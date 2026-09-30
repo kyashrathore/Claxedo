@@ -18,7 +18,7 @@ export type CursorSubagentObservation = {
   providerKind?: string
   subagentKey?: string
   childSessionId?: string
-  transcript: { kind: "none" | "live" }
+  transcript: { kind: "live" }
 }
 
 function taskErrorMessage(value: unknown) {
@@ -47,9 +47,8 @@ function safeTaskSuccess(success: Record<string, unknown>) {
 export function taskMetadata(value: unknown) {
   const result = asRecord(value)
   const success = result?.status === "success" ? asRecord(result.value) : undefined
-  if (!success) return { transcript: "unavailable" }
+  if (!success) return {}
   return {
-    transcript: text(success.transcriptPath) ? "awaiting-host-resolution" : "unavailable",
     ...(text(success.agentId) ? { agentId: text(success.agentId) } : {}),
     ...(typeof success.isBackground === "boolean" ? { isBackground: success.isBackground } : {}),
     ...(asFiniteNumber(success.durationMs) !== undefined ? { durationMs: asFiniteNumber(success.durationMs) } : {}),
@@ -94,7 +93,7 @@ function taskCallObservation(message: Record<string, unknown>, toolCallId: strin
     ...(text(args.description) ? { label: text(args.description), description: text(args.description) } : {}),
     ...(subagentType ? { subagentType } : {}),
     ...(providerId ? { providerId, providerKind: "cursor-agent" } : {}),
-    transcript: { kind: "none" },
+    transcript: { kind: "live" },
   }
 }
 

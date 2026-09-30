@@ -3,6 +3,8 @@
   "initialState": {
     "toolsByCallId": {},
     "usageByRunId": {},
+    "openShells": [],
+    "shellOutputByCallId": {},
     "notedKinds": []
   },
   "calls": [
@@ -10,6 +12,8 @@
       "state": {
         "toolsByCallId": {},
         "usageByRunId": {},
+        "openShells": [],
+        "shellOutputByCallId": {},
         "notedKinds": []
       },
       "event": {
@@ -31,6 +35,8 @@
         "state": {
           "toolsByCallId": {},
           "usageByRunId": {},
+          "openShells": [],
+          "shellOutputByCallId": {},
           "notedKinds": []
         },
         "events": [
@@ -45,6 +51,8 @@
       "state": {
         "toolsByCallId": {},
         "usageByRunId": {},
+        "openShells": [],
+        "shellOutputByCallId": {},
         "notedKinds": []
       },
       "event": {
@@ -89,6 +97,8 @@
             }
           },
           "usageByRunId": {},
+          "openShells": [],
+          "shellOutputByCallId": {},
           "notedKinds": []
         },
         "events": [
@@ -189,6 +199,8 @@
           }
         },
         "usageByRunId": {},
+        "openShells": [],
+        "shellOutputByCallId": {},
         "notedKinds": []
       },
       "event": {
@@ -239,6 +251,8 @@
             }
           },
           "usageByRunId": {},
+          "openShells": [],
+          "shellOutputByCallId": {},
           "notedKinds": []
         },
         "events": [
@@ -268,7 +282,6 @@
               "cursor": {
                 "itemType": "collab_agent_tool_call",
                 "subagent": {
-                  "transcript": "unavailable",
                   "agentId": "agent-child",
                   "isBackground": true,
                   "durationMs": 5,
@@ -297,6 +310,8 @@
           }
         },
         "usageByRunId": {},
+        "openShells": [],
+        "shellOutputByCallId": {},
         "notedKinds": []
       },
       "event": {
@@ -347,6 +362,8 @@
               }
             }
           },
+          "openShells": [],
+          "shellOutputByCallId": {},
           "notedKinds": []
         },
         "events": [
@@ -398,6 +415,8 @@
             }
           }
         },
+        "openShells": [],
+        "shellOutputByCallId": {},
         "notedKinds": []
       },
       "event": {
@@ -442,6 +461,8 @@
               }
             }
           },
+          "openShells": [],
+          "shellOutputByCallId": {},
           "notedKinds": []
         },
         "events": []
@@ -474,6 +495,8 @@
             }
           }
         },
+        "openShells": [],
+        "shellOutputByCallId": {},
         "notedKinds": []
       },
       "event": {
@@ -496,6 +519,8 @@
         "state": {
           "toolsByCallId": {},
           "usageByRunId": {},
+          "openShells": [],
+          "shellOutputByCallId": {},
           "notedKinds": []
         },
         "events": [
@@ -514,6 +539,8 @@
       "state": {
         "toolsByCallId": {},
         "usageByRunId": {},
+        "openShells": [],
+        "shellOutputByCallId": {},
         "notedKinds": []
       },
       "event": {
@@ -535,6 +562,8 @@
         "state": {
           "toolsByCallId": {},
           "usageByRunId": {},
+          "openShells": [],
+          "shellOutputByCallId": {},
           "notedKinds": []
         },
         "events": [
@@ -549,6 +578,8 @@
       "state": {
         "toolsByCallId": {},
         "usageByRunId": {},
+        "openShells": [],
+        "shellOutputByCallId": {},
         "notedKinds": []
       },
       "event": {
@@ -583,6 +614,8 @@
             }
           },
           "usageByRunId": {},
+          "openShells": [],
+          "shellOutputByCallId": {},
           "notedKinds": []
         },
         "events": [
@@ -658,6 +691,8 @@
           }
         },
         "usageByRunId": {},
+        "openShells": [],
+        "shellOutputByCallId": {},
         "notedKinds": []
       },
       "event": {
@@ -698,6 +733,8 @@
             }
           },
           "usageByRunId": {},
+          "openShells": [],
+          "shellOutputByCallId": {},
           "notedKinds": []
         },
         "events": [
@@ -744,6 +781,8 @@
           }
         },
         "usageByRunId": {},
+        "openShells": [],
+        "shellOutputByCallId": {},
         "notedKinds": []
       },
       "event": {
@@ -785,6 +824,8 @@
             }
           },
           "usageByRunId": {},
+          "openShells": [],
+          "shellOutputByCallId": {},
           "notedKinds": []
         },
         "events": [
@@ -867,6 +908,8 @@
           }
         },
         "usageByRunId": {},
+        "openShells": [],
+        "shellOutputByCallId": {},
         "notedKinds": []
       },
       "event": {
@@ -917,6 +960,8 @@
             }
           },
           "usageByRunId": {},
+          "openShells": [],
+          "shellOutputByCallId": {},
           "notedKinds": []
         },
         "events": [
@@ -957,6 +1002,8 @@
           }
         },
         "usageByRunId": {},
+        "openShells": [],
+        "shellOutputByCallId": {},
         "notedKinds": []
       },
       "event": {
@@ -1016,6 +1063,8 @@
             }
           },
           "usageByRunId": {},
+          "openShells": [],
+          "shellOutputByCallId": {},
           "notedKinds": []
         },
         "events": [
@@ -1118,6 +1167,8 @@
           }
         },
         "usageByRunId": {},
+        "openShells": [],
+        "shellOutputByCallId": {},
         "notedKinds": []
       },
       "event": {
@@ -1179,6 +1230,8 @@
               }
             }
           },
+          "openShells": [],
+          "shellOutputByCallId": {},
           "notedKinds": []
         },
         "events": [
@@ -1241,6 +1294,8 @@
             }
           }
         },
+        "openShells": [],
+        "shellOutputByCallId": {},
         "notedKinds": []
       },
       "event": {
@@ -1296,6 +1351,8 @@
               }
             }
           },
+          "openShells": [],
+          "shellOutputByCallId": {},
           "notedKinds": []
         },
         "events": []
@@ -1339,6 +1396,8 @@
             }
           }
         },
+        "openShells": [],
+        "shellOutputByCallId": {},
         "notedKinds": []
       },
       "event": {
@@ -1361,6 +1420,8 @@
         "state": {
           "toolsByCallId": {},
           "usageByRunId": {},
+          "openShells": [],
+          "shellOutputByCallId": {},
           "notedKinds": []
         },
         "events": [
@@ -1379,6 +1440,8 @@
       "state": {
         "toolsByCallId": {},
         "usageByRunId": {},
+        "openShells": [],
+        "shellOutputByCallId": {},
         "notedKinds": []
       },
       "event": {
@@ -1400,6 +1463,8 @@
         "state": {
           "toolsByCallId": {},
           "usageByRunId": {},
+          "openShells": [],
+          "shellOutputByCallId": {},
           "notedKinds": []
         },
         "events": [
@@ -1414,6 +1479,8 @@
       "state": {
         "toolsByCallId": {},
         "usageByRunId": {},
+        "openShells": [],
+        "shellOutputByCallId": {},
         "notedKinds": []
       },
       "event": {
@@ -1458,6 +1525,8 @@
             }
           },
           "usageByRunId": {},
+          "openShells": [],
+          "shellOutputByCallId": {},
           "notedKinds": []
         },
         "events": [
@@ -1555,6 +1624,8 @@
           }
         },
         "usageByRunId": {},
+        "openShells": [],
+        "shellOutputByCallId": {},
         "notedKinds": []
       },
       "event": {
@@ -1612,6 +1683,8 @@
             }
           },
           "usageByRunId": {},
+          "openShells": [],
+          "shellOutputByCallId": {},
           "notedKinds": []
         },
         "events": [
@@ -1666,6 +1739,8 @@
           }
         },
         "usageByRunId": {},
+        "openShells": [],
+        "shellOutputByCallId": {},
         "notedKinds": []
       },
       "event": {
@@ -1729,6 +1804,8 @@
             }
           },
           "usageByRunId": {},
+          "openShells": [],
+          "shellOutputByCallId": {},
           "notedKinds": []
         },
         "events": [
@@ -1823,6 +1900,8 @@
           }
         },
         "usageByRunId": {},
+        "openShells": [],
+        "shellOutputByCallId": {},
         "notedKinds": []
       },
       "event": {
@@ -1882,6 +1961,8 @@
               }
             }
           },
+          "openShells": [],
+          "shellOutputByCallId": {},
           "notedKinds": []
         },
         "events": [
@@ -1942,6 +2023,8 @@
             }
           }
         },
+        "openShells": [],
+        "shellOutputByCallId": {},
         "notedKinds": []
       },
       "event": {
@@ -1995,6 +2078,8 @@
               }
             }
           },
+          "openShells": [],
+          "shellOutputByCallId": {},
           "notedKinds": []
         },
         "events": []
@@ -2036,6 +2121,8 @@
             }
           }
         },
+        "openShells": [],
+        "shellOutputByCallId": {},
         "notedKinds": []
       },
       "event": {
@@ -2058,6 +2145,8 @@
         "state": {
           "toolsByCallId": {},
           "usageByRunId": {},
+          "openShells": [],
+          "shellOutputByCallId": {},
           "notedKinds": []
         },
         "events": [

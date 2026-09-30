@@ -1,4 +1,4 @@
-import type { McpServerConfig, SDKMessage, SDKUserMessage, SettingSource } from "@cursor/sdk"
+import type { McpServerConfig, SDKMessage, SDKUserMessage, SettingSource, ShellOutputDeltaUpdate, ToolCallDeltaUpdate } from "@cursor/sdk"
 
 export type HostLocalOptions = {
   settingSources?: SettingSource[]
@@ -39,13 +39,16 @@ export type HostResult = { agentId?: string; runId?: string; status?: string; re
 
 export type HostFailure = { message: string; name?: string; code?: string; retryable?: boolean }
 
+export type HostDelta = ShellOutputDeltaUpdate | ToolCallDeltaUpdate
+
 export type HostReply =
   | { id: number; kind: "result"; value?: HostResult }
   | { id: number; kind: "event"; message: SDKMessage }
+  | { id: number; kind: "delta"; update: HostDelta }
   | ({ id: number; kind: "error" } & HostFailure)
 
 const commandKinds: readonly string[] = ["open", "run", "title", "models", "cancel", "steer", "close"]
-const replyKinds: readonly string[] = ["result", "event", "error"]
+const replyKinds: readonly string[] = ["result", "event", "delta", "error"]
 
 function frameOf(value: unknown, kinds: readonly string[]): boolean {
   return typeof value === "object" && value !== null && "id" in value && typeof value.id === "number" &&

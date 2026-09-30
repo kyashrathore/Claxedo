@@ -151,7 +151,7 @@ export class CursorSdkTransport implements HarnessTransport {
       if (broker.signal.aborted || entry.starting?.abort.signal.aborted) return
       if (entry.starting) entry.starting.launched = true
       entry.unsent = false
-      yield* streamCursorRun({ host, broker, prompt, services: this.services, ...(turn?.prompt.agent === "plan" ? { mode: "plan" as const } : {}),
+      yield* streamCursorRun({ host, broker, prompt, ...(turn?.prompt.agent === "plan" ? { mode: "plan" as const } : {}),
         session: hostSession(entry.input, this.services, entry.credential.apiKey, entry.plugins, entry.session.binding.upstreamSessionId, turn?.model?.modelID) })
     } finally {
       entry.busy = false

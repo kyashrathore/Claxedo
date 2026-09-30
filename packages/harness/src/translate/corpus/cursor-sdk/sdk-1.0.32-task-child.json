@@ -1,0 +1,164 @@
+{
+  "adapter": "cursor-sdk",
+  "initialState": {
+    "toolsByCallId": {},
+    "usageByRunId": {},
+    "openShells": [],
+    "shellOutputByCallId": {},
+    "notedKinds": []
+  },
+  "calls": [
+    {
+      "state": {
+        "toolsByCallId": {},
+        "usageByRunId": {},
+        "openShells": [],
+        "shellOutputByCallId": {},
+        "notedKinds": []
+      },
+      "event": {
+        "source": "cursor.sdk.message",
+        "method": "cursor/assistant",
+        "payload": {
+          "type": "assistant",
+          "agent_id": "t1",
+          "run_id": "t1",
+          "message": {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "child says"
+              }
+            ]
+          }
+        }
+      },
+      "context": {
+        "harness": "cursor-sdk",
+        "threadId": "thread-1"
+      },
+      "callbacks": [],
+      "output": {
+        "state": {
+          "toolsByCallId": {},
+          "usageByRunId": {},
+          "openShells": [],
+          "shellOutputByCallId": {},
+          "notedKinds": []
+        },
+        "events": [
+          {
+            "type": "text-delta",
+            "delta": "child says"
+          }
+        ]
+      }
+    },
+    {
+      "state": {
+        "toolsByCallId": {},
+        "usageByRunId": {},
+        "openShells": [],
+        "shellOutputByCallId": {},
+        "notedKinds": []
+      },
+      "event": {
+        "source": "cursor.sdk.message",
+        "method": "cursor/tool_call",
+        "payload": {
+          "type": "tool_call",
+          "agent_id": "t1",
+          "run_id": "t1",
+          "call_id": "t1c",
+          "name": "read",
+          "status": "running",
+          "args": {
+            "path": "a.txt"
+          }
+        }
+      },
+      "context": {
+        "harness": "cursor-sdk",
+        "threadId": "thread-1"
+      },
+      "callbacks": [],
+      "output": {
+        "state": {
+          "toolsByCallId": {
+            "t1c": {
+              "toolName": "read",
+              "kind": "file_read",
+              "input": {
+                "path": "a.txt"
+              }
+            }
+          },
+          "usageByRunId": {},
+          "openShells": [],
+          "shellOutputByCallId": {},
+          "notedKinds": []
+        },
+        "events": [
+          {
+            "type": "tool-start",
+            "toolCallId": "t1c",
+            "toolName": "read",
+            "kind": "file_read",
+            "display": {
+              "kind": "file_read",
+              "intent": "read",
+              "path": "a.txt",
+              "input": {
+                "path": "a.txt"
+              }
+            },
+            "metadata": {
+              "cursor": {
+                "itemType": "file_read"
+              }
+            }
+          },
+          {
+            "type": "tool-input",
+            "toolCallId": "t1c",
+            "input": {
+              "path": "a.txt"
+            },
+            "display": {
+              "kind": "file_read",
+              "intent": "read",
+              "path": "a.txt",
+              "input": {
+                "path": "a.txt"
+              }
+            },
+            "metadata": {
+              "cursor": {
+                "itemType": "file_read"
+              }
+            }
+          },
+          {
+            "type": "tool-status",
+            "toolCallId": "t1c",
+            "status": "running",
+            "display": {
+              "kind": "file_read",
+              "intent": "read",
+              "path": "a.txt",
+              "input": {
+                "path": "a.txt"
+              }
+            },
+            "metadata": {
+              "cursor": {
+                "itemType": "file_read"
+              }
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

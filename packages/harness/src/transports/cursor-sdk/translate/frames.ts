@@ -1,5 +1,5 @@
 import { asRecord } from "@claxedo/helpers/guards"
-import type { LocalRunStreamEvent, SDKMessage } from "@cursor/sdk"
+import type { LocalRunStreamEvent, SDKMessage, ShellOutputDeltaUpdate } from "@cursor/sdk"
 import { runtimeDiagnostic } from "@claxedo/agent-runtime-contract"
 import { boundList } from "../../../translate/value"
 import type { CursorSdkAdapterState, CursorTranslation } from "./state"
@@ -37,6 +37,10 @@ export function isSdkMessage(value: unknown): value is SDKMessage {
 export function isLocalRunStreamEvent(value: unknown): value is LocalRunStreamEvent {
   const message = asRecord(value)
   return typeof message?.type === "string" && message.type in localRunStreamEventTypes
+}
+
+export function isShellOutputDelta(value: Record<string, unknown>): value is ShellOutputDeltaUpdate & Record<string, unknown> {
+  return value.type === "shell-output-delta" && asRecord(value.event) !== undefined
 }
 
 export function unknownKind(state: CursorSdkAdapterState, kind: string): CursorTranslation {

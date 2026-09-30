@@ -603,7 +603,7 @@ test("stopping a running Cursor goal interrupts the run and pauses the goal", as
   } finally { await context.close() }
 }, 60_000)
 
-test("a Task tool call is admitted through the broker with its transcript", async () => {
+test("a Task tool call is admitted through the broker as a child with a live transcript from its first frame", async () => {
   const state = await backend()
   const args = { description: "Review auth", prompt: "Review the auth module", subagentType: { explore: {} } }
   state.server.script("task", { steps: [
@@ -619,10 +619,50 @@ test("a Task tool call is admitted through the broker with its transcript", asyn
         { status: "running", providerId: undefined, providerKind: undefined, toolCallId: "scripted-tool-1", toolCallRole: "spawn" },
         { status: "completed", providerId: "cursor-child-a", providerKind: "cursor-agent", toolCallId: "scripted-tool-1", toolCallRole: "spawn" },
       ])
-    expect(context.ports.subagents[1]?.childSessionId).toBeDefined()
-    expect(context.services.transcriptRows.has("/tmp/cursor-child-a.jsonl")).toBe(true)
+    expect(context.ports.subagents[0]?.childSessionId).toBeDefined()
+    expect(context.ports.subagents[1]?.childSessionId).toBe(context.ports.subagents[0]?.childSessionId)
+    expect(context.services.transcriptRows.size).toBe(0)
     expect(events.some((item) => item.event.type === "tool-output" && item.event.toolCallId === "scripted-tool-1")).toBe(true)
     expect(events.some((item) => item.event.type === "finish")).toBe(true)
+  } finally { await context.close() }
+}, 60_000)
+
+test("a running shell streams its output into its row, and a Task's own activity reaches its bound child as it happens", async () => {
+  const state = await backend()
+  const update = (value: Record<string, unknown>) => ({ kind: "update" as const, update: value })
+  const shell = (result?: unknown) => ({ shellToolCall: { args: { command: "make test", workingDirectory: "/repo" }, ...(result ? { result } : {}) } })
+  const nested = (value: Record<string, unknown>) => update({ toolCallDelta: { callId: "task-1", toolCallDelta: { taskToolCallDelta: { interactionUpdate: value } } } })
+  state.server.script("live", { steps: [
+    update({ toolCallStarted: { callId: "shell-1", toolCall: shell() } }),
+    update({ shellOutputDelta: { start: {} } }), update({ shellOutputDelta: { stdout: { data: "compiling\n" } } }),
+    update({ shellOutputDelta: { stderr: { data: "1 warning\n" } } }), update({ shellOutputDelta: { exit: { code: 0 } } }),
+    update({ toolCallCompleted: { callId: "shell-1", toolCall: shell({ success: { exitCode: 0, stdout: "compiling\n", stderr: "1 warning\n" } }) } }),
+    update({ toolCallStarted: { callId: "task-1", toolCall: { taskToolCall: { args: { description: "Explore auth", prompt: "look" } } } } }),
+    nested({ textDelta: { text: "CHILD-SAYS" } }),
+    nested({ toolCallStarted: { callId: "child-read-1", toolCall: { readToolCall: { args: { path: "auth.ts" } } } } }),
+    nested({ toolCallCompleted: { callId: "child-read-1", toolCall: { readToolCall: { args: { path: "auth.ts" }, result: { success: { content: "export {}" } } } } } }),
+    update({ toolCallCompleted: { callId: "task-1", toolCall: { taskToolCall: { args: { description: "Explore auth", prompt: "look" },
+      result: { success: { agentId: "cursor-child-b", isBackground: false, durationMs: "5" } } } } } }),
+    { kind: "text", text: "LIVE-DONE" },
+  ] })
+  const context = await setupConformance({ name: "live", backend: async () => state, makeTransport: transportFor(state) })
+  try {
+    const routed: { event: RoutedEvent["event"]; bound: string }[] = []
+    for await (const item of context.transport.send(context.session, context.turn("CURSOR_SCRIPT:live"), context.turnBroker())) {
+      const key = item.route?.kind === "child" ? item.route.correlationKey : undefined
+      routed.push({ event: item.event, bound: key ? context.ports.childRoute(context.session.binding.sessionId, key).kind : "parent" })
+    }
+    const shellContent = routed.flatMap(({ event }) => event.type === "tool-content" && event.toolCallId === "shell-1" && event.content.type === "content"
+      && event.content.content.type === "text" ? [event.content.content.text] : [])
+    expect(shellContent).toEqual(["compiling\n", "compiling\n1 warning\n"])
+    const shellOrder = routed.map(({ event }) => event).filter((event) => "toolCallId" in event && event.toolCallId === "shell-1").map((event) => event.type)
+    expect(shellOrder.indexOf("tool-content")).toBeLessThan(shellOrder.indexOf("tool-output"))
+    const child = routed.filter(({ bound }) => bound !== "parent")
+    expect(child.map(({ event }) => event.type)).toEqual(expect.arrayContaining(["text-delta", "tool-start", "tool-output"]))
+    expect(child.every(({ bound }) => bound === "bound")).toBe(true)
+    expect(child.find(({ event }) => event.type === "text-delta")?.event).toMatchObject({ delta: "CHILD-SAYS" })
+    expect(routed.some(({ event, bound }) => bound === "parent" && event.type === "text-delta" && event.delta === "CHILD-SAYS")).toBe(false)
+    expect(routed.some(({ event }) => event.type === "finish")).toBe(true)
   } finally { await context.close() }
 }, 60_000)
 

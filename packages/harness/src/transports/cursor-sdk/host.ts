@@ -1,6 +1,7 @@
 import { createInterface } from "node:readline"
 import { errorMessage } from "@claxedo/helpers"
 import type { AgentOptions, Run, SDKAgent } from "@cursor/sdk"
+import { forwardedDelta, HostDeltaOrder } from "./host-deltas"
 import { hostFailure, hostRunError, isHostCommand, type HostCommand, type HostReply, type HostSession } from "./protocol"
 import { CursorRunState } from "./run-state"
 
@@ -82,19 +83,22 @@ export class CursorHostRuntime {
   private async send(command: Extract<HostCommand, { kind: "run" }>, pending: CursorRunState): Promise<void> {
     const agent = await this.open(command.session)
     pending.beforeSend()
+    const order = new HostDeltaOrder((reply) => this.post({ id: command.id, ...reply }))
     let run: Run
     try {
       run = await agent.send(command.prompt, {
         ...(command.session.model ? { model: { id: command.session.model } } : {}),
         ...(Object.keys(command.session.mcpServers).length ? { mcpServers: command.session.mcpServers } : {}),
         ...(command.mode ? { mode: command.mode } : {}), local: { force: false },
+        onDelta: ({ update }) => { const delta = forwardedDelta(update); if (delta) order.delta(delta) },
       })
     } catch (error) {
       this.discard(command.session.sessionId)
       throw error
     }
     pending.activate(run)
-    for await (const message of run.stream()) this.post({ id: command.id, kind: "event", message })
+    for await (const message of run.stream()) order.message(message)
+    order.end()
     const result = await run.wait()
     this.post({ id: command.id, kind: "result", value: { agentId: agent.agentId, runId: run.id,
       status: result.status, ...(result.result ? { result: result.result } : {}), ...hostRunError(result.error) } })

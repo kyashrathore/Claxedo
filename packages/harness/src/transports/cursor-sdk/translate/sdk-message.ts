@@ -3,6 +3,7 @@ import type { AgentRuntimeEvent } from "@claxedo/agent-runtime-contract"
 import { asText as text } from "@claxedo/agent-runtime-contract"
 import { unknownKind } from "./frames"
 import { statusEvents } from "./run-status"
+import { closedShell, openedShell } from "./shell-output"
 import { unchanged, type CursorSdkAdapterState, type CursorTranslation } from "./state"
 import { toolCompletedEvents } from "./tool-results"
 import { cursorToolName, ensureTool, isTodoTool, todosFromInput, toolInput } from "./tools"
@@ -34,12 +35,13 @@ function toolCallEvents(state: CursorSdkAdapterState, message: ToolCall): Cursor
   switch (status) {
     case "running": {
       const ensured = ensureTool({ state, toolCallId: message.call_id, toolName, rawInput })
-      return { state: ensured.state, events: [...ensured.events, { type: "tool-status", toolCallId: message.call_id, status: "running",
-        display: ensured.display, metadata: { cursor: { itemType: ensured.kind, truncated: message.truncated } } }] }
+      return { state: toolName === "shell" ? openedShell(ensured.state, message.call_id) : ensured.state, events: [...ensured.events, { type: "tool-status",
+        toolCallId: message.call_id, status: "running", display: ensured.display, metadata: { cursor: { itemType: ensured.kind, truncated: message.truncated } } }] }
     }
     case "completed":
     case "error":
-      return toolCompletedEvents({ state, toolCallId: message.call_id, toolName, rawInput, result: message.result, isError: status === "error" })
+      return toolCompletedEvents({ state: closedShell(state, message.call_id), toolCallId: message.call_id, toolName, rawInput, result: message.result,
+        isError: status === "error" })
     default:
       return unknownKind(state, `tool_call:${String(status)}`)
   }
