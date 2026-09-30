@@ -624,6 +624,33 @@ describe("D1 access changes that must not undo or outlive a decision", () => {
     expect(await held()).toBe(false)
   })
 
+  test("lowering or revoking a grant, leaving a team or a demotion leaves the workspace owner's own runtime tokens active", async () => {
+    const { authority, alice, carol, projectId } = await setup()
+    await authority.addOrgMember!(alice, { orgId: "org_acme", userPublicId: id(carol), role: "admin" })
+    await authority.createWorkspace(carol, {
+      workspaceId: "ws_carol",
+      orgId: "org_acme",
+      displayName: "carol",
+      backing: "cloud-vm",
+      repoUrl: "https://github.com/acme/app",
+    })
+    await authority.grantProjectMember!(alice, { projectId, userPublicId: id(carol), role: "admin" })
+    const team = (await authority.createTeamInOrg!(alice, { orgId: "org_acme", name: "Eng" })) as { team_id: string }
+    await authority.addTeamMember!(alice, { teamId: team.team_id, userPublicId: id(carol) })
+    await authority.grantTeamProject!(alice, { teamId: team.team_id, projectId, role: "admin" })
+    const own = await token(authority, carol, "jti_carol_own", "admin", "ws_carol")
+
+    await authority.grantProjectMember!(alice, { projectId, userPublicId: id(carol), role: "viewer" })
+    await authority.revokeProjectMember!(alice, { projectId, userPublicId: id(carol) })
+    await authority.grantTeamProject!(alice, { teamId: team.team_id, projectId, role: "viewer" })
+    await authority.revokeTeamProject!(alice, { teamId: team.team_id, projectId })
+    await authority.grantTeamProject!(alice, { teamId: team.team_id, projectId, role: "editor" })
+    await authority.removeTeamMember!(alice, { teamId: team.team_id, userPublicId: id(carol) })
+    await authority.updateOrgMember!(alice, { orgId: "org_acme", userPublicId: id(carol), role: "member" })
+
+    expect(await own()).toBe(true)
+  })
+
   test("removal revokes the person's direct session shares and participations in the organization, audited, so re-admission restores no consent", async () => {
     const { authority, database, alice, bob, projectId, audit } = await setup()
     await authority.addOrgMember!(alice, { orgId: "org_acme", userPublicId: id(bob), role: "member" })

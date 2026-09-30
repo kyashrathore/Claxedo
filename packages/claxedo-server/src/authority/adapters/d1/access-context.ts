@@ -206,25 +206,3 @@ export function ownerMembershipStatements(context: D1AccessContext, input: { own
     `).bind(input.now, input.now, ...input.owners.bind),
   ]
 }
-
-/**
- * Revokes the live runtime access tokens minted for the people `holders`
- * selects (a `user_id` subquery) on the projects `projects` selects, guarded
- * like the change it accompanies. A token outlives the rank that minted it
- * otherwise: its activity is re-read at check time, so a person removed and
- * later re-admitted would find the old token working again.
- */
-export function revokeRuntimeTokensStatement(context: D1AccessContext, input: {
-  holders: BoundSql
-  projects: BoundSql
-  guard: BoundSql
-  now: number
-}) {
-  return context.database.prepare(`
-    update runtime_access_tokens set revoked_at = ?
-    where revoked_at is null and deployment_id = ?
-      and minted_for_user_id in (${input.holders.sql})
-      and project_id in (${input.projects.sql})
-      and ${input.guard.sql}
-  `).bind(input.now, context.deploymentId, ...input.holders.bind, ...input.projects.bind, ...input.guard.bind)
-}

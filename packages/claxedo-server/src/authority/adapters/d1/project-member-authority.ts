@@ -11,12 +11,11 @@ import {
   D1AccessAuthorityError,
   isActiveOrgMember,
   requireText,
-  revokeRuntimeTokensStatement,
   type AccessPrincipal,
   type BoundSql,
   type D1AccessContext,
 } from "./access-context"
-import { activeOrgMemberSql, orgRoleRankSql, PROJECT_ACCESS_SQL, projectRoleRankSql, rankRole, roleRankSql } from "./project-role"
+import { activeOrgMemberSql, orgRoleRankSql, PROJECT_ACCESS_SQL, projectRoleRankSql, rankRole } from "./project-role"
 
 export const D1_PROJECT_MEMBER_AUTHORITY_METHODS = [
   "grantProjectMember",
@@ -83,16 +82,6 @@ export class D1ProjectMemberAuthority implements D1ProjectMemberAuthorityPort {
         guard,
         now,
       }),
-      revokeRuntimeTokensStatement(this.context, {
-        holders: { sql: "select ?", bind: [userId] },
-        projects: {
-          sql: `select project_id from project_memberships
-            where project_id = ? and user_id = ? and revoked_at is null and ${roleRankSql("role")} > ${roleRankSql("?")}`,
-          bind: [project.project_id, userId, args.role],
-        },
-        guard,
-        now,
-      }),
       this.database
         .prepare(`
           insert into project_memberships (project_id, user_id, role, created_at, updated_at, revoked_at)
@@ -126,17 +115,11 @@ export class D1ProjectMemberAuthority implements D1ProjectMemberAuthorityPort {
       )`,
       bind: [],
     })
-    const [, , revoked] = await this.database.batch([
+    const [, revoked] = await this.database.batch([
       accessAuditStatement(this.context, {
         who,
         action: "project.member.revoked",
         metadata: this.grantChange(project, userId, null),
-        guard,
-        now,
-      }),
-      revokeRuntimeTokensStatement(this.context, {
-        holders: { sql: "select ?", bind: [userId] },
-        projects: { sql: "select ?", bind: [project.project_id] },
         guard,
         now,
       }),

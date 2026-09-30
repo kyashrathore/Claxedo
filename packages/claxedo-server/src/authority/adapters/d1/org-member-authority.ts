@@ -8,7 +8,6 @@ import type {
 import {
   accessAuditStatement,
   canAdminOrganization,
-  revokeRuntimeTokensStatement,
   D1AccessAuthorityError,
   isActiveOrgMember,
   requireText,
@@ -84,8 +83,9 @@ export class D1OrgMemberAuthority implements D1OrgMemberAuthorityPort {
    * Revokes the membership together with everything the person holds in this
    * organization through it: team memberships, project member grants, direct
    * session shares, session participations and runtime access tokens, in one
-   * batch, so re-admitting them later restores none of it. A project they own
-   * stays theirs; without the membership it admits them to nothing.
+   * batch, so re-admitting them later restores none of it. A project or
+   * workspace they own stays theirs; without the membership it admits them to
+   * nothing.
    */
   async removeOrgMember(auth: SignedControlPlaneAuth, args: { orgId: string; userPublicId: string }) {
     const who = await this.context.principal(auth)
@@ -123,12 +123,12 @@ export class D1OrgMemberAuthority implements D1OrgMemberAuthorityPort {
         guard,
         now,
       }),
-      revokeRuntimeTokensStatement(this.context, {
-        holders: { sql: "select ?", bind: [userId] },
-        projects: { sql: "select project_id from projects where org_id = ?", bind: [orgId] },
-        guard,
-        now,
-      }),
+      this.database
+        .prepare(`
+          update runtime_access_tokens set revoked_at = ?
+          where revoked_at is null and deployment_id = ? and minted_for_user_id = ? and org_id = ? and ${guard.sql}
+        `)
+        .bind(now, this.context.deploymentId, userId, orgId, ...guard.bind),
       this.database
         .prepare(`update session_share_grants set revoked_at = ? where rowid in (select rowid from ${shares}) and ${guard.sql}`)
         .bind(now, userId, orgId, ...guard.bind),
@@ -174,8 +174,7 @@ export class D1OrgMemberAuthority implements D1OrgMemberAuthorityPort {
   /**
    * `add` writes the membership whatever its state, which is how a removed
    * member is reinstated; `update` changes only a membership that is still
-   * active when the batch runs. Moving someone from owner or admin to member
-   * revokes their runtime tokens in the organization in the same batch.
+   * active when the batch runs.
    */
   private async setRole(who: AccessPrincipal, orgId: string, userId: string, role: OrgMemberRole, mode: "add" | "update") {
     await this.assertOwnershipChange(who, orgId, await this.membership(orgId, userId), role)
@@ -204,16 +203,6 @@ export class D1OrgMemberAuthority implements D1OrgMemberAuthorityPort {
         who,
         action: mode === "add" ? "org.member.added" : "org.member.role_changed",
         metadata: this.roleChange(orgId, userId, role),
-        guard,
-        now,
-      }),
-      revokeRuntimeTokensStatement(this.context, {
-        holders: {
-          sql: `select user_id from org_memberships
-            where org_id = ? and user_id = ? and revoked_at is null and role in ('owner', 'admin') and ? = 'member'`,
-          bind: [orgId, userId, role],
-        },
-        projects: { sql: "select project_id from projects where org_id = ?", bind: [orgId] },
         guard,
         now,
       }),

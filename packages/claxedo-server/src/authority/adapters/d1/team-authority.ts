@@ -7,7 +7,6 @@ import {
   isActiveOrgMember,
   requireText,
   resolveMemberUser,
-  revokeRuntimeTokensStatement,
   type BoundSql,
   type D1AccessContext,
 } from "./access-context"
@@ -16,7 +15,7 @@ import type {
   OrgMemberRole,
   ProjectGrantRole,
 } from "@claxedo/server-core/platform/auth/org-access-authority"
-import { organizationAdminSql, roleRankSql } from "./project-role"
+import { organizationAdminSql } from "./project-role"
 
 export const D1_TEAM_AUTHORITY_METHODS = [
   "listTeams",
@@ -280,17 +279,11 @@ export class D1TeamAuthority implements D1TeamAuthorityPort {
         select 1 from team_memberships current
         where current.team_id = guard_team.team_id and current.user_id = ? and current.revoked_at is null
       )`, [target.user_id])
-    const [, , removed] = await this.database.batch([
+    const [, removed] = await this.database.batch([
       accessAuditStatement(this.context, {
         who,
         action: "team.member.removed",
         metadata: this.memberChange(team, target.user_id, null),
-        guard,
-        now,
-      }),
-      revokeRuntimeTokensStatement(this.context, {
-        holders: { sql: "select ?", bind: [target.user_id] },
-        projects: { sql: "select project_id from team_project_grants where team_id = ? and revoked_at is null", bind: [team.team_id] },
         guard,
         now,
       }),
@@ -356,16 +349,6 @@ export class D1TeamAuthority implements D1TeamAuthorityPort {
         guard,
         now,
       }),
-      revokeRuntimeTokensStatement(this.context, {
-        holders: this.teamHolders(team.team_id),
-        projects: {
-          sql: `select project_id from team_project_grants
-            where team_id = ? and project_id = ? and revoked_at is null and ${roleRankSql("role")} > ${roleRankSql("?")}`,
-          bind: [team.team_id, projectId, args.role],
-        },
-        guard,
-        now,
-      }),
       this.database
         .prepare(`
           insert into team_project_grants (
@@ -400,17 +383,11 @@ export class D1TeamAuthority implements D1TeamAuthorityPort {
         select 1 from team_project_grants current
         where current.team_id = guard_team.team_id and current.project_id = ? and current.revoked_at is null
       )`, [projectId])
-    const [, , revoked] = await this.database.batch([
+    const [, revoked] = await this.database.batch([
       accessAuditStatement(this.context, {
         who,
         action: "team.project.revoked",
         metadata: this.grantChange(team, projectId, null),
-        guard,
-        now,
-      }),
-      revokeRuntimeTokensStatement(this.context, {
-        holders: this.teamHolders(team.team_id),
-        projects: { sql: "select ?", bind: [projectId] },
         guard,
         now,
       }),
@@ -474,10 +451,6 @@ export class D1TeamAuthority implements D1TeamAuthorityPort {
       )`,
       bind: [teamId, userId, userId, ...bind],
     }
-  }
-
-  private teamHolders(teamId: string): BoundSql {
-    return { sql: "select user_id from team_memberships where team_id = ? and revoked_at is null", bind: [teamId] }
   }
 
   private memberChange(team: { team_id: string; org_id: string }, userId: string, after: OrgMemberRole | null): BoundSql {
