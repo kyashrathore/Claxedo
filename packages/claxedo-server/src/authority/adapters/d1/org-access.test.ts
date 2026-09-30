@@ -6,6 +6,7 @@ import type { D1CoreAuthorityBoundary } from "./core-authority"
 import { D1WorkspaceAuthority } from "./workspace-authority"
 import { D1OrgMemberAuthority } from "./org-member-authority"
 import { D1ProjectMemberAuthority } from "./project-member-authority"
+import { D1AuditAuthority } from "./audit-authority"
 import { composeBetterAuthD1Authority } from "../worker/better-auth-d1-compose"
 import {
   controlPlaneMigrations,
@@ -522,6 +523,23 @@ describe("D1 access changes that must not undo or outlive a decision", () => {
       { action: "org.member.added", actor: id(alice), orgId: "org_acme", targetUserId: id(alice), before: null, after: "owner" },
       { action: "org.member.added", actor: id(outsider), orgId: "org_other", targetUserId: id(outsider), before: null, after: "owner" },
     ])
+  })
+
+  test("audit retention evicts deny rows and never an access change, however many deny rows a caller provokes", async () => {
+    const { database, alice, audit } = await setup()
+    const retained = new D1AuditAuthority(database, { deploymentId: "deployment-a", retentionLimit: 3 })
+    const denied = async () => (await database
+      .prepare("select count(*) as n from authority_audit_events where result = 'deny'")
+      .first<{ n: number }>())?.n
+
+    for (let attempt = 0; attempt < 5; attempt++) {
+      await retained.auditDeny(alice, { action: "workspaces.open.denied", reason: "denied", workspaceId: "ws_private" })
+    }
+
+    expect(await denied()).toBe(3)
+    expect(await audit("org.member.added")).toEqual(expect.arrayContaining([
+      expect.objectContaining({ orgId: "org_acme", targetUserId: id(alice), after: "owner" }),
+    ]))
   })
 
   test("a role change racing a removal does not reinstate the member", async () => {

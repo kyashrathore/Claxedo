@@ -121,6 +121,18 @@ export async function resolveMemberUser(
 
 export type BoundSql = { sql: string; bind: unknown[] }
 
+const ACCESS_CHANGE_ACTION_PREFIXES = ["org.", "team.", "project.member."] as const
+
+export type AccessChangeAction = `${(typeof ACCESS_CHANGE_ACTION_PREFIXES)[number]}${string}`
+
+/** True for an audit row an access change wrote; `action` and `result` are its columns. */
+export function accessChangeRowSql(action: string, result: string) {
+  const prefixed = ACCESS_CHANGE_ACTION_PREFIXES
+    .map((prefix) => `substr(${action}, 1, ${prefix.length}) = '${prefix}'`)
+    .join(" or ")
+  return `(${result} = 'allow' and (${prefixed}))`
+}
+
 /**
  * The audit row for one membership or grant change, attributed to the caller
  * and written in the same batch as the change. It is placed BEFORE the change
@@ -133,7 +145,7 @@ export type BoundSql = { sql: string; bind: unknown[] }
  */
 export function accessAuditStatement(context: D1AccessContext, input: {
   who: AccessPrincipal
-  action: string
+  action: AccessChangeAction
   metadata: BoundSql
   guard: BoundSql
   now: number

@@ -1,6 +1,7 @@
 import type { D1Database } from "@cloudflare/workers-types"
 import { ControlPlaneAuthError, type SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import type { WorkspaceAuthority } from "@claxedo/server-core/platform/auth/authority"
+import { accessChangeRowSql } from "./access-context"
 
 export const D1_AUDIT_AUTHORITY_METHODS = ["auditDeny", "auditAllow"] as const satisfies readonly (keyof WorkspaceAuthority)[]
 export type D1AuditAuthorityPort = Pick<WorkspaceAuthority, (typeof D1_AUDIT_AUTHORITY_METHODS)[number]>
@@ -9,7 +10,12 @@ export type D1AuditAuthorityOptions = {
   deploymentId: string
   now?: () => number
   randomId?: () => string
-  /** Per-deployment row cap. Production defaults to 10,000. */
+  /**
+   * Per-deployment cap on the rows this writer keeps. Production defaults to
+   * 10,000. Access-change rows are outside it: deny rows are what any signed
+   * caller can provoke, and they must not push the record of who granted what
+   * out of the table.
+   */
   retentionLimit?: number
 }
 
@@ -147,7 +153,7 @@ export class D1AuditAuthority implements D1AuditAuthorityPort {
         delete from authority_audit_events
         where deployment_id = ? and event_id in (
           select event_id from authority_audit_events
-          where deployment_id = ?
+          where deployment_id = ? and not ${accessChangeRowSql("action", "result")}
           order by created_at desc, event_id desc
           limit -1 offset ?
         )
