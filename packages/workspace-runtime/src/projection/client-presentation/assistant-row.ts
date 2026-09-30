@@ -63,7 +63,6 @@ const PART_BEARING_COMPAT_EVENTS = new Set([
   "message.completed",
 ])
 
-/** The message a part-bearing compat event files against, if it is one. */
 function partBearingMessageId(event: AgentEventEnvelope): string | undefined {
   if (!PART_BEARING_COMPAT_EVENTS.has(event.payload.type)) return undefined
   const properties = object(event.payload.properties)

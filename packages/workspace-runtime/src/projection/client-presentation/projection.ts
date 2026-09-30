@@ -15,14 +15,14 @@ import { endReasoning, REASONING_ENDS_ON } from "./text-parts"
 import { terminalizeOpenTools } from "./tool-lifecycle"
 import { translateRuntimeEventToCompat } from "./translate"
 
-export type ClientPresentationProjection = {
+type ClientPresentationProjection = {
   name: "client-presentation"
   ingest: (event: AgentRuntimeEvent) => AgentEventEnvelope[]
   state: () => ClientPresentationProjectionState
   terminalizeOpenTools: (error: string) => AgentEventEnvelope[]
 }
 
-export type ClientPresentationProjectionOptions = {
+type ClientPresentationProjectionOptions = {
   sessionId: string
   directory: string
   assistantMessageId: string
