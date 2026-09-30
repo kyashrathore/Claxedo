@@ -44,7 +44,14 @@ export const serverWorkerd: Policy = {
     ],
     requiredPackages: ["better-auth", "hono", "@claxedo/server-core"],
   },
-  ceilings: { modules: 97, packages: 19 },
+  // The D1 authority composes its organization, team and project-member
+  // modules beside `project-role.ts`, the one rank query they and every other
+  // D1 reader share (`authority/adapters/d1/core-authority.ts`); the host
+  // access authority's error contract is its own module
+  // (`authority/adapters/d1/host-access-errors.ts`); and the Better Auth
+  // composition adds the AUTH_DB email lookup an org admin adds a member by
+  // (`platform/auth/better-auth-d1-account-email.ts`).
+  ceilings: { modules: 104, packages: 19 },
 
   emitted: {
     file: "packages/claxedo-server/.artifacts/u8-package-split/manifests/server-workerd.json",

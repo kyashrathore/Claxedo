@@ -1,6 +1,5 @@
 import type { D1Database, D1PreparedStatement } from "@cloudflare/workers-types"
 import { ControlPlaneAuthError, type SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
-import { ClaxedoError } from "@claxedo/server-core/platform/errors/base"
 import {
   hostEnrollmentScope,
   hostProviderConfigRekeyed,
@@ -12,7 +11,6 @@ import {
 import type {
   HostAssignmentAck,
   HostAssignmentDescription,
-  HostConnectErrorCode,
   HostEnrollment,
   HostEnrollmentListRow,
   HostEnrollmentState,
@@ -39,12 +37,13 @@ import {
   normalizeStoredDirectory,
   publicKeyFingerprint,
 } from "@claxedo/server-core/platform/auth/host-connect-contract"
-import type { MachineAuthRefusal } from "@claxedo/server-core/platform/auth/machine-auth"
 import { MACHINE_SEAL_VERSION, machineSealingPublicKey } from "@claxedo/server-core/platform/auth/machine-seal"
 import { timingSafeEqualStrings } from "@claxedo/server-core/platform/auth/web-crypto"
 import { sha256Hex } from "@claxedo/helpers/crypto"
 import { asRecord, parseJson } from "@claxedo/server-core/platform/json/index"
 import { batchAssertionFailed, type D1WorkspaceAuthority } from "./workspace-authority"
+import { activeOrgMemberSql, workspaceRoleRankSql } from "./project-role"
+import { D1HostAccessAuthorityError } from "./host-access-errors"
 
 export const D1_HOST_ACCESS_AUTHORITY_METHODS = [
   "createHostEnrollmentRequest",
@@ -189,50 +188,6 @@ const MAX_SEALING_PUBLIC_KEY_LENGTH = 4_000
 const MAX_SEALED_LENGTH = 64 * 1024
 const MAX_PROVIDER_IDS = 100
 
-export type D1HostAccessErrorCode =
-  | "invalid_input"
-  | "resource_conflict"
-  | "host_attestation_denied"
-  | "signature_replayed"
-  | "host_enrollment_not_found"
-  | Extract<
-    MachineAuthRefusal["code"],
-    "enrollment_revoked" | "enrollment_paused" | "enrollment_owner_ineligible" | "enrollment_key_version_mismatch"
-  >
-  | HostConnectErrorCode
-
-const ERROR_STATUS: Record<D1HostAccessErrorCode, number> = {
-  invalid_input: 400,
-  resource_conflict: 409,
-  host_attestation_denied: 403,
-  signature_replayed: 409,
-  host_enrollment_not_found: 404,
-  enrollment_revoked: 403,
-  enrollment_paused: 403,
-  enrollment_owner_ineligible: 403,
-  enrollment_key_version_mismatch: 403,
-  invitation_invalid: 403,
-  invitation_expired: 410,
-  invitation_revoked: 410,
-  invitation_redeemed: 409,
-  invitation_host_conflict: 409,
-  enrollment_generation_superseded: 409,
-  host_assignment_outside_scope: 400,
-  host_sealing_key_undeclared: 409,
-  host_provider_config_revision_stale: 409,
-}
-
-export class D1HostAccessAuthorityError extends ClaxedoError<D1HostAccessErrorCode> {
-  constructor(
-    code: D1HostAccessErrorCode,
-    message: string,
-    /** Extra fields the route places beside `code` and `message` in the error body. */
-    public readonly details?: Record<string, unknown>,
-  ) {
-    super({ code, message, status: ERROR_STATUS[code] })
-  }
-}
-
 /**
  * The one definition of "a host is serving this workspace right now": an
  * enrollment that is neither revoked nor paused, whose lease has not expired,
@@ -257,28 +212,6 @@ export const HOST_SERVING_WORKSPACE_SQL = `enrollment.revoked_at is null and enr
             and readiness.generation = enrollment.serving_generation
             and readiness.revision = assignment.revision
         )`
-
-/**
- * The organization branch of a workspace's role rank: every workspace-scoped
- * rank computation — `workspaceAccessCte` here, workspace-authority's
- * `workspaceAccessSql`, channel-runtime-authority's `workspaceAccessSql`, the
- * session authority's actor rank and the Agent Plugins store's
- * `WORKSPACE_ACCESS_SQL` — builds its org branch from this one string. The
- * ordinary org member's implicit viewer rank is gated on the workspace's
- * `org_member_visible`; owners and admins are not. Project access has no
- * workspace row and does not use this.
- */
-export function organizationRoleRankSql(input: {
-  orgOwnerUserId: string
-  userId: string
-  orgMemberRole: string
-  workspaceAlias: string
-}) {
-  return `case when ${input.orgOwnerUserId} = ${input.userId} then 3
-          when ${input.orgMemberRole} in ('owner', 'admin') then 3
-          when ${input.orgMemberRole} = 'member' and ${input.workspaceAlias}.org_member_visible = 1 then 1
-          else 0 end`
-}
 
 /**
  * The machine caller's eligibility, evaluated inside every batch that mutates
@@ -1710,28 +1643,13 @@ function workspaceAccessCte(rank: 1 | 3, revivable = false) {
     select workspace.workspace_id, workspace.org_id, workspace.project_id,
       workspace.backing, workspace.home_region, workspace.remote_directory,
       workspace.host_assignment_revision,
-      max(
-        case when workspace.owner_user_id = current_actor.user_id then 4 else 0 end,
-        coalesce(case project_member.role when 'viewer' then 1 when 'editor' then 2 when 'admin' then 3 when 'owner' then 4 end, 0),
-        ${organizationRoleRankSql({
-          orgOwnerUserId: "organization.owner_user_id",
-          userId: "current_actor.user_id",
-          orgMemberRole: "org_member.role",
-          workspaceAlias: "workspace",
-        })}
-      ) as role_rank
+      ${workspaceRoleRankSql({ user: "current_actor.user_id", ownerUserId: "workspace.owner_user_id" })} as role_rank
     from current_actor
     join workspaces workspace on workspace.workspace_id = ?
       and ${revivable ? "(workspace.deleted_at is null or workspace.backing = 'local-worktree')" : "workspace.deleted_at is null"}
     join projects project
       on project.project_id = workspace.project_id and project.org_id = workspace.org_id and project.deleted_at is null
-    join orgs organization on organization.org_id = workspace.org_id and organization.deleted_at is null
-    left join project_memberships project_member
-      on project_member.project_id = workspace.project_id and project_member.user_id = current_actor.user_id
-      and project_member.revoked_at is null
-    left join org_memberships org_member
-      on org_member.org_id = workspace.org_id and org_member.user_id = current_actor.user_id and org_member.revoked_at is null
-    where organization.owner_user_id = current_actor.user_id or org_member.user_id is not null
+    where ${activeOrgMemberSql("workspace.org_id", "current_actor.user_id")}
     group by workspace.workspace_id
     having role_rank >= ${rank}
   )`

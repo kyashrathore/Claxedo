@@ -131,10 +131,19 @@ is the authoritative source for this column.
 | `org.teams.list` | `features/settings/data/org-team-api.ts` | `GET /api/control/orgs/:orgId/teams` | unary | safe | Teams for an org; Settings, rail switcher, and People "share with team" picker (also called from `session-share-api`). |
 | `org.teams.create` | `features/settings/data/org-team-api.ts` | `POST /api/control/orgs/:orgId/teams` | unary | unsafe | Creates a team in an org. |
 | `org.ensureDefaultTeam` | `features/settings/data/org-team-api.ts` | `POST /api/control/orgs/:orgId/ensure-default-team` | unary | unsafe | Ensures the org has a default team; may create one. |
+| `org.members.list` | none yet | `GET /api/control/orgs/:orgId/members` | unary | safe | Members with role and `joined_at`; empty to a caller outside the org. |
+| `org.members.add` | none yet | `POST /api/control/orgs/:orgId/members` | unary | unsafe | Adds an existing account by `userPublicId`, verified `email`, `tokenIdentifier` or `providerSubject`; org owners and admins only, the owner role by owners only. |
+| `org.members.update` | none yet | `PATCH /api/control/orgs/:orgId/members/:userPublicId` | unary | unsafe | Changes a member's role; the founding owner cannot be demoted. |
+| `org.members.remove` | none yet | `DELETE /api/control/orgs/:orgId/members/:userPublicId` | unary | unsafe | Also revokes the person's team memberships and project member grants in the org. |
 | `team.members.list` | `features/settings/data/org-team-api.ts` | `GET /api/control/teams/:teamId/members` | unary | safe | |
 | `team.members.add` | `features/settings/data/org-team-api.ts` | `POST /api/control/teams/:teamId/members` | unary | unsafe | |
 | `team.members.remove` | `features/settings/data/org-team-api.ts` | `DELETE /api/control/teams/:teamId/members` | unary | unsafe | |
+| `team.projects.list` | none yet | `GET /api/control/teams/:teamId/projects` | unary | safe | The team's project grants with role. |
 | `team.projects.grant` | `features/settings/data/org-team-api.ts` | `POST /api/control/teams/:teamId/projects` | unary | unsafe | Grants a project role to a team. |
+| `team.projects.revoke` | none yet | `DELETE /api/control/teams/:teamId/projects` | unary | unsafe | Revokes a team's project grant. |
+| `project.members.grant` | none yet | `POST /api/control/projects/:projectId/members` | unary | unsafe | Grants or changes one person's project role; project and org admins only, never the owner. |
+| `project.members.revoke` | none yet | `DELETE /api/control/projects/:projectId/members/:userPublicId` | unary | unsafe | Revokes one person's project grant. |
+| `project.access` | none yet | `GET /api/control/projects/:projectId/access` | unary | safe | Everyone who reaches the project, one entry per source (`owner`, `member`, `team:<teamId>`, `org-role`); project and org admins only. |
 | `account.agentSettings.read` | `features/settings/data/agent-settings-api.ts` | `GET /api/account/agent-settings` | unary | safe | Reads the caller's agent-cross-machine-writes setting. |
 | `account.agentSettings.write` | `features/settings/data/agent-settings-api.ts` | `PUT /api/account/agent-settings` | unary | unsafe | Updates the caller's agent-cross-machine-writes setting; each update sets the exact state in the body. |
 

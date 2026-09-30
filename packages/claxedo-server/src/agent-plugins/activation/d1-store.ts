@@ -22,7 +22,7 @@ import type { WorkspaceAuthority } from "@claxedo/server-core/platform/auth/auth
 import { asOrgId, asProjectId } from "@claxedo/server-core/platform/auth/branded-id"
 import { stringField } from "@claxedo/server-core/platform/json/index"
 import type { SignedAgentPluginRuntimeSnapshot } from "../runtime/provision"
-import { organizationRoleRankSql } from "../../authority/adapters/d1/host-access-authority"
+import { activeOrgMemberSql, PROJECT_ACCESS_SQL, workspaceAccessSql } from "../../authority/adapters/d1/project-role"
 import { isRecord } from "@claxedo/helpers/guards"
 
 /** The project scope a user default addresses; never a real project ID. */
@@ -109,79 +109,13 @@ type WorkspaceRow = {
 }
 
 /**
- * Membership, project, and workspace SQL owned by `D1WorkspaceAuthority`.
- *
  * The runtime reads below carry an audience-bound token instead of a signed
- * bearer, so they cannot go through the authority port and must evaluate the
- * same canonical rows themselves. These three shapes are kept identical to
- * `activeOrgMembership`, `projectAccess`, and `workspaceAccessSql` in
- * `authority/adapters/d1/workspace-authority.ts`; a divergence there is a
- * divergence in what a runtime token may read.
+ * bearer, so they cannot go through the authority port; they evaluate the
+ * same membership and rank statements the authority does.
  */
-const ORG_MEMBERSHIP_SQL = `
-  select 1 as present from orgs o
-  left join org_memberships m
-    on m.org_id = o.org_id and m.user_id = ? and m.revoked_at is null
-  where o.org_id = ? and o.deleted_at is null and (o.owner_user_id = ? or m.user_id is not null)
-`
+const ORG_MEMBERSHIP_SQL = `select 1 as present where ${activeOrgMemberSql("?", "?")}`
 
-const PROJECT_ACCESS_SQL = `
-  select p.org_id,
-    max(
-      case when p.owner_user_id = ? then 4 else 0 end,
-      coalesce(case pm.role when 'viewer' then 1 when 'editor' then 2 when 'admin' then 3 when 'owner' then 4 end, 0),
-      coalesce((
-        select max(case tg.role when 'viewer' then 1 when 'editor' then 2 when 'admin' then 3 end)
-        from team_project_grants tg
-        join team_memberships tm
-          on tm.team_id = tg.team_id and tm.user_id = ? and tm.revoked_at is null
-        join teams t on t.team_id = tg.team_id and t.org_id = p.org_id and t.deleted_at is null
-        where tg.project_id = p.project_id and tg.revoked_at is null
-      ), 0),
-      case when o.owner_user_id = ? then 3
-        when om.role in ('owner', 'admin') then 3
-        when om.role = 'member' then 1 else 0 end
-    ) as role_rank
-  from projects p
-  join orgs o on o.org_id = p.org_id and o.deleted_at is null
-  left join project_memberships pm
-    on pm.project_id = p.project_id and pm.user_id = ? and pm.revoked_at is null
-  left join org_memberships om
-    on om.org_id = p.org_id and om.user_id = ? and om.revoked_at is null
-  where p.project_id = ? and p.deleted_at is null and (? is null or p.org_id = ?)
-    and (o.owner_user_id = ? or om.user_id is not null)
-`
-
-const WORKSPACE_ACCESS_SQL = `
-  select w.workspace_id, w.org_id, w.project_id, w.owner_user_id, w.backing,
-    max(
-      case when w.owner_user_id = ? then 4 else 0 end,
-      coalesce(case pm.role when 'viewer' then 1 when 'editor' then 2 when 'admin' then 3 when 'owner' then 4 end, 0),
-      coalesce((
-        select max(case tg.role when 'viewer' then 1 when 'editor' then 2 when 'admin' then 3 end)
-        from team_project_grants tg
-        join team_memberships tm
-          on tm.team_id = tg.team_id and tm.user_id = ? and tm.revoked_at is null
-        join teams t on t.team_id = tg.team_id and t.org_id = w.org_id and t.deleted_at is null
-        where tg.project_id = w.project_id and tg.revoked_at is null
-      ), 0),
-      ${organizationRoleRankSql({
-        orgOwnerUserId: "o.owner_user_id",
-        userId: "?",
-        orgMemberRole: "om.role",
-        workspaceAlias: "w",
-      })}
-    ) as role_rank
-  from workspaces w
-  join projects p on p.project_id = w.project_id and p.org_id = w.org_id and p.deleted_at is null
-  join orgs o on o.org_id = w.org_id and o.deleted_at is null
-  left join project_memberships pm
-    on pm.project_id = w.project_id and pm.user_id = ? and pm.revoked_at is null
-  left join org_memberships om
-    on om.org_id = w.org_id and om.user_id = ? and om.revoked_at is null
-  where w.workspace_id = ? and w.deleted_at is null
-    and (o.owner_user_id = ? or om.user_id is not null)
-`
+const WORKSPACE_ACCESS_SQL = workspaceAccessSql("w.workspace_id = ? and w.deleted_at is null")
 
 const PIN_COLUMNS = "plugin_instance_id, artifact_digest, source_id, relative_path, source_revision"
 
@@ -673,29 +607,11 @@ export class D1SignedAgentPluginActivationStore implements SignedAgentPluginActi
       this.database.prepare(ORG_MEMBERSHIP_SQL).bind(ownerUserId, organizationId, ownerUserId).first<PresenceRow>(),
       this.database
         .prepare(PROJECT_ACCESS_SQL)
-        .bind(
-          ownerUserId,
-          ownerUserId,
-          ownerUserId,
-          ownerUserId,
-          ownerUserId,
-          projectId,
-          organizationId,
-          organizationId,
-          ownerUserId,
-        )
+        .bind(ownerUserId, projectId, organizationId)
         .first<ProjectAccessRow>(),
       this.database
         .prepare(WORKSPACE_ACCESS_SQL)
-        .bind(
-          ownerUserId,
-          ownerUserId,
-          ownerUserId,
-          ownerUserId,
-          ownerUserId,
-          workspaceId,
-          ownerUserId,
-        )
+        .bind(ownerUserId, workspaceId)
         .first<WorkspaceAccessRow>(),
     ])
     if (!user || !membership) throw denied("Agent Plugins organization membership is required")

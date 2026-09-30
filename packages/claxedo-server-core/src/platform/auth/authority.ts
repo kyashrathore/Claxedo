@@ -13,6 +13,7 @@ import type { LatestView } from "../../session/latest-view-page"
 import type { TurnPageQuery, TurnPageRequest, TurnPage, FirstRead } from "@claxedo/agent-runtime-contract"
 import type { AgentContentPart } from "@claxedo/agent-runtime-contract"
 import type { HostSessionRowsAuthority } from "./host-session-rows"
+import type { OrgAccessAuthority } from "./org-access-authority"
 
 export {
   DEFAULT_SESSION_SHARE_LEVEL,
@@ -159,7 +160,7 @@ export type ChannelMachineIdentity = { channel: string; externalUserId: string; 
 /** The same identity carrying the binding generation the authority admitted it under. */
 export type AuthorizedChannelIdentity = ChannelMachineIdentity & { identityVersion: number }
 
-export type WorkspaceAuthority = {
+export type WorkspaceAuthority = OrgAccessAuthority & {
   /**
    * Internal host delegation; the authority rechecks the actor and current
    * workspace role. `userId` is the user-scoped partition key the authority
@@ -546,37 +547,6 @@ export type WorkspaceAuthority = {
     args: { sessionId: string; workspaceId: string },
   ) => Promise<SessionPeopleContext>
   createOrg?: (auth: SignedControlPlaneAuth, args: { name: string }) => Promise<unknown>
-  listTeams?: (auth: SignedControlPlaneAuth, args: { orgId: string }) => Promise<unknown>
-  createTeamInOrg?: (auth: SignedControlPlaneAuth, args: { orgId: string; name: string }) => Promise<unknown>
-  addTeamMember?: (
-    auth: SignedControlPlaneAuth,
-    args: {
-      teamId: string
-      tokenIdentifier?: string
-      providerSubject?: string
-      userPublicId?: string
-      role?: "member" | "admin" | "owner"
-    },
-  ) => Promise<unknown>
-  removeTeamMember?: (
-    auth: SignedControlPlaneAuth,
-    args: {
-      teamId: string
-      tokenIdentifier?: string
-      providerSubject?: string
-      userPublicId?: string
-    },
-  ) => Promise<unknown>
-  listTeamMembers?: (auth: SignedControlPlaneAuth, args: { teamId: string }) => Promise<unknown>
-  grantTeamProject?: (
-    auth: SignedControlPlaneAuth,
-    args: { teamId: string; projectId: string; role: "viewer" | "editor" | "admin" },
-  ) => Promise<unknown>
-  revokeTeamProject?: (
-    auth: SignedControlPlaneAuth,
-    args: { teamId: string; projectId: string },
-  ) => Promise<unknown>
-  ensureDefaultTeam?: (auth: SignedControlPlaneAuth, args: { orgId: string }) => Promise<unknown>
   listSessions: (
     auth: SignedControlPlaneAuth,
     args: { workspaceId: string },

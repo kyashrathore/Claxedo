@@ -348,6 +348,24 @@ export const HOSTED_OPERATIONS = {
     method: "POST",
     path: "/api/control/orgs/:orgId/ensure-default-team",
   },
+  "org.members.list": {
+    method: "GET",
+    path: "/api/control/orgs/:orgId/members",
+  },
+  "org.members.add": {
+    method: "POST",
+    path: "/api/control/orgs/:orgId/members",
+    body: ["userPublicId", "email", "tokenIdentifier", "providerSubject", "role"],
+  },
+  "org.members.update": {
+    method: "PATCH",
+    path: "/api/control/orgs/:orgId/members/:userPublicId",
+    body: ["role"],
+  },
+  "org.members.remove": {
+    method: "DELETE",
+    path: "/api/control/orgs/:orgId/members/:userPublicId",
+  },
   "team.members.list": {
     method: "GET",
     path: "/api/control/teams/:teamId/members",
@@ -362,10 +380,32 @@ export const HOSTED_OPERATIONS = {
     path: "/api/control/teams/:teamId/members",
     body: ["tokenIdentifier", "userPublicId"],
   },
+  "team.projects.list": {
+    method: "GET",
+    path: "/api/control/teams/:teamId/projects",
+  },
   "team.projects.grant": {
     method: "POST",
     path: "/api/control/teams/:teamId/projects",
     body: ["projectId", "role"],
+  },
+  "team.projects.revoke": {
+    method: "DELETE",
+    path: "/api/control/teams/:teamId/projects",
+    body: ["projectId"],
+  },
+  "project.members.grant": {
+    method: "POST",
+    path: "/api/control/projects/:projectId/members",
+    body: ["userPublicId", "role"],
+  },
+  "project.members.revoke": {
+    method: "DELETE",
+    path: "/api/control/projects/:projectId/members/:userPublicId",
+  },
+  "project.access": {
+    method: "GET",
+    path: "/api/control/projects/:projectId/access",
   },
   "connections.list": { method: "GET", path: "/api/claxedo/integrations" },
   "connections.connect": {

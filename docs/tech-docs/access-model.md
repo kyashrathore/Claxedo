@@ -1,55 +1,172 @@
 # Access model
 
-Claxedo presents an **Org** (company/tenant) and **Teams** (access groups inside
-an org). A personal org is created implicitly for every user, preserving
-unbranched solo onboarding. Collaborative orgs are created explicitly and begin
-with their creator as owner. Nested teams, invites, active org/team navigation,
-and workspace transfer are product surfaces layered on this model.
+People reach code through three things: an organization, the teams inside it,
+and the grants that name a project. Everything below is what the hosted
+control plane (D1) enforces today.
+
+## Glossary
+
+- **Organization (org)**: the tenant. It owns projects, holds shared
+  configuration (provider credentials, Agent Plugins defaults), and is the boundary
+  every grant stays inside. Every user has a personal org created with their
+  account; a collaborative org is created explicitly and its creator is its
+  **founding owner** (`orgs.owner_user_id`).
+- **Org member**: a person with an active `org_memberships` row. Org roles are
+  `member`, `admin` and `owner`.
+- **Team**: an access group inside one org (`teams.org_id`). Its members
+  (`team_memberships`, roles `member`, `admin`, `owner`) must be members of
+  that org. A team owns nothing; it receives project grants.
+- **Project**: one repository inside one org, with an opaque `project_id` and
+  its creator as owner (`projects.owner_user_id`). `(org_id, repo_key)`
+  identifies the repository inside the org, so the same repository opened by
+  two orgs is two isolated projects.
+- **Workspace**: a checkout and execution location of a project. Its
+  `org_id` and `project_id` never change.
+- **Project access**: a person's role on a project, `viewer`, `editor`,
+  `admin` or `owner`, the highest of:
+  - **owner**: they own the project (`owner`);
+  - **member grant**: their own `project_memberships` row (`viewer`,
+    `editor`, `admin`);
+  - **team grant**: the best `team_project_grants` row of a team they are on
+    in the project's org;
+  - **org role**: org owners and admins are `admin`, org members `viewer`.
+
+  Nobody outside the project's org has any role on it, whatever rows name
+  them. `projectRoleRankSql` in
+  `packages/claxedo-server/src/authority/adapters/d1/project-role.ts`
+  computes it, and every project decision on D1 reads it. Project access
+  governs the project (its access listing, its grants) and never a
+  workspace; see the resource hierarchy below.
+
+## Who may change what
+
+| Change | Who | Refused with |
+|---|---|---|
+| Add a member (including a user-deployed identity admission), change a member's role, remove a member | org owners and admins | `org_admin_required` |
+| Grant, change or remove the `owner` role | org owners | `org_owner_required` |
+| Demote or remove the founding owner | nobody, which is what keeps every org owned | `org_owner_protected` |
+| Create a team, set up the default team, add or remove team members, grant or revoke a team's project role | org owners and admins | `org_admin_required` |
+| Grant or revoke one person's project role | project admins (org owners and admins included) | `project_admin_required` |
+| Read a project's access listing | project admins (org owners and admins included) | `project_admin_required` |
+| Create a workspace in an org | org owners and admins | `workspace_authorization_denied` |
+
+A team member, a team's project and a member grant's grantee must all belong
+to the same org (`team_member_org_membership_required`,
+`project_member_org_membership_required`, `project_not_found`). A project's
+owner is never granted or revoked (`project_member_owner_immutable`). A
+project the caller has no role on answers `project_not_found`.
+
+Adding a member writes the membership in any state, which is how a removed
+member is reinstated; changing a role changes only a membership still active
+when the write runs, so a role change racing a removal cannot undo it.
+Admitting a user-deployed identity is the same add, under the same owner
+rules.
+
+Removing an org member revokes, in the same D1 batch, their team memberships
+in that org's teams, their member grants on its projects, their direct
+session shares and session participations in the org, and their runtime
+access tokens in the org. A project or workspace they own stays theirs and
+admits them to nothing without the membership. Re-admitting them restores
+none of it. Every decision reads the rows at request time, so the removed
+person's next request is refused.
+
+A runtime access token is minted only by the workspace's owner, and its
+activity is re-read against their rank at check time. The one change that
+takes that rank away is removing the owner from the org, so it is the one
+change that revokes tokens: re-admission gives the rank back, and without the
+revocation the old token would work again. Lowering or revoking a grant,
+leaving a team and a change of org role touch no workspace rank and revoke
+no token.
+
+Setting up the default team creates only what is missing: the team, a
+membership for each org member who never had one, and an editor grant on each
+project it never had one on. A membership or grant an admin revoked or
+re-roled stays as they left it.
+
+Every membership and grant change writes an `authority_audit_events` row in
+the batch that makes it, attributed to the caller, whose metadata names the
+org, the team or project, the target person, and the role `before` and
+`after` (null when there was none or is none); a set change such as the
+default team's setup writes one row per target. Every founding owner's
+membership (a personal org, a created org, a user-deployed deployment's
+configured or claimed owner) writes one too, attributed to the founder, and
+only the first time. The row carries the change's complete guard, so a change
+the guard refuses, or one that finds nothing to change (the role already in
+place, the member already gone), writes no row. The audit table's
+per-deployment row cap evicts deny and MCP rows only; access-change rows
+(`org.*`, `team.*`, `project.member.*`) are never evicted.
+
+An email is resolved only after the caller is found to administer the org the
+request names, so a caller who administers no org learns nothing from the
+answer. That is the whole guarantee. In the user-deployed posture the
+deployment has one org, so only its owners and admins can learn whether an
+address has a verified account. In the hosted posture any signed user can
+create an org and administer it, so any signed user can learn that.
+
+## Routes
+
+All under `/api/control`, signed, mounted by `OrgTeamControlRoutes`
+(`packages/claxedo-server/src/session/routes/org-team-routes.ts`). An
+authority that stores none of this answers `501 not_implemented`.
+
+| Route | Does |
+|---|---|
+| `GET /orgs`, `POST /orgs` | the caller's orgs; create a collaborative org |
+| `GET /orgs/:orgId/members` | members with `role` and `joined_at` |
+| `POST /orgs/:orgId/members` | add an existing account by `userPublicId`, `email`, `tokenIdentifier` or `providerSubject`, with `role`; an email names the Better Auth account that verified it (`AUTH_DB`), and a deployment without that lookup answers `org_member_email_unsupported` |
+| `PATCH /orgs/:orgId/members/:userPublicId` | change `role` |
+| `DELETE /orgs/:orgId/members/:userPublicId` | remove, with the cascade above |
+| `GET`, `POST /orgs/:orgId/teams`; `POST /orgs/:orgId/ensure-default-team` | teams; create what the default team is missing (org admins) |
+| `GET`, `POST`, `DELETE /teams/:teamId/members` | a team's members; `POST` takes an optional `role` (`member` by default, `admin` or `owner`) and answers any other value `400 team_member_role_invalid` |
+| `GET`, `POST`, `DELETE /teams/:teamId/projects` | a team's project grants (`projectId`, `role`) |
+| `POST /projects/:projectId/members` | grant or change one person's role (`userPublicId`, `role`); a revoked grant is granted again |
+| `DELETE /projects/:projectId/members/:userPublicId` | revoke it |
+| `GET /projects/:projectId/access` | every person or team that reaches the project, one entry per source: `owner`, `member`, `team:<teamId>` or `org-role` |
+
+The signed desktop reaches the same routes through the named operations
+`org.members.*`, `team.members.*`, `team.projects.*`, `project.members.*` and
+`project.access` (`docs/tech-docs/desktop-hosted-operation-matrix.md`).
 
 ## Resource hierarchy
-
-Access combines a people axis with a code axis:
 
 ```text
 People: Org → Teams → members → roles
 Code:   Project → Workspace → Session → participants / session share grants
 ```
 
-A project represents one repository inside one org. It has a globally unique,
-opaque `project_id`; `(org_id, repo_key)` is the canonical repository identity
-used to reuse a project inside an org. The same repository opened by two orgs
-produces two isolated projects. Teams receive project access through
-`team_project_grants`; they do not own projects.
+A workspace is a folder on a machine, or a cloud sandbox, and it belongs to
+its owner (`workspaces.owner_user_id`), the person who created or placed it.
+A person's role on a workspace, `workspaceRoleRankSql`, is `owner` for its
+owner and nothing for anyone else. Org roles, project roles (a project
+`owner` membership row included), member grants and team grants never reach
+a workspace or the machine it runs on; nobody is added to a machine or a
+folder, and no row names a person on a workspace. `org_member_visible` changes
+no one's workspace role.
 
-A workspace is a checkout and execution location. Every workspace is created
-with both `org_id` and `project_id`; those identities are immutable. Solo
-creation resolves the caller's personal org. Creating a workspace in a
-collaborative org requires an effective workspace role of editor or above.
-Creating a workspace never moves an existing personal workspace into another
-org; workspace transfer is an explicit future billing operation.
+What the owner's role unlocks: listing and opening the workspace, seeing
+where it is placed and whether its machine is serving it, the
+workspace-scoped surfaces the Relay Host Token gates (files, terminals,
+processes, git), assigning it to a machine or unassigning it, channel access
+to it, Agent Plugins runtime reads for it, and runtime access tokens for it.
+The owner still needs an active membership of the workspace's org; removing
+them from the org takes all of it away.
 
-## Roles and authority
-
-Org roles are `member`, `admin`, and `owner`. Team roles are `member`, `admin`,
-and `owner`. Workspace roles are `viewer`, `editor`, `admin`, and `owner`. A
-workspace role is computed from membership, never handed to one person by
-another: the workspace's owner is `owner`, and everyone else holds the highest
-of their `project_memberships` row, their org role (an org member's `viewer`
-is withheld when the workspace's `org_member_visible` is 0), and the best
-`team_project_grants` row of a team they are on in that org
-(`workspaceRoleForUser` in
-`packages/claxedo-server-core/src/authority/adapters/sqlite/workspace-authority-store.ts`,
-`workspaceAccessSql` in
+The only thing that crosses people is a session share, `follow` or `send`,
+on one session. It admits the grantee to that session, and workspace open,
+channel access and runtime access tokens admit a share grantee as a viewer of
+that session's workspace (`SESSION_SHARE_WORKSPACE_ACCESS_SQL` in
 `packages/claxedo-server/src/authority/adapters/d1/workspace-authority.ts`).
 
-What that role is FOR: seeing that the workspace's placement exists (which
-machine it runs on, its directory there), the workspace-scoped surfaces
-the Relay Host Token has always gated (files, terminals, processes, git),
-and being offerable a session share. An organization is a grouping of
-people. It is not an execution environment and it grants nothing on any
-machine, runtime or workspace folder: there is no concept of adding a
-member to a machine or a folder, no membership row on a workspace, and no
-rank on an organization or a workspace that admits a person to a session.
+One exception is still in the code. The session layer
+(`packages/claxedo-server/src/authority/adapters/d1/session-authority.ts`)
+reads the older rank for reserving, forking, starting, adopting and
+re-visibility of a session and for adding a participant: the workspace
+form of `projectRoleRankSql`, where org owners and admins are `admin` on
+every workspace of the org and, on a workspace whose `org_member_visible` is
+1, a member grant (at most `admin`), a team grant or plain org membership
+counts. So today an org member can still reserve, fork and start a session
+on another member's workspace through the session layer. Lane C1 removes
+that.
 
 The workspace role stops at the session. A session share, at level `follow` or
 `send`, is the only grant one person makes to another, and it is the whole

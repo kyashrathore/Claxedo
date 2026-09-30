@@ -11,7 +11,9 @@ import type {
   RequestAuthenticationAdapter,
 } from "@claxedo/server-core/platform/auth/authentication"
 
+import { isClaxedoError } from "@claxedo/server-core/platform/errors/base"
 import { signedOrError } from "../workspace/route-support"
+import { contentfulStatus } from "../platform/http/status"
 import { readJsonRecord } from "@claxedo/server-core/platform/json/index"
 
 const BODY_LIMIT_BYTES = 16 * 1024
@@ -81,25 +83,10 @@ export function UserDeployedIdentityAdmissionRoutes(options: {
       if (error instanceof ControlPlaneAuthError) {
         return context.json(controlPlaneAuthErrorBody(error), error.status)
       }
-      const code = authorityErrorCode(error)
-      if (code) {
-        const status = code === "invalid_input" ? 400 : code === "organization_policy_denied" ? 403 : 409
-        return context.json({
-          error: { code, message: error instanceof Error ? error.message : "Identity admission failed" },
-        }, status)
+      if (isClaxedoError(error)) {
+        return context.json({ error: { code: error.code, message: error.message } }, contentfulStatus(error.status))
       }
       throw error
     }
   })
-}
-
-function authorityErrorCode(error: unknown) {
-  if (!error || typeof error !== "object") return undefined
-  const code = (error as { code?: unknown }).code
-  return code === "invalid_input"
-    || code === "identity_conflict"
-    || code === "organization_policy_denied"
-    || code === "resource_conflict"
-    ? code
-    : undefined
 }

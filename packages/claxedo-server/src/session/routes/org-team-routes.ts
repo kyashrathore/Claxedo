@@ -7,7 +7,13 @@ import {
   controlPlaneAuthErrorBody,
   type ControlPlaneTokenVerifier,
   type ControlPlaneAuthConfig,
+  type SignedControlPlaneAuth,
 } from "@claxedo/server-core/platform/auth/auth"
+import {
+  isOrgMemberRole,
+  isProjectGrantRole,
+  type MemberSelector,
+} from "@claxedo/server-core/platform/auth/org-access-authority"
 import type { RequestAuthenticationAdapter } from "@claxedo/server-core/platform/auth/authentication"
 import { apiError, signedOrError, txt } from "../../workspace/route-support"
 import { readJsonRecord } from "@claxedo/server-core/platform/json/index"
@@ -35,39 +41,42 @@ function hasErrorCode(error: unknown, code: string) {
   return value === code || message === code || message.includes(code)
 }
 
+const ORG_TEAM_ERRORS: Record<string, Omit<OrgTeamError, "code">> = {
+  invalid_input: { status: 400, message: "The request names an invalid value" },
+  organization_policy_denied: { status: 403, message: "Organization creation is disabled for this deployment" },
+  org_admin_required: { status: 403, message: "Organization administrator authority is required" },
+  org_owner_required: { status: 403, message: "Only an organization owner may grant, change or remove the owner role" },
+  org_owner_protected: { status: 409, message: "The organization's founding owner cannot be removed or demoted" },
+  team_member_org_membership_required: { status: 403, message: "The team member must belong to the team organization" },
+  project_member_org_membership_required: { status: 403, message: "The project member must belong to the project organization" },
+  org_membership_required: { status: 403, message: "Organization membership is required" },
+  project_admin_required: { status: 403, message: "Project administrator authority is required" },
+  team_not_allowed_on_personal_org: { status: 400, message: "Personal organizations cannot contain teams" },
+  team_member_target_required: { status: 400, message: "Exactly one team member target is required" },
+  org_member_target_required: { status: 400, message: "Exactly one organization member target is required" },
+  org_member_email_unsupported: { status: 400, message: "This deployment cannot find accounts by email" },
+  organization_not_found: { status: 404, message: "Organization not found" },
+  team_not_found: { status: 404, message: "Team not found" },
+  team_member_not_found: { status: 404, message: "Team member not found" },
+  org_member_not_found: { status: 404, message: "Organization member not found" },
+  project_not_found: { status: 404, message: "Project not found" },
+  project_member_not_found: { status: 404, message: "Project member not found" },
+  project_member_owner_immutable: { status: 409, message: "The project owner's access cannot be changed" },
+  resource_conflict: { status: 409, message: "Organization or team authority changed concurrently" },
+}
+
+const NOT_FOUND_BY_MESSAGE: Record<string, string> = {
+  "Organization not found": "organization_not_found",
+  "Team not found": "team_not_found",
+  "Project not found": "project_not_found",
+}
+
 function orgTeamAuthorityError(error: unknown): OrgTeamError | undefined {
-  if (hasErrorCode(error, "organization_policy_denied")) {
-    return { status: 403, code: "organization_policy_denied", message: "Organization creation is disabled for this deployment" }
+  for (const [code, mapped] of Object.entries(ORG_TEAM_ERRORS)) {
+    if (hasErrorCode(error, code)) return { code, ...mapped }
   }
-  if (hasErrorCode(error, "org_admin_required")) {
-    return { status: 403, code: "org_admin_required", message: "Organization administrator authority is required" }
-  }
-  if (hasErrorCode(error, "team_member_org_membership_required")) {
-    return { status: 403, code: "team_member_org_membership_required", message: "The team member must belong to the team organization" }
-  }
-  if (hasErrorCode(error, "org_membership_required")) {
-    return { status: 403, code: "org_membership_required", message: "Organization membership is required" }
-  }
-  if (hasErrorCode(error, "team_not_allowed_on_personal_org")) {
-    return { status: 400, code: "team_not_allowed_on_personal_org", message: "Personal organizations cannot contain teams" }
-  }
-  if (hasErrorCode(error, "team_member_target_required")) {
-    return { status: 400, code: "team_member_target_required", message: "Exactly one team member target is required" }
-  }
-  if (hasErrorCode(error, "organization_not_found") || String(error).includes("Organization not found")) {
-    return { status: 404, code: "organization_not_found", message: "Organization not found" }
-  }
-  if (hasErrorCode(error, "team_not_found") || String(error).includes("Team not found")) {
-    return { status: 404, code: "team_not_found", message: "Team not found" }
-  }
-  if (hasErrorCode(error, "team_member_not_found")) {
-    return { status: 404, code: "team_member_not_found", message: "Team member not found" }
-  }
-  if (hasErrorCode(error, "project_not_found") || String(error).includes("Project not found")) {
-    return { status: 404, code: "project_not_found", message: "Project not found" }
-  }
-  if (hasErrorCode(error, "resource_conflict")) {
-    return { status: 409, code: "resource_conflict", message: "Organization or team authority changed concurrently" }
+  for (const [message, code] of Object.entries(NOT_FOUND_BY_MESSAGE)) {
+    if (String(error).includes(message)) return { code, ...ORG_TEAM_ERRORS[code] }
   }
   return undefined
 }
@@ -104,129 +113,151 @@ export function OrgTeamControlRoutes(services: ControlPlaneServices, options: Op
     return authResult.auth
   }
 
+  function authorized(run: (auth: SignedControlPlaneAuth, c: Context) => Promise<Response>) {
+    return async (c: Context) => {
+      try {
+        return await run(await signed(c.req.raw), c)
+      } catch (err) {
+        return orgTeamErrorResponse(c, err)
+      }
+    }
+  }
+
+  const authority = () => requireAuthority(services)
+  const unavailable = (c: Context, message = "Teams unavailable") =>
+    c.json({ error: apiError("not_implemented", message) }, 501)
+  const body = async (c: Context) => (await readJsonRecord(c.req.raw)) ?? {}
+
   return new Hono()
-    .get("/orgs", async (c) => {
-      try {
-        const auth = await signed(c.req.raw)
-        return c.json(await requireAuthority(services).listOrgs(auth))
-      } catch (err) {
-        return orgTeamErrorResponse(c, err)
+    .get("/orgs", authorized(async (auth, c) => c.json(await authority().listOrgs(auth))))
+    .post("/orgs", limited, authorized(async (auth, c) => {
+      const create = authority().createOrg
+      if (!create) return unavailable(c, "Org create unavailable")
+      const name = txt((await body(c)).name)?.trim()
+      if (!name) return c.json({ error: apiError("org_name_required", "name is required") }, 400)
+      return c.json(await create(auth, { name }))
+    }))
+    .get("/orgs/:orgId/teams", authorized(async (auth, c) => {
+      const list = authority().listTeams
+      if (!list) return unavailable(c)
+      return c.json(await list(auth, { orgId: c.req.param("orgId")! }))
+    }))
+    .post("/orgs/:orgId/teams", limited, authorized(async (auth, c) => {
+      const create = authority().createTeamInOrg
+      if (!create) return unavailable(c)
+      const name = txt((await body(c)).name)?.trim()
+      if (!name) return c.json({ error: apiError("team_name_required", "name is required") }, 400)
+      return c.json(await create(auth, { orgId: c.req.param("orgId")!, name }))
+    }))
+    .post("/orgs/:orgId/ensure-default-team", limited, authorized(async (auth, c) => {
+      const ensure = authority().ensureDefaultTeam
+      if (!ensure) return unavailable(c)
+      return c.json(await ensure(auth, { orgId: c.req.param("orgId")! }))
+    }))
+    .get("/orgs/:orgId/members", authorized(async (auth, c) => {
+      const list = authority().listOrgMembers
+      if (!list) return unavailable(c, "Organization members unavailable")
+      return c.json(await list(auth, { orgId: c.req.param("orgId")! }))
+    }))
+    .post("/orgs/:orgId/members", limited, authorized(async (auth, c) => {
+      const add = authority().addOrgMember
+      if (!add) return unavailable(c, "Organization members unavailable")
+      const input = await body(c)
+      if (!isOrgMemberRole(input.role)) return c.json({ error: apiError("org_member_role_required", "role is required") }, 400)
+      return c.json(await add(auth, { orgId: c.req.param("orgId")!, ...memberSelector(input), role: input.role }))
+    }))
+    .patch("/orgs/:orgId/members/:userPublicId", limited, authorized(async (auth, c) => {
+      const update = authority().updateOrgMember
+      if (!update) return unavailable(c, "Organization members unavailable")
+      const role = (await body(c)).role
+      if (!isOrgMemberRole(role)) return c.json({ error: apiError("org_member_role_required", "role is required") }, 400)
+      return c.json(await update(auth, {
+        orgId: c.req.param("orgId")!,
+        userPublicId: c.req.param("userPublicId")!,
+        role,
+      }))
+    }))
+    .delete("/orgs/:orgId/members/:userPublicId", authorized(async (auth, c) => {
+      const remove = authority().removeOrgMember
+      if (!remove) return unavailable(c, "Organization members unavailable")
+      return c.json(await remove(auth, { orgId: c.req.param("orgId")!, userPublicId: c.req.param("userPublicId")! }))
+    }))
+    .get("/teams/:teamId/members", authorized(async (auth, c) => {
+      const list = authority().listTeamMembers
+      if (!list) return unavailable(c)
+      return c.json(await list(auth, { teamId: c.req.param("teamId")! }))
+    }))
+    .post("/teams/:teamId/members", limited, authorized(async (auth, c) => {
+      const add = authority().addTeamMember
+      if (!add) return unavailable(c)
+      const input = await body(c)
+      const role = input.role
+      if (role !== undefined && !isOrgMemberRole(role)) {
+        return c.json({ error: apiError("team_member_role_invalid", "role must be member, admin or owner") }, 400)
       }
-    })
-    .post("/orgs", limited, async (c) => {
-      try {
-        const auth = await signed(c.req.raw)
-        const name = txt((await readJsonRecord(c.req.raw))?.name)?.trim()
-        const create = requireAuthority(services).createOrg
-        if (!create) return c.json({ error: apiError("not_implemented", "Org create unavailable") }, 501)
-        if (!name) return c.json({ error: apiError("org_name_required", "name is required") }, 400)
-        return c.json(await create(auth, { name }))
-      } catch (err) {
-        return orgTeamErrorResponse(c, err)
+      return c.json(await add(auth, {
+        teamId: c.req.param("teamId")!,
+        ...memberSelector(input),
+        ...(role === undefined ? {} : { role }),
+      }))
+    }))
+    .delete("/teams/:teamId/members", limited, authorized(async (auth, c) => {
+      const remove = authority().removeTeamMember
+      if (!remove) return unavailable(c)
+      return c.json(await remove(auth, { teamId: c.req.param("teamId")!, ...memberSelector(await body(c)) }))
+    }))
+    .get("/teams/:teamId/projects", authorized(async (auth, c) => {
+      const list = authority().listTeamProjects
+      if (!list) return unavailable(c)
+      return c.json(await list(auth, { teamId: c.req.param("teamId")! }))
+    }))
+    .post("/teams/:teamId/projects", limited, authorized(async (auth, c) => {
+      const grant = authority().grantTeamProject
+      if (!grant) return unavailable(c)
+      const input = await body(c)
+      const projectId = txt(input.projectId)
+      if (!projectId || !isProjectGrantRole(input.role)) {
+        return c.json({ error: apiError("team_project_grant_required", "projectId and role are required") }, 400)
       }
-    })
-    .get("/orgs/:orgId/teams", async (c) => {
-      try {
-        const auth = await signed(c.req.raw)
-        const list = requireAuthority(services).listTeams
-        if (!list) return c.json({ error: apiError("not_implemented", "Teams unavailable") }, 501)
-        return c.json(await list(auth, { orgId: c.req.param("orgId") }))
-      } catch (err) {
-        return orgTeamErrorResponse(c, err)
+      return c.json(await grant(auth, { teamId: c.req.param("teamId")!, projectId, role: input.role }))
+    }))
+    .delete("/teams/:teamId/projects", limited, authorized(async (auth, c) => {
+      const revoke = authority().revokeTeamProject
+      if (!revoke) return unavailable(c)
+      const projectId = txt((await body(c)).projectId)
+      if (!projectId) return c.json({ error: apiError("team_project_grant_required", "projectId is required") }, 400)
+      return c.json(await revoke(auth, { teamId: c.req.param("teamId")!, projectId }))
+    }))
+    .post("/projects/:projectId/members", limited, authorized(async (auth, c) => {
+      const grant = authority().grantProjectMember
+      if (!grant) return unavailable(c, "Project members unavailable")
+      const input = await body(c)
+      const userPublicId = txt(input.userPublicId)
+      if (!userPublicId || !isProjectGrantRole(input.role)) {
+        return c.json({ error: apiError("project_member_grant_required", "userPublicId and role are required") }, 400)
       }
-    })
-    .post("/orgs/:orgId/teams", limited, async (c) => {
-      try {
-        const auth = await signed(c.req.raw)
-        const create = requireAuthority(services).createTeamInOrg
-        if (!create) return c.json({ error: apiError("not_implemented", "Teams unavailable") }, 501)
-        const name = txt((await readJsonRecord(c.req.raw))?.name)?.trim()
-        if (!name) return c.json({ error: apiError("team_name_required", "name is required") }, 400)
-        return c.json(await create(auth, { orgId: c.req.param("orgId"), name }))
-      } catch (err) {
-        return orgTeamErrorResponse(c, err)
-      }
-    })
-    .post("/orgs/:orgId/ensure-default-team", limited, async (c) => {
-      try {
-        const auth = await signed(c.req.raw)
-        const ensure = requireAuthority(services).ensureDefaultTeam
-        if (!ensure) return c.json({ error: apiError("not_implemented", "Teams unavailable") }, 501)
-        return c.json(await ensure(auth, { orgId: c.req.param("orgId") }))
-      } catch (err) {
-        return orgTeamErrorResponse(c, err)
-      }
-    })
-    .get("/teams/:teamId/members", async (c) => {
-      try {
-        const auth = await signed(c.req.raw)
-        const list = requireAuthority(services).listTeamMembers
-        if (!list) return c.json({ error: apiError("not_implemented", "Teams unavailable") }, 501)
-        return c.json(await list(auth, { teamId: c.req.param("teamId") }))
-      } catch (err) {
-        return orgTeamErrorResponse(c, err)
-      }
-    })
-    .post("/teams/:teamId/members", limited, async (c) => {
-      try {
-        const auth = await signed(c.req.raw)
-        const add = requireAuthority(services).addTeamMember
-        if (!add) return c.json({ error: apiError("not_implemented", "Teams unavailable") }, 501)
-        const body = (await readJsonRecord(c.req.raw)) ?? {}
-        return c.json(await add(auth, {
-          teamId: c.req.param("teamId"),
-          ...(typeof body.tokenIdentifier === "string" ? { tokenIdentifier: body.tokenIdentifier } : {}),
-          ...(typeof body.providerSubject === "string" ? { providerSubject: body.providerSubject } : {}),
-          ...(typeof body.userPublicId === "string" ? { userPublicId: body.userPublicId } : {}),
-          ...(body.role === "member" || body.role === "admin" || body.role === "owner" ? { role: body.role } : {}),
-        }))
-      } catch (err) {
-        return orgTeamErrorResponse(c, err)
-      }
-    })
-    .delete("/teams/:teamId/members", limited, async (c) => {
-      try {
-        const auth = await signed(c.req.raw)
-        const remove = requireAuthority(services).removeTeamMember
-        if (!remove) return c.json({ error: apiError("not_implemented", "Teams unavailable") }, 501)
-        const body = (await readJsonRecord(c.req.raw)) ?? {}
-        return c.json(await remove(auth, {
-          teamId: c.req.param("teamId"),
-          ...(typeof body.tokenIdentifier === "string" ? { tokenIdentifier: body.tokenIdentifier } : {}),
-          ...(typeof body.providerSubject === "string" ? { providerSubject: body.providerSubject } : {}),
-          ...(typeof body.userPublicId === "string" ? { userPublicId: body.userPublicId } : {}),
-        }))
-      } catch (err) {
-        return orgTeamErrorResponse(c, err)
-      }
-    })
-    .post("/teams/:teamId/projects", limited, async (c) => {
-      try {
-        const auth = await signed(c.req.raw)
-        const grant = requireAuthority(services).grantTeamProject
-        if (!grant) return c.json({ error: apiError("not_implemented", "Teams unavailable") }, 501)
-        const body = (await readJsonRecord(c.req.raw)) ?? {}
-        const projectId = txt(body.projectId)
-        const role = body.role
-        if (!projectId || (role !== "viewer" && role !== "editor" && role !== "admin")) {
-          return c.json({ error: apiError("team_project_grant_required", "projectId and role are required") }, 400)
-        }
-        return c.json(await grant(auth, { teamId: c.req.param("teamId"), projectId, role }))
-      } catch (err) {
-        return orgTeamErrorResponse(c, err)
-      }
-    })
-    .delete("/teams/:teamId/projects", limited, async (c) => {
-      try {
-        const auth = await signed(c.req.raw)
-        const revoke = requireAuthority(services).revokeTeamProject
-        if (!revoke) return c.json({ error: apiError("not_implemented", "Teams unavailable") }, 501)
-        const projectId = txt((await readJsonRecord(c.req.raw))?.projectId)
-        if (!projectId) return c.json({ error: apiError("team_project_grant_required", "projectId is required") }, 400)
-        return c.json(await revoke(auth, { teamId: c.req.param("teamId"), projectId }))
-      } catch (err) {
-        if (err instanceof ControlPlaneAuthError) return c.json(controlPlaneAuthErrorBody(err), err.status)
-        throw err
-      }
-    })
+      return c.json(await grant(auth, { projectId: c.req.param("projectId")!, userPublicId, role: input.role }))
+    }))
+    .delete("/projects/:projectId/members/:userPublicId", authorized(async (auth, c) => {
+      const revoke = authority().revokeProjectMember
+      if (!revoke) return unavailable(c, "Project members unavailable")
+      return c.json(await revoke(auth, {
+        projectId: c.req.param("projectId")!,
+        userPublicId: c.req.param("userPublicId")!,
+      }))
+    }))
+    .get("/projects/:projectId/access", authorized(async (auth, c) => {
+      const list = authority().listProjectAccess
+      if (!list) return unavailable(c, "Project access unavailable")
+      return c.json(await list(auth, { projectId: c.req.param("projectId")! }))
+    }))
+}
+
+function memberSelector(input: Record<string, unknown>): MemberSelector {
+  return {
+    ...(typeof input.tokenIdentifier === "string" ? { tokenIdentifier: input.tokenIdentifier } : {}),
+    ...(typeof input.providerSubject === "string" ? { providerSubject: input.providerSubject } : {}),
+    ...(typeof input.userPublicId === "string" ? { userPublicId: input.userPublicId } : {}),
+    ...(typeof input.email === "string" ? { email: input.email } : {}),
+  }
 }

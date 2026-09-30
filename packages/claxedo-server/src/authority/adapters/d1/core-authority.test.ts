@@ -91,9 +91,9 @@ describe("composed Better Auth + D1 authority", () => {
     const bob = await signed(authority, "bob")
 
     await authority.createHostedOrganization(alice, { name: "Acme", orgId: "org_acme" })
-    await authority.addOrganizationMember(alice, {
+    await authority.addOrgMember!(alice, {
       orgId: "org_acme",
-      userId: bob.principal!.userId,
+      userPublicId: bob.principal!.userId,
       role: "member",
     })
     await authority.createWorkspace(alice, {
@@ -103,17 +103,24 @@ describe("composed Better Auth + D1 authority", () => {
       backing: "cloud-vm",
     })
 
-    await authority.addOrganizationMember(alice, {
+    await authority.addOrgMember!(alice, {
       orgId: "org_acme",
-      userId: bob.principal!.userId,
+      userPublicId: bob.principal!.userId,
       role: "admin",
     })
-    expect(await authority.openWorkspace(bob, { workspaceId: "ws_acme" })).toMatchObject({ role: "admin" })
+    await expect(authority.openWorkspace(bob, { workspaceId: "ws_acme" })).rejects.toMatchObject({ status: 403 })
+    await authority.createWorkspace(bob, {
+      workspaceId: "ws_bob",
+      orgId: "org_acme",
+      displayName: "Bob's workspace",
+      backing: "cloud-vm",
+    })
+    expect(await authority.openWorkspace(bob, { workspaceId: "ws_bob" })).toMatchObject({ role: "owner" })
 
     await authority.reserveSession(bob, {
       operationId: "op_bob",
       sessionId: "ses_bob",
-      workspaceId: "ws_acme",
+      workspaceId: "ws_bob",
       kind: "create",
       title: "Bob's session",
     })
@@ -125,7 +132,7 @@ describe("composed Better Auth + D1 authority", () => {
       actorKind: "human",
       operationId: "op_bob",
       sessionId: "ses_bob",
-      workspaceId: "ws_acme",
+      workspaceId: "ws_bob",
       title: "Bob's session",
     })
     const turn = await authority.acquireSessionTurn({
@@ -133,13 +140,13 @@ describe("composed Better Auth + D1 authority", () => {
       actorId: bob.principal!.actorId,
       actorKind: "human",
       sessionId: "ses_bob",
-      workspaceId: "ws_acme",
+      workspaceId: "ws_bob",
       turnId: "msg_1",
     })
     await authority.syncSessionMessages(bob, {
       updatedAt: Date.now(),
       sessionId: "ses_bob",
-      workspaceId: "ws_acme",
+      workspaceId: "ws_bob",
       messages: [
         {
           id: "msg_1",
@@ -155,20 +162,20 @@ describe("composed Better Auth + D1 authority", () => {
       actorId: bob.principal!.actorId,
       actorKind: "human",
       sessionId: "ses_bob",
-      workspaceId: "ws_acme",
+      workspaceId: "ws_bob",
       turnId: "msg_1",
       leaseId: turn.leaseId,
       fencingToken: turn.fencingToken,
     })
     const transcript = (await authority.readSessionMessages(bob, {
       sessionId: "ses_bob",
-      workspaceId: "ws_acme",
+      workspaceId: "ws_bob",
     })) as { messages: Array<{ info: { claxedo: { author: { id: string } } } }> }
     expect(transcript.messages[0]?.info.claxedo.author.id).toBe(bob.principal!.actorId)
 
     await authority.recordRuntimeAccessToken(bob, {
       jti: "jti_bob",
-      workspaceId: "ws_acme",
+      workspaceId: "ws_bob",
       hostId: "host_bob",
       actorId: bob.principal!.actorId,
       actorKind: "human",
@@ -178,7 +185,7 @@ describe("composed Better Auth + D1 authority", () => {
     expect(
       await authority.runtimeAccessTokenActive({
         jti: "jti_bob",
-        workspaceId: "ws_acme",
+        workspaceId: "ws_bob",
         hostId: "host_bob",
       }),
     ).toEqual({ active: true })
@@ -191,9 +198,9 @@ describe("composed Better Auth + D1 authority", () => {
     const outsider = await signed(authority, "team-outsider")
 
     await authority.createHostedOrganization(alice, { name: "Team sharing", orgId: "org_team_sharing" })
-    await authority.addOrganizationMember(alice, {
+    await authority.addOrgMember!(alice, {
       orgId: "org_team_sharing",
-      userId: bob.principal!.userId,
+      userPublicId: bob.principal!.userId,
       role: "member",
     })
     await authority.createHostedOrganization(outsider, { name: "Other org", orgId: "org_other" })
@@ -212,9 +219,7 @@ describe("composed Better Auth + D1 authority", () => {
       userPublicId: bob.principal!.userId,
       role: "member",
     })
-    await expect(authority.openWorkspace(bob, { workspaceId: "ws_team_sharing" })).resolves.toMatchObject({
-      role: "editor",
-    })
+    await expect(authority.openWorkspace(bob, { workspaceId: "ws_team_sharing" })).rejects.toMatchObject({ status: 403 })
     const otherTeam = await authority.ensureDefaultTeam!(outsider, { orgId: "org_other" }) as {
       team_id: string
     }
@@ -316,12 +321,18 @@ describe("composed Better Auth + D1 authority", () => {
     const alice = await signed(authority, "channel-alice")
     const bob = await signed(authority, "channel-bob")
     await authority.createHostedOrganization(alice, { name: "Channels", orgId: "org_channels" })
-    await authority.addOrganizationMember(alice, {
+    await authority.addOrgMember!(alice, {
       orgId: "org_channels",
-      userId: bob.principal!.userId,
-      role: "member",
+      userPublicId: bob.principal!.userId,
+      role: "admin",
     })
     await authority.createWorkspace(alice, {
+      workspaceId: "ws_alice_channels",
+      orgId: "org_channels",
+      displayName: "Alice's channels workspace",
+      backing: "cloud-vm",
+    })
+    await authority.createWorkspace(bob, {
       workspaceId: "ws_channels",
       orgId: "org_channels",
       displayName: "Channels workspace",
@@ -366,8 +377,7 @@ describe("composed Better Auth + D1 authority", () => {
       }),
     ).toEqual({ actorId: bob.principal!.actorId, actorKind: "human" })
     const channelIdentity = { channel: "telegram", externalUserId: "telegram-user-7", threadKey: "telegram:thread-1" }
-    await expect(authority.resolveChannelMachineAccess(channelIdentity, "ws_channels")).rejects.toMatchObject({ status: 403 })
-    await authority.addOrganizationMember(alice, { orgId: "org_channels", userId: bob.principal!.userId, role: "admin" })
+    await expect(authority.resolveChannelMachineAccess(channelIdentity, "ws_alice_channels")).rejects.toMatchObject({ status: 403 })
     const access = await authority.resolveChannelMachineAccess(channelIdentity, "ws_channels")
     expect(access).toMatchObject({ actorId: bob.principal!.actorId, userId: bob.principal!.userId, orgId: "org_channels", identityVersion: 1 })
     const tokenScope = { jti: "channel-token", workspaceId: "ws_channels", hostId: "channel-host", actorId: access.actorId, actorKind: access.actorKind, role: access.role, expiresAt: Date.now() + 600_000 }
@@ -412,37 +422,38 @@ describe("composed Better Auth + D1 authority", () => {
     ).toEqual({ revoked: false })
   })
 
-  test("a channel-bound org member is refused on an owner-visibility workspace and admitted by a rank on its project", async () => {
+  test("a channel-bound org member is refused on another person's workspace whatever their project grant or its visibility", async () => {
     const { authority, database } = await setup()
     const alice = await signed(authority, "visibility-alice")
     const bob = await signed(authority, "visibility-bob")
     await authority.createHostedOrganization(alice, { name: "Visibility", orgId: "org_visibility" })
-    await authority.addOrganizationMember(alice, { orgId: "org_visibility", userId: bob.principal!.userId, role: "member" })
+    await authority.addOrgMember!(alice, { orgId: "org_visibility", userPublicId: bob.principal!.userId, role: "member" })
     await authority.createWorkspace(alice, {
-      workspaceId: "ws_hidden",
+      workspaceId: "ws_alice",
       orgId: "org_visibility",
-      displayName: "hidden",
+      displayName: "alice",
       backing: "local-worktree",
     })
-    // The column an owner-visibility host assignment writes.
-    await database.prepare("update workspaces set org_member_visible = 0 where workspace_id = 'ws_hidden'").run()
     await authority.bindChannelIdentity(bob, { channel: "telegram", externalUserId: "telegram-user-9" })
     const request = {
       channel: "telegram",
       externalUserId: "telegram-user-9",
       threadKey: "telegram:thread-9",
-      workspaceId: "ws_hidden",
+      workspaceId: "ws_alice",
       action: "read" as const,
     }
-    await expect(authority.authorizeChannelWorkspace(request)).rejects.toMatchObject({ status: 403 })
     const project = await database
-      .prepare("select project_id from workspaces where workspace_id = 'ws_hidden'")
+      .prepare("select project_id from workspaces where workspace_id = 'ws_alice'")
       .first<{ project_id: string }>()
     await database
-      .prepare("insert into project_memberships (project_id, user_id, role, created_at, updated_at, revoked_at) values (?, ?, 'viewer', 1, 1, null)")
+      .prepare("insert into project_memberships (project_id, user_id, role, created_at, updated_at, revoked_at) values (?, ?, 'admin', 1, 1, null)")
       .bind(project!.project_id, bob.principal!.userId)
       .run()
-    expect(await authority.authorizeChannelWorkspace(request)).toEqual({ actorId: bob.principal!.actorId, actorKind: "human" })
+
+    for (const visible of [0, 1]) {
+      await database.prepare("update workspaces set org_member_visible = ? where workspace_id = 'ws_alice'").bind(visible).run()
+      await expect(authority.authorizeChannelWorkspace(request)).rejects.toMatchObject({ status: 403 })
+    }
   })
 
   test("records only the configured canonical service actor and enforces deployment, workspace, JTI, and revocation", async () => {

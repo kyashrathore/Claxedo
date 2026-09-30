@@ -277,7 +277,54 @@ describe("resolveHostedOperation", () => {
       path: "/api/control/teams/team_1/projects",
       body: { projectId: "proj_1", role: "editor" },
     })
+    expect(resolveHostedOperation("team.projects.list", { teamId: "team_1" })).toEqual({
+      method: "GET",
+      path: "/api/control/teams/team_1/projects",
+    })
+    expect(resolveHostedOperation("team.projects.revoke", { teamId: "team_1", projectId: "proj_1" })).toEqual({
+      method: "DELETE",
+      path: "/api/control/teams/team_1/projects",
+      body: { projectId: "proj_1" },
+    })
+    expect(resolveHostedOperation("org.members.list", { orgId: "org_1" })).toEqual({
+      method: "GET",
+      path: "/api/control/orgs/org_1/members",
+    })
+    expect(resolveHostedOperation("org.members.add", { orgId: "org_1", email: "a@example.com", role: "member" })).toEqual({
+      method: "POST",
+      path: "/api/control/orgs/org_1/members",
+      body: { email: "a@example.com", role: "member" },
+    })
+    expect(resolveHostedOperation("org.members.update", { orgId: "org_1", userPublicId: "usr_1", role: "admin" })).toEqual({
+      method: "PATCH",
+      path: "/api/control/orgs/org_1/members/usr_1",
+      body: { role: "admin" },
+    })
+    expect(resolveHostedOperation("org.members.remove", { orgId: "org_1", userPublicId: "usr_1" })).toEqual({
+      method: "DELETE",
+      path: "/api/control/orgs/org_1/members/usr_1",
+    })
+    expect(resolveHostedOperation("project.members.grant", {
+      projectId: "proj_1",
+      userPublicId: "usr_1",
+      role: "viewer",
+    })).toEqual({
+      method: "POST",
+      path: "/api/control/projects/proj_1/members",
+      body: { userPublicId: "usr_1", role: "viewer" },
+    })
+    expect(resolveHostedOperation("project.members.revoke", { projectId: "proj_1", userPublicId: "usr_1" })).toEqual({
+      method: "DELETE",
+      path: "/api/control/projects/proj_1/members/usr_1",
+    })
+    expect(resolveHostedOperation("project.access", { projectId: "proj_1" })).toEqual({
+      method: "GET",
+      path: "/api/control/projects/proj_1/access",
+    })
     expect(() => resolveHostedOperation("org.teams.create", { name: "Eng" })).toThrow(
+      MissingOperationParameter,
+    )
+    expect(() => resolveHostedOperation("org.members.remove", { orgId: "org_1" })).toThrow(
       MissingOperationParameter,
     )
   })

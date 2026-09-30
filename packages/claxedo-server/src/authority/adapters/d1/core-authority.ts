@@ -1,5 +1,6 @@
 import type { D1Database } from "@cloudflare/workers-types"
 import type { WorkspaceAuthority } from "@claxedo/server-core/platform/auth/authority"
+import type { FindAccountByEmail } from "@claxedo/server-core/platform/auth/org-access-authority"
 import {
   PRIVATE_SESSION_AUTHORITY_METHODS,
   type PrivateSessionAuthority,
@@ -29,9 +30,23 @@ import {
   type D1ChannelRuntimeAuthorityPort,
 } from "./channel-runtime-authority"
 import { publishD1HostSessionRows } from "./host-session-rows"
+import { D1TeamAuthority, D1_TEAM_AUTHORITY_METHODS, type D1TeamAuthorityPort } from "./team-authority"
+import {
+  D1OrgMemberAuthority,
+  D1_ORG_MEMBER_AUTHORITY_METHODS,
+  type D1OrgMemberAuthorityPort,
+} from "./org-member-authority"
+import {
+  D1ProjectMemberAuthority,
+  D1_PROJECT_MEMBER_AUTHORITY_METHODS,
+  type D1ProjectMemberAuthorityPort,
+} from "./project-member-authority"
 
 /** The shared authority surface already backed by D1. */
 export type D1CoreAuthorityPort = D1WorkspaceAuthorityCore &
+  D1TeamAuthorityPort &
+  D1OrgMemberAuthorityPort &
+  D1ProjectMemberAuthorityPort &
   D1SessionAuthorityPort &
   PrivateSessionAuthority &
   SessionTurnAuthority &
@@ -44,7 +59,6 @@ const WORKSPACE_LIFECYCLE_METHODS = [
   "linkApplicationIdentity",
   "admitUserDeployedIdentity",
   "createHostedOrganization",
-  "addOrganizationMember",
   "createWorkspace",
   "claimUserDeployedOwner",
 ] as const satisfies readonly (keyof D1WorkspaceAuthority)[]
@@ -86,6 +100,7 @@ export type D1CoreAuthorityOptions = {
   deploymentId: string
   product: D1AuthorityProductPolicy
   now?: () => number
+  findAccountByEmail?: FindAccountByEmail
 }
 
 /**
@@ -96,7 +111,12 @@ export type D1CoreAuthorityOptions = {
  */
 export function createD1CoreAuthority(database: D1Database, options: D1CoreAuthorityOptions): D1CoreAuthorityBoundary {
   const shared = { deploymentId: options.deploymentId, ...(options.now ? { now: options.now } : {}) }
-  const workspace = new D1WorkspaceAuthority(database, { ...shared, product: options.product })
+  const workspace = new D1WorkspaceAuthority(database, {
+    ...shared,
+    product: options.product,
+    ...(options.findAccountByEmail ? { findAccountByEmail: options.findAccountByEmail } : {}),
+  })
+  const access = workspace.accessContext()
   const sessions = new D1SessionAuthority(database, shared)
   const hosts = new D1HostAccessAuthority(database, {
     ...shared,
@@ -109,6 +129,9 @@ export function createD1CoreAuthority(database: D1Database, options: D1CoreAutho
 
   return {
     ...bindMethods(workspace, D1_WORKSPACE_AUTHORITY_METHODS),
+    ...bindMethods(new D1TeamAuthority(access), D1_TEAM_AUTHORITY_METHODS),
+    ...bindMethods(new D1OrgMemberAuthority(access), D1_ORG_MEMBER_AUTHORITY_METHODS),
+    ...bindMethods(new D1ProjectMemberAuthority(access), D1_PROJECT_MEMBER_AUTHORITY_METHODS),
     ...bindMethods(sessions, D1_SESSION_AUTHORITY_METHODS),
     ...bindMethods(hosts, D1_HOST_ACCESS_AUTHORITY_METHODS),
     ...bindMethods(audit, D1_AUDIT_AUTHORITY_METHODS),

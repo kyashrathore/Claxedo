@@ -14,6 +14,7 @@ import {
 import { sha256Hex } from "@claxedo/helpers/crypto"
 
 import { D1WorkspaceAuthority } from "./workspace-authority"
+import { D1OrgMemberAuthority } from "./org-member-authority"
 import { createD1HostTunnelTargetResolver } from "./host-tunnel-relay-target"
 import { D1HostAccessAuthority, hostEnrollmentPayload } from "./host-access-authority"
 import { D1ChannelRuntimeAuthority } from "./channel-runtime-authority"
@@ -154,14 +155,14 @@ async function fixture(input: Awaited<ReturnType<typeof setup>>) {
   const admin = await signed(input.workspace, "admin")
   const outsider = await signed(input.workspace, "outsider")
   await input.workspace.createHostedOrganization(alice, { name: "Acme", orgId: "org_acme" })
-  await input.workspace.addOrganizationMember(alice, {
+  await new D1OrgMemberAuthority(input.workspace.accessContext()).addOrgMember(alice, {
     orgId: "org_acme",
-    userId: bob.principal!.userId,
+    userPublicId: bob.principal!.userId,
     role: "member",
   })
-  await input.workspace.addOrganizationMember(alice, {
+  await new D1OrgMemberAuthority(input.workspace.accessContext()).addOrgMember(alice, {
     orgId: "org_acme",
-    userId: admin.principal!.userId,
+    userPublicId: admin.principal!.userId,
     role: "admin",
   })
   const local = await input.workspace.createWorkspace(alice, {
@@ -670,53 +671,64 @@ describe("D1 host access authority", () => {
     `).bind(request.request_id).first()).toBeNull()
   })
 
-  test("runtime workspace admission rechecks requested role and active membership", async () => {
+  test("runtime workspace admission answers the workspace owner only, and rechecks their membership", async () => {
     const input = await setup()
-    const { alice, bob, outsider } = await fixture(input)
-    const reader = bob.principal!.actorId
-    await expect(input.runtimeTokens.resolveRuntimeMachineAccess(reader, "ws_local", "viewer")).resolves.toMatchObject({ role: "viewer" })
-    await expect(input.runtimeTokens.resolveRuntimeMachineAccess(reader, "ws_local")).rejects.toMatchObject({ status: 403 })
-    await expect(input.runtimeTokens.resolveRuntimeMachineAccess(reader, "ws_local", "admin")).rejects.toMatchObject({ status: 403 })
-    await expect(input.runtimeTokens.resolveRuntimeMachineAccess(alice.principal!.actorId, "ws_local", "admin")).resolves.toMatchObject({ role: "owner" })
-    await expect(input.runtimeTokens.resolveRuntimeMachineAccess(outsider.principal!.actorId, "ws_local", "viewer")).rejects.toMatchObject({ status: 403 })
-    await input.database.prepare("UPDATE org_memberships SET revoked_at = ? WHERE user_id = ?").bind(input.now(), bob.principal!.userId).run()
-    await expect(input.runtimeTokens.resolveRuntimeMachineAccess(reader, "ws_local", "viewer")).rejects.toMatchObject({ status: 403 })
+    const { alice, bob, admin, outsider } = await fixture(input)
+    await input.workspace.createWorkspace(admin, {
+      workspaceId: "ws_admin",
+      orgId: "org_acme",
+      displayName: "admin",
+      backing: "local-worktree",
+    })
+    const owner = admin.principal!.actorId
+    await expect(input.runtimeTokens.resolveRuntimeMachineAccess(owner, "ws_admin", "admin")).resolves.toMatchObject({ role: "owner" })
+    await expect(input.runtimeTokens.resolveRuntimeMachineAccess(bob.principal!.actorId, "ws_admin", "viewer")).rejects.toMatchObject({ status: 403 })
+    await expect(input.runtimeTokens.resolveRuntimeMachineAccess(alice.principal!.actorId, "ws_admin", "viewer")).rejects.toMatchObject({ status: 403 })
+    await expect(input.runtimeTokens.resolveRuntimeMachineAccess(outsider.principal!.actorId, "ws_admin", "viewer")).rejects.toMatchObject({ status: 403 })
+    await input.database.prepare("UPDATE org_memberships SET revoked_at = ? WHERE user_id = ?").bind(input.now(), admin.principal!.userId).run()
+    await expect(input.runtimeTokens.resolveRuntimeMachineAccess(owner, "ws_admin", "viewer")).rejects.toMatchObject({ status: 403 })
   })
 
   test("records runtime tokens for canonical actors only and revokes them without crossing tenants", async () => {
     const input = await setup()
-    const { alice, bob, outsider } = await fixture(input)
-    expect(await input.workspace.openWorkspace(bob, { workspaceId: "ws_local" })).toMatchObject({ role: "viewer" })
+    const { alice, admin, outsider } = await fixture(input)
+    await input.workspace.createWorkspace(admin, {
+      workspaceId: "ws_admin",
+      orgId: "org_acme",
+      displayName: "admin",
+      backing: "local-worktree",
+    })
+    expect(await input.workspace.openWorkspace(admin, { workspaceId: "ws_admin" })).toMatchObject({ role: "owner" })
 
-    await input.runtimeTokens.recordRuntimeAccessToken(bob, {
-      jti: "jti-bob",
-      workspaceId: "ws_local",
+    await input.runtimeTokens.recordRuntimeAccessToken(admin, {
+      jti: "jti-admin",
+      workspaceId: "ws_admin",
       hostId: "host-a",
-      actorId: bob.principal!.actorId,
+      actorId: admin.principal!.actorId,
       actorKind: "human",
       role: "viewer",
       expiresAt: 1_800_000_100_000,
     })
     expect(await input.runtimeTokens.runtimeAccessTokenActive({
-      jti: "jti-bob",
-      workspaceId: "ws_local",
+      jti: "jti-admin",
+      workspaceId: "ws_admin",
       hostId: "host-a",
     })).toEqual({ active: true })
-    await expect(input.runtimeTokens.recordRuntimeAccessToken(bob, {
-      jti: "jti-bob",
-      workspaceId: "ws_local",
+    await expect(input.runtimeTokens.recordRuntimeAccessToken(admin, {
+      jti: "jti-admin",
+      workspaceId: "ws_admin",
       hostId: "host-other",
-      actorId: bob.principal!.actorId,
+      actorId: admin.principal!.actorId,
       actorKind: "human",
       role: "viewer",
       expiresAt: 1_800_000_100_000,
     })).rejects.toMatchObject({ code: "resource_conflict" })
 
-    await input.runtimeTokens.recordRuntimeAccessToken(bob, {
+    await input.runtimeTokens.recordRuntimeAccessToken(admin, {
       jti: "jti-current-authority",
-      workspaceId: "ws_local",
+      workspaceId: "ws_admin",
       hostId: "host-a",
-      actorId: bob.principal!.actorId,
+      actorId: admin.principal!.actorId,
       actorKind: "human",
       role: "viewer",
       expiresAt: 1_800_000_100_000,
@@ -724,10 +736,10 @@ describe("D1 host access authority", () => {
     await input.database.prepare(`
       update org_memberships set revoked_at = ?, updated_at = ?
       where org_id = 'org_acme' and user_id = ?
-    `).bind(1_800_000_000_001, 1_800_000_000_001, bob.principal!.userId).run()
+    `).bind(1_800_000_000_001, 1_800_000_000_001, admin.principal!.userId).run()
     expect(await input.runtimeTokens.runtimeAccessTokenActive({
       jti: "jti-current-authority",
-      workspaceId: "ws_local",
+      workspaceId: "ws_admin",
       hostId: "host-a",
     })).toMatchObject({ active: false, code: "runtime_access_token_revoked" })
 
@@ -1250,53 +1262,35 @@ describe("host-connect: machine heartbeat, readiness, invitations, scope", () =>
     expect(await input.database.prepare("select org_id from workspaces where workspace_id = 'ws_cold'").first()).toEqual({ org_id: "org_acme" })
   })
 
-  test("an ordinary org member cannot open an owner-visibility workspace but a direct member, a project member and an org admin can", async () => {
+  test("a machine-placed workspace admits its owner only, whatever the machine's visibility, org roles or project grants", async () => {
     const input = await setup()
     const { alice, bob, admin } = await fixture(input)
     const owner = await signed(input.workspace, "alice", "org_acme")
     const { enrollment } = await redeem(input, await invite(input, owner, ["/srv"], "owner"), "vps-v", await hostKey())
     await input.hostAccess.assignWorkspaceHost(owner, { workspaceId: "ws_local", hostId: enrollment.host_id, remoteDirectory: "/srv/local" })
-    expect(await input.database.prepare("select org_member_visible from workspaces where workspace_id = 'ws_local'").first())
-      .toEqual({ org_member_visible: 0 })
-    const listed = async (who: SignedControlPlaneAuth) =>
-      (await input.workspace.listWorkspaces(who) as Array<{ workspace_id: string }>).map((row) => row.workspace_id)
-
-    await expect(input.workspace.openWorkspace(bob, { workspaceId: "ws_local" })).rejects.toMatchObject({ status: 403 })
-    expect(await listed(bob)).toEqual(["ws_cloud"])
-    expect(await input.workspace.openWorkspace(admin, { workspaceId: "ws_local" })).toMatchObject({ role: "admin" })
-    expect(await input.workspace.openWorkspace(alice, { workspaceId: "ws_local" })).toMatchObject({ role: "owner" })
-    await expect(input.hostAccess.activeWorkspaceHost(bob, { workspaceId: "ws_local" })).rejects.toMatchObject({ status: 403 })
-    expect(await input.hostAccess.activeWorkspaceHost(admin, { workspaceId: "ws_local" })).toEqual({ active: false })
-
     const localProject = await input.database
       .prepare("select project_id from workspaces where workspace_id = 'ws_local'")
       .first<{ project_id: string }>()
     await input.database.prepare(
-      "insert into project_memberships (project_id, user_id, role, created_at, updated_at, revoked_at) values (?, ?, 'editor', 1, 1, null)",
+      "insert into project_memberships (project_id, user_id, role, created_at, updated_at, revoked_at) values (?, ?, 'admin', 1, 1, null)",
     ).bind(localProject!.project_id, bob.principal!.userId).run()
-    expect(await input.workspace.openWorkspace(bob, { workspaceId: "ws_local" })).toMatchObject({ role: "editor" })
-    expect(await input.hostAccess.activeWorkspaceHost(bob, { workspaceId: "ws_local" })).toEqual({ active: false })
-    const carol = await signed(input.workspace, "carol")
-    await input.workspace.addOrganizationMember(alice, { orgId: "org_acme", userId: carol.principal!.userId, role: "member" })
-    await expect(input.workspace.openWorkspace(carol, { workspaceId: "ws_local" })).rejects.toMatchObject({ status: 403 })
-    const project = await input.database.prepare("select project_id from workspaces where workspace_id = 'ws_local'").first<{ project_id: string }>()
-    await input.database.prepare(
-      "insert into project_memberships (project_id, user_id, role, created_at, updated_at, revoked_at) values (?, ?, 'viewer', 1, 1, null)",
-    ).bind(project!.project_id, carol.principal!.userId).run()
-    expect(await input.workspace.openWorkspace(carol, { workspaceId: "ws_local" })).toMatchObject({ role: "viewer" })
+    const listed = async (who: SignedControlPlaneAuth) =>
+      (await input.workspace.listWorkspaces(who) as Array<{ workspace_id: string }>).map((row) => row.workspace_id)
 
-    // The cloud workspace and an org-visibility assignment are untouched.
-    expect(await input.workspace.openWorkspace(bob, { workspaceId: "ws_cloud" })).toMatchObject({ role: "viewer" })
-    const laptop = await enrollAccountMachine(input, alice, "laptop")
-    void laptop
-    await input.workspace.createWorkspace(alice, {
-      workspaceId: "ws_open",
-      orgId: "org_acme",
-      displayName: "open",
-      backing: "local-worktree",
-    })
-    await input.hostAccess.assignWorkspaceHost(alice, { workspaceId: "ws_open", hostId: "laptop" })
-    expect(await input.workspace.openWorkspace(carol, { workspaceId: "ws_open" })).toMatchObject({ role: "viewer" })
+    for (const visibility of ["owner", "org"] as const) {
+      await input.hostAccess.updateHostEnrollmentScope(owner, {
+        enrollmentId: enrollment.enrollment_id,
+        scope: { allowed_roots: ["/srv"], visibility },
+      })
+      for (const other of [bob, admin]) {
+        await expect(input.workspace.openWorkspace(other, { workspaceId: "ws_local" })).rejects.toMatchObject({ status: 403 })
+        await expect(input.hostAccess.activeWorkspaceHost(other, { workspaceId: "ws_local" })).rejects.toMatchObject({ status: 403 })
+        await expect(input.hostAccess.unassignWorkspaceHost(other, { workspaceId: "ws_local" })).rejects.toMatchObject({ status: 403 })
+        expect(await listed(other)).toEqual([])
+      }
+      expect(await input.workspace.openWorkspace(alice, { workspaceId: "ws_local" })).toMatchObject({ role: "owner" })
+      expect(await input.hostAccess.activeWorkspaceHost(alice, { workspaceId: "ws_local" })).toEqual({ active: false })
+    }
   })
 
   test("the owner renames a machine, the name reaches the fleet listing, and nobody else can rename it", async () => {
@@ -1336,7 +1330,6 @@ describe("host-connect: machine heartbeat, readiness, invitations, scope", () =>
     await input.hostAccess.assignWorkspaceHost(owner, { workspaceId: "ws_web", hostId: enrollment.host_id, remoteDirectory: "/srv/web" })
     await machineBeat(input, enrollment.enrollment_id, [{ workspaceId: "ws_api", revision: 1 }, { workspaceId: "ws_web", revision: 1 }])
     expect(await routable(input, owner, "ws_api")).toEqual({ active: true, host_online: true, relay: true })
-    expect(await input.workspace.openWorkspace(bob, { workspaceId: "ws_web" })).toMatchObject({ role: "viewer" })
 
     await expect(input.hostAccess.updateHostEnrollmentScope(bob, {
       enrollmentId: enrollment.enrollment_id,
@@ -1357,7 +1350,8 @@ describe("host-connect: machine heartbeat, readiness, invitations, scope", () =>
       .toEqual(["ws_cloud", "ws_local", "ws_web"])
     await expect(input.relayTarget("ws_api")).resolves.toEqual({ active: false })
     expect(await routable(input, owner, "ws_web")).toEqual({ active: true, host_online: true, relay: true })
-    await expect(input.workspace.openWorkspace(bob, { workspaceId: "ws_web" })).rejects.toMatchObject({ status: 403 })
+    expect(await input.database.prepare("select org_member_visible from workspaces where workspace_id = 'ws_web'").first())
+      .toEqual({ org_member_visible: 0 })
     // The next beat carries the new scope revision and omits the retired row.
     const beat = await machineBeat(input, enrollment.enrollment_id, [{ workspaceId: "ws_web", revision: 1 }])
     expect(beat.scope).toEqual({ allowed_roots: ["/srv/web"], visibility: "owner", revision: 2 })
@@ -1898,12 +1892,12 @@ describe("machine share admission", () => {
     const input = await setup()
     const { alice, bob, admin, outsider } = await fixture(input)
 
-    // A live row: its administrators, and nobody else. No enrollment exists
-    // yet, which is the point — the answer must not depend on one.
+    // A live row: its owner, and nobody else. No enrollment exists yet,
+    // which is the point — the answer must not depend on one.
     await expect(input.hostAccess.authorizeWorkspaceHostAssignment(alice, { workspaceId: "ws_local" }))
       .resolves.toEqual({ registration: "existing" })
     await expect(input.hostAccess.authorizeWorkspaceHostAssignment(admin, { workspaceId: "ws_local" }))
-      .resolves.toEqual({ registration: "existing" })
+      .rejects.toMatchObject({ status: 403 })
     await expect(input.hostAccess.authorizeWorkspaceHostAssignment(bob, { workspaceId: "ws_local" }))
       .rejects.toMatchObject({ status: 403 })
     await expect(input.hostAccess.authorizeWorkspaceHostAssignment(outsider, { workspaceId: "ws_local" }))
@@ -1937,14 +1931,20 @@ describe("machine share admission", () => {
   test("a membership revoked between two shares stops the second", async () => {
     const input = await setup()
     const { admin } = await fixture(input)
-    await expect(input.hostAccess.authorizeWorkspaceHostAssignment(admin, { workspaceId: "ws_local" }))
+    await input.workspace.createWorkspace(admin, {
+      workspaceId: "ws_admin",
+      orgId: "org_acme",
+      displayName: "admin",
+      backing: "local-worktree",
+    })
+    await expect(input.hostAccess.authorizeWorkspaceHostAssignment(admin, { workspaceId: "ws_admin" }))
       .resolves.toEqual({ registration: "existing" })
 
     await input.database.prepare(`
       update org_memberships set revoked_at = ? where org_id = ? and user_id = ? and revoked_at is null
     `).bind(1_800_000_000_000, "org_acme", admin.principal!.userId).run()
 
-    await expect(input.hostAccess.authorizeWorkspaceHostAssignment(admin, { workspaceId: "ws_local" }))
+    await expect(input.hostAccess.authorizeWorkspaceHostAssignment(admin, { workspaceId: "ws_admin" }))
       .rejects.toMatchObject({ status: 403 })
   })
 })

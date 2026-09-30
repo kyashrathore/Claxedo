@@ -23,6 +23,7 @@ import { exerciseSessionPartConformance } from "@claxedo/server-core/platform/au
 
 import { buildSessionListResponse, parseSessionListQuery } from "../../../session/list"
 import { D1WorkspaceAuthority } from "./workspace-authority"
+import { D1OrgMemberAuthority } from "./org-member-authority"
 import { D1ChannelRuntimeAuthority } from "./channel-runtime-authority"
 import { D1SessionAuthority } from "./session-authority"
 import { controlPlaneMigrationPath, controlPlaneMigrations } from "../../../test-support/control-plane-migrations"
@@ -132,19 +133,19 @@ async function sharedWorkspace(input: Awaited<ReturnType<typeof setup>>) {
   const outsider = await signed(input.workspace, "outsider")
   const reader = await signed(input.workspace, "reader")
   await input.workspace.createHostedOrganization(alice, { name: "Acme", orgId: "org_acme" })
-  await input.workspace.addOrganizationMember(alice, {
+  await new D1OrgMemberAuthority(input.workspace.accessContext()).addOrgMember(alice, {
     orgId: "org_acme",
-    userId: bob.principal!.userId,
+    userPublicId: bob.principal!.userId,
     role: "member",
   })
-  await input.workspace.addOrganizationMember(alice, {
+  await new D1OrgMemberAuthority(input.workspace.accessContext()).addOrgMember(alice, {
     orgId: "org_acme",
-    userId: admin.principal!.userId,
+    userPublicId: admin.principal!.userId,
     role: "admin",
   })
-  await input.workspace.addOrganizationMember(alice, {
+  await new D1OrgMemberAuthority(input.workspace.accessContext()).addOrgMember(alice, {
     orgId: "org_acme",
-    userId: reader.principal!.userId,
+    userPublicId: reader.principal!.userId,
     role: "member",
   })
   const workspace = await input.workspace.createWorkspace(alice, {
@@ -319,9 +320,9 @@ describe("D1 private multiplayer session authority", () => {
     const input = await setup()
     const { alice, admin, outsider } = await sharedWorkspace(input)
     const teammate = await signed(input.workspace, "teammate")
-    await input.workspace.addOrganizationMember(alice, {
+    await new D1OrgMemberAuthority(input.workspace.accessContext()).addOrgMember(alice, {
       orgId: "org_acme",
-      userId: teammate.principal!.userId,
+      userPublicId: teammate.principal!.userId,
       role: "member",
     })
     // `org_member_visible = 0` withholds the implicit member rank, which is
@@ -371,21 +372,20 @@ describe("D1 private multiplayer session authority", () => {
     const input = await setup()
     const { alice, admin } = await sharedWorkspace(input)
     const teammate = await signed(input.workspace, "teammate")
-    await input.workspace.addOrganizationMember(alice, {
+    await new D1OrgMemberAuthority(input.workspace.accessContext()).addOrgMember(alice, {
       orgId: "org_acme",
-      userId: teammate.principal!.userId,
+      userPublicId: teammate.principal!.userId,
       role: "member",
     })
-    // `org_member_visible = 0` withholds the implicit member rank, so the
-    // teammate's only standing on this workspace is the share under test. An
-    // org ADMIN keeps their rank either way, which is what lets the departing
-    // member create a session and what revoking the membership takes back.
-    await input.database
-      .prepare(`update workspaces set org_member_visible = 0 where workspace_id = ?`)
-      .bind("ws_main")
-      .run()
-    await reserveAndRegister(input.sessions, alice, { operationId: "op_shared", sessionId: "ses_shared" })
-    await reserveAndRegister(input.sessions, admin, { operationId: "op_departing", sessionId: "ses_departing" })
+    await input.workspace.createWorkspace(admin, {
+      workspaceId: "ws_admin",
+      orgId: "org_acme",
+      displayName: "admin",
+      repoUrl: "https://github.com/acme/main.git",
+      backing: "cloud-vm",
+    })
+    await reserveAndRegister(input.sessions, admin, { operationId: "op_shared", sessionId: "ses_shared", workspaceId: "ws_admin" })
+    await reserveAndRegister(input.sessions, admin, { operationId: "op_departing", sessionId: "ses_departing", workspaceId: "ws_admin" })
 
     await expect(
       exerciseSessionShareRuntimeTokenConformance({
@@ -396,10 +396,10 @@ describe("D1 private multiplayer session authority", () => {
           runtimeAccessTokenActive: (args) => input.runtimeTokens.runtimeAccessTokenActive(args),
           grantSessionShare: (auth, args) => input.sessions.grantSessionShare(auth, args),
         },
-        workspaceId: "ws_main",
+        workspaceId: "ws_admin",
         hostId: "host_alices_desktop",
         sessionId: "ses_shared",
-        creator: { auth: alice },
+        creator: { auth: admin },
         grantee: {
           auth: teammate,
           runtime: { principalKind: "user", actorId: teammate.principal!.actorId, actorKind: "human" },
@@ -1362,9 +1362,9 @@ describe("D1 session authority, shares of a session this plane never registered"
     const input = await setup()
     const { alice, outsider } = await sharedWorkspace(input)
     const teammate = await signed(input.workspace, "teammate")
-    await input.workspace.addOrganizationMember(alice, {
+    await new D1OrgMemberAuthority(input.workspace.accessContext()).addOrgMember(alice, {
       orgId: "org_acme",
-      userId: teammate.principal!.userId,
+      userPublicId: teammate.principal!.userId,
       role: "member",
     })
     // Withholding the implicit member rank leaves the teammate standing in
@@ -1391,9 +1391,9 @@ describe("D1 session authority, write classes", () => {
     const input = await setup()
     const { alice } = await sharedWorkspace(input)
     const teammate = await signed(input.workspace, "teammate")
-    await input.workspace.addOrganizationMember(alice, {
+    await new D1OrgMemberAuthority(input.workspace.accessContext()).addOrgMember(alice, {
       orgId: "org_acme",
-      userId: teammate.principal!.userId,
+      userPublicId: teammate.principal!.userId,
       role: "member",
     })
     // `org_member_visible = 0` withholds the implicit member rank, so the

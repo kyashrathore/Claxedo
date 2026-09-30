@@ -9,7 +9,7 @@ import type {
 } from "@claxedo/server-core/platform/auth/authority"
 import { asOrgId } from "@claxedo/server-core/platform/auth/branded-id"
 import { CURRENT_CHANNEL_IDENTITY_VERSION } from "@claxedo/workspace-relay-protocol"
-import { organizationRoleRankSql } from "./host-access-authority"
+import { actionRank, PROJECT_ACCESS_SQL, rankRole, roleRank, workspaceAccessSql } from "./project-role"
 import { SESSION_SHARE_WORKSPACE_ACCESS_SQL } from "./workspace-authority"
 
 const CONTROL_PLANE_SERVICE_ACTOR_ID = "control-plane"
@@ -519,15 +519,11 @@ export class D1ChannelRuntimeAuthority implements D1ChannelRuntimeAuthorityPort 
   }
 
   private async projectAccess(userId: string, projectId: string) {
-    return await this.database.prepare(projectAccessSql).bind(
-      userId, userId, userId, userId, projectId, userId,
-    ).first<AccessRow>()
+    return await this.database.prepare(PROJECT_ACCESS_SQL).bind(userId, projectId, null).first<AccessRow>()
   }
 
   private async workspaceAccess(userId: string, workspaceId: string) {
-    const row = await this.database.prepare(workspaceAccessSql).bind(
-      userId, userId, userId, userId, workspaceId, userId,
-    ).first<AccessRow>()
+    const row = await this.database.prepare(WORKSPACE_ACCESS_SQL).bind(userId, workspaceId).first<AccessRow>()
     if (!row) return null
     if (row.role_rank >= 1) return row
     const shared = await this.database.prepare(SESSION_SHARE_WORKSPACE_ACCESS_SQL)
@@ -545,59 +541,7 @@ export class D1ChannelRuntimeAuthority implements D1ChannelRuntimeAuthorityPort 
   }
 }
 
-const projectAccessSql = `
-  select project.org_id,
-    max(
-      case when project.owner_user_id = ? then 4 else 0 end,
-      coalesce(case project_member.role when 'viewer' then 1 when 'editor' then 2 when 'admin' then 3 when 'owner' then 4 end, 0),
-      case when org.owner_user_id = ? then 3
-        when org_member.role in ('owner', 'admin') then 3
-        when org_member.role = 'member' then 1 else 0 end
-    ) as role_rank
-  from projects project
-  join orgs org on org.org_id = project.org_id and org.deleted_at is null
-  left join project_memberships project_member
-    on project_member.project_id = project.project_id and project_member.user_id = ? and project_member.revoked_at is null
-  left join org_memberships org_member
-    on org_member.org_id = project.org_id and org_member.user_id = ? and org_member.revoked_at is null
-  where project.project_id = ? and project.deleted_at is null
-    and (org.owner_user_id = ? or org_member.user_id is not null)
-`
-
-const workspaceAccessSql = `
-  select workspace.org_id,
-    max(
-      case when workspace.owner_user_id = ? then 4 else 0 end,
-      coalesce(case project_member.role when 'viewer' then 1 when 'editor' then 2 when 'admin' then 3 when 'owner' then 4 end, 0),
-      ${organizationRoleRankSql({
-        orgOwnerUserId: "org.owner_user_id",
-        userId: "?",
-        orgMemberRole: "org_member.role",
-        workspaceAlias: "workspace",
-      })}
-    ) as role_rank
-  from workspaces workspace
-  join projects project on project.project_id = workspace.project_id and project.deleted_at is null
-  join orgs org on org.org_id = workspace.org_id and org.deleted_at is null
-  left join project_memberships project_member
-    on project_member.project_id = workspace.project_id and project_member.user_id = ? and project_member.revoked_at is null
-  left join org_memberships org_member
-    on org_member.org_id = workspace.org_id and org_member.user_id = ? and org_member.revoked_at is null
-  where workspace.workspace_id = ? and workspace.deleted_at is null
-    and (org.owner_user_id = ? or org_member.user_id is not null)
-`
-
-function actionRank(action: ProjectAction) {
-  return action === "read" ? 1 : action === "write" ? 2 : action === "admin" ? 3 : 4
-}
-
-function roleRank(role: ProjectRole) {
-  return role === "viewer" ? 1 : role === "editor" ? 2 : role === "admin" ? 3 : 4
-}
-
-function rankRole(rank: number): ProjectRole {
-  return rank >= 4 ? "owner" : rank === 3 ? "admin" : rank === 2 ? "editor" : "viewer"
-}
+const WORKSPACE_ACCESS_SQL = workspaceAccessSql("w.workspace_id = ? and w.deleted_at is null")
 
 function requireText(value: unknown, name: string, max = 512) {
   if (typeof value !== "string") throw conflict(`${name} must be a string`)
