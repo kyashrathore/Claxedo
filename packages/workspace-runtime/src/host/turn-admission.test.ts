@@ -18,7 +18,7 @@ import {
 import { FakeTransport } from "../test-support/fake-transport"
 import { createTurnAdmissions } from "./turn-admission"
 import { rmSync } from "node:fs"
-import { RuntimeStore } from "../store"
+import { openRuntimeStore } from "../store-file"
 
 function open(controls: TurnControl[]) {
   const control = controlledTurn("ses_busy")
@@ -423,7 +423,7 @@ describe("durable turn authority", () => {
 
   test("a persisted unfinished turn is unknown to a replacement host and refuses stale cancellation", async () => {
     const root = tempStoreRoot()
-    let store = new RuntimeStore(root)
+    let store = openRuntimeStore(root)
     const transport = new FakeTransport()
     let f = createHostFixture({ store, transports: { pi: transport } })
     try {
@@ -431,7 +431,7 @@ describe("durable turn authority", () => {
       store.startTurn(record)
       await f.runtime.dispose()
       store.close()
-      store = new RuntimeStore(root)
+      store = openRuntimeStore(root)
       f = createHostFixture({ store, transports: { pi: transport } })
       const inspection = f.runtime.recovery.inspect("s")
       expect(inspection.target).toBeUndefined()

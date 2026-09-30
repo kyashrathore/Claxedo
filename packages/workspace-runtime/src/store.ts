@@ -2,11 +2,7 @@ import { SessionAuthoringOwnership } from "./session/authoring-ownership"
 import type { TurnOutline, AgentPresentationEvent } from "@claxedo/agent-runtime-contract"
 import { readTurnOutline } from "./session/turn-outline"
 import type { SessionConfig, SessionConfigUpdate, SessionHandoff, SessionHandoffSource, SubagentObservation } from "@claxedo/agent-runtime-contract"
-import { randomBytes } from "crypto"
-import fs from "fs"
-import { createRequire } from "module"
-import path from "path"
-import { recoveryScopeKey, recoveryTargetSessionId, AgentMessagePageError, type AgentMessagePage, type AgentMessagePageInput } from "@claxedo/agent-runtime-contract"
+import { recoveryScopeKey, recoveryTargetSessionId, decodeMessagePageCursor, encodeMessagePageCursor, AgentMessagePageError, type AgentMessagePage, type AgentMessagePageInput } from "@claxedo/agent-runtime-contract"
 import { AGENT_MESSAGE_PAGE_LIMIT, projectLatestSurfaceMessages, type AgentTurnCoverage, type AgentTurnCoveragePage } from "@claxedo/agent-runtime-contract"
 import { acceptsSessionTitle, boundSessionTitleSource } from "./session/session-title"
 import { firstTurnErrorData, normalizeHarnessIdentity, parseStoredSessionModelGroup, sessionModelGroupJson } from "@claxedo/agent-runtime-contract"
@@ -26,10 +22,10 @@ import {
 } from "@claxedo/agent-runtime-contract"
 import { foldUsageObservations, type RuntimeUsageObservation } from "@claxedo/agent-runtime-contract"
 import { isTerminalSubagentStatus, type RuntimeGoalSnapshot, type SubagentUpdatedEvent } from "@claxedo/agent-runtime-contract"
+import { base64UrlEncode } from "@claxedo/helpers/crypto"
 import { asRecord } from "@claxedo/helpers/guards"
-import { workspaceRuntimeStoreDir } from "./env"
-import { migrateLaunchOwnership, sqliteLaunchOwnership } from "./ownership/launch-ownership-sqlite"
-import type { LaunchOwnershipOwner } from "@claxedo/process-ownership/launch"
+import type { SqliteDatabase } from "./sqlite/database"
+import { openRuntimeStoreSchema } from "./store-schema"
 import type { SessionTurnOrigin } from "./session-access-policy"
 import { actorKind, isRecord, num, rec, str } from "./json-value"
 import { buildAssistantMessage, buildUserMessage, buildUserPromptParts, messageCompleted, messagePartUpdated, messageUpdated, sessionError, sessionIdle, sessionStatus } from "./projection/presentation-events"
@@ -60,6 +56,7 @@ type Bind = {
   upstreamSessionId?: string
   title?: string
   agentSessionId: string
+  owner: TurnActor
   ownerKey?: string | null
   parentSessionId?: string
   processKey?: string | null
@@ -154,7 +151,6 @@ type ProjectionResetRequested = {
 type ConfigUpdate = {
   type: "config.update"
   patch: SessionConfigUpdate
-  directory?: string
 }
 
 type Control =
@@ -173,36 +169,6 @@ type Control =
   | ProjectionResetRequested
   | ConfigUpdate
   | { type: "goal.update"; goal: RuntimeGoalSnapshot | null }
-
-/** What both `bun:sqlite` and `better-sqlite3` return from a write statement. */
-type SqliteRunResult = {
-  changes?: number
-  lastInsertRowid?: number | bigint
-}
-
-/**
- * A prepared statement over rows of a single declared shape.
- *
- * `Row` is the column list this store's SQL selects, declared once at
- * `db.prepare<Row>(sql)` instead of re-asserted at every read. `get` widens to
- * `null | undefined` because the two drivers disagree on the empty result:
- * `bun:sqlite` yields `null`, `better-sqlite3` yields `undefined`.
- */
-type SqliteStatement<Row> = {
-  run(...params: unknown[]): SqliteRunResult
-  get(...params: unknown[]): Row | null | undefined
-  all(...params: unknown[]): Row[]
-  finalize?: () => unknown
-}
-
-export type SqliteDatabase = {
-  exec(sql: string): unknown
-  prepare<Row = unknown>(sql: string): SqliteStatement<Row>
-  close?: (throwOnError?: boolean) => unknown
-}
-
-/** The constructor shape both SQLite drivers expose. */
-type SqliteDatabaseConstructor = new (file: string) => SqliteDatabase
 
 /**
  * A row the schema guarantees exists (a `SELECT` on a row this statement just
@@ -287,80 +253,6 @@ export type WorkspaceWorktreeRecord = {
   lastActivityAt: number
 }
 
-const requireDatabase = createRequire(import.meta.url)
-
-function managedDatabase(db: SqliteDatabase): SqliteDatabase {
-  return {
-    exec: (sql) => db.exec(sql),
-    prepare<Row>(sql: string): SqliteStatement<Row> {
-      const statement = db.prepare<Row>(sql)
-      const finalize = () => statement.finalize?.()
-      return {
-        run(...params) {
-          try {
-            return statement.run(...params)
-          } finally {
-            finalize()
-          }
-        },
-        get(...params) {
-          try {
-            return statement.get(...params)
-          } finally {
-            finalize()
-          }
-        },
-        all(...params) {
-          try {
-            return statement.all(...params)
-          } finally {
-            finalize()
-          }
-        },
-      }
-    },
-    close: (throwOnError) => db.close?.(throwOnError),
-  }
-}
-
-/**
- * Both drivers are loaded through `createRequire` (never bundled), so their
- * exports arrive untyped. This is the one place that decides a value is a
- * database constructor, and it decides it by looking, not by asserting.
- */
-function isSqliteDatabaseConstructor(value: unknown): value is SqliteDatabaseConstructor {
-  return typeof value === "function"
-}
-
-function sqliteConstructor(mod: unknown, exportName: string): SqliteDatabaseConstructor {
-  if (isSqliteDatabaseConstructor(mod)) return mod
-  if (isRecord(mod)) {
-    const named = mod[exportName]
-    if (isSqliteDatabaseConstructor(named)) return named
-    const fallback = mod.default
-    if (isSqliteDatabaseConstructor(fallback)) return fallback
-  }
-  throw new Error(`sqlite driver export ${exportName} missing`)
-}
-
-export function openDatabase(file: string): SqliteDatabase {
-  const driver = process.versions.bun
-    ? sqliteConstructor(requireDatabase("bun:sqlite"), "Database")
-    : sqliteConstructor(requireDatabase("better-sqlite3"), "default")
-  return managedDatabase(new driver(file))
-}
-
-function tableColumns(db: SqliteDatabase, table: string) {
-  return db
-    .prepare<{ name: string }>(`PRAGMA table_info(${table})`)
-    .all()
-    .map((row) => row.name)
-}
-
-function hasColumn(db: SqliteDatabase, table: string, column: string) {
-  return tableColumns(db, table).includes(column)
-}
-
 const SETTLE_DELTAS_MS = 200
 
 type PendingDelta = {
@@ -437,30 +329,6 @@ type SurfaceTurnRow = {
 
 const MESSAGE_PAGE_CURSOR_PREFIX = "wrmp1:"
 const MESSAGE_HYDRATION_BATCH_SIZE = 500
-
-function encodeMessagePageCursor(sessionId: string, ord: number) {
-  return `${MESSAGE_PAGE_CURSOR_PREFIX}${Buffer.from(JSON.stringify({ sessionId, ord })).toString("base64url")}`
-}
-
-function decodeMessagePageCursor(sessionId: string, input: string) {
-  try {
-    if (!input.startsWith(MESSAGE_PAGE_CURSOR_PREFIX)) throw new Error("unexpected cursor version")
-    const encoded = input.slice(MESSAGE_PAGE_CURSOR_PREFIX.length)
-    if (!encoded) throw new Error("missing cursor payload")
-    const decoded = JSON.parse(Buffer.from(encoded, "base64url").toString("utf8")) as unknown
-    const value = asRecord(decoded)
-    if (
-      value?.sessionId !== sessionId ||
-      typeof value.ord !== "number" ||
-      !Number.isSafeInteger(value.ord) ||
-      value.ord < 0
-    )
-      throw new Error("invalid cursor payload")
-    return value.ord
-  } catch {
-    throw new AgentMessagePageError(400, "Invalid message page cursor")
-  }
-}
 
 /**
  * The read half of this store's JSON columns.
@@ -670,22 +538,6 @@ function sameRunningSelections(previous: ReturnType<typeof sessionRowConfig> | u
  */
 type ProjectionFailure = { seq: number; reason: string; repairable: boolean }
 
-/**
- * Open a snapshot and make SQLite read it end to end. A copy whose bytes
- * landed is not yet a backup: only the reopened file can say whether the pages
- * are coherent, and a restore is the worst moment to find out they are not.
- */
-function assertReadableDatabase(file: string) {
-  let db: SqliteDatabase | undefined
-  try {
-    db = openDatabase(file)
-    const row = db.prepare<{ integrity_check: string }>("PRAGMA integrity_check").get()
-    if (row?.integrity_check !== "ok") throw new Error(`integrity_check reported ${row?.integrity_check ?? "nothing"}`)
-  } finally {
-    db?.close?.()
-  }
-}
-
 export class RuntimeProjectionBlockedError extends Error {
   readonly code = "runtime_projection_blocked"
 
@@ -695,22 +547,19 @@ export class RuntimeProjectionBlockedError extends Error {
   }
 }
 
-export class RuntimeStoreMigrationBlockedError extends Error {
-  readonly code = "runtime_store_migration_blocked"
-
-  constructor(readonly root: string, readonly reason: string) {
-    super(
-      `Cannot snapshot ${root} before the recovery migration: ${reason}. `
-        + "Stop every process holding this workspace store open, then reopen it; the schema was left unchanged.",
-    )
-    this.name = "RuntimeStoreMigrationBlockedError"
-  }
+/** The database a runtime store runs on, as its host opened it. */
+export type RuntimeStoreDatabase = {
+  readonly db: SqliteDatabase
+  /** Names the store in the errors that refuse it. */
+  readonly location: string
+  /** Makes every committed write durable; a host whose commits already are does nothing. */
+  flush(): void
 }
 
 export class RuntimeStore {
   readonly sessionStarts: AgentSessionStarts
   readonly deliveryQueue: DeliveryQueue
-  private root: string
+  private opened: RuntimeStoreDatabase
   private db: SqliteDatabase
   private subagentAdmission = createMemorySubagentAdmissionStore()
   private authoringOwnership: SessionAuthoringOwnership
@@ -729,30 +578,14 @@ export class RuntimeStore {
    */
   private pendingDeltas = new Map<string, PendingDelta>()
   private settleTimer: ReturnType<typeof setTimeout> | undefined
-  private databaseFile: string
-  private hadDatabaseFile: boolean
-  /**
-   * Keyed by scope and generation: a store that outlives a mount must not hand
-   * the next one an instance stamped with the previous owner, or the launches
-   * it records would be reconciled out from under it as somebody else's.
-   */
-  private launchOwnershipStores = new Map<string, ReturnType<typeof sqliteLaunchOwnership>>()
 
-  constructor(root = workspaceRuntimeStoreDir()) {
-    this.root = root
-    fs.mkdirSync(root, { recursive: true, mode: 0o755 })
-    this.databaseFile = path.join(root, "state.db")
-    this.hadDatabaseFile = fs.existsSync(this.databaseFile)
-    this.db = openDatabase(this.databaseFile)
-    this.db.exec("PRAGMA journal_mode = WAL")
-    this.db.exec("PRAGMA synchronous = NORMAL")
-    this.db.exec("PRAGMA busy_timeout = 5000")
-    this.db.exec("PRAGMA foreign_keys = ON")
-    this.migrate()
+  constructor(database: RuntimeStoreDatabase) {
+    this.opened = database
+    this.db = database.db
+    openRuntimeStoreSchema(this.db, database.location)
     this.authoringOwnership = new SessionAuthoringOwnership(this.db)
     this.sessionStarts = sqliteSessionStarts(this.db)
-    this.deliveryQueue = new DeliveryQueue(this.db, (run) => this.transaction(run, "immediate"),
-      (sessionId, actorId) => this.authoringOwnership.record(sessionId, actorId))
+    this.deliveryQueue = new DeliveryQueue(this.db, (sessionId, actorId) => this.authoringOwnership.record(sessionId, actorId))
     this.hydrateSubagentAdmission()
     this.replay()
     this.reconcileOrphanedSubagents()
@@ -761,19 +594,14 @@ export class RuntimeStore {
   close() {
     if (this.closed) return
     this.settleDeltas()
-    // Bun's SQLite binding defaults `throwOnError` to false. When SQLite
-    // refuses to close, that default silently leaves the database handle open
-    // and Windows keeps the workspace directory locked. A store close is the
-    // authoritative end of this handle's lifetime, so surface a failed close
-    // instead of reporting the store closed while retaining the resource.
-    this.db.close?.(true)
+    this.db.close()
     this.closed = true
   }
 
   flush() {
     if (this.closed) throw new Error("Runtime store is closed")
     this.settleDeltas()
-    this.db.exec("PRAGMA wal_checkpoint(TRUNCATE)")
+    this.opened.flush()
   }
 
   /**
@@ -800,7 +628,7 @@ export class RuntimeStore {
     for (const [session, items] of bySession) {
       let last = { seq: 0, ts: 0 }
       try {
-        this.transaction(() => {
+        this.db.transaction(() => {
           for (const item of items) {
             this.delta(item.sessionId, item.messageId, item.partId, item.field, item.text, item.ts)
             if (item.seq > last.seq) last = { seq: item.seq, ts: item.ts }
@@ -839,543 +667,6 @@ export class RuntimeStore {
       if (!this.closed) this.settleDeltas()
     }, SETTLE_DELTAS_MS)
     this.settleTimer.unref?.()
-  }
-
-  private migrate() {
-    // First, because the snapshot it may take has to precede every schema
-    // write, not just the one that needs it.
-    this.migrateRecoveryOperations()
-    migrateLaunchOwnership(this.db)
-    this.db.exec(`
-      CREATE TABLE IF NOT EXISTS runtime_journal (
-        session_id TEXT NOT NULL,
-        seq INTEGER NOT NULL,
-        kind TEXT NOT NULL,
-        type TEXT NOT NULL,
-        created_at INTEGER NOT NULL,
-        provider_session_id TEXT,
-        process_key TEXT,
-        turn_id TEXT,
-        user_message_id TEXT,
-        assistant_message_id TEXT,
-        part_id TEXT,
-        payload_json TEXT NOT NULL,
-        source_json TEXT,
-        PRIMARY KEY (session_id, seq)
-      )
-    `)
-    this.db.exec(`
-      CREATE INDEX IF NOT EXISTS runtime_journal_session_created_idx
-      ON runtime_journal (session_id, created_at, seq)
-    `)
-    try {
-      this.db.exec("ALTER TABLE runtime_journal ADD COLUMN part_id TEXT")
-    } catch {
-      // column already exists
-    }
-    this.db.exec(`
-      CREATE INDEX IF NOT EXISTS runtime_journal_message_usage_idx
-      ON runtime_journal (session_id, assistant_message_id, seq)
-      WHERE kind = 'event' AND type = 'session.usage'
-    `)
-    this.db.exec(`
-      CREATE INDEX IF NOT EXISTS runtime_journal_part_snapshot_idx
-      ON runtime_journal (session_id, part_id, seq)
-      WHERE kind = 'event' AND type = 'message.part.updated' AND part_id IS NOT NULL
-    `)
-    // `lastTurn` projects a session's outcome from its newest terminal journal
-    // row. Without this partial index the query walks the session's whole
-    // journal backwards through the primary key (tens of thousands of
-    // `message.part.updated` rows for a long session) on every session read
-    // and every session listing; with it the walk touches only terminal rows.
-    // The predicate must stay textually identical to the one in `lastTurn` so
-    // the planner can prove the index covers the query.
-    this.db.exec(`
-      CREATE INDEX IF NOT EXISTS runtime_journal_turn_outcome_idx
-      ON runtime_journal (session_id, seq)
-      WHERE (kind = 'control' AND type = 'turn.finish')
-        OR (kind = 'event' AND type IN ('message.completed', 'session.error'))
-    `)
-    this.db.exec(`
-      CREATE TABLE IF NOT EXISTS session (
-        id TEXT PRIMARY KEY,
-        parent_id TEXT,
-        directory TEXT NOT NULL,
-        title TEXT,
-        agent_session_id TEXT,
-        process_key TEXT,
-        harness_id TEXT,
-        harness_access TEXT,
-        harness_binary TEXT,
-        harness_transport TEXT,
-        harness_url TEXT,
-        harness_headers_json TEXT,
-        model_provider_id TEXT,
-        model_id TEXT,
-        variant TEXT,
-        agent TEXT,
-        instructions TEXT,
-        group_json TEXT,
-        handoff_json TEXT,
-        goal_json TEXT,
-        commands_json TEXT,
-        permission_mode TEXT,
-        permission_mode_label TEXT,
-        permission_ceiling TEXT,
-        permission_state_json TEXT,
-        created_at INTEGER NOT NULL,
-        updated_at INTEGER NOT NULL,
-        last_human_turn_at INTEGER,
-        status TEXT,
-        recovery_error TEXT,
-        archived_at INTEGER
-      )
-    `)
-    this.db.exec(`
-      CREATE TABLE IF NOT EXISTS session_turn_lease (
-        session_id TEXT PRIMARY KEY,
-        lease_id TEXT NOT NULL,
-        acquired_at INTEGER NOT NULL
-      )
-    `)
-    this.transaction(() => {
-      this.db.exec(`
-        CREATE TABLE IF NOT EXISTS runtime_delivery (
-          session_id TEXT NOT NULL,
-          seq INTEGER NOT NULL,
-          message_id TEXT,
-          parts_json TEXT NOT NULL,
-          agent TEXT,
-          model_provider_id TEXT,
-          model_id TEXT,
-          tools_json TEXT,
-          format_json TEXT,
-          system TEXT,
-          variant TEXT,
-          permission_mode TEXT,
-          delivery TEXT NOT NULL,
-          actor_id TEXT,
-          actor_kind TEXT,
-          author_id TEXT,
-          author_name TEXT,
-          author_avatar_url TEXT,
-          author_kind TEXT,
-          queued_at INTEGER NOT NULL,
-          steering_json TEXT,
-          held INTEGER NOT NULL DEFAULT 0,
-          authority_json TEXT,
-          origin_provenance TEXT,
-          turn_grant TEXT,
-          service_tier TEXT,
-          PRIMARY KEY (session_id, seq)
-        )
-      `)
-      for (const column of ["origin_provenance", "turn_grant", "service_tier"]) {
-        if (!hasColumn(this.db, "runtime_delivery", column)) {
-          this.db.exec(`ALTER TABLE runtime_delivery ADD COLUMN ${column} TEXT`)
-        }
-      }
-      // Preserve control identities after delivery rows are removed.
-      this.db.exec(`
-        CREATE TABLE IF NOT EXISTS runtime_delivery_sequence (
-          session_id TEXT PRIMARY KEY,
-          seq INTEGER NOT NULL
-        );
-      `)
-    }, "immediate")
-    this.db.exec(`
-      CREATE TABLE IF NOT EXISTS runtime_secret (
-        name TEXT PRIMARY KEY,
-        value TEXT NOT NULL,
-        created_at INTEGER NOT NULL
-      )
-    `)
-    if (!hasColumn(this.db, "session", "parent_id")) {
-      try {
-        this.db.exec("ALTER TABLE session ADD COLUMN parent_id TEXT")
-      } catch (error) {
-        if (!hasColumn(this.db, "session", "parent_id")) throw error
-      }
-    }
-    this.db.exec(`
-      CREATE INDEX IF NOT EXISTS session_parent_idx
-      ON session (parent_id, created_at)
-    `)
-    this.db.exec(`
-      CREATE TABLE IF NOT EXISTS session_subagent (
-        parent_session_id TEXT NOT NULL,
-        subagent_key TEXT NOT NULL,
-        child_session_id TEXT,
-        assistant_message_id TEXT,
-        revision INTEGER NOT NULL DEFAULT 0,
-        mode TEXT,
-        status TEXT NOT NULL DEFAULT 'pending',
-        label TEXT,
-        subagent_type TEXT,
-        description TEXT,
-        provider_kind TEXT,
-        provider_id TEXT,
-        transcript_kind TEXT NOT NULL DEFAULT 'none',
-        transcript_ref TEXT,
-        mode_revision INTEGER NOT NULL DEFAULT 0,
-        status_revision INTEGER NOT NULL DEFAULT 0,
-        label_revision INTEGER NOT NULL DEFAULT 0,
-        subagent_type_revision INTEGER NOT NULL DEFAULT 0,
-        description_revision INTEGER NOT NULL DEFAULT 0,
-        provider_kind_revision INTEGER NOT NULL DEFAULT 0,
-        provider_id_revision INTEGER NOT NULL DEFAULT 0,
-        child_session_id_revision INTEGER NOT NULL DEFAULT 0,
-        transcript_revision INTEGER NOT NULL DEFAULT 0,
-        created_at INTEGER NOT NULL,
-        updated_at INTEGER NOT NULL,
-        PRIMARY KEY (parent_session_id, subagent_key)
-      )
-    `)
-    for (const [column, type] of [
-      ["attention", "INTEGER"],
-      ["attention_revision", "INTEGER NOT NULL DEFAULT 0"],
-      ["wake", "TEXT"],
-      ["wake_revision", "INTEGER NOT NULL DEFAULT 0"],
-      ["origin_provenance", "TEXT"],
-      ["origin_actor_id", "TEXT"],
-      ["origin_actor_kind", "TEXT"],
-      ["origin_user_id", "TEXT"],
-      ["origin_authority_json", "TEXT"],
-      ["wake_grant", "TEXT"],
-    ] as const) {
-      if (!hasColumn(this.db, "session_subagent", column)) {
-        this.db.exec(`ALTER TABLE session_subagent ADD COLUMN ${column} ${type}`)
-      }
-    }
-    this.db.exec(`
-      CREATE UNIQUE INDEX IF NOT EXISTS session_subagent_child_idx
-      ON session_subagent (child_session_id)
-      WHERE child_session_id IS NOT NULL
-    `)
-    this.db.exec(`
-      CREATE UNIQUE INDEX IF NOT EXISTS session_subagent_provider_idx
-      ON session_subagent (parent_session_id, provider_kind, provider_id)
-      WHERE provider_id IS NOT NULL
-    `)
-    this.db.exec(`
-      CREATE TABLE IF NOT EXISTS session_subagent_tool_call (
-        parent_session_id TEXT NOT NULL,
-        subagent_key TEXT NOT NULL,
-        tool_call_id TEXT NOT NULL,
-        role TEXT NOT NULL CHECK (role IN ('spawn', 'interaction')),
-        revision INTEGER NOT NULL,
-        created_at INTEGER NOT NULL,
-        PRIMARY KEY (parent_session_id, subagent_key, tool_call_id)
-      )
-    `)
-    this.db.exec(`
-      CREATE INDEX IF NOT EXISTS session_subagent_tool_call_lookup_idx
-      ON session_subagent_tool_call (parent_session_id, tool_call_id)
-    `)
-    this.db.exec(`
-      CREATE TABLE IF NOT EXISTS session_subagent_observation (
-        parent_session_id TEXT NOT NULL,
-        observation_id TEXT NOT NULL,
-        subagent_key TEXT NOT NULL,
-        revision INTEGER NOT NULL,
-        observation_json TEXT NOT NULL,
-        event_json TEXT NOT NULL,
-        published INTEGER NOT NULL DEFAULT 0,
-        created_at INTEGER NOT NULL,
-        PRIMARY KEY (parent_session_id, observation_id)
-      )
-    `)
-    if (!hasColumn(this.db, "session_subagent_observation", "observation_json")) {
-      this.db.exec("ALTER TABLE session_subagent_observation ADD COLUMN observation_json TEXT NOT NULL DEFAULT '{}'")
-    }
-    this.db.exec(`
-      CREATE TABLE IF NOT EXISTS session_subagent_correlation (
-        parent_session_id TEXT NOT NULL,
-        correlation_key TEXT NOT NULL,
-        subagent_key TEXT NOT NULL,
-        PRIMARY KEY (parent_session_id, correlation_key, subagent_key)
-      )
-    `)
-    this.db.exec(`
-      CREATE TABLE IF NOT EXISTS session_map (
-        session_id TEXT PRIMARY KEY,
-        agent_session_id TEXT NOT NULL UNIQUE
-      )
-    `)
-    this.db.exec(`
-      CREATE TABLE IF NOT EXISTS session_execution_binding (
-        session_id TEXT PRIMARY KEY,
-        workspace_id TEXT NOT NULL,
-        directory TEXT NOT NULL,
-        connection_id TEXT NOT NULL,
-        upstream_session_id TEXT NOT NULL
-      )
-    `)
-    this.db.exec(`
-      CREATE TABLE IF NOT EXISTS session_owner (
-        session_id TEXT PRIMARY KEY,
-        owner_json TEXT NOT NULL
-      )
-    `)
-    this.db.exec(`
-      CREATE TABLE IF NOT EXISTS message (
-        id TEXT PRIMARY KEY,
-        session_id TEXT NOT NULL,
-        role TEXT NOT NULL,
-        ord INTEGER NOT NULL,
-        info_json TEXT NOT NULL,
-        created_at INTEGER NOT NULL
-      )
-    `)
-    this.db.exec(`
-      CREATE INDEX IF NOT EXISTS message_session_ord_idx
-      ON message (session_id, ord DESC)
-    `)
-    this.db.exec(`
-      CREATE TABLE IF NOT EXISTS part (
-        id TEXT PRIMARY KEY,
-        session_id TEXT NOT NULL,
-        message_id TEXT NOT NULL,
-        ord INTEGER NOT NULL,
-        data_json TEXT NOT NULL,
-        updated_at INTEGER NOT NULL
-      )
-    `)
-    this.db.exec(`
-      CREATE INDEX IF NOT EXISTS part_session_message_ord_idx
-      ON part (session_id, message_id, ord)
-    `)
-    this.db.exec(`
-      CREATE TABLE IF NOT EXISTS todo (
-        session_id TEXT NOT NULL,
-        position INTEGER NOT NULL,
-        task_id TEXT,
-        content TEXT NOT NULL,
-        status TEXT NOT NULL,
-        priority TEXT NOT NULL,
-        updated_at INTEGER NOT NULL,
-        PRIMARY KEY (session_id, position)
-      )
-    `)
-    if (!hasColumn(this.db, "todo", "task_id")) {
-      this.db.exec("ALTER TABLE todo ADD COLUMN task_id TEXT")
-    }
-    this.db.exec(`
-      CREATE TABLE IF NOT EXISTS pending_permission (
-        id TEXT NOT NULL,
-        session_id TEXT NOT NULL,
-        tool TEXT NOT NULL,
-        patterns_json TEXT NOT NULL,
-        metadata_json TEXT NOT NULL,
-        always_json TEXT NOT NULL,
-        options_json TEXT,
-        broker_request_json TEXT,
-        broker_upstream_session_id TEXT,
-        broker_start_json TEXT,
-        broker_answer_json TEXT,
-        broker_automatic INTEGER,
-        status TEXT NOT NULL,
-        created_at INTEGER NOT NULL,
-        updated_at INTEGER NOT NULL,
-        PRIMARY KEY (session_id, id)
-      )
-    `)
-    if (!hasColumn(this.db, "pending_permission", "options_json")) {
-      this.db.exec("ALTER TABLE pending_permission ADD COLUMN options_json TEXT")
-    }
-    this.db.exec(`
-      CREATE TABLE IF NOT EXISTS pending_question (
-        id TEXT NOT NULL,
-        session_id TEXT NOT NULL,
-        questions_json TEXT NOT NULL,
-        broker_request_json TEXT,
-        broker_upstream_session_id TEXT,
-        broker_start_json TEXT,
-        broker_answer_json TEXT,
-        broker_automatic INTEGER,
-        status TEXT NOT NULL,
-        created_at INTEGER NOT NULL,
-        updated_at INTEGER NOT NULL,
-        PRIMARY KEY (session_id, id)
-      )
-    `)
-    this.db.exec(`
-      CREATE TABLE IF NOT EXISTS journal_checkpoint (
-        session_id TEXT PRIMARY KEY,
-        last_seq INTEGER NOT NULL,
-        updated_at INTEGER NOT NULL
-      )
-    `)
-    this.db.exec(`
-      CREATE TABLE IF NOT EXISTS deleted_session (
-        session_id TEXT PRIMARY KEY,
-        deleted_at INTEGER NOT NULL
-      )
-    `)
-    this.db.exec(`
-      CREATE TABLE IF NOT EXISTS workspace_worktree (
-        session_id TEXT PRIMARY KEY,
-        workspace_id TEXT NOT NULL,
-        branch TEXT NOT NULL,
-        base_commit TEXT NOT NULL,
-        path TEXT NOT NULL,
-        state TEXT NOT NULL,
-        created_at INTEGER NOT NULL,
-        updated_at INTEGER NOT NULL,
-        last_activity_at INTEGER NOT NULL
-      )
-    `)
-    this.db.exec(`
-      CREATE INDEX IF NOT EXISTS workspace_worktree_workspace_activity_idx
-      ON workspace_worktree (workspace_id, last_activity_at DESC)
-    `)
-    // Migration: add archived_at column for existing databases
-    try {
-      this.db.exec("ALTER TABLE session ADD COLUMN archived_at INTEGER")
-    } catch {
-      // column already exists
-    }
-    const hasTitleSource = this.db.prepare<{ name: string }>("PRAGMA table_info(session)").all().some(column => column.name === "title_source")
-    if (!hasTitleSource) {
-      this.transaction(() => {
-        this.db.exec("ALTER TABLE session ADD COLUMN title_source TEXT")
-        this.backfillTitleSources()
-      })
-    }
-    for (const sql of [
-      "ALTER TABLE session ADD COLUMN harness_id TEXT",
-      "ALTER TABLE session ADD COLUMN harness_access TEXT",
-      "ALTER TABLE session ADD COLUMN harness_binary TEXT",
-      "ALTER TABLE session ADD COLUMN harness_transport TEXT",
-      "ALTER TABLE session ADD COLUMN harness_url TEXT",
-      "ALTER TABLE session ADD COLUMN harness_headers_json TEXT",
-      "ALTER TABLE session ADD COLUMN process_key TEXT",
-      "ALTER TABLE session ADD COLUMN model_provider_id TEXT",
-      "ALTER TABLE session ADD COLUMN model_id TEXT",
-      "ALTER TABLE session ADD COLUMN variant TEXT",
-      "ALTER TABLE session ADD COLUMN agent TEXT",
-      "ALTER TABLE session ADD COLUMN instructions TEXT",
-      "ALTER TABLE session ADD COLUMN group_json TEXT",
-      "ALTER TABLE session ADD COLUMN handoff_json TEXT",
-      "ALTER TABLE session ADD COLUMN goal_json TEXT",
-      "ALTER TABLE session ADD COLUMN commands_json TEXT",
-      "ALTER TABLE session ADD COLUMN permission_mode TEXT",
-      "ALTER TABLE session ADD COLUMN permission_ceiling TEXT",
-      "ALTER TABLE session ADD COLUMN permission_state_json TEXT",
-      // Existing rows stay null: a session whose last human turn predates this column
-      // reads as "not recently spoken to", which is what a long-dormant session is.
-      "ALTER TABLE session ADD COLUMN last_human_turn_at INTEGER",
-    ]) {
-      try {
-        this.db.exec(sql)
-      } catch {
-        // column already exists
-      }
-    }
-  }
-
-  private migrateRecoveryOperations() {
-    const present = (name: string) =>
-      !!this.db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?").get(name)
-    if (present("recovery_operation") && present("recovery_operation_caller")) return
-    if (this.hadDatabaseFile) this.snapshotBeforeRecoveryMigration()
-    this.db.exec(`
-      CREATE TABLE IF NOT EXISTS recovery_operation (
-        operation_id TEXT PRIMARY KEY,
-        scope_key TEXT NOT NULL,
-        caller_id TEXT NOT NULL,
-        request_id TEXT NOT NULL,
-        session_id TEXT,
-        action TEXT NOT NULL,
-        state TEXT NOT NULL,
-        cleanup_fact TEXT NOT NULL,
-        persistence_fact TEXT NOT NULL,
-        created_at INTEGER NOT NULL,
-        updated_at INTEGER NOT NULL,
-        payload_json TEXT NOT NULL
-      )
-    `)
-    // The uniqueness that makes a repeated request id idempotent. It is an
-    // index rather than an application check because two RuntimeStore handles
-    // on one root are two connections: only SQLite can decide which insert won.
-    this.db.exec(`
-      CREATE UNIQUE INDEX IF NOT EXISTS recovery_operation_request_idx
-      ON recovery_operation (scope_key, caller_id, request_id)
-    `)
-    this.db.exec(`
-      CREATE INDEX IF NOT EXISTS recovery_operation_session_idx
-      ON recovery_operation (session_id, updated_at DESC)
-    `)
-    // Who may read a receipt: its creator, plus every caller that coalesced
-    // onto it. Separate from `recovery_operation.caller_id`, which is one third
-    // of the claim key and must stay the single caller that won the insert.
-    this.db.exec(`
-      CREATE TABLE IF NOT EXISTS recovery_operation_caller (
-        operation_id TEXT NOT NULL,
-        caller_id TEXT NOT NULL,
-        PRIMARY KEY (operation_id, caller_id)
-      )
-    `)
-  }
-
-  /**
-   * Copy the database aside before the first schema write that recovery needs.
-   * A WAL file holds committed frames the main file does not, so the copy is a
-   * consistent snapshot only once the WAL has been folded in and truncated;
-   * another connection reading or writing blocks that, and a copy taken anyway
-   * would be a backup in name only. The `-wal`/`-shm` companions are copied
-   * too, because a restore replaces the set the reopened database expects.
-   */
-  private snapshotBeforeRecoveryMigration() {
-    // A boot must not wait out someone else's transaction to find out it
-    // cannot snapshot; the owner is told to close them instead.
-    this.db.exec("PRAGMA busy_timeout = 1000")
-    let checkpoint: { busy: number } | null | undefined
-    try {
-      checkpoint = this.db.prepare<{ busy: number }>("PRAGMA wal_checkpoint(TRUNCATE)").get()
-    } catch (error) {
-      throw new RuntimeStoreMigrationBlockedError(this.root, `WAL checkpoint failed (${String(error)})`)
-    } finally {
-      this.db.exec("PRAGMA busy_timeout = 5000")
-    }
-    if (!checkpoint || checkpoint.busy !== 0) {
-      throw new RuntimeStoreMigrationBlockedError(this.root, "another connection holds the database open")
-    }
-    const stamp = `${this.databaseFile}.pre-recovery-${Date.now()}.bak`
-    const written = [stamp]
-    try {
-      fs.copyFileSync(this.databaseFile, stamp)
-      for (const suffix of ["-wal", "-shm"]) {
-        if (!fs.existsSync(`${this.databaseFile}${suffix}`)) continue
-        fs.copyFileSync(`${this.databaseFile}${suffix}`, `${stamp}${suffix}`)
-        written.push(`${stamp}${suffix}`)
-      }
-      assertReadableDatabase(stamp)
-    } catch (error) {
-      // A half-written copy is worse than none: a restore would reach for it.
-      for (const file of written) fs.rmSync(file, { force: true })
-      if (error instanceof RuntimeStoreMigrationBlockedError) throw error
-      throw new RuntimeStoreMigrationBlockedError(this.root, `snapshot could not be written (${String(error)})`)
-    }
-  }
-
-  private backfillTitleSources() {
-    const titles = new Map<string, { title?: string | null; titleSource?: AgentSessionTitleSource }>()
-    const rows = this.db.prepare<RuntimeJournalRow>("SELECT * FROM runtime_journal WHERE type IN ('session.bind', 'session.update', 'session.updated', 'session.delete') ORDER BY session_id, seq").all()
-    for (const raw of rows) {
-      const row = this.parseJournalRow(raw)
-      if (!row) continue
-      const previous = titles.get(row.sessionId)
-      if (row.kind === "control") {
-        if (row.control.type === "session.delete") titles.delete(row.sessionId)
-        if (row.control.type === "session.bind") titles.set(row.sessionId, { title: row.control.title ?? previous?.title, titleSource: boundSessionTitleSource(row.control.title, previous) })
-        if (row.control.type === "session.update" && row.control.updates.title !== undefined) titles.set(row.sessionId, { title: row.control.updates.title, titleSource: "user" })
-      } else if (row.payload.type === "session.updated") {
-        const info = row.payload.properties.info
-        if (info.title !== undefined && acceptsSessionTitle(info.titleSource, previous?.titleSource)) titles.set(row.sessionId, { title: info.title, titleSource: info.titleSource ?? "prompt" })
-      }
-    }
-    for (const [id, value] of titles) this.db.prepare("UPDATE session SET title = ?, title_source = ? WHERE id = ?").run(value.title ?? null, value.titleSource ?? null, id)
   }
 
   private hydrateSubagentAdmission() {
@@ -1467,14 +758,15 @@ export class RuntimeStore {
     const child = this.getSession(childSessionId) as { directory?: string; parentID?: string } | null
     if (child?.parentID === parentSessionId) return
     const parent = this.getSession(parentSessionId) as { directory?: string } | null
+    const owner = this.sessionOwner(parentSessionId)
+    if (!owner) throw new Error(`Session ${parentSessionId} has no row to own child ${childSessionId}`)
     this.bindSession({
       sessionId: childSessionId,
       directory: child?.directory ?? parent?.directory ?? "",
       agentSessionId: this.getAgentSessionId(childSessionId) ?? childSessionId,
+      owner,
       parentSessionId,
     })
-    const owner = this.sessionOwner(parentSessionId)
-    if (owner) this.recordSessionOwner(childSessionId, owner)
   }
 
   private admitObservation(input: {
@@ -1483,74 +775,68 @@ export class RuntimeStore {
     allocateKey: () => string
     allocateChildSessionId?: () => string
   }): AdmittedSubagentObservation {
-    this.db.exec("BEGIN IMMEDIATE")
     try {
-      // Another host instance may have admitted an observation since this
-      // process last touched its in-memory index. Refresh only after taking
-      // SQLite's write lock so key association and revision assignment share
-      // the same serialization point as the durable insert.
-      this.hydrateSubagentAdmission()
-      const admitted = this.subagentAdmission.admit(input)
-      const existing = this.db
-        .prepare<{
-        event_json: string
-        published: number
-      }>(
-          `
-        SELECT event_json, published
-        FROM session_subagent_observation
-        WHERE parent_session_id = ? AND observation_id = ?
-      `,
-        )
-        .get(input.parentSessionId, input.observation.observationId)
-      if (existing) {
-        this.db.exec("COMMIT")
-        return { ...admitted, published: !!existing.published }
-      }
-      this.persistSubagentEvent(input.parentSessionId, admitted.event)
-      for (const correlationKey of subagentCorrelationKeys(input.observation)) {
+      return this.db.transaction(() => {
+        // Another host instance may have admitted an observation since this
+        // process last touched its in-memory index. Refresh only after taking
+        // SQLite's write lock so key association and revision assignment share
+        // the same serialization point as the durable insert.
+        this.hydrateSubagentAdmission()
+        const admitted = this.subagentAdmission.admit(input)
+        const existing = this.db
+          .prepare<{
+          event_json: string
+          published: number
+        }>(
+            `
+          SELECT event_json, published
+          FROM session_subagent_observation
+          WHERE parent_session_id = ? AND observation_id = ?
+        `,
+          )
+          .get(input.parentSessionId, input.observation.observationId)
+        if (existing) return { ...admitted, published: !!existing.published }
+        this.persistSubagentEvent(input.parentSessionId, admitted.event)
+        for (const correlationKey of subagentCorrelationKeys(input.observation)) {
+          this.db
+            .prepare(
+              `
+            INSERT OR IGNORE INTO session_subagent_correlation (
+              parent_session_id, correlation_key, subagent_key
+            ) VALUES (?, ?, ?)
+          `,
+            )
+            .run(input.parentSessionId, correlationKey, admitted.event.subagentKey)
+        }
         this.db
           .prepare(
             `
-          INSERT OR IGNORE INTO session_subagent_correlation (
-            parent_session_id, correlation_key, subagent_key
-          ) VALUES (?, ?, ?)
+          INSERT INTO session_subagent_observation (
+            parent_session_id, observation_id, subagent_key, revision,
+            observation_json, event_json, published, created_at
+          ) VALUES (?, ?, ?, ?, ?, ?, 0, ?)
         `,
           )
-          .run(input.parentSessionId, correlationKey, admitted.event.subagentKey)
-      }
-      this.db
-        .prepare(
-          `
-        INSERT INTO session_subagent_observation (
-          parent_session_id, observation_id, subagent_key, revision,
-          observation_json, event_json, published, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, 0, ?)
-      `,
-        )
-        .run(
-          input.parentSessionId,
-          input.observation.observationId,
-          admitted.event.subagentKey,
-          admitted.event.revision,
-          // Persist the EFFECTIVE observation — with the child session the
-          // admission layer resolved or allocated stamped in — so hydrate's
-          // replay rebuilds the same child binding this admit produced. The
-          // raw input may lack the child (admission allocated it), and a
-          // replay without it would forget which row owns the child session.
-          JSON.stringify({
-            ...input.observation,
-            ...(admitted.event.childSessionId ? { childSessionId: admitted.event.childSessionId } : {}),
-          }),
-          JSON.stringify(admitted.event),
-          Date.now(),
-        )
-      this.db.exec("COMMIT")
-      return admitted
+          .run(
+            input.parentSessionId,
+            input.observation.observationId,
+            admitted.event.subagentKey,
+            admitted.event.revision,
+            // Persist the EFFECTIVE observation — with the child session the
+            // admission layer resolved or allocated stamped in — so hydrate's
+            // replay rebuilds the same child binding this admit produced. The
+            // raw input may lack the child (admission allocated it), and a
+            // replay without it would forget which row owns the child session.
+            JSON.stringify({
+              ...input.observation,
+              ...(admitted.event.childSessionId ? { childSessionId: admitted.event.childSessionId } : {}),
+            }),
+            JSON.stringify(admitted.event),
+            Date.now(),
+          )
+        return admitted
+      })
     } catch (error) {
-      try {
-        this.db.exec("ROLLBACK")
-      } catch {}
       this.hydrateSubagentAdmission()
       throw error
     }
@@ -1925,7 +1211,7 @@ export class RuntimeStore {
     const before = this.failedProjections.get(sessionId)
     this.failedProjections.delete(sessionId)
     const to = this.getSessionMaxSeq(sessionId)
-    this.transaction(() => {
+    this.db.transaction(() => {
       const seq = this.next(sessionId)
       this.insertRuntimeJournal(
         { seq, ts: Date.now(), sessionId, kind: "control", control: { type: "projection.reset_requested", reason } },
@@ -2291,26 +1577,13 @@ export class RuntimeStore {
     return !!this.db.prepare("SELECT 1 FROM deleted_session WHERE session_id = ?").get(sessionId)
   }
 
-  private transaction<T>(run: () => T, mode?: "immediate"): T {
-    this.db.exec(mode === "immediate" ? "BEGIN IMMEDIATE" : "BEGIN")
-    try {
-      const result = run()
-      this.db.exec("COMMIT")
-      return result
-    } catch (err) {
-      try {
-        this.db.exec("ROLLBACK")
-      } catch {}
-      throw err
-    }
-  }
-
-  brokerDatabase(): SqliteDatabase {
+  /** The store's SQLite, for the ports that keep their own rows beside the store's: broker requests and launch ownership. */
+  database(): SqliteDatabase {
     return this.db
   }
 
   brokerTransaction<T>(run: () => T): T {
-    return this.transaction(run, "immediate")
+    return this.db.transaction(run)
   }
 
   brokerAppendInside(sessionId: string, payload: AgentPresentationEvent): void {
@@ -2415,7 +1688,7 @@ export class RuntimeStore {
         )
     }
     if (options.insideTransaction) insert()
-    else this.transaction(insert)
+    else this.db.transaction(insert)
     return { ...row, seq }
   }
 
@@ -2428,10 +1701,10 @@ export class RuntimeStore {
   }
 
   /**
-   * Journal, apply and checkpoint one row while the caller already holds the
-   * transaction. `commit` opens a transaction per row and `transaction` is not
-   * reentrant, so a caller that needs several rows to land together builds
-   * them from here instead.
+   * Journal, apply and checkpoint one row inside the caller's transaction, for
+   * rows that must land together. `commit` journals its row on its own and
+   * gates the session when projection fails; inside a transaction that the caller
+   * rolls back, that gate would name a row that no longer exists.
    */
   private commitInside(row: Row, fencingToken: number | undefined) {
     this.assertFencingToken(row.sessionId, fencingToken)
@@ -2505,7 +1778,7 @@ export class RuntimeStore {
       return journaled
     }
     let journaled!: Row
-    this.transaction(() => {
+    this.db.transaction(() => {
       this.assertFencingToken(row.sessionId, fence.fencingToken, fence.advance)
       journaled = this.insertRuntimeJournal(row, this.next(row.sessionId), { insideTransaction: true })
       if (deferred) return
@@ -2637,9 +1910,12 @@ export class RuntimeStore {
     status?: string
     recoveryError?: string | null
     parentSessionId?: string
+    /** Only a bind carries it, so only a bind creates the row; the first owner written stays. */
+    owner?: TurnActor
   }) {
     const prev = this.db
       .prepare<{
+      owner_json: string
       created_at: number
       parent_id: string | null
       title: string | null
@@ -2664,6 +1940,7 @@ export class RuntimeStore {
     }>(
         `
         SELECT
+          owner_json,
           created_at,
           parent_id,
           title,
@@ -2690,11 +1967,14 @@ export class RuntimeStore {
       `,
       )
       .get(input.id)
+    const owner = prev?.owner_json ?? (input.owner && JSON.stringify(input.owner))
+    if (!owner) return
     this.db
       .prepare(
         `INSERT INTO session (
         id,
         parent_id,
+        owner_json,
         directory,
         title,
         agent_session_id,
@@ -2717,7 +1997,7 @@ export class RuntimeStore {
         last_human_turn_at,
         status,
         recovery_error
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
         parent_id = COALESCE(excluded.parent_id, session.parent_id),
         directory = excluded.directory,
@@ -2749,6 +2029,7 @@ export class RuntimeStore {
       .run(
         input.id,
         input.parentSessionId ?? prev?.parent_id ?? null,
+        owner,
         input.directory,
         input.title ?? prev?.title ?? null,
         input.agentSessionId ?? prev?.agent_session_id ?? null,
@@ -2793,7 +2074,6 @@ export class RuntimeStore {
     this.db.prepare("DELETE FROM message WHERE session_id = ?").run(id)
     this.db.prepare("DELETE FROM session_execution_binding WHERE session_id = ?").run(id)
     this.db.prepare("DELETE FROM session_map WHERE session_id = ?").run(id)
-    this.db.prepare("DELETE FROM session_owner WHERE session_id = ?").run(id)
     this.db.prepare("DELETE FROM session WHERE id = ?").run(id)
   }
 
@@ -2841,6 +2121,7 @@ export class RuntimeStore {
         title: control.title,
         agentSessionId: control.agentSessionId,
         processKey: control.ownerKey !== undefined ? control.ownerKey : control.processKey,
+        owner: control.owner,
         parentSessionId: control.parentSessionId,
         createdAt: control.createdAt ?? existing.created ?? row.ts,
         updatedAt: control.updatedAt ?? existing.updated ?? row.ts,
@@ -2927,7 +2208,7 @@ export class RuntimeStore {
       return
     }
     if (control.type === "config.update") {
-      this.applyConfigUpdate(row.sessionId, control.patch, row.ts, control.directory)
+      this.applyConfigUpdate(row.sessionId, control.patch, row.ts)
       return
     }
     if (control.type === "session.update") {
@@ -3194,7 +2475,7 @@ export class RuntimeStore {
 
   private project(row: Row) {
     try {
-      this.transaction(() => {
+      this.db.transaction(() => {
         this.apply(row)
         this.checkpoint(row)
       })
@@ -3214,11 +2495,15 @@ export class RuntimeStore {
     upstreamSessionId?: string
     title?: string
     agentSessionId: string
+    /** Required to create the session; a rebind keeps the owner its row already has. */
+    owner?: TurnActor
     ownerKey?: string | null
     parentSessionId?: string
     createdAt?: number
     updatedAt?: number
   }) {
+    const owner = input.owner ?? this.sessionOwner(input.sessionId)
+    if (!owner) throw new Error(`Session ${input.sessionId} cannot be bound without an owner`)
     const ts = input.createdAt ?? Date.now()
     const row: Row = {
       seq: this.next(input.sessionId),
@@ -3234,6 +2519,7 @@ export class RuntimeStore {
         ...(input.upstreamSessionId ? { upstreamSessionId: input.upstreamSessionId } : {}),
         title: input.title,
         agentSessionId: input.agentSessionId,
+        owner,
         ...(input.ownerKey !== undefined ? { ownerKey: input.ownerKey } : {}),
         ...(input.parentSessionId ? { parentSessionId: input.parentSessionId } : {}),
         createdAt: ts,
@@ -3515,7 +2801,7 @@ export class RuntimeStore {
     this.assertProjectionCurrent(input.sessionId)
     this.settleDeltas(input.sessionId)
     if (this.deleted(input.sessionId)) throw new Error(`Session ${input.sessionId} was deleted`)
-    return this.transaction(() => {
+    return this.db.transaction(() => {
       // The absent case is spelled out: comparing two absent leases would pass
       // a writer holding nothing over a session that has granted nothing, which
       // is exactly the unfenced terminal the required lease removes.
@@ -3596,7 +2882,7 @@ export class RuntimeStore {
         },
       }, input.fencingToken)
       return { events }
-    }, "immediate")
+    })
   }
 
   /**
@@ -4003,14 +3289,8 @@ export class RuntimeStore {
     }
   }
 
-  recordSessionOwner(sessionId: string, owner: TurnActor) {
-    this.db
-      .prepare("INSERT INTO session_owner (session_id, owner_json) VALUES (?, ?) ON CONFLICT(session_id) DO NOTHING")
-      .run(sessionId, JSON.stringify(owner))
-  }
-
   sessionOwner(sessionId: string): TurnActor | undefined {
-    const row = this.db.prepare<{ owner_json: string }>("SELECT owner_json FROM session_owner WHERE session_id = ?").get(sessionId)
+    const row = this.db.prepare<{ owner_json: string }>("SELECT owner_json FROM session WHERE id = ?").get(sessionId)
     if (!row) return undefined
     const owner: unknown = JSON.parse(row.owner_json)
     if (!isRecord(owner)) throw new Error(`Session ${sessionId} has an unreadable owner`)
@@ -4251,7 +3531,7 @@ export class RuntimeStore {
     // whether this means engine-owned history or an authoritative empty store.
     if (!projection) return undefined
     if ("view" in page && page.view !== undefined) {
-      const endOrd = page.before === undefined ? undefined : decodeMessagePageCursor(sessionId, page.before)
+      const endOrd = page.before === undefined ? undefined : decodeMessagePageCursor(MESSAGE_PAGE_CURSOR_PREFIX, sessionId, page.before)
       const boundary = this.db
         .prepare<Pick<MessageProjectionRow, "id" | "ord">>(
           `
@@ -4335,7 +3615,7 @@ export class RuntimeStore {
           .get(sessionId, boundary.ord, final.ord)
         return {
           messages: this.hydrateSurfaceMessages(sessionId, selected),
-          ...(older || intermediate ? { nextCursor: encodeMessagePageCursor(sessionId, final.ord) } : {}),
+          ...(older || intermediate ? { nextCursor: encodeMessagePageCursor(MESSAGE_PAGE_CURSOR_PREFIX, sessionId, final.ord) } : {}),
         }
       }
       const turn = this.db
@@ -4356,13 +3636,13 @@ export class RuntimeStore {
         .get(sessionId, boundary.ord)
       return {
         messages: this.hydrateMessages(sessionId, turn),
-        ...(older ? { nextCursor: encodeMessagePageCursor(sessionId, boundary.ord) } : {}),
+        ...(older ? { nextCursor: encodeMessagePageCursor(MESSAGE_PAGE_CURSOR_PREFIX, sessionId, boundary.ord) } : {}),
       }
     }
     if (!Number.isSafeInteger(page.limit) || page.limit < 1 || page.limit > AGENT_MESSAGE_PAGE_LIMIT) {
       throw new AgentMessagePageError(400, `Message page limit must be between 1 and ${AGENT_MESSAGE_PAGE_LIMIT}`)
     }
-    const beforeOrd = page.before === undefined ? undefined : decodeMessagePageCursor(sessionId, page.before)
+    const beforeOrd = page.before === undefined ? undefined : decodeMessagePageCursor(MESSAGE_PAGE_CURSOR_PREFIX, sessionId, page.before)
     const params: unknown[] = [sessionId]
     if (beforeOrd !== undefined) params.push(beforeOrd)
     params.push(page.limit + 1)
@@ -4381,7 +3661,7 @@ export class RuntimeStore {
     const selected = rows.slice(0, page.limit).reverse()
     return {
       messages: this.hydrateMessages(sessionId, selected),
-      ...(hasMore && selected[0] ? { nextCursor: encodeMessagePageCursor(sessionId, selected[0].ord) } : {}),
+      ...(hasMore && selected[0] ? { nextCursor: encodeMessagePageCursor(MESSAGE_PAGE_CURSOR_PREFIX, sessionId, selected[0].ord) } : {}),
     }
   }
 
@@ -4529,21 +3809,6 @@ export class RuntimeStore {
 
   releaseTurnLease(sessionId: string, leaseId: string) {
     this.db.prepare(`DELETE FROM session_turn_lease WHERE session_id = ? AND lease_id = ?`).run(sessionId, leaseId)
-  }
-
-  /**
-   * The durable owner a launch is recorded against, stamped with the scope and
-   * generation making it. One instance per owner: every launch of one runtime
-   * has to agree about who owns it, and two views would let a survivor be
-   * owned twice.
-   */
-  launchOwnership(owner: LaunchOwnershipOwner) {
-    const key = `${owner.scope.kind === "workspace" ? owner.scope.workspaceId : ""}:${owner.ownerGeneration}`
-    const held = this.launchOwnershipStores.get(key)
-    if (held) return held
-    const store = sqliteLaunchOwnership(this.db, owner)
-    this.launchOwnershipStores.set(key, store)
-    return store
   }
 
   /** Who may currently write for this session, as the durable lease row says. */
@@ -4728,7 +3993,7 @@ export class RuntimeStore {
    * nobody has discharged.
    */
   private pruneRecoveryOperations() {
-    this.transaction(() => {
+    this.db.transaction(() => {
       const expired = `
         SELECT operation_id FROM recovery_operation
         WHERE state IN ('succeeded', 'failed')
@@ -4750,7 +4015,7 @@ export class RuntimeStore {
   runtimeSecret(name: string) {
     const existing = this.db.prepare<{ value: string }>("SELECT value FROM runtime_secret WHERE name = ?").get(name)
     if (existing) return existing.value
-    const value = randomBytes(32).toString("hex")
+    const value = base64UrlEncode(crypto.getRandomValues(new Uint8Array(32)))
     this.db.prepare("INSERT INTO runtime_secret(name, value, created_at) VALUES (?, ?, ?)").run(name, value, Date.now())
     return value
   }
@@ -4879,10 +4144,9 @@ export class RuntimeStore {
     }
   }
 
-  private applyConfigUpdate(id: string, patch: SessionConfigUpdate, ts = Date.now(), directory?: string) {
+  private applyConfigUpdate(id: string, patch: SessionConfigUpdate, ts: number) {
     const prev = this.db
       .prepare<{
-      directory: string | null
       harness_id: string | null
       harness_access: string | null
       harness_binary: string | null
@@ -4904,7 +4168,6 @@ export class RuntimeStore {
     }>(
         `
 	        SELECT
-	          directory,
 	          harness_id,
 	          harness_access,
 	          harness_binary,
@@ -4928,27 +4191,9 @@ export class RuntimeStore {
       `,
       )
       .get(id)
-    const prevHarness = prev ? sessionHarness(prev) : undefined
+    if (!prev) return
+    const prevHarness = sessionHarness(prev)
     if (!prevHarness && !patch.harness) return
-    if (!prev) {
-      this.upsertSession({
-        id,
-        directory: directory ?? "",
-        harness: patch.harness,
-        model: patch.model ?? undefined,
-        variant: patch.variant ?? null,
-        agent: patch.agent ?? null,
-        instructions: patch.instructions ?? null,
-        group: patch.group ?? null,
-        handoff: patch.handoff,
-        createdAt: ts,
-        updatedAt: ts,
-      })
-      if (patch.permissionCeiling !== undefined || patch.permissionMode !== undefined || patch.permissionState !== undefined) {
-        this.applyConfigUpdate(id, { permissionCeiling: patch.permissionCeiling, permissionMode: patch.permissionMode, permissionState: patch.permissionState }, ts, directory)
-      }
-      return
-    }
     const nextHarness = patch.harness ?? prevHarness
     const sameHarness = nextHarness?.id === prevHarness?.id && nextHarness?.access === prevHarness?.access
     if (prevHarness && !sameHarness) {
@@ -5007,7 +4252,7 @@ export class RuntimeStore {
   setGoal(id: string, goal: RuntimeGoalSnapshot | null): AgentPresentationEvent[] {
     this.assertProjectionCurrent(id)
     this.settleDeltas(id)
-    return this.transaction(() => {
+    return this.db.transaction(() => {
       if (!this.getSession(id) || JSON.stringify(this.getGoal(id)) === JSON.stringify(goal)) return []
       const payload: AgentPresentationEvent = goal
         ? { type: "goal.updated", properties: { sessionID: id, goal } }
@@ -5018,10 +4263,10 @@ export class RuntimeStore {
       }, undefined)
       this.brokerAppendInside(id, payload)
       return [payload]
-    }, "immediate")
+    })
   }
 
-  updateSessionConfig(id: string, update: SessionConfigUpdate, input: { directory?: string } = {}) {
+  updateSessionConfig(id: string, update: SessionConfigUpdate) {
     const row: Row = {
       seq: this.next(id),
       ts: Date.now(),
@@ -5030,7 +4275,6 @@ export class RuntimeStore {
       control: {
         type: "config.update",
         patch: update,
-        ...(input.directory ? { directory: input.directory } : {}),
       },
     }
     this.commit(row)

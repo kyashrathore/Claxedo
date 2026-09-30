@@ -4,7 +4,7 @@ import fs from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
 import { managedWorkspaceSessionAccessPolicy, type SessionAccessPolicy } from "../session-access-policy"
-import { RuntimeStore } from "../store"
+import { openRuntimeStore } from "../store-file"
 import { registerWorkspaceDirectory, unregisterWorkspaceDirectory, withWorkspaceTarget } from "../target"
 import type { RelayHostAuthContext } from "../workspace-host-service-auth"
 import { WorkspaceWorktreeManager } from "../worktree"
@@ -139,7 +139,7 @@ async function fixture(options: { worktreeRoot?: (source: string) => string } = 
   await git(["add", "README.md"], source)
   await git(["commit", "-m", "base"], source)
 
-  const store = new RuntimeStore(path.join(root, "state"))
+  const store = openRuntimeStore(path.join(root, "state"))
   const manager = new WorkspaceWorktreeManager({
     workspaceId: WORKSPACE_ID,
     sourceDirectory: source,

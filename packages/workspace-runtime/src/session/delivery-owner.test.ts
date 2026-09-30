@@ -6,7 +6,8 @@ import { SessionRoutes } from "../routes/session"
 import type { AgentRuntime, AgentRuntimeTurnStartInput } from "../host/runtime"
 import type { SessionHarness } from "@claxedo/agent-runtime-contract"
 import { managedWorkspaceSessionAccessPolicy, type SessionAccessPolicy } from "../session-access-policy"
-import { RuntimeStore } from "../store"
+import type { RuntimeStore } from "../store"
+import { openRuntimeStore } from "../store-file"
 import { workspaceRuntimeBus, type WorkspaceRuntimeEvent } from "../bus"
 import { createSessionDeliveryOwner, type SessionDeliveryStore } from "./delivery-owner"
 import { sessionIdle } from "../projection/presentation-events"
@@ -24,7 +25,7 @@ afterEach(async () => {
 })
 
 function store(root: string) {
-  const opened = new RuntimeStore(root)
+  const opened = openRuntimeStore(root)
   stores.push(opened)
   return opened
 }

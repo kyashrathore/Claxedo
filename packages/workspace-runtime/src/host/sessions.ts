@@ -230,9 +230,8 @@ export function createSessionLifecycle(input: SessionLifecycleInput) {
         ...(create.permissionCeiling ? { permissionCeiling: create.permissionCeiling } : {}),
         ...retainedFields(create),
       }
-      store.recordSessionOwner(sessionId, owner)
       store.bindSession({
-        sessionId, workspaceId: create.workspaceId, directory,
+        sessionId, workspaceId: create.workspaceId, directory, owner,
         connectionId: connectionIdForHarness(create.harness), upstreamSessionId: sessionId, agentSessionId: sessionId,
         ...(create.title ? { title: create.title } : {}),
         ...(create.parentID ? { parentSessionId: create.parentID } : {}),
@@ -307,9 +306,8 @@ export function createSessionLifecycle(input: SessionLifecycleInput) {
       const config = store.getSessionConfig(sessionId)
       if (!config) throw new Error(`Session ${sessionId} has no runtime config`)
       const binding = attached.session.binding
-      store.recordSessionOwner(id, attached.owner)
       store.bindSession({
-        sessionId: id, workspaceId: binding.workspaceId, directory: binding.directory,
+        sessionId: id, workspaceId: binding.workspaceId, directory: binding.directory, owner: attached.owner,
         connectionId: binding.connectionId, upstreamSessionId, agentSessionId: upstreamSessionId,
       })
       store.updateSessionConfig(id, config)

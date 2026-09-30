@@ -2,7 +2,8 @@ import type { AgentPresentationEvent } from "@claxedo/agent-runtime-contract"
 import type { AgentRuntimeEvent } from "@claxedo/agent-runtime-contract"
 import type { PendingRequest, RequestAnswer, RequestScope } from "@claxedo/harness/contract"
 import type { BrokerEvent } from "@claxedo/harness/broker"
-import type { RuntimeStore, SqliteDatabase } from "../store"
+import type { SqliteDatabase } from "../sqlite/database"
+import type { RuntimeStore } from "../store"
 import type { BrokerEventDelivery } from "./delivery"
 import { parseStoredAnswer, parseStoredRequest, parseStoredStart } from "./stored-values"
 
@@ -79,7 +80,7 @@ export class BrokerRequestRows {
   constructor(private readonly store: RuntimeStore, private readonly delivery: BrokerEventDelivery) {}
 
   readAnswer(sessionId: string, requestId: string): RequestAnswer | undefined {
-    const row = readAnswerRow(this.store.brokerDatabase(), sessionId, requestId)
+    const row = readAnswerRow(this.store.database(), sessionId, requestId)
     return row?.broker_answer_json ? parseStoredAnswer(row.broker_answer_json) : undefined
   }
 
@@ -87,7 +88,7 @@ export class BrokerRequestRows {
     const condition = "sessionId" in scope ? "p.session_id = ?" : "COALESCE(s.directory, start.directory) = ?"
     const value = "sessionId" in scope ? scope.sessionId : scope.directory
     return ["pending_permission", "pending_question"].flatMap((name) =>
-      this.store.brokerDatabase().prepare<PendingRow>(`
+      this.store.database().prepare<PendingRow>(`
         SELECT p.session_id, p.broker_request_json, p.broker_upstream_session_id,
           p.broker_start_json, p.created_at
         FROM ${name} p
@@ -122,7 +123,7 @@ export class BrokerRequestRows {
     const published = this.store.brokerTransaction(() => {
       if (this.readAnswer(pending.sessionId, pending.request.requestId)) return false
       this.store.brokerAppendInside(pending.sessionId, event)
-      this.store.brokerDatabase().prepare(`
+      this.store.database().prepare(`
         UPDATE ${table(pending.request)}
         SET broker_request_json = ?, broker_upstream_session_id = ?, broker_start_json = ?, created_at = ?
         WHERE session_id = ? AND id = ?
@@ -140,7 +141,7 @@ export class BrokerRequestRows {
     pending: PendingRequest, answer: RequestAnswer, automatic: boolean, grantKey?: string,
   ): Promise<readonly AgentRuntimeEvent[]> {
     const published = this.store.brokerTransaction(() => {
-      const db = this.store.brokerDatabase()
+      const db = this.store.database()
       const prior = readAnswerRow(db, pending.sessionId, pending.request.requestId)
       if (prior?.broker_answer_json) return false
       const name = table(pending.request)

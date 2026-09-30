@@ -7,7 +7,8 @@ import { openAuthorityDb } from "@claxedo/server-core/authority/adapters/sqlite/
 import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import type { PrivateSessionRuntimePrincipal } from "@claxedo/server-core/platform/auth/private-session-authority"
 import { randomUUID } from "node:crypto"
-import { RuntimeStore } from "../../../workspace-runtime/src/store"
+import type { RuntimeStore } from "../../../workspace-runtime/src/store"
+import { openRuntimeStore } from "../../../workspace-runtime/src/store-file"
 import type { AgentRuntime } from "../../../workspace-runtime/src/host/runtime"
 import type { SessionRoutes } from "../../../workspace-runtime/src/routes/session"
 import { removeTestDataDir } from "./test-data-dir"
@@ -146,9 +147,9 @@ export function admitFinishedChild(store: RuntimeStore, subagentKey: string) {
  * recorded as the identity the wake is to run as, with the grant it presents.
  */
 export function seedFinishedChildStore(root: string, origin?: { actorId: string; orgId: string; grant?: string }) {
-  const store = new RuntimeStore(runtimeStoreRoot(root))
-  store.bindSession({ sessionId: PARENT, directory: DIRECTORY, agentSessionId: PARENT })
-  store.bindSession({ sessionId: CHILD, directory: DIRECTORY, agentSessionId: CHILD, parentSessionId: PARENT })
+  const store = openRuntimeStore(runtimeStoreRoot(root))
+  store.bindSession({ owner: { kind: "machine-owner" }, sessionId: PARENT, directory: DIRECTORY, agentSessionId: PARENT })
+  store.bindSession({ owner: { kind: "machine-owner" }, sessionId: CHILD, directory: DIRECTORY, agentSessionId: CHILD, parentSessionId: PARENT })
   store.admit({
     parentSessionId: PARENT,
     observation: {
@@ -179,7 +180,7 @@ export function seedFinishedChildStore(root: string, origin?: { actorId: string;
 
 /** The store as a restarted process finds it: reopened from disk, nothing carried over. */
 export function reopened(storeRoot: string) {
-  const store = new RuntimeStore(storeRoot)
+  const store = openRuntimeStore(storeRoot)
   lifecycle.closer(() => store.close())
   return store
 }

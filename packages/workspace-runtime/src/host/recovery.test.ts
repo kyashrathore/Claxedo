@@ -3,7 +3,8 @@ import { afterEach, describe, expect, test } from "bun:test"
 import { RECOVERY_OPERATION_RETENTION_MS, turnStopped } from "@claxedo/agent-runtime-contract"
 import type { AdapterCancelOutcome, AgentExecutionBinding, RecoveryOperation } from "@claxedo/agent-runtime-contract"
 import type { SessionBroker } from "@claxedo/harness/contract"
-import { RuntimeStore } from "../store"
+import { RuntimeStore, type RuntimeStoreDatabase } from "../store"
+import { openRuntimeStoreDatabase } from "../store-file"
 import {
   LOOPBACK_ORIGIN,
   MACHINE_OWNER,
@@ -34,9 +35,9 @@ const BUDGETS = { ackMs: 40, providerQueryMs: 40, gracefulCancelMs: 40, reconcil
 const opened: Array<{ store: RuntimeStore; root: string }> = []
 
 /** A store the test owns: opened in its own root, closed and removed after the test. */
-function openStore<T extends RuntimeStore>(Store: new (root: string) => T): T {
+function openStore<T extends RuntimeStore>(Store: new (database: RuntimeStoreDatabase) => T): T {
   const root = tempStoreRoot("host-recovery-")
-  const store = new Store(root)
+  const store = new Store(openRuntimeStoreDatabase(root))
   opened.push({ store, root })
   return store
 }
@@ -98,7 +99,7 @@ const origin = LOOPBACK_ORIGIN
 
 function owner(options: { store?: RuntimeStore } = {}) {
   const store = options.store ?? openStore(RuntimeStore)
-  store.bindSession({ sessionId: "ses", directory: "/repo", workspaceId: "ws", connectionId: "native:pi", upstreamSessionId: "ses", agentSessionId: "ses" })
+  store.bindSession({ owner: { kind: "machine-owner" }, sessionId: "ses", directory: "/repo", workspaceId: "ws", connectionId: "native:pi", upstreamSessionId: "ses", agentSessionId: "ses" })
   const admissions = createTurnAdmissions(store)
   const published: string[] = []
   const recovery = createRuntimeRecovery({
@@ -290,7 +291,7 @@ describe("a finalization the store refused", () => {
 describe("finalizing a turn this owner did not admit", () => {
   test("a capture with no generation cannot end a turn the runtime has since admitted", () => {
     const store = openStore(RuntimeStore)
-    store.bindSession({ sessionId: "ses", directory: "/repo", workspaceId: "ws", connectionId: "native:pi", upstreamSessionId: "ses", agentSessionId: "ses" })
+    store.bindSession({ owner: { kind: "machine-owner" }, sessionId: "ses", directory: "/repo", workspaceId: "ws", connectionId: "native:pi", upstreamSessionId: "ses", agentSessionId: "ses" })
     const admissions = createTurnAdmissions(store)
     const published: string[] = []
     const recovery = createRuntimeRecovery({

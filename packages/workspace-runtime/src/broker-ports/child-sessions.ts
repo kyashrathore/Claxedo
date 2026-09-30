@@ -8,7 +8,7 @@ type ChildRow = { assistant_message_id: string | null; created_at: number; statu
 export function bindChildCorrelation(
   store: RuntimeStore, parentSessionId: string, correlationKey: string, childSessionId: string,
 ): void {
-  const db = store.brokerDatabase()
+  const db = store.database()
   const child = db.prepare<{ subagent_key: string }>(`
     SELECT subagent_key FROM session_subagent
     WHERE parent_session_id = ? AND child_session_id = ?
@@ -29,7 +29,7 @@ export async function admitChildSession(
   store: RuntimeStore, parentSessionId: string, childSessionId: string,
   observation: SubagentObservation,
 ): Promise<ChildSessionRef> {
-  const db = store.brokerDatabase()
+  const db = store.database()
   const read = () => db.prepare<ChildRow>(`
     SELECT assistant_message_id, created_at, status FROM session_subagent
     WHERE parent_session_id = ? AND child_session_id = ?

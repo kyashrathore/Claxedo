@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test"
 import fs from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
-import { RuntimeStore } from "./store"
+import { openRuntimeStore } from "./store-file"
 import { assertTarget, withWorkspaceTarget } from "./target"
 import { WorkspaceWorktreeManager } from "./worktree"
 
@@ -30,7 +30,7 @@ async function fixture() {
   await fs.writeFile(path.join(source, "README.md"), "base\n")
   await git(["add", "README.md"], source)
   await git(["commit", "-m", "base"], source)
-  const store = new RuntimeStore(path.join(root, "state"))
+  const store = openRuntimeStore(path.join(root, "state"))
   const manager = new WorkspaceWorktreeManager({
     workspaceId: "workspace-1",
     sourceDirectory: source,

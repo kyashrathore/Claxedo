@@ -9,7 +9,8 @@ import {
   type LaunchOwnershipStore,
 } from "@claxedo/process-ownership/launch"
 import { isRecord } from "@claxedo/helpers/guards"
-import { openDatabase, type SqliteDatabase } from "../store"
+import type { SqliteDatabase } from "../sqlite/database"
+import { openSqliteDatabase } from "../sqlite/node"
 
 export const HARNESS_HOME_MAX_IDLE_MS = 30 * 24 * 60 * 60 * 1000
 
@@ -29,22 +30,13 @@ const defaults: HarnessHomeDependencies = {
 
 function withLedger<T>(root: string, operation: (db: SqliteDatabase) => T): T {
   mkdirSync(root, { recursive: true, mode: 0o700 })
-  const db = openDatabase(path.join(root, ".usage.sqlite"))
+  const db = openSqliteDatabase(path.join(root, ".usage.sqlite"))
   try {
     db.exec(`PRAGMA busy_timeout = 5000;
       CREATE TABLE IF NOT EXISTS home_use (home TEXT PRIMARY KEY, last_used INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS home_launch (launch_id TEXT PRIMARY KEY, home TEXT NOT NULL, identity TEXT NOT NULL);`)
     return operation(db)
-  } finally { db.close?.() }
-}
-
-function transaction<T>(db: SqliteDatabase, operation: () => T): T {
-  db.exec("BEGIN IMMEDIATE")
-  try {
-    const result = operation()
-    db.exec("COMMIT")
-    return result
-  } catch (error) { db.exec("ROLLBACK"); throw error }
+  } finally { db.close() }
 }
 
 function recordLastUse(db: SqliteDatabase, home: string, now: number): void {
@@ -52,7 +44,7 @@ function recordLastUse(db: SqliteDatabase, home: string, now: number): void {
 }
 
 export function recordHarnessHomeUse(home: string, deps: Pick<HarnessHomeDependencies, "now"> = defaults): void {
-  withLedger(path.dirname(home), (db) => transaction(db, () => recordLastUse(db, home, deps.now())))
+  withLedger(path.dirname(home), (db) => db.transaction(() => recordLastUse(db, home, deps.now())))
 }
 
 export function homeHoldingOwnership(ownership: LaunchOwnershipStore, home: string,
@@ -67,7 +59,7 @@ export function homeHoldingOwnership(ownership: LaunchOwnershipStore, home: stri
     listUnresolved: (scope) => ownership.listUnresolved(scope),
     async recordIdentity(launchId, identity, gateNonce) {
       await ownership.recordIdentity(launchId, identity, gateNonce)
-      withLedger(root, (db) => transaction(db, () => {
+      withLedger(root, (db) => db.transaction(() => {
         recordLastUse(db, home, deps.now())
         db.prepare("INSERT INTO home_launch VALUES (?, ?, ?)").run(launchId, home, JSON.stringify(identity))
       }))
@@ -75,7 +67,7 @@ export function homeHoldingOwnership(ownership: LaunchOwnershipStore, home: stri
     async recordRetirement(launchId, result) {
       await ownership.recordRetirement(launchId, result)
       if (!retirementSettled(result)) return
-      withLedger(root, (db) => transaction(db, () => {
+      withLedger(root, (db) => db.transaction(() => {
         recordLastUse(db, home, deps.now())
         db.prepare("DELETE FROM home_launch WHERE launch_id = ?").run(launchId)
       }))
@@ -109,7 +101,7 @@ function setAside(root: string, home: string): boolean {
 function collectIdle(root: string, now: number, retired: readonly string[]): string[] {
   const cutoff = now - HARNESS_HOME_MAX_IDLE_MS
   return withLedger(root, (db) => {
-    transaction(db, () => {
+    db.transaction(() => {
       for (const launchId of retired) {
         const launch = db.prepare<{ home: string }>("SELECT home FROM home_launch WHERE launch_id = ?").get(launchId)
         if (!launch) continue
@@ -120,7 +112,7 @@ function collectIdle(root: string, now: number, retired: readonly string[]): str
     const idle = `SELECT home FROM home_use WHERE last_used < ? AND NOT EXISTS (SELECT 1 FROM home_launch WHERE home_launch.home = home_use.home)`
     const collected: string[] = []
     for (const { home } of db.prepare<{ home: string }>(idle).all(cutoff)) {
-      const moved = transaction(db, () => {
+      const moved = db.transaction(() => {
         if (!db.prepare(`${idle} AND home = ?`).get(cutoff, home)) return false
         db.prepare("DELETE FROM home_use WHERE home = ?").run(home)
         return setAside(root, home)

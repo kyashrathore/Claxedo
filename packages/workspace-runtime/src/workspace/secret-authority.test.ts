@@ -6,7 +6,8 @@ import { SessionRoutes } from "../routes/session"
 import { managedWorkspaceSessionAccessPolicy } from "../session-access-policy"
 import { FakeTransport } from "../test-support/fake-transport"
 import { createHostFixture, sessionCreate, tempStoreRoot, until, type HostFixture } from "../test-support/host-fixture"
-import { RuntimeStore } from "../store"
+import type { RuntimeStore } from "../store"
+import { openRuntimeStore } from "../store-file"
 import { rm } from "node:fs/promises"
 import { join } from "node:path"
 import { createWorkspaceHost } from "./runtime"
@@ -129,7 +130,7 @@ test("a relayed prompt queued behind a running turn is delivered later under its
 
 test("after a restart, a session read attaches its connection under the relay proof of the read itself", async () => {
   const root = tempStoreRoot("secret-authority-restart-")
-  const store = new RuntimeStore(root)
+  const store = openRuntimeStore(root)
   cleanups.push(async () => { store.close(); await rm(root, { recursive: true, force: true }) })
   const before = fixture({ store })
   await before.host.runtime.sessions.create({ ...sessionCreate({ id: "restarted", harness: runner, workspaceId: "ws" }),

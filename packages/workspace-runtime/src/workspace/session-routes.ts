@@ -1,5 +1,5 @@
 import { DEFAULT_RECOVERY_BUDGETS, type SubagentObservation } from "@claxedo/agent-runtime-contract"
-import type { SubagentUpdatedEvent } from "@claxedo/agent-runtime-contract"
+import type { AgentSessionStarts, SubagentUpdatedEvent } from "@claxedo/agent-runtime-contract"
 import { HTTPException } from "hono/http-exception"
 import type { AgentRuntime, AgentRuntimeRecovery } from "../host/runtime"
 import type { RuntimeEventHub } from "../projection/runtime-event-hub"
@@ -18,6 +18,7 @@ export type SessionRoutesMountInput = {
   /** The recovery owner already built, without building one: recovery answers while the host is closing. */
   recovery: () => AgentRuntimeRecovery | undefined
   store: () => RuntimeStore
+  sessionStarts: AgentSessionStarts
   eventHub: RuntimeEventHub
   sessionAccessPolicy: SessionAccessPolicy
   checkpoint: WorkspaceCheckpoint
@@ -52,7 +53,7 @@ export function mountSessionRoutes(input: SessionRoutesMountInput) {
   return SessionRoutes(input.runtime, {
     eventHub: input.eventHub,
     sessionAccessPolicy: input.sessionAccessPolicy,
-    sessionStarts: store().sessionStarts,
+    sessionStarts: input.sessionStarts,
     requestedSessionHarness: (requested) => requested ?? input.currentRunner(),
     resolveRecoveryOwner: () => input.recovery(),
     listSessions: async (_c, directory) => store().listSessions(directory),

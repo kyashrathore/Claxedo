@@ -3,7 +3,8 @@ import path from "node:path"
 import { inside } from "@claxedo/helpers/path"
 import { runGit } from "./git"
 import { workspaceRuntimeStoreDir, workspaceRuntimeWorkspacesDir } from "./env"
-import { RuntimeStore, type WorkspaceWorktreeRecord } from "./store"
+import type { RuntimeStore, WorkspaceWorktreeRecord } from "./store"
+import { openRuntimeStore } from "./store-file"
 import { registerWorkspaceDirectory, unregisterWorkspaceDirectory, WorkspaceTargetError } from "./target"
 
 const SEGMENT = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/
@@ -38,7 +39,7 @@ export class WorkspaceWorktreeManager {
     this.root = path.resolve(options.root ?? workspaceStorageRoot(options.workspaceId))
     this.repo = path.join(this.root, "repo.git")
     this.worktrees = path.join(this.root, "worktrees")
-    this.ownedStore = options.store ? undefined : new RuntimeStore(options.storeRoot ?? workspaceRuntimeStoreDir())
+    this.ownedStore = options.store ? undefined : openRuntimeStore(options.storeRoot ?? workspaceRuntimeStoreDir())
     this.store = options.store ?? this.ownedStore!
     this.store.listWorktrees(options.workspaceId)
       .filter((record) => record.state === "active")

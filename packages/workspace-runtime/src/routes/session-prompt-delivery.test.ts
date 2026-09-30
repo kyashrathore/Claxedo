@@ -9,7 +9,8 @@ import { createSessionDeliveryOwner, type SessionDeliveryOwner } from "../sessio
 import type { AgentRuntime, AgentRuntimeTurnStartInput } from "../host/runtime"
 import { runRuntimePromptTurn } from "../session/service"
 import type { SessionAccessPolicy, SessionTurnGrantDecision } from "../session-access-policy"
-import { RuntimeStore } from "../store"
+import type { RuntimeStore } from "../store"
+import { openRuntimeStore } from "../store-file"
 import type { QueuedPromptRecord } from "../session/delivery-queue"
 import { FakeTransport } from "../test-support/fake-transport"
 import { LOOPBACK_ORIGIN, createHostFixture, sessionCreate, testLaunch } from "../test-support/host-fixture"
@@ -152,7 +153,7 @@ function relayedPrompt(body: Record<string, unknown>) {
 
 /** The durable queue the host lends the routes, on a real store. */
 function durableQueue() {
-  const store = new RuntimeStore(storeRoot())
+  const store = openRuntimeStore(storeRoot())
   stores.push(store)
   const recoveries: string[] = []
   let runtime!: AgentRuntime

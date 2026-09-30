@@ -56,9 +56,8 @@ async function restorationFixture() {
   const harness = { id: "acp", access: "connection" as const }
   const handle = { ...transportHandle(harness, transport), locality: "remote" as const }
   const f = createHostFixture({ transports: { forHarness: async () => handle, composed: () => [handle], onRetire: () => () => {} } })
-  f.store.bindSession({ sessionId: "saved", workspaceId: "ws", directory: "/repo", connectionId: "connection:acp", upstreamSessionId: "upstream", agentSessionId: "upstream" })
+  f.store.bindSession({ owner: MACHINE_OWNER, sessionId: "saved", workspaceId: "ws", directory: "/repo", connectionId: "connection:acp", upstreamSessionId: "upstream", agentSessionId: "upstream" })
   f.store.updateSessionConfig("saved", { harness, agent: "build", model: { providerID: "acp", modelID: "default" } })
-  f.store.recordSessionOwner("saved", MACHINE_OWNER)
   return {
     ...f, requests, restoring,
     release: () => { held = false; release?.() },

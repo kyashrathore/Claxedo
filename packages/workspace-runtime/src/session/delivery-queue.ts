@@ -1,7 +1,7 @@
 import type { AgentMessageAuthor, PromptFormat, PromptInput } from "@claxedo/agent-runtime-contract"
 import { actorKind } from "../json-value"
 import type { SessionRequestProvenance, SessionWorkspaceAuthority } from "../session-access-policy"
-import type { SqliteDatabase } from "../store"
+import type { SqliteDatabase } from "../sqlite/database"
 
 /**
  * A prompt admitted for a session that was already running a turn, waiting for
@@ -126,7 +126,6 @@ function queuedPrompt(row: QueuedPromptRow): QueuedPromptRecord {
 export class DeliveryQueue {
   constructor(
     private readonly db: SqliteDatabase,
-    private readonly transaction: <T>(run: () => T) => T,
     private readonly recordAuthor: (sessionId: string, actorId?: string) => void,
   ) {}
 
@@ -138,7 +137,7 @@ export class DeliveryQueue {
    * never reached one still has to run.
    */
   queuePrompt(input: Omit<QueuedPromptRecord, "seq" | "queuedAt" | "held" | "steering">): QueuedPromptRecord {
-    return this.transaction(() => {
+    return this.db.transaction(() => {
       if (input.messageId) {
         const existing = this.db.prepare<QueuedPromptRow>(
           "SELECT * FROM runtime_delivery WHERE session_id = ? AND message_id = ? ORDER BY seq LIMIT 1",
