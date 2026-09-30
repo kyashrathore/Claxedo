@@ -1,7 +1,7 @@
 import { AsyncPushQueue } from "@claxedo/helpers"
 import { asRecordOrEmpty, asString } from "@claxedo/helpers/guards"
 import type { HarnessServices, HarnessSession, RoutedEvent, TurnBroker, TurnInput } from "../../contract"
-import type { Entry } from "./index"
+import type { Entry } from "./entry"
 import { CodexEvents } from "./events"
 import { CodexTransportError } from "./errors"
 import { codexThreadResumeParams, codexTurnParams } from "./input"
@@ -9,7 +9,7 @@ import { codexTurnSettings, type CodexModel } from "./models"
 import { codexPermissionSettings } from "./modes"
 import { startCodexTurn } from "./recovery"
 import { projectCodexThreadConfig } from "./configuration"
-import type { RpcMessage } from "./rpc"
+import { codexRetirementDeadline, type RpcMessage } from "./rpc"
 import { codexHostSubagentObservation } from "./subagents"
 
 function hostSubagents(threadId: string, broker: TurnBroker, queue: AsyncPushQueue<RoutedEvent>) {
@@ -46,8 +46,8 @@ function listenTurn(entry: Entry, session: HarnessSession, queue: AsyncPushQueue
         if (id !== entry.turn.id) return
       }
       subagents.observe(message)
-      const steered = startedSteer(message, entry)
-      if (steered) queue.push({ event: { type: "input-incorporated", messageId: steered } })
+      const steered = incorporatedSteer(message, entry.steers)
+      if (steered) queue.push(steered)
       for (const event of events.ingest(message)) queue.push(event)
       if (message.method === "turn/completed") subagents.end()
     } catch (error) { queue.fail(error) }
@@ -57,12 +57,20 @@ function listenTurn(entry: Entry, session: HarnessSession, queue: AsyncPushQueue
   return { remove: () => { removeMessage(); removeFailure() }, accept: () => { for (const message of early) ingest(message) } }
 }
 
-function startedSteer(message: RpcMessage, entry: Entry): string | undefined {
+export async function activeCodexTurn(entry: Entry): Promise<{ broker: TurnBroker; drained(): Promise<void> } | undefined> {
+  const turn = entry.turn
+  if (turn) return { broker: turn.broker, drained: () => turn.queue.drained() }
+  const provider = entry.providerTurn
+  const broker = await provider?.broker
+  return provider && broker && { broker, drained: () => provider.drained() }
+}
+
+export function incorporatedSteer(message: RpcMessage, steers: Set<string>): RoutedEvent | undefined {
   if (message.method !== "item/started") return undefined
   const item = asRecordOrEmpty(asRecordOrEmpty(message.params).item)
   const clientId = asString(item.clientId)
-  if (item.type !== "userMessage" || !clientId || !entry.turn?.steers.delete(clientId)) return undefined
-  return clientId
+  if (item.type !== "userMessage" || !clientId || !steers.delete(clientId)) return undefined
+  return { event: { type: "input-incorporated", messageId: clientId } }
 }
 
 async function startTurn(entry: Entry, session: HarnessSession, turn: TurnInput, services: HarnessServices,
@@ -73,9 +81,9 @@ async function startTurn(entry: Entry, session: HarnessSession, turn: TurnInput,
   const mode = codexPermissionSettings(entry.start.config.permissionMode)
   const threadId = session.binding.upstreamSessionId
   const params = await codexTurnParams(turn, threadId, session.directory, settings, mode)
-  const resume = codexThreadResumeParams(threadId, entry.start, projectCodexThreadConfig(entry.start, services), mode)
-  if (entry.turn) entry.turn.settings = settings
-  const result = asRecordOrEmpty(await startCodexTurn(entry.rpc, params, resume))
+  const resume = codexThreadResumeParams(threadId, entry.start, projectCodexThreadConfig(entry.start, services, entry.plugins), mode)
+  entry.settings = settings
+  const result = asRecordOrEmpty(await startCodexTurn(entry.rpc, params, resume, codexRetirementDeadline(services)))
   const id = asString(asRecordOrEmpty(result.turn).id)
   if (!id) throw new CodexTransportError("protocol", "Codex turn/start returned no turn id")
   if (entry.turn) entry.turn.id = id
@@ -86,7 +94,9 @@ export async function* runCodexTurn(entry: Entry, session: HarnessSession, turn:
   if (entry.state !== "ready" || entry.providerTurn) throw new CodexTransportError("session", "Codex turn already active")
   entry.state = "busy"
   const queue = new AsyncPushQueue<RoutedEvent>()
-  entry.turn = { broker, queue, settings: {}, steers: new Set(), started: startTurn(entry, session, turn, services, models) }
+  entry.turn = { broker, queue, started: startTurn(entry, session, turn, services, models) }
+  let released!: () => void
+  entry.released = new Promise((resolve) => { released = resolve })
   const listener = listenTurn(entry, session, queue, broker)
   const onAbort = () => { void cancel().catch((error: unknown) => entry.broker.reportFailure(error)) }
   broker.signal.addEventListener("abort", onAbort, { once: true })
@@ -100,5 +110,7 @@ export async function* runCodexTurn(entry: Entry, session: HarnessSession, turn:
     broker.signal.removeEventListener("abort", onAbort)
     entry.turn = undefined
     if (entry.state === "busy") entry.state = "ready"
+    services.clock.setTimeout(released, 0)
+    entry.idle()
   }
 }

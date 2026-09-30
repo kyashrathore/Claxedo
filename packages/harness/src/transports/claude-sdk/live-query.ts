@@ -107,6 +107,18 @@ export class ClaudeLiveQuery {
     this.close()
   }
 
+  spawnCall(taskId: string): string | undefined {
+    const call = this.tasks.get(taskId)?.toolUseId
+    return call === undefined ? undefined : this.tasks.firstLevelSubagent(call)
+  }
+
+  async stopTask(toolCallId: string): Promise<boolean> {
+    const task = [...this.background].find((id) => this.tasks.get(id)?.toolUseId === toolCallId)
+    if (this.process.kind !== "open" || task === undefined) return false
+    await this.process.stream.stopTask(task)
+    return true
+  }
+
   async interrupt(): Promise<void> {
     if (this.frames.kind === "claimed") this.frames.claim.interrupted = true
     if (this.process.kind === "open" || this.process.kind === "closing") await this.process.stream.interrupt()

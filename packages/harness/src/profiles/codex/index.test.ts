@@ -64,7 +64,8 @@ test("an own-login session with plugins leaves the owner's Codex home byte-ident
     expect(config).toContain("[mcp_servers.owner]")
     expect(config).not.toContain("marketplaces.stale")
     expect(config).toContain(`[marketplaces.claxedo-agent-plugins]`)
-    expect(config).toContain('[plugins."one@claxedo-agent-plugins"]')
+    expect(config).not.toContain("[plugins.")
+    expect(first.plugins).toEqual(["one@claxedo-agent-plugins", "two@claxedo-agent-plugins"])
     expect(await fs.readFile(path.join(first.home, "AGENTS.md"), "utf8")).toBe("Owner instructions\n")
     expect(await fs.readFile(path.join(first.home, "skills", "owner-skill", "SKILL.md"), "utf8")).toContain("owner-skill")
     expect(await fs.readlink(path.join(first.home, "auth.json"))).toBe(path.join(await fs.realpath(owner), "auth.json"))
@@ -159,11 +160,12 @@ test("selected execution excludes personal plugin config and cache from the shar
     const selected = await plugin(root, "selected")
     const projection = { ...noPlugins, pluginRoots: [selected], pluginSelection: { mode: "selected" as const, selectionHash: "selection-a" } }
     const before = await snapshot(owner)
-    const { home } = await prepareCodexProfile({ homeRoot: path.join(root, "homes"), credentials: ownLogin, projection, ownerHome: owner })
+    const { home, plugins } = await prepareCodexProfile({ homeRoot: path.join(root, "homes"), credentials: ownLogin, projection, ownerHome: owner })
+    expect(plugins).toEqual(["selected@claxedo-agent-plugins"])
     const config = await fs.readFile(path.join(home, "config.toml"), "utf8")
     expect(config).not.toContain("unselected")
     expect(config).not.toContain("marketplaces.personal")
-    expect(config).toContain('[plugins."selected@claxedo-agent-plugins"]')
+    expect(config).toContain("[marketplaces.claxedo-agent-plugins]")
     expect(await fs.readdir(path.join(home, "plugins/cache"))).toEqual(["claxedo-agent-plugins"])
     const cache = path.join(home, "plugins/cache/claxedo-agent-plugins")
     const inode = (await fs.stat(cache)).ino
@@ -173,7 +175,7 @@ test("selected execution excludes personal plugin config and cache from the shar
   } finally { await fs.rm(root, { recursive: true, force: true }) }
 })
 
-test("a plugin generation change and an owner config change update the shared home in place", async () => {
+test("a plugin generation change, a changed plugin set and an owner config change update the shared home in place", async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "codex-profile-inplace-"))
   try {
     const owner = await ownerHome(root)
@@ -190,12 +192,13 @@ test("a plugin generation change and an owner config change update the shared ho
     expect(await fs.readdir(path.join(first.home, "skills"))).toEqual([])
     expect(await fs.readFile(path.join(first.home, "config.toml"), "utf8")).toContain('model = "gpt-5.4"')
     const third = await prepareCodexProfile({ homeRoot, credentials: ownLogin, projection: { generation: "g3", mcpServers: [], notApplied: [], pluginRoots: [one] }, ownerHome: owner })
-    expect(third.home).not.toBe(first.home)
-    expect(await fs.readdir(path.join(third.home, "marketplace", "plugins"))).toEqual(["one"])
+    expect(third.home).toBe(first.home)
+    expect(third.plugins).toEqual(["one@claxedo-agent-plugins"])
+    expect(await fs.readdir(path.join(third.home, "marketplace", "plugins"))).toEqual(["one", "two"])
   } finally { await fs.rm(root, { recursive: true, force: true }) }
 })
 
-test("the home is shared by account holder, credential binding and plugin set", async () => {
+test("the home is shared by account holder, credential binding and plugin selection mode, whatever the plugin set", async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "codex-profile-key-"))
   try {
     const owner = await ownerHome(root)
@@ -203,6 +206,8 @@ test("the home is shared by account holder, credential binding and plugin set", 
     const run = (input: Partial<Parameters<typeof prepareCodexProfile>[0]>) => prepareCodexProfile({ homeRoot, credentials: ownLogin, projection: noPlugins, ownerHome: owner, ...input })
     const base = (await run({})).home
     expect((await run({})).home).toBe(base)
+    expect((await run({ projection: { ...noPlugins, pluginRoots: [await plugin(root, "added")] } })).home).toBe(base)
+    expect((await run({ projection: { ...noPlugins, pluginSelection: { mode: "selected", selectionHash: "one" } } })).home).not.toBe(base)
     expect((await run({ credentials: { ...brokered, accountOwner: "member" } })).home)
       .not.toBe((await run({ credentials: brokered })).home)
     expect((await run({ credentials: brokered })).home).not.toBe(base)

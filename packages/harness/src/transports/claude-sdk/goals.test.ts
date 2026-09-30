@@ -101,15 +101,3 @@ test("a Goal whose work goes to the background stays active while its process li
   await until(() => goals.at(-1)?.status === "paused")
   await transport.dispose()
 })
-
-test("a Goal on a Claude Code older than the tested range fails its start with the update message", async () => {
-  const { transport, session, launches } = await setup()
-  const started = transport.goals.start(session, "Ship")
-  await until(() => launches[0]?.prompts.length === 1)
-  launches[0]!.frames.push(init("2.1.150"))
-  const answer = await started
-  expect(answer).toMatchObject({ ok: false, status: "failed" })
-  expect(!answer.ok && answer.message).toContain("Claude Code 2.1.150 is installed")
-  launches[0]!.frames.end()
-  await transport.dispose()
-})

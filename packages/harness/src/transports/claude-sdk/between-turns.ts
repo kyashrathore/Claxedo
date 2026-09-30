@@ -7,7 +7,7 @@ export function claudeChildDelivery(entry: ClaudeEntry, live: () => ClaudeLiveQu
   let translator: ReturnType<typeof claudeTranslator> | undefined
   return async (frame) => {
     try {
-      translator ??= claudeTranslator(entry.session.binding.sessionId, [], live().tasks, live().memory)
+      translator ??= claudeTranslator(entry.session.binding.sessionId, [], live().tasks)
       for (const event of await translateClaude(frame, translator.runtime, translator.tasks, entry.broker)) await entry.broker.publishChild(event)
     } catch (error) {
       entry.broker.reportFailure(error)

@@ -3,7 +3,8 @@ import { AbortError, type EffortLevel, type SDKMessage, type SDKUserMessage } fr
 import { isHarnessEffortLevel, type PromptModel, type SteerResult } from "@claxedo/agent-runtime-contract"
 import type { AdapterCancelOutcome } from "@claxedo/agent-runtime-contract"
 import { errorMessage } from "@claxedo/helpers"
-import type { Deadline, HarnessServices, HarnessSession, HarnessVersionGate, RoutedEvent, SessionBroker, StartInput, TurnBroker, TurnInput, TurnRef } from "../../contract"
+import type { BackgroundTaskRef, BackgroundTaskStopResult, Deadline, HarnessServices, HarnessSession, HarnessVersionGate, RoutedEvent, SessionBroker,
+  StartInput, TurnBroker, TurnInput, TurnRef } from "../../contract"
 import { TransportError } from "../../contract/errors"
 import { claudePrompt } from "./attachments"
 import { ClaudeLiveQuery, type ClaudeClaim } from "./live-query"
@@ -46,11 +47,6 @@ export function configuredChoice(entry: Pick<ClaudeEntry, "broker">): ClaudeChoi
   return { ...(model ? { model } : {}), ...(variant ? { effort: variant } : {}), ...(instructions ? { system: instructions } : {}), ...(agent ? { agent } : {}) }
 }
 
-function spawnCallOf(live: ClaudeLiveQuery, agentId: string): string | undefined {
-  const call = live.tasks.get(agentId)?.toolUseId
-  return call === undefined ? undefined : live.tasks.firstLevelSubagent(call)
-}
-
 function settlement(): { done: Promise<void>; finish: () => void } {
   let finish!: () => void
   return { done: new Promise<void>((resolve) => { finish = resolve }), finish }
@@ -80,6 +76,11 @@ export class ClaudeTurns {
     if (await settledBy(running.done, deadline)) return { execution: "terminal", cleanup: "unknown" }
     running.live?.terminate()
     return { execution: "unknown", cleanup: "unknown" }
+  }
+
+  async stopBackgroundTask(entry: ClaudeEntry, task: BackgroundTaskRef): Promise<BackgroundTaskStopResult> {
+    if (await entry.live?.stopTask(task.toolCallId)) return { ok: true }
+    return { ok: false, status: "not_found", message: "No running Claude background task was started by that call" }
   }
 
   async stop(entry: ClaudeEntry): Promise<void> {
@@ -189,7 +190,7 @@ export class ClaudeTurns {
     const claim = live.claim("prompt")!
     try {
       live.run(await this.launcher().launch({ session: entry.session, input: entry.input, broker: entry.broker, turn: () => entry.turn,
-        prompt: live.input.stream, abort: live.abort, processes: live.processes, usage: live.usage, subagentCall: (agentId) => spawnCallOf(live, agentId), model: launch.model, effort: launch.effort,
+        prompt: live.input.stream, abort: live.abort, processes: live.processes, usage: live.usage, subagentCall: (agentId) => live.spawnCall(agentId), model: launch.model, effort: launch.effort,
         system: launch.system, agent: launch.agent }))
     } catch (error) {
       live.fail(error)
