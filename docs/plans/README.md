@@ -18,6 +18,7 @@ doc or package README that owns it.
   — queue execution and admission safety implemented; provider incorporation,
   transcript placement and the acceptance matrix remain.
 - [Tasks as a hosted plugin, with work runs on Pi](./2026-09-29-001-feat-tasks-plugin-on-pi-plan.md)
+- [Consolidation before launch](./2026-09-30-001-refactor-consolidation-before-launch-plan.md)
   — planned, not started. Tasks becomes a hosted-only plugin with a Dynamic Worker backend;
   a task's own agent is Pi's `AgentHarness` in its Durable Object; the native Tasks feature
   (~16.5k production lines) is removed at the end.

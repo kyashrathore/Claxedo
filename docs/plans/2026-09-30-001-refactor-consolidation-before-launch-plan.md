@@ -1,0 +1,63 @@
+# Consolidation before launch
+
+**Scope:** the server, runtime and machine code on `goal/foundation`, plus the contract packages they share with the app, desktop and CLI. **Out of scope:** app, UI kit and harness internals (their owners), except where a shared contract crosses into them.
+
+**Source:** three read-only audits of `d93757f9e8` (control plane; runtime and machine; whole-repo view). The rows in §2 carry the audits' file references; the access, ordinal, fence, open-time migration and idempotency rows were read in the code, and each lane re-reads its rows before changing anything. Savings are estimates and overlap between lanes.
+
+## 1. Rulings this plan applies
+
+- **Machine access:** a workspace belongs to its owner. Only a session share crosses people, and it grants that session's actions (follow or send), never the workspace. Org roles, project roles, member project grants and team grants never reach a machine. `org_member_visible` goes.
+- **Stored schema:** one canonical baseline per store before launch. No migration or open-time step converts old rows; an incompatible store is refused. Staging D1 is reset when the baseline lands.
+- No backward compatibility, no bridges. Hosted is Cloudflare only.
+- One implementation per responsibility. A shared mechanism takes caller policy as input; it never absorbs it.
+
+## 2. What the audits found
+
+| Theme | Evidence (checked) | Lane |
+|---|---|---|
+| Machine access is computed in about seven places from org, project and team roles, and any session share becomes workspace viewer | `d1/workspace-authority.ts` `workspaceAccess` + `SESSION_SHARE_WORKSPACE_ACCESS_SQL`; `d1/project-role.ts`; `agent-plugins/activation/d1-store.ts:128-184`; `d1/host-access-authority.ts:271-280`; runtime `session-access-policy.ts:411-442`, `routes/workspace-role.ts`, `routes/host-capability-access.ts`, relay `server.ts:828-835` | C1 |
+| Five D1 authority classes each re-validate deployment, identity link, human actor and account state | `workspace-authority.ts:1542`, `session-authority.ts:2320`, `host-access-authority.ts:1316`, `audit-authority.ts:173`, `channel-runtime-authority.ts:486` | C1 |
+| Stored rows are converted at deploy and at open | D1 `0031`, `0045`; `sqlite/authority-schema-upgrades.ts`; local-server `drop-copied-harness-logins.ts` runs every start | C2, C3 |
+| Relay host tokens without a generation are admitted "exactly as before the fence existed" | `workspace-relay/src/auth.ts:100-114`, `server.ts:627-638` | C3 |
+| Hosted message reads return `maxEventOrdinal: 0` while D1 owns the ordinal; hosted and generic session reads are two route families | `hosted-core-app.ts:635-730` vs `session/routes/control-plane-session.ts:261-351` | C4 |
+| Projection register/checkpoint/repair default to per-isolate maps for idempotency; the durable setter has no production caller | `authority/http/idempotency.ts:50-87,253-274`; `routes/hosted/control.ts:112-205` | C4 |
+| Each hosted operation is declared three or four times | `account-contract/operation-name.ts`, `hosted-operations.ts`; desktop `main/account/hosted-operations.ts:68-512`; app `server/operations.ts:54-98` | C5 |
+| Errors are matched by message substring; status guessed from the word "required" | `session/routes/org-team-routes.ts:30-80`; `routes/hosted/control.ts:33-47`; connector `machine-transport.ts:49-88`; MCP `http-error.ts` | C6 |
+| Machine enrollment, signing and sealing bytes, relay claims and the native-auth descriptor are each defined on both sides | `server-core/platform/auth/host-connect-contract.ts` vs `host-connector/host-identity.ts`; `machine-seal.ts` twice; relay `auth.ts` vs `workspace-relay-protocol/token-verifier.ts` vs runtime `workspace-host-service-auth.ts`; descriptor parsers in server-core, desktop and CLI | C7 |
+| Runtime events are appended and published on three paths; `publishSubagent` appends a presentation event and publishes the raw event, which SSE may project a second time (unverified: C8 reproduces it first) | `broker-ports/delivery.ts:20-33`, `host/runtime.ts:115-133`, `projection/turn-projection.ts:75-162`, `broker-ports/session-events.ts:75-81` | C8 |
+| Three relay request clients mint tokens, build URLs and decode responses | `authority/hosted-session-pull.ts:62-136`, `authority/http/runtime-transport.ts:13-131`, `workspace/hosted-runtime-fetch.ts:20-44` | C8 |
+| Machine file listing and indexing exist twice and have drifted | local-server `shell/files.ts` vs runtime `workspace-files/file.ts:150-253` | C9 |
+| Session identity has three shapes | `agent-runtime-contract/sessions.ts`, `claxedo-plugin-api/host.ts` (`projectId`), `claxedo-tasks/contracts.ts` (nullable `workspaceId`) | C10 |
+| The self-hosted authority twin (~6k) and the Bun relay (~3k) survive only for e2e | plan 2026-09-29-002 Phase 0 and 5 | C11 |
+
+## 3. Lanes
+
+Each lane is one agent in its own worktree off the `goal/foundation` tip, with the files listed as its own. The orchestrator reviews each diff, merges it onto the tip, and runs the ratchets there. At most three agents run at once, and at most one full package test suite at a time (24 GB machine).
+
+- [ ] **C1 One authorization owner** (after L3 merges). `may(principal, action, resource)` over discriminated `MachineRef | SessionRef | ProjectRef | OrgRef`, one request-scoped `requireHuman` shared by every D1 authority class, one workspace-rank path. A non-owner's machine access comes only from a session share, and only for that session's actions. `org_member_visible` and `SESSION_SHARE_WORKSPACE_ACCESS_SQL` are gone; the plugin activation store and host access read `may`. Runtime and relay checks verify a capability the authority issued instead of recomputing roles. Owns `claxedo-server/src/authority/adapters/d1/**`, `agent-plugins/activation/d1-store.ts`, `workspace-runtime/src/{session-access-policy.ts,routes/workspace-role.ts,routes/host-capability-access.ts}`, `workspace-relay/src/server.ts` access checks. Done when: negative tests prove org admin, project owner, team editor and member grant each get no workspace or runtime token on another person's machine; a follow share cannot send, and neither share opens the workspace; the access-model doc states the rule; `git grep org_member_visible -- packages` is empty. Progress:
+- [ ] **C2 Fresh D1 baseline.** One `0001_baseline.sql` equal to today's final schema, with no row conversion; the deploy applies it to an empty database and refuses a database carrying the old migration table. The SQLite on-open rewrites and the local `'team'` rewrite go. Owns `claxedo-server/migrations/**`, `scripts/deploy/d1-databases.ts`, `server-core/src/authority/adapters/sqlite/authority-schema-upgrades.ts`, the migration tests. Done when: the D1 conformance suite runs against the baseline alone; a test proves an old-schema database is refused; `ls migrations/control-plane` shows one file; staging reset is recorded as a deploy step. Progress:
+- [ ] **C3 Compatibility leftovers.** Host tunnel tokens always carry `enrollment_id` and `generation`, every minting path supplies them, and the relay refuses a token without them; `dropCopiedHarnessLogins` and its marker go; legacy bare-secret decoding (`driver-auth.ts` `singleFieldLegacyValues`, sandbox-verify `storedAuth`) goes. Done when: a token without a fence is refused in a test; `git grep -n "before the fence\|singleFieldLegacyValues\|dropCopiedHarnessLogins" -- packages` is empty. Progress:
+- [ ] **C4 Session reads and projection commands.** One `SessionReadPort` and one `createSessionReadRoutes` serve hosted and generic reads; the hosted response carries D1's real ordinal. Projection commands require a durable idempotency coordinator in the Worker composition. Done when: a hosted read test asserts the stored ordinal; a two-isolate test (or a D1-backed coordinator test) proves a replayed command is not applied twice. Progress:
+- [ ] **C5 Hosted operation registry.** `defineOperation<I, O>({ method, path, input, output, retry, exposure })` in `account-contract`; names, types, decoders, desktop request construction and the app subset derive from it. Desktop main keeps credential ownership and the renderer allowlist. Done when: adding an operation is one declaration plus its server route; the desktop and app tables are gone. Progress:
+- [ ] **C6 Typed errors end to end.** Producers throw typed errors with `code`, `status` and `retryable`; one `encodeApiError` and one `decodeApiError` in helpers; no route or client branches on a message string. Done when: `git grep -nE "message\.(includes|startsWith)|/required/" -- packages/*/src` finds no error branching; public codes are listed in one table. Progress:
+- [ ] **C7 Wire protocols in one place.** Pure codecs for machine request payloads, invitations and seal AAD in `account-contract/machine`; relay claims in `workspace-relay-protocol` (`decodeRelayClaims`); the native-auth descriptor and client binding in `account-contract/auth`. Key custody, nonce consumption and TTL policy stay with their owners. Done when: each byte format has one encoder and one decoder, both sides import them, and a golden test pins the bytes. Progress:
+- [ ] **C8 One event write path and one relay client.** `createSessionEventWriter` commits and publishes every runtime event once; the subagent double publish is gone. `createRelayRuntimeClient` replaces the three hosted relay clients; authorization stays an explicit input. Done when: a test counts exactly one SSE frame per subagent update; the three client modules are gone. Progress:
+- [ ] **C9 One machine file index.** `createFileIndex` owned by the machine filesystem layer serves the local server and the runtime, with one bounded cache and one path separator. Done when: one implementation remains and both callers' tests pass. Progress:
+- [ ] **C10 One `SessionRef`.** `{ sessionId, workspaceId }` in `agent-runtime-contract`; the plugin API and Tasks import it; project association is separate metadata. Done when: no other session reference type exists in contracts. Progress:
+- [ ] **C11 Retired twins go** (after the e2e harnesses boot the Worker, plan 2026-09-29-002 Phase 0). Delete the SQLite authority twin and the Bun relay composition. Progress:
+
+Later, with their owning plans: the store split and explicit turn identity (plan 2026-09-29-002 Phase 3), the machine agent composition (D9), authorized fanout and journal streams, the credential domain service (needs a ruling on accounts per provider), and the sandbox driver catalogue (needs the boat.dev launch scope).
+
+## 4. Order
+
+1. Now: C3, C4, C9 (disjoint from L3's files).
+2. After L3 merges: C1, then C6 (both touch the org and team routes).
+3. After C1: C2 (the baseline captures the final access schema), C5, C7, C8, C10.
+4. C11 when its gate opens.
+
+## 5. Definition of done
+
+- [ ] Every lane above is merged into `goal/foundation` with its done-when met. Progress:
+- [ ] `bun run typecheck` passes and `bun run test:architecture-ratchets` fails on nothing new. Progress:
+- [ ] Each touched package's tests pass, or each failure is shown to fail identically on the lane base. Progress:
+- [ ] Every lane had one review (Codex `gpt-6.1-sol`, read-only) and at most one re-review. Progress:
