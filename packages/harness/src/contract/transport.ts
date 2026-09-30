@@ -55,6 +55,14 @@ export interface SteerOperations {
   steer(session: HarnessSession, turn: TurnRef, input: TurnInput): Promise<SteerResult>
 }
 
+export type BackgroundTaskRef = { toolCallId: string }
+
+export type BackgroundTaskStopResult = { ok: true } | { ok: false; status: "not_found"; message: string }
+
+export interface BackgroundTaskOperations {
+  stop(session: HarnessSession, task: BackgroundTaskRef): Promise<BackgroundTaskStopResult>
+}
+
 export interface NativeGoalOperations {
   read(session: HarnessSession): Promise<RuntimeGoalSnapshot | null>
   start(session: HarnessSession, objective: string, broker: SessionBroker): Promise<AgentGoalMutationResult>
@@ -127,6 +135,7 @@ export interface HarnessTransport {
   close(session: HarnessSession): Promise<void>
   dispose(): Promise<void>
   readonly steer?: SteerOperations
+  readonly backgroundTasks?: BackgroundTaskOperations
   readonly goals?: NativeGoalOperations
   readonly providerCatalog?: { providers(draft: DraftLaunch): Promise<readonly ProviderCatalogEntry[]> }
   readonly config?: ConfigOperations

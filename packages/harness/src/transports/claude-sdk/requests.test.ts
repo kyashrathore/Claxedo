@@ -104,3 +104,17 @@ test("an always-allow answer that moves Claude's mode stores the mode the query 
   expect(answer).toMatchObject({ behavior: "allow", updatedPermissions: [{ type: "setMode", mode: "acceptEdits" }] })
   expect(kept).toEqual([{ modeId: "acceptEdits", label: "Accept edits" }])
 })
+
+test("a subagent's permission request names the subagent and the call that spawned it, so it can be filed on the child", async () => {
+  const requests: TurnRequest[] = []
+  const broker = { signal: new AbortController().signal, ask: async (request: TurnRequest) => {
+    requests.push(request)
+    return { kind: "permission" as const, decision: "allow_once" as const }
+  } } as TurnBroker
+  const options = { signal: new AbortController().signal, toolUseID: "toolu_bash", agentID: "a64191ef39c5ecd63" } as Parameters<CanUseTool>[2]
+  await askClaudePermission(input, broker, "Bash", { command: "ls" }, options, "t1", (agentId) => agentId === "a64191ef39c5ecd63" ? "toolu_agent" : undefined)
+  await askClaudePermission(input, broker, "Bash", { command: "ls" }, { ...options, agentID: undefined }, "t1", () => "toolu_agent")
+  const metadata = requests.map((request) => request.kind === "permission" ? request.permission.metadata : undefined)
+  expect(metadata[0]).toMatchObject({ subagent: { agentId: "a64191ef39c5ecd63", toolCallId: "toolu_agent" } })
+  expect(metadata[1]).not.toHaveProperty("subagent")
+})
