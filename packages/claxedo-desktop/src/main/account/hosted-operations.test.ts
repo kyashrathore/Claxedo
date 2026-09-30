@@ -33,10 +33,16 @@ describe("HOSTED_OPERATIONS", () => {
   })
 
   test("declares no generic proxy", () => {
-    for (const name of Object.keys(HOSTED_OPERATIONS)) {
+    // `plugin.request` is the one row whose method and rest of path the caller
+    // chooses, and its prefix is one plugin's backend, where the supervisor
+    // answers against that plugin's manifest routes.
+    const callerChosen = Object.entries(HOSTED_OPERATIONS)
+      .filter(([, operation]) => typeof operation.method !== "string" || operation.path.endsWith("/*"))
+      .map(([name, operation]) => [name, operation.path])
+    expect(callerChosen).toEqual([["plugin.request", "/api/plugins/:pluginId/*"]])
+    for (const name of Object.keys(HOSTED_OPERATIONS).filter((name) => name !== "plugin.request")) {
       expect(name).not.toMatch(/fetch|proxy|request$/i)
     }
-    // And nothing whose path is caller-supplied.
     for (const operation of Object.values(HOSTED_OPERATIONS)) {
       expect(operation.path.startsWith("/")).toBe(true)
       expect(operation.path).not.toContain("://")
@@ -319,6 +325,50 @@ describe("resolveHostedOperation", () => {
       path: "/api/workspace/ws_1/lifecycle/replace",
       body: { approved: true },
     })
+  })
+
+  test("a plugin request carries the caller's method, path and body beneath that plugin's prefix", () => {
+    expect(resolveHostedOperation("plugin.request", { pluginId: "counter", method: "POST", path: "/tasks/t 1/start", body: { at: 1 } })).toEqual({
+      method: "POST",
+      path: "/api/plugins/counter/tasks/t%201/start",
+      body: { at: 1 },
+      response: "http",
+    })
+    expect(resolveHostedOperation("plugin.request", { pluginId: "counter", method: "GET", path: "/count", query: "x" })).toEqual({
+      method: "GET",
+      path: "/api/plugins/counter/count",
+      response: "http",
+    })
+  })
+
+  test("a plugin request cannot leave its plugin's prefix, add a query, or choose an undeclared method", () => {
+    const escapes = [
+      "/..",
+      "/tasks/../../workspace",
+      "/./count",
+      "//api/workspace",
+      "/count/",
+      "count",
+      "",
+    ]
+    for (const path of escapes) {
+      expect(() => resolveHostedOperation("plugin.request", { pluginId: "counter", method: "GET", path }), path).toThrow(MissingOperationParameter)
+    }
+    expect(resolveHostedOperation("plugin.request", { pluginId: "counter", method: "GET", path: "/%2e%2e/%2E%2E/workspace?host=machine#x" }).path).toBe(
+      "/api/plugins/counter/%252e%252e/%252E%252E/workspace%3Fhost%3Dmachine%23x",
+    )
+    expect(resolveHostedOperation("plugin.request", { pluginId: "../admin", method: "GET", path: "/count" }).path).toBe("/api/plugins/..%2Fadmin/count")
+    for (const method of ["HEAD", "OPTIONS", "get", undefined]) {
+      expect(() => resolveHostedOperation("plugin.request", { pluginId: "counter", method, path: "/count" }), String(method)).toThrow(MissingOperationParameter)
+    }
+  })
+
+  test("a plugin request sends its body only as an object and never with GET", () => {
+    for (const [method, body] of [["POST", "text"], ["POST", [1]], ["POST", null], ["GET", { at: 1 }]] as const) {
+      expect(() => resolveHostedOperation("plugin.request", { pluginId: "counter", method, path: "/count", body }), `${method} ${JSON.stringify(body)}`).toThrow(
+        MissingOperationParameter,
+      )
+    }
   })
 
   test("refuses an operation nobody wrote down", () => {

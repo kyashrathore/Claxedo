@@ -24,13 +24,23 @@
  * it, so an operation added there without a route here does not compile.
  */
 import type { HostedOperationName as ContractOperationName } from "@claxedo/account-contract"
+import { asRecord } from "@claxedo/helpers/guards"
+
+type HostedMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE"
 
 export type HostedOperation = {
-  method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE"
-  /** Path template; `:name` segments are filled from the caller's parameters. */
+  /** The method, or the methods a caller chooses between with its `method` parameter. */
+  method: HostedMethod | readonly HostedMethod[]
+  /**
+   * Path template; `:name` segments are filled from the caller's parameters.
+   * A template ending in `/*` takes the rest of the path from the caller's
+   * `path` parameter, each of its segments encoded on its own.
+   */
   path: string
   /** Parameter names that go in the body rather than the path. */
   body?: string[]
+  /** The parameter whose object is sent as the whole JSON body. */
+  bodyObject?: string
   /**
    * Declared query keys filled from the caller's parameters.
    *
@@ -487,6 +497,16 @@ export const HOSTED_OPERATIONS = {
     path: "/documents/from-repo",
     body: ["project_id", "directory", "workspace_id", "path", "display_name", "status", "session_id"],
   },
+  // The one row whose method and path the caller chooses, and only beneath
+  // one plugin's prefix. The hosted supervisor answers each request against
+  // that plugin's declared routes and the caller's own organization, so what
+  // this row can reach is the plugin's manifest, enforced there.
+  "plugin.request": {
+    method: ["GET", "POST", "PUT", "PATCH", "DELETE"],
+    path: "/api/plugins/:pluginId/*",
+    bodyObject: "body",
+    response: "http",
+  },
 } as const satisfies Record<ContractOperationName, HostedOperation>
 
 export type HostedOperationName = keyof typeof HOSTED_OPERATIONS
@@ -528,6 +548,28 @@ function operationParameter(name: string, key: string, value: unknown): string {
   throw new MissingOperationParameter(`operation "${name}" requires ${key} to be a string, number or boolean`)
 }
 
+function operationMethod(name: string, operation: HostedOperation, input: Record<string, unknown>): HostedMethod {
+  if (typeof operation.method === "string") return operation.method
+  const chosen = operation.method.find((method) => method === input.method)
+  if (!chosen) throw new MissingOperationParameter(`operation "${name}" requires method to be one of ${operation.method.join(", ")}`)
+  return chosen
+}
+
+/**
+ * The caller's `path` below a `/*` template, one encoded segment at a time: a
+ * segment cannot be empty, `.` or `..`, and `?`, `#` and `%` arrive as
+ * literal characters, so the request stays beneath the template's prefix and
+ * carries no query.
+ */
+function restOfPath(name: string, value: unknown): string {
+  const path = operationParameter(name, "path", value ?? "")
+  const segments = path.startsWith("/") ? path.slice(1).split("/") : undefined
+  if (!segments || segments.some((segment) => segment === "" || segment === "." || segment === "..")) {
+    throw new MissingOperationParameter(`operation "${name}" requires path to be an absolute path with no empty, "." or ".." segment`)
+  }
+  return segments.map((segment) => `/${encodeURIComponent(segment)}`).join("")
+}
+
 /**
  * Turn a named operation plus parameters into the one request it stands for.
  *
@@ -542,32 +584,17 @@ export function resolveHostedOperation(
   const operation = (HOSTED_OPERATIONS as Record<string, HostedOperation | undefined>)[name]
   if (!operation) throw new UnknownHostedOperation(`no hosted operation named "${name}"`)
 
-  const method = operation.method
-
-  let path = operation.path
-  if (path.endsWith("/*")) {
-    const subpath =
-      input.subpath === undefined || input.subpath === null
-        ? ""
-        : operationParameter(name, "subpath", input.subpath)
-    if (subpath.includes("..") || subpath.includes("://") || subpath.startsWith("//")) {
-      throw new MissingOperationParameter(`operation "${name}" requires a safe subpath`)
+  const method = operationMethod(name, operation, input)
+  const rest = operation.path.endsWith("/*")
+  let path = (rest ? operation.path.slice(0, -2) : operation.path).replace(/:([A-Za-z][A-Za-z0-9]*)/g, (_match, key: string) => {
+    const value = input[key]
+    if (value === undefined || value === null || value === "") {
+      throw new MissingOperationParameter(`operation "${name}" requires ${key}`)
     }
-    const suffix = subpath.replace(/^\//, "")
-    // Empty subpath means the collection root (no trailing slash), used by
-    // agent-config extensions list/install. Owner-scoped callers always pass a
-    // non-empty relative path.
-    path = suffix ? `${path.slice(0, -1)}${suffix}` : path.slice(0, -2)
-  } else {
-    path = path.replace(/:([A-Za-z][A-Za-z0-9]*)/g, (_match, key: string) => {
-      const value = input[key]
-      if (value === undefined || value === null || value === "") {
-        throw new MissingOperationParameter(`operation "${name}" requires ${key}`)
-      }
-      // Encoded, so a parameter cannot add a path segment or a query string.
-      return encodeURIComponent(operationParameter(name, key, value))
-    })
-  }
+    // Encoded, so a parameter cannot add a path segment or a query string.
+    return encodeURIComponent(operationParameter(name, key, value))
+  })
+  if (rest) path = `${path}${restOfPath(name, input.path)}`
 
   if (operation.query?.length || operation.optionalQuery?.length) {
     const params = new URLSearchParams()
@@ -599,6 +626,16 @@ export function resolveHostedOperation(
   const extra: Pick<ResolvedRequest, "headers" | "response"> = {
     ...(Object.keys(headers).length > 0 ? { headers } : {}),
     ...(operation.response ? { response: operation.response } : {}),
+  }
+
+  if (operation.bodyObject) {
+    const value = input[operation.bodyObject]
+    if (value === undefined) return { method, path, ...extra }
+    const body = asRecord(value)
+    if (method === "GET" || !body) {
+      throw new MissingOperationParameter(`operation "${name}" sends ${operation.bodyObject} only as an object, and never with GET`)
+    }
+    return { method, path, body, ...extra }
   }
 
   if (!operation.body) {

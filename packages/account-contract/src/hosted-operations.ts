@@ -320,6 +320,10 @@ export const HOSTED_OPERATIONS = {
   "billing.checkout": { safe: false, decode: object },
   "billing.portal": { safe: true, decode: object },
   "usage.cloudFacts": { safe: true, decode: withArrays("facts") },
+  // A request to one plugin's backend, `{ pluginId, method, path, body? }`,
+  // answered as `{ status, body? }`. Unsafe whatever the method: whether a
+  // plugin route may be repeated is the plugin's to say, not this table's.
+  "plugin.request": { safe: false, decode: statusResult },
 } satisfies Record<HostedOperationName, HostedOperationSpec>
 
 /**
