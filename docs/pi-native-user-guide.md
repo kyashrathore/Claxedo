@@ -59,5 +59,9 @@ in this release.
 
 Pi supplies its native file, search and shell tools. Inline image attachments
 are supported. Refer to other workspace files by path. Pi does not provide
-Claxedo permission prompts or native subagents. MCP support requires a Pi
-extension; configuring a Claxedo MCP server alone does not add it to upstream Pi.
+Claxedo permission prompts or native subagents. The MCP servers you configure in
+Claxedo reach Pi through Pi's own MCP support: HTTP servers everywhere, stdio
+servers in local sessions, and no SSE servers. Their tools are declared to the
+model directly. Pi also reads its own `mcp.json` from its profile, so the
+machine owner's own Pi servers load in their sessions; a server there with the
+same name as one from Claxedo replaces it.

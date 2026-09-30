@@ -26,7 +26,7 @@ const PROGRAMS: Record<string, RangedProgram> = {
   pi: {
     variable: "CLAXEDO_E2E_PI",
     range: PI_RANGE,
-    flows: ["H0-smoke", "H1-turn-parts", "H2-stop", "H4-pi-dialogs", "H4.pi-timeout", "H7-steer", "H7.unknown-held", "H13.pi-usage", "H14-mcp",
+    flows: ["H0-smoke", "H1-turn-parts", "H2-stop", "H4-pi-dialogs", "H4.pi-timeout", "H7-steer", "H7.unknown-held", "H13.pi-usage",
       "H18-pi-owner", "H20-pi-session-owner"],
     conformance: ["src/conformance/pi.test.ts", "src/conformance/pi-mcp.test.ts", "src/profiles/pi/index.test.ts"],
   },

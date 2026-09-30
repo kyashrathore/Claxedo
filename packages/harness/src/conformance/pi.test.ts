@@ -68,7 +68,7 @@ async function backend(): Promise<PiBackend> {
   return {
     root, agentDir, directory, authFile, server, uiCommand: "conformance-ui", owner: { kind: "machine-owner" },
     sharedSender: { actor: { kind: "person", userId: "member" }, via: "relay", reissued: false },
-    harness: { id: "pi", access: "native" }, expectedMcp: "none",
+    harness: { id: "pi", access: "native" }, expectedMcp: "session",
     model: { providerID: "pi", modelID: "openai/gpt-4.1" },
     credentials: { machineLoginAllowed: true, accountOwner: "fixture-owner", providers: {}, secrets: {}, leaseGeneration: "conformance" },
     hold: (marker) => server.holdTextReplies(marker),

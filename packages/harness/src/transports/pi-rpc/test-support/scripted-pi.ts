@@ -1,4 +1,4 @@
-import { mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs"
+import { mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs"
 import fs from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
@@ -11,14 +11,22 @@ type Frame = { type: string; id?: string; message?: string }
 type Handoff = { file: string; mode: number; content: string }
 type Launch = { command: SpawnCommand; options: SpawnOptions; wire: ScriptedProcess<Frame>; handoffs: Handoff[] }
 
-const EXTENSION_COMMANDS: Record<string, string> = { "claxedo-first-party-mcp.ts": "claxedo-mcp", "claxedo-session-title.ts": "claxedo-title" }
+const EXTENSION_COMMANDS: Record<string, string> = { "claxedo-session-title.ts": "claxedo-title" }
 
-function registeredCommands(launch: Launch, unregistered: readonly string[]) {
+function registeredCommands(launch: Launch) {
   const args = launch.command.args
   return args.flatMap((arg, index) => {
     const name = args[index - 1] === "-e" ? EXTENSION_COMMANDS[path.basename(arg)] : undefined
-    return name && !unregistered.includes(name) ? [{ name, source: "extension", sourceInfo: { path: arg } }] : []
+    return name ? [{ name, source: "extension", sourceInfo: { path: arg } }] : []
   })
+}
+
+function loadMcpExtension(launch: Launch) {
+  const args = launch.command.args
+  const file = launch.command.env.CLAXEDO_PI_MCP_HANDOFF
+  if (!file || !args.some((arg, index) => args[index - 1] === "-e" && path.basename(arg) === "claxedo-mcp.ts")) return
+  launch.handoffs.push({ file, mode: statSync(file).mode & 0o777, content: readFileSync(file, "utf8") })
+  rmSync(file)
 }
 
 function projectModel(cwd: string): string {
@@ -29,18 +37,13 @@ function projectModel(cwd: string): string {
   }
 }
 
-function answer(frame: Frame, launch: Launch, mcpFailure: string | undefined, unregistered: readonly string[]): unknown {
+function answer(frame: Frame, launch: Launch): unknown {
   const sessionDir = launch.command.args[launch.command.args.indexOf("--session-dir") + 1]
   if (frame.type === "get_state" && launch.options.role === "harness" && sessionDir) {
     mkdirSync(sessionDir, { recursive: true })
     writeFileSync(path.join(sessionDir, "scripted_scripted-pi.jsonl"), "")
   }
-  if (frame.type === "get_commands") return { commands: registeredCommands(launch, unregistered) }
-  if (frame.type === "prompt" && frame.message?.startsWith("/claxedo-mcp ")) {
-    const file = frame.message.slice("/claxedo-mcp ".length)
-    launch.handoffs.push({ file, mode: statSync(file).mode & 0o777, content: readFileSync(file, "utf8") })
-    if (mcpFailure) launch.wire.send({ type: "extension_error", extensionPath: "command:claxedo-mcp", error: mcpFailure })
-  }
+  if (frame.type === "get_commands") return { commands: registeredCommands(launch) }
   if (frame.type === "get_available_models") return { models: [{ provider: "scripted", id: projectModel(launch.command.cwd), name: "Scripted" }] }
   if (frame.type === "get_available_thinking_levels") return { levels: [] }
   if (frame.type === "prompt") return { disposition: "handled" }
@@ -53,7 +56,7 @@ function versionProcess(version: string) {
   return wire.owned()
 }
 
-export async function scriptedPi(input: { firstPartyMcp?: HarnessServices["firstPartyMcp"]; mcpFailure?: string; unregistered?: string[];
+export async function scriptedPi(input: { firstPartyMcp?: HarnessServices["firstPartyMcp"]; mcpUnloaded?: true;
   onLaunch?: (launch: Launch) => void; version?: string } = {}) {
   const root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), "pi-scripted-")))
   const directory = path.join(root, "work")
@@ -68,10 +71,10 @@ export async function scriptedPi(input: { firstPartyMcp?: HarnessServices["first
       return versionProcess(input.version ?? PI_RANGE.max)
     }
     const launch: Launch = { command, options, handoffs: [], wire: new ScriptedProcess<Frame>((frame) => {
-      if (frame.id) launch.wire.send({ type: "response", id: frame.id, command: frame.type, success: true,
-        data: answer(frame, launch, input.mcpFailure, input.unregistered ?? []) })
+      if (frame.id) launch.wire.send({ type: "response", id: frame.id, command: frame.type, success: true, data: answer(frame, launch) })
     }) }
     launches.push(launch)
+    if (!input.mcpUnloaded) loadMcpExtension(launch)
     input.onLaunch?.(launch)
     return launch.wire.owned()
   }

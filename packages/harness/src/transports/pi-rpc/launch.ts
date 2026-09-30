@@ -7,7 +7,7 @@ import { TransportError } from "../../contract/errors"
 import { piEnvironment, piProjectionArgs, preparePiProfile, type PiProfile, type PiProfileOptions } from "../../profiles/pi"
 import { PiRpc } from "./rpc"
 import { installPiTitleExtension } from "./title"
-import { connectPiMcp, installPiMcpExtension } from "./mcp"
+import { piMcpHandoff, type PiMcpHandoff } from "./mcp"
 import type { UnsettledPiLaunches } from "./retirements"
 import { PiSessionStream } from "./session-stream"
 import { stopPiRun } from "./stop"
@@ -33,16 +33,15 @@ export async function retiringOnFailure<T>(host: PiLaunchHost, rpc: PiRpc, work:
   catch (error) { await host.unsettled.retire(rpc); throw error }
 }
 
-async function harnessArgs(host: PiLaunchHost, launch: Extract<PiLaunch, { role: "harness" }>, mcp: boolean): Promise<string[]> {
-  return ["-e", await installPiTitleExtension(host.options.stateRoot),
-    ...(mcp ? ["-e", await installPiMcpExtension(host.options.stateRoot)] : []),
+async function harnessArgs(host: PiLaunchHost, launch: Extract<PiLaunch, { role: "harness" }>, mcp: PiMcpHandoff | undefined): Promise<string[]> {
+  return ["-e", await installPiTitleExtension(host.options.stateRoot), ...mcp?.args ?? [],
     ...(launch.resume ? ["--session", launch.resume] : [])]
 }
 
-function piCommand(host: PiLaunchHost, input: StartInput, profile: PiProfile, args: readonly string[]): SpawnCommand {
+function piCommand(host: PiLaunchHost, input: StartInput, profile: PiProfile, args: readonly string[], env: Record<string, string> = {}): SpawnCommand {
   const binary = host.options.binary
   const command = /\.[cm]?js$/.test(binary) ? { file: host.options.runtime, args: [binary, ...args] } : { file: binary, args }
-  return { ...command, cwd: input.directory, env: piEnvironment(profile, host.options.env) }
+  return { ...command, cwd: input.directory, env: { ...piEnvironment(profile, host.options.env), ...env } }
 }
 
 async function admitPiVersion(host: PiLaunchHost, input: StartInput, profile: PiProfile, broker: SessionBroker | undefined,
@@ -60,23 +59,24 @@ async function spawnPi<T>(host: PiLaunchHost, input: StartInput, profile: PiProf
   host.unsettled.retryHeld()
   await admitPiVersion(host, input, profile, broker, launch.role)
   await preparePiProfile(profile, input.model)
-  const mcp = launch.role === "harness" ? host.services.firstPartyMcp(input.sessionId, input.locality) : undefined
-  const args = ["--mode", "rpc", ...(launch.role === "probe" ? ["--no-session"] : ["--session-dir", profile.sessionDir]),
-    ...piProjectionArgs(input.projection), ...host.options.args ?? [],
-    ...(launch.role === "harness" ? await harnessArgs(host, launch, mcp !== undefined) : [])]
-  const owned = await host.services.spawn(piCommand(host, input, profile, args),
-    { role: launch.role, label: "Pi RPC", sessionId: input.sessionId, signal: host.signal })
-  const rpc = new PiRpc(owned, host.services.clock, (event) => {
-    if (broker) void broker.publish(event).catch((error: unknown) =>
-      host.services.log.error("Pi RPC diagnostic publication failed", { error: errorMessage(error) }))
-    else host.services.log.warn(event.diagnostic.message, { code: event.diagnostic.code, raw: event.diagnostic.raw })
-  })
-  const observed = observe(rpc)
-  await retiringOnFailure(host, rpc, async () => {
-    await rpc.request("get_state")
-    if (mcp) await connectPiMcp(rpc, host.services.clock, host.options.stateRoot, mcp)
-  })
-  return { rpc, observed }
+  const mcp = launch.role === "harness" ? await piMcpHandoff(host.options.stateRoot, input, host.services) : undefined
+  try {
+    const args = ["--mode", "rpc", ...(launch.role === "probe" ? ["--no-session"] : ["--session-dir", profile.sessionDir]),
+      ...piProjectionArgs(input.projection), ...host.options.args ?? [], ...(launch.role === "harness" ? await harnessArgs(host, launch, mcp) : [])]
+    const owned = await host.services.spawn(piCommand(host, input, profile, args, mcp?.env),
+      { role: launch.role, label: "Pi RPC", sessionId: input.sessionId, signal: host.signal })
+    const rpc = new PiRpc(owned, host.services.clock, (event) => {
+      if (broker) void broker.publish(event).catch((error: unknown) =>
+        host.services.log.error("Pi RPC diagnostic publication failed", { error: errorMessage(error) }))
+      else host.services.log.warn(event.diagnostic.message, { code: event.diagnostic.code, raw: event.diagnostic.raw })
+    })
+    const observed = observe(rpc)
+    await retiringOnFailure(host, rpc, async () => {
+      await rpc.request("get_state")
+      await mcp?.consumed()
+    })
+    return { rpc, observed }
+  } finally { await mcp?.discard() }
 }
 
 export async function launchPiProbe(host: PiLaunchHost, input: StartInput, profile: PiProfile): Promise<PiRpc> {
