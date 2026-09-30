@@ -22,6 +22,25 @@ export default definePlugin({
 })
 `
 
+const BACKEND = `import { DurableObject } from "cloudflare:workers"
+
+export class Counter extends DurableObject {
+  async fetch(request: Request) {
+    const value = ((await this.ctx.storage.get("value")) ?? 0) + (request.method === "POST" ? 1 : 0)
+    await this.ctx.storage.put("value", value)
+    return Response.json({ value })
+  }
+}
+
+export default {
+  fetch(request: Request, env: { OBJECTS: { object(name: string, key: string, request: Request): Promise<Response> } }) {
+    return env.OBJECTS.object("Counter", "main", request)
+  },
+}
+`
+
+const COUNTER_BACKEND = { entry: "./src/backend.ts", objects: ["Counter"], routes: ["GET /count", "POST /count"] }
+
 let root: string
 
 async function writePlugin(name: string, app: string, manifest: Record<string, unknown> = {}) {
@@ -32,6 +51,12 @@ async function writePlugin(name: string, app: string, manifest: Record<string, u
     JSON.stringify({ name: `claxedo-plugin-${name}`, version: "0.1.0", claxedo: { id: name, name: "Notes", version: "0.1.0", app: "./src/app.tsx", ...manifest } }),
   )
   await fs.writeFile(path.join(dir, "src", "app.tsx"), app)
+  return dir
+}
+
+async function writeBackendPlugin(name: string, backend: string, declared: Record<string, unknown> = COUNTER_BACKEND) {
+  const dir = await writePlugin(name, APP, { backend: declared })
+  await fs.writeFile(path.join(dir, "src", "backend.ts"), backend)
   return dir
 }
 
@@ -76,6 +101,39 @@ describe("checkPluginApp", () => {
     const checked = await checkPluginApp({ rootDir: dir })
     expect(checked.ok).toBe(false)
     expect(checked.diagnostics).toEqual([expect.objectContaining({ stage: "manifest", file: "package.json", message: expect.stringContaining("claxedo.id") })])
+  })
+
+  test("a plugin with a backend typechecks and builds both entries", async () => {
+    const dir = await writeBackendPlugin("counter", BACKEND)
+    const checked = await checkPluginApp({ rootDir: dir })
+    expect(checked.diagnostics).toEqual([])
+    expect(checked.ok).toBe(true)
+    expect(checked.manifest?.backend).toEqual({ ...COUNTER_BACKEND, outbound: [] })
+  })
+
+  test("a backend that does not export a declared object class fails the bundle stage", async () => {
+    const dir = await writeBackendPlugin("undeclared", BACKEND.replace("export class Counter", "class Counter"))
+    const checked = await checkPluginApp({ rootDir: dir })
+    expect(checked.ok).toBe(false)
+    expect(checked.diagnostics).toEqual([
+      expect.objectContaining({ stage: "bundle", file: "./src/backend.ts", message: "claxedo.backend.objects names Counter, which the entry does not export" }),
+    ])
+  })
+
+  test("a backend entry that does not exist fails the entry stage", async () => {
+    const dir = await writePlugin("absent", APP, { backend: COUNTER_BACKEND })
+    const checked = await checkPluginApp({ rootDir: dir })
+    expect(checked.ok).toBe(false)
+    expect(checked.diagnostics).toEqual([
+      expect.objectContaining({ stage: "entry", file: "package.json", message: "claxedo.backend.entry names ./src/backend.ts, which does not exist" }),
+    ])
+  })
+
+  test("an invalid backend block is a manifest diagnostic", async () => {
+    const dir = await writePlugin("routeless", APP, { backend: { ...COUNTER_BACKEND, routes: ["/count"] } })
+    const checked = await checkPluginApp({ rootDir: dir })
+    expect(checked.ok).toBe(false)
+    expect(checked.diagnostics).toEqual([expect.objectContaining({ stage: "manifest", message: expect.stringContaining("claxedo.backend.routes.0") })])
   })
 
   test("the check writes nothing into the plugin folder", async () => {

@@ -9,7 +9,7 @@ import type { PluginPackage } from "./manifest-file"
 const DIAGNOSTIC_LINE = /^(.+)\((\d+),(\d+)\): error (TS\d+): (.*)$/
 const GLOBAL_DIAGNOSTIC_LINE = /^error (TS\d+): (.*)$/
 
-const UNTYPED_HOST_MODULES = `declare module "@claxedo/app/ui"\n`
+const UNTYPED_HOST_MODULES = `declare module "@claxedo/app/ui"\ndeclare module "cloudflare:workers"\n`
 
 const require = createRequire(import.meta.url)
 
