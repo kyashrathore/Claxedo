@@ -542,6 +542,29 @@ describe("D1 access changes that must not undo or outlive a decision", () => {
     ]))
   })
 
+  test("a change that finds the role already in place changes nothing and writes no audit row", async () => {
+    const { authority, alice, bob, projectId, audit } = await setup()
+    await authority.addOrgMember!(alice, { orgId: "org_acme", userPublicId: id(bob), role: "member" })
+    const team = (await authority.createTeamInOrg!(alice, { orgId: "org_acme", name: "Eng" })) as { team_id: string }
+    await authority.addTeamMember!(alice, { teamId: team.team_id, userPublicId: id(bob) })
+    await authority.grantTeamProject!(alice, { teamId: team.team_id, projectId, role: "editor" })
+    await authority.grantProjectMember!(alice, { projectId, userPublicId: id(bob), role: "editor" })
+    const before = await audit("")
+
+    expect(await authority.addOrgMember!(alice, { orgId: "org_acme", userPublicId: id(bob), role: "member" }))
+      .toMatchObject({ role: "member" })
+    expect(await authority.updateOrgMember!(alice, { orgId: "org_acme", userPublicId: id(bob), role: "member" }))
+      .toMatchObject({ role: "member" })
+    expect(await authority.addTeamMember!(alice, { teamId: team.team_id, userPublicId: id(bob), role: "member" }))
+      .toMatchObject({ role: "member" })
+    expect(await authority.grantTeamProject!(alice, { teamId: team.team_id, projectId, role: "editor" }))
+      .toMatchObject({ role: "editor" })
+    expect(await authority.grantProjectMember!(alice, { projectId, userPublicId: id(bob), role: "editor" }))
+      .toMatchObject({ role: "editor" })
+
+    expect(await audit("")).toEqual(before)
+  })
+
   test("a role change racing a removal does not reinstate the member", async () => {
     const { authority, database, alice, bob } = await setup()
     await authority.addOrgMember!(alice, { orgId: "org_acme", userPublicId: id(bob), role: "member" })

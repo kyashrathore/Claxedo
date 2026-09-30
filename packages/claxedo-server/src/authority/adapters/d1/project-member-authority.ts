@@ -67,7 +67,14 @@ export class D1ProjectMemberAuthority implements D1ProjectMemberAuthorityPort {
       throw new D1AccessAuthorityError("project_member_org_membership_required")
     }
     const now = this.context.now()
-    const guard = this.changeGuard(who, project.project_id, userId, "")
+    const guard = this.changeGuard(who, project.project_id, userId, {
+      sql: `and not exists (
+        select 1 from project_memberships unchanged
+        where unchanged.project_id = guard_project.project_id and unchanged.user_id = guard_target.user_id
+          and unchanged.revoked_at is null and unchanged.role = ?
+      )`,
+      bind: [args.role],
+    })
     await this.database.batch([
       accessAuditStatement(this.context, {
         who,
@@ -111,12 +118,14 @@ export class D1ProjectMemberAuthority implements D1ProjectMemberAuthorityPort {
     const userId = requireText(args.userPublicId, "userPublicId")
     if (userId === project.owner_user_id) throw new D1AccessAuthorityError("project_member_owner_immutable")
     const now = this.context.now()
-    const guard = this.changeGuard(who, project.project_id, userId, `
-      and exists (
+    const guard = this.changeGuard(who, project.project_id, userId, {
+      sql: `and exists (
         select 1 from project_memberships current
         where current.project_id = guard_project.project_id and current.user_id = guard_target.user_id
           and current.revoked_at is null
-      )`)
+      )`,
+      bind: [],
+    })
     const [, , revoked] = await this.database.batch([
       accessAuditStatement(this.context, {
         who,
@@ -202,9 +211,11 @@ export class D1ProjectMemberAuthority implements D1ProjectMemberAuthorityPort {
   /**
    * Re-read inside the batch: the project is live, the caller still holds
    * admin rank on it, and the target is an active member of its organization
-   * who is not its owner, plus the change's own condition.
+   * who is not its owner, plus the change's own condition: a grant that finds
+   * the role already in place, or a revocation that finds nothing to revoke,
+   * writes nothing, its audit row included.
    */
-  private changeGuard(who: AccessPrincipal, projectId: string, userId: string, condition: string): BoundSql {
+  private changeGuard(who: AccessPrincipal, projectId: string, userId: string, condition: BoundSql): BoundSql {
     return {
       sql: `exists (
         select 1 from projects guard_project
@@ -220,9 +231,9 @@ export class D1ProjectMemberAuthority implements D1ProjectMemberAuthorityPort {
             orgId: "guard_project.org_id",
             ownerUserId: "guard_project.owner_user_id",
           })} >= 3
-          ${condition}
+          ${condition.sql}
       )`,
-      bind: [who.userId, userId, projectId],
+      bind: [who.userId, userId, projectId, ...condition.bind],
     }
   }
 

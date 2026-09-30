@@ -236,7 +236,12 @@ export class D1TeamAuthority implements D1TeamAuthorityPort {
         select 1 from org_memberships target
         join users target_user on target_user.user_id = target.user_id and target_user.state = 'active'
         where target.org_id = guard_team.org_id and target.user_id = ? and target.revoked_at is null
-      )`, [target.user_id])
+      )
+      and not exists (
+        select 1 from team_memberships unchanged
+        where unchanged.team_id = guard_team.team_id and unchanged.user_id = ?
+          and unchanged.revoked_at is null and unchanged.role = ?
+      )`, [target.user_id, target.user_id, role])
     await this.database.batch([
       accessAuditStatement(this.context, {
         who,
@@ -337,7 +342,12 @@ export class D1TeamAuthority implements D1TeamAuthorityPort {
       and exists (
         select 1 from projects project
         where project.project_id = ? and project.org_id = guard_team.org_id and project.deleted_at is null
-      )`, [projectId])
+      )
+      and not exists (
+        select 1 from team_project_grants unchanged
+        where unchanged.team_id = guard_team.team_id and unchanged.project_id = ?
+          and unchanged.revoked_at is null and unchanged.role = ?
+      )`, [projectId, projectId, args.role])
     await this.database.batch([
       accessAuditStatement(this.context, {
         who,

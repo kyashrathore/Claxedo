@@ -273,7 +273,9 @@ export class D1OrgMemberAuthority implements D1OrgMemberAuthorityPort {
    * cannot slip past them: the caller still administers the organization, the
    * target is an active user, the founder keeps the owner role, whoever moves
    * an owner role is an owner, and a change to a membership (an update or a
-   * removal) still finds it active.
+   * removal) still finds it active. Setting a role also requires that the
+   * active membership does not already hold it, so a change with nothing to
+   * change writes nothing, its audit row included.
    */
   private changeGuard(
     who: AccessPrincipal,
@@ -308,8 +310,13 @@ export class D1OrgMemberAuthority implements D1OrgMemberAuthorityPort {
             where active_row.org_id = guard_org.org_id and active_row.user_id = guard_target.user_id
               and active_row.revoked_at is null
           )` : ""}
+          ${next === null ? "" : `and not exists (
+            select 1 from org_memberships unchanged_row
+            where unchanged_row.org_id = guard_org.org_id and unchanged_row.user_id = guard_target.user_id
+              and unchanged_row.revoked_at is null and unchanged_row.role = ?
+          )`}
       )`,
-      bind: [userId, orgId, who.userId, who.userId, next, who.userId, who.userId, next],
+      bind: [userId, orgId, who.userId, who.userId, next, who.userId, who.userId, next, ...(next === null ? [] : [next])],
     }
   }
 
