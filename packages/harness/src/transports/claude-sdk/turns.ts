@@ -1,7 +1,7 @@
 import { AbortError, type EffortLevel, type SDKMessage } from "@anthropic-ai/claude-agent-sdk"
 import { isHarnessEffortLevel, type SteerResult } from "@claxedo/agent-runtime-contract"
 import type { AdapterCancelOutcome } from "@claxedo/agent-runtime-contract"
-import type { Deadline, HarnessSession, RoutedEvent, SessionBroker, StartInput, TurnBroker, TurnInput, TurnRef } from "../../contract"
+import type { Deadline, HarnessSession, HarnessVersionGate, RoutedEvent, SessionBroker, StartInput, TurnBroker, TurnInput, TurnRef } from "../../contract"
 import { TransportError } from "../../contract/errors"
 import { claudePrompt } from "./attachments"
 import { claudeStreamEndedWithoutResult } from "./errors"
@@ -33,7 +33,8 @@ function claudeEffort(value: string | null | undefined): EffortLevel | undefined
 }
 
 export class ClaudeTurns {
-  constructor(private readonly launcher: () => ClaudeQueryLauncher, private readonly models: ClaudeModelCatalog) {}
+  constructor(private readonly launcher: () => ClaudeQueryLauncher, private readonly models: ClaudeModelCatalog,
+    private readonly versions: HarnessVersionGate) {}
 
   async steer(entry: ClaudeEntry, ref: TurnRef, input: TurnInput): Promise<SteerResult> {
     const active = entry.active
@@ -170,7 +171,7 @@ export class ClaudeTurns {
     try {
       let result: SDKMessage | undefined
       for await (const message of frames) {
-        const observed = await observeClaudeSessionMessage(message, entry, entry.broker, signal)
+        const observed = await observeClaudeSessionMessage(message, entry, entry.broker, signal, this.versions)
         if (observed.kind === "active-goal") continue
         const incorporated = live.input.observe(observed.message)
         if (incorporated) {
