@@ -1,7 +1,7 @@
 import { unreachable } from "@/lib/machine"
 import type { ServerEvent, TranscriptMessage } from "@/server"
 import type { TranscriptContext } from "./context"
-import { removeMessage, removePart, upsertMessage, upsertPart } from "./conversation"
+import { removeMessage, removePart, retractParts, upsertMessage, upsertPart } from "./conversation"
 import { isPresentationMessage } from "./merge"
 import { isReading, isTranscriptEvent, type TranscriptEvent } from "./model"
 
@@ -21,6 +21,8 @@ export function applyTranscriptEvent(context: TranscriptContext, event: Transcri
       return upsertPart(context.setData, event.part)
     case "partRemoved":
       return removePart(context.setData, event.messageId, event.partId)
+    case "partsRetracted":
+      return retractParts(context.setData, context.data, event.parts, event.reason)
     case "todosChanged":
       return context.todos.changed(event.todos)
     case "diffChanged":

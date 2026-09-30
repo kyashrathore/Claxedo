@@ -409,6 +409,22 @@ and child sessions. One request broker per store (`@claxedo/harness/broker`
 over `src/broker-ports/`) answers every permission, question and elicitation a
 transport asks, and persists each answer before the harness is released.
 
+A notice the person needs reaches the transcript, not a diagnostic. The
+client-presentation projection (`src/projection/client-presentation/notices.ts`)
+turns a turn's `harness-notice` into a `notice` part on its reply, and a
+compaction into one `notice` part that goes from running to completed or
+failed, and a `conversation-reset` (Claude's `/clear`) into a boundary part; the
+session and its stored history stay, and later turns run on the new
+conversation. A `debug` notice, or one published outside any turn, has no reply to
+land in and stays a `runtime.diagnostic`.
+
+A harness that names its model responses (`response-start`) lets the
+projection remember which text, reasoning and tool parts each response wrote.
+A `response-retracted` for those responses becomes `message.part.retracted`:
+the store marks exactly those text and reasoning parts `retracted`, keeping
+their content, and a tool call the response never ran settles as withdrawn. A
+tool call that ran keeps its recorded outcome, because what it did happened.
+
 A descriptor whose revision or secret lease changes replaces its transport.
 The superseded one is disposed only once the turns admitted on it have ended,
 so their cancellation and requests still reach the process running them.

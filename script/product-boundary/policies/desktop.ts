@@ -400,7 +400,13 @@ export const desktopRenderer: Policy = {
   // and `background-work-label.ts`, which its unit test reaches directly; and a
   // running background subagent's Stop beside its chip is
   // `transcript/subagent-stop.tsx`.
-  ceilings: { modules: 1233, packages: 36 },
+  // The transcript draws a harness's notices and compaction boundaries from the
+  // contract's `transcript-notice.ts` through `transcript/notice-part.tsx`, whose
+  // pure view (`notice-view.ts`) its unit test reaches directly, on the divider
+  // it shares with the compaction part (`message-divider.tsx`). A response the
+  // harness withdrew draws through `transcript/retracted-part.tsx`, and the edit
+  // tools' diagnostics list is `transcript/tool-diagnostics.tsx`.
+  ceilings: { modules: 1238, packages: 36 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,

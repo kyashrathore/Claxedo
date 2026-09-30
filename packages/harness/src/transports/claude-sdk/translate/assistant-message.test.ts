@@ -1,6 +1,12 @@
 import { describe, expect, test } from "bun:test"
 import { claudeRuntime as runtime } from "../test-support/runtime"
 
+function started(id: string) {
+  const agent = runtime()
+  agent.ingest({ source: "claude.sdk.message", payload: { type: "stream_event", event: { type: "message_start", message: { id, content: [] } } } })
+  return agent
+}
+
 describe("claudeSdkAdapter", () => {
   test("preserves provider error explanation and recovery guidance", () => {
     const explanation = "API Error: This request was blocked. Try a new session or change your model."
@@ -22,7 +28,7 @@ describe("claudeSdkAdapter", () => {
   })
 
   test("maps text deltas and suppresses duplicate assistant snapshots", () => {
-    const agent = runtime()
+    const agent = started("message-1")
 
     expect(agent.ingest({
       source: "claude.sdk.message",
@@ -47,7 +53,7 @@ describe("claudeSdkAdapter", () => {
   })
 
   test("keeps the active assistant text stream without duplicating snapshots", () => {
-    const first = runtime()
+    const first = started("message-1")
     first.ingest({
       source: "claude.sdk.message",
       payload: {

@@ -5,6 +5,8 @@ import type { Terminal, TerminalAgentStatus } from "./terminal-types"
 import type { BackgroundWork, SessionStatus } from "./status-types"
 import type { AgentRequest, FileDiff, SessionGoal, SessionRef, SessionRow, Subagent, Todo, TranscriptMessage, TranscriptPart } from "./types"
 
+export type PartAddress = { readonly messageId: string; readonly partId: string }
+
 export type ServerEvent =
   | { readonly type: "sessionUpserted"; readonly row: SessionRow }
   | { readonly type: "sessionRemoved"; readonly ref: SessionRef }
@@ -22,6 +24,7 @@ export type ServerEvent =
       readonly delta: string
     }
   | { readonly type: "partRemoved"; readonly ref: SessionRef; readonly messageId: string; readonly partId: string }
+  | { readonly type: "partsRetracted"; readonly ref: SessionRef; readonly reason: string; readonly parts: readonly PartAddress[] }
   | { readonly type: "requestOpened"; readonly ref: SessionRef; readonly request: AgentRequest }
   | { readonly type: "requestClosed"; readonly ref: SessionRef; readonly requestId: RequestId }
   | { readonly type: "todosChanged"; readonly ref: SessionRef; readonly todos: readonly Todo[] }

@@ -11,7 +11,7 @@ export function SessionRetry(props: { status: AgentRuntimeStatus; show?: boolean
     if (props.status.type !== "retry") return undefined
     return props.status
   })
-  const now = useSecondClock(() => retry() !== undefined)
+  const now = useSecondClock(() => retry()?.next !== undefined)
   const seconds = () => {
     const next = retry()?.next
     return next ? Math.round((next - now()) / 1000) : 0
@@ -37,7 +37,7 @@ export function SessionRetry(props: { status: AgentRuntimeStatus; show?: boolean
     const delay = count > 0 ? i18n.t("transcript.sessionTurn.retry.inSeconds", { seconds: count }) : ""
     const retrying = i18n.t("transcript.sessionTurn.retry.retrying")
     const line = [retrying, delay].filter(Boolean).join(" ")
-    if (!line) return i18n.t("transcript.sessionTurn.retry.attempt", { attempt: current.attempt })
+    if (current.attempt === undefined) return line
     return i18n.t("transcript.sessionTurn.retry.attemptLine", { line, attempt: current.attempt })
   })
 

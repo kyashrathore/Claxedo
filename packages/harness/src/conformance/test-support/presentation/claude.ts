@@ -52,9 +52,14 @@ export function registerClaudePresentationCases(createClientPresentationProjecti
       return { type: "stream_event", event: { type: "content_block_delta", index: 0, delta: { type: "text_delta", text } } }
     }
 
+    function messageStart(id: string) {
+      return { type: "stream_event", event: { type: "message_start", message: { id, content: [] } } }
+    }
+
     test("reconciles a turn's second assistant message against its own streamed text", () => {
       const session = assistantTextSession()
 
+      session.ingest(messageStart("message-a"))
       session.ingest(textDelta("Hello"))
       expect(session.ingest({
         type: "assistant",
@@ -62,6 +67,7 @@ export function registerClaudePresentationCases(createClientPresentationProjecti
         message: { id: "message-a", content: [{ type: "text", text: "Hello" }] },
       })).toEqual([])
 
+      session.ingest(messageStart("message-b"))
       session.ingest(textDelta("Wor"))
       expect(session.ingest({
         type: "assistant",
@@ -82,7 +88,7 @@ export function registerClaudePresentationCases(createClientPresentationProjecti
         message: { id: "message-child", content: [{ type: "text", text: "Child reply" }] },
       }
 
-      expect(session.ingest(childMessage)).toMatchObject([{ type: "text-delta", delta: "Child reply" }])
+      expect(session.ingest(childMessage)).toMatchObject([{ type: "response-start", responseId: "message-child" }, { type: "text-delta", delta: "Child reply" }])
       expect(session.ingest(childMessage)).toEqual([])
 
       expect(session.assistantText()).toBe("Child reply")
@@ -91,6 +97,7 @@ export function registerClaudePresentationCases(createClientPresentationProjecti
     test("a snapshot diverging from the streamed text emits only its unseen suffix", () => {
       const session = assistantTextSession()
 
+      session.ingest(messageStart("message-1"))
       session.ingest(textDelta("Hello wrold"))
       expect(session.ingest({
         type: "assistant",

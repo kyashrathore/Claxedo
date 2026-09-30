@@ -57,3 +57,11 @@ test("frames: an expired permission or question closes the request exactly as it
   expect(settled("question.rejected")).toEqual(closed)
   expect(settled("question.expired")).toEqual(closed)
 })
+
+test("frames: a part retraction names the withdrawn parts and why", () => {
+  const frame = frameFromWire({
+    directory: "/work",
+    payload: { type: "message.part.retracted", properties: { sessionID: "s1", reason: "refusal", parts: [{ messageID: "m1", partID: "p1" }, { messageID: "m1" }] } },
+  })
+  expect(frame && serverEventFromFrame(frame, address)).toEqual({ type: "partsRetracted", ref, reason: "refusal", parts: [{ messageId: "m1", partId: "p1" }] })
+})

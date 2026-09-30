@@ -23,7 +23,9 @@ export function sessionStatusSnapshot(input: unknown[], backgroundWork: (session
   return out
 }
 
-function live(input: Record<string, unknown>, defaultMessage: string, now = Date.now()): AgentRuntimeStatus | undefined {
+const RETRYING = "The harness is retrying its model request"
+
+function live(input: Record<string, unknown>, defaultMessage: string): AgentRuntimeStatus | undefined {
   if (input.status === "busy") return { type: "busy" }
   if (input.status === "recovering") {
     return recovering(typeof input.message === "string" ? input.message : typeof input.recovery_error === "string" ? input.recovery_error : defaultMessage)
@@ -31,8 +33,8 @@ function live(input: Record<string, unknown>, defaultMessage: string, now = Date
   if (input.status !== "retry") return undefined
   return {
     type: "retry",
-    attempt: typeof input.attempt === "number" ? input.attempt : 1,
-    message: typeof input.message === "string" ? input.message : defaultMessage,
-    next: typeof input.next === "number" ? input.next : now,
+    message: typeof input.message === "string" ? input.message : RETRYING,
+    ...(typeof input.attempt === "number" ? { attempt: input.attempt } : {}),
+    ...(typeof input.next === "number" ? { next: input.next } : {}),
   }
 }

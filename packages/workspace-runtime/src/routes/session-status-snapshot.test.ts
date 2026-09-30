@@ -12,6 +12,12 @@ describe("sessionStatusSnapshot", () => {
     })
   })
 
+  it("a stored retry, which keeps only its kind, reads as retrying without an invented attempt or countdown", () => {
+    expect(sessionStatusSnapshot([{ id: "retry-2", status: "retry" }])).toEqual({
+      "retry-2": { type: "retry", message: "The harness is retrying its model request" },
+    })
+  })
+
   it("surfaces persisted recovery markers so reload can show stale ACP turns", () => {
     expect(sessionStatusSnapshot([
       { id: "rec-1", status: "recovering", recovery_error: "ACP process restarted" },

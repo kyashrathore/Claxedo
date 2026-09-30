@@ -35,6 +35,7 @@ export type ClaudeSdkAdapterState = {
   model?: string
   mainRequests?: Record<string, ClaudeRequestUsage>
   streamingRequestByOwner?: Record<string, string>
+  responseByOwner?: Record<string, string>
   lastMainRequest?: string
   rejectedWindow?: { limitName?: string; resetsAt?: number | null }
   failure?: { error: string; errorClass?: FirstTurnErrorClass }

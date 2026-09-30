@@ -4,6 +4,11 @@ import type { PiMessage, PiRpc } from "./rpc"
 const dialogs = ["select", "confirm", "input", "editor"]
 const notices = ["notify", "setStatus", "setWidget", "setTitle", "set_editor_text"]
 
+function noticeSeverity(message: PiMessage) {
+  if (message.method !== "notify") return "debug"
+  return message.notifyType === "error" ? "error" : message.notifyType === "warning" ? "warn" : "info"
+}
+
 export function piUiEvent(message: PiMessage): RoutedEvent | undefined {
   if (message.type !== "extension_ui_request" || typeof message.method !== "string" || !notices.includes(message.method)) return undefined
   const detail = message.method === "setStatus" ? message.statusText
@@ -14,7 +19,7 @@ export function piUiEvent(message: PiMessage): RoutedEvent | undefined {
     event: {
       type: "harness-notice", code: `pi.extension_ui.${message.method}`,
       message: typeof detail === "string" ? detail : JSON.stringify(detail ?? ""),
-      severity: message.notifyType === "error" ? "error" : message.notifyType === "warning" ? "warn" : "info",
+      severity: noticeSeverity(message),
       details: { method: message.method, id: message.id,
         ...(message.method === "setStatus" ? { statusKey: message.statusKey, statusText: message.statusText } : {}),
         ...(message.method === "setWidget" ? { widgetKey: message.widgetKey, widgetLines: message.widgetLines, widgetPlacement: message.widgetPlacement } : {}),

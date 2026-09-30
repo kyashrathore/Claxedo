@@ -55,3 +55,9 @@ test("goal notifications belong to the goal owner and are not reported again her
   expect(ingest("thread/goal/updated", { threadId: "thread-1", turnId: null, goal }).events).toEqual([])
   expect(ingest("thread/goal/cleared", { threadId: "thread-1" }).events).toEqual([])
 })
+
+test("model verification is bookkeeping, not a notice the person reads", () => {
+  expect(ingest("model/verification", { threadId: "thread-1", verified: true }).events).toMatchObject([
+    { type: "harness-notice", code: "codex_app_server.model_verification", severity: "debug" },
+  ])
+})
