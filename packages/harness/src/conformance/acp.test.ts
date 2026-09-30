@@ -180,6 +180,27 @@ test("a missing native ACP session persists saved context before rebinding", asy
   } finally { await context.close() }
 })
 
+test("ACP advertises session notices, and a notice the agent sends is a harness notice in the turn", async () => {
+  const context = await setupConformance({
+    name: "acp notice", backend: () => backend("process"),
+    makeTransport(services, state) {
+      return new AcpTransport(services, (state as AcpBackend).connection, filterMcpServers,
+        async () => { throw new Error("No saved transcript in this conformance scenario") })
+    },
+  })
+  try {
+    await writeAcpScript(context.backend.directory, "notice", { steps: [
+      { kind: "notice", severity: "warning", title: "Rate limit approaching", description: "Requests slow down after 80%." },
+      { kind: "text", text: "Done" },
+    ] })
+    const events: unknown[] = []
+    for await (const routed of context.transport.send(context.session, context.turn(acpScriptToken("notice")), context.turnBroker())) events.push(routed.event)
+    expect(events).toContainEqual(expect.objectContaining({ type: "harness-notice", code: "acp.notice", severity: "warn",
+      message: "Rate limit approaching. Requests slow down after 80%." }))
+    expect(JSON.stringify(events)).not.toContain("Rate limit approaching Requests")
+  } finally { await context.close() }
+})
+
 test("ACP publishes a command update received outside a turn", async () => {
   const context = await setupConformance({
     name: "acp outside commands", backend: () => backend("websocket"),
