@@ -22,7 +22,7 @@ function reportTo(entry: Entry): (error: unknown) => void {
 
 function spawnNative(entry: Entry, threadId: string, spawn: ChildSpawn): void {
   if (entry.children.has(threadId)) return
-  const child = entry.children.add(new CodexChild(threadId, "native", spawn))
+  const child = entry.children.add(new CodexChild(threadId, spawn))
   const { toolCallId, ...described } = spawn
   child.enqueue(async () => {
     const ref = await observeNativeChild(entry, child, `spawn:${toolCallId ?? threadId}`, "running",
@@ -36,7 +36,7 @@ function taskName(agentPath: string | undefined): string {
 }
 
 function awaitInteraction(child: CodexChild | undefined, toolCallId: string): void {
-  if (child?.origin === "native" && !child.calls.has(toolCallId)) child.interaction = toolCallId
+  if (child && !child.calls.has(toolCallId)) child.interaction = toolCallId
 }
 
 function collabCall(entry: Entry, message: RpcMessage, call: CodexCollabAgentCall, fromSession: boolean): void {
@@ -48,7 +48,7 @@ function collabCall(entry: Entry, message: RpcMessage, call: CodexCollabAgentCal
   }
   for (const threadId of call.receiverThreadIds) {
     const child = entry.children.get(threadId)
-    if (child?.origin !== "native") continue
+    if (!child) continue
     if (fromSession) awaitInteraction(child, call.id)
     if (message.method === "item/completed" && call.statuses[threadId] === "killed") {
       child.enqueue(async () => { await observeNativeChild(entry, child, `shutdown:${call.id}`, "killed") }, reportTo(entry))
@@ -79,7 +79,7 @@ function childTurnStarted(entry: Entry, child: CodexChild, turnId: string): void
   const reopened = child.state === "idle"
   child.turnId = turnId
   entry.children.move(child, "turn-started")
-  if (!reopened || child.origin !== "native") return
+  if (!reopened) return
   const call = child.interaction ?? turnId
   child.interaction = undefined
   child.calls.add(call)
@@ -88,7 +88,6 @@ function childTurnStarted(entry: Entry, child: CodexChild, turnId: string): void
 
 function childTurnEnded(entry: Entry, child: CodexChild, turn: Record<string, unknown>): void {
   entry.children.move(child, "turn-ended")
-  if (child.origin !== "native") return
   const outcome = childTurnOutcome(turn)
   child.outcome = outcome.status
   child.enqueue(async () => {

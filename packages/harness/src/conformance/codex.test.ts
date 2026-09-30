@@ -93,30 +93,45 @@ test("Codex offers today's four permission modes and applies the selected one to
   } finally { await context.close() }
 }, 90_000)
 
-test("Codex spawn_agent runs a child thread whose events route to the child session", async () => {
+const HOST_CHILD = { kind: "claxedo.subagent", subagentKey: "subagent_codex", sessionId: "child-codex", status: "running" }
+
+test("a Codex model without Codex's own multi-agent tools is offered no Claxedo spawn tool and starts a Codex child through create_subagent", async () => {
+  let admitHostChild = () => {}
+  const mcp = await startScriptedMcpServer({ name: "create_subagent", description: "Start a subagent session on a harness",
+    inputSchema: { type: "object", properties: { harness: { type: "string" }, prompt: { type: "string" } }, required: ["harness", "prompt"] },
+    result: () => {
+      admitHostChild()
+      return { content: [{ type: "text", text: JSON.stringify(HOST_CHILD) }] }
+    } })
   const recorder = recordingBackend()
-  const context = await setupConformance({ name: "codex-subagent", backend: recorder.backend, makeTransport })
+  const context = await setupConformance({ name: "codex-create-subagent",
+    backend: async () => ({ ...(await recorder.backend()), model: { providerID: "codex", modelID: "gpt-5.5" },
+      configureServices: (services) => { services.firstPartyMcp = (_sessionId, locality) => locality === "local" ? { kind: "http", name: "claxedo", url: mcp.url } : undefined } }),
+    makeTransport })
+  admitHostChild = () => context.sessionBroker.associateChild(HOST_CHILD.subagentKey, { sessionId: HOST_CHILD.sessionId, assistantMessageId: "child-a1", created: 10 })
   try {
-    const state = context.backend as CodexBackend
-    state.server.scriptTool({ name: "spawn_agent", input: { task_name: "child_inspect", message: "Inspect the workspace for CODEXCHILDTASK" },
-      whenPromptIncludes: "CODEXPARENT" })
-    state.server.scriptText({ marker: "CODEXCHILDTASK", text: "CODEXCHILD" })
-    const events = []
-    for await (const event of context.transport.send(context.session,
-      context.turn("Delegate one child task, then reply with exactly this one token: CODEXPARENT"), context.turnBroker())) events.push(event)
-    const childText = events.filter((item) => item.event.type === "text-delta" && item.event.delta.includes("CODEXCHILD"))
-    expect(childText.length).toBeGreaterThan(0)
-    expect(childText.every((item) => item.route?.kind === "child")).toBe(true)
-    expect(events.some((item) => item.route?.kind !== "child" && item.event.type === "text-delta" && item.event.delta.includes("CODEXPARENT"))).toBe(true)
-    expect(events.filter((item) => item.route?.kind !== "child" && item.event.type === "finish")).toHaveLength(1)
-    expect(context.ports.subagents.some((row) => row.status === "running" && row.toolCallId && row.childSessionId)).toBe(true)
-    expect(context.ports.subagents.some((row) => row.status === "completed")).toBe(true)
-    const started = recorder.frames.filter((frame) => frame.method === "thread/start")
-    expect(started[0]?.params?.dynamicTools).toBeDefined()
-    expect(started[1]?.params).toMatchObject({ threadSource: "subagent", sandbox: "workspace-write" })
-    expect(recorder.frames.filter((frame) => frame.method === "turn/start")).toHaveLength(2)
-    expect((await context.transport.capabilities({ directory: context.backend.directory })).subagents).toBe(true)
-  } finally { await context.close() }
+    const server = (context.backend as CodexBackend).server
+    await context.transport.config!.update(context.session, { permissionMode: "full-access" })
+    server.scriptTool({ name: "tool_search", format: "tool_search", input: { query: "create_subagent" }, whenPromptIncludes: "CODEXFINDSPAWN" })
+    for await (const _event of context.transport.send(context.session, context.turn("Find the subagent tool CODEXFINDSPAWN"), context.turnBroker())) {}
+    const offered = server.requests.filter((request) => request.prompt.includes("CODEXFINDSPAWN")).flatMap((request) => request.tools)
+    expect(offered.filter((tool) => tool.call.name === "spawn_agent")).toEqual([])
+    const create = offered.find((tool) => tool.call.name === "create_subagent")
+    expect(create?.call).toEqual({ name: "create_subagent", namespace: expect.stringMatching(/^mcp__claxedo/) })
+    server.scriptTool({ ...create!.call, input: { harness: "codex", prompt: "Inspect the workspace" }, whenPromptIncludes: "CODEXHOSTSPAWN" })
+    const events: RoutedEvent[] = []
+    for await (const routed of context.transport.send(context.session, { ...context.turn("Start a Codex subagent CODEXHOSTSPAWN", "u2"),
+      turnId: "t2", assistantMessageId: "a2" }, context.turnBroker())) events.push(routed)
+    expect(mcp.calls).toEqual([{ name: "create_subagent", arguments: { harness: "codex", prompt: "Inspect the workspace" } }])
+    const call = events.find((routed) => routed.event.type === "tool-start" && routed.event.toolName.includes("create_subagent"))
+    expect(context.ports.subagents).toContainEqual(expect.objectContaining({ toolCallRole: "spawn", providerKind: "claxedo",
+      childSessionId: "child-codex", subagentKey: "subagent_codex", toolCallId: call?.event.type === "tool-start" ? call.event.toolCallId : "missing" }))
+    expect(recorder.frames.filter((frame) => frame.method === "thread/start").map((frame) => frame.params?.dynamicTools)).toEqual([undefined])
+    expect(recorder.received.some((frame) => frame.method === "item/tool/call")).toBe(false)
+  } finally {
+    await context.close()
+    await mcp.close()
+  }
 }, 90_000)
 
 async function titledSession(recorder: ReturnType<typeof recordingBackend>) {

@@ -8,7 +8,6 @@ import { reconcileCodexGoal } from "./goals"
 import { codexThreadResumeParams, codexThreadStartParams } from "./input"
 import { codexModelProvider, type CodexLaunch, type CodexLaunches } from "./launch"
 import { codexPermissionSettings } from "./modes"
-import { codexStartSettings } from "./models"
 import { codexNotificationOutsideTurn } from "./notifications"
 import type { RpcMessage } from "./rpc"
 import { CodexTerminals } from "./terminals"
@@ -62,7 +61,7 @@ async function bindEntry(host: CodexSessionHost, launched: OpenedLaunch, input: 
   const binding = await broker.rebind(threadId)
   const bound: Entry = { state: "ready", start: input, session: { directory: input.directory, locality: input.locality, binding }, broker, rpc,
     home: launched.home, modelProvider: launched.modelProvider, plugins: launched.plugins, terminals: new CodexTerminals(rpc, threadId), children: new CodexChildren((work) => publishBackgroundWork(broker, work)), sideThreads: new Set(),
-    usage: new CodexUsageLedger(), goal: null, settings: codexStartSettings(input), steers: new Set(), released: Promise.resolve(), idle: () => host.idle(bound) }
+    usage: new CodexUsageLedger(), goal: null, steers: new Set(), released: Promise.resolve(), idle: () => host.idle(bound) }
   return { entry: bound, replay: () => {
     entry = bound
     for (const message of early.splice(0)) codexNotificationOutsideTurn(bound, message)

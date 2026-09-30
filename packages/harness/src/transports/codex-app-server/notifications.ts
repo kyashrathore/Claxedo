@@ -10,10 +10,9 @@ import type { ThreadOwnership } from "./usage"
 
 function usageOwnership(entry: Entry, threadId: string | undefined): ThreadOwnership {
   if (!threadId) return "unknown"
-  const child = entry.children.get(threadId)
-  if (child?.origin === "native") return "owned"
+  if (entry.children.has(threadId)) return "owned"
   const streaming = entry.state === "busy" || entry.providerTurn !== undefined
-  if (threadId === entry.session.binding.upstreamSessionId || child) return streaming ? "owned" : "detached"
+  if (threadId === entry.session.binding.upstreamSessionId) return streaming ? "owned" : "detached"
   return entry.sideThreads.has(threadId) ? "side" : "unknown"
 }
 

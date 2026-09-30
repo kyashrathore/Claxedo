@@ -9,9 +9,11 @@ import { frameSessionId, frameType, type EventStream } from "../harness/stream"
 const NATIVE = [
   { id: "claude", providerId: "anthropic", modelId: "claude-sonnet-4-5", mode: "default",
     spawn: (prompt: string) => ({ name: "Agent", input: { description: "Write a file", prompt, subagent_type: "general-purpose", run_in_background: false } }),
+    childPrompt: (prompt: string) => prompt,
     command: (command: string) => ({ name: "Bash", input: { command, description: "Write the file" } }) },
   { id: "codex", providerId: "openai", modelId: "gpt-4.1", mode: "workspace-write",
-    spawn: (prompt: string) => ({ name: "spawn_agent", input: { task_name: "child_write", message: prompt } }),
+    spawn: (prompt: string) => ({ name: "spawn_agent", namespace: "multi_agent_v1", input: { message: prompt } }),
+    childPrompt: (prompt: string) => `"text":"${prompt}`,
     command: (command: string) => ({ name: "exec_command", input: { cmd: command, sandbox_permissions: "require_escalated", justification: "Write the file" } }) },
 ] as const
 
@@ -25,8 +27,9 @@ export async function run() {
       const parentMarker = `H3C_${harness.id.toUpperCase()}_PARENT`
       const childMarker = `H3C_${harness.id.toUpperCase()}_CHILD`
       const output = path.join(stack.dataDir, `${harness.id}-child.txt`)
-      stack.scripted.scriptTool({ ...harness.spawn(`Run the command, then reply with exactly this one token: ${childMarker}`), whenPromptIncludes: parentMarker })
-      stack.scripted.scriptTool({ ...harness.command(`printf approved > '${output}'`), whenPromptIncludes: childMarker })
+      const childPrompt = `Run the command, then reply with exactly this one token: ${childMarker}`
+      stack.scripted.scriptTool({ ...harness.spawn(childPrompt), whenPromptIncludes: parentMarker })
+      stack.scripted.scriptTool({ ...harness.command(`printf approved > '${output}'`), whenPromptIncludes: harness.childPrompt(childPrompt) })
       const parent = await api.createSession(directory, { harness: { id: harness.id, access: "native" },
         permissionMode: harness.mode, model: { providerId: harness.providerId, modelId: harness.modelId } })
       const since = stream.frames.length
@@ -46,6 +49,8 @@ export async function run() {
       await api.replyPermission(directory, child.id, row.id, "once")
       await stream.waitFor((frame) => stream.frames.indexOf(frame) >= since && frameType(frame) === "session.idle" && frameSessionId(frame) === parent.id,
         { label: `${harness.id} parent idle`, timeoutMs: 90_000 })
+      await stream.waitFor((frame) => stream.frames.indexOf(frame) >= since && frameType(frame) === "session.idle" && frameSessionId(frame) === child.id,
+        { label: `${harness.id} child idle`, timeoutMs: 90_000 })
       assert.equal(await fs.readFile(output, "utf8"), "approved")
       await assert.rejects(() => api.replyPermission(directory, child.id, row.id, "once"),
         (error: unknown) => error instanceof ApiError && error.status === 404, `${harness.id} took a duplicate answer`)

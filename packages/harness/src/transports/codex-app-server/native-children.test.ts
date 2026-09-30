@@ -185,7 +185,7 @@ test("per-task stop interrupts only the native child's running turn, and names n
   } finally { await peer.close() }
 })
 
-test("an approval a native child asks names the child it came from", async () => {
+test("an approval a native child asks names the child it came from, and the parent's own approval names none", async () => {
   const { peer, host, running } = await nativeSession()
   try {
     const asked: unknown[] = []
@@ -195,8 +195,33 @@ test("an approval a native child asks names the child it came from", async () =>
     await settle()
     peer.request(91, "item/commandExecution/requestApproval", { threadId: CHILD, turnId: CHILD_TURN, itemId: "item-1", command: "ls", cwd: peer.root })
     for (let round = 0; round < 50 && !peer.frames.some((frame) => frame.id === 91 && !frame.method); round++) await tick()
-    expect(asked).toMatchObject([{ child: { correlationKey: CHILD } }])
+    peer.request(92, "item/commandExecution/requestApproval", { threadId: PARENT, turnId: "turn-current", itemId: "item-2", command: "ls", cwd: peer.root })
+    for (let round = 0; round < 50 && !peer.frames.some((frame) => frame.id === 92 && !frame.method); round++) await tick()
+    expect(asked).toMatchObject([{ child: { correlationKey: CHILD } }, {}])
+    expect((asked[1] as { child?: unknown }).child).toBeUndefined()
     expect(asked).not.toContainEqual(expect.objectContaining({ permission: expect.objectContaining({ metadata: expect.objectContaining({ subagent: expect.anything() }) }) }))
+    peer.emit(turnCompleted(CHILD, CHILD_TURN))
+    peer.emit(turnCompleted(PARENT, "turn-current"))
+    await running
+  } finally { await peer.close() }
+})
+
+test("an approval a native child asks before its spawn is bound is asked only once the child is bound, so the broker can file it on the child", async () => {
+  const { peer, host, running } = await nativeSession()
+  try {
+    let bind!: () => void
+    const binding = new Promise<void>((resolve) => { bind = resolve })
+    const observe = host.broker.observeSubagent.bind(host.broker)
+    host.broker.observeSubagent = (async (observation: SubagentObservation) => { await binding; return observe(observation) }) as SessionBroker["observeSubagent"]
+    host.turnBroker.ask = (async () => { host.log.push("ask"); return { kind: "permission", decision: "allow_once" } }) as TurnBroker["ask"]
+    peer.emit(subAgentActivity("item/started", PARENT, "turn-current", { id: "call_1", kind: "started", agentThreadId: CHILD, agentPath: "/root/child_probe" }))
+    peer.emit(turnStarted(CHILD, CHILD_TURN))
+    peer.request(93, "item/commandExecution/requestApproval", { threadId: CHILD, turnId: CHILD_TURN, itemId: "item-3", command: "ls", cwd: peer.root })
+    await settle()
+    expect(host.log).not.toContain("ask")
+    bind()
+    for (let round = 0; round < 50 && !peer.frames.some((frame) => frame.id === 93 && !frame.method); round++) await tick()
+    expect(host.log.filter((row) => row === "ask" || row.startsWith("associate:"))).toEqual([`associate:${CHILD}`, "ask"])
     peer.emit(turnCompleted(CHILD, CHILD_TURN))
     peer.emit(turnCompleted(PARENT, "turn-current"))
     await running
