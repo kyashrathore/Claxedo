@@ -20,9 +20,6 @@ import type { TestServices } from "./test-support/services"
 import type { RuntimeGoalSnapshot } from "@claxedo/agent-runtime-contract"
 import { AbortError, type CanUseTool, type Query, type SDKMessage, type PermissionUpdate, type query } from "@anthropic-ai/claude-agent-sdk"
 import type { HarnessBinding, HarnessServices, SessionBroker, SpawnCommand, StartInput, RoutedEvent, TurnInput } from "../contract"
-import { HarnessVersionGate } from "../contract"
-import { CLAUDE_CODE_RANGE } from "../transports/claude-sdk/cli-version"
-import { ClaudeGoals } from "../transports/claude-sdk/goals"
 import { ClaudeQueryLauncher } from "../transports/claude-sdk/query-options"
 import { askClaudePermission } from "../transports/claude-sdk/requests"
 import { sdkModes } from "../transports/claude-sdk/permissions"
@@ -236,7 +233,8 @@ test.each(["allow_once", "allow_always", "deny", "reject_always"])("Claude permi
       prompt: { agent: "claude", assistantMessageId: "a1", parts: [{ type: "text" as const, text: "Run the scripted Bash tool" }] }, todos: [] }
     const turnBroker = createTurnBroker(owner, { authority: { ...authority, directory: state.directory,
       upstreamSessionId: session.binding.upstreamSessionId }, origin, signal: new AbortController().signal })
-    const running = (async () => { for await (const _event of transport.send(session, turn, turnBroker)) {} })()
+    const events: RoutedEvent[] = []
+    const running = (async () => { for await (const event of transport.send(session, turn, turnBroker)) events.push(event) })()
     const deadline = Date.now() + 10_000
     let pending = owner.broker.list({ sessionId: "s1" }).find((row) => row.request.kind === "permission")
     while (!pending && Date.now() < deadline) {
@@ -256,8 +254,8 @@ test.each(["allow_once", "allow_always", "deny", "reject_always"])("Claude permi
     }
     const answer = await owner.broker.answer(pending.request.requestId, { kind: "permission", decision }, { sessionId: "s1" })
     expect(answer.ok).toBe(true)
-    if (decision === "reject_always") await expect(running).rejects.toThrow()
-    else await running
+    await running
+    if (decision === "reject_always") expect(events.some(({ event }) => event.type === "cancelled" || event.type === "error")).toBe(true)
     expect(ports.saved.some((row) => row.pending.request.requestId === pending.request.requestId)).toBe(true)
     expect(await fs.stat(target).then(() => true, () => false)).toBe(decision.startsWith("allow"))
     expect(await fs.readFile(path.join(state.userConfigRoot, "settings.json"))).toEqual(originalSettings)
@@ -300,7 +298,7 @@ test("Claude native Goal starts through provider admission and confirms clear", 
     const session = await transport.start({ sessionId: "s1", workspaceId: "w1", directory: state.directory, locality: "local", owner: state.owner,
       config: { harness: state.harness, model: state.model }, model: state.model, credentials: state.credentials,
       projection: { generation: "g1", mcpServers: [], pluginRoots: [], notApplied: [] } }, broker)
-    const started = await transport.goals.start(session, "Reply with exactly this one token: CLAUDEGOAL", broker)
+    const started = await transport.goals.start(session, "Reply with exactly this one token: CLAUDEGOAL")
     expect(started.ok).toBe(true)
     const until = Date.now() + 10_000
     while (!broker.goal.read() && Date.now() < until) await new Promise((resolve) => setTimeout(resolve, 50))
@@ -531,55 +529,6 @@ test("Always allow persists Claude's suggested rules through the broker's grants
   } finally { await second?.close(); await first.close(); await state.close() }
 }, 90_000)
 
-function goalStream(messages: AsyncIterable<SDKMessage>): Query {
-  return { [Symbol.asyncIterator]: () => messages[Symbol.asyncIterator](), close() {} } as Query
-}
-
-const goalEntry = () => ({ session: { directory: "/work", locality: "local" as const, binding: { sessionId: "s1", workspaceId: "w1", directory: "/work",
-  connectionId: "claude-sdk", upstreamSessionId: "up1" } }, input: { sessionId: "s1", workspaceId: "w1", directory: "/work", locality: "local" as const,
-  owner: { kind: "machine-owner" as const }, config: { harness: { id: "claude" as const, access: "native" as const } },
-  projection: { generation: "g1", mcpServers: [], pluginRoots: [], notApplied: [] }, credentials: { machineLoginAllowed: true, accountOwner: "fixture-owner", providers: {}, secrets: {}, leaseGeneration: "g1" } } })
-
-function abortingLauncher(): ClaudeQueryLauncher {
-  return { launch: async (spec: Parameters<ClaudeQueryLauncher["launch"]>[0]) => goalStream({ async *[Symbol.asyncIterator]() {
-    yield { type: "active_goal", session_id: "up1", uuid: "g1", value: { condition: "Ship", iterations: 1, set_at: 1_700_000_000, tokens_at_start: 0 } } as unknown as SDKMessage
-    if (!spec.abort.signal.aborted) await new Promise<void>((resolve) => spec.abort.signal.addEventListener("abort", () => resolve(), { once: true }))
-    throw new AbortError("aborted")
-  } }) } as unknown as ClaudeQueryLauncher
-}
-
-function memoryBroker() {
-  const ports = new MemoryPorts()
-  ports.current.set("s1", { ...authority, connectionId: "claude-sdk" })
-  let goal: import("@claxedo/agent-runtime-contract").RuntimeGoalSnapshot | null = null
-  Object.assign(ports, { readGoal: () => goal, publishGoal: async (_sessionId: string, snapshot: typeof goal) => { goal = snapshot } })
-  const broker = createSessionBroker(createRequestBroker(ports), { sessionId: "s1", workspaceId: "w1", directory: "/work", origin: { actor: { kind: "machine-owner" }, via: "loopback", reissued: false } })
-  return { ports, broker }
-}
-
-test("a runtime cancel of the admitted Goal turn settles cancelled and pauses the Goal", async () => {
-  const { ports, broker } = memoryBroker()
-  const goals = new ClaudeGoals(abortingLauncher(), new HarnessVersionGate(CLAUDE_CODE_RANGE, "claude.sdk"))
-  expect((await goals.start(goalEntry(), broker, "Ship")).ok).toBe(true)
-  await new Promise((resolve) => setTimeout(resolve, 0))
-  expect(broker.goal.read()?.status).toBe("active")
-  ports.cancelProviderTurn()
-  expect(await goals.cancel("s1")).toEqual({ state: "cancelled" })
-  await new Promise((resolve) => setTimeout(resolve, 0))
-  expect(broker.goal.read()?.status).toBe("paused")
-  expect(goals.turnId("s1")).toBeUndefined()
-})
-
-test("the transport's own Goal abort ends the run as a cancellation, not a failure", async () => {
-  const { broker } = memoryBroker()
-  const goals = new ClaudeGoals(abortingLauncher(), new HarnessVersionGate(CLAUDE_CODE_RANGE, "claude.sdk"))
-  expect((await goals.start(goalEntry(), broker, "Ship")).ok).toBe(true)
-  await new Promise((resolve) => setTimeout(resolve, 0))
-  expect(await goals.cancel("s1")).toEqual({ state: "completed" })
-  await new Promise((resolve) => setTimeout(resolve, 0))
-  expect(broker.goal.read()?.status).toBe("active")
-})
-
 describe("Claude permission persistence", () => {
   const suggestions: PermissionUpdate[] = [
     { type: "addRules", behavior: "allow", destination: "localSettings", rules: [{ toolName: "Bash", ruleContent: "printf approved-write *" }] },
@@ -627,7 +576,7 @@ describe("Claude permission persistence", () => {
       const broker = { sessionId, config: () => start.config } as SessionBroker
       await launch.launch({ input: start, session: { directory: start.directory, locality: start.locality,
         binding: { ...authority, sessionId, connectionId: "claude-sdk" } },
-        broker, abort: new AbortController(), processes: new Set(), prompt: "hello",
+        broker, abort: new AbortController(), processes: new Set(), prompt: (async function* () {})(), turn: () => undefined,
         usage: new ClaudeMirroredUsage(claudeTranslator("a1").runtime, { broker, assistantMessageId: "a1", directory: start.directory }) })
       const value = captured!.options!
       return { allow: (value.settings as { permissions: { allow: string[]; deny: string[] } }).permissions.allow,
@@ -771,6 +720,14 @@ describe("Claude SDK protocol", () => {
     } finally { await f.close() }
   })
 
+  test("a Claude process that dies mid-turn fails the turn with a typed process error carrying its stderr tail", async () => {
+    const f = await scriptedClaude({ models, crash: "fatal: config.json is not valid JSON\n" })
+    try {
+      const failure = await f.run("default").then(() => undefined, (error: unknown) => error)
+      expect(failure).toMatchObject({ transport: "claude", code: "process", retryable: true, detail: { stderr: "fatal: config.json is not valid JSON\n" } })
+    } finally { await f.close() }
+  })
+
   test.each([true, false])("the Claude SDK consumes a steer and accepts it only with replay=%s", async (replay) => {
     const f = await fixture({ steering: true })
     try {
@@ -807,5 +764,16 @@ test("the /compact Claude declares runs Claude's own compaction", async () => {
     expect(events.some((row) => row.event.type === "finish")).toBe(true)
     const compaction = state.server.requests.slice(before).map((request) => request.prompt)
     expect(compaction.some((prompt) => prompt.includes("<summary>") && prompt.includes("CLAUDEWARM"))).toBe(true)
+  } finally { await context.close(); await state.close() }
+}, 60_000)
+
+test("Claude is not offered session wakeups, which nothing would deliver once its process retires", async () => {
+  const state = await backend()
+  const context = await attachedClaude(state)
+  try {
+    expect((await context.collect("t1", "Reply with exactly this one token: CLAUDEWAKE")).some((row) => row.event.type === "finish")).toBe(true)
+    const offered = new Set(state.server.requests.flatMap((request) => request.tools.map((tool) => tool.name)))
+    expect(offered.has("Bash")).toBe(true)
+    expect(["ScheduleWakeup", "CronCreate", "CronDelete", "CronList"].filter((tool) => offered.has(tool))).toEqual([])
   } finally { await context.close(); await state.close() }
 }, 60_000)

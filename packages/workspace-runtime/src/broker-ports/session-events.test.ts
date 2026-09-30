@@ -5,6 +5,7 @@ import path from "node:path"
 import { createRequestBroker, createTurnBroker } from "@claxedo/harness/broker"
 import { RuntimeStore } from "../store"
 import { createRuntimeEventHub } from "../projection/runtime-event-hub"
+import { BrokerBackgroundWork } from "./background-work"
 import { BrokerEventDelivery } from "./delivery"
 import { createStoreBrokerPorts } from "./index"
 import { BrokerSessionEvents } from "./session-events"
@@ -35,7 +36,8 @@ function setup() {
   const authority = ports.currentTurnAuthority("s1")
   if (!authority) throw new Error("Expected turn authority")
   const turn = createTurnBroker(createRequestBroker(ports), { authority, origin, signal: new AbortController().signal })
-  const events = new BrokerSessionEvents(store, new BrokerEventDelivery(store, publishers))
+  const delivery = new BrokerEventDelivery(store, publishers)
+  const events = new BrokerSessionEvents(store, delivery, new BrokerBackgroundWork(store, delivery))
   const rows = (sessionId: string) => store.brokerDatabase().prepare<{ type: string; payload_json: string }>(
     "SELECT type, payload_json FROM runtime_journal WHERE session_id = ? AND kind = 'event' ORDER BY seq").all(sessionId)
   return { store, ports, turn, events, rows }

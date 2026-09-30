@@ -86,6 +86,8 @@ export type ProviderTurnResult =
 
 export type ProviderTurnSettlement = { state: "completed" } | { state: "failed"; error: string } | { state: "cancelled" }
 
+export type BackgroundWorkEvent = { type: "background-work"; active: boolean }
+
 export type OutsideTurnEvent = AgentRuntimeEventOf<
   | "rate-limit" | "auth-status" | "mcp-server-status" | "available-commands-update" | "config-update"
   | "session-info" | "session-title" | "session-agent" | "harness-notice" | "diagnostic" | "background-work"
@@ -111,7 +113,10 @@ export interface SessionBroker {
     run: (broker: TurnBroker, turn: TurnRef) => AsyncIterable<RoutedEvent>,
   ): Promise<ProviderTurnResult>
   meter(usage: OutsideTurnUsage): void
-  publish(event: OutsideTurnEvent): Promise<void>
+  publish(event: OutsideTurnEvent | BackgroundWorkEvent): Promise<void>
+  observeSubagent(observation: SubagentObservation): Promise<ChildSessionRef | undefined>
+  associateChild(correlationKey: string, child: ChildSessionRef): void
+  publishChild(event: RoutedEvent): Promise<void>
   readonly goal: {
     read(): RuntimeGoalSnapshot | null
     publish(snapshot: RuntimeGoalSnapshot | null): Promise<void>

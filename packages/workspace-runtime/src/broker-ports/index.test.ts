@@ -506,6 +506,26 @@ describe("store broker ports", () => {
     expect(parentRows.map((row) => row.type)).not.toContain("message.part.updated")
   })
 
+  test("a session broker delivers a background child's events while its parent has no turn", async () => {
+    const { store, ports, publishers } = setup()
+    const owner = createRequestBroker(ports)
+    const session = createSessionBroker(owner, { sessionId: "s1", directory: "/work", workspaceId: "w1", origin })
+    const child = await session.observeSubagent({ observationId: "background-start", providerKind: "claude-agent", toolCallId: "toolu_agent",
+      toolCallRole: "spawn", mode: "background", transcript: { kind: "messages" }, status: "running" })
+    if (!child) throw new Error("Missing child session")
+    session.associateChild("toolu_agent", child)
+    const leaseId = store.readTurnAuthority("s1")?.leaseId
+    if (!leaseId) throw new Error("Missing turn lease")
+    store.finishTurn({ sessionId: "s1", assistantMessageId: "t1", leaseId, outcome: { status: "completed", completedAt: 2 } })
+    store.releaseTurnLease("s1", leaseId)
+    expect(store.readTurnAuthority("s1")).toBeUndefined()
+    const seen: string[] = []
+    publishers.subscribeRuntime((envelope) => seen.push(envelope.sessionId))
+    await session.publishChild({ event: { type: "text-delta", delta: "background output" }, route: { kind: "child", correlationKey: "toolu_agent" } })
+    expect(seen).toEqual([child.sessionId])
+    await expect(session.publishChild({ event: { type: "text-delta", delta: "parent text" } })).rejects.toThrow("child-routed")
+  })
+
   test("subagent admission keeps revisions and child identity across restart", async () => {
     const { root, store, ports } = setup()
     const first = ports.subagentAdmissionStore.admit({

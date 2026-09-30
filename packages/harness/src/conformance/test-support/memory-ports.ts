@@ -121,6 +121,8 @@ export class MemoryPorts implements BrokerPorts {
     this.drained.push(event)
     if (event.route?.kind !== "child" && (event.event.type === "finish" || event.event.type === "error")) this.terminals.set(turn.turnId, event.event)
   }
+  childEvents: { sessionId: string; event: RoutedEvent }[] = []
+  async drainChildEvent(sessionId: string, event: RoutedEvent) { this.childEvents.push({ sessionId, event }) }
   meterUsage(_usage: unknown) {}
   sessionEvents: { sessionId: string; event: unknown }[] = []
   async publishSessionEvent(sessionId: string, event: unknown) { this.sessionEvents.push({ sessionId, event }) }

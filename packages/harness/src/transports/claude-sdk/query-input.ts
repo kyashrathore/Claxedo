@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto"
-import type { SDKMessage, SDKUserMessage } from "@anthropic-ai/claude-agent-sdk"
+import type { SDKActiveGoalMessage, SDKMessage, SDKUserMessage } from "@anthropic-ai/claude-agent-sdk"
 import type { SteerResult } from "@claxedo/agent-runtime-contract"
 import { AsyncPushQueue } from "@claxedo/helpers"
 
@@ -8,21 +8,35 @@ type Pending = { uuid: string; messageId: string; resolve: (result: SteerResult)
 export class ClaudeQueryInput {
   private readonly queue = new AsyncPushQueue<SDKUserMessage>()
   private readonly pending = new Set<Pending>()
+  private readonly unreplayed = new Set<string>()
   private steerable = false
 
   readonly stream: AsyncIterable<SDKUserMessage> = this.queue
 
+  get replayed(): boolean { return this.unreplayed.size === 0 }
+
   open(message: SDKUserMessage): void {
-    this.steerable = true
-    this.queue.push(message)
+    this.write(message)
   }
 
   steer(input: SDKUserMessage, messageId: string): Promise<SteerResult> {
     if (!this.steerable) return Promise.resolve({ ok: false, status: "no_active_turn", message: "Claude turn ended" })
-    const message = { ...input, uuid: randomUUID() }
-    const result = new Promise<SteerResult>((resolve) => this.pending.add({ uuid: message.uuid, messageId, resolve }))
-    this.queue.push(message)
+    let resolve!: (result: SteerResult) => void
+    const result = new Promise<SteerResult>((settle) => { resolve = settle })
+    this.pending.add({ uuid: this.write(input), messageId, resolve })
     return result
+  }
+
+  acknowledge(message: SDKMessage | SDKActiveGoalMessage): void {
+    if (message.type === "user" && "isReplay" in message && message.isReplay && message.uuid) this.unreplayed.delete(message.uuid)
+  }
+
+  private write(input: SDKUserMessage): string {
+    const uuid = randomUUID()
+    this.steerable = true
+    this.unreplayed.add(uuid)
+    this.queue.push({ ...input, uuid })
+    return uuid
   }
 
   observe(message: SDKMessage): string[] | undefined {
@@ -48,6 +62,7 @@ export class ClaudeQueryInput {
 
   settle(outcome: "ended" | "failed"): void {
     this.steerable = false
+    this.unreplayed.clear()
     for (const item of this.pending) item.resolve({ ok: false, status: outcome === "ended" ? "declined" : "unknown", message: "Claude did not replay the steer" })
     this.pending.clear()
   }
