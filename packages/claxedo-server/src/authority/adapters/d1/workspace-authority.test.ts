@@ -239,10 +239,11 @@ describe("D1 hosted workspace authority", () => {
       await database.prepare("select project_id from projects where repo_key = 'github.com/acme/collision'").first(),
     ).toBeNull()
 
-    expect(await authority.openWorkspace(bob, { workspaceId: "ws_acme_main" })).toMatchObject({
-      role: "viewer",
+    expect(await authority.openWorkspace(alice, { workspaceId: "ws_acme_main" })).toMatchObject({
+      role: "owner",
       workspace: { org_id: "org_acme", project_id: created.project_id },
     })
+    await expect(authority.openWorkspace(bob, { workspaceId: "ws_acme_main" })).rejects.toMatchObject({ status: 403 })
     expect(
       await authority.authorizeProject(bob, {
         projectId: created.project_id,
@@ -545,7 +546,7 @@ describe("D1 user-deployed workspace authority", () => {
       repoUrl: "https://github.com/acme/shared.git",
       backing: "cloud-vm",
     })
-    expect(await authority.openWorkspace(member, { workspaceId: "ws_shared" })).toMatchObject({ role: "viewer" })
+    await expect(authority.openWorkspace(member, { workspaceId: "ws_shared" })).rejects.toMatchObject({ status: 403 })
     await expect(
       authority.createWorkspace(member, {
         workspaceId: "ws_denied",

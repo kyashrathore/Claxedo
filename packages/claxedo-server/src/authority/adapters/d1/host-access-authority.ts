@@ -42,8 +42,7 @@ import { timingSafeEqualStrings } from "@claxedo/server-core/platform/auth/web-c
 import { sha256Hex } from "@claxedo/helpers/crypto"
 import { asRecord, parseJson } from "@claxedo/server-core/platform/json/index"
 import { batchAssertionFailed, type D1WorkspaceAuthority } from "./workspace-authority"
-import { activeOrgMemberSql, projectRoleRankSql } from "./project-role"
-import { revokeTokensOutrankedWhenHiddenStatement } from "./access-context"
+import { activeOrgMemberSql, workspaceRoleRankSql } from "./project-role"
 import { D1HostAccessAuthorityError } from "./host-access-errors"
 
 export const D1_HOST_ACCESS_AUTHORITY_METHODS = [
@@ -391,10 +390,6 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
     const assertionId = this.randomId("assert")
     await this.guardedBatch([
       ...registration,
-      ...(orgMemberVisible ? [] : [revokeTokensOutrankedWhenHiddenStatement(this.tokenRevocation, {
-        workspaces: { sql: "select ?", bind: [workspaceId] },
-        now,
-      })]),
       this.database.prepare(`
         update workspaces set deleted_at = null, host_assignment_revision = ?,
           ${description.map(([column]) => `${column} = ?`).join(", ")}, updated_at = ?
@@ -898,13 +893,6 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
       this.database.prepare(`
         delete from host_workspace_assignments where workspace_id in (${outsideRootsSql})
       `).bind(...outsideRoots()),
-      ...(scope.visibility === "owner" ? [revokeTokensOutrankedWhenHiddenStatement(this.tokenRevocation, {
-        workspaces: {
-          sql: "select workspace_id from host_workspace_assignments where host_id = ? and owner_actor_id = ?",
-          bind: [row.host_id, row.owner_actor_id],
-        },
-        now,
-      })] : []),
       this.database.prepare(`
         update workspaces set org_member_visible = ?, updated_at = ?
         where workspace_id in (
@@ -1256,10 +1244,6 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
       ),
     ])
     return { revoked: changes(results[0]), runtime_tokens_revoked: changes(results[4]) }
-  }
-
-  private get tokenRevocation() {
-    return { database: this.database, deploymentId: this.options.deploymentId }
   }
 
   private async requirePrincipal(auth: SignedControlPlaneAuth): Promise<Principal> {
@@ -1659,13 +1643,7 @@ function workspaceAccessCte(rank: 1 | 3, revivable = false) {
     select workspace.workspace_id, workspace.org_id, workspace.project_id,
       workspace.backing, workspace.home_region, workspace.remote_directory,
       workspace.host_assignment_revision,
-      ${projectRoleRankSql({
-        user: "current_actor.user_id",
-        projectId: "workspace.project_id",
-        orgId: "workspace.org_id",
-        ownerUserId: "workspace.owner_user_id",
-        orgMemberVisible: "workspace.org_member_visible",
-      })} as role_rank
+      ${workspaceRoleRankSql({ user: "current_actor.user_id", ownerUserId: "workspace.owner_user_id" })} as role_rank
     from current_actor
     join workspaces workspace on workspace.workspace_id = ?
       and ${revivable ? "(workspace.deleted_at is null or workspace.backing = 'local-worktree')" : "workspace.deleted_at is null"}

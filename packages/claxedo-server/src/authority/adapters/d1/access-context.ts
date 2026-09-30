@@ -2,7 +2,7 @@ import type { D1Database } from "@cloudflare/workers-types"
 import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import { ClaxedoError } from "@claxedo/server-core/platform/errors/base"
 import type { FindAccountByEmail, MemberSelector } from "@claxedo/server-core/platform/auth/org-access-authority"
-import { activeOrgMemberSql, organizationAdminSql, projectRoleRankSql, roleRankSql } from "./project-role"
+import { activeOrgMemberSql, organizationAdminSql } from "./project-role"
 
 export type AccessPrincipal = { userId: string; actorId: string }
 
@@ -227,32 +227,4 @@ export function revokeRuntimeTokensStatement(context: D1AccessContext, input: {
       and project_id in (${input.projects.sql})
       and ${input.guard.sql}
   `).bind(input.now, context.deploymentId, ...input.holders.bind, ...input.projects.bind, ...input.guard.bind)
-}
-
-/**
- * Revokes each live runtime access token on the workspaces `workspaces`
- * selects whose role exceeds its holder's rank there once they are hidden
- * from org members (`org_member_visible` = 0), for the batch that hides them.
- * A token's activity is re-read against the rank at check time, so without
- * this it would work again once the owner opened them to the org.
- */
-export function revokeTokensOutrankedWhenHiddenStatement(
-  context: Pick<D1AccessContext, "database" | "deploymentId">,
-  input: { workspaces: BoundSql; now: number },
-) {
-  return context.database.prepare(`
-    update runtime_access_tokens set revoked_at = ?
-    where revoked_at is null and deployment_id = ? and minted_for_user_id is not null
-      and workspace_id in (${input.workspaces.sql})
-      and (
-        select ${projectRoleRankSql({
-          user: "runtime_access_tokens.minted_for_user_id",
-          projectId: "hidden.project_id",
-          orgId: "hidden.org_id",
-          ownerUserId: "hidden.owner_user_id",
-          orgMemberVisible: "0",
-        })}
-        from workspaces hidden where hidden.workspace_id = runtime_access_tokens.workspace_id
-      ) < ${roleRankSql("runtime_access_tokens.role")}
-  `).bind(input.now, context.deploymentId, ...input.workspaces.bind)
 }

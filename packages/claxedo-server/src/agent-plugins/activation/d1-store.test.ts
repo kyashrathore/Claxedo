@@ -514,13 +514,11 @@ describe("D1 signed Agent Plugins activation store", () => {
     expect(foreignWorkspace.code).toBe("workspace_authorization_denied")
   })
 
-  test("an org member's runtime read is refused on an owner-visibility workspace and admitted with a direct share", async () => {
+  test("an org member's runtime read on another person's workspace is refused whatever their project grant or its visibility", async () => {
     const { database, authority, store } = await setup()
     const auth = await signed(authority, identity("alice"))
     const { orgId } = await principalOf(authority, auth)
-    const created = await workspace({ authority, auth, orgId, workspaceId: "ws-hidden", backing: "local-worktree" })
-    // The column an owner-visibility host assignment writes.
-    await database.prepare("update workspaces set org_member_visible = 0 where workspace_id = ?").bind(created.workspace_id).run()
+    const created = await workspace({ authority, auth, orgId, workspaceId: "ws-alice", backing: "local-worktree" })
     const member = await plainMember({ database, authority, subject: "bob", orgId })
     const runtime = {
       ownerUserId: member.userId,
@@ -530,14 +528,17 @@ describe("D1 signed Agent Plugins activation store", () => {
       pluginInstanceId: PLUGIN,
       harnessId: "codex" as AgentPluginHarnessId,
     }
-    const refused = await denial(store.readRuntime(runtime))
-    expect(refused.code).toBe("workspace_authorization_denied")
-
     await database
-      .prepare("insert into project_memberships (project_id, user_id, role, created_at, updated_at, revoked_at) values (?, ?, 'viewer', 1, 1, null)")
+      .prepare("insert into project_memberships (project_id, user_id, role, created_at, updated_at, revoked_at) values (?, ?, 'admin', 1, 1, null)")
       .bind(created.project_id, member.userId)
       .run()
-    await expect(store.readRuntime(runtime)).resolves.toMatchObject({ pluginInstanceId: PLUGIN, harnessId: "codex" })
+
+    for (const visible of [0, 1]) {
+      await database.prepare("update workspaces set org_member_visible = ? where workspace_id = ?").bind(visible, created.workspace_id).run()
+      expect((await denial(store.readRuntime(runtime))).code).toBe("workspace_authorization_denied")
+    }
+    await expect(store.readRuntime({ ...runtime, ownerUserId: (await principalOf(authority, auth)).userId }))
+      .resolves.toMatchObject({ pluginInstanceId: PLUGIN, harnessId: "codex" })
   })
 
   test("serves the runtime world of a cloud workspace and refuses a machine-placed one", async () => {

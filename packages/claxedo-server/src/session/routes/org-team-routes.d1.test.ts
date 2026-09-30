@@ -177,7 +177,7 @@ async function hosted() {
 }
 
 describe("hosted organization, team and project access routes on D1", () => {
-  test("on an org-visible workspace a member's role follows a team grant, drops on revoke and a member grant alone restores it; an owner-only one stays closed", async () => {
+  test("a team grant and a member grant show on the project's access listing and never open the owner's workspace", async () => {
     const { authority, person, call } = await hosted()
     const alice = await person("alice")
     const bob = await person("bob")
@@ -190,25 +190,15 @@ describe("hosted organization, team and project access routes on D1", () => {
       orgId,
       displayName: "acme",
       backing: "local-worktree",
-      repoUrl: "https://github.com/acme/app",
       orgMemberVisible: true,
     })
-    await authority.createWorkspace(alice.auth, {
-      workspaceId: "ws_private",
-      orgId,
-      displayName: "private",
-      backing: "local-worktree",
-      repoUrl: "https://github.com/acme/app",
-      orgMemberVisible: false,
-    })
-    const opens = async (workspaceId: string) =>
-      (await call(bob.token, "GET", `/api/claxedo/agent-config/harness?workspaceId=${workspaceId}`)).status
+    const opens = async () => (await call(bob.token, "GET", "/api/claxedo/agent-config/harness?workspaceId=ws_acme")).status
     const listed = async () =>
-      Object.fromEntries(((await call(bob.token, "GET", "/api/workspace?host=machine")).body as {
-        workspaces: Array<{ workspace_id: string; role: string }>
-      }).workspaces.map((row) => [row.workspace_id, row.role]))
+      ((await call(bob.token, "GET", "/api/workspace?host=machine")).body as { workspaces: Array<{ workspace_id: string }> })
+        .workspaces.map((row) => row.workspace_id)
+    const access = async () =>
+      ((await call(alice.token, "GET", `/api/control/projects/${projectId}/access`)).body as { entries: unknown[] }).entries
 
-    expect(await opens("ws_acme")).toBe(404)
     expect((await call(alice.token, "POST", `/api/control/orgs/${orgId}/members`, { userPublicId: bob.userId, role: "member" })).body)
       .toMatchObject({ user_id: bob.userId, role: "member" })
     expect((await call(alice.token, "GET", `/api/control/orgs/${orgId}/members`)).body)
@@ -218,40 +208,33 @@ describe("hosted organization, team and project access routes on D1", () => {
       ])
     const team = (await call(alice.token, "POST", `/api/control/orgs/${orgId}/teams`, { name: "Eng" })).body as { team_id: string }
     expect((await call(alice.token, "POST", `/api/control/teams/${team.team_id}/members`, { userPublicId: bob.userId })).status).toBe(200)
-    expect(await opens("ws_acme")).toBe(200)
-    expect(await listed()).toEqual({ ws_acme: "viewer" })
 
     expect((await call(alice.token, "POST", `/api/control/teams/${team.team_id}/projects`, { projectId, role: "editor" })).status).toBe(200)
     expect((await call(bob.token, "GET", `/api/control/teams/${team.team_id}/projects`)).body)
       .toEqual([expect.objectContaining({ project_id: projectId, role: "editor" })])
-    expect(await listed()).toEqual({ ws_acme: "editor" })
-    expect(await opens("ws_private")).toBe(404)
+    expect(await access()).toEqual(expect.arrayContaining([
+      { kind: "team", team_id: team.team_id, name: "Eng", role: "editor", source: `team:${team.team_id}` },
+    ]))
+    expect(await opens()).toBe(404)
+    expect(await listed()).toEqual([])
 
     expect((await call(alice.token, "DELETE", `/api/control/teams/${team.team_id}/projects`, { projectId })).body).toEqual({ revoked: true })
-    expect(await listed()).toEqual({ ws_acme: "viewer" })
-
     expect((await call(bob.token, "POST", `/api/control/projects/${projectId}/members`, { userPublicId: bob.userId, role: "admin" })))
       .toMatchObject({ status: 403, body: { error: { code: "project_admin_required" } } })
     expect((await call(alice.token, "POST", `/api/control/projects/${projectId}/members`, { userPublicId: bob.userId, role: "editor" })).body)
       .toEqual({ project_id: projectId, user_id: bob.userId, role: "editor" })
-    expect(await listed()).toEqual({ ws_acme: "editor" })
-    expect(await opens("ws_private")).toBe(404)
-
-    await call(alice.token, "POST", `/api/control/teams/${team.team_id}/projects`, { projectId, role: "editor" })
-    const access = await call(alice.token, "GET", `/api/control/projects/${projectId}/access`)
-    expect(access.status).toBe(200)
-    expect((access.body as { entries: unknown[] }).entries).toEqual(expect.arrayContaining([
+    expect(await access()).toEqual(expect.arrayContaining([
       { kind: "user", user_id: alice.userId, role: "owner", source: "owner" },
       { kind: "user", user_id: bob.userId, role: "editor", source: "member" },
-      { kind: "team", team_id: team.team_id, name: "Eng", role: "editor", source: `team:${team.team_id}` },
       { kind: "user", user_id: bob.userId, role: "viewer", source: "org-role" },
     ]))
+    expect(await opens()).toBe(404)
+    expect(await listed()).toEqual([])
     expect((await call(bob.token, "GET", `/api/control/projects/${projectId}/access`)))
       .toMatchObject({ status: 403, body: { error: { code: "project_admin_required" } } })
 
     expect((await call(alice.token, "DELETE", `/api/control/projects/${projectId}/members/${bob.userId}`)).body).toEqual({ revoked: true })
-    expect(await listed()).toEqual({ ws_acme: "editor" })
-    expect(await opens("ws_private")).toBe(404)
+    expect((await access()).filter((entry) => (entry as { source: string }).source === "member")).toEqual([])
   })
 
   test("membership routes change roles, protect the founding owner, and a removed member is refused on the next request", async () => {
@@ -276,11 +259,10 @@ describe("hosted organization, team and project access routes on D1", () => {
       .toMatchObject({ status: 409, body: { error: { code: "org_owner_protected" } } })
     expect(await call(alice.token, "POST", `/api/control/orgs/${orgId}/members`, { userPublicId: bob.userId, role: "boss" }))
       .toMatchObject({ status: 400, body: { error: { code: "org_member_role_required" } } })
-    expect(await call(bob.token, "GET", "/api/claxedo/agent-config/harness?workspaceId=ws_acme")).toMatchObject({ status: 200 })
+    expect(await call(bob.token, "GET", `/api/control/projects/${projectId}/access`)).toMatchObject({ status: 200 })
 
     expect((await call(alice.token, "DELETE", `/api/control/orgs/${orgId}/members/${bob.userId}`)).body)
       .toMatchObject({ removed: true, team_memberships_revoked: 0, project_memberships_revoked: 0 })
-    expect(await call(bob.token, "GET", "/api/claxedo/agent-config/harness?workspaceId=ws_acme")).toMatchObject({ status: 404 })
     expect(await call(bob.token, "GET", `/api/control/projects/${projectId}/access`))
       .toMatchObject({ status: 404, body: { error: { code: "project_not_found" } } })
     expect(await call(bob.token, "GET", `/api/control/orgs/${orgId}/members`)).toMatchObject({ status: 200, body: [] })

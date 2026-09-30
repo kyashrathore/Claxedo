@@ -377,16 +377,15 @@ describe("D1 private multiplayer session authority", () => {
       userPublicId: teammate.principal!.userId,
       role: "member",
     })
-    // `org_member_visible = 0` withholds the implicit member rank, so the
-    // teammate's only standing on this workspace is the share under test. An
-    // org ADMIN keeps their rank either way, which is what lets the departing
-    // member create a session and what revoking the membership takes back.
-    await input.database
-      .prepare(`update workspaces set org_member_visible = 0 where workspace_id = ?`)
-      .bind("ws_main")
-      .run()
-    await reserveAndRegister(input.sessions, alice, { operationId: "op_shared", sessionId: "ses_shared" })
-    await reserveAndRegister(input.sessions, admin, { operationId: "op_departing", sessionId: "ses_departing" })
+    await input.workspace.createWorkspace(admin, {
+      workspaceId: "ws_admin",
+      orgId: "org_acme",
+      displayName: "admin",
+      repoUrl: "https://github.com/acme/main.git",
+      backing: "cloud-vm",
+    })
+    await reserveAndRegister(input.sessions, admin, { operationId: "op_shared", sessionId: "ses_shared", workspaceId: "ws_admin" })
+    await reserveAndRegister(input.sessions, admin, { operationId: "op_departing", sessionId: "ses_departing", workspaceId: "ws_admin" })
 
     await expect(
       exerciseSessionShareRuntimeTokenConformance({
@@ -397,10 +396,10 @@ describe("D1 private multiplayer session authority", () => {
           runtimeAccessTokenActive: (args) => input.runtimeTokens.runtimeAccessTokenActive(args),
           grantSessionShare: (auth, args) => input.sessions.grantSessionShare(auth, args),
         },
-        workspaceId: "ws_main",
+        workspaceId: "ws_admin",
         hostId: "host_alices_desktop",
         sessionId: "ses_shared",
-        creator: { auth: alice },
+        creator: { auth: admin },
         grantee: {
           auth: teammate,
           runtime: { principalKind: "user", actorId: teammate.principal!.actorId, actorKind: "human" },

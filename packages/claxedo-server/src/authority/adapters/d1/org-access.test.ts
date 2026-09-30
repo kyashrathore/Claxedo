@@ -185,7 +185,7 @@ describe("D1 organization members", () => {
     await authority.addTeamMember!(alice, { teamId: team.team_id, userPublicId: id(bob) })
     await authority.grantTeamProject!(alice, { teamId: team.team_id, projectId, role: "editor" })
     await authority.grantProjectMember!(alice, { projectId, userPublicId: id(bob), role: "admin" })
-    expect(await authority.openWorkspace(bob, { workspaceId: "ws_acme" })).toMatchObject({ role: "admin" })
+    expect(await authority.projectRole(bob, { projectId: projectId as never })).toMatchObject({ role: "admin" })
 
     expect(await authority.removeOrgMember!(alice, { orgId: "org_acme", userPublicId: id(bob) })).toEqual({
       removed: true,
@@ -196,10 +196,7 @@ describe("D1 organization members", () => {
       runtime_tokens_revoked: 0,
     })
 
-    await expect(authority.openWorkspace(bob, { workspaceId: "ws_acme" })).rejects.toMatchObject({ status: 403 })
     expect(await authority.projectRole(bob, { projectId: projectId as never })).toEqual({ ok: false })
-    await expect(authority.resolveRuntimeMachineAccess(bob.principal!.actorId, "ws_acme", "viewer"))
-      .rejects.toMatchObject({ status: 403 })
     expect(await database
       .prepare("select count(*) as n from team_memberships where user_id = ? and revoked_at is null")
       .bind(id(bob)).first<{ n: number }>()).toEqual({ n: 0 })
@@ -219,7 +216,6 @@ describe("D1 organization members", () => {
 
     await authority.addOrgMember!(alice, { orgId: "org_acme", userPublicId: id(bob), role: "member" })
     expect(await authority.projectRole(bob, { projectId: projectId as never })).toMatchObject({ ok: true, role: "viewer" })
-    expect(await authority.openWorkspace(bob, { workspaceId: "ws_acme" })).toMatchObject({ role: "viewer" })
   })
 })
 
@@ -227,19 +223,20 @@ describe("D1 per-member project grants", () => {
   test("grant, re-grant with a role change, revoke and re-grant, each audited with the role before and after", async () => {
     const { authority, alice, bob, projectId, audit } = await setup()
     await authority.addOrgMember!(alice, { orgId: "org_acme", userPublicId: id(bob), role: "member" })
-    expect(await authority.openWorkspace(bob, { workspaceId: "ws_acme" })).toMatchObject({ role: "viewer" })
+    const role = async () => await authority.projectRole(bob, { projectId: projectId as never })
+    expect(await role()).toMatchObject({ role: "viewer" })
 
     expect(await authority.grantProjectMember!(alice, { projectId, userPublicId: id(bob), role: "editor" }))
       .toEqual({ project_id: projectId, user_id: id(bob), role: "editor" })
-    expect(await authority.openWorkspace(bob, { workspaceId: "ws_acme" })).toMatchObject({ role: "editor" })
+    expect(await role()).toMatchObject({ role: "editor" })
     await authority.grantProjectMember!(alice, { projectId, userPublicId: id(bob), role: "admin" })
-    expect(await authority.projectRole(bob, { projectId: projectId as never })).toMatchObject({ role: "admin" })
+    expect(await role()).toMatchObject({ role: "admin" })
 
     expect(await authority.revokeProjectMember!(alice, { projectId, userPublicId: id(bob) })).toEqual({ revoked: true })
     expect(await authority.revokeProjectMember!(alice, { projectId, userPublicId: id(bob) })).toEqual({ revoked: false })
-    expect(await authority.openWorkspace(bob, { workspaceId: "ws_acme" })).toMatchObject({ role: "viewer" })
+    expect(await role()).toMatchObject({ role: "viewer" })
     await authority.grantProjectMember!(alice, { projectId, userPublicId: id(bob), role: "editor" })
-    expect(await authority.openWorkspace(bob, { workspaceId: "ws_acme" })).toMatchObject({ role: "editor" })
+    expect(await role()).toMatchObject({ role: "editor" })
 
     const change = { actor: id(alice), orgId: "org_acme", projectId, targetUserId: id(bob) }
     expect(await audit("project.member.")).toEqual([
@@ -277,27 +274,24 @@ describe("D1 per-member project grants", () => {
 })
 
 describe("D1 team project grants", () => {
-  test("a team grant is listed, changes role, is revoked, and its members' rank follows it on every rank reader", async () => {
+  test("a team grant is listed, changes role and is revoked, and its members' project role follows it", async () => {
     const { authority, alice, bob, projectId, audit } = await setup()
     await authority.addOrgMember!(alice, { orgId: "org_acme", userPublicId: id(bob), role: "member" })
     const team = (await authority.createTeamInOrg!(alice, { orgId: "org_acme", name: "Eng" })) as { team_id: string }
     await authority.addTeamMember!(alice, { teamId: team.team_id, userPublicId: id(bob) })
+    const role = async () => await authority.projectRole(bob, { projectId: projectId as never })
 
     await authority.grantTeamProject!(alice, { teamId: team.team_id, projectId, role: "admin" })
     expect(await authority.listTeamProjects!(alice, { teamId: team.team_id }))
       .toEqual([expect.objectContaining({ team_id: team.team_id, project_id: projectId, role: "admin" })])
     expect(await authority.listTeamProjects!(bob, { teamId: team.team_id })).toHaveLength(1)
-    expect(await authority.openWorkspace(bob, { workspaceId: "ws_acme" })).toMatchObject({ role: "admin" })
-    expect(await authority.resolveRuntimeMachineAccess(bob.principal!.actorId, "ws_acme", "editor"))
-      .toMatchObject({ role: "admin" })
+    expect(await role()).toMatchObject({ role: "admin" })
 
     await authority.grantTeamProject!(alice, { teamId: team.team_id, projectId, role: "editor" })
-    expect(await authority.openWorkspace(bob, { workspaceId: "ws_acme" })).toMatchObject({ role: "editor" })
+    expect(await role()).toMatchObject({ role: "editor" })
     expect(await authority.revokeTeamProject!(alice, { teamId: team.team_id, projectId })).toEqual({ revoked: true })
     expect(await authority.listTeamProjects!(alice, { teamId: team.team_id })).toEqual([])
-    expect(await authority.openWorkspace(bob, { workspaceId: "ws_acme" })).toMatchObject({ role: "viewer" })
-    await expect(authority.resolveRuntimeMachineAccess(bob.principal!.actorId, "ws_acme", "editor"))
-      .rejects.toMatchObject({ status: 403 })
+    expect(await role()).toMatchObject({ role: "viewer" })
 
     const change = { actor: id(alice), orgId: "org_acme", teamId: team.team_id, projectId }
     expect(await audit("team.project.")).toEqual([
@@ -330,37 +324,42 @@ describe("D1 team project grants", () => {
 })
 
 describe("D1 grants on another person's workspace", () => {
-  test("a member or team grant reaches another person's workspace only once it is visible to org members", async () => {
-    const { authority, database, alice, bob, carol, projectId } = await setup()
+  test("no org role, project grant or team grant reaches another person's workspace, and the grants still show on the project", async () => {
+    const { authority, database, alice, bob, carol, person, projectId } = await setup()
+    const dave = await person("dave")
     await authority.addOrgMember!(alice, { orgId: "org_acme", userPublicId: id(bob), role: "member" })
     await authority.addOrgMember!(alice, { orgId: "org_acme", userPublicId: id(carol), role: "member" })
+    await authority.addOrgMember!(alice, { orgId: "org_acme", userPublicId: id(dave), role: "admin" })
     await authority.grantProjectMember!(alice, { projectId, userPublicId: id(bob), role: "admin" })
     const team = (await authority.createTeamInOrg!(alice, { orgId: "org_acme", name: "Eng" })) as { team_id: string }
     await authority.addTeamMember!(alice, { teamId: team.team_id, userPublicId: id(carol) })
     await authority.grantTeamProject!(alice, { teamId: team.team_id, projectId, role: "admin" })
-    const reserve = (auth: SignedControlPlaneAuth, operation: string) =>
-      authority.reserveSession(auth, { operationId: operation, sessionId: `ses_${operation}`, workspaceId: "ws_private", kind: "create", title: "t" })
+    await database.prepare("update workspaces set org_member_visible = 1").run()
+    const listed = async (auth: SignedControlPlaneAuth) =>
+      (await authority.listWorkspaces(auth) as Array<{ workspace_id: string }>).map((row) => row.workspace_id)
 
-    for (const person of [bob, carol]) {
-      await expect(authority.openWorkspace(person, { workspaceId: "ws_private" })).rejects.toMatchObject({ status: 403 })
-      await expect(authority.resolveRuntimeMachineAccess(person.principal!.actorId, "ws_private", "viewer"))
-        .rejects.toMatchObject({ status: 403 })
-      await expect(token(authority, person, `jti_hidden_${id(person)}`, "viewer", "ws_private")).rejects.toMatchObject({ status: 403 })
-      await expect(reserve(person, `hidden_${id(person)}`)).rejects.toMatchObject({ status: 403 })
+    for (const other of [bob, carol, dave]) {
+      for (const workspaceId of ["ws_acme", "ws_private"]) {
+        await expect(authority.openWorkspace(other, { workspaceId })).rejects.toMatchObject({ status: 403 })
+        await expect(authority.resolveRuntimeMachineAccess(other.principal!.actorId, workspaceId, "viewer"))
+          .rejects.toMatchObject({ status: 403 })
+        await expect(token(authority, other, `jti_${id(other)}_${workspaceId}`, "viewer", workspaceId))
+          .rejects.toMatchObject({ status: 403 })
+      }
+      expect(await listed(other)).not.toContain("ws_acme")
+      expect(await listed(other)).not.toContain("ws_private")
     }
-
-    await database.prepare("update workspaces set org_member_visible = 1 where workspace_id = 'ws_private'").run()
-    for (const person of [bob, carol]) {
-      expect(await authority.openWorkspace(person, { workspaceId: "ws_private" })).toMatchObject({ role: "admin" })
-      expect(await authority.resolveRuntimeMachineAccess(person.principal!.actorId, "ws_private", "editor"))
-        .toMatchObject({ role: "admin" })
-      expect(await (await token(authority, person, `jti_visible_${id(person)}`, "admin", "ws_private"))()).toBe(true)
-      expect(await reserve(person, `visible_${id(person)}`)).toMatchObject({ sessionId: `ses_visible_${id(person)}` })
-    }
+    expect(await authority.openWorkspace(alice, { workspaceId: "ws_private" })).toMatchObject({ role: "owner" })
+    expect((await authority.listProjectAccess!(alice, { projectId })).entries).toEqual(expect.arrayContaining([
+      { kind: "user", user_id: id(bob), role: "admin", source: "member" },
+      { kind: "team", team_id: team.team_id, name: "Eng", role: "admin", source: `team:${team.team_id}` },
+    ]))
+    expect(await authority.projectRole(bob, { projectId: projectId as never })).toMatchObject({ role: "admin" })
+    expect(await authority.projectRole(carol, { projectId: projectId as never })).toMatchObject({ role: "admin" })
   })
 
   test("creating a project makes its creator the owner of no one else's workspace in it", async () => {
-    const { authority, database, alice, carol } = await setup()
+    const { authority, alice, carol } = await setup()
     await authority.addOrgMember!(alice, { orgId: "org_acme", userPublicId: id(carol), role: "admin" })
     const tools = await authority.createWorkspace(carol, {
       workspaceId: "ws_tools",
@@ -375,15 +374,11 @@ describe("D1 grants on another person's workspace", () => {
       displayName: "alice tools",
       backing: "cloud-vm",
       repoUrl: "https://github.com/acme/tools",
-      orgMemberVisible: false,
     })
-    await authority.updateOrgMember!(alice, { orgId: "org_acme", userPublicId: id(carol), role: "member" })
 
     expect(await authority.projectRole(carol, { projectId: tools.project_id as never })).toMatchObject({ role: "owner" })
     expect(await authority.openWorkspace(carol, { workspaceId: "ws_tools" })).toMatchObject({ role: "owner" })
     await expect(authority.openWorkspace(carol, { workspaceId: "ws_alice_tools" })).rejects.toMatchObject({ status: 403 })
-    await database.prepare("update workspaces set org_member_visible = 1 where workspace_id = 'ws_alice_tools'").run()
-    expect(await authority.openWorkspace(carol, { workspaceId: "ws_alice_tools" })).toMatchObject({ role: "admin" })
   })
 })
 
@@ -606,68 +601,27 @@ describe("D1 access changes that must not undo or outlive a decision", () => {
     expect(await audit("org.member.removed")).toEqual([])
   })
 
-  test("removal, an org downgrade and each grant revocation revoke the runtime tokens they minted, so re-admission does not revive them", async () => {
-    const { authority, alice, bob, projectId } = await setup()
-    await authority.addOrgMember!(alice, { orgId: "org_acme", userPublicId: id(bob), role: "member" })
-    await authority.grantProjectMember!(alice, { projectId, userPublicId: id(bob), role: "editor" })
+  test("removing a workspace owner from the org takes their rank on their own workspace, and re-admitting them does not revive the token they held", async () => {
+    const { authority, alice, carol } = await setup()
+    await authority.addOrgMember!(alice, { orgId: "org_acme", userPublicId: id(carol), role: "admin" })
+    await authority.createWorkspace(carol, {
+      workspaceId: "ws_carol",
+      orgId: "org_acme",
+      displayName: "carol",
+      backing: "cloud-vm",
+      repoUrl: "https://github.com/acme/app",
+    })
+    const held = await token(authority, carol, "jti_carol_removed", "editor", "ws_carol")
 
-    const memberToken = await token(authority, bob, "jti_member", "editor")
-    await authority.revokeProjectMember!(alice, { projectId, userPublicId: id(bob) })
-    await authority.grantProjectMember!(alice, { projectId, userPublicId: id(bob), role: "editor" })
-    expect(await memberToken()).toBe(false)
-
-    const team = (await authority.createTeamInOrg!(alice, { orgId: "org_acme", name: "Eng" })) as { team_id: string }
-    await authority.addTeamMember!(alice, { teamId: team.team_id, userPublicId: id(bob) })
-    await authority.grantTeamProject!(alice, { teamId: team.team_id, projectId, role: "admin" })
-    const teamToken = await token(authority, bob, "jti_team", "admin")
-    await authority.revokeTeamProject!(alice, { teamId: team.team_id, projectId })
-    await authority.grantTeamProject!(alice, { teamId: team.team_id, projectId, role: "admin" })
-    expect(await teamToken()).toBe(false)
-
-    const teamMemberToken = await token(authority, bob, "jti_team_member", "admin")
-    await authority.removeTeamMember!(alice, { teamId: team.team_id, userPublicId: id(bob) })
-    await authority.addTeamMember!(alice, { teamId: team.team_id, userPublicId: id(bob) })
-    expect(await teamMemberToken()).toBe(false)
-
-    await authority.updateOrgMember!(alice, { orgId: "org_acme", userPublicId: id(bob), role: "admin" })
-    const adminToken = await token(authority, bob, "jti_admin", "admin")
-    await authority.updateOrgMember!(alice, { orgId: "org_acme", userPublicId: id(bob), role: "member" })
-    await authority.updateOrgMember!(alice, { orgId: "org_acme", userPublicId: id(bob), role: "admin" })
-    expect(await adminToken()).toBe(false)
-
-    const removedToken = await token(authority, bob, "jti_removed", "editor")
-    expect(await removedToken()).toBe(true)
-    expect(await authority.removeOrgMember!(alice, { orgId: "org_acme", userPublicId: id(bob) }))
+    expect(await authority.removeOrgMember!(alice, { orgId: "org_acme", userPublicId: id(carol) }))
       .toMatchObject({ removed: true, runtime_tokens_revoked: 1 })
-    await authority.addOrgMember!(alice, { orgId: "org_acme", userPublicId: id(bob), role: "admin" })
-    expect(await removedToken()).toBe(false)
-  })
+    await expect(authority.openWorkspace(carol, { workspaceId: "ws_carol" })).rejects.toMatchObject({ status: 403 })
+    await expect(authority.resolveRuntimeMachineAccess(carol.principal!.actorId, "ws_carol", "viewer"))
+      .rejects.toMatchObject({ status: 403 })
 
-  test("lowering a member grant, a team grant or an owner's org role revokes the tokens the higher rank minted, so raising it again does not revive them", async () => {
-    const { authority, alice, bob, carol, person, projectId } = await setup()
-    const dave = await person("dave")
-    await authority.addOrgMember!(alice, { orgId: "org_acme", userPublicId: id(bob), role: "member" })
     await authority.addOrgMember!(alice, { orgId: "org_acme", userPublicId: id(carol), role: "member" })
-    await authority.addOrgMember!(alice, { orgId: "org_acme", userPublicId: id(dave), role: "owner" })
-
-    await authority.grantProjectMember!(alice, { projectId, userPublicId: id(bob), role: "admin" })
-    const memberToken = await token(authority, bob, "jti_member_lowered", "admin")
-    await authority.grantProjectMember!(alice, { projectId, userPublicId: id(bob), role: "editor" })
-    await authority.grantProjectMember!(alice, { projectId, userPublicId: id(bob), role: "admin" })
-    expect(await memberToken()).toBe(false)
-
-    const team = (await authority.createTeamInOrg!(alice, { orgId: "org_acme", name: "Eng" })) as { team_id: string }
-    await authority.addTeamMember!(alice, { teamId: team.team_id, userPublicId: id(carol) })
-    await authority.grantTeamProject!(alice, { teamId: team.team_id, projectId, role: "admin" })
-    const teamToken = await token(authority, carol, "jti_team_lowered", "admin")
-    await authority.grantTeamProject!(alice, { teamId: team.team_id, projectId, role: "viewer" })
-    await authority.grantTeamProject!(alice, { teamId: team.team_id, projectId, role: "admin" })
-    expect(await teamToken()).toBe(false)
-
-    const ownerToken = await token(authority, dave, "jti_owner_demoted", "admin")
-    await authority.updateOrgMember!(alice, { orgId: "org_acme", userPublicId: id(dave), role: "member" })
-    await authority.updateOrgMember!(alice, { orgId: "org_acme", userPublicId: id(dave), role: "owner" })
-    expect(await ownerToken()).toBe(false)
+    expect(await authority.openWorkspace(carol, { workspaceId: "ws_carol" })).toMatchObject({ role: "owner" })
+    expect(await held()).toBe(false)
   })
 
   test("removal revokes the person's direct session shares and participations in the organization, audited, so re-admission restores no consent", async () => {

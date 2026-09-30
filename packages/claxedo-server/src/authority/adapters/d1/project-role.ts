@@ -5,17 +5,16 @@ export function roleRankSql(column: string) {
 }
 
 /**
- * A person's rank on a project, or on one workspace of it: the highest of
- * being its owner (4), their own member grant, the best grant of a team they
- * are on in the project's organization, and `orgRoleRankSql`. Every project,
- * workspace and session decision on D1 reads its rank from here.
+ * A person's rank on a project: the highest of being its owner (4), their own
+ * member grant, the best grant of a team they are on in the project's
+ * organization, and `orgRoleRankSql`. Every project decision on D1 reads its
+ * rank from here. A workspace surface reads `workspaceRoleRankSql` instead.
  *
- * `orgMemberVisible` selects the workspace form: `ownerUserId` is then the
- * workspace's owner, and on a workspace whose `org_member_visible` is 0 the
- * member and team grants count for nothing, so they reach another person's
- * workspace only once its owner opens it to the organization. A member grant
- * is worth at most admin (3) there: the project owner's `owner` row owns the
- * project, not someone else's workspace in it.
+ * `orgMemberVisible` selects the form the session layer still reads as a
+ * workspace rank (`actorWorkspaceRoleRankSql` in `session-authority.ts`):
+ * `ownerUserId` is then the workspace's owner, the member and team grants
+ * count only where the workspace's `org_member_visible` is 1, and a member
+ * grant is worth at most admin (3).
  *
  * Each input is a SQL expression in the caller's row scope and is repeated
  * verbatim, so a `?` inside one is bound once per occurrence.
@@ -73,6 +72,17 @@ export function orgRoleRankSql(input: { user: string; orgId: string; orgMemberVi
         and rank_org_member.revoked_at is null
       where rank_org.org_id = ${input.orgId} and rank_org.deleted_at is null
     ), 0)`
+}
+
+/**
+ * A person's rank on a workspace: 4 for its owner, 0 for everyone else. A
+ * workspace is a folder on its owner's machine; no organization role,
+ * project role, or project or team grant reaches it. Callers still gate on
+ * `activeOrgMemberSql`, so an owner outside the workspace's organization gets
+ * no row.
+ */
+export function workspaceRoleRankSql(input: { user: string; ownerUserId: string }) {
+  return `case when ${input.ownerUserId} = ${input.user} then 4 else 0 end`
 }
 
 export function activeOrgMemberSql(orgExpression: string, userExpression: string) {
@@ -133,13 +143,7 @@ export const PROJECT_ACCESS_SQL = `
 export function workspaceAccessSql(predicate: string, extension: { columns?: string; joins?: string } = {}) {
   return `
     with me as (select ? as user_id)
-    select w.*, ${projectRoleRankSql({
-      user: "me.user_id",
-      projectId: "w.project_id",
-      orgId: "w.org_id",
-      ownerUserId: "w.owner_user_id",
-      orgMemberVisible: "w.org_member_visible",
-    })} as role_rank${extension.columns ? `, ${extension.columns}` : ""}
+    select w.*, ${workspaceRoleRankSql({ user: "me.user_id", ownerUserId: "w.owner_user_id" })} as role_rank${extension.columns ? `, ${extension.columns}` : ""}
     from me
     join workspaces w on ${predicate}
     join projects p on p.project_id = w.project_id and p.org_id = w.org_id and p.deleted_at is null

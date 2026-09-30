@@ -109,9 +109,9 @@ async function signed(authority: D1WorkspaceAuthority, subject: string): Promise
 }
 
 /**
- * Two accounts in one organization, both able to reach the workspace: the
- * collision only means anything when the legacy holder and the stable-id holder
- * would each have been authorized on their own.
+ * Two accounts in one organization, each owning a workspace: the collision
+ * only means anything when the legacy holder and the stable-id holder would
+ * each have been authorized on their own.
  */
 async function deployment(migrations: readonly string[]) {
   const context = await setup(migrations)
@@ -121,7 +121,7 @@ async function deployment(migrations: readonly string[]) {
   await new D1OrgMemberAuthority(context.workspace.accessContext()).addOrgMember(handleHolder, {
     orgId: "org_acme",
     userPublicId: accountHolder.principal!.userId,
-    role: "member",
+    role: "admin",
   })
   const workspace = await context.workspace.createWorkspace(handleHolder, {
     workspaceId: "ws_main",
@@ -130,10 +130,13 @@ async function deployment(migrations: readonly string[]) {
     repoUrl: "https://github.com/acme/main.git",
     backing: "cloud-vm",
   })
-  await context.database.prepare(
-    `insert into project_memberships (project_id, user_id, role, created_at, updated_at, revoked_at)
-     values (?, ?, 'editor', 1, 1, null)`,
-  ).bind(workspace.project_id, accountHolder.principal!.userId).run()
+  await context.workspace.createWorkspace(accountHolder, {
+    workspaceId: "ws_account",
+    orgId: "org_acme",
+    displayName: "account",
+    repoUrl: "https://github.com/acme/main.git",
+    backing: "cloud-vm",
+  })
   return { ...context, handleHolder, accountHolder, workspace }
 }
 
@@ -177,8 +180,8 @@ async function preBoundaryAdmits(database: D1Database) {
   ).bind(TELEGRAM_KEY.channel, TELEGRAM_KEY.externalUserId).first()
 }
 
-function admission(channels: D1ChannelRuntimeAuthority) {
-  return channels.authorizeChannelWorkspace({ ...TELEGRAM_KEY, workspaceId: "ws_main", action: "write" })
+function admission(channels: D1ChannelRuntimeAuthority, workspaceId: "ws_main" | "ws_account") {
+  return channels.authorizeChannelWorkspace({ ...TELEGRAM_KEY, workspaceId, action: "write" })
 }
 
 async function versions(database: D1Database) {
@@ -201,7 +204,7 @@ describe("channel identity binding version boundary", () => {
     expect(await versions(before.database)).toEqual([
       { user_id: before.handleHolder.principal!.userId, identity_version: 0, revoked_at: null },
     ])
-    await expect(admission(before.channels)).rejects.toMatchObject({ status: 403 })
+    await expect(admission(before.channels, "ws_main")).rejects.toMatchObject({ status: 403 })
   })
 
   test("the account that actually owns the colliding id binds and is admitted", async () => {
@@ -213,7 +216,7 @@ describe("channel identity binding version boundary", () => {
     // index would have refused this insert outright.
     expect(await context.channels.bindChannelIdentity(context.accountHolder, TELEGRAM_KEY))
       .toMatchObject({ created: true, userId: context.accountHolder.principal!.userId })
-    expect(await admission(context.channels)).toEqual({
+    expect(await admission(context.channels, "ws_account")).toEqual({
       actorId: context.accountHolder.principal!.actorId,
       actorKind: "human",
     })
@@ -231,7 +234,7 @@ describe("channel identity binding version boundary", () => {
 
     await expect(context.channels.bindChannelIdentity(context.handleHolder, TELEGRAM_KEY))
       .rejects.toMatchObject({ status: 403 })
-    expect(await admission(context.channels)).toEqual({
+    expect(await admission(context.channels, "ws_account")).toEqual({
       actorId: context.accountHolder.principal!.actorId,
       actorKind: "human",
     })
@@ -252,7 +255,7 @@ describe("channel identity binding version boundary", () => {
     // state it already reached rather than re-authorizing anyone.
     expect(await context.channels.revokeChannelIdentity(context.accountHolder, TELEGRAM_KEY))
       .toEqual({ revoked: true })
-    await expect(admission(context.channels)).rejects.toMatchObject({ status: 403 })
+    await expect(admission(context.channels, "ws_account")).rejects.toMatchObject({ status: 403 })
   })
 
   test("a runtime credential minted for a legacy binding stops renewing and stops admitting", async () => {
@@ -317,7 +320,7 @@ describe("channel identity binding version boundary", () => {
 
     expect(await versions(context.database)).toEqual(before.rows)
     expect(await schema()).toEqual(before.schema)
-    expect(await admission(context.channels)).toEqual({
+    expect(await admission(context.channels, "ws_account")).toEqual({
       actorId: context.accountHolder.principal!.actorId,
       actorKind: "human",
     })
@@ -348,7 +351,7 @@ describe("channel identity binding version boundary", () => {
     expect(await versions(context.database)).toEqual([
       { user_id: context.accountHolder.principal!.userId, identity_version: 1, revoked_at: null },
     ])
-    expect(await admission(context.channels)).toEqual({
+    expect(await admission(context.channels, "ws_account")).toEqual({
       actorId: context.accountHolder.principal!.actorId,
       actorKind: "human",
     })
