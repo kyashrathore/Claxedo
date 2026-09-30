@@ -63,6 +63,7 @@ async function acpGoal() {
 
 async function nativeGoal(harnessId: "claude" | "codex") {
   const stack = await startStack({ label: `h6-${harnessId}-goals` })
+  let held: (() => void) | undefined
   try {
     const api = new ClaxedoApi(stack.url)
     const workspace = await stack.daemon.makeWorkspace(`h6-${harnessId}-goals`)
@@ -81,6 +82,7 @@ async function nativeGoal(harnessId: "claude" | "codex") {
     const objective = `Complete scripted ${harnessId} H6 objective`
     const priorMessages = await api.messages(workspace.directory, session.id)
     const priorFrameCount = stream.frames.length
+    held = harnessId === "claude" ? stack.scripted.holdTextReplies(objective) : undefined
     const started = await api.startGoal(workspace.directory, session.id, objective)
     assert.equal(started.goal?.objective, objective)
     await stream.waitFor((frame) => frameType(frame) === "goal.updated", { label: `${harnessId} Goal frame`, timeoutMs: 60_000 })
@@ -104,6 +106,7 @@ async function nativeGoal(harnessId: "claude" | "codex") {
     assert.deepEqual(unexpectedEgress(stack.egress.attempts), [], `${harnessId} must not attempt unexpected outbound traffic`)
     console.log(`H6 ${harnessId}: Goal started, live frame, stored turn, route readback, and local model request passed`)
   } finally {
+    held?.()
     await stack.close()
   }
 }

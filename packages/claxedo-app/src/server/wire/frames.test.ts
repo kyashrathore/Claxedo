@@ -58,6 +58,18 @@ test("frames: an expired permission or question closes the request exactly as it
   expect(settled("question.expired")).toEqual(closed)
 })
 
+test("frames: a subagent's request opens on the child session its sessionID names, never the parent", () => {
+  const opened = (type: string, properties: Record<string, unknown>) => {
+    const frame = frameFromWire({ directory: "/work", payload: { type, properties } })
+    return frame && serverEventFromFrame(frame, address)
+  }
+  const child = { ...ref, sessionId: sessionId("child-1") }
+  expect(opened("permission.asked", { id: "perm-1", sessionID: "child-1", permission: "bash", patterns: [], always: [], metadata: {} }))
+    .toMatchObject({ type: "requestOpened", ref: child, request: { kind: "permission", id: requestId("perm-1") } })
+  expect(opened("question.asked", { id: "ask-1", sessionID: "child-1", questions: [] }))
+    .toMatchObject({ type: "requestOpened", ref: child, request: { kind: "question", id: requestId("ask-1") } })
+})
+
 test("frames: a part retraction names the withdrawn parts and why", () => {
   const frame = frameFromWire({
     directory: "/work",

@@ -20,26 +20,24 @@ export type PermissionOption = {
   name: string
 }
 
-export type PermissionRequest = {
+export type ChildRequestRoute = { correlationKey: string }
+
+type RequestIdentity = { requestId: string; child?: ChildRequestRoute; expiresAt?: number }
+
+export type PermissionRequest = RequestIdentity & {
   kind: "permission"
-  requestId: string
-  expiresAt?: number
   permission: AgentPermission
   options?: readonly PermissionOption[]
   grantKey?: string
 }
 
-export type QuestionRequest = {
+export type QuestionRequest = RequestIdentity & {
   kind: "question"
-  requestId: string
-  expiresAt?: number
   question: AgentQuestion
 }
 
-export type ElicitationRequest = {
+export type ElicitationRequest = RequestIdentity & {
   kind: "elicitation"
-  requestId: string
-  expiresAt?: number
   elicitationId?: string
   mode: "form" | "url"
   message: string

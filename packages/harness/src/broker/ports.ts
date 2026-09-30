@@ -22,10 +22,9 @@ import type {
 import type { Clock, HarnessServices } from "../contract/services"
 import type { HarnessBinding, RoutedEvent, TurnOrigin, TurnRef } from "../contract/session"
 
-export type TurnAuthority = AgentExecutionBinding & {
-  ownerGeneration: string
-  turnId: string
-}
+export type SessionAuthority = AgentExecutionBinding & { ownerGeneration: string }
+
+export type TurnAuthority = SessionAuthority & { turnId: string }
 
 export type BrokerEvent = AgentPresentationEvent | {
   type: "permission.auto-answered"
@@ -40,6 +39,13 @@ export type AdmittedSubagentObservation = {
   event: SubagentUpdatedEvent
   published: boolean
 }
+
+export type RequestGrant = { sessionId: string; key: string }
+
+export type ChildRoute =
+  | { kind: "bound"; childSessionId: string; assistantMessageId: string }
+  | { kind: "unbound" }
+  | { kind: "finished"; childSessionId: string; assistantMessageId: string }
 
 export type SubagentAdmissionStore = {
   hasChild(parentSessionId: string, childSessionId: string): boolean
@@ -57,9 +63,11 @@ export interface BrokerPorts {
   readonly clock: Clock
   readonly services: Pick<HarnessServices, "patternEvaluator">
   currentTurnAuthority(sessionId: string): TurnAuthority | undefined
+  sessionAuthority(sessionId: string): SessionAuthority | undefined
+  turnOpen(sessionId: string, turnId: string): boolean
   readStart(sessionId: string): AgentSessionStart | undefined
   readPending(scope: RequestScope): readonly PendingRequest[]
-  persistAnswer(pending: PendingRequest, answer: RequestAnswer, automatic: boolean, grantKey?: string): Promise<readonly AgentRuntimeEvent[]>
+  persistAnswer(pending: PendingRequest, answer: RequestAnswer, automatic: boolean, grant?: RequestGrant): Promise<readonly AgentRuntimeEvent[]>
   readAnswer(sessionId: string, requestId: string): RequestAnswer | undefined
   publish(event: BrokerEvent, pending?: PendingRequest): Promise<void>
   readPermissionState(sessionId: string): Record<string, unknown> | undefined
@@ -76,6 +84,7 @@ export interface BrokerPorts {
   meterUsage(usage: OutsideTurnUsage): void
   readonly subagentAdmissionStore: SubagentAdmissionStore
   bindChildCorrelation(parentSessionId: string, correlationKey: string, childSessionId: string): void
+  childRoute(parentSessionId: string, correlationKey: string): ChildRoute
   admitChildSession(parentSessionId: string, childSessionId: string, observation: SubagentObservation): Promise<ChildSessionRef>
   publishSubagent(parentSessionId: string, event: SubagentUpdatedEvent): Promise<void>
   publishSubagentDiagnostic(parentSessionId: string, diagnostic: RuntimeDiagnostic): Promise<void>

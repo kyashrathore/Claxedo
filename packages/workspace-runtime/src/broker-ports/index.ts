@@ -3,6 +3,7 @@ import type { BrokerPorts } from "@claxedo/harness/broker"
 import type { Clock } from "@claxedo/harness/contract"
 import type { RuntimeStore } from "../store"
 import type { RuntimeEventPublishers } from "../projection/runtime-event-hub"
+import { resolveChildRoute } from "../projection/child-routes"
 import { BrokerAuthority } from "./authority"
 import { BrokerBackgroundWork } from "./background-work"
 import { admitChildSession, bindChildCorrelation } from "./child-sessions"
@@ -36,30 +37,33 @@ export function createStoreBrokerPorts(store: RuntimeStore, options: StoreBroker
   const backgroundWork = new BrokerBackgroundWork(store, delivery)
   const events = new BrokerSessionEvents(store, delivery, backgroundWork)
   const state = new BrokerSessionState(store, delivery)
-  const providerTurns = new BrokerProviderTurns(store, events, delivery,
+  const timers = new Map<unknown, TimerHandle>()
+  const clock: Clock = options.clock ?? {
+    now: () => Date.now(),
+    setTimeout: (callback, ms) => {
+      const handle = setTimeout(() => { timers.delete(handle); callback() }, ms)
+      timers.set(handle, handle)
+      return handle
+    },
+    clearTimeout: (handle) => {
+      const timer = timers.get(handle)
+      if (!timer) return
+      clearTimeout(timer)
+      timers.delete(handle)
+    },
+  }
+  const providerTurns = new BrokerProviderTurns(store, events, delivery, clock,
     (sessionId, error) => options.reportOwnerFailure(sessionId, error),
     (sessionId, turn, error) => options.retainLeasedTurnFailure(sessionId, turn, error))
-  const timers = new Map<unknown, TimerHandle>()
   return {
-    clock: options.clock ?? {
-      now: () => Date.now(),
-      setTimeout: (callback, ms) => {
-        const handle = setTimeout(() => { timers.delete(handle); callback() }, ms)
-        timers.set(handle, handle)
-        return handle
-      },
-      clearTimeout: (handle) => {
-        const timer = timers.get(handle)
-        if (!timer) return
-        clearTimeout(timer)
-        timers.delete(handle)
-      },
-    },
+    clock,
     services: { patternEvaluator: options.patternEvaluator },
     currentTurnAuthority: (sessionId) => authority.currentTurnAuthority(sessionId),
+    sessionAuthority: (sessionId) => authority.sessionAuthority(sessionId),
+    turnOpen: (sessionId, turnId) => authority.turnOpen(sessionId, turnId),
     readStart: (sessionId) => authority.readStart(sessionId),
     readPending: (scope) => requests.readPending(scope),
-    persistAnswer: (pending, answer, automatic, grantKey) => requests.persistAnswer(pending, answer, automatic, grantKey),
+    persistAnswer: (pending, answer, automatic, grant) => requests.persistAnswer(pending, answer, automatic, grant),
     readAnswer: (sessionId, requestId) => requests.readAnswer(sessionId, requestId),
     publish: (event, pending) => requests.publish(event, pending),
     readPermissionState: (sessionId) => state.readPermissionState(sessionId),
@@ -76,6 +80,7 @@ export function createStoreBrokerPorts(store: RuntimeStore, options: StoreBroker
     subagentAdmissionStore: store,
     bindChildCorrelation: (parentSessionId, correlationKey, childSessionId) =>
       bindChildCorrelation(store, parentSessionId, correlationKey, childSessionId),
+    childRoute: (parentSessionId, correlationKey) => resolveChildRoute(store, parentSessionId, correlationKey),
     admitChildSession: (parentSessionId, childSessionId, observation) =>
       admitChildSession(store, parentSessionId, childSessionId, observation),
     publishSubagent: (parentSessionId, event) => events.publishSubagent(parentSessionId, event),

@@ -101,3 +101,15 @@ test("a Goal whose work goes to the background stays active while its process li
   await until(() => goals.at(-1)?.status === "paused")
   await transport.dispose()
 })
+
+test("stopping a Goal Claude has just met says the Goal is gone rather than that the stop failed", async () => {
+  const { transport, session, claude, goals } = await goalStarted()
+  claude.frames.push(frame({ type: "active_goal", value: null }))
+  await until(() => goals.at(-1) === null)
+  const stopped = transport.goals.stop(rebound(session))
+  await until(() => claude.controls.includes("interrupt"))
+  claude.frames.push(result())
+  expect(await stopped).toMatchObject({ ok: false, status: "not_found" })
+  claude.frames.end()
+  await transport.dispose()
+})

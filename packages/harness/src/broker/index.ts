@@ -11,6 +11,7 @@ export type BrokerOwner = {
   subagents: SubagentBroker
   endTurn(authority: TurnBrokerContext["authority"]): Promise<void>
   endStart(context: SessionBrokerContext): Promise<void>
+  endChildTurn(childSessionId: string, turnId: string): Promise<void>
 }
 
 export function createRequestBroker(ports: BrokerPorts): BrokerOwner & { broker: RequestBroker } {
@@ -19,6 +20,7 @@ export function createRequestBroker(ports: BrokerPorts): BrokerOwner & { broker:
     ports, requests, subagents: new SubagentBroker(ports), broker: requests,
     endTurn: (authority) => requests.cancelTurn(authority),
     endStart: (context) => requests.cancelStart(context),
+    endChildTurn: (childSessionId, turnId) => requests.cancelChildTurn(childSessionId, turnId),
   }
 }
 
@@ -51,7 +53,7 @@ export function createSessionBroker(owner: BrokerOwner, context: SessionBrokerCo
     context.start.operationId !== context.operationId)) throw new Error("Session start binding does not match broker context")
   return {
     sessionId: context.sessionId,
-    ask: (request, options) => owner.requests.askStart(context, request, options),
+    ask: (request, options) => owner.requests.askSession(context, request, options),
     completeElicitation: (elicitationId) => {
       if (!context.start) throw new Error("Session completion requires a start binding")
       return owner.requests.completeElicitation(context.sessionId, context.start.connectionId, elicitationId)
@@ -81,4 +83,4 @@ export function createSessionBroker(owner: BrokerOwner, context: SessionBrokerCo
   }
 }
 
-export type { AdmittedSubagentObservation, BrokerEvent, BrokerPorts, SessionBrokerContext, TurnBrokerContext, TurnAuthority } from "./ports"
+export type { AdmittedSubagentObservation, BrokerEvent, BrokerPorts, ChildRoute, RequestGrant, SessionAuthority, SessionBrokerContext, TurnBrokerContext, TurnAuthority } from "./ports"

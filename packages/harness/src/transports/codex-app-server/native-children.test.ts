@@ -195,9 +195,29 @@ test("an approval a native child asks names the child it came from", async () =>
     await settle()
     peer.request(91, "item/commandExecution/requestApproval", { threadId: CHILD, turnId: CHILD_TURN, itemId: "item-1", command: "ls", cwd: peer.root })
     for (let round = 0; round < 50 && !peer.frames.some((frame) => frame.id === 91 && !frame.method); round++) await tick()
-    expect(asked).toMatchObject([{ permission: { metadata: { subagent: { correlationKey: CHILD, toolCallId: "call_1" } } } }])
+    expect(asked).toMatchObject([{ child: { correlationKey: CHILD } }])
+    expect(asked).not.toContainEqual(expect.objectContaining({ permission: expect.objectContaining({ metadata: expect.objectContaining({ subagent: expect.anything() }) }) }))
     peer.emit(turnCompleted(CHILD, CHILD_TURN))
     peer.emit(turnCompleted(PARENT, "turn-current"))
     await running
+  } finally { await peer.close() }
+})
+
+test("an approval a native child asks after its parent's turn ended goes to the session broker with the child's route", async () => {
+  const { peer, host, running } = await nativeSession()
+  try {
+    const asked: { via: string; request: unknown }[] = []
+    host.broker.ask = (async (request: unknown) => { asked.push({ via: "session", request }); return { kind: "permission", decision: "allow_once" } }) as SessionBroker["ask"]
+    peer.emit(subAgentActivity("item/started", PARENT, "turn-current", { id: "call_1", kind: "started", agentThreadId: CHILD, agentPath: "/root/child_probe" }))
+    peer.emit(turnStarted(CHILD, CHILD_TURN))
+    await settle()
+    peer.emit(turnCompleted(PARENT, "turn-current"))
+    await running
+    peer.request(92, "item/commandExecution/requestApproval", { threadId: CHILD, turnId: CHILD_TURN, itemId: "item-2", command: "ls", cwd: peer.root })
+    for (let round = 0; round < 50 && !peer.frames.some((frame) => frame.id === 92 && !frame.method); round++) await tick()
+    expect(asked).toMatchObject([{ via: "session", request: { child: { correlationKey: CHILD } } }])
+    expect(peer.frames.find((frame) => frame.id === 92 && !frame.method)).toMatchObject({ result: { decision: "accept" } })
+    peer.emit(turnCompleted(CHILD, CHILD_TURN))
+    await settle()
   } finally { await peer.close() }
 })

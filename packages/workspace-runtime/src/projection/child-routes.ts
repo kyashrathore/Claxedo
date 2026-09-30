@@ -1,11 +1,9 @@
 import type { AgentRuntimeEvent, AgentRuntimeEventOf, RuntimeUsageObservation } from "@claxedo/agent-runtime-contract"
+import type { ChildRoute } from "@claxedo/harness/broker"
 
-export type BoundChildRoute = { kind: "bound"; childSessionId: string; assistantMessageId: string }
+export type { ChildRoute } from "@claxedo/harness/broker"
 
-export type ChildRoute =
-  | BoundChildRoute
-  | { kind: "unbound" }
-  | { kind: "finished"; childSessionId: string; assistantMessageId: string }
+export type BoundChildRoute = Extract<ChildRoute, { kind: "bound" }>
 
 export type ChildRouteReader = {
   childRouteBinding(parentSessionId: string, correlationKey: string): { childSessionId: string; assistantMessageId: string } | undefined
