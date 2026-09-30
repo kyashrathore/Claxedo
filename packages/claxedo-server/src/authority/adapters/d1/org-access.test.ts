@@ -116,7 +116,7 @@ describe("D1 organization members", () => {
       { user_id: id(bob), role: "admin" },
     ])
     expect(members.every((member) => typeof member.joined_at === "number")).toBe(true)
-    expect((await audit("org.member.")).filter((row) => row.targetUserId === id(bob))).toEqual([
+    expect((await audit("org.member.")).filter((row) => row.orgId === "org_acme" && row.targetUserId === id(bob))).toEqual([
       { action: "org.member.added", actor: id(alice), orgId: "org_acme", targetUserId: id(bob), before: null, after: "member" },
       { action: "org.member.role_changed", actor: id(alice), orgId: "org_acme", targetUserId: id(bob), before: "member", after: "admin" },
     ])
@@ -517,12 +517,27 @@ describe("D1 access changes that must not undo or outlive a decision", () => {
     expect(await audit("team.")).toHaveLength(before)
   })
 
-  test("the founding owner's membership is audited when the organization is created", async () => {
-    const { alice, outsider, audit } = await setup()
-    expect(await audit("org.member.added")).toEqual([
-      { action: "org.member.added", actor: id(alice), orgId: "org_acme", targetUserId: id(alice), before: null, after: "owner" },
-      { action: "org.member.added", actor: id(outsider), orgId: "org_other", targetUserId: id(outsider), before: null, after: "owner" },
-    ])
+  test("every founding owner's membership, of a personal or a created organization, is audited once and attributed to the founder", async () => {
+    const { database, alice, bob, carol, outsider, audit, person } = await setup()
+    await person("alice")
+    const personal = async (auth: SignedControlPlaneAuth) => (await database
+      .prepare("select org_id from orgs where kind = 'personal' and owner_user_id = ?")
+      .bind(id(auth))
+      .first<{ org_id: string }>())!.org_id
+    const founded = (auth: SignedControlPlaneAuth, orgId: string) =>
+      ({ action: "org.member.added", actor: id(auth), orgId, targetUserId: id(auth), before: null, after: "owner" })
+
+    expect((await audit("org.member.added")).toSorted(byJson)).toEqual([
+      founded(alice, await personal(alice)),
+      founded(bob, await personal(bob)),
+      founded(carol, await personal(carol)),
+      founded(outsider, await personal(outsider)),
+      founded(alice, "org_acme"),
+      founded(outsider, "org_other"),
+    ].toSorted(byJson))
+    expect(await database
+      .prepare("select count(*) as n from authority_audit_events where action = 'org.member.added' and actor_id is null")
+      .first<{ n: number }>()).toEqual({ n: 0 })
   })
 
   test("audit retention evicts deny rows and never an access change, however many deny rows a caller provokes", async () => {
@@ -694,6 +709,6 @@ describe("D1 user-deployed identity admission", () => {
     const admitted = (await controlPlane.database
       .prepare("select metadata_json from authority_audit_events where action = 'org.member.added' order by rowid")
       .all<{ metadata_json: string }>()).results.map((row) => JSON.parse(row.metadata_json).targetUserId)
-    expect(admitted).toEqual([id(bob), carolId])
+    expect(admitted).toEqual([id(alice), id(bob), carolId])
   })
 })

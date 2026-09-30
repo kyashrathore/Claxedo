@@ -173,6 +173,41 @@ export function accessAuditStatement(context: D1AccessContext, input: {
 }
 
 /**
+ * The owner memberships an organization's bootstrap writes (a personal
+ * organization, a created one, a user-deployed deployment's configured or
+ * claimed owner), each preceded by its audit row, attributed to the new
+ * owner. `owners` selects `org_id, user_id` pairs and may read rows written
+ * earlier in the same batch. A membership already present in any state is
+ * neither written again nor audited, so a replayed bootstrap writes nothing.
+ */
+export function ownerMembershipStatements(context: D1AccessContext, input: { owners: BoundSql; now: number }) {
+  const action: AccessChangeAction = "org.member.added"
+  return [
+    context.database.prepare(`
+      insert into authority_audit_events (
+        event_id, deployment_id, user_id, actor_id, org_id, project_id, workspace_id,
+        unverified_attempted_workspace_id, action, result, reason, metadata_json, created_at
+      )
+      select ? || '/' || owner.org_id, ?, owner.user_id,
+        (select actor_id from actors where user_id = owner.user_id and kind = 'human'),
+        null, null, null, null, ?, 'allow', null,
+        json_object('orgId', owner.org_id, 'targetUserId', owner.user_id, 'before', null, 'after', 'owner'), ?
+      from (${input.owners.sql}) owner
+      where not exists (
+        select 1 from org_memberships existing where existing.org_id = owner.org_id and existing.user_id = owner.user_id
+      )
+    `).bind(context.randomId("audit"), context.deploymentId, action, input.now, ...input.owners.bind),
+    context.database.prepare(`
+      insert into org_memberships (org_id, user_id, role, created_at, updated_at, revoked_at)
+      select owner.org_id, owner.user_id, 'owner', ?, ?, null
+      from (${input.owners.sql}) owner
+      where true
+      on conflict (org_id, user_id) do nothing
+    `).bind(input.now, input.now, ...input.owners.bind),
+  ]
+}
+
+/**
  * Revokes the live runtime access tokens minted for the people `holders`
  * selects (a `user_id` subquery) on the projects `projects` selects, guarded
  * like the change it accompanies. A token outlives the rank that minted it

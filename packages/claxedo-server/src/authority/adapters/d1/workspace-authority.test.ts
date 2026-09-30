@@ -435,11 +435,26 @@ describe("D1 user-deployed workspace authority", () => {
     ).toEqual({ consumed_subject: ownerIdentity.subject })
     expect((await database.prepare("select count(*) as count from users").first<{ count: number }>())?.count).toBe(1)
     expect((await database.prepare("select count(*) as count from orgs").first<{ count: number }>())?.count).toBe(1)
+    const founded = async () => (await database
+      .prepare("select user_id, actor_id, metadata_json from authority_audit_events where action = 'org.member.added'")
+      .all<{ user_id: string; actor_id: string; metadata_json: string }>()).results
+      .map((row) => ({ user: row.user_id, actor: row.actor_id, ...JSON.parse(row.metadata_json) }))
+    if (owner.state !== "active") throw new Error(`owner did not become active: ${owner.state}`)
+    const foundingOwner = {
+      user: owner.userId,
+      actor: owner.actorId,
+      orgId: "org_deployment",
+      targetUserId: owner.userId,
+      before: null,
+      after: "owner",
+    }
+    expect(await founded()).toEqual([foundingOwner])
 
     await expect(authority.claimUserDeployedOwner(identity("attacker"), claim)).rejects.toMatchObject({
       code: "resource_conflict",
     })
     expect((await database.prepare("select count(*) as count from users").first<{ count: number }>())?.count).toBe(1)
+    expect(await founded()).toEqual([foundingOwner])
 
     const expired = await setup({
       kind: "user-deployed",

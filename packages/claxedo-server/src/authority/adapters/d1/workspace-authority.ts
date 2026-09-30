@@ -23,9 +23,9 @@ import {
   workspaceAccessSql,
 } from "./project-role"
 import {
-  accessAuditStatement,
   canAdminOrganization,
   isActiveOrgMember,
+  ownerMembershipStatements,
   requireText,
   type D1AccessContext,
 } from "./access-context"
@@ -245,18 +245,15 @@ export class D1WorkspaceAuthority implements D1WorkspaceAuthorityCore {
         `,
           )
           .bind(candidate.orgId, now, now, identity.adapter, identity.issuer, identity.subject),
-        this.database
-          .prepare(
-            `
-          insert into org_memberships (org_id, user_id, role, created_at, updated_at, revoked_at)
-          select o.org_id, ai.user_id, 'owner', ?, ?, null
-          from auth_identities ai
-          join orgs o on o.owner_user_id = ai.user_id and o.kind = 'personal' and o.deleted_at is null
-          where ai.adapter = ? and ai.issuer = ? and ai.subject = ? and ai.unlinked_at is null
-          on conflict (org_id, user_id) do nothing
-        `,
-          )
-          .bind(now, now, identity.adapter, identity.issuer, identity.subject),
+        ...ownerMembershipStatements(this.accessContext(), {
+          owners: {
+            sql: `select o.org_id, ai.user_id from auth_identities ai
+              join orgs o on o.owner_user_id = ai.user_id and o.kind = 'personal' and o.deleted_at is null
+              where ai.adapter = ? and ai.issuer = ? and ai.subject = ? and ai.unlinked_at is null`,
+            bind: [identity.adapter, identity.issuer, identity.subject],
+          },
+          now,
+        }),
       ])
       return await this.identityResolution(identity)
     }
@@ -294,18 +291,15 @@ export class D1WorkspaceAuthority implements D1WorkspaceAuthorityCore {
           identity.issuer,
           identity.subject,
         ),
-      this.database
-        .prepare(
-          `
-        insert into org_memberships (org_id, user_id, role, created_at, updated_at, revoked_at)
-        select o.org_id, ai.user_id, 'owner', ?, ?, null
-        from auth_identities ai
-        join orgs o on o.org_id = ? and o.kind = 'deployment' and o.deployment_id = ? and o.deleted_at is null
-        where ai.adapter = ? and ai.issuer = ? and ai.subject = ? and ai.unlinked_at is null
-        on conflict (org_id, user_id) do nothing
-      `,
-        )
-        .bind(now, now, org.id, this.options.deploymentId, identity.adapter, identity.issuer, identity.subject),
+      ...ownerMembershipStatements(this.accessContext(), {
+        owners: {
+          sql: `select o.org_id, ai.user_id from auth_identities ai
+            join orgs o on o.org_id = ? and o.kind = 'deployment' and o.deployment_id = ? and o.deleted_at is null
+            where ai.adapter = ? and ai.issuer = ? and ai.subject = ? and ai.unlinked_at is null`,
+          bind: [org.id, this.options.deploymentId, identity.adapter, identity.issuer, identity.subject],
+        },
+        now,
+      }),
     ])
     const resolution = await this.identityResolution(identity)
     if (resolution.state !== "active" || !(await isActiveOrgMember(this.database, resolution.userId, org.id))) {
@@ -394,16 +388,14 @@ export class D1WorkspaceAuthority implements D1WorkspaceAuthorityCore {
             identityHash,
             now,
           ),
-        this.database
-          .prepare(
-            `
-        insert into org_memberships (org_id, user_id, role, created_at, updated_at, revoked_at)
-        select o.org_id, o.owner_user_id, 'owner', ?, ?, null
-        from orgs o where o.org_id = ? and o.deployment_id = ? and o.owner_user_id = ? and o.deleted_at is null
-        on conflict (org_id, user_id) do nothing
-      `,
-          )
-          .bind(now, now, org.id, deploymentId, userId),
+        ...ownerMembershipStatements(this.accessContext(), {
+          owners: {
+            sql: `select o.org_id, o.owner_user_id as user_id from orgs o
+              where o.org_id = ? and o.deployment_id = ? and o.owner_user_id = ? and o.deleted_at is null`,
+            bind: [org.id, deploymentId, userId],
+          },
+          now,
+        }),
         this.database
           .prepare(
             `
@@ -613,30 +605,14 @@ export class D1WorkspaceAuthority implements D1WorkspaceAuthorityCore {
       `,
           )
           .bind(orgId, name, now, now, who.userId),
-        accessAuditStatement(this.accessContext(), {
-          who,
-          action: "org.member.added",
-          metadata: {
-            sql: `json_object('orgId', ?, 'targetUserId', ?, 'before', null, 'after', 'owner')`,
+        ...ownerMembershipStatements(this.accessContext(), {
+          owners: {
+            sql: `select o.org_id, o.owner_user_id as user_id from orgs o
+              where o.org_id = ? and o.owner_user_id = ? and o.deleted_at is null`,
             bind: [orgId, who.userId],
-          },
-          guard: {
-            sql: `exists (select 1 from orgs where org_id = ? and owner_user_id = ? and deleted_at is null)
-              and not exists (select 1 from org_memberships where org_id = ? and user_id = ?)`,
-            bind: [orgId, who.userId, orgId, who.userId],
           },
           now,
         }),
-        this.database
-          .prepare(
-            `
-        insert into org_memberships (org_id, user_id, role, created_at, updated_at, revoked_at)
-        select o.org_id, o.owner_user_id, 'owner', ?, ?, null from orgs o
-        where o.org_id = ? and o.owner_user_id = ? and o.deleted_at is null
-        on conflict (org_id, user_id) do nothing
-      `,
-          )
-          .bind(now, now, orgId, who.userId),
         this.database
           .prepare(
             `

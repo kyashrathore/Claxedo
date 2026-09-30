@@ -90,10 +90,14 @@ Every membership and grant change writes an `authority_audit_events` row in
 the batch that makes it, attributed to the caller, whose metadata names the
 org, the team or project, the target person, and the role `before` and
 `after` (null when there was none or is none); a set change such as the
-default team's setup writes one row per target, and creating an org writes
-one for its founding owner. The row carries the change's complete guard, so a
-change the guard refuses, or one that finds nothing left to change, writes no
-row.
+default team's setup writes one row per target. Every founding owner's
+membership (a personal org, a created org, a user-deployed deployment's
+configured or claimed owner) writes one too, attributed to the founder, and
+only the first time. The row carries the change's complete guard, so a change
+the guard refuses, or one that finds nothing to change (the role already in
+place, the member already gone), writes no row. The audit table's
+per-deployment row cap evicts deny and MCP rows only; access-change rows
+(`org.*`, `team.*`, `project.member.*`) are never evicted.
 
 An email is resolved only after the caller is found to administer the org, so
 the answer never tells someone without that right whether an address has an
