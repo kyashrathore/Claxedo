@@ -1,10 +1,14 @@
 import assert from "node:assert/strict"
 import fs from "node:fs/promises"
 import path from "node:path"
-import { ApiError, ClaxedoApi } from "../harness/api"
+import { ApiError, ClaxedoApi, type MessageRow } from "../harness/api"
 import { unexpectedEgress } from "../harness/egress-guard"
 import { startStack, type Stack } from "../harness/stack"
 import { frameSessionId, frameType, type EventStream } from "../harness/stream"
+
+function childTranscriptNames(messages: MessageRow[], marker: string): boolean {
+  return messages.some((message) => message.parts.some((part) => part.type === "text" && part.text?.includes(marker)))
+}
 
 const NATIVE = [
   { id: "claude", providerId: "anthropic", modelId: "claude-sonnet-4-5", mode: "default",
@@ -52,6 +56,7 @@ export async function run() {
       await stream.waitFor((frame) => stream.frames.indexOf(frame) >= since && frameType(frame) === "session.idle" && frameSessionId(frame) === child.id,
         { label: `${harness.id} child idle`, timeoutMs: 90_000 })
       assert.equal(await fs.readFile(output, "utf8"), "approved")
+      assert.ok(childTranscriptNames(await api.messages(directory, child.id), childMarker), `${harness.id} child transcript lost its task`)
       await assert.rejects(() => api.replyPermission(directory, child.id, row.id, "once"),
         (error: unknown) => error instanceof ApiError && error.status === 404, `${harness.id} took a duplicate answer`)
       console.log(`H3 ${harness.id} child: a subagent's permission was filed, answered and refused on the parent as the child's own`)
@@ -93,6 +98,7 @@ async function idleParentChild(stack: Stack, api: ClaxedoApi, stream: EventStrea
     await stream.waitFor((frame) => stream.frames.indexOf(frame) >= since && frameType(frame) === "session.idle" && frameSessionId(frame) === child.id,
       { label: "claude background child idle", timeoutMs: 90_000 })
     assert.equal(await fs.readFile(output, "utf8"), "approved")
+    assert.ok(childTranscriptNames(await api.messages(directory, child.id), childMarker), "claude background child transcript lost its task")
     console.log("H3 claude background child: a request asked while its parent was idle was filed and answered on the child")
   } finally { release() }
 }
