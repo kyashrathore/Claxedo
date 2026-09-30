@@ -308,6 +308,25 @@ test.each([
   } finally { await context.close() }
 }, 90_000)
 
+test("a host that dies mid-run fails that turn as retryable, and the next turn resumes the agent on a new host", async () => {
+  const state = await backend()
+  state.server.script("dies", { steps: [{ kind: "text", text: "BEFORE-DEATH" }], hold: true })
+  const context = await setupConformance({ name: "host-death", backend: async () => state, makeTransport: transportFor(state) })
+  try {
+    const upstream = context.session.binding.upstreamSessionId
+    const turn = collect(context, context.turn("CURSOR_SCRIPT:dies")).then(() => undefined, (error: unknown) => error)
+    await pollUntil(() => state.server.requests.some((request) => request.path === "/aiserver.v1.BidiService/BidiAppend"
+      && JSON.stringify(request.decoded).includes("CURSOR_SCRIPT:dies")) || undefined, Date.now() + 15_000)
+    const host = context.services.processes.at(-1)!
+    process.kill(host.pid, "SIGKILL")
+    expect(await turn).toMatchObject({ transport: "cursor", code: "worker", retryable: true })
+    const recovered = await collect(context, context.turn("CURSOR_SCRIPT:conformance"))
+    expect(recovered.some((item) => item.event.type === "finish")).toBe(true)
+    expect(context.services.processes.at(-1)).not.toBe(host)
+    expect(context.session.binding.upstreamSessionId).toBe(upstream)
+  } finally { await context.close() }
+}, 60_000)
+
 test("a failed scripted run leaves the next turn usable", async () => {
   const state = await backend()
   state.server.script("crash", { steps: [], error: { status: 503, message: "scripted Cursor failure" } })

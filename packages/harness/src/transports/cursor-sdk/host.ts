@@ -6,6 +6,8 @@ import { CursorRunState } from "./run-state"
 
 const TITLE_AGENT_NAME = "Claxedo session title"
 
+type SdkAgent = typeof import("@cursor/sdk").Agent
+
 const protocolOut = process.stdout.write.bind(process.stdout)
 
 function keepStdoutForProtocol() {
@@ -41,9 +43,20 @@ export class CursorHostRuntime {
     if (existing) return existing
     const { Agent } = await this.sdk()
     const options = agentOptions(session)
+    if (session.agentId) await this.endOrphanedRuns(Agent, session.agentId, session.directory)
     const agent = session.agentId ? await Agent.resume(session.agentId, options) : await Agent.create(options)
     this.agents.set(session.sessionId, agent)
     return agent
+  }
+
+  private async endOrphanedRuns(Agent: SdkAgent, agentId: string, cwd: string): Promise<void> {
+    if ((await Agent.get(agentId, { cwd })).status !== "running") return
+    let cursor: string | undefined
+    do {
+      const page = await Agent.listRuns(agentId, { runtime: "local", cwd, ...(cursor ? { cursor } : {}) })
+      for (const run of page.items) if (run.status === "running") await Agent.cancelRun(run.id, { runtime: "local", cwd })
+      cursor = page.nextCursor
+    } while (cursor)
   }
 
   private async run(command: Extract<HostCommand, { kind: "run" }>): Promise<void> {
