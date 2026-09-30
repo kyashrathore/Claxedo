@@ -77,7 +77,7 @@ export default {
   "settings.connections.reverify": "다시 확인",
   "settings.connections.disconnectConfirm": "연결을 해제할까요?",
   "settings.connections.scope.personal": "나만",
-  "settings.connections.scope.team": "조직",
+  "settings.connections.scope.org": "조직",
   "settings.connections.oauth": "OAuth로 계속",
   "settings.connections.waiting": "승인을 기다리는 중…",
   "settings.connections.code": "공급자에서 이 코드를 입력하세요: {{code}}",

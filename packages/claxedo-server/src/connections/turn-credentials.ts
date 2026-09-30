@@ -7,9 +7,9 @@ type TurnRecord = {
   sessionId: string
   subject?: string
   // Tenant the turn belongs to (hosted org partition): token resolution
-  // derives the team partition from THIS org,
+  // derives the org partition from THIS org,
   // never from the deployment-wide null partition, so a turn credential can
-  // never unlock another org's team rows — even if a subject id collides.
+  // never unlock another org's rows — even if a subject id collides.
   orgId?: string
   expiresAt: number
 }

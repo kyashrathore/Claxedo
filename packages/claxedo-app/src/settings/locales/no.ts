@@ -75,7 +75,7 @@ export default {
   "settings.connections.reverify": "Bekreft på nytt",
   "settings.connections.disconnectConfirm": "Koble fra?",
   "settings.connections.scope.personal": "Bare meg",
-  "settings.connections.scope.team": "Organisasjon",
+  "settings.connections.scope.org": "Organisasjon",
   "settings.connections.oauth": "Fortsett med OAuth",
   "settings.connections.waiting": "Venter på autorisasjon…",
   "settings.connections.code": "Skriv inn denne koden hos leverandøren: {{code}}",

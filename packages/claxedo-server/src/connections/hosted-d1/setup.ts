@@ -17,7 +17,7 @@
  *     reached through the injected `credentials` factory).
  *
  * `ownerlessRows: "refuse"` is the hosted invariant: a hosted host must derive
- * its team partition from the caller's org and never expose the kit's
+ * its org partition from the caller's org and never expose the kit's
  * deployment-wide owner-absent partition.
  */
 import {
@@ -86,7 +86,7 @@ export type HostedD1ConnectionsSetupInput = Readonly<{
 /** The membership verdict every hosted Connections request is authorized against. */
 type HostedMembership = Readonly<{ userId: string; orgId: string; role: string }>
 
-const TEAM_WRITE_ROLES = new Set(["admin", "owner"])
+const ORG_WRITE_ROLES = new Set(["admin", "owner"])
 
 const CALLBACK_FAILURE_PAGE =
   "<!doctype html><html><body style=\"font-family:sans-serif;padding:2rem\"><h2>Connection failed</h2><p>You can close this window and return to the app.</p></body></html>"
@@ -181,10 +181,10 @@ export function createHostedD1ConnectionsSetup(input: HostedD1ConnectionsSetupIn
       // membership + entitlement; the route layer adds no second gate here.
       gate: () => null,
       owner: () => `user:${membership.userId}`,
-      teamOwner: () => `org:${membership.orgId}`,
+      orgOwner: () => `org:${membership.orgId}`,
       attemptRouting: () => ({ org_id: membership.orgId, owner_user_id: membership.userId }),
-      teamWriteGate: (context) =>
-        TEAM_WRITE_ROLES.has(membership.role) ? null : context.json({ code: "connections_org_admin_required" }, 403),
+      orgWriteGate: (context) =>
+        ORG_WRITE_ROLES.has(membership.role) ? null : context.json({ code: "connections_org_admin_required" }, 403),
       ownerlessRows: "refuse",
     })
     const url = new URL(c.req.url)
@@ -215,7 +215,7 @@ async function hostedCallback(input: HostedD1ConnectionsSetupInput, c: Context, 
   // the state token that selects this row.
   const ownerMatches = pending?.scope === "personal"
     ? pending.owner === `user:${ownerUserId}`
-    : pending?.scope === "team" && pending.owner === `org:${orgId}`
+    : pending?.scope === "org" && pending.owner === `org:${orgId}`
   if (!orgId || !ownerUserId || !ownerMatches) return c.html(CALLBACK_FAILURE_PAGE, 400)
   const service = await hostedConnectionsService(input, {
     ownerUserId,
@@ -254,7 +254,7 @@ export function createHostedRepositoryAccess(input: HostedD1ConnectionsSetupInpu
     if (!membership) return { ok: false as const, status: 403 as const, code: "connections_org_membership_required" }
     const service = await hostedConnectionsService(input, { ownerUserId: membership.userId, orgId: membership.orgId })
     try {
-      const visible = (await service.list({ teamOwner: `org:${membership.orgId}`, scope: "team" }))
+      const visible = (await service.list({ orgOwner: `org:${membership.orgId}`, scope: "org" }))
         .some((connection) => connection.id === connectionId)
       if (!visible) return { ok: false as const, status: 404 as const, code: "connection_not_found" }
       const listed = await service.listRepositories(connectionId)
@@ -296,7 +296,7 @@ export function createHostedCapabilityTokenResolver(input: HostedD1ConnectionsSe
     try {
       const [connection] = await service.resolveForCapability(request.capability, {
         owner: `user:${request.ownerUserId}`,
-        teamOwner: `org:${request.orgId}`,
+        orgOwner: `org:${request.orgId}`,
         integration: request.integrationId,
       })
       if (!connection) return { ok: false as const, status: 404 as const, code: "connection_not_found" }
@@ -323,7 +323,7 @@ export function createHostedCapabilityConnectionResolver(input: HostedD1Connecti
     try {
       const [connection] = await service.resolveForCapability(request.capability, {
         owner: `user:${request.ownerUserId}`,
-        teamOwner: `org:${request.orgId}`,
+        orgOwner: `org:${request.orgId}`,
         integration: request.integrationId,
       })
       if (!connection) return { ok: false as const, status: 404 as const, code: "connection_not_found" }
@@ -351,7 +351,7 @@ export function createHostedCapabilityAuthFailureReporter(input: HostedD1Connect
     try {
       const handles = await service.resolveForCapability(request.capability, {
         owner: `user:${request.ownerUserId}`,
-        teamOwner: `org:${request.orgId}`,
+        orgOwner: `org:${request.orgId}`,
         integration: request.integrationId,
       })
       const connection = handles.find((candidate) => candidate.id === request.connectionId)
@@ -444,7 +444,7 @@ async function hostedConnectionsService(
   // canonical fields instead.
   //
   // The partition is named rather than searched: a callback carries the owner
-  // its attempt froze, and a runtime resolution reads personal-before-team —
+  // its attempt froze, and a runtime resolution reads personal-before-org —
   // the SAME precedence `service.resolveForCapability` uses to pick the row
   // whose token will actually be served. Scanning both partitions and taking
   // whichever sorts first could rebuild the refresh behavior from the org row

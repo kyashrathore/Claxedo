@@ -125,7 +125,7 @@ export function createConnectionsHost(options: ConnectionsHostOptions) {
 
   // Token/auth-failure partition keys come from the host-minted turn
   // credential only. Absent, expired, or unknown credentials resolve the
-  // owner-absent team partition.
+  // owner-absent org partition.
   const resolveTurn = (c: Context) => options.turnCredentials?.resolve(c.req.header(CONNECTION_TURN_HEADER))
   const tokenOwner = (c: Context) => resolveTurn(c)?.subject
 

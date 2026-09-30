@@ -76,7 +76,7 @@ export default {
   "settings.connections.reverify": "Проверить снова",
   "settings.connections.disconnectConfirm": "Отключить?",
   "settings.connections.scope.personal": "Только я",
-  "settings.connections.scope.team": "Организация",
+  "settings.connections.scope.org": "Организация",
   "settings.connections.oauth": "Продолжить через OAuth",
   "settings.connections.waiting": "Ожидание авторизации…",
   "settings.connections.code": "Введите этот код у провайдера: {{code}}",

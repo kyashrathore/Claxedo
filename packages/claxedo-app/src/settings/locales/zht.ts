@@ -77,7 +77,7 @@ export default {
   "settings.connections.reverify": "重新驗證",
   "settings.connections.disconnectConfirm": "中斷連線？",
   "settings.connections.scope.personal": "僅限我",
-  "settings.connections.scope.team": "組織",
+  "settings.connections.scope.org": "組織",
   "settings.connections.oauth": "使用 OAuth 繼續",
   "settings.connections.waiting": "正在等待授權…",
   "settings.connections.code": "在提供者處輸入此代碼：{{code}}",

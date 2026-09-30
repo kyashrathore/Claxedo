@@ -180,7 +180,7 @@ const CONNECTION_CORE_MUTANTS: readonly Mutant<ConnectionStorePort>[] = [
 
 const CONNECTION_PARTITION_MUTANTS: readonly Mutant<ConnectionStorePort>[] = [
   {
-    breaks: "returns only the team partition when no filter is given",
+    breaks: "returns only the org partition when no filter is given",
     apply: (store) => ({ ...store, list: (filter) => store.list(filter ?? { owner: null }) }),
   },
   {
@@ -191,7 +191,7 @@ const CONNECTION_PARTITION_MUTANTS: readonly Mutant<ConnectionStorePort>[] = [
     }),
   },
   {
-    breaks: "answers the team partition with every row",
+    breaks: "answers the org partition with every row",
     apply: (store) => ({ ...store, list: (filter) => store.list(filter?.owner === null ? undefined : filter) }),
   },
   {
@@ -199,7 +199,7 @@ const CONNECTION_PARTITION_MUTANTS: readonly Mutant<ConnectionStorePort>[] = [
     apply: (store) => ({ ...store, list: async (filter) => (typeof filter?.owner === "string" ? [] : store.list(filter)) }),
   },
   {
-    breaks: "leaks the team partition into a specific-owner list",
+    breaks: "leaks the org partition into a specific-owner list",
     apply: (store) => ({
       ...store,
       list: async (filter) =>

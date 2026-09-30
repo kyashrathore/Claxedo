@@ -77,7 +77,7 @@ export default {
   "settings.connections.reverify": "再確認",
   "settings.connections.disconnectConfirm": "接続を解除しますか？",
   "settings.connections.scope.personal": "自分のみ",
-  "settings.connections.scope.team": "組織",
+  "settings.connections.scope.org": "組織",
   "settings.connections.oauth": "OAuth で続行",
   "settings.connections.waiting": "承認を待っています…",
   "settings.connections.code": "プロバイダーでこのコードを入力してください: {{code}}",

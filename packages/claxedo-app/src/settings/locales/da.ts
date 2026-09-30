@@ -75,7 +75,7 @@ export default {
   "settings.connections.reverify": "Bekræft igen",
   "settings.connections.disconnectConfirm": "Afbryd forbindelse?",
   "settings.connections.scope.personal": "Kun mig",
-  "settings.connections.scope.team": "Organisation",
+  "settings.connections.scope.org": "Organisation",
   "settings.connections.oauth": "Fortsæt med OAuth",
   "settings.connections.waiting": "Venter på godkendelse…",
   "settings.connections.code": "Indtast denne kode hos udbyderen: {{code}}",

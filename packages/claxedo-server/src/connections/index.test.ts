@@ -94,7 +94,7 @@ describe("connections host", () => {
     host.dispose()
   })
 
-  test("signed subjects see their personal rows plus the ownerless team partition", async () => {
+  test("signed subjects see their personal rows plus the ownerless org partition", async () => {
     const host = createConnectionsHost({
       credentials: credentialsPort(),
       env: {},
@@ -122,7 +122,7 @@ describe("connections host", () => {
       createdAt: 1,
       updatedAt: 1,
     })
-    await connections.upsert(row("team"))
+    await connections.upsert(row("org"))
     await connections.upsert(row("alice", "alice"))
     await connections.upsert(row("bob", "bob"))
 
@@ -131,7 +131,7 @@ describe("connections host", () => {
     })
     expect(response.status).toBe(200)
     expect(((await response.json()) as { connections: Array<{ id: string }> }).connections.map((item) => item.id).sort())
-      .toEqual(["alice", "team"])
+      .toEqual(["alice", "org"])
     host.dispose()
   })
 
@@ -189,20 +189,20 @@ describe("connections host", () => {
     const connections = createConnectionStoreAdapter()
     const credentials = createCredentialStoreAdapter(credentialsPort())
     await connections.upsert({
-      id: "team-notion",
+      id: "org-notion",
       integrationId: "notion",
       grantedCapabilities: ["docs"],
       fields: {},
       createdAt: 1,
       updatedAt: 1,
     })
-    await credentials.put({ providerId: "integration:team-notion", kind: "api_key", secret: "rejected-secret" })
+    await credentials.put({ providerId: "integration:org-notion", kind: "api_key", secret: "rejected-secret" })
     // What an upstream 401 during a turn records.
-    await credentials.setStatus("integration:team-notion", "error", "upstream_authorization_rejected")
+    await credentials.setStatus("integration:org-notion", "error", "upstream_authorization_rejected")
 
-    expect(await host.service.reverify("team-notion")).toEqual({ ok: false, reason: "unauthorized" })
-    expect((await credentials.get("integration:team-notion"))?.status).toBe("error")
-    expect(await host.service.getToken("team-notion", "docs")).toMatchObject({
+    expect(await host.service.reverify("org-notion")).toEqual({ ok: false, reason: "unauthorized" })
+    expect((await credentials.get("integration:org-notion"))?.status).toBe("error")
+    expect(await host.service.getToken("org-notion", "docs")).toMatchObject({
       ok: false,
       code: "connection_not_available",
     })

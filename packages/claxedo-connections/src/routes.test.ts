@@ -102,8 +102,8 @@ const connectBody = { fields: { site_url: "https://acme.example" }, secret: "goo
 // oauth-method integration whose provider boundary is a local fake.
 function oauthHarness(options: {
   owner?: string
-  teamOwner?: string
-  ownerlessRows?: "team" | "refuse"
+  orgOwner?: string
+  ownerlessRows?: "org" | "refuse"
   callback?: (code: string, verifier: string) => Promise<{ accessToken: string; refreshToken?: string; expiresAt?: number }>
 } = {}) {
   const authorized: Array<{ state: string; verifier: string }> = []
@@ -135,7 +135,7 @@ function oauthHarness(options: {
   const app = createIntegrationsRoutes(service, {
     gate: () => null,
     ...(options.owner !== undefined ? { owner: () => options.owner } : {}),
-    ...(options.teamOwner !== undefined ? { teamOwner: () => options.teamOwner } : {}),
+    ...(options.orgOwner !== undefined ? { orgOwner: () => options.orgOwner } : {}),
     ...(options.ownerlessRows !== undefined ? { ownerlessRows: options.ownerlessRows } : {}),
   })
   const startOAuth = async (body: Record<string, unknown> = {}) =>
@@ -177,11 +177,11 @@ describe("integrations routes", () => {
     // route whose policy changes has to change here too.
     const policies = {
       "GET /": "authenticated",
-      "POST /:id/connect": "team-write",
+      "POST /:id/connect": "org-write",
       "GET /callback": "public",
       "GET /attempts/:state": "authenticated",
-      "DELETE /connections/:id": "team-write",
-      "POST /connections/:id/reverify": "team-write",
+      "DELETE /connections/:id": "org-write",
+      "POST /connections/:id/reverify": "org-write",
       "GET /connections/:id/repositories": "authenticated",
       "POST /connections/:id/auth-failure": "turn-credential",
       "GET /connections/:id/token": "turn-credential",
@@ -197,18 +197,18 @@ describe("integrations routes", () => {
     expect(await callback.text()).toContain("Connection failed")
   })
 
-  test("teamWriteGate guards a team-scoped write and leaves a personal one alone", async () => {
+  test("orgWriteGate guards an org-scoped write and leaves a personal one alone", async () => {
     const { service } = harness()
     const app = createIntegrationsRoutes(service, {
       gate: () => null,
-      teamWriteGate: () => new Response("not an admin", { status: 403 }),
+      orgWriteGate: () => new Response("not an admin", { status: 403 }),
       owner: () => "user:me",
     })
-    const team = await app.request("/fake/connect", {
+    const org = await app.request("/fake/connect", {
       method: "POST",
-      body: JSON.stringify({ ...connectBody, scope: "team" }),
+      body: JSON.stringify({ ...connectBody, scope: "org" }),
     })
-    expect(team.status).toBe(403)
+    expect(org.status).toBe(403)
 
     const personal = await app.request("/fake/connect", {
       method: "POST",
@@ -348,7 +348,7 @@ describe("integrations routes", () => {
       connections: Array<{ scope: string }>
       personalScopeEnabled: boolean
     }
-    expect(unsignedListing.connections).toEqual([expect.objectContaining({ scope: "team" })])
+    expect(unsignedListing.connections).toEqual([expect.objectContaining({ scope: "org" })])
     expect(unsignedListing.personalScopeEnabled).toBe(false)
 
     const { app, service } = harness({ owner: "user-a", tokenOwner: "user-a" })
@@ -358,7 +358,7 @@ describe("integrations routes", () => {
       connections: Array<{ id: string; scope: string }>
       personalScopeEnabled: boolean
     }
-    expect(ownerListing.connections.map((connection) => connection.scope).sort()).toEqual(["personal", "team"])
+    expect(ownerListing.connections.map((connection) => connection.scope).sort()).toEqual(["org", "personal"])
     expect(ownerListing.personalScopeEnabled).toBe(true)
     const personal = ownerListing.connections.find((connection) => connection.scope === "personal")!
     expect((await app.request(`/connections/${personal.id}/token?capability=docs`)).status).toBe(200)
@@ -369,7 +369,7 @@ describe("integrations routes", () => {
       tokenOwner: () => "user-b",
     })
     const otherListing = await (await otherUser.request("/")).json() as { connections: Array<{ scope: string }> }
-    expect(otherListing.connections).toEqual([expect.objectContaining({ scope: "team" })])
+    expect(otherListing.connections).toEqual([expect.objectContaining({ scope: "org" })])
     expect((await otherUser.request(`/connections/${personal.id}`, { method: "DELETE" })).status).toBe(404)
     expect((await otherUser.request(`/connections/${personal.id}/reverify`, { method: "POST" })).status).toBe(404)
     expect((await otherUser.request(`/connections/${personal.id}/token?capability=docs`)).status).toBe(404)
@@ -456,7 +456,7 @@ describe("integrations routes", () => {
     // The attempt is live and readable through the status route.
     const status = await app.request(`/attempts/${body.attemptId}`)
     expect(status.status).toBe(200)
-    expect(await status.json()).toEqual({ status: "pending", integrationId: "oauthy", scope: "team" })
+    expect(await status.json()).toEqual({ status: "pending", integrationId: "oauthy", scope: "org" })
   })
 
   test("oauth connect 409s on an existing connection unless confirmReplace is set", async () => {
@@ -499,18 +499,18 @@ describe("integrations routes", () => {
     expect(await missing.json()).toEqual({ ok: false, code: "unknown_integration" })
   })
 
-  test("oauth connect propagates the resolved teamOwner so org team attempts are not 'personal'", async () => {
-    // Partitioned host: the team write carries `org:org-a` as the owner AND
-    // the team key. Only when both reach connectOAuth does the attempt
-    // classify as team — dropping teamOwner would report "personal".
-    const partitioned = oauthHarness({ owner: "user:alice", teamOwner: "org:org-a", ownerlessRows: "refuse" })
-    const team = await partitioned.startOAuth()
-    expect(team.status).toBe(200)
-    const teamState = (await team.json() as { attemptId: string }).attemptId
-    expect(await (await partitioned.app.request(`/attempts/${teamState}`)).json()).toEqual({
+  test("oauth connect propagates the resolved orgOwner so org attempts are not 'personal'", async () => {
+    // Partitioned host: the org write carries `org:org-a` as the owner AND
+    // the org key. Only when both reach connectOAuth does the attempt
+    // classify as org — dropping orgOwner would report "personal".
+    const partitioned = oauthHarness({ owner: "user:alice", orgOwner: "org:org-a", ownerlessRows: "refuse" })
+    const org = await partitioned.startOAuth()
+    expect(org.status).toBe(200)
+    const orgState = (await org.json() as { attemptId: string }).attemptId
+    expect(await (await partitioned.app.request(`/attempts/${orgState}`)).json()).toEqual({
       status: "pending",
       integrationId: "oauthy",
-      scope: "team",
+      scope: "org",
     })
 
     // The personal write on the same partitioned host stays personal.
@@ -536,7 +536,7 @@ describe("integrations routes", () => {
     expect(await (await app.request(`/attempts/${state}`)).json()).toEqual({
       status: "complete",
       integrationId: "oauthy",
-      scope: "team",
+      scope: "org",
     })
   })
 
@@ -557,7 +557,7 @@ describe("integrations routes", () => {
     expect(JSON.parse(body)).toEqual({
       status: "failed",
       integrationId: "oauthy",
-      scope: "team",
+      scope: "org",
       message: "callback_failed",
     })
     expect(body).not.toContain("auth-code-1")
@@ -615,7 +615,7 @@ describe("integrations routes", () => {
     expect(secretBody).not.toContain("good")
   })
 
-  test("org-partitioned team scope: team writes carry the team key and stay invisible across partitions", async () => {
+  test("org-partitioned org scope: org writes carry the org key and stay invisible across partitions", async () => {
     // One service/store shared by two partitioned apps — the hosted shape:
     // same deployment, two orgs.
     const { service } = harness()
@@ -624,36 +624,36 @@ describe("integrations routes", () => {
         gate: () => null,
         owner: () => `user:${subject}`,
         tokenOwner: () => `user:${subject}`,
-        teamOwner: () => `org:${org}`,
-        tokenTeamOwner: () => `org:${org}`,
+        orgOwner: () => `org:${org}`,
+        tokenOrgOwner: () => `org:${org}`,
         ownerlessRows: "refuse",
       })
     const orgA = partitioned("org-a", "alice")
     const orgB = partitioned("org-b", "bob")
 
-    // Team connect through org A's app writes the org A partition key.
+    // Org connect through org A's app writes the org A partition key.
     expect((await orgA.request("/fake/connect", { method: "POST", body: JSON.stringify(connectBody) })).status).toBe(200)
     const aListing = (await (await orgA.request("/")).json()) as { connections: Array<{ id: string; scope: string }> }
-    expect(aListing.connections).toEqual([expect.objectContaining({ scope: "team" })])
-    const teamRow = aListing.connections[0]
-    expect((await service.getById(teamRow.id))?.owner).toBe("org:org-a")
+    expect(aListing.connections).toEqual([expect.objectContaining({ scope: "org" })])
+    const orgRow = aListing.connections[0]
+    expect((await service.getById(orgRow.id))?.owner).toBe("org:org-a")
 
     // Every org B surface: list, delete, reverify, token, auth-failure.
     const bListing = (await (await orgB.request("/")).json()) as { connections: unknown[] }
     expect(bListing.connections).toEqual([])
-    expect((await orgB.request(`/connections/${teamRow.id}`, { method: "DELETE" })).status).toBe(404)
-    expect((await orgB.request(`/connections/${teamRow.id}/reverify`, { method: "POST" })).status).toBe(404)
-    expect((await orgB.request(`/connections/${teamRow.id}/token?capability=docs`)).status).toBe(404)
-    expect((await orgB.request(`/connections/${teamRow.id}/auth-failure`, { method: "POST", body: "{}" })).status).toBe(404)
+    expect((await orgB.request(`/connections/${orgRow.id}`, { method: "DELETE" })).status).toBe(404)
+    expect((await orgB.request(`/connections/${orgRow.id}/reverify`, { method: "POST" })).status).toBe(404)
+    expect((await orgB.request(`/connections/${orgRow.id}/token?capability=docs`)).status).toBe(404)
+    expect((await orgB.request(`/connections/${orgRow.id}/auth-failure`, { method: "POST", body: "{}" })).status).toBe(404)
 
     // Org A keeps full access to its own partition.
-    expect((await orgA.request(`/connections/${teamRow.id}/token?capability=docs`)).status).toBe(200)
-    expect((await orgA.request(`/connections/${teamRow.id}`, { method: "DELETE" })).status).toBe(200)
+    expect((await orgA.request(`/connections/${orgRow.id}/token?capability=docs`)).status).toBe(200)
+    expect((await orgA.request(`/connections/${orgRow.id}`, { method: "DELETE" })).status).toBe(200)
   })
 
   test("ownerlessRows: 'refuse' makes owner-absent rows unreachable on every surface", async () => {
     const { app: selfHost, service } = harness()
-    // Seed an owner-absent (self-host team) row through the default app.
+    // Seed an owner-absent (self-host org) row through the default app.
     expect((await selfHost.request("/fake/connect", { method: "POST", body: JSON.stringify(connectBody) })).status).toBe(200)
     const seeded = (await (await selfHost.request("/")).json()) as { connections: Array<{ id: string }> }
     const ownerless = seeded.connections[0].id
@@ -662,8 +662,8 @@ describe("integrations routes", () => {
       gate: () => null,
       owner: () => "user:alice",
       tokenOwner: () => "user:alice",
-      teamOwner: () => "org:org-a",
-      tokenTeamOwner: () => "org:org-a",
+      orgOwner: () => "org:org-a",
+      tokenOrgOwner: () => "org:org-a",
       ownerlessRows: "refuse",
     })
     const listing = (await (await refusing.request("/")).json()) as { connections: unknown[] }
@@ -673,22 +673,22 @@ describe("integrations routes", () => {
     expect((await refusing.request(`/connections/${ownerless}/token?capability=docs`)).status).toBe(404)
     expect((await refusing.request(`/connections/${ownerless}/auth-failure`, { method: "POST", body: "{}" })).status).toBe(404)
 
-    // A refusing app without a resolved team key cannot write team rows and
+    // A refusing app without a resolved org key cannot write org rows and
     // never falls back to the owner-absent partition.
-    const noTeamKey = createIntegrationsRoutes(service, {
+    const noOrgKey = createIntegrationsRoutes(service, {
       gate: () => null,
       owner: () => "user:alice",
       ownerlessRows: "refuse",
     })
-    const denied = await noTeamKey.request("/fake/connect", { method: "POST", body: JSON.stringify(connectBody) })
+    const denied = await noOrgKey.request("/fake/connect", { method: "POST", body: JSON.stringify(connectBody) })
     expect(denied.status).toBe(422)
-    expect(await denied.json()).toEqual({ ok: false, code: "team_scope_requires_team_partition" })
-    // Listing without a team key surfaces personal rows only.
-    const personalOnly = (await (await noTeamKey.request("/")).json()) as { connections: unknown[] }
+    expect(await denied.json()).toEqual({ ok: false, code: "org_scope_requires_org_partition" })
+    // Listing without an org key surfaces personal rows only.
+    const personalOnly = (await (await noOrgKey.request("/")).json()) as { connections: unknown[] }
     expect(personalOnly.connections).toEqual([])
 
-    // The self-host app still sees its team row — untouched semantics.
+    // The self-host app still sees its org row — untouched semantics.
     const still = (await (await selfHost.request("/")).json()) as { connections: Array<{ id: string; scope: string }> }
-    expect(still.connections).toEqual([expect.objectContaining({ id: ownerless, scope: "team" })])
+    expect(still.connections).toEqual([expect.objectContaining({ id: ownerless, scope: "org" })])
   })
 })
