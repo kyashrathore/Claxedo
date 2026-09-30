@@ -163,6 +163,11 @@ test("run-local values normalize: an actor id, a digest and timestamps inside ra
   expect(result.title).toBe("<sha256>…")
 })
 
+test("a Codex session home named in a Codex warning is run-local", () => {
+  const warning = (home: string) => normalizeWireCorpus({ message: `To suppress this warning, set it in /tmp/claxedo-e2e-h5-abc/.claxedo/harness/codex/homes/codex-owner-1d71abcc5dcbef36/homes/codex-${home}/config.toml.` })
+  expect(warning("e614cd53e077b5e8")).toEqual(warning("86cd0cb8fdc841a9"))
+})
+
 test("the checkout root and the runtime executable are environment facts", () => {
   const agent = path.resolve(import.meta.dirname, "../../../..", "packages/harness/e2e/harness/acp/agent.ts")
   const result = normalizeWireCorpus({ command: process.execPath, args: [agent] }) as { command: string; args: string[] }
