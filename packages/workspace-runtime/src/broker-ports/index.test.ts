@@ -447,6 +447,40 @@ describe("store broker ports", () => {
     expect(live).toContain("usage")
   })
 
+  test("background work is pushed live when it changes, never journaled, and leaves turn admission alone", async () => {
+    const { store, ports, publishers } = setup()
+    const live: unknown[] = []
+    publishers.subscribeGlobal((envelope) => live.push(envelope.payload))
+    const runtime: string[] = []
+    publishers.subscribeRuntime((envelope) => runtime.push(envelope.payload.type))
+    const lease = store.readTurnAuthority("s1")?.leaseId
+    if (!lease) throw new Error("Missing initial lease")
+    store.finishTurn({ sessionId: "s1", assistantMessageId: "t1", leaseId: lease, outcome: { status: "completed", completedAt: 10 } })
+    store.releaseTurnLease("s1", lease)
+
+    await ports.publishSessionEvent("s1", { type: "background-work", active: true })
+    await ports.publishSessionEvent("s1", { type: "background-work", active: true })
+    expect(ports.backgroundWork.has("s1")).toBe(true)
+    const admitted = await ports.admitProviderTurn("s1", { reason: "provider" }, async (turn) => {
+      await ports.drainProviderEvent("s1", turn, { event: { type: "finish", sessionId: "s1" } })
+    })
+    expect(admitted.admitted).toBe(true)
+    if (admitted.admitted) expect(await admitted.settled).toEqual({ state: "completed" })
+    expect(ports.backgroundWork.has("s1")).toBe(true)
+    ports.backgroundWork.retireAll()
+
+    expect(ports.backgroundWork.has("s1")).toBe(false)
+    expect(live.filter((payload) => (payload as { type: string }).type === "session.background-work")).toEqual([
+      { type: "session.background-work", properties: { sessionID: "s1", active: true } },
+      { type: "session.background-work", properties: { sessionID: "s1", active: false } },
+    ])
+    expect(runtime.filter((type) => type === "background-work")).toHaveLength(2)
+    const journaled = store.brokerDatabase().prepare<{ type: string }>(
+      "SELECT type FROM runtime_journal WHERE session_id = ? AND type = 'session.background-work'",
+    ).all("s1")
+    expect(journaled).toEqual([])
+  })
+
   test("child provider events project into the admitted child session", async () => {
     const { store, ports, publishers } = setup()
     const owner = createRequestBroker(ports)

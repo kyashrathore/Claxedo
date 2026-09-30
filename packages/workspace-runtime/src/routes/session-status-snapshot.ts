@@ -4,9 +4,11 @@ import { recovering } from "../projection/presentation-events"
 import { str } from "../json-value"
 import { asRecord } from "@claxedo/helpers/guards"
 
-export type SessionStatusSnapshot = Record<string, AgentRuntimeStatus>
+export type SessionStatusRead = AgentRuntimeStatus & { backgroundWork?: true }
 
-export function sessionStatusSnapshot(input: unknown[]): SessionStatusSnapshot {
+export type SessionStatusSnapshot = Record<string, SessionStatusRead>
+
+export function sessionStatusSnapshot(input: unknown[], backgroundWork: (sessionId: string) => boolean = () => false): SessionStatusSnapshot {
   const out: SessionStatusSnapshot = {}
   for (const item of input) {
     const row = asRecord(item)
@@ -14,8 +16,9 @@ export function sessionStatusSnapshot(input: unknown[]): SessionStatusSnapshot {
     const id = str(row.id)
     if (!id) continue
     const status = live(row, ACP_RECOVER)
-    if (!status) continue
-    out[id] = status
+    const background = backgroundWork(id)
+    if (!status && !background) continue
+    out[id] = { ...(status ?? { type: "idle" }), ...(background ? { backgroundWork: true } : {}) }
   }
   return out
 }

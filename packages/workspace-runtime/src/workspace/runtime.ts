@@ -1,6 +1,5 @@
 import type { RecoveryTurnTarget, AgentEventEnvelope } from "@claxedo/agent-runtime-contract"
 import { DEFAULT_RECOVERY_BUDGETS, type AgentRuntimeHealth, type AgentTurnOutcome } from "@claxedo/agent-runtime-contract"
-import type { BrokerPorts } from "@claxedo/harness/broker"
 import { createHarnessComposer } from "@claxedo/harness/compose"
 import type { CustomHarnessProvider } from "@claxedo/harness/providers"
 import type { HarnessServices, MachineLoginPolicy } from "@claxedo/harness/contract"
@@ -296,7 +295,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions): WorkspaceHos
   type Engine = {
     services: HarnessServices
     transports: ReturnType<typeof createWorkspaceTransports>
-    ports: BrokerPorts & { abortProviderTurn(sessionId: string): void }
+    ports: ReturnType<typeof createStoreBrokerPorts>
     runtime: AgentRuntime
     configuration: ReturnType<typeof createSessionConfiguration>
   }
@@ -642,6 +641,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions): WorkspaceHos
           return registration ? scopedToolPrompt(sessionId, registration) : undefined
         },
         subagentAdmission: (parentSessionId, observation) => harnessEngine().runtime.subagents.admit(parentSessionId, observation),
+        backgroundWork: (sessionId) => engine?.ports.backgroundWork.has(sessionId) ?? false,
       })
       disposeDeliveries = sessions.dispose
       app.route("/", sessions.routes)
@@ -788,6 +788,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions): WorkspaceHos
         const retired = engine
         engine = undefined
         appliedSignature = undefined
+        retired?.ports.backgroundWork.retireAll()
         if (retired) await retireTransports(retired.transports)
       },
       async resume() {

@@ -111,12 +111,13 @@ function isTerminalPresentationEvent(event: AgentPresentationEvent): event is Ev
 }
 
 /**
- * Frames a stream must not shed and its replay buffer keeps in reserve:
- * each settles a state machine the client renders and nothing re-states it
- * before the turn ends — a lost one pins a turn to busy, a subagent to
- * running, or a tool row to "Running" with its clock still ticking. A tool's
- * start and input snapshots are chatty and stay evictable. Distinct from
- * `isTerminalPresentationEvent`, which is a transport's "the prompt is over".
+ * Frames a stream must not shed and its replay buffer keeps in reserve: each
+ * settles a state machine the client renders, and nothing re-states it on the
+ * stream. A lost one pins a turn to busy, a subagent to running, a tool row to
+ * "Running" with its clock still ticking, or a session to in progress after
+ * its background work settled. Starts and tool input snapshots are chatty and
+ * stay evictable. Distinct from `isTerminalPresentationEvent`, which is a
+ * transport's "the prompt is over".
  */
 export function isRetainedPresentationEvent(event: AgentPresentationEvent): boolean {
   if (isTerminalPresentationEvent(event)) return true
@@ -128,6 +129,7 @@ export function isRetainedPresentationEvent(event: AgentPresentationEvent): bool
     const status = event.properties.update.status
     return status === "completed" || status === "failed" || status === "killed" || status === "interrupted"
   }
+  if (event.type === "session.background-work") return !event.properties.active
   return false
 }
 
@@ -279,6 +281,10 @@ export function sessionStatus(sessionID: string, status: AgentRuntimeStatus): Ev
     type: "session.status",
     properties: { sessionID, status },
   }
+}
+
+export function sessionBackgroundWork(sessionID: string, active: boolean): Event<"session.background-work"> {
+  return { type: "session.background-work", properties: { sessionID, active } }
 }
 
 export function sessionCompacted(sessionID: string): Event<"session.compacted"> {

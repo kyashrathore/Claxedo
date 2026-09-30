@@ -311,6 +311,14 @@ describe("wr/events — one stream per workspace runtime", () => {
     })).toBe(false)
   })
 
+  test("background work settling is retained; its start is not", () => {
+    const backgroundWork = (active: boolean) => ({
+      directory: DIRECTORY, payload: { type: "session.background-work" as const, properties: { sessionID: "s", active } },
+    })
+    expect(isRetainedWorkspaceEventFrame(backgroundWork(false))).toBe(true)
+    expect(isRetainedWorkspaceEventFrame(backgroundWork(true))).toBe(false)
+  })
+
   test("a retained settlement survives a burst that rolls the ring", async () => {
     const { app, hub } = harness({})
     hub.publishGlobal(part("ses-1", "prt-done", { status: "completed" }))

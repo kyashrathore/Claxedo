@@ -27,6 +27,7 @@ export type SessionRoutesMountInput = {
   sessionIdWorkspace?: (sessionId: string) => Promise<string | undefined> | string | undefined
   sessionToolPrompt: (sessionId: string) => string | undefined
   subagentAdmission: (parentSessionId: string, observation: SubagentObservation) => Promise<SubagentUpdatedEvent>
+  backgroundWork: (sessionId: string) => boolean
 }
 
 export function queuedPromptStore(store: RuntimeStore): SessionDeliveryStore {
@@ -56,7 +57,7 @@ export function mountSessionRoutes(input: SessionRoutesMountInput) {
     requestedSessionHarness: (requested) => requested ?? input.currentRunner(),
     resolveRecoveryOwner: () => input.recovery(),
     listSessions: async (_c, directory) => store().listSessions(directory),
-    getStatus: (_c, directory) => sessionStatusSnapshot(store().listSessions(directory)),
+    getStatus: (_c, directory) => sessionStatusSnapshot(store().listSessions(directory), input.backgroundWork),
     listSubagents: ({ parentSessionId }) => store().listSubagents(parentSessionId),
     childSessions: {
       admit: input.subagentAdmission,
