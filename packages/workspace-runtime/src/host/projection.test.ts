@@ -37,13 +37,23 @@ describe("pluginProjectionFor", () => {
     expect(projection.notApplied).toEqual([])
   })
 
-  test.each(["claude", "pi"] as const)("%s reports unrepresentable entries without blocking launch", (id) => {
-    const projection = pluginProjectionFor({ id, access: "native" }, { generation: "g", harnessLaunch: {}, mcp: {
+  test("claude reports unrepresentable entries without blocking launch", () => {
+    const projection = pluginProjectionFor({ id: "claude", access: "native" }, { generation: "g", harnessLaunch: {}, mcp: {
       cwd: { name: "cwd", source: "user", transport: "stdio", command: "/server", cwd: "/data", args: [], env: {} },
       http: { name: "http", source: "user", transport: "remote", url: "https://mcp.example", headers: {} },
     } })
-    expect(projection.mcpServers.map((server) => server.name)).toEqual(id === "pi" ? [] : ["http"])
+    expect(projection.mcpServers.map((server) => server.name)).toEqual(["http"])
     expect(projection.notApplied).toContainEqual({ item: "cwd", reason: "unsupported-by-harness" })
+  })
+
+  test("pi carries stdio and HTTP servers and reports a server name Pi rejects without blocking launch", () => {
+    const projection = pluginProjectionFor({ id: "pi", access: "native" }, { generation: "g", harnessLaunch: {}, mcp: {
+      cwd: { name: "cwd", source: "user", transport: "stdio", command: "/server", cwd: "/data", args: [], env: {} },
+      http: { name: "http", source: "user", transport: "remote", url: "https://mcp.example", headers: {} },
+      dotted: { name: "team.docs", source: "user", transport: "remote", url: "https://docs.example", headers: {} },
+    } })
+    expect(projection.mcpServers.map((server) => server.name)).toEqual(["cwd", "http"])
+    expect(projection.notApplied).toEqual([{ item: "team.docs", reason: "unsupported-by-harness" }])
   })
   test("carries the materializer's generation and plugin identities into the start projection", () => {
     expect(pluginProjectionFor({ id: "claude", access: "native" }, { generation: "runtime-config:3", mcp: {}, harnessLaunch })).toEqual({

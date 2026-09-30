@@ -37,8 +37,8 @@ const emit = value => process.stdout.write(JSON.stringify(value) + "\\n")
 let pending
 let thinkingLevel = "off"
 const done = text => {
-  emit({ type: "message_end", message: { role: "assistant", content: [{ type: "text", text }], usage: { input: 11, output: 3, cacheRead: 0, cacheWrite: 0 }, timestamp: Date.now() } })
-  emit({ type: "agent_end" }); emit({ type: "agent_settled" })
+  emit({ type: "message_end", message: { role: "assistant", content: [{ type: "text", text }], stopReason: "stop", usage: { input: 11, output: 3, cacheRead: 0, cacheWrite: 0 }, timestamp: Date.now() } })
+  emit({ type: "agent_end", messages: [], willRetry: false }); emit({ type: "agent_settled" })
 }
 for await (const line of readline.createInterface({ input: process.stdin })) {
   const cmd = JSON.parse(line)
@@ -51,16 +51,16 @@ for await (const line of readline.createInterface({ input: process.stdin })) {
     case "set_model": thinkingLevel = "off"; ok({}); break
     case "set_thinking_level": thinkingLevel = ["off", "high"].includes(cmd.level) ? cmd.level : "high"; ok({}); break
     case "clear_queue": ok({}); break
-    case "steer": ok({}); done("steered: " + cmd.message); break
+    case "steer": ok({ disposition: "queued" }); done("steered: " + cmd.message); break
     case "abort": ok({}); emit({ type: "agent_settled" }); break
     case "set_session_name": ok({}); emit({ type: "session_info_changed", name: cmd.name }); break
     case "prompt":
-      if (cmd.message.startsWith("/claxedo-title ")) { emit({ type: "session_info_changed", name: "Fake generated title" }); ok({}); break }
-      ok({}); emit({ type: "agent_start" });
+      if (cmd.message.startsWith("/claxedo-title ")) { emit({ type: "session_info_changed", name: "Fake generated title" }); ok({ disposition: "handled" }); break }
+      ok({ disposition: "started" }); emit({ type: "agent_start" });
       if (cmd.message === "die") { process.exit(9) }
       if (cmd.message === "hold") break
       if (cmd.message === "question") { emit({ type: "extension_ui_request", id: "question-" + id, method: "input", title: "Name?" }); break }
-      if (cmd.message === "provider-error") { emit({ type: "message_end", message: { role: "assistant", stopReason: "error", errorMessage: "Provider rejected request", content: [] } }); emit({ type: "agent_settled" }); break }
+      if (cmd.message === "provider-error") { emit({ type: "message_end", message: { role: "assistant", stopReason: "error", errorMessage: "Provider rejected request", content: [] } }); emit({ type: "agent_end", messages: [], willRetry: false }); emit({ type: "agent_settled" }); break }
       emit({ type: "message_start", message: { role: "assistant" } });
       emit({ type: "message_update", assistantMessageEvent: { type: "text_delta", contentIndex: 0, delta: "work" } });
       done("work done"); break
