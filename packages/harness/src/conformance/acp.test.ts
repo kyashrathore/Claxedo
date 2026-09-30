@@ -1388,7 +1388,7 @@ function parityTransport(services: ReturnType<typeof createTestServices>, state:
     async () => { throw new Error("No saved transcript in this conformance scenario") })
 }
 
-const PNG = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/lp8AAAAASUVORK5CYII="
+const PNG = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+ip1sAAAAASUVORK5CYII="
 const TEXT_BASE64 = Buffer.from("ACP parity text attachment\n").toString("base64")
 const WAV_BASE64 = Buffer.from("RIFF....WAVEfmt ").toString("base64")
 

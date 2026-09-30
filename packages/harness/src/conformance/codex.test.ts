@@ -174,7 +174,7 @@ test("Codex meters a side thread's usage outside a turn to the session's last tu
   } finally { await context.close() }
 }, 90_000)
 
-const PNG = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/lp8AAAAASUVORK5CYII="
+const PNG = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+ip1sAAAAASUVORK5CYII="
 const TEXT = "Codex attachment reached the harness\n"
 
 test("Codex materializes every attachment into the workspace with a path line, and images also as native input", async () => {
