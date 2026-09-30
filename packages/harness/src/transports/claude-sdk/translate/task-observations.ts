@@ -8,42 +8,24 @@ type TaskUpdate = Omit<ClaudeSubagentObservation, "observationId" | "harnessExec
 export function taskSystemObservations(
   message: Record<string, unknown>,
   wrapperId: string,
-  harnessExecutionId: string | undefined,
   ledger: ClaudeTaskLedger,
 ): ClaudeSubagentObservation[] {
   switch (message.subtype) {
     case "task_started":
-      return taskStartedObservations(message, wrapperId, harnessExecutionId, ledger)
-    case "task_progress":
-      if (!admittedTask(ledger.get(text(message.task_id)))) return []
-      return [taskObservation(message, wrapperId, ledger, {
-        status: "running",
-        description: text(message.description),
-        subagentType: text(message.subagent_type),
-      })]
+      return taskStartedObservations(message, wrapperId, ledger)
     case "task_notification":
       if (!admittedTask(ledger.get(text(message.task_id)))) return []
       return [taskObservation(message, wrapperId, ledger, {
         status: message.status === "completed" ? "completed" : message.status === "failed" ? "failed" : "killed",
-        description: text(message.summary),
       })]
     case "task_updated":
       return taskUpdatedObservations(message, wrapperId, ledger)
-    case "background_tasks_changed":
-      return ledger
-        .replaceLive(liveTaskIds(message))
-        .flatMap((record) => admittedTask(record) ? [departedTaskObservation(record, wrapperId, ledger)] : [])
     default:
       return []
   }
 }
 
-function taskStartedObservations(
-  message: Record<string, unknown>,
-  wrapperId: string,
-  harnessExecutionId: string | undefined,
-  ledger: ClaudeTaskLedger,
-): ClaudeSubagentObservation[] {
+function taskStartedObservations(message: Record<string, unknown>, wrapperId: string, ledger: ClaudeTaskLedger): ClaudeSubagentObservation[] {
   const taskId = text(message.task_id)
   if (!taskId) return []
   const toolUseId = text(message.tool_use_id)
@@ -51,17 +33,16 @@ function taskStartedObservations(
     (asFiniteNumber(message.spawn_depth) ?? 0) > 1
   const record: ClaudeTaskRecord = {
     taskId,
-    ...(toolUseId ? { toolUseId } : {}),
-    ...(harnessExecutionId ? { harnessExecutionId } : {}),
     isAgentTask: !!text(message.subagent_type),
     skipTranscript: message.skip_transcript === true,
     ...(nested ? { nested } : {}),
   }
   ledger.start(record)
   if (!admittedTask(record)) return []
+  const description = text(message.description)
   return [taskObservation(message, wrapperId, ledger, {
     status: "running",
-    description: text(message.description),
+    ...(description ? { description, label: description } : {}),
     subagentType: text(message.subagent_type),
   })]
 }
@@ -81,23 +62,6 @@ function taskUpdatedObservations(message: Record<string, unknown>, wrapperId: st
 
 function admittedTask(record: ClaudeTaskRecord | undefined) {
   return record?.isAgentTask && !record.skipTranscript && !record.nested ? record : undefined
-}
-
-function liveTaskIds(message: Record<string, unknown>) {
-  const tasks = Array.isArray(message.tasks) ? message.tasks : []
-  return tasks.flatMap((value) => text(asRecord(value)?.task_id) ?? [])
-}
-
-function departedTaskObservation(record: ClaudeTaskRecord, wrapperId: string, ledger: ClaudeTaskLedger): ClaudeSubagentObservation {
-  return {
-    observationId: `claude:background_tasks_changed:${wrapperId}:${record.taskId}`,
-    ...(record.harnessExecutionId ? { harnessExecutionId: record.harnessExecutionId } : {}),
-    stableCorrelationId: record.taskId,
-    ...taskCall(record.toolUseId, ledger),
-    status: "interrupted",
-    providerKind: "claude-agent",
-    transcript: { kind: "messages" },
-  }
 }
 
 function taskStatus(value: unknown): ClaudeSubagentObservation["status"] {
@@ -120,7 +84,8 @@ function taskObservation(
     ...(update.mode ? { mode: update.mode } : {}),
     ...(update.status ? { status: update.status } : {}),
     ...(update.subagentType ? { subagentType: update.subagentType } : {}),
-    ...(update.description ? { description: update.description, label: update.description } : {}),
+    ...(update.description ? { description: update.description } : {}),
+    ...(update.label ? { label: update.label } : {}),
     providerKind: "claude-agent",
     transcript: { kind: "messages" },
   }
