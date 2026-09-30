@@ -34,7 +34,7 @@ export class CodexAppServerTransport implements HarnessTransport {
 
   constructor(private readonly services: HarnessServices, private readonly options: CodexTransportOptions) {
     this.launches = new CodexLaunches(services, options)
-    this.sessions = new CodexSessions(this.launches, services, this.losses, (entry, message) => this.answer(entry, message))
+    this.sessions = new CodexSessions(this.launches, services, this.losses, (entry, message, signal) => this.answer(entry, message, signal))
   }
 
   async capabilities(context: { sessionId?: string; directory: string }) {
@@ -78,7 +78,7 @@ export class CodexAppServerTransport implements HarnessTransport {
     finally { await this.launches.discard(rpc) }
   }
 
-  private async answer(entry: Entry, message: RpcMessage): Promise<unknown> {
+  private async answer(entry: Entry, message: RpcMessage, signal: AbortSignal): Promise<unknown> {
     if (!message.method) throw new CodexRequestRefusal(-32600, "Codex request has no method")
     const active = await activeCodexTurn(entry)
     if (message.method === "item/tool/call") {
@@ -87,7 +87,8 @@ export class CodexAppServerTransport implements HarnessTransport {
         drained: active.drained }, active?.broker, message)
     }
     if (!active && isCodexRequestMethod(message.method)) throw new CodexRequestRefusal(-32000, "Codex request has no active turn")
-    return answerCodexRequest(message, active?.broker ?? entry.broker, entry.session.binding.sessionId,
+    const broker = active?.broker ?? entry.broker
+    return answerCodexRequest(message, { ask: (request) => broker.ask(request, { signal }) }, entry.session.binding.sessionId,
       { directory: entry.session.directory, permissionMode: entry.start.config.permissionMode })
   }
 

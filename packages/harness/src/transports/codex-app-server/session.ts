@@ -18,7 +18,7 @@ export type CodexSessionHost = {
   services: HarnessServices
   losses: ProcessLosses
   entries: Map<string, Entry>
-  answer(entry: Entry, message: RpcMessage): Promise<unknown>
+  answer(entry: Entry, message: RpcMessage, signal: AbortSignal): Promise<unknown>
   idle(entry: Entry): void
 }
 
@@ -38,7 +38,7 @@ async function bindEntry(host: CodexSessionHost, launched: CodexLaunch, input: S
   const { rpc } = launched
   let entry: Entry | undefined
   const early: RpcMessage[] = []
-  rpc.onRequest((message) => entry ? host.answer(entry, message)
+  rpc.onRequest((message, signal) => entry ? host.answer(entry, message, signal)
     : Promise.reject(new CodexRequestRefusal(-32000, "Codex session is not bound yet")))
   rpc.onMessage((message) => { if (entry) codexNotificationOutsideTurn(entry, message); else early.push(message) })
   rpc.onFailure((error) => {
@@ -51,7 +51,7 @@ async function bindEntry(host: CodexSessionHost, launched: CodexLaunch, input: S
   })
   const binding = await broker.rebind(threadId)
   const bound: Entry = { state: "ready", start: input, session: { directory: input.directory, locality: input.locality, binding }, broker, rpc,
-    home: launched.home, brokered: launched.brokered, terminals: new CodexTerminals(rpc, threadId), children: new Map(), sideThreads: new Set(),
+    home: launched.home, brokered: launched.brokered, terminals: new CodexTerminals(rpc, threadId), children: new Map(), sideThreads: new Set(), nativeChildren: new Set(),
     usage: new CodexUsageLedger(), goal: null, settings: codexStartSettings(input), steers: new Set(), released: Promise.resolve(), idle: () => host.idle(bound) }
   return { entry: bound, replay: () => {
     entry = bound

@@ -17,7 +17,7 @@ export class CodexSessions implements CodexSessionHost {
   private readonly reopening = new Map<string, Promise<Entry>>()
 
   constructor(readonly launches: CodexLaunches, readonly services: HarnessServices, readonly losses: ProcessLosses,
-    readonly answer: (entry: Entry, message: RpcMessage) => Promise<unknown>) {}
+    readonly answer: (entry: Entry, message: RpcMessage, signal: AbortSignal) => Promise<unknown>) {}
 
   open(input: StartInput, broker: SessionBroker, resumed?: string): Promise<Entry> {
     return openCodexSession(this, input, broker, resumed)

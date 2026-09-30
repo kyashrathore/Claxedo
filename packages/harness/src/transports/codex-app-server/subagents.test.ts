@@ -29,7 +29,7 @@ function scriptedRpc(options: { childOutcome?: "completed" | "failed" | "held"; 
   return { rpc, requests, emit, listenerCount: () => listeners.size }
 }
 
-function host(rpc: CodexRpc, drained: () => Promise<void> = async () => {}): SubagentHost & { children: Map<string, CodexEvents> } {
+function host(rpc: CodexRpc, drained: () => Promise<void> = async () => {}): SubagentHost {
   return { rpc, directory: "/work", threadId: "parent-1", brokered: false, permissionMode: "full-access",
     settings: { model: "gpt-5.5", effort: "high", serviceTier: null }, children: new Map(), drained }
 }
@@ -52,6 +52,7 @@ test("spawn_agent starts a subagent thread under the parent's mode and settings 
   const subagents = host(rpc)
   expect(await answerCodexToolCall(subagents, turnBroker, call({ task_name: "review", message: "Inspect this" }))).toEqual({
     contentItems: [{ type: "inputText", text: "Subagent child-1 completed successfully." }], success: true })
+  expect([...subagents.children]).toEqual([["child-1", undefined]])
   expect(requests.map((request) => request.method)).toEqual(["thread/start", "turn/start"])
   expect(requests[0]?.params).toMatchObject({ cwd: "/work", threadSource: "subagent", approvalPolicy: "never", sandbox: "danger-full-access", model: "gpt-5.5" })
   expect(requests[1]?.params).toMatchObject({ threadId: "child-1", model: "gpt-5.5", effort: "high", sandboxPolicy: { type: "dangerFullAccess" },
@@ -97,17 +98,17 @@ test("unknown tools, calls without a message, and calls with no active turn are 
   expect(observations).toEqual([])
 })
 
-test("an aborted parent turn interrupts the running child turn", async () => {
+test("an aborted parent turn interrupts the running child turn, which reports interrupted, not success", async () => {
   const { rpc, requests } = scriptedRpc({ childOutcome: "held" })
   const controller = new AbortController()
   const { turnBroker, observations } = broker(controller.signal)
   const pending = answerCodexToolCall(host(rpc), turnBroker, call({ task_name: "review", message: "Inspect this" }))
   while (!requests.some((request) => request.method === "turn/start")) await new Promise((resolve) => setTimeout(resolve, 1))
   controller.abort()
-  expect(await pending).toMatchObject({ success: true })
+  expect(await pending).toEqual({ contentItems: [{ type: "inputText", text: "Subagent child-1 was interrupted before it finished." }], success: false })
   expect(requests.map((request) => request.method)).toEqual(["thread/start", "turn/start", "turn/interrupt"])
   expect(requests[2]?.params).toEqual({ threadId: "child-1", turnId: "child-turn" })
-  expect(observations.at(-1)?.status).toBe("completed")
+  expect(observations.at(-1)?.status).toBe("interrupted")
 })
 
 test("a failed child turn start removes the child listener", async () => {

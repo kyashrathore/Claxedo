@@ -118,3 +118,27 @@ test("an owner's credential change that leaves the Codex account as it was keeps
     expect(peer.retired()).toBe(0)
   } finally { await peer.close() }
 })
+
+test("a request Codex resolves itself closes its open prompt and gets no late answer", async () => {
+  const peer = await scriptedTransport()
+  let asked!: (signal: AbortSignal | undefined) => void
+  const asking = new Promise<AbortSignal | undefined>((resolve) => { asked = resolve })
+  const broker = { signal: new AbortController().signal, ask: (_request: unknown, options?: { signal?: AbortSignal }) => {
+    asked(options?.signal)
+    return new Promise((resolve) => options?.signal?.addEventListener("abort", () => resolve({ kind: "cancelled" }), { once: true }))
+  } } as unknown as TurnBroker
+  try {
+    const session = await peer.transport.start(peer.startInput, peer.liveBroker())
+    const running = drain(peer.transport.send(session, turnInput, broker))
+    await peer.started
+    peer.request(91, "item/commandExecution/requestApproval", { threadId: "thread-1", turnId: "turn-current", itemId: "item-1", command: "ls", cwd: peer.root })
+    const signal = await asking
+    peer.emit({ method: "serverRequest/resolved", params: { threadId: "thread-1", requestId: 91 } })
+    await tick()
+    expect(signal?.aborted).toBe(true)
+    await tick()
+    expect(peer.frames.some((frame) => frame.id === 91 && !frame.method)).toBe(false)
+    peer.emit({ method: "turn/completed", params: { threadId: "thread-1", turn: { id: "turn-current", status: "completed" } } })
+    await running
+  } finally { await peer.close() }
+})

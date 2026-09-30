@@ -19,7 +19,8 @@ export class CodexRpc {
   private readonly channel: NdjsonOwnedProcess
   private readonly pending: PendingRpcRequests<number>
   private readonly listeners = new Set<(message: RpcMessage) => void>()
-  private handler?: (message: RpcMessage) => Promise<unknown>
+  private handler?: (message: RpcMessage, signal: AbortSignal) => Promise<unknown>
+  private readonly inbound = new Map<string | number, AbortController>()
   private stderr = ""
 
   constructor(readonly process: OwnedProcess, clock: HarnessServices["clock"]) {
@@ -41,7 +42,7 @@ export class CodexRpc {
 
   onFailure(listener: (error: Error) => void): () => void { return this.channel.onFailure(listener) }
 
-  onRequest(handler: (message: RpcMessage) => Promise<unknown>): void { this.handler = handler }
+  onRequest(handler: (message: RpcMessage, signal: AbortSignal) => Promise<unknown>): void { this.handler = handler }
 
   request(method: string, params?: unknown, ms = 30_000): Promise<unknown> {
     if (!this.channel.alive) return Promise.reject(new CodexTransportError("process", `Codex ${method} was not sent after process exit`))
@@ -73,20 +74,27 @@ export class CodexRpc {
       return
     }
     if (message.method && message.id !== undefined) {
-      void this.answer(message)
+      void this.answer({ ...message, id: message.id })
       return
+    }
+    if (message.method === "serverRequest/resolved") {
+      const requestId = asRecordOrEmpty(message.params).requestId
+      if (typeof requestId === "string" || typeof requestId === "number") this.inbound.get(requestId)?.abort()
     }
     for (const listener of this.listeners) listener(message)
   }
 
-  private async answer(message: RpcMessage): Promise<void> {
+  private async answer(message: RpcMessage & { id: string | number }): Promise<void> {
+    const resolved = new AbortController()
+    this.inbound.set(message.id, resolved)
     try {
       if (!this.handler) throw new CodexTransportError("protocol", `No handler for ${message.method}`)
-      this.channel.send({ id: message.id, result: await this.handler(message) })
+      const result = await this.handler(message, resolved.signal)
+      if (!resolved.signal.aborted) this.channel.send({ id: message.id, result })
     } catch (error) {
-      if (this.channel.alive) this.channel.send({ id: message.id,
+      if (this.channel.alive && !resolved.signal.aborted) this.channel.send({ id: message.id,
         error: { code: error instanceof CodexRequestRefusal ? error.rpcCode : -32603, message: errorMessage(error) } })
-    }
+    } finally { this.inbound.delete(message.id) }
   }
 
   retire(deadline: Deadline): Promise<void> {

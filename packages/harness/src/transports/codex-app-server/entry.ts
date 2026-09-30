@@ -21,8 +21,9 @@ export type Entry = {
   home: string
   brokered: boolean
   terminals: CodexTerminals
-  children: Map<string, CodexEvents>
+  children: Map<string, CodexEvents | undefined>
   sideThreads: Set<string>
+  nativeChildren: Set<string>
   usage: CodexUsageLedger
   goal: RuntimeGoalSnapshot | null
   settings: CodexTurnSettings

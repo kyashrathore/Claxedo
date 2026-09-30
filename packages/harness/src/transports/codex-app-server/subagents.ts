@@ -27,7 +27,7 @@ export type SubagentHost = {
   brokered: boolean
   permissionMode: string | undefined
   settings: CodexTurnSettings
-  children: Map<string, CodexEvents>
+  children: Map<string, CodexEvents | undefined>
   drained: () => Promise<void>
 }
 
@@ -73,16 +73,19 @@ async function spawnChild(host: SubagentHost, broker: TurnBroker, call: SpawnCal
     host.children.set(childThreadId, new CodexEvents(childThreadId))
     const child = await observeChild(host, broker, call, childThreadId, "running", call.label)
     if (child) broker.associateChild(childThreadId, child)
-    await runChildTurn(host, broker, childThreadId, call.prompt, mode)
+    const status = await runChildTurn(host, broker, childThreadId, call.prompt, mode)
     await host.drained()
-    await observeChild(host, broker, call, childThreadId, "completed", call.label)
-    return toolResult(`Subagent ${childThreadId} completed successfully.`, true)
+    await observeChild(host, broker, call, childThreadId, status, call.label)
+    return status === "completed" ? toolResult(`Subagent ${childThreadId} completed successfully.`, true)
+      : toolResult(`Subagent ${childThreadId} was interrupted before it finished.`, false)
   } catch (error) {
     if (childThreadId) {
       await host.drained()
       await observeChild(host, broker, call, childThreadId, "failed", errorMessage(error))
     }
     return toolResult(`Subagent failed: ${errorMessage(error)}`, false)
+  } finally {
+    if (childThreadId) host.children.set(childThreadId, undefined)
   }
 }
 
@@ -105,10 +108,12 @@ function observeChild(host: SubagentHost, broker: TurnBroker, call: SpawnCall, c
   })
 }
 
-function childCompletion(rpc: CodexRpc, childThreadId: string): { done: Promise<void>; fail(error: unknown): void; remove(): void } {
-  let resolve!: () => void
+type ChildOutcome = "completed" | "interrupted"
+
+function childCompletion(rpc: CodexRpc, childThreadId: string): { done: Promise<ChildOutcome>; fail(error: unknown): void; remove(): void } {
+  let resolve!: (outcome: ChildOutcome) => void
   let reject!: (error: unknown) => void
-  const done = new Promise<void>((res, rej) => { resolve = res; reject = rej })
+  const done = new Promise<ChildOutcome>((res, rej) => { resolve = res; reject = rej })
   const removeMessage = rpc.onMessage((message) => {
     const params = asRecordOrEmpty(message.params)
     if (asString(params.threadId) !== childThreadId) return
@@ -116,13 +121,13 @@ function childCompletion(rpc: CodexRpc, childThreadId: string): { done: Promise<
     if (message.method !== "turn/completed") return
     const turn = asRecordOrEmpty(params.turn)
     if (turn.status === "failed") reject(new CodexTransportError("session", asString(asRecordOrEmpty(turn.error).message) ?? "Codex child turn failed"))
-    else resolve()
+    else resolve(turn.status === "interrupted" ? "interrupted" : "completed")
   })
   const removeFailure = rpc.onFailure((error) => reject(error))
   return { done, fail: reject, remove: () => { removeMessage(); removeFailure() } }
 }
 
-async function runChildTurn(host: SubagentHost, broker: TurnBroker, childThreadId: string, prompt: string, mode: CodexPermissionSettings): Promise<void> {
+async function runChildTurn(host: SubagentHost, broker: TurnBroker, childThreadId: string, prompt: string, mode: CodexPermissionSettings): Promise<ChildOutcome> {
   const completion = childCompletion(host.rpc, childThreadId)
   let turnId: string | undefined
   const onAbort = () => {
@@ -135,7 +140,7 @@ async function runChildTurn(host: SubagentHost, broker: TurnBroker, childThreadI
     const result = asRecordOrEmpty(await host.rpc.request("turn/start", params, 60_000))
     turnId = asString(asRecordOrEmpty(result.turn).id)
     if (broker.signal.aborted) onAbort()
-    await completion.done
+    return await completion.done
   } finally {
     broker.signal.removeEventListener("abort", onAbort)
     completion.remove()

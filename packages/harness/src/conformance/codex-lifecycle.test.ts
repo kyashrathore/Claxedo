@@ -135,3 +135,19 @@ test("a child a goal turn spawns runs on the session's model and asks for a reas
     expect((await transport.goals.stop(session)).ok).toBe(true)
   } finally { await transport.dispose(); await state.close() }
 }, 60_000)
+
+test("usage of a child thread Codex spawns on its own is metered to the session, not reported unbilled", async () => {
+  const context = await setupConformance({ name: "codex-native-child-usage", backend: codexBackend, makeTransport: makeCodexTransport })
+  const metered: string[] = []
+  const meter = context.sessionBroker.meter.bind(context.sessionBroker)
+  context.sessionBroker.meter = (usage) => { metered.push(usage.usage.observation?.scope ?? ""); meter(usage) }
+  try {
+    const state = context.backend as CodexBackend
+    state.server.scriptTool({ name: "spawn_agent", namespace: "multi_agent_v1", input: { message: "Reply with exactly this one token: NATIVECHILD" },
+      whenPromptIncludes: "NATIVEPARENT" })
+    for await (const _event of context.transport.send(context.session, context.turn("Spawn once, then reply with exactly this one token: NATIVEPARENT"), context.turnBroker())) {}
+    expect(await eventually(() => state.server.requests.find((row) => row.prompt.endsWith('"text":"Reply with exactly this one token: NATIVECHILD"}]}]')))).toBeDefined()
+    expect(await eventually(() => metered.find((scope) => scope.startsWith("detached:")))).toBeDefined()
+    expect(context.ports.sessionEvents.filter((row) => JSON.stringify(row.event).includes("codex.usage_unbilled"))).toEqual([])
+  } finally { await context.close() }
+}, 60_000)

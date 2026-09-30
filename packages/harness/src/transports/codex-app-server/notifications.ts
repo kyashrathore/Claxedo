@@ -7,12 +7,21 @@ import type { RpcMessage } from "./rpc"
 import { incorporatedSteer } from "./turn"
 import type { ThreadOwnership } from "./usage"
 
+function observeNativeChild(entry: Entry, message: RpcMessage): void {
+  if (message.method !== "item/completed") return
+  const item = asRecordOrEmpty(asRecordOrEmpty(message.params).item)
+  const sender = asString(item.senderThreadId)
+  if (item.type !== "collabAgentToolCall" || !sender || !Array.isArray(item.receiverThreadIds)) return
+  if (sender !== entry.session.binding.upstreamSessionId && !entry.children.has(sender) && !entry.nativeChildren.has(sender)) return
+  for (const receiver of item.receiverThreadIds) if (typeof receiver === "string" && !entry.children.has(receiver)) entry.nativeChildren.add(receiver)
+}
+
 function observeUsage(entry: Entry, message: RpcMessage): void {
   const threadId = asString(asRecordOrEmpty(message.params).threadId)
   const streaming = entry.state === "busy" || entry.providerTurn !== undefined
   const ownership: ThreadOwnership = !threadId ? "unknown"
     : threadId === entry.session.binding.upstreamSessionId || entry.children.has(threadId) ? (streaming ? "owned" : "detached")
-      : entry.sideThreads.has(threadId) ? "side" : "unknown"
+      : entry.nativeChildren.has(threadId) ? "detached" : entry.sideThreads.has(threadId) ? "side" : "unknown"
   const { usage, unbilled } = entry.usage.observe(message, ownership)
   if (usage) entry.broker.meter(usage)
   if (unbilled) void entry.broker.publish({ type: "diagnostic", diagnostic: { code: "codex.usage_unbilled", severity: "warn", source: "codex.app-server",
@@ -23,6 +32,7 @@ function observeUsage(entry: Entry, message: RpcMessage): void {
 export function codexNotificationOutsideTurn(entry: Entry, message: RpcMessage): void {
   const params = asRecordOrEmpty(message.params)
   entry.terminals.observe(message)
+  observeNativeChild(entry, message)
   observeUsage(entry, message)
   if (message.method === "account/rateLimits/updated") {
     if (entry.state !== "busy" && !entry.providerTurn) {
