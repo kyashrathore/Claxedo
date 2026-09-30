@@ -60,7 +60,7 @@ function translateClaudeSdkMessage(
     case "system":
       return translateSystemMessage(message, rawMessage, state, event)
     case "tool_progress":
-      return [{ type: "tool-status", toolCallId: message.tool_use_id, status: "running" }]
+      return []
     case "tool_use_summary":
       return message.summary ? [diagnosticForEvent({ code: "claude_sdk.tool_use_summary", message: message.summary, severity: "info", event })] : []
     case "auth_status":
