@@ -14,6 +14,8 @@ import { createMemorySubagentAdmissionStore } from "@claxedo/harness/broker"
 import { sqliteSessionStarts } from "./session/session-starts"
 import { DeliveryQueue } from "./session/delivery-queue"
 import { TurnLeases } from "./session/turn-leases"
+import { retractStoredParts } from "./session/part-retraction"
+import { sessionHandoff, sessionHandoffJson } from "./session/handoff-column"
 import type { AgentMessage, AgentPermission, AgentQuestion, AgentTurnOutcome, PromptFormat, PromptInput, SessionHarness, SessionModelGroup } from "@claxedo/agent-runtime-contract"
 import type { AdmittedSubagentObservation } from "@claxedo/harness/broker"
 import type { ChildSessionRef, TurnActor } from "@claxedo/harness/contract"
@@ -32,7 +34,7 @@ import { workspaceRuntimeStoreDir } from "./env"
 import { migrateLaunchOwnership, sqliteLaunchOwnership } from "./ownership/launch-ownership-sqlite"
 import type { LaunchOwnershipOwner } from "@claxedo/process-ownership/launch"
 import type { SessionTurnOrigin } from "./session-access-policy"
-import { actorKind, isRecord, num, rec, str } from "./json-value"
+import { actorKind, isRecord, nullable, num, rec, str } from "./json-value"
 import { observationStartsNewRun, subagentStatusAdvances } from "./subagent-status"
 import { buildAssistantMessage, buildUserMessage, buildUserPromptParts, messageCompleted, messagePartUpdated, messageUpdated, sessionError, sessionIdle, sessionStatus } from "./projection/presentation-events"
 
@@ -559,64 +561,6 @@ function subagentCorrelationKeys(observation: SubagentObservation) {
       : undefined,
     observation.toolCallId ? `tool:${observation.harnessExecutionId ?? ""}:${observation.toolCallId}` : undefined,
   ].filter((key): key is string => !!key)
-}
-
-function nullable(input: unknown): string | null | undefined {
-  if (input === null) return null
-  return typeof input === "string" ? input : undefined
-}
-
-function sessionHandoff(input: string | null | undefined): SessionHandoff | undefined {
-  if (!input) return undefined
-  try {
-    const value: unknown = JSON.parse(input)
-    const handoff = pendingHandoff(value)
-    const source = handoff && handoffSource(asRecord(value)?.source)
-    return source ? { ...handoff, source } : handoff
-  } catch {
-    return undefined
-  }
-}
-
-function pendingHandoff(input: unknown): Omit<SessionHandoff, "source"> | undefined {
-  const value = asRecord(input)
-  if (!value || value.pending !== true || typeof value.transcript !== "string") return undefined
-  const from = normalizeHarnessIdentity(value.from)
-  if (!from) return undefined
-  return {
-    from,
-    pending: true,
-    transcript: value.transcript,
-    ...(value.reason === "missing-session" ? { reason: value.reason } : {}),
-    ...(value.announced === true ? { announced: true } : {}),
-  }
-}
-
-function handoffSource(input: unknown): SessionHandoffSource | undefined {
-  const value = asRecord(input)
-  const ownerKey = nullable(value?.ownerKey)
-  if (!value || typeof value.agentSessionId !== "string" || typeof value.upstreamSessionId !== "string" || ownerKey === undefined) {
-    return undefined
-  }
-  const model = asRecord(value.model)
-  const variant = nullable(value.variant)
-  const agent = nullable(value.agent)
-  const handoff = pendingHandoff(value.handoff)
-  return {
-    agentSessionId: value.agentSessionId,
-    upstreamSessionId: value.upstreamSessionId,
-    ownerKey,
-    ...(typeof model?.providerID === "string" && typeof model.modelID === "string"
-      ? { model: { providerID: model.providerID, modelID: model.modelID } }
-      : {}),
-    ...(variant !== undefined ? { variant } : {}),
-    ...(agent !== undefined ? { agent } : {}),
-    ...(handoff ? { handoff } : {}),
-  }
-}
-
-function sessionHandoffJson(input: SessionConfig["handoff"] | undefined) {
-  return input ? JSON.stringify(input) : null
 }
 
 function sessionHarness(input: {
@@ -3016,6 +2960,9 @@ export class RuntimeStore {
       case "message.part.updated":
         this.upsertPart(event.properties.part, row.ts)
         return
+
+      case "message.part.retracted":
+        return retractStoredParts(this.db, event.properties, (part) => this.upsertPart(part, row.ts))
 
       case "message.part.delta":
         this.delta(

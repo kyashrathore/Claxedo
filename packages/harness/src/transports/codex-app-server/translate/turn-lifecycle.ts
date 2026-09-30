@@ -3,7 +3,7 @@ import type { AgentRuntimeEvent } from "@claxedo/agent-runtime-contract"
 import { asText as text } from "@claxedo/agent-runtime-contract"
 import type { HarnessEventAdapterContext } from "../../../translate/adapter"
 import { codexSessionId, type CodexHandlers } from "./frame"
-import { diagnosticForEvent, harnessNotice } from "./notices"
+import { harnessNotice } from "./notices"
 import { endThreadTurn } from "./state"
 import { turnErrorEvent } from "./turn-errors"
 
@@ -97,11 +97,9 @@ export const turnHandlers: CodexHandlers = {
     return name ? [{ type: "session-title", title: name }] : []
   },
   "thread/compacted": ({ row }) => [{ type: "session-compaction", phase: "completed", metadata: { codex: row } }],
-  error: ({ state, row, event }) => {
+  error: ({ state, row }) => {
     const failure = turnErrorEvent(asRecord(row.error), text(row.message), state.lastLimitedRateLimitMessage, "Codex provider error")
-    if (row.willRetry === true) {
-      return [diagnosticForEvent({ code: "codex_app_server.retryable_error", message: failure.error, severity: "warn", event })]
-    }
+    if (row.willRetry === true) return [{ type: "session-retry", message: failure.error }]
     return [{ type: "session-status", status: "error" }, failure]
   },
 }

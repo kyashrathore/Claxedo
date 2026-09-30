@@ -123,3 +123,10 @@ test("counts observed native compaction usage without inventing unavailable cate
   })
   expect(events[1]).toMatchObject({ type: "session-compaction", summary: "summary" })
 })
+
+test("Pi retrying a failed model request is the session retrying, with Pi's attempt, delay and cause", () => {
+  const send = translate()
+  expect(send({ type: "auto_retry_start", attempt: 2, maxAttempts: 3, delayMs: 4000, errorMessage: "OpenAI API error (500): overloaded" }))
+    .toEqual([{ type: "session-retry", attempt: 2, delayMs: 4000, message: "OpenAI API error (500): overloaded" }])
+  expect(send({ type: "auto_retry_start" })).toEqual([{ type: "session-retry", message: "Pi is retrying the model request" }])
+})

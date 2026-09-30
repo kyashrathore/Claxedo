@@ -1,4 +1,4 @@
-import type { SubagentStatus } from "@claxedo/agent-runtime-contract"
+import { NO_BACKGROUND_WORK, type BackgroundWork, type SubagentStatus } from "@claxedo/agent-runtime-contract"
 import type { RoutedEvent } from "../../contract"
 import { CodexEvents } from "./events"
 import type { RpcMessage } from "./rpc"
@@ -51,9 +51,9 @@ export class CodexChild {
 
 export class CodexChildren {
   private readonly byThread = new Map<string, CodexChild>()
-  private active = false
+  private agents = 0
 
-  constructor(private readonly backgroundWork: (active: boolean) => void) {}
+  constructor(private readonly backgroundWork: (work: BackgroundWork) => void) {}
 
   get(threadId: string | undefined): CodexChild | undefined { return threadId ? this.byThread.get(threadId) : undefined }
 
@@ -81,9 +81,9 @@ export class CodexChildren {
   }
 
   private changed(): void {
-    const active = [...this.byThread.values()].some((child) => child.origin === "native" && child.live)
-    if (active === this.active) return
-    this.active = active
-    this.backgroundWork(active)
+    const agents = [...this.byThread.values()].filter((child) => child.origin === "native" && child.live).length
+    if (agents === this.agents) return
+    this.agents = agents
+    this.backgroundWork({ ...NO_BACKGROUND_WORK, agents })
   }
 }

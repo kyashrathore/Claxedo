@@ -2,6 +2,8 @@
 
 Pi has no MCP protocol and no ACP wrapper. The native RPC transport carries Pi's session resume, `get_commands`, extension UI dialogs and notices, steering, its own session name, and Claxedo's first-party MCP tools. Source: pinned Pi 0.85.1 `packages/harness/e2e/.artifacts/pi/node_modules/@earendil-works/pi-coding-agent/docs/rpc.md`.
 
+An extension's `notify` is a notice the person reads, in its own severity; its `setStatus`, `setWidget`, `setTitle` and `set_editor_text` pushes drive Pi's own terminal chrome, which Claxedo does not draw, so they are `debug` notices that stay diagnostics. Pi's `auto_retry_start` is a `session-retry` with Pi's attempt, delay and error.
+
 Pi's `steer` acknowledgement means Pi queued the input, and the user message Pi starts when it delivers the input carries no id. The transport therefore does not report where a steer entered the conversation, and a steered prompt stays in Claxedo's queue as accepted rather than being written into the transcript.
 
 `commands.list` returns every entry of `get_commands`. Pi lists only commands a `prompt` runs: extension commands, prompt templates and skills. Its interactive built-ins, such as `/model` and `/settings`, aren't listed (`docs/extensions.md`, `pi.getCommands()`). The conformance case proves an extension command from its fixture. Pi's bundled `/llama` downloads models, so it can't run in an offline suite.

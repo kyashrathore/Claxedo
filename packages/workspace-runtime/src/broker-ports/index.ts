@@ -5,6 +5,7 @@ import type { RuntimeStore } from "../store"
 import type { RuntimeEventPublishers } from "../projection/runtime-event-hub"
 import { resolveChildRoute } from "../projection/child-routes"
 import { BrokerAuthority } from "./authority"
+import { BrokerBackgroundWork } from "./background-work"
 import { admitChildSession, bindChildCorrelation } from "./child-sessions"
 import { BrokerEventDelivery } from "./delivery"
 import { BrokerProviderTurns, type LeasedTurnFailure } from "./provider-turns"
@@ -28,11 +29,13 @@ export type StoreBrokerPortOptions = {
 
 export function createStoreBrokerPorts(store: RuntimeStore, options: StoreBrokerPortOptions): BrokerPorts & {
   abortProviderTurn(sessionId: string): void
+  readonly backgroundWork: Pick<BrokerBackgroundWork, "read" | "retireAll">
 } {
   const authority = new BrokerAuthority(store, options.ownerGeneration)
   const delivery = new BrokerEventDelivery(store, options.publishers)
   const requests = new BrokerRequestRows(store, delivery)
-  const events = new BrokerSessionEvents(store, delivery)
+  const backgroundWork = new BrokerBackgroundWork(store, delivery)
+  const events = new BrokerSessionEvents(store, delivery, backgroundWork)
   const state = new BrokerSessionState(store, delivery)
   const timers = new Map<unknown, TimerHandle>()
   const clock: Clock = options.clock ?? {
@@ -87,5 +90,6 @@ export function createStoreBrokerPorts(store: RuntimeStore, options: StoreBroker
     config: (sessionId) => state.config(sessionId),
     reportOwnerFailure: (sessionId, error) => options.reportOwnerFailure(sessionId, error),
     abortProviderTurn: (sessionId) => providerTurns.abort(sessionId),
+    backgroundWork,
   }
 }

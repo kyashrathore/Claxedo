@@ -3,6 +3,7 @@ import { NO_HARNESS_EFFORT, type AdapterCancelOutcome, type HarnessConnectionCap
 import type {
   AgentListOperations,
   AttachInput,
+  BackgroundTaskOperations,
   CommandOperations,
   ConfigApplied,
   ConfigOperations,
@@ -90,6 +91,7 @@ export type FakeTransportOptions = {
   commands?: CommandOperations
   agents?: AgentListOperations
   goals?: NativeGoalOperations
+  backgroundTasks?: BackgroundTaskOperations
   naming?: NamingOperations
   health?: HealthOperations
 }
@@ -124,6 +126,7 @@ export class FakeTransport implements HarnessTransport {
   commands: CommandOperations | undefined
   agents: AgentListOperations | undefined
   goals: NativeGoalOperations | undefined
+  backgroundTasks: BackgroundTaskOperations | undefined
   naming: NamingOperations | undefined
   health: HealthOperations | undefined
   readonly steer: SteerOperations | undefined
@@ -139,6 +142,7 @@ export class FakeTransport implements HarnessTransport {
     this.commands = options.commands
     this.agents = options.agents
     this.goals = options.goals
+    this.backgroundTasks = options.backgroundTasks
     this.naming = options.naming
     this.health = options.health
     this.steer = options.steer ? { steer: options.steer } : undefined

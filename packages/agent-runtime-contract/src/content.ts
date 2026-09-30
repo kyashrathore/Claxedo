@@ -1,6 +1,7 @@
 import type { AgentMessageAuthor } from "./sessions"
 import { isRecord } from "./values"
 import { canonicalToolName } from "./tool-names"
+import { isTranscriptNotice, type TranscriptNotice } from "./transcript-notice"
 
 /** Token accounting, reported identically by assistant messages and step-finish parts. */
 export type AgentTokenUsage = {
@@ -102,18 +103,23 @@ type AgentPartBase<Type extends string> = {
   type: Type
 }
 
+/** The harness withdrew the response this content belongs to; the content is kept, not erased. */
+export type AgentPartRetraction = { reason: string }
+
 export type AgentTextPart = AgentPartBase<"text"> & {
   text: string
   synthetic?: boolean
   ignored?: boolean
   time?: { start: number; end?: number }
   metadata?: Record<string, unknown>
+  retracted?: AgentPartRetraction
 }
 
 export type AgentReasoningPart = AgentPartBase<"reasoning"> & {
   text: string
   time: { start: number; end?: number }
   metadata?: Record<string, unknown>
+  retracted?: AgentPartRetraction
 }
 
 export type AgentFilePartSourceText = {
@@ -269,6 +275,10 @@ export type AgentHandoffPart = AgentPartBase<"handoff"> & {
   from: { id: string; access: string; connection?: unknown }
   to: { id: string; access: string; connection?: unknown }
 }
+export type AgentNoticePart = AgentPartBase<"notice"> & {
+  notice: TranscriptNotice
+  time: { created: number }
+}
 
 export type AgentContentPart =
   | AgentTextPart
@@ -284,6 +294,7 @@ export type AgentContentPart =
   | AgentRetryPart
   | AgentCompactionPart
   | AgentHandoffPart
+  | AgentNoticePart
 
 export type AgentPromptResponse = {
   info: AgentAssistantMessage
@@ -416,6 +427,10 @@ function isSpan(value: unknown): boolean {
   return isRecord(value) && typeof value.start === "number" && optionalIs(value, "end", (end) => typeof end === "number")
 }
 
+function isRetraction(value: unknown): boolean {
+  return isRecord(value) && typeof value.reason === "string"
+}
+
 function isMessageError(value: unknown): value is AgentMessageError {
   return isRecord(value) && typeof value.name === "string" && isRecord(value.data)
 }
@@ -474,9 +489,9 @@ function hasPartIdentity(value: unknown): value is Record<string, unknown> {
 function hasVariantFields(part: Record<string, unknown>): boolean {
   switch (part.type) {
     case "text":
-      return isStringField(part, "text")
+      return isStringField(part, "text") && optionalIs(part, "retracted", isRetraction)
     case "reasoning":
-      return isStringField(part, "text") && isSpan(part.time)
+      return isStringField(part, "text") && isSpan(part.time) && optionalIs(part, "retracted", isRetraction)
     case "file":
       return isStringField(part, "mime") && isFilePartUrl(part.url)
     case "tool":
@@ -501,6 +516,8 @@ function hasVariantFields(part: Record<string, unknown>): boolean {
       return typeof part.auto === "boolean"
     case "handoff":
       return isHandoffEnd(part.from) && isHandoffEnd(part.to)
+    case "notice":
+      return isTranscriptNotice(part.notice) && isRecord(part.time) && typeof part.time.created === "number"
     default:
       return false
   }

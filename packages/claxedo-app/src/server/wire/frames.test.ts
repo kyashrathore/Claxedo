@@ -31,6 +31,16 @@ test("frames: a harness.health frame becomes the session's harnessHealthChanged"
   })
 })
 
+test("frames: a session.background-work frame becomes the session's backgroundWorkChanged", () => {
+  const frame = (agents: unknown) => frameFromWire({ directory: "/work", payload: { type: "session.background-work", properties: { sessionID: "s1", agents, shells: 1, other: 0 } } })
+  const started = frame(2)
+  const settled = frame(0)
+  const garbled = frame("yes")
+  expect(started && serverEventFromFrame(started, address)).toEqual({ type: "backgroundWorkChanged", ref, work: { agents: 2, shells: 1, other: 0 } })
+  expect(settled && serverEventFromFrame(settled, address)).toEqual({ type: "backgroundWorkChanged", ref, work: { agents: 0, shells: 1, other: 0 } })
+  expect(garbled && serverEventFromFrame(garbled, address)).toBeUndefined()
+})
+
 test("frames: a harness.health frame without a known health status is dropped", () => {
   const frame = frameFromWire({ directory: "/work", payload: { type: "harness.health", properties: { sessionID: "s1", harnessHealth: { status: "fine" } } } })
   expect(frame && serverEventFromFrame(frame, address)).toBeUndefined()
@@ -58,4 +68,12 @@ test("frames: a subagent's request opens on the child session its sessionID name
     .toMatchObject({ type: "requestOpened", ref: child, request: { kind: "permission", id: requestId("perm-1") } })
   expect(opened("question.asked", { id: "ask-1", sessionID: "child-1", questions: [] }))
     .toMatchObject({ type: "requestOpened", ref: child, request: { kind: "question", id: requestId("ask-1") } })
+})
+
+test("frames: a part retraction names the withdrawn parts and why", () => {
+  const frame = frameFromWire({
+    directory: "/work",
+    payload: { type: "message.part.retracted", properties: { sessionID: "s1", reason: "refusal", parts: [{ messageID: "m1", partID: "p1" }, { messageID: "m1" }] } },
+  })
+  expect(frame && serverEventFromFrame(frame, address)).toEqual({ type: "partsRetracted", ref, reason: "refusal", parts: [{ messageId: "m1", partId: "p1" }] })
 })

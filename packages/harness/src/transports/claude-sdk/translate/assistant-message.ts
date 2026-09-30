@@ -6,6 +6,7 @@ import { withoutKey, type ClaudeSdkAdapterState, type ClaudeTranslation } from "
 import { assistantBlocks, assistantSnapshotText, assistantToolBlocks } from "./assistant-content"
 import { assistantErrorClass, windowLimitMessage } from "./rate-limits"
 import { meterRequest } from "./request-usage"
+import { rememberFrame, announceResponse, supersededResponses } from "./responses"
 import { diagnosticForEvent, type ClaudeFrameEvent, type ClaudeSdkAssistantMessage } from "./sdk-message"
 import { claudeStreamOwner } from "./subagent-routing"
 import { toolInputEvents, toolStartEvents } from "./tool-blocks"
@@ -83,9 +84,18 @@ function serverResults(state: ClaudeSdkAdapterState, message: Record<string, unk
   return { state: next, events }
 }
 
-export function translateAssistantMessage(message: ClaudeSdkAssistantMessage, rawMessage: Record<string, unknown>, state: ClaudeSdkAdapterState,
+function responseEvents(state: ClaudeSdkAdapterState, rawMessage: Record<string, unknown>, memory: ClaudeTranslatorMemory, messageId: string | undefined) {
+  if (!messageId) return { state, events: [] }
+  rememberFrame(memory, text(rawMessage.uuid), messageId)
+  const started = announceResponse(state, claudeStreamOwner(rawMessage), messageId)
+  return { state: started.state, events: [...supersededResponses(memory, rawMessage.supersedes), ...started.events] }
+}
+
+export function translateAssistantMessage(message: ClaudeSdkAssistantMessage, rawMessage: Record<string, unknown>, prior: ClaudeSdkAdapterState,
   event: ClaudeFrameEvent, memory: ClaudeTranslatorMemory): ClaudeTranslation {
-  if (message.error) return assistantFailure(message.error, rawMessage, state)
+  if (message.error) return assistantFailure(message.error, rawMessage, prior)
+  const response = responseEvents(prior, rawMessage, memory, text(message.message.id))
+  const state = response.state
   const frameId = text(rawMessage.uuid)
   const repeated = frameId !== undefined && state.reconciledFrames?.[frameId] === true
   const completeTools = assistantToolBlocks(rawMessage)
@@ -101,6 +111,7 @@ export function translateAssistantMessage(message: ClaudeSdkAssistantMessage, ra
   return {
     state: metered?.state ?? results.state,
     events: [
+      ...response.events,
       ...completeToolEvents(state, completeTools),
       ...(thinking.reconciliation?.delta ? [{ type: "thinking-delta", delta: thinking.reconciliation.delta } satisfies AgentRuntimeEvent] : []),
       ...divergenceDiagnostics(reply.reconciliation, event, { messageId, shown: reply.shown, snapshot }),

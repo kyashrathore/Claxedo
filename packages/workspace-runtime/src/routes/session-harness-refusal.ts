@@ -7,6 +7,10 @@ import type { AgentRuntime, HarnessTarget } from "../host/runtime"
 import { WorkspaceHarnessUnavailableError } from "../harness-unavailable-error"
 import { errorBody } from "./error-body"
 
+export type CapabilityKey = {
+  [K in keyof HarnessCapabilities]: HarnessCapabilities[K] extends boolean ? K : never
+}[keyof HarnessCapabilities] & string
+
 export function harnessUnavailableResponse(c: Context, error: unknown) {
   if (error instanceof CredentialSelectionError) {
     return c.json(errorBody(error.code, error.message, { retryable: error.retryable }), 409)
@@ -15,13 +19,9 @@ export function harnessUnavailableResponse(c: Context, error: unknown) {
   return undefined
 }
 
-export type CapabilityKey = {
-  [K in keyof HarnessCapabilities]: HarnessCapabilities[K] extends boolean ? K : never
-}[keyof HarnessCapabilities] & string
-
 export function unsupportedOperation(
   c: Context,
-  caps: HarnessCapabilities,
+  harness: string,
   operation: string,
   details?: {
     capability?: string
@@ -36,10 +36,10 @@ export function unsupportedOperation(
       code: "unsupported_operation",
       operation,
       capability: details?.capability ?? operation,
-      harness: details?.harness ?? caps.harness,
-      transport: caps.harness,
+      harness: details?.harness ?? harness,
+      transport: harness,
       reason: details?.reason ?? "capability_disabled",
-      message: details?.message ?? `${caps.harness} does not support ${operation}`,
+      message: details?.message ?? `${harness} does not support ${operation}`,
     },
   }, 409)
 }
@@ -52,7 +52,7 @@ export async function unsupportedIfUnavailable(
   operation: string = key,
 ) {
   const caps = await runtime.reads.capabilities(target)
-  if (!caps[key]) return unsupportedOperation(c, caps, operation, { capability: key })
+  if (!caps[key]) return unsupportedOperation(c, caps.harness, operation, { capability: key })
   return undefined
 }
 
@@ -64,7 +64,7 @@ export async function unsupportedIfUnavailable(
 export async function unsupportedIfRefused(c: Context, runtime: AgentRuntime, target: HarnessTarget, key: CapabilityKey, error: unknown) {
   if (!(error instanceof AgentRuntimeContractError) || error.detail.code !== "unsupported_operation") throw error
   const caps = await runtime.reads.capabilities(target)
-  return unsupportedOperation(c, caps, error.detail.operation, {
+  return unsupportedOperation(c, caps.harness, error.detail.operation, {
     capability: key,
     reason: "harness_refused",
     message: error.detail.message,

@@ -17,7 +17,7 @@ function recordingHost(base: SessionBroker) {
   const observations: SubagentObservation[] = []
   const delivered: Delivery[] = []
   const metered: OutsideTurnUsage[] = []
-  const background: boolean[] = []
+  const background: number[] = []
   let refs = 0
   const children = {
     observeSubagent: async (observation: SubagentObservation): Promise<ChildSessionRef> => {
@@ -31,7 +31,7 @@ function recordingHost(base: SessionBroker) {
   const broker: SessionBroker = { ...base, ...children,
     publishChild: async (event: RoutedEvent) => { log.push(`publishChild:${event.event.type}`); delivered.push({ via: "publishChild", event }) },
     meter: (usage: OutsideTurnUsage) => { metered.push(usage) },
-    publish: async (event: { type: string; active?: boolean }) => { if (event.type === "background-work") background.push(event.active === true) },
+    publish: async (event: { type: string; agents?: number }) => { if (event.type === "background-work") background.push(event.agents ?? -1) },
   } as unknown as SessionBroker
   const turnBroker = { signal: new AbortController().signal, origin: { actor: { kind: "machine-owner" }, via: "loopback", reissued: false },
     ask: async () => { throw new Error("No request expected") }, completeElicitation: async () => {}, ...children } as unknown as TurnBroker
@@ -87,7 +87,7 @@ test("a Codex v2 native subagent becomes a background child session whose transc
     expect(host.log.indexOf("observe:completed")).toBeGreaterThan(host.log.lastIndexOf("publishChild:text-delta"))
     expect(host.observations.map((row) => row.status)).toEqual(["running", "completed"])
     expect(turnEvents.filter((row) => row.route?.kind !== "child" && row.event.type === "finish")).toHaveLength(1)
-    expect(host.background).toEqual([true, false])
+    expect(host.background).toEqual([1, 0])
   } finally { await peer.close() }
 })
 

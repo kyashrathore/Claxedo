@@ -16,7 +16,8 @@ createInterface({ input: process.stdin }).on("line", line => {
   let response;
   if (kind === "pi") response = { type: "response", id: request.id, command: request.type, success: true,
     data: request.type === "get_state" ? { sessionId: "pi-peer" } : {} };
-  else if (kind === "codex") response = { id: request.id, result: request.method === "thread/start" ? { thread: { id: "codex-peer" } } : {} };
+  else if (kind === "codex") response = { id: request.id, result: request.method === "thread/start" ? { thread: { id: "codex-peer" } }
+    : request.method === "initialize" ? { userAgent: "codex_cli_rs/0.156.1 (Mac OS 26.6.2; arm64)" } : {} };
   else response = { jsonrpc: "2.0", id: request.id, result: request.method === "initialize"
     ? { protocolVersion: 1, agentCapabilities: {} } : { sessionId: "acp-peer" } };
   if (request.id !== undefined) process.stdout.write(JSON.stringify(response) + "\\n");

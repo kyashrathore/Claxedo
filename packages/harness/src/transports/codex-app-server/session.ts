@@ -1,3 +1,4 @@
+import type { BackgroundWork } from "@claxedo/agent-runtime-contract"
 import { asRecordOrEmpty, asString } from "@claxedo/helpers/guards"
 import type { HarnessServices, HarnessVersionGate, ProcessLosses, SessionBroker, StartInput } from "../../contract"
 import { projectCodexThreadConfig } from "./configuration"
@@ -35,8 +36,8 @@ async function openThread(host: CodexSessionHost, { rpc, plugins }: CodexLaunch,
   return threadId
 }
 
-function publishBackgroundWork(broker: SessionBroker, active: boolean): void {
-  void broker.publish({ type: "background-work", active }).catch((error: unknown) => broker.reportFailure(error))
+function publishBackgroundWork(broker: SessionBroker, work: BackgroundWork): void {
+  void broker.publish({ type: "background-work", ...work }).catch((error: unknown) => broker.reportFailure(error))
 }
 
 async function bindEntry(host: CodexSessionHost, launched: CodexLaunch, input: StartInput, broker: SessionBroker,
@@ -58,7 +59,7 @@ async function bindEntry(host: CodexSessionHost, launched: CodexLaunch, input: S
   })
   const binding = await broker.rebind(threadId)
   const bound: Entry = { state: "ready", start: input, session: { directory: input.directory, locality: input.locality, binding }, broker, rpc,
-    home: launched.home, brokered: launched.brokered, plugins: launched.plugins, terminals: new CodexTerminals(rpc, threadId), children: new CodexChildren((active) => publishBackgroundWork(broker, active)), sideThreads: new Set(),
+    home: launched.home, brokered: launched.brokered, plugins: launched.plugins, terminals: new CodexTerminals(rpc, threadId), children: new CodexChildren((work) => publishBackgroundWork(broker, work)), sideThreads: new Set(),
     usage: new CodexUsageLedger(), goal: null, settings: codexStartSettings(input), steers: new Set(), released: Promise.resolve(), idle: () => host.idle(bound) }
   return { entry: bound, replay: () => {
     entry = bound

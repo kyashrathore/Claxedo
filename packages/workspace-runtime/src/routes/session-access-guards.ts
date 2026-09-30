@@ -2,25 +2,9 @@ import type { AgentSessionStartBinding } from "@claxedo/agent-runtime-contract"
 import { asRecord } from "@claxedo/helpers/guards"
 import { sessionAccessContext, sessionAccessDenied, type SessionAccessOperation } from "../session-access-policy"
 import { errorBody } from "./error-body"
+import { sessionOperationGuard } from "./session-operation-guard"
 import { managedSessionLifecycle, type SessionRouteContext as Ctx, type SessionRouteOptions as Opts } from "./session-route-options"
 import type { SessionStatusSnapshot } from "./session-status-snapshot"
-
-export async function sessionOperationGuard(
-  opts: Opts,
-  c: Ctx,
-  sessionId: string,
-  operation: SessionAccessOperation,
-) {
-  const decision = await opts.sessionAccessPolicy?.authorize({
-    ...sessionAccessContext(c),
-    sessionId,
-    operation,
-    method: c.req.method,
-    path: c.req.path,
-  })
-  if (decision && !decision.allowed) return sessionAccessDenied(decision)
-  return opts.beforeSessionOperation?.(c, { sessionId, operation })
-}
 
 export async function sessionStartGuard(opts: Opts, c: Ctx, owner: AgentSessionStartBinding, operation: SessionAccessOperation, created = false) {
   const directory = await opts.resolveDirectory(c)

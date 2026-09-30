@@ -83,14 +83,15 @@ test("a generic session error from a new Codex error kind explains itself", () =
   ])
 })
 
-test("a reconnect Codex will retry keeps the turn working and records why", () => {
+test("a reconnect Codex will retry is the session retrying, in Codex's own words", () => {
   const events = runtime().ingest({
     source: "codex.app-server",
     method: "error",
     payload: { threadId: "thread-1", turnId: "turn-1", willRetry: true, error: { message: "Reconnecting... 2/5", codexErrorInfo: { responseStreamDisconnected: { httpStatusCode: null } }, additionalDetails: null } },
   }).events
-  expect(events).toMatchObject([{ type: "diagnostic", diagnostic: { code: "codex_app_server.retryable_error", message: "Reconnecting... 2/5" } }])
-  expect(events).toHaveLength(1)
+  expect(events).toEqual([expect.objectContaining({ type: "session-retry", message: "Reconnecting... 2/5" })])
+  expect(events[0]).not.toHaveProperty("attempt")
+  expect(events[0]).not.toHaveProperty("delayMs")
 })
 
 test("a thread system error is surfaced without ending the turn", () => {

@@ -44,10 +44,11 @@ describe("Claude frames the pinned SDK does not declare", () => {
 })
 
 describe("Claude side-channel frames the person should see", () => {
-  test("an API retry is reported as a retry notice", () => {
-    expect(ingest(runtime(), system("api_retry", { attempt: 1, max_retries: 10, retry_delay_ms: 591, error_status: 529, error: "overloaded" })))
-      .toMatchObject([{ type: "harness-notice", code: "claude_sdk.api_retry", severity: "warn",
-        message: "Claude is retrying the model request (attempt 1 of 10, overloaded 529) in 1 s" }])
+  test("an API retry is the session retrying, with Claude's attempt, delay and cause", () => {
+    expect(ingest(runtime(), system("api_retry", { attempt: 1, max_retries: 10, retry_delay_ms: 5000, error_status: 429, error: "rate_limit" })))
+      .toMatchObject([{ type: "session-retry", attempt: 1, delayMs: 5000, message: "The model request failed (rate_limit, HTTP 429); retry 1 of 10" }])
+    expect(ingest(runtime(), system("api_retry", { attempt: 2, max_retries: 10, retry_delay_ms: 615, error_status: null, error: "unknown" })))
+      .toMatchObject([{ type: "session-retry", attempt: 2, delayMs: 615, message: "The model request failed (unknown); retry 2 of 10" }])
   })
 
   test("compaction start, success and failure are compaction events", () => {
@@ -71,16 +72,18 @@ describe("Claude side-channel frames the person should see", () => {
     expect(ingest(agent, system("model_fallback", { trigger: "overloaded", original_model: "claude-opus-5-5", fallback_model: "claude-sonnet-4-6", content: "Switched to Sonnet" })))
       .toMatchObject([{ type: "harness-notice", code: "claude_sdk.model_fallback", severity: "warn", message: "Switched to Sonnet" }])
     expect(ingest(agent, system("model_refusal_fallback", { trigger: "refusal", direction: "retry", original_model: "a", fallback_model: "b",
-      request_id: null, retracted_message_uuids: ["m-1"], content: "Retried with b" })))
-      .toMatchObject([{ type: "harness-notice", code: "claude_sdk.model_refusal_fallback", message: "Retried with b", details: { retractedMessageUuids: ["m-1"] } }])
+      request_id: null, retracted_message_uuids: ["m-1"], content: "Retried with b" })).filter((event) => event.type === "harness-notice"))
+      .toMatchObject([{ type: "harness-notice", code: "claude_sdk.model_refusal_fallback", severity: "warn", message: "Retried with b" }])
     expect(ingest(agent, system("model_refusal_no_fallback", { original_model: "a", request_id: null, content: "Claude declined" })))
       .toMatchObject([{ type: "harness-notice", code: "claude_sdk.model_refusal_no_fallback", severity: "warn", message: "Claude declined" }])
   })
 
-  test("a conversation reset after /clear is a notice", () => {
+  test("a conversation reset after /clear is the conversation resetting, with what reset it", () => {
     expect(ingest(runtime(), { type: "conversation_reset", new_conversation_id: "8b3d5dd3-a512-41a3-94d8-8342f793b8d1", trigger: "clear",
       user_message_uuid: "22222222-2222-4222-8222-222222222222", timestamp: "2026-09-30T06:55:12.243Z", ...session }))
-      .toMatchObject([{ type: "harness-notice", code: "claude_sdk.conversation_reset", details: { trigger: "clear" } }])
+      .toEqual([expect.objectContaining({ type: "conversation-reset", trigger: "clear" })])
+    expect(ingest(runtime(), { type: "conversation_reset", new_conversation_id: "8b3d5dd3-a512-41a3-94d8-8342f793b8d1", ...session }))
+      .toEqual([expect.objectContaining({ type: "conversation-reset", trigger: "unspecified" })])
   })
 
   test("an authentication status error is an auth status, not a failed turn", () => {

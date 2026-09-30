@@ -4,6 +4,7 @@ import type { ConnectionSecretAuthority } from "@claxedo/agent-runtime-contract"
 import { createRequestBroker, type BrokerPorts } from "@claxedo/harness/broker"
 import type { HarnessSession, HarnessTransport } from "@claxedo/harness/contract"
 import { SessionAttachments, type AttachedSession } from "./attachments"
+import { createBackgroundTaskStops } from "./background-tasks"
 import { createChildTurns } from "./child-turns"
 import { providerParentTurn } from "./provider-child-turns"
 import { createHarnessReads } from "./config-ops"
@@ -334,6 +335,7 @@ export function createAgentRuntime(input: AgentRuntimeCompositionInput) {
       ...resource({ start: startTurn }),
     },
     goals: resource(goals.resource),
+    backgroundTasks: resource(createBackgroundTaskStops(attachments)),
     recovery: wiring.surface() satisfies AgentRuntimeRecovery,
     events: {
       subscribe(subscribe: AgentRuntimeSubscribeInput = {}) {

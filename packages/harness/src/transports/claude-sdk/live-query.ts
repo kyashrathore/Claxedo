@@ -1,6 +1,8 @@
 import type { Query, SDKActiveGoalMessage, SDKMessage } from "@anthropic-ai/claude-agent-sdk"
 import { AsyncPushQueue } from "@claxedo/helpers"
+import { NO_BACKGROUND_WORK, sameBackgroundWork, type BackgroundWork } from "@claxedo/agent-runtime-contract"
 import type { RoutedEvent } from "../../contract"
+import { countBackgroundTasks, type ClaudeBackgroundTask } from "./between-turns"
 import { claudeChildFrameKey } from "./events"
 import { createClaudeTaskLedger, createClaudeTranslatorMemory } from "./translate"
 import { ClaudeHeldFrames } from "./held-frames"
@@ -24,7 +26,7 @@ type Process = { kind: "launching" } | { kind: "open"; stream: Query } | { kind:
 
 type MirroredRequest = Parameters<ClaudeMirroredUsage["observe"]>[0]
 
-export type ClaudeBetweenTurns = { unclaimed: () => void; child: (frame: SDKMessage) => Promise<void>; background: (active: boolean) => void }
+export type ClaudeBetweenTurns = { unclaimed: () => void; child: (frame: SDKMessage) => Promise<void>; background: (work: BackgroundWork) => void }
 
 export class ClaudeUsageRelay {
   private current: ClaudeMirroredUsage | undefined
@@ -49,6 +51,7 @@ export class ClaudeLiveQuery {
   readonly usage = new ClaudeUsageRelay()
   readonly processes = new Set<ClaudeProcess>()
   private background = new Set<string>()
+  private work = NO_BACKGROUND_WORK
   private readonly held = new ClaudeHeldFrames()
   private frames: Frames = { kind: "idle" }
   private process: Process = { kind: "launching" }
@@ -126,7 +129,7 @@ export class ClaudeLiveQuery {
 
   terminate(): void {
     this.input.close()
-    this.replaceBackground(new Set())
+    this.replaceBackground([])
     this.abort.abort()
     if (this.process.kind === "open" || this.process.kind === "closing") this.process.stream.close()
   }
@@ -145,7 +148,7 @@ export class ClaudeLiveQuery {
 
   private finish(failure?: unknown): void {
     this.process = { kind: "ended", ...(failure === undefined ? {} : { failure }) }
-    this.replaceBackground(new Set())
+    this.replaceBackground([])
     if (this.frames.kind === "claimed") this.settle(this.frames.claim)
     this.resolveEnded()
   }
@@ -164,14 +167,16 @@ export class ClaudeLiveQuery {
 
   private track(frame: ClaudeFrame): void {
     if (frame.type !== "system" || frame.subtype !== "background_tasks_changed") return
-    this.replaceBackground(new Set(frame.tasks.map((task) => task.task_id)))
+    this.replaceBackground(frame.tasks)
     if (this.background.size === 0 && this.frames.kind !== "claimed") this.close()
   }
 
-  private replaceBackground(next: Set<string>): void {
-    const was = this.background.size > 0
-    this.background = next
-    if (was !== next.size > 0) this.between.background(next.size > 0)
+  private replaceBackground(tasks: readonly ClaudeBackgroundTask[]): void {
+    this.background = new Set(tasks.map((task) => task.task_id))
+    const work = countBackgroundTasks(tasks)
+    if (sameBackgroundWork(work, this.work)) return
+    this.work = work
+    this.between.background(work)
   }
 
   private hold(frame: ClaudeFrame): void {
