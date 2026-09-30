@@ -31,30 +31,38 @@ function coreConfig(artifactId: (typeof CERTIFIED_HOSTED_WORKER_ARTIFACT_IDS)[nu
 }
 
 describe("certified core resource ownership", () => {
-  test("every artifact binds auth/control D1, the limiter and LiveSyncRoom, and only Agent Plugins binds R2", () => {
+  test("every artifact binds auth/control D1, the limiter and LiveSyncRoom, and only Agent Plugins binds R2 and the plugin-backend platform", () => {
     for (const artifactId of CERTIFIED_HOSTED_WORKER_ARTIFACT_IDS) {
       const config = coreConfig(artifactId)
+      const agentPlugins = certifiedHostedWorkerArtifact(artifactId).agentPlugins
       expect([...config.matchAll(/^binding = "([A-Z][A-Z0-9_]+)"$/gm)].map((match) => match[1]), artifactId).toEqual([
         "CF_VERSION_METADATA",
         "AUTH_DB",
         "CONTROL_PLANE_DB",
-        ...(certifiedHostedWorkerArtifact(artifactId).agentPlugins ? ["CLAXEDO_AGENT_PLUGINS"] : []),
+        ...(agentPlugins ? ["CLAXEDO_AGENT_PLUGINS", "PLUGIN_LOADER"] : []),
       ])
       expect([...config.matchAll(/^name = "([A-Z][A-Z0-9_]+)"$/gm)].map((match) => match[1])).toEqual([
         "CLAXEDO_REQUEST_LIMITER",
         "LIVE_SYNC_ROOM",
+        ...(agentPlugins ? ["PLUGIN_SUPERVISOR"] : []),
       ])
       expect(config).toContain('tag = "v1"\nnew_sqlite_classes = ["LiveSyncRoom"]')
+      if (agentPlugins) expect(config).toContain('tag = "v2"\nnew_sqlite_classes = ["PluginSupervisor"]')
+      else expect(config).not.toMatch(/PluginSupervisor|worker_loaders/)
       expect(config).not.toMatch(/DOCUMENTS|POLAR|BILLING|crons/i)
     }
   })
 
-  test("maps only to existing default-exporting Workers that export LiveSyncRoom, never the core factory", async () => {
+  test("maps only to existing default-exporting Workers that export their Durable Object classes, never the core factory", async () => {
     for (const artifactId of CERTIFIED_HOSTED_WORKER_ARTIFACT_IDS) {
       const artifact = certifiedHostedWorkerArtifact(artifactId)
       const source = await readFile(path.join(packageRoot, artifact.entrypointFromPackageRoot), "utf8")
       expect(source).toMatch(/export default handler/)
-      expect(source).toMatch(/export \{ LiveSyncRoom \}/)
+      expect(source).toMatch(
+        artifact.agentPlugins
+          ? /export \{ LiveSyncRoom, PluginOutbound, PluginPlatform, PluginSupervisor \}/
+          : /export \{ LiveSyncRoom \}/,
+      )
       expect(artifact.entrypointFromPackageRoot).not.toBe("src/deployments/hosted-workerd/core-worker.cf.ts")
     }
   })

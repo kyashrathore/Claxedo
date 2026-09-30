@@ -16,11 +16,16 @@ import { createD1SandboxPassRegister } from "../../platform/auth/d1-sandbox-pass
 import { hostedControlPlaneOrigin } from "../../authority/adapters/worker/control-plane-origin"
 import { d1CrossMachineWrites } from "../../authority/adapters/d1/agent-settings"
 import type { WorkspaceRuntimeContext, WorkspaceRuntimePreparation } from "../../workspace/route-support"
+import { HostedWorkerCompositionError } from "../../authority/composition-error"
+import { pluginBackendRouteContribution } from "../../plugin-backends/routes"
+import { PluginSupervisor, type PluginSupervisorNamespace } from "../../plugin-backends/supervisor.cf"
+import { PluginOutbound, PluginPlatform } from "../../plugin-backends/entrypoints.cf"
 
-export { LiveSyncRoom }
+export { LiveSyncRoom, PluginOutbound, PluginPlatform, PluginSupervisor }
 
 export type BetterAuthD1AgentPluginsWorkerEnv = BetterAuthD1WorkerEnv & {
   CLAXEDO_AGENT_PLUGINS?: AgentPluginR2Bucket
+  PLUGIN_SUPERVISOR?: PluginSupervisorNamespace
 }
 
 /** The string-valued half of a Worker env, for the composers that read configuration rather than bindings. */
@@ -61,6 +66,15 @@ export function composeBetterAuthD1AgentPlugins(
   if (!authority.resolveWorkspaceOwner) {
     throw new Error("Enabled Agent Plugins build requires an authority that resolves workspace owners")
   }
+  if (!env.PLUGIN_SUPERVISOR) {
+    throw new HostedWorkerCompositionError("hosted_dependency_missing", "The Agent Plugins Worker requires the PLUGIN_SUPERVISOR binding")
+  }
+  const pluginBackends = pluginBackendRouteContribution({
+    authentication: base.options.authentication,
+    authority,
+    supervisors: env.PLUGIN_SUPERVISOR,
+    services: base.plane.services,
+  })
   const feature = createHostedAgentPluginsComposition({
     env,
     plane: base.plane,
@@ -129,7 +143,7 @@ export function composeBetterAuthD1AgentPlugins(
     options: {
       ...base.options,
       sandboxPasses: passes,
-      routeContributions: [...feature.routeContributions, ...tasks],
+      routeContributions: [...feature.routeContributions, ...tasks, pluginBackends],
       integrationRoutes: feature.integrationRoutes,
       productWorkspace: {
         ...base.options.productWorkspace,

@@ -182,6 +182,13 @@ describe("the signed desktop's session sources", () => {
     expect(isSafeOperation("session.turnPage")).toBe(true)
   })
 
+  test("a plugin request answers the plugin's status and body, and is never the renderer's to retry", () => {
+    expect(decodeHostedResult("plugin.request", { status: 200, body: { value: 1 } })).toEqual({ status: 200, body: { value: 1 } })
+    expect(decodeHostedResult("plugin.request", { status: 404, body: { error: { code: "plugin_route_not_declared" } } })).toMatchObject({ status: 404 })
+    expect(() => decodeHostedResult("plugin.request", { value: 1 })).toThrow(/plugin\.request.*response status/)
+    expect(isSafeOperation("plugin.request")).toBe(false)
+  })
+
   test("a part read is an object a renderer may retry", () => {
     expect(decodeHostedResult("session.part", { part: { id: "a1-p0", type: "text", text: "whole" } })).toEqual({ part: { id: "a1-p0", type: "text", text: "whole" } })
     expect(() => decodeHostedResult("session.part", [])).toThrow(/expected an object/)

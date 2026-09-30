@@ -93,7 +93,9 @@ describe("registered channels", () => {
   test("registers no generic channel", () => {
     const h = harness()
 
-    for (const channel of h.channels()) {
+    const pluginRequest = hostedOperationChannel("plugin.request")
+    expect(h.channels()).toContain(pluginRequest)
+    for (const channel of h.channels().filter((channel) => channel !== pluginRequest)) {
       expect(channel).not.toMatch(/fetch|proxy|invoke|request$/i)
     }
   })

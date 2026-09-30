@@ -1,3 +1,5 @@
+export { buildPluginBackend } from "./backend"
+export type { PluginBackendBuild } from "./backend"
 export { buildPluginApp, pluginBundleHash } from "./build"
 export type { PluginBuild, PluginBuildOptions } from "./build"
 export { checkPluginApp } from "./check"

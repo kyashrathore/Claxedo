@@ -1,3 +1,5 @@
+import type { Message } from "esbuild"
+
 export type PluginBuildFailure = "manifest" | "entry" | "bundle"
 
 export type PluginCheckStage = PluginBuildFailure | "typecheck"
@@ -31,4 +33,18 @@ export class PluginBuildError extends Error {
     this.diagnostics = staged
     this.messages = messages
   }
+}
+
+function bundleDiagnostic(message: Message) {
+  const { location } = message
+  return {
+    ...(location ? { file: location.file, line: location.line, column: location.column + 1 } : {}),
+    message: message.text,
+  }
+}
+
+export function bundleFailure(error: unknown): PluginBuildError | undefined {
+  if (typeof error !== "object" || error === null) return undefined
+  const errors = (error as { errors?: unknown }).errors
+  return Array.isArray(errors) ? new PluginBuildError("bundle", (errors as Message[]).map(bundleDiagnostic)) : undefined
 }

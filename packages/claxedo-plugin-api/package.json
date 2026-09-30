@@ -17,6 +17,11 @@
       "development": "./src/index.ts",
       "default": "./src/index.ts"
     },
+    "./id": {
+      "types": "./src/id.ts",
+      "development": "./src/id.ts",
+      "default": "./src/id.ts"
+    },
     "./manifest": {
       "types": "./src/manifest.ts",
       "development": "./src/manifest.ts",

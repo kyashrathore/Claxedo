@@ -28,8 +28,11 @@ const HOSTED_CORE_WORKER_ROOT = "src/deployments/hosted-workerd/core-worker.cf.t
  */
 const ENTRIES = [
   { name: "worker", entry: BETTER_AUTH_D1_ENTRY, modules: 99, packages: 20 },
-  { name: "worker-agent-plugins", entry: BETTER_AUTH_D1_AGENT_PLUGINS_ENTRY, modules: 143, packages: 22 },
-  { name: "worker-agent-plugins-full-hosted", entry: BETTER_AUTH_D1_AGENT_PLUGINS_FULL_HOSTED_ENTRY, modules: 148, packages: 22 },
+  // Both Agent Plugins entries carry the plugin-backend platform
+  // (`src/plugin-backends/`): seven modules, `@claxedo/plugin-api` for the
+  // manifest, and `cloudflare:workers` for the supervisor and its entrypoints.
+  { name: "worker-agent-plugins", entry: BETTER_AUTH_D1_AGENT_PLUGINS_ENTRY, modules: 150, packages: 24 },
+  { name: "worker-agent-plugins-full-hosted", entry: BETTER_AUTH_D1_AGENT_PLUGINS_FULL_HOSTED_ENTRY, modules: 155, packages: 24 },
 ] as const
 
 function closure(entry: string, options: { runtimeOnly?: boolean } = {}) {
