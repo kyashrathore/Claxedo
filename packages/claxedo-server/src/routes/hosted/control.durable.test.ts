@@ -70,29 +70,28 @@ test("a concurrent or changed command is refused while the first runs, and the f
   expect(pulls.session).toHaveBeenCalledTimes(1)
 })
 
+/** D1 dates a lease by its own clock, so time passes for a claim by moving its deadline back. */
+async function elapse(ms: number) {
+  await d1.database.prepare("update projection_command_idempotency set expires_at = expires_at - ?").bind(ms).run()
+}
+
 test("a command whose instance died is taken over after the lease, never inside it", async () => {
-  const start = Date.now()
-  const now = vi.spyOn(Date, "now").mockReturnValue(start)
-  try {
-    pulls.session.mockImplementationOnce(() => new Promise(() => {}))
-    void (await instance()).fetch(request("register", "crashed"))
-    await vi.waitFor(() => expect(pulls.session).toHaveBeenCalledTimes(1))
+  pulls.session.mockImplementationOnce(() => new Promise(() => {}))
+  void (await instance()).fetch(request("register", "crashed"))
+  await vi.waitFor(() => expect(pulls.session).toHaveBeenCalledTimes(1))
 
-    now.mockReturnValue(start + IDEMPOTENCY_INFLIGHT_TTL_MS - 1)
-    const inside = await (await instance()).fetch(request("register", "crashed"))
-    expect(inside.status).toBe(409)
-    expect(pulls.session).toHaveBeenCalledTimes(1)
+  await elapse(IDEMPOTENCY_INFLIGHT_TTL_MS - 1_000)
+  const inside = await (await instance()).fetch(request("register", "crashed"))
+  expect(inside.status).toBe(409)
+  expect(pulls.session).toHaveBeenCalledTimes(1)
 
-    now.mockReturnValue(start + IDEMPOTENCY_INFLIGHT_TTL_MS)
-    pulls.session.mockResolvedValue({ ok: true, sessionId: "ses" })
-    const takeover = await (await instance()).fetch(request("register", "crashed"))
-    expect(takeover.status).toBe(200)
-    const replay = await (await instance()).fetch(request("register", "crashed"))
-    expect(await replay.json()).toEqual({ ok: true, sessionId: "ses" })
-    expect(pulls.session).toHaveBeenCalledTimes(2)
-  } finally {
-    now.mockRestore()
-  }
+  await elapse(1_000)
+  pulls.session.mockResolvedValue({ ok: true, sessionId: "ses" })
+  const takeover = await (await instance()).fetch(request("register", "crashed"))
+  expect(takeover.status).toBe(200)
+  const replay = await (await instance()).fetch(request("register", "crashed"))
+  expect(await replay.json()).toEqual({ ok: true, sessionId: "ses" })
+  expect(pulls.session).toHaveBeenCalledTimes(2)
 })
 
 test("a failed command releases its claim for the retry, and a storage failure refuses the command", async () => {

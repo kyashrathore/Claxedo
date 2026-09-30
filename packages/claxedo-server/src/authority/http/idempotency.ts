@@ -7,6 +7,8 @@ const IDEMPOTENCY_MAX_ENTRIES = 1_000
 export const IDEMPOTENCY_KEY_MAX_LENGTH = 256
 export { IDEMPOTENCY_INFLIGHT_TTL_MS, IDEMPOTENCY_TTL_MS }
 const D1_PRUNE_BATCH = 100
+/** Every D1 deadline is dated and compared by the database's clock, never an isolate's. */
+const D1_NOW_MS = "cast(unixepoch('subsec') * 1000 as integer)"
 
 export type IdempotencyClaim =
   | { state: "acquired" }
@@ -16,13 +18,15 @@ export type IdempotencyClaim =
 
 /**
  * One row per cache key, shared by every instance that serves the key. A row
- * whose `expiresAt` has passed no longer exists: `begin` claims over it, which
- * is how an in-flight claim abandoned by a dead instance is taken over after its
- * lease. Only the holder of `claimId` may complete or release a claim.
+ * whose deadline has passed no longer exists: `begin` claims over it, which is
+ * how an in-flight claim abandoned by a dead instance is taken over after its
+ * lease. Only the holder of `claimId` may complete or release a claim. A lease
+ * or replay window arrives as a duration and the store dates it by its own
+ * clock, so instances whose clocks disagree still agree on when a row lapses.
  */
 export type DurableIdempotencyStore = {
-  begin(input: { cacheKey: string; fingerprint: string; claimId: string; now: number; leaseUntil: number }): Promise<IdempotencyClaim>
-  complete(input: { cacheKey: string; claimId: string; resultJson?: string; expiresAt: number }): Promise<unknown>
+  begin(input: { cacheKey: string; fingerprint: string; claimId: string; leaseMs: number }): Promise<IdempotencyClaim>
+  complete(input: { cacheKey: string; claimId: string; resultJson?: string; replayMs: number }): Promise<unknown>
   release(input: { cacheKey: string; claimId: string }): Promise<unknown>
 }
 
@@ -66,8 +70,7 @@ export function createIdempotencyCoordinator(store: DurableIdempotencyStore): Id
  */
 async function runClaimed(store: DurableIdempotencyStore, cacheKey: string, fingerprint: string, run: () => Promise<unknown>) {
   const claimId = crypto.randomUUID()
-  const now = Date.now()
-  const claim = await store.begin({ cacheKey, fingerprint, claimId, now, leaseUntil: now + IDEMPOTENCY_INFLIGHT_TTL_MS })
+  const claim = await store.begin({ cacheKey, fingerprint, claimId, leaseMs: IDEMPOTENCY_INFLIGHT_TTL_MS })
   if (claim.state === "conflict") throw new IdempotencyConflictError()
   if (claim.state === "in_flight") throw new IdempotencyInFlightError()
   if (claim.state === "completed") return claim.resultJson === undefined ? undefined : parseJson(claim.resultJson)
@@ -83,7 +86,7 @@ async function runClaimed(store: DurableIdempotencyStore, cacheKey: string, fing
     cacheKey,
     claimId,
     ...(value === undefined ? {} : { resultJson: JSON.stringify(value) }),
-    expiresAt: Date.now() + IDEMPOTENCY_TTL_MS,
+    replayMs: IDEMPOTENCY_TTL_MS,
   })
   return value
 }
@@ -94,23 +97,24 @@ type MemoryRow = { fingerprint: string; state: "in_flight" | "completed"; claimI
 export function memoryIdempotencyStore(): DurableIdempotencyStore {
   const rows = new Map<string, MemoryRow>()
   return {
-    async begin({ cacheKey, fingerprint, claimId, now, leaseUntil }) {
+    async begin({ cacheKey, fingerprint, claimId, leaseMs }) {
+      const now = Date.now()
       for (const [candidate, row] of rows) {
         if (row.expiresAt <= now) rows.delete(candidate)
       }
       const row = rows.get(cacheKey)
       if (!row) {
-        rows.set(cacheKey, { fingerprint, state: "in_flight", claimId, expiresAt: leaseUntil })
+        rows.set(cacheKey, { fingerprint, state: "in_flight", claimId, expiresAt: now + leaseMs })
         return { state: "acquired" }
       }
       if (row.fingerprint !== fingerprint) return { state: "conflict" }
       if (row.state === "in_flight") return { state: "in_flight" }
       return { state: "completed", ...(row.resultJson === undefined ? {} : { resultJson: row.resultJson }) }
     },
-    async complete({ cacheKey, claimId, resultJson, expiresAt }) {
+    async complete({ cacheKey, claimId, resultJson, replayMs }) {
       const row = rows.get(cacheKey)
       if (row?.state !== "in_flight" || row.claimId !== claimId) return
-      rows.set(cacheKey, { ...row, state: "completed", ...(resultJson === undefined ? {} : { resultJson }), expiresAt })
+      rows.set(cacheKey, { ...row, state: "completed", ...(resultJson === undefined ? {} : { resultJson }), expiresAt: Date.now() + replayMs })
     },
     async release({ cacheKey, claimId }) {
       const row = rows.get(cacheKey)
@@ -131,24 +135,24 @@ export function memoryIdempotencyStore(): DurableIdempotencyStore {
  */
 export function d1ProjectionCommandIdempotency(database: D1Database): DurableIdempotencyStore {
   return {
-    async begin({ cacheKey, fingerprint, claimId, now, leaseUntil }) {
+    async begin({ cacheKey, fingerprint, claimId, leaseMs }) {
       const [, , current] = await database.batch<{ fingerprint: string; state: "in_flight" | "completed"; claim_id: string; result_json: string | null }>([
         database.prepare(`
           delete from projection_command_idempotency where rowid in (
-            select rowid from projection_command_idempotency where expires_at <= ? and cache_key <> ? limit ${D1_PRUNE_BATCH}
+            select rowid from projection_command_idempotency where expires_at <= ${D1_NOW_MS} and cache_key <> ? limit ${D1_PRUNE_BATCH}
           )
-        `).bind(now, cacheKey),
+        `).bind(cacheKey),
         database.prepare(`
           insert into projection_command_idempotency (cache_key, fingerprint, state, claim_id, result_json, expires_at)
-          values (?, ?, 'in_flight', ?, null, ?)
+          values (?, ?, 'in_flight', ?, null, ${D1_NOW_MS} + ?)
           on conflict (cache_key) do update set
             fingerprint = excluded.fingerprint,
             state = excluded.state,
             claim_id = excluded.claim_id,
             result_json = null,
             expires_at = excluded.expires_at
-          where projection_command_idempotency.expires_at <= ?
-        `).bind(cacheKey, fingerprint, claimId, leaseUntil, now),
+          where projection_command_idempotency.expires_at <= ${D1_NOW_MS}
+        `).bind(cacheKey, fingerprint, claimId, leaseMs),
         database.prepare(`
           select fingerprint, state, claim_id, result_json from projection_command_idempotency where cache_key = ?
         `).bind(cacheKey),
@@ -159,11 +163,11 @@ export function d1ProjectionCommandIdempotency(database: D1Database): DurableIde
       if (row.state === "in_flight") return { state: "in_flight" }
       return { state: "completed", ...(row.result_json === null ? {} : { resultJson: row.result_json }) }
     },
-    async complete({ cacheKey, claimId, resultJson, expiresAt }) {
+    async complete({ cacheKey, claimId, resultJson, replayMs }) {
       await database.prepare(`
-        update projection_command_idempotency set state = 'completed', result_json = ?, expires_at = ?
+        update projection_command_idempotency set state = 'completed', result_json = ?, expires_at = ${D1_NOW_MS} + ?
         where cache_key = ? and claim_id = ? and state = 'in_flight'
-      `).bind(resultJson ?? null, expiresAt, cacheKey, claimId).run()
+      `).bind(resultJson ?? null, replayMs, cacheKey, claimId).run()
     },
     async release({ cacheKey, claimId }) {
       await database.prepare(`
