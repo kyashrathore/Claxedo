@@ -29,7 +29,6 @@
   "packages/claxedo-server/src/routes/runtime-session-authority.ts": 1374,
   "packages/claxedo-server/src/signed-browser-relay-fixture.mjs": 1373,
   "packages/claxedo-server/src/workspace/supervisor/sandbox.ts": 854,
-  "packages/harness/src/transports/codex-app-server/translate/adapter.ts": 1312,
   "packages/workspace-relay/src/bun.ts": 2442,
   "packages/workspace-relay/src/cloudflare.ts": 2645,
   "packages/workspace-relay/src/server.ts": 1773,

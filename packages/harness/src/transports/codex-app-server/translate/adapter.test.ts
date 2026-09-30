@@ -1,12 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { translatorRuntime } from "../../../test-support/translator-runtime"
-import {
-  codexAppServerAdapter,
-  codexCollabAgentCall,
-  codexCollabAgentStatus,
-  codexStartedSubagent,
-  codexSubagentActivity,
-} from "./adapter"
+import { codexAppServerAdapter } from "./adapter"
+import { codexCollabAgentCall, codexCollabAgentStatus, codexStartedSubagent, codexSubagentActivity } from "./subagent-items"
 
 function runtime() {
   return translatorRuntime({
