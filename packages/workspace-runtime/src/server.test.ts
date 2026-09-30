@@ -38,6 +38,7 @@ import { volatileLaunchOwnership } from "@claxedo/process-ownership/launch"
 import { loopbackMachineLoginPolicy } from "./testing"
 import { openSqliteDatabase } from "./sqlite/node"
 import { openRuntimeStore } from "./store-file"
+import { workspaceStorageRoot } from "./worktree"
 
 /** This suite asserts routing, not recovery: the launch records die with the test. */
 const ownership = volatileLaunchOwnership()
@@ -178,14 +179,18 @@ describe("workspace runtime listen policy", () => {
 })
 
 describe("a store this build refuses", () => {
-  test("still lets the runtime start, and answers each store-backed request with the typed refusal", async () => {
+  async function refusedStore() {
     const directory = await pinTempWorkspaceDirectory()
     const storeRoot = path.join(directory, ".state")
     openRuntimeStore(storeRoot).close()
     const other = openSqliteDatabase(path.join(storeRoot, "state.db"))
     other.exec("UPDATE runtime_store_schema SET identity = 'CREATE TABLE session (id TEXT PRIMARY KEY)'")
     other.close()
+    return { directory, storeRoot }
+  }
 
+  test("still lets the runtime start, and answers every store-backed route with the typed refusal before any work", async () => {
+    const { directory, storeRoot } = await refusedStore()
     const runtime = createWorkspaceRuntimeApp({
       placement,
       exposure: loopbackWorkspaceRuntimeExposure(),
@@ -193,13 +198,49 @@ describe("a store this build refuses", () => {
       storeRoot,
     })
     try {
-      for (const pathname of ["/api/wr/worktrees", "/session"]) {
-        const response = await runtime.app.request(`http://localhost${pathname}?directory=${encodeURIComponent(directory)}`)
-        expect(response.status, pathname).toBe(503)
-        expect(await response.json(), pathname).toMatchObject({ error: { code: "runtime_store_schema_mismatch" } })
+      for (const [method, pathname, body] of [
+        ["GET", "/api/wr/worktrees", undefined],
+        ["POST", "/api/wr/worktrees", { sessionId: "ses_refused" }],
+        ["POST", "/api/wr/checkpoint/flush", {}],
+        ["POST", "/api/wr/checkpoint/restore-reconcile", { epoch: 1, checkpointId: "checkpoint-1" }],
+        ["GET", "/session", undefined],
+      ] as const) {
+        const response = await runtime.app.request(`http://localhost${pathname}?directory=${encodeURIComponent(directory)}`, {
+          method,
+          ...(body ? { headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) } : {}),
+        })
+        const label = `${method} ${pathname}`
+        expect(response.status, label).toBe(503)
+        expect(await response.json(), label).toMatchObject({ error: { code: "runtime_store_schema_mismatch" } })
       }
+      expect(fs.existsSync(workspaceStorageRoot("ws_refused"))).toBe(false)
     } finally {
       await runtime.host.dispose()
+    }
+  })
+
+  test("mounting with a native default harness leaves queued-prompt recovery for an admitted store", async () => {
+    const { directory, storeRoot } = await refusedStore()
+    const rejections: unknown[] = []
+    const record = (reason: unknown) => { rejections.push(reason) }
+    process.on("unhandledRejection", record)
+    try {
+      const runtime = createWorkspaceRuntimeApp({
+        placement,
+        exposure: loopbackWorkspaceRuntimeExposure(),
+        target: { workspaceId: "ws_refused_native", directory },
+        storeRoot,
+        harness: { kind: "native", harnessId: "pi" },
+      })
+      try {
+        await new Promise((resolve) => setTimeout(resolve, 50))
+        expect(rejections).toEqual([])
+        expect((await runtime.app.request(`http://localhost/session?directory=${encodeURIComponent(directory)}`)).status).toBe(503)
+      } finally {
+        await runtime.host.dispose()
+      }
+    } finally {
+      process.off("unhandledRejection", record)
     }
   })
 })

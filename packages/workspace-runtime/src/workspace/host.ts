@@ -1,5 +1,5 @@
 import type { SessionConfig } from "@claxedo/agent-runtime-contract"
-import type { Hono } from "hono"
+import type { Hono, MiddlewareHandler } from "hono"
 import type { PtyRoutes } from "../routes/pty"
 import type { RuntimeHarnessSelection, RuntimeSnapshot } from "../routes/config"
 import type { WorkspaceCapabilities } from "../capabilities"
@@ -109,6 +109,8 @@ export type WorkspaceHost = {
   /** The workspace's store, opened on first use; one this build refuses throws a typed 503. */
   store: () => RuntimeStore
   whenStoreOpens: (opener: (store: RuntimeStore) => void) => void
+  /** For routes mounted ahead of `mount`'s gate: admits the store before they run. */
+  storeAdmission: MiddlewareHandler
   /**
    * Settles when the startup reconciliation of this workspace's launches has
    * finished. A caller that must see the settled answer — a drain preview, a

@@ -41,5 +41,5 @@
   "packages/workspace-runtime/src/routes/session-core.ts": 2224,
   "packages/workspace-runtime/src/store.ts": 4282,
   "packages/workspace-runtime/src/workspace-relay-host-tunnel.ts": 815,
-  "packages/workspace-runtime/src/workspace/runtime.ts": 816
+  "packages/workspace-runtime/src/workspace/runtime.ts": 814
 }

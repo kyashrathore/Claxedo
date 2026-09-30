@@ -1,15 +1,19 @@
 import { DEFAULT_RECOVERY_BUDGETS, type AgentSessionStarts } from "@claxedo/agent-runtime-contract"
 import type { LaunchOwnershipOwner, LaunchOwnershipStore } from "@claxedo/process-ownership/launch"
+import type { MiddlewareHandler } from "hono"
 import { HTTPException } from "hono/http-exception"
+import { Log } from "../log"
 import { sqliteLaunchOwnership } from "../ownership/launch-ownership-sqlite"
 import { reconcileLaunchOwnership, type LaunchOwnershipReconciliation } from "../ownership/reconcile-launch-ownership"
 import { errorBody } from "../routes/error-body"
 import type { RuntimeStore } from "../store"
 import { RuntimeStoreSchemaMismatchError } from "../store-schema"
 
+const log = Log.create({ service: "workspace-runtime" })
+
 /**
- * A workspace host's store and the launch ownership kept beside it, opened on
- * first use. Nothing opens at mount, so a store this build refuses answers each
+ * A workspace host's store and the launch ownership kept beside it. Nothing
+ * that can fail the host opens it, so a store this build refuses answers each
  * request with a typed 503 instead of failing the host that mounts it.
  */
 export function workspaceDurableState(input: {
@@ -33,7 +37,6 @@ export function workspaceDurableState(input: {
       throw new HTTPException(503, { res: Response.json(errorBody(error.code, error.message), { status: 503 }) })
     }
     opened = { store, launches: sqliteLaunchOwnership(store.database(), input.launchOwner) }
-    for (const opener of openers) opener(store)
     // Started before anything else this store does, because until it has
     // run the processes of a previous owner still hold this workspace's
     // ports, working directories and agent session storage, and nothing
@@ -47,6 +50,7 @@ export function workspaceDurableState(input: {
       return settled
     })
     store.recoverBusySessions()
+    for (const opener of openers) opener(store)
     return opened
   }
 
@@ -59,34 +63,57 @@ export function workspaceDurableState(input: {
     retire: (binding) => store().sessionStarts.retire(binding),
   }
 
+  function whenOpened(opener: (store: RuntimeStore) => void) {
+    if (opened) opener(opened.store)
+    else openers.push(opener)
+  }
+
+  /**
+   * A read needs the store open; a write also waits out launch
+   * reconciliation and is refused while a previous owner's launch is
+   * unresolved. Answers the refusal, or nothing when the request may run.
+   */
+  async function admit(method: string): Promise<Response | undefined> {
+    try {
+      open()
+    } catch (error) {
+      if (!(error instanceof HTTPException)) throw error
+      return error.getResponse()
+    }
+    if (["GET", "HEAD", "OPTIONS"].includes(method) || !reconciliation) return undefined
+    const settled = await reconciliation
+    if (settled.unresolved.length === 0) return undefined
+    const unresolved = settled.unresolved.map((row) => `${row.launchId} (${row.outcome}: ${row.reason})`).join("; ")
+    return Response.json({ error: `workspace_launch_unreconciled: ${unresolved}` }, { status: 503 })
+  }
+
   return {
     store,
-    whenOpened(opener: (store: RuntimeStore) => void) {
-      if (opened) opener(opened.store)
-      else openers.push(opener)
-    },
+    whenOpened,
     launchOwnership: () => open().launches,
     sessionStarts,
     launchReconciliation: () => reconciliation,
     launchSummary: () => summary,
+    admit,
     /**
-     * A read needs the store open; a write also waits out launch
-     * reconciliation and is refused while a previous owner's launch is
-     * unresolved. Answers the refusal, or nothing when the request may run.
+     * Opens the store now and runs `work` once it is open. A store this build
+     * refuses stays closed, `work` never runs, and requests answer the refusal.
      */
-    async admit(method: string): Promise<Response | undefined> {
-      try {
-        open()
-      } catch (error) {
-        if (!(error instanceof HTTPException)) throw error
-        return error.getResponse()
-      }
-      if (["GET", "HEAD", "OPTIONS"].includes(method) || !reconciliation) return undefined
-      const settled = await reconciliation
-      if (settled.unresolved.length === 0) return undefined
-      const unresolved = settled.unresolved.map((row) => `${row.launchId} (${row.outcome}: ${row.reason})`).join("; ")
-      return Response.json({ error: `workspace_launch_unreconciled: ${unresolved}` }, { status: 503 })
+    whenAdmitted(what: string, work: () => Promise<void>) {
+      let pending = true
+      const failed = (error: unknown) => log.error(`${what} failed`, { error })
+      whenOpened(() => {
+        if (!pending) return
+        pending = false
+        work().catch(failed)
+      })
+      admit("GET").catch(failed)
     },
+    /** For the routes mounted ahead of the host's gate: admit the store before any filesystem or Git work. */
+    admission: (async (_c, next) => {
+      store()
+      await next()
+    }) satisfies MiddlewareHandler,
     flush: () => opened?.store.flush(),
     close() {
       opened?.store.close()

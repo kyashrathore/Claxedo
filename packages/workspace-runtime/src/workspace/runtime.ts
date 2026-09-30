@@ -602,11 +602,8 @@ export function createWorkspaceHost(options: WorkspaceHostOptions): WorkspaceHos
       })
       disposeDeliveries = sessions.dispose
       app.route("/", sessions.routes)
-      reissueQueuedPrompts = () => {
-        const reissue = () => void sessions.recoverQueuedPrompts()
-        if (options.target) withWorkspaceTarget(options.target, reissue)
-        else reissue()
-      }
+      reissueQueuedPrompts = () => durable.whenAdmitted("queued prompt recovery", () =>
+        options.target ? withWorkspaceTarget(options.target, sessions.recoverQueuedPrompts) : sessions.recoverQueuedPrompts())
       if (runner) reissueQueuedPrompts()
     },
     hasSession(sessionId: string) {
@@ -677,6 +674,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions): WorkspaceHos
     ownerGeneration,
     store,
     whenStoreOpens: durable.whenOpened,
+    storeAdmission: durable.admission,
     async launchReconciliation() {
       return await durable.launchReconciliation()
     },

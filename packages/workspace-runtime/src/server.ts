@@ -587,6 +587,8 @@ export function createWorkspaceRuntimeApp(options: WorkspaceRuntimeServerOptions
     ...(options.managementAuth ? { managementAuth: options.managementAuth } : {}),
     ...(options.managementTarget ? { managementTarget: options.managementTarget } : {}),
   }))
+  app.use(`${WorkspaceRuntimeRoutes.checkpoint}/*`, host.storeAdmission)
+  if (worktrees) app.use(`${WorkspaceRuntimeRoutes.worktrees}/*`, host.storeAdmission)
   if (worktrees) {
     app.route(
       WorkspaceRuntimeRoutes.worktrees,
