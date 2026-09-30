@@ -51,24 +51,25 @@ export class BrokerProviderTurns {
     return !session || !!session.time?.archived
   }
 
-  private async leaseOnceReleased(sessionId: string): Promise<string | undefined> {
+  private async leaseOnceReleased(sessionId: string, closing?: AbortSignal): Promise<string | undefined> {
     const bound = new AbortController()
     const timer = this.clock.setTimeout(() => bound.abort(), ENDING_TURN_RELEASE_WAIT_MS)
-    try { return await this.store.turnLeases.acquireOnRelease(sessionId, bound.signal) }
+    const signal = closing ? AbortSignal.any([bound.signal, closing]) : bound.signal
+    try { return await this.store.turnLeases.acquireOnRelease(sessionId, signal) }
     finally { this.clock.clearTimeout(timer) }
   }
 
   async admit(
     sessionId: string, input: ProviderTurnInput,
-    run: (turn: TurnRef, signal: AbortSignal) => Promise<void>,
+    run: (turn: TurnRef, signal: AbortSignal) => Promise<void>, closing?: AbortSignal,
   ): Promise<ProviderTurnResult> {
-    if (this.closed(sessionId)) return { admitted: false, reason: "closed" }
+    if (closing?.aborted || this.closed(sessionId)) return { admitted: false, reason: "closed" }
     const config = this.store.getSessionConfig(sessionId)
     if (!config) throw new Error(`Provider turn ${sessionId} has no runtime config`)
     const model = resolveSessionModel(config)
-    const leaseId = await this.leaseOnceReleased(sessionId)
-    if (!leaseId) return { admitted: false, reason: "busy" }
-    if (this.closed(sessionId)) {
+    const leaseId = await this.leaseOnceReleased(sessionId, closing)
+    if (!leaseId) return { admitted: false, reason: closing?.aborted ? "closed" : "busy" }
+    if (closing?.aborted || this.closed(sessionId)) {
       this.store.releaseTurnLease(sessionId, leaseId)
       return { admitted: false, reason: "closed" }
     }

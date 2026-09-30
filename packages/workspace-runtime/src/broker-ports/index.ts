@@ -69,7 +69,7 @@ export function createStoreBrokerPorts(store: RuntimeStore, options: StoreBroker
     readPermissionState: (sessionId) => state.readPermissionState(sessionId),
     readGoal: (sessionId) => state.readGoal(sessionId),
     publishGoal: (sessionId, snapshot) => state.publishGoal(sessionId, snapshot),
-    admitProviderTurn: (sessionId, input, run) => providerTurns.admit(sessionId, input, run),
+    admitProviderTurn: (sessionId, input, run, closing) => providerTurns.admit(sessionId, input, run, closing),
     drainProviderEvent: (sessionId, turn, event) => {
       providerTurns.observe(turn.turnId, event)
       return events.drainProviderEvent(sessionId, turn.assistantMessageId, event)
