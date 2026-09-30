@@ -475,18 +475,6 @@ function unsupportedOperation(
   }, 409)
 }
 
-function notImplemented(c: Ctx, operation: "revert" | "unrevert" | "shell" | "summarize" | "command") {
-  return c.json({
-    ok: false,
-    error: {
-      code: "unsupported_operation",
-      operation,
-      reason: "not_implemented",
-      message: `${operation} is not implemented`,
-    },
-  }, 501)
-}
-
 /** How each fixed-at-create field answers a PATCH that names it. */
 const IMMUTABLE_CONFIG_REFUSALS = {
   instructions: {
@@ -1974,18 +1962,6 @@ export function createSessionRoutes(opts: Opts) {
         throw error
       }
     })
-    .post("/session/:id/revert", async (c) => {
-      const sessionId = c.req.param("id")
-      const guarded = await sessionOperationGuard(opts, c, sessionId, "revert")
-      if (guarded) return guarded
-      return notImplemented(c, "revert")
-    })
-    .post("/session/:id/unrevert", async (c) => {
-      const sessionId = c.req.param("id")
-      const guarded = await sessionOperationGuard(opts, c, sessionId, "unrevert")
-      if (guarded) return guarded
-      return notImplemented(c, "unrevert")
-    })
     .post("/session/:id/fork", async (c) => {
       const sessionId = c.req.param("id")
       const guarded = await sessionOperationGuard(opts, c, sessionId, "fork")
@@ -2052,24 +2028,6 @@ export function createSessionRoutes(opts: Opts) {
         throw error
       }
       return c.json(forked.session, 201)
-    })
-    .post("/session/:id/command", async (c) => {
-      const sessionId = c.req.param("id")
-      const guarded = await sessionOperationGuard(opts, c, sessionId, "command")
-      if (guarded) return guarded
-      return notImplemented(c, "command")
-    })
-    .post("/session/:id/shell", async (c) => {
-      const sessionId = c.req.param("id")
-      const guarded = await sessionOperationGuard(opts, c, sessionId, "shell")
-      if (guarded) return guarded
-      return notImplemented(c, "shell")
-    })
-    .post("/session/:id/summarize", async (c) => {
-      const sessionId = c.req.param("id")
-      const guarded = await sessionOperationGuard(opts, c, sessionId, "summarize")
-      if (guarded) return guarded
-      return notImplemented(c, "summarize")
     })
     .get("/session/:id/queue", async (c) => {
       const id = c.req.param("id")

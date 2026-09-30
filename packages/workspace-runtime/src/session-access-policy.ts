@@ -70,12 +70,7 @@ export type SessionAccessOperation =
   | "queue_read"
   | "recovery_inspect"
   | "recovery_submit"
-  | "revert"
-  | "unrevert"
   | "fork"
-  | "command"
-  | "shell"
-  | "summarize"
   | "delete"
   | "session_event_stream"
   | "checkpoint_read"
@@ -367,14 +362,9 @@ export const SESSION_CORE_ROUTE_ACCESS = {
   "GET /session/:id/recovery": { kind: "authorize", operation: "recovery_inspect" },
   "GET /session/:id/recovery/operations/:operationId": { kind: "authorize", operation: "recovery_inspect" },
   "POST /session/:id/recovery": { kind: "authorize", operation: "recovery_submit" },
-  "POST /session/:id/command": { kind: "authorize", operation: "command" },
   "POST /session/:id/fork": { kind: "authorize", operation: "fork" },
   "POST /session/:id/message": { kind: "authorize", operation: "prompt" },
   "POST /session/:id/prompt_async": { kind: "authorize", operation: "prompt" },
-  "POST /session/:id/revert": { kind: "authorize", operation: "revert" },
-  "POST /session/:id/shell": { kind: "authorize", operation: "shell" },
-  "POST /session/:id/summarize": { kind: "authorize", operation: "summarize" },
-  "POST /session/:id/unrevert": { kind: "authorize", operation: "unrevert" },
   "POST /session/:sessionId/permissions/:permId": { kind: "authorize", operation: "permission_response" },
   "PUT /session/:id/permission-mode": { kind: "authorize", operation: "permission_mode_write" },
 } as const satisfies Record<string, SessionRouteDecision>
@@ -400,12 +390,7 @@ const SESSION_CONTROL_OPERATIONS = new Set<SessionAccessOperation>([
   "session_meta_write",
   "session_config_write",
   "permission_mode_write",
-  "revert",
-  "unrevert",
   "fork",
-  "command",
-  "shell",
-  "summarize",
   "delete",
   "checkpoint_write",
   "tool_write",

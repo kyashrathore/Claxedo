@@ -82,7 +82,7 @@ describe("tool coverage", () => {
 
   test("an operation with no tool and no pinned reason is reported", () => {
     expect(uncovered(new Set(), new Set())).toEqual(operations())
-    expect(uncovered(coveredByTools(), new Set())).toContain("shell")
+    expect(uncovered(coveredByTools(), new Set())).toContain("fork")
     expect(uncovered(new Set(), excluded())).toContain("prompt")
   })
 

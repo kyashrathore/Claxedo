@@ -123,14 +123,9 @@ export type WorkspaceSessionClient = {
     submit(input: SessionInput & { request: RecoveryRequest }, options?: Options): Reply<RecoveryOutcome>
     read(input: SessionInput & { operationId: string }, options?: Options): Reply<RecoveryOutcome>
   }
-  summarize(input: SessionInput & { providerID: string; modelID: string; auto?: boolean }, options?: Options): Reply<Ok>
   prompt(input: SessionMessageInput, options?: Options): Reply<AgentPromptResponse | SessionDeliveryAcknowledgement>
   /** Immediate admission has no body; explicit delivery requests return their durable admission state. */
   promptAsync(input: SessionMessageInput, options?: Options): Reply<void | SessionDeliveryAcknowledgement>
-  command(input: SessionMessageInput, options?: Options): Reply<AgentPromptResponse>
-  shell(input: SessionMessageInput, options?: Options): Reply<AgentPromptResponse>
-  revert(input: SessionInput & { messageID: string; partID?: string }, options?: Options): Reply<AgentPresentationSession>
-  unrevert(input: SessionInput, options?: Options): Reply<AgentPresentationSession>
   config: {
     get(input: SessionInput, options?: Options): Reply<SessionConfig>
     update(input: SessionInput & SessionConfigUpdate, options?: Options): Reply<SessionConfig>
@@ -284,7 +279,6 @@ export function sessionClient(caller: WorkspaceRuntimeCaller): WorkspaceSessionC
         decode: decodeRecoveryOutcome,
       }),
     },
-    summarize: (input, options) => write("session.summarize", "POST", input, "/summarize", options, without(input, ["sessionID"])),
     prompt: (input, options) => write("session.prompt", "POST", input, "/message", options, without(input, ["sessionID"])),
     promptAsync: (input, options) => {
       const request = {
@@ -295,10 +289,6 @@ export function sessionClient(caller: WorkspaceRuntimeCaller): WorkspaceSessionC
         ? caller.call<SessionDeliveryAcknowledgement>(request)
         : caller.callNoContent(request)
     },
-    command: (input, options) => write("session.command", "POST", input, "/command", options, without(input, ["sessionID"])),
-    shell: (input, options) => write("session.shell", "POST", input, "/shell", options, without(input, ["sessionID"])),
-    revert: (input, options) => write("session.revert", "POST", input, "/revert", options, without(input, ["sessionID"])),
-    unrevert: (input, options) => write("session.unrevert", "POST", input, "/unrevert", options),
     config: {
       get: (input, options) => read("session.config.get", input, "/config", options),
       update: (input, options) => write("session.config.update", "PATCH", input, "/config", options, without(input, ["sessionID"])),
