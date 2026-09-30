@@ -88,7 +88,7 @@ export type ProviderTurnSettlement = { state: "completed" } | { state: "failed";
 
 export type OutsideTurnEvent = AgentRuntimeEventOf<
   | "rate-limit" | "auth-status" | "mcp-server-status" | "available-commands-update" | "config-update"
-  | "session-info" | "session-title" | "session-agent" | "harness-notice" | "diagnostic"
+  | "session-info" | "session-title" | "session-agent" | "harness-notice" | "diagnostic" | "background-work"
 >
 
 export interface TurnBroker {
