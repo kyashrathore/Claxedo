@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, test, vi } from "vitest"
 import { ControlPlaneAuthError } from "@claxedo/server-core/platform/auth/auth"
-import { D1SessionAuthorityError } from "../authority/adapters/d1/session-authority"
+import { D1SessionAuthorityError } from "../authority/adapters/d1/session-input"
 import {
   startConfigurationDigest,
   type ConfigurationSlot,

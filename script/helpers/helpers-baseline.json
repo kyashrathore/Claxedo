@@ -167,7 +167,7 @@
     "oneOf": 3,
     "openDatabase": 2,
     "optionalGit": 2,
-    "optionalText": 2,
+    "optionalText": 3,
     "organizationScopeKey": 1,
     "own": 2,
     "parseEnvelope": 3,

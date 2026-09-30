@@ -1,6 +1,5 @@
 import type { D1Database, D1PreparedStatement } from "@cloudflare/workers-types"
 import { ControlPlaneAuthError, type SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
-import { ClaxedoError } from "@claxedo/server-core/platform/errors/base"
 import type {
   SessionShareGrantResult,
   SessionShareLevel,
@@ -45,8 +44,18 @@ import {
   type SessionTurnLease,
 } from "@claxedo/server-core/platform/auth/session-turn-authority"
 import { SESSION_TURN_LEASE_TTL_MS } from "@claxedo/workspace-relay-protocol"
-import { asRecord } from "@claxedo/server-core/platform/json/index"
 import { projectRoleRankSql, rankRole } from "./project-role"
+import {
+  D1SessionAuthorityError,
+  MAX_SNAPSHOT_BYTES,
+  byteLength,
+  canonicalMessages,
+  optionalOrdinal,
+  optionalText,
+  positiveFence,
+  requireText,
+  visibilityRows,
+} from "./session-input"
 import { readD1SessionPage, readD1MessagePage, readD1LatestView, validateD1MessageRead, decodeMessagePageCursor } from "./session-read-store"
 import { storedTurn, type LatestView } from "@claxedo/server-core/session/latest-view-page"
 import { readStoredTurnOutline } from "@claxedo/server-core/session/turn-outline"
@@ -200,33 +209,6 @@ type TurnGrantRow = {
   redeemed_turn_id: string | null
   revoked_at: number | null
   revoke_reason: string | null
-}
-
-type CanonicalMessage = {
-  id: string
-  role: string
-  ordinal: number
-  dataJson: string
-  authorActorId: string | null
-}
-
-const MAX_SNAPSHOT_MESSAGES = 500
-const MAX_MESSAGE_BYTES = 256 * 1024
-const MAX_SNAPSHOT_BYTES = 8 * 1024 * 1024
-const MAX_VISIBILITY_ROWS = 500
-
-export class D1SessionAuthorityError extends ClaxedoError {
-  constructor(
-    code:
-      "invalid_input" | "resource_conflict" | "registration_transition_denied" | "actor_authorization_denied",
-    message: string,
-  ) {
-    super({
-      code,
-      message,
-      status: code === "invalid_input" ? 400 : code === "resource_conflict" ? 409 : 403,
-    })
-  }
 }
 
 /**
@@ -2653,90 +2635,12 @@ function sessionJson(row: SessionRow) {
   }
 }
 
-function visibilityRows(input: WorkspaceVisibility[]) {
-  if (!Array.isArray(input) || input.length > MAX_VISIBILITY_ROWS) {
-    throw new D1SessionAuthorityError("invalid_input", `Session visibility accepts at most ${MAX_VISIBILITY_ROWS} rows`)
-  }
-  const seen = new Set<string>()
-  return input.map((value) => {
-    const sessionId = requireText(value.sessionId, "sessionId")
-    if (seen.has(sessionId))
-      throw new D1SessionAuthorityError("invalid_input", "Session visibility contains duplicate identifiers")
-    seen.add(sessionId)
-    return {
-      sessionId,
-      title: optionalText(value.title, "title", 2_000),
-      createdAt: optionalTimestamp(value.createdAt, "createdAt"),
-      updatedAt: optionalTimestamp(value.updatedAt, "updatedAt"),
-    }
-  })
-}
-
-function canonicalMessages(input: unknown[]): CanonicalMessage[] {
-  if (!Array.isArray(input) || input.length > MAX_SNAPSHOT_MESSAGES) {
-    throw new D1SessionAuthorityError(
-      "invalid_input",
-      `Session snapshots accept at most ${MAX_SNAPSHOT_MESSAGES} messages`,
-    )
-  }
-  const ids = new Set<string>()
-  return input.map((message, ordinal) => {
-    const row = asRecord(message)
-    const info = asRecord(row?.info)
-    const id = optionalText(
-      typeof row?.id === "string" ? row.id : typeof info?.id === "string" ? info.id : undefined,
-      "message.id",
-    )
-    const role = optionalText(
-      typeof row?.role === "string" ? row.role : typeof info?.role === "string" ? info.role : undefined,
-      "message.role",
-      100,
-    )
-    if (!id || !role)
-      throw new D1SessionAuthorityError("invalid_input", "Every session message requires a canonical id and role")
-    if (ids.has(id))
-      throw new D1SessionAuthorityError("invalid_input", "Session snapshots contain duplicate message identifiers")
-    ids.add(id)
-    let dataJson: string
-    try {
-      dataJson = JSON.stringify(message)
-    } catch {
-      throw new D1SessionAuthorityError("invalid_input", "Session message must be JSON serializable")
-    }
-    if (dataJson === undefined || byteLength(dataJson) > MAX_MESSAGE_BYTES) {
-      throw new D1SessionAuthorityError("invalid_input", `Session message exceeds ${MAX_MESSAGE_BYTES} bytes`)
-    }
-    return {
-      id,
-      role,
-      ordinal,
-      dataJson,
-      authorActorId: null,
-    }
-  })
-}
-
-function optionalOrdinal(value: number | undefined) {
-  if (value === undefined) return undefined
-  if (!Number.isSafeInteger(value) || value < 0) {
-    throw new D1SessionAuthorityError("invalid_input", "maxEventOrdinal must be a non-negative safe integer")
-  }
-  return value
-}
-
 function boundedTurnLeaseTtl(value: number | undefined) {
   const ttl = value ?? SESSION_TURN_LEASE_TTL_MS
   if (!Number.isSafeInteger(ttl) || ttl < 5_000 || ttl > 15 * 60_000) {
     throw new TypeError("turnLeaseTtlMs must be an integer between 5000 and 900000")
   }
   return ttl
-}
-
-function positiveFence(value: number) {
-  if (!Number.isSafeInteger(value) || value < 1) {
-    throw new D1SessionAuthorityError("invalid_input", "fencingToken must be a positive safe integer")
-  }
-  return value
 }
 
 type TurnAdmission = {
@@ -2782,39 +2686,12 @@ function turnLeaseJson(row: TurnLeaseRow): SessionTurnLease {
   }
 }
 
-function optionalTimestamp(value: number | undefined, name: string) {
-  if (value === undefined) return undefined
-  if (!Number.isSafeInteger(value) || value < 0)
-    throw new D1SessionAuthorityError("invalid_input", `${name} is invalid`)
-  return value
-}
-
-function optionalText(value: string | undefined, name: string, max = 512) {
-  if (value === undefined) return undefined
-  return requireText(value, name, max)
-}
-
-function requireText(value: string, name: string, max = 512) {
-  const result = value.trim()
-  if (!result || result.length > max) {
-    throw new D1SessionAuthorityError(
-      "invalid_input",
-      `${name} must be a non-empty string of at most ${max} characters`,
-    )
-  }
-  return result
-}
-
 function denied(message = "Session authorization was denied") {
   return new ControlPlaneAuthError(403, "workspace_authorization_denied", message)
 }
 
 function isDenied(error: unknown) {
   return error instanceof ControlPlaneAuthError && error.status === 403
-}
-
-function byteLength(value: string) {
-  return new TextEncoder().encode(value).byteLength
 }
 
 async function sha256(value: string) {
