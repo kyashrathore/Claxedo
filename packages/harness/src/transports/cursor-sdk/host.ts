@@ -1,7 +1,7 @@
 import { createInterface } from "node:readline"
 import { errorMessage } from "@claxedo/helpers"
 import type { AgentOptions, Run, SDKAgent } from "@cursor/sdk"
-import { isHostCommand, type HostCommand, type HostReply, type HostSession } from "./protocol"
+import { hostFailure, hostRunError, isHostCommand, type HostCommand, type HostReply, type HostSession } from "./protocol"
 import { CursorRunState } from "./run-state"
 
 const TITLE_AGENT_NAME = "Claxedo session title"
@@ -84,7 +84,7 @@ export class CursorHostRuntime {
     for await (const message of run.stream()) this.post({ id: command.id, kind: "event", message })
     const result = await run.wait()
     this.post({ id: command.id, kind: "result", value: { agentId: agent.agentId, runId: run.id,
-      status: result.status, ...(result.result ? { result: result.result } : {}) } })
+      status: result.status, ...(result.result ? { result: result.result } : {}), ...hostRunError(result.error) } })
   }
 
   private async title(command: Extract<HostCommand, { kind: "title" }>): Promise<void> {
@@ -137,7 +137,7 @@ export class CursorHostRuntime {
         this.post({ id: command.id, kind: "result" })
       }
     } catch (error) {
-      this.post({ id: command.id, kind: "error", message: errorMessage(error) })
+      this.post({ id: command.id, kind: "error", ...hostFailure(error, errorMessage(error)) })
     }
   }
 }

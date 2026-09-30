@@ -3,6 +3,7 @@ import type { Clock, Deadline, HarnessServices, Logger, OwnedProcess, SpawnComma
 import { TransportError } from "../../contract/errors"
 import { NdjsonOwnedProcess } from "../../rpc/channel"
 import { PendingRpcRequests } from "../../rpc/pending"
+import { cursorSdkFailure } from "./errors"
 import { isHostReply, type HostReply, type HostRequest } from "./protocol"
 
 export type CursorHostKey = { binding: string; home: string; backendUrl?: string }
@@ -56,7 +57,7 @@ export class CursorHost {
   private receive(reply: HostReply) {
     const onEvent = this.pending.get(reply.id)
     if (reply.kind === "event") { onEvent?.(reply); return }
-    if (reply.kind === "error") this.pending.reject(reply.id, new TransportError("cursor", "sdk", reply.message))
+    if (reply.kind === "error") this.pending.reject(reply.id, cursorSdkFailure(reply))
     else this.pending.resolve(reply.id, reply)
   }
 

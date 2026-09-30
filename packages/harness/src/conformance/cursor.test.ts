@@ -343,6 +343,23 @@ test("repeated text chunks, every turn end's usage and a compaction summary reac
   } finally { await context.close() }
 }, 60_000)
 
+test("a stop interrupts the SDK run, the turn ends cancelled, and the stop reports the run terminal", async () => {
+  const state = await backend()
+  state.server.script("stoppable", { steps: [{ kind: "text", text: "STOPPABLE-PARTIAL" }, { kind: "wait", ms: 20_000 }, { kind: "text", text: "NEVER" }] })
+  const context = await setupConformance({ name: "stop", backend: async () => state, makeTransport: transportFor(state) })
+  try {
+    const turn = context.turn("CURSOR_SCRIPT:stoppable")
+    const events: RoutedEvent[] = []
+    const draining = (async () => { for await (const event of context.transport.send(context.session, turn, context.turnBroker())) events.push(event) })()
+    await pollUntil(() => events.some((item) => item.event.type === "text-delta") || undefined, Date.now() + 15_000)
+    const outcome = await context.transport.cancel(context.session, { turnId: turn.turnId, assistantMessageId: turn.assistantMessageId },
+      { at: Date.now() + 15_000, signal: new AbortController().signal })
+    await draining
+    expect(outcome).toEqual({ execution: "terminal", cleanup: "unknown" })
+    expect(events.filter((item) => ["finish", "cancelled", "error"].includes(item.event.type)).map((item) => item.event.type)).toEqual(["cancelled"])
+  } finally { await context.close() }
+}, 60_000)
+
 test("offers Cursor's permission modes and refuses an unknown one", async () => {
   const state = await backend()
   const context = await setupConformance({ name: "modes", backend: async () => state, makeTransport: transportFor(state) })
@@ -380,7 +397,9 @@ test("a session created in review mode is refused by the SDK's sandbox gate on i
     const review = await context.transport.start({ ...context.start, sessionId: "s2", config: { ...context.start.config, permissionMode: "review" } },
       { rebind: async (upstreamSessionId: string) => ({ ...context.session.binding, sessionId: "s2", upstreamSessionId }) } as unknown as SessionBroker)
     expect((await context.transport.config!.permissionModes({ session: review })).currentModeId).toBe("review")
-    expect(await refusal(collect(context, context.turn("CURSOR_SCRIPT:conformance"), review))).toMatch(/sandboxing is not supported in this environment/)
+    const refused = await collect(context, context.turn("CURSOR_SCRIPT:conformance"), review).then(() => undefined, (error: unknown) => error)
+    expect(String(refused)).toMatch(/sandboxing is not supported in this environment/)
+    expect(refused).toMatchObject({ transport: "cursor", code: "sdk", retryable: false, detail: { sdkError: "ConfigurationError" } })
     expect(state.server.requests.filter((request) => request.path === "/agent.v1.AgentService/RunSSE")).toHaveLength(0)
     expect((await collect(context, context.turn("CURSOR_SCRIPT:conformance"))).some((item) => item.event.type === "finish")).toBe(true)
   } finally { await context.close() }
