@@ -5,6 +5,7 @@ import { ApiError, ClaxedoApi, type MessageRow } from "../harness/api"
 import { unexpectedEgress } from "../harness/egress-guard"
 import { startStack, type Stack } from "../harness/stack"
 import { frameSessionId, frameType, type EventStream } from "../harness/stream"
+import { waitForTitle } from "../harness/turn-observations"
 
 function childTranscriptNames(messages: MessageRow[], marker: string): boolean {
   return messages.some((message) => message.parts.some((part) => part.type === "text" && part.text?.includes(marker)))
@@ -53,6 +54,7 @@ export async function run() {
       await api.replyPermission(directory, child.id, row.id, "once")
       await stream.waitFor((frame) => stream.frames.indexOf(frame) >= since && frameType(frame) === "session.idle" && frameSessionId(frame) === parent.id,
         { label: `${harness.id} parent idle`, timeoutMs: 90_000 })
+      if (harness.id === "codex") await waitForTitle(stream, parent.id)
       await stream.waitFor((frame) => stream.frames.indexOf(frame) >= since && frameType(frame) === "session.idle" && frameSessionId(frame) === child.id,
         { label: `${harness.id} child idle`, timeoutMs: 90_000 })
       assert.equal(await fs.readFile(output, "utf8"), "approved")
