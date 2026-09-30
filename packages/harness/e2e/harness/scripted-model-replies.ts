@@ -221,8 +221,10 @@ type ResponsesReasoningItem = Extract<ResponseOutputItem, { type: "reasoning" }>
 
 function responsesReasoningEvents(reasoning: ResponsesReasoningItem, text: string): ResponseStreamEvent[] {
   const summary = { type: "summary_text" as const, text: "" }
+  const added: ResponseStreamEvent = { type: "response.output_item.added", sequence_number: 0, output_index: 0, item: { ...reasoning, summary: [], status: "in_progress" } }
+  if (!reasoning.summary.length) return [added, { type: "response.output_item.done", sequence_number: 0, output_index: 0, item: reasoning }]
   return [
-    { type: "response.output_item.added", sequence_number: 0, output_index: 0, item: { ...reasoning, summary: [], status: "in_progress" } },
+    added,
     { type: "response.reasoning_summary_part.added", sequence_number: 0, item_id: reasoning.id, output_index: 0, summary_index: 0, part: summary },
     { type: "response.reasoning_summary_text.delta", sequence_number: 0, item_id: reasoning.id, output_index: 0, summary_index: 0, delta: text },
     { type: "response.reasoning_summary_text.done", sequence_number: 0, item_id: reasoning.id, output_index: 0, summary_index: 0, text },
@@ -290,8 +292,9 @@ export async function respondResponses(
         content: [{ type: "output_text", text: reply.text, annotations: [], logprobs: [] }],
       }
   const thought = reply.kind === "text" ? reply.reasoning : undefined
+  const summarized = body.reasoning?.summary !== undefined && body.reasoning.summary !== null && body.reasoning.summary !== "none"
   const reasoning: ResponsesReasoningItem | undefined = thought
-    ? { type: "reasoning", id: `rs_${sequence}`, summary: [{ type: "summary_text", text: thought }], status: "completed" }
+    ? { type: "reasoning", id: `rs_${sequence}`, summary: summarized ? [{ type: "summary_text", text: thought }] : [], status: "completed" }
     : undefined
   const itemIndex = reasoning ? 1 : 0
   const streamed = item.type === "function_call" || item.type === "custom_tool_call" || item.type === "tool_search_call" ? responsesToolEvents(item) : responsesTextEvents(sequence, reply.kind === "text" ? reply.text : "", itemIndex, pacing)

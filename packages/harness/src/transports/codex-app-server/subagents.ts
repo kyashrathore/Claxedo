@@ -8,6 +8,7 @@ import { CodexEvents } from "./events"
 import { CodexTransportError } from "./errors"
 import { codexPermissionSettings, codexTurnSandboxPolicy, type CodexPermissionSettings } from "./modes"
 import type { CodexRpc, RpcMessage } from "./rpc"
+import type { CodexTurnSettings } from "./models"
 
 export const codexDynamicTools: v2.DynamicToolSpec[] = [{
   type: "function",
@@ -18,8 +19,6 @@ export const codexDynamicTools: v2.DynamicToolSpec[] = [{
     message: { type: "string", description: "Task instructions for the child agent." },
   }, required: ["task_name", "message"], additionalProperties: false },
 }]
-
-export type CodexTurnSettings = Pick<v2.TurnStartParams, "model" | "effort" | "serviceTier">
 
 export type SubagentHost = {
   rpc: CodexRpc
