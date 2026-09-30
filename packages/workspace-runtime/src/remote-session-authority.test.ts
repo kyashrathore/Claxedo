@@ -41,12 +41,12 @@ describe("remote workspace session authority", () => {
     expect((await policy.authorizeHost!({
       ...input,
       operation: "agent_setup_read",
-      minimumRole: "viewer",
+      hostAccess: "read",
     })).allowed).toBe(true)
     expect((await policy.authorizeHost!({
       ...input,
       operation: "agent_setup_write",
-      minimumRole: "admin",
+      hostAccess: "admin",
     })).allowed).toBe(true)
     expect(bodies).toEqual([{ action: "host_read" }, { action: "host_admin" }])
   })
@@ -57,7 +57,7 @@ describe("remote workspace session authority", () => {
       url: "https://control.test/api/runtime-authority/session-authorize",
       fetch: async () => Response.json({ error: { code: "host_authority_denied", message: "no" } }, { status: answers.shift() }),
     })
-    const host = () => policy.authorizeHost!({ ...input, operation: "session_event_stream", minimumRole: "viewer" })
+    const host = () => policy.authorizeHost!({ ...input, operation: "session_event_stream", hostAccess: "read" })
     expect(await host()).toMatchObject({ allowed: false, status: 403, code: "host_authority_denied" })
     expect(await host()).toMatchObject({ allowed: false, status: 503 })
     expect(await host()).toMatchObject({ allowed: false, status: 503 })

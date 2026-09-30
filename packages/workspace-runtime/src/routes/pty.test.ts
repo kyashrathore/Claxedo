@@ -243,27 +243,6 @@ describe("PtyRoutes", () => {
     })
   })
 
-  test("denies every terminal route to authenticated viewers", async () => {
-    const app = appForRole("viewer")
-
-    const list = await app.request("http://localhost/")
-    const connect = await app.request("http://localhost/pty_1/connect", {
-      headers: {
-        connection: "Upgrade",
-        upgrade: "websocket",
-      },
-    })
-
-    expect(list.status).toBe(403)
-    expect(connect.status).toBe(403)
-    await expect(connect.json()).resolves.toEqual({
-      error: {
-        code: "relay_role_denied",
-        message: "Workspace role does not allow terminal access",
-      },
-    })
-  })
-
   test("allows terminal routes for authenticated editors", async () => {
     const res = await appForRole("editor").request("http://localhost/")
 

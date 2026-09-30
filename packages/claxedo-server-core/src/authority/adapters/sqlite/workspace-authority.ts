@@ -886,7 +886,9 @@ export function createSqliteWorkspaceAuthority(
   const recordUserRuntimeToken = (who: AuthorityUser, args: Parameters<WorkspaceAuthority["recordRuntimeAccessToken"]>[1]) => {
       const db = database()
       const workspace = workspaceByPublicId(db, args.workspaceId)
-      if (!workspace) denied()
+      // This store mints workspace tokens only, which are the owner's: a share
+      // holder's session-scoped token is the hosted authority's.
+      if (!workspace || args.sessionId !== undefined) denied()
       const currentRole = workspaceRoleForUser(db, workspace, who)
       if (!currentRole || !roleAtLeast(currentRole, args.role)) denied()
       const existing = db.prepare(`SELECT jti FROM runtime_access_tokens WHERE jti = ?`).get(args.jti)
@@ -2763,9 +2765,6 @@ export function createSqliteWorkspaceAuthority(
           || token.actor_kind !== "agent"
           || !token.actor_id.trim()
         ))
-        || (args.minimumRole && (token.principal_kind === "user"
-          ? !currentRole || !roleAtLeast(currentRole, args.minimumRole)
-          : !roleAtLeast(token.role, args.minimumRole)))
       if (authorizationChanged) {
         return {
           active: false,

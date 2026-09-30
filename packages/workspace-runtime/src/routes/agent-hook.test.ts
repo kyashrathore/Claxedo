@@ -197,6 +197,7 @@ function privateSessionPolicy(owners: Record<string, string>): SessionAccessPoli
 function relayAuth(
   actorId: string,
   role: NonNullable<RelayHostAuthContext["relayHostAuth"]>["role"] = "editor",
+  sessionScope?: string,
 ): NonNullable<RelayHostAuthContext["relayHostAuth"]> {
   const now = Math.floor(Date.now() / 1000)
   return {
@@ -214,6 +215,7 @@ function relayAuth(
     iat: now,
     jti: `jti_${actorId}`,
     parent_jti: "rat_jti_1",
+    ...(sessionScope ? { session_id: sessionScope } : {}),
   }
 }
 
@@ -247,22 +249,21 @@ const managedPolicy = managedWorkspaceSessionAccessPolicy({
     releaseTurn: () => ({ released: true }),
   },
 })
-managedPolicy.authorizeHost = async (input) => {
-  const rank = { viewer: 0, editor: 1, admin: 2, owner: 3 } as const
-  return input.authority && rank[input.authority.role] >= rank[input.minimumRole]
+managedPolicy.authorizeHost = async (input) =>
+  input.authority && input.authority.sessionId === undefined
     ? { allowed: true }
     : { allowed: false, status: 403, code: "host_authority_denied", message: "Current host authority is required" }
-}
 
 function managedApp(
   actorId: string,
   policyOrRole: SessionAccessPolicy | NonNullable<RelayHostAuthContext["relayHostAuth"]>["role"] = managedPolicy,
+  sessionScope?: string,
 ) {
   const policy = typeof policyOrRole === "string" ? managedPolicy : policyOrRole
   const role = typeof policyOrRole === "string" ? policyOrRole : "editor"
   const app = new Hono<{ Variables: RelayHostAuthContext }>()
   app.use("*", async (c, next) => {
-    c.set("relayHostAuth", relayAuth(actorId, role))
+    c.set("relayHostAuth", relayAuth(actorId, role, sessionScope))
     return await next()
   })
   app.route("/", AgentHookRoutes({ sessionAccessPolicy: policy }))
@@ -774,7 +775,7 @@ describe("AgentHookRoutes", () => {
     }
   })
 
-  test("managed terminal metadata is private to its recorded owner while administrators retain oversight", async () => {
+  test("managed terminal metadata is private to its recorded owner while the workspace owner's token keeps oversight", async () => {
     const get = spyOn(Pty, "get").mockReturnValue({
       id: "pty_metadata",
       title: "metadata",
@@ -800,9 +801,9 @@ describe("AgentHookRoutes", () => {
       })
       expect(write.status).toBe(200)
 
-      const attacker = await managedApp("actor_attacker").request("http://localhost/terminal-session?terminalId=pty_metadata")
+      const attacker = await managedApp("actor_attacker", "viewer", "ses_shared").request("http://localhost/terminal-session?terminalId=pty_metadata")
       expect(attacker.status).toBe(403)
-      await expect(attacker.json()).resolves.toMatchObject({ error: { code: "agent_terminal_private" } })
+      await expect(attacker.json()).resolves.toMatchObject({ error: { code: "session_scope_denied" } })
 
       const ownerRead = await managedApp("actor_owner").request("http://localhost/terminal-session?terminalId=pty_metadata")
       expect(ownerRead.status).toBe(200)
@@ -815,8 +816,8 @@ describe("AgentHookRoutes", () => {
       })
       expect(ownerBody.session?.sessionId).toBeUndefined()
 
-      const adminRead = await managedApp("actor_admin", "admin").request("http://localhost/terminal-session?terminalId=pty_metadata")
-      expect(adminRead.status).toBe(200)
+      const workspaceOwnerRead = await managedApp("actor_workspace_owner", "owner").request("http://localhost/terminal-session?terminalId=pty_metadata")
+      expect(workspaceOwnerRead.status).toBe(200)
     } finally {
       get.mockRestore()
       owner.mockRestore()
@@ -1046,11 +1047,13 @@ describe("AgentHookRoutes", () => {
     }
   })
 
-  test("allows managed setup status reads but reserves setup writes for administrators", async () => {
-    const status = await managedApp("actor_viewer", "viewer").request("http://localhost/setup/status")
+  test("setup status and setup writes are the workspace owner's token's, never a session-scoped one's", async () => {
+    const status = await managedApp("actor_owner", "owner").request("http://localhost/setup/status")
     expect(status.status).toBe(200)
+    const scopedStatus = await managedApp("actor_viewer", "viewer", "ses_shared").request("http://localhost/setup/status")
+    expect(scopedStatus.status).toBe(403)
 
-    const setup = await managedApp("actor_editor", "editor").request("http://localhost/setup", {
+    const setup = await managedApp("actor_viewer", "viewer", "ses_shared").request("http://localhost/setup", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: "{}",

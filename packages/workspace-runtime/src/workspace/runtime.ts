@@ -29,7 +29,6 @@ import { createWorkspaceEventFramesTap, type WorkspaceEventParents } from "../ro
 import { isSessionRecoveryPath } from "../routes/session-core"
 import { sessionOwner } from "../routes/session-route-options"
 import { errorBody } from "../routes/error-body"
-import { providerCatalogRefusal } from "../routes/workspace-role"
 import { managedWorkspaceSessionAccessPolicy, type SessionAccessPolicy } from "../session-access-policy"
 import { runtimeSessionTime } from "../session/session-time"
 import type { RuntimeStore } from "../store"
@@ -531,8 +530,6 @@ export function createWorkspaceHost(options: WorkspaceHostOptions): WorkspaceHos
         events.close()
       }
       app.get("/api/wr/harness-providers", async (c) => {
-        const refused = providerCatalogRefusal(c)
-        if (refused) return refused
         const harness = requestedSessionHarness(c.req)
         if (!harness) return c.json(errorBody("harness_required", "Name the harness whose provider catalog to read"), 400)
         const directory = assertTarget(c.req.query("directory") || workspaceDir())
@@ -559,10 +556,6 @@ export function createWorkspaceHost(options: WorkspaceHostOptions): WorkspaceHos
         try {
           const runtime = await runtimeForSession()
           const target = { harness: targetRunner, directory, owner: sessionOwner(c) }
-          if (await runtime.reads.servesProviderCatalog(target)) {
-            const refused = providerCatalogRefusal(c)
-            if (refused) return refused
-          }
           const preview = await runtime.reads.configOptions(target, c.req.query("model") || undefined)
           if (!preview) {
             return c.json({ ok: false, error: { code: "harness_config_options_unavailable", harness: targetRunner.id,

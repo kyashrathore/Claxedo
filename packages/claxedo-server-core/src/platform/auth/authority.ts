@@ -621,6 +621,7 @@ export type WorkspaceAuthority = OrgAccessAuthority & {
   ) => Promise<{ org_id: string; user_id: string } | undefined>
 
   // runtime tokens
+  /** Without `sessionId` the token reaches the workspace and is its owner's; with one it is a viewer's for that session alone. */
   recordRuntimeAccessToken: (
     auth: SignedControlPlaneAuth,
     args: {
@@ -630,6 +631,7 @@ export type WorkspaceAuthority = OrgAccessAuthority & {
       actorId: string
       actorKind: "human" | "agent"
       role: "viewer" | "editor" | "admin" | "owner"
+      sessionId?: string
       expiresAt: number
     },
   ) => Promise<unknown>
@@ -643,12 +645,7 @@ export type WorkspaceAuthority = OrgAccessAuthority & {
     role: "viewer" | "editor" | "admin" | "owner"
     expiresAt: number
   }) => Promise<unknown>
-  runtimeAccessTokenActive: (args: {
-    jti: string
-    workspaceId: string
-    hostId: string
-    minimumRole?: "viewer" | "editor" | "admin" | "owner"
-  }) => Promise<unknown>
+  runtimeAccessTokenActive: (args: { jti: string; workspaceId: string; hostId: string }) => Promise<unknown>
   revokeRuntimeAccessToken: (
     auth: SignedControlPlaneAuth,
     args: { jti: string; workspaceId: string },

@@ -9,7 +9,7 @@ import type {
 } from "@claxedo/server-core/platform/auth/authority"
 import { asOrgId } from "@claxedo/server-core/platform/auth/branded-id"
 import { CURRENT_CHANNEL_IDENTITY_VERSION } from "@claxedo/workspace-relay-protocol"
-import { may, maySql, readProjectRole, roleRank, type AuthorizationPrincipal } from "./authorization"
+import { may, maySql, readProjectRole, type AuthorizationPrincipal } from "./authorization"
 import { requireHuman } from "./access-context"
 
 const CONTROL_PLANE_SERVICE_ACTOR_ID = "control-plane"
@@ -58,6 +58,7 @@ type RuntimeTokenRow = {
   actor_kind: "human" | "agent"
   role: ProjectRole
   minted_for_user_id: string | null
+  session_id: string | null
   expires_at: number
   revoked_at: number | null
 }
@@ -261,6 +262,7 @@ export class D1ChannelRuntimeAuthority implements D1ChannelRuntimeAuthorityPort 
       actorId: string
       actorKind: "human" | "agent"
       role: ProjectRole
+      sessionId?: string
       expiresAt: number
     },
   ) {
@@ -317,12 +319,7 @@ export class D1ChannelRuntimeAuthority implements D1ChannelRuntimeAuthorityPort 
     }
   }
 
-  async runtimeAccessTokenActive(args: {
-    jti: string
-    workspaceId: string
-    hostId: string
-    minimumRole?: "viewer" | "editor" | "admin" | "owner"
-  }) {
+  async runtimeAccessTokenActive(args: { jti: string; workspaceId: string; hostId: string }) {
     const jti = requireText(args.jti, "jti")
     const workspaceId = requireText(args.workspaceId, "workspaceId")
     const hostId = requireText(args.hostId, "hostId")
@@ -344,15 +341,13 @@ export class D1ChannelRuntimeAuthority implements D1ChannelRuntimeAuthorityPort 
         || row.role !== "owner"
         || row.minted_for_user_id !== null
         || !await this.workspaceExists(row.workspace_id)
-        || (args.minimumRole && roleRank(row.role) < roleRank(args.minimumRole))
       ) return inactive("runtime_access_token_revoked", "Runtime Access Token service authority has been revoked")
       return { active: true }
     }
     if (!row.minted_for_user_id || row.actor_kind !== "human") {
       return inactive("runtime_access_token_revoked", "Runtime Access Token actor is invalid")
     }
-    const holder = { userId: row.minted_for_user_id, actorId: row.actor_id }
-    if (!(await may(this.database, holder, "operate", { kind: "workspace", workspaceId: row.workspace_id }))) {
+    if (!(await this.holderMayUse({ userId: row.minted_for_user_id, actorId: row.actor_id }, row.workspace_id, row.session_id))) {
       return inactive("runtime_access_token_revoked", "Runtime Access Token authority has been revoked")
     }
     return { active: true }
@@ -386,22 +381,29 @@ export class D1ChannelRuntimeAuthority implements D1ChannelRuntimeAuthorityPort 
     return { revoked: changes(result) }
   }
 
+  /**
+   * A token with no session reaches the workspace and is its owner's; a token
+   * scoped to one session is a viewer's, for someone who may read that
+   * session, and reaches nothing else.
+   */
   private async recordUserRuntimeToken(
     who: Principal,
-    args: { jti: string; workspaceId: string; hostId: string; role: ProjectRole; expiresAt: number },
+    args: { jti: string; workspaceId: string; hostId: string; role: ProjectRole; sessionId?: string; expiresAt: number },
   ) {
     const values = this.tokenValues(args)
-    if (!(await may(this.database, who, "operate", { kind: "workspace", workspaceId: values.workspaceId }))) {
-      throw denied("Runtime access to this workspace is its owner's")
+    const sessionId = args.sessionId === undefined ? null : requireText(args.sessionId, "sessionId")
+    if (sessionId !== null && args.role !== "viewer") throw denied("A session's runtime token is a viewer's")
+    if (!(await this.holderMayUse(who, values.workspaceId, sessionId))) {
+      throw denied(sessionId === null ? "Runtime access to this workspace is its owner's" : "Runtime access to this session is denied")
     }
     try {
       const result = await this.database.prepare(`
         insert into runtime_access_tokens (
           jti, deployment_id, workspace_id, org_id, project_id, host_id,
-          principal_kind, actor_id, actor_kind, role, minted_for_user_id,
+          principal_kind, actor_id, actor_kind, role, minted_for_user_id, session_id,
           expires_at, revoked_at, created_at
         )
-        select ?, ?, workspace_id, org_id, project_id, ?, 'user', ?, 'human', ?, ?, ?, null, ?
+        select ?, ?, workspace_id, org_id, project_id, ?, 'user', ?, 'human', ?, ?, ?, ?, null, ?
         from workspaces where workspace_id = ? and deleted_at is null
       `).bind(
         values.jti,
@@ -410,6 +412,7 @@ export class D1ChannelRuntimeAuthority implements D1ChannelRuntimeAuthorityPort 
         who.actorId,
         args.role,
         who.userId,
+        sessionId,
         values.expiresAt,
         this.now(),
         values.workspaceId,
@@ -487,6 +490,12 @@ export class D1ChannelRuntimeAuthority implements D1ChannelRuntimeAuthorityPort 
       .prepare(`select w.org_id from workspaces w where w.workspace_id = ? and ${operates.sql}`)
       .bind(workspaceId, ...operates.bind)
       .first<{ org_id: string }>()
+  }
+
+  private async holderMayUse(holder: AuthorizationPrincipal, workspaceId: string, sessionId: string | null) {
+    return sessionId === null
+      ? await may(this.database, holder, "operate", { kind: "workspace", workspaceId })
+      : await may(this.database, holder, "read", { kind: "session", sessionId, workspaceId })
   }
 
   private async workspaceExists(workspaceId: string) {

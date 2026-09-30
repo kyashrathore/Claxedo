@@ -66,6 +66,8 @@ export type RuntimeAccessTokenClaims = {
   workspace_id: string
   host_id: string
   role: RelayRole
+  /** The one session a share holder's token reaches; absent on the workspace owner's token, which reaches the workspace. */
+  session_id?: string
   channel_identity?: ChannelIdentityClaim
   /** Present for cloud workspaces; assigned atomically with the sandbox address. */
   routing_id?: string
@@ -88,6 +90,7 @@ export type RelayHostTokenClaims = {
   workspace_id: string
   host_id: string
   role: RelayRole
+  session_id?: string
   channel_identity?: ChannelIdentityClaim
   exp: number
   iat: number
@@ -143,6 +146,7 @@ type RuntimeInput = {
   workspaceId: string
   hostId: string
   role: RelayRole
+  sessionId?: string
   channelIdentity?: ChannelIdentityInput
   routingId?: string
   ttlSeconds?: number
@@ -408,6 +412,7 @@ export async function mintRuntimeAccessToken(input: RuntimeInput, key: RelaySign
     workspace_id: input.workspaceId,
     host_id: input.hostId,
     role: input.role,
+    ...(input.sessionId !== undefined ? { session_id: input.sessionId } : {}),
     ...(input.routingId !== undefined ? { routing_id: input.routingId } : {}),
   })
     .setProtectedHeader({ alg: requireAlgorithm(alg) })
@@ -568,6 +573,7 @@ export async function mintRelayHostToken(input: RelayHostInput, key: RelaySignin
     workspace_id: input.workspaceId,
     host_id: input.hostId,
     role: input.role,
+    ...(input.sessionId !== undefined ? { session_id: input.sessionId } : {}),
     backing: input.backing,
     parent_jti: input.parentJti,
   })
@@ -605,9 +611,11 @@ function runtimeClaims(payload: JWTPayload): RuntimeAccessTokenClaims | undefine
   const workspace_id = stringClaim(payload, "workspace_id")
   const host_id = stringClaim(payload, "host_id")
   const role = roleClaim(payload)
+  const session_id = stringClaim(payload, "session_id")
   if (
     !exp || !iat || !jti || !org_id || !workspace_id || !host_id || !role || !actor_id
     || (payload.user_id !== undefined && !user_id)
+    || (payload.session_id !== undefined && !session_id)
     || (principal_kind !== "user" && principal_kind !== "service")
     || (actor_kind !== "human" && actor_kind !== "agent")
     || (principal_kind === "user" && actor_kind !== "human")
@@ -631,6 +639,7 @@ function runtimeClaims(payload: JWTPayload): RuntimeAccessTokenClaims | undefine
     workspace_id,
     host_id,
     role,
+    ...(session_id ? { session_id } : {}),
     exp,
     iat,
     jti,

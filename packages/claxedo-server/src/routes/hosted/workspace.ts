@@ -26,7 +26,7 @@ import { requireAuthority } from "@claxedo/server-core/platform/auth/authority"
 import { createFixedWindowConnectionRateLimiter, type ConnectionRateLimiter } from "../../platform/auth/rate-limit"
 import { newWorkspaceId } from "../../platform/auth/workspace-id"
 import { keepAlivePastResponse } from "@claxedo/server-core/platform/http/background-work"
-import { hostedConnectionInfo, hostedConnectionStatus } from "../../connections/hosted-connection-info"
+import { hostedConnectionInfo, hostedConnectionStatus, hostedSessionConnection } from "../../connections/hosted-connection-info"
 import { WORKSPACE_DIR } from "@claxedo/sandbox-manager/defaults"
 import { hostedSandboxInput } from "../../workspace/hosted-sandbox-input"
 import { apiError, captureWorkspaceTelemetry, missingBearerBody, parsedBody, signedOrError, type WorkspaceRouteOptions } from "../../workspace/route-support"
@@ -182,10 +182,14 @@ export function HostedWorkspaceRoutes(services?: ControlPlaneServices, options: 
       // GET is the read: it reports the lease's current state and may mint only
       // off an already-running sandbox. POST is the explicit connect: the only
       // path that runs `sandboxManager.ensure` and so the only one that can
-      // start billable compute (P-118).
-      const result = input.readOnly
-        ? await hostedConnectionStatus(services, options, auth, workspaceId)
-        : await hostedConnectionInfo(services, options, auth, workspaceId, input.previousJti)
+      // start billable compute (P-118). A GET naming a session is a share
+      // holder's, whose token reaches that session alone.
+      const sessionId = input.readOnly ? c.req.query("sessionId")?.trim() : undefined
+      const result = sessionId
+        ? await hostedSessionConnection(services, options, auth, { workspaceId, sessionId })
+        : input.readOnly
+          ? await hostedConnectionStatus(services, options, auth, workspaceId)
+          : await hostedConnectionInfo(services, options, auth, workspaceId, input.previousJti)
       if ("error" in result)
         return c.json({ error: result.error }, result.status)
       // Any status-bearing body (`provisioning`, `stopped`) minted nothing, so

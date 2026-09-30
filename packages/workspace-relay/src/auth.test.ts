@@ -56,6 +56,26 @@ describe("workspace relay auth", () => {
     expect(unleased.routing_id).toBeUndefined()
   })
 
+  test("carries the one session a token is scoped to through both tokens, none when the mint named none, and refuses an empty one", async () => {
+    const key = await keys()
+    const target = { workspaceId: "ws_1", hostId: "host_1" }
+    const scoped = await verifyRuntimeAccessToken(await mintRuntimeAccessToken({ ...base, role: "viewer", sessionId: "ses_1" }, key.privateKey, "EdDSA"), key.publicKey, target)
+    const workspaceWide = await verifyRuntimeAccessToken(await mintRuntimeAccessToken(base, key.privateKey, "EdDSA"), key.publicKey, target)
+    const host = await verifyRelayHostToken(await mintRelayHostToken({
+      ...base, sessionId: "ses_1", backing: "local-worktree", parentJti: "jti_1",
+    }, key.privateKey, "EdDSA"), key.publicKey, target)
+    const empty = await new SignJWT({
+      principal_kind: "user", actor_id: "actor_1", actor_kind: "human", org_id: "org_1",
+      workspace_id: "ws_1", host_id: "host_1", role: "viewer", session_id: " ",
+    }).setProtectedHeader({ alg: "EdDSA" }).setIssuer(runtimeAccessTokenIssuer).setAudience(runtimeAccessTokenAudience)
+      .setIssuedAt().setExpirationTime("10m").setJti("jti_empty").sign(key.privateKey)
+
+    expect(scoped.session_id).toBe("ses_1")
+    expect(workspaceWide.session_id).toBeUndefined()
+    expect(host.session_id).toBe("ses_1")
+    await expect(verifyRuntimeAccessToken(empty, key.publicKey, target)).rejects.toMatchObject({ code: "relay_token_claims_invalid" })
+  })
+
   test("verifies Runtime Access Tokens for the expected workspace and host", async () => {
     const key = await keys()
     const token = await mintRuntimeAccessToken(base, key.privateKey, "EdDSA")

@@ -80,6 +80,48 @@ describe("workspace host service relay auth", () => {
     })
   })
 
+  test("a relay host token scoped to one session reaches that session and nothing else of the workspace", async () => {
+    const harness = await app()
+    harness.app.all("*", (c) => c.json({ sessionScope: c.get("relayHostAuth")?.session_id }))
+    const token = await mintRelayHostToken({
+      ...tokenInput,
+      role: "viewer",
+      sessionId: "ses_1",
+      backing: "local-worktree",
+    }, harness.key.privateKey, "EdDSA")
+    const call = (path: string, method = "GET") => harness.app.request(`http://localhost${path}`, {
+      method,
+      headers: { authorization: `Bearer ${token}`, "x-workspace-id": "ws_1", "x-forwarded-by": "workspace-relay" },
+    })
+
+    for (const [path, method] of [
+      ["/session/ses_1/message", "GET"],
+      ["/session/ses_1/prompt_async", "POST"],
+      ["/api/wr/events?sessionID=ses_1", "GET"],
+      ["/question/question_1/reply", "POST"],
+    ] as const) {
+      const allowed = await call(path, method)
+      expect(allowed.status, `${method} ${path}`).toBe(200)
+      await expect(allowed.json()).resolves.toEqual({ sessionScope: "ses_1" })
+    }
+    for (const path of ["/api/wr/health", "/api/wr/pty", "/api/wr/git/status", "/session/ses_2", "/api/wr/events", "/file?path=a"]) {
+      const refused = await call(path)
+      expect(refused.status, path).toBe(403)
+      await expect(refused.json()).resolves.toEqual({
+        error: { code: "relay_scope_denied", message: "This token reaches one session and nothing else" },
+      })
+    }
+    expect(harness.auditEvents).toContainEqual({
+      action: "relay_host_token.rejected",
+      result: "deny",
+      reason: "relay_scope_denied",
+      workspaceId: "ws_1",
+      hostId: "host_1",
+      path: "/api/wr/pty",
+      method: "GET",
+    })
+  })
+
   test("rejects direct client Runtime Access Tokens", async () => {
     const harness = await app()
     const token = await mintRuntimeAccessToken(tokenInput, harness.key.privateKey, "EdDSA")

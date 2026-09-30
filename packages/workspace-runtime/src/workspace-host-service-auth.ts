@@ -1,6 +1,6 @@
 import { createMiddleware } from "hono/factory"
 import { createRemoteJWKSet, importSPKI } from "jose"
-import type { RelayHostVerifierClaims, TokenVerifier } from "@claxedo/workspace-relay-protocol"
+import { sessionScopeReaches, type RelayHostVerifierClaims, type TokenVerifier } from "@claxedo/workspace-relay-protocol"
 import {
   WorkspaceRelayAuthError,
   isRelayBacking,
@@ -59,6 +59,8 @@ export type EmbeddedRelayHostIdentity = {
   org_id: string
   workspace_id: string
   role: "viewer" | "editor" | "admin" | "owner"
+  /** The one session the stamped caller's token reaches; absent on the workspace owner's. */
+  session_id?: string
   host_id?: string
   backing?: "cloud-vm" | "local-worktree"
 }
@@ -119,6 +121,7 @@ function validateRelayHostVerifierClaims(
   const iat = numberClaim(payload, "iat")
   const jti = stringClaim(payload, "jti")
   const parent_jti = stringClaim(payload, "parent_jti")
+  const session_id = stringClaim(payload, "session_id")
 
   if (
     !actor_id
@@ -131,6 +134,7 @@ function validateRelayHostVerifierClaims(
     || !workspace_id
     || !host_id
     || !role
+    || (payload.session_id !== undefined && !session_id)
     || payload.access !== undefined
     || !isRelayBacking(backing)
     || !exp
@@ -164,6 +168,7 @@ function validateRelayHostVerifierClaims(
     workspace_id,
     host_id,
     role,
+    ...(session_id ? { session_id } : {}),
     backing,
     exp,
     iat,
@@ -342,6 +347,16 @@ export function createRelayHostAuthMiddleware(options: RelayHostAuthOptions) {
             "Relay-forwarded marker is required for relay-issued tokens",
           ), 401)
         }
+      }
+      if (!sessionScopeReaches(claims.session_id, c.req.path, new URL(c.req.url).search)) {
+        await audit(options, {
+          action: "relay_host_token.rejected",
+          result: "deny",
+          reason: "relay_scope_denied",
+          path: c.req.path,
+          method: c.req.method,
+        })
+        return c.json(errorBody("relay_scope_denied", "This token reaches one session and nothing else"), 403)
       }
       c.set("relayHostAuth", claims)
       await audit(options, {

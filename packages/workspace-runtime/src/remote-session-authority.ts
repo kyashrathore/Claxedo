@@ -169,8 +169,7 @@ export function remoteWorkspaceSessionAccessPolicy(
   policy.authorizeHost = async (input) => {
     const url = authorityUrl()
     if (!url || (!input.credential && !input.lease)) return denied(503, "session_authority_unavailable")
-    const action: HostAuthorityAction =
-      input.minimumRole === "admin" || input.minimumRole === "owner" ? "host_admin" : "host_read"
+    const action: HostAuthorityAction = input.hostAccess === "admin" ? "host_admin" : "host_read"
     try {
       const timeoutSignal = AbortSignal.timeout(options.timeoutMs ?? 5_000)
       const response = await (options.fetch ?? globalThis.fetch)(url, {

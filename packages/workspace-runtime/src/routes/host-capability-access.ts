@@ -48,7 +48,7 @@ export async function authorizeHostCapability(
     const decision = await options.sessionAccessPolicy.authorizeHost({
       ...context,
       operation,
-      minimumRole: operation === "agent_setup_read" ? "viewer" : "admin",
+      hostAccess: operation === "agent_setup_read" ? "read" : "admin",
       method: c.req.method,
       path: c.req.path,
     })

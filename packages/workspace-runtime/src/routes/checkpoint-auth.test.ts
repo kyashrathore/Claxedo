@@ -27,7 +27,7 @@ async function fixture() {
       authorizeHost(input) {
         expect(input.authority?.workspaceId).toBe(target.workspaceId)
         expect(input.actor?.actorId).toBe("actor_checkpoint")
-        expect(input.minimumRole).toBe("admin")
+        expect(input.hostAccess).toBe("admin")
         asked.push(input.operation)
         return currentRole === "admin" || currentRole === "owner"
           ? { allowed: true }

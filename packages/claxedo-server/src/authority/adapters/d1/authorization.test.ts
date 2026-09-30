@@ -218,6 +218,38 @@ describe("one authorization owner", () => {
       .rejects.toMatchObject({ status: 403 })
   })
 
+  test("a share holder's runtime token reaches their session alone, and revoking the share revokes it and nothing of the owner's", async () => {
+    const { authority, alice, sender } = await setup()
+    const workspaceId = "ws_alice"
+    const token = (who: SignedControlPlaneAuth, jti: string, extra: { role?: "viewer" | "owner"; sessionId?: string } = {}) =>
+      authority.recordRuntimeAccessToken(who, {
+        jti, workspaceId, hostId: "host_alice", ...runtime(who), role: extra.role ?? "viewer", expiresAt: 1_900_000_000_000,
+        ...(extra.sessionId ? { sessionId: extra.sessionId } : {}),
+      })
+    const active = async (jti: string) => await authority.runtimeAccessTokenActive({ jti, workspaceId, hostId: "host_alice" })
+
+    await expect(token(sender, "jti_before_share", { sessionId: "ses_alice" })).rejects.toMatchObject({ status: 403 })
+    await authority.grantSessionShare!(alice, { sessionId: "ses_alice", workspaceId, grantedToUserId: id(sender), level: "send" })
+    await authority.grantSessionShare!(alice, { sessionId: "ses_alice", workspaceId, grantedToOrgId: "org_acme" })
+    await token(sender, "jti_share", { sessionId: "ses_alice" })
+    expect(await active("jti_share")).toEqual({ active: true })
+    await expect(token(sender, "jti_other_session", { sessionId: "ses_alice_other" })).rejects.toMatchObject({ status: 403 })
+    await expect(token(sender, "jti_workspace")).rejects.toMatchObject({ status: 403 })
+    await expect(token(sender, "jti_share_owner", { sessionId: "ses_alice", role: "owner" })).rejects.toMatchObject({ status: 403 })
+    await token(alice, "jti_owner", { role: "owner" })
+
+    // Revoking a share revokes the session tokens of everyone it named, the
+    // organization's founder included, and never a workspace token.
+    await authority.revokeSessionShare!(alice, { sessionId: "ses_alice", workspaceId, grantedToOrgId: "org_acme" })
+    expect(await active("jti_owner")).toEqual({ active: true })
+    await token(sender, "jti_share_again", { sessionId: "ses_alice" })
+    expect(await authority.revokeSessionShare!(alice, { sessionId: "ses_alice", workspaceId, grantedToUserId: id(sender) }))
+      .toMatchObject({ revoked: true, runtime_tokens_revoked: 1 })
+    expect(await active("jti_share_again")).toMatchObject({ active: false, code: "runtime_access_token_revoked" })
+    await expect(token(sender, "jti_after_revoke", { sessionId: "ses_alice" })).rejects.toMatchObject({ status: 403 })
+    expect(await active("jti_owner")).toEqual({ active: true })
+  })
+
   test("organization and project actions follow the organization and project roles", async () => {
     const { database, alice, projectId, grantees } = await setup()
     const principal = (who: SignedControlPlaneAuth) => ({ userId: id(who), actorId: who.principal!.actorId })

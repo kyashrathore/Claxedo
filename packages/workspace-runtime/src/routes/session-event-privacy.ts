@@ -67,7 +67,7 @@ export async function authorizeSessionEventScope(
     const workspace = await policy.authorizeHost({
       ...sessionAccessContext(c),
       operation: "session_event_stream",
-      minimumRole: "viewer",
+      hostAccess: "read",
       method: c.req.method,
       path: c.req.path,
     })

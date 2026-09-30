@@ -2,7 +2,7 @@ import { Hono } from "hono"
 import { cors } from "hono/cors"
 import { exportJWK, type JWK } from "jose"
 import { isRecord } from "@claxedo/helpers/guards"
-import type { RuntimeAccessVerifierClaims, TokenVerifier } from "@claxedo/workspace-relay-protocol"
+import { sessionScopeReaches, type RuntimeAccessVerifierClaims, type TokenVerifier } from "@claxedo/workspace-relay-protocol"
 import {
   WorkspaceRelayAuthError,
   isHostGeneration,
@@ -805,9 +805,6 @@ function targetUrl(target: WorkspaceRelayTarget, path: string, search: string) {
   return url
 }
 
-// A PTY WebSocket upgrade is a GET but still grants an interactive shell.
-const RELAY_VIEWER_DENIED_PATH = /^\/api\/wr\/pty(?:\/|$)/
-
 function relayRuntimePath(request: Request) {
   try {
     const decoded = decodeURIComponent(new URL(request.url).pathname.replace(/^\/workspaces\/[^/]+\/?/, "/"))
@@ -816,22 +813,13 @@ function relayRuntimePath(request: Request) {
     // the path through `new URL`, which parses any `?`/`#` a decoded %3F/%23
     // introduced as query/fragment and drops it from the pathname. Resolve it the
     // same way here so a viewer cannot smuggle `/api/wr/pty%3Fx` (authz sees
-    // "/api/wr/pty?x", which the deny regex misses, but forwarding hits the real
+    // "/api/wr/pty?x", which a path rule misses, but forwarding hits the real
     // "/api/wr/pty") past the gate. Query strings ride in `request.url` search,
     // not the pathname, so legitimate requests are unaffected.
     return new URL(decoded.replace(/^\/+/, ""), "http://relay.invalid/").pathname
   } catch {
     return undefined
   }
-}
-
-function roleAllowsRelayRequest(role: RelayRole, method: string, path: string) {
-  if (role === "owner" || role === "admin" || role === "editor") return true
-  if (role === "viewer") {
-    if (RELAY_VIEWER_DENIED_PATH.test(path)) return false
-    return method === "GET" || method === "HEAD" || method === "OPTIONS"
-  }
-  return false
 }
 
 function relayHostTokenCacheTtlMs(options: WorkspaceRelayOptions, claims: RuntimeAccessTokenClaims) {
@@ -983,6 +971,7 @@ function relayHostMintInput(
       : {}),
     orgId: claims.org_id,
     role: claims.role,
+    ...(claims.session_id ? { sessionId: claims.session_id } : {}),
     ...target,
     ...(options.relayHostMintKid ? { kid: options.relayHostMintKid } : {}),
   }
@@ -1355,13 +1344,13 @@ export async function authorizeWorkspaceRelayRequest(
       }
     }
     const path = relayRuntimePath(request)
-    if (!path || !roleAllowsRelayRequest(claims.role, request.method, path)) {
+    if (!path || !sessionScopeReaches(claims.session_id, path, new URL(request.url).search)) {
       return {
         ok: false,
-        code: "relay_role_denied",
+        code: "relay_scope_denied",
         response: await deny(options, {
-          code: "relay_role_denied",
-          message: "Workspace role does not allow this relay request",
+          code: "relay_scope_denied",
+          message: "Runtime Access Token scope does not reach this relay request",
           status: 403,
           claims,
           request,

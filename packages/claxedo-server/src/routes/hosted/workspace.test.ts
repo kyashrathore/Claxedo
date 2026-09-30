@@ -775,6 +775,78 @@ describe("hosted connection", () => {
   })
 })
 
+describe("a session share holder's connection", () => {
+  function sessionApp(input: { authority: ReturnType<typeof fakeAuthority>; hostTunnelResolver?: (workspaceId: string) => Promise<unknown> }) {
+    const { services } = fakeServices(input.authority)
+    ;(services as { relay?: unknown }).relay = { hostTunnelResolver: input.hostTunnelResolver }
+    return HostedWorkspaceRoutes(services, {
+      authConfig,
+      verifier,
+      relayUrl: "https://relay.test",
+      runtimeAccessTokenSigner: ratSigner,
+      hostTunnelTokenSigner: httSigner,
+    })
+  }
+
+  test("is scoped to the session it names, off the machine already serving it, without opening the workspace", async () => {
+    const authorizeSessionRead = vi.fn(async () => {})
+    const authority = fakeAuthority({
+      authorizeSessionRead,
+      resolveWorkspaceOwner: vi.fn(async () => ({ userId: "user_owner", actorId: "act_owner", orgId: "org_owner", projectId: "prj_1" })),
+    })
+    const app = sessionApp({ authority, hostTunnelResolver: async () => ({ active: true, hostId: "host_1", backing: "local-worktree" }) })
+
+    const res = await app.fetch(get("/ws_1/connection?sessionId=ses_shared", "user_share"))
+
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({
+      backing: "local-worktree",
+      sessionAuthority: "managed-private",
+      workspaceId: "ws_1",
+      sessionId: "ses_shared",
+      relayUrl: "https://relay.test",
+      runtimeAccessToken: "rat-token",
+      tokenExpiresAt: 1_000_000,
+      role: "viewer",
+      hostId: "host_1",
+    })
+    expect(authorizeSessionRead).toHaveBeenCalledWith(expect.anything(), { workspaceId: "ws_1", sessionId: "ses_shared" })
+    expect(vi.mocked(ratSigner).mock.calls.at(-1)?.[0]).toMatchObject({ orgId: "org_owner", role: "viewer", sessionId: "ses_shared", hostId: "host_1" })
+    expect(authority.recordRuntimeAccessToken).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ role: "viewer", sessionId: "ses_shared" }))
+    expect(authority.openWorkspace).not.toHaveBeenCalled()
+    expect(authority.activeWorkspaceHost).not.toHaveBeenCalled()
+  })
+
+  test("is refused before anything is minted when the caller may not read the session", async () => {
+    const resolveWorkspaceOwner = vi.fn(async () => ({ userId: "user_owner", actorId: "act_owner", orgId: "org_owner", projectId: "prj_1" }))
+    const authority = fakeAuthority({
+      authorizeSessionRead: vi.fn(async () => { throw new ControlPlaneAuthError(403, "workspace_authorization_denied", "Session authorization was denied") }),
+      resolveWorkspaceOwner,
+    })
+    const app = sessionApp({ authority, hostTunnelResolver: async () => ({ active: true, hostId: "host_1", backing: "local-worktree" }) })
+
+    const res = await app.fetch(get("/ws_1/connection?sessionId=ses_private", "user_stranger"))
+
+    expect(res.status).toBe(403)
+    expect(authority.recordRuntimeAccessToken).not.toHaveBeenCalled()
+    expect(resolveWorkspaceOwner).not.toHaveBeenCalled()
+  })
+
+  test("answers offline, starting nothing, when no machine or running sandbox serves the workspace", async () => {
+    const authority = fakeAuthority({
+      authorizeSessionRead: vi.fn(async () => {}),
+      resolveWorkspaceOwner: vi.fn(async () => ({ userId: "user_owner", actorId: "act_owner", orgId: "org_owner", projectId: "prj_1" })),
+    })
+    const app = sessionApp({ authority, hostTunnelResolver: async () => ({ active: false }) })
+
+    const res = await app.fetch(get("/ws_1/connection?sessionId=ses_shared", "user_share"))
+
+    expect(res.status).toBe(409)
+    await expect(res.json()).resolves.toMatchObject({ error: { code: "workspace_host_offline" } })
+    expect(authority.recordRuntimeAccessToken).not.toHaveBeenCalled()
+  })
+})
+
 describe("hosted connection rate limiting (mint-only)", () => {
   function cloudWorkspaceAuthority() {
     return fakeAuthority({
