@@ -11,7 +11,7 @@ import { hostedWorkerCompatibility, wranglerBundle } from "../test-support/hoste
 import { activatePluginBackend, deactivatePluginBackend } from "./activations"
 import { putPluginBackendBundle } from "./bundles"
 
-const FIXTURE_WORKER = fileURLToPath(new URL("./fixtures/worker.ts", import.meta.url))
+const FIXTURE_WORKER = fileURLToPath(new URL("./fixtures/worker.fixture.ts", import.meta.url))
 const COUNTER_PLUGIN = fileURLToPath(new URL("./fixtures/counter", import.meta.url))
 const ORIGIN = "https://api.test"
 const DEPLOYMENT_ID = "deployment-plugin-backends"

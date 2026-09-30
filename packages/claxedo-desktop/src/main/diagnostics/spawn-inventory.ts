@@ -475,6 +475,17 @@ export const SPAWN_INVENTORY: readonly SpawnInventoryRow[] = [
     },
   },
   {
+    id: "hosted-worker-test-bundle",
+    family: "Wrangler dry-run bundle of a hosted Worker entry under test",
+    classification: "non-production",
+    owner: "server",
+    linkage: "none",
+    observation: "none",
+    stop: "unsupported",
+    kill: "unsupported",
+    source: { file: "packages/claxedo-server/src/test-support/hosted-worker-bundle.ts", callee: "spawnSync", calls: 1 },
+  },
+  {
     id: "stdio-mcp",
     family: "Configured stdio MCP",
     classification: "registered-descendant",
