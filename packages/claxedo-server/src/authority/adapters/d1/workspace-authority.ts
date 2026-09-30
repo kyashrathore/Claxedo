@@ -166,9 +166,9 @@ export class D1WorkspaceAuthorityError extends ClaxedoError<D1WorkspaceAuthority
 }
 
 /**
- * Worker-safe identity, organization, team, project, and workspace authority.
- * Session-scoped state stays in `D1SessionAuthority`; both modules evaluate
- * the same canonical D1 rows at decision time.
+ * Worker-safe identity, organization creation, project and workspace authority.
+ * Membership, teams and grants live in the modules sharing `accessContext()`,
+ * session state in `D1SessionAuthority`; all read the same canonical D1 rows.
  */
 export class D1WorkspaceAuthority implements D1WorkspaceAuthorityCore {
   private readonly now: () => number

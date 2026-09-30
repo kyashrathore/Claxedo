@@ -66,7 +66,7 @@ const ORG_TEAM_ERRORS: Record<string, Omit<OrgTeamError, "code">> = {
   resource_conflict: { status: 409, message: "Organization or team authority changed concurrently" },
 }
 
-const LEGACY_NOT_FOUND_MESSAGES: Record<string, string> = {
+const NOT_FOUND_BY_MESSAGE: Record<string, string> = {
   "Organization not found": "organization_not_found",
   "Team not found": "team_not_found",
   "Project not found": "project_not_found",
@@ -76,7 +76,7 @@ function orgTeamAuthorityError(error: unknown): OrgTeamError | undefined {
   for (const [code, mapped] of Object.entries(ORG_TEAM_ERRORS)) {
     if (hasErrorCode(error, code)) return { code, ...mapped }
   }
-  for (const [message, code] of Object.entries(LEGACY_NOT_FOUND_MESSAGES)) {
+  for (const [message, code] of Object.entries(NOT_FOUND_BY_MESSAGE)) {
     if (String(error).includes(message)) return { code, ...ORG_TEAM_ERRORS[code] }
   }
   return undefined
