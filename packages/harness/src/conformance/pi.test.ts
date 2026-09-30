@@ -410,3 +410,21 @@ test("a Pi cancel that arrives before the prompt stops that turn, whether or not
     expect(server.requests.filter((request) => request.prompt.includes("PICANCELEARLY"))).toEqual([])
   } finally { await context.close() }
 }, 60_000)
+
+test("a Pi model error that Pi retries and recovers shows as retrying and leaves the turn completed", async () => {
+  const context = await setupConformance({ name: "pi recovered retry", backend, makeTransport: piTransport })
+  try {
+    const stop = (context.backend as PiBackend).server.scriptError({ marker: "PIRETRYONCE", status: 500, message: "overloaded" })
+    const types: string[] = []
+    let text = ""
+    for await (const { event } of context.transport.send(context.session, context.turn("Reply with exactly this one token: PIRETRYONCE"), context.turnBroker())) {
+      types.push(event.type)
+      if (event.type === "session-retry") stop()
+      if (event.type === "text-delta") text += event.delta
+    }
+    expect(types).toContain("session-retry")
+    expect(types).not.toContain("error")
+    expect(types.at(-1)).toBe("finish")
+    expect(text).toContain("PIRETRYONCE")
+  } finally { await context.close() }
+}, 60_000)
