@@ -44,7 +44,7 @@ export class ClaudeSdkTransport implements HarnessTransport {
     this.models = new ClaudeModelCatalog(services, options)
     this.launcher = new ClaudeQueryLauncher(services, options)
     this.goalRuntime = new ClaudeGoals(this.launcher)
-    this.turns = new ClaudeTurns(() => this.launcher, this.models)
+    this.turns = new ClaudeTurns(() => this.launcher, this.models, services.log)
   }
 
   async capabilities(context: CapabilityContext): Promise<TransportCapabilities> {

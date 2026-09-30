@@ -37,6 +37,7 @@ export async function scriptedClaude(options: { models: unknown[]; steering?: bo
       return
     }
     users.push(frame)
+    if (users.length === 1 || !options.steering) process.wire.send({ ...frame, isReplay: true })
     if (!options.steering) finish(process)
   }
   const services = {

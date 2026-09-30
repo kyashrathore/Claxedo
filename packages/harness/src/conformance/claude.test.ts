@@ -234,7 +234,8 @@ test.each(["allow_once", "allow_always", "deny", "reject_always"])("Claude permi
       prompt: { agent: "claude", assistantMessageId: "a1", parts: [{ type: "text" as const, text: "Run the scripted Bash tool" }] }, todos: [] }
     const turnBroker = createTurnBroker(owner, { authority: { ...authority, directory: state.directory,
       upstreamSessionId: session.binding.upstreamSessionId }, origin, signal: new AbortController().signal })
-    const running = (async () => { for await (const _event of transport.send(session, turn, turnBroker)) {} })()
+    const events: RoutedEvent[] = []
+    const running = (async () => { for await (const event of transport.send(session, turn, turnBroker)) events.push(event) })()
     const deadline = Date.now() + 10_000
     let pending = owner.broker.list({ sessionId: "s1" }).find((row) => row.request.kind === "permission")
     while (!pending && Date.now() < deadline) {
@@ -254,8 +255,8 @@ test.each(["allow_once", "allow_always", "deny", "reject_always"])("Claude permi
     }
     const answer = await owner.broker.answer(pending.request.requestId, { kind: "permission", decision }, { sessionId: "s1" })
     expect(answer.ok).toBe(true)
-    if (decision === "reject_always") await expect(running).rejects.toThrow()
-    else await running
+    await running
+    if (decision === "reject_always") expect(events.some(({ event }) => event.type === "cancelled" || event.type === "error")).toBe(true)
     expect(ports.saved.some((row) => row.pending.request.requestId === pending.request.requestId)).toBe(true)
     expect(await fs.stat(target).then(() => true, () => false)).toBe(decision.startsWith("allow"))
     expect(await fs.readFile(path.join(state.userConfigRoot, "settings.json"))).toEqual(originalSettings)
