@@ -663,9 +663,10 @@ another. `workspaceRoleForUser`
 `owner` for the workspace's owner and otherwise the highest of a direct
 `project_memberships` row, `workspaceOrgRole` (the person's org role, with
 an org member's `viewer` withheld when `org_member_visible` is 0) and the
-best `team_project_grants` row of a team they are on in that org;
-`workspaceAccessSql` (D1 `workspace-authority.ts`) takes the same `max` in
-one query and joins the assignment's enrollment in as `host_enrollment_id`.
+best `team_project_grants` row of a team they are on in that org. On D1
+every reader takes that `max` from one builder, `projectRoleRankSql`
+(`claxedo-server/.../d1/project-role.ts`); `D1WorkspaceAuthority` joins the
+assignment's enrollment in as `host_enrollment_id`.
 That role decides who can SEE the placement and the workspace-scoped
 surfaces (files, terminals, processes, git); it is what lets a teammate be
 offered a session share. An organization is a grouping of people and grants
