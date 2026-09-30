@@ -3,11 +3,12 @@ import { Hono } from "hono"
 import { AuthenticationError, type ControlPlanePrincipal } from "@claxedo/server-core/platform/auth/authentication"
 import { D1WorkspaceAuthority } from "../../authority/adapters/d1/workspace-authority"
 import { testRequestAuthenticationAdapter } from "../../test-support/request-authentication"
+import { activatePluginBackend, deactivatePluginBackend } from "../lifecycle"
 import { pluginBackendRouteContribution } from "../routes"
-import type { PluginSupervisorNamespace } from "../supervisor.cf"
+import { pluginSupervisor, type PluginSupervisorNamespace } from "../supervisor.cf"
 
 export { PluginSupervisor } from "../supervisor.cf"
-export { PluginObjects, PluginOutbound } from "../entrypoints.cf"
+export { PluginOutbound, PluginPlatform } from "../entrypoints.cf"
 
 type Env = { CONTROL_PLANE_DB: D1Database; PLUGIN_SUPERVISOR: PluginSupervisorNamespace; DEPLOYMENT_ID: string }
 
@@ -23,8 +24,20 @@ function principalFromBearer(request: Request): ControlPlanePrincipal {
   return JSON.parse(atob(token.replace(/-/g, "+").replace(/_/g, "/"))) as ControlPlanePrincipal
 }
 
+/** The operator side of activation, which has no public route yet, and the supervisor's own generation check. */
+async function admin(request: Request, env: Env) {
+  const url = new URL(request.url)
+  const input = (await request.json()) as Parameters<typeof activatePluginBackend>[1] & { pluginId: string; generation: string }
+  const ports = { database: env.CONTROL_PLANE_DB, supervisors: env.PLUGIN_SUPERVISOR }
+  if (url.pathname === "/__admin/active") return Response.json({ active: await pluginSupervisor(env.PLUGIN_SUPERVISOR, input.orgId).active(input) })
+  if (url.pathname === "/__admin/activate") await activatePluginBackend(ports, input)
+  else await deactivatePluginBackend(ports, input.orgId, input.pluginId)
+  return new Response(null, { status: 204 })
+}
+
 export default {
   fetch(request: Request, env: Env) {
+    if (new URL(request.url).pathname.startsWith("/__admin/")) return admin(request, env)
     const authority = new D1WorkspaceAuthority(env.CONTROL_PLANE_DB, {
       deploymentId: env.DEPLOYMENT_ID,
       product: { kind: "claxedo-hosted" },

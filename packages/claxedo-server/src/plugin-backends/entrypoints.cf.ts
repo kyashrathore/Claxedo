@@ -1,17 +1,22 @@
 import { WorkerEntrypoint } from "cloudflare:workers"
 import type { Request as WorkerRequest, Response as WorkerResponse } from "@cloudflare/workers-types"
 import { pluginRefusal } from "./refusal"
-import { pluginSupervisor, type PluginBackendEnv, type PluginScope } from "./supervisor.cf"
+import { pluginSupervisor, type PluginBackendEnv, type PluginRunScope } from "./supervisor.cf"
 
 /**
- * `env.OBJECTS` inside a loaded backend: `object(className, name, request)`
- * reaches that object in the plugin's own organization. The scope is bound by
- * the supervisor when it loads the backend, so a plugin names an object but
- * never an organization.
+ * `env.PLATFORM` inside a loaded backend, bound by the supervisor to the one
+ * generation it loaded, so a plugin names objects but never an organization,
+ * and a backend the organization has since replaced reaches nothing.
+ * `object(className, name, request)` reaches an object of the plugin's;
+ * `active()` answers whether this generation is still the current activation.
  */
-export class PluginObjects extends WorkerEntrypoint<PluginBackendEnv, PluginScope> {
+export class PluginPlatform extends WorkerEntrypoint<PluginBackendEnv, PluginRunScope> {
   object(className: string, name: string, request: Request): Promise<Response> {
     return pluginSupervisor(this.env.PLUGIN_SUPERVISOR, this.ctx.props.orgId).object(this.ctx.props, className, name, request)
+  }
+
+  active(): Promise<boolean> {
+    return pluginSupervisor(this.env.PLUGIN_SUPERVISOR, this.ctx.props.orgId).active(this.ctx.props)
   }
 }
 

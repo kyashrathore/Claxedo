@@ -12,7 +12,7 @@
  * specifiers are the same zod 4 classic export surface.
  *
  * `enable_ctx_exports` gives the plugin-backend supervisor `ctx.exports`, from
- * which it binds a loaded backend's `env.OBJECTS` and outbound gate; at this
+ * which it binds a loaded backend's `env.PLATFORM` and outbound gate; at this
  * compatibility date the runtime leaves `ctx.exports` undefined without it.
  *
  * The alias is a TOML table, so this block has to close the config's

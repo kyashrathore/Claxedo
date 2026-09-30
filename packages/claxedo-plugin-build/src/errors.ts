@@ -43,7 +43,6 @@ function bundleDiagnostic(message: Message) {
   }
 }
 
-/** The esbuild failure `error` is, as a bundle-stage `PluginBuildError`; undefined for anything else. */
 export function bundleFailure(error: unknown): PluginBuildError | undefined {
   if (typeof error !== "object" || error === null) return undefined
   const errors = (error as { errors?: unknown }).errors

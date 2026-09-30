@@ -33,8 +33,8 @@ export class Counter extends DurableObject {
 }
 
 export default {
-  fetch(request: Request, env: { OBJECTS: { object(name: string, key: string, request: Request): Promise<Response> } }) {
-    return env.OBJECTS.object("Counter", "main", request)
+  fetch(request: Request, env: { PLATFORM: { object(name: string, key: string, request: Request): Promise<Response> } }) {
+    return env.PLATFORM.object("Counter", "main", request)
   },
 }
 `

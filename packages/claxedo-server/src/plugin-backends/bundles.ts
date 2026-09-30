@@ -1,12 +1,12 @@
 import type { AgentPluginR2Bucket } from "../agent-plugins/artifacts/r2-artifact-adapter"
 
 /** Cloudflare's own ceiling on a Worker's modules. */
-export const PLUGIN_BACKEND_BUNDLE_MAX_BYTES = 10 * 1024 * 1024
+const PLUGIN_BACKEND_BUNDLE_MAX_BYTES = 10 * 1024 * 1024
 
 const HASH_PATTERN = /^[0-9a-f]{64}$/
 const PREFIX = "plugin-backends/"
 
-export class PluginBackendBundleError extends Error {
+class PluginBackendBundleError extends Error {
   constructor(message: string) {
     super(message)
     this.name = "PluginBackendBundleError"

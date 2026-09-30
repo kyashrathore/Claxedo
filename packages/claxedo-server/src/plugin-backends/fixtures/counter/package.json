@@ -11,7 +11,7 @@
       "entry": "./src/backend.js",
       "objects": ["Counter"],
       "outbound": ["allowed.example.com"],
-      "routes": ["GET /count", "POST /count", "GET /whoami", "GET /outbound", "GET /objects/:className", "GET /fail"]
+      "routes": ["GET /", "GET /instance", "GET /count", "POST /count", "GET /whoami", "GET /outbound", "GET /objects/:className", "GET /fail", "POST /tick", "GET /active"]
     }
   }
 }

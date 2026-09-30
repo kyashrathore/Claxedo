@@ -19,9 +19,9 @@ import type { WorkspaceRuntimeContext, WorkspaceRuntimePreparation } from "../..
 import { HostedWorkerCompositionError } from "../../authority/composition-error"
 import { pluginBackendRouteContribution } from "../../plugin-backends/routes"
 import { PluginSupervisor, type PluginSupervisorNamespace } from "../../plugin-backends/supervisor.cf"
-import { PluginObjects, PluginOutbound } from "../../plugin-backends/entrypoints.cf"
+import { PluginOutbound, PluginPlatform } from "../../plugin-backends/entrypoints.cf"
 
-export { LiveSyncRoom, PluginObjects, PluginOutbound, PluginSupervisor }
+export { LiveSyncRoom, PluginOutbound, PluginPlatform, PluginSupervisor }
 
 export type BetterAuthD1AgentPluginsWorkerEnv = BetterAuthD1WorkerEnv & {
   CLAXEDO_AGENT_PLUGINS?: AgentPluginR2Bucket

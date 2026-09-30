@@ -6,22 +6,22 @@ export type PluginBackendActivation = Readonly<{
   pluginId: string
   bundleHash: string
   manifest: PluginManifest & { backend: PluginBackend }
+  /** Digest of the bundle hash and the manifest: one per distinct configuration the plugin can run under. */
+  generation: string
 }>
 
 type ActivationRow = { bundle_hash: string; manifest_json: string }
 
-export class PluginBackendActivationError extends Error {
-  constructor(message: string) {
-    super(message)
-    this.name = "PluginBackendActivationError"
-  }
-}
-
 function backendManifest(value: unknown, pluginId: string) {
   const manifest = pluginManifestSchema.parse(value)
-  if (manifest.id !== pluginId) throw new PluginBackendActivationError(`the manifest names ${manifest.id}, not ${pluginId}`)
-  if (!manifest.backend) throw new PluginBackendActivationError(`plugin ${pluginId} declares no backend`)
+  if (manifest.id !== pluginId) throw new Error(`the manifest names ${manifest.id}, not ${pluginId}`)
+  if (!manifest.backend) throw new Error(`plugin ${pluginId} declares no backend`)
   return { ...manifest, backend: manifest.backend }
+}
+
+async function generationOf(bundleHash: string, manifest: PluginManifest) {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(`${bundleHash}\n${JSON.stringify(manifest)}`))
+  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("")
 }
 
 export async function readPluginBackendActivation(
@@ -34,11 +34,11 @@ export async function readPluginBackendActivation(
     .bind(orgId, pluginId)
     .first<ActivationRow>()
   if (!row) return undefined
-  return { orgId, pluginId, bundleHash: row.bundle_hash, manifest: backendManifest(JSON.parse(row.manifest_json), pluginId) }
+  const manifest = backendManifest(JSON.parse(row.manifest_json), pluginId)
+  return { orgId, pluginId, bundleHash: row.bundle_hash, manifest, generation: await generationOf(row.bundle_hash, manifest) }
 }
 
-/** Points the organization's plugin at one bundle; the next request loads it. */
-export async function activatePluginBackend(
+export async function writePluginBackendActivation(
   database: D1Database,
   input: { orgId: string; manifest: PluginManifest; bundleHash: string; activatedBy: string; now: number },
 ): Promise<void> {
@@ -57,6 +57,6 @@ export async function activatePluginBackend(
     .run()
 }
 
-export async function deactivatePluginBackend(database: D1Database, orgId: string, pluginId: string): Promise<void> {
+export async function deletePluginBackendActivation(database: D1Database, orgId: string, pluginId: string): Promise<void> {
   await database.prepare("delete from plugin_backend_activations where org_id = ? and plugin_id = ?").bind(orgId, pluginId).run()
 }

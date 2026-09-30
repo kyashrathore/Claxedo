@@ -60,7 +60,7 @@ describe("certified core resource ownership", () => {
       expect(source).toMatch(/export default handler/)
       expect(source).toMatch(
         artifact.agentPlugins
-          ? /export \{ LiveSyncRoom, PluginObjects, PluginOutbound, PluginSupervisor \}/
+          ? /export \{ LiveSyncRoom, PluginOutbound, PluginPlatform, PluginSupervisor \}/
           : /export \{ LiveSyncRoom \}/,
       )
       expect(artifact.entrypointFromPackageRoot).not.toBe("src/deployments/hosted-workerd/core-worker.cf.ts")
