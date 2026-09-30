@@ -37,7 +37,7 @@
   "packages/workspace-runtime/src/pty/index.ts": 1406,
   "packages/workspace-runtime/src/routes/document-hydration.ts": 811,
   "packages/workspace-runtime/src/routes/session-core.ts": 1959,
-  "packages/workspace-runtime/src/store.ts": 4967,
+  "packages/workspace-runtime/src/store.ts": 4942,
   "packages/workspace-runtime/src/workspace-relay-host-tunnel.ts": 815,
   "packages/workspace-runtime/src/workspace/runtime.ts": 839
 }

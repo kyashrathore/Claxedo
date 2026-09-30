@@ -107,17 +107,21 @@ export function piUpstreamOf(host: PiLaunchHost, rpc: PiRpc): Promise<string> {
 }
 
 export async function resumePi(host: PiLaunchHost, input: StartInput, profile: PiProfile, broker: SessionBroker,
-  upstreamSessionId: string, unwritten = false): Promise<PiSessionLaunch> {
-  const resume = unwritten ? { id: upstreamSessionId } : { file: await piSessionFile(profile, upstreamSessionId) }
-  const launched = await launchPiSession(host, input, profile, broker, resume)
+  upstreamSessionId: string, hasTurns: boolean): Promise<PiSessionLaunch> {
+  const launched = await launchPiSession(host, input, profile, broker, await piResume(profile, upstreamSessionId, hasTurns))
   if (await piUpstreamOf(host, launched.rpc) === upstreamSessionId) return launched
   await host.unsettled.retire(launched.rpc)
   throw new TransportError("pi", "session", "Pi resumed a different session")
 }
 
-async function piSessionFile(profile: PiProfile, upstreamSessionId: string): Promise<string> {
-  const files = await fs.readdir(profile.sessionDir)
+async function piResume(profile: PiProfile, upstreamSessionId: string, hasTurns: boolean): Promise<PiResume> {
+  const files = await fs.readdir(profile.sessionDir).catch((error: unknown) => {
+    if (error instanceof Error && "code" in error && error.code === "ENOENT") return []
+    throw error
+  })
   const file = files.find((name) => name.endsWith(`_${upstreamSessionId}.jsonl`))
-  if (!file) throw new TransportError("pi", "session", "Pi session file is missing")
-  return path.join(profile.sessionDir, file)
+  if (file) return { file: path.join(profile.sessionDir, file) }
+  if (!hasTurns) return { id: upstreamSessionId }
+  throw new TransportError("pi", "session", `Pi session ${upstreamSessionId} has had turns, but its session file is gone from ${profile.sessionDir}`,
+    { retryable: false, detail: { upstreamSessionId, sessionDir: profile.sessionDir } })
 }

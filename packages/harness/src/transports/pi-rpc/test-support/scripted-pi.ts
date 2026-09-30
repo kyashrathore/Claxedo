@@ -39,7 +39,7 @@ function projectModel(cwd: string): string {
 
 function answer(frame: Frame, launch: Launch): unknown {
   const sessionDir = launch.command.args[launch.command.args.indexOf("--session-dir") + 1]
-  if (frame.type === "get_state" && launch.options.role === "harness" && sessionDir) {
+  if (frame.type === "prompt" && sessionDir) {
     mkdirSync(sessionDir, { recursive: true })
     writeFileSync(path.join(sessionDir, "scripted_scripted-pi.jsonl"), "")
   }

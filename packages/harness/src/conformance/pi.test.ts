@@ -529,3 +529,37 @@ test("a Pi session reconfigured before its first prompt keeps its session id and
     expect((await entry.rpc.request("get_state") as { sessionId: string }).sessionId).toBe(context.session.binding.upstreamSessionId)
   } finally { await context.close() }
 }, 60_000)
+
+test("a Pi session that never had a turn attaches after a restart as a fresh Pi session under its id", async () => {
+  const context = await setupConformance({ name: "pi attach before prompt", backend, makeTransport: piTransport })
+  try {
+    const entries = (context.transport as unknown as { entries: Map<string, { profile: { sessionDir: string }; rpc: { request(type: string): Promise<unknown> } }> }).entries
+    const sessionDir = entries.get("s1")!.profile.sessionDir
+    const upstream = context.session.binding.upstreamSessionId
+    await context.transport.close(context.session)
+    expect((await fs.readdir(sessionDir)).filter((name) => name.includes(upstream))).toEqual([])
+    const attached = await context.transport.attach({ ...context.start, binding: context.session.binding, upstreamHasTurns: false }, context.sessionBroker)
+    expect(attached.binding.upstreamSessionId).toBe(upstream)
+    const events: string[] = []
+    for await (const { event } of context.transport.send(attached, context.turn("Reply with exactly this one token: PIFRESHATTACH"), context.turnBroker())) events.push(event.type)
+    expect(events.at(-1)).toBe("finish")
+    expect((await entries.get("s1")!.rpc.request("get_state") as { sessionId: string }).sessionId).toBe(upstream)
+  } finally { await context.close() }
+}, 60_000)
+
+test("a Pi session that had a turn refuses to attach once its session file is gone", async () => {
+  const context = await setupConformance({ name: "pi attach lost file", backend, makeTransport: piTransport })
+  try {
+    for await (const _event of context.transport.send(context.session, context.turn("Reply with exactly this one token: PIWRITTEN"), context.turnBroker())) {}
+    const entry = (context.transport as unknown as { entries: Map<string, { profile: { sessionDir: string } }> }).entries.get("s1")!
+    const upstream = context.session.binding.upstreamSessionId
+    await context.transport.close(context.session)
+    const written = (await fs.readdir(entry.profile.sessionDir)).filter((name) => name.endsWith(`_${upstream}.jsonl`))
+    expect(written).toHaveLength(1)
+    await fs.rm(path.join(entry.profile.sessionDir, written[0]!))
+    const processes = context.services.processes.length
+    await expect(context.transport.attach({ ...context.start, binding: context.session.binding, upstreamHasTurns: true }, context.sessionBroker))
+      .rejects.toMatchObject({ name: "PiTransportError", code: "session", retryable: false, detail: { upstreamSessionId: upstream } })
+    expect(context.services.processes).toHaveLength(processes)
+  } finally { await context.close() }
+}, 60_000)

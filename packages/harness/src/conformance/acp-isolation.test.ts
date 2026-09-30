@@ -65,7 +65,7 @@ for (const kind of ["websocket", "streamable-http"] as const) {
           await context.transport.fork!.fork(context.session, "message", "child")
           const binding = context.session.binding
           await context.transport.close(context.session)
-          await context.transport.attach({ ...context.start, binding }, context.sessionBroker)
+          await context.transport.attach({ ...context.start, binding, upstreamHasTurns: false }, context.sessionBroker)
           const methods = ["session/new", "session/fork", `session/${restoreMode}`]
           const calls = (await readAcpRequests(context.backend.directory)).filter((row) => methods.includes(row.method))
           expect(calls.map((row) => row.method)).toEqual(methods)
