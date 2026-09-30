@@ -174,7 +174,7 @@ export function createSqlitePrivateSessionAuthority(input: {
    * what they let a SHARE answer: a `follow` grant reads and streams, a `send`
    * grant also drives the agent's turn, and neither carries a
    * `session_control` write, which stays with the creator and the
-   * participants however the workspace ranks anyone.
+   * participants, who are the workspace owner's.
    */
   const hasPrivateAccess = (
     db: SqliteAuthorityDb,
