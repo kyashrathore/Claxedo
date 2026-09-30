@@ -4,7 +4,7 @@ import { elicitationAnswer, elicitationRequest, permissionDecision, permissionRe
 import type { RpcMessage } from "./rpc"
 import { CodexRequestRefusal, CodexTransportError } from "./errors"
 import { grantIdentity } from "../../contract/grant-identity"
-import type { CodexChildren } from "./children"
+import type { CodexChild, CodexChildren } from "./children"
 
 const approvalMethods = [
   "item/commandExecution/requestApproval", "item/fileChange/requestApproval",
@@ -16,8 +16,8 @@ const protocolDecisionMapping = {
 type RequestBroker = Pick<TurnBroker, "ask">
 type RequestContext = { directory: string; permissionMode?: string }
 
-export function requestingChildThread(entry: { children: CodexChildren }, message: RpcMessage): string | undefined {
-  return entry.children.get(asString(asRecordOrEmpty(message.params).threadId))?.threadId
+export function requestingChild(entry: { children: CodexChildren }, message: RpcMessage): CodexChild | undefined {
+  return entry.children.get(asString(asRecordOrEmpty(message.params).threadId))
 }
 
 function decisionResponse(method: string, decision: string, params: Record<string, unknown>): unknown {

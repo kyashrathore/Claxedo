@@ -4,11 +4,9 @@ import { CodexTransportError } from "./errors"
 import { flattenTurnPrompt } from "../../translate/prompt"
 import { attachmentPathLine, isPromptImage, materializeAttachment, promptFiles, type MaterializedFile } from "../../translate/attachments"
 import { codexTurnSandboxPolicy, type CodexPermissionSettings } from "./modes"
-import { codexDynamicTools } from "./subagents"
 import type { CodexTurnSettings } from "./models"
 
 type ThreadConfig = Record<string, JsonValue>
-type ThreadStartParams = v2.ThreadStartParams & { dynamicTools: v2.DynamicToolSpec[] }
 
 const codexAttachmentError = (message: string) => new CodexTransportError("configuration", message)
 
@@ -22,11 +20,11 @@ export async function codexTurnInput(turn: TurnInput, directory: string): Promis
     ...written.filter((file) => isPromptImage(file.mime)).map((file): v2.UserInput => ({ type: "localImage", path: file.path }))]
 }
 
-export function codexThreadStartParams(input: StartInput, config: ThreadConfig, mode: CodexPermissionSettings, modelProvider: string): ThreadStartParams {
+export function codexThreadStartParams(input: StartInput, config: ThreadConfig, mode: CodexPermissionSettings, modelProvider: string): v2.ThreadStartParams {
   const model = input.model?.modelID === "default" ? undefined : input.model?.modelID
   return { cwd: input.directory, ...(model ? { model } : {}),
     modelProvider,
-    approvalPolicy: mode.approvalPolicy, approvalsReviewer: "user", sandbox: mode.sandbox, config, dynamicTools: codexDynamicTools,
+    approvalPolicy: mode.approvalPolicy, approvalsReviewer: "user", sandbox: mode.sandbox, config,
     ...(input.instructions ? { developerInstructions: input.instructions } : {}) }
 }
 

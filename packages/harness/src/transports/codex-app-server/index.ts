@@ -16,13 +16,12 @@ import { CodexRequestRefusal, CodexDeadlineError } from "./errors"
 import { createCodexGoals } from "./goals"
 import { CodexLaunches } from "./launch"
 import { readCodexModels, type CodexModel } from "./models"
-import { answerCodexRequest, isCodexRequestMethod, requestingChildThread } from "./requests"
+import { answerCodexRequest, isCodexRequestMethod, requestingChild } from "./requests"
 import { stopCodexChild } from "./native-children"
 import { codexRetirementDeadline, type RpcMessage } from "./rpc"
 import { CodexSessions } from "./sessions"
-import { answerCodexToolCall } from "./subagents"
 import { codexRename, codexSessionTitle } from "./titles"
-import { activeCodexTurn, runCodexTurn } from "./turn"
+import { activeTurnBroker, runCodexTurn } from "./turn"
 
 export type { CodexTransportOptions, Entry } from "./entry"
 
@@ -81,16 +80,12 @@ export class CodexAppServerTransport implements HarnessTransport {
 
   private async answer(entry: Entry, message: RpcMessage, signal: AbortSignal): Promise<unknown> {
     if (!message.method) throw new CodexRequestRefusal(-32600, "Codex request has no method")
-    const active = await activeCodexTurn(entry)
-    if (message.method === "item/tool/call") {
-      return answerCodexToolCall(active && { rpc: entry.rpc, directory: entry.session.directory, threadId: entry.session.binding.upstreamSessionId,
-        modelProvider: entry.modelProvider, plugins: entry.plugins, permissionMode: entry.start.config.permissionMode, settings: entry.settings, children: entry.children,
-        drained: active.drained }, active?.broker, message)
-    }
-    const child = requestingChildThread(entry, message)
+    const child = requestingChild(entry, message)
+    await child?.flushed()
+    const active = await activeTurnBroker(entry)
     if (!active && !child && isCodexRequestMethod(message.method)) throw new CodexRequestRefusal(-32000, "Codex request has no active turn")
-    const broker = active?.broker ?? entry.broker
-    return answerCodexRequest(message, { ask: (request) => broker.ask(child ? { ...request, child: { correlationKey: child } } : request, { signal }) },
+    const broker = active ?? entry.broker
+    return answerCodexRequest(message, { ask: (request) => broker.ask(child ? { ...request, child: { correlationKey: child.threadId } } : request, { signal }) },
       entry.session.binding.sessionId, { directory: entry.session.directory, permissionMode: entry.start.config.permissionMode })
   }
 

@@ -10,7 +10,7 @@ import { codexPermissionSettings } from "./modes"
 import { startCodexTurn } from "./recovery"
 import { projectCodexThreadConfig } from "./configuration"
 import { codexRetirementDeadline, type RpcMessage } from "./rpc"
-import { codexHostSubagentObservation } from "./subagents"
+import { codexHostSubagentObservation } from "./host-subagents"
 
 function hostSubagents(threadId: string, broker: TurnBroker, queue: AsyncPushQueue<RoutedEvent>) {
   let observed: Promise<unknown> = Promise.resolve()
@@ -57,12 +57,8 @@ function listenTurn(entry: Entry, session: HarnessSession, queue: AsyncPushQueue
   return { remove: () => { removeMessage(); removeFailure() }, accept: () => { for (const message of early) ingest(message) } }
 }
 
-export async function activeCodexTurn(entry: Entry): Promise<{ broker: TurnBroker; drained(): Promise<void> } | undefined> {
-  const turn = entry.turn
-  if (turn) return { broker: turn.broker, drained: () => turn.queue.drained() }
-  const provider = entry.providerTurn
-  const broker = await provider?.broker
-  return provider && broker && { broker, drained: () => provider.drained() }
+export async function activeTurnBroker(entry: Entry): Promise<TurnBroker | undefined> {
+  return entry.turn?.broker ?? await entry.providerTurn?.broker
 }
 
 export function incorporatedSteer(message: RpcMessage, steers: Set<string>): RoutedEvent | undefined {
@@ -82,7 +78,6 @@ async function startTurn(entry: Entry, session: HarnessSession, turn: TurnInput,
   const threadId = session.binding.upstreamSessionId
   const params = await codexTurnParams(turn, threadId, session.directory, settings, mode)
   const resume = codexThreadResumeParams(threadId, entry.start, projectCodexThreadConfig(entry.start, services, entry.plugins), mode, entry.modelProvider)
-  entry.settings = settings
   const result = asRecordOrEmpty(await startCodexTurn(entry.rpc, params, resume, codexRetirementDeadline(services)))
   const id = asString(asRecordOrEmpty(result.turn).id)
   if (!id) throw new CodexTransportError("protocol", "Codex turn/start returned no turn id")

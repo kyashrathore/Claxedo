@@ -3,7 +3,6 @@ import type { RoutedEvent } from "../../contract"
 import { CodexEvents } from "./events"
 import type { RpcMessage } from "./rpc"
 
-export type ChildOrigin = "dynamic" | "native"
 export type ChildState = "spawned" | "running" | "idle" | "released"
 type ChildMove = "turn-started" | "turn-ended" | "release"
 
@@ -25,7 +24,7 @@ export class CodexChild {
   private events?: CodexEvents
   private tail: Promise<void> = Promise.resolve()
 
-  constructor(readonly threadId: string, readonly origin: ChildOrigin, readonly spawn?: ChildSpawn) {
+  constructor(readonly threadId: string, readonly spawn?: ChildSpawn) {
     this.events = new CodexEvents(threadId)
     if (spawn?.toolCallId) this.calls.add(spawn.toolCallId)
   }
@@ -81,7 +80,7 @@ export class CodexChildren {
   }
 
   private changed(): void {
-    const agents = [...this.byThread.values()].filter((child) => child.origin === "native" && child.live).length
+    const agents = [...this.byThread.values()].filter((child) => child.live).length
     if (agents === this.agents) return
     this.agents = agents
     this.backgroundWork({ ...NO_BACKGROUND_WORK, agents })
