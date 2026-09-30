@@ -25,13 +25,14 @@ import {
   type RecoveryOperation,
 } from "@claxedo/agent-runtime-contract"
 import { foldUsageObservations, type RuntimeUsageObservation } from "@claxedo/agent-runtime-contract"
-import { isTerminalSubagentStatus, type RuntimeGoalSnapshot, type SubagentUpdatedEvent } from "@claxedo/agent-runtime-contract"
+import { type RuntimeGoalSnapshot, type SubagentUpdatedEvent } from "@claxedo/agent-runtime-contract"
 import { asRecord } from "@claxedo/helpers/guards"
 import { workspaceRuntimeStoreDir } from "./env"
 import { migrateLaunchOwnership, sqliteLaunchOwnership } from "./ownership/launch-ownership-sqlite"
 import type { LaunchOwnershipOwner } from "@claxedo/process-ownership/launch"
 import type { SessionTurnOrigin } from "./session-access-policy"
 import { actorKind, isRecord, num, rec, str } from "./json-value"
+import { observationStartsNewRun, subagentStatusAdvances } from "./subagent-status"
 import { buildAssistantMessage, buildUserMessage, buildUserPromptParts, messageCompleted, messagePartUpdated, messageUpdated, sessionError, sessionIdle, sessionStatus } from "./projection/presentation-events"
 
 export const ACP_RECOVER = "ACP process restarted; pending interactive state must be rerun"
@@ -1507,18 +1508,10 @@ export class RuntimeStore {
         this.db.exec("COMMIT")
         return { ...admitted, published: !!existing.published }
       }
-      this.persistSubagentEvent(input.parentSessionId, admitted.event)
-      for (const correlationKey of subagentCorrelationKeys(input.observation)) {
-        this.db
-          .prepare(
-            `
-          INSERT OR IGNORE INTO session_subagent_correlation (
-            parent_session_id, correlation_key, subagent_key
-          ) VALUES (?, ?, ?)
-        `,
-          )
-          .run(input.parentSessionId, correlationKey, admitted.event.subagentKey)
-      }
+      const freshKeys = subagentCorrelationKeys(input.observation).filter((correlationKey) => this.db.prepare(`INSERT OR IGNORE
+        INTO session_subagent_correlation (parent_session_id, correlation_key, subagent_key) VALUES (?, ?, ?)`)
+        .run(input.parentSessionId, correlationKey, admitted.event.subagentKey).changes === 1)
+      this.persistSubagentEvent(input.parentSessionId, admitted.event, observationStartsNewRun(input.observation, freshKeys))
       this.db
         .prepare(
           `
@@ -1749,7 +1742,7 @@ export class RuntimeStore {
     }
   }
 
-  private persistSubagentEvent(parentSessionId: string, event: SubagentUpdatedEvent) {
+  private persistSubagentEvent(parentSessionId: string, event: SubagentUpdatedEvent, startsNewRun: boolean) {
     const now = Date.now()
     this.db
       .prepare(
@@ -1802,12 +1795,7 @@ export class RuntimeStore {
           .get(parentSessionId, event.subagentKey),
         "session_subagent",
       )
-      const currentTerminal = isTerminalSubagentStatus(current.status)
-      const incomingTerminal = isTerminalSubagentStatus(event.status)
-      if (
-        (!currentTerminal && incomingTerminal) ||
-        (currentTerminal === incomingTerminal && event.revision > current.status_revision)
-      ) {
+      if (subagentStatusAdvances(current, { status: event.status, revision: event.revision }, startsNewRun)) {
         this.db
           .prepare(
             `

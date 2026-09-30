@@ -18,9 +18,12 @@ export function claudeModeState(currentModeId: string): AgentPermissionModeState
 
 export function claudeModeKept(updates: readonly PermissionUpdate[] | undefined): KeptPermissionMode | undefined {
   const moved = updates?.findLast((update) => update.type === "setMode")
-  if (moved?.type !== "setMode") return undefined
-  const mode = CLAUDE_PERMISSION_MODES.modes.find((candidate) => candidate.id === moved.mode)
-  if (!mode) throw new TransportError("claude", "protocol", `Unknown Claude permission mode ${moved.mode}`)
+  return moved?.type === "setMode" ? claudeKeptMode(moved.mode) : undefined
+}
+
+export function claudeKeptMode(modeId: string): KeptPermissionMode {
+  const mode = CLAUDE_PERMISSION_MODES.modes.find((candidate) => candidate.id === modeId)
+  if (!mode) throw new TransportError("claude", "protocol", `Unknown Claude permission mode ${modeId}`)
   return { modeId: mode.id, label: mode.name }
 }
 

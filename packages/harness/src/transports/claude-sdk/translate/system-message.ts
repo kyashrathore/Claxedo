@@ -1,38 +1,25 @@
 import { asText as text } from "@claxedo/agent-runtime-contract"
 import type { AgentRuntimeEvent } from "@claxedo/agent-runtime-contract"
+import { asFiniteNumber, asRecord } from "@claxedo/helpers/guards"
 import type { ClaudeSdkAdapterState, ClaudeTranslation } from "./adapter-state"
-import { assertNever, diagnosticForEvent, unmappedSdkEvent, type ClaudeFrameEvent, type ClaudeSdkSystemMessage } from "./sdk-message"
+import { diagnosticForEvent, ignoredFrame, type ClaudeFrameEvent } from "./sdk-message"
+import { systemNotice } from "./system-notices"
+import type { ClaudeTranslatorMemory } from "./translator-memory"
 
-type MappedSystemSubtype =
-  | "task_progress"
-  | "init"
-  | "status"
-  | "local_command_output"
-  | "commands_changed"
-  | "permission_denied"
-  | "task_started"
-  | "task_notification"
-  | "background_tasks_changed"
-  | "task_updated"
+const ignoredSubtypes: readonly string[] = ["thinking_tokens", "post_turn_summary", "task_summary", "vcs_state_changed", "session_title_changed",
+  "hook_started", "hook_progress", "hook_response", "stop_hook_summary", "files_persisted", "elicitation_complete", "plugin_install",
+  "session_state_changed", "worker_shutting_down", "control_request_progress", "turn_duration", "turn_preempted", "away_summary",
+  "memory_saved", "agents_killed", "thinking", "file_snapshot", "scheduled_task_fire", "peer_message_hold", "api_error", "permission_retry",
+  "session_metadata", "feedback_draft_queued", "turn_handoff_available", "ui_invalidate", "ui_log", "ui_toast", "ui_status", "ui_panes",
+  "ui_scroll", "ui_focus", "cloud_session_delta", "upgrade_relay_marker", "dev_intent", "code_change_published", "per_turn_effort_changed"]
 
-type UnmappedSystemMessage = Exclude<ClaudeSdkSystemMessage, { subtype: MappedSystemSubtype }>
-
-const namedUnmappedSystemMessages = {
-  compact_boundary: { sdkEvent: "SDKCompactBoundaryMessage", reason: "compaction metadata has no dedicated AgentRuntimeEvent equivalent" },
-  files_persisted: { sdkEvent: "SDKFilesPersistedEvent", reason: "file persistence metadata has no dedicated AgentRuntimeEvent equivalent" },
-  elicitation_complete: { sdkEvent: "SDKElicitationCompleteMessage", reason: "MCP elicitation completion has no dedicated AgentRuntimeEvent equivalent" },
-} as const
-
-function slashCommandEvents(message: Record<string, unknown>) {
-  const commands = Array.isArray(message.slash_commands)
-    ? message.slash_commands.filter((item): item is string => typeof item === "string" && item.length > 0)
-    : []
-  return commands.length
-    ? [{
-      type: "available-commands-update",
-      commands: commands.map((command) => ({ name: command, description: command })),
-    } satisfies AgentRuntimeEvent]
-    : []
+function claudeCommandEvents(values: unknown): AgentRuntimeEvent[] {
+  const listed = Array.isArray(values) ? values.flatMap((value) => {
+    const row = asRecord(value)
+    const name = text(row?.name) ?? text(value)
+    return name ? [{ name, description: text(row?.description) ?? name }] : []
+  }) : []
+  return listed.length ? [{ type: "available-commands-update", commands: listed }] : []
 }
 
 function summaryDiagnostics(code: string, message: Record<string, unknown>, event: ClaudeFrameEvent): AgentRuntimeEvent[] {
@@ -40,86 +27,58 @@ function summaryDiagnostics(code: string, message: Record<string, unknown>, even
   return summary ? [diagnosticForEvent({ code, message: summary, severity: "info", event })] : []
 }
 
-function translateInit(message: Record<string, unknown>, state: ClaudeSdkAdapterState, event: ClaudeFrameEvent): ClaudeTranslation {
+function translateInit(message: Record<string, unknown>, state: ClaudeSdkAdapterState): ClaudeTranslation {
   const cwd = text(message.cwd)
-  return {
-    ...(cwd ? { state: { ...state, cwd } } : {}),
-    events: [
-      ...slashCommandEvents(message),
-      ...unmappedSdkEvent({
-        sdkEvent: "SDKSystemMessage(init)",
-        reason: "model, tools, MCP server status, permission mode, and output style have no complete AgentRuntimeEvent mapping",
-        event,
-      }),
-    ],
-  }
+  const model = text(message.model)
+  return { state: { ...state, ...(cwd ? { cwd } : {}), ...(model ? { model } : {}) }, events: claudeCommandEvents(message.slash_commands) }
 }
 
-function unmappedSystemMessage(message: UnmappedSystemMessage, event: ClaudeFrameEvent): AgentRuntimeEvent[] {
-  switch (message.subtype) {
-    case "compact_boundary":
-    case "files_persisted":
-    case "elicitation_complete":
-      return unmappedSdkEvent({ ...namedUnmappedSystemMessages[message.subtype], event })
-    case "hook_started":
-    case "hook_progress":
-    case "hook_response":
-      return unmappedSdkEvent({
-        sdkEvent: `SDKSystemMessage(${message.subtype})`,
-        reason: "hook lifecycle output has no dedicated AgentRuntimeEvent equivalent",
-        event,
-      })
-    case "api_retry":
-    case "control_request_progress":
-    case "informational":
-    case "memory_recall":
-    case "mirror_error":
-    case "model_refusal_fallback":
-    case "model_refusal_no_fallback":
-    case "notification":
-    case "plugin_install":
-    case "session_state_changed":
-    case "thinking_tokens":
-    case "worker_shutting_down":
-      return unmappedSdkEvent({
-        sdkEvent: `SDKSystemMessage(${message.subtype})`,
-        reason: "system metadata has no dedicated AgentRuntimeEvent equivalent",
-        event,
-      })
-    default:
-      return assertNever(message)
-  }
+function compactionStatusEvents(message: Record<string, unknown>): AgentRuntimeEvent[] {
+  if (message.status === "compacting") return [{ type: "session-status", status: "busy" }, { type: "session-compaction", phase: "started" }]
+  if (message.compact_result !== "failed") return []
+  return [{ type: "session-compaction", phase: "completed", metadata: { error: text(message.compact_error) ?? "Claude could not compact the conversation" } }]
 }
 
-export function translateSystemMessage(
-  message: ClaudeSdkSystemMessage,
-  rawMessage: Record<string, unknown>,
-  state: ClaudeSdkAdapterState,
-  event: ClaudeFrameEvent,
-): ClaudeTranslation {
-  if (text(rawMessage.subtype) === "post_turn_summary") return summaryDiagnostics("claude_sdk.post_turn_summary", rawMessage, event)
-  switch (message.subtype) {
+function compacted(message: Record<string, unknown>): AgentRuntimeEvent[] {
+  const metadata = asRecord(message.compact_metadata)
+  return [{ type: "session-compaction", phase: "completed", ...(text(metadata?.trigger) ? { reason: text(metadata?.trigger) } : {}),
+    metadata: { preTokens: asFiniteNumber(metadata?.pre_tokens), postTokens: asFiniteNumber(metadata?.post_tokens) } }]
+}
+
+function localOutput(content: string | undefined): AgentRuntimeEvent[] {
+  return content ? [{ type: "text-delta", delta: content }] : []
+}
+
+function permissionDeniedEvents(toolCallId: string | undefined, error: string | undefined): AgentRuntimeEvent[] {
+  return toolCallId ? [{ type: "tool-error", toolCallId, error: error ?? "Permission denied" }] : []
+}
+
+export function translateSystemMessage(message: Record<string, unknown>, state: ClaudeSdkAdapterState, event: ClaudeFrameEvent,
+  memory: ClaudeTranslatorMemory): ClaudeTranslation {
+  const subtype = text(message.subtype) ?? ""
+  const notice = systemNotice(subtype, message)
+  if (notice) return notice
+  switch (subtype) {
     case "task_progress":
-      return { state, events: summaryDiagnostics("claude_sdk.task_progress", rawMessage, event) }
+      return { state, events: summaryDiagnostics("claude_sdk.task_progress", message, event) }
     case "init":
-      return translateInit(rawMessage, state, event)
+      return translateInit(message, state)
     case "status":
-      return message.status === "compacting" ? [{ type: "session-status", status: "busy" }] : []
+      return compactionStatusEvents(message)
+    case "compact_boundary":
+      return compacted(message)
     case "local_command_output":
-      return message.content ? [{ type: "text-delta", delta: message.content }] : []
+      return localOutput(text(message.content))
     case "commands_changed":
-      return [{
-        type: "available-commands-update",
-        commands: message.commands.map((command) => ({ name: command.name, description: command.description })),
-      }]
+      return claudeCommandEvents(message.commands)
     case "permission_denied":
-      return [{ type: "tool-error", toolCallId: message.tool_use_id, error: message.message }]
+      return permissionDeniedEvents(text(message.tool_use_id), text(message.message))
     case "task_started":
     case "task_notification":
     case "background_tasks_changed":
     case "task_updated":
       return []
     default:
-      return unmappedSystemMessage(message, event)
+      return ignoredSubtypes.includes(subtype) ? [] : ignoredFrame(memory, `system/${subtype}`)
   }
 }

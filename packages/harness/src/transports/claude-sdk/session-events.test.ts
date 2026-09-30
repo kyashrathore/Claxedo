@@ -25,3 +25,17 @@ test("terminal results rebind before translation, the holder adopts the committe
   expect(unbound.binding.upstreamSessionId).toBe("claude-sdk:unbound")
   expect(order).toEqual(["rebind up1", "rebind up2", "goal"])
 })
+
+test("a permission mode Claude moves to itself is reported as the mode it keeps", async () => {
+  const session: HarnessSession = { directory: "/work", locality: "local", binding: Object.freeze({ sessionId: "s1", workspaceId: "w1",
+    directory: "/work", connectionId: "claude-sdk", upstreamSessionId: "up1" }) }
+  const kept: unknown[] = []
+  const holder = { session, input: { permissionModeKept: async (mode: unknown) => { kept.push(mode) } } }
+  const status = (permissionMode?: string) => ({ type: "system", subtype: "status", status: null, ...(permissionMode ? { permissionMode } : {}),
+    uuid: "793a379a-073b-4cc9-820e-f6052518039c", session_id: "up1" }) as SDKMessage
+  const broker = {} as SessionBroker
+  const versions = new HarnessVersionGate(CLAUDE_CODE_RANGE, "claude.sdk")
+  await observeClaudeSessionMessage(status("plan"), holder, broker, new AbortController().signal, versions)
+  await observeClaudeSessionMessage(status(), holder, broker, new AbortController().signal, versions)
+  expect(kept).toEqual([{ modeId: "plan", label: "Plan" }])
+})

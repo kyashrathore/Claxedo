@@ -390,6 +390,23 @@ describe("createClientPresentationProjection", () => {
     ])
   })
 
+  test("a reply after a thought that followed earlier text is its own part, below the thought", () => {
+    const projection = makeProjection()
+    const created = (events: ReturnType<typeof projection.ingest>) => events.flatMap((event) =>
+      event.payload.type === "message.part.updated" ? [event.payload.properties.part] : [])
+    const deltas = (events: ReturnType<typeof projection.ingest>) => events.flatMap((event) =>
+      event.payload.type === "message.part.delta" ? [event.payload.properties] : [])
+
+    const commentary = created(projection.ingest({ type: "text-delta", delta: "Checking now." }))
+    const thought = created(projection.ingest({ type: "thinking-delta", delta: "Weighing the fix" }))
+    const answer = projection.ingest({ type: "text-delta", delta: "Final answer." })
+    const answerPart = created(answer).find((part) => part.type === "text")
+    expect(answerPart?.id).toBeDefined()
+    expect(answerPart?.id).not.toBe(commentary[0]?.id)
+    expect(deltas(answer)).toMatchObject([{ partID: answerPart?.id, delta: "Final answer." }])
+    expect([commentary[0]?.id, thought[0]?.id, answerPart?.id].map(String).sort()).toEqual([commentary[0]?.id, thought[0]?.id, answerPart?.id].map(String))
+  })
+
   test("a diagnostic leaves a thought open, and a turn torn down mid-thought still ends it", () => {
     let clock = 10
     const projection = createClientPresentationProjection({

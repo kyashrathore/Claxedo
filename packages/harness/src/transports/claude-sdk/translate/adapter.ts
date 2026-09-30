@@ -8,115 +8,82 @@ import { translateCanUseTool } from "./can-use-tool"
 import { translateRateLimitEvent } from "./rate-limits"
 import { CLAUDE_SUBAGENT_USAGE_METHOD, translateMessageDelta, translateMessageStart, translateMessageStop, translateSubagentUsage } from "./request-stream"
 import { translateResult } from "./result-events"
-import { assertNever, diagnosticForEvent, isSdkMessage, sdkMessage, unmappedSdkEvent, type ClaudeFrameEvent, type ClaudeSdkStreamEvent } from "./sdk-message"
+import { claudeNotice, diagnosticForEvent, ignoredFrame, sdkMessage, type ClaudeFrameEvent, type ClaudeSdkStreamEvent } from "./sdk-message"
 import { translateContentBlockDelta, translateContentBlockStart, translateContentBlockStop } from "./stream-content"
 import { translateSystemMessage } from "./system-message"
 import type { ClaudeTrackedTask } from "./task-tracking"
 import { translateToolResults } from "./tool-results"
 import { claudeTranscriptTitle } from "./transcript-title"
+import { createClaudeTranslatorMemory, type ClaudeTranslatorMemory } from "./translator-memory"
 
-type AuthStatusMessage = Extract<SDKMessage, { type: "auth_status" }>
+type Frame = { message: Record<string, unknown>; state: ClaudeSdkAdapterState; event: ClaudeFrameEvent; context: HarnessEventAdapterContext;
+  memory: ClaudeTranslatorMemory }
 
-export function claudeSdkAdapter(initialTasks: ClaudeTrackedTask[] = []): HarnessEventAdapter<ClaudeSdkAdapterState> {
+const ignoredTypes: readonly string[] = ["tool_progress", "prompt_suggestion", "command_lifecycle", "tombstone"]
+
+export function claudeSdkAdapter(initialTasks: ClaudeTrackedTask[] = [], memory = createClaudeTranslatorMemory()): HarnessEventAdapter<ClaudeSdkAdapterState> {
   return {
     name: "claude-sdk",
-    createInitialState: () => ({ blocksByIndex: {}, toolsById: {}, streamedAssistantTextByOwner: {}, reconciledAssistantTextByMessageId: {}, tasks: Object.fromEntries(initialTasks.map((task) => [task.id, task])) }),
-    translate: ({ state, event, context }) => translateClaudeFrame(state, event, context),
+    createInitialState: () => ({ blocksByIndex: {}, toolsById: {}, streamedAssistantTextByOwner: {}, streamedThinkingByOwner: {},
+      ...(memory.window ? { model: memory.window.model } : {}), tasks: Object.fromEntries(initialTasks.map((task) => [task.id, task])) }),
+    translate: ({ state, event, context }) => translateClaudeFrame({ message: sdkMessage(event), state, event, context, memory }),
   }
 }
 
-function translateClaudeFrame(state: ClaudeSdkAdapterState, event: ClaudeFrameEvent, context: HarnessEventAdapterContext): ClaudeTranslation {
-  const rawMessage = sdkMessage(event)
-  if (event.method === "claude/can-use-tool") return translateCanUseTool(rawMessage, context)
-  if (event.method === "claude/session-store") return claudeTranscriptTitle(rawMessage)
-  if (event.method === CLAUDE_SUBAGENT_USAGE_METHOD) return translateSubagentUsage(state, rawMessage)
-  if (!isSdkMessage(rawMessage)) {
-    return unmappedSdkEvent({
-      sdkEvent: `SDKMessage(${text(rawMessage.type) ?? "unknown"})`,
-      reason: "payload is not a known Claude SDK message type",
-      event,
-      severity: "warn",
-    })
-  }
-  return translateClaudeSdkMessage(rawMessage, rawMessage, state, event, context)
-}
-
-function translateClaudeSdkMessage(
-  message: SDKMessage,
-  rawMessage: Record<string, unknown>,
-  state: ClaudeSdkAdapterState,
-  event: ClaudeFrameEvent,
-  context: HarnessEventAdapterContext,
-): ClaudeTranslation {
-  switch (message.type) {
+function translateClaudeFrame(frame: Frame): ClaudeTranslation {
+  const { message, state, event, context, memory } = frame
+  if (event.method === "claude/can-use-tool") return translateCanUseTool(message, context)
+  if (event.method === "claude/session-store") return claudeTranscriptTitle(message)
+  if (event.method === CLAUDE_SUBAGENT_USAGE_METHOD) return translateSubagentUsage(state, memory, message)
+  const type = text(message.type) ?? "unknown"
+  if (ignoredTypes.includes(type)) return []
+  switch (type) {
     case "stream_event":
-      return translateStreamEvent(message.event, rawMessage, state, event)
+      return translateStreamEvent(message.event as ClaudeSdkStreamEvent, frame)
     case "user":
-      return translateToolResults(state, rawMessage)
+      return translateToolResults(state, message)
     case "assistant":
-      return translateAssistantMessage(message, rawMessage, state, event)
+      return translateAssistantMessage(message as Extract<SDKMessage, { type: "assistant" }>, message, state, event, memory)
     case "result":
-      return translateResult(state, rawMessage, context)
+      return translateResult(state, message, context, memory)
     case "system":
-      return translateSystemMessage(message, rawMessage, state, event)
-    case "tool_progress":
-      return [{ type: "tool-status", toolCallId: message.tool_use_id, status: "running" }]
+      return translateSystemMessage(message, state, event, memory)
     case "tool_use_summary":
-      return message.summary ? [diagnosticForEvent({ code: "claude_sdk.tool_use_summary", message: message.summary, severity: "info", event })] : []
+      return text(message.summary) ? [diagnosticForEvent({ code: "claude_sdk.tool_use_summary", message: text(message.summary) ?? "", severity: "info", event })] : []
     case "auth_status":
-      return authStatusEvents(message, event)
+      return authStatusEvents(message)
     case "rate_limit_event":
       return translateRateLimitEvent(state, message.rate_limit_info)
-    case "prompt_suggestion":
-      return unmappedSdkEvent({
-        sdkEvent: "SDKPromptSuggestionMessage",
-        reason: "prompt suggestions have no dedicated AgentRuntimeEvent equivalent",
-        event,
-      })
     case "conversation_reset":
-      return unmappedSdkEvent({
-        sdkEvent: "SDKConversationResetMessage",
-        reason: "conversation reset has no dedicated AgentRuntimeEvent equivalent",
-        event,
-      })
+      return [claudeNotice("conversation_reset", "Claude started a new conversation", "info", { trigger: text(message.trigger) ?? "unspecified",
+        newConversationId: text(message.new_conversation_id) })]
     default:
-      return assertNever(message)
+      return ignoredFrame(memory, type)
   }
 }
 
-function translateStreamEvent(
-  stream: ClaudeSdkStreamEvent,
-  rawMessage: Record<string, unknown>,
-  state: ClaudeSdkAdapterState,
-  event: ClaudeFrameEvent,
-): ClaudeTranslation {
+function translateStreamEvent(stream: ClaudeSdkStreamEvent, frame: Frame): ClaudeTranslation {
+  const { message, state, memory } = frame
+  const kind: string = stream.type
   switch (stream.type) {
     case "content_block_start":
-      return translateContentBlockStart(stream, state, event)
+      return translateContentBlockStart(stream, state, memory)
     case "content_block_delta":
-      return translateContentBlockDelta(stream, rawMessage, state, event)
+      return translateContentBlockDelta(stream, message, state, memory)
     case "content_block_stop":
-      return translateContentBlockStop(String(stream.index), rawMessage, state)
+      return translateContentBlockStop(String(stream.index), message, state)
     case "message_start":
-      return translateMessageStart(stream, rawMessage, state)
+      return translateMessageStart(stream, message, state, memory)
     case "message_delta":
-      return translateMessageDelta(stream, rawMessage, state)
+      return translateMessageDelta(stream, message, state, memory)
     case "message_stop":
-      return translateMessageStop(rawMessage, state)
+      return translateMessageStop(message, state)
     default:
-      return assertNever(stream)
+      return kind === "ping" ? [] : ignoredFrame(memory, `stream_event/${kind}`)
   }
 }
 
-function authStatusEvents(message: AuthStatusMessage, event: ClaudeFrameEvent): AgentRuntimeEvent[] {
-  return message.error
-    ? [
-      { type: "session-status", status: "error" },
-      { type: "error", error: message.error },
-    ] satisfies AgentRuntimeEvent[]
-    : unmappedSdkEvent({
-      sdkEvent: "SDKAuthStatusMessage",
-      reason: "authentication progress output has no dedicated AgentRuntimeEvent equivalent",
-      event,
-    })
+function authStatusEvents(message: Record<string, unknown>): AgentRuntimeEvent[] {
+  const error = text(message.error)
+  return error ? [{ type: "auth-status", status: "unauthenticated", metadata: { error } }] : []
 }

@@ -1,7 +1,8 @@
 import { createClientPresentationProjection } from "../projection/client-presentation/projection"
 import { projectSessionCommands } from "../projection/client-presentation/projection"
-import type { RuntimeDiagnostic, SubagentUpdatedEvent } from "@claxedo/agent-runtime-contract"
+import type { AgentRuntimeEvent, RuntimeDiagnostic, SubagentUpdatedEvent } from "@claxedo/agent-runtime-contract"
 import type { OutsideTurnEvent, OutsideTurnUsage, RoutedEvent } from "@claxedo/harness/contract"
+import { childRouteDropped, isMeteredUsage, parentScopedUsage, resolveChildRoute } from "../projection/child-routes"
 import type { RuntimeStore } from "../store"
 import type { BrokerBackgroundWork } from "./background-work"
 import type { BrokerEventDelivery } from "./delivery"
@@ -16,30 +17,49 @@ export class BrokerSessionEvents {
   ) {}
 
   async drainProviderEvent(sessionId: string, turnId: string, routed: RoutedEvent): Promise<void> {
-    let targetSessionId = sessionId
-    let targetTurnId = turnId
-    if (routed.route?.kind === "child") {
-      const correlationKey = routed.route.correlationKey
-      if (!correlationKey) throw new Error("Child event routing requires a correlation key")
-      const child = this.store.childRouteBinding(sessionId, correlationKey)
-      if (!child) throw new Error(`Child event routing has no binding for ${correlationKey}`)
-      targetSessionId = child.childSessionId
-      targetTurnId = child.assistantMessageId
+    if (routed.route?.kind === "child") return this.deliverChild(sessionId, routed, turnId)
+    this.project(sessionId, turnId, routed.event, routed.source)
+  }
+
+  /**
+   * A child-routed event goes where the store's binding sends it, whether a
+   * parent turn is running or not. One the store cannot route is dropped with
+   * one diagnostic on the parent; the tokens it carried stay on the parent's
+   * running turn, when there is one.
+   */
+  drainChildEvent(sessionId: string, routed: RoutedEvent): Promise<void> {
+    return this.deliverChild(sessionId, routed, undefined)
+  }
+
+  private async deliverChild(sessionId: string, routed: RoutedEvent, parentTurnId: string | undefined): Promise<void> {
+    const correlationKey = routed.route?.kind === "child" ? routed.route.correlationKey : undefined
+    const route = correlationKey ? resolveChildRoute(this.store, sessionId, correlationKey) : { kind: "uncorrelated" as const }
+    if (route.kind === "bound") {
+      this.project(route.childSessionId, route.assistantMessageId, routed.event, routed.source)
+      return
     }
-    const session = this.store.getSession(targetSessionId) as { directory?: string } | null
-    if (!session) throw new Error(`Unknown session ${targetSessionId}`)
-    const key = JSON.stringify([targetSessionId, targetTurnId])
+    if (route.kind === "finished") this.turnProjections.delete(JSON.stringify([route.childSessionId, route.assistantMessageId]))
+    if (parentTurnId && isMeteredUsage(routed.event)) {
+      this.project(sessionId, parentTurnId, parentScopedUsage(routed.event, correlationKey), routed.source)
+    }
+    await this.publishSessionEvent(sessionId, childRouteDropped(correlationKey, route, routed.event))
+  }
+
+  private project(sessionId: string, turnId: string, event: AgentRuntimeEvent, source: RoutedEvent["source"]): void {
+    const session = this.store.getSession(sessionId) as { directory?: string } | null
+    if (!session) throw new Error(`Unknown session ${sessionId}`)
+    const key = JSON.stringify([sessionId, turnId])
     let projection = this.turnProjections.get(key)
     if (!projection) {
       projection = createClientPresentationProjection({
-        sessionId: targetSessionId, directory: session.directory ?? "", assistantMessageId: targetTurnId,
+        sessionId, directory: session.directory ?? "", assistantMessageId: turnId,
       })
       this.turnProjections.set(key, projection)
     }
-    for (const envelope of projection.ingest(routed.event)) {
-      this.delivery.append(targetSessionId, envelope.payload, routed.source)
+    for (const envelope of projection.ingest(event)) {
+      this.delivery.append(sessionId, envelope.payload, source)
     }
-    this.delivery.runtime(targetSessionId, routed.event, targetTurnId)
+    this.delivery.runtime(sessionId, event, turnId)
   }
 
   releaseProviderTurn(sessionId: string, turnId: string): void {

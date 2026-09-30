@@ -747,6 +747,7 @@ function deltaText(
     return events
   }
   ctx.accumulatedThinkingText += delta
+  ctx.splitText = true
   const open = ctx.openReasoning?.partId === id ? ctx.openReasoning : undefined
   ctx.openReasoning = open
     ? { ...open, text: open.text + delta }
