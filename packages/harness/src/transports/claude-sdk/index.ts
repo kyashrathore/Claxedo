@@ -23,7 +23,7 @@ function capability(models?: readonly ModelInfo[]): TransportCapabilities {
       modelID: model.value, levels: model.supportsEffort ? model.supportedEffortLevels ?? [] : [],
     })) } : { status: "unresolved", models: [] },
     instructionChannel: "turn-system-prompt", configOwner: "runtime",
-    requests: { permissions: true, questions: true, elicitation: false }, subagents: true,
+    requests: { permissions: true, questions: true, elicitation: true }, subagents: true,
     goals: { implemented: true, available: true, actions: [], recovery: "blocked", optionalFields: ["iteration", "lastReason"] },
     todos: true, history: "store", titles: "harness",
     pluginIntake: { mcp: "session", skills: "plugin-dir" }, mcpTransports: { stdio: true, http: true, sse: true },
@@ -58,7 +58,7 @@ export class ClaudeSdkTransport implements HarnessTransport {
     claudeBinding(input.credentials)
     const session: HarnessSession = { directory: input.directory, locality: input.locality,
       binding: await broker.rebind(`claude-sdk:${randomUUID()}`) }
-    this.entries.set(input.sessionId, { input, revision: 0, session, broker: this.goalRuntime.watch(input.sessionId, broker), processes: new Set() })
+    this.entries.set(input.sessionId, { input, revision: 0, session, broker: this.goalRuntime.watch(input.sessionId, broker) })
     return session
   }
 
@@ -68,7 +68,7 @@ export class ClaudeSdkTransport implements HarnessTransport {
     claudeBinding(input.credentials)
     const session: HarnessSession = { directory: input.directory, locality: input.locality,
       binding: await broker.rebind(input.binding.upstreamSessionId) }
-    this.entries.set(input.sessionId, { input, revision: 0, session, broker: this.goalRuntime.watch(input.sessionId, broker), processes: new Set() })
+    this.entries.set(input.sessionId, { input, revision: 0, session, broker: this.goalRuntime.watch(input.sessionId, broker) })
     return session
   }
 

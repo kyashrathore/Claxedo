@@ -4,7 +4,7 @@ import { goalSessionStore } from "./goal-state"
 import { claudeLaunchContext, type ClaudeSdkOptions } from "./launch-context"
 import { permissionOptions } from "./permissions"
 import { ClaudeProcess } from "./process"
-import { askClaudePermission } from "./requests"
+import { askClaudeElicitation, askClaudePermission } from "./requests"
 import type { ClaudeMirroredUsage } from "./mirrored-usage"
 import { connectionGrantKeys, sessionMcpServers } from "../../contract"
 
@@ -58,6 +58,7 @@ export class ClaudeQueryLauncher {
         const turn = spec.turn()
         return askClaudePermission(current, turn?.broker ?? { ask: (request, asked) => broker.ask(request, asked), signal: abort.signal }, name, payload, options, turn?.turnId)
       },
+      onElicitation: (request, options) => askClaudeElicitation(spec.turn()?.broker ?? broker, request, options.signal),
       spawnClaudeCodeProcess: (options) => {
         const child = new ClaudeProcess(this.services, options, input.sessionId)
         processes.add(child)

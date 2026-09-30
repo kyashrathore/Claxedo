@@ -720,6 +720,14 @@ describe("Claude SDK protocol", () => {
     } finally { await f.close() }
   })
 
+  test("a Claude process that dies mid-turn fails the turn with a typed process error carrying its stderr tail", async () => {
+    const f = await scriptedClaude({ models, crash: "fatal: config.json is not valid JSON\n" })
+    try {
+      const failure = await f.run("default").then(() => undefined, (error: unknown) => error)
+      expect(failure).toMatchObject({ transport: "claude", code: "process", retryable: true, detail: { stderr: "fatal: config.json is not valid JSON\n" } })
+    } finally { await f.close() }
+  })
+
   test.each([true, false])("the Claude SDK consumes a steer and accepts it only with replay=%s", async (replay) => {
     const f = await fixture({ steering: true })
     try {

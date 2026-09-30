@@ -6,14 +6,11 @@ import { errorMessage } from "@claxedo/helpers"
 import type { Deadline, HarnessServices, HarnessSession, RoutedEvent, SessionBroker, StartInput, TurnBroker, TurnInput, TurnRef } from "../../contract"
 import { TransportError } from "../../contract/errors"
 import { claudePrompt } from "./attachments"
-import { claudeStreamEndedWithoutResult } from "./errors"
-import { claudeTranslator, translateClaude } from "./events"
 import { ClaudeLiveQuery, type ClaudeClaim } from "./live-query"
-import { ClaudeMirroredUsage } from "./mirrored-usage"
 import { type ClaudeModelCatalog, requiredClaudeEffort } from "./models"
-import { type ClaudeProcess, retireClaudeProcesses } from "./process"
+import { retireClaudeProcesses } from "./process"
 import type { ClaudeLaunchTurn, ClaudeQueryLauncher } from "./query-options"
-import { observeClaudeSessionMessage } from "./session-events"
+import { commandResult, translatedClaim, type ClaudeScope } from "./claim-frames"
 import { settledBy } from "./turn-deadline"
 
 type Running = { live?: ClaudeLiveQuery; done: Promise<void> }
@@ -25,7 +22,6 @@ export type ClaudeEntry = {
   revision: number
   session: HarnessSession
   broker: SessionBroker
-  processes: Set<ClaudeProcess>
   active?: ClaudeActive
   provider?: Running & { turnId: string; live: ClaudeLiveQuery }
   turn?: ClaudeLaunchTurn
@@ -37,7 +33,6 @@ export type ClaudeChoice = { model?: PromptModel; effort?: string | null; system
 
 type Launch = { key: string; model: string; effort?: EffortLevel; system?: string; agent?: string }
 
-type Scope = { assistantMessageId: string; todos: TurnInput["todos"]; broker: TurnBroker; signal: AbortSignal; final: boolean }
 
 function claudeEffort(value: string | null | undefined): EffortLevel | undefined {
   if (!value) return undefined
@@ -83,8 +78,9 @@ export class ClaudeTurns {
 
   async stop(entry: ClaudeEntry): Promise<void> {
     entry.active?.abort.abort()
-    entry.live?.terminate()
-    await retireClaudeProcesses(entry.processes)
+    const live = entry.live
+    live?.terminate()
+    await Promise.all([live ? retireClaudeProcesses(live.processes) : undefined, entry.retiring?.done])
   }
 
   async *run(entry: ClaudeEntry, turn: TurnInput, broker: TurnBroker): AsyncIterable<RoutedEvent> {
@@ -96,7 +92,7 @@ export class ClaudeTurns {
     const onAbort = () => active.abort.abort()
     if (broker.signal.aborted) onAbort()
     else broker.signal.addEventListener("abort", onAbort, { once: true })
-    const scope: Scope = { assistantMessageId: turn.assistantMessageId, todos: turn.todos, broker, signal: active.abort.signal, final: true }
+    const scope: ClaudeScope = { assistantMessageId: turn.assistantMessageId, todos: turn.todos, broker, signal: active.abort.signal, final: true }
     let settled = false
     try {
       settled = yield* this.prompted(entry, active, turn, scope)
@@ -110,7 +106,7 @@ export class ClaudeTurns {
     }
   }
 
-  private async *prompted(entry: ClaudeEntry, active: ClaudeActive, turn: TurnInput, scope: Scope): AsyncGenerator<RoutedEvent, boolean> {
+  private async *prompted(entry: ClaudeEntry, active: ClaudeActive, turn: TurnInput, scope: ClaudeScope): AsyncGenerator<RoutedEvent, boolean> {
     if (scope.signal.aborted) return false
     const opening = await claudePrompt(turn, entry.input.directory)
     const launch = await this.launchFor(entry, { model: turn.model, effort: turn.effort, system: turn.system, agent: turn.prompt.agent })
@@ -122,7 +118,7 @@ export class ClaudeTurns {
     const opened = await this.open(entry, launch, opening)
     active.live = opened.live
     if (scope.signal.aborted) this.interrupt(opened.live)
-    return yield* this.translated(entry, opened.live, opened.claim, scope)
+    return yield* translatedClaim(entry, opened.live, opened.claim, scope)
   }
 
   async command(entry: ClaudeEntry, text: string, limitMs: number): Promise<SDKMessage | undefined> {
@@ -137,7 +133,7 @@ export class ClaudeTurns {
       const opened = await this.open(entry, await this.launchFor(entry, configuredChoice(entry)), opening, () => true)
       active.live = opened.live
       const limit = setTimeout(() => opened.live.terminate(), limitMs)
-      try { return await this.commandResult(entry, opened.claim, active.abort.signal) } finally { clearTimeout(limit) }
+      try { return await commandResult(entry, opened.claim, active.abort.signal) } finally { clearTimeout(limit) }
     } finally {
       entry.active = undefined
       if (active.live) this.endTurn(entry, active.live, active.id, true)
@@ -145,23 +141,14 @@ export class ClaudeTurns {
     }
   }
 
-  private async commandResult(entry: ClaudeEntry, claim: ClaudeClaim, signal: AbortSignal): Promise<SDKMessage | undefined> {
-    let result: SDKMessage | undefined
-    for await (const frame of claim.frames) {
-      const observed = await observeClaudeSessionMessage(frame, entry, entry.broker, signal)
-      if (observed.kind === "message" && observed.message.type === "result") result = observed.message
-    }
-    return result
-  }
-
-  private async *drain(entry: ClaudeEntry, prior: ClaudeLiveQuery, active: ClaudeActive, scope: Scope, turnId: string): AsyncGenerator<RoutedEvent> {
+  private async *drain(entry: ClaudeEntry, prior: ClaudeLiveQuery, active: ClaudeActive, scope: ClaudeScope, turnId: string): AsyncGenerator<RoutedEvent> {
     await prior.stopBackground()
     const claim = prior.claim("exit")
     if (claim) {
       active.live = prior
       active.launched = true
       entry.turn = { broker: scope.broker, turnId }
-      yield* this.translated(entry, prior, claim, { ...scope, final: false })
+      yield* translatedClaim(entry, prior, claim, { ...scope, final: false })
       prior.release()
       active.live = undefined
     }
@@ -195,7 +182,7 @@ export class ClaudeTurns {
     const claim = live.claim("prompt")!
     try {
       live.run(await this.launcher().launch({ session: entry.session, input: entry.input, broker: entry.broker, turn: () => entry.turn,
-        prompt: live.input.stream, abort: live.abort, processes: entry.processes, usage: live.usage, model: launch.model, effort: launch.effort,
+        prompt: live.input.stream, abort: live.abort, processes: live.processes, usage: live.usage, model: launch.model, effort: launch.effort,
         system: launch.system, agent: launch.agent }))
     } catch (error) {
       live.fail(error)
@@ -210,7 +197,7 @@ export class ClaudeTurns {
     const done = live.ended.then(async () => {
       if (entry.live === live) entry.live = undefined
       if (live.failure !== undefined) this.log.warn("Claude Code ended with an error after its last turn", { error: errorMessage(live.failure) })
-      await retireClaudeProcesses(entry.processes)
+      await retireClaudeProcesses(live.processes)
     })
     entry.retiring = { live, done }
     void done.then(undefined, (error: unknown) => this.log.error("Claude Code process retirement failed", { error: errorMessage(error) }))
@@ -234,7 +221,7 @@ export class ClaudeTurns {
     else broker.signal.addEventListener("abort", onAbort, { once: true })
     let settled = false
     try {
-      settled = yield* this.translated(entry, live, claim, { assistantMessageId: turn.assistantMessageId, todos: [], broker, signal: broker.signal, final: true })
+      settled = yield* translatedClaim(entry, live, claim, { assistantMessageId: turn.assistantMessageId, todos: [], broker, signal: broker.signal, final: true })
     } finally {
       broker.signal.removeEventListener("abort", onAbort)
       if (entry.provider?.turnId === turn.turnId) entry.provider = undefined
@@ -249,33 +236,5 @@ export class ClaudeTurns {
     if (!settled) live.terminate()
     live.input.settle(settled && !live.reusable ? "ended" : "failed")
     if (!live.reusable) void this.retire(entry, live)
-  }
-
-  private async *translated(entry: ClaudeEntry, live: ClaudeLiveQuery, claim: ClaudeClaim, scope: Scope): AsyncGenerator<RoutedEvent, boolean> {
-    if (claim.dropped) yield claim.dropped
-    const { runtime, tasks } = claudeTranslator(scope.assistantMessageId, scope.todos, live.tasks)
-    const mirroredUsage = new ClaudeMirroredUsage(runtime, { broker: entry.broker, assistantMessageId: scope.assistantMessageId, directory: entry.input.directory })
-    live.usage.target(mirroredUsage)
-    try {
-      let result: SDKMessage | undefined
-      for await (const message of claim.frames) {
-        const observed = await observeClaudeSessionMessage(message, entry, entry.broker, scope.signal)
-        if (observed.kind === "active-goal") continue
-        const incorporated = live.input.observe(observed.message)
-        if (incorporated) {
-          for (const messageId of incorporated) yield { event: { type: "input-incorporated", messageId } }
-          continue
-        }
-        if (observed.message.type === "result") { result = observed.message; continue }
-        for (const event of await translateClaude(observed.message, runtime, tasks, scope.broker)) yield event
-      }
-      if (!scope.final) return true
-      if (result) {
-        mirroredUsage.release()
-        for (const event of await translateClaude(result, runtime, tasks, scope.broker)) yield event
-      }
-      if (!result && !scope.signal.aborted) throw claudeStreamEndedWithoutResult()
-      return true
-    } finally { mirroredUsage.release() }
   }
 }

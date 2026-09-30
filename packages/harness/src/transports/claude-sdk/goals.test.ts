@@ -64,7 +64,7 @@ test("a Goal whose turn fails clears the native Goal so Claude stops pursuing it
   launches[1]!.replay(0)
   launches[1]!.frames.push(cleared())
   await until(() => goals.at(-1)?.status === "blocked")
-  expect(goals.at(-1)).toMatchObject({ status: "blocked", lastReason: "Error: Claude Code process exited with code 1" })
+  expect(goals.at(-1)?.lastReason).toContain("Claude Code process exited with code 1")
   launches[1]!.frames.end()
   await transport.dispose()
 })

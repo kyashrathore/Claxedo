@@ -263,3 +263,20 @@ test("a cancel Claude does not answer by its deadline ends the process and says 
   await turn
   await transport.dispose()
 })
+
+test("Claude's elicitation_complete settles the accepted URL consent through the turn's broker", async () => {
+  const { transport, session, launches } = await setup()
+  const completed: string[] = []
+  const broker = { ...turnBroker(), completeElicitation: async (id: string) => { completed.push(id) } } as unknown as TurnBroker
+  const turn = collect(transport.send(session, userTurn("t1", "sign in"), broker))
+  await until(() => launches[0]?.prompts.length === 1)
+  const claude = launches[0]!
+  claude.frames.push(init())
+  claude.replay(0)
+  claude.frames.push(frame({ type: "system", subtype: "elicitation_complete", mcp_server_name: "auth", elicitation_id: "consent-1" }))
+  claude.frames.push(result())
+  await turn
+  expect(completed).toEqual(["consent-1"])
+  claude.frames.end()
+  await transport.dispose()
+})

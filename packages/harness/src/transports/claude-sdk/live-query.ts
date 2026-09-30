@@ -5,6 +5,7 @@ import { createClaudeTaskLedger } from "./translate"
 import { ClaudeHeldFrames } from "./held-frames"
 import { ClaudeQueryInput } from "./query-input"
 import type { ClaudeMirroredUsage } from "./mirrored-usage"
+import type { ClaudeProcess } from "./process"
 
 export type ClaudeFrame = SDKMessage | SDKActiveGoalMessage
 
@@ -42,6 +43,7 @@ export class ClaudeLiveQuery {
   readonly abort = new AbortController()
   readonly tasks = createClaudeTaskLedger()
   readonly usage = new ClaudeUsageRelay()
+  readonly processes = new Set<ClaudeProcess>()
   private background = new Set<string>()
   private readonly held = new ClaudeHeldFrames()
   private frames: Frames = { kind: "idle" }
@@ -54,6 +56,8 @@ export class ClaudeLiveQuery {
   get reusable(): boolean { return this.process.kind === "open" && this.frames.kind !== "claimed" }
 
   get failure(): unknown { return this.process.kind === "ended" ? this.process.failure : undefined }
+
+  get stderr(): string { return [...this.processes].at(-1)?.stderr ?? "" }
 
   run(stream: Query): void {
     this.process = { kind: "open", stream }
