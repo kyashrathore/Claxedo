@@ -2,62 +2,32 @@ import { asText as text } from "@claxedo/agent-runtime-contract"
 import type { AgentRuntimeEvent, AgentRuntimeEventOf } from "@claxedo/agent-runtime-contract"
 import type { HarnessEventAdapterContext } from "../../../translate/adapter"
 import type { ClaudeSdkAdapterState, ClaudeTranslation } from "./adapter-state"
-import { resultContextWindow, resultUsageEvent } from "./request-usage"
+import { rememberContextWindow, resultUsageEvent } from "./request-usage"
+import type { ClaudeTranslatorMemory } from "./translator-memory"
 
-function isInterruptedResult(message: Record<string, unknown>, errorMessage?: string) {
-  const summary = [
-    errorMessage,
-    text(message.subtype),
-    text(message.stop_reason),
-    text(message.result),
-  ].flatMap((item) => item ?? []).join(" ").toLowerCase()
-  return ["request was aborted", "aborted", "cancelled", "canceled", "interrupted"].some((item) => summary.includes(item))
+const cancelledReasons: readonly string[] = ["aborted_streaming", "aborted_tools"]
+
+function resultFailure(message: Record<string, unknown>, state: ClaudeSdkAdapterState): AgentRuntimeEvent {
+  if (state.failure) return { type: "error", ...state.failure }
+  const errors = Array.isArray(message.errors) ? message.errors.filter((item): item is string => typeof item === "string") : []
+  return { type: "error", error: errors[0] ?? text(message.result) ?? "Claude turn failed" }
 }
 
-function resultEvents(
-  message: Record<string, unknown>,
-  context: HarnessEventAdapterContext,
-  usage: AgentRuntimeEventOf<"usage"> | undefined,
-) {
+function resultEvents(message: Record<string, unknown>, state: ClaudeSdkAdapterState, context: HarnessEventAdapterContext,
+  usage: AgentRuntimeEventOf<"usage"> | undefined): AgentRuntimeEvent[] {
   const sessionId = text(message.session_id) ?? context.threadId
-  const errors = Array.isArray(message.errors)
-    ? message.errors.filter((item): item is string => typeof item === "string")
-    : []
-  const errorMessage = errors[0] ?? text(message.error)
-  const interrupted = isInterruptedResult(message, errorMessage)
-  if (message.is_error === true && !interrupted) {
-    return [
-      ...(usage ? [usage] : []),
-      { type: "session-status", status: "error" },
-      { type: "error", error: errorMessage ?? "Claude turn failed" },
-    ] satisfies AgentRuntimeEvent[]
-  }
-  if (interrupted) {
-    return [
-      ...(usage ? [usage] : []),
-      { type: "session-status", status: "idle" },
-      { type: "cancelled", sessionId },
-    ] satisfies AgentRuntimeEvent[]
-  }
-  return [
-    ...(usage ? [usage] : []),
-    { type: "session-status", status: "idle" },
-    { type: "finish", sessionId },
-  ] satisfies AgentRuntimeEvent[]
+  const metered = usage ? [usage] : []
+  if (cancelledReasons.includes(text(message.terminal_reason) ?? "")) return [...metered, { type: "session-status", status: "idle" }, { type: "cancelled", sessionId }]
+  if (message.is_error === true) return [...metered, { type: "session-status", status: "error" }, resultFailure(message, state)]
+  return [...metered, { type: "session-status", status: "idle" }, { type: "finish", sessionId }]
 }
 
-export function translateResult(state: ClaudeSdkAdapterState, message: Record<string, unknown>, context: HarnessEventAdapterContext): ClaudeTranslation {
-  const lastKnownContextWindow = resultContextWindow(message) ?? state.lastKnownContextWindow
-  const next = {
-    ...state,
-    blocksByIndex: {},
-    toolsById: {},
-    streamedAssistantTextByOwner: {},
-    reconciledAssistantTextByMessageId: {},
-    ...(lastKnownContextWindow ? { lastKnownContextWindow } : {}),
-  }
+export function translateResult(state: ClaudeSdkAdapterState, message: Record<string, unknown>, context: HarnessEventAdapterContext,
+  memory: ClaudeTranslatorMemory): ClaudeTranslation {
+  rememberContextWindow(state, memory, message)
+  const { failure: _, reconciledFrames: __, ...settled } = state
   return {
-    state: next,
-    events: resultEvents(message, context, resultUsageEvent(next, text(message.session_id))),
+    state: { ...settled, blocksByIndex: {}, toolsById: {}, streamedAssistantTextByOwner: {}, streamedThinkingByOwner: {} },
+    events: resultEvents(message, state, context, resultUsageEvent(state, memory, text(message.session_id))),
   }
 }

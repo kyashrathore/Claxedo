@@ -164,7 +164,7 @@ export class ClaudeTurns {
 
   private async *translated(entry: ClaudeEntry, live: ClaudeLiveQuery, frames: AsyncIterable<ClaudeFrame>, assistantMessageId: string,
     todos: TurnInput["todos"], broker: TurnBroker, signal: AbortSignal): AsyncGenerator<RoutedEvent, boolean> {
-    const { runtime, tasks } = claudeTranslator(assistantMessageId, todos, live.tasks)
+    const { runtime, tasks } = claudeTranslator(assistantMessageId, todos, live.tasks, live.memory)
     const mirroredUsage = new ClaudeMirroredUsage(runtime, { broker: entry.broker, assistantMessageId, directory: entry.input.directory })
     live.usage.target(mirroredUsage)
     try {
