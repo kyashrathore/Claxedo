@@ -1,5 +1,6 @@
+import { randomUUID } from "node:crypto"
 import { AbortError, type EffortLevel, type SDKMessage, type SDKUserMessage } from "@anthropic-ai/claude-agent-sdk"
-import { isHarnessEffortLevel, type SteerResult } from "@claxedo/agent-runtime-contract"
+import { isHarnessEffortLevel, type PromptModel, type SteerResult } from "@claxedo/agent-runtime-contract"
 import type { AdapterCancelOutcome } from "@claxedo/agent-runtime-contract"
 import { errorMessage } from "@claxedo/helpers"
 import type { Deadline, HarnessServices, HarnessSession, RoutedEvent, SessionBroker, StartInput, TurnBroker, TurnInput, TurnRef } from "../../contract"
@@ -32,7 +33,9 @@ export type ClaudeEntry = {
   retiring?: { live: ClaudeLiveQuery; done: Promise<void> }
 }
 
-type Launch = { key: string; model: string; effort?: EffortLevel; turn: TurnInput }
+export type ClaudeChoice = { model?: PromptModel; effort?: string | null; system?: string; agent?: string }
+
+type Launch = { key: string; model: string; effort?: EffortLevel; system?: string; agent?: string }
 
 type Scope = { assistantMessageId: string; todos: TurnInput["todos"]; broker: TurnBroker; signal: AbortSignal; final: boolean }
 
@@ -40,6 +43,11 @@ function claudeEffort(value: string | null | undefined): EffortLevel | undefined
   if (!value) return undefined
   if (!isHarnessEffortLevel(value)) throw new TransportError("claude", "configuration", `Unsupported Claude effort ${value}`)
   return value
+}
+
+export function configuredChoice(entry: Pick<ClaudeEntry, "broker">): ClaudeChoice {
+  const { model, variant, instructions, agent } = entry.broker.config()
+  return { ...(model ? { model } : {}), ...(variant ? { effort: variant } : {}), ...(instructions ? { system: instructions } : {}), ...(agent ? { agent } : {}) }
 }
 
 function settlement(): { done: Promise<void>; finish: () => void } {
@@ -105,7 +113,7 @@ export class ClaudeTurns {
   private async *prompted(entry: ClaudeEntry, active: ClaudeActive, turn: TurnInput, scope: Scope): AsyncGenerator<RoutedEvent, boolean> {
     if (scope.signal.aborted) return false
     const opening = await claudePrompt(turn, entry.input.directory)
-    const launch = await this.launchFor(entry, turn)
+    const launch = await this.launchFor(entry, { model: turn.model, effort: turn.effort, system: turn.system, agent: turn.prompt.agent })
     const prior = entry.live
     if (prior && (!prior.reusable || prior.key !== launch.key)) yield* this.drain(entry, prior, active, scope, turn.turnId)
     if (scope.signal.aborted) return false
@@ -115,6 +123,35 @@ export class ClaudeTurns {
     active.live = opened.live
     if (scope.signal.aborted) this.interrupt(opened.live)
     return yield* this.translated(entry, opened.live, opened.claim, scope)
+  }
+
+  async command(entry: ClaudeEntry, text: string, limitMs: number): Promise<SDKMessage | undefined> {
+    if (entry.active || entry.provider) throw new TransportError("claude", "session", "Claude turn already active")
+    const { done, finish } = settlement()
+    const active: ClaudeActive = { id: `command:${randomUUID()}`, abort: new AbortController(), launched: true, done }
+    entry.active = active
+    try {
+      const prior = entry.live
+      if (prior && !prior.reusable) await this.retire(entry, prior)
+      const opening: SDKUserMessage = { type: "user", session_id: "", message: { role: "user", content: text }, parent_tool_use_id: null }
+      const opened = await this.open(entry, await this.launchFor(entry, configuredChoice(entry)), opening, () => true)
+      active.live = opened.live
+      const limit = setTimeout(() => opened.live.terminate(), limitMs)
+      try { return await this.commandResult(entry, opened.claim, active.abort.signal) } finally { clearTimeout(limit) }
+    } finally {
+      entry.active = undefined
+      if (active.live) this.endTurn(entry, active.live, active.id, true)
+      finish()
+    }
+  }
+
+  private async commandResult(entry: ClaudeEntry, claim: ClaudeClaim, signal: AbortSignal): Promise<SDKMessage | undefined> {
+    let result: SDKMessage | undefined
+    for await (const frame of claim.frames) {
+      const observed = await observeClaudeSessionMessage(frame, entry, entry.broker, signal)
+      if (observed.kind === "message" && observed.message.type === "result") result = observed.message
+    }
+    return result
   }
 
   private async *drain(entry: ClaudeEntry, prior: ClaudeLiveQuery, active: ClaudeActive, scope: Scope, turnId: string): AsyncGenerator<RoutedEvent> {
@@ -138,16 +175,17 @@ export class ClaudeTurns {
     })
   }
 
-  private async launchFor(entry: ClaudeEntry, turn: TurnInput): Promise<Launch> {
-    const model = turn.model?.modelID ?? "default"
-    const effort = claudeEffort(requiredClaudeEffort(turn.effort ? await this.models.load(entry.input, entry.input.sessionId) : [], model, turn.effort))
-    const key = JSON.stringify([entry.revision, entry.broker.config(), model, effort ?? null, turn.system ?? null, turn.prompt.agent ?? null])
-    return { key, model, ...(effort ? { effort } : {}), turn }
+  private async launchFor(entry: ClaudeEntry, choice: ClaudeChoice): Promise<Launch> {
+    const model = choice.model?.modelID ?? "default"
+    const effort = claudeEffort(requiredClaudeEffort(choice.effort ? await this.models.load(entry.input, entry.input.sessionId) : [], model, choice.effort))
+    const key = JSON.stringify([entry.revision, entry.broker.config(), model, effort ?? null, choice.system ?? null, choice.agent ?? null])
+    return { key, model, ...(effort ? { effort } : {}), ...(choice.system ? { system: choice.system } : {}), ...(choice.agent ? { agent: choice.agent } : {}) }
   }
 
-  private async open(entry: ClaudeEntry, launch: Launch, opening: SDKUserMessage): Promise<{ live: ClaudeLiveQuery; claim: ClaudeClaim }> {
+  private async open(entry: ClaudeEntry, launch: Launch, opening: SDKUserMessage,
+    reuse = (live: ClaudeLiveQuery) => live.key === launch.key): Promise<{ live: ClaudeLiveQuery; claim: ClaudeClaim }> {
     const current = entry.live
-    if (current?.reusable && current.key === launch.key) {
+    if (current?.reusable && reuse(current)) {
       current.input.open(opening)
       return { live: current, claim: current.claim("prompt")! }
     }
@@ -158,7 +196,7 @@ export class ClaudeTurns {
     try {
       live.run(await this.launcher().launch({ session: entry.session, input: entry.input, broker: entry.broker, turn: () => entry.turn,
         prompt: live.input.stream, abort: live.abort, processes: entry.processes, usage: live.usage, model: launch.model, effort: launch.effort,
-        system: launch.turn.system, agent: launch.turn.prompt.agent, partialMessages: true }))
+        system: launch.system, agent: launch.agent }))
     } catch (error) {
       live.fail(error)
       if (entry.live === live) entry.live = undefined

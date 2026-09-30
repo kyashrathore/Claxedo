@@ -1,4 +1,4 @@
-import { query, type EffortLevel, type McpServerConfig, type Query } from "@anthropic-ai/claude-agent-sdk"
+import { query, type EffortLevel, type McpServerConfig, type Query, type SDKUserMessage } from "@anthropic-ai/claude-agent-sdk"
 import type { HarnessServices, HarnessSession, SessionBroker, StartInput, TurnBroker } from "../../contract"
 import { goalSessionStore } from "./goal-state"
 import { claudeLaunchContext, type ClaudeSdkOptions } from "./launch-context"
@@ -8,8 +8,6 @@ import { askClaudePermission } from "./requests"
 import type { ClaudeMirroredUsage } from "./mirrored-usage"
 import { connectionGrantKeys, sessionMcpServers } from "../../contract"
 
-const protocolClaudePermissionMap = { deny: "deny" } as const
-
 const undeliveredWakeups = ["ScheduleWakeup", "CronCreate", "CronDelete", "CronList"]
 
 export type ClaudeLaunchTurn = { broker: TurnBroker; turnId: string }
@@ -18,17 +16,15 @@ type Launch = {
   session: HarnessSession
   input: StartInput
   broker: SessionBroker
-  turn?: () => ClaudeLaunchTurn | undefined
-  prompt: Parameters<typeof query>[0]["prompt"]
+  turn: () => ClaudeLaunchTurn | undefined
+  prompt: AsyncIterable<SDKUserMessage>
   abort: AbortController
   processes: Set<ClaudeProcess>
   usage: Pick<ClaudeMirroredUsage, "observe">
-  clear?: boolean
   model?: string
   effort?: EffortLevel
   system?: string
   agent?: string
-  partialMessages?: boolean
 }
 
 function mcpServers(input: StartInput, services: HarnessServices): Record<string, McpServerConfig> {
@@ -52,16 +48,14 @@ export class ClaudeQueryLauncher {
       ...permissionOptions(current.config, connectionGrantKeys(current.config.permissionState, session.binding.connectionId)),
       ...(session.binding.upstreamSessionId.startsWith("claude-sdk:") ? {} : { resume: session.binding.upstreamSessionId }),
       mcpServers: mcpServers(input, this.services), forwardSubagentText: true, abortController: abort, disallowedTools: undeliveredWakeups,
-      ...(spec.clear ? { tools: [], maxTurns: 1 } : { sessionStore: goalSessionStore(broker, abort.signal, spec.usage), sessionStoreFlush: "eager" as const }),
+      sessionStore: goalSessionStore(broker, abort.signal, spec.usage), sessionStoreFlush: "eager",
       ...(spec.model && (spec.model !== "default" || !spec.agent) ? { model: spec.model } : {}),
       ...(spec.effort ? { effort: spec.effort } : {}),
       ...(spec.system ? { systemPrompt: { type: "preset" as const, preset: "claude_code" as const, append: spec.system } } : {}),
       ...(spec.agent ? { agent: spec.agent } : {}),
-      extraArgs: { "thinking-display": "summarized", ...(spec.partialMessages ? { "replay-user-messages": null } : {}) },
-      ...(spec.partialMessages ? { includePartialMessages: true } : {}),
+      extraArgs: { "thinking-display": "summarized", "replay-user-messages": null }, includePartialMessages: true,
       canUseTool: (name, payload, options) => {
-        if (spec.clear) return Promise.resolve({ behavior: protocolClaudePermissionMap.deny, message: "Clearing the native Goal cannot run tools" })
-        const turn = spec.turn?.()
+        const turn = spec.turn()
         return askClaudePermission(current, turn?.broker ?? { ask: (request, asked) => broker.ask(request, asked), signal: abort.signal }, name, payload, options, turn?.turnId)
       },
       spawnClaudeCodeProcess: (options) => {

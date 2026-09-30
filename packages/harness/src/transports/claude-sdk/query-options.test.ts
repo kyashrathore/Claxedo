@@ -6,7 +6,7 @@ import { ClaudeMirroredUsage } from "./mirrored-usage"
 import type { ClaudeProcess } from "./process"
 import { ClaudeQueryLauncher } from "./query-options"
 
-test("turns and native goals share session options while clear forbids tools", async () => {
+test("every Claude launch streams its input with partial messages and replayed prompts, and offers no wakeups", async () => {
   const calls: Parameters<typeof query>[0][] = []
   const runQuery = ((call: Parameters<typeof query>[0]) => { calls.push(call); return {} as Query }) as typeof query
   const services = { firstPartyMcp: () => ({ name: "claxedo", kind: "http", url: "http://127.0.0.1:48810",
@@ -20,28 +20,18 @@ test("turns and native goals share session options while clear forbids tools", a
   const broker = { sessionId: "s1", config: () => input.config, goal: { read: () => null, publish: async () => {} } } as unknown as SessionBroker
   const mirroredUsage = new ClaudeMirroredUsage(claudeTranslator("a1").runtime, { broker, assistantMessageId: "a1", directory: "/work" })
   const launcher = new ClaudeQueryLauncher(services, { executable: "claude", configRoot: "/tmp/claxedo", userConfigRoot: "/tmp/user", env: {} }, runQuery)
-  const base = { session, input, broker, abort: new AbortController(), processes: new Set<ClaudeProcess>(), usage: mirroredUsage }
-  await launcher.launch({ ...base, prompt: "turn", turn: () => ({ broker: { signal: new AbortController().signal } as TurnBroker, turnId: "t1" }),
-    model: "default", agent: "reviewer", system: "system", partialMessages: true })
-  await launcher.launch({ ...base, prompt: "/goal Ship" })
-  await launcher.launch({ ...base, prompt: "/goal clear", clear: true })
-  const options = calls.map((call) => call.options)
-  const shared = (value: NonNullable<typeof options[number]>) => ({ cwd: value.cwd, env: value.env, resume: value.resume,
-    permissionMode: value.permissionMode, settings: value.settings, additionalDirectories: value.additionalDirectories,
-    plugins: value.plugins, mcpServers: value.mcpServers, settingSources: value.settingSources,
-    forwardSubagentText: value.forwardSubagentText, pathToClaudeCodeExecutable: value.pathToClaudeCodeExecutable })
-  expect(shared(options[0]!)).toEqual(shared(options[1]!))
-  expect(shared(options[1]!)).toEqual(shared(options[2]!))
-  expect(options[0]).toMatchObject({ agent: "reviewer", includePartialMessages: true,
-    systemPrompt: { append: "system" } })
-  expect(options[1]?.tools).toBeUndefined()
-  expect(options[2]).toMatchObject({ tools: [], maxTurns: 1 })
-  expect(options[2]?.sessionStore).toBeUndefined()
-  expect(JSON.stringify(options[0]?.env)).not.toContain("Bearer local")
-  expect(options[0]?.extraArgs).toEqual({ "thinking-display": "summarized", "replay-user-messages": null })
-  expect(options[1]?.extraArgs).toEqual({ "thinking-display": "summarized" })
+  const prompt = (async function* () {})()
+  await launcher.launch({ session, input, broker, abort: new AbortController(), processes: new Set<ClaudeProcess>(), usage: mirroredUsage, prompt,
+    turn: () => ({ broker: { signal: new AbortController().signal } as TurnBroker, turnId: "t1" }), model: "default", agent: "reviewer", system: "system" })
+  const options = calls[0]!.options!
+  expect(options).toMatchObject({ agent: "reviewer", includePartialMessages: true, systemPrompt: { append: "system" }, resume: "up1", forwardSubagentText: true,
+    disallowedTools: ["ScheduleWakeup", "CronCreate", "CronDelete", "CronList"] })
+  expect(calls[0]!.prompt).toBe(prompt)
+  expect(options.tools).toBeUndefined()
+  expect(JSON.stringify(options.env)).not.toContain("Bearer local")
+  expect(options.extraArgs).toEqual({ "thinking-display": "summarized", "replay-user-messages": null })
   const key = { projectKey: "project", sessionId: "up1" }
-  expect(await options[1]?.sessionStore?.load(key)).toBeNull()
-  expect(await options[1]?.sessionStore?.listSessions?.("project")).toEqual([])
-  expect(await options[1]?.sessionStore?.listSubkeys?.(key)).toEqual([])
+  expect(await options.sessionStore?.load(key)).toBeNull()
+  expect(await options.sessionStore?.listSessions?.("project")).toEqual([])
+  expect(await options.sessionStore?.listSubkeys?.(key)).toEqual([])
 })

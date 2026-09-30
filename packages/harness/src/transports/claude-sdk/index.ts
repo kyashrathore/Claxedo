@@ -43,8 +43,8 @@ export class ClaudeSdkTransport implements HarnessTransport {
   constructor(private readonly services: HarnessServices, private readonly options: ClaudeSdkOptions) {
     this.models = new ClaudeModelCatalog(services, options)
     this.launcher = new ClaudeQueryLauncher(services, options)
-    this.goalRuntime = new ClaudeGoals(this.launcher)
     this.turns = new ClaudeTurns(() => this.launcher, this.models, services.log)
+    this.goalRuntime = new ClaudeGoals(this.turns)
   }
 
   async capabilities(context: CapabilityContext): Promise<TransportCapabilities> {
@@ -58,7 +58,7 @@ export class ClaudeSdkTransport implements HarnessTransport {
     claudeBinding(input.credentials)
     const session: HarnessSession = { directory: input.directory, locality: input.locality,
       binding: await broker.rebind(`claude-sdk:${randomUUID()}`) }
-    this.entries.set(input.sessionId, { input, revision: 0, session, broker, processes: new Set() })
+    this.entries.set(input.sessionId, { input, revision: 0, session, broker: this.goalRuntime.watch(input.sessionId, broker), processes: new Set() })
     return session
   }
 
@@ -68,7 +68,7 @@ export class ClaudeSdkTransport implements HarnessTransport {
     claudeBinding(input.credentials)
     const session: HarnessSession = { directory: input.directory, locality: input.locality,
       binding: await broker.rebind(input.binding.upstreamSessionId) }
-    this.entries.set(input.sessionId, { input, revision: 0, session, broker, processes: new Set() })
+    this.entries.set(input.sessionId, { input, revision: 0, session, broker: this.goalRuntime.watch(input.sessionId, broker), processes: new Set() })
     return session
   }
 
@@ -87,14 +87,10 @@ export class ClaudeSdkTransport implements HarnessTransport {
 
   readonly goals = {
     read: async (session: HarnessSession) => this.entry(session).broker.goal.read(),
-    start: async (session: HarnessSession, objective: string, broker: SessionBroker) =>
-      this.goalRuntime.start(this.entry(session), broker, objective),
+    start: async (session: HarnessSession, objective: string) => this.goalRuntime.start(this.entry(session), objective),
     pause: async () => ({ ok: false as const, status: "unsupported" as const, message: "Claude Goal cannot pause" }),
     resume: async () => ({ ok: false as const, status: "unsupported" as const, message: "Claude Goal cannot resume" }),
-    stop: async (session: HarnessSession) => {
-      const entry = this.entry(session)
-      return this.goalRuntime.stop(entry, entry.broker)
-    },
+    stop: async (session: HarnessSession) => this.goalRuntime.stop(this.entry(session)),
     delete: async () => ({ ok: false as const, status: "unsupported" as const, message: "Claude Goal cannot delete" }),
   }
 
@@ -139,14 +135,7 @@ export class ClaudeSdkTransport implements HarnessTransport {
   readonly naming = {}
 
   async cancel(session: HarnessSession, turn: TurnRef, deadline: Deadline) {
-    const entry = this.entry(session)
-    if (this.goalRuntime.turnId(entry.input.sessionId) === turn.turnId) {
-      const settlement = await this.goalRuntime.cancel(entry.input.sessionId)
-      if (settlement?.state === "cancelled" || settlement?.state === "completed") return { execution: "terminal" as const, cleanup: "unknown" as const }
-      return { execution: "unknown" as const, cleanup: "unknown" as const,
-        ...(settlement?.state === "failed" ? { error: { code: "internal_error" as const, message: settlement.error } } : {}) }
-    }
-    return this.turns.cancel(entry, turn, deadline)
+    return this.turns.cancel(this.entry(session), turn, deadline)
   }
 
   async configure(session: HarnessSession, update: TransportConfigUpdate): Promise<ConfigApplied> {
@@ -159,7 +148,7 @@ export class ClaudeSdkTransport implements HarnessTransport {
 
   async close(session: HarnessSession): Promise<void> {
     const entry = this.entry(session)
-    await this.goalRuntime.cancel(entry.input.sessionId)
+    this.goalRuntime.forget(entry.input.sessionId)
     await this.turns.stop(entry)
     this.entries.delete(session.binding.sessionId)
   }
