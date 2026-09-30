@@ -6,6 +6,7 @@ import { attachmentPathLine, isPromptImage, materializeAttachment, promptFiles, 
 import { codexTurnSandboxPolicy, type CodexPermissionSettings } from "./modes"
 import { codexDynamicTools } from "./subagents"
 import { codexCredential } from "../../profiles/codex"
+import type { CodexTurnSettings } from "./models"
 
 type ThreadConfig = Record<string, JsonValue>
 type ThreadStartParams = v2.ThreadStartParams & { dynamicTools: v2.DynamicToolSpec[] }
@@ -32,11 +33,11 @@ export function codexThreadStartParams(input: StartInput, config: ThreadConfig, 
 
 export function codexThreadResumeParams(threadId: string, input: Pick<StartInput, "directory">, config: ThreadConfig,
   mode: CodexPermissionSettings): v2.ThreadResumeParams {
-  return { threadId, cwd: input.directory, approvalPolicy: mode.approvalPolicy, approvalsReviewer: "user", sandbox: mode.sandbox, config }
+  return { threadId, cwd: input.directory, approvalPolicy: mode.approvalPolicy, approvalsReviewer: "user", sandbox: mode.sandbox, config, excludeTurns: true }
 }
 
 export async function codexTurnParams(turn: TurnInput, threadId: string, directory: string,
-  settings: Pick<v2.TurnStartParams, "model" | "effort" | "serviceTier">, mode: CodexPermissionSettings): Promise<v2.TurnStartParams> {
+  settings: CodexTurnSettings, mode: CodexPermissionSettings): Promise<v2.TurnStartParams> {
   return { threadId, input: await codexTurnInput(turn, directory), cwd: directory, ...settings,
     approvalPolicy: mode.approvalPolicy, approvalsReviewer: "user", sandboxPolicy: codexTurnSandboxPolicy(mode.sandbox, directory) }
 }

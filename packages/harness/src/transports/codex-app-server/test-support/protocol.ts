@@ -51,18 +51,25 @@ const methods: Record<string, Shape> = {
     model: optional(text), serviceTier: optional(text), serviceTierForTurn: optional(text), effort: optional(text),
     summary: optional(oneOf("auto", "concise", "detailed", "none")), personality, outputSchema: json } },
   "turn/interrupt": { required: ["threadId", "turnId"], fields: { threadId: text, turnId: text } },
+  "thread/goal/get": { required: ["threadId"], fields: { threadId: text } },
+  "turn/steer": { required: ["threadId", "expectedTurnId", "input"], fields: { threadId: text, expectedTurnId: text,
+    clientUserMessageId: optional(text), input: list(userInput) } },
 }
+
+export class CodexScriptedFailure extends Error {}
 
 export class CodexPeer {
   private phase: "new" | "initializing" | "ready" = "new"
   private readonly threads = new Map<string, string | undefined>()
   private readonly pending = new Set<number>()
 
-  constructor(private readonly models: unknown[]) {}
+  constructor(private readonly models: unknown[], private readonly script: { modelListFailures?: number; goal?: unknown; userAgent?: string } = {}) {}
 
   request(id: number) { this.pending.add(id) }
 
   emitted(frame: Frame) {
+    const started = frame.params?.turn
+    if (frame.method === "turn/started" && isRecord(started)) this.threads.set(String(frame.params?.threadId), String(started.id))
     if (frame.method !== "turn/completed") return
     const threadId = String(frame.params?.threadId)
     const turn = frame.params?.turn
@@ -84,8 +91,16 @@ export class CodexPeer {
     assert.equal(typeof frame.id, "number", `${frame.method} requires a request id`)
     assert(methods[frame.method], `Unscripted Codex method: ${frame.method}`)
     assert(conforms(params, methods[frame.method]), `Invalid Codex ${frame.method} parameters: ${JSON.stringify(params)}`)
-    if (frame.method === "model/list") return { data: this.models }
+    if (frame.method === "model/list") {
+      if (this.script.modelListFailures) { this.script.modelListFailures--; throw new CodexScriptedFailure("model catalog unavailable") }
+      return { data: this.models }
+    }
+    if (frame.method === "thread/goal/get") return { goal: this.script.goal ?? null }
     if (frame.method === "turn/start") return this.start(params)
+    if (frame.method === "turn/steer") {
+      assert.equal(this.threads.get(String(params.threadId)), params.expectedTurnId, "turn/steer must name the thread's active turn")
+      return { turnId: params.expectedTurnId }
+    }
     if (frame.method === "turn/interrupt") {
       assert.equal(this.threads.get(String(params.threadId)), params.turnId, "turn/interrupt must name the thread's active turn")
       return {}
@@ -106,7 +121,7 @@ export class CodexPeer {
     assert.equal(typeof frame.id, "number", "initialize requires a request id")
     assert.deepEqual(params, { clientInfo: { name: "claxedo", version: "0.1.0" }, capabilities: { experimentalApi: true, requestAttestation: false } })
     this.phase = "initializing"
-    return { userAgent: "codex-conformance", platformFamily: "unix", platformOs: "macos" }
+    return { userAgent: this.script.userAgent ?? "claxedo/0.156.1 (Mac OS 26.6.2; arm64) unknown (claxedo; 0.1.0)", platformFamily: "unix", platformOs: "macos" }
   }
 
   private start(params: Record<string, unknown>) {

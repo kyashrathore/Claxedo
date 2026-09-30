@@ -12,7 +12,7 @@ import { CLAXEDO_MARKETPLACE, codexHomeKey, copyTreeAtomically, mirrorOwnerCodex
 const START = "# BEGIN CLAXEDO CODEX PROFILE"
 const END = "# END CLAXEDO CODEX PROFILE"
 
-export type CodexProfile = { home: string; brokered: boolean }
+export type CodexProfile = { home: string; brokered: boolean; plugins: string[] }
 
 export type CodexProfileInput = {
   homeRoot: string
@@ -33,43 +33,42 @@ async function readOptional(file: string): Promise<string> {
   })
 }
 
-async function marketplace(home: string, projection: PluginProjection): Promise<string> {
+async function installedPlugins(folder: string): Promise<string[]> {
+  return (await fs.readdir(folder).catch((error: NodeJS.ErrnoException) => {
+    if (error.code === "ENOENT") return []
+    throw error
+  })).sort()
+}
+
+async function installCodexPlugin(item: PluginProjection["pluginRoots"][number], source: string, cache: string): Promise<string> {
+  const fields = asRecordOrEmpty(JSON.parse(await fs.readFile(path.join(item.root, ".codex-plugin", "plugin.json"), "utf8")))
+  const name = validatedCodexPluginSegment(asString(fields.name) ?? "")
+  const version = validatedCodexPluginSegment(asString(fields.version) ?? "1.0.0")
+  const pluginRoot = await fs.realpath(item.root)
+  await copyTreeAtomically(item.root, path.join(source, "plugins", name), pluginRoot)
+  await fs.mkdir(path.join(cache, name), { recursive: true, mode: 0o700 })
+  await copyTreeAtomically(item.root, path.join(cache, name, version), pluginRoot)
+  for (const stale of await fs.readdir(path.join(cache, name))) if (stale !== version) await fs.rm(path.join(cache, name, stale), { recursive: true, force: true })
+  return name
+}
+
+async function marketplace(home: string, projection: PluginProjection): Promise<{ block: string; plugins: string[] }> {
   const source = path.join(home, "marketplace")
   const cache = path.join(home, "plugins", "cache", CLAXEDO_MARKETPLACE)
-  if (!projection.pluginRoots.length) {
-    await fs.rm(source, { recursive: true, force: true })
-    await fs.rm(cache, { recursive: true, force: true })
-    return ""
-  }
-  const manifest = path.join(source, ".agents", "plugins")
-  await fs.mkdir(manifest, { recursive: true, mode: 0o700 })
-  await fs.mkdir(path.join(source, "plugins"), { recursive: true, mode: 0o700 })
-  await fs.mkdir(cache, { recursive: true, mode: 0o700 })
   const names = new Set<string>()
-  const plugins = []
   for (const item of projection.pluginRoots) {
-    const fields = asRecordOrEmpty(JSON.parse(await fs.readFile(path.join(item.root, ".codex-plugin", "plugin.json"), "utf8")))
-    const name = validatedCodexPluginSegment(asString(fields.name) ?? "")
-    const version = validatedCodexPluginSegment(asString(fields.version) ?? "1.0.0")
+    await fs.mkdir(path.join(source, "plugins"), { recursive: true, mode: 0o700 })
+    const name = await installCodexPlugin(item, source, cache)
     if (names.has(name)) throw new Error(`Duplicate Codex plugin ${name}`)
     names.add(name)
-    const pluginRoot = await fs.realpath(item.root)
-    await copyTreeAtomically(item.root, path.join(source, "plugins", name), pluginRoot)
-    await fs.mkdir(path.join(cache, name), { recursive: true, mode: 0o700 })
-    await copyTreeAtomically(item.root, path.join(cache, name, version), pluginRoot)
-    for (const stale of await fs.readdir(path.join(cache, name))) if (stale !== version) await fs.rm(path.join(cache, name, stale), { recursive: true, force: true })
-    plugins.push({ name, source: { source: "local", path: `./plugins/${name}` } })
   }
-  for (const folder of [path.join(source, "plugins"), cache]) {
-    for (const stale of await fs.readdir(folder)) if (!names.has(stale)) await fs.rm(path.join(folder, stale), { recursive: true, force: true })
-  }
-  await writePrivateFileAtomic(path.join(manifest, "marketplace.json"), JSON.stringify({ name: CLAXEDO_MARKETPLACE, plugins }))
-  return [
-    `[marketplaces.${CLAXEDO_MARKETPLACE}]`,
-    'source_type = "local"',
-    `source = ${JSON.stringify(source)}`,
-    ...plugins.flatMap(({ name }) => [`[plugins.${JSON.stringify(`${name}@${CLAXEDO_MARKETPLACE}`)}]`, "enabled = true"]),
-  ].join("\n")
+  const installed = await installedPlugins(path.join(source, "plugins"))
+  if (!installed.length) return { block: "", plugins: [] }
+  await fs.mkdir(path.join(source, ".agents", "plugins"), { recursive: true, mode: 0o700 })
+  await writePrivateFileAtomic(path.join(source, ".agents", "plugins", "marketplace.json"), JSON.stringify({ name: CLAXEDO_MARKETPLACE,
+    plugins: installed.map((name) => ({ name, source: { source: "local", path: `./plugins/${name}` } })) }))
+  return { block: [`[marketplaces.${CLAXEDO_MARKETPLACE}]`, 'source_type = "local"', `source = ${JSON.stringify(source)}`].join("\n"),
+    plugins: [...names].map((name) => `${name}@${CLAXEDO_MARKETPLACE}`) }
 }
 
 function brokerFragment(selected: { baseUrl: string; apiPath?: string; placeholder: string }): string {
@@ -140,11 +139,12 @@ export async function prepareCodexProfile(input: CodexProfileInput): Promise<Cod
   await fs.mkdir(home, { recursive: true, mode: 0o700 })
   await fs.chmod(home, 0o700)
   if (!brokered) await mirrorOwnerCodexHome(ownerHome, home, input.projection.pluginSelection?.mode !== "selected")
-  const fragments = [await marketplace(home, input.projection)]
+  const plugins = await marketplace(home, input.projection)
+  const fragments = [plugins.block]
   if (selected) fragments.unshift(brokerFragment(selected))
   const retained = brokered ? "" : personalConfig(await readOptional(path.join(ownerHome, "config.toml")), input.projection)
   const block = fragments.filter(Boolean).join("\n\n")
   const next = [retained, block ? `${START}\n${block}\n${END}` : ""].filter(Boolean).join("\n\n")
   await writePrivateFileAtomic(path.join(home, "config.toml"), `${next}\n`)
-  return { home, brokered }
+  return { home, brokered, plugins: plugins.plugins }
 }

@@ -24,7 +24,7 @@ function parseCodexTitle(reply: string): string | null {
 async function startTitleThread(entry: TitleEntry, request: SessionTitleRequest, services: HarnessServices, model: string | undefined): Promise<string> {
   const params: v2.ThreadStartParams = { cwd: request.directory, ephemeral: true, approvalPolicy: "never", approvalsReviewer: "user", sandbox: "read-only",
     developerInstructions: request.system, ...(model ? { model } : {}), ...(entry.brokered ? { modelProvider: "broker" } : {}),
-    config: projectCodexThreadConfig(entry.start, services) }
+    config: projectCodexThreadConfig(entry.start, services, []) }
   const started = asRecordOrEmpty(await entry.rpc.request("thread/start", params))
   const threadId = asString(asRecordOrEmpty(started.thread).id)
   if (!threadId) throw new CodexTransportError("protocol", "Codex returned no title thread id")
