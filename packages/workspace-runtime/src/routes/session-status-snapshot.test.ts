@@ -30,4 +30,17 @@ describe("sessionStatusSnapshot", () => {
       },
     })
   })
+
+  it("marks background work beside the turn's status and lists an idle session that has some", () => {
+    const work = { agents: 2, shells: 1, other: 0 }
+    const background = new Map([["busy-1", work], ["idle-1", work]])
+    expect(sessionStatusSnapshot([
+      { id: "busy-1", status: "busy" },
+      { id: "idle-1", status: "idle" },
+      { id: "idle-2", status: "idle" },
+    ], (sessionId) => background.get(sessionId))).toEqual({
+      "busy-1": { type: "busy", backgroundWork: work },
+      "idle-1": { type: "idle", backgroundWork: work },
+    })
+  })
 })

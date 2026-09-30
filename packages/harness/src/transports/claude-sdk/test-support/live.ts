@@ -15,8 +15,9 @@ export const services = { log: { debug() {}, info() {}, warn() {}, error() {} } 
 
 export const frame = (value: Record<string, unknown>) => ({ session_id: "up1", uuid: crypto.randomUUID(), ...value }) as unknown as SDKMessage
 export const init = (version: string = CLAUDE_CODE_RANGE.max) => frame({ type: "system", subtype: "init", claude_code_version: version })
-export const background = (...ids: string[]) => frame({ type: "system", subtype: "background_tasks_changed",
-  tasks: ids.map((id) => ({ task_id: id, task_type: "local_bash", description: "sleep" })) })
+export const background = (...ids: string[]) => backgroundTasks(...ids.map((id) => ({ id, type: "local_bash" })))
+export const backgroundTasks = (...tasks: { id: string; type: string; ambient?: boolean }[]) => frame({ type: "system", subtype: "background_tasks_changed",
+  tasks: tasks.map((task) => ({ task_id: task.id, task_type: task.type, description: "work", ...(task.ambient ? { ambient: true } : {}) })) })
 export const notification = (id: string) => frame({ type: "system", subtype: "task_notification", task_id: id, status: "completed", output_file: "/tmp/out", summary: "done" })
 export const reply = (text: string) => frame({ type: "assistant", parent_tool_use_id: null,
   message: { id: `m-${text}`, role: "assistant", model: "claude", content: [{ type: "text", text }], usage: { input_tokens: 1, output_tokens: 1 } } })

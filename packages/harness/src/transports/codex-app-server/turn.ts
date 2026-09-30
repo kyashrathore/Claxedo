@@ -32,11 +32,9 @@ function listenTurn(entry: Entry, session: HarnessSession, queue: AsyncPushQueue
   const ingest = (message: RpcMessage) => {
     if (!message.method) return
     const threadId = asString(asRecordOrEmpty(message.params).threadId)
-    const child = threadId ? entry.children.get(threadId) : undefined
     try {
-      if (threadId && child) {
+      if (entry.children.has(threadId)) {
         subagents.observe(message)
-        for (const event of child.ingest(message)) queue.push({ ...event, route: { kind: "child", correlationKey: threadId } })
         return
       }
       if (message.method !== "account/rateLimits/updated" && threadId !== session.binding.upstreamSessionId) return
@@ -49,7 +47,9 @@ function listenTurn(entry: Entry, session: HarnessSession, queue: AsyncPushQueue
       const steered = incorporatedSteer(message, entry.steers)
       if (steered) queue.push(steered)
       for (const event of events.ingest(message)) queue.push(event)
-      if (message.method === "turn/completed") subagents.end()
+      if (message.method !== "turn/completed") return
+      if (entry.turn) entry.turn.closing = true
+      subagents.end()
     } catch (error) { queue.fail(error) }
   }
   const removeMessage = entry.rpc.onMessage(ingest)

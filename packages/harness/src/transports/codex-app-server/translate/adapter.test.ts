@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { translatorRuntime } from "../../../test-support/translator-runtime"
 import { codexAppServerAdapter } from "./adapter"
-import { codexCollabAgentCall, codexCollabAgentStatus, codexStartedSubagent, codexSubagentActivity } from "./subagent-items"
+import { codexCollabAgentCall, codexCollabAgentStatus, codexSubagentActivity } from "./subagent-items"
 
 function runtime() {
   return translatorRuntime({
@@ -1063,29 +1063,11 @@ describe("codexAppServerAdapter", () => {
     }).events).toEqual([])
   })
 
-  test("maps thread/started parent identity without emitting a parent diagnostic", () => {
-    const payload = {
-      thread: {
-        id: "thread-child",
-        parentThreadId: "thread-parent",
-        preview: "Inspect the adapter",
-        agentNickname: "Ada",
-        agentRole: "reviewer",
-        status: { type: "active", activeFlags: [] },
-      },
-    }
-    expect(codexStartedSubagent(payload)).toEqual({
-      id: "thread-child",
-      parentThreadId: "thread-parent",
-      status: "running",
-      label: "Ada",
-      subagentType: "reviewer",
-      description: "Inspect the adapter",
-    })
+  test("maps thread/started to nothing, since the transport owns thread identity", () => {
     expect(runtime().ingest({
       source: "codex.app-server",
       method: "thread/started",
-      payload,
+      payload: { thread: { id: "thread-child", parentThreadId: "thread-parent", agentNickname: "Ada", status: { type: "active", activeFlags: [] } } },
     }).events).toEqual([])
   })
 

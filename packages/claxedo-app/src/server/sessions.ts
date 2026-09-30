@@ -10,7 +10,7 @@ import { onRuntime, sessionEndpoint, type SessionContext } from "./session-conte
 import { startSessionReads } from "./session-reads"
 import { readPart, readTurnPageBefore } from "./transcript-reads"
 import type { HostedAccount } from "./account"
-import { cancelRunningTurn } from "./session-stop"
+import { cancelRunningTurn, stopBackgroundTask } from "./session-stop"
 import type { StatusOwner } from "./status"
 import { jsonInit, withQuery, type Transport } from "./transport"
 import type { AgentRequestReply, PromptDelivery, PromptInput, SessionCreateInput, SessionRef, SessionRow } from "./types"
@@ -100,6 +100,7 @@ export function createSessionsApi(transport: Transport, workspaces: Workspaces, 
     },
     prompt: (ref, input) => postPrompt(context, wakes, ref, input, input.messageId ?? newMessageId()),
     stop: async (ref) => cancelRunningTurn(transport, await workspaces.route(ref), ref),
+    stopBackgroundTask: async (ref, toolCallId) => stopBackgroundTask(transport, await workspaces.route(ref), ref, toolCallId),
     reply: (ref, id, answer) => replyToRequest(context, ref, id, answer),
     rename: (ref, title) => patchSession(context, ref, { title }),
     archive: (ref, archived) => patchSession(context, ref, { time: { archived: archived ? Date.now() : 0 } }),

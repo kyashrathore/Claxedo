@@ -1,3 +1,4 @@
+import type { BackgroundWork } from "./background-work"
 import type { AgentSubagentUpdate, RuntimeGoalSnapshot } from "./subagents"
 import type { RuntimeQuestion, RuntimeUsageObservation } from "./events"
 import type { AgentSessionCommand } from "./sessions"
@@ -144,6 +145,8 @@ export type AgentRuntimeEvent = RuntimeEventMeta & (
       workspaceID?: string
     }
   | { type: "session-title"; title: string; titleSource?: "harness" | "user" }
+  /** The work the harness runs for the session outside any turn (background agents, shells, other tasks), restated whole whenever it changes; all zero once it settled. Never a turn state. */
+  | ({ type: "background-work" } & BackgroundWork)
   | {
       type: "usage"
       contextSize: number
@@ -208,6 +211,7 @@ export const AGENT_RUNTIME_EVENT_TYPE_REGISTRY = {
   "config-update": true,
   "session-info": true,
   "session-title": true,
+  "background-work": true,
   usage: true,
   diagnostic: true,
 } satisfies Record<AgentRuntimeEventType, true>
@@ -268,6 +272,7 @@ export const AGENT_RUNTIME_EVENT_FACTORY_TYPES = {
   configUpdate: "config-update",
   sessionInfo: "session-info",
   sessionTitle: "session-title",
+  backgroundWork: "background-work",
   usage: "usage",
   diagnostic: "diagnostic",
 } as const satisfies Record<string, AgentRuntimeEventType>
@@ -335,6 +340,7 @@ export const agentRuntimeEvent = {
   configUpdate: (input) => ({ type: "config-update", ...input }),
   sessionInfo: (input) => ({ type: "session-info", ...input }),
   sessionTitle: (input) => ({ type: "session-title", ...input }),
+  backgroundWork: (input) => ({ type: "background-work", ...input }),
   usage: (input) => ({ type: "usage", ...input }),
   diagnostic: (input) => ({ type: "diagnostic", ...input }),
 } satisfies AgentRuntimeEventFactoriesFor<AgentRuntimeEventFactoryTypes>

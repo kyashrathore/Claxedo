@@ -59,19 +59,3 @@ export function codexCollabAgentStatus(value: unknown): SubagentStatus | undefin
   if (status === "shutdown") return "killed"
   return undefined
 }
-
-export function codexStartedSubagent(value: unknown) {
-  const thread = asRecord(asRecord(value)?.thread)
-  const id = text(thread?.id)
-  const parentThreadId = text(thread?.parentThreadId)
-  if (!id || !parentThreadId) return undefined
-  const status = text(asRecord(thread?.status)?.type)
-  return {
-    id,
-    parentThreadId,
-    status: status === "active" ? "running" as const : status === "systemError" ? "failed" as const : "pending" as const,
-    ...(text(thread?.agentNickname) ? { label: text(thread?.agentNickname) } : {}),
-    ...(text(thread?.agentRole) ? { subagentType: text(thread?.agentRole) } : {}),
-    ...(text(thread?.preview) ? { description: text(thread?.preview) } : {}),
-  }
-}

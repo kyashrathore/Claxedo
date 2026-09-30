@@ -1,3 +1,4 @@
+import type { BackgroundWork } from "@claxedo/agent-runtime-contract"
 import { asRecordOrEmpty, asString } from "@claxedo/helpers/guards"
 import type { HarnessServices, HarnessVersionGate, ProcessLosses, SessionBroker, StartInput } from "../../contract"
 import { projectCodexThreadConfig } from "./configuration"
@@ -11,6 +12,7 @@ import { codexStartSettings } from "./models"
 import { codexNotificationOutsideTurn } from "./notifications"
 import type { RpcMessage } from "./rpc"
 import { CodexTerminals } from "./terminals"
+import { CodexChildren } from "./children"
 import { CodexUsageLedger } from "./usage"
 
 export type CodexSessionHost = {
@@ -34,6 +36,10 @@ async function openThread(host: CodexSessionHost, { rpc, plugins }: CodexLaunch,
   return threadId
 }
 
+function publishBackgroundWork(broker: SessionBroker, work: BackgroundWork): void {
+  void broker.publish({ type: "background-work", ...work }).catch((error: unknown) => broker.reportFailure(error))
+}
+
 async function bindEntry(host: CodexSessionHost, launched: CodexLaunch, input: StartInput, broker: SessionBroker,
   threadId: string): Promise<{ entry: Entry; replay(): void }> {
   const { rpc } = launched
@@ -49,10 +55,11 @@ async function bindEntry(host: CodexSessionHost, launched: CodexLaunch, input: S
       entry.state = "lost"
     }
     entry.providerTurn?.fail(error)
+    entry.children.end()
   })
   const binding = await broker.rebind(threadId)
   const bound: Entry = { state: "ready", start: input, session: { directory: input.directory, locality: input.locality, binding }, broker, rpc,
-    home: launched.home, brokered: launched.brokered, plugins: launched.plugins, terminals: new CodexTerminals(rpc, threadId), children: new Map(), sideThreads: new Set(), nativeChildren: new Set(),
+    home: launched.home, brokered: launched.brokered, plugins: launched.plugins, terminals: new CodexTerminals(rpc, threadId), children: new CodexChildren((work) => publishBackgroundWork(broker, work)), sideThreads: new Set(),
     usage: new CodexUsageLedger(), goal: null, settings: codexStartSettings(input), steers: new Set(), released: Promise.resolve(), idle: () => host.idle(bound) }
   return { entry: bound, replay: () => {
     entry = bound

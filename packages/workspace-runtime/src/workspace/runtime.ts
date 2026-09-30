@@ -1,6 +1,5 @@
 import type { RecoveryTurnTarget, AgentEventEnvelope } from "@claxedo/agent-runtime-contract"
 import { DEFAULT_RECOVERY_BUDGETS, type AgentRuntimeHealth, type AgentTurnOutcome } from "@claxedo/agent-runtime-contract"
-import type { BrokerPorts } from "@claxedo/harness/broker"
 import { createHarnessComposer } from "@claxedo/harness/compose"
 import type { CustomHarnessProvider } from "@claxedo/harness/providers"
 import type { HarnessServices, MachineLoginPolicy } from "@claxedo/harness/contract"
@@ -42,6 +41,7 @@ import { createSessionConfiguration } from "./configure"
 import { createHarnessHealthFeed } from "./harness-health-feed"
 import { mountWorkspaceCore, mountWorkspaceAgentHooks, mountWorkspaceEvents, mountWorkspaceProcess, mountWorkspacePty, type MountedWorkspaceEvents, type WorkspaceTranscriptRoutesOptions } from "./core"
 import type { RuntimeConfigApplyStatus, WorkspaceConnectionState, WorkspaceHost, WorkspaceHostMountOptions } from "./host"
+import { scopedToolPrompt } from "./scoped-tool-prompt"
 import { mountSessionRoutes } from "./session-routes"
 import { assertConnectionRevision, connectionConfigHooks, harnessKey, persistRuntimeConfigApplyStatus, runnerForSelection, runtimeConfigApplyError, runtimeSnapshotSignature, sameAuth, sameRuntimeMcp, validateDescriptors, type RuntimeRunner } from "./snapshot"
 import { createWorkspaceTransports } from "./transports"
@@ -155,26 +155,6 @@ function resolveStoreFactory(options: WorkspaceHostOptions): WorkspaceRuntimeSto
     }
     return store
   }
-}
-
-function scopedToolPrompt(
-  sessionId: string,
-  registration: {
-    callbackUrl: string
-    tools: Array<{ name: string; description: string; inputSchema: Record<string, unknown> }>
-  },
-) {
-  return [
-    "<claxedo_scoped_session_tools>",
-    "These trusted tools apply only to the current Session. Their callback derives tenant, workspace, Stream, Task, Run, and lease identity from a nonce-bound host binding; never add or change those identities.",
-    "Invoke a tool from the sandbox shell by POSTing JSON shaped as {\"sessionID\",\"name\",\"toolCallID\",\"input\"} to the callback URL. Use a stable unique toolCallID and reuse it if the response is lost.",
-    `Session ID: ${JSON.stringify(sessionId)}`,
-    `Callback URL: ${JSON.stringify(registration.callbackUrl)}`,
-    "Available tools:",
-    ...registration.tools.map((tool) => `${tool.name}: ${tool.description}\nInput schema: ${JSON.stringify(tool.inputSchema)}`),
-    "Use progress tools only at meaningful logical boundaries. If a completion tool is available, call it with evidence before giving the final response.",
-    "</claxedo_scoped_session_tools>",
-  ].join("\n")
 }
 
 function requestDirectory(c: { req: { query(name: string): string | undefined } }) {
@@ -296,7 +276,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions): WorkspaceHos
   type Engine = {
     services: HarnessServices
     transports: ReturnType<typeof createWorkspaceTransports>
-    ports: BrokerPorts & { abortProviderTurn(sessionId: string): void }
+    ports: ReturnType<typeof createStoreBrokerPorts>
     runtime: AgentRuntime
     configuration: ReturnType<typeof createSessionConfiguration>
   }
@@ -642,6 +622,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions): WorkspaceHos
           return registration ? scopedToolPrompt(sessionId, registration) : undefined
         },
         subagentAdmission: (parentSessionId, observation) => harnessEngine().runtime.subagents.admit(parentSessionId, observation),
+        backgroundWork: (sessionId) => engine?.ports.backgroundWork.read(sessionId),
       })
       disposeDeliveries = sessions.dispose
       app.route("/", sessions.routes)
@@ -788,6 +769,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions): WorkspaceHos
         const retired = engine
         engine = undefined
         appliedSignature = undefined
+        retired?.ports.backgroundWork.retireAll()
         if (retired) await retireTransports(retired.transports)
       },
       async resume() {

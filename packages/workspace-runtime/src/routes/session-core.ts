@@ -68,9 +68,11 @@ import { arr, num, rec, str } from "../json-value"
 import { disposeRuntimeSessionDocuments } from "./document-hydration"
 import { elicitationError } from "./elicitation-error"
 import { errorBody } from "./error-body"
-import { boundedJsonBody, boundedJsonRecord, isRequestBodyTooLarge, requestBodyTooLargeBody } from "./http"
+import { boundedJsonBody, boundedJsonRecord, isRequestBodyTooLarge, noStoreJson, requestBodyTooLargeBody } from "./http"
 import { MAX_ACTIVE_CHILDREN_PER_PARENT } from "./session-children"
-import { harnessUnavailableResponse } from "./session-harness-refusal"
+import { harnessUnavailableResponse, unsupportedOperation } from "./session-harness-refusal"
+import { backgroundTaskStopRoute } from "./session-background-tasks"
+import { sessionOperationGuard, sessionPromptAdmitted } from "./session-operation-guard"
 import {
   effectivePermissionCeiling,
   permissionModeUnderCeiling,
@@ -196,12 +198,6 @@ function sessionFirstInput(wire: Record<string, unknown>): SessionFirstInput | {
   if (!prompt) return { invalid: "prompt must be an object" }
   if (prompt.delivery !== undefined) return { invalid: "A new session has no running turn to queue behind or steer" }
   return { prompt: parseSessionPromptBody(prompt) }
-}
-
-function noStoreJson(c: Ctx, data: unknown, status?: ContentfulStatusCode) {
-  return c.json(data, status, {
-    "Cache-Control": "no-store",
-  })
 }
 
 function messageReadInput(c: Ctx): AgentMessageReadInput | undefined {
@@ -450,31 +446,6 @@ type CapabilityKey = {
   [K in keyof HarnessCapabilities]: HarnessCapabilities[K] extends boolean ? K : never
 }[keyof HarnessCapabilities] & string
 
-function unsupportedOperation(
-  c: Ctx,
-  caps: HarnessCapabilities,
-  operation: string,
-  details?: {
-    capability?: string
-    harness?: string
-    reason?: string
-    message?: string
-  },
-) {
-  return c.json({
-    ok: false,
-    error: {
-      code: "unsupported_operation",
-      operation,
-      capability: details?.capability ?? operation,
-      harness: details?.harness ?? caps.harness,
-      transport: caps.harness,
-      reason: details?.reason ?? "capability_disabled",
-      message: details?.message ?? `${caps.harness} does not support ${operation}`,
-    },
-  }, 409)
-}
-
 function notImplemented(c: Ctx, operation: "revert" | "unrevert" | "shell" | "summarize" | "command") {
   return c.json({
     ok: false,
@@ -595,7 +566,7 @@ async function unsupportedIfUnavailable(
   operation: string = key,
 ) {
   const caps = await runtime.reads.capabilities(target)
-  if (!caps[key]) return unsupportedOperation(c, caps, operation, { capability: key })
+  if (!caps[key]) return unsupportedOperation(c, caps.harness, operation, { capability: key })
   return undefined
 }
 
@@ -607,7 +578,7 @@ async function unsupportedIfUnavailable(
 async function unsupportedIfRefused(c: Ctx, runtime: AgentRuntime, target: HarnessTarget, key: CapabilityKey, error: unknown) {
   if (!(error instanceof AgentRuntimeContractError) || error.detail.code !== "unsupported_operation") throw error
   const caps = await runtime.reads.capabilities(target)
-  return unsupportedOperation(c, caps, error.detail.operation, {
+  return unsupportedOperation(c, caps.harness, error.detail.operation, {
     capability: key,
     reason: "harness_refused",
     message: error.detail.message,
@@ -701,42 +672,6 @@ function recoveryRefused(c: Ctx, refusal: RecoveryRefusal) {
  */
 function noRecoveryOwner(sessionId: string): RecoveryRefusal {
   return { kind: "unavailable", message: `No runtime owns session ${sessionId} on this host` }
-}
-
-async function sessionOperationGuard(
-  opts: Opts,
-  c: Ctx,
-  sessionId: string,
-  operation: SessionAccessOperation,
-) {
-  const decision = await opts.sessionAccessPolicy?.authorize({
-    ...sessionAccessContext(c),
-    sessionId,
-    operation,
-    method: c.req.method,
-    path: c.req.path,
-  })
-  if (decision && !decision.allowed) return sessionAccessDenied(decision)
-  return opts.beforeSessionOperation?.(c, { sessionId, operation })
-}
-
-/**
- * Whether this reader may prompt the session, answered by the same policy the
- * prompt route asks and reported alongside the harness's capabilities.
- *
- * A `follow` share admits the transcript and refuses the turn, so the reader
- * reaches this route and not `POST /session/:id/message`. Without the answer
- * here the composer has only the workspace role to go on, which says nothing
- * about a session someone was shared, and the reader meets the refusal as a
- * 403 after typing.
- */
-async function sessionPromptAdmitted(opts: Opts, c: Ctx, sessionId: string) {
-  const decision = await opts.sessionAccessPolicy?.authorize({
-    ...sessionAccessContext(c),
-    sessionId,
-    operation: "prompt",
-  })
-  return decision?.allowed !== false
 }
 
 async function registerCreatedSession(
@@ -929,7 +864,7 @@ async function sessionOwnStatus(opts: Opts, c: Ctx, directory: RuntimeDirectory,
 async function readSessionTodos(opts: Opts, c: Ctx, directory: RuntimeDirectory, sessionId: string): Promise<readonly unknown[] | Response> {
   const runtime = await opts.runtime(c)
   const caps = await runtime.reads.declaredCapabilities(sessionId, directory, requestSecretAuthority(c).secretAuthority)
-  if (!caps.todos) return unsupportedOperation(c, caps, "todos", { capability: "todos" })
+  if (!caps.todos) return unsupportedOperation(c, caps.harness, "todos", { capability: "todos" })
   const replay = await opts.getTodos?.(c, directory, sessionId)
   if (replay) return replay
   return await runtime.reads.todos(sessionId) ?? []
@@ -1619,6 +1554,7 @@ export function createSessionRoutes(opts: Opts) {
       goalMutationResponse(c, await runtime.goals.pause(sessionId, directory))))
     .post("/session/:id/goal/resume", goalRoute(opts, "goal_resume", async ({ c, sessionId, directory, runtime }) =>
       goalMutationResponse(c, await runtime.goals.resume(sessionId, directory))))
+    .post("/session/:id/background-task/stop", backgroundTaskStopRoute(opts))
     .post("/session/:id/goal/stop", goalRoute(opts, "goal_stop", async ({ c, sessionId, directory, runtime }) =>
       goalMutationResponse(c, await runtime.goals.stop(sessionId, directory))))
     .delete("/session/:id/goal", goalRoute(opts, "goal_delete", async ({ c, sessionId, directory, runtime }) =>
@@ -1949,7 +1885,7 @@ export function createSessionRoutes(opts: Opts) {
       const target = sessionTarget(c, sessionId, directory)
       const caps = await runtime.reads.capabilities(target)
       if (!caps.configOptions) {
-        return unsupportedOperation(c, caps, "set_permission_mode", {
+        return unsupportedOperation(c, caps.harness, "set_permission_mode", {
           capability: "permissions",
           reason: "adapter_method_unavailable",
           message: `${caps.harness} cannot be told about permission modes`,
@@ -2107,7 +2043,7 @@ export function createSessionRoutes(opts: Opts) {
         const agents = await runtime.reads.agents(target)
         if (!agents) {
           const caps = await runtime.reads.capabilities(target)
-          return unsupportedOperation(c, caps, "list_agents", {
+          return unsupportedOperation(c, caps.harness, "list_agents", {
             capability: "agents",
             reason: "adapter_method_unavailable",
             message: `${caps.harness} does not expose live agent options`,
