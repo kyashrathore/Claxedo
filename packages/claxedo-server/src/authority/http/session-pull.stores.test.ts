@@ -45,3 +45,19 @@ test("a register that finishes after a newer one leaves the newer title in the p
   expect((await services.projectionStore.session_meta(sessionId))?.title).toBe("Renamed")
   expect(await authority.resolveSession(auth, { sessionId })).toMatchObject({ title: "Renamed" })
 })
+
+test("a tag change the server stamped after the runtime's rename time does not hold back the rename", async () => {
+  stores = await selfHostedSessionStores()
+  const { services, authority, auth, workspaceId, sessionId, runtime, options } = stores
+  const register = () => pullControlSession(services, options, auth, { workspaceId, sessionId })
+
+  runtime.session = { title: "Original", updated: 200 }
+  await register()
+  await services.projectionStore.put_session_meta(sessionId, { tags: ["pinned"] })
+  expect((await services.projectionStore.session_meta(sessionId))?.updatedAt).toBeGreaterThan(300)
+  runtime.session = { title: "Renamed", updated: 300 }
+  await register()
+
+  expect((await services.projectionStore.session_meta(sessionId))?.title).toBe("Renamed")
+  expect(await authority.resolveSession(auth, { sessionId })).toMatchObject({ title: "Renamed" })
+})

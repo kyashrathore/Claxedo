@@ -51,9 +51,11 @@ export const serverWorkerd: Policy = {
   // (`authority/adapters/d1/host-access-errors.ts`); and the Better Auth
   // composition adds the AUTH_DB email lookup an org admin adds a member by
   // (`platform/auth/better-auth-d1-account-email.ts`). The D1 session
-  // authority's refusal error and input validation are their own module
-  // (`authority/adapters/d1/session-input.ts`), split from the authority.
-  ceilings: { modules: 105, packages: 19 },
+  // authority's refusal error and input validation
+  // (`authority/adapters/d1/session-input.ts`) and its access predicates
+  // (`authority/adapters/d1/session-access-sql.ts`) are modules of their own,
+  // split from the authority.
+  ceilings: { modules: 106, packages: 19 },
 
   emitted: {
     file: "packages/claxedo-server/.artifacts/u8-package-split/manifests/server-workerd.json",
