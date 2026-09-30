@@ -73,7 +73,8 @@ async function backend(): Promise<PiBackend> {
     credentials: { machineLoginAllowed: true, accountOwner: "fixture-owner", providers: {}, secrets: {}, leaseGeneration: "conformance" },
     hold: (marker) => server.holdTextReplies(marker),
     held: (marker) => server.textGateReached(marker),
-    processesPerLaunch: 2,
+    processesPerLaunch: 1,
+    firstLaunchProcesses: 2,
     scriptTool: (name, input) => server.scriptTool({ name, input }),
     scriptThinking: (input) => server.scriptText(input),
     unrunnableTurn: withUndeliverableFile,
@@ -316,7 +317,7 @@ test("Pi lists only its profile's runnable models and their thinking levels thro
     expect(await config.options({ draft }, "probe")).toEqual(preview)
     expect(await config.permissionModes({ session: context.session })).toEqual({ modes: [], unsupported: "Pi has no permission modes", appliesFrom: "next-turn" })
     await expect(config.setPermissionMode(context.session, "auto")).rejects.toThrow("Pi has no permission modes")
-    expect(context.services.processes.slice(2)).toHaveLength(4)
+    expect(context.services.processes.slice(2)).toHaveLength(2)
     for (const probe of context.services.processes.slice(2)) expect(await probe.exited).toBeDefined()
   } finally { await context.close() }
 }, 60_000)

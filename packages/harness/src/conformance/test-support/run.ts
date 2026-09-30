@@ -33,6 +33,7 @@ export type ConformanceBackend = {
   held?(marker: string): Promise<void>
   steerIncorporationUnreported?: true
   processesPerLaunch?: number
+  firstLaunchProcesses?: number
   scriptTool?(name: string, input: unknown): void
   scriptThinking?(input: { marker: string; text: string; reasoning: string }): void | Promise<string>
   thinkingRequested?(marker: string): boolean
@@ -324,7 +325,7 @@ export function runConformance(input: SuiteInput): void {
         expect(events.some((item) => item.event.type === "finish")).toBe(true)
         await context.transport.close(attached)
         expect(context.services.processes).toHaveLength(context.backend.execution === "in-process" || context.backend.locality === "remote" ? 0
-          : 2 * (context.backend.processesPerLaunch ?? 1))
+          : (context.backend.firstLaunchProcesses ?? context.backend.processesPerLaunch ?? 1) + (context.backend.processesPerLaunch ?? 1))
       } finally { await context.close() }
     }, 60_000)
 
