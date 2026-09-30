@@ -311,8 +311,11 @@ if (mode) {
   globalThis.fetch = new Proxy(nativeFetch, { apply: (_target, _this, args: Parameters<typeof fetch>) => observedFetch(...args) })
 }
 
-if (mode) process.on("exit", (code) => {
-  if (code !== 0) return
+let settled = false
+
+function settleCorpus(code: number) {
+  if (settled || code !== 0) return
+  settled = true
   if (!file) throw new Error("Corpus flow selector is missing")
   const current = { flow, observations: comparisonShape(faultedObservations(observations)) }
   if (mode === "record") {
@@ -328,4 +331,9 @@ if (mode) process.on("exit", (code) => {
   }
   if (diff) { console.error(`Wire corpus mismatch for ${flow}: ${diff}`); process.exitCode = 1 }
   else console.log(`Wire corpus matched ${flow}`)
-})
+}
+
+if (mode) {
+  process.on("beforeExit", settleCorpus)
+  process.on("exit", settleCorpus)
+}
