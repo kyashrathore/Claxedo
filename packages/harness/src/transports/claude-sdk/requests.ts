@@ -15,13 +15,13 @@ const protocolPermissionMap = {
 } as const
 
 function fromSubagent<T extends TurnRequest>(request: T, agentId: string | undefined, subagentCall: (agentId: string) => string | undefined): T {
-  const spawnCall = agentId ? subagentCall(agentId) : undefined
-  return spawnCall ? { ...request, child: { correlationKey: spawnCall } } : request
+  return agentId ? { ...request, child: { correlationKey: subagentCall(agentId) ?? agentId } } : request
 }
 
 export async function askClaudePermission(input: StartInput, broker: Pick<TurnBroker, "ask" | "signal">, toolName: string,
   toolInput: Record<string, unknown>, options: Parameters<CanUseTool>[2], turnId?: string, subagentCall: (agentId: string) => string | undefined = () => undefined) {
-  if (options.signal.aborted || broker.signal.aborted) return { behavior: protocolPermissionMap.deny, message: "Turn cancelled" }
+  const cancelled = () => options.signal.aborted || (!options.agentID && broker.signal.aborted)
+  if (cancelled()) return { behavior: protocolPermissionMap.deny, message: "Turn cancelled" }
   if (toolName === "AskUserQuestion") {
     const questions = toolInput.questions
     if (!Array.isArray(questions) || !questions.length || questions.some((question) =>
@@ -41,7 +41,7 @@ export async function askClaudePermission(input: StartInput, broker: Pick<TurnBr
     harnessPayload: { toolName, toolInput, suggestions: options.suggestions },
     options: protocolPermissionMap.options,
   }), options.agentID, subagentCall), { signal: options.signal })
-  if (options.signal.aborted || broker.signal.aborted) return { behavior: protocolPermissionMap.deny, message: "Turn cancelled" }
+  if (cancelled()) return { behavior: protocolPermissionMap.deny, message: "Turn cancelled" }
   const decision = permissionDecision(answer)
   if (!decision) return { behavior: protocolPermissionMap.deny, message: "Permission dismissed" }
   if (decision === protocolPermissionMap.allowOnce) return { behavior: protocolPermissionMap.allow, updatedInput: toolInput }
