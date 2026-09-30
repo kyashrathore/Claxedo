@@ -104,7 +104,7 @@ export class PiRpcTransport implements HarnessTransport {
 
   async attach(input: AttachInput, broker: SessionBroker): Promise<HarnessSession> {
     const profile = selectPiProfile(input.credentials, input.directory, input.sessionId, this.options)
-    const launched = await resumePi(this.host, input, profile, broker, input.binding.upstreamSessionId)
+    const launched = await resumePi(this.host, input, profile, broker, input.binding.upstreamSessionId, input.upstreamHasTurns)
     return this.remember(input, profile, launched, broker, input.binding.upstreamSessionId)
   }
 
@@ -202,10 +202,10 @@ export class PiRpcTransport implements HarnessTransport {
     if (entry.stream.busy) return { state: "refused", reason: "Cannot reconfigure Pi during an active turn" }
     const start = mergeStartInput(entry.start, update)
     const profile = selectPiProfile(start.credentials, start.directory, start.sessionId, this.options, entry.profile.kind)
-    const unwritten = entry.rpc.alive && asRecordOrEmpty(await entry.rpc.request("get_state")).messageCount === 0
+    const hasTurns = !entry.rpc.alive || asRecordOrEmpty(await entry.rpc.request("get_state")).messageCount !== 0
     await this.retireSession(entry)
     this.entries.delete(session.binding.sessionId)
-    const launched = await resumePi(this.host, start, profile, entry.broker, entry.session.binding.upstreamSessionId, unwritten)
+    const launched = await resumePi(this.host, start, profile, entry.broker, entry.session.binding.upstreamSessionId, hasTurns)
     entry.rpc = launched.rpc
     entry.stream = launched.stream
     entry.profile = profile

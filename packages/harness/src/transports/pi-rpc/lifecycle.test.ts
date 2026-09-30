@@ -110,7 +110,7 @@ test("a Pi process lost under a session reads degraded until its replacement sta
     await first.exited
     expect(pi.transport.health.runtime(pi.directory, "s1")).toEqual({ status: "degraded", reason: "harness_process_lost", message: "Pi process exited (9)" })
     expect(pi.health.changes).toBe(1)
-    const replaced = await pi.transport.attach({ ...pi.start(), binding: session.binding }, pi.broker)
+    const replaced = await pi.transport.attach({ ...pi.start(), binding: session.binding, upstreamHasTurns: false }, pi.broker)
     expect(pi.transport.health.runtime(pi.directory, "s1")).toEqual({ status: "ok" })
     expect(pi.health.changes).toBe(2)
     await pi.transport.close(replaced)

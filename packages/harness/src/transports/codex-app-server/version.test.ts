@@ -30,7 +30,7 @@ test("a Codex newer than the tested range runs, with one untested-version diagno
   try {
     const session = await peer.transport.start(peer.startInput, broker())
     await peer.transport.close(session)
-    await peer.transport.attach({ ...peer.startInput, binding: session.binding }, broker())
+    await peer.transport.attach({ ...peer.startInput, binding: session.binding, upstreamHasTurns: false }, broker())
     expect(published).toEqual([{ type: "diagnostic", diagnostic: { code: "codex.untested_version", severity: "warn", source: "codex.app-server", method: "initialize",
       message: "Codex 0.160.0 is newer than 0.159.2, the newest version Claxedo is tested against" } }])
   } finally { await peer.close() }

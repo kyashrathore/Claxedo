@@ -318,7 +318,7 @@ export function runConformance(input: SuiteInput): void {
       try {
         await collect(context.transport, context.session, context.turn("PIATTACH"), context.turnBroker())
         await context.transport.close(context.session)
-        const attached = await context.transport.attach({ ...context.start, binding: context.session.binding }, context.sessionBroker)
+        const attached = await context.transport.attach({ ...context.start, binding: context.session.binding, upstreamHasTurns: true }, context.sessionBroker)
         if (context.backend.execution === "in-process") expect(context.services.processes).toHaveLength(0)
         expect(attached.binding.upstreamSessionId).toBe(context.session.binding.upstreamSessionId)
         const events = await collect(context.transport, attached, context.turn("PIRESUMED"), context.turnBroker())
@@ -336,7 +336,7 @@ export function runConformance(input: SuiteInput): void {
         if (!context.backend.verifyRemoteMcp) return
         await context.transport.fork?.fork(context.session, "m1", "child")
         await context.transport.close(context.session)
-        await context.transport.attach({ ...context.start, binding: context.session.binding }, context.sessionBroker)
+        await context.transport.attach({ ...context.start, binding: context.session.binding, upstreamHasTurns: false }, context.sessionBroker)
         await context.backend.verifyRemoteMcp()
       } finally { await context.close() }
     }, 60_000)

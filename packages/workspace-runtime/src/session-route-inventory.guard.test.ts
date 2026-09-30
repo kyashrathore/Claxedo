@@ -70,7 +70,6 @@ describe("private-session route inventory", () => {
         "POST /",
         "PUT /:ptyID",
       ],
-      "./routes/transcript.ts": ["GET /:handle"],
       "./routes/worktree.ts": ["GET /", "GET /:sessionId", "POST /"],
     }
 
