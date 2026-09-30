@@ -28,7 +28,7 @@ function added(previous: RuntimeTokenUsage | undefined, next: RuntimeTokenUsage)
   }
 }
 
-export function usageEvents(state: CursorSdkAdapterState, message: UsageMessage): CursorTranslation {
+export function summedUsageEvents(state: CursorSdkAdapterState, message: UsageMessage): CursorTranslation {
   const tokens = added(own(state.usageByRunId, message.run_id), turnTokens(message.usage))
   return {
     state: { ...state, usageByRunId: boundKeyedRecord({ ...state.usageByRunId, [message.run_id]: tokens }, RETAINED_WIRE_KEYS_MAX) },

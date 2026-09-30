@@ -71,18 +71,18 @@ function hostSubagentObservations(message: Record<string, unknown>, toolCallId: 
   }]
 }
 
-function taskStatus(message: Record<string, unknown>, result: Record<string, unknown> | undefined): SubagentStatus {
+function taskCallStatus(message: Record<string, unknown>, result: Record<string, unknown> | undefined): SubagentStatus {
   if (message.status === "running") return "running"
   return message.status === "error" || result?.status === "error" ? "failed" : "completed"
 }
 
-function taskObservation(message: Record<string, unknown>, toolCallId: string): CursorSubagentObservation {
+function taskCallObservation(message: Record<string, unknown>, toolCallId: string): CursorSubagentObservation {
   const args = toolInput(message.args)
   const result = asRecord(message.result)
   const success = result?.status === "success" ? asRecord(result.value) : undefined
   const priorProviderId = text(args.agentId) ?? text(args.resume)
   const providerId = text(success?.agentId) ?? priorProviderId
-  const status = taskStatus(message, result)
+  const status = taskCallStatus(message, result)
   const subagentType = text(asRecord(args.subagentType)?.name) ?? text(asRecord(args.subagentType)?.kind)
   return {
     observationId: `cursor:task:${text(message.run_id) ?? "unknown"}:${toolCallId}:${status}`,
@@ -105,7 +105,7 @@ export function cursorSubagentObservations(value: unknown): CursorSubagentObserv
   if (!toolCallId) return []
   const toolName = cursorToolName(text(message.name) ?? "", toolInput(message.args))
   if (isHostSubagentTool(toolName)) return hostSubagentObservations(message, toolCallId)
-  return isTaskTool(toolName) ? [taskObservation(message, toolCallId)] : []
+  return isTaskTool(toolName) ? [taskCallObservation(message, toolCallId)] : []
 }
 
 export function cursorRuntimeMessage(value: unknown) {

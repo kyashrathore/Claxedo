@@ -6,7 +6,7 @@ import { statusEvents } from "./run-status"
 import { unchanged, type CursorSdkAdapterState, type CursorTranslation } from "./state"
 import { toolCompletedEvents } from "./tool-results"
 import { cursorToolName, ensureTool, isTodoTool, todosFromInput, toolInput } from "./tools"
-import { usageEvents } from "./usage"
+import { summedUsageEvents } from "./usage"
 
 type Assistant = Extract<SDKMessage, { type: "assistant" }>
 type ToolCall = Extract<SDKMessage, { type: "tool_call" }>
@@ -61,7 +61,7 @@ export function translateSdkMessage(state: CursorSdkAdapterState, message: SDKMe
     case "status":
       return statusEvents(state, message)
     case "usage":
-      return usageEvents(state, message)
+      return summedUsageEvents(state, message)
     case "task":
       return compactionEvents(state, message)
     case "system":
