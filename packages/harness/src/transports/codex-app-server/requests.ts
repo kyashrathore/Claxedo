@@ -4,6 +4,7 @@ import { elicitationAnswer, elicitationRequest, permissionDecision, permissionRe
 import type { RpcMessage } from "./rpc"
 import { CodexRequestRefusal, CodexTransportError } from "./errors"
 import { grantIdentity } from "../../contract/grant-identity"
+import type { CodexChildren } from "./children"
 
 const approvalMethods = [
   "item/commandExecution/requestApproval", "item/fileChange/requestApproval",
@@ -13,6 +14,11 @@ const protocolDecisionMapping = {
   once: "allow_once", always: "allow_always", deny: "deny", never: "reject_always",
 } as const
 type RequestBroker = Pick<TurnBroker, "ask">
+type RequestContext = { directory: string; permissionMode?: string }
+
+export function requestingChildThread(entry: { children: CodexChildren }, message: RpcMessage): string | undefined {
+  return entry.children.get(asString(asRecordOrEmpty(message.params).threadId))?.threadId
+}
 
 function decisionResponse(method: string, decision: string, params: Record<string, unknown>): unknown {
   const allow = decision === protocolDecisionMapping.once || decision === protocolDecisionMapping.always
@@ -25,7 +31,7 @@ function decisionResponse(method: string, decision: string, params: Record<strin
 }
 
 async function approval(method: string, params: Record<string, unknown>, message: RpcMessage, broker: RequestBroker, sessionId: string,
-  context?: { directory: string; permissionMode?: string }): Promise<unknown> {
+  context?: RequestContext): Promise<unknown> {
   const command = typeof params.command === "string" ? params.command : JSON.stringify(params.changes ?? params.permissions ?? {})
   const { threadId: _threadId, turnId: _turnId, itemId: _itemId, startedAtMs: _startedAtMs, approvalId: _approvalId, ...keyParams } = params
   const answer = await broker.ask(permissionRequest({ sessionId, permission: method, title: command,
@@ -82,7 +88,7 @@ export function isCodexRequestMethod(method: string): boolean {
 }
 
 export async function answerCodexRequest(message: RpcMessage, broker: RequestBroker, sessionId: string,
-  context?: { directory: string; permissionMode?: string }): Promise<unknown> {
+  context?: RequestContext): Promise<unknown> {
   const { method } = message
   if (!method) throw new CodexTransportError("protocol", "Codex request has no method")
   const params = asRecordOrEmpty(message.params)

@@ -18,8 +18,9 @@ const PROGRAMS: Record<string, RangedProgram> = {
     variable: "CLAXEDO_E2E_CODEX",
     range: CODEX_RANGE,
     flows: ["H1-turn-parts", "H2-stop", "H2.codex-inventory-unverifiable", "H3-native-permissions", "H4-native-questions", "H5-native-subagents",
-      "H6-goals", "H7-steer", "H7.unknown-held", "H13.codex-usage", "H14.codex-configured-mcp", "H15.codex-brokered-plugin"],
-    conformance: ["src/conformance/codex.test.ts", "src/conformance/codex-lifecycle.test.ts", "src/profiles/codex/index.test.ts"],
+      "H5.codex-native-subagents", "H6-goals", "H7-steer", "H7.unknown-held", "H13.codex-usage", "H14.codex-configured-mcp", "H15.codex-brokered-plugin"],
+    conformance: ["src/conformance/codex.test.ts", "src/conformance/codex-lifecycle.test.ts", "src/conformance/codex-native-subagents.test.ts",
+      "src/profiles/codex/index.test.ts"],
   },
 }
 

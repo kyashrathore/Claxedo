@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import type { SubagentObservation } from "@claxedo/agent-runtime-contract"
 import type { ChildSessionRef, TurnBroker } from "../../contract"
-import type { CodexEvents } from "./events"
+import { CodexChildren } from "./children"
 import type { CodexRpc, RpcMessage } from "./rpc"
 import { answerCodexToolCall, codexHostSubagentObservation, type SubagentHost } from "./subagents"
 
@@ -31,7 +31,7 @@ function scriptedRpc(options: { childOutcome?: "completed" | "failed" | "held"; 
 
 function host(rpc: CodexRpc, drained: () => Promise<void> = async () => {}): SubagentHost {
   return { rpc, directory: "/work", threadId: "parent-1", brokered: false, plugins: ["kit@claxedo-agent-plugins"], permissionMode: "full-access",
-    settings: { model: "gpt-5.5", effort: "high", serviceTier: null }, children: new Map(), drained }
+    settings: { model: "gpt-5.5", effort: "high", serviceTier: null }, children: new CodexChildren(() => {}), drained }
 }
 
 function broker(signal = new AbortController().signal) {
@@ -52,7 +52,7 @@ test("spawn_agent starts a subagent thread under the parent's mode and settings 
   const subagents = host(rpc)
   expect(await answerCodexToolCall(subagents, turnBroker, call({ task_name: "review", message: "Inspect this" }))).toEqual({
     contentItems: [{ type: "inputText", text: "Subagent child-1 completed successfully." }], success: true })
-  expect([...subagents.children]).toEqual([["child-1", undefined]])
+  expect(subagents.children.get("child-1")).toMatchObject({ origin: "dynamic", state: "released", calls: new Set(["call-1"]) })
   expect(requests.map((request) => request.method)).toEqual(["thread/start", "turn/start"])
   expect(requests[0]?.params).toMatchObject({ cwd: "/work", threadSource: "subagent", approvalPolicy: "never", sandbox: "danger-full-access", model: "gpt-5.5",
     config: { plugins: { "kit@claxedo-agent-plugins": { enabled: true } } } })

@@ -4,7 +4,7 @@ import type { SubagentObservation, SubagentStatus } from "@claxedo/agent-runtime
 import { hostSubagentBinding, hostSubagentObservation, isHostSubagentTool } from "../../translate/host-subagent"
 import type { v2 } from "./translate"
 import type { ChildSessionRef, TurnBroker } from "../../contract"
-import { CodexEvents } from "./events"
+import { CodexChild, type CodexChildren } from "./children"
 import { CodexTransportError } from "./errors"
 import { codexPermissionSettings, codexTurnSandboxPolicy, type CodexPermissionSettings } from "./modes"
 import type { CodexRpc, RpcMessage } from "./rpc"
@@ -29,7 +29,7 @@ export type SubagentHost = {
   plugins: readonly string[]
   permissionMode: string | undefined
   settings: CodexTurnSettings
-  children: Map<string, CodexEvents | undefined>
+  children: CodexChildren
   drained: () => Promise<void>
 }
 
@@ -52,11 +52,6 @@ export async function answerCodexToolCall(host: SubagentHost | undefined, broker
   return spawnChild(host, broker, { callId, prompt, label: asString(args.task_name) ?? "Codex subagent" })
 }
 
-export function codexRequestChild(children: ReadonlyMap<string, unknown>, message: RpcMessage): string | undefined {
-  const threadId = asString(asRecordOrEmpty(message.params).threadId)
-  return threadId && children.has(threadId) ? threadId : undefined
-}
-
 export function codexHostSubagentObservation(turnThreadId: string, params: unknown): SubagentObservation | undefined {
   const notification = asRecordOrEmpty(params)
   const item = asRecord(notification.item)
@@ -74,26 +69,31 @@ export function codexHostSubagentObservation(turnThreadId: string, params: unkno
 
 async function spawnChild(host: SubagentHost, broker: TurnBroker, call: SpawnCall): Promise<ToolResult> {
   const mode = codexPermissionSettings(host.permissionMode)
-  let childThreadId: string | undefined
+  let child: CodexChild | undefined
   try {
-    childThreadId = await startChildThread(host, mode)
-    host.children.set(childThreadId, new CodexEvents(childThreadId))
-    const child = await observeChild(host, broker, call, childThreadId, "running", call.label)
-    if (child) broker.associateChild(childThreadId, child)
+    const childThreadId = await startChildThread(host, mode)
+    child = host.children.add(new CodexChild(childThreadId, "dynamic", { toolCallId: call.callId, label: call.label, description: call.prompt }))
+    const ref = await observeChild(host, broker, call, childThreadId, "running", call.label)
+    if (ref) broker.associateChild(childThreadId, ref)
     const status = await runChildTurn(host, broker, childThreadId, call.prompt, mode)
-    await host.drained()
+    await childDrained(host, child)
     await observeChild(host, broker, call, childThreadId, status, call.label)
     return status === "completed" ? toolResult(`Subagent ${childThreadId} completed successfully.`, true)
       : toolResult(`Subagent ${childThreadId} was interrupted before it finished.`, false)
   } catch (error) {
-    if (childThreadId) {
-      await host.drained()
-      await observeChild(host, broker, call, childThreadId, "failed", errorMessage(error))
+    if (child) {
+      await childDrained(host, child)
+      await observeChild(host, broker, call, child.threadId, "failed", errorMessage(error))
     }
     return toolResult(`Subagent failed: ${errorMessage(error)}`, false)
   } finally {
-    if (childThreadId) host.children.set(childThreadId, undefined)
+    if (child) host.children.move(child, "release")
   }
+}
+
+async function childDrained(host: SubagentHost, child: CodexChild): Promise<void> {
+  await child.flushed()
+  await host.drained()
 }
 
 async function startChildThread(host: SubagentHost, mode: CodexPermissionSettings): Promise<string> {

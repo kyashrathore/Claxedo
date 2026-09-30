@@ -1,7 +1,7 @@
 import { prefixedRandomId, settleAtRequestDeadline } from "@claxedo/helpers"
 import { HARNESS_TABLE, type SessionTitleRequest } from "@claxedo/agent-runtime-contract"
 import type {
-  AttachInput, ConfigApplied, Deadline, DraftLaunch, HarnessServices, HarnessSession, HarnessTransport,
+  AttachInput, BackgroundTaskRef, ConfigApplied, Deadline, DraftLaunch, HarnessServices, HarnessSession, HarnessTransport,
   RoutedEvent, SessionBroker, StartInput, TransportConfigUpdate, TurnBroker, TurnInput, TurnRef,
 } from "../../contract"
 import { draftProbeKey, DraftProbeCache, ProcessLosses, selectedTurnAccount } from "../../contract"
@@ -16,10 +16,11 @@ import { CodexRequestRefusal, CodexDeadlineError } from "./errors"
 import { createCodexGoals } from "./goals"
 import { CodexLaunches } from "./launch"
 import { readCodexModels, type CodexModel } from "./models"
-import { answerCodexRequest, isCodexRequestMethod } from "./requests"
+import { answerCodexRequest, isCodexRequestMethod, requestingChildThread } from "./requests"
+import { stopCodexChild } from "./native-children"
 import { codexRetirementDeadline, type RpcMessage } from "./rpc"
 import { CodexSessions } from "./sessions"
-import { answerCodexToolCall, codexRequestChild } from "./subagents"
+import { answerCodexToolCall } from "./subagents"
 import { codexRename, codexSessionTitle } from "./titles"
 import { activeCodexTurn, runCodexTurn } from "./turn"
 
@@ -86,12 +87,14 @@ export class CodexAppServerTransport implements HarnessTransport {
         brokered: entry.brokered, plugins: entry.plugins, permissionMode: entry.start.config.permissionMode, settings: entry.settings, children: entry.children,
         drained: active.drained }, active?.broker, message)
     }
-    if (!active && isCodexRequestMethod(message.method)) throw new CodexRequestRefusal(-32000, "Codex request has no active turn")
+    const child = requestingChildThread(entry, message)
+    if (!active && !child && isCodexRequestMethod(message.method)) throw new CodexRequestRefusal(-32000, "Codex request has no active turn")
     const broker = active?.broker ?? entry.broker
-    const child = codexRequestChild(entry.children, message)
-    return answerCodexRequest(message, { ask: (request) => broker.ask(child ? { ...request, child: { correlationKey: child } } : request, { signal }) }, entry.session.binding.sessionId,
-      { directory: entry.session.directory, permissionMode: entry.start.config.permissionMode })
+    return answerCodexRequest(message, { ask: (request) => broker.ask(child ? { ...request, child: { correlationKey: child } } : request, { signal }) },
+      entry.session.binding.sessionId, { directory: entry.session.directory, permissionMode: entry.start.config.permissionMode })
   }
+
+  readonly backgroundTasks = { stop: async (session: HarnessSession, task: BackgroundTaskRef) => stopCodexChild(this.sessions.entry(session), task) }
 
   readonly goals = createCodexGoals((session) => this.sessions.live(session))
 
