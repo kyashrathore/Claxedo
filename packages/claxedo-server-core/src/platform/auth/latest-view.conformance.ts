@@ -8,7 +8,7 @@ export type LatestViewConformanceHarness = {
   creator: SessionPageConformanceUser
 }
 
-type Page = { messages: Array<{ info: { id: string }; parts: Array<{ type: string }> }>; nextCursor?: string }
+type Page = { messages: Array<{ info: { id: string }; parts: Array<{ type: string }> }>; nextCursor?: string; maxEventOrdinal?: number }
 
 const transcriptEntry = (id: string, role: "user" | "assistant", parts: Array<Record<string, unknown>>) => ({ info: { id, role }, parts })
 
@@ -17,7 +17,8 @@ const transcriptEntry = (id: string, role: "user" | "assistant", parts: Array<Re
  * the surface is the latest turn's prompt and answer, text only, and its
  * cursor pages back to everything the surface left out; the latest turn is
  * that turn whole, and its cursor reads the turn before it whole. A session
- * with no transcript answers none.
+ * with no transcript answers none. Every read carries the event ordinal the
+ * registry stored with the transcript it answers from.
  */
 export async function exerciseLatestViewConformance(harness: LatestViewConformanceHarness) {
   const { authority, workspaceId, creator } = harness
@@ -65,6 +66,11 @@ export async function exerciseLatestViewConformance(harness: LatestViewConforman
   const earlier = await read({ view: "latest-turn", before: turn.nextCursor })
   latestViewHolds(JSON.stringify(earlier.messages.map((item) => item.info.id)) === '["u1","a1"]', "the turn before the latest is not whole")
   latestViewHolds(!earlier.nextCursor, "the first turn named a cursor to history that does not exist")
+  const replay = await read({})
+  latestViewHolds(
+    [surface, restored, turn, earlier, replay].every((page) => page.maxEventOrdinal === 5),
+    "a read did not carry the stored event ordinal",
+  )
   return {
     surface: surface.messages.map((item) => item.info.id),
     turn: turn.messages.map((item) => item.info.id),

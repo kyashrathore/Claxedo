@@ -5,6 +5,8 @@ import { localOnlyAuthAdapter, type SignedControlPlaneAuth } from "@claxedo/serv
 import { createSqliteWorkspaceAuthority } from "@claxedo/server-core/authority/adapters/sqlite/workspace-authority"
 import { createSqliteCentralStore } from "../authority/adapters/sqlite/central-store"
 import { createControlPlaneServices } from "../authority/services"
+import { ControlPlaneProtocolError } from "../authority/http/protocol"
+import { pulledCloudWorkspace } from "../authority/pulled-session"
 import { removeTestDataDir } from "./test-data-dir"
 
 export type RuntimeSnapshot = {
@@ -17,7 +19,8 @@ export type RuntimeSession = { title: string; updated: number }
 /**
  * The self-hosted composition's real session stores — the SQLite projection
  * and the SQLite authority — holding one registered cloud session, and a
- * runtime whose snapshot and session a test sets before each pull.
+ * runtime whose snapshot and session a test sets before each pull. The
+ * projection's database outlives one call, so each call names its own session.
  */
 export async function selfHostedSessionStores() {
   const root = mkdtempSync(path.join(realpathSync(tmpdir()), "claxedo-session-stores-"))
@@ -32,8 +35,9 @@ export async function selfHostedSessionStores() {
     token: "tok_alice",
     user: { subject: "alice", tokenIdentifier: "https://idp.example.test|alice", issuer: "https://idp.example.test" },
   }
-  const workspaceId = "ws_stores"
-  const sessionId = "ses_stores"
+  const suffix = path.basename(root).slice(-6)
+  const workspaceId = `ws_${suffix}`
+  const sessionId = `ses_${suffix}`
   await authority.usersMe(auth)
   const org = await authority.createOrg!(auth, { name: "Stores" }) as { org_id: string }
   await authority.createCloudWorkspace(auth, { workspaceId, displayName: "Stores", orgId: org.org_id })
@@ -62,18 +66,20 @@ export async function selfHostedSessionStores() {
     return new Response("not found", { status: 404 })
   }
 
+  const opened = await authority.openWorkspace(auth, { workspaceId })
+
   return {
     services,
     authority,
     auth,
     workspaceId,
     sessionId,
+    projectionWorkspace: pulledCloudWorkspace(workspaceId, opened.workspace, ControlPlaneProtocolError),
     runtime,
     options: { runtimeFetch },
+    /** The projection keys messages by id alone, so each session's ids carry its suffix. */
+    messageId: (name: string) => `${name}_${suffix}`,
+    assistantMessage: (name: string) => ({ info: { id: `${name}_${suffix}`, role: "assistant" as const }, parts: [{ type: "text", text: name }] }),
     dispose: () => removeTestDataDir(root),
   }
-}
-
-export function assistantMessage(id: string) {
-  return { info: { id, role: "assistant" as const }, parts: [{ type: "text", text: id }] }
 }

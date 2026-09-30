@@ -326,12 +326,12 @@ export function createSqlitePrivateSessionAuthority(input: {
     }
   }
 
-  const sessionReadRole = (auth: SignedControlPlaneAuth, sessionId: string, workspaceId: string): { role: string | undefined } | undefined => {
+  const sessionReadAccess = (auth: SignedControlPlaneAuth, sessionId: string, workspaceId: string): { role: string | undefined; maxEventOrdinal: number } | undefined => {
     const db = input.database()
     const actor = actorForAuth(auth)
     try {
       const current = requireSessionAccess(db, actor, sessionId, workspaceId, "read")
-      return { role: authorizeWorkspaceForUser(db, current.workspace, actor, "read") }
+      return { role: authorizeWorkspaceForUser(db, current.workspace, actor, "read"), maxEventOrdinal: current.row.max_event_ordinal }
     } catch (error) {
       if (error instanceof ControlPlaneAuthError) return undefined
       throw error
@@ -699,12 +699,12 @@ export function createSqlitePrivateSessionAuthority(input: {
     },
     async readSessionMessages(auth, value) {
       const db = input.database()
-      const read = sessionReadRole(auth, value.sessionId, value.workspaceId)
+      const read = sessionReadAccess(auth, value.sessionId, value.workspaceId)
       if (!read) return { allowed: false, messages: [] }
-      const { role } = read
+      const { role, maxEventOrdinal } = read
       if (value.view !== undefined) {
         const end = value.before === undefined ? undefined : decodeCursor(value.sessionId, value.before)
-        return { allowed: true, role, ...readLatestView(db, value.sessionId, value.workspaceId, value.view, end) }
+        return { allowed: true, role, maxEventOrdinal, ...readLatestView(db, value.sessionId, value.workspaceId, value.view, end) }
       }
       validatePage(value.limit, value.before)
       const before = value.before === undefined ? undefined : decodeCursor(value.sessionId, value.before)
@@ -744,11 +744,12 @@ export function createSqlitePrivateSessionAuthority(input: {
           },
         ]
       })
-      if (value.limit === undefined) return { allowed: true, role, messages: rows.map(publicMessage) }
+      if (value.limit === undefined) return { allowed: true, role, maxEventOrdinal, messages: rows.map(publicMessage) }
       const selected = rows.slice(0, value.limit).reverse()
       return {
         allowed: true,
         role,
+        maxEventOrdinal,
         messages: selected.map(publicMessage),
         ...(rows.length > value.limit && selected[0]
           ? { nextCursor: encodeCursor(value.sessionId, selected[0].ordinal) }

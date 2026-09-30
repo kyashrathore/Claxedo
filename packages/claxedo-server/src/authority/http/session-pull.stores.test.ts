@@ -1,5 +1,5 @@
 import { afterEach, expect, test, vi } from "vitest"
-import { assistantMessage, selfHostedSessionStores } from "../../test-support/self-hosted-session-stores"
+import { selfHostedSessionStores } from "../../test-support/self-hosted-session-stores"
 import { projectionSessionReads } from "../../session/projection-session-reads"
 import { pullControlSessionMessages } from "./session-pull"
 
@@ -11,7 +11,7 @@ afterEach(() => {
 
 test("a checkpoint whose authority write failed after the projection committed is repaired by the next pull", async () => {
   stores = await selfHostedSessionStores()
-  const { services, authority, auth, workspaceId, sessionId, runtime, options } = stores
+  const { services, authority, auth, workspaceId, sessionId, runtime, options, assistantMessage, messageId } = stores
   const checkpoint = () => pullControlSessionMessages(services, options, auth, { workspaceId, sessionId })
   const read = async () => await projectionSessionReads(services).messages(auth, { sessionId, workspaceId }) as {
     messages: Array<{ info: { id: string } }>
@@ -28,6 +28,6 @@ test("a checkpoint whose authority write failed after the projection committed i
 
   await checkpoint()
   const converged = await read()
-  expect(converged.messages.map((message) => message.info.id)).toEqual(["a1", "a2"])
+  expect(converged.messages.map((message) => message.info.id)).toEqual([messageId("a1"), messageId("a2")])
   expect(converged.maxEventOrdinal).toBe(2)
 })

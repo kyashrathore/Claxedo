@@ -52,7 +52,7 @@ export function projectionSessionReads(services: ControlPlaneServices): SessionR
       if (auth) {
         const body = asRecord(await requireAuthority(services).readSessionMessages(auth, { sessionId, workspaceId: workspaceId!, ...page }))
         if (body?.allowed === false) return undefined
-        return { ...body, maxEventOrdinal: services.projectionStore.read_session_max_event_ordinal(sessionId) }
+        return body
       }
       const body = page
         ? projectedMessagePage(services, sessionId, page)
