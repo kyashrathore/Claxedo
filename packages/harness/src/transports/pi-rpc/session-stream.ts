@@ -16,11 +16,10 @@ const OUTSIDE: readonly string[] = ["harness-notice", "diagnostic", "session-tit
 export class PiSessionStream {
   private owner: Owner = { kind: "idle" }
   private readonly translate: (message: PiMessage) => RoutedEvent[]
-  readonly detach: () => void
-
   constructor(private readonly host: PiStreamHost) {
     this.translate = piEvents(host.sessionId)
-    this.detach = host.rpc.onEvent((message) => this.receive(message))
+    host.rpc.onEvent((message) => this.receive(message))
+    host.rpc.onFailure((error) => this.fail(error))
   }
 
   get busy(): boolean { return this.owner.kind !== "idle" }
@@ -33,6 +32,11 @@ export class PiSessionStream {
     if (this.owner.kind !== "idle") throw new TransportError("pi", "session", "Pi turn already active")
     this.owner = { kind: "turn", run }
     return () => { if (this.owner.kind === "turn" && this.owner.run === run) this.owner = { kind: "idle" } }
+  }
+
+  private fail(error: Error): void {
+    if (this.owner.kind === "turn") this.owner.run.queue.fail(error)
+    else if (this.owner.kind === "provider") this.owner.turn.fail(error)
   }
 
   private receive(message: PiMessage): void {

@@ -499,3 +499,18 @@ test("a Pi that exits while starting names Pi's own reason, not only its exit co
     await expect(context.transport.start(start, context.sessionBroker)).rejects.toThrow(/Pi process exited \(1\): [\s\S]*PIBROKENEXTENSION/)
   } finally { await context.close() }
 }, 60_000)
+
+test("a Pi process that dies during a run Pi started itself ends that provider turn instead of holding the session", async () => {
+  const context = await setupConformance({ name: "pi provider turn death", backend, makeTransport: piTransport })
+  try {
+    const release = context.backend.hold!("PILATER")
+    for await (const _event of context.transport.send(context.session, context.turn("/conformance-later"), context.turnBroker())) {}
+    await context.backend.held!("PILATER")
+    const entry = (context.transport as unknown as { entries: Map<string, { stream: { busy: boolean }; rpc: { process: { pid: number } } }> }).entries.get("s1")!
+    expect(entry.stream.busy).toBe(true)
+    process.kill(entry.rpc.process.pid, "SIGKILL")
+    const idle = await pollUntil(() => entry.stream.busy ? undefined : true, Date.now() + 5_000)
+    release()
+    expect(idle).toBe(true)
+  } finally { await context.close() }
+}, 60_000)

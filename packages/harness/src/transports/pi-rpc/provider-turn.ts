@@ -32,6 +32,7 @@ export class PiProviderTurn {
   private held: Held[] = []
   private run?: PiRun
   private admitting = false
+  private failure?: { error: unknown }
 
   constructor(private readonly host: PiProviderHost) {}
 
@@ -42,6 +43,12 @@ export class PiProviderTurn {
     this.held.push({ message, events })
     const input = this.admitting ? undefined : opening(message)
     if (input) this.admit(input)
+  }
+
+  fail(error: unknown): void {
+    if (this.run) return this.run.queue.fail(error)
+    this.failure = { error }
+    if (!this.admitting) this.host.ended(this)
   }
 
   private admit(input: ProviderTurnInput): void {
@@ -61,6 +68,7 @@ export class PiProviderTurn {
     const stop = () => { void this.host.stop().then(undefined, (error: unknown) => this.host.broker.reportFailure(error)) }
     broker.signal.addEventListener("abort", stop, { once: true })
     for (const held of this.held.splice(0)) run.receive(held.message, held.events)
+    if (this.failure) run.queue.fail(this.failure.error)
     this.run = run
     try {
       yield* run.queue

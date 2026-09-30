@@ -157,7 +157,6 @@ export class PiRpcTransport implements HarnessTransport {
     const run = new PiRun(entry.rpc, session.binding.sessionId, this.services.clock, broker)
     const release = entry.stream.claim(run)
     entry.prompted = false
-    const removeFailure = entry.rpc.onFailure((error) => run.queue.fail(error))
     const started = this.beginTurn(entry, turn, broker, run)
     try {
       await started.prompt(body)
@@ -170,7 +169,6 @@ export class PiRpcTransport implements HarnessTransport {
     } finally {
       run.close()
       release()
-      removeFailure()
       started.release()
     }
   }
