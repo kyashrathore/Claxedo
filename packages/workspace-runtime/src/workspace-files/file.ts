@@ -4,6 +4,7 @@ import fuzzysort from "fuzzysort"
 import { runGit } from "../git"
 import { resolveWorkspacePath } from "../target"
 import { readWorkingTreeText } from "./working-tree"
+import { machineFileIndex } from "@claxedo/workspace-runtime/file-index"
 
 export type WorkspaceFileKind = "file" | "directory" | "any"
 
@@ -18,7 +19,7 @@ export async function searchWorkspaceFiles(
   limit: number,
 ) {
   if (limit < 1) return []
-  const index = await workspaceSearchIndex(searchDir)
+  const index = await machineFileIndex.get(searchDir)
   const items = type === "file" ? index.files : type === "directory" ? index.directories : index.all
   const q = query.trim()
   if (!q) return items.slice(0, limit)
@@ -147,107 +148,10 @@ export async function workspaceFileStatus(root: string) {
   }
 }
 
-const ALL_IGNORE = new Set([".git", ".DS_Store", "node_modules", ".next", "dist", "build", ".turbo", ".vercel", ".cache"])
-
-async function gitListAll(root: string): Promise<string[] | undefined> {
-  try {
-    // `-c -o` in one pass: tracked plus not-ignored-untracked. Two spawns
-    // produced a byte-identical union and doubled the cost of the only step
-    // a cold file search waits on.
-    const listed = await gitCmd(root, ["ls-files", "-c", "-o", "--exclude-standard"])
-    const out = new Set<string>()
-    for (const line of listed.split("\n")) {
-      const v = line.trim()
-      if (v) out.add(v)
-    }
-    return Array.from(out).sort()
-  } catch {
-    return undefined
-  }
-}
-
-async function walkAll(root: string, limit = 200_000): Promise<string[]> {
-  const out: string[] = []
-  const queue = [""]
-  while (queue.length && out.length < limit) {
-    const rel = queue.shift()!
-    const abs = rel ? path.join(root, rel) : root
-    let rows: fs.Dirent[]
-    try {
-      rows = await fs.promises.readdir(abs, { withFileTypes: true })
-    } catch {
-      continue
-    }
-    for (const row of rows) {
-      if (ALL_IGNORE.has(row.name)) continue
-      const next = rel ? path.join(rel, row.name) : row.name
-      if (row.isDirectory()) {
-        queue.push(next)
-      } else if (row.isFile()) {
-        out.push(next)
-        if (out.length >= limit) break
-      }
-    }
-  }
-  return out.sort()
-}
-
 export async function listAllWorkspaceFiles(root: string) {
-  return await gitListAll(root) ?? await walkAll(root)
+  return await machineFileIndex.list(root)
 }
 
-const SEARCH_INDEX_TTL_MS = 10_000
-
-type WorkspaceSearchIndex = {
-  readonly files: readonly string[]
-  readonly directories: readonly string[]
-  readonly all: readonly string[]
-}
-
-const searchIndexes = new Map<string, { expires: number; index: Promise<WorkspaceSearchIndex> }>()
-
-/** Builds the index off the request path, so the first search matches in memory. */
 export function warmWorkspaceSearchIndex(root: string) {
-  void workspaceSearchIndex(root).catch(() => {})
-}
-
-/**
- * Searching matches against this prebuilt list instead of walking the tree per
- * keystroke. The walk it replaced only stopped once it filled `limit`, so any
- * query with fewer hits than that read every directory in the workspace —
- * 130,479 of them and 13.6s on this monorepo, once per character typed.
- * Listing costs 37ms and a query against the result stays under 3ms.
- */
-function workspaceSearchIndex(root: string) {
-  const key = path.resolve(root)
-  const cached = searchIndexes.get(key)
-  if (cached && cached.expires > Date.now()) return cached.index
-
-  const index = buildWorkspaceSearchIndex(key)
-  searchIndexes.set(key, { expires: Date.now() + SEARCH_INDEX_TTL_MS, index })
-  // A rejected build must not be served for the rest of the window.
-  void index.catch(() => {
-    if (searchIndexes.get(key)?.index === index) searchIndexes.delete(key)
-  })
-  return index
-}
-
-async function buildWorkspaceSearchIndex(root: string): Promise<WorkspaceSearchIndex> {
-  const listed = await listAllWorkspaceFiles(root)
-  const files = listed.map((item) => item.replaceAll("\\", "/")).sort()
-
-  const directories = new Set<string>()
-  for (const file of files) {
-    const parts = file.split("/")
-    for (const [index] of parts.slice(0, -1).entries()) {
-      directories.add(parts.slice(0, index + 1).join("/"))
-    }
-  }
-
-  const sortedDirectories = Array.from(directories).sort()
-  return {
-    files,
-    directories: sortedDirectories,
-    all: [...files, ...sortedDirectories].sort(),
-  }
+  void machineFileIndex.get(root).catch(() => {})
 }
