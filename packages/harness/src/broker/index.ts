@@ -81,4 +81,4 @@ export function createSessionBroker(owner: BrokerOwner, context: SessionBrokerCo
   }
 }
 
-export type { AdmittedSubagentObservation, BrokerEvent, BrokerPorts, SessionBrokerContext, TurnBrokerContext, TurnAuthority } from "./ports"
+export type { AdmittedSubagentObservation, BrokerEvent, BrokerPorts, ChildRoute, RequestGrant, SessionBrokerContext, TurnBrokerContext, TurnAuthority } from "./ports"

@@ -1,6 +1,7 @@
 import { MemoryPorts, authority, origin } from "../conformance/test-support/memory-ports"
 import { registerBrokerBehaviorCases } from "./test-support/behavior-cases"
 import { registerBrokerPortCases } from "./test-support/port-cases"
+import { registerChildRequestCases } from "./test-support/child-request-cases"
 import { expect, test, describe } from "bun:test"
 import { createRequestBroker, createTurnBroker } from "./index"
 
@@ -15,6 +16,8 @@ registerBrokerPortCases("memory", () => {
 })
 
 registerBrokerBehaviorCases("memory", () => new MemoryPorts())
+
+registerChildRequestCases("memory", () => new MemoryPorts())
 
 describe("request owner changes", () => {
   test("a late answer from an old turn is refused and reports the session owner", async () => {

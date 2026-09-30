@@ -3,7 +3,7 @@ import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"
 import { createRequestBroker, createSessionBroker, createTurnBroker } from "@claxedo/harness/broker"
-import { MemoryPorts, registerBrokerBehaviorCases, registerBrokerPortCases } from "@claxedo/harness/testing"
+import { MemoryPorts, registerBrokerBehaviorCases, registerBrokerPortCases, registerChildRequestCases } from "@claxedo/harness/testing"
 import type { PendingRequest, RoutedEvent } from "@claxedo/harness/contract"
 import type { BrokerEvent, TurnAuthority } from "@claxedo/harness/broker"
 import { RuntimeStore } from "../store"
@@ -213,6 +213,17 @@ class StoreBehaviorPorts extends MemoryPorts {
   override bindChildCorrelation(...args: Parameters<typeof this.real.bindChildCorrelation>) {
     this.real.bindChildCorrelation(...args)
   }
+  override childRoute(...args: Parameters<typeof this.real.childRoute>) { return this.real.childRoute(...args) }
+  override finishChildTurn(parentSessionId: string, correlationKey: string) {
+    const route = this.real.childRoute(parentSessionId, correlationKey)
+    if (route.kind !== "bound") throw new Error(`No running child bound to ${correlationKey}`)
+    const leaseId = this.store.acquireTurnLease(route.childSessionId)
+    if (!leaseId) throw new Error(`No test lease for ${route.childSessionId}`)
+    this.store.startTurn({ sessionId: route.childSessionId, assistantMessageId: route.assistantMessageId, agent: "general", parts: [] })
+    this.store.finishTurn({ sessionId: route.childSessionId, assistantMessageId: route.assistantMessageId, leaseId,
+      outcome: { status: "completed", completedAt: 2 } })
+    this.store.releaseTurnLease(route.childSessionId, leaseId)
+  }
   override async publishSubagent(...args: Parameters<typeof this.real.publishSubagent>) {
     await this.real.publishSubagent(...args)
     this.subagents.push(args[1])
@@ -234,6 +245,8 @@ class StoreBehaviorPorts extends MemoryPorts {
 }
 
 registerBrokerBehaviorCases("runtime store", () => new StoreBehaviorPorts())
+
+registerChildRequestCases("runtime store", () => new StoreBehaviorPorts())
 
 describe("store broker ports", () => {
   test("a permission that expires is published as expired, not as the person's rejection", async () => {
@@ -361,11 +374,11 @@ describe("store broker ports", () => {
     const pending: PendingRequest = { sessionId: "s1", request, askedAt: 10, upstreamSessionId: "up1" }
     await ports.publish({ id: "permission.asked:s1:grant", type: "permission.asked", properties: request.permission }, pending)
     store.brokerDatabase().exec("CREATE TRIGGER deny_broker_grant BEFORE UPDATE OF permission_state_json ON session BEGIN SELECT RAISE(ABORT, 'grant failed'); END")
-    await expect(ports.persistAnswer(pending, { kind: "permission", decision: "allow_always" }, false, '["c1","run"]')).rejects.toThrow("grant failed")
+    await expect(ports.persistAnswer(pending, { kind: "permission", decision: "allow_always" }, false, { sessionId: "s1", key: '["c1","run"]' })).rejects.toThrow("grant failed")
     expect(ports.readAnswer("s1", "grant")).toBeUndefined()
     expect(ports.readPermissionState("s1")?.brokerGrants).toBeUndefined()
     store.brokerDatabase().exec("DROP TRIGGER deny_broker_grant")
-    await ports.persistAnswer(pending, { kind: "permission", decision: "allow_always" }, false, '["c1","run"]')
+    await ports.persistAnswer(pending, { kind: "permission", decision: "allow_always" }, false, { sessionId: "s1", key: '["c1","run"]' })
     expect(ports.readAnswer("s1", "grant")).toEqual({ kind: "permission", decision: "allow_always" })
     expect(ports.readPermissionState("s1")?.brokerGrants).toEqual(['["c1","run"]'])
   })

@@ -29,7 +29,7 @@ async function commitAnswer(ports: BrokerPorts, entries: RequestEntries, entry: 
   entry.phase = "committing"
   try {
     const grant = entry.pending.request.kind === "permission" ?
-      grantToSave(entry.authority.value.connectionId, entry.pending.request, answer) : undefined
+      grantToSave(entry.authority.value, entry.pending.request, answer) : undefined
     const events = await ports.persistAnswer(entry.pending, answer, false, grant)
     entries.finish(entry, answer)
     return { ok: true, events }

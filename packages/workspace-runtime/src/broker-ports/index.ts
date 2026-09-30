@@ -3,6 +3,7 @@ import type { BrokerPorts } from "@claxedo/harness/broker"
 import type { Clock } from "@claxedo/harness/contract"
 import type { RuntimeStore } from "../store"
 import type { RuntimeEventPublishers } from "../projection/runtime-event-hub"
+import { resolveChildRoute } from "../projection/child-routes"
 import { BrokerAuthority } from "./authority"
 import { admitChildSession, bindChildCorrelation } from "./child-sessions"
 import { BrokerEventDelivery } from "./delivery"
@@ -56,7 +57,7 @@ export function createStoreBrokerPorts(store: RuntimeStore, options: StoreBroker
     currentTurnAuthority: (sessionId) => authority.currentTurnAuthority(sessionId),
     readStart: (sessionId) => authority.readStart(sessionId),
     readPending: (scope) => requests.readPending(scope),
-    persistAnswer: (pending, answer, automatic, grantKey) => requests.persistAnswer(pending, answer, automatic, grantKey),
+    persistAnswer: (pending, answer, automatic, grant) => requests.persistAnswer(pending, answer, automatic, grant),
     readAnswer: (sessionId, requestId) => requests.readAnswer(sessionId, requestId),
     publish: (event, pending) => requests.publish(event, pending),
     readPermissionState: (sessionId) => state.readPermissionState(sessionId),
@@ -73,6 +74,7 @@ export function createStoreBrokerPorts(store: RuntimeStore, options: StoreBroker
     subagentAdmissionStore: store,
     bindChildCorrelation: (parentSessionId, correlationKey, childSessionId) =>
       bindChildCorrelation(store, parentSessionId, correlationKey, childSessionId),
+    childRoute: (parentSessionId, correlationKey) => resolveChildRoute(store, parentSessionId, correlationKey),
     admitChildSession: (parentSessionId, childSessionId, observation) =>
       admitChildSession(store, parentSessionId, childSessionId, observation),
     publishSubagent: (parentSessionId, event) => events.publishSubagent(parentSessionId, event),

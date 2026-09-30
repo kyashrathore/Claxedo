@@ -1051,7 +1051,8 @@ async function admitQuestionOperation(
   }
   const guarded = await sessionOperationGuard(opts, c, known, "question_response")
   if (guarded) return { rejected: guarded }
-  const unsupported = await unsupportedIfUnavailable(c, runtime, { sessionId: known, ...(directory ? { directory } : {}) }, "questions", "question_response")
+  const asking = await runtime.questions.askingSession(known)
+  const unsupported = await unsupportedIfUnavailable(c, runtime, { sessionId: asking, ...(directory ? { directory } : {}) }, "questions", "question_response")
   if (unsupported) return { rejected: unsupported }
   return { id, directory, sessionId: known }
 }
@@ -2147,7 +2148,7 @@ export function createSessionRoutes(opts: Opts) {
       const sessionId = permission?.sessionID
       if (!sessionId) return interactionNotFound(c, "permission", permId)
       if (sessionId !== suppliedSessionId) return interactionSessionMismatch(c, "permission", permId)
-      const unsupported = await unsupportedIfUnavailable(c, runtime, sessionTarget(c, sessionId, directory), "permissions", "permission_response")
+      const unsupported = await unsupportedIfUnavailable(c, runtime, sessionTarget(c, await runtime.permissions.askingSession(sessionId), directory), "permissions", "permission_response")
       if (unsupported) return unsupported
       const guarded = await sessionOperationGuard(opts, c, sessionId, "permission_response")
       if (guarded) return guarded
