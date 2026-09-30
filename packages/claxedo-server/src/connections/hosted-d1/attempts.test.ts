@@ -1,7 +1,4 @@
-import { readFile } from "node:fs/promises"
-import { fileURLToPath } from "node:url"
 import { afterEach, describe, expect, test } from "vitest"
-import { Miniflare } from "miniflare"
 import type { D1Database } from "@cloudflare/workers-types"
 
 import {
@@ -9,6 +6,7 @@ import {
   HOSTED_ATTEMPT_RETENTION_MS,
   HOSTED_ATTEMPT_TTL_MS,
 } from "./attempts"
+import { controlPlaneMigrations, miniflareControlPlaneDatabase, type ControlPlaneDatabase } from "../../test-support/control-plane-migrations"
 
 /**
  * These are the SEMANTICS tests the kit's in-memory store pins
@@ -17,27 +15,16 @@ import {
  * expire distinct from settle(false), and a mid-consume row that outlives its
  * TTL. Both stores implement one port and must answer alike.
  */
-const active: Miniflare[] = []
+const active: ControlPlaneDatabase[] = []
 
 afterEach(async () => {
   await Promise.all(active.splice(0).map((instance) => instance.dispose()))
 })
 
 async function database(): Promise<D1Database> {
-  const instance = new Miniflare({
-    modules: true,
-    script: "export default { fetch() { return new Response('ok') } }",
-    compatibilityDate: "2025-05-01",
-    d1Databases: ["CONTROL_PLANE_DB"],
-  })
+  const instance = await miniflareControlPlaneDatabase(controlPlaneMigrations())
   active.push(instance)
-  const target = await instance.getD1Database("CONTROL_PLANE_DB")
-  const path = fileURLToPath(new URL("../../../migrations/control-plane/0020_hosted_connections.sql", import.meta.url))
-  const migration = (await readFile(path, "utf8")).replace(/^\s*--.*$/gm, "")
-  for (const statement of migration.split(/;\s*\n\s*\n/).map((part) => part.trim()).filter(Boolean)) {
-    await target.prepare(statement).run()
-  }
-  return target
+  return instance.database
 }
 
 /** A store over a clock the test moves, so TTL arithmetic is exact rather than timed. */
@@ -62,13 +49,13 @@ async function store(options: { newToken?: () => string } = {}) {
 describe("D1 hosted connection attempts", () => {
   test("an attempt created by one store instance is found by another — the durability the in-memory store cannot give", async () => {
     const rig = await store()
-    const { state } = await rig.attempts.create({ integrationId: "context7", scope: "team", owner: "org:org-a" })
+    const { state } = await rig.attempts.create({ integrationId: "context7", scope: "org", owner: "org:org-a" })
 
     // A second store over the same database stands in for the next request's
     // isolate, which is where the in-memory map went empty.
     const next = createD1ConnectionAttempts({ database: rig.database, now: rig.at })
-    expect(await next.status(state)).toEqual({ status: "pending", integrationId: "context7", scope: "team" })
-    expect(await next.inspect(state)).toEqual({ integrationId: "context7", owner: "org:org-a", scope: "team" })
+    expect(await next.status(state)).toEqual({ status: "pending", integrationId: "context7", scope: "org" })
+    expect(await next.inspect(state)).toEqual({ integrationId: "context7", owner: "org:org-a", scope: "org" })
   })
 
   test("consume is single-use and hands back the verifier and frozen context exactly once", async () => {
@@ -98,7 +85,7 @@ describe("D1 hosted connection attempts", () => {
     const rig = await store()
     const { state, verifier } = await rig.attempts.create({
       integrationId: "mcp-docs",
-      scope: "team",
+      scope: "org",
       owner: "org:org-a",
       context: { issuer: "https://mcp-issuer.example" },
       routing: { org_id: "org-a", owner_user_id: "user-1" },
@@ -108,7 +95,7 @@ describe("D1 hosted connection attempts", () => {
     expect(routing).toEqual({
       integrationId: "mcp-docs",
       owner: "org:org-a",
-      scope: "team",
+      scope: "org",
       routing: { org_id: "org-a", owner_user_id: "user-1" },
       context: { issuer: "https://mcp-issuer.example" },
     })
@@ -119,11 +106,11 @@ describe("D1 hosted connection attempts", () => {
     const rig = await store()
     const { state } = await rig.attempts.create({
       integrationId: "github",
-      scope: "team",
+      scope: "org",
       owner: "org:org-a",
       deviceCode: "device-1",
     })
-    const device = { integrationId: "github", owner: "org:org-a", scope: "team", deviceCode: "device-1" }
+    const device = { integrationId: "github", owner: "org:org-a", scope: "org", deviceCode: "device-1" }
 
     // Many polls, same answer — `consume` cannot serve this, being single-use.
     expect(await rig.attempts.peek(state)).toEqual(device)
@@ -138,23 +125,23 @@ describe("D1 hosted connection attempts", () => {
       .bind(state)
       .first<{ status: string; expires_at: number }>()
     expect(row).toEqual({ status: "expired", expires_at: rig.at() + HOSTED_ATTEMPT_RETENTION_MS })
-    expect(await rig.attempts.status(state)).toEqual({ status: "expired", integrationId: "github", scope: "team" })
+    expect(await rig.attempts.status(state)).toEqual({ status: "expired", integrationId: "github", scope: "org" })
   })
 
   test("a redirect attempt has no device code, so peek never answers for it", async () => {
     const rig = await store()
-    const { state } = await rig.attempts.create({ integrationId: "context7", scope: "team" })
+    const { state } = await rig.attempts.create({ integrationId: "context7", scope: "org" })
     expect(await rig.attempts.peek(state)).toBeUndefined()
   })
 
   test("a pending attempt past its TTL is not consumable and reads as expired", async () => {
     const rig = await store()
-    const { state } = await rig.attempts.create({ integrationId: "context7", scope: "team" })
+    const { state } = await rig.attempts.create({ integrationId: "context7", scope: "org" })
 
     rig.advance(HOSTED_ATTEMPT_TTL_MS)
     expect(await rig.attempts.inspect(state)).toBeUndefined()
     expect(await rig.attempts.consume(state)).toBeUndefined()
-    expect(await rig.attempts.status(state)).toEqual({ status: "expired", integrationId: "context7", scope: "team" })
+    expect(await rig.attempts.status(state)).toEqual({ status: "expired", integrationId: "context7", scope: "org" })
     // The refused consume recorded the expiry rather than leaving it derived.
     expect(
       (await rig.database
@@ -166,7 +153,7 @@ describe("D1 hosted connection attempts", () => {
 
   test("a mid-consume attempt is left pending past its TTL — only settle may move it", async () => {
     const rig = await store()
-    const { state } = await rig.attempts.create({ integrationId: "context7", scope: "team" })
+    const { state } = await rig.attempts.create({ integrationId: "context7", scope: "org" })
     expect(await rig.attempts.consume(state)).toBeDefined()
 
     // A slow token exchange still owns its attempt.
@@ -175,12 +162,12 @@ describe("D1 hosted connection attempts", () => {
     expect(await rig.attempts.status(state)).toMatchObject({ status: "pending" })
 
     await rig.attempts.settle(state, true)
-    expect(await rig.attempts.status(state)).toEqual({ status: "complete", integrationId: "context7", scope: "team" })
+    expect(await rig.attempts.status(state)).toEqual({ status: "complete", integrationId: "context7", scope: "org" })
   })
 
   test("settle records complete and failed, and a message only when there is one", async () => {
     const rig = await store()
-    const complete = await rig.attempts.create({ integrationId: "context7", scope: "team" })
+    const complete = await rig.attempts.create({ integrationId: "context7", scope: "org" })
     const failed = await rig.attempts.create({ integrationId: "github", scope: "personal", owner: "user:user-1" })
 
     await rig.attempts.settle(complete.state, true)
@@ -189,7 +176,7 @@ describe("D1 hosted connection attempts", () => {
     expect(await rig.attempts.status(complete.state)).toEqual({
       status: "complete",
       integrationId: "context7",
-      scope: "team",
+      scope: "org",
     })
     expect(await rig.attempts.status(failed.state)).toEqual({
       status: "failed",
@@ -205,21 +192,21 @@ describe("D1 hosted connection attempts", () => {
 
   test("expire is its own outcome, distinct from settle(false)", async () => {
     const rig = await store()
-    const { state } = await rig.attempts.create({ integrationId: "github", scope: "team", deviceCode: "device-1" })
+    const { state } = await rig.attempts.create({ integrationId: "github", scope: "org", deviceCode: "device-1" })
 
     await rig.attempts.expire(state)
 
     // "expired" is worth restarting; "failed" reads as a refusal. Collapsing the
     // two would tell a user who merely took too long that authorization was denied.
-    expect(await rig.attempts.status(state)).toEqual({ status: "expired", integrationId: "github", scope: "team" })
+    expect(await rig.attempts.status(state)).toEqual({ status: "expired", integrationId: "github", scope: "org" })
     expect(await rig.attempts.peek(state)).toBeUndefined()
     expect(await rig.attempts.consume(state)).toBeUndefined()
   })
 
   test("sweep deletes terminal rows past retention and expires stale pending ones", async () => {
     const rig = await store()
-    const stale = await rig.attempts.create({ integrationId: "context7", scope: "team" })
-    const settled = await rig.attempts.create({ integrationId: "github", scope: "team" })
+    const stale = await rig.attempts.create({ integrationId: "context7", scope: "org" })
+    const settled = await rig.attempts.create({ integrationId: "github", scope: "org" })
     await rig.attempts.settle(settled.state, true)
 
     // Retention (5 min) is shorter than the TTL (10 min), so a settled attempt
@@ -236,7 +223,7 @@ describe("D1 hosted connection attempts", () => {
     expect(await rig.attempts.status(stale.state)).toEqual({
       status: "expired",
       integrationId: "context7",
-      scope: "team",
+      scope: "org",
     })
 
     rig.advance(HOSTED_ATTEMPT_RETENTION_MS)
@@ -277,7 +264,7 @@ describe("D1 hosted connection attempts", () => {
     const { state } = await rig.attempts.create({
       integrationId: "composio",
       owner: "org:org-a",
-      scope: "team",
+      scope: "org",
       routing: { org_id: "org-a", owner_user_id: "user-1" },
     })
 
@@ -298,8 +285,8 @@ describe("D1 hosted connection attempts", () => {
     // `state` is 32 random bytes; a collision is either a bug or a replay, and
     // either way the second write must not overwrite a live attempt.
     const rig = await store({ newToken: () => "collision" })
-    await rig.attempts.create({ integrationId: "context7", scope: "team" })
-    await expect(rig.attempts.create({ integrationId: "github", scope: "team" }))
+    await rig.attempts.create({ integrationId: "context7", scope: "org" })
+    await expect(rig.attempts.create({ integrationId: "github", scope: "org" }))
       .rejects.toThrow(/already recorded/)
     expect(await rig.attempts.status("collision")).toMatchObject({ integrationId: "context7" })
   })
@@ -309,7 +296,7 @@ describe("D1 hosted connection attempts", () => {
     // if dispose deleted rows, the attempt created by `POST /:id/connect` would
     // be gone before `GET /attempts/:state` ran.
     const rig = await store()
-    const { state } = await rig.attempts.create({ integrationId: "context7", scope: "team" })
+    const { state } = await rig.attempts.create({ integrationId: "context7", scope: "org" })
 
     rig.attempts.dispose()
 
@@ -323,7 +310,7 @@ describe("D1 hosted connection attempts", () => {
     const attempts = createD1ConnectionAttempts({ database: rig.database })
     const seen = new Set<string>()
     for (let index = 0; index < 5; index++) {
-      const { state, verifier } = await attempts.create({ integrationId: "context7", scope: "team" })
+      const { state, verifier } = await attempts.create({ integrationId: "context7", scope: "org" })
       expect(state).not.toEqual(verifier)
       // 32 bytes base64url, matching what the kit's in-memory store mints.
       expect(state.length).toBeGreaterThanOrEqual(43)

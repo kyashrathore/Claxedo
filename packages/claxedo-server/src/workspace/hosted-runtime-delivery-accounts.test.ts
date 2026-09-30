@@ -3,7 +3,7 @@ import { vercelBrokeredNetworkPolicy } from "@claxedo/sandbox-manager/drivers/ve
 import { createHostedRuntimeDelivery } from "./hosted-runtime-delivery"
 import { hostedOrgCredentials, HOSTED_CREDENTIALS_FLAG } from "../credentials/worker"
 import { CREDENTIALS_KEK_ENV } from "@claxedo/server-core/credentials/envelope"
-import { miniflareControlPlaneDatabase, HOSTED_CREDENTIAL_MIGRATIONS } from "../test-support/control-plane-migrations"
+import { controlPlaneMigrations, miniflareControlPlaneDatabase } from "../test-support/control-plane-migrations"
 import { hostedRuntimeConfigApply } from "./hosted-runtime-fetch"
 
 vi.mock("./hosted-runtime-fetch", () => ({ hostedRuntimeConfigApply: vi.fn(async () => {}) }))
@@ -11,7 +11,7 @@ vi.mock("./hosted-runtime-fetch", () => ({ hostedRuntimeConfigApply: vi.fn(async
 const OWNERS: Record<string, string> = { "ws-a": "A", "ws-b": "B" }
 
 test("a workspace's sandbox is delivered its owner's account alone, and another person's placeholder buys no injection there", async () => {
-  const database = await miniflareControlPlaneDatabase(HOSTED_CREDENTIAL_MIGRATIONS)
+  const database = await miniflareControlPlaneDatabase(controlPlaneMigrations())
   try {
     const credentials = hostedOrgCredentials("org", { database: database.database, env: {
       [HOSTED_CREDENTIALS_FLAG]: "1", [CREDENTIALS_KEK_ENV]: Buffer.alloc(32, 7).toString("base64"),

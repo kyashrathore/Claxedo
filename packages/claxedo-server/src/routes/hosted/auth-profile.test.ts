@@ -54,7 +54,7 @@ describe("hosted canonical auth profile", () => {
     const listOrgs = vi.fn(async () => [{
       org_id: "org_canonical",
       name: "Canonical organization",
-      kind: "team",
+      kind: "shared",
       role: "owner",
       provider_org_id: "provider-org-secret",
       client_secret: "must-not-leak",

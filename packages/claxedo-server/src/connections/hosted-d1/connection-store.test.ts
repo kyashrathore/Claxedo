@@ -1,43 +1,21 @@
-import { readFile } from "node:fs/promises"
-import { fileURLToPath } from "node:url"
 import { afterEach, describe, expect, test } from "vitest"
-import { Miniflare } from "miniflare"
 import type { D1Database } from "@cloudflare/workers-types"
 
 import { ConnectionExistsError, connectionStoreCoreConformance } from "@claxedo/connections"
 
+import { controlPlaneMigrations, miniflareControlPlaneDatabase, type ControlPlaneDatabase } from "../../test-support/control-plane-migrations"
 import { createD1ConnectionStore, HostedConnectionPartitionError } from "./connection-store"
 
-// 0002 owns `users` and `orgs`, which 0020's foreign keys reference; 0020 owns
-// the table under test. The real migration files run — a hand-written schema in
-// the test would prove the store works against a table that does not ship.
-// 0021 is inert here (it adds only `mcp_oauth_clients`, which this store never
-// reads) and runs so the applied order matches production.
-const MIGRATIONS = ["0002_workspace_authority.sql", "0020_hosted_connections.sql", "0021_mcp_oauth_clients.sql"]
-
-const active: Miniflare[] = []
+const active: ControlPlaneDatabase[] = []
 
 afterEach(async () => {
   await Promise.all(active.splice(0).map((instance) => instance.dispose()))
 })
 
 async function database(): Promise<D1Database> {
-  const instance = new Miniflare({
-    modules: true,
-    script: "export default { fetch() { return new Response('ok') } }",
-    compatibilityDate: "2025-05-01",
-    d1Databases: ["CONTROL_PLANE_DB"],
-  })
+  const instance = await miniflareControlPlaneDatabase(controlPlaneMigrations())
   active.push(instance)
-  const target = await instance.getD1Database("CONTROL_PLANE_DB")
-  for (const name of MIGRATIONS) {
-    const path = fileURLToPath(new URL(`../../../migrations/control-plane/${name}`, import.meta.url))
-    const migration = (await readFile(path, "utf8")).replace(/^\s*--.*$/gm, "")
-    for (const statement of migration.split(/;\s*\n\s*\n/).map((part) => part.trim()).filter(Boolean)) {
-      await target.prepare(statement).run()
-    }
-  }
-  return target
+  return instance.database
 }
 
 /**
@@ -54,7 +32,7 @@ async function seed(target: D1Database, orgs: readonly string[], users: readonly
   for (const orgId of orgs) {
     await target
       .prepare(
-        `insert into orgs (org_id, name, kind, owner_user_id, created_at, updated_at) values (?, ?, 'team', ?, 1, 1)`,
+        `insert into orgs (org_id, name, kind, owner_user_id, created_at, updated_at) values (?, ?, 'shared', ?, 1, 1)`,
       )
       .bind(orgId, orgId, users[0])
       .run()
@@ -241,7 +219,7 @@ describe("D1 hosted connection store", () => {
 /**
  * The partition-agnostic half of the kit's store-port suite, run in this
  * store's personal partition. The other half — the three-way `list({owner})`
- * model — is unrunnable here by design: this store has no owner-absent team
+ * model — is unrunnable here by design: this store has no owner-absent org
  * partition and refuses every owner key outside its two. What remains is row
  * identity, upsert arbitration, deletion and copy-on-read, which this adapter
  * previously shared with no other host at all.

@@ -311,7 +311,7 @@ describe("SQLite workspace authority tenancy migration", () => {
       INSERT INTO users (token_identifier, subject, issuer, kind, created_at, updated_at)
       VALUES ('owner', 'owner', 'issuer', 'human', 1, 1);
       INSERT INTO orgs (org_id, name, kind, owner_token_identifier, created_at, updated_at)
-      VALUES ('org_one', 'One', 'team', NULL, 1, 1), ('org_two', 'Two', 'team', NULL, 1, 1);
+      VALUES ('org_one', 'One', 'shared', NULL, 1, 1), ('org_two', 'Two', 'shared', NULL, 1, 1);
       INSERT INTO org_memberships (org_id, token_identifier, role, created_at, updated_at)
       VALUES ('org_one', 'owner', 'owner', 1, 1), ('org_two', 'owner', 'owner', 1, 1);
       INSERT INTO workspaces

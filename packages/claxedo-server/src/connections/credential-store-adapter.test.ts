@@ -36,7 +36,7 @@ const {
 } = await import("@claxedo/connections")
 const { CREDENTIALS_KEK_ENV } = await import("@claxedo/server-core/credentials/envelope")
 const { HOSTED_CREDENTIALS_FLAG, hostedOrgCredentials } = await import("../credentials/worker/index")
-const { HOSTED_CREDENTIAL_MIGRATIONS, miniflareControlPlaneDatabase } = await import("../test-support/control-plane-migrations")
+const { controlPlaneMigrations, miniflareControlPlaneDatabase } = await import("../test-support/control-plane-migrations")
 import { registryCredentialsPort } from "./test-helper"
 import type { ConnectionRow } from "@claxedo/connections"
 import type { ControlPlaneDatabase } from "../test-support/control-plane-migrations"
@@ -49,7 +49,7 @@ function resetSqlite() {
 let controlPlane: ControlPlaneDatabase
 
 beforeAll(async () => {
-  controlPlane = await miniflareControlPlaneDatabase(HOSTED_CREDENTIAL_MIGRATIONS)
+  controlPlane = await miniflareControlPlaneDatabase(controlPlaneMigrations())
 })
 
 beforeEach(resetSqlite)
