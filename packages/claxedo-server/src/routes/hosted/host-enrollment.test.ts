@@ -8,7 +8,7 @@ import {
 import type { HostTunnelTokenSigner } from "@claxedo/server-core/platform/auth/runtime-access-token"
 import { sha256Hex } from "@claxedo/helpers/crypto"
 import type { ControlPlaneServices } from "../../authority/services"
-import { D1HostAccessAuthorityError } from "../../authority/adapters/d1/host-access-authority"
+import { D1HostAccessAuthorityError } from "../../authority/adapters/d1/host-access-errors"
 import { createFixedWindowConnectionRateLimiter } from "../../platform/auth/rate-limit"
 import { HostEnrollmentRoutes, HostInvitationRoutes } from "./host-enrollment"
 

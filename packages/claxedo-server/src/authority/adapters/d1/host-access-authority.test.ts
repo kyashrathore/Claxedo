@@ -1301,6 +1301,46 @@ describe("host-connect: machine heartbeat, readiness, invitations, scope", () =>
     expect(await input.workspace.openWorkspace(bob, { workspaceId: "ws_open" })).toMatchObject({ role: "viewer" })
   })
 
+  test("hiding a workspace from org members, by assignment or by narrowing the machine, revokes the tokens whose rank it lowers", async () => {
+    const input = await setup()
+    const { alice, bob, admin } = await fixture(input)
+    const owner = await signed(input.workspace, "alice", "org_acme")
+    const { enrollment } = await redeem(input, await invite(input, owner, ["/srv"], "owner"), "vps-r", await hostKey())
+    const mint = async (auth: SignedControlPlaneAuth, jti: string) => {
+      await input.runtimeTokens.recordRuntimeAccessToken(auth, {
+        jti,
+        workspaceId: "ws_local",
+        hostId: enrollment.host_id,
+        actorId: auth.principal!.actorId,
+        actorKind: "human",
+        role: "viewer",
+        expiresAt: 1_800_000_100_000,
+      })
+      return async () =>
+        (await input.runtimeTokens.runtimeAccessTokenActive({ jti, workspaceId: "ws_local", hostId: enrollment.host_id }) as { active: boolean }).active
+    }
+    const scope = (visibility: "owner" | "org") =>
+      input.hostAccess.updateHostEnrollmentScope(owner, { enrollmentId: enrollment.enrollment_id, scope: { allowed_roots: ["/srv"], visibility } })
+
+    const beforeAssignment = await mint(bob, "jti-before-assignment")
+    await input.hostAccess.assignWorkspaceHost(owner, { workspaceId: "ws_local", hostId: enrollment.host_id, remoteDirectory: "/srv/local" })
+    await scope("org")
+    expect(await beforeAssignment()).toBe(false)
+
+    const member = await mint(bob, "jti-member")
+    const orgAdmin = await mint(admin, "jti-admin")
+    const workspaceOwner = await mint(alice, "jti-owner")
+    await scope("owner")
+    await scope("org")
+    expect(await member()).toBe(false)
+    expect(await orgAdmin()).toBe(true)
+    expect(await workspaceOwner()).toBe(true)
+
+    const unchanged = await mint(bob, "jti-unchanged")
+    await scope("org")
+    expect(await unchanged()).toBe(true)
+  })
+
   test("the owner renames a machine, the name reaches the fleet listing, and nobody else can rename it", async () => {
     const input = await setup()
     const { bob } = await fixture(input)

@@ -76,10 +76,13 @@ request is refused.
 
 A runtime access token's activity is re-read at check time, so a token would
 work again once its holder regained the rank. Every change that lowers a rank
-therefore revokes the tokens it affects in the same batch: removing a member,
-moving one from owner or admin to member, revoking or lowering a member
-grant, revoking or lowering a team's grant (for every member of the team), and
-removing a person from a team (on the projects the team reaches).
+therefore revokes tokens in the same batch: removing a member, moving one from
+owner or admin to member, revoking or lowering a member grant, revoking or
+lowering a team's grant (for every member of the team), and removing a person
+from a team (on the projects the team reaches) revoke the person's tokens on
+the projects concerned; hiding a workspace from org members revokes each token
+on it whose role now exceeds its holder's rank (see the resource hierarchy
+below).
 
 Setting up the default team creates only what is missing: the team, a
 membership for each org member who never had one, and an editor grant on each
@@ -99,9 +102,12 @@ place, the member already gone), writes no row. The audit table's
 per-deployment row cap evicts deny and MCP rows only; access-change rows
 (`org.*`, `team.*`, `project.member.*`) are never evicted.
 
-An email is resolved only after the caller is found to administer the org, so
-the answer never tells someone without that right whether an address has an
-account.
+An email is resolved only after the caller is found to administer the org the
+request names, so a caller who administers no org learns nothing from the
+answer. That is the whole guarantee. In the user-deployed posture the
+deployment has one org, so only its owners and admins can learn whether an
+address has a verified account. In the hosted posture any signed user can
+create an org and administer it, so any signed user can learn that.
 
 ## Routes
 
@@ -134,14 +140,40 @@ People: Org → Teams → members → roles
 Code:   Project → Workspace → Session → participants / session share grants
 ```
 
-What a workspace role is for: seeing that the workspace's placement exists (which
-machine it runs on, its directory there), the workspace-scoped surfaces
-the Relay Host Token has always gated (files, terminals, processes, git),
-and being offerable a session share. An organization is a grouping of
-people. It is not an execution environment and it grants nothing on any
-machine, runtime or workspace folder: there is no concept of adding a
-member to a machine or a folder, no membership row on a workspace, and no
-rank on an organization or a workspace that admits a person to a session.
+A workspace is a folder on a machine, or a cloud sandbox, and it has one
+owner (`workspaces.owner_user_id`), the person who created or placed it. An
+org and its teams group people. Nobody is added to a machine or a folder, and
+no row names a person on a workspace. A person's role on a workspace, the
+workspace form of `projectRoleRankSql`, is the highest of:
+
+- `owner`, when they own the workspace;
+- `admin`, when they are an owner or admin of its org, whatever the
+  workspace's visibility;
+- only when the workspace is visible to org members (`org_member_visible` is
+  1): their member grant on its project, worth at most `admin`; the best grant
+  of a team they are on; and `viewer` for any org member.
+
+A project or team grant therefore reaches another person's workspace only
+once its owner makes it visible to org members; on a workspace its owner
+keeps to themselves, it reaches nobody. Being the project's owner makes
+nobody the owner of someone else's workspace in it.
+
+Visibility follows placement. A workspace created without a machine is
+visible unless it is created with `orgMemberVisible: false`. A machine's scope
+visibility, `owner` or `org`, is written to a workspace when it is assigned to
+that machine, and to every workspace the machine serves whenever the scope
+changes. Hiding a workspace, by assigning it to an owner-visibility machine or
+by narrowing the machine's scope to `owner`, revokes in the same batch every
+runtime access token on it whose role exceeds its holder's rank once hidden.
+
+What the role unlocks on a workspace: `viewer` lists and opens it, sees where
+it is placed and whether its machine is serving it, and reaches the
+workspace-scoped surfaces the Relay Host Token gates (files, terminals,
+processes, git); `editor` reserves and registers sessions on it; `admin`
+assigns it to a machine or unassigns it. A runtime access token names a role
+no higher than its holder's rank when it is minted, and stops working once the
+rank falls below it. No workspace role admits anyone to another person's
+session.
 
 The workspace role stops at the session. A session share, at level `follow` or
 `send`, is the only grant one person makes to another, and it is the whole

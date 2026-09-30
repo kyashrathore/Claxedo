@@ -1,6 +1,5 @@
 import type { D1Database, D1PreparedStatement } from "@cloudflare/workers-types"
 import { ControlPlaneAuthError, type SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
-import { ClaxedoError } from "@claxedo/server-core/platform/errors/base"
 import {
   hostEnrollmentScope,
   hostProviderConfigRekeyed,
@@ -12,7 +11,6 @@ import {
 import type {
   HostAssignmentAck,
   HostAssignmentDescription,
-  HostConnectErrorCode,
   HostEnrollment,
   HostEnrollmentListRow,
   HostEnrollmentState,
@@ -39,13 +37,14 @@ import {
   normalizeStoredDirectory,
   publicKeyFingerprint,
 } from "@claxedo/server-core/platform/auth/host-connect-contract"
-import type { MachineAuthRefusal } from "@claxedo/server-core/platform/auth/machine-auth"
 import { MACHINE_SEAL_VERSION, machineSealingPublicKey } from "@claxedo/server-core/platform/auth/machine-seal"
 import { timingSafeEqualStrings } from "@claxedo/server-core/platform/auth/web-crypto"
 import { sha256Hex } from "@claxedo/helpers/crypto"
 import { asRecord, parseJson } from "@claxedo/server-core/platform/json/index"
 import { batchAssertionFailed, type D1WorkspaceAuthority } from "./workspace-authority"
 import { activeOrgMemberSql, projectRoleRankSql } from "./project-role"
+import { revokeTokensOutrankedWhenHiddenStatement } from "./access-context"
+import { D1HostAccessAuthorityError } from "./host-access-errors"
 
 export const D1_HOST_ACCESS_AUTHORITY_METHODS = [
   "createHostEnrollmentRequest",
@@ -189,50 +188,6 @@ const MAX_SEALING_PUBLIC_KEY_LENGTH = 4_000
 /** base64url of the route's 32 KiB plaintext cap plus the ephemeral key, iv and tag. */
 const MAX_SEALED_LENGTH = 64 * 1024
 const MAX_PROVIDER_IDS = 100
-
-export type D1HostAccessErrorCode =
-  | "invalid_input"
-  | "resource_conflict"
-  | "host_attestation_denied"
-  | "signature_replayed"
-  | "host_enrollment_not_found"
-  | Extract<
-    MachineAuthRefusal["code"],
-    "enrollment_revoked" | "enrollment_paused" | "enrollment_owner_ineligible" | "enrollment_key_version_mismatch"
-  >
-  | HostConnectErrorCode
-
-const ERROR_STATUS: Record<D1HostAccessErrorCode, number> = {
-  invalid_input: 400,
-  resource_conflict: 409,
-  host_attestation_denied: 403,
-  signature_replayed: 409,
-  host_enrollment_not_found: 404,
-  enrollment_revoked: 403,
-  enrollment_paused: 403,
-  enrollment_owner_ineligible: 403,
-  enrollment_key_version_mismatch: 403,
-  invitation_invalid: 403,
-  invitation_expired: 410,
-  invitation_revoked: 410,
-  invitation_redeemed: 409,
-  invitation_host_conflict: 409,
-  enrollment_generation_superseded: 409,
-  host_assignment_outside_scope: 400,
-  host_sealing_key_undeclared: 409,
-  host_provider_config_revision_stale: 409,
-}
-
-export class D1HostAccessAuthorityError extends ClaxedoError<D1HostAccessErrorCode> {
-  constructor(
-    code: D1HostAccessErrorCode,
-    message: string,
-    /** Extra fields the route places beside `code` and `message` in the error body. */
-    public readonly details?: Record<string, unknown>,
-  ) {
-    super({ code, message, status: ERROR_STATUS[code] })
-  }
-}
 
 /**
  * The one definition of "a host is serving this workspace right now": an
@@ -436,6 +391,10 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
     const assertionId = this.randomId("assert")
     await this.guardedBatch([
       ...registration,
+      ...(orgMemberVisible ? [] : [revokeTokensOutrankedWhenHiddenStatement(this.tokenRevocation, {
+        workspaces: { sql: "select ?", bind: [workspaceId] },
+        now,
+      })]),
       this.database.prepare(`
         update workspaces set deleted_at = null, host_assignment_revision = ?,
           ${description.map(([column]) => `${column} = ?`).join(", ")}, updated_at = ?
@@ -939,6 +898,13 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
       this.database.prepare(`
         delete from host_workspace_assignments where workspace_id in (${outsideRootsSql})
       `).bind(...outsideRoots()),
+      ...(scope.visibility === "owner" ? [revokeTokensOutrankedWhenHiddenStatement(this.tokenRevocation, {
+        workspaces: {
+          sql: "select workspace_id from host_workspace_assignments where host_id = ? and owner_actor_id = ?",
+          bind: [row.host_id, row.owner_actor_id],
+        },
+        now,
+      })] : []),
       this.database.prepare(`
         update workspaces set org_member_visible = ?, updated_at = ?
         where workspace_id in (
@@ -1290,6 +1256,10 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
       ),
     ])
     return { revoked: changes(results[0]), runtime_tokens_revoked: changes(results[4]) }
+  }
+
+  private get tokenRevocation() {
+    return { database: this.database, deploymentId: this.options.deploymentId }
   }
 
   private async requirePrincipal(auth: SignedControlPlaneAuth): Promise<Principal> {
