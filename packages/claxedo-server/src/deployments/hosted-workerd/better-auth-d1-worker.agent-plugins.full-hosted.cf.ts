@@ -3,6 +3,9 @@ import { hostedSandboxDriver } from "../../authority/adapters/worker/hosted-sand
 import { createD1SandboxLeaseStore } from "../../sandbox/stores/d1"
 import {
   composeBetterAuthD1AgentPlugins,
+  PluginObjects,
+  PluginOutbound,
+  PluginSupervisor,
   stringEnvironment,
   type BetterAuthD1AgentPluginsWorkerEnv,
 } from "./better-auth-d1-worker.agent-plugins.cf"
@@ -10,7 +13,7 @@ import { createBetterAuthD1Worker } from "./better-auth-d1-worker.cf"
 import { LiveSyncRoom } from "./core-worker.cf"
 import { settledCompositionCache } from "./settled-composition-cache"
 
-export { LiveSyncRoom }
+export { LiveSyncRoom, PluginObjects, PluginOutbound, PluginSupervisor }
 
 /**
  * The full-hosted Agent Plugins Worker: the Agent Plugins composition plus

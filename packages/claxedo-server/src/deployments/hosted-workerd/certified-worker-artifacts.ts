@@ -49,8 +49,9 @@ const ARTIFACTS = Object.freeze({
     agentPlugins: false,
   }),
   // A feature-selected artifact of the same user-deployed product, not a
-  // second product. It adds the immutable plugin artifact bucket and the
-  // org-partitioned credential namespace, and nothing else.
+  // second product. It adds the immutable plugin artifact bucket, the
+  // org-partitioned credential namespace, and the plugin-backend platform:
+  // the Worker Loader binding and the PluginSupervisor Durable Object.
   "user-deployed-better-auth-d1-agent-plugins": Object.freeze({
     artifactId: "user-deployed-better-auth-d1-agent-plugins" as const,
     sandboxPosture: "control-plane-only" as const,

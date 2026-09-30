@@ -15,7 +15,7 @@
  * top-level keys: a bare key emitted after it would belong to `[alias]`.
  */
 export const HOSTED_WORKER_BUNDLE_CONTRACT = `compatibility_date = "2025-05-01"
-compatibility_flags = ["nodejs_compat", "global_fetch_strictly_public"]
+compatibility_flags = ["nodejs_compat", "global_fetch_strictly_public", "enable_ctx_exports"]
 workers_dev = false
 preview_urls = false
 

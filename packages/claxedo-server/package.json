@@ -66,6 +66,7 @@
     "@claxedo/helpers": "workspace:*",
     "@claxedo/local-server": "workspace:*",
     "@claxedo/mcp": "workspace:*",
+    "@claxedo/plugin-api": "workspace:*",
     "@claxedo/sandbox-contract": "workspace:*",
     "@claxedo/sandbox-manager": "workspace:*",
     "@claxedo/service-contract": "workspace:*",
@@ -91,6 +92,7 @@
     "zod": "4.4.3"
   },
   "devDependencies": {
+    "@claxedo/plugin-build": "workspace:*",
     "@cloudflare/workers-types": "catalog:",
     "@modelcontextprotocol/inspector": "2.4.0",
     "@modelcontextprotocol/sdk": "1.29.0",

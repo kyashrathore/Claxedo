@@ -1,0 +1,17 @@
+{
+  "name": "claxedo-plugin-counter",
+  "version": "0.1.0",
+  "private": true,
+  "claxedo": {
+    "id": "counter",
+    "name": "Counter",
+    "version": "0.1.0",
+    "app": "./src/app.js",
+    "backend": {
+      "entry": "./src/backend.js",
+      "objects": ["Counter"],
+      "outbound": ["allowed.example.com"],
+      "routes": ["GET /count", "POST /count", "GET /whoami", "GET /outbound", "GET /objects/:className", "GET /fail"]
+    }
+  }
+}
