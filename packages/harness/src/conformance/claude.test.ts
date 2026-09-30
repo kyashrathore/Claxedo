@@ -808,3 +808,14 @@ test("the /compact Claude declares runs Claude's own compaction", async () => {
     expect(compaction.some((prompt) => prompt.includes("<summary>") && prompt.includes("CLAUDEWARM"))).toBe(true)
   } finally { await context.close(); await state.close() }
 }, 60_000)
+
+test("Claude is not offered session wakeups, which nothing would deliver once its process retires", async () => {
+  const state = await backend()
+  const context = await attachedClaude(state)
+  try {
+    expect((await context.collect("t1", "Reply with exactly this one token: CLAUDEWAKE")).some((row) => row.event.type === "finish")).toBe(true)
+    const offered = new Set(state.server.requests.flatMap((request) => request.tools.map((tool) => tool.name)))
+    expect(offered.has("Bash")).toBe(true)
+    expect(["ScheduleWakeup", "CronCreate", "CronDelete", "CronList"].filter((tool) => offered.has(tool))).toEqual([])
+  } finally { await context.close(); await state.close() }
+}, 60_000)

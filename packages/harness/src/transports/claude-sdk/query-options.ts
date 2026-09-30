@@ -10,6 +10,8 @@ import { connectionGrantKeys, sessionMcpServers } from "../../contract"
 
 const protocolClaudePermissionMap = { deny: "deny" } as const
 
+const undeliveredWakeups = ["ScheduleWakeup", "CronCreate", "CronDelete", "CronList"]
+
 export type ClaudeLaunchTurn = { broker: TurnBroker; turnId: string }
 
 type Launch = {
@@ -49,7 +51,7 @@ export class ClaudeQueryLauncher {
       ...context,
       ...permissionOptions(current.config, connectionGrantKeys(current.config.permissionState, session.binding.connectionId)),
       ...(session.binding.upstreamSessionId.startsWith("claude-sdk:") ? {} : { resume: session.binding.upstreamSessionId }),
-      mcpServers: mcpServers(input, this.services), forwardSubagentText: true, abortController: abort,
+      mcpServers: mcpServers(input, this.services), forwardSubagentText: true, abortController: abort, disallowedTools: undeliveredWakeups,
       ...(spec.clear ? { tools: [], maxTurns: 1 } : { sessionStore: goalSessionStore(broker, abort.signal, spec.usage), sessionStoreFlush: "eager" as const }),
       ...(spec.model && (spec.model !== "default" || !spec.agent) ? { model: spec.model } : {}),
       ...(spec.effort ? { effort: spec.effort } : {}),
