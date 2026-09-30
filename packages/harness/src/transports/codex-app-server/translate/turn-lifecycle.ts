@@ -3,7 +3,7 @@ import type { AgentRuntimeEvent } from "@claxedo/agent-runtime-contract"
 import { asText as text } from "@claxedo/agent-runtime-contract"
 import type { HarnessEventAdapterContext } from "../../../translate/adapter"
 import { codexSessionId, type CodexHandlers } from "./frame"
-import { diagnosticForEvent } from "./notices"
+import { diagnosticForEvent, harnessNotice } from "./notices"
 import { endThreadTurn } from "./state"
 import { turnErrorEvent } from "./turn-errors"
 
@@ -19,6 +19,12 @@ function completionEvents(
     return [
       { type: "session-status", status: "error" },
       turnErrorEvent(asRecord(turn.error), text(row.message), lastLimitedRateLimitMessage, "Codex turn failed"),
+    ] satisfies AgentRuntimeEvent[]
+  }
+  if ((status === "cancelled" || status === "interrupted") && asRecord(turn.error)) {
+    return [
+      { type: "session-status", status: "error" },
+      turnErrorEvent(asRecord(turn.error), undefined, lastLimitedRateLimitMessage, "Codex interrupted the turn"),
     ] satisfies AgentRuntimeEvent[]
   }
   if (status === "cancelled" || status === "interrupted") {
@@ -38,7 +44,8 @@ function threadStatusEvents(row: Record<string, unknown>) {
   const type = text(status?.type)
   if (type === "active") return [{ type: "session-status", status: "busy" }] satisfies AgentRuntimeEvent[]
   if (type === "idle" || type === "notLoaded") return [{ type: "session-status", status: "idle" }] satisfies AgentRuntimeEvent[]
-  return []
+  if (type !== "systemError") return []
+  return [harnessNotice({ code: "codex_app_server.thread_system_error", message: "Codex reported a system error on this thread", severity: "warn" })]
 }
 
 function todosFromPlan(row: Record<string, unknown>) {

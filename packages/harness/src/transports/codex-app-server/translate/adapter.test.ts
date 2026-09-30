@@ -889,7 +889,7 @@ describe("codexAppServerAdapter", () => {
     expect(agent.ingest({
       source: "codex.app-server", method: "thread/status/changed",
       payload: { threadId: "thread-1", status: { type: "systemError" } },
-    }).events).toEqual([])
+    }).events).toMatchObject([{ type: "harness-notice", code: "codex_app_server.thread_system_error" }])
   })
 
   test("waits for the authoritative error after an early systemError", () => {
@@ -897,7 +897,7 @@ describe("codexAppServerAdapter", () => {
     expect(agent.ingest({
       source: "codex.app-server", method: "thread/status/changed",
       payload: { threadId: "thread-1", status: { type: "systemError" } },
-    }).events).toEqual([])
+    }).events).toMatchObject([{ type: "harness-notice", code: "codex_app_server.thread_system_error" }])
     expect(agent.ingest({
       source: "codex.app-server", method: "error",
       payload: { threadId: "thread-1", turnId: "turn-1", willRetry: false,
@@ -948,13 +948,21 @@ describe("codexAppServerAdapter", () => {
     ])
   })
 
-  test("a Codex failure with no limit behind it carries no class of its own", () => {
+  test("a Codex sandbox failure is a workspace failure", () => {
     const [, error] = runtime().ingest({
       source: "codex.app-server",
       method: "error",
       payload: { threadId: "thread-1", turnId: "turn-1", willRetry: false, error: { message: "sandbox denied", codexErrorInfo: "sandboxError" } },
     }).events
-    expect(error).toMatchObject({ type: "error", error: "sandbox denied" })
+    expect(error).toMatchObject({ type: "error", error: "sandbox denied", errorClass: "workspace" })
+  })
+
+  test("a Codex failure with no structured reason carries no class of its own", () => {
+    const [, error] = runtime().ingest({
+      source: "codex.app-server",
+      method: "error",
+      payload: { threadId: "thread-1", turnId: "turn-1", willRetry: false, error: { message: "sandbox denied" } },
+    }).events
     expect(error).not.toHaveProperty("errorClass")
   })
 
