@@ -462,11 +462,11 @@ describe(`${name} request broker`, () => {
   test("a session's background work reaches its host like any other outside-turn event", async () => {
     const { ports, owner } = setup()
     const session = createSessionBroker(owner, { sessionId: "s1", workspaceId: "w1", directory: "/work", origin })
-    await session.publish({ type: "background-work", active: true })
-    await session.publish({ type: "background-work", active: false })
+    await session.publish({ type: "background-work", agents: 1, shells: 0, other: 0 })
+    await session.publish({ type: "background-work", agents: 0, shells: 0, other: 0 })
     expect(ports.sessionEvents).toEqual([
-      { sessionId: "s1", event: { type: "background-work", active: true } },
-      { sessionId: "s1", event: { type: "background-work", active: false } },
+      { sessionId: "s1", event: { type: "background-work", agents: 1, shells: 0, other: 0 } },
+      { sessionId: "s1", event: { type: "background-work", agents: 0, shells: 0, other: 0 } },
     ])
   })
 

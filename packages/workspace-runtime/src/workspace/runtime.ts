@@ -622,7 +622,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions): WorkspaceHos
           return registration ? scopedToolPrompt(sessionId, registration) : undefined
         },
         subagentAdmission: (parentSessionId, observation) => harnessEngine().runtime.subagents.admit(parentSessionId, observation),
-        backgroundWork: (sessionId) => engine?.ports.backgroundWork.has(sessionId) ?? false,
+        backgroundWork: (sessionId) => engine?.ports.backgroundWork.read(sessionId),
       })
       disposeDeliveries = sessions.dispose
       app.route("/", sessions.routes)

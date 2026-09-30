@@ -312,11 +312,11 @@ describe("wr/events — one stream per workspace runtime", () => {
   })
 
   test("background work settling is retained; its start is not", () => {
-    const backgroundWork = (active: boolean) => ({
-      directory: DIRECTORY, payload: { type: "session.background-work" as const, properties: { sessionID: "s", active } },
+    const backgroundWork = (agents: number) => ({
+      directory: DIRECTORY, payload: { type: "session.background-work" as const, properties: { sessionID: "s", agents, shells: 0, other: 0 } },
     })
-    expect(isRetainedWorkspaceEventFrame(backgroundWork(false))).toBe(true)
-    expect(isRetainedWorkspaceEventFrame(backgroundWork(true))).toBe(false)
+    expect(isRetainedWorkspaceEventFrame(backgroundWork(0))).toBe(true)
+    expect(isRetainedWorkspaceEventFrame(backgroundWork(2))).toBe(false)
   })
 
   test("a retained settlement survives a burst that rolls the ring", async () => {

@@ -1,3 +1,4 @@
+import { parseBackgroundWork, type BackgroundWork } from "@claxedo/agent-runtime-contract"
 import type { SessionRowStatusKind } from "@claxedo/server-core/session/navigation-list"
 import { record, raw } from "../platform/json"
 
@@ -6,8 +7,8 @@ export type RuntimeStatusPath = "/session/status" | "/permission" | "/question"
 /** A GET on the workspace's mounted runtime, or nothing when no runtime is up. */
 export type RuntimeStatusRead = (workspaceId: string, path: RuntimeStatusPath) => Promise<Response | undefined>
 
-/** A session's status kind, the ids of its open permissions and questions, keyed `<kind>.asked:<id>`, and whether its harness runs work outside any turn. */
-export type RuntimeSessionActivity = { kind: SessionRowStatusKind; pending: Set<string>; backgroundWork: boolean }
+/** A session's status kind, the ids of its open permissions and questions, keyed `<kind>.asked:<id>`, and the work its harness runs outside any turn, when there is any. */
+export type RuntimeSessionActivity = { kind: SessionRowStatusKind; pending: Set<string>; backgroundWork?: BackgroundWork }
 
 export function runtimeStatusKind(status: unknown): SessionRowStatusKind {
   const type = raw(record(status)?.type)
@@ -34,7 +35,8 @@ export async function readRuntimeSessionActivity(
   if (status === undefined) return undefined
   const sessions = new Map<string, RuntimeSessionActivity>()
   for (const [sessionId, value] of Object.entries(record(status) ?? {})) {
-    sessions.set(sessionId, { kind: runtimeStatusKind(value), pending: new Set(), backgroundWork: record(value)?.backgroundWork === true })
+    const backgroundWork = parseBackgroundWork(record(value)?.backgroundWork)
+    sessions.set(sessionId, { kind: runtimeStatusKind(value), pending: new Set(), ...(backgroundWork ? { backgroundWork } : {}) })
   }
   for (const path of ["/permission", "/question"] as const) {
     const rows = await readRuntimeStatus(read, workspaceId, path)
@@ -42,7 +44,7 @@ export async function readRuntimeSessionActivity(
       const sessionId = raw(record(row)?.sessionID)
       const id = raw(record(row)?.id)
       if (!sessionId || !id) continue
-      const entry = sessions.get(sessionId) ?? { kind: "idle", pending: new Set<string>(), backgroundWork: false }
+      const entry = sessions.get(sessionId) ?? { kind: "idle", pending: new Set<string>() }
       entry.pending.add(`${path.slice(1)}.asked:${id}`)
       sessions.set(sessionId, entry)
     }

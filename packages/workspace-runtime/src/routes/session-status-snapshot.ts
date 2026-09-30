@@ -1,14 +1,14 @@
-import type { AgentRuntimeStatus } from "@claxedo/agent-runtime-contract"
+import type { AgentRuntimeStatus, BackgroundWork } from "@claxedo/agent-runtime-contract"
 import { ACP_RECOVER } from "../store"
 import { recovering } from "../projection/presentation-events"
 import { str } from "../json-value"
 import { asRecord } from "@claxedo/helpers/guards"
 
-export type SessionStatusRead = AgentRuntimeStatus & { backgroundWork?: true }
+export type SessionStatusRead = AgentRuntimeStatus & { backgroundWork?: BackgroundWork }
 
 export type SessionStatusSnapshot = Record<string, SessionStatusRead>
 
-export function sessionStatusSnapshot(input: unknown[], backgroundWork: (sessionId: string) => boolean = () => false): SessionStatusSnapshot {
+export function sessionStatusSnapshot(input: unknown[], backgroundWork: (sessionId: string) => BackgroundWork | undefined = () => undefined): SessionStatusSnapshot {
   const out: SessionStatusSnapshot = {}
   for (const item of input) {
     const row = asRecord(item)
@@ -18,7 +18,7 @@ export function sessionStatusSnapshot(input: unknown[], backgroundWork: (session
     const status = live(row, ACP_RECOVER)
     const background = backgroundWork(id)
     if (!status && !background) continue
-    out[id] = { ...(status ?? { type: "idle" }), ...(background ? { backgroundWork: true } : {}) }
+    out[id] = { ...(status ?? { type: "idle" }), ...(background ? { backgroundWork: background } : {}) }
   }
   return out
 }

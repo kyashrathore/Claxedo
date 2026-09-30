@@ -1,3 +1,4 @@
+import type { BackgroundWork } from "./background-work"
 import type { AgentSubagentUpdate, RuntimeGoalSnapshot } from "./subagents"
 import type { RuntimeQuestion, RuntimeUsageObservation } from "./events"
 import type { AgentSessionCommand } from "./sessions"
@@ -136,8 +137,8 @@ export type AgentRuntimeEvent = RuntimeEventMeta & (
       workspaceID?: string
     }
   | { type: "session-title"; title: string; titleSource?: "harness" | "user" }
-  /** Work the harness runs for the session outside any turn (background agents, background shells) started (`true`) or all of it settled (`false`). Never a turn state. */
-  | { type: "background-work"; active: boolean }
+  /** The work the harness runs for the session outside any turn (background agents, shells, other tasks), restated whole whenever it changes; all zero once it settled. Never a turn state. */
+  | ({ type: "background-work" } & BackgroundWork)
   | {
       type: "usage"
       contextSize: number

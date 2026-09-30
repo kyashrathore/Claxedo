@@ -62,7 +62,7 @@ describe("localSessionListPage", () => {
     await putSessionMeta("ses_asleep", { ws: asleep, title: "Asleep", createdAt: 1, updatedAt: 1 })
     const fake = runtime({
       [running.id]: {
-        "/session/status": { ses_busy: { type: "busy" }, ses_background: { type: "idle", backgroundWork: true } },
+        "/session/status": { ses_busy: { type: "busy" }, ses_background: { type: "idle", backgroundWork: { agents: 2, shells: 0, other: 0 } } },
         "/question": [{ id: "que_1", sessionID: "ses_asking" }],
       },
     })
@@ -80,7 +80,7 @@ describe("localSessionListPage", () => {
       ses_busy: { kind: "busy", awaitingInput: false, at: 7_000 },
       ses_asking: { kind: "idle", awaitingInput: true, at: 7_000 },
       ses_quiet: { kind: "idle", awaitingInput: false, at: 7_000 },
-      ses_background: { kind: "idle", awaitingInput: false, backgroundWork: true, at: 7_000 },
+      ses_background: { kind: "idle", awaitingInput: false, backgroundWork: { agents: 2, shells: 0, other: 0 }, at: 7_000 },
       ses_asleep: { kind: "idle", awaitingInput: false, at: 7_000 },
     })
     expect(fake.reads.filter((read) => read.endsWith("/session/status"))).toEqual([

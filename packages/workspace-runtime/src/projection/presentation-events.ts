@@ -15,7 +15,7 @@ import type {
   PromptInput,
   TurnAccount,
 } from "@claxedo/agent-runtime-contract"
-import { firstTurnErrorData, promptPartId } from "@claxedo/agent-runtime-contract"
+import { backgroundWorkActive, firstTurnErrorData, promptPartId, type BackgroundWork } from "@claxedo/agent-runtime-contract"
 import { asRecord } from "@claxedo/helpers/guards"
 import { withClaxedoMessageAuthor } from "./client-presentation/author"
 
@@ -129,7 +129,7 @@ export function isRetainedPresentationEvent(event: AgentPresentationEvent): bool
     const status = event.properties.update.status
     return status === "completed" || status === "failed" || status === "killed" || status === "interrupted"
   }
-  if (event.type === "session.background-work") return !event.properties.active
+  if (event.type === "session.background-work") return !backgroundWorkActive(event.properties)
   return false
 }
 
@@ -283,8 +283,8 @@ export function sessionStatus(sessionID: string, status: AgentRuntimeStatus): Ev
   }
 }
 
-export function sessionBackgroundWork(sessionID: string, active: boolean): Event<"session.background-work"> {
-  return { type: "session.background-work", properties: { sessionID, active } }
+export function sessionBackgroundWork(sessionID: string, work: BackgroundWork): Event<"session.background-work"> {
+  return { type: "session.background-work", properties: { sessionID, ...work } }
 }
 
 export function sessionCompacted(sessionID: string): Event<"session.compacted"> {

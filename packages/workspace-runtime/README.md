@@ -208,16 +208,18 @@ watched session on the next task; a read that differs from the last one sent for
 that session is published.
 
 `session.background-work` is owned by `src/broker-ports/background-work.ts`. A
-harness publishes `{ type: "background-work", active }` through
-`SessionBroker.publish` when the work it runs for a session outside any turn
-(background agents and shells in a process that outlives the turn) starts or
-all of it settles. The fact is held in memory by the engine's broker ports,
-not in the store: it describes a process this runtime owns, so a restart or a
-retired engine ends it, and nothing stored could outlive that truthfully. A
-change is broadcast, never journaled; `GET /session/status` and the open view's
-`status` add `backgroundWork: true` beside the turn's own status (an idle
-session with background work is listed as `{ type: "idle", backgroundWork: true }`).
-It never enters turn admission: a prompt sent while it is set starts a turn on
+harness publishes `{ type: "background-work", agents, shells, other }` through
+`SessionBroker.publish` whenever the work it runs for a session outside any
+turn (background agents, shells and other tasks in a process that outlives the
+turn) changes, all zero once it settled. The counts are held in memory by the
+engine's broker ports, not in the store: they describe a process this runtime
+owns, so a restart or a retired engine ends them, and nothing stored could
+outlive that truthfully. A change is broadcast as `session.background-work`
+with the same counts, never journaled, and the settling frame (all zero) is
+retained in the replay ring; `GET /session/status` and the open view's
+`status` add `backgroundWork: { agents, shells, other }` beside the turn's own
+status while any count is above zero (an idle session with background work is
+listed as `{ type: "idle", backgroundWork: { … } }`). It never enters turn admission: a prompt sent while it is set starts a turn on
 the same attached session as any other.
 
 `POST /session/:id/background-task/stop` with `{ toolCallId }` stops one

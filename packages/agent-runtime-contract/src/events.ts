@@ -8,6 +8,7 @@ import type {
   AgentTodo,
 } from "./content"
 import type { AgentRuntimeStatus } from "./availability"
+import type { BackgroundWork } from "./background-work"
 import type { AgentRuntimeHealth, ConnectionRuntimeStatus } from "./connections"
 import type { AgentSubagentUpdate, RuntimeGoalSnapshot } from "./subagents"
 
@@ -95,7 +96,7 @@ export type AgentPresentationEvent =
   /** `parentID` names a subsession, whose deletion leaves the visible session count alone. */
   | { type: "session.deleted"; properties: { info: { id: string; directory: string; parentID?: string } } }
   /** Whether the session's harness runs work outside any turn; live state pushed when it changes and never journaled. */
-  | { type: "session.background-work"; properties: { sessionID: string; active: boolean } }
+  | { type: "session.background-work"; properties: { sessionID: string } & BackgroundWork }
   /** A session's harness health and its connection's state, pushed when either changes. */
   | { type: "harness.health"; properties: { sessionID: string; harnessHealth: AgentRuntimeHealth; connectionState?: ConnectionRuntimeStatus & { connectionId: string } } }
 

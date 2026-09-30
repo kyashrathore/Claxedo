@@ -71,7 +71,7 @@ export class BrokerSessionEvents {
     if (!session) throw new Error(`Unknown session ${sessionId}`)
     const directory = session.directory ?? ""
     if (event.type === "background-work") {
-      this.backgroundWork.record(sessionId, event.active)
+      this.backgroundWork.record(sessionId, { agents: event.agents, shells: event.shells, other: event.other })
       this.delivery.runtime(sessionId, event)
       return
     }
