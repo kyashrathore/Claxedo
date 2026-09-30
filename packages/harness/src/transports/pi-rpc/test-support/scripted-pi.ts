@@ -5,6 +5,7 @@ import path from "node:path"
 import type { HarnessServices, McpServerSpec, SessionBroker, SpawnCommand, SpawnOptions, StartInput } from "../../../contract"
 import { ScriptedProcess } from "../../../test-support/scripted-process"
 import { PiRpcTransport } from ".."
+import { PI_RANGE } from "../version"
 
 type Frame = { type: string; id?: string; message?: string }
 type Handoff = { file: string; mode: number; content: string }
@@ -45,15 +46,26 @@ function answer(frame: Frame, launch: Launch, mcpFailure: string | undefined, un
   return frame.type === "get_state" ? { sessionId: "scripted-pi", thinkingLevel: "off" } : {}
 }
 
+function versionProcess(version: string) {
+  const wire = new ScriptedProcess<Frame>(() => {})
+  queueMicrotask(() => { wire.stdout.write(`${version}\n`); wire.exit() })
+  return wire.owned()
+}
+
 export async function scriptedPi(input: { firstPartyMcp?: HarnessServices["firstPartyMcp"]; mcpFailure?: string; unregistered?: string[];
-  onLaunch?: (launch: Launch) => void } = {}) {
+  onLaunch?: (launch: Launch) => void; version?: string } = {}) {
   const root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), "pi-scripted-")))
   const directory = path.join(root, "work")
   await fs.mkdir(directory)
   const launches: Launch[] = []
   const health = { changes: 0 }
   const mcpRequests: [string, string][] = []
+  const versions: SpawnCommand[] = []
   const spawn: HarnessServices["spawn"] = async (command, options) => {
+    if (command.args.includes("--version")) {
+      versions.push(command)
+      return versionProcess(input.version ?? PI_RANGE.max)
+    }
     const launch: Launch = { command, options, handoffs: [], wire: new ScriptedProcess<Frame>((frame) => {
       if (frame.id) launch.wire.send({ type: "response", id: frame.id, command: frame.type, success: true,
         data: answer(frame, launch, input.mcpFailure, input.unregistered ?? []) })
@@ -82,6 +94,6 @@ export async function scriptedPi(input: { firstPartyMcp?: HarnessServices["first
     return rest
   }
   const close = async () => { await transport.dispose(); await fs.rm(root, { recursive: true, force: true }) }
-  return { root, directory, transport, launches, health, mcpRequests, start, broker, draft, close,
+  return { root, directory, transport, launches, versions, health, mcpRequests, start, broker, draft, close,
     probes: () => launches.filter((launch) => launch.options.role === "probe") }
 }

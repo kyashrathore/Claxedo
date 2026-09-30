@@ -23,7 +23,7 @@ RUN npm i -g --min-release-age=2 \
       @anthropic-ai/claude-code@2.1.280 \
       @openai/codex@0.156.1 \
       @google/gemini-cli@0.43.0 \
-      @earendil-works/pi-coding-agent@0.85.1
+      @earendil-works/pi-coding-agent@0.99.1
 
 COPY .build/install-agent-artifacts.sh /tmp/install-agent-artifacts.sh
 RUN sh /tmp/install-agent-artifacts.sh && \

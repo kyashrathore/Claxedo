@@ -10,6 +10,7 @@ import { PINNED_PI } from "../../e2e/harness/pinned-pi"
 import { reservePort, releasePort } from "../../e2e/harness/ports"
 import { startScriptedModelServer } from "../../e2e/harness/scripted-model-server"
 import { PiRpcTransport } from "../transports/pi-rpc"
+import { PI_RANGE } from "../transports/pi-rpc/version"
 import { SESSION_TITLE_SYSTEM_PROMPT } from "../../e2e/harness/config"
 
 type PiBackend = SuiteBackend & { root: string; agentDir: string; server: Awaited<ReturnType<typeof startScriptedModelServer>> }
@@ -61,6 +62,7 @@ async function backend(): Promise<PiBackend> {
     hold: (marker) => server.holdTextReplies(marker),
     held: (marker) => server.textGateReached(marker),
     steerIncorporationUnreported: true,
+    processesPerLaunch: 2,
     scriptTool: (name, input) => server.scriptTool({ name, input }),
     scriptThinking: (input) => server.scriptText(input),
     unrunnableTurn: withUndeliverableFile,
@@ -94,7 +96,8 @@ test("Pi failed configuration restart removes the retired session", async () => 
 test("Pi settles a turn and cancels its unanswered dialog", async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "pi-settled-dialog-"))
   const script = path.join(root, "scripted-pi.js")
-  await fs.writeFile(script, `const readline = require("node:readline");
+  await fs.writeFile(script, `if (process.argv.includes("--version")) { console.log("${PI_RANGE.max}"); process.exit(0); }
+const readline = require("node:readline");
 const fs = require("node:fs");
 const send = (message) => process.stdout.write(JSON.stringify(message) + "\\n");
 readline.createInterface({ input: process.stdin }).on("line", (line) => {
@@ -185,7 +188,8 @@ test("Pi script uses the composed runtime even when PATH starts with a failing n
   const marker = path.join(root, "wrong-node")
   await fs.writeFile(path.join(bin, "node"), `#!/bin/sh\ntouch '${marker}'\nexit 91\n`, { mode: 0o755 })
   const script = path.join(root, "pi.js")
-  await fs.writeFile(script, `const readline = require("node:readline");
+  await fs.writeFile(script, `if (process.argv.includes("--version")) { console.log("${PI_RANGE.max}"); process.exit(0); }
+const readline = require("node:readline");
 readline.createInterface({ input: process.stdin }).on("line", (line) => {
   const request = JSON.parse(line);
   process.stdout.write(JSON.stringify({ type: "response", id: request.id, command: request.type,
@@ -300,8 +304,8 @@ test("Pi lists only its profile's runnable models and their thinking levels thro
     expect(await config.options({ draft }, "probe")).toEqual(preview)
     expect(await config.permissionModes({ session: context.session })).toEqual({ modes: [], unsupported: "Pi has no permission modes", appliesFrom: "next-turn" })
     await expect(config.setPermissionMode(context.session, "auto")).rejects.toThrow("Pi has no permission modes")
-    expect(context.services.processes.filter((child) => child !== context.services.processes[0])).toHaveLength(2)
-    for (const probe of context.services.processes.slice(1)) expect(await probe.exited).toBeDefined()
+    expect(context.services.processes.slice(2)).toHaveLength(4)
+    for (const probe of context.services.processes.slice(2)) expect(await probe.exited).toBeDefined()
   } finally { await context.close() }
 }, 60_000)
 
@@ -335,7 +339,7 @@ test("a failed Pi retirement during configure keeps the session and its process 
         const spawn = services.spawn.bind(services)
         services.spawn = async (command, options) => {
           const child = await spawn(command, options)
-          if (options.role !== "harness" || pid !== undefined) return child
+          if (options.label !== "Pi RPC" || pid !== undefined) return child
           pid = child.pid
           let refused = false
           const retire = child.retire.bind(child)
@@ -357,7 +361,7 @@ test("a failed Pi retirement during configure keeps the session and its process 
     expect(context.transport.health?.connection(context.backend.directory, "s1").state).toBe("ready")
     expect(context.transport.health?.runtime(context.backend.directory, "s1").status).toBe("degraded")
     await context.transport.close(context.session)
-    expect(await context.services.processes[0]!.exited).toBeDefined()
+    expect(await context.services.processes[1]!.exited).toBeDefined()
     expect(processAlive(pid!)).toBe(false)
   } finally {
     await context.close()

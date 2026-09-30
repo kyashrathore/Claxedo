@@ -4,7 +4,7 @@ import type {
   AttachInput, ConfigApplied, ConfigTarget, Deadline, HarnessServices, HarnessSession, HarnessTransport,
   RoutedEvent, SessionBroker, StartInput, TransportCapabilities, TransportConfigUpdate, TurnBroker, TurnInput, TurnRef,
 } from "../../contract"
-import { attachedSessionEntry, mergeStartInput, ProcessLosses, sessionConnectionHealth } from "../../contract"
+import { attachedSessionEntry, HarnessVersionGate, mergeStartInput, ProcessLosses, sessionConnectionHealth } from "../../contract"
 import { selectPiProfile, type PiProfile } from "../../profiles/pi"
 import { TransportError } from "../../contract/errors"
 import { piEvents } from "./events"
@@ -18,6 +18,7 @@ import { inlineDataUrl, flattenTurnPrompt } from "../../translate/prompt"
 import { createPiConfig, piModelSelection, piThinkingLevel, piTurnAccount } from "./config"
 import { withTurnAccount } from "../../translate/turn-account"
 import { piSessionTitle } from "./title"
+import { PI_RANGE } from "./version"
 import { launchPi, piDeadline, piUpstreamOf, resumePi, retiringOnFailure, type PiLaunchHost, type PiRpcOptions } from "./launch"
 
 type Entry = {
@@ -56,7 +57,7 @@ export class PiRpcTransport implements HarnessTransport {
 
   constructor(private readonly services: HarnessServices, private readonly options: PiRpcOptions) {
     this.host = { services, options, signal: this.disposeAbort.signal, disposed: () => this.disposed,
-      unsettled: new UnsettledPiLaunches(services.clock, services.log) }
+      unsettled: new UnsettledPiLaunches(services.clock, services.log), versions: new HarnessVersionGate(PI_RANGE, "pi.rpc") }
     this.probes = new PiDraftProbes(this.host)
     this.losses = new ProcessLosses(() => services.healthChanged())
   }

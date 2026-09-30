@@ -1,13 +1,15 @@
 import fs from "node:fs/promises"
 import path from "node:path"
 import { errorMessage } from "@claxedo/helpers"
-import { deadlineAfter, type Deadline, type HarnessServices, type SessionBroker, type StartInput } from "../../contract"
+import { deadlineAfter, harnessVersionStanding, type Deadline, type HarnessServices, type HarnessVersionGate, type SessionBroker,
+  type SpawnCommand, type StartInput } from "../../contract"
 import { TransportError } from "../../contract/errors"
 import { piEnvironment, piProjectionArgs, preparePiProfile, type PiProfile, type PiProfileOptions } from "../../profiles/pi"
 import { PiRpc } from "./rpc"
 import { installPiTitleExtension } from "./title"
 import { connectPiMcp, installPiMcpExtension } from "./mcp"
 import type { UnsettledPiLaunches } from "./retirements"
+import { PI_RANGE, piReportedVersion } from "./version"
 
 export type PiRpcOptions = PiProfileOptions & { binary: string; runtime: string; args?: readonly string[]; env: NodeJS.ProcessEnv }
 
@@ -18,6 +20,7 @@ export type PiLaunchHost = {
   readonly options: PiRpcOptions
   readonly signal: AbortSignal
   readonly unsettled: UnsettledPiLaunches
+  readonly versions: HarnessVersionGate
   disposed(): boolean
 }
 
@@ -34,17 +37,31 @@ async function harnessArgs(host: PiLaunchHost, launch: Extract<PiLaunch, { role:
     ...(launch.resume ? ["--session", launch.resume] : [])]
 }
 
+function piCommand(host: PiLaunchHost, input: StartInput, profile: PiProfile, args: readonly string[]): SpawnCommand {
+  const binary = host.options.binary
+  const command = /\.[cm]?js$/.test(binary) ? { file: host.options.runtime, args: [binary, ...args] } : { file: binary, args }
+  return { ...command, cwd: input.directory, env: piEnvironment(profile, host.options.env) }
+}
+
+async function admitPiVersion(host: PiLaunchHost, input: StartInput, profile: PiProfile, broker: SessionBroker | undefined,
+  role: PiLaunch["role"]): Promise<void> {
+  const owned = await host.services.spawn(piCommand(host, input, profile, ["--version"]),
+    { role, label: "Pi version", sessionId: input.sessionId, signal: host.signal })
+  const reported = await piReportedVersion(owned, piDeadline(host.services.clock))
+  if (broker) await host.versions.admit(reported, "--version", broker)
+  else harnessVersionStanding(PI_RANGE, reported)
+}
+
 export async function launchPi(host: PiLaunchHost, input: StartInput, profile: PiProfile, broker: SessionBroker | undefined, launch: PiLaunch): Promise<PiRpc> {
   if (host.disposed()) throw new TransportError("pi", "process", "Pi transport disposed")
   host.unsettled.retryHeld()
+  await admitPiVersion(host, input, profile, broker, launch.role)
   await preparePiProfile(profile, input.model)
   const mcp = launch.role === "harness" ? host.services.firstPartyMcp(input.sessionId, input.locality) : undefined
   const args = ["--mode", "rpc", ...(launch.role === "probe" ? ["--no-session"] : ["--session-dir", profile.sessionDir]),
     ...piProjectionArgs(input.projection), ...host.options.args ?? [],
     ...(launch.role === "harness" ? await harnessArgs(host, launch, mcp !== undefined) : [])]
-  const binary = host.options.binary
-  const command = /\.[cm]?js$/.test(binary) ? { file: host.options.runtime, args: [binary, ...args] } : { file: binary, args }
-  const owned = await host.services.spawn({ ...command, cwd: input.directory, env: piEnvironment(profile, host.options.env) },
+  const owned = await host.services.spawn(piCommand(host, input, profile, args),
     { role: launch.role, label: "Pi RPC", sessionId: input.sessionId, signal: host.signal })
   const rpc = new PiRpc(owned, host.services.clock, (event) => {
     if (broker) void broker.publish(event).catch((error: unknown) =>

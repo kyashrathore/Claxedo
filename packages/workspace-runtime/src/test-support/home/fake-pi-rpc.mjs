@@ -15,7 +15,7 @@ import path from "node:path"
 import readline from "node:readline"
 import { randomUUID } from "node:crypto"
 const args = process.argv.slice(2)
-if (args.includes("--version")) { console.log("0.85.1"); process.exit(0) }
+if (args.includes("--version")) { console.log("0.99.1"); process.exit(0) }
 if (args.includes("-p")) {
   fs.writeFileSync(path.join(process.cwd(), "evaluating"), "yes")
   fs.writeFileSync(path.join(process.cwd(), "evaluator-argv.json"), JSON.stringify(args))

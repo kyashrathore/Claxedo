@@ -2,6 +2,7 @@ import { spawnSync } from "node:child_process"
 import path from "node:path"
 import { CLAUDE_CODE_RANGE } from "../../src/transports/claude-sdk/cli-version"
 import { CODEX_RANGE } from "../../src/transports/codex-app-server/version"
+import { PI_RANGE } from "../../src/transports/pi-rpc/version"
 import type { TestedRange } from "../harness/pinned-package"
 
 type RangedProgram = { variable: string; range: TestedRange; flows: string[]; conformance: string[] }
@@ -21,6 +22,13 @@ const PROGRAMS: Record<string, RangedProgram> = {
       "H5.codex-native-subagents", "H6-goals", "H7-steer", "H7.unknown-held", "H13.codex-usage", "H14.codex-configured-mcp", "H15.codex-brokered-plugin"],
     conformance: ["src/conformance/codex.test.ts", "src/conformance/codex-lifecycle.test.ts", "src/conformance/codex-native-subagents.test.ts",
       "src/profiles/codex/index.test.ts"],
+  },
+  pi: {
+    variable: "CLAXEDO_E2E_PI",
+    range: PI_RANGE,
+    flows: ["H0-smoke", "H1-turn-parts", "H2-stop", "H4-pi-dialogs", "H4.pi-timeout", "H7-steer", "H7.unknown-held", "H13.pi-usage", "H14-mcp",
+      "H18-pi-owner", "H20-pi-session-owner"],
+    conformance: ["src/conformance/pi.test.ts", "src/conformance/pi-mcp.test.ts", "src/profiles/pi/index.test.ts"],
   },
 }
 
