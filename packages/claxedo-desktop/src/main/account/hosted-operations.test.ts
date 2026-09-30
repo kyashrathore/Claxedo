@@ -151,7 +151,7 @@ describe("resolveHostedOperation", () => {
   })
 
   test("reads the account's cloud usage facts for a range, and has no hosted dashboard read to route to", () => {
-    expect(resolveHostedOperation("usage.cloudFacts", { since: 1, until: 2, timezone: "UTC", view: "total" })).toEqual({
+    expect(resolveHostedOperation("usage.cloudFacts", { since: 1, until: 2, timezone: "UTC", view: "claxedo" })).toEqual({
       method: "GET",
       path: "/api/claxedo/usage/cloud-facts?since=1&until=2",
     })

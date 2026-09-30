@@ -118,7 +118,6 @@ describe("usage routes", () => {
     expect(await response.json()).toMatchObject({
       quota: { status: "unavailable" },
       claxedo: { status: "unavailable" },
-      externalLocal: { status: "unavailable" },
     })
     expect(usageDashboard).not.toHaveBeenCalled()
   })
@@ -392,7 +391,6 @@ describe("usage routes", () => {
       rangeDays: 1,
       latencyMs: expect.any(Number),
       claxedoStatus: "available",
-      externalStatus: "unavailable",
       quotaStatus: "unavailable",
       pricedTokens: expect.any(Number),
       unpricedTokens: expect.any(Number),
@@ -442,258 +440,15 @@ describe("local unified usage route", () => {
     body: JSON.stringify({ cloud }),
   })
 
-  test("sorts Total local providers by tokens or cost from the authoritative history", async () => {
-    const rows = [
-      {
-        app: "codex",
-        provider: "codex",
-        model: "gpt-5",
-        bucketStart: 10,
-        nativeSessionId: "cheap",
-        turnCount: 1,
-        tokens: { input: 2_000_000, output: 0, reasoning: 0, cacheRead: 0, cacheWrite: 0, cacheWrite1h: null },
-      },
-      {
-        app: "claude",
-        provider: "claude",
-        model: "claude-sonnet-4-5",
-        bucketStart: 10,
-        nativeSessionId: "expensive",
-        turnCount: 1,
-        tokens: { input: 0, output: 1_000_000, reasoning: 0, cacheRead: 0, cacheWrite: 0, cacheWrite1h: null },
-      },
-    ]
-    const app = LocalUsageRoutes({
-      pricing,
-      local: { current: async () => [], ownedBy: async () => [] } as never,
-      identity: async () => undefined,
-      history: async () => ({
-        rows,
-        totalRows: rows,
-        coverage: [],
-        classifiedClaxedo: 0,
-        unclassifiedRequests: 0,
-      }),
-    })
-
-    const tokens = (await (
-      await app.request("/?since=0&until=20&timezone=UTC&view=total&group=provider&metric=tokens")
-    ).json())
-    expect(tokens.breakdown.rows.map((row: any) => row.value)).toEqual(["codex", "claude"])
-
-    const cost = (await (
-      await app.request("/?since=0&until=20&timezone=UTC&view=total&group=provider&metric=cost")
-    ).json())
-    expect(cost.breakdown.rows.map((row: any) => row.value)).toEqual(["claude", "codex"])
-    expect(cost.breakdown.rows[0].estimatedUsd).toBeGreaterThan(cost.breakdown.rows[1].estimatedUsd)
-    expect(
-      (await app.request("/?since=0&until=20&timezone=UTC&view=total&metric=turns")).status,
-    ).toBe(400)
-  })
-
-  test("counts the account's cloud turns in both Claxedo and Total, beside this machine's history", async () => {
+  test("counts the account's cloud turns in Claxedo beside this machine's turns", async () => {
     const local = { current: async () => [fact], ownedBy: async () => [fact] } as never
-    const app = LocalUsageRoutes({
-      pricing,
-      local,
-      identity: async () => ({ org_id: "org", user_id: "user" }),
-      history: async () => {
-        const direct = {
-          app: "claude",
-          provider: "anthropic",
-          model: "m",
-          bucketStart: 10,
-          nativeSessionId: "direct",
-          turnCount: 1,
-          tokens: { input: 5, output: 0, reasoning: 0, cacheRead: 0, cacheWrite: 0, cacheWrite1h: null },
-        }
-        const throughClaxedo = {
-          app: "pi",
-          provider: "anthropic",
-          model: "m",
-          bucketStart: 10,
-          nativeSessionId: "native-claxedo",
-          turnCount: 1,
-          tokens: { input: 10, output: 2, reasoning: 0, cacheRead: 0, cacheWrite: 0, cacheWrite1h: null },
-        }
-        return {
-          rows: [direct],
-          totalRows: [direct, throughClaxedo],
-          coverage: [{ source: "claude", status: "available" }],
-          classifiedClaxedo: 1,
-          unclassifiedRequests: 0,
-        }
-      },
-    })
+    const app = LocalUsageRoutes({ pricing, local, identity: async () => ({ org_id: "org", user_id: "user" }) })
     const cloud = { status: "available", facts: [cloudFact({ messageId: "msg_cloud" })] }
 
     const claxedo = await (await app.request("/?since=0&until=20&timezone=UTC&view=claxedo", withCloud(cloud))).json()
     expect(claxedo.claxedo.totals).toMatchObject({ turnCount: 2, input: 30 })
     expect(claxedo.claxedo.scope).toBe("cross-machine")
-
-    const total = await (await app.request("/?since=0&until=20&timezone=UTC&view=total&group=app", withCloud(cloud))).json()
-    expect(total.total.totals).toMatchObject({ turnCount: 3, input: 35, output: 6 })
-    expect(total.externalLocal.totals.input).toBe(5)
-    expect(total.breakdown.rows).toEqual(expect.arrayContaining([
-      expect.objectContaining({ value: "claude", turnCount: 2, input: 25 }),
-      expect.objectContaining({ value: "pi", turnCount: 1, input: 10 }),
-    ]))
-    expect(total.filterOptions.total).toMatchObject({ app: ["claude", "pi"], location: ["cloud", "local"] })
-
-    const cloudOnly = await (
-      await app.request("/?since=0&until=20&timezone=UTC&view=total&filter_location=cloud", withCloud(cloud))
-    ).json()
-    expect(cloudOnly.total.totals).toMatchObject({ turnCount: 1, input: 20 })
   })
-
-  test("builds Total local usage from provider history even when attribution is quarantined", async () => {
-    const row = {
-      app: "codex",
-      provider: "openai",
-      model: "gpt-5.6-sol",
-      bucketStart: 10,
-      nativeSessionId: "historical-codex",
-      turnCount: 123,
-      tokens: { input: 50, output: 5, reasoning: 2, cacheRead: 100, cacheWrite: 0, cacheWrite1h: null },
-    }
-    const app = LocalUsageRoutes({
-      pricing,
-      local: { current: async () => [], ownedBy: async () => [] } as never,
-      identity: async () => undefined,
-      history: async () => ({
-        rows: [],
-        totalRows: [row],
-        coverage: [{ source: "codex", status: "available" }],
-        classifiedClaxedo: 0,
-        unclassifiedRequests: 1,
-      }),
-    })
-
-    const response = await app.request("/?since=0&until=20&timezone=UTC&view=total&group=provider")
-    const body = (await response.json())
-    expect(body.externalLocal.totals.input).toBe(0)
-    expect(body.total.totals).toMatchObject({ turnCount: 123, input: 50, output: 5, reasoning: 2, cacheRead: 100 })
-    expect(body.breakdown.rows).toEqual([
-      expect.objectContaining({ value: "openai", turnCount: 123, input: 50, output: 5, reasoning: 2, cacheRead: 100 }),
-    ])
-    expect(body.chart.series).toEqual([
-      expect.objectContaining({ value: "openai", daily: [expect.objectContaining({ input: 50 })] }),
-    ])
-    expect(body.externalLocal.unclassifiedRequests).toBe(1)
-  })
-
-  test("anonymous requests stay local and source failures do not zero Claxedo", async () => {
-    const app = LocalUsageRoutes({
-      pricing,
-      local: { current: async () => [fact], ownedBy: async () => [fact] } as never,
-      identity: async () => undefined,
-      history: async () => {
-        throw new Error("scanner unavailable")
-      },
-    })
-    const body = (await (await app.request("/?since=0&until=20&timezone=UTC&view=total")).json())
-    expect(body.claxedo.totals.input).toBe(10)
-    expect(body.externalLocal.status).toBe("degraded")
-  })
-
-  test("retains the last valid local-history snapshot when refresh fails", async () => {
-    const history = vi
-      .fn()
-      .mockResolvedValueOnce({
-        rows: [
-          {
-            app: "codex",
-            provider: "openai",
-            model: "gpt-5.6-sol",
-            bucketStart: 10,
-            nativeSessionId: "direct",
-            turnCount: 1,
-            tokens: { input: 5, output: 2, reasoning: 1, cacheRead: 7, cacheWrite: null },
-          },
-        ],
-        totalRows: [
-          {
-            app: "codex",
-            provider: "openai",
-            model: "gpt-5.6-sol",
-            bucketStart: 10,
-            nativeSessionId: "direct",
-            turnCount: 1,
-            tokens: { input: 5, output: 2, reasoning: 1, cacheRead: 7, cacheWrite: null },
-          },
-        ],
-        coverage: [{ source: "codex", status: "available" }],
-        classifiedClaxedo: 0,
-        unclassifiedRequests: 0,
-      })
-      .mockRejectedValueOnce(new Error("scanner offline"))
-    const app = LocalUsageRoutes({
-      pricing,
-      local: { current: async () => [], ownedBy: async () => [] } as never,
-      identity: async () => undefined,
-      history,
-    })
-    const first = (await (await app.request("/?since=0&until=20&timezone=UTC&view=total&group=app")).json())
-    expect(first.total.totals).toMatchObject({ input: 5, output: 2, reasoning: 1, cacheRead: 7 })
-    const stale = (await (
-      await app.request("/?since=0&until=20&timezone=UTC&view=total&group=app&refresh_nonce=1")
-    ).json())
-    expect(stale.externalLocal).toMatchObject({
-      status: "degraded",
-      error: "scanner offline",
-      totals: { input: 5, output: 2, reasoning: 1, cacheRead: 7 },
-    })
-    expect(stale.breakdown.rows.find((row: any) => row.value === "codex")).toMatchObject({
-      status: "partial",
-      unknownCategories: 1,
-    })
-  })
-
-  test("never reuses a failed history snapshot for a shifted range", async () => {
-    const history = vi
-      .fn()
-      .mockResolvedValueOnce({
-        rows: [
-          {
-            app: "codex",
-            provider: "openai",
-            model: "gpt-5.6-sol",
-            bucketStart: 10,
-            nativeSessionId: "direct",
-            turnCount: 1,
-            tokens: { input: 5, output: 0, reasoning: 0, cacheRead: 0, cacheWrite: 0 },
-          },
-        ],
-        totalRows: [
-          {
-            app: "codex",
-            provider: "openai",
-            model: "gpt-5.6-sol",
-            bucketStart: 10,
-            nativeSessionId: "direct",
-            turnCount: 1,
-            tokens: { input: 5, output: 0, reasoning: 0, cacheRead: 0, cacheWrite: 0 },
-          },
-        ],
-        coverage: [{ source: "codex", status: "available" }],
-        classifiedClaxedo: 0,
-        unclassifiedRequests: 0,
-      })
-      .mockRejectedValueOnce(new Error("scanner offline"))
-    const app = LocalUsageRoutes({
-      pricing,
-      local: { current: async () => [], ownedBy: async () => [] } as never,
-      identity: async () => undefined,
-      history,
-    })
-    await app.request("/?since=0&until=20&timezone=UTC&view=total")
-    const shifted = (await (
-      await app.request("/?since=20&until=40&timezone=UTC&view=total&refresh_nonce=2")
-    ).json())
-    expect(shifted.externalLocal).toMatchObject({ status: "degraded", totals: { input: 0 } })
-    expect(shifted.filterOptions.total.app ?? []).not.toContain("codex")
-  })
-
   test("keeps the last valid quota snapshot when a refresh fails", async () => {
     const snapshot = {
       accounts: [{ harness: "codex", credentialId: "cred_1", label: "a@b.c", inUse: true, windows: [], usageAt: 5 }],
@@ -711,11 +466,11 @@ describe("local unified usage route", () => {
     const request = "/?since=0&until=20&timezone=UTC&view=quota"
     expect(((await (await app.request(request)).json())).quota).toEqual({ status: "available", snapshot })
     expect(quota.mock.calls[0]?.[0]).toMatchObject({ refresh: false })
-    // The history and Claxedo halves of this same response answer a failed
-    // refresh with their last figures plus the error. Blanking every plan card
-    // because a refresh the reader was already holding an answer for threw is
-    // the asymmetry a reader sees as the numbers vanishing on Refresh. The
-    // quota status has only two values, so the error is what marks it stale.
+    // A failed refresh answers with the last plans plus the error. Blanking
+    // every plan card because a refresh the reader was already holding an
+    // answer for threw is what a reader sees as the numbers vanishing on
+    // Refresh. The quota status has only two values, so the error is what
+    // marks it stale.
     expect(((await (await app.request(`${request}&refresh_nonce=3`)).json())).quota).toEqual({
       status: "available",
       snapshot,
@@ -739,45 +494,28 @@ describe("local unified usage route", () => {
   })
 
   test("consumes a refresh nonce once across pagination and refetches", async () => {
-    const history = vi.fn(async ({ refresh }: { refresh: boolean }) => ({
-      rows: [],
-      totalRows: [],
-      coverage: [],
-      classifiedClaxedo: 0,
-      unclassifiedRequests: 0,
-      refresh,
-    }))
+    const quota = vi.fn(async (_input: { refresh: boolean }) => ({ status: "unavailable" as const }))
     const app = LocalUsageRoutes({
       pricing,
       local: { current: async () => [], ownedBy: async () => [] } as never,
       identity: async () => undefined,
-      history,
+      quota,
     })
 
-    const request = "/?since=0&until=20&timezone=UTC&view=total&group=provider&refresh_nonce=44"
+    const request = "/?since=0&until=20&timezone=UTC&view=quota&refresh_nonce=44"
     await app.request(request)
     await app.request(`${request}&after=next`)
 
-    expect(history).toHaveBeenNthCalledWith(1, { since: 0, until: 20, refresh: true })
-    expect(history).toHaveBeenNthCalledWith(2, { since: 0, until: 20, refresh: false })
+    expect(quota.mock.calls.map(([input]) => input.refresh)).toEqual([true, false])
   })
-
   test("runs only the producers required by the selected usage view", async () => {
     const current = vi.fn(async () => [fact])
     const identity = vi.fn(async () => undefined)
-    const history = vi.fn(async () => ({
-      rows: [],
-      totalRows: [],
-      coverage: [],
-      classifiedClaxedo: 0,
-      unclassifiedRequests: 0,
-    }))
     const quota = vi.fn(async () => ({ status: "unavailable" as const }))
     const app = LocalUsageRoutes({
       pricing,
       local: { current, ownedBy: async () => [] } as never,
       identity,
-      history,
       quota,
     })
 
@@ -785,18 +523,10 @@ describe("local unified usage route", () => {
     expect(quota).toHaveBeenCalledTimes(1)
     expect(identity).not.toHaveBeenCalled()
     expect(current).not.toHaveBeenCalled()
-    expect(history).not.toHaveBeenCalled()
 
     await app.request("/?since=0&until=20&timezone=UTC&view=claxedo")
     expect(identity).toHaveBeenCalledTimes(1)
     expect(current).toHaveBeenCalledTimes(1)
-    expect(history).not.toHaveBeenCalled()
-    expect(quota).toHaveBeenCalledTimes(1)
-
-    await app.request("/?since=0&until=20&timezone=UTC&view=total")
-    expect(identity).toHaveBeenCalledTimes(2)
-    expect(current).toHaveBeenCalledTimes(2)
-    expect(history).toHaveBeenCalledTimes(1)
     expect(quota).toHaveBeenCalledTimes(1)
   })
 
@@ -821,7 +551,7 @@ describe("local unified usage route", () => {
     })
   })
 
-  test("uses one latest revision and attributes total usage to its canonical provider", async () => {
+  test("uses one latest revision of a turn", async () => {
     const final = {
       ...fact,
       revision: 2,
@@ -832,85 +562,14 @@ describe("local unified usage route", () => {
       pricing,
       local: { current, ownedBy: async () => [] } as never,
       identity: async () => ({ org_id: "org", user_id: "user" }),
-      history: async () => ({
-        rows: [
-          {
-            app: "claude",
-            provider: "anthropic",
-            model: "m",
-            bucketStart: 10,
-            nativeSessionId: "direct",
-            turnCount: 1,
-            tokens: { input: 5, output: 0, reasoning: 0, cacheRead: 0, cacheWrite: 0, cacheWrite1h: null },
-          },
-        ],
-        totalRows: [
-          {
-            app: "claude",
-            provider: "anthropic",
-            model: "m",
-            bucketStart: 10,
-            nativeSessionId: "direct",
-            turnCount: 1,
-            tokens: { input: 5, output: 0, reasoning: 0, cacheRead: 0, cacheWrite: 0, cacheWrite1h: null },
-          },
-          {
-            app: "pi",
-            provider: "anthropic",
-            model: "m",
-            bucketStart: 10,
-            nativeSessionId: "claxedo-pi",
-            turnCount: 1,
-            tokens: { input: 20, output: 2, reasoning: 0, cacheRead: 0, cacheWrite: 0, cacheWrite1h: null },
-          },
-        ],
-        coverage: [],
-        classifiedClaxedo: 0,
-        unclassifiedRequests: 0,
-      }),
     })
 
-    const body = (await (await app.request("/?since=0&until=20&timezone=UTC&view=total&group=app")).json())
+    const body = (await (await app.request("/?since=0&until=20&timezone=UTC&view=claxedo&group=provider")).json())
     expect(current).toHaveBeenCalledWith({ since: 0, until: 20 })
     expect(body.claxedo.totals.input).toBe(20)
-    expect(body.breakdown.rows).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ value: "pi", turnCount: 1, input: 20 }),
-        expect.objectContaining({ value: "claude", turnCount: 1, input: 5 }),
-      ]),
-    )
-    expect(body.chart.dimension).toBe("app")
-    expect(body.chart.series).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          value: "pi",
-          daily: [expect.objectContaining({ date: "1970-01-01", input: 20, output: 2 })],
-        }),
-        expect.objectContaining({
-          value: "claude",
-          daily: [expect.objectContaining({ date: "1970-01-01", input: 5, output: 0 })],
-        }),
-      ]),
-    )
+    expect(body.breakdown.rows).toEqual([expect.objectContaining({ value: "anthropic", turnCount: 1, input: 20 })])
     expect(body.claxedo.cost.pricedTokens + body.claxedo.cost.unpricedTokens).toBe(22)
-
-    const provider = (await (
-      await app.request("/?since=0&until=20&timezone=UTC&view=total&group=provider")
-    ).json())
-    expect(provider.breakdown).toMatchObject({
-      dimension: "provider",
-      rows: [expect.objectContaining({ value: "anthropic", turnCount: 2, input: 25 })],
-    })
-    expect(provider.breakdown.rows.some((row: { value: string }) => row.value === "Claxedo")).toBe(false)
-    expect(provider.chart).toMatchObject({
-      dimension: "provider",
-      series: [expect.objectContaining({ value: "anthropic" })],
-    })
-
-    const model = (await (await app.request("/?since=0&until=20&timezone=UTC&view=total&group=model")).json())
-    expect(model.breakdown.rows).toEqual([expect.objectContaining({ value: "anthropic/m", label: "m", input: 25 })])
   })
-
   test("filters authoritative local facts before totals and paginates the merged breakdown", async () => {
     const second = {
       ...fact,
@@ -949,43 +608,26 @@ describe("local unified usage route", () => {
     expect(await (await app.request("/?since=0&until=20&timezone=UTC&view=claxedo")).json()).not.toHaveProperty("sync")
   })
 
-  test("denies machine history and quota to a signed caller who is not the machine operator", async () => {
-    const history = vi.fn(async () => ({ rows: [], totalRows: [], coverage: [], classifiedClaxedo: 0, unclassifiedRequests: 0 }))
+  test("denies quota to a signed caller who is not the machine operator", async () => {
     const quota = vi.fn(async () => ({ status: "available" as const, snapshot: { accounts: [] } }))
     const app = LocalUsageRoutes({
       pricing,
       local: { current: async () => [], ownedBy: async () => [] } as never,
       identity: async () => ({ org_id: "org", user_id: "member" }),
       machineOperator: async () => false,
-      history,
       quota,
     })
     const headers = { authorization: "Bearer valid" }
 
-    for (const url of [
-      "/?since=0&until=20&timezone=UTC&view=total",
-      "/?since=0&until=20&timezone=UTC&view=quota",
-    ]) {
-      const response = await app.request(url, { headers })
-      expect(response.status).toBe(403)
-      await expect(response.json()).resolves.toEqual({
-        error: { code: "operator_required", message: "Machine operator access is required" },
-      })
-    }
-    expect(history).not.toHaveBeenCalled()
+    const response = await app.request("/?since=0&until=20&timezone=UTC&view=quota", { headers })
+    expect(response.status).toBe(403)
+    await expect(response.json()).resolves.toEqual({
+      error: { code: "operator_required", message: "Machine operator access is required" },
+    })
     expect(quota).not.toHaveBeenCalled()
   })
 
-  test("charts Total by harness, session and workspace from the same turns its breakdown counts", async () => {
-    const direct = {
-      app: "claude",
-      provider: "anthropic",
-      model: "m",
-      bucketStart: 10,
-      nativeSessionId: "direct",
-      turnCount: 1,
-      tokens: { input: 5, output: 0, reasoning: 0, cacheRead: 0, cacheWrite: 0, cacheWrite1h: null },
-    }
+  test("charts Claxedo by harness, session and workspace from the same turns its breakdown counts", async () => {
     const cloudTurn: TurnUsageRevision = {
       ...fact,
       hostId: "workspace:ws_cloud",
@@ -1000,13 +642,12 @@ describe("local unified usage route", () => {
     }
     const app = LocalUsageRoutes({
       pricing,
-      local: { current: async () => [], ownedBy: async () => [] },
+      local: { current: async () => [fact], ownedBy: async () => [] } as never,
       identity: async () => undefined,
-      history: async () => ({ rows: [direct], totalRows: [direct], coverage: [], classifiedClaxedo: 0, unclassifiedRequests: 0 }),
     })
     for (const group of ["harness", "session", "workspace"]) {
       const body = await (await app.request(
-        `/?since=0&until=20&timezone=UTC&view=total&group=${group}`,
+        `/?since=0&until=20&timezone=UTC&view=claxedo&group=${group}`,
         withCloud({ status: "available", facts: [cloudTurn] }),
       )).json()
       const charted = Object.fromEntries(body.chart.series.map((series: { value: string; daily: Array<{ input: number }> }) =>

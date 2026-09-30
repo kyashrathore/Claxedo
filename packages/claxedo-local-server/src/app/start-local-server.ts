@@ -22,13 +22,10 @@
 import type { AgentEventEnvelope } from "@claxedo/agent-runtime-contract"
 import { serve } from "@hono/node-server"
 import { Hono } from "hono"
-import os from "node:os"
-import path from "node:path"
 import type { Duplex } from "node:stream"
 import { ClaxedoDB } from "@claxedo/server-core/platform/db/index"
 import { controlPlaneAuthContext } from "@claxedo/server-core/platform/auth/auth"
 import { isLoopbackLocalRequest } from "@claxedo/server-core/platform/http/peer-address"
-import { localHistoryClassifier } from "@claxedo/server-core/usage/local-history-classifier"
 import { createTurnMeter } from "@claxedo/server-core/usage/turn-meter"
 import { meteringHarnessId } from "@claxedo/server-core/session/harness/index"
 import { dataDir } from "@claxedo/server-core/platform/runtime/lib/paths"
@@ -61,9 +58,7 @@ import { createUsageQuotaReader } from "@claxedo/server-core/usage/quota"
 import { tokenTrackerPricing } from "@claxedo/server-core/usage/adapters/token-tracker-pricing"
 import { DEFAULT_CLAXEDO_SERVER_PORT } from "../deployments/local/port"
 import { createSqliteUsageLedger } from "@claxedo/server-core/usage/adapters/sqlite-usage-ledger"
-import { createSqliteUsageSourceCoverageStore } from "@claxedo/server-core/usage/adapters/sqlite-usage-provenance"
 import { createSqliteTurnMeterStateStore } from "@claxedo/server-core/usage/adapters/sqlite-turn-meter-state"
-import { scanTokenTrackerLocalHistory } from "../usage/adapters/token-tracker-local-history"
 import { readMachineAgentUsage } from "../usage/adapters/token-tracker-usage-limits"
 import { localUsageHostId } from "../usage/host-id"
 import { drainUsageEvents } from "../usage/usage-event-drain"
@@ -229,8 +224,6 @@ function startOwned(options: StartLocalServerOptions, release: () => void): Loca
   })
 
   const usageRevisionStore = createSqliteUsageLedger()
-  const usageSourceCoverage = createSqliteUsageSourceCoverageStore()
-  const usageSourceCoverageReady = usageSourceCoverage.ensure(["claude", "codex", "cursor", "opencode", "pi"])
   const turnMeter = createTurnMeter({
     writer: usageRevisionStore,
     reader: usageRevisionStore,
@@ -304,22 +297,11 @@ function startOwned(options: StartLocalServerOptions, release: () => void): Loca
         : undefined
     },
     // This server has exactly one operator: whoever is on the machine's own
-    // loopback. Signed or unsigned, machine history, stored quota and unowned
-    // facts answer to that caller alone.
+    // loopback. Signed or unsigned, stored quota and unowned facts answer to
+    // that caller alone.
     machineOperator: (request: Request) => isLoopbackLocalRequest(request),
     quota: async ({ request, refresh }: { request: Request; refresh: boolean }) =>
       await readQuota({ org: await requestOrg(request, authOptions), refresh }),
-    history: async ({ since, until, refresh }: { since: number; until: number; refresh: boolean }) => {
-      await usageSourceCoverageReady
-      return await scanTokenTrackerLocalHistory({
-        sourceHome: os.homedir(),
-        stateDir: path.join(dataDir(), "usage-scanner"),
-        since,
-        until,
-        refresh,
-        classify: localHistoryClassifier(await usageRevisionStore.localTurnSpans(), await usageSourceCoverage.starts()),
-      })
-    },
     pricing: tokenTrackerPricing("refreshed"),
     telemetry: services.telemetry,
   }

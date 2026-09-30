@@ -41,43 +41,10 @@ describe("local usage routes, quota view", () => {
   })
 })
 
-describe("local usage routes, total view", () => {
-  const empty = { rows: [], totalRows: [], coverage: [], classifiedClaxedo: 0, unclassifiedRequests: 0, scannedAt: 1_234 }
-  function withHistory(history: NonNullable<Parameters<typeof LocalUsageRoutes>[0]["history"]>) {
-    return LocalUsageRoutes({
-      local: { current: async () => [], ownedBy: async () => [] },
-      identity: async () => undefined,
-      history,
-      pricing,
-    })
-  }
-  const RANGE = "since=0&until=20&timezone=UTC"
-
-  test("a plain read asks for the stored history, and only the refresh nonce asks for a walk", async () => {
-    const history = vi.fn(async () => empty)
-    const app = withHistory(history)
-    expect((await app.request(`/?${RANGE}&view=total`)).status).toBe(200)
-    expect(history).toHaveBeenLastCalledWith({ since: 0, until: 20, refresh: false })
-    expect((await app.request(`/?${RANGE}&view=total&refresh_nonce=3`)).status).toBe(200)
-    expect(history).toHaveBeenLastCalledWith({ since: 0, until: 20, refresh: true })
-    expect((await app.request(`/?${RANGE}&view=total&refresh_nonce=3`)).status).toBe(200)
-    expect(history).toHaveBeenLastCalledWith({ since: 0, until: 20, refresh: false })
-    expect(history).toHaveBeenCalledTimes(3)
-  })
-
-  test("the views that do not draw local history never touch it", async () => {
-    const history = vi.fn(async () => empty)
-    const app = withHistory(history)
-    for (const view of ["quota", "claxedo"]) {
-      expect((await app.request(`/?${RANGE}&view=${view}`)).status).toBe(200)
-      expect((await app.request(`/?${RANGE}&view=${view}&refresh_nonce=${view.length}`)).status).toBe(200)
-    }
-    expect(history).not.toHaveBeenCalled()
-  })
-
-  test("the response says when the rows it draws were scanned", async () => {
-    const app = withHistory(async () => empty)
-    const body = await (await app.request(`/?${RANGE}&view=total`)).json()
-    expect(body.externalLocal).toMatchObject({ status: "available", scannedAt: 1_234 })
+describe("local usage routes, views", () => {
+  test("a view other than quota or claxedo is refused", async () => {
+    const response = await routes(undefined).request("/?since=0&until=20&timezone=UTC&view=total")
+    expect(response.status).toBe(400)
+    expect(await response.json()).toEqual({ error: "invalid_usage_view" })
   })
 })
