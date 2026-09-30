@@ -1,6 +1,6 @@
 import { claudeModeId, claudeModeKept } from "./permissions"
 import type { CanUseTool, ElicitationRequest, ElicitationResult } from "@anthropic-ai/claude-agent-sdk"
-import { elicitationAnswer, elicitationRequest, permissionDecision, permissionRequest, requestQuestionAnswers, questionRequest, type StartInput, type TurnBroker } from "../../contract"
+import { elicitationAnswer, elicitationRequest, permissionDecision, permissionRequest, requestQuestionAnswers, questionRequest, type StartInput, type TurnBroker, type TurnRequest } from "../../contract"
 import { TransportError } from "../../contract/errors"
 import { claudeGrant } from "./grants"
 
@@ -14,10 +14,9 @@ const protocolPermissionMap = {
   ],
 } as const
 
-function subagentOf(agentId: string | undefined, subagentCall: (agentId: string) => string | undefined) {
-  if (!agentId) return {}
-  const toolCallId = subagentCall(agentId)
-  return { subagent: { agentId, ...(toolCallId ? { toolCallId } : {}) } }
+function fromSubagent<T extends TurnRequest>(request: T, agentId: string | undefined, subagentCall: (agentId: string) => string | undefined): T {
+  const spawnCall = agentId ? subagentCall(agentId) : undefined
+  return spawnCall ? { ...request, child: { correlationKey: spawnCall } } : request
 }
 
 export async function askClaudePermission(input: StartInput, broker: Pick<TurnBroker, "ask" | "signal">, toolName: string,
@@ -29,19 +28,19 @@ export async function askClaudePermission(input: StartInput, broker: Pick<TurnBr
       !question || typeof question !== "object" || typeof question.question !== "string" || !question.question.trim())) {
       throw new TransportError("claude", "protocol", "Claude question requires non-empty question text")
     }
-    const answers = requestQuestionAnswers(await broker.ask(questionRequest({ sessionId: input.sessionId, questions,
-      harnessPayload: { toolName, toolInput } }), { signal: options.signal }))
+    const answers = requestQuestionAnswers(await broker.ask(fromSubagent(questionRequest({ sessionId: input.sessionId, questions,
+      harnessPayload: { toolName, toolInput } }), options.agentID, subagentCall), { signal: options.signal }))
     if (!answers) return { behavior: protocolPermissionMap.deny, message: "Question dismissed" }
     if (answers.length !== questions.length) throw new TransportError("claude", "protocol", "Claude question reply must answer each question")
     return { behavior: protocolPermissionMap.allow, updatedInput: { ...toolInput,
       answers: Object.fromEntries(answers.map((value, index) => [questions[index]?.question, value.join(", ")])) } }
   }
   const grant = claudeGrant({ directory: input.directory, permissionMode: claudeModeId(input.config.permissionMode) }, toolName, toolInput, options)
-  const answer = await broker.ask(permissionRequest({ sessionId: input.sessionId, permission: toolName, title: options.title ?? toolName,
-    ...(grant ? { grantKey: grant.key } : {}), metadata: { input: toolInput, description: options.description ?? "", turnId, ...subagentOf(options.agentID, subagentCall) },
+  const answer = await broker.ask(fromSubagent(permissionRequest({ sessionId: input.sessionId, permission: toolName, title: options.title ?? toolName,
+    ...(grant ? { grantKey: grant.key } : {}), metadata: { input: toolInput, description: options.description ?? "", turnId },
     harnessPayload: { toolName, toolInput, suggestions: options.suggestions },
     options: protocolPermissionMap.options,
-  }), { signal: options.signal })
+  }), options.agentID, subagentCall), { signal: options.signal })
   if (options.signal.aborted || broker.signal.aborted) return { behavior: protocolPermissionMap.deny, message: "Turn cancelled" }
   const decision = permissionDecision(answer)
   if (!decision) return { behavior: protocolPermissionMap.deny, message: "Permission dismissed" }
