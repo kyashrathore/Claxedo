@@ -9,6 +9,9 @@ const settle = async () => { for (let round = 0; round < 5; round++) await tick(
 
 function hostBroker(base: SessionBroker) {
   let lease = false
+  let freed: (() => void)[] = []
+  const release = () => { lease = false; const waiting = freed; freed = []; for (const wake of waiting) wake() }
+  const leased = async () => { while (lease) await new Promise<void>((wake) => { freed.push(wake) }); lease = true }
   const refused: string[] = []
   const asked: string[] = []
   const events = new Map<string, RoutedEvent[]>()
@@ -19,22 +22,21 @@ function hostBroker(base: SessionBroker) {
   const broker: SessionBroker = { ...base,
     ask: async () => { throw new Error("Session ask requires a start binding") },
     admitProviderTurn: async (_input, run) => {
-      if (lease) { refused.push("busy"); return { admitted: false, reason: "busy" } }
-      lease = true
+      await leased()
       const turn: TurnRef = { turnId: `provider-${controllers.length + 1}`, assistantMessageId: `provider-${controllers.length + 1}` }
       const controller = new AbortController()
       controllers.push(controller)
       const settled = Promise.resolve().then(async () => {
         try { for await (const routed of run(turnBroker(controller.signal), turn)) events.set(turn.turnId, [...events.get(turn.turnId) ?? [], routed]) }
-        finally { lease = false }
+        finally { release() }
         return controller.signal.aborted ? { state: "cancelled" as const } : { state: "completed" as const }
       })
       return { admitted: true, turn, settled }
     } }
   const userTurn = async (transport: { send(session: HarnessSession, turn: TurnInput, broker: TurnBroker): AsyncIterable<RoutedEvent> }, session: HarnessSession, id: string) => {
-    lease = true
+    await leased()
     try { for await (const _event of transport.send(session, turnInput(id), turnBroker(new AbortController().signal))) {} }
-    finally { lease = false }
+    finally { release() }
   }
   return { broker, refused, asked, events, controllers, userTurn }
 }

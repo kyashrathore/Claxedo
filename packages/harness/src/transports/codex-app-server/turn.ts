@@ -110,7 +110,7 @@ export async function* runCodexTurn(entry: Entry, session: HarnessSession, turn:
     broker.signal.removeEventListener("abort", onAbort)
     entry.turn = undefined
     if (entry.state === "busy") entry.state = "ready"
-    services.clock.setTimeout(released, 0)
+    released()
     entry.idle()
   }
 }

@@ -73,6 +73,6 @@ export function admitCodexProviderTurn(entry: ProviderTurnEntry, message: RpcMes
   if (!id) return
   const turn = new CodexProviderTurn(id, entry.session.binding.upstreamSessionId)
   entry.providerTurn = turn
-  entry.released = entry.released.then(() => turn.admit(entry))
+  entry.released = turn.admit(entry)
   for (const event of turn.events.ingest(message)) turn.push(event)
 }
