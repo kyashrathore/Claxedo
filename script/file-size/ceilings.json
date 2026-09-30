@@ -36,7 +36,7 @@
   "packages/workspace-runtime/src/projection/client-presentation/projection.ts": 1524,
   "packages/workspace-runtime/src/pty/index.ts": 1406,
   "packages/workspace-runtime/src/routes/document-hydration.ts": 811,
-  "packages/workspace-runtime/src/routes/session-core.ts": 2225,
+  "packages/workspace-runtime/src/routes/session-core.ts": 1982,
   "packages/workspace-runtime/src/store.ts": 5027,
   "packages/workspace-runtime/src/workspace-relay-host-tunnel.ts": 815,
   "packages/workspace-runtime/src/workspace/runtime.ts": 857
