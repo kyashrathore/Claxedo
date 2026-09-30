@@ -487,3 +487,15 @@ test("a steer a Pi extension takes as input settles declined instead of waiting 
     expect(result).toEqual({ ok: false, status: "declined", message: "A Pi extension took the steer as input, so it is not in the conversation" })
   } finally { await context.close() }
 }, 60_000)
+
+test("a Pi that exits while starting names Pi's own reason, not only its exit code", async () => {
+  const context = await setupConformance({ name: "pi start failure", backend, makeTransport: piTransport })
+  try {
+    const plugin = path.join(context.backend.directory, "broken-extension")
+    await fs.mkdir(plugin)
+    await fs.writeFile(path.join(plugin, "index.ts"), "export default function () { throw new Error(\"PIBROKENEXTENSION\") }\n")
+    const start = { ...context.start, sessionId: "s-broken", projection: { generation: "g2", mcpServers: [], notApplied: [],
+      pluginRoots: [{ pluginInstanceId: "broken", root: plugin, skillNames: [], dataRoot: plugin }] } }
+    await expect(context.transport.start(start, context.sessionBroker)).rejects.toThrow(/Pi process exited \(1\): [\s\S]*PIBROKENEXTENSION/)
+  } finally { await context.close() }
+}, 60_000)
