@@ -643,6 +643,33 @@ describe("D1 access changes that must not undo or outlive a decision", () => {
     expect(await removedToken()).toBe(false)
   })
 
+  test("lowering a member grant, a team grant or an owner's org role revokes the tokens the higher rank minted, so raising it again does not revive them", async () => {
+    const { authority, alice, bob, carol, person, projectId } = await setup()
+    const dave = await person("dave")
+    await authority.addOrgMember!(alice, { orgId: "org_acme", userPublicId: id(bob), role: "member" })
+    await authority.addOrgMember!(alice, { orgId: "org_acme", userPublicId: id(carol), role: "member" })
+    await authority.addOrgMember!(alice, { orgId: "org_acme", userPublicId: id(dave), role: "owner" })
+
+    await authority.grantProjectMember!(alice, { projectId, userPublicId: id(bob), role: "admin" })
+    const memberToken = await token(authority, bob, "jti_member_lowered", "admin")
+    await authority.grantProjectMember!(alice, { projectId, userPublicId: id(bob), role: "editor" })
+    await authority.grantProjectMember!(alice, { projectId, userPublicId: id(bob), role: "admin" })
+    expect(await memberToken()).toBe(false)
+
+    const team = (await authority.createTeamInOrg!(alice, { orgId: "org_acme", name: "Eng" })) as { team_id: string }
+    await authority.addTeamMember!(alice, { teamId: team.team_id, userPublicId: id(carol) })
+    await authority.grantTeamProject!(alice, { teamId: team.team_id, projectId, role: "admin" })
+    const teamToken = await token(authority, carol, "jti_team_lowered", "admin")
+    await authority.grantTeamProject!(alice, { teamId: team.team_id, projectId, role: "viewer" })
+    await authority.grantTeamProject!(alice, { teamId: team.team_id, projectId, role: "admin" })
+    expect(await teamToken()).toBe(false)
+
+    const ownerToken = await token(authority, dave, "jti_owner_demoted", "admin")
+    await authority.updateOrgMember!(alice, { orgId: "org_acme", userPublicId: id(dave), role: "member" })
+    await authority.updateOrgMember!(alice, { orgId: "org_acme", userPublicId: id(dave), role: "owner" })
+    expect(await ownerToken()).toBe(false)
+  })
+
   test("removal revokes the person's direct session shares and participations in the organization, audited, so re-admission restores no consent", async () => {
     const { authority, database, alice, bob, projectId, audit } = await setup()
     await authority.addOrgMember!(alice, { orgId: "org_acme", userPublicId: id(bob), role: "member" })
