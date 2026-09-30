@@ -6,8 +6,8 @@ export type RuntimeStatusPath = "/session/status" | "/permission" | "/question"
 /** A GET on the workspace's mounted runtime, or nothing when no runtime is up. */
 export type RuntimeStatusRead = (workspaceId: string, path: RuntimeStatusPath) => Promise<Response | undefined>
 
-/** A session's status kind and the ids of its open permissions and questions, keyed `<kind>.asked:<id>`. */
-export type RuntimeSessionActivity = { kind: SessionRowStatusKind; pending: Set<string> }
+/** A session's status kind, the ids of its open permissions and questions, keyed `<kind>.asked:<id>`, and whether its harness runs work outside any turn. */
+export type RuntimeSessionActivity = { kind: SessionRowStatusKind; pending: Set<string>; backgroundWork: boolean }
 
 export function runtimeStatusKind(status: unknown): SessionRowStatusKind {
   const type = raw(record(status)?.type)
@@ -34,7 +34,7 @@ export async function readRuntimeSessionActivity(
   if (status === undefined) return undefined
   const sessions = new Map<string, RuntimeSessionActivity>()
   for (const [sessionId, value] of Object.entries(record(status) ?? {})) {
-    sessions.set(sessionId, { kind: runtimeStatusKind(value), pending: new Set() })
+    sessions.set(sessionId, { kind: runtimeStatusKind(value), pending: new Set(), backgroundWork: record(value)?.backgroundWork === true })
   }
   for (const path of ["/permission", "/question"] as const) {
     const rows = await readRuntimeStatus(read, workspaceId, path)
@@ -42,7 +42,7 @@ export async function readRuntimeSessionActivity(
       const sessionId = raw(record(row)?.sessionID)
       const id = raw(record(row)?.id)
       if (!sessionId || !id) continue
-      const entry = sessions.get(sessionId) ?? { kind: "idle", pending: new Set<string>() }
+      const entry = sessions.get(sessionId) ?? { kind: "idle", pending: new Set<string>(), backgroundWork: false }
       entry.pending.add(`${path.slice(1)}.asked:${id}`)
       sessions.set(sessionId, entry)
     }
