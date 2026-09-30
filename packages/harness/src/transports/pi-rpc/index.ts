@@ -1,5 +1,5 @@
 import { errorMessage, singleFlightUntil } from "@claxedo/helpers"
-import type { AdapterCancelOutcome, PromptModel, SessionTitleRequest } from "@claxedo/agent-runtime-contract"
+import type { AdapterCancelOutcome, PromptModel, SessionTitleRequest, SteerResult } from "@claxedo/agent-runtime-contract"
 import type {
   AttachInput, ConfigApplied, ConfigTarget, Deadline, HarnessServices, HarnessSession, HarnessTransport,
   RoutedEvent, SessionBroker, StartInput, TransportCapabilities, TransportConfigUpdate, TurnBroker, TurnInput, TurnRef,
@@ -7,10 +7,12 @@ import type {
 import { attachedSessionEntry, HarnessVersionGate, mergeStartInput, ProcessLosses, sessionConnectionHealth } from "../../contract"
 import { selectPiProfile, type PiProfile } from "../../profiles/pi"
 import { TransportError } from "../../contract/errors"
-import { piEvents } from "./events"
-import { AsyncPushQueue } from "@claxedo/helpers"
-import { PiRpc, type PiMessage } from "./rpc"
-import { answerPiDialog } from "./ui"
+import { asRecordOrEmpty } from "@claxedo/helpers/guards"
+import type { PiRpc } from "./rpc"
+import { PiRun } from "./run"
+import type { PiSessionStream } from "./session-stream"
+import { stopPiRun } from "./stop"
+import { piSteerResult } from "./steers"
 import { piCommands } from "./commands"
 import { PiDraftProbes } from "./probes"
 import { UnsettledPiLaunches } from "./retirements"
@@ -19,7 +21,8 @@ import { createPiConfig, piModelSelection, piThinkingLevel, piTurnAccount } from
 import { withTurnAccount } from "../../translate/turn-account"
 import { piSessionTitle } from "./title"
 import { PI_RANGE } from "./version"
-import { launchPi, piDeadline, piUpstreamOf, resumePi, retiringOnFailure, type PiLaunchHost, type PiRpcOptions } from "./launch"
+import { launchPiSession, piDeadline, piUpstreamOf, resumePi, retiringOnFailure, type PiLaunchHost, type PiRpcOptions,
+  type PiSessionLaunch } from "./launch"
 
 type Entry = {
   session: HarnessSession
@@ -27,10 +30,9 @@ type Entry = {
   profile: PiProfile
   broker: SessionBroker
   rpc: PiRpc
-  busy: boolean
+  stream: PiSessionStream
   prompted: boolean
   stopUnprompted?: () => void
-  settled: boolean
 }
 
 export type { PiRpcOptions } from "./launch"
@@ -76,11 +78,11 @@ export class PiRpcTransport implements HarnessTransport {
     }
   }
 
-  private async remember(input: StartInput, profile: PiProfile, rpc: PiRpc, broker: SessionBroker, upstreamSessionId: string): Promise<HarnessSession> {
-    const binding = await retiringOnFailure(this.host, rpc, () => broker.rebind(upstreamSessionId))
+  private async remember(input: StartInput, profile: PiProfile, launched: PiSessionLaunch, broker: SessionBroker, upstreamSessionId: string): Promise<HarnessSession> {
+    const binding = await retiringOnFailure(this.host, launched.rpc, () => broker.rebind(upstreamSessionId))
     const session: HarnessSession = { binding, directory: input.directory, locality: input.locality }
-    this.entries.set(input.sessionId, { session, start: input, profile, broker, rpc, busy: false, prompted: false, settled: true })
-    this.track(input.sessionId, rpc)
+    this.entries.set(input.sessionId, { session, start: input, profile, broker, ...launched, prompted: false })
+    this.track(input.sessionId, launched.rpc)
     return session
   }
 
@@ -96,34 +98,18 @@ export class PiRpcTransport implements HarnessTransport {
 
   async start(input: StartInput, broker: SessionBroker): Promise<HarnessSession> {
     const profile = selectPiProfile(input.credentials, input.directory, input.sessionId, this.options)
-    const rpc = await launchPi(this.host, input, profile, broker, { role: "harness" })
-    return this.remember(input, profile, rpc, broker, await piUpstreamOf(this.host, rpc))
+    const launched = await launchPiSession(this.host, input, profile, broker)
+    return this.remember(input, profile, launched, broker, await piUpstreamOf(this.host, launched.rpc))
   }
 
   async attach(input: AttachInput, broker: SessionBroker): Promise<HarnessSession> {
     const profile = selectPiProfile(input.credentials, input.directory, input.sessionId, this.options)
-    const rpc = await resumePi(this.host, input, profile, broker, input.binding.upstreamSessionId)
-    return this.remember(input, profile, rpc, broker, input.binding.upstreamSessionId)
+    const launched = await resumePi(this.host, input, profile, broker, input.binding.upstreamSessionId)
+    return this.remember(input, profile, launched, broker, input.binding.upstreamSessionId)
   }
 
   private entry(session: HarnessSession): Entry {
     return attachedSessionEntry(this.entries, session, () => new TransportError("pi", "session", "Pi session is not attached"))
-  }
-
-  private receiveTurn(entry: Entry, broker: TurnBroker, queue: AsyncPushQueue<RoutedEvent>, pending: Set<Promise<void>>,
-    dialogAbort: AbortController): () => void {
-    const translate = piEvents(entry.session.binding.sessionId)
-    return entry.rpc.onEvent((message: PiMessage) => {
-      try {
-        for (const event of translate(message)) queue.push(event)
-        if (message.type === "extension_ui_request") {
-          const task = answerPiDialog(message, entry.rpc, broker, entry.session.binding.sessionId, this.services.clock.now(), dialogAbort.signal)
-          pending.add(task)
-          void task.then(() => pending.delete(task), (error: unknown) => queue.fail(error))
-        }
-        if (message.type === "agent_settled") { entry.settled = true; dialogAbort.abort(); queue.end() }
-      } catch (error) { queue.fail(error) }
-    })
   }
 
   private async applyTurnConfig(entry: Entry, model: PromptModel | undefined, effort: string | null | undefined): Promise<void> {
@@ -137,23 +123,25 @@ export class PiRpcTransport implements HarnessTransport {
     }
   }
 
-  private beginTurn(entry: Entry, turn: TurnInput, broker: TurnBroker, queue: AsyncPushQueue<RoutedEvent>) {
+  private beginTurn(entry: Entry, turn: TurnInput, broker: TurnBroker, run: PiRun) {
     let stopped = false
-    entry.stopUnprompted = () => { stopped = true; queue.end() }
+    entry.stopUnprompted = () => { stopped = true; run.queue.end() }
     const onAbort = () => {
       if (!entry.prompted) { entry.stopUnprompted?.(); return }
       void this.cancel(entry.session, { turnId: turn.turnId, assistantMessageId: turn.assistantMessageId }, piDeadline(this.services.clock)).then(
-        (result) => { if (result.error) queue.fail(new TransportError("pi", "process", result.error.message)) },
-        (error: unknown) => queue.fail(error),
+        (result) => { if (result.error) run.queue.fail(new TransportError("pi", "process", result.error.message)) },
+        (error: unknown) => run.queue.fail(error),
       )
     }
     broker.signal.addEventListener("abort", onAbort, { once: true })
     return {
       prompt: async (body: ReturnType<typeof piRpcPromptBody>) => {
         await this.applyTurnConfig(entry, turn.model, turn.effort)
-        if (stopped || broker.signal.aborted) return queue.end()
+        if (stopped || broker.signal.aborted) return run.queue.end()
         entry.prompted = true
-        await entry.rpc.request("prompt", body)
+        const disposition = asRecordOrEmpty(await entry.rpc.request("prompt", body)).disposition
+        if (disposition !== "started" && disposition !== "handled") throw new TransportError("pi", "protocol", `Pi answered a prompt with disposition ${String(disposition)}`)
+        if (disposition === "handled" && !run.started) run.finishUnstarted()
       },
       release: () => {
         broker.signal.removeEventListener("abort", onAbort)
@@ -164,55 +152,45 @@ export class PiRpcTransport implements HarnessTransport {
 
   async *send(session: HarnessSession, turn: TurnInput, broker: TurnBroker): AsyncIterable<RoutedEvent> {
     const entry = this.entry(session)
-    if (entry.busy) throw new TransportError("pi", "session", "Pi turn already active")
     const body = piRpcPromptBody(turn)
     const account = piTurnAccount(entry.start, turn.model)
-    entry.busy = true
+    const run = new PiRun(entry.rpc, session.binding.sessionId, this.services.clock, broker)
+    const release = entry.stream.claim(run)
     entry.prompted = false
-    entry.settled = false
-    const queue = new AsyncPushQueue<RoutedEvent>()
-    const pending = new Set<Promise<void>>()
-    const dialogAbort = new AbortController()
-    const remove = this.receiveTurn(entry, broker, queue, pending, dialogAbort)
-    const removeFailure = entry.rpc.onFailure((error) => queue.fail(error))
-    const started = this.beginTurn(entry, turn, broker, queue)
+    const removeFailure = entry.rpc.onFailure((error) => run.queue.fail(error))
+    const started = this.beginTurn(entry, turn, broker, run)
     try {
       await started.prompt(body)
-      yield* withTurnAccount(queue, account)
-      await Promise.all(pending)
+      yield* withTurnAccount(run.queue, account)
+      await run.answered()
     } catch (error) {
       await entry.rpc.retire(piDeadline(this.services.clock))
       this.entries.delete(session.binding.sessionId)
       throw error
     } finally {
-      dialogAbort.abort()
-      remove()
+      run.close()
+      release()
       removeFailure()
       started.release()
-      entry.busy = false
     }
   }
 
   async cancel(session: HarnessSession, _turn: TurnRef, deadline: Deadline): Promise<AdapterCancelOutcome> {
     const entry = this.entry(session)
-    if (!entry.busy || !entry.prompted) {
+    const run = entry.stream.run
+    if (!run || !entry.prompted) {
       entry.stopUnprompted?.()
       return { execution: "terminal", cleanup: "unknown" }
     }
-    const stop = this.stops.get(entry) ?? singleFlightUntil((stopBy: Deadline) => this.stopPrompted(entry, stopBy), () => false)
+    const stop = this.stops.get(entry) ?? singleFlightUntil((stopBy: Deadline) => this.stopPrompted(entry, run, stopBy), () => false)
     this.stops.set(entry, stop)
     return stop(deadline)
   }
 
-  private async stopPrompted(entry: Entry, deadline: Deadline): Promise<AdapterCancelOutcome> {
+  private async stopPrompted(entry: Entry, run: PiRun, deadline: Deadline): Promise<AdapterCancelOutcome> {
     try {
-      const results = await Promise.allSettled([
-        entry.rpc.request("clear_queue", {}, deadline),
-        entry.rpc.request("abort", {}, deadline),
-      ])
-      const failure = results.find((result) => result.status === "rejected")
-      if (failure?.status === "rejected") throw failure.reason
-      return { execution: entry.settled ? "terminal" as const : "unknown" as const, cleanup: "unknown" as const }
+      await stopPiRun(entry.rpc, deadline)
+      return { execution: run.settled ? "terminal" as const : "unknown" as const, cleanup: "unknown" as const }
     } catch (error) {
       return { execution: "unknown" as const, cleanup: "owned" as const,
         error: { code: error instanceof TransportError && error.code === "timeout" ? "cancellation_timeout" as const : "provider_unreachable" as const,
@@ -223,12 +201,14 @@ export class PiRpcTransport implements HarnessTransport {
   async configure(session: HarnessSession, update: TransportConfigUpdate): Promise<ConfigApplied> {
     const entry = this.entry(session)
     if (!update.credentials && !update.projection) return { state: "applied" }
-    if (entry.busy) return { state: "refused", reason: "Cannot reconfigure Pi during an active turn" }
+    if (entry.stream.busy) return { state: "refused", reason: "Cannot reconfigure Pi during an active turn" }
     const start = mergeStartInput(entry.start, update)
     const profile = selectPiProfile(start.credentials, start.directory, start.sessionId, this.options, entry.profile.kind)
     await this.retireSession(entry)
     this.entries.delete(session.binding.sessionId)
-    entry.rpc = await resumePi(this.host, start, profile, entry.broker, entry.session.binding.upstreamSessionId)
+    const launched = await resumePi(this.host, start, profile, entry.broker, entry.session.binding.upstreamSessionId)
+    entry.rpc = launched.rpc
+    entry.stream = launched.stream
     entry.profile = profile
     entry.start = start
     this.entries.set(session.binding.sessionId, entry)
@@ -253,11 +233,14 @@ export class PiRpcTransport implements HarnessTransport {
   }
 
   readonly steer = {
-    steer: async (session: HarnessSession, _turn: TurnRef, input: TurnInput) => {
+    steer: async (session: HarnessSession, _turn: TurnRef, input: TurnInput): Promise<SteerResult> => {
       const entry = this.entry(session)
-      if (!entry.busy) return { ok: false as const, status: "no_active_turn" as const, message: "No Pi turn is active" }
-      await entry.rpc.request("steer", piRpcPromptBody(input))
-      return { ok: true as const }
+      const run = entry.stream.active
+      if (!run) return { ok: false, status: "no_active_turn", message: "No Pi turn is active" }
+      const body = piRpcPromptBody(input)
+      const withdraw = run.steers.add({ messageId: input.userMessageId, text: body.message })
+      try { return piSteerResult(asRecordOrEmpty(await entry.rpc.request("steer", body)).disposition, withdraw) }
+      catch (error) { withdraw(); throw error }
     },
   }
 
@@ -271,7 +254,7 @@ export class PiRpcTransport implements HarnessTransport {
   readonly naming = {
     generateTitle: async (session: HarnessSession, request: SessionTitleRequest) => {
       const entry = this.entry(session)
-      if (entry.busy) return null
+      if (entry.stream.busy) return null
       return piSessionTitle(entry.rpc, this.options.stateRoot, request)
     },
     rename: async (session: HarnessSession, title: string) => {

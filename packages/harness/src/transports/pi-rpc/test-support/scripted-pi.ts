@@ -43,6 +43,7 @@ function answer(frame: Frame, launch: Launch, mcpFailure: string | undefined, un
   }
   if (frame.type === "get_available_models") return { models: [{ provider: "scripted", id: projectModel(launch.command.cwd), name: "Scripted" }] }
   if (frame.type === "get_available_thinking_levels") return { levels: [] }
+  if (frame.type === "prompt") return { disposition: "handled" }
   return frame.type === "get_state" ? { sessionId: "scripted-pi", thinkingLevel: "off" } : {}
 }
 

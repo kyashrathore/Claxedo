@@ -36,7 +36,7 @@ export function piDialog(message: PiMessage): boolean {
   return message.type === "extension_ui_request" && typeof message.method === "string" && dialogs.includes(message.method)
 }
 
-export async function answerPiDialog(message: PiMessage, rpc: PiRpc, broker: TurnBroker, sessionId: string, now: number,
+export async function answerPiDialog(message: PiMessage, rpc: PiRpc, broker: Pick<TurnBroker, "ask">, sessionId: string, now: number,
   signal: AbortSignal): Promise<void> {
   if (!piDialog(message)) return
   if (typeof message.id !== "string") throw new Error("Pi extension dialog lacks an id")

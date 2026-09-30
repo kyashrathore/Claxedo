@@ -7,12 +7,10 @@ import { frameSessionId, frameType, type EventStream } from "../harness/stream"
 
 const nextMessageId = ascendingMessageIds()
 
-type Receipt = "queue" | "transcript"
-
 const CASES = [
-  { name: "pi", receipt: "queue" as Receipt, harness: { id: "pi", access: "native" as const }, model: { providerId: "pi", modelId: "openai/gpt-4.1" } },
-  { name: "claude", receipt: "transcript" as Receipt, harness: { id: "claude", access: "native" as const }, model: { providerId: "claude", modelId: "sonnet" } },
-  { name: "codex", receipt: "transcript" as Receipt, harness: { id: "codex", access: "native" as const }, model: { providerId: "codex", modelId: "gpt-5.5" } },
+  { name: "pi", harness: { id: "pi", access: "native" as const }, model: { providerId: "pi", modelId: "openai/gpt-4.1" } },
+  { name: "claude", harness: { id: "claude", access: "native" as const }, model: { providerId: "claude", modelId: "sonnet" } },
+  { name: "codex", harness: { id: "codex", access: "native" as const }, model: { providerId: "codex", modelId: "gpt-5.5" } },
 ]
 
 type QueueRow = { steering?: { state: string }; parts: Array<{ text?: string }> }
@@ -75,16 +73,12 @@ async function steerCase(stack: Stack, api: ClaxedoApi, item: typeof CASES[numbe
     assert.equal(queue.status, 200)
     const rows = await queue.json() as QueueRow[]
     const stored = await api.messages(workspace.directory, session.id)
-    if (item.receipt === "queue") {
-      assert.ok(rows.some((row) => row.steering?.state === "accepted" && row.parts.some((part) => part.text === second)), `${item.name} steer receipt missing: ${JSON.stringify(rows)}`)
-    } else {
-      assertIncorporated(item.name, stream, stored, rows, ids, second)
-    }
+    assertIncorporated(item.name, stream, stored, rows, ids, second)
     assert.ok(stored.some((message) => message.info.role === "user" && message.parts.some((part) => part.text?.includes(first))))
     assert.ok(assistantText(stored).length > 0)
     assert.equal((await api.session(workspace.directory, session.id)).lastTurn?.status, "completed")
     assert.ok(stack.scripted.requests.some((request) => request.prompt.includes(second)), `${item.name} steer never reached the model`)
-    console.log(`H7 ${item.name}: steer accepted, ${item.receipt === "queue" ? "durable queue receipt" : "steered prompt in the transcript where the harness took it in"}, model request, live idle and stored turn passed`)
+    console.log(`H7 ${item.name}: steer accepted, steered prompt in the transcript where the harness took it in, model request, live idle and stored turn passed`)
   } finally {
     release()
   }
