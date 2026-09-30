@@ -1,7 +1,7 @@
 import type { AsyncPushQueue } from "@claxedo/helpers"
 import type { RuntimeGoalSnapshot } from "@claxedo/agent-runtime-contract"
 import type { HarnessSession, RoutedEvent, SessionBroker, StartInput, TransportConfigUpdate, TurnBroker } from "../../contract"
-import type { CodexEvents } from "./events"
+import type { CodexChildren } from "./children"
 import type { CodexModel, CodexTurnSettings } from "./models"
 import type { CodexProviderTurn } from "./provider-turn"
 import type { CodexRpc } from "./rpc"
@@ -22,9 +22,8 @@ export type Entry = {
   brokered: boolean
   plugins: string[]
   terminals: CodexTerminals
-  children: Map<string, CodexEvents | undefined>
+  children: CodexChildren
   sideThreads: Set<string>
-  nativeChildren: Set<string>
   usage: CodexUsageLedger
   goal: RuntimeGoalSnapshot | null
   settings: CodexTurnSettings
@@ -34,5 +33,5 @@ export type Entry = {
   pendingUpdate?: TransportConfigUpdate
   idle(): void
   providerTurn?: CodexProviderTurn
-  turn?: { broker: TurnBroker; queue: AsyncPushQueue<RoutedEvent>; id?: string; started: Promise<void> }
+  turn?: { broker: TurnBroker; queue: AsyncPushQueue<RoutedEvent>; id?: string; started: Promise<void>; closing?: boolean }
 }

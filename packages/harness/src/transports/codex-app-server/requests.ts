@@ -4,6 +4,7 @@ import { elicitationAnswer, elicitationRequest, permissionDecision, permissionRe
 import type { RpcMessage } from "./rpc"
 import { CodexRequestRefusal, CodexTransportError } from "./errors"
 import { grantIdentity } from "../../contract/grant-identity"
+import type { CodexChildren } from "./children"
 
 const approvalMethods = [
   "item/commandExecution/requestApproval", "item/fileChange/requestApproval",
@@ -13,6 +14,14 @@ const protocolDecisionMapping = {
   once: "allow_once", always: "allow_always", deny: "deny", never: "reject_always",
 } as const
 type RequestBroker = Pick<TurnBroker, "ask">
+export type RequestingChild = { correlationKey: string; toolCallId?: string }
+type RequestContext = { directory: string; permissionMode?: string; subagent?: RequestingChild }
+
+export function requestingChild(entry: { children: CodexChildren }, message: RpcMessage): RequestingChild | undefined {
+  const child = entry.children.get(asString(asRecordOrEmpty(message.params).threadId))
+  const toolCallId = child?.spawn?.toolCallId
+  return child && { correlationKey: child.threadId, ...(toolCallId ? { toolCallId } : {}) }
+}
 
 function decisionResponse(method: string, decision: string, params: Record<string, unknown>): unknown {
   const allow = decision === protocolDecisionMapping.once || decision === protocolDecisionMapping.always
@@ -25,11 +34,11 @@ function decisionResponse(method: string, decision: string, params: Record<strin
 }
 
 async function approval(method: string, params: Record<string, unknown>, message: RpcMessage, broker: RequestBroker, sessionId: string,
-  context?: { directory: string; permissionMode?: string }): Promise<unknown> {
+  context?: RequestContext): Promise<unknown> {
   const command = typeof params.command === "string" ? params.command : JSON.stringify(params.changes ?? params.permissions ?? {})
   const { threadId: _threadId, turnId: _turnId, itemId: _itemId, startedAtMs: _startedAtMs, approvalId: _approvalId, ...keyParams } = params
   const answer = await broker.ask(permissionRequest({ sessionId, permission: method, title: command,
-    patterns: [command], metadata: { method, params }, harnessPayload: message,
+    patterns: [command], metadata: { method, params, ...(context?.subagent ? { subagent: context.subagent } : {}) }, harnessPayload: message,
     grantKey: grantIdentity([method, context?.directory, context?.permissionMode, keyParams]),
     options: [
       { optionId: protocolDecisionMapping.once, kind: protocolDecisionMapping.once, name: "Allow once" },
@@ -55,11 +64,12 @@ async function question(params: Record<string, unknown>, message: RpcMessage, br
   return { answers: Object.fromEntries(ids.map((id, index) => [id, { answers: answers[index] ?? [] }])) }
 }
 
-async function elicitation(params: Record<string, unknown>, message: RpcMessage, broker: RequestBroker, sessionId: string): Promise<unknown> {
+async function elicitation(params: Record<string, unknown>, message: RpcMessage, broker: RequestBroker, sessionId: string,
+  subagent: RequestingChild | undefined): Promise<unknown> {
     const approval = codexMcpApproval(params)
     if (approval) {
       const answer = await broker.ask(permissionRequest({ sessionId, permission: "mcp", title: approval.reason,
-        patterns: [approval.tool], metadata: { method: message.method, params }, harnessPayload: message,
+        patterns: [approval.tool], metadata: { method: message.method, params, ...(subagent ? { subagent } : {}) }, harnessPayload: message,
         envelope: { options: approval.options.map((option) => ({ id: option.id, label: option.label })) },
         options: approval.options.map((option) => ({ optionId: option.id,
           kind: option.id.startsWith("{") ? protocolDecisionMapping.always : option.id === "accept" ? protocolDecisionMapping.once : "reject_once" as const,
@@ -82,12 +92,12 @@ export function isCodexRequestMethod(method: string): boolean {
 }
 
 export async function answerCodexRequest(message: RpcMessage, broker: RequestBroker, sessionId: string,
-  context?: { directory: string; permissionMode?: string }): Promise<unknown> {
+  context?: RequestContext): Promise<unknown> {
   const { method } = message
   if (!method) throw new CodexTransportError("protocol", "Codex request has no method")
   const params = asRecordOrEmpty(message.params)
   if (approvalMethods.some((name) => name === method)) return approval(method, params, message, broker, sessionId, context)
   if (method === "item/tool/requestUserInput") return question(params, message, broker, sessionId)
-  if (method === "mcpServer/elicitation/request") return elicitation(params, message, broker, sessionId)
+  if (method === "mcpServer/elicitation/request") return elicitation(params, message, broker, sessionId, context?.subagent)
   throw new CodexRequestRefusal(-32601, `Unsupported Codex request ${method}`)
 }
