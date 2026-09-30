@@ -1,3 +1,5 @@
+import { base64UrlDecode, base64UrlEncode } from "@claxedo/helpers/crypto"
+import { asRecord } from "@claxedo/helpers/guards"
 import type { AgentMessage } from "./content"
 import type { AgentTurnOutcome } from "./sessions"
 
@@ -112,6 +114,29 @@ export class AgentMessagePageError extends Error {
   ) {
     super(message)
     this.name = "AgentMessagePageError"
+  }
+}
+
+/**
+ * The `before` cursor a message-page producer hands out: its own prefix, then
+ * the session and the ordinal the next page ends before. A cursor from another
+ * producer or for another session is refused like a malformed one.
+ */
+export function encodeMessagePageCursor(prefix: string, sessionId: string, ordinal: number): string {
+  return `${prefix}${base64UrlEncode(new TextEncoder().encode(JSON.stringify({ sessionId, ordinal })))}`
+}
+
+export function decodeMessagePageCursor(prefix: string, sessionId: string, input: string): number {
+  try {
+    if (!input.startsWith(prefix)) throw new Error("unexpected cursor version")
+    const value = asRecord(JSON.parse(new TextDecoder().decode(base64UrlDecode(input.slice(prefix.length)))))
+    const ordinal = value?.ordinal
+    if (value?.sessionId !== sessionId || typeof ordinal !== "number" || !Number.isSafeInteger(ordinal) || ordinal < 0) {
+      throw new Error("invalid cursor payload")
+    }
+    return ordinal
+  } catch {
+    throw new AgentMessagePageError(400, "Invalid message page cursor")
   }
 }
 
