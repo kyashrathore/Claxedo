@@ -14,9 +14,10 @@ const INFO_MESSAGES: Readonly<Record<string, string>> = {
   tooManyDenials: "Codex stopped the turn after too many denied approvals.",
 }
 
-const PINNED_INFO_CLASSES = {
+const INFO_CLASSES: Readonly<Record<string, FirstTurnErrorClass>> = {
   usageLimitExceeded: "usage_limit",
   rateLimitExceeded: "rate_limit",
+  flexUnavailable: "model",
   serverOverloaded: "model",
   unauthorized: "credential",
   sandboxError: "workspace",
@@ -25,12 +26,11 @@ const PINNED_INFO_CLASSES = {
   sessionBudgetExceeded: "unknown",
   cyberPolicy: "unknown",
   misalignmentPolicyViolation: "unknown",
+  tooManyDenials: "unknown",
   internalServerError: "unknown",
   badRequest: "unknown",
   other: "unknown",
-} as const satisfies Record<Extract<v2.CodexErrorInfo, string>, FirstTurnErrorClass>
-
-const INFO_CLASSES: Readonly<Record<string, FirstTurnErrorClass>> = { ...PINNED_INFO_CLASSES, flexUnavailable: "model", tooManyDenials: "unknown" }
+} satisfies Record<Extract<v2.CodexErrorInfo, string>, FirstTurnErrorClass>
 
 function httpStatusClass(status: unknown): FirstTurnErrorClass {
   if (status === 429) return "rate_limit"

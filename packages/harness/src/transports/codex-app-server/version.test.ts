@@ -36,13 +36,14 @@ test("a Codex newer than the tested range runs, with one untested-version diagno
   } finally { await peer.close() }
 })
 
-test("the Codex the protocol types are generated from and every sandbox image runs are inside the tested range", () => {
+test("the protocol types come from the newest tested Codex, and every sandbox image runs one inside the tested range", () => {
   const repo = path.resolve(import.meta.dirname, "../../../../..")
   const read = (file: string) => readFileSync(path.join(repo, file), "utf8")
   const generator = JSON.parse(read("packages/harness/package.json")).devDependencies["@openai/codex"]
-  const sandboxes = ["packages/claxedo-server/scripts/sandbox/Dockerfile", "packages/sandbox-manager/src/drivers/vercel.ts"]
+  const sandboxes = ["packages/claxedo-server/scripts/sandbox/Dockerfile", "packages/claxedo-server/scripts/sandbox/cloudflare-worker/Dockerfile",
+    "packages/sandbox-manager/src/drivers/vercel.ts"]
     .flatMap((file) => [...read(file).matchAll(/@openai\/codex@(\d+\.\d+\.\d+)/g)].map((match) => match[1]))
-  expect(generator).toBe(CODEX_RANGE.min)
-  expect(sandboxes).toHaveLength(2)
-  for (const version of [generator, ...sandboxes]) expect(harnessVersionStanding(CODEX_RANGE, version)).toBe("tested")
+  expect(generator).toBe(CODEX_RANGE.max)
+  expect(sandboxes).toHaveLength(3)
+  for (const version of sandboxes) expect(harnessVersionStanding(CODEX_RANGE, version)).toBe("tested")
 })
