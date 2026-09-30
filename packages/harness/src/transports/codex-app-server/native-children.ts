@@ -10,7 +10,7 @@ import { codexCollabAgentCall, codexSubagentActivity, type CodexCollabAgentCall 
 
 type Observed = Omit<SubagentObservation, "observationId" | "status">
 
-function observe(entry: Entry, child: CodexChild, id: string, status: SubagentStatus, fields: Partial<Observed> = {}) {
+function observeNativeChild(entry: Entry, child: CodexChild, id: string, status: SubagentStatus, fields: Partial<Observed> = {}) {
   return entry.broker.observeSubagent({ observationId: `codex:native:${child.threadId}:${id}`, harnessExecutionId: entry.session.binding.upstreamSessionId,
     stableCorrelationId: child.threadId, providerId: child.threadId, providerKind: "codex", mode: "background", transcript: { kind: "live" },
     status, ...fields })
@@ -25,7 +25,7 @@ function spawnNative(entry: Entry, threadId: string, spawn: ChildSpawn): void {
   const child = entry.children.add(new CodexChild(threadId, "native", spawn))
   const { toolCallId, ...described } = spawn
   child.enqueue(async () => {
-    const ref = await observe(entry, child, `spawn:${toolCallId ?? threadId}`, "running",
+    const ref = await observeNativeChild(entry, child, `spawn:${toolCallId ?? threadId}`, "running",
       { ...described, ...(toolCallId ? { toolCallId, toolCallRole: "spawn" } : {}) })
     if (ref) entry.broker.associateChild(threadId, ref)
   }, reportTo(entry))
@@ -51,7 +51,7 @@ function collabCall(entry: Entry, message: RpcMessage, call: CodexCollabAgentCal
     if (child?.origin !== "native") continue
     if (fromSession) awaitInteraction(child, call.id)
     if (message.method === "item/completed" && call.statuses[threadId] === "killed") {
-      child.enqueue(async () => { await observe(entry, child, `shutdown:${call.id}`, "killed") }, reportTo(entry))
+      child.enqueue(async () => { await observeNativeChild(entry, child, `shutdown:${call.id}`, "killed") }, reportTo(entry))
     }
   }
 }
@@ -69,7 +69,7 @@ export function observeNativeChildren(entry: Entry, message: RpcMessage): void {
   if (call) collabCall(entry, message, call, fromSession)
 }
 
-function childOutcome(turn: Record<string, unknown>): { status: SubagentStatus; label?: string } {
+function childTurnOutcome(turn: Record<string, unknown>): { status: SubagentStatus; label?: string } {
   const error = asString(asRecordOrEmpty(turn.error).message)
   if (turn.status === "failed" || (turn.status === "interrupted" && error)) return { status: "failed", label: error ?? "Codex subagent failed" }
   return { status: turn.status === "interrupted" ? "interrupted" : "completed" }
@@ -83,17 +83,17 @@ function childTurnStarted(entry: Entry, child: CodexChild, turnId: string): void
   const call = child.interaction ?? turnId
   child.interaction = undefined
   child.calls.add(call)
-  child.enqueue(async () => { await observe(entry, child, `${turnId}:running`, "running", { toolCallId: call, toolCallRole: "interaction" }) }, reportTo(entry))
+  child.enqueue(async () => { await observeNativeChild(entry, child, `${turnId}:running`, "running", { toolCallId: call, toolCallRole: "interaction" }) }, reportTo(entry))
 }
 
 function childTurnEnded(entry: Entry, child: CodexChild, turn: Record<string, unknown>): void {
   entry.children.move(child, "turn-ended")
   if (child.origin !== "native") return
-  const outcome = childOutcome(turn)
+  const outcome = childTurnOutcome(turn)
   child.outcome = outcome.status
   child.enqueue(async () => {
     await childFramesDelivered(entry)
-    await observe(entry, child, `${asString(turn.id) ?? "turn"}:${outcome.status}`, outcome.status, outcome.label ? { label: outcome.label } : {})
+    await observeNativeChild(entry, child, `${asString(turn.id) ?? "turn"}:${outcome.status}`, outcome.status, outcome.label ? { label: outcome.label } : {})
   }, reportTo(entry))
 }
 
