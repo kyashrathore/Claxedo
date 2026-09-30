@@ -16,8 +16,7 @@ const mirror: ConfigMirrorOptions = { secretFile: SECRET_FILE, externalSkills: t
 export function codexHomeKey(accountOwner: string, selected: ProviderBinding | undefined, projection: PluginProjection): string {
   const ownerKey = `person:${accountOwner}`
   const credentialKey = selected ? `broker:${selected.baseUrl}:${selected.authMode}` : "own-login"
-  const plugins = [...new Set(projection.pluginRoots.map((root) => root.pluginInstanceId))].sort()
-  return `codex-${createHash("sha256").update(JSON.stringify([ownerKey, credentialKey, plugins, projection.pluginSelection?.mode ?? "default"])).digest("hex").slice(0, 16)}`
+  return `codex-${createHash("sha256").update(JSON.stringify([ownerKey, credentialKey, projection.pluginSelection?.mode ?? "default"])).digest("hex").slice(0, 16)}`
 }
 
 export function copyTreeAtomically(source: string, target: string, root: string, relative = ""): Promise<void> {

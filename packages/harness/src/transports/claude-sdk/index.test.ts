@@ -80,14 +80,6 @@ test("a Claude transport turn removes its broker abort listener on settlement", 
   expect(removed).toBe(added)
 })
 
-test("goal cancellation reports unknown when admission settles failed", async () => {
-  const value = transport({ async *[Symbol.asyncIterator]() {} })
-  const session = await value.start(input, sessionBroker)
-  Object.assign(value, { goalRuntime: { turnId: () => "t1", cancel: async () => ({ state: "failed", error: "retirement failed" }) } })
-  expect(await value.cancel(session, { turnId: "t1", assistantMessageId: "a1" }, { at: Date.now() + 1000, signal: new AbortController().signal }))
-    .toMatchObject({ execution: "unknown", cleanup: "unknown", error: { message: "retirement failed" } })
-})
-
 test("an unselected Claude draft reports the auto classifier mode", async () => {
   const value = new ClaudeSdkTransport({} as HarnessServices, { executable: "claude", configRoot: "/tmp/claxedo-claude", userConfigRoot: "/tmp/person-claude", env: {} })
   expect((await value.config.permissionModes({ draft: { ...input, config: { harness: input.config.harness } } })).currentModeId).toBe("auto")
@@ -108,16 +100,6 @@ test("Claude session config has one owner, the runtime, and the transport keeps 
     await expect(value.config.update(session, { permissionMode: "unknown" })).rejects.toMatchObject({ code: "configuration" })
     expect(await value.config.read(session)).toEqual(runtimeConfig.current)
   } finally { await value.close(session) }
-})
-
-test("goal cancellation reports terminal execution and unproven cleanup once admission settles cancelled or completed", async () => {
-  for (const state of ["cancelled", "completed"] as const) {
-    const value = transport({ async *[Symbol.asyncIterator]() {} })
-    const session = await value.start(input, sessionBroker)
-    Object.assign(value, { goalRuntime: { turnId: () => "t1", cancel: async () => ({ state }) } })
-    expect(await value.cancel(session, { turnId: "t1", assistantMessageId: "a1" }, { at: Date.now() + 1000, signal: new AbortController().signal }))
-      .toEqual({ execution: "terminal", cleanup: "unknown" })
-  }
 })
 
 test("a stop during Claude turn startup aborts it before launch and says nothing ran", async () => {

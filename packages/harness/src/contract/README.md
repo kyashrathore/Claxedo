@@ -23,6 +23,7 @@ Everything a transport sees. The types say the shapes; this file says the rules 
   - The runtime owns cancelling a provider turn, as it does any turn: it aborts the turn's signal. A run that ends after that signal aborted settles `cancelled`, whether it returned or threw.
   - A transport's own stop of a native goal interrupts the harness. The runtime's goal-stop route then cancels the provider turn it admitted.
 - **`SessionBroker.publish` carries session-level events that arrive with no turn active.** Examples are quota windows and command updates. Usage outside a turn goes through `meter`.
+- **A child's events need no parent turn.** `SessionBroker.observeSubagent` and `associateChild` admit and bind a subagent as a turn's broker does, and `publishChild` delivers a child-routed event through the host's child resolver, so a background subagent's transcript moves while its parent is idle. `publishChild` refuses an event without a child route.
 
 ## Turns
 
@@ -30,6 +31,7 @@ Everything a transport sees. The types say the shapes; this file says the rules 
 - **A turn the transport cannot run or finish throws from `send`'s iterator.** A refused launch, an undeliverable prompt, a dead process, a protocol failure or an engine error rejects the iteration with the transport's typed error. It is never yielded as an `error` event. An `error` event is only the harness's own reported outcome, translated from its protocol by the corpus-proven translator.
 - **A native harness's own `error` event names the account the turn launched on.** Claude, Codex, Cursor and Pi pass their `send` stream through `withTurnAccount` with `selectedTurnAccount` over the same provider ids their launch selects: the stored credential's non-secret `account` from its binding, or this computer's login when no binding is selected. A binding from an authority that names no account names nothing. ACP and OpenCode report no account.
 - **A thrown `TransportError` may carry `detail`:** facts the transport established about the failure, which the host puts on the turn's error record beside the message.
+- **`backgroundTasks.stop` stops one piece of background work and nothing else.** A transport implements it only when its harness can stop a single background task while the session, its turn and its other tasks go on. The task is named by the `toolCallId` of the call that started it, which is what the subagent row the host shows carries; the transport maps that call to its harness's own task id. It resolves `{ ok: true }` once the harness accepted the stop; the task's end still arrives as the harness reports it. A call with no running task behind it resolves `not_found`.
 - **`sessionTools` is optional.** A transport that dispatches host-scoped tools inside its engine implements it; the host hands every other harness the tools as a prompt.
 - **`services.spawn` takes the caller's `signal`.** A spawn whose signal is already aborted, or aborts before the process is handed back, rejects and leaves nothing running. A process that was handed back is the caller's to retire; the signal does not retire it.
 
