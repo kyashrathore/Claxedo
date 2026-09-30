@@ -2,7 +2,8 @@ import { asFiniteNumber } from "@claxedo/helpers/guards"
 import type { AgentRuntimeEvent } from "@claxedo/agent-runtime-contract"
 import { asText as text } from "@claxedo/agent-runtime-contract"
 import { RETAINED_WIRE_KEYS_MAX, boundKeyedRecord, own } from "../../../translate/value"
-import { structuredInput, toolDisplay, toolNameForItem } from "./item-kind"
+import { structuredInput } from "./item-input"
+import { toolDisplay, toolNameForItem } from "./item-kind"
 import type { CodexAppServerAdapterState } from "./state"
 
 export function base64Text(value: unknown): string | undefined {

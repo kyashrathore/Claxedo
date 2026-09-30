@@ -13,13 +13,16 @@ export type CodexCollabAgentCall = {
   statuses: Record<string, SubagentStatus>
 }
 
+const SUBAGENT_ACTIVITY_KINDS = ["started", "interacted", "interrupted", "completed"] as const
+
 export function codexSubagentActivity(value: unknown) {
   const row = asRecord(value)
   if (row?.type !== "subAgentActivity") return undefined
   const id = text(row.id)
   const agentThreadId = text(row.agentThreadId)
-  if (!id || !agentThreadId || (row.kind !== "started" && row.kind !== "completed")) return undefined
-  return { id, agentThreadId, kind: row.kind, agentPath: text(row.agentPath) }
+  const kind = SUBAGENT_ACTIVITY_KINDS.find((value) => value === row.kind)
+  if (!id || !agentThreadId || !kind) return undefined
+  return { id, agentThreadId, kind, agentPath: text(row.agentPath) }
 }
 
 export function codexCollabAgentCall(value: unknown): CodexCollabAgentCall | undefined {

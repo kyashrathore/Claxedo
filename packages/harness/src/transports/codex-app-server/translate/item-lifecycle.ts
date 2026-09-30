@@ -1,52 +1,28 @@
-import { asFiniteNumber, asRecord } from "@claxedo/helpers/guards"
+import { asFiniteNumber } from "@claxedo/helpers/guards"
 import type { AgentRuntimeEvent } from "@claxedo/agent-runtime-contract"
 import { asText as text } from "@claxedo/agent-runtime-contract"
-import { contentBlockImages, imageUrlAttachment } from "../../../translate/tool-attachments"
 import { RETAINED_WIRE_KEYS_MAX, boundKeyedRecord, own } from "../../../translate/value"
 import { item, itemId, type CodexFrame, type CodexHandlers } from "./frame"
-import { canonicalItemType, structuredInput, toolDisplay, toolNameForItem } from "./item-kind"
+import { itemInput, itemMetadata } from "./item-input"
+import { canonicalItemType, toolDisplay, toolNameForItem } from "./item-kind"
+import { itemOutcome } from "./item-outcome"
 import { completedAssistantMessage, completedReasoning } from "./message-items"
 import type { CodexAppServerAdapterState } from "./state"
 import { codexSubagentActivity } from "./subagent-items"
 
-function mcpError(itemType: string, completed: Record<string, unknown>) {
-  if (itemType !== "mcp_tool_call") return undefined
-  const explicit = text(asRecord(completed.error)?.message)
-  if (explicit || completed.status !== "failed") return explicit
-  const result = asRecord(completed.result)
-  return (Array.isArray(result?.content) ? result.content.flatMap((part) => text(asRecord(part)?.text) ?? []).join("\n") : "") || "MCP tool call failed"
+type Row = Record<string, unknown>
+
+function rememberTool(state: CodexAppServerAdapterState, id: string, tool: { toolName: string; input?: Row; itemType: string }) {
+  return { ...state, toolsByItemId: boundKeyedRecord({ ...state.toolsByItemId, [id]: tool }, RETAINED_WIRE_KEYS_MAX) }
 }
 
-function completedItemAttachments(itemType: string, completed: Record<string, unknown>) {
-  return [
-    ...(itemType === "image_view" && text(completed.path)
-      ? [{ kind: "tool-file" as const, mime: "image/*", path: String(completed.path), filename: String(completed.path).split(/[\\/]/).pop() }]
-      : []),
-    ...contentBlockImages(asRecord(completed.result)?.content),
-    ...(Array.isArray(completed.contentItems) ? completed.contentItems : []).flatMap((item) =>
-      asRecord(item)?.type === "inputImage" ? imageUrlAttachment(asRecord(item)?.imageUrl) : []),
-  ]
-}
-
-function toolCompletion(state: CodexAppServerAdapterState, id: string, itemType: string, completed: Record<string, unknown>) {
-  const output = completed.output ?? completed.result ?? completed.aggregatedOutput ?? completed.text ?? own(state.toolOutputByCallId, id) ?? ""
-  const exitCode = asFiniteNumber(completed.exitCode)
-  const failure = mcpError(itemType, completed)
-  const commandStatus = itemType === "command_execution" ? text(completed.status) : undefined
-  const attachments = completedItemAttachments(itemType, completed)
-  if (failure !== undefined) return { type: "tool-error" as const, toolCallId: id, error: failure }
-  if (commandStatus === "declined") return { type: "tool-error" as const, toolCallId: id, error: "User declined the command" }
-  if (commandStatus === "failed") return { type: "tool-error" as const, toolCallId: id, error: text(output) ?? `Process exited with code ${exitCode}` }
-  return { type: "tool-output" as const, toolCallId: id, output, ...(attachments.length ? { attachments } : {}) }
-}
-
-function openTool(state: CodexAppServerAdapterState, id: string, itemType: string, row: Record<string, unknown>) {
+function openTool(state: CodexAppServerAdapterState, id: string, itemType: string, row: Row) {
   const toolName = toolNameForItem(itemType, row)
-  const input = structuredInput(row)
+  const input = itemInput(row)
   const display = toolDisplay(itemType, input, toolName)
-  const metadata = { codex: { itemType } }
+  const metadata = itemMetadata(itemType, row)
   return {
-    state: { ...state, toolsByItemId: boundKeyedRecord({ ...state.toolsByItemId, [id]: { toolName, input, itemType } }, RETAINED_WIRE_KEYS_MAX) },
+    state: rememberTool(state, id, { toolName, input, itemType }),
     display,
     events: [
       { type: "tool-start", toolCallId: id, toolName, kind: itemType, display, metadata },
@@ -55,14 +31,28 @@ function openTool(state: CodexAppServerAdapterState, id: string, itemType: strin
   }
 }
 
-function completedToolItem(state: CodexAppServerAdapterState, id: string, itemType: string, completed: Record<string, unknown>) {
-  const completion = toolCompletion(state, id, itemType, completed)
+function settledInput(state: CodexAppServerAdapterState, id: string, itemType: string, completed: Row) {
+  const existing = own(state.toolsByItemId, id)!
+  const input = itemInput(completed)
+  const display = toolDisplay(itemType, input ?? existing.input, existing.toolName)
+  if (!input || JSON.stringify(input) === JSON.stringify(existing.input)) return { state, display, events: [] satisfies AgentRuntimeEvent[] }
+  return {
+    state: rememberTool(state, id, { ...existing, input, itemType }),
+    display,
+    events: [{ type: "tool-input", toolCallId: id, input, display, metadata: itemMetadata(itemType, completed) } satisfies AgentRuntimeEvent],
+  }
+}
+
+function completedToolItem(state: CodexAppServerAdapterState, id: string, itemType: string, completed: Row) {
+  const outcome = itemOutcome(state, id, itemType, completed)
   const exitCode = asFiniteNumber(completed.exitCode)
-  const metadata = { ...(exitCode === undefined ? {} : { exitCode }), codex: { itemType } }
-  const existing = own(state.toolsByItemId, id)
-  if (existing) return [{ ...completion, display: toolDisplay(itemType, existing.input, existing.toolName), metadata }]
-  const opened = openTool(state, id, itemType, completed)
-  return { state: opened.state, events: [...opened.events, { ...completion, display: opened.display, metadata }] }
+  const metadata = { ...(exitCode === undefined ? {} : { exitCode }), ...itemMetadata(itemType, completed) }
+  const opened = own(state.toolsByItemId, id) ? settledInput(state, id, itemType, completed) : openTool(state, id, itemType, completed)
+  const completion = "error" in outcome
+    ? { type: "tool-error" as const, toolCallId: id, error: outcome.error }
+    : { type: "tool-output" as const, toolCallId: id, output: outcome.output, ...(outcome.attachments.length ? { attachments: outcome.attachments } : {}) }
+  const events = [...opened.events, { ...completion, display: opened.display, metadata }]
+  return opened.state === state ? events : { state: opened.state, events }
 }
 
 function itemCompleted({ state, event, context, row }: CodexFrame) {
@@ -79,7 +69,6 @@ function itemCompleted({ state, event, context, row }: CodexFrame) {
   }
   if (itemType === "assistant_message") return completedAssistantMessage(state, id, completed)
   if (itemType === "reasoning") return completedReasoning(state, id, completed)
-  if (itemType === "error") return [{ type: "error", error: text(completed.message) ?? text(completed.text) ?? "Codex item failed" } satisfies AgentRuntimeEvent]
   return completedToolItem(state, id, itemType, completed)
 }
 

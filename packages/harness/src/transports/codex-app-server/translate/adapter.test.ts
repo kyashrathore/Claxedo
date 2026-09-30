@@ -523,7 +523,7 @@ describe("codexAppServerAdapter", () => {
         changes: [{ path: "src/app.ts", kind: "update", diff: "@@ -1 +1 @@" }],
       },
     }).events).toMatchObject([
-      { type: "tool-start", toolCallId: "patch-1", toolName: "file-change", kind: "file_change" },
+      { type: "tool-start", toolCallId: "patch-1", toolName: "apply_patch", kind: "file_change" },
       { type: "file-diff", toolCallId: "patch-1", path: "src/app.ts", newText: "@@ -1 +1 @@" },
     ])
   })

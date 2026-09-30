@@ -2,7 +2,7 @@ import { asFiniteNumber, asRecord } from "@claxedo/helpers/guards"
 import type { AgentRuntimeEvent } from "@claxedo/agent-runtime-contract"
 import { asText as text } from "@claxedo/agent-runtime-contract"
 import { itemId, type CodexFrame, type CodexHandler, type CodexHandlers } from "./frame"
-import { structuredInput } from "./item-kind"
+import { structuredInput } from "./item-input"
 import { appendToolText, base64Text, ensureTool, processExitEvents } from "./tool-state"
 
 function itemDelta(itemType: string, prefix: string, field: "delta" | "message"): CodexHandler {
