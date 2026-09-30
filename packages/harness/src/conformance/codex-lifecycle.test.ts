@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test"
+import { existsSync } from "node:fs"
 import fs from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
@@ -7,6 +8,10 @@ import { codexBackend, makeCodexTransport, recordingBackend, type CodexBackend }
 import { createTestServices } from "./test-support/services"
 import { PINNED_CODEX } from "../../e2e/harness/pinned-codex"
 import { CodexRpc } from "../transports/codex-app-server/rpc"
+import { CodexAppServerTransport } from "../transports/codex-app-server"
+import { createRequestBroker, createSessionBroker } from "../broker"
+import { MemoryPorts, authority } from "./test-support/memory-ports"
+import type { StartInput } from "../contract"
 
 const CATALOG_MODEL = { providerID: "codex", modelID: "gpt-5.5" }
 
@@ -75,3 +80,58 @@ test("a killed Codex app-server reads lost, and the next turn resumes the same t
     expect(context.transport.health!.runtime(context.backend.directory, "s1")).toEqual({ status: "ok" })
   } finally { await context.close() }
 }, 90_000)
+
+async function attachedGoalSession(state: CodexBackend, model = state.model) {
+  const services = createTestServices()
+  const transport = new CodexAppServerTransport(services, { binary: PINNED_CODEX, homeRoot: path.join(state.root, "homes"), env: state.env })
+  const ports = new MemoryPorts()
+  ports.current.set("s1", { ...authority, directory: state.directory })
+  const owner = createRequestBroker(ports)
+  const broker = createSessionBroker(owner, { sessionId: "s1", workspaceId: "w1", directory: state.directory, origin: state.origin! })
+  const input: StartInput = { sessionId: "s1", workspaceId: "w1", directory: state.directory, locality: "local", owner: state.owner,
+    config: { harness: state.harness, model }, model, projection: { generation: "g1", mcpServers: [], pluginRoots: [], notApplied: [] }, credentials: state.credentials }
+  const session = await transport.start(input, broker)
+  ports.current.set("s1", { ...authority, directory: state.directory, upstreamSessionId: session.binding.upstreamSessionId })
+  return { transport, ports, owner, broker, session }
+}
+
+async function eventually<T>(read: () => T | undefined): Promise<T | undefined> {
+  for (let attempt = 0; attempt < 250; attempt++) {
+    const value = read()
+    if (value !== undefined) return value
+    await new Promise((resolve) => setTimeout(resolve, 20))
+  }
+  return undefined
+}
+
+test("an approval Codex asks during a goal turn reaches that turn's broker, and the allowed command runs", async () => {
+  const state = await codexBackend()
+  const marker = path.join(state.root, "goal-approved-marker")
+  state.server.scriptTool({ name: "exec_command", input: { cmd: `touch ${marker}`, sandbox_permissions: "require_escalated", justification: "Goal approval" },
+    whenPromptIncludes: "GOALAPPROVE" })
+  const { transport, owner, broker, session } = await attachedGoalSession(state)
+  try {
+    expect((await transport.goals.start(session, "Run the scripted command for GOALAPPROVE", broker)).ok).toBe(true)
+    const pending = await eventually(() => owner.broker.list({ sessionId: "s1" }).find((item) => item.request.kind === "permission"))
+    expect(pending?.request.kind).toBe("permission")
+    expect((await owner.broker.answer(pending!.request.requestId, { kind: "permission", decision: "allow_once" }, { sessionId: "s1" })).ok).toBe(true)
+    expect(await eventually(() => existsSync(marker) || undefined)).toBe(true)
+    expect((await transport.goals.stop(session)).ok).toBe(true)
+  } finally { await transport.dispose(); await state.close() }
+}, 60_000)
+
+test("a child a goal turn spawns runs on the session's model and asks for a reasoning summary", async () => {
+  const state = await codexBackend()
+  state.server.scriptTool({ name: "spawn_agent", input: { task_name: "goal_child", message: "Reply with exactly this one token: GOALCHILD" },
+    whenPromptIncludes: "GOALPARENT" })
+  const { transport, broker, session } = await attachedGoalSession(state, CATALOG_MODEL)
+  try {
+    expect((await transport.goals.start(session, "Delegate once for GOALPARENT", broker)).ok).toBe(true)
+    const child = await eventually(() => state.server.requests.find((row) => row.prompt.includes("GOALCHILD") && !row.prompt.includes("GOALPARENT")))
+    expect(child?.model).toBe("gpt-5.5")
+    expect((child?.body as { reasoning?: { summary?: string } } | undefined)?.reasoning?.summary).toBe("auto")
+    const goalTurn = state.server.requests.find((row) => row.prompt.includes("GOALPARENT"))
+    expect((goalTurn?.body as { reasoning?: { summary?: string } } | undefined)?.reasoning?.summary).toBe("auto")
+    expect((await transport.goals.stop(session)).ok).toBe(true)
+  } finally { await transport.dispose(); await state.close() }
+}, 60_000)

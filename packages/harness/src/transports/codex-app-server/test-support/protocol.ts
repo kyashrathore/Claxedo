@@ -52,6 +52,8 @@ const methods: Record<string, Shape> = {
     summary: optional(oneOf("auto", "concise", "detailed", "none")), personality, outputSchema: json } },
   "turn/interrupt": { required: ["threadId", "turnId"], fields: { threadId: text, turnId: text } },
   "thread/goal/get": { required: ["threadId"], fields: { threadId: text } },
+  "turn/steer": { required: ["threadId", "expectedTurnId", "input"], fields: { threadId: text, expectedTurnId: text,
+    clientUserMessageId: optional(text), input: list(userInput) } },
 }
 
 export class CodexScriptedFailure extends Error {}
@@ -66,6 +68,8 @@ export class CodexPeer {
   request(id: number) { this.pending.add(id) }
 
   emitted(frame: Frame) {
+    const started = frame.params?.turn
+    if (frame.method === "turn/started" && isRecord(started)) this.threads.set(String(frame.params?.threadId), String(started.id))
     if (frame.method !== "turn/completed") return
     const threadId = String(frame.params?.threadId)
     const turn = frame.params?.turn
@@ -93,6 +97,10 @@ export class CodexPeer {
     }
     if (frame.method === "thread/goal/get") return { goal: this.script.goal ?? null }
     if (frame.method === "turn/start") return this.start(params)
+    if (frame.method === "turn/steer") {
+      assert.equal(this.threads.get(String(params.threadId)), params.expectedTurnId, "turn/steer must name the thread's active turn")
+      return { turnId: params.expectedTurnId }
+    }
     if (frame.method === "turn/interrupt") {
       assert.equal(this.threads.get(String(params.threadId)), params.turnId, "turn/interrupt must name the thread's active turn")
       return {}

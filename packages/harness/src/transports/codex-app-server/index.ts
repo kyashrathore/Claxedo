@@ -21,7 +21,7 @@ import { codexRetirementDeadline, type RpcMessage } from "./rpc"
 import { CodexSessions } from "./sessions"
 import { answerCodexToolCall } from "./subagents"
 import { codexRename, codexSessionTitle } from "./titles"
-import { runCodexTurn } from "./turn"
+import { activeCodexTurn, runCodexTurn } from "./turn"
 
 export type { CodexTransportOptions, Entry } from "./entry"
 
@@ -80,15 +80,14 @@ export class CodexAppServerTransport implements HarnessTransport {
 
   private async answer(entry: Entry, message: RpcMessage): Promise<unknown> {
     if (!message.method) throw new CodexRequestRefusal(-32600, "Codex request has no method")
+    const active = await activeCodexTurn(entry)
     if (message.method === "item/tool/call") {
-      const active = entry.turn ? { broker: entry.turn.broker, queue: entry.turn.queue }
-        : entry.providerTurn?.turnBroker ? { broker: entry.providerTurn.turnBroker, queue: entry.providerTurn.queue } : undefined
       return answerCodexToolCall(active && { rpc: entry.rpc, directory: entry.session.directory, threadId: entry.session.binding.upstreamSessionId,
         brokered: entry.brokered, permissionMode: entry.start.config.permissionMode, settings: entry.settings, children: entry.children,
-        drained: () => active.queue.drained() }, active?.broker, message)
+        drained: active.drained }, active?.broker, message)
     }
-    if (!entry.turn && !entry.providerTurn && isCodexRequestMethod(message.method)) throw new CodexRequestRefusal(-32000, "Codex request has no active turn")
-    return answerCodexRequest(message, entry.turn?.broker ?? entry.broker, entry.session.binding.sessionId,
+    if (!active && isCodexRequestMethod(message.method)) throw new CodexRequestRefusal(-32000, "Codex request has no active turn")
+    return answerCodexRequest(message, active?.broker ?? entry.broker, entry.session.binding.sessionId,
       { directory: entry.session.directory, permissionMode: entry.start.config.permissionMode })
   }
 
@@ -113,6 +112,7 @@ export class CodexAppServerTransport implements HarnessTransport {
   async cancel(session: HarnessSession, _turn: TurnRef, deadline: Deadline) {
     const entry = this.sessions.entry(session)
     const turn = entry.turn
+    if (!turn && entry.providerTurn) return entry.terminals.stop(entry.providerTurn.id, deadline)
     if (entry.state !== "busy" || !turn) return { execution: "unknown" as const, cleanup: "unknown" as const }
     await settleAtRequestDeadline("Codex turn startup", { signal: deadline.signal, deadlineAt: deadline.at },
       turn.started, () => {}, () => new CodexDeadlineError("Codex turn startup exceeded the stop deadline"))
@@ -122,9 +122,10 @@ export class CodexAppServerTransport implements HarnessTransport {
 
   readonly steer = { steer: async (session: HarnessSession, _turn: TurnRef, input: TurnInput) => {
     const entry = this.sessions.entry(session)
-    if (!entry.turn?.id) return { ok: false as const, status: "no_active_turn" as const, message: "No active Codex turn" }
-    entry.turn.steers.add(input.userMessageId)
-    await entry.rpc.request("turn/steer", { threadId: session.binding.upstreamSessionId, expectedTurnId: entry.turn.id,
+    const turnId = entry.turn ? entry.turn.id : entry.providerTurn?.id
+    if (!turnId) return { ok: false as const, status: "no_active_turn" as const, message: "No active Codex turn" }
+    entry.steers.add(input.userMessageId)
+    await entry.rpc.request("turn/steer", { threadId: session.binding.upstreamSessionId, expectedTurnId: turnId,
       clientUserMessageId: input.userMessageId, input: await codexTurnInput(input, session.directory) })
     return { ok: true as const }
   } }

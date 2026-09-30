@@ -27,8 +27,10 @@ export type Entry = {
   goal: RuntimeGoalSnapshot | null
   settings: CodexTurnSettings
   models?: Promise<CodexModel[]>
+  steers: Set<string>
+  released: Promise<void>
   pendingUpdate?: TransportConfigUpdate
   idle(): void
   providerTurn?: CodexProviderTurn
-  turn?: { broker: TurnBroker; queue: AsyncPushQueue<RoutedEvent>; id?: string; started: Promise<void>; steers: Set<string> }
+  turn?: { broker: TurnBroker; queue: AsyncPushQueue<RoutedEvent>; id?: string; started: Promise<void> }
 }

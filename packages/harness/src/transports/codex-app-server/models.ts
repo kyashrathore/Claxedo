@@ -2,7 +2,7 @@ import type { AgentConfigOption } from "@claxedo/agent-runtime-contract"
 import { asRecordOrEmpty, asString } from "@claxedo/helpers/guards"
 import type { v2 } from "./translate"
 import { CodexTransportError } from "./errors"
-import { modelAndEffortOptions } from "../../contract"
+import { modelAndEffortOptions, type StartInput } from "../../contract"
 import type { CodexRpc } from "./rpc"
 
 export type CodexModel = {
@@ -68,6 +68,11 @@ export function codexModelOptions(models: readonly CodexModel[], requested: stri
 }
 
 export type CodexTurnSettings = Pick<v2.TurnStartParams, "model" | "effort" | "serviceTier" | "summary">
+
+export function codexStartSettings(input: Pick<StartInput, "model">): CodexTurnSettings {
+  const model = input.model?.modelID === "default" ? undefined : input.model?.modelID
+  return { ...(model ? { model } : {}), summary: "auto" }
+}
 
 export function codexTurnSettings(models: readonly CodexModel[], requested: {
   model?: string; effort?: string | null; serviceTier?: string | null

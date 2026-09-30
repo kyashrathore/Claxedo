@@ -96,7 +96,7 @@ export class CodexSessions implements CodexSessionHost {
     const entry = this.entries.get(session.binding.sessionId)
     if (!entry) return
     entry.state = "retiring"
-    entry.providerTurn?.queue.fail(new CodexTransportError("process", "Codex process retired during provider turn"))
+    entry.providerTurn?.fail(new CodexTransportError("process", "Codex process retired during provider turn"))
     entry.providerTurn = undefined
     await entry.rpc.retire(codexRetirementDeadline(this.services))
     this.entries.delete(session.binding.sessionId)
