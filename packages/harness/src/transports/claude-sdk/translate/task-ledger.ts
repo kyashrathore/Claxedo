@@ -1,7 +1,6 @@
 export type ClaudeTaskRecord = {
   taskId: string
   toolUseId?: string
-  harnessExecutionId?: string
   isAgentTask: boolean
   skipTranscript: boolean
   nested?: boolean
@@ -10,7 +9,6 @@ export type ClaudeTaskRecord = {
 export type ClaudeTaskLedger = {
   start(record: ClaudeTaskRecord): void
   get(taskId: string | undefined): ClaudeTaskRecord | undefined
-  replaceLive(taskIds: readonly string[]): ClaudeTaskRecord[]
   startSpawnCall(toolUseId: string): void
   isSpawnCall(toolUseId: string): boolean
   startHostSubagentCall(toolUseId: string): void
@@ -44,7 +42,6 @@ function parentCalls(): ParentCalls {
 export function createClaudeTaskLedger(): ClaudeTaskLedger {
   const tasks = new Map<string, ClaudeTaskRecord>()
   const firstLevelByNestedCall = new Map<string, string>()
-  let live = new Set<string>()
   const firstLevelSubagent = (correlationKey: string) => firstLevelByNestedCall.get(correlationKey) ?? correlationKey
   return {
     ...parentCalls(),
@@ -53,12 +50,6 @@ export function createClaudeTaskLedger(): ClaudeTaskLedger {
     },
     get(taskId) {
       return taskId ? tasks.get(taskId) : undefined
-    },
-    replaceLive(taskIds) {
-      const next = new Set(taskIds)
-      const departed = [...live].flatMap((taskId) => next.has(taskId) ? [] : tasks.get(taskId) ?? [])
-      live = next
-      return departed
     },
     nestSubagentCall(toolUseId, spawnerKey) {
       firstLevelByNestedCall.set(toolUseId, firstLevelSubagent(spawnerKey))

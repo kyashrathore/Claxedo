@@ -110,53 +110,43 @@ describe("claudeSdkAdapter", () => {
     }, ledger)).toEqual([])
   })
 
-  test("U5: a background subagent dropped from the live set gets the terminal it was never sent", () => {
+  test("a background subagent leaves the live set before its terminal frames, and only those frames settle it", () => {
     const ledger = createClaudeTaskLedger()
-    claudeSubagentObservations(parentAgentCall("tool-agent-1"), ledger)
-    claudeSubagentObservations({
-      type: "system",
-      subtype: "task_started",
-      uuid: "task-start-agent",
-      session_id: "sdk-session-1",
-      task_id: "task-agent",
-      tool_use_id: "tool-agent-1",
-      description: "Review auth",
-      subagent_type: "code-reviewer",
-    }, ledger)
-    claudeSubagentObservations({
-      type: "system",
-      subtype: "task_started",
-      uuid: "task-start-bash",
-      session_id: "sdk-session-1",
-      task_id: "task-bash",
-      task_type: "local_bash",
-      description: "npm run build",
-    }, ledger)
-    const live = (uuid: string, tasks: Array<{ task_id: string; task_type: string; description: string }>) => claudeSubagentObservations({
-      type: "system",
-      subtype: "background_tasks_changed",
-      uuid,
-      session_id: "sdk-session-1",
-      tasks,
-    }, ledger)
+    const frame = (subtype: string, uuid: string, fields: Record<string, unknown>) => ({ type: "system", subtype, uuid, session_id: "d14a31d7-f9bc-458c-a07b-6a40b37bd04c", ...fields })
+    claudeSubagentObservations(parentAgentCall("toolu_015UbZUP8bFFjAP8oQii1W9J"), ledger)
+    const statuses = [
+      frame("background_tasks_changed", "live", { tasks: [{ task_id: "a74cc8dab8859120e", task_type: "local_agent", description: "Map deploy workflows and gates" }] }),
+      frame("task_started", "started", { task_id: "a74cc8dab8859120e", tool_use_id: "toolu_015UbZUP8bFFjAP8oQii1W9J", description: "Map deploy workflows and gates",
+        subagent_type: "Explore", task_type: "local_agent", is_backgrounded: true, spawn_depth: 1 }),
+      frame("background_tasks_changed", "8e860299-0e27-4268-8abd-b47265162eb6", { tasks: [] }),
+      frame("task_updated", "7b3d7d21-0029-4505-ad1f-a2c650a6d593", { task_id: "a74cc8dab8859120e", patch: { status: "completed", end_time: 1789574656223 } }),
+      frame("task_notification", "1f5f749c-4937-42a2-b17b-d12a12eb1564", { task_id: "a74cc8dab8859120e", tool_use_id: "toolu_015UbZUP8bFFjAP8oQii1W9J",
+        status: "completed", output_file: "", summary: "Mapped the deploy workflows." }),
+    ].flatMap((item) => claudeSubagentObservations(item, ledger).map(({ observationId, status }) => ({ observationId, status })))
 
-    expect(live("background-1", [
-      { task_id: "task-agent", task_type: "local_agent", description: "Review auth" },
-      { task_id: "task-bash", task_type: "local_bash", description: "npm run build" },
-    ])).toEqual([])
+    expect(statuses).toEqual([
+      { observationId: "claude:task_started:started", status: "running" },
+      { observationId: "claude:task_updated:7b3d7d21-0029-4505-ad1f-a2c650a6d593", status: "completed" },
+      { observationId: "claude:task_notification:1f5f749c-4937-42a2-b17b-d12a12eb1564", status: "completed" },
+    ])
+  })
 
-    expect(live("background-2", [{ task_id: "task-bash", task_type: "local_bash", description: "npm run build" }])).toEqual([{
-      observationId: "claude:background_tasks_changed:background-2:task-agent",
-      harnessExecutionId: "sdk-session-1",
-      stableCorrelationId: "task-agent",
-      toolCallId: "tool-agent-1",
-      toolCallRole: "spawn",
-      status: "interrupted",
-      providerKind: "claude-agent",
-      transcript: { kind: "messages" },
-    }])
+  test("a subagent's progress and its final summary never rename its row or add a row per progress frame", () => {
+    const ledger = createClaudeTaskLedger()
+    const frame = (subtype: string, uuid: string, fields: Record<string, unknown>) => ({ type: "system", subtype, uuid, session_id: "sdk-session-1", ...fields })
+    claudeSubagentObservations(parentAgentCall("toolu_1"), ledger)
+    claudeSubagentObservations(frame("task_started", "started", { task_id: "task-1", tool_use_id: "toolu_1", description: "Lane A: server scripts cleanup",
+      subagent_type: "general-purpose" }), ledger)
+    const progress = [1, 2, 3].flatMap((index) => claudeSubagentObservations(frame("task_progress", `progress-${index}`, { task_id: "task-1",
+      tool_use_id: "toolu_1", description: `Running cd /repo && bun test step ${index}`, subagent_type: "general-purpose",
+      usage: { total_tokens: 100 * index, tool_uses: index, duration_ms: 1000 * index }, last_tool_name: "Bash" }), ledger))
+    const [notified] = claudeSubagentObservations(frame("task_notification", "notified", { task_id: "task-1", tool_use_id: "toolu_1", status: "completed",
+      summary: "This agent's report was delivered to you as a message from \"lane-a-server-scripts\"." }), ledger)
 
-    expect(live("background-3", [])).toEqual([])
+    expect(progress).toEqual([])
+    expect(notified).toMatchObject({ status: "completed", stableCorrelationId: "task-1" })
+    expect(notified?.label).toBeUndefined()
+    expect(notified?.description).toBeUndefined()
   })
 
   test("U5: only a Task subagent's own lifecycle becomes a subagent row", () => {
@@ -312,7 +302,7 @@ describe("claudeSdkAdapter", () => {
       const edges = frames.flatMap((item) => claudeSubagentObservations(item, ledger).map(({ stableCorrelationId, toolCallId, toolCallRole }) => (toolCallId ? { toolCallId, toolCallRole } : { stableCorrelationId })))
       const spawn = { toolCallId: "toolu_1", toolCallRole: "spawn" as const }
 
-      expect(edges, "the call, task_started, the async launch, the departure, task_updated by its task id alone, task_notification").toEqual([spawn, spawn, spawn, spawn, { stableCorrelationId: "task-1" }, spawn])
+      expect(edges, "the call, task_started, the async launch, task_updated by its task id alone, task_notification").toEqual([spawn, spawn, spawn, { stableCorrelationId: "task-1" }, spawn])
     })
   }
 

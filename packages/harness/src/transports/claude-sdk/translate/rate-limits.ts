@@ -27,7 +27,7 @@ function claudeRateLimitEvent(info: Record<string, unknown>) {
   return {
     type: "rate-limit",
     status: text(info.status) === "rejected" ? "limited" : "ok",
-    ...(utilization === undefined ? {} : { usedPercent: Math.min(100, Math.max(0, Math.round(utilization))) }),
+    ...(utilization === undefined ? {} : { usedPercent: Math.min(100, Math.max(0, Math.round(utilization * 100))) }),
     resetsAt: rateLimitResetMs(info.resetsAt),
     ...(limitId ? { limitId, limitName: (windows && Object.hasOwn(windows, limitId) ? windows[limitId] : undefined) ?? limitId } : {}),
   } satisfies AgentRuntimeEvent

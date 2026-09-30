@@ -1,37 +1,16 @@
 import { asRecord } from "@claxedo/helpers/guards"
 import type { SDKMessage } from "@anthropic-ai/claude-agent-sdk"
-import type { AgentRuntimeEvent } from "@claxedo/agent-runtime-contract"
+import type { AgentRuntimeEvent, RuntimeNoticeSeverity } from "@claxedo/agent-runtime-contract"
 import { runtimeDiagnostic } from "@claxedo/agent-runtime-contract"
+import type { ClaudeTranslatorMemory } from "./translator-memory"
 
 export type ClaudeFrameEvent = { source: string; method?: string; payload: unknown }
 export type ClaudeSdkSystemMessage = Extract<SDKMessage, { type: "system" }>
 export type ClaudeSdkAssistantMessage = Extract<SDKMessage, { type: "assistant" }>
 export type ClaudeSdkStreamEvent = Extract<SDKMessage, { type: "stream_event" }>["event"]
 
-export function assertNever(value: never): never {
-  throw new Error(`Unhandled Claude SDK event: ${JSON.stringify(value)}`)
-}
-
 export function sdkMessage(event: { payload: unknown }) {
   return asRecord(event.payload) ?? {}
-}
-
-const sdkMessageTypes = {
-  assistant: true,
-  auth_status: true,
-  conversation_reset: true,
-  prompt_suggestion: true,
-  rate_limit_event: true,
-  result: true,
-  stream_event: true,
-  system: true,
-  tool_progress: true,
-  tool_use_summary: true,
-  user: true,
-} satisfies Record<SDKMessage["type"], true>
-
-export function isSdkMessage(message: Record<string, unknown>): message is SDKMessage {
-  return typeof message.type === "string" && message.type in sdkMessageTypes
 }
 
 export function diagnosticForEvent(input: {
@@ -55,17 +34,13 @@ export function diagnosticForEvent(input: {
   } satisfies AgentRuntimeEvent
 }
 
-export function unmappedSdkEvent(input: {
-  sdkEvent: string
-  reason: string
-  event: { source: string; method?: string; payload: unknown }
-  severity?: "debug" | "info" | "warn" | "error"
-}) {
-  return [diagnosticForEvent({
-    code: "claude_sdk.unmapped_event",
-    message: `${input.sdkEvent}: ${input.reason}`,
-    severity: input.severity ?? "info",
-    event: input.event,
-    details: { sdkEvent: input.sdkEvent, reason: input.reason },
-  })]
+export function ignoredFrame(memory: ClaudeTranslatorMemory, kind: string): AgentRuntimeEvent[] {
+  if (memory.noted.has(kind)) return []
+  memory.noted.add(kind)
+  return [{ type: "diagnostic", diagnostic: runtimeDiagnostic({ code: "claude_sdk.ignored_frame", severity: "debug", source: "claude.sdk",
+    message: `Claude frame ${kind} is not known to this transport and is ignored`, details: { kind } }) }]
+}
+
+export function claudeNotice(code: string, message: string, severity: RuntimeNoticeSeverity = "info", details?: Record<string, unknown>): AgentRuntimeEvent {
+  return { type: "harness-notice", code: `claude_sdk.${code}`, message, severity, ...(details ? { details } : {}) }
 }

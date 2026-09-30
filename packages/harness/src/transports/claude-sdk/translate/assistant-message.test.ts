@@ -4,13 +4,16 @@ import { claudeRuntime as runtime } from "../test-support/runtime"
 describe("claudeSdkAdapter", () => {
   test("preserves provider error explanation and recovery guidance", () => {
     const explanation = "API Error: This request was blocked. Try a new session or change your model."
-    const events = runtime().ingest({
+    const agent = runtime()
+    const failed = agent.ingest({
       source: "claude.sdk.message",
       payload: {
         type: "assistant", error: "invalid_request",
         message: { content: [{ type: "text", text: explanation }] },
       },
     }).events
+    expect(failed).toEqual([])
+    const events = agent.ingest({ source: "claude.sdk.message", payload: { type: "result", subtype: "success", is_error: true, terminal_reason: "api_error", result: explanation } }).events
     expect(events).toMatchObject([
       { type: "session-status", status: "error" },
       { type: "error", error: `Claude assistant message failed: invalid_request\n${explanation}` },
@@ -65,6 +68,5 @@ describe("claudeSdkAdapter", () => {
         message: { id: "message-1", content: [{ type: "text", text: "Hi there" }] },
       },
     }).events).toMatchObject([{ type: "text-delta", delta: " there" }])
-    expect(first.state().reconciledAssistantTextByMessageId["message-1"]).toBe("Hi there")
   })
 })

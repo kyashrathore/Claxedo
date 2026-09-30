@@ -1,6 +1,6 @@
 import type { Query, SDKActiveGoalMessage, SDKMessage } from "@anthropic-ai/claude-agent-sdk"
 import { AsyncPushQueue } from "@claxedo/helpers"
-import { createClaudeTaskLedger } from "./translate"
+import { createClaudeTaskLedger, createClaudeTranslatorMemory } from "./translate"
 import { ClaudeQueryInput } from "./query-input"
 import type { ClaudeMirroredUsage } from "./mirrored-usage"
 
@@ -31,6 +31,7 @@ export class ClaudeLiveQuery {
   readonly input = new ClaudeQueryInput()
   readonly abort = new AbortController()
   readonly tasks = createClaudeTaskLedger()
+  readonly memory = createClaudeTranslatorMemory()
   readonly usage = new ClaudeUsageRelay()
   private background = new Set<string>()
   private sink: AsyncPushQueue<ClaudeFrame> | undefined
