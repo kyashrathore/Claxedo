@@ -3,10 +3,12 @@
  *
  * Certified product/profile entrypoints inject exactly one static composition
  * through `createHostedCoreWorker`. This module owns the Cloudflare-only core
- * resources shared by every profile: the cross-isolate request limiter and
- * `LIVE_SYNC_ROOM`.
+ * resources shared by every profile: the cross-isolate request limiter,
+ * `LIVE_SYNC_ROOM`, and the projection-command idempotency store in
+ * `CONTROL_PLANE_DB`.
  */
 
+import type { D1Database } from "@cloudflare/workers-types"
 import type { ExecutionContext, Hono } from "hono"
 import { HTTPException } from "hono/http-exception"
 import {
@@ -16,6 +18,7 @@ import {
 } from "@claxedo/server-core/platform/http/security-headers"
 
 import type { HostedControlPlane } from "../../authority/hosted-services"
+import { createIdempotencyCoordinator, d1ProjectionCommandIdempotency } from "../../authority/http/idempotency"
 import { HostedWorkerCompositionError } from "../../authority/composition-error"
 import {
   cloudflareRateLimitStore,
@@ -33,6 +36,7 @@ import type { LiveSyncRoomNamespace } from "../../platform/http/live-sync-publis
 export { LiveSyncRoom }
 
 export type HostedCoreWorkerEnv = Record<string, unknown> & {
+  CONTROL_PLANE_DB?: D1Database
   CLAXEDO_REQUEST_LIMITER?: CloudflareRateLimitBinding
   LIVE_SYNC_ROOM?: LiveSyncRoomNamespace
 }
@@ -41,7 +45,7 @@ export type HostedCoreWorkerComposition<Env extends HostedCoreWorkerEnv> = (
   env: Env,
 ) => {
   plane: HostedControlPlane
-  options: Omit<HostedCoreAppOptions, "liveSyncRoom" | "sharedRateLimitStore">
+  options: Omit<HostedCoreAppOptions, "liveSyncRoom" | "sharedRateLimitStore" | "idempotency">
 }
 
 function bindingError(name: string): never {
@@ -60,6 +64,11 @@ function requiredLiveSyncRoom(value: LiveSyncRoomNamespace | undefined) {
   if (!value || typeof value.idFromName !== "function" || typeof value.get !== "function") {
     bindingError("LIVE_SYNC_ROOM")
   }
+  return value
+}
+
+function requiredControlPlaneDatabase(value: D1Database | undefined) {
+  if (!value || typeof value.prepare !== "function") bindingError("CONTROL_PLANE_DB")
   return value
 }
 
@@ -97,6 +106,7 @@ export function createHostedCoreWorker<Env extends HostedCoreWorkerEnv>(
     // Mandatory bindings fail closed BEFORE any composition runs.
     const limiter = requiredRateLimiter(env.CLAXEDO_REQUEST_LIMITER)
     const liveSyncRoom = requiredLiveSyncRoom(env.LIVE_SYNC_ROOM)
+    const controlPlaneDatabase = requiredControlPlaneDatabase(env.CONTROL_PLANE_DB)
     const selected = compose(env)
     const key = selected.plane as object
     const existing = appByPlane.get(key)
@@ -104,6 +114,7 @@ export function createHostedCoreWorker<Env extends HostedCoreWorkerEnv>(
 
     const app = createHostedCoreApp(selected.plane, {
       ...selected.options,
+      idempotency: createIdempotencyCoordinator(d1ProjectionCommandIdempotency(controlPlaneDatabase)),
       liveSyncRoom,
       sharedRateLimitStore: cloudflareRateLimitStore(limiter, { periodSeconds: 60 }),
       // Every profile serves the same endpoint: the control plane runs no

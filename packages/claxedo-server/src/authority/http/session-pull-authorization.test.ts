@@ -11,7 +11,7 @@ vi.mock("@claxedo/server-core/workspace/store/index", () => ({
   }),
 }))
 
-import { ControlPlaneHttpRoutes } from "./index"
+import { ControlPlaneHttpRoutes, createIdempotencyCoordinator, memoryIdempotencyStore } from "./index"
 
 const workspaceA = "ws_pull_security_a"
 const workspaceB = "ws_pull_security_b"
@@ -57,7 +57,7 @@ function fixture(storedWorkspace?: string, local = false) {
     heartbeat: vi.fn(async () => ({ ok: true, status: "ready" })),
   }
   const services = { projectionStore, auth, sandbox: { sandboxManager }, relay: {}, telemetry: { capture: () => {} } } as unknown as ControlPlaneServices
-  const app = ControlPlaneHttpRoutes(services, { authConfig: auth.config, verifier: auth.verifier, runtimeFetch })
+  const app = ControlPlaneHttpRoutes(services, { authConfig: auth.config, verifier: auth.verifier, runtimeFetch, idempotency: createIdempotencyCoordinator(memoryIdempotencyStore()) })
   function pull(operation: string, workspaceId = workspaceA, headerWorkspace = workspaceA, token = tokenA) {
     return app.request(`http://selfhost.test/workspaces/${workspaceId}/sessions/synthetic-session/${operation}`, {
       method: "POST",

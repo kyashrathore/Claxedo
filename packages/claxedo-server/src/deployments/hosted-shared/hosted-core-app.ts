@@ -52,6 +52,7 @@ import {
 import { parseSessionListQuery, sessionInventoryResponse, signedSessionList, sessionListErrorResponse } from "../../session/list"
 import { createSessionReadRoutes, authoritySessionReads } from "../../session/routes/session-read"
 import type { HostedControlPlane } from "../../authority/hosted-services"
+import type { IdempotencyCoordinator } from "../../authority/http/idempotency"
 import { HostedWorkerCompositionError } from "../../authority/composition-error"
 import { hostedPiCredentials } from "../../credentials/worker/pi"
 import { hostedAgentConfigRoutes } from "../../agent-config/hosted-routes"
@@ -90,6 +91,7 @@ export type HostedCoreProductWorkspaceOptions = Pick<
 >
 
 export type HostedCoreAppOptions = {
+  idempotency: IdempotencyCoordinator
   authentication: RequestAuthenticationAdapter
   relayTargetLookup?: RelayTargetLookup
   liveSyncRoom: LiveSyncRoomNamespace
@@ -389,6 +391,7 @@ export function createHostedCoreApp(plane: HostedControlPlane, options: HostedCo
   app.route(
     "/api/control",
     HostedControlRoutes(services, {
+      idempotency: options.idempotency,
       authentication: options.authentication,
       authConfig,
       cliTokenEnv: plane.env,

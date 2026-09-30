@@ -18,6 +18,7 @@ import { d1UserAgentConfigRepository } from "../../authority/adapters/d1/user-ag
 import { fetchUrl } from "../../test-support/fetch-calls"
 import type { ClaxedoMcpClient } from "@claxedo/mcp/client"
 import type { McpClientInputs } from "@claxedo/mcp"
+import { createIdempotencyCoordinator, memoryIdempotencyStore } from "../../authority/http/idempotency"
 
 const ROOT = path.resolve(import.meta.dirname, "../../..")
 
@@ -79,6 +80,7 @@ function plane(): HostedControlPlane {
 }
 
 const options = {
+  idempotency: createIdempotencyCoordinator(memoryIdempotencyStore()),
   authentication: testRequestAuthenticationAdapter(),
   liveSyncRoom: {
     idFromName: (name: string) => name,

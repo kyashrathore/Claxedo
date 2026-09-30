@@ -12,10 +12,12 @@ import {
 } from "./protocol"
 import type { ControlPlaneHttpOptions } from "./protocol"
 import {
-  cachedIdempotency,
+  createIdempotencyCoordinator,
+  type IdempotencyCoordinator,
   idempotencyCacheKey,
   idempotencyFingerprint,
   lockKey,
+  memoryIdempotencyStore,
   serialized,
 } from "./idempotency"
 import {
@@ -31,10 +33,11 @@ import {
 export type { ControlPlaneHttpOptions }
 export { resolveSessionGateway, pullControlSession, pullControlSessionMessages }
 export { registerControlRuntime, heartbeatControlRuntime }
+export { createIdempotencyCoordinator, memoryIdempotencyStore }
 
 export function ControlPlaneHttpRoutes(
   services: ControlPlaneServices,
-  options: ControlPlaneHttpOptions = {},
+  options: ControlPlaneHttpOptions & { idempotency: IdempotencyCoordinator },
 ) {
   const app = new Hono()
   const ok = () => ({ ok: true })
@@ -53,7 +56,7 @@ export function ControlPlaneHttpRoutes(
         sessionId,
         key: body.idempotencyKey,
       })
-      const result = await cachedIdempotency(key, () =>
+      const result = await options.idempotency.run(key, () =>
         serialized(lockKey(workspaceId, sessionId), () =>
           pullControlSession(services, options, auth, {
             workspaceId,
@@ -79,7 +82,7 @@ export function ControlPlaneHttpRoutes(
         sessionId,
         key: body.idempotencyKey,
       })
-      const result = await cachedIdempotency(key, () =>
+      const result = await options.idempotency.run(key, () =>
         serialized(lockKey(workspaceId, sessionId), () =>
           pullControlSessionMessages(services, options, auth, {
             workspaceId,
@@ -106,7 +109,7 @@ export function ControlPlaneHttpRoutes(
         sessionId,
         key: body.idempotencyKey,
       })
-      const result = await cachedIdempotency(key, () =>
+      const result = await options.idempotency.run(key, () =>
         serialized(lockKey(workspaceId, sessionId), async () => {
           const session = await pullControlSession(services, options, auth, {
             workspaceId,
