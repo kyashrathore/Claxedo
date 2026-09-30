@@ -184,6 +184,7 @@ export const sessionScreenEnglish: Record<SessionScreenTextKey, string> = {
   "sessionScreen.timeline.ui.message.queued": "Queued",
   "sessionScreen.timeline.ui.message.queued.accepted": "Accepted · transcript position unconfirmed",
   "sessionScreen.timeline.ui.message.queued.cancelEdit": "Cancel edit",
+  "sessionScreen.timeline.ui.message.queued.declined": "Not taken in · sends next",
   "sessionScreen.timeline.ui.message.queued.dispatching": "Awaiting harness acceptance",
   "sessionScreen.timeline.ui.message.queued.edit": "Edit",
   "sessionScreen.timeline.ui.message.queued.editing": "Editing",

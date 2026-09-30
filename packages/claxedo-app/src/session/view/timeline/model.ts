@@ -42,6 +42,7 @@ export type TimelineTextKey =
   | "ui.message.queued"
   | "ui.message.queued.accepted"
   | "ui.message.queued.cancelEdit"
+  | "ui.message.queued.declined"
   | "ui.message.queued.dispatching"
   | "ui.message.queued.edit"
   | "ui.message.queued.editing"
