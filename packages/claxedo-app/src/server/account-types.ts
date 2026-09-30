@@ -3,9 +3,9 @@ import type { QuotaWindow } from "@claxedo/usage-contract"
 
 export type AccountDelivery = { readonly local: boolean; readonly cloud: boolean; readonly reason?: string }
 
-export type AccountSources = { readonly sources: ReadonlyMap<string, AccountSource>; readonly team: readonly Account[] }
+export type AccountSources = { readonly sources: ReadonlyMap<string, AccountSource>; readonly org: readonly Account[] }
 
-export type HostedAccountSources = { readonly sources: ReadonlyMap<string, AccountSource>; readonly team: ReadonlySet<string> }
+export type HostedAccountSources = { readonly sources: ReadonlyMap<string, AccountSource>; readonly org: ReadonlySet<string> }
 
 export type Account = {
   readonly id: string

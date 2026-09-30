@@ -38,7 +38,7 @@ export function holderAccountSources(selections: AccountSelections, holder: stri
 /**
  * Whether `holder` spends a stored provider account: their own row for a
  * provider they spend their own account on, the org's (owner NULL) row for a
- * provider they chose the team account for, and nothing else. Selection,
+ * provider they chose the org account for, and nothing else. Selection,
  * delivery and every catalog answer through this, so no surface can show or
  * spend an account the person did not choose.
  */
@@ -53,25 +53,24 @@ export function spendsAccount(
   return spent !== null && accountHolderOf(row.owner, machineOwnerUserId) === holder
 }
 
-/** The owner of the row a person spends for a provider: the team's NULL for the team account, theirs otherwise. */
 export function spentRowOwner(sources: AccountSources, providerId: string, person: string): string | null {
-  return sources[providerId] === "team" ? null : person
+  return sources[providerId] === "org" ? null : person
 }
 
 /**
  * Each person's spent account per provider, from the rows a producer resolved.
  *
- * A person who chose the team account for a provider gets the team row, or
- * `missingTeam` when the org holds none, and never their own row for it; a
- * person who did not choose it never sees the team row.
+ * A person who chose the org account for a provider gets the org's row, or
+ * `missingOrgAccount` when the org holds none, and never their own row for it;
+ * a person who did not choose it never sees the org's row.
  */
 export function selectedAccounts<T>(input: {
   machineOwnerUserId: string
   rows: Iterable<{ owner: string | null; providerId: string; projection: T }>
   selections: AccountSelections
-  missingTeam: (providerId: string) => T
+  missingOrgAccount: (providerId: string) => T
 }): Record<string, Record<string, T>> {
-  const team = new Map<string, T>()
+  const org = new Map<string, T>()
   const accounts: Record<string, Record<string, T>> = Object.create(null)
   const holders = new Map<string, AccountSources>()
   const sourcesOf = (holder: string) => {
@@ -81,21 +80,21 @@ export function selectedAccounts<T>(input: {
   }
   for (const row of input.rows) {
     if (row.owner === null) {
-      team.set(row.providerId, row.projection)
+      org.set(row.providerId, row.projection)
       continue
     }
     const holder = accountHolderOf(row.owner, input.machineOwnerUserId)
-    if (sourcesOf(holder)[row.providerId] === "team") continue
+    if (sourcesOf(holder)[row.providerId] === "org") continue
     ;(accounts[holder] ??= Object.create(null))[row.providerId] = row.projection
   }
   for (const user of Object.keys(input.selections)) {
     const holder = accountHolderOf(user, input.machineOwnerUserId)
     for (const [providerId, source] of Object.entries(sourcesOf(holder))) {
-      if (source !== "team") continue
-      ;(accounts[holder] ??= Object.create(null))[providerId] = team.get(providerId) ?? input.missingTeam(providerId)
+      if (source !== "org") continue
+      ;(accounts[holder] ??= Object.create(null))[providerId] = org.get(providerId) ?? input.missingOrgAccount(providerId)
     }
   }
   return accounts
 }
 
-export const TEAM_ACCOUNT_UNAVAILABLE = "team_account_unavailable"
+export const ORG_ACCOUNT_UNAVAILABLE = "org_account_unavailable"

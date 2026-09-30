@@ -82,10 +82,10 @@ broader consent. There is no toggle API, because a toggle would let a grant
 widen without the user ever being asked.
 
 **Partitions are opaque to the kit.** A connection carries an optional `owner`
-string. Absent owner is the *team* partition; a present owner is that subject's
+string. Absent owner is the *org* partition; a present owner is that subject's
 personal partition. One connection per integration per partition; re-linking is
 an explicit, confirmed replace. `list({ owner })` is three-way: `undefined`
-means every partition, `null` means the team partition only, a string means that
+means every partition, `null` means the org partition only, a string means that
 owner only — so a host adapter can push scoping into its query layer rather than
 filtering in memory.
 
@@ -181,7 +181,7 @@ type IntegrationImpl = {
    `status: "available"`.
 
 `B.2` **OAuth redirect (asynchronous, via attempts)** —
-`service.connectOAuth({ integrationId, owner?, teamOwner?, confirmReplace? })`
+`service.connectOAuth({ integrationId, owner?, orgOwner?, confirmReplace? })`
 creates an **attempt** keyed by an opaque `state`, and returns the provider
 authorize URL plus that state as `attemptId`. `service.handleCallback(state,
 code)` consumes the attempt, calls `impl.auth.callback(code, verifier)`, stores
@@ -252,7 +252,7 @@ type ConnectionStorePort = {
   upsert(row): Promise<void>                       // keyed by row.id
   get(integrationId, owner?): Promise<Row | undefined>
   getById(id): Promise<Row | undefined>
-  // undefined = every partition, null = team only, string = that owner only.
+  // undefined = every partition, null = org only, string = that owner only.
   list(filter?: { owner?: string | null }): Promise<Row[]>
   delete(id): Promise<boolean>
 }
@@ -364,10 +364,10 @@ which takes the same path.
 ### E. Capability resolution — what a feature actually calls
 
 ```ts
-const handles = await service.resolveForCapability("docs", { owner?, teamOwner?, integration? })
+const handles = await service.resolveForCapability("docs", { owner?, orgOwner?, integration? })
 ```
 
-It matches against the row's frozen `grantedCapabilities`, and where both a team
+It matches against the row's frozen `grantedCapabilities`, and where both an org
 and a personal connection exist for the same integration, **personal wins**.
 Each handle is a `CapabilityHandle`: `{ id, integrationId, scope, accountLabel,
 fields, getToken(), reportAuthFailure(reason) }`. No secret ever appears on it.
@@ -388,18 +388,18 @@ open deployment states that with `gate: () => null`.
 | Route | Policy | Purpose |
 | --- | --- | --- |
 | `GET /` | `authenticated` | List integrations and the caller's connections |
-| `POST /:id/connect` | `team-write` | Key connect, or start an OAuth/device flow |
+| `POST /:id/connect` | `org-write` | Key connect, or start an OAuth/device flow |
 | `GET /callback` | `public` | OAuth redirect landing; renders success/failure |
 | `GET /attempts/:state` | `authenticated` | Poll an attempt — **and advance a device grant** |
-| `DELETE /connections/:id` | `team-write` | Remove a connection and purge its credentials |
-| `POST /connections/:id/reverify` | `team-write` | Recover an errored credential |
+| `DELETE /connections/:id` | `org-write` | Remove a connection and purge its credentials |
+| `POST /connections/:id/reverify` | `org-write` | Recover an errored credential |
 | `GET /connections/:id/repositories` | `authenticated` | `code-host` listing |
 | `POST /connections/:id/auth-failure` | `turn-credential` | Consumer-reported definitive rejection |
 | `GET /connections/:id/token` | `turn-credential` | The live token |
 
 `authenticated` runs `gate`; `turn-credential` runs `gate` then `tokenGate`;
-`team-write` runs `gate` and hands the handler `teamWriteGate`, which it
-applies once it knows whether the target is a team row. `public` is the
+`org-write` runs `gate` and hands the handler `orgWriteGate`, which it
+applies once it knows whether the target is an org row. `public` is the
 provider's browser redirect alone, which carries its own single-use `state`.
 `ConnectionExistsError` is mapped to 409 by an `onError` handler rather than by
 each route.
@@ -440,7 +440,7 @@ each route.
 - **No webhook subscription management, no webhook verification, no UI.** Hosts
   own all three.
 - **No multiple accounts within one integration/owner partition.** Independent
-  team and personal partitions are supported; two accounts in the same partition
+  org and personal partitions are supported; two accounts in the same partition
   are not.
 - **No cross-process refresh coordination.** Single-flight is per process, by
   design (see `D.1`).

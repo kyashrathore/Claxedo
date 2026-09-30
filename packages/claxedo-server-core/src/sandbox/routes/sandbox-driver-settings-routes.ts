@@ -216,7 +216,7 @@ function localSandboxDriverBody() {
   return {
     error: {
       code: "local_only_sandbox_driver",
-      message: "Sandbox driver configuration is local-only and is not available through signed/team Control Plane access",
+      message: "Sandbox driver configuration is local-only and is not available through signed Control Plane access",
     },
   }
 }

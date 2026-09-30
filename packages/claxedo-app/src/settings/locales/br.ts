@@ -76,7 +76,7 @@ export default {
   "settings.connections.reverify": "Verificar novamente",
   "settings.connections.disconnectConfirm": "Desconectar?",
   "settings.connections.scope.personal": "Somente eu",
-  "settings.connections.scope.team": "Organização",
+  "settings.connections.scope.org": "Organização",
   "settings.connections.oauth": "Continuar com OAuth",
   "settings.connections.waiting": "Aguardando autorização…",
   "settings.connections.code": "Digite este código no provedor: {{code}}",

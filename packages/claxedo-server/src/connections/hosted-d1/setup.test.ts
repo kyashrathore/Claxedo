@@ -277,16 +277,16 @@ describe("hosted D1 Connections setup", () => {
     const test = await rig()
 
     test.as(test.member)
-    const refused = await connect(test.app, "context7", { scope: "team", secret: "member-key" })
+    const refused = await connect(test.app, "context7", { scope: "org", secret: "member-key" })
     expect(refused.status).toBe(403)
     expect(await refused.json()).toEqual({ code: "connections_org_admin_required" })
 
     test.as(test.owner)
-    expect((await connect(test.app, "context7", { scope: "team", secret: "org-key" })).status).toBe(200)
+    expect((await connect(test.app, "context7", { scope: "org", secret: "org-key" })).status).toBe(200)
 
     // The organization row is the member's too — that is the point of the scope.
     test.as(test.member)
-    expect((await listed(test.app)).connections).toMatchObject([{ integrationId: "context7", scope: "team" }])
+    expect((await listed(test.app)).connections).toMatchObject([{ integrationId: "context7", scope: "org" }])
   })
 
   test("an unsigned request is refused before any authority or store read", async () => {
@@ -302,7 +302,7 @@ describe("hosted D1 Connections setup", () => {
   test("capability resolution prefers the caller's personal connection over the organization one", async () => {
     const test = await rig()
     test.as(test.owner)
-    await connect(test.app, "context7", { scope: "team", secret: "org-key" })
+    await connect(test.app, "context7", { scope: "org", secret: "org-key" })
     await connect(test.app, "context7", { scope: "personal", secret: "owner-key" })
     const rows = await test.database
       .prepare(`select connection_id, owner_user_id from hosted_connections order by owner_user_id is null`)
@@ -322,7 +322,7 @@ describe("hosted D1 Connections setup", () => {
     expect(await resolveConnection({ ...scope, ownerUserId: test.memberUserId })).toMatchObject({
       ok: true,
       connectionId: organization,
-      scope: "team",
+      scope: "org",
     })
     expect(await resolveConnection({ ...scope, ownerUserId: test.memberUserId, integrationId: "composio" })).toEqual({
       ok: false,
@@ -334,7 +334,7 @@ describe("hosted D1 Connections setup", () => {
   test("the token resolver serves the selected connection's secret and the failure reporter degrades that exact row", async () => {
     const test = await rig()
     test.as(test.owner)
-    await connect(test.app, "context7", { scope: "team", secret: "org-key" })
+    await connect(test.app, "context7", { scope: "org", secret: "org-key" })
     await connect(test.app, "context7", { scope: "personal", secret: "owner-key" })
     const rows = await test.database
       .prepare(`select connection_id, owner_user_id from hosted_connections`)
@@ -404,17 +404,17 @@ describe("hosted D1 Connections setup", () => {
     const started = await mounted.request("/api/claxedo/integrations/composio/connect", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ method: "oauth", scope: "team" }),
+      body: JSON.stringify({ method: "oauth", scope: "org" }),
     })
     expect(started.status).toBe(200)
     const attempt = (await started.json()) as { attemptId: string }
 
     const polled = await mounted.request(`/api/claxedo/integrations/attempts/${attempt.attemptId}`)
-    expect(await polled.json()).toMatchObject({ status: "pending", integrationId: "composio", scope: "team" })
+    expect(await polled.json()).toMatchObject({ status: "pending", integrationId: "composio", scope: "org" })
 
     const callback = await mounted.request(`/api/claxedo/integrations/callback?state=${attempt.attemptId}&code=grant-code`)
     expect(callback.status).toBe(200)
-    expect((await listed(test.app)).connections).toMatchObject([{ integrationId: "composio", scope: "team" }])
+    expect((await listed(test.app)).connections).toMatchObject([{ integrationId: "composio", scope: "org" }])
   })
 
   test("repository access refuses a connection id from another partition", async () => {
@@ -466,7 +466,7 @@ describe("hosted D1 Connections setup", () => {
     const crossOrg = await attempts.create({
       integrationId: "composio",
       owner: "org:org_deployment",
-      scope: "team",
+      scope: "org",
       routing: { org_id: "org-elsewhere", owner_user_id: test.ownerUserId },
     })
     expect((await test.app.request(`/attempts/${crossOrg.state}`)).status).toBe(404)
@@ -476,10 +476,10 @@ describe("hosted D1 Connections setup", () => {
       attemptId: string
     }
     expect((await test.app.request(`/attempts/${personal.attemptId}`)).status).toBe(200)
-    const team = (await (await connect(test.app, "composio", { method: "oauth", scope: "team" })).json()) as {
+    const org = (await (await connect(test.app, "composio", { method: "oauth", scope: "org" })).json()) as {
       attemptId: string
     }
-    expect((await test.app.request(`/attempts/${team.attemptId}`)).status).toBe(200)
+    expect((await test.app.request(`/attempts/${org.attemptId}`)).status).toBe(200)
   })
 
   test("an attempt past its TTL reads expired and settles nothing", async () => {

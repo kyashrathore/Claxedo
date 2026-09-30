@@ -1,7 +1,4 @@
-import { readFile } from "node:fs/promises"
-import { fileURLToPath } from "node:url"
 import { afterEach, expect, test } from "vitest"
-import { Miniflare } from "miniflare"
 import type { D1Database } from "@cloudflare/workers-types"
 
 import {
@@ -13,6 +10,7 @@ import {
   type IntegrationImpl,
 } from "@claxedo/connections"
 
+import { controlPlaneMigrations, miniflareControlPlaneDatabase, type ControlPlaneDatabase } from "../../test-support/control-plane-migrations"
 import { createD1ConnectionAttempts } from "./attempts"
 import { createD1ConnectionStore } from "./connection-store"
 
@@ -27,39 +25,25 @@ import { createD1ConnectionStore } from "./connection-store"
  * never reaches `storeConnection`. This test runs the interleaving the
  * in-process queue cannot see.
  */
-const MIGRATIONS = ["0002_workspace_authority.sql", "0020_hosted_connections.sql", "0021_mcp_oauth_clients.sql"]
-
 const ORG_ID = "org-1"
 const USER_ID = "user-1"
 
-const active: Miniflare[] = []
+const active: ControlPlaneDatabase[] = []
 
 afterEach(async () => {
   await Promise.all(active.splice(0).map((instance) => instance.dispose()))
 })
 
 async function database(): Promise<D1Database> {
-  const instance = new Miniflare({
-    modules: true,
-    script: "export default { fetch() { return new Response('ok') } }",
-    compatibilityDate: "2025-05-01",
-    d1Databases: ["CONTROL_PLANE_DB"],
-  })
+  const instance = await miniflareControlPlaneDatabase(controlPlaneMigrations())
   active.push(instance)
-  const target = await instance.getD1Database("CONTROL_PLANE_DB")
-  for (const name of MIGRATIONS) {
-    const path = fileURLToPath(new URL(`../../../migrations/control-plane/${name}`, import.meta.url))
-    const migration = (await readFile(path, "utf8")).replace(/^\s*--.*$/gm, "")
-    for (const statement of migration.split(/;\s*\n\s*\n/).map((part) => part.trim()).filter(Boolean)) {
-      await target.prepare(statement).run()
-    }
-  }
+  const target = instance.database
   await target
     .prepare(`insert into users (user_id, state, created_at, updated_at) values (?, 'active', 1, 1)`)
     .bind(USER_ID)
     .run()
   await target
-    .prepare(`insert into orgs (org_id, name, kind, owner_user_id, created_at, updated_at) values (?, ?, 'team', ?, 1, 1)`)
+    .prepare(`insert into orgs (org_id, name, kind, owner_user_id, created_at, updated_at) values (?, ?, 'shared', ?, 1, 1)`)
     .bind(ORG_ID, ORG_ID, USER_ID)
     .run()
   return target
@@ -133,7 +117,7 @@ test("two concurrent completions of one device attempt yield exactly one connect
   const started = await request().connectOAuth({
     integrationId: "github",
     owner: `user:${USER_ID}`,
-    teamOwner: `org:${ORG_ID}`,
+    orgOwner: `org:${ORG_ID}`,
   })
   expect(started.ok).toBe(true)
   if (!started.ok) return

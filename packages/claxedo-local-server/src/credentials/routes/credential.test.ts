@@ -4,6 +4,7 @@ import fs from "fs/promises"
 import os from "os"
 import path from "path"
 import { randomUUID } from "crypto"
+import { isAccountSource } from "@claxedo/account-contract/vocabulary"
 import { CredentialRoutes } from "./credential"
 import { defaultControlPlaneCredentials } from "@claxedo/server-core/authority/default-credentials"
 import { localControlPlaneCredentials } from "../machine-credentials"
@@ -88,7 +89,7 @@ function credentials(): ControlPlaneCredentials {
       failed: [],
     })),
     accountSelections: vi.fn(async () => ({})),
-    setAccountSources: vi.fn(async (providerIds: readonly string[], source: "own" | "team") =>
+    setAccountSources: vi.fn(async (providerIds: readonly string[], source: "own" | "org") =>
       Object.fromEntries(providerIds.map((providerId) => [providerId, source]))),
   }
 }
@@ -1236,28 +1237,54 @@ describe("choosing which account a provider runs on", () => {
     expect(byProvider.credential).toMatchObject({ id: second.id, is_active: true })
   })
 
-  test("the org's team account is what a person spends only once they choose it, and choosing their own puts theirs back", async () => {
-    const own = await account("team-choice", "acc_own")
-    const team = await registry.putCredential({ owner: null, provider_id: "team-choice", kind: "oauth_token", source: "managed",
-      account_id: "acc_team", label: "Team", secret: "team-secret" })
+  test("the org's account is what a person spends only once they choose it, and choosing their own puts theirs back", async () => {
+    const own = await account("org-choice", "acc_own")
+    const orgAccount = await registry.putCredential({ owner: null, provider_id: "org-choice", kind: "oauth_token", source: "managed",
+      account_id: "acc_org", label: "Org", secret: "org-secret" })
     const spent = async () => ((await (await app.request("http://localhost/effective")).json()) as { credentials: Array<{ id: string; provider_id: string }> })
-      .credentials.filter((row) => row.provider_id === "team-choice").map((row) => row.id)
+      .credentials.filter((row) => row.provider_id === "org-choice").map((row) => row.id)
     const choose = (source: string) => app.request("http://localhost/account-sources", {
-      method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ provider_ids: ["team-choice"], source }),
+      method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ provider_ids: ["org-choice"], source }),
     })
 
     expect(await spent()).toEqual([own.id])
-    const chosen = await choose("team")
+    const chosen = await choose("org")
     expect(chosen.status).toBe(200)
-    await expect(chosen.json()).resolves.toMatchObject({ sources: { "team-choice": "team" } })
-    expect(await spent()).toEqual([team.id])
-    const listed = await (await app.request("http://localhost/account-sources")).json() as { sources: Record<string, string>; team: Array<{ id: string }> }
-    expect(listed.sources).toMatchObject({ "team-choice": "team" })
-    expect(listed.team.map((row) => row.id)).toContain(team.id)
+    await expect(chosen.json()).resolves.toMatchObject({ sources: { "org-choice": "org" } })
+    expect(await spent()).toEqual([orgAccount.id])
+    const listed = await (await app.request("http://localhost/account-sources")).json() as { sources: Record<string, string>; org: Array<{ id: string }> }
+    expect(listed.sources).toMatchObject({ "org-choice": "org" })
+    expect(listed.org.map((row) => row.id)).toContain(orgAccount.id)
 
     expect((await choose("own")).status).toBe(200)
     expect(await spent()).toEqual([own.id])
     expect((await choose("everyone")).status).toBe(400)
+  })
+
+  test("a database whose choices were stored as 'team' spends the org account and answers 'org' once it is upgraded", async () => {
+    const own = await account("legacy-choice", "acc_legacy_own")
+    const orgAccount = await registry.putCredential({ owner: null, provider_id: "legacy-choice", kind: "oauth_token", source: "managed",
+      account_id: "acc_legacy_org", label: "Org", secret: "legacy-org-secret" })
+    const chosen = await app.request("http://localhost/account-sources", {
+      method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ provider_ids: ["legacy-choice"], source: "org" }),
+    })
+    expect(chosen.status).toBe(200)
+    const { ClaxedoDB } = await import("@claxedo/server-core/platform/db/index")
+    const before = ClaxedoDB.raw()
+    before.prepare("DELETE FROM __claxedo_migrations WHERE name = ?").run("20260930000100_org_account_source")
+    before.prepare("UPDATE claxedo_provider_account_source SET source = 'team' WHERE provider_id = ?").run("legacy-choice")
+    before.exec("DROP INDEX claxedo_connection_org_integration_unique")
+    before.exec("CREATE UNIQUE INDEX claxedo_connection_team_integration_unique ON claxedo_connection (integration_id) WHERE owner IS NULL")
+    ClaxedoDB.close()
+
+    const listed = await (await app.request("http://localhost/account-sources")).json() as { sources: Record<string, unknown> }
+    expect(listed.sources["legacy-choice"]).toBe("org")
+    expect(Object.values(listed.sources).every(isAccountSource)).toBe(true)
+    const spent = await (await app.request("http://localhost/effective")).json() as { credentials: Array<{ id: string; provider_id: string }> }
+    expect(spent.credentials.filter((row) => row.provider_id === "legacy-choice").map((row) => row.id)).toEqual([orgAccount.id])
+    expect(spent.credentials.map((row) => row.id)).not.toContain(own.id)
+    const indexes = ClaxedoDB.raw().prepare("SELECT name FROM sqlite_master WHERE type = 'index' AND name LIKE 'claxedo_connection_%_integration_unique'").all()
+    expect(indexes).toEqual([{ name: "claxedo_connection_org_integration_unique" }])
   })
 
   test("every binding named in one call is marked together", async () => {

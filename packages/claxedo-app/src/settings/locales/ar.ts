@@ -77,7 +77,7 @@ export default {
   "settings.connections.reverify": "إعادة التحقق",
   "settings.connections.disconnectConfirm": "قطع الاتصال؟",
   "settings.connections.scope.personal": "أنا فقط",
-  "settings.connections.scope.team": "المؤسسة",
+  "settings.connections.scope.org": "المؤسسة",
   "settings.connections.oauth": "المتابعة عبر OAuth",
   "settings.connections.waiting": "بانتظار التفويض…",
   "settings.connections.code": "أدخل هذا الرمز لدى المزوّد: {{code}}",

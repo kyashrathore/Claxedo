@@ -47,7 +47,7 @@ export default {
   "settings.connections.disconnectConfirm": "Disconnect?",
   "settings.connections.confirm": "Confirm",
   "settings.connections.scope.personal": "Only me",
-  "settings.connections.scope.team": "Organization",
+  "settings.connections.scope.org": "Organization",
   "settings.connections.oauth": "Continue with OAuth",
   "settings.connections.waiting": "Waiting for authorization…",
   "settings.connections.code": "Enter this code at the provider: {{code}}",

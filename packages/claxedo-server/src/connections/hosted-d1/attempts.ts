@@ -86,7 +86,7 @@ type AttemptRecord = {
   integration_id: string
   device_code: string | null
   owner: string | null
-  scope: "team" | "personal"
+  scope: "org" | "personal"
   context_json: string | null
   routing_json: string | null
   status: "pending" | "complete" | "failed" | "expired"

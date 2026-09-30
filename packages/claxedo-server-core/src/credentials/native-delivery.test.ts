@@ -62,34 +62,34 @@ describe("native provider delivery", () => {
     else process.env.CLAXEDO_DATA_DIR = previousDataDir
   })
 
-  test("a sandbox is delivered the team account only for a provider its owner chose it for, and then not their own", async () => {
+  test("a sandbox is delivered the org account only for a provider its owner chose it for, and then not their own", async () => {
     await shared({ provider_id: "claude-sdk", kind: "api_key", secret: API_KEY })
-    const team = await putCredential({ owner: null, source: "managed", scope: "shared", consent,
-      provider_id: "claude-sdk", kind: "api_key", secret: "sk-ant-api03-team-key" })
+    const org = await putCredential({ owner: null, source: "managed", scope: "shared", consent,
+      provider_id: "claude-sdk", kind: "api_key", secret: "sk-ant-api03-org-key" })
     const { setAccountSources, accountSelections } = await import("./account-source")
     const delivered = async () => nativeProviderSecrets(await nativeProviderDeliveries({
       owner: "local", machineOwnerUserId: "local", selections: accountSelections(), secretBrokering: "native",
     })).map((secret) => secret.value)
 
     expect(await delivered()).toEqual([API_KEY])
-    setAccountSources(["claude-sdk"], "team", undefined, "local")
-    expect(await delivered()).toEqual(["sk-ant-api03-team-key"])
+    setAccountSources(["claude-sdk"], "org", undefined, "local")
+    expect(await delivered()).toEqual(["sk-ant-api03-org-key"])
     await projectNativeProviderAuth({ scope: "shared", sandboxOwner: "local", machineOwnerUserId: "local", secretBrokering: "native" })
       .then((auth) => expect(Object.keys(auth.accounts.local ?? {})).toEqual(["claude-sdk"]))
-    await deleteCredential(team.id)
+    await deleteCredential(org.id)
     expect(await delivered()).toEqual([])
     await expect(projectNativeProviderAuth({ scope: "shared", sandboxOwner: "local", machineOwnerUserId: "local", secretBrokering: "native" }))
-      .resolves.toMatchObject({ accounts: { local: { "claude-sdk": { unavailable: true, reason: "team_account_unavailable" } } } })
+      .resolves.toMatchObject({ accounts: { local: { "claude-sdk": { unavailable: true, reason: "org_account_unavailable" } } } })
     setAccountSources(["claude-sdk"], "own", undefined, "local")
   })
 
   test("a Pi catalog shows connected exactly what the person would spend", async () => {
     const { piProviderCatalog } = await import("./pi-provider-catalog")
     const { setAccountSources } = await import("./account-source")
-    await putCredential({ owner: null, source: "managed", provider_id: "anthropic", kind: "api_key", secret: "sk-ant-api03-team-pi" })
+    await putCredential({ owner: null, source: "managed", provider_id: "anthropic", kind: "api_key", secret: "sk-ant-api03-org-pi" })
     const connected = () => piProviderCatalog("local").connected as readonly string[]
     expect(connected()).not.toContain("anthropic")
-    setAccountSources(["anthropic"], "team", undefined, "local")
+    setAccountSources(["anthropic"], "org", undefined, "local")
     expect(connected()).toContain("anthropic")
     setAccountSources(["anthropic"], "own", undefined, "local")
     expect(connected()).not.toContain("anthropic")

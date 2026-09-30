@@ -115,7 +115,7 @@ export type AgentConfigOptions = {
     workspaceId?: string
     /** How this workspace's sandbox can carry a credential, when it has one. */
     secretBrokering?: SandboxSecretBrokering
-    /** The person a shared-scope sandbox serves; only their accounts and the team's reach it. */
+    /** The person a shared-scope sandbox serves; only their accounts and the org's reach it. */
     sandboxOwner?: string
   }) => Promise<CredentialSnapshot>
 }

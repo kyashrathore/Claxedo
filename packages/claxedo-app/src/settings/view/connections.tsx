@@ -147,7 +147,7 @@ function ConnectionRow(props: {
       <div class="settings-account-text">
         <span class="settings-row-title">{t(STATUS_KEY[props.connection.status])}</span>
         <span class="settings-row-description">
-          <Show when={props.personalScope}>{t(props.connection.scope === "personal" ? "settings.connections.scope.personal" : "settings.connections.scope.team")} · </Show>
+          <Show when={props.personalScope}>{t(props.connection.scope === "personal" ? "settings.connections.scope.personal" : "settings.connections.scope.org")} · </Show>
           {props.connection.accountLabel ?? ""}
         </span>
       </div>

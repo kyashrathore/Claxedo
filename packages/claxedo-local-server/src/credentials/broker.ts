@@ -30,7 +30,7 @@ import {
   type RuntimeIdentity,
 } from "@claxedo/egress-broker"
 import type { CredentialSnapshot, ProviderProjectionSource } from "@claxedo/agent-runtime-contract"
-import { selectedAccounts, TEAM_ACCOUNT_UNAVAILABLE, type AccountSelections } from "@claxedo/server-core/credentials/account-holder"
+import { ORG_ACCOUNT_UNAVAILABLE, selectedAccounts, type AccountSelections } from "@claxedo/server-core/credentials/account-holder"
 import { accountSelections } from "@claxedo/server-core/credentials/account-source"
 import { projectionRenewalDue, projectionRenewalDueAt } from "@claxedo/agent-runtime-contract"
 import {
@@ -170,7 +170,7 @@ type MintedLease = {
 
 /** What a binding names, so a request resolves from its id alone. */
 type MintedBinding = {
-  /** The broker identity the binding is minted under: the row's owner, or the org for its team account. */
+  /** The broker identity the binding is minted under: the row's owner, or the org for its own account. */
   userId: string
   rowOwner: string | null
   providerId: string
@@ -182,9 +182,9 @@ type MintedBinding = {
   lease?: MintedLease
 }
 
-/** Whether anyone chose the team account for a provider: a team row nobody chose is neither minted nor honoured. */
-function anyoneChoseTeam(selections: AccountSelections, providerId: string) {
-  return Object.values(selections).some((sources) => sources[providerId] === "team")
+/** Whether anyone chose the org account for a provider: an org row nobody chose is neither minted nor honoured. */
+function anyoneChoseOrg(selections: AccountSelections, providerId: string) {
+  return Object.values(selections).some((sources) => sources[providerId] === "org")
 }
 
 export function createLocalCredentialBroker(input: {
@@ -326,7 +326,7 @@ export function createLocalCredentialBroker(input: {
       const row = selectedCredentials(entry.scope, entry.orgId)
         .find((candidate) => candidate.credential.provider_id === entry.providerId && (candidate.credential.owner ?? null) === entry.rowOwner)
       if (!row || row.unavailable) return undefined
-      if (entry.rowOwner === null && !anyoneChoseTeam(accountSelections(entry.orgId), entry.providerId)) return undefined
+      if (entry.rowOwner === null && !anyoneChoseOrg(accountSelections(entry.orgId), entry.providerId)) return undefined
       const destination = await destinationFor(row.credential, entry.orgId)
       if (!destination) return undefined
       const state = await brokerState()
@@ -434,7 +434,7 @@ export function createLocalCredentialBroker(input: {
       }
       const selections = accountSelections(org)
       const selection = selectedCredentials(scope, org)
-        .filter(({ credential }) => credential.owner || anyoneChoseTeam(selections, credential.provider_id))
+        .filter(({ credential }) => credential.owner || anyoneChoseOrg(selections, credential.provider_id))
       const resolved: { owner: string | null; providerId: string; projection: ProviderProjectionSource }[] = []
       const project = (credential: CredentialMetadata, projection: ProviderProjectionSource) =>
         resolved.push({ owner: credential.owner ?? null, providerId: credential.provider_id, projection })
@@ -444,7 +444,7 @@ export function createLocalCredentialBroker(input: {
           machineOwnerUserId,
           rows: resolved,
           selections,
-          missingTeam: () => ({ unavailable: true, reason: TEAM_ACCOUNT_UNAVAILABLE }),
+          missingOrgAccount: () => ({ unavailable: true, reason: ORG_ACCOUNT_UNAVAILABLE }),
         }),
       })
       let state: BrokerState
@@ -474,7 +474,7 @@ export function createLocalCredentialBroker(input: {
           project(credential, { unavailable: true, reason: "unreadable_secret" })
           continue
         }
-        const identityUser = credential.owner ?? `team:${org}`
+        const identityUser = credential.owner ?? `org:${org}`
         const id = bindingId(org, workspaceId, credential.provider_id, identityUser)
         let entry = minted.get(id)
         if (entry) bindCurrentAccount(state, id, entry, credential)

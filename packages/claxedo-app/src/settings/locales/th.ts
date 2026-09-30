@@ -77,7 +77,7 @@ export default {
   "settings.connections.reverify": "ตรวจสอบอีกครั้ง",
   "settings.connections.disconnectConfirm": "ตัดการเชื่อมต่อหรือไม่",
   "settings.connections.scope.personal": "เฉพาะฉัน",
-  "settings.connections.scope.team": "องค์กร",
+  "settings.connections.scope.org": "องค์กร",
   "settings.connections.oauth": "ดำเนินการต่อด้วย OAuth",
   "settings.connections.waiting": "กำลังรอการอนุญาต…",
   "settings.connections.code": "ป้อนรหัสนี้ที่ผู้ให้บริการ: {{code}}",

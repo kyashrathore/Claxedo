@@ -116,7 +116,7 @@ type IdentityRow = {
 type OrgRow = {
   org_id: string
   name: string
-  kind: "personal" | "team" | "deployment"
+  kind: "personal" | "shared" | "deployment"
   role: "member" | "admin" | "owner"
 }
 
@@ -613,7 +613,7 @@ export class D1WorkspaceAuthority implements D1WorkspaceAuthorityCore {
           .prepare(
             `
         insert into orgs (org_id, name, kind, owner_user_id, deployment_id, created_at, updated_at)
-        select ?, ?, 'team', u.user_id, null, ?, ? from users u
+        select ?, ?, 'shared', u.user_id, null, ?, ? from users u
         where u.user_id = ? and u.state = 'active'
         on conflict (org_id) do nothing
       `,
@@ -635,7 +635,7 @@ export class D1WorkspaceAuthority implements D1WorkspaceAuthorityCore {
         insert into authority_batch_assertions (assertion_id, passed)
         values (?, case when exists (
           select 1 from orgs o join org_memberships m on m.org_id = o.org_id and m.user_id = o.owner_user_id
-          where o.org_id = ? and o.owner_user_id = ? and o.name = ? and o.kind = 'team'
+          where o.org_id = ? and o.owner_user_id = ? and o.name = ? and o.kind = 'shared'
             and o.deleted_at is null and m.role = 'owner' and m.revoked_at is null
         ) then 1 else 0 end)
       `,
@@ -645,7 +645,7 @@ export class D1WorkspaceAuthority implements D1WorkspaceAuthorityCore {
       ],
       "Organization creation conflicted with existing authority state",
     )
-    return { org_id: orgId, name, kind: "team" as const, role: "owner" as const }
+    return { org_id: orgId, name, kind: "shared" as const, role: "owner" as const }
   }
 
   async addOrganizationMember(

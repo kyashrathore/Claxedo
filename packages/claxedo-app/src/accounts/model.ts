@@ -44,7 +44,7 @@ export const harnesses: readonly Harness[] = HARNESS_IDS.map((id) => ({
 
 export const MACHINE_LOGIN_KEY = "machine"
 
-export const TEAM_ACCOUNT_KEY = "team"
+export const ORG_ACCOUNT_KEY = "org"
 
 export const isRefusal = (verdict: string) => verdict === "auth_failed" || verdict === "no_billing" || verdict === "expired"
 
@@ -136,12 +136,12 @@ function ownAccountInUse(harness: Harness, snapshot: AccountsSnapshot) {
   return inUse && snapshot.stored.some((row) => row.id === inUse.id) ? inUse : undefined
 }
 
-export function teamAccountOf(harness: Harness, snapshot: AccountsSnapshot): HarnessAccount | undefined {
-  return harnessAccounts(harness, snapshot.sources.team)[0]
+export function orgAccountOf(harness: Harness, snapshot: AccountsSnapshot): HarnessAccount | undefined {
+  return harnessAccounts(harness, snapshot.sources.org)[0]
 }
 
-function harnessOnTeamAccount(harness: Harness, snapshot: AccountsSnapshot) {
-  return harness.providerIds.length > 0 && harness.providerIds.every((id) => snapshot.sources.sources.get(id) === "team")
+function harnessOnOrgAccount(harness: Harness, snapshot: AccountsSnapshot) {
+  return harness.providerIds.length > 0 && harness.providerIds.every((id) => snapshot.sources.sources.get(id) === "org")
 }
 
 export function strandedBinding(login: MachineLogin, harness: Harness, snapshot: AccountsSnapshot) {
@@ -153,7 +153,7 @@ export function strandedBinding(login: MachineLogin, harness: Harness, snapshot:
 }
 
 export function selectedAccountKey(harness: Harness, snapshot: AccountsSnapshot): string | undefined {
-  if (harnessOnTeamAccount(harness, snapshot)) return TEAM_ACCOUNT_KEY
+  if (harnessOnOrgAccount(harness, snapshot)) return ORG_ACCOUNT_KEY
   const rows = harnessAccounts(harness, snapshot.stored)
   const inUse = ownAccountInUse(harness, snapshot)
   const match = inUse ? rows.find((row) => row.ids.includes(inUse.id)) : undefined
@@ -183,7 +183,7 @@ export function harnessRunnable(harness: Harness, snapshot: AccountsSnapshot, li
     const login = machineLoginOf(harness, snapshot)
     return login?.state === "signed_in" && !strandedBinding(login, harness, snapshot)
   }
-  const row = selected === TEAM_ACCOUNT_KEY ? teamAccountOf(harness, snapshot) : harnessAccounts(harness, snapshot.stored).find((account) => account.id === selected)
+  const row = selected === ORG_ACCOUNT_KEY ? orgAccountOf(harness, snapshot) : harnessAccounts(harness, snapshot.stored).find((account) => account.id === selected)
   const verdict = row ? storedCheck(row, live[row.id])?.verdict : undefined
   return row !== undefined && !(verdict !== undefined && isRefusal(verdict))
 }

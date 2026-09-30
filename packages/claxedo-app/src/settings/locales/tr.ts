@@ -76,7 +76,7 @@ export default {
   "settings.connections.reverify": "Yeniden doğrula",
   "settings.connections.disconnectConfirm": "Bağlantı kesilsin mi?",
   "settings.connections.scope.personal": "Yalnızca ben",
-  "settings.connections.scope.team": "Kuruluş",
+  "settings.connections.scope.org": "Kuruluş",
   "settings.connections.oauth": "OAuth ile devam et",
   "settings.connections.waiting": "Yetkilendirme bekleniyor…",
   "settings.connections.code": "Bu kodu sağlayıcıda girin: {{code}}",

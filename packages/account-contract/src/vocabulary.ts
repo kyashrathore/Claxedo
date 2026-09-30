@@ -1,5 +1,5 @@
-/** Whose stored account a person spends for a provider: their own, or the team's (the org's row). */
-export const ACCOUNT_SOURCES = ["own", "team"] as const
+/** Whose stored account a person spends for a provider: their own, or the org's row. */
+export const ACCOUNT_SOURCES = ["own", "org"] as const
 export type AccountSource = (typeof ACCOUNT_SOURCES)[number]
 
 export function isAccountSource(value: unknown): value is AccountSource {

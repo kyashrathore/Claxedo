@@ -340,8 +340,8 @@ export function CredentialRoutes(
     })
     .get("/account-sources", async (c) => {
       const orgId = org(c.req.raw)
-      const team = (await credentials.listCredentials(orgId)).filter((row) => row.owner === null && fanoutEligible(row))
-      return c.json({ sources: (await credentials.accountSelections(orgId))[actor(c.req.raw)] ?? {}, team: team.map(redact) })
+      const orgRows = (await credentials.listCredentials(orgId)).filter((row) => row.owner === null && fanoutEligible(row))
+      return c.json({ sources: (await credentials.accountSelections(orgId))[actor(c.req.raw)] ?? {}, org: orgRows.map(redact) })
     })
     .put("/account-sources", async (c) => {
       const body = accountSourcesBody.safeParse(await c.req.json().catch(() => null))

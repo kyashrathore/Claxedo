@@ -973,7 +973,7 @@ export function createSqliteWorkspaceAuthority(
       db.transaction(() => {
         db.prepare(`
           INSERT INTO orgs (org_id, name, kind, owner_token_identifier, created_at, updated_at)
-          VALUES (?, ?, 'team', ?, ?, ?)
+          VALUES (?, ?, 'shared', ?, ?, ?)
         `).run(orgId, name, who.token_identifier, now, now)
         db.prepare(`
           INSERT INTO org_memberships (org_id, token_identifier, role, created_at, updated_at)

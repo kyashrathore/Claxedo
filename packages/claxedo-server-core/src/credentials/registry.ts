@@ -67,7 +67,7 @@ function inOrg(org?: CredentialOrgScope | null) {
 /**
  * Rows belonging to one owner. `coalesce` matches the active index's own
  * expression, so a predicate and the uniqueness it relies on agree about which
- * rows are the team's.
+ * rows are the org's.
  */
 function ownedBy(owner: string | null) {
   return sql`coalesce(${ClaxedoProviderCredentialTable.owner}, '') = ${owner ?? ""}`

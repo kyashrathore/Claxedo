@@ -76,7 +76,7 @@ export default {
   "settings.connections.reverify": "Ponovo provjeri",
   "settings.connections.disconnectConfirm": "Prekinuti vezu?",
   "settings.connections.scope.personal": "Samo ja",
-  "settings.connections.scope.team": "Organizacija",
+  "settings.connections.scope.org": "Organizacija",
   "settings.connections.oauth": "Nastavi putem OAuth",
   "settings.connections.waiting": "Čeka se autorizacija…",
   "settings.connections.code": "Unesite ovaj kod kod pružatelja: {{code}}",

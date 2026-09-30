@@ -6,7 +6,7 @@ import { connectError, connectMachine, createConnectForm, grantError } from "../
 import { settingsDictionary } from "../i18n"
 import { openExternal } from "@/lib/external-link"
 
-const SCOPES: readonly ConnectionScope[] = ["team", "personal"]
+const SCOPES: readonly ConnectionScope[] = ["org", "personal"]
 
 export function ConnectForm(props: {
   readonly integration: Integration
@@ -18,12 +18,12 @@ export function ConnectForm(props: {
   const t = useTranslator(settingsDictionary)
   const server = useServer()
   const state = connectMachine()
-  const [form, setForm] = createConnectForm(props.initialScope ?? "team")
+  const [form, setForm] = createConnectForm(props.initialScope ?? "org")
   const [alive, setAlive] = createSignal(true)
   onCleanup(() => setAlive(false))
   const keyMethod = () => props.integration.methods.includes("key") && props.integration.prompts.length > 0
   const oauthMethod = () => props.integration.methods.includes("oauth")
-  const scopeLabel = (scope: ConnectionScope) => t(scope === "personal" ? "settings.connections.scope.personal" : "settings.connections.scope.team")
+  const scopeLabel = (scope: ConnectionScope) => t(scope === "personal" ? "settings.connections.scope.personal" : "settings.connections.scope.org")
 
   const connectInput = (mode: "key" | "oauth", confirmReplace: boolean): IntegrationConnectInput => {
     const options = { ...(props.personalScopeEnabled ? { scope: form.scope } : {}), ...(confirmReplace ? { confirmReplace: true } : {}) }

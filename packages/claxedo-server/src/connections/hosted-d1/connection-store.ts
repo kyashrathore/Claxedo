@@ -6,7 +6,7 @@
  * principal to an application `user_id` and `org_id` through the workspace
  * authority, and this store never accepts an owner key outside those two
  * partitions. That refusal is the whole security property — the hosted routes
- * run with `ownerlessRows: "refuse"`, so there is no deployment-wide team
+ * run with `ownerlessRows: "refuse"`, so there is no deployment-wide org
  * partition to fall back to and a row can only ever belong to
  * `user:{ownerUserId}` or `org:{orgId}`.
  */
