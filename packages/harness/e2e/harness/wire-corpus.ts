@@ -241,6 +241,7 @@ function normalize(value: unknown, ids: Map<string, string>, specials: Map<strin
   result = result.replace(/subagent-[a-f0-9]{8}/gi, (id) => special(specials, "subagent", id, scope))
   result = result.replace(/pty_[a-zA-Z0-9_-]+/g, (id) => special(specials, "pty", id, scope))
   result = result.replace(/(\\?"timestamp\\?":)1[7-9]\d{11}\b/g, "$1<time>")
+  result = result.replace(/\b\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})/g, "<time>")
   result = result.replace(/\b[0-9a-f]{48,64}(?![0-9a-f])/g, "<sha256>")
   result = result.replace(/\b1[7-9]\d{11}\b/g, (timestamp) => special(specials, "time-id", timestamp, scope))
   result = result.replace(/(goal\.updated:.*:)(1[7-9]\d{8,11})$/, (_match, prefix: string, timestamp: string) =>

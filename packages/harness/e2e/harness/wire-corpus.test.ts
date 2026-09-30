@@ -148,16 +148,18 @@ test("a hosted stack's temporary root normalizes like the local stack's data dir
   expect(result.product).toBe("<workspace:value:1>")
 })
 
-test("run-local values normalize: an actor id, a digest and a timestamp inside a raw harness line", () => {
+test("run-local values normalize: an actor id, a digest and timestamps inside raw harness lines", () => {
   const result = normalizeWireCorpus({
     actorId: "act_4c24c830a021c693c5c6bcace9d15828",
     delta: "56d2fe28c7026db5dfa4144d76f482bb855f00ecf31b40f5a4306407f6225107",
     raw: "{\"isError\":false,\"timestamp\":1790640318314}",
+    excerpt: "{\"subtype\":\"informational\",\"timestamp\":\"2026-09-30T09:25:53.257Z\"}",
     title: "5822feb31efae0d63b8ab72cb3e383bf64187deb7815820b794a1f7ab47…",
   }) as Record<string, string>
   expect(result.actorId).toBe("<id:value:1>")
   expect(result.delta).toBe("<sha256>")
   expect(result.raw).toBe("{\"isError\":false,\"timestamp\":<time>}")
+  expect(result.excerpt).toBe("{\"subtype\":\"informational\",\"timestamp\":\"<time>\"}")
   expect(result.title).toBe("<sha256>…")
 })
 

@@ -1,17 +1,32 @@
 import assert from "node:assert/strict"
 import fs from "node:fs/promises"
 import path from "node:path"
-import { ClaxedoApi, assistantText } from "../harness/api"
+import { ClaxedoApi, assistantText, type MessageRow } from "../harness/api"
 import { unexpectedEgress } from "../harness/egress-guard"
-import { startStack } from "../harness/stack"
+import { startStack, type Stack } from "../harness/stack"
 import { frameSessionId, frameType } from "../harness/stream"
 import { waitForTitle } from "../harness/turn-observations"
 
+/**
+ * `held`: the harness gives no evidence of the steer, so it stays uncertain.
+ * `incorporated`: Codex still opens the steer's userMessage item when only its
+ * `turn/steer` reply is withheld, and that evidence settles the steer.
+ */
 const CASES = [
-  { name: "pi", model: { providerId: "pi", modelId: "openai/gpt-4.1" } },
-  { name: "codex", model: { providerId: "codex", modelId: "gpt-5.5" } },
-  { name: "claude", model: { providerId: "claude", modelId: "sonnet" } },
+  { name: "pi", outcome: "held", model: { providerId: "pi", modelId: "openai/gpt-4.1" } },
+  { name: "codex", outcome: "incorporated", model: { providerId: "codex", modelId: "gpt-5.5" } },
+  { name: "claude", outcome: "held", model: { providerId: "claude", modelId: "sonnet" } },
 ] as const
+
+async function nextTurn(stack: Stack, api: ClaxedoApi, directory: string, sessionId: string, name: string) {
+  const resumed = await stack.events(directory)
+  const next = `H7NEXT${name.toUpperCase()}`
+  stack.scripted.scriptText({ marker: next, text: next })
+  await api.promptAsync(directory, sessionId, next)
+  await resumed.waitFor((frame) => frameType(frame) === "session.idle" && frameSessionId(frame) === sessionId, { label: `${name} next turn idle` })
+  assert.match(assistantText(await api.messages(directory, sessionId)), new RegExp(next))
+  assert.equal((await api.session(directory, sessionId)).lastTurn?.status, "completed")
+}
 
 async function unknownCase(item: typeof CASES[number]) {
   const stack = await startStack({ label: `h7-unknown-${item.name}`, ...(item.name === "claude" ? { claudeSteerFault: true } : { steerReplyFault: item.name }) })
@@ -36,9 +51,7 @@ async function unknownCase(item: typeof CASES[number]) {
       await new Promise((resolve) => setTimeout(resolve, 150))
       release()
       const answer = await pending
-      const body = await answer.json() as { status?: string }
-      assert.equal(answer.status, 202, `${item.name} unknown steer HTTP: ${JSON.stringify(body)}`)
-      assert.ok(body.status === "pending" || body.status === "unknown", `${item.name} steer receipt: ${JSON.stringify(body)}`)
+      const body = await answer.json() as { status?: string; delivery?: string }
       await stream.waitFor((frame) => (frameType(frame) === "session.idle" || frameType(frame) === "session.error") && frameSessionId(frame) === session.id, { label: `${item.name} unknown steer settled` })
       if (item.name !== "claude") await waitForTitle(stream, session.id)
       const queue = async () => {
@@ -46,6 +59,22 @@ async function unknownCase(item: typeof CASES[number]) {
         assert.equal(response.status, 200)
         return await response.json() as Array<{ seq: number; parts: Array<{ text?: string }>; steering?: { state: string; mode: string } }>
       }
+      const storedSteerCount = (messages: MessageRow[]) => messages.filter((message) => message.info.role === "user" && message.parts.some((part) => part.text === steered)).length
+      if (item.outcome === "incorporated") {
+        assert.equal(answer.status, 200, `${item.name} incorporated steer HTTP: ${JSON.stringify(body)}`)
+        assert.deepEqual(body, { delivery: "steer" })
+        assert.match(await fs.readFile(path.join(stack.dataDir, `${item.name}-steer-fault-bin`, "seen.log"), "utf8"), /reply withheld/)
+        assert.deepEqual(await queue(), [], `${item.name} steer the transcript holds stayed in the queue`)
+        assert.equal(storedSteerCount(await api.messages(workspace.directory, session.id)), 1, `${item.name} steered prompt is not in the transcript once`)
+        await nextTurn(stack, api, workspace.directory, session.id, item.name)
+        assert.equal(storedSteerCount(await api.messages(workspace.directory, session.id)), 1, `${item.name} steered prompt was resent`)
+        assert.deepEqual(await queue(), [], `${item.name} queue changed after next turn`)
+        assert.deepEqual(unexpectedEgress(stack.egress.attempts), [], `${item.name} attempted outbound egress`)
+        console.log(`H7 ${item.name}: withheld steer reply settled by the userMessage item; HTTP 200, one stored steer, empty queue and next completed turn passed`)
+        return
+      }
+      assert.equal(answer.status, 202, `${item.name} unknown steer HTTP: ${JSON.stringify(body)}`)
+      assert.ok(body.status === "pending" || body.status === "unknown", `${item.name} steer receipt: ${JSON.stringify(body)}`)
       await stream.waitFor((frame) => {
         const payload = frame.data.payload as { type?: string; sessionID?: string; queue?: Array<{ steering?: { state?: string } }> } | undefined
         return payload?.type === "session.queue" && payload.sessionID === session.id && !!payload.queue?.some((row) => row.steering?.state === "unknown")
@@ -55,7 +84,6 @@ async function unknownCase(item: typeof CASES[number]) {
       const evidence = await fs.readFile(path.join(stack.dataDir, `${item.name}-steer-fault-bin`, "seen.log"), "utf8")
       assert.match(evidence, item.name === "claude" ? /process interrupted before replay/ : /reply withheld/)
       const firstMessages = await api.messages(workspace.directory, session.id)
-      const storedSteerCount = (messages: typeof firstMessages) => messages.filter((message) => message.info.role === "user" && message.parts.some((part) => part.text === steered)).length
       if (item.name === "claude") {
         stream.close()
         await stack.daemon.restart()
@@ -66,14 +94,7 @@ async function unknownCase(item: typeof CASES[number]) {
         console.log("H7 claude: unknown steer HTTP 202 stayed provider-owned after restart; live failure, stored outcome and queue readback passed")
         return
       }
-      const resumed = await stack.events(workspace.directory)
-      const next = `H7NEXT${item.name.toUpperCase()}`
-      stack.scripted.scriptText({ marker: next, text: next })
-      await api.promptAsync(workspace.directory, session.id, next)
-      await resumed.waitFor((frame) => frameType(frame) === "session.idle" && frameSessionId(frame) === session.id, { label: `${item.name} next turn idle` })
-      const stored = await api.messages(workspace.directory, session.id)
-      assert.match(assistantText(stored), new RegExp(next))
-      assert.equal((await api.session(workspace.directory, session.id)).lastTurn?.status, "completed")
+      await nextTurn(stack, api, workspace.directory, session.id, item.name)
       assert.equal(storedSteerCount(await api.messages(workspace.directory, session.id)), storedSteerCount(firstMessages), `${item.name} stored a second user turn for provider-owned steer`)
       assert.deepEqual(await queue(), firstRows, `${item.name} unknown steer changed after next turn`)
       assert.deepEqual(unexpectedEgress(stack.egress.attempts), [], `${item.name} attempted outbound egress`)
