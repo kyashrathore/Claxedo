@@ -1101,13 +1101,13 @@ describe("codexAppServerAdapter", () => {
 
     expect(agent.ingest({
       source: "codex.app-server",
-      method: "hook/started",
-      payload: { threadId: "thread-1", turnId: "turn-1", run: { id: "hook-1" } },
+      method: "remoteControl/status/changed",
+      payload: { status: "disabled" },
     }).events).toMatchObject([{
       type: "diagnostic",
       diagnostic: {
         code: "codex_app_server.unmapped_event",
-        message: "hook/started: Codex app-server method has no AgentRuntimeEvent mapping",
+        message: "remoteControl/status/changed: Codex app-server method has no AgentRuntimeEvent mapping",
         severity: "info",
       },
     }])

@@ -2,7 +2,7 @@ import { asRecord } from "@claxedo/helpers/guards"
 import { asText as text } from "@claxedo/agent-runtime-contract"
 import { RETAINED_WIRE_KEYS_MAX, boundKeyedRecord, own } from "../../../translate/value"
 import { threadOf, type CodexHandlers } from "./frame"
-import { harnessNotice, unmappedCodexAppServerEvent } from "./notices"
+import { harnessNotice } from "./notices"
 import type { CodexAppServerAdapterState } from "./state"
 import { turnUsage } from "./token-usage"
 
@@ -61,8 +61,5 @@ export const usageHandlers: CodexHandlers = {
       details: row,
     })],
   }),
-  "thread/settings/updated": ({ state, method, row, event }) => ({
-    state: recordReportedModel(state, method, row),
-    events: unmappedCodexAppServerEvent(event),
-  }),
+  "thread/settings/updated": ({ state, method, row }) => ({ state: recordReportedModel(state, method, row), events: [] }),
 }

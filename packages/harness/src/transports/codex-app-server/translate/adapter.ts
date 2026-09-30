@@ -3,6 +3,7 @@ import { asText as text } from "@claxedo/agent-runtime-contract"
 import type { HarnessEventAdapter } from "../../../translate/adapter"
 import { accountHandlers } from "./account"
 import { eventPayload, protocolMethod, frameRequestId, type CodexHandlers, type CodexThreadModel } from "./frame"
+import { hookHandlers } from "./hooks"
 import { itemHandlers } from "./item-lifecycle"
 import { messageHandlers } from "./message-items"
 import { diagnosticForEvent, noticeHandlers, unmappedCodexAppServerEvent } from "./notices"
@@ -24,6 +25,7 @@ const handlers: CodexHandlers = {
   ...requestHandlers,
   ...accountHandlers,
   ...noticeHandlers,
+  ...hookHandlers,
 }
 
 export function codexAppServerAdapter(options: { threadModel?: CodexThreadModel } = {}): HarnessEventAdapter<CodexAppServerAdapterState> {

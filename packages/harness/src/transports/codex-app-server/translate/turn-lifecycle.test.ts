@@ -102,3 +102,16 @@ test("a thread system error is surfaced without ending the turn", () => {
   expect(events.some((event) => event.type === "error" || event.type === "finish" || event.type === "cancelled"
     || (event.type === "session-status" && event.status !== "busy"))).toBe(false)
 })
+
+test("a turn's aggregated diff is one file diff per file it touched, never a file named diff", () => {
+  const app = "diff --git a/src/app.ts b/src/app.ts\nindex 1111111..2222222 100644\n--- a/src/app.ts\n+++ b/src/app.ts\n@@ -1 +1 @@\n-a\n+b\n"
+  const added = "diff --git a/src/new.ts b/src/new.ts\nnew file mode 100644\n--- /dev/null\n+++ b/src/new.ts\n@@ -0,0 +1 @@\n+export {}\n"
+  expect(runtime().ingest({
+    source: "codex.app-server",
+    method: "turn/diff/updated",
+    payload: { threadId: "thread-1", turnId: "turn-1", diff: `${app}${added}` },
+  }).events).toEqual([
+    expect.objectContaining({ type: "file-diff", path: "src/app.ts", newText: app }),
+    expect.objectContaining({ type: "file-diff", path: "src/new.ts", newText: added }),
+  ])
+})

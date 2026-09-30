@@ -63,6 +63,13 @@ function todosFromPlan(row: Record<string, unknown>) {
   })
 }
 
+function fileDiffs(diff: string): AgentRuntimeEvent[] {
+  return diff.split(/^(?=diff --git )/m).flatMap((section) => {
+    const path = /^diff --git a\/.+? b\/(.+)$/m.exec(section)?.[1]
+    return path ? [{ type: "file-diff", path, newText: section }] : []
+  })
+}
+
 export const turnHandlers: CodexHandlers = {
   "turn/started": () => [{ type: "session-status", status: "busy" }],
   "turn/completed": ({ state, event, context, row }) => ({
@@ -78,14 +85,13 @@ export const turnHandlers: CodexHandlers = {
     ],
   }),
   "thread/started": () => [],
+  "thread/goal/updated": () => [],
+  "thread/goal/cleared": () => [],
   "turn/plan/updated": ({ row }) => {
     const todos = todosFromPlan(row)
     return todos.length ? [{ type: "todo-update", todos }] : []
   },
-  "turn/diff/updated": ({ row }) => {
-    const diff = text(row.diff)
-    return diff ? [{ type: "file-diff", path: text(row.path) ?? "diff", newText: diff }] : []
-  },
+  "turn/diff/updated": ({ row }) => fileDiffs(text(row.diff) ?? ""),
   "thread/name/updated": ({ row }) => {
     const name = text(row.threadName)
     return name ? [{ type: "session-title", title: name }] : []
