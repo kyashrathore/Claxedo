@@ -1224,7 +1224,7 @@ void describe("RuntimeStore", () => {
       first.messages.map((message) => (message.parts[0] as { text?: string } | undefined)?.text),
       ["message 5", "message 6"],
     )
-    assert.match(first.nextCursor ?? "", /^wrmp1:/)
+    assert.match(first.nextCursor ?? "", /^wrmp2:/)
 
     const second = store.getMessagePage("s1", { limit: 2, before: first.nextCursor })
     assert.ok(second)
@@ -1263,7 +1263,7 @@ void describe("RuntimeStore", () => {
       latest.messages.map((message) => message.info.id),
       ["user-2", "assistant-2a", "assistant-2b"],
     )
-    assert.match(latest.nextCursor ?? "", /^wrmp1:/)
+    assert.match(latest.nextCursor ?? "", /^wrmp2:/)
 
     const older = store.getMessagePage("s1", { limit: 10, before: latest.nextCursor })
     assert.ok(older)
@@ -1484,7 +1484,7 @@ void describe("RuntimeStore", () => {
         ],
       ],
     )
-    assert.match(surface.nextCursor ?? "", /^wrmp1:/)
+    assert.match(surface.nextCursor ?? "", /^wrmp2:/)
 
     const complete = store.getMessagePage("s1", { view: "latest-turn" })
     assert.ok(complete)
@@ -1676,16 +1676,19 @@ void describe("RuntimeStore", () => {
     const cursor = result.nextCursor
     assert.ok(cursor)
 
-    for (const run of [
-      () => store.getMessagePage("s1", { limit: 1, before: "not-a-cursor" }),
+    assert.throws(
       () => store.getMessagePage("s2", { limit: 1, before: cursor }),
-    ]) {
+      (error: unknown) =>
+        error instanceof AgentMessagePageError && error.status === 400 && error.message === "Invalid message page cursor",
+    )
+    const previousVersion = `wrmp1:${btoa(JSON.stringify({ sessionId: "s1", ord: 1 })).replace(/=+$/, "")}`
+    for (const before of ["not-a-cursor", previousVersion]) {
       assert.throws(
-        run,
+        () => store.getMessagePage("s1", { limit: 1, before }),
         (error: unknown) =>
-          error instanceof AgentMessagePageError &&
-          error.status === 400 &&
-          error.message === "Invalid message page cursor",
+          error instanceof AgentMessagePageError
+          && error.status === 400
+          && error.message === "Message page cursor is from another version or producer",
       )
     }
     assert.throws(

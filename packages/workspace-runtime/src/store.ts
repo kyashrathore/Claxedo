@@ -327,7 +327,7 @@ type SurfaceTurnRow = {
   parent_id: string | null
 }
 
-const MESSAGE_PAGE_CURSOR_PREFIX = "wrmp1:"
+const MESSAGE_PAGE_CURSOR_PREFIX = "wrmp2:"
 const MESSAGE_HYDRATION_BATCH_SIZE = 500
 
 /**
@@ -547,7 +547,6 @@ export class RuntimeProjectionBlockedError extends Error {
   }
 }
 
-/** The database a runtime store runs on, as its host opened it. */
 export type RuntimeStoreDatabase = {
   readonly db: SqliteDatabase
   /** Names the store in the errors that refuse it. */
