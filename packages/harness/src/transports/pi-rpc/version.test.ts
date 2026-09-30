@@ -41,7 +41,7 @@ test("a Pi newer than the tested range runs, with one untested-version diagnosti
   try {
     const session = await pi.transport.start(pi.start(), broker)
     await pi.transport.close(session)
-    await pi.transport.attach({ ...pi.start(), binding: session.binding }, broker)
+    await pi.transport.attach({ ...pi.start(), binding: session.binding, upstreamHasTurns: false }, broker)
     expect(published).toEqual([{ type: "diagnostic", diagnostic: { code: "pi.untested_version", severity: "warn", source: "pi.rpc", method: "--version",
       message: `Pi 0.100.0 is newer than ${PI_RANGE.max}, the newest version Claxedo is tested against` } }])
     expect(pi.versions.map((command) => command.args.at(-1))).toEqual(["--version", "--version"])

@@ -92,7 +92,7 @@ async function attachedClaude(state: ClaudeBackend, previous?: { ports: MemoryPo
   const start = { sessionId: "s1", workspaceId: "w1", directory: state.directory, locality: "local" as const, owner: state.owner,
     config: { harness: state.harness, model: state.model }, model: state.model, credentials: state.credentials,
     projection: { generation: "g1", mcpServers: [], pluginRoots: [], notApplied: [] } }
-  const started = previous ? await transport.attach({ ...start, binding: previous.binding }, broker) : await transport.start(start, broker)
+  const started = previous ? await transport.attach({ ...start, binding: previous.binding, upstreamHasTurns: true }, broker) : await transport.start(start, broker)
   const session = () => ({ ...started, binding: ports.bindings.get("s1") ?? started.binding })
   const turn = (turnId: string, text: string): TurnInput => ({ turnId, userMessageId: `u-${turnId}`, assistantMessageId: `a-${turnId}`, origin,
     model: state.model, prompt: { agent: "claude", assistantMessageId: `a-${turnId}`, parts: [{ type: "text", text }] }, todos: [] })
@@ -373,7 +373,7 @@ test("a saved Claude grant survives transport recreation and stays in its sessio
   const second = transport()
   for (const [index, sessionId] of ["s1", "s2"].entries()) {
     const broker = createSessionBroker(restartedOwner, { sessionId, workspaceId: "w1", directory: "/work", origin })
-    await second.attach({ ...input(sessionId), binding: firstSessions[index]!.binding }, broker)
+    await second.attach({ ...input(sessionId), binding: firstSessions[index]!.binding, upstreamHasTurns: false }, broker)
   }
   try {
     const reused = await askClaudePermission(input("s1"), turn(restartedOwner, "s1"), "Bash", { command: "echo shared" }, options)

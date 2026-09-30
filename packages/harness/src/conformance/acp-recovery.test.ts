@@ -10,7 +10,7 @@ for (const operation of ["start", "attach"] as const) test(`ACP immediate ${oper
     const session = await f.start()
     f.peers[0]!.retirementGate = new Promise<void>((resolve) => { release = resolve })
     closing = f.transport.close(session)
-    replacement = operation === "start" ? f.start() : f.transport.attach({ ...f.input, binding: session.binding }, f.sessionBroker)
+    replacement = operation === "start" ? f.start() : f.transport.attach({ ...f.input, binding: session.binding, upstreamHasTurns: false }, f.sessionBroker)
     await reached(() => f.peers[0]!.retirements === 1 ? true : undefined)
     await Bun.sleep(15)
     expect(f.peers).toHaveLength(1)
@@ -27,7 +27,7 @@ test("ACP cold config synchronization is bounded before any native prompt", asyn
   let running: Promise<unknown> | undefined
   let released = false
   try {
-    const session = await f.transport.attach({ ...f.input, binding: { ...f.binding, upstreamSessionId: "saved" } }, f.sessionBroker)
+    const session = await f.transport.attach({ ...f.input, binding: { ...f.binding, upstreamSessionId: "saved" }, upstreamHasTurns: true }, f.sessionBroker)
     running = collect(f.transport.send(session, { ...f.turn, model: { providerID: "c1", modelID: "two" } }, f.turnBroker()))
       .then(() => "completed", (error: unknown) => error)
     const peer = f.peers[0]!
@@ -80,7 +80,7 @@ test("ACP resumed session timeout never prompts, cancels, or binds and leaves th
   const f = wireFixture((_peer, message) => message.method === "session/resume", { startupTimeoutMs: 25 })
   try {
     const sibling = await f.start()
-    await expect(f.transport.attach({ ...f.input, sessionId: "s2", binding: { ...f.binding, sessionId: "s2", upstreamSessionId: "saved" } }, f.sessionBroker))
+    await expect(f.transport.attach({ ...f.input, sessionId: "s2", binding: { ...f.binding, sessionId: "s2", upstreamSessionId: "saved" }, upstreamHasTurns: true }, f.sessionBroker))
       .rejects.toMatchObject({ code: "timeout", message: "ACP session restore timed out" })
     expect(f.peers.map((peer) => peer.retirements)).toEqual([0, 1])
     expect(f.peers[1]!.messages.map((row) => row.method)).toEqual(["initialize", "session/resume"])

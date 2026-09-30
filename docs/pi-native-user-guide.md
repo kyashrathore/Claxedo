@@ -17,10 +17,13 @@ Claxedo keeps the visible conversation and controls starting, stopping and
 answering questions. Pi keeps its native conversation file, chooses the context
 sent to the model and performs automatic compaction. Restarting an idle process
 resumes that same file. Pi writes the file with the first message, so a session
-reconfigured before its first message reopens under the same id. If the file of
-a session that had messages is missing, Claxedo reports an error rather than
-silently starting another conversation. Repository memory files and other
-files written by the agent live on the selected machine.
+that has not had a message yet has no file: reconfiguring it, or reopening it
+after Claxedo restarts, starts Pi fresh under the same id, and nothing is lost
+because nothing was said. Claxedo's own record of the session's turns decides
+which case applies. If a session that had a turn has lost its file, Claxedo
+reports an error rather than silently starting another conversation.
+Repository memory files and other files written by the agent live on the
+selected machine.
 
 ## Extending Pi
 

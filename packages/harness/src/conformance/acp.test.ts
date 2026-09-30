@@ -171,7 +171,7 @@ test("a missing native ACP session persists saved context before rebinding", asy
     }
     context.ports.rebind = async (_sessionId, upstreamSessionId) => { order.push("rebind"); return { ...context.started.binding, upstreamSessionId } }
     const attached = await context.transport.attach({ ...context.start,
-      binding: { ...context.session.binding, upstreamSessionId: "missing-session" } }, context.sessionBroker)
+      binding: { ...context.session.binding, upstreamSessionId: "missing-session" }, upstreamHasTurns: true }, context.sessionBroker)
     expect(attached.binding.upstreamSessionId).not.toBe("missing-session")
     expect(order).toEqual(["context", "persist", "rebind"])
     const requests = await readAcpRequests(context.backend.directory)
@@ -944,7 +944,7 @@ test("a stalled ACP resume times out without disturbing a sibling peer", async (
       timers.set(id, callback)
       return id
     }, clearTimeout(handle) { timers.delete(handle as number) } }
-    const attaching = context.transport.attach({ ...context.start, binding: context.session.binding }, context.sessionBroker)
+    const attaching = context.transport.attach({ ...context.start, binding: context.session.binding, upstreamHasTurns: false }, context.sessionBroker)
     for (let attempt = 0; attempt < 500; attempt++) {
       if ((await readAcpRequests(context.backend.directory)).some((row) => row.method === "session/resume")) break
       await new Promise((resolve) => setTimeout(resolve, 10))

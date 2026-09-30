@@ -1,6 +1,7 @@
 import { SessionAuthoringOwnership } from "./session/authoring-ownership"
 import type { TurnOutline, AgentPresentationEvent } from "@claxedo/agent-runtime-contract"
 import { readTurnOutline } from "./session/turn-outline"
+import { readTurnEvidence, readUpstreamHasTurns } from "./session/turn-evidence"
 import type { SessionConfig, SessionConfigUpdate, SessionHandoff, SessionHandoffSource, SubagentObservation } from "@claxedo/agent-runtime-contract"
 import { randomBytes } from "crypto"
 import fs from "fs"
@@ -4484,38 +4485,12 @@ export class RuntimeStore {
     return this.turnLeases.read(sessionId)
   }
 
-  /**
-   * What the journal records about one turn, for a caller deciding whether a
-   * cancellation still has anything to cancel.
-   *
-   * Either of the turn's two message ids identifies it. The journal keys turn
-   * rows on the assistant message id, while a recovery target carries the user
-   * message id the caller was given at admission, and neither side can derive
-   * the other without this lookup.
-   */
   turnEvidence(sessionId: string, turnId: string) {
-    const start = this.db
-      .prepare<{ assistant_message_id: string }>(
-        `
-        SELECT assistant_message_id FROM runtime_journal
-        WHERE session_id = ? AND kind = 'control' AND type = 'turn.start'
-          AND (assistant_message_id = ? OR user_message_id = ?)
-        ORDER BY seq DESC LIMIT 1
-      `,
-      )
-      .get(sessionId, turnId, turnId)
-    if (!start) return { started: false, finished: false }
-    const finish = this.db
-      .prepare<{ payload_json: string }>(
-        `
-        SELECT payload_json FROM runtime_journal
-        WHERE session_id = ? AND kind = 'control' AND type = 'turn.finish' AND assistant_message_id = ?
-        ORDER BY seq DESC LIMIT 1
-      `,
-      )
-      .get(sessionId, start.assistant_message_id)
-    if (!finish) return { started: true, finished: false }
-    return { started: true, finished: true, outcome: readColumn.turnFinish(finish.payload_json).outcome }
+    return readTurnEvidence(this.db, sessionId, turnId)
+  }
+
+  upstreamHasTurns(sessionId: string, upstreamSessionId: string) {
+    return readUpstreamHasTurns(this.db, sessionId, upstreamSessionId)
   }
 
   /**

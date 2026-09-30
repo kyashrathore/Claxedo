@@ -47,6 +47,7 @@ export type StartInput = {
 
 export type AttachInput = Omit<StartInput, "title" | "instructions"> & {
   binding: HarnessBinding
+  upstreamHasTurns: boolean
 }
 
 export type TurnPrompt = Omit<PromptInput, "model" | "variant" | "system">

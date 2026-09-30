@@ -87,7 +87,7 @@ test("Codex offers today's four permission modes and applies the selected one to
     }
     expect((await context.transport.config!.permissionModes({ session: context.session })).currentModeId).toBe("full-access")
     await context.transport.close(context.session)
-    const attached = await context.transport.attach({ ...context.start, config: { ...context.start.config, permissionMode: "read-only" }, binding: context.session.binding }, context.sessionBroker)
+    const attached = await context.transport.attach({ ...context.start, config: { ...context.start.config, permissionMode: "read-only" }, binding: context.session.binding, upstreamHasTurns: true }, context.sessionBroker)
     expect(recorder.frames.find((frame) => frame.method === "thread/resume")?.params).toMatchObject({ approvalPolicy: "never", sandbox: "read-only" })
     await context.transport.close(attached)
   } finally { await context.close() }
@@ -246,8 +246,8 @@ test("two concurrent own-login sessions share one Claxedo home, see the owner's 
     expect(state.server.requests.find((row) => row.prompt.includes("SHAREDTWO"))?.authorization).toContain(OWNER_KEY)
     await context.transport.close(first)
     await context.transport.close(second)
-    const firstAgain = await context.transport.attach({ ...context.start, binding: first.binding }, context.sessionBroker)
-    const secondAgain = await context.transport.attach({ ...secondStart, binding: second.binding }, secondBroker)
+    const firstAgain = await context.transport.attach({ ...context.start, binding: first.binding, upstreamHasTurns: true }, context.sessionBroker)
+    const secondAgain = await context.transport.attach({ ...secondStart, binding: second.binding, upstreamHasTurns: true }, secondBroker)
     expect(entryHome(context.transport, "s1")).toBe(entryHome(context.transport, "s2"))
     const collected: string[] = []
     for await (const event of context.transport.send(firstAgain, context.turn("Reply with exactly this one token: RESUMEDONE"), context.turnBroker())) {
