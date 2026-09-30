@@ -7,12 +7,11 @@ ENV AMP_SKIP_UPDATE_CHECK=1 FACTORY_DROID_AUTO_UPDATE_ENABLED=false
 
 # Direct terminal-agent CLIs baked into the image. These are the single biggest
 # contributor to image size (claude ~228MB, codex ~218MB,
-# gemini ~156MB, pi ~147MB) and the push bottleneck — so they are build-arg
-# driven and default to a LEAN set. Pass the full list to restore every runner:
-#   --build-arg CLAXEDO_NPM_AGENTS="@anthropic-ai/claude-code@2.1.280 @openai/codex@0.133.0 @google/gemini-cli@0.43.0 @earendil-works/pi-coding-agent@0.99.1"
+# gemini ~156MB, pi ~147MB) and the push bottleneck, so they are build-arg
+# driven: pass a different CLAXEDO_NPM_AGENTS to a local `docker build`.
 # NOTE: `wrangler deploy` cannot inject --build-arg, so the DEFAULT below is what
-# ships via wrangler. Override only for local `docker build`.
-ARG CLAXEDO_NPM_AGENTS="@anthropic-ai/claude-code@2.1.280 @openai/codex@0.133.0 @google/gemini-cli@0.43.0 @earendil-works/pi-coding-agent@0.99.1"
+# ships via wrangler.
+ARG CLAXEDO_NPM_AGENTS="@anthropic-ai/claude-code@2.1.285 @openai/codex@0.159.2 @google/gemini-cli@0.62.0 @earendil-works/pi-coding-agent@0.99.1"
 ARG CLAXEDO_CURL_AGENTS="1"
 
 # Install build tools for native deps (better-sqlite3, node-pty). `git` is named
@@ -32,13 +31,26 @@ RUN apt-get update && \
 # (the same major as Electron 43 and the ghcr image) ahead of the base's node
 # on PATH; the sandbox's own container
 # server is a self-contained binary and does not resolve node from PATH.
-RUN curl -fsSL https://nodejs.org/dist/v24.18.0/node-v24.18.0-linux-x64.tar.xz -o /tmp/node24.tar.xz && \
-    printf '%s  %s\n' 55aa7153f9d88f28d765fcdad5ae6945b5c0f98a36881703817e4c450fa76742 /tmp/node24.tar.xz | sha256sum -c - && \
+RUN curl -fsSL https://nodejs.org/dist/v24.21.0/node-v24.21.0-linux-x64.tar.xz -o /tmp/node24.tar.xz && \
+    printf '%s  %s\n' fd8e59d5a511510f6a298afb548f18c7d2b1be404d8b4a27d94fbe49f56cb2d6 /tmp/node24.tar.xz | sha256sum -c - && \
     mkdir -p /opt/node-24 && \
     tar -xJf /tmp/node24.tar.xz -C /opt/node-24 --strip-components=1 && \
     rm /tmp/node24.tar.xz && \
     /opt/node-24/bin/node --version
 ENV PATH=/opt/node-24/bin:$PATH
+
+# Harness SDKs and CLIs skip npm's release-age gate: their releases carry the
+# protocol changes Claxedo tracks the day they ship (owner exemption,
+# 2026-09-30). npm honors these exclusions from 11.17 (Node 24.19); every other
+# package, the harness packages' own dependencies included, stays gated.
+RUN printf '%s\n' \
+      'min-release-age-exclude[]=@agentclientprotocol/sdk' \
+      'min-release-age-exclude[]=@anthropic-ai/claude-*' \
+      'min-release-age-exclude[]=@cursor/sdk*' \
+      'min-release-age-exclude[]=@earendil-works/*' \
+      'min-release-age-exclude[]=@google/gemini-cli*' \
+      'min-release-age-exclude[]=@openai/codex' \
+      >> "$HOME/.npmrc"
 
 # Global CLI tools used by direct terminal agents and materialized MCP configs.
 # tsx is always needed by the runtime; the agent set is configurable above.

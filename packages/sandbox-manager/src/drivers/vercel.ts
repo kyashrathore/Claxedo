@@ -88,6 +88,8 @@ export type VercelSandboxDriverOptions = {
 }
 
 const DEFAULT_RUNTIME = "node22"
+const HARNESS_RELEASE_AGE_EXCLUSIONS = `printf '%s\\n' ${["@agentclientprotocol/sdk", "@anthropic-ai/claude-*", "@cursor/sdk*", "@earendil-works/*",
+  "@google/gemini-cli*", "@openai/codex"].map((name) => `'min-release-age-exclude[]=${name}'`).join(" ")} >> "$HOME/.npmrc"`
 const DEFAULT_RUNTIME_COMMAND = "/usr/local/bin/workspace-runtime"
 const DEFAULT_WORKSPACE_DIR = "/workspace"
 const DEFAULT_TIMEOUT_MS = 30 * 60 * 1000
@@ -317,7 +319,8 @@ export function createVercelSandboxDriver(options: VercelSandboxDriverOptions): 
       })
       await runSetup(builder, "sudo dnf install -y git make gcc-c++ python3 > /dev/null 2>&1")
       await runSetup(builder, [
-        "npm i -g --min-release-age=2 tsx@4.22.3 opencode-ai@1.15.10 @anthropic-ai/claude-code@2.1.280 @openai/codex@0.156.1 @google/gemini-cli@0.43.0 @earendil-works/pi-coding-agent@0.99.1",
+        HARNESS_RELEASE_AGE_EXCLUSIONS,
+        "npm i -g --min-release-age=2 tsx@4.22.3 opencode-ai@1.15.10 @anthropic-ai/claude-code@2.1.285 @openai/codex@0.159.2 @google/gemini-cli@0.62.0 @earendil-works/pi-coding-agent@0.99.1",
         "curl https://cursor.com/install -fsS | bash",
         "curl -fsSL https://ampcode.com/install.sh | bash",
         "curl -fsSL https://app.factory.ai/cli | sh",
