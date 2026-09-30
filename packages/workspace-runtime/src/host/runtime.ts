@@ -5,6 +5,7 @@ import { createRequestBroker, type BrokerPorts } from "@claxedo/harness/broker"
 import type { HarnessSession, HarnessTransport } from "@claxedo/harness/contract"
 import { SessionAttachments, type AttachedSession } from "./attachments"
 import { createChildTurns } from "./child-turns"
+import { providerParentTurn } from "./provider-child-turns"
 import { createHarnessReads } from "./config-ops"
 import { AgentRuntimeTurnAdmissionError } from "./contracts"
 import type {
@@ -92,7 +93,12 @@ export function createAgentRuntime(input: AgentRuntimeCompositionInput) {
     admitProviderTurn: (sessionId, turn, run) => {
       if (lifecycle.closing) return Promise.resolve({ admitted: false, reason: "closed" })
       return track(async () => {
-        const result = await input.ports.admitProviderTurn(sessionId, turn, run)
+        const result = await input.ports.admitProviderTurn(sessionId, turn, async (ref, signal) => {
+          const endChildTurns = childTurns.beginTurn(sessionId, providerParentTurn(store, sessionId, publish))
+          try { await run(ref, signal) } finally {
+            try { endChildTurns() } catch (error) { recovery.reportSessionFailure(sessionId, error) }
+          }
+        })
         if (result.admitted) {
           const current = input.ports.currentTurnAuthority(sessionId)
           const leaseId = current?.turnId === result.turn.turnId ? store.readTurnAuthority(sessionId)?.leaseId : undefined
@@ -178,6 +184,7 @@ export function createAgentRuntime(input: AgentRuntimeCompositionInput) {
     store, admissions, recovery, titles, broker, steers, ownerGeneration: input.ownerGeneration, publish,
     commit: commitAndPublish,
     beginChildTurns: (parentSessionId, context) => childTurns.beginTurn(parentSessionId, context),
+    childTarget: (childSessionId, assistantMessageId) => childTurns.target(childSessionId, assistantMessageId),
   }
 
   const startTurn = async (turn: AgentRuntimeTurnStartInput): Promise<AgentRuntimeTurnStartResult> => {
