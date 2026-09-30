@@ -91,9 +91,9 @@ describe("composed Better Auth + D1 authority", () => {
     const bob = await signed(authority, "bob")
 
     await authority.createHostedOrganization(alice, { name: "Acme", orgId: "org_acme" })
-    await authority.addOrganizationMember(alice, {
+    await authority.addOrgMember!(alice, {
       orgId: "org_acme",
-      userId: bob.principal!.userId,
+      userPublicId: bob.principal!.userId,
       role: "member",
     })
     await authority.createWorkspace(alice, {
@@ -103,9 +103,9 @@ describe("composed Better Auth + D1 authority", () => {
       backing: "cloud-vm",
     })
 
-    await authority.addOrganizationMember(alice, {
+    await authority.addOrgMember!(alice, {
       orgId: "org_acme",
-      userId: bob.principal!.userId,
+      userPublicId: bob.principal!.userId,
       role: "admin",
     })
     expect(await authority.openWorkspace(bob, { workspaceId: "ws_acme" })).toMatchObject({ role: "admin" })
@@ -191,9 +191,9 @@ describe("composed Better Auth + D1 authority", () => {
     const outsider = await signed(authority, "team-outsider")
 
     await authority.createHostedOrganization(alice, { name: "Team sharing", orgId: "org_team_sharing" })
-    await authority.addOrganizationMember(alice, {
+    await authority.addOrgMember!(alice, {
       orgId: "org_team_sharing",
-      userId: bob.principal!.userId,
+      userPublicId: bob.principal!.userId,
       role: "member",
     })
     await authority.createHostedOrganization(outsider, { name: "Other org", orgId: "org_other" })
@@ -316,9 +316,9 @@ describe("composed Better Auth + D1 authority", () => {
     const alice = await signed(authority, "channel-alice")
     const bob = await signed(authority, "channel-bob")
     await authority.createHostedOrganization(alice, { name: "Channels", orgId: "org_channels" })
-    await authority.addOrganizationMember(alice, {
+    await authority.addOrgMember!(alice, {
       orgId: "org_channels",
-      userId: bob.principal!.userId,
+      userPublicId: bob.principal!.userId,
       role: "member",
     })
     await authority.createWorkspace(alice, {
@@ -367,7 +367,7 @@ describe("composed Better Auth + D1 authority", () => {
     ).toEqual({ actorId: bob.principal!.actorId, actorKind: "human" })
     const channelIdentity = { channel: "telegram", externalUserId: "telegram-user-7", threadKey: "telegram:thread-1" }
     await expect(authority.resolveChannelMachineAccess(channelIdentity, "ws_channels")).rejects.toMatchObject({ status: 403 })
-    await authority.addOrganizationMember(alice, { orgId: "org_channels", userId: bob.principal!.userId, role: "admin" })
+    await authority.addOrgMember!(alice, { orgId: "org_channels", userPublicId: bob.principal!.userId, role: "admin" })
     const access = await authority.resolveChannelMachineAccess(channelIdentity, "ws_channels")
     expect(access).toMatchObject({ actorId: bob.principal!.actorId, userId: bob.principal!.userId, orgId: "org_channels", identityVersion: 1 })
     const tokenScope = { jti: "channel-token", workspaceId: "ws_channels", hostId: "channel-host", actorId: access.actorId, actorKind: access.actorKind, role: access.role, expiresAt: Date.now() + 600_000 }
@@ -417,7 +417,7 @@ describe("composed Better Auth + D1 authority", () => {
     const alice = await signed(authority, "visibility-alice")
     const bob = await signed(authority, "visibility-bob")
     await authority.createHostedOrganization(alice, { name: "Visibility", orgId: "org_visibility" })
-    await authority.addOrganizationMember(alice, { orgId: "org_visibility", userId: bob.principal!.userId, role: "member" })
+    await authority.addOrgMember!(alice, { orgId: "org_visibility", userPublicId: bob.principal!.userId, role: "member" })
     await authority.createWorkspace(alice, {
       workspaceId: "ws_hidden",
       orgId: "org_visibility",

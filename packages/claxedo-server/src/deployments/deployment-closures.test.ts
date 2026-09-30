@@ -27,9 +27,9 @@ const HOSTED_CORE_WORKER_ROOT = "src/deployments/hosted-workerd/core-worker.cf.t
  * deliberate bump someone reads.
  */
 const ENTRIES = [
-  { name: "worker", entry: BETTER_AUTH_D1_ENTRY, modules: 99, packages: 20 },
-  { name: "worker-agent-plugins", entry: BETTER_AUTH_D1_AGENT_PLUGINS_ENTRY, modules: 143, packages: 22 },
-  { name: "worker-agent-plugins-full-hosted", entry: BETTER_AUTH_D1_AGENT_PLUGINS_FULL_HOSTED_ENTRY, modules: 148, packages: 22 },
+  { name: "worker", entry: BETTER_AUTH_D1_ENTRY, modules: 104, packages: 20 },
+  { name: "worker-agent-plugins", entry: BETTER_AUTH_D1_AGENT_PLUGINS_ENTRY, modules: 148, packages: 22 },
+  { name: "worker-agent-plugins-full-hosted", entry: BETTER_AUTH_D1_AGENT_PLUGINS_FULL_HOSTED_ENTRY, modules: 153, packages: 22 },
 ] as const
 
 function closure(entry: string, options: { runtimeOnly?: boolean } = {}) {

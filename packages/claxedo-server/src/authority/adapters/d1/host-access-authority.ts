@@ -45,6 +45,7 @@ import { timingSafeEqualStrings } from "@claxedo/server-core/platform/auth/web-c
 import { sha256Hex } from "@claxedo/helpers/crypto"
 import { asRecord, parseJson } from "@claxedo/server-core/platform/json/index"
 import { batchAssertionFailed, type D1WorkspaceAuthority } from "./workspace-authority"
+import { activeOrgMemberSql, projectRoleRankSql } from "./project-role"
 
 export const D1_HOST_ACCESS_AUTHORITY_METHODS = [
   "createHostEnrollmentRequest",
@@ -257,28 +258,6 @@ export const HOST_SERVING_WORKSPACE_SQL = `enrollment.revoked_at is null and enr
             and readiness.generation = enrollment.serving_generation
             and readiness.revision = assignment.revision
         )`
-
-/**
- * The organization branch of a workspace's role rank: every workspace-scoped
- * rank computation — `workspaceAccessCte` here, workspace-authority's
- * `workspaceAccessSql`, channel-runtime-authority's `workspaceAccessSql`, the
- * session authority's actor rank and the Agent Plugins store's
- * `WORKSPACE_ACCESS_SQL` — builds its org branch from this one string. The
- * ordinary org member's implicit viewer rank is gated on the workspace's
- * `org_member_visible`; owners and admins are not. Project access has no
- * workspace row and does not use this.
- */
-export function organizationRoleRankSql(input: {
-  orgOwnerUserId: string
-  userId: string
-  orgMemberRole: string
-  workspaceAlias: string
-}) {
-  return `case when ${input.orgOwnerUserId} = ${input.userId} then 3
-          when ${input.orgMemberRole} in ('owner', 'admin') then 3
-          when ${input.orgMemberRole} = 'member' and ${input.workspaceAlias}.org_member_visible = 1 then 1
-          else 0 end`
-}
 
 /**
  * The machine caller's eligibility, evaluated inside every batch that mutates
@@ -1710,28 +1689,19 @@ function workspaceAccessCte(rank: 1 | 3, revivable = false) {
     select workspace.workspace_id, workspace.org_id, workspace.project_id,
       workspace.backing, workspace.home_region, workspace.remote_directory,
       workspace.host_assignment_revision,
-      max(
-        case when workspace.owner_user_id = current_actor.user_id then 4 else 0 end,
-        coalesce(case project_member.role when 'viewer' then 1 when 'editor' then 2 when 'admin' then 3 when 'owner' then 4 end, 0),
-        ${organizationRoleRankSql({
-          orgOwnerUserId: "organization.owner_user_id",
-          userId: "current_actor.user_id",
-          orgMemberRole: "org_member.role",
-          workspaceAlias: "workspace",
-        })}
-      ) as role_rank
+      ${projectRoleRankSql({
+        user: "current_actor.user_id",
+        projectId: "workspace.project_id",
+        orgId: "workspace.org_id",
+        ownerUserId: "workspace.owner_user_id",
+        orgMemberVisible: "workspace.org_member_visible",
+      })} as role_rank
     from current_actor
     join workspaces workspace on workspace.workspace_id = ?
       and ${revivable ? "(workspace.deleted_at is null or workspace.backing = 'local-worktree')" : "workspace.deleted_at is null"}
     join projects project
       on project.project_id = workspace.project_id and project.org_id = workspace.org_id and project.deleted_at is null
-    join orgs organization on organization.org_id = workspace.org_id and organization.deleted_at is null
-    left join project_memberships project_member
-      on project_member.project_id = workspace.project_id and project_member.user_id = current_actor.user_id
-      and project_member.revoked_at is null
-    left join org_memberships org_member
-      on org_member.org_id = workspace.org_id and org_member.user_id = current_actor.user_id and org_member.revoked_at is null
-    where organization.owner_user_id = current_actor.user_id or org_member.user_id is not null
+    where ${activeOrgMemberSql("workspace.org_id", "current_actor.user_id")}
     group by workspace.workspace_id
     having role_rank >= ${rank}
   )`

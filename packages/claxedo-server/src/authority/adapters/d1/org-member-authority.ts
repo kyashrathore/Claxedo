@@ -1,0 +1,245 @@
+import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
+import type { WorkspaceAuthority } from "@claxedo/server-core/platform/auth/authority"
+import type {
+  MemberSelector,
+  OrgMember,
+  OrgMemberRole,
+} from "@claxedo/server-core/platform/auth/org-access-authority"
+import {
+  accessAuditStatement,
+  canAdminOrganization,
+  D1AccessAuthorityError,
+  isActiveOrgMember,
+  requireText,
+  resolveMemberUser,
+  type AccessPrincipal,
+  type BoundSql,
+  type D1AccessContext,
+} from "./access-context"
+import { organizationAdminSql } from "./project-role"
+
+export const D1_ORG_MEMBER_AUTHORITY_METHODS = [
+  "listOrgMembers",
+  "addOrgMember",
+  "updateOrgMember",
+  "removeOrgMember",
+] as const satisfies readonly (keyof WorkspaceAuthority)[]
+
+export type D1OrgMemberAuthorityPort = Pick<WorkspaceAuthority, (typeof D1_ORG_MEMBER_AUTHORITY_METHODS)[number]>
+
+type MembershipState = { founder: boolean; role: OrgMemberRole | null }
+
+/**
+ * Who belongs to an organization and with which role. Owners and admins
+ * change membership; only an owner grants, changes or removes the owner role;
+ * the founding owner (`orgs.owner_user_id`) is an owner for as long as the
+ * organization exists, which is what keeps every organization owned.
+ */
+export class D1OrgMemberAuthority implements D1OrgMemberAuthorityPort {
+  constructor(private readonly context: D1AccessContext) {}
+
+  private get database() {
+    return this.context.database
+  }
+
+  async listOrgMembers(auth: SignedControlPlaneAuth, args: { orgId: string }): Promise<OrgMember[]> {
+    const who = await this.context.principal(auth)
+    const orgId = requireText(args.orgId, "orgId")
+    if (!(await isActiveOrgMember(this.database, who.userId, orgId))) return []
+    const result = await this.database
+      .prepare(`
+        select member.user_id, member.user_id as public_id,
+          case when org.owner_user_id = member.user_id then 'owner' else member.role end as role,
+          member.created_at as joined_at
+        from org_memberships member
+        join orgs org on org.org_id = member.org_id and org.deleted_at is null
+        join users person on person.user_id = member.user_id and person.state = 'active'
+        where member.org_id = ? and member.revoked_at is null
+        order by case when org.owner_user_id = member.user_id or member.role = 'owner' then 3
+          when member.role = 'admin' then 2 else 1 end desc, member.created_at, member.user_id
+      `)
+      .bind(orgId)
+      .all<OrgMember>()
+    return result.results
+  }
+
+  async addOrgMember(auth: SignedControlPlaneAuth, args: MemberSelector & { orgId: string; role: OrgMemberRole }) {
+    const who = await this.context.principal(auth)
+    const orgId = await this.adminOrganization(who, args.orgId)
+    const target = await resolveMemberUser(this.database, args, "org_member_target_required")
+    if (!target) throw new D1AccessAuthorityError("org_member_not_found")
+    return await this.setRole(who, orgId, target.user_id, args.role, "org.member.added")
+  }
+
+  async updateOrgMember(auth: SignedControlPlaneAuth, args: { orgId: string; userPublicId: string; role: OrgMemberRole }) {
+    const who = await this.context.principal(auth)
+    const orgId = await this.adminOrganization(who, args.orgId)
+    const userId = requireText(args.userPublicId, "userPublicId")
+    if ((await this.membership(orgId, userId)).role === null) throw new D1AccessAuthorityError("org_member_not_found")
+    return await this.setRole(who, orgId, userId, args.role, "org.member.role_changed")
+  }
+
+  /**
+   * Revokes the membership together with the person's team memberships and
+   * project member grants in this organization, in one batch. A project they
+   * own stays theirs; without the membership it admits them to nothing.
+   */
+  async removeOrgMember(auth: SignedControlPlaneAuth, args: { orgId: string; userPublicId: string }) {
+    const who = await this.context.principal(auth)
+    const orgId = await this.adminOrganization(who, args.orgId)
+    const userId = requireText(args.userPublicId, "userPublicId")
+    const current = await this.membership(orgId, userId)
+    if (current.role === null) return { removed: false, team_memberships_revoked: 0, project_memberships_revoked: 0 }
+    await this.assertOwnershipChange(who, orgId, current, null)
+    const now = this.context.now()
+    const guard = this.changeGuard(who, orgId, userId, null)
+    const [, teams, projects, membership] = await this.database.batch([
+      accessAuditStatement(this.context, {
+        who,
+        action: "org.member.removed",
+        metadata: this.roleChange(orgId, userId, null),
+        guard,
+        now,
+      }),
+      this.database
+        .prepare(`
+          update team_memberships set revoked_at = ?, updated_at = ?
+          where user_id = ? and revoked_at is null
+            and team_id in (select team_id from teams where org_id = ?)
+            and ${guard.sql}
+        `)
+        .bind(now, now, userId, orgId, ...guard.bind),
+      this.database
+        .prepare(`
+          update project_memberships set revoked_at = ?, updated_at = ?
+          where user_id = ? and revoked_at is null and role <> 'owner'
+            and project_id in (select project_id from projects where org_id = ?)
+            and ${guard.sql}
+        `)
+        .bind(now, now, userId, orgId, ...guard.bind),
+      this.database
+        .prepare(`
+          update org_memberships set revoked_at = ?, updated_at = ?
+          where org_id = ? and user_id = ? and revoked_at is null and ${guard.sql}
+        `)
+        .bind(now, now, orgId, userId, ...guard.bind),
+    ])
+    if ((membership.meta.changes ?? 0) === 0) {
+      throw new D1AccessAuthorityError("resource_conflict", "Organization membership changed concurrently")
+    }
+    return {
+      removed: true,
+      team_memberships_revoked: teams.meta.changes ?? 0,
+      project_memberships_revoked: projects.meta.changes ?? 0,
+    }
+  }
+
+  private async setRole(who: AccessPrincipal, orgId: string, userId: string, role: OrgMemberRole, action: string) {
+    await this.assertOwnershipChange(who, orgId, await this.membership(orgId, userId), role)
+    const now = this.context.now()
+    const guard = this.changeGuard(who, orgId, userId, role)
+    await this.database.batch([
+      accessAuditStatement(this.context, { who, action, metadata: this.roleChange(orgId, userId, role), guard, now }),
+      this.database
+        .prepare(`
+          insert into org_memberships (org_id, user_id, role, created_at, updated_at, revoked_at)
+          select ?, ?, ?, ?, ?, null where ${guard.sql}
+          on conflict (org_id, user_id) do update set
+            role = excluded.role,
+            created_at = case when org_memberships.revoked_at is null then org_memberships.created_at else excluded.created_at end,
+            updated_at = excluded.updated_at,
+            revoked_at = null
+        `)
+        .bind(orgId, userId, role, now, now, ...guard.bind),
+    ])
+    const member = await this.database
+      .prepare(`
+        select user_id, user_id as public_id, role, created_at as joined_at
+        from org_memberships where org_id = ? and user_id = ? and revoked_at is null
+      `)
+      .bind(orgId, userId)
+      .first<OrgMember>()
+    if (!member || member.role !== role) {
+      throw new D1AccessAuthorityError("resource_conflict", "Organization membership changed concurrently")
+    }
+    return member
+  }
+
+  private async adminOrganization(who: AccessPrincipal, value: string) {
+    const orgId = requireText(value, "orgId")
+    this.context.assertOrganizationAllowed(orgId)
+    if (!(await canAdminOrganization(this.database, who.userId, orgId))) {
+      throw new D1AccessAuthorityError("org_admin_required")
+    }
+    return orgId
+  }
+
+  private async membership(orgId: string, userId: string): Promise<MembershipState> {
+    const row = await this.database
+      .prepare(`
+        select org.owner_user_id = ? as founder, member.role
+        from orgs org
+        left join org_memberships member
+          on member.org_id = org.org_id and member.user_id = ? and member.revoked_at is null
+        where org.org_id = ? and org.deleted_at is null
+      `)
+      .bind(userId, userId, orgId)
+      .first<{ founder: number; role: OrgMemberRole | null }>()
+    return { founder: row?.founder === 1, role: row?.role ?? null }
+  }
+
+  private async assertOwnershipChange(
+    who: AccessPrincipal,
+    orgId: string,
+    current: MembershipState,
+    next: OrgMemberRole | null,
+  ) {
+    if (current.founder && next !== "owner") throw new D1AccessAuthorityError("org_owner_protected")
+    if (current.role !== "owner" && next !== "owner") return
+    const caller = await this.membership(orgId, who.userId)
+    if (!caller.founder && caller.role !== "owner") throw new D1AccessAuthorityError("org_owner_required")
+  }
+
+  /**
+   * The checks `assertOwnershipChange` and `adminOrganization` made, re-read
+   * inside the batch so a concurrent change between the read and the write
+   * cannot slip past them: the caller still administers the organization, the
+   * target is an active user, the founder keeps the owner role, and whoever
+   * moves an owner role is an owner.
+   */
+  private changeGuard(who: AccessPrincipal, orgId: string, userId: string, next: OrgMemberRole | null): BoundSql {
+    const callerIsOwner = `exists (
+      select 1 from org_memberships caller_row
+      where caller_row.org_id = guard_org.org_id and caller_row.user_id = ?
+        and caller_row.role = 'owner' and caller_row.revoked_at is null
+    )`
+    const targetIsOwner = `exists (
+      select 1 from org_memberships target_row
+      where target_row.org_id = guard_org.org_id and target_row.user_id = guard_target.user_id
+        and target_row.role = 'owner' and target_row.revoked_at is null
+    )`
+    return {
+      sql: `exists (
+        select 1 from orgs guard_org
+        join users guard_target on guard_target.user_id = ? and guard_target.state = 'active'
+        where guard_org.org_id = ? and guard_org.deleted_at is null
+          and ${organizationAdminSql("guard_org.org_id", "?")}
+          and (guard_org.owner_user_id <> guard_target.user_id or ? = 'owner')
+          and (
+            guard_org.owner_user_id = ? or ${callerIsOwner}
+            or (coalesce(?, '') <> 'owner' and not ${targetIsOwner})
+          )
+      )`,
+      bind: [userId, orgId, who.userId, who.userId, next, who.userId, who.userId, next],
+    }
+  }
+
+  private roleChange(orgId: string, userId: string, after: OrgMemberRole | null): BoundSql {
+    return {
+      sql: `json_object('orgId', ?, 'targetUserId', ?,
+        'before', (select role from org_memberships where org_id = ? and user_id = ? and revoked_at is null),
+        'after', ?)`,
+      bind: [orgId, userId, orgId, userId, after],
+    }
+  }
+}

@@ -44,7 +44,10 @@ export const serverWorkerd: Policy = {
     ],
     requiredPackages: ["better-auth", "hono", "@claxedo/server-core"],
   },
-  ceilings: { modules: 99, packages: 20 },
+  // The D1 authority composes its organization, team and project-member
+  // modules beside `project-role.ts`, the one rank query they and every other
+  // D1 reader share (`authority/adapters/d1/core-authority.ts`).
+  ceilings: { modules: 104, packages: 20 },
 
   emitted: {
     file: "packages/claxedo-server/.artifacts/u8-package-split/manifests/server-workerd.json",

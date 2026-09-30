@@ -3,7 +3,6 @@ import { AGENT_MESSAGE_PAGE_LIMIT, AgentMessagePageError } from "@claxedo/agent-
 import { ControlPlaneAuthError, type SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import { ClaxedoError } from "@claxedo/server-core/platform/errors/base"
 import type {
-  ProjectRole,
   SessionShareGrantResult,
   SessionShareLevel,
   WorkspaceAuthority,
@@ -48,7 +47,7 @@ import {
 } from "@claxedo/server-core/platform/auth/session-turn-authority"
 import { SESSION_TURN_LEASE_TTL_MS } from "@claxedo/workspace-relay-protocol"
 import { asRecord, numberField, parseJson } from "@claxedo/server-core/platform/json/index"
-import { organizationRoleRankSql } from "./host-access-authority"
+import { projectRoleRankSql, rankRole } from "./project-role"
 import { readD1SessionPage } from "./session-page"
 import { latestViewPage, storedTurn, type LatestView } from "@claxedo/server-core/session/latest-view-page"
 import { readStoredTurnOutline } from "@claxedo/server-core/session/turn-outline"
@@ -2476,27 +2475,13 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
 }
 
 function actorWorkspaceRoleRankSql(actorExpression: string, workspaceAlias: string) {
-  return `max(
-    case when ${workspaceAlias}.owner_user_id = a.user_id then 4 else 0 end,
-    coalesce((select case pm.role when 'viewer' then 1 when 'editor' then 2 when 'admin' then 3 when 'owner' then 4 end
-      from project_memberships pm
-      where pm.project_id = ${workspaceAlias}.project_id and pm.user_id = a.user_id and pm.revoked_at is null), 0),
-    ${organizationRoleRankSql({
-      orgOwnerUserId: "o.owner_user_id",
-      userId: "a.user_id",
-      orgMemberRole: "om.role",
-      workspaceAlias: workspaceAlias,
-    })}
-  )`
-    .replaceAll("a.user_id", `(select user_id from actors where actor_id = ${actorExpression})`)
-    .replaceAll(
-      "o.owner_user_id",
-      `(select owner_user_id from orgs where org_id = ${workspaceAlias}.org_id and deleted_at is null)`,
-    )
-    .replaceAll(
-      "om.role",
-      `(select role from org_memberships where org_id = ${workspaceAlias}.org_id and user_id = (select user_id from actors where actor_id = ${actorExpression}) and revoked_at is null)`,
-    )
+  return projectRoleRankSql({
+    user: `(select user_id from actors where actor_id = ${actorExpression})`,
+    projectId: `${workspaceAlias}.project_id`,
+    orgId: `${workspaceAlias}.org_id`,
+    ownerUserId: `${workspaceAlias}.owner_user_id`,
+    orgMemberVisible: `${workspaceAlias}.org_member_visible`,
+  })
 }
 
 function actorWorkspaceAccessSql(actorExpression: string, workspaceAlias: string, rank: 1 | 2) {
@@ -2839,10 +2824,6 @@ function decodeMessagePageCursor(sessionId: string, input: string) {
   } catch {
     throw new AgentMessagePageError(400, "Invalid message page cursor")
   }
-}
-
-function rankRole(rank: number): ProjectRole {
-  return rank >= 4 ? "owner" : rank >= 3 ? "admin" : rank >= 2 ? "editor" : "viewer"
 }
 
 function optionalOrdinal(value: number | undefined) {

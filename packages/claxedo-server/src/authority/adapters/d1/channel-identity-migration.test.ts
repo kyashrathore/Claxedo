@@ -16,6 +16,7 @@ import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/
 import type { AuthIdentity, ControlPlanePrincipal } from "@claxedo/server-core/platform/auth/authentication"
 
 import { D1WorkspaceAuthority } from "./workspace-authority"
+import { D1OrgMemberAuthority } from "./org-member-authority"
 import { D1ChannelRuntimeAuthority } from "./channel-runtime-authority"
 import { controlPlaneMigrationPath, controlPlaneMigrations } from "../../../test-support/control-plane-migrations"
 
@@ -117,9 +118,9 @@ async function deployment(migrations: readonly string[]) {
   const handleHolder = await signed(context.workspace, "handle-holder")
   const accountHolder = await signed(context.workspace, "account-holder")
   await context.workspace.createHostedOrganization(handleHolder, { name: "Acme", orgId: "org_acme" })
-  await context.workspace.addOrganizationMember(handleHolder, {
+  await new D1OrgMemberAuthority(context.workspace.accessContext()).addOrgMember(handleHolder, {
     orgId: "org_acme",
-    userId: accountHolder.principal!.userId,
+    userPublicId: accountHolder.principal!.userId,
     role: "member",
   })
   const workspace = await context.workspace.createWorkspace(handleHolder, {

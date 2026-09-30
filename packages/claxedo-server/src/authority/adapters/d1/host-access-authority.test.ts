@@ -14,6 +14,7 @@ import {
 import { sha256Hex } from "@claxedo/helpers/crypto"
 
 import { D1WorkspaceAuthority } from "./workspace-authority"
+import { D1OrgMemberAuthority } from "./org-member-authority"
 import { createD1HostTunnelTargetResolver } from "./host-tunnel-relay-target"
 import { D1HostAccessAuthority, hostEnrollmentPayload } from "./host-access-authority"
 import { D1ChannelRuntimeAuthority } from "./channel-runtime-authority"
@@ -154,14 +155,14 @@ async function fixture(input: Awaited<ReturnType<typeof setup>>) {
   const admin = await signed(input.workspace, "admin")
   const outsider = await signed(input.workspace, "outsider")
   await input.workspace.createHostedOrganization(alice, { name: "Acme", orgId: "org_acme" })
-  await input.workspace.addOrganizationMember(alice, {
+  await new D1OrgMemberAuthority(input.workspace.accessContext()).addOrgMember(alice, {
     orgId: "org_acme",
-    userId: bob.principal!.userId,
+    userPublicId: bob.principal!.userId,
     role: "member",
   })
-  await input.workspace.addOrganizationMember(alice, {
+  await new D1OrgMemberAuthority(input.workspace.accessContext()).addOrgMember(alice, {
     orgId: "org_acme",
-    userId: admin.principal!.userId,
+    userPublicId: admin.principal!.userId,
     role: "admin",
   })
   const local = await input.workspace.createWorkspace(alice, {
@@ -1277,7 +1278,7 @@ describe("host-connect: machine heartbeat, readiness, invitations, scope", () =>
     expect(await input.workspace.openWorkspace(bob, { workspaceId: "ws_local" })).toMatchObject({ role: "editor" })
     expect(await input.hostAccess.activeWorkspaceHost(bob, { workspaceId: "ws_local" })).toEqual({ active: false })
     const carol = await signed(input.workspace, "carol")
-    await input.workspace.addOrganizationMember(alice, { orgId: "org_acme", userId: carol.principal!.userId, role: "member" })
+    await new D1OrgMemberAuthority(input.workspace.accessContext()).addOrgMember(alice, { orgId: "org_acme", userPublicId: carol.principal!.userId, role: "member" })
     await expect(input.workspace.openWorkspace(carol, { workspaceId: "ws_local" })).rejects.toMatchObject({ status: 403 })
     const project = await input.database.prepare("select project_id from workspaces where workspace_id = 'ws_local'").first<{ project_id: string }>()
     await input.database.prepare(

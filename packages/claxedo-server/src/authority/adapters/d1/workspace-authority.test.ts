@@ -11,6 +11,7 @@ import {
   userDeployedOwnerIdentityHash,
   type D1AuthorityProductPolicy,
 } from "./workspace-authority"
+import { D1OrgMemberAuthority } from "./org-member-authority"
 
 const MIGRATIONS_DIRECTORY = fileURLToPath(new URL("../../../../migrations/control-plane/", import.meta.url))
 
@@ -191,9 +192,9 @@ describe("D1 hosted workspace authority", () => {
     const bob = await signed(authority, identity("bob"))
     const outsider = await signed(authority, identity("outsider"))
     const team = await authority.createHostedOrganization(alice, { name: "Acme", orgId: "org_acme" })
-    await authority.addOrganizationMember(alice, {
+    await new D1OrgMemberAuthority(authority.accessContext()).addOrgMember(alice, {
       orgId: team.org_id,
-      userId: bob.principal!.userId,
+      userPublicId: bob.principal!.userId,
       role: "member",
     })
 
@@ -283,9 +284,9 @@ describe("D1 hosted workspace authority", () => {
       await database.prepare("select project_id from projects where repo_key = 'github.com/acme/denied'").first(),
     ).toBeNull()
 
-    await authority.addOrganizationMember(alice, {
+    await new D1OrgMemberAuthority(authority.accessContext()).addOrgMember(alice, {
       orgId: team.org_id,
-      userId: bob.principal!.userId,
+      userPublicId: bob.principal!.userId,
       role: "admin",
     })
     await expect(
@@ -324,7 +325,7 @@ describe("D1 hosted workspace authority", () => {
     const alice = await signed(authority, identity("alice"))
     const bob = await signed(authority, identity("bob"))
     const team = await authority.createHostedOrganization(alice, { name: "Acme", orgId: "org_acme" })
-    await authority.addOrganizationMember(alice, { orgId: team.org_id, userId: bob.principal!.userId, role: "member" })
+    await new D1OrgMemberAuthority(authority.accessContext()).addOrgMember(alice, { orgId: team.org_id, userPublicId: bob.principal!.userId, role: "member" })
     const project = await authority.createWorkspace(alice, {
       workspaceId: "ws_acme_main",
       orgId: team.org_id,
@@ -539,9 +540,9 @@ describe("D1 user-deployed workspace authority", () => {
       }),
     ).rejects.toMatchObject({ status: 403, code: "workspace_authorization_denied" })
 
-    await authority.addOrganizationMember(owner, {
+    await new D1OrgMemberAuthority(authority.accessContext()).addOrgMember(owner, {
       orgId: "org_deployment",
-      userId: member.principal!.userId,
+      userPublicId: member.principal!.userId,
       role: "admin",
     })
     await expect(
@@ -677,9 +678,9 @@ describe("workspace creation admission", () => {
     })
 
     const team = await authority.createHostedOrganization(alice, { name: "Acme", orgId: "org_acme" })
-    await authority.addOrganizationMember(alice, {
+    await new D1OrgMemberAuthority(authority.accessContext()).addOrgMember(alice, {
       orgId: team.org_id,
-      userId: bob.principal!.userId,
+      userPublicId: bob.principal!.userId,
       role: "member",
     })
     const created = await authority.createWorkspace(alice, {
@@ -722,9 +723,9 @@ describe("workspace creation admission", () => {
       }),
     ).rejects.toMatchObject({ status: 403 })
 
-    await authority.addOrganizationMember(alice, {
+    await new D1OrgMemberAuthority(authority.accessContext()).addOrgMember(alice, {
       orgId: team.org_id,
-      userId: bob.principal!.userId,
+      userPublicId: bob.principal!.userId,
       role: "admin",
     })
     await expect(authority.authorizeWorkspaceCreate(bob, { projectId: created.project_id }))
