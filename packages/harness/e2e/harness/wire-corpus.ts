@@ -306,7 +306,7 @@ if (mode) {
     const target = new URL(input instanceof Request ? input.url : String(input))
     const method = init?.method ?? (input instanceof Request ? input.method : "GET")
     const accept = new Headers(init?.headers ?? (input instanceof Request ? input.headers : undefined)).get("accept")
-    const unsynchronizedReadback = method === "GET" && flow !== "H0-smoke" && target.pathname === "/api/claxedo/health"
+    const unsynchronizedReadback = method === "GET" && flow !== "H0-smoke" && (target.pathname === "/api/claxedo/health" || target.pathname.endsWith("/api/wr/health"))
     const capture = active && !unsynchronizedReadback && (target.hostname === "127.0.0.1" || target.hostname === "localhost") && accept !== "text/event-stream"
     const reply = await nativeFetch(input, init)
     if (capture && !reply.headers.get("content-type")?.includes("text/event-stream")) {
