@@ -83,11 +83,6 @@ export function sandboxRelayTargetLookup(input: {
       backing: link.backing,
     }
   }
-  const upstreamHeaders = (target: SandboxTarget) => {
-    const daytonaPreviewToken = trimToUndefined(target.labels?.["daytona.previewToken"])
-    if (!daytonaPreviewToken) return undefined
-    return { "x-daytona-preview-token": daytonaPreviewToken }
-  }
   return async (args) => {
     // Cloud workspaces resolve through the SandboxLease.
     if (input.sandboxManager) {
@@ -97,14 +92,8 @@ export function sandboxRelayTargetLookup(input: {
       )
       if (target.status === "ready" && target.hostId === args.hostId) {
         if (!args.routingId || args.routingId !== target.routingId) return { found: false, code: "runtime_access_token_invalid" }
-        const headers = upstreamHeaders(target)
         touch(args.workspaceId, args.waitUntil)
-        return {
-          found: true,
-          baseUrl: target.url,
-          backing: "cloud-vm",
-          ...(headers ? { upstreamHeaders: headers } : {}),
-        }
+        return { found: true, baseUrl: target.url, backing: "cloud-vm" }
       }
     }
     if (args.routingId) return { found: false, code: "runtime_access_token_invalid" }

@@ -668,14 +668,14 @@ describe("verifyCredential — sandbox providers", () => {
     const transports = transport({})
 
     const outcome = await verifyCredential(
-      credential({ provider_id: "daytona", kind: "sandbox_driver" }),
-      JSON.stringify({ api_key: "dtn_key" }),
+      credential({ provider_id: "box", kind: "sandbox_driver" }),
+      JSON.stringify({ api_key: "box_key" }),
       { fetch: transports.stub, now: () => NOW },
     )
 
     expect(outcome).toEqual({ health: "ok" })
-    expect(transports.probeCalls()[0].url).toBe("https://app.daytona.io/api/api-keys/current")
-    expect(transports.probeCalls()[0].headers.Authorization).toBe("Bearer dtn_key")
+    expect(transports.probeCalls()[0].url).toBe("https://ascii.dev/api/box/v1/me")
+    expect(transports.probeCalls()[0].headers.Authorization).toBe("Bearer box_key")
   })
 
   test("a rejected sandbox provider key is auth_failed, not an error", async () => {
@@ -691,22 +691,20 @@ describe("verifyCredential — sandbox providers", () => {
   })
 
   /**
-   * The legacy encoder stored single-field drivers bare, and
-   * `credentials/migrate.ts` still writes daytona that way — a stored
-   * credential that predates the JSON codec must still verify rather than read
-   * as an unsupported shape.
+   * A credential stored before the JSON codec holds a single-field driver's
+   * secret bare; it must still verify rather than read as an unsupported shape.
    */
   test("a legacy bare secret still verifies", async () => {
     const transports = transport({})
 
     const outcome = await verifyCredential(
-      credential({ provider_id: "daytona", kind: "sandbox_driver" }),
-      "dtn_legacy_key",
+      credential({ provider_id: "box", kind: "sandbox_driver" }),
+      "box_legacy_key",
       { fetch: transports.stub, now: () => NOW },
     )
 
     expect(outcome).toEqual({ health: "ok" })
-    expect(transports.probeCalls()[0].headers.Authorization).toBe("Bearer dtn_legacy_key")
+    expect(transports.probeCalls()[0].headers.Authorization).toBe("Bearer box_legacy_key")
   })
 
   test("a sandbox provider with no documented probe is an error, not a verdict", async () => {

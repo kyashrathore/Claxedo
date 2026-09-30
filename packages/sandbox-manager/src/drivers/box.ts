@@ -15,10 +15,10 @@ import { record, text } from "../json"
 import { isTransientDriverError } from "./transient-error"
 
 // Box by ASCII (https://box.ascii.dev) exposes persistent Linux microVMs over a
-// small REST API. Unlike Daytona/Modal/Vercel, a Box boots a *fixed* base image
+// small REST API. Unlike Modal/Vercel, a Box boots a *fixed* base image
 // with no workspace-runtime baked in — but it ships Docker-in-VM, so this driver
 // delivers the canonical sandbox OCI image by `docker run`-ing it inside the box
-// (the same image the Docker/Daytona/Modal drivers use) and then publishes the
+// (the same image the Docker/Modal drivers use) and then publishes the
 // runtime port to a public HTTPS URL via Box's `host` command. The control plane
 // reaches that URL over the relay, exactly like the other remote drivers.
 

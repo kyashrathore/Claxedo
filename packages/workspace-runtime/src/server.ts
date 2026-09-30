@@ -56,7 +56,6 @@ export type WorkspaceRuntimeServiceExposure = {
   source: "loopback" | "driver-service-url"
   access: "private" | "public" | "driver-authenticated" | "unknown"
   driver?: string
-  fallbackAccess?: "private" | "public" | "driver-authenticated" | "unknown"
   note?: string
 }
 
@@ -247,7 +246,6 @@ type ServiceExposureEnv = {
   WORKSPACE_RUNTIME_SERVICE_EXPOSURE_SOURCE?: string | undefined
   WORKSPACE_RUNTIME_SERVICE_EXPOSURE_ACCESS?: string | undefined
   WORKSPACE_RUNTIME_SERVICE_EXPOSURE_DRIVER?: string | undefined
-  WORKSPACE_RUNTIME_SERVICE_EXPOSURE_FALLBACK_ACCESS?: string | undefined
   WORKSPACE_RUNTIME_SERVICE_EXPOSURE_NOTE?: string | undefined
 }
 
@@ -260,7 +258,6 @@ function serviceExposureAccess(input: string | undefined) {
 
 export function workspaceRuntimeServiceExposureFromEnv(env: ServiceExposureEnv = process.env): WorkspaceRuntimeServiceExposure {
   const access = serviceExposureAccess(runtimeEnvText(env, "WORKSPACE_RUNTIME_SERVICE_EXPOSURE_ACCESS"))
-  const fallbackAccess = serviceExposureAccess(runtimeEnvText(env, "WORKSPACE_RUNTIME_SERVICE_EXPOSURE_FALLBACK_ACCESS"))
   const driver = runtimeEnvText(env, "WORKSPACE_RUNTIME_SERVICE_EXPOSURE_DRIVER")
   const note = runtimeEnvText(env, "WORKSPACE_RUNTIME_SERVICE_EXPOSURE_NOTE")
   const source = runtimeEnvText(env, "WORKSPACE_RUNTIME_SERVICE_EXPOSURE_SOURCE") === "driver-service-url"
@@ -270,7 +267,6 @@ export function workspaceRuntimeServiceExposureFromEnv(env: ServiceExposureEnv =
     source,
     access: access ?? (source === "loopback" ? "private" : "unknown"),
     ...(driver ? { driver } : {}),
-    ...(fallbackAccess ? { fallbackAccess } : {}),
     ...(note ? { note } : {}),
   }
 }

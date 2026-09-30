@@ -27,8 +27,8 @@ describe("workspacePlacement", () => {
   })
 
   test("a driver places the workspace on the machine that driver provisions", () => {
-    expect(workspacePlacement(ws({ kind: "cloud", driver: "daytona", remote_directory: "/workspace/repo" }))).toEqual({
-      host: { kind: "provisioner", driver: "daytona" },
+    expect(workspacePlacement(ws({ kind: "cloud", driver: "modal", remote_directory: "/workspace/repo" }))).toEqual({
+      host: { kind: "provisioner", driver: "modal" },
       directory: "/workspace/repo",
     })
   })
@@ -53,12 +53,12 @@ describe("workspaceBacking reads the placement", () => {
   test("a provisioner placement is a cloud VM carrying its driver", () => {
     expect(workspaceBacking(ws({
       kind: "cloud",
-      driver: "daytona",
+      driver: "modal",
       workspace_name: "feature-x",
       remote_directory: "/workspace/repo",
     }))).toEqual({
       kind: "cloud-vm",
-      driver: "daytona",
+      driver: "modal",
       workspaceName: "feature-x",
       remoteDirectory: "/workspace/repo",
     })
@@ -130,11 +130,11 @@ describe("ensureWorkspace requires a placement for a cloud row", () => {
       workspaceId: "ws_b",
       kind: "cloud",
       directory: "/workspace",
-      driver: "daytona",
+      driver: "modal",
     })
-    expect(created?.driver).toBe("daytona")
+    expect(created?.driver).toBe("modal")
     expect((await ensureWorkspace({ workspaceId: "ws_b", kind: "cloud", directory: "/workspace" }))?.driver)
-      .toBe("daytona")
+      .toBe("modal")
   })
 })
 

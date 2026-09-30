@@ -324,7 +324,6 @@ describe("workspaceRuntimeProxy startup wait", () => {
     expect(req.url).toBe("https://relay.eu.test/workspaces/ws_1/file/content?workspaceId=ws_1&directory=%2Flocal")
     expect(req.headers.get("authorization")).toBe("Bearer relay-runtime-token")
     expect(req.headers.get("x-claxedo-directory")).toBe("workspace:ws_1")
-    expect(req.headers.get("X-Daytona-Skip-Preview-Warning")).toBeNull()
   })
 })
 

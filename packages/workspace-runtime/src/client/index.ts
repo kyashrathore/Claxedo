@@ -42,7 +42,6 @@ export type WorkspaceRuntimeHealth = {
     source: "loopback" | "driver-service-url"
     access: "private" | "public" | "driver-authenticated" | "unknown"
     driver?: string
-    fallbackAccess?: "private" | "public" | "driver-authenticated" | "unknown"
     note?: string
   }
   exposure?: { kind: "loopback" | "relay" | "private-network-host-guard" | "private-network-dev-unsafe" | "embedded" }

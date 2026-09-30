@@ -61,7 +61,7 @@ function respond(input: { ok?: boolean; status?: number; body?: string }) {
 }
 
 const OFFLINE = (async () => {
-  throw new Error("getaddrinfo ENOTFOUND app.daytona.io")
+  throw new Error("getaddrinfo ENOTFOUND ascii.dev")
 }) as unknown as typeof fetch
 
 function appWith(credentials: ControlPlaneCredentials, fetchImpl?: typeof fetch) {
@@ -94,7 +94,7 @@ describe("a key the provider rejects is refused at paste time", () => {
     const { credentials, stored } = recordingCredentials()
     const transport = respond({ ok: false, status: 401, body: "unauthorized" })
 
-    const response = await putAuth(appWith(credentials, transport.stub), "daytona", { api_key: "dtn_bad" })
+    const response = await putAuth(appWith(credentials, transport.stub), "box", { api_key: "box_bad" })
 
     expect(response.status).toBe(400)
     // Nothing was written: a rejected key must not sit in the registry looking
@@ -106,7 +106,7 @@ describe("a key the provider rejects is refused at paste time", () => {
     const { credentials } = recordingCredentials()
     const transport = respond({ ok: false, status: 401, body: "unauthorized" })
 
-    const response = await putAuth(appWith(credentials, transport.stub), "daytona", { api_key: "dtn_bad" })
+    const response = await putAuth(appWith(credentials, transport.stub), "box", { api_key: "box_bad" })
     const body = (await response.json()) as { error: { code: string; reason?: string } }
 
     expect(body.error.code).toBe("sandbox_driver_key_rejected")
@@ -138,7 +138,7 @@ describe("a key that could not be checked is still saved", () => {
   test("an unreachable provider does not block the save", async () => {
     const { credentials, stored } = recordingCredentials()
 
-    const response = await putAuth(appWith(credentials, OFFLINE), "daytona", { api_key: "dtn_key" })
+    const response = await putAuth(appWith(credentials, OFFLINE), "box", { api_key: "box_key" })
 
     expect(response.status).toBe(200)
     expect(stored).toHaveLength(1)
@@ -147,7 +147,7 @@ describe("a key that could not be checked is still saved", () => {
   test("the response reports the unchecked state rather than claiming it verified", async () => {
     const { credentials } = recordingCredentials()
 
-    const response = await putAuth(appWith(credentials, OFFLINE), "daytona", { api_key: "dtn_key" })
+    const response = await putAuth(appWith(credentials, OFFLINE), "box", { api_key: "box_key" })
     const body = (await response.json()) as { verification?: { state: string; reason?: string } }
 
     expect(body.verification?.state).toBe("unknown")
@@ -178,7 +178,7 @@ describe("a key the provider accepts", () => {
     const { credentials, stored } = recordingCredentials()
     const transport = respond({})
 
-    const response = await putAuth(appWith(credentials, transport.stub), "daytona", { api_key: "dtn_good" })
+    const response = await putAuth(appWith(credentials, transport.stub), "box", { api_key: "box_good" })
     const body = (await response.json()) as {
       verification?: { state: string }
       drivers: Array<{ id: string; configured: boolean }>
@@ -187,8 +187,8 @@ describe("a key the provider accepts", () => {
     expect(response.status).toBe(200)
     expect(stored).toHaveLength(1)
     expect(body.verification?.state).toBe("working")
-    expect(body.drivers.find((item) => item.id === "daytona")?.configured).toBe(true)
-    expect(transport.calls[0]).toBe("https://app.daytona.io/api/api-keys/current")
+    expect(body.drivers.find((item) => item.id === "box")?.configured).toBe(true)
+    expect(transport.calls[0]).toBe("https://ascii.dev/api/box/v1/me")
   })
 
   /**
@@ -199,7 +199,7 @@ describe("a key the provider accepts", () => {
     const { credentials, stored } = recordingCredentials()
     const transport = respond({ ok: false, status: 429, body: "too many requests" })
 
-    const response = await putAuth(appWith(credentials, transport.stub), "daytona", { api_key: "dtn_good" })
+    const response = await putAuth(appWith(credentials, transport.stub), "box", { api_key: "box_good" })
     const body = (await response.json()) as { verification?: { state: string } }
 
     expect(response.status).toBe(200)
@@ -211,14 +211,14 @@ describe("a key the provider accepts", () => {
     const { credentials } = recordingCredentials()
     const transport = respond({})
 
-    const response = await putAuth(appWith(credentials, transport.stub), "daytona", { api_key: "dtn_good" })
+    const response = await putAuth(appWith(credentials, transport.stub), "box", { api_key: "box_good" })
     const body = (await response.json()) as {
       drivers: Array<{ id: string; verification?: { state: string } }>
     }
 
     // The step's "ready for cloud sessions" line is backed by this field, so it
     // must be on the driver row rather than only on the save response.
-    expect(body.drivers.find((item) => item.id === "daytona")?.verification?.state).toBe("working")
+    expect(body.drivers.find((item) => item.id === "box")?.verification?.state).toBe("working")
   })
 })
 
@@ -227,7 +227,7 @@ describe("verification runs before the credential is stored", () => {
     const { credentials } = recordingCredentials()
     const transport = respond({ ok: false, status: 401, body: "unauthorized" })
 
-    await putAuth(appWith(credentials, transport.stub), "daytona", { api_key: "dtn_bad" })
+    await putAuth(appWith(credentials, transport.stub), "box", { api_key: "box_bad" })
 
     const config = path.join(tempDataDir, "user-agent-config.json")
     expect(fs.existsSync(config) ? fs.readFileSync(config, "utf8") : "").toBe("")
@@ -237,10 +237,10 @@ describe("verification runs before the credential is stored", () => {
     const { credentials } = recordingCredentials()
     const transport = respond({ ok: false, status: 401, body: "unauthorized" })
 
-    await putAuth(appWith(credentials, transport.stub), "daytona", { api_key: "dtn_secret_value" })
+    await putAuth(appWith(credentials, transport.stub), "box", { api_key: "box_secret_value" })
 
     const config = path.join(tempDataDir, "user-agent-config.json")
     const written = fs.existsSync(config) ? fs.readFileSync(config, "utf8") : ""
-    expect(written).not.toContain("dtn_secret_value")
+    expect(written).not.toContain("box_secret_value")
   })
 })

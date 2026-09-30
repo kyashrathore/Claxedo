@@ -11,11 +11,11 @@ import type { LocalCredentialItem } from "@claxedo/server-core/credentials/opera
 
 function item(input: Partial<LocalCredentialItem> = {}): LocalCredentialItem {
   return {
-    provider_id: "daytona",
+    provider_id: "box",
     kind: "sandbox_driver",
     source: "local_only",
     label: "Synced from local sandbox driver config",
-    secret: JSON.stringify({ api_key: "dtn_key" }),
+    secret: JSON.stringify({ api_key: "box_key" }),
     ...input,
   } as LocalCredentialItem
 }
@@ -47,10 +47,10 @@ describe("discovered sandbox provider keys get live verdicts", () => {
     // The verdict travels with the probe so the row that is saved from it reads
     // as checked without a second request against the user's quota.
     expect(probe).toEqual({ state: "working", health: "ok" })
-    expect(transport.calls[0]?.url).toBe("https://app.daytona.io/api/api-keys/current")
+    expect(transport.calls[0]?.url).toBe("https://ascii.dev/api/box/v1/me")
     // The discovered key itself is what the provider answers about; a probe
     // that authenticated as anything else would verify the wrong credential.
-    expect(authorization(transport.calls[0])).toBe("Bearer dtn_key")
+    expect(authorization(transport.calls[0])).toBe("Bearer box_key")
     expect(transport.calls[0]?.init?.method).toBe("GET")
   })
 
@@ -64,7 +64,7 @@ describe("discovered sandbox provider keys get live verdicts", () => {
 
   test("an unreachable provider is unknown, never broken", async () => {
     const offline = (async () => {
-      throw new Error("getaddrinfo ENOTFOUND app.daytona.io")
+      throw new Error("getaddrinfo ENOTFOUND ascii.dev")
     }) as unknown as typeof fetch
 
     const probe = await probeDiscoveredCredential(item(), { fetch: offline })

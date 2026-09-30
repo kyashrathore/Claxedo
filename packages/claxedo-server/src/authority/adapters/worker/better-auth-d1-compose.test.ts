@@ -223,7 +223,7 @@ describe("Better Auth + D1 user-deployed composition", () => {
     })).toThrow(/full-hosted Better Auth \+ D1 requires/)
     expect(() => composeBetterAuthD1UserDeployedControlPlane({
       ...input,
-      env: env({ CLAXEDO_SANDBOX_POSTURE: "full-hosted", CLAXEDO_SANDBOX_DRIVER: "daytona" }),
+      env: env({ CLAXEDO_SANDBOX_POSTURE: "full-hosted", CLAXEDO_SANDBOX_DRIVER: "fetch" }),
       sandbox,
     })).toThrow(/full-hosted Better Auth \+ D1 requires/)
     expect(() => composeBetterAuthD1UserDeployedControlPlane({ ...input, env: env(), sandbox })).toThrow(

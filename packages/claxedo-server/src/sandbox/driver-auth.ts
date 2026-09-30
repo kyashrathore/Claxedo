@@ -43,13 +43,8 @@ export async function sandboxDriverAuthAsync<T extends SandboxDriverID>(
 }
 
 // Decoder half of the sandbox-driver credential codec; `sandboxDriverManagedSecret`
-// in `sandbox-driver-routes.ts` is the encoder.
-//
-// This was seven hand-written per-driver branches, and it had already drifted
-// from the encoder: both named special cases, but not the SAME ones, so exe.dev
-// and Box decoded a JSON blob as though it were a bare token. Driving both
-// halves off `credentialFields` removes the class of bug — a new driver needs
-// no edit here, and there is no per-driver list left to disagree about.
+// in `sandbox-driver-routes.ts` is the encoder. Both halves read the driver's
+// `credentialFields`, so there is no per-driver list for them to disagree about.
 function parseManagedAuth<T extends SandboxDriverID>(id: T, secret: string): SandboxDriverAuth[T] | undefined {
   const fields = sandboxDriverCredentialFields[id]
   const parsed = parseJsonRecord(secret)
@@ -63,9 +58,8 @@ function parseManagedAuth<T extends SandboxDriverID>(id: T, secret: string): San
             return value ? [[field.key, value]] : []
           }),
         )
-      : // Legacy bare secret: the pre-codec encoder stored daytona/docker
-        // unwrapped, and `credentials/migrate.ts` still writes daytona that
-        // way. A bare string can only ever be a single-field driver's value.
+      : // Legacy bare secret: the pre-codec encoder stored single-field drivers
+        // unwrapped. A bare string can only ever be a single-field driver's value.
         singleFieldLegacyValues(fields, secret)
 
   if (Object.keys(values).length !== fields.length) return undefined

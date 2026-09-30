@@ -1240,55 +1240,7 @@ describe("workspace relay server", () => {
       expect(out.get("accept-encoding")).toBe("identity")
       expect(out.get("authorization")).toBe("Bearer relay-host-token-value")
       expect(out.get("x-workspace-id")).toBe("ws_1")
-      expect(out.get("X-Daytona-Skip-Preview-Warning")).toBe("true")
       expect(out.get("content-type")).toBe("application/json")
-    })
-
-    test("applies allowlisted resolver headers without overwriting relay-owned ones", () => {
-      const input = new Headers({
-        "x-daytona-preview-token": "client-supplied",
-        "x-workspace-id": "client-supplied",
-      })
-      const out = workspaceRelayForwardHeaders(input, "tok", "ws_1", {
-        upstreamHeaders: {
-          "x-daytona-preview-token": "resolver-supplied",
-          "x-empty-provider-header": "   ",
-        },
-      })
-
-      expect(out.get("x-daytona-preview-token")).toBe("resolver-supplied")
-      expect(out.get("x-workspace-id")).toBe("ws_1")
-      expect(out.get("x-empty-provider-header")).toBeNull()
-    })
-
-    test("resolver headers cannot overwrite relay-owned authentication or identity headers", () => {
-      const out = workspaceRelayForwardHeaders(new Headers(), "tok", "ws_1", {
-        upstreamHeaders: {
-          authorization: "Bearer resolver-supplied",
-          "x-workspace-id": "ws_other",
-          "x-forwarded-by": "resolver-proxy",
-          "X-Daytona-Preview-Token": "preview-ok",
-        },
-      })
-
-      expect(out.get("authorization")).toBe("Bearer tok")
-      expect(out.get("x-workspace-id")).toBe("ws_1")
-      expect(out.get("x-forwarded-by")).toBe("workspace-relay")
-      expect(out.get("x-daytona-preview-token")).toBe("preview-ok")
-    })
-
-    test("drops resolver-supplied headers outside the provider allowlist", () => {
-      const out = workspaceRelayForwardHeaders(new Headers(), "tok", "ws_1", {
-        upstreamHeaders: {
-          "x-acme-api-key": "injected",
-          cookie: "session=evil",
-          "x-claxedo-internal-actor": "spoofed",
-        },
-      })
-
-      expect(out.get("x-acme-api-key")).toBeNull()
-      expect(out.get("cookie")).toBeNull()
-      expect(out.get("x-claxedo-internal-actor")).toBeNull()
     })
 
     test("strips x-forwarded-for from inbound headers", () => {

@@ -11,7 +11,7 @@
 export const CERTIFIED_ADAPTER_PROFILES = ["better-auth-d1"] as const
 export const PRODUCT_POSTURES = ["claxedo-hosted", "user-deployed"] as const
 export const SANDBOX_POSTURES = ["control-plane-only", "full-hosted"] as const
-export const SANDBOX_DRIVERS = ["cloudflare", "daytona", "exe", "fetch"] as const
+export const SANDBOX_DRIVERS = ["cloudflare", "fetch"] as const
 
 export type CertifiedAdapterProfile = (typeof CERTIFIED_ADAPTER_PROFILES)[number]
 export type ProductPosture = (typeof PRODUCT_POSTURES)[number]

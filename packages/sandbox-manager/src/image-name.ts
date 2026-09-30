@@ -39,12 +39,8 @@ export function sandboxImageRepository(env: SandboxImageEnv = process.env) {
  * Naming scheme: the id is inserted AFTER the core version and BEFORE the
  * `-v<schema>` suffix, so ordering stays version → build → schema:
  *   image    ghcr.io/<repo>:workspace-runtime-<version>[-<id>]-v<schema>
- *   snapshot claxedo-workspace-runtime-<version>[-<id>]-v<schema>
- * With no build-id the names are byte-identical to before (all existing
- * consumers/tests unaffected). Precedence for the runtime side mirrors the
- * SANDBOX_IMAGE/SNAPSHOT_NAME overrides: an explicit CLAXEDO_SANDBOX_IMAGE /
- * CLAXEDO_SNAPSHOT_NAME wins outright; otherwise CLAXEDO_SANDBOX_BUILD_ID (if
- * set) pins the default name to a specific build.
+ * An explicit CLAXEDO_SANDBOX_IMAGE wins outright; otherwise
+ * CLAXEDO_SANDBOX_BUILD_ID (if set) pins the default name to a specific build.
  */
 function buildIdSuffix(buildId: string | undefined, env: SandboxImageEnv) {
   const id = (buildId ?? env.CLAXEDO_SANDBOX_BUILD_ID)?.trim()
@@ -57,12 +53,4 @@ export function defaultSandboxImage(
   env: SandboxImageEnv = process.env,
 ) {
   return `${sandboxImageRepository(env)}:workspace-runtime-${snapshotVersion(version)}${buildIdSuffix(buildId, env)}-v${SNAPSHOT_SCHEMA_VERSION}`
-}
-
-export function defaultSnapshotName(
-  version = workspaceRuntimeVersion(),
-  buildId?: string,
-  env: SandboxImageEnv = process.env,
-) {
-  return `claxedo-workspace-runtime-${snapshotVersion(version)}${buildIdSuffix(buildId, env)}-v${SNAPSHOT_SCHEMA_VERSION}`
 }

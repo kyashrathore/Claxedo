@@ -427,16 +427,15 @@ export function HostedWorkspaceRoutes(services?: ControlPlaneServices, options: 
             // What reaches the driver is the manager's call, resolved by
             // `sandboxEgressDisposition`:
             //
-            //  - a driver that can enforce (daytona, vercel) is handed the
-            //    allowlist and contains the sandbox;
-            //  - a driver declaring `egressControl: "none"` (cloudflare — which
-            //    the hosted auto-selection prefers — plus exe, the fetch bridge,
-            //    docker, modal, box) has it withheld, and the sandbox comes up
-            //    with unrestricted egress. Withholding keeps the drivers that
-            //    throw on a restricted policy from seeing one, and stops the ones
-            //    that silently drop it from pretending. That exposure is loud:
-            //    the manager warns, and the hosted composition emits
-            //    `sandbox.egress_unenforced` per create
+            //  - a driver that can enforce (vercel) is handed the allowlist and
+            //    contains the sandbox;
+            //  - a driver declaring `egressControl: "none"` (cloudflare, the
+            //    fetch bridge, docker, modal, box) has it withheld, and the
+            //    sandbox comes up with unrestricted egress. Withholding keeps
+            //    the drivers that throw on a restricted policy from seeing one,
+            //    and stops the ones that silently drop it from pretending. That
+            //    exposure is loud: the manager warns, and the hosted
+            //    composition emits `sandbox.egress_unenforced` per create
             //    (`sandboxEgressUnenforcedSink`). `public-docs/sandbox-egress.md`
             //    has the operator-facing matrix.
             //

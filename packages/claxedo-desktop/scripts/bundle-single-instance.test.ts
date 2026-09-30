@@ -56,10 +56,8 @@ function emitted(dir: string): string[] {
 
 describe("shipped claxedo-server bundle", () => {
   test("carries no hosted capability implementation", async () => {
-    // The point of the split, measured on the artifact rather than the import
-    // graph. Before the desktop entry moved to `@claxedo/local-server` this
-    // bundle was 30MB and contained better-auth and the Daytona driver — in a
-    // build that never signs in.
+    // Measured on the artifact rather than the import graph: a build that
+    // never signs in must not carry the hosted sign-in stack.
     //
     // Matched on symbols that only appear in the real implementations. Plain
     // product words still occur as DATA — a network-policy hostname allowlist,
@@ -70,7 +68,6 @@ describe("shipped claxedo-server bundle", () => {
     const text = emitted(OUT).map((file) => fs.readFileSync(file, "utf8")).join("\n")
     const forbidden = {
       "better-auth": /betterAuth\(|better-auth\//,
-      "Daytona driver": /@daytona\/sdk|DaytonaClient\b/,
     }
     // Agent Plugins is NOT on this list. The desktop serves
     // `/api/claxedo/plugins` from the local composition and its packaged e2e

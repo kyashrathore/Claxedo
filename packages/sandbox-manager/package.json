@@ -2,7 +2,7 @@
   "name": "@claxedo/sandbox-manager",
   "version": "0.10.0",
   "type": "module",
-  "description": "Sandbox lifecycle manager with epoch-based leases and pluggable drivers for Daytona, Modal, Vercel Sandbox, Cloudflare, Box, and Docker",
+  "description": "Sandbox lifecycle manager with epoch-based leases and pluggable drivers for Modal, Vercel Sandbox, Cloudflare, Box, and Docker",
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -12,7 +12,6 @@
   "keywords": [
     "claxedo",
     "sandbox",
-    "daytona",
     "modal",
     "vercel",
     "cloudflare",
@@ -72,26 +71,12 @@
       "import": "./dist/drivers/box.mjs",
       "default": "./dist/drivers/box.mjs"
     },
-    "./drivers/exe": {
-      "development": "./src/drivers/exe.ts",
-      "bun": "./src/drivers/exe.ts",
-      "types": "./dist/drivers/exe.d.ts",
-      "import": "./dist/drivers/exe.mjs",
-      "default": "./dist/drivers/exe.mjs"
-    },
     "./drivers/cloudflare": {
       "development": "./src/drivers/cloudflare.ts",
       "bun": "./src/drivers/cloudflare.ts",
       "types": "./dist/drivers/cloudflare.d.ts",
       "import": "./dist/drivers/cloudflare.mjs",
       "default": "./dist/drivers/cloudflare.mjs"
-    },
-    "./drivers/daytona": {
-      "development": "./src/drivers/daytona.ts",
-      "bun": "./src/drivers/daytona.ts",
-      "types": "./dist/drivers/daytona.d.ts",
-      "import": "./dist/drivers/daytona.mjs",
-      "default": "./dist/drivers/daytona.mjs"
     },
     "./drivers/docker": {
       "development": "./src/drivers/docker.ts",
@@ -190,7 +175,6 @@
     "@claxedo/egress-broker": "workspace:*",
     "@claxedo/helpers": "workspace:*",
     "@claxedo/sandbox-contract": "workspace:*",
-    "@daytona/sdk": "0.211.2",
     "@vercel/sandbox": "3.3.0",
     "modal": "0.10.1"
   },

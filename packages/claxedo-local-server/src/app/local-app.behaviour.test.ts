@@ -217,10 +217,8 @@ describe("local composition — sandbox driver settings", () => {
       drivers?: Array<{ id: string; label: string; fields: unknown[] }>
     }
 
-    expect(body.default_driver).toBe("daytona")
+    expect(body.default_driver).toBe("cloudflare")
     expect(body.drivers?.map((driver) => driver.id)).toEqual([
-      "exe",
-      "daytona",
       "modal",
       "vercel",
       "cloudflare",

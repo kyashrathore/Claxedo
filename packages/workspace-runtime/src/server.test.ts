@@ -393,9 +393,8 @@ describe("workspace runtime host route auth", () => {
       configToken: "cfg-secret",
       serviceExposure: {
         source: "driver-service-url",
-        access: "driver-authenticated",
-        driver: "daytona",
-        fallbackAccess: "public",
+        access: "public",
+        driver: "vercel",
       },
     })
     try {
@@ -414,9 +413,8 @@ describe("workspace runtime host route auth", () => {
         routeAuthBoundary: "relay-host-auth",
         serviceExposure: {
           source: "driver-service-url",
-          access: "driver-authenticated",
-          driver: "daytona",
-          fallbackAccess: "public",
+          access: "public",
+          driver: "vercel",
         },
       })
       expect(workspaceRuntimeRouteAuthBoundary({}, "0.0.0.0", {

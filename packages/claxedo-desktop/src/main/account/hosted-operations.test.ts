@@ -387,7 +387,7 @@ describe("resolveHostedOperation", () => {
       workspaceName: "main",
       connectionId: "conn_1",
       repoFullName: "acme/demo",
-      driver: "daytona",
+      driver: "modal",
     })).toEqual({
       method: "POST",
       path: "/api/workspace/create",
@@ -398,7 +398,7 @@ describe("resolveHostedOperation", () => {
         // `driver` is declared, so the signed desktop path forwards the create
         // dialog's provider choice instead of silently dropping it. The hosted
         // control plane composes one driver from env and ignores the field.
-        driver: "daytona",
+        driver: "modal",
         repo: { fullName: "acme/demo" },
       },
     })

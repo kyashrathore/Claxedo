@@ -87,7 +87,6 @@ export function workspaceRuntimeServiceExposureEnv(input: {
   driver: SandboxDriverID
   source: "driver-service-url"
   access: "private" | "public" | "driver-authenticated" | "unknown"
-  fallbackAccess?: "private" | "public" | "driver-authenticated" | "unknown"
   note?: string
 }): Record<string, string> {
   return {
@@ -95,7 +94,6 @@ export function workspaceRuntimeServiceExposureEnv(input: {
     WORKSPACE_RUNTIME_SERVICE_EXPOSURE_SOURCE: input.source,
     WORKSPACE_RUNTIME_SERVICE_EXPOSURE_ACCESS: input.access,
     WORKSPACE_RUNTIME_SERVICE_EXPOSURE_DRIVER: input.driver,
-    ...(input.fallbackAccess ? { WORKSPACE_RUNTIME_SERVICE_EXPOSURE_FALLBACK_ACCESS: input.fallbackAccess } : {}),
     ...(input.note ? { WORKSPACE_RUNTIME_SERVICE_EXPOSURE_NOTE: input.note } : {}),
   }
 }

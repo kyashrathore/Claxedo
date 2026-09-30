@@ -148,7 +148,7 @@ describe("agentPluginWorkspaceRuntimeContribution", () => {
 
   test("projects only the sandbox-native broker reference, never the gateway credential", async () => {
     const secretName = "CLAXEDO_MCP_ABC"
-    const { artifact, app } = await fixture({ mcp: true, env: { [secretName]: "dtn_secret_reference" } })
+    const { artifact, app } = await fixture({ mcp: true, env: { [secretName]: "secret_ref_reference" } })
     const response = await app.request(AGENT_PLUGINS_RUNTIME_APPLY_PATH, {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -175,12 +175,12 @@ describe("agentPluginWorkspaceRuntimeContribution", () => {
     expect(config.mcpServers.docs).toEqual({
       type: "http",
       url: "https://mcp-abc.gateway.example/api/claxedo/plugins/mcp/id",
-      headers: { Authorization: "dtn_secret_reference" },
+      headers: { Authorization: "secret_ref_reference" },
     })
   })
 
   test("refuses a gateway row whose transport or secret name is malformed", async () => {
-    const { artifact, app, applyHarnessLaunch } = await fixture({ mcp: true, env: { CLAXEDO_MCP_ABC: "dtn_secret_reference" } })
+    const { artifact, app, applyHarnessLaunch } = await fixture({ mcp: true, env: { CLAXEDO_MCP_ABC: "secret_ref_reference" } })
     const docs = { pluginInstanceId: "claxedo/review", artifactDigest: artifact.digest, harnessId: "claude", serverName: "docs" }
     const target = "https://mcp-abc.gateway.example/api/claxedo/plugins/mcp/id"
     for (const server of [

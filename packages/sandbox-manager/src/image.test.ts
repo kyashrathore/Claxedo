@@ -1,13 +1,6 @@
-import { afterEach, describe, expect, test, vi } from "vitest"
-// The SDK error class is imported inside the mocks that throw it, never at
-// module scope: a static value import would load the whole Daytona SDK into
-// this suite's file-load phase, which image.ts just stopped doing.
-import type { Daytona } from "@daytona/sdk"
+import { afterEach, describe, expect, test } from "vitest"
 import {
   defaultSandboxImage,
-  defaultSnapshotName,
-  ensureSnapshot,
-  SNAPSHOT_NAME,
   SNAPSHOT_SCHEMA_VERSION,
   snapshotVersion,
 } from "./image"
@@ -27,14 +20,7 @@ describe("sandbox image contract", () => {
     )
   })
 
-  test("default snapshot name follows the workspace-runtime package version", () => {
-    delete process.env.CLAXEDO_SANDBOX_BUILD_ID
-    expect(defaultSnapshotName()).toBe(
-      `claxedo-workspace-runtime-${workspaceRuntimeVersion().replaceAll(".", "-")}-v${SNAPSHOT_SCHEMA_VERSION}`,
-    )
-  })
-
-  test("snapshot version is safe for driver snapshot names", () => {
+  test("the version segment is safe inside an image tag", () => {
     expect(snapshotVersion("0.4.9+build.1")).toBe("0-4-9-build-1")
   })
 
@@ -44,9 +30,6 @@ describe("sandbox image contract", () => {
     expect(defaultSandboxImage(workspaceRuntimeVersion(), "abc1230000")).toBe(
       `ghcr.io/kyashrathore/claxedo-sandbox:workspace-runtime-${v}-abc1230000-v${SNAPSHOT_SCHEMA_VERSION}`,
     )
-    expect(defaultSnapshotName(workspaceRuntimeVersion(), "abc1230000")).toBe(
-      `claxedo-workspace-runtime-${v}-abc1230000-v${SNAPSHOT_SCHEMA_VERSION}`,
-    )
   })
 
   test("CLAXEDO_SANDBOX_BUILD_ID env supplies the build-id when no arg is passed", () => {
@@ -54,9 +37,6 @@ describe("sandbox image contract", () => {
     const v = snapshotVersion(workspaceRuntimeVersion())
     expect(defaultSandboxImage()).toBe(
       `ghcr.io/kyashrathore/claxedo-sandbox:workspace-runtime-${v}-deadbeef01-v${SNAPSHOT_SCHEMA_VERSION}`,
-    )
-    expect(defaultSnapshotName()).toBe(
-      `claxedo-workspace-runtime-${v}-deadbeef01-v${SNAPSHOT_SCHEMA_VERSION}`,
     )
   })
 
@@ -71,77 +51,5 @@ describe("sandbox image contract", () => {
     expect(defaultSandboxImage()).toBe(
       `ghcr.io/kyashrathore/claxedo-sandbox:workspace-runtime-${v}-v${SNAPSHOT_SCHEMA_VERSION}`,
     )
-  })
-})
-
-describe("snapshot build progress reporting", () => {
-  // A snapshot build takes minutes. Before the sink existed these messages went
-  // to a no-op logger, so `onLogs` — the only view into whether a build is
-  // progressing or wedged — was discarded.
-  function daytona(input: {
-    get?: () => Promise<unknown>
-    create?: (params: unknown, options: { onLogs?: (chunk: string) => void }) => Promise<unknown>
-  }) {
-    return {
-      snapshot: {
-        get: input.get ?? vi.fn(async () => ({ state: "ready" })),
-        create: input.create ?? vi.fn(async () => {}),
-        activate: vi.fn(async () => {}),
-      },
-    } as unknown as Daytona
-  }
-
-  test("the build stream and its progress messages reach the injected sink", async () => {
-    const log = vi.fn()
-    const sdk = daytona({
-      get: vi.fn(async () => {
-        const { DaytonaNotFoundError } = await import("@daytona/sdk")
-        throw new DaytonaNotFoundError("missing")
-      }),
-      create: vi.fn(async (_params, options) => {
-        options.onLogs?.("step 1/3 pulling base image")
-        options.onLogs?.("step 3/3 done")
-      }),
-    })
-
-    expect(await ensureSnapshot(sdk, { log })).toBe(SNAPSHOT_NAME)
-
-    expect(log).toHaveBeenCalledWith(
-      "Creating sandbox snapshot (this may take a few minutes)...",
-      { name: SNAPSHOT_NAME },
-    )
-    expect(log).toHaveBeenCalledWith("[snapshot]", { text: "step 1/3 pulling base image" })
-    expect(log).toHaveBeenCalledWith("[snapshot]", { text: "step 3/3 done" })
-  })
-
-  test("reactivating an inactive snapshot is reported", async () => {
-    const log = vi.fn()
-    const states = ["inactive", "ready"]
-    const sdk = daytona({ get: vi.fn(async () => ({ state: states.shift(), id: "snap_1" })) })
-
-    expect(await ensureSnapshot(sdk, { log })).toBe(SNAPSHOT_NAME)
-    expect(log).toHaveBeenCalledWith(
-      "Snapshot is inactive, reactivating...",
-      { name: SNAPSHOT_NAME, id: "snap_1" },
-    )
-  })
-
-  test("the default sink is console-backed, so an unwired caller still sees the build", async () => {
-    const info = vi.spyOn(console, "info").mockImplementation(() => {})
-    try {
-      const sdk = daytona({
-        get: vi.fn(async () => {
-          const { DaytonaNotFoundError } = await import("@daytona/sdk")
-          throw new DaytonaNotFoundError("missing")
-        }),
-      })
-      await ensureSnapshot(sdk)
-      expect(info).toHaveBeenCalledWith(
-        "Creating sandbox snapshot (this may take a few minutes)...",
-        { name: SNAPSHOT_NAME },
-      )
-    } finally {
-      info.mockRestore()
-    }
   })
 })

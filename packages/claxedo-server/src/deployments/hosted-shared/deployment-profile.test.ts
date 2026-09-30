@@ -98,7 +98,7 @@ describe("hosted deployment profile", () => {
     expect(() =>
       resolveDeploymentProfile({
         ...userDeployed,
-        sandboxDriver: "daytona",
+        sandboxDriver: "fetch",
       }),
     ).toThrowError(/control-plane-only forbids a sandbox driver/)
   })

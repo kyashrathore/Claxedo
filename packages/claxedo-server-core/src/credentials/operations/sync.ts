@@ -1,5 +1,4 @@
 import { loadUserConfig, sandboxDriverConfig } from "../../agent-config"
-import type { SandboxDriverID } from "@claxedo/sandbox-contract"
 import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
 import { credentialByProvider, putCredential } from "@claxedo/server-core/credentials/registry"
 import { listCustomProviders, type CustomProviderConfig } from "@claxedo/server-core/credentials/custom-provider"
@@ -77,23 +76,6 @@ function claudeEnvOAuthItem() {
   }
 }
 
-function sandboxDriverCredentialItem(
-  driverId: SandboxDriverID,
-  source: CredentialSource,
-  label: string,
-  secret: string | undefined,
-) {
-  const txt = trimToUndefined(secret)
-  if (!txt) return undefined
-  return {
-    provider_id: driverId,
-    kind: "sandbox_driver" as const,
-    source,
-    label,
-    secret: txt,
-  }
-}
-
 function vercelSandboxDriverCredentialItem(
   source: CredentialSource,
   label: string,
@@ -158,15 +140,6 @@ export async function collectLocalCredentials() {
 
   put(
     map,
-    sandboxDriverCredentialItem(
-      "daytona",
-      "local_only",
-      "Synced from local sandbox driver config",
-      sandboxDriverConfigValue.auth?.daytona?.api_key,
-    ),
-  )
-  put(
-    map,
     sandboxDriverConfigValue.auth?.modal?.token_id && sandboxDriverConfigValue.auth?.modal?.token_secret
       ? {
           provider_id: "modal",
@@ -222,10 +195,6 @@ export async function collectLocalCredentials() {
 
   for (const provider of listCustomProviders()) put(map, customProviderEnvCredential(provider))
 
-  put(
-    map,
-    sandboxDriverCredentialItem("daytona", "env", "Synced from DAYTONA_API_KEY", process.env.DAYTONA_API_KEY),
-  )
   put(
     map,
     trimToUndefined(process.env.MODAL_TOKEN_ID) && trimToUndefined(process.env.MODAL_TOKEN_SECRET)

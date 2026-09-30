@@ -13,28 +13,18 @@ import { isSandboxDriverID, sandboxDriverIds } from "@claxedo/sandbox-contract"
 
 describe("sandbox driver catalog", () => {
   test("owns every direct sandbox driver id", () => {
-    expect(sandboxDriverIds).toEqual(["exe", "daytona", "modal", "vercel", "cloudflare", "box", "docker"])
+    expect(sandboxDriverIds).toEqual(["modal", "vercel", "cloudflare", "box", "docker"])
     expect(Object.keys(sandboxDriverCatalog).sort()).toEqual([...sandboxDriverIds].sort())
-    expect(isSandboxDriverID("daytona")).toBe(true)
+    expect(isSandboxDriverID("vercel")).toBe(true)
     expect(isSandboxDriverID("fetch")).toBe(false)
   })
 
   test("describes where each driver can run without workerSafe/localOnly booleans", () => {
     expect(sandboxDriverCatalog.cloudflare.metadata.driverRunsIn).toEqual(["worker"])
-    expect(sandboxDriverCatalog.exe.metadata.driverRunsIn).toEqual(["worker", "node"])
-    expect(sandboxDriverCatalog.daytona.metadata.driverRunsIn).toEqual(["worker", "node"])
     expect(sandboxDriverCatalog.docker.metadata.driverRunsIn).toEqual(["local"])
   })
 
   test("declares persistence semantics for every driver", () => {
-    expect(sandboxDriverCatalog.daytona.metadata.persistence).toEqual({
-      resume: "same-sandbox",
-      capture: "filesystem",
-      clone: false,
-      captureSource: "preserved",
-      retention: "provider-managed",
-      restoreMount: "new-resource",
-    })
     expect(sandboxDriverCatalog.cloudflare.metadata.persistence).toEqual({
       resume: "replacement-restore",
       capture: "directories",
@@ -45,7 +35,6 @@ describe("sandbox driver catalog", () => {
     })
     expect(sandboxDriverCatalog.box.metadata.persistence.capture).toBe("none")
     expect(sandboxDriverCatalog.docker.metadata.persistence.restoreMount).toBe("same-resource")
-    expect(sandboxDriverCatalog.exe.metadata.persistence.clone).toBe(true)
     for (const driver of Object.values(sandboxDriverCatalog)) {
       expect(validateSandboxPersistenceCapabilities(driver.metadata.persistence)).toEqual({ valid: true })
     }
@@ -73,15 +62,11 @@ describe("sandbox driver catalog", () => {
   })
 
   test("exposes concrete credential field metadata", () => {
-    expect(sandboxDriverCatalog.daytona.credentialFields).toEqual([{ key: "api_key", label: "API Key", secret: true }])
+    expect(sandboxDriverCatalog.box.credentialFields).toEqual([{ key: "api_key", label: "API Key", secret: true }])
     expect(sandboxDriverCatalog.cloudflare.credentialFields.map((field) => field.key)).toEqual(["api_token", "worker_url"])
   })
 
   test("parses config and environment auth without the legacy provider registry", () => {
-    expect(sandboxDriverAuth({ auth: { daytona: { api_key: "dtn" } } }, "daytona")).toEqual({ api_key: "dtn" })
-    expect(sandboxDriverAuth(undefined, "exe", { EXE_DEV_API_TOKEN: "exe-token" })).toEqual({
-      api_token: "exe-token",
-    })
     expect(sandboxDriverAuth(undefined, "modal", {
       MODAL_TOKEN_ID: "id",
       MODAL_TOKEN_SECRET: "secret",
@@ -125,7 +110,7 @@ describe("sandbox driver catalog", () => {
   })
 
   test("does not accept legacy default_provider config", () => {
-    expect(defaultSandboxDriverID({ default_provider: "vercel" } as never, {})).toBe("daytona")
+    expect(defaultSandboxDriverID({ default_provider: "vercel" } as never, {})).toBe("cloudflare")
     expect(listSandboxDrivers({ default_provider: "cloudflare" } as never, {})).not.toHaveProperty("default_provider")
   })
 

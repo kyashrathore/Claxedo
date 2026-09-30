@@ -10,15 +10,12 @@ const entries = [
   "src/command.ts",
   "src/checkpoint-manager.ts",
   "src/constants.ts",
-  "src/daytona-allow-list.ts",
   "src/defaults.ts",
   "src/driver-catalog.ts",
   "src/hosted-network-policy.ts",
   "src/drivers/box.ts",
   "src/drivers/cloudflare.ts",
-  "src/drivers/daytona.ts",
   "src/drivers/docker.ts",
-  "src/drivers/exe.ts",
   "src/drivers/local-brokering.ts",
   "src/drivers/fetch-bridge.ts",
   "src/drivers/modal.ts",
@@ -38,8 +35,8 @@ if (fs.existsSync(DIST)) fs.rmSync(DIST, { recursive: true })
 fs.mkdirSync(DIST, { recursive: true })
 
 // Not script/bun-build's buildPackage: for a node target, Bun.build prefixes
-// any bundle that dynamically imports an external (the Daytona, Modal and
-// Vercel SDKs) with `createRequire(import.meta.url)`, which throws when the
+// any bundle that dynamically imports an external (the Modal and Vercel
+// SDKs) with `createRequire(import.meta.url)`, which throws when the
 // hosted workerd worker loads these drivers.
 execFileSync(path.join(ROOT, "node_modules/.bin/esbuild"), [
   ...entries,
@@ -51,7 +48,6 @@ execFileSync(path.join(ROOT, "node_modules/.bin/esbuild"), [
   "--outbase=src",
   "--out-extension:.js=.mjs",
   "--external:@claxedo/workspace-runtime",
-  "--external:@daytona/sdk",
   "--external:@vercel/sandbox",
   "--external:modal",
 ], { stdio: "inherit", cwd: ROOT })

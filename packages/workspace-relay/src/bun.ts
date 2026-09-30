@@ -1384,7 +1384,6 @@ async function directHttpRequest(input: {
   targetUrl: string
   relayHostToken: string
   workspaceId: string
-  upstreamHeaders?: Record<string, string>
   timeoutMs: number
   requestBodyMaxBytes: number
   limiter?: DirectHttpLimiter
@@ -1402,7 +1401,6 @@ async function directHttpRequest(input: {
         // Cloud-vm direct path: cookies pass through — workspace dashboards in
         // the VM may legitimately need session cookies.
         hostTunnel: false,
-        upstreamHeaders: input.upstreamHeaders,
         // Client disconnect cancels the upstream fetch the same way the
         // timeout does — a gone caller must not keep a host request alive.
         signal: AbortSignal.any([controller.signal, input.request.signal]),
@@ -1981,7 +1979,6 @@ export function createWorkspaceRelayBun(options: WorkspaceRelayOptions, bunOptio
             ).toString(),
             relayHostToken: relay.request.relayHostToken,
             workspaceId: relay.request.target.workspaceId,
-            upstreamHeaders: relay.request.target.upstreamHeaders,
             timeoutMs: bunOptions.directHttpTimeoutMs ?? DIRECT_HTTP_TIMEOUT_MS_DEFAULT,
             requestBodyMaxBytes: bunOptions.directHttpRequestBodyMaxBytes ?? DIRECT_HTTP_REQUEST_BODY_MAX_BYTES_DEFAULT,
             limiter: directHttpLimiter,
@@ -2045,7 +2042,7 @@ export function createWorkspaceRelayBun(options: WorkspaceRelayOptions, bunOptio
             relay.request.relayHostToken,
             relay.request.target.workspaceId,
             // Cloud-vm WS upgrade: cookies pass through.
-            { hostTunnel: false, upstreamHeaders: relay.request.target.upstreamHeaders },
+            { hostTunnel: false },
           )),
           queue: [],
           ...(relayWebSocketTraceEnabled(request)

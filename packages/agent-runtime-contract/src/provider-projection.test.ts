@@ -25,9 +25,9 @@ describe("provider projection", () => {
   })
 
   test("a provider-issued placeholder is read off the environment the sandbox holds", () => {
-    expect(providerProjection(native, { CLAXEDO_PROVIDER_CLAUDE_SDK: "dtn_secret_abc" })).toEqual({
+    expect(providerProjection(native, { CLAXEDO_PROVIDER_CLAUDE_SDK: "secret_ref_abc" })).toEqual({
       baseUrl: "https://api.anthropic.com",
-      placeholder: "dtn_secret_abc",
+      placeholder: "secret_ref_abc",
       authMode: "bearer",
       apiPath: "/v1",
     })
@@ -53,8 +53,8 @@ describe("provider projection", () => {
   })
 
   test("a binding without an expiry is valid and never due for renewal", () => {
-    const resolved = providerProjection(native, { CLAXEDO_PROVIDER_CLAUDE_SDK: "dtn_secret_abc" })!
-    expect(resolved).toMatchObject({ placeholder: "dtn_secret_abc" })
+    const resolved = providerProjection(native, { CLAXEDO_PROVIDER_CLAUDE_SDK: "secret_ref_abc" })!
+    expect(resolved).toMatchObject({ placeholder: "secret_ref_abc" })
     expect(resolved).not.toHaveProperty("expiresAt")
     expect(projectionRenewalDueAt({ "claude-sdk": resolved }, 1_000)).toBeUndefined()
   })
@@ -62,10 +62,10 @@ describe("provider projection", () => {
   test("a record resolves every row against the same environment", () => {
     expect(providerProjectionRecord(
       { "claude-sdk": native, openrouter: minted },
-      { CLAXEDO_PROVIDER_CLAUDE_SDK: "dtn_secret_abc" },
+      { CLAXEDO_PROVIDER_CLAUDE_SDK: "secret_ref_abc" },
       { onInvalid: "reject" },
     )).toEqual({
-      "claude-sdk": { baseUrl: "https://api.anthropic.com", placeholder: "dtn_secret_abc", authMode: "bearer", apiPath: "/v1" },
+      "claude-sdk": { baseUrl: "https://api.anthropic.com", placeholder: "secret_ref_abc", authMode: "bearer", apiPath: "/v1" },
       openrouter: minted,
     })
   })

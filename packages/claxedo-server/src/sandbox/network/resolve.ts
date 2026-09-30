@@ -2,7 +2,6 @@
  * Network resolution — converts hostnames and policy entries to CIDR blocks
  * for sandbox driver APIs that only accept IP-based allowlists.
  *
- * Daytona: comma-separated IPv4 CIDR blocks via `networkAllowList`
  * Modal: list of CIDR ranges via `cidr_allowlist`
  */
 
@@ -140,22 +139,4 @@ export async function resolveSandboxNetworkPolicy(
     cidrs: [...cidrs],
     ...(rules.length ? { rules } : {}),
   }
-}
-
-/**
- * Resolve a list of policy entries to a deduplicated CIDR allowlist string
- * suitable for Daytona's `networkAllowList` parameter.
- *
- * Always includes Claxedo control-plane CIDRs so the sandbox can
- * communicate with the gateway server.
- *
- * @param entries - User-configured policy entries
- * @param serverUrl - The claxedo-server URL the sandbox needs to reach
- * @returns Comma-separated CIDR string, or undefined if no entries
- */
-export async function resolveAllowListCidrs(
-  entries: PolicyEntry[],
-  serverUrl?: string,
-): Promise<string[]> {
-  return (await resolveSandboxNetworkPolicy(entries, serverUrl)).cidrs
 }

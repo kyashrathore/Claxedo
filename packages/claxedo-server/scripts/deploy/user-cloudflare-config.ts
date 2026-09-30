@@ -11,13 +11,11 @@ import {
   resolveBetterAuthMethodSelection,
 } from "../../src/platform/auth/better-auth-configuration"
 
-export type SandboxDriver = "cloudflare" | "daytona" | "exe" | "fetch"
+export type SandboxDriver = "cloudflare" | "fetch"
 
 /** The Worker secret each full-hosted driver needs. */
 const SANDBOX_DRIVER_SECRETS: Readonly<Record<SandboxDriver, readonly string[]>> = Object.freeze({
   cloudflare: ["CLOUDFLARE_SANDBOX_API_TOKEN"],
-  daytona: ["DAYTONA_API_KEY"],
-  exe: ["EXE_DEV_API_TOKEN"],
   fetch: [],
 })
 
@@ -151,7 +149,6 @@ export function userCloudflareDeployment(
           ...(driver === "cloudflare"
             ? { CLOUDFLARE_SANDBOX_WORKER_URL: exactHttpsOrigin(env, "CLAXEDO_SANDBOX_WORKER_URL") }
             : {}),
-          ...(driver === "daytona" ? { CLAXEDO_DAYTONA_SNAPSHOT: setting(env, "CLAXEDO_DAYTONA_SNAPSHOT") } : {}),
           ...(driver === "fetch" ? { CLAXEDO_SANDBOX_DRIVER_URL: exactHttpsOrigin(env, "CLAXEDO_SANDBOX_DRIVER_URL") } : {}),
         },
       }

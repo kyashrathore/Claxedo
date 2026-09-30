@@ -1644,7 +1644,7 @@ describe("sandbox garbage collection visibility (W1)", () => {
   })
 
   test("a driver that cannot list reports listingUnsupported instead of empty success", async () => {
-    // No `list` — the pre-W1 Daytona and Cloudflare drivers. Four empty arrays
+    // No `list` — a driver that cannot enumerate its sandboxes. Four empty arrays
     // are indistinguishable from "swept, found nothing", which is exactly the
     // silent success finding B1 is about.
     const driver = fakeDriver({ destroy: vi.fn(async () => {}) })

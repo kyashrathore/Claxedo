@@ -85,7 +85,6 @@ export type RelayTargetResult =
       found: true
       baseUrl: string
       backing: "cloud-vm" | "local-worktree"
-      upstreamHeaders?: Record<string, string>
     }
   | {
       found: false

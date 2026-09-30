@@ -132,7 +132,7 @@ await test("the sandbox image is selected by the Worker and every package baked 
     "packages/claxedo-server/scripts/sandbox/cloudflare-worker/src/index.ts",
     "packages/claxedo-server/scripts/sandbox/build-sandbox-image.ts",
     "packages/sandbox-contract/src/index.ts",
-    "packages/sandbox-manager/src/daytona.ts",
+    "packages/sandbox-manager/src/drivers/cloudflare.ts",
     "packages/workspace-runtime/src/workspace/runtime.ts",
     "packages/harness/src/compose.ts",
     "packages/agent-runtime-contract/src/elicitation.ts",

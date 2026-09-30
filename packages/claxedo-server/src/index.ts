@@ -70,7 +70,6 @@ export {
 export { createMemoryLeaseStore, sandboxLease } from "@claxedo/sandbox-manager/stores/memory"
 export { createSqliteLeaseStore } from "./sandbox/stores/sqlite"
 export { createCloudflareSandboxDriver, type CloudflareSandboxDriverOptions } from "@claxedo/sandbox-manager/drivers/cloudflare"
-export { createDaytonaSandboxDriver, type DaytonaSandboxDriverOptions } from "@claxedo/sandbox-manager/drivers/daytona"
 export { createDockerSandboxDriver, type DockerSandboxDriverOptions } from "@claxedo/sandbox-manager/drivers/docker"
 export { createModalSandboxDriver, type ModalSandboxDriverOptions } from "@claxedo/sandbox-manager/drivers/modal"
 export { createVercelSandboxDriver, type VercelSandboxDriverOptions } from "@claxedo/sandbox-manager/drivers/vercel"

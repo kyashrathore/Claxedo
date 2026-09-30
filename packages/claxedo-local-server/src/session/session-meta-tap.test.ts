@@ -113,7 +113,7 @@ describe("session meta projection tap", () => {
       workspaceId: "ws_cloud",
       directory: "/workspace",
       kind: "cloud",
-      driver: "daytona",
+      driver: "modal",
     })
     expect(cloud?.kind).toBe("cloud")
 

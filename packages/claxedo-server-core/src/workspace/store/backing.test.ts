@@ -42,7 +42,7 @@ describe("workspaceBacking", () => {
   test("returns cloud-vm with driver metadata for cloud workspaces", () => {
     expect(workspaceBacking(ws({
       kind: "cloud",
-      driver: "daytona",
+      driver: "vercel",
       project_name: "acme",
       workspace_name: "feature-x",
       repo_url: "https://github.com/acme/repo",
@@ -52,7 +52,7 @@ describe("workspaceBacking", () => {
       remote_directory: "/workspace/repo",
     }))).toEqual({
       kind: "cloud-vm",
-      driver: "daytona",
+      driver: "vercel",
       projectName: "acme",
       workspaceName: "feature-x",
       repoUrl: "https://github.com/acme/repo",
@@ -65,14 +65,14 @@ describe("workspaceBacking", () => {
   test("keeps driver-backed cloud workspaces as cloud-vm before sandbox attach", () => {
     expect(workspaceBacking(ws({
       kind: "cloud",
-      driver: "daytona",
+      driver: "vercel",
       project_name: "acme",
       workspace_name: "feature-x",
       repo_url: "https://github.com/acme/repo",
       git_branch: "feature-x",
     }))).toEqual({
       kind: "cloud-vm",
-      driver: "daytona",
+      driver: "vercel",
       projectName: "acme",
       workspaceName: "feature-x",
       repoUrl: "https://github.com/acme/repo",
@@ -115,7 +115,7 @@ describe("workspaceBacking", () => {
     const cloud = workspaceBacking(ws({
       kind: "cloud",
       directory: "/workspace/cloud",
-      driver: "daytona",
+      driver: "vercel",
       sandbox_id: "sandbox-x",
     }))
     expect(cloud).not.toHaveProperty("directory")

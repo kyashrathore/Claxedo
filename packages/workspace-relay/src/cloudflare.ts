@@ -2242,7 +2242,7 @@ export function createWorkspaceRelayDurableObjectRoom(options: WorkspaceRelayDur
             new Headers(),
             authorized.relayHostToken,
             authorized.target.workspaceId,
-            { hostTunnel: false, upstreamHeaders: authorized.target.upstreamHeaders },
+            { hostTunnel: false },
           )),
         },
       )
@@ -2437,7 +2437,6 @@ export function createWorkspaceRelayDurableObjectRoom(options: WorkspaceRelayDur
         ),
         workspaceRelayForwardRequestInit(request, authorized.request.relayHostToken, workspaceId, {
           signal: controller.signal,
-          upstreamHeaders: authorized.request.target.upstreamHeaders,
         }),
       ))
       return new Response(upstream.body, {

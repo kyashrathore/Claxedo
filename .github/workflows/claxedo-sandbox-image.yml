@@ -17,7 +17,7 @@ on:
   workflow_dispatch:
     inputs:
       runtime_version:
-        description: "workspace-runtime core version used for image/snapshot naming (defaults to the checkout's package.json)"
+        description: "workspace-runtime core version used for image naming (defaults to the checkout's package.json)"
         required: false
         type: string
 
@@ -52,10 +52,10 @@ jobs:
           WORKSPACE_RUNTIME_VERSION: ${{ inputs.runtime_version }}
         run: bun run --cwd packages/claxedo-server sandbox:image --push --latest
 
-      # Surface the content build-id / image tag / snapshot name so operators
-      # can pin the control plane (CLAXEDO_SANDBOX_BUILD_ID / CLAXEDO_SNAPSHOT_NAME
-      # / CLAXEDO_SANDBOX_IMAGE). Deleting the npm-publish gate removed content
-      # immutability at a fixed core version, so the exact build must be nameable.
+      # Surface the content build-id / image tag so operators can pin the
+      # control plane (CLAXEDO_SANDBOX_BUILD_ID / CLAXEDO_SANDBOX_IMAGE): two
+      # builds at the same core version differ, so the exact build must be
+      # nameable.
       - name: Surface sandbox build identity
         if: always()
         run: |
@@ -65,7 +65,7 @@ jobs:
             echo '```json' >> "$GITHUB_STEP_SUMMARY"
             cat "$INFO" >> "$GITHUB_STEP_SUMMARY"
             echo '```' >> "$GITHUB_STEP_SUMMARY"
-            echo "Pin the control plane: set CLAXEDO_SANDBOX_BUILD_ID (or CLAXEDO_SNAPSHOT_NAME / CLAXEDO_SANDBOX_IMAGE) to the value above." >> "$GITHUB_STEP_SUMMARY"
+            echo "Pin the control plane: set CLAXEDO_SANDBOX_BUILD_ID (or CLAXEDO_SANDBOX_IMAGE) to the value above." >> "$GITHUB_STEP_SUMMARY"
             cat "$INFO"
           else
             echo "no build-info.json emitted"

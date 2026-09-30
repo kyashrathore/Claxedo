@@ -79,7 +79,7 @@ export const DEFAULT_ALLOWLIST: Record<string, string[]> = {
   huggingface: ["huggingface.co", "*.huggingface.co"],
   ai_services: ["api.perplexity.ai", "api.deepseek.com", "api.groq.com", "openrouter.ai", "api.fireworks.ai", "*.cursor.com", "*.cursor.sh", "ampcode.com", "*.ampcode.com", "ai-gateway.vercel.sh"],
   // Sandbox providers
-  sandbox_drivers: ["app.daytona.io", "api.modal.com", "modal.com", "*.modal.com"],
+  sandbox_drivers: ["api.modal.com", "modal.com", "*.modal.com"],
   // Dev platforms
   vercel: ["vercel.com", "*.vercel.com", "*.vercel.app"],
   supabase: ["supabase.com", "*.supabase.com", "supabase.co", "*.supabase.co"],
@@ -125,6 +125,5 @@ export const PROVIDER_TO_GROUP: Record<string, string> = {
   "anthropic": "anthropic",
   "openai": "openai",
   "google": "google_ai",
-  "daytona": "sandbox_drivers",
   "modal": "sandbox_drivers",
 }
