@@ -478,9 +478,10 @@ export function createWorkspaceRuntimeApp(options: WorkspaceRuntimeServerOptions
       ? new WorkspaceWorktreeManager({
         workspaceId: options.target.workspaceId,
         sourceDirectory: options.target.directory,
-        ...(options.storeRoot ? { storeRoot: options.storeRoot } : {}),
+        store: host.store,
       })
     : undefined
+  if (worktrees) host.whenStoreOpens(() => worktrees.serveActive())
 
   const app = new Hono()
 

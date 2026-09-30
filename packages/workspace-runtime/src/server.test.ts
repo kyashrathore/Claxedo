@@ -36,6 +36,8 @@ import {
 } from "./workspace-relay-env"
 import { volatileLaunchOwnership } from "@claxedo/process-ownership/launch"
 import { loopbackMachineLoginPolicy } from "./testing"
+import { openSqliteDatabase } from "./sqlite/node"
+import { openRuntimeStore } from "./store-file"
 
 /** This suite asserts routing, not recovery: the launch records die with the test. */
 const ownership = volatileLaunchOwnership()
@@ -171,6 +173,33 @@ describe("workspace runtime listen policy", () => {
       )
     } finally {
       warn.mockRestore()
+    }
+  })
+})
+
+describe("a store this build refuses", () => {
+  test("still lets the runtime start, and answers each store-backed request with the typed refusal", async () => {
+    const directory = await pinTempWorkspaceDirectory()
+    const storeRoot = path.join(directory, ".state")
+    openRuntimeStore(storeRoot).close()
+    const other = openSqliteDatabase(path.join(storeRoot, "state.db"))
+    other.exec("UPDATE runtime_store_schema SET identity = 'CREATE TABLE session (id TEXT PRIMARY KEY)'")
+    other.close()
+
+    const runtime = createWorkspaceRuntimeApp({
+      placement,
+      exposure: loopbackWorkspaceRuntimeExposure(),
+      target: { workspaceId: "ws_refused", directory },
+      storeRoot,
+    })
+    try {
+      for (const pathname of ["/api/wr/worktrees", "/session"]) {
+        const response = await runtime.app.request(`http://localhost${pathname}?directory=${encodeURIComponent(directory)}`)
+        expect(response.status, pathname).toBe(503)
+        expect(await response.json(), pathname).toMatchObject({ error: { code: "runtime_store_schema_mismatch" } })
+      }
+    } finally {
+      await runtime.host.dispose()
     }
   })
 })

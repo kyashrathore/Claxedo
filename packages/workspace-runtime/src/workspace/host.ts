@@ -13,6 +13,7 @@ import type { ConnectionRuntimeStatus, RecoveryTurnTarget } from "@claxedo/agent
 import type { LaunchOwnershipRecord } from "@claxedo/process-ownership/launch"
 import type { LaunchOwnershipReconciliation } from "../ownership/reconcile-launch-ownership"
 import type { RuntimeSessionTime } from "../session/session-time"
+import type { RuntimeStore } from "../store"
 
 export type WorkspaceConnectionState = ConnectionRuntimeStatus & { connectionId: string }
 
@@ -105,6 +106,9 @@ export type WorkspaceHost = {
    * previous one carries to it.
    */
   ownerGeneration: string
+  /** The workspace's store, opened on first use; one this build refuses throws a typed 503. */
+  store: () => RuntimeStore
+  whenStoreOpens: (opener: (store: RuntimeStore) => void) => void
   /**
    * Settles when the startup reconciliation of this workspace's launches has
    * finished. A caller that must see the settled answer — a drain preview, a

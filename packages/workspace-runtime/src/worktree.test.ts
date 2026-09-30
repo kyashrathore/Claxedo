@@ -35,7 +35,7 @@ async function fixture() {
     workspaceId: "workspace-1",
     sourceDirectory: source,
     root: path.join(root, "hidden"),
-    store,
+    store: () => store,
   })
   return { source, store, manager }
 }

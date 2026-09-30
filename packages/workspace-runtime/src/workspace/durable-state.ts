@@ -20,6 +20,7 @@ export function workspaceDurableState(input: {
   let opened: { store: RuntimeStore; launches: LaunchOwnershipStore } | undefined
   let reconciliation: Promise<LaunchOwnershipReconciliation> | undefined
   let summary: LaunchOwnershipReconciliation | undefined
+  const openers: Array<(store: RuntimeStore) => void> = []
 
   function open() {
     if (opened) return opened
@@ -32,6 +33,7 @@ export function workspaceDurableState(input: {
       throw new HTTPException(503, { res: Response.json(errorBody(error.code, error.message), { status: 503 }) })
     }
     opened = { store, launches: sqliteLaunchOwnership(store.database(), input.launchOwner) }
+    for (const opener of openers) opener(store)
     // Started before anything else this store does, because until it has
     // run the processes of a previous owner still hold this workspace's
     // ports, working directories and agent session storage, and nothing
@@ -59,21 +61,31 @@ export function workspaceDurableState(input: {
 
   return {
     store,
+    whenOpened(opener: (store: RuntimeStore) => void) {
+      if (opened) opener(opened.store)
+      else openers.push(opener)
+    },
     launchOwnership: () => open().launches,
     sessionStarts,
     launchReconciliation: () => reconciliation,
     launchSummary: () => summary,
-    /** Refuses a write while a previous owner's launch is still unresolved. */
-    async assertLaunchAdmission() {
-      open()
-      if (!reconciliation) return
+    /**
+     * A read needs the store open; a write also waits out launch
+     * reconciliation and is refused while a previous owner's launch is
+     * unresolved. Answers the refusal, or nothing when the request may run.
+     */
+    async admit(method: string): Promise<Response | undefined> {
+      try {
+        open()
+      } catch (error) {
+        if (!(error instanceof HTTPException)) throw error
+        return error.getResponse()
+      }
+      if (["GET", "HEAD", "OPTIONS"].includes(method) || !reconciliation) return undefined
       const settled = await reconciliation
-      if (settled.unresolved.length === 0) return
-      throw new HTTPException(503, {
-        message: `workspace_launch_unreconciled: ${settled.unresolved
-          .map((row) => `${row.launchId} (${row.outcome}: ${row.reason})`)
-          .join("; ")}`,
-      })
+      if (settled.unresolved.length === 0) return undefined
+      const unresolved = settled.unresolved.map((row) => `${row.launchId} (${row.outcome}: ${row.reason})`).join("; ")
+      return Response.json({ error: `workspace_launch_unreconciled: ${unresolved}` }, { status: 503 })
     },
     flush: () => opened?.store.flush(),
     close() {

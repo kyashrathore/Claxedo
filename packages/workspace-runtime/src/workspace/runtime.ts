@@ -222,7 +222,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions): WorkspaceHos
     scope: assignedWorkspaceId ? { kind: "workspace", workspaceId: assignedWorkspaceId } : { kind: "standalone" },
   }
   const durable = workspaceDurableState({ open: () => storeFactory({ storeRoot }), launchOwner, closing: () => closing })
-  const { store, launchOwnership, sessionStarts, assertLaunchAdmission } = durable
+  const { store, launchOwnership, sessionStarts } = durable
   let disposeDeliveries: (() => Promise<void>) | undefined
   let reissueQueuedPrompts: (() => void) | undefined
   let closing = false
@@ -487,14 +487,8 @@ export function createWorkspaceHost(options: WorkspaceHostOptions): WorkspaceHos
         return undefined
       }
       if (closing) return c.json({ error: "Workspace runtime is disposed" }, 503)
-      if (!["GET", "HEAD", "OPTIONS"].includes(c.req.method)) {
-        try {
-          await assertLaunchAdmission()
-        } catch (error) {
-          if (!(error instanceof HTTPException)) throw error
-          return error.res ? error.getResponse() : c.json({ error: error.message }, 503)
-        }
-      }
+      const refused = await durable.admit(c.req.method)
+      if (refused) return refused
       let finish!: () => void
       const request = new Promise<void>((resolve) => { finish = resolve })
       pendingRequests.add(request)
@@ -681,6 +675,8 @@ export function createWorkspaceHost(options: WorkspaceHostOptions): WorkspaceHos
       return turns
     },
     ownerGeneration,
+    store,
+    whenStoreOpens: durable.whenOpened,
     async launchReconciliation() {
       return await durable.launchReconciliation()
     },
