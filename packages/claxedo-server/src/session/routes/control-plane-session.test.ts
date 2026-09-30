@@ -384,7 +384,7 @@ describe("control plane session routes", () => {
       firstPage: { rows: 10, cols: 100, reasoning: false, shell: false, edit: false },
     })
     expect(missingOutline.status).toBe(404)
-    await expect(missingOutline.json()).resolves.toMatchObject({ error: { code: "session_not_found" } })
+    await expect(missingOutline.json()).resolves.toMatchObject({ error: { code: "SESSION_NOT_FOUND" } })
     expect(capabilities.status).toBe(409)
     await expect(capabilities.json()).resolves.toMatchObject({
       error: { code: "session_harness_missing" },
@@ -448,7 +448,7 @@ describe("control plane session routes", () => {
 
     const missing = await app.request(`http://127.0.0.1/sessions/session-2/page?workspaceId=ws_1&${viewport}&before=cursor-2`, { headers })
     expect(missing.status).toBe(404)
-    await expect(missing.json()).resolves.toMatchObject({ error: { code: "session_not_found" } })
+    await expect(missing.json()).resolves.toMatchObject({ error: { code: "SESSION_NOT_FOUND" } })
     expect(svc.projectionStore.read_session_message_page).not.toHaveBeenCalled()
   })
 
@@ -476,9 +476,11 @@ describe("control plane session routes", () => {
       partId: "a1-p0",
     })
 
-    const unnamed = await app.request("http://127.0.0.1/sessions/session-1/part?workspaceId=ws_1&messageId=a1", { headers })
-    expect(unnamed.status).toBe(400)
-    await expect(unnamed.json()).resolves.toMatchObject({ error: { code: "message_page_error" } })
+    for (const query of ["messageId=a1", "partId=a1-p0", "messageId=&partId=a1-p0", "messageId=a1&partId="]) {
+      const unnamed = await app.request(`http://127.0.0.1/sessions/session-1/part?workspaceId=ws_1&${query}`, { headers })
+      expect(unnamed.status).toBe(400)
+      await expect(unnamed.json()).resolves.toMatchObject({ error: { code: "message_page_error" } })
+    }
 
     const noPart = await app.request("http://127.0.0.1/sessions/session-1/part?workspaceId=ws_1&messageId=a1&partId=a1-p9", { headers })
     expect(noPart.status).toBe(404)
@@ -486,7 +488,7 @@ describe("control plane session routes", () => {
 
     const missing = await app.request("http://127.0.0.1/sessions/session-2/part?workspaceId=ws_1&messageId=a1&partId=a1-p0", { headers })
     expect(missing.status).toBe(404)
-    await expect(missing.json()).resolves.toMatchObject({ error: { code: "session_not_found" } })
+    await expect(missing.json()).resolves.toMatchObject({ error: { code: "SESSION_NOT_FOUND" } })
     expect(svc.projectionStore.read_session_messages).not.toHaveBeenCalled()
   })
 
@@ -809,7 +811,7 @@ describe("control plane session routes", () => {
     expect(authority.readSessionMessages).not.toHaveBeenCalled()
   })
 
-  test("loopback workspace session messages fall back to authority when projection is empty", async () => {
+  test("signed loopback workspace session messages use authority", async () => {
     const svc = services()
     const authority = {
       readSessionMessages: vi.fn(async () => ({
@@ -896,10 +898,10 @@ describe("control plane session routes", () => {
     })
   })
 
-  test("signed messages prefer durable projection replay when available", async () => {
+  test("signed messages come from authority despite a stale projection", async () => {
     const svc = services()
     const authority = {
-      readSessionMessages: vi.fn(async () => ({ messages: [] })),
+      readSessionMessages: vi.fn(async () => ({ messages: [{ info: { id: "msg_authority" }, parts: [] }] })),
     }
     svc.authority = authority as never
     svc.projectionStore.read_session_messages = vi.fn(() => [
@@ -933,8 +935,8 @@ describe("control plane session routes", () => {
     await expect(messages.json()).resolves.toMatchObject({
       messages: [
         {
-          info: { id: "msg_replay" },
-          parts: [{ id: "part_replay", text: "persisted replay" }],
+          info: { id: "msg_authority" },
+          parts: [],
         },
       ],
       maxEventOrdinal: 2,
@@ -1061,7 +1063,7 @@ describe("a loopback caller without a bearer reads the local projection's first 
     }
     const missing = await app.request("http://127.0.0.1/sessions/session-2/page?rows=10&cols=100&reasoning=0&shell=0&edit=0&before=cursor-u2")
     expect(missing.status).toBe(404)
-    expect(await missing.json()).toMatchObject({ error: { code: "session_not_found" } })
+    expect(await missing.json()).toMatchObject({ error: { code: "SESSION_NOT_FOUND" } })
     expect(svc.projectionStore.read_session_message_page).not.toHaveBeenCalled()
   })
 
@@ -1079,7 +1081,7 @@ describe("a loopback caller without a bearer reads the local projection's first 
     expect(await unnamed.json()).toMatchObject({ error: { code: "message_page_error" } })
     const missing = await app.request("http://127.0.0.1/sessions/session-2/part?messageId=a2&partId=a2-p1")
     expect(missing.status).toBe(404)
-    expect(await missing.json()).toMatchObject({ error: { code: "session_not_found" } })
+    expect(await missing.json()).toMatchObject({ error: { code: "SESSION_NOT_FOUND" } })
   })
 
   test("refuses a partial or out-of-range viewport and names a session the projection does not hold", async () => {
@@ -1092,7 +1094,7 @@ describe("a loopback caller without a bearer reads the local projection's first 
     expect(svc.projectionStore.session_meta).not.toHaveBeenCalled()
     const missing = await app.request("http://127.0.0.1/sessions/session-2/outline?rows=10&cols=100&reasoning=0&shell=0&edit=0")
     expect(missing.status).toBe(404)
-    expect(await missing.json()).toMatchObject({ error: { code: "session_not_found" } })
+    expect(await missing.json()).toMatchObject({ error: { code: "SESSION_NOT_FOUND" } })
   })
 
   test("every read sends a tool as its header, and whole only when the reader's shell or edit setting opens it", async () => {

@@ -1044,6 +1044,7 @@ describe("D1 private multiplayer session authority", () => {
       workspaceId: "ws_main",
       limit: 2,
     })) as { messages: Array<Record<string, any>>; nextCursor?: string }
+    expect(page).toMatchObject({ maxEventOrdinal: 7 })
     expect(page.messages.map((message) => message.info.id)).toEqual(["m2", "m3"])
     expect(page.messages[0].info.claxedo.author).toEqual({
       id: alice.principal!.actorId,

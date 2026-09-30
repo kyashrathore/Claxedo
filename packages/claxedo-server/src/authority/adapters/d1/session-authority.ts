@@ -1,5 +1,4 @@
 import type { D1Database, D1PreparedStatement } from "@cloudflare/workers-types"
-import { AGENT_MESSAGE_PAGE_LIMIT, AgentMessagePageError } from "@claxedo/agent-runtime-contract"
 import { ControlPlaneAuthError, type SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import { ClaxedoError } from "@claxedo/server-core/platform/errors/base"
 import type {
@@ -46,10 +45,10 @@ import {
   type SessionTurnLease,
 } from "@claxedo/server-core/platform/auth/session-turn-authority"
 import { SESSION_TURN_LEASE_TTL_MS } from "@claxedo/workspace-relay-protocol"
-import { asRecord, numberField, parseJson } from "@claxedo/server-core/platform/json/index"
+import { asRecord } from "@claxedo/server-core/platform/json/index"
 import { projectRoleRankSql, rankRole } from "./project-role"
-import { readD1SessionPage } from "./session-page"
-import { latestViewPage, storedTurn, type LatestView } from "@claxedo/server-core/session/latest-view-page"
+import { readD1SessionPage, readD1MessagePage, readD1LatestView, validateD1MessageRead, decodeMessagePageCursor } from "./session-read-store"
+import { storedTurn, type LatestView } from "@claxedo/server-core/session/latest-view-page"
 import { readStoredTurnOutline } from "@claxedo/server-core/session/turn-outline"
 import { readStoredPart } from "@claxedo/server-core/session/stored-part"
 import type { StoredMessageQuery } from "@claxedo/server-core/session/stored-messages"
@@ -150,13 +149,6 @@ type RegistrationRow = {
   updated_at: number
 }
 
-type MessageRow = {
-  ordinal: number
-  data_json: string
-  author_actor_id: string | null
-  author_kind: "human" | "agent" | null
-}
-
 type SessionShareRow = {
   grant_id: string
   session_id: string
@@ -218,7 +210,6 @@ type CanonicalMessage = {
   authorActorId: string | null
 }
 
-const MESSAGE_PAGE_CURSOR_PREFIX = "d1sm1:"
 const MAX_SNAPSHOT_MESSAGES = 500
 const MAX_MESSAGE_BYTES = 256 * 1024
 const MAX_SNAPSHOT_BYTES = 8 * 1024 * 1024
@@ -1527,19 +1518,7 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
     const who = await this.requirePrincipal(auth)
     const sessionId = requireText(args.sessionId, "sessionId")
     const workspaceId = requireText(args.workspaceId, "workspaceId")
-    if (args.view !== undefined) {
-      const end = args.before === undefined ? undefined : decodeMessagePageCursor(sessionId, args.before)
-      return await this.readLatestView(who, sessionId, workspaceId, args.view, end)
-    }
-    if (args.before !== undefined && args.limit === undefined) {
-      throw new AgentMessagePageError(400, "Message page limit is required with a cursor")
-    }
-    if (
-      args.limit !== undefined &&
-      (!Number.isSafeInteger(args.limit) || args.limit < 1 || args.limit > AGENT_MESSAGE_PAGE_LIMIT)
-    ) {
-      throw new AgentMessagePageError(400, `Message page limit must be between 1 and ${AGENT_MESSAGE_PAGE_LIMIT}`)
-    }
+    const before = validateD1MessageRead({ ...args, sessionId, workspaceId })
     let access: SessionRow & { role_rank: number }
     try {
       access = await this.requireSessionAccess(who, sessionId, workspaceId, "read")
@@ -1547,29 +1526,11 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
       if (isDenied(error)) return { allowed: false, messages: [] }
       throw error
     }
-    const beforeOrdinal = args.before === undefined ? undefined : decodeMessagePageCursor(sessionId, args.before)
-    const limit = args.limit
-    const query = this.database.prepare(`
-      select m.ordinal, m.data_json, m.author_actor_id, a.kind as author_kind
-      from session_messages m
-      left join actors a on a.actor_id = m.author_actor_id and a.state = 'active'
-      where m.session_id = ? and m.workspace_id = ? and (? is null or m.ordinal < ?)
-      order by m.ordinal ${limit === undefined ? "asc" : "desc"}
-      ${limit === undefined ? "" : "limit ?"}
-    `)
-    const result =
-      limit === undefined
-        ? await query.bind(sessionId, workspaceId, beforeOrdinal ?? null, beforeOrdinal ?? null).all<MessageRow>()
-        : await query
-            .bind(sessionId, workspaceId, beforeOrdinal ?? null, beforeOrdinal ?? null, limit + 1)
-            .all<MessageRow>()
-    const rows = limit === undefined ? result.results : result.results.slice(0, limit).reverse()
-    const hasMore = limit !== undefined && result.results.length > limit
     return {
       allowed: true,
       role: rankRole(access.role_rank),
-      messages: rows.map(publicMessage),
-      ...(hasMore && rows[0] ? { nextCursor: encodeMessagePageCursor(sessionId, rows[0].ordinal) } : {}),
+      maxEventOrdinal: access.max_event_ordinal,
+      ...await readD1MessagePage(this.database, { ...args, sessionId, workspaceId }, before),
     }
   }
 
@@ -1615,46 +1576,7 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
 
   private turnRead(sessionId: string, workspaceId: string): TurnRead {
     return async (before) =>
-      storedTurn(await this.latestView(sessionId, workspaceId, "latest-turn", before === undefined ? undefined : decodeMessagePageCursor(sessionId, before)))
-  }
-
-  private async readLatestView(who: Principal, sessionId: string, workspaceId: string, view: LatestView, end?: number) {
-    let access: SessionRow & { role_rank: number }
-    try {
-      access = await this.requireSessionAccess(who, sessionId, workspaceId, "read")
-    } catch (error) {
-      if (isDenied(error)) return { allowed: false, messages: [] }
-      throw error
-    }
-    return { allowed: true, role: rankRole(access.role_rank), ...(await this.latestView(sessionId, workspaceId, view, end)) }
-  }
-
-  private async latestView(sessionId: string, workspaceId: string, view: LatestView, end?: number) {
-    const endBound = end === undefined ? [] : [end]
-    const boundary = await this.database
-      .prepare(`select max(ordinal) as ordinal from session_messages where session_id = ? and workspace_id = ? and role = 'user'${end === undefined ? "" : " and ordinal < ?"}`)
-      .bind(sessionId, workspaceId, ...endBound)
-      .first<{ ordinal: number | null }>()
-    if (boundary?.ordinal === null || boundary?.ordinal === undefined) return { messages: [] }
-    const [turn, older] = await Promise.all([
-      this.database.prepare(`
-        select m.ordinal, m.data_json, m.author_actor_id, a.kind as author_kind
-        from session_messages m
-        left join actors a on a.actor_id = m.author_actor_id and a.state = 'active'
-        where m.session_id = ? and m.workspace_id = ? and m.ordinal >= ?${end === undefined ? "" : " and m.ordinal < ?"}
-        order by m.ordinal asc
-      `).bind(sessionId, workspaceId, boundary.ordinal, ...endBound).all<MessageRow>(),
-      this.database
-        .prepare(`select 1 as found from session_messages where session_id = ? and workspace_id = ? and ordinal < ? limit 1`)
-        .bind(sessionId, workspaceId, boundary.ordinal)
-        .first<{ found: number }>(),
-    ])
-    return latestViewPage(
-      view,
-      turn.results.map((row) => ({ ordinal: row.ordinal, message: publicMessage(row) })),
-      !!older,
-      (ordinal) => encodeMessagePageCursor(sessionId, ordinal),
-    )
+      storedTurn(await readD1LatestView(this.database, sessionId, workspaceId, "latest-turn", before === undefined ? undefined : decodeMessagePageCursor(sessionId, before)))
   }
 
   async syncSessionMessages(
@@ -2785,45 +2707,6 @@ function canonicalMessages(input: unknown[]): CanonicalMessage[] {
       authorActorId: null,
     }
   })
-}
-
-function publicMessage(row: MessageRow) {
-  const parsed = parseJson(row.data_json)
-  const message = asRecord(parsed)
-  if (!message) return parsed
-  const info = asRecord(message.info) ?? {}
-  const claxedo = asRecord(info.claxedo) ?? {}
-  const { author: _untrustedAuthor, ...safeClaxedo } = claxedo
-  const { claxedo: _untrustedClaxedo, ...safeInfo } = info
-  const canonicalClaxedo =
-    row.author_actor_id && row.author_kind && (message.role === "user" || info.role === "user")
-      ? { ...safeClaxedo, author: { id: row.author_actor_id, kind: row.author_kind } }
-      : safeClaxedo
-  return {
-    ...message,
-    info: {
-      ...safeInfo,
-      ...(Object.keys(canonicalClaxedo).length > 0 ? { claxedo: canonicalClaxedo } : {}),
-    },
-  }
-}
-
-function encodeMessagePageCursor(sessionId: string, ordinal: number) {
-  return `${MESSAGE_PAGE_CURSOR_PREFIX}${encodeURIComponent(JSON.stringify({ sessionId, ordinal }))}`
-}
-
-function decodeMessagePageCursor(sessionId: string, input: string) {
-  try {
-    if (!input.startsWith(MESSAGE_PAGE_CURSOR_PREFIX)) throw new Error("unexpected cursor version")
-    const value = asRecord(parseJson(decodeURIComponent(input.slice(MESSAGE_PAGE_CURSOR_PREFIX.length))))
-    const ordinal = numberField(value, "ordinal")
-    if (value?.sessionId !== sessionId || ordinal === undefined || !Number.isSafeInteger(ordinal) || ordinal < 0) {
-      throw new Error("invalid cursor payload")
-    }
-    return ordinal
-  } catch {
-    throw new AgentMessagePageError(400, "Invalid message page cursor")
-  }
 }
 
 function optionalOrdinal(value: number | undefined) {

@@ -106,7 +106,7 @@ import { createSqliteHostTunnelTargetResolver } from "@claxedo/server-core/autho
 import type { HostTunnelTargetResolver } from "@claxedo/server-core/adapters/relay-port"
 import type { TasksSessionGrants } from "@claxedo/server-core/tasks-host/session-grants"
 import { selfHostedTasksClientInput } from "../../tasks/session-grants"
-import { ControlPlaneHttpRoutes } from "../../authority/http"
+import { ControlPlaneHttpRoutes, createIdempotencyCoordinator, memoryIdempotencyStore } from "../../authority/http"
 import { OrgTeamControlRoutes } from "../../session/routes/org-team-routes"
 import { createControlPlaneApp } from "../../control-plane-app"
 import { createMachineSessionDispatch } from "../../session/machine-dispatch"
@@ -1389,7 +1389,7 @@ export function createSelfHostedApp(
     // turns meter into, so one usage view answers for both.
     ...(options.usageRevisionStore ? { usageWriter: options.usageRevisionStore.reports } : {}),
   }))
-  app.route("/api/control", ControlPlaneHttpRoutes(services, authRouteOptions(services)))
+  app.route("/api/control", ControlPlaneHttpRoutes(services, { ...authRouteOptions(services), idempotency: createIdempotencyCoordinator(memoryIdempotencyStore()) }))
   app.route("/api/control", OrgTeamControlRoutes(services, authRouteOptions(services)))
   app.route("/api/control/session-registrations", PrivateSessionRegistrationRoutes({
     authority: selfHostedPrivateSessionAuthority(services.authority),

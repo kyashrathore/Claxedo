@@ -1,8 +1,7 @@
 import { errorBody as dispatchErrorBody, statusOf } from "@claxedo/server-core/platform/errors/base"
-import { Hono, type Context } from "hono"
-import { AGENT_HARNESS_IDS, parseMessagePageQuery } from "@claxedo/agent-runtime-contract"
+import { Hono } from "hono"
+import { AGENT_HARNESS_IDS } from "@claxedo/agent-runtime-contract"
 import type { MachineSessionCreate } from "../machine-dispatch"
-import { AgentMessagePageError, type AgentMessagePageInput } from "@claxedo/agent-runtime-contract"
 import type { ControlPlaneServices } from "../../authority/services"
 import { resolveSessionGateway } from "../../authority/http"
 import {
@@ -23,12 +22,10 @@ import {
   sessionInventoryResponse,
   requiredWorkspaceId,
   signedSessionList, sessionListErrorResponse } from "../list"
-import { messagePageCursor, parseSessionPartInput } from "../message-page"
-import { turnOutlineOfMessages } from "@claxedo/server-core/session/turn-outline"
-import { storedTurn } from "@claxedo/server-core/session/latest-view-page"
-import { TurnPageQueryError, parseOlderTurnPageQuery, parseTurnPageQuery, readFirstRead, readTurnPage, type TurnPageQuery, type TurnRead } from "@claxedo/agent-runtime-contract"
 import type { SessionShareChangedSink } from "../session-people-contract"
 import { SessionPeopleControlRoutes } from "./session-people-routes"
+import { createSessionReadRoutes } from "./session-read"
+import { projectionSessionReads } from "../projection-session-reads"
 import { asRecord, readJsonRecord } from "@claxedo/server-core/platform/json/index"
 import { contentfulStatus } from "../../platform/http/status"
 
@@ -54,88 +51,6 @@ function hasBearerToken(req: Request) {
   return /^Bearer\s+\S+$/i.test(req.headers.get("authorization") ?? "")
 }
 
-function authorityMessages(body: unknown) {
-  if (Array.isArray(body)) return body
-  const messages = asRecord(body)?.messages
-  return Array.isArray(messages) ? messages : []
-}
-
-function authorityReadAllowed(body: unknown) {
-  return !(
-    body &&
-    typeof body === "object" &&
-    !Array.isArray(body) &&
-    (body as { allowed?: boolean }).allowed === false
-  )
-}
-
-function messagePageJson(
-  c: Context,
-  body: unknown,
-  messages: unknown[],
-  maxEventOrdinal: number,
-) {
-  const cursor = messagePageCursor(body)
-  if (cursor) {
-    c.header("Access-Control-Expose-Headers", "X-Next-Cursor")
-    c.header("X-Next-Cursor", cursor)
-  }
-  return c.json({
-    ...(body && typeof body === "object" && !Array.isArray(body) ? body : {}),
-    messages,
-    maxEventOrdinal,
-  })
-}
-
-function projectedMessagePage(
-  services: ControlPlaneServices,
-  sessionId: string,
-  page: AgentMessagePageInput,
-) {
-  const read = services.projectionStore.read_session_message_page
-  if (!read) throw new AgentMessagePageError(501, "message paging is unavailable for the session projection")
-  return read(sessionId, page)
-}
-
-function projectedTurnRead(services: ControlPlaneServices, sessionId: string): TurnRead {
-  return (before) => storedTurn(projectedMessagePage(services, sessionId, before === undefined ? { view: "latest-turn" } : { view: "latest-turn", before }))
-}
-
-async function projectedFirstRead(services: ControlPlaneServices, sessionId: string, firstPage: TurnPageQuery | undefined) {
-  const meta = await services.projectionStore.session_meta(sessionId)
-  if (!meta) return undefined
-  return await readFirstRead(
-    meta,
-    turnOutlineOfMessages(services.projectionStore.read_session_messages(sessionId)),
-    projectedTurnRead(services, sessionId),
-    firstPage,
-  )
-}
-
-/** The projection has no read of one message by id, so a part is found in the session's replay. */
-async function projectedPart(services: ControlPlaneServices, sessionId: string, at: { messageId: string; partId: string }) {
-  if (!(await services.projectionStore.session_meta(sessionId))) return undefined
-  const message = services.projectionStore.read_session_messages(sessionId).find((item) => item.info.id === at.messageId)
-  const part = message?.parts.find((item) => item.id === at.partId)
-  return part ? { part } : {}
-}
-
-async function projectedPage(services: ControlPlaneServices, sessionId: string, page: TurnPageQuery & { before: string }) {
-  if (!(await services.projectionStore.session_meta(sessionId))) return undefined
-  return await readTurnPage(projectedTurnRead(services, sessionId), page)
-}
-
-const sessionNotFound = { error: { code: "session_not_found", message: "Session not found" } } as const
-
-function transcriptReadError(c: Context, err: unknown) {
-  if (err instanceof ControlPlaneAuthError) return c.json(controlPlaneAuthErrorBody(err), err.status)
-  if (err instanceof TurnPageQueryError) return c.json({ error: { code: "turn_page_query_error", message: err.message } }, 400)
-  if (err instanceof AgentMessagePageError) {
-    return c.json({ error: { code: "message_page_error", message: err.message } }, contentfulStatus(err.status))
-  }
-  throw err
-}
-
 function workspaceTransportCapabilities(transport: string) {
   return {
     transport,
@@ -155,6 +70,15 @@ function workspaceTransportCapabilities(transport: string) {
 
 export function ControlPlaneSessionRoutes(services: ControlPlaneServices, options: Options = {}) {
   const app = new Hono()
+  app.route("/", createSessionReadRoutes({
+    reads: projectionSessionReads(services),
+    authenticate: async (request, workspaceId) => {
+      if (isLoopbackLocalRequest(request) && !hasBearerToken(request)) return undefined
+      const auth = await signedAuth(request, options)
+      requiredWorkspaceId(workspaceId)
+      return auth
+    },
+  }))
   // The People routes are also mounted by hosted workerd. Keep the central
   // surface on that worker-safe owner rather than maintaining two copies.
   app.route("/", SessionPeopleControlRoutes(services, {
@@ -256,98 +180,6 @@ export function ControlPlaneSessionRoutes(services: ControlPlaneServices, option
       } catch (err) {
         if (err instanceof ControlPlaneAuthError) return c.json(controlPlaneAuthErrorBody(err), err.status)
         throw err
-      }
-    })
-    .get("/sessions/:sessionId/messages", async (c) => {
-      try {
-        const sessionId = c.req.param("sessionId")
-        const page = parseMessagePageQuery(c.req.query("limit"), c.req.query("before"), c.req.query("view"))
-        const maxEventOrdinal = services.projectionStore.read_session_max_event_ordinal(sessionId)
-        if (isLoopbackLocalRequest(c.req.raw) && !hasBearerToken(c.req.raw)) {
-          if (page) {
-            const projected = projectedMessagePage(services, sessionId, page)
-            return messagePageJson(c, projected, projected.messages, maxEventOrdinal)
-          }
-          const replayMessages = services.projectionStore.read_session_messages(sessionId)
-          return c.json({
-            messages: replayMessages,
-            maxEventOrdinal,
-          })
-        }
-        const auth = await signedAuth(c.req.raw, options)
-        const workspaceId = requiredWorkspaceId(c.req.query("workspaceId"))
-        const body = await requireAuthority(services).readSessionMessages(auth, {
-          sessionId,
-          workspaceId,
-          ...page,
-        })
-        const messages = authorityMessages(body)
-        if (page) return messagePageJson(c, body, messages, maxEventOrdinal)
-        const replayMessages = services.projectionStore.read_session_messages(sessionId)
-        const visibleMessages = authorityReadAllowed(body)
-          ? (replayMessages.length > 0 ? replayMessages : messages)
-          : []
-        return c.json({
-          ...(body && typeof body === "object" && !Array.isArray(body) ? body : {}),
-          messages: visibleMessages,
-          maxEventOrdinal: services.projectionStore.read_session_max_event_ordinal(sessionId),
-        })
-      } catch (err) {
-        if (err instanceof ControlPlaneAuthError) return c.json(controlPlaneAuthErrorBody(err), err.status)
-        if (err instanceof AgentMessagePageError) {
-          return c.json({ error: { code: "message_page_error", message: err.message } }, contentfulStatus(err.status))
-        }
-        throw err
-      }
-    })
-    .get("/sessions/:sessionId/outline", async (c) => {
-      try {
-        const sessionId = c.req.param("sessionId")
-        const firstPage = parseTurnPageQuery((name) => c.req.query(name))
-        const read = isLoopbackLocalRequest(c.req.raw) && !hasBearerToken(c.req.raw)
-          ? await projectedFirstRead(services, sessionId, firstPage)
-          : await requireAuthority(services).readSessionFirstRead(await signedAuth(c.req.raw, options), {
-              sessionId,
-              workspaceId: requiredWorkspaceId(c.req.query("workspaceId")),
-              ...(firstPage ? { firstPage } : {}),
-            })
-        return read ? c.json(read) : c.json(sessionNotFound, 404)
-      } catch (err) {
-        return transcriptReadError(c, err)
-      }
-    })
-    .get("/sessions/:sessionId/page", async (c) => {
-      try {
-        const sessionId = c.req.param("sessionId")
-        const page = parseOlderTurnPageQuery((name) => c.req.query(name))
-        const read = isLoopbackLocalRequest(c.req.raw) && !hasBearerToken(c.req.raw)
-          ? await projectedPage(services, sessionId, page)
-          : await requireAuthority(services).readSessionPage(await signedAuth(c.req.raw, options), {
-              sessionId,
-              workspaceId: requiredWorkspaceId(c.req.query("workspaceId")),
-              page,
-            })
-        return read ? c.json(read) : c.json(sessionNotFound, 404)
-      } catch (err) {
-        return transcriptReadError(c, err)
-      }
-    })
-    .get("/sessions/:sessionId/part", async (c) => {
-      try {
-        const sessionId = c.req.param("sessionId")
-        const at = parseSessionPartInput(c.req.query("messageId"), c.req.query("partId"))
-        const read = isLoopbackLocalRequest(c.req.raw) && !hasBearerToken(c.req.raw)
-          ? await projectedPart(services, sessionId, at)
-          : await requireAuthority(services).readSessionPart(await signedAuth(c.req.raw, options), {
-              sessionId,
-              workspaceId: requiredWorkspaceId(c.req.query("workspaceId")),
-              ...at,
-            })
-        if (!read) return c.json(sessionNotFound, 404)
-        if (!read.part) return c.json({ error: { code: "part_not_found", message: "The session has no such part" } }, 404)
-        return c.json({ part: read.part })
-      } catch (err) {
-        return transcriptReadError(c, err)
       }
     })
     .get("/sessions/:sessionId/capabilities", async (c) => {

@@ -17,6 +17,7 @@ function app() {
 
 function env() {
   return {
+    CONTROL_PLANE_DB: { prepare: vi.fn() } as never,
     CLAXEDO_REQUEST_LIMITER: {
       limit: vi.fn(async () => ({ success: true })),
     },
@@ -78,7 +79,7 @@ describe("hosted core Worker root", () => {
     expect(secondApp.fetch).toHaveBeenCalledTimes(1)
   })
 
-  test.each(["CLAXEDO_REQUEST_LIMITER", "LIVE_SYNC_ROOM"] as const)(
+  test.each(["CLAXEDO_REQUEST_LIMITER", "LIVE_SYNC_ROOM", "CONTROL_PLANE_DB"] as const)(
     "fails closed before composition when %s is absent",
     async (binding) => {
       mocks.createHostedCoreApp.mockReturnValue(app())

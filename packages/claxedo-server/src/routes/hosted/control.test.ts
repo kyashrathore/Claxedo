@@ -1,6 +1,7 @@
 import { describe, expect, test } from "vitest"
 import type { ControlPlaneTokenVerifier } from "@claxedo/server-core/platform/auth/auth"
 import { HostedControlRoutes } from "./control"
+import { createIdempotencyCoordinator, memoryIdempotencyStore } from "../../authority/http/idempotency"
 
 const authConfig = {
   enabled: true,
@@ -19,7 +20,7 @@ const verifier: ControlPlaneTokenVerifier = async (token, config) => ({
 
 describe("hosted control-plane idempotency", () => {
   test("rejects idempotency keys longer than 256 characters before pull execution", async () => {
-    const app = HostedControlRoutes(undefined, { authConfig, verifier })
+    const app = HostedControlRoutes(undefined, { authConfig, verifier, idempotency: createIdempotencyCoordinator(memoryIdempotencyStore()) })
     const response = await app.request(
       "http://localhost/workspaces/ws_1/sessions/session_1/register",
       {

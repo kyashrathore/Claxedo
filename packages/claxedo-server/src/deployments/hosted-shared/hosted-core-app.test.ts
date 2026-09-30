@@ -13,10 +13,12 @@ import { STATIC_PRODUCT_DESCRIPTORS } from "./deployment-profile"
 import { testRequestAuthenticationAdapter } from "../../test-support/request-authentication"
 import { hostedOrgCredentials } from "../../credentials/worker"
 import { controlPlaneMigrations, miniflareControlPlaneDatabase } from "../../test-support/control-plane-migrations"
+import { storedD1Session } from "../../test-support/d1-stored-session"
 import { d1UserAgentConfigRepository } from "../../authority/adapters/d1/user-agent-config"
 import { fetchUrl } from "../../test-support/fetch-calls"
 import type { ClaxedoMcpClient } from "@claxedo/mcp/client"
 import type { McpClientInputs } from "@claxedo/mcp"
+import { createIdempotencyCoordinator, memoryIdempotencyStore } from "../../authority/http/idempotency"
 
 const ROOT = path.resolve(import.meta.dirname, "../../..")
 
@@ -78,6 +80,7 @@ function plane(): HostedControlPlane {
 }
 
 const options = {
+  idempotency: createIdempotencyCoordinator(memoryIdempotencyStore()),
   authentication: testRequestAuthenticationAdapter(),
   liveSyncRoom: {
     idFromName: (name: string) => name,
@@ -288,6 +291,28 @@ describe("hosted agent connection deletion", () => {
 })
 
 describe("resource-closed hosted core app", () => {
+  test("message reads preserve the stored authority ordinal and hide denied sessions", async () => {
+    const controlPlane = await miniflareControlPlaneDatabase(controlPlaneMigrations())
+    const { database } = controlPlane
+    try {
+      const { auth, sessions } = await storedD1Session(database)
+      await database.prepare("update sessions set max_event_ordinal = 37 where session_id = 'ses'").run()
+      const hosted = plane()
+      hosted.services.authority!.readSessionMessages = sessions.readSessionMessages.bind(sessions)
+      const authentication = { ...options.authentication, authenticate: async () => auth.principal! }
+      const app = createHostedCoreApp(hosted, { ...options, authentication }) as unknown as Hono
+      const headers = { authorization: "Bearer alice" }
+      const response = await app.request("/api/control/sessions/ses/messages?workspaceId=ws&limit=2", { headers })
+      expect(response.status).toBe(200)
+      expect(await response.json()).toMatchObject({ messages: [], maxEventOrdinal: 37 })
+      const denied = await app.request("/api/control/sessions/denied/messages?workspaceId=ws", { headers })
+      expect(denied.status).toBe(404)
+      expect(await denied.json()).toMatchObject({ error: { code: "SESSION_NOT_FOUND" } })
+    } finally {
+      await controlPlane.dispose()
+    }
+  })
+
   test("mounts core multiplayer routes and no optional-service or billing route", () => {
     const app = createHostedCoreApp(plane(), options) as unknown as Hono
     const paths = [...new Set(app.routes.map((route) => route.path))].toSorted()

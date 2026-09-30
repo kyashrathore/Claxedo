@@ -38,7 +38,9 @@ vi.mock("@claxedo/server-core/workspace/store/index", () => ({
 
 import {
   ControlPlaneHttpRoutes,
+  createIdempotencyCoordinator,
   heartbeatControlRuntime,
+  memoryIdempotencyStore,
   pullControlSession,
   pullControlSessionMessages,
   registerControlRuntime,
@@ -107,7 +109,7 @@ describe("control plane HTTP protocol", () => {
 
   test("does not expose push session sync endpoints", async () => {
     const svc = services()
-    const app = ControlPlaneHttpRoutes(svc)
+    const app = ControlPlaneHttpRoutes(svc, { idempotency: createIdempotencyCoordinator(memoryIdempotencyStore()) })
     const routes = [
       ["POST", "/sessions/sync"],
       ["POST", "/sessions/sync-many"],
@@ -321,7 +323,7 @@ describe("control plane HTTP protocol", () => {
     const heartbeat = vi.fn(async () => ({ ok: true as const, status: "ready" as const }))
     svc.sandbox.sandboxManager = { heartbeat } as never
 
-    const res = await ControlPlaneHttpRoutes(svc).request("http://localhost/runtime/heartbeat", {
+    const res = await ControlPlaneHttpRoutes(svc, { idempotency: createIdempotencyCoordinator(memoryIdempotencyStore()) }).request("http://localhost/runtime/heartbeat", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
@@ -368,7 +370,7 @@ describe("control plane HTTP protocol", () => {
     })
     expect(mocks.updateWorkspace).not.toHaveBeenCalled()
 
-    const app = ControlPlaneHttpRoutes(svc)
+    const app = ControlPlaneHttpRoutes(svc, { idempotency: createIdempotencyCoordinator(memoryIdempotencyStore()) })
     const res = await app.request("http://localhost/runtime/heartbeat", {
       method: "POST",
       headers: runtimeHeaders(),
@@ -416,7 +418,7 @@ describe("control plane HTTP protocol", () => {
       if (input.path === "/session/session-1") return Response.json({ id: "session-1", title: "Pulled", time: { created: 100, updated: 200 } })
       return new Response("not found", { status: 404 })
     })
-    const app = ControlPlaneHttpRoutes(svc, { runtimeFetch })
+    const app = ControlPlaneHttpRoutes(svc, { runtimeFetch, idempotency: createIdempotencyCoordinator(memoryIdempotencyStore()) })
 
     const res = await app.request("http://localhost/workspaces/ws_1/sessions/session-1/register", {
       method: "POST",
@@ -432,6 +434,14 @@ describe("control plane HTTP protocol", () => {
       title: "Pulled",
       time: { created: 100, updated: 200 },
     })
+
+    const replay = await app.request("http://localhost/workspaces/ws_1/sessions/session-1/register", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ idempotencyKey: "create-1", reason: "session-created" }),
+    })
+    expect(await replay.json()).toEqual(await res.json())
+    expect(svc.projectionStore.sync_session_meta).toHaveBeenCalledTimes(1)
   })
 
   test("pulls a cloud runtime through its ready sandbox target", async () => {
@@ -685,6 +695,7 @@ describe("control plane HTTP protocol", () => {
       },
     })
     const app = ControlPlaneHttpRoutes(svc, {
+      idempotency: createIdempotencyCoordinator(memoryIdempotencyStore()),
       authConfig,
       verifier,
       runtimeFetch: async (input) => {
@@ -719,6 +730,7 @@ describe("control plane HTTP protocol", () => {
   test("register rejects runtime session payloads for another session", async () => {
     const svc = services()
     const app = ControlPlaneHttpRoutes(svc, {
+      idempotency: createIdempotencyCoordinator(memoryIdempotencyStore()),
       runtimeFetch: async (input: { path: string }) => {
         if (input.path === "/global/health") return Response.json({ workspaceId: "ws_1" })
         if (input.path === "/session/session-1") return Response.json({ id: "session-2", title: "Wrong" })
@@ -977,6 +989,7 @@ describe("control plane HTTP protocol", () => {
       return new Response("unexpected runtime request", { status: 500 })
     })
     const app = ControlPlaneHttpRoutes(svc, {
+      idempotency: createIdempotencyCoordinator(memoryIdempotencyStore()),
       runtimeFetch,
     })
 

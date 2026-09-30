@@ -1,10 +1,9 @@
 import { requireAuthority } from "@claxedo/server-core/platform/auth/authority"
-import { Hono, type Context } from "hono"
+import { Hono } from "hono"
 import { cors } from "hono/cors"
 import { allowedOriginPatterns } from "@claxedo/server-core/platform/http/cors-origins"
 import { securityHeaders } from "@claxedo/server-core/platform/http/security-headers"
 import { browserAuthHttpSecurity } from "@claxedo/server-core/platform/http/browser-auth-security"
-import { type SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import type { RequestAuthenticationAdapter } from "@claxedo/server-core/platform/auth/authentication"
 import {
   DEPLOYMENT_MODE_ENV,
@@ -51,10 +50,9 @@ import {
   type RouteGuardExemption,
 } from "../../platform/auth/request-guard"
 import { parseSessionListQuery, sessionInventoryResponse, signedSessionList, sessionListErrorResponse } from "../../session/list"
-import { AgentMessagePageError, parseMessagePageQuery } from "@claxedo/agent-runtime-contract"
-import { TurnPageQueryError, parseOlderTurnPageQuery, parseTurnPageQuery } from "@claxedo/agent-runtime-contract"
-import { messagePageCursor, parseSessionPartInput } from "../../session/message-page"
+import { createSessionReadRoutes, authoritySessionReads } from "../../session/routes/session-read"
 import type { HostedControlPlane } from "../../authority/hosted-services"
+import type { IdempotencyCoordinator } from "../../authority/http/idempotency"
 import { HostedWorkerCompositionError } from "../../authority/composition-error"
 import { hostedPiCredentials } from "../../credentials/worker/pi"
 import { hostedAgentConfigRoutes } from "../../agent-config/hosted-routes"
@@ -69,7 +67,6 @@ import {
   mountControlPlaneRouteContributions,
   type ControlPlaneRouteContribution,
 } from "@claxedo/server-core/platform/http/route-contribution"
-import { contentfulStatus } from "../../platform/http/status"
 import type { FirstPartyMcpOptions } from "@claxedo/mcp"
 import { firstPartyMcpContribution } from "../../mcp/first-party-mcp"
 import { readIntrospectedAccessToken, resolveOAuthMcpCredential } from "../../mcp/oauth-credential"
@@ -94,6 +91,7 @@ export type HostedCoreProductWorkspaceOptions = Pick<
 >
 
 export type HostedCoreAppOptions = {
+  idempotency: IdempotencyCoordinator
   authentication: RequestAuthenticationAdapter
   relayTargetLookup?: RelayTargetLookup
   liveSyncRoom: LiveSyncRoomNamespace
@@ -393,6 +391,7 @@ export function createHostedCoreApp(plane: HostedControlPlane, options: HostedCo
   app.route(
     "/api/control",
     HostedControlRoutes(services, {
+      idempotency: options.idempotency,
       authentication: options.authentication,
       authConfig,
       cliTokenEnv: plane.env,
@@ -632,100 +631,14 @@ function mountSessionReadRoutes(app: Hono, plane: HostedControlPlane, authentica
       harnessHost: "workspace",
     })
   })
-  app.get("/api/control/sessions/:sessionId/messages", async (context) => {
-    const workspaceId = context.req.query("workspaceId")
-    if (!workspaceId || !services.authority?.readSessionMessages) {
-      return context.json({ error: { code: "WORKSPACE_ID_REQUIRED", message: "workspaceId is required" } }, 400)
-    }
-    const authResult = await signedOrError(
-      context.req.raw,
-      {
-        authentication,
-        requireSigned: true,
-      },
-      services,
-    )
-    if ("error" in authResult) return context.json(authResult.error, authResult.status)
-    if (!authResult.auth) {
-      return context.json({ error: { code: "UNAUTHORIZED", message: "Signed auth is required" } }, 401)
-    }
-    let page
-    try {
-      page = parseMessagePageQuery(context.req.query("limit"), context.req.query("before"), context.req.query("view"))
-    } catch (error) {
-      if (error instanceof AgentMessagePageError) {
-        return context.json({ error: { code: "message_page_error", message: error.message } }, 400)
-      }
-      throw error
-    }
-    let body
-    try {
-      body = await services.authority.readSessionMessages(authResult.auth, {
-        sessionId: context.req.param("sessionId"),
-        workspaceId,
-        ...page,
-      })
-    } catch (error) {
-      if (error instanceof AgentMessagePageError) {
-        return context.json(
-          { error: { code: "message_page_error", message: error.message } },
-          contentfulStatus(error.status),
-        )
-      }
-      throw error
-    }
-    const cursor = messagePageCursor(body)
-    if (cursor) {
-      context.header("Access-Control-Expose-Headers", "X-Next-Cursor")
-      context.header("X-Next-Cursor", cursor)
-    }
-    const record = asRecord(body)
-    const messages = record?.messages
-    return context.json({
-      ...record,
-      messages: Array.isArray(messages) ? messages : [],
-      maxEventOrdinal: 0,
-    })
-  })
-  const sessionNotFound = { error: { code: "SESSION_NOT_FOUND", message: "Session not found" } } as const
-  const transcriptRead = async (context: Context, read: (auth: SignedControlPlaneAuth, workspaceId: string) => Promise<Response>) => {
-    const workspaceId = context.req.query("workspaceId")
-    if (!workspaceId) return context.json({ error: { code: "WORKSPACE_ID_REQUIRED", message: "workspaceId is required" } }, 400)
-    const authResult = await signedOrError(context.req.raw, { authentication, requireSigned: true }, services)
-    if ("error" in authResult) return context.json(authResult.error, authResult.status)
-    if (!authResult.auth) return context.json({ error: { code: "UNAUTHORIZED", message: "Signed auth is required" } }, 401)
-    try {
-      return await read(authResult.auth, workspaceId)
-    } catch (error) {
-      if (error instanceof TurnPageQueryError) return context.json({ error: { code: "turn_page_query_error", message: error.message } }, 400)
-      if (error instanceof AgentMessagePageError) {
-        return context.json({ error: { code: "message_page_error", message: error.message } }, contentfulStatus(error.status))
-      }
-      throw error
-    }
-  }
-  app.get("/api/control/sessions/:sessionId/outline", (context) => transcriptRead(context, async (auth, workspaceId) => {
-    const firstPage = parseTurnPageQuery((name) => context.req.query(name))
-    const read = await requireAuthority(services).readSessionFirstRead(auth, {
-      sessionId: context.req.param("sessionId"),
-      workspaceId,
-      ...(firstPage ? { firstPage } : {}),
-    })
-    return read ? context.json(read) : context.json(sessionNotFound, 404)
-  }))
-  app.get("/api/control/sessions/:sessionId/page", (context) => transcriptRead(context, async (auth, workspaceId) => {
-    const page = await requireAuthority(services).readSessionPage(auth, {
-      sessionId: context.req.param("sessionId"),
-      workspaceId,
-      page: parseOlderTurnPageQuery((name) => context.req.query(name)),
-    })
-    return page ? context.json(page) : context.json(sessionNotFound, 404)
-  }))
-  app.get("/api/control/sessions/:sessionId/part", (context) => transcriptRead(context, async (auth, workspaceId) => {
-    const at = parseSessionPartInput(context.req.query("messageId"), context.req.query("partId"))
-    const read = await requireAuthority(services).readSessionPart(auth, { sessionId: context.req.param("sessionId"), workspaceId, ...at })
-    if (!read) return context.json(sessionNotFound, 404)
-    if (!read.part) return context.json({ error: { code: "part_not_found", message: "The session has no such part" } }, 404)
-    return context.json({ part: read.part })
+  app.route("/api/control", createSessionReadRoutes({
+    reads: authoritySessionReads(requireAuthority(services)),
+    authenticate: async (request, workspaceId) => {
+      if (!workspaceId) return Response.json({ error: { code: "WORKSPACE_ID_REQUIRED", message: "workspaceId is required" } }, { status: 400 })
+      const result = await signedOrError(request, { authentication, requireSigned: true }, services)
+      if ("error" in result) return Response.json(result.error, { status: result.status })
+      if (!result.auth) return Response.json({ error: { code: "UNAUTHORIZED", message: "Signed auth is required" } }, { status: 401 })
+      return result.auth
+    },
   }))
 }
