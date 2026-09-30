@@ -30,6 +30,10 @@ export class CodexProviderTurn {
   end(): void { if (this.queue) this.queue.end(); else this.ending ??= {} }
   fail(error: unknown): void { if (this.queue) this.queue.fail(error); else this.ending ??= { error } }
   drained(): Promise<void> { return this.queue ? this.queue.drained() : Promise.resolve() }
+  async delivered(): Promise<void> {
+    await this.broker
+    await this.drained()
+  }
 
   admit(entry: ProviderTurnEntry): Promise<void> {
     return new Promise((released) => {

@@ -100,6 +100,7 @@ export class CodexSessions implements CodexSessionHost {
     entry.state = "retiring"
     entry.providerTurn?.fail(new CodexTransportError("process", "Codex process retired during provider turn"))
     entry.providerTurn = undefined
+    entry.children.end()
     await entry.rpc.retire(codexRetirementDeadline(this.services))
     this.entries.delete(session.binding.sessionId)
     this.losses.recovered(session.binding.sessionId)

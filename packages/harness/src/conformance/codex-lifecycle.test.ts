@@ -13,7 +13,7 @@ import { CodexRpc } from "../transports/codex-app-server/rpc"
 import { CodexAppServerTransport } from "../transports/codex-app-server"
 import { createRequestBroker, createSessionBroker, createTurnBroker } from "../broker"
 import { MemoryPorts, authority } from "./test-support/memory-ports"
-import type { StartInput } from "../contract"
+import type { RoutedEvent, StartInput } from "../contract"
 
 const CATALOG_MODEL = { providerID: "codex", modelID: "gpt-5.5" }
 
@@ -138,7 +138,7 @@ test("a child a goal turn spawns runs on the session's model and asks for a reas
   } finally { await transport.dispose(); await state.close() }
 }, 60_000)
 
-test("usage of a child thread Codex spawns on its own is metered to the session, not reported unbilled", async () => {
+test("usage of a child thread Codex spawns on its own is metered once, on the child, and never to the session or unbilled", async () => {
   const context = await setupConformance({ name: "codex-native-child-usage", backend: codexBackend, makeTransport: makeCodexTransport })
   const metered: string[] = []
   const meter = context.sessionBroker.meter.bind(context.sessionBroker)
@@ -147,9 +147,13 @@ test("usage of a child thread Codex spawns on its own is metered to the session,
     const state = context.backend as CodexBackend
     state.server.scriptTool({ name: "spawn_agent", namespace: "multi_agent_v1", input: { message: "Reply with exactly this one token: NATIVECHILD" },
       whenPromptIncludes: "NATIVEPARENT" })
-    for await (const _event of context.transport.send(context.session, context.turn("Spawn once, then reply with exactly this one token: NATIVEPARENT"), context.turnBroker())) {}
+    const parent: RoutedEvent[] = []
+    for await (const routed of context.transport.send(context.session, context.turn("Spawn once, then reply with exactly this one token: NATIVEPARENT"), context.turnBroker())) parent.push(routed)
     expect(await eventually(() => state.server.requests.find((row) => row.prompt.endsWith('"text":"Reply with exactly this one token: NATIVECHILD"}]}]')))).toBeDefined()
-    expect(await eventually(() => metered.find((scope) => scope.startsWith("detached:")))).toBeDefined()
+    const childUsage = () => [...parent, ...context.ports.childEvents.map((row) => row.event)]
+      .find((routed) => routed.route?.kind === "child" && routed.event.type === "usage")
+    expect(await eventually(childUsage)).toBeDefined()
+    expect(metered.filter((scope) => scope.startsWith("detached:"))).toEqual([])
     expect(context.ports.sessionEvents.filter((row) => JSON.stringify(row.event).includes("codex.usage_unbilled"))).toEqual([])
   } finally { await context.close() }
 }, 60_000)
