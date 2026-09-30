@@ -35,6 +35,11 @@ async function nativeContext(protocol: keyof typeof PROTOCOLS) {
 
 const idle = () => new Promise((resolve) => setTimeout(resolve, 3_000))
 
+const FOLLOWUPS = {
+  v2: (_child: string) => ({ name: "followup_task", input: { target: "child_probe", message: "Second child task CODEXNATIVESECOND" } }),
+  v1: (child: string) => ({ name: "send_input", input: { target: child, message: "Second child task CODEXNATIVESECOND" } }),
+} as const
+
 for (const protocol of ["v2", "v1"] as const) {
   test(`Codex's own ${protocol} subagent becomes a background child session that keeps streaming after its parent's turn ends`, async () => {
     const { context, metered, parent, release, child } = await nativeContext(protocol)
@@ -66,5 +71,26 @@ for (const protocol of ["v2", "v1"] as const) {
       release()
       await context.close()
     }
+  }, 120_000)
+
+  test(`a follow-up to Codex's own finished ${protocol} subagent opens a new turn on the same child session under the follow-up call`, async () => {
+    const { context, release, child } = await nativeContext(protocol)
+    try {
+      release()
+      await idle()
+      const state = context.backend as CodexBackend
+      const followup = FOLLOWUPS[protocol](child)
+      state.server.scriptTool({ ...followup, namespace: PROTOCOLS[protocol].namespace, whenPromptIncludes: "CODEXNATIVEFOLLOWUP" })
+      for await (const _routed of context.transport.send(context.session, { ...context.turn("Follow up once, then reply with exactly this one token: CODEXNATIVEFOLLOWUP", "u2"),
+        turnId: "t2", assistantMessageId: "a2" }, context.turnBroker())) { void _routed }
+      await idle()
+      const updates = context.ports.subagents.filter((row) => row.providerId === child)
+      const reopened = updates.findIndex((row) => row.status === "running" && row.toolCallRole === "interaction")
+      expect(reopened).toBeGreaterThan(0)
+      expect(updates[reopened]?.toolCallId).toMatch(/^call_/)
+      expect(updates[reopened]?.toolCallId).not.toBe(updates[0]?.toolCallId)
+      expect(new Set(updates.map((row) => row.childSessionId)).size).toBe(1)
+      expect(updates.at(-1)?.status).toBe("completed")
+    } finally { await context.close() }
   }, 120_000)
 }
