@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto"
 import type { ModelInfo } from "@anthropic-ai/claude-agent-sdk"
 import { HARNESS_TABLE } from "@claxedo/agent-runtime-contract"
 import type {
-  AttachInput, CapabilityContext, ConfigApplied, Deadline, HarnessServices, HarnessSession, HarnessTransport,
+  AttachInput, BackgroundTaskRef, CapabilityContext, ConfigApplied, Deadline, HarnessServices, HarnessSession, HarnessTransport,
   RoutedEvent, SessionBroker, StartInput, TransportCapabilities, TransportConfigUpdate,
   TurnBroker, TurnInput, TurnRef,
 } from "../../contract"
@@ -82,6 +82,8 @@ export class ClaudeSdkTransport implements HarnessTransport {
     const entry = this.entry(session)
     yield* withTurnAccount(this.turns.run(entry, turn, broker), selectedTurnAccount("claude", entry.input.credentials, HARNESS_TABLE.claude.providerIds))
   }
+
+  readonly backgroundTasks = { stop: async (session: HarnessSession, task: BackgroundTaskRef) => this.turns.stopBackgroundTask(this.entry(session), task) }
 
   readonly steer = { steer: async (session: HarnessSession, ref: TurnRef, input: TurnInput) => this.turns.steer(this.entry(session), ref, input) }
 

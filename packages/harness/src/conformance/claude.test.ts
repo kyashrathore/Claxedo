@@ -777,3 +777,44 @@ test("Claude is not offered session wakeups, which nothing would deliver once it
     expect(["ScheduleWakeup", "CronCreate", "CronDelete", "CronList"].filter((tool) => offered.has(tool))).toEqual([])
   } finally { await context.close(); await state.close() }
 }, 60_000)
+
+test("a cancel spares Claude's running background agent, which finishes into its child transcript", async () => {
+  const state = await backend()
+  const context = await attachedClaude(state)
+  const release = state.server.holdTextReplies("CLAUDEBGWORK")
+  try {
+    state.server.scriptTool({ name: "Agent", whenPromptIncludes: "CLAUDEBGSPAWN", input: { description: "background work",
+      prompt: "Reply with exactly this one token: CLAUDEBGWORK", run_in_background: true, subagent_type: "general-purpose" } })
+    const running = context.collect("t1", "CLAUDEBGSPAWN: start the background agent")
+    const held = () => state.server.requests.filter((request) => request.reply.kind === "text" && request.prompt.includes("CLAUDEBGWORK")).length >= 2
+    expect(await pollUntil(() => held() || undefined, Date.now() + 20_000)).toBe(true)
+    const outcome = await context.transport.cancel(context.session(), { turnId: "t1", assistantMessageId: "a-t1" }, { at: Date.now() + 10_000, signal: new AbortController().signal })
+    expect(outcome).toEqual({ execution: "terminal", cleanup: "unknown" })
+    await running
+    release()
+    const childText = () => [...context.ports.childEvents.map((row) => row.event), ...context.ports.drained as RoutedEvent[]]
+      .some((routed) => routed.route?.kind === "child" && JSON.stringify(routed.event).includes("CLAUDEBGWORK")) || undefined
+    expect(await pollUntil(childText, Date.now() + 20_000)).toBe(true)
+  } finally { release(); await context.close(); await state.close() }
+}, 90_000)
+
+test("stopping one background task by its starting call stops only that Claude agent", async () => {
+  const state = await backend()
+  const context = await attachedClaude(state)
+  const release = state.server.holdTextReplies("CLAUDEBGSTOP")
+  try {
+    state.server.scriptTool({ name: "Agent", whenPromptIncludes: "CLAUDEBGSTART", input: { description: "background work",
+      prompt: "Reply with exactly this one token: CLAUDEBGSTOP", run_in_background: true, subagent_type: "general-purpose" } })
+    const running = context.collect("t1", "CLAUDEBGSTART: start the background agent")
+    const held = () => state.server.requests.filter((request) => request.reply.kind === "text" && request.prompt.includes("CLAUDEBGSTOP")).length >= 2
+    expect(await pollUntil(() => held() || undefined, Date.now() + 20_000)).toBe(true)
+    await context.transport.cancel(context.session(), { turnId: "t1", assistantMessageId: "a-t1" }, { at: Date.now() + 10_000, signal: new AbortController().signal })
+    await running
+    const toolCallId = context.ports.subagents.find((row) => row.toolCallId)?.toolCallId
+    if (!toolCallId) throw new Error("Claude reported no spawn call")
+    expect(await context.transport.backgroundTasks.stop(context.session(), { toolCallId: "toolu_unknown" })).toMatchObject({ ok: false, status: "not_found" })
+    expect(await context.transport.backgroundTasks.stop(context.session(), { toolCallId })).toEqual({ ok: true })
+    const killed = () => context.ports.subagents.some((row) => row.toolCallId === toolCallId && row.status === "killed") || undefined
+    expect(await pollUntil(killed, Date.now() + 20_000)).toBe(true)
+  } finally { release(); await context.close(); await state.close() }
+}, 90_000)

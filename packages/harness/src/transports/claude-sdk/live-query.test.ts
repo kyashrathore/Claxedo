@@ -372,3 +372,26 @@ test("closing the session with background work running tells the session the wor
   expect(published.filter((event) => (event as { type?: string }).type === "background-work"))
     .toEqual([{ type: "background-work", active: true }, { type: "background-work", active: false }])
 })
+
+test("stopping a background task by the call that started it stops that task and no other", async () => {
+  const { transport, session, launches } = await setup()
+  const first = collect(transport.send(session, userTurn("t1", "start two jobs"), turnBroker()))
+  await until(() => launches[0]?.prompts.length === 1)
+  const claude = launches[0]!
+  claude.frames.push(init())
+  claude.replay(0)
+  claude.frames.push(frame({ type: "system", subtype: "task_started", task_id: "one", tool_use_id: "toolu_one", description: "one" }))
+  claude.frames.push(frame({ type: "system", subtype: "task_started", task_id: "two", tool_use_id: "toolu_two", description: "two" }))
+  claude.frames.push(background("one", "two"))
+  claude.frames.push(result())
+  await first
+  expect(await transport.backgroundTasks.stop(rebound(session), { toolCallId: "toolu_two" })).toEqual({ ok: true })
+  expect(await transport.backgroundTasks.stop(rebound(session), { toolCallId: "toolu_other" })).toMatchObject({ ok: false, status: "not_found" })
+  expect(claude.controls).toEqual(["stop two"])
+  expect(claude.stdinOpen()).toBe(true)
+  claude.frames.push(background())
+  await claude.stdinClosed
+  claude.frames.end()
+  expect(await transport.backgroundTasks.stop(rebound(session), { toolCallId: "toolu_one" })).toMatchObject({ ok: false, status: "not_found" })
+  await transport.dispose()
+})

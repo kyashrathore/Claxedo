@@ -48,7 +48,7 @@ export class ClaudeQueryLauncher {
       ...context,
       ...permissionOptions(current.config, connectionGrantKeys(current.config.permissionState, session.binding.connectionId)),
       ...(session.binding.upstreamSessionId.startsWith("claude-sdk:") ? {} : { resume: session.binding.upstreamSessionId }),
-      mcpServers: mcpServers(input, this.services), forwardSubagentText: true, abortController: abort, disallowedTools: undeliveredWakeups,
+      mcpServers: mcpServers(input, this.services), forwardSubagentText: true, abortController: abort, disallowedTools: undeliveredWakeups, perTaskStopAffordance: true,
       sessionStore: goalSessionStore(broker, abort.signal, spec.usage), sessionStoreFlush: "eager",
       ...(spec.model && (spec.model !== "default" || !spec.agent) ? { model: spec.model } : {}),
       ...(spec.effort ? { effort: spec.effort } : {}),

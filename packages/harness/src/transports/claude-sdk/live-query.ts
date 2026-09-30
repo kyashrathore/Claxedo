@@ -48,6 +48,7 @@ export class ClaudeLiveQuery {
   readonly usage = new ClaudeUsageRelay()
   readonly processes = new Set<ClaudeProcess>()
   private background = new Set<string>()
+  private readonly taskCalls = new Map<string, string>()
   private readonly held = new ClaudeHeldFrames()
   private frames: Frames = { kind: "idle" }
   private process: Process = { kind: "launching" }
@@ -106,6 +107,18 @@ export class ClaudeLiveQuery {
     this.close()
   }
 
+  spawnCall(taskId: string): string | undefined {
+    const call = this.taskCalls.get(taskId)
+    return call === undefined ? undefined : this.tasks.firstLevelSubagent(call)
+  }
+
+  async stopTask(toolCallId: string): Promise<boolean> {
+    const task = [...this.background].find((id) => this.taskCalls.get(id) === toolCallId)
+    if (this.process.kind !== "open" || task === undefined) return false
+    await this.process.stream.stopTask(task)
+    return true
+  }
+
   async interrupt(): Promise<void> {
     if (this.frames.kind === "claimed") this.frames.claim.interrupted = true
     if (this.process.kind === "open" || this.process.kind === "closing") await this.process.stream.interrupt()
@@ -150,6 +163,7 @@ export class ClaudeLiveQuery {
   }
 
   private track(frame: ClaudeFrame): void {
+    if (frame.type === "system" && frame.subtype === "task_started" && frame.tool_use_id) this.taskCalls.set(frame.task_id, frame.tool_use_id)
     if (frame.type !== "system" || frame.subtype !== "background_tasks_changed") return
     this.replaceBackground(new Set(frame.tasks.map((task) => task.task_id)))
     if (this.background.size === 0 && this.frames.kind !== "claimed") this.close()
