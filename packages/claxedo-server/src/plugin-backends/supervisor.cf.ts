@@ -2,9 +2,8 @@ import { DurableObject } from "cloudflare:workers"
 import type { D1Database, Fetcher, WorkerLoader, WorkerStub } from "@cloudflare/workers-types"
 import { pluginBackendRouteAllowed } from "@claxedo/plugin-api/manifest"
 import type { AgentPluginR2Bucket } from "../agent-plugins/artifacts/r2-artifact-adapter"
-import { readPluginBackendActivation, type PluginBackendActivation } from "./activations"
+import { readPluginBackendState, type PluginBackendActivation } from "./activations"
 import { readPluginBackendBundle } from "./bundles"
-import { PLUGIN_BUNDLE_MODULE, PLUGIN_MAIN_MODULE, pluginMainModule } from "./platform-module"
 import { pluginRefusal } from "./refusal"
 import { PluginBackendRuns, type PluginDispatch } from "./runs"
 
@@ -19,8 +18,8 @@ export type PluginScope = Readonly<{ orgId: string; pluginId: string }>
 
 export type PluginCaller = PluginScope & Readonly<{ userId: string }>
 
-/** The scope a loaded backend's `env.PLATFORM` is bound to: one generation of one plugin in one organization. */
-export type PluginRunScope = PluginScope & Readonly<{ generation: string }>
+/** The scope every capability of a loaded backend is bound to: one activation epoch of one plugin in one organization. */
+export type PluginRunScope = PluginScope & Readonly<{ epoch: number }>
 
 export type PluginSupervisorStub = {
   request(caller: PluginCaller, request: Request): Promise<Response>
@@ -41,12 +40,13 @@ export function pluginSupervisor(namespace: PluginSupervisorNamespace, orgId: st
 
 const PLUGIN_USER_HEADER = "x-claxedo-user-id"
 const PLUGIN_COMPATIBILITY_DATE = "2025-05-01"
+const PLUGIN_MODULE = "backend.js"
 const OBJECT_NAME_MAX_LENGTH = 256
 
 /** `ctx.exports` is typed from a main module this package does not declare to workers-types. */
 type LoaderExports = {
   PluginPlatform(options: { props: PluginRunScope }): Fetcher
-  PluginOutbound(options: { props: { hosts: readonly string[] } }): Fetcher
+  PluginOutbound(options: { props: PluginRunScope & { hosts: readonly string[] } }): Fetcher
 }
 
 /**
@@ -68,7 +68,7 @@ function refusals(pluginId: string): Pick<PluginDispatch<WorkerStub, Response>, 
 
 /**
  * One per organization, named `org:<orgId>`. It loads each activated plugin's
- * backend through the Worker Loader, once per generation, and runs the
+ * backend through the Worker Loader, once per activation epoch, and runs the
  * plugin's Durable Object classes as its own facets, so every object a plugin
  * reaches holds only this organization's storage. The caller is authenticated
  * before it gets here; this object answers only to the Worker that owns its
@@ -99,7 +99,7 @@ export class PluginSupervisor extends DurableObject<PluginBackendEnv> {
     return this.#runsFor(scope.orgId).dispatch(scope.pluginId, {
       ...refusals(scope.pluginId),
       refuse: (activation) => {
-        if (activation.generation !== scope.generation) {
+        if (activation.epoch !== scope.epoch) {
           return pluginRefusal(409, "plugin_backend_replaced", `Plugin ${scope.pluginId} is running a newer activation`)
         }
         if (!activation.manifest.backend.objects.includes(className)) {
@@ -119,7 +119,7 @@ export class PluginSupervisor extends DurableObject<PluginBackendEnv> {
   }
 
   async active(scope: PluginRunScope): Promise<boolean> {
-    return this.#runsFor(scope.orgId).admits(scope.pluginId, scope.generation)
+    return this.#runsFor(scope.orgId).admits(scope.pluginId, scope.epoch)
   }
 
   async refresh(scope: PluginScope): Promise<void> {
@@ -130,7 +130,7 @@ export class PluginSupervisor extends DurableObject<PluginBackendEnv> {
     if (this.#orgId !== undefined && this.#orgId !== orgId) throw new Error(`supervisor for ${this.#orgId} was asked about ${orgId}`)
     this.#orgId = orgId
     this.#runs ??= new PluginBackendRuns({
-      readActivation: (pluginId) => readPluginBackendActivation(this.env.CONTROL_PLANE_DB, orgId, pluginId),
+      readState: (pluginId) => readPluginBackendState(this.env.CONTROL_PLANE_DB, orgId, pluginId),
       loadWorker: (activation) => this.#load(activation),
       abortFacet: (facet, reason) => this.ctx.facets.abort(facet, reason),
     })
@@ -141,13 +141,16 @@ export class PluginSupervisor extends DurableObject<PluginBackendEnv> {
     const code = await readPluginBackendBundle(this.env.CLAXEDO_AGENT_PLUGINS, activation.bundleHash)
     if (code === undefined) return undefined
     const exports = this.ctx.exports as unknown as LoaderExports
-    const scope: PluginRunScope = { orgId: activation.orgId, pluginId: activation.pluginId, generation: activation.generation }
-    return this.env.PLUGIN_LOADER.get(`${scope.orgId}/${scope.pluginId}/${scope.generation}`, () => ({
+    const scope: PluginRunScope = { orgId: activation.orgId, pluginId: activation.pluginId, epoch: activation.epoch }
+    // The epoch is part of the id because it is part of the loaded Worker's
+    // environment: an identical reactivation must not inherit bindings
+    // fenced to an epoch that has ended.
+    return this.env.PLUGIN_LOADER.get(`${scope.orgId}/${scope.pluginId}/${activation.generation}/${scope.epoch}`, () => ({
       compatibilityDate: PLUGIN_COMPATIBILITY_DATE,
-      mainModule: PLUGIN_MAIN_MODULE,
-      modules: { [PLUGIN_MAIN_MODULE]: pluginMainModule(activation.manifest.backend.objects), [PLUGIN_BUNDLE_MODULE]: code },
+      mainModule: PLUGIN_MODULE,
+      modules: { [PLUGIN_MODULE]: code },
       env: { PLATFORM: exports.PluginPlatform({ props: scope }) },
-      globalOutbound: exports.PluginOutbound({ props: { hosts: activation.manifest.backend.outbound } }),
+      globalOutbound: exports.PluginOutbound({ props: { ...scope, hosts: activation.manifest.backend.outbound } }),
     }))
   }
 }

@@ -24,14 +24,14 @@ function principalFromBearer(request: Request): ControlPlanePrincipal {
   return JSON.parse(atob(token.replace(/-/g, "+").replace(/_/g, "/"))) as ControlPlanePrincipal
 }
 
-/** The operator side of activation, which has no public route yet, and the supervisor's own generation check. */
+/** The operator side of activation, which has no public route yet, and the supervisor's own epoch check. */
 async function admin(request: Request, env: Env) {
   const url = new URL(request.url)
-  const input = (await request.json()) as Parameters<typeof activatePluginBackend>[1] & { pluginId: string; generation: string }
+  const input = (await request.json()) as Parameters<typeof activatePluginBackend>[1] & { pluginId: string; epoch: number }
   const ports = { database: env.CONTROL_PLANE_DB, supervisors: env.PLUGIN_SUPERVISOR }
   if (url.pathname === "/__admin/active") return Response.json({ active: await pluginSupervisor(env.PLUGIN_SUPERVISOR, input.orgId).active(input) })
   if (url.pathname === "/__admin/activate") await activatePluginBackend(ports, input)
-  else await deactivatePluginBackend(ports, input.orgId, input.pluginId)
+  else await deactivatePluginBackend(ports, input)
   return new Response(null, { status: 204 })
 }
 

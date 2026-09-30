@@ -1,7 +1,7 @@
-import type { PluginBackendActivation } from "./activations"
+import type { PluginBackendActivation, PluginBackendState } from "./activations"
 
 export type PluginRunPorts<Worker> = {
-  readActivation(pluginId: string): Promise<PluginBackendActivation | undefined>
+  readState(pluginId: string): Promise<PluginBackendState>
   loadWorker(activation: PluginBackendActivation): Promise<Worker | undefined>
   abortFacet(facet: string, reason: Error): void
 }
@@ -29,38 +29,34 @@ type Run<Worker> = {
 const DISPATCH_ATTEMPTS = 3
 
 /**
- * The runs of one organization's plugin backends: which activation each plugin
- * is running, the Worker loaded for it, and the facets it started.
+ * The runs of one organization's plugin backends: which activation epoch each
+ * plugin is running, the Worker loaded for it, and the facets it started.
  *
- * An activation is identified by its generation, the digest of its bundle hash
- * and manifest, so a manifest change is a new run just as a new bundle is.
- * Activation reads are applied in the order they started, so a slow read never
- * replaces a newer one. Replacing or ending a run aborts its facets, and work
- * that resumes after its run ended starts nothing on it.
+ * Epochs only rise, so a read carrying an older epoch than one already applied
+ * is stale and changes nothing. A newer epoch ends the run, aborting its
+ * facets, and work that resumes after its run ended starts nothing on it.
  */
 export class PluginBackendRuns<Worker> {
   readonly #runs = new Map<string, Run<Worker>>()
-  readonly #applied = new Map<string, number>()
-  #reads = 0
+  readonly #epochs = new Map<string, number>()
 
   constructor(private readonly ports: PluginRunPorts<Worker>) {}
 
   async current(pluginId: string): Promise<Run<Worker> | undefined> {
-    const ticket = ++this.#reads
-    const activation = await this.ports.readActivation(pluginId)
-    if (ticket < (this.#applied.get(pluginId) ?? 0)) return this.#runs.get(pluginId)
-    this.#applied.set(pluginId, ticket)
+    const state = await this.ports.readState(pluginId)
+    if (state.epoch < (this.#epochs.get(pluginId) ?? 0)) return this.#runs.get(pluginId)
+    this.#epochs.set(pluginId, state.epoch)
     const run = this.#runs.get(pluginId)
-    if (run && run.activation.generation === activation?.generation) return run
+    if (run && run.activation.epoch === state.epoch) return run
     if (run) this.#end(pluginId, run)
-    if (!activation) return undefined
-    const next: Run<Worker> = { activation, live: true, facets: new Set() }
+    if (!state.activation) return undefined
+    const next: Run<Worker> = { activation: state.activation, live: true, facets: new Set() }
     this.#runs.set(pluginId, next)
     return next
   }
 
-  async admits(pluginId: string, generation: string): Promise<boolean> {
-    return (await this.current(pluginId))?.activation.generation === generation
+  async admits(pluginId: string, epoch: number): Promise<boolean> {
+    return (await this.current(pluginId))?.activation.epoch === epoch
   }
 
   async dispatch<Answer>(pluginId: string, dispatch: PluginDispatch<Worker, Answer>): Promise<Answer> {
@@ -90,7 +86,7 @@ export class PluginBackendRuns<Worker> {
   #end(pluginId: string, run: Run<Worker>) {
     run.live = false
     this.#runs.delete(pluginId)
-    const reason = new Error(`plugin ${pluginId} is no longer running generation ${run.activation.generation}`)
+    const reason = new Error(`plugin ${pluginId} is no longer running epoch ${run.activation.epoch}`)
     for (const facet of run.facets) this.ports.abortFacet(facet, reason)
   }
 }

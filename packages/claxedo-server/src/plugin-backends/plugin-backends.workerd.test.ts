@@ -8,7 +8,7 @@ import type { AgentPluginR2Bucket } from "../agent-plugins/artifacts/r2-artifact
 import { D1WorkspaceAuthority } from "../authority/adapters/d1/workspace-authority"
 import { applyControlPlaneMigration, controlPlaneMigrations } from "../test-support/control-plane-migrations"
 import { hostedWorkerCompatibility, wranglerBundle } from "../test-support/hosted-worker-bundle"
-import { readPluginBackendActivation, writePluginBackendActivation } from "./activations"
+import { readPluginBackendState, writePluginBackendActivation } from "./activations"
 import { putPluginBackendBundle } from "./bundles"
 
 const FIXTURE_WORKER = fileURLToPath(new URL("./fixtures/worker.fixture.ts", import.meta.url))
@@ -28,6 +28,21 @@ let carol: Member
 let bob: Member
 let dave: Member
 let sequence = 0
+let holdArrived = () => {}
+let releaseHold = () => {}
+
+/** The next outbound fetch to `/hold` waits here until the test releases it. */
+function holdOutbound() {
+  const arrived = new Promise<void>((resolve) => {
+    holdArrived = resolve
+  })
+  const released = new Promise<void>((resolve) => {
+    releaseHold = resolve
+  })
+  return { arrived, released }
+}
+
+let held: Promise<void> = Promise.resolve()
 
 function authority() {
   return new D1WorkspaceAuthority(database, {
@@ -89,21 +104,21 @@ async function withoutOrganization(subject: string): Promise<Member> {
 }
 
 async function activate(member: Member, bundleHash: string, manifest = counter.manifest) {
-  await writePluginBackendActivation(database, { orgId: member.orgId, manifest, bundleHash, activatedBy: member.userId, now: ++sequence })
+  await writePluginBackendActivation(database, { orgId: member.orgId, manifest, bundleHash, changedBy: member.userId, now: ++sequence })
 }
 
 async function operate(action: "activate" | "deactivate", member: Member, bundleHash = counterHash) {
   const response = await miniflare.dispatchFetch(`${ORIGIN}/__admin/${action}`, {
     method: "POST",
-    body: JSON.stringify({ orgId: member.orgId, pluginId: "counter", manifest: counter.manifest, bundleHash, activatedBy: member.userId, now: ++sequence }),
+    body: JSON.stringify({ orgId: member.orgId, pluginId: "counter", manifest: counter.manifest, bundleHash, changedBy: member.userId, now: ++sequence }),
   })
   expect(response.status).toBe(204)
 }
 
-async function generationActive(member: Member, generation: string) {
+async function epochActive(member: Member, epoch: number) {
   const response = await miniflare.dispatchFetch(`${ORIGIN}/__admin/active`, {
     method: "POST",
-    body: JSON.stringify({ orgId: member.orgId, pluginId: "counter", generation }),
+    body: JSON.stringify({ orgId: member.orgId, pluginId: "counter", epoch }),
   })
   return ((await response.json()) as { active: boolean }).active
 }
@@ -133,7 +148,13 @@ beforeAll(async () => {
     r2Buckets: ["CLAXEDO_AGENT_PLUGINS"],
     workerLoaders: { PLUGIN_LOADER: {} },
     durableObjects: { PLUGIN_SUPERVISOR: { className: "PluginSupervisor", useSQLite: true } },
-    outboundService: (request: Request) => Response.json({ reached: new URL(request.url).host }),
+    outboundService: async (request: Request) => {
+      if (new URL(request.url).pathname === "/hold") {
+        holdArrived()
+        await held
+      }
+      return Response.json({ reached: new URL(request.url).host })
+    },
   })
   database = (await miniflare.getD1Database("CONTROL_PLANE_DB")) as unknown as D1Database
   for (const name of controlPlaneMigrations()) await applyControlPlaneMigration(database, name)
@@ -258,7 +279,7 @@ describe("a plugin backend on workerd", () => {
   })
 
   test("deactivation reaches the supervisor at once: the running objects stop before any later request", async () => {
-    const running = await readPluginBackendActivation(database, alice.orgId, "counter")
+    const running = (await readPluginBackendState(database, alice.orgId, "counter")).activation
     const before = (await call(alice, "GET", "/counter/instance")).body.instance
     expect(typeof before).toBe("string")
     await operate("deactivate", alice)
@@ -267,24 +288,31 @@ describe("a plugin backend on workerd", () => {
     expect(after).not.toBe(before)
   })
 
-  test("a generation is active only while it is the organization's current activation", async () => {
-    const first = (await readPluginBackendActivation(database, bob.orgId, "counter"))!
+  test("an epoch is active only while it is the organization's current activation, and an identical reactivation is a new epoch", async () => {
+    const first = (await readPluginBackendState(database, bob.orgId, "counter")).epoch
     expect(await call(bob, "GET", "/counter/active")).toEqual({ status: 200, body: { active: true } })
-    expect(await generationActive(bob, first.generation)).toBe(true)
-    const narrowed = { ...counter.manifest, backend: { ...counter.manifest.backend, outbound: [] } }
-    await activate(bob, counterHash, narrowed)
-    const second = (await readPluginBackendActivation(database, bob.orgId, "counter"))!
-    expect(second.generation).not.toBe(first.generation)
-    expect(await generationActive(bob, first.generation)).toBe(false)
-    expect(await generationActive(bob, second.generation)).toBe(true)
+    expect(await epochActive(bob, first)).toBe(true)
     await operate("deactivate", bob)
-    expect(await generationActive(bob, second.generation)).toBe(false)
+    expect((await readPluginBackendState(database, bob.orgId, "counter")).epoch).toBe(first + 1)
+    expect(await epochActive(bob, first)).toBe(false)
     await operate("activate", bob)
+    const second = (await readPluginBackendState(database, bob.orgId, "counter")).epoch
+    expect(second).toBe(first + 2)
+    expect(await epochActive(bob, first)).toBe(false)
+    expect(await epochActive(bob, second)).toBe(true)
   })
 
-  test("an object's alarm runs through the platform gate while its generation is active", async () => {
-    expect(await call(alice, "POST", "/counter/tick")).toEqual({ status: 200, body: { ticks: 1 } })
-    expect(await call(alice, "POST", "/counter/tick")).toEqual({ status: 200, body: { ticks: 2 } })
+  test("a request still running when its activation ends reaches no object, no network and no longer counts as active, even after an identical reactivation", async () => {
+    const running = (await readPluginBackendState(database, alice.orgId, "counter")).activation!
+    const hold = holdOutbound()
+    held = hold.released
+    const pending = call(alice, "GET", "/counter/held")
+    await hold.arrived
+    await operate("deactivate", alice)
+    await operate("activate", alice, running.bundleHash)
+    releaseHold()
+    expect(await pending).toEqual({ status: 200, body: { active: false, object: 409, outbound: 403 } })
+    expect((await call(alice, "GET", "/counter/active")).body).toEqual({ active: true })
   })
 
   test("deactivating the plugin refuses its routes and keeps its storage for a later activation", async () => {

@@ -1,5 +1,5 @@
 import type { D1Database } from "@cloudflare/workers-types"
-import { deletePluginBackendActivation, writePluginBackendActivation } from "./activations"
+import { writePluginBackendActivation, writePluginBackendDeactivation } from "./activations"
 import { pluginSupervisor, type PluginSupervisorNamespace } from "./supervisor.cf"
 
 export type PluginBackendLifecyclePorts = { database: D1Database; supervisors: PluginSupervisorNamespace }
@@ -17,7 +17,10 @@ export async function activatePluginBackend(
   await pluginSupervisor(ports.supervisors, input.orgId).refresh({ orgId: input.orgId, pluginId: input.manifest.id })
 }
 
-export async function deactivatePluginBackend(ports: PluginBackendLifecyclePorts, orgId: string, pluginId: string): Promise<void> {
-  await deletePluginBackendActivation(ports.database, orgId, pluginId)
-  await pluginSupervisor(ports.supervisors, orgId).refresh({ orgId, pluginId })
+export async function deactivatePluginBackend(
+  ports: PluginBackendLifecyclePorts,
+  input: Parameters<typeof writePluginBackendDeactivation>[1],
+): Promise<void> {
+  await writePluginBackendDeactivation(ports.database, input)
+  await pluginSupervisor(ports.supervisors, input.orgId).refresh({ orgId: input.orgId, pluginId: input.pluginId })
 }
