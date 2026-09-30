@@ -478,9 +478,10 @@ export function createWorkspaceRuntimeApp(options: WorkspaceRuntimeServerOptions
       ? new WorkspaceWorktreeManager({
         workspaceId: options.target.workspaceId,
         sourceDirectory: options.target.directory,
-        ...(options.storeRoot ? { storeRoot: options.storeRoot } : {}),
+        store: host.store,
       })
     : undefined
+  if (worktrees) host.whenStoreOpens(() => worktrees.serveActive())
 
   const app = new Hono()
 
@@ -586,6 +587,8 @@ export function createWorkspaceRuntimeApp(options: WorkspaceRuntimeServerOptions
     ...(options.managementAuth ? { managementAuth: options.managementAuth } : {}),
     ...(options.managementTarget ? { managementTarget: options.managementTarget } : {}),
   }))
+  app.use(`${WorkspaceRuntimeRoutes.checkpoint}/*`, host.storeAdmission)
+  if (worktrees) app.use(`${WorkspaceRuntimeRoutes.worktrees}/*`, host.storeAdmission)
   if (worktrees) {
     app.route(
       WorkspaceRuntimeRoutes.worktrees,

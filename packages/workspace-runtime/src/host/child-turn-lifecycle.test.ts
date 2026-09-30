@@ -136,13 +136,13 @@ test("a child the store records as finished stays finished when its running obse
 })
 
 function subagentStatus(f: HostFixture, childSessionId: string) {
-  return f.store.brokerDatabase().prepare<{ status: string }>("SELECT status FROM session_subagent WHERE child_session_id = ?").get(childSessionId)?.status
+  return f.store.database().prepare<{ status: string }>("SELECT status FROM session_subagent WHERE child_session_id = ?").get(childSessionId)?.status
 }
 
 function expectTwoFinishedTurns(f: HostFixture, childSessionId: string) {
   const assistants = f.store.getMessages(childSessionId).filter((message) => message.info.role === "assistant")
   expect(new Set(assistants.map((message) => message.info.id)).size).toBe(2)
-  expect(f.store.brokerDatabase().prepare<{ count: number }>(
+  expect(f.store.database().prepare<{ count: number }>(
     "SELECT COUNT(*) AS count FROM runtime_journal WHERE session_id = ? AND type = 'turn.finish'",
   ).get(childSessionId)?.count).toBe(2)
   expect(f.store.readTurnAuthority(childSessionId)).toBeUndefined()

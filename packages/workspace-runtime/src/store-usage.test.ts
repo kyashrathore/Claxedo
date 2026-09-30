@@ -3,7 +3,8 @@ import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"
 import type { RuntimeUsageObservation } from "@claxedo/agent-runtime-contract"
-import { RuntimeStore } from "./store"
+import type { RuntimeStore } from "./store"
+import { openRuntimeStore } from "./store-file"
 import { sessionUsage } from "./projection/presentation-events"
 
 const opened: Array<{ root: string; store: RuntimeStore }> = []
@@ -17,9 +18,9 @@ afterEach(() => {
 
 function turnStore() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "wr-store-usage-"))
-  const store = new RuntimeStore(root)
+  const store = openRuntimeStore(root)
   opened.push({ root, store })
-  store.bindSession({ sessionId: "s1", directory: "/work", agentSessionId: "a1", createdAt: 1 })
+  store.bindSession({ owner: { kind: "machine-owner" }, sessionId: "s1", directory: "/work", agentSessionId: "a1", createdAt: 1 })
   store.startTurn({
     sessionId: "s1",
     agentSessionId: "a1",

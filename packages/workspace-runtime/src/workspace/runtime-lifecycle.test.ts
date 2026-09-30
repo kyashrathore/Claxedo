@@ -5,7 +5,9 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { Hono } from "hono"
 import { applySessionConfigUpdate, type HarnessServices, type StartInput } from "@claxedo/harness/contract"
-import { RuntimeStore } from "../store"
+import { openSqliteDatabase } from "../sqlite/node"
+import { openRuntimeStore } from "../store-file"
+import { sqliteLaunchOwnership } from "../ownership/launch-ownership-sqlite"
 import { registerWorkspaceDirectory, unregisterWorkspaceDirectory, withWorkspaceTarget } from "../target"
 import { loopbackWorkspaceRuntimeExposure } from "../exposure"
 import { installFakePiRpc } from "../test-support/home/fake-pi-rpc.mjs"
@@ -182,7 +184,7 @@ async function fixture(options: FixtureOptions = {}) {
   options.seed?.(storeRoot)
   function open() {
     const host = createWorkspaceHost({ placement: loopbackMachineLoginPolicy(), target, storeRoot, eventHub, ...(options.onActivityChange ? { onActivityChange: options.onActivityChange } : {}), connectionProviders: [provider], resolveConnectionSecrets: () => ({ secrets: { token: secretLease }, secretLeaseGeneration: secretLease }), storeFactory: ({ storeRoot }) => {
-      const store = new RuntimeStore(storeRoot)
+      const store = openRuntimeStore(storeRoot)
       storeLifecycle.opened++
       const recover = store.recoverBusySessions.bind(store)
       const close = store.close.bind(store)
@@ -336,7 +338,7 @@ describe("workspace runtime public lifecycle", () => {
     await f.host.apply(f.snapshot())
     await f.request("/session", "POST", { id: "local" })
     await f.host.dispose()
-    const crashed = new RuntimeStore(f.storeRoot)
+    const crashed = openRuntimeStore(f.storeRoot)
     expect(crashed.acquireTurnLease("local")).toBeDefined()
     crashed.close()
     const restored = f.open()
@@ -558,9 +560,10 @@ describe("workspace runtime public lifecycle", () => {
 
   test("metadata events update known rows without importing sessions or moving their binding", async () => {
     const f = await fixture()
-    const store = new RuntimeStore(f.storeRoot)
+    const store = openRuntimeStore(f.storeRoot)
     cleanups.push(() => store.close())
     store.bindSession({
+      owner: { kind: "machine-owner" },
       sessionId: "local", directory: f.target.directory, workspaceId: f.target.workspaceId,
       connectionId: "connection:primary", agentSessionId: "upstream-local", upstreamSessionId: "upstream-local",
     })
@@ -609,7 +612,7 @@ describe("workspace runtime public lifecycle", () => {
     const created = await previous.request("/session", "POST", { id: "local", model: { providerID: "pi", modelID: "test/model" } })
     expect(created.status, await created.clone().text()).toBe(201)
     await previous.host.dispose()
-    const died = new RuntimeStore(storeRoot)
+    const died = openRuntimeStore(storeRoot)
     died.deliveryQueue.queuePrompt({ sessionId: "local", messageId: "msg_queued", parts: [{ type: "text", text: "then run the tests" }], delivery: "queue" })
     died.close()
 
@@ -620,7 +623,7 @@ describe("workspace runtime public lifecycle", () => {
     expect(history).toContain("then run the tests")
     expect(history).toContain("work done")
     await restarted.host.dispose()
-    const drained = new RuntimeStore(storeRoot)
+    const drained = openRuntimeStore(storeRoot)
     cleanups.push(() => drained.close())
     expect(drained.deliveryQueue.listQueuedPrompts()).toEqual([])
   })
@@ -790,14 +793,29 @@ describe("workspace runtime public lifecycle", () => {
       stop()
     }
   })
+  test("a store written by another schema is answered as a typed refusal on every request, never opened", async () => {
+    const f = await fixture({ seed: (storeRoot) => {
+      openRuntimeStore(storeRoot).close()
+      const db = openSqliteDatabase(join(storeRoot, "state.db"))
+      db.exec("UPDATE runtime_store_schema SET identity = 'CREATE TABLE session (id TEXT PRIMARY KEY)'")
+      db.close()
+    } })
+    for (const request of [() => f.request("/session"), () => f.request("/session", "POST", { id: "refused" })]) {
+      const refused = await request()
+      expect(refused.status).toBe(503)
+      expect(await refused.json()).toMatchObject({ error: { code: "runtime_store_schema_mismatch" } })
+    }
+    expect(f.storeLifecycle.opened).toBe(0)
+  })
+
   test("a launch a previous owner never settled keeps writes out until an operator resolves it", async () => {
     const f = await fixture()
     // What a crash leaves: a direct launch whose spawn was never witnessed and
     // for which no creation identity was recorded, so nothing the replacement
     // can check establishes whether that process is still running.
-    const seeded = new RuntimeStore(f.storeRoot)
+    const seeded = openRuntimeStore(f.storeRoot)
     const previousOwner = { ownerGeneration: "previous-owner-generation", scope: { kind: "workspace" as const, workspaceId: f.target.workspaceId } }
-    const prepared = await seeded.launchOwnership(previousOwner).prepare({
+    const prepared = await sqliteLaunchOwnership(seeded.database(), previousOwner).prepare({
       role: "terminal",
       protocol: "direct",
     })
@@ -816,8 +834,8 @@ describe("workspace runtime public lifecycle", () => {
     expect((await replacement.request("/session")).status).toBe(200)
     expect(replacement.host.activity().launches).toMatchObject({ examined: 1, retired: 0, unresolved: 1 })
 
-    const resolving = new RuntimeStore(f.storeRoot)
-    await resolving.launchOwnership(previousOwner).recordRetirement(prepared.launchId, {
+    const resolving = openRuntimeStore(f.storeRoot)
+    await sqliteLaunchOwnership(resolving.database(), previousOwner).recordRetirement(prepared.launchId, {
       leader: "exited",
       descendants: "verified_clear",
       signals: [],
@@ -835,15 +853,15 @@ describe("workspace runtime public lifecycle", () => {
 /** A store left behind by a process that died holding a queued prompt on the fixture's primary connection. */
 function queuedPromptLeftBehind(storeRoot: string) {
   const directory = join(storeRoot, "..")
-  const died = new RuntimeStore(storeRoot)
+  const died = openRuntimeStore(storeRoot)
   died.bindSession({
+    owner: { kind: "machine-owner" },
     sessionId: "local", directory, workspaceId: "workspace-lifecycle",
     connectionId: "connection:primary", agentSessionId: "upstream-local", upstreamSessionId: "upstream-local",
   })
-  died.recordSessionOwner("local", { kind: "machine-owner" })
   died.updateSessionConfig("local", {
     harness: { id: "primary", access: "connection" }, model: null, variant: null, agent: null,
-  }, { directory })
+  })
   died.deliveryQueue.queuePrompt({
     sessionId: "local",
     messageId: "msg_queued",
@@ -875,7 +893,7 @@ test("workspace shutdown closes the producer, cancels its permission and questio
     expect(f.controls.filter((item) => item.action === "question")).toHaveLength(1)
     expect(f.disposed).toEqual([1])
     expect(f.storeLifecycle.closed).toBe(1)
-    const reopened = new RuntimeStore(f.storeRoot)
+    const reopened = openRuntimeStore(f.storeRoot)
     try {
       expect(reopened.listPermissions(f.target.directory)).toEqual([])
       expect(reopened.listQuestions(f.target.directory)).toEqual([])
@@ -933,7 +951,7 @@ describe("host lifecycle", () => {
   test("missing canonical config and unbound sessions never derive a transport", async () => {
     const transport = new FakeTransport()
     const f = createHostFixture({ transports: { pi: transport } })
-    f.store.bindSession({ sessionId: "bound", workspaceId: "ws", connectionId: "native:pi", directory: "/repo", agentSessionId: "up", upstreamSessionId: "up" })
+    f.store.bindSession({ owner: { kind: "machine-owner" }, sessionId: "bound", workspaceId: "ws", connectionId: "native:pi", directory: "/repo", agentSessionId: "up", upstreamSessionId: "up" })
     await expect(f.runtime.transportFor("bound")).rejects.toThrow("no runtime config")
     await expect(f.runtime.transportFor("missing")).rejects.toThrow("no runtime config")
     expect(transport.attaches).toEqual([])
@@ -957,7 +975,7 @@ describe("host lifecycle", () => {
     const transport = new FakeTransport()
     const f = createHostFixture({ transports: { pi: transport } })
     await f.runtime.sessions.create(sessionCreate({ id: "s" }))
-    f.store.brokerDatabase().prepare("DELETE FROM session_execution_binding WHERE session_id = ?").run("s")
+    f.store.database().prepare("DELETE FROM session_execution_binding WHERE session_id = ?").run("s")
     await expect(f.runtime.turns.start({ sessionId: "s", text: "work", origin })).rejects.toMatchObject({ detail: { code: "invalid_execution_binding" } })
     expect(transport.turns).toEqual([])
     expect(f.store.getSession("s")?.status).not.toBe("busy")
@@ -1049,9 +1067,8 @@ describe("host lifecycle", () => {
   test("a bound session naming an unavailable transport refuses a turn before writing", async () => {
     const f = createHostFixture({ transports: {} })
     try {
-      f.store.bindSession({ sessionId: "s", workspaceId: "ws", connectionId: "native:pi", upstreamSessionId: "up", agentSessionId: "up", directory: "/repo" })
+      f.store.bindSession({ owner: MACHINE_OWNER, sessionId: "s", workspaceId: "ws", connectionId: "native:pi", upstreamSessionId: "up", agentSessionId: "up", directory: "/repo" })
       f.store.updateSessionConfig("s", { harness: { id: "pi", access: "native" } })
-      f.store.recordSessionOwner("s", MACHINE_OWNER)
       await expect(f.runtime.turns.start({ sessionId: "s", text: "work", origin })).rejects.toThrow("No transport is composed")
       expect(f.store.getMessages("s")).toEqual([])
       expect(f.store.getSession("s")?.status).not.toBe("busy")

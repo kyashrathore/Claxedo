@@ -13,6 +13,8 @@ import { createRequestBroker } from "@claxedo/harness/broker"
 import { createStoreBrokerPorts } from "./broker-ports/index"
 import type { RuntimeEventPublishers } from "./projection/runtime-event-hub"
 import { RuntimeStore as RuntimeStoreImpl } from "./store"
+import { openRuntimeStore, openRuntimeStoreDatabase } from "./store-file"
+import { RuntimeStoreSchemaMismatchError } from "./store-schema"
 import { readTurnOutline, type TurnOutlineDatabase } from "./session/turn-outline"
 import { messageCompleted, messagePartDelta, messagePartUpdated, messageUpdated, permissionAsked, questionAsked, sessionIdle, sessionUpdated, sessionUsage, todoUpdated } from "./projection/presentation-events"
 
@@ -20,8 +22,8 @@ const roots: string[] = []
 const stores: RuntimeStoreImpl[] = []
 
 class RuntimeStore extends RuntimeStoreImpl {
-  constructor(...args: ConstructorParameters<typeof RuntimeStoreImpl>) {
-    super(...args)
+  constructor(root: string) {
+    super(openRuntimeStoreDatabase(root))
     stores.push(this)
   }
 }
@@ -228,7 +230,7 @@ void describe("RuntimeStore", () => {
   void it("deleting a session forgets the prompts queued for it", () => {
     const root = tmp()
     const store = new RuntimeStore(root)
-    store.bindSession({ sessionId: "ses_gone", directory: "/workspace", agentSessionId: "agent_gone" })
+    store.bindSession({ owner: { kind: "machine-owner" }, sessionId: "ses_gone", directory: "/workspace", agentSessionId: "agent_gone" })
     store.deliveryQueue.queuePrompt({
       sessionId: "ses_gone",
       parts: [{ type: "text", text: "never runs" }],
@@ -298,7 +300,7 @@ void describe("RuntimeStore", () => {
       ...origin,
     })
     for (const [sessionId, parentSessionId] of [["own", undefined], ["shared", undefined], ["child", "shared"], ["grandchild", "child"], ["own-child", "own"]] as const) {
-      store.bindSession({ sessionId, directory: "/work", agentSessionId: `agent-${sessionId}`, createdAt: 1, ...(parentSessionId ? { parentSessionId } : {}) })
+      store.bindSession({ owner: { kind: "machine-owner" }, sessionId, directory: "/work", agentSessionId: `agent-${sessionId}`, createdAt: 1, ...(parentSessionId ? { parentSessionId } : {}) })
     }
     turn("own", "msg-own")
     turn("own-child", "msg-own-child")
@@ -322,7 +324,7 @@ void describe("RuntimeStore", () => {
   void it("a queued or steered member prompt fences authoring before dispatch and after its queue row is removed", () => {
     const root = tmp()
     const store = new RuntimeStore(root)
-    store.bindSession({ sessionId: "steered", directory: "/work", agentSessionId: "agent", createdAt: 1 })
+    store.bindSession({ owner: { kind: "machine-owner" }, sessionId: "steered", directory: "/work", agentSessionId: "agent", createdAt: 1 })
     const queued = store.deliveryQueue.queuePrompt({ sessionId: "steered", parts: [{ type: "text", text: "make a plugin" }], delivery: "steer",
       actor: { actorId: "member", actorKind: "human" } })
     assert.equal(store.relayedTurnInLineage("steered", "owner"), true)
@@ -337,8 +339,9 @@ void describe("RuntimeStore", () => {
   void it("persists explicit child Session ownership across updates and reopen", () => {
     const root = tmp()
     const store = new RuntimeStore(root)
-    store.bindSession({ sessionId: "parent", directory: "/work", agentSessionId: "provider-parent", createdAt: 1 })
+    store.bindSession({ owner: { kind: "machine-owner" }, sessionId: "parent", directory: "/work", agentSessionId: "provider-parent", createdAt: 1 })
     store.bindSession({
+      owner: { kind: "machine-owner" },
       sessionId: "child",
       parentSessionId: "parent",
       directory: "/work",
@@ -346,7 +349,7 @@ void describe("RuntimeStore", () => {
       createdAt: 2,
     })
     store.updateSession("child", { title: "Child transcript", time: { archived: 3 } })
-    store.bindSession({ sessionId: "child", directory: "/work", agentSessionId: "provider-child", createdAt: 4 })
+    store.bindSession({ owner: { kind: "machine-owner" }, sessionId: "child", directory: "/work", agentSessionId: "provider-child", createdAt: 4 })
 
     assert.partialDeepStrictEqual(store.getSession("child"), {
       id: "child",
@@ -378,7 +381,7 @@ void describe("RuntimeStore", () => {
       retainLeasedTurnFailure: (_sessionId, _turn, error) => { throw error },
     })).subagents
     const store = new RuntimeStore(root)
-    store.bindSession({ sessionId: "parent", directory: "/work", agentSessionId: "provider-parent", createdAt: 1 })
+    store.bindSession({ owner: { kind: "machine-owner" }, sessionId: "parent", directory: "/work", agentSessionId: "provider-parent", createdAt: 1 })
     const boundary = subagents(store)
     // The spawn names its child: the broker allocates one for an openable
     // transcript otherwise, and the later binding could then name no other.
@@ -442,11 +445,11 @@ void describe("RuntimeStore", () => {
     const root = tmp()
     const store = new RuntimeStore(root)
     const secret = store.runtimeSecret("child-session")
-    assert.match(secret, /^[0-9a-f]{64}$/)
+    assert.match(secret, /^[A-Za-z0-9_-]{43}$/)
     assert.equal(store.runtimeSecret("child-session"), secret)
     assert.notEqual(store.runtimeSecret("other"), secret)
-    store.bindSession({ sessionId: "parent", directory: "/workspace", agentSessionId: "parent" })
-    store.bindSession({ sessionId: "child", directory: "/workspace", agentSessionId: "child", parentSessionId: "parent" })
+    store.bindSession({ owner: { kind: "machine-owner" }, sessionId: "parent", directory: "/workspace", agentSessionId: "parent" })
+    store.bindSession({ owner: { kind: "machine-owner" }, sessionId: "child", directory: "/workspace", agentSessionId: "child", parentSessionId: "parent" })
     const observations: Array<[string, Record<string, unknown>]> = [
       ["create", { status: "pending", providerKind: "claxedo", providerId: "child", childSessionId: "child", transcript: { kind: "live" } }],
       ["attention-2", { attention: 2 }],
@@ -485,7 +488,7 @@ void describe("RuntimeStore", () => {
   void it("keeps a child's origin actor and authority across reopen, and later observations cannot move it", () => {
     const root = tmp()
     const store = new RuntimeStore(root)
-    store.bindSession({ sessionId: "parent", directory: "/workspace", agentSessionId: "parent" })
+    store.bindSession({ owner: { kind: "machine-owner" }, sessionId: "parent", directory: "/workspace", agentSessionId: "parent" })
     store.admit({
       parentSessionId: "parent",
       observation: { observationId: "create", subagentKey: "subagent_host", status: "pending", childSessionId: "child" },
@@ -530,7 +533,7 @@ void describe("RuntimeStore", () => {
   void it("keeps a child's deferred turn grant across reopen and out of the subagent listing", () => {
     const root = tmp()
     const store = new RuntimeStore(root)
-    store.bindSession({ sessionId: "parent", directory: "/workspace", agentSessionId: "parent" })
+    store.bindSession({ owner: { kind: "machine-owner" }, sessionId: "parent", directory: "/workspace", agentSessionId: "parent" })
     store.admit({
       parentSessionId: "parent",
       observation: { observationId: "create", subagentKey: "subagent_host", status: "pending", childSessionId: "child" },
@@ -558,7 +561,7 @@ void describe("RuntimeStore", () => {
 
   void it("a relayed origin recorded without a grant reads back without one", () => {
     const store = new RuntimeStore(tmp())
-    store.bindSession({ sessionId: "parent", directory: "/workspace", agentSessionId: "parent" })
+    store.bindSession({ owner: { kind: "machine-owner" }, sessionId: "parent", directory: "/workspace", agentSessionId: "parent" })
     store.admit({
       parentSessionId: "parent",
       observation: { observationId: "create", subagentKey: "subagent_host", status: "pending", childSessionId: "child" },
@@ -579,7 +582,7 @@ void describe("RuntimeStore", () => {
   void it("cannot upgrade or reassign an origin a pre-provenance build already recorded", () => {
     const root = tmp()
     const historical = new RuntimeStore(root)
-    historical.bindSession({ sessionId: "parent", directory: "/workspace", agentSessionId: "parent" })
+    historical.bindSession({ owner: { kind: "machine-owner" }, sessionId: "parent", directory: "/workspace", agentSessionId: "parent" })
     historical.admit({
       parentSessionId: "parent",
       observation: { observationId: "create", subagentKey: "subagent_legacy", status: "pending" },
@@ -620,7 +623,7 @@ void describe("RuntimeStore", () => {
   void it("refuses a local origin that also names an actor instead of reading it as local", () => {
     const root = tmp()
     const store = new RuntimeStore(root)
-    store.bindSession({ sessionId: "parent", directory: "/workspace", agentSessionId: "parent" })
+    store.bindSession({ owner: { kind: "machine-owner" }, sessionId: "parent", directory: "/workspace", agentSessionId: "parent" })
     store.admit({
       parentSessionId: "parent",
       observation: { observationId: "create", subagentKey: "subagent_mixed", status: "pending" },
@@ -641,7 +644,7 @@ void describe("RuntimeStore", () => {
   void it("keeps a local child's provenance across reopen, and tells it apart from a row that recorded none", () => {
     const root = tmp()
     const store = new RuntimeStore(root)
-    store.bindSession({ sessionId: "parent", directory: "/workspace", agentSessionId: "parent" })
+    store.bindSession({ owner: { kind: "machine-owner" }, sessionId: "parent", directory: "/workspace", agentSessionId: "parent" })
     for (const key of ["subagent_local", "subagent_legacy"]) {
       store.admit({
         parentSessionId: "parent",
@@ -669,7 +672,7 @@ void describe("RuntimeStore", () => {
   void it("keeps a queued prompt's provenance across reopen so a delayed local turn is still local", () => {
     const root = tmp()
     const store = new RuntimeStore(root)
-    store.bindSession({ sessionId: "s1", directory: "/workspace", agentSessionId: "a1" })
+    store.bindSession({ owner: { kind: "machine-owner" }, sessionId: "s1", directory: "/workspace", agentSessionId: "a1" })
     store.deliveryQueue.queuePrompt({ sessionId: "s1", messageId: "local", parts: [], delivery: "queue", provenance: "loopback-direct" })
     store.deliveryQueue.queuePrompt({ sessionId: "s1", messageId: "legacy", parts: [], delivery: "queue" })
     store.close()
@@ -682,11 +685,10 @@ void describe("RuntimeStore", () => {
     reopened.close()
   })
 
-  void it("keeps a queued prompt's service tier across reopen, including on a queue table created before the column", () => {
+  void it("keeps a queued prompt's service tier across reopen", () => {
     const root = tmp()
     const store = new RuntimeStore(root)
-    store.bindSession({ sessionId: "s1", directory: "/workspace", agentSessionId: "a1" })
-    db(store).exec("ALTER TABLE runtime_delivery DROP COLUMN service_tier")
+    store.bindSession({ owner: { kind: "machine-owner" }, sessionId: "s1", directory: "/workspace", agentSessionId: "a1" })
     store.close()
 
     const upgraded = new RuntimeStore(root)
@@ -713,6 +715,7 @@ void describe("RuntimeStore", () => {
     // collided with the unique child index, killing the whole turn.
     const root = tmp()
     const store = new RuntimeStore(root)
+    store.bindSession({ owner: { kind: "machine-owner" }, sessionId: "parent", directory: "/work", agentSessionId: "parent" })
 
     // Channel 1: Task tool block — toolCallId only, child session allocated.
     const spawn = store.admit({
@@ -781,11 +784,11 @@ void describe("RuntimeStore", () => {
   void it("gives an admitted delegation's child session the parent it belongs to", () => {
     const root = tmp()
     const store = new RuntimeStore(root)
-    store.bindSession({ sessionId: "parent", directory: "/work", agentSessionId: "parent", createdAt: 1 })
+    store.bindSession({ owner: { kind: "machine-owner" }, sessionId: "parent", directory: "/work", agentSessionId: "parent", createdAt: 1 })
     // A delegating harness owns this child, so the runtime's only row for it is
     // the placeholder a session-scoped read binds. Admission is where the
     // parent link enters this store, and `GET /session/:id` answers from here.
-    store.bindSession({ sessionId: "child", directory: "/work", agentSessionId: "child", createdAt: 2 })
+    store.bindSession({ owner: { kind: "machine-owner" }, sessionId: "child", directory: "/work", agentSessionId: "child", createdAt: 2 })
 
     store.admit({
       parentSessionId: "parent",
@@ -815,7 +818,7 @@ void describe("RuntimeStore", () => {
   void it("binds a child session admission names before this store has any row for it", () => {
     const root = tmp()
     const store = new RuntimeStore(root)
-    store.bindSession({ sessionId: "parent", directory: "/work", agentSessionId: "parent", createdAt: 1 })
+    store.bindSession({ owner: { kind: "machine-owner" }, sessionId: "parent", directory: "/work", agentSessionId: "parent", createdAt: 1 })
 
     store.admit({
       parentSessionId: "parent",
@@ -910,8 +913,9 @@ void describe("RuntimeStore", () => {
   void it("interrupts active children on archive while preserving durable history", () => {
     const root = tmp()
     const store = new RuntimeStore(root)
-    store.bindSession({ sessionId: "parent", directory: "/work", agentSessionId: "provider-parent", createdAt: 1 })
+    store.bindSession({ owner: { kind: "machine-owner" }, sessionId: "parent", directory: "/work", agentSessionId: "provider-parent", createdAt: 1 })
     store.bindSession({
+      owner: { kind: "machine-owner" },
       sessionId: "child-session",
       parentSessionId: "parent",
       directory: "/work",
@@ -953,8 +957,9 @@ void describe("RuntimeStore", () => {
   void it("reconciles disconnected foreground children and deletes child ownership atomically", () => {
     const root = tmp()
     const store = new RuntimeStore(root)
-    store.bindSession({ sessionId: "parent", directory: "/work", agentSessionId: "provider-parent", createdAt: 1 })
+    store.bindSession({ owner: { kind: "machine-owner" }, sessionId: "parent", directory: "/work", agentSessionId: "provider-parent", createdAt: 1 })
     store.bindSession({
+      owner: { kind: "machine-owner" },
       sessionId: "child-session",
       parentSessionId: "parent",
       directory: "/work",
@@ -1005,10 +1010,11 @@ void describe("RuntimeStore", () => {
         }
       }
     ).db
-    db.exec("DROP TABLE session")
+    db.exec("CREATE TRIGGER refuse_session BEFORE INSERT ON session BEGIN SELECT RAISE(ABORT, 'session projection refused'); END")
 
     assert.throws(() => {
       store.bindSession({
+        owner: { kind: "machine-owner" },
         sessionId: "s1",
         directory: "/work",
         agentSessionId: "a1",
@@ -1023,6 +1029,7 @@ void describe("RuntimeStore", () => {
       journal.map((row) => row.type),
       ["session.bind"],
     )
+    db.exec("DROP TRIGGER refuse_session")
     store.close()
 
     const next = new RuntimeStore(root)
@@ -1034,6 +1041,7 @@ void describe("RuntimeStore", () => {
     const root = tmp()
     const store = new RuntimeStore(root)
     store.bindSession({
+      owner: { kind: "machine-owner" },
       sessionId: "s1",
       directory: "/work",
       agentSessionId: "a1",
@@ -1075,6 +1083,7 @@ void describe("RuntimeStore", () => {
     const root = tmp()
     const store = new RuntimeStore(root)
     store.bindSession({
+      owner: { kind: "machine-owner" },
       sessionId: "s1",
       directory: "/work",
       agentSessionId: "a1",
@@ -1111,6 +1120,7 @@ void describe("RuntimeStore", () => {
     const root = tmp()
     const store = new RuntimeStore(root)
     store.bindSession({
+      owner: { kind: "machine-owner" },
       sessionId: "s1",
       directory: "/work",
       agentSessionId: "a1",
@@ -1158,7 +1168,7 @@ void describe("RuntimeStore", () => {
   void it("persists Goal continuations under their original user boundary through reopen", () => {
     const root = tmp()
     const store = new RuntimeStore(root)
-    store.bindSession({ sessionId: "goal-session", directory: "/work", agentSessionId: "native-goal", createdAt: 1 })
+    store.bindSession({ owner: { kind: "machine-owner" }, sessionId: "goal-session", directory: "/work", agentSessionId: "native-goal", createdAt: 1 })
     const common = { sessionId: "goal-session", agent: "build", model: { providerID: "openai", modelID: "codex" } }
     store.startTurn({ ...common, userMessageId: "goal-request", assistantMessageId: "first", parts: [{ type: "text", text: "Finish the requested work" }] })
     const user = store.getMessages("goal-session").find((message) => message.info.role === "user")
@@ -1175,7 +1185,7 @@ void describe("RuntimeStore", () => {
 
   void it("pages projected messages backward with an opaque cursor and bounded hydration", () => {
     const store = new RuntimeStore(tmp())
-    store.bindSession({ sessionId: "s1", directory: "/work", agentSessionId: "a1", createdAt: 1 })
+    store.bindSession({ owner: { kind: "machine-owner" }, sessionId: "s1", directory: "/work", agentSessionId: "a1", createdAt: 1 })
     for (let index = 1; index <= 6; index++) {
       const messageId = `m${index}`
       store.appendEvent({
@@ -1214,7 +1224,7 @@ void describe("RuntimeStore", () => {
       first.messages.map((message) => (message.parts[0] as { text?: string } | undefined)?.text),
       ["message 5", "message 6"],
     )
-    assert.match(first.nextCursor ?? "", /^wrmp1:/)
+    assert.match(first.nextCursor ?? "", /^wrmp2:/)
 
     const second = store.getMessagePage("s1", { limit: 2, before: first.nextCursor })
     assert.ok(second)
@@ -1234,7 +1244,7 @@ void describe("RuntimeStore", () => {
 
   void it("returns the chronological latest turn and continues before its user boundary, a page or a whole turn at a time", () => {
     const store = new RuntimeStore(tmp())
-    store.bindSession({ sessionId: "s1", directory: "/work", agentSessionId: "a1", createdAt: 1 })
+    store.bindSession({ owner: { kind: "machine-owner" }, sessionId: "s1", directory: "/work", agentSessionId: "a1", createdAt: 1 })
     const append = (info: Record<string, unknown>) =>
       store.appendEvent({
         sessionId: "s1",
@@ -1253,7 +1263,7 @@ void describe("RuntimeStore", () => {
       latest.messages.map((message) => message.info.id),
       ["user-2", "assistant-2a", "assistant-2b"],
     )
-    assert.match(latest.nextCursor ?? "", /^wrmp1:/)
+    assert.match(latest.nextCursor ?? "", /^wrmp2:/)
 
     const older = store.getMessagePage("s1", { limit: 10, before: latest.nextCursor })
     assert.ok(older)
@@ -1274,7 +1284,7 @@ void describe("RuntimeStore", () => {
 
   void it("reads one part whole by its message and id, and nothing for another session's message or a part the message lacks", () => {
     const store = new RuntimeStore(tmp())
-    for (const sessionId of ["s1", "s2"]) store.bindSession({ sessionId, directory: "/work", agentSessionId: `a-${sessionId}`, createdAt: 1 })
+    for (const sessionId of ["s1", "s2"]) store.bindSession({ owner: { kind: "machine-owner" }, sessionId, directory: "/work", agentSessionId: `a-${sessionId}`, createdAt: 1 })
     store.appendEvent({ sessionId: "s1", agentSessionId: "a-s1", payload: messageUpdated({ sessionID: "s1", id: "user-1", role: "user", time: { created: 1 } } as any) })
     store.appendEvent({ sessionId: "s1", agentSessionId: "a-s1", payload: messageUpdated({ sessionID: "s1", id: "assistant-1", role: "assistant", parentID: "user-1", time: { created: 2, completed: 3 } } as any) })
     const tool = {
@@ -1296,7 +1306,7 @@ void describe("RuntimeStore", () => {
 
   void it("reads a pending or running tool of a settled message back errored, as the page read gives it", () => {
     const store = new RuntimeStore(tmp())
-    store.bindSession({ sessionId: "s1", directory: "/work", agentSessionId: "a1", createdAt: 1 })
+    store.bindSession({ owner: { kind: "machine-owner" }, sessionId: "s1", directory: "/work", agentSessionId: "a1", createdAt: 1 })
     const append = (info: Record<string, unknown>) =>
       store.appendEvent({ sessionId: "s1", agentSessionId: "a1", payload: messageUpdated({ sessionID: "s1", ...info } as any) })
     const part = (part: Record<string, unknown>) =>
@@ -1322,7 +1332,7 @@ void describe("RuntimeStore", () => {
   void it("reads no part through another message or session, even one whose ids exist elsewhere", () => {
     const store = new RuntimeStore(tmp())
     for (const sessionId of ["s1", "s2"]) {
-      store.bindSession({ sessionId, directory: "/work", agentSessionId: `a-${sessionId}`, createdAt: 1 })
+      store.bindSession({ owner: { kind: "machine-owner" }, sessionId, directory: "/work", agentSessionId: `a-${sessionId}`, createdAt: 1 })
       for (const [id, role] of [[`${sessionId}-user`, "user"], [`${sessionId}-assistant`, "assistant"]]) {
         store.appendEvent({ sessionId, agentSessionId: `a-${sessionId}`, payload: messageUpdated({ sessionID: sessionId, id, role, time: { created: 1 } } as any) })
         store.appendEvent({ sessionId, agentSessionId: `a-${sessionId}`, payload: messagePartUpdated({ sessionID: sessionId, id: `${id}-text`, messageID: id, type: "text", text: id } as any) })
@@ -1339,7 +1349,7 @@ void describe("RuntimeStore", () => {
 
   void it("reads one part of a many-part message without parsing its siblings", () => {
     const store = new RuntimeStore(tmp())
-    store.bindSession({ sessionId: "s1", directory: "/work", agentSessionId: "a1", createdAt: 1 })
+    store.bindSession({ owner: { kind: "machine-owner" }, sessionId: "s1", directory: "/work", agentSessionId: "a1", createdAt: 1 })
     store.appendEvent({ sessionId: "s1", agentSessionId: "a1", payload: messageUpdated({ sessionID: "s1", id: "assistant-1", role: "assistant", time: { created: 1, completed: 2 } } as any) })
     for (let index = 0; index < 50; index += 1) {
       store.appendEvent({ sessionId: "s1", agentSessionId: "a1", payload: messagePartUpdated({ sessionID: "s1", id: `tool-${index}`, messageID: "assistant-1", type: "tool", callID: `call-${index}`, tool: "bash", state: { status: "completed", input: {}, output: `out ${index}`, title: "", metadata: {}, time: { start: 1, end: 2 } } } as any) })
@@ -1354,7 +1364,7 @@ void describe("RuntimeStore", () => {
 
   void it("outlines the newest turns from their users alone: capped prompt snippets, parsing no assistant part and no part outside the window", () => {
     const store = new RuntimeStore(tmp())
-    store.bindSession({ sessionId: "s1", directory: "/work", agentSessionId: "a1", createdAt: 1 })
+    store.bindSession({ owner: { kind: "machine-owner" }, sessionId: "s1", directory: "/work", agentSessionId: "a1", createdAt: 1 })
     const append = (info: Record<string, unknown>) =>
       store.appendEvent({ sessionId: "s1", agentSessionId: "a1", payload: messageUpdated({ sessionID: "s1", ...info } as any) })
     const part = (part: Record<string, unknown>) =>
@@ -1393,7 +1403,7 @@ void describe("RuntimeStore", () => {
     const store = new RuntimeStore(tmp())
     const omittedDecodeMarker = "LATEST_SURFACE_OMITTED_PAYLOAD_MUST_NOT_BE_PARSED"
     const omittedPayload = `${omittedDecodeMarker}:${"x".repeat(256 * 1024)}`
-    store.bindSession({ sessionId: "s1", directory: "/work", agentSessionId: "a1", createdAt: 1 })
+    store.bindSession({ owner: { kind: "machine-owner" }, sessionId: "s1", directory: "/work", agentSessionId: "a1", createdAt: 1 })
     const append = (info: Record<string, unknown>) =>
       store.appendEvent({
         sessionId: "s1",
@@ -1474,7 +1484,7 @@ void describe("RuntimeStore", () => {
         ],
       ],
     )
-    assert.match(surface.nextCursor ?? "", /^wrmp1:/)
+    assert.match(surface.nextCursor ?? "", /^wrmp2:/)
 
     const complete = store.getMessagePage("s1", { view: "latest-turn" })
     assert.ok(complete)
@@ -1503,7 +1513,7 @@ void describe("RuntimeStore", () => {
     const longUser = "u".repeat(96 * 1024)
     const longAnswer = "a".repeat(200 * 1024)
     const error = { name: "ProviderError", data: { body: "e".repeat(16 * 1024) } }
-    store.bindSession({ sessionId: "s1", directory: "/work", agentSessionId: "a1", createdAt: 1 })
+    store.bindSession({ owner: { kind: "machine-owner" }, sessionId: "s1", directory: "/work", agentSessionId: "a1", createdAt: 1 })
     for (const info of [
       { id: "user-long", role: "user", summary: { title: "kept" } },
       { id: "assistant-long", role: "assistant", parentID: "user-long", error },
@@ -1560,7 +1570,7 @@ void describe("RuntimeStore", () => {
   void it("does not invent a surface cursor for an adjacent user and final assistant", () => {
 
     const store = new RuntimeStore(tmp())
-    store.bindSession({ sessionId: "s1", directory: "/work", agentSessionId: "a1", createdAt: 1 })
+    store.bindSession({ owner: { kind: "machine-owner" }, sessionId: "s1", directory: "/work", agentSessionId: "a1", createdAt: 1 })
     for (const info of [
       { id: "user-adjacent", role: "user" },
       { id: "assistant-adjacent", role: "assistant", parentID: "user-adjacent" },
@@ -1584,7 +1594,7 @@ void describe("RuntimeStore", () => {
 
   void it("rejects a latest surface whose assistant is not owned by its user boundary", () => {
     const store = new RuntimeStore(tmp())
-    store.bindSession({ sessionId: "s1", directory: "/work", agentSessionId: "a1", createdAt: 1 })
+    store.bindSession({ owner: { kind: "machine-owner" }, sessionId: "s1", directory: "/work", agentSessionId: "a1", createdAt: 1 })
     for (const info of [
       { id: "owner", role: "user" },
       { id: "wrong-owner", role: "assistant", parentID: "different-user" },
@@ -1605,7 +1615,7 @@ void describe("RuntimeStore", () => {
 
   void it("returns a user-only live turn without inventing an older-history cursor", () => {
     const store = new RuntimeStore(tmp())
-    store.bindSession({ sessionId: "s1", directory: "/work", agentSessionId: "a1", createdAt: 1 })
+    store.bindSession({ owner: { kind: "machine-owner" }, sessionId: "s1", directory: "/work", agentSessionId: "a1", createdAt: 1 })
     store.appendEvent({
       sessionId: "s1",
       agentSessionId: "a1",
@@ -1629,8 +1639,8 @@ void describe("RuntimeStore", () => {
 
   void it("rejects invalid, cross-session, and missing-session message page cursors", () => {
     const store = new RuntimeStore(tmp())
-    store.bindSession({ sessionId: "s1", directory: "/work", agentSessionId: "a1", createdAt: 1 })
-    store.bindSession({ sessionId: "s2", directory: "/work", agentSessionId: "a2", createdAt: 2 })
+    store.bindSession({ owner: { kind: "machine-owner" }, sessionId: "s1", directory: "/work", agentSessionId: "a1", createdAt: 1 })
+    store.bindSession({ owner: { kind: "machine-owner" }, sessionId: "s2", directory: "/work", agentSessionId: "a2", createdAt: 2 })
     store.appendEvent({
       sessionId: "s1",
       agentSessionId: "a1",
@@ -1666,16 +1676,19 @@ void describe("RuntimeStore", () => {
     const cursor = result.nextCursor
     assert.ok(cursor)
 
-    for (const run of [
-      () => store.getMessagePage("s1", { limit: 1, before: "not-a-cursor" }),
+    assert.throws(
       () => store.getMessagePage("s2", { limit: 1, before: cursor }),
-    ]) {
+      (error: unknown) =>
+        error instanceof AgentMessagePageError && error.status === 400 && error.message === "Invalid message page cursor",
+    )
+    const previousVersion = `wrmp1:${btoa(JSON.stringify({ sessionId: "s1", ord: 1 })).replace(/=+$/, "")}`
+    for (const before of ["not-a-cursor", previousVersion]) {
       assert.throws(
-        run,
+        () => store.getMessagePage("s1", { limit: 1, before }),
         (error: unknown) =>
-          error instanceof AgentMessagePageError &&
-          error.status === 400 &&
-          error.message === "Invalid message page cursor",
+          error instanceof AgentMessagePageError
+          && error.status === 400
+          && error.message === "Message page cursor is from another version or producer",
       )
     }
     assert.throws(
@@ -1689,6 +1702,7 @@ void describe("RuntimeStore", () => {
     const root = tmp()
     const store = new RuntimeStore(root)
     store.bindSession({
+      owner: { kind: "machine-owner" },
       sessionId: "s1",
       directory: "/work",
       title: "Demo",
@@ -1775,6 +1789,7 @@ void describe("RuntimeStore", () => {
     const root = tmp()
     const first = new RuntimeStore(root)
     first.bindSession({
+      owner: { kind: "machine-owner" },
       sessionId: "s1",
       directory: "/work",
       agentSessionId: "a1",
@@ -1793,6 +1808,7 @@ void describe("RuntimeStore", () => {
     const root = tmp()
     const first = new RuntimeStore(root)
     first.bindSession({
+      owner: { kind: "machine-owner" },
       sessionId: "s1",
       directory: "/work",
       agentSessionId: "a1",
@@ -1816,6 +1832,7 @@ void describe("RuntimeStore", () => {
     const root = tmp()
     const store = new RuntimeStore(root)
     store.bindSession({
+      owner: { kind: "machine-owner" },
       sessionId: "s1",
       directory: "/work",
       agentSessionId: "a1",
@@ -1839,6 +1856,7 @@ void describe("RuntimeStore", () => {
     const root = tmp()
     const first = new RuntimeStore(root)
     first.bindSession({
+      owner: { kind: "machine-owner" },
       sessionId: "s1",
       directory: "/work",
       title: "Demo",
@@ -1892,14 +1910,13 @@ void describe("RuntimeStore", () => {
     assert.deepEqual(next.getTodos("s1"), [{ id: "native-task-42", content: "Ship", status: "pending", priority: "high" }])
   })
 
-  void it("migrates task identity without discarding existing todo rows", () => {
+  void it("gives an existing todo its task identity across reopen", () => {
     const root = tmp()
     const first = new RuntimeStore(root)
-    first.bindSession({ sessionId: "s1", directory: "/work", agentSessionId: "a1", createdAt: 1 })
+    first.bindSession({ owner: { kind: "machine-owner" }, sessionId: "s1", directory: "/work", agentSessionId: "a1", createdAt: 1 })
     first.appendEvent({ sessionId: "s1", agentSessionId: "a1", payload: todoUpdated("s1", [
       { content: "Existing", status: "pending", priority: "medium" },
     ]) })
-    db(first).exec("ALTER TABLE todo DROP COLUMN task_id")
     first.close()
     const next = new RuntimeStore(root)
     assert.deepEqual(next.getTodos("s1"), [{ content: "Existing", status: "pending", priority: "medium" }])
@@ -1916,6 +1933,7 @@ void describe("RuntimeStore", () => {
     const root = tmp()
     const store = new RuntimeStore(root)
     store.bindSession({
+      owner: { kind: "machine-owner" },
       sessionId: "s1",
       directory: "/work",
       agentSessionId: "a1",
@@ -1970,6 +1988,7 @@ void describe("RuntimeStore", () => {
     const root = tmp()
     const store = new RuntimeStore(root)
     store.bindSession({
+      owner: { kind: "machine-owner" },
       sessionId: "s1",
       directory: "/work",
       title: "Demo",
@@ -2024,6 +2043,7 @@ void describe("RuntimeStore", () => {
     const root = tmp()
     const store = new RuntimeStore(root)
     store.bindSession({
+      owner: { kind: "machine-owner" },
       sessionId: "s1",
       directory: "/work",
       title: "Demo",
@@ -2056,6 +2076,7 @@ void describe("RuntimeStore", () => {
     const root = tmp()
     const store = new RuntimeStore(root)
     store.bindSession({
+      owner: { kind: "machine-owner" },
       sessionId: "s1",
       directory: "/work",
       agentSessionId: "agent-abc",
@@ -2094,6 +2115,7 @@ void describe("RuntimeStore", () => {
     const root = tmp()
     const store = new RuntimeStore(root)
     store.bindSession({
+      owner: { kind: "machine-owner" },
       sessionId: "s1",
       directory: "/work",
       title: "New Session",
@@ -2131,6 +2153,7 @@ void describe("RuntimeStore", () => {
     const root = tmp()
     const first = new RuntimeStore(root)
     first.bindSession({
+      owner: { kind: "machine-owner" },
       sessionId: "s1",
       directory: "/work",
       agentSessionId: "a1",
@@ -2180,6 +2203,7 @@ void describe("RuntimeStore", () => {
     const root = tmp()
     const first = new RuntimeStore(root)
     first.bindSession({
+      owner: { kind: "machine-owner" },
       sessionId: "s1",
       directory: "/work",
       agentSessionId: "a1",
@@ -2215,6 +2239,7 @@ void describe("RuntimeStore", () => {
     const root = tmp()
     const first = new RuntimeStore(root)
     first.bindSession({
+      owner: { kind: "machine-owner" },
       sessionId: "s1",
       directory: "/work",
       agentSessionId: "a1",
@@ -2222,6 +2247,7 @@ void describe("RuntimeStore", () => {
       createdAt: 1,
     })
     first.bindSession({
+      owner: { kind: "machine-owner" },
       sessionId: "s2",
       directory: "/work",
       agentSessionId: "a2",
@@ -2269,6 +2295,7 @@ void describe("RuntimeStore", () => {
     const root = tmp()
     const first = new RuntimeStore(root)
     first.bindSession({
+      owner: { kind: "machine-owner" },
       sessionId: "s1",
       directory: "/work",
       agentSessionId: "a1",
@@ -2328,6 +2355,7 @@ void describe("RuntimeStore", () => {
     const root = tmp()
     const store = new RuntimeStore(root)
     store.bindSession({
+      owner: { kind: "machine-owner" },
       sessionId: "s1",
       directory: "/work",
       agentSessionId: "a1",
@@ -2387,6 +2415,7 @@ void describe("RuntimeStore", () => {
     const root = tmp()
     const first = new RuntimeStore(root)
     first.bindSession({
+      owner: { kind: "machine-owner" },
       sessionId: "s1",
       directory: "/work",
       agentSessionId: "a1",
@@ -2439,6 +2468,7 @@ void describe("RuntimeStore", () => {
     const root = tmp()
     const first = new RuntimeStore(root)
     first.bindSession({
+      owner: { kind: "machine-owner" },
       sessionId: "s1",
       directory: "/work",
       agentSessionId: "a1",
@@ -2461,6 +2491,7 @@ void describe("RuntimeStore", () => {
     const root = tmp()
     const store = new RuntimeStore(root)
     store.bindSession({
+      owner: { kind: "machine-owner" },
       sessionId: "s1",
       directory: "/work",
       agentSessionId: "a1",
@@ -2504,7 +2535,7 @@ void describe("RuntimeStore", () => {
   void it("persists the durable generation and rejects every stale producer write after takeover", () => {
     const root = tmp()
     const first = new RuntimeStore(root)
-    first.bindSession({ sessionId: "s1", directory: "/work", agentSessionId: "a1", createdAt: 1 })
+    first.bindSession({ owner: { kind: "machine-owner" }, sessionId: "s1", directory: "/work", agentSessionId: "a1", createdAt: 1 })
     const start = (assistantMessageId: string, fencingToken: number) => first.startTurn({
       sessionId: "s1",
       agentSessionId: "a1",
@@ -2551,7 +2582,7 @@ void describe("RuntimeStore", () => {
   void it("commits exact usage before terminal lifecycle records", () => {
     const root = tmp()
     const store = new RuntimeStore(root)
-    store.bindSession({ sessionId: "s1", directory: "/work", agentSessionId: "a1", createdAt: 1 })
+    store.bindSession({ owner: { kind: "machine-owner" }, sessionId: "s1", directory: "/work", agentSessionId: "a1", createdAt: 1 })
     store.startTurn({
       sessionId: "s1",
       agentSessionId: "a1",
@@ -2606,6 +2637,7 @@ void describe("RuntimeStore", () => {
     const root = tmp()
     const store = new RuntimeStore(root)
     store.bindSession({
+      owner: { kind: "machine-owner" },
       sessionId: "s1",
       directory: "/work",
       agentSessionId: "a1",
@@ -2650,6 +2682,7 @@ void describe("RuntimeStore", () => {
     const root = tmp()
     const store = new RuntimeStore(root)
     store.bindSession({
+      owner: { kind: "machine-owner" },
       sessionId: "s1",
       directory: "/work",
       agentSessionId: "a1",
@@ -2703,6 +2736,7 @@ void describe("RuntimeStore", () => {
     const root = tmp()
     const store = new RuntimeStore(root)
     store.bindSession({
+      owner: { kind: "machine-owner" },
       sessionId: "s1",
       directory: "/work",
       agentSessionId: "a1",
@@ -2753,6 +2787,7 @@ void describe("RuntimeStore", () => {
     const root = tmp()
     const first = new RuntimeStore(root)
     first.bindSession({
+      owner: { kind: "machine-owner" },
       sessionId: "s1",
       directory: "/work",
       agentSessionId: "a1",
@@ -2787,6 +2822,7 @@ void describe("RuntimeStore", () => {
     const root = tmp()
     const store = new RuntimeStore(root)
     store.bindSession({
+      owner: { kind: "machine-owner" },
       sessionId: "s1",
       directory: "/work",
       title: "Demo",
@@ -2820,7 +2856,7 @@ void describe("RuntimeStore", () => {
   void it("persists permission selection across reopen and clears it on a harness change", () => {
     const root = tmp()
     const first = new RuntimeStore(root)
-    first.bindSession({ sessionId: "restricted", directory: "/work", agentSessionId: "a1" })
+    first.bindSession({ owner: { kind: "machine-owner" }, sessionId: "restricted", directory: "/work", agentSessionId: "a1" })
     first.updateSessionConfig("restricted", { harness: { id: "codex", access: "native" }, permissionCeiling: "ask", permissionMode: "read-only", permissionState: { allow: ["Bash(printf approved-write *)"] } })
     first.updateSessionConfig("restricted", { agent: "build" })
     const reopened = new RuntimeStore(root)
@@ -2841,7 +2877,7 @@ void describe("RuntimeStore", () => {
       store.updateSessionConfig("native", update)
       return store.getSession("native")?.time.updated
     }
-    store.bindSession({ sessionId: "native", directory: "/work", agentSessionId: "a1" })
+    store.bindSession({ owner: { kind: "machine-owner" }, sessionId: "native", directory: "/work", agentSessionId: "a1" })
     store.updateSessionConfig("native", { harness: { id: "claude", access: "native" } })
 
     assert.equal(updatedAfter({ harness: { id: "claude", access: "native" }, model: { providerID: "claude", modelID: "default" }, permissionMode: "auto", agent: "build" }), 111)
@@ -2857,7 +2893,7 @@ void describe("RuntimeStore", () => {
     const root = tmp()
     const store = new RuntimeStore(root)
     const label = (from: RuntimeStore) => (from.getSession("acp") as { config?: { permissionModeLabel?: string } } | null)?.config?.permissionModeLabel
-    store.bindSession({ sessionId: "acp", directory: "/work", agentSessionId: "a1" })
+    store.bindSession({ owner: { kind: "machine-owner" }, sessionId: "acp", directory: "/work", agentSessionId: "a1" })
     store.updateSessionConfig("acp", { harness: { id: "scripted-acp", access: "connection" } })
     store.updateSessionConfig("acp", { permissionMode: "architect", permissionModeLabel: "Architect" })
     store.updateSessionConfig("acp", { agent: "build" })
@@ -2875,7 +2911,7 @@ void describe("RuntimeStore", () => {
   void it("the session row carries each selection's effective value: the stored one, else the harness default", () => {
     const store = new RuntimeStore(tmp())
     const config = (id: string) => (store.getSession(id) as { config?: Record<string, unknown> } | null)?.config
-    store.bindSession({ sessionId: "native", directory: "/work", agentSessionId: "a1" })
+    store.bindSession({ owner: { kind: "machine-owner" }, sessionId: "native", directory: "/work", agentSessionId: "a1" })
     store.updateSessionConfig("native", { harness: { id: "claude", access: "native" } })
     assert.deepEqual(config("native"), {
       harness: { id: "claude", access: "native" },
@@ -2898,11 +2934,11 @@ void describe("RuntimeStore", () => {
     assert.equal(config("native")?.permissionMode, null, "Cursor declares no default mode: its transport applies none until the person picks one")
     assert.deepEqual(config("native")?.model, { providerID: "cursor", modelID: "auto" })
 
-    store.bindSession({ sessionId: "engine", directory: "/work", agentSessionId: "a2" })
+    store.bindSession({ owner: { kind: "machine-owner" }, sessionId: "engine", directory: "/work", agentSessionId: "a2" })
     store.updateSessionConfig("engine", { harness: { id: "pi", access: "native" } })
     assert.equal(config("engine")?.permissionMode, null)
 
-    store.bindSession({ sessionId: "acp", directory: "/work", agentSessionId: "a3" })
+    store.bindSession({ owner: { kind: "machine-owner" }, sessionId: "acp", directory: "/work", agentSessionId: "a3" })
     store.updateSessionConfig("acp", { harness: { id: "scripted-acp", access: "connection" } })
     assert.equal(config("acp")?.permissionMode, null)
     store.updateSessionConfig("acp", { permissionMode: "agent-mode" })
@@ -2930,7 +2966,7 @@ void describe("RuntimeStore", () => {
   void it("preserves elicitation schema through reload without resurrecting process resolvers", () => {
     const root = tmp()
     const first = new RuntimeStore(root)
-    first.bindSession({ sessionId: "elicitation", directory: "/work", agentSessionId: "agent", createdAt: 1 })
+    first.bindSession({ owner: { kind: "machine-owner" }, sessionId: "elicitation", directory: "/work", agentSessionId: "agent", createdAt: 1 })
     const questions = [{ header: "Agent", question: "Choose", options: [], elicitation: {
       mode: "form" as const, agentName: "Agent", message: "Choose", requestedSchema: { type: "object" as const,
         properties: { count: { type: "integer" as const, default: 2 } }, required: ["count"] },
@@ -2946,7 +2982,7 @@ void describe("RuntimeStore", () => {
   void it("persists agent command updates, clears them, and isolates sessions", () => {
     const root = tmp()
     const first = new RuntimeStore(root)
-    for (const sessionId of ["one", "two"]) first.bindSession({ sessionId, directory: "/work", agentSessionId: `agent-${sessionId}`, createdAt: 1 })
+    for (const sessionId of ["one", "two"]) first.bindSession({ owner: { kind: "machine-owner" }, sessionId, directory: "/work", agentSessionId: `agent-${sessionId}`, createdAt: 1 })
     const commands = [{ name: "review", description: "Review changes", input: { hint: "<path>" } }]
     first.appendEvent({ sessionId: "one", payload: { type: "session.commands", properties: { sessionID: "one", commands } } })
     assert.deepEqual(first.getSession("one")?.commands, commands)
@@ -2954,7 +2990,7 @@ void describe("RuntimeStore", () => {
     first.close()
     const reopened = new RuntimeStore(root)
     assert.deepEqual(reopened.getSession("one")?.commands, commands)
-    reopened.bindSession({ sessionId: "one", directory: "/work", agentSessionId: "agent-one-resumed", createdAt: 1 })
+    reopened.bindSession({ owner: { kind: "machine-owner" }, sessionId: "one", directory: "/work", agentSessionId: "agent-one-resumed", createdAt: 1 })
     assert.deepEqual(reopened.getSession("one")?.commands, commands)
     assert.deepEqual(reopened.listSessions("/work").find((session) => session.id === "one")?.commands, commands)
     reopened.appendEvent({ sessionId: "one", payload: { type: "session.commands", properties: { sessionID: "one", commands: [] } } })
@@ -2971,6 +3007,7 @@ void describe("RuntimeStore", () => {
     const root = tmp()
     const first = new RuntimeStore(root)
     first.bindSession({
+      owner: { kind: "machine-owner" },
       sessionId: "s1",
       directory: "/work",
       agentSessionId: "a1",
@@ -3010,7 +3047,7 @@ void describe("RuntimeStore", () => {
   void it("retains create-time instructions across reopen and through a harness change", () => {
     const root = tmp()
     const first = new RuntimeStore(root)
-    first.bindSession({ sessionId: "s1", directory: "/work", agentSessionId: "a1", createdAt: 1 })
+    first.bindSession({ owner: { kind: "machine-owner" }, sessionId: "s1", directory: "/work", agentSessionId: "a1", createdAt: 1 })
     first.updateSessionConfig("s1", { harness: { id: "codex", access: "native" }, instructions: "Answer only in haiku." })
     assert.equal(first.getSessionConfig("s1")?.instructions, "Answer only in haiku.")
 
@@ -3030,7 +3067,7 @@ void describe("RuntimeStore", () => {
       review: { harness: { id: "codex", access: "native" }, model: { providerID: "openai", modelID: "gpt-5-codex" } },
     } as const
     const first = new RuntimeStore(root)
-    first.bindSession({ sessionId: "s1", directory: "/work", agentSessionId: "a1", createdAt: 1 })
+    first.bindSession({ owner: { kind: "machine-owner" }, sessionId: "s1", directory: "/work", agentSessionId: "a1", createdAt: 1 })
     first.updateSessionConfig("s1", { harness: { id: "codex", access: "native" }, group })
     assert.deepEqual(first.getSessionConfig("s1")?.group, group)
 
@@ -3043,20 +3080,18 @@ void describe("RuntimeStore", () => {
     assert.equal(new RuntimeStore(root).getSessionConfig("s1")?.group, undefined)
   })
 
-  void it("writes the group of a config applied before the session row exists", () => {
+  void it("creates no session from a config written before its bind, because only a bind carries the owner", () => {
     const root = tmp()
-    const group = {
-      planning: { harness: { id: "claude", access: "native" }, model: { providerID: "anthropic", modelID: "opus" } },
-    } as const
     const first = new RuntimeStore(root)
-    first.updateSessionConfig("s1", { harness: { id: "claude", access: "native" }, group }, { directory: "/work" })
-    assert.deepEqual(new RuntimeStore(root).getSessionConfig("s1")?.group, group)
+    assert.equal(first.updateSessionConfig("s1", { harness: { id: "claude", access: "native" } }), null)
+    assert.equal(first.getSession("s1"), null)
+    assert.equal(new RuntimeStore(root).getSession("s1"), null)
   })
 
   void it("reads back no group when the stored row is not a valid group", () => {
     const root = tmp()
     const store = new RuntimeStore(root)
-    store.bindSession({ sessionId: "s1", directory: "/work", agentSessionId: "a1", createdAt: 1 })
+    store.bindSession({ owner: { kind: "machine-owner" }, sessionId: "s1", directory: "/work", agentSessionId: "a1", createdAt: 1 })
     store.updateSessionConfig("s1", {
       harness: { id: "codex", access: "native" },
       group: { primary: { harness: { id: "codex", access: "native" }, model: { providerID: "openai", modelID: "gpt-5-codex" } } },
@@ -3069,7 +3104,7 @@ void describe("RuntimeStore", () => {
   void it("persists and clears a pending cross-harness handoff", () => {
     const root = tmp()
     const first = new RuntimeStore(root)
-    first.bindSession({ sessionId: "s1", directory: "/work", agentSessionId: "a1", createdAt: 1 })
+    first.bindSession({ owner: { kind: "machine-owner" }, sessionId: "s1", directory: "/work", agentSessionId: "a1", createdAt: 1 })
     first.updateSessionConfig("s1", {
       harness: { id: "claude", access: "native" },
       handoff: {
@@ -3094,8 +3129,8 @@ void describe("RuntimeStore", () => {
   void it("persists why a handoff is pending, whether a sent message marked it, and the session it kept", () => {
     const root = tmp()
     const first = new RuntimeStore(root)
-    first.bindSession({ sessionId: "s1", directory: "/work", agentSessionId: "a1", createdAt: 1 })
-    first.bindSession({ sessionId: "s2", directory: "/work", agentSessionId: "a2", createdAt: 1 })
+    first.bindSession({ owner: { kind: "machine-owner" }, sessionId: "s1", directory: "/work", agentSessionId: "a1", createdAt: 1 })
+    first.bindSession({ owner: { kind: "machine-owner" }, sessionId: "s2", directory: "/work", agentSessionId: "a2", createdAt: 1 })
     const from = { id: "claude", access: "native" } as const
     first.updateSessionConfig("s1", {
       harness: from,
@@ -3129,7 +3164,7 @@ void describe("RuntimeStore", () => {
 void describe("RuntimeStore session projection cost", () => {
   void it("resolves lastTurn through the terminal-row partial index instead of walking the journal", () => {
     const root = tmp()
-    const store = new RuntimeStoreImpl(root)
+    const store = new RuntimeStore(root)
     const db = (store as unknown as { db: { prepare(sql: string): { all(...params: unknown[]): unknown[] } } }).db
     // The same statement `lastTurn` runs. If the predicate drifts from the
     // index predicate the planner silently falls back to the primary key and
@@ -3159,6 +3194,7 @@ void describe("canonical execution binding", () => {
     const root = tmp()
     const store = new RuntimeStore(root)
     store.bindSession({
+      owner: { kind: "machine-owner" },
       sessionId: "session-1",
       workspaceId: "workspace-1",
       directory: "/work/a",
@@ -3183,7 +3219,7 @@ void describe("canonical execution binding", () => {
 
 void it("keeps the user's prompt when the handoff part lands on its message", () => {
   const store = new RuntimeStore(tmp())
-  store.bindSession({ sessionId: "s1", directory: "/work", agentSessionId: "a1", createdAt: 1 })
+  store.bindSession({ owner: { kind: "machine-owner" }, sessionId: "s1", directory: "/work", agentSessionId: "a1", createdAt: 1 })
   store.startTurn({
     sessionId: "s1",
     agentSessionId: "a1",
@@ -3222,7 +3258,7 @@ void it("keeps the user's prompt when the handoff part lands on its message", ()
 void it("persists Goal state across reopen and clears it with the session", () => {
   const root = tmp()
   const store = new RuntimeStore(root)
-  store.bindSession({ sessionId: "goal-session", directory: "/work", agentSessionId: "pi-native" })
+  store.bindSession({ owner: { kind: "machine-owner" }, sessionId: "goal-session", directory: "/work", agentSessionId: "pi-native" })
   const goal = { sessionId: "goal-session", objective: "Verify the workspace", status: "active" as const, iteration: 0, createdAt: 1, updatedAt: 1 }
   store.setGoal("goal-session", goal)
   assert.deepEqual(store.getGoal("goal-session"), goal)
@@ -3242,7 +3278,7 @@ void describe("session ordering timestamps", () => {
   void it("recovery does not restamp the session the way a turn does", () => {
     const root = tmp()
     const store = new RuntimeStore(root)
-    store.bindSession({ sessionId: "s1", directory: "/work", agentSessionId: "a1", createdAt: 1_000 })
+    store.bindSession({ owner: { kind: "machine-owner" }, sessionId: "s1", directory: "/work", agentSessionId: "a1", createdAt: 1_000 })
     store.startTurn({
       sessionId: "s1",
       assistantMessageId: "m1",
@@ -3286,8 +3322,8 @@ void describe("session ordering timestamps", () => {
     const read = (id: string) =>
       store.getSession(id) as { time?: { updated?: number; lastHumanTurn?: number } } | null
 
-    store.bindSession({ sessionId: "human", directory: "/work", agentSessionId: "ah", createdAt: 1 })
-    store.bindSession({ sessionId: "agent", directory: "/work", agentSessionId: "aa", createdAt: 1 })
+    store.bindSession({ owner: { kind: "machine-owner" }, sessionId: "human", directory: "/work", agentSessionId: "ah", createdAt: 1 })
+    store.bindSession({ owner: { kind: "machine-owner" }, sessionId: "agent", directory: "/work", agentSessionId: "aa", createdAt: 1 })
     turn("human", "human")
     turn("agent", "agent")
 
@@ -3300,7 +3336,7 @@ void describe("session ordering timestamps", () => {
   void it("an agent turn after a human one leaves the human stamp where it was", () => {
     const root = tmp()
     const store = new RuntimeStore(root)
-    store.bindSession({ sessionId: "s1", directory: "/work", agentSessionId: "a1", createdAt: 1 })
+    store.bindSession({ owner: { kind: "machine-owner" }, sessionId: "s1", directory: "/work", agentSessionId: "a1", createdAt: 1 })
     store.startTurn({
       sessionId: "s1",
       assistantMessageId: "m1",
@@ -3330,8 +3366,8 @@ void describe("session ordering timestamps", () => {
   void it("the directory listing carries lastHumanTurn, which is what the session list orders on", () => {
     const root = tmp()
     const store = new RuntimeStore(root)
-    store.bindSession({ sessionId: "spoken", directory: "/work", agentSessionId: "a1", createdAt: 1 })
-    store.bindSession({ sessionId: "quiet", directory: "/work", agentSessionId: "a2", createdAt: 2 })
+    store.bindSession({ owner: { kind: "machine-owner" }, sessionId: "spoken", directory: "/work", agentSessionId: "a1", createdAt: 1 })
+    store.bindSession({ owner: { kind: "machine-owner" }, sessionId: "quiet", directory: "/work", agentSessionId: "a2", createdAt: 2 })
     store.startTurn({
       sessionId: "spoken",
       assistantMessageId: "m1",
@@ -3368,7 +3404,7 @@ void describe("streamed delta settlement", () => {
       payload: { type: "message.part.delta", properties: { sessionID: "s1", messageID: "m1", partID: "p1", field: "text", delta: chunk } },
     } as never)
   const bind = (store: RuntimeStore) => {
-    store.bindSession({ sessionId: "s1", directory: "/w", agentSessionId: "a1" })
+    store.bindSession({ owner: { kind: "machine-owner" }, sessionId: "s1", directory: "/w", agentSessionId: "a1" })
     store.appendEvent({ sessionId: "s1", payload: { type: "message.updated", properties: { info: { id: "m1", sessionID: "s1", role: "assistant" } } } } as never)
   }
 
@@ -3450,8 +3486,8 @@ void describe("streamed delta settlement", () => {
 void it("later events cannot checkpoint past a failed approval, and repair replays it before continuing", () => {
   const root = tmp()
   const store = new RuntimeStore(root)
-  store.bindSession({ sessionId: "s1", directory: "/work", agentSessionId: "a1", createdAt: 1 })
-  store.bindSession({ sessionId: "s2", directory: "/other", agentSessionId: "a2", createdAt: 1 })
+  store.bindSession({ owner: { kind: "machine-owner" }, sessionId: "s1", directory: "/work", agentSessionId: "a1", createdAt: 1 })
+  store.bindSession({ owner: { kind: "machine-owner" }, sessionId: "s2", directory: "/other", agentSessionId: "a2", createdAt: 1 })
   const permission = { id: "blocked", sessionID: "s1", permission: "command", patterns: [], always: [], metadata: {} }
   db(store).exec("ALTER TABLE pending_permission DROP COLUMN options_json")
   assert.throws(() => store.appendEvent({ sessionId: "s1", payload: permissionAsked(permission) }), /options_json/)
@@ -3470,30 +3506,10 @@ void it("later events cannot checkpoint past a failed approval, and repair repla
   assert.deepEqual(reopened.listPermissions("/work"), [permission])
 })
 
-void it("migrates existing permission storage and replays an unprojected approval", () => {
-  const root = tmp()
-  const first = new RuntimeStore(root)
-  first.bindSession({ sessionId: "s1", directory: "/work", agentSessionId: "a1", createdAt: 1 })
-  const existing = { id: "existing", sessionID: "s1", permission: "command", patterns: ["pwd"], always: [], metadata: {} }
-  first.appendEvent({ sessionId: "s1", agentSessionId: "a1", payload: permissionAsked(existing) })
-  db(first).exec("ALTER TABLE pending_permission DROP COLUMN options_json")
-  const pending = { ...existing, id: "unprojected", options: [{ id: "accept", label: "Allow once" }] }
-  // The request is journaled before projection fails against the old schema.
-  assert.throws(() => first.appendEvent({ sessionId: "s1", agentSessionId: "a1", payload: permissionAsked(pending) }), /options_json/)
-  first.close()
-
-  const next = new RuntimeStore(root)
-  assert.deepEqual(next.listPermissions("/work"), [existing, pending])
-  assert.deepEqual(next.listPermissions("/other"), [])
-  next.close()
-  const reopened = new RuntimeStore(root)
-  assert.deepEqual(reopened.listPermissions("/work"), [existing, pending])
-})
-
 void it("persists provider permission options across reload, preserving empty versus absent", () => {
   const root = tmp()
   const first = new RuntimeStore(root)
-  first.bindSession({ sessionId: "options-session", directory: "/work", agentSessionId: "options-agent", createdAt: 1 })
+  first.bindSession({ owner: { kind: "machine-owner" }, sessionId: "options-session", directory: "/work", agentSessionId: "options-agent", createdAt: 1 })
   const choices = [{ id: '{"persist":"session"}', label: "Accept for session", description: "Supplied scope" }]
   const permissions = [
     { id: "dynamic", options: choices },
@@ -3510,10 +3526,10 @@ void it("persists provider permission options across reload, preserving empty ve
   assert.deepEqual(reopened.listPermissions("/other"), [])
 })
 
-void it("preserves canonical title precedence across binding, replay and legacy projection migration", () => {
+void it("preserves canonical title precedence across binding, replay and reopen", () => {
   const root = tmp()
   const store = new RuntimeStore(root)
-  store.bindSession({ sessionId: "titled", directory: "/work", title: "New Session", agentSessionId: "agent-title" })
+  store.bindSession({ owner: { kind: "machine-owner" }, sessionId: "titled", directory: "/work", title: "New Session", agentSessionId: "agent-title" })
   const update = (title: string, titleSource?: "prompt" | "harness" | "user") => store.appendEvent({
     sessionId: "titled", payload: sessionUpdated({ id: "titled", directory: "/work", title, ...(titleSource ? { titleSource } : {}), time: { created: 1, updated: 20 } }),
   })
@@ -3522,7 +3538,7 @@ void it("preserves canonical title precedence across binding, replay and legacy 
   update("Late unranked title")
   assert.equal(store.getSession("titled")?.title, "Agent title")
   assert.equal(store.getSession("titled")?.titleSource, "harness")
-  store.bindSession({ sessionId: "titled", directory: "/work", title: "Agent title", agentSessionId: "agent-resumed" })
+  store.bindSession({ owner: { kind: "machine-owner" }, sessionId: "titled", directory: "/work", title: "Agent title", agentSessionId: "agent-resumed" })
   assert.equal(store.getSession("titled")?.titleSource, "harness")
   store.updateSession("titled", { title: "My chosen title" })
   update("Late generated title", "harness")
@@ -3530,26 +3546,19 @@ void it("preserves canonical title precedence across binding, replay and legacy 
   assert.equal(store.getSession("titled")?.titleSource, "user")
   assert.equal(store.listSessions("/work")[0]?.titleSource, "user")
   const timestamp = store.getSession("titled")?.time.updated
-  // Simulate the old projection: source was absent and a stale event had
-  // overwritten the user title. Rebuild only from the authoritative journal.
-  db(store).exec("ALTER TABLE session DROP COLUMN title_source")
-  db(store).prepare("UPDATE session SET title = ? WHERE id = ?").run("Late generated title", "titled")
+  store.close()
   const reopened = new RuntimeStore(root)
   assert.equal(reopened.getSession("titled")?.title, "My chosen title")
   assert.equal(reopened.getSession("titled")?.titleSource, "user")
   assert.equal(reopened.getSession("titled")?.time.updated, timestamp)
-  reopened.bindSession({ sessionId: "chosen", directory: "/work", title: "Chosen at creation", agentSessionId: "agent-chosen" })
+  reopened.bindSession({ owner: { kind: "machine-owner" }, sessionId: "chosen", directory: "/work", title: "Chosen at creation", agentSessionId: "agent-chosen" })
   assert.equal(reopened.getSession("chosen")?.titleSource, "user")
 })
 
 
 const requireDriver = createRequire(import.meta.url)
 
-/**
- * A second connection to the same store file, outside any RuntimeStore. Two
- * RuntimeStore handles both migrate, so a test about what a concurrent
- * connection does to a migration needs one that does not.
- */
+/** A connection to the store file that opens no RuntimeStore, so it can write what no store would. */
 function rawDatabase(root: string) {
   const driver = requireDriver("better-sqlite3")
   const Database = (driver as { default?: unknown }).default ?? driver
@@ -3561,7 +3570,7 @@ function rawDatabase(root: string) {
 }
 
 function turnFixture(store: RuntimeStore, sessionId = "s1") {
-  store.bindSession({ sessionId, directory: "/work", agentSessionId: "a1", createdAt: 1 })
+  store.bindSession({ owner: { kind: "machine-owner" }, sessionId, directory: "/work", agentSessionId: "a1", createdAt: 1 })
   const leaseId = store.acquireTurnLease(sessionId)
   assert.ok(leaseId)
   store.startTurn({
@@ -3697,8 +3706,8 @@ void it("a lease release that fails reaches its caller and leaves the lease held
 void it("a journal row that no longer parses stops that session's replay and gates its later writes", () => {
   const root = tmp()
   const first = new RuntimeStore(root)
-  first.bindSession({ sessionId: "s1", directory: "/work", agentSessionId: "a1", createdAt: 1 })
-  first.bindSession({ sessionId: "s2", directory: "/other", agentSessionId: "a2", createdAt: 1 })
+  first.bindSession({ owner: { kind: "machine-owner" }, sessionId: "s1", directory: "/work", agentSessionId: "a1", createdAt: 1 })
+  first.bindSession({ owner: { kind: "machine-owner" }, sessionId: "s2", directory: "/other", agentSessionId: "a2", createdAt: 1 })
   first.appendEvent({ sessionId: "s1", payload: todoUpdated("s1", [{ content: "before", status: "pending", priority: "low" }]) })
   first.appendEvent({ sessionId: "s1", payload: todoUpdated("s1", [{ content: "after", status: "completed", priority: "high" }]) })
   first.appendEvent({ sessionId: "s2", payload: todoUpdated("s2", [{ content: "unrelated", status: "pending", priority: "low" }]) })
@@ -3731,8 +3740,8 @@ void it("a journal row that no longer parses stops that session's replay and gat
 void it("an explicit rebuild repairs one session's projection and applies every row exactly once", () => {
   const root = tmp()
   const first = new RuntimeStore(root)
-  first.bindSession({ sessionId: "s1", directory: "/work", agentSessionId: "a1", createdAt: 1 })
-  first.bindSession({ sessionId: "s2", directory: "/other", agentSessionId: "a2", createdAt: 1 })
+  first.bindSession({ owner: { kind: "machine-owner" }, sessionId: "s1", directory: "/work", agentSessionId: "a1", createdAt: 1 })
+  first.bindSession({ owner: { kind: "machine-owner" }, sessionId: "s2", directory: "/other", agentSessionId: "a2", createdAt: 1 })
   first.appendEvent({ sessionId: "s1", payload: todoUpdated("s1", [{ content: "first", status: "pending", priority: "low" }]) })
   first.appendEvent({ sessionId: "s1", payload: todoUpdated("s1", [{ content: "second", status: "completed", priority: "high" }]) })
   first.appendEvent({ sessionId: "s2", payload: todoUpdated("s2", [{ content: "other", status: "pending", priority: "low" }]) })
@@ -3858,56 +3867,37 @@ void it("settled recovery operations age out, and one still holding cleanup neve
   store.close()
 })
 
-void it("the recovery migration snapshots an existing store before it writes the new schema", () => {
+void it("a store written by another schema is refused at open with a typed error naming it, and is left as it was", () => {
   const root = tmp()
   const first = new RuntimeStore(root)
-  first.bindSession({ sessionId: "s1", directory: "/work", agentSessionId: "a1", createdAt: 1 })
-  db(first).exec("DROP TABLE recovery_operation")
+  first.bindSession({ owner: { kind: "machine-owner" }, sessionId: "s1", directory: "/work", agentSessionId: "a1", createdAt: 1 })
   first.close()
+  const other = rawDatabase(root)
+  other.exec("UPDATE runtime_store_schema SET identity = 'CREATE TABLE session (id TEXT PRIMARY KEY)'")
+  other.close()
 
-  const migrated = new RuntimeStore(root)
-  assert.equal(migrated.readRecoveryOperation("none", { callerId: "caller-a" }), undefined)
-  assert.equal(migrated.getAgentSessionId("s1"), "a1")
-  migrated.close()
-
-  const backups = fs.readdirSync(root).filter((name) => name.endsWith(".bak"))
-  assert.equal(backups.length, 1)
-  assert.ok(fs.statSync(path.join(root, backups[0])).size > 0)
-  // An already-migrated store takes no further snapshots.
-  new RuntimeStore(root).close()
-  assert.equal(fs.readdirSync(root).filter((name) => name.endsWith(".bak")).length, 1)
+  assert.throws(
+    () => openRuntimeStore(root),
+    (error: unknown) => error instanceof RuntimeStoreSchemaMismatchError
+      && error.code === "runtime_store_schema_mismatch"
+      && error.location === root
+      && error.message.includes(root),
+  )
+  const after = rawDatabase(root)
+  try {
+    assert.deepEqual(after.prepare("SELECT id FROM session").get(), { id: "s1" })
+  } finally {
+    after.close()
+  }
 })
 
-void it("the recovery migration refuses to run when the store cannot be quiesced", () => {
+void it("a database holding tables but no schema identity is refused rather than adopted", () => {
   const root = tmp()
-  const first = new RuntimeStore(root)
-  first.bindSession({ sessionId: "s1", directory: "/work", agentSessionId: "a1", createdAt: 1 })
-  db(first).exec("DROP TABLE recovery_operation")
-  first.close()
-
-  // A second connection reading the database is exactly the case a file copy
-  // would silently misreport as a consistent backup.
-  const holder = rawDatabase(root)
-  holder.exec("BEGIN IMMEDIATE")
-  try {
-    assert.throws(
-      () => new RuntimeStore(root),
-      (error: unknown) =>
-        error instanceof Error
-        && error.name === "RuntimeStoreMigrationBlockedError"
-        && /Stop every process/.test(error.message),
-    )
-    assert.equal(fs.readdirSync(root).some((name) => name.endsWith(".bak")), false)
-    assert.equal(holder.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'recovery_operation'").get(), undefined)
-  } finally {
-    holder.exec("ROLLBACK")
-    holder.close()
-  }
-
-  const repaired = new RuntimeStore(root)
-  assert.equal(repaired.readRecoveryOperation("none", { callerId: "caller-a" }), undefined)
-  repaired.close()
-  assert.equal(fs.readdirSync(root).filter((name) => name.endsWith(".bak")).length, 1)
+  fs.mkdirSync(root, { recursive: true })
+  const foreign = rawDatabase(root)
+  foreign.exec("CREATE TABLE session (id TEXT PRIMARY KEY)")
+  foreign.close()
+  assert.throws(() => openRuntimeStore(root), RuntimeStoreSchemaMismatchError)
 })
 
 void it("a turn the replacement superseded is still reported against its own id", () => {
@@ -3981,7 +3971,7 @@ void it("turnCoverage calls a finished turn complete against the id it was asked
 void it("turnCoverage refuses a turn that belongs to another session rather than calling it unavailable", () => {
   const store = new RuntimeStore(tmp())
   turnFixture(store)
-  store.bindSession({ sessionId: "s2", directory: "/work", agentSessionId: "a2", createdAt: 1 })
+  store.bindSession({ owner: { kind: "machine-owner" }, sessionId: "s2", directory: "/work", agentSessionId: "a2", createdAt: 1 })
 
   // `unavailable` tells a caller the turn can never be covered, which would
   // discharge the obligation s1 still owes for it.
@@ -4110,8 +4100,8 @@ void it("a receipt is readable by the caller that created it and by one that coa
 void it("a session whose projection is behind cannot advance its checkpoint through pending deltas", () => {
   const root = tmp()
   const store = new RuntimeStore(root)
-  store.bindSession({ sessionId: "s1", directory: "/work", agentSessionId: "a1", createdAt: 1 })
-  store.bindSession({ sessionId: "s2", directory: "/other", agentSessionId: "a2", createdAt: 1 })
+  store.bindSession({ owner: { kind: "machine-owner" }, sessionId: "s1", directory: "/work", agentSessionId: "a1", createdAt: 1 })
+  store.bindSession({ owner: { kind: "machine-owner" }, sessionId: "s2", directory: "/other", agentSessionId: "a2", createdAt: 1 })
   const delta = (sessionId: string, text: string) => store.appendEvent({
     sessionId,
     payload: messagePartDelta({ sessionID: sessionId, messageID: "m", partID: `p-${sessionId}`, field: "text", delta: text }),
@@ -4155,7 +4145,7 @@ void it("a writer carrying no lease is refused, whether or not the session grant
   )
 
   // And against one that holds none: two absent leases must not compare equal.
-  store.bindSession({ sessionId: "s2", directory: "/other", agentSessionId: "a2", createdAt: 1 })
+  store.bindSession({ owner: { kind: "machine-owner" }, sessionId: "s2", directory: "/other", agentSessionId: "a2", createdAt: 1 })
   store.startTurn({
     sessionId: "s2",
     agentSessionId: "a2",
@@ -4268,7 +4258,7 @@ void describe("session starts", () => {
     assert.deepEqual(store.sessionStarts.get(binding.sessionId), starting)
     assert.deepEqual(store.listQuestions("/work").map((row) => row.id), ["question"])
     assert.equal(store.getSession(binding.sessionId), null)
-    store.bindSession({ ...binding, agentSessionId: "real-upstream", upstreamSessionId: "real-upstream" })
+    store.bindSession({ owner: { kind: "machine-owner" }, ...binding, agentSessionId: "real-upstream", upstreamSessionId: "real-upstream" })
     store.sessionStarts.finish(binding, { status: "created", upstreamSessionId: "real-upstream" })
     assert.deepEqual(store.listQuestions("/work").map((row) => row.id), ["question"])
     store.close()

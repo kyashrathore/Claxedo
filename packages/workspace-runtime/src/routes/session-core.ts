@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto"
 import { Hono } from "hono"
 import { HTTPException } from "hono/http-exception"
 import type { ContentfulStatusCode } from "hono/utils/http-status"
@@ -170,7 +169,7 @@ async function updateSessionMeta(
   const session = await (await opts.runtime(c)).sessions.update(sessionId, body, directory, requestSecretAuthority(c).secretAuthority)
   await after(opts.afterUpdateSession?.(c, directory, session, body))
   const owner = body.time ? opts.resolveRecoveryOwner?.(c, { sessionId }) : undefined
-  if (owner) await cancelAdmittedTurn(owner, sessionId, recoveryCaller(c), `archive:${sessionId}:${randomUUID()}`)
+  if (owner) await cancelAdmittedTurn(owner, sessionId, recoveryCaller(c), `archive:${sessionId}:${crypto.randomUUID()}`)
   opts.publishGlobal(withDir(envelopeDirectory(directory, sessionId), sessionUpdated(session)))
   return session
 }
@@ -1253,7 +1252,7 @@ export function createSessionRoutes(opts: Opts) {
         const selfReservation = managed && !operationId && body.parentID && children
           ? opts.sessionAccessPolicy?.reserveSession?.bind(opts.sessionAccessPolicy)
           : undefined
-        if (selfReservation && !body.id) body.id = `ses_${randomUUID()}`
+        if (selfReservation && !body.id) body.id = `ses_${crypto.randomUUID()}`
         if (managed && (!body.id || (!operationId && !selfReservation))) {
           return c.json(errorBody(
             "session_reservation_required",
@@ -1370,13 +1369,13 @@ export function createSessionRoutes(opts: Opts) {
           }
           if (!existing && opts.sessionStarts) {
             if (!body.id) {
-              body.id = `ses_${randomUUID()}`
+              body.id = `ses_${crypto.randomUUID()}`
               activeSessionChanges.add(body.id)
               claimed = body.id
             }
             const owner: AgentSessionStartBinding = {
               sessionId: body.id, directory: directory ?? "", workspaceId: workspaceId ?? "",
-              operationId: operationId ?? randomUUID(),
+              operationId: operationId ?? crypto.randomUUID(),
               connectionId: connectionIdForHarness(draft.harness),
             }
             if (opts.sessionStarts.get(body.id)) throw new HTTPException(409, { message: "Session creation already has an owner; inspect its status before retrying" })
@@ -1741,7 +1740,7 @@ export function createSessionRoutes(opts: Opts) {
       if (permissionRefusal) return permissionRefusal
       if (body.delivery) {
         if (!opts.queuedPrompts) return c.json({ error: "Queued delivery requires a durable runtime owner" }, 409)
-        body.messageID ??= `msg_${randomUUID()}`
+        body.messageID ??= `msg_${crypto.randomUUID()}`
         const requester = await queuedPromptRequester(opts, c, id, body.messageID)
         if ("refused" in requester) return requester.refused
         const submission = { sessionId: id, body, ...requester }

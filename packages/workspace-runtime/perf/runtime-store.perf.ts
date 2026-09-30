@@ -4,7 +4,8 @@ import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"
 
-import { RuntimeStore } from "../src/store"
+import type { RuntimeStore } from "../src/store"
+import { openRuntimeStore } from "../src/store-file"
 import { num, rec } from "../src/json-value"
 import { messagePartUpdated } from "../src/projection/presentation-events"
 
@@ -85,8 +86,9 @@ afterEach(() => {
 describe("RuntimeStore performance", () => {
   it("opens a checkpointed 64 MiB journal without loading its payloads", () => {
     const root = tmp()
-    const first = new RuntimeStore(root)
+    const first = openRuntimeStore(root)
     first.bindSession({
+      owner: { kind: "machine-owner" },
       sessionId: "s1",
       directory: "/work",
       agentSessionId: "a1",
@@ -121,7 +123,7 @@ describe("RuntimeStore performance", () => {
     Bun.gc(true)
     const rss = process.memoryUsage().rss
     const started = performance.now()
-    const reopened = new RuntimeStore(root)
+    const reopened = openRuntimeStore(root)
     const elapsed = performance.now() - started
     const rssGrowth = process.memoryUsage().rss - rss
 
@@ -133,8 +135,9 @@ describe("RuntimeStore performance", () => {
 
   it("keeps session reads flat as a session's non-terminal journal grows", () => {
     const root = tmp()
-    const store = new RuntimeStore(root)
+    const store = openRuntimeStore(root)
     store.bindSession({
+      owner: { kind: "machine-owner" },
       sessionId: "s1",
       directory: "/work",
       agentSessionId: "a1",
@@ -173,8 +176,9 @@ describe("RuntimeStore performance", () => {
 
   it("orders a message's new part through the part index, not a scan of the workspace's other parts", () => {
     const root = tmp()
-    const store = new RuntimeStore(root)
+    const store = openRuntimeStore(root)
     store.bindSession({
+      owner: { kind: "machine-owner" },
       sessionId: "s1",
       directory: "/work",
       agentSessionId: "a1",
@@ -223,8 +227,9 @@ describe("RuntimeStore performance", () => {
 
   it("bounds repeated full-snapshot journal storage to the latest part state", () => {
     const root = tmp()
-    const store = new RuntimeStore(root)
+    const store = openRuntimeStore(root)
     store.bindSession({
+      owner: { kind: "machine-owner" },
       sessionId: "s1",
       directory: "/work",
       agentSessionId: "a1",

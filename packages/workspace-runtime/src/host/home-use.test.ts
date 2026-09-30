@@ -12,7 +12,7 @@ import {
   type IdentityVerdict,
 } from "@claxedo/process-ownership/launch"
 import { sqliteLaunchOwnership } from "../ownership/launch-ownership-sqlite"
-import { openDatabase } from "../store"
+import { openSqliteDatabase } from "../sqlite/node"
 import { HARNESS_HOME_MAX_IDLE_MS, homeHoldingOwnership, recordHarnessHomeUse, sweepHarnessHomeRoot } from "./home-use"
 import { sweepIdleHarnessHomes } from "./composition"
 
@@ -134,9 +134,9 @@ test("a harness that outlives its runtime keeps its home until its launch is pro
     { stdout: "pipe", stderr: "pipe" })
   const [code, stderr] = await Promise.all([runtime.exited, new Response(runtime.stderr).text()])
   expect(code, stderr).toBe(0)
-  const db = openDatabase(ledger)
+  const db = openSqliteDatabase(ledger)
   const [launch] = await sqliteLaunchOwnership(db, { ownerGeneration: "test", scope: { kind: "standalone" } }).listUnresolved({ kind: "standalone" })
-  db.close?.()
+  db.close()
   const survivor = launch?.identity
   if (!survivor) throw new Error("The runtime recorded no harness launch identity")
   try {

@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto"
 import { HTTPException } from "hono/http-exception"
 import type { RecoveryOutcome, AgentEventEnvelope } from "@claxedo/agent-runtime-contract"
 import type { RuntimeDirectory } from "../host/contracts"
@@ -281,7 +280,7 @@ export function createPromptAdmission(opts: Opts, requestErrorResponse: (err: un
           return c.body(null, 204)
         }
       }
-      body.messageID ??= `msg_${randomUUID()}`
+      body.messageID ??= `msg_${crypto.randomUUID()}`
       const access = sessionAccessContext(c)
       if (body.delivery) {
         if (!opts.queuedPrompts) return c.json({ error: "Queued delivery requires a durable runtime owner" }, 409)

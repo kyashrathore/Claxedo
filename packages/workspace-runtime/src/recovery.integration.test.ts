@@ -15,7 +15,8 @@ import { loopbackWorkspaceRuntimeExposure } from "./exposure"
 import type { AgentRuntimeRecoveryInspection } from "./host/contracts"
 import { managedWorkspaceSessionAccessPolicy, type ManagedSessionAuthority } from "./session-access-policy"
 import type { RelayHostAuthContext } from "./workspace-host-service-auth"
-import { RuntimeStore } from "./store"
+import type { RuntimeStore } from "./store"
+import { openRuntimeStore } from "./store-file"
 import { withWorkspaceTarget } from "./target"
 import { FakeTransport, fakeConnectionProvider, loopbackMachineLoginPolicy } from "./testing"
 import { createWorkspaceHost } from "./workspace/runtime"
@@ -114,7 +115,7 @@ function openWorkspace(input: { directory: string; storeRoot: string; workspaceI
     sessionAccessPolicy,
     onTurnOutcome: ({ sessionId, outcome }) => turnOutcomes.push({ sessionId, status: outcome.status }),
     storeFactory: ({ storeRoot }) => {
-      const store = new RuntimeStore(storeRoot)
+      const store = openRuntimeStore(storeRoot)
       stores.push(store)
       const finish = store.finishTurn.bind(store)
       store.finishTurn = (value) => {
@@ -521,7 +522,7 @@ describe("a journal row that cannot be read", () => {
     expect(seq).toBeGreaterThan(0)
     await f.host.dispose()
 
-    const offline = new RuntimeStore(f.storeRoot)
+    const offline = openRuntimeStore(f.storeRoot)
     const db = (offline as unknown as { db: { prepare(sql: string): { run(...p: unknown[]): unknown; get(...p: unknown[]): unknown } } }).db
     const readable = db.prepare("SELECT payload_json FROM runtime_journal WHERE session_id = ? AND seq = ?").get("ses_broken", seq) as { payload_json: string }
     db.prepare("UPDATE runtime_journal SET payload_json = ? WHERE session_id = ? AND seq = ?").run("{not json", "ses_broken", seq)

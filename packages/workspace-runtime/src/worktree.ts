@@ -2,8 +2,8 @@ import fs from "node:fs/promises"
 import path from "node:path"
 import { inside } from "@claxedo/helpers/path"
 import { runGit } from "./git"
-import { workspaceRuntimeStoreDir, workspaceRuntimeWorkspacesDir } from "./env"
-import { RuntimeStore, type WorkspaceWorktreeRecord } from "./store"
+import { workspaceRuntimeWorkspacesDir } from "./env"
+import type { RuntimeStore, WorkspaceWorktreeRecord } from "./store"
 import { registerWorkspaceDirectory, unregisterWorkspaceDirectory, WorkspaceTargetError } from "./target"
 
 const SEGMENT = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/
@@ -24,35 +24,33 @@ export class WorkspaceWorktreeManager {
   readonly root: string
   readonly repo: string
   readonly worktrees: string
-  private readonly store: WorktreeStore
-  private readonly ownedStore?: RuntimeStore
+  private readonly served = new Map<string, WorkspaceWorktreeRecord>()
   private maintenance = Promise.resolve()
 
+  /** `store` is read on each use, so a store the host has not opened yet is opened by the first worktree request. */
   constructor(private readonly options: {
     workspaceId: string
     sourceDirectory: string
     root?: string
-    store?: WorktreeStore
-    storeRoot?: string
+    store: () => WorktreeStore
   }) {
     this.root = path.resolve(options.root ?? workspaceStorageRoot(options.workspaceId))
     this.repo = path.join(this.root, "repo.git")
     this.worktrees = path.join(this.root, "worktrees")
-    this.ownedStore = options.store ? undefined : new RuntimeStore(options.storeRoot ?? workspaceRuntimeStoreDir())
-    this.store = options.store ?? this.ownedStore!
-    this.store.listWorktrees(options.workspaceId)
-      .filter((record) => record.state === "active")
-      .forEach((record) => registerWorkspaceDirectory({
-        workspaceId: record.workspaceId,
-        sessionId: record.sessionId,
-        directory: record.path,
-      }))
+  }
+
+  private get store() {
+    return this.options.store()
+  }
+
+  /** Serves every active worktree the store records; the host calls it when the store opens. */
+  serveActive() {
+    for (const record of this.list()) if (record.state === "active") this.serve(record)
   }
 
   close() {
-    this.store.listWorktrees(this.options.workspaceId)
-      .forEach((record) => unregisterWorkspaceDirectory(record))
-    this.ownedStore?.close()
+    for (const record of this.served.values()) unregisterWorkspaceDirectory(record)
+    this.served.clear()
   }
 
   list() {
@@ -61,6 +59,11 @@ export class WorkspaceWorktreeManager {
 
   get(sessionId: string) {
     return this.store.getWorktree(this.options.workspaceId, requireSessionId(sessionId))
+  }
+
+  private serve(record: WorkspaceWorktreeRecord) {
+    registerWorkspaceDirectory({ workspaceId: record.workspaceId, sessionId: record.sessionId, directory: record.path })
+    this.served.set(record.sessionId, record)
   }
 
   async flush() {
@@ -156,11 +159,7 @@ export class WorkspaceWorktreeManager {
       lastActivityAt: Date.now(),
     }
     this.store.putWorktree(active)
-    registerWorkspaceDirectory({
-      workspaceId: active.workspaceId,
-      sessionId: active.sessionId,
-      directory: active.path,
-    })
+    this.serve(active)
     return active
   }
 
@@ -172,6 +171,7 @@ export class WorkspaceWorktreeManager {
     const repairing = { ...record, state: "repairing" as const, updatedAt: Date.now() }
     this.store.putWorktree(repairing)
     unregisterWorkspaceDirectory(repairing)
+    this.served.delete(repairing.sessionId)
     await runGit(["worktree", "prune"], this.repo)
     await fs.rm(record.path, { recursive: true, force: true })
     try {

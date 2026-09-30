@@ -7,7 +7,8 @@ import type { TurnOrigin } from "@claxedo/harness/contract"
 import { createStoreBrokerPorts } from "../broker-ports/index"
 import { createAgentRuntime, type AgentRuntime, type HarnessHandle, type LaunchComposer } from "../host/runtime"
 import { createRuntimeEventHub } from "../projection/runtime-event-hub"
-import { RuntimeStore } from "../store"
+import type { RuntimeStore } from "../store"
+import { openRuntimeStore } from "../store-file"
 import { FakeTransport, type FakeTransportOptions } from "../test-support/fake-transport"
 import {
   parseSessionPromptBody,
@@ -32,7 +33,7 @@ const hosts: Array<{ host: Host; root: string }> = []
 /** The real runtime host over a durable store, with the scripted transport behind it. */
 function host(options: FakeTransportOptions = {}): Host {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "claxedo-session-service-"))
-  const store = new RuntimeStore(root)
+  const store = openRuntimeStore(root)
   const eventHub = createRuntimeEventHub()
   const transport = new FakeTransport(options)
   const ownerGeneration = "owner-1"
@@ -80,6 +81,7 @@ describe("session service", () => {
     // A session row without its config row: the shape a create leaves behind
     // when it fails between binding the session and recording its config.
     fixture.store.bindSession({
+      owner: { kind: "machine-owner" },
       sessionId: "s1", workspaceId: WORKSPACE, directory: DIRECTORY, connectionId: "connection:fake",
       upstreamSessionId: "s1", agentSessionId: "s1", createdAt: 1,
     })

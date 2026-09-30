@@ -6,7 +6,8 @@ import { afterEach, describe, expect, test } from "bun:test"
 import type { AgentMessage, AgentSession, AgentEventEnvelope } from "@claxedo/agent-runtime-contract"
 import type { SubagentUpdatedEvent } from "@claxedo/agent-runtime-contract"
 import type { SessionTurnOrigin } from "../session-access-policy"
-import { RuntimeStore } from "../store"
+import type { RuntimeStore } from "../store"
+import { openRuntimeStore } from "../store-file"
 import { HOST_CHILD_PROVIDER_KIND, childSummary, createChildSessionHost, hostChildRow, wakeMessageId, type ChildSessionHostInput } from "./session-children"
 import { permissionAsked, questionAsked } from "../projection/presentation-events"
 
@@ -23,7 +24,7 @@ afterEach(() => {
 
 function openStore() {
   const root = mkdtempSync(join(tmpdir(), "wr-child-host-"))
-  const store = new RuntimeStore(root)
+  const store = openRuntimeStore(root)
   opened.push({ store, root })
   return store
 }
@@ -52,6 +53,9 @@ function harness(input: {
   const sessions = new Map<string, AgentSession>()
   for (const [id, session] of Object.entries(input.sessions ?? {})) {
     sessions.set(id, { id, directory: DIRECTORY, time: { created: 1, updated: 1 }, ...session })
+    if (!session.parentID && !store.getSession(id)) {
+      store.bindSession({ owner: { kind: "machine-owner" }, sessionId: id, directory: DIRECTORY, agentSessionId: id })
+    }
   }
   /** Every observation the host asked the broker to admit, in order; the broker publishes what it admits. */
   const admitted: Array<{ parentSessionId: string; event: SubagentUpdatedEvent }> = []

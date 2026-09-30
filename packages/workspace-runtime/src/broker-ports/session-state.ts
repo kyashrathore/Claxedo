@@ -7,7 +7,7 @@ export class BrokerSessionState {
   constructor(private readonly store: RuntimeStore, private readonly delivery: BrokerEventDelivery) {}
 
   readPermissionState(sessionId: string): Record<string, unknown> | undefined {
-    const row = this.store.brokerDatabase().prepare<{ permission_state_json: string | null }>(
+    const row = this.store.database().prepare<{ permission_state_json: string | null }>(
       "SELECT permission_state_json FROM session WHERE id = ?",
     ).get(sessionId)
     return row?.permission_state_json ? parseStoredPermissionState(row.permission_state_json) : undefined

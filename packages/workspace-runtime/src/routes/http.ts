@@ -1,12 +1,11 @@
 import { bearerToken } from "@claxedo/helpers/string"
-import { runtimeEnvText } from "../env"
 import { rec } from "../json-value"
 import { errorBody } from "./error-body"
 
 export { bearerToken }
 export { errorBody }
 
-export const JSON_BODY_LIMIT_BYTES = jsonBodyLimit()
+export const JSON_BODY_LIMIT_BYTES = 5 * 1024 * 1024
 
 export class RequestBodyTooLargeError extends Error {
   limit: number
@@ -59,13 +58,6 @@ export function isRequestBodyTooLarge(cause: unknown): cause is RequestBodyTooLa
 
 export function requestBodyTooLargeBody() {
   return errorBody("request_body_too_large", "Request body is too large")
-}
-
-function jsonBodyLimit() {
-  const configured = Number(runtimeEnvText(process.env, "WORKSPACE_RUNTIME_JSON_BODY_LIMIT_BYTES"))
-  return Number.isSafeInteger(configured) && configured > 0
-    ? configured
-    : 5 * 1024 * 1024
 }
 
 export async function boundedTextBody(c: JsonBodyContext, limit = JSON_BODY_LIMIT_BYTES) {

@@ -1,5 +1,4 @@
 import { createSseReplayBuffer, type SseReplayBuffer } from "./projection/sse"
-import { randomUUID } from "node:crypto"
 import type { Context } from "hono"
 import { SESSION_STREAM_LEASE_TTL_MS } from "@claxedo/workspace-relay-protocol"
 import type { SessionAccessPolicy } from "./session-access-policy"
@@ -105,7 +104,7 @@ export type EventDeliveryOptions<T> = {
 }
 
 export function eventDeliveryPrincipal(context: Context): EventDeliveryPrincipal {
-  const connectionId = randomUUID()
+  const connectionId = crypto.randomUUID()
   const claims = context.get("relayHostAuth")
   if (!claims) return { mode: "unmanaged-local", connectionId }
   const credential = context.req.header("authorization")

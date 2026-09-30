@@ -37,8 +37,8 @@
   "packages/workspace-runtime/src/managed-processes/manager.ts": 1766,
   "packages/workspace-runtime/src/pty/index.ts": 1406,
   "packages/workspace-runtime/src/routes/document-hydration.ts": 811,
-  "packages/workspace-runtime/src/routes/session-core.ts": 2225,
-  "packages/workspace-runtime/src/store.ts": 5039,
+  "packages/workspace-runtime/src/routes/session-core.ts": 2224,
+  "packages/workspace-runtime/src/store.ts": 4282,
   "packages/workspace-runtime/src/workspace-relay-host-tunnel.ts": 815,
-  "packages/workspace-runtime/src/workspace/runtime.ts": 857
+  "packages/workspace-runtime/src/workspace/runtime.ts": 814
 }

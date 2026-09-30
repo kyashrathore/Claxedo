@@ -9,7 +9,7 @@ export class BrokerAuthority {
   currentTurnAuthority(sessionId: string): TurnAuthority | undefined {
     const binding = this.store.getExecutionBinding(sessionId)
     if (!binding || !this.store.readTurnAuthority(sessionId)) return undefined
-    const row = this.store.brokerDatabase().prepare<{ assistant_message_id: string }>(`
+    const row = this.store.database().prepare<{ assistant_message_id: string }>(`
       SELECT start.assistant_message_id
       FROM runtime_journal start
       WHERE start.session_id = ? AND start.kind = 'control' AND start.type = 'turn.start'

@@ -11,7 +11,8 @@ import type { LaunchComposer } from "../host/launch"
 import { createAgentRuntime, type AgentRuntime } from "../host/runtime"
 import type { HarnessHandle, TransportResolver } from "../host/transports"
 import { createRuntimeEventHub, type RuntimeEventHub } from "../projection/runtime-event-hub"
-import { RuntimeStore } from "../store"
+import type { RuntimeStore } from "../store"
+import { openRuntimeStore } from "../store-file"
 import type { FakeTurn } from "./fake-transport"
 
 export const MACHINE_OWNER: TurnActor = { kind: "machine-owner" }
@@ -84,7 +85,7 @@ export type HostFixture = {
  */
 export function createHostFixture(input: HostFixtureInput): HostFixture {
   const root = input.store ? undefined : tempStoreRoot()
-  const store = input.store ?? new RuntimeStore(root)
+  const store = input.store ?? openRuntimeStore(root)
   const eventHub = createRuntimeEventHub()
   const workspaceId = input.workspaceId ?? "ws"
   const ownerGeneration = input.ownerGeneration ?? `owner_${randomUUID()}`

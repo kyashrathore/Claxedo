@@ -5,7 +5,8 @@ import Database from "better-sqlite3"
 import { decodeJwt, exportPKCS8, exportSPKI, generateKeyPair } from "jose"
 import { mintRelayHostToken } from "@claxedo/workspace-relay"
 import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
-import { RuntimeStore } from "../../../../workspace-runtime/src/store"
+import type { RuntimeStore } from "../../../../workspace-runtime/src/store"
+import { openRuntimeStore } from "../../../../workspace-runtime/src/store-file"
 import { SessionRoutes } from "../../../../workspace-runtime/src/routes/session"
 import { remoteWorkspaceSessionAccessPolicy } from "../../../../workspace-runtime/src/remote-session-authority"
 import { createRelayHostAuthMiddleware } from "../../../../workspace-runtime/src/workspace-host-service-auth"
@@ -182,9 +183,9 @@ async function childCreatedOverTheRelay(parentShare: "follow" | "send" = "send")
   await reserveChild(authority, bobRuntime)
   const plane = await controlPlane(authority)
   const storeRoot = runtimeStoreRoot(root)
-  const store = new RuntimeStore(storeRoot)
+  const store = openRuntimeStore(storeRoot)
   lifecycle.closer(() => store.close())
-  store.bindSession({ sessionId: PARENT, directory: DIRECTORY, agentSessionId: PARENT })
+  store.bindSession({ owner: { kind: "machine-owner" }, sessionId: PARENT, directory: DIRECTORY, agentSessionId: PARENT })
   const { policy, calls } = remotePolicy(plane.app)
   const { runtime, prompts } = hostRuntimeDouble()
   const { host, ingress } = hostOver(store, policy, runtime, plane.relayKey.publicKey)
@@ -384,9 +385,9 @@ test("a prompt queued over the relay mints a grant for its message id, survives 
   })
   const plane = await controlPlane(authority)
   const storeRoot = runtimeStoreRoot(root)
-  const store = new RuntimeStore(storeRoot)
+  const store = openRuntimeStore(storeRoot)
   lifecycle.closer(() => store.close())
-  store.bindSession({ sessionId: PARENT, directory: DIRECTORY, agentSessionId: PARENT })
+  store.bindSession({ owner: { kind: "machine-owner" }, sessionId: PARENT, directory: DIRECTORY, agentSessionId: PARENT })
   const busy = remotePolicy(plane.app)
   const busyRuntime = hostRuntimeDouble({ whenIdle: () => new Promise(() => {}) })
   const first = hostOver(store, busy.policy, busyRuntime.runtime, plane.relayKey.publicKey)

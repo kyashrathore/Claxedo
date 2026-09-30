@@ -7,7 +7,8 @@ import { Hono } from "hono"
 import { loopbackWorkspaceRuntimeExposure } from "../exposure"
 import { createRuntimeEventHub, type RuntimeEventHub } from "../projection/runtime-event-hub"
 import type { SessionAccessPolicy } from "../session-access-policy"
-import { RuntimeStore } from "../store"
+import type { RuntimeStore } from "../store"
+import { openRuntimeStore } from "../store-file"
 import type { RuntimeSnapshot } from "../routes/config"
 import { withWorkspaceTarget } from "../target"
 import { loopbackMachineLoginPolicy } from "../testing"
@@ -76,7 +77,7 @@ export async function createFakeWorkspaceApp(options: FakeWorkspaceAppOptions = 
     ...(options.afterCreateSession ? { afterCreateSession: options.afterCreateSession } : {}),
     ...(options.sessionIdWorkspace ? { sessionIdWorkspace: options.sessionIdWorkspace } : {}),
     storeFactory: ({ storeRoot }) => {
-      store = new RuntimeStore(storeRoot)
+      store = openRuntimeStore(storeRoot)
       return store
     },
     connectionProviders: connections.map((connection) => fakeConnectionProvider({

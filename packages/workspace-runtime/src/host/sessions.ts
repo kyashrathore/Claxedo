@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto"
 import {
   AgentRuntimeContractError,
   connectionIdForHarness,
@@ -215,7 +214,7 @@ export function createSessionLifecycle(input: SessionLifecycleInput) {
         throw new AgentRuntimeContractError({ code: "unsupported_operation", operation: "session_instructions", message: refusal.message })
       }
       if (refusal) throw new Error(refusal.message)
-      const sessionId = create.id ?? `ses_${randomUUID()}`
+      const sessionId = create.id ?? `ses_${crypto.randomUUID()}`
       const existed = !!store.getSession(sessionId)
       const recorded = store.sessionOwner(sessionId)
       const holder = (actor: TurnActor) => sessionAccountOwner(launch.credentials(), actor).userId
@@ -230,9 +229,8 @@ export function createSessionLifecycle(input: SessionLifecycleInput) {
         ...(create.permissionCeiling ? { permissionCeiling: create.permissionCeiling } : {}),
         ...retainedFields(create),
       }
-      store.recordSessionOwner(sessionId, owner)
       store.bindSession({
-        sessionId, workspaceId: create.workspaceId, directory,
+        sessionId, workspaceId: create.workspaceId, directory, owner,
         connectionId: connectionIdForHarness(create.harness), upstreamSessionId: sessionId, agentSessionId: sessionId,
         ...(create.title ? { title: create.title } : {}),
         ...(create.parentID ? { parentSessionId: create.parentID } : {}),
@@ -302,14 +300,13 @@ export function createSessionLifecycle(input: SessionLifecycleInput) {
       const attached = await attachments.for(sessionId, directory, undefined, authority)
       const ops = attached.handle.transport.fork
       if (!ops) throw new AgentRuntimeContractError({ code: "unsupported_operation", operation: "fork", message: `${attached.handle.runner.id} does not support fork` })
-      const id = childId ?? `ses_${randomUUID()}`
+      const id = childId ?? `ses_${crypto.randomUUID()}`
       const { upstreamSessionId } = await ops.fork(attached.session, messageId, id)
       const config = store.getSessionConfig(sessionId)
       if (!config) throw new Error(`Session ${sessionId} has no runtime config`)
       const binding = attached.session.binding
-      store.recordSessionOwner(id, attached.owner)
       store.bindSession({
-        sessionId: id, workspaceId: binding.workspaceId, directory: binding.directory,
+        sessionId: id, workspaceId: binding.workspaceId, directory: binding.directory, owner: attached.owner,
         connectionId: binding.connectionId, upstreamSessionId, agentSessionId: upstreamSessionId,
       })
       store.updateSessionConfig(id, config)

@@ -1,5 +1,5 @@
 import type { RecoveryTurnTarget, AgentEventEnvelope } from "@claxedo/agent-runtime-contract"
-import { DEFAULT_RECOVERY_BUDGETS, type AgentRuntimeHealth, type AgentTurnOutcome } from "@claxedo/agent-runtime-contract"
+import type { AgentRuntimeHealth, AgentTurnOutcome } from "@claxedo/agent-runtime-contract"
 import type { BrokerPorts } from "@claxedo/harness/broker"
 import { createHarnessComposer } from "@claxedo/harness/compose"
 import type { CustomHarnessProvider } from "@claxedo/harness/providers"
@@ -7,7 +7,7 @@ import type { HarnessServices, MachineLoginPolicy } from "@claxedo/harness/contr
 import type { Hono } from "hono"
 import { HTTPException } from "hono/http-exception"
 import { clearOpaqueTimer, createKeyedSerializer, errorMessage } from "@claxedo/helpers"
-import { volatileLaunchOwnership, type LaunchOwnershipOwner } from "@claxedo/process-ownership/launch"
+import type { LaunchOwnershipOwner } from "@claxedo/process-ownership/launch"
 import { workspaceCapabilities } from "../capabilities"
 import { createStoreBrokerPorts } from "../broker-ports"
 import { workspaceRuntimeStoreDir } from "../env"
@@ -24,7 +24,6 @@ import { PreviewModelInvalidError } from "../host/config-ops"
 import { createAgentRuntime, type AgentRuntime, type LaunchComposer } from "../host/runtime"
 import { Log } from "../log"
 import type { ProcessObserver } from "../managed-processes/process-observer"
-import { reconcileLaunchOwnership, type LaunchOwnershipReconciliation } from "../ownership/reconcile-launch-ownership"
 import { createRuntimeEventHub, type RuntimeEventEnvelope, type RuntimeEventHub } from "../projection/runtime-event-hub"
 import { normalizeRuntimeSnapshot, requestedSessionHarness, RUNTIME_NATIVE_HARNESS_IDS, RuntimeConfigApplyError, type AppliedRuntimeSnapshot, type RuntimeConnectionDescriptor, type RuntimeHarnessSelection, type RuntimeSnapshot } from "../routes/config"
 import { createWorkspaceEventFramesTap, type WorkspaceEventParents } from "../routes/events"
@@ -34,7 +33,9 @@ import { errorBody } from "../routes/error-body"
 import { providerCatalogRefusal } from "../routes/workspace-role"
 import { managedWorkspaceSessionAccessPolicy, type SessionAccessPolicy } from "../session-access-policy"
 import { runtimeSessionTime } from "../session/session-time"
-import { RuntimeStore } from "../store"
+import type { RuntimeStore } from "../store"
+import { openRuntimeStore } from "../store-file"
+import { workspaceDurableState } from "./durable-state"
 import { runGit } from "../git"
 import { assertTarget, authoritativeWorkspaceId, withWorkspaceTarget, workspaceDir, workspaceId, type WorkspaceTarget } from "../target"
 import { createWorkspaceCheckpoint } from "./checkpoint"
@@ -134,7 +135,7 @@ function selectionForRunner(runner: RuntimeRunner): RuntimeHarnessSelection {
   throw new WorkspaceHarnessUnavailableError(runner)
 }
 
-const defaultStoreFactory: WorkspaceRuntimeStoreFactory = ({ storeRoot }) => new RuntimeStore(storeRoot)
+const defaultStoreFactory: WorkspaceRuntimeStoreFactory = ({ storeRoot }) => openRuntimeStore(storeRoot)
 
 function resolveStoreFactory(options: WorkspaceHostOptions): WorkspaceRuntimeStoreFactory {
   const factory = options.storeFactory ?? defaultStoreFactory
@@ -214,15 +215,14 @@ export function createWorkspaceHost(options: WorkspaceHostOptions): WorkspaceHos
   let appliedConnections = new Map<string, RuntimeConnectionDescriptor>()
   const snapshots = createKeyedSerializer<"snapshot">()
   const storeFactory = resolveStoreFactory(options)
-  let sessionConfigStore: WorkspaceRuntimeStore | undefined
-  let launchReconciliation: Promise<LaunchOwnershipReconciliation> | undefined
-  let launchOwnershipSummary: LaunchOwnershipReconciliation | undefined
   const ownerGeneration = crypto.randomUUID()
   const assignedWorkspaceId = options.target?.workspaceId ?? authoritativeWorkspaceId()
   const launchOwner: LaunchOwnershipOwner = {
     ownerGeneration,
     scope: assignedWorkspaceId ? { kind: "workspace", workspaceId: assignedWorkspaceId } : { kind: "standalone" },
   }
+  const durable = workspaceDurableState({ open: () => storeFactory({ storeRoot }), launchOwner, closing: () => closing })
+  const { store, launchOwnership, sessionStarts } = durable
   let disposeDeliveries: (() => Promise<void>) | undefined
   let reissueQueuedPrompts: (() => void) | undefined
   let closing = false
@@ -237,44 +237,6 @@ export function createWorkspaceHost(options: WorkspaceHostOptions): WorkspaceHos
   function currentRunner(): RuntimeRunner {
     if (!runner) throw new WorkspaceHarnessUnavailableError({ id: "default", access: "unconfigured" })
     return runner
-  }
-
-  function store() {
-    if (!sessionConfigStore) {
-      if (closing) throw new HTTPException(503, { message: "Workspace runtime is disposed" })
-      sessionConfigStore = storeFactory({ storeRoot })
-      const ownership = sessionConfigStore.launchOwnership(launchOwner)
-      // Started before anything else this store does, because until it has
-      // run the processes of a previous owner still hold this workspace's
-      // ports, working directories and agent session storage, and nothing
-      // else in the system is looking for them.
-      launchReconciliation = reconcileLaunchOwnership(ownership, {
-        currentOwnerGeneration: ownerGeneration,
-        scope: launchOwner.scope,
-        budgets: DEFAULT_RECOVERY_BUDGETS,
-      }).then((summary) => {
-        launchOwnershipSummary = summary
-        return summary
-      })
-      sessionConfigStore.recoverBusySessions()
-    }
-    return sessionConfigStore
-  }
-
-  async function assertLaunchAdmission() {
-    store()
-    if (!launchReconciliation) return
-    const summary = await launchReconciliation
-    if (summary.unresolved.length === 0) return
-    throw new HTTPException(503, {
-      message: `workspace_launch_unreconciled: ${summary.unresolved
-        .map((row) => `${row.launchId} (${row.outcome}: ${row.reason})`)
-        .join("; ")}`,
-    })
-  }
-
-  function launchOwnership() {
-    return store().launchOwnership(launchOwner) ?? volatileLaunchOwnership(launchOwner)
   }
 
   const resolveSnapshotConnectionSecrets: ConnectionSecretResolver = async ({ descriptor }) => {
@@ -525,14 +487,8 @@ export function createWorkspaceHost(options: WorkspaceHostOptions): WorkspaceHos
         return undefined
       }
       if (closing) return c.json({ error: "Workspace runtime is disposed" }, 503)
-      if (!["GET", "HEAD", "OPTIONS"].includes(c.req.method)) {
-        try {
-          await assertLaunchAdmission()
-        } catch (error) {
-          if (!(error instanceof HTTPException)) throw error
-          return c.json({ error: error.message }, 503)
-        }
-      }
+      const refused = await durable.admit(c.req.method)
+      if (refused) return refused
       let finish!: () => void
       const request = new Promise<void>((resolve) => { finish = resolve })
       pendingRequests.add(request)
@@ -547,12 +503,12 @@ export function createWorkspaceHost(options: WorkspaceHostOptions): WorkspaceHos
     if (mount.core) {
       return mountWorkspaceCore(app, mount.core.upgradeWebSocket, {
         directory, workspaceId: id, eventHub, exposure: mount.exposure, sessionAccessPolicy,
-        processObserver: options.processObserver, sessionStarts: store().sessionStarts,
+        processObserver: options.processObserver, sessionStarts,
         sessionParents: options.sessionParents ?? sessionParents, transcripts: options.transcripts, launchOwnership,
       })
     }
     const events = mountWorkspaceEvents(app, {
-      directory, workspaceId: id, eventHub, sessionAccessPolicy, sessionStarts: store().sessionStarts,
+      directory, workspaceId: id, eventHub, sessionAccessPolicy, sessionStarts,
       sessionParents: options.sessionParents ?? sessionParents,
       ...(mount.renewalIntervalMs !== undefined ? { renewalIntervalMs: mount.renewalIntervalMs } : {}),
     })
@@ -630,6 +586,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions): WorkspaceHos
         runtime: runtimeForSession,
         recovery: () => engine?.runtime.recovery,
         store,
+        sessionStarts,
         eventHub,
         sessionAccessPolicy,
         checkpoint,
@@ -645,11 +602,8 @@ export function createWorkspaceHost(options: WorkspaceHostOptions): WorkspaceHos
       })
       disposeDeliveries = sessions.dispose
       app.route("/", sessions.routes)
-      reissueQueuedPrompts = () => {
-        const reissue = () => void sessions.recoverQueuedPrompts()
-        if (options.target) withWorkspaceTarget(options.target, reissue)
-        else reissue()
-      }
+      reissueQueuedPrompts = () => durable.whenAdmitted("queued prompt recovery", () =>
+        options.target ? withWorkspaceTarget(options.target, sessions.recoverQueuedPrompts) : sessions.recoverQueuedPrompts())
       if (runner) reissueQueuedPrompts()
     },
     hasSession(sessionId: string) {
@@ -718,23 +672,27 @@ export function createWorkspaceHost(options: WorkspaceHostOptions): WorkspaceHos
       return turns
     },
     ownerGeneration,
+    store,
+    whenStoreOpens: durable.whenOpened,
+    storeAdmission: durable.admission,
     async launchReconciliation() {
-      return await launchReconciliation
+      return await durable.launchReconciliation()
     },
     async unresolvedLaunches() {
       if (closing) throw new HTTPException(503, { message: "Workspace runtime is disposed" })
-      const ownership = store().launchOwnership(launchOwner)
-      await launchReconciliation
+      const ownership = launchOwnership()
+      await durable.launchReconciliation()
       return await ownership.listUnresolved(launchOwner.scope)
     },
     activity() {
+      const launchSummary = durable.launchSummary()
       return {
         activeTurns: checkpoint.activeTurnCount(),
         activeWrites: checkpoint.detail().activeWrites,
         checkpointState: checkpoint.state(),
-        ...(launchOwnershipSummary
-          ? { launches: { examined: launchOwnershipSummary.examined, live: launchOwnershipSummary.live,
-              retired: launchOwnershipSummary.retired, unresolved: launchOwnershipSummary.unresolved.length } }
+        ...(launchSummary
+          ? { launches: { examined: launchSummary.examined, live: launchSummary.live,
+              retired: launchSummary.retired, unresolved: launchSummary.unresolved.length } }
           : {}),
       }
     },
@@ -781,7 +739,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions): WorkspaceHos
       async flush() {
         if (checkpoint.state() !== "frozen") throw new Error("workspace_checkpoint_not_frozen")
         await snapshots.run("snapshot", async () => {})
-        sessionConfigStore?.flush()
+        durable.flush()
       },
       async scrub() {
         if (checkpoint.state() !== "frozen") throw new Error("workspace_checkpoint_not_frozen")
@@ -825,8 +783,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions): WorkspaceHos
         cleanupRuntimeObserver()
         closeEvents()
         sessionToolPrompts.clear()
-        sessionConfigStore?.close()
-        sessionConfigStore = undefined
+        durable.close()
         engine = undefined
       })()
       void disposal.catch((error) => {

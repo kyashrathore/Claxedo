@@ -93,18 +93,12 @@ derived projection rebuilt from it:
   journal append, that second transaction rolls back and a later runtime
   start rebuilds the projection from the journal via `replay()` — the
   journal row itself is never lost.
-- `RuntimeStore` also understands on-disk per-session `.jsonl` files: on
-  startup it imports any files under `<store>/sessions/*.jsonl` into
-  `runtime_journal` (idempotently, via `INSERT OR IGNORE`) for stores
-  migrating from the older flat-file journal layout, and
-  `exportJournalJsonl(sessionId?)` serializes journal rows back to that same
-  JSONL text shape for export/debugging.
-- Startup always calls `replay()`: it resets the projection tables and
-  replays every `runtime_journal` row, in `(session_id, seq)` order, back
-  through `apply()`. Replay-time recovery normalization (marking `busy`
-  sessions interrupted, terminalizing stale `pending`/`running` tool parts),
-  multi-row event projections, session deletion, and multi-field session
-  updates all run inside SQLite transactions.
+- `exportJournalJsonl(sessionId?)` serializes journal rows as JSONL for
+  export and debugging.
+- Opening a store calls `replay()`, which applies, per session, the journal
+  rows past its `journal_checkpoint` through `apply()`.
+- The schema and its refusal rule are described under "Runtime store
+  durability" in the package README.
 - The workspace host closes the store it opened when it is disposed, including
   one a `storeFactory` supplied.
 

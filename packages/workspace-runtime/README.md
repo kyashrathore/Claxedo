@@ -352,17 +352,24 @@ can restart the runtime. They are not suppress-and-continue handlers.
 
 ## Runtime store durability
 
-`RuntimeStore` treats per-session JSONL journals as the source of truth and
-SQLite as a derived projection. Journaled control/event mutations append the
-JSONL row first, then apply the SQLite projection and checkpoint in one
-transaction. If projection fails after the append, the current DB transaction
-rolls back and a later runtime start rebuilds the projection from the journal.
+`RuntimeStore` keeps the `runtime_journal` table as the source of truth and
+the rest of its SQLite tables as a projection of it. A mutation journals its
+row first, then applies the projection and advances `journal_checkpoint` in
+one transaction. If projection fails, that transaction rolls back, the
+session is gated for writes, and a later open replays the journal rows past
+the session's checkpoint.
 
-Startup replay resets the SQLite projection and replays journals in sequence.
-Replay-time recovery normalization, multi-row event projections, session
-deletion, and multi-field session updates run inside SQLite transactions.
-The workspace host closes the store it opened when it is disposed; a caller
-that injects its own store through `storeFactory` still receives that close.
+The store runs on whatever `SqliteDatabase` its host opens: `store-file.ts`
+opens `state.db` under the store root on a machine, and a Durable Object
+hands it `ctx.storage.sql`. The workspace host opens it on first use and
+closes it when disposed, including one a `storeFactory` supplied.
+
+The schema is declared once, in `src/store-schema.ts`, and its identity is
+that DDL text with whitespace normalized, recorded in `runtime_store_schema`
+when a store is created. Any edit to the DDL, a reformat included, is a
+storage-contract change: every store written before it is refused at open
+with `RuntimeStoreSchemaMismatchError` (a typed 503 on requests), and there
+are no migrations while the product is unreleased.
 
 ## Harness transports
 

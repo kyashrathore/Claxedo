@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto"
 import { isTerminalSubagentStatus, type PromptInput, type SubagentObservation } from "@claxedo/agent-runtime-contract"
 import type { SubagentUpdatedEvent, AgentPresentationEvent } from "@claxedo/agent-runtime-contract"
 import type { BrokerPorts } from "@claxedo/harness/broker"
@@ -72,7 +71,7 @@ export function createChildTurns(input: {
       getAgentSessionId: () => input.store.getAgentSessionId(ref.sessionId) ?? agentSessionId,
       assistantMessageId: ref.assistantMessageId,
       created: ref.created,
-      input: { userMessageId: randomUUID(), agent: parent.input.agent, model: parent.input.model,
+      input: { userMessageId: crypto.randomUUID(), agent: parent.input.agent, model: parent.input.model,
         ...(parent.input.variant ? { variant: parent.input.variant } : {}) },
     }
     const leaseId = input.store.acquireTurnLease(ref.sessionId)

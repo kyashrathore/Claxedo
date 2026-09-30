@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto"
 import {
   DEFAULT_RECOVERY_BUDGETS,
   RECOVERY_ACTION_SCOPES,
@@ -66,7 +65,7 @@ export function createRuntimeRecovery(input: RuntimeRecoveryInput) {
    * This runtime instance. A fact about a session that holds no turn lease
    * still carries the generation of whatever observed it.
    */
-  const owner: RecoveryGeneration = `runtime_${randomUUID()}`
+  const owner: RecoveryGeneration = `runtime_${crypto.randomUUID()}`
   const machine = input.identity?.machineId !== undefined ? { machineId: input.identity.machineId } : {}
 
   const workspaceIdFor = (sessionId: string) =>
