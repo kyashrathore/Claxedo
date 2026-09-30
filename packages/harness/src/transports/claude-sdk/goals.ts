@@ -62,7 +62,8 @@ export class ClaudeGoals {
       running.stopped = true
       await this.turns.cancel(entry, { turnId: running.turnId, assistantMessageId: running.turnId }, { at: Date.now() + CLEAR_LIMIT_MS, signal: new AbortController().signal })
       const goal = await running.settled
-      return goal?.status === "paused" ? { ok: true, goal } : { ok: false, status: "failed", message: goal?.lastReason ?? "Claude Goal did not stop" }
+      if (!goal) return { ok: false, status: "not_found", message: "Claude Goal is absent" }
+      return goal.status === "paused" ? { ok: true, goal } : { ok: false, status: "failed", message: goal.lastReason ?? "Claude Goal did not stop" }
     }
     const goal = entry.broker.goal.read()
     if (!goal) return { ok: false, status: "not_found", message: "Claude Goal is absent" }
