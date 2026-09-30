@@ -55,6 +55,8 @@ export function createStoreBrokerPorts(store: RuntimeStore, options: StoreBroker
     },
     services: { patternEvaluator: options.patternEvaluator },
     currentTurnAuthority: (sessionId) => authority.currentTurnAuthority(sessionId),
+    sessionAuthority: (sessionId) => authority.sessionAuthority(sessionId),
+    turnOpen: (sessionId, turnId) => authority.turnOpen(sessionId, turnId),
     readStart: (sessionId) => authority.readStart(sessionId),
     readPending: (scope) => requests.readPending(scope),
     persistAnswer: (pending, answer, automatic, grant) => requests.persistAnswer(pending, answer, automatic, grant),

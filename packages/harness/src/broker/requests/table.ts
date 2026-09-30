@@ -12,7 +12,7 @@ import { replyAnswer } from "../options"
 import { pendingRequest, requestOwnerIsCurrent, requestTargetMatchesOwner, requestRefusal, sameTurnAuthority, type FiledRequest, type RequestAuthority } from "./authority"
 import { validateAndCommit } from "./commit"
 import { RequestEntries, type RequestEntry } from "./entries"
-import { fileTurnRequest } from "./filing"
+import { fileChildOwnedRequest, fileTurnRequest } from "./filing"
 import { OrphanRetirement } from "./orphan-retirement"
 import { preflight } from "./preflight"
 import { publishAsked } from "./publication"
@@ -52,6 +52,20 @@ export class RequestTable implements RequestBroker {
     let filed: FiledRequest
     try { filed = fileTurnRequest(this.ports, authority, request) } catch (error) { return Promise.reject(error) }
     return this.ask({ kind: "turn", value: authority }, filed, request.expiresAt ?? context.expiresAt, signal)
+  }
+
+  askSession(context: SessionBrokerContext, request: TurnRequest, options?: { signal?: AbortSignal }): Promise<RequestAnswer> {
+    if (!request.child) return this.askStart(context, request, options)
+    const owner = this.ports.sessionAuthority(context.sessionId)
+    if (!owner || owner.workspaceId !== context.workspaceId || owner.directory !== context.directory) {
+      return Promise.reject(new Error("A child's request needs its parent's execution binding"))
+    }
+    let routed: ReturnType<typeof fileChildOwnedRequest>
+    try { routed = fileChildOwnedRequest(this.ports, owner, { ...request, child: request.child }) } catch (error) { return Promise.reject(error) }
+    if (!routed) return Promise.reject(new Error("A child's request needs a running child or its parent's turn"))
+    const authority: RequestAuthority = { kind: "child", value: routed.authority }
+    if (options?.signal?.aborted) return this.saveCancelled(authority, routed.filed)
+    return this.ask(authority, routed.filed, request.expiresAt ?? context.expiresAt, options?.signal)
   }
 
   askStart(context: SessionBrokerContext, request: TurnRequest, options?: { signal?: AbortSignal }): Promise<RequestAnswer> {
@@ -183,6 +197,12 @@ export class RequestTable implements RequestBroker {
       entry.authority.value.ownerGeneration === authority.ownerGeneration))
   }
 
+  cancelChildTurn(childSessionId: string, turnId: string): Promise<void> {
+    return this.entries.cancelAll(this.entries.all().filter((entry) =>
+      entry.authority.kind === "child" && entry.authority.value.childSessionId === childSessionId &&
+      entry.authority.value.childTurnId === turnId))
+  }
+
   cancelStart(context: SessionBrokerContext): Promise<void> {
     return this.entries.cancelAll(this.entries.all().filter((entry) =>
       entry.authority.kind === "start" && entry.authority.value.operationId === context.start?.operationId &&
@@ -204,5 +224,8 @@ export class RequestTable implements RequestBroker {
 
   closeSession(sessionId: string): void {
     this.urlConsents.clearSession(sessionId)
+    const owned = this.entries.all().filter((entry) => entry.authority.kind === "child" &&
+      (entry.authority.value.sessionId === sessionId || entry.authority.value.childSessionId === sessionId))
+    void this.entries.cancelAll(owned).catch((error: unknown) => this.ports.reportOwnerFailure(sessionId, error))
   }
 }

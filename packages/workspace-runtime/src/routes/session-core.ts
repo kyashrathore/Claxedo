@@ -890,6 +890,15 @@ async function filterSessionRows<T>(opts: Opts, c: Ctx, operation: SessionAccess
   return rows.filter((row) => allowed.has(rowSessionId(row)))
 }
 
+/** A request filed on a subagent's child session is listed and answered under the session whose harness asked it. */
+async function filterRequestRows<T extends { sessionID: string }>(opts: Opts, c: Ctx, operation: SessionAccessOperation, rows: T[],
+  askingSession: (sessionId: string) => Promise<string>) {
+  const asking = new Map<string, string>()
+  for (const row of rows) if (!asking.has(row.sessionID)) asking.set(row.sessionID, await askingSession(row.sessionID))
+  const allowed = await collectionSessionIds(opts, c, operation, [...asking.values()])
+  return rows.filter((row) => allowed.has(asking.get(row.sessionID) ?? row.sessionID))
+}
+
 async function filterSessionStatus(opts: Opts, c: Ctx, status: SessionStatusSnapshot) {
   const entries = Object.entries(status)
   const allowed = await collectionSessionIds(opts, c, "session_status", entries.map(([sessionId]) => sessionId))
@@ -1049,9 +1058,9 @@ async function admitQuestionOperation(
     if (pending.status !== "starting") return { rejected: interactionNotFound(c, "question", id) }
     return { id, directory, sessionId: known, start: pending.binding }
   }
-  const guarded = await sessionOperationGuard(opts, c, known, "question_response")
-  if (guarded) return { rejected: guarded }
   const asking = await runtime.questions.askingSession(known)
+  const guarded = await sessionOperationGuard(opts, c, asking, "question_response")
+  if (guarded) return { rejected: guarded }
   const unsupported = await unsupportedIfUnavailable(c, runtime, { sessionId: asking, ...(directory ? { directory } : {}) }, "questions", "question_response")
   if (unsupported) return { rejected: unsupported }
   return { id, directory, sessionId: known }
@@ -2123,7 +2132,8 @@ export function createSessionRoutes(opts: Opts) {
     .get("/permission", async (c) => {
       const rows = await listPermissionRows(opts, c, await opts.resolveDirectory(c))
       if (rows instanceof Response) return rows
-      return c.json(await filterSessionRows(opts, c, "permission_list", rows))
+      const runtime = await opts.runtime(c)
+      return c.json(await filterRequestRows(opts, c, "permission_list", rows, runtime.permissions.askingSession))
     })
     .get("/question", async (c) => {
       const rows = await listQuestionRows(opts, c, await opts.resolveDirectory(c))
@@ -2137,7 +2147,8 @@ export function createSessionRoutes(opts: Opts) {
         if (sessionStartSettled(opts, row.sessionID)) normal.push(row)
         else if (start?.status === "starting" && !await sessionStartGuard(opts, c, start.binding, "question_list")) pending.push(row)
       }
-      return c.json([...await filterSessionRows(opts, c, "question_list", normal), ...pending])
+      const runtime = await opts.runtime(c)
+      return c.json([...await filterRequestRows(opts, c, "question_list", normal, runtime.questions.askingSession), ...pending])
     })
     .post("/session/:sessionId/permissions/:permId", async (c) => {
       const suppliedSessionId = c.req.param("sessionId")
@@ -2148,9 +2159,10 @@ export function createSessionRoutes(opts: Opts) {
       const sessionId = permission?.sessionID
       if (!sessionId) return interactionNotFound(c, "permission", permId)
       if (sessionId !== suppliedSessionId) return interactionSessionMismatch(c, "permission", permId)
-      const unsupported = await unsupportedIfUnavailable(c, runtime, sessionTarget(c, await runtime.permissions.askingSession(sessionId), directory), "permissions", "permission_response")
+      const asking = await runtime.permissions.askingSession(sessionId)
+      const unsupported = await unsupportedIfUnavailable(c, runtime, sessionTarget(c, asking, directory), "permissions", "permission_response")
       if (unsupported) return unsupported
-      const guarded = await sessionOperationGuard(opts, c, sessionId, "permission_response")
+      const guarded = await sessionOperationGuard(opts, c, asking, "permission_response")
       if (guarded) return guarded
       const body = await boundedJsonRecord(c)
       if (body.optionId !== undefined && (typeof body.optionId !== "string" || body.response !== undefined)) {

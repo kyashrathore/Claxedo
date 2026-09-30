@@ -3,7 +3,7 @@ import { errorMessage } from "@claxedo/helpers"
 import type { AgentRuntimeEvent, SubagentUpdatedEvent } from "@claxedo/agent-runtime-contract"
 import type { PendingRequest, ProviderTurnInput, ProviderTurnResult, ProviderTurnSettlement, RequestAnswer } from "../../contract/broker"
 import type { HarnessBinding, RoutedEvent, TurnRef } from "../../contract/session"
-import type { BrokerEvent, BrokerPorts, ChildRoute, RequestGrant, SubagentAdmissionStore, TurnAuthority } from "../../broker/ports"
+import type { BrokerEvent, BrokerPorts, ChildRoute, RequestGrant, SessionAuthority, SubagentAdmissionStore, TurnAuthority } from "../../broker/ports"
 import { createMemorySubagentAdmissionStore } from "../../broker/subagents/admission"
 
 export const origin = { actor: { kind: "machine-owner" as const }, via: "loopback" as const, reissued: false }
@@ -57,6 +57,13 @@ export class MemoryPorts implements BrokerPorts {
     },
   }
   currentTurnAuthority(sessionId: string) { return this.current.get(sessionId) }
+  sessionAuthorities = new Map<string, SessionAuthority>([["s1", { sessionId: "s1", workspaceId: "w1", directory: "/work", connectionId: "c1",
+    upstreamSessionId: "up1", ownerGeneration: "g1" }]])
+  sessionAuthority(sessionId: string) { return this.sessionAuthorities.get(sessionId) }
+  openChildTurns = new Set<string>()
+  turnOpen(sessionId: string, turnId: string) {
+    return this.openChildTurns.has(JSON.stringify([sessionId, turnId])) && !this.finishedChildren.has(sessionId)
+  }
   async persistAnswer(pending: PendingRequest, answer: RequestAnswer, automatic: boolean, grant?: RequestGrant): Promise<readonly AgentRuntimeEvent[]> {
     const key = JSON.stringify([pending.sessionId, pending.request.requestId])
     if (this.answers.has(key)) return []
@@ -144,6 +151,23 @@ export class MemoryPorts implements BrokerPorts {
     const route = this.childRoute(sessionId, correlationKey)
     if (route.kind === "unbound") throw new Error(`No child bound to ${correlationKey}`)
     this.finishedChildren.add(route.childSessionId)
+  }
+  startChildTurn(sessionId: string, correlationKey: string) {
+    const route = this.childRoute(sessionId, correlationKey)
+    if (route.kind !== "bound") throw new Error(`No running child bound to ${correlationKey}`)
+    this.openChildTurns.add(JSON.stringify([route.childSessionId, route.assistantMessageId]))
+  }
+  reopenChildTurn(sessionId: string, correlationKey: string) {
+    const route = this.childRoute(sessionId, correlationKey)
+    if (route.kind === "unbound") throw new Error(`No child bound to ${correlationKey}`)
+    this.children.set(route.childSessionId, { sessionId: route.childSessionId, assistantMessageId: `${route.assistantMessageId}-reopened`, created: 10 })
+    this.finishedChildren.delete(route.childSessionId)
+    this.startChildTurn(sessionId, correlationKey)
+  }
+  rebindConnection(sessionId: string, connectionId: string) {
+    const current = this.sessionAuthorities.get(sessionId)
+    if (!current) throw new Error(`Session ${sessionId} has no binding`)
+    this.sessionAuthorities.set(sessionId, { ...current, connectionId })
   }
   async publishSubagent(_sessionId: string, event: SubagentUpdatedEvent) { this.subagents.push(event) }
   async publishSubagentDiagnostic(_sessionId: string, diagnostic: unknown) {

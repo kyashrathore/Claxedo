@@ -3,7 +3,7 @@ import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"
 import { createRequestBroker, createSessionBroker, createTurnBroker } from "@claxedo/harness/broker"
-import { MemoryPorts, registerBrokerBehaviorCases, registerBrokerPortCases, registerChildRequestCases } from "@claxedo/harness/testing"
+import { MemoryPorts, registerBrokerBehaviorCases, registerBrokerPortCases, registerChildOwnedRequestCases, registerChildRequestCases } from "@claxedo/harness/testing"
 import type { PendingRequest, RoutedEvent } from "@claxedo/harness/contract"
 import type { BrokerEvent, TurnAuthority } from "@claxedo/harness/broker"
 import { RuntimeStore } from "../store"
@@ -214,15 +214,41 @@ class StoreBehaviorPorts extends MemoryPorts {
     this.real.bindChildCorrelation(...args)
   }
   override childRoute(...args: Parameters<typeof this.real.childRoute>) { return this.real.childRoute(...args) }
-  override finishChildTurn(parentSessionId: string, correlationKey: string) {
+  override sessionAuthority(sessionId: string) { return this.real.sessionAuthority(sessionId) }
+  override turnOpen(sessionId: string, turnId: string) { return this.real.turnOpen(sessionId, turnId) }
+  private readonly childLeases = new Map<string, string>()
+  private boundChild(parentSessionId: string, correlationKey: string) {
     const route = this.real.childRoute(parentSessionId, correlationKey)
     if (route.kind !== "bound") throw new Error(`No running child bound to ${correlationKey}`)
+    return route
+  }
+  override startChildTurn(parentSessionId: string, correlationKey: string) {
+    const route = this.boundChild(parentSessionId, correlationKey)
     const leaseId = this.store.acquireTurnLease(route.childSessionId)
     if (!leaseId) throw new Error(`No test lease for ${route.childSessionId}`)
     this.store.startTurn({ sessionId: route.childSessionId, assistantMessageId: route.assistantMessageId, agent: "general", parts: [] })
+    this.childLeases.set(route.childSessionId, leaseId)
+  }
+  override finishChildTurn(parentSessionId: string, correlationKey: string) {
+    const route = this.boundChild(parentSessionId, correlationKey)
+    if (!this.childLeases.has(route.childSessionId)) this.startChildTurn(parentSessionId, correlationKey)
+    const leaseId = this.childLeases.get(route.childSessionId)!
     this.store.finishTurn({ sessionId: route.childSessionId, assistantMessageId: route.assistantMessageId, leaseId,
       outcome: { status: "completed", completedAt: 2 } })
     this.store.releaseTurnLease(route.childSessionId, leaseId)
+    this.childLeases.delete(route.childSessionId)
+  }
+  override reopenChildTurn(parentSessionId: string, correlationKey: string) {
+    const route = this.boundChild(parentSessionId, correlationKey)
+    this.finishChildTurn(parentSessionId, correlationKey)
+    void this.real.admitChildSession(parentSessionId, route.childSessionId, { observationId: `reopen:${correlationKey}`,
+      providerKind: "claude-agent", toolCallId: correlationKey, status: "running" })
+    this.startChildTurn(parentSessionId, correlationKey)
+  }
+  override rebindConnection(sessionId: string, connectionId: string) {
+    const binding = this.store.getExecutionBinding(sessionId)
+    if (!binding) throw new Error(`Session ${sessionId} has no binding`)
+    this.store.bindSession({ ...binding, connectionId, agentSessionId: binding.upstreamSessionId })
   }
   override async publishSubagent(...args: Parameters<typeof this.real.publishSubagent>) {
     await this.real.publishSubagent(...args)
@@ -247,6 +273,8 @@ class StoreBehaviorPorts extends MemoryPorts {
 registerBrokerBehaviorCases("runtime store", () => new StoreBehaviorPorts())
 
 registerChildRequestCases("runtime store", () => new StoreBehaviorPorts())
+
+registerChildOwnedRequestCases("runtime store", () => new StoreBehaviorPorts())
 
 describe("store broker ports", () => {
   test("a permission that expires is published as expired, not as the person's rejection", async () => {

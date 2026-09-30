@@ -60,6 +60,7 @@ export function createChildTurns(input: {
   publish: (parentSessionId: string, event: AgentPresentationEvent) => void
   /** Retains a child terminal the store refused under the child's lease; `false` when nothing could, and the lease is released. */
   retainLeasedTurnFailure: (sessionId: string, turn: LeasedTurnFailure, error: unknown) => boolean
+  childTurnSettled: (childSessionId: string, assistantMessageId: string) => void
 }) {
   const parents = new Map<string, ParentTurnContext>()
   const children = new Map<string, SeededChild>()
@@ -119,6 +120,7 @@ export function createChildTurns(input: {
       if (!retained) input.store.releaseTurnLease(child.target.sessionId, child.leaseId)
       throw error
     }
+    input.childTurnSettled(child.target.sessionId, child.target.assistantMessageId)
     try {
       parent?.projectChild(child.target,
         outcome.status === "failed" ? { type: "error", error: outcome.error } : { type: "finish", sessionId: child.target.sessionId },

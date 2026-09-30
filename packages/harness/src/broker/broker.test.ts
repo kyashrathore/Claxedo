@@ -2,8 +2,9 @@ import { MemoryPorts, authority, origin } from "../conformance/test-support/memo
 import { registerBrokerBehaviorCases } from "./test-support/behavior-cases"
 import { registerBrokerPortCases } from "./test-support/port-cases"
 import { registerChildRequestCases } from "./test-support/child-request-cases"
+import { registerChildOwnedRequestCases } from "./test-support/child-owned-request-cases"
 import { expect, test, describe } from "bun:test"
-import { createRequestBroker, createTurnBroker } from "./index"
+import { createRequestBroker, createSessionBroker, createTurnBroker } from "./index"
 
 registerBrokerPortCases("memory", () => {
   const ports = new MemoryPorts()
@@ -18,6 +19,8 @@ registerBrokerPortCases("memory", () => {
 registerBrokerBehaviorCases("memory", () => new MemoryPorts())
 
 registerChildRequestCases("memory", () => new MemoryPorts())
+
+registerChildOwnedRequestCases("memory", () => new MemoryPorts())
 
 describe("request owner changes", () => {
   test("a late answer from an old turn is refused and reports the session owner", async () => {
@@ -54,4 +57,23 @@ describe("request owner changes", () => {
     expect(await waiting).toEqual({ kind: "cancelled" })
     expect(failures).toHaveLength(1)
   })
+})
+
+test("a child-owned request is refused once its parent's owner generation changes", async () => {
+  const ports = new MemoryPorts()
+  const owner = createRequestBroker(ports)
+  const turn = createTurnBroker(owner, { authority, origin, signal: new AbortController().signal })
+  const child = await turn.observeSubagent({ observationId: "spawn", providerKind: "claude-agent", toolCallId: "toolu_agent",
+    toolCallRole: "spawn", status: "running", mode: "background", transcript: { kind: "live" } })
+  turn.associateChild("toolu_agent", child!)
+  ports.startChildTurn("s1", "toolu_agent")
+  ports.current.delete("s1")
+  const session = createSessionBroker(owner, { sessionId: "s1", workspaceId: "w1", directory: "/work", origin })
+  const waiting = session.ask({ kind: "permission", requestId: "generation", child: { correlationKey: "toolu_agent" },
+    permission: { id: "generation", sessionID: "s1", permission: "execute", patterns: [], always: [], metadata: {} } })
+  for (let i = 0; i < 20; i++) await Promise.resolve()
+  ports.sessionAuthorities.set("s1", { ...ports.sessionAuthorities.get("s1")!, ownerGeneration: "g2" })
+  expect(await owner.broker.answer("generation", { kind: "permission", decision: "allow_once" }, { sessionId: child!.sessionId }))
+    .toMatchObject({ ok: false, refusal: "foreign" })
+  expect(await waiting).toEqual({ kind: "cancelled" })
 })
