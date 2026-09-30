@@ -151,9 +151,12 @@ const mockNoCapturePersistence = {
 } as const
 
 /**
- * The default fake: a driver that suspends its host and brokers natively, so
- * the lifecycle and secret-delivery tests below exercise both paths on one
- * driver. Its capabilities are the fake's own, not the Box provider's.
+ * The default fake: a driver that suspends its host, brokers caller-stated
+ * secrets and enforces egress, so the lifecycle, secret and egress tests below
+ * run on one driver. Its capabilities are the fake's own, not the Box
+ * provider's. Tests of the operator's provider accounts run on the Cloudflare
+ * fake instead: the supervisor decides account delivery from the catalog entry
+ * for the driver's id, and Box's entry cannot broker.
  */
 const mockCreateBoxSandboxDriver = vi.fn((options: any) => ({
   id: "box",
@@ -1075,6 +1078,7 @@ describe("workspace-supervisor", () => {
     })
 
     test("the operator's active account reaches the driver as a brokered secret no caller stated", async () => {
+      driverId = "cloudflare"
       credentials.active.push({
         credential: {
           owner: "local",
@@ -1100,7 +1104,7 @@ describe("workspace-supervisor", () => {
       })
 
       expect(result.status).toBe("ready")
-      const launch = mockBoxLaunch.mock.calls.at(-1)![0]
+      const launch = mockCloudflareLaunch.mock.calls.at(-1)![0]
       expect(launch.secrets).toEqual([
         { name: "CLAXEDO_GITHUB_CLONE_AUTH", value: "Basic clone-token", hosts: ["github.com"], header: "Authorization" },
         {
@@ -1117,6 +1121,7 @@ describe("workspace-supervisor", () => {
     })
 
     test("an account the vendor rejected is withdrawn from the driver on the next ensure", async () => {
+      driverId = "cloudflare"
       credentials.active.push({
         credential: {
           owner: "local",
@@ -1131,7 +1136,7 @@ describe("workspace-supervisor", () => {
       credentials.secrets.set("cred-1", "sk-ant-api03-fixture")
       const manager = supervisor.createWorkspaceSupervisorSandboxManager()
       await manager.ensure("ws-provider-withdrawn", { homeRegion: "us-east" })
-      mockBoxLaunch.mockClear()
+      mockCloudflareLaunch.mockClear()
 
       credentials.active[0].unavailable = "auth_failed"
 
@@ -1140,10 +1145,11 @@ describe("workspace-supervisor", () => {
       expect(result.status).toBe("ready")
       // Still STATED, and empty: the driver reconciles against the list, so an
       // absent name is what withdraws the value from the provider edge.
-      expect(mockBoxLaunch.mock.calls.at(-1)![0].secrets).toEqual([])
+      expect(mockCloudflareLaunch.mock.calls.at(-1)![0].secrets).toEqual([])
     })
 
     test("an unchanged account set answers from the warm runtime without a driver call", async () => {
+      driverId = "cloudflare"
       credentials.active.push({
         credential: {
           owner: "local",
@@ -1158,7 +1164,7 @@ describe("workspace-supervisor", () => {
       credentials.secrets.set("cred-1", "sk-ant-api03-fixture")
       const manager = supervisor.createWorkspaceSupervisorSandboxManager()
       await manager.ensure("ws-provider-warm", { homeRegion: "us-east" })
-      mockBoxLaunch.mockClear()
+      mockCloudflareLaunch.mockClear()
 
       const result = await manager.ensure("ws-provider-warm", { homeRegion: "us-east" })
 
@@ -1166,10 +1172,11 @@ describe("workspace-supervisor", () => {
       // Presence of an account is not a change to reconcile; answering on it
       // would send every message through the driver, which on a
       // replacement-host driver is a new sandbox per message.
-      expect(mockBoxLaunch).not.toHaveBeenCalled()
+      expect(mockCloudflareLaunch).not.toHaveBeenCalled()
     })
 
     test("a rotated account set goes back through the driver", async () => {
+      driverId = "cloudflare"
       const row = {
         credential: {
           owner: "local",
@@ -1185,14 +1192,14 @@ describe("workspace-supervisor", () => {
       credentials.secrets.set("cred-1", "sk-ant-api03-fixture")
       const manager = supervisor.createWorkspaceSupervisorSandboxManager()
       await manager.ensure("ws-provider-rotated", { homeRegion: "us-east" })
-      mockBoxLaunch.mockClear()
+      mockCloudflareLaunch.mockClear()
 
       row.credential.revision = 2
       credentials.secrets.set("cred-1", "sk-ant-api03-rotated")
       const result = await manager.ensure("ws-provider-rotated", { homeRegion: "us-east" })
 
       expect(result.status).toBe("ready")
-      expect(mockBoxLaunch.mock.calls.at(-1)![0].secrets).toEqual([
+      expect(mockCloudflareLaunch.mock.calls.at(-1)![0].secrets).toEqual([
         expect.objectContaining({ name: accountPlaceholderEnv({ id: "cred-1", provider_id: "claude-sdk" }), value: "sk-ant-api03-rotated" }),
       ])
     })
@@ -1225,6 +1232,7 @@ describe("workspace-supervisor", () => {
     })
 
     test("a caller and a provider account claiming one secret name is refused by name", async () => {
+      driverId = "cloudflare"
       credentials.active.push({
         credential: {
           owner: "local",
@@ -1253,6 +1261,7 @@ describe("workspace-supervisor", () => {
     })
 
     test("a restored checkpoint carries the operator's accounts into the replacement sandbox", async () => {
+      driverId = "cloudflare"
       credentials.active.push({
         credential: {
           owner: "local",
@@ -1276,7 +1285,7 @@ describe("workspace-supervisor", () => {
           metadata: { scope: "filesystem", sourceBehavior: "preserved", restoreMount: "same-resource" },
         },
       })
-      mockBoxLaunch.mockClear()
+      mockCloudflareLaunch.mockClear()
 
       await supervisorSandbox.restoreSupervisorSandboxCheckpoint(entry, {
         runtime: {
@@ -1291,12 +1300,13 @@ describe("workspace-supervisor", () => {
       // A restore provisions a replacement sandbox without going through
       // `startRuntime`; one that mounted only the empty slot answers every turn
       // with a placeholder its provider never filled.
-      expect(mockBoxLaunch.mock.calls.at(-1)?.[0].secrets).toEqual([
+      expect(mockCloudflareLaunch.mock.calls.at(-1)?.[0].secrets).toEqual([
         expect.objectContaining({ name: accountPlaceholderEnv({ id: "cred-1", provider_id: "claude-sdk" }) }),
       ])
     })
 
     test("removing the last account withdraws it from a warm sandbox", async () => {
+      driverId = "cloudflare"
       const row = {
         credential: {
           owner: "local",
@@ -1312,7 +1322,7 @@ describe("workspace-supervisor", () => {
       credentials.secrets.set("cred-1", "sk-ant-api03-fixture")
       const manager = supervisor.createWorkspaceSupervisorSandboxManager()
       await manager.ensure("ws-provider-last", { homeRegion: "us-east" })
-      mockBoxLaunch.mockClear()
+      mockCloudflareLaunch.mockClear()
 
       credentials.active.length = 0
       const result = await manager.ensure("ws-provider-last", { homeRegion: "us-east" })
@@ -1320,10 +1330,11 @@ describe("workspace-supervisor", () => {
       // Having no account left is a change once something of ours is installed;
       // the empty set is how the last one reaches the provider edge.
       expect(result.status).toBe("ready")
-      expect(mockBoxLaunch.mock.calls.at(-1)![0].secrets).toEqual([])
+      expect(mockCloudflareLaunch.mock.calls.at(-1)![0].secrets).toEqual([])
     })
 
     test("an account whose secret cannot be read holds what the sandbox installed", async () => {
+      driverId = "cloudflare"
       credentials.active.push({
         credential: {
           owner: "local",
@@ -1338,7 +1349,7 @@ describe("workspace-supervisor", () => {
       credentials.secrets.set("cred-1", "sk-ant-api03-fixture")
       const manager = supervisor.createWorkspaceSupervisorSandboxManager()
       await manager.ensure("ws-provider-blip", { homeRegion: "us-east" })
-      mockBoxLaunch.mockClear()
+      mockCloudflareLaunch.mockClear()
 
       credentials.locked.add("cred-1")
       const result = await manager.ensure("ws-provider-blip", { homeRegion: "us-east" })
@@ -1346,10 +1357,11 @@ describe("workspace-supervisor", () => {
       // A locked keychain is not a revocation; stating a set without the row
       // would write the revoked value over a credential nobody revoked.
       expect(result.status).toBe("ready")
-      expect(mockBoxLaunch).not.toHaveBeenCalled()
+      expect(mockCloudflareLaunch).not.toHaveBeenCalled()
     })
 
     test("a fresh sandbox delivers the readable accounts when one cannot be read", async () => {
+      driverId = "cloudflare"
       credentials.active.push(
         {
           credential: {
@@ -1382,7 +1394,7 @@ describe("workspace-supervisor", () => {
         .ensure("ws-provider-blip-fresh", { homeRegion: "us-east" })
 
       expect(result.status).toBe("ready")
-      expect(mockBoxLaunch.mock.calls.at(-1)![0].secrets).toEqual([
+      expect(mockCloudflareLaunch.mock.calls.at(-1)![0].secrets).toEqual([
         expect.objectContaining({ name: accountPlaceholderEnv({ id: "cred-2", provider_id: "openrouter" }) }),
       ])
     })
@@ -1867,6 +1879,7 @@ describe("workspace-supervisor", () => {
     })
 
     test("cloud runtime config uses shared credentials and workspace identity", async () => {
+      driverId = "cloudflare"
       store.set("ws-hosted-config", {
         ...workspace("ws-hosted-config"),
         remote_directory: "/remote/app",
@@ -1883,7 +1896,7 @@ describe("workspace-supervisor", () => {
         secretBrokering: "native",
         sandboxOwner: "local",
       })
-      const env = latestSandboxBootEnv("box")
+      const env = latestSandboxBootEnv("cloudflare")
       expect(env.WORKSPACE_RUNTIME_CONFIG_TOKEN).toBeTruthy()
       expect(env.WORKSPACE_RUNTIME_TRUSTED_DIRECT_TOKEN).toBeUndefined()
       expect(env.WORKSPACE_RUNTIME_HOST_ID).toBe("lease-ws-hosted-config")
@@ -2037,6 +2050,10 @@ describe("workspace-supervisor", () => {
   // ── Credential delivery reconcile ─────────────────────────────────
 
   describe("reconcileCredentialDelivery", () => {
+    beforeEach(() => {
+      driverId = "cloudflare"
+    })
+
     const activeAccount = (id: string, providerId = "claude-sdk", revision = 1) => ({
       credential: {
         owner: "local",
@@ -2053,7 +2070,7 @@ describe("workspace-supervisor", () => {
       credentials.active.push(activeAccount("cred-1"))
       credentials.secrets.set("cred-1", "sk-ant-api03-fixture")
       await supervisor.ensureSupervisorSandbox("ws-reconcile-revoke")
-      mockBoxLaunch.mockClear()
+      mockCloudflareLaunch.mockClear()
       configPush.length = 0
 
       credentials.active[0].unavailable = "revoked"
@@ -2062,23 +2079,23 @@ describe("workspace-supervisor", () => {
 
       // The running sandbox goes back through the driver on the same lease:
       // an absent name is what withdraws the secret at the provider edge.
-      expect(mockBoxLaunch).toHaveBeenCalledWith(expect.objectContaining({ secrets: [] }))
+      expect(mockCloudflareLaunch).toHaveBeenCalledWith(expect.objectContaining({ secrets: [] }))
       // And the projection inside the runtime stops offering the account.
-      expect(configPush.some((push) => push.url.includes("box-sdk.example.com"))).toBe(true)
+      expect(configPush.some((push) => push.url.includes("cloudflare-sdk.example.com"))).toBe(true)
     })
 
     test("revoking the last account reaches the driver as an empty set, not silence", async () => {
       credentials.active.push(activeAccount("cred-1"))
       credentials.secrets.set("cred-1", "sk-ant-api03-fixture")
       await supervisor.ensureSupervisorSandbox("ws-reconcile-last")
-      mockBoxLaunch.mockClear()
+      mockCloudflareLaunch.mockClear()
 
       credentials.active.length = 0
       await supervisor.reconcileCredentialDelivery()
 
       // Once something of ours is installed, having no account left is a
       // change — the empty set is how the last one reaches the provider edge.
-      expect(mockBoxLaunch).toHaveBeenCalledWith(expect.objectContaining({ secrets: [] }))
+      expect(mockCloudflareLaunch).toHaveBeenCalledWith(expect.objectContaining({ secrets: [] }))
     })
 
     test("a backend outage during revocation still withdraws the revoked account", async () => {
@@ -2086,7 +2103,7 @@ describe("workspace-supervisor", () => {
       credentials.secrets.set("cred-1", "sk-ant-api03-fixture")
       credentials.secrets.set("cred-2", "sk-or-fixture")
       await supervisor.ensureSupervisorSandbox("ws-reconcile-outage")
-      mockBoxLaunch.mockClear()
+      mockCloudflareLaunch.mockClear()
 
       // cred-1 is revoked while cred-2's backend read fails. The unreadable
       // account loses its secret for a round rather than the revoked one
@@ -2095,21 +2112,21 @@ describe("workspace-supervisor", () => {
       credentials.locked.add("cred-2")
       await supervisor.reconcileCredentialDelivery()
 
-      expect(mockBoxLaunch).toHaveBeenCalledWith(expect.objectContaining({ secrets: [] }))
+      expect(mockCloudflareLaunch).toHaveBeenCalledWith(expect.objectContaining({ secrets: [] }))
     })
 
     test("an unchanged delivered set makes no driver call but still pushes the config", async () => {
       credentials.active.push(activeAccount("cred-1"))
       credentials.secrets.set("cred-1", "sk-ant-api03-fixture")
       await supervisor.ensureSupervisorSandbox("ws-reconcile-same")
-      mockBoxLaunch.mockClear()
+      mockCloudflareLaunch.mockClear()
       configPush.length = 0
 
       await supervisor.reconcileCredentialDelivery()
 
       // Nothing to withdraw: the digest still matches, so the reconcile is a
       // projection push and no provider-edge call.
-      expect(mockBoxLaunch).not.toHaveBeenCalled()
+      expect(mockCloudflareLaunch).not.toHaveBeenCalled()
       expect(configPush.length).toBe(1)
     })
 
@@ -2127,12 +2144,12 @@ describe("workspace-supervisor", () => {
         active: 0,
         holds: [],
       })
-      mockBoxLaunch.mockClear()
+      mockCloudflareLaunch.mockClear()
       configPush.length = 0
 
       await supervisor.reconcileCredentialDelivery()
 
-      expect(mockBoxLaunch).not.toHaveBeenCalled()
+      expect(mockCloudflareLaunch).not.toHaveBeenCalled()
       expect(configPush.some((push) => push.url.includes("127.0.0.1:2597"))).toBe(true)
     })
 
@@ -2143,17 +2160,17 @@ describe("workspace-supervisor", () => {
       await supervisor.ensureSupervisorSandbox("ws-reconcile-up")
       const runtimes = (await import("./store")).runtimes
       const installedBefore = runtimes.get("ws-reconcile-down")!.installed_secrets
-      mockBoxLaunch.mockClear()
+      mockCloudflareLaunch.mockClear()
       configPush.length = 0
-      const realLaunch = mockBoxLaunch.getMockImplementation()!
-      mockBoxLaunch.mockImplementation(async (input: any) => {
+      const realLaunch = mockCloudflareLaunch.getMockImplementation()!
+      mockCloudflareLaunch.mockImplementation(async (input: any) => {
         if (input.workspaceId === "ws-reconcile-down") throw new Error("provider is down")
         return realLaunch(input)
       })
 
       credentials.active[0].unavailable = "revoked"
       await expect(supervisor.reconcileCredentialDelivery()).rejects.toMatchObject({ name: "CredentialDeliveryError" })
-      mockBoxLaunch.mockImplementation(realLaunch)
+      mockCloudflareLaunch.mockImplementation(realLaunch)
 
       // The healthy sandbox withdrew on the same sweep. The failed one is
       // still booked on the set it actually holds — the ensure returned the
@@ -2168,9 +2185,9 @@ describe("workspace-supervisor", () => {
       credentials.active.push(activeAccount("cred-1"))
       credentials.secrets.set("cred-1", "sk-ant-api03-fixture")
       await supervisor.ensureSupervisorSandbox("ws-reconcile-churn")
-      const realLaunch = mockBoxLaunch.getMockImplementation()!
+      const realLaunch = mockCloudflareLaunch.getMockImplementation()!
       let revision = 1
-      mockBoxLaunch.mockImplementation(async (input: any) => {
+      mockCloudflareLaunch.mockImplementation(async (input: any) => {
         const launched = await realLaunch(input)
         credentials.active[0] = activeAccount("cred-1", "claude-sdk", ++revision)
         return launched
@@ -2179,7 +2196,7 @@ describe("workspace-supervisor", () => {
       try {
         await expect(supervisor.reconcileCredentialDelivery()).rejects.toMatchObject({ name: "CredentialDeliveryError" })
       } finally {
-        mockBoxLaunch.mockImplementation(realLaunch)
+        mockCloudflareLaunch.mockImplementation(realLaunch)
       }
     })
   })

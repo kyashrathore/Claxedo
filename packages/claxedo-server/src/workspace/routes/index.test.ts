@@ -415,7 +415,7 @@ describe("workspace routes signed control plane authority", () => {
       repo_url: "https://github.com/acme/demo.git",
       repo_name: "demo",
       git_branch: "main",
-      driver: "vercel",
+      driver: "cloudflare",
       status: "acquiring_sandbox",
       created_at: 1,
       updated_at: 1,
@@ -427,7 +427,7 @@ describe("workspace routes signed control plane authority", () => {
       workspace_name: "signed-demo",
       directory: "/workspace",
       kind: "cloud",
-      driver: "vercel",
+      driver: "cloudflare",
       status: "ready",
       created_at: 1,
       updated_at: 1,
@@ -506,7 +506,7 @@ describe("workspace routes signed control plane authority", () => {
     expect(svc.telemetry.capture).toHaveBeenCalledWith("user_1", "workspace.cloud.create", {
       workspaceId: "ws_1",
       projectId: expect.stringMatching(/^ws_/),
-      driver: "vercel",
+      driver: "cloudflare",
       repoName: "demo",
       gitBranch: "main",
     })
@@ -890,7 +890,7 @@ describe("workspace routes signed control plane authority", () => {
       "workspace.cloud.create",
       expect.objectContaining({
         workspaceId: "ws_1",
-        driver: "vercel",
+        driver: "cloudflare",
         repoName: "demo",
         gitBranch: "signed-demo",
       }),
