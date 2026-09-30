@@ -7,9 +7,10 @@ describe("createClaudeTaskLedger", () => {
     expect(ledger.get("task-1")).toBeUndefined()
     expect(ledger.get(undefined)).toBeUndefined()
 
-    ledger.start({ taskId: "task-1", isAgentTask: true, skipTranscript: false })
+    ledger.start({ taskId: "task-1", toolUseId: "tool-agent-1", isAgentTask: true, skipTranscript: false })
     expect(ledger.get("task-1")).toEqual({
       taskId: "task-1",
+      toolUseId: "tool-agent-1",
       isAgentTask: true,
       skipTranscript: false,
     })

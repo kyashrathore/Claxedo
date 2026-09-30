@@ -1,5 +1,6 @@
 export type ClaudeTaskRecord = {
   taskId: string
+  toolUseId?: string
   isAgentTask: boolean
   skipTranscript: boolean
   nested?: boolean

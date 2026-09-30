@@ -33,6 +33,7 @@ function taskStartedObservations(message: Record<string, unknown>, wrapperId: st
     (asFiniteNumber(message.spawn_depth) ?? 0) > 1
   const record: ClaudeTaskRecord = {
     taskId,
+    ...(toolUseId ? { toolUseId } : {}),
     isAgentTask: !!text(message.subagent_type),
     skipTranscript: message.skip_transcript === true,
     ...(nested ? { nested } : {}),
