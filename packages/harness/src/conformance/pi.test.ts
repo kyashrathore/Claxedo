@@ -92,6 +92,7 @@ test("Pi failed configuration restart removes the retired session", async () => 
     },
   })
   try {
+    for await (const _event of context.transport.send(context.session, context.turn("Reply with exactly this one token: PIWRITTEN"), context.turnBroker())) {}
     const entry = (context.transport as unknown as { entries: Map<string, { profile: { sessionDir: string } }> }).entries.get("s1")!
     await fs.rm(entry.profile.sessionDir, { recursive: true, force: true })
     await expect(context.transport.configure(context.session,
@@ -512,5 +513,18 @@ test("a Pi process that dies during a run Pi started itself ends that provider t
     const idle = await pollUntil(() => entry.stream.busy ? undefined : true, Date.now() + 5_000)
     release()
     expect(idle).toBe(true)
+  } finally { await context.close() }
+}, 60_000)
+
+test("a Pi session reconfigured before its first prompt keeps its session id and runs the next turn", async () => {
+  const context = await setupConformance({ name: "pi configure before prompt", backend, makeTransport: piTransport })
+  try {
+    const update = await context.transport.configure(context.session, { credentials: { ...context.backend.credentials, leaseGeneration: "before-first-prompt" } })
+    expect(update).toEqual({ state: "applied" })
+    const events: string[] = []
+    for await (const { event } of context.transport.send(context.session, context.turn("Reply with exactly this one token: PIFRESHCONFIG"), context.turnBroker())) events.push(event.type)
+    expect(events.at(-1)).toBe("finish")
+    const entry = (context.transport as unknown as { entries: Map<string, { rpc: { request(type: string): Promise<unknown> } }> }).entries.get("s1")!
+    expect((await entry.rpc.request("get_state") as { sessionId: string }).sessionId).toBe(context.session.binding.upstreamSessionId)
   } finally { await context.close() }
 }, 60_000)

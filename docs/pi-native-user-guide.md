@@ -16,8 +16,10 @@ that Pi process; connect a provider before selecting its model.
 Claxedo keeps the visible conversation and controls starting, stopping and
 answering questions. Pi keeps its native conversation file, chooses the context
 sent to the model and performs automatic compaction. Restarting an idle process
-resumes that same file. If the file is missing, Claxedo reports an error rather
-than silently starting another conversation. Repository memory files and other
+resumes that same file. Pi writes the file with the first message, so a session
+reconfigured before its first message reopens under the same id. If the file of
+a session that had messages is missing, Claxedo reports an error rather than
+silently starting another conversation. Repository memory files and other
 files written by the agent live on the selected machine.
 
 ## Extending Pi

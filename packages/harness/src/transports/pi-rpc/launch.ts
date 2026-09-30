@@ -15,7 +15,9 @@ import { PI_RANGE, piReportedVersion } from "./version"
 
 export type PiRpcOptions = PiProfileOptions & { binary: string; runtime: string; args?: readonly string[]; env: NodeJS.ProcessEnv }
 
-export type PiLaunch = { role: "harness"; resume?: string } | { role: "probe" }
+export type PiResume = { file: string } | { id: string }
+
+export type PiLaunch = { role: "harness"; resume?: PiResume } | { role: "probe" }
 
 export type PiLaunchHost = {
   readonly services: HarnessServices
@@ -35,7 +37,7 @@ export async function retiringOnFailure<T>(host: PiLaunchHost, rpc: PiRpc, work:
 
 async function harnessArgs(host: PiLaunchHost, launch: Extract<PiLaunch, { role: "harness" }>, mcp: PiMcpHandoff | undefined): Promise<string[]> {
   return ["-e", await installPiTitleExtension(host.options.stateRoot), ...mcp?.args ?? [],
-    ...(launch.resume ? ["--session", launch.resume] : [])]
+    ...(!launch.resume ? [] : "file" in launch.resume ? ["--session", launch.resume.file] : ["--session-id", launch.resume.id])]
 }
 
 function piCommand(host: PiLaunchHost, input: StartInput, profile: PiProfile, args: readonly string[], env: Record<string, string> = {}): SpawnCommand {
@@ -86,7 +88,7 @@ export async function launchPiProbe(host: PiLaunchHost, input: StartInput, profi
 export type PiSessionLaunch = { rpc: PiRpc; stream: PiSessionStream }
 
 export async function launchPiSession(host: PiLaunchHost, input: StartInput, profile: PiProfile, broker: SessionBroker,
-  resume?: string): Promise<PiSessionLaunch> {
+  resume?: PiResume): Promise<PiSessionLaunch> {
   const { clock, log } = host.services
   const { rpc, observed } = await spawnPi(host, input, profile, broker, { role: "harness", ...(resume ? { resume } : {}) }, (rpc) =>
     new PiSessionStream({ sessionId: input.sessionId, rpc, broker, clock, log, stop: () => stopPiRun(rpc, piDeadline(clock)) }))
@@ -102,8 +104,9 @@ export function piUpstreamOf(host: PiLaunchHost, rpc: PiRpc): Promise<string> {
 }
 
 export async function resumePi(host: PiLaunchHost, input: StartInput, profile: PiProfile, broker: SessionBroker,
-  upstreamSessionId: string): Promise<PiSessionLaunch> {
-  const launched = await launchPiSession(host, input, profile, broker, await piSessionFile(profile, upstreamSessionId))
+  upstreamSessionId: string, unwritten = false): Promise<PiSessionLaunch> {
+  const resume = unwritten ? { id: upstreamSessionId } : { file: await piSessionFile(profile, upstreamSessionId) }
+  const launched = await launchPiSession(host, input, profile, broker, resume)
   if (await piUpstreamOf(host, launched.rpc) === upstreamSessionId) return launched
   await host.unsettled.retire(launched.rpc)
   throw new TransportError("pi", "session", "Pi resumed a different session")
