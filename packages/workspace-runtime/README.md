@@ -195,7 +195,7 @@ are not event streams and have their own transports:
 
 | Surface | Transport | Event family | Contract |
 | --- | --- | --- | --- |
-| `GET /api/wr/events` | SSE | `{ directory, payload }` frames: the runtime's projected client-presentation events (parts, deltas, tool state, status, permission and question asks, todo, diagnostics), the projected `subagent.updated` / `goal.*` runtime-channel events, `harness.health` (a session's `harnessHealth` and `connectionState`, as `/api/wr/health?sessionId=` answers them, sent when either changes around a turn), and the workspace's control frames from `workspaceRuntimeBus` (PTY lifecycle and stream summaries, process status/config, agent lifecycle, session lifecycle) | The one stream a workspace runtime serves. Mounted by `mountWorkspaceCore()`; resumable by `Last-Event-ID`, with a second retained ring for the frames that settle a state machine. A principal the workspace authority admits reads it unscoped, on a workspace lease the control plane mints for the read and the delivery policy renews, and the session authority decides per session what reaches it — the workspace's owner is no exception; a principal it refuses is answered 403 `workspace_event_stream_denied` and reads `?sessionID=` under a session lease, that session and its subagent children. A connection lives at most one runtime-access-token lifetime and reconnects by cursor into the reader's actor-keyed replay scope; a self-hosted node admits the unscoped arm by stamped role with no lease and re-checks only session grants. |
+| `GET /api/wr/events` | SSE | `{ directory, payload }` frames: the runtime's projected client-presentation events (parts, deltas, tool state, status, permission and question asks, todo, diagnostics), the projected `subagent.updated` / `goal.*` runtime-channel events, `harness.health` (a session's `harnessHealth` and `connectionState`, as `/api/wr/health?sessionId=` answers them, sent when either changes around a turn), `session.background-work` (whether the session's harness runs work outside any turn, sent when it changes), and the workspace's control frames from `workspaceRuntimeBus` (PTY lifecycle and stream summaries, process status/config, agent lifecycle, session lifecycle) | The one stream a workspace runtime serves. Mounted by `mountWorkspaceCore()`; resumable by `Last-Event-ID`, with a second retained ring for the frames that settle a state machine. A principal the workspace authority admits reads it unscoped, on a workspace lease the control plane mints for the read and the delivery policy renews, and the session authority decides per session what reaches it — the workspace's owner is no exception; a principal it refuses is answered 403 `workspace_event_stream_denied` and reads `?sessionID=` under a session lease, that session and its subagent children. A connection lives at most one runtime-access-token lifetime and reconnects by cursor into the reader's actor-keyed replay scope; a self-hosted node admits the unscoped arm by stamped role with no lease and re-checks only session grants. |
 | `GET /api/wr/pty/:ptyID/connect` | WebSocket | PTY bytes plus cursor metadata | Supported PTY data stream. PTY lifecycle summaries also appear on `/api/wr/events`, but terminal bytes are delivered over this WebSocket. |
 | `GET /api/wr/process/logs` | HTTP snapshot | Text log tail | Process output is poll/snapshot based through PTY log snapshots. There is no separate supported process-output event stream. Process status summaries appear on `/api/wr/events`. |
 
@@ -206,6 +206,35 @@ lost under a turn, its replacement, an unsettled retirement, an ACP connection's
 state), and every call, turn start and turn end schedules one read of each
 watched session on the next task; a read that differs from the last one sent for
 that session is published.
+
+`session.background-work` is owned by `src/broker-ports/background-work.ts`. A
+harness publishes `{ type: "background-work", agents, shells, other }` through
+`SessionBroker.publish` whenever the work it runs for a session outside any
+turn (background agents, shells and other tasks in a process that outlives the
+turn) changes, all zero once it settled. The counts are held in memory by the
+engine's broker ports, not in the store: they describe a process this runtime
+owns, so a restart or a retired engine ends them, and nothing stored could
+outlive that truthfully. A change is broadcast as `session.background-work`
+with the same counts, never journaled, and the settling frame (all zero) is
+retained in the replay ring; `GET /session/status` and the open view's
+`status` add `backgroundWork: { agents, shells, other }` beside the turn's own
+status while any count is above zero (an idle session with background work is
+listed as `{ type: "idle", backgroundWork: { … } }`). It never enters turn admission: a prompt sent while it is set starts a turn on
+the same attached session as any other.
+
+`POST /session/:id/background-task/stop` with `{ toolCallId }` stops one
+background task (`src/host/background-tasks.ts`, route in
+`src/routes/session-background-tasks.ts`). It is an `agent_turn` write
+(`background_task_stop`), authorized like a prompt or a turn cancel, so a
+`send` share may stop a task its turn started. The task is named by the call
+that started it, which the subagent row carries. The runtime asks the held
+attachment's `HarnessTransport.backgroundTasks.stop` and answers what the
+harness answers: 200 `{ ok: true }` once the harness accepted (the task's end
+still arrives as its row's own update), 404 `not_found` for a call with no
+running task, and for a session holding no harness process, which is never
+launched to answer. A harness without the operation is refused 409
+`unsupported_operation` and reads `backgroundTasks: false` in
+`GET /session/:id/capabilities`.
 
 `RuntimeEventHub` is the hub for session/runtime events: session routes
 publish client-presentation events to its global channel, which `/api/wr/events`

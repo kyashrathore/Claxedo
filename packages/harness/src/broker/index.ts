@@ -73,7 +73,7 @@ export function createSessionBroker(owner: BrokerOwner, context: SessionBrokerCo
       }
       ports.meterUsage(usage)
     },
-    publish: async (event) => { if (event.type !== "background-work") await ports.publishSessionEvent(context.sessionId, event) },
+    publish: (event) => ports.publishSessionEvent(context.sessionId, event),
     ...sessionChildren(owner, context.sessionId),
     goal: goalPort(ports, context.sessionId),
     config: () => ports.config(context.sessionId),

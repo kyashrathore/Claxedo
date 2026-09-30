@@ -1,5 +1,5 @@
 import { DEFAULT_RECOVERY_BUDGETS, type SubagentObservation } from "@claxedo/agent-runtime-contract"
-import type { SubagentUpdatedEvent } from "@claxedo/agent-runtime-contract"
+import type { BackgroundWork, SubagentUpdatedEvent } from "@claxedo/agent-runtime-contract"
 import { HTTPException } from "hono/http-exception"
 import type { AgentRuntime, AgentRuntimeRecovery } from "../host/runtime"
 import type { RuntimeEventHub } from "../projection/runtime-event-hub"
@@ -27,6 +27,7 @@ export type SessionRoutesMountInput = {
   sessionIdWorkspace?: (sessionId: string) => Promise<string | undefined> | string | undefined
   sessionToolPrompt: (sessionId: string) => string | undefined
   subagentAdmission: (parentSessionId: string, observation: SubagentObservation) => Promise<SubagentUpdatedEvent>
+  backgroundWork: (sessionId: string) => BackgroundWork | undefined
 }
 
 export function queuedPromptStore(store: RuntimeStore): SessionDeliveryStore {
@@ -56,7 +57,7 @@ export function mountSessionRoutes(input: SessionRoutesMountInput) {
     requestedSessionHarness: (requested) => requested ?? input.currentRunner(),
     resolveRecoveryOwner: () => input.recovery(),
     listSessions: async (_c, directory) => store().listSessions(directory),
-    getStatus: (_c, directory) => sessionStatusSnapshot(store().listSessions(directory)),
+    getStatus: (_c, directory) => sessionStatusSnapshot(store().listSessions(directory), input.backgroundWork),
     listSubagents: ({ parentSessionId }) => store().listSubagents(parentSessionId),
     childSessions: {
       admit: input.subagentAdmission,

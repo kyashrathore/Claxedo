@@ -2,7 +2,7 @@ import { expect, test } from "bun:test"
 import type { TurnBroker } from "../../contract"
 import { CLAUDE_CODE_RANGE } from "./cli-version"
 import { ClaudeSdkTransport } from "./index"
-import { background, collect, frame, init, input, notification, rebound, reply, result, scriptedLaunches, services, sessionBroker, setup,
+import { background, backgroundTasks, collect, frame, init, input, notification, rebound, reply, result, scriptedLaunches, services, sessionBroker, setup,
   texts, turnBroker, until, userTurn } from "./test-support/live"
 
 test("a turn with no background task closes Claude's stdin at its result and ends there", async () => {
@@ -338,7 +338,7 @@ test("frames held between turns are bounded: a task's progress replaces its earl
   await transport.dispose()
 })
 
-test("the session learns when background work starts and stops, and never that it still runs after the process is gone", async () => {
+test("the session learns the background work it runs by kind whenever it changes, ambient tasks aside, and never that it still runs after the process is gone", async () => {
   const { transport, session, launches, published } = await setup()
   const work = () => published.filter((event) => (event as { type?: string }).type === "background-work")
   const first = collect(transport.send(session, userTurn("t1", "start the job"), turnBroker()))
@@ -346,15 +346,20 @@ test("the session learns when background work starts and stops, and never that i
   const claude = launches[0]!
   claude.frames.push(init())
   claude.replay(0)
+  const running = [{ id: "job", type: "local_bash" }, { id: "agent", type: "local_agent" }, { id: "watch", type: "local_bash", ambient: true }, { id: "flow", type: "local_workflow" }]
   claude.frames.push(background("job"))
-  claude.frames.push(background("job", "other"))
+  claude.frames.push(backgroundTasks(...running))
+  claude.frames.push(backgroundTasks(...running.slice().reverse()))
   claude.frames.push(result())
   await first
-  await until(() => work().length === 1)
-  expect(work()).toEqual([{ type: "background-work", active: true }])
-  claude.frames.fail(new Error("Claude Code process exited with code 1"))
   await until(() => work().length === 2)
-  expect(work()).toEqual([{ type: "background-work", active: true }, { type: "background-work", active: false }])
+  expect(work()).toEqual([
+    { type: "background-work", agents: 0, shells: 1, other: 0 },
+    { type: "background-work", agents: 1, shells: 1, other: 1 },
+  ])
+  claude.frames.fail(new Error("Claude Code process exited with code 1"))
+  await until(() => work().length === 3)
+  expect(work()[2]).toEqual({ type: "background-work", agents: 0, shells: 0, other: 0 })
   await transport.dispose()
 })
 
@@ -371,7 +376,7 @@ test("closing the session with background work running tells the session the wor
   await transport.close(rebound(session))
   await Promise.resolve()
   expect(published.filter((event) => (event as { type?: string }).type === "background-work"))
-    .toEqual([{ type: "background-work", active: true }, { type: "background-work", active: false }])
+    .toEqual([{ type: "background-work", agents: 0, shells: 1, other: 0 }, { type: "background-work", agents: 0, shells: 0, other: 0 }])
 })
 
 test("stopping a background task by the call that started it stops that task and no other", async () => {

@@ -130,7 +130,7 @@ export interface MentionsApi {
   register(provider: MentionProvider): Disposer
 }
 
-export type WorkbenchTabStatus = "idle" | "working" | "attention" | "done" | "failed"
+export type WorkbenchTabStatus = "idle" | "working" | "running_in_background" | "attention" | "done" | "failed"
 
 export interface WorkbenchTab {
   id: string

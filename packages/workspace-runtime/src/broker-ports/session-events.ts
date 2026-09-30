@@ -4,12 +4,17 @@ import type { AgentRuntimeEvent, RuntimeDiagnostic, SubagentUpdatedEvent } from 
 import type { OutsideTurnEvent, OutsideTurnUsage, RoutedEvent } from "@claxedo/harness/contract"
 import { childRouteDropped, isMeteredUsage, parentScopedUsage, resolveChildRoute } from "../projection/child-routes"
 import type { RuntimeStore } from "../store"
+import type { BrokerBackgroundWork } from "./background-work"
 import type { BrokerEventDelivery } from "./delivery"
 
 export class BrokerSessionEvents {
   private readonly turnProjections = new Map<string, ReturnType<typeof createClientPresentationProjection>>()
 
-  constructor(private readonly store: RuntimeStore, private readonly delivery: BrokerEventDelivery) {}
+  constructor(
+    private readonly store: RuntimeStore,
+    private readonly delivery: BrokerEventDelivery,
+    private readonly backgroundWork: BrokerBackgroundWork,
+  ) {}
 
   async drainProviderEvent(sessionId: string, turnId: string, routed: RoutedEvent): Promise<void> {
     if (routed.route?.kind === "child") return this.deliverChild(sessionId, routed, turnId)
@@ -65,6 +70,11 @@ export class BrokerSessionEvents {
     const session = this.store.getSession(sessionId) as { directory?: string } | null
     if (!session) throw new Error(`Unknown session ${sessionId}`)
     const directory = session.directory ?? ""
+    if (event.type === "background-work") {
+      this.backgroundWork.record(sessionId, { agents: event.agents, shells: event.shells, other: event.other })
+      this.delivery.runtime(sessionId, event)
+      return
+    }
     if (event.type === "available-commands-update") {
       this.delivery.append(sessionId, projectSessionCommands(sessionId, directory, event).payload)
       this.delivery.runtime(sessionId, event)

@@ -23,7 +23,7 @@ export function SwitcherPrefixMark(props: { readonly item: SwitcherItem; readonl
       }}
     >
       <Show
-        when={props.item.status === "working"}
+        when={props.item.status === "working" || props.item.status === "background"}
         fallback={
           <>
             <ProjectAvatar data-switcher-project-avatar fallback={orGlobal(props.item.projectLabel, t("rail.global"))} variant="outline" class="size-4 shrink-0" />
@@ -35,7 +35,7 @@ export function SwitcherPrefixMark(props: { readonly item: SwitcherItem; readonl
           </>
         }
       >
-        <NavigationStatusMark status="working" surface="switcher" />
+        <NavigationStatusMark status={props.item.status} surface="switcher" />
       </Show>
     </span>
   )
@@ -59,7 +59,7 @@ function MetadataRow(props: { readonly icon: ClaxedoIconProps["name"]; readonly 
   )
 }
 
-const STATUS_TEXT = { working: "rail.card.working", permission: "rail.card.waiting", error: "rail.card.failed" } as const
+const STATUS_TEXT = { working: "rail.card.working", background: "rail.card.background", permission: "rail.card.waiting", error: "rail.card.failed" } as const
 
 function statusKey(status: NavigationStatus) {
   return status === "idle" || status === "done" ? undefined : STATUS_TEXT[status]
@@ -96,7 +96,7 @@ export function SwitcherCard(props: { readonly item: SwitcherItem }): JSX.Elemen
               const key = statusKey(props.item.status)
               return key ? t(key) : undefined
             })()}
-            attention={props.item.status !== "working"}
+            attention={props.item.status !== "working" && props.item.status !== "background"}
           />
         </Show>
       </div>

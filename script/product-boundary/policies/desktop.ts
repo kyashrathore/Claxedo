@@ -394,7 +394,13 @@ export const desktopRenderer: Policy = {
   // `server/harness-commands.ts`, parsed by `server/wire/harness-commands.ts`;
   // and onboarding's choice of where the first project lives, the draft it
   // holds and the creation Finish opens are `onboarding/{place,model,finish}.ts`.
-  ceilings: { modules: 1229, packages: 36 },
+  // A session's activity for the rail, workbench tabs and plugins is one
+  // reading (`session/list/activity.ts`); the transcript's background work
+  // line and its label are `session/view/timeline/timeline-background-work.tsx`
+  // and `background-work-label.ts`, which its unit test reaches directly; and a
+  // running background subagent's Stop beside its chip is
+  // `transcript/subagent-stop.tsx`.
+  ceilings: { modules: 1233, packages: 36 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,

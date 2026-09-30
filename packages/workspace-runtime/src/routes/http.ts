@@ -1,3 +1,5 @@
+import type { Context } from "hono"
+import type { ContentfulStatusCode } from "hono/utils/http-status"
 import { bearerToken } from "@claxedo/helpers/string"
 import { runtimeEnvText } from "../env"
 import { rec } from "../json-value"
@@ -7,6 +9,12 @@ export { bearerToken }
 export { errorBody }
 
 export const JSON_BODY_LIMIT_BYTES = jsonBodyLimit()
+
+export function noStoreJson(c: Context, data: unknown, status?: ContentfulStatusCode) {
+  return c.json(data, status, {
+    "Cache-Control": "no-store",
+  })
+}
 
 export class RequestBodyTooLargeError extends Error {
   limit: number

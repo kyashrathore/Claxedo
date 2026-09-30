@@ -130,7 +130,7 @@ test("session reads: a machine session's first read lands while its open view is
     expect((await reads.first).transcript.entries.map((entry) => entry.info.id)).toEqual(["msg_1", "msg_2"])
   } finally {
     facts.resolve(openView())
-    await Promise.all([reads.status, reads.requests, reads.todos, reads.goal, reads.subagents])
+    await Promise.all([reads.status, reads.backgroundWork, reads.requests, reads.todos, reads.goal, reads.subagents])
   }
 })
 
@@ -153,7 +153,7 @@ test("session reads: a failed first read rejects the first read and the status i
     { status: "fulfilled", value: [] },
   ])
   const openFailed = startSessionReads(failing("open").context, ref, shape)
-  const [first, ...facts] = await Promise.allSettled([openFailed.first, openFailed.status, openFailed.requests, openFailed.todos, openFailed.goal, openFailed.subagents])
+  const [first, ...facts] = await Promise.allSettled([openFailed.first, openFailed.status, openFailed.backgroundWork, openFailed.requests, openFailed.todos, openFailed.goal, openFailed.subagents])
   expect(first?.status).toBe("fulfilled")
   for (const fact of facts) expect(fact).toEqual({ status: "rejected", reason: failure })
 })
@@ -162,7 +162,7 @@ test("session reads: a failed placement lookup rejects every read without an unh
   const failure = new Error("catalog unavailable")
   const server = fakeServer({ reachable: () => { throw failure } })
   const reads = startSessionReads(server.context, ref, shape)
-  const results = await Promise.allSettled([reads.first, reads.status, reads.requests, reads.todos, reads.goal, reads.subagents])
+  const results = await Promise.allSettled([reads.first, reads.status, reads.backgroundWork, reads.requests, reads.todos, reads.goal, reads.subagents])
   for (const result of results) expect(result).toEqual({ status: "rejected", reason: failure })
 })
 
