@@ -3,7 +3,7 @@ import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { Hono } from "hono"
-import type { SessionBroker } from "@claxedo/harness/contract"
+import type { BackgroundTaskOperations, BackgroundTaskRef, HarnessSession, SessionBroker } from "@claxedo/harness/contract"
 import { withWorkspaceTarget } from "../target"
 import { loopbackWorkspaceRuntimeExposure } from "../exposure"
 import { createRuntimeEventHub } from "../projection/runtime-event-hub"
@@ -24,12 +24,13 @@ const snapshot: RuntimeSnapshot = {
   defaultHarness: { kind: "connection", connectionId: "scripted" },
 }
 
-async function fixture() {
+async function fixture(backgroundTasks?: BackgroundTaskOperations) {
   const directory = await mkdtemp(join(tmpdir(), "background-work-"))
   cleanups.push(() => rm(directory, { recursive: true, force: true }))
   const target = { workspaceId: "ws_background", directory }
   const brokers: SessionBroker[] = []
   const transport: FakeTransport = new FakeTransport({
+    ...(backgroundTasks ? { backgroundTasks } : {}),
     beforeStart: async (_input, broker) => { brokers.push(broker) },
     turn: async function* ({ session }) {
       yield { type: "text-delta", delta: "started a background shell" }
@@ -52,11 +53,16 @@ async function fixture() {
     `http://runtime.test${pathname}${pathname.includes("?") ? "&" : "?"}directory=${encodeURIComponent(directory)}`,
     { method, headers: { "Content-Type": "application/json" }, ...(body ? { body: JSON.stringify(body) } : {}) },
   ))
-  const prompt = (text: string) => request("/session/s/message", "POST", { parts: [{ type: "text", text }] })
+  const prompt = (text: string, session = "s") => request(`/session/${session}/message`, "POST", { parts: [{ type: "text", text }] })
+  const stopTask = async (body: unknown, session = "s") => {
+    const response = await request(`/session/${session}/background-task/stop`, "POST", body)
+    return { status: response.status, body: await response.json() }
+  }
+  const capabilities = async () => ((await (await request("/session/s/capabilities")).json()) as { backgroundTasks?: unknown }).backgroundTasks
   const statuses = async () => (await request("/session/status")).json()
   const openStatus = async () => ((await (await request("/session/s?view=open")).json()) as { status: unknown }).status
   expect((await request("/session", "POST", { id: "s" })).status).toBe(201)
-  return { transport, brokers, frames, prompt, statuses, openStatus }
+  return { transport, brokers, frames, prompt, statuses, openStatus, stopTask, capabilities, request }
 }
 
 test("background work started in a turn outlives it as a status fact that never holds the next prompt", async () => {
@@ -79,4 +85,26 @@ test("background work started in a turn outlives it as a status fact that never 
     { type: "session.background-work", properties: { sessionID: "s", active: true } },
     { type: "session.background-work", properties: { sessionID: "s", active: false } },
   ])
+})
+
+test("stopping one background task reaches the attached session's harness by the call that started it, and answers as the harness does", async () => {
+  const stops: Array<{ session: HarnessSession; task: BackgroundTaskRef }> = []
+  const f = await fixture({ stop: async (session, task) => {
+    stops.push({ session, task })
+    return task.toolCallId === "call-agent" ? { ok: true } : { ok: false, status: "not_found", message: `No running background task for ${task.toolCallId}` }
+  } })
+  expect(await f.capabilities()).toBe(true)
+  expect((await f.prompt("run it in the background")).status).toBe(200)
+
+  expect(await f.stopTask({ toolCallId: "call-agent" })).toEqual({ status: 200, body: { ok: true } })
+  expect(stops.map(({ session, task }) => [session, task])).toEqual([[f.transport.turns[0]!.session, { toolCallId: "call-agent" }]])
+  expect(await f.stopTask({ toolCallId: "call-gone" })).toEqual({ status: 404, body: { ok: false, status: "not_found", message: "No running background task for call-gone" } })
+  expect((await f.stopTask({})).status).toBe(400)
+})
+
+test("a harness without the operation refuses it as unsupported and says so in its capabilities", async () => {
+  const f = await fixture()
+  expect(await f.capabilities()).toBe(false)
+  expect((await f.prompt("run it in the background")).status).toBe(200)
+  expect(await f.stopTask({ toolCallId: "call-agent" })).toMatchObject({ status: 409, body: { error: { code: "unsupported_operation", capability: "backgroundTasks" } } })
 })

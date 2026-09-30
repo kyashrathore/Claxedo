@@ -220,6 +220,20 @@ session with background work is listed as `{ type: "idle", backgroundWork: true 
 It never enters turn admission: a prompt sent while it is set starts a turn on
 the same attached session as any other.
 
+`POST /session/:id/background-task/stop` with `{ toolCallId }` stops one
+background task (`src/host/background-tasks.ts`, route in
+`src/routes/session-background-tasks.ts`). It is an `agent_turn` write
+(`background_task_stop`), authorized like a prompt or a turn cancel, so a
+`send` share may stop a task its turn started. The task is named by the call
+that started it, which the subagent row carries. The runtime asks the held
+attachment's `HarnessTransport.backgroundTasks.stop` and answers what the
+harness answers: 200 `{ ok: true }` once the harness accepted (the task's end
+still arrives as its row's own update), 404 `not_found` for a call with no
+running task, and for a session holding no harness process, which is never
+launched to answer. A harness without the operation is refused 409
+`unsupported_operation` and reads `backgroundTasks: false` in
+`GET /session/:id/capabilities`.
+
 `RuntimeEventHub` is the hub for session/runtime events: session routes
 publish client-presentation events to its global channel, which `/api/wr/events`
 serves, and runtime-channel events (subagent revisions, goal changes) to its
