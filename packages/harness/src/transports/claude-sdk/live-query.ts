@@ -42,7 +42,7 @@ export class ClaudeLiveQuery {
   private resolveEnded!: () => void
   readonly ended = new Promise<void>((resolve) => { this.resolveEnded = resolve })
 
-  constructor(readonly key: ClaudeLaunchKey, private readonly unclaimed: () => void) {}
+  constructor(readonly key: ClaudeLaunchKey, private readonly unclaimed: (notice: string | undefined) => void) {}
 
   get reusable(): boolean { return !this.closing && !this.finished && !this.sink }
 
@@ -112,7 +112,13 @@ export class ClaudeLiveQuery {
     this.held.push(frame)
     if (frame.type !== "system" || frame.subtype !== "init") return
     this.announced = true
-    this.unclaimed()
+    this.unclaimed(this.heldNotice())
+  }
+
+  private heldNotice(): string | undefined {
+    const summaries = this.held.flatMap((frame) =>
+      frame.type === "system" && frame.subtype === "task_notification" && frame.summary ? [frame.summary] : [])
+    return summaries.length > 0 ? summaries.join("\n") : undefined
   }
 
   private route(frame: ClaudeFrame): void {

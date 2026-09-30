@@ -43,6 +43,9 @@ export async function prepareDesktopArtifacts(options: { staleOnly: boolean; log
   // Resolved before the expensive builds: Bun would report a missing
   // dependency as a bundler log buried under a larger build.
   log(`Local server entry: ${LOCAL_SERVER_ENTRY} → ${resolveLocalServerEntry(PACKAGE_DIR)}`)
+  // Both the server bundle and the Host Connector child resolve siblings
+  // through their published dist, so those builds finish before either bundles.
+  await buildPublishedPackages(REPO_ROOT, log)
 
   const [, hostConnector] = await Promise.all([
     prepareServer(staleOnly, log),
@@ -54,8 +57,6 @@ export async function prepareDesktopArtifacts(options: { staleOnly: boolean; log
 }
 
 async function prepareServer(staleOnly: boolean, log: Log) {
-  await buildPublishedPackages(REPO_ROOT, log)
-
   const entry = localServerBundleEntry(PACKAGE_DIR)
   const bundleDir = path.dirname(entry)
   let deferredEntry: string

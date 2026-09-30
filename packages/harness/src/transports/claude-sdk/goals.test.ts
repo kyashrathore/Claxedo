@@ -32,16 +32,18 @@ function broker(initial: "active" | "absent" = "absent") {
     initial === "active" ? { sessionId: "s1", objective: "Ship", status: "active", createdAt: 1, updatedAt: 1 } : null
   let settled: Promise<unknown> | undefined
   const published: (typeof goal)[] = []
+  const requests: unknown[] = []
   const value = { sessionId: "s1", config: () => input.config, rebind: async (upstreamSessionId: string) => ({ ...session().binding, upstreamSessionId }),
     goal: { read: () => goal, publish: async (next: typeof goal) => { published.push(next); goal = next } },
-    admitProviderTurn: async (_request: unknown, run: (turn: TurnBroker, ref: TurnRef) => AsyncIterable<unknown>) => {
+    admitProviderTurn: async (request: unknown, run: (turn: TurnBroker, ref: TurnRef) => AsyncIterable<unknown>) => {
+      requests.push(request)
       settled = (async () => {
         try { for await (const _event of run({ signal: new AbortController().signal } as TurnBroker, admitted)) {} return { state: "completed" as const } }
         catch (error) { return { state: "failed" as const, error: error instanceof Error ? error.message : String(error) } }
       })()
       return { admitted: true as const, turn: admitted, settled }
     } } as unknown as SessionBroker
-  return { value, published, settled: () => settled }
+  return { value, published, requests, settled: () => settled }
 }
 
 test("a native Goal starts under the admitted turn's identity and answers with the Goal Claude reported", async () => {
@@ -63,6 +65,7 @@ test("a native Goal starts under the admitted turn's identity and answers with t
   expect(started).toEqual({ ok: true, goal: state.value.goal.read() })
   expect(started.ok && started.goal).toMatchObject({ objective: "Ship", status: "active" })
   expect(goals.turnId("s1")).toBe("goal-turn")
+  expect(state.requests).toEqual([{ reason: "goal", detail: "Ship" }])
   finish()
   await state.settled()
   expect(specs[0]?.turn?.()).toMatchObject({ turnId: "goal-turn" })

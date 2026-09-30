@@ -77,7 +77,7 @@ export type ChildSessionRef = {
 
 export type ProviderTurnInput = {
   reason: "goal" | "provider"
-  userMessage?: { id: string; text: string }
+  detail?: string
 }
 
 export type ProviderTurnResult =

@@ -29,7 +29,7 @@ export class ClaudeGoals {
       await broker.goal.publish(goal)
       if (goal) accept({ ok: true, goal })
     } } }
-    const admitted = await broker.admitProviderTurn({ reason: "goal" }, (turnBroker, turn) =>
+    const admitted = await broker.admitProviderTurn({ reason: "goal", detail: objective }, (turnBroker, turn) =>
       this.run(entry, reporting, turnBroker, turn, nativeGoalPrompt(objective), abort))
     if (!admitted.admitted) return { ok: false, status: "conflict", message: `Claude Goal admission ${admitted.reason}` }
     const running = { turnId: admitted.turn.turnId, abort, settled: admitted.settled }

@@ -1,7 +1,7 @@
-import { randomUUID } from "node:crypto"
 import { errorMessage } from "@claxedo/helpers"
-import type { AgentTurnOutcome } from "@claxedo/agent-runtime-contract"
+import { assistantMessageIdForTurn, createMessageIds, type AgentTurnOutcome } from "@claxedo/agent-runtime-contract"
 import type { ProviderTurnInput, ProviderTurnResult, ProviderTurnSettlement, RoutedEvent, TurnRef } from "@claxedo/harness/contract"
+import { harnessAuthor, providerTurnNotice } from "./provider-turn-message"
 import { resolveSessionModel } from "../session/session-model"
 import { isTerminalRuntimePayload, mergeOutcome, outcomeFromPayload } from "../host/turn-outcome"
 import { sessionTurnAgent } from "../host/turn-record"
@@ -15,6 +15,7 @@ export type LeasedTurnFailure = { leaseId: string; assistantMessageId: string; o
 export class BrokerProviderTurns {
   private readonly controllers = new Map<string, AbortController>()
   private readonly streams = new Map<string, { terminal?: boolean; outcome?: AgentTurnOutcome }>()
+  private readonly messageIds = createMessageIds()
 
   constructor(
     private readonly store: RuntimeStore,
@@ -53,15 +54,16 @@ export class BrokerProviderTurns {
     const model = resolveSessionModel(config)
     const leaseId = this.store.acquireTurnLease(sessionId)
     if (!leaseId) return { admitted: false, reason: "busy" }
-    const turnId = randomUUID()
+    const userMessageId = this.messageIds()
+    const turnId = assistantMessageIdForTurn(userMessageId)
     const turn: TurnRef = { turnId, assistantMessageId: turnId }
     const controller = new AbortController()
     try {
       const started = this.store.startTurn({
         sessionId, agentSessionId: this.store.getAgentSessionId(sessionId) ?? undefined,
-        assistantMessageId: turnId, agent: sessionTurnAgent(config), ...(model ? { model } : {}),
-        parts: input.userMessage ? [{ type: "text", text: input.userMessage.text }] : [],
-        ...(input.userMessage ? { userMessageId: input.userMessage.id } : {}),
+        userMessageId, assistantMessageId: turnId, agent: sessionTurnAgent(config), ...(model ? { model } : {}),
+        parts: [{ type: "text", text: providerTurnNotice(input) }],
+        author: harnessAuthor(config.harness.id),
       })
       for (const event of started.events) this.delivery.broadcast(sessionId, event)
     } catch (error) {

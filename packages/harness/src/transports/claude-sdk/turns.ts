@@ -82,7 +82,7 @@ export class ClaudeTurns {
     }
     if (abort.signal.aborted || !entry.active) return undefined
     entry.active.launched = true
-    const live: ClaudeLiveQuery = new ClaudeLiveQuery(key, () => this.admitOwnTurn(entry, live))
+    const live: ClaudeLiveQuery = new ClaudeLiveQuery(key, (notice) => this.admitOwnTurn(entry, live, notice))
     entry.live = live
     const frames = live.claim()!
     live.run(await this.launcher().launch({ session: entry.session, input: entry.input, broker: entry.broker, turn: () => entry.turn,
@@ -102,8 +102,8 @@ export class ClaudeTurns {
     return done
   }
 
-  private admitOwnTurn(entry: ClaudeEntry, live: ClaudeLiveQuery): void {
-    void entry.broker.admitProviderTurn({ reason: "provider" }, (broker, turn) => this.ownTurn(entry, live, broker, turn)).then((admission) => {
+  private admitOwnTurn(entry: ClaudeEntry, live: ClaudeLiveQuery, notice: string | undefined): void {
+    void entry.broker.admitProviderTurn({ reason: "provider", ...(notice ? { detail: notice } : {}) }, (broker, turn) => this.ownTurn(entry, live, broker, turn)).then((admission) => {
       if (!admission.admitted && admission.reason === "closed") live.close()
     }, (error: unknown) => entry.broker.reportFailure(error))
   }

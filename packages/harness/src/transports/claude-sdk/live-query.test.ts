@@ -135,7 +135,7 @@ test("a turn that leaves a background task running ends at its result with stdin
   await until(() => own.length === 1)
   claude.frames.end()
   await own[0]!.done
-  expect(own[0]!.input).toEqual({ reason: "provider" })
+  expect(own[0]!.input).toEqual({ reason: "provider", detail: "done" })
   expect(texts(own[0]!.events).join()).toContain("the job finished")
   expect(launches).toHaveLength(1)
   await transport.dispose()

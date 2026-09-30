@@ -10,6 +10,8 @@ import { RuntimeStore } from "../store"
 import { createRequestSurface } from "../host/requests"
 import { createRuntimeEventHub } from "../projection/runtime-event-hub"
 import { createStoreBrokerPorts, type StoreBrokerPortOptions } from "./index"
+import { harnessAuthor, providerTurnNotice } from "./provider-turn-message"
+import { assistantMessageIdForTurn, createMessageIds } from "@claxedo/agent-runtime-contract"
 
 const origin = { actor: { kind: "machine-owner" as const }, via: "loopback" as const, reissued: false }
 const question = (id: string) => ({
@@ -407,6 +409,44 @@ describe("store broker ports", () => {
     if (!admitted.admitted) throw new Error("Provider turn was not admitted")
     expect(await admitted.settled).toEqual({ state: "completed" })
     expect(store.getMessages("s1").at(-1)?.info).toMatchObject({ agent: "build", providerID: "claude", modelID: "default" })
+  })
+
+  test("a provider turn after a prompted one opens with a message its harness authored, so the session's latest turn still pages", async () => {
+    const { store, ports } = setup()
+    const first = store.readTurnAuthority("s1")?.leaseId
+    if (!first) throw new Error("Missing initial lease")
+    store.finishTurn({ sessionId: "s1", assistantMessageId: "t1", leaseId: first, outcome: { status: "completed", completedAt: 10 } })
+    store.releaseTurnLease("s1", first)
+    const prompted = store.acquireTurnLease("s1")
+    if (!prompted) throw new Error("Missing prompted lease")
+    const promptId = createMessageIds()()
+    store.startTurn({ sessionId: "s1", userMessageId: promptId, assistantMessageId: assistantMessageIdForTurn(promptId), agent: "general",
+      model: { providerID: "anthropic", modelID: "test" }, parts: [{ type: "text", text: "start four agents" }] })
+    store.finishTurn({ sessionId: "s1", assistantMessageId: assistantMessageIdForTurn(promptId), leaseId: prompted, outcome: { status: "completed", completedAt: 20 } })
+    store.releaseTurnLease("s1", prompted)
+
+    const admitted = await ports.admitProviderTurn("s1", { reason: "provider", detail: "Agent \"Audit\" finished" }, async (turn) => {
+      await ports.drainProviderEvent("s1", turn, { event: { type: "text-delta", delta: "One task finished." } })
+      await ports.drainProviderEvent("s1", turn, { event: { type: "finish", sessionId: "s1" } })
+    })
+    if (!admitted.admitted) throw new Error("Provider turn was not admitted")
+    expect(await admitted.settled).toEqual({ state: "completed" })
+
+    const page = store.getMessagePage("s1", { view: "latest-surface" })
+    const [opening, reply] = page?.messages ?? []
+    expect(opening?.info).toMatchObject({ role: "user", claxedo: { author: { id: "harness:claude", name: "Claude Code", kind: "agent" } } })
+    expect(opening?.parts).toMatchObject([{ type: "text", text: "Agent \"Audit\" finished" }])
+    expect(reply?.info).toMatchObject({ id: admitted.turn.assistantMessageId, role: "assistant", parentID: opening?.info.id })
+    const laterPromptId = createMessageIds()()
+    expect([laterPromptId, opening!.info.id, promptId].sort()).toEqual([promptId, opening!.info.id, laterPromptId])
+    expect(store.getMessagePage("s1", { view: "latest-turn" })?.messages.map((message) => message.info.id))
+      .toEqual([opening?.info.id, admitted.turn.assistantMessageId])
+  })
+
+  test("a provider turn names its opening message after the reason it started", () => {
+    expect(providerTurnNotice({ reason: "goal", detail: "ship the fix" })).toBe("Goal: ship the fix")
+    expect(providerTurnNotice({ reason: "provider" })).toBe("Continued on its own")
+    expect(harnessAuthor("cursor-acp")).toEqual({ id: "harness:cursor-acp", name: "cursor-acp", kind: "agent" })
   })
 
   test("a provider turn settles from its own terminal event, and one exhausted without it fails", async () => {
