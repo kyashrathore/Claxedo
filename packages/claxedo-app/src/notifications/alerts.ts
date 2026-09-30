@@ -1,4 +1,4 @@
-import type { ServerEvent, SessionRef, SessionStatus } from "@/server"
+import { sessionStatusWithBackgroundWork, type ServerEvent, type SessionRef, type SessionStatus } from "@/server"
 import type { SoundChoice } from "./sounds"
 
 export type AlertKind = "agent" | "permissions" | "errors"
@@ -10,24 +10,28 @@ export type AlertPreferences = {
 
 export type Alert = { readonly kind: AlertKind; readonly ref: SessionRef }
 
-type Activity = { readonly kind?: SessionStatus["kind"]; readonly backgroundWork: boolean }
+type Activity = { readonly status?: SessionStatus; readonly backgroundWork: boolean }
 
 const QUIET: Activity = { backgroundWork: false }
 
-function inProgress(activity: Activity): boolean {
-  if (activity.kind === "working" || activity.kind === "retrying" || activity.kind === "recovering") return true
-  return activity.backgroundWork && activity.kind !== "failed"
+function shown(activity: Activity): SessionStatus["kind"] | undefined {
+  return activity.status && sessionStatusWithBackgroundWork(activity.status, activity.backgroundWork).kind
+}
+
+function turnRunning(kind: SessionStatus["kind"] | undefined): boolean {
+  return kind === "working" || kind === "retrying" || kind === "recovering"
 }
 
 function activityAlert(previous: Activity, next: Activity): AlertKind | undefined {
-  if (next.kind === "failed") return previous.kind === "failed" ? undefined : "errors"
-  return inProgress(previous) && !inProgress(next) ? "agent" : undefined
+  const [before, after] = [shown(previous), shown(next)]
+  if (after === "failed") return before === "failed" ? undefined : "errors"
+  return turnRunning(before) && after === "idle" ? "agent" : undefined
 }
 
 type ActivityEvent = Extract<ServerEvent, { type: "statusChanged" | "backgroundWorkChanged" }>
 
 function nextActivity(previous: Activity, event: ActivityEvent): Activity {
-  return event.type === "statusChanged" ? { ...previous, kind: event.status.kind } : { ...previous, backgroundWork: event.active }
+  return event.type === "statusChanged" ? { ...previous, status: event.status } : { ...previous, backgroundWork: event.active }
 }
 
 export function createAlertDetector(): (event: ServerEvent) => Alert | undefined {

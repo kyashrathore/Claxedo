@@ -199,19 +199,22 @@ test("a turn's status that lands before its session's row is the row's status on
 const rowView = (state: ListState, id: string) =>
   rowViews({ order: visibleOrder(state), data: state, openRequests: new Map(), cache: createRowViewCache() }).get(sessionId(id))
 
-test("background work started under a turn keeps the row in progress after the turn ends, while the turn's status reads idle", () => {
+test("a turn that ends while its background work runs leaves the row running in background, and it is idle once the work settles", () => {
   const a1 = row(ALPHA, "a1", 50).ref
   const live = run(initialListState, { type: "fetchStarted" }, { type: "fetched", window: window([page(ALPHA, [row(ALPHA, "a1", 50)])]) })
-  const ended = run(
+  const started = run(
     live,
     { type: "statusChanged", ref: a1, status: { kind: "working" }, at: 1_100 },
     { type: "backgroundWorkChanged", ref: a1, active: true, at: 1_200 },
-    { type: "statusChanged", ref: a1, status: { kind: "idle" }, at: 1_300 },
   )
-  expect(rowView(ended, "a1")).toMatchObject({ status: { kind: "idle" }, backgroundWork: true })
+  expect(rowView(started, "a1")?.status).toEqual({ kind: "working" })
+  const ended = run(started, { type: "statusChanged", ref: a1, status: { kind: "idle" }, at: 1_300 })
+  expect(rowView(ended, "a1")?.status).toEqual({ kind: "runningInBackground" })
 
-  const settled = run(ended, { type: "backgroundWorkChanged", ref: a1, active: false, at: 1_400 })
-  expect(rowView(settled, "a1")).toMatchObject({ status: { kind: "idle" }, backgroundWork: false })
+  const reporting = run(ended, { type: "backgroundWorkChanged", ref: a1, active: false, at: 1_400 }, { type: "statusChanged", ref: a1, status: { kind: "working" }, at: 1_410 })
+  expect(rowView(reporting, "a1")?.status).toEqual({ kind: "working" })
+  const settled = run(reporting, { type: "statusChanged", ref: a1, status: { kind: "idle" }, at: 1_500 })
+  expect(rowView(settled, "a1")?.status).toEqual({ kind: "idle" })
 })
 
 test("listed and opened background work is a read at its send time: an event at or after it wins, and one that lands during a read is replayed", () => {
@@ -220,18 +223,18 @@ test("listed and opened background work is a read at its send time: an event at 
     ["a1", { status: { kind: "idle" }, waitingOnUser: false, backgroundWork }],
   ])], [], sentAt)
   const read = run(initialListState, { type: "fetchStarted" }, { type: "fetched", window: listed(true, 1_000) })
-  expect(rowView(read, "a1")?.backgroundWork).toBe(true)
+  expect(rowView(read, "a1")?.status.kind).toBe("runningInBackground")
 
   const settled = run(read, { type: "backgroundWorkChanged", ref: a1, active: false, at: 1_500 })
   const stalePage = run(settled, { type: "rereadStarted" }, { type: "rereadFetched", mode: "refresh", window: listed(true, 1_200) })
-  expect(rowView(stalePage, "a1")?.backgroundWork).toBe(false)
+  expect(rowView(stalePage, "a1")?.status.kind).toBe("idle")
   const staleOpen = run(stalePage, { type: "backgroundWorkRead", ref: a1, active: true, sentAt: 1_400 })
-  expect(rowView(staleOpen, "a1")?.backgroundWork).toBe(false)
+  expect(rowView(staleOpen, "a1")?.status.kind).toBe("idle")
   const freshOpen = run(staleOpen, { type: "backgroundWorkRead", ref: a1, active: true, sentAt: 1_600 })
-  expect(rowView(freshOpen, "a1")?.backgroundWork).toBe(true)
+  expect(rowView(freshOpen, "a1")?.status.kind).toBe("runningInBackground")
 
   const held = run(freshOpen, { type: "rereadStarted" }, { type: "backgroundWorkChanged", ref: a1, active: false, at: 1_700 }, {
     type: "rereadFetched", mode: "refresh", window: listed(true, 1_650),
   })
-  expect(rowView(held, "a1")?.backgroundWork).toBe(false)
+  expect(rowView(held, "a1")?.status.kind).toBe("idle")
 })

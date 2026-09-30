@@ -21,6 +21,12 @@ export type StatusOwner = {
 
 type FailedStatus = Extract<SessionStatus, { kind: "failed" }>
 
+export const RUNNING_IN_BACKGROUND: Extract<SessionStatus, { kind: "runningInBackground" }> = { kind: "runningInBackground" }
+
+export function sessionStatusWithBackgroundWork<S extends { readonly kind: string }>(status: S, backgroundWork: boolean): S | typeof RUNNING_IN_BACKGROUND {
+  return backgroundWork && (status.kind === "idle" || status.kind === "unknown") ? RUNNING_IN_BACKGROUND : status
+}
+
 function statusFromLastTurn(outcome: AgentTurnOutcome | undefined): SessionStatus {
   if (outcome?.status !== "failed") return { kind: "idle" }
   return { kind: "failed", error: new ServerError({ class: "internal", message: outcome.error }) }

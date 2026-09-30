@@ -103,6 +103,7 @@ export type SessionStatus =
   | { readonly kind: "retrying"; readonly attempt: number; readonly message: string; readonly nextAt: number; readonly action?: RetryAction }
   | { readonly kind: "recovering"; readonly reason: "processRestart" | "uncertainExecution"; readonly message: string }
   | { readonly kind: "failed"; readonly error: AppError }
+  | { readonly kind: "runningInBackground" }
 
 export type SessionSelections = {
   readonly harness?: HarnessSelection

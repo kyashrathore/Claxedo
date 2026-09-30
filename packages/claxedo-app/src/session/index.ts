@@ -31,7 +31,6 @@ export type SentPrompt = PromptInput & { readonly messageId: string; readonly se
 export type SessionRowView = SessionRow & {
   readonly status: SessionStatusView
   readonly waitingOnUser: boolean
-  readonly backgroundWork: boolean
   readonly pending: boolean
 }
 

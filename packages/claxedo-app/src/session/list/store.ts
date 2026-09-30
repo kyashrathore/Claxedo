@@ -4,6 +4,7 @@ import { machine, type Machine } from "@/lib/machine"
 import { uuid } from "@/lib/uuid"
 import {
   sessionId as asSessionId,
+  sessionStatusWithBackgroundWork,
   toAppError,
   type AppError,
   type PlacementId,
@@ -119,6 +120,7 @@ function createRowReads(state: Accessor<ListState>, requests: RequestsInternal, 
   const views = createMemo(() => rowViews({ order: order(), data: { entries: entries(), statuses: statuses(), backgroundWork: backgroundWork() }, openRequests: requests.openBySession(), cache }))
   const entryOf = createKeyedReads(entries)
   const statusOf = createKeyedReads(statuses)
+  const backgroundWorkOf = createKeyedReads(backgroundWork)
   return {
     order,
     view: createKeyedReads(views),
@@ -126,7 +128,7 @@ function createRowReads(state: Accessor<ListState>, requests: RequestsInternal, 
       const entry = entryOf(sessionId)
       return entry && entry.kind !== "tombstone" ? entry.row : undefined
     },
-    statusOf: (sessionId: SessionId) => statusOf(sessionId)?.status ?? UNKNOWN_STATUS,
+    statusOf: (sessionId: SessionId) => sessionStatusWithBackgroundWork(statusOf(sessionId)?.status ?? UNKNOWN_STATUS, backgroundWorkOf(sessionId)?.active === true),
   }
 }
 
