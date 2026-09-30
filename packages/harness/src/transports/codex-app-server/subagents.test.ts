@@ -30,7 +30,7 @@ function scriptedRpc(options: { childOutcome?: "completed" | "failed" | "held"; 
 }
 
 function host(rpc: CodexRpc, drained: () => Promise<void> = async () => {}): SubagentHost {
-  return { rpc, directory: "/work", threadId: "parent-1", brokered: false, permissionMode: "full-access",
+  return { rpc, directory: "/work", threadId: "parent-1", brokered: false, plugins: ["kit@claxedo-agent-plugins"], permissionMode: "full-access",
     settings: { model: "gpt-5.5", effort: "high", serviceTier: null }, children: new Map(), drained }
 }
 
@@ -54,7 +54,8 @@ test("spawn_agent starts a subagent thread under the parent's mode and settings 
     contentItems: [{ type: "inputText", text: "Subagent child-1 completed successfully." }], success: true })
   expect([...subagents.children]).toEqual([["child-1", undefined]])
   expect(requests.map((request) => request.method)).toEqual(["thread/start", "turn/start"])
-  expect(requests[0]?.params).toMatchObject({ cwd: "/work", threadSource: "subagent", approvalPolicy: "never", sandbox: "danger-full-access", model: "gpt-5.5" })
+  expect(requests[0]?.params).toMatchObject({ cwd: "/work", threadSource: "subagent", approvalPolicy: "never", sandbox: "danger-full-access", model: "gpt-5.5",
+    config: { plugins: { "kit@claxedo-agent-plugins": { enabled: true } } } })
   expect(requests[1]?.params).toMatchObject({ threadId: "child-1", model: "gpt-5.5", effort: "high", sandboxPolicy: { type: "dangerFullAccess" },
     input: [{ type: "text", text: "Inspect this" }] })
   expect(observations.map((row) => [row.status, row.toolCallId, row.providerId, row.label])).toEqual([

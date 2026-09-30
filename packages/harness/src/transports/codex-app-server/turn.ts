@@ -81,7 +81,7 @@ async function startTurn(entry: Entry, session: HarnessSession, turn: TurnInput,
   const mode = codexPermissionSettings(entry.start.config.permissionMode)
   const threadId = session.binding.upstreamSessionId
   const params = await codexTurnParams(turn, threadId, session.directory, settings, mode)
-  const resume = codexThreadResumeParams(threadId, entry.start, projectCodexThreadConfig(entry.start, services), mode)
+  const resume = codexThreadResumeParams(threadId, entry.start, projectCodexThreadConfig(entry.start, services, entry.plugins), mode)
   entry.settings = settings
   const result = asRecordOrEmpty(await startCodexTurn(entry.rpc, params, resume, codexRetirementDeadline(services)))
   const id = asString(asRecordOrEmpty(result.turn).id)

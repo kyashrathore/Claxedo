@@ -5,7 +5,7 @@ import type { CodexTransportOptions } from "./entry"
 import { CodexTransportError } from "./errors"
 import { CodexRpc, codexRetirementDeadline } from "./rpc"
 
-export type CodexLaunch = { rpc: CodexRpc; home: string; brokered: boolean }
+export type CodexLaunch = { rpc: CodexRpc; home: string; brokered: boolean; plugins: string[] }
 
 async function spawnCodexProfile(input: StartInput, options: CodexTransportOptions, services: HarnessServices, signal: AbortSignal) {
   const profileInput = { homeRoot: options.homeRoot, credentials: input.credentials, projection: input.projection }

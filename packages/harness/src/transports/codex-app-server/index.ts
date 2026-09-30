@@ -83,7 +83,7 @@ export class CodexAppServerTransport implements HarnessTransport {
     const active = await activeCodexTurn(entry)
     if (message.method === "item/tool/call") {
       return answerCodexToolCall(active && { rpc: entry.rpc, directory: entry.session.directory, threadId: entry.session.binding.upstreamSessionId,
-        brokered: entry.brokered, permissionMode: entry.start.config.permissionMode, settings: entry.settings, children: entry.children,
+        brokered: entry.brokered, plugins: entry.plugins, permissionMode: entry.start.config.permissionMode, settings: entry.settings, children: entry.children,
         drained: active.drained }, active?.broker, message)
     }
     if (!active && isCodexRequestMethod(message.method)) throw new CodexRequestRefusal(-32000, "Codex request has no active turn")

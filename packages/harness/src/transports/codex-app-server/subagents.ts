@@ -9,6 +9,7 @@ import { CodexTransportError } from "./errors"
 import { codexPermissionSettings, codexTurnSandboxPolicy, type CodexPermissionSettings } from "./modes"
 import type { CodexRpc, RpcMessage } from "./rpc"
 import type { CodexTurnSettings } from "./models"
+import { codexPluginConfig } from "./configuration"
 
 export const codexDynamicTools: v2.DynamicToolSpec[] = [{
   type: "function",
@@ -25,6 +26,7 @@ export type SubagentHost = {
   directory: string
   threadId: string
   brokered: boolean
+  plugins: readonly string[]
   permissionMode: string | undefined
   settings: CodexTurnSettings
   children: Map<string, CodexEvents | undefined>
@@ -91,7 +93,7 @@ async function spawnChild(host: SubagentHost, broker: TurnBroker, call: SpawnCal
 
 async function startChildThread(host: SubagentHost, mode: CodexPermissionSettings): Promise<string> {
   const params: v2.ThreadStartParams = { cwd: host.directory, approvalPolicy: mode.approvalPolicy, approvalsReviewer: "user",
-    sandbox: mode.sandbox, threadSource: "subagent", ...(host.settings.model ? { model: host.settings.model } : {}),
+    sandbox: mode.sandbox, threadSource: "subagent", config: codexPluginConfig(host.plugins), ...(host.settings.model ? { model: host.settings.model } : {}),
     ...(host.brokered ? { modelProvider: "broker" } : {}) }
   const started = asRecordOrEmpty(await host.rpc.request("thread/start", params))
   const childThreadId = asString(asRecordOrEmpty(started.thread).id)

@@ -4,12 +4,12 @@ import fs from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
 import { setupConformance } from "./test-support/run"
-import { codexBackend, makeCodexTransport, recordingBackend, type CodexBackend } from "./test-support/codex"
+import { codexBackend, codexEntry, makeCodexTransport, recordingBackend, type CodexBackend } from "./test-support/codex"
 import { createTestServices } from "./test-support/services"
 import { PINNED_CODEX } from "../../e2e/harness/pinned-codex"
 import { CodexRpc } from "../transports/codex-app-server/rpc"
 import { CodexAppServerTransport } from "../transports/codex-app-server"
-import { createRequestBroker, createSessionBroker } from "../broker"
+import { createRequestBroker, createSessionBroker, createTurnBroker } from "../broker"
 import { MemoryPorts, authority } from "./test-support/memory-ports"
 import type { StartInput } from "../contract"
 
@@ -151,3 +151,59 @@ test("usage of a child thread Codex spawns on its own is metered to the session,
     expect(context.ports.sessionEvents.filter((row) => JSON.stringify(row.event).includes("codex.usage_unbilled"))).toEqual([])
   } finally { await context.close() }
 }, 60_000)
+
+async function conformPlugin(root: string, name: string) {
+  const plugin = path.join(root, name)
+  const skill = path.join(plugin, "skills", `${name}-skill`)
+  await fs.mkdir(path.join(plugin, ".codex-plugin"), { recursive: true })
+  await fs.mkdir(skill, { recursive: true })
+  await fs.writeFile(path.join(plugin, ".codex-plugin", "plugin.json"), JSON.stringify({ name, version: "1.0.0", skills: "./skills/" }))
+  await fs.writeFile(path.join(skill, "SKILL.md"), `---\nname: ${name}-skill\ndescription: ${name} skill\n---\n${name}\n`)
+  return { pluginInstanceId: name, root: plugin, skillNames: [], dataRoot: plugin }
+}
+
+test("adding a plugin to a session keeps its thread: the next turn resumes it in the same home with the plugin loaded", async () => {
+  const context = await setupConformance({ name: "codex-plugin-change", backend: codexBackend, makeTransport: makeCodexTransport })
+  try {
+    const state = context.backend as CodexBackend
+    for await (const _event of context.transport.send(context.session, context.turn("Reply with exactly this one token: BEFOREPLUGIN"), context.turnBroker())) {}
+    const home = codexEntry(context.transport, "s1").home
+    const projection = { ...context.start.projection, generation: "g2", pluginRoots: [await conformPlugin(state.root, "added-plugin")] }
+    expect(await context.transport.configure(context.session, { projection })).toEqual({ state: "applied" })
+    const text: string[] = []
+    for await (const routed of context.transport.send(context.session, context.turn("Reply with exactly this one token: AFTERPLUGIN"), context.turnBroker())) {
+      if (routed.event.type === "text-delta") text.push(routed.event.delta)
+    }
+    expect(text.join("")).toContain("AFTERPLUGIN")
+    expect(codexEntry(context.transport, "s1").home).toBe(home)
+    const after = state.server.requests.find((row) => row.prompt.includes("AFTERPLUGIN"))
+    expect(after?.prompt).toContain("BEFOREPLUGIN")
+    expect(JSON.stringify(after?.body)).toContain("added-plugin-skill")
+  } finally { await context.close() }
+}, 90_000)
+
+test("two sessions of one owner with different plugin sets share a home, and each thread loads only its own plugins", async () => {
+  const context = await setupConformance({ name: "codex-plugin-isolation", backend: async () => {
+    const state = await codexBackend()
+    return { ...state, projection: { generation: "g1", mcpServers: [], notApplied: [], pluginRoots: [await conformPlugin(state.root, "first-plugin")] } }
+  }, makeTransport: makeCodexTransport })
+  try {
+    const state = context.backend as CodexBackend
+    const secondStart = { ...context.start, sessionId: "s2", workspaceId: "w2",
+      projection: { ...context.start.projection, pluginRoots: [await conformPlugin(state.root, "second-plugin")] } }
+    context.ports.current.set("s2", { ...authority, sessionId: "s2", workspaceId: "w2", directory: context.backend.directory })
+    context.ports.directories.set("s2", context.backend.directory)
+    const second = await context.transport.start(secondStart, createSessionBroker(context.owner, { sessionId: "s2", workspaceId: "w2",
+      directory: context.backend.directory, origin: context.backend.origin! }))
+    expect(codexEntry(context.transport, "s2").home).toBe(codexEntry(context.transport, "s1").home)
+    for await (const _event of context.transport.send(context.session, context.turn("Reply with exactly this one token: FIRSTPLUGINS"), context.turnBroker())) {}
+    for await (const _event of context.transport.send(second, context.turn("Reply with exactly this one token: SECONDPLUGINS"),
+      createTurnBroker(context.owner, { authority: context.ports.current.get("s2")!, origin: context.backend.origin!, signal: new AbortController().signal }))) {}
+    const first = JSON.stringify(state.server.requests.find((row) => row.prompt.includes("FIRSTPLUGINS"))?.body)
+    const secondBody = JSON.stringify(state.server.requests.find((row) => row.prompt.includes("SECONDPLUGINS"))?.body)
+    expect(first).toContain("first-plugin-skill")
+    expect(first).not.toContain("second-plugin-skill")
+    expect(secondBody).toContain("second-plugin-skill")
+    expect(secondBody).not.toContain("first-plugin-skill")
+  } finally { await context.close() }
+}, 90_000)

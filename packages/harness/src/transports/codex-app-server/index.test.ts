@@ -22,13 +22,13 @@ const input: StartInput = {
 
 test("Codex receives every projected MCP server and local first-party server", () => {
   const services = { firstPartyMcp: () => ({ kind: "http", name: "claxedo", url: "http://127.0.0.1:47503" }) } as unknown as HarnessServices
-  const config = projectCodexThreadConfig(input, services)
+  const config = projectCodexThreadConfig(input, services, [])
   expect(config.mcp_servers).toEqual({
     configured: { command: "server", args: ["--port", "47501"], env: { TOKEN: "sentinel" } },
     plugin: { url: "http://127.0.0.1:47502", http_headers: { Authorization: "Bearer sentinel" } },
     claxedo: { url: "http://127.0.0.1:47503", http_headers: {} },
   })
-  expect((projectCodexThreadConfig({ ...input, locality: "remote" }, services).mcp_servers as Record<string, unknown>).claxedo).toBeUndefined()
+  expect((projectCodexThreadConfig({ ...input, locality: "remote" }, services, []).mcp_servers as Record<string, unknown>).claxedo).toBeUndefined()
 })
 
 test("disposing during pending initialize retires the process before start rejects", async () => {

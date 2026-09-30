@@ -8,9 +8,8 @@ import { SESSION_TITLE_SYSTEM_PROMPT } from "../../e2e/harness/config"
 import { PINNED_CODEX } from "../../e2e/harness/pinned-codex"
 import { startScriptedMcpServer } from "../../e2e/harness/scripted-mcp-server"
 import { CodexAppServerTransport } from "../transports/codex-app-server"
-import { CodexRpc, type RpcMessage } from "../transports/codex-app-server/rpc"
+import type { RpcMessage } from "../transports/codex-app-server/rpc"
 import { answerCodexRequest } from "../transports/codex-app-server/requests"
-import { prepareCodexProfile } from "../profiles/codex"
 import { createRequestBroker, createSessionBroker, createTurnBroker } from "../broker"
 import { MemoryPorts, authority, origin } from "./test-support/memory-ports"
 import { createTestServices } from "./test-support/services"
@@ -455,29 +454,21 @@ test("Codex native goals use the running app-server", async () => {
 }, 60_000)
 
 test("brokered Codex discovers a projected plugin skill through its composed home", async () => {
-  const state = await backend()
-  const plugin = path.join(state.root, "plugin")
-  const skill = path.join(plugin, "skills", "conform-skill")
-  await fs.mkdir(path.join(plugin, ".codex-plugin"), { recursive: true })
-  await fs.mkdir(skill, { recursive: true })
-  await fs.writeFile(path.join(plugin, ".codex-plugin", "plugin.json"), JSON.stringify({ name: "conform-plugin", version: "1.0.0", skills: "./skills/" }))
-  await fs.writeFile(path.join(skill, "SKILL.md"), "---\nname: conform-skill\ndescription: Conformance plugin\n---\nConformance\n")
-  const projection = { generation: "g1", mcpServers: [], notApplied: [], pluginRoots: [{ pluginInstanceId: "one", root: plugin, skillNames: [], dataRoot: plugin }] }
-  const services = createTestServices()
-  let rpc: CodexRpc | undefined
+  const context = await setupConformance({ name: "codex-plugin-skill", backend: async () => {
+    const state = await backend()
+    const plugin = path.join(state.root, "plugin")
+    const skill = path.join(plugin, "skills", "conform-skill")
+    await fs.mkdir(path.join(plugin, ".codex-plugin"), { recursive: true })
+    await fs.mkdir(skill, { recursive: true })
+    await fs.writeFile(path.join(plugin, ".codex-plugin", "plugin.json"), JSON.stringify({ name: "conform-plugin", version: "1.0.0", skills: "./skills/" }))
+    await fs.writeFile(path.join(skill, "SKILL.md"), "---\nname: conform-skill\ndescription: Conformance plugin\n---\nConformance\n")
+    return { ...state, projection: { generation: "g1", mcpServers: [], notApplied: [], pluginRoots: [{ pluginInstanceId: "one", root: plugin, skillNames: [], dataRoot: plugin }] } }
+  }, makeTransport })
   try {
-    const { home } = await prepareCodexProfile({ homeRoot: path.join(state.root, "homes"), credentials: state.credentials, projection })
-    const owned = await services.spawn({ file: PINNED_CODEX, args: ["app-server", "--listen", "stdio://"], cwd: state.directory,
-      env: { ...state.env, CODEX_HOME: home } as Record<string, string> }, { role: "harness", label: "Codex plugin conformance", signal: new AbortController().signal })
-    rpc = new CodexRpc(owned, services.clock)
-    await rpc.request("initialize", { clientInfo: { name: "claxedo", version: "0.1.0" }, capabilities: { experimentalApi: true } })
-    rpc.notify("initialized")
-    const response = await rpc.request("skills/list", { cwds: [state.directory], forceReload: true })
-    expect(JSON.stringify(response)).toContain("conform-skill")
-  } finally {
-    if (rpc) await rpc.retire({ at: Date.now() + 10_000, signal: new AbortController().signal })
-    await state.close()
-  }
+    for await (const _event of context.transport.send(context.session, context.turn("Reply with exactly this one token: PLUGINSKILL"), context.turnBroker())) {}
+    const state = context.backend as CodexBackend
+    expect(JSON.stringify(state.server.requests.find((row) => row.prompt.includes("PLUGINSKILL"))?.body)).toContain("conform-skill")
+  } finally { await context.close() }
 }, 60_000)
 
 test("Codex defers a projected configured MCP server's tools behind tool_search, and the loaded tool calls the server", async () => {

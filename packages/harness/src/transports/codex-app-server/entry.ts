@@ -20,6 +20,7 @@ export type Entry = {
   rpc: CodexRpc
   home: string
   brokered: boolean
+  plugins: string[]
   terminals: CodexTerminals
   children: Map<string, CodexEvents | undefined>
   sideThreads: Set<string>
