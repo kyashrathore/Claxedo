@@ -87,7 +87,7 @@ export const noticeHandlers: CodexHandlers = {
   "model/verification": ({ row }) => [harnessNotice({
     code: "codex_app_server.model_verification",
     message: "Codex model verification updated",
-    severity: "info",
+    severity: "debug",
     details: row,
   })],
   "windows/worldWritableWarning": ({ row }) => [harnessNotice({
