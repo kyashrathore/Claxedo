@@ -9,7 +9,7 @@ function mcpConfig(server: McpServerSpec): Record<string, JsonValue> {
   return { url: server.url, http_headers: server.headers ?? {} }
 }
 
-export function codexPluginConfig(plugins: readonly string[]): Record<string, JsonValue> {
+function codexPluginConfig(plugins: readonly string[]): Record<string, JsonValue> {
   return { model_reasoning_summary: "auto", plugins: Object.fromEntries(plugins.map((plugin) => [plugin, { enabled: true }])) }
 }
 

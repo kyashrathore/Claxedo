@@ -15,31 +15,33 @@ import { createRequestBroker, createSessionBroker, createTurnBroker } from "../b
 import { MemoryPorts, authority } from "./test-support/memory-ports"
 import type { RoutedEvent, StartInput } from "../contract"
 
-const CATALOG_MODEL = { providerID: "codex", modelID: "gpt-5.5" }
+const NATIVE_MODEL = { providerID: "codex", modelID: "gpt-6-astra" }
+const NATIVE_CHILD_PROMPT = "Message Type: NEW_TASK"
 
-test("a catalog model whose default summary is none still streams its reasoning summary, in the session and in a child", async () => {
-  const context = await setupConformance({ name: "codex-reasoning-summary", backend: async () => ({ ...await codexBackend(), model: CATALOG_MODEL }),
+test("a catalog model whose default summary is none still streams its reasoning summary, in the session and in Codex's own child", async () => {
+  const context = await setupConformance({ name: "codex-reasoning-summary", backend: async () => ({ ...await codexBackend(), model: NATIVE_MODEL }),
     makeTransport: makeCodexTransport })
   try {
     const state = context.backend as CodexBackend
-    const thinking: { text: string; child: boolean }[] = []
+    const streamed: RoutedEvent[] = []
     const run = async (prompt: string) => {
-      for await (const routed of context.transport.send(context.session, { ...context.turn(prompt), model: CATALOG_MODEL }, context.turnBroker())) {
-        if (routed.event.type === "thinking-delta") thinking.push({ text: routed.event.delta, child: routed.route?.kind === "child" })
-      }
+      for await (const routed of context.transport.send(context.session, { ...context.turn(prompt), model: NATIVE_MODEL }, context.turnBroker())) streamed.push(routed)
     }
+    const thinking = (child: boolean) => [...streamed, ...context.ports.childEvents.map((row) => row.event)]
+      .filter((routed) => routed.event.type === "thinking-delta" && (routed.route?.kind === "child") === child)
+      .map((routed) => (routed.event as { delta: string }).delta).join("")
     state.server.scriptText({ marker: "PARENTREASON", text: "PARENTREASON", reasoning: "Parent weighs the reply" })
     await run("Reply with exactly this one token: PARENTREASON")
-    state.server.scriptTool({ name: "spawn_agent", input: { task_name: "child_reason", message: "Reply with exactly this one token: CHILDREASON" },
+    state.server.scriptTool({ name: "spawn_agent", namespace: "collaboration", input: { task_name: "child_reason", message: "Reply with exactly this one token: CHILDREASON" },
       whenPromptIncludes: "DELEGATEREASON" })
-    state.server.scriptText({ marker: "CHILDREASON", text: "CHILDREASON", reasoning: "Child weighs the task" })
+    state.server.scriptText({ marker: NATIVE_CHILD_PROMPT, text: "CHILDREASON", reasoning: "Child weighs the task" })
     await run("Delegate once, then reply with exactly this one token: DELEGATEREASON")
+    expect(await eventually(() => thinking(true) || undefined)).toContain("Child weighs the task")
     const summaries = state.server.requests.filter((row) => row.dialect === "responses" && !row.prompt.includes("conversation>"))
       .map((row) => (row.body as { reasoning?: { summary?: string } }).reasoning?.summary)
     expect(summaries.length).toBeGreaterThanOrEqual(3)
     expect(summaries.every((summary) => summary === "auto")).toBe(true)
-    expect(thinking.filter((row) => !row.child).map((row) => row.text).join("")).toContain("Parent weighs the reply")
-    expect(thinking.filter((row) => row.child).map((row) => row.text).join("")).toContain("Child weighs the task")
+    expect(thinking(false)).toContain("Parent weighs the reply")
   } finally { await context.close() }
 }, 90_000)
 
@@ -122,15 +124,15 @@ test("an approval Codex asks during a goal turn reaches that turn's broker, and 
   } finally { await transport.dispose(); await state.close() }
 }, 60_000)
 
-test("a child a goal turn spawns runs on the session's model and asks for a reasoning summary", async () => {
+test("Codex's own child a goal turn spawns asks for a reasoning summary", async () => {
   const state = await codexBackend()
-  state.server.scriptTool({ name: "spawn_agent", input: { task_name: "goal_child", message: "Reply with exactly this one token: GOALCHILD" },
+  state.server.scriptTool({ name: "spawn_agent", namespace: "collaboration", input: { task_name: "goal_child", message: "Reply with exactly this one token: GOALCHILD" },
     whenPromptIncludes: "GOALPARENT" })
-  const { transport, broker, session } = await attachedGoalSession(state, CATALOG_MODEL)
+  const { transport, broker, session } = await attachedGoalSession(state, NATIVE_MODEL)
   try {
     expect((await transport.goals.start(session, "Delegate once for GOALPARENT", broker)).ok).toBe(true)
-    const child = await eventually(() => state.server.requests.find((row) => row.prompt.includes("GOALCHILD") && !row.prompt.includes("GOALPARENT")))
-    expect(child?.model).toBe("gpt-5.5")
+    const child = await eventually(() => state.server.requests.find((row) => row.prompt.includes(NATIVE_CHILD_PROMPT) && row.prompt.includes("GOALCHILD")))
+    expect(child?.model).toBe("gpt-6-astra")
     expect((child?.body as { reasoning?: { summary?: string } } | undefined)?.reasoning?.summary).toBe("auto")
     const goalTurn = state.server.requests.find((row) => row.prompt.includes("GOALPARENT"))
     expect((goalTurn?.body as { reasoning?: { summary?: string } } | undefined)?.reasoning?.summary).toBe("auto")

@@ -67,7 +67,7 @@ test("Codex refuses an unbound member before spawning or touching the owner's ho
   } finally { await peer.close() }
 })
 
-test("Codex refuses the external-auth token refresh request as an unsupported method and answers tool calls outside a turn", async () => {
+test("Codex starts its thread with no Claxedo dynamic tool and refuses the token refresh and any dynamic tool call as unsupported methods", async () => {
   const peer = await scriptedTransport()
   const responses = new Map<number, (value: Frame & { result?: unknown; error?: { code: number } }) => void>()
   const send = (id: number, method: string, params: unknown) => new Promise<Frame & { result?: unknown; error?: { code: number } }>((resolve) => {
@@ -87,9 +87,11 @@ test("Codex refuses the external-auth token refresh request as an unsupported me
     const refresh = send(0, "account/chatgptAuthTokens/refresh", { reason: "unauthorized" })
     await poll(0)
     expect((await refresh).error?.code).toBe(-32601)
-    const tool = send(1, "item/tool/call", { tool: "spawn_agent", arguments: { task_name: "x", message: "y" } })
+    const tool = send(1, "item/tool/call", { threadId: "thread-1", turnId: "turn-1", callId: "call-1", tool: "spawn_agent", arguments: { task_name: "x", message: "y" } })
     await poll(1)
-    expect((await tool).result).toEqual({ contentItems: [{ type: "inputText", text: "Dynamic tool spawn_agent is unavailable." }], success: false })
+    expect((await tool).error?.code).toBe(-32601)
+    expect(peer.frames.filter((frame) => frame.method === "thread/start").map((frame) => Object.keys(frame.params ?? {}))).toEqual([
+      expect.not.arrayContaining(["dynamicTools"])])
   } finally { await peer.close() }
 })
 

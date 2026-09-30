@@ -28,10 +28,6 @@ const approvalPolicy = optional(either(oneOf("untrusted", "on-request", "never")
   required: ["granular"], fields: { granular: shaped({
     required: ["sandbox_approval", "rules", "skill_approval", "request_permissions", "mcp_elicitations"],
     fields: { sandbox_approval: flag, rules: flag, skill_approval: flag, request_permissions: flag, mcp_elicitations: flag } }) } })))
-const dynamicTool = tagged({
-  function: { required: ["name", "description", "inputSchema"], fields: { name: text, description: text, inputSchema: json, deferLoading: optional(flag) } },
-  namespace: { required: ["name", "description", "tools"], fields: { name: text, description: text, tools: list(isRecord) } },
-})
 const personality = optional(oneOf("none", "friendly", "pragmatic"))
 const thread = {
   model: optional(text), modelProvider: optional(text), serviceTier: optional(text), cwd: optional(text), approvalPolicy,
@@ -43,7 +39,7 @@ const methods: Record<string, Shape> = {
   "model/list": { required: [], fields: { cursor: optional(text), limit: optional(count), includeHidden: optional(flag) } },
   "config/read": { required: [], fields: { includeLayers: optional(flag), cwd: optional(text) } },
   "thread/start": { required: [], fields: { ...thread, serviceName: optional(text), ephemeral: optional(flag),
-    sessionStartSource: optional(oneOf("startup", "clear")), threadSource: optional(text), dynamicTools: optional(list(dynamicTool)) } },
+    sessionStartSource: optional(oneOf("startup", "clear")) } },
   "thread/resume": { required: ["threadId"], fields: { ...thread, threadId: text, excludeTurns: optional(flag) } },
   "turn/start": { required: ["threadId", "input"], fields: { threadId: text, disabledPluginIds: optional(list(text)),
     clientUserMessageId: optional(text), input: list(userInput), turnTrigger: optional(text),

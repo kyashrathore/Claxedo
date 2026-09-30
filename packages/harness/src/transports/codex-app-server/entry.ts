@@ -2,7 +2,7 @@ import type { AsyncPushQueue } from "@claxedo/helpers"
 import type { RuntimeGoalSnapshot } from "@claxedo/agent-runtime-contract"
 import type { HarnessSession, RoutedEvent, SessionBroker, StartInput, TransportConfigUpdate, TurnBroker } from "../../contract"
 import type { CodexChildren } from "./children"
-import type { CodexModel, CodexTurnSettings } from "./models"
+import type { CodexModel } from "./models"
 import type { CodexProviderTurn } from "./provider-turn"
 import type { CodexRpc } from "./rpc"
 import type { CodexTerminals } from "./terminals"
@@ -26,7 +26,6 @@ export type Entry = {
   sideThreads: Set<string>
   usage: CodexUsageLedger
   goal: RuntimeGoalSnapshot | null
-  settings: CodexTurnSettings
   models?: Promise<CodexModel[]>
   steers: Set<string>
   released: Promise<void>
