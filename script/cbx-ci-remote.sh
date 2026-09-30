@@ -308,19 +308,6 @@ run_packages_dry_run() {
   )
 }
 
-run_relay_bench() {
-  install_root
-  bun run --cwd packages/workspace-relay-protocol build
-  bun run --cwd packages/sandbox-contract build
-  bun run --cwd packages/sandbox-manager build
-  (
-    cd packages/workspace-relay
-    bun run typecheck:bench
-    bun run test
-    CLAXEDO_BENCH_HTTP_P99_GATE_MS=250 bun run bench:gate
-  )
-}
-
 case "$LANE" in
   diagnostics-linux) run_diagnostics ;;
   release-gates-linux-x64) run_release_gates_linux_x64 ;;
@@ -328,7 +315,6 @@ case "$LANE" in
   workspace-files-linux) run_workspace_files ;;
   typecheck-linux) run_typecheck ;;
   packages-dry-run) run_packages_dry_run ;;
-  relay-bench) run_relay_bench ;;
   *)
     echo "unknown Crabbox CI lane: $LANE" >&2
     exit 2

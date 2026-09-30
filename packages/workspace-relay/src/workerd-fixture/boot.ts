@@ -8,9 +8,8 @@ import { Miniflare, type MiniflareOptions } from "miniflare"
  * a port announcement on a control pipe. That await has no deadline: if the
  * runtime never comes up — the process failed to spawn, or bound no socket and
  * emitted no listen event — `waitForPorts` waits forever. On a laptop that never
- * happens (measured boots here are ~85ms). On a shared GitHub runner it happens
- * often enough to have made `relay-bench-gate` fail six of its eight runs, and
- * the report was always the same shape and never the same test: whichever of the
+ * happens (measured boots here are ~85ms). On a shared GitHub runner it hit six
+ * of eight runs, and the report was always the same shape and never the same test: whichever of the
  * sequential boots lost the race sat at the deadline until bun killed it,
  * printing `this test timed out after 180000ms` for a runtime that had died
  * before the assertions could run.

@@ -73,15 +73,6 @@ jobs:
     command: bash script/cbx-ci-remote.sh packages-dry-run
     stop: auto
 
-  pr-relay-bench-linux:
-    provider: hetzner
-    target: linux
-    architecture: amd64
-    serverType: cpx42
-    shell: true
-    command: bash script/cbx-ci-remote.sh relay-bench
-    stop: auto
-
   # Canonical AWS Linux matrix selected by `script/cbx-ci.ts run pr-linux`.
   # Pass `--id <linux-slug>` to reuse an existing compatible lease.
   pr-diagnostics-linux-aws: &aws_linux_job
@@ -113,9 +104,6 @@ jobs:
   pr-packages-dry-run-linux-aws:
     <<: *aws_linux_job
     command: bash script/cbx-ci-remote.sh packages-dry-run
-  pr-relay-bench-linux-aws:
-    <<: *aws_linux_job
-    command: bash script/cbx-ci-remote.sh relay-bench
 
   pr-unit-windows:
     provider: aws

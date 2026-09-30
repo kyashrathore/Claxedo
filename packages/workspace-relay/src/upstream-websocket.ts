@@ -13,10 +13,10 @@
  * cannot be augmented. So while `lib.dom` is in `tsconfig.json`, the real
  * constructor is unreachable through the global's type.
  *
- * Dropping `lib.dom` (as `bench/tsconfig.json` does) fixes THIS and breaks more
- * than it fixes: `bun-types`' `Request` constructor declares `string`,
- * `RequestInit & { url }` and `Request` inputs and no `URL` input at all, which
- * this package and its tests rely on.
+ * Dropping `lib.dom` fixes THIS and breaks more than it fixes: `bun-types`'
+ * `Request` constructor declares `string`, `RequestInit & { url }` and
+ * `Request` inputs and no `URL` input at all, which this package and its tests
+ * rely on.
  *
  * The assertion is therefore genuine — the type system cannot express the
  * value — and it is confined to this module so that the lint override excusing

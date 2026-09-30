@@ -6,8 +6,7 @@ hosts, whether the host is a cloud VM or a user laptop.
 It deploys as a Cloudflare Worker. `src/worker.ts` is a stateless gateway that
 routes each workspace to its own Durable Object room (`src/cloudflare.ts`), so
 the room that owns a workspace's host tunnel also serves every request for that
-workspace. `scripts/deploy-cloudflare.ts` deploys it, and `bun run bench:gate`
-boots it locally on workerd (see [bench/README.md](bench/README.md)).
+workspace. `scripts/deploy-cloudflare.ts` deploys it.
 
 `src/bun.ts` and `src/main.ts` run the same server core as a Bun process. It is
 not deployed; the app and harness e2e suites and the server's host-tunnel tests
@@ -320,7 +319,6 @@ decisions. The decision data crosses the seam as
 ```sh
 bun --cwd packages/workspace-relay test        # unit suites, including the workerd ones
 bun --cwd packages/workspace-relay typecheck
-bun --cwd packages/workspace-relay bench:gate  # the Worker on workerd, end to end
 ```
 
 The TS error baseline for this package is **0** — keep it that way.

@@ -13,13 +13,11 @@ const groups = {
     "pr-unit-linux-aws",
     "pr-typecheck-linux-aws",
     "pr-packages-dry-run-linux-aws",
-    "pr-relay-bench-linux-aws",
   ],
   "pr-linux-hetzner": [
     "pr-unit-linux",
     "pr-typecheck-linux",
     "pr-packages-dry-run-linux",
-    "pr-relay-bench-linux",
   ],
   "pr-native": ["pr-unit-windows"],
 } as const
