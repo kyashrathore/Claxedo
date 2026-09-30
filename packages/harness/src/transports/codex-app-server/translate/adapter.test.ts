@@ -797,21 +797,14 @@ describe("codexAppServerAdapter", () => {
     })
   })
 
-  test("maps retryable provider errors to diagnostics", () => {
+  test("maps retryable provider errors to the session retrying", () => {
     const agent = runtime()
 
     expect(agent.ingest({
       source: "codex.app-server",
       method: "error",
       payload: { error: { message: "Reconnecting... 2/5" }, willRetry: true },
-    }).events).toMatchObject([{
-      type: "diagnostic",
-      diagnostic: {
-        code: "codex_app_server.retryable_error",
-        message: "Reconnecting... 2/5",
-        severity: "warn",
-      },
-    }])
+    }).events).toMatchObject([{ type: "session-retry", message: "Reconnecting... 2/5" }])
   })
 
   test("maps chat-adjacent app-server session/provider events first class", () => {

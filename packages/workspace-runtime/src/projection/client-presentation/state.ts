@@ -17,6 +17,8 @@ export type OpenReasoningPart = {
 export type NoticeProjectionState = {
   noticeCount: number
   runningCompactionPartId?: string
+  /** A harness retry the session status shows until the reply's next content. */
+  retrying: boolean
 }
 
 export type ClientPresentationProjectionState = {
@@ -91,6 +93,6 @@ export function createClientPresentationProjectionState(
     splitText: initial?.splitText ?? false,
     splitReasoning: initial?.splitReasoning ?? false,
     openReasoning: initial?.openReasoning,
-    notices: initial?.notices ? structuredClone(initial.notices) : { noticeCount: 0 },
+    notices: initial?.notices ? structuredClone(initial.notices) : { noticeCount: 0, retrying: false },
   }
 }

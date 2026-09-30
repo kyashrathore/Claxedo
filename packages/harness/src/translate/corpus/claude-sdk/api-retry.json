@@ -1,0 +1,86 @@
+{
+  "adapter": "claude-sdk",
+  "initialState": {
+    "blocksByIndex": {},
+    "toolsById": {},
+    "streamedAssistantTextByOwner": {},
+    "streamedThinkingByOwner": {},
+    "tasks": {}
+  },
+  "calls": [
+    {
+      "state": {
+        "blocksByIndex": {},
+        "toolsById": {},
+        "streamedAssistantTextByOwner": {},
+        "streamedThinkingByOwner": {},
+        "tasks": {}
+      },
+      "event": {
+        "source": "claude.sdk",
+        "method": "claude/system",
+        "payload": {
+          "type": "system",
+          "subtype": "api_retry",
+          "attempt": 1,
+          "max_retries": 10,
+          "retry_delay_ms": 5000,
+          "error_status": 429,
+          "error": "rate_limit",
+          "session_id": "00000000-0000-4000-8000-000000000001",
+          "uuid": "00000000-0000-4000-8000-000000000011"
+        }
+      },
+      "context": {
+        "harness": "claude-sdk",
+        "threadId": "thread-1"
+      },
+      "callbacks": [],
+      "output": [
+        {
+          "type": "session-retry",
+          "message": "The model request failed (rate_limit, HTTP 429); retry 1 of 10",
+          "attempt": 1,
+          "delayMs": 5000
+        }
+      ]
+    },
+    {
+      "state": {
+        "blocksByIndex": {},
+        "toolsById": {},
+        "streamedAssistantTextByOwner": {},
+        "streamedThinkingByOwner": {},
+        "tasks": {}
+      },
+      "event": {
+        "source": "claude.sdk",
+        "method": "claude/system",
+        "payload": {
+          "type": "system",
+          "subtype": "api_retry",
+          "attempt": 1,
+          "max_retries": 10,
+          "retry_delay_ms": 615,
+          "error_status": null,
+          "error": "unknown",
+          "session_id": "00000000-0000-4000-8000-000000000001",
+          "uuid": "00000000-0000-4000-8000-000000000012"
+        }
+      },
+      "context": {
+        "harness": "claude-sdk",
+        "threadId": "thread-1"
+      },
+      "callbacks": [],
+      "output": [
+        {
+          "type": "session-retry",
+          "message": "The model request failed (unknown); retry 1 of 10",
+          "attempt": 1,
+          "delayMs": 615
+        }
+      ]
+    }
+  ]
+}

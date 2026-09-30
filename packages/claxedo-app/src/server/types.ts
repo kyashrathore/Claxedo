@@ -100,7 +100,7 @@ export type RetryAction = {
 export type SessionStatus =
   | { readonly kind: "idle" }
   | { readonly kind: "working" }
-  | { readonly kind: "retrying"; readonly attempt: number; readonly message: string; readonly nextAt: number; readonly action?: RetryAction }
+  | { readonly kind: "retrying"; readonly message: string; readonly attempt?: number; readonly nextAt?: number; readonly action?: RetryAction }
   | { readonly kind: "recovering"; readonly reason: "processRestart" | "uncertainExecution"; readonly message: string }
   | { readonly kind: "failed"; readonly error: AppError }
 

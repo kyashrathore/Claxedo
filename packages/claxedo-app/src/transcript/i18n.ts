@@ -37,7 +37,6 @@ const en = {
   "transcript.lineComment.submit": "Comment",
   "transcript.sessionTurn.retry.retrying": "retrying",
   "transcript.sessionTurn.retry.inSeconds": "in {{seconds}}s",
-  "transcript.sessionTurn.retry.attempt": "attempt #{{attempt}}",
   "transcript.sessionTurn.retry.attemptLine": "{{line}} - attempt #{{attempt}}",
   "transcript.sessionTurn.retry.geminiHot": "gemini is way too hot right now",
   "transcript.notice.compacting": "Compacting conversation…",

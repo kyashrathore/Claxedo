@@ -7,10 +7,19 @@ function notice(code: string, message: string | undefined, severity: RuntimeNoti
   return message ? [claudeNotice(code, message, severity, details)] : []
 }
 
-function retryMessage(frame: Record<string, unknown>) {
-  const cause = [text(frame.error), asFiniteNumber(frame.error_status)].filter((part) => part !== undefined).join(" ")
-  const delay = Math.round((asFiniteNumber(frame.retry_delay_ms) ?? 0) / 1000)
-  return `Claude is retrying the model request (attempt ${String(frame.attempt)} of ${String(frame.max_retries)}${cause ? `, ${cause}` : ""}) in ${delay} s`
+function retryCause(frame: Record<string, unknown>) {
+  const status = asFiniteNumber(frame.error_status)
+  return [text(frame.error), status === undefined ? undefined : `HTTP ${status}`].filter((part) => part !== undefined).join(", ")
+}
+
+function retryEvents(frame: Record<string, unknown>): AgentRuntimeEvent[] {
+  const attempt = asFiniteNumber(frame.attempt)
+  const delayMs = asFiniteNumber(frame.retry_delay_ms)
+  const limit = asFiniteNumber(frame.max_retries)
+  const cause = retryCause(frame)
+  const counted = attempt !== undefined && limit !== undefined ? `; retry ${attempt} of ${limit}` : ""
+  return [{ type: "session-retry", message: `The model request failed${cause ? ` (${cause})` : ""}${counted}`,
+    ...(attempt !== undefined ? { attempt } : {}), ...(delayMs !== undefined ? { delayMs } : {}) }]
 }
 
 function recalledPaths(frame: Record<string, unknown>) {
@@ -26,7 +35,7 @@ function fallbackMessage(frame: Record<string, unknown>) {
 export function systemNotice(subtype: string, frame: Record<string, unknown>): AgentRuntimeEvent[] | undefined {
   switch (subtype) {
     case "api_retry":
-      return notice(subtype, retryMessage(frame), "warn")
+      return retryEvents(frame)
     case "notification":
       return notice(subtype, text(frame.text))
     case "memory_recall":

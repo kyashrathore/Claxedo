@@ -7,6 +7,8 @@ import { normalizePresentationEventWithDiagnostics } from "./normalize"
 import { partEvent, seen, seqId, type CompatContext } from "./context"
 import { projectCompaction, projectHarnessNotice } from "./notices"
 import { projectHarnessDiagnostic } from "./harness-diagnostics"
+import { projectRetry, resumeAfterRetry } from "./retry"
+import { questionAnswers, questions, todos } from "./request-payloads"
 import {
   createClientPresentationProjectionState,
   RETAINED_PART_IDS_MAX,
@@ -810,36 +812,6 @@ function hydrateToolInput(
   return normalizeLocationInput(tool, input, [...locationsFromList(display?.locations), ...locationsFromMetadata(metadata)])
 }
 
-function todos(chunk: Extract<AgentRuntimeEvent, { type: "todo-update" }>) {
-  return chunk.todos.map((todo) => ({
-    id: todo.id,
-    content: todo.description,
-    status: todo.status,
-    priority: todo.priority ?? "medium",
-  }))
-}
-
-function questions(chunk: Extract<AgentRuntimeEvent, { type: "question" }>) {
-  return chunk.questions.map((question, i) => ({
-    question: question.text,
-    header: question.header ?? (question.text.slice(0, 30) || `Question ${i + 1}`),
-    options: (question.options ?? []).map((label) => ({
-      label,
-      description: question.optionDescriptions?.[label] ?? label,
-    })),
-    ...(question.multiple !== undefined ? { multiple: question.multiple } : {}),
-    custom: question.custom ?? !question.options?.length,
-  }))
-}
-
-function questionAnswers(chunk: Extract<AgentRuntimeEvent, { type: "question-answered" }>) {
-  return Object.keys(chunk.answers).sort().map((key) => {
-    const answer = chunk.answers[key]
-    if (Array.isArray(answer)) return answer.filter((value): value is string => typeof value === "string")
-    return typeof answer === "string" ? [answer] : []
-  })
-}
-
 function terminalizeOpenTools(ctx: CompatContext, error: string, now: () => number): AgentEventEnvelope[] {
   const endedAt = now()
   const events: AgentEventEnvelope[] = []
@@ -888,6 +860,9 @@ function translateRuntimeEventToCompat(chunk: AgentRuntimeEvent, ctx: CompatCont
 
     case "harness-notice":
       return projectHarnessNotice(ctx, chunk, now)
+
+    case "session-retry":
+      return projectRetry(ctx, chunk, now)
 
     case "auth-status":
     case "rate-limit":
@@ -1461,6 +1436,7 @@ export function createClientPresentationProjection(options: ClientPresentationPr
     name: "client-presentation",
     ingest(event) {
       return run("ingest", event.type, (ctx) => [
+        ...resumeAfterRetry(ctx, event),
         ...(REASONING_ENDS_ON.has(event.type) ? endReasoning(ctx, now) : []),
         ...translateRuntimeEventToCompat(event, ctx, now),
       ])

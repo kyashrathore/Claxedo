@@ -44,10 +44,11 @@ describe("Claude frames the pinned SDK does not declare", () => {
 })
 
 describe("Claude side-channel frames the person should see", () => {
-  test("an API retry is reported as a retry notice", () => {
-    expect(ingest(runtime(), system("api_retry", { attempt: 1, max_retries: 10, retry_delay_ms: 591, error_status: 529, error: "overloaded" })))
-      .toMatchObject([{ type: "harness-notice", code: "claude_sdk.api_retry", severity: "warn",
-        message: "Claude is retrying the model request (attempt 1 of 10, overloaded 529) in 1 s" }])
+  test("an API retry is the session retrying, with Claude's attempt, delay and cause", () => {
+    expect(ingest(runtime(), system("api_retry", { attempt: 1, max_retries: 10, retry_delay_ms: 5000, error_status: 429, error: "rate_limit" })))
+      .toMatchObject([{ type: "session-retry", attempt: 1, delayMs: 5000, message: "The model request failed (rate_limit, HTTP 429); retry 1 of 10" }])
+    expect(ingest(runtime(), system("api_retry", { attempt: 2, max_retries: 10, retry_delay_ms: 615, error_status: null, error: "unknown" })))
+      .toMatchObject([{ type: "session-retry", attempt: 2, delayMs: 615, message: "The model request failed (unknown); retry 2 of 10" }])
   })
 
   test("compaction start, success and failure are compaction events", () => {

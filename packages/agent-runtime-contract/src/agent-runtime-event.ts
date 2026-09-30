@@ -100,6 +100,8 @@ export type AgentRuntimeEvent = RuntimeEventMeta & (
   | { type: "session-status"; status: RuntimeStatus }
   | { type: "session-compaction"; phase: "started" | "completed"; reason?: string; summary?: string; metadata?: Record<string, unknown> }
   | { type: "harness-notice"; code: string; message: string; severity?: RuntimeNoticeSeverity; details?: unknown }
+  /** The harness is retrying a failed model request itself; `attempt` and `delayMs` only when it reports them. */
+  | { type: "session-retry"; message: string; attempt?: number; delayMs?: number }
   | { type: "auth-status"; status: "authenticated" | "unauthenticated" | "unknown"; authMode?: string | null; planType?: string | null; metadata?: Record<string, unknown> }
   | { type: "rate-limit"; status: "ok" | "limited"; usedPercent?: number; resetsAt?: number | null; windowDurationMins?: number | null; limitId?: string | null; limitName?: string | null; reason?: string | null; metadata?: Record<string, unknown> }
   | { type: "mcp-server-status"; serverName: string; status: "starting" | "ready" | "failed" | "cancelled"; error?: string | null }
@@ -174,6 +176,7 @@ export const AGENT_RUNTIME_EVENT_TYPE_REGISTRY = {
   "session-status": true,
   "session-compaction": true,
   "harness-notice": true,
+  "session-retry": true,
   "auth-status": true,
   "rate-limit": true,
   "mcp-server-status": true,
@@ -230,6 +233,7 @@ export const AGENT_RUNTIME_EVENT_FACTORY_TYPES = {
   sessionStatus: "session-status",
   sessionCompaction: "session-compaction",
   harnessNotice: "harness-notice",
+  sessionRetry: "session-retry",
   authStatus: "auth-status",
   rateLimit: "rate-limit",
   mcpServerStatus: "mcp-server-status",
@@ -293,6 +297,7 @@ export const agentRuntimeEvent = {
   sessionStatus: (input) => ({ type: "session-status", ...input }),
   sessionCompaction: (input) => ({ type: "session-compaction", ...input }),
   harnessNotice: (input) => ({ type: "harness-notice", ...input }),
+  sessionRetry: (input) => ({ type: "session-retry", ...input }),
   authStatus: (input) => ({ type: "auth-status", ...input }),
   rateLimit: (input) => ({ type: "rate-limit", ...input }),
   mcpServerStatus: (input) => ({ type: "mcp-server-status", ...input }),

@@ -146,14 +146,12 @@ export function piRpcAdapter(): HarnessEventAdapter<State> {
             },
           ]
         case "auto_retry_start":
-          return [
-            {
-              type: "harness-notice",
-              code: "pi.retry",
-              message: string(message.errorMessage) || "Pi is retrying the model request",
-              severity: "warn",
-            },
-          ]
+          return [{
+            type: "session-retry",
+            message: string(message.errorMessage) || "Pi is retrying the model request",
+            ...(typeof message.attempt === "number" ? { attempt: message.attempt } : {}),
+            ...(typeof message.delayMs === "number" ? { delayMs: message.delayMs } : {}),
+          }]
         case "extension_error":
           return [
             { type: "harness-notice", code: "pi.extension_error", message: string(message.error), severity: "error" },

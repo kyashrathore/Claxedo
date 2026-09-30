@@ -22,6 +22,7 @@ describe("AgentRuntimeEvent contract", () => {
     expect(AGENT_RUNTIME_EVENT_TYPES).toContain("session-info")
     expect(AGENT_RUNTIME_EVENT_TYPES).toContain("session-compaction")
     expect(AGENT_RUNTIME_EVENT_TYPES).toContain("harness-notice")
+    expect(AGENT_RUNTIME_EVENT_TYPES).toContain("session-retry")
     expect(AGENT_RUNTIME_EVENT_TYPES).toContain("auth-status")
     expect(AGENT_RUNTIME_EVENT_TYPES).toContain("rate-limit")
     expect(AGENT_RUNTIME_EVENT_TYPES).toContain("mcp-server-status")

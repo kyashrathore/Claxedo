@@ -1,0 +1,69 @@
+{
+  "adapter": "pi-rpc",
+  "initialState": {
+    "blocks": {},
+    "finished": false
+  },
+  "calls": [
+    {
+      "state": {
+        "blocks": {},
+        "finished": false
+      },
+      "event": {
+        "source": "pi.rpc",
+        "method": "auto_retry_start",
+        "payload": {
+          "type": "auto_retry_start",
+          "attempt": 1,
+          "maxAttempts": 3,
+          "delayMs": 2000,
+          "errorMessage": "OpenAI API error (500): {\"type\":\"invalid_request_error\",\"message\":\"provider failure\"}"
+        }
+      },
+      "context": {
+        "harness": "pi",
+        "threadId": "native-pi"
+      },
+      "callbacks": [],
+      "output": [
+        {
+          "type": "session-retry",
+          "message": "OpenAI API error (500): {\"type\":\"invalid_request_error\",\"message\":\"provider failure\"}",
+          "attempt": 1,
+          "delayMs": 2000
+        }
+      ]
+    },
+    {
+      "state": {
+        "blocks": {},
+        "finished": false
+      },
+      "event": {
+        "source": "pi.rpc",
+        "method": "auto_retry_start",
+        "payload": {
+          "type": "auto_retry_start",
+          "attempt": 2,
+          "maxAttempts": 3,
+          "delayMs": 4000,
+          "errorMessage": "OpenAI API error (500): {\"type\":\"invalid_request_error\",\"message\":\"provider failure\"}"
+        }
+      },
+      "context": {
+        "harness": "pi",
+        "threadId": "native-pi"
+      },
+      "callbacks": [],
+      "output": [
+        {
+          "type": "session-retry",
+          "message": "OpenAI API error (500): {\"type\":\"invalid_request_error\",\"message\":\"provider failure\"}",
+          "attempt": 2,
+          "delayMs": 4000
+        }
+      ]
+    }
+  ]
+}
