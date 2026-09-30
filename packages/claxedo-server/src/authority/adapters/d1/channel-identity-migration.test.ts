@@ -20,6 +20,7 @@ import { D1ChannelRuntimeAuthority } from "./channel-runtime-authority"
 import { controlPlaneMigrationPath, controlPlaneMigrations } from "../../../test-support/control-plane-migrations"
 
 const BOUNDARY_MIGRATION = "0038_channel_identity_version.sql"
+const ORG_KIND_MIGRATION = "0045_org_scope_means_org.sql"
 const ALL_MIGRATIONS = controlPlaneMigrations()
 const BEFORE_BOUNDARY = ALL_MIGRATIONS.slice(0, ALL_MIGRATIONS.indexOf(BOUNDARY_MIGRATION))
 
@@ -108,6 +109,24 @@ async function signed(authority: D1WorkspaceAuthority, subject: string): Promise
 }
 
 /**
+ * The rows `createHostedOrganization` shipped before `orgs.kind` said
+ * 'shared': the pre-boundary schema admits only 'team', so today's producer
+ * cannot seed it.
+ */
+async function createPreOrgKindOrganization(database: D1Database, owner: SignedControlPlaneAuth) {
+  await database.batch([
+    database.prepare(
+      `insert into orgs (org_id, name, kind, owner_user_id, deployment_id, created_at, updated_at)
+       values ('org_acme', 'Acme', 'team', ?, null, 1, 1)`,
+    ).bind(owner.principal!.userId),
+    database.prepare(
+      `insert into org_memberships (org_id, user_id, role, created_at, updated_at, revoked_at)
+       values ('org_acme', ?, 'owner', 1, 1, null)`,
+    ).bind(owner.principal!.userId),
+  ])
+}
+
+/**
  * Two accounts in one organization, both able to reach the workspace: the
  * collision only means anything when the legacy holder and the stable-id holder
  * would each have been authorized on their own.
@@ -116,7 +135,11 @@ async function deployment(migrations: readonly string[]) {
   const context = await setup(migrations)
   const handleHolder = await signed(context.workspace, "handle-holder")
   const accountHolder = await signed(context.workspace, "account-holder")
-  await context.workspace.createHostedOrganization(handleHolder, { name: "Acme", orgId: "org_acme" })
+  if (migrations.includes(ORG_KIND_MIGRATION)) {
+    await context.workspace.createHostedOrganization(handleHolder, { name: "Acme", orgId: "org_acme" })
+  } else {
+    await createPreOrgKindOrganization(context.database, handleHolder)
+  }
   await context.workspace.addOrganizationMember(handleHolder, {
     orgId: "org_acme",
     userId: accountHolder.principal!.userId,
