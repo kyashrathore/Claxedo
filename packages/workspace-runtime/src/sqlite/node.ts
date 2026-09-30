@@ -50,7 +50,6 @@ function finalized<T>(statement: NativeStatement<unknown>, read: () => T): T {
   }
 }
 
-/** Open a SQLite file with `bun:sqlite` under Bun and `better-sqlite3` under Node. */
 export function openSqliteDatabase(file: string): SqliteDatabase {
   const driver = process.versions.bun
     ? nativeConstructor(requireDriver("bun:sqlite"), "Database")

@@ -1,4 +1,3 @@
-/** What every driver reports from a write statement: the rows it changed. */
 export type SqliteRunResult = {
   changes: number
 }

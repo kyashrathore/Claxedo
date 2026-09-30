@@ -1,6 +1,5 @@
 import type { SqliteDatabase, SqliteStatement } from "./database"
 
-/** The slice of a Durable Object's `ctx.storage` this adapter drives. */
 export type DurableObjectSqlStorage = {
   sql: {
     exec<Row>(query: string, ...bindings: unknown[]): { toArray(): Row[] }

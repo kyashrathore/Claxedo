@@ -4,7 +4,6 @@ import { workspaceRuntimeStoreDir } from "./env"
 import { openSqliteDatabase } from "./sqlite/node"
 import { RuntimeStore, type RuntimeStoreDatabase } from "./store"
 
-/** The store's SQLite file under `root`, opened for one runtime process on this machine. */
 export function openRuntimeStoreDatabase(root: string): RuntimeStoreDatabase {
   fs.mkdirSync(root, { recursive: true, mode: 0o755 })
   const db = openSqliteDatabase(path.join(root, "state.db"))
