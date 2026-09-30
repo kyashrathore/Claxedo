@@ -24,8 +24,7 @@ export const BROWSER_ALLOWED_REQUEST_HEADERS = [
   "last-event-id",
   // W3C Trace Context. Named here before anything sends it: a trace header the
   // preflight omits does not degrade tracing, it kills the request carrying it,
-  // so instrumentation would take the product down. `@claxedo/telemetry`
-  // explains the propagation these two carry.
+  // so instrumentation would take the product down.
   "traceparent",
   "tracestate",
   "x-claxedo-bootstrap-owner-claim",

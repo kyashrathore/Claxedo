@@ -434,15 +434,6 @@
         "typescript": "catalog:",
       },
     },
-    "packages/claxedo-telemetry": {
-      "name": "@claxedo/telemetry",
-      "version": "0.1.0",
-      "devDependencies": {
-        "@tsconfig/node-lts": "22.0.4",
-        "typescript": "catalog:",
-        "vitest": "2.1.9",
-      },
-    },
     "packages/claxedo-web": {
       "name": "@claxedo/web",
       "version": "0.0.1",
@@ -1105,8 +1096,6 @@
     "@claxedo/server-core": ["@claxedo/server-core@workspace:packages/claxedo-server-core"],
 
     "@claxedo/tasks": ["@claxedo/tasks@workspace:packages/claxedo-tasks"],
-
-    "@claxedo/telemetry": ["@claxedo/telemetry@workspace:packages/claxedo-telemetry"],
 
     "@claxedo/usage-contract": ["@claxedo/usage-contract@workspace:packages/usage-contract"],
 
