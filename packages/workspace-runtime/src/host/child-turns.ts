@@ -32,6 +32,7 @@ type SeededChild = {
 }
 
 const SOURCE: RuntimeAppendSource = { dir: "in", method: "subagent" }
+const HOST_MINTED = "claxedo"
 
 export class TurnAuthorityUnavailableError extends Error {
   readonly code = "turn_authority_unavailable"
@@ -53,7 +54,9 @@ function childOutcome(event: Pick<SubagentUpdatedEvent, "status" | "label">) {
  * response of its own, so its turn exists only because the host seeds it when
  * the broker admits the child and ends it when the terminal observation
  * arrives; both steps project through the same router its routed events use,
- * so a reader watching the child sees it start, work and stop.
+ * so a reader watching the child sees it start, work and stop. A child
+ * `create_subagent` minted is prompted like any session and owns its turns,
+ * so its harness's observation only binds it to the call.
  */
 export function createChildTurns(input: {
   store: AgentRuntimeStore
@@ -158,6 +161,7 @@ export function createChildTurns(input: {
         ...base,
         admitChildSession: async (parentSessionId, childSessionId, observation) => {
           const ref = await base.admitChildSession(parentSessionId, childSessionId, observation)
+          if (observation.providerKind === HOST_MINTED) return ref
           const parent = parents.get(parentSessionId) ??
             (isTerminalSubagentStatus(observation.status) ? undefined : input.idleParent(parentSessionId))
           const known = children.get(childSessionId)
