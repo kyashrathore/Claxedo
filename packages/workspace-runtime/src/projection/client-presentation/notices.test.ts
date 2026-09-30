@@ -44,6 +44,13 @@ describe("notices the person reads", () => {
   })
 })
 
+describe("a conversation reset", () => {
+  test("draws a boundary in the same session's reply", () => {
+    expect(parts(turn(), { type: "conversation-reset", trigger: "clear" }))
+      .toMatchObject([{ type: "notice", messageID: "msg_turn_1_r", notice: { kind: "conversation-reset", trigger: "clear" } }])
+  })
+})
+
 describe("compaction", () => {
   test("one part runs from compacting to compacted", () => {
     const projection = turn()

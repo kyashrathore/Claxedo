@@ -8,7 +8,7 @@ import { translateCanUseTool } from "./can-use-tool"
 import { translateRateLimitEvent } from "./rate-limits"
 import { CLAUDE_SUBAGENT_USAGE_METHOD, translateMessageDelta, translateMessageStart, translateMessageStop, translateSubagentUsage } from "./request-stream"
 import { translateResult } from "./result-events"
-import { claudeNotice, diagnosticForEvent, ignoredFrame, sdkMessage, type ClaudeFrameEvent, type ClaudeSdkStreamEvent } from "./sdk-message"
+import { diagnosticForEvent, ignoredFrame, sdkMessage, type ClaudeFrameEvent, type ClaudeSdkStreamEvent } from "./sdk-message"
 import { translateContentBlockDelta, translateContentBlockStart, translateContentBlockStop } from "./stream-content"
 import { translateSystemMessage } from "./system-message"
 import type { ClaudeTrackedTask } from "./task-tracking"
@@ -55,8 +55,7 @@ function translateClaudeFrame(frame: Frame): ClaudeTranslation {
     case "rate_limit_event":
       return translateRateLimitEvent(state, message.rate_limit_info)
     case "conversation_reset":
-      return [claudeNotice("conversation_reset", "Claude started a new conversation", "info", { trigger: text(message.trigger) ?? "unspecified",
-        newConversationId: text(message.new_conversation_id) })]
+      return [{ type: "conversation-reset", trigger: text(message.trigger) ?? "unspecified" }]
     default:
       return ignoredFrame(memory, type)
   }

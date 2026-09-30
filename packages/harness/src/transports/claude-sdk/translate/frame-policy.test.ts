@@ -78,10 +78,12 @@ describe("Claude side-channel frames the person should see", () => {
       .toMatchObject([{ type: "harness-notice", code: "claude_sdk.model_refusal_no_fallback", severity: "warn", message: "Claude declined" }])
   })
 
-  test("a conversation reset after /clear is a notice", () => {
+  test("a conversation reset after /clear is the conversation resetting, with what reset it", () => {
     expect(ingest(runtime(), { type: "conversation_reset", new_conversation_id: "8b3d5dd3-a512-41a3-94d8-8342f793b8d1", trigger: "clear",
       user_message_uuid: "22222222-2222-4222-8222-222222222222", timestamp: "2026-09-30T06:55:12.243Z", ...session }))
-      .toMatchObject([{ type: "harness-notice", code: "claude_sdk.conversation_reset", details: { trigger: "clear" } }])
+      .toEqual([expect.objectContaining({ type: "conversation-reset", trigger: "clear" })])
+    expect(ingest(runtime(), { type: "conversation_reset", new_conversation_id: "8b3d5dd3-a512-41a3-94d8-8342f793b8d1", ...session }))
+      .toEqual([expect.objectContaining({ type: "conversation-reset", trigger: "unspecified" })])
   })
 
   test("an authentication status error is an auth status, not a failed turn", () => {

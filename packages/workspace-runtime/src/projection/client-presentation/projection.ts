@@ -5,7 +5,7 @@ import { boundKeyedMap } from "@claxedo/harness/translate"
 import { messagePartUpdated, messagePartDelta, messageCompleted, permissionAsked, questionAsked, questionReplied, todoUpdated, sessionStatus, sessionDiff, sessionIdle, sessionError, sessionUpdated, sessionAgent, messageUpdated, sessionConfig, sessionUsage, runtimeDiagnostic, buildSession, recovering, withDir } from "../presentation-events"
 import { normalizePresentationEventWithDiagnostics } from "./normalize"
 import { partEvent, seen, seqId, type CompatContext } from "./context"
-import { projectCompaction, projectHarnessNotice } from "./notices"
+import { projectNotice } from "./notices"
 import { projectHarnessDiagnostic } from "./harness-diagnostics"
 import { projectRetry, resumeAfterRetry } from "./retry"
 import { endReasoning, REASONING_ENDS_ON } from "./reasoning"
@@ -825,10 +825,9 @@ function translateRuntimeEventToCompat(chunk: AgentRuntimeEvent, ctx: CompatCont
       return [withDir(ctx.directory, sessionStatus(ctx.sessionId, { type: chunk.status }))]
 
     case "session-compaction":
-      return projectCompaction(ctx, chunk, now)
-
     case "harness-notice":
-      return projectHarnessNotice(ctx, chunk, now)
+    case "conversation-reset":
+      return projectNotice(ctx, chunk, now)
 
     case "session-retry":
       return projectRetry(ctx, chunk, now)

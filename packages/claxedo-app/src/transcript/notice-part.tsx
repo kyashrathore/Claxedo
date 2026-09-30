@@ -33,7 +33,7 @@ export function NoticePartDisplay(props: { part: AgentContentPart }) {
   }
   return (
     <Switch>
-      <Match when={boundary()}>{(current) => <MessageDivider label={i18n.t(current().key)} icon="archive" />}</Match>
+      <Match when={boundary()}>{(current) => <MessageDivider label={i18n.t(current().key)} icon={current().icon} />}</Match>
       <Match when={row()}>{(current) => <NoticeRow view={current()} />}</Match>
     </Switch>
   )

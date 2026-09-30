@@ -25,6 +25,7 @@ describe("AgentRuntimeEvent contract", () => {
     expect(AGENT_RUNTIME_EVENT_TYPES).toContain("session-retry")
     expect(AGENT_RUNTIME_EVENT_TYPES).toContain("response-start")
     expect(AGENT_RUNTIME_EVENT_TYPES).toContain("response-retracted")
+    expect(AGENT_RUNTIME_EVENT_TYPES).toContain("conversation-reset")
     expect(AGENT_RUNTIME_EVENT_TYPES).toContain("auth-status")
     expect(AGENT_RUNTIME_EVENT_TYPES).toContain("rate-limit")
     expect(AGENT_RUNTIME_EVENT_TYPES).toContain("mcp-server-status")

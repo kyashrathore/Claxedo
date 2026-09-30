@@ -53,6 +53,8 @@ test("a notice part carries one of the notices the transcript draws", () => {
   expect(isAgentContentPart({ ...notice, notice: { kind: "compaction", status: "running" } })).toBe(true)
   expect(isAgentContentPart({ ...notice, notice: { kind: "compaction", status: "failed", error: "too long" } })).toBe(true)
   expect(isAgentContentPart({ ...notice, notice: { kind: "compaction", status: "failed" } })).toBe(false)
+  expect(isAgentContentPart({ ...notice, notice: { kind: "conversation-reset", trigger: "clear" } })).toBe(true)
+  expect(isAgentContentPart({ ...notice, notice: { kind: "conversation-reset" } })).toBe(false)
   expect(isAgentContentPart({ ...notice, notice: { kind: "invented" } })).toBe(false)
   expect(isAgentContentPart({ ...notice, time: undefined, notice: { kind: "compaction", status: "completed" } })).toBe(false)
 })

@@ -384,7 +384,9 @@ A notice the person needs reaches the transcript, not a diagnostic. The
 client-presentation projection (`src/projection/client-presentation/notices.ts`)
 turns a turn's `harness-notice` into a `notice` part on its reply, and a
 compaction into one `notice` part that goes from running to completed or
-failed. A `debug` notice, or one published outside any turn, has no reply to
+failed, and a `conversation-reset` (Claude's `/clear`) into a boundary part; the
+session and its stored history stay, and later turns run on the new
+conversation. A `debug` notice, or one published outside any turn, has no reply to
 land in and stays a `runtime.diagnostic`.
 
 A harness that names its model responses (`response-start`) lets the

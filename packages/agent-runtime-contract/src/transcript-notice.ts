@@ -10,6 +10,7 @@ export type TranscriptCompaction =
 export type TranscriptNotice =
   | { kind: "harness"; code: string; message: string; severity: TranscriptNoticeSeverity }
   | ({ kind: "compaction" } & TranscriptCompaction)
+  | { kind: "conversation-reset"; trigger: string }
 
 const SEVERITIES: ReadonlySet<unknown> = new Set<TranscriptNoticeSeverity>(["info", "warn", "error"])
 
@@ -25,6 +26,8 @@ export function isTranscriptNotice(value: unknown): value is TranscriptNotice {
       return typeof value.code === "string" && typeof value.message === "string" && SEVERITIES.has(value.severity)
     case "compaction":
       return isCompaction(value)
+    case "conversation-reset":
+      return typeof value.trigger === "string"
     default:
       return false
   }

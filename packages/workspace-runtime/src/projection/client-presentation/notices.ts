@@ -33,7 +33,11 @@ function noticeDiagnostic(ctx: CompatContext, chunk: HarnessNotice): AgentEventE
   }))
 }
 
-export function projectHarnessNotice(ctx: CompatContext, chunk: HarnessNotice, now: () => number): AgentEventEnvelope[] {
+function projectConversationReset(ctx: CompatContext, chunk: AgentRuntimeEventOf<"conversation-reset">, now: () => number): AgentEventEnvelope[] {
+  return ctx.assistantMsgId ? [appendNotice(ctx, { kind: "conversation-reset", trigger: chunk.trigger }, now())] : []
+}
+
+function projectHarnessNotice(ctx: CompatContext, chunk: HarnessNotice, now: () => number): AgentEventEnvelope[] {
   const severity = chunk.severity ?? "info"
   if (severity === "debug" || !ctx.assistantMsgId) return [noticeDiagnostic(ctx, chunk)]
   return [appendNotice(ctx, { kind: "harness", code: chunk.code, message: chunk.message, severity }, now())]
@@ -46,7 +50,7 @@ function compactionOutcome(chunk: Compaction): TranscriptNotice {
   return { kind: "compaction", status: "completed" }
 }
 
-export function projectCompaction(ctx: CompatContext, chunk: Compaction, now: () => number): AgentEventEnvelope[] {
+function projectCompaction(ctx: CompatContext, chunk: Compaction, now: () => number): AgentEventEnvelope[] {
   if (!ctx.assistantMsgId) return []
   if (chunk.phase === "started") {
     const id = nextNoticePartId(ctx)
@@ -58,4 +62,15 @@ export function projectCompaction(ctx: CompatContext, chunk: Compaction, now: ()
   const outcome = compactionOutcome(chunk)
   const part = noticePart(ctx, id, outcome, now())
   return outcome.kind === "compaction" && outcome.status === "completed" ? [part, withDir(ctx.directory, sessionCompacted(ctx.sessionId))] : [part]
+}
+
+export function projectNotice(ctx: CompatContext, chunk: AgentRuntimeEventOf<"session-compaction" | "harness-notice" | "conversation-reset">, now: () => number) {
+  switch (chunk.type) {
+    case "session-compaction":
+      return projectCompaction(ctx, chunk, now)
+    case "harness-notice":
+      return projectHarnessNotice(ctx, chunk, now)
+    case "conversation-reset":
+      return projectConversationReset(ctx, chunk, now)
+  }
 }

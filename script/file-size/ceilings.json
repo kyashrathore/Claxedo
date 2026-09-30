@@ -33,7 +33,7 @@
   "packages/workspace-relay/src/cloudflare.ts": 2645,
   "packages/workspace-relay/src/server.ts": 1773,
   "packages/workspace-runtime/src/managed-processes/manager.ts": 1766,
-  "packages/workspace-runtime/src/projection/client-presentation/projection.ts": 1424,
+  "packages/workspace-runtime/src/projection/client-presentation/projection.ts": 1423,
   "packages/workspace-runtime/src/pty/index.ts": 1406,
   "packages/workspace-runtime/src/routes/document-hydration.ts": 811,
   "packages/workspace-runtime/src/routes/session-core.ts": 2225,

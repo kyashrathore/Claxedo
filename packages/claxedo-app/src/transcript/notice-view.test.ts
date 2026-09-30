@@ -10,8 +10,13 @@ test("a harness notice reads as its own sentence in its severity", () => {
 })
 
 test("compaction draws a boundary while it runs and once it is done", () => {
-  expect(noticeView({ kind: "compaction", status: "running" })).toEqual({ shape: "boundary", key: "transcript.notice.compacting" })
-  expect(noticeView({ kind: "compaction", status: "completed" })).toEqual({ shape: "boundary", key: "transcript.messagePart.compaction" })
+  expect(noticeView({ kind: "compaction", status: "running" })).toEqual({ shape: "boundary", key: "transcript.notice.compacting", icon: "archive" })
+  expect(noticeView({ kind: "compaction", status: "completed" })).toEqual({ shape: "boundary", key: "transcript.messagePart.compaction", icon: "archive" })
+})
+
+test("a cleared conversation draws a boundary that says the context starts fresh", () => {
+  expect(noticeView({ kind: "conversation-reset", trigger: "clear" })).toEqual({ shape: "boundary", key: "transcript.notice.conversationCleared", icon: "new-session" })
+  expect(noticeView({ kind: "conversation-reset", trigger: "plan_mode_exit" })).toEqual({ shape: "boundary", key: "transcript.notice.conversationReset", icon: "new-session" })
 })
 
 test("a failed compaction is a warning that says why", () => {

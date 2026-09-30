@@ -106,6 +106,8 @@ export type AgentRuntimeEvent = RuntimeEventMeta & (
   | { type: "response-start"; responseId: string }
   /** The harness withdrew these responses; their content stays on record, marked withdrawn. */
   | { type: "response-retracted"; responseIds: string[]; reason: string }
+  /** The harness discarded its conversation (Claude's `/clear`); the turns after it start from fresh context in the same session. */
+  | { type: "conversation-reset"; trigger: string }
   | { type: "auth-status"; status: "authenticated" | "unauthenticated" | "unknown"; authMode?: string | null; planType?: string | null; metadata?: Record<string, unknown> }
   | { type: "rate-limit"; status: "ok" | "limited"; usedPercent?: number; resetsAt?: number | null; windowDurationMins?: number | null; limitId?: string | null; limitName?: string | null; reason?: string | null; metadata?: Record<string, unknown> }
   | { type: "mcp-server-status"; serverName: string; status: "starting" | "ready" | "failed" | "cancelled"; error?: string | null }
@@ -183,6 +185,7 @@ export const AGENT_RUNTIME_EVENT_TYPE_REGISTRY = {
   "session-retry": true,
   "response-start": true,
   "response-retracted": true,
+  "conversation-reset": true,
   "auth-status": true,
   "rate-limit": true,
   "mcp-server-status": true,
@@ -242,6 +245,7 @@ export const AGENT_RUNTIME_EVENT_FACTORY_TYPES = {
   sessionRetry: "session-retry",
   responseStart: "response-start",
   responseRetracted: "response-retracted",
+  conversationReset: "conversation-reset",
   authStatus: "auth-status",
   rateLimit: "rate-limit",
   mcpServerStatus: "mcp-server-status",
@@ -308,6 +312,7 @@ export const agentRuntimeEvent = {
   sessionRetry: (input) => ({ type: "session-retry", ...input }),
   responseStart: (input) => ({ type: "response-start", ...input }),
   responseRetracted: (input) => ({ type: "response-retracted", ...input }),
+  conversationReset: (input) => ({ type: "conversation-reset", ...input }),
   authStatus: (input) => ({ type: "auth-status", ...input }),
   rateLimit: (input) => ({ type: "rate-limit", ...input }),
   mcpServerStatus: (input) => ({ type: "mcp-server-status", ...input }),
