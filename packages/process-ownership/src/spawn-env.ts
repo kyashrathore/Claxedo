@@ -15,9 +15,11 @@ const INTERNAL_PREFIXES = ["CLAXEDO_", "WORKSPACE_RUNTIME_"]
 
 /**
  * Names agent children legitimately read: where the child talks to and as
- * what workspace/session, shell-integration wiring, codex hook pids, and the
- * deliberately agent-scoped grants — `WORKSPACE_RUNTIME_OWNER_GRANT` and the
- * tasks capability family are documented as agent-readable in
+ * what workspace/session, shell-integration wiring, codex hook pids, the path
+ * of the MCP handoff file Pi's Claxedo extension reads once and deletes (a
+ * path, never the servers it held), and the deliberately agent-scoped grants —
+ * `WORKSPACE_RUNTIME_OWNER_GRANT` and the tasks capability family are
+ * documented as agent-readable in
  * `claxedo-server-core/src/hosts/workspace-runtime/env.ts`.
  *
  * Deliberately absent: `CLAXEDO_CONTROL_PLANE_URL` /
@@ -47,6 +49,7 @@ const ALLOWED_INTERNAL_ENV = new Set([
   "CLAXEDO_HOME",
   "CLAXEDO_HOME_DIR",
   "CLAXEDO_DIR",
+  "CLAXEDO_PI_MCP_HANDOFF",
   "WORKSPACE_RUNTIME_OWNER_GRANT",
   "WORKSPACE_RUNTIME_TASKS_CAPABILITY",
   "WORKSPACE_RUNTIME_TASKS_OPERATIONS",

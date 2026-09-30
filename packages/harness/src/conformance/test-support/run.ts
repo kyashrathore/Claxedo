@@ -32,6 +32,7 @@ export type ConformanceBackend = {
   hold?(marker: string): () => void
   held?(marker: string): Promise<void>
   steerIncorporationUnreported?: true
+  processesPerLaunch?: number
   scriptTool?(name: string, input: unknown): void
   scriptThinking?(input: { marker: string; text: string; reasoning: string }): void | Promise<string>
   thinkingRequested?(marker: string): boolean
@@ -322,7 +323,8 @@ export function runConformance(input: SuiteInput): void {
         expect(events.flatMap((item) => item.event.type === "text-delta" ? [item.event.delta] : []).join("").length).toBeGreaterThan(0)
         expect(events.some((item) => item.event.type === "finish")).toBe(true)
         await context.transport.close(attached)
-        expect(context.services.processes).toHaveLength(context.backend.execution === "in-process" || context.backend.locality === "remote" ? 0 : 2)
+        expect(context.services.processes).toHaveLength(context.backend.execution === "in-process" || context.backend.locality === "remote" ? 0
+          : 2 * (context.backend.processesPerLaunch ?? 1))
       } finally { await context.close() }
     }, 60_000)
 
@@ -511,8 +513,8 @@ export function runConformance(input: SuiteInput): void {
         expect(first.options.length).toBeGreaterThan(0)
         if (context.backend.execution === "in-process") expect(context.services.processes).toHaveLength(0)
         else if (context.backend.locality !== "remote") {
-          expect(context.services.processes).toHaveLength(before + 1)
-          expect(await context.services.processes.at(-1)!.exited).toBeDefined()
+          expect(context.services.processes).toHaveLength(before + (context.backend.processesPerLaunch ?? 1))
+          for (const child of context.services.processes.slice(before)) expect(await child.exited).toBeDefined()
         }
         expect(await context.transport.config.options({ draft }, "probe")).toEqual(first)
       } finally { await context.close() }
@@ -529,8 +531,8 @@ export function runConformance(input: SuiteInput): void {
         expect(commands?.length).toBeGreaterThan(0)
         if (context.backend.execution === "in-process") expect(context.services.processes).toHaveLength(0)
         else if (context.backend.locality !== "remote") {
-          expect(context.services.processes).toHaveLength(before + 1)
-          expect(await context.services.processes.at(-1)!.exited).toBeDefined()
+          expect(context.services.processes).toHaveLength(before + (context.backend.processesPerLaunch ?? 1))
+          for (const child of context.services.processes.slice(before)) expect(await child.exited).toBeDefined()
         }
       } finally { await context.close() }
     }, 60_000)

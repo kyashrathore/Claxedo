@@ -31,6 +31,7 @@ describe("Pi RPC normalization", () => {
         type: "message_end",
         message: {
           role: "assistant",
+          stopReason: "stop",
           content: [
             { type: "thinking", thinking: "think" },
             { type: "text", text: "hello" },
@@ -43,7 +44,7 @@ describe("Pi RPC normalization", () => {
     const send = translate()
     send({ type: "message_update", assistantMessageEvent: { type: "text_delta", contentIndex: 0, delta: "wrong" } })
     expect(() =>
-      send({ type: "message_end", message: { role: "assistant", content: [{ type: "text", text: "actual" }] } }),
+      send({ type: "message_end", message: { role: "assistant", stopReason: "stop", content: [{ type: "text", text: "actual" }] } }),
     ).toThrow("disagrees")
   })
   test("agent_end is not final; settled completes only once", () => {
@@ -65,7 +66,8 @@ describe("Pi RPC normalization", () => {
         type: "message_end",
         message: { role: "assistant", content: [], stopReason: "error", errorMessage: "Unauthorized" },
       }),
-    ).toEqual([{ type: "error", error: "Unauthorized" }])
+    ).toEqual([])
+    expect(send({ type: "agent_end", willRetry: false })).toEqual([{ type: "error", error: "Unauthorized" }])
   })
 })
 
@@ -103,8 +105,8 @@ test("Pi partial tool output preserves tool identity and aborted compaction repo
       partialResult: { content: [{ type: "text", text: "progress" }] },
     }),
   ).toMatchObject([{ type: "tool-content", toolCallId: "call", content: { content: { text: "progress" } } }])
-  expect(send({ type: "auto_compaction_start" })).toEqual([{ type: "session-compaction", phase: "started" }])
-  expect(send({ type: "auto_compaction_end", aborted: true, errorMessage: "cancelled" })).toMatchObject([
+  expect(send({ type: "compaction_start", reason: "threshold" })).toEqual([{ type: "session-compaction", phase: "started", reason: "threshold" }])
+  expect(send({ type: "compaction_end", reason: "threshold", aborted: true, errorMessage: "cancelled" })).toMatchObject([
     { type: "session-compaction", phase: "completed", metadata: { aborted: true, error: "cancelled" } },
   ])
 })

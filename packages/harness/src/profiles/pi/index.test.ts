@@ -3,7 +3,7 @@ import fs from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
 import { PI_LAUNCH_PROVIDERS, piCredentialProviderIDs } from "@claxedo/agent-runtime-contract"
-import { piEnvironment, piProjectionArgs, preparePiProfile, selectPiProfile, type PiProfileOptions } from "./index"
+import { piEnvironment, piMcpServerConfig, piProjectionArgs, preparePiProfile, selectPiProfile, type PiProfileOptions } from "./index"
 
 const credentials = { machineLoginAllowed: true, accountOwner: "fixture-owner", providers: {}, secrets: {}, leaseGeneration: "g1" }
 const brokeredOnly = { ...credentials, machineLoginAllowed: false }
@@ -84,11 +84,17 @@ describe("Pi profile selection", () => {
     } finally { await fs.rm(root, { recursive: true, force: true }) }
   })
 
-  test("adds a Pi package without admitting MCP", () => {
+  test("adds a Pi package with -e", () => {
     const projection = { generation: "g1", pluginRoots: [{ pluginInstanceId: "plugin", root: "/tmp/pi-extension", skillNames: [], dataRoot: "/tmp/pi-data" }],
       mcpServers: [], notApplied: [] }
     expect(piProjectionArgs(projection)).toEqual(["-e", "/tmp/pi-extension"])
-    expect(() => piProjectionArgs({ ...projection, mcpServers: [{ kind: "http", name: "server", url: "https://example.test", origin: "configured" }] }))
-      .toThrow("Pi has no MCP intake")
+  })
+
+  test("an MCP server takes Pi's mcp.json shape, declared to the model, with every header and env value kept literal", () => {
+    expect(piMcpServerConfig({ kind: "http", name: "docs", url: "https://example.test/mcp", headers: { authorization: "Bearer $TOKEN", "x-run": "!echo hi" } }))
+      .toEqual({ type: "http", url: "https://example.test/mcp", headers: { authorization: "Bearer $$TOKEN", "x-run": "$!echo hi" }, exposure: "direct" })
+    expect(piMcpServerConfig({ kind: "stdio", name: "local", command: "node", args: ["server.js"], env: { KEY: "${HOME}" }, cwd: "/work" }))
+      .toEqual({ type: "stdio", command: "node", args: ["server.js"], env: { KEY: "$${HOME}" }, cwd: "/work", exposure: "direct" })
+    expect(() => piMcpServerConfig({ kind: "sse", name: "old", url: "https://example.test/sse" })).toThrow("Pi cannot load SSE MCP server old")
   })
 })

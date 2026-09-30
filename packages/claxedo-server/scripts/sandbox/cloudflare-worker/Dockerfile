@@ -9,10 +9,10 @@ ENV AMP_SKIP_UPDATE_CHECK=1 FACTORY_DROID_AUTO_UPDATE_ENABLED=false
 # contributor to image size (claude ~228MB, codex ~218MB,
 # gemini ~156MB, pi ~147MB) and the push bottleneck — so they are build-arg
 # driven and default to a LEAN set. Pass the full list to restore every runner:
-#   --build-arg CLAXEDO_NPM_AGENTS="@anthropic-ai/claude-code@2.1.280 @openai/codex@0.133.0 @google/gemini-cli@0.43.0 @earendil-works/pi-coding-agent@0.85.1"
+#   --build-arg CLAXEDO_NPM_AGENTS="@anthropic-ai/claude-code@2.1.280 @openai/codex@0.133.0 @google/gemini-cli@0.43.0 @earendil-works/pi-coding-agent@0.99.1"
 # NOTE: `wrangler deploy` cannot inject --build-arg, so the DEFAULT below is what
 # ships via wrangler. Override only for local `docker build`.
-ARG CLAXEDO_NPM_AGENTS="@anthropic-ai/claude-code@2.1.280 @openai/codex@0.133.0 @google/gemini-cli@0.43.0 @earendil-works/pi-coding-agent@0.85.1"
+ARG CLAXEDO_NPM_AGENTS="@anthropic-ai/claude-code@2.1.280 @openai/codex@0.133.0 @google/gemini-cli@0.43.0 @earendil-works/pi-coding-agent@0.99.1"
 ARG CLAXEDO_CURL_AGENTS="1"
 
 # Install build tools for native deps (better-sqlite3, node-pty). `git` is named

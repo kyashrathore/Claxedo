@@ -32,9 +32,13 @@ export function piUiEvent(message: PiMessage): RoutedEvent | undefined {
   }
 }
 
-export async function answerPiDialog(message: PiMessage, rpc: PiRpc, broker: TurnBroker, sessionId: string, now: number,
+export function piDialog(message: PiMessage): boolean {
+  return message.type === "extension_ui_request" && typeof message.method === "string" && dialogs.includes(message.method)
+}
+
+export async function answerPiDialog(message: PiMessage, rpc: PiRpc, broker: Pick<TurnBroker, "ask">, sessionId: string, now: number,
   signal: AbortSignal): Promise<void> {
-  if (message.type !== "extension_ui_request" || typeof message.method !== "string" || !dialogs.includes(message.method)) return
+  if (!piDialog(message)) return
   if (typeof message.id !== "string") throw new Error("Pi extension dialog lacks an id")
   const choices = Array.isArray(message.options) ? message.options.filter((item): item is string => typeof item === "string") : undefined
   const options = message.method === "confirm" ? ["Yes", "No"] : choices
