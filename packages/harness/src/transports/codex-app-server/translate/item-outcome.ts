@@ -1,9 +1,9 @@
 import { asFiniteNumber, asRecord } from "@claxedo/helpers/guards"
 import type { RuntimeToolAttachment } from "@claxedo/agent-runtime-contract"
 import { asText as text } from "@claxedo/agent-runtime-contract"
-import { contentBlockImages, imageUrlAttachment } from "../../../translate/tool-attachments"
+import { contentBlockImages, imageFileAttachment, imageUrlAttachment } from "../../../translate/tool-attachments"
 import { own } from "../../../translate/value"
-import { generatedImageAttachments, generatedImageFailure, imageFileAttachment } from "./generated-image"
+import { generatedImageAttachments, generatedImageFailure } from "./generated-image"
 import type { CodexAppServerAdapterState } from "./state"
 
 type Row = Record<string, unknown>

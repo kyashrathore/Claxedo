@@ -1,7 +1,7 @@
 import { asRecord } from "@claxedo/helpers/guards"
 import type { RuntimeToolAttachment } from "@claxedo/agent-runtime-contract"
 import { asText as text } from "@claxedo/agent-runtime-contract"
-import { TOOL_ATTACHMENT_INLINE_MAX_BYTES, imageAttachment } from "../../../translate/tool-attachments"
+import { TOOL_ATTACHMENT_INLINE_MAX_BYTES, imageAttachment, imageFileAttachment } from "../../../translate/tool-attachments"
 
 const IMAGE_SIGNATURES: ReadonlyArray<readonly [prefix: string, mime: string]> = [
   ["iVBORw0KGgo", "image/png"],
@@ -9,10 +9,6 @@ const IMAGE_SIGNATURES: ReadonlyArray<readonly [prefix: string, mime: string]> =
   ["UklGR", "image/webp"],
   ["R0lGOD", "image/gif"],
 ]
-
-export function imageFileAttachment(path: string, mime: string): RuntimeToolAttachment {
-  return { kind: "tool-file", mime, path, filename: path.split(/[\\/]/).pop() }
-}
 
 export function generatedImageAttachments(completed: Record<string, unknown>): RuntimeToolAttachment[] {
   const data = text(completed.result)

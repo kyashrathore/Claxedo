@@ -4,8 +4,10 @@ import { loadCursorDescriptors, type CursorDescriptors } from "./descriptors"
 
 export type CursorToolStep = { kind: "tool"; tool: string; args: unknown; result?: unknown }
 
+export type CursorUpdateStep = { kind: "update"; update: Record<string, unknown> }
+
 export type CursorScript = {
-  steps: Array<{ kind: "text"; text: string } | { kind: "thinking"; text: string; durationMs: number } | { kind: "read"; path: string; result: string } | { kind: "wait"; ms: number } | CursorToolStep>
+  steps: Array<{ kind: "text"; text: string } | { kind: "thinking"; text: string; durationMs: number } | { kind: "read"; path: string; result: string } | { kind: "wait"; ms: number } | CursorToolStep | CursorUpdateStep>
   usage?: { inputTokens: number; outputTokens: number }
   error?: { status: number; message: string }
   hold?: boolean
@@ -87,6 +89,10 @@ async function sendScript(response: ServerResponse, descriptors: CursorDescripto
     if (step.kind === "thinking") {
       response.write(frame(0, message.fromJson({ interactionUpdate: { thinkingDelta: { text: step.text } } }).toBinary()))
       response.write(frame(0, message.fromJson({ interactionUpdate: { thinkingCompleted: { thinkingDurationMs: step.durationMs } } }).toBinary()))
+      continue
+    }
+    if (step.kind === "update") {
+      response.write(frame(0, message.fromJson({ interactionUpdate: step.update }).toBinary()))
       continue
     }
     if (step.kind === "wait") {

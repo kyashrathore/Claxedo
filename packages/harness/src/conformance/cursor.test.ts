@@ -25,7 +25,9 @@ type Context = Awaited<ReturnType<typeof setupConformance>>
 async function backend(): Promise<CursorBackend> {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "cursor-conformance-"))
   const directory = path.join(root, "work")
+  const home = path.join(root, "person")
   await fs.mkdir(directory)
+  await fs.mkdir(home)
   const serverPort = await reservePort()
   const guardPort = await reservePort()
   const server = await startScriptedCursorBackend(serverPort)
@@ -33,7 +35,7 @@ async function backend(): Promise<CursorBackend> {
   server.script("conformance", { steps: [{ kind: "text", text: "PICONFORM" }], usage: { inputTokens: 7, outputTokens: 11 } })
   server.defaultScript("conformance")
   return {
-    execution: "process", root, directory, server, env: { ...process.env, ...egressProxyEnv(guard.url) },
+    execution: "process", root, directory, server, env: { ...process.env, HOME: home, USERPROFILE: home, ...egressProxyEnv(guard.url) },
     harness: { id: "cursor", access: "native" }, model: { providerID: "cursor", modelID: "scripted" },
     credentials: { machineLoginAllowed: true, accountOwner: "fixture-owner", providers: { cursor: { baseUrl: server.url, placeholder: "cursor-conformance-placeholder", authMode: "bearer" } },
       secrets: {}, leaseGeneration: "conformance" },
@@ -306,6 +308,25 @@ test.each([
   } finally { await context.close() }
 }, 90_000)
 
+test("a host that dies mid-run fails that turn as retryable, and the next turn resumes the agent on a new host", async () => {
+  const state = await backend()
+  state.server.script("dies", { steps: [{ kind: "text", text: "BEFORE-DEATH" }], hold: true })
+  const context = await setupConformance({ name: "host-death", backend: async () => state, makeTransport: transportFor(state) })
+  try {
+    const upstream = context.session.binding.upstreamSessionId
+    const turn = collect(context, context.turn("CURSOR_SCRIPT:dies")).then(() => undefined, (error: unknown) => error)
+    await pollUntil(() => state.server.requests.some((request) => request.path === "/aiserver.v1.BidiService/BidiAppend"
+      && JSON.stringify(request.decoded).includes("CURSOR_SCRIPT:dies")) || undefined, Date.now() + 15_000)
+    const host = context.services.processes.at(-1)!
+    process.kill(host.pid, "SIGKILL")
+    expect(await turn).toMatchObject({ transport: "cursor", code: "worker", retryable: true })
+    const recovered = await collect(context, context.turn("CURSOR_SCRIPT:conformance"))
+    expect(recovered.some((item) => item.event.type === "finish")).toBe(true)
+    expect(context.services.processes.at(-1)).not.toBe(host)
+    expect(context.session.binding.upstreamSessionId).toBe(upstream)
+  } finally { await context.close() }
+}, 60_000)
+
 test("a failed scripted run leaves the next turn usable", async () => {
   const state = await backend()
   state.server.script("crash", { steps: [], error: { status: 503, message: "scripted Cursor failure" } })
@@ -322,6 +343,41 @@ test("a failed scripted run leaves the next turn usable", async () => {
     expect(state.server.requests.filter((request) => request.path === "/agent.v1.AgentService/RunSSE").length).toBeGreaterThan(1)
   } finally { await context.close() }
 }, 90_000)
+
+test("repeated text chunks, every turn end's usage and a compaction summary reach the turn through the real SDK", async () => {
+  const state = await backend()
+  const update = (value: Record<string, unknown>) => ({ kind: "update" as const, update: value })
+  state.server.script("chunks", { steps: [
+    update({ textDelta: { text: "Hel" } }), update({ textDelta: { text: "lo" } }), update({ textDelta: { text: "lo" } }),
+    update({ summary: { summary: "Earlier turns, summarized" } }),
+    update({ turnEnded: { inputTokens: "100", outputTokens: "20", cacheReadTokens: "30", cacheWriteTokens: "4", reasoningTokens: "6" } }),
+  ], usage: { inputTokens: 7, outputTokens: 11 } })
+  const context = await setupConformance({ name: "chunks", backend: async () => state, makeTransport: transportFor(state) })
+  try {
+    const events = (await collect(context, context.turn("CURSOR_SCRIPT:chunks"))).map((item) => item.event)
+    expect(events.flatMap((event) => event.type === "text-delta" ? [event.delta] : []).join("")).toBe("Hellolo")
+    expect(events.filter((event) => event.type === "session-compaction")).toMatchObject([{ phase: "completed", summary: "Earlier turns, summarized" }])
+    expect(events.filter((event) => event.type === "usage").at(-1)).toMatchObject({ contextSize: 0,
+      observation: { kind: "cumulative", tokens: { input: 107, output: 31, reasoning: 6, cache: { read: 30, write: 4 } } } })
+  } finally { await context.close() }
+}, 60_000)
+
+test("a stop interrupts the SDK run, the turn ends cancelled, and the stop reports the run terminal", async () => {
+  const state = await backend()
+  state.server.script("stoppable", { steps: [{ kind: "text", text: "STOPPABLE-PARTIAL" }, { kind: "wait", ms: 20_000 }, { kind: "text", text: "NEVER" }] })
+  const context = await setupConformance({ name: "stop", backend: async () => state, makeTransport: transportFor(state) })
+  try {
+    const turn = context.turn("CURSOR_SCRIPT:stoppable")
+    const events: RoutedEvent[] = []
+    const draining = (async () => { for await (const event of context.transport.send(context.session, turn, context.turnBroker())) events.push(event) })()
+    await pollUntil(() => events.some((item) => item.event.type === "text-delta") || undefined, Date.now() + 15_000)
+    const outcome = await context.transport.cancel(context.session, { turnId: turn.turnId, assistantMessageId: turn.assistantMessageId },
+      { at: Date.now() + 15_000, signal: new AbortController().signal })
+    await draining
+    expect(outcome).toEqual({ execution: "terminal", cleanup: "unknown" })
+    expect(events.filter((item) => ["finish", "cancelled", "error"].includes(item.event.type)).map((item) => item.event.type)).toEqual(["cancelled"])
+  } finally { await context.close() }
+}, 60_000)
 
 test("offers Cursor's permission modes and refuses an unknown one", async () => {
   const state = await backend()
@@ -360,7 +416,9 @@ test("a session created in review mode is refused by the SDK's sandbox gate on i
     const review = await context.transport.start({ ...context.start, sessionId: "s2", config: { ...context.start.config, permissionMode: "review" } },
       { rebind: async (upstreamSessionId: string) => ({ ...context.session.binding, sessionId: "s2", upstreamSessionId }) } as unknown as SessionBroker)
     expect((await context.transport.config!.permissionModes({ session: review })).currentModeId).toBe("review")
-    expect(await refusal(collect(context, context.turn("CURSOR_SCRIPT:conformance"), review))).toMatch(/sandboxing is not supported in this environment/)
+    const refused = await collect(context, context.turn("CURSOR_SCRIPT:conformance"), review).then(() => undefined, (error: unknown) => error)
+    expect(String(refused)).toMatch(/sandboxing is not supported in this environment/)
+    expect(refused).toMatchObject({ transport: "cursor", code: "sdk", retryable: false, detail: { sdkError: "ConfigurationError" } })
     expect(state.server.requests.filter((request) => request.path === "/agent.v1.AgentService/RunSSE")).toHaveLength(0)
     expect((await collect(context, context.turn("CURSOR_SCRIPT:conformance"))).some((item) => item.event.type === "finish")).toBe(true)
   } finally { await context.close() }
@@ -580,7 +638,8 @@ test("a projected plugin reaches Cursor through a Claxedo home that mirrors the 
     const before = await hashTree(personal)
     const root = await pluginRoot(state, "conform-plugin", pluginMcp.url)
     const projection = { generation: "g2", mcpServers: [], notApplied: [], pluginRoots: [{ pluginInstanceId: "conform/plugin", root, skillNames: [], dataRoot: root }] }
-    const context = await setupConformance({ name: "plugin", backend: async () => ({ ...state, projection }), makeTransport: transportFor(state) })
+    const closeUnchanged = async () => { expect(await hashTree(personal)).toEqual(before); await state.close() }
+    const context = await setupConformance({ name: "plugin", backend: async () => ({ ...state, projection, close: closeUnchanged }), makeTransport: transportFor(state) })
     try {
       expect((await context.transport.capabilities({ directory: state.directory })).pluginIntake).toEqual({ mcp: "session", skills: "plugin-dir" })
       const [home] = await claxedoHomes(state)
@@ -604,7 +663,6 @@ test("a projected plugin reaches Cursor through a Claxedo home that mirrors the 
       expect(await managedPlugins(home!)).toEqual([])
       expect(await fs.readdir(local)).toContain("foreign")
     } finally { await context.close() }
-    expect(await hashTree(personal)).toEqual(before)
   } finally { await pluginMcp.close(); await personalMcp.close() }
 }, 60_000)
 

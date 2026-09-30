@@ -1,16 +1,16 @@
 {
   "adapter": "cursor-sdk",
   "initialState": {
-    "assistantTextByRunId": {},
-    "thinkingTextByRunId": {},
-    "toolsByCallId": {}
+    "toolsByCallId": {},
+    "usageByRunId": {},
+    "notedKinds": []
   },
   "calls": [
     {
       "state": {
-        "assistantTextByRunId": {},
-        "thinkingTextByRunId": {},
-        "toolsByCallId": {}
+        "toolsByCallId": {},
+        "usageByRunId": {},
+        "notedKinds": []
       },
       "event": {
         "source": "cursor.sdk.message",
@@ -34,8 +34,6 @@
       "callbacks": [],
       "output": {
         "state": {
-          "assistantTextByRunId": {},
-          "thinkingTextByRunId": {},
           "toolsByCallId": {
             "tool-shell-1": {
               "toolName": "shell",
@@ -46,7 +44,9 @@
                 "cwd": "/repo"
               }
             }
-          }
+          },
+          "usageByRunId": {},
+          "notedKinds": []
         },
         "events": [
           {
@@ -122,8 +122,6 @@
     },
     {
       "state": {
-        "assistantTextByRunId": {},
-        "thinkingTextByRunId": {},
         "toolsByCallId": {
           "tool-shell-1": {
             "toolName": "shell",
@@ -134,7 +132,9 @@
               "cwd": "/repo"
             }
           }
-        }
+        },
+        "usageByRunId": {},
+        "notedKinds": []
       },
       "event": {
         "source": "cursor.sdk.message",
@@ -166,8 +166,6 @@
       "callbacks": [],
       "output": {
         "state": {
-          "assistantTextByRunId": {},
-          "thinkingTextByRunId": {},
           "toolsByCallId": {
             "tool-shell-1": {
               "toolName": "shell",
@@ -178,7 +176,9 @@
                 "cwd": "/repo"
               }
             }
-          }
+          },
+          "usageByRunId": {},
+          "notedKinds": []
         },
         "events": [
           {

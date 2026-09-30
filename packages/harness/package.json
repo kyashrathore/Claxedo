@@ -85,7 +85,7 @@
     "@anthropic-ai/claude-agent-sdk": "0.3.283",
     "@claxedo/agent-runtime-contract": "workspace:*",
     "@claxedo/helpers": "workspace:*",
-    "@cursor/sdk": "1.0.24",
+    "@cursor/sdk": "1.0.32",
     "@opencode-ai/plugin": "0.0.0-beta-19271",
     "@opencode-ai/schema": "0.0.0-beta-19271",
     "@opencode-ai/sdk": "0.0.0-beta-19271",

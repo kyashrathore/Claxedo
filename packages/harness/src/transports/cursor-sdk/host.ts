@@ -1,10 +1,12 @@
 import { createInterface } from "node:readline"
 import { errorMessage } from "@claxedo/helpers"
 import type { AgentOptions, Run, SDKAgent } from "@cursor/sdk"
-import { isHostCommand, type HostCommand, type HostReply, type HostSession } from "./protocol"
+import { hostFailure, hostRunError, isHostCommand, type HostCommand, type HostReply, type HostSession } from "./protocol"
 import { CursorRunState } from "./run-state"
 
 const TITLE_AGENT_NAME = "Claxedo session title"
+
+type SdkAgent = typeof import("@cursor/sdk").Agent
 
 const protocolOut = process.stdout.write.bind(process.stdout)
 
@@ -41,9 +43,20 @@ export class CursorHostRuntime {
     if (existing) return existing
     const { Agent } = await this.sdk()
     const options = agentOptions(session)
+    if (session.agentId) await this.endOrphanedRuns(Agent, session.agentId, session.directory)
     const agent = session.agentId ? await Agent.resume(session.agentId, options) : await Agent.create(options)
     this.agents.set(session.sessionId, agent)
     return agent
+  }
+
+  private async endOrphanedRuns(Agent: SdkAgent, agentId: string, cwd: string): Promise<void> {
+    if ((await Agent.get(agentId, { cwd })).status !== "running") return
+    let cursor: string | undefined
+    do {
+      const page = await Agent.listRuns(agentId, { runtime: "local", cwd, ...(cursor ? { cursor } : {}) })
+      for (const run of page.items) if (run.status === "running") await Agent.cancelRun(run.id, { runtime: "local", cwd })
+      cursor = page.nextCursor
+    } while (cursor)
   }
 
   private async run(command: Extract<HostCommand, { kind: "run" }>): Promise<void> {
@@ -84,7 +97,7 @@ export class CursorHostRuntime {
     for await (const message of run.stream()) this.post({ id: command.id, kind: "event", message })
     const result = await run.wait()
     this.post({ id: command.id, kind: "result", value: { agentId: agent.agentId, runId: run.id,
-      status: result.status, ...(result.result ? { result: result.result } : {}) } })
+      status: result.status, ...(result.result ? { result: result.result } : {}), ...hostRunError(result.error) } })
   }
 
   private async title(command: Extract<HostCommand, { kind: "title" }>): Promise<void> {
@@ -137,7 +150,7 @@ export class CursorHostRuntime {
         this.post({ id: command.id, kind: "result" })
       }
     } catch (error) {
-      this.post({ id: command.id, kind: "error", message: errorMessage(error) })
+      this.post({ id: command.id, kind: "error", ...hostFailure(error, errorMessage(error)) })
     }
   }
 }

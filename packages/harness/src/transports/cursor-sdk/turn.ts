@@ -1,5 +1,5 @@
 import { createAgentEventRuntime } from "../../translate/runtime"
-import { cursorRuntimeMessage, cursorSdkAdapter, cursorSubagentObservations } from "./translate"
+import { cursorRuntimeMessage, cursorSdkAdapter, cursorSubagentObservations, type CursorRunResult } from "./translate"
 import type { SubagentTranscript } from "@claxedo/agent-runtime-contract"
 import { AsyncPushQueue } from "@claxedo/helpers"
 import { asRecord } from "@claxedo/helpers/guards"
@@ -9,7 +9,7 @@ import { TransportError } from "../../contract/errors"
 import { attachmentPathLine, isPromptImage, materializeAttachment, promptFiles } from "../../translate/attachments"
 import { routedIngest } from "../../translate/ingest"
 import { flattenTurnPrompt } from "../../translate/prompt"
-import { unrecognizedEvent } from "../../translate/unrecognized"
+import { cursorRunResultMissing, cursorRunStatusUnknown } from "./errors"
 import type { CursorHost } from "./host-registry"
 import type { HostReply, HostSession } from "./protocol"
 
@@ -31,25 +31,23 @@ export async function cursorPrompt(turn: TurnInput, directory: string): Promise<
   return images.length ? { text, images } : text
 }
 
+function isRunStatus(status: string): status is CursorRunResult["status"] {
+  return status === "finished" || status === "cancelled" || status === "error"
+}
+
 function runResultEvents(runtime: Runtime, reply: HostReply): RoutedEvent[] {
   if (reply.kind !== "result") return []
   const value = reply.value
-  if (!value?.runId || !value.agentId || !value.status) throw new TransportError("cursor", "sdk", "Cursor omitted its run result")
-  const status = value.status
-  if (status !== "finished" && status !== "cancelled" && status !== "error") {
-    throw new TransportError("cursor", "sdk", `Cursor reported unknown run status ${status}`)
-  }
-  return routedIngest(runtime, { source: "cursor.local-run-stream", method: "result",
-    payload: { type: "result", agentId: value.agentId, runId: value.runId, status,
-      ...(value.result ? { result: value.result } : {}) } }, { method: "cursor.result" })
+  if (!value?.runId || !value.agentId || !value.status) throw cursorRunResultMissing()
+  if (!isRunStatus(value.status)) throw cursorRunStatusUnknown(value.status)
+  const payload: CursorRunResult = { schemaVersion: 1, type: "result", agentId: value.agentId, runId: value.runId, status: value.status,
+    ...(value.error ? { error: value.error } : {}) }
+  return routedIngest(runtime, { source: "cursor.local-run-stream", method: "result", payload }, { method: "cursor.result" })
 }
 
 function messageEvents(runtime: Runtime, message: SDKMessage): RoutedEvent[] {
-  return routedIngest(runtime, { source: "cursor.sdk.message", method: `cursor/${message.type}`,
-    payload: cursorRuntimeMessage(message) }, { method: `cursor.${message.type}`, target: { kind: "parent" },
-    mapEvent: (event) => event.type === "diagnostic" && event.diagnostic.code.includes("unmapped")
-      ? unrecognizedEvent("cursor.sdk", message.type, message) : event,
-  })
+  return routedIngest(runtime, { source: "cursor.sdk.message", method: `cursor/${message.type}`, payload: cursorRuntimeMessage(message) },
+    { method: `cursor.${message.type}`, target: { kind: "parent" } })
 }
 
 function taskTranscriptPath(message: SDKMessage): string | undefined {
@@ -110,7 +108,6 @@ export async function* streamCursorRun(input: CursorRun): AsyncIterable<RoutedEv
         continue
       }
       yield* runResultEvents(runtime, reply)
-      if (reply.kind === "result" && reply.value?.status === "error") throw new TransportError("cursor", "sdk", "Cursor run failed")
     }
   } finally {
     input.broker.signal.removeEventListener("abort", onAbort)
