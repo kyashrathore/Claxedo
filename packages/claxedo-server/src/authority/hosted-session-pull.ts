@@ -212,7 +212,7 @@ export async function pullHostedControlSessionMessages(
     currentOrdinal,
     refreshMetadata: () => syncHostedSessionMetadata(services, signed, target, input.sessionId, payload.session),
   })
-  if (pullReachesAuthority(payload, skipped)) {
+  if (pullReachesAuthority(skipped)) {
     await syncAuthority(
       payload.messages,
       payload.maxEventOrdinal ?? services.projectionStore.read_session_max_event_ordinal(input.sessionId),

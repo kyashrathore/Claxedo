@@ -127,7 +127,7 @@ export async function pullControlSessionMessages(
     currentOrdinal,
     refreshMetadata: () => syncPulledSessionMetadata(services, auth, ws, input.sessionId, payload.session),
   })
-  if (pullReachesAuthority(payload, skipped)) await syncAuthority()
+  if (pullReachesAuthority(skipped)) await syncAuthority()
   if (skipped) return skipped
   await syncPulledSessionMetadata(services, auth, ws, input.sessionId, payload.session)
   return {

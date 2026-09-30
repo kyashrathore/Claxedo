@@ -184,13 +184,14 @@ export async function projectPulledMessages(input: {
 }
 
 /**
- * Whether a pulled snapshot is offered to the authority. One that carries an
- * event ordinal is offered even when the projection skipped it, because the
- * authority refuses it by its own stored ordinal: a pull that committed the
- * projection and failed before the authority write is completed by the next
- * pull. One without an ordinal is offered only when the projection took it,
- * since the authority would replace a newer transcript with it.
+ * Whether a pulled snapshot is offered to the authority. One the projection
+ * skipped at its own ordinal is: the projection holds it, but a pull that
+ * committed the projection and failed before the authority write left the
+ * authority behind, and the authority refuses a snapshot it already holds by
+ * its own stored ordinal. One older than the projection is not, because the
+ * newer pull that passed it offered the authority its own.
  */
-export function pullReachesAuthority(payload: ReturnType<typeof messagesPayload>, skipped: PullSkip | undefined) {
-  return !skipped || payload.maxEventOrdinal !== undefined
+export function pullReachesAuthority(skipped: PullSkip | undefined) {
+  if (!skipped) return true
+  return "snapshotOrdinal" in skipped && skipped.snapshotOrdinal !== undefined && skipped.snapshotOrdinal >= skipped.currentOrdinal
 }
