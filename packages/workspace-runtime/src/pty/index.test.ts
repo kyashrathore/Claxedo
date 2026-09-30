@@ -154,10 +154,10 @@ describe("Pty lifecycle cleanup", () => {
     expect(alive(info.pid)).toBe(false)
   })
 
-  test("orphan timeout removes abandoned unmanaged sessions", async () => {
+  test("orphan timeout removes abandoned provisional sessions", async () => {
     const { Pty } = await import("./index")
     const info = await Pty.create({ cwd: tmpDir, title: "orphan" }, ownership)
-    expect(Pty.activity()).toEqual({ running: 1, committed: 0, provisional: 1, managed: 0, subscribers: 0, unrecorded: 0, unresolved: 0 })
+    expect(Pty.activity()).toEqual({ running: 1, committed: 0, provisional: 1, subscribers: 0, unrecorded: 0, unresolved: 0 })
     expect(Pty.listDetailed().find((session) => session.id === info.id)?.orphanTimerActive).toBe(true)
 
     await waitFor(() => Pty.get(info.id) === undefined)
@@ -180,7 +180,7 @@ describe("Pty lifecycle cleanup", () => {
     await new Promise((resolve) => setTimeout(resolve, 20))
 
     expect(Pty.get(info.id)).toEqual(info)
-    expect(Pty.activity()).toEqual({ running: 1, committed: 1, provisional: 0, managed: 0, subscribers: 0, unrecorded: 0, unresolved: 0 })
+    expect(Pty.activity()).toEqual({ running: 1, committed: 1, provisional: 0, subscribers: 0, unrecorded: 0, unresolved: 0 })
     expect(alive(info.pid)).toBe(true)
   })
 

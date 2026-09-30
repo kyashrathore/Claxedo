@@ -31,7 +31,6 @@ import { BIN_DIR, getTerminalEnvVars, isSetupComplete, setupAgentHooks } from ".
 import { cleanupOrphanedHistory, createDiskHistory, renameHistory } from "./history-disk"
 import { CLEAR_SCROLLBACK, extractContentAfterClear } from "./escape-filter"
 import { osc7 as osc7Parser } from "./osc7"
-import { oscProcessExit } from "./osc-process-exit"
 import { buildSafeEnv, getLocale } from "./env"
 import { resolveCwd } from "./resolve-cwd"
 import { workspaceId as runtimeWorkspaceId } from "../target"
@@ -222,14 +221,6 @@ export namespace Pty {
     }
   }
 
-  function busy(text: string) {
-    return (
-      text.includes("EADDRINUSE") ||
-      /address already in use/i.test(text) ||
-      /port\s+\d{2,5}\s+is\s+already\s+in\s+use/i.test(text)
-    )
-  }
-
   /**
    * A terminal's own session and process group come from the PTY itself
    * (`forkpty` calls `setsid`), so the scope this retires is the one the OS
@@ -262,8 +253,8 @@ export namespace Pty {
   }
 
   /**
-   * A payload that exits before its identity is read (`/bin/echo` under a
-   * managed process) leaves nothing to verify, but the PTY library reaping it
+   * A payload that exits before its identity is read (a `/bin/echo`) leaves
+   * nothing to verify, but the PTY library reaping it
    * or its pid no longer existing is proof that the leader is gone. A pid that
    * still answers may be a reuse, so it stays unverifiable rather than exited.
    */
@@ -328,7 +319,6 @@ export namespace Pty {
     initialCommand: z.string().optional(),
     env: z.record(z.string(), z.string()).optional(),
     previousPtyId: z.string().optional(),
-    managed: z.boolean().optional(),
   })
 
   export type CreateInput = z.infer<typeof CreateInput>
@@ -368,7 +358,6 @@ export namespace Pty {
     onResize(): void
     history: Awaited<ReturnType<typeof createDiskHistory>>
     osc7: string
-    processExitBuf: string
     subscribers: Set<WebSocketBackpressureSocket>
     exited: boolean
     removed: boolean
@@ -380,7 +369,6 @@ export namespace Pty {
     createdAt: number
     firstByteAt: number | undefined
     directory: string
-    managed: boolean
     /**
      * Public PTY creation is a two-phase ownership transfer. `create()` owns a
      * provisional process until the HTTP route has produced a successful
@@ -388,9 +376,7 @@ export namespace Pty {
      * running terminal is intentionally independent of WebSocket subscribers.
      */
     committed: boolean
-    addrInUse: boolean
     orphanTimer: ReturnType<typeof setTimeout> | undefined
-    interruptTimer: ReturnType<typeof setTimeout> | undefined
     cleanupOperation?: Promise<RetirementResult | undefined>
     removeOperation?: Promise<RetirementResult | undefined>
     launchId?: string
@@ -437,12 +423,6 @@ export namespace Pty {
     agentHookAccess?: AgentHookAccessBinding
   }
 
-  function clearInterrupt(session: ActiveSession) {
-    if (!session.interruptTimer) return
-    clearTimeout(session.interruptTimer)
-    session.interruptTimer = undefined
-  }
-
   function clearOrphanTimer(session: ActiveSession) {
     if (!session.orphanTimer) return
     clearTimeout(session.orphanTimer)
@@ -450,34 +430,18 @@ export namespace Pty {
   }
 
   function armOrphanTimer(id: string, session: ActiveSession) {
-    if (session.managed || session.committed || session.exited || session.removed || session.orphanTimer) return
+    if (session.committed || session.exited || session.removed || session.orphanTimer) return
     const timeoutMs = orphanTimeoutMs()
     log.info("provisional PTY cleanup timer started", { id, timeoutMs })
     session.orphanTimer = setTimeout(() => {
       const current = sessions.get(id)
       if (!current) return
       current.orphanTimer = undefined
-      if (current.managed || current.committed || current.subscribers.size > 0 || current.exited || current.removed) return
+      if (current.committed || current.subscribers.size > 0 || current.exited || current.removed) return
       log.info("provisional PTY cleanup timer fired", { id })
       void remove(id)
     }, timeoutMs)
     session.orphanTimer.unref?.()
-  }
-
-  function interrupt(id: string, session: ActiveSession) {
-    if (!session.managed) return
-    if (session.interruptTimer) return
-    session.interruptTimer = setTimeout(() => {
-      session.interruptTimer = undefined
-      if (session.exited || session.removed || session.info.status !== "running") return
-      workspaceRuntimeBus.publish({
-        type: "pty.stream",
-        id,
-        ...(session.info.sessionId ? { sessionId: session.info.sessionId } : {}),
-        kind: "command-exit",
-        exitCode: 130,
-      })
-    }, 150)
   }
 
   function cleanupSession(id: string, session: ActiveSession, reason: "exit" | "remove") {
@@ -495,7 +459,6 @@ export namespace Pty {
       activityChanged()
     }
 
-    clearInterrupt(session)
     // Release the headless emulator on BOTH paths — it holds a parser and a
     // screen buffer per session, so leaking one per terminal adds up.
     session.modeTracker.dispose()
@@ -623,7 +586,6 @@ export namespace Pty {
       ready: s.ready,
       exited: s.exited,
       removed: s.removed,
-      managed: s.managed,
       committed: s.committed,
       orphanTimerActive: !!s.orphanTimer,
       ...(s.cleanup ? { cleanup: s.cleanup, cleanupResult: s.cleanupResult } : {}),
@@ -646,7 +608,6 @@ export namespace Pty {
     let running = 0
     let committed = 0
     let provisional = 0
-    let managed = 0
     let subscribers = 0
     let unrecorded = 0
     let unresolved = 0
@@ -661,11 +622,10 @@ export namespace Pty {
       if (pinnedUnresolved) unresolved++
       if (pinnedUnrecorded) unrecorded++
       subscribers += session.subscribers.size
-      if (session.managed) managed++
-      else if (session.committed) committed++
+      if (session.committed) committed++
       else provisional++
     }
-    return { running, committed, provisional, managed, subscribers, unrecorded, unresolved }
+    return { running, committed, provisional, subscribers, unrecorded, unresolved }
   }
 
   export function commit(id: string) {
@@ -720,10 +680,6 @@ export namespace Pty {
     const session = sessions.get(id)
     if (!session || session.exited || session.removed) return undefined
     return session.agentHookAccess?.token
-  }
-
-  export function hasAddrInUse(id: string) {
-    return sessions.get(id)?.addrInUse ?? false
   }
 
   export function snapshot(id: string, max = BUFFER_LIMIT) {
@@ -989,7 +945,6 @@ export namespace Pty {
       },
       history,
       osc7: "",
-      processExitBuf: "",
       subscribers: new Set(),
       exited: false,
       removed: false,
@@ -1001,11 +956,8 @@ export namespace Pty {
       createdAt: performance.now(),
       firstByteAt: undefined,
       directory: cwd,
-      managed: !!input.managed,
       committed: false,
-      addrInUse: false,
       orphanTimer: undefined,
-      interruptTimer: undefined,
       launchId: prepared.launchId,
       store: ownership,
       ...(unrecorded ? { ownership: "unrecorded" as const, ownershipError: unrecorded } : {}),
@@ -1044,27 +996,6 @@ export namespace Pty {
         workspaceRuntimeBus.publish({ type: "pty.updated", info: session.info })
       }
 
-      const exitParsed = oscProcessExit(session.processExitBuf, data)
-      session.processExitBuf = exitParsed.buf
-      if (exitParsed.exitCode !== undefined) {
-        clearInterrupt(session)
-        // Flush stray terminal reply bytes (e.g., CPR \x1b[1;1R) that may have
-        // accumulated in the PTY slave input buffer while the command was running
-        // but were never consumed before exit. \x15 (Ctrl+U) kills any text that
-        // zsh's ZLE accumulated from those bytes, so the prompt comes back clean
-        // instead of showing garbage like "1R".
-        try {
-          session.process.write("\x15")
-        } catch {}
-        workspaceRuntimeBus.publish({
-          type: "pty.stream",
-          id,
-          ...(session.info.sessionId ? { sessionId: session.info.sessionId } : {}),
-          kind: "command-exit",
-          exitCode: exitParsed.exitCode,
-        })
-      }
-
       // Mirror into the headless emulator BEFORE broadcasting, so a client that
       // attaches in the same tick gets a preamble that already includes
       // whatever this chunk just set.
@@ -1082,16 +1013,6 @@ export namespace Pty {
         const cut = safeStartIndex(session.buffer, session.buffer.length - BUFFER_LIMIT)
         session.buffer = session.buffer.slice(cut)
         session.bufferCursor += cut
-      }
-      if (session.managed && busy(data)) {
-        session.addrInUse = true
-        workspaceRuntimeBus.publish({
-          type: "pty.stream",
-          id,
-          ...(session.info.sessionId ? { sessionId: session.info.sessionId } : {}),
-          kind: "data",
-          tail: snapshot(id, 16_384),
-        })
       }
 
       const filtered = (() => {
@@ -1116,7 +1037,6 @@ export namespace Pty {
         clearTimeout(initialCommandTimer)
         initialCommandTimer = undefined
       }
-      clearInterrupt(session)
       log.info("session exited", { id, exitCode })
       session.info.status = "exited"
       activityChanged()
@@ -1258,9 +1178,6 @@ export namespace Pty {
         enqueueWrite(session, { type: "write", data })
         return
       }
-      if (data.includes("\x03")) {
-        interrupt(id, session)
-      }
       session.process.write(data)
     }
   }
@@ -1336,9 +1253,6 @@ export namespace Pty {
         }
         if (session.info.status !== "running") {
           return
-        }
-        if (input.includes("\x03")) {
-          interrupt(id, session)
         }
         session.process.write(input)
       },

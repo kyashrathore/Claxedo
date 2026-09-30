@@ -39,7 +39,7 @@ import { assertTarget, authoritativeWorkspaceId, withWorkspaceTarget, workspaceD
 import { createWorkspaceCheckpoint } from "./checkpoint"
 import { createSessionConfiguration } from "./configure"
 import { createHarnessHealthFeed } from "./harness-health-feed"
-import { mountWorkspaceCore, mountWorkspaceAgentHooks, mountWorkspaceEvents, mountWorkspaceProcess, mountWorkspacePty, type MountedWorkspaceEvents, type WorkspaceTranscriptRoutesOptions } from "./core"
+import { mountWorkspaceCore, mountWorkspaceAgentHooks, mountWorkspaceEvents, mountWorkspacePty, type MountedWorkspaceEvents, type WorkspaceTranscriptRoutesOptions } from "./core"
 import type { RuntimeConfigApplyStatus, WorkspaceConnectionState, WorkspaceHost, WorkspaceHostMountOptions } from "./host"
 import { mountSessionRoutes } from "./session-routes"
 import { assertConnectionRevision, connectionConfigHooks, harnessKey, persistRuntimeConfigApplyStatus, runnerForSelection, runtimeConfigApplyError, runtimeSnapshotSignature, sameAuth, sameRuntimeMcp, validateDescriptors, type RuntimeRunner } from "./snapshot"
@@ -553,7 +553,6 @@ export function createWorkspaceHost(options: WorkspaceHostOptions): WorkspaceHos
       ...(mount.renewalIntervalMs !== undefined ? { renewalIntervalMs: mount.renewalIntervalMs } : {}),
     })
     if (mount.pty) mountWorkspacePty(app, mount.pty.upgradeWebSocket, sessionAccessPolicy, { ownership: launchOwnership })
-    if (mount.process) mountWorkspaceProcess(app, sessionAccessPolicy, { ownership: launchOwnership })
     if (mount.agentHooks) mountWorkspaceAgentHooks(app, sessionAccessPolicy)
     return events
   }

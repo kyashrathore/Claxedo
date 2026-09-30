@@ -459,7 +459,7 @@ describe("workspace runtime host route auth", () => {
       for (const field of [
         "directory", "capabilities", "profile", "harness", "harnessHealth",
         "connectionState", "configApply", "controlPlane", "routeAuthBoundary",
-        "serviceExposure", "exposure", "ptyCount", "processCount", "activeProcessCount",
+        "serviceExposure", "exposure", "ptyCount",
       ]) {
         expect(body).not.toHaveProperty(field)
       }
@@ -468,7 +468,7 @@ describe("workspace runtime host route auth", () => {
     }
   })
 
-  test("the authenticated health probe reports the process counters the supervisor's idle check reads", async () => {
+  test("the authenticated health probe reports the terminal counter the supervisor's idle check reads", async () => {
     const runtime = createWorkspaceRuntimeApp({
       placement,
       exposure: relayWorkspaceRuntimeExposure(relayHostAuth),
@@ -483,11 +483,7 @@ describe("workspace runtime host route auth", () => {
         headers: { authorization: "Bearer cfg-secret" },
       })
       expect(response.status).toBe(200)
-      await expect(response.json()).resolves.toMatchObject({
-        ptyCount: 0,
-        processCount: 0,
-        activeProcessCount: 0,
-      })
+      await expect(response.json()).resolves.toMatchObject({ ptyCount: 0 })
     } finally {
       await runtime.host.dispose()
     }
@@ -710,11 +706,7 @@ describe("workspace runtime drain", () => {
     await drainWorkspaceRuntime({
       server: { close: () => events.push("server.close") },
       hostTunnel: { close: () => events.push("hostTunnel.close") },
-      directory: "/tmp/ws",
       drainTimeoutMs: 1000,
-      processDispose: async (directory) => {
-        events.push(`process.dispose:${directory}`)
-      },
       ptyDispose: async () => {
         events.push("pty.dispose")
       },
@@ -731,7 +723,6 @@ describe("workspace runtime drain", () => {
     expect(events).toEqual([
       "server.close",
       "hostTunnel.close",
-      "process.dispose:/tmp/ws",
       "pty.dispose",
       "host.dispose",
       "host.drain",
@@ -744,14 +735,10 @@ describe("workspace runtime drain", () => {
 
     await drainWorkspaceRuntime({
       server: { close: () => events.push("server.close") },
-      directory: "/tmp/ws",
       drainTimeoutMs: 5,
-      processDispose: async () => {
-        events.push("process.dispose")
-        await new Promise(() => {})
-      },
       ptyDispose: async () => {
         events.push("pty.dispose")
+        await new Promise(() => {})
       },
       runtime: {
         host: {
@@ -763,7 +750,7 @@ describe("workspace runtime drain", () => {
     expect(performance.now() - startedAt).toBeLessThan(500)
     expect(events).toEqual([
       "server.close",
-      "process.dispose",
+      "pty.dispose",
     ])
   })
 
@@ -772,14 +759,10 @@ describe("workspace runtime drain", () => {
 
     await expect(drainWorkspaceRuntime({
       server: { close: () => events.push("server.close") },
-      directory: "/tmp/ws",
       drainTimeoutMs: 1000,
-      processDispose: async () => {
-        events.push("process.dispose")
-        throw new Error("process cleanup failed")
-      },
       ptyDispose: async () => {
         events.push("pty.dispose")
+        throw new Error("pty cleanup failed")
       },
       runtime: {
         host: {
@@ -790,7 +773,6 @@ describe("workspace runtime drain", () => {
 
     expect(events).toEqual([
       "server.close",
-      "process.dispose",
       "pty.dispose",
       "host.dispose",
     ])
@@ -810,7 +792,6 @@ describe("workspace runtime drain", () => {
 
       await drainWorkspaceRuntime({
         server: { close() {} },
-        directory: dir,
         drainTimeoutMs: 2_000,
         runtime: {
           host: {

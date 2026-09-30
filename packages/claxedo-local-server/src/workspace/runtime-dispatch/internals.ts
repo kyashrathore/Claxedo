@@ -465,8 +465,6 @@ export function embeddedConfigModeForPath(
     || pathname.startsWith("/find/")
     || pathname === "/api/wr/pty"
     || pathname.startsWith("/api/wr/pty/")
-    || pathname === "/api/wr/process"
-    || pathname.startsWith("/api/wr/process/")
     || pathname === "/api/wr/diff"
     || pathname.startsWith("/api/wr/diff/")
     || pathname === "/api/wr/git"

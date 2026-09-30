@@ -33,12 +33,11 @@
   "packages/workspace-relay/src/bun.ts": 2442,
   "packages/workspace-relay/src/cloudflare.ts": 2645,
   "packages/workspace-relay/src/server.ts": 1773,
-  "packages/workspace-runtime/src/managed-processes/manager.ts": 1739,
   "packages/workspace-runtime/src/projection/client-presentation/projection.ts": 1524,
-  "packages/workspace-runtime/src/pty/index.ts": 1361,
+  "packages/workspace-runtime/src/pty/index.ts": 1275,
   "packages/workspace-runtime/src/routes/document-hydration.ts": 811,
   "packages/workspace-runtime/src/routes/session-core.ts": 2183,
   "packages/workspace-runtime/src/store.ts": 5039,
   "packages/workspace-runtime/src/workspace-relay-host-tunnel.ts": 815,
-  "packages/workspace-runtime/src/workspace/runtime.ts": 853
+  "packages/workspace-runtime/src/workspace/runtime.ts": 852
 }

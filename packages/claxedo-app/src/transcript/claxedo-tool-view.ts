@@ -22,10 +22,6 @@ export const CLAXEDO_TOOL_TITLE_KEYS = {
   session_changes: "transcript.claxedoTool.session_changes",
   documents_list: "transcript.claxedoTool.documents_list",
   documents_open: "transcript.claxedoTool.documents_open",
-  processes: "transcript.claxedoTool.processes",
-  process_start: "transcript.claxedoTool.process_start",
-  process_stop: "transcript.claxedoTool.process_stop",
-  process_logs: "transcript.claxedoTool.process_logs",
   subagent_capabilities: "transcript.claxedoTool.subagent_capabilities",
   create_subagent: "transcript.claxedoTool.create_subagent",
   subagent_status: "transcript.claxedoTool.subagent_status",
@@ -275,21 +271,6 @@ export function claxedoToolView(view: ClaxedoToolViewInput): ClaxedoToolView {
         ],
       }
     }
-    case "process_start":
-    case "process_logs":
-      return { ...base, subject: nonEmptyString(args.process) ?? nonEmptyString(args.name), ...prose(view.output) }
-    case "process_stop":
-      return {
-        ...base,
-        subject: nonEmptyString(args.process),
-        ...(result
-          ? {
-              note: i18n.t(
-                result.state === "unresolved" ? "transcript.claxedoTool.note.stopUnverified" : "transcript.claxedoTool.note.stopped",
-              ),
-            }
-          : {}),
-      }
     case "create_subagent":
     case "subagent_status":
     case "subagent_cancel": {
@@ -307,7 +288,6 @@ export function claxedoToolView(view: ClaxedoToolViewInput): ClaxedoToolView {
       return { ...base, link: session(nonEmptyString(args.session)), ...prose(view.output) }
     case "workspace_lifecycle":
       return { ...base, subject: nonEmptyString(args.action) ?? nonEmptyString(args.state), ...prose(view.output) }
-    case "processes":
     case "sessions_board":
     case "wait_for_attention":
     case "workspaces_list":

@@ -17,10 +17,6 @@ export type WorkspaceCapabilities = {
   command: boolean
   /** PTY management APIs are available for creating, updating, and streaming terminals. */
   pty: boolean
-  /** Managed process APIs are available for long-running workspace services like dev servers. */
-  process: boolean
-  /** Local hosts can publish redacted process-owner lifecycle events to an embedding desktop. */
-  process_observer: true
   /** Standalone git diff APIs are available for comparing workspace changes. */
   diff: boolean
   /** Runtime config push is supported via `/api/wr/config`. */
@@ -47,8 +43,6 @@ export function workspaceCapabilities(enabled: boolean): WorkspaceCapabilities {
     harness_host: enabled,
     command: enabled,
     pty: true,
-    process: true,
-    process_observer: true,
     diff: true,
     config: true,
     mcp: enabled,

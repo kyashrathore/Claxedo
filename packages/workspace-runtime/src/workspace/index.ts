@@ -3,7 +3,6 @@ export {
   mountWorkspaceCore,
   mountWorkspaceEvents,
   mountWorkspaceFiles,
-  mountWorkspaceProcess,
   mountWorkspacePty,
   mountWorkspaceTranscripts,
 } from "./core"

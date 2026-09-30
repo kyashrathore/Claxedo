@@ -7,7 +7,6 @@ import { AgentHookRoutes } from "../routes/agent-hook"
 import { workspaceEventsHandler, type WorkspaceEventFramesTap, type WorkspaceEventParents } from "../routes/events"
 import { TranscriptRoutes } from "../routes/transcript"
 import type { TranscriptResolution, TranscriptUnavailable } from "../transcript-resolver"
-import { ProcessRoutes, type ProcessRouteOptions } from "../routes/process"
 import { createDiffRoutes } from "../routes/diff"
 import { FileRoutes } from "../routes/file"
 import { GitSourceRoutes } from "../routes/git-source"
@@ -87,10 +86,6 @@ export function mountWorkspaceTranscripts(app: Hono, options: WorkspaceTranscrip
   app.route(WorkspaceRuntimeRoutes.subagentTranscripts, TranscriptRoutes(options))
 }
 
-export function mountWorkspaceProcess(app: Hono, sessionAccessPolicy?: SessionAccessPolicy, options?: ProcessRouteOptions) {
-  app.route(WorkspaceRuntimeRoutes.process, ProcessRoutes(sessionAccessPolicy, options))
-}
-
 export function mountWorkspaceFiles(app: Hono, sessionAccessPolicy?: SessionAccessPolicy) {
   // Every family here takes a directory, and a registered per-session worktree
   // is one of the directories this runtime serves: the policy is what decides
@@ -127,7 +122,6 @@ export function mountWorkspaceCore(
   mountWorkspaceAgentHooks(app, options.sessionAccessPolicy)
   const events = mountWorkspaceEvents(app, options)
   if (options.transcripts) mountWorkspaceTranscripts(app, options.transcripts)
-  mountWorkspaceProcess(app, options.sessionAccessPolicy, ownership)
   mountWorkspaceFiles(app, options.sessionAccessPolicy)
   return events
 }

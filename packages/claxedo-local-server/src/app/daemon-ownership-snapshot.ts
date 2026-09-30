@@ -86,7 +86,7 @@ export function readDaemonOwnershipSnapshot(file: string): DaemonOwnershipSnapsh
 }
 
 const DAEMON_OWNER_KINDS: readonly LocalDaemonOwner["kind"][] = [
-  "managed_process", "terminal", "turn", "workspace_runtime",
+  "terminal", "turn", "workspace_runtime",
 ]
 
 /**

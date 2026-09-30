@@ -65,8 +65,6 @@ export const runtimeSnapshotInput = z.object({
   agentType: z.string(),
   model: z.string().nullable(),
   ptyCount: z.number().int().nonnegative(),
-  processCount: z.number().int().nonnegative(),
-  activeProcessCount: z.number().int().nonnegative(),
   epoch: z.number().int().positive(),
   controlPlane: z.object({
     enabled: z.boolean(),

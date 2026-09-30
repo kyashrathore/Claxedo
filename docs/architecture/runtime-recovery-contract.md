@@ -107,7 +107,7 @@ Inspection must report the individual owners behind aggregate counts. `activeTur
 
 Authorization remains scoped to the existing session/workspace/machine authority. Session access does not confer authority to terminate a shared harness. Shared escalation requires a preview naming the affected sessions/resources and an authorization bound to that generation and scope revision. Revalidate immediately before action; if the impact expands, return a scope-changed result for renewed selection. Gate admission atomically with accepting the reviewed scope.
 
-Ordinary containment of resources exclusively owned by a failed operation is part of the execution owner's existing responsibility; it does not require a fresh permission prompt for every failure. User Stop authorizes cancellation of the named turn and cleanup of its owned resources. Escalation that interrupts additional sessions, retained managed processes, or the containing daemon requires the broader scope to be authorized. A provider or local process must not gain extra tool permissions during recovery.
+Ordinary containment of resources exclusively owned by a failed operation is part of the execution owner's existing responsibility; it does not require a fresh permission prompt for every failure. User Stop authorizes cancellation of the named turn and cleanup of its owned resources. Escalation that interrupts additional sessions or the containing daemon requires the broader scope to be authorized. A provider or local process must not gain extra tool permissions during recovery.
 
 ## 7. Acknowledgements, deadlines, retries, and disconnects
 
@@ -180,7 +180,7 @@ If durable fencing cannot be advanced, in-memory gating protects only the curren
 | In-process runtime | Cooperative cancellation; if wedged, explicit containing-daemon escalation | A settled in-process owner or verified daemon-generation termination |
 | Remote connection/provider | Remote cancellation/reconciliation through that authority | Provider/remote-host terminal evidence; local disconnect is not proof |
 
-Maintain a recoverable record of retired generations with unresolved cleanup. Do not label them active model work, and do not erase them from diagnostics or shutdown impact. Managed processes with explicit handoff remain separate legitimate work.
+Maintain a recoverable record of retired generations with unresolved cleanup. Do not label them active model work, and do not erase them from diagnostics or shutdown impact.
 
 Daemon normal exit keeps today's background-work policy. Drain reports blockers within its deadline. Explicit stop may escalate past broken activity counters after authorized scope selection; counters are accounting, not a veto over the machine owner's recovery authority.
 

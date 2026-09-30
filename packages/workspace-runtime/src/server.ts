@@ -6,7 +6,6 @@ import { serve } from "@hono/node-server"
 import { createNodeWebSocket } from "@hono/node-ws"
 import type { UpgradeWebSocket } from "hono/ws"
 import { Pty } from "./pty/index"
-import * as ProcessManager from "./managed-processes/manager"
 import { withWorkspaceTarget, workspaceDir, workspaceId, type WorkspaceTarget } from "./target"
 import { WorkspaceWorktreeManager } from "./worktree"
 import { createWorkspaceHost, type WorkspaceHostOptions } from "./workspace"
@@ -299,12 +298,10 @@ export async function waitForWorkspaceRuntimeServerPort(
 type WorkspaceRuntimeDrainOptions = {
   server: { close(): unknown }
   runtime: { host: { dispose(): unknown } }
-  directory: string
   drainTimeoutMs: number
   // Draining only closes the tunnel, so it asks for no more than that —
   // matching `server` above. A full `WorkspaceRelayHostTunnel` satisfies it.
   hostTunnel?: { close(): unknown }
-  processDispose?: (directory: string) => Promise<void>
   ptyDispose?: () => Promise<void>
   hostDrain?: () => Promise<void> | void
 }
@@ -328,7 +325,6 @@ export async function drainWorkspaceRuntime(options: WorkspaceRuntimeDrainOption
     await Promise.race([
       (async () => {
         const errors: unknown[] = []
-        await drainStep(errors, () => (options.processDispose ?? ProcessManager.dispose)(options.directory))
         await drainStep(errors, () => (options.ptyDispose ?? Pty.dispose)())
         await drainStep(errors, () => options.runtime.host.dispose())
         await drainStep(errors, () => options.hostDrain?.())
@@ -399,8 +395,6 @@ function runtimeProbe(host: Host, options: WorkspaceRuntimeServerOptions) {
 }
 
 async function runtimeLiveness(host: Host, options: WorkspaceRuntimeServerOptions, sessionId?: string) {
-  const dir = options.target?.directory ?? workspaceDir()
-  const rows = ProcessManager.list(dir)
   const detail = host.detail()
   const harnessHealth = sessionId
     ? await host.readHarnessHealth({
@@ -419,8 +413,6 @@ async function runtimeLiveness(host: Host, options: WorkspaceRuntimeServerOption
     exposure: options.exposure ? { kind: exposureBoundaryName(options.exposure) } : undefined,
     workspaceId: options.target?.workspaceId ?? workspaceId(),
     ptyCount: Pty.list().length,
-    processCount: rows.length,
-    activeProcessCount: rows.filter((item) => item.status !== "idle" && item.status !== "stopped").length,
   })
 }
 
@@ -753,13 +745,12 @@ export function startServer(
     drainTimeoutMs: () => Number(runtimeEnvText(process.env, "WORKSPACE_RUNTIME_DRAIN_TIMEOUT_MS") ?? 10_000),
     drain: (drainTimeoutMs) =>
       // Stop accepting work, detach external routing, stop heartbeats,
-      // then clean up workspace-owned processes, PTYs, and adapter state.
+      // then clean up workspace-owned PTYs and adapter state.
       // Race with the drain timeout so a hung cleanup cannot strand the
       // process during supervisor shutdown or fatal-error restart.
       drainWorkspaceRuntime({
         server,
         runtime,
-        directory: options.target?.directory ?? workspaceDir(),
         drainTimeoutMs,
         ...(hostTunnel ? { hostTunnel } : {}),
         ...(options.onDrain ? { hostDrain: options.onDrain } : {}),

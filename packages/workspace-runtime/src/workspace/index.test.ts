@@ -8,7 +8,6 @@ import {
   loopbackWorkspaceRuntimeExposure,
   mountWorkspaceAgentHooks,
   mountWorkspaceCore,
-  mountWorkspaceProcess,
   mountWorkspacePty,
 } from "./index"
 import { loopbackMachineLoginPolicy } from "../testing"
@@ -148,31 +147,22 @@ describe("workspace module wiring", () => {
     expect(has(seen, "/api/wr/pty")).toBe(true)
     expect(has(seen, "/api/wr/hook")).toBe(true)
     expect(has(seen, "/api/wr/events")).toBe(true)
-    expect(has(seen, "/api/wr/process")).toBe(true)
     expect(has(seen, "/api/wr/file")).toBe(true)
     expect(has(seen, "/api/wr/find/file")).toBe(true)
     expect(has(seen, "/api/wr/diff")).toBe(true)
   })
 
-  test("workspace PTY, process, and agent hooks mount independently", () => {
+  test("workspace PTY and agent hooks mount independently", () => {
     const upgradeWebSocket = (() => () => ({})) as never
     const pty = new Hono()
     mountWorkspacePty(pty, upgradeWebSocket)
     expect(has(paths(pty), "/api/wr/pty")).toBe(true)
-    expect(has(paths(pty), "/api/wr/process")).toBe(false)
     expect(has(paths(pty), "/api/wr/hook")).toBe(false)
-
-    const process = new Hono()
-    mountWorkspaceProcess(process)
-    expect(has(paths(process), "/api/wr/process")).toBe(true)
-    expect(has(paths(process), "/api/wr/pty")).toBe(false)
-    expect(has(paths(process), "/api/wr/hook")).toBe(false)
 
     const hooks = new Hono()
     mountWorkspaceAgentHooks(hooks)
     expect(has(paths(hooks), "/api/wr/hook")).toBe(true)
     expect(has(paths(hooks), "/api/wr/pty")).toBe(false)
-    expect(has(paths(hooks), "/api/wr/process")).toBe(false)
   })
 
   test("workspace host mounts runtime routes", async () => {
@@ -204,7 +194,6 @@ describe("workspace module wiring", () => {
     expect(seen).toContain("/api/wr/harness-config-options")
     // Core surfaces from workspace/core.ts
     expect(has(seen, "/api/wr/pty")).toBe(true)
-    expect(has(seen, "/api/wr/process")).toBe(true)
     expect(has(seen, "/api/wr/file")).toBe(true)
     expect(has(seen, "/api/wr/find/file")).toBe(true)
     expect(has(seen, "/api/wr/diff")).toBe(true)
@@ -212,19 +201,17 @@ describe("workspace module wiring", () => {
     expect(has(seen, "/api/wr/events")).toBe(true)
   })
 
-  test("workspace host can mount PTY, process, and agent hooks separately", () => {
+  test("workspace host can mount PTY without the core routes", () => {
     const host = createWorkspaceHost({ placement: loopbackMachineLoginPolicy() })
     const app = new Hono()
     host.mount(app, {
       exposure: loopbackExposure,
       pty: { upgradeWebSocket: (() => () => ({})) as never },
-      process: true,
     })
 
     const seen = paths(app)
     expect(seen).toContain("/api/wr/harness-config-options")
     expect(has(seen, "/api/wr/pty")).toBe(true)
-    expect(has(seen, "/api/wr/process")).toBe(true)
     expect(has(seen, "/api/wr/hook")).toBe(false)
     expect(has(seen, "/api/wr/diff")).toBe(false)
   })
@@ -236,7 +223,6 @@ describe("workspace module wiring", () => {
 
     const seen = paths(app)
     expect(has(seen, "/api/wr/pty")).toBe(false)
-    expect(has(seen, "/api/wr/process")).toBe(false)
     expect(has(seen, "/api/wr/diff")).toBe(false)
   })
 

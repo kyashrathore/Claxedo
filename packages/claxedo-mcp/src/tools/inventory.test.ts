@@ -139,10 +139,6 @@ describe("the registered surface", () => {
       "create_subagent",
       "documents_list",
       "documents_open",
-      "process_logs",
-      "process_start",
-      "process_stop",
-      "processes",
       "question_reply",
       "session_cancel_turn",
       "session_create",
@@ -181,10 +177,6 @@ describe("the registered surface", () => {
       "documents_list",
       "documents_open",
       "permission_reply",
-      "process_logs",
-      "process_start",
-      "process_stop",
-      "processes",
       "question_reject",
       "question_reply",
       "session_cancel_turn",
@@ -214,8 +206,6 @@ describe("the registered surface", () => {
     expect(listed.filter((name) => writes.includes(name))).toEqual([])
     expect(listed).toEqual([
       "documents_list",
-      "process_logs",
-      "processes",
       "session_changes",
       "session_get",
       "session_transcript",
@@ -270,7 +260,6 @@ describe("the tool names the catalog publishes", () => {
     expect(published.filter((group) => typeof group.reach === "object").map((group) => group.id)).toEqual(["app-plugins", "documents"])
     expect(published.filter((group) => group.reach === "runtime").map((group) => group.id)).toEqual([
       "attention",
-      "processes",
       "review",
       "sessions",
       "subagents",

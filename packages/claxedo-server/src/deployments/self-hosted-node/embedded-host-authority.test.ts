@@ -122,12 +122,12 @@ test("an already-open SSE stream stops sessionless frames after current SQLite m
     }
     throw new Error("Expected stream marker")
   }
-  bus.publish({ type: "process.status", directory: f.directory, configId: "before_revoke", status: "running" })
+  bus.publish({ type: "pty.created", info: { id: "before_revoke", title: "t", command: "sh", args: [], cwd: f.directory, status: "running", pid: 1 } })
   expect(await readUntil("before_revoke")).toContain("before_revoke")
   f.role()
   const later = Date.now() + 6_000
   vi.spyOn(Date, "now").mockReturnValue(later)
-  bus.publish({ type: "process.status", directory: f.directory, configId: "after_revoke", status: "running" })
+  bus.publish({ type: "pty.created", info: { id: "after_revoke", title: "t", command: "sh", args: [], cwd: f.directory, status: "running", pid: 1 } })
   expect(await readUntil("after_revoke")).not.toContain("after_revoke")
   expect(await reader.read()).toMatchObject({ done: true })
 })

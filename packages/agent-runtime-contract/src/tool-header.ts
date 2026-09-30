@@ -84,7 +84,6 @@ const CLAXEDO_RESULT_ROWS = new Set([
   "sessions_list",
   "documents_list",
   "documents_open",
-  "process_stop",
   "create_subagent",
   "subagent_status",
   "subagent_cancel",

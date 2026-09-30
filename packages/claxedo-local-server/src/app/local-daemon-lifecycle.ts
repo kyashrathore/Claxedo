@@ -41,7 +41,7 @@ export type LocalDaemonWorkActivity = ReturnType<typeof localDaemonWorkActivity>
  */
 export type LocalDaemonOwner = {
   id: string
-  kind: "workspace_runtime" | "terminal" | "managed_process" | "turn"
+  kind: "workspace_runtime" | "terminal" | "turn"
   /**
    * What makes this owner answerable across a restart: a gate acknowledged for
    * one generation does not carry to a replacement wearing the same id.
@@ -93,7 +93,7 @@ export function localDaemonOwners(
     if (!unresolved && (terminal.removed || terminal.exited || terminal.status !== "running")) continue
     owners.push({
       id: `terminal:${terminal.id}`,
-      kind: terminal.managed ? "managed_process" : "terminal",
+      kind: "terminal",
       generation: String(terminal.pid),
       state: unresolved ? "cleanup_unresolved" : terminal.status,
       pins: true,

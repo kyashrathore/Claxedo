@@ -65,7 +65,7 @@ test("activation authorization is durable before the gate could have been told",
 
 test("a launch whose cleanup is unresolved is retained for a later owner", async () => {
   const { ownership } = store()
-  const prepared = await ownership.prepare({ role: "managed-process", protocol: "gate", scope: { directory: "/tmp/p" } })
+  const prepared = await ownership.prepare({ role: "terminal", protocol: "gate", scope: { directory: "/tmp/p" } })
   await ownership.recordIdentity(prepared.launchId, identity, "nonce-1")
   await ownership.authorizeActivation(prepared.launchId)
   await ownership.acknowledgeActivation(prepared.launchId)

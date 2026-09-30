@@ -138,8 +138,7 @@ export function PtyRoutes(
         })
         if (!decision.allowed) return sessionAccessDenied(decision)
       }
-      // Strip `managed` — only the process manager (internal caller) may set it
-      const { managed: _, ...input } = parsed.data
+      const input = parsed.data
       const workspaceId = authoritativeWorkspaceId()
       const { CLAXEDO_WORKSPACE_ID: _untrustedWorkspaceId, ...environment } = input.env ?? {}
       let cwd: string | undefined

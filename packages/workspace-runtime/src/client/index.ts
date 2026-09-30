@@ -2,7 +2,6 @@ import { WORKSPACE_RUNTIME_MANAGEMENT_TOKEN_HEADER } from "../management-auth"
 import { WorkspaceRuntimeRoutes } from "../routes/manifest"
 import type { WorkspaceCapabilities } from "../capabilities"
 import type { RuntimeSnapshot } from "../routes/config"
-import type { ProcessStopResult } from "../managed-processes/manager"
 import type { GitCommitSummary, GitWorktreeStatus } from "../workspace-files/git-worktree"
 import { fileClient, filesClient, findClient, type WorkspaceFileClient, type WorkspaceFilesClient, type WorkspaceFindClient } from "./files"
 import {
@@ -90,16 +89,6 @@ export type WorkspaceRuntimeClient = {
     remove: (id: string, options?: Options) => Promise<boolean>
     connectUrl: (id: string, cursor?: number) => URL
   }
-  process: {
-    list: (options?: Options) => Promise<unknown>
-    create: (body: unknown, options?: Options) => Promise<unknown>
-    update: (id: string, body: unknown, options?: Options) => Promise<unknown>
-    remove: (id: string, options?: Options) => Promise<boolean>
-    start: (id: string, body?: unknown, options?: Options) => Promise<unknown>
-    stop: (id: string, options?: Options) => Promise<ProcessStopResult>
-    restart: (id: string, options?: Options) => Promise<unknown>
-    logs: (query?: Query, options?: Options) => Promise<string>
-  }
 }
 
 export function createWorkspaceRuntimeClient(options: WorkspaceRuntimeClientOptions): WorkspaceRuntimeClient {
@@ -157,16 +146,6 @@ export function createWorkspaceRuntimeClient(options: WorkspaceRuntimeClientOpti
       update: (id, body, options) => data({ operation: "pty.update", method: "PUT", path: at(WorkspaceRuntimeRoutes.pty, id), body, options }),
       remove: (id, options) => data({ operation: "pty.remove", method: "DELETE", path: at(WorkspaceRuntimeRoutes.pty, id), options }),
       connectUrl: (id, cursor) => caller.url(at(WorkspaceRuntimeRoutes.pty, id, "connect"), cursor === undefined ? {} : { cursor }),
-    },
-    process: {
-      list: (options) => data({ operation: "process.list", path: WorkspaceRuntimeRoutes.process, options }),
-      create: (body, options) => data({ operation: "process.create", method: "POST", path: WorkspaceRuntimeRoutes.process, body, options }),
-      update: (id, body, options) => data({ operation: "process.update", method: "PUT", path: at(WorkspaceRuntimeRoutes.process, id), body, options }),
-      remove: (id, options) => data({ operation: "process.remove", method: "DELETE", path: at(WorkspaceRuntimeRoutes.process, id), options }),
-      start: (id, body, options) => data({ operation: "process.start", method: "POST", path: at(WorkspaceRuntimeRoutes.process, id, "start"), body: body ?? {}, options }),
-      stop: (id, options) => data({ operation: "process.stop", method: "POST", path: at(WorkspaceRuntimeRoutes.process, id, "stop"), options }),
-      restart: (id, options) => data({ operation: "process.restart", method: "POST", path: at(WorkspaceRuntimeRoutes.process, id, "restart"), options }),
-      logs: async (query = {}, options) => (await caller.send({ operation: "process.logs", path: `${WorkspaceRuntimeRoutes.process}/logs`, query, options })).response.text(),
     },
   }
 }

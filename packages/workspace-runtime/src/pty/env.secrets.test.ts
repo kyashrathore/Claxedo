@@ -4,7 +4,7 @@ import path from "node:path"
 import { buildSafeEnv, isSecretShapedEnvName, prefixedEnvAllowed } from "./env"
 
 // Everything buildSafeEnv returns is handed to an agent-driven child process
-// (PTY, /exec, managed processes), and in embedded mode the workspace runtime
+// (a PTY), and in embedded mode the workspace runtime
 // shares a process with the control plane — so `process.env` there carries the
 // control plane's own secrets. A prompt-injected agent running `env` is the
 // threat model, not a hypothetical one.

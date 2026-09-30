@@ -494,7 +494,7 @@ describe("two-user signed runtime transport acceptance", () => {
     const bobWide = await connect(runtimeApp, bobRht, undefined, "workspace")
     const caseyWide = await connect(runtimeApp, caseyRht, undefined, "workspace")
     await new Promise((resolve) => setTimeout(resolve, 1_500))
-    sessionBus.publish({ type: "process.status", directory: workspaceDirectory, configId: "workspace-process", status: "running" })
+    sessionBus.publish({ type: "pty.created", info: { id: "workspace-terminal", title: "t", command: "sh", args: [], cwd: workspaceDirectory, status: "running", pid: 1 } })
     sessionBus.publish({
       type: "session.lifecycle",
       phase: "created",
@@ -503,12 +503,12 @@ describe("two-user signed runtime transport acceptance", () => {
       info: { id: "ses_runtime_private", title: "wide-private" },
       ts: 1,
     })
-    const widePayload = (frame: { data: Record<string, unknown> }) => frame.data.payload as { type?: string; configId?: string; info?: { title?: string } } | undefined
+    const widePayload = (frame: { data: Record<string, unknown> }) => frame.data.payload as { type?: string; info?: { id?: string; title?: string } } | undefined
     const aliceWideFrames = await aliceWide.until((frames) => frames.some((frame) => widePayload(frame)?.info?.title === "wide-private"))
-    expect(aliceWideFrames.some((frame) => widePayload(frame)?.configId === "workspace-process")).toBe(true)
+    expect(aliceWideFrames.some((frame) => widePayload(frame)?.info?.id === "workspace-terminal")).toBe(true)
     const bobWideFrames = await bobWide.until((frames) => frames.some((frame) => widePayload(frame)?.info?.title === "wide-private"))
-    expect(bobWideFrames.some((frame) => widePayload(frame)?.configId === "workspace-process")).toBe(true)
-    const caseyWideFrames = await caseyWide.until((frames) => frames.some((frame) => widePayload(frame)?.configId === "workspace-process"))
+    expect(bobWideFrames.some((frame) => widePayload(frame)?.info?.id === "workspace-terminal")).toBe(true)
+    const caseyWideFrames = await caseyWide.until((frames) => frames.some((frame) => widePayload(frame)?.info?.id === "workspace-terminal"))
     const caseyLater = await caseyWide.observe(300)
     expect([...caseyWideFrames, ...caseyLater].some((frame) => widePayload(frame)?.info?.title === "wide-private")).toBe(false)
     aliceWide.close()
@@ -533,7 +533,7 @@ describe("two-user signed runtime transport acceptance", () => {
       info: { id: "ses_runtime_private", title: "live-private" },
       ts: 1,
     })
-    sessionBus.publish({ type: "process.status", directory: workspaceDirectory, configId: "public-process", status: "running" })
+    sessionBus.publish({ type: "pty.created", info: { id: "public-terminal", title: "t", command: "sh", args: [], cwd: workspaceDirectory, status: "running", pid: 1 } })
     const control = (frame: { data: Record<string, unknown> }) => frame.data.payload as { info?: { title?: string }; sessionID?: string } | undefined
     const bobLiveFrames = await bobLive.until((frames) => frames.some((frame) => control(frame)?.info?.title === "live-private"))
     const bobCursor = bobLiveFrames.findLast((frame) => frame.id)?.id
