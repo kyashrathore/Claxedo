@@ -15,6 +15,7 @@ const OUTSIDE: readonly string[] = ["harness-notice", "diagnostic", "session-tit
 
 export class PiSessionStream {
   private owner: Owner = { kind: "idle" }
+  private renaming: string | undefined
   private readonly translate: (message: PiMessage) => RoutedEvent[]
   constructor(private readonly host: PiStreamHost) {
     this.translate = piEvents(host.sessionId)
@@ -39,8 +40,18 @@ export class PiSessionStream {
     else if (this.owner.kind === "provider") this.owner.turn.fail(error)
   }
 
+  async rename(name: string, send: () => Promise<unknown>): Promise<void> {
+    this.renaming = name.trim()
+    try { await send() } finally { this.renaming = undefined }
+  }
+
+  private withoutRenameEcho(events: RoutedEvent[]): RoutedEvent[] {
+    if (this.renaming === undefined) return events
+    return events.filter(({ event }) => event.type !== "session-title" || event.title !== this.renaming)
+  }
+
   private receive(message: PiMessage): void {
-    const events = this.translate(message)
+    const events = this.withoutRenameEcho(this.translate(message))
     if (this.owner.kind === "idle" && message.type === "agent_start") this.owner = { kind: "provider", turn: this.provider() }
     if (this.owner.kind === "turn") this.owner.run.receive(message, events)
     else if (this.owner.kind === "provider") this.owner.turn.receive(message, events)

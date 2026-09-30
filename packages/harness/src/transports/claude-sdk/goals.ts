@@ -20,11 +20,13 @@ export class ClaudeGoals {
   private readonly running = new Map<string, Running>()
   private readonly reported = new Map<string, (goal: RuntimeGoalSnapshot) => void>()
   private readonly closed = new Set<string>()
+  private readonly clearing = new Set<string>()
 
   constructor(private readonly turns: ClaudeTurns) {}
 
   watch(sessionId: string, broker: SessionBroker): SessionBroker {
     return { ...broker, goal: { ...broker.goal, publish: async (goal) => {
+      if (!goal && this.clearing.has(sessionId)) return
       await broker.goal.publish(goal)
       if (goal) this.reported.get(sessionId)?.(goal)
     } } }
@@ -109,9 +111,15 @@ export class ClaudeGoals {
 
   private async clear(entry: ClaudeEntry): Promise<void> {
     if (entry.session.binding.upstreamSessionId.startsWith("claude-sdk:")) throw claudeGoalNotCleared("Claude Goal has no native session to clear")
-    const result = await this.turns.command(entry, nativeGoalPrompt("clear"), CLEAR_LIMIT_MS)
-    if (result?.type !== "result" || result.subtype !== "success" || result.is_error || result.num_turns !== 0) {
-      throw claudeGoalNotCleared("Claude did not confirm clearing the native Goal")
+    const { sessionId } = entry.input
+    this.clearing.add(sessionId)
+    try {
+      const result = await this.turns.command(entry, nativeGoalPrompt("clear"), CLEAR_LIMIT_MS)
+      if (result?.type !== "result" || result.subtype !== "success" || result.is_error || result.num_turns !== 0) {
+        throw claudeGoalNotCleared("Claude did not confirm clearing the native Goal")
+      }
+    } finally {
+      this.clearing.delete(sessionId)
     }
   }
 }

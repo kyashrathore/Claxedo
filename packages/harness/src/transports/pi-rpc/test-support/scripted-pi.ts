@@ -7,7 +7,7 @@ import { ScriptedProcess } from "../../../test-support/scripted-process"
 import { PiRpcTransport } from ".."
 import { PI_RANGE } from "../version"
 
-type Frame = { type: string; id?: string; message?: string }
+type Frame = { type: string; id?: string; message?: string; name?: string }
 type Handoff = { file: string; mode: number; content: string }
 type Launch = { command: SpawnCommand; options: SpawnOptions; wire: ScriptedProcess<Frame>; handoffs: Handoff[] }
 
@@ -71,6 +71,7 @@ export async function scriptedPi(input: { firstPartyMcp?: HarnessServices["first
       return versionProcess(input.version ?? PI_RANGE.max)
     }
     const launch: Launch = { command, options, handoffs: [], wire: new ScriptedProcess<Frame>((frame) => {
+      if (frame.type === "set_session_name") launch.wire.send({ type: "session_info_changed", name: frame.name?.trim() })
       if (frame.id) launch.wire.send({ type: "response", id: frame.id, command: frame.type, success: true, data: answer(frame, launch) })
     }) }
     launches.push(launch)

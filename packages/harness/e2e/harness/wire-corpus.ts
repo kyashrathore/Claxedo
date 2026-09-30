@@ -49,6 +49,7 @@ export function orderFramesByEntity(frames: unknown[]): Array<{ key: string; fra
 
 export function latestStatusSubject(frame: unknown): string | undefined {
   const payload = object(object(object(frame).data).payload)
+  if (payload.type === "session.background-work") return "session.background-work"
   if (payload.type !== "runtime.diagnostic") return undefined
   const properties = object(payload.properties)
   const code = properties.code
@@ -232,6 +233,11 @@ function normalize(value: unknown, ids: Map<string, string>, specials: Map<strin
     return scopedId(ids, directory, "workspace", scope)
   })
   result = result.replace(/-private-var-folders-[^/]+/g, (directory) => special(specials, "encoded-workspace", directory, scope))
+  result = result.replace(/(\/codex-owner-[0-9a-f]+\/homes\/)(codex-[0-9a-f]{16})\b/g, (_match, store: string, home: string) =>
+    `${store}${special(specials, "codex-home", home, scope)}`)
+  result = result.replace(/(?:\/private)?\/tmp\/claude-\d+\//g, "<claude-tmp>/")
+  result = result.replace(/(agentId: |to: '|\/tasks\/)(a[0-9a-f]{16})\b/g, (_match, context: string, agent: string) =>
+    `${context}${special(specials, "claude-agent", agent, scope)}`)
   result = result.replace(/([?&](?:since|until)=)\d+/g, "$1<time>")
   result = result.replace(/(?:127\.0\.0\.1|localhost):\d+/g, "localhost:<port>")
   result = result.replace(/\/tmp\/cc-socks\/\d+\.sock/g, (socket) => special(specials, "socket", socket, scope))
@@ -300,7 +306,7 @@ if (mode) {
     const target = new URL(input instanceof Request ? input.url : String(input))
     const method = init?.method ?? (input instanceof Request ? input.method : "GET")
     const accept = new Headers(init?.headers ?? (input instanceof Request ? input.headers : undefined)).get("accept")
-    const unsynchronizedReadback = method === "GET" && flow !== "H0-smoke" && target.pathname === "/api/claxedo/health"
+    const unsynchronizedReadback = method === "GET" && flow !== "H0-smoke" && (target.pathname === "/api/claxedo/health" || target.pathname.endsWith("/api/wr/health"))
     const capture = active && !unsynchronizedReadback && (target.hostname === "127.0.0.1" || target.hostname === "localhost") && accept !== "text/event-stream"
     const reply = await nativeFetch(input, init)
     if (capture && !reply.headers.get("content-type")?.includes("text/event-stream")) {
@@ -311,8 +317,11 @@ if (mode) {
   globalThis.fetch = new Proxy(nativeFetch, { apply: (_target, _this, args: Parameters<typeof fetch>) => observedFetch(...args) })
 }
 
-if (mode) process.on("exit", (code) => {
-  if (code !== 0) return
+let settled = false
+
+function settleCorpus(code: number) {
+  if (settled || code !== 0) return
+  settled = true
   if (!file) throw new Error("Corpus flow selector is missing")
   const current = { flow, observations: comparisonShape(faultedObservations(observations)) }
   if (mode === "record") {
@@ -328,4 +337,9 @@ if (mode) process.on("exit", (code) => {
   }
   if (diff) { console.error(`Wire corpus mismatch for ${flow}: ${diff}`); process.exitCode = 1 }
   else console.log(`Wire corpus matched ${flow}`)
-})
+}
+
+if (mode) {
+  process.on("beforeExit", settleCorpus)
+  process.on("exit", settleCorpus)
+}
