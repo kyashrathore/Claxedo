@@ -1,119 +1,125 @@
-import { AbortError, type SDKActiveGoalMessage, type SDKMessage } from "@anthropic-ai/claude-agent-sdk"
-import type { AgentGoalMutationResult } from "@claxedo/agent-runtime-contract"
-import type { HarnessSession, ProviderTurnSettlement, RoutedEvent, SessionBroker, StartInput, TurnBroker, TurnRef } from "../../contract"
-import { nativeGoalPrompt } from "../../contract"
-import { claudeStreamEndedWithoutResult } from "./errors"
-import { ClaudeProcess, retireClaudeProcesses } from "./process"
-import { ClaudeQueryLauncher } from "./query-options"
-import { observeClaudeSessionMessage } from "./session-events"
-import { claudeTranslator, translateClaude } from "./events"
-import { ClaudeMirroredUsage } from "./mirrored-usage"
+import type { AgentGoalMutationResult, RuntimeGoalSnapshot } from "@claxedo/agent-runtime-contract"
 import { errorMessage } from "@claxedo/helpers"
+import type { ProviderTurnSettlement, SessionBroker, TurnBroker, TurnInput, TurnRef } from "../../contract"
+import { nativeGoalPrompt } from "../../contract"
+import { claudeGoalNotCleared } from "./errors"
+import { configuredChoice, type ClaudeEntry, type ClaudeTurns } from "./turns"
 
-type Running = { turnId: string; abort: AbortController; settled: Promise<ProviderTurnSettlement> }
+const CLEAR_LIMIT_MS = 30_000
 
-export type ClaudeGoalEntry = { session: HarnessSession; input: StartInput }
+type Running = { turnId: string; stopped: boolean; settled: Promise<RuntimeGoalSnapshot | null> }
+
+function goalTurn(entry: ClaudeEntry, broker: TurnBroker, turn: TurnRef, text: string): TurnInput {
+  const { model, effort, system, agent } = configuredChoice(entry)
+  return { turnId: turn.turnId, userMessageId: turn.assistantMessageId, assistantMessageId: turn.assistantMessageId, todos: [],
+    origin: broker.origin, ...(model ? { model } : {}), ...(effort ? { effort } : {}), ...(system ? { system } : {}),
+    prompt: { agent: agent ?? "", assistantMessageId: turn.assistantMessageId, parts: [{ type: "text", text }] } }
+}
 
 export class ClaudeGoals {
   private readonly running = new Map<string, Running>()
+  private readonly reported = new Map<string, (goal: RuntimeGoalSnapshot) => void>()
+  private readonly closed = new Set<string>()
+  private readonly clearing = new Set<string>()
 
-  constructor(private readonly launcher: ClaudeQueryLauncher) {}
+  constructor(private readonly turns: ClaudeTurns) {}
 
-  async start(entry: ClaudeGoalEntry, broker: SessionBroker, objective: string): Promise<AgentGoalMutationResult> {
-    const { input } = entry
-    if (this.running.has(input.sessionId)) return { ok: false, status: "conflict", message: "Claude Goal is running" }
-    const abort = new AbortController()
+  watch(sessionId: string, broker: SessionBroker): SessionBroker {
+    return { ...broker, goal: { ...broker.goal, publish: async (goal) => {
+      if (!goal && this.clearing.has(sessionId)) return
+      await broker.goal.publish(goal)
+      if (goal) this.reported.get(sessionId)?.(goal)
+    } } }
+  }
+
+  async start(entry: ClaudeEntry, objective: string): Promise<AgentGoalMutationResult> {
+    const { sessionId } = entry.input
+    if (this.running.has(sessionId)) return { ok: false, status: "conflict", message: "Claude Goal is running" }
     let accept!: (result: AgentGoalMutationResult) => void
     const accepted = new Promise<AgentGoalMutationResult>((resolve) => { accept = resolve })
-    const reporting: SessionBroker = { ...broker, goal: { ...broker.goal, publish: async (goal) => {
-      await broker.goal.publish(goal)
-      if (goal) accept({ ok: true, goal })
-    } } }
-    const admitted = await broker.admitProviderTurn({ reason: "goal", detail: objective }, (turnBroker, turn) =>
-      this.run(entry, reporting, turnBroker, turn, nativeGoalPrompt(objective), abort))
-    if (!admitted.admitted) return { ok: false, status: "conflict", message: `Claude Goal admission ${admitted.reason}` }
-    const running = { turnId: admitted.turn.turnId, abort, settled: admitted.settled }
-    this.running.set(input.sessionId, running)
-    void admitted.settled.then(async (outcome) => {
-      if (this.running.get(input.sessionId) === running) this.running.delete(input.sessionId)
+    this.reported.set(sessionId, (goal) => accept({ ok: true, goal }))
+    const admitted = await entry.broker.admitProviderTurn({ reason: "goal", detail: objective }, (broker, turn) =>
+      this.turns.run(entry, goalTurn(entry, broker, turn, nativeGoalPrompt(objective)), broker))
+    if (!admitted.admitted) {
+      this.reported.delete(sessionId)
+      return { ok: false, status: "conflict", message: `Claude Goal admission ${admitted.reason}` }
+    }
+    const running: Running = { turnId: admitted.turn.turnId, stopped: false, settled: admitted.settled.then((outcome) => {
+      this.reported.delete(sessionId)
       accept({ ok: false, status: "failed", message: outcome.state === "failed" ? outcome.error : "Claude ended before reporting the Goal" })
-      const goal = broker.goal.read()
-      if (goal?.status === "active" && outcome.state !== "completed") await broker.goal.publish({ ...goal,
-        status: outcome.state === "cancelled" ? "paused" : "blocked", updatedAt: Date.now(),
-        ...(outcome.state === "failed" ? { lastReason: outcome.error } : {}) })
+      return this.settle(entry, running, running.stopped ? { state: "cancelled" } : outcome)
+    }) }
+    this.running.set(sessionId, running)
+    const release = () => { if (this.running.get(sessionId) === running) this.running.delete(sessionId) }
+    void running.settled.then(release, (error: unknown) => {
+      release()
+      entry.broker.reportFailure(error)
     })
     return await accepted
   }
 
-  async stop(entry: ClaudeGoalEntry, broker: SessionBroker): Promise<AgentGoalMutationResult> {
+  async stop(entry: ClaudeEntry): Promise<AgentGoalMutationResult> {
     const running = this.running.get(entry.input.sessionId)
-    if (running) { running.abort.abort(); await running.settled }
-    const goal = broker.goal.read()
-    if (!goal) return { ok: false, status: "not_found", message: "Claude Goal is absent" }
-    if (entry.session.binding.upstreamSessionId.startsWith("claude-sdk:")) return { ok: false, status: "failed", message: "Claude Goal has no native session to clear" }
-    const abort = new AbortController()
-    const timeout = setTimeout(() => abort.abort(), 30_000)
-    try {
-      let confirmed = false
-      for await (const _event of this.run(entry, broker, undefined, undefined, nativeGoalPrompt("clear"), abort, true, () => { confirmed = true })) {}
-      if (!confirmed) throw new Error("Claude did not confirm clearing the native Goal")
-      const paused = { ...goal, status: "paused" as const, updatedAt: Date.now() }
-      await broker.goal.publish(paused)
-      return { ok: true, goal: paused }
-    } catch (error) {
-      const blocked = { ...goal, status: "blocked" as const, updatedAt: Date.now(), lastReason: errorMessage(error) }
-      await broker.goal.publish(blocked)
-      return { ok: false, status: "failed", message: blocked.lastReason }
-    } finally { clearTimeout(timeout) }
-  }
-
-  async cancel(sessionId: string): Promise<ProviderTurnSettlement | undefined> {
-    const running = this.running.get(sessionId)
-    if (running) { running.abort.abort(); return running.settled }
-    return undefined
-  }
-
-  turnId(sessionId: string): string | undefined { return this.running.get(sessionId)?.turnId }
-
-  private async *run(entry: ClaudeGoalEntry, broker: SessionBroker, turnBroker: TurnBroker | undefined, turn: TurnRef | undefined,
-    prompt: string, abort: AbortController, clear = false, confirm?: () => void): AsyncIterable<RoutedEvent> {
-    const assistantMessageId = turn?.assistantMessageId ?? entry.session.binding.sessionId
-    const { runtime, tasks } = claudeTranslator(assistantMessageId)
-    const mirroredUsage = new ClaudeMirroredUsage(runtime, { broker, assistantMessageId, directory: entry.input.directory })
-    const processes = new Set<ClaudeProcess>()
-    const onAbort = () => abort.abort()
-    if (turnBroker?.signal.aborted) onAbort()
-    else turnBroker?.signal.addEventListener("abort", onAbort, { once: true })
-    const launchTurn = turnBroker && turn ? { broker: turnBroker, turnId: turn.turnId } : undefined
-    const stream = await this.launcher.launch({ session: entry.session, input: entry.input, broker, turn: () => launchTurn, prompt, abort, processes,
-      usage: mirroredUsage, clear })
-    let sawResult = false
-    let stopped = false
-    try {
-      for await (const message of stream as AsyncIterable<SDKMessage | SDKActiveGoalMessage>) {
-        const observed = await observeClaudeSessionMessage(message, entry, broker, abort.signal)
-        if (observed.kind === "active-goal") continue
-        const current = observed.message
-        if (current.type === "result") { sawResult = true; mirroredUsage.release() }
-        if (clear) {
-          if (current.type === "result" && current.subtype === "success" && !current.is_error && current.num_turns === 0) {
-            confirm?.()
-          }
-          continue
-        }
-        if (turnBroker) for (const event of await translateClaude(current, runtime, tasks, turnBroker)) yield event
-      }
-      if (!sawResult && !abort.signal.aborted) throw claudeStreamEndedWithoutResult()
-      stopped = !sawResult
-    } catch (error) {
-      if (!abort.signal.aborted || !(error instanceof AbortError)) throw error
-      stopped = true
-    } finally {
-      mirroredUsage.release()
-      turnBroker?.signal.removeEventListener("abort", onAbort)
-      stream.close()
-      await retireClaudeProcesses(processes)
+    if (running) {
+      running.stopped = true
+      await this.turns.cancel(entry, { turnId: running.turnId, assistantMessageId: running.turnId }, { at: Date.now() + CLEAR_LIMIT_MS, signal: new AbortController().signal })
+      const goal = await running.settled
+      if (!goal) return { ok: false, status: "not_found", message: "Claude Goal is absent" }
+      return goal.status === "paused" ? { ok: true, goal } : { ok: false, status: "failed", message: goal.lastReason ?? "Claude Goal did not stop" }
     }
-    if (stopped && turnBroker) yield { event: { type: "finish", sessionId: entry.session.binding.sessionId } }
+    const goal = entry.broker.goal.read()
+    if (!goal) return { ok: false, status: "not_found", message: "Claude Goal is absent" }
+    const stopped = await this.ended(entry, goal, "paused")
+    return stopped.status === "paused" ? { ok: true, goal: stopped } : { ok: false, status: "failed", message: stopped.lastReason ?? "Claude Goal did not stop" }
+  }
+
+  forget(sessionId: string): void {
+    this.closed.add(sessionId)
+  }
+
+  private async settle(entry: ClaudeEntry, running: Running, outcome: ProviderTurnSettlement): Promise<RuntimeGoalSnapshot | null> {
+    const goal = entry.broker.goal.read()
+    if (goal?.status !== "active" || this.closed.has(entry.input.sessionId)) return goal
+    if (outcome.state === "completed") {
+      this.pauseWhenIdle(entry, running.turnId)
+      return goal
+    }
+    return this.ended(entry, outcome.state === "failed" ? { ...goal, lastReason: outcome.error } : goal,
+      outcome.state === "cancelled" ? "paused" : "blocked")
+  }
+
+  private pauseWhenIdle(entry: ClaudeEntry, turnId: string): void {
+    const live = entry.live
+    void (live?.ended ?? Promise.resolve()).then(async () => {
+      const goal = entry.broker.goal.read()
+      const running = this.running.get(entry.input.sessionId)
+      if (goal?.status !== "active" || (running && running.turnId !== turnId) || (entry.live && entry.live !== live)) return
+      await entry.broker.goal.publish({ ...goal, status: "paused", updatedAt: Date.now() })
+    }).then(undefined, (error: unknown) => entry.broker.reportFailure(error))
+  }
+
+  private async ended(entry: ClaudeEntry, goal: RuntimeGoalSnapshot, status: "paused" | "blocked"): Promise<RuntimeGoalSnapshot> {
+    let next: RuntimeGoalSnapshot = { ...goal, status, updatedAt: Date.now() }
+    try {
+      await this.clear(entry)
+    } catch (error) {
+      next = { ...goal, status: "blocked", updatedAt: Date.now(), lastReason: [goal.lastReason, errorMessage(error)].filter(Boolean).join("; ") }
+    }
+    await entry.broker.goal.publish(next)
+    return next
+  }
+
+  private async clear(entry: ClaudeEntry): Promise<void> {
+    if (entry.session.binding.upstreamSessionId.startsWith("claude-sdk:")) throw claudeGoalNotCleared("Claude Goal has no native session to clear")
+    const { sessionId } = entry.input
+    this.clearing.add(sessionId)
+    try {
+      const result = await this.turns.command(entry, nativeGoalPrompt("clear"), CLEAR_LIMIT_MS)
+      if (result?.type !== "result" || result.subtype !== "success" || result.is_error || result.num_turns !== 0) {
+        throw claudeGoalNotCleared("Claude did not confirm clearing the native Goal")
+      }
+    } finally {
+      this.clearing.delete(sessionId)
+    }
   }
 }

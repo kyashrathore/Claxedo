@@ -151,6 +151,7 @@ describe("agent runtime contract", () => {
         case "retry":
         case "compaction":
         case "handoff":
+        case "notice":
           return part.type
         default:
           return assertNever(part)

@@ -11,6 +11,10 @@ function cleanupFailure(error: unknown): { code: RecoveryErrorCode; message: str
   return { code, message: errorMessage(error) }
 }
 
+export function codexStopDeadline(): Deadline {
+  return { at: Date.now() + 10_000, signal: new AbortController().signal }
+}
+
 export class CodexTerminals {
   private readonly byTurn = new Map<string, Set<string>>()
   private readonly completed = new Set<string>()

@@ -1,10 +1,20 @@
 import type { SessionHandoff } from "@claxedo/agent-runtime-contract"
-import type { TurnAuthority } from "@claxedo/harness/broker"
+import type { SessionAuthority, TurnAuthority } from "@claxedo/harness/broker"
 import type { HarnessBinding } from "@claxedo/harness/contract"
 import type { RuntimeStore } from "../store"
 
 export class BrokerAuthority {
   constructor(private readonly store: RuntimeStore, private readonly ownerGeneration: string) {}
+
+  sessionAuthority(sessionId: string): SessionAuthority | undefined {
+    const binding = this.store.getExecutionBinding(sessionId)
+    return binding ? { ...binding, ownerGeneration: this.ownerGeneration } : undefined
+  }
+
+  turnOpen(sessionId: string, turnId: string): boolean {
+    const evidence = this.store.turnEvidence(sessionId, turnId)
+    return evidence.started && !evidence.finished
+  }
 
   currentTurnAuthority(sessionId: string): TurnAuthority | undefined {
     const binding = this.store.getExecutionBinding(sessionId)

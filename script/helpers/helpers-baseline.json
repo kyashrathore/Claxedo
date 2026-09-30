@@ -1,5 +1,5 @@
 {
-  "totalHelpers": 12903,
+  "totalHelpers": 12954,
   "divergentNames": {
     "actionRank": 1,
     "add": 3,
@@ -58,7 +58,7 @@
     "delay": 3,
     "denied": 9,
     "deriveKid": 2,
-    "diagnosticForEvent": 2,
+    "diagnosticForEvent": 3,
     "Dialog": 2,
     "DiffChanges": 2,
     "dir": 2,
@@ -275,7 +275,7 @@
     "timestamp": 3,
     "timingSafeEqualStrings": 2,
     "title": 2,
-    "toolDisplay": 2,
+    "toolDisplay": 3,
     "toolInput": 2,
     "toolKind": 2,
     "toRecord": 2,
@@ -313,5 +313,5 @@
     "writeContained": 2,
     "writeIfChanged": 2
   },
-  "clonedCopies": 79
+  "clonedCopies": 76
 }

@@ -14,12 +14,11 @@ type ChildLifecycleEvent =
   | { type: "finish"; sessionId: string }
   | { type: "error"; error: string }
 
-/** What a parent's running turn lends its children: the router that projects them and the prompt they inherit. */
+/** What a parent's running turn, prompted or provider-initiated, lends its children: the prompt they inherit and where their lifecycle projects. */
 export type ParentTurnContext = {
   directory: string
   input: Pick<PromptInput, "agent" | "model" | "variant">
   fencingToken?: number
-  associate: (correlationKey: string, target: ChildProjectionTarget) => void
   projectChild: (target: ChildProjectionTarget, event: ChildLifecycleEvent, source: RuntimeAppendSource) => void
 }
 
@@ -33,6 +32,7 @@ type SeededChild = {
 }
 
 const SOURCE: RuntimeAppendSource = { dir: "in", method: "subagent" }
+const HOST_MINTED = "claxedo"
 
 export class TurnAuthorityUnavailableError extends Error {
   readonly code = "turn_authority_unavailable"
@@ -54,13 +54,18 @@ function childOutcome(event: Pick<SubagentUpdatedEvent, "status" | "label">) {
  * response of its own, so its turn exists only because the host seeds it when
  * the broker admits the child and ends it when the terminal observation
  * arrives; both steps project through the same router its routed events use,
- * so a reader watching the child sees it start, work and stop.
+ * so a reader watching the child sees it start, work and stop. A child
+ * `create_subagent` minted is prompted like any session and owns its turns,
+ * so its harness's observation only binds it to the call.
  */
 export function createChildTurns(input: {
   store: AgentRuntimeStore
   publish: (parentSessionId: string, event: AgentPresentationEvent) => void
   /** Retains a child terminal the store refused under the child's lease; `false` when nothing could, and the lease is released. */
   retainLeasedTurnFailure: (sessionId: string, turn: LeasedTurnFailure, error: unknown) => boolean
+  childTurnSettled: (childSessionId: string, assistantMessageId: string) => void
+  /** What an idle parent lends a child that opens with no parent turn running: the session's own agent and model, as a provider turn's children get. */
+  idleParent: (parentSessionId: string) => ParentTurnContext
 }) {
   const parents = new Map<string, ParentTurnContext>()
   const children = new Map<string, SeededChild>()
@@ -74,6 +79,7 @@ export function createChildTurns(input: {
       created: ref.created,
       input: { userMessageId: randomUUID(), agent: parent.input.agent, model: parent.input.model,
         ...(parent.input.variant ? { variant: parent.input.variant } : {}) },
+      ...(parent.fencingToken === undefined ? {} : { fencingToken: parent.fencingToken }),
     }
     const leaseId = input.store.acquireTurnLease(ref.sessionId)
     if (!leaseId) throw new TurnAuthorityUnavailableError(ref.sessionId)
@@ -119,6 +125,7 @@ export function createChildTurns(input: {
       if (!retained) input.store.releaseTurnLease(child.target.sessionId, child.leaseId)
       throw error
     }
+    input.childTurnSettled(child.target.sessionId, child.target.assistantMessageId)
     try {
       parent?.projectChild(child.target,
         outcome.status === "failed" ? { type: "error", error: outcome.error } : { type: "finish", sessionId: child.target.sessionId },
@@ -130,6 +137,11 @@ export function createChildTurns(input: {
   }
 
   return {
+    /** The projection target of the child turn this host seeded, when the route names that turn. */
+    target(childSessionId: string, assistantMessageId: string): ChildProjectionTarget | undefined {
+      const child = children.get(childSessionId)
+      return child?.target.assistantMessageId === assistantMessageId ? child.target : undefined
+    },
     beginTurn(parentSessionId: string, context: ParentTurnContext) {
       parents.set(parentSessionId, context)
       return () => {
@@ -149,16 +161,12 @@ export function createChildTurns(input: {
         ...base,
         admitChildSession: async (parentSessionId, childSessionId, observation) => {
           const ref = await base.admitChildSession(parentSessionId, childSessionId, observation)
-          const parent = parents.get(parentSessionId)
+          if (observation.providerKind === HOST_MINTED) return ref
+          const parent = parents.get(parentSessionId) ??
+            (isTerminalSubagentStatus(observation.status) ? undefined : input.idleParent(parentSessionId))
           const known = children.get(childSessionId)
           if (parent && (!known || known.settled && ref.assistantMessageId !== known.target.assistantMessageId)) seed(parentSessionId, ref, observation, parent)
           return ref
-        },
-        bindChildCorrelation: (parentSessionId, correlationKey, childSessionId) => {
-          base.bindChildCorrelation(parentSessionId, correlationKey, childSessionId)
-          const child = children.get(childSessionId)
-          const parent = parents.get(parentSessionId)
-          if (child && parent) parent.associate(correlationKey, child.target)
         },
         publishSubagent: async (parentSessionId, event) => {
           await base.publishSubagent(parentSessionId, event)

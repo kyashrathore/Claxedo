@@ -8,8 +8,8 @@ import { waitForTitle } from "../harness/turn-observations"
 const NATIVE = [
   { id: "claude", providerId: "anthropic", modelId: "claude-sonnet-4-5", tool: "Agent", mode: "bypassPermissions",
     input: { description: "Inspect child", prompt: "Reply with exactly CHILD-CLAUDE-NATIVE", subagent_type: "general-purpose", run_in_background: false } },
-  { id: "codex", providerId: "openai", modelId: "gpt-4.1", tool: "spawn_agent", mode: "full-access",
-    input: { task_name: "child_inspect", message: "Reply with exactly CHILD-CODEX-NATIVE" } },
+  { id: "codex", providerId: "openai", modelId: "gpt-4.1", tool: "spawn_agent", namespace: "multi_agent_v1", mode: "full-access",
+    input: { message: "Reply with exactly CHILD-CODEX-NATIVE" } },
 ] as const
 
 export async function run() {
@@ -20,7 +20,7 @@ export async function run() {
     const stream = await stack.events(directory)
     for (const harness of NATIVE) {
       const marker = `H5_${harness.id.toUpperCase()}_PARENT`
-      stack.scripted.scriptTool({ name: harness.tool, input: harness.input, whenPromptIncludes: marker })
+      stack.scripted.scriptTool({ name: harness.tool, ...("namespace" in harness ? { namespace: harness.namespace } : {}), input: harness.input, whenPromptIncludes: marker })
       const parent = await api.createSession(directory, { harness: { id: harness.id, access: "native" },
         permissionMode: harness.mode, model: { providerId: harness.providerId, modelId: harness.modelId } })
       await api.promptAsync(directory, parent.id, `Delegate one child task, then reply with exactly this one token: ${marker}`)

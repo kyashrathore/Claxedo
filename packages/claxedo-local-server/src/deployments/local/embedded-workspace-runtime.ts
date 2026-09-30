@@ -2,13 +2,10 @@ import type { AgentEventEnvelope } from "@claxedo/agent-runtime-contract"
 import { embeddedConfigModeForPath } from "../../workspace/runtime-dispatch/internals"
 import path from "path"
 import fs from "fs/promises"
-import os from "node:os"
 import {
   authorizePtyAttach,
   createAuthorizedPtyConnection,
-  createPersistentTranscriptHandleStore,
   createRuntimeCredentialIssuer,
-  createTranscriptResolver,
   createWorkspaceRuntimeApp,
   managedWorkspaceSessionAccessPolicy,
   Pty,
@@ -392,20 +389,11 @@ function storeRoot(ws: Workspace) {
   return path.join(dataDir(), "agent-core", ws.id)
 }
 
-export function cursorTranscriptRoot(workspaceDirectory: string, cursorDataRoot = process.env.CURSOR_DATA_DIR?.trim()) {
-  const project = workspaceDirectory
-    .replace(/[^a-zA-Z0-9]/g, "-")
-    .replace(/-+/g, "-")
-    .replace(/^-+|-+$/g, "")
-  return path.join(cursorDataRoot || path.join(os.homedir(), ".cursor"), "projects", project, "agent-transcripts")
-}
-
 const embeddedRuntimeGuard = () => true
 
 function options(
   ws: Workspace,
   sessionAccess: {
-    exists(sessionId: string): boolean
     parentSessionIdFor(sessionId: string): string | undefined
   },
   harness: WorkspaceRuntimeServerOptions["harness"],
@@ -443,20 +431,6 @@ function options(
     exposure: createClaxedoRuntimeExposure({ kind: "embedded", guard: embeddedRuntimeGuard }),
     target: resolveClaxedoWorkspaceRuntimeTarget(ws),
     storeRoot: storeRoot(ws),
-    transcripts: {
-      workspaceId: ws.id,
-      resolver: createTranscriptResolver({
-        workspaceId: ws.id,
-        providers: {
-          "cursor-agent": { root: cursorTranscriptRoot(ws.directory), format: "jsonl" },
-        },
-        authorizeParent: ({ workspaceId, parentSessionId }) =>
-          workspaceId === ws.id && sessionAccess.exists(parentSessionId),
-        handleStore: createPersistentTranscriptHandleStore({
-          file: path.join(storeRoot(ws), "transcript-handles.db"),
-        }),
-      }),
-    },
     sessionParents: {
       parentSessionIdFor: (sessionId) => sessionAccess.parentSessionIdFor(sessionId),
     },
@@ -647,7 +621,6 @@ export async function ensureEmbeddedWorkspaceRuntime(
   let activeHost: EmbeddedRuntime["host"] | undefined
   const created = createWorkspaceRuntimeApp({
     ...options(ws, {
-      exists: (sessionId) => activeHost?.hasSession(sessionId) ?? false,
       parentSessionIdFor: (sessionId) => activeHost?.parentSessionIdFor(sessionId),
     }, harness),
     beforeHarnessAcquire: async () => {

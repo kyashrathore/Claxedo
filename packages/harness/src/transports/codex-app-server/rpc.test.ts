@@ -13,7 +13,7 @@ function peer(answer?: (frame: RpcMessage, wire: ScriptedProcess<RpcMessage>) =>
 
 test("Codex JSON-RPC request deadline is per call and a later request still answers", async () => {
   const { rpc, stdout, frames } = peer()
-  await expect(rpc.request("never", {}, 10)).rejects.toMatchObject({ code: "protocol", message: "Codex never did not answer within 10ms" })
+  await expect(rpc.request("never", {}, 10)).rejects.toMatchObject({ code: "process", message: "Codex never did not answer within 10ms" })
   const next = rpc.request("after", {}, 1000)
   const frame = frames[1] as { id: number }
   stdout.write(`${JSON.stringify({ id: frame.id, result: { ok: true } })}\n`)
@@ -77,7 +77,7 @@ function recoveringPeer(errors: string[], resumeError?: string) {
     const error = frame.method === "turn/start" ? errors.shift() : resumeError
     wire.send({ id: frame.id, ...(error ? { error: { code: -32000, message: error } } : { result: { turn: { id: "recovered" } } }) })
   })
-  return { calls, start: () => startCodexTurn(rpc, { threadId: "thread-1", input: [] }, { threadId: "thread-1" }) }
+  return { calls, start: () => startCodexTurn(rpc, { threadId: "thread-1", input: [] }, { threadId: "thread-1" }, { at: Date.now() + 1_000, signal: new AbortController().signal }) }
 }
 
 test.each(["thread not found: thread-1", "Thread not found: thread-1"])("recovers the native missing-thread error %s", async (message) => {

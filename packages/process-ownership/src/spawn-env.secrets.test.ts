@@ -99,4 +99,8 @@ describe("harness spawn env never carries internal secrets", () => {
   test("undefined values are dropped", () => {
     expect(harnessSpawnEnv({ KEEP: "v", DROP: undefined })).toEqual({ KEEP: "v" })
   })
+
+  test("the path of Pi's one-read MCP handoff file reaches the Pi child it names", () => {
+    expect(harnessSpawnEnv({ CLAXEDO_PI_MCP_HANDOFF: "/state/mcp-handoff/one.json" })).toEqual({ CLAXEDO_PI_MCP_HANDOFF: "/state/mcp-handoff/one.json" })
+  })
 })

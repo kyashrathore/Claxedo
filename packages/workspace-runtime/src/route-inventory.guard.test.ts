@@ -37,9 +37,9 @@ const managementAuth: WorkspaceRuntimeManagementAuth = {
 
 /**
  * The widest composition `createWorkspaceRuntimeApp` mounts in production:
- * relay auth, a placed target (worktrees), transcripts, the management
- * channel, and a host route contribution, so every conditional mount branch
- * is exercised by the inventory.
+ * relay auth, a placed target (worktrees), the management channel, and a
+ * host route contribution, so every conditional mount branch is exercised by
+ * the inventory.
  */
 async function composedRuntime() {
   const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "wr-route-inventory-"))
@@ -53,10 +53,6 @@ async function composedRuntime() {
     target: { workspaceId: "ws_1", directory: dir },
     managementAuth,
     managementTarget: { workspaceId: "ws_1", hostId: "host_1" },
-    transcripts: {
-      workspaceId: "ws_1",
-      resolver: { open: async () => ({ state: "unavailable", reason: "route inventory probe" }) },
-    },
     routeContributions: [{
       id: "inventory-probe",
       mount: () => ({

@@ -105,6 +105,7 @@ export const MCP_OPERATIONS_WITHOUT_TOOLS = {
   goal_resume: "Goal internals are the runtime's own autonomous-loop state, not a host-facing surface.",
   goal_stop: "Goal internals are the runtime's own autonomous-loop state, not a host-facing surface.",
   goal_delete: "Goal internals are the runtime's own autonomous-loop state, not a host-facing surface.",
+  background_task_stop: "Stopping one background task is the control on the task row a client shows; session_cancel_turn stops the turn.",
 } as const satisfies Partial<Record<SessionAccessOperation, string>>
 
 export type McpToolGating = Readonly<{

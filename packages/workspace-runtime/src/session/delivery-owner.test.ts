@@ -180,6 +180,31 @@ test("a steer the transcript takes in before its call returns is done, and its r
   expect(changed).toEqual(["session_1", "session_1", "session_1"])
 })
 
+test("a steer the transcript took in stays done whatever its call reports afterwards", async () => {
+  const outcomes = [
+    { ok: false, status: "unknown", message: "turn ended before the steer was acknowledged" },
+    { ok: false, status: "declined", message: "no active turn" },
+  ] as const
+  for (const outcome of outcomes) {
+    const runtimeStore = store(root())
+    let host!: ReturnType<typeof owner>
+    host = owner(runtimeStore, { startTurn: async (input) => {
+      host.incorporated("session_1", "message")
+      input.onSteeringResult?.(outcome)
+      input.onDelivery("steer")
+    } })
+    expect(await host.steer(submission())).toEqual({ ok: true })
+    expect(runtimeStore.deliveryQueue.listQueuedPrompts()).toEqual([])
+  }
+  const runtimeStore = store(root())
+  let host!: ReturnType<typeof owner>
+  host = owner(runtimeStore, { startTurn: async () => {
+    host.incorporated("session_1", "message")
+    throw new Error("connection lost after the harness took the input in")
+  } })
+  expect(await host.steer(submission())).toEqual({ ok: true })
+})
+
 test("only a steered row leaves the queue when its message reaches the transcript", async () => {
   const runtimeStore = store(root())
   const host = owner(runtimeStore, { whenIdle: () => new Promise(() => {}) })

@@ -1,6 +1,6 @@
 import { errorMessage } from "@claxedo/helpers"
 import { assistantMessageIdForTurn, createMessageIds, type AgentTurnOutcome } from "@claxedo/agent-runtime-contract"
-import type { ProviderTurnInput, ProviderTurnResult, ProviderTurnSettlement, RoutedEvent, TurnRef } from "@claxedo/harness/contract"
+import type { Clock, ProviderTurnInput, ProviderTurnResult, ProviderTurnSettlement, RoutedEvent, TurnRef } from "@claxedo/harness/contract"
 import { harnessAuthor, providerTurnNotice } from "./provider-turn-message"
 import { resolveSessionModel } from "../session/session-model"
 import { isTerminalRuntimePayload, mergeOutcome, outcomeFromPayload } from "../host/turn-outcome"
@@ -8,6 +8,9 @@ import { sessionTurnAgent } from "../host/turn-record"
 import type { RuntimeStore } from "../store"
 import type { BrokerSessionEvents } from "./session-events"
 import type { BrokerEventDelivery } from "./delivery"
+
+/** How long a provider turn waits for the turn still holding its session to release it before it is refused as busy. */
+const ENDING_TURN_RELEASE_WAIT_MS = 30_000
 
 /** A turn held only by its store lease, whose terminal the store refused: the lease stays held until the session's owner reconciles it. */
 export type LeasedTurnFailure = { leaseId: string; assistantMessageId: string; outcome: AgentTurnOutcome }
@@ -21,6 +24,7 @@ export class BrokerProviderTurns {
     private readonly store: RuntimeStore,
     private readonly events: BrokerSessionEvents,
     private readonly delivery: BrokerEventDelivery,
+    private readonly clock: Clock,
     private readonly reportOwnerFailure: (sessionId: string, error: unknown) => void,
     private readonly retainLeasedTurnFailure: (sessionId: string, turn: LeasedTurnFailure, error: unknown) => boolean,
   ) {}
@@ -43,17 +47,33 @@ export class BrokerProviderTurns {
     this.controllers.get(sessionId)?.abort()
   }
 
+  private closed(sessionId: string): boolean {
+    const session = this.store.getSession(sessionId) as { time?: { archived?: number } } | null
+    return !session || !!session.time?.archived
+  }
+
+  private async leaseOnceReleased(sessionId: string, closing?: AbortSignal): Promise<string | undefined> {
+    const bound = new AbortController()
+    const timer = this.clock.setTimeout(() => bound.abort(), ENDING_TURN_RELEASE_WAIT_MS)
+    const signal = closing ? AbortSignal.any([bound.signal, closing]) : bound.signal
+    try { return await this.store.turnLeases.acquireOnRelease(sessionId, signal) }
+    finally { this.clock.clearTimeout(timer) }
+  }
+
   async admit(
     sessionId: string, input: ProviderTurnInput,
-    run: (turn: TurnRef, signal: AbortSignal) => Promise<void>,
+    run: (turn: TurnRef, signal: AbortSignal) => Promise<void>, closing?: AbortSignal,
   ): Promise<ProviderTurnResult> {
-    const session = this.store.getSession(sessionId) as { time?: { archived?: number } } | null
-    if (!session || session.time?.archived) return { admitted: false, reason: "closed" }
+    if (closing?.aborted || this.closed(sessionId)) return { admitted: false, reason: "closed" }
     const config = this.store.getSessionConfig(sessionId)
     if (!config) throw new Error(`Provider turn ${sessionId} has no runtime config`)
     const model = resolveSessionModel(config)
-    const leaseId = this.store.acquireTurnLease(sessionId)
-    if (!leaseId) return { admitted: false, reason: "busy" }
+    const leaseId = await this.leaseOnceReleased(sessionId, closing)
+    if (!leaseId) return { admitted: false, reason: closing?.aborted ? "closed" : "busy" }
+    if (closing?.aborted || this.closed(sessionId)) {
+      this.store.releaseTurnLease(sessionId, leaseId)
+      return { admitted: false, reason: "closed" }
+    }
     const userMessageId = this.messageIds()
     const turnId = assistantMessageIdForTurn(userMessageId)
     const turn: TurnRef = { turnId, assistantMessageId: turnId }

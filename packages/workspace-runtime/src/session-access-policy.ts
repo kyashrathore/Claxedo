@@ -70,6 +70,7 @@ export type SessionAccessOperation =
   | "queue_read"
   | "recovery_inspect"
   | "recovery_submit"
+  | "background_task_stop"
   | "revert"
   | "unrevert"
   | "fork"
@@ -364,6 +365,7 @@ export const SESSION_CORE_ROUTE_ACCESS = {
   "POST /question/:id/reject": { kind: "authorize", operation: "question_response" },
   "POST /question/:id/reply": { kind: "authorize", operation: "question_response" },
   "POST /session": { kind: "authorize", operation: "session_create" },
+  "POST /session/:id/background-task/stop": { kind: "authorize", operation: "background_task_stop" },
   "GET /session/:id/recovery": { kind: "authorize", operation: "recovery_inspect" },
   "GET /session/:id/recovery/operations/:operationId": { kind: "authorize", operation: "recovery_inspect" },
   "POST /session/:id/recovery": { kind: "authorize", operation: "recovery_submit" },
@@ -393,6 +395,7 @@ const AGENT_TURN_OPERATIONS = new Set<SessionAccessOperation>([
   "permission_response",
   "question_response",
   "recovery_submit",
+  "background_task_stop",
 ])
 
 const SESSION_CONTROL_OPERATIONS = new Set<SessionAccessOperation>([
