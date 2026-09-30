@@ -343,7 +343,7 @@ function prose(output: string | undefined): { text?: string } {
   return trimmed ? { text: trimmed } : {}
 }
 
-const LABEL_KEYS = ["title", "name", "session", "task", "process", "document", "workspace", "query", "text", "prompt"]
+const LABEL_KEYS = ["title", "name", "session", "task", "document", "workspace", "query", "text", "prompt"]
 
 function firstLabel(args: Record<string, unknown>) {
   for (const key of LABEL_KEYS) {

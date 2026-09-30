@@ -13,7 +13,6 @@ import {
 const GROUPS: BuiltinToolGroup[] = [
   { id: "attention", reach: "runtime", tools: [] },
   { id: "documents", reach: { service: "documents" }, tools: [] },
-  { id: "processes", reach: "runtime", tools: [] },
   { id: "review", reach: "runtime", tools: [] },
   { id: "sessions", reach: "runtime", tools: [] },
   { id: "subagents", reach: "runtime", tools: [] },
@@ -42,7 +41,6 @@ describe("what a project starts with", () => {
     expect(Object.fromEntries(GROUPS.map((entry) => [entry.id, builtinGroupDefault(entry, local)]))).toEqual({
       attention: true,
       documents: true,
-      processes: true,
       review: true,
       sessions: true,
       subagents: true,
@@ -55,7 +53,6 @@ describe("what a project starts with", () => {
     expect(Object.fromEntries(GROUPS.map((entry) => [entry.id, builtinGroupDefault(entry, hosted)]))).toEqual({
       attention: true,
       documents: false,
-      processes: true,
       review: true,
       sessions: true,
       subagents: true,
