@@ -1,3 +1,8 @@
 export * from "./adapter"
+export type { ClaudeRequestUsage, ClaudeSdkAdapterState } from "./adapter-state"
+export { CLAUDE_SUBAGENT_USAGE_METHOD, type ClaudeSubagentUsage } from "./request-stream"
+export type { ClaudeSubagentObservation } from "./subagent-observation"
+export { claudeSubagentObservations } from "./subagent-observations"
+export { claudeChildCorrelationKey, foldNestedSubagentFrame } from "./subagent-routing"
 export * from "./question-decline"
 export * from "./task-ledger"

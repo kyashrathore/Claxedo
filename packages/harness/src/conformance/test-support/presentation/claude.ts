@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { TOOL_ATTACHMENT_INLINE_MAX_BYTES } from "../../../translate/tool-attachments"
-import { claudeSubagentObservations } from "../../../transports/claude-sdk/translate/adapter"
+import { claudeSubagentObservations } from "../../../transports/claude-sdk/translate/subagent-observations"
 import { createClaudeTaskLedger } from "../../../transports/claude-sdk/translate/task-ledger"
 import { claudeRuntime as runtime } from "../../../transports/claude-sdk/test-support/runtime"
 import type { CreatePresentationProjection } from "./projection"
