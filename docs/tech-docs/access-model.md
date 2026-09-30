@@ -32,15 +32,11 @@ control plane (D1) enforces today.
   - **org role**: org owners and admins are `admin`, org members `viewer`.
 
   Nobody outside the project's org has any role on it, whatever rows name
-  them. A workspace's role is the same computation with three differences:
-  the workspace's owner stands in for the project's; a member grant is worth
-  at most `admin`, so the project owner's own `owner` row makes them owner of
-  no one else's workspace; and when the workspace's `org_member_visible` is 0
-  the member grant, the team grant and an ordinary org member's `viewer` all
-  count for nothing. One SQL builder computes both, `projectRoleRankSql` in
-  `packages/claxedo-server/src/authority/adapters/d1/project-role.ts`, and
-  every project, workspace, session, runtime-token and Agent Plugins decision
-  on D1 reads its rank from it.
+  them. `projectRoleRankSql` in
+  `packages/claxedo-server/src/authority/adapters/d1/project-role.ts`
+  computes it, and every project decision on D1 reads it. Project access
+  governs the project (its access listing, its grants) and never a
+  workspace; see the resource hierarchy below.
 
 ## Who may change what
 
@@ -69,20 +65,18 @@ rules.
 Removing an org member revokes, in the same D1 batch, their team memberships
 in that org's teams, their member grants on its projects, their direct
 session shares and session participations in the org, and their runtime
-access tokens on its projects; a project they own stays theirs and admits them
-to nothing without the membership. Re-admitting them restores none of it.
-Every decision reads the rows at request time, so the removed person's next
-request is refused.
+access tokens in the org. A project or workspace they own stays theirs and
+admits them to nothing without the membership. Re-admitting them restores
+none of it. Every decision reads the rows at request time, so the removed
+person's next request is refused.
 
-A runtime access token's activity is re-read at check time, so a token would
-work again once its holder regained the rank. Every change that lowers a rank
-therefore revokes tokens in the same batch: removing a member, moving one from
-owner or admin to member, revoking or lowering a member grant, revoking or
-lowering a team's grant (for every member of the team), and removing a person
-from a team (on the projects the team reaches) revoke the person's tokens on
-the projects concerned; hiding a workspace from org members revokes each token
-on it whose role now exceeds its holder's rank (see the resource hierarchy
-below).
+A runtime access token is minted only by the workspace's owner, and its
+activity is re-read against their rank at check time. The one change that
+takes that rank away is removing the owner from the org, so it is the one
+change that revokes tokens: re-admission gives the rank back, and without the
+revocation the old token would work again. Lowering or revoking a grant,
+leaving a team and a change of org role touch no workspace rank and revoke
+no token.
 
 Setting up the default team creates only what is missing: the team, a
 membership for each org member who never had one, and an editor grant on each
@@ -140,40 +134,39 @@ People: Org → Teams → members → roles
 Code:   Project → Workspace → Session → participants / session share grants
 ```
 
-A workspace is a folder on a machine, or a cloud sandbox, and it has one
-owner (`workspaces.owner_user_id`), the person who created or placed it. An
-org and its teams group people. Nobody is added to a machine or a folder, and
-no row names a person on a workspace. A person's role on a workspace, the
-workspace form of `projectRoleRankSql`, is the highest of:
+A workspace is a folder on a machine, or a cloud sandbox, and it belongs to
+its owner (`workspaces.owner_user_id`), the person who created or placed it.
+A person's role on a workspace, `workspaceRoleRankSql`, is `owner` for its
+owner and nothing for anyone else. Org roles, project roles (a project
+`owner` membership row included), member grants and team grants never reach
+a workspace or the machine it runs on; nobody is added to a machine or a
+folder, and no row names a person on a workspace. `org_member_visible` changes
+no one's workspace role.
 
-- `owner`, when they own the workspace;
-- `admin`, when they are an owner or admin of its org, whatever the
-  workspace's visibility;
-- only when the workspace is visible to org members (`org_member_visible` is
-  1): their member grant on its project, worth at most `admin`; the best grant
-  of a team they are on; and `viewer` for any org member.
-
-A project or team grant therefore reaches another person's workspace only
-once its owner makes it visible to org members; on a workspace its owner
-keeps to themselves, it reaches nobody. Being the project's owner makes
-nobody the owner of someone else's workspace in it.
-
-Visibility follows placement. A workspace created without a machine is
-visible unless it is created with `orgMemberVisible: false`. A machine's scope
-visibility, `owner` or `org`, is written to a workspace when it is assigned to
-that machine, and to every workspace the machine serves whenever the scope
-changes. Hiding a workspace, by assigning it to an owner-visibility machine or
-by narrowing the machine's scope to `owner`, revokes in the same batch every
-runtime access token on it whose role exceeds its holder's rank once hidden.
-
-What the role unlocks on a workspace: `viewer` lists and opens it, sees where
-it is placed and whether its machine is serving it, and reaches the
+What the owner's role unlocks: listing and opening the workspace, seeing
+where it is placed and whether its machine is serving it, the
 workspace-scoped surfaces the Relay Host Token gates (files, terminals,
-processes, git); `editor` reserves and registers sessions on it; `admin`
-assigns it to a machine or unassigns it. A runtime access token names a role
-no higher than its holder's rank when it is minted, and stops working once the
-rank falls below it. No workspace role admits anyone to another person's
-session.
+processes, git), assigning it to a machine or unassigning it, channel access
+to it, Agent Plugins runtime reads for it, and runtime access tokens for it.
+The owner still needs an active membership of the workspace's org; removing
+them from the org takes all of it away.
+
+The only thing that crosses people is a session share, `follow` or `send`,
+on one session. It admits the grantee to that session, and workspace open,
+channel access and runtime access tokens admit a share grantee as a viewer of
+that session's workspace (`SESSION_SHARE_WORKSPACE_ACCESS_SQL` in
+`packages/claxedo-server/src/authority/adapters/d1/workspace-authority.ts`).
+
+One exception is still in the code. The session layer
+(`packages/claxedo-server/src/authority/adapters/d1/session-authority.ts`)
+reads the older rank for reserving, forking, starting, adopting and
+re-visibility of a session and for adding a participant: the workspace
+form of `projectRoleRankSql`, where org owners and admins are `admin` on
+every workspace of the org and, on a workspace whose `org_member_visible` is
+1, a member grant (at most `admin`), a team grant or plain org membership
+counts. So today an org member can still reserve, fork and start a session
+on another member's workspace through the session layer. Lane C1 removes
+that.
 
 The workspace role stops at the session. A session share, at level `follow` or
 `send`, is the only grant one person makes to another, and it is the whole
