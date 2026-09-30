@@ -41,13 +41,13 @@ function onlySessions(allowed: () => readonly string[]): SessionAccessPolicy {
 const post = (app: ReturnType<typeof routes>, path: string, body: unknown) => app.request(`http://localhost${path}`,
   { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) })
 
-async function childAsking(asks: ((broker: TurnBroker) => Promise<RequestAnswer>)[]) {
+async function childAsking(asks: ((broker: TurnBroker) => Promise<RequestAnswer>)[], mode: "foreground" | "background" = "foreground") {
   const control = controlledTurn("parent")
   const answers: RequestAnswer[] = []
   const children: string[] = []
   const transport = new FakeTransport({ capabilities: REQUESTS, turn: ({ broker }) => (async function* () {
     for (const key of ["toolu_agent", "toolu_sibling"]) {
-      const child = await broker.observeSubagent(spawn(key))
+      const child = await broker.observeSubagent(spawn(key, mode))
       broker.associateChild(key, child!)
       children.push(child!.sessionId)
     }
@@ -101,7 +101,25 @@ test("a subagent's question is answered only on its child, whichever session the
   } finally { control.finish() }
 })
 
-test("the parent turn's end cancels its subagent's pending requests, and a late answer is refused", async () => {
+test("a background subagent's request asked during its parent's turn survives that turn's end and is answered on the child under the parent's authorization", async () => {
+  const { f, control, answers, child, sibling } = await childAsking([childPermission, childQuestion], "background")
+  control.finish()
+  ;(await f.runtime.turns.whenIdle("parent")).abandon()
+  expect(answers).toEqual([])
+  expect(f.store.listPermissions("/repo").map((row) => row.sessionID)).toEqual([child])
+  let allowed: readonly string[] = [child]
+  const app = routes(f, onlySessions(() => allowed))
+  expect((await post(app, `/session/${child}/permissions/perm`, { response: "once" })).status).toBe(403)
+  allowed = ["parent"]
+  for (const other of ["parent", sibling]) expect((await post(app, `/session/${other}/permissions/perm`, { response: "once" })).status).toBe(409)
+  expect((await post(app, `/session/${child}/permissions/perm`, { response: "once" })).status).toBe(200)
+  expect((await post(app, `/question/ask/reply?sessionId=${child}`, { answers: [["a"]] })).status).toBe(200)
+  await until(() => answers.length === 2, "harness released")
+  expect(answers).toContainEqual({ kind: "permission", decision: "allow_once" })
+  expect(answers).toContainEqual({ kind: "answers", answers: [["a"]] })
+})
+
+test("a foreground subagent's pending requests are cancelled when its parent's turn ends, and a late answer is refused", async () => {
   const { f, app, control, answers, child } = await childAsking([childPermission, childQuestion])
   control.finish()
   ;(await f.runtime.turns.whenIdle("parent")).abandon()

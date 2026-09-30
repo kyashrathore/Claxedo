@@ -72,6 +72,7 @@ export function createAgentRuntime(input: AgentRuntimeCompositionInput) {
   const lifecycle = createRuntimeLifecycle({ onTeardownFailure: (error) => recovery.reportOwnerFailure(error) })
   const { resource, track } = lifecycle
   const admissions = createTurnAdmissions(store, input.onActiveTurnChange)
+  const disposing = new AbortController()
   const workspaceId = input.identity?.workspaceId ?? input.launch.workspaceId
 
   const publish = (event: AgentRuntimeEventEnvelope) => {
@@ -103,7 +104,7 @@ export function createAgentRuntime(input: AgentRuntimeCompositionInput) {
           try { await run(ref, signal) } finally {
             try { endChildTurns() } catch (error) { recovery.reportSessionFailure(sessionId, error) }
           }
-        })
+        }, disposing.signal)
         if (result.admitted) {
           const current = input.ports.currentTurnAuthority(sessionId)
           const leaseId = current?.turnId === result.turn.turnId ? store.readTurnAuthority(sessionId)?.leaseId : undefined
@@ -367,6 +368,7 @@ export function createAgentRuntime(input: AgentRuntimeCompositionInput) {
       return { transport: attached.handle.transport, session: attached.session }
     },
     dispose() {
+      disposing.abort()
       return lifecycle.dispose(
         async () => {
           recovery.stops.releaseAll()

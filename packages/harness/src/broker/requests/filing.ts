@@ -51,19 +51,28 @@ export function fileTurnRequest(ports: BrokerPorts, authority: TurnAuthority, re
   return { sessionId: parentSessionId, request }
 }
 
-export function fileChildOwnedRequest(
-  ports: BrokerPorts, owner: SessionAuthority, request: TurnRequest & { child: { correlationKey: string } },
-): { authority: ChildAuthority; filed: FiledRequest } | undefined {
+type ChildOwned = { authority: ChildAuthority; filed: FiledRequest }
+type ChildRequest = TurnRequest & { child: { correlationKey: string } }
+
+function childOwnedRoute(ports: BrokerPorts, owner: SessionAuthority, request: ChildRequest): ChildOwned | UnroutedChild {
   const correlationKey = request.child.correlationKey
   const route = ports.childRoute(owner.sessionId, correlationKey)
-  const open = route.kind === "bound" && ports.turnOpen(route.childSessionId, route.assistantMessageId)
-  if (route.kind === "bound" && open) {
-    return {
-      authority: { ...owner, correlationKey, childSessionId: route.childSessionId, childTurnId: route.assistantMessageId },
-      filed: { sessionId: route.childSessionId, request: retargeted(request, owner.sessionId, route.childSessionId) },
-    }
+  if (route.kind !== "bound") return route
+  if (!ports.turnOpen(route.childSessionId, route.assistantMessageId)) return { ...route, kind: "unstarted" }
+  return {
+    authority: { ...owner, correlationKey, childSessionId: route.childSessionId, childTurnId: route.assistantMessageId },
+    filed: { sessionId: route.childSessionId, request: retargeted(request, owner.sessionId, route.childSessionId) },
   }
-  const unrouted: UnroutedChild = route.kind === "bound" ? { ...route, kind: "unstarted" } : route
-  reportUnrouted(ports, owner.sessionId, unroutedChildRequest(request, correlationKey, unrouted, "refused"))
+}
+
+export function fileOpenChildRequest(ports: BrokerPorts, owner: SessionAuthority, request: ChildRequest): ChildOwned | undefined {
+  const routed = childOwnedRoute(ports, owner, request)
+  return "authority" in routed ? routed : undefined
+}
+
+export function fileChildOwnedRequest(ports: BrokerPorts, owner: SessionAuthority, request: ChildRequest): ChildOwned | undefined {
+  const routed = childOwnedRoute(ports, owner, request)
+  if ("authority" in routed) return routed
+  reportUnrouted(ports, owner.sessionId, unroutedChildRequest(request, request.child.correlationKey, routed, "refused"))
   return undefined
 }

@@ -435,6 +435,22 @@ describe("store broker ports", () => {
     if (failed.admitted) expect(await failed.settled).toEqual({ state: "failed", error: "failed" })
   })
 
+  test("a child request keyed by the agent id a result reported routes to that child before its spawn call is known", async () => {
+    const { store, ports, authority } = setup()
+    const owner = createRequestBroker(ports)
+    const turn = createTurnBroker(owner, { authority, origin, signal: new AbortController().signal })
+    const child = await turn.observeSubagent({ observationId: "result", providerKind: "claude-agent", providerId: "a64191ef39c5ecd63",
+      toolCallId: "toolu_agent", transcript: { kind: "messages" }, status: "running", mode: "background" })
+    if (!child) throw new Error("Missing child session")
+    if (!store.acquireTurnLease(child.sessionId)) throw new Error("Expected child lease")
+    store.startTurn({ sessionId: child.sessionId, assistantMessageId: child.assistantMessageId, agent: "general", parts: [] })
+    const waiting = turn.ask({ ...permission("by-agent"), child: { correlationKey: "a64191ef39c5ecd63" } })
+    await tick()
+    expect(owner.broker.list({ sessionId: child.sessionId }).map((row) => row.request.requestId)).toEqual(["by-agent"])
+    expect(await owner.broker.answer("by-agent", { kind: "permission", decision: "allow_once" }, { sessionId: child.sessionId })).toMatchObject({ ok: true })
+    expect(await waiting).toEqual({ kind: "permission", decision: "allow_once" })
+  })
+
   test("a provider turn asked for while the ending turn still holds the session is admitted when that turn releases it", async () => {
     const { store, ports } = setup()
     const lease = store.readTurnAuthority("s1")!.leaseId
