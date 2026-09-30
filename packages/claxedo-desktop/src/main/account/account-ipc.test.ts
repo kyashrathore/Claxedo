@@ -273,8 +273,7 @@ describe("operation channels", () => {
 
 describe("operations whose result is a credential", () => {
   /**
-   * The real body shape of `POST /api/auth/cli/exchange` (`mintCliSessionTokens`
-   * in `@claxedo/server-core/platform/auth/cli-session-token`), so the value
+   * The body shape `POST /api/auth/cli/exchange` answers with, so the value
    * scan below checks the actual field names.
    */
   const CLI_TOKEN_PAIR = {

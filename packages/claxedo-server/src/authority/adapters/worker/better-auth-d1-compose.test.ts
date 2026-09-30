@@ -273,7 +273,6 @@ describe("Better Auth + D1 user-deployed composition", () => {
     expect(composed.plane.privateSessionAuthority).toBeDefined()
     expect(composed.plane.runtimeSessionAuthority).toBeDefined()
     expect(composed.plane.services.auth.config).toMatchObject({ enabled: true, adapter: "better-auth" })
-    expect(composed.plane.cliSessionTokenRegistry).toBeUndefined()
     expect(composed.options.authentication.descriptor).toMatchObject({
       adapter: "better-auth",
       deploymentId: "deployment-1",
