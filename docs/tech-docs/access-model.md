@@ -32,10 +32,12 @@ control plane (D1) enforces today.
   - **org role**: org owners and admins are `admin`, org members `viewer`.
 
   Nobody outside the project's org has any role on it, whatever rows name
-  them. A workspace's role is the same computation with the workspace's owner
-  in place of the project's, and an ordinary org member's `viewer` withheld
-  when the workspace's `org_member_visible` is 0. One SQL builder computes
-  both, `projectRoleRankSql` in
+  them. A workspace's role is the same computation with three differences:
+  the workspace's owner stands in for the project's; a member grant is worth
+  at most `admin`, so the project owner's own `owner` row makes them owner of
+  no one else's workspace; and when the workspace's `org_member_visible` is 0
+  the member grant, the team grant and an ordinary org member's `viewer` all
+  count for nothing. One SQL builder computes both, `projectRoleRankSql` in
   `packages/claxedo-server/src/authority/adapters/d1/project-role.ts`, and
   every project, workspace, session, runtime-token and Agent Plugins decision
   on D1 reads its rank from it.

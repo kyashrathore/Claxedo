@@ -44,8 +44,16 @@ async function setup() {
     orgId: "org_acme",
     displayName: "acme",
     backing: "local-worktree",
+    repoUrl: "https://github.com/acme/app",
   })
-  await database.prepare("update workspaces set org_member_visible = 0 where workspace_id = 'ws_acme'").run()
+  await authority.createWorkspace(alice, {
+    workspaceId: "ws_private",
+    orgId: "org_acme",
+    displayName: "private",
+    backing: "cloud-vm",
+    repoUrl: "https://github.com/acme/app",
+    orgMemberVisible: false,
+  })
   const audit = async (prefix: string) =>
     (await database
       .prepare("select action, user_id, metadata_json from authority_audit_events where action like ? order by rowid")
@@ -210,7 +218,7 @@ describe("D1 organization members", () => {
 
     await authority.addOrgMember!(alice, { orgId: "org_acme", userPublicId: id(bob), role: "member" })
     expect(await authority.projectRole(bob, { projectId: projectId as never })).toMatchObject({ ok: true, role: "viewer" })
-    await expect(authority.openWorkspace(bob, { workspaceId: "ws_acme" })).rejects.toMatchObject({ status: 403 })
+    expect(await authority.openWorkspace(bob, { workspaceId: "ws_acme" })).toMatchObject({ role: "viewer" })
   })
 })
 
@@ -218,7 +226,7 @@ describe("D1 per-member project grants", () => {
   test("grant, re-grant with a role change, revoke and re-grant, each audited with the role before and after", async () => {
     const { authority, alice, bob, projectId, audit } = await setup()
     await authority.addOrgMember!(alice, { orgId: "org_acme", userPublicId: id(bob), role: "member" })
-    await expect(authority.openWorkspace(bob, { workspaceId: "ws_acme" })).rejects.toMatchObject({ status: 403 })
+    expect(await authority.openWorkspace(bob, { workspaceId: "ws_acme" })).toMatchObject({ role: "viewer" })
 
     expect(await authority.grantProjectMember!(alice, { projectId, userPublicId: id(bob), role: "editor" }))
       .toEqual({ project_id: projectId, user_id: id(bob), role: "editor" })
@@ -228,16 +236,16 @@ describe("D1 per-member project grants", () => {
 
     expect(await authority.revokeProjectMember!(alice, { projectId, userPublicId: id(bob) })).toEqual({ revoked: true })
     expect(await authority.revokeProjectMember!(alice, { projectId, userPublicId: id(bob) })).toEqual({ revoked: false })
-    await expect(authority.openWorkspace(bob, { workspaceId: "ws_acme" })).rejects.toMatchObject({ status: 403 })
-    await authority.grantProjectMember!(alice, { projectId, userPublicId: id(bob), role: "viewer" })
     expect(await authority.openWorkspace(bob, { workspaceId: "ws_acme" })).toMatchObject({ role: "viewer" })
+    await authority.grantProjectMember!(alice, { projectId, userPublicId: id(bob), role: "editor" })
+    expect(await authority.openWorkspace(bob, { workspaceId: "ws_acme" })).toMatchObject({ role: "editor" })
 
     const change = { actor: id(alice), orgId: "org_acme", projectId, targetUserId: id(bob) }
     expect(await audit("project.member.")).toEqual([
       { action: "project.member.granted", ...change, before: null, after: "editor" },
       { action: "project.member.granted", ...change, before: "editor", after: "admin" },
       { action: "project.member.revoked", ...change, before: "admin", after: null },
-      { action: "project.member.granted", ...change, before: null, after: "viewer" },
+      { action: "project.member.granted", ...change, before: null, after: "editor" },
     ])
   })
 
@@ -274,25 +282,27 @@ describe("D1 team project grants", () => {
     const team = (await authority.createTeamInOrg!(alice, { orgId: "org_acme", name: "Eng" })) as { team_id: string }
     await authority.addTeamMember!(alice, { teamId: team.team_id, userPublicId: id(bob) })
 
-    await authority.grantTeamProject!(alice, { teamId: team.team_id, projectId, role: "editor" })
+    await authority.grantTeamProject!(alice, { teamId: team.team_id, projectId, role: "admin" })
     expect(await authority.listTeamProjects!(alice, { teamId: team.team_id }))
-      .toEqual([expect.objectContaining({ team_id: team.team_id, project_id: projectId, role: "editor" })])
+      .toEqual([expect.objectContaining({ team_id: team.team_id, project_id: projectId, role: "admin" })])
     expect(await authority.listTeamProjects!(bob, { teamId: team.team_id })).toHaveLength(1)
-    expect(await authority.openWorkspace(bob, { workspaceId: "ws_acme" })).toMatchObject({ role: "editor" })
+    expect(await authority.openWorkspace(bob, { workspaceId: "ws_acme" })).toMatchObject({ role: "admin" })
     expect(await authority.resolveRuntimeMachineAccess(bob.principal!.actorId, "ws_acme", "editor"))
-      .toMatchObject({ role: "editor" })
+      .toMatchObject({ role: "admin" })
 
-    await authority.grantTeamProject!(alice, { teamId: team.team_id, projectId, role: "viewer" })
-    expect(await authority.openWorkspace(bob, { workspaceId: "ws_acme" })).toMatchObject({ role: "viewer" })
+    await authority.grantTeamProject!(alice, { teamId: team.team_id, projectId, role: "editor" })
+    expect(await authority.openWorkspace(bob, { workspaceId: "ws_acme" })).toMatchObject({ role: "editor" })
     expect(await authority.revokeTeamProject!(alice, { teamId: team.team_id, projectId })).toEqual({ revoked: true })
     expect(await authority.listTeamProjects!(alice, { teamId: team.team_id })).toEqual([])
-    await expect(authority.openWorkspace(bob, { workspaceId: "ws_acme" })).rejects.toMatchObject({ status: 403 })
+    expect(await authority.openWorkspace(bob, { workspaceId: "ws_acme" })).toMatchObject({ role: "viewer" })
+    await expect(authority.resolveRuntimeMachineAccess(bob.principal!.actorId, "ws_acme", "editor"))
+      .rejects.toMatchObject({ status: 403 })
 
     const change = { actor: id(alice), orgId: "org_acme", teamId: team.team_id, projectId }
     expect(await audit("team.project.")).toEqual([
-      { action: "team.project.granted", ...change, before: null, after: "editor" },
-      { action: "team.project.granted", ...change, before: "editor", after: "viewer" },
-      { action: "team.project.revoked", ...change, before: "viewer", after: null },
+      { action: "team.project.granted", ...change, before: null, after: "admin" },
+      { action: "team.project.granted", ...change, before: "admin", after: "editor" },
+      { action: "team.project.revoked", ...change, before: "editor", after: null },
     ])
     expect((await audit("team.member.")).map((row) => [row.action, row.targetUserId, row.before, row.after]))
       .toEqual([["team.member.added", id(bob), null, "member"]])
@@ -315,6 +325,64 @@ describe("D1 team project grants", () => {
     await expect(authority.revokeTeamProject!(bob, { teamId: acmeTeam.team_id, projectId }))
       .rejects.toMatchObject({ code: "org_admin_required" })
     expect(await authority.listTeamProjects!(outsider, { teamId: acmeTeam.team_id })).toEqual([])
+  })
+})
+
+describe("D1 grants on another person's workspace", () => {
+  test("a member or team grant reaches another person's workspace only once it is visible to org members", async () => {
+    const { authority, database, alice, bob, carol, projectId } = await setup()
+    await authority.addOrgMember!(alice, { orgId: "org_acme", userPublicId: id(bob), role: "member" })
+    await authority.addOrgMember!(alice, { orgId: "org_acme", userPublicId: id(carol), role: "member" })
+    await authority.grantProjectMember!(alice, { projectId, userPublicId: id(bob), role: "admin" })
+    const team = (await authority.createTeamInOrg!(alice, { orgId: "org_acme", name: "Eng" })) as { team_id: string }
+    await authority.addTeamMember!(alice, { teamId: team.team_id, userPublicId: id(carol) })
+    await authority.grantTeamProject!(alice, { teamId: team.team_id, projectId, role: "admin" })
+    const reserve = (auth: SignedControlPlaneAuth, operation: string) =>
+      authority.reserveSession(auth, { operationId: operation, sessionId: `ses_${operation}`, workspaceId: "ws_private", kind: "create", title: "t" })
+
+    for (const person of [bob, carol]) {
+      await expect(authority.openWorkspace(person, { workspaceId: "ws_private" })).rejects.toMatchObject({ status: 403 })
+      await expect(authority.resolveRuntimeMachineAccess(person.principal!.actorId, "ws_private", "viewer"))
+        .rejects.toMatchObject({ status: 403 })
+      await expect(token(authority, person, `jti_hidden_${id(person)}`, "viewer", "ws_private")).rejects.toMatchObject({ status: 403 })
+      await expect(reserve(person, `hidden_${id(person)}`)).rejects.toMatchObject({ status: 403 })
+    }
+
+    await database.prepare("update workspaces set org_member_visible = 1 where workspace_id = 'ws_private'").run()
+    for (const person of [bob, carol]) {
+      expect(await authority.openWorkspace(person, { workspaceId: "ws_private" })).toMatchObject({ role: "admin" })
+      expect(await authority.resolveRuntimeMachineAccess(person.principal!.actorId, "ws_private", "editor"))
+        .toMatchObject({ role: "admin" })
+      expect(await (await token(authority, person, `jti_visible_${id(person)}`, "admin", "ws_private"))()).toBe(true)
+      expect(await reserve(person, `visible_${id(person)}`)).toMatchObject({ sessionId: `ses_visible_${id(person)}` })
+    }
+  })
+
+  test("creating a project makes its creator the owner of no one else's workspace in it", async () => {
+    const { authority, database, alice, carol } = await setup()
+    await authority.addOrgMember!(alice, { orgId: "org_acme", userPublicId: id(carol), role: "admin" })
+    const tools = await authority.createWorkspace(carol, {
+      workspaceId: "ws_tools",
+      orgId: "org_acme",
+      displayName: "tools",
+      backing: "cloud-vm",
+      repoUrl: "https://github.com/acme/tools",
+    })
+    await authority.createWorkspace(alice, {
+      workspaceId: "ws_alice_tools",
+      orgId: "org_acme",
+      displayName: "alice tools",
+      backing: "cloud-vm",
+      repoUrl: "https://github.com/acme/tools",
+      orgMemberVisible: false,
+    })
+    await authority.updateOrgMember!(alice, { orgId: "org_acme", userPublicId: id(carol), role: "member" })
+
+    expect(await authority.projectRole(carol, { projectId: tools.project_id as never })).toMatchObject({ role: "owner" })
+    expect(await authority.openWorkspace(carol, { workspaceId: "ws_tools" })).toMatchObject({ role: "owner" })
+    await expect(authority.openWorkspace(carol, { workspaceId: "ws_alice_tools" })).rejects.toMatchObject({ status: 403 })
+    await database.prepare("update workspaces set org_member_visible = 1 where workspace_id = 'ws_alice_tools'").run()
+    expect(await authority.openWorkspace(carol, { workspaceId: "ws_alice_tools" })).toMatchObject({ role: "admin" })
   })
 })
 
@@ -398,17 +466,23 @@ function racing(database: D1Database, first: (database: D1Database) => Promise<u
   })
 }
 
-async function token(authority: D1CoreAuthorityBoundary, auth: SignedControlPlaneAuth, jti: string, role: "viewer" | "editor" | "admin") {
+async function token(
+  authority: D1CoreAuthorityBoundary,
+  auth: SignedControlPlaneAuth,
+  jti: string,
+  role: "viewer" | "editor" | "admin",
+  workspaceId = "ws_acme",
+) {
   await authority.recordRuntimeAccessToken(auth, {
     jti,
-    workspaceId: "ws_acme",
+    workspaceId,
     hostId: "host_acme",
     actorId: auth.principal!.actorId,
     actorKind: "human",
     role,
     expiresAt: Date.now() + 600_000,
   })
-  return async () => (await authority.runtimeAccessTokenActive({ jti, workspaceId: "ws_acme", hostId: "host_acme" }) as { active: boolean }).active
+  return async () => (await authority.runtimeAccessTokenActive({ jti, workspaceId, hostId: "host_acme" }) as { active: boolean }).active
 }
 
 describe("D1 access changes that must not undo or outlive a decision", () => {

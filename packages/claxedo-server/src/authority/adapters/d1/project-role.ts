@@ -10,6 +10,13 @@ export function roleRankSql(column: string) {
  * are on in the project's organization, and `orgRoleRankSql`. Every project,
  * workspace and session decision on D1 reads its rank from here.
  *
+ * `orgMemberVisible` selects the workspace form: `ownerUserId` is then the
+ * workspace's owner, and on a workspace whose `org_member_visible` is 0 the
+ * member and team grants count for nothing, so they reach another person's
+ * workspace only once its owner opens it to the organization. A member grant
+ * is worth at most admin (3) there: the project owner's `owner` row owns the
+ * project, not someone else's workspace in it.
+ *
  * Each input is a SQL expression in the caller's row scope and is repeated
  * verbatim, so a `?` inside one is bound once per occurrence.
  *
@@ -23,14 +30,16 @@ export function projectRoleRankSql(input: {
   ownerUserId: string
   orgMemberVisible?: string
 }) {
-  const { user, projectId, orgId } = input
+  const { user, projectId, orgId, orgMemberVisible } = input
+  const memberRank = orgMemberVisible ? `min(${roleRankSql("rank_member.role")}, 3)` : roleRankSql("rank_member.role")
+  const grant = (rank: string) => (orgMemberVisible ? `case when ${orgMemberVisible} = 1 then ${rank} else 0 end` : rank)
   return `max(
     case when ${input.ownerUserId} = ${user} then 4 else 0 end,
-    coalesce((
-      select ${roleRankSql("rank_member.role")} from project_memberships rank_member
+    ${grant(`coalesce((
+      select ${memberRank} from project_memberships rank_member
       where rank_member.project_id = ${projectId} and rank_member.user_id = ${user} and rank_member.revoked_at is null
-    ), 0),
-    coalesce((
+    ), 0)`)},
+    ${grant(`coalesce((
       select max(${roleRankSql("rank_team_grant.role")}) from team_project_grants rank_team_grant
       join team_memberships rank_team_member
         on rank_team_member.team_id = rank_team_grant.team_id and rank_team_member.user_id = ${user}
@@ -38,8 +47,8 @@ export function projectRoleRankSql(input: {
       join teams rank_team
         on rank_team.team_id = rank_team_grant.team_id and rank_team.org_id = ${orgId} and rank_team.deleted_at is null
       where rank_team_grant.project_id = ${projectId} and rank_team_grant.revoked_at is null
-    ), 0),
-    ${orgRoleRankSql({ user, orgId, ...(input.orgMemberVisible ? { orgMemberVisible: input.orgMemberVisible } : {}) })}
+    ), 0)`)},
+    ${orgRoleRankSql({ user, orgId, ...(orgMemberVisible ? { orgMemberVisible } : {}) })}
   )`
 }
 

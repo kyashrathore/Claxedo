@@ -412,7 +412,7 @@ describe("composed Better Auth + D1 authority", () => {
     ).toEqual({ revoked: false })
   })
 
-  test("a channel-bound org member is refused on an owner-visibility workspace and admitted by a rank on its project", async () => {
+  test("a channel-bound org member is refused on an owner-visibility workspace whatever their project grant, until it is visible to org members", async () => {
     const { authority, database } = await setup()
     const alice = await signed(authority, "visibility-alice")
     const bob = await signed(authority, "visibility-bob")
@@ -442,6 +442,8 @@ describe("composed Better Auth + D1 authority", () => {
       .prepare("insert into project_memberships (project_id, user_id, role, created_at, updated_at, revoked_at) values (?, ?, 'viewer', 1, 1, null)")
       .bind(project!.project_id, bob.principal!.userId)
       .run()
+    await expect(authority.authorizeChannelWorkspace(request)).rejects.toMatchObject({ status: 403 })
+    await database.prepare("update workspaces set org_member_visible = 1 where workspace_id = 'ws_hidden'").run()
     expect(await authority.authorizeChannelWorkspace(request)).toEqual({ actorId: bob.principal!.actorId, actorKind: "human" })
   })
 

@@ -1251,7 +1251,7 @@ describe("host-connect: machine heartbeat, readiness, invitations, scope", () =>
     expect(await input.database.prepare("select org_id from workspaces where workspace_id = 'ws_cold'").first()).toEqual({ org_id: "org_acme" })
   })
 
-  test("an ordinary org member cannot open an owner-visibility workspace but a direct member, a project member and an org admin can", async () => {
+  test("on an owner-visibility workspace an org admin and the owner get in, and an org member does not, whatever their project grant", async () => {
     const input = await setup()
     const { alice, bob, admin } = await fixture(input)
     const owner = await signed(input.workspace, "alice", "org_acme")
@@ -1273,18 +1273,19 @@ describe("host-connect: machine heartbeat, readiness, invitations, scope", () =>
       .prepare("select project_id from workspaces where workspace_id = 'ws_local'")
       .first<{ project_id: string }>()
     await input.database.prepare(
-      "insert into project_memberships (project_id, user_id, role, created_at, updated_at, revoked_at) values (?, ?, 'editor', 1, 1, null)",
+      "insert into project_memberships (project_id, user_id, role, created_at, updated_at, revoked_at) values (?, ?, 'admin', 1, 1, null)",
     ).bind(localProject!.project_id, bob.principal!.userId).run()
-    expect(await input.workspace.openWorkspace(bob, { workspaceId: "ws_local" })).toMatchObject({ role: "editor" })
+    await expect(input.workspace.openWorkspace(bob, { workspaceId: "ws_local" })).rejects.toMatchObject({ status: 403 })
+    await expect(input.hostAccess.activeWorkspaceHost(bob, { workspaceId: "ws_local" })).rejects.toMatchObject({ status: 403 })
+    await expect(input.hostAccess.unassignWorkspaceHost(bob, { workspaceId: "ws_local" })).rejects.toMatchObject({ status: 403 })
+    expect(await listed(bob)).toEqual(["ws_cloud"])
+
+    await input.hostAccess.updateHostEnrollmentScope(owner, {
+      enrollmentId: enrollment.enrollment_id,
+      scope: { allowed_roots: ["/srv"], visibility: "org" },
+    })
+    expect(await input.workspace.openWorkspace(bob, { workspaceId: "ws_local" })).toMatchObject({ role: "admin" })
     expect(await input.hostAccess.activeWorkspaceHost(bob, { workspaceId: "ws_local" })).toEqual({ active: false })
-    const carol = await signed(input.workspace, "carol")
-    await new D1OrgMemberAuthority(input.workspace.accessContext()).addOrgMember(alice, { orgId: "org_acme", userPublicId: carol.principal!.userId, role: "member" })
-    await expect(input.workspace.openWorkspace(carol, { workspaceId: "ws_local" })).rejects.toMatchObject({ status: 403 })
-    const project = await input.database.prepare("select project_id from workspaces where workspace_id = 'ws_local'").first<{ project_id: string }>()
-    await input.database.prepare(
-      "insert into project_memberships (project_id, user_id, role, created_at, updated_at, revoked_at) values (?, ?, 'viewer', 1, 1, null)",
-    ).bind(project!.project_id, carol.principal!.userId).run()
-    expect(await input.workspace.openWorkspace(carol, { workspaceId: "ws_local" })).toMatchObject({ role: "viewer" })
 
     // The cloud workspace and an org-visibility assignment are untouched.
     expect(await input.workspace.openWorkspace(bob, { workspaceId: "ws_cloud" })).toMatchObject({ role: "viewer" })
@@ -1297,7 +1298,7 @@ describe("host-connect: machine heartbeat, readiness, invitations, scope", () =>
       backing: "local-worktree",
     })
     await input.hostAccess.assignWorkspaceHost(alice, { workspaceId: "ws_open", hostId: "laptop" })
-    expect(await input.workspace.openWorkspace(carol, { workspaceId: "ws_open" })).toMatchObject({ role: "viewer" })
+    expect(await input.workspace.openWorkspace(bob, { workspaceId: "ws_open" })).toMatchObject({ role: "viewer" })
   })
 
   test("the owner renames a machine, the name reaches the fleet listing, and nobody else can rename it", async () => {
