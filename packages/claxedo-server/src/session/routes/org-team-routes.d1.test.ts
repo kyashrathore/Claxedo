@@ -286,6 +286,22 @@ describe("hosted organization, team and project access routes on D1", () => {
     expect(await call(bob.token, "GET", `/api/control/orgs/${orgId}/members`)).toMatchObject({ status: 200, body: [] })
   })
 
+  test("a team member role that does not exist is refused and adds nobody", async () => {
+    const { person, call } = await hosted()
+    const alice = await person("alice")
+    const bob = await person("bob")
+    const orgId = ((await call(alice.token, "POST", "/api/control/orgs", { name: "Acme" })).body as { org_id: string }).org_id
+    await call(alice.token, "POST", `/api/control/orgs/${orgId}/members`, { userPublicId: bob.userId, role: "member" })
+    const team = (await call(alice.token, "POST", `/api/control/orgs/${orgId}/teams`, { name: "Eng" })).body as { team_id: string }
+
+    expect(await call(alice.token, "POST", `/api/control/teams/${team.team_id}/members`, { userPublicId: bob.userId, role: "boss" }))
+      .toMatchObject({ status: 400, body: { error: { code: "team_member_role_invalid" } } })
+    expect(((await call(alice.token, "GET", `/api/control/teams/${team.team_id}/members`)).body as Array<{ user_id: string }>)
+      .map((row) => row.user_id)).not.toContain(bob.userId)
+    expect((await call(alice.token, "POST", `/api/control/teams/${team.team_id}/members`, { userPublicId: bob.userId, role: "admin" })).body)
+      .toMatchObject({ user_id: bob.userId, role: "admin" })
+  })
+
   test("an admin adds an existing account by its verified email, and an unverified or unknown address names nobody", async () => {
     const { person, account, call } = await hosted()
     const alice = await person("alice")

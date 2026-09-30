@@ -117,7 +117,7 @@ authority that stores none of this answers `501 not_implemented`.
 | `PATCH /orgs/:orgId/members/:userPublicId` | change `role` |
 | `DELETE /orgs/:orgId/members/:userPublicId` | remove, with the cascade above |
 | `GET`, `POST /orgs/:orgId/teams`; `POST /orgs/:orgId/ensure-default-team` | teams; create what the default team is missing (org admins) |
-| `GET`, `POST`, `DELETE /teams/:teamId/members` | a team's members |
+| `GET`, `POST`, `DELETE /teams/:teamId/members` | a team's members; `POST` takes an optional `role` (`member` by default, `admin` or `owner`) and answers any other value `400 team_member_role_invalid` |
 | `GET`, `POST`, `DELETE /teams/:teamId/projects` | a team's project grants (`projectId`, `role`) |
 | `POST /projects/:projectId/members` | grant or change one person's role (`userPublicId`, `role`); a revoked grant is granted again |
 | `DELETE /projects/:projectId/members/:userPublicId` | revoke it |

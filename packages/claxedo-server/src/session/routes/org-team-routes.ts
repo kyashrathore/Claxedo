@@ -191,10 +191,14 @@ export function OrgTeamControlRoutes(services: ControlPlaneServices, options: Op
       const add = authority().addTeamMember
       if (!add) return unavailable(c)
       const input = await body(c)
+      const role = input.role
+      if (role !== undefined && !isOrgMemberRole(role)) {
+        return c.json({ error: apiError("team_member_role_invalid", "role must be member, admin or owner") }, 400)
+      }
       return c.json(await add(auth, {
         teamId: c.req.param("teamId")!,
         ...memberSelector(input),
-        ...(isOrgMemberRole(input.role) ? { role: input.role } : {}),
+        ...(role === undefined ? {} : { role }),
       }))
     }))
     .delete("/teams/:teamId/members", limited, authorized(async (auth, c) => {
