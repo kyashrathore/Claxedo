@@ -44,6 +44,7 @@ Each lane is one agent in its own worktree off the `goal/foundation` tip, with t
 - [ ] **C8 One event write path and one relay client.** `createSessionEventWriter` commits and publishes every runtime event once; the subagent double publish is gone. `createRelayRuntimeClient` replaces the three hosted relay clients; authorization stays an explicit input. Done when: a test counts exactly one SSE frame per subagent update; the three client modules are gone. Progress:
 - [ ] **C9 One machine file index.** `createFileIndex` owned by the machine filesystem layer serves the local server and the runtime, with one bounded cache and one path separator. Done when: one implementation remains and both callers' tests pass. Progress:
 - [ ] **C10 One `SessionRef`.** `{ sessionId, workspaceId }` in `agent-runtime-contract`; the plugin API and Tasks import it; project association is separate metadata. Done when: no other session reference type exists in contracts. Progress:
+- [ ] **C12 Org invitations** (after C1; with the Settings → Organization screen). An admin invites by email and the answer is always "invitation sent", whether or not an account exists; the person joins only by accepting, and an address with no account gets a sign-up link that ends in the same acceptance. Adding an outsider directly by email, provider subject or token identifier goes, so no org route tells anyone whether an address has an account. Invitations expire, can be revoked, are single-use, and are audited like other access changes. Done when: a test proves an unknown and a known address get identical responses and timing class; accepting joins with the invited role; an expired, revoked or reused invite is refused; `resolveMemberUser`'s email branch is gone. Progress:
 - [ ] **C11 Retired twins go** (after the e2e harnesses boot the Worker, plan 2026-09-29-002 Phase 0). Delete the SQLite authority twin and the Bun relay composition. Progress:
 
 Later, with their owning plans: the store split and explicit turn identity (plan 2026-09-29-002 Phase 3), the machine agent composition (D9), authorized fanout and journal streams, the credential domain service (needs a ruling on accounts per provider), and the sandbox driver catalogue (needs the boat.dev launch scope).
@@ -51,7 +52,7 @@ Later, with their owning plans: the store split and explicit turn identity (plan
 ## 4. Order
 
 1. Now: C3, C4, C9 (disjoint from L3's files).
-2. After L3 merges: C1, then C6 (both touch the org and team routes).
+2. After L3 merges: C1, then C6 and C12 (all touch the org and team routes).
 3. After C1: C2 (the baseline captures the final access schema), C5, C7, C8, C10.
 4. C11 when its gate opens.
 
