@@ -58,7 +58,8 @@ test("an own-login session with plugins leaves the owner's Codex home byte-ident
     const first = await prepareCodexProfile({ homeRoot: path.join(root, "homes"), credentials: ownLogin, projection, ownerHome: owner })
     expect(await snapshot(owner)).toEqual(before)
     expect(first.brokered).toBe(false)
-    expect(path.dirname(first.home)).toBe(path.join(root, "homes"))
+    expect(path.dirname(first.store)).toBe(path.join(root, "homes"))
+    expect(path.dirname(first.home)).toBe(path.join(first.store, "homes"))
     const config = await fs.readFile(path.join(first.home, "config.toml"), "utf8")
     expect(config).toContain('model = "gpt-5.5"')
     expect(config).toContain("[mcp_servers.owner]")
@@ -70,7 +71,8 @@ test("an own-login session with plugins leaves the owner's Codex home byte-ident
     expect(await fs.readFile(path.join(first.home, "skills", "owner-skill", "SKILL.md"), "utf8")).toContain("owner-skill")
     expect(await fs.readlink(path.join(first.home, "auth.json"))).toBe(path.join(await fs.realpath(owner), "auth.json"))
     expect(await fs.readdir(first.home)).not.toContain(".env")
-    expect(await fs.readdir(first.home)).not.toContain("sessions")
+    expect(await fs.readlink(path.join(first.home, "sessions"))).toBe(path.join(first.store, "sessions"))
+    expect(await fs.readdir(path.join(first.store, "sessions"))).toEqual([])
     expect(await fs.readFile(path.join(first.home, "plugins", "cache", "claxedo-agent-plugins", "two", "1.0.0", "sentinel"), "utf8")).toBe("two retained")
     expect(await fs.readdir(owner)).not.toContain("marketplace")
     expect(await fs.readdir(owner)).not.toContain("plugins")
@@ -219,6 +221,33 @@ test("the home is shared by account holder, credential binding and plugin select
   } finally { await fs.rm(root, { recursive: true, force: true }) }
 })
 
+test("every home of one owner links one conversation store and names it Codex's sqlite home, and another owner's homes link their own", async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "codex-profile-store-"))
+  try {
+    const owner = await ownerHome(root)
+    const homeRoot = path.join(root, "homes")
+    const own = await prepareCodexProfile({ homeRoot, credentials: ownLogin, projection: noPlugins, ownerHome: owner })
+    const switched = await prepareCodexProfile({ homeRoot, credentials: brokered, projection: { ...noPlugins, pluginSelection: { mode: "selected", selectionHash: "one" } } })
+    const member = await prepareCodexProfile({ homeRoot, credentials: { ...brokered, accountOwner: "member" }, projection: noPlugins })
+    expect(switched.home).not.toBe(own.home)
+    expect(switched.store).toBe(own.store)
+    expect(member.store).not.toBe(own.store)
+    for (const profile of [own, switched]) {
+      expect(profile.configOverrides).toEqual([`sqlite_home=${JSON.stringify(own.store)}`])
+      for (const name of ["sessions", "archived_sessions", "thread-writer-locks", "memories", "session_index.jsonl"]) {
+        expect(await fs.readlink(path.join(profile.home, name))).toBe(path.join(own.store, name))
+      }
+    }
+    await fs.mkdir(path.join(own.home, "sessions", "2026"))
+    await fs.appendFile(path.join(own.home, "session_index.jsonl"), "{}\n")
+    expect(await fs.readdir(path.join(switched.home, "sessions"))).toEqual(["2026"])
+    expect(await fs.readFile(path.join(switched.home, "session_index.jsonl"), "utf8")).toBe("{}\n")
+    expect(await fs.readdir(path.join(member.home, "sessions"))).toEqual([])
+    expect(await fs.readdir(path.join(owner, "sessions"))).toEqual(["2026"])
+    expect(await fs.readdir(path.join(owner, "sessions", "2026"))).toEqual(["rollout.jsonl"])
+  } finally { await fs.rm(root, { recursive: true, force: true }) }
+})
+
 test("the shared home refuses a symlink in its place and a mirror link that escapes the owner's home", async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "codex-profile-link-"))
   try {
@@ -231,6 +260,11 @@ test("the shared home refuses a symlink in its place and a mirror link that esca
     await expect(prepareCodexProfile({ homeRoot, credentials: ownLogin, projection: noPlugins, ownerHome: owner })).rejects.toThrow("symlink")
     expect(await fs.readdir(path.join(root, "elsewhere"))).toEqual([])
     await fs.rm(home)
+    const store = path.dirname(path.dirname(home))
+    await fs.rename(store, path.join(root, "moved-store"))
+    await fs.symlink(path.join(root, "moved-store"), store)
+    await expect(prepareCodexProfile({ homeRoot, credentials: ownLogin, projection: noPlugins, ownerHome: owner })).rejects.toThrow("symlink")
+    await fs.rm(store)
     await fs.writeFile(path.join(root, "private.txt"), "private")
     await fs.symlink(path.join(root, "private.txt"), path.join(owner, "prompts-link"))
     await fs.mkdir(path.join(owner, "prompts"))

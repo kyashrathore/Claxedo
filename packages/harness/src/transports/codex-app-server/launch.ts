@@ -1,6 +1,7 @@
 import { stringRecord } from "@claxedo/helpers"
+import { asRecordOrEmpty, asString } from "@claxedo/helpers/guards"
 import { harnessVersionStanding, type HarnessServices, type StartInput } from "../../contract"
-import { codexProfileHome, prepareCodexProfile } from "../../profiles/codex"
+import { CODEX_BROKER_PROVIDER, CODEX_DEFAULT_PROVIDER, codexProfilePaths, prepareCodexProfile } from "../../profiles/codex"
 import type { CodexTransportOptions } from "./entry"
 import { CodexTransportError } from "./errors"
 import { CodexRpc, codexRetirementDeadline } from "./rpc"
@@ -10,12 +11,19 @@ export type CodexLaunch = { rpc: CodexRpc; home: string; brokered: boolean; plug
 
 async function spawnCodexProfile(input: StartInput, options: CodexTransportOptions, services: HarnessServices, signal: AbortSignal) {
   const profileInput = { homeRoot: options.homeRoot, credentials: input.credentials, projection: input.projection }
-  await services.recordHomeUse(codexProfileHome(profileInput))
+  await services.recordHomeUse(codexProfilePaths(profileInput).store)
   const profile = await prepareCodexProfile({ ...profileInput, ownerHome: options.ownerHome })
   const env = { ...stringRecord(options.env ?? process.env), CODEX_HOME: profile.home }
-  const owned = await services.spawn({ file: options.binary, args: ["app-server", "--listen", "stdio://"], cwd: input.directory, env },
-    { role: "harness", label: "Codex app-server", sessionId: input.sessionId, home: profile.home, signal })
+  const overrides = profile.configOverrides.flatMap((override) => ["-c", override])
+  const owned = await services.spawn({ file: options.binary, args: ["app-server", ...overrides, "--listen", "stdio://"], cwd: input.directory, env },
+    { role: "harness", label: "Codex app-server", sessionId: input.sessionId, home: profile.store, signal })
   return { rpc: new CodexRpc(owned, services.clock), profile }
+}
+
+export async function codexModelProvider(launch: CodexLaunch, directory: string): Promise<string> {
+  if (launch.brokered) return CODEX_BROKER_PROVIDER
+  const read = asRecordOrEmpty(await launch.rpc.request("config/read", { cwd: directory }))
+  return asString(asRecordOrEmpty(read.config).model_provider) ?? CODEX_DEFAULT_PROVIDER
 }
 
 export class CodexLaunches {

@@ -30,7 +30,7 @@ function scriptedRpc(options: { childOutcome?: "completed" | "failed" | "held"; 
 }
 
 function host(rpc: CodexRpc, drained: () => Promise<void> = async () => {}): SubagentHost {
-  return { rpc, directory: "/work", threadId: "parent-1", brokered: false, plugins: ["kit@claxedo-agent-plugins"], permissionMode: "full-access",
+  return { rpc, directory: "/work", threadId: "parent-1", modelProvider: "openai", plugins: ["kit@claxedo-agent-plugins"], permissionMode: "full-access",
     settings: { model: "gpt-5.5", effort: "high", serviceTier: null }, children: new CodexChildren(() => {}), drained }
 }
 

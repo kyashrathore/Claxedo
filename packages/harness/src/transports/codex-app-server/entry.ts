@@ -19,7 +19,7 @@ export type Entry = {
   broker: SessionBroker
   rpc: CodexRpc
   home: string
-  brokered: boolean
+  modelProvider: string
   plugins: string[]
   terminals: CodexTerminals
   children: CodexChildren

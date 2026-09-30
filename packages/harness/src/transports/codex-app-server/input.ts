@@ -5,7 +5,6 @@ import { flattenTurnPrompt } from "../../translate/prompt"
 import { attachmentPathLine, isPromptImage, materializeAttachment, promptFiles, type MaterializedFile } from "../../translate/attachments"
 import { codexTurnSandboxPolicy, type CodexPermissionSettings } from "./modes"
 import { codexDynamicTools } from "./subagents"
-import { codexCredential } from "../../profiles/codex"
 import type { CodexTurnSettings } from "./models"
 
 type ThreadConfig = Record<string, JsonValue>
@@ -23,17 +22,17 @@ export async function codexTurnInput(turn: TurnInput, directory: string): Promis
     ...written.filter((file) => isPromptImage(file.mime)).map((file): v2.UserInput => ({ type: "localImage", path: file.path }))]
 }
 
-export function codexThreadStartParams(input: StartInput, config: ThreadConfig, mode: CodexPermissionSettings): ThreadStartParams {
+export function codexThreadStartParams(input: StartInput, config: ThreadConfig, mode: CodexPermissionSettings, modelProvider: string): ThreadStartParams {
   const model = input.model?.modelID === "default" ? undefined : input.model?.modelID
   return { cwd: input.directory, ...(model ? { model } : {}),
-    ...(codexCredential(input.credentials) ? { modelProvider: "broker" } : {}),
+    modelProvider,
     approvalPolicy: mode.approvalPolicy, approvalsReviewer: "user", sandbox: mode.sandbox, config, dynamicTools: codexDynamicTools,
     ...(input.instructions ? { developerInstructions: input.instructions } : {}) }
 }
 
 export function codexThreadResumeParams(threadId: string, input: Pick<StartInput, "directory">, config: ThreadConfig,
-  mode: CodexPermissionSettings): v2.ThreadResumeParams {
-  return { threadId, cwd: input.directory, approvalPolicy: mode.approvalPolicy, approvalsReviewer: "user", sandbox: mode.sandbox, config, excludeTurns: true }
+  mode: CodexPermissionSettings, modelProvider: string): v2.ThreadResumeParams {
+  return { threadId, cwd: input.directory, modelProvider, approvalPolicy: mode.approvalPolicy, approvalsReviewer: "user", sandbox: mode.sandbox, config, excludeTurns: true }
 }
 
 export async function codexTurnParams(turn: TurnInput, threadId: string, directory: string,
