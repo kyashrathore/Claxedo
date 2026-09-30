@@ -6,7 +6,7 @@ import type { Entry } from "./entry"
 import { CodexRequestRefusal, CodexTransportError } from "./errors"
 import { reconcileCodexGoal } from "./goals"
 import { codexThreadResumeParams, codexThreadStartParams } from "./input"
-import type { CodexLaunch, CodexLaunches } from "./launch"
+import { codexModelProvider, type CodexLaunch, type CodexLaunches } from "./launch"
 import { codexPermissionSettings } from "./modes"
 import { codexStartSettings } from "./models"
 import { codexNotificationOutsideTurn } from "./notifications"
@@ -25,12 +25,14 @@ export type CodexSessionHost = {
   idle(entry: Entry): void
 }
 
-async function openThread(host: CodexSessionHost, { rpc, plugins }: CodexLaunch, input: StartInput, resumed: string | undefined): Promise<string> {
+type OpenedLaunch = CodexLaunch & { modelProvider: string }
+
+async function openThread(host: CodexSessionHost, { rpc, plugins, modelProvider }: OpenedLaunch, input: StartInput, resumed: string | undefined): Promise<string> {
   const config = projectCodexThreadConfig(input, host.services, plugins)
   host.launches.assertLive(" during startup")
   const mode = codexPermissionSettings(input.config.permissionMode)
   const result = asRecordOrEmpty(await rpc.request(resumed ? "thread/resume" : "thread/start",
-    resumed ? codexThreadResumeParams(resumed, input, config, mode) : codexThreadStartParams(input, config, mode)))
+    resumed ? codexThreadResumeParams(resumed, input, config, mode, modelProvider) : codexThreadStartParams(input, config, mode, modelProvider)))
   const threadId = asString(asRecordOrEmpty(result.thread).id) ?? ""
   if (!threadId || (resumed && threadId !== resumed)) throw new CodexTransportError("session", "Codex returned a different or missing thread")
   return threadId
@@ -40,7 +42,7 @@ function publishBackgroundWork(broker: SessionBroker, work: BackgroundWork): voi
   void broker.publish({ type: "background-work", ...work }).catch((error: unknown) => broker.reportFailure(error))
 }
 
-async function bindEntry(host: CodexSessionHost, launched: CodexLaunch, input: StartInput, broker: SessionBroker,
+async function bindEntry(host: CodexSessionHost, launched: OpenedLaunch, input: StartInput, broker: SessionBroker,
   threadId: string): Promise<{ entry: Entry; replay(): void }> {
   const { rpc } = launched
   let entry: Entry | undefined
@@ -59,7 +61,7 @@ async function bindEntry(host: CodexSessionHost, launched: CodexLaunch, input: S
   })
   const binding = await broker.rebind(threadId)
   const bound: Entry = { state: "ready", start: input, session: { directory: input.directory, locality: input.locality, binding }, broker, rpc,
-    home: launched.home, brokered: launched.brokered, plugins: launched.plugins, terminals: new CodexTerminals(rpc, threadId), children: new CodexChildren((work) => publishBackgroundWork(broker, work)), sideThreads: new Set(),
+    home: launched.home, modelProvider: launched.modelProvider, plugins: launched.plugins, terminals: new CodexTerminals(rpc, threadId), children: new CodexChildren((work) => publishBackgroundWork(broker, work)), sideThreads: new Set(),
     usage: new CodexUsageLedger(), goal: null, settings: codexStartSettings(input), steers: new Set(), released: Promise.resolve(), idle: () => host.idle(bound) }
   return { entry: bound, replay: () => {
     entry = bound
@@ -68,9 +70,10 @@ async function bindEntry(host: CodexSessionHost, launched: CodexLaunch, input: S
 }
 
 export async function openCodexSession(host: CodexSessionHost, input: StartInput, broker: SessionBroker, resumed?: string): Promise<Entry> {
-  const launched = await host.launches.launch(input)
+  const launch = await host.launches.launch(input)
   try {
-    await host.versions.admit(launched.version, "initialize", broker)
+    await host.versions.admit(launch.version, "initialize", broker)
+    const launched = { ...launch, modelProvider: await codexModelProvider(launch, input.directory) }
     const threadId = await openThread(host, launched, input, resumed)
     const { entry, replay } = await bindEntry(host, launched, input, broker, threadId)
     if (resumed) await reconcileCodexGoal(entry)
@@ -81,7 +84,7 @@ export async function openCodexSession(host: CodexSessionHost, input: StartInput
     replay()
     return entry
   } catch (error) {
-    await host.launches.discard(launched.rpc)
+    await host.launches.discard(launch.rpc)
     throw error
   }
 }

@@ -84,7 +84,7 @@ export class CodexAppServerTransport implements HarnessTransport {
     const active = await activeCodexTurn(entry)
     if (message.method === "item/tool/call") {
       return answerCodexToolCall(active && { rpc: entry.rpc, directory: entry.session.directory, threadId: entry.session.binding.upstreamSessionId,
-        brokered: entry.brokered, plugins: entry.plugins, permissionMode: entry.start.config.permissionMode, settings: entry.settings, children: entry.children,
+        modelProvider: entry.modelProvider, plugins: entry.plugins, permissionMode: entry.start.config.permissionMode, settings: entry.settings, children: entry.children,
         drained: active.drained }, active?.broker, message)
     }
     const child = requestingChildThread(entry, message)

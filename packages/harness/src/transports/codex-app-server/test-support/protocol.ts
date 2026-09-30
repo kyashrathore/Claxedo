@@ -41,6 +41,7 @@ const thread = {
 }
 const methods: Record<string, Shape> = {
   "model/list": { required: [], fields: { cursor: optional(text), limit: optional(count), includeHidden: optional(flag) } },
+  "config/read": { required: [], fields: { includeLayers: optional(flag), cwd: optional(text) } },
   "thread/start": { required: [], fields: { ...thread, serviceName: optional(text), ephemeral: optional(flag),
     sessionStartSource: optional(oneOf("startup", "clear")), threadSource: optional(text), dynamicTools: optional(list(dynamicTool)) } },
   "thread/resume": { required: ["threadId"], fields: { ...thread, threadId: text, excludeTurns: optional(flag) } },
@@ -95,6 +96,7 @@ export class CodexPeer {
       if (this.script.modelListFailures) { this.script.modelListFailures--; throw new CodexScriptedFailure("model catalog unavailable") }
       return { data: this.models }
     }
+    if (frame.method === "config/read") return { config: { model_provider: null }, origins: {}, layers: null }
     if (frame.method === "thread/goal/get") return { goal: this.script.goal ?? null }
     if (frame.method === "turn/start") return this.start(params)
     if (frame.method === "turn/steer") {

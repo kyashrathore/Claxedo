@@ -6,7 +6,7 @@ import { projectCodexThreadConfig } from "./configuration"
 import { CodexTransportError } from "./errors"
 import type { CodexRpc } from "./rpc"
 
-export type TitleEntry = { rpc: CodexRpc; start: StartInput; brokered: boolean; broker: SessionBroker; sideThreads: Set<string> }
+export type TitleEntry = { rpc: CodexRpc; start: StartInput; modelProvider: string; broker: SessionBroker; sideThreads: Set<string> }
 
 const titleSchema = { type: "object", properties: { title: { type: "string" } }, required: ["title"], additionalProperties: false }
 
@@ -23,7 +23,7 @@ function parseCodexTitle(reply: string): string | null {
 
 async function startTitleThread(entry: TitleEntry, request: SessionTitleRequest, services: HarnessServices, model: string | undefined): Promise<string> {
   const params: v2.ThreadStartParams = { cwd: request.directory, ephemeral: true, approvalPolicy: "never", approvalsReviewer: "user", sandbox: "read-only",
-    developerInstructions: request.system, ...(model ? { model } : {}), ...(entry.brokered ? { modelProvider: "broker" } : {}),
+    developerInstructions: request.system, ...(model ? { model } : {}), modelProvider: entry.modelProvider,
     config: projectCodexThreadConfig(entry.start, services, []) }
   const started = asRecordOrEmpty(await entry.rpc.request("thread/start", params))
   const threadId = asString(asRecordOrEmpty(started.thread).id)

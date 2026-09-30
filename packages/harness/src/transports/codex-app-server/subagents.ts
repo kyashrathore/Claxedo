@@ -25,7 +25,7 @@ export type SubagentHost = {
   rpc: CodexRpc
   directory: string
   threadId: string
-  brokered: boolean
+  modelProvider: string
   plugins: readonly string[]
   permissionMode: string | undefined
   settings: CodexTurnSettings
@@ -99,7 +99,7 @@ async function childDrained(host: SubagentHost, child: CodexChild): Promise<void
 async function startChildThread(host: SubagentHost, mode: CodexPermissionSettings): Promise<string> {
   const params: v2.ThreadStartParams = { cwd: host.directory, approvalPolicy: mode.approvalPolicy, approvalsReviewer: "user",
     sandbox: mode.sandbox, threadSource: "subagent", config: codexPluginConfig(host.plugins), ...(host.settings.model ? { model: host.settings.model } : {}),
-    ...(host.brokered ? { modelProvider: "broker" } : {}) }
+    modelProvider: host.modelProvider }
   const started = asRecordOrEmpty(await host.rpc.request("thread/start", params))
   const childThreadId = asString(asRecordOrEmpty(started.thread).id)
   if (!childThreadId) throw new CodexTransportError("protocol", "Codex returned no child thread id")
