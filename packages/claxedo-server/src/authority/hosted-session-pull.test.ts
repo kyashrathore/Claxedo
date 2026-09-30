@@ -264,7 +264,7 @@ describe("hosted session pull", () => {
     expect(fetch).not.toHaveBeenCalled()
   })
 
-  test("does not resubmit an older runtime snapshot through the current projection", async () => {
+  test("a snapshot the projection already holds is offered to the authority at its own ordinal", async () => {
     const svc = services()
     const messages = [
       { info: { id: "msg-1", role: "user" }, parts: [{ type: "text", text: "hello" }] },
@@ -323,8 +323,11 @@ describe("hosted session pull", () => {
       }),
     ).resolves.toMatchObject({ skipped: true, snapshotOrdinal: 7 })
 
-    expect(syncSessionMessages).not.toHaveBeenCalled()
     expect(svc.projectionStore.sync_session_messages).not.toHaveBeenCalled()
+    expect(syncSessionMessages).toHaveBeenCalledWith(signed, expect.objectContaining({
+      messages: messages.slice(0, 1),
+      maxEventOrdinal: 7,
+    }))
   })
 
   test("rejects a mismatched runtime identity before pulling session data", async () => {
