@@ -87,6 +87,7 @@ export function createAgentRuntime(input: AgentRuntimeCompositionInput) {
     store,
     publish: (sessionId, payload) => publish({ sessionId, directory: store.getSession(sessionId)?.directory, payload }),
     retainLeasedTurnFailure: (sessionId, turn, error) => recovery.retainLeasedTurnFailure(sessionId, turn, error),
+    idleParent: (parentSessionId) => providerParentTurn(store, parentSessionId, publish),
     childTurnSettled: (childSessionId, assistantMessageId) => {
       void broker.endChildTurn(childSessionId, assistantMessageId).catch((error: unknown) => recovery.reportSessionFailure(childSessionId, error))
     },

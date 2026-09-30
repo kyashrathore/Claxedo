@@ -6,10 +6,11 @@ import { normalizeDirectory } from "./execution-binding"
 import { sessionTurnAgent } from "./turn-record"
 
 /**
- * What a provider-initiated turn (a native goal continuation, or a turn the
- * harness started itself) lends the children it spawns. It has no prompt, so
- * its children inherit the agent and model the session itself runs, which is
- * what the provider turn's own record carries.
+ * What a parent with no prompt behind it lends the children that open under
+ * it: a provider-initiated turn (a native goal continuation, or a turn the
+ * harness started itself), or no turn at all while the parent is idle. Its
+ * children inherit the agent and model the session itself runs, which is what
+ * a provider turn's own record carries.
  */
 export function providerParentTurn(
   store: AgentRuntimeStore,

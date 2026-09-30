@@ -61,6 +61,8 @@ export function createChildTurns(input: {
   /** Retains a child terminal the store refused under the child's lease; `false` when nothing could, and the lease is released. */
   retainLeasedTurnFailure: (sessionId: string, turn: LeasedTurnFailure, error: unknown) => boolean
   childTurnSettled: (childSessionId: string, assistantMessageId: string) => void
+  /** What an idle parent lends a child that opens with no parent turn running: the session's own agent and model, as a provider turn's children get. */
+  idleParent: (parentSessionId: string) => ParentTurnContext
 }) {
   const parents = new Map<string, ParentTurnContext>()
   const children = new Map<string, SeededChild>()
@@ -156,7 +158,8 @@ export function createChildTurns(input: {
         ...base,
         admitChildSession: async (parentSessionId, childSessionId, observation) => {
           const ref = await base.admitChildSession(parentSessionId, childSessionId, observation)
-          const parent = parents.get(parentSessionId)
+          const parent = parents.get(parentSessionId) ??
+            (isTerminalSubagentStatus(observation.status) ? undefined : input.idleParent(parentSessionId))
           const known = children.get(childSessionId)
           if (parent && (!known || known.settled && ref.assistantMessageId !== known.target.assistantMessageId)) seed(parentSessionId, ref, observation, parent)
           return ref
