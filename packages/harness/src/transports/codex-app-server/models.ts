@@ -2,7 +2,7 @@ import type { AgentConfigOption } from "@claxedo/agent-runtime-contract"
 import { asRecordOrEmpty, asString } from "@claxedo/helpers/guards"
 import type { v2 } from "./translate"
 import { CodexTransportError } from "./errors"
-import { modelAndEffortOptions } from "../../contract"
+import { modelAndEffortOptions, type StartInput } from "../../contract"
 import type { CodexRpc } from "./rpc"
 
 export type CodexModel = {
@@ -67,9 +67,16 @@ export function codexModelOptions(models: readonly CodexModel[], requested: stri
   return options
 }
 
+export type CodexTurnSettings = Pick<v2.TurnStartParams, "model" | "effort" | "serviceTier" | "summary">
+
+export function codexStartSettings(input: Pick<StartInput, "model">): CodexTurnSettings {
+  const model = input.model?.modelID === "default" ? undefined : input.model?.modelID
+  return { ...(model ? { model } : {}), summary: "auto" }
+}
+
 export function codexTurnSettings(models: readonly CodexModel[], requested: {
   model?: string; effort?: string | null; serviceTier?: string | null
-}): Pick<v2.TurnStartParams, "model" | "effort" | "serviceTier"> {
+}): CodexTurnSettings {
   const row = selectedModel(models, requested.model)
   const model = row?.id ?? (requested.model === "default" ? undefined : requested.model)
   if (requested.effort && (!row || !row.efforts.includes(requested.effort))) {
@@ -77,5 +84,5 @@ export function codexTurnSettings(models: readonly CodexModel[], requested: {
   }
   const effort = requested.effort ?? (row?.defaultEffort && row.efforts.includes(row.defaultEffort) ? row.defaultEffort : undefined)
   return { ...(model ? { model } : {}), ...(effort ? { effort: reasoningEffort(effort) } : {}),
-    serviceTier: requested.serviceTier && row?.tiers.some((tier) => tier.id === requested.serviceTier) ? requested.serviceTier : null }
+    serviceTier: requested.serviceTier && row?.tiers.some((tier) => tier.id === requested.serviceTier) ? requested.serviceTier : null, summary: "auto" }
 }

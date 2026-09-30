@@ -11,8 +11,8 @@ export async function pluginFlowStep<T>(label: string, operation: () => Promise<
 export async function sharedCodexProfileConfig(dataDir: string): Promise<string> {
   const homes = path.join(dataDir, ".claxedo", "harness", "codex", "homes")
   const profiles = (await fs.readdir(homes)).filter((name) => name.startsWith("codex-"))
-  const configs = await Promise.all(profiles.map((name) => fs.readFile(path.join(homes, name, "config.toml"), "utf8")))
-  const pluginProfiles = configs.filter((config) => config.includes('[plugins."e2e-proof@claxedo-agent-plugins"]'))
+  const installed = await Promise.all(profiles.map((name) => fs.stat(path.join(homes, name, "marketplace", "plugins", "e2e-proof")).then(() => name, () => undefined)))
+  const pluginProfiles = await Promise.all(installed.flatMap((name) => name ? [fs.readFile(path.join(homes, name, "config.toml"), "utf8")] : []))
   assert.equal(pluginProfiles.length, 1, `Expected one shared Codex plugin profile in ${homes}`)
   assert.match(pluginProfiles[0], /# BEGIN CLAXEDO CODEX PROFILE/)
   assert.match(pluginProfiles[0], /\[marketplaces.claxedo-agent-plugins\]/)

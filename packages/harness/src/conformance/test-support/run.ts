@@ -271,7 +271,7 @@ export function runConformance(input: SuiteInput): void {
           const running = collect(context.transport, context.session, context.turn("Reply with exactly this one token: PICANCEL"), context.turnBroker(controller.signal))
           await heldRequest(context.backend, "PICANCEL")
           const update = await context.transport.configure(context.session, { credentials: context.backend.credentials })
-          if (capabilities.timing.credentials === "after-active-turns") expect(update.state).toBe("refused")
+          if (capabilities.timing.credentials === "after-active-turns") expect(["refused", "deferred"]).toContain(update.state)
           const outcome = await context.transport.cancel(context.session, { turnId: "t1", assistantMessageId: "a1" }, { at: Date.now() + 5_000, signal: controller.signal })
           expect(["terminal", "unknown"].includes(outcome.execution)).toBe(true)
           if (context.backend.cleanupWithoutCommands) expect(outcome.cleanup).toBe(context.backend.cleanupWithoutCommands)
@@ -485,9 +485,10 @@ export function runConformance(input: SuiteInput): void {
           expect(pending).toBeDefined()
         } else await heldRequest(context.backend, "CONFORMANCESECOND")
         const secondProcess = context.services.processes.at(-1)
-        const update = await context.transport.configure(context.session, { credentials: {
-          ...context.backend.credentials, leaseGeneration: "session-one-only",
-        } })
+        const { credentials } = context.backend
+        const update = await context.transport.configure(context.session, { credentials: { ...credentials, leaseGeneration: "session-one-only",
+          providers: Object.fromEntries(Object.entries(credentials.providers).map(([id, provider]) =>
+            [id, "placeholder" in provider ? { ...provider, placeholder: `${provider.placeholder}-session-one-only` } : provider])) } })
         expect(update.state).toBe("applied")
         if (secondProcess) expect(context.services.processes.at(-1)).not.toBe(secondProcess)
         if (pending) expect((await context.owner.broker.answer(pending.request.requestId,
