@@ -5,11 +5,8 @@ import * as os from "node:os"
 import * as path from "node:path"
 
 import {
-  ALL_NATIVE_MODULES,
   ASAR_STRUCTURAL_ROOTS,
   HOST_CONNECTOR_EXTRA_RESOURCE,
-  NATIVE_MODULES,
-  WINDOWS_NATIVE_MODULES,
   asarStructuralGlobs,
   isDeclaredStructuralEntry,
   requiredPackagedBoundaryEntries,
@@ -53,25 +50,6 @@ test("the electron-builder file globs are exactly the declared roots", () => {
   // never a new structural root smuggled in beside the declared ones.
   const literals = [...code.matchAll(/"([^"]+)"/g)].map((match) => match[1])
   expect(literals.filter((glob) => !glob.startsWith("!") && !glob.includes("node_modules/"))).toEqual([])
-})
-
-test("the config's native-module list and the verifier's allowlist cannot drift", () => {
-  // The config spells the base set by importing it, and the Windows one
-  // inline — because `src/main/diagnostics/process-metrics-source.test.ts`
-  // pins that exact source line as the audited-dependency record. Two
-  // spellings therefore exist; this holds them equal, which is the property
-  // the shared declaration was for.
-  const config = fs.readFileSync(path.resolve(import.meta.dir, "../electron-builder.config.ts"), "utf8")
-  const conditional = config.match(/win32-"\) \? \[([^\]]*)\] : \[\]/)?.[1]
-
-  expect(conditional).toBeString()
-  const inlineWindows = [...conditional!.matchAll(/"([^"]+)"/g)].map((match) => match[1])
-
-  expect(inlineWindows).toEqual([...WINDOWS_NATIVE_MODULES])
-  expect(config).toContain("BASE_NATIVE_MODULES")
-  for (const module of [...NATIVE_MODULES, ...inlineWindows]) {
-    expect(ALL_NATIVE_MODULES, module).toContain(module)
-  }
 })
 
 test("the packaged Host Connector child uses the one declared extra-resource boundary", () => {

@@ -7,7 +7,6 @@ import { boundedJsonBody, errorBody, isRequestBodyTooLarge, requestBodyTooLargeB
 import { routeParam } from "@claxedo/helpers/route-param"
 import { assertTarget, authoritativeWorkspaceId, resolveWorkspaceCommandPaths, resolveWorkspacePath, WorkspaceTargetError } from "../target"
 import type { RelayHostAuthContext } from "../workspace-host-service-auth"
-import type { ProcessObserver } from "../managed-processes/process-observer"
 import { denyWorkspaceViewers } from "./workspace-role"
 import { readHistorySessionId } from "../pty/history-disk"
 import {
@@ -72,7 +71,6 @@ export type PtyRouteOptions = {
 
 export function PtyRoutes(
   upgradeWebSocket: UpgradeWebSocket,
-  processObserver?: ProcessObserver,
   policy: SessionAccessPolicy = managedWorkspaceSessionAccessPolicy(),
   options: PtyRouteOptions = {},
 ) {
@@ -222,17 +220,6 @@ export function PtyRoutes(
         // A workspace with no durable store gets volatile ownership, said here
         // rather than defaulted inside the PTY owner.
         options.ownership?.() ?? volatileLaunchOwnership(),
-        processObserver
-          ? {
-              observer: processObserver,
-              kind: "pty",
-              ownerId: `pty:${crypto.randomUUID()}`,
-              workspaceId: workspaceId ?? cwd,
-              directory: cwd,
-              label: input.title ?? "Terminal",
-              ...(input.sessionId ? { sessionId: input.sessionId } : {}),
-            }
-          : undefined,
         agentHookAccess,
       )
       const actorId = sessionAccessContext(c).actor?.actorId

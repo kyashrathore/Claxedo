@@ -19,7 +19,6 @@ import {
   managedWorkspaceSessionAccessPolicy,
   sessionAccessRequiresWrite,
   sessionAccessWriteClass,
-  type ProcessObserver,
   type SessionAccessStreamDecision,
   type SessionAccessPolicyInput,
   type SessionAuthorityInput,
@@ -1656,7 +1655,6 @@ export type ControlPlaneStackOptions = {
   sandboxDriver?: InjectedSandboxDriver
   egressBroker?: (request: Request) => Promise<Response>
   port?: number
-  processObserver?: ProcessObserver
   /** Explicit build/composition contributions (Agent Plugins); absent in the disabled product. */
   routeContributions?: readonly ControlPlaneRouteContribution[]
   /** Agent Plugins' contribution to every runtime snapshot this box pushes; absent in the disabled product. */
@@ -1888,7 +1886,6 @@ function startOwnedControlPlaneStack(options: ControlPlaneStackOptions, releaseD
     ...(services.auth.config.enabled && services.authority
       ? { sessionAccessPolicy: embeddedManagedPrivateSessionPolicy(services.authority, connectionTurnCredentials) }
       : {}),
-    ...(options.processObserver ? { processObserver: options.processObserver } : {}),
     // See `projectLocalSessionMetaFromEvent` above: a harness session's
     // async auto-title is published only as a `session.updated` frame on that
     // workspace runtime's own stream, never an HTTP `PATCH /session/:id` the
@@ -2040,7 +2037,6 @@ export function startServer(
   port = DEFAULT_CLAXEDO_SERVER_PORT,
   options: {
     egressBroker?: (request: Request) => Promise<Response>
-    processObserver?: ProcessObserver
     routeContributions?: readonly ControlPlaneRouteContribution[]
   } = {},
 ) {
@@ -2048,7 +2044,6 @@ export function startServer(
     egressBroker: options.egressBroker,
     services: createDefaultLocalControlPlaneServices(),
     port,
-    ...(options.processObserver ? { processObserver: options.processObserver } : {}),
     ...(options.routeContributions ? { routeContributions: options.routeContributions } : {}),
   })
 }

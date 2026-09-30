@@ -19,13 +19,6 @@
       "import": "./dist/launch-gate-child.mjs",
       "default": "./dist/launch-gate-child.mjs"
     },
-    "./process-observer": {
-      "development": "./src/process-observer.ts",
-      "bun": "./src/process-observer.ts",
-      "types": "./dist/process-observer.d.ts",
-      "import": "./dist/process-observer.mjs",
-      "default": "./dist/process-observer.mjs"
-    },
     "./process-lifecycle": {
       "development": "./src/process-lifecycle.ts",
       "bun": "./src/process-lifecycle.ts",

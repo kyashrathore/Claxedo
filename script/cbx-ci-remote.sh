@@ -185,32 +185,9 @@ install_linux_native_build_dependencies() {
     python3-setuptools
 }
 
-run_diagnostics() {
-  install_linux_gui_dependencies
-  install_root
-  install_app_server_native_dependencies
-  build_dist_packages
-  (
-    cd packages/claxedo-desktop
-    bun run build
-    CLAXEDO_DIAGNOSTICS_VERIFY_ADVISORIES=1 bun run verify:diagnostics-dependencies
-    bun run verify:diagnostics-privacy
-    bun run test:diagnostics-release
-  )
-  (
-    cd packages/claxedo-desktop
-    mkdir -p .artifacts
-    ulimit -n "$(ulimit -Hn)" || true
-    CLAXEDO_DIAGNOSTICS_SMOKE_OUTPUT=.artifacts/diagnostics-source-linux.json \
-      bun run smoke:diagnostics
-    test -s .artifacts/diagnostics-source-linux.json
-  )
-}
-
 run_release_gates_linux_x64() {
   install_linux_gui_dependencies
   install_linux_native_build_dependencies
-  sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y xvfb
   ensure_node_22_23
   ensure_bun_1_3_14
   ensure_rust_target x86_64-unknown-linux-gnu
@@ -226,25 +203,10 @@ run_release_gates_linux_x64() {
   )
   (
     cd packages/claxedo-desktop
-    mkdir -p .artifacts
-    CLAXEDO_DIAGNOSTICS_SMOKE_OUTPUT=.artifacts/diagnostics-source-x86_64-unknown-linux-gnu.json \
-    CLAXEDO_DIAGNOSTICS_EXPECTED_ARCH=x64 \
-    CLAXEDO_DIAGNOSTICS_DEBUG=1 \
-      bun run test:diagnostics-release
-    CLAXEDO_DIAGNOSTICS_SMOKE_OUTPUT=.artifacts/diagnostics-source-x86_64-unknown-linux-gnu.json \
-    CLAXEDO_DIAGNOSTICS_EXPECTED_ARCH=x64 \
-    CLAXEDO_DIAGNOSTICS_DEBUG=1 \
-      bun run smoke:diagnostics
-  )
-  (
-    cd packages/claxedo-desktop
     CLAXEDO_CHANNEL=prod \
     RUST_TARGET=x86_64-unknown-linux-gnu \
     CSC_IDENTITY_AUTO_DISCOVERY=false \
       bun run package:linux -- --x64 --dir --publish never
-    CLAXEDO_DIAGNOSTICS_SMOKE_OUTPUT=.artifacts/diagnostics-packaged-x86_64-unknown-linux-gnu.json \
-    CLAXEDO_DIAGNOSTICS_EXPECTED_ARCH=x64 \
-      xvfb-run -a bun run smoke:diagnostics:packaged
   )
 }
 
@@ -309,7 +271,6 @@ run_packages_dry_run() {
 }
 
 case "$LANE" in
-  diagnostics-linux) run_diagnostics ;;
   release-gates-linux-x64) run_release_gates_linux_x64 ;;
   unit-linux) run_unit ;;
   workspace-files-linux) run_workspace_files ;;

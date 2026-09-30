@@ -254,7 +254,3 @@ bun install --frozen-lockfile
 if ($LASTEXITCODE -ne 0) {
   throw "bun install exited $LASTEXITCODE"
 }
-$windowsProcessTreeManifest = Join-Path $root "packages\claxedo-desktop\node_modules\@vscode\windows-process-tree\package.json"
-if (-not (Test-Path $windowsProcessTreeManifest)) {
-  throw "Windows process-tree native dependency was not installed"
-}

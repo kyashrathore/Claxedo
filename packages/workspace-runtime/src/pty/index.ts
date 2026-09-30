@@ -49,12 +49,6 @@ import { sanitizeReplay } from "./replay-sanitize"
 import { workspaceRuntimeBus } from "../bus"
 import { ensureSpawnHelper } from "./spawn-helper-fix"
 import { prependWorkspaceRuntimeBin } from "../runtime-bin"
-import type {
-  ProcessObserver,
-  ProcessOwnerHandle,
-  ProcessOwnerKind,
-  ProcessOwnerOperations,
-} from "../managed-processes/process-observer"
 import type { SessionAccessActor, SessionWorkspaceAuthority } from "../session-access-policy"
 
 async function getSpawn() {
@@ -299,7 +293,6 @@ export namespace Pty {
       session.persistence = "unavailable"
       session.persistenceError = launchErrorText(error)
       log.error("PTY retirement could not be recorded", { id, error: session.persistenceError })
-      session.owner?.ownership({ state: "persistence-unavailable", message: session.persistenceError })
     }
   }
 
@@ -435,7 +428,6 @@ export namespace Pty {
      * are gone, and pinning on them would never release.
      */
     escapees?: DescendantSweep
-    owner?: ProcessOwnerHandle
     /** Verified relay actor that created this public terminal. Never accepted
      * from request input and deliberately absent from the public PTY info. */
     accessOwnerActorId?: string
@@ -751,16 +743,6 @@ export namespace Pty {
      * after a restart is a visible decision at the call site.
      */
     ownership: LaunchOwnershipStore,
-    observation?: {
-      observer: ProcessObserver
-      kind: Extract<ProcessOwnerKind, "pty" | "managed-process">
-      ownerId: string
-      workspaceId: string
-      directory: string
-      label: string
-      sessionId?: string
-      operations?: ProcessOwnerOperations
-    },
     agentHookAccess?: AgentHookAccessBinding,
   ) {
     const createStart = performance.now()
@@ -918,27 +900,6 @@ export namespace Pty {
       status: "running",
       pid: ptyProcess.pid,
     } as const
-    const observedPid = Number.isInteger(info.pid) && info.pid > 0 ? info.pid : undefined
-    const owner = observation?.observer.register(
-      {
-        ownerId: observation.ownerId,
-        ownerGeneration: crypto.randomUUID(),
-        launchId: crypto.randomUUID(),
-        kind: observation.kind,
-        role: observation.kind,
-        label: observation.label,
-        ...(observedPid !== undefined ? { pid: observedPid } : {}),
-        workspaceId: observation.workspaceId,
-        directory: observation.directory,
-        ...(observation.sessionId ? { sessionId: observation.sessionId } : {}),
-      },
-      observation.operations ?? {
-        stopGracefully: async () => remove(info.id),
-        ...(observedPid !== undefined ? { killOwnedTree: async () => remove(info.id) } : {}),
-      },
-    )
-
-    if (unrecorded) owner?.ownership({ state: "unrecorded", message: unrecorded })
 
     const previousPtyId = input.env?.previousPtyId
     if (previousPtyId) {
@@ -1049,7 +1010,6 @@ export namespace Pty {
       store: ownership,
       ...(unrecorded ? { ownership: "unrecorded" as const, ownershipError: unrecorded } : {}),
       ...(identity ? { identity } : {}),
-      ...(owner ? { owner } : {}),
       ...(agentHookAccess ? { agentHookAccess } : {}),
     }
     if (restoredBuffer) session.modeTracker.feed(restoredBuffer)
@@ -1176,7 +1136,6 @@ export namespace Pty {
         exitCode,
         tail,
       })
-      session.owner?.exit({ reason: "exited", exitCode })
       await cleanupSession(id, session, "exit")
     })
     workspaceRuntimeBus.publish({ type: "pty.created", info })
@@ -1206,7 +1165,6 @@ export namespace Pty {
     if (!session) return undefined
     session.removeOperation ??= (async () => {
       log.info("removing session", { id })
-      const alreadyExited = session.exited
       const result = await cleanupSession(id, session, "remove")
       if (retained(session)) return result
       // Native exit cleanup may already own `cleanupOperation`. Explicit
@@ -1218,7 +1176,6 @@ export namespace Pty {
         sessions.delete(id)
         activityChanged()
       }
-      if (!alreadyExited) session.owner?.exit({ reason: "disposed" })
       workspaceRuntimeBus.publish({
         type: "pty.deleted",
         id,
@@ -1249,7 +1206,6 @@ export namespace Pty {
     session.removed = true
     sessions.delete(id)
     activityChanged()
-    session.owner?.exit({ reason: "detached" })
     log.error("PTY ownership abandoned with cleanup unresolved", {
       id,
       ...authorization,
@@ -1283,7 +1239,6 @@ export namespace Pty {
       session.removed = true
       sessions.delete(id)
       activityChanged()
-      session.owner?.exit({ reason: "detached" })
     }
     return results
   }

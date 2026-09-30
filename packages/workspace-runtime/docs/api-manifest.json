@@ -31,7 +31,6 @@
     "ptyAccessRefusalResponse",
     "ptyStreamAccess",
     "createPersistentTranscriptHandleStore",
-    "createProcessObserver",
     "createRuntimeCredentialIssuer",
     "createTranscriptResolver",
     "createWorkspaceHost",

@@ -32,7 +32,6 @@ const NATIVE_MODULES = [
   // ships beside the wrapper via the `files` from/to entry below, and this
   // spelling keeps it asar-unpacked so its pty.node loads as a real file.
   `@lydell/node-pty-${targetOsArch}`,
-  ...(targetOsArch.startsWith("win32-") ? ["@vscode/windows-process-tree"] : []),
 ]
 
 // Native prebuilds ship one variant per package per target — the loader picks
@@ -194,9 +193,6 @@ const getBase = (): Configuration => ({
       to: "mermaid/",
       filter: [targetOsArch.startsWith("win32-") ? "claxedo-mermaid-renderer.exe" : "claxedo-mermaid-renderer"],
     },
-    ...(targetOsArch.startsWith("darwin-")
-      ? [{ from: "resources/diagnostics/", to: "diagnostics/", filter: ["macos-memory-impact"] }]
-      : []),
     {
       // The separately fingerprinted Host Connector runs as a child process
       // beside app.asar; neither main nor renderer imports its implementation.
@@ -249,8 +245,7 @@ const getBase = (): Configuration => ({
     target: ["AppImage", "deb", "rpm"],
     // Explicit, not defaulted: the default derives from package.json's name
     // ("@claxedo/desktop") through a sanitizer, which produced a binary name
-    // no tooling predicted — the packaged diagnostics smoke spent two release
-    // rounds guessing at it. Pinning makes the binary path a contract.
+    // no tooling predicted. Pinning makes the binary path a contract.
     executableName: "claxedo",
   },
 })

@@ -170,12 +170,9 @@
         "electron-updater": "6.8.9",
         "electron-window-state": "5.0.3",
         "jsonc-parser": "3.3.1",
-        "pidtree": "1.0.0",
-        "pidusage": "4.0.1",
         "posthog-node": "4.18.0",
         "solid-js": "1.9.12",
         "tree-kill": "1.2.2",
-        "zod": "4.4.3",
       },
       "devDependencies": {
         "@tailwindcss/vite": "4.1.11",
@@ -190,9 +187,6 @@
         "typescript-legacy": "npm:typescript@5.8.2",
         "vite": "7.1.4",
         "vite-plugin-solid": "2.11.10",
-      },
-      "optionalDependencies": {
-        "@vscode/windows-process-tree": "0.8.0",
       },
     },
     "packages/claxedo-helpers": {
@@ -686,12 +680,11 @@
     },
   },
   "trustedDependencies": [
-    "esbuild",
-    "protobufjs",
     "electron",
     "better-sqlite3",
+    "esbuild",
     "web-tree-sitter",
-    "@vscode/windows-process-tree",
+    "protobufjs",
   ],
   "overrides": {
     "@opentui/core": "catalog:",
@@ -2393,8 +2386,6 @@
 
     "@vscode/l10n": ["@vscode/l10n@0.0.18", "", {}, "sha512-KYSIHVmslkaCDyw013pphY+d7x1qV8IZupYfeIfzNA+nsaWHbn5uPuQRvdRFsa9zFzGeudPuoGoZ1Op4jrJXIQ=="],
 
-    "@vscode/windows-process-tree": ["@vscode/windows-process-tree@0.8.0", "", { "dependencies": { "node-addon-api": "7.1.0" } }, "sha512-TI+h2GRwX+igD/YYJMQQVAFcsCNSg7Te2yYxQpKMzwto5RsJ8d2KKgOeur/p/6sAOQwZvopiTDOClyTHEn9MhQ=="],
-
     "@whiskeysockets/baileys": ["@whiskeysockets/baileys@7.0.0-rc13", "", { "dependencies": { "@cacheable/node-cache": "^1.4.0", "@hapi/boom": "^9.1.3", "async-mutex": "^0.5.0", "libsignal": "^6.0.0", "lru-cache": "^11.1.0", "music-metadata": "^11.12.3", "p-queue": "^9.0.0", "pino": "^9.6", "protobufjs": "^7.5.6", "whatsapp-rust-bridge": "0.5.4", "ws": "^8.13.0" }, "peerDependencies": { "audio-decode": "^2.1.3", "jimp": "^1.6.1", "link-preview-js": "^3.0.0", "sharp": "*" }, "optionalPeers": ["audio-decode", "jimp", "link-preview-js"] }, "sha512-8JPc8gaaCRykkjW2jxLGQ7/RZGrc7awO7WU+QJocf58eSUI9jAdcuYLynzhAbyU4UWvJJsHImZ+5E/JaZj5ypA=="],
 
     "@workflow/serde": ["@workflow/serde@4.1.0-beta.2", "", {}, "sha512-8kkeoQKLDaKXefjV5dbhBj2aErfKp1Mc4pb6tj8144cF+Em5SPbyMbyLCHp+BVrFfFVCBluCtMx+jjvaFVZGww=="],
@@ -3823,10 +3814,6 @@
 
     "picomatch": ["picomatch@4.0.5", "", {}, "sha512-RvwwcruNjI1ncT5xRakeyS9Lf8lcItv34KD+aif+VH9kduAyfYBipGh12274xtenIPZ119/R9BdTBa8gAwSh0A=="],
 
-    "pidtree": ["pidtree@1.0.0", "", { "bin": { "pidtree": "bin/pidtree.js" } }, "sha512-avfAvjB9Dd0wdj3rjJX//yS+G79OO0KrS5pJHFJENjYGX6N4SMgEDBBI/yFy0lloOYSaC6XQxzpOAMPfSYFV/Q=="],
-
-    "pidusage": ["pidusage@4.0.1", "", { "dependencies": { "safe-buffer": "^5.2.1" } }, "sha512-yCH2dtLHfEBnzlHUJymR/Z1nN2ePG3m392Mv8TFlTP1B0xkpMQNHAnfkY0n2tAi6ceKO6YWhxYfZ96V4vVkh/g=="],
-
     "pino": ["pino@9.14.0", "", { "dependencies": { "@pinojs/redact": "^0.4.0", "atomic-sleep": "^1.0.0", "on-exit-leak-free": "^2.1.0", "pino-abstract-transport": "^2.0.0", "pino-std-serializers": "^7.0.0", "process-warning": "^5.0.0", "quick-format-unescaped": "^4.0.3", "real-require": "^0.2.0", "safe-stable-stringify": "^2.3.1", "sonic-boom": "^4.0.1", "thread-stream": "^3.0.0" }, "bin": { "pino": "bin.js" } }, "sha512-8OEwKp5juEvb/MjpIc4hjqfgCNysrS94RIOMXYvpYCdm/jglrKEiAYmiumbmGhCvs+IcInsphYDFwqrjr7398w=="],
 
     "pino-abstract-transport": ["pino-abstract-transport@2.0.0", "", { "dependencies": { "split2": "^4.0.0" } }, "sha512-F63x5tizV6WCh4R6RHyi2Ml+M70DNRXt/+HANowMflpgGFMAym/VKm6G7ZOQRjqN7XbGxK1Lg9t6ZrtzOaivMw=="],
@@ -5032,8 +5019,6 @@
     "@vscode/emmet-helper/jsonc-parser": ["jsonc-parser@2.3.1", "", {}, "sha512-H8jvkz1O50L3dMZCsLqiuB2tA7muqbSg1AtGEkN0leAqGjsUzDJir3Zwr02BhqdcITPg3ei3mZ+HjMocAknhhg=="],
 
     "@vscode/emmet-helper/vscode-languageserver-types": ["vscode-languageserver-types@3.18.0", "", {}, "sha512-8TsGPNMIMiiBdkORgRSvLjuiEIiAFtO+KssmYWxQ+uSVvlf7RjK8YKCOjPzZ+YA04jXEV7+7LvkSmHkhpNS99g=="],
-
-    "@vscode/windows-process-tree/node-addon-api": ["node-addon-api@7.1.0", "", {}, "sha512-mNcltoe1R8o7STTegSOHdnJNN7s5EUvhoS7ShnTHDyOSd+8H+UdWODq6qSv67PjC8Zc5JRT8+oLAMCr0SIXw7g=="],
 
     "aggregate-error/indent-string": ["indent-string@4.0.0", "", {}, "sha512-EdDDZu4A2OyIK7Lr/2zG+w5jmbuk1DVBnEwREQvBzspBJkCEbRa8GxU1lghYcaGJCnRWibjDXlq779X1/y5xwg=="],
 

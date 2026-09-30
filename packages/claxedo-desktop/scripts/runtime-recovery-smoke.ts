@@ -71,8 +71,6 @@ export async function runRuntimeRecoverySmoke(): Promise<RuntimeRecoverySmokeRep
       CLAXEDO_DAEMON_DISCOVERY_PATH: discoveryPath,
       CLAXEDO_DAEMON_IDLE_GRACE_MS: String(IDLE_GRACE_MS),
       CLAXEDO_DATA_DIR: path.join(root, "data"),
-      CLAXEDO_DIAGNOSTICS_LAUNCH_ID: generation,
-      CLAXEDO_DIAGNOSTICS_GENERATION: generation,
     }, serverLog),
     execPath: electronExecutable(),
     stdio: ["ignore", "ignore", "pipe", "ipc"],

@@ -13,7 +13,6 @@ fs.mkdirSync(dist, { recursive: true })
 
 execFileSync(esbuild, [
   "src/launch/index.ts",
-  "src/process-observer.ts",
   "src/process-lifecycle.ts",
   "src/windows-process.ts",
   "src/spawn-env.ts",

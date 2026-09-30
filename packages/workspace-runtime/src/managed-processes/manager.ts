@@ -33,7 +33,6 @@ import { Process } from "./schema"
 import { errorMessage } from "@claxedo/helpers"
 import { rec } from "../json-value"
 import { findFreePort, findPidOnPort, tryPort } from "./port-picker"
-import type { ProcessObserver } from "./process-observer"
 import { resolveWorkspaceCommandPaths, resolveWorkspacePath } from "../target"
 import { isMissingFile } from "@claxedo/helpers/fs"
 
@@ -102,7 +101,6 @@ interface WorkspaceBinding {
 }
 
 const workspaceMap = new Map<string, WorkspaceBinding>()
-const processObserverMap = new Map<string, ProcessObserver>()
 
 function getState(directory: string): State {
   const key = real(directory)
@@ -142,15 +140,6 @@ export function bindWorkspace(directory: string, workspaceId?: string, workspace
     id: workspaceId,
     name: workspaceName ?? prev?.name,
   })
-}
-
-export function bindProcessObserver(directory: string, observer?: ProcessObserver) {
-  const key = real(directory)
-  if (observer) {
-    processObserverMap.set(key, observer)
-    return
-  }
-  processObserverMap.delete(key)
 }
 
 function title(directory: string): string {
@@ -1123,7 +1112,6 @@ async function startOnce(
     const launch = processCommand(config, assignedPort)
     Object.assign(env, launch.env)
 
-    const processObserver = processObserverMap.get(real(directory))
     const info = await Pty.create(
       {
         command: shell,
@@ -1135,20 +1123,6 @@ async function startOnce(
         managed: true,
       },
       opts.ownership,
-      processObserver
-        ? {
-            observer: processObserver,
-            kind: "managed-process",
-            ownerId: `managed-process:${crypto.randomUUID()}`,
-            workspaceId: workspace(directory),
-            directory: real(directory),
-            label: config.name,
-            operations: {
-              stopGracefully: async () => (await stop(directory, configId)).retirement,
-              killOwnedTree: async () => (await stop(directory, configId, "SIGKILL")).retirement,
-            },
-          }
-        : undefined,
     )
     ptyId = info.id
 
@@ -1650,7 +1624,6 @@ export async function dispose(directory: string) {
   s.dispose?.()
   s.processes.clear()
   s.configs.clear()
-  processObserverMap.delete(real(directory))
   stateMap.delete(real(directory))
   // The manager's state is gone; the outcomes are not. A caller that tears down
   // a workspace has to be told which of its processes were never proven stopped.

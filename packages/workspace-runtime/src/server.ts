@@ -34,7 +34,6 @@ import {
 } from "./exposure"
 import { runtimeEnvText, workspaceRuntimeEpoch, workspaceRuntimeStoreDir } from "./env"
 import { retainedWorkspaceRuntimeInternalSecrets, type WorkspaceRuntimeInternalSecrets } from "./internal-secrets"
-import type { ProcessObserver } from "./managed-processes/process-observer"
 import type { WorkspaceEventParents } from "./routes/events"
 import type { WorkspaceTranscriptRoutesOptions } from "./workspace/core"
 import { managedWorkspaceSessionAccessPolicy, sessionAccessContext, sessionAccessDenied, type SessionAccessPolicy } from "./session-access-policy"
@@ -63,8 +62,6 @@ export type WorkspaceRuntimeServiceExposure = {
 }
 
 export type WorkspaceRuntimeServerOptions = {
-  /** Optional local owner observer. Remote/relay compositions omit it. */
-  processObserver?: ProcessObserver
   onTurnOutcome?: WorkspaceHostOptions["onTurnOutcome"]
   onPresentationEvent?: WorkspaceHostOptions["onPresentationEvent"]
   onRuntimeEvent?: WorkspaceHostOptions["onRuntimeEvent"]
@@ -440,7 +437,6 @@ export function createWorkspaceRuntimeApp(options: WorkspaceRuntimeServerOptions
     isLoopbackHostname,
     env: process.env,
   })
-  if (options.target) ProcessManager.bindProcessObserver(options.target.directory, options.processObserver)
   // One policy for every surface this app mounts. A loopback or embedded
   // runtime is reached only through its own process boundary and carries the
   // unbound local flavour; any other exposure answers a remote caller and
@@ -464,7 +460,6 @@ export function createWorkspaceRuntimeApp(options: WorkspaceRuntimeServerOptions
     ...(options.beforeHarnessAcquire ? { beforeHarnessAcquire: options.beforeHarnessAcquire } : {}),
     ...(options.onActivityChange ? { onActivityChange: options.onActivityChange } : {}),
     ...(options.configApplyReceiptDir ? { configApplyReceiptDir: options.configApplyReceiptDir } : {}),
-    ...(options.processObserver ? { processObserver: options.processObserver } : {}),
     ...(options.onTurnOutcome ? { onTurnOutcome: options.onTurnOutcome } : {}),
     ...(options.onPresentationEvent ? { onPresentationEvent: options.onPresentationEvent } : {}),
     ...(options.onRuntimeEvent ? { onRuntimeEvent: options.onRuntimeEvent } : {}),
@@ -696,13 +691,6 @@ export function createWorkspaceRuntimeApp(options: WorkspaceRuntimeServerOptions
   const dispose = () => {
     if (!cleaned) {
       cleaned = true
-      if (options.target && options.processObserver) {
-        options.processObserver.detachWorkspace(options.target.workspaceId)
-        if (options.target.directory !== options.target.workspaceId) {
-          options.processObserver.detachWorkspace(options.target.directory)
-        }
-        ProcessManager.bindProcessObserver(options.target.directory)
-      }
       routeContributions.dispose()
       worktrees?.close()
     }

@@ -152,7 +152,6 @@ test("bundled claxedo-server boots and serves Claxedo-owned routes", async () =>
   // exercise the same authoritative registration path on every machine.
   execFileSync("git", ["init", workspaceDirectory], { stdio: "ignore" })
   const port = await freePort()
-  const launchId = "server-boot-test"
   const generation = "server-boot-generation"
   const daemonToken = "server-boot-daemon-token"
   const daemonDiscoveryPath = path.join(root, "data", "local-daemon.json")
@@ -171,8 +170,6 @@ test("bundled claxedo-server boots and serves Claxedo-owned routes", async () =>
       CLAXEDO_DAEMON_DISCOVERY_PATH: daemonDiscoveryPath,
       // First launch hands the server a profile path that does not exist yet.
       CLAXEDO_DATA_DIR: path.join(root, "data"),
-      CLAXEDO_DIAGNOSTICS_LAUNCH_ID: launchId,
-      CLAXEDO_DIAGNOSTICS_GENERATION: generation,
     }, serverLog),
     execPath: electronExecutable(),
     stdio: ["ignore", "pipe", "pipe", "ipc"],
@@ -268,29 +265,6 @@ test("bundled claxedo-server boots and serves Claxedo-owned routes", async () =>
     })
     expect(createPty.status).toBe(200)
     const pty = await createPty.json() as { id: string }
-    const registered = await waitForMessage(messages, (message) => {
-      if (!message || typeof message !== "object" || !("type" in message)) return false
-      return message.type === "owner-registered"
-    }) as {
-      binding: { pid: number; launchId: string; generation: string }
-      descriptor: { ownerOperationId: string; ownerGeneration: string; pid?: number }
-    }
-    expect(registered.binding).toEqual({ pid: child.pid!, launchId, generation })
-
-    child.send({
-      type: "owner-operation-request",
-      binding: registered.binding,
-      requestId: "boot-test-stale-operation",
-      ownerOperationId: registered.descriptor.ownerOperationId,
-      ownerGeneration: "stale-generation",
-      operation: "stop",
-      identity: { pid: registered.descriptor.pid ?? child.pid!, creation: "not-needed-for-stale-generation" },
-    })
-    expect(await waitForMessage(messages, (message) => {
-      if (!message || typeof message !== "object") return false
-      return "type" in message && message.type === "owner-operation-result" &&
-        "requestId" in message && message.requestId === "boot-test-stale-operation"
-    })).toMatchObject({ result: "owner-unavailable" })
 
     // Electron releases its IPC ownership immediately after startup and may
     // then exit for an app restart or update. The daemon must retain the exact

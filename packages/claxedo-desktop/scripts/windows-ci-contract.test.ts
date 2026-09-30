@@ -78,7 +78,6 @@ describe("Windows CI contract", () => {
     expect(acceptance).toContain('[ValidatePattern("^[0-9a-f]{40}$")]')
     expect(acceptance).toContain("$env:CLAXEDO_BUILD_SOURCE_COMMIT = $SourceCommit")
     expect(prepare).toContain('throw "bun install exited $LASTEXITCODE"')
-    expect(prepare).toContain('throw "Windows process-tree native dependency was not installed"')
   })
 
   // On the Windows runner %TEMP% is 8.3-spelled (`RUNNER~1`), and libuv's

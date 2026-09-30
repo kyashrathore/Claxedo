@@ -38,8 +38,6 @@ $env:CLAXEDO_CHANNEL = "prod"
 $env:OPENCODE_CHANNEL = "windows-e2e"
 $env:CLAXEDO_BUILD_SOURCE_COMMIT = $SourceCommit
 $env:RUST_TARGET = "x86_64-pc-windows-msvc"
-$env:CLAXEDO_DIAGNOSTICS_EXPECTED_ARCH = "x64"
-$env:CLAXEDO_DIAGNOSTICS_DEBUG = "1"
 
 bun run build:packages
 Assert-LastExitCode "bun run build:packages"
@@ -57,20 +55,8 @@ Assert-LastExitCode "desktop build"
 bun run test
 Assert-LastExitCode "desktop tests"
 
-New-Item -ItemType Directory -Force -Path ".artifacts" | Out-Null
-$env:CLAXEDO_DIAGNOSTICS_SMOKE_OUTPUT = ".artifacts\diagnostics-source-x86_64-pc-windows-msvc.json"
-bun run test:diagnostics-release
-Assert-LastExitCode "source diagnostics release tests"
-
-bun run smoke:diagnostics
-Assert-LastExitCode "source diagnostics smoke"
-
 $env:CSC_IDENTITY_AUTO_DISCOVERY = "false"
 bun run package:win -- --x64 --dir --publish never
 Assert-LastExitCode "unsigned Windows package"
-
-$env:CLAXEDO_DIAGNOSTICS_SMOKE_OUTPUT = ".artifacts\diagnostics-packaged-x86_64-pc-windows-msvc.json"
-bun run smoke:diagnostics:packaged
-Assert-LastExitCode "packaged diagnostics smoke"
 
 Write-Output "Windows desktop acceptance passed"

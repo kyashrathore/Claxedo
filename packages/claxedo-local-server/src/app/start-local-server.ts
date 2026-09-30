@@ -72,8 +72,6 @@ export type StartLocalServerOptions = Omit<LocalAppOptions, "onError" | "service
   port?: number
   hostname?: string
   onError?: LocalAppOptions["onError"]
-  /** Desktop diagnostics observer for spawned harness processes. */
-  processObserver?: Parameters<typeof configureEmbeddedWorkspaceRuntime>[0]["processObserver"]
   /** The Agent Plugins module's contribution to every runtime snapshot. */
   pluginRuntime?: NonNullable<Parameters<typeof configureAgentConfig>[0]>["pluginRuntime"]
 }
@@ -180,7 +178,6 @@ function startOwned(options: StartLocalServerOptions, release: () => void): Loca
     sessionAccessPolicy: localHostSessionAccessPolicy,
     loopbackSessionAuthority: "local",
     firstPartyMcpLaunch: { baseUrl: firstPartyMcpBaseUrl, enabledToolGroups: builtinToolGroups },
-    ...(options.processObserver ? { processObserver: options.processObserver } : {}),
     // No route contributions: hosted capabilities contribute routes, and their
     // absence from an unsigned desktop is this line rather than a runtime flag.
     routeContributions: [],

@@ -5,8 +5,7 @@
  * callback fires; Electron main (`main/index.ts`) resolves its `listening`
  * gate on it and cross-checks the port it assigned. Both sides import the same
  * builder/parser pair so the shape can never drift between them, and the
- * parser validates unknown IPC input instead of trusting it — the same channel
- * carries diagnostics-transport messages.
+ * parser validates unknown IPC input instead of trusting it.
  */
 
 import { readField, readFiniteNumber } from "@claxedo/helpers/readers"
