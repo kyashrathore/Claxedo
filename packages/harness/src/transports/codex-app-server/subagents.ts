@@ -52,6 +52,11 @@ export async function answerCodexToolCall(host: SubagentHost | undefined, broker
   return spawnChild(host, broker, { callId, prompt, label: asString(args.task_name) ?? "Codex subagent" })
 }
 
+export function codexRequestChild(children: ReadonlyMap<string, unknown>, message: RpcMessage): string | undefined {
+  const threadId = asString(asRecordOrEmpty(message.params).threadId)
+  return threadId && children.has(threadId) ? threadId : undefined
+}
+
 export function codexHostSubagentObservation(turnThreadId: string, params: unknown): SubagentObservation | undefined {
   const notification = asRecordOrEmpty(params)
   const item = asRecord(notification.item)

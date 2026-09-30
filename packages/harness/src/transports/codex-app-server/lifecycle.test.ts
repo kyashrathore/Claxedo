@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test"
-import type { Clock, TurnBroker, TurnInput } from "../../contract"
+import type { Clock, TurnBroker, TurnInput, TurnRequest } from "../../contract"
 import { scriptedTransport } from "./test-support/transport"
 
 const turnInput = { turnId: "t1", userMessageId: "u1", assistantMessageId: "a1", origin: { actor: { kind: "person", userId: "owner" }, via: "relay", reissued: false },
@@ -138,6 +138,35 @@ test("a request Codex resolves itself closes its open prompt and gets no late an
     expect(signal?.aborted).toBe(true)
     await tick()
     expect(peer.frames.some((frame) => frame.id === 91 && !frame.method)).toBe(false)
+    peer.emit({ method: "turn/completed", params: { threadId: "thread-1", turn: { id: "turn-current", status: "completed" } } })
+    await running
+  } finally { await peer.close() }
+})
+
+test("an approval a spawn_agent child asks names that child's thread as its route, and the parent's own approval names none", async () => {
+  const peer = await scriptedTransport()
+  const asked: TurnRequest[] = []
+  const broker = { signal: new AbortController().signal, origin: turnInput.origin,
+    ask: async (request: TurnRequest) => { asked.push(request); return { kind: "permission", decision: "allow_once" } },
+    observeSubagent: async () => ({ sessionId: "child-session", assistantMessageId: "child-a1", created: 1 }),
+    associateChild: () => {}, completeElicitation: async () => {} } as unknown as TurnBroker
+  const approval = (id: number, threadId: string) => peer.request(id, "item/commandExecution/requestApproval",
+    { threadId, turnId: `${threadId}-turn`, itemId: `item-${id}`, command: "ls", cwd: peer.root })
+  const replied = async (id: number) => { while (!peer.frames.some((frame) => frame.id === id && !frame.method)) await tick() }
+  try {
+    const session = await peer.transport.start(peer.startInput, peer.liveBroker())
+    const running = drain(peer.transport.send(session, turnInput, broker))
+    await peer.started
+    peer.request(90, "item/tool/call", { threadId: "thread-1", turnId: "turn-current", callId: "call-1", tool: "spawn_agent",
+      arguments: { task_name: "review", message: "Inspect" } })
+    while (!peer.frames.some((frame) => frame.method === "turn/start" && frame.params?.threadId === "thread-2")) await tick()
+    approval(91, "thread-2")
+    await replied(91)
+    approval(92, "thread-1")
+    await replied(92)
+    expect(asked.map((request) => request.child)).toEqual([{ correlationKey: "thread-2" }, undefined])
+    peer.emit({ method: "turn/completed", params: { threadId: "thread-2", turn: { id: "turn-current", status: "completed" } } })
+    await replied(90)
     peer.emit({ method: "turn/completed", params: { threadId: "thread-1", turn: { id: "turn-current", status: "completed" } } })
     await running
   } finally { await peer.close() }

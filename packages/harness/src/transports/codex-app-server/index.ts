@@ -19,7 +19,7 @@ import { readCodexModels, type CodexModel } from "./models"
 import { answerCodexRequest, isCodexRequestMethod } from "./requests"
 import { codexRetirementDeadline, type RpcMessage } from "./rpc"
 import { CodexSessions } from "./sessions"
-import { answerCodexToolCall } from "./subagents"
+import { answerCodexToolCall, codexRequestChild } from "./subagents"
 import { codexRename, codexSessionTitle } from "./titles"
 import { activeCodexTurn, runCodexTurn } from "./turn"
 
@@ -88,7 +88,8 @@ export class CodexAppServerTransport implements HarnessTransport {
     }
     if (!active && isCodexRequestMethod(message.method)) throw new CodexRequestRefusal(-32000, "Codex request has no active turn")
     const broker = active?.broker ?? entry.broker
-    return answerCodexRequest(message, { ask: (request) => broker.ask(request, { signal }) }, entry.session.binding.sessionId,
+    const child = codexRequestChild(entry.children, message)
+    return answerCodexRequest(message, { ask: (request) => broker.ask(child ? { ...request, child: { correlationKey: child } } : request, { signal }) }, entry.session.binding.sessionId,
       { directory: entry.session.directory, permissionMode: entry.start.config.permissionMode })
   }
 
