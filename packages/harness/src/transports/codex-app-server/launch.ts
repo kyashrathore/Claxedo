@@ -1,11 +1,12 @@
 import { stringRecord } from "@claxedo/helpers"
-import type { HarnessServices, StartInput } from "../../contract"
+import { harnessVersionStanding, type HarnessServices, type StartInput } from "../../contract"
 import { codexProfileHome, prepareCodexProfile } from "../../profiles/codex"
 import type { CodexTransportOptions } from "./entry"
 import { CodexTransportError } from "./errors"
 import { CodexRpc, codexRetirementDeadline } from "./rpc"
+import { CODEX_RANGE, codexReportedVersion } from "./version"
 
-export type CodexLaunch = { rpc: CodexRpc; home: string; brokered: boolean; plugins: string[] }
+export type CodexLaunch = { rpc: CodexRpc; home: string; brokered: boolean; plugins: string[]; version: string }
 
 async function spawnCodexProfile(input: StartInput, options: CodexTransportOptions, services: HarnessServices, signal: AbortSignal) {
   const profileInput = { homeRoot: options.homeRoot, credentials: input.credentials, projection: input.projection }
@@ -33,10 +34,12 @@ export class CodexLaunches {
     this.starting.add(rpc)
     try {
       this.assertLive(" during startup")
-      await rpc.request("initialize", { clientInfo: { name: "claxedo", version: "0.1.0" }, capabilities: { experimentalApi: true, requestAttestation: false } })
+      const version = codexReportedVersion(await rpc.request("initialize",
+        { clientInfo: { name: "claxedo", version: "0.1.0" }, capabilities: { experimentalApi: true, requestAttestation: false } }))
+      harnessVersionStanding(CODEX_RANGE, version)
       this.assertLive(" during initialize")
       rpc.notify("initialized")
-      return { rpc, ...profile }
+      return { rpc, ...profile, version: String(version) }
     } catch (error) {
       await this.discard(rpc)
       throw error

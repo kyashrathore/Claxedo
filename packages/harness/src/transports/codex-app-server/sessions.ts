@@ -1,12 +1,13 @@
 import { errorMessage } from "@claxedo/helpers"
 import type { ConfigApplied, HarnessServices, HarnessSession, ProcessLosses, SessionBroker, StartInput, TransportConfigUpdate } from "../../contract"
-import { attachedSessionEntry, mergeStartInput } from "../../contract"
+import { attachedSessionEntry, HarnessVersionGate, mergeStartInput } from "../../contract"
 import { codexCredential } from "../../profiles/codex"
 import type { Entry } from "./entry"
 import { CodexTransportError } from "./errors"
 import type { CodexLaunches } from "./launch"
 import { codexRetirementDeadline, type RpcMessage } from "./rpc"
 import { openCodexSession, type CodexSessionHost } from "./session"
+import { CODEX_RANGE } from "./version"
 
 function codexLaunch(start: StartInput): string {
   return JSON.stringify([start.credentials.accountOwner, start.credentials.machineLoginAllowed, codexCredential(start.credentials) ?? null, start.projection])
@@ -14,6 +15,7 @@ function codexLaunch(start: StartInput): string {
 
 export class CodexSessions implements CodexSessionHost {
   readonly entries = new Map<string, Entry>()
+  readonly versions = new HarnessVersionGate(CODEX_RANGE, "codex.app-server")
   private readonly reopening = new Map<string, Promise<Entry>>()
 
   constructor(readonly launches: CodexLaunches, readonly services: HarnessServices, readonly losses: ProcessLosses,

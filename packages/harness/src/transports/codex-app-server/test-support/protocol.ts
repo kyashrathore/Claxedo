@@ -63,7 +63,7 @@ export class CodexPeer {
   private readonly threads = new Map<string, string | undefined>()
   private readonly pending = new Set<number>()
 
-  constructor(private readonly models: unknown[], private readonly script: { modelListFailures?: number; goal?: unknown } = {}) {}
+  constructor(private readonly models: unknown[], private readonly script: { modelListFailures?: number; goal?: unknown; userAgent?: string } = {}) {}
 
   request(id: number) { this.pending.add(id) }
 
@@ -121,7 +121,7 @@ export class CodexPeer {
     assert.equal(typeof frame.id, "number", "initialize requires a request id")
     assert.deepEqual(params, { clientInfo: { name: "claxedo", version: "0.1.0" }, capabilities: { experimentalApi: true, requestAttestation: false } })
     this.phase = "initializing"
-    return { userAgent: "codex-conformance", platformFamily: "unix", platformOs: "macos" }
+    return { userAgent: this.script.userAgent ?? "claxedo/0.156.1 (Mac OS 26.6.2; arm64) unknown (claxedo; 0.1.0)", platformFamily: "unix", platformOs: "macos" }
   }
 
   private start(params: Record<string, unknown>) {

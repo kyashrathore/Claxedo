@@ -1,6 +1,7 @@
 import { spawnSync } from "node:child_process"
 import path from "node:path"
 import { CLAUDE_CODE_RANGE } from "../../src/transports/claude-sdk/cli-version"
+import { CODEX_RANGE } from "../../src/transports/codex-app-server/version"
 import type { TestedRange } from "../harness/pinned-package"
 
 type RangedProgram = { variable: string; range: TestedRange; flows: string[]; conformance: string[] }
@@ -12,6 +13,13 @@ const PROGRAMS: Record<string, RangedProgram> = {
     flows: ["H1-turn-parts", "H2-stop", "H3-native-permissions", "H3b-sdk-save-before-release", "H4-native-questions", "H5-native-subagents",
       "H6-goals", "H7-steer", "H7.unknown-held", "H13.claude-usage"],
     conformance: ["src/conformance/claude.test.ts", "src/conformance/claude-background.test.ts"],
+  },
+  codex: {
+    variable: "CLAXEDO_E2E_CODEX",
+    range: CODEX_RANGE,
+    flows: ["H1-turn-parts", "H2-stop", "H2.codex-inventory-unverifiable", "H3-native-permissions", "H4-native-questions", "H5-native-subagents",
+      "H6-goals", "H7-steer", "H7.unknown-held", "H13.codex-usage", "H14.codex-configured-mcp", "H15.codex-brokered-plugin"],
+    conformance: ["src/conformance/codex.test.ts", "src/conformance/codex-lifecycle.test.ts", "src/profiles/codex/index.test.ts"],
   },
 }
 

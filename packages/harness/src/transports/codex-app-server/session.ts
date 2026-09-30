@@ -1,5 +1,5 @@
 import { asRecordOrEmpty, asString } from "@claxedo/helpers/guards"
-import type { HarnessServices, ProcessLosses, SessionBroker, StartInput } from "../../contract"
+import type { HarnessServices, HarnessVersionGate, ProcessLosses, SessionBroker, StartInput } from "../../contract"
 import { projectCodexThreadConfig } from "./configuration"
 import type { Entry } from "./entry"
 import { CodexRequestRefusal, CodexTransportError } from "./errors"
@@ -15,6 +15,7 @@ import { CodexUsageLedger } from "./usage"
 
 export type CodexSessionHost = {
   launches: CodexLaunches
+  versions: HarnessVersionGate
   services: HarnessServices
   losses: ProcessLosses
   entries: Map<string, Entry>
@@ -62,6 +63,7 @@ async function bindEntry(host: CodexSessionHost, launched: CodexLaunch, input: S
 export async function openCodexSession(host: CodexSessionHost, input: StartInput, broker: SessionBroker, resumed?: string): Promise<Entry> {
   const launched = await host.launches.launch(input)
   try {
+    await host.versions.admit(launched.version, "initialize", broker)
     const threadId = await openThread(host, launched, input, resumed)
     const { entry, replay } = await bindEntry(host, launched, input, broker, threadId)
     if (resumed) await reconcileCodexGoal(entry)

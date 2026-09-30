@@ -10,8 +10,8 @@ export type { Frame } from "./protocol"
 type CodexProcess = { wire: ScriptedProcess<Frame>; protocol: CodexPeer }
 
 export async function scriptedTransport(options: { holdTurnStart?: boolean; clock?: Clock; models?: unknown[]; completeTurns?: boolean
-  modelListFailures?: number; goal?: unknown } = {}) {
-  const script = { modelListFailures: options.modelListFailures, goal: options.goal }
+  modelListFailures?: number; goal?: unknown; userAgent?: string } = {}) {
+  const script = { modelListFailures: options.modelListFailures, goal: options.goal, userAgent: options.userAgent }
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "codex-scripted-"))
   const frames: Frame[] = []
   const violations: unknown[] = []
