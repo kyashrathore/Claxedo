@@ -210,7 +210,7 @@ function localOnlyBody(label: string) {
   return {
     error: {
       code: "local_only_projection_route",
-      message: `${label} is local-only and is not available through signed/team Control Plane access`,
+      message: `${label} is local-only and is not available through signed Control Plane access`,
     },
   }
 }
@@ -218,7 +218,7 @@ function localOnlyBody(label: string) {
 async function signedBootstrapAuth(request: Request, options: Options) {
   const config = options.authConfig ?? controlPlaneAuthConfig()
   if (!config.enabled && config.mode === "local-only") {
-    throw new ControlPlaneAuthError(403, "invalid_bearer_token", "Local bootstrap compatibility is local-only and is not available through signed/team Control Plane access")
+    throw new ControlPlaneAuthError(403, "invalid_bearer_token", "Local bootstrap compatibility is local-only and is not available through signed Control Plane access")
   }
   const context = await controlPlaneAuthContext(request, {
     config,

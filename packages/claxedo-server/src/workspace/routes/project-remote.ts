@@ -5,7 +5,7 @@
  *
  * Local-only by construction: it reads the caller's filesystem, which is
  * meaningful on the machine the desktop app runs on and meaningless through
- * signed/team control-plane access.
+ * signed control-plane access.
  *
  * Deriving is a convenience and never a licence to skip confirmation — a wrong
  * guess clones the wrong codebase into a paid sandbox — so every answer carries
