@@ -4,6 +4,7 @@ import fs from "fs/promises"
 import os from "os"
 import path from "path"
 import { randomUUID } from "crypto"
+import { isAccountSource } from "@claxedo/account-contract/vocabulary"
 import { CredentialRoutes } from "./credential"
 import { defaultControlPlaneCredentials } from "@claxedo/server-core/authority/default-credentials"
 import { localControlPlaneCredentials } from "../machine-credentials"
@@ -1258,6 +1259,32 @@ describe("choosing which account a provider runs on", () => {
     expect((await choose("own")).status).toBe(200)
     expect(await spent()).toEqual([own.id])
     expect((await choose("everyone")).status).toBe(400)
+  })
+
+  test("a database whose choices were stored as 'team' spends the org account and answers 'org' once it is upgraded", async () => {
+    const own = await account("legacy-choice", "acc_legacy_own")
+    const orgAccount = await registry.putCredential({ owner: null, provider_id: "legacy-choice", kind: "oauth_token", source: "managed",
+      account_id: "acc_legacy_org", label: "Org", secret: "legacy-org-secret" })
+    const chosen = await app.request("http://localhost/account-sources", {
+      method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ provider_ids: ["legacy-choice"], source: "org" }),
+    })
+    expect(chosen.status).toBe(200)
+    const { ClaxedoDB } = await import("@claxedo/server-core/platform/db/index")
+    const before = ClaxedoDB.raw()
+    before.prepare("DELETE FROM __claxedo_migrations WHERE name = ?").run("20260930000100_org_account_source")
+    before.prepare("UPDATE claxedo_provider_account_source SET source = 'team' WHERE provider_id = ?").run("legacy-choice")
+    before.exec("DROP INDEX claxedo_connection_org_integration_unique")
+    before.exec("CREATE UNIQUE INDEX claxedo_connection_team_integration_unique ON claxedo_connection (integration_id) WHERE owner IS NULL")
+    ClaxedoDB.close()
+
+    const listed = await (await app.request("http://localhost/account-sources")).json() as { sources: Record<string, unknown> }
+    expect(listed.sources["legacy-choice"]).toBe("org")
+    expect(Object.values(listed.sources).every(isAccountSource)).toBe(true)
+    const spent = await (await app.request("http://localhost/effective")).json() as { credentials: Array<{ id: string; provider_id: string }> }
+    expect(spent.credentials.filter((row) => row.provider_id === "legacy-choice").map((row) => row.id)).toEqual([orgAccount.id])
+    expect(spent.credentials.map((row) => row.id)).not.toContain(own.id)
+    const indexes = ClaxedoDB.raw().prepare("SELECT name FROM sqlite_master WHERE type = 'index' AND name LIKE 'claxedo_connection_%_integration_unique'").all()
+    expect(indexes).toEqual([{ name: "claxedo_connection_org_integration_unique" }])
   })
 
   test("every binding named in one call is marked together", async () => {
