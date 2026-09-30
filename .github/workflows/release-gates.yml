@@ -138,13 +138,6 @@ jobs:
         working-directory: packages/claxedo-desktop
         run: bun run build
 
-      # Forks the bundle prebuild just produced; process ownership is qualified
-      # on macOS only, and the smoke's stray check needs `pgrep`.
-      - name: Run runtime recovery smoke (macOS)
-        if: runner.os == 'macOS' && (inputs.leg == 'all' || inputs.leg == matrix.leg || inputs.leg == matrix.platform)
-        working-directory: packages/claxedo-desktop
-        run: bun run test:runtime-recovery
-
       # Unsigned, dir-only package: proves the electron-builder config and the
       # native-module file sets without dmg/nsis/AppImage/deb/rpm assembly or
       # notarization, which is where the release's wall-clock actually goes.

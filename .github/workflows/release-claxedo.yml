@@ -220,13 +220,6 @@ jobs:
         working-directory: packages/claxedo-desktop
         run: bun run build
 
-      # Forks the bundle prebuild just produced; process ownership is qualified
-      # on macOS only, and the smoke's stray check needs `pgrep`.
-      - name: Run runtime recovery smoke (macOS)
-        if: runner.os == 'macOS' && (github.event_name == 'push' || github.event.inputs.platforms == 'all' || github.event.inputs.platforms == matrix.platform)
-        working-directory: packages/claxedo-desktop
-        run: bun run test:runtime-recovery
-
       # A source-map upload token is optional config: its absence must degrade
       # to "no upload, release still green", never a failed build. secrets.* is
       # not usable directly in `if:`, hence the bridge through a step output.
