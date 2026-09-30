@@ -4116,9 +4116,8 @@ describe("workspace route body bound", () => {
   })
 
   test("the enrolled-host assignment handler keeps its bound mounted without a route cap", async () => {
-    // The handler is mounted by two routers; one mount is the hosted workerd
-    // spike, which composes no request guard, so the bound lives in the
-    // handler and not only in the wiring.
+    // The handler is mounted by two routers, so the bound lives in the
+    // handler and not only in either router's wiring.
     const svc = services()
     const app = new Hono().post(
       "/:id/host-assignment",
