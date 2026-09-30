@@ -1936,6 +1936,10 @@
                 "reasoningOutputTokens": 0
               }
             }
+          },
+          "streamedItem": {
+            "channel": "text",
+            "itemId": "msg_12"
           }
         },
         "events": [
@@ -1996,6 +2000,10 @@
               "reasoningOutputTokens": 0
             }
           }
+        },
+        "streamedItem": {
+          "channel": "text",
+          "itemId": "msg_12"
         }
       },
       "event": {
@@ -2078,6 +2086,10 @@
               "reasoningOutputTokens": 0
             }
           }
+        },
+        "streamedItem": {
+          "channel": "text",
+          "itemId": "msg_12"
         }
       },
       "event": {
@@ -2157,6 +2169,10 @@
               "reasoningOutputTokens": 0
             }
           }
+        },
+        "streamedItem": {
+          "channel": "text",
+          "itemId": "msg_12"
         }
       },
       "event": {
@@ -2226,6 +2242,10 @@
               }
             }
           },
+          "streamedItem": {
+            "channel": "reasoning",
+            "itemId": "rs_12"
+          },
           "reasoningTextByItemId": {
             "rs_12": "H1 codex reasoning"
           }
@@ -2288,6 +2308,10 @@
               "reasoningOutputTokens": 0
             }
           }
+        },
+        "streamedItem": {
+          "channel": "reasoning",
+          "itemId": "rs_12"
         },
         "reasoningTextByItemId": {
           "rs_12": "H1 codex reasoning"
@@ -2372,6 +2396,10 @@
               "reasoningOutputTokens": 0
             }
           }
+        },
+        "streamedItem": {
+          "channel": "reasoning",
+          "itemId": "rs_12"
         },
         "reasoningTextByItemId": {
           "rs_12": "H1 codex reasoning"
@@ -2460,6 +2488,10 @@
               }
             }
           },
+          "streamedItem": {
+            "channel": "reasoning",
+            "itemId": "rs_12"
+          },
           "reasoningTextByItemId": {
             "rs_12": "H1 codex reasoning"
           }
@@ -2540,6 +2572,10 @@
             }
           }
         },
+        "streamedItem": {
+          "channel": "reasoning",
+          "itemId": "rs_12"
+        },
         "reasoningTextByItemId": {
           "rs_12": "H1 codex reasoning"
         }
@@ -2617,6 +2653,10 @@
                 "reasoningOutputTokens": 0
               }
             }
+          },
+          "streamedItem": {
+            "channel": "reasoning",
+            "itemId": "rs_12"
           },
           "reasoningTextByItemId": {
             "rs_12": "H1 codex reasoning"
@@ -2702,6 +2742,10 @@
             }
           }
         },
+        "streamedItem": {
+          "channel": "reasoning",
+          "itemId": "rs_12"
+        },
         "reasoningTextByItemId": {
           "rs_12": "H1 codex reasoning"
         }
@@ -2778,6 +2822,10 @@
               "reasoningOutputTokens": 0
             }
           }
+        },
+        "streamedItem": {
+          "channel": "reasoning",
+          "itemId": "rs_12"
         },
         "reasoningTextByItemId": {
           "rs_12": "H1 codex reasoning"

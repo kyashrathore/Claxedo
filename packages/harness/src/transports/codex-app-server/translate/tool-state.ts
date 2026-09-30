@@ -4,7 +4,7 @@ import { asText as text } from "@claxedo/agent-runtime-contract"
 import { RETAINED_WIRE_KEYS_MAX, boundKeyedRecord, own } from "../../../translate/value"
 import { structuredInput } from "./item-input"
 import { toolDisplay, toolNameForItem } from "./item-kind"
-import type { CodexAppServerAdapterState } from "./state"
+import { withoutStreamedItem, type CodexAppServerAdapterState } from "./state"
 
 export function base64Text(value: unknown): string | undefined {
   const raw = text(value)
@@ -50,7 +50,7 @@ export function ensureTool(input: {
   const metadata = { codex: { itemType } }
   return {
     state: {
-      ...input.state,
+      ...withoutStreamedItem(input.state),
       toolsByItemId: boundKeyedRecord({
         ...input.state.toolsByItemId,
         [input.toolCallId]: { toolName, ...(rawInput ? { input: rawInput } : {}), itemType },

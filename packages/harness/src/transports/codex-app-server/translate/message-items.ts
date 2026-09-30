@@ -6,13 +6,21 @@ import { eventText, itemId, type CodexHandler, type CodexHandlers } from "./fram
 import type { CodexAppServerAdapterState } from "./state"
 
 type Result = HarnessEventAdapterResult<CodexAppServerAdapterState> | AgentRuntimeEvent[]
+type Channel = "text" | "reasoning"
+
+function separated(state: CodexAppServerAdapterState, channel: Channel, itemId: string, delta: string) {
+  const previous = state.streamedItem
+  const paragraph = previous?.channel === channel && previous.itemId !== itemId ? "\n\n" : ""
+  return { state: { ...state, streamedItem: { channel, itemId } }, delta: `${paragraph}${delta}` }
+}
 
 function streamedReasoning(state: CodexAppServerAdapterState, id: string, delta: string) {
   const reasoningTextByItemId = boundKeyedRecord({
     ...state.reasoningTextByItemId,
     [id]: `${own(state.reasoningTextByItemId ?? {}, id) ?? ""}${delta}`,
   }, RETAINED_WIRE_KEYS_MAX)
-  return { state: { ...state, reasoningTextByItemId }, events: [{ type: "thinking-delta" as const, delta }] }
+  const shown = separated({ ...state, reasoningTextByItemId }, "reasoning", id, delta)
+  return { state: shown.state, events: [{ type: "thinking-delta" as const, delta: shown.delta }] }
 }
 
 const reasoningDelta: CodexHandler = ({ state, event }) => {
@@ -25,13 +33,11 @@ export function completedAssistantMessage(state: CodexAppServerAdapterState, id:
   const previous = own(state.assistantTextByItemId, id) ?? ""
   const delta = fullText?.startsWith(previous) ? fullText.slice(previous.length) : fullText
   if (!delta) return []
-  return {
-    state: {
-      ...state,
-      assistantTextByItemId: boundKeyedRecord({ ...state.assistantTextByItemId, [id]: fullText ?? previous }, RETAINED_WIRE_KEYS_MAX),
-    },
-    events: [{ type: "text-delta", delta }],
-  }
+  const shown = separated({
+    ...state,
+    assistantTextByItemId: boundKeyedRecord({ ...state.assistantTextByItemId, [id]: fullText ?? previous }, RETAINED_WIRE_KEYS_MAX),
+  }, "text", id, delta)
+  return { state: shown.state, events: [{ type: "text-delta", delta: shown.delta }] }
 }
 
 export function completedReasoning(state: CodexAppServerAdapterState, id: string, completed: Record<string, unknown>): Result {
@@ -42,7 +48,9 @@ export function completedReasoning(state: CodexAppServerAdapterState, id: string
     ...(Array.isArray(completed.content) ? completed.content.flatMap((item) => text(item) ?? []) : []),
     ...(Array.isArray(completed.summary) ? completed.summary.flatMap((item) => text(item) ?? []) : []),
   ].flatMap((item) => item ?? []).join("\n")
-  return content ? [{ type: "thinking-delta", delta: content }] : []
+  if (!content) return []
+  const shown = separated(state, "reasoning", id, content)
+  return { state: shown.state, events: [{ type: "thinking-delta", delta: shown.delta }] }
 }
 
 export const messageHandlers: CodexHandlers = {
@@ -50,16 +58,14 @@ export const messageHandlers: CodexHandlers = {
     const delta = eventText(event)
     if (!delta) return []
     const id = itemId(event, "assistant")
-    return {
-      state: {
-        ...state,
-        assistantTextByItemId: boundKeyedRecord({
-          ...state.assistantTextByItemId,
-          [id]: `${own(state.assistantTextByItemId, id) ?? ""}${delta}`,
-        }, RETAINED_WIRE_KEYS_MAX),
-      },
-      events: [{ type: "text-delta", delta }],
-    }
+    const shown = separated({
+      ...state,
+      assistantTextByItemId: boundKeyedRecord({
+        ...state.assistantTextByItemId,
+        [id]: `${own(state.assistantTextByItemId, id) ?? ""}${delta}`,
+      }, RETAINED_WIRE_KEYS_MAX),
+    }, "text", id, delta)
+    return { state: shown.state, events: [{ type: "text-delta", delta: shown.delta }] }
   },
   "item/reasoning/textDelta": reasoningDelta,
   "item/reasoning/summaryTextDelta": reasoningDelta,

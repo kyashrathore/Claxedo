@@ -7,7 +7,7 @@ import { itemInput, itemMetadata } from "./item-input"
 import { canonicalItemType, toolDisplay, toolNameForItem } from "./item-kind"
 import { itemOutcome } from "./item-outcome"
 import { completedAssistantMessage, completedReasoning } from "./message-items"
-import type { CodexAppServerAdapterState } from "./state"
+import { withoutStreamedItem, type CodexAppServerAdapterState } from "./state"
 import { codexSubagentActivity } from "./subagent-items"
 
 type Row = Record<string, unknown>
@@ -22,7 +22,7 @@ function openTool(state: CodexAppServerAdapterState, id: string, itemType: strin
   const display = toolDisplay(itemType, input, toolName)
   const metadata = itemMetadata(itemType, row)
   return {
-    state: rememberTool(state, id, { toolName, input, itemType }),
+    state: rememberTool(withoutStreamedItem(state), id, { toolName, input, itemType }),
     display,
     events: [
       { type: "tool-start", toolCallId: id, toolName, kind: itemType, display, metadata },

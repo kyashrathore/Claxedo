@@ -119,7 +119,7 @@ describe("codexAppServerAdapter", () => {
     expect(thinking("item/completed", { item: { id: "rs-1", type: "reasoning", summary: ["**Reading**", "**Checking**"], content: [] } }))
       .toEqual([])
     expect(thinking("item/completed", { item: { id: "rs-2", type: "reasoning", summary: ["Only at completion"], content: [] } }))
-      .toEqual(["Only at completion"])
+      .toEqual(["\n\nOnly at completion"])
   })
 
   test("maps reasoning and proposed plan streams", () => {

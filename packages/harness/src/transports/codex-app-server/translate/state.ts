@@ -27,6 +27,7 @@ export type CodexAppServerAdapterState = {
   reasoningTextByItemId?: Record<string, string>
   reportedModels?: Record<string, string>
   lastLimitedRateLimitMessage?: string
+  streamedItem?: { channel: "text" | "reasoning"; itemId: string }
 }
 
 export function createCodexAppServerAdapterState(): CodexAppServerAdapterState {
@@ -51,4 +52,9 @@ export function endThreadTurn(
   if (threadId === context.threadId) return pruneTurnState(state)
   const { [threadId]: _ended, ...turnUsageByThread } = state.turnUsageByThread ?? {}
   return { ...state, turnUsageByThread }
+}
+
+export function withoutStreamedItem(state: CodexAppServerAdapterState): CodexAppServerAdapterState {
+  const { streamedItem: _streamedItem, ...rest } = state
+  return rest
 }
