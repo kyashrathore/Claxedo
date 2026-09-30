@@ -5,6 +5,15 @@ import { AsyncPushQueue } from "@claxedo/helpers"
 
 type Pending = { uuid: string; messageId: string; resolve: (result: SteerResult) => void }
 
+const DROPPED_COMMAND_STATES: readonly string[] = ["cancelled", "discarded", "refused"]
+
+function droppedCommand(message: unknown): { uuid: string; state: string } | undefined {
+  if (!message || typeof message !== "object") return undefined
+  const frame = message as { type?: unknown; command_uuid?: unknown; state?: unknown }
+  if (frame.type !== "command_lifecycle" || typeof frame.command_uuid !== "string" || typeof frame.state !== "string") return undefined
+  return DROPPED_COMMAND_STATES.includes(frame.state) ? { uuid: frame.command_uuid, state: frame.state } : undefined
+}
+
 export class ClaudeQueryInput {
   private readonly queue = new AsyncPushQueue<SDKUserMessage>()
   private readonly pending = new Set<Pending>()
@@ -29,6 +38,17 @@ export class ClaudeQueryInput {
 
   acknowledge(message: SDKMessage | SDKActiveGoalMessage): void {
     if (message.type === "user" && "isReplay" in message && message.isReplay && message.uuid) this.unreplayed.delete(message.uuid)
+    const dropped = droppedCommand(message)
+    if (dropped) this.drop(dropped.uuid, dropped.state)
+  }
+
+  private drop(uuid: string, state: string): void {
+    this.unreplayed.delete(uuid)
+    for (const item of this.pending) {
+      if (item.uuid !== uuid) continue
+      this.pending.delete(item)
+      item.resolve({ ok: false, status: "declined", message: `Claude ${state} the steer before taking it in` })
+    }
   }
 
   private write(input: SDKUserMessage): string {
