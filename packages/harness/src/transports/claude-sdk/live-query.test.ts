@@ -356,3 +356,19 @@ test("the session learns when background work starts and stops, and never that i
   expect(work()).toEqual([{ type: "background-work", active: true }, { type: "background-work", active: false }])
   await transport.dispose()
 })
+
+test("closing the session with background work running tells the session the work is gone before close returns", async () => {
+  const { transport, session, launches, published } = await setup()
+  const first = collect(transport.send(session, userTurn("t1", "start the job"), turnBroker()))
+  await until(() => launches[0]?.prompts.length === 1)
+  const claude = launches[0]!
+  claude.frames.push(init())
+  claude.replay(0)
+  claude.frames.push(background("job"))
+  claude.frames.push(result())
+  await first
+  await transport.close(rebound(session))
+  await Promise.resolve()
+  expect(published.filter((event) => (event as { type?: string }).type === "background-work"))
+    .toEqual([{ type: "background-work", active: true }, { type: "background-work", active: false }])
+})

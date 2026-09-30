@@ -113,6 +113,7 @@ export class ClaudeLiveQuery {
 
   terminate(): void {
     this.input.close()
+    this.replaceBackground(new Set())
     this.abort.abort()
     if (this.process.kind === "open" || this.process.kind === "closing") this.process.stream.close()
   }
