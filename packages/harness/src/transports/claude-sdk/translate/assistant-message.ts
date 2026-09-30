@@ -3,14 +3,17 @@ import type { AgentRuntimeEvent } from "@claxedo/agent-runtime-contract"
 import { asRecord } from "@claxedo/helpers/guards"
 import { own } from "../../../translate/value"
 import { withoutKey, type ClaudeSdkAdapterState, type ClaudeTranslation } from "./adapter-state"
-import { assistantSnapshotText, assistantToolBlocks } from "./assistant-content"
+import { assistantBlocks, assistantSnapshotText, assistantToolBlocks } from "./assistant-content"
 import { assistantErrorClass, windowLimitMessage } from "./rate-limits"
 import { meterRequest } from "./request-usage"
 import { diagnosticForEvent, type ClaudeFrameEvent, type ClaudeSdkAssistantMessage } from "./sdk-message"
 import { claudeStreamOwner } from "./subagent-routing"
 import { toolInputEvents, toolStartEvents } from "./tool-blocks"
+import { isServerToolResult, serverToolResult } from "./tool-results"
+import type { ClaudeTranslatorMemory } from "./translator-memory"
 
 type AssistantError = NonNullable<ClaudeSdkAssistantMessage["error"]>
+type Streamed = "streamedAssistantTextByOwner" | "streamedThinkingByOwner"
 type SnapshotReconciliation = { delta: string; divergedAt?: number }
 
 function commonPrefixLength(shown: string, snapshot: string) {
@@ -26,20 +29,12 @@ function reconcileAssistantSnapshot(shown: string, snapshot: string): SnapshotRe
   return { delta: snapshot.slice(shared), divergedAt: shared }
 }
 
-function assistantErrorEvents(error: AssistantError, message: Record<string, unknown>, state: ClaudeSdkAdapterState): AgentRuntimeEvent[] {
-  const explanation = assistantSnapshotText(message)
+function assistantFailure(error: AssistantError, message: Record<string, unknown>, state: ClaudeSdkAdapterState): ClaudeTranslation {
   const errorClass = assistantErrorClass(error, state)
   const head = errorClass === "usage_limit" && state.rejectedWindow
     ? windowLimitMessage(state.rejectedWindow)
     : `Claude assistant message failed: ${error}`
-  return [
-    { type: "session-status", status: "error" },
-    {
-      type: "error",
-      error: [head, explanation].filter(Boolean).join("\n"),
-      ...(errorClass ? { errorClass } : {}),
-    },
-  ] satisfies AgentRuntimeEvent[]
+  return { state: { ...state, failure: { error: [head, assistantSnapshotText(message)].filter(Boolean).join("\n"), ...(errorClass ? { errorClass } : {}) } }, events: [] }
 }
 
 function completeToolEvents(state: ClaudeSdkAdapterState, completeTools: ReturnType<typeof assistantToolBlocks>) {
@@ -51,13 +46,10 @@ function completeToolEvents(state: ClaudeSdkAdapterState, completeTools: ReturnT
   })
 }
 
-function reconciledTextState(state: ClaudeSdkAdapterState, owner: string, messageId: string | undefined, snapshot: string) {
-  return {
-    streamedAssistantTextByOwner: withoutKey(state.streamedAssistantTextByOwner, owner),
-    ...(messageId
-      ? { reconciledAssistantTextByMessageId: { ...state.reconciledAssistantTextByMessageId, [messageId]: snapshot } }
-      : {}),
-  }
+function reconcileKind(state: ClaudeSdkAdapterState, key: Streamed, owner: string, snapshot: string) {
+  if (!snapshot) return { state, reconciliation: undefined, shown: "" }
+  const shown = own(state[key], owner) ?? ""
+  return { state: { ...state, [key]: withoutKey(state[key], owner) }, reconciliation: reconcileAssistantSnapshot(shown, snapshot), shown }
 }
 
 function divergenceDiagnostics(
@@ -80,33 +72,40 @@ function divergenceDiagnostics(
   })]
 }
 
-export function translateAssistantMessage(
-  message: ClaudeSdkAssistantMessage,
-  rawMessage: Record<string, unknown>,
-  state: ClaudeSdkAdapterState,
-  event: ClaudeFrameEvent,
-): ClaudeTranslation {
-  if (message.error) return assistantErrorEvents(message.error, rawMessage, state)
+function serverResults(state: ClaudeSdkAdapterState, message: Record<string, unknown>) {
+  let next = state
+  const events = assistantBlocks(message).filter((block) => isServerToolResult(block.type)).flatMap((block) => {
+    const settled = serverToolResult(next, block)
+    if (Array.isArray(settled)) return settled
+    next = settled.state ?? next
+    return settled.events ?? []
+  })
+  return { state: next, events }
+}
+
+export function translateAssistantMessage(message: ClaudeSdkAssistantMessage, rawMessage: Record<string, unknown>, state: ClaudeSdkAdapterState,
+  event: ClaudeFrameEvent, memory: ClaudeTranslatorMemory): ClaudeTranslation {
+  if (message.error) return assistantFailure(message.error, rawMessage, state)
+  const frameId = text(rawMessage.uuid)
+  const repeated = frameId !== undefined && state.reconciledFrames?.[frameId] === true
   const completeTools = assistantToolBlocks(rawMessage)
-  const snapshot = assistantSnapshotText(rawMessage)
   const messageId = text(message.message.id)
   const owner = claudeStreamOwner(rawMessage)
-  const shown = `${(messageId ? own(state.reconciledAssistantTextByMessageId, messageId) : undefined) ?? ""}${own(state.streamedAssistantTextByOwner, owner) ?? ""}`
-  const reconciliation = snapshot ? reconcileAssistantSnapshot(shown, snapshot) : undefined
+  const thinking = reconcileKind(state, "streamedThinkingByOwner", owner, repeated ? "" : assistantSnapshotText(rawMessage, "thinking"))
+  const snapshot = repeated ? "" : assistantSnapshotText(rawMessage)
+  const reply = reconcileKind(thinking.state, "streamedAssistantTextByOwner", owner, snapshot)
+  const results = serverResults({ ...reply.state, ...(frameId ? { reconciledFrames: { ...state.reconciledFrames, [frameId]: true as const } } : {}), toolsById: { ...state.toolsById, ...Object.fromEntries(completeTools.map(({ tool }) => [tool.toolCallId, { ...own(state.toolsById, tool.toolCallId), ...tool }])) } }, rawMessage)
   const metered = messageId
-    ? meterRequest(state, owner, messageId, asRecord(message.message.usage), text(rawMessage.session_id), text(message.message.model))
+    ? meterRequest(results.state, memory, owner, messageId, asRecord(message.message.usage), text(rawMessage.session_id), text(message.message.model))
     : undefined
   return {
-    state: {
-      ...state,
-      toolsById: { ...state.toolsById, ...Object.fromEntries(completeTools.map(({ tool }) => [tool.toolCallId, tool])) },
-      ...(reconciliation ? reconciledTextState(state, owner, messageId, snapshot) : {}),
-      ...(metered ? { requestUsageByOwner: metered.requestUsageByOwner } : {}),
-    },
+    state: metered?.state ?? results.state,
     events: [
       ...completeToolEvents(state, completeTools),
-      ...divergenceDiagnostics(reconciliation, event, { messageId, shown, snapshot }),
-      ...(reconciliation?.delta ? [{ type: "text-delta", delta: reconciliation.delta } satisfies AgentRuntimeEvent] : []),
+      ...(thinking.reconciliation?.delta ? [{ type: "thinking-delta", delta: thinking.reconciliation.delta } satisfies AgentRuntimeEvent] : []),
+      ...divergenceDiagnostics(reply.reconciliation, event, { messageId, shown: reply.shown, snapshot }),
+      ...(reply.reconciliation?.delta ? [{ type: "text-delta", delta: reply.reconciliation.delta } satisfies AgentRuntimeEvent] : []),
+      ...results.events,
       ...(metered ? [metered.event] : []),
     ],
   }

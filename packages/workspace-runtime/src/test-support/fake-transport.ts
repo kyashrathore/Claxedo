@@ -66,7 +66,7 @@ export type FakeTransportOptions = {
   kind?: TransportKind
   capabilities?: Partial<TransportCapabilities>
   /** What one turn yields; the default answers "ack" and finishes. */
-  turn?: (input: FakeTurn) => AsyncIterable<AgentRuntimeEvent>
+  turn?: (input: FakeTurn) => AsyncIterable<AgentRuntimeEvent | RoutedEvent>
   /** The upstream id a started session is bound to; the default derives one from the session id. */
   upstreamSessionId?: (input: StartInput) => string
   onStart?: (input: StartInput, config: SessionConfig) => void
@@ -179,7 +179,7 @@ export class FakeTransport implements HarnessTransport {
     try {
       for await (const event of (this.options.turn ?? ackTurn)(input)) {
         if (broker.signal.aborted && !this.options.drainsAfterAbort) return
-        yield { event }
+        yield "event" in event ? event : { event }
       }
     } finally {
       this.activeTurns--

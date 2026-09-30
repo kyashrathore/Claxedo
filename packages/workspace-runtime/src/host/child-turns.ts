@@ -14,12 +14,11 @@ type ChildLifecycleEvent =
   | { type: "finish"; sessionId: string }
   | { type: "error"; error: string }
 
-/** What a parent's running turn lends its children: the router that projects them and the prompt they inherit. */
+/** What a parent's running turn, prompted or provider-initiated, lends its children: the prompt they inherit and where their lifecycle projects. */
 export type ParentTurnContext = {
   directory: string
   input: Pick<PromptInput, "agent" | "model" | "variant">
   fencingToken?: number
-  associate: (correlationKey: string, target: ChildProjectionTarget) => void
   projectChild: (target: ChildProjectionTarget, event: ChildLifecycleEvent, source: RuntimeAppendSource) => void
 }
 
@@ -74,6 +73,7 @@ export function createChildTurns(input: {
       created: ref.created,
       input: { userMessageId: randomUUID(), agent: parent.input.agent, model: parent.input.model,
         ...(parent.input.variant ? { variant: parent.input.variant } : {}) },
+      ...(parent.fencingToken === undefined ? {} : { fencingToken: parent.fencingToken }),
     }
     const leaseId = input.store.acquireTurnLease(ref.sessionId)
     if (!leaseId) throw new TurnAuthorityUnavailableError(ref.sessionId)
@@ -130,6 +130,11 @@ export function createChildTurns(input: {
   }
 
   return {
+    /** The projection target of the child turn this host seeded, when the route names that turn. */
+    target(childSessionId: string, assistantMessageId: string): ChildProjectionTarget | undefined {
+      const child = children.get(childSessionId)
+      return child?.target.assistantMessageId === assistantMessageId ? child.target : undefined
+    },
     beginTurn(parentSessionId: string, context: ParentTurnContext) {
       parents.set(parentSessionId, context)
       return () => {
@@ -153,12 +158,6 @@ export function createChildTurns(input: {
           const known = children.get(childSessionId)
           if (parent && (!known || known.settled && ref.assistantMessageId !== known.target.assistantMessageId)) seed(parentSessionId, ref, observation, parent)
           return ref
-        },
-        bindChildCorrelation: (parentSessionId, correlationKey, childSessionId) => {
-          base.bindChildCorrelation(parentSessionId, correlationKey, childSessionId)
-          const child = children.get(childSessionId)
-          const parent = parents.get(parentSessionId)
-          if (child && parent) parent.associate(correlationKey, child.target)
         },
         publishSubagent: async (parentSessionId, event) => {
           await base.publishSubagent(parentSessionId, event)

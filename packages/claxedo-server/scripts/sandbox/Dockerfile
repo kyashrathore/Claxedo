@@ -20,7 +20,7 @@ RUN apt-get update && \
 # Global CLI tools used by direct terminal agents and materialized MCP configs.
 RUN npm i -g --min-release-age=2 \
       tsx@4.22.3 \
-      @anthropic-ai/claude-code@2.1.150 \
+      @anthropic-ai/claude-code@2.1.280 \
       @openai/codex@0.156.1 \
       @google/gemini-cli@0.43.0 \
       @earendil-works/pi-coding-agent@0.85.1

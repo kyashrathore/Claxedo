@@ -3,7 +3,8 @@ import { AbortError, type EffortLevel, type SDKMessage, type SDKUserMessage } fr
 import { isHarnessEffortLevel, type PromptModel, type SteerResult } from "@claxedo/agent-runtime-contract"
 import type { AdapterCancelOutcome } from "@claxedo/agent-runtime-contract"
 import { errorMessage } from "@claxedo/helpers"
-import type { BackgroundTaskRef, BackgroundTaskStopResult, Deadline, HarnessServices, HarnessSession, RoutedEvent, SessionBroker, StartInput, TurnBroker, TurnInput, TurnRef } from "../../contract"
+import type { BackgroundTaskRef, BackgroundTaskStopResult, Deadline, HarnessServices, HarnessSession, HarnessVersionGate, RoutedEvent, SessionBroker,
+  StartInput, TurnBroker, TurnInput, TurnRef } from "../../contract"
 import { TransportError } from "../../contract/errors"
 import { claudePrompt } from "./attachments"
 import { ClaudeLiveQuery, type ClaudeClaim } from "./live-query"
@@ -53,7 +54,7 @@ function settlement(): { done: Promise<void>; finish: () => void } {
 
 export class ClaudeTurns {
   constructor(private readonly launcher: () => ClaudeQueryLauncher, private readonly models: ClaudeModelCatalog,
-    private readonly log: HarnessServices["log"]) {}
+    private readonly log: HarnessServices["log"], private readonly versions: HarnessVersionGate) {}
 
   async steer(entry: ClaudeEntry, ref: TurnRef, input: TurnInput): Promise<SteerResult> {
     const active = entry.active
@@ -98,7 +99,7 @@ export class ClaudeTurns {
     const onAbort = () => active.abort.abort()
     if (broker.signal.aborted) onAbort()
     else broker.signal.addEventListener("abort", onAbort, { once: true })
-    const scope: ClaudeScope = { assistantMessageId: turn.assistantMessageId, todos: turn.todos, broker, signal: active.abort.signal, final: true }
+    const scope: ClaudeScope = { assistantMessageId: turn.assistantMessageId, todos: turn.todos, broker, signal: active.abort.signal, final: true, versions: this.versions }
     let settled = false
     try {
       settled = yield* this.prompted(entry, active, turn, scope)
@@ -139,7 +140,7 @@ export class ClaudeTurns {
       const opened = await this.open(entry, await this.launchFor(entry, configuredChoice(entry)), opening, () => true)
       active.live = opened.live
       const limit = setTimeout(() => opened.live.terminate(), limitMs)
-      try { return await commandResult(entry, opened.claim, active.abort.signal) } finally { clearTimeout(limit) }
+      try { return await commandResult(entry, opened.claim, active.abort.signal, this.versions) } finally { clearTimeout(limit) }
     } finally {
       entry.active = undefined
       if (active.live) this.endTurn(entry, active.live, active.id, true)
@@ -228,7 +229,7 @@ export class ClaudeTurns {
     else broker.signal.addEventListener("abort", onAbort, { once: true })
     let settled = false
     try {
-      settled = yield* translatedClaim(entry, live, claim, { assistantMessageId: turn.assistantMessageId, todos: [], broker, signal: broker.signal, final: true })
+      settled = yield* translatedClaim(entry, live, claim, { assistantMessageId: turn.assistantMessageId, todos: [], broker, signal: broker.signal, final: true, versions: this.versions })
     } finally {
       broker.signal.removeEventListener("abort", onAbort)
       if (entry.provider?.turnId === turn.turnId) entry.provider = undefined

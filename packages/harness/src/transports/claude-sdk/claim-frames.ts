@@ -1,5 +1,5 @@
 import type { SDKMessage } from "@anthropic-ai/claude-agent-sdk"
-import type { RoutedEvent, TurnBroker, TurnInput } from "../../contract"
+import type { HarnessVersionGate, RoutedEvent, TurnBroker, TurnInput } from "../../contract"
 import { claudeProcessFailed, claudeStreamEndedWithoutResult } from "./errors"
 import { claudeTranslator, translateClaude } from "./events"
 import type { ClaudeClaim, ClaudeLiveQuery } from "./live-query"
@@ -7,7 +7,7 @@ import { ClaudeMirroredUsage } from "./mirrored-usage"
 import { observeClaudeSessionMessage } from "./session-events"
 import type { ClaudeEntry } from "./turns"
 
-export type ClaudeScope = { assistantMessageId: string; todos: TurnInput["todos"]; broker: TurnBroker; signal: AbortSignal; final: boolean }
+export type ClaudeScope = { assistantMessageId: string; todos: TurnInput["todos"]; broker: TurnBroker; signal: AbortSignal; final: boolean; versions: HarnessVersionGate }
 
 async function* claimedFrames(live: ClaudeLiveQuery, claim: ClaudeClaim) {
   try {
@@ -20,13 +20,13 @@ async function* claimedFrames(live: ClaudeLiveQuery, claim: ClaudeClaim) {
 export async function* translatedClaim(entry: ClaudeEntry, live: ClaudeLiveQuery, claim: ClaudeClaim, scope: ClaudeScope): AsyncGenerator<RoutedEvent, boolean> {
   if (claim.dropped) yield claim.dropped
   await live.childrenDelivered
-  const { runtime, tasks } = claudeTranslator(scope.assistantMessageId, scope.todos, live.tasks)
+  const { runtime, tasks } = claudeTranslator(scope.assistantMessageId, scope.todos, live.tasks, live.memory)
   const mirroredUsage = new ClaudeMirroredUsage(runtime, { broker: entry.broker, assistantMessageId: scope.assistantMessageId, directory: entry.input.directory })
   live.usage.target(mirroredUsage)
   try {
     let result: SDKMessage | undefined
     for await (const message of claimedFrames(live, claim)) {
-      const observed = await observeClaudeSessionMessage(message, entry, entry.broker, scope.signal)
+      const observed = await observeClaudeSessionMessage(message, entry, entry.broker, scope.signal, scope.versions)
       if (observed.kind === "active-goal") continue
       const incorporated = live.input.observe(observed.message)
       if (incorporated) {
@@ -47,10 +47,10 @@ export async function* translatedClaim(entry: ClaudeEntry, live: ClaudeLiveQuery
   } finally { mirroredUsage.release() }
 }
 
-export async function commandResult(entry: ClaudeEntry, claim: ClaudeClaim, signal: AbortSignal): Promise<SDKMessage | undefined> {
+export async function commandResult(entry: ClaudeEntry, claim: ClaudeClaim, signal: AbortSignal, versions: HarnessVersionGate): Promise<SDKMessage | undefined> {
   let result: SDKMessage | undefined
   for await (const frame of claim.frames) {
-    const observed = await observeClaudeSessionMessage(frame, entry, entry.broker, signal)
+    const observed = await observeClaudeSessionMessage(frame, entry, entry.broker, signal, versions)
     if (observed.kind === "message" && observed.message.type === "result") result = observed.message
   }
   return result

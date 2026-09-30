@@ -20,7 +20,7 @@ export function claudeSubagentObservations(value: unknown, ledger: ClaudeTaskLed
   }
   if (message.type === "user") return agentResultObservations(message, wrapperId, harnessExecutionId, ledger)
   if (message.type !== "system") return []
-  return taskSystemObservations(message, wrapperId, harnessExecutionId, ledger)
+  return taskSystemObservations(message, wrapperId, ledger)
 }
 
 function recordHostSubagentCalls(message: Record<string, unknown>, ledger: ClaudeTaskLedger) {

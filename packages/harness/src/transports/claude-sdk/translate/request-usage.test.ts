@@ -93,7 +93,7 @@ describe("claudeSdkAdapter", () => {
         is_error: false,
         session_id: "sdk-session-result",
         usage: { ...opening, output_tokens: 679 },
-        modelUsage: { "claude-opus-4-6": { contextWindow: 200000 } },
+        modelUsage: { "claude-opus": { contextWindow: 200000, canonicalModel: "claude-opus" } },
       },
     }).events).toMatchObject([
       {
@@ -154,7 +154,7 @@ describe("claudeSdkAdapter", () => {
       },
     ].flatMap((payload) => sdkFrame(agent, payload))
 
-    expect(events).toContainEqual(expect.objectContaining({ type: "error" }))
+    expect(events).not.toContainEqual(expect.objectContaining({ type: "error" }))
     expect(meteredTokens(events)).toEqual(TWO_REQUEST_FINALS)
   })
 
@@ -171,7 +171,7 @@ describe("claudeSdkAdapter", () => {
       cache_read_input_tokens: 2200,
       output_tokens: 4900,
       cache_creation: { ephemeral_1h_input_tokens: 200, ephemeral_5m_input_tokens: 50 },
-    }, { modelUsage: { "claude-opus": { contextWindow: 200000 } } }))
+    }, { modelUsage: { "claude-opus": { contextWindow: 200000, canonicalModel: "claude-opus" } } }))
 
     expect(closing).toMatchObject([
       { type: "usage", contextSize: 200000, contextUsed: 5 + 4000 + 1200 + 50 },
@@ -196,20 +196,19 @@ describe("claudeSdkAdapter", () => {
     }
   })
 
-  test("a child's requests meter the child's own total, corrected by its transcript, and never the parent's", () => {
+  test("a child's requests meter the child's own total, once, and never the parent's", () => {
     const agent = runtime()
     for (const payload of streamedRequest("req-parent", FIRST_REQUEST, 900)) sdkFrame(agent, payload)
     const childOpening = { input_tokens: 4, cache_read_input_tokens: 700, cache_creation_input_tokens: 30, cache_creation: { ephemeral_1h_input_tokens: 30, ephemeral_5m_input_tokens: 0 }, output_tokens: 2 }
     const correction = (id: string, usage: Record<string, unknown>) => agent.ingest({
       source: "claude.sdk",
       method: CLAUDE_SUBAGENT_USAGE_METHOD,
-      payload: { parent_tool_use_id: "tool-agent-1", session_id: "sdk-session-1", message: { id, usage } } satisfies ClaudeSubagentUsage,
+      payload: { parent_tool_use_id: null, subpath: "subagents/agent-1", session_id: "sdk-session-1", message: { id, usage } } satisfies ClaudeSubagentUsage,
     }).events
 
     expect(meteredTokens(sdkFrame(agent, assistantFrame("req-child-1", childOpening, "tool-agent-1"))))
       .toEqual({ input: 4, output: 2, reasoning: null, cache: { read: 700, write: 30, write1h: 30 } })
-    expect(meteredTokens(correction("req-child-1", { ...childOpening, output_tokens: 310 })))
-      .toEqual({ input: 4, output: 310, reasoning: null, cache: { read: 700, write: 30, write1h: 30 } })
+    expect(correction("req-child-1", { ...childOpening, output_tokens: 310 })).toEqual([])
     expect(correction("req-child-1", childOpening)).toEqual([])
 
     const closing = sdkFrame(agent, resultFrame({ input_tokens: 3, cache_creation_input_tokens: 200, cache_read_input_tokens: 1000, output_tokens: 900 }))
@@ -243,8 +242,8 @@ describe("claudeSdkAdapter", () => {
     expect(observed(agent.ingest({
       source: "claude.sdk",
       method: CLAUDE_SUBAGENT_USAGE_METHOD,
-      payload: { parent_tool_use_id: "tool-agent-2", session_id: "sdk-session-1", message: { id: "req-mirrored", usage: { input_tokens: 9 }, model: "claude-haiku-4-5" } } satisfies ClaudeSubagentUsage,
-    }).events)).toEqual([{ scope: "tool-agent-2", model: "claude-haiku-4-5", input: 9 }])
+      payload: { parent_tool_use_id: null, subpath: "subagents/agent-2", session_id: "sdk-session-1", message: { id: "req-mirrored", usage: { input_tokens: 9 }, model: "claude-haiku-4-5" } } satisfies ClaudeSubagentUsage,
+    }).events)).toEqual([{ scope: "subagents/agent-2", model: "claude-haiku-4-5", input: 9 }])
   })
 
   test("a message_delta after its request stopped merges into no request", () => {

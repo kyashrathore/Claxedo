@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test"
 import type { TurnBroker } from "../../contract"
+import { CLAUDE_CODE_RANGE } from "./cli-version"
 import { ClaudeSdkTransport } from "./index"
 import { background, collect, frame, init, input, notification, rebound, reply, result, scriptedLaunches, services, sessionBroker, setup,
   texts, turnBroker, until, userTurn } from "./test-support/live"
@@ -393,5 +394,16 @@ test("stopping a background task by the call that started it stops that task and
   await claude.stdinClosed
   claude.frames.end()
   expect(await transport.backgroundTasks.stop(rebound(session), { toolCallId: "toolu_one" })).toMatchObject({ ok: false, status: "not_found" })
+  await transport.dispose()
+})
+
+test("a turn on a Claude Code older than the tested range fails with the update message", async () => {
+  const { transport, session, launches } = await setup()
+  const turn = collect(transport.send(session, userTurn("t1", "hello"), turnBroker()))
+  await until(() => launches[0]?.prompts.length === 1)
+  launches[0]!.frames.push(init("2.1.150"))
+  await expect(turn).rejects.toMatchObject({ transport: "claude", code: "configuration", retryable: false,
+    detail: { installed: "2.1.150", minimum: CLAUDE_CODE_RANGE.min } })
+  launches[0]!.frames.end()
   await transport.dispose()
 })

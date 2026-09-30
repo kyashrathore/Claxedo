@@ -105,3 +105,43 @@ test("a create_subagent call a Claude subagent made binds the host child under i
     tool_use_result: [{ type: "text", text: binding }] } as unknown as SDKMessage, runtime, tasks, broker)
   expect(associated).toEqual(["toolu_1", "tool-mcp-nested-1"])
 })
+
+test("a Claude 2.1.285 agent resumed through SendMessage in a later process routes its frames under its original Agent call", async () => {
+  const { runtime, tasks } = claudeTranslator("a1")
+  const { broker, associated, observed } = recordingBroker()
+  const session = "a7e7300f-e560-4376-9ab2-4c65ca2b4268"
+  await translateClaude({ type: "user", uuid: "44ffac63-9a2b-425a-90ab-85d3d1f4d9f0", session_id: session, parent_tool_use_id: null,
+    message: { role: "user", content: [{ tool_use_id: "toolu_01LxqZ8zxkTpU8LH8gBdeU9S", type: "tool_result",
+      content: [{ type: "text", text: "{\"success\":true,\"message\":\"Resuming agent ab03639\",\"resumedAgentId\":\"ab03639cdfec8b10f\"}" }] }] },
+    tool_use_result: { success: true, message: "Resuming agent ab03639", resumedAgentId: "ab03639cdfec8b10f",
+      pin: { id: "ab03639cdfec8b10f", name: "ab03639cdfec8b10f", ref: "8ce2e3" } } } as unknown as SDKMessage, runtime, tasks, broker)
+  await translateClaude({ type: "system", subtype: "task_started", uuid: "71313ac4-4cc0-45a8-adc5-51a92657139d", session_id: session,
+    task_id: "ab03639cdfec8b10f", tool_use_id: "toolu_01LxqZ8zxkTpU8LH8gBdeU9S", description: "Lane A: server scripts cleanup",
+    subagent_type: "general-purpose", task_type: "local_agent", spawn_depth: 1 } as unknown as SDKMessage, runtime, tasks, broker)
+  const resumedText = { type: "assistant", uuid: "resumed-text", session_id: session, parent_tool_use_id: "toolu_01CM7rPr5fxA7N9D3aD9vJMR",
+    message: { id: "req-resumed", role: "assistant", content: [{ type: "text", text: "Picking up where I left off." }],
+      usage: { input_tokens: 1, output_tokens: 1 } } } as unknown as SDKMessage
+  const routed = await translateClaude(resumedText, runtime, tasks, broker)
+
+  expect(observed).toMatchObject([{ stableCorrelationId: "ab03639cdfec8b10f", toolCallId: "toolu_01LxqZ8zxkTpU8LH8gBdeU9S", status: "running" }])
+  expect(associated).toEqual(["toolu_01LxqZ8zxkTpU8LH8gBdeU9S"])
+  expect(routed.length).toBeGreaterThan(0)
+  expect(routed.every((item) => item.route?.kind === "child" && item.route.correlationKey === "toolu_01CM7rPr5fxA7N9D3aD9vJMR")).toBe(true)
+})
+
+test("a Skill call's forked execution is bound under the Skill call at task_started, before any of its frames", async () => {
+  const { runtime, tasks } = claudeTranslator("a1")
+  const { broker, associated } = recordingBroker()
+  await translateClaude({ type: "assistant", uuid: "skill-call", session_id: "up1", parent_tool_use_id: null,
+    message: { id: "req-skill", role: "assistant", content: [{ type: "tool_use", id: "toolu_skill", name: "Skill",
+      input: { skill: "review-lanes" } }], usage: { input_tokens: 1, output_tokens: 1 } } } as unknown as SDKMessage, runtime, tasks, broker)
+  await translateClaude({ type: "system", subtype: "task_started", uuid: "fork-started", session_id: "up1", task_id: "agent-fork",
+    tool_use_id: "toolu_skill", description: "review-lanes", subagent_type: "general-purpose", task_type: "local_agent",
+    is_backgrounded: true } as unknown as SDKMessage, runtime, tasks, broker)
+  expect(associated).toEqual(["toolu_skill"])
+  const forkText = { type: "assistant", uuid: "fork-text", session_id: "up1", parent_tool_use_id: "toolu_skill",
+    message: { id: "req-fork", role: "assistant", content: [{ type: "text", text: "Reviewing the lanes." }],
+      usage: { input_tokens: 1, output_tokens: 1 } } } as unknown as SDKMessage
+  const routed = await translateClaude(forkText, runtime, tasks, broker)
+  expect(routed.every((item) => item.route?.kind === "child" && item.route.correlationKey === "toolu_skill")).toBe(true)
+})

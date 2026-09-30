@@ -3,6 +3,7 @@ import type { Query, SDKMessage, SDKUserMessage } from "@anthropic-ai/claude-age
 import type { RuntimeGoalSnapshot } from "@claxedo/agent-runtime-contract"
 import { AsyncPushQueue } from "@claxedo/helpers"
 import type { HarnessServices, HarnessSession, ProviderTurnInput, ProviderTurnResult, ProviderTurnSettlement, RoutedEvent, SessionBroker, StartInput, TurnBroker, TurnInput, TurnRef } from "../../../contract"
+import { CLAUDE_CODE_RANGE } from "../cli-version"
 import { ClaudeSdkTransport } from "../index"
 import type { ClaudeQueryLauncher } from "../query-options"
 
@@ -13,7 +14,7 @@ export const input: StartInput = { sessionId: "s1", workspaceId: "w1", directory
 export const services = { log: { debug() {}, info() {}, warn() {}, error() {} } } as unknown as HarnessServices
 
 export const frame = (value: Record<string, unknown>) => ({ session_id: "up1", uuid: crypto.randomUUID(), ...value }) as unknown as SDKMessage
-export const init = () => frame({ type: "system", subtype: "init" })
+export const init = (version: string = CLAUDE_CODE_RANGE.max) => frame({ type: "system", subtype: "init", claude_code_version: version })
 export const background = (...ids: string[]) => frame({ type: "system", subtype: "background_tasks_changed",
   tasks: ids.map((id) => ({ task_id: id, task_type: "local_bash", description: "sleep" })) })
 export const notification = (id: string) => frame({ type: "system", subtype: "task_notification", task_id: id, status: "completed", output_file: "/tmp/out", summary: "done" })

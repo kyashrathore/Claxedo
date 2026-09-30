@@ -1,4 +1,4 @@
-import type { AgentRuntimeEvent } from "@claxedo/agent-runtime-contract"
+import type { AgentRuntimeEvent, FirstTurnErrorClass } from "@claxedo/agent-runtime-contract"
 import type { HarnessEventAdapterResult } from "../../../translate/adapter"
 import type { ClaudeTrackedTask } from "./task-tracking"
 
@@ -11,6 +11,7 @@ export type ClaudeBlockState = {
   input?: Record<string, unknown>
   partialInputJson?: string
   streamedInputJson?: string
+  settled?: boolean
 }
 
 export type ClaudeRequestUsage = {
@@ -28,13 +29,15 @@ export type ClaudeSdkAdapterState = {
   blocksByIndex: Record<string, ClaudeBlockState>
   toolsById: Record<string, ClaudeBlockState>
   streamedAssistantTextByOwner: Record<string, string>
-  reconciledAssistantTextByMessageId: Record<string, string>
+  streamedThinkingByOwner: Record<string, string>
+  reconciledFrames?: Record<string, true>
   cwd?: string
-  lastKnownContextWindow?: number
-  requestUsageByOwner?: Record<string, Record<string, ClaudeRequestUsage>>
+  model?: string
+  mainRequests?: Record<string, ClaudeRequestUsage>
   streamingRequestByOwner?: Record<string, string>
   lastMainRequest?: string
   rejectedWindow?: { limitName?: string; resetsAt?: number | null }
+  failure?: { error: string; errorClass?: FirstTurnErrorClass }
 }
 
 export type ClaudeTranslation = HarnessEventAdapterResult<ClaudeSdkAdapterState> | AgentRuntimeEvent[]
