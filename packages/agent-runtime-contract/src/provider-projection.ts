@@ -75,7 +75,7 @@ export type CredentialSnapshot<T = ProviderProjectionSource> = {
   machineOwnerUserId: string
   /**
    * The account each person spends, by user id and provider: their own, or the
-   * org's team account for a provider they chose it for. Nothing else is spent.
+   * org's account for a provider they chose it for. Nothing else is spent.
    */
   accounts: Record<string, Record<string, T>>
 }

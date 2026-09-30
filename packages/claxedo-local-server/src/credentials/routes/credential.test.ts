@@ -88,7 +88,7 @@ function credentials(): ControlPlaneCredentials {
       failed: [],
     })),
     accountSelections: vi.fn(async () => ({})),
-    setAccountSources: vi.fn(async (providerIds: readonly string[], source: "own" | "team") =>
+    setAccountSources: vi.fn(async (providerIds: readonly string[], source: "own" | "org") =>
       Object.fromEntries(providerIds.map((providerId) => [providerId, source]))),
   }
 }
@@ -1236,24 +1236,24 @@ describe("choosing which account a provider runs on", () => {
     expect(byProvider.credential).toMatchObject({ id: second.id, is_active: true })
   })
 
-  test("the org's team account is what a person spends only once they choose it, and choosing their own puts theirs back", async () => {
-    const own = await account("team-choice", "acc_own")
-    const team = await registry.putCredential({ owner: null, provider_id: "team-choice", kind: "oauth_token", source: "managed",
-      account_id: "acc_team", label: "Team", secret: "team-secret" })
+  test("the org's account is what a person spends only once they choose it, and choosing their own puts theirs back", async () => {
+    const own = await account("org-choice", "acc_own")
+    const orgAccount = await registry.putCredential({ owner: null, provider_id: "org-choice", kind: "oauth_token", source: "managed",
+      account_id: "acc_org", label: "Org", secret: "org-secret" })
     const spent = async () => ((await (await app.request("http://localhost/effective")).json()) as { credentials: Array<{ id: string; provider_id: string }> })
-      .credentials.filter((row) => row.provider_id === "team-choice").map((row) => row.id)
+      .credentials.filter((row) => row.provider_id === "org-choice").map((row) => row.id)
     const choose = (source: string) => app.request("http://localhost/account-sources", {
-      method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ provider_ids: ["team-choice"], source }),
+      method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ provider_ids: ["org-choice"], source }),
     })
 
     expect(await spent()).toEqual([own.id])
-    const chosen = await choose("team")
+    const chosen = await choose("org")
     expect(chosen.status).toBe(200)
-    await expect(chosen.json()).resolves.toMatchObject({ sources: { "team-choice": "team" } })
-    expect(await spent()).toEqual([team.id])
-    const listed = await (await app.request("http://localhost/account-sources")).json() as { sources: Record<string, string>; team: Array<{ id: string }> }
-    expect(listed.sources).toMatchObject({ "team-choice": "team" })
-    expect(listed.team.map((row) => row.id)).toContain(team.id)
+    await expect(chosen.json()).resolves.toMatchObject({ sources: { "org-choice": "org" } })
+    expect(await spent()).toEqual([orgAccount.id])
+    const listed = await (await app.request("http://localhost/account-sources")).json() as { sources: Record<string, string>; org: Array<{ id: string }> }
+    expect(listed.sources).toMatchObject({ "org-choice": "org" })
+    expect(listed.org.map((row) => row.id)).toContain(orgAccount.id)
 
     expect((await choose("own")).status).toBe(200)
     expect(await spent()).toEqual([own.id])

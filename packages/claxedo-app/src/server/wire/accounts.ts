@@ -119,12 +119,12 @@ function sourcesFromWire(value: unknown): ReadonlyMap<string, AccountSource> | u
 
 export function accountSourcesFromWire(value: unknown): AccountSources | undefined {
   const sources = sourcesFromWire(asRecord(value)?.sources)
-  const team = rowsFromWire(value, "team", accountFromWire)
-  return sources && team ? { sources, team } : undefined
+  const org = rowsFromWire(value, "org", accountFromWire)
+  return sources && org ? { sources, org } : undefined
 }
 
 export function hostedAccountSourcesFromWire(value: unknown): HostedAccountSources | undefined {
   const sources = sourcesFromWire(asRecord(value)?.sources)
-  const team = texts(asRecord(value)?.team)
-  return sources && team ? { sources, team: new Set(team) } : undefined
+  const org = texts(asRecord(value)?.org)
+  return sources && org ? { sources, org: new Set(org) } : undefined
 }

@@ -59,11 +59,11 @@ describe("what a host answers once a configuration is pushed", () => {
     expect(answer.accounts.owner).toEqual({ openai: PUSHED, anthropic: brokered })
   })
 
-  test("a provider the owner chose the team account for keeps it over their pushed account", async () => {
-    const team = { baseUrl: "https://broker.local", placeholder: "team", authMode: "api-key" } as const
-    const base = async () => ({ machineOwnerUserId: "owner", accounts: { owner: { openai: team, anthropic: brokered } } })
-    const answer = await hostProviderConfigProjectAuth(base, () => pushedBy("owner"), () => "owner", () => ({ openai: "team" }))({})
-    expect(answer.accounts.owner).toEqual({ openai: team, anthropic: brokered })
+  test("a provider the owner chose the org account for keeps it over their pushed account", async () => {
+    const org = { baseUrl: "https://broker.local", placeholder: "org", authMode: "api-key" } as const
+    const base = async () => ({ machineOwnerUserId: "owner", accounts: { owner: { openai: org, anthropic: brokered } } })
+    const answer = await hostProviderConfigProjectAuth(base, () => pushedBy("owner"), () => "owner", () => ({ openai: "org" }))({})
+    expect(answer.accounts.owner).toEqual({ openai: org, anthropic: brokered })
   })
 
   test("a push from anyone but the enrolled owner is an earlier enrollment's and answers for nobody", async () => {

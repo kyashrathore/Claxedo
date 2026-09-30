@@ -92,7 +92,7 @@ export type HostedShellRouteOptions = {
   piProviderCatalog?: (auth: SignedControlPlaneAuth) => Promise<Record<string, unknown>>
   putPiCredential?: (auth: SignedControlPlaneAuth, providerID: string, key: string) => Promise<void>
   deletePiCredential?: (auth: SignedControlPlaneAuth, providerID: string) => Promise<void>
-  piAccountSources?: (auth: SignedControlPlaneAuth) => Promise<{ sources: Record<string, AccountSource>; team: string[] }>
+  piAccountSources?: (auth: SignedControlPlaneAuth) => Promise<{ sources: Record<string, AccountSource>; org: string[] }>
   putPiAccountSource?: (auth: SignedControlPlaneAuth, providerID: string, source: AccountSource) => Promise<void>
   /**
    * Ask the runtime of a workspace placed on a machine for harness health and
@@ -729,7 +729,7 @@ export function HostedShellRoutes(options: HostedShellRouteOptions) {
         const auth = await signedAuth(c, options)
         if (!auth) throw new ControlPlaneAuthError(401, "missing_bearer_token", "Authorization: Bearer token is required")
         const source = (await readJsonRecord(c.req.raw))?.source
-        if (!isAccountSource(source)) return c.json({ error: { code: "account_source_invalid", message: "source must be \"own\" or \"team\"" } }, 400)
+        if (!isAccountSource(source)) return c.json({ error: { code: "account_source_invalid", message: "source must be \"own\" or \"org\"" } }, 400)
         await options.putPiAccountSource(auth, c.req.param("providerID"), source)
         return c.json({})
       } catch (err) {

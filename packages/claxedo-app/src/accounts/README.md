@@ -4,16 +4,16 @@ Owns: the logins each agent harness runs on, and today's app's surfaces for them
 
 ## Data
 
-- `useAccounts()` (`store.ts`) reads four adapter queries: stored accounts (`server.queries.accounts.list`), the ones in use (`effective`), this machine's CLI logins (`machineLogins`) and whose account the person spends per provider with the organization's team rows (`sources`, `/api/claxedo/credentials/account-sources`). Nothing reads them at app start: the machine-login read starts the harness CLIs, so it runs only when Settings → Models or the AI step mounts.
+- `useAccounts()` (`store.ts`) reads four adapter queries: stored accounts (`server.queries.accounts.list`), the ones in use (`effective`), this machine's CLI logins (`machineLogins`) and whose account the person spends per provider with the organization's own rows (`sources`, `/api/claxedo/credentials/account-sources`). Nothing reads them at app start: the machine-login read starts the harness CLIs, so it runs only when Settings → Models or the AI step mounts.
 - Rescan asks every CLI again (`server.accounts.rescan`, `fresh=1`) and rereads the stored rows. Select, remove and check go through `server.accounts`; a failed write is a "Request failed" toast.
 - A live check of a stored account is kept on the page (`liveChecks`) and outranks the verdict the server stored; a check that never reached the provider is kept as `unknown` with its reason.
-- `model.ts` holds the harness list (Claude Code, Codex, Cursor) and the rules: which row is selected (the team account when the person chose it for every provider of the harness; otherwise, among their own, the server's effective read when it names one of their rows, then the stored mark, then this computer's login), whether a login is refused or unavailable, whether this computer's login would strand a binding, and whether a harness can run a turn (`harnessRunnable`).
+- `model.ts` holds the harness list (Claude Code, Codex, Cursor) and the rules: which row is selected (the org account when the person chose it for every provider of the harness; otherwise, among their own, the server's effective read when it names one of their rows, then the stored mark, then this computer's login), whether a login is refused or unavailable, whether this computer's login would strand a binding, and whether a harness can run a turn (`harnessRunnable`).
 - `account-words.ts` turns a row into what the row says: label, second line (verdict, plan windows), hint, alert, reach and cloud consent.
 
-## Team account and cloud consent
+## Organization account and cloud consent
 
-- Every CLI harness lists a "Team account" entry after the person's own accounts and this computer's login. Choosing it writes `team` for all of the harness's providers (`server.accounts.setSource`); choosing any own entry writes `own` first. Only the chosen side is ever spent, so a team choice where the organization holds no team row is shown as unable to run, never as a fallback to the person's own key. The team entry is not the person's to check or remove.
-- On a hosted plane, each Pi provider row offers the same own/team choice where the organization holds a team account or the person chose one (`HostedAccountSourceChoice`, `/auth/sources` and `/auth/:provider/source`).
+- Every CLI harness lists an "Organization account" entry after the person's own accounts and this computer's login. Choosing it writes `org` for all of the harness's providers (`server.accounts.setSource`); choosing any own entry writes `own` first. Only the chosen side is ever spent, so an org choice where the organization holds no row of its own is shown as unable to run, never as a fallback to the person's own key. The org entry is not the person's to check or remove.
+- On a hosted plane, each Pi provider row offers the same own/org choice where the organization holds an account or the person chose one (`HostedAccountSourceChoice`, `/auth/sources` and `/auth/:provider/source`).
 - A stored account that its provider can deliver to a cloud sandbox carries an "Allow in cloud sandboxes" switch, which writes `local` or `shared` to every row of the account (`server.accounts.setScope`); an account whose rows disagree says cloud use is allowed for some bindings, and a failed write stays on the row.
 
 ## Catalog harnesses

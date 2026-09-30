@@ -10,7 +10,7 @@ import {
 import { hostedPiCredentials } from "./pi"
 import { CREDENTIALS_KEK_ENV } from "@claxedo/server-core/credentials/envelope"
 import { checkCredential } from "@claxedo/server-core/credentials/operations/check"
-import { HOSTED_CREDENTIAL_MIGRATIONS, miniflareControlPlaneDatabase, type ControlPlaneDatabase } from "../../test-support/control-plane-migrations"
+import { controlPlaneMigrations, miniflareControlPlaneDatabase, type ControlPlaneDatabase } from "../../test-support/control-plane-migrations"
 
 const KEK_ENV = { [CREDENTIALS_KEK_ENV]: Buffer.alloc(32, 3).toString("base64") }
 const FULL_ENV = { ...KEK_ENV, [HOSTED_CREDENTIALS_FLAG]: "1" }
@@ -26,7 +26,7 @@ const write = {
 let controlPlane: ControlPlaneDatabase
 
 beforeAll(async () => {
-  controlPlane = await miniflareControlPlaneDatabase(HOSTED_CREDENTIAL_MIGRATIONS)
+  controlPlane = await miniflareControlPlaneDatabase(controlPlaneMigrations())
 })
 
 afterAll(async () => {
@@ -130,27 +130,27 @@ describe("hostedOrgCredentials (org-partitioned CRUD over D1)", () => {
     expect(["first", "second"]).toContain(await credentials.resolveCredentialSecretById!(first.id))
   })
 
-  test("a person's own-or-team choice is theirs alone and answers back what they chose", async () => {
+  test("a person's own-or-org choice is theirs alone and answers back what they chose", async () => {
     const credentials = store(freshOrg("sources"))
     expect(await credentials.accountSelections()).toEqual({})
-    expect(await credentials.setAccountSources(["anthropic", "claude-sdk"], "team", undefined, "A")).toEqual({ anthropic: "team", "claude-sdk": "team" })
-    expect(await credentials.setAccountSources(["anthropic"], "own", undefined, "A")).toEqual({ anthropic: "own", "claude-sdk": "team" })
-    await credentials.setAccountSources(["anthropic"], "team", undefined, "B")
-    expect(await credentials.accountSelections()).toEqual({ A: { anthropic: "own", "claude-sdk": "team" }, B: { anthropic: "team" } })
+    expect(await credentials.setAccountSources(["anthropic", "claude-sdk"], "org", undefined, "A")).toEqual({ anthropic: "org", "claude-sdk": "org" })
+    expect(await credentials.setAccountSources(["anthropic"], "own", undefined, "A")).toEqual({ anthropic: "own", "claude-sdk": "org" })
+    await credentials.setAccountSources(["anthropic"], "org", undefined, "B")
+    expect(await credentials.accountSelections()).toEqual({ A: { anthropic: "own", "claude-sdk": "org" }, B: { anthropic: "org" } })
     expect(await store(freshOrg("other-org")).accountSelections()).toEqual({})
   })
 
-  test("the hosted Pi catalog shows the team account connected only for the person who chose it", async () => {
-    const orgId = freshOrg("pi-team")
+  test("the hosted Pi catalog shows the org account connected only for the person who chose it", async () => {
+    const orgId = freshOrg("pi-org")
     const credentials = store(orgId)
-    await credentials.putCredential({ ...write, owner: null, provider_id: "anthropic", secret: "sk-ant-team" })
+    await credentials.putCredential({ ...write, owner: null, provider_id: "anthropic", secret: "sk-ant-org" })
     const pi = hostedPiCredentials({ resolveOrgId: async () => orgId, credentials: () => credentials })
     const as = (subject: string) => ({ mode: "signed" as const, user: { subject, tokenIdentifier: subject, issuer: "test" } })
     expect((await pi.piProviderCatalog(as("A"))).connected).not.toContain("anthropic")
-    await pi.putPiAccountSource(as("A"), "anthropic", "team")
+    await pi.putPiAccountSource(as("A"), "anthropic", "org")
     expect((await pi.piProviderCatalog(as("A"))).connected).toContain("anthropic")
     expect((await pi.piProviderCatalog(as("B"))).connected).not.toContain("anthropic")
-    expect(await pi.piAccountSources(as("A"))).toMatchObject({ sources: { anthropic: "team" }, team: ["anthropic"] })
+    expect(await pi.piAccountSources(as("A"))).toMatchObject({ sources: { anthropic: "org" }, org: ["anthropic"] })
   })
 
   test("fails closed: flag off, blank org, or missing KEK all throw", () => {

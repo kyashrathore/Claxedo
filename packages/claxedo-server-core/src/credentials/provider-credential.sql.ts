@@ -35,11 +35,11 @@ export const ClaxedoProviderCredentialTable = sqliteTable(
      */
     org_id: text().notNull().default(SINGLE_TENANT_ORG),
     /**
-     * The person whose account this is. NULL is the org's own row: a team
-     * account anyone in the org without their own account for that provider
-     * spends, or a connection, sandbox-driver or deployment secret no person
-     * owns. It is a value rather than an absence: it sorts alongside personal
-     * rows in the same uniqueness rule instead of escaping it.
+     * The person whose account this is. NULL is the org's own row: an org
+     * account a person spends for a provider they chose it for, or a
+     * connection, sandbox-driver or deployment secret no person owns. It is a
+     * value rather than an absence: it sorts alongside personal rows in the
+     * same uniqueness rule instead of escaping it.
      */
     owner: text(),
     provider_id: text().notNull(),
@@ -93,8 +93,8 @@ export const ClaxedoProviderCredentialTable = sqliteTable(
     index("claxedo_provider_credential_org_provider_idx").on(table.org_id, table.provider_id),
     /**
      * SQLite treats NULLs as distinct in a unique index, so a bare `owner`
-     * column would let a provider hold any number of active TEAM rows while
-     * enforcing the rule only for personal ones. `coalesce` gives the team
+     * column would let a provider hold any number of active org rows while
+     * enforcing the rule only for personal ones. `coalesce` gives the org
      * owner a value the index can collide on.
      */
     uniqueIndex("claxedo_provider_credential_active_idx")

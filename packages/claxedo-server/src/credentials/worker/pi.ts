@@ -41,7 +41,7 @@ export function hostedPiCredentials(input: {
       const rows = await store.listCredentials()
       return {
         sources: Object.fromEntries(PI_LAUNCH_PROVIDERS.map((provider) => [provider, piAccountSource(provider, sources)])),
-        team: PI_LAUNCH_PROVIDERS.filter((provider) => piCredentialProviderIDs(provider)
+        org: PI_LAUNCH_PROVIDERS.filter((provider) => piCredentialProviderIDs(provider)
           .some((id) => rows.some((row) => row.owner === null && row.provider_id === id))),
       }
     },
@@ -76,7 +76,7 @@ export function hostedPiCredentials(input: {
   }
 }
 
-/** A Pi provider spends the team account only when every credential it resolves through does. */
+/** A Pi provider spends the org account only when every credential it resolves through does. */
 function piAccountSource(provider: string, sources: AccountSources): AccountSource {
-  return piCredentialProviderIDs(provider).every((id) => sources[id] === "team") ? "team" : "own"
+  return piCredentialProviderIDs(provider).every((id) => sources[id] === "org") ? "org" : "own"
 }

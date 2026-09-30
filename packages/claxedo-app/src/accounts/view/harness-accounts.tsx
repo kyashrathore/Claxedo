@@ -8,7 +8,7 @@ import type { AccountsSnapshot, Harness } from "../model"
 import type { Accounts } from "../store"
 import { AgentHarnessRow } from "./harness-row"
 
-const UNREAD: AccountsSnapshot = { stored: [], effective: undefined, machineLogins: [], sources: { sources: new Map(), team: [] }, scannedAt: 0 }
+const UNREAD: AccountsSnapshot = { stored: [], effective: undefined, machineLogins: [], sources: { sources: new Map(), org: [] }, scannedAt: 0 }
 
 function ScanningNote() {
   const t = useAccountsText()

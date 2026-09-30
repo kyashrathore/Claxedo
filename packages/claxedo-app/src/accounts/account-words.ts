@@ -9,9 +9,9 @@ import {
   MACHINE_LOGIN_KEY,
   partialMachineLogin,
   strandedBinding,
+  ORG_ACCOUNT_KEY,
+  orgAccountOf,
   storedCheck,
-  TEAM_ACCOUNT_KEY,
-  teamAccountOf,
   type AccountReach,
   type AccountsSnapshot,
   type Harness,
@@ -39,7 +39,6 @@ export type AccountWords = {
   readonly reach?: AccountReach
   readonly cloudConsent?: CloudConsent
   readonly machine: boolean
-  readonly team: boolean
   readonly disabled: boolean
 }
 
@@ -95,25 +94,23 @@ export function storedAccountWords(words: Words, row: HarnessAccount, live: Live
     ...(reach === undefined ? {} : { reach }),
     ...(cloudConsent === undefined ? {} : { cloudConsent }),
     machine: false,
-    team: false,
     disabled: false,
   }
 }
 
-export function teamAccountWords(words: Words, harness: Harness, snapshot: AccountsSnapshot, chosen: boolean): AccountWords {
+export function orgAccountWords(words: Words, harness: Harness, snapshot: AccountsSnapshot, chosen: boolean): AccountWords {
   const { t } = words
-  const row = teamAccountOf(harness, snapshot)
+  const row = orgAccountOf(harness, snapshot)
   if (row === undefined) {
     const unavailable = t("settings.providers.accountSource.unavailable", { name: harness.label })
     return {
-      key: TEAM_ACCOUNT_KEY,
+      key: ORG_ACCOUNT_KEY,
       ids: [],
-      label: t("settings.providers.accountSource.team"),
+      label: t("settings.providers.accountSource.org"),
       detail: chosen ? unavailable : t("settings.providers.accountSource.missing"),
       ...(chosen ? { alert: unavailable } : {}),
       refused: false,
       machine: false,
-      team: true,
       disabled: true,
     }
   }
@@ -121,16 +118,15 @@ export function teamAccountWords(words: Words, harness: Harness, snapshot: Accou
   const alert = check?.verdict !== undefined && isUnavailable(check.verdict) ? verdictWords(t, check).join(" · ") : undefined
   const reach = accountReach(row.delivery)
   return {
-    key: TEAM_ACCOUNT_KEY,
+    key: ORG_ACCOUNT_KEY,
     ids: [],
     label: accountLabel(row),
-    detail: [t("settings.providers.accountSource.team"), ...verdictWords(t, check), ...windowWords(words, check?.usage)].join(" · "),
+    detail: [t("settings.providers.accountSource.org"), ...verdictWords(t, check), ...windowWords(words, check?.usage)].join(" · "),
     ...(alert === undefined ? {} : { alert }),
     ...(check === undefined ? {} : { checkedAt: check.at }),
     refused: check?.verdict !== undefined && isRefusal(check.verdict),
     ...(reach === undefined ? {} : { reach }),
     machine: false,
-    team: true,
     disabled: false,
   }
 }
@@ -166,7 +162,6 @@ export function machineLoginWords(words: Words, login: MachineLogin, harness: Ha
     refused: false,
     ...(reach === undefined ? {} : { reach }),
     machine: true,
-    team: false,
     disabled: login.state === "absent" || stranded,
   }
 }

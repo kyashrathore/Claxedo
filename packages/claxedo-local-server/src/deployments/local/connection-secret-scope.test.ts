@@ -22,21 +22,21 @@ test("two people on one desktop: each connection spends its own owner's or the o
     })).id, { onOutage: "throw" })!
     const operator = await row({ owner: "local" }, "machine-owner-key")
     const member = await row({ owner: "usr_member" }, "member-key")
-    const team = await row({ owner: null }, "team-key")
+    const org = await row({ owner: null }, "org-key")
 
     const machine = localConnectionSecretScope({ kind: "machine-owner" })
-    expect([operator, member, team].map(machine.admits)).toEqual([true, false, true])
+    expect([operator, member, org].map(machine.admits)).toEqual([true, false, true])
     expect(machine.machineLoginAllowed).toBe(true)
 
     const other = localConnectionSecretScope({ kind: "person", userId: "usr_member" })
-    expect([operator, member, team].map(other.admits)).toEqual([false, true, true])
+    expect([operator, member, org].map(other.admits)).toEqual([false, true, true])
     expect(other.machineLoginAllowed).toBe(false)
 
     await adoptHostEnrolledOwner("usr_machine_owner", { forget: () => () => {}, reapply: async () => {} })
     const relayedOwner = localConnectionSecretScope({ kind: "person", userId: "usr_machine_owner" })
-    expect([operator, member, team].map(relayedOwner.admits)).toEqual([true, false, true])
+    expect([operator, member, org].map(relayedOwner.admits)).toEqual([true, false, true])
     expect(relayedOwner.machineLoginAllowed).toBe(true)
-    expect([operator, member, team].map(localConnectionSecretScope({ kind: "person", userId: "local" }).admits))
+    expect([operator, member, org].map(localConnectionSecretScope({ kind: "person", userId: "local" }).admits))
       .toEqual([false, false, true])
   } finally {
     resetHostEnrolledOwner()

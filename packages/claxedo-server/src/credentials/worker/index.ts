@@ -1,6 +1,6 @@
 /**
  * Hosted provider credentials over D1 (`hosted_provider_credentials` and
- * `hosted_provider_account_sources`, migration 0044).
+ * `hosted_provider_account_sources`).
  *
  * `hostedOrgCredentials(orgId, { database, env })` is the per-org
  * `ControlPlaneCredentials`; it exists only for a request whose org
