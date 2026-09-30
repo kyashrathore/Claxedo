@@ -249,7 +249,7 @@ describe("Better Auth + D1 user-deployed composition", () => {
     await plain.authReady.catch(() => undefined)
   })
 
-  test("composes the real auth, authority, empty service catalog, and no-billing posture", async () => {
+  test("composes the real auth, authority and user-deployed posture", async () => {
     const { authDatabase, controlPlaneDatabase } = await databases()
     const composed = composeBetterAuthD1UserDeployedControlPlane({
       env: env(),
@@ -283,11 +283,9 @@ describe("Better Auth + D1 user-deployed composition", () => {
         desktop: { flow: "authorization-code-pkce" },
       },
     })
-    expect(composed.billing).toBe("absent")
     expect(composed.product).toMatchObject({
       productPosture: "user-deployed",
       organizationPolicy: "single-org",
-      billing: "absent",
       multiplayer: true,
     })
     await expect(composed.options.cloudWorkspaceAdmission({} as never)).resolves.toMatchObject({
@@ -359,7 +357,7 @@ describe("Better Auth + D1 user-deployed composition", () => {
     ).toThrow("AUTH_DB and CONTROL_PLANE_DB must be distinct D1 bindings")
   })
 
-  test("has no third-party identity, hosted-storage, billing, optional-service, or sandbox-driver value edge", async () => {
+  test("has no third-party identity, hosted-storage, documents or sandbox-driver value edge", async () => {
     const entry = path.join(ROOT, "src/authority/adapters/worker/better-auth-d1-compose.ts")
     const closure = sourceClosure({ entry, root: ROOT, runtimeOnly: true })
     expect(closure.unresolved).toEqual([])
@@ -371,7 +369,6 @@ describe("Better Auth + D1 user-deployed composition", () => {
           "/authority/adapters/hosted/",
           "/sandbox/stores/hosted",
           "/platform/auth/hosted-adapter",
-          "/billing/",
           "/documents/",
         ].some((part) => `/${file}`.includes(part)),
       ),
@@ -397,7 +394,6 @@ describe("Better Auth + D1 user-deployed composition", () => {
           "/sandbox/stores/hosted",
           "/platform/auth/hosted-adapter",
           "/sandbox-manager/src/drivers/",
-          "/billing/",
           "/documents/",
         ].some((part) => file.includes(part)),
       ),

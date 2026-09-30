@@ -19,16 +19,14 @@ describe("hosted deployment profile", () => {
     expect(STATIC_PRODUCT_DESCRIPTORS["user-deployed"]).toEqual({
       productPosture: "user-deployed",
       organizationPolicy: "single-org",
-      billing: "absent",
       multiplayer: true,
     })
     expect(STATIC_PRODUCT_DESCRIPTORS["claxedo-hosted"]).toMatchObject({
       organizationPolicy: "multi-org",
-      billing: "polar",
       multiplayer: true,
     })
   })
-  test("resolves the user-deployed product as one-org multiplayer with a hard billing closure", () => {
+  test("resolves the user-deployed product as one-org multiplayer", () => {
     expect(resolveDeploymentProfile(userDeployed)).toEqual({
       adapterProfile: "better-auth-d1",
       authAdapter: "better-auth",
@@ -36,12 +34,11 @@ describe("hosted deployment profile", () => {
       productPosture: "user-deployed",
       organizationPolicy: "single-org",
       multiplayer: true,
-      billing: "absent",
       sandboxPosture: "control-plane-only",
     })
   })
 
-  test("resolves the certified Claxedo-hosted adapter profile with Polar billing", () => {
+  test("resolves the certified Claxedo-hosted adapter profile", () => {
     expect(
       resolveDeploymentProfile({
         adapterProfile: "better-auth-d1",
@@ -54,7 +51,6 @@ describe("hosted deployment profile", () => {
       productPosture: "claxedo-hosted",
       organizationPolicy: "multi-org",
       multiplayer: true,
-      billing: "polar",
       sandboxPosture: "full-hosted",
       sandboxDriver: "cloudflare",
     })

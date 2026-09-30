@@ -40,9 +40,9 @@ import { createCloudCreateAdmission, type CloudCreateUsage } from "../../workspa
 import { authenticatedGitHubCloneSource } from "../../workspace/repository-clone"
 import { normalizeClaxedoRegion } from "@claxedo/server-core/platform/runtime/region/index"
 
-// `requireCloudWorkspaceEntitlement` (the paid-capability gate for both
-// create and wake) now lives on the shared WorkspaceRouteOptions so the wake
-// choke point (workspace-hosted-connection-info.ts) reads the same hook.
+// `requireCloudWorkspaceEntitlement` (cloud-workspace admission for both
+// create and wake) lives on the shared WorkspaceRouteOptions so the wake
+// choke point (hosted-connection-info.ts) reads the same hook.
 //
 // The three additions here are hosted-only knobs for `POST /create`, the one
 // route in this file that provisions real infrastructure. They are optional, so
@@ -288,7 +288,7 @@ export function HostedWorkspaceRoutes(services?: ControlPlaneServices, options: 
 
         // Admission for every create, not only one that names a tenant:
         // the authority's own create admission against the organization the
-        // workspace would land in, the paid-capability entitlement, and the
+        // workspace would land in, the deployment's cloud-workspace admission, and the
         // concurrent-lease cap — the same object the Tasks cloud-root
         // allocation is subject to, so no door reaches a billable sandbox
         // around it.

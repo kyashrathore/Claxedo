@@ -12,7 +12,7 @@ export const claims = [
     id: "free",
     publicWording: "Claxedo is free.",
     owner: "Claxedo product",
-    evidence: ["packages/claxedo-server/src/billing/entitlement.ts"],
+    evidence: ["packages/claxedo-server/src/authority/adapters/worker/better-auth-d1-compose.ts"],
     verifiedAt: "2026-09-28",
   },
   {

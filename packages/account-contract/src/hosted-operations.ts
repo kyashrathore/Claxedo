@@ -238,7 +238,7 @@ export const HOSTED_OPERATIONS = {
   "workspace.connection.refresh": { safe: true, decode: connection },
   // Signed desktop Share cannot hit the sidecar: that process does not mount
   // the register route. The AccountPort carries the same displayName-only body
-  // share-workspace.ts already posts. Declared once, with billing below.
+  // share-workspace.ts already posts.
   // Wrapped: the route returns `{ enrollment }`. Reading `host_id` off the
   // envelope finds nothing, which is exactly what this decoder existed to
   // prevent and exactly what it did.
@@ -317,8 +317,6 @@ export const HOSTED_OPERATIONS = {
   "session.turnPage": { safe: true, decode: withArrays("turns") },
   "session.part": { safe: true, decode: object },
   "session.gateway": { safe: true, decode: object },
-  "billing.checkout": { safe: false, decode: object },
-  "billing.portal": { safe: true, decode: object },
   "usage.cloudFacts": { safe: true, decode: withArrays("facts") },
 } satisfies Record<HostedOperationName, HostedOperationSpec>
 

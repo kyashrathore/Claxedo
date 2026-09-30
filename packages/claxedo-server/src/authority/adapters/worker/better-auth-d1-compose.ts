@@ -119,7 +119,6 @@ export type BetterAuthD1UserDeployedComposition = {
    */
   authReady: Promise<void>
   product: (typeof STATIC_PRODUCT_DESCRIPTORS)["user-deployed"]
-  billing: "absent"
 }
 
 /**
@@ -246,9 +245,8 @@ export function composeBetterAuthD1UserDeployedControlPlane(
           provisionRuntime: delivery.provisionRuntime,
         },
       } : {}),
-      // User-deployed has no billing tier: with a composed sandbox the owner's
-      // organization is entitled to cloud workspaces; without one the answer
-      // names the posture instead of a 404.
+      // With a composed sandbox the owner's organization is admitted to cloud
+      // workspaces; without one the answer names the posture instead of a 404.
       cloudWorkspaceAdmission: input.sandbox
         ? async () => undefined
         : async () => ({
@@ -279,7 +277,6 @@ export function composeBetterAuthD1UserDeployedControlPlane(
       await input.controlPlaneDatabase.prepare("select 1").first()
     }),
     product: STATIC_PRODUCT_DESCRIPTORS["user-deployed"],
-    billing: "absent",
   }
 }
 

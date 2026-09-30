@@ -557,20 +557,13 @@ describe("resource-closed hosted core app", () => {
     )
   })
 
-  test("has no static Documents, billing, or Polar implementation edge", () => {
+  test("has no static Documents implementation edge", () => {
     const entry = "src/deployments/hosted-shared/hosted-core-app.ts"
     const closure = sourceClosure({ entry: path.join(ROOT, entry), root: ROOT, runtimeOnly: true })
     expect(closure.unresolved).toEqual([])
     expect(closure.opaque).toEqual([])
     const files = closure.modules.map((module) => module.relative.toLowerCase())
-    expect(files.filter((file) => ["documents/", "billing/"].some((part) => file.includes(part)))).toEqual([])
-    expect(
-      closure.packages.filter((name) =>
-        [
-          "@polar-sh/sdk",
-        ].includes(name),
-      ),
-    ).toEqual([])
+    expect(files.filter((file) => file.includes("documents/"))).toEqual([])
   })
 
   test("requires the cross-isolate limiter, LiveSyncRoom, and admission policy", () => {
@@ -624,7 +617,7 @@ describe("resource-closed hosted core app", () => {
     })
     const mode = await app.fetch(new Request("https://core.test/api/claxedo/mode"))
     expect(await mode.json()).toMatchObject({
-      product: { productPosture: "user-deployed", organizationPolicy: "single-org", billing: "absent", multiplayer: true },
+      product: { productPosture: "user-deployed", organizationPolicy: "single-org", multiplayer: true },
     })
   })
 

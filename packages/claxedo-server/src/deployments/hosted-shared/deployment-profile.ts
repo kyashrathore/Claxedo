@@ -22,13 +22,11 @@ export type StaticProductDescriptor =
   | Readonly<{
       productPosture: "claxedo-hosted"
       organizationPolicy: "multi-org"
-      billing: "polar"
       multiplayer: true
     }>
   | Readonly<{
       productPosture: "user-deployed"
       organizationPolicy: "single-org"
-      billing: "absent"
       multiplayer: true
     }>
 
@@ -37,13 +35,11 @@ export const STATIC_PRODUCT_DESCRIPTORS = Object.freeze({
   "claxedo-hosted": Object.freeze({
     productPosture: "claxedo-hosted",
     organizationPolicy: "multi-org",
-    billing: "polar",
     multiplayer: true,
   }),
   "user-deployed": Object.freeze({
     productPosture: "user-deployed",
     organizationPolicy: "single-org",
-    billing: "absent",
     multiplayer: true,
   }),
 }) satisfies Readonly<Record<ProductPosture, StaticProductDescriptor>>
@@ -81,12 +77,10 @@ export type DeploymentProfile = CommonDeploymentProfile &
     | {
         productPosture: "claxedo-hosted"
         organizationPolicy: "multi-org"
-        billing: "polar"
       }
     | {
         productPosture: "user-deployed"
         organizationPolicy: "single-org"
-        billing: "absent"
         adapterProfile: "better-auth-d1"
         authAdapter: "better-auth"
         controlPlaneAdapter: "d1"

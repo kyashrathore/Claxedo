@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test, vi } from "vitest"
-import { reportError, reportPaymentError, setErrorReporterSink } from "./report"
+import { reportError, setErrorReporterSink } from "./report"
 import {
   deploymentModeTag,
   observabilityOptions,
@@ -211,17 +211,6 @@ describe("report seam", () => {
     })
   })
 
-  test("reportPaymentError stamps the payment page class (ADR page class 1 of 2)", () => {
-    const sink = vi.fn()
-    setErrorReporterSink(sink)
-    reportPaymentError(new Error("webhook signature failed"), { tags: { route: "polar_webhook" } })
-    expect(sink).toHaveBeenCalledTimes(1)
-    expect(sink.mock.calls[0][1]).toEqual({
-      tags: { route: "polar_webhook", page_class: "payment" },
-      extra: {},
-    })
-  })
-
   test("a throwing sink never propagates into the request path", () => {
     setErrorReporterSink(() => {
       throw new Error("sink exploded")
@@ -285,14 +274,13 @@ describe("initNodeObservability", () => {
 
   test("a call site that knows the user keys the exception to them, not to system", () => {
     initNodeObservability({ ...ON, CLAXEDO_POSTHOG_KEY: "phc_server" })
-    const err = new Error("checkout failed")
-    reportPaymentError(err, { tags: { user_id: "user_42" } })
+    const err = new Error("route blew up")
+    reportError(err, { tags: { user_id: "user_42" } })
     expect(postHogMock.captureException).toHaveBeenCalledWith(err, "user_42", {
       unit: "server",
       deployment_mode: "local",
       deployment_runtime: "node",
       user_id: "user_42",
-      page_class: "payment",
     })
   })
 
