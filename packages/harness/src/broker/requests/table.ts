@@ -8,46 +8,34 @@ import type {
   TurnRequest,
 } from "../../contract/broker"
 import type { BrokerPorts, SessionBrokerContext, TurnBrokerContext } from "../ports"
-import { grantToSave } from "../grants"
 import { replyAnswer } from "../options"
 import { pendingRequest, requestOwnerIsCurrent, requestTargetMatchesOwner, requestRefusal, sameTurnAuthority, type RequestAuthority } from "./authority"
+import { validateAndCommit } from "./commit"
+import { RequestEntries, type RequestEntry } from "./entries"
 import { OrphanRetirement } from "./orphan-retirement"
 import { preflight } from "./preflight"
 import { publishAsked } from "./publication"
 import { requestKey } from "./request-key"
 import { UrlConsentAdmissions } from "./url-consent"
-import { validateAnswer, validateRequest } from "./validation"
+import { validateRequest } from "./validation"
 import { ElicitationValidationError } from "@claxedo/agent-runtime-contract"
 
-type Entry = {
-  pending: PendingRequest
-  authority: RequestAuthority
-  phase: "asked" | "validating" | "committing" | "answered" | "cancelled" | "expired"
-  resolve(answer: RequestAnswer): void
-  expiry?: unknown
-  validating?: { controller: AbortController; settled: Promise<void> }
-  cancelRequested?: "cancelled" | "expired"
-  published?: Promise<void>
-  termination?: Promise<void>
-  foreignReported?: true
-}
-
 export class RequestTable implements RequestBroker {
-  private readonly entries = new Map<string, Entry>()
-  private readonly asking = new Set<string>()
+  private readonly entries: RequestEntries
   private readonly urlConsents = new UrlConsentAdmissions()
   private readonly orphans: OrphanRetirement
   constructor(private readonly ports: BrokerPorts) {
+    this.entries = new RequestEntries(ports)
     this.orphans = new OrphanRetirement(ports)
   }
 
   list(scope: RequestScope): readonly PendingRequest[] {
-    this.orphans.retire(scope, (key) => this.entries.has(key) || this.asking.has(key))
-    for (const entry of this.entries.values()) {
-      if (!requestOwnerIsCurrent(this.ports, entry.authority)) void this.terminate(entry, "cancelled")
+    this.orphans.retire(scope, (key) => this.entries.has(key))
+    for (const entry of this.entries.all()) {
+      if (!requestOwnerIsCurrent(this.ports, entry.authority)) void this.entries.terminate(entry, "cancelled")
         .catch((error: unknown) => this.ports.reportOwnerFailure(entry.pending.sessionId, error))
     }
-    return [...this.entries.values()]
+    return this.entries.all()
       .filter((entry) => entry.phase === "asked" || entry.phase === "validating" || entry.phase === "committing")
       .filter((entry) => requestOwnerIsCurrent(this.ports, entry.authority))
       .filter((entry) => "sessionId" in scope
@@ -91,8 +79,8 @@ export class RequestTable implements RequestBroker {
     if (signal?.aborted) return this.saveCancelled(authority, request)
     const sessionId = authority.value.sessionId
     const key = requestKey(sessionId, request.requestId)
-    if (this.entries.has(key) || this.asking.has(key)) throw new Error(`Request ${request.requestId} is already registered`)
-    this.asking.add(key)
+    if (this.entries.has(key)) throw new Error(`Request ${request.requestId} is already registered`)
+    this.entries.reserve(key)
     try {
       await this.orphans.settled(key)
       const prior = this.ports.readAnswer(sessionId, request.requestId)
@@ -112,7 +100,7 @@ export class RequestTable implements RequestBroker {
       if (!requestOwnerIsCurrent(this.ports, authority)) return this.saveCancelled(authority, request)
       return await this.register(authority, request, key, expiresAt, signal)
     } finally {
-      this.asking.delete(key)
+      this.entries.release(key)
     }
   }
 
@@ -127,27 +115,27 @@ export class RequestTable implements RequestBroker {
     const pending = pendingRequest(this.ports, authority, request)
     let resolve!: (answer: RequestAnswer) => void
     const response = new Promise<RequestAnswer>((done) => { resolve = done })
-    const entry: Entry = { pending, authority, phase: "asked", resolve }
-    this.entries.set(key, entry)
+    const entry: RequestEntry = { pending, authority, phase: "asked", resolve }
+    this.entries.add(key, entry)
     try {
       entry.published = publishAsked(this.ports, pending, authority.value.connectionId)
       await entry.published
       if (expiresAt !== undefined) {
         entry.expiry = this.ports.clock.setTimeout(() => {
-          void this.terminate(entry, "expired").catch((error: unknown) => this.ports.reportOwnerFailure(sessionId, error))
+          void this.entries.terminate(entry, "expired").catch((error: unknown) => this.ports.reportOwnerFailure(sessionId, error))
         }, Math.max(0, expiresAt - this.ports.clock.now()))
       }
       if (signal) this.bindAbort(entry, signal, response)
     } catch (error) {
-      this.entries.delete(key)
+      this.entries.remove(key)
       throw error
     }
     return response
   }
 
-  private bindAbort(entry: Entry, signal: AbortSignal, response: Promise<RequestAnswer>): void {
+  private bindAbort(entry: RequestEntry, signal: AbortSignal, response: Promise<RequestAnswer>): void {
     const cancel = () => {
-      void this.terminate(entry, "cancelled").catch((error: unknown) => this.ports.reportOwnerFailure(entry.pending.sessionId, error))
+      void this.entries.terminate(entry, "cancelled").catch((error: unknown) => this.ports.reportOwnerFailure(entry.pending.sessionId, error))
     }
     signal.addEventListener("abort", cancel, { once: true })
     void response.then(() => signal.removeEventListener("abort", cancel))
@@ -162,7 +150,7 @@ export class RequestTable implements RequestBroker {
     const sessionId = "sessionId" in target ? target.sessionId : target.start.sessionId
     const entry = this.entries.get(requestKey(sessionId, requestId))
     if (!entry) {
-      if ([...this.entries.values()].some((candidate) => candidate.pending.request.requestId === requestId)) return requestRefusal("foreign")
+      if (this.entries.all().some((candidate) => candidate.pending.request.requestId === requestId)) return requestRefusal("foreign")
       const prior = this.ports.readAnswer(sessionId, requestId)
       return requestRefusal(prior && prior.kind !== "cancelled" && prior.kind !== "expired" ? "duplicate" : "stale")
     }
@@ -176,111 +164,33 @@ export class RequestTable implements RequestBroker {
       entry.validating?.controller.abort()
       await entry.validating?.settled
     }
-    if (entry.cancelRequested) return this.retryTermination(entry)
+    if (entry.cancelRequested) return this.entries.retryTermination(entry)
     if (entry.phase !== "asked") return requestRefusal("duplicate")
     const answer = replyAnswer(entry.pending.request, reply)
     if (!answer) return requestRefusal("unoffered")
-    return this.validateAndCommit(entry, answer)
-  }
-
-  private async validateAndCommit(entry: Entry, answer: RequestAnswer): Promise<AnswerResult> {
-    entry.phase = "validating"
-    const controller = new AbortController()
-    const { promise: settled, resolve: settle } = Promise.withResolvers<void>()
-    entry.validating = { controller, settled }
-    try {
-      await validateAnswer(this.ports, entry.pending.request, answer, controller.signal)
-    } catch (error) {
-      entry.validating = undefined
-      settle()
-      if (entry.cancelRequested) return this.retryTermination(entry)
-      entry.phase = "asked"
-      throw error
-    }
-    entry.validating = undefined
-    settle()
-    if (entry.cancelRequested) return this.retryTermination(entry)
-    return this.commitAnswer(entry, answer)
-  }
-
-  private async commitAnswer(entry: Entry, answer: RequestAnswer): Promise<AnswerResult> {
-    entry.phase = "committing"
-    try {
-      const grant = entry.pending.request.kind === "permission" ?
-        grantToSave(entry.authority.value.connectionId, entry.pending.request, answer) : undefined
-      const events = await this.ports.persistAnswer(entry.pending, answer, false, grant)
-      this.finish(entry, answer)
-      return { ok: true, events }
-    } catch (error) {
-      this.ports.reportOwnerFailure(entry.pending.sessionId, error)
-      if (entry.cancelRequested) await this.finishTermination(entry)
-      else entry.phase = "asked"
-      return requestRefusal("persistence")
-    }
+    return validateAndCommit(this.ports, this.entries, entry, answer)
   }
 
   cancelTurn(authority: TurnBrokerContext["authority"]): Promise<void> {
-    return this.cancelAll([...this.entries.values()].filter((entry) =>
+    return this.entries.cancelAll(this.entries.all().filter((entry) =>
       entry.authority.kind === "turn" && entry.authority.value.sessionId === authority.sessionId &&
       entry.authority.value.turnId === authority.turnId &&
       entry.authority.value.ownerGeneration === authority.ownerGeneration))
   }
 
   cancelStart(context: SessionBrokerContext): Promise<void> {
-    return this.cancelAll([...this.entries.values()].filter((entry) =>
+    return this.entries.cancelAll(this.entries.all().filter((entry) =>
       entry.authority.kind === "start" && entry.authority.value.operationId === context.start?.operationId &&
       entry.authority.value.sessionId === context.sessionId))
   }
 
-  private async cancelAll(entries: readonly Entry[]): Promise<void> {
-    const results = await Promise.allSettled(entries.map((entry) => this.terminate(entry, "cancelled")))
-    const failures = results.flatMap((result) => result.status === "rejected" ? [result.reason] : [])
-    if (failures.length) throw new AggregateError(failures, `${failures.length} of ${entries.length} requests could not be cancelled`)
-  }
-
-  private async refusePreviousOwner(entry: Entry, sessionId: string, requestId: string): Promise<AnswerResult> {
-    try { await this.terminate(entry, "cancelled") } catch { return requestRefusal("persistence") }
+  private async refusePreviousOwner(entry: RequestEntry, sessionId: string, requestId: string): Promise<AnswerResult> {
+    try { await this.entries.terminate(entry, "cancelled") } catch { return requestRefusal("persistence") }
     if (!entry.foreignReported) {
       entry.foreignReported = true
       this.ports.reportOwnerFailure(sessionId, new Error(`Request ${requestId} belongs to a previous turn owner`))
     }
     return requestRefusal("foreign")
-  }
-
-  private async terminate(entry: Entry, kind: "cancelled" | "expired"): Promise<void> {
-    if (entry.phase === "answered" || entry.phase === "cancelled" || entry.phase === "expired") return
-    entry.cancelRequested = kind
-    entry.validating?.controller.abort()
-    await entry.published
-    if (entry.phase === "committing") return
-    await this.finishTermination(entry)
-  }
-
-  private async finishTermination(entry: Entry): Promise<void> {
-    if (entry.termination) return entry.termination
-    if (entry.phase === "cancelled" || entry.phase === "expired") return
-    entry.termination = this.persistTermination(entry)
-    try { await entry.termination } finally { entry.termination = undefined }
-  }
-
-  private async persistTermination(entry: Entry): Promise<void> {
-    const kind = entry.cancelRequested!
-    entry.phase = "committing"
-    try {
-      await this.ports.persistAnswer(entry.pending, { kind }, false)
-    } catch (error) {
-      entry.phase = "asked"
-      this.ports.reportOwnerFailure(entry.pending.sessionId, error)
-      throw error
-    }
-    this.finish(entry, { kind })
-  }
-
-  private finish(entry: Entry, answer: RequestAnswer): void {
-    entry.phase = answer.kind === "cancelled" ? "cancelled" : answer.kind === "expired" ? "expired" : "answered"
-    if (entry.expiry !== undefined) this.ports.clock.clearTimeout(entry.expiry)
-    this.entries.delete(requestKey(entry.pending.sessionId, entry.pending.request.requestId))
-    entry.resolve(answer)
   }
 
   async completeElicitation(sessionId: string, connectionId: string, elicitationId: string): Promise<void> {
@@ -290,10 +200,4 @@ export class RequestTable implements RequestBroker {
   closeSession(sessionId: string): void {
     this.urlConsents.clearSession(sessionId)
   }
-
-  private async retryTermination(entry: Entry): Promise<AnswerResult> {
-    try { await this.finishTermination(entry); return requestRefusal("duplicate") }
-    catch { return requestRefusal("persistence") }
-  }
-
 }
