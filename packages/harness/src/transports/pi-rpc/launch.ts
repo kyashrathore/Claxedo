@@ -11,7 +11,7 @@ import { piMcpHandoff, type PiMcpHandoff } from "./mcp"
 import type { UnsettledPiLaunches } from "./retirements"
 import { PiSessionStream } from "./session-stream"
 import { stopPiRun } from "./stop"
-import { PI_RANGE, piReportedVersion } from "./version"
+import { PI_RANGE, piReportedVersion, type PiVersionReadings } from "./version"
 
 export type PiRpcOptions = PiProfileOptions & { binary: string; runtime: string; args?: readonly string[]; env: NodeJS.ProcessEnv }
 
@@ -25,6 +25,7 @@ export type PiLaunchHost = {
   readonly signal: AbortSignal
   readonly unsettled: UnsettledPiLaunches
   readonly versions: HarnessVersionGate
+  readonly versionReadings: PiVersionReadings
   disposed(): boolean
 }
 
@@ -48,9 +49,11 @@ function piCommand(host: PiLaunchHost, input: StartInput, profile: PiProfile, ar
 
 async function admitPiVersion(host: PiLaunchHost, input: StartInput, profile: PiProfile, broker: SessionBroker | undefined,
   role: PiLaunch["role"]): Promise<void> {
-  const owned = await host.services.spawn(piCommand(host, input, profile, ["--version"]),
-    { role, label: "Pi version", sessionId: input.sessionId, signal: host.signal })
-  const reported = await piReportedVersion(owned, piDeadline(host.services.clock))
+  const reported = await host.versionReadings.read(host.options.binary, async () => {
+    const owned = await host.services.spawn(piCommand(host, input, profile, ["--version"]),
+      { role, label: "Pi version", sessionId: input.sessionId, signal: host.signal })
+    return piReportedVersion(owned, piDeadline(host.services.clock))
+  })
   if (broker) await host.versions.admit(reported, "--version", broker)
   else harnessVersionStanding(PI_RANGE, reported)
 }

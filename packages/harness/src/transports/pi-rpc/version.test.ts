@@ -1,5 +1,7 @@
 import { expect, test } from "bun:test"
 import { readFileSync } from "node:fs"
+import fs from "node:fs/promises"
+import os from "node:os"
 import path from "node:path"
 import type { SessionBroker } from "../../contract"
 import { harnessVersionStanding } from "../../contract"
@@ -53,4 +55,22 @@ test("every sandbox image installs a Pi inside the tested range", () => {
     .flatMap((file) => [...readFileSync(path.join(repo, file), "utf8").matchAll(/@earendil-works\/pi-coding-agent@(\d+\.\d+\.\d+)/g)].map((match) => match[1]))
   expect(pins).toHaveLength(4)
   for (const pin of pins) expect(harnessVersionStanding(PI_RANGE, pin)).toBe("tested")
+})
+
+test("the version is read once per Pi binary file, and again once the file changes", async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "pi-binary-"))
+  const binary = path.join(dir, "cli.js")
+  await fs.writeFile(binary, "old")
+  const pi = await scriptedPi({ binary })
+  try {
+    for (let index = 0; index < 3; index += 1) await pi.transport.close(await pi.transport.start(pi.start(), pi.broker))
+    expect(pi.versions).toHaveLength(1)
+    await fs.rm(binary)
+    await fs.writeFile(binary, "upgraded")
+    await pi.transport.close(await pi.transport.start(pi.start(), pi.broker))
+    expect(pi.versions).toHaveLength(2)
+  } finally {
+    await pi.close()
+    await fs.rm(dir, { recursive: true, force: true })
+  }
 })

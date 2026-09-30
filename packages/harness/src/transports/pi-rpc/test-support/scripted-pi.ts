@@ -57,7 +57,7 @@ function versionProcess(version: string) {
 }
 
 export async function scriptedPi(input: { firstPartyMcp?: HarnessServices["firstPartyMcp"]; mcpUnloaded?: true;
-  onLaunch?: (launch: Launch) => void; version?: string } = {}) {
+  onLaunch?: (launch: Launch) => void; version?: string; binary?: string } = {}) {
   const root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), "pi-scripted-")))
   const directory = path.join(root, "work")
   await fs.mkdir(directory)
@@ -85,7 +85,7 @@ export async function scriptedPi(input: { firstPartyMcp?: HarnessServices["first
   const log = { debug: () => {}, info: () => {}, warn: () => {}, error: () => {} }
   const services = { spawn, firstPartyMcp, healthChanged: () => { health.changes += 1 }, recordHomeUse: async () => {}, log,
     clock: { now: Date.now, setTimeout, clearTimeout } } as unknown as HarnessServices
-  const transport = new PiRpcTransport(services, { binary: "pi", runtime: "node", env: {}, placement: "loopback", machineOwnerUserId: "owner",
+  const transport = new PiRpcTransport(services, { binary: input.binary ?? "pi", runtime: "node", env: {}, placement: "loopback", machineOwnerUserId: "owner",
     canUseOwnLogin: true, stateRoot: path.join(root, "state"), ownerAgentDir: path.join(root, "owner-agent") })
   const start = (locality: "local" | "remote" = "local"): StartInput => ({ sessionId: "s1", workspaceId: "w1", directory, locality,
     owner: { kind: "machine-owner" }, config: { harness: { id: "pi", access: "native" } },

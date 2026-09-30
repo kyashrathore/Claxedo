@@ -1,3 +1,5 @@
+import fs from "node:fs/promises"
+import path from "node:path"
 import { settleAtRequestDeadline } from "@claxedo/helpers"
 import type { Deadline, HarnessVersionRange, OwnedProcess } from "../../contract"
 import { TransportError } from "../../contract/errors"
@@ -20,5 +22,29 @@ export async function piReportedVersion(owned: OwnedProcess, deadline: Deadline)
   } finally {
     const retired = await owned.retire(deadline)
     if (!retired.stopped) throw new TransportError("pi", "retirement", retired.error.message)
+  }
+}
+
+async function binaryIdentity(binary: string): Promise<string | undefined> {
+  if (!path.isAbsolute(binary)) return undefined
+  const real = await fs.realpath(binary)
+  const stat = await fs.stat(real)
+  return JSON.stringify([real, stat.ino, stat.size, stat.mtimeMs])
+}
+
+export class PiVersionReadings {
+  private readonly readings = new Map<string, Promise<string>>()
+
+  async read(binary: string, spawnReading: () => Promise<string>): Promise<string> {
+    const identity = await binaryIdentity(binary)
+    if (!identity) return spawnReading()
+    const known = this.readings.get(identity)
+    if (known) return known
+    const reading = spawnReading().then((version) => version, (error: unknown) => {
+      this.readings.delete(identity)
+      throw error
+    })
+    this.readings.set(identity, reading)
+    return reading
   }
 }

@@ -20,7 +20,7 @@ import { inlineDataUrl, flattenTurnPrompt } from "../../translate/prompt"
 import { createPiConfig, piModelSelection, piThinkingLevel, piTurnAccount } from "./config"
 import { withTurnAccount } from "../../translate/turn-account"
 import { piSessionTitle } from "./title"
-import { PI_RANGE } from "./version"
+import { PI_RANGE, PiVersionReadings } from "./version"
 import { launchPiSession, piDeadline, piUpstreamOf, resumePi, retiringOnFailure, type PiLaunchHost, type PiRpcOptions,
   type PiSessionLaunch } from "./launch"
 
@@ -59,7 +59,7 @@ export class PiRpcTransport implements HarnessTransport {
 
   constructor(private readonly services: HarnessServices, private readonly options: PiRpcOptions) {
     this.host = { services, options, signal: this.disposeAbort.signal, disposed: () => this.disposed,
-      unsettled: new UnsettledPiLaunches(services.clock, services.log), versions: new HarnessVersionGate(PI_RANGE, "pi.rpc") }
+      unsettled: new UnsettledPiLaunches(services.clock, services.log), versions: new HarnessVersionGate(PI_RANGE, "pi.rpc"), versionReadings: new PiVersionReadings() }
     this.probes = new PiDraftProbes(this.host)
     this.losses = new ProcessLosses(() => services.healthChanged())
   }
