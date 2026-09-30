@@ -12,6 +12,7 @@ import {
 import {
   isOrgMemberRole,
   isProjectGrantRole,
+  type FindAccountByEmail,
   type MemberSelector,
 } from "@claxedo/server-core/platform/auth/org-access-authority"
 import type { RequestAuthenticationAdapter } from "@claxedo/server-core/platform/auth/authentication"
@@ -19,6 +20,7 @@ import { apiError, signedOrError, txt } from "../../workspace/route-support"
 import { readJsonRecord } from "@claxedo/server-core/platform/json/index"
 
 type Options = {
+  findAccountByEmail?: FindAccountByEmail
   authentication?: RequestAuthenticationAdapter
   authConfig?: ControlPlaneAuthConfig
   verifier?: ControlPlaneTokenVerifier
@@ -163,7 +165,21 @@ export function OrgTeamControlRoutes(services: ControlPlaneServices, options: Op
       if (!add) return unavailable(c, "Organization members unavailable")
       const input = await body(c)
       if (!isOrgMemberRole(input.role)) return c.json({ error: apiError("org_member_role_required", "role is required") }, 400)
-      return c.json(await add(auth, { orgId: c.req.param("orgId")!, ...memberSelector(input), role: input.role }))
+      const email = txt(input.email)
+      if (email === undefined) {
+        return c.json(await add(auth, { orgId: c.req.param("orgId")!, ...memberSelector(input), role: input.role }))
+      }
+      if (!options.findAccountByEmail) {
+        return c.json({ error: apiError("org_member_email_unsupported", "This deployment cannot find accounts by email") }, 400)
+      }
+      const account = await options.findAccountByEmail(email)
+      if (!account) return c.json({ error: apiError("org_member_not_found", "No account has this verified email") }, 404)
+      return c.json(await add(auth, {
+        orgId: c.req.param("orgId")!,
+        ...memberSelector(input),
+        tokenIdentifier: account.tokenIdentifier,
+        role: input.role,
+      }))
     }))
     .patch("/orgs/:orgId/members/:userPublicId", limited, authorized(async (auth, c) => {
       const update = authority().updateOrgMember

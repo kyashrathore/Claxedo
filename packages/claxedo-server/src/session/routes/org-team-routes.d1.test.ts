@@ -12,18 +12,43 @@ import { STATIC_PRODUCT_DESCRIPTORS } from "../../deployments/hosted-shared/depl
 import { sandboxRelayTargetLookup, type HostedControlPlane } from "../../authority/hosted-services"
 import type { ControlPlaneServices } from "../../authority/services"
 import { composeBetterAuthD1Authority } from "../../authority/adapters/worker/better-auth-d1-compose"
+import { readdirSync } from "node:fs"
+import { readFile } from "node:fs/promises"
+import { fileURLToPath } from "node:url"
+import { Miniflare } from "miniflare"
+import { createBetterAuthD1AccountEmailResolver } from "../../platform/auth/better-auth-d1-account-email"
 import { testRequestAuthenticationAdapter } from "../../test-support/request-authentication"
 import {
   controlPlaneMigrations,
   miniflareControlPlaneDatabase,
-  type ControlPlaneDatabase,
 } from "../../test-support/control-plane-migrations"
 
-const active: ControlPlaneDatabase[] = []
+const disposers: Array<() => Promise<void>> = []
 
 afterEach(async () => {
-  await Promise.all(active.splice(0).map((database) => database.dispose()))
+  await Promise.all(disposers.splice(0).map((dispose) => dispose()))
 })
+
+const AUTH_MIGRATIONS = fileURLToPath(new URL("../../../migrations/auth/", import.meta.url))
+
+/** Better Auth's own database, where the only copy of an account's email lives. */
+async function authDatabase() {
+  const instance = new Miniflare({
+    modules: true,
+    script: "export default { fetch() { return new Response('ok') } }",
+    compatibilityDate: "2025-05-01",
+    d1Databases: ["AUTH_DB"],
+  })
+  disposers.push(() => instance.dispose())
+  const database = await instance.getD1Database("AUTH_DB")
+  for (const name of readdirSync(AUTH_MIGRATIONS).filter((file) => file.endsWith(".sql")).sort()) {
+    const migration = (await readFile(`${AUTH_MIGRATIONS}${name}`, "utf8")).replace(/^\s*--.*$/gm, "")
+    for (const statement of migration.split(/;\s*\n\s*\n/).map((part) => part.trim()).filter(Boolean)) {
+      await database.prepare(statement).run()
+    }
+  }
+  return database
+}
 
 /**
  * The hosted core app over a real D1 control plane. The bearer token names a
@@ -32,7 +57,7 @@ afterEach(async () => {
  */
 async function hosted() {
   const controlPlane = await miniflareControlPlaneDatabase(controlPlaneMigrations())
-  active.push(controlPlane)
+  disposers.push(() => controlPlane.dispose())
   const authority = composeBetterAuthD1Authority({
     env: {
       CLAXEDO_ADAPTER_PROFILE: "better-auth-d1",
@@ -79,7 +104,9 @@ async function hosted() {
     runtimeSessionAuthority: authority,
     env: { CLAXEDO_DEPLOYMENT_MODE: "hosted" },
   } as unknown as HostedControlPlane
+  const accounts = await authDatabase()
   const app = createHostedCoreApp(plane, {
+    findAccountByEmail: createBetterAuthD1AccountEmailResolver(accounts, "https://auth.test"),
     authentication,
     liveSyncRoom: {
       idFromName: (name: string) => name,
@@ -139,7 +166,14 @@ async function hosted() {
     })
     return { status: response.status, body: (await response.json()) as never }
   }
-  return { authority, person, call }
+  const account = async (subject: string, email: string, verified: boolean) => {
+    await accounts
+      .prepare(`insert into "user" (id, name, email, "emailVerified", image, "createdAt", "updatedAt") values (?, ?, ?, ?, null, 1, 1)`)
+      .bind(subject, subject, email, verified ? 1 : 0)
+      .run()
+    return await person(subject)
+  }
+  return { authority, person, account, call }
 }
 
 describe("hosted organization, team and project access routes on D1", () => {
@@ -237,5 +271,25 @@ describe("hosted organization, team and project access routes on D1", () => {
     expect(await call(bob.token, "GET", `/api/control/projects/${projectId}/access`))
       .toMatchObject({ status: 404, body: { error: { code: "project_not_found" } } })
     expect(await call(bob.token, "GET", `/api/control/orgs/${orgId}/members`)).toMatchObject({ status: 200, body: [] })
+  })
+
+  test("an admin adds an existing account by its verified email, and an unverified or unknown address names nobody", async () => {
+    const { person, account, call } = await hosted()
+    const alice = await person("alice")
+    const carol = await account("carol", "carol@example.com", true)
+    await account("dave", "dave@example.com", false)
+    const orgId = ((await call(alice.token, "POST", "/api/control/orgs", { name: "Acme" })).body as { org_id: string }).org_id
+
+    expect((await call(alice.token, "POST", `/api/control/orgs/${orgId}/members`, { email: " Carol@Example.COM ", role: "member" })).body)
+      .toMatchObject({ user_id: carol.userId, role: "member" })
+    expect(await call(alice.token, "POST", `/api/control/orgs/${orgId}/members`, { email: "dave@example.com", role: "member" }))
+      .toMatchObject({ status: 404, body: { error: { code: "org_member_not_found" } } })
+    expect(await call(alice.token, "POST", `/api/control/orgs/${orgId}/members`, { email: "nobody@example.com", role: "member" }))
+      .toMatchObject({ status: 404, body: { error: { code: "org_member_not_found" } } })
+    expect(await call(alice.token, "POST", `/api/control/orgs/${orgId}/members`, {
+      email: "carol@example.com",
+      userPublicId: carol.userId,
+      role: "member",
+    })).toMatchObject({ status: 400, body: { error: { code: "org_member_target_required" } } })
   })
 })

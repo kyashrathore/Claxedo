@@ -287,10 +287,10 @@ describe("resolveHostedOperation", () => {
       method: "GET",
       path: "/api/control/orgs/org_1/members",
     })
-    expect(resolveHostedOperation("org.members.add", { orgId: "org_1", userPublicId: "usr_1", role: "member" })).toEqual({
+    expect(resolveHostedOperation("org.members.add", { orgId: "org_1", email: "a@example.com", role: "member" })).toEqual({
       method: "POST",
       path: "/api/control/orgs/org_1/members",
-      body: { userPublicId: "usr_1", role: "member" },
+      body: { email: "a@example.com", role: "member" },
     })
     expect(resolveHostedOperation("org.members.update", { orgId: "org_1", userPublicId: "usr_1", role: "admin" })).toEqual({
       method: "PATCH",

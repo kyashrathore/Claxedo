@@ -80,7 +80,7 @@ authority that stores none of this answers `501 not_implemented`.
 |---|---|
 | `GET /orgs`, `POST /orgs` | the caller's orgs; create a collaborative org |
 | `GET /orgs/:orgId/members` | members with `role` and `joined_at` |
-| `POST /orgs/:orgId/members` | add an existing account by `userPublicId`, `tokenIdentifier` or `providerSubject`, with `role` |
+| `POST /orgs/:orgId/members` | add an existing account by `userPublicId`, `email`, `tokenIdentifier` or `providerSubject`, with `role`; an email names the Better Auth account that verified it (`AUTH_DB`), and a deployment without that lookup answers `org_member_email_unsupported` |
 | `PATCH /orgs/:orgId/members/:userPublicId` | change `role` |
 | `DELETE /orgs/:orgId/members/:userPublicId` | remove, with the cascade above |
 | `GET`, `POST /orgs/:orgId/teams`; `POST /orgs/:orgId/ensure-default-team` | teams; the default team every member and project joins |

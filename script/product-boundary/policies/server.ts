@@ -46,8 +46,10 @@ export const serverWorkerd: Policy = {
   },
   // The D1 authority composes its organization, team and project-member
   // modules beside `project-role.ts`, the one rank query they and every other
-  // D1 reader share (`authority/adapters/d1/core-authority.ts`).
-  ceilings: { modules: 104, packages: 20 },
+  // D1 reader share (`authority/adapters/d1/core-authority.ts`), and the
+  // Better Auth composition adds the AUTH_DB email lookup an org admin adds a
+  // member by (`platform/auth/better-auth-d1-account-email.ts`).
+  ceilings: { modules: 105, packages: 20 },
 
   emitted: {
     file: "packages/claxedo-server/.artifacts/u8-package-split/manifests/server-workerd.json",

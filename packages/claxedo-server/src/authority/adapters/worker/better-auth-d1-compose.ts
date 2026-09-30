@@ -43,6 +43,7 @@ import {
 } from "../../../platform/auth/better-auth-native-clients"
 import { createBetterAuthD1AuthenticationEvidenceResolver } from "../../../platform/auth/better-auth-d1-authentication-evidence"
 import { createBetterAuthD1RequestAuthenticationAdapter } from "../../../platform/auth/better-auth-d1-request-authentication"
+import { createBetterAuthD1AccountEmailResolver } from "../../../platform/auth/better-auth-d1-account-email"
 import { STATIC_PRODUCT_DESCRIPTORS } from "../../../deployments/hosted-shared/deployment-profile"
 import type { HostedCoreAppOptions } from "../../../deployments/hosted-shared/hosted-core-app"
 import { provisionedRunner } from "@claxedo/server-core/agent-config/connections"
@@ -269,6 +270,7 @@ export function composeBetterAuthD1UserDeployedControlPlane(
       userDeployedIdentityAdmission: {
         admit: (auth, admission) => authority.admitUserDeployedIdentity(auth, admission),
       },
+      findAccountByEmail: createBetterAuthD1AccountEmailResolver(input.authDatabase, descriptor.issuer),
     },
     verifyIdentity: (request) => authentication.verifyIdentity(request),
     authHandler: async (request) => await authProtocol.fetch(request),

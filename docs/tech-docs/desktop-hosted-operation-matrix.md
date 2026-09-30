@@ -132,7 +132,7 @@ is the authoritative source for this column.
 | `org.teams.create` | `features/settings/data/org-team-api.ts` | `POST /api/control/orgs/:orgId/teams` | unary | unsafe | Creates a team in an org. |
 | `org.ensureDefaultTeam` | `features/settings/data/org-team-api.ts` | `POST /api/control/orgs/:orgId/ensure-default-team` | unary | unsafe | Ensures the org has a default team; may create one. |
 | `org.members.list` | none yet | `GET /api/control/orgs/:orgId/members` | unary | safe | Members with role and `joined_at`; empty to a caller outside the org. |
-| `org.members.add` | none yet | `POST /api/control/orgs/:orgId/members` | unary | unsafe | Adds an existing account by `userPublicId`, `tokenIdentifier` or `providerSubject`; org owners and admins only, the owner role by owners only. |
+| `org.members.add` | none yet | `POST /api/control/orgs/:orgId/members` | unary | unsafe | Adds an existing account by `userPublicId`, verified `email`, `tokenIdentifier` or `providerSubject`; org owners and admins only, the owner role by owners only. |
 | `org.members.update` | none yet | `PATCH /api/control/orgs/:orgId/members/:userPublicId` | unary | unsafe | Changes a member's role; the founding owner cannot be demoted. |
 | `org.members.remove` | none yet | `DELETE /api/control/orgs/:orgId/members/:userPublicId` | unary | unsafe | Also revokes the person's team memberships and project member grants in the org. |
 | `team.members.list` | `features/settings/data/org-team-api.ts` | `GET /api/control/teams/:teamId/members` | unary | safe | |

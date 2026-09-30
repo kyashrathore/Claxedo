@@ -18,6 +18,9 @@ export type MemberSelector = {
   providerSubject?: string
 }
 
+/** Finds an existing account by its verified email address, for deployments whose identity provider holds one. */
+export type FindAccountByEmail = (email: string) => Promise<{ tokenIdentifier: string } | undefined>
+
 export type OrgMember = { user_id: string; public_id: string; role: OrgMemberRole; joined_at: number }
 
 export type OrgMemberRemoval = { removed: boolean; team_memberships_revoked: number; project_memberships_revoked: number }

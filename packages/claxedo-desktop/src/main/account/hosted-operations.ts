@@ -342,7 +342,7 @@ export const HOSTED_OPERATIONS = {
   "org.members.add": {
     method: "POST",
     path: "/api/control/orgs/:orgId/members",
-    body: ["userPublicId", "tokenIdentifier", "providerSubject", "role"],
+    body: ["userPublicId", "email", "tokenIdentifier", "providerSubject", "role"],
   },
   "org.members.update": {
     method: "PATCH",
