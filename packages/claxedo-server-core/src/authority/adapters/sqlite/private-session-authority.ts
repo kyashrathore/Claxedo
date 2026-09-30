@@ -891,9 +891,11 @@ export function createSqlitePrivateSessionAuthority(input: {
         }
         incoming.add(value.sessionId)
         db.prepare(`
-          UPDATE session_history SET title = COALESCE(?, title), updated_at = MAX(updated_at, COALESCE(?, updated_at))
+          UPDATE session_history SET
+            title = CASE WHEN COALESCE(?, updated_at) >= updated_at THEN COALESCE(?, title) ELSE title END,
+            updated_at = MAX(updated_at, COALESCE(?, updated_at))
           WHERE session_id = ? AND workspace_id = ? AND deleted_at IS NULL
-        `).run(value.title ?? null, value.updatedAt ?? null, value.sessionId, workspaceId)
+        `).run(value.updatedAt ?? null, value.title ?? null, value.updatedAt ?? null, value.sessionId, workspaceId)
       }
       if (!replace) return
       const owned = db.prepare<unknown[], { session_id: string }>(`

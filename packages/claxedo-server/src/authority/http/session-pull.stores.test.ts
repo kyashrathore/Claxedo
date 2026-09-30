@@ -1,7 +1,7 @@
 import { afterEach, expect, test, vi } from "vitest"
 import { selfHostedSessionStores } from "../../test-support/self-hosted-session-stores"
 import { projectionSessionReads } from "../../session/projection-session-reads"
-import { pullControlSessionMessages } from "./session-pull"
+import { pullControlSession, pullControlSessionMessages } from "./session-pull"
 
 let stores: Awaited<ReturnType<typeof selfHostedSessionStores>> | undefined
 afterEach(() => {
@@ -30,4 +30,18 @@ test("a checkpoint whose authority write failed after the projection committed i
   const converged = await read()
   expect(converged.messages.map((message) => message.info.id)).toEqual([messageId("a1"), messageId("a2")])
   expect(converged.maxEventOrdinal).toBe(2)
+})
+
+test("a register that finishes after a newer one leaves the newer title in the projection and the authority", async () => {
+  stores = await selfHostedSessionStores()
+  const { services, authority, auth, workspaceId, sessionId, runtime, options } = stores
+  const register = () => pullControlSession(services, options, auth, { workspaceId, sessionId })
+
+  runtime.session = { title: "Renamed", updated: 300 }
+  await register()
+  runtime.session = { title: "Original", updated: 200 }
+  await register()
+
+  expect((await services.projectionStore.session_meta(sessionId))?.title).toBe("Renamed")
+  expect(await authority.resolveSession(auth, { sessionId })).toMatchObject({ title: "Renamed" })
 })

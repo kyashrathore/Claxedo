@@ -1171,6 +1171,21 @@ describe("D1 private multiplayer session authority", () => {
     expect(await updatedAt("ses_a")).toEqual({ ...registered.a, deleted_at: expect.any(Number) })
   })
 
+  test("a title from an older runtime snapshot does not replace a newer one", async () => {
+    const input = await setup()
+    const { alice } = await sharedWorkspace(input)
+    await reserveAndRegister(input.sessions, alice, { operationId: "op_a", sessionId: "ses_a" })
+    const write = (title: string, updatedAt: number) =>
+      input.sessions.upsertSessionVisibility(alice, { workspaceId: "ws_main", sessions: [{ sessionId: "ses_a", title, updatedAt }] })
+
+    await write("Renamed", 3_000_000_000_000)
+    await write("Original", 2_000_000_000_000)
+
+    expect(await input.sessions.listSessions(alice, { workspaceId: "ws_main" })).toEqual([
+      expect.objectContaining({ session_id: "ses_a", title: "Renamed", updated_at: 3_000_000_000_000 }),
+    ])
+  })
+
   test("stamps the admitted human turn and refuses to move it backwards", async () => {
     const input = await setup()
     const { alice } = await sharedWorkspace(input)

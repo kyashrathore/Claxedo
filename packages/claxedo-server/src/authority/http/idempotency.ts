@@ -120,11 +120,14 @@ export function memoryIdempotencyStore(): DurableIdempotencyStore {
 }
 
 /**
- * Taking over a claim whose lease passed may run a command a second time, when
- * its first run committed and the instance died before completing the row.
- * That is safe for register, checkpoint and repair: each re-pulls the runtime's
- * current snapshot, and every projection write it makes is an upsert guarded by
- * the event ordinal, so a second run converges on the same state.
+ * Taking over a claim whose lease passed may run a command twice: the first
+ * run may have committed, or still be running, when its successor starts.
+ * Register, checkpoint and repair tolerate that because each re-pulls the
+ * runtime's current snapshot and each of its writes refuses an older one: the
+ * projection and the authority keep a message snapshot only at or above their
+ * stored event ordinal, and a session's title and archive state only at or
+ * above their stored runtime `time.updated`. A message snapshot the runtime
+ * sends without an event ordinal has no such fence.
  */
 export function d1ProjectionCommandIdempotency(database: D1Database): DurableIdempotencyStore {
   return {

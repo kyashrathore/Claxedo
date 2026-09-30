@@ -2006,13 +2006,20 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
         .prepare(
           `
       update sessions set
-        title = coalesce(?, title),
+        title = case when coalesce(?, updated_at) >= updated_at then coalesce(?, title) else title end,
         updated_at = max(updated_at, coalesce(?, updated_at))
       where session_id = ? and workspace_id = ? and deleted_at is null
         and ${actorSessionAccessSql("?", "sessions", "agent_turn")}
     `,
         )
-        .bind(row.title ?? null, row.updatedAt ?? null, row.sessionId, workspaceId, ...repeat(who.actorId, SESSION_ACCESS_BINDINGS.agent_turn)),
+        .bind(
+          row.updatedAt ?? null,
+          row.title ?? null,
+          row.updatedAt ?? null,
+          row.sessionId,
+          workspaceId,
+          ...repeat(who.actorId, SESSION_ACCESS_BINDINGS.agent_turn),
+        ),
     )
     if (replace) {
       statements.push(

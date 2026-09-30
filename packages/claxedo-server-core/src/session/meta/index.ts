@@ -478,6 +478,9 @@ async function upsertRows(rows: Array<ReturnType<typeof sessionMetaSyncRow>>): P
     )
     for (const item of all) {
       const prev = old.get(item.session_ref)
+      // Two pulls of one session can finish in either order; the runtime's
+      // `time.updated` orders their snapshots, and the older one writes nothing.
+      if (prev && item.updated_at < prev.updated_at) continue
       const update = {
         session_id: item.session_id,
         workspace_id: item.workspace_id ?? prev?.workspace_id ?? null,
