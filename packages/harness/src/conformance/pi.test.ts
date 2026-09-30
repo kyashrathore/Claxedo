@@ -263,7 +263,8 @@ runConformance({
 function piTransport(services: ReturnType<typeof createTestServices>, state: ConformanceBackend, env = process.env) {
   const pi = state as PiBackend
   return new PiRpcTransport(services, { binary: PINNED_PI, placement: "loopback", machineOwnerUserId: "owner",
-    canUseOwnLogin: true, stateRoot: path.join(pi.root, "claxedo"), ownerAgentDir: pi.agentDir, runtime: process.execPath, env })
+    canUseOwnLogin: true, stateRoot: path.join(pi.root, "claxedo"), ownerAgentDir: pi.agentDir, runtime: process.execPath,
+    env: { ...env, HOME: path.join(pi.root, "home") } })
 }
 
 test("a Pi process death mid-turn fails the turn through the channel's exit", async () => {
@@ -297,7 +298,7 @@ test("Pi reads back a clamped thinking level and refuses the turn", async () => 
 
 test("Pi lists only its profile's runnable models and their thinking levels through the config group", async () => {
   const context = await setupConformance({ name: "pi config group", backend,
-    makeTransport: (services, state) => piTransport(services, state, { PATH: process.env.PATH, HOME: process.env.HOME }) })
+    makeTransport: (services, state) => piTransport(services, state, { PATH: process.env.PATH }) })
   try {
     const config = context.transport.config!
     const preview = await config.options({ session: context.session }, "probe")
