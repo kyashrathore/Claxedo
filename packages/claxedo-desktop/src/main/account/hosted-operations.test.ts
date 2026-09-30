@@ -33,9 +33,6 @@ describe("HOSTED_OPERATIONS", () => {
   })
 
   test("declares no generic proxy", () => {
-    // `plugin.request` is the one row whose method and rest of path the caller
-    // chooses, and its prefix is one plugin's backend, where the supervisor
-    // answers against that plugin's manifest routes.
     const callerChosen = Object.entries(HOSTED_OPERATIONS)
       .filter(([, operation]) => typeof operation.method !== "string" || operation.path.endsWith("/*"))
       .map(([name, operation]) => [name, operation.path])
@@ -339,6 +336,23 @@ describe("resolveHostedOperation", () => {
       path: "/api/plugins/counter/count",
       response: "http",
     })
+    expect(resolveHostedOperation("plugin.request", { pluginId: "counter", method: "GET", path: "/" })).toEqual({
+      method: "GET",
+      path: "/api/plugins/counter/",
+      response: "http",
+    })
+  })
+
+  test("a plugin request names only a plugin id the manifest schema accepts", () => {
+    // `..` survives encodeURIComponent, and URL normalization would turn
+    // `/api/plugins/../claxedo/plugins/runtime/self` into a withheld row whose
+    // answer carries gateway credentials.
+    for (const pluginId of ["..", ".", "../admin", "Counter", "counter-", "a".repeat(65)]) {
+      expect(
+        () => resolveHostedOperation("plugin.request", { pluginId, method: "GET", path: "/claxedo/plugins/runtime/self" }),
+        pluginId,
+      ).toThrow(MissingOperationParameter)
+    }
   })
 
   test("a plugin request cannot leave its plugin's prefix, add a query, or choose an undeclared method", () => {
@@ -357,7 +371,6 @@ describe("resolveHostedOperation", () => {
     expect(resolveHostedOperation("plugin.request", { pluginId: "counter", method: "GET", path: "/%2e%2e/%2E%2E/workspace?host=machine#x" }).path).toBe(
       "/api/plugins/counter/%252e%252e/%252E%252E/workspace%3Fhost%3Dmachine%23x",
     )
-    expect(resolveHostedOperation("plugin.request", { pluginId: "../admin", method: "GET", path: "/count" }).path).toBe("/api/plugins/..%2Fadmin/count")
     for (const method of ["HEAD", "OPTIONS", "get", undefined]) {
       expect(() => resolveHostedOperation("plugin.request", { pluginId: "counter", method, path: "/count" }), String(method)).toThrow(MissingOperationParameter)
     }
@@ -383,6 +396,13 @@ describe("resolveHostedOperation", () => {
 
     expect(resolved.path).toBe("/api/workspace/..%2F..%2Finternal%2Fsandbox-manager/checkpoints")
     expect(resolved.path.split("/").filter(Boolean)).toHaveLength(4)
+  })
+
+  test("a parameter cannot be a dot segment, which URL normalization would resolve away", () => {
+    for (const id of ["..", "."]) {
+      expect(() => resolveHostedOperation("workspace.checkpoints.list", { id }), id).toThrow(MissingOperationParameter)
+      expect(() => resolveHostedOperation("workspace.lifecycle", { id: "ws_1", operation: id }), id).toThrow(MissingOperationParameter)
+    }
   })
 
   test("a parameter cannot append a query string", () => {

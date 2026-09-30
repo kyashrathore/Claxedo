@@ -1,5 +1,6 @@
 import { Hono } from "hono"
-import { PLUGIN_BACKEND_METHODS, PLUGIN_ID_PATTERN } from "@claxedo/plugin-api/manifest"
+import { isPluginId } from "@claxedo/plugin-api/id"
+import { PLUGIN_BACKEND_METHODS } from "@claxedo/plugin-api/manifest"
 import { ControlPlaneAuthError, controlPlaneAuthErrorBody } from "@claxedo/server-core/platform/auth/auth"
 import type { RequestAuthenticationAdapter } from "@claxedo/server-core/platform/auth/authentication"
 import type { WorkspaceAuthority } from "@claxedo/server-core/platform/auth/authority"
@@ -32,7 +33,7 @@ export function pluginBackendRouteContribution(input: PluginBackendRouteInput): 
   const routes = new Hono()
   routes.all("/:pluginId/*", async (context) => {
     const pluginId = context.req.param("pluginId")
-    if (!PLUGIN_ID_PATTERN.test(pluginId)) return pluginRefusal(404, "plugin_not_found", "No plugin has that id")
+    if (!isPluginId(pluginId)) return pluginRefusal(404, "plugin_not_found", "No plugin has that id")
     const method = context.req.method
     if (!(PLUGIN_BACKEND_METHODS as readonly string[]).includes(method)) {
       return pluginRefusal(405, "plugin_method_not_allowed", `Plugin routes do not answer ${method}`)

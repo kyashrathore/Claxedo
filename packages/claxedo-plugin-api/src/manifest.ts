@@ -1,7 +1,6 @@
 import { z } from "zod"
+import { PLUGIN_ID_MAX_LENGTH, PLUGIN_ID_PATTERN } from "./id"
 
-export const PLUGIN_ID_PATTERN = /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/
-export const PLUGIN_ID_MAX_LENGTH = 64
 export const PLUGIN_NAME_MAX_LENGTH = 80
 export const PLUGIN_CAPABILITIES = ["tasks", "documents"] as const
 export const PLUGIN_SERVER_ROUTE_PREFIX = "/api/claxedo/"

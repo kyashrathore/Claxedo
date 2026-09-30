@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test"
+import { isPluginId } from "./id"
 import { PluginManifestError, pluginBackendRouteAllowed, pluginOperationAllowed, pluginRouteAllowed, readPluginManifest } from "./manifest"
 
 const packageJson = {
@@ -122,5 +123,13 @@ describe("backend routes", () => {
     expect(pluginBackendRouteAllowed(root, "GET", "/a")).toBe(false)
     expect(pluginBackendRouteAllowed(root, "POST", "/a/b")).toBe(true)
     expect(pluginBackendRouteAllowed(root, "POST", "/")).toBe(false)
+  })
+})
+
+describe("isPluginId", () => {
+  test("accepts exactly the ids the manifest schema accepts", () => {
+    expect(isPluginId("counter")).toBe(true)
+    expect(isPluginId("a".repeat(64))).toBe(true)
+    for (const id of ["", ".", "..", "../admin", "Counter", "counter-", "-counter", "a".repeat(65)]) expect(isPluginId(id), id).toBe(false)
   })
 })

@@ -161,6 +161,7 @@
         "@claxedo/helpers": "workspace:*",
         "@claxedo/host-connector": "workspace:*",
         "@claxedo/local-server": "workspace:*",
+        "@claxedo/plugin-api": "workspace:*",
         "@claxedo/process-ownership": "workspace:*",
         "@claxedo/workspace-runtime": "workspace:*",
         "@lydell/node-pty": "catalog:",

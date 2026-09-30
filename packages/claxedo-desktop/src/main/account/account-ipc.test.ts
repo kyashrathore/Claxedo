@@ -93,8 +93,6 @@ describe("registered channels", () => {
   test("registers no generic channel", () => {
     const h = harness()
 
-    // `plugin.request` reaches one plugin's declared routes only; the operation
-    // table's own test pins it as the single caller-chosen row.
     const pluginRequest = hostedOperationChannel("plugin.request")
     expect(h.channels()).toContain(pluginRequest)
     for (const channel of h.channels().filter((channel) => channel !== pluginRequest)) {

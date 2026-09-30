@@ -49,6 +49,7 @@
     "@claxedo/process-ownership": "workspace:*",
     "@claxedo/app": "workspace:*",
     "@claxedo/helpers": "workspace:*",
+    "@claxedo/plugin-api": "workspace:*",
     "@claxedo/host-connector": "workspace:*",
     "@claxedo/local-server": "workspace:*",
     "@claxedo/workspace-runtime": "workspace:*",

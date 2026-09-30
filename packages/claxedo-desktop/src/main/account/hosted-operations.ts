@@ -25,6 +25,7 @@
  */
 import type { HostedOperationName as ContractOperationName } from "@claxedo/account-contract"
 import { asRecord } from "@claxedo/helpers/guards"
+import { isPluginId } from "@claxedo/plugin-api/id"
 
 type HostedMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE"
 
@@ -41,6 +42,8 @@ export type HostedOperation = {
   body?: string[]
   /** The parameter whose object is sent as the whole JSON body. */
   bodyObject?: string
+  /** Path parameters that must also satisfy the owning contract's own rule. */
+  accepts?: Readonly<Record<string, (value: string) => boolean>>
   /**
    * Declared query keys filled from the caller's parameters.
    *
@@ -504,6 +507,7 @@ export const HOSTED_OPERATIONS = {
   "plugin.request": {
     method: ["GET", "POST", "PUT", "PATCH", "DELETE"],
     path: "/api/plugins/:pluginId/*",
+    accepts: { pluginId: isPluginId },
     bodyObject: "body",
     response: "http",
   },
@@ -556,13 +560,14 @@ function operationMethod(name: string, operation: HostedOperation, input: Record
 }
 
 /**
- * The caller's `path` below a `/*` template, one encoded segment at a time: a
- * segment cannot be empty, `.` or `..`, and `?`, `#` and `%` arrive as
- * literal characters, so the request stays beneath the template's prefix and
- * carries no query.
+ * The caller's `path` below a `/*` template, one encoded segment at a time: `/`
+ * is the template's root, any other segment cannot be empty, `.` or `..`, and
+ * `?`, `#` and `%` arrive as literal characters, so the request stays beneath
+ * the template's prefix and carries no query.
  */
 function restOfPath(name: string, value: unknown): string {
   const path = operationParameter(name, "path", value ?? "")
+  if (path === "/") return "/"
   const segments = path.startsWith("/") ? path.slice(1).split("/") : undefined
   if (!segments || segments.some((segment) => segment === "" || segment === "." || segment === "..")) {
     throw new MissingOperationParameter(`operation "${name}" requires path to be an absolute path with no empty, "." or ".." segment`)
@@ -591,10 +596,19 @@ export function resolveHostedOperation(
     if (value === undefined || value === null || value === "") {
       throw new MissingOperationParameter(`operation "${name}" requires ${key}`)
     }
+    const text = operationParameter(name, key, value)
+    // `.` and `..` pass encodeURIComponent unchanged and URL normalization
+    // would resolve them into a different route.
+    if (text === "." || text === ".." || operation.accepts?.[key]?.(text) === false) {
+      throw new MissingOperationParameter(`operation "${name}" does not accept ${key} ${JSON.stringify(text)}`)
+    }
     // Encoded, so a parameter cannot add a path segment or a query string.
-    return encodeURIComponent(operationParameter(name, key, value))
+    return encodeURIComponent(text)
   })
   if (rest) path = `${path}${restOfPath(name, input.path)}`
+  if (new URL(path, "http://hosted.invalid").pathname !== path.split("?")[0]) {
+    throw new MissingOperationParameter(`operation "${name}" resolved to a path the URL parser would rewrite`)
+  }
 
   if (operation.query?.length || operation.optionalQuery?.length) {
     const params = new URLSearchParams()

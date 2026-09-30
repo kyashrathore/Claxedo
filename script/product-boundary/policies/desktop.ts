@@ -196,7 +196,11 @@ export const desktopMainComposition: Policy = {
   // no package edge. 101/27, no headroom.
   // -1 module: `account/account-perf.ts` is gone with the account-port bench,
   // its only reader. 100/27, no headroom.
-  ceilings: { modules: 100, packages: 27 },
+  // +1 package (2026-09-30): `@claxedo/plugin-api/id`, reached through
+  // `account/hosted-operations.ts`. Reviewed owner: the plugin id rule, which
+  // main applies to `plugin.request`'s plugin id before it builds a URL. The
+  // subpath is one zod-free module. 100/28, no headroom.
+  ceilings: { modules: 100, packages: 28 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-main.json",
     minModules: 35,
@@ -257,7 +261,9 @@ export const desktopAccountComposition: Policy = {
   // composition, and `@claxedo/helpers/claxedo-credentials` is its file shape
   // and path. The `@claxedo/helpers` subpaths (`fs`, `guards`, `readers`,
   // `string`) are leaves over node builtins already in this closure.
-  ceilings: { modules: 17, packages: 7 },
+  // `@claxedo/plugin-api/id` is the plugin id rule `hosted-operations.ts`
+  // applies to `plugin.request`, one zod-free module: 17 modules, 8 packages.
+  ceilings: { modules: 17, packages: 8 },
   // The emitted list names the credential-bearing half only. `hosted-operations.ts`
   // and `account-ipc.ts` are reached from the base entry through
   // `lazy-account.ts`, so Rollup places them in `index.js`, and
