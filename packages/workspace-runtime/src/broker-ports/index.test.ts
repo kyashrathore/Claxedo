@@ -435,6 +435,64 @@ describe("store broker ports", () => {
     if (failed.admitted) expect(await failed.settled).toEqual({ state: "failed", error: "failed" })
   })
 
+  test("a provider turn asked for while the ending turn still holds the session is admitted when that turn releases it", async () => {
+    const { store, ports } = setup()
+    const lease = store.readTurnAuthority("s1")!.leaseId
+    let decided = false
+    const admission = ports.admitProviderTurn("s1", { reason: "provider" }, async (turn) => {
+      await ports.drainProviderEvent("s1", turn, { event: { type: "finish", sessionId: "s1" } })
+    }).finally(() => { decided = true })
+    await tick()
+    expect(decided).toBe(false)
+    store.finishTurn({ sessionId: "s1", assistantMessageId: "t1", leaseId: lease, outcome: { status: "completed", completedAt: 10 } })
+    store.releaseTurnLease("s1", lease)
+    const result = await admission
+    expect(result.admitted).toBe(true)
+    if (result.admitted) expect(await result.settled).toEqual({ state: "completed" })
+    expect(store.readTurnAuthority("s1")).toBeUndefined()
+  })
+
+  test("a provider turn waits for a running provider turn's settlement, not a second lease", async () => {
+    const { store, ports } = setup()
+    const lease = store.readTurnAuthority("s1")!.leaseId
+    store.finishTurn({ sessionId: "s1", assistantMessageId: "t1", leaseId: lease, outcome: { status: "completed", completedAt: 10 } })
+    store.releaseTurnLease("s1", lease)
+    let finish!: () => void
+    const running = new Promise<void>((resolve) => { finish = resolve })
+    const order: string[] = []
+    const first = await ports.admitProviderTurn("s1", { reason: "goal" }, async (turn) => {
+      await running
+      await ports.drainProviderEvent("s1", turn, { event: { type: "finish", sessionId: "s1" } })
+      order.push("first ran")
+    })
+    const second = ports.admitProviderTurn("s1", { reason: "goal" }, async (turn) => {
+      order.push("second ran")
+      await ports.drainProviderEvent("s1", turn, { event: { type: "finish", sessionId: "s1" } })
+    })
+    await tick()
+    expect(order).toEqual([])
+    finish()
+    const admitted = await second
+    if (!first.admitted || !admitted.admitted) throw new Error("both provider turns must be admitted")
+    expect(await first.settled).toEqual({ state: "completed" })
+    expect(await admitted.settled).toEqual({ state: "completed" })
+    expect(order).toEqual(["first ran", "second ran"])
+  })
+
+  test("a provider turn whose session is not released within the bound is refused busy and takes nothing later", async () => {
+    const timers: (() => void)[] = []
+    const clock = { now: () => 0, setTimeout: (callback: () => void) => timers.push(callback), clearTimeout: () => {} }
+    const { store, ports } = setup({ clock })
+    const lease = store.readTurnAuthority("s1")!.leaseId
+    const admission = ports.admitProviderTurn("s1", { reason: "provider" }, async () => {})
+    await tick()
+    expect(timers).toHaveLength(1)
+    timers[0]!()
+    expect(await admission).toEqual({ admitted: false, reason: "busy" })
+    store.releaseTurnLease("s1", lease)
+    expect(store.readTurnAuthority("s1")).toBeUndefined()
+  })
+
   test("a provider turn on a session that never picked an agent or model runs the defaults a prompted turn runs", async () => {
     const { store, ports } = setup()
     const lease = store.readTurnAuthority("s1")?.leaseId
@@ -682,14 +740,17 @@ test("question cancellation publishes one rejection and preserves a sibling ques
 })
 
 test("provider admission refused as busy never runs its provisional producer", async () => {
-  const { ports } = setup()
+  const timers: (() => void)[] = []
+  const { ports } = setup({ clock: { now: () => 0, setTimeout: (callback: () => void) => timers.push(callback), clearTimeout: () => {} } })
   const session = createSessionBroker(createRequestBroker(ports), { sessionId: "s1", directory: "/work", workspaceId: "w1", origin })
   let runs = 0
-  const result = await session.admitProviderTurn({ reason: "provider" }, async function* () {
+  const admission = session.admitProviderTurn({ reason: "provider" }, async function* () {
     runs++
     yield { event: { type: "finish", sessionId: "s1" } }
   })
-  expect(result).toEqual({ admitted: false, reason: "busy" })
+  await tick()
+  for (const fire of timers) fire()
+  expect(await admission).toEqual({ admitted: false, reason: "busy" })
   expect(runs).toBe(0)
 })
 

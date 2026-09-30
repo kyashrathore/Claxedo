@@ -13,6 +13,7 @@ import { firstTurnErrorData, normalizeHarnessIdentity, parseStoredSessionModelGr
 import { createMemorySubagentAdmissionStore } from "@claxedo/harness/broker"
 import { sqliteSessionStarts } from "./session/session-starts"
 import { DeliveryQueue } from "./session/delivery-queue"
+import { TurnLeases } from "./session/turn-leases"
 import type { AgentMessage, AgentPermission, AgentQuestion, AgentTurnOutcome, PromptFormat, PromptInput, SessionHarness, SessionModelGroup } from "@claxedo/agent-runtime-contract"
 import type { AdmittedSubagentObservation } from "@claxedo/harness/broker"
 import type { ChildSessionRef, TurnActor } from "@claxedo/harness/contract"
@@ -711,6 +712,7 @@ export class RuntimeStoreMigrationBlockedError extends Error {
 export class RuntimeStore {
   readonly sessionStarts: AgentSessionStarts
   readonly deliveryQueue: DeliveryQueue
+  readonly turnLeases: TurnLeases
   private root: string
   private db: SqliteDatabase
   private subagentAdmission = createMemorySubagentAdmissionStore()
@@ -752,6 +754,7 @@ export class RuntimeStore {
     this.migrate()
     this.authoringOwnership = new SessionAuthoringOwnership(this.db)
     this.sessionStarts = sqliteSessionStarts(this.db)
+    this.turnLeases = new TurnLeases(this.db)
     this.deliveryQueue = new DeliveryQueue(this.db, (run) => this.transaction(run, "immediate"),
       (sessionId, actorId) => this.authoringOwnership.record(sessionId, actorId))
     this.hydrateSubagentAdmission()
@@ -2114,7 +2117,7 @@ export class RuntimeStore {
     // can still be active. A crash cannot release its durable lease, so clear
     // those stale ownership rows at the same boundary that interrupts busy
     // sessions and their pending tools.
-    this.db.exec("DELETE FROM session_turn_lease")
+    this.turnLeases.clear()
     this.normalizeRecoveringTools()
   }
 
@@ -4507,16 +4510,11 @@ export class RuntimeStore {
   }
 
   acquireTurnLease(sessionId: string) {
-    const leaseId = `${sessionId}:${crypto.randomUUID()}`
-    const result = this.db.prepare(`
-      INSERT OR IGNORE INTO session_turn_lease (session_id, lease_id, acquired_at)
-      VALUES (?, ?, ?)
-    `).run(sessionId, leaseId, Date.now())
-    return result.changes === 1 ? leaseId : undefined
+    return this.turnLeases.acquire(sessionId)
   }
 
   releaseTurnLease(sessionId: string, leaseId: string) {
-    this.db.prepare(`DELETE FROM session_turn_lease WHERE session_id = ? AND lease_id = ?`).run(sessionId, leaseId)
+    this.turnLeases.release(sessionId, leaseId)
   }
 
   /**
@@ -4536,12 +4534,7 @@ export class RuntimeStore {
 
   /** Who may currently write for this session, as the durable lease row says. */
   readTurnAuthority(sessionId: string) {
-    const row = this.db
-      .prepare<{ lease_id: string; acquired_at: number }>(
-        "SELECT lease_id, acquired_at FROM session_turn_lease WHERE session_id = ?",
-      )
-      .get(sessionId)
-    return row ? { leaseId: row.lease_id, acquiredAt: row.acquired_at } : undefined
+    return this.turnLeases.read(sessionId)
   }
 
   /**

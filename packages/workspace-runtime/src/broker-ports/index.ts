@@ -34,25 +34,26 @@ export function createStoreBrokerPorts(store: RuntimeStore, options: StoreBroker
   const requests = new BrokerRequestRows(store, delivery)
   const events = new BrokerSessionEvents(store, delivery)
   const state = new BrokerSessionState(store, delivery)
-  const providerTurns = new BrokerProviderTurns(store, events, delivery,
+  const timers = new Map<unknown, TimerHandle>()
+  const clock: Clock = options.clock ?? {
+    now: () => Date.now(),
+    setTimeout: (callback, ms) => {
+      const handle = setTimeout(() => { timers.delete(handle); callback() }, ms)
+      timers.set(handle, handle)
+      return handle
+    },
+    clearTimeout: (handle) => {
+      const timer = timers.get(handle)
+      if (!timer) return
+      clearTimeout(timer)
+      timers.delete(handle)
+    },
+  }
+  const providerTurns = new BrokerProviderTurns(store, events, delivery, clock,
     (sessionId, error) => options.reportOwnerFailure(sessionId, error),
     (sessionId, turn, error) => options.retainLeasedTurnFailure(sessionId, turn, error))
-  const timers = new Map<unknown, TimerHandle>()
   return {
-    clock: options.clock ?? {
-      now: () => Date.now(),
-      setTimeout: (callback, ms) => {
-        const handle = setTimeout(() => { timers.delete(handle); callback() }, ms)
-        timers.set(handle, handle)
-        return handle
-      },
-      clearTimeout: (handle) => {
-        const timer = timers.get(handle)
-        if (!timer) return
-        clearTimeout(timer)
-        timers.delete(handle)
-      },
-    },
+    clock,
     services: { patternEvaluator: options.patternEvaluator },
     currentTurnAuthority: (sessionId) => authority.currentTurnAuthority(sessionId),
     sessionAuthority: (sessionId) => authority.sessionAuthority(sessionId),
