@@ -102,6 +102,10 @@ export type AgentRuntimeEvent = RuntimeEventMeta & (
   | { type: "harness-notice"; code: string; message: string; severity?: RuntimeNoticeSeverity; details?: unknown }
   /** The harness is retrying a failed model request itself; `attempt` and `delayMs` only when it reports them. */
   | { type: "session-retry"; message: string; attempt?: number; delayMs?: number }
+  /** The model began a response; the content after it, until the next start, is that response's. */
+  | { type: "response-start"; responseId: string }
+  /** The harness withdrew these responses; their content stays on record, marked withdrawn. */
+  | { type: "response-retracted"; responseIds: string[]; reason: string }
   | { type: "auth-status"; status: "authenticated" | "unauthenticated" | "unknown"; authMode?: string | null; planType?: string | null; metadata?: Record<string, unknown> }
   | { type: "rate-limit"; status: "ok" | "limited"; usedPercent?: number; resetsAt?: number | null; windowDurationMins?: number | null; limitId?: string | null; limitName?: string | null; reason?: string | null; metadata?: Record<string, unknown> }
   | { type: "mcp-server-status"; serverName: string; status: "starting" | "ready" | "failed" | "cancelled"; error?: string | null }
@@ -177,6 +181,8 @@ export const AGENT_RUNTIME_EVENT_TYPE_REGISTRY = {
   "session-compaction": true,
   "harness-notice": true,
   "session-retry": true,
+  "response-start": true,
+  "response-retracted": true,
   "auth-status": true,
   "rate-limit": true,
   "mcp-server-status": true,
@@ -234,6 +240,8 @@ export const AGENT_RUNTIME_EVENT_FACTORY_TYPES = {
   sessionCompaction: "session-compaction",
   harnessNotice: "harness-notice",
   sessionRetry: "session-retry",
+  responseStart: "response-start",
+  responseRetracted: "response-retracted",
   authStatus: "auth-status",
   rateLimit: "rate-limit",
   mcpServerStatus: "mcp-server-status",
@@ -298,6 +306,8 @@ export const agentRuntimeEvent = {
   sessionCompaction: (input) => ({ type: "session-compaction", ...input }),
   harnessNotice: (input) => ({ type: "harness-notice", ...input }),
   sessionRetry: (input) => ({ type: "session-retry", ...input }),
+  responseStart: (input) => ({ type: "response-start", ...input }),
+  responseRetracted: (input) => ({ type: "response-retracted", ...input }),
   authStatus: (input) => ({ type: "auth-status", ...input }),
   rateLimit: (input) => ({ type: "rate-limit", ...input }),
   mcpServerStatus: (input) => ({ type: "mcp-server-status", ...input }),

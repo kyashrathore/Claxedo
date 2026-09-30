@@ -469,6 +469,9 @@
           "tasks": {},
           "cwd": "/private/var/folders/t2/23hmqy6j43j7f3fg3m70gzhh0000gn/T/claxedo-e2e-h1-turn-parts-JxE40L/workspaces/h1-claude-iftJ4k",
           "model": "claude-opus-5-5[1m]",
+          "responseByOwner": {
+            "": "msg_5"
+          },
           "streamingRequestByOwner": {
             "": "msg_5"
           },
@@ -486,6 +489,10 @@
           }
         },
         "events": [
+          {
+            "type": "response-start",
+            "responseId": "msg_5"
+          },
           {
             "type": "usage",
             "contextSize": 0,
@@ -517,6 +524,9 @@
         "tasks": {},
         "cwd": "/private/var/folders/t2/23hmqy6j43j7f3fg3m70gzhh0000gn/T/claxedo-e2e-h1-turn-parts-JxE40L/workspaces/h1-claude-iftJ4k",
         "model": "claude-opus-5-5[1m]",
+        "responseByOwner": {
+          "": "msg_5"
+        },
         "streamingRequestByOwner": {
           "": "msg_5"
         },
@@ -586,6 +596,9 @@
           "tasks": {},
           "cwd": "/private/var/folders/t2/23hmqy6j43j7f3fg3m70gzhh0000gn/T/claxedo-e2e-h1-turn-parts-JxE40L/workspaces/h1-claude-iftJ4k",
           "model": "claude-opus-5-5[1m]",
+          "responseByOwner": {
+            "": "msg_5"
+          },
           "streamingRequestByOwner": {
             "": "msg_5"
           },
@@ -646,6 +659,9 @@
         "tasks": {},
         "cwd": "/private/var/folders/t2/23hmqy6j43j7f3fg3m70gzhh0000gn/T/claxedo-e2e-h1-turn-parts-JxE40L/workspaces/h1-claude-iftJ4k",
         "model": "claude-opus-5-5[1m]",
+        "responseByOwner": {
+          "": "msg_5"
+        },
         "streamingRequestByOwner": {
           "": "msg_5"
         },
@@ -714,6 +730,9 @@
           "tasks": {},
           "cwd": "/private/var/folders/t2/23hmqy6j43j7f3fg3m70gzhh0000gn/T/claxedo-e2e-h1-turn-parts-JxE40L/workspaces/h1-claude-iftJ4k",
           "model": "claude-opus-5-5[1m]",
+          "responseByOwner": {
+            "": "msg_5"
+          },
           "streamingRequestByOwner": {
             "": "msg_5"
           },
@@ -785,6 +804,9 @@
         "tasks": {},
         "cwd": "/private/var/folders/t2/23hmqy6j43j7f3fg3m70gzhh0000gn/T/claxedo-e2e-h1-turn-parts-JxE40L/workspaces/h1-claude-iftJ4k",
         "model": "claude-opus-5-5[1m]",
+        "responseByOwner": {
+          "": "msg_5"
+        },
         "streamingRequestByOwner": {
           "": "msg_5"
         },
@@ -885,6 +907,9 @@
           "tasks": {},
           "cwd": "/private/var/folders/t2/23hmqy6j43j7f3fg3m70gzhh0000gn/T/claxedo-e2e-h1-turn-parts-JxE40L/workspaces/h1-claude-iftJ4k",
           "model": "claude-opus-5-5[1m]",
+          "responseByOwner": {
+            "": "msg_5"
+          },
           "streamingRequestByOwner": {
             "": "msg_5"
           },
@@ -962,6 +987,9 @@
         "tasks": {},
         "cwd": "/private/var/folders/t2/23hmqy6j43j7f3fg3m70gzhh0000gn/T/claxedo-e2e-h1-turn-parts-JxE40L/workspaces/h1-claude-iftJ4k",
         "model": "claude-opus-5-5[1m]",
+        "responseByOwner": {
+          "": "msg_5"
+        },
         "streamingRequestByOwner": {
           "": "msg_5"
         },
@@ -1034,6 +1062,9 @@
         "tasks": {},
         "cwd": "/private/var/folders/t2/23hmqy6j43j7f3fg3m70gzhh0000gn/T/claxedo-e2e-h1-turn-parts-JxE40L/workspaces/h1-claude-iftJ4k",
         "model": "claude-opus-5-5[1m]",
+        "responseByOwner": {
+          "": "msg_5"
+        },
         "streamingRequestByOwner": {
           "": "msg_5"
         },
@@ -1119,6 +1150,9 @@
         "tasks": {},
         "cwd": "/private/var/folders/t2/23hmqy6j43j7f3fg3m70gzhh0000gn/T/claxedo-e2e-h1-turn-parts-JxE40L/workspaces/h1-claude-iftJ4k",
         "model": "claude-opus-5-5[1m]",
+        "responseByOwner": {
+          "": "msg_5"
+        },
         "streamingRequestByOwner": {
           "": "msg_5"
         },
@@ -1198,6 +1232,9 @@
         "tasks": {},
         "cwd": "/private/var/folders/t2/23hmqy6j43j7f3fg3m70gzhh0000gn/T/claxedo-e2e-h1-turn-parts-JxE40L/workspaces/h1-claude-iftJ4k",
         "model": "claude-opus-5-5[1m]",
+        "responseByOwner": {
+          "": "msg_5"
+        },
         "streamingRequestByOwner": {
           "": "msg_5"
         },
@@ -1267,6 +1304,9 @@
           "tasks": {},
           "cwd": "/private/var/folders/t2/23hmqy6j43j7f3fg3m70gzhh0000gn/T/claxedo-e2e-h1-turn-parts-JxE40L/workspaces/h1-claude-iftJ4k",
           "model": "claude-opus-5-5[1m]",
+          "responseByOwner": {
+            "": "msg_5"
+          },
           "streamingRequestByOwner": {},
           "lastMainRequest": "msg_5",
           "mainRequests": {
@@ -1319,6 +1359,9 @@
         "tasks": {},
         "cwd": "/private/var/folders/t2/23hmqy6j43j7f3fg3m70gzhh0000gn/T/claxedo-e2e-h1-turn-parts-JxE40L/workspaces/h1-claude-iftJ4k",
         "model": "claude-opus-5-5[1m]",
+        "responseByOwner": {
+          "": "msg_5"
+        },
         "streamingRequestByOwner": {},
         "lastMainRequest": "msg_5",
         "mainRequests": {
@@ -1424,6 +1467,9 @@
         "tasks": {},
         "cwd": "/private/var/folders/t2/23hmqy6j43j7f3fg3m70gzhh0000gn/T/claxedo-e2e-h1-turn-parts-JxE40L/workspaces/h1-claude-iftJ4k",
         "model": "claude-opus-5-5[1m]",
+        "responseByOwner": {
+          "": "msg_5"
+        },
         "streamingRequestByOwner": {},
         "lastMainRequest": "msg_5",
         "mainRequests": {
@@ -1491,6 +1537,9 @@
         "tasks": {},
         "cwd": "/private/var/folders/t2/23hmqy6j43j7f3fg3m70gzhh0000gn/T/claxedo-e2e-h1-turn-parts-JxE40L/workspaces/h1-claude-iftJ4k",
         "model": "claude-opus-5-5[1m]",
+        "responseByOwner": {
+          "": "msg_5"
+        },
         "streamingRequestByOwner": {},
         "lastMainRequest": "msg_5",
         "mainRequests": {
@@ -1581,6 +1630,9 @@
           "tasks": {},
           "cwd": "/private/var/folders/t2/23hmqy6j43j7f3fg3m70gzhh0000gn/T/claxedo-e2e-h1-turn-parts-JxE40L/workspaces/h1-claude-iftJ4k",
           "model": "claude-opus-5-5[1m]",
+          "responseByOwner": {
+            "": "msg_6"
+          },
           "streamingRequestByOwner": {
             "": "msg_6"
           },
@@ -1610,6 +1662,10 @@
           }
         },
         "events": [
+          {
+            "type": "response-start",
+            "responseId": "msg_6"
+          },
           {
             "type": "usage",
             "contextSize": 0,
@@ -1664,6 +1720,9 @@
         "tasks": {},
         "cwd": "/private/var/folders/t2/23hmqy6j43j7f3fg3m70gzhh0000gn/T/claxedo-e2e-h1-turn-parts-JxE40L/workspaces/h1-claude-iftJ4k",
         "model": "claude-opus-5-5[1m]",
+        "responseByOwner": {
+          "": "msg_6"
+        },
         "streamingRequestByOwner": {
           "": "msg_6"
         },
@@ -1755,6 +1814,9 @@
           "tasks": {},
           "cwd": "/private/var/folders/t2/23hmqy6j43j7f3fg3m70gzhh0000gn/T/claxedo-e2e-h1-turn-parts-JxE40L/workspaces/h1-claude-iftJ4k",
           "model": "claude-opus-5-5[1m]",
+          "responseByOwner": {
+            "": "msg_6"
+          },
           "streamingRequestByOwner": {
             "": "msg_6"
           },
@@ -1837,6 +1899,9 @@
         "tasks": {},
         "cwd": "/private/var/folders/t2/23hmqy6j43j7f3fg3m70gzhh0000gn/T/claxedo-e2e-h1-turn-parts-JxE40L/workspaces/h1-claude-iftJ4k",
         "model": "claude-opus-5-5[1m]",
+        "responseByOwner": {
+          "": "msg_6"
+        },
         "streamingRequestByOwner": {
           "": "msg_6"
         },
@@ -1928,6 +1993,9 @@
           "tasks": {},
           "cwd": "/private/var/folders/t2/23hmqy6j43j7f3fg3m70gzhh0000gn/T/claxedo-e2e-h1-turn-parts-JxE40L/workspaces/h1-claude-iftJ4k",
           "model": "claude-opus-5-5[1m]",
+          "responseByOwner": {
+            "": "msg_6"
+          },
           "streamingRequestByOwner": {
             "": "msg_6"
           },
@@ -2024,6 +2092,9 @@
         "tasks": {},
         "cwd": "/private/var/folders/t2/23hmqy6j43j7f3fg3m70gzhh0000gn/T/claxedo-e2e-h1-turn-parts-JxE40L/workspaces/h1-claude-iftJ4k",
         "model": "claude-opus-5-5[1m]",
+        "responseByOwner": {
+          "": "msg_6"
+        },
         "streamingRequestByOwner": {
           "": "msg_6"
         },
@@ -2149,6 +2220,9 @@
           "tasks": {},
           "cwd": "/private/var/folders/t2/23hmqy6j43j7f3fg3m70gzhh0000gn/T/claxedo-e2e-h1-turn-parts-JxE40L/workspaces/h1-claude-iftJ4k",
           "model": "claude-opus-5-5[1m]",
+          "responseByOwner": {
+            "": "msg_6"
+          },
           "streamingRequestByOwner": {
             "": "msg_6"
           },
@@ -2250,6 +2324,9 @@
         "tasks": {},
         "cwd": "/private/var/folders/t2/23hmqy6j43j7f3fg3m70gzhh0000gn/T/claxedo-e2e-h1-turn-parts-JxE40L/workspaces/h1-claude-iftJ4k",
         "model": "claude-opus-5-5[1m]",
+        "responseByOwner": {
+          "": "msg_6"
+        },
         "streamingRequestByOwner": {
           "": "msg_6"
         },
@@ -2344,6 +2421,9 @@
         "tasks": {},
         "cwd": "/private/var/folders/t2/23hmqy6j43j7f3fg3m70gzhh0000gn/T/claxedo-e2e-h1-turn-parts-JxE40L/workspaces/h1-claude-iftJ4k",
         "model": "claude-opus-5-5[1m]",
+        "responseByOwner": {
+          "": "msg_6"
+        },
         "streamingRequestByOwner": {
           "": "msg_6"
         },
@@ -2451,6 +2531,9 @@
         "tasks": {},
         "cwd": "/private/var/folders/t2/23hmqy6j43j7f3fg3m70gzhh0000gn/T/claxedo-e2e-h1-turn-parts-JxE40L/workspaces/h1-claude-iftJ4k",
         "model": "claude-opus-5-5[1m]",
+        "responseByOwner": {
+          "": "msg_6"
+        },
         "streamingRequestByOwner": {
           "": "msg_6"
         },
@@ -2542,6 +2625,9 @@
           "tasks": {},
           "cwd": "/private/var/folders/t2/23hmqy6j43j7f3fg3m70gzhh0000gn/T/claxedo-e2e-h1-turn-parts-JxE40L/workspaces/h1-claude-iftJ4k",
           "model": "claude-opus-5-5[1m]",
+          "responseByOwner": {
+            "": "msg_6"
+          },
           "streamingRequestByOwner": {},
           "lastMainRequest": "msg_6",
           "mainRequests": {
@@ -2616,6 +2702,9 @@
         "tasks": {},
         "cwd": "/private/var/folders/t2/23hmqy6j43j7f3fg3m70gzhh0000gn/T/claxedo-e2e-h1-turn-parts-JxE40L/workspaces/h1-claude-iftJ4k",
         "model": "claude-opus-5-5[1m]",
+        "responseByOwner": {
+          "": "msg_6"
+        },
         "streamingRequestByOwner": {},
         "lastMainRequest": "msg_6",
         "mainRequests": {
@@ -2725,6 +2814,9 @@
           },
           "cwd": "/private/var/folders/t2/23hmqy6j43j7f3fg3m70gzhh0000gn/T/claxedo-e2e-h1-turn-parts-JxE40L/workspaces/h1-claude-iftJ4k",
           "model": "claude-opus-5-5[1m]",
+          "responseByOwner": {
+            "": "msg_6"
+          },
           "streamingRequestByOwner": {},
           "lastMainRequest": "msg_6",
           "mainRequests": {
@@ -2836,6 +2928,9 @@
         },
         "cwd": "/private/var/folders/t2/23hmqy6j43j7f3fg3m70gzhh0000gn/T/claxedo-e2e-h1-turn-parts-JxE40L/workspaces/h1-claude-iftJ4k",
         "model": "claude-opus-5-5[1m]",
+        "responseByOwner": {
+          "": "msg_6"
+        },
         "streamingRequestByOwner": {},
         "lastMainRequest": "msg_6",
         "mainRequests": {
@@ -2931,6 +3026,9 @@
         },
         "cwd": "/private/var/folders/t2/23hmqy6j43j7f3fg3m70gzhh0000gn/T/claxedo-e2e-h1-turn-parts-JxE40L/workspaces/h1-claude-iftJ4k",
         "model": "claude-opus-5-5[1m]",
+        "responseByOwner": {
+          "": "msg_6"
+        },
         "streamingRequestByOwner": {},
         "lastMainRequest": "msg_6",
         "mainRequests": {
@@ -3049,6 +3147,9 @@
           },
           "cwd": "/private/var/folders/t2/23hmqy6j43j7f3fg3m70gzhh0000gn/T/claxedo-e2e-h1-turn-parts-JxE40L/workspaces/h1-claude-iftJ4k",
           "model": "claude-opus-5-5[1m]",
+          "responseByOwner": {
+            "": "msg_7"
+          },
           "streamingRequestByOwner": {
             "": "msg_7"
           },
@@ -3088,6 +3189,10 @@
           }
         },
         "events": [
+          {
+            "type": "response-start",
+            "responseId": "msg_7"
+          },
           {
             "type": "usage",
             "contextSize": 0,
@@ -3160,6 +3265,9 @@
         },
         "cwd": "/private/var/folders/t2/23hmqy6j43j7f3fg3m70gzhh0000gn/T/claxedo-e2e-h1-turn-parts-JxE40L/workspaces/h1-claude-iftJ4k",
         "model": "claude-opus-5-5[1m]",
+        "responseByOwner": {
+          "": "msg_7"
+        },
         "streamingRequestByOwner": {
           "": "msg_7"
         },
@@ -3278,6 +3386,9 @@
           },
           "cwd": "/private/var/folders/t2/23hmqy6j43j7f3fg3m70gzhh0000gn/T/claxedo-e2e-h1-turn-parts-JxE40L/workspaces/h1-claude-iftJ4k",
           "model": "claude-opus-5-5[1m]",
+          "responseByOwner": {
+            "": "msg_7"
+          },
           "streamingRequestByOwner": {
             "": "msg_7"
           },
@@ -3387,6 +3498,9 @@
         },
         "cwd": "/private/var/folders/t2/23hmqy6j43j7f3fg3m70gzhh0000gn/T/claxedo-e2e-h1-turn-parts-JxE40L/workspaces/h1-claude-iftJ4k",
         "model": "claude-opus-5-5[1m]",
+        "responseByOwner": {
+          "": "msg_7"
+        },
         "streamingRequestByOwner": {
           "": "msg_7"
         },
@@ -3504,6 +3618,9 @@
           },
           "cwd": "/private/var/folders/t2/23hmqy6j43j7f3fg3m70gzhh0000gn/T/claxedo-e2e-h1-turn-parts-JxE40L/workspaces/h1-claude-iftJ4k",
           "model": "claude-opus-5-5[1m]",
+          "responseByOwner": {
+            "": "msg_7"
+          },
           "streamingRequestByOwner": {
             "": "msg_7"
           },
@@ -3625,6 +3742,9 @@
         },
         "cwd": "/private/var/folders/t2/23hmqy6j43j7f3fg3m70gzhh0000gn/T/claxedo-e2e-h1-turn-parts-JxE40L/workspaces/h1-claude-iftJ4k",
         "model": "claude-opus-5-5[1m]",
+        "responseByOwner": {
+          "": "msg_7"
+        },
         "streamingRequestByOwner": {
           "": "msg_7"
         },
@@ -3774,6 +3894,9 @@
           },
           "cwd": "/private/var/folders/t2/23hmqy6j43j7f3fg3m70gzhh0000gn/T/claxedo-e2e-h1-turn-parts-JxE40L/workspaces/h1-claude-iftJ4k",
           "model": "claude-opus-5-5[1m]",
+          "responseByOwner": {
+            "": "msg_7"
+          },
           "streamingRequestByOwner": {
             "": "msg_7"
           },
@@ -3899,6 +4022,9 @@
         },
         "cwd": "/private/var/folders/t2/23hmqy6j43j7f3fg3m70gzhh0000gn/T/claxedo-e2e-h1-turn-parts-JxE40L/workspaces/h1-claude-iftJ4k",
         "model": "claude-opus-5-5[1m]",
+        "responseByOwner": {
+          "": "msg_7"
+        },
         "streamingRequestByOwner": {
           "": "msg_7"
         },
@@ -4018,6 +4144,9 @@
         },
         "cwd": "/private/var/folders/t2/23hmqy6j43j7f3fg3m70gzhh0000gn/T/claxedo-e2e-h1-turn-parts-JxE40L/workspaces/h1-claude-iftJ4k",
         "model": "claude-opus-5-5[1m]",
+        "responseByOwner": {
+          "": "msg_7"
+        },
         "streamingRequestByOwner": {
           "": "msg_7"
         },
@@ -4150,6 +4279,9 @@
         },
         "cwd": "/private/var/folders/t2/23hmqy6j43j7f3fg3m70gzhh0000gn/T/claxedo-e2e-h1-turn-parts-JxE40L/workspaces/h1-claude-iftJ4k",
         "model": "claude-opus-5-5[1m]",
+        "responseByOwner": {
+          "": "msg_7"
+        },
         "streamingRequestByOwner": {
           "": "msg_7"
         },
@@ -4266,6 +4398,9 @@
           },
           "cwd": "/private/var/folders/t2/23hmqy6j43j7f3fg3m70gzhh0000gn/T/claxedo-e2e-h1-turn-parts-JxE40L/workspaces/h1-claude-iftJ4k",
           "model": "claude-opus-5-5[1m]",
+          "responseByOwner": {
+            "": "msg_7"
+          },
           "streamingRequestByOwner": {},
           "lastMainRequest": "msg_7",
           "mainRequests": {
@@ -4365,6 +4500,9 @@
         },
         "cwd": "/private/var/folders/t2/23hmqy6j43j7f3fg3m70gzhh0000gn/T/claxedo-e2e-h1-turn-parts-JxE40L/workspaces/h1-claude-iftJ4k",
         "model": "claude-opus-5-5[1m]",
+        "responseByOwner": {
+          "": "msg_7"
+        },
         "streamingRequestByOwner": {},
         "lastMainRequest": "msg_7",
         "mainRequests": {
@@ -4513,6 +4651,9 @@
         },
         "cwd": "/private/var/folders/t2/23hmqy6j43j7f3fg3m70gzhh0000gn/T/claxedo-e2e-h1-turn-parts-JxE40L/workspaces/h1-claude-iftJ4k",
         "model": "claude-opus-5-5[1m]",
+        "responseByOwner": {
+          "": "msg_7"
+        },
         "streamingRequestByOwner": {},
         "lastMainRequest": "msg_7",
         "mainRequests": {
@@ -4627,6 +4768,9 @@
         },
         "cwd": "/private/var/folders/t2/23hmqy6j43j7f3fg3m70gzhh0000gn/T/claxedo-e2e-h1-turn-parts-JxE40L/workspaces/h1-claude-iftJ4k",
         "model": "claude-opus-5-5[1m]",
+        "responseByOwner": {
+          "": "msg_7"
+        },
         "streamingRequestByOwner": {},
         "lastMainRequest": "msg_7",
         "mainRequests": {
@@ -4764,6 +4908,9 @@
           },
           "cwd": "/private/var/folders/t2/23hmqy6j43j7f3fg3m70gzhh0000gn/T/claxedo-e2e-h1-turn-parts-JxE40L/workspaces/h1-claude-iftJ4k",
           "model": "claude-opus-5-5[1m]",
+          "responseByOwner": {
+            "": "msg_8"
+          },
           "streamingRequestByOwner": {
             "": "msg_8"
           },
@@ -4813,6 +4960,10 @@
           }
         },
         "events": [
+          {
+            "type": "response-start",
+            "responseId": "msg_8"
+          },
           {
             "type": "usage",
             "contextSize": 0,
@@ -4894,6 +5045,9 @@
         },
         "cwd": "/private/var/folders/t2/23hmqy6j43j7f3fg3m70gzhh0000gn/T/claxedo-e2e-h1-turn-parts-JxE40L/workspaces/h1-claude-iftJ4k",
         "model": "claude-opus-5-5[1m]",
+        "responseByOwner": {
+          "": "msg_8"
+        },
         "streamingRequestByOwner": {
           "": "msg_8"
         },
@@ -5017,6 +5171,9 @@
           },
           "cwd": "/private/var/folders/t2/23hmqy6j43j7f3fg3m70gzhh0000gn/T/claxedo-e2e-h1-turn-parts-JxE40L/workspaces/h1-claude-iftJ4k",
           "model": "claude-opus-5-5[1m]",
+          "responseByOwner": {
+            "": "msg_8"
+          },
           "streamingRequestByOwner": {
             "": "msg_8"
           },
@@ -5119,6 +5276,9 @@
         },
         "cwd": "/private/var/folders/t2/23hmqy6j43j7f3fg3m70gzhh0000gn/T/claxedo-e2e-h1-turn-parts-JxE40L/workspaces/h1-claude-iftJ4k",
         "model": "claude-opus-5-5[1m]",
+        "responseByOwner": {
+          "": "msg_8"
+        },
         "streamingRequestByOwner": {
           "": "msg_8"
         },
@@ -5237,6 +5397,9 @@
         },
         "cwd": "/private/var/folders/t2/23hmqy6j43j7f3fg3m70gzhh0000gn/T/claxedo-e2e-h1-turn-parts-JxE40L/workspaces/h1-claude-iftJ4k",
         "model": "claude-opus-5-5[1m]",
+        "responseByOwner": {
+          "": "msg_8"
+        },
         "streamingRequestByOwner": {
           "": "msg_8"
         },
@@ -5362,6 +5525,9 @@
           },
           "cwd": "/private/var/folders/t2/23hmqy6j43j7f3fg3m70gzhh0000gn/T/claxedo-e2e-h1-turn-parts-JxE40L/workspaces/h1-claude-iftJ4k",
           "model": "claude-opus-5-5[1m]",
+          "responseByOwner": {
+            "": "msg_8"
+          },
           "streamingRequestByOwner": {
             "": "msg_8"
           },
@@ -5472,6 +5638,9 @@
         },
         "cwd": "/private/var/folders/t2/23hmqy6j43j7f3fg3m70gzhh0000gn/T/claxedo-e2e-h1-turn-parts-JxE40L/workspaces/h1-claude-iftJ4k",
         "model": "claude-opus-5-5[1m]",
+        "responseByOwner": {
+          "": "msg_8"
+        },
         "streamingRequestByOwner": {
           "": "msg_8"
         },
@@ -5599,6 +5768,9 @@
         },
         "cwd": "/private/var/folders/t2/23hmqy6j43j7f3fg3m70gzhh0000gn/T/claxedo-e2e-h1-turn-parts-JxE40L/workspaces/h1-claude-iftJ4k",
         "model": "claude-opus-5-5[1m]",
+        "responseByOwner": {
+          "": "msg_8"
+        },
         "streamingRequestByOwner": {
           "": "msg_8"
         },
@@ -5744,6 +5916,9 @@
           },
           "cwd": "/private/var/folders/t2/23hmqy6j43j7f3fg3m70gzhh0000gn/T/claxedo-e2e-h1-turn-parts-JxE40L/workspaces/h1-claude-iftJ4k",
           "model": "claude-opus-5-5[1m]",
+          "responseByOwner": {
+            "": "msg_8"
+          },
           "streamingRequestByOwner": {
             "": "msg_8"
           },
@@ -5848,6 +6023,9 @@
         },
         "cwd": "/private/var/folders/t2/23hmqy6j43j7f3fg3m70gzhh0000gn/T/claxedo-e2e-h1-turn-parts-JxE40L/workspaces/h1-claude-iftJ4k",
         "model": "claude-opus-5-5[1m]",
+        "responseByOwner": {
+          "": "msg_8"
+        },
         "streamingRequestByOwner": {
           "": "msg_8"
         },
@@ -5970,6 +6148,9 @@
         },
         "cwd": "/private/var/folders/t2/23hmqy6j43j7f3fg3m70gzhh0000gn/T/claxedo-e2e-h1-turn-parts-JxE40L/workspaces/h1-claude-iftJ4k",
         "model": "claude-opus-5-5[1m]",
+        "responseByOwner": {
+          "": "msg_8"
+        },
         "streamingRequestByOwner": {
           "": "msg_8"
         },
@@ -6098,6 +6279,9 @@
           },
           "cwd": "/private/var/folders/t2/23hmqy6j43j7f3fg3m70gzhh0000gn/T/claxedo-e2e-h1-turn-parts-JxE40L/workspaces/h1-claude-iftJ4k",
           "model": "claude-opus-5-5[1m]",
+          "responseByOwner": {
+            "": "msg_8"
+          },
           "streamingRequestByOwner": {
             "": "msg_8"
           },
@@ -6205,6 +6389,9 @@
         },
         "cwd": "/private/var/folders/t2/23hmqy6j43j7f3fg3m70gzhh0000gn/T/claxedo-e2e-h1-turn-parts-JxE40L/workspaces/h1-claude-iftJ4k",
         "model": "claude-opus-5-5[1m]",
+        "responseByOwner": {
+          "": "msg_8"
+        },
         "streamingRequestByOwner": {
           "": "msg_8"
         },
@@ -6335,6 +6522,9 @@
           },
           "cwd": "/private/var/folders/t2/23hmqy6j43j7f3fg3m70gzhh0000gn/T/claxedo-e2e-h1-turn-parts-JxE40L/workspaces/h1-claude-iftJ4k",
           "model": "claude-opus-5-5[1m]",
+          "responseByOwner": {
+            "": "msg_8"
+          },
           "streamingRequestByOwner": {
             "": "msg_8"
           },
@@ -6450,6 +6640,9 @@
         },
         "cwd": "/private/var/folders/t2/23hmqy6j43j7f3fg3m70gzhh0000gn/T/claxedo-e2e-h1-turn-parts-JxE40L/workspaces/h1-claude-iftJ4k",
         "model": "claude-opus-5-5[1m]",
+        "responseByOwner": {
+          "": "msg_8"
+        },
         "streamingRequestByOwner": {
           "": "msg_8"
         },
@@ -6600,6 +6793,9 @@
           },
           "cwd": "/private/var/folders/t2/23hmqy6j43j7f3fg3m70gzhh0000gn/T/claxedo-e2e-h1-turn-parts-JxE40L/workspaces/h1-claude-iftJ4k",
           "model": "claude-opus-5-5[1m]",
+          "responseByOwner": {
+            "": "msg_8"
+          },
           "streamingRequestByOwner": {
             "": "msg_8"
           },
@@ -6709,6 +6905,9 @@
         },
         "cwd": "/private/var/folders/t2/23hmqy6j43j7f3fg3m70gzhh0000gn/T/claxedo-e2e-h1-turn-parts-JxE40L/workspaces/h1-claude-iftJ4k",
         "model": "claude-opus-5-5[1m]",
+        "responseByOwner": {
+          "": "msg_8"
+        },
         "streamingRequestByOwner": {
           "": "msg_8"
         },
@@ -6836,6 +7035,9 @@
         },
         "cwd": "/private/var/folders/t2/23hmqy6j43j7f3fg3m70gzhh0000gn/T/claxedo-e2e-h1-turn-parts-JxE40L/workspaces/h1-claude-iftJ4k",
         "model": "claude-opus-5-5[1m]",
+        "responseByOwner": {
+          "": "msg_8"
+        },
         "streamingRequestByOwner": {
           "": "msg_8"
         },
@@ -6976,6 +7178,9 @@
         },
         "cwd": "/private/var/folders/t2/23hmqy6j43j7f3fg3m70gzhh0000gn/T/claxedo-e2e-h1-turn-parts-JxE40L/workspaces/h1-claude-iftJ4k",
         "model": "claude-opus-5-5[1m]",
+        "responseByOwner": {
+          "": "msg_8"
+        },
         "streamingRequestByOwner": {
           "": "msg_8"
         },
@@ -7100,6 +7305,9 @@
           },
           "cwd": "/private/var/folders/t2/23hmqy6j43j7f3fg3m70gzhh0000gn/T/claxedo-e2e-h1-turn-parts-JxE40L/workspaces/h1-claude-iftJ4k",
           "model": "claude-opus-5-5[1m]",
+          "responseByOwner": {
+            "": "msg_8"
+          },
           "streamingRequestByOwner": {},
           "lastMainRequest": "msg_8",
           "mainRequests": {
@@ -7207,6 +7415,9 @@
         },
         "cwd": "/private/var/folders/t2/23hmqy6j43j7f3fg3m70gzhh0000gn/T/claxedo-e2e-h1-turn-parts-JxE40L/workspaces/h1-claude-iftJ4k",
         "model": "claude-opus-5-5[1m]",
+        "responseByOwner": {
+          "": "msg_8"
+        },
         "streamingRequestByOwner": {},
         "lastMainRequest": "msg_8",
         "mainRequests": {
@@ -7364,6 +7575,9 @@
           },
           "cwd": "/private/var/folders/t2/23hmqy6j43j7f3fg3m70gzhh0000gn/T/claxedo-e2e-h1-turn-parts-JxE40L/workspaces/h1-claude-iftJ4k",
           "model": "claude-opus-5-5[1m]",
+          "responseByOwner": {
+            "": "msg_8"
+          },
           "streamingRequestByOwner": {},
           "lastMainRequest": "msg_8",
           "mainRequests": {

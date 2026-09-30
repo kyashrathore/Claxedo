@@ -103,18 +103,23 @@ type AgentPartBase<Type extends string> = {
   type: Type
 }
 
+/** The harness withdrew the response this content belongs to; the content is kept, not erased. */
+export type AgentPartRetraction = { reason: string }
+
 export type AgentTextPart = AgentPartBase<"text"> & {
   text: string
   synthetic?: boolean
   ignored?: boolean
   time?: { start: number; end?: number }
   metadata?: Record<string, unknown>
+  retracted?: AgentPartRetraction
 }
 
 export type AgentReasoningPart = AgentPartBase<"reasoning"> & {
   text: string
   time: { start: number; end?: number }
   metadata?: Record<string, unknown>
+  retracted?: AgentPartRetraction
 }
 
 export type AgentFilePartSourceText = {
@@ -422,6 +427,10 @@ function isSpan(value: unknown): boolean {
   return isRecord(value) && typeof value.start === "number" && optionalIs(value, "end", (end) => typeof end === "number")
 }
 
+function isRetraction(value: unknown): boolean {
+  return isRecord(value) && typeof value.reason === "string"
+}
+
 function isMessageError(value: unknown): value is AgentMessageError {
   return isRecord(value) && typeof value.name === "string" && isRecord(value.data)
 }
@@ -480,9 +489,9 @@ function hasPartIdentity(value: unknown): value is Record<string, unknown> {
 function hasVariantFields(part: Record<string, unknown>): boolean {
   switch (part.type) {
     case "text":
-      return isStringField(part, "text")
+      return isStringField(part, "text") && optionalIs(part, "retracted", isRetraction)
     case "reasoning":
-      return isStringField(part, "text") && isSpan(part.time)
+      return isStringField(part, "text") && isSpan(part.time) && optionalIs(part, "retracted", isRetraction)
     case "file":
       return isStringField(part, "mime") && isFilePartUrl(part.url)
     case "tool":

@@ -71,6 +71,14 @@ function diffOf(value: unknown): FileDiff[] | undefined {
   return value.filter((item): item is FileDiff => isRecord(item) && typeof item.additions === "number" && typeof item.deletions === "number")
 }
 
+function retractedParts(value: unknown) {
+  return (Array.isArray(value) ? value : []).flatMap((item) => {
+    const messageId = isRecord(item) ? nonEmptyString(item.messageID) : undefined
+    const partId = isRecord(item) ? nonEmptyString(item.partID) : undefined
+    return messageId && partId ? [{ messageId, partId }] : []
+  })
+}
+
 function transcriptEvent(frame: Frame, ref: SessionRef): ServerEvent | undefined {
   const properties = frame.properties ?? {}
   switch (frame.type) {
@@ -86,6 +94,10 @@ function transcriptEvent(frame: Frame, ref: SessionRef): ServerEvent | undefined
       const messageId = nonEmptyString(properties.messageID)
       const partId = nonEmptyString(properties.partID)
       return messageId && partId ? { type: "partRemoved", ref, messageId, partId } : undefined
+    }
+    case "message.part.retracted": {
+      const reason = nonEmptyString(properties.reason)
+      return reason ? { type: "partsRetracted", ref, reason, parts: retractedParts(properties.parts) } : undefined
     }
     case "message.part.delta": {
       const messageId = nonEmptyString(properties.messageID)

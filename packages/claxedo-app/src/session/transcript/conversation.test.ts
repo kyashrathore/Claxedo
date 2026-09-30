@@ -3,7 +3,7 @@ import { expect, test } from "bun:test"
 import { createRoot, createEffect } from "solid-js"
 import { createStore } from "solid-js/store"
 import type { TranscriptPage, TranscriptPart } from "@/server"
-import { appendDelta, prependPage, upsertPart } from "./conversation"
+import { appendDelta, prependPage, retractParts, upsertPart } from "./conversation"
 import { emptyTranscript } from "./model"
 
 function textPart(id: string, text: string): TranscriptPart {
@@ -47,4 +47,17 @@ test("a page read records the parts it brings with text", () => {
   } as unknown as TranscriptPage
   prependPage(set, page)
   expect(data.partsWithText).toEqual({ prt_1: true })
+})
+
+test("a retraction marks the named text and reasoning withdrawn and keeps their words", () => {
+  const [data, set] = createStore(emptyTranscript())
+  upsertPart(set, textPart("prt_1", "Here is how"))
+  upsertPart(set, { id: "prt_2", sessionID: "ses_1", messageID: "msg_1", type: "reasoning", text: "Considering", time: { start: 1 } } as TranscriptPart)
+  upsertPart(set, textPart("prt_3", "Safe answer"))
+  retractParts(set, data, [{ messageId: "msg_1", partId: "prt_1" }, { messageId: "msg_1", partId: "prt_2" }, { messageId: "msg_9", partId: "prt_3" }], "refusal")
+  expect(data.parts.msg_1?.map((part) => [part.id, "text" in part ? part.text : undefined, "retracted" in part ? part.retracted : undefined])).toEqual([
+    ["prt_1", "Here is how", { reason: "refusal" }],
+    ["prt_2", "Considering", { reason: "refusal" }],
+    ["prt_3", "Safe answer", undefined],
+  ])
 })

@@ -397,8 +397,10 @@ export const desktopRenderer: Policy = {
   // The transcript draws a harness's notices and compaction boundaries from the
   // contract's `transcript-notice.ts` through `transcript/notice-part.tsx`, whose
   // pure view (`notice-view.ts`) its unit test reaches directly, on the divider
-  // it shares with the compaction part (`message-divider.tsx`).
-  ceilings: { modules: 1232, packages: 36 },
+  // it shares with the compaction part (`message-divider.tsx`). A response the
+  // harness withdrew draws through `transcript/retracted-part.tsx`, and the edit
+  // tools' diagnostics list is `transcript/tool-diagnostics.tsx`.
+  ceilings: { modules: 1234, packages: 36 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,

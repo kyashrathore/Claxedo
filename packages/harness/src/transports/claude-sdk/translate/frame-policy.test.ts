@@ -72,8 +72,8 @@ describe("Claude side-channel frames the person should see", () => {
     expect(ingest(agent, system("model_fallback", { trigger: "overloaded", original_model: "claude-opus-5-5", fallback_model: "claude-sonnet-4-6", content: "Switched to Sonnet" })))
       .toMatchObject([{ type: "harness-notice", code: "claude_sdk.model_fallback", severity: "warn", message: "Switched to Sonnet" }])
     expect(ingest(agent, system("model_refusal_fallback", { trigger: "refusal", direction: "retry", original_model: "a", fallback_model: "b",
-      request_id: null, retracted_message_uuids: ["m-1"], content: "Retried with b" })))
-      .toMatchObject([{ type: "harness-notice", code: "claude_sdk.model_refusal_fallback", message: "Retried with b", details: { retractedMessageUuids: ["m-1"] } }])
+      request_id: null, retracted_message_uuids: ["m-1"], content: "Retried with b" })).filter((event) => event.type === "harness-notice"))
+      .toMatchObject([{ type: "harness-notice", code: "claude_sdk.model_refusal_fallback", severity: "warn", message: "Retried with b" }])
     expect(ingest(agent, system("model_refusal_no_fallback", { original_model: "a", request_id: null, content: "Claude declined" })))
       .toMatchObject([{ type: "harness-notice", code: "claude_sdk.model_refusal_no_fallback", severity: "warn", message: "Claude declined" }])
   })

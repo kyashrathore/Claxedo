@@ -1,6 +1,6 @@
 /// <reference types="bun" />
 import { expect, test } from "bun:test"
-import { noticeView } from "./notice-view"
+import { noticeView, retractionLabel } from "./notice-view"
 
 test("a harness notice reads as its own sentence in its severity", () => {
   expect(noticeView({ kind: "harness", code: "claude_sdk.informational", message: "UserPromptSubmit hook blocked the prompt", severity: "warn" }))
@@ -17,4 +17,9 @@ test("compaction draws a boundary while it runs and once it is done", () => {
 test("a failed compaction is a warning that says why", () => {
   expect(noticeView({ kind: "compaction", status: "failed", error: "prompt too long" }))
     .toEqual({ shape: "row", tone: "warn", message: { key: "transcript.notice.compactionFailed", error: "prompt too long" } })
+})
+
+test("withdrawn content says why when the harness named a refusal", () => {
+  expect(retractionLabel("refusal")).toBe("transcript.retracted.refusal")
+  expect(retractionLabel("something-else")).toBe("transcript.retracted.other")
 })

@@ -21,6 +21,17 @@ export type NoticeProjectionState = {
   retrying: boolean
 }
 
+export type ResponseMembers = {
+  parts: Array<{ messageID: string; partID: string }>
+  toolCallIds: string[]
+}
+
+/** The model response the turn is writing, and what each response wrote, so a retraction names exactly its content. */
+export type ResponseProjectionState = {
+  current?: string
+  members: Map<string, ResponseMembers>
+}
+
 export type ClientPresentationProjectionState = {
   assistantMsgId?: string
   /**
@@ -62,6 +73,7 @@ export type ClientPresentationProjectionState = {
   /** The reasoning part still streaming; the next content event ends it with `time.end`. */
   openReasoning?: OpenReasoningPart
   notices: NoticeProjectionState
+  responses: ResponseProjectionState
 }
 
 function keyedMap<V>(value: Map<string, V> | undefined): Map<string, V> {
@@ -94,5 +106,6 @@ export function createClientPresentationProjectionState(
     splitReasoning: initial?.splitReasoning ?? false,
     openReasoning: initial?.openReasoning,
     notices: initial?.notices ? structuredClone(initial.notices) : { noticeCount: 0, retrying: false },
+    responses: initial?.responses ? structuredClone(initial.responses) : { members: new Map() },
   }
 }

@@ -1813,3 +1813,51 @@
     color: var(--icon-critical-active);
   }
 }
+
+[data-component="retracted-part"] {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 4px 0;
+  color: var(--text-weak);
+
+  [data-slot="retracted-part-header"] {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+  }
+
+  [data-slot="notice-part-icon"] {
+    display: inline-flex;
+    flex: 0 0 auto;
+    color: var(--icon-base);
+  }
+
+  [data-slot="retracted-part-toggle"] {
+    flex: 0 0 auto;
+    min-height: 28px;
+    padding: 0 6px;
+    border-radius: 6px;
+    color: var(--text-base);
+    background: transparent;
+  }
+
+  [data-slot="retracted-part-toggle"]:focus-visible {
+    outline: 2px solid var(--border-interactive-base);
+    outline-offset: 1px;
+  }
+
+  [data-slot="retracted-part-text"] {
+    padding-left: 22px;
+    color: var(--text-weaker);
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+}
+
+@media (pointer: coarse) {
+  [data-component="retracted-part"] [data-slot="retracted-part-toggle"] {
+    min-height: 44px;
+  }
+}

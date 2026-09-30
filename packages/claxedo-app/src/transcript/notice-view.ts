@@ -17,3 +17,7 @@ export function noticeView(notice: TranscriptNotice): NoticeView {
       return { shape: "row", tone: "warn", message: { key: "transcript.notice.compactionFailed", error: notice.error } }
   }
 }
+
+export function retractionLabel(reason: string): Extract<TranscriptTextKey, "transcript.retracted.refusal" | "transcript.retracted.other"> {
+  return reason === "refusal" ? "transcript.retracted.refusal" : "transcript.retracted.other"
+}

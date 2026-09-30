@@ -40,6 +40,12 @@ test("each variant is checked against the fields it declares", () => {
   expect(isAgentContentPart({ ...identity, type: "compaction", auto: "yes" })).toBe(false)
 })
 
+test("retracted text and reasoning keep their content and say why", () => {
+  expect(isAgentContentPart({ ...identity, type: "text", text: "Partial", retracted: { reason: "refusal" } })).toBe(true)
+  expect(isAgentContentPart({ ...identity, type: "reasoning", text: "Partial", time: { start: 1 }, retracted: { reason: "refusal" } })).toBe(true)
+  expect(isAgentContentPart({ ...identity, type: "text", text: "Partial", retracted: true })).toBe(false)
+})
+
 test("a notice part carries one of the notices the transcript draws", () => {
   const notice = { ...identity, type: "notice" as const, time: { created: 1 } }
   expect(isAgentContentPart({ ...notice, notice: { kind: "harness", code: "claude_sdk.notification", message: "Done", severity: "info" } })).toBe(true)

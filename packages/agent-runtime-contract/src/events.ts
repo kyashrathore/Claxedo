@@ -66,6 +66,8 @@ export type AgentPresentationEvent =
   | { id: string; type: "message.part.updated"; properties: { sessionID: string; part: AgentContentPart; time: number } }
   | { id: string; type: "message.part.removed"; properties: { sessionID: string; messageID: string; partID: string } }
   | { id: string; type: "message.part.delta"; properties: { sessionID: string; messageID: string; partID: string; field: string; delta: string } }
+  /** These text and reasoning parts belong to a response the harness withdrew; they keep their content and gain `retracted`. */
+  | { id: string; type: "message.part.retracted"; properties: { sessionID: string; reason: string; parts: Array<{ messageID: string; partID: string }> } }
   /** `cancelled` marks the message a stopped turn ended on; the runtime records that turn as cancelled from it. */
   | { type: "message.completed"; properties: { sessionID: string; messageID: string; cancelled?: true } }
   | { id: string; type: "permission.asked"; properties: AgentPermission }
@@ -105,6 +107,7 @@ export const AGENT_PRESENTATION_EVENT_TYPE_REGISTRY = {
   "message.part.updated": true,
   "message.part.removed": true,
   "message.part.delta": true,
+  "message.part.retracted": true,
   "message.completed": true,
   "permission.asked": true,
   "permission.replied": true,

@@ -60,6 +60,8 @@ import { useLocation } from "@solidjs/router"
 import { attached, inline, kind } from "./message-file"
 import { MessageDivider } from "./message-divider"
 import { NoticePartDisplay } from "./notice-part"
+import { isRetractedPart, RetractedPartDisplay } from "./retracted-part"
+import { DiagnosticsDisplay, getDiagnostics } from "./tool-diagnostics"
 import { readPartText } from "./message-part-text"
 import { shouldRenderUserMarkdown } from "./user-message-markdown"
 import { handleTranscriptLinkClick, transcriptLinkHref, transcriptLinks } from "./transcript-link"
@@ -94,59 +96,6 @@ function ShellSubmessage(props: { text: string; animate?: boolean }) {
         </span>
       </span>
     </span>
-  )
-}
-
-interface Diagnostic {
-  range: {
-    start: { line: number; character: number }
-    end: { line: number; character: number }
-  }
-  message: string
-  severity?: number
-}
-
-interface DiagnosticsResult {
-  items: Diagnostic[]
-  total: number
-}
-
-const DIAGNOSTICS_CAP = 3
-
-function getDiagnostics(
-  diagnosticsByFile: Record<string, Diagnostic[]> | undefined,
-  filePath: string | undefined,
-): DiagnosticsResult {
-  if (!diagnosticsByFile || !filePath) return { items: [], total: 0 }
-  const diagnostics = diagnosticsByFile[filePath] ?? []
-  const errors = diagnostics.filter((d) => d.severity === 1)
-  return { items: errors.slice(0, DIAGNOSTICS_CAP), total: errors.length }
-}
-
-function DiagnosticsDisplay(props: { diagnostics: DiagnosticsResult }): JSX.Element {
-  const i18n = useTranscriptI18n()
-  const overflow = () => props.diagnostics.total - props.diagnostics.items.length
-  return (
-    <Show when={props.diagnostics.items.length > 0}>
-      <div class="ui-diagnostics">
-        <For each={props.diagnostics.items}>
-          {(diagnostic) => (
-            <div data-slot="diagnostic">
-              <span class="ui-diagnostic-icon" aria-label={i18n.t("transcript.messagePart.diagnostic.error")}>
-                <Icon name="circle-ban-sign" size="small" />
-              </span>
-              <span class="ui-diagnostic-location">
-                [{diagnostic.range.start.line + 1}:{diagnostic.range.start.character + 1}]
-              </span>
-              <span class="ui-diagnostic-message">{diagnostic.message}</span>
-            </div>
-          )}
-        </For>
-        <Show when={overflow() > 0}>
-          <div class="ui-diagnostic-overflow">{i18n.t("transcript.messagePart.diagnostic.more", { count: overflow() })}</div>
-        </Show>
-      </div>
-    </Show>
   )
 }
 
@@ -1120,7 +1069,7 @@ function HighlightedText(props: { text: string; references: AgentFilePart[]; age
 }
 
 export function Part(props: MessagePartProps) {
-  const component = createMemo(() => PART_MAPPING[props.part.type])
+  const component = createMemo(() => (isRetractedPart(props.part) ? RetractedPartDisplay : PART_MAPPING[props.part.type]))
   return (
     <Show when={component()}>
       <Dynamic

@@ -8,6 +8,8 @@ import { partEvent, seen, seqId, type CompatContext } from "./context"
 import { projectCompaction, projectHarnessNotice } from "./notices"
 import { projectHarnessDiagnostic } from "./harness-diagnostics"
 import { projectRetry, resumeAfterRetry } from "./retry"
+import { endReasoning, REASONING_ENDS_ON } from "./reasoning"
+import { recordResponseMembers, retractResponses, enterResponse, WITHDRAWN_TOOL } from "./responses"
 import { questionAnswers, questions, todos } from "./request-payloads"
 import {
   createClientPresentationProjectionState,
@@ -732,39 +734,6 @@ function deltaText(
   return events
 }
 
-const REASONING_ENDS_ON = new Set<AgentRuntimeEvent["type"]>([
-  "text-delta",
-  "proposed-plan-delta",
-  "proposed-plan-complete",
-  "tool-start",
-  "file-diff",
-  "image-delta",
-  "audio-delta",
-  "resource-link-delta",
-  "permission-request",
-  "question",
-  "step-start",
-  "finish",
-  "cancelled",
-  "error",
-])
-
-function endReasoning(ctx: CompatContext, now: () => number): AgentEventEnvelope[] {
-  const open = ctx.openReasoning
-  if (!open) return []
-  ctx.openReasoning = undefined
-  ctx.splitReasoning = true
-  const end = now()
-  return [partEvent(ctx.directory, {
-    id: open.partId,
-    sessionID: ctx.sessionId,
-    messageID: open.messageId,
-    type: "reasoning",
-    text: open.text,
-    time: { start: open.start, end },
-  }, end)]
-}
-
 function normalizeLocationInput(
   tool: string,
   input: Record<string, unknown>,
@@ -812,11 +781,11 @@ function hydrateToolInput(
   return normalizeLocationInput(tool, input, [...locationsFromList(display?.locations), ...locationsFromMetadata(metadata)])
 }
 
-function terminalizeOpenTools(ctx: CompatContext, error: string, now: () => number): AgentEventEnvelope[] {
+function terminalizeOpenTools(ctx: CompatContext, error: string, now: () => number, only?: ReadonlySet<string>): AgentEventEnvelope[] {
   const endedAt = now()
   const events: AgentEventEnvelope[] = []
   for (const [toolCallId, status] of ctx.toolStatusByCallId) {
-    if (status !== "running" && status !== "pending") continue
+    if ((status !== "running" && status !== "pending") || (only && !only.has(toolCallId))) continue
     const tool = ctx.toolNamesByCallId.get(toolCallId) ?? toolCallId
     const metadata = ctx.toolMetadataByCallId.get(toolCallId) ?? {}
     const input = hydrateToolInput(tool, ctx.toolInputsByCallId.get(toolCallId), metadata, ctx.toolDisplaysByCallId.get(toolCallId))
@@ -863,6 +832,12 @@ function translateRuntimeEventToCompat(chunk: AgentRuntimeEvent, ctx: CompatCont
 
     case "session-retry":
       return projectRetry(ctx, chunk, now)
+
+    case "response-start":
+      return enterResponse(ctx, chunk)
+
+    case "response-retracted":
+      return retractResponses(ctx, chunk, (tools) => terminalizeOpenTools(ctx, WITHDRAWN_TOOL, now, tools))
 
     case "auth-status":
     case "rate-limit":
@@ -1435,11 +1410,11 @@ export function createClientPresentationProjection(options: ClientPresentationPr
   return {
     name: "client-presentation",
     ingest(event) {
-      return run("ingest", event.type, (ctx) => [
+      return run("ingest", event.type, (ctx) => recordResponseMembers(ctx, event, [
         ...resumeAfterRetry(ctx, event),
         ...(REASONING_ENDS_ON.has(event.type) ? endReasoning(ctx, now) : []),
         ...translateRuntimeEventToCompat(event, ctx, now),
-      ])
+      ]))
     },
     terminalizeOpenTools(error) {
       return run("terminalize", undefined, (ctx) => [...endReasoning(ctx, now), ...terminalizeOpenTools(ctx, error, now)])

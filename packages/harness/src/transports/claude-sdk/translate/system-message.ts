@@ -56,7 +56,7 @@ function permissionDeniedEvents(toolCallId: string | undefined, error: string | 
 export function translateSystemMessage(message: Record<string, unknown>, state: ClaudeSdkAdapterState, event: ClaudeFrameEvent,
   memory: ClaudeTranslatorMemory): ClaudeTranslation {
   const subtype = text(message.subtype) ?? ""
-  const notice = systemNotice(subtype, message)
+  const notice = systemNotice(subtype, message, memory, event)
   if (notice) return notice
   switch (subtype) {
     case "task_progress":

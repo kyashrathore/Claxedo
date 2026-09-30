@@ -13,6 +13,7 @@ A logic change here is its own slice, proven by the transcript corpus (flow 30, 
 - Markdown (`markdown*.ts(x)`, `mermaid.ts`, `transcript-link.ts`, `safe-link.ts`), and image availability per URL (`image-availability.ts`).
 - File and diff viewing (`file.tsx`, `file-media.tsx`, `diff/`, `session-diff.ts`, `review-code-view*.ts(x)`, `line-comment*.ts(x)`).
 - Notices (`notice-part.tsx`, `notice-view.ts`): a `notice` part is a boundary on the shared divider (`message-divider.tsx`) while a compaction runs and once it is done, or a one-line row with the harness's own sentence in its severity (a hook block, a model fallback, a notification, a recalled memory, a failed compaction and its reason). The runtime writes them into the reply where they happened, so a reload reads the same rows.
+- Withdrawn content (`retracted-part.tsx`): a text or reasoning part whose response the harness withdrew (`retracted`, a refused answer Claude replaced with a fallback model's) reads as one line saying it was withdrawn and why, with its words behind a toggle. They are never erased: the reader can see what was said and that it was taken back, and the answer that replaced it follows as its own part.
 - Subagents (`subagent-chip.tsx`, `agent-glyph.tsx`), the rail (`message-nav.tsx`), the retry card (`session-retry.tsx`), and `formatDuration`.
 - Strings: `transcriptDictionary` (`i18n.ts`, `locales/`).
 

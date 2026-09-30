@@ -4,6 +4,7 @@ import { own } from "../../../translate/value"
 import { withoutKey, type ClaudeSdkAdapterState, type ClaudeTranslation } from "./adapter-state"
 import { latestMainRequest, meteredResult, meterRequest } from "./request-usage"
 import type { ClaudeSdkStreamEvent } from "./sdk-message"
+import { noteRefusal, announceResponse } from "./responses"
 import { claudeStreamOwner } from "./subagent-routing"
 import type { ClaudeTranslatorMemory } from "./translator-memory"
 
@@ -35,13 +36,14 @@ export function translateMessageStart(stream: MessageStart, message: Record<stri
   const owner = claudeStreamOwner(message)
   const requestId = text(stream.message.id)
   if (!requestId) return []
+  const started = announceResponse(state, owner, requestId)
   const streaming = {
-    ...state,
-    streamingRequestByOwner: { ...state.streamingRequestByOwner, [owner]: requestId },
+    ...started.state,
+    streamingRequestByOwner: { ...started.state.streamingRequestByOwner, [owner]: requestId },
     ...(owner ? {} : { lastMainRequest: requestId }),
   }
   const metered = meterRequest(streaming, memory, owner, requestId, asRecord(stream.message.usage), text(message.session_id), text(stream.message.model))
-  return metered ? meteredResult(metered) : { state: streaming, events: [] }
+  return metered ? { state: metered.state, events: [...started.events, metered.event] } : { state: streaming, events: started.events }
 }
 
 export function translateMessageDelta(stream: MessageDelta, message: Record<string, unknown>, state: ClaudeSdkAdapterState,
@@ -49,6 +51,7 @@ export function translateMessageDelta(stream: MessageDelta, message: Record<stri
   const owner = claudeStreamOwner(message)
   const requestId = own(state.streamingRequestByOwner ?? {}, owner)
   if (!requestId) return []
+  noteRefusal(memory, requestId, stream.delta.stop_reason)
   return meteredResult(meterRequest(state, memory, owner, requestId, asRecord(stream.usage), text(message.session_id), undefined))
 }
 

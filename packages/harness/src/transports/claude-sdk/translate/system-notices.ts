@@ -1,7 +1,9 @@
 import { asText as text } from "@claxedo/agent-runtime-contract"
 import type { AgentRuntimeEvent, RuntimeNoticeSeverity } from "@claxedo/agent-runtime-contract"
 import { asFiniteNumber, asRecord } from "@claxedo/helpers/guards"
-import { claudeNotice } from "./sdk-message"
+import { refusalRetraction } from "./responses"
+import { claudeNotice, type ClaudeFrameEvent } from "./sdk-message"
+import type { ClaudeTranslatorMemory } from "./translator-memory"
 
 function notice(code: string, message: string | undefined, severity: RuntimeNoticeSeverity = "info", details?: Record<string, unknown>) {
   return message ? [claudeNotice(code, message, severity, details)] : []
@@ -32,7 +34,7 @@ function fallbackMessage(frame: Record<string, unknown>) {
   return text(frame.content) ?? `Claude switched from ${String(frame.original_model)} to ${String(frame.fallback_model)}`
 }
 
-export function systemNotice(subtype: string, frame: Record<string, unknown>): AgentRuntimeEvent[] | undefined {
+export function systemNotice(subtype: string, frame: Record<string, unknown>, memory: ClaudeTranslatorMemory, event: ClaudeFrameEvent): AgentRuntimeEvent[] | undefined {
   switch (subtype) {
     case "api_retry":
       return retryEvents(frame)
@@ -46,7 +48,7 @@ export function systemNotice(subtype: string, frame: Record<string, unknown>): A
     case "model_consent_fallback":
       return notice(subtype, fallbackMessage(frame), "warn")
     case "model_refusal_fallback":
-      return notice(subtype, fallbackMessage(frame), "warn", { retractedMessageUuids: Array.isArray(frame.retracted_message_uuids) ? frame.retracted_message_uuids : [] })
+      return [...refusalRetraction(memory, frame.retracted_message_uuids, event), ...notice(subtype, fallbackMessage(frame), "warn")]
     case "model_refusal_no_fallback":
       return notice(subtype, text(frame.content), "warn")
     case "mirror_error":
