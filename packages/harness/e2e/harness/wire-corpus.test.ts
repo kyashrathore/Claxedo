@@ -110,6 +110,8 @@ test("latest-status subjects separate server, native event kind, and rate limit"
     rateLimit: { limitId: "codex" },
   }))).toBe("runtime.rate_limit:codex")
   expect(latestStatusSubject(diagnostic("pi.retry", {}))).toBeUndefined()
+  expect(latestStatusSubject({ data: { payload: { type: "session.background-work", properties: { sessionID: "ses_11111111", agents: 0 } } } }))
+    .toBe("session.background-work")
 })
 
 test("an extra ID in one entity does not renumber another entity", () => {

@@ -49,6 +49,7 @@ export function orderFramesByEntity(frames: unknown[]): Array<{ key: string; fra
 
 export function latestStatusSubject(frame: unknown): string | undefined {
   const payload = object(object(object(frame).data).payload)
+  if (payload.type === "session.background-work") return "session.background-work"
   if (payload.type !== "runtime.diagnostic") return undefined
   const properties = object(payload.properties)
   const code = properties.code
