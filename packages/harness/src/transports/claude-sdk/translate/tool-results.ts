@@ -2,11 +2,14 @@ import { canonicalToolName, reconstructQuestionAnswers, asText as text } from "@
 import type { AgentRuntimeEvent, RuntimeToolAttachment, ToolDisplay } from "@claxedo/agent-runtime-contract"
 import { asFiniteNumber, asRecord } from "@claxedo/helpers/guards"
 import { imageAttachment } from "../../../translate/tool-attachments"
-import { optionLabels } from "../../../translate/value"
+import { optionLabels, own } from "../../../translate/value"
 import type { ClaudeSdkAdapterState, ClaudeTranslation } from "./adapter-state"
 import { isClaudeQuestionDecline } from "./question-decline"
 import { applyClaudeTaskResult } from "./task-tracking"
 import { isTaskTool, toolDisplay, toolKind } from "./tool-blocks"
+
+const serverToolResults: readonly string[] = ["web_search_tool_result", "web_fetch_tool_result", "advisor_tool_result", "code_execution_tool_result",
+  "bash_code_execution_tool_result", "text_editor_code_execution_tool_result", "tool_search_tool_result", "mcp_tool_result"]
 
 type ToolResultBlock = ReturnType<typeof toolResultBlocks>[number]
 
@@ -15,19 +18,19 @@ function exitCodeFromResultText(resultText: string) {
   return match ? Number(match[1]) : undefined
 }
 
-function toolResultText(block: Record<string, unknown>) {
+export function toolResultText(block: Record<string, unknown>) {
   const content = block.content
   if (typeof content === "string") return content
   if (!Array.isArray(content)) return ""
   return content.flatMap((item) => text(item) ?? text(asRecord(item)?.text) ?? []).join("\n")
 }
 
-function toolResultImages(block: Record<string, unknown>): Array<{ mime: string; data: string }> {
+function toolResultFiles(block: Record<string, unknown>): Array<{ mime: string; data: string }> {
   const content = block.content
   if (!Array.isArray(content)) return []
   return content.flatMap((item) => {
     const row = asRecord(item)
-    if (row?.type !== "image") return []
+    if (row?.type !== "image" && row?.type !== "document") return []
     const source = asRecord(row.source)
     if (source?.type !== "base64") return []
     const mime = text(source.media_type)
@@ -59,7 +62,7 @@ export function toolResultBlocks(message: Record<string, unknown>) {
       toolCallId,
       block,
       text: toolResultText(block),
-      images: toolResultImages(block),
+      images: toolResultFiles(block),
       isError: block.is_error === true,
       structured: asRecord(message.tool_use_result),
     }]
@@ -171,4 +174,20 @@ export function translateToolResults(state: ClaudeSdkAdapterState, message: Reco
   })
   if (!changedTasks) return events
   return { state: { ...state, tasks }, events: [...events, { type: "todo-update", todos: Object.values(tasks) } satisfies AgentRuntimeEvent] }
+}
+
+export function isServerToolResult(type: unknown) {
+  return typeof type === "string" && serverToolResults.includes(type)
+}
+
+export function serverToolResult(state: ClaudeSdkAdapterState, block: Record<string, unknown>): ClaudeTranslation {
+  const toolCallId = text(block.tool_use_id)
+  const tool = toolCallId ? own(state.toolsById, toolCallId) : undefined
+  if (!toolCallId || tool?.settled) return []
+  const content = asRecord(block.content)
+  const display = tool?.toolName ? { display: toolDisplay(tool.toolName, tool.input ?? {}) } : {}
+  const event: AgentRuntimeEvent = block.is_error === true || text(content?.type)?.endsWith("_error")
+    ? { type: "tool-error", toolCallId, error: text(content?.error_code) ?? toolResultText(block), ...display }
+    : { type: "tool-output", toolCallId, output: toolResultText(block) || block.content, ...display }
+  return { state: { ...state, toolsById: { ...state.toolsById, [toolCallId]: { ...(tool ?? { type: "tool", toolCallId }), settled: true } } }, events: [event] }
 }

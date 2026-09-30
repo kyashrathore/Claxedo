@@ -165,7 +165,7 @@ test("an aborted Claude turn signal ends the stream before launch without an err
   } finally { await value.dispose() }
 })
 
-test("subagent usage the SDK mirrors ahead of the stream is metered at the turn's result, after the stream's own usage", async () => {
+test("subagent usage the SDK mirrors ahead of the stream is metered once, at the turn's result, under its transcript and apart from the parent's own total", async () => {
   const log: [string, number | null][] = []
   const tokens = (usage: unknown) => (usage as { observation: { tokens: { input: number | null } } }).observation.tokens.input
   const options = { executable: "claude", configRoot: "/tmp/claude-test", userConfigRoot: "/tmp/claude-user", env: {} }
@@ -188,5 +188,5 @@ test("subagent usage the SDK mirrors ahead of the stream is metered at the turn'
       if (routed.event.type === "usage") log.push(["stream", tokens(routed.event)])
     }
   } finally { await value.dispose() }
-  expect(log).toEqual([["stream", 1], ["mirror", 6], ["stream", 6]])
+  expect(log).toEqual([["stream", 1], ["mirror", 5], ["stream", 1]])
 })

@@ -20,7 +20,7 @@ describe("claudeSdkAdapter rate limits", () => {
   }
 
   test("names the five-hour, weekly and opus windows the way the usage read does", () => {
-    expect(emitted({ status: "allowed", rateLimitType: "five_hour", utilization: 42.4, resetsAt: 1_757_700_000 })).toEqual([{
+    expect(emitted({ status: "allowed", rateLimitType: "five_hour", utilization: 0.424, resetsAt: 1_757_700_000 })).toEqual([{
       type: "rate-limit",
       status: "ok",
       usedPercent: 42,
@@ -28,9 +28,9 @@ describe("claudeSdkAdapter rate limits", () => {
       limitId: "five_hour",
       limitName: "session",
     }])
-    expect(emitted({ status: "allowed_warning", rateLimitType: "seven_day", utilization: 90 })[0])
+    expect(emitted({ status: "allowed_warning", rateLimitType: "seven_day", utilization: 0.9 })[0])
       .toMatchObject({ status: "ok", limitId: "seven_day", limitName: "weekly" })
-    expect(emitted({ status: "allowed", rateLimitType: "seven_day_opus", utilization: 5 })[0])
+    expect(emitted({ status: "allowed", rateLimitType: "seven_day_opus", utilization: 0.05 })[0])
       .toMatchObject({ limitId: "seven_day_opus", limitName: "weekly_opus" })
     for (const [slot, name] of Object.entries(USAGE_WINDOW_NAMES.claude ?? {})) {
       expect(emitted({ status: "allowed", rateLimitType: slot, utilization: 1 })[0]).toMatchObject({ limitName: name })
@@ -38,7 +38,7 @@ describe("claudeSdkAdapter rate limits", () => {
   })
 
   test("passes a window the vendor added since through under its own name", () => {
-    expect(emitted({ status: "allowed", rateLimitType: "seven_day_sonnet", utilization: 12 })[0])
+    expect(emitted({ status: "allowed", rateLimitType: "seven_day_sonnet", utilization: 0.12 })[0])
       .toMatchObject({ limitId: "seven_day_sonnet", limitName: "seven_day_sonnet" })
   })
 
@@ -62,13 +62,17 @@ describe("claudeSdkAdapter rate limits", () => {
       method: "claude/rate_limit_event",
       payload: { type: "rate_limit_event", uuid: `rate-${status}`, session_id: "sdk-session-1", rate_limit_info: { status, rateLimitType: "five_hour" } },
     })
-    const refusal = () => agent.ingest({
-      source: "claude.sdk.message",
-      payload: {
-        type: "assistant", error: "rate_limit",
-        message: { content: [{ type: "text", text: "API Error: Request rejected (429) · This request would exceed your account's rate limit. Please try again later." }] },
-      },
-    }).events.find((event) => event.type === "error")
+    const refusal = () => {
+      agent.ingest({
+        source: "claude.sdk.message",
+        payload: {
+          type: "assistant", error: "rate_limit",
+          message: { content: [{ type: "text", text: "API Error: Request rejected (429) · This request would exceed your account's rate limit. Please try again later." }] },
+        },
+      })
+      return agent.ingest({ source: "claude.sdk.message", payload: { type: "result", subtype: "success", is_error: true, terminal_reason: "api_error" } })
+        .events.find((event) => event.type === "error")
+    }
 
     expect(refusal()).toMatchObject({ type: "error", errorClass: "rate_limit" })
     window("rejected")
@@ -78,13 +82,14 @@ describe("claudeSdkAdapter rate limits", () => {
   })
 
   test("the owner's recorded 429, with no window report before it in its session, is a temporary rate limit", () => {
-    const events = createAgentEventRuntime({
+    const agent = createAgentEventRuntime({
       harness: "claude-sdk",
       threadId: "thread-1",
       adapter: claudeSdkAdapter(),
       clock: () => 0,
       createId: (prefix = "id") => `${prefix}-1`,
-    }).ingest({
+    })
+    agent.ingest({
       source: "claude.sdk.message",
       payload: {
         type: "assistant",
@@ -104,7 +109,8 @@ describe("claudeSdkAdapter rate limits", () => {
         error: "rate_limit",
         is_api_error_message: true,
       },
-    }).events
+    })
+    const events = agent.ingest({ source: "claude.sdk.message", payload: { type: "result", subtype: "success", is_error: true, terminal_reason: "api_error" } }).events
     expect(events.find((event) => event.type === "error")).toMatchObject({ errorClass: "rate_limit" })
   })
 
@@ -134,7 +140,7 @@ describe("claudeSdkAdapter rate limits", () => {
         session_id: "8f4a7cac-7236-426d-befc-31ea7d872d95",
       },
     })
-    const refusal = agent.ingest({
+    agent.ingest({
       source: "claude.sdk.message",
       payload: {
         type: "assistant",
@@ -152,7 +158,10 @@ describe("claudeSdkAdapter rate limits", () => {
         error: "rate_limit",
         is_api_error_message: true,
       },
-    }).events.find((event) => event.type === "error")
+    })
+    const refusal = agent.ingest({ source: "claude.sdk.message", payload: { type: "result", subtype: "success", is_error: true, terminal_reason: "api_error",
+      result: "You've hit your weekly limit · resets Sep 26 at 8:30am (Asia/Calcutta)", session_id: "8f4a7cac-7236-426d-befc-31ea7d872d95" } })
+      .events.find((event) => event.type === "error")
 
     expect(refusal).toMatchObject({
       type: "error",
@@ -165,19 +174,21 @@ describe("claudeSdkAdapter rate limits", () => {
   })
 
   test("an assistant failure that is no limit carries no class of its own", () => {
-    const [, error] = createAgentEventRuntime({
+    const agent = createAgentEventRuntime({
       harness: "claude-sdk",
       threadId: "thread-1",
       adapter: claudeSdkAdapter(),
       clock: () => 0,
       createId: (prefix = "id") => `${prefix}-1`,
-    }).ingest({ source: "claude.sdk.message", payload: { type: "assistant", error: "invalid_request", message: { content: [] } } }).events
+    })
+    agent.ingest({ source: "claude.sdk.message", payload: { type: "assistant", error: "invalid_request", message: { content: [] } } })
+    const [, error] = agent.ingest({ source: "claude.sdk.message", payload: { type: "result", subtype: "success", is_error: true, terminal_reason: "api_error", result: "API Error: 400" } }).events
     expect(error).toMatchObject({ type: "error" })
     expect(error).not.toHaveProperty("errorClass")
   })
 
   test("only a rejection is a limit", () => {
-    expect(emitted({ status: "rejected", rateLimitType: "five_hour", utilization: 100, resetsAt: 1_757_700_000 })).toEqual([{
+    expect(emitted({ status: "rejected", rateLimitType: "five_hour", utilization: 1, resetsAt: 1_757_700_000 })).toEqual([{
       type: "rate-limit",
       status: "limited",
       usedPercent: 100,
@@ -193,9 +204,10 @@ describe("claudeSdkAdapter rate limits", () => {
     expect(Object.keys(event ?? {}).sort()).toEqual(["resetsAt", "status", "type"])
   })
 
-  test("clamps a utilization outside 0..100", () => {
-    expect(emitted({ status: "allowed", utilization: 137.6 })[0]).toMatchObject({ usedPercent: 100 })
-    expect(emitted({ status: "allowed", utilization: -4 })[0]).toMatchObject({ usedPercent: 0 })
+  test("reads utilization as a fraction of the window and clamps it to 0..100 percent", () => {
+    expect(emitted({ status: "allowed_warning", rateLimitType: "seven_day", utilization: 0.81, resetsAt: 1789974000, isUsingOverage: false, surpassedThreshold: 0.75 })[0]).toMatchObject({ usedPercent: 81 })
+    expect(emitted({ status: "allowed", utilization: 1.376 })[0]).toMatchObject({ usedPercent: 100 })
+    expect(emitted({ status: "allowed", utilization: -0.04 })[0]).toMatchObject({ usedPercent: 0 })
   })
 
   test("normalises the reset to epoch milliseconds, whichever unit the vendor sent", () => {
