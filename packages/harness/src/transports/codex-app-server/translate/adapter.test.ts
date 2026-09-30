@@ -1,12 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { translatorRuntime } from "../../../test-support/translator-runtime"
-import {
-  codexAppServerAdapter,
-  codexCollabAgentCall,
-  codexCollabAgentStatus,
-  codexStartedSubagent,
-  codexSubagentActivity,
-} from "./adapter"
+import { codexAppServerAdapter } from "./adapter"
+import { codexCollabAgentCall, codexCollabAgentStatus, codexStartedSubagent, codexSubagentActivity } from "./subagent-items"
 
 function runtime() {
   return translatorRuntime({
@@ -124,7 +119,7 @@ describe("codexAppServerAdapter", () => {
     expect(thinking("item/completed", { item: { id: "rs-1", type: "reasoning", summary: ["**Reading**", "**Checking**"], content: [] } }))
       .toEqual([])
     expect(thinking("item/completed", { item: { id: "rs-2", type: "reasoning", summary: ["Only at completion"], content: [] } }))
-      .toEqual(["Only at completion"])
+      .toEqual(["\n\nOnly at completion"])
   })
 
   test("maps reasoning and proposed plan streams", () => {
@@ -528,7 +523,7 @@ describe("codexAppServerAdapter", () => {
         changes: [{ path: "src/app.ts", kind: "update", diff: "@@ -1 +1 @@" }],
       },
     }).events).toMatchObject([
-      { type: "tool-start", toolCallId: "patch-1", toolName: "file-change", kind: "file_change" },
+      { type: "tool-start", toolCallId: "patch-1", toolName: "apply_patch", kind: "file_change" },
       { type: "file-diff", toolCallId: "patch-1", path: "src/app.ts", newText: "@@ -1 +1 @@" },
     ])
   })
@@ -894,7 +889,7 @@ describe("codexAppServerAdapter", () => {
     expect(agent.ingest({
       source: "codex.app-server", method: "thread/status/changed",
       payload: { threadId: "thread-1", status: { type: "systemError" } },
-    }).events).toEqual([])
+    }).events).toMatchObject([{ type: "harness-notice", code: "codex_app_server.thread_system_error" }])
   })
 
   test("waits for the authoritative error after an early systemError", () => {
@@ -902,7 +897,7 @@ describe("codexAppServerAdapter", () => {
     expect(agent.ingest({
       source: "codex.app-server", method: "thread/status/changed",
       payload: { threadId: "thread-1", status: { type: "systemError" } },
-    }).events).toEqual([])
+    }).events).toMatchObject([{ type: "harness-notice", code: "codex_app_server.thread_system_error" }])
     expect(agent.ingest({
       source: "codex.app-server", method: "error",
       payload: { threadId: "thread-1", turnId: "turn-1", willRetry: false,
@@ -953,13 +948,21 @@ describe("codexAppServerAdapter", () => {
     ])
   })
 
-  test("a Codex failure with no limit behind it carries no class of its own", () => {
+  test("a Codex sandbox failure is a workspace failure", () => {
     const [, error] = runtime().ingest({
       source: "codex.app-server",
       method: "error",
       payload: { threadId: "thread-1", turnId: "turn-1", willRetry: false, error: { message: "sandbox denied", codexErrorInfo: "sandboxError" } },
     }).events
-    expect(error).toMatchObject({ type: "error", error: "sandbox denied" })
+    expect(error).toMatchObject({ type: "error", error: "sandbox denied", errorClass: "workspace" })
+  })
+
+  test("a Codex failure with no structured reason carries no class of its own", () => {
+    const [, error] = runtime().ingest({
+      source: "codex.app-server",
+      method: "error",
+      payload: { threadId: "thread-1", turnId: "turn-1", willRetry: false, error: { message: "sandbox denied" } },
+    }).events
     expect(error).not.toHaveProperty("errorClass")
   })
 
@@ -1098,13 +1101,13 @@ describe("codexAppServerAdapter", () => {
 
     expect(agent.ingest({
       source: "codex.app-server",
-      method: "hook/started",
-      payload: { threadId: "thread-1", turnId: "turn-1", run: { id: "hook-1" } },
+      method: "remoteControl/status/changed",
+      payload: { status: "disabled" },
     }).events).toMatchObject([{
       type: "diagnostic",
       diagnostic: {
         code: "codex_app_server.unmapped_event",
-        message: "hook/started: Codex app-server method has no AgentRuntimeEvent mapping",
+        message: "remoteControl/status/changed: Codex app-server method has no AgentRuntimeEvent mapping",
         severity: "info",
       },
     }])
