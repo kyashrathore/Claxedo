@@ -68,7 +68,6 @@
     "@claxedo/mcp": "workspace:*",
     "@claxedo/sandbox-contract": "workspace:*",
     "@claxedo/sandbox-manager": "workspace:*",
-    "@claxedo/service-contract": "workspace:*",
     "@claxedo/server-core": "workspace:*",
     "@claxedo/tasks": "workspace:*",
     "@claxedo/workspace-relay": "workspace:*",

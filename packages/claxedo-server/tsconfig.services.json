@@ -5,7 +5,6 @@
     "skipLibCheck": true
   },
   "include": [
-    "src/platform/services/**/*.ts",
     "src/deployments/hosted-shared/hosted-core-app.ts",
     "src/deployments/hosted-shared/hosted-core-app.test.ts",
     "src/deployments/hosted-shared/deployment-profile.ts",

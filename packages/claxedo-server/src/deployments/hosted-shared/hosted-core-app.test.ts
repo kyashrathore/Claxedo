@@ -567,7 +567,6 @@ describe("resource-closed hosted core app", () => {
     expect(
       closure.packages.filter((name) =>
         [
-          "@claxedo/documents-service",
           "@polar-sh/sdk",
         ].includes(name),
       ),

@@ -56,7 +56,6 @@ describe("server deployment entry closures", () => {
     expect(
       result.packages.filter((name) =>
         [
-          "@claxedo/documents-service",
           "@polar-sh/sdk",
         ].includes(name),
       ),
@@ -81,7 +80,6 @@ describe("server deployment entry closures", () => {
     expect(
       result.packages.filter((name) =>
         [
-          "@claxedo/documents-service",
           "@polar-sh/sdk",
         ].includes(name),
       ),
@@ -116,7 +114,7 @@ describe("server deployment entry closures", () => {
     ).toEqual([])
     expect(
       feature.packages.filter((name) =>
-        ["@claxedo/local-server", "@claxedo/documents-service", "@polar-sh/sdk", "convex"].includes(name),
+        ["@claxedo/local-server", "@polar-sh/sdk", "convex"].includes(name),
       ),
     ).toEqual([])
   })

@@ -78,7 +78,6 @@
   },
   "dependencies": {
     "@claxedo/server-core": "workspace:*",
-    "@claxedo/service-contract": "workspace:*",
     "@claxedo/workspace-relay-protocol": "workspace:*",
     "typescript": "catalog:"
   },

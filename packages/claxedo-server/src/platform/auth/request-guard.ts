@@ -48,7 +48,6 @@ import type { LayeredRateLimiter } from "./rate-limit"
 /**
  * Default maximum request body, 1 MiB.
  *
- * Optional services may contribute their own reviewed exemptions when mounted.
  * Core hosted routes take JSON control payloads measured in kilobytes, so 1 MiB
  * is roughly three orders of magnitude of headroom over real traffic while still
  * bounding what one request can make the Worker buffer.
