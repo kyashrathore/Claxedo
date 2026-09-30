@@ -325,6 +325,24 @@ test("a failed scripted run leaves the next turn usable", async () => {
   } finally { await context.close() }
 }, 90_000)
 
+test("repeated text chunks, every turn end's usage and a compaction summary reach the turn through the real SDK", async () => {
+  const state = await backend()
+  const update = (value: Record<string, unknown>) => ({ kind: "update" as const, update: value })
+  state.server.script("chunks", { steps: [
+    update({ textDelta: { text: "Hel" } }), update({ textDelta: { text: "lo" } }), update({ textDelta: { text: "lo" } }),
+    update({ summary: { summary: "Earlier turns, summarized" } }),
+    update({ turnEnded: { inputTokens: "100", outputTokens: "20", cacheReadTokens: "30", cacheWriteTokens: "4", reasoningTokens: "6" } }),
+  ], usage: { inputTokens: 7, outputTokens: 11 } })
+  const context = await setupConformance({ name: "chunks", backend: async () => state, makeTransport: transportFor(state) })
+  try {
+    const events = (await collect(context, context.turn("CURSOR_SCRIPT:chunks"))).map((item) => item.event)
+    expect(events.flatMap((event) => event.type === "text-delta" ? [event.delta] : []).join("")).toBe("Hellolo")
+    expect(events.filter((event) => event.type === "session-compaction")).toMatchObject([{ phase: "completed", summary: "Earlier turns, summarized" }])
+    expect(events.filter((event) => event.type === "usage").at(-1)).toMatchObject({ contextSize: 0,
+      observation: { kind: "cumulative", tokens: { input: 107, output: 31, reasoning: 6, cache: { read: 30, write: 4 } } } })
+  } finally { await context.close() }
+}, 60_000)
+
 test("offers Cursor's permission modes and refuses an unknown one", async () => {
   const state = await backend()
   const context = await setupConformance({ name: "modes", backend: async () => state, makeTransport: transportFor(state) })

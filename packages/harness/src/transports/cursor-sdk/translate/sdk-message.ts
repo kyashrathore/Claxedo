@@ -1,185 +1,74 @@
 import type { SDKMessage } from "@cursor/sdk"
 import type { AgentRuntimeEvent } from "@claxedo/agent-runtime-contract"
 import { asText as text } from "@claxedo/agent-runtime-contract"
-import type { HarnessEventAdapterContext, HarnessEventAdapterResult } from "../../../translate/adapter"
-import { RETAINED_WIRE_KEYS_MAX, boundKeyedRecord, own } from "../../../translate/value"
-import { assertNever, diagnosticForEvent, unmappedSdkEvent } from "./frames"
-import { isTerminalSdkStatus, statusEvents } from "./run-status"
-import { pruneTurnState, type CursorSdkAdapterState } from "./state"
+import { unknownKind } from "./frames"
+import { statusEvents } from "./run-status"
+import { unchanged, type CursorSdkAdapterState, type CursorTranslation } from "./state"
 import { toolCompletedEvents } from "./tool-results"
-import { ensureTool, isTodoTool, todosFromInput, toolInput } from "./tools"
+import { cursorToolName, ensureTool, isTodoTool, todosFromInput, toolInput } from "./tools"
+import { usageEvents } from "./usage"
 
-function assistantText(message: Extract<SDKMessage, { type: "assistant" }>) {
-  return message.message.content.flatMap((block) => block.type === "text" ? [block.text] : []).join("")
+type Assistant = Extract<SDKMessage, { type: "assistant" }>
+type ToolCall = Extract<SDKMessage, { type: "tool_call" }>
+
+function todoEvents(input: Record<string, unknown>): AgentRuntimeEvent[] {
+  const todos = todosFromInput(input)
+  return todos.length ? [{ type: "todo-update", todos }] : []
 }
 
-function toolBlocks(message: Extract<SDKMessage, { type: "assistant" }>) {
-  return message.message.content.flatMap((block) => block.type === "tool_use" ? [block] : [])
+function assistantEvents(state: CursorSdkAdapterState, message: Assistant): CursorTranslation {
+  return message.message.content.reduce<CursorTranslation>((current, block) => {
+    if (block.type === "text") return block.text ? unchanged(current.state, [...current.events, { type: "text-delta", delta: block.text }]) : current
+    const input = toolInput(block.input)
+    if (isTodoTool(block.name)) return unchanged(current.state, [...current.events, ...todoEvents(input)])
+    const ensured = ensureTool({ state: current.state, toolCallId: block.id, toolName: cursorToolName(block.name, input), rawInput: input })
+    return { state: ensured.state, events: [...current.events, ...ensured.events] }
+  }, unchanged(state))
 }
 
-export function translateSdkMessage(input: {
-  state: CursorSdkAdapterState
-  event: { source: string; method?: string; payload: unknown }
-  context: HarnessEventAdapterContext
-  message: SDKMessage
-}): HarnessEventAdapterResult<CursorSdkAdapterState> | AgentRuntimeEvent[] {
-  const state = input.state
-  const event = input.event
-  const context = input.context
-  const message = input.message
+function toolCallEvents(state: CursorSdkAdapterState, message: ToolCall): CursorTranslation {
+  const rawInput = toolInput(message.args)
+  const toolName = cursorToolName(message.name, rawInput)
+  if (isTodoTool(toolName)) return unchanged(state, todoEvents(rawInput))
+  const status = message.status
+  switch (status) {
+    case "running": {
+      const ensured = ensureTool({ state, toolCallId: message.call_id, toolName, rawInput })
+      return { state: ensured.state, events: [...ensured.events, { type: "tool-status", toolCallId: message.call_id, status: "running",
+        display: ensured.display, metadata: { cursor: { itemType: ensured.kind, truncated: message.truncated } } }] }
+    }
+    case "completed":
+    case "error":
+      return toolCompletedEvents({ state, toolCallId: message.call_id, toolName, rawInput, result: message.result, isError: status === "error" })
+    default:
+      return unknownKind(state, `tool_call:${String(status)}`)
+  }
+}
 
+function compactionEvents(state: CursorSdkAdapterState, message: Extract<SDKMessage, { type: "task" }>): CursorTranslation {
+  const summary = text(message.text)
+  return unchanged(state, summary ? [{ type: "session-compaction", phase: "completed", summary }] : [])
+}
+
+export function translateSdkMessage(state: CursorSdkAdapterState, message: SDKMessage): CursorTranslation {
   switch (message.type) {
-        case "assistant": {
-          const snapshot = assistantText(message)
-          const previous = own(state.assistantTextByRunId, message.run_id) ?? ""
-          const delta = snapshot.startsWith(previous)
-            ? snapshot.slice(previous.length)
-            : previous.endsWith(snapshot)
-              ? ""
-              : snapshot
-          const toolResults = toolBlocks(message).reduce<{ state: CursorSdkAdapterState; events: AgentRuntimeEvent[] }>(
-            (current, block) => {
-              if (isTodoTool(block.name)) {
-                const todos = todosFromInput(toolInput(block.input))
-                return {
-                  state: current.state,
-                  events: [
-                    ...current.events,
-                    ...(todos.length ? [{ type: "todo-update", todos } satisfies AgentRuntimeEvent] : []),
-                  ],
-                }
-              }
-              const ensured = ensureTool({
-                state: current.state,
-                toolCallId: block.id,
-                toolName: block.name,
-                rawInput: toolInput(block.input),
-              })
-              return { state: ensured.state, events: [...current.events, ...ensured.events] }
-            },
-            { state, events: [] satisfies AgentRuntimeEvent[] },
-          )
-          return {
-            state: {
-              ...toolResults.state,
-              assistantTextByRunId: boundKeyedRecord({ ...toolResults.state.assistantTextByRunId, [message.run_id]: snapshot || previous }, RETAINED_WIRE_KEYS_MAX),
-            },
-            events: [
-              ...(delta ? [{ type: "text-delta", delta } satisfies AgentRuntimeEvent] : []),
-              ...toolResults.events,
-            ],
-          }
-        }
-
-        case "thinking": {
-          const previous = own(state.thinkingTextByRunId, message.run_id) ?? ""
-          const delta = message.text.startsWith(previous)
-            ? message.text.slice(previous.length)
-            : previous.endsWith(message.text)
-              ? ""
-              : message.text
-          return {
-            state: {
-              ...state,
-              thinkingTextByRunId: boundKeyedRecord({ ...state.thinkingTextByRunId, [message.run_id]: message.text || previous }, RETAINED_WIRE_KEYS_MAX),
-            },
-            events: delta ? [{ type: "thinking-delta", delta } satisfies AgentRuntimeEvent] : [],
-          }
-        }
-
-        case "tool_call": {
-          const rawInput = toolInput(message.args)
-          if (isTodoTool(message.name)) {
-            const todos = todosFromInput(rawInput)
-            return todos.length ? [{ type: "todo-update", todos }] : []
-          }
-          const status = message.status
-          switch (status) {
-            case "running": {
-              const ensured = ensureTool({
-                state,
-                toolCallId: message.call_id,
-                toolName: message.name,
-                rawInput,
-              })
-              return {
-                state: ensured.state,
-                events: [
-                  ...ensured.events,
-                  { type: "tool-status", toolCallId: message.call_id, status: "running", display: ensured.display, metadata: { cursor: { itemType: ensured.kind, truncated: message.truncated } } },
-                ],
-              }
-            }
-            case "completed":
-            case "error":
-              return toolCompletedEvents({
-                state,
-                toolCallId: message.call_id,
-                toolName: message.name,
-                rawInput,
-                result: message.result,
-                isError: status === "error",
-              })
-            default:
-              return assertNever(status)
-          }
-        }
-
-        case "status": {
-          const events = statusEvents(message, context)
-          return isTerminalSdkStatus(message.status) ? { state: pruneTurnState(), events } : events
-        }
-
-        case "system":
-          return [
-            { type: "session-agent", agentId: message.agent_id },
-            ...unmappedSdkEvent({
-              sdkEvent: `SDKSystemMessage(${message.subtype ?? "unknown"})`,
-              reason: "model and tool inventory have no complete AgentRuntimeEvent mapping",
-              event,
-            }),
-          ]
-
-        case "task": {
-          const taskText = text(message.text)
-          return taskText
-            ? [diagnosticForEvent({
-              code: "cursor_sdk.task_progress",
-              message: taskText,
-              severity: "info",
-              event,
-              details: { status: message.status },
-            })]
-            : []
-        }
-
-        case "request":
-          return []
-
-        case "usage":
-          return [{
-            type: "usage",
-            contextSize: message.usage.totalTokens,
-            contextUsed: message.usage.totalTokens,
-            observation: {
-              kind: "cumulative",
-              providerObservationId: message.run_id,
-              tokens: {
-                input: message.usage.inputTokens,
-                output: message.usage.outputTokens,
-                reasoning: null,
-                cache: {
-                  read: message.usage.cacheReadTokens,
-                  write: message.usage.cacheWriteTokens,
-                },
-              },
-            },
-          }]
-
-        case "user":
-          return []
-
-        default:
-          return assertNever(message)
-      }
+    case "assistant":
+      return assistantEvents(state, message)
+    case "thinking":
+      return unchanged(state, message.text ? [{ type: "thinking-delta", delta: message.text }] : [])
+    case "tool_call":
+      return toolCallEvents(state, message)
+    case "status":
+      return statusEvents(state, message)
+    case "usage":
+      return usageEvents(state, message)
+    case "task":
+      return compactionEvents(state, message)
+    case "system":
+    case "request":
+    case "user":
+      return unchanged(state)
+    default:
+      return unknownKind(state, `message:${String((message as { type: unknown }).type)}`)
+  }
 }

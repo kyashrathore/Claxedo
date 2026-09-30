@@ -1,10 +1,12 @@
 import { asRecord } from "@claxedo/helpers/guards"
-import type { AgentRuntimeEvent } from "@claxedo/agent-runtime-contract"
+import type { AgentRuntimeEvent, ToolDisplay } from "@claxedo/agent-runtime-contract"
 import { asText as text } from "@claxedo/agent-runtime-contract"
 import { toolDisplayFromInput } from "../../../translate/tool-display"
 import { isHostSubagentTool } from "../../../translate/host-subagent"
 import { RETAINED_WIRE_KEYS_MAX, boundKeyedRecord, own } from "../../../translate/value"
-import type { CursorSdkAdapterState } from "./state"
+import type { CursorSdkAdapterState, CursorToolRecord } from "./state"
+
+const TODO_TOOLS = ["updatetodos", "readtodos"]
 
 export function toolInput(value: unknown) {
   const input = asRecord(value) ?? {}
@@ -13,8 +15,15 @@ export function toolInput(value: unknown) {
     : input
 }
 
+export function cursorToolName(name: string, args: Record<string, unknown>) {
+  if (name !== "mcp") return name
+  const server = text(args.providerIdentifier)
+  const tool = text(args.toolName)
+  return server && tool ? `mcp__${server}__${tool}` : name
+}
+
 export function isTodoTool(toolName: string) {
-  return toolName.toLowerCase().includes("todo")
+  return TODO_TOOLS.includes(toolName.toLowerCase())
 }
 
 export function isTaskTool(toolName: string) {
@@ -22,7 +31,7 @@ export function isTaskTool(toolName: string) {
 }
 
 function cursorTodoStatus(value: unknown) {
-  if (value === "completed") return "completed"
+  if (value === "completed" || value === "cancelled") return value
   if (value === "inProgress" || value === "in_progress") return "in_progress"
   return "pending"
 }
@@ -43,90 +52,52 @@ export function todosFromInput(input: Record<string, unknown>) {
 function toolKind(toolName: string) {
   const normalized = toolName.toLowerCase()
   if (isTaskTool(toolName) || isHostSubagentTool(toolName)) return "collab_agent_tool_call"
-  if (normalized === "shell" || normalized.includes("shell") || normalized.includes("command")) return "command_execution"
-  if (normalized === "write" || normalized === "edit" || normalized === "delete" || normalized.includes("patch")) return "file_change"
+  if (normalized === "mcp" || normalized.startsWith("mcp__")) return "mcp_tool_call"
+  if (normalized === "shell") return "command_execution"
+  if (normalized === "delete") return "delete"
+  if (normalized === "edit") return "file_change"
   if (normalized === "read" || normalized === "readlints") return "file_read"
-  if (normalized === "grep" || normalized === "glob" || normalized === "semsearch" || normalized.includes("search")) return "web_search"
-  if (normalized === "mcp" || normalized.startsWith("mcp")) return "mcp_tool_call"
-  if (normalized === "createplan" || normalized.includes("plan")) return "plan"
-  if (normalized.includes("image")) return "image_view"
+  if (normalized === "grep" || normalized === "glob" || normalized === "semsearch") return "web_search"
+  if (normalized === "createplan") return "plan"
+  if (normalized === "generateimage") return "image_view"
   return "dynamic_tool_call"
 }
 
-function toolDisplay(toolName: string, input: Record<string, unknown>) {
-  return toolDisplayFromInput({
-    kind: toolKind(toolName),
-    toolName,
-    ...(Object.keys(input).length ? { input } : {}),
-  })
+type EnsuredTool = { state: CursorSdkAdapterState; events: AgentRuntimeEvent[]; toolName: string; kind: string; display: ToolDisplay }
+
+function recorded(state: CursorSdkAdapterState, toolCallId: string, record: CursorToolRecord): CursorSdkAdapterState {
+  return { ...state, toolsByCallId: boundKeyedRecord({ ...state.toolsByCallId, [toolCallId]: record }, RETAINED_WIRE_KEYS_MAX) }
 }
 
-export function ensureTool(input: {
-  state: CursorSdkAdapterState
-  toolCallId: string
-  toolName: string
-  rawInput?: Record<string, unknown>
-}) {
+function inputEvent(toolCallId: string, record: CursorToolRecord, display: ToolDisplay): AgentRuntimeEvent {
+  return { type: "tool-input", toolCallId, input: record.input ?? {}, display, metadata: { cursor: { itemType: record.kind } } }
+}
+
+function changedInput(previous: Record<string, unknown> | undefined, next: Record<string, unknown> | undefined) {
+  return next !== undefined && Object.entries(next).some(([key, value]) => JSON.stringify(previous?.[key]) !== JSON.stringify(value))
+}
+
+export function ensureTool(input: { state: CursorSdkAdapterState; toolCallId: string; toolName: string; rawInput?: Record<string, unknown> }): EnsuredTool {
   const existing = own(input.state.toolsByCallId, input.toolCallId)
   const toolName = existing?.toolName ?? input.toolName
-  const rawInput = existing?.input || input.rawInput
-    ? { ...existing?.input, ...input.rawInput }
-    : undefined
-  const kind = existing?.kind ?? toolKind(toolName)
-  const display = toolDisplay(toolName, rawInput ?? {})
-  if (existing) {
-    const inputChanged = input.rawInput && Object.entries(input.rawInput)
-      .some(([key, value]) => JSON.stringify(existing.input?.[key]) !== JSON.stringify(value))
-    return {
-      state: {
-        ...input.state,
-        toolsByCallId: boundKeyedRecord({
-          ...input.state.toolsByCallId,
-          ...input.state.toolsByCallId,
-          [input.toolCallId]: {
-            toolName,
-            kind,
-            ...(rawInput ? { input: rawInput } : {}),
-          },
-        }, RETAINED_WIRE_KEYS_MAX),
-      },
-      events: inputChanged
-        ? [{ type: "tool-input", toolCallId: input.toolCallId, input: rawInput ?? {}, display, metadata: { cursor: { itemType: kind } } } satisfies AgentRuntimeEvent]
-        : [],
-      toolName,
-      rawInput,
-      kind,
-      display,
-    }
-  }
-  return {
-    state: {
-      ...input.state,
-      toolsByCallId: boundKeyedRecord({
-        ...input.state.toolsByCallId,
-        ...input.state.toolsByCallId,
-        [input.toolCallId]: {
-          toolName,
-          kind,
-          ...(rawInput ? { input: rawInput } : {}),
-        },
-      }, RETAINED_WIRE_KEYS_MAX),
-    },
-    events: [
-      { type: "tool-start", toolCallId: input.toolCallId, toolName, kind, display, metadata: { cursor: { itemType: kind } } },
-      ...(rawInput && Object.keys(rawInput).length
-        ? [{ type: "tool-input", toolCallId: input.toolCallId, input: rawInput, display, metadata: { cursor: { itemType: kind } } } satisfies AgentRuntimeEvent]
-        : []),
-    ] satisfies AgentRuntimeEvent[],
-    toolName,
-    rawInput,
-    kind,
-    display,
-  }
+  const merged = existing?.input || input.rawInput ? { ...existing?.input, ...input.rawInput } : undefined
+  const record: CursorToolRecord = { toolName, kind: existing?.kind ?? toolKind(toolName), ...(merged ? { input: merged } : {}) }
+  const display = toolDisplayFromInput({ kind: record.kind, toolName, ...(merged && Object.keys(merged).length ? { input: merged } : {}) })
+  const state = recorded(input.state, input.toolCallId, record)
+  const events: AgentRuntimeEvent[] = existing
+    ? changedInput(existing.input, input.rawInput) ? [inputEvent(input.toolCallId, record, display)] : []
+    : [{ type: "tool-start", toolCallId: input.toolCallId, toolName, kind: record.kind, display, metadata: { cursor: { itemType: record.kind } } },
+      ...(merged && Object.keys(merged).length ? [inputEvent(input.toolCallId, record, display)] : [])]
+  return { state, events, toolName, kind: record.kind, display }
 }
 
 export function successfulOutput(value: unknown) {
   const row = asRecord(value)
   if (row?.status === "success" && row.value !== undefined) return row.value
   return value
+}
+
+export function mcpContentTexts(value: unknown): string[] {
+  const content = asRecord(successfulOutput(value))?.content
+  return Array.isArray(content) ? content.flatMap((item) => text(asRecord(asRecord(item)?.text)?.text) ?? []) : []
 }

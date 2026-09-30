@@ -2,7 +2,7 @@ import { asFiniteNumber, asRecord } from "@claxedo/helpers/guards"
 import type { SubagentMode, SubagentStatus, SubagentToolCallRole } from "@claxedo/agent-runtime-contract"
 import { asText as text } from "@claxedo/agent-runtime-contract"
 import { hostSubagentBinding, hostSubagentObservation, isHostSubagentTool } from "../../../translate/host-subagent"
-import { isTaskTool, successfulOutput, toolInput } from "./tools"
+import { cursorToolName, isTaskTool, mcpContentTexts, successfulOutput, toolInput } from "./tools"
 
 export type CursorSubagentObservation = {
   observationId: string
@@ -57,52 +57,55 @@ export function taskMetadata(value: unknown) {
   }
 }
 
+function hostSubagentObservations(message: Record<string, unknown>, toolCallId: string): CursorSubagentObservation[] {
+  const binding = hostSubagentBinding(mcpContentTexts(message.result))
+  if (!binding) return []
+  return [{
+    ...hostSubagentObservation({
+      observationId: `cursor:host-subagent:${text(message.run_id) ?? "unknown"}:${toolCallId}`,
+      ...(text(message.run_id) ? { harnessExecutionId: text(message.run_id) } : {}),
+      toolCallId,
+      binding,
+    }),
+    toolCallRole: "spawn",
+  }]
+}
+
+function taskStatus(message: Record<string, unknown>, result: Record<string, unknown> | undefined): SubagentStatus {
+  if (message.status === "running") return "running"
+  return message.status === "error" || result?.status === "error" ? "failed" : "completed"
+}
+
+function taskObservation(message: Record<string, unknown>, toolCallId: string): CursorSubagentObservation {
+  const args = toolInput(message.args)
+  const result = asRecord(message.result)
+  const success = result?.status === "success" ? asRecord(result.value) : undefined
+  const priorProviderId = text(args.agentId) ?? text(args.resume)
+  const providerId = text(success?.agentId) ?? priorProviderId
+  const status = taskStatus(message, result)
+  const subagentType = text(asRecord(args.subagentType)?.name) ?? text(asRecord(args.subagentType)?.kind)
+  return {
+    observationId: `cursor:task:${text(message.run_id) ?? "unknown"}:${toolCallId}:${status}`,
+    ...(text(message.run_id) ? { harnessExecutionId: text(message.run_id) } : {}),
+    toolCallId,
+    toolCallRole: priorProviderId ? "interaction" : "spawn",
+    ...(typeof success?.isBackground === "boolean" ? { mode: success.isBackground ? "background" : "foreground" } : {}),
+    status,
+    ...(text(args.description) ? { label: text(args.description), description: text(args.description) } : {}),
+    ...(subagentType ? { subagentType } : {}),
+    ...(providerId ? { providerId, providerKind: "cursor-agent" } : {}),
+    transcript: { kind: "none" },
+  }
+}
+
 export function cursorSubagentObservations(value: unknown): CursorSubagentObservation[] {
   const message = asRecord(value)
   if (!message || message.type !== "tool_call") return []
   const toolCallId = text(message.call_id)
   if (!toolCallId) return []
-  if (isHostSubagentTool(text(message.name) ?? "")) {
-    const binding = hostSubagentBinding(message.result)
-    return binding
-      ? [{
-          ...hostSubagentObservation({
-            observationId: `cursor:host-subagent:${text(message.run_id) ?? "unknown"}:${toolCallId}`,
-            ...(text(message.run_id) ? { harnessExecutionId: text(message.run_id) } : {}),
-            toolCallId,
-            binding,
-          }),
-          toolCallRole: "spawn",
-        }]
-      : []
-  }
-  if (!isTaskTool(text(message.name) ?? "")) return []
-  const args = toolInput(message.args)
-  const result = asRecord(message.result)
-  const success = result?.status === "success" ? asRecord(result.value) : undefined
-  const providerId = text(success?.agentId) ?? text(args.agentId) ?? text(args.resume)
-  const priorProviderId = text(args.agentId) ?? text(args.resume)
-  const status = message.status === "running"
-    ? "running"
-    : message.status === "error" || result?.status === "error"
-      ? "failed"
-      : "completed"
-  const subagentType = text(asRecord(args.subagentType)?.name) ?? text(asRecord(args.subagentType)?.kind)
-  return [{
-    observationId: `cursor:task:${text(message.run_id) ?? "unknown"}:${toolCallId}:${status}`,
-    ...(text(message.run_id) ? { harnessExecutionId: text(message.run_id) } : {}),
-    toolCallId,
-    toolCallRole: priorProviderId ? "interaction" : "spawn",
-    ...(typeof success?.isBackground === "boolean"
-      ? { mode: success.isBackground ? "background" : "foreground" }
-      : {}),
-    status,
-    ...(text(args.description) ? { label: text(args.description), description: text(args.description) } : {}),
-    ...(subagentType ? { subagentType } : {}),
-    ...(providerId ? { providerId } : {}),
-    ...(providerId ? { providerKind: "cursor-agent" } : {}),
-    transcript: { kind: "none" },
-  }]
+  const toolName = cursorToolName(text(message.name) ?? "", toolInput(message.args))
+  if (isHostSubagentTool(toolName)) return hostSubagentObservations(message, toolCallId)
+  return isTaskTool(toolName) ? [taskObservation(message, toolCallId)] : []
 }
 
 export function cursorRuntimeMessage(value: unknown) {

@@ -1,11 +1,11 @@
 import { asRecord } from "@claxedo/helpers/guards"
 import type { LocalRunStreamEvent, SDKMessage } from "@cursor/sdk"
-import type { AgentRuntimeEvent } from "@claxedo/agent-runtime-contract"
 import { runtimeDiagnostic } from "@claxedo/agent-runtime-contract"
+import { boundList } from "../../../translate/value"
+import type { CursorSdkAdapterState, CursorTranslation } from "./state"
 
-export function assertNever(value: never): never {
-  throw new Error(`Unhandled Cursor SDK event: ${JSON.stringify(value)}`)
-}
+const NOTED_KINDS_MAX = 64
+const KIND_CHARS_MAX = 80
 
 export function payload(event: { payload: unknown }) {
   return asRecord(event.payload) ?? {}
@@ -39,38 +39,12 @@ export function isLocalRunStreamEvent(value: unknown): value is LocalRunStreamEv
   return typeof message?.type === "string" && message.type in localRunStreamEventTypes
 }
 
-export function diagnosticForEvent(input: {
-  code: string
-  message: string
-  event: { source: string; method?: string; payload: unknown }
-  severity?: "debug" | "info" | "warn" | "error"
-  details?: Record<string, unknown>
-}) {
+export function unknownKind(state: CursorSdkAdapterState, kind: string): CursorTranslation {
+  const bounded = kind.slice(0, KIND_CHARS_MAX)
+  if (state.notedKinds.includes(bounded)) return { state, events: [] }
   return {
-    type: "diagnostic",
-    diagnostic: runtimeDiagnostic({
-      code: input.code,
-      message: input.message,
-      severity: input.severity,
-      source: input.event.source,
-      method: input.event.method,
-      raw: input.event.payload,
-      details: input.details,
-    }),
-  } satisfies AgentRuntimeEvent
-}
-
-export function unmappedSdkEvent(input: {
-  sdkEvent: string
-  reason: string
-  event: { source: string; method?: string; payload: unknown }
-  severity?: "debug" | "info" | "warn" | "error"
-}) {
-  return [diagnosticForEvent({
-    code: "cursor_sdk.unmapped_event",
-    message: `${input.sdkEvent}: ${input.reason}`,
-    severity: input.severity ?? "info",
-    event: input.event,
-    details: { sdkEvent: input.sdkEvent, reason: input.reason },
-  })]
+    state: { ...state, notedKinds: boundList([...state.notedKinds, bounded], NOTED_KINDS_MAX) },
+    events: [{ type: "diagnostic", diagnostic: runtimeDiagnostic({ code: "cursor_sdk.ignored_frame", severity: "debug", source: "cursor.sdk",
+      message: `Cursor frame ${bounded} is not known to this transport and is ignored`, details: { kind: bounded } }) }],
+  }
 }
