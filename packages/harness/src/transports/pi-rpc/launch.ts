@@ -1,23 +1,31 @@
 import fs from "node:fs/promises"
 import path from "node:path"
 import { errorMessage } from "@claxedo/helpers"
-import { deadlineAfter, type Deadline, type HarnessServices, type SessionBroker, type StartInput } from "../../contract"
+import { deadlineAfter, harnessVersionStanding, type Deadline, type HarnessServices, type HarnessVersionGate, type SessionBroker,
+  type SpawnCommand, type StartInput } from "../../contract"
 import { TransportError } from "../../contract/errors"
 import { piEnvironment, piProjectionArgs, preparePiProfile, type PiProfile, type PiProfileOptions } from "../../profiles/pi"
 import { PiRpc } from "./rpc"
 import { installPiTitleExtension } from "./title"
-import { connectPiMcp, installPiMcpExtension } from "./mcp"
+import { piMcpHandoff, type PiMcpHandoff } from "./mcp"
 import type { UnsettledPiLaunches } from "./retirements"
+import { PiSessionStream } from "./session-stream"
+import { stopPiRun } from "./stop"
+import { PI_RANGE, piReportedVersion, type PiVersionReadings } from "./version"
 
 export type PiRpcOptions = PiProfileOptions & { binary: string; runtime: string; args?: readonly string[]; env: NodeJS.ProcessEnv }
 
-export type PiLaunch = { role: "harness"; resume?: string } | { role: "probe" }
+export type PiResume = { file: string } | { id: string }
+
+export type PiLaunch = { role: "harness"; resume?: PiResume } | { role: "probe" }
 
 export type PiLaunchHost = {
   readonly services: HarnessServices
   readonly options: PiRpcOptions
   readonly signal: AbortSignal
   readonly unsettled: UnsettledPiLaunches
+  readonly versions: HarnessVersionGate
+  readonly versionReadings: PiVersionReadings
   disposed(): boolean
 }
 
@@ -28,34 +36,66 @@ export async function retiringOnFailure<T>(host: PiLaunchHost, rpc: PiRpc, work:
   catch (error) { await host.unsettled.retire(rpc); throw error }
 }
 
-async function harnessArgs(host: PiLaunchHost, launch: Extract<PiLaunch, { role: "harness" }>, mcp: boolean): Promise<string[]> {
-  return ["-e", await installPiTitleExtension(host.options.stateRoot),
-    ...(mcp ? ["-e", await installPiMcpExtension(host.options.stateRoot)] : []),
-    ...(launch.resume ? ["--session", launch.resume] : [])]
+async function harnessArgs(host: PiLaunchHost, launch: Extract<PiLaunch, { role: "harness" }>, mcp: PiMcpHandoff | undefined): Promise<string[]> {
+  return ["-e", await installPiTitleExtension(host.options.stateRoot), ...mcp?.args ?? [],
+    ...(!launch.resume ? [] : "file" in launch.resume ? ["--session", launch.resume.file] : ["--session-id", launch.resume.id])]
 }
 
-export async function launchPi(host: PiLaunchHost, input: StartInput, profile: PiProfile, broker: SessionBroker | undefined, launch: PiLaunch): Promise<PiRpc> {
-  if (host.disposed()) throw new TransportError("pi", "process", "Pi transport disposed")
-  host.unsettled.retryHeld()
-  await preparePiProfile(profile, input.model)
-  const mcp = launch.role === "harness" ? host.services.firstPartyMcp(input.sessionId, input.locality) : undefined
-  const args = ["--mode", "rpc", ...(launch.role === "probe" ? ["--no-session"] : ["--session-dir", profile.sessionDir]),
-    ...piProjectionArgs(input.projection), ...host.options.args ?? [],
-    ...(launch.role === "harness" ? await harnessArgs(host, launch, mcp !== undefined) : [])]
+function piCommand(host: PiLaunchHost, input: StartInput, profile: PiProfile, args: readonly string[], env: Record<string, string> = {}): SpawnCommand {
   const binary = host.options.binary
   const command = /\.[cm]?js$/.test(binary) ? { file: host.options.runtime, args: [binary, ...args] } : { file: binary, args }
-  const owned = await host.services.spawn({ ...command, cwd: input.directory, env: piEnvironment(profile, host.options.env) },
-    { role: launch.role, label: "Pi RPC", sessionId: input.sessionId, signal: host.signal })
-  const rpc = new PiRpc(owned, host.services.clock, (event) => {
-    if (broker) void broker.publish(event).catch((error: unknown) =>
-      host.services.log.error("Pi RPC diagnostic publication failed", { error: errorMessage(error) }))
-    else host.services.log.warn(event.diagnostic.message, { code: event.diagnostic.code, raw: event.diagnostic.raw })
+  return { ...command, cwd: input.directory, env: { ...piEnvironment(profile, host.options.env), ...env } }
+}
+
+async function admitPiVersion(host: PiLaunchHost, input: StartInput, profile: PiProfile, broker: SessionBroker | undefined,
+  role: PiLaunch["role"]): Promise<void> {
+  const reported = await host.versionReadings.read(host.options.binary, async () => {
+    const owned = await host.services.spawn(piCommand(host, input, profile, ["--version"]),
+      { role, label: "Pi version", sessionId: input.sessionId, signal: host.signal })
+    return piReportedVersion(owned, piDeadline(host.services.clock))
   })
-  await retiringOnFailure(host, rpc, async () => {
-    await rpc.request("get_state")
-    if (mcp) await connectPiMcp(rpc, host.services.clock, host.options.stateRoot, mcp)
-  })
-  return rpc
+  if (broker) await host.versions.admit(reported, "--version", broker)
+  else harnessVersionStanding(PI_RANGE, reported)
+}
+
+async function spawnPi<T>(host: PiLaunchHost, input: StartInput, profile: PiProfile, broker: SessionBroker | undefined, launch: PiLaunch,
+  observe: (rpc: PiRpc) => T): Promise<{ rpc: PiRpc; observed: T }> {
+  if (host.disposed()) throw new TransportError("pi", "process", "Pi transport disposed")
+  host.unsettled.retryHeld()
+  await admitPiVersion(host, input, profile, broker, launch.role)
+  await preparePiProfile(profile, input.model)
+  const mcp = launch.role === "harness" ? await piMcpHandoff(host.options.stateRoot, input, host.services) : undefined
+  try {
+    const args = ["--mode", "rpc", ...(launch.role === "probe" ? ["--no-session"] : ["--session-dir", profile.sessionDir]),
+      ...piProjectionArgs(input.projection), ...host.options.args ?? [], ...(launch.role === "harness" ? await harnessArgs(host, launch, mcp) : [])]
+    const owned = await host.services.spawn(piCommand(host, input, profile, args, mcp?.env),
+      { role: launch.role, label: "Pi RPC", sessionId: input.sessionId, signal: host.signal })
+    const rpc = new PiRpc(owned, host.services.clock, (event) => {
+      if (broker) void broker.publish(event).catch((error: unknown) =>
+        host.services.log.error("Pi RPC diagnostic publication failed", { error: errorMessage(error) }))
+      else host.services.log.warn(event.diagnostic.message, { code: event.diagnostic.code, raw: event.diagnostic.raw })
+    })
+    const observed = observe(rpc)
+    await retiringOnFailure(host, rpc, async () => {
+      await rpc.request("get_state")
+      await mcp?.consumed()
+    })
+    return { rpc, observed }
+  } finally { await mcp?.discard() }
+}
+
+export async function launchPiProbe(host: PiLaunchHost, input: StartInput, profile: PiProfile): Promise<PiRpc> {
+  return (await spawnPi(host, input, profile, undefined, { role: "probe" }, () => undefined)).rpc
+}
+
+export type PiSessionLaunch = { rpc: PiRpc; stream: PiSessionStream }
+
+export async function launchPiSession(host: PiLaunchHost, input: StartInput, profile: PiProfile, broker: SessionBroker,
+  resume?: PiResume): Promise<PiSessionLaunch> {
+  const { clock, log } = host.services
+  const { rpc, observed } = await spawnPi(host, input, profile, broker, { role: "harness", ...(resume ? { resume } : {}) }, (rpc) =>
+    new PiSessionStream({ sessionId: input.sessionId, rpc, broker, clock, log, stop: () => stopPiRun(rpc, piDeadline(clock)) }))
+  return { rpc, stream: observed }
 }
 
 export function piUpstreamOf(host: PiLaunchHost, rpc: PiRpc): Promise<string> {
@@ -66,10 +106,12 @@ export function piUpstreamOf(host: PiLaunchHost, rpc: PiRpc): Promise<string> {
   })
 }
 
-export async function resumePi(host: PiLaunchHost, input: StartInput, profile: PiProfile, broker: SessionBroker, upstreamSessionId: string): Promise<PiRpc> {
-  const rpc = await launchPi(host, input, profile, broker, { role: "harness", resume: await piSessionFile(profile, upstreamSessionId) })
-  if (await piUpstreamOf(host, rpc) === upstreamSessionId) return rpc
-  await host.unsettled.retire(rpc)
+export async function resumePi(host: PiLaunchHost, input: StartInput, profile: PiProfile, broker: SessionBroker,
+  upstreamSessionId: string, unwritten = false): Promise<PiSessionLaunch> {
+  const resume = unwritten ? { id: upstreamSessionId } : { file: await piSessionFile(profile, upstreamSessionId) }
+  const launched = await launchPiSession(host, input, profile, broker, resume)
+  if (await piUpstreamOf(host, launched.rpc) === upstreamSessionId) return launched
+  await host.unsettled.retire(launched.rpc)
   throw new TransportError("pi", "session", "Pi resumed a different session")
 }
 

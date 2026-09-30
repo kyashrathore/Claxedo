@@ -9,11 +9,12 @@ import { waitForTitle } from "../harness/turn-observations"
 
 /**
  * `held`: the harness gives no evidence of the steer, so it stays uncertain.
- * `incorporated`: Codex still opens the steer's userMessage item when only its
- * `turn/steer` reply is withheld, and that evidence settles the steer.
+ * `incorporated`: when only the steer's reply is withheld, Codex still opens
+ * the steer's userMessage item and Pi still starts the steer's user message,
+ * and that evidence settles the steer.
  */
 const CASES = [
-  { name: "pi", outcome: "held", model: { providerId: "pi", modelId: "openai/gpt-4.1" } },
+  { name: "pi", outcome: "incorporated", model: { providerId: "pi", modelId: "openai/gpt-4.1" } },
   { name: "codex", outcome: "incorporated", model: { providerId: "codex", modelId: "gpt-5.5" } },
   { name: "claude", outcome: "held", model: { providerId: "claude", modelId: "sonnet" } },
 ] as const
@@ -70,7 +71,7 @@ async function unknownCase(item: typeof CASES[number]) {
         assert.equal(storedSteerCount(await api.messages(workspace.directory, session.id)), 1, `${item.name} steered prompt was resent`)
         assert.deepEqual(await queue(), [], `${item.name} queue changed after next turn`)
         assert.deepEqual(unexpectedEgress(stack.egress.attempts), [], `${item.name} attempted outbound egress`)
-        console.log(`H7 ${item.name}: withheld steer reply settled by the userMessage item; HTTP 200, one stored steer, empty queue and next completed turn passed`)
+        console.log(`H7 ${item.name}: withheld steer reply settled by the harness's own user message; HTTP 200, one stored steer, empty queue and next completed turn passed`)
         return
       }
       assert.equal(answer.status, 202, `${item.name} unknown steer HTTP: ${JSON.stringify(body)}`)
@@ -82,23 +83,15 @@ async function unknownCase(item: typeof CASES[number]) {
       const firstRows = await queue()
       assert.ok(firstRows.some((row) => row.parts.some((part) => part.text === steered) && row.steering?.state === "unknown" && row.steering.mode === "steer"), `${item.name} uncertain steer was not held: ${JSON.stringify(firstRows)}`)
       const evidence = await fs.readFile(path.join(stack.dataDir, `${item.name}-steer-fault-bin`, "seen.log"), "utf8")
-      assert.match(evidence, item.name === "claude" ? /process interrupted before replay/ : /reply withheld/)
+      assert.match(evidence, /process interrupted before replay/)
       const firstMessages = await api.messages(workspace.directory, session.id)
-      if (item.name === "claude") {
-        stream.close()
-        await stack.daemon.restart()
-        assert.deepEqual(await queue(), firstRows, "Claude unknown steer changed across daemon restart")
-        assert.equal(storedSteerCount(await api.messages(workspace.directory, session.id)), storedSteerCount(firstMessages), "Claude resent provider-owned steer on restart")
-        assert.equal((await api.session(workspace.directory, session.id)).lastTurn?.status, "failed")
-        assert.deepEqual(unexpectedEgress(stack.egress.attempts), [], "Claude attempted outbound egress")
-        console.log("H7 claude: unknown steer HTTP 202 stayed provider-owned after restart; live failure, stored outcome and queue readback passed")
-        return
-      }
-      await nextTurn(stack, api, workspace.directory, session.id, item.name)
-      assert.equal(storedSteerCount(await api.messages(workspace.directory, session.id)), storedSteerCount(firstMessages), `${item.name} stored a second user turn for provider-owned steer`)
-      assert.deepEqual(await queue(), firstRows, `${item.name} unknown steer changed after next turn`)
-      assert.deepEqual(unexpectedEgress(stack.egress.attempts), [], `${item.name} attempted outbound egress`)
-      console.log(`H7 ${item.name}: unknown steer HTTP 202 stayed provider-owned through next completed turn; live, stored and queue readback passed`)
+      stream.close()
+      await stack.daemon.restart()
+      assert.deepEqual(await queue(), firstRows, "Claude unknown steer changed across daemon restart")
+      assert.equal(storedSteerCount(await api.messages(workspace.directory, session.id)), storedSteerCount(firstMessages), "Claude resent provider-owned steer on restart")
+      assert.equal((await api.session(workspace.directory, session.id)).lastTurn?.status, "failed")
+      assert.deepEqual(unexpectedEgress(stack.egress.attempts), [], "Claude attempted outbound egress")
+      console.log("H7 claude: unknown steer HTTP 202 stayed provider-owned after restart; live failure, stored outcome and queue readback passed")
     } finally {
       release()
     }

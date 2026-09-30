@@ -105,7 +105,9 @@ export class MemoryPorts implements BrokerPorts {
   providerTurn?: AbortController
   nextProviderTurn = 0
   cancelProviderTurn() { this.providerTurn?.abort() }
-  async admitProviderTurn(_sessionId: string, _input: ProviderTurnInput, run: (turn: TurnRef, signal: AbortSignal) => Promise<void>): Promise<ProviderTurnResult> {
+  providerInputs: ProviderTurnInput[] = []
+  async admitProviderTurn(_sessionId: string, input: ProviderTurnInput, run: (turn: TurnRef, signal: AbortSignal) => Promise<void>): Promise<ProviderTurnResult> {
+    this.providerInputs.push(input)
     const controller = new AbortController()
     this.providerTurn = controller
     const turnId = `provider-${++this.nextProviderTurn}`

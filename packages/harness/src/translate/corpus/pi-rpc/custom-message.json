@@ -16,13 +16,16 @@
       },
       "event": {
         "source": "pi.rpc",
-        "method": "auto_retry_start",
+        "method": "message_start",
         "payload": {
-          "type": "auto_retry_start",
-          "attempt": 1,
-          "maxAttempts": 3,
-          "delayMs": 2000,
-          "errorMessage": "OpenAI API error (500): {\"type\":\"invalid_request_error\",\"message\":\"provider failure\"}"
+          "type": "message_start",
+          "message": {
+            "role": "custom",
+            "customType": "probe",
+            "content": "custom text shown",
+            "display": true,
+            "timestamp": 1790766448156
+          }
         }
       },
       "context": {
@@ -37,14 +40,7 @@
           "stopped": false,
           "noted": []
         },
-        "events": [
-          {
-            "type": "session-retry",
-            "message": "OpenAI API error (500): {\"type\":\"invalid_request_error\",\"message\":\"provider failure\"}",
-            "attempt": 1,
-            "delayMs": 2000
-          }
-        ]
+        "events": []
       }
     },
     {
@@ -56,13 +52,16 @@
       },
       "event": {
         "source": "pi.rpc",
-        "method": "auto_retry_start",
+        "method": "message_end",
         "payload": {
-          "type": "auto_retry_start",
-          "attempt": 2,
-          "maxAttempts": 3,
-          "delayMs": 4000,
-          "errorMessage": "OpenAI API error (500): {\"type\":\"invalid_request_error\",\"message\":\"provider failure\"}"
+          "type": "message_end",
+          "message": {
+            "role": "custom",
+            "customType": "probe",
+            "content": "custom text shown",
+            "display": true,
+            "timestamp": 1790766448156
+          }
         }
       },
       "context": {
@@ -79,10 +78,13 @@
         },
         "events": [
           {
-            "type": "session-retry",
-            "message": "OpenAI API error (500): {\"type\":\"invalid_request_error\",\"message\":\"provider failure\"}",
-            "attempt": 2,
-            "delayMs": 4000
+            "type": "harness-notice",
+            "code": "pi.custom_message",
+            "message": "custom text shown",
+            "severity": "info",
+            "details": {
+              "customType": "probe"
+            }
           }
         ]
       }

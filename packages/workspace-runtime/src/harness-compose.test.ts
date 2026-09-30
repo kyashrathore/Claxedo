@@ -11,6 +11,7 @@ import { requireCursorWorker } from "./host/executables/cursor"
 const peerSource = `#!/usr/bin/env node
 const { createInterface } = require("node:readline");
 const kind = process.env.COMPOSE_PEER_KIND;
+if (kind === "pi" && process.argv.includes("--version")) { process.stdout.write("0.99.1\\n"); process.exit(0); }
 createInterface({ input: process.stdin }).on("line", line => {
   const request = JSON.parse(line);
   let response;
