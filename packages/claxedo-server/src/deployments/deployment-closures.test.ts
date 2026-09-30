@@ -29,13 +29,14 @@ const HOSTED_CORE_WORKER_ROOT = "src/deployments/hosted-workerd/core-worker.cf.t
 const ENTRIES = [
   // Every entry carries the D1 access model: the project-role query, the access
   // context, the org-member, project-member and team authorities, the host
-  // access error contract, and the verified-email account lookup.
-  { name: "worker", entry: BETTER_AUTH_D1_ENTRY, modules: 104, packages: 19 },
+  // access error contract, the D1 session authority's input validation and
+  // access predicates, and the verified-email account lookup.
+  { name: "worker", entry: BETTER_AUTH_D1_ENTRY, modules: 106, packages: 19 },
   // Both Agent Plugins entries carry the plugin-backend platform
   // (`src/plugin-backends/`): seven modules, `@claxedo/plugin-api` for the
   // manifest, and `cloudflare:workers` for the supervisor and its entrypoints.
-  { name: "worker-agent-plugins", entry: BETTER_AUTH_D1_AGENT_PLUGINS_ENTRY, modules: 155, packages: 23 },
-  { name: "worker-agent-plugins-full-hosted", entry: BETTER_AUTH_D1_AGENT_PLUGINS_FULL_HOSTED_ENTRY, modules: 160, packages: 23 },
+  { name: "worker-agent-plugins", entry: BETTER_AUTH_D1_AGENT_PLUGINS_ENTRY, modules: 157, packages: 23 },
+  { name: "worker-agent-plugins-full-hosted", entry: BETTER_AUTH_D1_AGENT_PLUGINS_FULL_HOSTED_ENTRY, modules: 162, packages: 23 },
 ] as const
 
 function closure(entry: string, options: { runtimeOnly?: boolean } = {}) {

@@ -214,6 +214,9 @@ export async function putSessionMeta(
         ? stamp
         : prev?.updated_at ?? stamp
     const lastHumanTurnAt = laterHumanTurnAt(input.lastHumanTurnAt, prev?.last_human_turn_at)
+    const runtimeUpdatedAt = input.updatedAt === undefined
+      ? prev?.runtime_updated_at ?? null
+      : Math.max(input.updatedAt, prev?.runtime_updated_at ?? 0)
     const update = {
       session_id: sessionID,
       workspace_id: workspaceID,
@@ -227,6 +230,7 @@ export async function putSessionMeta(
       archived_at: archivedAt,
       updated_at: updatedAt,
       last_human_turn_at: lastHumanTurnAt,
+      runtime_updated_at: runtimeUpdatedAt,
     }
     db.insert(ClaxedoSessionMetaTable).values({
       ...update,
@@ -478,6 +482,9 @@ async function upsertRows(rows: Array<ReturnType<typeof sessionMetaSyncRow>>): P
     )
     for (const item of all) {
       const prev = old.get(item.session_ref)
+      // Two pulls of one session can finish in either order; the runtime's
+      // `time.updated` orders their snapshots, and the older one writes nothing.
+      if (prev?.runtime_updated_at != null && item.updated_at < prev.runtime_updated_at) continue
       const update = {
         session_id: item.session_id,
         workspace_id: item.workspace_id ?? prev?.workspace_id ?? null,
@@ -491,6 +498,7 @@ async function upsertRows(rows: Array<ReturnType<typeof sessionMetaSyncRow>>): P
         archived_at: item.archived_at,
         updated_at: Math.max(item.updated_at, prev?.updated_at ?? 0),
         last_human_turn_at: laterHumanTurnAt(item.last_human_turn_at, prev?.last_human_turn_at),
+        runtime_updated_at: item.updated_at,
       }
       db.insert(ClaxedoSessionMetaTable).values({
         ...update,

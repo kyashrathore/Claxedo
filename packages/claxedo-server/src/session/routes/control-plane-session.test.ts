@@ -317,6 +317,7 @@ describe("control plane session routes", () => {
             parts: [{ id: "part_1", messageID: "msg_1", text: "hello" }],
           },
         ],
+        maxEventOrdinal: 7,
       })),
       readSessionFirstRead: vi.fn(async (_auth: unknown, input: { sessionId: string }) =>
         input.sessionId === "session-1"
@@ -328,7 +329,7 @@ describe("control plane session routes", () => {
     svc.projectionStore.list_session_metas = vi.fn(async () => {
       throw new Error("signed inventory must not read the unfiltered local projection")
     })
-    svc.projectionStore.read_session_max_event_ordinal = vi.fn(() => 7)
+    svc.projectionStore.read_session_max_event_ordinal = vi.fn(() => 3)
     const app = ControlPlaneSessionRoutes(svc, {
       authConfig: {
         enabled: true,
@@ -499,6 +500,7 @@ describe("control plane session routes", () => {
         allowed: true,
         messages: [{ info: { id: "msg_workspace_page", role: "assistant" }, parts: [] }],
         nextCursor: "authority-next",
+        maxEventOrdinal: 18,
       })),
     }
     svc.authority = authority as never
@@ -508,7 +510,7 @@ describe("control plane session routes", () => {
     svc.projectionStore.read_session_message_page = vi.fn(() => {
       throw new Error("workspace authority cursors must not switch to the central projection")
     })
-    svc.projectionStore.read_session_max_event_ordinal = vi.fn(() => 18)
+    svc.projectionStore.read_session_max_event_ordinal = vi.fn(() => 30)
     const app = ControlPlaneSessionRoutes(svc, signedOptions)
 
     const response = await app.request(
@@ -822,11 +824,12 @@ describe("control plane session routes", () => {
             parts: [{ id: "part_workspace", messageID: "msg_workspace", type: "text", text: "workspace replay" }],
           },
         ],
+        maxEventOrdinal: 0,
       })),
     }
     svc.authority = authority as never
     svc.projectionStore.read_session_messages = vi.fn(() => [])
-    svc.projectionStore.read_session_max_event_ordinal = vi.fn(() => 0)
+    svc.projectionStore.read_session_max_event_ordinal = vi.fn(() => 4)
 
     const messages = await ControlPlaneSessionRoutes(svc, signedOptions).request(
       "http://127.0.0.1/sessions/session-1/messages?workspaceId=ws_1",
@@ -865,11 +868,12 @@ describe("control plane session routes", () => {
             parts: [{ id: "part_hosted", messageID: "msg_hosted", type: "text", text: "hosted replay" }],
           },
         ],
+        maxEventOrdinal: 0,
       })),
     }
     svc.authority = authority as never
     svc.projectionStore.read_session_messages = vi.fn(() => [])
-    svc.projectionStore.read_session_max_event_ordinal = vi.fn(() => 0)
+    svc.projectionStore.read_session_max_event_ordinal = vi.fn(() => 4)
 
     const messages = await ControlPlaneSessionRoutes(svc, signedOptions).request(
       "http://127.0.0.1/sessions/session-1/messages?workspaceId=ws_1",
@@ -898,10 +902,10 @@ describe("control plane session routes", () => {
     })
   })
 
-  test("signed messages come from authority despite a stale projection", async () => {
+  test("signed messages and their ordinal come from authority despite a stale projection", async () => {
     const svc = services()
     const authority = {
-      readSessionMessages: vi.fn(async () => ({ messages: [{ info: { id: "msg_authority" }, parts: [] }] })),
+      readSessionMessages: vi.fn(async () => ({ messages: [{ info: { id: "msg_authority" }, parts: [] }], maxEventOrdinal: 3 })),
     }
     svc.authority = authority as never
     svc.projectionStore.read_session_messages = vi.fn(() => [
@@ -939,7 +943,7 @@ describe("control plane session routes", () => {
           parts: [],
         },
       ],
-      maxEventOrdinal: 2,
+      maxEventOrdinal: 3,
     })
     expect(authority.readSessionMessages).toHaveBeenCalled()
   })

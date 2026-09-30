@@ -11,7 +11,7 @@ export function roleRankSql(column: string) {
  * rank from here. A workspace surface reads `workspaceRoleRankSql` instead.
  *
  * `orgMemberVisible` selects the form the session layer still reads as a
- * workspace rank (`actorWorkspaceRoleRankSql` in `session-authority.ts`):
+ * workspace rank (`actorWorkspaceRoleRankSql` in `session-access-sql.ts`):
  * `ownerUserId` is then the workspace's owner, the member and team grants
  * count only where the workspace's `org_member_visible` is 1, and a member
  * grant is worth at most admin (3).

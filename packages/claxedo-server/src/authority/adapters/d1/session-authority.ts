@@ -1,6 +1,5 @@
 import type { D1Database, D1PreparedStatement } from "@cloudflare/workers-types"
 import { ControlPlaneAuthError, type SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
-import { ClaxedoError } from "@claxedo/server-core/platform/errors/base"
 import type {
   SessionShareGrantResult,
   SessionShareLevel,
@@ -45,8 +44,30 @@ import {
   type SessionTurnLease,
 } from "@claxedo/server-core/platform/auth/session-turn-authority"
 import { SESSION_TURN_LEASE_TTL_MS } from "@claxedo/workspace-relay-protocol"
-import { asRecord } from "@claxedo/server-core/platform/json/index"
-import { projectRoleRankSql, rankRole } from "./project-role"
+import { rankRole } from "./project-role"
+import {
+  actorSessionAccessSql,
+  actorWorkspaceAccessSql,
+  actorWorkspaceRoleRankSql,
+  ORGANIZATION_STANDING_BINDINGS,
+  SESSION_ACCESS_BINDINGS,
+  SESSION_CREATOR_BINDINGS,
+  sessionCreatorSql,
+  userInOrganizationSql,
+  WORKSPACE_ACCESS_BINDINGS,
+  WORKSPACE_ROLE_RANK_BINDINGS,
+} from "./session-access-sql"
+import {
+  D1SessionAuthorityError,
+  MAX_SNAPSHOT_BYTES,
+  byteLength,
+  canonicalMessages,
+  optionalOrdinal,
+  optionalText,
+  positiveFence,
+  requireText,
+  visibilityRows,
+} from "./session-input"
 import { readD1SessionPage, readD1MessagePage, readD1LatestView, validateD1MessageRead, decodeMessagePageCursor } from "./session-read-store"
 import { storedTurn, type LatestView } from "@claxedo/server-core/session/latest-view-page"
 import { readStoredTurnOutline } from "@claxedo/server-core/session/turn-outline"
@@ -200,33 +221,6 @@ type TurnGrantRow = {
   redeemed_turn_id: string | null
   revoked_at: number | null
   revoke_reason: string | null
-}
-
-type CanonicalMessage = {
-  id: string
-  role: string
-  ordinal: number
-  dataJson: string
-  authorActorId: string | null
-}
-
-const MAX_SNAPSHOT_MESSAGES = 500
-const MAX_MESSAGE_BYTES = 256 * 1024
-const MAX_SNAPSHOT_BYTES = 8 * 1024 * 1024
-const MAX_VISIBILITY_ROWS = 500
-
-export class D1SessionAuthorityError extends ClaxedoError {
-  constructor(
-    code:
-      "invalid_input" | "resource_conflict" | "registration_transition_denied" | "actor_authorization_denied",
-    message: string,
-  ) {
-    super({
-      code,
-      message,
-      status: code === "invalid_input" ? 400 : code === "resource_conflict" ? 409 : 403,
-    })
-  }
 }
 
 /**
@@ -2006,13 +2000,21 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
         .prepare(
           `
       update sessions set
-        title = coalesce(?, title),
-        updated_at = max(updated_at, coalesce(?, updated_at))
-      where session_id = ? and workspace_id = ? and deleted_at is null
+        title = case when ?1 is null or runtime_updated_at is null or ?1 >= runtime_updated_at
+          then coalesce(?2, title) else title end,
+        runtime_updated_at = coalesce(max(runtime_updated_at, ?1), ?1, runtime_updated_at),
+        updated_at = max(updated_at, coalesce(?1, updated_at))
+      where session_id = ?3 and workspace_id = ?4 and deleted_at is null
         and ${actorSessionAccessSql("?", "sessions", "agent_turn")}
     `,
         )
-        .bind(row.title ?? null, row.updatedAt ?? null, row.sessionId, workspaceId, ...repeat(who.actorId, SESSION_ACCESS_BINDINGS.agent_turn)),
+        .bind(
+          row.updatedAt ?? null,
+          row.title ?? null,
+          row.sessionId,
+          workspaceId,
+          ...repeat(who.actorId, SESSION_ACCESS_BINDINGS.agent_turn),
+        ),
     )
     if (replace) {
       statements.push(
@@ -2396,170 +2398,6 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
   }
 }
 
-function actorWorkspaceRoleRankSql(actorExpression: string, workspaceAlias: string) {
-  return projectRoleRankSql({
-    user: `(select user_id from actors where actor_id = ${actorExpression})`,
-    projectId: `${workspaceAlias}.project_id`,
-    orgId: `${workspaceAlias}.org_id`,
-    ownerUserId: `${workspaceAlias}.owner_user_id`,
-    orgMemberVisible: `${workspaceAlias}.org_member_visible`,
-  })
-}
-
-function actorWorkspaceAccessSql(actorExpression: string, workspaceAlias: string, rank: 1 | 2) {
-  return `exists (
-    select 1 from actors aa join users au on au.user_id = aa.user_id and au.state = 'active'
-    where aa.actor_id = ${actorExpression} and aa.state = 'active'
-      and exists (
-        select 1 from orgs ao
-        left join org_memberships aom
-          on aom.org_id = ao.org_id and aom.user_id = au.user_id and aom.revoked_at is null
-        where ao.org_id = ${workspaceAlias}.org_id and ao.deleted_at is null
-          and (ao.owner_user_id = au.user_id or aom.user_id is not null)
-      )
-      and exists (
-        select 1 from projects ap
-        where ap.project_id = ${workspaceAlias}.project_id
-          and ap.org_id = ${workspaceAlias}.org_id
-          and ap.deleted_at is null
-      )
-      and ${actorWorkspaceRoleRankSql(actorExpression, workspaceAlias)} >= ${rank}
-  )`
-}
-
-/**
- * Creator, participant and share grantee are the whole admission, asked of
- * someone who still stands in the session's organization; the project and the
- * workspace decide nothing, and a rank in the organization decides only who may
- * be OFFERED a share. The question narrows what a SHARE may answer: `follow`
- * reads, `send` also drives the agent's turn, and a `session_control` write
- * drops the share branch entirely, leaving the creator and the participants.
- */
-function actorSessionAccessSql(actorExpression: string, sessionAlias: string, access: SessionAccessQuestion) {
-  const shareLevelSql = access === "agent_turn" ? "and share.level = 'send'" : ""
-  return `${actorOrganizationStandingSql(actorExpression, sessionAlias)} and exists (
-    select 1 from workspaces session_workspace
-    where session_workspace.workspace_id = ${sessionAlias}.workspace_id
-      and session_workspace.org_id = ${sessionAlias}.org_id
-      and session_workspace.project_id = ${sessionAlias}.project_id
-      and session_workspace.deleted_at is null
-  ) and (
-    ${sessionCreatedByActorUserSql(actorExpression, sessionAlias)}
-    or exists (
-      select 1 from session_participants sap
-      where sap.session_id = ${sessionAlias}.session_id and sap.actor_id = ${actorExpression} and sap.revoked_at is null
-    )
-    ${access === "session_control" ? "" : `or exists (
-      select 1 from session_share_grants share
-      join actors share_actor on share_actor.actor_id = ${actorExpression}
-        and share_actor.kind = 'human' and share_actor.state = 'active'
-      join users share_user on share_user.user_id = share_actor.user_id and share_user.state = 'active'
-      where share.session_id = ${sessionAlias}.session_id and share.revoked_at is null
-        ${shareLevelSql}
-        and (
-          share.target_user_id = share_user.user_id
-          or (
-            share.target_org_id = ${sessionAlias}.org_id
-            and exists (
-              select 1 from org_memberships share_org_member
-              where share_org_member.org_id = share.target_org_id
-                and share_org_member.user_id = share_user.user_id
-                and share_org_member.revoked_at is null
-            )
-          )
-          or exists (
-            select 1 from team_memberships share_team_member
-            join teams share_team on share_team.team_id = share_team_member.team_id
-              and share_team.org_id = ${sessionAlias}.org_id and share_team.deleted_at is null
-            join org_memberships share_team_org_member
-              on share_team_org_member.org_id = share_team.org_id
-              and share_team_org_member.user_id = share_team_member.user_id
-              and share_team_org_member.revoked_at is null
-            where share_team_member.team_id = share.target_team_id
-              and share_team_member.user_id = share_user.user_id
-              and share_team_member.revoked_at is null
-          )
-        )
-    )`}
-  )`
-}
-
-/**
- * The standing every session decision needs before any of them: a live account
- * that is still in the organization the session belongs to. Leaving the
- * organization ends every grant inside it, creator standing included, so
- * membership is necessary here and never sufficient — nothing below reads a
- * rank.
- */
-function actorOrganizationStandingSql(actorExpression: string, sessionAlias: string) {
-  return `exists (
-    select 1 from actors admitted_actor
-    join users admitted_user
-      on admitted_user.user_id = admitted_actor.user_id and admitted_user.state = 'active'
-    where admitted_actor.actor_id = ${actorExpression} and admitted_actor.state = 'active'
-      and ${userInOrganizationSql("admitted_actor.user_id", `${sessionAlias}.org_id`)}
-  )`
-}
-
-/**
- * Who a session's people are is the creator's to decide, and nobody else's,
- * for as long as the creator stands in the organization.
- */
-function sessionCreatorSql(actorExpression: string, sessionAlias: string) {
-  return `(${actorOrganizationStandingSql(actorExpression, sessionAlias)}
-    and ${sessionCreatedByActorUserSql(actorExpression, sessionAlias)})`
-}
-
-/**
- * One person acts through several actors — the browser actor they sign in as
- * and the agent actor a runtime mints to drive a session unprompted — so
- * creator standing is a question about the user behind the actor. Comparing
- * actor ids would strand every session an agent opened on its owner's behalf.
- */
-function sessionCreatedByActorUserSql(actorExpression: string, sessionAlias: string) {
-  return `exists (
-    select 1 from actors creator_actor
-    join actors reading_actor
-      on reading_actor.actor_id = ${actorExpression} and reading_actor.state = 'active'
-    where creator_actor.actor_id = ${sessionAlias}.creator_actor_id
-      and creator_actor.user_id = reading_actor.user_id
-  )`
-}
-
-/**
- * Being in the organization is what makes a person offerable as a share
- * recipient. It carries no standing on the session, the workspace or the
- * machine; only the grant they are then given does.
- */
-function userInOrganizationSql(userExpression: string, orgExpression: string) {
-  return `exists (
-    select 1 from orgs offer_org
-    left join org_memberships offer_member
-      on offer_member.org_id = offer_org.org_id and offer_member.user_id = ${userExpression}
-      and offer_member.revoked_at is null
-    where offer_org.org_id = ${orgExpression} and offer_org.deleted_at is null
-      and (offer_org.owner_user_id = ${userExpression} or offer_member.user_id is not null)
-  )`
-}
-
-/**
- * Every `?` a fragment carries is the actor expression, so its own text says
- * how many copies of the actor id the caller must bind ahead of it.
- */
-function actorBindings(fragment: string) {
-  return fragment.match(/\?/g)?.length ?? 0
-}
-
-const SESSION_ACCESS_BINDINGS: Record<SessionAccessQuestion, number> = {
-  read: actorBindings(actorSessionAccessSql("?", "s", "read")),
-  agent_turn: actorBindings(actorSessionAccessSql("?", "s", "agent_turn")),
-  session_control: actorBindings(actorSessionAccessSql("?", "s", "session_control")),
-}
-const SESSION_CREATOR_BINDINGS = actorBindings(sessionCreatorSql("?", "s"))
-const WORKSPACE_ACCESS_BINDINGS = actorBindings(actorWorkspaceAccessSql("?", "w", 1))
-const ORGANIZATION_STANDING_BINDINGS = actorBindings(userInOrganizationSql("?", "w.org_id"))
-const WORKSPACE_ROLE_RANK_BINDINGS = actorBindings(actorWorkspaceRoleRankSql("?", "w"))
-
 function shareSelectorCount(args: {
   grantedToTokenIdentifier?: string
   grantedToSubject?: string
@@ -2646,90 +2484,12 @@ function sessionJson(row: SessionRow) {
   }
 }
 
-function visibilityRows(input: WorkspaceVisibility[]) {
-  if (!Array.isArray(input) || input.length > MAX_VISIBILITY_ROWS) {
-    throw new D1SessionAuthorityError("invalid_input", `Session visibility accepts at most ${MAX_VISIBILITY_ROWS} rows`)
-  }
-  const seen = new Set<string>()
-  return input.map((value) => {
-    const sessionId = requireText(value.sessionId, "sessionId")
-    if (seen.has(sessionId))
-      throw new D1SessionAuthorityError("invalid_input", "Session visibility contains duplicate identifiers")
-    seen.add(sessionId)
-    return {
-      sessionId,
-      title: optionalText(value.title, "title", 2_000),
-      createdAt: optionalTimestamp(value.createdAt, "createdAt"),
-      updatedAt: optionalTimestamp(value.updatedAt, "updatedAt"),
-    }
-  })
-}
-
-function canonicalMessages(input: unknown[]): CanonicalMessage[] {
-  if (!Array.isArray(input) || input.length > MAX_SNAPSHOT_MESSAGES) {
-    throw new D1SessionAuthorityError(
-      "invalid_input",
-      `Session snapshots accept at most ${MAX_SNAPSHOT_MESSAGES} messages`,
-    )
-  }
-  const ids = new Set<string>()
-  return input.map((message, ordinal) => {
-    const row = asRecord(message)
-    const info = asRecord(row?.info)
-    const id = optionalText(
-      typeof row?.id === "string" ? row.id : typeof info?.id === "string" ? info.id : undefined,
-      "message.id",
-    )
-    const role = optionalText(
-      typeof row?.role === "string" ? row.role : typeof info?.role === "string" ? info.role : undefined,
-      "message.role",
-      100,
-    )
-    if (!id || !role)
-      throw new D1SessionAuthorityError("invalid_input", "Every session message requires a canonical id and role")
-    if (ids.has(id))
-      throw new D1SessionAuthorityError("invalid_input", "Session snapshots contain duplicate message identifiers")
-    ids.add(id)
-    let dataJson: string
-    try {
-      dataJson = JSON.stringify(message)
-    } catch {
-      throw new D1SessionAuthorityError("invalid_input", "Session message must be JSON serializable")
-    }
-    if (dataJson === undefined || byteLength(dataJson) > MAX_MESSAGE_BYTES) {
-      throw new D1SessionAuthorityError("invalid_input", `Session message exceeds ${MAX_MESSAGE_BYTES} bytes`)
-    }
-    return {
-      id,
-      role,
-      ordinal,
-      dataJson,
-      authorActorId: null,
-    }
-  })
-}
-
-function optionalOrdinal(value: number | undefined) {
-  if (value === undefined) return undefined
-  if (!Number.isSafeInteger(value) || value < 0) {
-    throw new D1SessionAuthorityError("invalid_input", "maxEventOrdinal must be a non-negative safe integer")
-  }
-  return value
-}
-
 function boundedTurnLeaseTtl(value: number | undefined) {
   const ttl = value ?? SESSION_TURN_LEASE_TTL_MS
   if (!Number.isSafeInteger(ttl) || ttl < 5_000 || ttl > 15 * 60_000) {
     throw new TypeError("turnLeaseTtlMs must be an integer between 5000 and 900000")
   }
   return ttl
-}
-
-function positiveFence(value: number) {
-  if (!Number.isSafeInteger(value) || value < 1) {
-    throw new D1SessionAuthorityError("invalid_input", "fencingToken must be a positive safe integer")
-  }
-  return value
 }
 
 type TurnAdmission = {
@@ -2775,39 +2535,12 @@ function turnLeaseJson(row: TurnLeaseRow): SessionTurnLease {
   }
 }
 
-function optionalTimestamp(value: number | undefined, name: string) {
-  if (value === undefined) return undefined
-  if (!Number.isSafeInteger(value) || value < 0)
-    throw new D1SessionAuthorityError("invalid_input", `${name} is invalid`)
-  return value
-}
-
-function optionalText(value: string | undefined, name: string, max = 512) {
-  if (value === undefined) return undefined
-  return requireText(value, name, max)
-}
-
-function requireText(value: string, name: string, max = 512) {
-  const result = value.trim()
-  if (!result || result.length > max) {
-    throw new D1SessionAuthorityError(
-      "invalid_input",
-      `${name} must be a non-empty string of at most ${max} characters`,
-    )
-  }
-  return result
-}
-
 function denied(message = "Session authorization was denied") {
   return new ControlPlaneAuthError(403, "workspace_authorization_denied", message)
 }
 
 function isDenied(error: unknown) {
   return error instanceof ControlPlaneAuthError && error.status === 403
-}
-
-function byteLength(value: string) {
-  return new TextEncoder().encode(value).byteLength
 }
 
 async function sha256(value: string) {

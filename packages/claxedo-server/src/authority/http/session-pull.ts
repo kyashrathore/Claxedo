@@ -10,6 +10,7 @@ import {
   projectPulledMessages,
   pulledCloudWorkspace,
   pulledSession,
+  pullReachesAuthority,
   pullStartOrdinal,
   relayRole,
   runtimePath,
@@ -126,8 +127,8 @@ export async function pullControlSessionMessages(
     currentOrdinal,
     refreshMetadata: () => syncPulledSessionMetadata(services, auth, ws, input.sessionId, payload.session),
   })
+  if (pullReachesAuthority(skipped)) await syncAuthority()
   if (skipped) return skipped
-  await syncAuthority()
   await syncPulledSessionMetadata(services, auth, ws, input.sessionId, payload.session)
   return {
     ok: true,

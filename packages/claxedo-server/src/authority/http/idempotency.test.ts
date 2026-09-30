@@ -40,15 +40,22 @@ afterAll(async () => {
   await d1.dispose()
 })
 
-const stores: Array<[string, () => Promise<DurableIdempotencyStore>]> = [
-  ["memory", async () => memoryIdempotencyStore()],
+/** Moves a store's own clock: the process clock for memory, and for D1 every stored deadline, since its clock is the database's. */
+async function ageD1Rows(ms: number) {
+  await d1.database.prepare("update projection_command_idempotency set expires_at = expires_at - ?").bind(ms).run()
+}
+
+const stores: Array<[string, () => Promise<DurableIdempotencyStore>, (ms: number) => Promise<void>]> = [
+  ["memory", async () => memoryIdempotencyStore(), async (ms) => {
+    clock += ms
+  }],
   ["D1", async () => {
     await d1.database.prepare("delete from projection_command_idempotency").run()
     return d1ProjectionCommandIdempotency(d1.database)
-  }],
+  }, ageD1Rows],
 ]
 
-describe.each(stores)("instances sharing one %s idempotency store", (_name, createStore) => {
+describe.each(stores)("instances sharing one %s idempotency store", (_name, createStore, advance) => {
   test("a duplicate command runs once and the second instance replays its response", async () => {
     const store = await createStore()
     const run = vi.fn(async () => ({ ok: true, maxEventOrdinal: 7 }))
@@ -88,12 +95,12 @@ describe.each(stores)("instances sharing one %s idempotency store", (_name, crea
     const late = createIdempotencyCoordinator(store).run(key, started, "fp")
     await vi.waitFor(() => expect(started).toHaveBeenCalledTimes(1))
 
-    clock += IDEMPOTENCY_INFLIGHT_TTL_MS - 1
+    await advance(IDEMPOTENCY_INFLIGHT_TTL_MS - 1_000)
     const early = vi.fn(async () => ({ ok: "early" }))
     await expect(createIdempotencyCoordinator(store).run(key, early, "fp")).rejects.toMatchObject({ status: 409 })
     expect(early).not.toHaveBeenCalled()
 
-    clock += 1
+    await advance(1_000)
     const takeover = vi.fn(async () => ({ ok: "taker" }))
     await expect(createIdempotencyCoordinator(store).run(key, takeover, "fp")).resolves.toEqual({ ok: "taker" })
     expect(takeover).toHaveBeenCalledTimes(1)
@@ -111,7 +118,7 @@ describe.each(stores)("instances sharing one %s idempotency store", (_name, crea
     const hung = vi.fn(() => new Promise(() => {}))
     void createIdempotencyCoordinator(store).run(key, hung, "fp")
     await vi.waitFor(() => expect(hung).toHaveBeenCalledTimes(1))
-    clock += IDEMPOTENCY_INFLIGHT_TTL_MS
+    await advance(IDEMPOTENCY_INFLIGHT_TTL_MS)
 
     const gate = Promise.withResolvers<void>()
     const run = vi.fn(async () => {
@@ -150,10 +157,10 @@ describe.each(stores)("instances sharing one %s idempotency store", (_name, crea
     const key = registerKey("ttl")
     const run = vi.fn(async () => ({ ok: true }))
     await createIdempotencyCoordinator(store).run(key, run, "fp")
-    clock += IDEMPOTENCY_TTL_MS - 1
+    await advance(IDEMPOTENCY_TTL_MS - 1_000)
     await createIdempotencyCoordinator(store).run(key, run, "fp")
     expect(run).toHaveBeenCalledTimes(1)
-    clock += 1
+    await advance(1_000)
     await createIdempotencyCoordinator(store).run(key, run, "other-payload")
     expect(run).toHaveBeenCalledTimes(2)
   })
@@ -190,15 +197,50 @@ describe("D1 projection command idempotency rows", () => {
     await lapsedRun.done()
     expect(await rows(d1.database)).toEqual([completed, lapsed].toSorted())
 
-    clock += IDEMPOTENCY_INFLIGHT_TTL_MS
+    await ageD1Rows(IDEMPOTENCY_INFLIGHT_TTL_MS)
     const liveRun = hang()
     void createIdempotencyCoordinator(store).run(live, liveRun.started, "fp")
     await liveRun.done()
     expect(await rows(d1.database)).toEqual([completed, live].toSorted())
 
-    clock += IDEMPOTENCY_TTL_MS - IDEMPOTENCY_INFLIGHT_TTL_MS
+    await ageD1Rows(IDEMPOTENCY_TTL_MS - IDEMPOTENCY_INFLIGHT_TTL_MS)
     await createIdempotencyCoordinator(store).run(next, async () => ({ ok: true }), "fp")
     expect(await rows(d1.database)).toEqual([next])
+  })
+
+  test("an instance whose clock runs ahead neither takes over nor prunes a claim still inside its lease by database time", async () => {
+    await d1.database.prepare("delete from projection_command_idempotency").run()
+    const store = d1ProjectionCommandIdempotency(d1.database)
+    const held = registerKey("held")!
+    const hung = vi.fn(() => new Promise(() => {}))
+    void createIdempotencyCoordinator(store).run(held, hung, "fp")
+    await vi.waitFor(() => expect(hung).toHaveBeenCalledTimes(1))
+
+    clock += IDEMPOTENCY_TTL_MS * 2
+    const ahead = vi.fn(async () => ({ ok: "ahead" }))
+    await expect(createIdempotencyCoordinator(store).run(held, ahead, "fp"))
+      .rejects.toMatchObject({ status: 409, code: "control_plane_idempotency_in_flight" })
+    await createIdempotencyCoordinator(store).run(registerKey("other")!, async () => ({ ok: true }), "fp")
+    expect(ahead).not.toHaveBeenCalled()
+    expect(await rows(d1.database)).toEqual([held, registerKey("other")!].toSorted())
+  })
+})
+
+describe("a memory idempotency store", () => {
+  test("holding its capacity of receipts refuses a new key, still replays a known one, and admits new keys once receipts lapse", async () => {
+    const store = memoryIdempotencyStore()
+    const run = (key: string, value: () => Promise<unknown>) => createIdempotencyCoordinator(store).run(key, value)
+    for (let index = 0; index < 1_000; index += 1) await run(`receipt:${index}`, async () => index)
+
+    const overflow = vi.fn(async () => "overflow")
+    await expect(run("receipt:overflow", overflow)).rejects.toBeInstanceOf(IdempotencyCapacityError)
+    expect(overflow).not.toHaveBeenCalled()
+    const replay = vi.fn(async () => "again")
+    await expect(run("receipt:0", replay)).resolves.toBe(0)
+    expect(replay).not.toHaveBeenCalled()
+
+    clock += IDEMPOTENCY_TTL_MS
+    await expect(run("receipt:after", async () => "served")).resolves.toBe("served")
   })
 })
 

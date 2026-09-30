@@ -1,12 +1,8 @@
 import { asRecord } from "@claxedo/helpers/guards"
 import { createHash } from "node:crypto"
-import { isOneOf, jsonRecord } from "@claxedo/server-core/platform/runtime/lib/json"
-import { numberColumn, textColumn } from "../../../platform/db"
-import { AgentMessagePageError } from "@claxedo/agent-runtime-contract"
 import { readStoredTurnOutline } from "../../../session/turn-outline"
 import { readStoredPart } from "../../../session/stored-part"
-import type { StoredMessageQuery } from "../../../session/stored-messages"
-import { readFirstRead, readTurnPage, type TurnRead } from "@claxedo/agent-runtime-contract"
+import { readFirstRead, readTurnPage } from "@claxedo/agent-runtime-contract"
 import { SESSION_TURN_LEASE_TTL_MS } from "@claxedo/workspace-relay-protocol"
 import { ControlPlaneAuthError, type SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import {
@@ -29,9 +25,6 @@ import {
   sessionTurnGrantRefusal,
   type OwnedSessionTurnInput,
   type SessionTurnAuthority,
-  type SessionTurnGrant,
-  type SessionTurnGrantIntent,
-  type SessionTurnLease,
 } from "@claxedo/server-core/platform/auth/session-turn-authority"
 import { randomToken } from "@claxedo/server-core/platform/auth/web-crypto"
 import { storedSessionShareLevel } from "@claxedo/server-core/platform/auth/session-share-level"
@@ -44,11 +37,10 @@ import {
   type WorkspaceAction,
 } from "./workspace-authority-store"
 import { readSqliteSessionPage, type SessionPageRow } from "./session-page"
-import { latestViewPage, storedTurn, type LatestView } from "@claxedo/server-core/session/latest-view-page"
+import { readSqliteMessages, sqliteTurnRead, storedQuery } from "./session-read-store"
+import { matchesTurn, ownsTurn, publicTurnGrant, publicTurnLease, turnGrant, turnLease, type OwnedTurn } from "./session-turn-rows"
 import { trimToUndefined } from "@claxedo/helpers/string"
 
-const MESSAGE_PAGE_CURSOR_PREFIX = "sawmp1:"
-const MAX_MESSAGE_PAGE_LIMIT = 500
 
 type RegistrationState = PrivateSessionRegistrationResult["state"]
 type RegistrationRow = {
@@ -79,15 +71,6 @@ type SessionRow = {
   status_at: number | null
   awaiting_input: number
 }
-const AUTHOR_KINDS = ["human", "agent"] as const
-
-type MessageRow = {
-  ordinal: number
-  data: string
-  author_actor_id: string | null
-  author_kind: (typeof AUTHOR_KINDS)[number] | null
-}
-
 export class SqlitePrivateSessionAuthorityError extends Error {
   constructor(
     public readonly code:
@@ -326,12 +309,12 @@ export function createSqlitePrivateSessionAuthority(input: {
     }
   }
 
-  const sessionReadRole = (auth: SignedControlPlaneAuth, sessionId: string, workspaceId: string): { role: string | undefined } | undefined => {
+  const sessionReadAccess = (auth: SignedControlPlaneAuth, sessionId: string, workspaceId: string): { role: string | undefined; maxEventOrdinal: number } | undefined => {
     const db = input.database()
     const actor = actorForAuth(auth)
     try {
       const current = requireSessionAccess(db, actor, sessionId, workspaceId, "read")
-      return { role: authorizeWorkspaceForUser(db, current.workspace, actor, "read") }
+      return { role: authorizeWorkspaceForUser(db, current.workspace, actor, "read"), maxEventOrdinal: current.row.max_event_ordinal }
     } catch (error) {
       if (error instanceof ControlPlaneAuthError) return undefined
       throw error
@@ -698,62 +681,9 @@ export function createSqlitePrivateSessionAuthority(input: {
       return { ...publicSession(db, row, actor.token_identifier), workspace_id: row.workspace_id }
     },
     async readSessionMessages(auth, value) {
-      const db = input.database()
-      const read = sessionReadRole(auth, value.sessionId, value.workspaceId)
+      const read = sessionReadAccess(auth, value.sessionId, value.workspaceId)
       if (!read) return { allowed: false, messages: [] }
-      const { role } = read
-      if (value.view !== undefined) {
-        const end = value.before === undefined ? undefined : decodeCursor(value.sessionId, value.before)
-        return { allowed: true, role, ...readLatestView(db, value.sessionId, value.workspaceId, value.view, end) }
-      }
-      validatePage(value.limit, value.before)
-      const before = value.before === undefined ? undefined : decodeCursor(value.sessionId, value.before)
-      const query = value.limit === undefined
-        ? db.prepare(`
-            SELECT m.ordinal, m.data, m.author_actor_id, u.kind AS author_kind
-            FROM session_messages m LEFT JOIN users u ON u.token_identifier = m.author_actor_id
-            WHERE m.session_id = ? AND m.workspace_id = ? ORDER BY m.ordinal ASC
-          `)
-        : before === undefined
-          ? db.prepare(`
-              SELECT m.ordinal, m.data, m.author_actor_id, u.kind AS author_kind
-              FROM session_messages m LEFT JOIN users u ON u.token_identifier = m.author_actor_id
-              WHERE m.session_id = ? AND m.workspace_id = ? ORDER BY m.ordinal DESC LIMIT ?
-            `)
-          : db.prepare(`
-              SELECT m.ordinal, m.data, m.author_actor_id, u.kind AS author_kind
-              FROM session_messages m LEFT JOIN users u ON u.token_identifier = m.author_actor_id
-              WHERE m.session_id = ? AND m.workspace_id = ? AND m.ordinal < ? ORDER BY m.ordinal DESC LIMIT ?
-            `)
-      const rows = (value.limit === undefined
-        ? query.all(value.sessionId, value.workspaceId)
-        : before === undefined
-          ? query.all(value.sessionId, value.workspaceId, value.limit + 1)
-          : query.all(value.sessionId, value.workspaceId, before, value.limit + 1)
-      ).flatMap((row): MessageRow[] => {
-        const item = jsonRecord(row)
-        const ordinal = item && numberColumn(item, "ordinal")
-        const data = item && textColumn(item, "data")
-        if (item === undefined || ordinal === undefined || data === undefined) return []
-        return [
-          {
-            ordinal,
-            data,
-            author_actor_id: textColumn(item, "author_actor_id") ?? null,
-            author_kind: isOneOf(item.author_kind, AUTHOR_KINDS) ? item.author_kind : null,
-          },
-        ]
-      })
-      if (value.limit === undefined) return { allowed: true, role, messages: rows.map(publicMessage) }
-      const selected = rows.slice(0, value.limit).reverse()
-      return {
-        allowed: true,
-        role,
-        messages: selected.map(publicMessage),
-        ...(rows.length > value.limit && selected[0]
-          ? { nextCursor: encodeCursor(value.sessionId, selected[0].ordinal) }
-          : {}),
-      }
+      return { allowed: true, role: read.role, maxEventOrdinal: read.maxEventOrdinal, ...readSqliteMessages(input.database(), value) }
     },
     async readSessionFirstRead(auth, value) {
       const db = input.database()
@@ -890,9 +820,12 @@ export function createSqlitePrivateSessionAuthority(input: {
         }
         incoming.add(value.sessionId)
         db.prepare(`
-          UPDATE session_history SET title = COALESCE(?, title), updated_at = MAX(updated_at, COALESCE(?, updated_at))
-          WHERE session_id = ? AND workspace_id = ? AND deleted_at IS NULL
-        `).run(value.title ?? null, value.updatedAt ?? null, value.sessionId, workspaceId)
+          UPDATE session_history SET
+            title = CASE WHEN @at IS NULL OR runtime_updated_at IS NULL OR @at >= runtime_updated_at THEN COALESCE(@title, title) ELSE title END,
+            runtime_updated_at = COALESCE(MAX(runtime_updated_at, @at), @at, runtime_updated_at),
+            updated_at = MAX(updated_at, COALESCE(@at, updated_at))
+          WHERE session_id = @sessionId AND workspace_id = @workspaceId AND deleted_at IS NULL
+        `).run({ at: value.updatedAt ?? null, title: value.title ?? null, sessionId: value.sessionId, workspaceId })
       }
       if (!replace) return
       const owned = db.prepare<unknown[], { session_id: string }>(`
@@ -1021,78 +954,7 @@ function canonicalMessage(value: unknown) {
   return { id, role, value }
 }
 
-type TurnLeaseRow = {
-  session_id: string
-  workspace_id: string
-  turn_id: string
-  lease_id: string
-  fencing_token: number
-  actor_id: string
-  acquired_at: number
-  expires_at: number
-  released_at: number | null
-}
-
-function turnLease(db: SqliteAuthorityDb, sessionId: string) {
-  return db.prepare<unknown[], TurnLeaseRow>(`SELECT * FROM session_turn_leases WHERE session_id = ?`).get(sessionId)
-}
-
-type TurnGrantRow = {
-  grant_id: string
-  session_id: string
-  workspace_id: string
-  org_id: string
-  actor_id: string
-  intent: SessionTurnGrantIntent
-  subject_session_id: string | null
-  turn_id: string | null
-  turn_id_prefix: string | null
-  issued_at: number
-  expires_at: number
-  redeemed_at: number | null
-  redeemed_turn_id: string | null
-  revoked_at: number | null
-  revoke_reason: string | null
-}
-
-function turnGrant(db: SqliteAuthorityDb, grantId: string) {
-  return db.prepare<unknown[], TurnGrantRow>(`SELECT * FROM session_turn_grants WHERE grant_id = ?`).get(grantId)
-}
-
-function publicTurnGrant(row: TurnGrantRow): SessionTurnGrant
-function publicTurnGrant(row: TurnGrantRow | undefined): SessionTurnGrant | undefined
-function publicTurnGrant(row: TurnGrantRow | undefined): SessionTurnGrant | undefined {
-  if (!row) return undefined
-  return {
-    grantId: row.grant_id,
-    sessionId: row.session_id,
-    workspaceId: row.workspace_id,
-    actorId: row.actor_id,
-    intent: row.intent,
-    ...(row.subject_session_id === null ? {} : { subjectSessionId: row.subject_session_id }),
-    ...(row.turn_id === null ? {} : { turnId: row.turn_id }),
-    ...(row.turn_id_prefix === null ? {} : { turnIdPrefix: row.turn_id_prefix }),
-    issuedAt: row.issued_at,
-    expiresAt: row.expires_at,
-    ...(row.redeemed_at === null ? {} : { redeemedAt: row.redeemed_at }),
-    ...(row.redeemed_turn_id === null ? {} : { redeemedTurnId: row.redeemed_turn_id }),
-    ...(row.revoked_at === null ? {} : { revokedAt: row.revoked_at }),
-  }
-}
-
-function publicTurnLease(row: TurnLeaseRow): SessionTurnLease {
-  return {
-    sessionId: row.session_id,
-    workspaceId: row.workspace_id,
-    turnId: row.turn_id,
-    leaseId: row.lease_id,
-    fencingToken: row.fencing_token,
-    acquiredAt: row.acquired_at,
-    expiresAt: row.expires_at,
-  }
-}
-
-function ownedTurn(value: OwnedSessionTurnInput) {
+function ownedTurn(value: OwnedSessionTurnInput): OwnedTurn {
   return {
     sessionId: required(value.sessionId, "sessionId"),
     workspaceId: required(value.workspaceId, "workspaceId"),
@@ -1102,101 +964,11 @@ function ownedTurn(value: OwnedSessionTurnInput) {
   }
 }
 
-function ownsTurn(row: TurnLeaseRow | undefined, value: ReturnType<typeof ownedTurn>, actorId: string): row is TurnLeaseRow {
-  return matchesTurn(row, value, actorId) && row.released_at === null
-}
-
-function matchesTurn(row: TurnLeaseRow | undefined, value: ReturnType<typeof ownedTurn>, actorId: string): row is TurnLeaseRow {
-  return Boolean(
-    row
-      && row.workspace_id === value.workspaceId
-      && row.turn_id === value.turnId
-      && row.lease_id === value.leaseId
-      && row.fencing_token === value.fencingToken
-      && row.actor_id === actorId,
-  )
-}
-
 function positiveFence(value: number) {
   if (!Number.isSafeInteger(value) || value < 1) {
     throw new SqlitePrivateSessionAuthorityError("invalid_input", "fencingToken must be a positive integer")
   }
   return value
-}
-
-function publicMessage(row: MessageRow) {
-  const value = JSON.parse(row.data) as unknown
-  const message = asRecord(value)
-  if (!message) return value
-  const info = asRecord(message.info) ?? {}
-  const claxedo = asRecord(info.claxedo) ?? {}
-  const { author: _author, ...safeClaxedo } = claxedo
-  const { claxedo: _claxedo, ...safeInfo } = info
-  const canonical = row.author_actor_id && (row.author_kind === "human" || row.author_kind === "agent")
-    ? { ...safeClaxedo, author: { id: row.author_actor_id, kind: row.author_kind } }
-    : safeClaxedo
-  return {
-    ...message,
-    info: {
-      ...safeInfo,
-      ...(Object.keys(canonical).length ? { claxedo: canonical } : {}),
-    },
-  }
-}
-
-function validatePage(limit: number | undefined, before: string | undefined) {
-  if (before !== undefined && limit === undefined) throw new AgentMessagePageError(400, "Message page limit is required with a cursor")
-  if (limit !== undefined && (!Number.isSafeInteger(limit) || limit < 1 || limit > MAX_MESSAGE_PAGE_LIMIT)) {
-    throw new AgentMessagePageError(400, `Message page limit must be between 1 and ${MAX_MESSAGE_PAGE_LIMIT}`)
-  }
-}
-
-function readLatestView(db: SqliteAuthorityDb, sessionId: string, workspaceId: string, view: LatestView, end?: number) {
-  const endBound = end === undefined ? "" : " AND ordinal < ?"
-  const boundary = db.prepare<unknown[], { ordinal: number | null }>(`
-    SELECT MAX(ordinal) AS ordinal FROM session_messages WHERE session_id = ? AND workspace_id = ? AND role = 'user'${endBound}
-  `).get(...[sessionId, workspaceId, ...(end === undefined ? [] : [end])])?.ordinal
-  if (boundary === null || boundary === undefined) return { messages: [] }
-  const turn = db.prepare<unknown[], MessageRow>(`
-    SELECT m.ordinal, m.data, m.author_actor_id, u.kind AS author_kind
-    FROM session_messages m LEFT JOIN users u ON u.token_identifier = m.author_actor_id
-    WHERE m.session_id = ? AND m.workspace_id = ? AND m.ordinal >= ?${end === undefined ? "" : " AND m.ordinal < ?"} ORDER BY m.ordinal ASC
-  `).all(...[sessionId, workspaceId, boundary, ...(end === undefined ? [] : [end])])
-  const older = !!db.prepare(`SELECT 1 FROM session_messages WHERE session_id = ? AND workspace_id = ? AND ordinal < ? LIMIT 1`)
-    .get(sessionId, workspaceId, boundary)
-  return latestViewPage(
-    view,
-    turn.map((row) => ({ ordinal: row.ordinal, message: publicMessage(row) })),
-    older,
-    (ordinal) => encodeCursor(sessionId, ordinal),
-  )
-}
-
-function storedQuery(db: SqliteAuthorityDb): StoredMessageQuery {
-  return (sql, params) => db.prepare(sql).all(...params)
-}
-
-function sqliteTurnRead(db: SqliteAuthorityDb, sessionId: string, workspaceId: string): TurnRead {
-  return (before) => storedTurn(readLatestView(db, sessionId, workspaceId, "latest-turn", before === undefined ? undefined : decodeCursor(sessionId, before)))
-}
-
-function encodeCursor(sessionId: string, ordinal: number) {
-  return `${MESSAGE_PAGE_CURSOR_PREFIX}${Buffer.from(JSON.stringify({ sessionId, ordinal })).toString("base64url")}`
-}
-
-function decodeCursor(sessionId: string, value: string) {
-  try {
-    if (!value.startsWith(MESSAGE_PAGE_CURSOR_PREFIX)) throw new Error()
-    const parsed = jsonRecord(
-      JSON.parse(Buffer.from(value.slice(MESSAGE_PAGE_CURSOR_PREFIX.length), "base64url").toString("utf8")),
-    )
-    const ordinal = parsed?.ordinal
-    if (parsed?.sessionId !== sessionId || typeof ordinal !== "number" || !Number.isSafeInteger(ordinal) || ordinal < 0)
-      throw new Error()
-    return ordinal
-  } catch {
-    throw new AgentMessagePageError(400, "Invalid message page cursor")
-  }
 }
 
 function required(value: unknown, name: string) {

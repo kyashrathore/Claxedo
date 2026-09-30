@@ -209,8 +209,12 @@ describe("control plane HTTP protocol", () => {
 
     await expect(pull()).resolves.toMatchObject({ skipped: true, snapshotOrdinal: 7 })
 
-    expect(syncSessionMessages).toHaveBeenCalledTimes(1)
     expect(svc.projectionStore.sync_session_messages).toHaveBeenCalledTimes(1)
+    expect(syncSessionMessages).toHaveBeenNthCalledWith(2, expect.objectContaining({ mode: "signed" }), expect.objectContaining({
+      messages: messages.slice(0, 1),
+      maxEventOrdinal: 7,
+      intakeReady: true,
+    }))
   })
 
   test("register and heartbeat forward liveness and activity, never identity", async () => {
