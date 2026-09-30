@@ -1,12 +1,14 @@
 import { expect, test } from "bun:test"
 import { existsSync } from "node:fs"
 import fs from "node:fs/promises"
+import { createServer } from "node:http"
 import os from "node:os"
 import path from "node:path"
 import { setupConformance } from "./test-support/run"
 import { codexBackend, codexEntry, makeCodexTransport, recordingBackend, type CodexBackend } from "./test-support/codex"
 import { createTestServices } from "./test-support/services"
 import { PINNED_CODEX } from "../../e2e/harness/pinned-codex"
+import { listenOnLoopback, releasePort, reservePort } from "../../e2e/harness/ports"
 import { CodexRpc } from "../transports/codex-app-server/rpc"
 import { CodexAppServerTransport } from "../transports/codex-app-server"
 import { createRequestBroker, createSessionBroker, createTurnBroker } from "../broker"
@@ -207,3 +209,38 @@ test("two sessions of one owner with different plugin sets share a home, and eac
     expect(secondBody).not.toContain("first-plugin-skill")
   } finally { await context.close() }
 }, 90_000)
+
+test("a ChatGPT token refresh writes the rotated token through the linked auth.json into the owner's file and keeps the link", async () => {
+  const state = await codexBackend()
+  const b64 = (value: unknown) => Buffer.from(JSON.stringify(value)).toString("base64url")
+  const jwt = (exp: number) => `${b64({ alg: "none" })}.${b64({ email: "owner@example.com", exp,
+    "https://api.openai.com/auth": { chatgpt_plan_type: "plus", chatgpt_account_id: "acc-1", chatgpt_user_id: "user-1" } })}.sig`
+  const codexHome = path.join(state.root, "codex-home")
+  const owner = path.join(state.root, "owner-auth.json")
+  await fs.mkdir(codexHome)
+  await fs.writeFile(owner, JSON.stringify({ OPENAI_API_KEY: null, last_refresh: "2020-01-01T00:00:00Z",
+    tokens: { id_token: jwt(1), access_token: jwt(1), refresh_token: "refresh-one", account_id: "acc-1" } }))
+  await fs.symlink(owner, path.join(codexHome, "auth.json"))
+  const port = await reservePort()
+  const tokens = createServer((_request, response) => response.writeHead(200, { "content-type": "application/json" })
+    .end(JSON.stringify({ id_token: jwt(4102444800), access_token: jwt(4102444800), refresh_token: "refresh-two" })))
+  await listenOnLoopback(tokens, port)
+  const services = createTestServices()
+  try {
+    const owned = await services.spawn({ file: PINNED_CODEX, args: ["app-server", "--listen", "stdio://"], cwd: state.directory,
+      env: { ...state.env, HOME: state.root, CODEX_HOME: codexHome, CODEX_REFRESH_TOKEN_URL_OVERRIDE: `http://127.0.0.1:${port}/oauth/token` } as Record<string, string> },
+    { role: "harness", label: "Codex refresh", signal: new AbortController().signal })
+    const rpc = new CodexRpc(owned, services.clock)
+    await rpc.request("initialize", { clientInfo: { name: "claxedo", title: null, version: "0" }, capabilities: { experimentalApi: true } })
+    rpc.notify("initialized")
+    await rpc.request("account/read", { refreshToken: true }).then(() => undefined, (error: Error) => error)
+    expect(await fs.readFile(owner, "utf8")).toContain("refresh-two")
+    expect((await fs.lstat(path.join(codexHome, "auth.json"))).isSymbolicLink()).toBe(true)
+    await rpc.retire({ at: Date.now() + 10_000, signal: new AbortController().signal })
+  } finally {
+    tokens.closeAllConnections()
+    await new Promise<void>((resolve) => tokens.close(() => resolve()))
+    releasePort(port)
+    await state.close()
+  }
+}, 60_000)

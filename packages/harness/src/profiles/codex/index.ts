@@ -40,7 +40,7 @@ async function installedPlugins(folder: string): Promise<string[]> {
   })).sort()
 }
 
-async function installPlugin(item: PluginProjection["pluginRoots"][number], source: string, cache: string): Promise<string> {
+async function installCodexPlugin(item: PluginProjection["pluginRoots"][number], source: string, cache: string): Promise<string> {
   const fields = asRecordOrEmpty(JSON.parse(await fs.readFile(path.join(item.root, ".codex-plugin", "plugin.json"), "utf8")))
   const name = validatedCodexPluginSegment(asString(fields.name) ?? "")
   const version = validatedCodexPluginSegment(asString(fields.version) ?? "1.0.0")
@@ -58,7 +58,7 @@ async function marketplace(home: string, projection: PluginProjection): Promise<
   const names = new Set<string>()
   for (const item of projection.pluginRoots) {
     await fs.mkdir(path.join(source, "plugins"), { recursive: true, mode: 0o700 })
-    const name = await installPlugin(item, source, cache)
+    const name = await installCodexPlugin(item, source, cache)
     if (names.has(name)) throw new Error(`Duplicate Codex plugin ${name}`)
     names.add(name)
   }
