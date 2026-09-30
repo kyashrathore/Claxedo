@@ -196,7 +196,12 @@ export const desktopMainComposition: Policy = {
   // no package edge. 101/27, no headroom.
   // -1 module: `account/account-perf.ts` is gone with the account-port bench,
   // its only reader. 100/27, no headroom.
-  ceilings: { modules: 100, packages: 27 },
+  // -13 modules / -4 packages: process diagnostics are gone — the
+  // `main/diagnostics/` collectors, profiler, workers and IPC and the
+  // `shared/` diagnostics transport — and with them `zod`,
+  // `@vscode/windows-process-tree`, `node:readline` and `node:util`.
+  // 87/23, no headroom.
+  ceilings: { modules: 87, packages: 23 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-main.json",
     minModules: 35,
