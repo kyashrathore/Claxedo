@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto"
 import { errorMessage } from "@claxedo/helpers"
 import type { AgentTurnOutcome } from "@claxedo/agent-runtime-contract"
 import type { ProviderTurnInput, ProviderTurnResult, ProviderTurnSettlement, RoutedEvent, TurnRef } from "@claxedo/harness/contract"
@@ -53,7 +52,7 @@ export class BrokerProviderTurns {
     const model = resolveSessionModel(config)
     const leaseId = this.store.acquireTurnLease(sessionId)
     if (!leaseId) return { admitted: false, reason: "busy" }
-    const turnId = randomUUID()
+    const turnId = crypto.randomUUID()
     const turn: TurnRef = { turnId, assistantMessageId: turnId }
     const controller = new AbortController()
     try {

@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto"
 import type {
   CreationIdentity,
   LaunchOwnershipRecord,
@@ -70,7 +69,7 @@ export function sqliteLaunchOwnership(db: SqliteDatabase, owner: LaunchOwnership
 
     async prepare(input: PrepareLaunchInput) {
       const prepared = {
-        launchId: randomUUID(),
+        launchId: crypto.randomUUID(),
         ownerGeneration: owner.ownerGeneration,
         role: input.role,
         protocol: input.protocol,

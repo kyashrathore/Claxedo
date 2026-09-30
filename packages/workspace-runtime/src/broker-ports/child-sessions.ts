@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto"
 import { isTerminalSubagentStatus, type SubagentObservation } from "@claxedo/agent-runtime-contract"
 import type { ChildSessionRef } from "@claxedo/harness/contract"
 import type { RuntimeStore } from "../store"
@@ -39,12 +38,12 @@ export async function admitChildSession(
   if (!row.assistant_message_id) {
     db.prepare(`UPDATE session_subagent SET assistant_message_id = ?
       WHERE parent_session_id = ? AND child_session_id = ? AND assistant_message_id IS NULL`)
-      .run(`msg_${randomUUID()}`, parentSessionId, childSessionId)
+      .run(`msg_${crypto.randomUUID()}`, parentSessionId, childSessionId)
   } else if (!isTerminalSubagentStatus(observation.status) && !isTerminalSubagentStatus(row.status ?? undefined)
     && store.turnEvidence(childSessionId, row.assistant_message_id).finished) {
     db.prepare(`UPDATE session_subagent SET assistant_message_id = ?
       WHERE parent_session_id = ? AND child_session_id = ? AND assistant_message_id = ?`)
-      .run(`msg_${randomUUID()}`, parentSessionId, childSessionId, row.assistant_message_id)
+      .run(`msg_${crypto.randomUUID()}`, parentSessionId, childSessionId, row.assistant_message_id)
   }
   const committed = read()
   if (!committed?.assistant_message_id) throw new Error(`Child ${childSessionId} has no assistant message`)
