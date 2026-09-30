@@ -226,6 +226,24 @@ describe("D1 projection command idempotency rows", () => {
   })
 })
 
+describe("a memory idempotency store", () => {
+  test("holding its capacity of receipts refuses a new key, still replays a known one, and admits new keys once receipts lapse", async () => {
+    const store = memoryIdempotencyStore()
+    const run = (key: string, value: () => Promise<unknown>) => createIdempotencyCoordinator(store).run(key, value)
+    for (let index = 0; index < 1_000; index += 1) await run(`receipt:${index}`, async () => index)
+
+    const overflow = vi.fn(async () => "overflow")
+    await expect(run("receipt:overflow", overflow)).rejects.toBeInstanceOf(IdempotencyCapacityError)
+    expect(overflow).not.toHaveBeenCalled()
+    const replay = vi.fn(async () => "again")
+    await expect(run("receipt:0", replay)).resolves.toBe(0)
+    expect(replay).not.toHaveBeenCalled()
+
+    clock += IDEMPOTENCY_TTL_MS
+    await expect(run("receipt:after", async () => "served")).resolves.toBe("served")
+  })
+})
+
 describe("one coordinator", () => {
   test("coalesces concurrent requests for one key onto one run", async () => {
     const coordinator = createIdempotencyCoordinator(memoryIdempotencyStore())

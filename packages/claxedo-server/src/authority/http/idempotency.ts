@@ -45,9 +45,7 @@ export function createIdempotencyCoordinator(store: DurableIdempotencyStore): Id
     run(key, run, fingerprint = "") {
       if (!key) return run()
       const now = Date.now()
-      for (const [candidate, entry] of pending) {
-        if (entry.expiresAt <= now) pending.delete(candidate)
-      }
+      pruneLapsed(pending, now)
       const hit = pending.get(key)
       if (hit) {
         if (hit.fingerprint !== fingerprint) return Promise.reject(new IdempotencyConflictError())
@@ -91,34 +89,61 @@ async function runClaimed(store: DurableIdempotencyStore, cacheKey: string, fing
   return value
 }
 
-type MemoryRow = { fingerprint: string; state: "in_flight" | "completed"; claimId: string; resultJson?: string; expiresAt: number }
+/**
+ * Deletes a map's lapsed entries from its oldest end and stops at the first
+ * live one. Entries inserted in deadline order hold every lapsed entry at that
+ * end, so a call visits only what it deletes.
+ */
+function pruneLapsed(entries: Map<string, { expiresAt: number }>, now: number) {
+  for (const [key, entry] of entries) {
+    if (entry.expiresAt > now) return
+    entries.delete(key)
+  }
+}
 
-/** The store for a composition whose one process is every instance that serves a key. */
+/** An entry out of deadline order can outlive a prune, so a lookup checks its own deadline. */
+function liveEntry<T extends { expiresAt: number }>(entries: Map<string, T>, key: string, now: number) {
+  const entry = entries.get(key)
+  if (!entry || entry.expiresAt > now) return entry
+  entries.delete(key)
+  return undefined
+}
+
+/**
+ * The store for a composition whose one process is every instance that serves
+ * a key. Claims and receipts live in separate maps because each is inserted
+ * in the deadline order of its own window. Together they hold at most
+ * `IDEMPOTENCY_MAX_ENTRIES` keys: past that a new key is refused, while a key
+ * already held still reports its claim or replays its receipt.
+ */
 export function memoryIdempotencyStore(): DurableIdempotencyStore {
-  const rows = new Map<string, MemoryRow>()
+  const claims = new Map<string, { fingerprint: string; claimId: string; expiresAt: number }>()
+  const receipts = new Map<string, { fingerprint: string; resultJson?: string; expiresAt: number }>()
   return {
     async begin({ cacheKey, fingerprint, claimId, leaseMs }) {
       const now = Date.now()
-      for (const [candidate, row] of rows) {
-        if (row.expiresAt <= now) rows.delete(candidate)
-      }
-      const row = rows.get(cacheKey)
+      pruneLapsed(claims, now)
+      pruneLapsed(receipts, now)
+      const held = liveEntry(claims, cacheKey, now)
+      const receipt = liveEntry(receipts, cacheKey, now)
+      const row = held ?? receipt
       if (!row) {
-        rows.set(cacheKey, { fingerprint, state: "in_flight", claimId, expiresAt: now + leaseMs })
+        if (claims.size + receipts.size >= IDEMPOTENCY_MAX_ENTRIES) throw new IdempotencyCapacityError()
+        claims.set(cacheKey, { fingerprint, claimId, expiresAt: now + leaseMs })
         return { state: "acquired" }
       }
       if (row.fingerprint !== fingerprint) return { state: "conflict" }
-      if (row.state === "in_flight") return { state: "in_flight" }
-      return { state: "completed", ...(row.resultJson === undefined ? {} : { resultJson: row.resultJson }) }
+      if (held) return { state: "in_flight" }
+      return { state: "completed", ...(receipt?.resultJson === undefined ? {} : { resultJson: receipt.resultJson }) }
     },
     async complete({ cacheKey, claimId, resultJson, replayMs }) {
-      const row = rows.get(cacheKey)
-      if (row?.state !== "in_flight" || row.claimId !== claimId) return
-      rows.set(cacheKey, { ...row, state: "completed", ...(resultJson === undefined ? {} : { resultJson }), expiresAt: Date.now() + replayMs })
+      const held = claims.get(cacheKey)
+      if (held?.claimId !== claimId) return
+      claims.delete(cacheKey)
+      receipts.set(cacheKey, { fingerprint: held.fingerprint, ...(resultJson === undefined ? {} : { resultJson }), expiresAt: Date.now() + replayMs })
     },
     async release({ cacheKey, claimId }) {
-      const row = rows.get(cacheKey)
-      if (row?.state === "in_flight" && row.claimId === claimId) rows.delete(cacheKey)
+      if (claims.get(cacheKey)?.claimId === claimId) claims.delete(cacheKey)
     },
   }
 }
