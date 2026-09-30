@@ -10,7 +10,7 @@ export function TimelineBackgroundWork(props: { work: BackgroundWork; t: Timelin
     <Show when={label()}>
       {(text) => (
         <div data-slot="session-background-work" class="relative w-full px-4 md:px-5 pb-2 md:max-w-[var(--transcript-measure,48rem)] md:mx-auto" classList={{ "-mt-10": props.tucked }}>
-          <Tooltip placement="top" value={props.t("session.timeline.backgroundWork.hint")}>
+          <Tooltip placement="top" class="w-fit" value={props.t("session.timeline.backgroundWork.hint")}>
             <span tabIndex={0} class="text-13-regular text-text-weak cursor-default">{text()}</span>
           </Tooltip>
         </div>

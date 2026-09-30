@@ -11,13 +11,13 @@ export function sameBackgroundWork(a: BackgroundWork, b: BackgroundWork): boolea
   return a.agents === b.agents && a.shells === b.shells && a.other === b.other
 }
 
-function count(value: unknown): number | undefined {
+function wholeCount(value: unknown): number | undefined {
   return typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : undefined
 }
 
 export function parseBackgroundWork(value: unknown): BackgroundWork | undefined {
   if (typeof value !== "object" || value === null) return undefined
   const { agents, shells, other } = value as Record<string, unknown>
-  const [a, s, o] = [count(agents), count(shells), count(other)]
+  const [a, s, o] = [wholeCount(agents), wholeCount(shells), wholeCount(other)]
   return a === undefined || s === undefined || o === undefined ? undefined : { agents: a, shells: s, other: o }
 }
