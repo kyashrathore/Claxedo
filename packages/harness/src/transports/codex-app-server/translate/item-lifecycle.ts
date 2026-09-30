@@ -78,7 +78,8 @@ function itemStarted({ state, event, context, row }: CodexFrame) {
   if (started.type === "contextCompaction") return [{ type: "session-compaction", phase: "started", metadata: { codex: row } } satisfies AgentRuntimeEvent]
   const id = itemId(event, context.createId("item"))
   const itemType = canonicalItemType(started.type)
-  if (itemType === "user_message" || itemType === "assistant_message" || itemType === "reasoning" || itemType === "plan") return []
+  if (itemType === "user_message") return { state: withoutStreamedItem(state), events: [] }
+  if (itemType === "assistant_message" || itemType === "reasoning" || itemType === "plan") return []
   const opened = openTool(state, id, itemType, started)
   return { state: opened.state, events: opened.events }
 }

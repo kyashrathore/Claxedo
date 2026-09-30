@@ -47,3 +47,13 @@ test("a new turn starts without a separator", () => {
   deltas("turn/completed", { turn: { id: "turn-1", items: [], status: "completed", error: null } })
   expect(deltas("item/agentMessage/delta", { itemId: "msg-2", delta: "Second turn." })).toEqual(["text-delta:Second turn."])
 })
+
+test("a reply after a steered user message starts without a separator", () => {
+  const { deltas } = runtime()
+  deltas("item/agentMessage/delta", { itemId: "msg-1", delta: "ok" })
+  deltas("item/completed", { item: { type: "agentMessage", id: "msg-1", text: "ok", phase: "final_answer" } })
+  const steer = { type: "userMessage", id: "user-2", clientId: "steer-1", content: [{ type: "text", text: "H7STEERCODEX", text_elements: [] }] }
+  expect(deltas("item/started", { item: steer })).toEqual([])
+  expect(deltas("item/completed", { item: steer })).toEqual([])
+  expect(deltas("item/agentMessage/delta", { itemId: "msg-2", delta: "ok" })).toEqual(["text-delta:ok"])
+})
