@@ -1,6 +1,7 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http"
 import { listenOnLoopback } from "../ports"
-import { loadCursorDescriptors, type CursorDescriptors } from "./descriptors"
+import { frame, openStream, sendScript } from "./backend-stream"
+import { loadCursorDescriptors } from "./descriptors"
 
 export type CursorToolStep = { kind: "tool"; tool: string; args: unknown; result?: unknown }
 
@@ -11,7 +12,10 @@ export type CursorScript = {
   usage?: { inputTokens: number; outputTokens: number }
   error?: { status: number; message: string }
   hold?: boolean
+  steer?: "delivered" | "rejected"
 }
+
+export type CursorSteer = { requestId: string; text: string }
 
 export type CursorRunRequest = { requestId: string; run: unknown }
 
@@ -37,10 +41,11 @@ export type ScriptedCursorBackend = {
   refuseRun(name: string, status: number): void
   refusePath(path: string, status: number): void
   release(name: string): void
+  holdText(marker: string): () => void
+  textHeld(marker: string): Promise<void>
+  steers: CursorSteer[]
   close(): Promise<void>
 }
-
-type PendingStream = { response: ServerResponse; script?: CursorScript; name?: string }
 
 const SERVICE_PATHS: Record<string, string> = {
   "agent.v1.AgentService": "agent/v1/agent_service",
@@ -48,13 +53,6 @@ const SERVICE_PATHS: Record<string, string> = {
   "aiserver.v1.ServerConfigService": "aiserver/v1/server-config",
   "aiserver.v1.BidiService": "aiserver/v1/bidi",
   "aiserver.v1.AnalyticsService": "aiserver/v1/analytics",
-}
-
-function frame(flag: number, payload: Uint8Array) {
-  const header = Buffer.alloc(5)
-  header[0] = flag
-  header.writeUInt32BE(payload.length, 1)
-  return Buffer.concat([header, Buffer.from(payload)])
 }
 
 function scriptName(prompt: unknown) {
@@ -70,79 +68,66 @@ function readBody(incoming: IncomingMessage) {
   })()
 }
 
-async function sendScript(response: ServerResponse, descriptors: CursorDescriptors, script: CursorScript) {
-  if (script.error) {
-    response.writeHead(script.error.status, { "content-type": "application/json" })
-      .end(JSON.stringify({ message: script.error.message }))
-    return
-  }
-  const runSSE = descriptors.service("agent/v1/agent_service").methods.runSSE
-  if (!runSSE) throw new Error("Cursor SDK lacks RunSSE descriptor")
-  const message = runSSE.O
-  response.writeHead(200, { "content-type": "application/connect+proto", "connect-protocol-version": "1" })
-  let call = 0
-  for (const step of script.steps) {
-    if (step.kind === "text") {
-      response.write(frame(0, message.fromJson({ interactionUpdate: { textDelta: { text: step.text } } }).toBinary()))
-      continue
-    }
-    if (step.kind === "thinking") {
-      response.write(frame(0, message.fromJson({ interactionUpdate: { thinkingDelta: { text: step.text } } }).toBinary()))
-      response.write(frame(0, message.fromJson({ interactionUpdate: { thinkingCompleted: { thinkingDurationMs: step.durationMs } } }).toBinary()))
-      continue
-    }
-    if (step.kind === "update") {
-      response.write(frame(0, message.fromJson({ interactionUpdate: step.update }).toBinary()))
-      continue
-    }
-    if (step.kind === "wait") {
-      await new Promise((resolve) => setTimeout(resolve, step.ms))
-      continue
-    }
-    const tool: CursorToolStep = step.kind === "read"
-      ? { kind: "tool", tool: "readToolCall", args: { path: step.path }, result: { success: { path: step.path, content: step.result } } }
-      : step
-    const callId = `scripted-${step.kind}-${++call}`
-    response.write(frame(0, message.fromJson({ interactionUpdate: {
-      toolCallStarted: { callId, toolCall: { [tool.tool]: { args: tool.args } } },
-    } }).toBinary()))
-    if (tool.result === undefined) continue
-    response.write(frame(0, message.fromJson({ interactionUpdate: {
-      toolCallCompleted: { callId, toolCall: { [tool.tool]: { args: tool.args, result: tool.result } } },
-    } }).toBinary()))
-  }
-  response.write(frame(0, message.fromJson({ interactionUpdate: { turnEnded: {
-    inputTokens: String(script.usage?.inputTokens ?? 2),
-    outputTokens: String(script.usage?.outputTokens ?? 3),
-  } } }).toBinary()))
-  response.end(frame(2, Buffer.from("{}")))
+type RunState = { response?: ServerResponse; name?: string; script?: CursorScript; marker?: string; sending: boolean }
+
+type TextHold = { released: boolean; arrived: PromiseWithResolvers<void> }
+
+function injectedContext(decoded: unknown): { injectionId: string; text: string } | undefined {
+  const action = (decoded as { conversationAction?: { injectContextAction?: {
+    injectionId?: string; userContext?: { userMessage?: { text?: string } } } } }).conversationAction?.injectContextAction
+  return action?.injectionId ? { injectionId: action.injectionId, text: action.userContext?.userMessage?.text ?? "" } : undefined
 }
 
 export async function startScriptedCursorBackend(port: number): Promise<ScriptedCursorBackend> {
   const descriptors = await loadCursorDescriptors()
   const requests: CursorRequest[] = []
   const runs: CursorRunRequest[] = []
+  const steers: CursorSteer[] = []
   const scripts = new Map<string, CursorScript>()
   let defaultScript: string | undefined
   let catalog = DEFAULT_CATALOG
   const refused = new Map<string, number>()
   const refusedPaths = new Map<string, number>()
-  const streams = new Map<string, PendingStream>()
-  const selected = new Map<string, { name: string; script: CursorScript }>()
-  const held = new Map<string, Set<string>>()
+  const byRequest = new Map<string, RunState>()
   const released = new Set<string>()
+  const textHolds = new Map<string, TextHold>()
+  const runSSE = descriptors.service("agent/v1/agent_service").methods.runSSE
+  const run = descriptors.service("agent/v1/agent_service").methods.run
+  if (!runSSE || !run) throw new Error("Cursor SDK lacks the Run or RunSSE descriptor")
+  const state = (id: string) => byRequest.get(id) ?? byRequest.set(id, { sending: false }).get(id)!
+  const holding = (current: RunState) => (current.script?.hold && !released.has(current.name ?? ""))
+    || (current.marker !== undefined && !textHolds.get(current.marker)?.released)
   const send = (id: string) => {
-    const pending = streams.get(id)
-    if (!pending?.script || !pending.name) return
-    if (pending.script.hold && !released.has(pending.name)) {
-      held.set(pending.name, (held.get(pending.name) ?? new Set<string>()).add(id))
-      return
-    }
-    streams.delete(id)
-    selected.delete(id)
-    void sendScript(pending.response, descriptors, pending.script).catch((error: unknown) => {
-      pending.response.destroy(error instanceof Error ? error : new Error(String(error)))
+    const current = byRequest.get(id)
+    if (!current?.response || !current.script || current.sending || holding(current)) return
+    current.sending = true
+    const response = current.response
+    void sendScript(response, descriptors, current.script).catch((error: unknown) => {
+      response.destroy(error instanceof Error ? error : new Error(String(error)))
     })
+  }
+  const acknowledge = (id: string, injection: { injectionId: string; text: string }) => {
+    const current = byRequest.get(id)
+    steers.push({ requestId: id, text: injection.text })
+    if (!current?.response || current.response.writableEnded) return
+    const outcome = current.script?.steer ?? "delivered"
+    openStream(current.response)
+    current.response.write(frame(0, runSSE.O.fromJson({ interactionUpdate: {
+      contextInjectionState: { injectionId: injection.injectionId, state: { [outcome]: {} } } } }).toBinary()))
+    if (outcome === "delivered") current.response.write(frame(0, runSSE.O.fromJson({ interactionUpdate: {
+      userMessageAppended: { userMessage: { text: injection.text, turnSteer: true } } } }).toBinary()))
+  }
+  const begin = (id: string, prompt: unknown) => {
+    runs.push({ requestId: id, run: prompt })
+    const name = scriptName(prompt) ?? defaultScript
+    if (!name) throw new Error(`BidiAppend named no CURSOR_SCRIPT: ${JSON.stringify(prompt)}`)
+    const script = scripts.get(name)
+    if (!script) throw new Error(`Unknown Cursor script ${name}`)
+    const status = refused.get(name)
+    const marker = [...textHolds.keys()].find((held) => JSON.stringify(prompt).includes(held))
+    if (marker) textHolds.get(marker)!.arrived.resolve()
+    Object.assign(state(id), { name, script: status === undefined ? script : { ...script, error: { status, message: `Scripted Cursor run ${name} refused` } },
+      ...(marker ? { marker } : {}) })
   }
   const server = createServer(async (incoming, outgoing) => {
     try {
@@ -181,34 +166,16 @@ export async function startScriptedCursorBackend(port: number): Promise<Scripted
       } else if (path === "/agent.v1.AgentService/RunSSE" && method) {
         const id = (decoded as { requestId?: string }).requestId
         if (!id) throw new Error("RunSSE omitted requestId")
-        streams.set(id, { response: outgoing, ...selected.get(id) })
+        state(id).response = outgoing
         setImmediate(() => send(id))
-        incoming.on("close", () => {
-          if (outgoing.destroyed) streams.delete(id)
-        })
       } else if (path === "/aiserver.v1.BidiService/BidiAppend" && method) {
         const append = decoded as { data?: string; requestId?: { requestId?: string } }
         const id = append.requestId?.requestId
         if (!id || !append.data) throw new Error("BidiAppend omitted requestId or data")
-        if (!selected.has(id)) {
-          const run = descriptors.service("agent/v1/agent_service").methods.run
-          if (!run) throw new Error("Cursor SDK lacks Run descriptor")
-          const client = run.I
-          const prompt = client.fromBinary(Buffer.from(append.data, "hex")).toJson()
-          runs.push({ requestId: id, run: prompt })
-          const name = scriptName(prompt) ?? defaultScript
-          if (!name) throw new Error(`BidiAppend named no CURSOR_SCRIPT: ${JSON.stringify(prompt)}`)
-          const script = scripts.get(name)
-          if (!script) throw new Error(`Unknown Cursor script ${name}`)
-          const status = refused.get(name)
-          const selectedScript = status === undefined ? script : { ...script, error: { status, message: `Scripted Cursor run ${name} refused` } }
-          selected.set(id, { name, script: selectedScript })
-          const pending = streams.get(id)
-          if (pending) {
-            pending.script = selectedScript
-            pending.name = name
-          }
-        }
+        const message = run.I.fromBinary(Buffer.from(append.data, "hex")).toJson()
+        const injection = injectedContext(message)
+        if (!byRequest.get(id)?.script) begin(id, message)
+        else if (injection) acknowledge(id, injection)
         outgoing.writeHead(200, { "content-type": "application/proto" }).end(Buffer.from(method.O.fromJson({}).toBinary()))
         setImmediate(() => send(id))
       } else if (method) {
@@ -247,10 +214,22 @@ export async function startScriptedCursorBackend(port: number): Promise<Scripted
     release(name) {
       if (!scripts.has(name)) throw new Error(`Unknown Cursor script ${name}`)
       released.add(name)
-      const ids = held.get(name) ?? new Set<string>()
-      held.delete(name)
-      for (const id of ids) send(id)
+      for (const id of byRequest.keys()) send(id)
     },
+    holdText(marker) {
+      const hold: TextHold = { released: false, arrived: Promise.withResolvers<void>() }
+      textHolds.set(marker, hold)
+      return () => {
+        hold.released = true
+        for (const id of byRequest.keys()) send(id)
+      }
+    },
+    textHeld(marker) {
+      const hold = textHolds.get(marker)
+      if (!hold) throw new Error(`No Cursor text hold for ${marker}`)
+      return hold.arrived.promise
+    },
+    steers,
     close: async () => {
       server.closeAllConnections()
       await new Promise<void>((resolve) => server.close(() => resolve()))

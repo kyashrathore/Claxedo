@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test"
 import type { SDKMessage } from "@cursor/sdk"
-import type { HarnessServices, RoutedEvent, TurnBroker } from "../../contract"
+import type { RoutedEvent, TurnBroker } from "../../contract"
 import type { CursorHost } from "./host-registry"
 import type { HostReply, HostResult, HostSession } from "./protocol"
 import { streamCursorRun } from "./turn"
@@ -18,7 +18,7 @@ function hostReplying(messages: SDKMessage[], result: HostResult): CursorHost {
 async function drain(host: CursorHost): Promise<RoutedEvent[]> {
   const broker = { signal: new AbortController().signal, observeSubagent: async () => undefined, associateChild() {} } as unknown as TurnBroker
   const events: RoutedEvent[] = []
-  for await (const event of streamCursorRun({ host, session, prompt: "hello", broker, services: {} as HarnessServices })) events.push(event)
+  for await (const event of streamCursorRun({ host, session, prompt: "hello", broker })) events.push(event)
   return events
 }
 

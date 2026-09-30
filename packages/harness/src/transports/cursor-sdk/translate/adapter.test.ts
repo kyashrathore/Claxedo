@@ -195,7 +195,7 @@ describe("cursorSdkAdapter", () => {
       toolCallRole: "spawn",
       status: "running",
       subagentType: "code-reviewer",
-      transcript: { kind: "none" },
+      transcript: { kind: "live" },
     })
     expect(task("task-b")?.observationId).not.toBe(task("task-a")?.observationId)
   })
@@ -239,7 +239,7 @@ describe("cursorSdkAdapter", () => {
       providerId: "cursor-agent-9",
       mode: "background",
       status: "completed",
-      transcript: { kind: "none" },
+      transcript: { kind: "live" },
     }])
 
     expect(cursorSubagentObservations({
@@ -256,7 +256,7 @@ describe("cursorSdkAdapter", () => {
     })[0]).toEqual(expect.objectContaining({
       toolCallId: "task-no-handle",
       status: "completed",
-      transcript: { kind: "none" },
+      transcript: { kind: "live" },
     }))
     expect(cursorSubagentObservations({
       type: "tool_call",
@@ -290,7 +290,7 @@ describe("cursorSdkAdapter", () => {
     expect(cursorSubagentObservations(message)).toMatchObject([{
       toolCallId: "task-error",
       status: "failed",
-      transcript: { kind: "none" },
+      transcript: { kind: "live" },
     }])
     expect(cursorSubagentObservations(message)[0]).not.toHaveProperty("providerId")
     expect(JSON.stringify(runtime().ingest({ source: "cursor.sdk.message", payload: cursorRuntimeMessage(message) }).events))
@@ -342,7 +342,7 @@ describe("cursorSdkAdapter", () => {
         type: "tool-output",
         toolCallId: "task-complete",
         output: { agentId: "cursor-agent-10", isBackground: false, durationMs: 25 },
-        metadata: { cursor: { subagent: { agentId: "cursor-agent-10", transcript: "unavailable" } } },
+        metadata: { cursor: { subagent: { agentId: "cursor-agent-10" } } },
       },
     ])
     expect(JSON.stringify(events)).not.toContain("/private/provider/transcript.jsonl")
@@ -365,7 +365,7 @@ describe("cursorSdkAdapter", () => {
       { type: "session-status", status: "error" },
       { type: "error", error: "You've hit your usage limit", errorClass: "usage_limit" },
     ])
-    expect(agent.state()).toEqual({ toolsByCallId: {}, usageByRunId: {}, notedKinds: [] })
+    expect(agent.state()).toEqual({ toolsByCallId: {}, usageByRunId: {}, openShells: [], shellOutputByCallId: {}, notedKinds: [] })
     expect(bare(runtime().ingest({ source: "cursor.local-run-stream", payload: { schemaVersion: 1, type: "result", agentId: "agent-1", runId: "run-2",
       status: "error", error: { message: "[unavailable] HTTP 429" } } }).events)).toEqual([
       { type: "session-status", status: "error" },
@@ -417,6 +417,22 @@ describe("cursorSdkAdapter", () => {
       { type: "tool-input", toolCallId: "m2" },
       { type: "tool-error", toolCallId: "m2", error: "boom" },
     ])
+  })
+
+  test("shell output goes to the one running shell; with none or two running it is noted once and dropped", () => {
+    const agent = runtime()
+    const shell = (callId: string, status: string) => agent.ingest({ source: "cursor.sdk.message", payload: { type: "tool_call", agent_id: "agent-1",
+      run_id: "run-1", call_id: callId, name: "shell", status, args: { command: "ls" }, ...(status === "completed" ? { result: { status: "success", value: { exitCode: 0 } } } : {}) } })
+    const output = (data: string) => bare(agent.ingest({ source: "cursor.sdk.delta", payload: { type: "shell-output-delta", event: { case: "stdout", value: { data } } } }).events)
+    expect(output("early")).toMatchObject([{ type: "diagnostic", diagnostic: { details: { kind: "shell-output:no running shell" } } }])
+    shell("s1", "running")
+    expect(output("a")).toEqual([{ type: "tool-content", toolCallId: "s1", content: { type: "content", content: { type: "text", text: "a" } }, metadata: { cursor: { itemType: "command_execution", stream: "stdout" } } }])
+    shell("s2", "running")
+    expect(output("b")).toMatchObject([{ type: "diagnostic", diagnostic: { details: { kind: "shell-output:several running shells" } } }])
+    expect(output("c")).toEqual([])
+    shell("s1", "completed")
+    expect(output("d")).toMatchObject([{ type: "tool-content", toolCallId: "s2", content: { content: { text: "d" } } }])
+    expect(agent.state().shellOutputByCallId).toEqual({ s2: "d" })
   })
 
   test("todo statuses keep cancelled, and delete reads as a deletion", () => {

@@ -45,7 +45,7 @@ export function toolCompletedEvents(input: Completion): CursorTranslation {
   if (isTodoTool(ensured.toolName)) return { state: ensured.state, events: ensured.events }
   if (input.isError || isErrorResult(input.result)) {
     return { state: ensured.state, events: [...ensured.events, { type: "tool-error", toolCallId: input.toolCallId, error: errorMessage(input.result),
-      display: ensured.display, metadata: cursorMetadata(input.result, ensured, { transcript: "unavailable" }) }] }
+      display: ensured.display, metadata: cursorMetadata(input.result, ensured, {}) }] }
   }
   const attachments = outputAttachments(ensured.toolName, asRecord(successfulOutput(input.result)))
   const event: AgentRuntimeEvent = { type: "tool-output", toolCallId: input.toolCallId,

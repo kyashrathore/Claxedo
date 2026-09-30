@@ -56,7 +56,7 @@ export class CursorHost {
 
   private receive(reply: HostReply) {
     const onEvent = this.pending.get(reply.id)
-    if (reply.kind === "event") { onEvent?.(reply); return }
+    if (reply.kind === "event" || reply.kind === "delta") { onEvent?.(reply); return }
     if (reply.kind === "error") this.pending.reject(reply.id, cursorSdkFailure(reply))
     else this.pending.resolve(reply.id, reply)
   }

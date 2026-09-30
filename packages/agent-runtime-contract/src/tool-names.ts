@@ -27,6 +27,7 @@ const TOOL_NAME_ALIASES: Record<string, string> = {
   // that claims nothing changed; unaliased the generic row at least dumps the input.
   ls: "list",
   askuserquestion: "question",
+  createplan: "exitplanmode",
   web_search: "websearch",
 }
 

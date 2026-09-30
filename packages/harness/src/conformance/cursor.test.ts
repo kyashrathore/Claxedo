@@ -45,6 +45,10 @@ async function backend(): Promise<CursorBackend> {
       server.defaultScript(marker)
     },
     unrunnableTurn: withUndeliverableFile,
+    hold: (marker) => server.holdText(marker),
+    held: (marker) => server.textHeld(marker),
+    steerIncorporationUnreported: true,
+    credentialsPerCommand: true,
     close: async () => {
       console.log(`Cursor outbound attempts: ${JSON.stringify(guard.attempts)}`)
       const unexpected = unexpectedEgress(guard.attempts)
@@ -257,6 +261,22 @@ test("a host that stops answering a cancel is retired", async () => {
   await expect(host.call({ kind: "close", sessionId: "s" })).rejects.toThrow("Cursor SDK host retired")
 })
 
+test("a credential update on one session reaches its next turn on the host it shares with another session", async () => {
+  const state = await backend()
+  const context = await setupConformance({ name: "shared-rotation", backend: async () => state, makeTransport: transportFor(state) })
+  try {
+    await collect(context, context.turn("CURSOR_SCRIPT:conformance"))
+    const processes = context.services.processes.length
+    const { credentials } = context.backend
+    const rotated = { ...credentials, leaseGeneration: "rotated", providers: { cursor: { ...credentials.providers.cursor!, placeholder: "cursor-rotated-placeholder" } } }
+    expect(await context.transport.configure(context.session, { credentials: rotated })).toEqual({ state: "applied" })
+    expect((await collect(context, context.turn("CURSOR_SCRIPT:conformance"))).some((item) => item.event.type === "finish")).toBe(true)
+    expect(context.services.processes).toHaveLength(processes)
+    expect(state.server.requests.some((request) => request.path === "/auth/exchange_user_api_key"
+      && request.headers.authorization === "Bearer cursor-rotated-placeholder")).toBe(true)
+  } finally { await context.close() }
+}, 60_000)
+
 test("two bindings use separate SDK hosts", async () => {
   const first = await backend()
   const second = await backend()
@@ -376,6 +396,32 @@ test("a stop interrupts the SDK run, the turn ends cancelled, and the stop repor
     await draining
     expect(outcome).toEqual({ execution: "terminal", cleanup: "unknown" })
     expect(events.filter((item) => ["finish", "cancelled", "error"].includes(item.event.type)).map((item) => item.event.type)).toEqual(["cancelled"])
+  } finally { await context.close() }
+}, 60_000)
+
+test("a steer reaches the running Cursor turn, a steer Cursor turns back is declined, and neither is written into the reply", async () => {
+  const state = await backend()
+  state.server.script("steered", { steps: [{ kind: "text", text: "STEERED-DONE" }] })
+  state.server.script("refusing", { steps: [{ kind: "text", text: "REFUSED-DONE" }], steer: "rejected" })
+  const context = await setupConformance({ name: "steer", backend: async () => state, makeTransport: transportFor(state) })
+  try {
+    for (const [name, expected] of [["steered", { ok: true }], ["refusing", { ok: false, status: "declined" }]] as const) {
+      const release = state.server.holdText(`CURSOR_SCRIPT:${name}`)
+      const turn = context.turn(`CURSOR_SCRIPT:${name}`)
+      const running = collect(context, turn)
+      await state.server.textHeld(`CURSOR_SCRIPT:${name}`)
+      const result = await pollUntil(async () => {
+        const answer = await context.transport.steer?.steer(context.session, { turnId: turn.turnId, assistantMessageId: turn.assistantMessageId },
+          context.turn(`Also mention STEER-${name}`, `msg_${name}`))
+        return answer && !answer.ok && answer.status === "no_active_turn" ? undefined : answer
+      }, Date.now() + 10_000)
+      expect(result).toMatchObject(expected)
+      release()
+      const events = (await running).map((item) => item.event)
+      expect(events.some((event) => event.type === "finish")).toBe(true)
+      expect(events.some((event) => event.type === "input-incorporated")).toBe(false)
+    }
+    expect(state.server.steers.map((steer) => steer.text)).toEqual([expect.stringContaining("STEER-steered"), expect.stringContaining("STEER-refusing")])
   } finally { await context.close() }
 }, 60_000)
 
@@ -557,7 +603,7 @@ test("stopping a running Cursor goal interrupts the run and pauses the goal", as
   } finally { await context.close() }
 }, 60_000)
 
-test("a Task tool call is admitted through the broker with its transcript", async () => {
+test("a Task tool call is admitted through the broker as a child with a live transcript from its first frame", async () => {
   const state = await backend()
   const args = { description: "Review auth", prompt: "Review the auth module", subagentType: { explore: {} } }
   state.server.script("task", { steps: [
@@ -573,10 +619,50 @@ test("a Task tool call is admitted through the broker with its transcript", asyn
         { status: "running", providerId: undefined, providerKind: undefined, toolCallId: "scripted-tool-1", toolCallRole: "spawn" },
         { status: "completed", providerId: "cursor-child-a", providerKind: "cursor-agent", toolCallId: "scripted-tool-1", toolCallRole: "spawn" },
       ])
-    expect(context.ports.subagents[1]?.childSessionId).toBeDefined()
-    expect(context.services.transcriptRows.has("/tmp/cursor-child-a.jsonl")).toBe(true)
+    expect(context.ports.subagents[0]?.childSessionId).toBeDefined()
+    expect(context.ports.subagents[1]?.childSessionId).toBe(context.ports.subagents[0]?.childSessionId)
+    expect(context.services.transcriptRows.size).toBe(0)
     expect(events.some((item) => item.event.type === "tool-output" && item.event.toolCallId === "scripted-tool-1")).toBe(true)
     expect(events.some((item) => item.event.type === "finish")).toBe(true)
+  } finally { await context.close() }
+}, 60_000)
+
+test("a running shell streams its output into its row, and a Task's own activity reaches its bound child as it happens", async () => {
+  const state = await backend()
+  const update = (value: Record<string, unknown>) => ({ kind: "update" as const, update: value })
+  const shell = (result?: unknown) => ({ shellToolCall: { args: { command: "make test", workingDirectory: "/repo" }, ...(result ? { result } : {}) } })
+  const nested = (value: Record<string, unknown>) => update({ toolCallDelta: { callId: "task-1", toolCallDelta: { taskToolCallDelta: { interactionUpdate: value } } } })
+  state.server.script("live", { steps: [
+    update({ toolCallStarted: { callId: "shell-1", toolCall: shell() } }),
+    update({ shellOutputDelta: { start: {} } }), update({ shellOutputDelta: { stdout: { data: "compiling\n" } } }),
+    update({ shellOutputDelta: { stderr: { data: "1 warning\n" } } }), update({ shellOutputDelta: { exit: { code: 0 } } }),
+    update({ toolCallCompleted: { callId: "shell-1", toolCall: shell({ success: { exitCode: 0, stdout: "compiling\n", stderr: "1 warning\n" } }) } }),
+    update({ toolCallStarted: { callId: "task-1", toolCall: { taskToolCall: { args: { description: "Explore auth", prompt: "look" } } } } }),
+    nested({ textDelta: { text: "CHILD-SAYS" } }),
+    nested({ toolCallStarted: { callId: "child-read-1", toolCall: { readToolCall: { args: { path: "auth.ts" } } } } }),
+    nested({ toolCallCompleted: { callId: "child-read-1", toolCall: { readToolCall: { args: { path: "auth.ts" }, result: { success: { content: "export {}" } } } } } }),
+    update({ toolCallCompleted: { callId: "task-1", toolCall: { taskToolCall: { args: { description: "Explore auth", prompt: "look" },
+      result: { success: { agentId: "cursor-child-b", isBackground: false, durationMs: "5" } } } } } }),
+    { kind: "text", text: "LIVE-DONE" },
+  ] })
+  const context = await setupConformance({ name: "live", backend: async () => state, makeTransport: transportFor(state) })
+  try {
+    const routed: { event: RoutedEvent["event"]; bound: string }[] = []
+    for await (const item of context.transport.send(context.session, context.turn("CURSOR_SCRIPT:live"), context.turnBroker())) {
+      const key = item.route?.kind === "child" ? item.route.correlationKey : undefined
+      routed.push({ event: item.event, bound: key ? context.ports.childRoute(context.session.binding.sessionId, key).kind : "parent" })
+    }
+    const shellContent = routed.flatMap(({ event }) => event.type === "tool-content" && event.toolCallId === "shell-1" && event.content.type === "content"
+      && event.content.content.type === "text" ? [event.content.content.text] : [])
+    expect(shellContent).toEqual(["compiling\n", "compiling\n1 warning\n"])
+    const shellOrder = routed.map(({ event }) => event).filter((event) => "toolCallId" in event && event.toolCallId === "shell-1").map((event) => event.type)
+    expect(shellOrder.indexOf("tool-content")).toBeLessThan(shellOrder.indexOf("tool-output"))
+    const child = routed.filter(({ bound }) => bound !== "parent")
+    expect(child.map(({ event }) => event.type)).toEqual(expect.arrayContaining(["text-delta", "tool-start", "tool-output"]))
+    expect(child.every(({ bound }) => bound === "bound")).toBe(true)
+    expect(child.find(({ event }) => event.type === "text-delta")?.event).toMatchObject({ delta: "CHILD-SAYS" })
+    expect(routed.some(({ event, bound }) => bound === "parent" && event.type === "text-delta" && event.delta === "CHILD-SAYS")).toBe(false)
+    expect(routed.some(({ event }) => event.type === "finish")).toBe(true)
   } finally { await context.close() }
 }, 60_000)
 

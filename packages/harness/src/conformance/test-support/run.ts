@@ -34,6 +34,7 @@ export type ConformanceBackend = {
   steerIncorporationUnreported?: true
   processesPerLaunch?: number
   firstLaunchProcesses?: number
+  credentialsPerCommand?: true
   scriptTool?(name: string, input: unknown): void
   scriptThinking?(input: { marker: string; text: string; reasoning: string }): void | Promise<string>
   thinkingRequested?(marker: string): boolean
@@ -493,7 +494,7 @@ export function runConformance(input: SuiteInput): void {
           providers: Object.fromEntries(Object.entries(credentials.providers).map(([id, provider]) =>
             [id, "placeholder" in provider ? { ...provider, placeholder: `${provider.placeholder}-session-one-only` } : provider])) } })
         expect(update.state).toBe("applied")
-        if (secondProcess) expect(context.services.processes.at(-1)).not.toBe(secondProcess)
+        if (secondProcess && !context.backend.credentialsPerCommand) expect(context.services.processes.at(-1)).not.toBe(secondProcess)
         if (pending) expect((await context.owner.broker.answer(pending.request.requestId,
           { kind: "permission", decision: "deny" }, { sessionId: "s2" })).ok).toBe(true)
         release?.()

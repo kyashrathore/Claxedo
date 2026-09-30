@@ -3,6 +3,8 @@
   "initialState": {
     "toolsByCallId": {},
     "usageByRunId": {},
+    "openShells": [],
+    "shellOutputByCallId": {},
     "notedKinds": []
   },
   "calls": [
@@ -10,6 +12,8 @@
       "state": {
         "toolsByCallId": {},
         "usageByRunId": {},
+        "openShells": [],
+        "shellOutputByCallId": {},
         "notedKinds": []
       },
       "event": {
@@ -46,6 +50,10 @@
             }
           },
           "usageByRunId": {},
+          "openShells": [
+            "tool-shell-1"
+          ],
+          "shellOutputByCallId": {},
           "notedKinds": []
         },
         "events": [
@@ -134,6 +142,10 @@
           }
         },
         "usageByRunId": {},
+        "openShells": [
+          "tool-shell-1"
+        ],
+        "shellOutputByCallId": {},
         "notedKinds": []
       },
       "event": {
@@ -178,6 +190,8 @@
             }
           },
           "usageByRunId": {},
+          "openShells": [],
+          "shellOutputByCallId": {},
           "notedKinds": []
         },
         "events": [

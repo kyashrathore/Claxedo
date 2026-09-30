@@ -34,7 +34,7 @@ function failedRun(row: CursorRunResult): AgentRuntimeEvent[] {
   ]
 }
 
-function resultEvents(state: CursorSdkAdapterState, row: CursorRunResult): CursorTranslation {
+function runEndEvents(state: CursorSdkAdapterState, row: CursorRunResult): CursorTranslation {
   const status = row.status
   switch (status) {
     case "finished":
@@ -51,7 +51,7 @@ function resultEvents(state: CursorSdkAdapterState, row: CursorRunResult): Curso
 export function localRunTerminalEvents(state: CursorSdkAdapterState, row: Exclude<LocalRunStreamEvent, { type: "sdk_message" }>): CursorTranslation {
   switch (row.type) {
     case "result":
-      return resultEvents(state, row)
+      return runEndEvents(state, row)
     case "done":
       return { state: endedRunState(state), events: [{ type: "session-status", status: "idle" }, { type: "finish", sessionId: row.runId }] }
   }
