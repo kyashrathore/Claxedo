@@ -5,11 +5,12 @@ import type { ClaudeLiveQuery } from "./live-query"
 import type { ClaudeEntry } from "./turns"
 
 export function claudeChildDelivery(entry: ClaudeEntry, live: () => ClaudeLiveQuery): (frame: SDKMessage) => Promise<void> {
-  let translator: ReturnType<typeof claudeTranslator> | undefined
+  let translator: { live: ClaudeLiveQuery; runtime: ReturnType<typeof claudeTranslator>["runtime"] } | undefined
   return async (frame) => {
     try {
-      translator ??= claudeTranslator(entry.session.binding.sessionId, [], live().tasks)
-      for (const event of await translateClaude(frame, translator.runtime, translator.tasks, entry.broker)) await entry.broker.publishChild(event)
+      const current = live()
+      if (translator?.live !== current) translator = { live: current, runtime: claudeTranslator(entry.session.binding.sessionId, [], current.tasks, current.memory).runtime }
+      for (const event of await translateClaude(frame, translator.runtime, current.tasks, entry.broker)) await entry.broker.publishChild(event)
     } catch (error) {
       entry.broker.reportFailure(error)
     }

@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test"
-import type { TurnBroker } from "../../contract"
+import type { RoutedEvent, TurnBroker } from "../../contract"
 import { CLAUDE_CODE_RANGE } from "./cli-version"
 import { ClaudeSdkTransport } from "./index"
 import { background, backgroundTasks, collect, frame, init, input, notification, rebound, reply, result, scriptedLaunches, services, sessionBroker, setup,
@@ -304,6 +304,31 @@ test("a background agent's frames reach its child transcript while its parent is
   expect(children.every((routed) => routed.route?.kind === "child" && routed.route.correlationKey === "toolu_agent")).toBe(true)
   expect(texts(children).join()).toContain("child working")
   expect(own).toHaveLength(0)
+  claude.frames.push(background())
+  await claude.stdinClosed
+  claude.frames.end()
+  await transport.dispose()
+})
+
+const childUsage = (id: string, input: number) => frame({ type: "assistant", parent_tool_use_id: "toolu_agent",
+  message: { id, role: "assistant", model: "claude", content: [], usage: { input_tokens: input, output_tokens: 0 } } })
+const childInputs = (events: RoutedEvent[]) => events.flatMap(({ event }) => event.type === "usage" && event.observation ? [event.observation.tokens.input ?? 0] : [])
+
+test("a background agent's running total carries from its parent's turn into the frames it sends while the parent is idle", async () => {
+  const { transport, session, launches, children } = await setup()
+  const first = collect(transport.send(session, userTurn("t1", "start an agent"), turnBroker()))
+  await until(() => launches[0]?.prompts.length === 1)
+  const claude = launches[0]!
+  claude.frames.push(init())
+  claude.replay(0)
+  claude.frames.push(agentCall())
+  claude.frames.push(background("agent"))
+  claude.frames.push(childUsage("m-child-1", 1_000))
+  claude.frames.push(result())
+  await first
+  claude.frames.push(childUsage("m-child-2", 500))
+  await until(() => childInputs(children).length > 0)
+  expect(childInputs(children).at(-1)).toBe(1_500)
   claude.frames.push(background())
   await claude.stdinClosed
   claude.frames.end()
