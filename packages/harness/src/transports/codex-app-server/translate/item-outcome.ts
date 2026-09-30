@@ -1,7 +1,7 @@
 import { asFiniteNumber, asRecord } from "@claxedo/helpers/guards"
 import type { RuntimeToolAttachment } from "@claxedo/agent-runtime-contract"
 import { asText as text } from "@claxedo/agent-runtime-contract"
-import { contentBlockImages, imageFileAttachment, imageUrlAttachment } from "../../../translate/tool-attachments"
+import { contentBlockImages, imageFileAttachment } from "../../../translate/tool-attachments"
 import { own } from "../../../translate/value"
 import { generatedImageAttachments, generatedImageFailure } from "./generated-image"
 import type { CodexAppServerAdapterState } from "./state"
@@ -33,16 +33,15 @@ function fileChangeFailure(completed: Row) {
   return completed.status === "failed" ? "The file change failed to apply" : undefined
 }
 
-function dynamicFailure(completed: Row) {
-  if (completed.status !== "failed" && completed.success !== false) return undefined
-  return contentText(completed.contentItems) || `${text(completed.tool) ?? "Tool call"} failed`
+function toolCallFailure(completed: Row) {
+  return completed.status === "failed" ? `${text(completed.tool) ?? "Tool call"} failed` : undefined
 }
 
 function itemFailure(itemType: string, completed: Row, output: unknown) {
   if (itemType === "mcp_tool_call") return mcpFailure(completed)
   if (itemType === "command_execution") return commandFailure(completed, output)
   if (itemType === "file_change") return fileChangeFailure(completed)
-  if (itemType === "dynamic_tool_call") return dynamicFailure(completed)
+  if (itemType === "dynamic_tool_call") return toolCallFailure(completed)
   if (itemType === "image_generation") return generatedImageFailure(completed)
   return undefined
 }
@@ -50,7 +49,6 @@ function itemFailure(itemType: string, completed: Row, output: unknown) {
 function itemOutput(itemType: string, completed: Row, streamed: string | undefined): unknown {
   if (itemType === "image_generation") return text(completed.revisedPrompt) ?? ""
   if (itemType === "web_search" && completed.results !== null && completed.results !== undefined) return completed.results
-  if (itemType === "dynamic_tool_call" && contentText(completed.contentItems)) return contentText(completed.contentItems)
   return completed.output ?? completed.result ?? completed.aggregatedOutput ?? completed.text ?? streamed ?? ""
 }
 
@@ -59,8 +57,6 @@ function itemAttachments(itemType: string, completed: Row): RuntimeToolAttachmen
   return [
     ...(itemType === "image_view" && text(completed.path) ? [imageFileAttachment(String(completed.path), "image/*")] : []),
     ...contentBlockImages(asRecord(completed.result)?.content),
-    ...(Array.isArray(completed.contentItems) ? completed.contentItems : []).flatMap((item) =>
-      asRecord(item)?.type === "inputImage" ? imageUrlAttachment(asRecord(item)?.imageUrl) : []),
   ]
 }
 

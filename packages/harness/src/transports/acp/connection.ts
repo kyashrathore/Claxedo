@@ -19,7 +19,7 @@ export type AcpConnectionOptions = ({ startupTimeoutMs?: number; promptTimeoutMs
 
 export type AcpHandlers = {
   permission(request: RequestPermissionRequest): ReturnType<Client["requestPermission"]>
-  elicitation(request: CreateElicitationRequest): ReturnType<NonNullable<Client["unstable_createElicitation"]>>
+  elicitation(request: CreateElicitationRequest): ReturnType<NonNullable<Client["createElicitation"]>>
   complete(notification: CompleteElicitationNotification): Promise<void> | void
   update(notification: SessionNotification): Promise<void> | void
   extension(sessionId: string, update: unknown): Promise<void> | void
@@ -48,17 +48,17 @@ export async function connectAcp(input: StartInput, options: AcpConnectionOption
   const agent = new ClientSideConnection(() => ({
     requestPermission: (request) => initializing ? startup.request(() => handlers.permission(request)) : handlers.permission(request),
     sessionUpdate: inbound.sessionUpdate,
-    unstable_createElicitation: (request) => {
+    createElicitation: (request) => {
       requests.validate(request)
       return initializing ? startup.request(() => handlers.elicitation(request)) : handlers.elicitation(request)
     },
-    unstable_completeElicitation: (notification) => handlers.complete(notification),
+    completeElicitation: (notification) => handlers.complete(notification),
   }), inbound.stream)
   const retire = singleFlightUntil(() => retireAcpStream(process, inbound.cancel, services), () => true)
   launch.owner.own({ retire })
   try {
     const handshake = await startup.run(agent.initialize({ protocolVersion: PROTOCOL_VERSION,
-      clientCapabilities: { elicitation: { form: {}, url: {} } }, clientInfo: { name: "Claxedo", version: "2" } }), launch.signal)
+      clientCapabilities: { elicitation: { form: {}, url: {} }, session: { notices: {} } }, clientInfo: { name: "Claxedo", version: "2" } }), launch.signal)
     initializing = false
     return { agent, handshake, process, retire }
   } catch (error) {

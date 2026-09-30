@@ -10,6 +10,6 @@ const pinnedIn = (file: string) => [...readFileSync(path.join(repo, file), "utf8
 test("every sandbox image installs a Claude Code inside the tested range", () => {
   const pins = ["packages/claxedo-server/scripts/sandbox/Dockerfile", "packages/claxedo-server/scripts/sandbox/cloudflare-worker/Dockerfile",
     "packages/sandbox-manager/src/drivers/vercel.ts"].flatMap(pinnedIn)
-  expect(pins).toHaveLength(4)
+  expect(pins).toHaveLength(3)
   for (const pin of pins) expect(harnessVersionStanding(CLAUDE_CODE_RANGE, pin)).toBe("tested")
 })

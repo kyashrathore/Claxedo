@@ -37,7 +37,7 @@ export function codexCollabAgentCall(value: unknown): CodexCollabAgentCall | und
   return {
     id,
     tool,
-    toolCallRole: tool === "spawnAgent" || tool === "spawn_agent" ? "spawn" : "interaction",
+    toolCallRole: tool === "spawnAgent" ? "spawn" : "interaction",
     senderThreadId,
     receiverThreadIds,
     ...(text(row.prompt) ? { prompt: text(row.prompt) } : {}),

@@ -53,7 +53,7 @@ test("every sandbox image installs a Pi inside the tested range", () => {
   const pins = ["packages/claxedo-server/scripts/sandbox/Dockerfile", "packages/claxedo-server/scripts/sandbox/cloudflare-worker/Dockerfile",
     "packages/sandbox-manager/src/drivers/vercel.ts"]
     .flatMap((file) => [...readFileSync(path.join(repo, file), "utf8").matchAll(/@earendil-works\/pi-coding-agent@(\d+\.\d+\.\d+)/g)].map((match) => match[1]))
-  expect(pins).toHaveLength(4)
+  expect(pins).toHaveLength(3)
   for (const pin of pins) expect(harnessVersionStanding(PI_RANGE, pin)).toBe("tested")
 })
 

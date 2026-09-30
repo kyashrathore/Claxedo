@@ -1,6 +1,6 @@
 # better-sqlite3 13's Linux ARM64 prebuild requires glibc >= 2.38.
 # Trixie supplies it; Bookworm's 2.36 cannot load the runtime store.
-FROM node:24.18.0-trixie-slim
+FROM node:24.21.0-trixie-slim
 
 LABEL org.opencontainers.image.source="https://github.com/kyashrathore/Claxedo"
 
@@ -17,12 +17,25 @@ RUN apt-get update && \
       python3 make g++ && \
     rm -rf /var/lib/apt/lists/*
 
+# Harness SDKs and CLIs skip npm's release-age gate: their releases carry the
+# protocol changes Claxedo tracks the day they ship (owner exemption,
+# 2026-09-30). npm honors these exclusions from 11.17 (Node 24.19); every other
+# package, the harness packages' own dependencies included, stays gated.
+RUN printf '%s\n' \
+      'min-release-age-exclude[]=@agentclientprotocol/sdk' \
+      'min-release-age-exclude[]=@anthropic-ai/claude-*' \
+      'min-release-age-exclude[]=@cursor/sdk*' \
+      'min-release-age-exclude[]=@earendil-works/*' \
+      'min-release-age-exclude[]=@google/gemini-cli*' \
+      'min-release-age-exclude[]=@openai/codex' \
+      >> "$HOME/.npmrc"
+
 # Global CLI tools used by direct terminal agents and materialized MCP configs.
 RUN npm i -g --min-release-age=2 \
       tsx@4.22.3 \
-      @anthropic-ai/claude-code@2.1.280 \
-      @openai/codex@0.156.1 \
-      @google/gemini-cli@0.43.0 \
+      @anthropic-ai/claude-code@2.1.285 \
+      @openai/codex@0.159.2 \
+      @google/gemini-cli@0.62.0 \
       @earendil-works/pi-coding-agent@0.99.1
 
 COPY .build/install-agent-artifacts.sh /tmp/install-agent-artifacts.sh

@@ -55,7 +55,7 @@ function knownUpdate(type: string): boolean {
     case "agent_message_chunk": case "agent_thought_chunk": case "user_message_chunk": case "tool_call":
     case "tool_call_update": case "plan": case "plan_update": case "plan_removed":
     case "available_commands_update": case "current_mode_update": case "config_option_update":
-    case "session_info_update": case "usage_update": return true
+    case "session_info_update": case "usage_update": case "notice": return true
     default: return false
   }
 }
