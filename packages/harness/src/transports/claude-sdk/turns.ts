@@ -46,6 +46,11 @@ export function configuredChoice(entry: Pick<ClaudeEntry, "broker">): ClaudeChoi
   return { ...(model ? { model } : {}), ...(variant ? { effort: variant } : {}), ...(instructions ? { system: instructions } : {}), ...(agent ? { agent } : {}) }
 }
 
+function spawnCallOf(live: ClaudeLiveQuery, agentId: string): string | undefined {
+  const call = live.tasks.get(agentId)?.toolUseId
+  return call === undefined ? undefined : live.tasks.firstLevelSubagent(call)
+}
+
 function settlement(): { done: Promise<void>; finish: () => void } {
   let finish!: () => void
   return { done: new Promise<void>((resolve) => { finish = resolve }), finish }
@@ -184,7 +189,7 @@ export class ClaudeTurns {
     const claim = live.claim("prompt")!
     try {
       live.run(await this.launcher().launch({ session: entry.session, input: entry.input, broker: entry.broker, turn: () => entry.turn,
-        prompt: live.input.stream, abort: live.abort, processes: live.processes, usage: live.usage, model: launch.model, effort: launch.effort,
+        prompt: live.input.stream, abort: live.abort, processes: live.processes, usage: live.usage, subagentCall: (agentId) => spawnCallOf(live, agentId), model: launch.model, effort: launch.effort,
         system: launch.system, agent: launch.agent }))
     } catch (error) {
       live.fail(error)

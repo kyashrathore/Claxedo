@@ -14,8 +14,14 @@ const protocolPermissionMap = {
   ],
 } as const
 
+function subagentOf(agentId: string | undefined, subagentCall: (agentId: string) => string | undefined) {
+  if (!agentId) return {}
+  const toolCallId = subagentCall(agentId)
+  return { subagent: { agentId, ...(toolCallId ? { toolCallId } : {}) } }
+}
+
 export async function askClaudePermission(input: StartInput, broker: Pick<TurnBroker, "ask" | "signal">, toolName: string,
-  toolInput: Record<string, unknown>, options: Parameters<CanUseTool>[2], turnId?: string) {
+  toolInput: Record<string, unknown>, options: Parameters<CanUseTool>[2], turnId?: string, subagentCall: (agentId: string) => string | undefined = () => undefined) {
   if (options.signal.aborted || broker.signal.aborted) return { behavior: protocolPermissionMap.deny, message: "Turn cancelled" }
   if (toolName === "AskUserQuestion") {
     const questions = toolInput.questions
@@ -32,7 +38,7 @@ export async function askClaudePermission(input: StartInput, broker: Pick<TurnBr
   }
   const grant = claudeGrant({ directory: input.directory, permissionMode: claudeModeId(input.config.permissionMode) }, toolName, toolInput, options)
   const answer = await broker.ask(permissionRequest({ sessionId: input.sessionId, permission: toolName, title: options.title ?? toolName,
-    ...(grant ? { grantKey: grant.key } : {}), metadata: { input: toolInput, description: options.description ?? "", turnId },
+    ...(grant ? { grantKey: grant.key } : {}), metadata: { input: toolInput, description: options.description ?? "", turnId, ...subagentOf(options.agentID, subagentCall) },
     harnessPayload: { toolName, toolInput, suggestions: options.suggestions },
     options: protocolPermissionMap.options,
   }), { signal: options.signal })

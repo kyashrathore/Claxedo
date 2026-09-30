@@ -21,6 +21,7 @@ type Launch = {
   abort: AbortController
   processes: Set<ClaudeProcess>
   usage: Pick<ClaudeMirroredUsage, "observe">
+  subagentCall?: (agentId: string) => string | undefined
   model?: string
   effort?: EffortLevel
   system?: string
@@ -56,7 +57,7 @@ export class ClaudeQueryLauncher {
       extraArgs: { "thinking-display": "summarized", "replay-user-messages": null }, includePartialMessages: true,
       canUseTool: (name, payload, options) => {
         const turn = spec.turn()
-        return askClaudePermission(current, turn?.broker ?? { ask: (request, asked) => broker.ask(request, asked), signal: abort.signal }, name, payload, options, turn?.turnId)
+        return askClaudePermission(current, turn?.broker ?? { ask: (request, asked) => broker.ask(request, asked), signal: abort.signal }, name, payload, options, turn?.turnId, spec.subagentCall)
       },
       onElicitation: (request, options) => askClaudeElicitation(spec.turn()?.broker ?? broker, request, options.signal),
       spawnClaudeCodeProcess: (options) => {
