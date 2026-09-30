@@ -1,4 +1,4 @@
-import { isAgentContentPart, isAgentMessageInfo, type AgentSession } from "@claxedo/agent-runtime-contract"
+import { isAgentContentPart, isAgentMessageInfo, parseBackgroundWork, type AgentSession } from "@claxedo/agent-runtime-contract"
 import type { ServerEvent } from "../events"
 import { placementId as asPlacementId, projectId, requestId } from "../ids"
 import type { FileDiff, SessionRef, Todo } from "../types"
@@ -117,8 +117,10 @@ function activityEvent(frame: Frame, ref: SessionRef): ServerEvent | undefined {
       return { type: "statusChanged", ref, status: { kind: "idle" } }
     case "session.error":
       return { type: "statusChanged", ref, status: sessionStatusFromTurnError(properties.error) }
-    case "session.background-work":
-      return typeof properties.active === "boolean" ? { type: "backgroundWorkChanged", ref, active: properties.active } : undefined
+    case "session.background-work": {
+      const work = parseBackgroundWork(properties)
+      return work ? { type: "backgroundWorkChanged", ref, work } : undefined
+    }
     case "harness.health":
       return harnessHealthEvent(properties, ref)
     default:

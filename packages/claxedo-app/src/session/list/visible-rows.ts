@@ -1,4 +1,4 @@
-import { sessionStatusWithBackgroundWork, type AgentRequest, type SessionId, type SessionRef } from "@/server"
+import { NO_BACKGROUND_WORK, sessionStatusWithBackgroundWork, type AgentRequest, type SessionId, type SessionRef } from "@/server"
 import type { SessionRowView, SessionStatusView } from "@/session"
 import {
   compareOrder,
@@ -63,7 +63,7 @@ export function rowViews(input: {
     const id = ref.sessionId
     const entry = input.data.entries.get(id)
     if (!entry || entry.kind === "tombstone") continue
-    const status = sessionStatusWithBackgroundWork(input.data.statuses.get(id)?.status ?? UNKNOWN_STATUS, input.data.backgroundWork.get(id)?.active === true)
+    const status = sessionStatusWithBackgroundWork(input.data.statuses.get(id)?.status ?? UNKNOWN_STATUS, input.data.backgroundWork.get(id)?.work ?? NO_BACKGROUND_WORK)
     const waitingOnUser = (input.openRequests.get(id)?.length ?? 0) > 0 || input.data.statuses.get(id)?.waitingOnUser === true
     const cached = cachedView(input.cache.current.get(id), entry, status, waitingOnUser)
     next.set(id, cached)

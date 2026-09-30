@@ -53,6 +53,7 @@ export const freshness = {
   folderChildren: { kind: "once", reason: "the folder picker lists a directory once; a folder created outside the app is missed until restart" },
   harnessOptions: { kind: "once", reason: "a harness's agent and model options for a placement are read once; nothing in this app refreshes them" },
   harnessCommands: { kind: "once", reason: "a harness's saved and declared commands for a placement are read once; nothing in this app refreshes them" },
+  stopsBackgroundTasks: { kind: "once", reason: "whether a session's harness stops one background task is fixed by its harness; the read waits for a running background task" },
   integrations: { kind: "once", reason: "the integration catalog changes through this app's connects and disconnects, which invalidate it" },
   agentConnections: { kind: "once", reason: "agent connections change through this app's removals, which invalidate the list" },
   providerAuth: { kind: "once", reason: "the connect form forces a fresh read each time it opens with staleTime 0; otherwise the auth methods are static" },

@@ -1,4 +1,4 @@
-import { sessionStatusWithBackgroundWork, type ServerEvent, type SessionRef, type SessionStatus } from "@/server"
+import { NO_BACKGROUND_WORK, sessionStatusWithBackgroundWork, type BackgroundWork, type ServerEvent, type SessionRef, type SessionStatus } from "@/server"
 import type { SoundChoice } from "./sounds"
 
 export type AlertKind = "agent" | "permissions" | "errors"
@@ -10,9 +10,9 @@ export type AlertPreferences = {
 
 export type Alert = { readonly kind: AlertKind; readonly ref: SessionRef }
 
-type Activity = { readonly status?: SessionStatus; readonly backgroundWork: boolean }
+type Activity = { readonly status?: SessionStatus; readonly backgroundWork: BackgroundWork }
 
-const QUIET: Activity = { backgroundWork: false }
+const QUIET: Activity = { backgroundWork: NO_BACKGROUND_WORK }
 
 function shown(activity: Activity): SessionStatus["kind"] | undefined {
   return activity.status && sessionStatusWithBackgroundWork(activity.status, activity.backgroundWork).kind
@@ -31,7 +31,7 @@ function activityAlert(previous: Activity, next: Activity): AlertKind | undefine
 type ActivityEvent = Extract<ServerEvent, { type: "statusChanged" | "backgroundWorkChanged" }>
 
 function nextActivity(previous: Activity, event: ActivityEvent): Activity {
-  return event.type === "statusChanged" ? { ...previous, status: event.status } : { ...previous, backgroundWork: event.active }
+  return event.type === "statusChanged" ? { ...previous, status: event.status } : { ...previous, backgroundWork: event.work }
 }
 
 export function createAlertDetector(): (event: ServerEvent) => Alert | undefined {

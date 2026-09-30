@@ -86,6 +86,7 @@ export function createTimelineHost(input: TimelineHostInput): TimelineHost {
     parentConversation: () => input.parent()?.conversation(),
     sessions,
     status: () => shownStatus(view.status()),
+    backgroundWork: view.backgroundWork,
     turnSettlePending: view.turnSettlePending,
     settings,
     transcriptTypography,

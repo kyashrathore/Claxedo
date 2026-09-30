@@ -1,6 +1,7 @@
 import { isRecord } from "@claxedo/helpers/guards"
 import { errorFromBody, ServerError } from "../errors"
-import type { AgentRequest, SessionGoalState, SessionStatus, Subagent, Todo } from "../types"
+import type { BackgroundWork, SessionStatus } from "../status-types"
+import type { AgentRequest, SessionGoalState, Subagent, Todo } from "../types"
 import { goalStateFromWire } from "./goal"
 import { isPermissionWire, isQuestionWire, requestFromPermission, requestFromQuestion } from "./requests"
 import { backgroundWorkFromWire, sessionStatusFromWire } from "./status"
@@ -14,7 +15,7 @@ export type SessionFact<T> = { readonly value: T } | { readonly error: ServerErr
 
 export type SessionOpenView = {
   readonly status: SessionFact<SessionStatus | undefined>
-  readonly backgroundWork: SessionFact<boolean>
+  readonly backgroundWork: SessionFact<BackgroundWork>
   readonly requests: SessionFact<readonly AgentRequest[]>
   readonly todos: SessionFact<readonly Todo[]>
   readonly goal: SessionFact<SessionGoalState>

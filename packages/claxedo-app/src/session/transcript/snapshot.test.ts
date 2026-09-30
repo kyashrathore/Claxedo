@@ -53,7 +53,7 @@ function fakeServer(first: SessionFirstRead = firstRead(latest), pages: readonly
   const reads = {
     first: Promise.resolve(first),
     status: Promise.resolve({ kind: "idle" }),
-    backgroundWork: Promise.resolve(false),
+    backgroundWork: Promise.resolve({ agents: 0, shells: 0, other: 0 }),
     requests: Promise.resolve([]),
     todos: Promise.resolve([]),
     goal: Promise.resolve({ goal: undefined, actions: [], available: false }),

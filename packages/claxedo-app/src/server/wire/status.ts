@@ -1,6 +1,6 @@
-import type { AgentRuntimeStatus } from "@claxedo/agent-runtime-contract"
+import { NO_BACKGROUND_WORK, parseBackgroundWork, type AgentRuntimeStatus, type BackgroundWork } from "@claxedo/agent-runtime-contract"
 import { turnError } from "../errors"
-import type { RetryAction, SessionStatus } from "../types"
+import type { RetryAction, SessionStatus } from "../status-types"
 import { isRecord } from "@claxedo/helpers/guards"
 
 function retryActionFromWire(value: unknown): RetryAction | undefined {
@@ -44,8 +44,8 @@ function sessionStatusFromRuntime(status: AgentRuntimeStatus): SessionStatus {
   }
 }
 
-export function backgroundWorkFromWire(value: unknown): boolean {
-  return isRecord(value) && value.backgroundWork === true
+export function backgroundWorkFromWire(value: unknown): BackgroundWork {
+  return (isRecord(value) && parseBackgroundWork(value.backgroundWork)) || NO_BACKGROUND_WORK
 }
 
 export function sessionStatusFromWire(value: unknown): SessionStatus | undefined {

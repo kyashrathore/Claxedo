@@ -46,7 +46,7 @@ function applyListEvent<S extends ListData>(state: S, event: ServerListEvent): S
     case "statusChanged":
       return statusChanged(state, event.ref, event.status, event.at)
     case "backgroundWorkChanged":
-      return backgroundWorkChanged(state, event.ref, event.active, event.at)
+      return backgroundWorkChanged(state, event.ref, event.work, event.at)
     default:
       return unreachable(event)
   }
@@ -118,7 +118,7 @@ function sessionRead(state: ListState, event: Extract<ListEvent, { type: "rowRea
     case "statusRead":
       return statusRead(state, event.ref, event.status, event.sentAt)
     case "backgroundWorkRead":
-      return backgroundWorkRead(state, event.ref, event.active, event.sentAt)
+      return backgroundWorkRead(state, event.ref, event.work, event.sentAt)
   }
 }
 

@@ -5,7 +5,7 @@ import { createAlertDetector } from "./alerts"
 
 const ref = { projectId: projectId("prj_1"), placementId: placementId("plc_1"), sessionId: sessionId("ses_1") }
 const status = (value: SessionStatus): ServerEvent => ({ type: "statusChanged", ref, status: value })
-const backgroundWork = (active: boolean): ServerEvent => ({ type: "backgroundWorkChanged", ref, active })
+const backgroundWork = (active: boolean): ServerEvent => ({ type: "backgroundWorkChanged", ref, work: { agents: active ? 1 : 0, shells: 0, other: 0 } })
 
 function alerts(...events: ServerEvent[]) {
   const detect = createAlertDetector()

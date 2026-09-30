@@ -1,7 +1,8 @@
 import { asFiniteNumber, nonEmptyString } from "@claxedo/helpers/guards"
 import type { AgentSession } from "@claxedo/agent-runtime-contract"
 import { sessionId, type PlacementId, type ProjectId, type SessionId } from "../ids"
-import type { ListedStatus, ModelChoice, SessionRef, SessionRow, SessionSelections } from "../types"
+import type { ListedStatus } from "../status-types"
+import type { ModelChoice, SessionRef, SessionRow, SessionSelections } from "../types"
 import { sessionConfigFromWire } from "./harness-state"
 import { backgroundWorkFromWire } from "./status"
 

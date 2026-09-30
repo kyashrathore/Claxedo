@@ -18,10 +18,10 @@ test("session row: a session's saved config names its harness, model and permiss
 })
 
 test("session row: a listed status carries whether the session's harness runs work outside any turn", () => {
-  expect(listedStatusFromListItem({ status: { kind: "idle", awaitingInput: false, backgroundWork: true, at: 1 } })).toEqual({
-    status: { kind: "idle" }, waitingOnUser: false, backgroundWork: true,
+  expect(listedStatusFromListItem({ status: { kind: "idle", awaitingInput: false, backgroundWork: { agents: 2, shells: 0, other: 1 }, at: 1 } })).toEqual({
+    status: { kind: "idle" }, waitingOnUser: false, backgroundWork: { agents: 2, shells: 0, other: 1 },
   })
   expect(listedStatusFromListItem({ status: { kind: "busy", awaitingInput: true, at: 1 } })).toEqual({
-    status: { kind: "working" }, waitingOnUser: true, backgroundWork: false,
+    status: { kind: "working" }, waitingOnUser: true, backgroundWork: { agents: 0, shells: 0, other: 0 },
   })
 })

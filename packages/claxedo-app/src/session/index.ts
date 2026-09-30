@@ -3,6 +3,7 @@ import type {
   AgentRequest,
   AgentRequestReply,
   AppError,
+  BackgroundWork,
   FileDiff,
   GoalAction,
   ProjectId,
@@ -88,6 +89,7 @@ export type SessionView = {
   readonly state: Accessor<SessionLoadState>
   readonly row: Accessor<SessionRow | undefined>
   readonly status: Accessor<SessionStatusView>
+  readonly backgroundWork: Accessor<BackgroundWork>
   readonly messages: Accessor<readonly TranscriptMessage[]>
   readonly parts: (messageId: string) => readonly TranscriptPart[]
   readonly pendingDeltas: Accessor<boolean>
