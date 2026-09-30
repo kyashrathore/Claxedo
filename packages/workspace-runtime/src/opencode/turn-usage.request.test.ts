@@ -70,14 +70,13 @@ function scriptedEndpoint(readme: string) {
   }
 }
 
-/** The embedded engine runs in this process, so nothing here spawns, registers transcripts or asks a pattern evaluator. */
+/** The embedded engine runs in this process, so nothing here spawns or asks a pattern evaluator. */
 function services(): HarnessServices {
   return {
     spawn: async (_command, options) => { throw new Error(`The embedded engine spawns nothing (${options.label})`) },
     recordHomeUse: async () => {},
     firstPartyMcp: () => undefined,
     healthChanged: () => {},
-    transcripts: { register: async () => ({ state: "unavailable", reason: "no transcripts in this test" }) },
     patternEvaluator: async () => {},
     log: { debug() {}, info() {}, warn() {}, error() {} },
     clock: {

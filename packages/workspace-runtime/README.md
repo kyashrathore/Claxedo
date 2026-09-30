@@ -108,10 +108,8 @@ Root runtime value exports:
 `WORKSPACE_RUNTIME_MANAGEMENT_TOKEN_HEADER`,
 `WORKSPACE_RUNTIME_SESSION_AUTHORITY_URL`,
 `WorkspaceRuntimeRouteManifest`, `WorkspaceWorktreeManager`,
-`WorkspaceRuntimeRoutes`, `createMemoryTranscriptHandleStore`,
-`createPersistentTranscriptHandleStore`, `createProcessObserver`,
-`createRuntimeCredentialIssuer`,
-`createTranscriptResolver`, `createWorkspaceHost`,
+`WorkspaceRuntimeRoutes`, `createProcessObserver`,
+`createRuntimeCredentialIssuer`, `createWorkspaceHost`,
 `createWorkspaceRuntimeApp`, `createWorkspaceRuntimeJwtManagementAuth`,
 `embeddedWorkspaceRuntimeExposure`,
 `firstPartyMcpServerFor`, `isLoopbackHostname`, `loadWorkspaceRuntimeManagementVerificationKey`,
@@ -177,7 +175,6 @@ projection compose those concerns outside the OSS runtime boundary.
 | `*    /api/wr/pty/*` | [`routes/pty.ts`](src/routes/pty.ts) | exposure-dependent runtime auth |
 | `*    /api/wr/process/*` | [`routes/process.ts`](src/routes/process.ts) | exposure-dependent runtime auth |
 | `*    /api/wr/hook/*` | [`routes/agent-hook.ts`](src/routes/agent-hook.ts) | exposure-dependent runtime auth |
-| `GET  /api/wr/subagent-transcripts/*` | [`routes/transcript.ts`](src/routes/transcript.ts) | exposure-dependent runtime auth and parent-session authorization |
 | `*    /api/wr/worktrees/*` | [`routes/worktree.ts`](src/routes/worktree.ts) | exposure-dependent runtime auth |
 | `*    /session/*` | `SessionRoutes` (mounted via `mountWorkspaceCore`) | implicit (host-level) |
 | `*    /mcp/*` | MCP routes | implicit |

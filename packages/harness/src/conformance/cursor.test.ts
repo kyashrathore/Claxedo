@@ -621,7 +621,6 @@ test("a Task tool call is admitted through the broker as a child with a live tra
       ])
     expect(context.ports.subagents[0]?.childSessionId).toBeDefined()
     expect(context.ports.subagents[1]?.childSessionId).toBe(context.ports.subagents[0]?.childSessionId)
-    expect(context.services.transcriptRows.size).toBe(0)
     expect(events.some((item) => item.event.type === "tool-output" && item.event.toolCallId === "scripted-tool-1")).toBe(true)
     expect(events.some((item) => item.event.type === "finish")).toBe(true)
   } finally { await context.close() }

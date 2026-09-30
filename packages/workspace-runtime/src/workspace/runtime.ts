@@ -39,7 +39,7 @@ import { assertTarget, authoritativeWorkspaceId, withWorkspaceTarget, workspaceD
 import { createWorkspaceCheckpoint } from "./checkpoint"
 import { createSessionConfiguration } from "./configure"
 import { createHarnessHealthFeed } from "./harness-health-feed"
-import { mountWorkspaceCore, mountWorkspaceAgentHooks, mountWorkspaceEvents, mountWorkspaceProcess, mountWorkspacePty, type MountedWorkspaceEvents, type WorkspaceTranscriptRoutesOptions } from "./core"
+import { mountWorkspaceCore, mountWorkspaceAgentHooks, mountWorkspaceEvents, mountWorkspaceProcess, mountWorkspacePty, type MountedWorkspaceEvents } from "./core"
 import type { RuntimeConfigApplyStatus, WorkspaceConnectionState, WorkspaceHost, WorkspaceHostMountOptions } from "./host"
 import { scopedToolPrompt } from "./scoped-tool-prompt"
 import { mountSessionRoutes } from "./session-routes"
@@ -72,8 +72,6 @@ export type WorkspaceHostOptions = {
   onRuntimeEvent?: (event: RuntimeEventEnvelope) => void
   /** Parent lookup for scoping a subagent child's frames as its parent's; defaults to this host's own store. */
   sessionParents?: WorkspaceEventParents
-  /** Host-mediated resolver endpoint for opaque file-backed transcript handles. */
-  transcripts?: WorkspaceTranscriptRoutesOptions
   /** Host-owned projection write that completes before the created lifecycle event. */
   afterCreateSession?: (input: { directory: string; session: unknown }) => Promise<void> | void
   /** The workspace that already holds a session id on this host; a create naming an id another workspace holds is refused before any harness launches. */
@@ -296,7 +294,6 @@ export function createWorkspaceHost(options: WorkspaceHostOptions): WorkspaceHos
     const services = createHarnessServices({
       ownership: launchOwnership(),
       ...(options.processObserver ? { observation: { observer: options.processObserver, ...(options.target ? { workspaceId: options.target.workspaceId } : {}) } } : {}),
-      ...(options.transcripts ? { transcripts: options.transcripts } : {}),
       ...(options.firstPartyMcpLaunch ? { firstPartyMcpLaunch: options.firstPartyMcpLaunch } : {}),
       log: { debug: (message, fields) => log.info(message, fields), info: (message, fields) => log.info(message, fields),
         warn: (message, fields) => log.warn(message, fields), error: (message, fields) => log.error(message, fields) },
@@ -528,7 +525,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions): WorkspaceHos
       return mountWorkspaceCore(app, mount.core.upgradeWebSocket, {
         directory, workspaceId: id, eventHub, exposure: mount.exposure, sessionAccessPolicy,
         processObserver: options.processObserver, sessionStarts: store().sessionStarts,
-        sessionParents: options.sessionParents ?? sessionParents, transcripts: options.transcripts, launchOwnership,
+        sessionParents: options.sessionParents ?? sessionParents, launchOwnership,
       })
     }
     const events = mountWorkspaceEvents(app, {
@@ -614,7 +611,6 @@ export function createWorkspaceHost(options: WorkspaceHostOptions): WorkspaceHos
         sessionAccessPolicy,
         checkpoint,
         currentRunner,
-        transcripts: options.transcripts,
         afterCreateSession: options.afterCreateSession,
         sessionIdWorkspace: options.sessionIdWorkspace,
         sessionToolPrompt: (sessionId) => {
@@ -632,9 +628,6 @@ export function createWorkspaceHost(options: WorkspaceHostOptions): WorkspaceHos
         else reissue()
       }
       if (runner) reissueQueuedPrompts()
-    },
-    hasSession(sessionId: string) {
-      return !!store().getSession(sessionId)
     },
     sessionTime(sessionId: string) {
       const session = store().getSession(sessionId)
