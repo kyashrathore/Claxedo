@@ -1,4 +1,7 @@
+import fs from "node:fs/promises"
+import path from "node:path"
 import type { Page } from "@playwright/test"
+import { isRecord } from "@claxedo/helpers/guards"
 import { expect, installedCli, sendPrompt, sessionRoute, test, UI, type HarnessFixtures, type MessageRow } from "../harness"
 
 const CLAUDE = { id: "claude", access: "native" } as const
@@ -17,8 +20,8 @@ async function sendCommand(app: Page, command: string) {
   await app.keyboard.press("Enter")
 }
 
-function notices(messages: MessageRow[]) {
-  return messages.flatMap((message) => message.parts).flatMap((part) => (part.type === "notice" ? [part.notice] : []))
+function notices(messages: MessageRow[]): Record<string, unknown>[] {
+  return messages.flatMap((message) => message.parts).flatMap((part) => (part.type === "notice" && isRecord(part.notice) ? [part.notice] : []))
 }
 
 test("44 a model request Claude retries shows as retrying, then the reply lands", async ({ stack, api, app }) => {
@@ -65,4 +68,18 @@ test("44 /clear draws a boundary, keeps the earlier turns, and the next turn sta
   const after = stack.scripted.requests.filter((request) => request.prompt.includes("AFTERCLEAR"))
   expect(after.length).toBeGreaterThan(0)
   expect(after.every((request) => !JSON.stringify(request.body).includes("BEFORECLEAR"))).toBe(true)
+})
+
+test("44 a prompt a Claude hook blocks says why in the transcript", async ({ stack, api, app }) => {
+  const workspace = await stack.daemon.makeWorkspace("notices-hook")
+  await fs.mkdir(path.join(workspace.directory, ".claude"), { recursive: true })
+  await fs.writeFile(path.join(workspace.directory, ".claude", "settings.json"), JSON.stringify({
+    hooks: { UserPromptSubmit: [{ hooks: [{ type: "command", command: "echo 'Prompts about HOOKED are not allowed here' >&2; exit 2" }] }] },
+  }))
+  const session = await claudeSession(api, workspace.directory, "Hook")
+  await app.goto(`${stack.url}${sessionRoute(workspace.id, session.id)}`)
+  await sendPrompt(app, "Reply with exactly this one token: HOOKED")
+
+  await expect(app.getByText(/Prompts about HOOKED are not allowed here/)).toBeVisible({ timeout: 60_000 })
+  await expect.poll(async () => notices(await api.messages(workspace.directory, session.id)).map((notice) => notice.kind)).toContain("harness")
 })
