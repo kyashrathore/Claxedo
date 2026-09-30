@@ -1,14 +1,14 @@
 import type { AgentRuntimeEvent } from "@claxedo/agent-runtime-contract"
 import { asRecord } from "@claxedo/agent-runtime-contract"
 
-const count = (value: unknown) => typeof value === "number" ? value : null
+const reportedTokens = (value: unknown) => typeof value === "number" ? value : null
 
 export function piUsageEvents(value: unknown, providerObservationId?: string): AgentRuntimeEvent[] {
   const usage = asRecord(value) ?? {}
   if (typeof usage.input !== "number" || typeof usage.output !== "number") return []
-  const cacheRead = count(usage.cacheRead)
-  const cacheWrite = count(usage.cacheWrite)
-  const reasoning = count(usage.reasoning)
+  const cacheRead = reportedTokens(usage.cacheRead)
+  const cacheWrite = reportedTokens(usage.cacheWrite)
+  const reasoning = reportedTokens(usage.reasoning)
   return [{
     type: "usage",
     contextSize: 0,

@@ -3,7 +3,7 @@ import { asRecord } from "@claxedo/agent-runtime-contract"
 import { piMessageEnd, piMessageStart, piMessageUpdate } from "./messages"
 import { piAgentEnd, piAgentStart, piCompactionEnd, piCompactionStart, piExtensionError, piModelRetry, piSessionName, piSettled,
   piSummaryRetry } from "./session"
-import { ignoredKind, initialPiState, step, type PiStep, type PiTranslatorState } from "./state"
+import { ignoredKind, initialPiState, piStep, type PiStep, type PiTranslatorState } from "./state"
 import { piToolEnd, piToolStart, piToolUpdate } from "./tools"
 
 type Handler = (state: PiTranslatorState, frame: Record<string, unknown>, sessionId: string) => PiStep
@@ -30,7 +30,7 @@ export function piRpcAdapter(): HarnessEventAdapter<PiTranslatorState> {
       const type = String(frame.type)
       const handler = HANDLERS[type]
       if (handler) return handler(state, frame, context.threadId)
-      return SILENT.includes(type) ? step(state) : ignoredKind(state, type)
+      return SILENT.includes(type) ? piStep(state) : ignoredKind(state, type)
     },
   }
 }
