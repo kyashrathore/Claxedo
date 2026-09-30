@@ -487,7 +487,7 @@ describe("store broker ports", () => {
     const admission = ports.admitProviderTurn("s1", { reason: "provider" }, async () => {})
     await tick()
     expect(timers).toHaveLength(1)
-    timers[0]!()
+    timers[0]()
     expect(await admission).toEqual({ admitted: false, reason: "busy" })
     store.releaseTurnLease("s1", lease)
     expect(store.readTurnAuthority("s1")).toBeUndefined()

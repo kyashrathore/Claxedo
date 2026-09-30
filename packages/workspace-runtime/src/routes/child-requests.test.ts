@@ -59,7 +59,7 @@ async function childAsking(asks: ((broker: TurnBroker) => Promise<RequestAnswer>
   await f.runtime.sessions.create(sessionCreate({ id: "parent" }))
   await f.runtime.turns.start({ sessionId: "parent", text: "work", origin: LOOPBACK_ORIGIN })
   await until(() => f.store.listPermissions("/repo").length + f.store.listQuestions("/repo").length === asks.length, "child requests filed")
-  return { f, app: routes(f), control, answers, child: children[0]!, sibling: children[1]! }
+  return { f, app: routes(f), control, answers, child: children[0], sibling: children[1] }
 }
 
 const askedByChild = (request: TurnRequest, correlationKey: string): TurnRequest => ({ ...request, child: { correlationKey } })
@@ -137,7 +137,7 @@ async function idleParent() {
     void session.ask(request).then((answer) => { answers.push(answer) })
     await until(() => f.store.listPermissions("/repo").length + f.store.listQuestions("/repo").length === filed + 1, "child request filed")
   }
-  return { f, session, ask, answers, child: children[0]!, sibling: children[1]! }
+  return { f, session, ask, answers, child: children[0], sibling: children[1] }
 }
 
 const idlePermission = askedByChild(permissionRequest({ sessionId: "parent", requestId: "idle-perm", permission: "bash", title: "ls", patterns: ["ls"] }), "toolu_agent")

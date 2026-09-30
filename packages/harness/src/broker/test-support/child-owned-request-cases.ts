@@ -1,30 +1,7 @@
 import { describe, expect, test } from "bun:test"
-import type { SubagentObservation } from "@claxedo/agent-runtime-contract"
-import type { TurnRequest } from "../../contract/broker"
 import { createRequestBroker, createSessionBroker, createTurnBroker } from "../index"
 import { type MemoryPorts, authority, origin } from "../../conformance/test-support/memory-ports"
-
-const permission = (id: string, grantKey?: string, sessionID = "s1"): TurnRequest => ({
-  kind: "permission", requestId: id, ...(grantKey ? { grantKey } : {}),
-  permission: { id, sessionID, permission: "execute", patterns: [], always: [], metadata: {} },
-})
-const question = (id: string): TurnRequest => ({
-  kind: "question", requestId: id,
-  question: { id, sessionID: "s1", questions: [{ header: "Question", question: "Continue?", options: [], custom: true }] },
-})
-const byChild = (request: TurnRequest, correlationKey: string): TurnRequest => ({ ...request, child: { correlationKey } })
-const spawn = (toolCallId: string): SubagentObservation => ({
-  observationId: `spawn:${toolCallId}`, providerKind: "claude-agent", toolCallId, toolCallRole: "spawn",
-  status: "running", mode: "background", transcript: { kind: "live" },
-})
-const tick = async () => { for (let index = 0; index < 12; index++) await Promise.resolve() }
-const once = { kind: "permission", decision: "allow_once" } as const
-
-function filedSession(request: TurnRequest | undefined): string | undefined {
-  if (request?.kind === "permission") return request.permission.sessionID
-  if (request?.kind === "question") return request.question.sessionID
-  return undefined
-}
+import { byChild, filedSession, once, permission, question, spawn, tick } from "./child-request-fixtures"
 
 export function registerChildOwnedRequestCases(name: string, make: () => MemoryPorts): void {
   async function idleParent() {
@@ -32,7 +9,7 @@ export function registerChildOwnedRequestCases(name: string, make: () => MemoryP
     const owner = createRequestBroker(ports)
     const turn = createTurnBroker(owner, { authority, origin, signal: new AbortController().signal })
     const bind = async (toolCallId: string) => {
-      const child = await turn.observeSubagent(spawn(toolCallId))
+      const child = await turn.observeSubagent(spawn(toolCallId, "background"))
       if (!child) throw new Error(`No child session for ${toolCallId}`)
       turn.associateChild(toolCallId, child)
       ports.startChildTurn("s1", toolCallId)

@@ -38,7 +38,7 @@ test("a provider turn the harness starts as its prompted turn ends is admitted o
     await f.runtime.sessions.create(sessionCreate({ id: "parent" }))
     await f.runtime.turns.start({ sessionId: "parent", text: "work", origin: LOOPBACK_ORIGIN })
     await until(() => admissions.length === 1, "provider turn asked for")
-    const admitted = await admissions[0]!
+    const admitted = await admissions[0]
     if (!admitted.admitted) throw new Error(`provider turn refused: ${admitted.reason}`)
     expect(await admitted.settled).toEqual({ state: "completed" })
     expect(journal(f, child!)).toContain("the background agent reported back")

@@ -11,7 +11,11 @@ function hostBroker(base: SessionBroker) {
   let lease = false
   let freed: (() => void)[] = []
   const release = () => { lease = false; const waiting = freed; freed = []; for (const wake of waiting) wake() }
-  const leased = async () => { while (lease) await new Promise<void>((wake) => { freed.push(wake) }); lease = true }
+  const leased = async (): Promise<void> => {
+    if (!lease) { lease = true; return }
+    await new Promise<void>((wake) => { freed.push(wake) })
+    return leased()
+  }
   const refused: string[] = []
   const asked: string[] = []
   const events = new Map<string, RoutedEvent[]>()
