@@ -1,7 +1,6 @@
 import { registerAppPluginTools } from "./app-plugins"
 import { registerAttentionTools } from "./attention"
 import { registerDocumentTools } from "./documents"
-import { registerProcessTools } from "./processes"
 import type { ToolRegistrar } from "./registry"
 import { registerReviewTools } from "./review"
 import { registerSessionTools } from "./sessions"
@@ -44,7 +43,6 @@ export const CLAXEDO_MCP_TOOL_GROUPS = [
   { id: "app-plugins", reach: { service: "app-plugins" }, register: registerAppPluginTools },
   { id: "attention", reach: "runtime", register: registerAttentionTools },
   { id: "documents", reach: { service: "documents" }, register: registerDocumentTools },
-  { id: "processes", reach: "runtime", register: registerProcessTools },
   { id: "review", reach: "runtime", register: registerReviewTools },
   { id: "sessions", reach: "runtime", register: registerSessionTools },
   { id: "subagents", reach: "runtime", register: registerSubagentTools },

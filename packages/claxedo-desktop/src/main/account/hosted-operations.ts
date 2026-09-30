@@ -467,8 +467,6 @@ export const HOSTED_OPERATIONS = {
     path: "/api/control/sessions/:sessionId/gateway",
     optionalQuery: ["workspaceId"],
   },
-  "billing.checkout": { method: "POST", path: "/api/billing/checkout", body: ["plan"] },
-  "billing.portal": { method: "POST", path: "/api/billing/portal" },
   "workspace.assignHost": {
     method: "POST",
     path: "/api/workspace/:id/host-assignment",

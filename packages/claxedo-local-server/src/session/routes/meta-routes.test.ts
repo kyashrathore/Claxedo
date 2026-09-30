@@ -252,7 +252,7 @@ describe("session metadata routes", () => {
       directory: `workspace:${workspaceId}`,
       remote_directory: "/workspace",
       kind: "cloud",
-      driver: "daytona",
+      driver: "modal",
     })
     if (!resolvedWorkspace) throw new Error("test workspace was not created")
     const refreshSessionProjection = vi.fn(async () => {

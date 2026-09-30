@@ -31,7 +31,6 @@ export type WorkspaceRelayTarget = {
   workspaceId: string
   hostId: string
   baseUrl: string
-  upstreamHeaders?: Record<string, string>
   backing: RelayBacking
 }
 
@@ -55,9 +54,8 @@ export type RuntimeAccessTokenActiveResult =
 export function parseWorkspaceRelayTarget(input: unknown): WorkspaceRelayTarget | undefined {
   if (!isRecord(input)) return undefined
   const row = input
-  const { workspaceId, hostId, baseUrl, upstreamHeaders } = row
+  const { workspaceId, hostId, baseUrl } = row
   if (typeof workspaceId !== "string" || typeof hostId !== "string" || typeof baseUrl !== "string") return undefined
-  if (upstreamHeaders !== undefined && !isStringRecord(upstreamHeaders)) return undefined
   // `access` is the retired spelling of the same fact. A payload carrying it
   // came from a control plane on the other side of the placement change, whose
   // `backing` may disagree with it; drop the target rather than pick one.
@@ -68,7 +66,6 @@ export function parseWorkspaceRelayTarget(input: unknown): WorkspaceRelayTarget 
     workspaceId,
     hostId,
     baseUrl,
-    ...(upstreamHeaders ? { upstreamHeaders } : {}),
     backing: row.backing,
   }
 }
@@ -151,10 +148,6 @@ export function createHostGenerationResolverLookup(url: string, options: HostGen
 export function hostTunnelIncumbentOutranks(incumbentGeneration: number | undefined, candidateGeneration: number | undefined) {
   if (incumbentGeneration === undefined) return false
   return candidateGeneration === undefined || incumbentGeneration > candidateGeneration
-}
-
-function isStringRecord(input: unknown): input is Record<string, string> {
-  return isRecord(input) && Object.values(input).every((value) => typeof value === "string")
 }
 
 function parseAbsoluteHttpUrl(baseUrl: string): URL | undefined {
@@ -738,18 +731,6 @@ const DANGEROUS_INBOUND_HEADER_PATTERNS: ReadonlyArray<RegExp> = [
   /^x-supervisor-/i,
 ]
 
-/**
- * Headers a target resolver may add to the forwarded request: provider-
- * specific upstream configuration only, exact names. Anything else the
- * resolver supplies is dropped — it must never inject cookies, hop-by-hop
- * headers, or the relay-owned authentication/identity headers stamped after
- * it. The only producer today is the Daytona sandbox's preview token
- * (`sandbox-relay-target.ts`).
- */
-const UPSTREAM_HEADER_ALLOWLIST: ReadonlySet<string> = new Set([
-  "x-daytona-preview-token",
-])
-
 function isDangerousInboundHeader(name: string) {
   const lower = name.toLowerCase()
   if ((DANGEROUS_INBOUND_HEADERS as ReadonlyArray<string>).includes(lower)) return true
@@ -769,7 +750,6 @@ export type WorkspaceRelayForwardHeadersOptions = {
    * may legitimately be needed, so the default is to not strip cookies.
    */
   hostTunnel?: boolean
-  upstreamHeaders?: Record<string, string>
 }
 
 export type WorkspaceRelayForwardRequestInitOptions = WorkspaceRelayForwardHeadersOptions & {
@@ -795,23 +775,13 @@ function forwardHeaders(
   }
   if (options.hostTunnel) headers.delete("cookie")
   // Bun's fetch auto-decodes gzip/br responses but errors on malformed
-  // upstream content-encoding (Daytona occasionally serves gzip-marked
-  // responses that fail Zlib decompression). Force identity encoding so the
-  // body streams through verbatim and the browser handles decompression.
+  // upstream content-encoding. Force identity encoding so the body streams
+  // through verbatim and the browser handles decompression.
   headers.set("accept-encoding", "identity")
-  // Resolver-supplied headers apply through an exact allowlist and BEFORE the
-  // relay-owned stamps below, so a resolver can set the provider headers it
-  // owns but can never overwrite authentication or identity headers.
-  for (const [name, value] of Object.entries(options.upstreamHeaders ?? {})) {
-    const trimmed = value.trim()
-    if (trimmed && UPSTREAM_HEADER_ALLOWLIST.has(name.toLowerCase())) headers.set(name, trimmed)
-  }
   headers.delete("authorization")
   headers.delete("Authorization")
   headers.set("Authorization", `Bearer ${relayHostToken}`)
   headers.set("x-workspace-id", workspaceId)
-  headers.set("X-Daytona-Skip-Preview-Warning", "true")
-  headers.set("X-Daytona-Skip-Last-Activity-Update", "true")
   // Single relay-controlled marker that lets the host service distinguish
   // traffic coming through the relay from any other inbound source. We do not
   // attempt to preserve a client IP here because the relay is not behind a
@@ -1284,7 +1254,6 @@ export const RELAY_ALLOWED_REQUEST_HEADER_LIST = [
   "Traceparent",
   "Tracestate",
   "X-Fetch-Bypass-Throttle",
-  "X-Daytona-Skip-Preview-Warning",
   "X-Workspace-Id",
   "X-OpenCode-Directory",
   "X-Claxedo-Runner",
@@ -1496,7 +1465,6 @@ export async function forwardWorkspaceRelayRequest(
         // the browser's relay cookies however it is reached.
         hostTunnel: isHostTunnelTarget(target),
         signal: controller.signal,
-        upstreamHeaders: target.upstreamHeaders,
       }),
     ))
     const headers = new Headers(upstream.headers)

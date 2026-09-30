@@ -93,22 +93,6 @@ export function decideSandboxHealthFailure(
   return { action: "wait", until: now + backoff, reason: `health failure #${retryCount}, backoff ${backoff}ms` }
 }
 
-// `decideSandboxIdle` was DELETED here (W1.4, 2026-07-30). It had zero
-// production callers — only its own unit test — while every sibling in this
-// file is wired (`decideSandboxStart` and `decideSandboxHealthFailure` from
-// workspace-supervisor-sandbox.ts, `nextSandboxRetryAt` from the sqlite
-// supervisor store). Idle shutdown is covered twice over without it: the
-// provider expires the sandbox itself (Daytona auto-stops at 15 min by default
-// and now gets explicit autoStop/autoDelete from hosted-services.ts), and
-// `garbageCollect()` reaps anything whose lease no longer matches — which is
-// the layer W1 just made able to see. A third dormant safety layer that has
-// never run is not defense in depth; it is code that would be trusted the first
-// time it fired, having never been exercised. If idle stop is wanted as a
-// control-plane decision later, wire it on the way in.
-//
-// `stop_idle` remains in `SandboxDecision` because it is the union's vocabulary,
-// not a live branch.
-
 export function nextSandboxRetryAt(
   retryCount: number,
   now: number,

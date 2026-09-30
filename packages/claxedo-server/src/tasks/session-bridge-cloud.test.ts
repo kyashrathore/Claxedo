@@ -143,7 +143,7 @@ function runtime() {
 
 function services(
   sandboxManager: SandboxManager | undefined,
-  sandbox: ControlPlaneServices["sandbox"] = { defaultDriver: "daytona" },
+  sandbox: ControlPlaneServices["sandbox"] = { defaultDriver: "modal" },
 ) {
   const created = new Map<string, { projectId?: string; displayName: string }>()
   const authority = {
@@ -335,7 +335,7 @@ beforeEach(async () => {
     workspace_name: "importer",
     directory: "/workspace",
     kind: "cloud",
-    driver: "daytona",
+    driver: "modal",
     repo_url: REPO,
     git_branch: "main",
     remote_directory: "/workspace",
@@ -572,7 +572,7 @@ describe("hosted tasks cloud roots", () => {
     )
     expect((await start(bridge(composition), "tsk_one")).started).toMatchObject({ ok: true })
 
-    expect(await rootOf("tsk_one")).toMatchObject({ kind: "cloud", driver: "daytona" })
+    expect(await rootOf("tsk_one")).toMatchObject({ kind: "cloud", driver: "modal" })
   })
 
   test("keeps a root out of its project's workspace list, so an ordinary start still resolves one workspace", async () => {

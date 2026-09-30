@@ -36,7 +36,6 @@ import { createControlPlaneRelayProvider } from "@claxedo/server-core/adapters/r
 import { sandboxRelayTargetLookup, type HostTunnelTargetResolver } from "./sandbox-relay-target"
 import type { RelayTargetLookup } from "../deployments/shared-routes/internal-relay"
 import type { SandboxDriver, SandboxEgressUnenforcedEvent } from "@claxedo/sandbox-manager"
-import type { CliSessionTokenRegistry } from "@claxedo/server-core/platform/auth/cli-session-registry"
 import type { PrivateSessionAuthority } from "@claxedo/server-core/platform/auth/private-session-authority"
 import type { SessionTurnAuthority } from "@claxedo/server-core/platform/auth/session-turn-authority"
 import { DEFAULT_WORKSPACE_RUNTIME_PORT, createSandboxManager, type SandboxLeaseStore } from "@claxedo/sandbox-manager"
@@ -226,8 +225,6 @@ export type HostedControlPlane = {
    * consumed by both the relay provider and the internal relay resolver route.
    */
   relayTargetLookup: RelayTargetLookup
-  /** Present only for adapters whose native sessions use the retained registry. */
-  cliSessionTokenRegistry?: CliSessionTokenRegistry
   /**
    * Device-login provider, carried straight from the adapter bindings; undefined
    * until a trusted CLI issuer is configured. Its presence (or a native session
@@ -249,8 +246,6 @@ export type HostedControlPlaneAdapterBindings = {
   auth: ControlPlaneAuthAdapter
   authority: WorkspaceAuthority
   hostTunnelResolver: HostTunnelTargetResolver
-  /** Adapter-owned native sessions own this registry; Better Auth owns OAuth state in AUTH_DB. */
-  cliSessionTokenRegistry?: CliSessionTokenRegistry
   /** Required only when the static sandbox posture selects a driver. */
   sandbox?: { driver: SandboxDriver; leaseStore: SandboxLeaseStore }
   /**
@@ -379,7 +374,6 @@ export function composeProviderNeutralHostedControlPlane(
     resolverToken,
     safetyLimits: limits,
     relayTargetLookup,
-    ...(bindings.cliSessionTokenRegistry ? { cliSessionTokenRegistry: bindings.cliSessionTokenRegistry } : {}),
     ...(bindings.deviceAuthProvider ? { deviceAuthProvider: bindings.deviceAuthProvider } : {}),
     ...(bindings.runtimeSessionAuthority ? { runtimeSessionAuthority: bindings.runtimeSessionAuthority } : {}),
     ...(bindings.privateSessionAuthority ? { privateSessionAuthority: bindings.privateSessionAuthority } : {}),

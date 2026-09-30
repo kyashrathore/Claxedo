@@ -7,7 +7,6 @@ import { boundedJsonBody, errorBody, isRequestBodyTooLarge, requestBodyTooLargeB
 import { routeParam } from "@claxedo/helpers/route-param"
 import { assertTarget, authoritativeWorkspaceId, resolveWorkspaceCommandPaths, resolveWorkspacePath, WorkspaceTargetError } from "../target"
 import type { RelayHostAuthContext } from "../workspace-host-service-auth"
-import type { ProcessObserver } from "../managed-processes/process-observer"
 import { denyWorkspaceViewers } from "./workspace-role"
 import { readHistorySessionId } from "../pty/history-disk"
 import {
@@ -72,7 +71,6 @@ export type PtyRouteOptions = {
 
 export function PtyRoutes(
   upgradeWebSocket: UpgradeWebSocket,
-  processObserver?: ProcessObserver,
   policy: SessionAccessPolicy = managedWorkspaceSessionAccessPolicy(),
   options: PtyRouteOptions = {},
 ) {
@@ -140,8 +138,7 @@ export function PtyRoutes(
         })
         if (!decision.allowed) return sessionAccessDenied(decision)
       }
-      // Strip `managed` — only the process manager (internal caller) may set it
-      const { managed: _, ...input } = parsed.data
+      const input = parsed.data
       const workspaceId = authoritativeWorkspaceId()
       const { CLAXEDO_WORKSPACE_ID: _untrustedWorkspaceId, ...environment } = input.env ?? {}
       let cwd: string | undefined
@@ -222,17 +219,6 @@ export function PtyRoutes(
         // A workspace with no durable store gets volatile ownership, said here
         // rather than defaulted inside the PTY owner.
         options.ownership?.() ?? volatileLaunchOwnership(),
-        processObserver
-          ? {
-              observer: processObserver,
-              kind: "pty",
-              ownerId: `pty:${crypto.randomUUID()}`,
-              workspaceId: workspaceId ?? cwd,
-              directory: cwd,
-              label: input.title ?? "Terminal",
-              ...(input.sessionId ? { sessionId: input.sessionId } : {}),
-            }
-          : undefined,
         agentHookAccess,
       )
       const actorId = sessionAccessContext(c).actor?.actorId

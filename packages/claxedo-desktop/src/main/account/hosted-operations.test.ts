@@ -154,7 +154,7 @@ describe("resolveHostedOperation", () => {
   })
 
   test("reads the account's cloud usage facts for a range, and has no hosted dashboard read to route to", () => {
-    expect(resolveHostedOperation("usage.cloudFacts", { since: 1, until: 2, timezone: "UTC", view: "total" })).toEqual({
+    expect(resolveHostedOperation("usage.cloudFacts", { since: 1, until: 2, timezone: "UTC", view: "claxedo" })).toEqual({
       method: "GET",
       path: "/api/claxedo/usage/cloud-facts?since=1&until=2",
     })
@@ -457,7 +457,7 @@ describe("resolveHostedOperation", () => {
       workspaceName: "main",
       connectionId: "conn_1",
       repoFullName: "acme/demo",
-      driver: "daytona",
+      driver: "modal",
     })).toEqual({
       method: "POST",
       path: "/api/workspace/create",
@@ -468,7 +468,7 @@ describe("resolveHostedOperation", () => {
         // `driver` is declared, so the signed desktop path forwards the create
         // dialog's provider choice instead of silently dropping it. The hosted
         // control plane composes one driver from env and ignores the field.
-        driver: "daytona",
+        driver: "modal",
         repo: { fullName: "acme/demo" },
       },
     })

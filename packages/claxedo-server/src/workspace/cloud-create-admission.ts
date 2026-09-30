@@ -36,8 +36,7 @@ const DEFAULT_CREATE_WINDOW_MS = 60_000
 /**
  * Concurrently-live sandbox leases per tenant.
  *
- * This is a blast-radius bound, not a business quota — the billing entitlement
- * gate is what expresses "what did you pay for". At roughly one live sandbox
+ * This is a blast-radius bound, not a business quota. At roughly one live sandbox
  * per actively-working seat plus headroom for background/agent workspaces, 25
  * comfortably covers a ~10-seat team without ever being reached in normal use,
  * while capping what a compromised token or a runaway client can leave running
@@ -122,7 +121,7 @@ export type CloudCreateAdmission = {
   /**
    * The authority half of create admission, in the order `POST
    * /api/workspace/create` applies it: the authority's own create admission,
-   * then the paid-capability entitlement, then the concurrent-lease cap.
+   * then the deployment's cloud-workspace admission, then the concurrent-lease cap.
    *
    * `selectors` are the caller's tenant selectors, normalized here: blank
    * strings are absent, so a caller cannot name `""` to reach a different
@@ -138,13 +137,13 @@ export type CloudCreateAdmission = {
 /**
  * The deployment's half of create admission: everything beyond the authority's
  * own check. A policy that names none of it still rate-limits and caps by the
- * defaults; the entitlement and lease counter are the seams a deployment
- * supplies when it owns billing and a durable lease store.
+ * defaults; the admission gate and lease counter are the seams a deployment
+ * supplies when it owns a durable lease store.
  */
 export type CloudCreateAdmissionPolicy = {
   /** The per-caller create budget. A supplied limiter is shared with the create route when the same instance is handed to both. */
   rateLimiter?: ConnectionRateLimiter
-  /** The paid-capability gate. Absent hook = no billing gate (self-host). */
+  /** The deployment's cloud-workspace admission. Absent hook = no gate (self-host). */
   entitlement?: CloudWorkspaceEntitlementGate
   /** `0` disables the concurrent-lease cap; absent means the default. */
   leaseCap?: number

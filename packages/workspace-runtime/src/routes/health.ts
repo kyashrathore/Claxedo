@@ -16,8 +16,6 @@ export type WorkspaceRuntimeLivenessInput = {
   workspaceId: string
   /** Runtime-wide load counters the supervisor's idle check reads through the config-token grant. */
   ptyCount: number
-  processCount: number
-  activeProcessCount: number
 }
 
 /** Canonical response producer for `GET /api/wr/health`. */
@@ -37,8 +35,6 @@ export function workspaceRuntimeLivenessResponse(input: WorkspaceRuntimeLiveness
     harnessHealth: input.harnessHealth,
     ...(input.connectionState ? { connectionState: input.connectionState } : {}),
     ptyCount: input.ptyCount,
-    processCount: input.processCount,
-    activeProcessCount: input.activeProcessCount,
   }
 }
 

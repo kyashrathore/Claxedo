@@ -84,7 +84,6 @@ describe("syncLocalCredentials", () => {
       deleteOwn("codex-app-server"),
       deleteOwn("cursor-sdk"),
       deleteOwn("openai"),
-      deleteOwn("daytona"),
       deleteOwn("modal"),
       deleteOwn("vercel"),
       deleteOwn("cloudflare"),

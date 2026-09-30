@@ -23,7 +23,6 @@ import { pluginProjectionFor } from "../host/projection"
 import { PreviewModelInvalidError } from "../host/config-ops"
 import { createAgentRuntime, type AgentRuntime, type LaunchComposer } from "../host/runtime"
 import { Log } from "../log"
-import type { ProcessObserver } from "../managed-processes/process-observer"
 import { createRuntimeEventHub, type RuntimeEventEnvelope, type RuntimeEventHub } from "../projection/runtime-event-hub"
 import { normalizeRuntimeSnapshot, requestedSessionHarness, RUNTIME_NATIVE_HARNESS_IDS, RuntimeConfigApplyError, type AppliedRuntimeSnapshot, type RuntimeConnectionDescriptor, type RuntimeHarnessSelection, type RuntimeSnapshot } from "../routes/config"
 import { createWorkspaceEventFramesTap, type WorkspaceEventParents } from "../routes/events"
@@ -41,7 +40,7 @@ import { assertTarget, authoritativeWorkspaceId, withWorkspaceTarget, workspaceD
 import { createWorkspaceCheckpoint } from "./checkpoint"
 import { createSessionConfiguration } from "./configure"
 import { createHarnessHealthFeed } from "./harness-health-feed"
-import { mountWorkspaceCore, mountWorkspaceAgentHooks, mountWorkspaceEvents, mountWorkspaceProcess, mountWorkspacePty, type MountedWorkspaceEvents, type WorkspaceTranscriptRoutesOptions } from "./core"
+import { mountWorkspaceCore, mountWorkspaceAgentHooks, mountWorkspaceEvents, mountWorkspacePty, type MountedWorkspaceEvents, type WorkspaceTranscriptRoutesOptions } from "./core"
 import type { RuntimeConfigApplyStatus, WorkspaceConnectionState, WorkspaceHost, WorkspaceHostMountOptions } from "./host"
 import { mountSessionRoutes } from "./session-routes"
 import { assertConnectionRevision, connectionConfigHooks, harnessKey, persistRuntimeConfigApplyStatus, runnerForSelection, runtimeConfigApplyError, runtimeSnapshotSignature, sameAuth, sameRuntimeMcp, validateDescriptors, type RuntimeRunner } from "./snapshot"
@@ -56,8 +55,6 @@ export type WorkspaceRuntimeStore = RuntimeStore
 export type WorkspaceRuntimeStoreFactory = (input: { storeRoot?: string }) => WorkspaceRuntimeStore
 
 export type WorkspaceHostOptions = {
-  /** Optional, local-only lifecycle observer supplied by an embedding host. */
-  processObserver?: ProcessObserver
   /** Host observer for the durable turn.finish outcome after store commit. */
   onTurnOutcome?: (input: { sessionId: string; assistantMessageId?: string; outcome: AgentTurnOutcome }) => void
   /** Direct observer for the presentation events produced by this host. */
@@ -277,7 +274,6 @@ export function createWorkspaceHost(options: WorkspaceHostOptions): WorkspaceHos
     const runtimeStore = store()
     const services = createHarnessServices({
       ownership: launchOwnership(),
-      ...(options.processObserver ? { observation: { observer: options.processObserver, ...(options.target ? { workspaceId: options.target.workspaceId } : {}) } } : {}),
       ...(options.transcripts ? { transcripts: options.transcripts } : {}),
       ...(options.firstPartyMcpLaunch ? { firstPartyMcpLaunch: options.firstPartyMcpLaunch } : {}),
       log: { debug: (message, fields) => log.info(message, fields), info: (message, fields) => log.info(message, fields),
@@ -503,7 +499,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions): WorkspaceHos
     if (mount.core) {
       return mountWorkspaceCore(app, mount.core.upgradeWebSocket, {
         directory, workspaceId: id, eventHub, exposure: mount.exposure, sessionAccessPolicy,
-        processObserver: options.processObserver, sessionStarts,
+        sessionStarts,
         sessionParents: options.sessionParents ?? sessionParents, transcripts: options.transcripts, launchOwnership,
       })
     }
@@ -512,8 +508,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions): WorkspaceHos
       sessionParents: options.sessionParents ?? sessionParents,
       ...(mount.renewalIntervalMs !== undefined ? { renewalIntervalMs: mount.renewalIntervalMs } : {}),
     })
-    if (mount.pty) mountWorkspacePty(app, mount.pty.upgradeWebSocket, options.processObserver, sessionAccessPolicy, { ownership: launchOwnership })
-    if (mount.process) mountWorkspaceProcess(app, sessionAccessPolicy, { ownership: launchOwnership })
+    if (mount.pty) mountWorkspacePty(app, mount.pty.upgradeWebSocket, sessionAccessPolicy, { ownership: launchOwnership })
     if (mount.agentHooks) mountWorkspaceAgentHooks(app, sessionAccessPolicy)
     return events
   }

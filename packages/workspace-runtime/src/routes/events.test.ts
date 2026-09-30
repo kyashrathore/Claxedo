@@ -190,7 +190,6 @@ describe("wr/events — one stream per workspace runtime", () => {
     ptys.set("pty-elsewhere", "/elsewhere")
     const controller = new AbortController()
     const response = await app.request("http://localhost/api/wr/events", { signal: controller.signal })
-    bus.publish({ type: "process.started", directory: "/elsewhere", configId: "cfg-elsewhere", ptyId: "pty-elsewhere" })
     bus.publish({ type: "pty.created", info: { id: "pty-new-elsewhere", title: "t", command: "sh", args: [], cwd: "/elsewhere", status: "running", pid: 1 } })
     bus.publish({ type: "pty.exited", id: "pty-elsewhere", exitCode: 0 })
     bus.publish({ type: "session.lifecycle", phase: "created", directory: "/elsewhere", sessionID: "ses-elsewhere", ts: 1 })
@@ -200,7 +199,6 @@ describe("wr/events — one stream per workspace runtime", () => {
     bus.publish({ type: "agent.lifecycle", tabId: "tab", terminalId: "pty-here", eventType: "Idle" })
     ptys.delete("pty-here")
     bus.publish({ type: "pty.deleted", id: "pty-here" })
-    bus.publish({ type: "process.started", directory: DIRECTORY, configId: "cfg-here", ptyId: "pty-new-here" })
     // A per-session worktree lives under the storage root, not the workspace
     // directory; it is this runtime's because the workspace registered it.
     registerWorkspaceDirectory({ workspaceId: WORKSPACE_ID, sessionId: "ses-wt", directory: "/storage/worktrees/ses-wt" })
@@ -215,7 +213,7 @@ describe("wr/events — one stream per workspace runtime", () => {
     const frames = dataFrames(text)
     const payloads = frames.map((f) => f.payload).filter(Boolean)
     expect(payloads.map((p) => p.type)).toEqual([
-      "pty.created", "pty.exited", "agent.lifecycle", "pty.deleted", "process.started",
+      "pty.created", "pty.exited", "agent.lifecycle", "pty.deleted",
       "session.lifecycle", "pty.created", "agent.lifecycle", "message.part.updated",
     ])
     expect(frames.find((f) => f.payload?.type === "session.lifecycle")?.directory).toBe("/storage/worktrees/ses-wt")
@@ -269,7 +267,7 @@ describe("wr/events — one stream per workspace runtime", () => {
       providerSessionId: "provider-private-id", transcriptPath: "/transcripts/private.jsonl",
       prompt: "private-prompt-text", eventType: "Error",
     })
-    bus.publish({ type: "process.started", directory: DIRECTORY, configId: "lifecycle-sentinel", ptyId: "p" })
+    bus.publish({ type: "pty.created", info: { id: "lifecycle-sentinel", title: "t", command: "sh", args: [], cwd: DIRECTORY, status: "running", pid: 9 } })
     const text = await readUntil(response, "lifecycle-sentinel")
     controller.abort()
 
@@ -430,7 +428,7 @@ describe("wr/events — one stream per workspace runtime", () => {
     const cursor = frameId(await readUntil(response, "prt-1"), "prt-1")
     first.abort()
     // Frames the session arm never carries, numbered by the workspace ring only.
-    bus.publish({ type: "process.status", directory: DIRECTORY, configId: "svc", status: "running" })
+    bus.publish({ type: "pty.created", info: { id: "svc", title: "t", command: "sh", args: [], cwd: DIRECTORY, status: "running", pid: 9 } })
     hub.publishGlobal(part("other", "prt-other", { status: "running" }))
     hub.publishGlobal(part("shared", "prt-2", { status: "completed" }))
     const second = new AbortController()
@@ -731,7 +729,7 @@ test("pending startup frames use creator reservation authority without a session
     hub.publishGlobal(withDir(DIRECTORY, questionAsked({ id: "pending-question", sessionID: binding.sessionId, questions: [] })))
     hub.publishGlobal(part(binding.sessionId, "private-message", { status: "running" }))
     bus.publish({ type: "session.lifecycle", phase: "creating", start: { ...binding, operationId: "forged-operation" }, directory: DIRECTORY, workspaceId: WORKSPACE_ID, actorId: "creator", message: "forged-start", ts: 1 })
-    bus.publish({ type: "process.started", directory: DIRECTORY, configId: "sentinel", ptyId: "p" })
+    bus.publish({ type: "pty.created", info: { id: "sentinel", title: "t", command: "sh", args: [], cwd: DIRECTORY, status: "running", pid: 9 } })
     const text = await readUntil(response, "sentinel")
     expect(text.includes("pending-question")).toBe(actorId === "creator")
     expect(text.includes('"phase":"creating"')).toBe(actorId === "creator")
@@ -740,7 +738,7 @@ test("pending startup frames use creator reservation authority without a session
     if (actorId === "creator") {
       revoked = true
       hub.publishGlobal(withDir(DIRECTORY, questionAsked({ id: "revoked-question", sessionID: binding.sessionId, questions: [] })))
-      bus.publish({ type: "process.started", directory: DIRECTORY, configId: "revoked-sentinel", ptyId: "p" })
+      bus.publish({ type: "pty.created", info: { id: "revoked-sentinel", title: "t", command: "sh", args: [], cwd: DIRECTORY, status: "running", pid: 9 } })
       expect(await readUntil(response, "revoked-sentinel")).not.toContain("revoked-question")
       revoked = false
       start = { ...start, status: "failed", error: "Agent refused startup" }

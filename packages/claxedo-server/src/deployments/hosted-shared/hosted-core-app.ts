@@ -300,7 +300,6 @@ export function createHostedCoreApp(plane: HostedControlPlane, options: HostedCo
       runtimeAccessTokenSigner: !!services.relay.runtimeAccessTokenSigner,
       hostTunnelTokenSigner: !!services.relay.hostTunnelTokenSigner,
       deviceLogin: options.authentication.descriptor.native.cli.flow === "device-authorization",
-      optionalServices: "authenticated-catalog",
       product: options.product,
     }),
   )

@@ -37,35 +37,31 @@ Deleting the npm-publish gate removed content immutability at a fixed
 workspace-runtime version: two builds at the same core version now produce
 different bundles. To keep them distinguishable, `build-sandbox-image.ts`
 computes a short content **build-id** (sha256 → 10 hex over the emitted bundle
-+ generated `package.json`) and folds it into both the image tag and the
-snapshot name:
++ generated `package.json`) and folds it into the image tag:
 
 ```
 image    ghcr.io/<repo>:workspace-runtime-<version>-<buildId>-v<schema>
-snapshot claxedo-workspace-runtime-<version>-<buildId>-v<schema>
 ```
 
 Every build prints these prominently and writes
 `packages/claxedo-server/scripts/sandbox/.build/build-info.json`
-(`{ imageTag, snapshotName, buildId, coreVersion }`).
+(`{ imageTag, buildId, coreVersion }`).
 The `deploy-cloudflare-sandbox-worker` and `claxedo-sandbox-image` workflows
 echo this file after bundling.
 
 The runtime side (sandbox-manager `image.ts`, read at import by the
-supervisor/drivers) resolves the snapshot/image name from these env vars, in
-precedence order:
+supervisor/drivers) resolves the image name from these env vars, in precedence
+order:
 
-1. `CLAXEDO_SANDBOX_IMAGE` / `CLAXEDO_SNAPSHOT_NAME` — override the full names
-   outright (highest precedence).
+1. `CLAXEDO_SANDBOX_IMAGE` — overrides the full name outright (highest
+   precedence).
 2. `CLAXEDO_SANDBOX_BUILD_ID` — folds the given build-id into the default
-   names, so they resolve to the exact build just pushed.
-3. Neither set — the default names carry **no** build-id (byte-identical to the
-   pre-build-id behavior).
+   name, so it resolves to the exact build just pushed.
+3. Neither set — the default name carries **no** build-id.
 
 So after a rebuild, set `CLAXEDO_SANDBOX_BUILD_ID` (from the printed
-`build-info.json`) on the control plane's environment; the drivers will then
-`ensureSnapshot` against the new snapshot name instead of returning early for
-the stale one.
+`build-info.json`) on the control plane's environment so the drivers use the
+new image.
 
 ## Custom domain setup
 

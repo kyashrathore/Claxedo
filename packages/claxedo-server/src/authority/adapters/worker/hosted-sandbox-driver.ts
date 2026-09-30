@@ -1,7 +1,5 @@
 import type { SandboxDriver } from "@claxedo/sandbox-manager"
 import { createCloudflareSandboxDriver } from "@claxedo/sandbox-manager/drivers/cloudflare"
-import { createDaytonaSandboxDriver } from "@claxedo/sandbox-manager/drivers/daytona"
-import { createExeSandboxDriver } from "@claxedo/sandbox-manager/drivers/exe"
 import { createFetchBridgeSandboxDriver } from "@claxedo/sandbox-manager/drivers/fetch-bridge"
 
 import {
@@ -17,11 +15,6 @@ import {
 } from "../../provider-neutral-hosted-services"
 import { trimToUndefined } from "@claxedo/helpers/string"
 import { provisionedRunnerOption } from "@claxedo/server-core/agent-config/connections"
-
-/** Convert millisecond lifecycle knobs to the whole minutes Daytona accepts. */
-export function lifecycleMinutes(env: HostedWorkerEnv, key: string, fallbackMs: number) {
-  return Math.max(1, Math.round(positiveInteger(env, key, fallbackMs) / 60_000))
-}
 
 function trimmedOrigin(value: string) {
   return value.replace(/\/+$/g, "")
@@ -90,53 +83,10 @@ export function hostedSandboxDriver(env: HostedWorkerEnv): SandboxDriver | undef
     })
   }
 
-  if (name === "daytona") {
-    const apiKey = trimToUndefined(env.DAYTONA_API_KEY)
-    const baseSnapshot = trimToUndefined(env.CLAXEDO_DAYTONA_SNAPSHOT)
-    if (!apiKey || !baseSnapshot) return undefined
-    return createDaytonaSandboxDriver({
-      apiKey,
-      baseSnapshot,
-      autoStopMinutes: lifecycleMinutes(env, "CLAXEDO_SANDBOX_AUTO_STOP_MS", 30 * 60_000),
-      autoDeleteMinutes: lifecycleMinutes(env, "CLAXEDO_SANDBOX_AUTO_DELETE_MS", 24 * 60 * 60_000),
-      ...(trimToUndefined(env.DAYTONA_API_URL) ? { apiUrl: trimToUndefined(env.DAYTONA_API_URL) } : {}),
-      ...(trimToUndefined(env.DAYTONA_ORGANIZATION_ID) ? { organizationId: trimToUndefined(env.DAYTONA_ORGANIZATION_ID) } : {}),
-      ...(trimToUndefined(env.DAYTONA_TARGET) ? { target: trimToUndefined(env.DAYTONA_TARGET) } : {}),
-      runtimePort: workspaceRuntimePort(env),
-      ...(trimToUndefined(env.CLAXEDO_RUNTIME_WORKSPACE_DIR) ? { workspaceDir: trimToUndefined(env.CLAXEDO_RUNTIME_WORKSPACE_DIR) } : {}),
-      ...provisionedRunnerOption(env),
-      controlEnv: sandboxRuntimeControlEnv(env),
-      env: sandboxRuntimeManagementEnv,
-    })
-  }
-
-  if (name === "exe") {
-    const apiToken = trimToUndefined(env.EXE_DEV_API_TOKEN)
-    if (!apiToken) return undefined
-    const control = sandboxRuntimeControlEnv(env)
-    const runtimeEnv = {
-      ...sandboxRuntimeManagementEnv(),
-      ...(control.relayJwksUrl ? { WORKSPACE_RUNTIME_RELAY_JWKS_URL: control.relayJwksUrl } : {}),
-      ...(control.relayVerifyPem ? { WORKSPACE_RUNTIME_RELAY_HOST_VERIFY_PEM: control.relayVerifyPem } : {}),
-      ...(control.managementJwksUrl ? { WORKSPACE_RUNTIME_MANAGEMENT_JWKS_URL: control.managementJwksUrl } : {}),
-      ...(control.sessionAuthorityUrl ? { WORKSPACE_RUNTIME_SESSION_AUTHORITY_URL: control.sessionAuthorityUrl } : {}),
-    }
-    return createExeSandboxDriver({
-      apiToken,
-      ...(trimToUndefined(env.EXE_DEV_API_URL) ? { endpoint: trimToUndefined(env.EXE_DEV_API_URL) } : {}),
-      ...(trimToUndefined(env.CLAXEDO_SANDBOX_IMAGE) ? { image: trimToUndefined(env.CLAXEDO_SANDBOX_IMAGE) } : {}),
-      runtimePort: workspaceRuntimePort(env),
-      ...(trimToUndefined(env.CLAXEDO_RUNTIME_COMMAND) ? { runtimeCommand: trimToUndefined(env.CLAXEDO_RUNTIME_COMMAND) } : {}),
-      ...(trimToUndefined(env.CLAXEDO_RUNTIME_WORKSPACE_DIR) ? { workspaceDir: trimToUndefined(env.CLAXEDO_RUNTIME_WORKSPACE_DIR) } : {}),
-      ...provisionedRunnerOption(env),
-      ...(Object.keys(runtimeEnv).length ? { env: () => runtimeEnv } : {}),
-    })
-  }
-
   if (name !== "fetch") {
     throw new HostedWorkerCompositionError(
       "hosted_sandbox_driver_unsupported",
-      `Hosted Worker sandbox driver must be one of cloudflare, daytona, exe, or fetch; got ${name}`,
+      `Hosted Worker sandbox driver must be cloudflare or fetch; got ${name}`,
     )
   }
   const driverUrl = trimToUndefined(env.CLAXEDO_SANDBOX_DRIVER_URL)

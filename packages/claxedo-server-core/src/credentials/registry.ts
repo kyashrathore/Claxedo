@@ -913,7 +913,7 @@ export async function deleteCredentialsByProvider(
  * subscription_session} AND a bare (non-namespaced) provider id.
  *
  * Everything else stays server-side and reaches its consumer another way:
- *  - `kind: "sandbox_driver"` (Daytona/Vercel/Cloudflare/…): provisioning
+ *  - `kind: "sandbox_driver"` (Vercel/Cloudflare/…): provisioning
  *    credentials the DRIVER injects natively; the driver API token controls
  *    EVERY sandbox and must never sit in a sandbox's own config. Resolved for
  *    provisioning via `config.sandbox_driver`, never through this fanout.

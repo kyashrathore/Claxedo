@@ -194,7 +194,7 @@ function changeCount(result: unknown): number | undefined {
   return typeof result.changes === "number" ? result.changes : undefined
 }
 
-const LAUNCH_ROLES = ["turn", "harness", "managed-process", "terminal"] as const
+const LAUNCH_ROLES = ["turn", "harness", "terminal"] as const
 const LAUNCH_PROTOCOLS = ["gate", "direct"] as const
 
 /**

@@ -9,7 +9,6 @@ import { sourceClosure } from "@claxedo/server-core/platform/governance/source-c
 import { coreAppHomeOrigin, createHostedCoreApp } from "./hosted-core-app"
 import { sandboxRelayTargetLookup, type HostedControlPlane } from "../../authority/hosted-services"
 import type { ControlPlaneServices } from "../../authority/services"
-import { createInMemoryCliSessionTokenRegistry } from "@claxedo/server-core/platform/auth/cli-session-registry"
 import { STATIC_PRODUCT_DESCRIPTORS } from "./deployment-profile"
 import { testRequestAuthenticationAdapter } from "../../test-support/request-authentication"
 import { hostedOrgCredentials } from "../../credentials/worker"
@@ -72,7 +71,6 @@ function plane(): HostedControlPlane {
       sandboxMaxRetryCount: 5,
     },
     relayTargetLookup: sandboxRelayTargetLookup({ telemetry: services.telemetry }),
-    cliSessionTokenRegistry: createInMemoryCliSessionTokenRegistry(),
     privateSessionAuthority: sessionAuthority,
     runtimeSessionAuthority: sessionAuthority,
     env: { CLAXEDO_DEPLOYMENT_MODE: "hosted" },
@@ -557,21 +555,13 @@ describe("resource-closed hosted core app", () => {
     )
   })
 
-  test("has no static Documents, billing, or Polar implementation edge", () => {
+  test("has no static Documents implementation edge", () => {
     const entry = "src/deployments/hosted-shared/hosted-core-app.ts"
     const closure = sourceClosure({ entry: path.join(ROOT, entry), root: ROOT, runtimeOnly: true })
     expect(closure.unresolved).toEqual([])
     expect(closure.opaque).toEqual([])
     const files = closure.modules.map((module) => module.relative.toLowerCase())
-    expect(files.filter((file) => ["documents/", "billing/"].some((part) => file.includes(part)))).toEqual([])
-    expect(
-      closure.packages.filter((name) =>
-        [
-          "@claxedo/documents-service",
-          "@polar-sh/sdk",
-        ].includes(name),
-      ),
-    ).toEqual([])
+    expect(files.filter((file) => file.includes("documents/"))).toEqual([])
   })
 
   test("requires the cross-isolate limiter, LiveSyncRoom, and admission policy", () => {
@@ -625,7 +615,7 @@ describe("resource-closed hosted core app", () => {
     })
     const mode = await app.fetch(new Request("https://core.test/api/claxedo/mode"))
     expect(await mode.json()).toMatchObject({
-      product: { productPosture: "user-deployed", organizationPolicy: "single-org", billing: "absent", multiplayer: true },
+      product: { productPosture: "user-deployed", organizationPolicy: "single-org", multiplayer: true },
     })
   })
 

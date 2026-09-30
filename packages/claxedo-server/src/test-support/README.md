@@ -1,8 +1,8 @@
 # test-support/
 
 Test-only code. Nothing here may be imported by production modules —
-in-process helpers (`assert-helpers`, `guards`,
-`cli-session-registry` double) and the `fake-acp` subprocess fixture.
+in-process helpers (`assert-helpers`, `guards`) and the `fake-acp`
+subprocess fixture.
 
 `data-isolation.ts` is the suite's `setupFiles` entry rather than a helper a
 test imports: it must run before a test file's module graph loads.

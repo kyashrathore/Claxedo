@@ -74,7 +74,7 @@ test.each([false, true])("runtime callbacks require the workspace credential wit
     const callback = (workspaceId: string, headers: Record<string, string> = {}) => subject.app.request(`http://localhost/runtime/${operation}`, {
       method: "POST",
       headers: { "content-type": "application/json", ...headers },
-      body: JSON.stringify({ workspaceId, ok: true, status: "ready", directory: `/synthetic/${workspaceId}`, profile: "workspace", agentType: "opencode", model: null, ptyCount: 0, processCount: 0, activeProcessCount: 0, epoch: 2 }),
+      body: JSON.stringify({ workspaceId, ok: true, status: "ready", directory: `/synthetic/${workspaceId}`, profile: "workspace", agentType: "opencode", model: null, ptyCount: 0, epoch: 2 }),
     })
     const headers = { authorization: `Bearer ${subject.tokenA}`, "x-workspace-id": workspaceA }
     expect((await callback(workspaceA)).status).toBe(local ? 403 : 401)

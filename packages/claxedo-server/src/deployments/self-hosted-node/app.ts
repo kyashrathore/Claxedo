@@ -2,7 +2,6 @@ import { LOCAL_USER_ID } from "@claxedo/server-core/platform/auth/local-identity
 import fs from "node:fs"
 import path from "node:path"
 import type { Duplex } from "node:stream"
-import os from "node:os"
 import { Hono } from "hono"
 import type { MiddlewareHandler } from "hono"
 import { cors } from "hono/cors"
@@ -20,7 +19,6 @@ import {
   managedWorkspaceSessionAccessPolicy,
   sessionAccessRequiresWrite,
   sessionAccessWriteClass,
-  type ProcessObserver,
   type SessionAccessStreamDecision,
   type SessionAccessPolicyInput,
   type SessionAuthorityInput,
@@ -183,13 +181,11 @@ import {
   embeddedWorkspaceRuntimeSessionAuthority,
 } from "@claxedo/local-server/self-hosted-execution"
 import { createSqliteUsageLedger } from "@claxedo/server-core/usage/adapters/sqlite-usage-ledger"
-import { createSqliteUsageSourceCoverageStore, type UsageSourceCoverageStore } from "@claxedo/server-core/usage/adapters/sqlite-usage-provenance"
 import { createSqliteTurnMeterStateStore } from "@claxedo/server-core/usage/adapters/sqlite-turn-meter-state"
 import { createTurnMeter } from "@claxedo/server-core/usage/turn-meter"
 import { LocalUsageRoutes } from "@claxedo/local-server/self-hosted-execution"
 import { tokenTrackerPricing } from "@claxedo/server-core/usage/adapters/token-tracker-pricing"
-import { readMachineAgentUsage, scanTokenTrackerLocalHistory } from "@claxedo/local-server/self-hosted-execution"
-import { localHistoryClassifier } from "@claxedo/server-core/usage/local-history-classifier"
+import { readMachineAgentUsage } from "@claxedo/local-server/self-hosted-execution"
 import { usageLocation } from "@claxedo/server-core/usage/projection"
 import { meteringHarnessId } from "@claxedo/server-core/session/harness/index"
 import { recordRelayRuntimeToken } from "../../authority/relay-token-record"
@@ -837,8 +833,6 @@ export function createSelfHostedApp(
      */
     posture?: SelfHostedPosture
     usageRevisionStore?: ReturnType<typeof createSqliteUsageLedger>
-    usageSourceCoverage?: UsageSourceCoverageStore
-    usageSourceCoverageReady?: Promise<void>
     resolveUsageHostIdentity?: () => Promise<{ hostId: string }>
     /** Composition seam for tests/load fixtures; production keeps the default limiter. */
     connectionRateLimiter?: ConnectionRateLimiter
@@ -1477,20 +1471,6 @@ export function createSelfHostedApp(
         }
       },
       quota: async ({ request, refresh }) => await readQuota({ org: await requestOrg(request, {}), refresh }),
-      history: async ({ since, until, refresh }) => {
-        await options.usageSourceCoverageReady
-        return await scanTokenTrackerLocalHistory({
-          sourceHome: os.homedir(),
-          stateDir: path.join(dataDir(), "usage-scanner"),
-          since,
-          until,
-          refresh,
-          classify: localHistoryClassifier(
-            await options.usageRevisionStore!.localTurnSpans(),
-            (await options.usageSourceCoverage?.starts()) ?? {},
-          ),
-        })
-      },
       pricing: tokenTrackerPricing("refreshed"),
       telemetry: services.telemetry,
     }))
@@ -1675,7 +1655,6 @@ export type ControlPlaneStackOptions = {
   sandboxDriver?: InjectedSandboxDriver
   egressBroker?: (request: Request) => Promise<Response>
   port?: number
-  processObserver?: ProcessObserver
   /** Explicit build/composition contributions (Agent Plugins); absent in the disabled product. */
   routeContributions?: readonly ControlPlaneRouteContribution[]
   /** Agent Plugins' contribution to every runtime snapshot this box pushes; absent in the disabled product. */
@@ -1852,8 +1831,6 @@ function startOwnedControlPlaneStack(options: ControlPlaneStackOptions, releaseD
   const port = options.port ?? DEFAULT_CLAXEDO_SERVER_PORT
   const services = options.services
   const usageRevisionStore = createSqliteUsageLedger()
-  const usageSourceCoverage = createSqliteUsageSourceCoverageStore()
-  const usageCoverageReady = usageSourceCoverage.ensure(["claude", "codex", "cursor", "opencode", "pi"])
   const localUsageHost = localHostIdentity()
   const localTurnMeter = createTurnMeter({
     writer: usageRevisionStore,
@@ -1909,7 +1886,6 @@ function startOwnedControlPlaneStack(options: ControlPlaneStackOptions, releaseD
     ...(services.auth.config.enabled && services.authority
       ? { sessionAccessPolicy: embeddedManagedPrivateSessionPolicy(services.authority, connectionTurnCredentials) }
       : {}),
-    ...(options.processObserver ? { processObserver: options.processObserver } : {}),
     // See `projectLocalSessionMetaFromEvent` above: a harness session's
     // async auto-title is published only as a `session.updated` frame on that
     // workspace runtime's own stream, never an HTTP `PATCH /session/:id` the
@@ -1982,8 +1958,6 @@ function startOwnedControlPlaneStack(options: ControlPlaneStackOptions, releaseD
     ...(options.sandboxDriver?.id === "local-brokering-test" ? { localBrokeringRelay: true } : {}),
     egressBroker: options.egressBroker ?? credentialBroker?.handler,
     usageRevisionStore,
-    usageSourceCoverage,
-    usageSourceCoverageReady: usageCoverageReady,
     resolveUsageHostIdentity: localHostIdentity,
     ...(options.routeContributions ? { routeContributions: options.routeContributions } : {}),
     ...(options.tasksGrants ? { tasksGrants: options.tasksGrants } : {}),
@@ -2063,7 +2037,6 @@ export function startServer(
   port = DEFAULT_CLAXEDO_SERVER_PORT,
   options: {
     egressBroker?: (request: Request) => Promise<Response>
-    processObserver?: ProcessObserver
     routeContributions?: readonly ControlPlaneRouteContribution[]
   } = {},
 ) {
@@ -2071,7 +2044,6 @@ export function startServer(
     egressBroker: options.egressBroker,
     services: createDefaultLocalControlPlaneServices(),
     port,
-    ...(options.processObserver ? { processObserver: options.processObserver } : {}),
     ...(options.routeContributions ? { routeContributions: options.routeContributions } : {}),
   })
 }

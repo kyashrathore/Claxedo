@@ -11,7 +11,7 @@ become one running product. Three roles, three directories:
 | `deployments/` | we **compose** these modes | `hosted-workerd/` (the deployed Workers), `hosted-shared/`, `shared-routes/`, and `self-hosted-node/` (the Node composition the e2e suites and integration tests boot) |
 
 Everything else is a feature domain, flat at `src/` root — `documents/`,
-`billing/`, `channels/`, `session/`, `workspace/`, `credentials/`, `sandbox/`,
+`channels/`, `session/`, `workspace/`, `credentials/`, `sandbox/`,
 `connections/`, `agent-config/` — plus `authority/`, the
 identity/authorization/tenancy layer.
 
@@ -37,8 +37,7 @@ product HTTP surface.
 These are enforced by tests, not convention — see `tests/governance/codebase-shape.test.ts`:
 
 - **All SQL goes through drizzle tables.** Each domain owns its own
-  `*.sql.ts` table definitions; `platform/db/schema.ts` barrels them for the
-  migration generator. Hand-written
+  `*.sql.ts` table definitions. Hand-written
   `ClaxedoDB.raw().prepare(...)` in feature code fails the suite. One
   documented exception (``@claxedo/server-core/session/meta/index``, a dynamic cursor query).
   `authority/adapters/sqlite/` is a *separate* Node-only database with its own
@@ -47,7 +46,6 @@ These are enforced by tests, not convention — see `tests/governance/codebase-s
 - **No Node-only module or package may enter the Worker import graph.**
 - **The generic control-plane core stays storage-agnostic** — that is what keeps
   `trust=local` working with no hosted authority and no hosted identity provider.
-- **Polar stays inside `billing/`**, and never reaches the local entrypoints.
 
 ## Test kinds
 

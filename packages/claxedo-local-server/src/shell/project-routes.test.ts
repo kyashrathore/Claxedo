@@ -21,9 +21,9 @@ let app: ReturnType<typeof ShellRoutes>
 // asserting about an empty project.
 beforeEach(async () => {
   process.env.CLAXEDO_DATA_DIR = await fs.mkdtemp(path.join(root, "case-"))
-  await workspaceStore.ensureWorkspace({ workspaceId: "ws_main", project_id: "project_a", org_id: "org_a", project_name: "Original", workspace_name: "main", kind: "cloud", driver: "daytona", directory: "/srv/a" })
-  await workspaceStore.ensureWorkspace({ workspaceId: "ws_child", project_id: "project_a", org_id: "org_a", workspace_name: "branch", kind: "cloud", driver: "daytona", directory: "/srv/branch" })
-  await workspaceStore.ensureWorkspace({ workspaceId: "ws_other", project_id: "project_b", org_id: "org_b", project_name: "Other", kind: "cloud", driver: "daytona", directory: "/srv/b" })
+  await workspaceStore.ensureWorkspace({ workspaceId: "ws_main", project_id: "project_a", org_id: "org_a", project_name: "Original", workspace_name: "main", kind: "cloud", driver: "modal", directory: "/srv/a" })
+  await workspaceStore.ensureWorkspace({ workspaceId: "ws_child", project_id: "project_a", org_id: "org_a", workspace_name: "branch", kind: "cloud", driver: "modal", directory: "/srv/branch" })
+  await workspaceStore.ensureWorkspace({ workspaceId: "ws_other", project_id: "project_b", org_id: "org_b", project_name: "Other", kind: "cloud", driver: "modal", directory: "/srv/b" })
   app = ShellRoutes({ authConfig: unsigned })
 })
 afterAll(async () => {

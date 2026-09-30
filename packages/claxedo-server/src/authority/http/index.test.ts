@@ -225,8 +225,6 @@ describe("control plane HTTP protocol", () => {
       agentType: "opencode",
       model: "gpt-5.4",
       ptyCount: 1,
-      processCount: 2,
-      activeProcessCount: 1,
       epoch: 2,
     }
 
@@ -250,8 +248,6 @@ describe("control plane HTTP protocol", () => {
       agentType: "opencode",
       model: null,
       ptyCount: 0,
-      processCount: 0,
-      activeProcessCount: 0,
       epoch: 2,
     }
 
@@ -299,8 +295,6 @@ describe("control plane HTTP protocol", () => {
       agentType: "opencode",
       model: "gpt-5.4",
       ptyCount: 0,
-      processCount: 0,
-      activeProcessCount: 0,
       epoch: 7,
     }
 
@@ -339,8 +333,6 @@ describe("control plane HTTP protocol", () => {
         agentType: "opencode",
         model: null,
         ptyCount: 0,
-        processCount: 0,
-        activeProcessCount: 0,
         epoch: 2,
         sandboxId: "sandbox_b",
         url: "https://runtime.example.com/ws_b",
@@ -363,8 +355,6 @@ describe("control plane HTTP protocol", () => {
       agentType: "opencode",
       model: "gpt-5.4",
       ptyCount: 0,
-      processCount: 0,
-      activeProcessCount: 0,
       epoch: 2,
     }
 
@@ -405,8 +395,6 @@ describe("control plane HTTP protocol", () => {
       agentType: "opencode",
       model: "gpt-5.4",
       ptyCount: 0,
-      processCount: 0,
-      activeProcessCount: 0,
       epoch: 2,
     }
 
@@ -1064,8 +1052,6 @@ describe("control plane HTTP protocol", () => {
         agentType: "opencode",
         model: null,
         ptyCount: 0,
-        processCount: 0,
-        activeProcessCount: 0,
         epoch: 1,
       }),
     ).rejects.toThrow("workspace missing not found")

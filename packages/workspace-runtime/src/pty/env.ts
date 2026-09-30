@@ -106,10 +106,9 @@ const DENY_LIST = new Set([
 /**
  * `CLAXEDO_` is DENY-BY-DEFAULT: an explicit allowlist, not a prefix passthrough.
  *
- * Everything built here is handed to an agent-driven child — PTY sessions,
- * `/exec`, managed processes — and in embedded mode the workspace runtime shares
- * a process with the control plane, so `process.env` carries the control plane's
- * own secrets. Under a prefix passthrough that meant a prompt-injected agent
+ * Everything built here is handed to an agent-driven child — a PTY session —
+ * and in embedded mode the workspace runtime shares a process with the control
+ * plane, so `process.env` carries the control plane's own secrets. Under a prefix passthrough that meant a prompt-injected agent
  * could read them with `env`: JWT signing keys
  * (`CLAXEDO_RUNTIME_ACCESS_TOKEN_PRIVATE_KEY_PEM`,
  * `CLAXEDO_RELAY_HOST_SIGNING_KEY_PEM`), the control-plane machine principal
@@ -199,8 +198,8 @@ const DEFAULT_PREFIXES = ["CLAXEDO_"]
  * - `"ambient"` (default): the host process's own `process.env`. This is the
  *   dangerous projection — in embedded mode it is the CONTROL PLANE's
  *   environment — so prefixed names are deny-by-default here.
- * - `"explicit"`: env the caller deliberately supplied for this child (a managed
- *   process's configured `env`, a PTY's `input.env`, an `/exec` body's `env`).
+ * - `"explicit"`: env the caller deliberately supplied for this child (a PTY's
+ *   `input.env`).
  *   Filtering these to the allowlist would break a documented feature and
  *   protect nothing: whoever wrote the value already has it, so passing it back
  *   teaches them nothing. Deny-listed and non-prefixed rules still apply.

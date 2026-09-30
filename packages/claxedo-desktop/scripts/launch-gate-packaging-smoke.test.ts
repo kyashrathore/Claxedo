@@ -32,7 +32,7 @@ test("the main bundle copies the gate child beside itself and unpacks it from th
   expect(viteConfig).toContain("copy-launch-gate-child")
   expect(viteConfig).toContain("out/main/launch-gate-child.mjs")
   // Bundled, not external: nothing else puts this file on disk.
-  expect(viteConfig).toContain('external: ["better-sqlite3", "@lydell/node-pty", "@vscode/windows-process-tree"]')
+  expect(viteConfig).toContain('external: ["better-sqlite3", "@lydell/node-pty"]')
   expect(builderConfig).toContain('"**/out/main/launch-gate-child.mjs"')
 })
 

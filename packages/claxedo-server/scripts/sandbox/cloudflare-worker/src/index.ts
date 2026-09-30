@@ -317,9 +317,9 @@ export default {
     // enforces its own Relay Host Token on `Authorization`, which is the SAME
     // header our admin gate uses — so consuming it here would shadow the RHT.
     // Instead we forward `Authorization` untouched and let the runtime verify
-    // it. Same trust model as Daytona's preview URLs: publicly reachable,
-    // token-gated by the runtime itself. The worker API_TOKEN keeps gating the
-    // control actions below (ensure-runtime/touch-runtime/destroy).
+    // it: publicly reachable, token-gated by the runtime itself. The worker
+    // API_TOKEN keeps gating the control actions below
+    // (ensure-runtime/touch-runtime/destroy).
     if (parts[0] === "sandbox" && parts[1] && parts[2] === "proxy") {
       const startedAt = performance.now()
       const sandbox = getSandbox(env.Sandbox, parts[1], SANDBOX_OPTIONS)

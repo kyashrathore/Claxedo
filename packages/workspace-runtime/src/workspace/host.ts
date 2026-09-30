@@ -35,7 +35,7 @@ export type WorkspaceHostMountOptions = {
   renewalIntervalMs?: number
   exposure: WorkspaceRuntimeExposure
   /** When provided, also mounts the workspace core routes (file, diff,
-   *  PTY, process, tunnel, agent hooks, events, capabilities) as a
+   *  PTY, tunnel, agent hooks, events, capabilities) as a
    *  single unified host. Without this, only the session/runner
    *  surfaces are mounted and callers must mount the core separately. */
   core?: {
@@ -45,7 +45,6 @@ export type WorkspaceHostMountOptions = {
   pty?: {
     upgradeWebSocket: Parameters<typeof PtyRoutes>[0]
   }
-  process?: boolean
   agentHooks?: boolean
 }
 

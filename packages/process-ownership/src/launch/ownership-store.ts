@@ -1,7 +1,7 @@
 import type { CreationIdentity } from "./identity"
 import type { RetirementResult } from "./retirement"
 
-export type LaunchRole = "turn" | "harness" | "managed-process" | "terminal"
+export type LaunchRole = "turn" | "harness" | "terminal"
 
 /**
  * `gate` proves a prepared launch never executed: the payload cannot run before

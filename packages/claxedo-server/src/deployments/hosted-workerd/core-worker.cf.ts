@@ -4,10 +4,7 @@
  * Certified product/profile entrypoints inject exactly one static composition
  * through `createHostedCoreWorker`. This module owns the Cloudflare-only core
  * resources shared by every profile: the cross-isolate request limiter and
- * `LIVE_SYNC_ROOM`. Optional services are reached only through the typed
- * service catalog consumed by `HostedCoreAppOptions`; their implementations,
- * storage, jobs, and Durable Objects never enter this graph.
- *
+ * `LIVE_SYNC_ROOM`.
  */
 
 import type { ExecutionContext, Hono } from "hono"

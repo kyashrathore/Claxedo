@@ -83,12 +83,10 @@ function sandboxDriverAuthConfig(input: unknown): SandboxDriverConfig["auth"] | 
   const row = asRecord(input)
   if (!row) return undefined
   const auth: NonNullable<SandboxDriverConfig["auth"]> = {}
-  const daytona = asRecord(row.daytona)
   const modal = asRecord(row.modal)
   const vercel = asRecord(row.vercel)
   const cloudflare = asRecord(row.cloudflare)
   const docker = asRecord(row.docker)
-  const daytonaApiKey = credential(daytona, "api_key")
   const modalTokenId = credential(modal, "token_id")
   const modalTokenSecret = credential(modal, "token_secret")
   const vercelAccessToken = credential(vercel, "access_token")
@@ -97,7 +95,6 @@ function sandboxDriverAuthConfig(input: unknown): SandboxDriverConfig["auth"] | 
   const cloudflareApiToken = credential(cloudflare, "api_token")
   const cloudflareWorkerUrl = credential(cloudflare, "worker_url")
   const dockerImage = credential(docker, "image")
-  if (daytonaApiKey) auth.daytona = { api_key: daytonaApiKey }
   if (modalTokenId || modalTokenSecret) auth.modal = {
     ...(modalTokenId ? { token_id: modalTokenId } : {}),
     ...(modalTokenSecret ? { token_secret: modalTokenSecret } : {}),

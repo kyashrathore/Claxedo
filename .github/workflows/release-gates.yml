@@ -34,7 +34,7 @@ on:
           - macos
           - linux
       only:
-        description: "Stop after the source gate (skip packaging + packaged smoke)"
+        description: "Stop after the build (skip packaging)"
         required: false
         default: false
         type: boolean
@@ -138,31 +138,8 @@ jobs:
         working-directory: packages/claxedo-desktop
         run: bun run build
 
-      # Forks the bundle prebuild just produced; process ownership is qualified
-      # on macOS only, and the smoke's stray check needs `pgrep`.
-      - name: Run runtime recovery smoke (macOS)
-        if: runner.os == 'macOS' && (inputs.leg == 'all' || inputs.leg == matrix.leg || inputs.leg == matrix.platform)
-        working-directory: packages/claxedo-desktop
-        run: bun run test:runtime-recovery
-
-      - name: Run source diagnostics release gate
-        if: inputs.leg == 'all' || inputs.leg == matrix.leg || inputs.leg == matrix.platform
-        working-directory: packages/claxedo-desktop
-        env:
-          CLAXEDO_DIAGNOSTICS_SMOKE_OUTPUT: .artifacts/diagnostics-source-${{ matrix.target }}.json
-          CLAXEDO_DIAGNOSTICS_EXPECTED_ARCH: ${{ matrix.arch }}
-          # Surface the underlying collector error; the status enum alone
-          # cannot say WHY a source degraded.
-          CLAXEDO_DIAGNOSTICS_DEBUG: "1"
-        shell: bash
-        run: |
-          mkdir -p .artifacts
-          bun run test:diagnostics-release
-          bun run smoke:diagnostics
-
-      # Unsigned, dir-only package: proves the electron-builder config, the
-      # native-module file sets and the packaged smoke — the three things that
-      # failed repeatedly — without dmg/nsis/AppImage/deb/rpm assembly or
+      # Unsigned, dir-only package: proves the electron-builder config and the
+      # native-module file sets without dmg/nsis/AppImage/deb/rpm assembly or
       # notarization, which is where the release's wall-clock actually goes.
       - name: Package (unsigned, dir only)
         if: inputs.only != true && (inputs.leg == 'all' || inputs.leg == matrix.leg || inputs.leg == matrix.platform)
@@ -172,27 +149,3 @@ jobs:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
         working-directory: packages/claxedo-desktop
         run: bun run ${{ matrix.cmd }} -- --${{ matrix.arch }} --dir --publish never
-
-      - name: Run packaged diagnostics smoke (macOS)
-        if: inputs.only != true && runner.os == 'macOS' && (inputs.leg == 'all' || inputs.leg == matrix.leg || inputs.leg == matrix.platform)
-        working-directory: packages/claxedo-desktop
-        env:
-          CLAXEDO_DIAGNOSTICS_SMOKE_OUTPUT: .artifacts/diagnostics-packaged-${{ matrix.target }}.json
-          CLAXEDO_DIAGNOSTICS_EXPECTED_ARCH: ${{ matrix.arch }}
-        run: bun run smoke:diagnostics:packaged
-
-      - name: Run packaged diagnostics smoke (Linux)
-        if: inputs.only != true && runner.os == 'Linux' && (inputs.leg == 'all' || inputs.leg == matrix.leg || inputs.leg == matrix.platform)
-        working-directory: packages/claxedo-desktop
-        env:
-          CLAXEDO_DIAGNOSTICS_SMOKE_OUTPUT: .artifacts/diagnostics-packaged-${{ matrix.target }}.json
-          CLAXEDO_DIAGNOSTICS_EXPECTED_ARCH: ${{ matrix.arch }}
-        run: xvfb-run -a bun run smoke:diagnostics:packaged
-
-      - name: Run packaged diagnostics smoke (Windows)
-        if: inputs.only != true && runner.os == 'Windows' && (inputs.leg == 'all' || inputs.leg == matrix.leg || inputs.leg == matrix.platform)
-        working-directory: packages/claxedo-desktop
-        env:
-          CLAXEDO_DIAGNOSTICS_SMOKE_OUTPUT: .artifacts/diagnostics-packaged-${{ matrix.target }}.json
-          CLAXEDO_DIAGNOSTICS_EXPECTED_ARCH: ${{ matrix.arch }}
-        run: bun run smoke:diagnostics:packaged

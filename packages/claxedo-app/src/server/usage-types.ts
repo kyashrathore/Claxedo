@@ -4,7 +4,7 @@ export type UsageRequest = {
   readonly since: number
   readonly until: number
   readonly timeZone: string
-  readonly view?: "quota" | "claxedo" | "total"
+  readonly view?: "quota" | "claxedo"
   readonly group?: "provider" | "harness" | "model" | "location" | "session" | "workspace" | "app"
   readonly metric?: "tokens" | "cost"
   readonly filters?: UsageFilters

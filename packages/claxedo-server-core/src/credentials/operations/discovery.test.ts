@@ -13,7 +13,7 @@ import type { CredentialHealth, CredentialWrite } from "@claxedo/server-core/cre
 // and the data dir points at nothing so no user config on this machine does.
 vi.stubEnv("CLAXEDO_DATA_DIR", path.join(os.tmpdir(), `credential-discovery-${randomUUID().slice(0, 8)}`))
 for (const name of [
-  "ANTHROPIC_AUTH_TOKEN", "OPENAI_API_KEY", "DAYTONA_API_KEY", "MODAL_TOKEN_ID", "MODAL_TOKEN_SECRET",
+  "ANTHROPIC_AUTH_TOKEN", "OPENAI_API_KEY", "BOX_API_KEY", "MODAL_TOKEN_ID", "MODAL_TOKEN_SECRET",
   "VERCEL_TOKEN", "VERCEL_OIDC_TOKEN", "VERCEL_TEAM_ID", "VERCEL_PROJECT_ID",
   "CLOUDFLARE_API_TOKEN", "CLOUDFLARE_SANDBOX_WORKER_URL",
 ]) vi.stubEnv(name, "")

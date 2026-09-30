@@ -389,8 +389,7 @@ export function createHostedAgentPluginsComposition(input: {
   }
   // The header placeholder is the one a header-injecting driver installs
   // (`brokeredPlaceholderEnv`); the sandbox presents it and the driver's edge
-  // substitutes the minted gateway credential. A Daytona sandbox fills the
-  // same variable with its own opaque reference, which only the VM can read.
+  // substitutes the minted gateway credential.
   const acpMcp = async (workspaceId: string, preparation: WorkspaceRuntimePreparation | undefined) => {
     if (!(await cloudWorkspace(workspaceId))) return {}
     const plan = agentPluginMcpRuntimePlan(preparation)

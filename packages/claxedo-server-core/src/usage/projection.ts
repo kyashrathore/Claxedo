@@ -6,28 +6,9 @@ import type { TurnUsageRevision } from "./contracts"
 // the server-side facts and the runtime lists that go with it.
 export type { UsageFilterDimension, UsageFilters } from "@claxedo/usage-contract"
 
-export type ExternalUsageBucket = {
-  app: string
-  provider: string
-  model: string
-  bucketStart: number
-  nativeSessionId: string
-  turnCount: number
-  tokens: {
-    input: number | null
-    output: number | null
-    reasoning: number | null
-    cacheRead: number | null
-    cacheWrite: number | null
-    /** The part of `cacheWrite` written to the one-hour cache. */
-    cacheWrite1h: number | null
-  }
-}
-
 /**
  * A dimension that a single usage revision carries. "app" is excluded: it
- * separates Claxedo's own turns from the other coding tools found on the
- * machine, so it is a property of the source, not of a revision.
+ * names the product that ran the turn, which every revision shares.
  */
 export type UsageBreakdownDimension = Exclude<UsageFilterDimension, "app">
 
@@ -192,77 +173,6 @@ export function latestUsageFacts(facts: readonly TurnUsageRevision[]) {
     if (!existing || fact.revision > existing.revision) latest.set(key, fact)
   }
   return [...latest.values()]
-}
-
-export function usageSeriesFromExternal(input: {
-  rows: readonly ExternalUsageBucket[]
-  since: number
-  until: number
-  timeZone: string
-}): UsageSeries {
-  const rows = input.rows.filter((row) => row.bucketStart >= input.since && row.bucketStart <= input.until)
-  const facts = rows.map((row): TurnUsageRevision => ({
-    hostId: "external-local",
-    sessionRef: `external:${row.app}:${row.nativeSessionId}`,
-    sessionId: row.nativeSessionId,
-    // TokenTracker's authoritative bucket key includes model. A native session
-    // can switch models inside one 30-minute bucket; omitting model here made
-    // latestUsageFacts() treat those distinct rows as revisions of one turn,
-    // so summary totals disagreed with chart and breakdown totals.
-    messageId: `${row.model}:${row.bucketStart}`,
-    revision: 1,
-    observedAt: row.bucketStart,
-    settlement: "final",
-    status: "completed",
-    location: "local",
-    harness: row.app,
-    providerId: row.provider,
-    modelId: row.model,
-    tokens: {
-      input: row.tokens.input,
-      output: row.tokens.output,
-      reasoning: row.tokens.reasoning,
-      cache: {
-        read: row.tokens.cacheRead,
-        write: row.tokens.cacheWrite,
-        ...(row.tokens.cacheWrite1h === null ? {} : { write1h: row.tokens.cacheWrite1h }),
-      },
-    },
-    quality: {
-      source: "provider",
-      knownCategories: [
-        ...(row.tokens.input === null ? [] : ["input" as const]),
-        ...(row.tokens.output === null ? [] : ["output" as const]),
-        ...(row.tokens.reasoning === null ? [] : ["reasoning" as const]),
-        ...(row.tokens.cacheRead === null ? [] : ["cache_read" as const]),
-        ...(row.tokens.cacheWrite === null ? [] : ["cache_write" as const]),
-      ],
-    },
-  }))
-  const series = usageSeriesFromFacts({ ...input, facts })
-  const dailyTurnCounts = new Map<string, number>()
-  const formatDate = usageDateFormatter(input.timeZone)
-  for (const row of rows) {
-    const date = formatDate.format(new Date(row.bucketStart))
-    dailyTurnCounts.set(date, (dailyTurnCounts.get(date) ?? 0) + row.turnCount)
-  }
-  series.totals.turnCount = rows.reduce((sum, row) => sum + row.turnCount, 0)
-  for (const point of series.daily) point.turnCount = dailyTurnCounts.get(point.date) ?? 0
-  return series
-}
-
-export function mergeUsageSeries(...series: readonly UsageSeries[]): UsageSeries {
-  const totals = emptyUsageTotals()
-  const days = new Map<string, UsageMetricTotals>()
-  for (const item of series) {
-    add(totals, item.totals)
-    for (const point of item.daily) {
-      const target = days.get(point.date) ?? emptyUsageTotals()
-      add(target, point)
-      days.set(point.date, target)
-    }
-  }
-  return { totals, daily: [...days].map(([key, value]) => ({ date: key, ...value })).toSorted((a, b) => a.date.localeCompare(b.date)) }
 }
 
 export function centralProjectionSeries(source: CentralUsageProjection): UsageSeries {

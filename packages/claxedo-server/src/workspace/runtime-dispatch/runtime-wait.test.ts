@@ -233,7 +233,6 @@ describe("workspaceRuntimeProxy startup wait", () => {
       "http://localhost/session?workspaceId=ws_frontend_contract&roots=true&limit=55",
       "http://localhost/file/status?workspaceId=ws_frontend_contract",
       "http://localhost/find/file?workspaceId=ws_frontend_contract",
-      "http://localhost/api/wr/process?workspaceId=ws_frontend_contract",
       "http://localhost/api/wr/diff/vcs?workspaceId=ws_frontend_contract",
       "http://localhost/api/wr/pty?workspaceId=ws_frontend_contract",
     ]
@@ -325,7 +324,6 @@ describe("workspaceRuntimeProxy startup wait", () => {
     expect(req.url).toBe("https://relay.eu.test/workspaces/ws_1/file/content?workspaceId=ws_1&directory=%2Flocal")
     expect(req.headers.get("authorization")).toBe("Bearer relay-runtime-token")
     expect(req.headers.get("x-claxedo-directory")).toBe("workspace:ws_1")
-    expect(req.headers.get("X-Daytona-Skip-Preview-Warning")).toBeNull()
   })
 })
 
@@ -338,7 +336,6 @@ describe("embedded workspace runtime config hydration", () => {
       "/file/content",
       "/find/file",
       "/api/wr/pty/abc123/connect",
-      "/api/wr/process",
       "/api/wr/diff/vcs",
       "/vcs",
     ]) {

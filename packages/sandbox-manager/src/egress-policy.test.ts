@@ -17,7 +17,6 @@ import { createMemoryLeaseStore } from "./stores/memory"
 import { sandboxDriverCatalog } from "./driver-catalog"
 import { sandboxDriverIds } from "@claxedo/sandbox-contract"
 import { createCloudflareSandboxDriver } from "./drivers/cloudflare"
-import { createDaytonaSandboxDriver, type DaytonaClientLike } from "./drivers/daytona"
 import { createFetchBridgeSandboxDriver } from "./drivers/fetch-bridge"
 
 /**
@@ -67,7 +66,7 @@ function fakeDriver(
 }
 
 /**
- * A driver that behaves like the real exe/docker/modal/box drivers: it raises
+ * A driver that behaves like the real docker/modal/box drivers: it raises
  * when handed a restricted policy. Used to prove the manager withholds rather
  * than passes — an assertion on `seen.net` alone would still pass if the
  * withholding happened one layer too late.
@@ -200,7 +199,7 @@ describe("manager: document where we can't", () => {
   })
 
   test("a driver that THROWS on a restricted policy never gets the chance", async () => {
-    // exe, docker, modal and box all raise "cannot enforce host-based network
+    // docker, modal and box all raise "cannot enforce host-based network
     // policy". Their throws stay in place as their own last line of defence;
     // this proves the manager never trips them, so removing the caller-side
     // refusal did not turn a refusal into a provisioning failure.
@@ -347,11 +346,11 @@ describe("driver egress capability declarations", () => {
   })
 
   test("the drivers that throw on a restricted policy are declared uncontained", () => {
-    // exe.ts, docker.ts, modal.ts and box.ts all raise "cannot enforce
+    // docker.ts, modal.ts and box.ts all raise "cannot enforce
     // host-based network policy". Declaring them "none" is what makes the
     // manager withhold the policy, so those throws are never reached — and it
     // keeps them intact as the driver's own last line of defence.
-    for (const id of ["exe", "docker", "modal", "box"] as const) {
+    for (const id of ["docker", "modal", "box"] as const) {
       expect(sandboxDriverCatalog[id].metadata.egressControl, id).toBe("none")
     }
   })
@@ -393,15 +392,14 @@ describe("driver egress capability declarations", () => {
     ])
   })
 
-  test("daytona and vercel are the ONLY drivers that can contain a hosted workload", () => {
-    expect(sandboxDriverCatalog.daytona.metadata.egressControl).toBe("hosts-and-cidrs")
+  test("vercel is the ONLY driver that can contain a workload", () => {
     expect(sandboxDriverCatalog.vercel.metadata.egressControl).toBe("hosts")
     // Exhaustive, not just spot-checked: `public-docs/sandbox-egress.md` and
-    // the package README both tell operators these two are the enforcing
-    // drivers. A third one gaining the capability has to update that prose.
+    // the package README both tell operators this is the enforcing driver. A
+    // second one gaining the capability has to update that prose.
     expect(
       sandboxDriverIds.filter((id) => sandboxDriverCatalog[id].metadata.egressControl !== "none").sort(),
-    ).toEqual(["daytona", "vercel"])
+    ).toEqual(["vercel"])
   })
 })
 
@@ -478,97 +476,7 @@ describe("the egress capability doc cannot drift from the metadata", () => {
 
   test("the doc states the consequence and the remedy, not just the capability", () => {
     expect(markdown).toContain("exfiltration")
-    expect(markdown).toContain("CLAXEDO_SANDBOX_DRIVER=daytona")
-  })
-})
-
-describe("daytona egress translation", () => {
-  function daytonaClient() {
-    const created: Array<Record<string, unknown>> = []
-    const sandbox = {
-      id: "sbx_1",
-      state: "started",
-      process: { executeCommand: async () => ({ exitCode: 0 }) },
-      getPreviewLink: async () => ({ url: "https://preview.test" }),
-      getSignedPreviewUrl: async () => ({ url: "https://preview.test" }),
-      refreshActivity: async () => {},
-      start: async () => {},
-      stop: async () => {},
-      delete: async () => {},
-      updateSecrets: async () => {},
-    }
-    const client: DaytonaClientLike = {
-      create: async (params) => {
-        created.push(params as Record<string, unknown>)
-        return sandbox
-      },
-      get: async () => sandbox,
-      secret: {
-        list: async () => ({ items: [], nextCursor: null }),
-        create: async ({ name }) => ({ id: `sec_${name}`, name }),
-        update: async () => ({}),
-        delete: async () => {},
-      },
-    }
-    return { client, created }
-  }
-
-  async function ensure(net: SandboxDriverEnsureInput["net"]) {
-    const { client, created } = daytonaClient()
-    const driver = createDaytonaSandboxDriver({ apiKey: "k", baseSnapshot: "snap", client })
-    await driver.ensureHost({
-      workspaceId: "ws_1",
-      homeRegion: "us-east",
-      epoch: 1,
-      labels: {},
-      ...(net ? { net } : {}),
-    })
-    return created[0]
-  }
-
-  test("a host allowlist reaches daytona's domainAllowList", async () => {
-    const params = await ensure({ mode: "restricted", hosts: ["github.com", "api.anthropic.com"] })
-    expect(params.domainAllowList).toBe("github.com,api.anthropic.com")
-    expect(params.networkBlockAll).toBeUndefined()
-  })
-
-  test("names win over addresses when the policy carries both", async () => {
-    // The cidrs are DNS resolutions of the same hosts, so nothing is lost —
-    // and a pinned /32 goes stale when a CDN-fronted host rotates IPs.
-    const params = await ensure({
-      mode: "restricted",
-      hosts: ["github.com"],
-      cidrs: ["140.82.0.0/16"],
-    })
-    expect(params.domainAllowList).toBe("github.com")
-    expect(params.networkAllowList).toBeUndefined()
-  })
-
-  test("an address-only policy still reaches the CIDR allowlist", async () => {
-    const params = await ensure({ mode: "restricted", cidrs: ["140.82.0.0/16"] })
-    expect(params.networkAllowList).toBe("140.82.0.0/16")
-    expect(params.networkBlockAll).toBeUndefined()
-  })
-
-  test("a restricted policy allowing nothing blocks everything", async () => {
-    const params = await ensure({ mode: "restricted" })
-    expect(params.networkBlockAll).toBe(true)
-  })
-
-  test("allow-all leaves daytona's egress controls untouched", async () => {
-    const params = await ensure({ mode: "allow-all" })
-    expect(params.networkBlockAll).toBeUndefined()
-    expect(params.domainAllowList).toBeUndefined()
-    expect(params.networkAllowList).toBeUndefined()
-  })
-
-  test("the domain list is never truncated", async () => {
-    // The CIDR formatter caps at 10 for Daytona's documented limit. Applying
-    // that cap to names would silently drop allowlist entries, leaving a
-    // sandbox unable to reach hosts the caller believed it granted.
-    const hosts = Array.from({ length: 14 }, (_, i) => `h${i}.test`)
-    const params = await ensure({ mode: "restricted", hosts })
-    expect(String(params.domainAllowList).split(",")).toHaveLength(14)
+    expect(markdown).toContain("compose `vercel`")
   })
 })
 

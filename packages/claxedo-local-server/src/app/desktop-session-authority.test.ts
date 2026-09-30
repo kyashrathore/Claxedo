@@ -369,15 +369,15 @@ describe("a share level decides what a relayed grantee may do", () => {
       .toEqual([`read:${MEMBER.actorId}`, `read:${MEMBER.actorId}`, `write:${MEMBER.actorId}`])
   })
 
-  test("a send grantee is refused the shell, the permission mode and the delete, and the authority is asked for control", async () => {
+  test("a send grantee is refused the fork, the permission mode and the delete, and the authority is asked for control", async () => {
     const workspace = await resolveWorkspace()
     admitted = new Set([OWNER.actorId, MEMBER.actorId])
     shareLevels = new Map([[MEMBER.actorId, "send"]])
 
-    const shell = await fetch(`${origin}/workspaces/${workspace}/session/ses_shared/shell`, {
+    const fork = await fetch(`${origin}/workspaces/${workspace}/session/ses_shared/fork`, {
       method: "POST",
       headers: { "content-type": "application/json", ...relayed("member-token") },
-      body: JSON.stringify({ command: "id" }),
+      body: JSON.stringify({}),
     })
     const permissionMode = await fetch(`${origin}/workspaces/${workspace}/session/ses_shared/permission-mode`, {
       method: "PUT",
@@ -389,8 +389,8 @@ describe("a share level decides what a relayed grantee may do", () => {
       headers: relayed("member-token"),
     })
 
-    expect([shell.status, permissionMode.status, deleted.status]).toEqual([403, 403, 403])
-    expect(await shell.json()).toMatchObject({ error: { code: "workspace_authorization_denied" } })
+    expect([fork.status, permissionMode.status, deleted.status]).toEqual([403, 403, 403])
+    expect(await fork.json()).toMatchObject({ error: { code: "workspace_authorization_denied" } })
     expect(authorityCalls.map((call) => `${call.action}/${call.writeClass}:${call.actorId}`)).toEqual([
       `write/session_control:${MEMBER.actorId}`,
       `write/session_control:${MEMBER.actorId}`,

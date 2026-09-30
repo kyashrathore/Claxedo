@@ -286,7 +286,7 @@ describe("@claxedo/local-server closure", () => {
     //    session's workspace, its check and its registration with the live
     //    plugins above.
     const { modules, packages } = closure({ runtimeOnly: true })
-    expect(modules.size).toBeLessThanOrEqual(110)
+    expect(modules.size).toBeLessThanOrEqual(109)
     expect(packages.size).toBeLessThanOrEqual(30)
   })
 })

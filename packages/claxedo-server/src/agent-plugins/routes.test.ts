@@ -608,7 +608,6 @@ describe("hosted Agent Plugins routes", () => {
         "app-plugins": false,
         attention: true,
         documents: false,
-        processes: true,
         review: true,
         sessions: true,
         subagents: true,

@@ -325,8 +325,8 @@ describe("the signed bootstrap project inventory", () => {
 
   test("replays stored project metadata onto the projects the authority lists, and no others", async () => {
     const { ensureWorkspace, updateProjectMetadata } = await import("@claxedo/server-core/workspace/store/index")
-    await ensureWorkspace({ workspaceId: "ws_shared", project_id: "proj_shared", project_name: "Original", kind: "cloud", driver: "daytona", directory: "/srv/shared" })
-    await ensureWorkspace({ workspaceId: "ws_private", project_id: "proj_private", project_name: "Private", kind: "cloud", driver: "daytona", directory: "/srv/private" })
+    await ensureWorkspace({ workspaceId: "ws_shared", project_id: "proj_shared", project_name: "Original", kind: "cloud", driver: "modal", directory: "/srv/shared" })
+    await ensureWorkspace({ workspaceId: "ws_private", project_id: "proj_private", project_name: "Private", kind: "cloud", driver: "modal", directory: "/srv/private" })
     await updateProjectMetadata("proj_shared", { name: "Shared name", icon: { color: "purple" }, commands: { start: "bun dev" } })
     await updateProjectMetadata("proj_private", { icon: { override: "private-marker" }, commands: { start: "private-command" } })
 

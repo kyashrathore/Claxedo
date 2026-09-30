@@ -24,12 +24,9 @@ export type HostServingSurfaceTarget =
 
 /**
  * Daemon-owned families that must never cross the tunnel, whichever
- * workspace the caller's connection is scoped to. Named against
- * `server-core/deployments/product-route-families.ts`'s family ids — every
- * entry below is owned there by `local-server` or `server`, and
- * `route-ownership.ts` classifies every one of them
- * `RouteHandler.CentralServer` or `RouteHandler.WorkspaceRelay`, never
- * `SandboxRuntime`.
+ * workspace the caller's connection is scoped to. `route-ownership.ts`
+ * classifies every entry below `RouteHandler.CentralServer` or
+ * `RouteHandler.WorkspaceRelay`, never `SandboxRuntime`.
  *
  * Matched the same way `route-ownership.ts` matches prefixes: an exact hit,
  * or a path segment boundary (`entry + "/"`), so `/health` does not also

@@ -22,13 +22,14 @@ describe("sandbox contract", () => {
     expect(cloudflareWorkerBaseUrl(" https://worker.test/prefix/// ")).toBe("https://worker.test/prefix")
   })
   test("owns one credential schema for every driver identity", () => {
-    expect(sandboxDriverIds).toEqual(["exe", "daytona", "modal", "vercel", "cloudflare", "box", "docker"])
+    expect(sandboxDriverIds).toEqual(["modal", "vercel", "cloudflare", "box", "docker"])
     expect(Object.keys(sandboxDriverCredentialFields).sort()).toEqual([...sandboxDriverIds].sort())
     expect(sandboxDriverCredentialFields.modal.map((field) => field.key)).toEqual(["token_id", "token_secret"])
   })
 
   test("recognizes only canonical driver identities", () => {
-    expect(isSandboxDriverID("daytona")).toBe(true)
+    expect(isSandboxDriverID("vercel")).toBe(true)
+    expect(isSandboxDriverID("Vercel")).toBe(false)
     expect(isSandboxDriverID("fetch")).toBe(false)
     expect(isSandboxDriverID(undefined)).toBe(false)
   })

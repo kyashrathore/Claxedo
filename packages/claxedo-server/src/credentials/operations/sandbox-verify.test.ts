@@ -37,44 +37,6 @@ const offline = (async () => {
   throw new Error("getaddrinfo ENOTFOUND provider")
 }) as unknown as typeof fetch
 
-describe("daytona", () => {
-  // https://www.daytona.io/docs/en/api-keys/ — "Get current API key's details",
-  // authenticated with the API key itself. O(1), reads nothing but the key.
-  test("an API key verifies against the documented key-introspection route", async () => {
-    const transports = transport()
-
-    const health = await verifySandboxDriverAuth("daytona", { api_key: "dtn_key" }, { fetch: transports.stub })
-
-    expect(health).toBe("ok")
-    expect(transports.first().url).toBe("https://app.daytona.io/api/api-keys/current")
-    expect(transports.first().method).toBe("GET")
-    expect(transports.first().headers.Authorization).toBe("Bearer dtn_key")
-    expect(transports.first().body).toBeUndefined()
-  })
-
-  test("a rejected Daytona key is auth_failed, not an error", async () => {
-    const transports = transport({ ok: false, status: 401, body: "unauthorized" })
-
-    await expect(
-      verifySandboxDriverAuth("daytona", { api_key: "dtn_revoked" }, { fetch: transports.stub }),
-    ).resolves.toBe("auth_failed")
-  })
-
-  test("a network failure is inconclusive, never a verdict against the key", async () => {
-    await expect(
-      verifySandboxDriverAuth("daytona", { api_key: "dtn_key" }, { fetch: offline }),
-    ).rejects.toBeInstanceOf(CredentialVerificationError)
-  })
-
-  test("a key pasted with surrounding whitespace is sent bare", async () => {
-    const transports = transport()
-
-    await verifySandboxDriverAuth("daytona", { api_key: "  dtn_key\n" }, { fetch: transports.stub })
-
-    expect(transports.first().headers.Authorization).toBe("Bearer dtn_key")
-  })
-})
-
 describe("vercel", () => {
   /**
    * The catalog requires all three fields, so verifying only the token would
@@ -295,59 +257,6 @@ describe("box", () => {
   })
 })
 
-describe("exe.dev", () => {
-  // https://exe.dev/docs/https-api.md — `whoami` is in the default token `cmds`
-  // allowlist and is the docs' own example call.
-  test("a token verifies against the documented whoami command", async () => {
-    const transports = transport({ body: JSON.stringify({ ok: true }) })
-
-    const health = await verifySandboxDriverAuth("exe", { api_token: "exe1.token" }, { fetch: transports.stub })
-
-    expect(health).toBe("ok")
-    expect(transports.first().url).toBe("https://exe.dev/exec")
-    expect(transports.first().method).toBe("POST")
-    expect(transports.first().headers.Authorization).toBe("Bearer exe1.token")
-    // The command must be the read-only one, never anything that provisions.
-    expect(transports.first().body).toBe("whoami")
-  })
-
-  test("a rejected exe.dev token is auth_failed", async () => {
-    const transports = transport({ ok: false, status: 401, body: "invalid token" })
-
-    await expect(
-      verifySandboxDriverAuth("exe", { api_token: "exe1.revoked" }, { fetch: transports.stub }),
-    ).resolves.toBe("auth_failed")
-  })
-
-  /**
-   * exe.dev tokens carry a signed `cmds` allowlist, and 403 means the token is
-   * VALID but not permitted to run this command — documented separately from
-   * 401 "invalid token". Mapping it to auth_failed would call a working
-   * narrowly-scoped token broken.
-   */
-  test("a token scoped away from whoami is inconclusive, not a rejection", async () => {
-    const transports = transport({ ok: false, status: 403, body: "command not permitted" })
-
-    await expect(
-      verifySandboxDriverAuth("exe", { api_token: "exe1.scoped" }, { fetch: transports.stub }),
-    ).rejects.toBeInstanceOf(CredentialVerificationError)
-  })
-
-  test("a network failure is inconclusive, never a verdict against the key", async () => {
-    await expect(
-      verifySandboxDriverAuth("exe", { api_token: "exe1.token" }, { fetch: offline }),
-    ).rejects.toBeInstanceOf(CredentialVerificationError)
-  })
-
-  test("a token pasted with surrounding whitespace is sent bare", async () => {
-    const transports = transport({ body: JSON.stringify({ ok: true }) })
-
-    await verifySandboxDriverAuth("exe", { api_token: " exe1.token\n" }, { fetch: transports.stub })
-
-    expect(transports.first().headers.Authorization).toBe("Bearer exe1.token")
-  })
-})
-
 describe("providers with no documented probe", () => {
   /**
    * Modal's control plane is gRPC over HTTP/2 (`nice-grpc` against
@@ -399,7 +308,7 @@ describe("incomplete credentials", () => {
     const transports = transport()
 
     await expect(
-      verifySandboxDriverAuth("daytona", { api_key: "   " }, { fetch: transports.stub }),
+      verifySandboxDriverAuth("box", { api_key: "   " }, { fetch: transports.stub }),
     ).rejects.toThrow(/unsupported shape/)
     expect(transports.calls).toHaveLength(0)
   })
@@ -410,7 +319,7 @@ describe("shared status mapping", () => {
     const transports = transport({ ok: false, status: 429, body: "too many requests" })
 
     await expect(
-      verifySandboxDriverAuth("daytona", { api_key: "dtn_key" }, { fetch: transports.stub }),
+      verifySandboxDriverAuth("box", { api_key: "box_key" }, { fetch: transports.stub }),
     ).resolves.toBe("rate_capped")
   })
 
@@ -426,7 +335,7 @@ describe("shared status mapping", () => {
     const transports = transport({ ok: false, status: 503, body: "service unavailable" })
 
     await expect(
-      verifySandboxDriverAuth("daytona", { api_key: "dtn_key" }, { fetch: transports.stub }),
+      verifySandboxDriverAuth("box", { api_key: "box_key" }, { fetch: transports.stub }),
     ).rejects.toBeInstanceOf(CredentialVerificationError)
   })
 })

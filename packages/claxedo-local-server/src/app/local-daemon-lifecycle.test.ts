@@ -15,7 +15,7 @@ import {
 } from "./local-daemon-lifecycle"
 
 const empty = (): LocalDaemonWorkActivity => ({
-  pty: { running: 0, committed: 0, provisional: 0, managed: 0, subscribers: 0, unrecorded: 0, unresolved: 0 },
+  pty: { running: 0, committed: 0, provisional: 0, subscribers: 0, unrecorded: 0, unresolved: 0 },
   runtime: { hosts: 0, activeTurns: 0, activeWrites: 0, checkpointing: 0, owners: [] },
   owners: [],
   residencyPins: 0,
@@ -61,7 +61,6 @@ describe("local daemon lifecycle", () => {
       ["session write", empty().pty, { ...empty().runtime, activeWrites: 1 }],
       ["session checkpoint", empty().pty, { ...empty().runtime, checkpointing: 1 }],
       ["terminal", { ...empty().pty, running: 1, committed: 1 }, empty().runtime],
-      ["managed process", { ...empty().pty, running: 1, managed: 1 }, empty().runtime],
     ]
 
     for (const [label, pty, runtime] of cases) {
@@ -978,7 +977,7 @@ describe("what the inventory names", () => {
   test("a terminal nothing can find again is named apart from one that may yet settle", () => {
     const work: LocalDaemonWorkActivity = {
       ...empty(),
-      pty: { running: 3, committed: 3, provisional: 0, managed: 0, subscribers: 0, unrecorded: 1, unresolved: 2 },
+      pty: { running: 3, committed: 3, provisional: 0, subscribers: 0, unrecorded: 1, unresolved: 2 },
       residencyPins: 3,
       replacementBlockers: 3,
     }

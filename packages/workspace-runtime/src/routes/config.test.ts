@@ -134,12 +134,12 @@ describe("runtime config v4", () => {
     }
     expect(normalizeRuntimeSnapshot(
       { ...snapshot(), auth: { machineOwnerUserId: "local", accounts: { local: { "claude-sdk": projection } } } },
-      { CLAXEDO_PROVIDER_CLAUDE_SDK: "dtn_secret_abc" },
+      { CLAXEDO_PROVIDER_CLAUDE_SDK: "secret_ref_abc" },
     )).toMatchObject({
       auth: { machineOwnerUserId: "local", accounts: { local: {
         "claude-sdk": {
           baseUrl: "https://api.anthropic.com",
-          placeholder: "dtn_secret_abc",
+          placeholder: "secret_ref_abc",
           authMode: "api-key",
           apiPath: "/v1",
         },

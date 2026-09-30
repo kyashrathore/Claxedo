@@ -1,7 +1,5 @@
 import "./zod-jitless"
 import { contextBridge, ipcRenderer, webUtils } from "electron"
-import { LocalDiagnostics } from "../shared/local-diagnostics"
-import { applyDiagnosticsSnapshotUpdate } from "../shared/diagnostics-snapshot-update"
 import type {
   BrowserBridge,
   BrowserConsoleEntry,
@@ -16,7 +14,6 @@ import type {
   DaemonRecoveryBridge,
   ElectronAPI,
   InitStep,
-  ProcessDiagnosticsBridge,
   ServerReadyData,
 } from "./types"
 
@@ -25,9 +22,7 @@ import type {
  *
  * `ipcRenderer.invoke` resolves to `any`; each call below names the type its
  * main-process handler returns, and the `any` stops at this line rather than
- * being asserted away at every member. Replies whose shape actually needs
- * verifying are parsed by the caller (see `processDiagnosticsBridge`, which
- * runs every reply through its `LocalDiagnostics` schema).
+ * being asserted away at every member.
  */
 const invoke = <T>(channel: string, ...args: unknown[]): Promise<T> => ipcRenderer.invoke(channel, ...args)
 
@@ -72,65 +67,6 @@ const browserBridge: BrowserBridge = {
   openDevTools: (paneId) => invoke<BrowserResult>("browser:openDevTools", paneId),
   clearStorage: (paneId, storages?: BrowserStorageKey[]) =>
     invoke<BrowserResult>("browser:clearStorage", paneId, storages),
-}
-
-const processDiagnosticsBridge: ProcessDiagnosticsBridge = {
-  getSnapshot: async () =>
-    LocalDiagnostics.RetainedSnapshot.parse(await invoke("process-diagnostics:get-snapshot")),
-  subscribe: (listener) => {
-    let current: LocalDiagnostics.RetainedSnapshot | undefined
-    let resyncing = false
-    const accept = (input: unknown) => {
-      const next = applyDiagnosticsSnapshotUpdate(current, input)
-      if (next) {
-        current = next
-        listener(next)
-        return
-      }
-      if (resyncing) return
-      resyncing = true
-      void invoke("process-diagnostics:get-snapshot")
-        .then((snapshot) => {
-          current = LocalDiagnostics.RetainedSnapshot.parse(snapshot)
-          listener(current)
-        })
-        .catch(() => undefined)
-        .finally(() => {
-          resyncing = false
-        })
-    }
-    const handler = (_: unknown, input: unknown) => {
-      accept(input)
-    }
-    ipcRenderer.on("process-diagnostics:snapshot", handler)
-    void invoke("process-diagnostics:subscribe")
-      .then(accept)
-      .catch(() => {
-        ipcRenderer.removeListener("process-diagnostics:snapshot", handler)
-      })
-    return () => {
-      ipcRenderer.removeListener("process-diagnostics:snapshot", handler)
-      void invoke("process-diagnostics:unsubscribe").catch(() => {})
-    }
-  },
-  recordContext: async (context) => {
-    await invoke("process-diagnostics:context", LocalDiagnostics.SetContextRequest.parse(context))
-  },
-  scanSessionMemory: async (request) =>
-    LocalDiagnostics.SessionMemoryScanResult.parse(
-      await invoke(
-        "process-diagnostics:scan-session-memory",
-        LocalDiagnostics.SessionMemoryScanRequest.parse(request),
-      ),
-    ),
-  stop: async (request) =>
-    LocalDiagnostics.ActionResult.parse(
-      await invoke("process-diagnostics:stop", LocalDiagnostics.StopRequest.parse(request)),
-    ),
-  kill: async (request) =>
-    LocalDiagnostics.ActionResult.parse(
-      await invoke("process-diagnostics:kill", LocalDiagnostics.KillRequest.parse(request)),
-    ),
 }
 
 const daemonRecoveryBridge: DaemonRecoveryBridge = {
@@ -203,7 +139,6 @@ const api: ElectronAPI = {
   setStartAtLogin: (enabled) => invoke("set-start-at-login", enabled),
   setNativeTheme: (theme) => ipcRenderer.send("set-native-theme", theme),
   getDroppedFilePaths: (files) => files.map((f) => webUtils.getPathForFile(f)).filter(Boolean),
-  processDiagnostics: processDiagnosticsBridge,
   daemonRecovery: daemonRecoveryBridge,
   daemonStatus: {
     read: () => invoke("claxedo.daemon.status"),

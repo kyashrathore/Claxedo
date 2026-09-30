@@ -178,7 +178,7 @@ test.skipIf(!posix)("a store that refuses to prepare refuses the launch and spaw
   const before = await childCount()
   const failure = await launch({
     ownership,
-    role: "managed-process",
+    role: "terminal",
     scope: { directory },
     payload: sleeper(30),
     cwd: directory,

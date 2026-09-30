@@ -72,8 +72,7 @@ const ENV_PREFIX = "CLAXEDO_PROVIDER_"
  * stored account (its row id is random) rather than for any person, so code in
  * the sandbox cannot name another account's placeholder from who owns it.
  *
- * Stable across rotations: Daytona's mounted variables only reach processes
- * spawned after a change in the mounted NAMES, and a rotation keeps the row.
+ * Stable across rotations, because a rotation keeps the row.
  */
 export function accountPlaceholderEnv(credential: Pick<CredentialMetadata, "id" | "provider_id">): string {
   const binding = createHash("sha256").update(credential.id).digest("hex").slice(0, 24).toUpperCase()

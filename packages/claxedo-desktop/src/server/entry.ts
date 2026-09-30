@@ -10,9 +10,7 @@ import { createLocalTasksComposition } from "@claxedo/local-server/tasks/local-c
 import { localBuiltinToolGroupsReader } from "@claxedo/local-server/agent-plugins/builtin-groups"
 import { BUILTIN_TASKS_TOOL_GROUP } from "@claxedo/server-core/agent-plugins/builtin/plugin"
 import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
-import type { DiagnosticsBinding } from "../shared/diagnostics-transport"
 import { claxedoServerStartup } from "./startup"
-import { createDiagnosticsChildTransport } from "./diagnostics-child-transport"
 import { CLAXEDO_SERVER_IDENTITY_UNREADABLE_EXIT_CODE, claxedoServerReadyMessage } from "../shared/claxedo-server-lifecycle"
 import { recordStartupClock } from "../shared/startup-clock-probe"
 import { CLAXEDO_DAEMON_SERVICE } from "@claxedo/helpers/claxedo-daemon"
@@ -46,12 +44,7 @@ void agentPlugins.ready.catch((error) => {
   console.error("Agent Plugins startup reconciliation failed", error)
 })
 
-const parent = diagnosticsParent()
-const binding = diagnosticsBinding(process.env, Boolean(parent))
-const transport = binding && parent
-  ? createDiagnosticsChildTransport({ binding, send: parent.send })
-  : undefined
-parent?.listen((message) => void transport?.onMessage(message))
+const parent = parentChannel()
 
 const log = Log.create({ service: "daemon" })
 
@@ -116,7 +109,6 @@ const server = startLocalServer({
     },
     lifecycle,
   },
-  ...(transport ? { processObserver: transport.observer } : {}),
   routeContributions: [...agentPlugins.routeContributions, ...tasks.routeContributions],
   tasksGrants: tasks.grants,
   pluginRuntime: agentPlugins.runtimeContribution,
@@ -230,7 +222,7 @@ setTimeout(() => {
   ;(globalThis as typeof globalThis & { gc?: () => void }).gc?.()
 }, 1_000).unref()
 
-function diagnosticsParent() {
+function parentChannel() {
   if (typeof process.send === "function") {
     let connected = process.connected
     process.once("disconnect", () => {
@@ -241,8 +233,8 @@ function diagnosticsParent() {
         if (!connected || !process.connected || typeof process.send !== "function") return
         try {
           // Supplying a callback keeps a close racing this send from becoming
-          // an unhandled process-level error. Diagnostics are optional once
-          // Electron has released the daemon; PTYs and harnesses are not.
+          // an unhandled process-level error once Electron has released the
+          // daemon.
           process.send(message, undefined, undefined, (error) => {
             if (error && "code" in error && error.code === "ERR_IPC_CHANNEL_CLOSED") connected = false
           })
@@ -254,21 +246,12 @@ function diagnosticsParent() {
           throw error
         }
       },
-      listen: (listener: (message: unknown) => void) => process.on("message", listener),
     }
   }
   if (!process.parentPort) return undefined
   return {
     send: (message: Parameters<typeof process.parentPort.postMessage>[0]) => process.parentPort.postMessage(message),
-    listen: (listener: (message: unknown) => void) => process.parentPort.on("message", (event) => listener(event.data)),
   }
-}
-
-function diagnosticsBinding(env: NodeJS.ProcessEnv, connected: boolean): DiagnosticsBinding | undefined {
-  const launchId = env.CLAXEDO_DIAGNOSTICS_LAUNCH_ID?.trim()
-  const generation = env.CLAXEDO_DIAGNOSTICS_GENERATION?.trim()
-  if (!connected || !launchId || !generation) return undefined
-  return { pid: process.pid, launchId, generation }
 }
 
 function idleGraceFromEnv(): { idleGraceMs?: number } {

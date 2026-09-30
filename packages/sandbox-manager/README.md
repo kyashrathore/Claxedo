@@ -9,7 +9,7 @@ The package owns the generic pieces:
 - `SandboxTarget`
 - `SandboxLeaseStore`
 - `SandboxDriver`
-- provider drivers for Cloudflare, Daytona, Docker, fetch bridge, Modal, and Vercel
+- provider drivers for Cloudflare, Docker, fetch bridge, Modal, and Vercel
 
 `drivers/local-brokering` is a macOS test driver. The e2e self-hosted stack
 injects its instance programmatically; it has no product driver ID or product
@@ -67,8 +67,8 @@ if (result.status === "ready") {
 await manager.stop("workspace-1")
 ```
 
-Swap `createDockerSandboxDriver` for `createDaytonaSandboxDriver`,
-`createModalSandboxDriver`, `createVercelSandboxDriver`,
+Swap `createDockerSandboxDriver` for `createModalSandboxDriver`,
+`createVercelSandboxDriver`,
 `createCloudflareSandboxDriver`, or `createBoxSandboxDriver` (all under
 `@claxedo/sandbox-manager/drivers/*`) to place on a hosted provider instead —
 see [`docs/architecture.md`](docs/architecture.md) for the full driver
@@ -103,7 +103,7 @@ await manager.ensure(workspaceId, {
     name: "NOTION_TOKEN",
     value: notionToken,          // never enters the sandbox in plaintext
     hosts: ["api.notion.com"],   // substituted/injected only for these hosts
-    header: "Authorization",     // required for Vercel; optional for Daytona
+    header: "Authorization",     // required for Vercel
   }],
 })
 ```
@@ -112,7 +112,6 @@ Per-provider mechanism (from each provider's official docs):
 
 | Driver | `secretBrokering` | Mechanism |
 | --- | --- | --- |
-| Daytona | `native` | `daytona.secret.create({name, value, hosts})`; the sandbox env holds an opaque `dtn_secret_…` placeholder and an egress proxy substitutes the real value only for allowlisted hosts ([docs](https://www.daytona.io/docs/en/secrets/)). |
 | Vercel | `native` | Firewall header-transform (`updateNetworkPolicy`): the value is spliced onto egress to the allowlisted hosts as `header`, so the sandbox makes an unauthenticated request ([docs](https://vercel.com/docs/sandbox/concepts/firewall)). `updateNetworkPolicy` replaces the whole policy, so the driver sends the **union** of the create-time allow-list and the brokered hosts — attaching a credential must not revoke egress the caller was already granted (a mid-run `npm install` would start failing), nor widen it to a brokered host the create-time policy never approved. |
 | Cloudflare | `native` | The driver sends named registrations to the API-token-gated Worker. KV holds the values outside the container; native HTTPS outbound handlers replace named placeholders in registered headers. Each request reads KV, so there is no expiring container JWT. KV propagation delay still applies to rotation and withdrawal. |
 | Modal | `none` | Modal [Secrets](https://modal.com/docs/guide/secrets) are an encrypted by-reference store, but exposed as **readable env vars** inside the sandbox — they cannot satisfy the never-readable contract. |
@@ -147,13 +146,13 @@ and the difference matters:
 
 - **Brokered secrets fail closed.** A driver that cannot broker refuses to
   provision (`error: "secret_brokering_unsupported"`).
-- **Egress does not.** Only `daytona` (names + CIDRs) and `vercel` (names) can
-  enforce an allowlist. Every other driver declares
-  `metadata.egressControl: "none"`, and for those the manager **withholds** the
-  policy and provisions anyway — the sandbox runs with unrestricted egress.
+- **Egress does not.** Only `vercel` (names) can enforce an allowlist. Every
+  other driver declares `metadata.egressControl: "none"`, and for those the
+  manager **withholds** the policy and provisions anyway — the sandbox runs
+  with unrestricted egress.
 
-Withholding rather than passing is deliberate: `exe`, `docker`, `modal` and
-`box` throw when handed a restricted policy, and `cloudflare` and the fetch
+Withholding rather than passing is deliberate: `docker`, `modal` and `box`
+throw when handed a restricted policy, and `cloudflare` and the fetch
 bridge accept one and silently ignore it. Withholding at the manager means the
 throwing drivers never see a policy (their throws stay as their own last line of
 defence) and the silently-dropping ones stop pretending.
@@ -170,17 +169,6 @@ Pass `onEgressUnenforced` to route that into telemetry instead of `console.warn`
 — it receives a structured `SandboxEgressUnenforcedEvent`. Overriding the sink
 replaces the console warning, so only do it if the replacement is as visible.
 
-**Reuse and resume reapply the policy.** A restricted policy only reaches a
-provider as *creation* parameters, so a sandbox handed back rather than created
-— reuse in `ensureHost`, resume in `resumeHost` — would otherwise run on the
-policy in force when it was first created, possibly a wider one from an earlier
-caller. Daytona's allow-list is mutable post-create
-(`Sandbox.updateNetworkSettings`), so `daytona` reapplies the requested policy
-on both paths. A client too old to expose that call makes the driver **refuse
-the reuse**: a policy reported as applied but not in force is worse than no
-sandbox. Requesting no containment leaves the existing policy alone rather than
-clearing it — "not requested" is not "please unrestrict".
-
 `driver.metadata.egressControl` is the machine-readable source of truth, and
 `sandboxEgressDisposition(control, net)` is the pure predicate the manager uses,
 so you can ask the same question before composing. One exception stays fail
@@ -188,8 +176,8 @@ closed: a hosts-only driver handed an address-only policy is refused
 (`sandbox_egress_policy_unenforceable`) rather than degraded, because that
 driver *does* enforce egress — it just cannot express that encoding.
 
-> SDK conformance: the Daytona secret API and Vercel network-policy transform
-> shapes follow the providers' official docs and are validated structurally
+> SDK conformance: the Vercel network-policy transform shapes follow the
+> provider's official docs and are validated structurally
 > against the pinned SDK types; like all provider calls in this package they
 > are exercised against mocks in unit tests, with live-SDK integration
 > verified at deploy time.

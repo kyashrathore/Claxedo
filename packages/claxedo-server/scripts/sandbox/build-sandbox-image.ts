@@ -9,7 +9,7 @@ import { build as esbuildBuild, type Metafile } from "esbuild"
 import { stageOpenCodePatches } from "../../../workspace-runtime/scripts/stage-opencode-patches"
 import { bundleCursorWorker } from "../../../harness/scripts/cursor-worker"
 import { isRecord } from "@claxedo/helpers/guards"
-import { defaultSandboxImage, defaultSnapshotName, SANDBOX_IMAGE_REPOSITORY } from "@claxedo/sandbox-manager/image"
+import { defaultSandboxImage, SANDBOX_IMAGE_REPOSITORY } from "@claxedo/sandbox-manager/image"
 import { parseJson } from "@claxedo/server-core/platform/json/index"
 import {
   claxedoAgentPluginsWorkspaceRuntimeEntry,
@@ -329,7 +329,7 @@ export async function bundleClaxedoWorkspaceRuntimeHost(
   // Content build-id: sha256 over the emitted bundle + generated package.json,
   // truncated to 10 hex chars. Distinguishes two builds at the same core
   // version (the npm-publish immutability gate is gone), so a rebuilt image
-  // gets a distinct tag/snapshot name and actually reaches sandboxes.
+  // gets a distinct tag and actually reaches sandboxes.
   const buildId = createHash("sha256")
     .update(fs.readFileSync(bundlePath))
     .update(fs.readFileSync(versionFile))
@@ -418,7 +418,6 @@ async function main() {
   console.log(`host bundle: ${bundle.bundle}`)
 
   const imageTag = defaultSandboxImage(version, bundle.buildId)
-  const snapshotName = defaultSnapshotName(version, bundle.buildId)
 
   // Persist build-info for deploy tooling / operators. Always written next to
   // the sandbox scripts (deploy tooling reads a stable path even when the
@@ -427,16 +426,15 @@ async function main() {
   fs.mkdirSync(buildInfoDir, { recursive: true })
   fs.writeFileSync(
     path.join(buildInfoDir, "build-info.json"),
-    JSON.stringify({ imageTag, snapshotName, buildId: bundle.buildId, coreVersion: version, agentPlugins }, null, 2),
+    JSON.stringify({ imageTag, buildId: bundle.buildId, coreVersion: version, agentPlugins }, null, 2),
   )
 
   console.log("")
   console.log("=== sandbox build identity ===")
   console.log(`  build id:      ${bundle.buildId}`)
   console.log(`  image tag:     ${imageTag}`)
-  console.log(`  snapshot name: ${snapshotName}`)
   console.log(`  (set CLAXEDO_SANDBOX_BUILD_ID=${bundle.buildId} on the control plane to pin this build,`)
-  console.log(`   or CLAXEDO_SANDBOX_IMAGE / CLAXEDO_SNAPSHOT_NAME to override the names outright)`)
+  console.log(`   or CLAXEDO_SANDBOX_IMAGE to override the name outright)`)
   console.log("==============================")
   console.log("")
 
@@ -449,7 +447,6 @@ async function main() {
   await runDocker(sandboxImageBuildArgs({ tags, push }))
 
   console.log(push ? `sandbox image pushed: ${imageTag}` : `sandbox image build succeeded: ${imageTag}`)
-  console.log(`snapshot name: ${snapshotName}`)
 }
 
 if (fileURLToPath(import.meta.url) === path.resolve(process.argv[1] ?? "")) {

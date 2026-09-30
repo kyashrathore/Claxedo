@@ -21,7 +21,6 @@ import {
   type HostedControlPlane,
   type HostedWorkerEnv,
 } from "../../provider-neutral-hosted-services"
-import { D1ServiceInstallationStore } from "../../../platform/services/adapters/d1-installation-store"
 import { createD1UsageLedger } from "../../../usage/adapters/d1-usage-ledger"
 import {
   BETTER_AUTH_NATIVE_SCOPES,
@@ -119,9 +118,7 @@ export type BetterAuthD1UserDeployedComposition = {
    * every later caller awaiting it forever (see settled-composition-cache.ts).
    */
   authReady: Promise<void>
-  serviceInstallations: D1ServiceInstallationStore
   product: (typeof STATIC_PRODUCT_DESCRIPTORS)["user-deployed"]
-  billing: "absent"
 }
 
 /**
@@ -193,7 +190,6 @@ export function composeBetterAuthD1UserDeployedControlPlane(
     },
     ...(input.now ? { now: input.now } : {}),
   })
-  const serviceInstallations = new D1ServiceInstallationStore(input.controlPlaneDatabase)
   const legacyAuthBoundary: ControlPlaneAuthAdapter = {
     config: {
       enabled: true,
@@ -249,9 +245,8 @@ export function composeBetterAuthD1UserDeployedControlPlane(
           provisionRuntime: delivery.provisionRuntime,
         },
       } : {}),
-      // User-deployed has no billing tier: with a composed sandbox the owner's
-      // organization is entitled to cloud workspaces; without one the answer
-      // names the posture instead of a 404.
+      // With a composed sandbox the owner's organization is admitted to cloud
+      // workspaces; without one the answer names the posture instead of a 404.
       cloudWorkspaceAdmission: input.sandbox
         ? async () => undefined
         : async () => ({
@@ -281,9 +276,7 @@ export function composeBetterAuthD1UserDeployedControlPlane(
       await context.adapter.findOne({ model: "session", where: [{ field: "token", value: COMPOSITION_READINESS_TOKEN }] })
       await input.controlPlaneDatabase.prepare("select 1").first()
     }),
-    serviceInstallations,
     product: STATIC_PRODUCT_DESCRIPTORS["user-deployed"],
-    billing: "absent",
   }
 }
 

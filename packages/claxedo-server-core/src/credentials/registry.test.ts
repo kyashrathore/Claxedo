@@ -983,21 +983,21 @@ describe("credential registry", () => {
 
     test("a sandbox driver key neither holds the mark nor inherits it", async () => {
       const driver = await putCredential({ owner: "local",
-        provider_id: "daytona",
+        provider_id: "vercel",
         kind: "sandbox_driver",
         source: "managed",
         label: "driver",
-        secret: "daytona-key",
+        secret: "vercel-key",
       })
       // Nothing a harness runs on, so the mark never lands on it at save time…
       expect(driver.is_active).toBe(false)
 
       const mixed = await putCredential({ owner: "local",
-        provider_id: "daytona",
+        provider_id: "vercel",
         kind: "api_key",
         source: "managed",
         label: "model key",
-        secret: "sk-daytona-model",
+        secret: "sk-vercel-model",
       })
       expect(mixed.is_active).toBe(true)
       expect(setActiveCredentials([driver.id], undefined, "local")).toEqual({ ok: false, reason: "not_eligible" })
@@ -1007,7 +1007,7 @@ describe("credential registry", () => {
 
       expect(credentialById(driver.id, { onOutage: "throw" })?.is_active).toBe(false)
       expect(credentialById(mixed.id, { onOutage: "throw" })?.is_active).toBe(true)
-      expect(clearActiveCredentials(["daytona"], undefined, "local")).toEqual({ cleared: [mixed.id] })
+      expect(clearActiveCredentials(["vercel"], undefined, "local")).toEqual({ cleared: [mixed.id] })
     })
 
     test("clearActiveCredentials clears every binding named and nothing else", async () => {
@@ -1039,7 +1039,7 @@ describe("credential registry", () => {
         provider_id: "active-driver",
         kind: "sandbox_driver",
         source: "managed",
-        secret: "daytona-master-key",
+        secret: "driver-master-key",
       })
       const { first } = await twoAccounts("active-other-org")
 

@@ -175,7 +175,7 @@ describe("workspace store git subprocess cost", () => {
         workspaceId: "ws_cloud_spawn",
         directory: "/workspace",
         kind: "cloud",
-        driver: "daytona",
+        driver: "modal",
         repo_url: "https://github.com/foo/cloud-repo.git",
       }),
     )
@@ -190,7 +190,7 @@ describe("workspace store git subprocess cost", () => {
         workspaceId: "ws_cloud_spawn",
         directory: "/workspace",
         kind: "cloud",
-        driver: "daytona",
+        driver: "modal",
         repo_url: "https://github.com/foo/cloud-repo.git",
       }),
     )

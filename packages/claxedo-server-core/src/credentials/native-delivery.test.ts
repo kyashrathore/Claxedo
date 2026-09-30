@@ -390,7 +390,7 @@ describe("native provider delivery", () => {
       .toEqual({ local: true, cloud: false, reason: "native_delivery_needs_companion_header" })
     expect(credentialReach({ provider_id: "openai", kind: "api_key" })).toEqual({ local: true, cloud: true })
     expect(credentialReach({ provider_id: "claude-sdk", kind: "oauth_token" })).toEqual({ local: true, cloud: true })
-    expect(credentialReach({ provider_id: "daytona", kind: "sandbox_driver" }))
+    expect(credentialReach({ provider_id: "modal", kind: "sandbox_driver" }))
       .toEqual({ local: true, cloud: false, reason: "no_destination" })
   })
 

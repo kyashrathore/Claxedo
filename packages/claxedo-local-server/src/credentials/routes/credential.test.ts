@@ -1303,10 +1303,10 @@ describe("choosing which account a provider runs on", () => {
 
   test("an unknown id and the org's own sandbox-driver row are both not the caller's to mark, and neither writes", async () => {
     const driver = await registry.putCredential({ owner: null,
-      provider_id: "daytona",
+      provider_id: "modal",
       kind: "sandbox_driver",
       source: "managed",
-      secret: "daytona-master-key",
+      secret: "modal-master-key",
     })
     const waiting = await account("route-atomic", "acc_waiting")
 

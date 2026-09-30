@@ -6,7 +6,6 @@ import path from "node:path"
 const configRequire = createRequire(import.meta.url)
 
 import { createElectronRenderer, desktopDir } from "./vite.renderer"
-import { desktopNodeWorkerBundlePlugin } from "./scripts/node-worker-bundles"
 import { desktopMainBoundaryManifestPlugin } from "./scripts/product-boundary-manifests"
 
 const channel = (() => {
@@ -49,30 +48,9 @@ export default defineConfig(({ mode, command }) => {
         ...telemetryDefines,
         ...accountDefines,
         "import.meta.env.CLAXEDO_CHANNEL": JSON.stringify(channel),
-        // The reviewed CIM script, CRLF-normalized + UTF-16LE + base64 — the
-        // shape PowerShell's -EncodedCommand takes. A define rather than a
-        // module import so nothing ever has to PARSE the .ps1: bun runs
-        // process-metrics-source.ts straight from source for the release
-        // gates and choked reading the PowerShell as JavaScript.
-        CLAXEDO_WINDOWS_CIM_ENCODED: JSON.stringify(
-          Buffer.from(
-            readFileSync(path.join(desktopDir, "src/main/diagnostics/windows-cim-worker.ps1"), "utf8").replace(
-              /\r?\n/g,
-              "\r\n",
-            ),
-            "utf16le",
-          ).toString("base64"),
-        ),
       },
       plugins: [
         desktopMainBoundaryManifestPlugin(desktopDir),
-        desktopNodeWorkerBundlePlugin({
-          desktopRoot: desktopDir,
-          workerEntries: [
-            "src/main/diagnostics/process-metrics-worker-entry.ts",
-            "src/main/diagnostics/session-memory-worker-entry.ts",
-          ],
-        }),
         {
           // The launch gate is spawned by path, not imported, so bundling
           // process-ownership into the main process leaves nothing on disk for
@@ -118,11 +96,9 @@ export default defineConfig(({ mode, command }) => {
         // stay external — they ship as the app's sole node_modules content.
         externalizeDeps: false,
         rollupOptions: {
-          external: ["better-sqlite3", "@lydell/node-pty", "@vscode/windows-process-tree"],
+          external: ["better-sqlite3", "@lydell/node-pty"],
           input: {
             index: "src/main/index.ts",
-            "process-metrics-worker": "src/main/diagnostics/process-metrics-worker-entry.ts",
-            "session-memory-worker": "src/main/diagnostics/session-memory-worker-entry.ts",
           },
           output: {
             manualChunks(id) {
@@ -130,11 +106,8 @@ export default defineConfig(({ mode, command }) => {
               return id.endsWith("/src/main/account/index.ts") ? "desktop-account" : undefined
             },
             // Without this Rollup folds the manual chunk's whole static subtree
-            // into it, so a module both worker entries also import (the field
-            // readers) landed in `desktop-account-*.js` next to
-            // `import { app, safeStorage, shell } from "electron"`. The
-            // workers run under ELECTRON_RUN_AS_NODE, where `electron` has no
-            // named exports, and died at module instantiation.
+            // into it, and a module `index` shares with that subtree is then
+            // served from `desktop-account-*.js`.
             onlyExplicitManualChunks: true,
           },
         },

@@ -165,34 +165,7 @@ export type UnifiedUsageResponse = {
     scope: "local" | "cross-machine"
     error?: string
   }
-  externalLocal: UsageSeries & {
-    cost: UsageCost
-    status: "available" | "unavailable" | "degraded"
-    coverage: Array<{
-      source: string
-      status: "available" | "degraded" | "unavailable" | "unsupported"
-      error?: string
-    }>
-    /**
-     * Requests in this machine's CLI history that can be neither attributed
-     * to Claxedo nor ruled out, and so count in Total as history of their
-     * own. Requests, not turns: most requests open no turn, so a turn count
-     * would read zero while their tokens still count.
-     */
-    unclassifiedRequests: number
-    /**
-     * Epoch ms of the transcript walk these rows came from. Absent when no
-     * walk has produced them (a view that does not read local history, or a
-     * scanner failure with nothing held). A walk runs only on an explicit
-     * refresh or for a range nothing stored covers, so rows can be much older
-     * than the response.
-     */
-    scannedAt?: number
-    error?: string
-  }
-  total: UsageSeries
-  totalCost: UsageCost
-  filterOptions: { claxedo: UsageFilterOptions; total: UsageFilterOptions }
+  filterOptions: { claxedo: UsageFilterOptions }
   breakdown?: UsageBreakdownPage
   modelBreakdown?: UsageBreakdownPage
   chart?: UsageChartSeries

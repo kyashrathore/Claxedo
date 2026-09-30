@@ -13,7 +13,7 @@ import {
   type IpAddress,
 } from "@claxedo/helpers"
 
-export const sandboxDriverIds = ["exe", "daytona", "modal", "vercel", "cloudflare", "box", "docker"] as const
+export const sandboxDriverIds = ["modal", "vercel", "cloudflare", "box", "docker"] as const
 
 export type SandboxDriverID = (typeof sandboxDriverIds)[number]
 
@@ -44,8 +44,6 @@ export type SandboxProvisionerID = SandboxDriverID | "fetch"
 export type SandboxSecretBrokering = "native" | "none"
 
 export type SandboxDriverAuth = {
-  exe?: { api_token?: string }
-  daytona?: { api_key?: string }
   modal?: { token_id?: string; token_secret?: string }
   vercel?: { access_token?: string; team_id?: string; project_id?: string }
   cloudflare?: { api_token?: string; worker_url?: string }
@@ -65,8 +63,6 @@ export type SandboxDriverCredentialField = {
 }
 
 export const sandboxDriverCredentialFields = {
-  exe: [{ key: "api_token", label: "API Token", secret: true }],
-  daytona: [{ key: "api_key", label: "API Key", secret: true }],
   modal: [
     { key: "token_id", label: "Token ID", secret: true },
     { key: "token_secret", label: "Token Secret", secret: true },
@@ -85,8 +81,6 @@ export const sandboxDriverCredentialFields = {
 } as const satisfies Record<SandboxDriverID, readonly SandboxDriverCredentialField[]>
 
 export const sandboxDriverLabels = {
-  exe: "exe.dev",
-  daytona: "Daytona",
   modal: "Modal",
   vercel: "Vercel",
   cloudflare: "Cloudflare",
@@ -122,14 +116,6 @@ export function sandboxDriverAuthValues<T extends SandboxDriverID>(
   id: T,
   env: SandboxDriverEnv = process.env,
 ): SandboxDriverAuth[T] | undefined {
-  if (id === "daytona") {
-    const api_key = trimToUndefined(cfg?.auth?.daytona?.api_key)
-    return (api_key ? { api_key } : undefined) as SandboxDriverAuth[T] | undefined
-  }
-  if (id === "exe") {
-    const api_token = trimToUndefined(cfg?.auth?.exe?.api_token) ?? trimToUndefined(env.EXE_DEV_API_TOKEN)
-    return (api_token ? { api_token } : undefined) as SandboxDriverAuth[T] | undefined
-  }
   if (id === "modal") {
     const token_id = trimToUndefined(cfg?.auth?.modal?.token_id) ?? trimToUndefined(env.MODAL_TOKEN_ID)
     const token_secret = trimToUndefined(cfg?.auth?.modal?.token_secret) ?? trimToUndefined(env.MODAL_TOKEN_SECRET)
@@ -307,7 +293,7 @@ export function defaultSandboxDriverID(
   return sandboxDriverId(cfg?.default_driver, cfg, env)
     ?? (enabled(env.CLAXEDO_DOCKER_SANDBOX_DEFAULT) && sandboxDriverAuthValues(cfg, "docker", env)
       ? "docker"
-      : "daytona")
+      : "cloudflare")
 }
 
 export function listSandboxDrivers(

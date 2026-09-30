@@ -172,8 +172,8 @@ function createTasksCloudTarget(
     const port = input.selectedCapabilities
     const creator = rootCreator(input, origin)
     // The create route's own admission, before a row or a sandbox exists: the
-    // create budget, the authority's create admission, the paid-capability
-    // entitlement, and the concurrent-lease cap. A caller nobody resolved keeps
+    // create budget, the authority's create admission, the deployment's
+    // cloud-workspace admission, and the concurrent-lease cap. A caller nobody resolved keeps
     // its refusal inside `admit` below, where it always was. `existing` marks
     // the retry that re-admits an already-filed row: its lease is the cap's
     // own, so the cap does not count it a second time.

@@ -200,7 +200,12 @@ export const desktopMainComposition: Policy = {
   // `account/hosted-operations.ts`. Reviewed owner: the plugin id rule, which
   // main applies to `plugin.request`'s plugin id before it builds a URL. The
   // subpath is one zod-free module. 100/28, no headroom.
-  ceilings: { modules: 100, packages: 28 },
+  // -13 modules / -4 packages: process diagnostics are gone — the
+  // `main/diagnostics/` collectors, profiler, workers and IPC and the
+  // `shared/` diagnostics transport — and with them `zod`,
+  // `@vscode/windows-process-tree`, `node:readline` and `node:util`.
+  // 87/24 with the plugin id subpath above, no headroom.
+  ceilings: { modules: 87, packages: 24 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-main.json",
     minModules: 35,

@@ -2,7 +2,7 @@
 
 The workspace-runtime is the per-workspace host service. One process per
 workspace. It owns the runtime host that drives every harness through its
-`@claxedo/harness` transport, plus the PTY and process managers, the LSP/VCS
+`@claxedo/harness` transport, plus the PTY manager, the LSP/VCS
 surface, and the relay-host tunnel to `workspace-relay`. The transports live in
 `@claxedo/harness`; this package composes them and owns what they never decide.
 
@@ -46,7 +46,7 @@ for the other four exposure/deployment options, and
 ## Package role: a kit, not a runnable artifact
 
 This package ships the runtime **primitives** (host wiring, harness composition,
-PTY/process/file/git/event surfaces, config apply behavior, exposure/relay
+PTY/file/git/event surfaces, config apply behavior, exposure/relay
 contracts). It deliberately ships **no bin**: runnable hosts are composed by
 downstream packages. ACP binaries are not shipped by Claxedo. The operator
 installs them and names their command, arguments, and environment in the
@@ -90,7 +90,7 @@ lower-level helpers:
 | Import | Use |
 | --- | --- |
 | `@claxedo/workspace-runtime` | Standalone bootstrap, host creation, exposure/management contracts, route manifest, and stable config types. |
-| `@claxedo/workspace-runtime/client` | Manual typed HTTP client for health, capabilities, config apply, events, files, diff/git, PTY, and process routes. |
+| `@claxedo/workspace-runtime/client` | Manual typed HTTP client for health, capabilities, config apply, events, files, diff/git, and PTY routes. |
 | `@claxedo/workspace-runtime/host` | Low-level host construction and route mounting. |
 | `@claxedo/workspace-runtime/projection` | SSE fanout and replay helpers for runtime presentation frames. |
 | `@claxedo/harness/opencode-sdk` | The embedded OpenCode engine and its transport, which this runtime composes as the `opencode` registry row (Node 24+). |
@@ -109,8 +109,7 @@ Root runtime value exports:
 `WORKSPACE_RUNTIME_SESSION_AUTHORITY_URL`,
 `WorkspaceRuntimeRouteManifest`, `WorkspaceWorktreeManager`,
 `WorkspaceRuntimeRoutes`, `createMemoryTranscriptHandleStore`,
-`createPersistentTranscriptHandleStore`, `createProcessObserver`,
-`createRuntimeCredentialIssuer`,
+`createPersistentTranscriptHandleStore`, `createRuntimeCredentialIssuer`,
 `createTranscriptResolver`, `createWorkspaceHost`,
 `createWorkspaceRuntimeApp`, `createWorkspaceRuntimeJwtManagementAuth`,
 `embeddedWorkspaceRuntimeExposure`,
@@ -175,7 +174,6 @@ projection compose those concerns outside the OSS runtime boundary.
 | `*    /api/wr/file/*`, `GET /api/wr/find/file` | [`routes/file.ts`](src/routes/file.ts) | exposure-dependent runtime auth |
 | `*    /api/wr/diff/*`, `* /api/wr/git/*` | [`routes/diff.ts`](src/routes/diff.ts), [`routes/git-source.ts`](src/routes/git-source.ts) | exposure-dependent runtime auth |
 | `*    /api/wr/pty/*` | [`routes/pty.ts`](src/routes/pty.ts) | exposure-dependent runtime auth |
-| `*    /api/wr/process/*` | [`routes/process.ts`](src/routes/process.ts) | exposure-dependent runtime auth |
 | `*    /api/wr/hook/*` | [`routes/agent-hook.ts`](src/routes/agent-hook.ts) | exposure-dependent runtime auth |
 | `GET  /api/wr/subagent-transcripts/*` | [`routes/transcript.ts`](src/routes/transcript.ts) | exposure-dependent runtime auth and parent-session authorization |
 | `*    /api/wr/worktrees/*` | [`routes/worktree.ts`](src/routes/worktree.ts) | exposure-dependent runtime auth |
@@ -183,21 +181,17 @@ projection compose those concerns outside the OSS runtime boundary.
 | `*    /mcp/*` | MCP routes | implicit |
 | `*    /lsp`, `*    /vcs` | client-presentation routes mounted by host | implicit |
 
-The capability response is versioned with `api_version: 2`. It advertises
-`process_observer: true` for the public, redacted owner-event API used by an
-embedding desktop. Local CPU/RSS diagnostics are delivered by the desktop IPC
-capability; the runtime HTTP surface remains the workspace execution boundary.
+The capability response is versioned with `api_version: 2`.
 
 ## Event contract
 
-`workspace-runtime` serves one event stream. Terminal bytes and process logs
-are not event streams and have their own transports:
+`workspace-runtime` serves one event stream. Terminal bytes are not an event
+stream and have their own transport:
 
 | Surface | Transport | Event family | Contract |
 | --- | --- | --- | --- |
-| `GET /api/wr/events` | SSE | `{ directory, payload }` frames: the runtime's projected client-presentation events (parts, deltas, tool state, status, permission and question asks, todo, diagnostics), the projected `subagent.updated` / `goal.*` runtime-channel events, `harness.health` (a session's `harnessHealth` and `connectionState`, as `/api/wr/health?sessionId=` answers them, sent when either changes around a turn), and the workspace's control frames from `workspaceRuntimeBus` (PTY lifecycle and stream summaries, process status/config, agent lifecycle, session lifecycle) | The one stream a workspace runtime serves. Mounted by `mountWorkspaceCore()`; resumable by `Last-Event-ID`, with a second retained ring for the frames that settle a state machine. A principal the workspace authority admits reads it unscoped, on a workspace lease the control plane mints for the read and the delivery policy renews, and the session authority decides per session what reaches it — the workspace's owner is no exception; a principal it refuses is answered 403 `workspace_event_stream_denied` and reads `?sessionID=` under a session lease, that session and its subagent children. A connection lives at most one runtime-access-token lifetime and reconnects by cursor into the reader's actor-keyed replay scope; a self-hosted node admits the unscoped arm by stamped role with no lease and re-checks only session grants. |
+| `GET /api/wr/events` | SSE | `{ directory, payload }` frames: the runtime's projected client-presentation events (parts, deltas, tool state, status, permission and question asks, todo, diagnostics), the projected `subagent.updated` / `goal.*` runtime-channel events, `harness.health` (a session's `harnessHealth` and `connectionState`, as `/api/wr/health?sessionId=` answers them, sent when either changes around a turn), and the workspace's control frames from `workspaceRuntimeBus` (PTY lifecycle and stream summaries, agent lifecycle, session lifecycle) | The one stream a workspace runtime serves. Mounted by `mountWorkspaceCore()`; resumable by `Last-Event-ID`, with a second retained ring for the frames that settle a state machine. A principal the workspace authority admits reads it unscoped, on a workspace lease the control plane mints for the read and the delivery policy renews, and the session authority decides per session what reaches it — the workspace's owner is no exception; a principal it refuses is answered 403 `workspace_event_stream_denied` and reads `?sessionID=` under a session lease, that session and its subagent children. A connection lives at most one runtime-access-token lifetime and reconnects by cursor into the reader's actor-keyed replay scope; a self-hosted node admits the unscoped arm by stamped role with no lease and re-checks only session grants. |
 | `GET /api/wr/pty/:ptyID/connect` | WebSocket | PTY bytes plus cursor metadata | Supported PTY data stream. PTY lifecycle summaries also appear on `/api/wr/events`, but terminal bytes are delivered over this WebSocket. |
-| `GET /api/wr/process/logs` | HTTP snapshot | Text log tail | Process output is poll/snapshot based through PTY log snapshots. There is no separate supported process-output event stream. Process status summaries appear on `/api/wr/events`. |
 
 `harness.health` is owned by `src/workspace/harness-health-feed.ts`. A session is
 watched from its turn's start until one read after the turn ends. Adapters call
@@ -218,7 +212,7 @@ lifecycle states onto `workspaceRuntimeBus` as `agent.lifecycle` frames:
 `UserActionRequired`, `session.idle` `Idle`, and `session.error` `Error`.
 
 `workspaceRuntimeBus` is intentionally process-global runtime state. It is used
-by PTY, process, and agent-hook code that already lives inside the
+by PTY and agent-hook code that already lives inside the
 workspace-runtime process. Subscribers are isolated: a throwing or rejecting
 subscriber is reported and cannot prevent later subscribers from receiving the
 same event.
@@ -245,7 +239,7 @@ embedding server owns the browser origin policy.
 For all shapes, `WORKSPACE_RUNTIME_CONFIG_TOKEN` is a trusted direct token for
 health discovery through relay-host middleware, not whole-server auth.
 Config mutation is authorized only by an explicit workspace-runtime management
-auth adapter. The config token does not authorize PTY/process/file/session/VCS
+auth adapter. The config token does not authorize PTY/file/session/VCS
 routes or `/api/wr/config`.
 
 ## Standalone listen policy
@@ -262,7 +256,7 @@ self-managed deployments behind trusted private-network controls and does not
 add application-level auth.
 `WORKSPACE_RUNTIME_CONFIG_TOKEN` participates in trusted direct health access
 when relay-host auth is enabled; it is not standalone config mutation auth and
-is not a whole-server credential for PTY, process, file, session, or VCS routes.
+is not a whole-server credential for PTY, file, session, or VCS routes.
 
 ## Relay-attached runtime configuration
 
@@ -309,7 +303,7 @@ stop retrying after a bounded number of failed reconnect attempts.
 ## Workspace target and path containment
 
 `workspace-runtime` is a per-workspace host. Session, file, PTY,
-process, OpenCode-compat, and diff/VCS routes are pinned to
+OpenCode-compat, and diff/VCS routes are pinned to
 `WORKSPACE_RUNTIME_DIRECTORY` or the `WorkspaceTarget` passed to
 `createWorkspaceRuntimeApp()`. Callers may omit `directory` and use the pinned
 workspace, pass that exact directory, or pass the synthetic
@@ -338,8 +332,7 @@ States: `"ready" | "applying" | "error"` (see
    liveness and boundary metadata; richer diagnostics stay behind authenticated
    host-owned surfaces.
 6. **Drain & exit** — on SIGTERM/SIGINT we close the listening socket,
-   close the host tunnel (so the relay reroutes), dispose managed process
-   state, remove remaining PTYs, then
+   close the host tunnel (so the relay reroutes), remove remaining PTYs, then
    `host.dispose()` (with `WORKSPACE_RUNTIME_DRAIN_TIMEOUT_MS` wall-clock cap,
    default 10s). See `server.ts` for the exact phase sequence (P4).
 
@@ -477,7 +470,6 @@ contract.
 | `WORKSPACE_RUNTIME_NATIVE_HARNESS`, `WORKSPACE_RUNTIME_CONNECTION_ID`, `WORKSPACE_RUNTIME_ACP_BINARY` | Optional CLI launcher defaults for the initial harness. Select a native harness or a connection, not both. Runtime config apply can replace this after startup. |
 | `WORKSPACE_RUNTIME_ENABLE_ACP_REMOTE_TRANSPORT` | Enables remote ACP transport URLs in runner config. Disabled by default. |
 | `WORKSPACE_RUNTIME_TERMINAL_SESSION_TTL_MS` | Retention window for terminal lifecycle session summaries. |
-| `WORKSPACE_RUNTIME_DISABLE_PORTLESS` | Disables optional Portless named-url discovery for managed processes. |
 | `WORKSPACE_RUNTIME_DATA_DIR`, `WORKSPACE_RUNTIME_STATE_DIR`, `WORKSPACE_RUNTIME_STORE_DIR`, `WORKSPACE_RUNTIME_PTY_HISTORY_DIR` | Neutral runtime-owned storage locations. Defaults are under `~/.workspace-runtime`. |
 | `WORKSPACE_RUNTIME_MANAGEMENT_JWKS_URL`, `WORKSPACE_RUNTIME_MANAGEMENT_VERIFY_PEM`, `WORKSPACE_RUNTIME_MANAGEMENT_ISSUER`, `WORKSPACE_RUNTIME_MANAGEMENT_AUDIENCE` | Management-token verification inputs for `/api/wr/config`. Remote JWKS requires HTTPS and refuses redirects. Local development uses a pinned PEM public key. |
 | `WORKSPACE_RUNTIME_DRAIN_TIMEOUT_MS` | Drain wall-clock cap (default `10000`). |

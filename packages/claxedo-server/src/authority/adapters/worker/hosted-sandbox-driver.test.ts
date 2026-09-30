@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest"
-import { hostedSandboxDriver, lifecycleMinutes, sandboxRuntimeControlEnv } from "./hosted-sandbox-driver"
+import { hostedSandboxDriver, sandboxRuntimeControlEnv } from "./hosted-sandbox-driver"
 
 const plane = {
   BETTER_AUTH_URL: "https://api.example.test",
@@ -42,21 +42,9 @@ describe("hosted sandbox driver selection", () => {
     })
   })
 
-  test("daytona needs a key and a snapshot; exe needs a token; an unknown name is refused", () => {
-    expect(hostedSandboxDriver({ ...plane, CLAXEDO_SANDBOX_DRIVER: "daytona", DAYTONA_API_KEY: "k" })).toBeUndefined()
-    expect(hostedSandboxDriver({
-      ...plane,
-      CLAXEDO_SANDBOX_DRIVER: "daytona",
-      DAYTONA_API_KEY: "k",
-      CLAXEDO_DAYTONA_SNAPSHOT: "claxedo-workspace-runtime-0-5-2-v8",
-    })?.id).toBe("daytona")
-    expect(hostedSandboxDriver({ ...plane, CLAXEDO_SANDBOX_DRIVER: "exe" })).toBeUndefined()
-    expect(hostedSandboxDriver({ ...plane, CLAXEDO_SANDBOX_DRIVER: "exe", EXE_DEV_API_TOKEN: "t" })?.id).toBe("exe")
-    expect(() => hostedSandboxDriver({ ...plane, CLAXEDO_SANDBOX_DRIVER: "modal" })).toThrow(/must be one of/)
-  })
-
-  test("lifecycle knobs round to whole minutes with a floor of one", () => {
-    expect(lifecycleMinutes({}, "CLAXEDO_SANDBOX_AUTO_STOP_MS", 30 * 60_000)).toBe(30)
-    expect(lifecycleMinutes({ CLAXEDO_SANDBOX_AUTO_STOP_MS: "1000" }, "CLAXEDO_SANDBOX_AUTO_STOP_MS", 30 * 60_000)).toBe(1)
+  test("the fetch bridge needs its URL, and a driver it does not compose is refused", () => {
+    expect(hostedSandboxDriver({ ...plane, CLAXEDO_SANDBOX_DRIVER: "fetch" })).toBeUndefined()
+    expect(hostedSandboxDriver({ ...plane, CLAXEDO_SANDBOX_DRIVER: "fetch", CLAXEDO_SANDBOX_DRIVER_URL: "https://driver.example.test" })?.id).toBe("fetch")
+    expect(() => hostedSandboxDriver({ ...plane, CLAXEDO_SANDBOX_DRIVER: "modal" })).toThrow(/must be cloudflare or fetch/)
   })
 })

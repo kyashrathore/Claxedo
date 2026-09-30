@@ -294,7 +294,6 @@ describe("architecture boundaries", () => {
       "process.env",
       "Bun.file",
       "ControlPlaneAuthAdapter",
-      "billing",
       "usersMe",
     ]
 

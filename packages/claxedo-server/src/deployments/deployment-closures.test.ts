@@ -27,12 +27,12 @@ const HOSTED_CORE_WORKER_ROOT = "src/deployments/hosted-workerd/core-worker.cf.t
  * deliberate bump someone reads.
  */
 const ENTRIES = [
-  { name: "worker", entry: BETTER_AUTH_D1_ENTRY, modules: 99, packages: 20 },
+  { name: "worker", entry: BETTER_AUTH_D1_ENTRY, modules: 97, packages: 19 },
   // Both Agent Plugins entries carry the plugin-backend platform
   // (`src/plugin-backends/`): seven modules, `@claxedo/plugin-api` for the
   // manifest, and `cloudflare:workers` for the supervisor and its entrypoints.
-  { name: "worker-agent-plugins", entry: BETTER_AUTH_D1_AGENT_PLUGINS_ENTRY, modules: 150, packages: 24 },
-  { name: "worker-agent-plugins-full-hosted", entry: BETTER_AUTH_D1_AGENT_PLUGINS_FULL_HOSTED_ENTRY, modules: 155, packages: 24 },
+  { name: "worker-agent-plugins", entry: BETTER_AUTH_D1_AGENT_PLUGINS_ENTRY, modules: 148, packages: 23 },
+  { name: "worker-agent-plugins-full-hosted", entry: BETTER_AUTH_D1_AGENT_PLUGINS_FULL_HOSTED_ENTRY, modules: 153, packages: 23 },
 ] as const
 
 function closure(entry: string, options: { runtimeOnly?: boolean } = {}) {
@@ -40,7 +40,7 @@ function closure(entry: string, options: { runtimeOnly?: boolean } = {}) {
 }
 
 describe("server deployment entry closures", () => {
-  it("keeps the provider-independent hosted core physically free of optional services", () => {
+  it("keeps the provider-independent hosted core physically free of the documents backends", () => {
     const result = closure(HOSTED_CORE_WORKER_ROOT, { runtimeOnly: true })
     const files = result.modules.map((module) => module.relative)
     expect(files).toContain(HOSTED_CORE_WORKER_ROOT)
@@ -49,21 +49,7 @@ describe("server deployment entry closures", () => {
     expect(result.unresolved).toEqual([])
     expect(result.opaque).toEqual([])
 
-    const forbiddenFiles = files.filter((file) =>
-      [
-        "src/documents/",
-        "src/billing/",
-      ].some((prefix) => file.includes(prefix)),
-    )
-    expect(forbiddenFiles).toEqual([])
-    expect(
-      result.packages.filter((name) =>
-        [
-          "@claxedo/documents-service",
-          "@polar-sh/sdk",
-        ].includes(name),
-      ),
-    ).toEqual([])
+    expect(files.filter((file) => file.includes("src/documents/"))).toEqual([])
   })
 
   it("keeps the Better Auth D1 Worker free of optional provider implementations", () => {
@@ -73,22 +59,7 @@ describe("server deployment entry closures", () => {
     expect(files).toContain("src/deployments/hosted-workerd/core-worker.cf.ts")
     expect(result.unresolved).toEqual([])
     expect(result.opaque).toEqual([])
-    expect(
-      files.filter((file) =>
-        [
-          "billing/",
-          "documents/",
-        ].some((value) => file.toLowerCase().includes(value)),
-      ),
-    ).toEqual([])
-    expect(
-      result.packages.filter((name) =>
-        [
-          "@claxedo/documents-service",
-          "@polar-sh/sdk",
-        ].includes(name),
-      ),
-    ).toEqual([])
+    expect(files.filter((file) => file.toLowerCase().includes("documents/"))).toEqual([])
   })
 
   it("keeps the plain Worker free of Agent Plugins and the feature Worker closed over exactly it", () => {
@@ -106,12 +77,11 @@ describe("server deployment entry closures", () => {
     expect(files).toContain("src/agent-plugins/activation/d1-store.ts")
     expect(files).toContain("src/connections/hosted-d1/setup.ts")
     // The feature adds routes, storage adapters, and the hosted Connections
-    // family — never the desktop product, a sandbox provider SDK, or billing.
+    // family — never the desktop product or a sandbox provider SDK.
     expect(
       files.filter((file) =>
         [
           "packages/claxedo-local-server/src",
-          "billing/",
           "documents/",
           "convex",
         ].some((value) => file.toLowerCase().includes(value)),
@@ -119,7 +89,7 @@ describe("server deployment entry closures", () => {
     ).toEqual([])
     expect(
       feature.packages.filter((name) =>
-        ["@claxedo/local-server", "@claxedo/documents-service", "@polar-sh/sdk", "convex"].includes(name),
+        ["@claxedo/local-server", "convex"].includes(name),
       ),
     ).toEqual([])
   })
@@ -140,10 +110,10 @@ describe("server deployment entry closures", () => {
     // The provider SDKs are package edges of the driver composer, not source
     // files of this package; the composer itself is the edge that matters.
     expect(fullHosted.packages).toContain("@claxedo/sandbox-manager")
-    // Still no desktop product, billing, or the retired stack.
+    // Still no desktop product or the retired stack.
     expect(
       files.filter((file) =>
-        ["packages/claxedo-local-server/src", "billing/", "convex"].some((value) =>
+        ["packages/claxedo-local-server/src", "convex"].some((value) =>
           file.toLowerCase().includes(value),
         ),
       ),

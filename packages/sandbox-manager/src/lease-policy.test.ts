@@ -33,7 +33,7 @@ function lease(overrides: Partial<SandboxLeaseRow> = {}): SandboxLeaseRow {
     home_region: "us-east",
     epoch: 1,
     status: "stopped",
-    driver: "daytona",
+    driver: "vercel",
     driver_resource_id: null,
     driver_snapshot_id: null,
     sandbox_id: null,

@@ -83,7 +83,7 @@ function hostedOptions(
       runtimeAccessTokenSigner: vi.fn(),
       hostTunnelTokenSigner: vi.fn(),
     },
-    sandbox: { defaultDriver: "daytona" },
+    sandbox: { defaultDriver: "modal" },
     telemetry: { capture: vi.fn() },
     authority: fakeAuthority(),
     ...overrides,
@@ -209,7 +209,7 @@ describe("control-plane services", () => {
         runtimeAccessTokenSigner,
         hostTunnelTokenSigner,
       },
-      sandbox: { defaultDriver: "daytona" },
+      sandbox: { defaultDriver: "modal" },
       telemetry: { capture },
     })
 
@@ -222,7 +222,7 @@ describe("control-plane services", () => {
     })
     expect(services.relay.runtimeAccessTokenSigner).toBe(runtimeAccessTokenSigner)
     expect(services.relay.hostTunnelTokenSigner).toBe(hostTunnelTokenSigner)
-    expect(services.sandbox).toEqual({ defaultDriver: "daytona" })
+    expect(services.sandbox).toEqual({ defaultDriver: "modal" })
     services.telemetry.capture("user_1", "event")
     expect(capture).toHaveBeenCalledWith("user_1", "event")
   })
@@ -567,7 +567,7 @@ describe("control-plane services", () => {
       hasRelayResolverToken: true,
       hasRuntimeAccessTokenSigner: true,
       hasHostTunnelTokenSigner: true,
-      sandboxDriverId: "daytona",
+      sandboxDriverId: "modal",
     })
   })
 
@@ -623,9 +623,9 @@ describe("control-plane services", () => {
     const supervisorOptions = await import("../workspace/supervisor/options")
     supervisor.configureWorkspaceSupervisor({ sandboxOwner: async () => "local", machineOwnerUserId: "local",
       server_url: "http://127.0.0.1:0",
-      default_sandbox_driver: "daytona",
+      default_sandbox_driver: "modal",
     })
-    expect(supervisorOptions.needWorkspaceSupervisorOptions().default_sandbox_driver).toBe("daytona")
+    expect(supervisorOptions.needWorkspaceSupervisorOptions().default_sandbox_driver).toBe("modal")
   })
 
 })

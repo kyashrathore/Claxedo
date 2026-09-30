@@ -53,36 +53,8 @@ jobs:
           echo "tag=claxedo-v$VERSION" >> "$GITHUB_OUTPUT"
           echo "Releasing $VERSION"
 
-  diagnostics-dependency-trust:
-    runs-on: ubuntu-22.04
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Setup Bun
-        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
-        with:
-          bun-version-file: package.json
-
-      # --minimum-release-age=0: a tag build adopts nothing new, it rebuilds the
-      # exact integrity-hashed graph already in bun.lock, so the age gate adds no
-      # protection here and only makes releases fail on wall-clock time.
-      # claxedo-v0.0.63 died exactly this way (electron@43.2.0 was 10h short of
-      # the 3-day cutoff). --frozen-lockfile is what keeps this honest.
-      - name: Install exact locked graph
-        run: bun install --frozen-lockfile --minimum-release-age=0
-
-      - name: Verify reviewed diagnostics packages
-        working-directory: packages/claxedo-desktop
-        env:
-          CLAXEDO_DIAGNOSTICS_VERIFY_ADVISORIES: "1"
-        run: bun run verify:diagnostics-dependencies
-
-      - name: Verify diagnostics privacy boundary
-        working-directory: packages/claxedo-desktop
-        run: bun run verify:diagnostics-privacy
-
   build-desktop:
-    needs: [prepare, diagnostics-dependency-trust]
+    needs: [prepare]
     # Desktop public OAuth/control-plane values are environment-scoped, not
     # repo-level.
     #
@@ -174,9 +146,9 @@ jobs:
         # distutils deterministically.
         run: python3 -m pip install --break-system-packages setuptools || python3 -m pip install setuptools
 
-      # Frozen + age-gate-off: build exactly the graph diagnostics-dependency-trust
-      # already verified with --frozen-lockfile, and never let the age gate brick
-      # a platform leg on wall-clock time. (See that job for the full rationale.)
+      # Frozen + age-gate-off: a tag build adopts nothing new, it rebuilds the
+      # exact integrity-hashed graph already in bun.lock, so the age gate adds no
+      # protection here and only fails a platform leg on wall-clock time.
       - name: Install dependencies
         if: github.event_name == 'push' || github.event.inputs.platforms == 'all' || github.event.inputs.platforms == matrix.platform
         run: bun install --frozen-lockfile --minimum-release-age=0
@@ -248,13 +220,6 @@ jobs:
         working-directory: packages/claxedo-desktop
         run: bun run build
 
-      # Forks the bundle prebuild just produced; process ownership is qualified
-      # on macOS only, and the smoke's stray check needs `pgrep`.
-      - name: Run runtime recovery smoke (macOS)
-        if: runner.os == 'macOS' && (github.event_name == 'push' || github.event.inputs.platforms == 'all' || github.event.inputs.platforms == matrix.platform)
-        working-directory: packages/claxedo-desktop
-        run: bun run test:runtime-recovery
-
       # A source-map upload token is optional config: its absence must degrade
       # to "no upload, release still green", never a failed build. secrets.* is
       # not usable directly in `if:`, hence the bridge through a step output.
@@ -296,18 +261,6 @@ jobs:
         # `find -delete` is GNU/BSD find; pwsh on the windows leg has neither.
         shell: bash
         run: find out -type f -name '*.map' -delete
-
-      - name: Run source diagnostics release gate
-        if: github.event_name == 'push' || github.event.inputs.platforms == 'all' || github.event.inputs.platforms == matrix.platform
-        working-directory: packages/claxedo-desktop
-        env:
-          CLAXEDO_DIAGNOSTICS_SMOKE_OUTPUT: .artifacts/diagnostics-source-${{ matrix.target }}.json
-          CLAXEDO_DIAGNOSTICS_EXPECTED_ARCH: ${{ matrix.arch }}
-        shell: bash
-        run: |
-          mkdir -p .artifacts
-          bun run test:diagnostics-release
-          bun run smoke:diagnostics
 
       - name: Import Apple certificate
         if: runner.os == 'macOS' && (github.event_name == 'push' || github.event.inputs.platforms == 'all' || github.event.inputs.platforms == matrix.platform)
@@ -361,30 +314,6 @@ jobs:
         working-directory: packages/claxedo-desktop
         run: bun run ${{ matrix.cmd }} -- --${{ matrix.arch }} --publish never
 
-      - name: Run packaged diagnostics smoke (macOS)
-        if: runner.os == 'macOS' && (github.event_name == 'push' || github.event.inputs.platforms == 'all' || github.event.inputs.platforms == matrix.platform)
-        working-directory: packages/claxedo-desktop
-        env:
-          CLAXEDO_DIAGNOSTICS_SMOKE_OUTPUT: .artifacts/diagnostics-packaged-${{ matrix.target }}.json
-          CLAXEDO_DIAGNOSTICS_EXPECTED_ARCH: ${{ matrix.arch }}
-        run: bun run smoke:diagnostics:packaged
-
-      - name: Run packaged diagnostics smoke (Windows)
-        if: runner.os == 'Windows' && (github.event_name == 'push' || github.event.inputs.platforms == 'all' || github.event.inputs.platforms == matrix.platform)
-        working-directory: packages/claxedo-desktop
-        env:
-          CLAXEDO_DIAGNOSTICS_SMOKE_OUTPUT: .artifacts/diagnostics-packaged-${{ matrix.target }}.json
-          CLAXEDO_DIAGNOSTICS_EXPECTED_ARCH: ${{ matrix.arch }}
-        run: bun run smoke:diagnostics:packaged
-
-      - name: Run packaged diagnostics smoke (Linux)
-        if: runner.os == 'Linux' && (github.event_name == 'push' || github.event.inputs.platforms == 'all' || github.event.inputs.platforms == matrix.platform)
-        working-directory: packages/claxedo-desktop
-        env:
-          CLAXEDO_DIAGNOSTICS_SMOKE_OUTPUT: .artifacts/diagnostics-packaged-${{ matrix.target }}.json
-          CLAXEDO_DIAGNOSTICS_EXPECTED_ARCH: ${{ matrix.arch }}
-        run: xvfb-run -a bun run smoke:diagnostics:packaged
-
       - name: Upload build artifacts
         if: github.event_name == 'push' || github.event.inputs.platforms == 'all' || github.event.inputs.platforms == matrix.platform
         uses: actions/upload-artifact@v4
@@ -400,7 +329,6 @@ jobs:
             packages/claxedo-desktop/dist/*.yml
             packages/claxedo-desktop/dist/*.yaml
             packages/claxedo-desktop/dist/*.blockmap
-            packages/claxedo-desktop/.artifacts/diagnostics-*.json
           retention-days: 7
           # A packaging step that silently produces nothing must fail here,
           # not surface later as an empty release (bit by the bun --cwd no-op).

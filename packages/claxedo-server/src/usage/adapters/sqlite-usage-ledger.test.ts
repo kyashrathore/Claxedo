@@ -292,22 +292,6 @@ describe("sqlite usage ledger", () => {
       ).map((item) => item.messageId),
     ).toEqual(["wanted"])
   })
-
-  test("spans each local turn from its first revision to its completion", async () => {
-    const { ledger } = harness()
-    await ledger.writeRevision(revision({ observedAt: 1_000 }))
-    await ledger.writeRevision(revision({ revision: 2, observedAt: 1_500 }))
-    const final = revision({ revision: 3, observedAt: 1_800, completedAt: 2_000, settlement: "final", status: "completed" })
-    await ledger.writeRevision(final)
-    await ledger.writeRevision(revision({
-      messageId: "msg_cloud",
-      location: "cloud-workspace",
-      hostId: "workspace:ws",
-      sessionRef: "workspace:ws:session:same-session",
-    }))
-
-    expect(await ledger.localTurnSpans()).toEqual([{ fact: final, startedAt: 1_000 }])
-  })
 })
 
 describe("sqlite turn meter state", () => {

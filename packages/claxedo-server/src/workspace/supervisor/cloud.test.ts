@@ -9,7 +9,7 @@
  * - Hold/release ref counting
  * - Concurrent start deduplication
  * - Error handling and backoff
- * - Expected wake behavior: sandbox.start() for stopped Daytona sandboxes
+ * - Expected wake behavior: sandbox.start() for stopped Box sandboxes
  */
 
 import { describe, expect, test, beforeAll, beforeEach, afterEach, vi } from "vitest"
@@ -20,7 +20,7 @@ import { controlBus, type ControlPlaneEvent } from "@claxedo/server-core/platfor
 import { workspaceRuntimeTargetEnv } from "@claxedo/server-core/hosts/workspace-runtime/env"
 import { accountPlaceholderEnv } from "@claxedo/server-core/credentials/native-delivery-plan"
 
-let driverId = "daytona"
+let driverId = "box"
 const previousRelayHostPublicKey = process.env.CLAXEDO_RELAY_HOST_PUBLIC_KEY_JWK
 const previousRuntimePrivateKey = process.env.CLAXEDO_RUNTIME_ACCESS_TOKEN_PRIVATE_KEY_PEM
 const previousRuntimePublicKey = process.env.CLAXEDO_RUNTIME_ACCESS_TOKEN_PUBLIC_KEY_PEM
@@ -69,13 +69,13 @@ const mockUpdateWorkspace = vi.fn((id: string, patch: Record<string, unknown>) =
 
 const mockSandboxDriverAuthAsync: any = vi.fn(async (..._args: unknown[]) => undefined)
 const sandboxBootEnvCalls: Array<{ driver: string; hostId: string; env: Record<string, string> }> = []
-const mockDaytonaLaunch = vi.fn(async (input: any) => ({
+const mockBoxLaunch = vi.fn(async (input: any) => ({
   workspaceId: input.workspaceId,
-  sandboxId: "daytona-sdk-sb",
-  url: "https://daytona-sdk.example.com",
-  hostId: input.hostId ?? "daytona-sdk-host",
-  driverResourceId: "daytona-sdk-sb",
-  driver: { id: "daytona", resourceId: "daytona-sdk-sb" },
+  sandboxId: "box-sdk-sb",
+  url: "https://box-sdk.example.com",
+  hostId: input.hostId ?? "box-sdk-host",
+  driverResourceId: "box-sdk-sb",
+  driver: { id: "box", resourceId: "box-sdk-sb" },
   labels: input.labels,
 }))
 const mockCloudflareLaunch = vi.fn(async (input: any) => ({
@@ -114,15 +114,6 @@ const mockDockerLaunch = vi.fn(async (input: any) => ({
   driver: { id: "docker", resourceId: "docker-sdk-sb" },
   labels: input.labels,
 }))
-const mockBoxLaunch = vi.fn(async (input: any) => ({
-  workspaceId: input.workspaceId,
-  sandboxId: "bx_test01",
-  url: "https://sub-2593.on.ascii.dev?_token=t",
-  hostId: input.hostId ?? "box-sdk-host",
-  driverResourceId: "bx_test01",
-  driver: { id: "box", resourceId: "bx_test01" },
-  labels: input.labels,
-}))
 const mockVercelSnapshot = vi.fn(async () => ({ snapshotId: "snap-stop-1" }))
 let duringSandboxSuspend: (() => void) | undefined
 
@@ -131,11 +122,8 @@ let duringSandboxSuspend: (() => void) | undefined
  * composes it: the driver's own boot env first, the supervisor's callback
  * spread over it. Capturing only the callback's half would hide any key that
  * contradicts what the driver already wrote.
- *
- * `providerResourceId` is what Daytona hands its callback — it passes the
- * provider sandbox, not the host — while the others hand the hostId.
  */
-async function captureRuntimeEnv(driver: string, options: any, input: any, providerResourceId: string) {
+async function captureRuntimeEnv(driver: string, options: any, input: any) {
   const env = {
     ...workspaceRuntimeTargetEnv({
       workspaceId: input.workspaceId,
@@ -143,7 +131,7 @@ async function captureRuntimeEnv(driver: string, options: any, input: any, provi
       directory: input.workspaceRoot,
       port: input.workspaceRuntimePort,
     }),
-    ...await options.env?.(input, { id: driver === "daytona" ? providerResourceId : input.hostId }),
+    ...await options.env?.(input, { id: input.hostId }),
   }
   sandboxBootEnvCalls.push({ driver, hostId: input.hostId, env })
 }
@@ -162,10 +150,18 @@ const mockNoCapturePersistence = {
   restoreMount: "same-resource",
 } as const
 
-const mockCreateDaytonaSandboxDriver = vi.fn((options: any) => ({
-  id: "daytona",
+/**
+ * The default fake: a driver that suspends its host, brokers caller-stated
+ * secrets and enforces egress, so the lifecycle, secret and egress tests below
+ * run on one driver. Its capabilities are the fake's own, not the Box
+ * provider's. Tests of the operator's provider accounts run on the Cloudflare
+ * fake instead: the supervisor decides account delivery from the catalog entry
+ * for the driver's id, and Box's entry cannot broker.
+ */
+const mockCreateBoxSandboxDriver = vi.fn((options: any) => ({
+  id: "box",
   metadata: {
-    driverRunsIn: ["worker", "node"],
+    driverRunsIn: ["node"],
     hostStopBehavior: "suspends-host", hostResumeBehavior: "same-host",
     targetAccess: "relay",
     // Declared, because the manager fails closed on a driver that cannot
@@ -176,10 +172,10 @@ const mockCreateDaytonaSandboxDriver = vi.fn((options: any) => ({
     persistence: mockNoCapturePersistence,
   },
   ensureHost: async (input: any) => {
-    await captureRuntimeEnv("daytona", options, input, "daytona-sdk-sb")
-    return mockDaytonaLaunch(input)
+    await captureRuntimeEnv("box", options, input)
+    return mockBoxLaunch(input)
   },
-  resumeHost: async (input: any) => mockDaytonaLaunch(input.ensure),
+  resumeHost: async (input: any) => mockBoxLaunch(input.ensure),
   stop: vi.fn(async () => {}),
   suspend: vi.fn(async () => {
     // The window a stop holds open at the provider, where a replacement
@@ -201,7 +197,7 @@ const mockCreateCloudflareSandboxDriver = vi.fn((options: any) => ({
     persistence: mockNoCapturePersistence,
   },
   ensureHost: async (input: any) => {
-    await captureRuntimeEnv("cloudflare", options, input, "claxedo-cloudflare-sb")
+    await captureRuntimeEnv("cloudflare", options, input)
     return mockCloudflareLaunch(input)
   },
   resumeHost: async (input: any) => mockCloudflareLaunch(input.ensure),
@@ -220,7 +216,7 @@ const mockCreateModalSandboxDriver = vi.fn((options: any) => ({
     persistence: mockNoCapturePersistence,
   },
   ensureHost: async (input: any) => {
-    await captureRuntimeEnv("modal", options, input, "modal-sdk-host")
+    await captureRuntimeEnv("modal", options, input)
     return mockModalLaunch(input)
   },
   resumeHost: async (input: any) => mockModalLaunch(input.ensure),
@@ -246,7 +242,7 @@ const mockCreateVercelSandboxDriver = vi.fn((options: any) => ({
     },
   },
   ensureHost: async (input: any) => {
-    await captureRuntimeEnv("vercel", options, input, "vercel-sdk-host")
+    await captureRuntimeEnv("vercel", options, input)
     return mockVercelLaunch(input)
   },
   resumeHost: async (input: any) => mockVercelLaunch(input.ensure),
@@ -254,26 +250,6 @@ const mockCreateVercelSandboxDriver = vi.fn((options: any) => ({
   suspend: vi.fn(async () => {}),
   destroy: vi.fn(async () => {}),
   snapshot: mockVercelSnapshot,
-}))
-const mockCreateBoxSandboxDriver = vi.fn((options: any) => ({
-  id: "box",
-  metadata: {
-    driverRunsIn: ["node"],
-    hostStopBehavior: "suspends-host", hostResumeBehavior: "same-host",
-    targetAccess: "relay",
-    secretBrokering: "none",
-    egressControl: "none",
-    persistence: mockNoCapturePersistence,
-  },
-  ensureHost: async (input: any) => {
-    await captureRuntimeEnv("box", options, input, "box-sdk-host")
-    return mockBoxLaunch(input)
-  },
-  resumeHost: async (input: any) => mockBoxLaunch(input.ensure),
-  touch: vi.fn(async () => {}),
-  stop: vi.fn(async () => {}),
-  suspend: vi.fn(async () => {}),
-  destroy: vi.fn(async () => {}),
 }))
 const mockCreateDockerSandboxDriver = vi.fn((options: any) => ({
   id: "docker",
@@ -286,7 +262,7 @@ const mockCreateDockerSandboxDriver = vi.fn((options: any) => ({
     persistence: mockNoCapturePersistence,
   },
   ensureHost: async (input: any) => {
-    await captureRuntimeEnv("docker", options, input, "docker-sdk-sb")
+    await captureRuntimeEnv("docker", options, input)
     return mockDockerLaunch(input)
   },
   resumeHost: async (input: any) => mockDockerLaunch(input.ensure),
@@ -318,7 +294,7 @@ function workspaceHolds(workspaceId: string) {
   return [...holds.values()].filter((hold) => hold.workspace_id === workspaceId)
 }
 
-function lease(workspaceId: string, driverId = "daytona"): SandboxLeaseRow {
+function lease(workspaceId: string, driverId = "box"): SandboxLeaseRow {
   const ts = Date.now()
   return {
     workspace_id: workspaceId,
@@ -637,10 +613,6 @@ vi.mock("../../sandbox/driver-auth", () => ({
   sandboxDriverAuthAsync: (...args: unknown[]) => (mockSandboxDriverAuthAsync)(...args),
 }))
 
-vi.mock("@claxedo/sandbox-manager/drivers/daytona", () => ({
-  createDaytonaSandboxDriver: (...args: unknown[]) => (mockCreateDaytonaSandboxDriver as any)(...args),
-}))
-
 vi.mock("@claxedo/sandbox-manager/drivers/box", () => ({
   createBoxSandboxDriver: (...args: unknown[]) => (mockCreateBoxSandboxDriver as any)(...args),
 }))
@@ -767,30 +739,27 @@ describe("workspace-supervisor", () => {
     credentials.secrets.clear()
     credentials.locked.clear()
     sandboxBootEnvCalls.length = 0
-    driverId = "daytona"
+    driverId = "box"
     mockSandboxDriverAuthAsync.mockClear()
     mockSandboxDriverAuthAsync.mockImplementation(async (_cfg: unknown, id: string) => {
-      if (id === "daytona") return { api_key: "dtn-default" }
+      if (id === "box") return { api_key: "bx-default" }
       if (id === "cloudflare") return { api_token: "cf-default", worker_url: "https://worker.example.com" }
       if (id === "modal") return { token_id: "modal-default-id", token_secret: "modal-default-secret" }
       if (id === "vercel") return { access_token: "vercel-default", team_id: "team_1", project_id: "project_1" }
       if (id === "docker") return { image: "claxedo-sandbox:test" }
-      if (id === "box") return { api_key: "bx-default" }
       return undefined
     })
-    mockDaytonaLaunch.mockClear()
+    mockBoxLaunch.mockClear()
     mockCloudflareLaunch.mockClear()
     mockModalLaunch.mockClear()
     mockVercelLaunch.mockClear()
     mockDockerLaunch.mockClear()
-    mockBoxLaunch.mockClear()
     mockVercelSnapshot.mockClear()
-    mockCreateDaytonaSandboxDriver.mockClear()
+    mockCreateBoxSandboxDriver.mockClear()
     mockCreateCloudflareSandboxDriver.mockClear()
     mockCreateModalSandboxDriver.mockClear()
     mockCreateVercelSandboxDriver.mockClear()
     mockCreateDockerSandboxDriver.mockClear()
-    mockCreateBoxSandboxDriver.mockClear()
     mockProjectEnv.mockClear()
     mockProjectEnv.mockImplementation(async () => undefined)
     mockGetRuntimeConfigSnapshot.mockClear()
@@ -852,7 +821,7 @@ describe("workspace-supervisor", () => {
           status: "ready",
         }),
       )
-      expect(supervisor.getSandboxLease("ws-new-1")?.sandbox_id).toBe("daytona-sdk-sb")
+      expect(supervisor.getSandboxLease("ws-new-1")?.sandbox_id).toBe("box-sdk-sb")
     })
 
     test("exposes the supervisor as the local SandboxManager", async () => {
@@ -864,20 +833,20 @@ describe("workspace-supervisor", () => {
       expect(ensured).toMatchObject({
         status: "ready",
         workspaceId: "ws-manager-1",
-        sandboxId: "daytona-sdk-sb",
-        url: "https://daytona-sdk.example.com",
+        sandboxId: "box-sdk-sb",
+        url: "https://box-sdk.example.com",
       })
       expect(target).toMatchObject({
         status: "ready",
         workspaceId: "ws-manager-1",
-        sandboxId: "daytona-sdk-sb",
+        sandboxId: "box-sdk-sb",
       })
       expect(target.status === "ready" && ensured.status === "ready" ? target.hostId === ensured.hostId : false).toBe(
         true,
       )
       expect((await manager.list()).find((lease) => lease.workspaceId === "ws-manager-1")).toMatchObject({
         status: "ready",
-        driver: "daytona",
+        driver: "box",
       })
     })
 
@@ -1029,8 +998,8 @@ describe("workspace-supervisor", () => {
         homeRegion: "us-east", hostId, secrets,
       })
       expect(result.status).toBe("ready")
-      expect(mockDaytonaLaunch).toHaveBeenCalledWith(expect.objectContaining({ secrets }))
-      const launch = mockDaytonaLaunch.mock.calls.at(-1)![0]
+      expect(mockBoxLaunch).toHaveBeenCalledWith(expect.objectContaining({ secrets }))
+      const launch = mockBoxLaunch.mock.calls.at(-1)![0]
       expect(JSON.stringify(launch.env)).not.toContain("broker-only-credential")
       expect(JSON.stringify(result)).not.toContain("broker-only-credential")
     })
@@ -1041,7 +1010,7 @@ describe("workspace-supervisor", () => {
         homeRegion: "us-east",
         secrets: [{ name: "CLAXEDO_GITHUB_CLONE_AUTH", value: "Basic old", hosts: ["github.com"], header: "Authorization" }],
       })
-      mockDaytonaLaunch.mockClear()
+      mockBoxLaunch.mockClear()
 
       // Same process, runtime already ready: a warm short-circuit that answers
       // from memory leaves the withdrawal inside the supervisor and the secret
@@ -1049,7 +1018,7 @@ describe("workspace-supervisor", () => {
       const result = await manager.ensure("ws-secrets-warm", { homeRegion: "us-east", secrets: [] })
 
       expect(result.status).toBe("ready")
-      expect(mockDaytonaLaunch).toHaveBeenCalledWith(expect.objectContaining({ secrets: [] }))
+      expect(mockBoxLaunch).toHaveBeenCalledWith(expect.objectContaining({ secrets: [] }))
     })
 
     test("a warm local workspace is served with the egress policy every hosted route states", async () => {
@@ -1072,7 +1041,7 @@ describe("workspace-supervisor", () => {
         holds: [],
       })
       const manager = supervisor.createWorkspaceSupervisorSandboxManager()
-      mockDaytonaLaunch.mockClear()
+      mockBoxLaunch.mockClear()
 
       const result = await manager.ensure("ws-local-warm", {
         homeRegion: "us-east",
@@ -1080,7 +1049,7 @@ describe("workspace-supervisor", () => {
       })
 
       expect(result).toMatchObject({ status: "ready", url: "http://127.0.0.1:2599" })
-      expect(mockDaytonaLaunch).not.toHaveBeenCalled()
+      expect(mockBoxLaunch).not.toHaveBeenCalled()
     })
 
     test("a local workspace asked to carry a brokered secret is refused, not served", async () => {
@@ -1109,6 +1078,7 @@ describe("workspace-supervisor", () => {
     })
 
     test("the operator's active account reaches the driver as a brokered secret no caller stated", async () => {
+      driverId = "cloudflare"
       credentials.active.push({
         credential: {
           owner: "local",
@@ -1134,7 +1104,7 @@ describe("workspace-supervisor", () => {
       })
 
       expect(result.status).toBe("ready")
-      const launch = mockDaytonaLaunch.mock.calls.at(-1)![0]
+      const launch = mockCloudflareLaunch.mock.calls.at(-1)![0]
       expect(launch.secrets).toEqual([
         { name: "CLAXEDO_GITHUB_CLONE_AUTH", value: "Basic clone-token", hosts: ["github.com"], header: "Authorization" },
         {
@@ -1151,6 +1121,7 @@ describe("workspace-supervisor", () => {
     })
 
     test("an account the vendor rejected is withdrawn from the driver on the next ensure", async () => {
+      driverId = "cloudflare"
       credentials.active.push({
         credential: {
           owner: "local",
@@ -1165,7 +1136,7 @@ describe("workspace-supervisor", () => {
       credentials.secrets.set("cred-1", "sk-ant-api03-fixture")
       const manager = supervisor.createWorkspaceSupervisorSandboxManager()
       await manager.ensure("ws-provider-withdrawn", { homeRegion: "us-east" })
-      mockDaytonaLaunch.mockClear()
+      mockCloudflareLaunch.mockClear()
 
       credentials.active[0].unavailable = "auth_failed"
 
@@ -1174,10 +1145,11 @@ describe("workspace-supervisor", () => {
       expect(result.status).toBe("ready")
       // Still STATED, and empty: the driver reconciles against the list, so an
       // absent name is what withdraws the value from the provider edge.
-      expect(mockDaytonaLaunch.mock.calls.at(-1)![0].secrets).toEqual([])
+      expect(mockCloudflareLaunch.mock.calls.at(-1)![0].secrets).toEqual([])
     })
 
     test("an unchanged account set answers from the warm runtime without a driver call", async () => {
+      driverId = "cloudflare"
       credentials.active.push({
         credential: {
           owner: "local",
@@ -1192,7 +1164,7 @@ describe("workspace-supervisor", () => {
       credentials.secrets.set("cred-1", "sk-ant-api03-fixture")
       const manager = supervisor.createWorkspaceSupervisorSandboxManager()
       await manager.ensure("ws-provider-warm", { homeRegion: "us-east" })
-      mockDaytonaLaunch.mockClear()
+      mockCloudflareLaunch.mockClear()
 
       const result = await manager.ensure("ws-provider-warm", { homeRegion: "us-east" })
 
@@ -1200,10 +1172,11 @@ describe("workspace-supervisor", () => {
       // Presence of an account is not a change to reconcile; answering on it
       // would send every message through the driver, which on a
       // replacement-host driver is a new sandbox per message.
-      expect(mockDaytonaLaunch).not.toHaveBeenCalled()
+      expect(mockCloudflareLaunch).not.toHaveBeenCalled()
     })
 
     test("a rotated account set goes back through the driver", async () => {
+      driverId = "cloudflare"
       const row = {
         credential: {
           owner: "local",
@@ -1219,14 +1192,14 @@ describe("workspace-supervisor", () => {
       credentials.secrets.set("cred-1", "sk-ant-api03-fixture")
       const manager = supervisor.createWorkspaceSupervisorSandboxManager()
       await manager.ensure("ws-provider-rotated", { homeRegion: "us-east" })
-      mockDaytonaLaunch.mockClear()
+      mockCloudflareLaunch.mockClear()
 
       row.credential.revision = 2
       credentials.secrets.set("cred-1", "sk-ant-api03-rotated")
       const result = await manager.ensure("ws-provider-rotated", { homeRegion: "us-east" })
 
       expect(result.status).toBe("ready")
-      expect(mockDaytonaLaunch.mock.calls.at(-1)![0].secrets).toEqual([
+      expect(mockCloudflareLaunch.mock.calls.at(-1)![0].secrets).toEqual([
         expect.objectContaining({ name: accountPlaceholderEnv({ id: "cred-1", provider_id: "claude-sdk" }), value: "sk-ant-api03-rotated" }),
       ])
     })
@@ -1259,6 +1232,7 @@ describe("workspace-supervisor", () => {
     })
 
     test("a caller and a provider account claiming one secret name is refused by name", async () => {
+      driverId = "cloudflare"
       credentials.active.push({
         credential: {
           owner: "local",
@@ -1287,6 +1261,7 @@ describe("workspace-supervisor", () => {
     })
 
     test("a restored checkpoint carries the operator's accounts into the replacement sandbox", async () => {
+      driverId = "cloudflare"
       credentials.active.push({
         credential: {
           owner: "local",
@@ -1310,7 +1285,7 @@ describe("workspace-supervisor", () => {
           metadata: { scope: "filesystem", sourceBehavior: "preserved", restoreMount: "same-resource" },
         },
       })
-      mockDaytonaLaunch.mockClear()
+      mockCloudflareLaunch.mockClear()
 
       await supervisorSandbox.restoreSupervisorSandboxCheckpoint(entry, {
         runtime: {
@@ -1325,12 +1300,13 @@ describe("workspace-supervisor", () => {
       // A restore provisions a replacement sandbox without going through
       // `startRuntime`; one that mounted only the empty slot answers every turn
       // with a placeholder its provider never filled.
-      expect(mockDaytonaLaunch.mock.calls.at(-1)?.[0].secrets).toEqual([
+      expect(mockCloudflareLaunch.mock.calls.at(-1)?.[0].secrets).toEqual([
         expect.objectContaining({ name: accountPlaceholderEnv({ id: "cred-1", provider_id: "claude-sdk" }) }),
       ])
     })
 
     test("removing the last account withdraws it from a warm sandbox", async () => {
+      driverId = "cloudflare"
       const row = {
         credential: {
           owner: "local",
@@ -1346,7 +1322,7 @@ describe("workspace-supervisor", () => {
       credentials.secrets.set("cred-1", "sk-ant-api03-fixture")
       const manager = supervisor.createWorkspaceSupervisorSandboxManager()
       await manager.ensure("ws-provider-last", { homeRegion: "us-east" })
-      mockDaytonaLaunch.mockClear()
+      mockCloudflareLaunch.mockClear()
 
       credentials.active.length = 0
       const result = await manager.ensure("ws-provider-last", { homeRegion: "us-east" })
@@ -1354,10 +1330,11 @@ describe("workspace-supervisor", () => {
       // Having no account left is a change once something of ours is installed;
       // the empty set is how the last one reaches the provider edge.
       expect(result.status).toBe("ready")
-      expect(mockDaytonaLaunch.mock.calls.at(-1)![0].secrets).toEqual([])
+      expect(mockCloudflareLaunch.mock.calls.at(-1)![0].secrets).toEqual([])
     })
 
     test("an account whose secret cannot be read holds what the sandbox installed", async () => {
+      driverId = "cloudflare"
       credentials.active.push({
         credential: {
           owner: "local",
@@ -1372,7 +1349,7 @@ describe("workspace-supervisor", () => {
       credentials.secrets.set("cred-1", "sk-ant-api03-fixture")
       const manager = supervisor.createWorkspaceSupervisorSandboxManager()
       await manager.ensure("ws-provider-blip", { homeRegion: "us-east" })
-      mockDaytonaLaunch.mockClear()
+      mockCloudflareLaunch.mockClear()
 
       credentials.locked.add("cred-1")
       const result = await manager.ensure("ws-provider-blip", { homeRegion: "us-east" })
@@ -1380,10 +1357,11 @@ describe("workspace-supervisor", () => {
       // A locked keychain is not a revocation; stating a set without the row
       // would write the revoked value over a credential nobody revoked.
       expect(result.status).toBe("ready")
-      expect(mockDaytonaLaunch).not.toHaveBeenCalled()
+      expect(mockCloudflareLaunch).not.toHaveBeenCalled()
     })
 
     test("a fresh sandbox delivers the readable accounts when one cannot be read", async () => {
+      driverId = "cloudflare"
       credentials.active.push(
         {
           credential: {
@@ -1416,7 +1394,7 @@ describe("workspace-supervisor", () => {
         .ensure("ws-provider-blip-fresh", { homeRegion: "us-east" })
 
       expect(result.status).toBe("ready")
-      expect(mockDaytonaLaunch.mock.calls.at(-1)![0].secrets).toEqual([
+      expect(mockCloudflareLaunch.mock.calls.at(-1)![0].secrets).toEqual([
         expect.objectContaining({ name: accountPlaceholderEnv({ id: "cred-2", provider_id: "openrouter" }) }),
       ])
     })
@@ -1424,19 +1402,19 @@ describe("workspace-supervisor", () => {
     test("a wake that names no bindings still answers from the warm runtime", async () => {
       const manager = supervisor.createWorkspaceSupervisorSandboxManager()
       await manager.ensure("ws-secrets-untouched", { homeRegion: "us-east" })
-      mockDaytonaLaunch.mockClear()
+      mockBoxLaunch.mockClear()
 
       await manager.ensure("ws-secrets-untouched", { homeRegion: "us-east" })
 
-      expect(mockDaytonaLaunch).not.toHaveBeenCalled()
+      expect(mockBoxLaunch).not.toHaveBeenCalled()
     })
 
     test("a recorded sandbox is reconciled through the driver before it is called ready", async () => {
       leases.set("ws-recorded-bindings", {
         ...lease("ws-recorded-bindings"),
         status: "ready",
-        sandbox_id: "daytona-existing-sb",
-        driver_resource_id: "daytona-existing-sb",
+        sandbox_id: "box-existing-sb",
+        driver_resource_id: "box-existing-sb",
         url: "http://existing-runtime.test",
       })
       store.set("ws-recorded-bindings", { ...workspace("ws-recorded-bindings"), status: "ready" })
@@ -1449,7 +1427,7 @@ describe("workspace-supervisor", () => {
       expect(result.status).toBe("ready")
       // Reattaching the recorded url makes no driver call at all, so the
       // withdrawal would have been served on the previous authority.
-      expect(mockDaytonaLaunch).toHaveBeenCalledWith(expect.objectContaining({ secrets: [] }))
+      expect(mockBoxLaunch).toHaveBeenCalledWith(expect.objectContaining({ secrets: [] }))
     })
 
     test("the caller's network policy is passed through instead of being recomputed", async () => {
@@ -1461,7 +1439,7 @@ describe("workspace-supervisor", () => {
         net: { mode: "restricted", hosts: ["api.caller.test"] },
       })
 
-      expect(mockDaytonaLaunch).toHaveBeenCalledWith(
+      expect(mockBoxLaunch).toHaveBeenCalledWith(
         expect.objectContaining({ net: { mode: "restricted", hosts: ["api.caller.test"] } }),
       )
       expect(resolve.resolveSandboxNetworkPolicy).not.toHaveBeenCalled()
@@ -1497,28 +1475,23 @@ describe("workspace-supervisor", () => {
       })
     })
 
-    test("uses direct Daytona SDK sandbox driver when Daytona auth is configured", async () => {
-      mockSandboxDriverAuthAsync.mockImplementation(async () => ({ api_key: "dtn-key" }))
+    test("uses direct Box sandbox driver when Box auth is configured", async () => {
+      mockSandboxDriverAuthAsync.mockImplementation(async () => ({ api_key: "bx-key" }))
 
-      const entry = await supervisor.ensureSupervisorSandbox("ws-daytona-sdk")
+      const entry = await supervisor.ensureSupervisorSandbox("ws-box-sdk")
 
       expect(entry.status).toBe("ready")
-      expect(entry.url).toBe("https://daytona-sdk.example.com")
-      expect(mockCreateDaytonaSandboxDriver).toHaveBeenCalledWith(
+      expect(entry.url).toBe("https://box-sdk.example.com")
+      expect(mockCreateBoxSandboxDriver).toHaveBeenCalledWith(expect.objectContaining({ apiKey: "bx-key" }))
+      expect(mockBoxLaunch).toHaveBeenCalledWith(
         expect.objectContaining({
-          apiKey: "dtn-key",
-          baseSnapshot: expect.any(String),
-        }),
-      )
-      expect(mockDaytonaLaunch).toHaveBeenCalledWith(
-        expect.objectContaining({
-          workspaceId: "ws-daytona-sdk",
+          workspaceId: "ws-box-sdk",
           source: { kind: "git", repoUrl: "https://github.com/test/repo.git", branch: undefined },
         }),
       )
     })
 
-    test("passes resolved Daytona network policy CIDRs into SandboxManager", async () => {
+    test("passes resolved network policy CIDRs into SandboxManager", async () => {
       const policy = await import("@claxedo/server-core/sandbox/network/policy")
       const resolve = await import("../../sandbox/network/resolve")
       ;(policy.listPolicies as any).mockReturnValueOnce([
@@ -1530,15 +1503,15 @@ describe("workspace-supervisor", () => {
         cidrs: ["203.0.113.10/32"],
       })
 
-      await supervisor.ensureSupervisorSandbox("ws-daytona-network")
+      await supervisor.ensureSupervisorSandbox("ws-network-policy")
 
       expect(resolve.resolveSandboxNetworkPolicy).toHaveBeenCalledWith(
         [{ target: "api.example.test", kind: "host" }],
         "http://localhost:3000",
       )
-      expect(mockDaytonaLaunch).toHaveBeenCalledWith(
+      expect(mockBoxLaunch).toHaveBeenCalledWith(
         expect.objectContaining({
-          workspaceId: "ws-daytona-network",
+          workspaceId: "ws-network-policy",
           net: {
             mode: "restricted",
             hosts: ["api.example.test"],
@@ -1565,7 +1538,7 @@ describe("workspace-supervisor", () => {
       })
       credentials.secrets.set("cred-1", "sk-ant-api03-fixture")
 
-      await supervisor.ensureSupervisorSandbox("ws-daytona-credential-network")
+      await supervisor.ensureSupervisorSandbox("ws-credential-network")
 
       expect(resolve.resolveSandboxNetworkPolicy).toHaveBeenCalledWith(
         [
@@ -1662,8 +1635,8 @@ describe("workspace-supervisor", () => {
       leases.set("ws-existing-url", {
         ...lease("ws-existing-url"),
         status: "ready",
-        sandbox_id: "daytona-existing-sb",
-        driver_resource_id: "daytona-existing-sb",
+        sandbox_id: "box-existing-sb",
+        driver_resource_id: "box-existing-sb",
         url: "http://existing-runtime.test",
       })
       store.set("ws-existing-url", {
@@ -1676,10 +1649,10 @@ describe("workspace-supervisor", () => {
       expect(entry.status).toBe("ready")
       expect(entry.remote).toBe(true)
       expect(entry.url).toBe("http://existing-runtime.test")
-      expect(entry.sandbox_target?.sandboxId).toBe("daytona-existing-sb")
+      expect(entry.sandbox_target?.sandboxId).toBe("box-existing-sb")
       expect(entry.sandbox_target?.hostId).toBe("lease-ws-existing-url")
-      expect(entry.sandbox_target?.driverResourceId).toBe("daytona-existing-sb")
-      expect(mockDaytonaLaunch).not.toHaveBeenCalled()
+      expect(entry.sandbox_target?.driverResourceId).toBe("box-existing-sb")
+      expect(mockBoxLaunch).not.toHaveBeenCalled()
       expect(mockUpdateWorkspace).toHaveBeenCalledWith("ws-existing-url", {
         status: "ready",
       })
@@ -1705,7 +1678,7 @@ describe("workspace-supervisor", () => {
         retry_count: 0,
         next_retry_at: null,
         last_error: null,
-        sandbox_id: "daytona-existing-sb",
+        sandbox_id: "box-existing-sb",
       })
       expect(settled.last_heartbeat_at).toBeGreaterThan(0)
     })
@@ -1740,7 +1713,7 @@ describe("workspace-supervisor", () => {
           move: (row: SandboxLeaseRow) => ({
             ...row,
             epoch: row.epoch + 1,
-            sandbox_id: "daytona-replacement-sb",
+            sandbox_id: "box-replacement-sb",
             url: "http://replacement-runtime.test",
           }),
           reason: "runtime_lease_epoch_mismatch",
@@ -1751,8 +1724,8 @@ describe("workspace-supervisor", () => {
         leases.set(workspaceId, {
           ...lease(workspaceId),
           status: "ready",
-          sandbox_id: "daytona-existing-sb",
-          driver_resource_id: "daytona-existing-sb",
+          sandbox_id: "box-existing-sb",
+          driver_resource_id: "box-existing-sb",
           url: "http://existing-runtime.test",
         })
         store.set(workspaceId, { ...workspace(workspaceId), status: "ready" })
@@ -1764,7 +1737,7 @@ describe("workspace-supervisor", () => {
 
         expect(leases.get(workspaceId)).toMatchObject(scenario.expected)
         expect(leases.get(workspaceId)?.last_heartbeat_at).toBeNull()
-        expect(mockDaytonaLaunch).not.toHaveBeenCalled()
+        expect(mockBoxLaunch).not.toHaveBeenCalled()
         expect(mockUpdateWorkspace).not.toHaveBeenCalledWith(workspaceId, { status: "ready" })
         // The two proofs run against the url the attach read, and only that
         // url: the replacement's host is never spoken to, let alone served.
@@ -1785,8 +1758,8 @@ describe("workspace-supervisor", () => {
       const entry = await supervisor.ensureSupervisorSandbox("ws-stale-row-url")
 
       expect(entry.status).toBe("ready")
-      expect(entry.url).toBe("https://daytona-sdk.example.com")
-      expect(mockDaytonaLaunch).toHaveBeenCalledWith(
+      expect(entry.url).toBe("https://box-sdk.example.com")
+      expect(mockBoxLaunch).toHaveBeenCalledWith(
         expect.objectContaining({
           workspaceId: "ws-stale-row-url",
         }),
@@ -1797,7 +1770,7 @@ describe("workspace-supervisor", () => {
           status: "ready",
         }),
       )
-      expect(leases.get("ws-stale-row-url")?.url).toBe("https://daytona-sdk.example.com")
+      expect(leases.get("ws-stale-row-url")?.url).toBe("https://box-sdk.example.com")
     })
 
     test("local SandboxManager target keeps lease host id separate from sandbox resource id", async () => {
@@ -1832,14 +1805,14 @@ describe("workspace-supervisor", () => {
         manager.ensure("ws-relay-host-binding", { homeRegion: "us-east", hostId: "host_a" }),
       ).resolves.toMatchObject({
         status: "ready",
-        url: "https://daytona-sdk.example.com",
+        url: "https://box-sdk.example.com",
         hostId: "host_a",
       })
       await expect(
         manager.ensure("ws-relay-host-binding", { homeRegion: "us-east", hostId: "host_a" }),
       ).resolves.toMatchObject({
         status: "ready",
-        url: "https://daytona-sdk.example.com",
+        url: "https://box-sdk.example.com",
         hostId: "host_a",
       })
       await expect(
@@ -1906,6 +1879,7 @@ describe("workspace-supervisor", () => {
     })
 
     test("cloud runtime config uses shared credentials and workspace identity", async () => {
+      driverId = "cloudflare"
       store.set("ws-hosted-config", {
         ...workspace("ws-hosted-config"),
         remote_directory: "/remote/app",
@@ -1922,7 +1896,7 @@ describe("workspace-supervisor", () => {
         secretBrokering: "native",
         sandboxOwner: "local",
       })
-      const env = latestSandboxBootEnv("daytona")
+      const env = latestSandboxBootEnv("cloudflare")
       expect(env.WORKSPACE_RUNTIME_CONFIG_TOKEN).toBeTruthy()
       expect(env.WORKSPACE_RUNTIME_TRUSTED_DIRECT_TOKEN).toBeUndefined()
       expect(env.WORKSPACE_RUNTIME_HOST_ID).toBe("lease-ws-hosted-config")
@@ -1947,21 +1921,21 @@ describe("workspace-supervisor", () => {
       expect(mockGetRuntimeConfigSnapshot).toHaveBeenCalledWith(expect.objectContaining({ workspaceId: "ws-runner", provisionedRunner: "pi" }))
     })
 
-    test("a daytona sandbox boots on the host identity its lease routes on, not its provider resource id", async () => {
-      await supervisor.ensureSupervisorSandbox("ws-daytona-identity")
+    test("a sandbox boots on the host identity its lease routes on, not its provider resource id", async () => {
+      await supervisor.ensureSupervisorSandbox("ws-host-identity")
 
-      const recorded = leases.get("ws-daytona-identity")
-      const env = latestSandboxBootEnv("daytona")
+      const recorded = leases.get("ws-host-identity")
+      const env = latestSandboxBootEnv("box")
       // `lease_id` is where the store keeps the host identity, and it is what
       // `sandboxTargetFromLease` hands the relay to route and authorize this
       // host. A runtime told anything else binds a host nobody asks for.
-      expect(recorded?.lease_id).toBe("lease-ws-daytona-identity")
+      expect(recorded?.lease_id).toBe("lease-ws-host-identity")
       expect(env.WORKSPACE_RUNTIME_HOST_ID).toBe(recorded?.lease_id)
       // The provider's own id for the resource stays on the lease, where the
       // driver needs it, and never stands in for the host.
-      expect(recorded?.driver_resource_id).toBe("daytona-sdk-sb")
+      expect(recorded?.driver_resource_id).toBe("box-sdk-sb")
       expect(env.WORKSPACE_RUNTIME_HOST_ID).not.toBe(recorded?.driver_resource_id)
-      expect(env.WORKSPACE_RUNTIME_LEASE_ID).toBe("lease-ws-daytona-identity")
+      expect(env.WORKSPACE_RUNTIME_LEASE_ID).toBe("lease-ws-host-identity")
       expect(env.WORKSPACE_RUNTIME_EPOCH).toBe("1")
     })
 
@@ -1986,7 +1960,7 @@ describe("workspace-supervisor", () => {
       expect(leases.get("ws-identity-override")?.status).not.toBe("ready")
     })
 
-    test("daytona runtime uses public PEM for local management verification", async () => {
+    test("a sandbox runtime uses the public PEM for local management verification", async () => {
       process.env.CLAXEDO_RUNTIME_ACCESS_TOKEN_PUBLIC_KEY_PEM = runtimePublicKeyPem
       store.set("ws-local-control-plane", {
         ...workspace("ws-local-control-plane"),
@@ -1995,7 +1969,7 @@ describe("workspace-supervisor", () => {
 
       await supervisor.ensureSupervisorSandbox("ws-local-control-plane")
 
-      const env = latestSandboxBootEnv("daytona")
+      const env = latestSandboxBootEnv("box")
       expect(env.WORKSPACE_RUNTIME_MANAGEMENT_VERIFY_PEM).toBeTruthy()
       expect(env.WORKSPACE_RUNTIME_MANAGEMENT_JWKS_URL).toBeUndefined()
     })
@@ -2007,7 +1981,7 @@ describe("workspace-supervisor", () => {
 
       await supervisor.ensureSupervisorSandbox("ws-missing-relay-auth")
 
-      const env = latestSandboxBootEnv("daytona")
+      const env = latestSandboxBootEnv("box")
       expect(env.WORKSPACE_RUNTIME_HOST).toBe("0.0.0.0")
       expect(env.WORKSPACE_RUNTIME_ALLOW_UNAUTHENTICATED_NON_LOOPBACK).toBe("1")
       expect(env.CLAXEDO_RELAY_JWKS_URL).toBeUndefined()
@@ -2054,12 +2028,12 @@ describe("workspace-supervisor", () => {
 
     test("returns existing ready runtime without restarting", async () => {
       await supervisor.ensureSupervisorSandbox("ws-reuse-1")
-      const callsBefore = mockDaytonaLaunch.mock.calls.length
+      const callsBefore = mockBoxLaunch.mock.calls.length
 
       const entry2 = await supervisor.ensureSupervisorSandbox("ws-reuse-1")
       expect(entry2.status).toBe("ready")
 
-      expect(mockDaytonaLaunch.mock.calls.length).toBe(callsBefore)
+      expect(mockBoxLaunch.mock.calls.length).toBe(callsBefore)
     })
 
     test("updates used_at on each call", async () => {
@@ -2076,6 +2050,10 @@ describe("workspace-supervisor", () => {
   // ── Credential delivery reconcile ─────────────────────────────────
 
   describe("reconcileCredentialDelivery", () => {
+    beforeEach(() => {
+      driverId = "cloudflare"
+    })
+
     const activeAccount = (id: string, providerId = "claude-sdk", revision = 1) => ({
       credential: {
         owner: "local",
@@ -2092,7 +2070,7 @@ describe("workspace-supervisor", () => {
       credentials.active.push(activeAccount("cred-1"))
       credentials.secrets.set("cred-1", "sk-ant-api03-fixture")
       await supervisor.ensureSupervisorSandbox("ws-reconcile-revoke")
-      mockDaytonaLaunch.mockClear()
+      mockCloudflareLaunch.mockClear()
       configPush.length = 0
 
       credentials.active[0].unavailable = "revoked"
@@ -2101,23 +2079,23 @@ describe("workspace-supervisor", () => {
 
       // The running sandbox goes back through the driver on the same lease:
       // an absent name is what withdraws the secret at the provider edge.
-      expect(mockDaytonaLaunch).toHaveBeenCalledWith(expect.objectContaining({ secrets: [] }))
+      expect(mockCloudflareLaunch).toHaveBeenCalledWith(expect.objectContaining({ secrets: [] }))
       // And the projection inside the runtime stops offering the account.
-      expect(configPush.some((push) => push.url.includes("daytona-sdk.example.com"))).toBe(true)
+      expect(configPush.some((push) => push.url.includes("cloudflare-sdk.example.com"))).toBe(true)
     })
 
     test("revoking the last account reaches the driver as an empty set, not silence", async () => {
       credentials.active.push(activeAccount("cred-1"))
       credentials.secrets.set("cred-1", "sk-ant-api03-fixture")
       await supervisor.ensureSupervisorSandbox("ws-reconcile-last")
-      mockDaytonaLaunch.mockClear()
+      mockCloudflareLaunch.mockClear()
 
       credentials.active.length = 0
       await supervisor.reconcileCredentialDelivery()
 
       // Once something of ours is installed, having no account left is a
       // change — the empty set is how the last one reaches the provider edge.
-      expect(mockDaytonaLaunch).toHaveBeenCalledWith(expect.objectContaining({ secrets: [] }))
+      expect(mockCloudflareLaunch).toHaveBeenCalledWith(expect.objectContaining({ secrets: [] }))
     })
 
     test("a backend outage during revocation still withdraws the revoked account", async () => {
@@ -2125,7 +2103,7 @@ describe("workspace-supervisor", () => {
       credentials.secrets.set("cred-1", "sk-ant-api03-fixture")
       credentials.secrets.set("cred-2", "sk-or-fixture")
       await supervisor.ensureSupervisorSandbox("ws-reconcile-outage")
-      mockDaytonaLaunch.mockClear()
+      mockCloudflareLaunch.mockClear()
 
       // cred-1 is revoked while cred-2's backend read fails. The unreadable
       // account loses its secret for a round rather than the revoked one
@@ -2134,21 +2112,21 @@ describe("workspace-supervisor", () => {
       credentials.locked.add("cred-2")
       await supervisor.reconcileCredentialDelivery()
 
-      expect(mockDaytonaLaunch).toHaveBeenCalledWith(expect.objectContaining({ secrets: [] }))
+      expect(mockCloudflareLaunch).toHaveBeenCalledWith(expect.objectContaining({ secrets: [] }))
     })
 
     test("an unchanged delivered set makes no driver call but still pushes the config", async () => {
       credentials.active.push(activeAccount("cred-1"))
       credentials.secrets.set("cred-1", "sk-ant-api03-fixture")
       await supervisor.ensureSupervisorSandbox("ws-reconcile-same")
-      mockDaytonaLaunch.mockClear()
+      mockCloudflareLaunch.mockClear()
       configPush.length = 0
 
       await supervisor.reconcileCredentialDelivery()
 
       // Nothing to withdraw: the digest still matches, so the reconcile is a
       // projection push and no provider-edge call.
-      expect(mockDaytonaLaunch).not.toHaveBeenCalled()
+      expect(mockCloudflareLaunch).not.toHaveBeenCalled()
       expect(configPush.length).toBe(1)
     })
 
@@ -2166,12 +2144,12 @@ describe("workspace-supervisor", () => {
         active: 0,
         holds: [],
       })
-      mockDaytonaLaunch.mockClear()
+      mockCloudflareLaunch.mockClear()
       configPush.length = 0
 
       await supervisor.reconcileCredentialDelivery()
 
-      expect(mockDaytonaLaunch).not.toHaveBeenCalled()
+      expect(mockCloudflareLaunch).not.toHaveBeenCalled()
       expect(configPush.some((push) => push.url.includes("127.0.0.1:2597"))).toBe(true)
     })
 
@@ -2182,17 +2160,17 @@ describe("workspace-supervisor", () => {
       await supervisor.ensureSupervisorSandbox("ws-reconcile-up")
       const runtimes = (await import("./store")).runtimes
       const installedBefore = runtimes.get("ws-reconcile-down")!.installed_secrets
-      mockDaytonaLaunch.mockClear()
+      mockCloudflareLaunch.mockClear()
       configPush.length = 0
-      const realLaunch = mockDaytonaLaunch.getMockImplementation()!
-      mockDaytonaLaunch.mockImplementation(async (input: any) => {
+      const realLaunch = mockCloudflareLaunch.getMockImplementation()!
+      mockCloudflareLaunch.mockImplementation(async (input: any) => {
         if (input.workspaceId === "ws-reconcile-down") throw new Error("provider is down")
         return realLaunch(input)
       })
 
       credentials.active[0].unavailable = "revoked"
       await expect(supervisor.reconcileCredentialDelivery()).rejects.toMatchObject({ name: "CredentialDeliveryError" })
-      mockDaytonaLaunch.mockImplementation(realLaunch)
+      mockCloudflareLaunch.mockImplementation(realLaunch)
 
       // The healthy sandbox withdrew on the same sweep. The failed one is
       // still booked on the set it actually holds — the ensure returned the
@@ -2207,9 +2185,9 @@ describe("workspace-supervisor", () => {
       credentials.active.push(activeAccount("cred-1"))
       credentials.secrets.set("cred-1", "sk-ant-api03-fixture")
       await supervisor.ensureSupervisorSandbox("ws-reconcile-churn")
-      const realLaunch = mockDaytonaLaunch.getMockImplementation()!
+      const realLaunch = mockCloudflareLaunch.getMockImplementation()!
       let revision = 1
-      mockDaytonaLaunch.mockImplementation(async (input: any) => {
+      mockCloudflareLaunch.mockImplementation(async (input: any) => {
         const launched = await realLaunch(input)
         credentials.active[0] = activeAccount("cred-1", "claude-sdk", ++revision)
         return launched
@@ -2218,7 +2196,7 @@ describe("workspace-supervisor", () => {
       try {
         await expect(supervisor.reconcileCredentialDelivery()).rejects.toMatchObject({ name: "CredentialDeliveryError" })
       } finally {
-        mockDaytonaLaunch.mockImplementation(realLaunch)
+        mockCloudflareLaunch.mockImplementation(realLaunch)
       }
     })
   })
@@ -2263,10 +2241,10 @@ describe("workspace-supervisor", () => {
     })
 
     test("a save during a slow sandbox start returns without waiting for it", async () => {
-      const realLaunch = mockDaytonaLaunch.getMockImplementation()!
+      const realLaunch = mockBoxLaunch.getMockImplementation()!
       const entered = Promise.withResolvers<void>()
       const release = Promise.withResolvers<void>()
-      mockDaytonaLaunch.mockImplementation(async (input: any) => {
+      mockBoxLaunch.mockImplementation(async (input: any) => {
         entered.resolve()
         await release.promise
         return realLaunch(input)
@@ -2283,7 +2261,7 @@ describe("workspace-supervisor", () => {
         expect(pushedCommands(entry.url!)).toEqual(["saved during start"])
       } finally {
         release.resolve()
-        mockDaytonaLaunch.mockImplementation(realLaunch)
+        mockBoxLaunch.mockImplementation(realLaunch)
       }
     })
 
@@ -2292,8 +2270,8 @@ describe("workspace-supervisor", () => {
       leases.set(workspaceId, {
         ...lease(workspaceId),
         status: "ready",
-        sandbox_id: "daytona-existing-sb",
-        driver_resource_id: "daytona-existing-sb",
+        sandbox_id: "box-existing-sb",
+        driver_resource_id: "box-existing-sb",
         url: "http://existing-runtime.test",
       })
       store.set(workspaceId, { ...workspace(workspaceId), status: "ready" })
@@ -2327,7 +2305,7 @@ describe("workspace-supervisor", () => {
     test("launches the direct sandbox driver when no cached target exists", async () => {
       await supervisor.ensureSupervisorSandbox("ws-pool-1")
 
-      expect(mockDaytonaLaunch).toHaveBeenCalledWith(
+      expect(mockBoxLaunch).toHaveBeenCalledWith(
         expect.objectContaining({
           workspaceId: "ws-pool-1",
         }),
@@ -2431,26 +2409,26 @@ describe("workspace-supervisor", () => {
   describe("sandbox reuse after stop (wake path)", () => {
     test("sandbox target is cleared from memory on stop while lease keeps sandbox id", async () => {
       const entry = await supervisor.ensureSupervisorSandbox("ws-wake-1")
-      expect(entry.sandbox_target?.sandboxId).toBe("daytona-sdk-sb")
+      expect(entry.sandbox_target?.sandboxId).toBe("box-sdk-sb")
 
       await supervisor.stopSupervisorSandbox("ws-wake-1", "test")
 
       expect(entry.status).toBe("stopped")
       expect(entry.url).toBeUndefined()
       expect(entry.sandbox_target).toBeUndefined()
-      expect(supervisor.getSandboxLease("ws-wake-1")?.sandbox_id).toBe("daytona-sdk-sb")
+      expect(supervisor.getSandboxLease("ws-wake-1")?.sandbox_id).toBe("box-sdk-sb")
     })
 
     test("resumes same-resource driver through the direct sandbox driver", async () => {
       await supervisor.ensureSupervisorSandbox("ws-wake-2")
-      const callsBefore = mockDaytonaLaunch.mock.calls.length
+      const callsBefore = mockBoxLaunch.mock.calls.length
 
       await supervisor.stopSupervisorSandbox("ws-wake-2", "test")
 
       const entry = await supervisor.ensureSupervisorSandbox("ws-wake-2")
       expect(entry.status).toBe("ready")
 
-      expect(mockDaytonaLaunch.mock.calls.length).toBe(callsBefore + 1)
+      expect(mockBoxLaunch.mock.calls.length).toBe(callsBefore + 1)
     })
 
     test("uses persisted lease sandbox id when restarting a same-resource driver", async () => {
@@ -2461,12 +2439,12 @@ describe("workspace-supervisor", () => {
 
       await supervisor.ensureSupervisorSandbox("ws-wake-reattach-1")
 
-      expect(mockDaytonaLaunch).toHaveBeenCalledWith(
+      expect(mockBoxLaunch).toHaveBeenCalledWith(
         expect.objectContaining({
           workspaceId: "ws-wake-reattach-1",
         }),
       )
-      expect(supervisor.getSupervisorSandboxTarget("ws-wake-reattach-1")?.sandboxId).toBe("daytona-sdk-sb")
+      expect(supervisor.getSupervisorSandboxTarget("ws-wake-reattach-1")?.sandboxId).toBe("box-sdk-sb")
     })
 
     test("wake emits acquire and ready when resuming the direct host", async () => {
@@ -2525,8 +2503,8 @@ describe("workspace-supervisor", () => {
       leases.set("ws-stop-held", {
         ...lease("ws-stop-held"),
         status: "ready",
-        sandbox_id: "daytona-existing-sb",
-        driver_resource_id: "daytona-existing-sb",
+        sandbox_id: "box-existing-sb",
+        driver_resource_id: "box-existing-sb",
         url: "http://existing-runtime.test",
       })
       store.set("ws-stop-held", { ...workspace("ws-stop-held"), status: "ready" })
@@ -2568,7 +2546,7 @@ describe("workspace-supervisor", () => {
         leases.set("ws-stop-fence", {
           ...live,
           epoch: live.epoch + 1,
-          sandbox_id: "daytona-replacement-sb",
+          sandbox_id: "box-replacement-sb",
           url: "http://replacement-runtime.test",
         })
       }
@@ -2580,7 +2558,7 @@ describe("workspace-supervisor", () => {
       expect(leases.get("ws-stop-fence")).toMatchObject({
         status: "ready",
         epoch: live.epoch + 1,
-        sandbox_id: "daytona-replacement-sb",
+        sandbox_id: "box-replacement-sb",
         url: "http://replacement-runtime.test",
       })
     })
@@ -2617,7 +2595,7 @@ describe("workspace-supervisor", () => {
 
   describe("error handling", () => {
     test("transitions to backoff on direct sandbox driver ensureHost failure", async () => {
-      mockDaytonaLaunch.mockImplementationOnce(() => Promise.reject(new Error("driver exhausted")))
+      mockBoxLaunch.mockImplementationOnce(() => Promise.reject(new Error("driver exhausted")))
 
       const tracker = captureProvisionEvents()
 
@@ -2632,7 +2610,7 @@ describe("workspace-supervisor", () => {
     })
 
     test("error event includes message", async () => {
-      mockDaytonaLaunch.mockImplementationOnce(() => Promise.reject(new Error("no sandboxes available")))
+      mockBoxLaunch.mockImplementationOnce(() => Promise.reject(new Error("no sandboxes available")))
 
       const tracker = captureProvisionEvents()
 
@@ -2660,7 +2638,7 @@ describe("workspace-supervisor", () => {
       expect(r1).toBe(r2)
       expect(r1.status).toBe("ready")
 
-      const launchCalls = (mockDaytonaLaunch.mock.calls as any[][]).filter((c) => c[0]?.workspaceId === "ws-dedup-1")
+      const launchCalls = (mockBoxLaunch.mock.calls as any[][]).filter((c) => c[0]?.workspaceId === "ws-dedup-1")
       expect(launchCalls.length).toBe(1)
     })
   })
@@ -2745,7 +2723,7 @@ describe("workspace-supervisor", () => {
       await supervisor.ensureSupervisorSandbox("ws-sandbox-1")
 
       const target = supervisor.getSupervisorSandboxTarget("ws-sandbox-1")
-      expect(target?.sandboxId).toBe("daytona-sdk-sb")
+      expect(target?.sandboxId).toBe("box-sdk-sb")
     })
 
     test("returns undefined for unknown workspace", () => {
@@ -2812,7 +2790,7 @@ describe("workspace-supervisor", () => {
         releasePush()
         await starting
         await vi.waitFor(() => expect(configPush.at(-1)?.body).toMatchObject({ revision: 2 }))
-        const pushed = configPush.filter((push) => push.url.includes("daytona-sdk.example.com")).map((push) => (push.body as { revision: number }).revision)
+        const pushed = configPush.filter((push) => push.url.includes("box-sdk.example.com")).map((push) => (push.body as { revision: number }).revision)
         expect(pushed).toEqual([1, 2])
       } finally {
         releasePush()
@@ -2831,7 +2809,7 @@ describe("workspace-supervisor", () => {
 
       expect(entry.status).toBe("ready")
       expect(configPush.at(-1)).toEqual({
-        url: "https://daytona-sdk.example.com/api/wr/config",
+        url: "https://box-sdk.example.com/api/wr/config",
         body: expect.objectContaining({ version: 2, runners: [{ type: "opencode" }] }),
       })
     })
@@ -2859,9 +2837,6 @@ describe("workspace-supervisor", () => {
   })
 })
 
-// ── Expected behavior: Daytona sandbox wake ─────────────────────────────
-// These tests document the EXPECTED behavior for waking stopped sandboxes.
-
 describe("workspace-supervisor: expected wake behavior", () => {
   beforeEach(() => {
     process.env.CLAXEDO_RUNTIME_ACCESS_TOKEN_PRIVATE_KEY_PEM = runtimePrivateKeyPem
@@ -2869,7 +2844,7 @@ describe("workspace-supervisor: expected wake behavior", () => {
     // The shared driver-auth mock keeps whatever implementation the LAST test
     // of the previous describe installed; restore the defaults this block needs.
     mockSandboxDriverAuthAsync.mockImplementation(async (_cfg: unknown, id: string) => {
-      if (id === "daytona") return { api_key: "dtn-default" }
+      if (id === "box") return { api_key: "bx-default" }
       return undefined
     })
     supervisor.configureWorkspaceSupervisor({ sandboxOwner: async () => "local", machineOwnerUserId: "local",
@@ -2884,15 +2859,15 @@ describe("workspace-supervisor: expected wake behavior", () => {
     else process.env.CLAXEDO_RUNTIME_ACCESS_TOKEN_PRIVATE_KEY_PEM = previousRuntimePrivateKey
   })
 
-  test("when Daytona host is stopped, direct sandbox driver resume is used to wake it", async () => {
+  test("when the host is stopped, direct sandbox driver resume is used to wake it", async () => {
     await supervisor.ensureSupervisorSandbox("ws-wake-start-1")
     await supervisor.stopSupervisorSandbox("ws-wake-start-1", "test")
 
-    const callsBefore = mockDaytonaLaunch.mock.calls.length
+    const callsBefore = mockBoxLaunch.mock.calls.length
 
     await supervisor.ensureSupervisorSandbox("ws-wake-start-1")
 
-    expect(mockDaytonaLaunch.mock.calls.length).toBe(callsBefore + 1)
+    expect(mockBoxLaunch.mock.calls.length).toBe(callsBefore + 1)
   })
 
   test("wake produces fewer provision events than cold start", async () => {
@@ -2943,12 +2918,12 @@ describe("workspace-supervisor: expected wake behavior", () => {
 
     // Start
     await supervisor.ensureSupervisorSandbox("ws-identity-1")
-    expect(supervisor.getSupervisorSandboxTarget("ws-identity-1")?.sandboxId).toBe("daytona-sdk-sb")
+    expect(supervisor.getSupervisorSandboxTarget("ws-identity-1")?.sandboxId).toBe("box-sdk-sb")
 
     // Stop
     await supervisor.stopSupervisorSandbox("ws-identity-1", "test")
 
     await supervisor.ensureSupervisorSandbox("ws-identity-1")
-    expect(supervisor.getSupervisorSandboxTarget("ws-identity-1")?.sandboxId).toBe("daytona-sdk-sb")
+    expect(supervisor.getSupervisorSandboxTarget("ws-identity-1")?.sandboxId).toBe("box-sdk-sb")
   })
 })

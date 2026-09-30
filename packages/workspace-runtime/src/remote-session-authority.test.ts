@@ -273,14 +273,9 @@ describe("a share level narrows the authority's answer, not the runtime's questi
     })
     const turnOperations = ["prompt", "permission_response", "question_response", "recovery_submit"] as const
     const controlOperations = [
-      "shell",
       "permission_mode_write",
       "delete",
       "fork",
-      "revert",
-      "unrevert",
-      "command",
-      "summarize",
       "session_meta_write",
       "session_config_write",
       "worktree_write",

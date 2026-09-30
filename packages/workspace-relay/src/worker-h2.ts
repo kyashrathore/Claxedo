@@ -11,7 +11,7 @@
 // N shards give ~N×6 handshake capacity. If provider-side rate limiting of
 // shared CF egress IPs dominates, sharding will not help.
 //
-// Scope: cloud targets only (Daytona / CF sandbox). Every /workspaces/ WS
+// Scope: cloud targets only (CF sandbox). Every /workspaces/ WS
 // upgrade is round-robined, so a tunnelled client could land on a shard
 // without its host tunnel; host-tunnel routing would need shard affinity.
 

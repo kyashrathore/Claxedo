@@ -275,13 +275,11 @@ export async function proxy(c: Context, hit: Hit, options?: {
   if (hit.workspaceName) headers.set("x-workspace-name", hit.workspaceName)
   headers.set("x-claxedo-directory", hit.relay ? `workspace:${hit.workspaceId}` : hit.directory)
   if (options?.forwardedBy) headers.set("x-forwarded-by", options.forwardedBy)
-  if (!hit.relay) headers.set("X-Daytona-Skip-Preview-Warning", "true")
   headers.delete("host")
   headers.delete("connection")
   // Prevent the upstream from compressing responses. Node's fetch (undici)
-  // auto-decompresses, but the Daytona proxy layer can produce responses
-  // where the content-encoding header and actual body encoding disagree,
-  // causing Z_DATA_ERROR (incorrect header check) during decompression.
+  // auto-decompresses, and a proxy whose content-encoding header disagrees
+  // with the body fails with Z_DATA_ERROR (incorrect header check).
   // Requesting identity encoding avoids the mismatch entirely.
   headers.set("accept-encoding", "identity")
   // A caller with no verified actor is minted the control-plane service
@@ -465,8 +463,6 @@ export function embeddedConfigModeForPath(
     || pathname.startsWith("/find/")
     || pathname === "/api/wr/pty"
     || pathname.startsWith("/api/wr/pty/")
-    || pathname === "/api/wr/process"
-    || pathname.startsWith("/api/wr/process/")
     || pathname === "/api/wr/diff"
     || pathname.startsWith("/api/wr/diff/")
     || pathname === "/api/wr/git"

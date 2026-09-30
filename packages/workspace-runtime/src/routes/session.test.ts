@@ -825,13 +825,6 @@ describe("session prompt route", () => {
     expect(permissionRes.status).toBe(409)
     await expect(permissionRes.json()).resolves.toEqual(refusal("permission_response", "permissions"))
     expect(answers).toEqual([])
-
-    const command = await wa.json("/session/s1/command", { command: "review" })
-    expect(command.status).toBe(501)
-    await expect(command.json()).resolves.toEqual({
-      ok: false,
-      error: { code: "unsupported_operation", operation: "command", reason: "not_implemented", message: "command is not implemented" },
-    })
   })
 
   async function withControlPlaneEnv<T>(handler: Parameters<typeof fetchDouble>[0], run: () => Promise<T>) {

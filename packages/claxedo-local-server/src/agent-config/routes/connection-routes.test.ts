@@ -139,7 +139,7 @@ describe("generic agent connection config API", () => {
       version: 3,
       connections: { "conn-primary": descriptor("conn-primary") },
       defaultConnectionId: "conn-primary",
-      sandbox_driver: { default_driver: "daytona" },
+      sandbox_driver: { default_driver: "modal" },
     })
 
     expect((await app().request("/connections/absent", { method: "DELETE" })).status).toBe(200)
@@ -148,7 +148,7 @@ describe("generic agent connection config API", () => {
     const config = await loadUserConfig()
     expect(config.connections).toEqual({})
     expect(config.defaultConnectionId).toBeUndefined()
-    expect(config.sandbox_driver).toEqual({ default_driver: "daytona" })
+    expect(config.sandbox_driver).toEqual({ default_driver: "modal" })
   })
 
   test("does not retain the removed ACP route alias", async () => {

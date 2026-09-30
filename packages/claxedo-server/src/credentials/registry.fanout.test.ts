@@ -73,7 +73,7 @@ describe("credential fanout fence", () => {
     })
     // Sandbox-driver credential (fenced): the driver API token controls EVERY
     // sandbox and must never land in a sandbox's own runtime config.
-    await putCredential({ owner: "local", provider_id: "daytona", kind: "sandbox_driver", source: "managed", secret: "daytona-master-key" })
+    await putCredential({ owner: "local", provider_id: "modal", kind: "sandbox_driver", source: "managed", secret: "modal-master-key" })
     // Connection secret (fenced): reaches consumers only via the token endpoint.
     await putCredential({ owner: "local", provider_id: "integration:notion", kind: "api_key", source: "managed", secret: "ntn-connection-secret" })
     // Channel session state (fenced): namespaced, host-internal.
@@ -88,7 +88,7 @@ describe("credential fanout fence", () => {
     // every remote/cloud sandbox's runtime config.
     const shared = await fannedOut("shared")
     expect(shared).toEqual({ openai: "sk-harness", "claude-acp": "claude-oauth" })
-    expect(Object.keys(shared)).not.toContain("daytona")
+    expect(Object.keys(shared)).not.toContain("modal")
     expect(Object.keys(shared)).not.toContain("integration:notion")
     expect(Object.keys(shared)).not.toContain("channel:whatsapp:baileys:auth-state")
 

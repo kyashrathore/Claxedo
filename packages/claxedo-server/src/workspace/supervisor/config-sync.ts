@@ -100,7 +100,7 @@ export async function runtimeHasActiveWork(state: WorkspaceRuntimeState) {
     })
     if (!res.ok) return false
     const body = await readJsonRecord(res)
-    return (numberField(body, "ptyCount") ?? 0) > 0 || (numberField(body, "activeProcessCount") ?? 0) > 0
+    return (numberField(body, "ptyCount") ?? 0) > 0
   } catch {
     return false
   }

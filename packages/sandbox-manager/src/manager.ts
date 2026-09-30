@@ -41,7 +41,7 @@ function egressUnenforcedMessage(input: {
     `[sandbox-manager] SANDBOX EGRESS IS UNRESTRICTED: driver "${input.driver}" declares ` +
     `egressControl: "none", so ${scope} can reach ANY host on the internet, including ` +
     `attacker-controlled buckets — agent-authored code inside the sandbox has an unmonitored ` +
-    `exfiltration path.${withheld} Select a driver that can enforce egress (daytona, vercel) ` +
+    `exfiltration path.${withheld} Select a driver that can enforce egress (vercel) ` +
     `to close it. See public-docs/sandbox-egress.md.`
   )
 }
@@ -178,7 +178,7 @@ export function createSandboxManager(options: SandboxManagerOptions): SandboxMan
 
   // Boot-time half of the warning. A per-create line lands in request logs and
   // is easy to miss; this one lands wherever the process starts, so an operator
-  // who composed cloudflare/exe/box/docker/modal learns that this deployment
+  // who composed cloudflare/box/docker/modal learns that this deployment
   // runs sandboxes with unrestricted egress BEFORE the first workspace exists.
   if (egressControl === "none") {
     const key = `${options.driver.id}|${egressControl}`
@@ -291,7 +291,7 @@ export function createSandboxManager(options: SandboxManagerOptions): SandboxMan
         appLabel: options.appLabel ?? DEFAULT_APP_LABEL,
       })
       // Fail-closed: a brokered secret must never be downgraded to readable
-      // plaintext env. Daytona, Vercel and Cloudflare all keep the value out of
+      // plaintext env. Vercel and Cloudflare both keep the value out of
       // the sandbox through their own provider edge, and ONLY an explicit
       // `"native"` declaration means the driver can do the same — a missing or
       // unrecognized capability refuses here rather than expose the credential.
@@ -628,7 +628,7 @@ export function createSandboxManager(options: SandboxManagerOptions): SandboxMan
         const lease = leases.get(workspaceId)
         // Provider labels are create-time state: a driver that reuses a
         // resource across an epoch bump (a restore that keeps the same
-        // Daytona sandbox, a resume after stop) cannot retag it atomically
+        // provider sandbox, a resume after stop) cannot retag it atomically
         // with the reuse, so `labels.epoch` can lag the lease even after the
         // driver rewrote it — the sweep can simply land first. The lease
         // store is authoritative for which provider resource a workspace

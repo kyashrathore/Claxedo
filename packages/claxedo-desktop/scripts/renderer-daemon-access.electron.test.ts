@@ -62,9 +62,7 @@ function electronBinary(): string {
 /**
  * How this host starts Electron with a window.
  *
- * Two Linux-only concessions, both the ones this package already makes for the
- * same reasons — see `diagnostics-packaged-smoke.ts` for the sandbox and the
- * `xvfb-run -a` in `release-gates.yml` for the display:
+ * Two Linux-only concessions:
  *
  *   - `--no-sandbox`, because the Electron npm package cannot ship a
  *     setuid-root `chrome-sandbox`, so Chromium aborts at boot on a runner.

@@ -13,20 +13,18 @@ const groups = {
     "pr-unit-linux-aws",
     "pr-typecheck-linux-aws",
     "pr-packages-dry-run-linux-aws",
-    "pr-relay-bench-linux-aws",
   ],
   "pr-linux-hetzner": [
     "pr-unit-linux",
     "pr-typecheck-linux",
     "pr-packages-dry-run-linux",
-    "pr-relay-bench-linux",
   ],
   "pr-native": ["pr-unit-windows"],
 } as const
 
-// Full desktop compilation and release diagnostics are intentionally excluded
-// from ordinary PR groups. They remain explicit, opt-in release validation.
-const releaseJobs = ["pr-diagnostics-linux-aws", "pr-release-gates-linux-x64-aws", "pr-e2e-desktop-macos"] as const
+// Full desktop compilation is intentionally excluded from ordinary PR groups.
+// It remains explicit, opt-in release validation.
+const releaseJobs = ["pr-release-gates-linux-x64-aws", "pr-e2e-desktop-macos"] as const
 const releaseJobSet = new Set<string>(releaseJobs)
 
 const focusedJobs = [
@@ -58,8 +56,8 @@ function usage(): never {
   script/cbx-ci.ts run [--release] [--concurrency N] [--id LEASE] [pr-linux|pr-linux-hetzner|pr-native|pr|job ...]
   script/cbx-ci.ts retry [--release] [--concurrency N] [--id LEASE]
 
-Defaults: group=pr-linux, concurrency=12. --release adds the diagnostics,
-release-gate, and packaged-desktop jobs. Passing --id reuses one lease and
+Defaults: group=pr-linux, concurrency=12. --release adds the release-gate and
+packaged-desktop jobs. Passing --id reuses one lease and
 forces concurrency=1 so jobs cannot corrupt each other's workspace.`)
   process.exit(2)
 }

@@ -219,7 +219,7 @@ describe("host primitives package surface", () => {
             jti: "htt_1",
           })),
         },
-        sandbox: { defaultDriver: "daytona", sandboxManager: lifecycle },
+        sandbox: { defaultDriver: "vercel", sandboxManager: lifecycle },
         telemetry: { capture: vi.fn() },
         authority: authority,
       },
@@ -232,10 +232,10 @@ describe("host primitives package surface", () => {
     // credential port as the one a route calls, and identity on the services
     // bag says nothing about which object answers that call.
     await expect(services.credentials.putCredential({ owner: null,
-      provider_id: "daytona",
+      provider_id: "vercel",
       kind: "sandbox_driver",
       source: "managed",
-      secret: "dtn-key",
-    })).resolves.toMatchObject({ id: "cred_daytona", provider_id: "daytona", status: "available", revision: 1 })
+      secret: "vercel-key",
+    })).resolves.toMatchObject({ id: "cred_vercel", provider_id: "vercel", status: "available", revision: 1 })
   })
 })

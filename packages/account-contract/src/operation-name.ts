@@ -89,8 +89,6 @@ export type HostedOperationName =
   | "session.turnPage"
   | "session.part"
   | "session.gateway"
-  | "billing.checkout"
-  | "billing.portal"
   | "usage.cloudFacts"
   | "plugin.request"
 

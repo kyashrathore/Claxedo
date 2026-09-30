@@ -146,7 +146,6 @@ export function spec(root = ROOT): Spec {
     "../../bun.lock",
     "../../patches/app-builder-lib@26.8.1.patch",
     "scripts/build.ts",
-    "scripts/build-memory-impact-helper.ts",
     "scripts/bundle-claxedo-server.ts",
     "scripts/contract.ts",
     "scripts/finalize-latest-yml.ts",

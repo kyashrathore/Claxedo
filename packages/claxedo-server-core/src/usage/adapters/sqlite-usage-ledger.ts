@@ -12,7 +12,6 @@ import {
   type UsageRevisionWriteResult,
   type UsageRevisionWriter,
 } from "../contracts"
-import type { LocalTurnSpan } from "../local-history-classifier"
 import { USAGE_REPORT_MAX_MESSAGES_PER_TURN, type UsageReportWriter } from "../usage-report"
 import { ClaxedoUsageTurnCurrentTable, ClaxedoUsageTurnOwnerTable, ClaxedoUsageTurnRevisionTable } from "../usage.sql"
 
@@ -89,8 +88,6 @@ function fact(row: UsageRow): TurnUsageRevision {
 export type SqliteUsageLedger = UsageRevisionWriter &
   UsageRevisionReader &
   UsageOwnedTurnReader & {
-    /** The latest revision of every turn metered on this machine, with when its first revision was observed. */
-    localTurnSpans(): Promise<LocalTurnSpan[]>
     /** Where the plane files what a cloud sandbox this machine provisions reports, each turn up to its message cap. */
     reports: UsageReportWriter
   }
@@ -206,28 +203,6 @@ export function createSqliteUsageLedger(
             .all(),
         )
         .map(fact)
-    },
-
-    async localTurnSpans() {
-      const revisions = ClaxedoUsageTurnRevisionTable
-      const current = ClaxedoUsageTurnCurrentTable
-      const rows = database.use((db) =>
-        db
-          .select({
-            usage: current,
-            startedAt: sql<number>`(
-              select min(${revisions.observed_at}) from ${revisions}
-              where ${revisions.host_id} = ${current.host_id}
-                and ${revisions.session_ref} = ${current.session_ref}
-                and ${revisions.message_id} = ${current.message_id}
-            )`,
-          })
-          .from(current)
-          .where(eq(current.location, "local"))
-          .orderBy(asc(current.observed_at))
-          .all(),
-      )
-      return rows.map((row) => ({ fact: fact(row.usage), startedAt: row.startedAt }))
     },
 
     async ownedBy(owner, range = {}) {

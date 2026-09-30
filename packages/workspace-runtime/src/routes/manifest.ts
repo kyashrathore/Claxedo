@@ -11,7 +11,6 @@ export const WorkspaceRuntimeRoutes = {
   harnessConfigOptions: `${WorkspaceRuntimeApiPrefix}/harness-config-options`,
   harnessProviders: `${WorkspaceRuntimeApiPrefix}/harness-providers`,
   pty: `${WorkspaceRuntimeApiPrefix}/pty`,
-  process: `${WorkspaceRuntimeApiPrefix}/process`,
   events: `${WorkspaceRuntimeApiPrefix}/events`,
   subagentTranscripts: `${WorkspaceRuntimeApiPrefix}/subagent-transcripts`,
   file: `${WorkspaceRuntimeApiPrefix}/file`,

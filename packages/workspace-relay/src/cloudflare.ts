@@ -668,7 +668,7 @@ function websocketRequest(request: Request) {
 // `x-claxedo-relay-ws-trace: 1`, the cloud WS admit path emits a single
 // `relay.trace` frame on the client socket carrying wsUpstreamOpenMs /
 // queuedFrames / maxQueuedDelayMs. This mirrors the Bun relay's trace
-// (bun.ts) so a benchmark harness sees the same vocabulary on both adapters.
+// (bun.ts) so a measuring client sees the same vocabulary on both adapters.
 // Without the header there is zero behavior change.
 function relayWebSocketTraceEnabled(request: Request) {
   return request.headers.get("x-claxedo-relay-ws-trace") === "1"
@@ -2242,7 +2242,7 @@ export function createWorkspaceRelayDurableObjectRoom(options: WorkspaceRelayDur
             new Headers(),
             authorized.relayHostToken,
             authorized.target.workspaceId,
-            { hostTunnel: false, upstreamHeaders: authorized.target.upstreamHeaders },
+            { hostTunnel: false },
           )),
         },
       )
@@ -2261,7 +2261,7 @@ export function createWorkspaceRelayDurableObjectRoom(options: WorkspaceRelayDur
     const emitTrace = (openedAt: number) => {
       if (!trace || trace.emitted) return
       trace.emitted = true
-      // Unchecked on purpose: this frame exists only when a bench opted in with
+      // Unchecked on purpose: this frame exists only when a client opted in with
       // `x-claxedo-relay-ws-trace`, and losing a diagnostic must never affect the
       // connection it is measuring.
       sendSocket(pair.server, JSON.stringify({
@@ -2437,7 +2437,6 @@ export function createWorkspaceRelayDurableObjectRoom(options: WorkspaceRelayDur
         ),
         workspaceRelayForwardRequestInit(request, authorized.request.relayHostToken, workspaceId, {
           signal: controller.signal,
-          upstreamHeaders: authorized.request.target.upstreamHeaders,
         }),
       ))
       return new Response(upstream.body, {

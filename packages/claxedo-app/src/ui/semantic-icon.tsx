@@ -7,7 +7,6 @@ type IconSize = ComponentProps<typeof Icon>["size"]
 export const SEMANTIC_ICON = {
   changes: "changes",
   files: "folders",
-  processes: "process",
   terminal: "terminal",
   project: "folder",
   branch: "branch",

@@ -24,17 +24,6 @@ function platformFiles() {
   return walk(PLATFORM).filter((file) => file.endsWith(".ts") || file.endsWith(".mjs"))
 }
 
-/**
- * The one sanctioned inversion: drizzle needs a single module naming every
- * table, so `platform/db/schema.ts` re-exports the domains' table definitions
- * and holds no logic. Knowledge still flows the right way — the barrel names
- * the modules, the domains never learn about the barrel.
- *
- * Scoped to `*.sql` targets only: schema.ts importing a domain's SERVICE still
- * fails, which is the failure mode worth guarding.
- */
-const SCHEMA_BARREL = path.join("platform", "db", "schema.ts")
-
 function escapes(file: string) {
   const text = fs.readFileSync(file, "utf8")
   const rel = path.relative(SRC, file)
@@ -44,7 +33,6 @@ function escapes(file: string) {
     // Leaves src/ entirely (sibling packages) — not a domain.
     if (target.startsWith("..")) continue
     if (target.split(path.sep)[0] === "platform") continue
-    if (rel === SCHEMA_BARREL && target.endsWith(".sql")) continue
     out.push(`${rel} -> ${target}`)
   }
   return out

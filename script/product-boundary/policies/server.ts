@@ -44,7 +44,7 @@ export const serverWorkerd: Policy = {
     ],
     requiredPackages: ["better-auth", "hono", "@claxedo/server-core"],
   },
-  ceilings: { modules: 99, packages: 20 },
+  ceilings: { modules: 97, packages: 19 },
 
   emitted: {
     file: "packages/claxedo-server/.artifacts/u8-package-split/manifests/server-workerd.json",

@@ -1,5 +1,3 @@
-import type { LocalDiagnostics } from "../shared/local-diagnostics"
-
 export type InitStep = { phase: "server_waiting" } | { phase: "sqlite_waiting" } | { phase: "done" }
 
 export type ServerReadyData = {
@@ -121,8 +119,6 @@ export type BrowserBridge = {
   clearStorage: (paneId: string, storages?: BrowserStorageKey[]) => Promise<BrowserResult>
 }
 
-export type ProcessDiagnosticsBridge = LocalDiagnostics.Capability
-
 /**
  * Machine-scope recovery, by operation only.
  *
@@ -192,7 +188,6 @@ export type ElectronAPI = {
   setStartAtLogin: (enabled: boolean) => Promise<void>
   setNativeTheme: (theme: "light" | "dark" | "system") => void
   getDroppedFilePaths: (files: File[]) => string[]
-  processDiagnostics: ProcessDiagnosticsBridge
   daemonRecovery: DaemonRecoveryBridge
   daemonStatus: {
     read: () => Promise<unknown>

@@ -40,7 +40,7 @@ type CloudConnectionIngress =
 
 /**
  * Everything a cloud connection request shares BEFORE it decides whether to
- * spend: open authorization, the backing check, the cloud entitlement gate and
+ * spend: open authorization, the backing check, cloud-workspace admission and
  * relay/host-manager resolution. `sandboxManager.ensure` — the call that can
  * start billable compute — is deliberately NOT here: it is what separates the
  * connect path (`hostedConnectionInfo`, POST) from the read path
@@ -65,28 +65,18 @@ async function cloudConnectionIngress(
       status: 400,
     } as const
   }
-  // The cloud-workspace entitlement is enforced at wake/resume as well as at
-  // create: a canceled subscription would otherwise leave existing cloud
-  // workspaces wake-able forever. Reached ONLY for HOSTED `cloud-vm`
-  // workspaces, asserted above; the hook is composed exclusively in
-  // claxedo-hosted-product-app.ts and wired through hosted-core-app.ts's
-  // HostedWorkspaceRoutes mount, so self-host / local never gate. Denied → the
-  // typed billing_entitlement_required (402) the frontend acts on, BEFORE any
-  // sandbox wake side effect.
+  // Cloud-workspace admission is enforced at wake/resume as well as at
+  // create, so a deployment that stops admitting cloud workspaces cannot leave
+  // existing ones wake-able. Reached ONLY for HOSTED `cloud-vm` workspaces,
+  // asserted above; the hook is wired through hosted-core-app.ts's
+  // HostedWorkspaceRoutes mount, so self-host / local never gate. A denial is
+  // answered BEFORE any sandbox wake side effect.
   //
   // It gates the READ path too: the read still mints a Runtime Access Token
-  // for a workspace whose sandbox is already running, and a canceled
-  // subscription must not keep minting off a warm lease either.
+  // for a workspace whose sandbox is already running.
   if (options.requireCloudWorkspaceEntitlement) {
     const denied = await options.requireCloudWorkspaceEntitlement({ auth })
-    if (denied) {
-      return {
-        error:
-          denied.body.error ??
-          apiError("billing_entitlement_required", "An active Claxedo Cloud subscription is required"),
-        status: denied.status,
-      } as const
-    }
+    if (denied) return { error: denied.body.error, status: denied.status } as const
   }
   const hostManager = services?.sandbox.sandboxManager
   if (!hostManager) {
