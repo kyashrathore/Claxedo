@@ -25,7 +25,9 @@ type Context = Awaited<ReturnType<typeof setupConformance>>
 async function backend(): Promise<CursorBackend> {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "cursor-conformance-"))
   const directory = path.join(root, "work")
+  const home = path.join(root, "person")
   await fs.mkdir(directory)
+  await fs.mkdir(home)
   const serverPort = await reservePort()
   const guardPort = await reservePort()
   const server = await startScriptedCursorBackend(serverPort)
@@ -33,7 +35,7 @@ async function backend(): Promise<CursorBackend> {
   server.script("conformance", { steps: [{ kind: "text", text: "PICONFORM" }], usage: { inputTokens: 7, outputTokens: 11 } })
   server.defaultScript("conformance")
   return {
-    execution: "process", root, directory, server, env: { ...process.env, ...egressProxyEnv(guard.url) },
+    execution: "process", root, directory, server, env: { ...process.env, HOME: home, USERPROFILE: home, ...egressProxyEnv(guard.url) },
     harness: { id: "cursor", access: "native" }, model: { providerID: "cursor", modelID: "scripted" },
     credentials: { machineLoginAllowed: true, accountOwner: "fixture-owner", providers: { cursor: { baseUrl: server.url, placeholder: "cursor-conformance-placeholder", authMode: "bearer" } },
       secrets: {}, leaseGeneration: "conformance" },
@@ -580,7 +582,8 @@ test("a projected plugin reaches Cursor through a Claxedo home that mirrors the 
     const before = await hashTree(personal)
     const root = await pluginRoot(state, "conform-plugin", pluginMcp.url)
     const projection = { generation: "g2", mcpServers: [], notApplied: [], pluginRoots: [{ pluginInstanceId: "conform/plugin", root, skillNames: [], dataRoot: root }] }
-    const context = await setupConformance({ name: "plugin", backend: async () => ({ ...state, projection }), makeTransport: transportFor(state) })
+    const closeUnchanged = async () => { expect(await hashTree(personal)).toEqual(before); await state.close() }
+    const context = await setupConformance({ name: "plugin", backend: async () => ({ ...state, projection, close: closeUnchanged }), makeTransport: transportFor(state) })
     try {
       expect((await context.transport.capabilities({ directory: state.directory })).pluginIntake).toEqual({ mcp: "session", skills: "plugin-dir" })
       const [home] = await claxedoHomes(state)
@@ -604,7 +607,6 @@ test("a projected plugin reaches Cursor through a Claxedo home that mirrors the 
       expect(await managedPlugins(home!)).toEqual([])
       expect(await fs.readdir(local)).toContain("foreign")
     } finally { await context.close() }
-    expect(await hashTree(personal)).toEqual(before)
   } finally { await pluginMcp.close(); await personalMcp.close() }
 }, 60_000)
 
