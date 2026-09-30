@@ -33,8 +33,10 @@ export async function run() {
     assert.equal(update.toolCallId, (call as { callID?: string } | undefined)?.callID, `the host child was bound to another call: ${JSON.stringify(update)}`)
     const childSession = await api.session(directory, update.childSessionId!)
     assert.equal(childSession.parentID, parent.id)
-    await stream.waitFor((frame) => frameType(frame) === "session.idle" && frameSessionId(frame) === childSession.id, { label: "codex host child idle", timeoutMs: 90_000 })
+    const childIdle = await stream.waitFor((frame) => frameType(frame) === "session.idle" && frameSessionId(frame) === childSession.id, { label: "codex host child idle", timeoutMs: 90_000 })
     assert.match(assistantText(await api.messages(directory, childSession.id)), /H5CODEXHOSTCHILD-DONE/)
+    await stream.waitFor((frame) => frameType(frame) === "session.idle" && frameSessionId(frame) === parent.id
+      && stream.frames.indexOf(frame) > stream.frames.indexOf(childIdle), { label: "codex host parent idle after its child's result", timeoutMs: 90_000 })
     assert.deepEqual(unexpectedEgress(stack.egress.attempts), [])
     console.log("H5 codex host subagent: gpt-5.5 got no spawn_agent, found create_subagent, and started a bound Codex child that answered")
   } finally {
