@@ -9,10 +9,10 @@ import type {
 } from "../../contract/broker"
 import type { BrokerPorts, SessionBrokerContext, TurnBrokerContext } from "../ports"
 import { replyAnswer } from "../options"
-import { pendingRequest, requestOwnerIsCurrent, requestTargetMatchesOwner, requestRefusal, sameTurnAuthority, type FiledRequest, type RequestAuthority } from "./authority"
+import { pendingRequest, requestOwnerIsCurrent, requestTargetMatchesOwner, requestRefusal, sameTurnAuthority, type ChildAuthority, type FiledRequest, type RequestAuthority } from "./authority"
 import { validateAndCommit } from "./commit"
 import { RequestEntries, type RequestEntry } from "./entries"
-import { fileChildOwnedRequest, fileTurnRequest } from "./filing"
+import { fileChildOwnedRequest, fileOpenChildRequest, fileTurnRequest } from "./filing"
 import { OrphanRetirement } from "./orphan-retirement"
 import { preflight } from "./preflight"
 import { publishAsked } from "./publication"
@@ -48,10 +48,22 @@ export class RequestTable implements RequestBroker {
   askTurn(context: TurnBrokerContext, request: TurnRequest, options?: { signal?: AbortSignal }): Promise<RequestAnswer> {
     const current = this.ports.currentTurnAuthority(context.authority.sessionId)
     const authority = current && sameTurnAuthority(current, context.authority) ? current : context.authority
-    const signal = options?.signal ? AbortSignal.any([context.signal, options.signal]) : context.signal
+    const expiresAt = request.expiresAt ?? context.expiresAt
     let filed: FiledRequest
-    try { filed = fileTurnRequest(this.ports, authority, request) } catch (error) { return Promise.reject(error) }
-    return this.ask({ kind: "turn", value: authority }, filed, request.expiresAt ?? context.expiresAt, signal)
+    try {
+      const { turnId: _turnId, ...owner } = authority
+      const owned = request.child ? fileOpenChildRequest(this.ports, owner, { ...request, child: request.child }) : undefined
+      if (owned) return this.askChildOwned(owned.authority, owned.filed, expiresAt, options?.signal)
+      filed = fileTurnRequest(this.ports, authority, request)
+    } catch (error) { return Promise.reject(error) }
+    const signal = options?.signal ? AbortSignal.any([context.signal, options.signal]) : context.signal
+    return this.ask({ kind: "turn", value: authority }, filed, expiresAt, signal)
+  }
+
+  private askChildOwned(owner: ChildAuthority, filed: FiledRequest, expiresAt?: number, signal?: AbortSignal): Promise<RequestAnswer> {
+    const authority: RequestAuthority = { kind: "child", value: owner }
+    if (signal?.aborted) return this.saveCancelled(authority, filed)
+    return this.ask(authority, filed, expiresAt, signal)
   }
 
   askSession(context: SessionBrokerContext, request: TurnRequest, options?: { signal?: AbortSignal }): Promise<RequestAnswer> {
@@ -63,9 +75,7 @@ export class RequestTable implements RequestBroker {
     let routed: ReturnType<typeof fileChildOwnedRequest>
     try { routed = fileChildOwnedRequest(this.ports, owner, { ...request, child: request.child }) } catch (error) { return Promise.reject(error) }
     if (!routed) return Promise.reject(new Error("A child's request needs a running child or its parent's turn"))
-    const authority: RequestAuthority = { kind: "child", value: routed.authority }
-    if (options?.signal?.aborted) return this.saveCancelled(authority, routed.filed)
-    return this.ask(authority, routed.filed, request.expiresAt ?? context.expiresAt, options?.signal)
+    return this.askChildOwned(routed.authority, routed.filed, request.expiresAt ?? context.expiresAt, options?.signal)
   }
 
   askStart(context: SessionBrokerContext, request: TurnRequest, options?: { signal?: AbortSignal }): Promise<RequestAnswer> {

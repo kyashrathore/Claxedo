@@ -5,7 +5,7 @@ import { type MemoryPorts, authority, origin } from "../../conformance/test-supp
 import { byChild, filedSession, once, permission, question, spawn, tick } from "./child-request-fixtures"
 
 export function registerChildRequestCases(name: string, make: () => MemoryPorts): void {
-  async function setup() {
+  async function setup(options: { started: boolean } = { started: true }) {
     const ports = make()
     const owner = createRequestBroker(ports)
     const controller = new AbortController()
@@ -14,6 +14,7 @@ export function registerChildRequestCases(name: string, make: () => MemoryPorts)
       const child = await turn.observeSubagent(spawn(toolCallId))
       if (!child) throw new Error(`No child session for ${toolCallId}`)
       turn.associateChild(toolCallId, child)
+      if (options.started) ports.startChildTurn("s1", toolCallId)
       return child.sessionId
     }
     return { ports, owner, controller, turn, child: await bind("toolu_agent"), sibling: await bind("toolu_sibling") }
@@ -68,32 +69,45 @@ export function registerChildRequestCases(name: string, make: () => MemoryPorts)
       expect(await other).toEqual({ kind: "rejected" })
     })
 
-    test("ending the parent turn cancels the child's pending request and refuses a late answer", async () => {
-      const { ports, owner, turn, child } = await setup()
-      const waiting = turn.ask(byChild(permission("child-cancel"), "toolu_agent"))
-      await tick()
-      await owner.endTurn(authority)
-      expect(await waiting).toEqual({ kind: "cancelled" })
-      expect(ports.readAnswer(child, "child-cancel")).toEqual({ kind: "cancelled" })
-      expect(await owner.broker.answer("child-cancel", once, { sessionId: child })).toMatchObject({ ok: false, refusal: "stale" })
-    })
-
-    test("the parent turn's signal cancels the child's pending request", async () => {
-      const { ports, controller, turn, child } = await setup()
-      const waiting = turn.ask(byChild(question("child-abort"), "toolu_agent"))
+    test("ending the parent turn, its signal or its owner leaves an open child turn's request answerable on the child", async () => {
+      const { ports, owner, controller, turn, child } = await setup()
+      const waiting = turn.ask(byChild(permission("child-survives"), "toolu_agent"))
       await tick()
       controller.abort()
-      expect(await waiting).toEqual({ kind: "cancelled" })
-      expect(ports.readAnswer(child, "child-abort")).toEqual({ kind: "cancelled" })
+      await owner.endTurn(authority)
+      ports.current.set("s1", { ...authority, turnId: "replacement" })
+      await tick()
+      expect(owner.broker.list({ sessionId: child }).map((row) => row.request.requestId)).toEqual(["child-survives"])
+      expect(await owner.broker.answer("child-survives", once, { sessionId: "s1" })).toMatchObject({ ok: false, refusal: "foreign" })
+      expect(await owner.broker.answer("child-survives", once, { sessionId: child })).toMatchObject({ ok: true })
+      expect(await waiting).toEqual(once)
     })
 
-    test("a child's request is refused once the parent's turn owner changes", async () => {
+    test("ending the child's own turn cancels its request and refuses a late answer", async () => {
       const { ports, owner, turn, child } = await setup()
-      const waiting = turn.ask(byChild(permission("child-owner"), "toolu_agent"))
+      const waiting = turn.ask(byChild(question("child-ends"), "toolu_agent"))
       await tick()
-      ports.current.set("s1", { ...authority, turnId: "replacement" })
-      expect(await owner.broker.answer("child-owner", once, { sessionId: child })).toMatchObject({ ok: false, refusal: "foreign" })
+      ports.finishChildTurn("s1", "toolu_agent")
+      const route = ports.childRoute("s1", "toolu_agent")
+      if (route.kind === "unbound") throw new Error("child unbound")
+      await owner.endChildTurn(route.childSessionId, route.assistantMessageId)
       expect(await waiting).toEqual({ kind: "cancelled" })
+      expect(ports.readAnswer(child, "child-ends")).toEqual({ kind: "cancelled" })
+      expect(await owner.broker.answer("child-ends", { kind: "rejected" }, { sessionId: child })).toMatchObject({ ok: false, refusal: "stale" })
+    })
+
+    test("a child whose turn has not started files on the child under the parent turn, which cancels it when it ends", async () => {
+      const { ports, owner, controller, turn, child } = await setup({ started: false })
+      const ending = turn.ask(byChild(permission("unstarted-end"), "toolu_agent"))
+      const aborting = turn.ask(byChild(question("unstarted-abort"), "toolu_agent"))
+      await tick()
+      expect(owner.broker.list({ sessionId: child }).map((row) => row.request.requestId)).toEqual(["unstarted-end", "unstarted-abort"])
+      controller.abort()
+      expect(await aborting).toEqual({ kind: "cancelled" })
+      await owner.endTurn(authority)
+      expect(await ending).toEqual({ kind: "cancelled" })
+      expect(ports.readAnswer(child, "unstarted-end")).toEqual({ kind: "cancelled" })
+      expect(await owner.broker.answer("unstarted-end", once, { sessionId: child })).toMatchObject({ ok: false, refusal: "stale" })
     })
 
     test("a child's answer is saved before the harness is released, and a failed save releases nothing", async () => {
