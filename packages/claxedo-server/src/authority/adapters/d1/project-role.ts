@@ -1,6 +1,6 @@
 import type { ProjectAction, ProjectRole } from "@claxedo/server-core/platform/auth/authority"
 
-function roleRankSql(column: string) {
+export function roleRankSql(column: string) {
   return `case ${column} when 'viewer' then 1 when 'editor' then 2 when 'admin' then 3 when 'owner' then 4 else 0 end`
 }
 

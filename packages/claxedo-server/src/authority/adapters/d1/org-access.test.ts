@@ -90,6 +90,8 @@ async function signed(authority: D1CoreAuthorityBoundary, subject: string): Prom
 
 const id = (auth: SignedControlPlaneAuth) => auth.principal!.userId
 
+const byJson = (a: unknown, b: unknown) => JSON.stringify(a).localeCompare(JSON.stringify(b))
+
 describe("D1 organization members", () => {
   test("an admin adds a member, changes their role and lists them with when they joined; each change is audited", async () => {
     const { authority, alice, bob, audit } = await setup()
@@ -105,7 +107,7 @@ describe("D1 organization members", () => {
       { user_id: id(bob), role: "admin" },
     ])
     expect(members.every((member) => typeof member.joined_at === "number")).toBe(true)
-    expect(await audit("org.member.")).toEqual([
+    expect((await audit("org.member.")).filter((row) => row.targetUserId === id(bob))).toEqual([
       { action: "org.member.added", actor: id(alice), orgId: "org_acme", targetUserId: id(bob), before: null, after: "member" },
       { action: "org.member.role_changed", actor: id(alice), orgId: "org_acme", targetUserId: id(bob), before: "member", after: "admin" },
     ])
@@ -141,7 +143,8 @@ describe("D1 organization members", () => {
       .rejects.toMatchObject({ code: "org_owner_required" })
     await expect(authority.updateOrgMember!(bob, { orgId: "org_acme", userPublicId: id(carol), role: "member" }))
       .rejects.toMatchObject({ code: "org_owner_required" })
-    expect((await audit("org.member.")).map((row) => row.action)).toEqual([
+    expect((await audit("org.member.")).filter((row) => row.orgId === "org_acme").map((row) => row.action)).toEqual([
+      "org.member.added",
       "org.member.added",
       "org.member.role_changed",
       "org.member.added",
@@ -179,6 +182,9 @@ describe("D1 organization members", () => {
       removed: true,
       team_memberships_revoked: 1,
       project_memberships_revoked: 1,
+      session_shares_revoked: 0,
+      session_participations_revoked: 0,
+      runtime_tokens_revoked: 0,
     })
 
     await expect(authority.openWorkspace(bob, { workspaceId: "ws_acme" })).rejects.toMatchObject({ status: 403 })
@@ -189,13 +195,18 @@ describe("D1 organization members", () => {
       .prepare("select count(*) as n from team_memberships where user_id = ? and revoked_at is null")
       .bind(id(bob)).first<{ n: number }>()).toEqual({ n: 0 })
     expect((await audit("org.member.removed"))).toEqual([
-      { action: "org.member.removed", actor: id(alice), orgId: "org_acme", targetUserId: id(bob), before: "member", after: null },
+      {
+        action: "org.member.removed",
+        actor: id(alice),
+        orgId: "org_acme",
+        targetUserId: id(bob),
+        before: "member",
+        after: null,
+        sessionSharesRevoked: 0,
+        sessionParticipationsRevoked: 0,
+      },
     ])
-    expect(await authority.removeOrgMember!(alice, { orgId: "org_acme", userPublicId: id(bob) })).toEqual({
-      removed: false,
-      team_memberships_revoked: 0,
-      project_memberships_revoked: 0,
-    })
+    expect(await authority.removeOrgMember!(alice, { orgId: "org_acme", userPublicId: id(bob) })).toMatchObject({ removed: false })
 
     await authority.addOrgMember!(alice, { orgId: "org_acme", userPublicId: id(bob), role: "member" })
     expect(await authority.projectRole(bob, { projectId: projectId as never })).toMatchObject({ ok: true, role: "viewer" })
@@ -366,7 +377,208 @@ describe("D1 access changes under a concurrent revocation", () => {
     expect((await authority.listOrgMembers!(alice, { orgId: "org_acme" })).find((row) => row.user_id === id(carol)))
       .toMatchObject({ role: "member" })
     expect(await authority.projectRole(carol, { projectId: projectId as never })).toMatchObject({ role: "viewer" })
-    expect((await audit("org.member.")).map((row) => row.action)).toEqual(["org.member.added", "org.member.added"])
+    expect((await audit("org.member.")).filter((row) => row.orgId === "org_acme").map((row) => row.action))
+      .toEqual(["org.member.added", "org.member.added", "org.member.added"])
     expect(await audit("project.member.")).toEqual([])
+  })
+})
+
+function racing(database: D1Database, first: (database: D1Database) => Promise<unknown>) {
+  return new Proxy(database, {
+    get(target, key, receiver) {
+      if (key === "batch") {
+        return async (statements: Parameters<D1Database["batch"]>[0]) => {
+          await first(target)
+          return await target.batch(statements)
+        }
+      }
+      const value: unknown = Reflect.get(target, key, receiver)
+      return typeof value === "function" ? value.bind(target) : value
+    },
+  })
+}
+
+async function token(authority: D1CoreAuthorityBoundary, auth: SignedControlPlaneAuth, jti: string, role: "viewer" | "editor" | "admin") {
+  await authority.recordRuntimeAccessToken(auth, {
+    jti,
+    workspaceId: "ws_acme",
+    hostId: "host_acme",
+    actorId: auth.principal!.actorId,
+    actorKind: "human",
+    role,
+    expiresAt: Date.now() + 600_000,
+  })
+  return async () => (await authority.runtimeAccessTokenActive({ jti, workspaceId: "ws_acme", hostId: "host_acme" }) as { active: boolean }).active
+}
+
+describe("D1 access changes that must not undo or outlive a decision", () => {
+  test("only an org admin sets up the default team, and setting it up again restores nothing an admin removed or changed", async () => {
+    const { authority, alice, bob, carol, projectId, audit } = await setup()
+    await authority.addOrgMember!(alice, { orgId: "org_acme", userPublicId: id(bob), role: "member" })
+    await authority.addOrgMember!(alice, { orgId: "org_acme", userPublicId: id(carol), role: "member" })
+
+    await expect(authority.ensureDefaultTeam!(bob, { orgId: "org_acme" })).rejects.toMatchObject({ code: "org_admin_required" })
+    expect(await audit("team.")).toEqual([])
+
+    const { team_id: teamId } = (await authority.ensureDefaultTeam!(alice, { orgId: "org_acme" })) as { team_id: string }
+    expect((await audit("team.")).map((row) => [row.action, row.targetUserId ?? row.projectId, row.before, row.after]).toSorted(byJson))
+      .toEqual([
+        ["team.created", undefined, undefined, undefined],
+        ["team.member.added", id(alice), null, "owner"],
+        ["team.member.added", id(bob), null, "member"],
+        ["team.member.added", id(carol), null, "member"],
+        ["team.project.granted", projectId, null, "editor"],
+      ].toSorted(byJson))
+
+    await authority.removeTeamMember!(alice, { teamId, userPublicId: id(bob) })
+    await authority.addTeamMember!(alice, { teamId, userPublicId: id(carol), role: "admin" })
+    await authority.grantTeamProject!(alice, { teamId, projectId, role: "viewer" })
+    const before = (await audit("team.")).length
+    await authority.ensureDefaultTeam!(alice, { orgId: "org_acme" })
+
+    const members = (await authority.listTeamMembers!(alice, { teamId })) as Array<{ user_id: string; role: string }>
+    expect(members.map((row) => [row.user_id, row.role]).toSorted(byJson)).toEqual([[id(alice), "owner"], [id(carol), "admin"]].toSorted(byJson))
+    expect(await authority.listTeamProjects!(alice, { teamId })).toEqual([expect.objectContaining({ role: "viewer" })])
+    expect(await audit("team.")).toHaveLength(before)
+  })
+
+  test("the founding owner's membership is audited when the organization is created", async () => {
+    const { alice, outsider, audit } = await setup()
+    expect(await audit("org.member.added")).toEqual([
+      { action: "org.member.added", actor: id(alice), orgId: "org_acme", targetUserId: id(alice), before: null, after: "owner" },
+      { action: "org.member.added", actor: id(outsider), orgId: "org_other", targetUserId: id(outsider), before: null, after: "owner" },
+    ])
+  })
+
+  test("a role change racing a removal does not reinstate the member", async () => {
+    const { authority, database, alice, bob } = await setup()
+    await authority.addOrgMember!(alice, { orgId: "org_acme", userPublicId: id(bob), role: "member" })
+    const context = new D1WorkspaceAuthority(
+      racing(database, (target) => target.prepare("update org_memberships set revoked_at = 1 where user_id = ?").bind(id(bob)).run()),
+      { deploymentId: "deployment-a", product: { kind: "claxedo-hosted" } },
+    ).accessContext()
+
+    await expect(new D1OrgMemberAuthority(context).updateOrgMember(alice, { orgId: "org_acme", userPublicId: id(bob), role: "admin" }))
+      .rejects.toMatchObject({ code: "resource_conflict" })
+    expect((await authority.listOrgMembers!(alice, { orgId: "org_acme" })).map((row) => row.user_id)).toEqual([id(alice)])
+  })
+
+  test("a removal that finds the member already gone writes no allow row", async () => {
+    const { authority, database, alice, bob, audit } = await setup()
+    await authority.addOrgMember!(alice, { orgId: "org_acme", userPublicId: id(bob), role: "member" })
+    const context = new D1WorkspaceAuthority(
+      racing(database, (target) => target.prepare("update org_memberships set revoked_at = 1 where user_id = ?").bind(id(bob)).run()),
+      { deploymentId: "deployment-a", product: { kind: "claxedo-hosted" } },
+    ).accessContext()
+
+    await expect(new D1OrgMemberAuthority(context).removeOrgMember(alice, { orgId: "org_acme", userPublicId: id(bob) }))
+      .rejects.toMatchObject({ code: "resource_conflict" })
+    expect(await audit("org.member.removed")).toEqual([])
+  })
+
+  test("removal, an org downgrade and each grant revocation revoke the runtime tokens they minted, so re-admission does not revive them", async () => {
+    const { authority, alice, bob, projectId } = await setup()
+    await authority.addOrgMember!(alice, { orgId: "org_acme", userPublicId: id(bob), role: "member" })
+    await authority.grantProjectMember!(alice, { projectId, userPublicId: id(bob), role: "editor" })
+
+    const memberToken = await token(authority, bob, "jti_member", "editor")
+    await authority.revokeProjectMember!(alice, { projectId, userPublicId: id(bob) })
+    await authority.grantProjectMember!(alice, { projectId, userPublicId: id(bob), role: "editor" })
+    expect(await memberToken()).toBe(false)
+
+    const team = (await authority.createTeamInOrg!(alice, { orgId: "org_acme", name: "Eng" })) as { team_id: string }
+    await authority.addTeamMember!(alice, { teamId: team.team_id, userPublicId: id(bob) })
+    await authority.grantTeamProject!(alice, { teamId: team.team_id, projectId, role: "admin" })
+    const teamToken = await token(authority, bob, "jti_team", "admin")
+    await authority.revokeTeamProject!(alice, { teamId: team.team_id, projectId })
+    await authority.grantTeamProject!(alice, { teamId: team.team_id, projectId, role: "admin" })
+    expect(await teamToken()).toBe(false)
+
+    const teamMemberToken = await token(authority, bob, "jti_team_member", "admin")
+    await authority.removeTeamMember!(alice, { teamId: team.team_id, userPublicId: id(bob) })
+    await authority.addTeamMember!(alice, { teamId: team.team_id, userPublicId: id(bob) })
+    expect(await teamMemberToken()).toBe(false)
+
+    await authority.updateOrgMember!(alice, { orgId: "org_acme", userPublicId: id(bob), role: "admin" })
+    const adminToken = await token(authority, bob, "jti_admin", "admin")
+    await authority.updateOrgMember!(alice, { orgId: "org_acme", userPublicId: id(bob), role: "member" })
+    await authority.updateOrgMember!(alice, { orgId: "org_acme", userPublicId: id(bob), role: "admin" })
+    expect(await adminToken()).toBe(false)
+
+    const removedToken = await token(authority, bob, "jti_removed", "editor")
+    expect(await removedToken()).toBe(true)
+    expect(await authority.removeOrgMember!(alice, { orgId: "org_acme", userPublicId: id(bob) }))
+      .toMatchObject({ removed: true, runtime_tokens_revoked: 1 })
+    await authority.addOrgMember!(alice, { orgId: "org_acme", userPublicId: id(bob), role: "admin" })
+    expect(await removedToken()).toBe(false)
+  })
+
+  test("removal revokes the person's direct session shares and participations in the organization, audited, so re-admission restores no consent", async () => {
+    const { authority, database, alice, bob, projectId, audit } = await setup()
+    await authority.addOrgMember!(alice, { orgId: "org_acme", userPublicId: id(bob), role: "member" })
+    await authority.grantProjectMember!(alice, { projectId, userPublicId: id(bob), role: "editor" })
+    await authority.createWorkspace(alice, { workspaceId: "ws_cloud", orgId: "org_acme", displayName: "cloud", backing: "cloud-vm" })
+    await authority.reserveSession(alice, { operationId: "op_1", sessionId: "ses_1", workspaceId: "ws_cloud", kind: "create", title: "private" })
+    await authority.registerRuntimeSession({
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      principalKind: "user",
+      actorId: alice.principal!.actorId,
+      actorKind: "human",
+      operationId: "op_1",
+      sessionId: "ses_1",
+      workspaceId: "ws_cloud",
+      title: "private",
+    })
+    await authority.grantSessionShare!(alice, { sessionId: "ses_1", workspaceId: "ws_cloud", grantedToUserId: id(bob) })
+    await authority.grantSessionParticipant(alice, { sessionId: "ses_1", workspaceId: "ws_cloud", participantActorId: bob.principal!.actorId })
+
+    expect(await authority.removeOrgMember!(alice, { orgId: "org_acme", userPublicId: id(bob) }))
+      .toMatchObject({ removed: true, session_shares_revoked: 1, session_participations_revoked: 1 })
+    await authority.addOrgMember!(alice, { orgId: "org_acme", userPublicId: id(bob), role: "member" })
+
+    expect(await database.prepare("select count(*) as n from session_share_grants where target_user_id = ? and revoked_at is null")
+      .bind(id(bob)).first<{ n: number }>()).toEqual({ n: 0 })
+    expect(await database.prepare("select count(*) as n from session_participants where actor_id = ? and revoked_at is null")
+      .bind(bob.principal!.actorId).first<{ n: number }>()).toEqual({ n: 0 })
+    expect(await audit("org.member.removed")).toEqual([expect.objectContaining({
+      targetUserId: id(bob),
+      sessionSharesRevoked: 1,
+      sessionParticipationsRevoked: 1,
+    })])
+  })
+})
+
+describe("D1 user-deployed identity admission", () => {
+  test("admits through the organization member rules: an admin cannot demote an owner or the founder, and each admission is audited", async () => {
+    const controlPlane = await miniflareControlPlaneDatabase(controlPlaneMigrations())
+    active.push(controlPlane)
+    const identity = (subject: string): AuthIdentity => ({ adapter: "better-auth", issuer: "https://auth.example.test", subject })
+    const authority = composeBetterAuthD1Authority({
+      env: {
+        CLAXEDO_ADAPTER_PROFILE: "better-auth-d1",
+        CLAXEDO_PRODUCT_POSTURE: "user-deployed",
+        CLAXEDO_DEPLOYMENT_ID: "deployment-a",
+        CONTROL_PLANE_DB: controlPlane.database,
+      },
+      product: { kind: "user-deployed", organization: { id: "org_deploy", name: "Deploy" }, ownerIdentity: identity("alice") },
+    })
+    const alice = await signed(authority, "alice")
+    await authority.admitUserDeployedIdentity(alice, { identity: identity("bob"), role: "admin" })
+    const bob = await signed(authority, "bob")
+    const carolAdmission = await authority.admitUserDeployedIdentity(alice, { identity: identity("carol"), role: "member" })
+    const carolId = (carolAdmission as { userId: string }).userId
+    await authority.updateOrgMember!(alice, { orgId: "org_deploy", userPublicId: carolId, role: "owner" })
+
+    await expect(authority.admitUserDeployedIdentity(bob, { identity: identity("carol"), role: "member" }))
+      .rejects.toMatchObject({ code: "org_owner_required" })
+    await expect(authority.admitUserDeployedIdentity(bob, { identity: identity("alice"), role: "admin" }))
+      .rejects.toMatchObject({ code: "org_owner_protected" })
+    expect((await authority.listOrgMembers!(alice, { orgId: "org_deploy" })).map((row) => [row.user_id, row.role]).toSorted(byJson))
+      .toEqual([[id(alice), "owner"], [id(bob), "admin"], [carolId, "owner"]].toSorted(byJson))
+    const admitted = (await controlPlane.database
+      .prepare("select metadata_json from authority_audit_events where action = 'org.member.added' order by rowid")
+      .all<{ metadata_json: string }>()).results.map((row) => JSON.parse(row.metadata_json).targetUserId)
+    expect(admitted).toEqual([id(bob), carolId])
   })
 })

@@ -12,7 +12,6 @@ import {
 import {
   isOrgMemberRole,
   isProjectGrantRole,
-  type FindAccountByEmail,
   type MemberSelector,
 } from "@claxedo/server-core/platform/auth/org-access-authority"
 import type { RequestAuthenticationAdapter } from "@claxedo/server-core/platform/auth/authentication"
@@ -20,7 +19,6 @@ import { apiError, signedOrError, txt } from "../../workspace/route-support"
 import { readJsonRecord } from "@claxedo/server-core/platform/json/index"
 
 type Options = {
-  findAccountByEmail?: FindAccountByEmail
   authentication?: RequestAuthenticationAdapter
   authConfig?: ControlPlaneAuthConfig
   verifier?: ControlPlaneTokenVerifier
@@ -56,6 +54,7 @@ const ORG_TEAM_ERRORS: Record<string, Omit<OrgTeamError, "code">> = {
   team_not_allowed_on_personal_org: { status: 400, message: "Personal organizations cannot contain teams" },
   team_member_target_required: { status: 400, message: "Exactly one team member target is required" },
   org_member_target_required: { status: 400, message: "Exactly one organization member target is required" },
+  org_member_email_unsupported: { status: 400, message: "This deployment cannot find accounts by email" },
   organization_not_found: { status: 404, message: "Organization not found" },
   team_not_found: { status: 404, message: "Team not found" },
   team_member_not_found: { status: 404, message: "Team member not found" },
@@ -165,21 +164,7 @@ export function OrgTeamControlRoutes(services: ControlPlaneServices, options: Op
       if (!add) return unavailable(c, "Organization members unavailable")
       const input = await body(c)
       if (!isOrgMemberRole(input.role)) return c.json({ error: apiError("org_member_role_required", "role is required") }, 400)
-      const email = txt(input.email)
-      if (email === undefined) {
-        return c.json(await add(auth, { orgId: c.req.param("orgId")!, ...memberSelector(input), role: input.role }))
-      }
-      if (!options.findAccountByEmail) {
-        return c.json({ error: apiError("org_member_email_unsupported", "This deployment cannot find accounts by email") }, 400)
-      }
-      const account = await options.findAccountByEmail(email)
-      if (!account) return c.json({ error: apiError("org_member_not_found", "No account has this verified email") }, 404)
-      return c.json(await add(auth, {
-        orgId: c.req.param("orgId")!,
-        ...memberSelector(input),
-        tokenIdentifier: account.tokenIdentifier,
-        role: input.role,
-      }))
+      return c.json(await add(auth, { orgId: c.req.param("orgId")!, ...memberSelector(input), role: input.role }))
     }))
     .patch("/orgs/:orgId/members/:userPublicId", limited, authorized(async (auth, c) => {
       const update = authority().updateOrgMember
@@ -269,5 +254,6 @@ function memberSelector(input: Record<string, unknown>): MemberSelector {
     ...(typeof input.tokenIdentifier === "string" ? { tokenIdentifier: input.tokenIdentifier } : {}),
     ...(typeof input.providerSubject === "string" ? { providerSubject: input.providerSubject } : {}),
     ...(typeof input.userPublicId === "string" ? { userPublicId: input.userPublicId } : {}),
+    ...(typeof input.email === "string" ? { email: input.email } : {}),
   }
 }

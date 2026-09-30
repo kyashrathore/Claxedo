@@ -22,7 +22,15 @@ import {
   rankRole,
   workspaceAccessSql,
 } from "./project-role"
-import { canAdminOrganization, isActiveOrgMember, requireText, type D1AccessContext } from "./access-context"
+import {
+  accessAuditStatement,
+  canAdminOrganization,
+  isActiveOrgMember,
+  requireText,
+  type D1AccessContext,
+} from "./access-context"
+import { D1OrgMemberAuthority } from "./org-member-authority"
+import type { FindAccountByEmail } from "@claxedo/server-core/platform/auth/org-access-authority"
 import { asOrgId, type OrgId } from "@claxedo/server-core/platform/auth/branded-id"
 
 const KNOWN_HOME_REGIONS = new Set(["apac-south", "apac-east", "eu-west", "us-east", "us-west"])
@@ -69,6 +77,7 @@ export type D1WorkspaceAuthorityOptions = {
   product: D1AuthorityProductPolicy
   now?: () => number
   randomId?: (prefix: "usr" | "act" | "org" | "prj" | "team" | "assert" | "audit") => string
+  findAccountByEmail?: FindAccountByEmail
 }
 
 export type D1WorkspaceCreateArgs = {
@@ -200,6 +209,7 @@ export class D1WorkspaceAuthority implements D1WorkspaceAuthorityCore {
       randomId: this.randomId,
       principal: (auth) => this.requirePrincipal(auth),
       assertOrganizationAllowed: (orgId) => this.assertOrganizationAllowed(orgId),
+      ...(this.options.findAccountByEmail ? { findAccountByEmail: this.options.findAccountByEmail } : {}),
     }
   }
 
@@ -570,39 +580,12 @@ export class D1WorkspaceAuthority implements D1WorkspaceAuthorityCore {
           candidateUserId,
         ),
       this.insertHumanActor(input.identity, candidateActorId, now),
-      this.database
-        .prepare(
-          `
-        insert into org_memberships (org_id, user_id, role, created_at, updated_at, revoked_at)
-        select ?, ai.user_id, ?, ?, ?, null
-        from auth_identities ai join users u on u.user_id = ai.user_id and u.state = 'active'
-        where ai.adapter = ? and ai.issuer = ? and ai.subject = ? and ai.unlinked_at is null
-          and ${adminGuard}
-        on conflict (org_id, user_id) do update set
-          role = excluded.role,
-          updated_at = excluded.updated_at,
-          revoked_at = null
-      `,
-        )
-        .bind(
-          orgId,
-          input.role,
-          now,
-          now,
-          input.identity.adapter,
-          input.identity.issuer,
-          input.identity.subject,
-          administrator.userId,
-          orgId,
-          this.options.deploymentId,
-          administrator.userId,
-        ),
     ])
 
     const resolution = await this.identityResolution(input.identity)
-    if (resolution.state !== "active" || !(await isActiveOrgMember(this.database, resolution.userId, orgId))) {
-      throw denied("Organization administrator authority was denied")
-    }
+    if (resolution.state !== "active") throw denied("Organization administrator authority was denied")
+    await new D1OrgMemberAuthority(this.accessContext())
+      .addOrgMember(auth, { orgId, userPublicId: resolution.userId, role: input.role })
     return resolution
   }
 
@@ -630,6 +613,20 @@ export class D1WorkspaceAuthority implements D1WorkspaceAuthorityCore {
       `,
           )
           .bind(orgId, name, now, now, who.userId),
+        accessAuditStatement(this.accessContext(), {
+          who,
+          action: "org.member.added",
+          metadata: {
+            sql: `json_object('orgId', ?, 'targetUserId', ?, 'before', null, 'after', 'owner')`,
+            bind: [orgId, who.userId],
+          },
+          guard: {
+            sql: `exists (select 1 from orgs where org_id = ? and owner_user_id = ? and deleted_at is null)
+              and not exists (select 1 from org_memberships where org_id = ? and user_id = ?)`,
+            bind: [orgId, who.userId, orgId, who.userId],
+          },
+          now,
+        }),
         this.database
           .prepare(
             `

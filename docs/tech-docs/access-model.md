@@ -44,10 +44,10 @@ control plane (D1) enforces today.
 
 | Change | Who | Refused with |
 |---|---|---|
-| Add a member, change a member's role, remove a member | org owners and admins | `org_admin_required` |
+| Add a member (including a user-deployed identity admission), change a member's role, remove a member | org owners and admins | `org_admin_required` |
 | Grant, change or remove the `owner` role | org owners | `org_owner_required` |
 | Demote or remove the founding owner | nobody, which is what keeps every org owned | `org_owner_protected` |
-| Create a team, add or remove team members, grant or revoke a team's project role | org owners and admins | `org_admin_required` |
+| Create a team, set up the default team, add or remove team members, grant or revoke a team's project role | org owners and admins | `org_admin_required` |
 | Grant or revoke one person's project role | project admins (org owners and admins included) | `project_admin_required` |
 | Read a project's access listing | project admins (org owners and admins included) | `project_admin_required` |
 | Create a workspace in an org | org owners and admins | `workspace_authorization_denied` |
@@ -58,17 +58,44 @@ to the same org (`team_member_org_membership_required`,
 owner is never granted or revoked (`project_member_owner_immutable`). A
 project the caller has no role on answers `project_not_found`.
 
+Adding a member writes the membership in any state, which is how a removed
+member is reinstated; changing a role changes only a membership still active
+when the write runs, so a role change racing a removal cannot undo it.
+Admitting a user-deployed identity is the same add, under the same owner
+rules.
+
 Removing an org member revokes, in the same D1 batch, their team memberships
-in that org's teams and their member grants on its projects; a project they
-own stays theirs and admits them to nothing without the membership. Every
-decision reads the rows at request time, so the removed person's next request
-is refused.
+in that org's teams, their member grants on its projects, their direct
+session shares and session participations in the org, and their runtime
+access tokens on its projects; a project they own stays theirs and admits them
+to nothing without the membership. Re-admitting them restores none of it.
+Every decision reads the rows at request time, so the removed person's next
+request is refused.
+
+A runtime access token's activity is re-read at check time, so a token would
+work again once its holder regained the rank. Every change that lowers a rank
+therefore revokes the tokens it affects in the same batch: removing a member,
+moving one from owner or admin to member, revoking or lowering a member
+grant, revoking or lowering a team's grant (for every member of the team), and
+removing a person from a team (on the projects the team reaches).
+
+Setting up the default team creates only what is missing: the team, a
+membership for each org member who never had one, and an editor grant on each
+project it never had one on. A membership or grant an admin revoked or
+re-roled stays as they left it.
 
 Every membership and grant change writes an `authority_audit_events` row in
 the batch that makes it, attributed to the caller, whose metadata names the
 org, the team or project, the target person, and the role `before` and
-`after` (null when there was none or is none). A change its in-batch guard
-refuses writes neither the change nor the row.
+`after` (null when there was none or is none); a set change such as the
+default team's setup writes one row per target, and creating an org writes
+one for its founding owner. The row carries the change's complete guard, so a
+change the guard refuses, or one that finds nothing left to change, writes no
+row.
+
+An email is resolved only after the caller is found to administer the org, so
+the answer never tells someone without that right whether an address has an
+account.
 
 ## Routes
 
@@ -83,7 +110,7 @@ authority that stores none of this answers `501 not_implemented`.
 | `POST /orgs/:orgId/members` | add an existing account by `userPublicId`, `email`, `tokenIdentifier` or `providerSubject`, with `role`; an email names the Better Auth account that verified it (`AUTH_DB`), and a deployment without that lookup answers `org_member_email_unsupported` |
 | `PATCH /orgs/:orgId/members/:userPublicId` | change `role` |
 | `DELETE /orgs/:orgId/members/:userPublicId` | remove, with the cascade above |
-| `GET`, `POST /orgs/:orgId/teams`; `POST /orgs/:orgId/ensure-default-team` | teams; the default team every member and project joins |
+| `GET`, `POST /orgs/:orgId/teams`; `POST /orgs/:orgId/ensure-default-team` | teams; create what the default team is missing (org admins) |
 | `GET`, `POST`, `DELETE /teams/:teamId/members` | a team's members |
 | `GET`, `POST`, `DELETE /teams/:teamId/projects` | a team's project grants (`projectId`, `role`) |
 | `POST /projects/:projectId/members` | grant or change one person's role (`userPublicId`, `role`); a revoked grant is granted again |

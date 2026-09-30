@@ -1,7 +1,7 @@
 import type { D1Database } from "@cloudflare/workers-types"
 import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import { ClaxedoError } from "@claxedo/server-core/platform/errors/base"
-import type { MemberSelector } from "@claxedo/server-core/platform/auth/org-access-authority"
+import type { FindAccountByEmail, MemberSelector } from "@claxedo/server-core/platform/auth/org-access-authority"
 import { activeOrgMemberSql, organizationAdminSql } from "./project-role"
 
 export type AccessPrincipal = { userId: string; actorId: string }
@@ -19,6 +19,7 @@ export type D1AccessContext = {
   randomId: (prefix: "team" | "audit") => string
   principal: (auth: SignedControlPlaneAuth) => Promise<AccessPrincipal>
   assertOrganizationAllowed: (orgId: string) => void
+  findAccountByEmail?: FindAccountByEmail
 }
 
 const ACCESS_ERROR_STATUS = {
@@ -29,6 +30,7 @@ const ACCESS_ERROR_STATUS = {
   org_membership_required: 403,
   org_member_not_found: 404,
   org_member_target_required: 400,
+  org_member_email_unsupported: 400,
   organization_not_found: 404,
   team_not_found: 404,
   team_not_allowed_on_personal_org: 400,
@@ -71,18 +73,27 @@ export async function isActiveOrgMember(database: D1Database, userId: string, or
 
 /**
  * The active user exactly one selector names: their public id (the canonical
- * user id), a provider token identifier (`issuer|subject`), or a provider
- * subject. Nothing when the named person has no active account.
+ * user id), a verified email the deployment's identity provider holds, a
+ * provider token identifier (`issuer|subject`), or a provider subject.
+ * Nothing when the named person has no active account. Callers resolve only
+ * after authorizing the change, so an unauthorized caller cannot learn from
+ * the answer whether an address has an account.
  */
 export async function resolveMemberUser(
-  database: D1Database,
+  context: D1AccessContext,
   selectors: MemberSelector,
   targetRequired: "team_member_target_required" | "org_member_target_required",
-) {
-  const named = [selectors.tokenIdentifier, selectors.providerSubject, selectors.userPublicId].filter(
+): Promise<{ user_id: string } | null> {
+  const database = context.database
+  const named = [selectors.tokenIdentifier, selectors.providerSubject, selectors.userPublicId, selectors.email].filter(
     (value): value is string => typeof value === "string" && !!value.trim(),
   )
   if (named.length !== 1) throw new D1AccessAuthorityError(targetRequired)
+  if (selectors.email?.trim()) {
+    if (!context.findAccountByEmail) throw new D1AccessAuthorityError("org_member_email_unsupported")
+    const account = await context.findAccountByEmail(requireText(selectors.email, "email"))
+    return account ? await resolveMemberUser(context, { tokenIdentifier: account.tokenIdentifier }, targetRequired) : null
+  }
   if (selectors.userPublicId?.trim()) {
     return await database
       .prepare(`select user_id from users where user_id = ? and state = 'active'`)
@@ -108,14 +119,17 @@ export async function resolveMemberUser(
     .first<{ user_id: string }>()
 }
 
-/** A SQL expression and the values its placeholders take, in order. */
 export type BoundSql = { sql: string; bind: unknown[] }
 
 /**
  * The audit row for one membership or grant change, attributed to the caller
  * and written in the same batch as the change. It is placed BEFORE the change
- * so `metadata` reads the prior role, and it carries the change's own guard so
- * a change the guard refuses leaves no row either.
+ * so `metadata` reads the prior role, and it carries the change's own complete
+ * guard so a change the guard refuses leaves no row either.
+ *
+ * `rows` audits a set change one row per target: a `from ... where ...` clause
+ * naming the targets, with `key` telling their event ids apart. `metadata` is
+ * then written over that clause's aliases.
  */
 export function accessAuditStatement(context: D1AccessContext, input: {
   who: AccessPrincipal
@@ -123,14 +137,16 @@ export function accessAuditStatement(context: D1AccessContext, input: {
   metadata: BoundSql
   guard: BoundSql
   now: number
+  rows?: BoundSql & { key: string }
 }) {
+  const rows = input.rows
   return context.database.prepare(`
     insert into authority_audit_events (
       event_id, deployment_id, user_id, actor_id, org_id, project_id, workspace_id,
       unverified_attempted_workspace_id, action, result, reason, metadata_json, created_at
     )
-    select ?, ?, ?, ?, null, null, null, null, ?, 'allow', null, ${input.metadata.sql}, ?
-    where ${input.guard.sql}
+    select ?${rows ? ` || '/' || ${rows.key}` : ""}, ?, ?, ?, null, null, null, null, ?, 'allow', null, ${input.metadata.sql}, ?
+    ${rows ? `${rows.sql} and` : "where"} ${input.guard.sql}
   `).bind(
     context.randomId("audit"),
     context.deploymentId,
@@ -139,6 +155,29 @@ export function accessAuditStatement(context: D1AccessContext, input: {
     input.action,
     ...input.metadata.bind,
     input.now,
+    ...(rows?.bind ?? []),
     ...input.guard.bind,
   )
+}
+
+/**
+ * Revokes the live runtime access tokens minted for the people `holders`
+ * selects (a `user_id` subquery) on the projects `projects` selects, guarded
+ * like the change it accompanies. A token outlives the rank that minted it
+ * otherwise: its activity is re-read at check time, so a person removed and
+ * later re-admitted would find the old token working again.
+ */
+export function revokeRuntimeTokensStatement(context: D1AccessContext, input: {
+  holders: BoundSql
+  projects: BoundSql
+  guard: BoundSql
+  now: number
+}) {
+  return context.database.prepare(`
+    update runtime_access_tokens set revoked_at = ?
+    where revoked_at is null and deployment_id = ?
+      and minted_for_user_id in (${input.holders.sql})
+      and project_id in (${input.projects.sql})
+      and ${input.guard.sql}
+  `).bind(input.now, context.deploymentId, ...input.holders.bind, ...input.projects.bind, ...input.guard.bind)
 }

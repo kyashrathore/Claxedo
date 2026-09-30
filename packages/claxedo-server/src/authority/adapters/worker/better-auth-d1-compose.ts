@@ -44,6 +44,7 @@ import {
 import { createBetterAuthD1AuthenticationEvidenceResolver } from "../../../platform/auth/better-auth-d1-authentication-evidence"
 import { createBetterAuthD1RequestAuthenticationAdapter } from "../../../platform/auth/better-auth-d1-request-authentication"
 import { createBetterAuthD1AccountEmailResolver } from "../../../platform/auth/better-auth-d1-account-email"
+import type { FindAccountByEmail } from "@claxedo/server-core/platform/auth/org-access-authority"
 import { STATIC_PRODUCT_DESCRIPTORS } from "../../../deployments/hosted-shared/deployment-profile"
 import type { HostedCoreAppOptions } from "../../../deployments/hosted-shared/hosted-core-app"
 import { provisionedRunner } from "@claxedo/server-core/agent-config/connections"
@@ -59,6 +60,7 @@ type BetterAuthD1AuthorityEnv = {
 export function composeBetterAuthD1Authority(input: {
   env: BetterAuthD1AuthorityEnv
   product: D1AuthorityProductPolicy
+  findAccountByEmail?: FindAccountByEmail
 }): D1CoreAuthorityBoundary {
   if (input.env.CLAXEDO_ADAPTER_PROFILE !== "better-auth-d1") {
     throw new HostedWorkerCompositionError(
@@ -85,6 +87,7 @@ export function composeBetterAuthD1Authority(input: {
   return createD1CoreAuthority(requiredDatabase(input.env.CONTROL_PLANE_DB), {
     deploymentId: required(input.env.CLAXEDO_DEPLOYMENT_ID, "CLAXEDO_DEPLOYMENT_ID"),
     product: input.product,
+    ...(input.findAccountByEmail ? { findAccountByEmail: input.findAccountByEmail } : {}),
   })
 }
 
@@ -163,6 +166,7 @@ export function composeBetterAuthD1UserDeployedControlPlane(
       CONTROL_PLANE_DB: input.controlPlaneDatabase,
     },
     product: input.product,
+    findAccountByEmail: createBetterAuthD1AccountEmailResolver(input.authDatabase, descriptor.issuer),
   })
   const foundation = createBetterAuthD1Foundation({
     database: requiredDatabase(input.authDatabase),
@@ -270,7 +274,6 @@ export function composeBetterAuthD1UserDeployedControlPlane(
       userDeployedIdentityAdmission: {
         admit: (auth, admission) => authority.admitUserDeployedIdentity(auth, admission),
       },
-      findAccountByEmail: createBetterAuthD1AccountEmailResolver(input.authDatabase, descriptor.issuer),
     },
     verifyIdentity: (request) => authentication.verifyIdentity(request),
     authHandler: async (request) => await authProtocol.fetch(request),

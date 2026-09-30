@@ -1,5 +1,6 @@
 import type { D1Database } from "@cloudflare/workers-types"
 import type { WorkspaceAuthority } from "@claxedo/server-core/platform/auth/authority"
+import type { FindAccountByEmail } from "@claxedo/server-core/platform/auth/org-access-authority"
 import {
   PRIVATE_SESSION_AUTHORITY_METHODS,
   type PrivateSessionAuthority,
@@ -99,6 +100,7 @@ export type D1CoreAuthorityOptions = {
   deploymentId: string
   product: D1AuthorityProductPolicy
   now?: () => number
+  findAccountByEmail?: FindAccountByEmail
 }
 
 /**
@@ -109,7 +111,11 @@ export type D1CoreAuthorityOptions = {
  */
 export function createD1CoreAuthority(database: D1Database, options: D1CoreAuthorityOptions): D1CoreAuthorityBoundary {
   const shared = { deploymentId: options.deploymentId, ...(options.now ? { now: options.now } : {}) }
-  const workspace = new D1WorkspaceAuthority(database, { ...shared, product: options.product })
+  const workspace = new D1WorkspaceAuthority(database, {
+    ...shared,
+    product: options.product,
+    ...(options.findAccountByEmail ? { findAccountByEmail: options.findAccountByEmail } : {}),
+  })
   const access = workspace.accessContext()
   const sessions = new D1SessionAuthority(database, shared)
   const hosts = new D1HostAccessAuthority(database, {

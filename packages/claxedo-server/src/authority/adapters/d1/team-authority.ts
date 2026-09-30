@@ -7,6 +7,7 @@ import {
   isActiveOrgMember,
   requireText,
   resolveMemberUser,
+  revokeRuntimeTokensStatement,
   type BoundSql,
   type D1AccessContext,
 } from "./access-context"
@@ -15,7 +16,7 @@ import type {
   OrgMemberRole,
   ProjectGrantRole,
 } from "@claxedo/server-core/platform/auth/org-access-authority"
-import { organizationAdminSql } from "./project-role"
+import { organizationAdminSql, roleRankSql } from "./project-role"
 
 export const D1_TEAM_AUTHORITY_METHODS = [
   "listTeams",
@@ -31,7 +32,6 @@ export const D1_TEAM_AUTHORITY_METHODS = [
 
 export type D1TeamAuthorityPort = Pick<WorkspaceAuthority, (typeof D1_TEAM_AUTHORITY_METHODS)[number]>
 
-/** Teams inside one organization, who is on them, and which projects they reach. */
 export class D1TeamAuthority implements D1TeamAuthorityPort {
   constructor(private readonly context: D1AccessContext) {}
 
@@ -105,22 +105,24 @@ export class D1TeamAuthority implements D1TeamAuthorityPort {
     return { team_id: teamId, org_id: orgId, name, role: "owner" as const }
   }
 
+  /**
+   * Creates what the organization's default team is missing: the team, a
+   * membership for each org member who never had one, and an editor grant on
+   * each project it never had one on. A membership or grant that exists in
+   * any state, including one an admin revoked or re-roled, is left as it is.
+   */
   async ensureDefaultTeam(auth: SignedControlPlaneAuth, args: { orgId: string }) {
     const who = await this.context.principal(auth)
     const orgId = requireText(args.orgId, "orgId")
     this.context.assertOrganizationAllowed(orgId)
+    if (!(await canAdminOrganization(this.database, who.userId, orgId))) {
+      throw new D1AccessAuthorityError("org_admin_required")
+    }
     const org = await this.database
-      .prepare(`
-        select o.name, o.kind
-        from orgs o
-        left join org_memberships m
-          on m.org_id = o.org_id and m.user_id = ? and m.revoked_at is null
-        where o.org_id = ? and o.deleted_at is null
-          and (o.owner_user_id = ? or m.user_id is not null)
-      `)
-      .bind(who.userId, orgId, who.userId)
+      .prepare(`select name, kind from orgs where org_id = ? and deleted_at is null`)
+      .bind(orgId)
       .first<{ name: string; kind: "personal" | "team" | "deployment" }>()
-    if (!org) throw new D1AccessAuthorityError("org_membership_required")
+    if (!org) throw new D1AccessAuthorityError("organization_not_found")
     if (org.kind === "personal") return { skipped: true as const }
     const existing = await this.database
       .prepare(`select team_id from teams where org_id = ? and is_default = 1 and deleted_at is null`)
@@ -128,60 +130,84 @@ export class D1TeamAuthority implements D1TeamAuthorityPort {
       .first<{ team_id: string }>()
     const teamId = existing?.team_id ?? this.context.randomId("team")
     const now = this.context.now()
+    const guard: BoundSql = { sql: organizationAdminSql("?", "?"), bind: [who.userId, orgId, who.userId] }
+    const noDefaultTeam: BoundSql = {
+      sql: `${guard.sql} and not exists (
+        select 1 from teams current where current.org_id = ? and current.is_default = 1 and current.deleted_at is null
+      )`,
+      bind: [...guard.bind, orgId],
+    }
+    const missingMembers: BoundSql = {
+      sql: `from org_memberships om
+        join users u on u.user_id = om.user_id and u.state = 'active'
+        join teams t on t.team_id = ? and t.org_id = om.org_id and t.deleted_at is null
+        where om.org_id = ? and om.revoked_at is null
+          and not exists (select 1 from team_memberships current where current.team_id = t.team_id and current.user_id = om.user_id)`,
+      bind: [teamId, orgId],
+    }
+    const missingGrants: BoundSql = {
+      sql: `from projects p
+        join teams t on t.team_id = ? and t.org_id = p.org_id and t.deleted_at is null
+        where p.org_id = ? and p.deleted_at is null
+          and not exists (select 1 from team_project_grants current where current.team_id = t.team_id and current.project_id = p.project_id)`,
+      bind: [teamId, orgId],
+    }
+    const memberRole = "case when om.role in ('owner', 'admin') then om.role else 'member' end"
     await this.database.batch([
       accessAuditStatement(this.context, {
         who,
-        action: "team.default_ensured",
+        action: "team.created",
         metadata: { sql: `json_object('orgId', ?, 'teamId', ?)`, bind: [orgId, teamId] },
-        guard: { sql: "true", bind: [] },
+        guard: noDefaultTeam,
         now,
       }),
       this.database
         .prepare(`
           insert into teams (team_id, org_id, name, is_default, created_by_user_id, created_at, updated_at, deleted_at)
-          select ?, o.org_id, ?, 1, ?, ?, ?, null
-          from orgs o
-          left join org_memberships m
-            on m.org_id = o.org_id and m.user_id = ? and m.revoked_at is null
-          where o.org_id = ? and o.deleted_at is null
-            and (o.owner_user_id = ? or m.user_id is not null)
-            and not exists (
-              select 1 from teams current
-              where current.org_id = o.org_id and current.is_default = 1 and current.deleted_at is null
-            )
+          select ?, ?, ?, 1, ?, ?, ?, null where ${noDefaultTeam.sql}
           on conflict (team_id) do nothing
         `)
-        .bind(teamId, org.name || "Everyone", who.userId, now, now, who.userId, orgId, who.userId),
+        .bind(teamId, orgId, org.name || "Everyone", who.userId, now, now, ...noDefaultTeam.bind),
+      accessAuditStatement(this.context, {
+        who,
+        action: "team.member.added",
+        metadata: {
+          sql: `json_object('orgId', ?, 'teamId', ?, 'targetUserId', om.user_id, 'before', null, 'after', ${memberRole})`,
+          bind: [orgId, teamId],
+        },
+        rows: { ...missingMembers, key: "om.user_id" },
+        guard,
+        now,
+      }),
       this.database
         .prepare(`
           insert into team_memberships (team_id, user_id, role, created_at, updated_at, revoked_at)
-          select ?, om.user_id,
-            case when om.role in ('owner', 'admin') then om.role else 'member' end,
-            ?, ?, null
-          from org_memberships om
-          join users u on u.user_id = om.user_id and u.state = 'active'
-          join teams t on t.team_id = ? and t.org_id = om.org_id and t.deleted_at is null
-          where om.org_id = ? and om.revoked_at is null
-          on conflict (team_id, user_id) do update set
-            role = excluded.role, updated_at = excluded.updated_at, revoked_at = null
+          select t.team_id, om.user_id, ${memberRole}, ?, ?, null
+          ${missingMembers.sql} and ${guard.sql}
+          on conflict (team_id, user_id) do nothing
         `)
-        .bind(teamId, now, now, teamId, orgId),
+        .bind(now, now, ...missingMembers.bind, ...guard.bind),
+      accessAuditStatement(this.context, {
+        who,
+        action: "team.project.granted",
+        metadata: {
+          sql: `json_object('orgId', ?, 'teamId', ?, 'projectId', p.project_id, 'before', null, 'after', 'editor')`,
+          bind: [orgId, teamId],
+        },
+        rows: { ...missingGrants, key: "p.project_id" },
+        guard,
+        now,
+      }),
       this.database
         .prepare(`
           insert into team_project_grants (
             team_id, project_id, role, created_by_user_id, created_at, updated_at, revoked_at
           )
-          select ?, p.project_id, 'editor', ?, ?, ?, null
-          from projects p
-          join teams t on t.team_id = ? and t.org_id = p.org_id and t.deleted_at is null
-          where p.org_id = ? and p.deleted_at is null
-          on conflict (team_id, project_id) do update set
-            role = excluded.role,
-            created_by_user_id = excluded.created_by_user_id,
-            updated_at = excluded.updated_at,
-            revoked_at = null
+          select t.team_id, p.project_id, 'editor', ?, ?, ?, null
+          ${missingGrants.sql} and ${guard.sql}
+          on conflict (team_id, project_id) do nothing
         `)
-        .bind(teamId, who.userId, now, now, teamId, orgId),
+        .bind(who.userId, now, now, ...missingGrants.bind, ...guard.bind),
     ])
     const selected = await this.database
       .prepare(`select team_id from teams where org_id = ? and is_default = 1 and deleted_at is null`)
@@ -198,7 +224,7 @@ export class D1TeamAuthority implements D1TeamAuthorityPort {
   async addTeamMember(auth: SignedControlPlaneAuth, args: MemberSelector & { teamId: string; role?: OrgMemberRole }) {
     const who = await this.context.principal(auth)
     const team = await this.adminTeam(who.userId, args.teamId)
-    const target = await resolveMemberUser(this.database, args, "team_member_target_required")
+    const target = await resolveMemberUser(this.context, args, "team_member_target_required")
     if (!target) throw new D1AccessAuthorityError("team_member_not_found")
     if (!(await isActiveOrgMember(this.database, target.user_id, team.org_id))) {
       throw new D1AccessAuthorityError("team_member_org_membership_required")
@@ -241,7 +267,7 @@ export class D1TeamAuthority implements D1TeamAuthorityPort {
   async removeTeamMember(auth: SignedControlPlaneAuth, args: MemberSelector & { teamId: string }) {
     const who = await this.context.principal(auth)
     const team = await this.adminTeam(who.userId, args.teamId)
-    const target = await resolveMemberUser(this.database, args, "team_member_target_required")
+    const target = await resolveMemberUser(this.context, args, "team_member_target_required")
     if (!target) return { removed: false }
     const now = this.context.now()
     const guard = this.teamAdminGuard(who.userId, team.team_id, `
@@ -249,11 +275,17 @@ export class D1TeamAuthority implements D1TeamAuthorityPort {
         select 1 from team_memberships current
         where current.team_id = guard_team.team_id and current.user_id = ? and current.revoked_at is null
       )`, [target.user_id])
-    const [, removed] = await this.database.batch([
+    const [, , removed] = await this.database.batch([
       accessAuditStatement(this.context, {
         who,
         action: "team.member.removed",
         metadata: this.memberChange(team, target.user_id, null),
+        guard,
+        now,
+      }),
+      revokeRuntimeTokensStatement(this.context, {
+        holders: { sql: "select ?", bind: [target.user_id] },
+        projects: { sql: "select project_id from team_project_grants where team_id = ? and revoked_at is null", bind: [team.team_id] },
         guard,
         now,
       }),
@@ -314,6 +346,16 @@ export class D1TeamAuthority implements D1TeamAuthorityPort {
         guard,
         now,
       }),
+      revokeRuntimeTokensStatement(this.context, {
+        holders: this.teamHolders(team.team_id),
+        projects: {
+          sql: `select project_id from team_project_grants
+            where team_id = ? and project_id = ? and revoked_at is null and ${roleRankSql("role")} > ${roleRankSql("?")}`,
+          bind: [team.team_id, projectId, args.role],
+        },
+        guard,
+        now,
+      }),
       this.database
         .prepare(`
           insert into team_project_grants (
@@ -348,11 +390,17 @@ export class D1TeamAuthority implements D1TeamAuthorityPort {
         select 1 from team_project_grants current
         where current.team_id = guard_team.team_id and current.project_id = ? and current.revoked_at is null
       )`, [projectId])
-    const [, revoked] = await this.database.batch([
+    const [, , revoked] = await this.database.batch([
       accessAuditStatement(this.context, {
         who,
         action: "team.project.revoked",
         metadata: this.grantChange(team, projectId, null),
+        guard,
+        now,
+      }),
+      revokeRuntimeTokensStatement(this.context, {
+        holders: this.teamHolders(team.team_id),
+        projects: { sql: "select ?", bind: [projectId] },
         guard,
         now,
       }),
@@ -416,6 +464,10 @@ export class D1TeamAuthority implements D1TeamAuthorityPort {
       )`,
       bind: [teamId, userId, userId, ...bind],
     }
+  }
+
+  private teamHolders(teamId: string): BoundSql {
+    return { sql: "select user_id from team_memberships where team_id = ? and revoked_at is null", bind: [teamId] }
   }
 
   private memberChange(team: { team_id: string; org_id: string }, userId: string, after: OrgMemberRole | null): BoundSql {

@@ -58,6 +58,7 @@ async function authDatabase() {
 async function hosted() {
   const controlPlane = await miniflareControlPlaneDatabase(controlPlaneMigrations())
   disposers.push(() => controlPlane.dispose())
+  const accounts = await authDatabase()
   const authority = composeBetterAuthD1Authority({
     env: {
       CLAXEDO_ADAPTER_PROFILE: "better-auth-d1",
@@ -66,6 +67,7 @@ async function hosted() {
       CONTROL_PLANE_DB: controlPlane.database,
     },
     product: { kind: "claxedo-hosted" },
+    findAccountByEmail: createBetterAuthD1AccountEmailResolver(accounts, "https://auth.test"),
   })
   const principals = new Map<string, ControlPlanePrincipal>()
   const authentication: RequestAuthenticationAdapter = {
@@ -104,9 +106,7 @@ async function hosted() {
     runtimeSessionAuthority: authority,
     env: { CLAXEDO_DEPLOYMENT_MODE: "hosted" },
   } as unknown as HostedControlPlane
-  const accounts = await authDatabase()
   const app = createHostedCoreApp(plane, {
-    findAccountByEmail: createBetterAuthD1AccountEmailResolver(accounts, "https://auth.test"),
     authentication,
     liveSyncRoom: {
       idFromName: (name: string) => name,
@@ -266,7 +266,7 @@ describe("hosted organization, team and project access routes on D1", () => {
     expect(await call(bob.token, "GET", "/api/claxedo/agent-config/harness?workspaceId=ws_acme")).toMatchObject({ status: 200 })
 
     expect((await call(alice.token, "DELETE", `/api/control/orgs/${orgId}/members/${bob.userId}`)).body)
-      .toEqual({ removed: true, team_memberships_revoked: 0, project_memberships_revoked: 0 })
+      .toMatchObject({ removed: true, team_memberships_revoked: 0, project_memberships_revoked: 0 })
     expect(await call(bob.token, "GET", "/api/claxedo/agent-config/harness?workspaceId=ws_acme")).toMatchObject({ status: 404 })
     expect(await call(bob.token, "GET", `/api/control/projects/${projectId}/access`))
       .toMatchObject({ status: 404, body: { error: { code: "project_not_found" } } })
@@ -291,5 +291,19 @@ describe("hosted organization, team and project access routes on D1", () => {
       userPublicId: carol.userId,
       role: "member",
     })).toMatchObject({ status: 400, body: { error: { code: "org_member_target_required" } } })
+  })
+
+  test("a caller who does not administer the org learns nothing about whether an email has an account", async () => {
+    const { person, account, call } = await hosted()
+    const alice = await person("alice")
+    const bob = await person("bob")
+    await account("carol", "carol@example.com", true)
+    const orgId = ((await call(alice.token, "POST", "/api/control/orgs", { name: "Acme" })).body as { org_id: string }).org_id
+    await call(alice.token, "POST", `/api/control/orgs/${orgId}/members`, { userPublicId: bob.userId, role: "member" })
+
+    const known = await call(bob.token, "POST", `/api/control/orgs/${orgId}/members`, { email: "carol@example.com", role: "member" })
+    const unknown = await call(bob.token, "POST", `/api/control/orgs/${orgId}/members`, { email: "nobody@example.com", role: "member" })
+    expect(known).toMatchObject({ status: 403, body: { error: { code: "org_admin_required" } } })
+    expect(unknown).toEqual(known)
   })
 })

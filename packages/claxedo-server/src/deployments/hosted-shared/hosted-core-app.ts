@@ -37,7 +37,6 @@ import {
   type UserDeployedIdentityAdmission,
 } from "../../routes/user-deployed-identity-admission"
 import { OrgTeamControlRoutes } from "../../session/routes/org-team-routes"
-import type { FindAccountByEmail } from "@claxedo/server-core/platform/auth/org-access-authority"
 import { SessionPeopleControlRoutes } from "../../session/routes/session-people-routes"
 import { createRouteOwnership, mountOwnedRoute, withRouteOwnership } from "../route-ownership"
 import { deploymentCompatibilityReport } from "../../platform/governance/deployment-compatibility"
@@ -107,7 +106,6 @@ export type HostedCoreAppOptions = {
   settingsChanged?: (userId: string) => Promise<void>
   credentialsChanged?: (orgId: string) => Promise<void>
   userDeployedIdentityAdmission?: UserDeployedIdentityAdmission
-  findAccountByEmail?: FindAccountByEmail
   /**
    * Build-composed product route families (Agent Plugins today). An entry
    * passes an explicit array; the base core passes none and imports no
@@ -424,7 +422,6 @@ export function createHostedCoreApp(plane: HostedControlPlane, options: HostedCo
   app.route(
     "/api/control",
     OrgTeamControlRoutes(services, {
-      ...(options.findAccountByEmail ? { findAccountByEmail: options.findAccountByEmail } : {}),
       authentication: options.authentication,
       authConfig,
       cliTokenEnv: plane.env,

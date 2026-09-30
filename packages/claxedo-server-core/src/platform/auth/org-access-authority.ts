@@ -11,9 +11,10 @@ export function isProjectGrantRole(value: unknown): value is ProjectGrantRole {
   return value === "viewer" || value === "editor" || value === "admin"
 }
 
-/** One person by exactly one of these: their public id, a provider token identifier, or a provider subject. */
+/** One person by exactly one of these: their public id, a verified email, a provider token identifier, or a provider subject. */
 export type MemberSelector = {
   userPublicId?: string
+  email?: string
   tokenIdentifier?: string
   providerSubject?: string
 }
@@ -23,7 +24,14 @@ export type FindAccountByEmail = (email: string) => Promise<{ tokenIdentifier: s
 
 export type OrgMember = { user_id: string; public_id: string; role: OrgMemberRole; joined_at: number }
 
-export type OrgMemberRemoval = { removed: boolean; team_memberships_revoked: number; project_memberships_revoked: number }
+export type OrgMemberRemoval = {
+  removed: boolean
+  team_memberships_revoked: number
+  project_memberships_revoked: number
+  session_shares_revoked: number
+  session_participations_revoked: number
+  runtime_tokens_revoked: number
+}
 
 export type ProjectMemberGrant = { project_id: string; user_id: string; role: ProjectGrantRole }
 
