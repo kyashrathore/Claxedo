@@ -405,8 +405,11 @@ export const desktopRenderer: Policy = {
   // pure view (`notice-view.ts`) its unit test reaches directly, on the divider
   // it shares with the compaction part (`message-divider.tsx`). A response the
   // harness withdrew draws through `transcript/retracted-part.tsx`, and the edit
-  // tools' diagnostics list is `transcript/tool-diagnostics.tsx`.
-  ceilings: { modules: 1238, packages: 36 },
+  // tools' diagnostics list is `transcript/tool-diagnostics.tsx`. A queued
+  // message's label, reason and send action, including a steer the harness
+  // declined, are `session/view/timeline/queued-message-status.ts`, which its
+  // unit test reaches directly.
+  ceilings: { modules: 1239, packages: 36 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,
