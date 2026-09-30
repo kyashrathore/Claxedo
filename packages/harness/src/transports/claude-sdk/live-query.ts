@@ -1,6 +1,7 @@
 import type { Query, SDKActiveGoalMessage, SDKMessage } from "@anthropic-ai/claude-agent-sdk"
 import { AsyncPushQueue } from "@claxedo/helpers"
 import type { RoutedEvent } from "../../contract"
+import { claudeChildFrameKey } from "./events"
 import { createClaudeTaskLedger } from "./translate"
 import { ClaudeHeldFrames } from "./held-frames"
 import { ClaudeQueryInput } from "./query-input"
@@ -22,6 +23,8 @@ type Frames = { kind: "idle" } | { kind: "announced" } | { kind: "claimed"; clai
 type Process = { kind: "launching" } | { kind: "open"; stream: Query } | { kind: "closing"; stream: Query } | { kind: "ended"; failure?: unknown }
 
 type MirroredRequest = Parameters<ClaudeMirroredUsage["observe"]>[0]
+
+export type ClaudeBetweenTurns = { unclaimed: () => void; child: (frame: SDKMessage) => Promise<void>; background: (active: boolean) => void }
 
 export class ClaudeUsageRelay {
   private current: ClaudeMirroredUsage | undefined
@@ -51,7 +54,11 @@ export class ClaudeLiveQuery {
   private resolveEnded!: () => void
   readonly ended = new Promise<void>((resolve) => { this.resolveEnded = resolve })
 
-  constructor(readonly key: ClaudeLaunchKey, private readonly unclaimed: () => void) {}
+  private delivered = Promise.resolve()
+
+  constructor(readonly key: ClaudeLaunchKey, private readonly between: ClaudeBetweenTurns) {}
+
+  get childrenDelivered(): Promise<void> { return this.delivered }
 
   get reusable(): boolean { return this.process.kind === "open" && this.frames.kind !== "claimed" }
 
@@ -124,6 +131,7 @@ export class ClaudeLiveQuery {
 
   private finish(failure?: unknown): void {
     this.process = { kind: "ended", ...(failure === undefined ? {} : { failure }) }
+    this.replaceBackground(new Set())
     if (this.frames.kind === "claimed") this.settle(this.frames.claim)
     this.resolveEnded()
   }
@@ -142,16 +150,26 @@ export class ClaudeLiveQuery {
 
   private track(frame: ClaudeFrame): void {
     if (frame.type !== "system" || frame.subtype !== "background_tasks_changed") return
-    this.background = new Set(frame.tasks.map((task) => task.task_id))
+    this.replaceBackground(new Set(frame.tasks.map((task) => task.task_id)))
     if (this.background.size === 0 && this.frames.kind !== "claimed") this.close()
   }
 
+  private replaceBackground(next: Set<string>): void {
+    const was = this.background.size > 0
+    this.background = next
+    if (was !== next.size > 0) this.between.background(next.size > 0)
+  }
+
   private hold(frame: ClaudeFrame): void {
-    if (frame.type === "stream_event" && this.frames.kind === "idle") return
+    if (frame.type !== "active_goal" && claudeChildFrameKey(frame, this.tasks) !== undefined) {
+      if (frame.type !== "stream_event") this.delivered = this.delivered.then(() => this.between.child(frame))
+      return
+    }
+    if (frame.type === "tool_progress" || (frame.type === "stream_event" && this.frames.kind === "idle")) return
     this.held.hold(frame)
     if (this.frames.kind !== "idle" || frame.type !== "system" || frame.subtype !== "init") return
     this.frames = { kind: "announced" }
-    this.unclaimed()
+    this.between.unclaimed()
   }
 
   private route(frame: ClaudeFrame): void {

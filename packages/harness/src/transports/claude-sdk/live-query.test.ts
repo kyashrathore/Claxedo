@@ -280,3 +280,79 @@ test("Claude's elicitation_complete settles the accepted URL consent through the
   claude.frames.end()
   await transport.dispose()
 })
+
+const agentCall = () => frame({ type: "assistant", parent_tool_use_id: null, message: { id: "m-agent", role: "assistant", model: "claude",
+  content: [{ type: "tool_use", id: "toolu_agent", name: "Agent", input: { description: "work", prompt: "work", run_in_background: true } }],
+  usage: { input_tokens: 1, output_tokens: 1 } } })
+const childReply = (text: string) => frame({ type: "assistant", parent_tool_use_id: "toolu_agent",
+  message: { id: `m-child-${text}`, role: "assistant", model: "claude", content: [{ type: "text", text }], usage: { input_tokens: 1, output_tokens: 1 } } })
+
+test("a background agent's frames reach its child transcript while its parent is idle", async () => {
+  const { transport, session, launches, own, children } = await setup()
+  const first = collect(transport.send(session, userTurn("t1", "start an agent"), turnBroker()))
+  await until(() => launches[0]?.prompts.length === 1)
+  const claude = launches[0]!
+  claude.frames.push(init())
+  claude.replay(0)
+  claude.frames.push(agentCall())
+  claude.frames.push(background("agent"))
+  claude.frames.push(result())
+  await first
+  claude.frames.push(childReply("child working"))
+  await until(() => children.length > 0)
+  expect(children.every((routed) => routed.route?.kind === "child" && routed.route.correlationKey === "toolu_agent")).toBe(true)
+  expect(texts(children).join()).toContain("child working")
+  expect(own).toHaveLength(0)
+  claude.frames.push(background())
+  await claude.stdinClosed
+  claude.frames.end()
+  await transport.dispose()
+})
+
+test("frames held between turns are bounded: a task's progress replaces its earlier progress and the oldest overflow is reported", async () => {
+  const { transport, session, launches } = await setup()
+  const first = collect(transport.send(session, userTurn("t1", "start the job"), turnBroker()))
+  await until(() => launches[0]?.prompts.length === 1)
+  const claude = launches[0]!
+  claude.frames.push(init())
+  claude.replay(0)
+  claude.frames.push(background("job"))
+  claude.frames.push(result())
+  await first
+  for (let index = 0; index < 1_005; index += 1) claude.frames.push(frame({ type: "rate_limit_event", rate_limit_info: { status: "allowed" } }))
+  for (let index = 0; index < 3; index += 1) claude.frames.push(frame({ type: "system", subtype: "task_progress", task_id: "job", description: `step ${index}` }))
+  await new Promise((resolve) => setTimeout(resolve, 20))
+  const second = collect(transport.send(rebound(session), userTurn("t2", "status?"), turnBroker()))
+  await until(() => claude.prompts.length === 2)
+  claude.frames.push(init())
+  claude.replay(1)
+  claude.frames.push(result())
+  const events = await second
+  expect(events.filter(({ event }) => event.type === "diagnostic" && event.diagnostic.code === "claude_sdk.held_frames_dropped")
+    .map(({ event }) => event.type === "diagnostic" ? event.diagnostic.message : "")).toEqual([
+    "Claude sent more than 1000 frames between turns; the 6 oldest were dropped"])
+  claude.frames.push(background())
+  await claude.stdinClosed
+  claude.frames.end()
+  await transport.dispose()
+})
+
+test("the session learns when background work starts and stops, and never that it still runs after the process is gone", async () => {
+  const { transport, session, launches, published } = await setup()
+  const work = () => published.filter((event) => (event as { type?: string }).type === "background-work")
+  const first = collect(transport.send(session, userTurn("t1", "start the job"), turnBroker()))
+  await until(() => launches[0]?.prompts.length === 1)
+  const claude = launches[0]!
+  claude.frames.push(init())
+  claude.replay(0)
+  claude.frames.push(background("job"))
+  claude.frames.push(background("job", "other"))
+  claude.frames.push(result())
+  await first
+  await until(() => work().length === 1)
+  expect(work()).toEqual([{ type: "background-work", active: true }])
+  claude.frames.fail(new Error("Claude Code process exited with code 1"))
+  await until(() => work().length === 2)
+  expect(work()).toEqual([{ type: "background-work", active: true }, { type: "background-work", active: false }])
+  await transport.dispose()
+})

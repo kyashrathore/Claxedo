@@ -67,6 +67,7 @@ export function createStoreBrokerPorts(store: RuntimeStore, options: StoreBroker
       providerTurns.observe(turn.turnId, event)
       return events.drainProviderEvent(sessionId, turn.assistantMessageId, event)
     },
+    drainChildEvent: (sessionId, event) => events.drainChildEvent(sessionId, event),
     publishSessionEvent: (sessionId, event) => events.publishSessionEvent(sessionId, event),
     meterUsage: (usage) => events.meterUsage(usage),
     subagentAdmissionStore: store,

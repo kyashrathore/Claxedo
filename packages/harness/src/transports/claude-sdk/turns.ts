@@ -11,6 +11,7 @@ import { type ClaudeModelCatalog, requiredClaudeEffort } from "./models"
 import { retireClaudeProcesses } from "./process"
 import type { ClaudeLaunchTurn, ClaudeQueryLauncher } from "./query-options"
 import { commandResult, translatedClaim, type ClaudeScope } from "./claim-frames"
+import { claudeBackgroundWork, claudeChildDelivery } from "./between-turns"
 import { settledBy } from "./turn-deadline"
 
 type Running = { live?: ClaudeLiveQuery; done: Promise<void> }
@@ -176,7 +177,8 @@ export class ClaudeTurns {
       current.input.open(opening)
       return { live: current, claim: current.claim("prompt")! }
     }
-    const live: ClaudeLiveQuery = new ClaudeLiveQuery(launch.key, () => this.admitOwnTurn(entry, live))
+    const live: ClaudeLiveQuery = new ClaudeLiveQuery(launch.key, { unclaimed: () => this.admitOwnTurn(entry, live),
+      child: claudeChildDelivery(entry, () => live), background: claudeBackgroundWork(entry) })
     entry.live = live
     live.input.open(opening)
     const claim = live.claim("prompt")!

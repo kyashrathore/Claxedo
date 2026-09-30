@@ -23,6 +23,7 @@ Everything a transport sees. The types say the shapes; this file says the rules 
   - The runtime owns cancelling a provider turn, as it does any turn: it aborts the turn's signal. A run that ends after that signal aborted settles `cancelled`, whether it returned or threw.
   - A transport's own stop of a native goal interrupts the harness. The runtime's goal-stop route then cancels the provider turn it admitted.
 - **`SessionBroker.publish` carries session-level events that arrive with no turn active.** Examples are quota windows and command updates. Usage outside a turn goes through `meter`.
+- **A child's events need no parent turn.** `SessionBroker.observeSubagent` and `associateChild` admit and bind a subagent as a turn's broker does, and `publishChild` delivers a child-routed event through the host's child resolver, so a background subagent's transcript moves while its parent is idle. `publishChild` refuses an event without a child route.
 
 ## Turns
 

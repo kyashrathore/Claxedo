@@ -19,6 +19,7 @@ async function* claimedFrames(live: ClaudeLiveQuery, claim: ClaudeClaim) {
 
 export async function* translatedClaim(entry: ClaudeEntry, live: ClaudeLiveQuery, claim: ClaudeClaim, scope: ClaudeScope): AsyncGenerator<RoutedEvent, boolean> {
   if (claim.dropped) yield claim.dropped
+  await live.childrenDelivered
   const { runtime, tasks } = claudeTranslator(scope.assistantMessageId, scope.todos, live.tasks)
   const mirroredUsage = new ClaudeMirroredUsage(runtime, { broker: entry.broker, assistantMessageId: scope.assistantMessageId, directory: entry.input.directory })
   live.usage.target(mirroredUsage)
