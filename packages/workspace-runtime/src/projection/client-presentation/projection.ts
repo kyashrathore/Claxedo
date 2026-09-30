@@ -17,6 +17,7 @@ import {
   RETAINED_TOOL_CALLS_MAX,
   type ClientPresentationProjectionState,
 } from "./state"
+import { toolState, withoutOutputText } from "./tool-state"
 
 export type ClientPresentationProjection = {
   name: "client-presentation"
@@ -492,51 +493,6 @@ function toolAttachments(ctx: CompatContext, toolCallId: string) {
     attachmentPart(ctx, seqId(ctx, `${toolCallId}-attachment-${index}`, `${ctx.assistantMsgId}-${toolCallId}-attachment-${index}`), attachment))
 }
 
-function toolState(input: {
-  status: ToolStateStatus
-  tool: string
-  stateInput: Record<string, unknown>
-  metadata: Record<string, unknown>
-  now: number
-  output?: string
-  error?: string
-  attachments: Extract<AgentContentPart, { type: "file" }>[]
-}): ToolPart["state"] {
-  if (input.status === "pending") {
-    return {
-      status: "pending",
-      input: input.stateInput,
-      raw: JSON.stringify(input.stateInput),
-    }
-  }
-  if (input.status === "completed") {
-    return {
-      status: "completed",
-      input: input.stateInput,
-      output: input.output ?? "",
-      title: input.tool,
-      metadata: input.metadata,
-      time: { start: input.now, end: input.now },
-      ...(input.attachments.length ? { attachments: input.attachments } : {}),
-    }
-  }
-  if (input.status === "error") {
-    return {
-      status: "error",
-      input: input.stateInput,
-      error: input.error ?? "tool failed",
-      ...(Object.keys(input.metadata).length ? { metadata: input.metadata } : {}),
-      time: { start: input.now, end: input.now },
-    }
-  }
-  return {
-    status: "running",
-    input: input.stateInput,
-    ...(Object.keys(input.metadata).length ? { metadata: input.metadata } : {}),
-    time: { start: input.now },
-  }
-}
-
 function toolPart(input: {
   ctx: CompatContext
   toolCallId: string
@@ -565,7 +521,7 @@ function toolPart(input: {
       ...(input.output !== undefined ? { output: input.output } : {}),
       ...(input.error !== undefined ? { error: input.error } : {}),
     }),
-    ...(input.metadata && Object.keys(input.metadata).length ? { metadata: input.metadata } : {}),
+    ...(input.status === "pending" && input.metadata && Object.keys(input.metadata).length ? { metadata: input.metadata } : {}),
   }
 }
 
@@ -1002,7 +958,7 @@ function translateRuntimeEventToCompat(chunk: AgentRuntimeEvent, ctx: CompatCont
     case "tool-output": {
       split()
       const tool = ctx.toolNamesByCallId.get(chunk.toolCallId) ?? chunk.toolCallId
-      const metadata = mergeMetadata(ctx.toolMetadataByCallId.get(chunk.toolCallId), chunk.metadata)
+      const metadata = withoutOutputText(mergeMetadata(ctx.toolMetadataByCallId.get(chunk.toolCallId), chunk.metadata))
       const display = mergeDisplay(ctx.toolDisplaysByCallId.get(chunk.toolCallId), chunk.display)
       const input = hydrateToolInput(tool, ctx.toolInputsByCallId.get(chunk.toolCallId), metadata, display)
       const formatted = output(chunk.output, input, metadata)

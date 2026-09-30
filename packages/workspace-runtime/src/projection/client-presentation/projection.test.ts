@@ -17,6 +17,18 @@ function makeProjection() {
 }
 
 describe("createClientPresentationProjection", () => {
+  test("a command's streamed output is stored once, as its output", () => {
+    const projection = makeProjection()
+    projection.ingest({ type: "tool-start", toolCallId: "cmd", toolName: "bash" })
+    const big = "x".repeat(10_000)
+    projection.ingest({ type: "tool-content", toolCallId: "cmd", content: { type: "content", content: { type: "text", text: big } } })
+    const parts = projection.ingest({ type: "tool-output", toolCallId: "cmd", output: big })
+      .map((event) => event.payload).filter((payload) => payload.type === "message.part.updated")
+    const part = (parts.at(-1) as { properties: { part: Record<string, unknown> } }).properties.part
+    expect((part.state as { output?: string }).output).toBe(big)
+    expect(JSON.stringify(part).split(big).length - 1).toBe(1)
+  })
+
   test("marks the message a cancelled turn completes, and only that terminal", () => {
     const terminal = <T extends { type: string }>(payloads: T[]) => payloads.filter((payload) => payload.type !== "message.updated")
     expect(terminal(makeProjection().ingest({ type: "cancelled", sessionId: "session-1" }).map((event) => event.payload))).toMatchObject([
@@ -949,7 +961,6 @@ describe("createClientPresentationProjection", () => {
             type: "tool",
             callID: "tool-1",
             tool: "bash",
-            metadata: { acp: { terminalId: "pty-1" } },
             state: {
               status: "completed",
               input: {},
