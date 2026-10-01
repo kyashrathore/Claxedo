@@ -40,7 +40,7 @@ function worker(options: { unauthorized?: boolean; malformed?: boolean } = {}) {
 test("signed browser build lists account projects, placements and sessions with no daemon", async () => {
   const calls = worker()
   await createRoot(async (dispose) => {
-    const server = createServer({ serverUrl: "https://worker.test", auth: { kind: "none" }, cookies: true })
+    const server = createServer({ serverUrl: "https://worker.test", cookies: true })
     try {
       await server.ready
       const projects = await server.queryClient.fetchQuery(server.queries.projects.list())
@@ -66,7 +66,7 @@ for (const [options, failure] of [
   test(`signed browser catalog surfaces ${failure.class} failures and recovers on the next read`, async () => {
     worker(options)
     await createRoot(async (dispose) => {
-      const server = createServer({ serverUrl: "https://worker.test", auth: { kind: "none" }, cookies: true })
+      const server = createServer({ serverUrl: "https://worker.test", cookies: true })
       const originalError = console.error
       console.error = () => undefined
       try {
@@ -83,7 +83,7 @@ for (const [options, failure] of [
 for (const action of ["create", "update", "remove", "reclone"] as const) {
   test(`hosted project ${action} refuses daemon configuration without a request`, async () => {
     const calls = worker()
-    const server = createServer({ serverUrl: "https://worker.test", auth: { kind: "none" }, cookies: true })
+    const server = createServer({ serverUrl: "https://worker.test", cookies: true })
     try {
       await server.ready
       const id = projectId("prj_app")
