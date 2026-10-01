@@ -44,7 +44,7 @@ let workspaces: Map<string, Workspace> | undefined
  * `@claxedo/<name>` -> package directory and whether it is published, scanned
  * from the packages directory (Bun's isolated linker does not link every
  * workspace at the root). Only published packages have a dist to prefer;
- * private ones (`"private": true`) export source and resolve normally.
+ * private ones (`"private": true`) export source at Bun's canonical resolved path.
  */
 function workspace(packageName: string): Workspace | undefined {
   if (!workspaces) {
@@ -102,7 +102,9 @@ export function publishedExportsPlugin(): BunPlugin {
       build.onResolve({ filter: /^@claxedo\// }, (args) => {
         if (packagesExternal || matchesExternal(args.path, external)) return undefined
         const resolved = resolvePublishedExport(args.path)
-        return resolved === null ? undefined : { path: resolved }
+        // Bun 1.3.14 on Windows panics ("Expected pretty file path to have only
+        // forward slashes") on a module reached through a workspace link.
+        return { path: resolved ?? fs.realpathSync(Bun.resolveSync(args.path, args.resolveDir)) }
       })
     },
   }

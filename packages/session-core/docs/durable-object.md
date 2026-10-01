@@ -51,7 +51,7 @@ Its workspace is the object's name, and placement comes from its own port.
 | Placement: `sessionIdWorkspace` | the control plane's session index, or the runtime's own store for a self-placed runtime (`storeBackedSessionPlacement`) | none: the object owns every session in its store | required |
 | `childSessions.deriveSessionId` | HMAC with `node:crypto` (`host/child-identity.ts`) | HMAC with Web Crypto, asynchronously | required |
 | `transports`, `launch` | the composed CLI and SDK transports, machine credentials | scripted here; Pi in process for production | required |
-| `readAttachment` | bounded filesystem reads (`host/attachment-files.ts`) | not supplied: tool images answer unavailable | optional |
+| `readAttachment` | bounded filesystem reads that never follow a link (`host/attachment-files.ts` through `workspace-files/open-without-following.ts`) | not supplied: tool images answer unavailable | optional |
 | `flushSessionDocuments`, `disposeSessionDocuments` | Pages hydration (`routes/document-hydration.ts`) | not supplied | optional |
 | Boot | `recoverBusySessions` when the store opens, then `recoverQueuedPrompts` once admitted | both, inside one `blockConcurrencyWhile` | required |
 

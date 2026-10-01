@@ -33,6 +33,5 @@
   "packages/workspace-relay/src/bun.ts": 2437,
   "packages/workspace-relay/src/cloudflare.ts": 2615,
   "packages/workspace-relay/src/server.ts": 1713,
-  "packages/workspace-runtime/src/pty/index.ts": 1262,
   "packages/workspace-runtime/src/workspace-relay-host-tunnel.ts": 815
 }

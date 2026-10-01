@@ -267,7 +267,7 @@ void describe("the session core in a Durable Object under workerd", () => {
     await watching.until(idleFor(rightSession.id), "the right turn to go idle")
     await watching.close()
 
-    assert.doesNotMatch(miniflare.stderr(), /workspaceRuntimeBus subscriber failed/)
+    assert.doesNotMatch(miniflare.stderr(), /Runtime bus subscriber failed/)
     const leaked = watching.frames.filter((frame) => JSON.stringify(frame).includes(leftSession.id) || JSON.stringify(frame).includes("left secret"))
     assert.deepEqual(leaked, [])
   })

@@ -1,11 +1,13 @@
 import { constants } from "node:fs"
-import fs from "node:fs/promises"
 import path from "node:path"
 import type { AttachmentReader } from "@claxedo/session-core"
+import { openWithoutFollowing } from "../workspace-files/open-without-following"
 
 export const readSessionAttachment: AttachmentReader = async (filePath, maximumBytes) => {
   if (!path.isAbsolute(filePath)) return undefined
-  const file = await fs.open(filePath, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK)
+  const entry = await openWithoutFollowing(filePath, constants.O_NONBLOCK)
+  if (!entry || "link" in entry) return undefined
+  const file = entry.handle
   try {
     const stat = await file.stat()
     if (!stat.isFile() || stat.size === 0) return undefined
