@@ -1,23 +1,17 @@
+import { artifact, projectContent, textInstall, notifyScript } from "../test-support/status-hooks"
 import { createBus as createTestBus, type WorkspaceRuntimeEvent as TestBusEvent } from "@claxedo/session-core"
-const testBus = createTestBus<TestBusEvent>()
 import { describe, expect, it, spyOn } from "bun:test"
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises"
 import http from "node:http"
 import { tmpdir } from "node:os"
 import path from "node:path"
-import {
-  generateNotifyScript,
-  generateAmpPlugin,
-  generateAntigravityHook,
-  generateGeminiHook,
-  generateCursorHook,
-  generateCopilotHook,
-  generateCopilotProjectHooks,
-} from "./core/hooks"
+
 import { AgentHookRoutes } from "../routes/agent-hook"
 import { NOTIFY_MARKER } from "./core/constants"
 import { currentSessionCore } from "../session-context"
 import { Pty } from "../pty/index"
+
+const testBus = createTestBus<TestBusEvent>()
 
 const liveTerminal = (terminalId: string) =>
   spyOn(Pty, "get").mockImplementation((id) => id === terminalId
@@ -76,8 +70,8 @@ it("Antigravity forwards native stop metadata through shell, HTTP and lifecycle 
   try {
     const notify = path.join(root, "notify.sh")
     const hook = path.join(root, "antigravity-hook.sh")
-    await writeFile(notify, generateNotifyScript(server.port))
-    await writeFile(hook, generateAntigravityHook(notify))
+    await writeFile(notify, notifyScript(server.port))
+    await writeFile(hook, artifact("antigravity", "antigravity-hook.sh", notify))
     for (const [name, fields] of [
       ["PreInvocation", {}],
       ["Stop", { fullyIdle: false, terminationReason: "model_stop" }],
@@ -119,8 +113,8 @@ it("Amp plugin delivers awaited native events through the real notification tran
   })
   try {
     await mkdir(path.join(root, "hooks"))
-    await writeFile(path.join(root, "hooks", "notify.sh"), generateNotifyScript(server.port))
-    await writeFile(path.join(root, "plugin.ts"), generateAmpPlugin())
+    await writeFile(path.join(root, "hooks", "notify.sh"), notifyScript(server.port))
+    await writeFile(path.join(root, "plugin.ts"), textInstall("amp"))
     await writeFile(path.join(root, "run.ts"), `
       import plugin from "./plugin"
       const handlers = new Map()
@@ -149,9 +143,8 @@ it("Amp plugin delivers awaited native events through the real notification tran
   }
 })
 
-// ── Notify script ───────────────────────────────────────────────────────────
 
-describe("generateNotifyScript", () => {
+describe("template NotifyScript", () => {
   it("delivers a real shell hook with workspace routing identity outside the form body", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "claxedo-notify-test-"))
     let delivered: { workspace: string | null; terminal: string | null; event: string | null } | undefined
@@ -165,7 +158,7 @@ describe("generateNotifyScript", () => {
     })
     try {
       const script = path.join(root, "notify.sh")
-      await writeFile(script, generateNotifyScript(server.port))
+      await writeFile(script, notifyScript(server.port))
       const child = Bun.spawn(["/bin/bash", script, JSON.stringify({ type: "agent-turn-complete" })], {
         env: {
           ...process.env,
@@ -199,7 +192,7 @@ describe("generateNotifyScript", () => {
     })
     try {
       const script = path.join(root, "notify.sh")
-      await writeFile(script, generateNotifyScript(server.port))
+      await writeFile(script, notifyScript(server.port))
       const invoke = async (hook_event_name: string, subagent?: string) => {
         const child = Bun.spawn(["/bin/bash", script, JSON.stringify({ hook_event_name, session_id: "parent", ...(subagent ? { agent_id: subagent } : {}) })], {
           env: { ...process.env, CLAXEDO_SERVER_PORT: String(server.port), CLAXEDO_TAB_ID: "tab", CLAXEDO_TERMINAL_ID: "parent", WORKSPACE_RUNTIME_STATE_DIR: root },
@@ -236,7 +229,7 @@ describe("generateNotifyScript", () => {
     })
     try {
       const script = path.join(root, "notify.sh")
-      await writeFile(script, generateNotifyScript(server.port))
+      await writeFile(script, notifyScript(server.port))
       const invoke = async (args: string[], env: Record<string, string>) => {
         const child = Bun.spawn(["/bin/bash", script, ...args], {
           env: { ...process.env, CLAXEDO_AGENT: "", CURSOR_VERSION: "", CLAXEDO_SERVER_PORT: String(server.port), CLAXEDO_TAB_ID: "tab", CLAXEDO_TERMINAL_ID: "pty", WORKSPACE_RUNTIME_STATE_DIR: root, ...env },
@@ -272,7 +265,7 @@ describe("generateNotifyScript", () => {
   })
 
   it("includes marker and port", () => {
-    const script = generateNotifyScript(7860)
+    const script = notifyScript(7860)
     expect(script).toContain(NOTIFY_MARKER)
     expect(script).toContain("7860")
   })
@@ -283,7 +276,7 @@ describe("generateNotifyScript", () => {
     const server = await serveHookFake(() => new Response("", { status: ++requests === 1 ? 503 : 200 }))
     try {
       const script = path.join(root, "notify.sh")
-      await writeFile(script, generateNotifyScript(server.port))
+      await writeFile(script, notifyScript(server.port))
       const invoke = () => Bun.spawn(["/bin/bash", script, JSON.stringify({ hook_event_name: "Stop" })], {
         env: { ...process.env, CLAXEDO_TAB_ID: "retry-tab", CLAXEDO_SERVER_PORT: String(server.port), WORKSPACE_RUNTIME_STATE_DIR: root },
         stdout: "ignore", stderr: "ignore",
@@ -298,26 +291,25 @@ describe("generateNotifyScript", () => {
   })
 
   it("posts lifecycle mutations with the terminal-scoped capability", () => {
-    const script = generateNotifyScript(7860)
+    const script = notifyScript(7860)
     expect(script).toContain('curl -fsS "$HOOK_URL"')
     expect(script).toContain('--request POST')
     expect(script).toContain('Authorization: Bearer $CLAXEDO_AGENT_HOOK_TOKEN')
   })
 })
 
-// ── Hook bridge generators ──────────────────────────────────────────────────
 
-describe("generateGeminiHook", () => {
+describe("template GeminiHook", () => {
   it("includes marker and notify path", () => {
-    const script = generateGeminiHook("/tmp/hooks/notify.sh")
+    const script = artifact("gemini", "gemini-hook.sh", "/tmp/hooks/notify.sh")
     expect(script).toContain(NOTIFY_MARKER)
     expect(script).toContain("/tmp/hooks/notify.sh")
   })
 })
 
-describe("generateCursorHook", () => {
+describe("template CursorHook", () => {
   it("includes marker and notify path", () => {
-    const script = generateCursorHook("/tmp/hooks/notify.sh")
+    const script = artifact("cursor", "cursor-hook.sh", "/tmp/hooks/notify.sh")
     expect(script).toContain(NOTIFY_MARKER)
     expect(script).toContain("/tmp/hooks/notify.sh")
   })
@@ -334,8 +326,8 @@ describe("generateCursorHook", () => {
     try {
       const notify = path.join(root, "notify.sh")
       const hook = path.join(root, "cursor-hook.sh")
-      await writeFile(notify, generateNotifyScript(server.port))
-      await writeFile(hook, generateCursorHook(notify))
+      await writeFile(notify, notifyScript(server.port))
+      await writeFile(hook, artifact("cursor", "cursor-hook.sh", notify))
       const terminalId = path.basename(root)
       const run = async (arg: string, payload: Record<string, unknown>) => {
         const child = Bun.spawn(["/bin/bash", hook, arg], {
@@ -369,8 +361,8 @@ describe("generateCursorHook", () => {
     try {
       const notify = path.join(root, "notify.sh")
       const hook = path.join(root, "cursor-hook.sh")
-      await writeFile(notify, generateNotifyScript(server.port))
-      await writeFile(hook, generateCursorHook(notify))
+      await writeFile(notify, notifyScript(server.port))
+      await writeFile(hook, artifact("cursor", "cursor-hook.sh", notify))
       for (const [arg, reply] of [["PermissionRequest", '{"continue":true}'], ["Stop", "{}"]] as const) {
         const child = Bun.spawn(["/bin/bash", hook, arg], {
           env: { PATH: process.env.PATH ?? "", HOME: root, CLAXEDO_SERVER_PORT: String(server.port) },
@@ -387,7 +379,7 @@ describe("generateCursorHook", () => {
   })
 })
 
-for (const [name, generate] of [["gemini", generateGeminiHook], ["copilot", generateCopilotHook]] as const) {
+for (const [name, generate] of [["gemini", (notify: string) => artifact("gemini", "gemini-hook.sh", notify)], ["copilot", (notify: string) => artifact("copilot", "copilot-hook.sh", notify)]] as const) {
   it(`${name} hook outside a Claxedo tab answers and forwards nothing`, async () => {
     const root = await mkdtemp(path.join(tmpdir(), `claxedo-${name}-outside-`))
     let forwarded = 0
@@ -395,7 +387,7 @@ for (const [name, generate] of [["gemini", generateGeminiHook], ["copilot", gene
     try {
       const notify = path.join(root, "notify.sh")
       const hook = path.join(root, `${name}-hook.sh`)
-      await writeFile(notify, generateNotifyScript(server.port))
+      await writeFile(notify, notifyScript(server.port))
       await writeFile(hook, generate(notify))
       const child = Bun.spawn(["/bin/bash", hook, "Stop"], {
         env: { PATH: process.env.PATH ?? "", HOME: root, CLAXEDO_SERVER_PORT: String(server.port) },
@@ -411,19 +403,18 @@ for (const [name, generate] of [["gemini", generateGeminiHook], ["copilot", gene
   })
 }
 
-describe("generateCopilotHook", () => {
+describe("template CopilotHook", () => {
   it("includes marker and notify path", () => {
-    const script = generateCopilotHook("/tmp/hooks/notify.sh")
+    const script = artifact("copilot", "copilot-hook.sh", "/tmp/hooks/notify.sh")
     expect(script).toContain(NOTIFY_MARKER)
     expect(script).toContain("/tmp/hooks/notify.sh")
   })
 })
 
-// ── Copilot project hooks ───────────────────────────────────────────────────
 
-describe("generateCopilotProjectHooks", () => {
+describe("template CopilotProjectHooks", () => {
   it("produces valid JSON with all lifecycle events", () => {
-    const json = generateCopilotProjectHooks("/tmp/hooks/copilot-hook.sh")
+    const json = projectContent("copilot", "/tmp/hooks/copilot-hook.sh".replace(/copilot-hook\.sh$/, "notify.sh"))
     const parsed = JSON.parse(json)
     expect(parsed.version).toBe(1)
     expect(parsed.hooks.sessionStart).toBeDefined()
@@ -433,14 +424,14 @@ describe("generateCopilotProjectHooks", () => {
   })
 
   it("embeds the hook script path in commands", () => {
-    const json = generateCopilotProjectHooks("/tmp/hooks/copilot-hook.sh")
+    const json = projectContent("copilot", "/tmp/hooks/copilot-hook.sh".replace(/copilot-hook\.sh$/, "notify.sh"))
     expect(json).toContain("/tmp/hooks/copilot-hook.sh")
   })
 })
 
 for (const [provider, generate, event, argument] of [
-  ["gemini", generateGeminiHook, "BeforeAgent", ""],
-  ["cursor", generateCursorHook, "beforeSubmitPrompt", "Start"],
+  ["gemini", (notify: string) => artifact("gemini", "gemini-hook.sh", notify), "BeforeAgent", ""],
+  ["cursor", (notify: string) => artifact("cursor", "cursor-hook.sh", notify), "beforeSubmitPrompt", "Start"],
 ] as const) {
   it(`${provider} forwards complete provider JSON and waits for the HTTP acknowledgement`, async () => {
     const root = await mkdtemp(path.join(tmpdir(), "claxedo-provider-hook-"))
@@ -456,7 +447,7 @@ for (const [provider, generate, event, argument] of [
     try {
       const notify = path.join(root, "notify.sh")
       const script = path.join(root, "hook.sh")
-      await writeFile(notify, generateNotifyScript(server.port), { mode: 0o700 })
+      await writeFile(notify, notifyScript(server.port), { mode: 0o700 })
       await writeFile(script, generate(notify))
       const child = Bun.spawn(["/bin/bash", script, argument], {
         stdin: new Blob([payload]), stdout: "pipe", stderr: "pipe",

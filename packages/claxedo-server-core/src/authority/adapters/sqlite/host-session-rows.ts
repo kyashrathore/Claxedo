@@ -96,12 +96,6 @@ function adoptHostSessionRow(db: SqliteAuthorityDb, now: number, workspace: Serv
     ) VALUES (?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT DO NOTHING
   `).run(row.sessionId, row.workspaceId, owner, operationId, row.title ?? null, row.createdAt, row.updatedAt)
-  db.prepare(`
-    INSERT INTO session_participants (
-      session_id, workspace_id, participant_actor_id, added_by_actor_id, created_at
-    ) VALUES (?, ?, ?, ?, ?)
-    ON CONFLICT DO NOTHING
-  `).run(row.sessionId, row.workspaceId, owner, owner, now)
 }
 
 function writeListFields(db: SqliteAuthorityDb, row: HostSessionRow) {

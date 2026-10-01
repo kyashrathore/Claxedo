@@ -474,7 +474,7 @@ function normalizeAuthorityDecision(result: SessionAccessDecision | boolean | vo
       allowed: false,
       status: 403,
       code: "session_private",
-      message: "Session access requires creator, participant, or session share authority",
+      message: "Session access requires workspace ownership or session share authority",
     }
   }
   return result
@@ -506,7 +506,7 @@ export function managedWorkspaceSessionAccessPolicy(
         allowed: false,
         status: 403,
         code: "session_authority_required",
-        message: "Managed session access requires creator, participant, or session share authority",
+        message: "Managed session access requires workspace ownership or session share authority",
       } satisfies SessionAccessDecision
     }
     const predicate = sessionAccessRequiresWrite(input)

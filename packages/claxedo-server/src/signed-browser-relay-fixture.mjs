@@ -847,7 +847,7 @@ if (hostMode === "embedded") {
   //      crosses before creating a session (`routes/private-session-registration
   //      .ts`'s `POST /reserve`).
   //   2. `registerRuntimeSession` — the RHT-authenticated runtime half that
-  //      creates the `session_history` row and its creator participant.
+  //      creates the `session_history` row with its creator.
   //   3. `acquireSessionTurn` — turn admission. It mints the fencing token AND
   //      records the admitted producer for `turnId`; `syncSessionMessages`
   //      rejects a snapshot whose user message has no admitted producer, and

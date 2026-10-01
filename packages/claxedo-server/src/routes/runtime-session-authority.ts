@@ -167,17 +167,8 @@ export type RuntimeSessionStreamOptions = {
   env?: Record<string, string | undefined>
 }
 
-/**
- * The one owner of "may this principal keep a live stream on this session,
- * and what proof carries it until the next renewal".
- *
- * `RuntimeSessionAuthorityRoutes` serves it over HTTP to isolated runtimes;
- * the self-hosted composition calls it in process for its embedded runtime.
- * Both re-run it on every renewal, so a revoked participant or a revoked
- * parent token ends the stream at the next refresh. A denial from the
- * private-session authority itself surfaces as the `ControlPlaneAuthError`
- * that authority throws.
- */
+// Held stream leases must recheck both session access and their parent token
+// at renewal, even when the request's bearer was verified at establishment.
 export async function authorizeRuntimeSessionStream(
   options: RuntimeSessionStreamOptions,
   claims: SessionStreamLeaseClaims,
@@ -1338,4 +1329,3 @@ function finiteTimestamp(value: unknown) {
 function keyPem(value: string | undefined) {
   return trimToUndefined(value)?.replaceAll("\\n", "\n")
 }
-

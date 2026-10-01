@@ -24,6 +24,8 @@ import {
   parseRecord,
 } from "@claxedo/session-core"
 import { providerLifecycle } from "../agent-hooks/provider-lifecycle"
+import { defaultStatusHooks } from "../status-hooks"
+import type { StatusHookTemplate } from "@claxedo/plugin-api"
 import {
   setupAgentHooks,
   getTerminalEnvVars,
@@ -387,7 +389,10 @@ const readTerminalSession = (input: { terminalId?: string; tabId?: string }) => 
   return { source: "memory" as const, terminalId, session }
 }
 
-export type AgentHookRoutesOptions = HostCapabilityAccessOptions & { bus: import("@claxedo/session-core").RuntimeBus }
+export type AgentHookRoutesOptions = HostCapabilityAccessOptions & {
+  bus: import("@claxedo/session-core").RuntimeBus
+  statusHooks?: readonly StatusHookTemplate[]
+}
 
 type AgentHookContext = ReturnType<typeof sessionAccessContext>
 
@@ -478,6 +483,7 @@ async function authorizeTerminal(
 }
 
 export function AgentHookRoutes(options: AgentHookRoutesOptions) {
+  const statusHooks = options.statusHooks ?? defaultStatusHooks
   options.bus.subscribe((event) => {
     if (event.type === "pty.exited" || event.type === "pty.deleted") clearTerminalSession(event.id, options.bus)
   })
@@ -501,7 +507,7 @@ export function AgentHookRoutes(options: AgentHookRoutesOptions) {
       const raw = "providerEvent" in parsed.data ? parsed.data.providerEvent : undefined
       const input = raw === undefined ? undefined : parseRecord(raw)
       if (raw !== undefined && !input) return c.json({ success: false, error: "Invalid provider event JSON" }, 400)
-      const providerEvent = input ? providerLifecycle(input) : undefined
+      const providerEvent = input ? providerLifecycle(input, statusHooks, parsed.data.provider) : undefined
       const payload = raw === undefined ? parsed.data : {
         ...parsed.data,
         ...providerEvent,
@@ -647,12 +653,13 @@ export function AgentHookRoutes(options: AgentHookRoutesOptions) {
       try {
         const body = await boundedJsonRecord(c)
         await setupAgentHooks({
+          templates: statusHooks,
           port: num(body.port),
           force: bool(body.force),
           wrappers: arr(body.wrappers)?.flatMap((item) => str(item) ?? []),
           replaceWrappers: bool(body.replaceWrappers),
         })
-        const wrappers = await listWrapperAgents()
+        const wrappers = await listWrapperAgents(undefined, statusHooks)
         return c.json({
           success: true,
           message: "Agent hooks initialized successfully",
@@ -667,9 +674,9 @@ export function AgentHookRoutes(options: AgentHookRoutesOptions) {
     .get("/setup/status", async (c) => {
       const denied = await authorizeHostCapability(c, options, "agent_setup_read")
       if (denied) return denied
-      const wrappers = await listWrapperAgents()
+      const wrappers = await listWrapperAgents(undefined, statusHooks)
       return c.json({
-        ready: isSetupComplete(),
+        ready: isSetupComplete(statusHooks),
         wrappers: wrappers.all,
         customWrappers: wrappers.custom,
       })

@@ -379,7 +379,7 @@ describe("embedded workspace runtime", () => {
           authorityCalls.push(`${input.actor.actorId}:stream:${input.sessionId}:${input.credential}`)
           return input.actor.actorId === "actor_alice"
             ? { allowed: true as const, lease: `lease_${input.sessionId}`, expiresAt: Date.now() + 60_000 }
-            : { allowed: false as const, status: 403 as const, code: "session_private", message: "Not a participant" }
+            : { allowed: false as const, status: 403 as const, code: "session_private", message: "Session access denied" }
         },
         registerSession: () => true,
         acquireTurn: (input) => ({

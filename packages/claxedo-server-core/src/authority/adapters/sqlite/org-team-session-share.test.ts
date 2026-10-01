@@ -150,7 +150,6 @@ describe("sqlite Org→Team + session share", () => {
     })).resolves.toEqual({
       can_manage_shares: false,
       grants: [],
-      participants: [],
       teams: [],
     })
 
@@ -205,7 +204,7 @@ describe("sqlite Org→Team + session share", () => {
     await expect(authority.listSessionShares!(alice, {
       sessionId: "ses_missing",
       workspaceId: "ws_team_share",
-    })).resolves.toEqual({ can_manage_shares: false, grants: [], participants: [], teams: [] })
+    })).resolves.toEqual({ can_manage_shares: false, grants: [], teams: [] })
     await expect(authority.listSessionShares!(signedAuth("stranger"), {
       sessionId: "ses_missing",
       workspaceId: "ws_team_share",
@@ -229,7 +228,7 @@ describe("sqlite Org→Team + session share", () => {
     await expect(authority.listSessionShares!(bob, {
       sessionId: "ses_private",
       workspaceId: "ws_team_share",
-    })).resolves.toEqual({ can_manage_shares: false, grants: [], participants: [], teams: [] })
+    })).resolves.toEqual({ can_manage_shares: false, grants: [], teams: [] })
     await expect(authority.grantSessionShare!(bob, {
       sessionId: "ses_private",
       workspaceId: "ws_team_share",
@@ -248,7 +247,7 @@ describe("sqlite Org→Team + session share", () => {
     await expect(authority.listSessionShares!(bob, {
       sessionId: "ses_private",
       workspaceId: "ws_team_share",
-    })).resolves.toEqual({ can_manage_shares: false, grants: [], participants: [], teams: [] })
+    })).resolves.toEqual({ can_manage_shares: false, grants: [], teams: [] })
     await expect(authority.grantSessionShare!(bob, {
       sessionId: "ses_private",
       workspaceId: "ws_team_share",

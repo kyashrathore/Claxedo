@@ -108,16 +108,16 @@ describe("control plane session routes", () => {
     })
   })
 
-  test("rejects oversized participant mutations before parsing or authentication", async () => {
+  test("rejects oversized share mutations before parsing or authentication", async () => {
     const response = await ControlPlaneSessionRoutes(services(), signedOptions).request(
-      "https://control.example.test/sessions/session-1/participants",
+      "https://control.example.test/sessions/session-1/shares",
       {
         method: "POST",
         headers: {
           "content-type": "application/json",
           "content-length": String(17 * 1024),
         },
-        body: JSON.stringify({ participantTokenIdentifier: "x".repeat(17 * 1024), workspaceId: "ws_1" }),
+        body: JSON.stringify({ grantedToUserId: "x".repeat(17 * 1024), workspaceId: "ws_1" }),
       },
     )
 

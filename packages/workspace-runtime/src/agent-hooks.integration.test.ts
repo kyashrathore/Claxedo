@@ -1,17 +1,6 @@
+import { wrapper, artifact, notifyScript } from "./test-support/status-hooks"
 import { createBus as createTestBus, type WorkspaceRuntimeEvent as TestBusEvent } from "@claxedo/session-core"
-const testBus = createTestBus<TestBusEvent>()
-/**
- * Agent Hooks Integration Test (Real-world execution)
- *
- * This test verifies the generated shell scripts by actually executing them
- * and checking their behavior (non-blocking, exit codes, state changes).
- *
- * We import the generator functions directly and write scripts to a temp dir,
- * rather than calling setupAgentHooks(). This avoids module-caching issues
- * where constants.ts evaluates CLAXEDO_DIR at import time — when unit tests
- * load the module first, the constants are frozen to the real paths and the
- * integration test's env overrides have no effect.
- */
+// Root constants capture paths at import time; execution tests need explicit temporary roots.
 
 import { afterAll, beforeAll, describe, expect, it, spyOn } from "bun:test"
 import fs from "fs/promises"
@@ -21,10 +10,10 @@ import { execFile } from "child_process"
 import { createHash } from "crypto"
 import { createServer, Server } from "http"
 import { fileURLToPath } from "url"
-import { generateClaudeHookSettings, generateNotifyScript, generateGeminiHook } from "./agent-hooks/core/hooks"
-import { generateClaudeWrapper } from "./agent-hooks/core/wrappers"
 import { AgentHookRoutes } from "./routes/agent-hook"
 import { Pty } from "./pty/index"
+
+const testBus = createTestBus<TestBusEvent>()
 
 function runShell(command: string, args: string[], options: { input?: string; env: NodeJS.ProcessEnv; timeout?: number }) {
   return new Promise<{ status: string | number; stdout: Buffer; stderr: Buffer }>((resolve) => {
@@ -49,14 +38,12 @@ describe("agent-hooks real-world execution", () => {
     : undefined)
 
   beforeAll(async () => {
-    // 1. Setup temp directory
     rootDir = await fs.mkdtemp(path.join(os.tmpdir(), "agent-hooks-test-"))
     hooksDir = path.join(rootDir, "hooks")
     binDir = path.join(rootDir, "bin")
     await fs.mkdir(hooksDir, { recursive: true })
     await fs.mkdir(binDir, { recursive: true })
 
-    // 2. Execute the real lifecycle route behind the shell's HTTP entrypoint.
     const app = AgentHookRoutes({ bus: testBus })
     mockServer = createServer((req, res) => {
       const url = new URL(req.url || "", `http://127.0.0.1`)
@@ -86,13 +73,12 @@ describe("agent-hooks real-world execution", () => {
       })
     })
 
-    // 3. Generate scripts directly into temp dir (no setupAgentHooks needed)
     notifyPath = path.join(hooksDir, "notify.sh")
-    await fs.writeFile(notifyPath, generateNotifyScript(serverPort), { mode: 0o755 })
-    await fs.writeFile(path.join(hooksDir, "gemini-hook.sh"), generateGeminiHook(notifyPath), { mode: 0o755 })
+    await fs.writeFile(notifyPath, notifyScript(serverPort), { mode: 0o755 })
+    await fs.writeFile(path.join(hooksDir, "gemini-hook.sh"), artifact("gemini", "gemini-hook.sh", notifyPath), { mode: 0o755 })
     const claudeSettings = path.join(hooksDir, "claude-settings.json")
-    await fs.writeFile(claudeSettings, generateClaudeHookSettings(notifyPath))
-    await fs.writeFile(path.join(binDir, "claude"), generateClaudeWrapper(notifyPath, claudeSettings), { mode: 0o755 })
+    await fs.writeFile(claudeSettings, artifact("claude", "claude-settings.json", notifyPath))
+    await fs.writeFile(path.join(binDir, "claude"), wrapper("claude", notifyPath), { mode: 0o755 })
   })
 
   afterAll(async () => {
@@ -123,13 +109,10 @@ describe("agent-hooks real-world execution", () => {
 
     const duration = Date.now() - startTime
 
-    // 1. Should have returned JSON immediately
     expect(result.stdout.toString().trim()).toBe("{}")
 
-    // 2. Should NOT have blocked for the full timeout
     expect(duration).toBeLessThan(1000)
 
-    // 3. Server should have received the Busy event (mapped from BeforeAgent)
     // Wait a bit for the background curl to finish
     await new Promise((r) => setTimeout(r, 2500))
     expect(lastEvent).toMatchObject({

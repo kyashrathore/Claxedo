@@ -399,6 +399,6 @@ function denied(
       message ??
       (status === 503
         ? "Session authority is temporarily unavailable"
-        : "Session access requires creator, participant, or session share authority"),
+        : "Session access requires workspace ownership or session share authority"),
   }
 }

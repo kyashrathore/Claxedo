@@ -1314,7 +1314,7 @@ Every slice deletes what it replaces.
 - [x] **P0.5 Invariant map,** per test case, plus every fix commit. It must finish before P0.3 deletes anything. `Progress:` done (`docs/harness-v2/invariant-map/`): 1,655 cases, of which 651 (39%) guard invariants no flow can observe and stay as focused tests, 503 are covered by flows, 483 by the two corpora, 18 are obsolete. The map adds flows H35 to H37 and lists the fix commits no test guards.
 - [ ] **P0.3 Deletions:** the generated Codex protocol (generated at build, fresh-clone run), the harness factories, and the four add-ons with no implementer. `Progress:` the protocol is generated at build from Codex 0.133.0, the version the sandbox runs, with a test that fails when the pins drift (b5ff388d93). The factories and add-ons wait for the invariant map.
 - [x] **P0.4 Checks and ratchet** at decision 12's numbers. `Progress:` `bun run check` in `packages/harness`, with a passing and a violating fixture per check and budgets in `budget.json` (1a1db3486d).
-- [x] **P0.6 Profiles from docs** (`docs/harness-v2/profiles.md`):
+- [x] **P0.6 Profiles from docs** (format contracts in `packages/harness/src/profiles/`; ownership in [the harness architecture](../harness/README.md#credentials-conversation-stores-and-plugins)):
   - format and delivery per transport, with citations;
   - whether projection adds to or replaces the user's setup;
   - `claude-agent-acp`'s `_meta` options;
@@ -1374,7 +1374,7 @@ Every slice deletes what it replaces.
 
 ### P3: the cutover
 
-- [ ] The runtime host calls the contract for every harness in one slice, and every old adapter is deleted in the same slice. Every eligible flow green; both corpora unchanged. `Progress:` the contract commit landed on `hv2/p3-cutover` (G1/G6 config preview, G5 capability sources, `spawn`'s signal, the admitted provider turn's identity, and review findings A, B, C, AA, H and V), every transport adopted it, and no production path switched; see `docs/harness-v2/p3-cutover.md`, "Run 6 status".
+- [ ] The runtime host calls the contract for every harness in one slice, and every old adapter is deleted in the same slice. Every eligible flow green; both corpora unchanged. `Progress:` `workspace-runtime/src/workspace/runtime.ts` composes `@claxedo/harness/compose`, and the old adapter packages are gone; the [harness architecture](../harness/README.md#sending-a-message) traces the execution path.
 - [ ] In the same slice: the runtime host and the rest of the projection move into `workspace-runtime`, and the subagent admission rules move into the broker, with the runtime store persisting only their state, so the broker's tests run the real rules instead of a fake. `Progress:`
 
 ### P4: cleanup
@@ -1445,7 +1445,7 @@ Each is corpus-proven, with your sign-off.
 1. **The counted boundary.**
    - **Recommendation:** `packages/harness` is gated. `agent-runtime-contract` is the shared wire contract, gated separately.
    - The moved runtime code and `process-ownership` count against their own packages.
-2. **OpenCode: the embedded engine.** Decided by the owner on 2026-09-25, after the options were measured (`docs/harness-v2/opencode-options.md`).
+2. **OpenCode: the embedded engine.** Decided by the owner on 2026-09-25, after the options were measured.
    - One transport, `opencode-sdk`: today's embedded engine (`@opencode-ai/sdk` V2, in the daemon), moved behind `HarnessTransport`. One engine serves every folder of the runtime: 572 MB idle and 792 MB after a turn.
    - A session runs on its owner's credentials. The engine's provider overlay is process-wide, so the transport holds one owner's credentials and refuses a session whose owner differs instead of running it on another person's account.
    - Claxedo's own tools, skills, MCP servers, plugins and the provider allow-list reach the engine in process through its host hooks, each with the calling session's identity.
