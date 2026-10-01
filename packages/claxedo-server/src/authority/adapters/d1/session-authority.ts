@@ -1,7 +1,7 @@
+import { PublicApiError } from "@claxedo/server-core/platform/errors/public-api-error"
+import type { PublicApiErrorCode } from "@claxedo/helpers/api-error"
 import type { D1Database, D1PreparedStatement } from "@cloudflare/workers-types"
-import { AGENT_MESSAGE_PAGE_LIMIT, AgentMessagePageError } from "@claxedo/agent-runtime-contract"
 import { ControlPlaneAuthError, type SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
-import { ClaxedoError } from "@claxedo/server-core/platform/errors/base"
 import type {
   SessionShareGrantResult,
   SessionShareLevel,
@@ -46,11 +46,22 @@ import {
   type SessionTurnLease,
 } from "@claxedo/server-core/platform/auth/session-turn-authority"
 import { SESSION_TURN_LEASE_TTL_MS } from "@claxedo/workspace-relay-protocol"
-import { asRecord, numberField, parseJson } from "@claxedo/server-core/platform/json/index"
 import { may, maySql, type AuthorizationPrincipal, type SessionAction, type WorkspaceAction } from "./authorization"
 import { requireHuman } from "./access-context"
-import { readD1SessionPage } from "./session-page"
-import { latestViewPage, storedTurn, type LatestView } from "@claxedo/server-core/session/latest-view-page"
+import {
+  D1SessionAuthorityError,
+  MAX_SNAPSHOT_BYTES,
+  byteLength,
+  canonicalMessages,
+  optionalOrdinal,
+  optionalText,
+  positiveFence,
+  requireText,
+  visibilityRows,
+} from "./session-input"
+import { readD1SessionPage, readD1MessagePage, readD1LatestView, validateD1MessageRead, decodeMessagePageCursor } from "./session-read-store"
+import { storedTurn, type LatestView } from "@claxedo/server-core/session/latest-view-page"
+import { d1ConstraintFailure } from "../../../platform/db/d1-constraint"
 import { readStoredTurnOutline } from "@claxedo/server-core/session/turn-outline"
 import { readStoredPart } from "@claxedo/server-core/session/stored-part"
 import type { StoredMessageQuery } from "@claxedo/server-core/session/stored-messages"
@@ -141,13 +152,6 @@ type RegistrationRow = {
   updated_at: number
 }
 
-type MessageRow = {
-  ordinal: number
-  data_json: string
-  author_actor_id: string | null
-  author_kind: "human" | "agent" | null
-}
-
 type SessionShareRow = {
   grant_id: string
   session_id: string
@@ -199,34 +203,6 @@ type TurnGrantRow = {
   redeemed_turn_id: string | null
   revoked_at: number | null
   revoke_reason: string | null
-}
-
-type CanonicalMessage = {
-  id: string
-  role: string
-  ordinal: number
-  dataJson: string
-  authorActorId: string | null
-}
-
-const MESSAGE_PAGE_CURSOR_PREFIX = "d1sm1:"
-const MAX_SNAPSHOT_MESSAGES = 500
-const MAX_MESSAGE_BYTES = 256 * 1024
-const MAX_SNAPSHOT_BYTES = 8 * 1024 * 1024
-const MAX_VISIBILITY_ROWS = 500
-
-export class D1SessionAuthorityError extends ClaxedoError {
-  constructor(
-    code:
-      "invalid_input" | "resource_conflict" | "registration_transition_denied" | "actor_authorization_denied",
-    message: string,
-  ) {
-    super({
-      code,
-      message,
-      status: code === "invalid_input" ? 400 : code === "resource_conflict" ? 409 : 403,
-    })
-  }
 }
 
 /**
@@ -1033,7 +1009,7 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
         "Session share grant raced with an authority change",
       )
     } catch (error) {
-      if (String(error).includes("UNIQUE constraint failed")) {
+      if (d1ConstraintFailure(error)?.kind === "unique") {
         await this.requireSessionShareAdministrator(administrator, sessionId, workspaceId)
         const raced = await this.activeShareForTarget(sessionId, target)
         if (raced && raced.workspace_id === workspaceId) {
@@ -1326,19 +1302,7 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
     const who = await this.requirePrincipal(auth)
     const sessionId = requireText(args.sessionId, "sessionId")
     const workspaceId = requireText(args.workspaceId, "workspaceId")
-    if (args.view !== undefined) {
-      const end = args.before === undefined ? undefined : decodeMessagePageCursor(sessionId, args.before)
-      return await this.readLatestView(who, sessionId, workspaceId, args.view, end)
-    }
-    if (args.before !== undefined && args.limit === undefined) {
-      throw new AgentMessagePageError(400, "Message page limit is required with a cursor")
-    }
-    if (
-      args.limit !== undefined &&
-      (!Number.isSafeInteger(args.limit) || args.limit < 1 || args.limit > AGENT_MESSAGE_PAGE_LIMIT)
-    ) {
-      throw new AgentMessagePageError(400, `Message page limit must be between 1 and ${AGENT_MESSAGE_PAGE_LIMIT}`)
-    }
+    const before = validateD1MessageRead({ ...args, sessionId, workspaceId })
     let access: ReadableSession
     try {
       access = await this.requireSessionAccess(who, sessionId, workspaceId, "read")
@@ -1346,29 +1310,11 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
       if (isDenied(error)) return { allowed: false, messages: [] }
       throw error
     }
-    const beforeOrdinal = args.before === undefined ? undefined : decodeMessagePageCursor(sessionId, args.before)
-    const limit = args.limit
-    const query = this.database.prepare(`
-      select m.ordinal, m.data_json, m.author_actor_id, a.kind as author_kind
-      from session_messages m
-      left join actors a on a.actor_id = m.author_actor_id and a.state = 'active'
-      where m.session_id = ? and m.workspace_id = ? and (? is null or m.ordinal < ?)
-      order by m.ordinal ${limit === undefined ? "asc" : "desc"}
-      ${limit === undefined ? "" : "limit ?"}
-    `)
-    const result =
-      limit === undefined
-        ? await query.bind(sessionId, workspaceId, beforeOrdinal ?? null, beforeOrdinal ?? null).all<MessageRow>()
-        : await query
-            .bind(sessionId, workspaceId, beforeOrdinal ?? null, beforeOrdinal ?? null, limit + 1)
-            .all<MessageRow>()
-    const rows = limit === undefined ? result.results : result.results.slice(0, limit).reverse()
-    const hasMore = limit !== undefined && result.results.length > limit
     return {
       allowed: true,
       role: access.role,
-      messages: rows.map(publicMessage),
-      ...(hasMore && rows[0] ? { nextCursor: encodeMessagePageCursor(sessionId, rows[0].ordinal) } : {}),
+      maxEventOrdinal: access.max_event_ordinal,
+      ...await readD1MessagePage(this.database, { ...args, sessionId, workspaceId }, before),
     }
   }
 
@@ -1414,46 +1360,7 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
 
   private turnRead(sessionId: string, workspaceId: string): TurnRead {
     return async (before) =>
-      storedTurn(await this.latestView(sessionId, workspaceId, "latest-turn", before === undefined ? undefined : decodeMessagePageCursor(sessionId, before)))
-  }
-
-  private async readLatestView(who: Principal, sessionId: string, workspaceId: string, view: LatestView, end?: number) {
-    let access: ReadableSession
-    try {
-      access = await this.requireSessionAccess(who, sessionId, workspaceId, "read")
-    } catch (error) {
-      if (isDenied(error)) return { allowed: false, messages: [] }
-      throw error
-    }
-    return { allowed: true, role: access.role, ...(await this.latestView(sessionId, workspaceId, view, end)) }
-  }
-
-  private async latestView(sessionId: string, workspaceId: string, view: LatestView, end?: number) {
-    const endBound = end === undefined ? [] : [end]
-    const boundary = await this.database
-      .prepare(`select max(ordinal) as ordinal from session_messages where session_id = ? and workspace_id = ? and role = 'user'${end === undefined ? "" : " and ordinal < ?"}`)
-      .bind(sessionId, workspaceId, ...endBound)
-      .first<{ ordinal: number | null }>()
-    if (boundary?.ordinal === null || boundary?.ordinal === undefined) return { messages: [] }
-    const [turn, older] = await Promise.all([
-      this.database.prepare(`
-        select m.ordinal, m.data_json, m.author_actor_id, a.kind as author_kind
-        from session_messages m
-        left join actors a on a.actor_id = m.author_actor_id and a.state = 'active'
-        where m.session_id = ? and m.workspace_id = ? and m.ordinal >= ?${end === undefined ? "" : " and m.ordinal < ?"}
-        order by m.ordinal asc
-      `).bind(sessionId, workspaceId, boundary.ordinal, ...endBound).all<MessageRow>(),
-      this.database
-        .prepare(`select 1 as found from session_messages where session_id = ? and workspace_id = ? and ordinal < ? limit 1`)
-        .bind(sessionId, workspaceId, boundary.ordinal)
-        .first<{ found: number }>(),
-    ])
-    return latestViewPage(
-      view,
-      turn.results.map((row) => ({ ordinal: row.ordinal, message: publicMessage(row) })),
-      !!older,
-      (ordinal) => encodeMessagePageCursor(sessionId, ordinal),
-    )
+      storedTurn(await readD1LatestView(this.database, sessionId, workspaceId, "latest-turn", before === undefined ? undefined : decodeMessagePageCursor(sessionId, before)))
   }
 
   async syncSessionMessages(
@@ -1462,7 +1369,6 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
       sessionId: string
       workspaceId: string
       messages: unknown[]
-      intakeReady?: boolean
       maxEventOrdinal?: number
       fencingToken?: number
       updatedAt: number
@@ -1473,9 +1379,6 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
     const workspaceId = requireText(args.workspaceId, "workspaceId")
     const updatedAt = requireRuntimeSessionTime(args.updatedAt, "updatedAt", (message) => new D1SessionAuthorityError("invalid_input", message))
     await this.requireSessionAccess(who, sessionId, workspaceId, "agent_turn")
-    if (args.intakeReady) {
-      throw new D1SessionAuthorityError("invalid_input", "Session intake is not owned by the D1 session authority")
-    }
     const maxEventOrdinal = optionalOrdinal(args.maxEventOrdinal)
     const messages = canonicalMessages(args.messages)
     const hasUserMessages = messages.some((message) => message.role === "user")
@@ -1874,13 +1777,15 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
         .prepare(
           `
       update sessions set
-        title = coalesce(?, title),
-        updated_at = max(updated_at, coalesce(?, updated_at))
-      where session_id = ? and workspace_id = ? and deleted_at is null
+        title = case when ?1 is null or runtime_updated_at is null or ?1 >= runtime_updated_at
+          then coalesce(?2, title) else title end,
+        runtime_updated_at = coalesce(max(runtime_updated_at, ?1), ?1, runtime_updated_at),
+        updated_at = max(updated_at, coalesce(?1, updated_at))
+      where session_id = ?3 and workspace_id = ?4 and deleted_at is null
         and ${sendsHere.sql}
     `,
         )
-        .bind(row.title ?? null, row.updatedAt ?? null, row.sessionId, workspaceId, ...sendsHere.bind),
+        .bind(row.updatedAt ?? null, row.title ?? null, row.sessionId, workspaceId, ...sendsHere.bind),
     )
     if (replace) {
       statements.push(
@@ -2202,10 +2107,7 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
     try {
       return await this.database.batch(statements)
     } catch (error) {
-      if (
-        String(error).includes("authority_batch_assertions.passed") ||
-        String(error).includes("CHECK constraint failed")
-      ) {
+      if (d1ConstraintFailure(error)?.kind === "check") {
         throw new D1SessionAuthorityError("resource_conflict", message)
       }
       throw error
@@ -2243,8 +2145,8 @@ function shareFanoutTarget(grant: SessionShareRow) {
   return { grantedToOrgId: grant.target_org_id! }
 }
 
-function sessionShareError(code: string) {
-  return new Error(code)
+function sessionShareError(code: PublicApiErrorCode) {
+  return new PublicApiError(code)
 }
 
 function normalizeReservation(input: ReserveSessionInput) {
@@ -2305,129 +2207,12 @@ function sessionJson(row: SessionRow) {
   }
 }
 
-function visibilityRows(input: WorkspaceVisibility[]) {
-  if (!Array.isArray(input) || input.length > MAX_VISIBILITY_ROWS) {
-    throw new D1SessionAuthorityError("invalid_input", `Session visibility accepts at most ${MAX_VISIBILITY_ROWS} rows`)
-  }
-  const seen = new Set<string>()
-  return input.map((value) => {
-    const sessionId = requireText(value.sessionId, "sessionId")
-    if (seen.has(sessionId))
-      throw new D1SessionAuthorityError("invalid_input", "Session visibility contains duplicate identifiers")
-    seen.add(sessionId)
-    return {
-      sessionId,
-      title: optionalText(value.title, "title", 2_000),
-      createdAt: optionalTimestamp(value.createdAt, "createdAt"),
-      updatedAt: optionalTimestamp(value.updatedAt, "updatedAt"),
-    }
-  })
-}
-
-function canonicalMessages(input: unknown[]): CanonicalMessage[] {
-  if (!Array.isArray(input) || input.length > MAX_SNAPSHOT_MESSAGES) {
-    throw new D1SessionAuthorityError(
-      "invalid_input",
-      `Session snapshots accept at most ${MAX_SNAPSHOT_MESSAGES} messages`,
-    )
-  }
-  const ids = new Set<string>()
-  return input.map((message, ordinal) => {
-    const row = asRecord(message)
-    const info = asRecord(row?.info)
-    const id = optionalText(
-      typeof row?.id === "string" ? row.id : typeof info?.id === "string" ? info.id : undefined,
-      "message.id",
-    )
-    const role = optionalText(
-      typeof row?.role === "string" ? row.role : typeof info?.role === "string" ? info.role : undefined,
-      "message.role",
-      100,
-    )
-    if (!id || !role)
-      throw new D1SessionAuthorityError("invalid_input", "Every session message requires a canonical id and role")
-    if (ids.has(id))
-      throw new D1SessionAuthorityError("invalid_input", "Session snapshots contain duplicate message identifiers")
-    ids.add(id)
-    let dataJson: string
-    try {
-      dataJson = JSON.stringify(message)
-    } catch {
-      throw new D1SessionAuthorityError("invalid_input", "Session message must be JSON serializable")
-    }
-    if (dataJson === undefined || byteLength(dataJson) > MAX_MESSAGE_BYTES) {
-      throw new D1SessionAuthorityError("invalid_input", `Session message exceeds ${MAX_MESSAGE_BYTES} bytes`)
-    }
-    return {
-      id,
-      role,
-      ordinal,
-      dataJson,
-      authorActorId: null,
-    }
-  })
-}
-
-function publicMessage(row: MessageRow) {
-  const parsed = parseJson(row.data_json)
-  const message = asRecord(parsed)
-  if (!message) return parsed
-  const info = asRecord(message.info) ?? {}
-  const claxedo = asRecord(info.claxedo) ?? {}
-  const { author: _untrustedAuthor, ...safeClaxedo } = claxedo
-  const { claxedo: _untrustedClaxedo, ...safeInfo } = info
-  const canonicalClaxedo =
-    row.author_actor_id && row.author_kind && (message.role === "user" || info.role === "user")
-      ? { ...safeClaxedo, author: { id: row.author_actor_id, kind: row.author_kind } }
-      : safeClaxedo
-  return {
-    ...message,
-    info: {
-      ...safeInfo,
-      ...(Object.keys(canonicalClaxedo).length > 0 ? { claxedo: canonicalClaxedo } : {}),
-    },
-  }
-}
-
-function encodeMessagePageCursor(sessionId: string, ordinal: number) {
-  return `${MESSAGE_PAGE_CURSOR_PREFIX}${encodeURIComponent(JSON.stringify({ sessionId, ordinal }))}`
-}
-
-function decodeMessagePageCursor(sessionId: string, input: string) {
-  try {
-    if (!input.startsWith(MESSAGE_PAGE_CURSOR_PREFIX)) throw new Error("unexpected cursor version")
-    const value = asRecord(parseJson(decodeURIComponent(input.slice(MESSAGE_PAGE_CURSOR_PREFIX.length))))
-    const ordinal = numberField(value, "ordinal")
-    if (value?.sessionId !== sessionId || ordinal === undefined || !Number.isSafeInteger(ordinal) || ordinal < 0) {
-      throw new Error("invalid cursor payload")
-    }
-    return ordinal
-  } catch {
-    throw new AgentMessagePageError(400, "Invalid message page cursor")
-  }
-}
-
-function optionalOrdinal(value: number | undefined) {
-  if (value === undefined) return undefined
-  if (!Number.isSafeInteger(value) || value < 0) {
-    throw new D1SessionAuthorityError("invalid_input", "maxEventOrdinal must be a non-negative safe integer")
-  }
-  return value
-}
-
 function boundedTurnLeaseTtl(value: number | undefined) {
   const ttl = value ?? SESSION_TURN_LEASE_TTL_MS
   if (!Number.isSafeInteger(ttl) || ttl < 5_000 || ttl > 15 * 60_000) {
     throw new TypeError("turnLeaseTtlMs must be an integer between 5000 and 900000")
   }
   return ttl
-}
-
-function positiveFence(value: number) {
-  if (!Number.isSafeInteger(value) || value < 1) {
-    throw new D1SessionAuthorityError("invalid_input", "fencingToken must be a positive safe integer")
-  }
-  return value
 }
 
 type TurnAdmission = {
@@ -2473,39 +2258,12 @@ function turnLeaseJson(row: TurnLeaseRow): SessionTurnLease {
   }
 }
 
-function optionalTimestamp(value: number | undefined, name: string) {
-  if (value === undefined) return undefined
-  if (!Number.isSafeInteger(value) || value < 0)
-    throw new D1SessionAuthorityError("invalid_input", `${name} is invalid`)
-  return value
-}
-
-function optionalText(value: string | undefined, name: string, max = 512) {
-  if (value === undefined) return undefined
-  return requireText(value, name, max)
-}
-
-function requireText(value: string, name: string, max = 512) {
-  const result = value.trim()
-  if (!result || result.length > max) {
-    throw new D1SessionAuthorityError(
-      "invalid_input",
-      `${name} must be a non-empty string of at most ${max} characters`,
-    )
-  }
-  return result
-}
-
 function denied(message = "Session authorization was denied") {
   return new ControlPlaneAuthError(403, "workspace_authorization_denied", message)
 }
 
 function isDenied(error: unknown) {
   return error instanceof ControlPlaneAuthError && error.status === 403
-}
-
-function byteLength(value: string) {
-  return new TextEncoder().encode(value).byteLength
 }
 
 async function sha256(value: string) {

@@ -1,12 +1,11 @@
 # Desktop hosted-operation matrix
 
-Status: **reviewed baseline**. The operation set lives in code:
-`HostedOperationName` in `packages/account-contract/src/operation-name.ts`,
-the `HOSTED_OPERATIONS` decoder registry beside it, and Electron main's
-method-and-path table in
-`packages/claxedo-desktop/src/main/account/hosted-operations.ts`. Tests hold
-those three equal; nothing reads this document. It records why the set is
-closed and what each row is for, and drifts unless it is updated with them.
+Status: **registry consolidated; hosted route coverage incomplete**. Each operation
+is declared in `packages/account-contract/src/hosted-operations.ts` with its
+method, path builder, input/output codecs, retry policy and exposure. Names and
+types derive from those declarations. Desktop and browser transports construct
+requests through `resolveHostedOperation`; desktop main owns credentials and
+`account-ipc.ts` owns renderer withholding. Nothing reads this document.
 
 ## Why this document exists
 
@@ -19,7 +18,7 @@ the renderer keep calling what it calls today.
 That is a confused deputy. Electron main holds the account credential; a
 renderer compromise would then be able to spend it on any Hosted Server route,
 including ones no product surface uses. The IPC surface must therefore be a
-closed set of **named operations** with fixed method and path owned in main —
+closed set of **named operations** with fixed method and path declared in account-contract —
 and a closed set can only be reviewed if it is written down first.
 
 This is that list. A hosted contribution that calls something absent here
@@ -103,9 +102,10 @@ key. `unsafe` means an uncertain result must be surfaced, never silently
 retried — a duplicate here creates a duplicate workspace, charge, or document.
 
 **There is no client-side idempotency-key mechanism today, and the desktop
-cannot grow one on its own.** `claxedo-desktop/src/main/account/hosted-operations.ts`
-expresses a request as a method, a path template, and a list of declared body
-fields; it has no header seam, and every route named below that accepts a key
+cannot grow one on its own.** `HOSTED_OPERATIONS` in
+`packages/account-contract/src/hosted-operations.ts` declares each request's
+method, path template, body fields and headers; no declaration sends an
+idempotency key header, and every route named below that accepts a key
 accepts it as a body field its schema must declare. So an `idempotency-key` row
 is only true when the ROUTE already carries the key, and each one says which
 field that is. A row that named a key the route does not accept would be worse
@@ -132,7 +132,10 @@ is the authoritative source for this column.
 | `org.teams.create` | `features/settings/data/org-team-api.ts` | `POST /api/control/orgs/:orgId/teams` | unary | unsafe | Creates a team in an org. |
 | `org.ensureDefaultTeam` | `features/settings/data/org-team-api.ts` | `POST /api/control/orgs/:orgId/ensure-default-team` | unary | unsafe | Ensures the org has a default team; may create one. |
 | `org.members.list` | none yet | `GET /api/control/orgs/:orgId/members` | unary | safe | Members with role and `joined_at`; empty to a caller outside the org. |
-| `org.members.add` | none yet | `POST /api/control/orgs/:orgId/members` | unary | unsafe | Adds an existing account by `userPublicId`, verified `email`, `tokenIdentifier` or `providerSubject`; org owners and admins only, the owner role by owners only. |
+| `org.invitations.create` | none yet | `POST /api/control/orgs/:orgId/invitations` | unary | unsafe | Sends an invitation to the normalized email with no account lookup; generic 202 receipt. |
+| `org.invitations.list` | none yet | `GET /api/control/orgs/:orgId/invitations` | unary | safe | Admin-only metadata without token or hash. |
+| `org.invitations.revoke` | none yet | `DELETE /api/control/orgs/:orgId/invitations/:invitationId` | unary | unsafe | Revokes a pending invitation. |
+| `org.invitations.accept` | invitation link | `POST /api/control/invitations/accept` | unary | unsafe | Submits `{ token }` in the POST body using the signed caller's matching verified email; single-use, seven-day expiry. |
 | `org.members.update` | none yet | `PATCH /api/control/orgs/:orgId/members/:userPublicId` | unary | unsafe | Changes a member's role; the founding owner cannot be demoted. |
 | `org.members.remove` | none yet | `DELETE /api/control/orgs/:orgId/members/:userPublicId` | unary | unsafe | Also revokes the person's team memberships and project member grants in the org. |
 | `team.members.list` | `features/settings/data/org-team-api.ts` | `GET /api/control/teams/:teamId/members` | unary | safe | |
@@ -144,8 +147,6 @@ is the authoritative source for this column.
 | `project.members.grant` | none yet | `POST /api/control/projects/:projectId/members` | unary | unsafe | Grants or changes one person's project role; project and org admins only, never the owner. |
 | `project.members.revoke` | none yet | `DELETE /api/control/projects/:projectId/members/:userPublicId` | unary | unsafe | Revokes one person's project grant. |
 | `project.access` | none yet | `GET /api/control/projects/:projectId/access` | unary | safe | Everyone who reaches the project, one entry per source (`owner`, `member`, `team:<teamId>`, `org-role`); project and org admins only. |
-| `account.agentSettings.read` | `features/settings/data/agent-settings-api.ts` | `GET /api/account/agent-settings` | unary | safe | Reads the caller's agent-cross-machine-writes setting. |
-| `account.agentSettings.write` | `features/settings/data/agent-settings-api.ts` | `PUT /api/account/agent-settings` | unary | unsafe | Updates the caller's agent-cross-machine-writes setting; each update sets the exact state in the body. |
 
 ### Workspace authority
 
@@ -202,7 +203,6 @@ are withheld from the renderer (see "Withheld from the renderer" below).
 | Operation ID | Owner module | Method + path | Transport | Retry | Notes |
 |---|---|---|---|---|---|
 | `session.list` | `platform/runtime/cloud/workspace-runtime-store.ts` | `GET /api/control/sessions` | unary | safe | Flat inventory for a workspace. |
-| `session.create` | `platform/runtime/cloud/workspace-runtime-store.ts` | `POST /api/control/sessions` | unary | unsafe | A retried create is a duplicate session. Prompt admission is never repeated on transport loss. |
 | `session.messages` | `platform/runtime/cloud/workspace-runtime-store.ts` | `GET /api/control/sessions/:sessionId/messages` | unary | safe | |
 | `session.gateway` | `platform/runtime/cloud/workspace-runtime-store.ts` | `GET /api/control/sessions/:sessionId/gateway` | unary | safe | |
 | `session.projection.register` | `platform/runtime/agent/session-projection.ts` | `POST /api/control/workspaces/:workspaceId/sessions/:sessionId/register` | unary | unsafe | Sync-back into the control plane; body carries `idempotencyKey`. |
@@ -230,8 +230,8 @@ are withheld from the renderer (see "Withheld from the renderer" below).
 | `documents.fromRepo` | `features/documents/data/documents-api.ts` | `POST /documents/from-repo` | unary | unsafe | |
 | `documents.snapshots` | `features/documents/data/documents-api.ts` | `GET /documents/:id/snapshots` | unary | safe | |
 | `documents.snapshots.restore` | `features/documents/data/documents-api.ts` | `POST /documents/:id/snapshots/:snapshotId/restore` | unary | unsafe | |
-| `documents.workSource` | `features/documents/data/documents-api.ts` | `POST /documents/:id/work-source` | unary | safe | Declared for the desktop hosted-operation table; the app has no client builder for it today. |
-| `documents.workSourcePin` | `features/documents/data/documents-api.ts` | `POST /documents/:id/snapshots/:snapshotId/work-source-pin` | unary | safe | Declared for the desktop hosted-operation table; the app has no client builder for it today. |
+| `documents.workSource` | `features/documents/data/documents-api.ts` | `POST /documents/:id/work-source` | unary | safe | Declared in the shared hosted-operation registry; the app has no client builder for it today. |
+| `documents.workSourcePin` | `features/documents/data/documents-api.ts` | `POST /documents/:id/snapshots/:snapshotId/work-source-pin` | unary | safe | Declared in the shared hosted-operation registry; the app has no client builder for it today. |
 | `documents.statuses` | `features/documents/data/documents-api.ts` | `GET /documents/statuses` | unary | safe | |
 
 ### Connections and integrations
@@ -323,21 +323,20 @@ which blocks Unit 9 until it gets a typed broker contract. One remains flagged:
 
 ## Enforcement
 
-- The old app's `account-port.guard.test.ts` (deleted at the swap) held the
-  port union, the app registry and Electron main's table to the same names,
-  refused request-shaped escape hatches on the port, and refused any
-  machine-address spelling in either table. Of that, only "routes exactly the
-  contract's operations" survives, in the desktop test below.
-- The old app's `hosted-operation-inventory.test.ts` (deleted at the swap)
-  required every module in `features/documents`, `platform/runtime/cloud`,
-  `features/workspaces`, `features/settings`, `features/onboarding` and
-  `app/routes` that reaches authenticated transport to be declared, either as
-  the owner of the hosted operations it names or with the reason its calls are
-  not account operations.
-- `packages/claxedo-desktop/src/main/account/hosted-operations.test.ts` refuses
+- `packages/account-contract/src/hosted-operations.test.ts` checks the shared
+  declarations and result codecs. `hosted-operations.test-d.ts` checks that
+  input and output types derive from those codecs.
+- `packages/account-contract/src/hosted-operation-requests.test.ts` refuses
   a generic proxy, a caller-selected query, a parameter that adds a path
   segment, and any entry that reaches a machine-signed, invitation or
   relay-fence route.
 
-No test checks that each path in main's table is a route the hosted app
-mounts.
+`packages/claxedo-desktop/src/main/account/account-ipc.test.ts` pins all 81
+renderer-visible names, verifies the registry exposure agrees with main's
+withheld set, and invokes the registered unary channels.
+
+`packages/claxedo-server/src/deployments/hosted-shared/hosted-operation-routes.test.ts`
+compares every declaration's method and path pattern against the route table
+of the full hosted product: the core app with Pages, Agent Plugins and plugin
+backends. The CLI exchange is checked under the hosted core's explicit
+native-auth branch; Better Auth uses its own OAuth routes instead.

@@ -1,4 +1,5 @@
 import { root } from "./test-support/signed-browser-relay-fixture-root.mjs"
+import { startEmbeddedRelayHostEnrollment } from "./test-support/embedded-relay-host-enrollment.ts"
 import fs from "node:fs/promises"
 import path from "node:path"
 import { execFile, spawn } from "node:child_process"
@@ -37,9 +38,7 @@ import {
   stopWorkspaceHostTunnel,
 } from "./host-tunnel.ts"
 import {
-  hostEnrollmentPayload,
   localHostIdentity,
-  signHostPayload,
 } from "./workspace/local-host.ts"
 import { createFixedWindowConnectionRateLimiter } from "./platform/auth/rate-limit.ts"
 import { hostTunnelTokenSigner } from "@claxedo/server-core/platform/auth/runtime-access-token"
@@ -117,8 +116,8 @@ const desktopHostRequests = []
 const hostHeartbeatDelayMs = Number(process.env.CLAXEDO_E2E_HOST_HEARTBEAT_DELAY_MS || 0)
 const runtimeConfigToken = "signed-browser-relay-runtime-config"
 let cloudRuntime
-let localHostHeartbeatTimer
-let localHostHeartbeatPromise = Promise.resolve()
+let embeddedHostFence
+let stopEmbeddedHostEnrollment
 
 process.env.CLAXEDO_DATA_DIR = dataDir
 process.env.CLAXEDO_RELAY_JWT_ALG = "EdDSA"
@@ -304,10 +303,10 @@ async function startRelayFixture(input) {
       CLAXEDO_RELAY_FIXTURE_HOST_ID: hostId,
       CLAXEDO_RELAY_FIXTURE_RUNTIME_PUBLIC_KEY_JWK: JSON.stringify(input.runtimePublicKeyJwk),
       CLAXEDO_RELAY_FIXTURE_HOST_PRIVATE_KEY_JWK: JSON.stringify(input.relayHostPrivateKeyJwk),
+      CLAXEDO_RELAY_RESOLVER_URL: `${input.controlPlaneUrl}/internal/relay`,
       ...(hostMode === "connect"
         ? {
             CLAXEDO_RELAY_FIXTURE_MODE: "connect",
-            CLAXEDO_RELAY_RESOLVER_URL: `${input.controlPlaneUrl}/internal/relay`,
             CLAXEDO_RELAY_RESOLVER_TOKEN: resolverToken,
           }
         : {}),
@@ -616,81 +615,18 @@ if (hostMode === "connect") {
     ...collaborativeOrgArgs,
   })
 
-  // Starting the relay tunnel above proves transport availability, while the
-  // machine-wide enrollment + owner assignment + machine beat is the
-  // authoritative control-plane presence record used to mint browser
-  // connection credentials. Run it through the real SQLite authority with the
-  // same enroll/assign/acquire/beat contract as the public routes, so terminal
-  // and runtime-event clients exercise the production flow: routable = owner-
-  // assigned AND acked at the owner's current revision AND live lease.
-  const enrollmentRequest = await authority.createHostEnrollmentRequest(browserAuth, { hostId })
-  const hostEnrollment = await authority.enrollHost(browserAuth, {
-    hostId,
-    publicKey: fixtureLocalHostIdentity.publicKey,
-    requestId: enrollmentRequest.request_id,
-    signature: signHostPayload(
-      fixtureLocalHostIdentity,
-      hostEnrollmentPayload({
-        hostId,
-        requestId: enrollmentRequest.request_id,
-        nonce: enrollmentRequest.nonce,
-      }),
-    ),
-    displayName: "Signed Browser Relay Host",
+  const serving = await startEmbeddedRelayHostEnrollment({
+    authority,
+    auth: browserAuth,
+    identity: fixtureLocalHostIdentity,
+    workspaceId,
+    remoteDirectory: workspaceDir,
+    sessionAuthority: embeddedSessionPolicy.sessionAuthority,
+    ttlMs: 60_000,
+    intervalMs: 15_000,
   })
-  await authority.assignWorkspaceHost(browserAuth, { workspaceId, hostId, remoteDirectory: workspaceDir })
-  // The machine caller the verifier builds for a signed request. This fixture
-  // holds the authority in its own process, so there is no wire to sign
-  // across; the row is read fresh per beat because the key version and serving
-  // generation on it are what every write re-asserts.
-  const machineCaller = async () => {
-    const row = await authority.machineAuth.lookupEnrollment(hostEnrollment.enrollment_id)
-    if (!row) throw new Error("signed-browser-relay-fixture: the host enrollment is gone")
-    return {
-      enrollmentId: row.enrollment_id,
-      hostId: row.host_id,
-      ownerUserId: row.owner_user_id,
-      ownerActorId: row.owner_actor_id,
-      scope: row.scope,
-      keyVersion: row.key_version,
-      generation: row.serving_generation,
-    }
-  }
-  const { generation } = await authority.acquireHostServingGeneration(await machineCaller())
-  const beatHostEnrollment = async () => {
-    const declared = (await authority.listHostEnrollments(browserAuth))
-      .find((row) => row.host_id === hostId)?.assignments ?? []
-    return await authority.heartbeatHostEnrollmentByMachine(await machineCaller(), {
-      enrollmentId: hostEnrollment.enrollment_id,
-      hostId,
-      generation,
-      ttlMs: 60_000,
-      // Read off the policy this machine's runtimes actually mount, never a
-      // literal — the whole point of the declaration is that it comes from the
-      // composition.
-      sessionAuthority: embeddedSessionPolicy.sessionAuthority,
-      // Only an ack at the revision the owner currently describes makes the
-      // workspace routable, so the revision is read back rather than assumed.
-      acks: declared
-        .filter((assignment) => assignment.workspace_id === workspaceId)
-        .map((assignment) => ({ workspaceId: assignment.workspace_id, revision: assignment.revision })),
-    })
-  }
-  // The first beat acks the described set so the assignment is routable before
-  // any spec asks for a connection.
-  await beatHostEnrollment()
-
-  // The full browser matrix intentionally keeps one fixture alive across many
-  // fresh documents. Renew the real signed lease just as the desktop host
-  // does; otherwise the default 60s lease expires halfway through the suite
-  // and later connection requests correctly fail with 409.
-  localHostHeartbeatTimer = setInterval(() => {
-    localHostHeartbeatPromise = localHostHeartbeatPromise
-      .then(beatHostEnrollment)
-      .catch((error) => {
-        console.error("signed-browser-relay-fixture: host enrollment heartbeat failed", error)
-      })
-  }, 15_000)
+  embeddedHostFence = serving.fence
+  stopEmbeddedHostEnrollment = serving.stop
 }
 if (collaborativeOrgName && fixtureDefaultTeamId) {
   await authority.ensureDefaultTeam(browserAuth, { orgId: fixtureOrgId })
@@ -939,7 +875,7 @@ if (hostMode === "embedded") {
   //      crosses before creating a session (`routes/private-session-registration
   //      .ts`'s `POST /reserve`).
   //   2. `registerRuntimeSession` — the RHT-authenticated runtime half that
-  //      creates the `session_history` row and its creator participant.
+  //      creates the `session_history` row with its creator.
   //   3. `acquireSessionTurn` — turn admission. It mints the fencing token AND
   //      records the admitted producer for `turnId`; `syncSessionMessages`
   //      rejects a snapshot whose user message has no admitted producer, and
@@ -995,6 +931,7 @@ const built = createSelfHostedApp(services, {
   connectionRateLimiter: createFixedWindowConnectionRateLimiter({ limit: 10_000, windowMs: 60_000 }),
 })
 if (backing === "local-worktree" && hostMode === "embedded") {
+  if (!embeddedHostFence) throw new Error("Embedded host has no serving enrollment")
   // Tunnel startup can create/cache the workspace runtime, and runtime policy
   // configuration is intentionally not retroactive. Start only after the
   // authority-backed factory above is ready.
@@ -1004,9 +941,10 @@ if (backing === "local-worktree" && hostMode === "embedded") {
     relayUrl,
     hostTunnelToken: await mintHostTunnelToken(
       {
-        subject: "user_host",
+        subject: browserSubject,
         hostId,
         workspaceIds: [workspaceId],
+        ...embeddedHostFence,
       },
       runtime.privateKey,
       "EdDSA",
@@ -1176,9 +1114,10 @@ if (hostMode === "connect") {
       relayUrl,
       hostTunnelToken: await mintHostTunnelToken(
         {
-          subject: "user_host",
+          subject: browserSubject,
           hostId,
           workspaceIds: [workspaceId],
+          ...embeddedHostFence,
         },
         runtime.privateKey,
         "EdDSA",
@@ -1332,8 +1271,7 @@ let shutdownPromise
 function shutdown() {
   if (shutdownPromise) return shutdownPromise
   shutdownPromise = (async () => {
-    if (localHostHeartbeatTimer) clearInterval(localHostHeartbeatTimer)
-    await localHostHeartbeatPromise
+    await stopEmbeddedHostEnrollment?.()
     faults.setRedeemResponseDrop(false)
     await connectInstances.stopAll()
     await closeHttp(server)

@@ -91,7 +91,7 @@ resource's org. Then:
 
 | Change | Who | Refused with |
 |---|---|---|
-| Add a member (including a user-deployed identity admission), change a member's role, remove a member | org owners and admins | `org_admin_required` |
+| Invite a member, change a member's role, remove a member | org owners and admins | `org_admin_required` |
 | Grant, change or remove the `owner` role | org owners | `org_owner_required` |
 | Demote or remove the founding owner | nobody, which is what keeps every org owned | `org_owner_protected` |
 | Create a team, set up the default team, add or remove team members, grant or revoke a team's project role | org owners and admins | `org_admin_required` |
@@ -148,12 +148,13 @@ place, the member already gone), writes no row. The audit table's
 per-deployment row cap evicts deny and MCP rows only; access-change rows
 (`org.*`, `team.*`, `project.member.*`) are never evicted.
 
-An email is resolved only after the caller is found to administer the org the
-request names, so a caller who administers no org learns nothing from the
-answer. That is the whole guarantee. In the user-deployed posture the
-deployment has one org, so only its owners and admins can learn whether an
-address has a verified account. In the hosted posture any signed user can
-create an org and administer it, so any signed user can learn that.
+Organization membership grows through an accepted invitation. An admin submits an email and role; the request never looks up an account and answers `202 {"message":"invitation sent"}` for both known and unknown addresses. Only owners may invite with the owner role. The control plane stores the normalized address and a SHA-256 token hash in `org_invitations`; the raw 256-bit token goes only to the deployment's `AuthEmailSender` and the invitee's link.
+
+Invitations expire after seven days, are single-use, and may be revoked by an org admin; creating and revoking one each write an `org.invitation.*` audit row attributed to the admin. A duplicate pending normalized address in the same org returns `409 org_invitation_pending` without another send or token. Creation is limited to 20 per org per rolling hour, including revoked and failed deliveries; `429 org_invitation_rate_limited` refuses excess requests. Acceptance requires the signed caller's verified address from Better Auth `AUTH_DB` to match the invited address. The membership, its `org.member.added` audit (attributed to the accepting user and naming `invitationId` and `inviterUserId`), and token consumption run in one D1 batch. The same transaction rechecks that the inviter still administers the organization (still owns it when granting owner). An existing active member changes role through the member update route; an invitation cannot change that member's role. A revoked membership may join again through a new invitation without restoring its revoked grants.
+
+The link opens `/invitations#<token>` in the app. A person without an account signs up, verifies their email, and returns to that page for the same signed accept call. A user-deployed instance admits a signed-in person other than its owner only while an invitation to their verified address is pending: their first signed request then creates their identity with no membership, and a stranger stays `auth_unavailable`. The founding owner's bootstrap is separate from invitation membership. `org_invitation_admissions` records which invitation admitted a control-plane user; admission rechecks the invitation and inviter in its write batch. Revoking the invitation retires a user it admitted that has no membership records, owns no organization and has no other pending invitation: its identity link is deleted, so its next sign-in is refused and a later invitation admits it afresh, and its user and actor are marked deleted and revoked. Audit rows, agent settings and the Better Auth account in `AUTH_DB` stay.
+
+The Worker composes `AuthEmailSender` through Cloudflare Email Service’s `EMAIL` binding with `CLAXEDO_EMAIL_FROM`. With no sender composed, creating an invitation answers `503 org_invitation_delivery_unavailable`. A delivery failure revokes the undelivered invitation and preserves the generic 202 receipt, so sender failures cannot reveal whether a recipient address has an account. Delivery health must be monitored by the deployment's sender.
 
 ## Routes
 
@@ -165,7 +166,10 @@ authority that stores none of this answers `501 not_implemented`.
 |---|---|
 | `GET /orgs`, `POST /orgs` | the caller's orgs; create a collaborative org |
 | `GET /orgs/:orgId/members` | members with `role` and `joined_at` |
-| `POST /orgs/:orgId/members` | add an existing account by `userPublicId`, `email`, `tokenIdentifier` or `providerSubject`, with `role`; an email names the Better Auth account that verified it (`AUTH_DB`), and a deployment without that lookup answers `org_member_email_unsupported` |
+| `POST /orgs/:orgId/invitations` | create an invitation from `email` and `role`; generic 202 receipt |
+| `GET /orgs/:orgId/invitations` | admins list invitation metadata; no token or hash |
+| `DELETE /orgs/:orgId/invitations/:invitationId` | admins revoke a pending invitation |
+| `POST /invitations/accept` | signed invitee submits `{ token }` in the body with a matching verified address; adds and audits the membership |
 | `PATCH /orgs/:orgId/members/:userPublicId` | change `role` |
 | `DELETE /orgs/:orgId/members/:userPublicId` | remove, with the cascade above |
 | `GET`, `POST /orgs/:orgId/teams`; `POST /orgs/:orgId/ensure-default-team` | teams; create what the default team is missing (org admins) |
@@ -176,7 +180,7 @@ authority that stores none of this answers `501 not_implemented`.
 | `GET /projects/:projectId/access` | every person or team that reaches the project, one entry per source: `owner`, `member`, `team:<teamId>` or `org-role` |
 
 The signed desktop reaches the same routes through the named operations
-`org.members.*`, `team.members.*`, `team.projects.*`, `project.members.*` and
+`org.invitations.*`, `org.members.*`, `team.members.*`, `team.projects.*`, `project.members.*` and
 `project.access` (`docs/tech-docs/desktop-hosted-operation-matrix.md`).
 
 ## Resource hierarchy
@@ -351,6 +355,42 @@ The app may optimistically represent a user action, but canonical server data
 owns the final session placement, message membership, author, model, and
 lifecycle. An empty canonical result is authoritative; the client must not fall
 back to stale data from another transport.
+
+## Private pages
+
+A document records its canonical user creator id on creation. After the project
+read gate, only its creator or an explicit share can read it. Organization and
+project administrators have no private-page override. A person target must be an
+active member of the page's organization; a team target must belong to that
+organization, and its members must still be active organization members. Shares
+have `view` or `edit` permission. Only the creator manages shares and archives or
+restores the page.
+
+`authorizeDocument` in `packages/claxedo-server-core/src/documents/access.ts`
+owns this policy, and `filterDocuments` applies it to listings with one
+membership, project and share read per organization and project. Hosted routes,
+the local document service, runtime writeback and the runtime's hydration
+callback (`POST /documents/:id/runtime-authorization`) use it. MCP and the CLI
+open a page through `/documents/:id/agent-open`, which authorizes on the server. Document access denials return 404, including denials
+after share revocation.
+
+The share API is `GET/POST/DELETE /documents/:id/shares`; DELETE accepts
+`{ "share_id": "..." }`. A link share is view only. Its token is returned once
+on creation, and only its SHA-256 hash is stored in `document_shares`. Public
+`GET /p/:token` is rate limited and returns no cached content. Revoked links and
+archived documents return 404. A link reads its page only while the page's
+creator could still read it. A link grants no machine or session access.
+
+Cloudflare Workers mount the hosted backend with `CLAXEDO_DOCUMENTS` (R2) and
+`CONTROL_PLANE_DB` (D1 shares). The local backend serves only the machine's own
+person: a signed caller gets `document_signed_access_unavailable` and a share
+request gets `document_sharing_unavailable` (both 501). Creation requires a
+creator; existing rows without one remain unreadable. No stored row is
+backfilled or assigned a guessed creator.
+
+Hosted Pages live in R2 and hydrate only into the selected session's runtime.
+A page on a machine is served by that machine's local backend alone; no route
+carries a machine's pages to the hosted control plane or to another runtime.
 
 ## Installation order
 

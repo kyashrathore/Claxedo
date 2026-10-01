@@ -148,13 +148,6 @@ export function deleteAssertion(database: D1Database, id: string) {
   return database.prepare(`delete from authority_batch_assertions where assertion_id = ?`).bind(id)
 }
 
-/** A batch aborted on its `authority_batch_assertions` row; the cause chain is searched because D1 wraps the SQLite error. */
-export function batchAssertionFailed(error: unknown): boolean {
-  if (!(error instanceof Error)) return false
-  if (error.message.includes("passed = 1")) return true
-  return batchAssertionFailed(error.cause)
-}
-
 /** The person's role on a live project in an organization they stand in, or nothing. */
 export async function readProjectRole(
   database: D1Database,

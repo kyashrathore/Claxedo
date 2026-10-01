@@ -1,7 +1,8 @@
 import { Hono } from "hono"
 import { describe, expect, test } from "vitest"
 
-import type { BrowserAuthDescriptor } from "../auth/authentication"
+import type { BrowserAuthDescriptor } from "@claxedo/account-contract/auth"
+
 import { browserAuthHttpSecurity } from "./browser-auth-security"
 
 const COOKIE_BROWSER = {

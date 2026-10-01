@@ -5,6 +5,7 @@ import fsNode from "node:fs"
 import os from "node:os"
 import path from "node:path"
 import { FileRoutes } from "./file"
+import { runGit } from "../git"
 
 let previousDirectory: string | undefined
 let tmp: string
@@ -25,6 +26,15 @@ afterEach(async () => {
 })
 
 describe("FileRoutes file reads", () => {
+  test("preserves whitespace, unicode and newlines in Git filenames on listing and search routes", async () => {
+    await runGit(["init"], tmp)
+    const name = " 雪 furniture\nnotes.txt "
+    await fs.writeFile(path.join(tmp, name), "")
+    const app = new Hono().route("/", FileRoutes())
+    expect(await (await app.request("http://localhost/file/all")).json()).toEqual({ paths: [name] })
+    expect(await (await app.request("http://localhost/find/file?dirs=false&query=雪")).json()).toEqual([name])
+  })
+
   test("lists all tracked or walked files", async () => {
     const app = new Hono().route("/", FileRoutes())
     await fs.mkdir(path.join(tmp, "src"), { recursive: true })
@@ -157,6 +167,20 @@ describe("FileRoutes file search", () => {
 
   test("does not descend into ignored directories", async () => {
     expect(await search("widget", "&dirs=false")).toEqual(["src/panel/widget.ts"])
+  })
+
+  test("evicts the oldest runtime root after the shared cache reaches its bound", async () => {
+    const roots = Array.from({ length: 34 }, (_, index) => path.join(tmp, `root-${index}`))
+    const app = new Hono().route("/", FileRoutes())
+    for (const root of roots) {
+      await fs.mkdir(root)
+      await fs.writeFile(path.join(root, "a.txt"), "")
+      process.env.WORKSPACE_RUNTIME_DIRECTORY = root
+      expect(await (await app.request("/find/file?dirs=false")).json()).toEqual(["a.txt"])
+    }
+    await fs.writeFile(path.join(roots[0]!, "b.txt"), "")
+    process.env.WORKSPACE_RUNTIME_DIRECTORY = roots[0]
+    expect(await (await app.request("/find/file?dirs=false")).json()).toEqual(["a.txt", "b.txt"])
   })
 
   test("matches a subsequence the way the picker does, not just a literal substring", async () => {

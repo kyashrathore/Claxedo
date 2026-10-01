@@ -114,15 +114,8 @@ export type HostTunnelTokenClaims = {
   sub: string
   host_id: string
   workspace_ids: string[]
-  /**
-   * Serving-generation fence. `generation` is only valid together with
-   * `enrollment_id`; a relay with a host-generation resolver refuses a token
-   * whose generation is below the enrollment's current one. A token without a
-   * generation is admitted exactly as before the fence existed, which is what
-   * desktop and self-hosted mints still produce.
-   */
-  enrollment_id?: string
-  generation?: number
+  enrollment_id: string
+  generation: number
   exp: number
   iat: number
   jti: string
@@ -180,8 +173,8 @@ type HostTunnelInput = {
   subject: string
   hostId: string
   workspaceIds: string[]
-  enrollmentId?: string
-  generation?: number
+  enrollmentId: string
+  generation: number
   ttlSeconds?: number
   jti?: string
   now?: number
@@ -225,15 +218,9 @@ export function isHostGeneration(value: unknown): value is number {
   return typeof value === "number" && Number.isInteger(value) && value >= 0
 }
 
-/**
- * The fence pair as it appears in a token payload: `undefined` when absent,
- * `null` when present but unusable (a generation that is not a non-negative
- * integer, or a generation without its enrollment id).
- */
 function hostGenerationClaims(payload: JWTPayload) {
   const enrollment_id = stringClaim(payload, "enrollment_id")
   const generation = payload.generation
-  if (generation === undefined) return enrollment_id ? { enrollment_id } : {}
   if (!isHostGeneration(generation) || !enrollment_id) return null
   return { enrollment_id, generation }
 }
@@ -491,14 +478,14 @@ export function validateRuntimeAccessTokenClaims(input: Record<string, unknown>,
 
 export async function mintHostTunnelToken(input: HostTunnelInput, key: RelaySigningKey, alg: RelayJwtAlgorithm) {
   const now = seconds(input.now)
-  if (input.generation !== undefined && (!isHostGeneration(input.generation) || !input.enrollmentId)) {
+  if (!isHostGeneration(input.generation) || !input.enrollmentId?.trim()) {
     throw new WorkspaceRelayAuthError("relay_token_claims_invalid", "Host Tunnel Token generation requires a non-negative integer and an enrollment id")
   }
   return await new SignJWT({
     host_id: input.hostId,
     workspace_ids: input.workspaceIds,
-    ...(input.enrollmentId ? { enrollment_id: input.enrollmentId } : {}),
-    ...(input.generation !== undefined ? { generation: input.generation } : {}),
+    enrollment_id: input.enrollmentId,
+    generation: input.generation,
   })
     .setProtectedHeader({ alg: requireAlgorithm(alg) })
     .setIssuer(runtimeAccessTokenIssuer)

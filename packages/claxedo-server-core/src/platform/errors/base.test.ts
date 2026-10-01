@@ -1,8 +1,8 @@
+import { encodeApiError } from "@claxedo/helpers/api-error"
 import { describe, expect, test } from "vitest"
 import {
   ClaxedoError,
   codeOf,
-  errorBody,
   isClaxedoError,
   isRetryable,
   statusOf,
@@ -70,10 +70,12 @@ describe("reading an unknown thrown value", () => {
     expect(isRetryable(null)).toBe(false)
   })
 
-  test("errorBody keeps the structured shape rather than flattening to a scalar", () => {
-    expect(errorBody(new SampleError())).toEqual({
-      error: { code: "sample_failed", message: "sample failed" },
+  test("encodeApiError keeps the structured shape rather than flattening to a scalar", () => {
+    expect(encodeApiError(new ClaxedoError({ code: "busy", message: "Busy", status: 503, retryable: true })))
+      .toMatchObject({ error: { code: "busy", retryable: true } })
+    expect(encodeApiError(new SampleError())).toEqual({
+      error: { code: "sample_failed", message: "sample failed", retryable: false },
     })
-    expect(errorBody(null)).toEqual({ error: { code: "internal_error", message: "Internal error" } })
+    expect(encodeApiError(null)).toEqual({ error: { code: "internal_error", message: "Internal error", retryable: false } })
   })
 })

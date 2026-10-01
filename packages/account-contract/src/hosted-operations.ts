@@ -1,381 +1,670 @@
-/**
- * What each hosted operation name means to a renderer: whether it may be
- * retried, and how its answer is read.
- *
- * No transport lives here: no bearer, URL, method or fetch. Electron main holds
- * the method-and-path table and types it against `HostedOperationName`, so a
- * registry that could express a request would be a place to open the closed set
- * in passing.
- *
- * Decoders rather than casts: a hosted response that changed shape fails where
- * it arrives, naming the operation.
- */
-import { asArray, asRecord } from "@claxedo/helpers/guards"
-import type { HostedOperationName } from "./operation-name"
-
-export type { HostedOperationName }
-
-export type HostedOperationInput = Record<string, string | number | boolean | undefined>
-
-export type DecodeResult<T> = { ok: true; value: T } | { ok: false; reason: string }
-
-/**
- * One row: what the operation is for, and how to read its answer.
- *
- * `safe` marks an operation with no side effect, which is the only property the
- * renderer needs in order to decide whether a retry is its own decision to
- * make. Anything unsafe is main's call.
- *
- * Main has no idempotency key, for any operation — `claxedo-desktop`'s
- * operation table expresses a request as method + path + declared body and has
- * no header seam, and no route it names accepts a key in its body. So
- * `safe: false` means exactly what it says and nothing more: do not retry. It
- * is not a promise that someone downstream will make a retry harmless.
- */
-export type HostedOperationSpec<T = unknown> = {
-  safe: boolean
-  decode: (raw: unknown) => DecodeResult<T>
-}
-
-function object(raw: unknown): DecodeResult<Record<string, unknown>> {
-  const value = asRecord(raw)
-  if (!value) return { ok: false, reason: "expected an object" }
-  return { ok: true, value }
-}
-
-/** Requires named fields to be present and non-empty strings. */
-function withStrings(...fields: string[]) {
-  return (raw: unknown): DecodeResult<Record<string, unknown>> => {
-    const shape = object(raw)
-    if (!shape.ok) return shape
-    for (const field of fields) {
-      if (typeof shape.value[field] !== "string" || shape.value[field] === "") {
-        return { ok: false, reason: `expected a non-empty "${field}"` }
-      }
-    }
-    return shape
-  }
-}
-
-/** Requires a bare JSON array. */
-function array(raw: unknown): DecodeResult<unknown[]> {
-  if (!Array.isArray(raw)) return { ok: false, reason: "expected an array" }
-  return { ok: true, value: raw }
-}
-
-/** Requires named fields holding arrays. */
-function withArrays(...fields: string[]) {
-  return (raw: unknown): DecodeResult<Record<string, unknown>> => {
-    const shape = object(raw)
-    if (!shape.ok) return shape
-    for (const field of fields) {
-      if (!Array.isArray(shape.value[field])) return { ok: false, reason: `expected an array "${field}"` }
-    }
-    return shape
-  }
-}
-
-function sessionPeople(raw: unknown): DecodeResult<Record<string, unknown>> {
-  const shape = withArrays("grants", "teams")(raw)
-  if (!shape.ok) return shape
-  if (typeof shape.value.can_manage_shares !== "boolean") {
-    return { ok: false, reason: 'expected a boolean "can_manage_shares"' }
-  }
-  const teams = asArray(shape.value.teams)
-  const grants = asArray(shape.value.grants)
-  for (const [index, team] of teams.entries()) {
-    const row = object(team)
-    if (!row.ok) return { ok: false, reason: `expected teams[${index}] to be an object` }
-    for (const field of ["team_id", "name", "is_shared"] as const) {
-      const expected = field === "is_shared" ? "boolean" : "string"
-      if (typeof row.value[field] !== expected) {
-        return { ok: false, reason: `expected teams[${index}].${field} to be a ${expected}` }
-      }
-    }
-  }
-  for (const [index, grant] of grants.entries()) {
-    const row = object(grant)
-    if (!row.ok || typeof row.value.grant_id !== "string") {
-      return { ok: false, reason: `expected grants[${index}].grant_id to be a string` }
-    }
-    // A grant names exactly one target; the session authorities return the
-    // other two columns as SQL nulls.
-    for (const field of ["granted_to_user_id", "granted_to_org_id", "granted_to_team_id"] as const) {
-      if (row.value[field] != null && typeof row.value[field] !== "string") {
-        return { ok: false, reason: `expected grants[${index}].${field} to be a string when present` }
-      }
-    }
-  }
-  return shape
-}
-
-/** Requires a named field holding an object, checked by `inner`. */
-function withRecord(field: string, inner: (raw: unknown) => DecodeResult<unknown>) {
-  return (raw: unknown): DecodeResult<Record<string, unknown>> => {
-    const shape = object(raw)
-    if (!shape.ok) return shape
-    const nested = inner(shape.value[field])
-    if (!nested.ok) return { ok: false, reason: `expected "${field}": ${nested.reason}` }
-    return shape
-  }
-}
-
-/**
- * `null`, or whatever `decode` accepts.
- *
- * Not a loosening of `object`. A route that answers `null` is answering
- * something — `GET /api/workspace/resolve` on the hosted control plane returns
- * it deliberately, as the documented "no central runtime snapshot" signal — and
- * a decoder that rejects it turns a correct answer into a crash. Bending
- * `object` to let nulls through instead would have made every other operation
- * silently null-tolerant, which is the opposite of what these decoders are for.
- */
-function nullable<T>(decode: (raw: unknown) => DecodeResult<T>) {
-  return (raw: unknown): DecodeResult<T | null> => (raw === null ? { ok: true, value: null } : decode(raw))
-}
-
-/**
- * A workspace connection: a mint, or the poll that precedes one.
- *
- * `relayUrl` is required, EXCEPT while the sandbox is still coming up. A cold
- * start answers 200 with `status: "provisioning"` and a `retryAfterMs`, and the
- * client is expected to poll — so a decoder that demanded `relayUrl`
- * unconditionally would fail every cold start, which is precisely when the user
- * is watching. The requirement still bites for a settled connection, which is
- * the case it exists to protect: a ready connection with no relay URL would be
- * a client with nowhere to connect.
- */
-function connection(raw: unknown): DecodeResult<Record<string, unknown>> {
-  const shape = object(raw)
-  if (!shape.ok) return shape
-  if (shape.value["status"] === "provisioning") return shape
-  return withStrings("relayUrl")(raw)
-}
-
-function statusResult(raw: unknown): DecodeResult<{ status: number; body?: unknown }> {
-  const shape = object(raw)
-  if (!shape.ok) return shape
-  const status = shape.value.status
-  if (typeof status !== "number" || !Number.isSafeInteger(status) || status < 100 || status > 599) {
-    return { ok: false, reason: "expected a response status" }
-  }
-  return { ok: true, value: { status, ...(Object.hasOwn(shape.value, "body") ? { body: shape.value.body } : {}) } }
-}
+import { isPluginId } from "@claxedo/plugin-api/id"
+import {
+  defineOperation, operationInput, operationPath, requiredParameter, optionalParameter, bodyField,
+  selectBody, operationHeaders, pluginMethod, pluginBody, connectedRepositoryBody,
+  type DecodeResult, type OperationDefinition, type ResolvedRequest,
+  MissingOperationParameter, UnknownHostedOperation,
+} from "./operation-definition"
+import { object, withStrings, array, withArrays, sessionPeople, withRecord, nullable, connection, statusResult } from "./hosted-output"
 
 export const HOSTED_OPERATIONS = {
-  "account.mode": { safe: true, decode: object },
-  "account.compatibility": { safe: true, decode: object },
-  // Mints a CLI session token. A replayed exchange must not mint twice — and
-  // nothing prevents it: the route mints from the bearer and never reads the
-  // body, so every call is a fresh, separately-revocable pair. Unreachable from
-  // here in any case; Electron main refuses this operation to the renderer
-  // (`RENDERER_WITHHELD_OPERATIONS`).
-  "account.cliExchange": { safe: false, decode: object },
-  "account.agentSettings.read": { safe: true, decode: object },
-  "account.agentSettings.write": { safe: false, decode: object },
-  "agentPlugins.catalog": { safe: true, decode: statusResult },
-  "agentPlugins.catalog.refresh": { safe: true, decode: statusResult },
-  "agentPlugins.catalog.project": { safe: true, decode: statusResult },
-  "agentPlugins.catalog.project.refresh": { safe: true, decode: statusResult },
-  "agentPlugins.activation": { safe: false, decode: statusResult },
-  "agentPlugins.organizationDefault": { safe: false, decode: statusResult },
-  "agentPlugins.update": { safe: false, decode: statusResult },
-  // One retained SKILL.md, project-scoped or not. Read-only, so both are safe
-  // to retry.
-  "agentPlugins.skill": { safe: true, decode: statusResult },
-  // Main-only (withheld from the renderer in account-ipc.ts): listed so the two
-  // registries name the same operations; the channel refuses a page.
-  "agentPlugins.runtimeSelf": { safe: true, decode: statusResult },
-  "agentPlugins.skill.project": { safe: true, decode: statusResult },
-  // Directory sources: listing and removal are idempotent reads/deletes
-  // (`remove` treats a 404 as success, so a retried delete is still correct);
-  // adding a source is not — a repeated POST with the same owner/repository is
-  // main's call, like every other creating mutation in this table.
-  "agentPlugins.sources.list": { safe: true, decode: statusResult },
-  "agentPlugins.sources.add": { safe: false, decode: statusResult },
-  "agentPlugins.sources.remove": { safe: true, decode: statusResult },
-  // An envelope, not a bare array: `GET /api/workspace` answers
-  // `{ workspaces: [...] }`, the same shape the local server's list handler
-  // uses. Validated and passed through rather than unwrapped, because every
-  // other row here validates without transforming and one decoder that quietly
-  // reshapes its answer is a decoder nobody can read the registry to predict.
-  //
-  // Two rows answering the same envelope, one per host the hosted route names
-  // on the wire (`provisioner`, `machine`); a caller that needs every placement
-  // asks for both and merges them. Two names rather than one operation taking a
-  // host argument, so the set of calls stays enumerable by name — the property
-  // the closed set rests on.
-  "workspace.list.provisioner": { safe: true, decode: withArrays("workspaces") },
-  "workspace.list.machine": { safe: true, decode: withArrays("workspaces") },
-  // Nullable: the hosted control plane answers `null` on purpose.
-  "workspace.resolve": { safe: true, decode: nullable(object) },
-  // Provisions a cloud VM. Without a key, an uncertain response creates a
-  // second one — and there is no key: the hosted route's body schema is strict
-  // and has no idempotency field, so one cannot be sent from a client at all.
-  // `safe: false` is therefore the whole protection, and the disposition for an
-  // uncertain response is to surface it, not to retry. Answers
-  // `{ workspaceId, directory }` — `directory` is what the caller opens, so an
-  // answer without one is not a usable workspace.
-  "workspace.create": { safe: false, decode: withStrings("workspaceId", "directory") },
-  "workspace.lifecycle": { safe: false, decode: object },
-  // The lifecycle snapshot — lease, checkpoint, worktrees, runtime — not a
-  // list. The route is `GET /:id/checkpoints` and the name has misled twice.
-  "workspace.checkpoints.list": { safe: true, decode: object },
-  "workspace.checkpoints.create": { safe: false, decode: object },
-  // Destructive to working state.
-  "workspace.checkpoints.restore": { safe: false, decode: object },
-  // Returns a relay URL and a scoped token — and deliberately no laptop
-  // address; the decoder requires the field that must be there rather than
-  // asserting the absence of one that must not.
-  "workspace.connection.mint": { safe: true, decode: connection },
-  "workspace.connection.refresh": { safe: true, decode: connection },
-  // Signed desktop Share cannot hit the sidecar: that process does not mount
-  // the register route. The AccountPort carries the same displayName-only body
-  // share-workspace.ts already posts.
-  // Wrapped: the route returns `{ enrollment }`. Reading `host_id` off the
-  // envelope finds nothing, which is exactly what this decoder existed to
-  // prevent and exactly what it did.
-  "host.enrollCurrentMachine": {
-    safe: false,
-    decode: withRecord("enrollment", withStrings("enrollment_id", "host_id")),
-  },
-  // Unsafe: each call mints a nonce, so a retry burns one. The nonce itself is
-  // public and worthless without the machine's private key.
-  "host.enrollmentNonce": { safe: false, decode: withStrings("request_id", "nonce") },
-  // Main-only like the enrollment pair: the route renames any enrollment the
-  // owner holds, and the renderer's route is the connector's own `rename` IPC,
-  // which carries a name and no id. Declared here because main's table and
-  // this registry are both typed against every `HostedOperationName`.
-  "host.renameCurrentMachine": { safe: false, decode: withStrings("enrollment_id", "display_name") },
-  // Workspace placement under machine-wide enrollment: the owner names the
-  // host a workspace runs on (pure data — the machine's consent is the Host
-  // Connector's signed heartbeat set). Main-only like the enrollment trio;
-  // the renderer reaches it through the data-only hostConnector IPC.
-  "workspace.assignHost": { safe: false, decode: object },
-  "workspace.unassignHost": { safe: false, decode: object },
-  // Control-plane session rows for a workspace (`{ sessions: [...] }`).
-  "session.list": { safe: true, decode: withArrays("sessions") },
-  // One keyset page of a project's sessions (`{ items, nextAfter? }`), for
-  // the signed desktop's two-source list.
-  "session.page": { safe: true, decode: withArrays("items") },
-  "session.projection.register": { safe: false, decode: object },
-  "session.projection.checkpoint": { safe: false, decode: object },
-  "session.projection.repair": { safe: false, decode: object },
-  // `GET /api/cp/events`. Stream IPC, not unary `run`.
-  "controlPlane.events": { safe: true, decode: object },
-  "session.shares.list": { safe: true, decode: sessionPeople },
-  "session.shares.grant": { safe: false, decode: object },
-  "session.shares.revoke": { safe: false, decode: object },
-  // Org / team settings (Settings + rail switcher). Desktop signed mode goes
-  // through AccountPort; browser keeps authFetch in org-team-api.
-  "org.list": { safe: true, decode: array },
-  "org.create": { safe: false, decode: withStrings("org_id", "name") },
-  // Bare team rows for the active org in Settings.
-  "org.teams.list": { safe: true, decode: array },
-  "org.teams.create": { safe: false, decode: withStrings("team_id", "name") },
-  "org.ensureDefaultTeam": { safe: false, decode: object },
-  "org.members.list": { safe: true, decode: array },
-  "org.members.add": { safe: false, decode: withStrings("user_id", "role") },
-  "org.members.update": { safe: false, decode: withStrings("user_id", "role") },
-  "org.members.remove": { safe: false, decode: object },
-  "team.members.list": { safe: true, decode: array },
-  "team.members.add": { safe: false, decode: object },
-  "team.members.remove": { safe: false, decode: object },
-  "team.projects.list": { safe: true, decode: array },
-  "team.projects.grant": { safe: false, decode: object },
-  "team.projects.revoke": { safe: false, decode: object },
-  "project.members.grant": { safe: false, decode: withStrings("project_id", "user_id", "role") },
-  "project.members.revoke": { safe: false, decode: object },
-  // Everyone who reaches a project, one entry per source; project and org admins only.
-  "project.access": { safe: true, decode: withArrays("entries") },
-  // Integrations catalog + OAuth/key connect flow.
-  "connections.list": { safe: true, decode: object },
-  "connections.connect": { safe: false, decode: object },
-  "connections.attempt": { safe: true, decode: object },
-  "connections.repositories": { safe: true, decode: object },
-  "connections.disconnect": { safe: true, decode: object },
-  "connections.reverify": { safe: false, decode: object },
-  "documents.list": { safe: true, decode: array },
-  "documents.get": { safe: true, decode: object },
-  "documents.create": { safe: false, decode: object },
-  "documents.update": { safe: true, decode: object },
-  "documents.content.get": { safe: true, decode: object },
-  "documents.content.put": { safe: false, decode: object },
-  "documents.snapshots": { safe: true, decode: array },
-  "documents.snapshots.restore": { safe: false, decode: object },
-  "documents.workSource": { safe: true, decode: object },
-  "documents.workSourcePin": { safe: true, decode: object },
-  "documents.statuses": { safe: true, decode: array },
-  // Binary export as `{ bytesBase64, contentType? }` — not a raw Response.
-  "documents.export": { safe: true, decode: withStrings("bytesBase64") },
-  "documents.agentOpen": { safe: false, decode: object },
-  "documents.runtimeConflictResolve": { safe: false, decode: object },
-  "documents.moveToRepository": { safe: false, decode: object },
-  "documents.fromRepo": { safe: false, decode: object },
-  "session.create": { safe: false, decode: object },
-  "session.messages": { safe: true, decode: object },
-  "session.outline": { safe: true, decode: object },
-  "session.turnPage": { safe: true, decode: withArrays("turns") },
-  "session.part": { safe: true, decode: object },
-  "session.gateway": { safe: true, decode: object },
-  "usage.cloudFacts": { safe: true, decode: withArrays("facts") },
-  // A request to one plugin's backend, `{ pluginId, method, path, body? }`,
-  // answered as `{ status, body? }`. Unsafe whatever the method: whether a
-  // plugin route may be repeated is the plugin's to say, not this table's.
-  "plugin.request": { safe: false, decode: statusResult },
-} satisfies Record<HostedOperationName, HostedOperationSpec>
+  "account.mode": defineOperation({
+    method: "GET", path: operationPath("/api/claxedo/mode"),
+    input: operationInput({}),
+    output: object, retry: "safe",
+    exposure: { renderer: true, app: false },
+  }),
+  "account.compatibility": defineOperation({
+    method: "GET", path: operationPath("/api/claxedo/compatibility"),
+    input: operationInput({}),
+    output: object, retry: "safe",
+    exposure: { renderer: true, app: false },
+  }),
+  // Withheld from the renderer: the answer is a long-lived CLI access and
+  // refresh pair, and every exchange is a real mint in the revocation registry.
+  // The web CLI login fetches the exchange with the page's own session.
+  "account.cliExchange": defineOperation({
+    method: "POST", path: operationPath("/api/auth/cli/exchange"),
+    input: operationInput({ code: bodyField }),
+    output: object, retry: "never",
+    exposure: { renderer: false, app: false },
+    body: selectBody("code"),
+  }),
+  "agentPlugins.catalog": defineOperation({
+    method: "GET", path: operationPath("/api/claxedo/plugins"),
+    input: operationInput({}),
+    output: statusResult, retry: "safe",
+    exposure: { renderer: true, app: false },
+    response: "http",
+  }),
+  "agentPlugins.catalog.refresh": defineOperation({
+    method: "GET", path: operationPath("/api/claxedo/plugins/refresh"),
+    input: operationInput({}),
+    output: statusResult, retry: "safe",
+    exposure: { renderer: true, app: false },
+    response: "http",
+  }),
+  "agentPlugins.catalog.project": defineOperation({
+    method: "GET", path: operationPath("/api/claxedo/plugins/projects/:projectId"),
+    input: operationInput({ projectId: requiredParameter }),
+    output: statusResult, retry: "safe",
+    exposure: { renderer: true, app: false },
+    response: "http",
+  }),
+  "agentPlugins.catalog.project.refresh": defineOperation({
+    method: "GET", path: operationPath("/api/claxedo/plugins/projects/:projectId/refresh"),
+    input: operationInput({ projectId: requiredParameter }),
+    output: statusResult, retry: "safe",
+    exposure: { renderer: true, app: false },
+    response: "http",
+  }),
+  "agentPlugins.activation": defineOperation({
+    method: "POST", path: operationPath("/api/claxedo/plugins/activation"),
+    input: operationInput({ pluginInstanceId: bodyField, harnessIds: bodyField, choice: bodyField, expectedRevision: bodyField, target: bodyField }),
+    output: statusResult, retry: "never",
+    exposure: { renderer: true, app: false },
+    body: selectBody("pluginInstanceId", "harnessIds", "choice", "expectedRevision", "target"),
+    response: "http",
+  }),
+  "agentPlugins.organizationDefault": defineOperation({
+    method: "POST", path: operationPath("/api/claxedo/plugins/organization-default"),
+    input: operationInput({ pluginInstanceId: bodyField, harnessIds: bodyField, choice: bodyField, expectedRevision: bodyField }),
+    output: statusResult, retry: "never",
+    exposure: { renderer: true, app: false },
+    body: selectBody("pluginInstanceId", "harnessIds", "choice", "expectedRevision"),
+    response: "http",
+  }),
+  "agentPlugins.update": defineOperation({
+    method: "POST", path: operationPath("/api/claxedo/plugins/update"),
+    input: operationInput({ pluginInstanceId: bodyField, expectedRevision: bodyField, authority: bodyField }),
+    output: statusResult, retry: "never",
+    exposure: { renderer: true, app: false },
+    body: selectBody("pluginInstanceId", "expectedRevision", "authority"),
+    response: "http",
+  }),
+  "agentPlugins.skill": defineOperation({
+    method: "GET", path: operationPath("/api/claxedo/plugins/:pluginInstanceId/skills/:skill"),
+    input: operationInput({ pluginInstanceId: requiredParameter, skill: requiredParameter }),
+    output: statusResult, retry: "safe",
+    exposure: { renderer: true, app: false },
+    response: "http",
+  }),
+  "agentPlugins.skill.project": defineOperation({
+    method: "GET", path: operationPath("/api/claxedo/plugins/projects/:projectId/:pluginInstanceId/skills/:skill"),
+    input: operationInput({ projectId: requiredParameter, pluginInstanceId: requiredParameter, skill: requiredParameter }),
+    output: statusResult, retry: "safe",
+    exposure: { renderer: true, app: false },
+    response: "http",
+  }),
+  "agentPlugins.sources.list": defineOperation({
+    method: "GET", path: operationPath("/api/claxedo/plugins/sources"),
+    input: operationInput({}),
+    output: statusResult, retry: "safe",
+    exposure: { renderer: true, app: false },
+    response: "http",
+  }),
+  "agentPlugins.sources.add": defineOperation({
+    method: "POST", path: operationPath("/api/claxedo/plugins/sources"),
+    input: operationInput({ owner: bodyField, repository: bodyField, ref: bodyField, authority: bodyField }),
+    output: statusResult, retry: "never",
+    exposure: { renderer: true, app: false },
+    body: selectBody("owner", "repository", "ref", "authority"),
+    response: "http",
+  }),
+  "agentPlugins.sources.remove": defineOperation({
+    method: "DELETE", path: operationPath("/api/claxedo/plugins/sources/:id"),
+    input: operationInput({ id: requiredParameter }),
+    output: statusResult, retry: "safe",
+    exposure: { renderer: true, app: false },
+    response: "http",
+  }),
+  // Withheld from the renderer: the answer carries MCP gateway bearer
+  // credentials, which main hands to the daemon and never to a page.
+  "agentPlugins.runtimeSelf": defineOperation({
+    method: "GET", path: operationPath("/api/claxedo/plugins/runtime/self"),
+    input: operationInput({}),
+    output: statusResult, retry: "safe",
+    exposure: { renderer: false, app: false },
+    response: "http",
+  }),
+  "workspace.list.provisioner": defineOperation({
+    method: "GET", path: operationPath("/api/workspace?host=provisioner"),
+    input: operationInput({}),
+    output: withArrays("workspaces"), retry: "safe",
+    exposure: { renderer: true, app: false },
+  }),
+  "workspace.list.machine": defineOperation({
+    method: "GET", path: operationPath("/api/workspace?host=machine"),
+    input: operationInput({}),
+    output: withArrays("workspaces"), retry: "safe",
+    exposure: { renderer: true, app: false },
+  }),
+  "workspace.resolve": defineOperation({
+    method: "GET", path: operationPath("/api/workspace/resolve", { optionalQuery: ["workspaceId", "directory"] }),
+    input: operationInput({ workspaceId: optionalParameter, directory: optionalParameter }),
+    output: nullable(object), retry: "safe",
+    exposure: { renderer: true, app: false },
+  }),
+  "workspace.create": defineOperation({
+    method: "POST", path: operationPath("/api/workspace/create"),
+    input: operationInput({ projectId: bodyField, workspaceName: bodyField, repoUrl: bodyField, gitBranch: bodyField, driver: bodyField, connectionId: bodyField, repoFullName: bodyField }),
+    output: withStrings("workspaceId", "directory"), retry: "never",
+    exposure: { renderer: true, app: false },
+    body: connectedRepositoryBody,
+  }),
+  "workspace.lifecycle": defineOperation({
+    method: "POST", path: operationPath("/api/workspace/:id/lifecycle/:operation"),
+    input: operationInput({ id: requiredParameter, operation: requiredParameter, approved: bodyField, checkpointId: bodyField }),
+    output: object, retry: "never",
+    exposure: { renderer: true, app: false },
+    body: selectBody("approved", "checkpointId"),
+  }),
+  "workspace.checkpoints.list": defineOperation({
+    method: "GET", path: operationPath("/api/workspace/:id/checkpoints"),
+    input: operationInput({ id: requiredParameter }),
+    output: object, retry: "safe",
+    exposure: { renderer: true, app: false },
+  }),
+  "workspace.checkpoints.create": defineOperation({
+    method: "POST", path: operationPath("/api/workspace/:id/checkpoints"),
+    input: operationInput({ id: requiredParameter, policy: bodyField }),
+    output: object, retry: "never",
+    exposure: { renderer: true, app: false },
+    body: selectBody("policy"),
+  }),
+  "workspace.checkpoints.restore": defineOperation({
+    method: "POST", path: operationPath("/api/workspace/:id/checkpoints/:checkpointId/restore"),
+    input: operationInput({ id: requiredParameter, checkpointId: requiredParameter, approved: bodyField }),
+    output: object, retry: "never",
+    exposure: { renderer: true, app: false },
+    body: selectBody("approved"),
+  }),
+  "workspace.connection.mint": defineOperation({
+    method: "POST", path: operationPath("/api/workspace/:id/connection"),
+    input: operationInput({ id: requiredParameter }),
+    output: connection, retry: "safe",
+    exposure: { renderer: true, app: false },
+  }),
+  "workspace.connection.refresh": defineOperation({
+    method: "POST", path: operationPath("/api/workspace/:id/connection/refresh"),
+    input: operationInput({ id: requiredParameter, previousJti: bodyField }),
+    output: connection, retry: "safe",
+    exposure: { renderer: true, app: false },
+    body: selectBody("previousJti"),
+  }),
+  "session.list": defineOperation({
+    method: "GET", path: operationPath("/api/control/sessions", { query: ["workspaceId"] }),
+    input: operationInput({ workspaceId: requiredParameter }),
+    output: withArrays("sessions"), retry: "safe",
+    exposure: { renderer: true, app: false },
+  }),
+  "session.page": defineOperation({
+    method: "GET", path: operationPath("/api/control/session-list?scope=project", { query: ["projectId", "limit"], optionalQuery: ["sort", "after"] }),
+    input: operationInput({ projectId: requiredParameter, limit: requiredParameter, sort: optionalParameter, after: optionalParameter }),
+    output: withArrays("items"), retry: "safe",
+    exposure: { renderer: true, app: false },
+  }),
+  "session.projection.register": defineOperation({
+    method: "POST", path: operationPath("/api/control/workspaces/:workspaceId/sessions/:sessionId/register"),
+    input: operationInput({ workspaceId: requiredParameter, sessionId: requiredParameter, idempotencyKey: bodyField, reason: bodyField, expectedEventOrdinal: bodyField }),
+    output: object, retry: "never",
+    exposure: { renderer: true, app: false },
+    body: selectBody("idempotencyKey", "reason", "expectedEventOrdinal"),
+  }),
+  "session.projection.checkpoint": defineOperation({
+    method: "POST", path: operationPath("/api/control/workspaces/:workspaceId/sessions/:sessionId/checkpoint"),
+    input: operationInput({ workspaceId: requiredParameter, sessionId: requiredParameter, idempotencyKey: bodyField, reason: bodyField, expectedEventOrdinal: bodyField }),
+    output: object, retry: "never",
+    exposure: { renderer: true, app: false },
+    body: selectBody("idempotencyKey", "reason", "expectedEventOrdinal"),
+  }),
+  "session.projection.repair": defineOperation({
+    method: "POST", path: operationPath("/api/control/workspaces/:workspaceId/sessions/:sessionId/repair"),
+    input: operationInput({ workspaceId: requiredParameter, sessionId: requiredParameter, idempotencyKey: bodyField, reason: bodyField, expectedEventOrdinal: bodyField }),
+    output: object, retry: "never",
+    exposure: { renderer: true, app: false },
+    body: selectBody("idempotencyKey", "reason", "expectedEventOrdinal"),
+  }),
+  "controlPlane.events": defineOperation({
+    method: "GET", path: operationPath("/api/cp/events"),
+    input: operationInput({ lastEventId: optionalParameter }),
+    output: object, retry: "safe",
+    exposure: { renderer: true, app: false, stream: true },
+    headers: operationHeaders({ lastEventId: "Last-Event-ID" }),
+  }),
+  // Withheld from the renderer: the route stores whatever public key and
+  // signature it is handed and upserts on (owner, host_id), so a renderer could
+  // enroll its own keypair under the owner, or take over or un-revoke a
+  // machine. Main brokers it for the Host Connector child, which supplies the
+  // key from the machine identity store; the renderer's route is the
+  // connector's own `start`.
+  "host.enrollCurrentMachine": defineOperation({
+    method: "POST", path: operationPath("/api/claxedo/host/enrollments"),
+    input: operationInput({ hostId: bodyField, publicKey: bodyField, requestId: bodyField, signature: bodyField, displayName: bodyField }),
+    output: withRecord("enrollment", withStrings("enrollment_id", "host_id")), retry: "never",
+    exposure: { renderer: false, app: false },
+    body: selectBody("hostId", "publicKey", "requestId", "signature", "displayName"),
+  }),
+  // Withheld from the renderer: step one of the enrollment handshake above.
+  "host.enrollmentNonce": defineOperation({
+    method: "POST", path: operationPath("/api/claxedo/host/enrollments/requests"),
+    input: operationInput({ hostId: bodyField }),
+    output: withStrings("request_id", "nonce"), retry: "never",
+    exposure: { renderer: false, app: false },
+    body: selectBody("hostId"),
+  }),
+  // Withheld from the renderer: it names an enrollment id, and every
+  // enrollment the owner holds answers to it; the renderer's route is the
+  // connector's own `rename`, which carries a name only.
+  "host.renameCurrentMachine": defineOperation({
+    method: "PATCH", path: operationPath("/api/claxedo/host/enrollments/:enrollmentId/display-name"),
+    input: operationInput({ enrollmentId: requiredParameter, displayName: bodyField }),
+    output: withStrings("enrollment_id", "display_name"), retry: "never",
+    exposure: { renderer: false, app: false },
+    body: selectBody("displayName"),
+  }),
+  "session.shares.list": defineOperation({
+    method: "GET", path: operationPath("/api/control/sessions/:sessionId/shares", { query: ["workspaceId"] }),
+    input: operationInput({ sessionId: requiredParameter, workspaceId: requiredParameter }),
+    output: sessionPeople, retry: "safe",
+    exposure: { renderer: true, app: false },
+  }),
+  "session.shares.grant": defineOperation({
+    method: "POST", path: operationPath("/api/control/sessions/:sessionId/shares"),
+    input: operationInput({ sessionId: requiredParameter, workspaceId: bodyField, level: bodyField, grantedToTokenIdentifier: bodyField, grantedToUserId: bodyField, grantedToTeamPublicId: bodyField, grantedToOrgId: bodyField }),
+    output: object, retry: "never",
+    exposure: { renderer: true, app: false },
+    body: selectBody("workspaceId", "level", "grantedToTokenIdentifier", "grantedToUserId", "grantedToTeamPublicId", "grantedToOrgId"),
+  }),
+  "session.shares.revoke": defineOperation({
+    method: "DELETE", path: operationPath("/api/control/sessions/:sessionId/shares"),
+    input: operationInput({ sessionId: requiredParameter, workspaceId: bodyField, grantId: bodyField, grantedToTokenIdentifier: bodyField, grantedToTeamPublicId: bodyField }),
+    output: object, retry: "never",
+    exposure: { renderer: true, app: false },
+    body: selectBody("workspaceId", "grantId", "grantedToTokenIdentifier", "grantedToTeamPublicId"),
+  }),
+  "org.list": defineOperation({
+    method: "GET", path: operationPath("/api/control/orgs"),
+    input: operationInput({}),
+    output: array, retry: "safe",
+    exposure: { renderer: true, app: false },
+  }),
+  "org.create": defineOperation({
+    method: "POST", path: operationPath("/api/control/orgs"),
+    input: operationInput({ name: bodyField }),
+    output: withStrings("org_id", "name"), retry: "never",
+    exposure: { renderer: true, app: false },
+    body: selectBody("name"),
+  }),
+  "org.teams.list": defineOperation({
+    method: "GET", path: operationPath("/api/control/orgs/:orgId/teams"),
+    input: operationInput({ orgId: requiredParameter }),
+    output: array, retry: "safe",
+    exposure: { renderer: true, app: false },
+  }),
+  "org.teams.create": defineOperation({
+    method: "POST", path: operationPath("/api/control/orgs/:orgId/teams"),
+    input: operationInput({ orgId: requiredParameter, name: bodyField }),
+    output: withStrings("team_id", "name"), retry: "never",
+    exposure: { renderer: true, app: false },
+    body: selectBody("name"),
+  }),
+  "org.ensureDefaultTeam": defineOperation({
+    method: "POST", path: operationPath("/api/control/orgs/:orgId/ensure-default-team"),
+    input: operationInput({ orgId: requiredParameter }),
+    output: object, retry: "never",
+    exposure: { renderer: true, app: false },
+  }),
+  "org.members.list": defineOperation({
+    method: "GET", path: operationPath("/api/control/orgs/:orgId/members"),
+    input: operationInput({ orgId: requiredParameter }),
+    output: array, retry: "safe",
+    exposure: { renderer: true, app: false },
+  }),
+  "org.invitations.create": defineOperation({
+    method: "POST", path: operationPath("/api/control/orgs/:orgId/invitations"),
+    input: operationInput({ orgId: requiredParameter, email: bodyField, role: bodyField }),
+    output: withStrings("message"), retry: "never",
+    exposure: { renderer: true, app: true },
+    body: selectBody("email", "role"),
+  }),
+  "org.invitations.list": defineOperation({
+    method: "GET", path: operationPath("/api/control/orgs/:orgId/invitations"),
+    input: operationInput({ orgId: requiredParameter }),
+    output: array, retry: "safe",
+    exposure: { renderer: true, app: true },
+  }),
+  "org.invitations.revoke": defineOperation({
+    method: "DELETE", path: operationPath("/api/control/orgs/:orgId/invitations/:invitationId"),
+    input: operationInput({ orgId: requiredParameter, invitationId: requiredParameter }),
+    output: object, retry: "never",
+    exposure: { renderer: true, app: true },
+  }),
+  "org.invitations.accept": defineOperation({
+    method: "POST", path: operationPath("/api/control/invitations/accept"),
+    input: operationInput({ token: requiredParameter }),
+    output: withStrings("user_id", "role"), retry: "never",
+    exposure: { renderer: true, app: true },
+    body: selectBody("token"),
+  }),
+  "org.members.update": defineOperation({
+    method: "PATCH", path: operationPath("/api/control/orgs/:orgId/members/:userPublicId"),
+    input: operationInput({ orgId: requiredParameter, userPublicId: requiredParameter, role: bodyField }),
+    output: withStrings("user_id", "role"), retry: "never",
+    exposure: { renderer: true, app: false },
+    body: selectBody("role"),
+  }),
+  "org.members.remove": defineOperation({
+    method: "DELETE", path: operationPath("/api/control/orgs/:orgId/members/:userPublicId"),
+    input: operationInput({ orgId: requiredParameter, userPublicId: requiredParameter }),
+    output: object, retry: "never",
+    exposure: { renderer: true, app: false },
+  }),
+  "team.members.list": defineOperation({
+    method: "GET", path: operationPath("/api/control/teams/:teamId/members"),
+    input: operationInput({ teamId: requiredParameter }),
+    output: array, retry: "safe",
+    exposure: { renderer: true, app: false },
+  }),
+  "team.members.add": defineOperation({
+    method: "POST", path: operationPath("/api/control/teams/:teamId/members"),
+    input: operationInput({ teamId: requiredParameter, tokenIdentifier: bodyField, providerSubject: bodyField, userPublicId: bodyField, role: bodyField }),
+    output: object, retry: "never",
+    exposure: { renderer: true, app: false },
+    body: selectBody("tokenIdentifier", "providerSubject", "userPublicId", "role"),
+  }),
+  "team.members.remove": defineOperation({
+    method: "DELETE", path: operationPath("/api/control/teams/:teamId/members"),
+    input: operationInput({ teamId: requiredParameter, tokenIdentifier: bodyField, userPublicId: bodyField }),
+    output: object, retry: "never",
+    exposure: { renderer: true, app: false },
+    body: selectBody("tokenIdentifier", "userPublicId"),
+  }),
+  "team.projects.list": defineOperation({
+    method: "GET", path: operationPath("/api/control/teams/:teamId/projects"),
+    input: operationInput({ teamId: requiredParameter }),
+    output: array, retry: "safe",
+    exposure: { renderer: true, app: false },
+  }),
+  "team.projects.grant": defineOperation({
+    method: "POST", path: operationPath("/api/control/teams/:teamId/projects"),
+    input: operationInput({ teamId: requiredParameter, projectId: bodyField, role: bodyField }),
+    output: object, retry: "never",
+    exposure: { renderer: true, app: false },
+    body: selectBody("projectId", "role"),
+  }),
+  "team.projects.revoke": defineOperation({
+    method: "DELETE", path: operationPath("/api/control/teams/:teamId/projects"),
+    input: operationInput({ teamId: requiredParameter, projectId: bodyField }),
+    output: object, retry: "never",
+    exposure: { renderer: true, app: false },
+    body: selectBody("projectId"),
+  }),
+  "project.members.grant": defineOperation({
+    method: "POST", path: operationPath("/api/control/projects/:projectId/members"),
+    input: operationInput({ projectId: requiredParameter, userPublicId: bodyField, role: bodyField }),
+    output: withStrings("project_id", "user_id", "role"), retry: "never",
+    exposure: { renderer: true, app: false },
+    body: selectBody("userPublicId", "role"),
+  }),
+  "project.members.revoke": defineOperation({
+    method: "DELETE", path: operationPath("/api/control/projects/:projectId/members/:userPublicId"),
+    input: operationInput({ projectId: requiredParameter, userPublicId: requiredParameter }),
+    output: object, retry: "never",
+    exposure: { renderer: true, app: false },
+  }),
+  "project.access": defineOperation({
+    method: "GET", path: operationPath("/api/control/projects/:projectId/access"),
+    input: operationInput({ projectId: requiredParameter }),
+    output: withArrays("entries"), retry: "safe",
+    exposure: { renderer: true, app: false },
+  }),
+  "connections.list": defineOperation({
+    method: "GET", path: operationPath("/api/claxedo/integrations"),
+    input: operationInput({}),
+    output: object, retry: "safe",
+    exposure: { renderer: true, app: false },
+  }),
+  "connections.connect": defineOperation({
+    method: "POST", path: operationPath("/api/claxedo/integrations/:id/connect"),
+    input: operationInput({ id: requiredParameter, method: bodyField, fields: bodyField, secret: bodyField, confirmReplace: bodyField, scope: bodyField, issuer: bodyField }),
+    output: object, retry: "never",
+    exposure: { renderer: true, app: false },
+    body: selectBody("method", "fields", "secret", "confirmReplace", "scope", "issuer"),
+  }),
+  "connections.attempt": defineOperation({
+    method: "GET", path: operationPath("/api/claxedo/integrations/attempts/:state"),
+    input: operationInput({ state: requiredParameter }),
+    output: object, retry: "safe",
+    exposure: { renderer: true, app: false },
+  }),
+  "connections.repositories": defineOperation({
+    method: "GET", path: operationPath("/api/claxedo/integrations/connections/:id/repositories"),
+    input: operationInput({ id: requiredParameter }),
+    output: object, retry: "safe",
+    exposure: { renderer: true, app: false },
+  }),
+  "connections.disconnect": defineOperation({
+    method: "DELETE", path: operationPath("/api/claxedo/integrations/connections/:id"),
+    input: operationInput({ id: requiredParameter }),
+    output: object, retry: "safe",
+    exposure: { renderer: true, app: false },
+  }),
+  "connections.reverify": defineOperation({
+    method: "POST", path: operationPath("/api/claxedo/integrations/connections/:id/reverify"),
+    input: operationInput({ id: requiredParameter }),
+    output: object, retry: "never",
+    exposure: { renderer: true, app: false },
+  }),
+  "documents.list": defineOperation({
+    method: "GET", path: operationPath("/documents", { optionalQuery: ["project_id", "document_id", "directory", "archived"] }),
+    input: operationInput({ project_id: optionalParameter, document_id: optionalParameter, directory: optionalParameter, archived: optionalParameter }),
+    output: array, retry: "safe",
+    exposure: { renderer: true, app: true },
+  }),
+  "documents.get": defineOperation({
+    method: "GET", path: operationPath("/documents/:id"),
+    input: operationInput({ id: requiredParameter }),
+    output: object, retry: "safe",
+    exposure: { renderer: true, app: true },
+  }),
+  "documents.create": defineOperation({
+    method: "POST", path: operationPath("/documents"),
+    input: operationInput({ project_id: bodyField, directory: bodyField, display_name: bodyField, markdown: bodyField }),
+    output: object, retry: "never",
+    exposure: { renderer: true, app: true },
+    body: selectBody("project_id", "directory", "display_name", "markdown"),
+  }),
+  "documents.update": defineOperation({
+    method: "PATCH", path: operationPath("/documents/:id"),
+    input: operationInput({ id: requiredParameter, display_name: bodyField, session_id: bodyField, ifMatch: optionalParameter }),
+    output: object, retry: "safe",
+    exposure: { renderer: true, app: true },
+    body: selectBody("display_name", "session_id"),
+    headers: operationHeaders({ ifMatch: "If-Match" }),
+  }),
+  "documents.content.get": defineOperation({
+    method: "GET", path: operationPath("/documents/:id/content"),
+    input: operationInput({ id: requiredParameter }),
+    output: object, retry: "safe",
+    exposure: { renderer: true, app: true },
+  }),
+  "documents.content.put": defineOperation({
+    method: "PUT", path: operationPath("/documents/:id/content"),
+    input: operationInput({ id: requiredParameter, display_name: bodyField, markdown: bodyField, ifMatch: requiredParameter }),
+    output: object, retry: "never",
+    exposure: { renderer: true, app: true },
+    body: selectBody("display_name", "markdown"),
+    headers: operationHeaders({ ifMatch: "If-Match" }),
+  }),
+  "documents.snapshots": defineOperation({
+    method: "GET", path: operationPath("/documents/:id/snapshots"),
+    input: operationInput({ id: requiredParameter }),
+    output: array, retry: "safe",
+    exposure: { renderer: true, app: true },
+  }),
+  "documents.snapshots.restore": defineOperation({
+    method: "POST", path: operationPath("/documents/:id/snapshots/:snapshotId/restore"),
+    input: operationInput({ id: requiredParameter, snapshotId: requiredParameter, ifMatch: requiredParameter }),
+    output: object, retry: "never",
+    exposure: { renderer: true, app: true },
+    headers: operationHeaders({ ifMatch: "If-Match" }),
+  }),
+  "documents.workSource": defineOperation({
+    method: "POST", path: operationPath("/documents/:id/work-source"),
+    input: operationInput({ id: requiredParameter, target_stream_id: bodyField, directory: bodyField, repository_url: bodyField }),
+    output: object, retry: "safe",
+    exposure: { renderer: true, app: false },
+    body: selectBody("target_stream_id", "directory", "repository_url"),
+  }),
+  "documents.workSourcePin": defineOperation({
+    method: "POST", path: operationPath("/documents/:id/snapshots/:snapshotId/work-source-pin"),
+    input: operationInput({ id: requiredParameter, snapshotId: requiredParameter, work_source_id: bodyField, revision_id: bodyField }),
+    output: object, retry: "safe",
+    exposure: { renderer: true, app: false },
+    body: selectBody("work_source_id", "revision_id"),
+  }),
+  "documents.statuses": defineOperation({
+    method: "GET", path: operationPath("/documents/statuses", { optionalQuery: ["project_id", "document_id", "directory", "archived"] }),
+    input: operationInput({ project_id: optionalParameter, document_id: optionalParameter, directory: optionalParameter, archived: optionalParameter }),
+    output: array, retry: "safe",
+    exposure: { renderer: true, app: true },
+  }),
+  "session.messages": defineOperation({
+    method: "GET", path: operationPath("/api/control/sessions/:sessionId/messages", { optionalQuery: ["workspaceId", "view", "limit", "before", "after"] }),
+    input: operationInput({ sessionId: requiredParameter, workspaceId: optionalParameter, view: optionalParameter, limit: optionalParameter, before: optionalParameter, after: optionalParameter }),
+    output: object, retry: "safe",
+    exposure: { renderer: true, app: false },
+  }),
+  "session.outline": defineOperation({
+    method: "GET", path: operationPath("/api/control/sessions/:sessionId/outline", { optionalQuery: ["workspaceId", "rows", "cols", "reasoning", "shell", "edit"] }),
+    input: operationInput({ sessionId: requiredParameter, workspaceId: optionalParameter, rows: optionalParameter, cols: optionalParameter, reasoning: optionalParameter, shell: optionalParameter, edit: optionalParameter }),
+    output: object, retry: "safe",
+    exposure: { renderer: true, app: false },
+  }),
+  "session.turnPage": defineOperation({
+    method: "GET", path: operationPath("/api/control/sessions/:sessionId/page", { query: ["workspaceId", "before", "rows", "cols", "reasoning", "shell", "edit"] }),
+    input: operationInput({ sessionId: requiredParameter, workspaceId: requiredParameter, before: requiredParameter, rows: requiredParameter, cols: requiredParameter, reasoning: requiredParameter, shell: requiredParameter, edit: requiredParameter }),
+    output: withArrays("turns"), retry: "safe",
+    exposure: { renderer: true, app: false },
+  }),
+  "session.part": defineOperation({
+    method: "GET", path: operationPath("/api/control/sessions/:sessionId/part", { query: ["workspaceId", "messageId", "partId"] }),
+    input: operationInput({ sessionId: requiredParameter, workspaceId: requiredParameter, messageId: requiredParameter, partId: requiredParameter }),
+    output: object, retry: "safe",
+    exposure: { renderer: true, app: false },
+  }),
+  "session.gateway": defineOperation({
+    method: "GET", path: operationPath("/api/control/sessions/:sessionId/gateway", { optionalQuery: ["workspaceId"] }),
+    input: operationInput({ sessionId: requiredParameter, workspaceId: optionalParameter }),
+    output: object, retry: "safe",
+    exposure: { renderer: true, app: false },
+  }),
+  // Withheld from the renderer, with `workspace.unassignHost`: an assignment
+  // names a host id the renderer must not choose. The supervisor supplies this
+  // machine's own; the renderer's route is hostConnector.share.
+  "workspace.assignHost": defineOperation({
+    method: "POST", path: operationPath("/api/workspace/:id/host-assignment"),
+    input: operationInput({ id: requiredParameter, hostId: bodyField, displayName: bodyField, orgId: bodyField, projectId: bodyField, repoUrl: bodyField, repoName: bodyField, gitBranch: bodyField, remoteDirectory: bodyField }),
+    output: object, retry: "never",
+    exposure: { renderer: false, app: false },
+    body: selectBody("hostId", "displayName", "orgId", "projectId", "repoUrl", "repoName", "gitBranch", "remoteDirectory"),
+  }),
+  "workspace.unassignHost": defineOperation({
+    method: "DELETE", path: operationPath("/api/workspace/:id/host-assignment"),
+    input: operationInput({ id: requiredParameter }),
+    output: object, retry: "never",
+    exposure: { renderer: false, app: false },
+  }),
+  "usage.cloudFacts": defineOperation({
+    method: "GET", path: operationPath("/api/claxedo/usage/cloud-facts", { query: ["since", "until"] }),
+    input: operationInput({ since: requiredParameter, until: requiredParameter }),
+    output: withArrays("facts"), retry: "safe",
+    exposure: { renderer: true, app: false },
+  }),
+  "documents.export": defineOperation({
+    method: "GET", path: operationPath("/documents/:id/export"),
+    input: operationInput({ id: requiredParameter }),
+    output: withStrings("bytesBase64"), retry: "safe",
+    exposure: { renderer: true, app: false },
+  }),
+  "documents.agentOpen": defineOperation({
+    method: "POST", path: operationPath("/documents/:id/agent-open"),
+    input: operationInput({ id: requiredParameter, session_id: bodyField }),
+    output: object, retry: "never",
+    exposure: { renderer: true, app: true },
+    body: selectBody("session_id"),
+  }),
+  "documents.runtimeConflictResolve": defineOperation({
+    method: "POST", path: operationPath("/documents/:id/runtime-conflict/resolve"),
+    input: operationInput({ id: requiredParameter, session_id: bodyField, choice: bodyField }),
+    output: object, retry: "never",
+    exposure: { renderer: true, app: true },
+    body: selectBody("session_id", "choice"),
+  }),
+  "documents.moveToRepository": defineOperation({
+    method: "POST", path: operationPath("/documents/:id/move-to-repository"),
+    input: operationInput({ id: requiredParameter, workspace_id: bodyField, path: bodyField }),
+    output: object, retry: "never",
+    exposure: { renderer: true, app: true },
+    body: selectBody("workspace_id", "path"),
+  }),
+  "documents.fromRepo": defineOperation({
+    method: "POST", path: operationPath("/documents/from-repo"),
+    input: operationInput({ project_id: bodyField, directory: bodyField, workspace_id: bodyField, path: bodyField, display_name: bodyField, status: bodyField, session_id: bodyField }),
+    output: object, retry: "never",
+    exposure: { renderer: true, app: true },
+    body: selectBody("project_id", "directory", "workspace_id", "path", "display_name", "status", "session_id"),
+  }),
+  "plugin.request": defineOperation({
+    method: (input) => input.method, path: operationPath("/api/plugins/:pluginId/*", { accepts: { pluginId: isPluginId } }),
+    input: operationInput({ pluginId: requiredParameter, method: pluginMethod, path: requiredParameter, body: bodyField }),
+    output: statusResult, retry: "never",
+    exposure: { renderer: true, app: false },
+    body: pluginBody,
+    response: "http",
+  }),
+}
 
-/**
- * What one operation's decoder actually proves about its result.
- *
- * The table used to be annotated `Record<HostedOperationName, HostedOperationSpec>`,
- * and that annotation collapsed every row to `HostedOperationSpec<unknown>` at
- * the point of declaration — the per-operation decoder type was thrown away
- * before anyone could read it. `decodeHostedResult` then took a type parameter
- * and cast to it, which let the CALLER name the result shape with nothing
- * checking the claim. Reading the type back off the decoder that actually runs
- * is the same fact, sourced from the code that establishes it.
- */
+export type HostedOperationName = keyof typeof HOSTED_OPERATIONS
+export type RunHostedOperation = (operation: HostedOperationName, input?: Readonly<Record<string, unknown>>) => Promise<unknown>
+export type HostedOperationInput<N extends HostedOperationName> =
+  (typeof HOSTED_OPERATIONS)[N]["input"] extends (raw: unknown) => DecodeResult<infer I> ? I : never
 export type DecodedHostedResult<N extends HostedOperationName> =
-  (typeof HOSTED_OPERATIONS)[N]["decode"] extends (raw: unknown) => DecodeResult<infer T> ? T : never
+  (typeof HOSTED_OPERATIONS)[N]["output"] extends (raw: unknown) => DecodeResult<infer O> ? O : never
 
-/**
- * The same table, typed so that indexing it by a name keeps that row's decoded
- * type instead of the union of all of them.
- *
- * A mapped type is required rather than merely nice: indexing the `satisfies`
- * literal by a type parameter defers to `(typeof HOSTED_OPERATIONS)[N]`, whose
- * apparent `decode` is the union of every decoder, so the call returns the
- * union of every decoded type and nothing can assign that back to row `N`.
- * Indexing a mapped type distributes instead. It is derived from the one table
- * above, so the two cannot drift.
- */
-const OPERATIONS: { [N in HostedOperationName]: HostedOperationSpec<DecodedHostedResult<N>> } = HOSTED_OPERATIONS
+const OUTPUTS: { [N in HostedOperationName]: Pick<OperationDefinition<unknown, DecodedHostedResult<N>>, "output"> } = HOSTED_OPERATIONS
 
 export function hostedOperationNames(): HostedOperationName[] {
   return Object.keys(HOSTED_OPERATIONS).filter(isHostedOperationName)
 }
 
-/** True for a name the operation table actually declares. */
 export function isHostedOperationName(value: string): value is HostedOperationName {
   return Object.hasOwn(HOSTED_OPERATIONS, value)
 }
 
-/**
- * Decode one operation's result, naming the operation on failure.
- *
- * The name in the message is the point. "expected a non-empty relayUrl" from an
- * unnamed decoder sends someone reading the wrong route.
- */
 export function decodeHostedResult<N extends HostedOperationName>(name: N, raw: unknown): DecodedHostedResult<N> {
-  const spec = OPERATIONS[name]
-  if (!spec) throw new Error(`no hosted operation named "${name}"`)
-  const decoded = spec.decode(raw)
+  const spec = OUTPUTS[name]
+  if (!spec) throw new UnknownHostedOperation(`no hosted operation named "${name}"`)
+  const decoded = spec.output(raw)
   if (!decoded.ok) throw new Error(`hosted operation "${name}" returned an unexpected shape: ${decoded.reason}`)
   return decoded.value
 }
 
-/** Whether the renderer may retry this operation on its own. */
 export function isSafeOperation(name: HostedOperationName) {
-  return HOSTED_OPERATIONS[name].safe
+  return HOSTED_OPERATIONS[name].retry === "safe"
+}
+
+export function isStreamHostedOperation(name: string): name is HostedOperationName {
+  return isHostedOperationName(name) && "stream" in HOSTED_OPERATIONS[name].exposure && HOSTED_OPERATIONS[name].exposure.stream === true
+}
+
+export function resolveHostedOperation(name: string, raw: unknown = {}): ResolvedRequest {
+  if (!isHostedOperationName(name)) throw new UnknownHostedOperation(`no hosted operation named "${name}"`)
+  try {
+    return HOSTED_OPERATIONS[name].request(raw)
+  } catch (error) {
+    if (error instanceof MissingOperationParameter) throw new MissingOperationParameter(`operation "${name}": ${error.message}`)
+    throw error
+  }
 }

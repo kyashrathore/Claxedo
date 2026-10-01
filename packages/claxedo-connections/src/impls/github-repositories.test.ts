@@ -52,5 +52,6 @@ describe("GitHub code-host repositories", () => {
       fetchImpl: (async () => new Response("token github-secret denied", { status: 403 })),
     })
     await expect(integration.impl.actions["code-host"]!.listRepositories?.({}, "github-secret")).rejects.toThrow("github_repositories_unauthorized")
+    await expect(integration.impl.actions["code-host"]!.listRepositories?.({}, "github-secret")).rejects.toMatchObject({ code: "repository_provider_unauthorized", status: 502, retryable: false })
   })
 })

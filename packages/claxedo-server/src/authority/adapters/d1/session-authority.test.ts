@@ -1,3 +1,4 @@
+import { inviteOrgMember } from "../../../test-support/invite-org-member"
 import { readFile } from "node:fs/promises"
 import { afterEach, describe, expect, test } from "vitest"
 import { Miniflare } from "miniflare"
@@ -23,7 +24,6 @@ import { exerciseSessionPartConformance } from "@claxedo/server-core/platform/au
 
 import { buildSessionListResponse, parseSessionListQuery } from "../../../session/list"
 import { D1WorkspaceAuthority } from "./workspace-authority"
-import { D1OrgMemberAuthority } from "./org-member-authority"
 import { D1ChannelRuntimeAuthority } from "./channel-runtime-authority"
 import { D1SessionAuthority } from "./session-authority"
 import { controlPlaneMigrationPath, controlPlaneMigrations } from "../../../test-support/control-plane-migrations"
@@ -133,17 +133,17 @@ async function sharedWorkspace(input: Awaited<ReturnType<typeof setup>>) {
   const outsider = await signed(input.workspace, "outsider")
   const reader = await signed(input.workspace, "reader")
   await input.workspace.createHostedOrganization(alice, { name: "Acme", orgId: "org_acme" })
-  await new D1OrgMemberAuthority(input.workspace.accessContext()).addOrgMember(alice, {
+  await inviteOrgMember(input.database, alice, {
     orgId: "org_acme",
     userPublicId: bob.principal!.userId,
     role: "member",
   })
-  await new D1OrgMemberAuthority(input.workspace.accessContext()).addOrgMember(alice, {
+  await inviteOrgMember(input.database, alice, {
     orgId: "org_acme",
     userPublicId: admin.principal!.userId,
     role: "admin",
   })
-  await new D1OrgMemberAuthority(input.workspace.accessContext()).addOrgMember(alice, {
+  await inviteOrgMember(input.database, alice, {
     orgId: "org_acme",
     userPublicId: reader.principal!.userId,
     role: "member",
@@ -317,7 +317,7 @@ describe("D1 private multiplayer session authority", () => {
     const input = await setup()
     const { alice, admin, outsider } = await sharedWorkspace(input)
     const teammate = await signed(input.workspace, "teammate")
-    await new D1OrgMemberAuthority(input.workspace.accessContext()).addOrgMember(alice, {
+    await inviteOrgMember(input.database, alice, {
       orgId: "org_acme",
       userPublicId: teammate.principal!.userId,
       role: "member",
@@ -362,7 +362,7 @@ describe("D1 private multiplayer session authority", () => {
     const input = await setup()
     const { alice, admin } = await sharedWorkspace(input)
     const teammate = await signed(input.workspace, "teammate")
-    await new D1OrgMemberAuthority(input.workspace.accessContext()).addOrgMember(alice, {
+    await inviteOrgMember(input.database, alice, {
       orgId: "org_acme",
       userPublicId: teammate.principal!.userId,
       role: "member",
@@ -1015,6 +1015,7 @@ describe("D1 private multiplayer session authority", () => {
       workspaceId: "ws_main",
       limit: 2,
     })) as { messages: Array<Record<string, any>>; nextCursor?: string }
+    expect(page).toMatchObject({ maxEventOrdinal: 7 })
     expect(page.messages.map((message) => message.info.id)).toEqual(["m2", "m3"])
     expect(page.messages[0].info.claxedo.author).toEqual({
       id: alice.principal!.actorId,
@@ -1140,6 +1141,21 @@ describe("D1 private multiplayer session authority", () => {
 
     await input.sessions.deleteSessionVisibility(alice, { workspaceId: "ws_main", sessionId: "ses_a" })
     expect(await updatedAt("ses_a")).toEqual({ ...registered.a, deleted_at: expect.any(Number) })
+  })
+
+  test("a title from an older runtime snapshot does not replace a newer one", async () => {
+    const input = await setup()
+    const { alice } = await sharedWorkspace(input)
+    await reserveAndRegister(input.sessions, alice, { operationId: "op_a", sessionId: "ses_a" })
+    const write = (title: string, updatedAt: number) =>
+      input.sessions.upsertSessionVisibility(alice, { workspaceId: "ws_main", sessions: [{ sessionId: "ses_a", title, updatedAt }] })
+
+    await write("Renamed", 3_000_000_000_000)
+    await write("Original", 2_000_000_000_000)
+
+    expect(await input.sessions.listSessions(alice, { workspaceId: "ws_main" })).toEqual([
+      expect.objectContaining({ session_id: "ses_a", title: "Renamed", updated_at: 3_000_000_000_000 }),
+    ])
   })
 
   test("stamps the admitted human turn and refuses to move it backwards", async () => {
@@ -1341,7 +1357,7 @@ describe("D1 session authority, shares of a session this plane never registered"
     const input = await setup()
     const { alice, outsider } = await sharedWorkspace(input)
     const teammate = await signed(input.workspace, "teammate")
-    await new D1OrgMemberAuthority(input.workspace.accessContext()).addOrgMember(alice, {
+    await inviteOrgMember(input.database, alice, {
       orgId: "org_acme",
       userPublicId: teammate.principal!.userId,
       role: "member",
@@ -1363,7 +1379,7 @@ describe("D1 session authority, write classes", () => {
     const input = await setup()
     const { alice } = await sharedWorkspace(input)
     const teammate = await signed(input.workspace, "teammate")
-    await new D1OrgMemberAuthority(input.workspace.accessContext()).addOrgMember(alice, {
+    await inviteOrgMember(input.database, alice, {
       orgId: "org_acme",
       userPublicId: teammate.principal!.userId,
       role: "member",

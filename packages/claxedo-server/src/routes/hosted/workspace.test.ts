@@ -1,3 +1,4 @@
+import { PublicApiError } from "@claxedo/server-core/platform/errors/public-api-error"
 import { describe, expect, test, vi } from "vitest"
 import { ControlPlaneAuthError, type ControlPlaneTokenVerifier } from "@claxedo/server-core/platform/auth/auth"
 import { ClaxedoError } from "@claxedo/server-core/platform/errors/base"
@@ -39,10 +40,6 @@ const verifier: ControlPlaneTokenVerifier = async (token, config) => ({
     issuer: config.issuer,
   },
 })
-
-function machineRow(hostId: string, enrolledVia: "account" | "invitation") {
-  return { enrollment_id: `enr_${hostId}`, host_id: hostId, enrolled_via: enrolledVia }
-}
 
 type CloudCreateArgs = { workspaceId: string; projectId?: string; repoUrl?: string; gitBranch?: string; remoteDirectory?: string; homeRegion?: string }
 
@@ -92,7 +89,6 @@ function fakeAuthority(overrides: Record<string, unknown> = {}) {
     ]),
     assignWorkspaceHost: vi.fn(async () => ({ assigned: true, workspace_id: "ws_1", host_id: "host_1" })),
     unassignWorkspaceHost: vi.fn(async () => ({ unassigned: true })),
-    hostEnrollmentByHost: vi.fn(async () => machineRow("host_1", "account")),
     auditAllow: vi.fn(async () => ({})),
     auditDeny: vi.fn(async () => ({})),
     ...overrides,
@@ -179,7 +175,7 @@ function del(path: string, token = "user_1") {
 }
 
 describe("host assignment (POST /:id/host-assignment)", () => {
-  test("records the owner assignment and mints a host tunnel token, without starting a tunnel", async () => {
+  test("records the owner assignment without issuing a tunnel credential", async () => {
     const { app, authority, capture } = buildApp({
       options: {
         defaultHomeRegion: "eu-west",
@@ -223,33 +219,8 @@ describe("host assignment (POST /:id/host-assignment)", () => {
       workspaceId: "ws_1",
       hostId: "host_1",
     })
-    // The desktop (account enrollment) opens its relay tunnel from this
-    // credential before its first beat; one enrollment row is read for it,
-    // not the fleet.
-    expect(authority!.hostEnrollmentByHost).toHaveBeenCalledWith(expect.anything(), { hostId: "host_1" })
     expect(json.assignment).toMatchObject({ assigned: true, workspace_id: "ws_1", host_id: "host_1" })
-    expect(json.hostTunnel).toMatchObject({
-      hostTunnelToken: "htt-for-host_1",
-      homeRegion: "eu-west",
-      relayUrl: "https://relay.eu.test",
-    })
-  })
-
-  test("mints no credential for a machine that is not account-enrolled: its heartbeat ack carries the fenced one", async () => {
-    for (const machine of [machineRow("host_1", "invitation"), undefined, "absent"] as const) {
-      const signer = vi.fn(httSigner)
-      const authority = fakeAuthority(
-        machine === "absent" ? { hostEnrollmentByHost: undefined } : { hostEnrollmentByHost: vi.fn(async () => machine) },
-      )
-      const { app } = buildApp({ authority, options: { hostTunnelTokenSigner: signer } })
-      const res = await app.fetch(post("/ws_1/host-assignment", { hostId: "host_1" }))
-      expect(res.status).toBe(200)
-      const json = (await res.json()) as Record<string, unknown>
-      expect(json.assignment).toMatchObject({ assigned: true })
-      expect(json).not.toHaveProperty("hostTunnel")
-      expect(signer).not.toHaveBeenCalled()
-      expect(authority.assignWorkspaceHost).toHaveBeenCalledTimes(1)
-    }
+    expect(json).not.toHaveProperty("hostTunnel")
   })
 
   test("an unknown enrollment or workspace is the authority's 404, not a server fault", async () => {
@@ -295,7 +266,7 @@ describe("host assignment (POST /:id/host-assignment)", () => {
   test("assigning a cloud-backed workspace returns a 409 conflict", async () => {
     const authority = fakeAuthority({
       assignWorkspaceHost: vi.fn(async () => {
-        throw new Error("workspace_backing_conflict: cannot assign a host to a cloud workspace")
+        throw new PublicApiError("workspace_backing_conflict")
       }),
     })
     const { app } = buildApp({ authority: authority })

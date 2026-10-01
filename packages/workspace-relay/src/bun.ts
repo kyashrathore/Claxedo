@@ -69,9 +69,8 @@ type RelayHostTunnelWebSocketData = {
   kind: "host-tunnel"
   hostId: string
   workspaceIds: string[]
-  /** Fence pair from the last verified Host Tunnel Token (connect or registration update); absent for tokens without one. */
-  enrollmentId?: string
-  generation?: number
+  enrollmentId: string
+  generation: number
   pending: Map<string, PendingTunnelHttpResponse>
   /**
    * Pending entries whose response started as `text/event-stream`. They stay
@@ -173,8 +172,8 @@ export type WorkspaceRelayHostTunnelOptions = {
   /**
    * Composition seam replacing Host Tunnel Token verification. The result's
    * claims are validated against the requested host and workspace set
-   * outside this policy; a tunnel admitted through it can carry a serving
-   * generation and is fenced like a token-admitted one.
+   * outside this policy, and must carry the serving-generation fence a Host
+   * Tunnel Token carries.
    */
   authorizeHostTunnel?: (
     request: Request,
@@ -611,7 +610,7 @@ function ownedWorkspaceIds(hostTunnels: Map<string, RelayHostTunnelWebSocket>, w
   return ws.data.workspaceIds.filter((workspaceId) => hostTunnels.get(tunnelKey(ws.data.hostId, workspaceId)) === ws)
 }
 
-function outranks(incumbent: RelayHostTunnelWebSocket, candidateGeneration: number | undefined) {
+function outranks(incumbent: RelayHostTunnelWebSocket, candidateGeneration: number) {
   return hostTunnelIncumbentOutranks(incumbent.data.generation, candidateGeneration)
 }
 
@@ -1522,7 +1521,7 @@ function watchHostGeneration(
   bunOptions: WorkspaceRelayBunOptions,
 ) {
   const intervalMs = bunOptions.hostGenerationCheckIntervalMs ?? HOST_GENERATION_CHECK_INTERVAL_MS_DEFAULT
-  if (ws.data.generationCheckTimer || !options.resolveHostGeneration || ws.data.generation === undefined || intervalMs <= 0) return
+  if (ws.data.generationCheckTimer || !options.resolveHostGeneration || intervalMs <= 0) return
   const graceAttempts = bunOptions.hostGenerationOutageGraceAttempts ?? HOST_GENERATION_OUTAGE_GRACE_ATTEMPTS_DEFAULT
   ws.data.generationCheckTimer = setInterval(() => {
     void checkHostTunnelGeneration(options.resolveHostGeneration, {
@@ -1706,8 +1705,8 @@ export function createWorkspaceRelayBun(options: WorkspaceRelayOptions, bunOptio
    * its last identity is closed as replaced; one that keeps another workspace
    * stays up for it. Returns the first workspace whose incumbent outranks the
    * candidate (`hostTunnelIncumbentOutranks`) with no routing entry touched,
-   * so a fenced socket is never displaced by a lower or absent generation
-   * even if both sockets were admitted before either opened; `undefined`
+   * so a socket is never displaced by a lower generation even if both
+   * sockets were admitted before either opened; `undefined`
    * once every identity points at `ws`.
    */
   function claimTunnelIdentities(ws: RelayHostTunnelWebSocket, workspaceIds: string[]): string | undefined {
@@ -1743,10 +1742,9 @@ export function createWorkspaceRelayBun(options: WorkspaceRelayOptions, bunOptio
    * socket's own claims as the first incumbent: the update's token must not
    * be outranked by the generation the socket already holds, must pass the
    * control-plane check, and must not be outranked by any incumbent for a
-   * workspace it claims. The socket then carries the update's verified claims
-   * and, if it became fenced, starts the periodic check. Between the awaits
-   * the socket may have lost every identity or closed; the update is then
-   * moot and dropped.
+   * workspace it claims. The socket then carries the update's verified claims.
+   * Between the awaits the socket may have lost every identity or closed; the
+   * update is then moot and dropped.
    */
   async function applyRegistrationUpdate(hostSocket: RelayHostTunnelWebSocket, workspaceIds: string[], token: string) {
     const hostId = hostSocket.data.hostId
@@ -1920,8 +1918,8 @@ export function createWorkspaceRelayBun(options: WorkspaceRelayOptions, bunOptio
             kind: "host-tunnel",
             hostId,
             workspaceIds,
-            ...(claims.enrollment_id ? { enrollmentId: claims.enrollment_id } : {}),
-            ...(claims.generation !== undefined ? { generation: claims.generation } : {}),
+            enrollmentId: claims.enrollment_id,
+            generation: claims.generation,
             pending: new Map(),
             activeStreams: 0,
             channels: new Map(),

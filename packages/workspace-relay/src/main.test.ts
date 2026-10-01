@@ -543,13 +543,10 @@ describe("createResolverClient host generation", () => {
 })
 
 describe("hostTunnelIncumbentOutranks", () => {
-  test("a fenced incumbent yields only to an equal or higher generation; an unfenced one yields to anyone", () => {
+  test("an incumbent yields only to an equal or higher generation", () => {
     expect(hostTunnelIncumbentOutranks(3, 2)).toBe(true)
-    expect(hostTunnelIncumbentOutranks(3, undefined)).toBe(true)
     expect(hostTunnelIncumbentOutranks(3, 3)).toBe(false)
     expect(hostTunnelIncumbentOutranks(3, 4)).toBe(false)
-    expect(hostTunnelIncumbentOutranks(undefined, undefined)).toBe(false)
-    expect(hostTunnelIncumbentOutranks(undefined, 0)).toBe(false)
   })
 })
 
@@ -720,19 +717,7 @@ describe("checkHostTunnelGeneration", () => {
     return { enrollmentId: "enr_1", generation, revoked }
   }
 
-  test("admits a token without a generation claim and never asks the resolver for it", async () => {
-    let calls = 0
-    const lookup = async () => {
-      calls += 1
-      return current(9)
-    }
-    await expect(checkHostTunnelGeneration(lookup, {})).resolves.toEqual({ ok: true })
-    await expect(checkHostTunnelGeneration(lookup, { enrollment_id: "enr_1" })).resolves.toEqual({ ok: true })
-    await expect(checkHostTunnelGeneration(undefined, {})).resolves.toEqual({ ok: true })
-    expect(calls).toBe(0)
-  })
-
-  test("refuses a token that carries a generation when there is no resolver to verify it, non-retryably", async () => {
+  test("refuses non-retryably when there is no resolver to verify the generation", async () => {
     await expect(checkHostTunnelGeneration(undefined, { enrollment_id: "enr_1", generation: 1 })).resolves.toEqual({
       ok: false,
       retryable: false,

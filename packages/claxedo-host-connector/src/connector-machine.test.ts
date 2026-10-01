@@ -14,7 +14,8 @@ import {
 import { createFakeControlPlane, enrollFakeHost, type FakeControlPlane } from "./fake-control-plane.test-support"
 import { effectiveRoots, type HostScope, type HostState } from "./host-state"
 import { createHostKeyPair, hostKeyPairFromJwk, newHostId } from "./host-identity"
-import { createMachineSealingKeyPair, hostMachineSealAad, openMachineSeal } from "./machine-seal"
+import { createMachineSealingKeyPair, openMachineSeal } from "./machine-seal"
+import { machineSealAad } from "@claxedo/account-contract/machine"
 import { createMachineSignedTransport } from "./machine-transport"
 
 /**
@@ -31,7 +32,10 @@ async function machineHost(
     cliRoots?: string[]
     resolvePath?: (p: string) => Promise<string>
     /** What the caller does with each description list; defaults to acking everything it can. */
-    onAssignments?: (descriptions: AssignmentDescription[], ack: (d: AssignmentDescription) => Promise<void>) => Promise<void>
+    onAssignments?: (
+      descriptions: AssignmentDescription[],
+      ack: (d: AssignmentDescription) => Promise<void>,
+    ) => Promise<void>
     wrap?: (transport: MachineTransport) => MachineTransport
     sealingPublicKey?: string
     /** The scope revision the caller's store already holds, as a restart would seed it. */
@@ -42,7 +46,10 @@ async function machineHost(
     onProviderConfig?: (config: ProviderConfigRevision) => Promise<void>
   } = {},
 ) {
-  const enrolled = await enrollFakeHost(cp, { allowedRoots: input.allowedRoots ?? ["/srv"], cliRoots: input.cliRoots ?? [] })
+  const enrolled = await enrollFakeHost(cp, {
+    allowedRoots: input.allowedRoots ?? ["/srv"],
+    cliRoots: input.cliRoots ?? [],
+  })
   let state: HostState = enrolled.state
   const real = createMachineSignedTransport({
     controlPlaneUrl: cp.url,
@@ -177,7 +184,11 @@ describe("start", () => {
 
     const state = await h.connector.start()
 
-    expect(state).toMatchObject({ status: "stopped", reason: "revoked", detail: expect.stringContaining("enrollment_revoked") })
+    expect(state).toMatchObject({
+      status: "stopped",
+      reason: "revoked",
+      detail: expect.stringContaining("enrollment_revoked"),
+    })
     expect(h.errors.map((entry) => entry.stage)).toEqual(["acquire"])
   })
 
@@ -197,7 +208,11 @@ describe("assignment discovery", () => {
     await h.connector.start()
     const before = h.beats().length
 
-    const revision = cp.assign({ enrollmentId: h.enrolled.enrollmentId, workspaceId: "ws_1", remoteDirectory: "/srv/api" })
+    const revision = cp.assign({
+      enrollmentId: h.enrolled.enrollmentId,
+      workspaceId: "ws_1",
+      remoteDirectory: "/srv/api",
+    })
     h.tick()
     await vi.waitFor(() => expect(cp.routable(h.enrolled.enrollmentId)).toEqual(["ws_1"]))
 
@@ -231,7 +246,11 @@ describe("assignment discovery", () => {
     h.tick()
     await vi.waitFor(() => expect(cp.routable(h.enrolled.enrollmentId)).toEqual(["ws_1"]))
 
-    const moved = cp.assign({ enrollmentId: h.enrolled.enrollmentId, workspaceId: "ws_1", remoteDirectory: "/srv/api-v2" })
+    const moved = cp.assign({
+      enrollmentId: h.enrolled.enrollmentId,
+      workspaceId: "ws_1",
+      remoteDirectory: "/srv/api-v2",
+    })
     const beatsBefore = h.beats().length
     let ackedAtDelivery: unknown
     const listener = h.connector.acked
@@ -476,7 +495,9 @@ describe("assignment discovery", () => {
     h.tick()
     await vi.waitFor(() => expect(cp.readiness.get("ws_a")).toMatchObject({ revision: 2 }))
 
-    expect(ackedAtDelivery.at(-1), "ws_b stayed acked while ws_a was withdrawn").toEqual([{ workspaceId: "ws_b", revision: 1 }])
+    expect(ackedAtDelivery.at(-1), "ws_b stayed acked while ws_a was withdrawn").toEqual([
+      { workspaceId: "ws_b", revision: 1 },
+    ])
     expect(h.beats().at(-1)?.body).toMatchObject({
       acks: [
         { workspaceId: "ws_a", revision: 2 },
@@ -752,7 +773,9 @@ describe("consent, withdrawal and drain", () => {
     expect(String(ackOutcome)).toContain("draining")
     expect(h.beats().length, "exactly one beat after the in-flight one").toBe(beatsBeforeDrain + 1)
     expect(h.beats().at(-1)?.body).toMatchObject({ acks: [] })
-    expect(cp.routable(h.enrolled.enrollmentId), "the control plane holds no readiness for the exiting host").toEqual([])
+    expect(cp.routable(h.enrolled.enrollmentId), "the control plane holds no readiness for the exiting host").toEqual(
+      [],
+    )
     expect(h.seen.at(-1)?.map((d) => d.workspaceId)).toEqual(["ws_fast", "ws_slow"])
     expect(h.tunnels.at(-1)).toBeUndefined()
   })
@@ -796,7 +819,10 @@ describe("consent, withdrawal and drain", () => {
     expect(h.seen.length, "the held beat's description list was not delivered").toBe(deliveries)
     expect(h.beats().length, "the held beat, then the drain beat and nothing else").toBe(requests + 1)
     expect(h.beats().at(-1)?.body).toMatchObject({ acks: [] })
-    expect(h.tunnels.slice(tunnels), "the held beat's credential was not reported; the drain reports nothing served").toEqual([undefined])
+    expect(
+      h.tunnels.slice(tunnels),
+      "the held beat's credential was not reported; the drain reports nothing served",
+    ).toEqual([undefined])
     expect(cp.routable(h.enrolled.enrollmentId)).toEqual([])
     await expect(h.connector.ack({ workspaceId: "ws_1", revision: 1 })).rejects.toThrow(/draining/)
   })
@@ -889,9 +915,21 @@ describe("with a real filesystem", () => {
     const h = await machineHost(cp, { allowedRoots: [root], resolvePath: (p) => realpath(p) })
     await h.connector.start()
 
-    cp.assign({ enrollmentId: h.enrolled.enrollmentId, workspaceId: "ws_escape", remoteDirectory: path.join(root, "escape") })
-    cp.assign({ enrollmentId: h.enrolled.enrollmentId, workspaceId: "ws_alias", remoteDirectory: path.join(root, "alias") })
-    cp.assign({ enrollmentId: h.enrolled.enrollmentId, workspaceId: "ws_missing", remoteDirectory: path.join(root, "nope") })
+    cp.assign({
+      enrollmentId: h.enrolled.enrollmentId,
+      workspaceId: "ws_escape",
+      remoteDirectory: path.join(root, "escape"),
+    })
+    cp.assign({
+      enrollmentId: h.enrolled.enrollmentId,
+      workspaceId: "ws_alias",
+      remoteDirectory: path.join(root, "alias"),
+    })
+    cp.assign({
+      enrollmentId: h.enrolled.enrollmentId,
+      workspaceId: "ws_missing",
+      remoteDirectory: path.join(root, "nope"),
+    })
     h.tick()
     await vi.waitFor(() => expect(cp.routable(h.enrolled.enrollmentId)).toEqual(["ws_alias"]))
 
@@ -912,12 +950,20 @@ describe("with a real filesystem", () => {
     await mkdir(path.join(elsewhere, "repo"), { recursive: true })
     await symlink(elsewhere, path.join(srv, "link"))
     const cp = createFakeControlPlane()
-    const h = await machineHost(cp, { allowedRoots: [srv], cliRoots: [path.join(srv, "link")], resolvePath: (p) => realpath(p) })
+    const h = await machineHost(cp, {
+      allowedRoots: [srv],
+      cliRoots: [path.join(srv, "link")],
+      resolvePath: (p) => realpath(p),
+    })
     await h.connector.start()
 
     // Lexically `<srv>/link/repo` is under both `<srv>` and `<srv>/link`;
     // resolved it is `<elsewhere>/repo`, outside the owner's root.
-    cp.assign({ enrollmentId: h.enrolled.enrollmentId, workspaceId: "ws_escape", remoteDirectory: path.join(srv, "link", "repo") })
+    cp.assign({
+      enrollmentId: h.enrolled.enrollmentId,
+      workspaceId: "ws_escape",
+      remoteDirectory: path.join(srv, "link", "repo"),
+    })
     h.tick()
     await vi.waitFor(() => expect(h.ackFailures).toHaveLength(1))
 
@@ -977,7 +1023,7 @@ describe("provider configuration", () => {
       await openMachineSeal(
         host.sealing.privateKeyJwk,
         delivered.sealed ?? "",
-        hostMachineSealAad({ enrollmentId: host.enrolled.enrollmentId, revision }),
+        machineSealAad({ enrollmentId: host.enrolled.enrollmentId, revision }),
       ),
     ).toBe(PLAINTEXT)
 

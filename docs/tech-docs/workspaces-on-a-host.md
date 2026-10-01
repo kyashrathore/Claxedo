@@ -109,7 +109,7 @@ workspace. The owner's declaration is `POST /api/workspace/:id/host-assignment`
 (`packages/claxedo-server/src/routes/hosted/workspace.ts`, and the self-hosted
 node's `packages/claxedo-server/src/workspace/routes/index.ts`), which Electron
 main sends as the account operation `workspace.assignHost`
-(`packages/claxedo-desktop/src/main/account/hosted-operations.ts`).
+(`packages/account-contract/src/hosted-operations.ts`).
 On the desktop the port is `claxedo.hostConnector.share`, which carries a
 workspace id and a label and nothing that names a machine; the supervisor's
 `shareWorkspace` describes the workspace (`describeWorkspace`: directory,
@@ -228,7 +228,7 @@ On a signed desktop the catalog has a second source, the account's:
    operations `workspace.list.provisioner` and `workspace.list.machine`
    through `HostedAccount` (`packages/claxedo-app/src/server/account.ts`).
 2. Electron main sends them as `GET /api/workspace?host=provisioner` and
-   `?host=machine` (`packages/claxedo-desktop/src/main/account/hosted-operations.ts`).
+   `?host=machine` (`packages/account-contract/src/hosted-operations.ts`).
    The control plane answers from `authority.listWorkspaces` and filters
    `host=machine` to `backing === "local-worktree"` rows
    (`packages/claxedo-server/src/routes/hosted/workspace.ts`; the self-hosted

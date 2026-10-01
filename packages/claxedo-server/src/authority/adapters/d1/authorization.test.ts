@@ -1,3 +1,4 @@
+import { inviteOrgMember } from "../../../test-support/invite-org-member"
 import { afterEach, describe, expect, test } from "vitest"
 import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import type { AuthIdentity, ControlPlanePrincipal } from "@claxedo/server-core/platform/auth/authentication"
@@ -80,7 +81,7 @@ async function setup() {
     [orgAdmin, "admin"], [projectOwnerRow, "member"], [teamEditor, "member"], [memberGrant, "member"],
     [follower, "member"], [sender, "member"],
   ] as const) {
-    await authority.addOrgMember!(alice, { orgId: "org_acme", userPublicId: id(who), role })
+    await inviteOrgMember(database, alice, { orgId: "org_acme", userPublicId: id(who), role })
   }
   const created = await authority.createWorkspace(alice, {
     workspaceId: "ws_alice",

@@ -14,6 +14,7 @@ import {
   type BetterAuthD1UserDeployedCompositionInput,
 } from "../../authority/adapters/worker/better-auth-d1-compose"
 import type { HostedWorkerEnv } from "../../authority/provider-neutral-hosted-services"
+import { cloudflareAuthEmailSender, type CloudflareEmailBinding } from "../../platform/auth/auth-email-delivery"
 import { resolveBetterAuthConfiguration } from "../../platform/auth/better-auth-configuration"
 import {
   cloudflareRateLimitStore,
@@ -28,6 +29,8 @@ import { settledCompositionCache } from "./settled-composition-cache"
 export { LiveSyncRoom }
 
 export type BetterAuthD1WorkerEnv = HostedCoreWorkerEnv & {
+  EMAIL?: CloudflareEmailBinding
+  CLAXEDO_EMAIL_FROM?: string
   AUTH_DB: D1Database
   CONTROL_PLANE_DB: D1Database
   CF_VERSION_METADATA?: { id?: string; tag?: string }
@@ -65,6 +68,7 @@ function requiredSetting(value: string | undefined, name: string) {
 export function betterAuthD1CompositionInput(env: BetterAuthD1WorkerEnv): BetterAuthD1UserDeployedCompositionInput {
   return {
     env: stringEnvironment(env),
+    emailSender: cloudflareAuthEmailSender(env),
     authDatabase: env.AUTH_DB,
     controlPlaneDatabase: env.CONTROL_PLANE_DB,
     descriptorExpiresAt: Date.now() + AUTH_DESCRIPTOR_TTL_MS,
@@ -218,7 +222,7 @@ export function createBetterAuthD1Worker(input: {
     })
   const core = createHostedCoreWorker<BetterAuthD1WorkerEnv>((env) => {
     const selected = composition(env)
-    return { plane: selected.plane, options: selected.options }
+    return { plane: selected.plane, options: selected.options, documentAccess: selected.documentAccess }
   })
 
   return {
@@ -226,7 +230,7 @@ export function createBetterAuthD1Worker(input: {
       const cors = refusalCorsEntries(request, env)
       try {
         if (!env.AUTH_DB || !env.CONTROL_PLANE_DB) throw new Error("AUTH_DB and CONTROL_PLANE_DB are required")
-        const configured = resolveBetterAuthConfiguration({ env: stringEnvironment(env) })
+        const configured = resolveBetterAuthConfiguration({ env: stringEnvironment(env), emailSender: cloudflareAuthEmailSender(env) })
         const url = new URL(request.url)
         if (url.origin !== configured.public.apiOrigin)
           throw new Error("observed request origin does not match BETTER_AUTH_URL")

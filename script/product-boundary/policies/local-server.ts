@@ -106,9 +106,6 @@ export const localServer: Policy = {
   //  - `credentials/machine-credentials.ts`: asking a CLI what it is signed in
   //    as, and withdrawing the stored mark so a harness runs on that login —
   //    operations with no referent on a host where no harness is installed.
-  //  - `credentials/operations/drop-copied-harness-logins.ts`: the one-time
-  //    delete of the harness logins an older Claxedo copied off this machine;
-  //    this is the process that ran that scan.
   //  - `usage/adapters/token-tracker-usage-limits.ts`: the plan probe for
   //    every agent installed on this machine, which only a server running on
   //    that machine can ask; tokentracker-cli is already carried by the

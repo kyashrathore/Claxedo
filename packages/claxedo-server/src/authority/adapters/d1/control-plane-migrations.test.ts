@@ -175,21 +175,6 @@ describe("control-plane adapter rebuild", () => {
     expect(owner?.user_id).toBe("user-a")
   })
 
-  test("stores an account's agent setting as one row that is off until written", async () => {
-    const target = await database()
-    await apply(target, CONTROL_PLANE_MIGRATIONS)
-
-    await target.prepare("insert into user_agent_settings (user_id, updated_at) values ('user-a', 1)").run()
-    const row = await target
-      .prepare("select cross_machine_writes from user_agent_settings where user_id = 'user-a'")
-      .first<{ cross_machine_writes: number }>()
-    expect(row).toEqual({ cross_machine_writes: 0 })
-
-    await expect(
-      target.prepare("update user_agent_settings set cross_machine_writes = 2 where user_id = 'user-a'").run(),
-    ).rejects.toThrow(/CHECK constraint failed/)
-  })
-
   test("keeps the consumed bootstrap identity immutable after the rebuild", async () => {
     const target = await database()
     await apply(target, CONTROL_PLANE_MIGRATIONS)

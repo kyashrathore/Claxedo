@@ -14,6 +14,8 @@ import { createLocalDaemonLifecycle } from "./local-daemon-lifecycle"
 import { DAEMON_CAPABILITY_HEADER } from "./daemon-admission"
 import { DAEMON_PROTOCOL_HEADER } from "@claxedo/helpers/claxedo-daemon"
 import { openDaemonSocket, testDaemon } from "./test-support/daemon"
+import { createTestBackend, setBackendOverride } from "@claxedo/server-core/credentials/backend-registry"
+import { credentialById, putCredential, readSecretById } from "@claxedo/server-core/credentials/registry"
 
 /**
  * Boots the real server on a real socket and talks to it over HTTP.
@@ -53,6 +55,7 @@ beforeEach(() => {
 afterEach(async () => {
   await server?.stop()
   server = undefined
+  setBackendOverride(undefined)
   // Direct service-composition tests below do not have a LocalServer lifecycle
   // to close the process-owned SQLite connection for them.
   ClaxedoDB.close()
@@ -107,6 +110,22 @@ async function boot() {
 }
 
 describe("startLocalServer", () => {
+  test("startup preserves stored harness credentials", async () => {
+    setBackendOverride(createTestBackend())
+    const secret = JSON.stringify({ type: "claude_code_oauth", claudeAiOauth: { accessToken: "test-login" } })
+    const credential = await putCredential({
+      owner: "local",
+      provider_id: "claude-sdk",
+      kind: "oauth_token",
+      source: "local_only",
+      secret,
+      consent: { at: 1, surface: "desktop_discovery" },
+    })
+    await (await boot()).ready
+    expect(credentialById(credential.id, { onOutage: "throw" })).toMatchObject({ id: credential.id })
+    await expect(readSecretById(credential.id)).resolves.toBe(secret)
+  })
+
   test("delivers the shutdown acknowledgment before closing the real HTTP connection", async () => {
     const lifecycle = createLocalDaemonLifecycle({
       activity: () => ({

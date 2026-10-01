@@ -798,8 +798,8 @@ export type HostMachineHeartbeatInput = {
   ttlMs?: number
   sessionAuthority?: HostSessionAuthority
   /**
-   * The ECDH P-256 public JWK JSON this machine can be sealed to
-   * (`./machine-seal`), recorded on every beat that carries one.
+   * The ECDH P-256 public JWK JSON this machine can be sealed to, recorded on
+   * every beat that carries one.
    *
    * The enrollment's own key signs and cannot derive bits, so this is a second
    * key and its declaration rides the one channel the machine already proves
@@ -910,7 +910,7 @@ export type HostProviderConfigPushInput = {
   sealed: string | null
   revision: number
   /**
-   * The key the blob was sealed to, as `machineSealingPublicKey` normalized it.
+   * The key the blob was sealed to, as `publicKeyJwk` normalized it.
    * Re-asserted inside the write: a machine that re-keyed between the read and
    * the write would otherwise be left holding a revision it cannot open, and
    * an unopenable revision is acked by nobody and re-sent forever.
@@ -953,7 +953,7 @@ export type HostInvitationRedeemInput = {
   hostId: string
   /** Public P-256 JWK JSON. */
   publicKey: string
-  /** Over `invitationRedeemPayload` (host-connect-contract). */
+  /** Over `invitationRedeemPayload` from account-contract/machine. */
   signature: string
   displayName?: string
 }

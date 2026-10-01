@@ -573,7 +573,7 @@ describe("credential routes", () => {
             "details": {
               "detail": {
                 "message": "Credential provider does not support verification",
-                "name": "Error",
+                "name": "CredentialVerificationError",
               },
             },
             "message": "Credential verification failed",
@@ -604,7 +604,7 @@ describe("credential routes", () => {
       error: {
         code: "credential_verification_failed",
         message: "Credential verification failed",
-        details: { detail: { name: "Error", message: "Credential provider request failed" } },
+        details: { detail: { name: "CredentialVerificationError", message: "Credential provider request failed" } },
       },
     })
     expect(JSON.stringify(body)).not.toContain(secret)
@@ -812,6 +812,19 @@ describe("credential routes", () => {
     const deleted = await app.request("http://localhost/cred_1", { method: "DELETE" })
     expect(deleted.status).toBe(200)
     expect(registry.deleteCredential).toHaveBeenCalledWith("cred_1", SINGLE_TENANT_ORG)
+  })
+
+  test("refuses a sandbox driver credential, which only the sandbox driver settings route writes", async () => {
+    const registry = credentials()
+    const app = CredentialRoutes(registry)
+
+    const put = await app.request("http://localhost/", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ provider_id: "box", kind: "sandbox_driver", source: "managed", secret: "box-key" }),
+    })
+    expect(put.status).toBe(400)
+    expect(registry.putCredential).not.toHaveBeenCalled()
   })
 
   test("returns structured validation errors", async () => {
@@ -1306,7 +1319,7 @@ describe("choosing which account a provider runs on", () => {
       provider_id: "modal",
       kind: "sandbox_driver",
       source: "managed",
-      secret: "modal-master-key",
+      secret: JSON.stringify({ token_id: "modal-id", token_secret: "modal-secret" }),
     })
     const waiting = await account("route-atomic", "acc_waiting")
 

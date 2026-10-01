@@ -5,14 +5,22 @@
  * exists on the box, so nothing here can be re-used by an account caller.
  */
 
+import { machineRequestSignature, randomNonce, type HostKeyPair } from "./host-identity"
+import { MACHINE_REQUEST_HEADERS } from "@claxedo/account-contract/machine"
 import {
-  MACHINE_REQUEST_HEADERS,
-  machineRequestSignature,
-  randomNonce,
-  type HostKeyPair,
-} from "./host-identity"
-import { canonicalControlPlaneUrl, canonicalFetchEndpointUrl, canonicalRelayUrl, isPlainRecord, type HostScope } from "./host-state"
-import type { AssignmentDescription, HeartbeatResponse, MachineHeartbeatInput, MachineTransport, ProviderConfigRevision } from "./connector"
+  canonicalControlPlaneUrl,
+  canonicalFetchEndpointUrl,
+  canonicalRelayUrl,
+  isPlainRecord,
+  type HostScope,
+} from "./host-state"
+import type {
+  AssignmentDescription,
+  HeartbeatResponse,
+  MachineHeartbeatInput,
+  MachineTransport,
+  ProviderConfigRevision,
+} from "./connector"
 
 /** What this package needs of `fetch`; the global one satisfies it under Node, Bun and Electron. */
 export type FetchLike = (input: URL, init: RequestInit) => Promise<Response>
@@ -34,7 +42,10 @@ export class HostedRequestTimeoutError extends Error {
   readonly pathname: string
   readonly timeoutMs: number
   constructor(pathname: string, timeoutMs: number, cause?: unknown) {
-    super(`control plane did not answer POST ${pathname} within ${timeoutMs / 1000}s`, cause === undefined ? undefined : { cause })
+    super(
+      `control plane did not answer POST ${pathname} within ${timeoutMs / 1000}s`,
+      cause === undefined ? undefined : { cause },
+    )
     this.name = "HostedRequestTimeoutError"
     this.pathname = pathname
     this.timeoutMs = timeoutMs
@@ -42,18 +53,22 @@ export class HostedRequestTimeoutError extends Error {
 }
 
 /**
- * An HTTP refusal, in the one message shape every reader of this package
- * already parses: `transientHeartbeatFailure` reads the status, `decisionCode`
- * the control plane's error code.
+ * The control plane's `{ error: { code, message, retryable } }` envelope, read
+ * here rather than through `@claxedo/helpers` because this package imports no
+ * first-party package (`connector-closure.test.ts`).
  */
 export class HostedHttpError extends Error {
-  readonly status: number
-  readonly body: unknown
-  constructor(status: number, body: unknown) {
-    super(`HOSTED_HTTP ${status} ${JSON.stringify(body)}`)
+  readonly code: string | undefined
+  readonly retryable: boolean
+  constructor(readonly status: number, readonly body: unknown) {
+    const envelope = isPlainRecord(body) && isPlainRecord(body.error) ? body.error : undefined
+    const error = typeof envelope?.code === "string" && envelope.code && typeof envelope.message === "string"
+      ? { code: envelope.code, message: envelope.message, retryable: envelope.retryable === true }
+      : undefined
+    super(error?.message || `HTTP ${status}`)
     this.name = "HostedHttpError"
-    this.status = status
-    this.body = body
+    this.code = error?.code
+    this.retryable = error?.retryable ?? false
   }
 }
 
@@ -67,25 +82,17 @@ export class HostedRedirectError extends Error {
   readonly pathname: string
   readonly status: number
   constructor(pathname: string, status: number) {
-    super(`control plane answered POST ${pathname} with a redirect (${status || "opaque"}); a machine request is never re-sent elsewhere`)
+    super(
+      `control plane answered POST ${pathname} with a redirect (${status || "opaque"}); a machine request is never re-sent elsewhere`,
+    )
     this.name = "HostedRedirectError"
     this.pathname = pathname
     this.status = status
   }
 }
 
-/** The `error.code` of a `HOSTED_HTTP <status> <json>` failure, if it carries one. */
 export function decisionCode(error: unknown): string | undefined {
-  const message = error instanceof Error ? error.message : String(error)
-  const match = /^HOSTED_HTTP \d{3} (.*)$/s.exec(message)
-  if (!match) return undefined
-  try {
-    const body: unknown = JSON.parse(match[1] ?? "")
-    if (!isPlainRecord(body) || !isPlainRecord(body.error)) return undefined
-    return typeof body.error.code === "string" ? body.error.code : undefined
-  } catch {
-    return undefined
-  }
+  return isPlainRecord(error) && typeof error.code === "string" ? error.code : undefined
 }
 
 /**
@@ -123,7 +130,11 @@ export async function postJson(
 ): Promise<unknown> {
   const signal = AbortSignal.timeout(timeoutMs)
   const timedOut = new Promise<never>((_, reject) => {
-    signal.addEventListener("abort", () => reject(new HostedRequestTimeoutError(url.pathname, timeoutMs, signal.reason)), { once: true })
+    signal.addEventListener(
+      "abort",
+      () => reject(new HostedRequestTimeoutError(url.pathname, timeoutMs, signal.reason)),
+      { once: true },
+    )
   })
   let text: string
   let response: Response
@@ -154,7 +165,7 @@ export async function postJson(
   try {
     parsed = text ? JSON.parse(text) : {}
   } catch {
-    parsed = { error: { code: "invalid_response", message: text.slice(0, 200) } }
+    parsed = text
   }
   if (!response.ok) throw new HostedHttpError(response.status, parsed)
   return parsed
@@ -201,7 +212,14 @@ export function decodeEndpoints(value: Record<string, unknown>) {
         }
       : {}),
     ...(authority && typeof authority.session_authority_url === "string"
-      ? { authority: { sessionAuthorityUrl: canonicalFetchEndpointUrl(authority.session_authority_url, "authority.session_authority_url") } }
+      ? {
+          authority: {
+            sessionAuthorityUrl: canonicalFetchEndpointUrl(
+              authority.session_authority_url,
+              "authority.session_authority_url",
+            ),
+          },
+        }
       : {}),
     ...(authority && typeof authority.session_rows_url === "string"
       ? { sessionRows: { url: canonicalFetchEndpointUrl(authority.session_rows_url, "authority.session_rows_url") } }
@@ -303,12 +321,18 @@ export function createMachineSignedTransport(options: MachineSignedTransportOpti
       nonce: requestNonce,
       enrollmentId: options.enrollmentId,
     })
-    return await postJson(options.fetch, url, bodyText, {
-      [MACHINE_REQUEST_HEADERS.enrollmentId]: options.enrollmentId,
-      [MACHINE_REQUEST_HEADERS.ts]: String(ts),
-      [MACHINE_REQUEST_HEADERS.nonce]: requestNonce,
-      [MACHINE_REQUEST_HEADERS.signature]: signature,
-    }, requestTimeoutMs)
+    return await postJson(
+      options.fetch,
+      url,
+      bodyText,
+      {
+        [MACHINE_REQUEST_HEADERS.enrollmentId]: options.enrollmentId,
+        [MACHINE_REQUEST_HEADERS.ts]: String(ts),
+        [MACHINE_REQUEST_HEADERS.nonce]: requestNonce,
+        [MACHINE_REQUEST_HEADERS.signature]: signature,
+      },
+      requestTimeoutMs,
+    )
   }
 
   return {

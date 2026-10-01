@@ -31,32 +31,33 @@ export class BrokerSessionEvents {
       })
       this.turnProjections.set(key, projection)
     }
-    for (const envelope of projection.ingest(routed.event)) {
-      this.delivery.append(targetSessionId, envelope.payload, routed.source)
-    }
-    this.delivery.runtime(targetSessionId, routed.event, targetTurnId)
+    this.delivery.runtime(targetSessionId, routed.event, targetTurnId, () => {
+      for (const envelope of projection.ingest(routed.event)) {
+        this.delivery.append(targetSessionId, envelope.payload, routed.source)
+      }
+    })
   }
 
   releaseProviderTurn(sessionId: string, turnId: string): void {
     this.turnProjections.delete(JSON.stringify([sessionId, turnId]))
   }
 
-  async publishSessionEvent(sessionId: string, event: OutsideTurnEvent): Promise<void> {
+  async publishSessionEvent(sessionId: string, event: OutsideTurnEvent | SubagentUpdatedEvent): Promise<void> {
     const session = this.store.getSession(sessionId) as { directory?: string } | null
     if (!session) throw new Error(`Unknown session ${sessionId}`)
     const directory = session.directory ?? ""
     if (event.type === "available-commands-update") {
-      this.delivery.append(sessionId, projectSessionCommands(sessionId, directory, event).payload)
-      this.delivery.runtime(sessionId, event)
+      this.delivery.runtime(sessionId, event, undefined, () => {
+        this.delivery.append(sessionId, projectSessionCommands(sessionId, directory, event).payload)
+      })
       return
     }
     const projection = createClientPresentationProjection({
       sessionId, directory, assistantMessageId: "",
     })
-    for (const envelope of projection.ingest(event)) {
-      this.delivery.append(sessionId, envelope.payload)
-    }
-    this.delivery.runtime(sessionId, event)
+    this.delivery.runtime(sessionId, event, undefined, () => {
+      for (const envelope of projection.ingest(event)) this.delivery.append(sessionId, envelope.payload)
+    })
   }
 
   meterUsage(usage: OutsideTurnUsage): void {
@@ -66,29 +67,25 @@ export class BrokerSessionEvents {
       sessionId: usage.sessionId, directory: usage.directory,
       assistantMessageId: usage.assistantMessageId,
     })
-    for (const envelope of projection.ingest(usage.usage)) {
-      this.delivery.append(usage.sessionId, envelope.payload)
-    }
-    this.delivery.runtime(usage.sessionId, usage.usage, usage.assistantMessageId)
+    this.delivery.runtime(usage.sessionId, usage.usage, usage.assistantMessageId, () => {
+      for (const envelope of projection.ingest(usage.usage)) this.delivery.append(usage.sessionId, envelope.payload)
+    })
   }
 
   async publishSubagent(parentSessionId: string, event: SubagentUpdatedEvent): Promise<void> {
-    this.delivery.append(parentSessionId, {
-        type: "subagent.updated",
-        properties: { sessionID: parentSessionId, update: event },
-    })
-    this.delivery.runtime(parentSessionId, event)
+    await this.publishSessionEvent(parentSessionId, event)
   }
 
   async publishSubagentDiagnostic(parentSessionId: string, diagnostic: RuntimeDiagnostic): Promise<void> {
-    this.delivery.append(parentSessionId, {
+    this.delivery.runtime(parentSessionId, { type: "diagnostic", diagnostic }, undefined, () => {
+      this.delivery.append(parentSessionId, {
         id: `runtime.diagnostic:${parentSessionId}:${diagnostic.code}`,
         type: "runtime.diagnostic",
         properties: {
           sessionID: parentSessionId, code: diagnostic.code, message: diagnostic.message,
           severity: diagnostic.severity, diagnostic,
         },
+      })
     })
-    this.delivery.runtime(parentSessionId, { type: "diagnostic", diagnostic })
   }
 }

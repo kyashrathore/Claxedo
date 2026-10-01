@@ -40,9 +40,11 @@ import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
 
 const log = Log.create({ service: "credential-routes" })
 
+// Sandbox driver credentials are written only by the sandbox driver settings
+// route, which verifies the fields and stores them as one JSON object.
 const putBody = z.object({
   provider_id: z.string().min(1),
-  kind: z.enum(["api_key", "oauth_token", "subscription_session", "sandbox_driver"]),
+  kind: z.enum(["api_key", "oauth_token", "subscription_session"]),
   source: z.enum(["managed", "local_only", "env", "upstream_sync"]).default("managed"),
   label: z.string().optional(),
   account_id: z.string().optional(),
@@ -282,11 +284,7 @@ export function CredentialRoutes(
     const expected = `Bearer ${options.token}`
     app.use(async (c, next) => {
       // Constant-time: `!==` on a shared bearer secret short-circuits at the
-      // first differing byte and leaks the matching prefix length. Every other
-      // bearer comparison in the server already uses this helper
-      // (internal-admin-auth, internal-relay, local-installation-broker); this
-      // one guards the credential store — API keys, OAuth tokens, sandbox
-      // driver secrets — so it is the last place to leave short-circuiting.
+      // first differing byte and leaks the matching prefix length.
       if (!timingSafeEqualStrings(c.req.header("authorization") ?? "", expected)) {
         return c.json(errorBody("credential_unauthorized", "Missing or invalid credentials token"), 401)
       }

@@ -18,6 +18,13 @@
   "main": "./dist/index.mjs",
   "types": "./dist/index.d.ts",
   "exports": {
+    "./api-error": {
+      "development": "./src/api-error.ts",
+      "bun": "./src/api-error.ts",
+      "types": "./dist/api-error.d.ts",
+      "import": "./dist/api-error.mjs",
+      "default": "./dist/api-error.mjs"
+    },
     ".": {
       "development": "./src/index.ts",
       "bun": "./src/index.ts",

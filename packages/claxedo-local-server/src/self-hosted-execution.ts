@@ -77,8 +77,6 @@ export {
 /** Records local session metadata from proxied `/session` responses. */
 export { sessionMetaProjectionTap } from "./session/session-meta-tap"
 
-/** Migrates legacy plaintext provider credentials into the managed backend. */
-export { dropCopiedHarnessLogins } from "./credentials/operations/drop-copied-harness-logins"
 export { projectLocalSessionMetaFromEvent } from "./session/session-meta-tap"
 
 export { appPluginAuthoring } from "./plugins/authoring"

@@ -76,7 +76,7 @@ import {
 } from "@claxedo/local-server/self-hosted-execution"
 import { getHarnessMode, getSessionWriteMode, getWorkspaceProfile } from "@claxedo/server-core/platform/runtime/profile"
 import { createSqliteCentralStore } from "../../authority/adapters/sqlite/central-store"
-import { dropCopiedHarnessLogins, projectLocalSessionMetaFromEvent } from "@claxedo/local-server/self-hosted-execution"
+import { projectLocalSessionMetaFromEvent } from "@claxedo/local-server/self-hosted-execution"
 import { CredentialRoutes, createUsageQuotaReader, localControlPlaneCredentials, requestOrg, syncEmbeddedWorkspaceRuntimes } from "@claxedo/local-server/self-hosted-execution"
 import { defaultControlPlaneCredentials } from "@claxedo/server-core/authority/default-credentials"
 import { ProviderAuthRoutes } from "@claxedo/local-server/self-hosted-execution"
@@ -106,7 +106,7 @@ import { createSqliteHostTunnelTargetResolver } from "@claxedo/server-core/autho
 import type { HostTunnelTargetResolver } from "@claxedo/server-core/adapters/relay-port"
 import type { TasksSessionGrants } from "@claxedo/server-core/tasks-host/session-grants"
 import { selfHostedTasksClientInput } from "../../tasks/session-grants"
-import { ControlPlaneHttpRoutes } from "../../authority/http"
+import { ControlPlaneHttpRoutes, createIdempotencyCoordinator, memoryIdempotencyStore } from "../../authority/http"
 import { OrgTeamControlRoutes } from "../../session/routes/org-team-routes"
 import { createControlPlaneApp } from "../../control-plane-app"
 import { createMachineSessionDispatch } from "../../session/machine-dispatch"
@@ -167,7 +167,6 @@ import {
 import { withDataDirOwnership } from "@claxedo/server-core/platform/runtime/lib/data-dir-owner"
 import { createLocalDocumentsBackend } from "@claxedo/server-core/documents/backends/local/backend"
 import { setDocumentChangedSink } from "@claxedo/server-core/documents/backend"
-import { LocalInstallationDocumentBroker } from "../../documents/backends/local/installation-broker"
 
 import { sessionMeta } from "@claxedo/server-core/session/meta/index"
 import { ClaxedoDB } from "../../platform/db"
@@ -851,8 +850,6 @@ export function createSelfHostedApp(
       "createSelfHostedApp is the self-host composition; use createHostedApp for hosted services",
     )
   }
-  const localDocumentBrokerToken = process.env.CLAXEDO_LOCAL_DOCUMENT_BROKER_TOKEN?.trim()
-  delete process.env.CLAXEDO_LOCAL_DOCUMENT_BROKER_TOKEN
   // One owner cannot collide with itself (`/api/workspace` is mounted twice on
   // purpose), so this catches a second composition mounting onto this app, not
   // a duplicate inside this function. The `mount*` helpers below run against
@@ -1251,14 +1248,6 @@ export function createSelfHostedApp(
   }
 
   const documentsBackend = localDocumentsBackend(services.authority)
-  // Documents doorbell. The documents backend is
-  // Worker-safe and cannot import the bus, so the local composition root injects
-  // the publish here. Every document mutation — saves AND `fs.watch` external
-  // changes — funnels through `publishDocumentEvent`, so this one line covers
-  // both paths. No hosted Worker composition (`hosted-core-app.ts`) mounts
-  // documents at present; a hosted composition that did would inject a
-  // LiveSyncRoom nudge sink through the DocumentsRoutes option instead of
-  // this process-global one.
   setDocumentChangedSink((event) => controlBus.publish(event))
   app.route(
     "/documents",
@@ -1268,11 +1257,6 @@ export function createSelfHostedApp(
       ...authRouteOptions(services),
     }),
   )
-  app.route("/internal/documents", LocalInstallationDocumentBroker({
-    backend: documentsBackend,
-    ...(localDocumentBrokerToken ? { installationToken: localDocumentBrokerToken } : {}),
-    env: process.env,
-  }))
 
   // Agent config routes (centralized MCP + commands management)
   app.route(
@@ -1373,7 +1357,7 @@ export function createSelfHostedApp(
     // turns meter into, so one usage view answers for both.
     ...(options.usageRevisionStore ? { usageWriter: options.usageRevisionStore.reports } : {}),
   }))
-  app.route("/api/control", ControlPlaneHttpRoutes(services, authRouteOptions(services)))
+  app.route("/api/control", ControlPlaneHttpRoutes(services, { ...authRouteOptions(services), idempotency: createIdempotencyCoordinator(memoryIdempotencyStore()) }))
   app.route("/api/control", OrgTeamControlRoutes(services, authRouteOptions(services)))
   app.route("/api/control/session-registrations", PrivateSessionRegistrationRoutes({
     authority: selfHostedPrivateSessionAuthority(services.authority),
@@ -1929,10 +1913,6 @@ function startOwnedControlPlaneStack(options: ControlPlaneStackOptions, releaseD
     ...(isSandboxDriverID(services.sandbox.defaultDriver)
       ? { default_sandbox_driver: services.sandbox.defaultDriver }
       : {}),
-  })
-
-  dropCopiedHarnessLogins().catch((err: unknown) => {
-    console.error("[claxedo-server] WARN  could not forget copied harness logins:", err)
   })
 
   captureControlPlaneStartupTelemetry(services, { port })

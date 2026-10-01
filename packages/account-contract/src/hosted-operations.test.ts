@@ -192,7 +192,7 @@ describe("the signed desktop's session sources", () => {
   test("reads the organization member and project access answers the access routes give", () => {
     const member = { user_id: "usr_1", public_id: "usr_1", role: "admin", joined_at: 1 }
     expect(decodeHostedResult("org.members.update", member)).toEqual(member)
-    expect(() => decodeHostedResult("org.members.add", { user_id: "usr_1" })).toThrow(/org\.members\.add.*role/)
+    expect(() => decodeHostedResult("org.invitations.accept", { user_id: "usr_1" })).toThrow(/org\.invitations\.accept.*role/)
     const access = { project_id: "prj_1", org_id: "org_1", entries: [{ kind: "user", user_id: "usr_1", role: "owner", source: "owner" }] }
     expect(decodeHostedResult("project.access", access)).toEqual(access)
     expect(() => decodeHostedResult("project.access", [])).toThrow(/project\.access/)
@@ -208,10 +208,18 @@ describe("the signed desktop's session sources", () => {
 })
 
 describe("isSafeOperation", () => {
+  test("each declaration owns its request, codecs and exposure", () => {
+    for (const name of hostedOperationNames()) {
+      const operation = HOSTED_OPERATIONS[name] as unknown as Record<string, unknown>
+      expect(typeof operation.method, name).not.toBe("undefined")
+      expect(typeof operation.path, name).toBe("function")
+      expect(typeof operation.input, name).toBe("function")
+      expect(typeof operation.output, name).toBe("function")
+      expect(["safe", "never"], name).toContain(String(operation.retry))
+      expect(operation.exposure, name).toEqual(expect.objectContaining({ renderer: expect.any(Boolean), app: expect.any(Boolean) }))
+    }
+  })
   test("marks the operations that provision or destroy as unsafe", () => {
-    // `safe` is the renderer's licence to retry on its own. Anything that
-    // creates a VM, restores a checkpoint or mints a token is main's call,
-    // because the idempotency key lives there.
     for (const unsafe of [
       "workspace.create",
       "workspace.checkpoints.restore",
@@ -243,10 +251,15 @@ describe("isSafeOperation", () => {
   })
 
   test("every operation states one way or the other", () => {
-    // A missing `safe` reads as unsafe through `?? false`, which is the right
-    // default and the wrong way to arrive at it — silently.
     for (const name of hostedOperationNames()) {
-      expect(typeof HOSTED_OPERATIONS[name].safe, name).toBe("boolean")
+      expect(["safe", "never"], name).toContain(HOSTED_OPERATIONS[name].retry)
     }
   })
+})
+
+test("invitation results decode the receipt and declare retry policy", () => {
+  expect(decodeHostedResult("org.invitations.create", { message: "invitation sent" })).toEqual({ message: "invitation sent" })
+  expect(isSafeOperation("org.invitations.create")).toBe(false)
+  expect(isSafeOperation("org.invitations.accept")).toBe(false)
+  expect(isSafeOperation("org.invitations.list")).toBe(true)
 })

@@ -28,7 +28,7 @@ type RelayTokenBaseInput = {
   ttlMs: number
 }
 
-export type HostTunnelTokenInput = RelayTokenBaseInput
+export type HostTunnelTokenInput = RelayTokenBaseInput & { enrollmentId: string; generation: number }
 
 export type RelayTokenInput = {
   workspaceId: string

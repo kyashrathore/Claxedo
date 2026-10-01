@@ -52,6 +52,14 @@ describe("Better Auth D1 Worker", () => {
     })
   })
 
+  test("composes the email binding into the shared auth sender", async () => {
+    const send = vi.fn(async () => ({ messageId: "sent" }))
+    const input = betterAuthD1CompositionInput({ ...env(), EMAIL: { send }, CLAXEDO_EMAIL_FROM: "auth@example.test" })
+    expect(input.emailSender).toBeDefined()
+    await input.emailSender!.send({ kind: "verification", recipient: "person@example.test", actionUrl: "https://api.example.test/verify", token: "secret" })
+    expect(send).toHaveBeenCalledWith(expect.objectContaining({ to: "person@example.test", from: "auth@example.test" }))
+  })
+
   test("reports the serving Cloudflare version on /health without composing", async () => {
     const response = await worker.fetch(new Request("https://api.example.test/health"), env())
     expect(response.status).toBe(200)

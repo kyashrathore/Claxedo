@@ -1,4 +1,5 @@
 import type { AgentPluginR2Bucket } from "../agent-plugins/artifacts/r2-artifact-adapter"
+import { ClaxedoError } from "@claxedo/server-core/platform/errors/base"
 
 /** Cloudflare's own ceiling on a Worker's modules. */
 const PLUGIN_BACKEND_BUNDLE_MAX_BYTES = 10 * 1024 * 1024
@@ -6,10 +7,9 @@ const PLUGIN_BACKEND_BUNDLE_MAX_BYTES = 10 * 1024 * 1024
 const HASH_PATTERN = /^[0-9a-f]{64}$/
 const PREFIX = "plugin-backends/"
 
-class PluginBackendBundleError extends Error {
+class PluginBackendBundleError extends ClaxedoError<"plugin_backend_bundle_invalid"> {
   constructor(message: string) {
-    super(message)
-    this.name = "PluginBackendBundleError"
+    super({ code: "plugin_backend_bundle_invalid", message })
   }
 }
 

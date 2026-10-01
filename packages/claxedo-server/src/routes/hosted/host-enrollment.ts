@@ -43,7 +43,8 @@ import {
 } from "@claxedo/server-core/platform/auth/auth"
 import { requireAuthority, type MachinePrincipal, type WorkspaceAuthority } from "@claxedo/server-core/platform/auth/authority"
 import { verifyMachineRequest } from "@claxedo/server-core/platform/auth/machine-auth"
-import { machineSealAad, sealForMachine } from "@claxedo/server-core/platform/auth/machine-seal"
+import { machineSealAad } from "@claxedo/account-contract/machine"
+import { sealForMachine } from "@claxedo/account-contract/machine-seal"
 import type { HostTunnelTokenSignerInput } from "@claxedo/server-core/platform/auth/runtime-access-token"
 import { serializeHostProviderConfig } from "@claxedo/server-core/credentials/host-provider-config"
 import { ClaxedoError, isClaxedoError } from "@claxedo/server-core/platform/errors/base"
@@ -462,7 +463,7 @@ export function HostEnrollmentRoutes(services: ControlPlaneServices, options: Ho
     const response: Record<string, unknown> = { ...result, ...endpoints, serving_generation: caller.generation }
     const signer = configuredHostTunnelTokenSigner(options)
     if (!signer || ready.length === 0) return response
-    const input: HostTunnelTokenSignerInput & { enrollmentId: string; generation: number } = {
+    const input: HostTunnelTokenSignerInput = {
       subject: caller.ownerUserId,
       hostId: caller.hostId,
       workspaceIds: ready,

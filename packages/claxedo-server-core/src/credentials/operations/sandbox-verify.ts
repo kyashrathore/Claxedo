@@ -4,7 +4,7 @@ import {
   sandboxDriverCredentialFields,
   type SandboxDriverID,
 } from "@claxedo/sandbox-contract"
-import { jsonRecord } from "@claxedo/server-core/platform/runtime/lib/json"
+import { parseJsonRecord } from "@claxedo/server-core/platform/json/index"
 import { CredentialVerificationError } from "../verification-error"
 import type { CredentialHealth } from "@claxedo/server-core/credentials/types"
 
@@ -29,15 +29,15 @@ export async function verifySandboxDriverAuth(
   options: { fetch?: typeof fetch } = {},
 ): Promise<CredentialHealth> {
   const values = probeAuth(id, auth)
-  if (!values) throw new CredentialVerificationError("Sandbox provider credential has an unsupported shape")
+  if (!values) throw new CredentialVerificationError("credential_shape_invalid", "Sandbox provider credential has an unsupported shape")
   const probe = sandboxDriverProbe(id, values)
-  if (!probe) throw new CredentialVerificationError("Sandbox provider does not support verification")
+  if (!probe) throw new CredentialVerificationError("credential_verification_unsupported", "Sandbox provider does not support verification")
 
   const response = await (options.fetch ?? globalThis.fetch)(probe.url, { ...probe.init, redirect: "error" }).catch(() => {
-    throw new CredentialVerificationError("Sandbox provider request failed")
+    throw new CredentialVerificationError("credential_provider_unavailable", "Sandbox provider request failed")
   })
   if (response.redirected || (response.status >= 300 && response.status < 400)) {
-    throw new CredentialVerificationError("Sandbox provider redirects are not allowed")
+    throw new CredentialVerificationError("credential_redirect_denied", "Sandbox provider redirects are not allowed")
   }
   if (response.ok) {
     await response.body?.cancel().catch(() => undefined)
@@ -53,47 +53,25 @@ export async function verifySandboxDriverAuth(
   ) return "no_billing"
   if (response.status === 429) return "rate_capped"
   if (probe.rejected(response.status)) return "auth_failed"
-  throw new CredentialVerificationError("Sandbox provider verification failed")
+  throw new CredentialVerificationError("credential_verification_failed", "Sandbox provider verification failed")
 }
 
-/**
- * Verify a credential as it is STORED — one opaque string per credential,
- * written by the codec in `routes/sandbox-driver-routes.ts`. Kept next to the
- * probes so `verifyCredential` can route the `sandbox_driver` kind without
- * knowing the encoding.
- */
 export async function verifySandboxDriverCredential(
   providerId: string,
   secret: string,
   options: { fetch?: typeof fetch } = {},
 ): Promise<CredentialHealth> {
   if (!isSandboxDriverID(providerId)) {
-    throw new CredentialVerificationError("Sandbox provider does not support verification")
+    throw new CredentialVerificationError("credential_verification_unsupported", "Sandbox provider does not support verification")
   }
-  return verifySandboxDriverAuth(providerId, storedAuth(providerId, secret), options)
+  const auth = parseJsonRecord(secret)
+  if (!auth) throw new CredentialVerificationError("credential_shape_invalid", "Sandbox provider credential has an unsupported shape")
+  return verifySandboxDriverAuth(providerId, auth, options)
 }
 
 /** Whether this provider can be checked at all, without spending a request. */
 export function sandboxDriverVerifiable(id: SandboxDriverID) {
   return VERIFIABLE.has(id)
-}
-
-/**
- * Mirrors `parseManagedAuth`'s tolerance in
- * `sandbox-manager-adapters/driver-auth.ts`: always JSON now, but a bare string
- * is still what the pre-codec encoder wrote for single-field drivers. A stored
- * credential that predates the codec must verify, not read as an unsupported
- * shape.
- */
-function storedAuth(id: SandboxDriverID, secret: string): Record<string, unknown> {
-  const fields = sandboxDriverCredentialFields[id]
-  try {
-    const parsed = jsonRecord(JSON.parse(secret))
-    if (parsed) return parsed
-  } catch {
-    // Falls through to the legacy bare reading below.
-  }
-  return fields.length === 1 ? { [fields[0].key]: secret } : {}
 }
 
 const VERIFIABLE = new Set<SandboxDriverID>(["vercel", "cloudflare", "box"])
@@ -137,7 +115,7 @@ function sandboxDriverProbe(id: SandboxDriverID, auth: Record<string, string>): 
   if (id === "cloudflare") {
     let base: string
     try { base = cloudflareWorkerBaseUrl(auth.worker_url) } catch {
-      throw new CredentialVerificationError("Cloudflare Worker URL requires a valid HTTPS endpoint without credentials, query or fragment")
+      throw new CredentialVerificationError("credential_endpoint_invalid", "Cloudflare Worker URL requires a valid HTTPS endpoint without credentials, query or fragment")
     }
     return {
       url: `${base}/sandboxes`,

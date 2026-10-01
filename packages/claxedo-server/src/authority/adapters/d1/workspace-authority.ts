@@ -1,7 +1,8 @@
+import { publicApiErrorShape } from "@claxedo/helpers/api-error"
 import type { D1Database, D1PreparedStatement } from "@cloudflare/workers-types"
 import { ControlPlaneAuthError, type SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
+import { AUTH_ADAPTERS } from "@claxedo/account-contract/auth"
 import {
-  AUTH_ADAPTERS,
   type ApplicationIdentityResolution,
   type AuthIdentity,
 } from "@claxedo/server-core/platform/auth/authentication"
@@ -16,11 +17,11 @@ import { canonicalRepositoryKey } from "@claxedo/server-core/authority/repositor
 import { ClaxedoError } from "@claxedo/server-core/platform/errors/base"
 import { normalizeStoredDirectory } from "@claxedo/server-core/platform/auth/host-connect-contract"
 import { HOST_SERVING_WORKSPACE_SQL } from "./host-access-authority"
-import { batchAssertionFailed, batchUnder, may, mayGuard, maySql, readProjectRole, roleRank, type AuthorizationPrincipal } from "./authorization"
+import { batchUnder, may, mayGuard, maySql, readProjectRole, roleRank, type AuthorizationPrincipal, type BoundSql } from "./authorization"
 import { ownerMembershipStatements, requireHuman, requireText, type D1AccessContext } from "./access-context"
-import { D1OrgMemberAuthority } from "./org-member-authority"
-import type { FindAccountByEmail } from "@claxedo/server-core/platform/auth/org-access-authority"
+import { prepareInvitationAdmission } from "./org-invitation-authority"
 import { asOrgId, type OrgId } from "@claxedo/server-core/platform/auth/branded-id"
+import { d1BatchAssertionFailed } from "../../../platform/db/d1-constraint"
 
 const KNOWN_HOME_REGIONS = new Set(["apac-south", "apac-east", "eu-west", "us-east", "us-west"])
 
@@ -66,7 +67,6 @@ export type D1WorkspaceAuthorityOptions = {
   product: D1AuthorityProductPolicy
   now?: () => number
   randomId?: (prefix: "usr" | "act" | "org" | "prj" | "team" | "assert" | "audit") => string
-  findAccountByEmail?: FindAccountByEmail
 }
 
 export type D1WorkspaceCreateArgs = {
@@ -136,13 +136,6 @@ export type D1WorkspaceAuthorityErrorCode =
   | "organization_policy_denied"
   | "resource_conflict"
 
-const D1_WORKSPACE_ERROR_STATUS: Record<D1WorkspaceAuthorityErrorCode, number> = {
-  invalid_input: 400,
-  identity_conflict: 409,
-  organization_policy_denied: 403,
-  resource_conflict: 409,
-}
-
 /**
  * Carries its HTTP status like every other authority refusal
  * (`D1HostAccessAuthorityError`), so a route that hands the caller a
@@ -150,7 +143,7 @@ const D1_WORKSPACE_ERROR_STATUS: Record<D1WorkspaceAuthorityErrorCode, number> =
  */
 export class D1WorkspaceAuthorityError extends ClaxedoError<D1WorkspaceAuthorityErrorCode> {
   constructor(code: D1WorkspaceAuthorityErrorCode, message: string) {
-    super({ code, message, status: D1_WORKSPACE_ERROR_STATUS[code] })
+    super({ code, message, ...publicApiErrorShape(code) })
   }
 }
 
@@ -189,7 +182,6 @@ export class D1WorkspaceAuthority implements D1WorkspaceAuthorityCore {
       randomId: this.randomId,
       principal: (auth) => requireHuman(this.database, this.options.deploymentId, auth),
       assertOrganizationAllowed: (orgId) => this.assertOrganizationAllowed(orgId),
-      ...(this.options.findAccountByEmail ? { findAccountByEmail: this.options.findAccountByEmail } : {}),
     }
   }
 
@@ -286,6 +278,32 @@ export class D1WorkspaceAuthority implements D1WorkspaceAuthorityCore {
       return { state: "unavailable" }
     }
     return resolution
+  }
+
+  /**
+   * A user-deployed instance admits anyone but its owner only while an
+   * invitation to their verified email is pending, so a stranger who signs in
+   * stays unavailable. Membership still waits for the accept.
+   */
+  async admitInvitedIdentity(identity: AuthIdentity, verifiedEmail: string): Promise<ApplicationIdentityResolution> {
+    validateIdentity(identity)
+    const existing = await this.identityResolution(identity)
+    if (this.options.product.kind !== "user-deployed" || existing.state !== "unavailable") return existing
+    const now = this.now()
+    const admission = await prepareInvitationAdmission(this.accessContext(), {
+      orgId: this.options.product.organization.id,
+      email: verifiedEmail,
+      now,
+    })
+    if (!admission) return existing
+    const userId = this.randomId("usr")
+    await this.database.batch([
+      this.insertIdentity(identity, userId, now, admission.guard),
+      this.insertMappedUser(identity, userId, now),
+      this.insertHumanActor(identity, this.randomId("act"), now),
+      admission.recordUser(userId),
+    ])
+    return await this.identityResolution(identity)
   }
 
   /**
@@ -475,84 +493,6 @@ export class D1WorkspaceAuthority implements D1WorkspaceAuthorityCore {
       )
     }
     return { userId: row.user_id, actorId: requireActor(row) }
-  }
-
-  /**
-   * Direct-add path for a verified user in the one-organization product.
-   * This is a trusted application lifecycle operation, not a public auth hook.
-   */
-  async admitUserDeployedIdentity(
-    auth: SignedControlPlaneAuth,
-    input: { identity: AuthIdentity; role: "member" | "admin" },
-  ) {
-    if (this.options.product.kind !== "user-deployed") {
-      throw new D1WorkspaceAuthorityError(
-        "organization_policy_denied",
-        "Direct deployment admission is unavailable in the hosted product",
-      )
-    }
-    validateIdentity(input.identity)
-    const administrator = await this.requirePrincipal(auth)
-    const orgId = this.options.product.organization.id
-    if (!(await may(this.database, administrator, "administer", { kind: "org", orgId }))) {
-      throw denied("Organization administrator authority was denied")
-    }
-    const now = this.now()
-    const candidateUserId = this.randomId("usr")
-    const candidateActorId = this.randomId("act")
-    const administers = mayGuard(administrator, "administer", { kind: "org", orgId })
-
-    await this.database.batch([
-      this.database
-        .prepare(
-          `
-        insert into auth_identities (adapter, issuer, subject, user_id, linked_at, unlinked_at)
-        select ?, ?, ?, ?, ?, null
-        where exists (
-          select 1 from orgs o where o.org_id = ? and o.kind = 'deployment' and o.deployment_id = ?
-        ) and ${administers.sql}
-        on conflict (adapter, issuer, subject) do nothing
-      `,
-        )
-        .bind(
-          input.identity.adapter,
-          input.identity.issuer,
-          input.identity.subject,
-          candidateUserId,
-          now,
-          orgId,
-          this.options.deploymentId,
-          ...administers.bind,
-        ),
-      this.database
-        .prepare(
-          `
-        insert into users (user_id, state, created_at, updated_at, suspended_at, deleted_at)
-        select ?, 'active', ?, ?, null, null
-        where exists (
-          select 1 from auth_identities
-          where adapter = ? and issuer = ? and subject = ? and user_id = ? and unlinked_at is null
-        )
-        on conflict (user_id) do nothing
-      `,
-        )
-        .bind(
-          candidateUserId,
-          now,
-          now,
-          input.identity.adapter,
-          input.identity.issuer,
-          input.identity.subject,
-          candidateUserId,
-        ),
-      this.insertHumanActor(input.identity, candidateActorId, now),
-    ])
-
-    const resolution = await this.identityResolution(input.identity)
-    if (resolution.state !== "active") throw denied("Organization administrator authority was denied")
-    await new D1OrgMemberAuthority(this.accessContext())
-      .addOrgMember(auth, { orgId, userPublicId: resolution.userId, role: input.role })
-    return resolution
   }
 
   async createHostedOrganization(auth: SignedControlPlaneAuth, input: { name: string; orgId?: string }) {
@@ -1031,23 +971,23 @@ export class D1WorkspaceAuthority implements D1WorkspaceAuthorityCore {
     try {
       return await this.database.batch(statements)
     } catch (error) {
-      if (batchAssertionFailed(error)) {
+      if (d1BatchAssertionFailed(error)) {
         throw new D1WorkspaceAuthorityError("resource_conflict", message)
       }
       throw error
     }
   }
 
-  private insertIdentity(identity: AuthIdentity, userId: string, now: number) {
+  private insertIdentity(identity: AuthIdentity, userId: string, now: number, guard?: BoundSql) {
     return this.database
       .prepare(
         `
       insert into auth_identities (adapter, issuer, subject, user_id, linked_at, unlinked_at)
-      values (?, ?, ?, ?, ?, null)
+      select ?, ?, ?, ?, ?, null${guard ? ` where ${guard.sql}` : ""}
       on conflict (adapter, issuer, subject) do nothing
     `,
       )
-      .bind(identity.adapter, identity.issuer, identity.subject, userId, now)
+      .bind(identity.adapter, identity.issuer, identity.subject, userId, now, ...(guard?.bind ?? []))
   }
 
   private insertMappedUser(identity: AuthIdentity, userId: string, now: number) {

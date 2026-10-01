@@ -50,7 +50,6 @@ import { localBuiltinToolGroupsReader } from "../agent-plugins/builtin-groups"
 import { createClaxedoMcpClient } from "@claxedo/mcp/client"
 import { projectLocalSessionMetaFromEvent, sessionMetaProjectionTap } from "../session/session-meta-tap"
 import { startSessionRowsPublisher } from "../session/publish/start-session-rows-publisher"
-import { dropCopiedHarnessLogins } from "../credentials/operations/drop-copied-harness-logins"
 import { createLocalCredentialBroker } from "../credentials/broker"
 import { hostCredentialProjectAuth, localMachineOwnerUserId } from "../workspace/host-provider-config"
 import { requestOrg } from "../credentials/routes/credential"
@@ -215,10 +214,6 @@ function startOwned(options: StartLocalServerOptions, release: () => void): Loca
   // Opened here so the first session-list request does not pay for migrations,
   // repair checks and statement preparation.
   ClaxedoDB.raw()
-
-  dropCopiedHarnessLogins().catch((error: unknown) => {
-    log.warn("Failed to forget copied harness logins", { error: String(error) })
-  })
 
   const usageRevisionStore = createSqliteUsageLedger()
   const turnMeter = createTurnMeter({

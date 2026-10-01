@@ -23,9 +23,10 @@ import { asOrgId, asProjectId } from "@claxedo/server-core/platform/auth/branded
 import { stringField } from "@claxedo/server-core/platform/json/index"
 import type { SignedAgentPluginRuntimeSnapshot } from "../runtime/provision"
 import {
-  assertionId, batchAssertionFailed, batchUnder, may, mayGuard, maySql, type BoundSql,
+  assertionId, batchUnder, may, mayGuard, maySql, type BoundSql,
 } from "../../authority/adapters/d1/authorization"
 import { isRecord } from "@claxedo/helpers/guards"
+import { d1BatchAssertionFailed } from "../../platform/db/d1-constraint"
 
 /** The project scope a user default addresses; never a real project ID. */
 export const AGENT_PLUGIN_ALL_PROJECTS_SCOPE = "all-projects"
@@ -640,7 +641,7 @@ export class D1SignedAgentPluginActivationStore implements SignedAgentPluginActi
         this.database.prepare(`delete from authority_batch_assertions where assertion_id = ?`).bind(revisionAssertion),
       ])
     } catch (cause) {
-      if (!batchAssertionFailed(cause)) throw cause
+      if (!d1BatchAssertionFailed(cause)) throw cause
       throw conflict(revision, await this.currentRevision(orgId))
     }
     return next

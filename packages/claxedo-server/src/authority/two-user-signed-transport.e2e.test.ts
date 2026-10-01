@@ -194,8 +194,8 @@ describe("two-user signed app transport", () => {
         user.token,
         "/api/control/sessions/ses_signed_private/messages?workspaceId=ws_signed_private",
       )
-      expect(messages.status).toBe(200)
-      await expect(messages.json()).resolves.toMatchObject({ allowed: false, messages: [] })
+      expect(messages.status).toBe(404)
+      await expect(messages.json()).resolves.toMatchObject({ error: { code: "SESSION_NOT_FOUND" } })
     }
 
     const shared = await signedRequest(alice.token, "/api/control/sessions/ses_signed_private/shares", {
@@ -351,7 +351,8 @@ describe("two-user signed app transport", () => {
       bob.token,
       "/api/control/sessions/ses_signed_private/messages?workspaceId=ws_signed_private",
     )
-    await expect(afterRemoval.json()).resolves.toMatchObject({ allowed: false, messages: [] })
+    expect(afterRemoval.status).toBe(404)
+    await expect(afterRemoval.json()).resolves.toMatchObject({ error: { code: "SESSION_NOT_FOUND" } })
   })
 })
 
