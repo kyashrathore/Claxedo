@@ -144,5 +144,4 @@ function mergeItems<T>(left: T[], right: T[] | null | undefined, keyOf: (item: T
 export interface TranslatorContext {
   state: SessionState
   diagnostics: AcpDiagnostics
-  preserveUserMessageChunks?: boolean
 }

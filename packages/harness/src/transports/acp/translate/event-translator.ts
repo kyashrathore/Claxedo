@@ -3,14 +3,7 @@ import { createAcpTranslatorState, type SessionState } from "./state"
 import { isSessionUpdate, translateSessionUpdate } from "./translate-session-update"
 import { diagnoseTranslation, shape, type AcpDiagnostics } from "./diagnostics"
 
-export type AcpEventTranslatorState = SessionState
-
-export type AcpEventTranslatorOptions = {
-  client: string
-  preserveUserMessageChunks?: boolean
-}
-
-export function createAcpEventTranslator(options: AcpEventTranslatorOptions): HarnessEventAdapter<AcpEventTranslatorState> {
+export function createAcpEventTranslator(options: { client: string }): HarnessEventAdapter<SessionState> {
   return {
     name: options.client,
     createInitialState: () => createAcpTranslatorState(options.client),
@@ -24,11 +17,7 @@ export function createAcpEventTranslator(options: AcpEventTranslatorOptions): Ha
         })
         return { events: [], diagnostics: diagnostics.items }
       }
-      const events = translateSessionUpdate(event.payload, {
-        state,
-        diagnostics,
-        preserveUserMessageChunks: options.preserveUserMessageChunks,
-      })
+      const events = translateSessionUpdate(event.payload, { state, diagnostics })
       return {
         events,
         diagnostics: diagnostics.items,

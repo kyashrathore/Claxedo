@@ -3,14 +3,11 @@ import { translatorRuntime } from "../../../test-support/translator-runtime"
 import { createAcpEventTranslator } from "./event-translator"
 import { RETAINED_MESSAGE_TEXTS_MAX, RETAINED_TOOLS_MAX } from "./state"
 
-function runtime(
-  client = "acp:example",
-  options?: { preserveUserMessageChunks?: boolean },
-) {
+function runtime(client = "acp:example") {
   return translatorRuntime({
     harness: client,
     threadId: "thread-1",
-    adapter: createAcpEventTranslator({ client, ...options }),
+    adapter: createAcpEventTranslator({ client }),
     clock: () => 0,
     createId: () => "id",
   })
@@ -572,24 +569,6 @@ describe("createAcpEventTranslator", () => {
         content: { type: "text", text: "from the user" },
       },
     }).events).toEqual([])
-  })
-
-  test("can preserve user message chunks as runtime events when explicitly requested", () => {
-    const agent = runtime("acp:example", { preserveUserMessageChunks: true })
-
-    expect(agent.ingest({
-      source: "acp.jsonrpc",
-      method: "session/update",
-      payload: {
-        sessionUpdate: "user_message_chunk",
-        messageId: "user-message-1",
-        content: { type: "text", text: "from the user" },
-      },
-    }).events).toMatchObject([{
-      type: "user-message-delta",
-      messageId: "user-message-1",
-      content: { type: "text", text: "from the user" },
-    }])
   })
 
   test("preserves available commands and session info updates", () => {

@@ -2,7 +2,7 @@ import { asRecord, type AgentRuntimeEvent } from "@claxedo/agent-runtime-contrac
 import type { SessionUpdate } from "./types"
 import type { TranslatorContext } from "./state"
 import { diagnoseTranslation, shape } from "./diagnostics"
-import { agentMessage, userMessageChunk } from "./content-chunks"
+import { agentMessage } from "./content-chunks"
 import { configOptionUpdate } from "./config-options"
 import { planUpdate } from "./plan-updates"
 import { toolUpdate } from "./tool-updates"
@@ -64,7 +64,7 @@ function usageUpdate(update: UpdateOf<"usage_update">): AgentRuntimeEvent[] {
 const handlers: Handlers = {
   agent_message_chunk: { translate: agentMessage },
   agent_thought_chunk: { translate: agentMessage },
-  user_message_chunk: { translate: userMessageChunk },
+  user_message_chunk: { translate: () => [] },
   tool_call: { required: [["toolCallId", "string"]], translate: toolUpdate },
   tool_call_update: { required: [["toolCallId", "string"]], translate: toolUpdate },
   plan: { translate: planUpdate },
