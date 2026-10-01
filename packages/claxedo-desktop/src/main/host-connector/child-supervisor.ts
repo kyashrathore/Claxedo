@@ -1,4 +1,4 @@
-import type { HostedOperationName } from "../account/hosted-operations"
+import type { HostedOperationName } from "@claxedo/account-contract"
 import type { LocalWorkspaceDescription } from "./local-workspace-description"
 import {
   parseHostConnectorChildMessage,

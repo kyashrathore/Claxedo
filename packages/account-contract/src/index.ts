@@ -1,12 +1,21 @@
-export type { HostedOperationName, RunHostedOperation } from "./operation-name"
 export {
   HOSTED_OPERATIONS,
   decodeHostedResult,
   hostedOperationNames,
   isHostedOperationName,
   isSafeOperation,
-  type DecodedHostedResult,
-  type DecodeResult,
+  isStreamHostedOperation,
+  resolveHostedOperation,
+  type HostedOperationName,
+  type RunHostedOperation,
   type HostedOperationInput,
-  type HostedOperationSpec,
+  type DecodedHostedResult,
 } from "./hosted-operations"
+export {
+  defineOperation,
+  MissingOperationParameter,
+  UnknownHostedOperation,
+  type DecodeResult,
+  type OperationDefinition,
+  type ResolvedRequest,
+} from "./operation-definition"

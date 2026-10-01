@@ -208,10 +208,18 @@ describe("the signed desktop's session sources", () => {
 })
 
 describe("isSafeOperation", () => {
+  test("each declaration owns its request, codecs and exposure", () => {
+    for (const name of hostedOperationNames()) {
+      const operation = HOSTED_OPERATIONS[name] as unknown as Record<string, unknown>
+      expect(typeof operation.method, name).not.toBe("undefined")
+      expect(typeof operation.path, name).toBe("function")
+      expect(typeof operation.input, name).toBe("function")
+      expect(typeof operation.output, name).toBe("function")
+      expect(["safe", "never"], name).toContain(String(operation.retry))
+      expect(operation.exposure, name).toEqual(expect.objectContaining({ renderer: expect.any(Boolean), app: expect.any(Boolean) }))
+    }
+  })
   test("marks the operations that provision or destroy as unsafe", () => {
-    // `safe` is the renderer's licence to retry on its own. Anything that
-    // creates a VM, restores a checkpoint or mints a token is main's call,
-    // because the idempotency key lives there.
     for (const unsafe of [
       "workspace.create",
       "workspace.checkpoints.restore",
@@ -243,10 +251,8 @@ describe("isSafeOperation", () => {
   })
 
   test("every operation states one way or the other", () => {
-    // A missing `safe` reads as unsafe through `?? false`, which is the right
-    // default and the wrong way to arrive at it — silently.
     for (const name of hostedOperationNames()) {
-      expect(typeof HOSTED_OPERATIONS[name].safe, name).toBe("boolean")
+      expect(["safe", "never"], name).toContain(HOSTED_OPERATIONS[name].retry)
     }
   })
 })

@@ -4,11 +4,22 @@ import { createOperations, hostedOperationRequest } from "./operations"
 import type { Transport } from "./transport"
 
 describe("hosted operations over the connected server's routes", () => {
+  test("only declared body fields reach the server", async () => {
+    const requests: RequestInit[] = []
+    const transport = { json: async (_path: string, init: RequestInit) => (requests.push(init), {}) } as unknown as Transport
+    await createOperations(transport, undefined).run("documents.create", { display_name: "Notes", markdown: "# Hi", admin: true })
+    expect(JSON.parse(requests[0]!.body as string)).toEqual({ display_name: "Notes", markdown: "# Hi" })
+  })
+
+  test("a document id cannot be normalized into a different route", () => {
+    for (const id of [".", ".."]) {
+      expect(() => hostedOperationRequest("documents.get", { id })).toThrow(expect.objectContaining({ class: "invalid" }))
+    }
+  })
   test("a list reads the documents route with its scope", () => {
     expect(hostedOperationRequest("documents.list", { project_id: "p1", archived: "all" })).toEqual({
       method: "GET",
-      path: "/documents",
-      query: { project_id: "p1", document_id: undefined, directory: undefined, archived: "all" },
+      path: "/documents?project_id=p1&archived=all",
     })
   })
 
@@ -17,7 +28,7 @@ describe("hosted operations over the connected server's routes", () => {
       method: "PUT",
       path: "/documents/doc%201/content",
       body: { display_name: "Notes", markdown: "# Hi" },
-      ifMatch: "v3",
+      headers: { "If-Match": "v3" },
     })
   })
 
@@ -25,7 +36,7 @@ describe("hosted operations over the connected server's routes", () => {
     expect(hostedOperationRequest("documents.snapshots.restore", { id: "d", snapshotId: "s", ifMatch: "v1" })).toMatchObject({
       method: "POST",
       path: "/documents/d/snapshots/s/restore",
-      ifMatch: "v1",
+      headers: { "If-Match": "v1" },
     })
   })
 
