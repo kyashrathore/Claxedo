@@ -131,13 +131,13 @@ export const HOSTED_OPERATIONS = {
     method: "GET", path: operationPath("/api/workspace?host=provisioner"),
     input: operationInput({}),
     output: withArrays("workspaces"), retry: "safe",
-    exposure: { renderer: true, app: false },
+    exposure: { renderer: true, app: true },
   }),
   "workspace.list.machine": defineOperation({
     method: "GET", path: operationPath("/api/workspace?host=machine"),
     input: operationInput({}),
     output: withArrays("workspaces"), retry: "safe",
-    exposure: { renderer: true, app: false },
+    exposure: { renderer: true, app: true },
   }),
   "workspace.resolve": defineOperation({
     method: "GET", path: operationPath("/api/workspace/resolve", { optionalQuery: ["workspaceId", "directory"] }),
@@ -202,7 +202,7 @@ export const HOSTED_OPERATIONS = {
     method: "GET", path: operationPath("/api/control/session-list?scope=project", { query: ["projectId", "limit"], optionalQuery: ["sort", "after"] }),
     input: operationInput({ projectId: requiredParameter, limit: requiredParameter, sort: optionalParameter, after: optionalParameter }),
     output: withArrays("items"), retry: "safe",
-    exposure: { renderer: true, app: false },
+    exposure: { renderer: true, app: true },
   }),
   "session.projection.register": defineOperation({
     method: "POST", path: operationPath("/api/control/workspaces/:workspaceId/sessions/:sessionId/register"),

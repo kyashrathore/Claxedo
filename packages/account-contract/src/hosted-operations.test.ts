@@ -263,3 +263,22 @@ test("invitation results decode the receipt and declare retry policy", () => {
   expect(isSafeOperation("org.invitations.accept")).toBe(false)
   expect(isSafeOperation("org.invitations.list")).toBe(true)
 })
+
+test("app exposure is limited to documents, invitations and account catalog reads", () => {
+  const catalog = {
+    "workspace.list.provisioner": "Read the owner's cloud placements and projects for the signed browser rail",
+    "workspace.list.machine": "Read the owner's machine placements and projects for the signed browser rail",
+    "session.page": "Read the account project's paginated sessions for the signed browser rail",
+  }
+  const existing = [
+    "org.invitations.create", "org.invitations.list", "org.invitations.revoke", "org.invitations.accept",
+    "documents.list", "documents.get", "documents.create", "documents.update", "documents.content.get",
+    "documents.content.put", "documents.snapshots", "documents.snapshots.restore", "documents.statuses",
+    "documents.agentOpen", "documents.runtimeConflictResolve", "documents.moveToRepository", "documents.fromRepo",
+  ]
+  const exposed: string[] = hostedOperationNames().filter((name) => HOSTED_OPERATIONS[name].exposure.app)
+  expect(exposed.sort()).toEqual([...existing, ...Object.keys(catalog)].sort())
+  for (const name of hostedOperationNames()) {
+    if (!HOSTED_OPERATIONS[name].exposure.renderer) expect(HOSTED_OPERATIONS[name].exposure.app, name).toBe(false)
+  }
+})

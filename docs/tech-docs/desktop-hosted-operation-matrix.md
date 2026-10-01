@@ -341,3 +341,15 @@ compares every declaration's method and path pattern against the route table
 of the full hosted product: the core app with Pages, Agent Plugins and plugin
 backends. The CLI exchange is checked under the hosted core's explicit
 native-auth branch; Better Auth uses its own OAuth routes instead.
+
+## Signed browser catalog exposure
+
+The registry's `exposure.app` admits these reads alongside its existing document and invitation operations. Requests use the browser's existing Better Auth session cookie on the Worker origin and the registry's fixed paths, query fields and result decoders.
+
+| Operation | App exposure reason |
+| --- | --- |
+| `workspace.list.provisioner` | Read the owner's cloud placements and projects for the signed browser rail. |
+| `workspace.list.machine` | Read the owner's machine placements and projects for the signed browser rail. |
+| `session.page` | Read the account project's paginated sessions for the signed browser rail. |
+
+No renderer-withheld operation gains app exposure. The exact app allowlist is pinned in `account-contract/src/hosted-operations.test.ts`. Existing central session reads stay on the Worker's HTTP routes on browser; Electron main remains the transport for a desktop connected to its daemon.
