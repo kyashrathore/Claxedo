@@ -22,6 +22,7 @@ import { ownerMembershipStatements, requireHuman, requireText, type D1AccessCont
 import { D1OrgMemberAuthority } from "./org-member-authority"
 import type { FindAccountByEmail } from "@claxedo/server-core/platform/auth/org-access-authority"
 import { asOrgId, type OrgId } from "@claxedo/server-core/platform/auth/branded-id"
+import { d1BatchAssertionFailed } from "../../../platform/db/d1-constraint"
 
 const KNOWN_HOME_REGIONS = new Set(["apac-south", "apac-east", "eu-west", "us-east", "us-west"])
 
@@ -1023,7 +1024,7 @@ export class D1WorkspaceAuthority implements D1WorkspaceAuthorityCore {
     try {
       return await this.database.batch(statements)
     } catch (error) {
-      if (batchAssertionFailed(error)) {
+      if (d1BatchAssertionFailed(error)) {
         throw new D1WorkspaceAuthorityError("resource_conflict", message)
       }
       throw error
@@ -1276,13 +1277,6 @@ function validateHomeRegion(value?: string) {
 
 function denied(message = "Workspace authority denied access") {
   return new ControlPlaneAuthError(403, "workspace_authorization_denied", message)
-}
-
-/** A guarded batch aborted on its `authority_batch_assertions` row; the cause chain is searched because D1 wraps the SQLite error. */
-export function batchAssertionFailed(error: unknown): boolean {
-  if (!(error instanceof Error)) return false
-  if (error.message.includes("passed = 1")) return true
-  return batchAssertionFailed(error.cause)
 }
 
 function randomId(prefix: "usr" | "act" | "org" | "prj" | "team" | "assert" | "audit") {

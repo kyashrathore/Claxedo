@@ -11,6 +11,7 @@ import { asOrgId } from "@claxedo/server-core/platform/auth/branded-id"
 import { CURRENT_CHANNEL_IDENTITY_VERSION } from "@claxedo/workspace-relay-protocol"
 import { may, maySql, readProjectRole, type AuthorizationPrincipal } from "./authorization"
 import { requireHuman } from "./access-context"
+import { d1ConstraintFailure } from "../../../platform/db/d1-constraint"
 
 const CONTROL_PLANE_SERVICE_ACTOR_ID = "control-plane"
 
@@ -110,7 +111,7 @@ export class D1ChannelRuntimeAuthority implements D1ChannelRuntimeAuthorityPort 
       ).run()
       return { bindingId, created: true, userId: who.userId, actorId: who.actorId, actorKind: who.actorKind }
     } catch (error) {
-      if (!isUniqueFailure(error)) throw error
+      if (d1ConstraintFailure(error)?.kind !== "unique") throw error
       const raced = await this.binding(channel, externalUserId, false)
       if (raced?.actorId === who.actorId && raced.userId === who.userId) {
         return { bindingId: raced.bindingId, created: false, userId: who.userId, actorId: who.actorId, actorKind: who.actorKind }
@@ -314,7 +315,7 @@ export class D1ChannelRuntimeAuthority implements D1ChannelRuntimeAuthorityPort 
       if (changes(result) !== 1) throw denied("Runtime token workspace is unavailable")
       return { ok: true }
     } catch (error) {
-      if (isUniqueFailure(error)) throw conflict("Runtime Access Token JTI is already recorded")
+      if (d1ConstraintFailure(error)?.kind === "unique") throw conflict("Runtime Access Token JTI is already recorded")
       throw error
     }
   }
@@ -423,7 +424,7 @@ export class D1ChannelRuntimeAuthority implements D1ChannelRuntimeAuthorityPort 
       if (changes(result) !== 1) throw denied("Runtime token workspace is unavailable")
       return { ok: true }
     } catch (error) {
-      if (isUniqueFailure(error)) throw conflict("Runtime Access Token JTI is already recorded")
+      if (d1ConstraintFailure(error)?.kind === "unique") throw conflict("Runtime Access Token JTI is already recorded")
       throw error
     }
   }
@@ -531,6 +532,3 @@ function changes(result: { meta?: { changes?: number } }) {
   return result.meta?.changes ?? 0
 }
 
-function isUniqueFailure(error: unknown) {
-  return String(error).toLowerCase().includes("unique constraint failed")
-}

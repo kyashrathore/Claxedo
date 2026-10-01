@@ -50,10 +50,11 @@ export const serverWorkerd: Policy = {
   // access authority's error contract is its own module
   // (`authority/adapters/d1/host-access-errors.ts`); and the Better Auth
   // composition adds the AUTH_DB email lookup an org admin adds a member by
-  // (`platform/auth/better-auth-d1-account-email.ts`). The org, team and
-  // People routes share one typed refusal envelope
+  // (`platform/auth/better-auth-d1-account-email.ts`). Every D1 adapter reads
+  // a constraint failure through `platform/db/d1-constraint.ts`, and the org,
+  // team and People routes share one typed refusal envelope
   // (`platform/http/public-api-error-response.ts`).
-  ceilings: { modules: 105, packages: 19 },
+  ceilings: { modules: 106, packages: 19 },
 
   emitted: {
     file: "packages/claxedo-server/.artifacts/u8-package-split/manifests/server-workerd.json",

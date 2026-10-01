@@ -52,6 +52,7 @@ import { SESSION_TURN_LEASE_TTL_MS } from "@claxedo/workspace-relay-protocol"
 import { asRecord, numberField, parseJson } from "@claxedo/server-core/platform/json/index"
 import { may, maySql, type AuthorizationPrincipal, type SessionAction, type WorkspaceAction } from "./authorization"
 import { requireHuman } from "./access-context"
+import { d1ConstraintFailure } from "../../../platform/db/d1-constraint"
 import { readD1SessionPage } from "./session-page"
 import { latestViewPage, storedTurn, type LatestView } from "@claxedo/server-core/session/latest-view-page"
 import { readStoredTurnOutline } from "@claxedo/server-core/session/turn-outline"
@@ -1191,7 +1192,7 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
         "Session share grant raced with an authority change",
       )
     } catch (error) {
-      if (String(error).includes("UNIQUE constraint failed")) {
+      if (d1ConstraintFailure(error)?.kind === "unique") {
         await this.requireParticipantAdministrator(administrator, sessionId, workspaceId)
         const raced = await this.activeShareForTarget(sessionId, target)
         if (raced && raced.workspace_id === workspaceId) {
@@ -2387,10 +2388,7 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
     try {
       return await this.database.batch(statements)
     } catch (error) {
-      if (
-        String(error).includes("authority_batch_assertions.passed") ||
-        String(error).includes("CHECK constraint failed")
-      ) {
+      if (d1ConstraintFailure(error)?.kind === "check") {
         throw new D1SessionAuthorityError("resource_conflict", message)
       }
       throw error

@@ -24,6 +24,7 @@ import { stringField } from "@claxedo/server-core/platform/json/index"
 import type { SignedAgentPluginRuntimeSnapshot } from "../runtime/provision"
 import { may, maySql } from "../../authority/adapters/d1/authorization"
 import { isRecord } from "@claxedo/helpers/guards"
+import { d1BatchAssertionFailed } from "../../platform/db/d1-constraint"
 
 /** The project scope a user default addresses; never a real project ID. */
 export const AGENT_PLUGIN_ALL_PROJECTS_SCOPE = "all-projects"
@@ -193,12 +194,6 @@ async function operationId(name: string, args: Record<string, unknown>) {
 function assertionId() {
   const bytes = crypto.getRandomValues(new Uint8Array(16))
   return `assert_${Array.from(bytes, (value) => value.toString(16).padStart(2, "0")).join("")}`
-}
-
-function assertionFailed(cause: unknown): boolean {
-  if (!(cause instanceof Error)) return false
-  if (cause.message.includes("passed = 1")) return true
-  return assertionFailed(cause.cause)
 }
 
 /**
@@ -643,7 +638,7 @@ export class D1SignedAgentPluginActivationStore implements SignedAgentPluginActi
         this.database.prepare(`delete from authority_batch_assertions where assertion_id = ?`).bind(guard),
       ])
     } catch (cause) {
-      if (!assertionFailed(cause)) throw cause
+      if (!d1BatchAssertionFailed(cause)) throw cause
       throw conflict(revision, await this.currentRevision(orgId))
     }
     return next

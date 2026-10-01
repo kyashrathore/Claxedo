@@ -12,6 +12,7 @@ import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/
 import type { WorkspaceAuthority } from "@claxedo/server-core/platform/auth/authority"
 import { isRecord, stringField } from "@claxedo/server-core/platform/json/index"
 import { may } from "../../authority/adapters/d1/authorization"
+import { d1ConstraintFailure } from "../../platform/db/d1-constraint"
 
 /**
  * The authority capabilities this store consumes, the same ones
@@ -73,11 +74,6 @@ function toRecord(row: SourceRow): AgentPluginSourceRecord {
     authority,
     addedAt: typeof row.added_at === "number" ? row.added_at : invalid("timestamp"),
   }
-}
-
-function constraintFailure(cause: unknown) {
-  const message = cause instanceof Error ? `${cause.message} ${cause.cause instanceof Error ? cause.cause.message : ""}` : ""
-  return /constraint failed/i.test(message)
 }
 
 /**
@@ -148,7 +144,7 @@ export class D1AgentPluginSourceStore implements AgentPluginSourceRegistry<Signe
     } catch (cause) {
       // The unique primary key is the race-safe half of the duplicate rule: the
       // read above answers a nicer message, this answers a concurrent writer.
-      if (constraintFailure(cause)) {
+      if (d1ConstraintFailure(cause)?.kind === "unique") {
         throw new AgentPluginSourceRegistryError("source-exists", `Source ${source.id} is already registered`)
       }
       throw cause
