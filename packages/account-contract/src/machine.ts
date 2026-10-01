@@ -109,6 +109,11 @@ export function decodeMachineSeal(sealed: string) {
   return { ephemeral: parts[1] ?? "", iv: parts[2] ?? "", ciphertext: parts[3] ?? "" }
 }
 
+/**
+ * `key_ops` and `ext` are dropped rather than carried: one runtime exports an
+ * ECDH public JWK with `key_ops: []` and another with none, and an importer
+ * handed the wrong list refuses the key.
+ */
 export function publicKeyJwk(input: unknown): JsonWebKey & { kty: "EC"; crv: "P-256"; x: string; y: string } {
   const value: unknown = typeof input === "string" ? JSON.parse(input) : input
   if (typeof value !== "object" || value === null) throw new TypeError("public key is not a JWK object")

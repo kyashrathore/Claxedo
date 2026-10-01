@@ -821,8 +821,8 @@ export type HostMachineHeartbeatInput = {
   ttlMs?: number
   sessionAuthority?: HostSessionAuthority
   /**
-   * The ECDH P-256 public JWK JSON this machine can be sealed to
-   * recorded on every beat that carries one.
+   * The ECDH P-256 public JWK JSON this machine can be sealed to, recorded on
+   * every beat that carries one.
    *
    * The enrollment's own key signs and cannot derive bits, so this is a second
    * key and its declaration rides the one channel the machine already proves

@@ -1,5 +1,7 @@
 import { expect, test } from "bun:test"
+import { base64UrlDecode, base64UrlEncode } from "@claxedo/helpers/crypto"
 import {
+  MACHINE_REQUEST_HEADERS,
   decodeInvitationToken,
   decodeMachineSeal,
   encodeMachineSeal,
@@ -45,8 +47,20 @@ test("invitation encoding is exact and decoding refuses malformed parts", () => 
     "chx_inv_1..b",
     "chx_inv_1.a.b=",
     " chx_inv_1.a.b",
+    "chx_inv_1.a.",
+    "chx_inv_1.a b.c",
+    "",
   ])
     expect(decodeInvitationToken(raw)).toBeUndefined()
+})
+
+test("machine request header names", () => {
+  expect(MACHINE_REQUEST_HEADERS).toEqual({
+    enrollmentId: "x-claxedo-enrollment-id",
+    ts: "x-claxedo-host-ts",
+    nonce: "x-claxedo-host-nonce",
+    signature: "x-claxedo-host-signature",
+  })
 })
 
 test("seal AAD pins enrollment and revision", () => {
@@ -78,4 +92,16 @@ test("fingerprint hashes decoded coordinates regardless of JWK serialization", a
     await publicKeyFingerprint(JSON.stringify({ y: key.y, x: key.x, crv: key.crv, kty: key.kty, ext: true })),
   ).toBe("9aX9QtFqIDAnmO9u0wmXm0MAPSMg2fDo6pgxqSdZ-0s")
   await expect(publicKeyFingerprint({ ...key, x: "a+b" })).rejects.toThrow(TypeError)
+})
+
+test("fingerprint is sha256 over the decoded x||y bytes of a generated key", async () => {
+  const pair = await crypto.subtle.generateKey({ name: "ECDSA", namedCurve: "P-256" }, true, ["sign", "verify"])
+  const jwk = await crypto.subtle.exportKey("jwk", pair.publicKey)
+  const x = base64UrlDecode(jwk.x!)
+  const y = base64UrlDecode(jwk.y!)
+  const material = new Uint8Array(x.length + y.length)
+  material.set(x, 0)
+  material.set(y, x.length)
+  expect(await publicKeyFingerprint(jwk)).toBe(base64UrlEncode(await crypto.subtle.digest("SHA-256", material)))
+  await expect(publicKeyFingerprint({ kty: "RSA", n: "x", e: "AQAB" })).rejects.toThrow(TypeError)
 })

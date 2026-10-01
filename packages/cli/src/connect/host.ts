@@ -13,7 +13,6 @@ import {
 } from "@claxedo/host-connector/host-state"
 import { createMachineSealingKeyPair, openMachineSeal } from "@claxedo/host-connector/machine-seal"
 import { machineSealAad, publicKeyJwk } from "@claxedo/account-contract/machine"
-
 import {
   createMachineSignedTransport,
   decisionCode,

@@ -7,7 +7,6 @@ import {
 } from "@claxedo/host-connector/host-identity"
 import { enrollmentPayload, machineSealAad, publicKeyJwk } from "@claxedo/account-contract/machine"
 import { createMachineSealingKeyPair, openMachineSeal } from "@claxedo/host-connector/machine-seal"
-
 import { createMachineSignedTransport, type FetchLike } from "@claxedo/host-connector/machine-transport"
 
 import { readField, readRecord } from "@claxedo/helpers/readers"

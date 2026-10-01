@@ -1,3 +1,5 @@
+import { isBase64Url } from "@claxedo/account-contract/machine"
+
 /** |server now − x-claxedo-host-ts| above this is refused. */
 export const MACHINE_REQUEST_SKEW_MS = 60_000
 /** A consumed nonce stays refused for this long after its `ts`; it outlives the skew window on both sides. */
@@ -5,10 +7,8 @@ export const MACHINE_NONCE_TTL_MS = 120_000
 export const MACHINE_NONCE_MIN_LENGTH = 16
 export const MACHINE_NONCE_MAX_LENGTH = 64
 
-const BASE64URL = /^[A-Za-z0-9_-]+$/
-
 export function isMachineNonce(value: string) {
-  return value.length >= MACHINE_NONCE_MIN_LENGTH && value.length <= MACHINE_NONCE_MAX_LENGTH && BASE64URL.test(value)
+  return value.length >= MACHINE_NONCE_MIN_LENGTH && value.length <= MACHINE_NONCE_MAX_LENGTH && isBase64Url(value)
 }
 
 /**

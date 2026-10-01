@@ -230,21 +230,15 @@ function assertUniqueConfiguredStrings(value: readonly string[], message: string
   }
 }
 
-function assertClientDescriptor(
-  name: "browser" | "cli" | "desktop",
-  value: { clientId: string; resource: string; scopes: readonly string[] },
-) {
+function assertBrowserClientDescriptor(value: { clientId: string; resource: string; scopes: readonly string[] }) {
   if (!isNonEmptyString(value.clientId) || !isNonEmptyString(value.resource)) {
     throw new AuthenticationError(
       503,
       "auth_configuration_invalid",
-      `${name === "browser" ? "Browser auth client" : `Native auth client ${name}`} requires clientId, resource, and at least one scope`,
+      "Browser auth client requires clientId, resource, and at least one scope",
     )
   }
-  assertUniqueConfiguredStrings(
-    value.scopes,
-    `${name === "browser" ? "Browser auth client" : `Native auth client ${name}`} requires unique non-empty scopes`,
-  )
+  assertUniqueConfiguredStrings(value.scopes, "Browser auth client requires unique non-empty scopes")
 }
 
 function isExactHttpsOrigin(value: string) {
@@ -330,7 +324,7 @@ function assertDescriptor(descriptor: AuthAdapterDescriptor, now: number) {
       "browser.trustedOrigins must contain exact HTTPS origins",
     )
   }
-  assertClientDescriptor("browser", descriptor.browser)
+  assertBrowserClientDescriptor(descriptor.browser)
 
   if (descriptor.browser.transport === "cookie") {
     const cookie = descriptor.browser.cookie

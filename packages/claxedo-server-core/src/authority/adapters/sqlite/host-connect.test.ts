@@ -18,9 +18,7 @@ import {
   publicKeyJwk,
 } from "@claxedo/account-contract/machine"
 import { verifyMachineRequest, type MachineAuthResult } from "@claxedo/server-core/platform/auth/machine-auth"
-
 import { sealForMachine } from "@claxedo/account-contract/machine-seal"
-
 import { createSqliteWorkspaceAuthority } from "./workspace-authority"
 import { closeAuthorityDatabases, openAuthorityDb, type SqliteAuthorityDb } from "./workspace-authority-store"
 
