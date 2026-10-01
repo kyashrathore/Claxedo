@@ -159,32 +159,10 @@ export type DocumentsBackend<H extends DocumentHandle = DocumentHandle> = Readon
       sessionId: string
     }>,
   ): Promise<Readonly<{ token: string; expiresAt: number }>>
-  remoteList?(
-    input: Readonly<{
-      auth: SignedControlPlaneAuth
-      orgId: string
-      projectId: string
-      localWorkspaceId: string
-      cloudWorkspaceId: string
-      sessionId: string
-    }>,
-  ): Promise<DocumentIndexEntry[]>
   moveToRepository?(
     entry: DocumentIndexEntry,
     destination: Readonly<{ workspaceId: string; relativePath: string }>,
   ): Promise<DocumentIndexEntry>
-}>
-
-/**
- * The slice of a backend the local installation broker reaches for: three index
- * operations and the three workspace file operations. Nothing it serves needs
- * the placement, the repository port, or the rest of the index, so callers that
- * only broker documents supply this instead of a whole `DocumentsBackend`.
- */
-export type DocumentBrokerBackend<H extends DocumentHandle = DocumentHandle> = Readonly<{
-  access: DocumentAccess
-  index: Pick<DocumentsBackend<H>["index"], "list" | "find" | "update">
-  workspace: Pick<DocumentsBackend<H>["workspace"], "resolve" | "read" | "write">
 }>
 
 export class DocumentAgentOpenError extends Error {

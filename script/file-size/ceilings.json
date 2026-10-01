@@ -24,7 +24,7 @@
   "packages/claxedo-server/src/authority/adapters/d1/session-authority.ts": 2553,
   "packages/claxedo-server/src/authority/adapters/d1/workspace-authority.ts": 1414,
   "packages/claxedo-server/src/deployments/hosted-workerd/live-sync-room.cf.ts": 976,
-  "packages/claxedo-server/src/deployments/self-hosted-node/app.ts": 2037,
+  "packages/claxedo-server/src/deployments/self-hosted-node/app.ts": 2029,
   "packages/claxedo-server/src/routes/runtime-session-authority.ts": 1374,
   "packages/claxedo-server/src/signed-browser-relay-fixture.mjs": 1311,
   "packages/claxedo-server/src/workspace/supervisor/sandbox.ts": 827,

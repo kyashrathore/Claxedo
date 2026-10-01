@@ -33,15 +33,15 @@ const ENTRIES = [
   // access predicates, and the verified-email account lookup. Every entry also
   // mounts hosted Pages from `core-worker.cf.ts`: the D1 document authority
   // (`authority/adapters/d1/document-authority.ts`), the R2 documents backend
-  // and its index, managed store and local-relay schemas
+  // and its index and managed store
   // (`documents/backends/hosted/`), and the runtime broker that hydrates a page
   // into a session with its relay client (`documents/relay-http.ts`).
-  { name: "worker", entry: BETTER_AUTH_D1_ENTRY, modules: 115, packages: 19 },
+  { name: "worker", entry: BETTER_AUTH_D1_ENTRY, modules: 114, packages: 19 },
   // Both Agent Plugins entries carry the plugin-backend platform
   // (`src/plugin-backends/`): seven modules, `@claxedo/plugin-api` for the
   // manifest, and `cloudflare:workers` for the supervisor and its entrypoints.
-  { name: "worker-agent-plugins", entry: BETTER_AUTH_D1_AGENT_PLUGINS_ENTRY, modules: 165, packages: 23 },
-  { name: "worker-agent-plugins-full-hosted", entry: BETTER_AUTH_D1_AGENT_PLUGINS_FULL_HOSTED_ENTRY, modules: 170, packages: 23 },
+  { name: "worker-agent-plugins", entry: BETTER_AUTH_D1_AGENT_PLUGINS_ENTRY, modules: 164, packages: 23 },
+  { name: "worker-agent-plugins-full-hosted", entry: BETTER_AUTH_D1_AGENT_PLUGINS_FULL_HOSTED_ENTRY, modules: 169, packages: 23 },
 ] as const
 
 function closure(entry: string, options: { runtimeOnly?: boolean } = {}) {

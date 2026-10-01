@@ -166,7 +166,6 @@ import {
 import { withDataDirOwnership } from "@claxedo/server-core/platform/runtime/lib/data-dir-owner"
 import { createLocalDocumentsBackend } from "@claxedo/server-core/documents/backends/local/backend"
 import { setDocumentChangedSink } from "@claxedo/server-core/documents/backend"
-import { LocalInstallationDocumentBroker } from "../../documents/backends/local/installation-broker"
 
 import { sessionMeta } from "@claxedo/server-core/session/meta/index"
 import { ClaxedoDB } from "../../platform/db"
@@ -867,8 +866,6 @@ export function createSelfHostedApp(
       "createSelfHostedApp is the self-host composition; use createHostedApp for hosted services",
     )
   }
-  const localDocumentBrokerToken = process.env.CLAXEDO_LOCAL_DOCUMENT_BROKER_TOKEN?.trim()
-  delete process.env.CLAXEDO_LOCAL_DOCUMENT_BROKER_TOKEN
   // One owner cannot collide with itself (`/api/workspace` is mounted twice on
   // purpose), so this catches a second composition mounting onto this app, not
   // a duplicate inside this function. The `mount*` helpers below run against
@@ -1276,11 +1273,6 @@ export function createSelfHostedApp(
       ...authRouteOptions(services),
     }),
   )
-  app.route("/internal/documents", LocalInstallationDocumentBroker({
-    backend: documentsBackend,
-    ...(localDocumentBrokerToken ? { installationToken: localDocumentBrokerToken } : {}),
-    env: process.env,
-  }))
 
   // Agent config routes (centralized MCP + commands management)
   app.route(

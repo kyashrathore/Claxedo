@@ -100,7 +100,6 @@ const DENY_LIST = new Set([
   "NODE_OPTIONS",
   "ELECTRON_RUN_AS_NODE",
   "NODE_PATH",
-  "CLAXEDO_LOCAL_DOCUMENT_BROKER_TOKEN",
 ])
 
 /**
@@ -113,8 +112,7 @@ const DENY_LIST = new Set([
  * (`CLAXEDO_RUNTIME_ACCESS_TOKEN_PRIVATE_KEY_PEM`,
  * `CLAXEDO_RELAY_HOST_SIGNING_KEY_PEM`), the control-plane machine principal
  * (`CLAXEDO_CONTROL_PLANE_SERVICE_TOKEN`), the credential-store bearer, and
- * more. `CLAXEDO_LOCAL_DOCUMENT_BROKER_TOKEN` was deny-listed individually,
- * which fixed one instance of the class rather than the class.
+ * more.
  *
  * A prefix passthrough is the wrong shape for a namespace that holds secrets:
  * it is correct only until the next secret is added, and nothing tells you when
@@ -140,7 +138,6 @@ const ALLOWED_CLAXEDO_VARS = new Set([
   "CLAXEDO_WORKSPACE_RELAY_URL",
   "CLAXEDO_SERVER_HOST",
   "CLAXEDO_SERVER_PORT",
-  "CLAXEDO_LOCAL_CONTROL_PLANE_URL",
   // Identity of the surface the child is running inside and the terminal env
   // the shell integration injects (agent-hooks/core/shell.ts).
   "CLAXEDO_WORKSPACE_ID",

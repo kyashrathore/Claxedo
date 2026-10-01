@@ -567,7 +567,7 @@ export type DocumentRelayJobScope = Readonly<{
   cloudWorkspaceId: string
   sessionId: string
   documentId: string
-  operations: readonly ("hydrate" | "read" | "write" | "resolve")[]
+  operations: readonly ("hydrate" | "write" | "resolve")[]
   jobExpiresAt: number
 }>
 

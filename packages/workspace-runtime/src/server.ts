@@ -14,7 +14,6 @@ import { createRelayHostAuthMiddleware, type RelayHostAuthOptions } from "./work
 import { startWorkspaceRelayHostTunnel, type WorkspaceRelayHostTunnelOptions } from "./workspace-relay-host-tunnel"
 import { ConfigRoutes } from "./routes/config"
 import { RuntimeDocumentHydrationRoutes } from "./routes/document-hydration"
-import { LocalDocumentBrokerRoutes } from "./routes/local-document-broker"
 import {
   mountRouteContributions,
   type WorkspaceRuntimeRouteContribution,
@@ -32,7 +31,6 @@ import {
   type WorkspaceRuntimeExposure,
 } from "./exposure"
 import { runtimeEnvText, workspaceRuntimeEpoch, workspaceRuntimeStoreDir } from "./env"
-import { retainedWorkspaceRuntimeInternalSecrets, type WorkspaceRuntimeInternalSecrets } from "./internal-secrets"
 import type { WorkspaceEventParents } from "./routes/events"
 import type { WorkspaceTranscriptRoutesOptions } from "./workspace/core"
 import { managedWorkspaceSessionAccessPolicy, sessionAccessContext, sessionAccessDenied, type SessionAccessPolicy } from "./session-access-policy"
@@ -113,8 +111,6 @@ export type WorkspaceRuntimeServerOptions = {
    * rather than of a runtime flag.
    */
   routeContributions?: readonly WorkspaceRuntimeRouteContribution[]
-  /** Process-retained authority. It is never projected into a Session or child environment. */
-  internalSecrets?: WorkspaceRuntimeInternalSecrets
   /**
    * The first-party MCP entry injected into every session this runtime
    * launches: the loopback origin of the process serving
@@ -418,7 +414,6 @@ function trustedAgentHookCallback(input: { token: string; path: string; method: 
 }
 
 export function createWorkspaceRuntimeApp(options: WorkspaceRuntimeServerOptions): WorkspaceRuntimeApp {
-  const internalSecrets = options.internalSecrets ?? retainedWorkspaceRuntimeInternalSecrets()
   assertWorkspaceRuntimeExposure({
     exposure: options.exposure,
     hostname: workspaceRuntimeListenHostname(),
@@ -593,17 +588,6 @@ export function createWorkspaceRuntimeApp(options: WorkspaceRuntimeServerOptions
     sessionAccessPolicy,
     ...(process.env.CLAXEDO_CONTROL_PLANE_URL ? { controlPlaneOrigin: process.env.CLAXEDO_CONTROL_PLANE_URL } : {}),
   }))
-  if (options.exposure?.kind === "relay") {
-    app.route("/", LocalDocumentBrokerRoutes({
-      trustedTransport: true,
-      ...(internalSecrets.localDocumentBrokerToken
-        ? { installationToken: internalSecrets.localDocumentBrokerToken }
-        : {}),
-      ...(process.env.CLAXEDO_LOCAL_CONTROL_PLANE_URL
-        ? { localControlPlaneUrl: process.env.CLAXEDO_LOCAL_CONTROL_PLANE_URL }
-        : {}),
-    }))
-  }
   type SessionToolRegistration = Parameters<typeof host.registerSessionTools>[0]
   const sessionToolGroups = new Map<string, Map<string, SessionToolRegistration>>()
   const dispatchSessionTool = async (url: string, call: { sessionID: string; name: string; toolCallID: string; input: unknown }) => {
@@ -715,7 +699,6 @@ export function startServer(
   options: WorkspaceRuntimeServerOptions,
   lifecycle: WorkspaceRuntimeLifecycleOptions = {},
 ) {
-  const internalSecrets = options.internalSecrets ?? retainedWorkspaceRuntimeInternalSecrets()
   const hostname = workspaceRuntimeListenHostname()
   assertWorkspaceRuntimeExposure({
     exposure: options.exposure,
@@ -724,7 +707,7 @@ export function startServer(
     env: process.env,
   })
   assertWorkspaceRuntimeListenPolicy(options, hostname)
-  const runtime = createWorkspaceRuntimeApp({ ...options, internalSecrets })
+  const runtime = createWorkspaceRuntimeApp(options)
 
   const server = serve({
     fetch: runtime.app.fetch,
