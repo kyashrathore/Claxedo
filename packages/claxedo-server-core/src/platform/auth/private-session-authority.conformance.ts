@@ -787,7 +787,7 @@ async function refusesWith(operation: () => Promise<unknown>, code: string) {
     await operation()
     return false
   } catch (error) {
-    return String(error instanceof Error ? error.message : error).includes(code)
+    return asRecord(error)?.code === code
   }
 }
 
