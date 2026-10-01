@@ -9,7 +9,7 @@ import type {
 } from "@claxedo/server-core/platform/auth/authority"
 import { asOrgId } from "@claxedo/server-core/platform/auth/branded-id"
 import { CURRENT_CHANNEL_IDENTITY_VERSION } from "@claxedo/workspace-relay-protocol"
-import { activeGuard, may, mayGuard, maySql, readProjectRole, type AuthorizationPrincipal } from "./authorization"
+import { activeGuard, admittingShareSql, may, mayGuard, maySql, readProjectRole, type AuthorizationPrincipal } from "./authorization"
 import { requireHuman } from "./access-context"
 import { d1ConstraintFailure } from "../../../platform/db/d1-constraint"
 
@@ -388,7 +388,8 @@ export class D1ChannelRuntimeAuthority implements D1ChannelRuntimeAuthorityPort 
   /**
    * A token with no session reaches the workspace and is its owner's; a token
    * scoped to one session is a viewer's, for someone who may read that
-   * session, and reaches nothing else.
+   * session, and reaches nothing else. A share holder's is recorded under the
+   * share that admitted it, which is what revokes it for good.
    */
   private async recordUserRuntimeToken(
     who: Principal,
@@ -403,14 +404,18 @@ export class D1ChannelRuntimeAuthority implements D1ChannelRuntimeAuthorityPort 
     const holder = sessionId === null
       ? mayGuard(who, "operate", { kind: "workspace", workspaceId: values.workspaceId })
       : mayGuard(who, "read", { kind: "session", sessionId, workspaceId: values.workspaceId })
+    const admitting = admittingShareSql(who, "token_session")
     try {
       const result = await this.database.prepare(`
         insert into runtime_access_tokens (
           jti, deployment_id, workspace_id, org_id, project_id, host_id,
-          principal_kind, actor_id, actor_kind, role, minted_for_user_id, session_id,
+          principal_kind, actor_id, actor_kind, role, minted_for_user_id, session_id, share_grant_id,
           expires_at, revoked_at, created_at
         )
-        select ?, ?, workspace_id, org_id, project_id, ?, 'user', ?, 'human', ?, ?, ?, ?, null, ?
+        select ?, ?, workspace_id, org_id, project_id, ?, 'user', ?, 'human', ?, ?, ?, (
+          select ${admitting.sql} from sessions token_session
+          where token_session.session_id = ? and token_session.workspace_id = workspaces.workspace_id
+        ), ?, null, ?
         from workspaces where workspace_id = ? and deleted_at is null and ${holder.sql}
       `).bind(
         values.jti,
@@ -419,6 +424,8 @@ export class D1ChannelRuntimeAuthority implements D1ChannelRuntimeAuthorityPort 
         who.actorId,
         args.role,
         who.userId,
+        sessionId,
+        ...admitting.bind,
         sessionId,
         values.expiresAt,
         this.now(),

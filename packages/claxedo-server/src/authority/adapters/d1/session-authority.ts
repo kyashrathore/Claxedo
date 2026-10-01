@@ -1275,27 +1275,15 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
     let runtimeTokensRevoked = 0
     for (const grant of grants) {
       const assertionId = this.randomId("assert")
-      const holders = grant.target_user_id
-        ? { sql: "?", bind: [grant.target_user_id] }
-        : grant.target_team_id
-          ? {
-              sql: `select tm.user_id from team_memberships tm
-                join teams t on t.team_id = tm.team_id and t.deleted_at is null
-                join org_memberships om
-                  on om.org_id = t.org_id and om.user_id = tm.user_id and om.revoked_at is null
-                where tm.team_id = ? and tm.revoked_at is null`,
-              bind: [grant.target_team_id],
-            }
-          : { sql: "select user_id from org_memberships where org_id = ? and revoked_at is null", bind: [grant.target_org_id] }
       const revokeTokens = this.database
         .prepare(
           `
         update runtime_access_tokens set revoked_at = ?
-        where workspace_id = ? and session_id = ? and revoked_at is null and minted_for_user_id in (${holders.sql})
+        where share_grant_id = ? and revoked_at is null
           and exists (select 1 from session_share_grants g where g.grant_id = ? and g.revoked_at = ?)
       `,
         )
-        .bind(now, workspaceId, sessionId, ...holders.bind, grant.grant_id, now)
+        .bind(now, grant.grant_id, grant.grant_id, now)
       const results = await this.guardedBatch(
         [
           this.database

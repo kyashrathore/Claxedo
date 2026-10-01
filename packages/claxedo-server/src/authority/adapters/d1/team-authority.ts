@@ -276,7 +276,7 @@ export class D1TeamAuthority implements D1TeamAuthorityPort {
         select 1 from team_memberships current
         where current.team_id = guard_team.team_id and current.user_id = ? and current.revoked_at is null
       )`, [target.user_id])
-    const [, removed] = await this.database.batch([
+    const [, , removed] = await this.database.batch([
       accessAuditStatement(this.context, {
         who,
         action: "team.member.removed",
@@ -284,6 +284,15 @@ export class D1TeamAuthority implements D1TeamAuthorityPort {
         guard,
         now,
       }),
+      // Before the membership ends, while the guard still finds it.
+      this.database
+        .prepare(`
+          update runtime_access_tokens set revoked_at = ?
+          where minted_for_user_id = ? and revoked_at is null
+            and share_grant_id in (select grant_id from session_share_grants where target_team_id = ?)
+            and ${guard.sql}
+        `)
+        .bind(now, target.user_id, team.team_id, ...guard.bind),
       this.database
         .prepare(`
           update team_memberships set revoked_at = ?, updated_at = ?
