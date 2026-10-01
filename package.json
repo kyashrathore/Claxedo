@@ -10,7 +10,7 @@
     "dev:desktop": "bun --cwd packages/claxedo-desktop dev",
     "lint": "bun run --cwd packages/harness generate:codex-protocol && oxlint",
     "typecheck": "bun run --cwd packages/harness generate:codex-protocol && bun turbo typecheck",
-    "test:architecture-ratchets": "BUN_CONFIG_FILE=./script/architecture-ratchets.bunfig.toml bun test ./script/agent-plugins-retirement.test.ts ./script/upstream-engine-retirement.test.ts ./script/session-core-node-free.test.ts ./script/bun-build.test.ts ./script/file-size/verify.test.ts && bun ./script/product-boundary/verify.ts --all --source-only && bun ./script/helpers/verify.ts && bun ./script/file-size/verify.ts",
+    "test:architecture-ratchets": "BUN_CONFIG_FILE=./script/architecture-ratchets.bunfig.toml bun test ./script/agent-plugins-retirement.test.ts ./script/upstream-engine-retirement.test.ts ./script/session-core-node-free.test.ts ./script/bun-build.test.ts ./script/published-exports-plugin.test.ts ./script/file-size/verify.test.ts && bun ./script/product-boundary/verify.ts --all --source-only && bun ./script/helpers/verify.ts && bun ./script/file-size/verify.ts",
     "test:ci-policy": "node --test script/ci-changes.test.mjs",
     "prepush": "bun run lint && bun run typecheck && bun run test:ci-policy && bun run test:architecture-ratchets && bun run --cwd packages/claxedo-app check",
     "postinstall": "bun script/apply-dependency-patches.ts && bun script/fix-node-pty.ts",
