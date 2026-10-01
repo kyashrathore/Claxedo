@@ -404,24 +404,14 @@ export function embeddedManagedPrivateSessionPolicy(
     workspaceId: input.authority.workspaceId,
     turnId: input.turnId,
   })
-  // The turn's connection credential binds the session's personal partition:
-  // the actor's user-scoped id is the same key `createConnectionsHost` writes
-  // into `owner` for signed callers. A service principal has no user row, and
-  // an actor whose workspace access lapsed between admission and this read
-  // mints a session-bound credential without one rather than failing the turn.
+  // A session spends its owner's accounts whoever sends, so the turn's
+  // connection credential binds the workspace owner's partition: their
+  // user-scoped id is the key `createConnectionsHost` writes into `owner`.
+  // A workspace whose owner can no longer be named mints a session-bound
+  // credential without one rather than failing the turn.
   const mintTurnCredential = async (input: SessionAuthorityInput, lease: SessionTurnLease) => {
     if (!turnCredentials) return undefined
-    // The owner column a connections row names is the user's `subject`;
-    // `userId` is that column. An authority that cannot resolve it mints the
-    // turn's session-bound credential without a personal partition.
-    let subject: string | undefined
-    if (input.actor.actorKind === "human") {
-      try {
-        subject = (await authority.resolveRuntimeMachineAccess(input.actor.actorId, input.authority.workspaceId)).userId
-      } catch {
-        subject = undefined
-      }
-    }
+    const subject = (await authority.resolveWorkspaceOwner?.(input.authority.workspaceId).catch(() => undefined))?.userId
     return turnCredentials.mint({
       sessionId: lease.sessionId,
       leaseId: lease.leaseId,

@@ -82,7 +82,7 @@ describe("connection turn credentials on the session authority", () => {
     else process.env.CLAXEDO_DATA_DIR = previousDataDir
   })
 
-  async function target(overrides: { resolveRuntimeMachineAccess?: (actorId: string) => Promise<{ actorId: string; actorKind: "human"; orgId: string; role: "editor"; userId: string }> } = {}) {
+  async function target() {
     const relayKey = await generateKeyPair("EdDSA", { extractable: true })
     const turnKey = await generateKeyPair("EdDSA", { extractable: true })
     const turns = createConnectionTurnCredentials()
@@ -123,13 +123,9 @@ describe("connection turn credentials on the session authority", () => {
       .route("/api/runtime-authority", RuntimeSessionAuthorityRoutes({
         authority: {
           ...transitionStubs,
-          resolveRuntimeMachineAccess: overrides.resolveRuntimeMachineAccess ?? (async (actorId: string) => ({
-            actorId,
-            actorKind: "human" as const,
-            orgId: "org_1",
-            role: "editor" as const,
-            userId: actorId === "actor_alice" ? "alice" : "bob",
-          })),
+          resolveWorkspaceOwner: async (workspaceId: string) => workspaceId === "ws_1"
+            ? { userId: "alice", actorId: "actor_alice", orgId: "org_1", projectId: "project_1" }
+            : { userId: "bob", actorId: "actor_bob", orgId: "org_1", projectId: "project_2" },
         },
         turnAuthority,
         turnCredentials: turns,
@@ -152,7 +148,7 @@ describe("connection turn credentials on the session authority", () => {
       updatedAt: 1,
     })
     await credentials.put({ providerId: "integration:conn_alice", kind: "api_key", secret: "alice-secret" })
-    const relayToken = (input: typeof relayInput) => mintRelayHostToken(input, relayKey.privateKey, "EdDSA")
+    const relayToken = (input: Parameters<typeof mintRelayHostToken>[0]) => mintRelayHostToken(input, relayKey.privateKey, "EdDSA")
     const readToken = (credential?: string) => app.request(
       "http://127.0.0.1/api/claxedo/integrations/connections/conn_alice/token?capability=docs",
       {
@@ -195,17 +191,34 @@ describe("connection turn credentials on the session authority", () => {
     }
   })
 
-  test("a credential minted for a foreign session reads none of this session's personal rows", async () => {
+  test("a send share holder's turn on Alice's session spends Alice's connections, never the sender's", async () => {
     const { app, readToken, relayToken, host } = await target()
     try {
-      const foreign = await relayToken({ ...relayInput, actorId: "actor_bob", jti: "rht_2" })
+      const shared = await relayToken({ ...relayInput, actorId: "actor_bob", role: "viewer", sessionId: "ses_1", jti: "rht_3" })
+      const acquired = await request(app, shared, { action: "turn_acquire", sessionId: "ses_1", turnId: "msg_shared" })
+      expect(acquired.status).toBe(200)
+      const body = await acquired.json() as { connectionCredential?: string }
+      expect(body.connectionCredential).toBeDefined()
+
+      const allowed = await readToken(body.connectionCredential)
+      expect(allowed.status).toBe(200)
+      expect(await allowed.json()).toMatchObject({ token: "alice-secret" })
+    } finally {
+      host.dispose()
+    }
+  })
+
+  test("a credential minted for a session in another workspace reads none of this workspace's personal rows", async () => {
+    const { app, readToken, relayToken, host } = await target()
+    try {
+      const foreign = await relayToken({ ...relayInput, actorId: "actor_bob", workspaceId: "ws_2", jti: "rht_2" })
       const acquired = await request(app, foreign, { action: "turn_acquire", sessionId: "ses_2", turnId: "msg_9" })
       expect(acquired.status).toBe(200)
       const body = await acquired.json() as { connectionCredential?: string }
       expect(body.connectionCredential).toBeDefined()
 
-      // `bob`'s partition on this box holds no `conn_alice` row — the minted
-      // credential binds the session's own subject, not the row's owner.
+      // `bob` owns `ws_2`, and his partition on this box holds no
+      // `conn_alice` row.
       expect((await readToken(body.connectionCredential)).status).toBe(404)
     } finally {
       host.dispose()

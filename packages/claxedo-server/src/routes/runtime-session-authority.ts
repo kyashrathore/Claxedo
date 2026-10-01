@@ -67,8 +67,8 @@ type RuntimeSessionAuthorityPort = Pick<
   | "authorizeRuntimeSession"
 > & {
   runtimeAccessTokenActive: (input: { jti: string; workspaceId: string; hostId: string }) => Promise<unknown>
-  /** Absent on a port that cannot resolve an actor's user-scoped partition; minted turn credentials then bind no personal rows. */
-  resolveRuntimeMachineAccess?: WorkspaceAuthority["resolveRuntimeMachineAccess"]
+  /** Absent on a port that cannot name a workspace's owner; minted turn credentials then bind no personal rows. */
+  resolveWorkspaceOwner?: ResolveWorkspaceOwner
   /** Absent on a plane that cannot reserve for a runtime actor; the owner grant's `reserve` then answers 503. */
   reserveRuntimeSession?: PrivateSessionAuthority["reserveRuntimeSession"]
   /** Absent on a plane that records no host enrollments; `adopt` then answers 503. */
@@ -616,27 +616,19 @@ export function RuntimeSessionAuthorityRoutes(options: RuntimeSessionAuthorityOp
 
   /**
    * The admitted turn's connection credential, bound to the authority lease.
-   * `subject` is the actor's user-scoped partition key — resolved through the
-   * authority, not read from the token — so a service principal or an actor
-   * with no user row mints a session-bound credential without one rather than
-   * being refused on the credential's account.
+   * A session spends its owner's accounts whoever sends, so `subject` is the
+   * workspace owner's user-scoped partition key, resolved through the
+   * authority and never read from the token. A workspace whose owner can no
+   * longer be named mints a session-bound credential without one.
    */
   async function mintConnectionTurn(
-    principal: PrivateSessionRuntimePrincipal,
     claims: Pick<SessionProofClaims, "orgId" | "workspaceId">,
     sessionId: string,
     lease: { leaseId: string; expiresAt: number },
   ) {
     const turnCredentials = options.turnCredentials
     if (!turnCredentials) return undefined
-    let subject: string | undefined
-    if (principal.principalKind === "user") {
-      try {
-        subject = (await options.authority.resolveRuntimeMachineAccess?.(principal.actorId, claims.workspaceId))?.userId
-      } catch {
-        subject = undefined
-      }
-    }
+    const subject = (await options.authority.resolveWorkspaceOwner?.(claims.workspaceId).catch(() => undefined))?.userId
     return turnCredentials.mint({
       sessionId,
       leaseId: lease.leaseId,
@@ -715,7 +707,7 @@ export function RuntimeSessionAuthorityRoutes(options: RuntimeSessionAuthorityOp
         acquiredAt: acquired.acquiredAt,
         expiresAt: acquired.expiresAt,
       })
-      const connectionCredential = await mintConnectionTurn(principal, claims, acquired.sessionId, {
+      const connectionCredential = await mintConnectionTurn(claims, acquired.sessionId, {
         leaseId: acquired.leaseId,
         expiresAt: acquired.expiresAt,
       })

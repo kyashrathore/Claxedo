@@ -161,16 +161,8 @@ export type ChannelMachineIdentity = { channel: string; externalUserId: string; 
 export type AuthorizedChannelIdentity = ChannelMachineIdentity & { identityVersion: number }
 
 export type WorkspaceAuthority = OrgAccessAuthority & {
-  /**
-   * Internal host delegation, answered only for the workspace's owner, whose
-   * actor the authority rechecks. `userId` is the user-scoped partition key the authority
-   * records for the actor (`auth.user.subject`'s side of the actor/user
-   * pair) — present when the actor resolves to a user the authority knows,
-   * absent for principals with no user row. It exists so a credential minted
-   * for a verified actor can bind that actor's personal partitions without
-   * the caller synthesizing provider subjects.
-   */
-  resolveRuntimeMachineAccess: (actorId: string, workspaceId: string) => Promise<RuntimeActorIdentity & { orgId: string; role: ProjectRole; userId?: string }>
+  /** Internal host delegation, answered only for the workspace's owner, whose actor the authority rechecks. */
+  resolveRuntimeMachineAccess: (actorId: string, workspaceId: string) => Promise<RuntimeActorIdentity & { orgId: string; role: ProjectRole }>
   resolveChannelMachineAccess: (identity: ChannelMachineIdentity, workspaceId: string) => Promise<RuntimeActorIdentity & { orgId: string; role: ProjectRole; identityVersion: number }>
   /**
    * The workspace's canonical owner, for a credential this control plane

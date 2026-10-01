@@ -2661,7 +2661,7 @@ export function createSqliteWorkspaceAuthority(
       if (!workspace) denied()
       const role = workspaceRoleForUser(db, workspace, who)
       if (!role) denied()
-      return { actorId: who.token_identifier, actorKind: "human" as const, orgId: workspace.org_id, role, ...(who.subject ? { userId: who.subject } : {}), ...(who.public_id && who.name ? { actorPublicId: who.public_id, actorName: who.name, ...(who.image_url ? { actorAvatarUrl: who.image_url } : {}) } : {}) }
+      return { actorId: who.token_identifier, actorKind: "human" as const, orgId: workspace.org_id, role, ...(who.public_id && who.name ? { actorPublicId: who.public_id, actorName: who.name, ...(who.image_url ? { actorAvatarUrl: who.image_url } : {}) } : {}) }
     },
     async resolveChannelMachineAccess(identity, workspaceId) {
       const db = database()

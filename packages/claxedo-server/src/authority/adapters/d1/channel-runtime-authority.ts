@@ -208,7 +208,7 @@ export class D1ChannelRuntimeAuthority implements D1ChannelRuntimeAuthorityPort 
     const who = await this.requireActor(actorId)
     const access = await this.operableWorkspace(who, requireText(workspaceId, "workspaceId"))
     if (!access) throw denied()
-    return { actorId: who.actorId, actorKind: who.actorKind, orgId: access.org_id, role: "owner" as const, userId: who.userId }
+    return { actorId: who.actorId, actorKind: who.actorKind, orgId: access.org_id, role: "owner" as const }
   }
 
   /**
