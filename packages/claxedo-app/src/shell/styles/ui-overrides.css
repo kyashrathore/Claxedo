@@ -463,8 +463,7 @@ html[data-theme="codex"] [data-component="session-composer"] {
   backdrop-filter: var(--surface-composer-backdrop-filter);
 }
 
-html[data-theme="codex"] [data-component="user-message"] .ui-folded-user-message-body,
-html[data-theme="codex"] [data-component="queued-message"] .ui-user-message-text {
+html[data-theme="codex"] :is([data-component="user-message"] .ui-folded-user-message-body, [data-component="queued-message"] .ui-user-message-text) {
   background: var(--surface-user-message);
   border: 0;
   border-radius: var(--surface-user-message-radius);
