@@ -421,7 +421,7 @@ describe("sqlite Org→Team + session share", () => {
 
     await expect(authority.runtimeAccessTokenActive({ jti: "rat_owner", workspaceId: "ws_tokens", hostId: "host_tokens" }))
       .resolves.toEqual({ active: true })
-    expect(revoked).toEqual({ revoked: true, revokedTargets: [{ grantedToTeamPublicId: org.default_team_id }] })
+    expect(revoked).toEqual({ revoked: true, runtime_tokens_revoked: 0, revokedTargets: [{ grantedToTeamPublicId: org.default_team_id }] })
     authority.close()
   })
 })

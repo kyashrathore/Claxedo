@@ -2523,7 +2523,7 @@ export function createSqliteWorkspaceAuthority(
       for (const grant of grants) {
         db.prepare(`UPDATE session_share_grants SET revoked_at = ? WHERE grant_id = ?`).run(now, grant.grant_id)
       }
-      return { revoked: true, revokedTargets }
+      return { revoked: true, runtime_tokens_revoked: 0, revokedTargets }
     },
     async listSessionShares(auth: SignedControlPlaneAuth, args) {
       const db = database()
