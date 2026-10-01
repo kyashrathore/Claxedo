@@ -21,13 +21,9 @@ function fixture() {
 }
 
 describe("plugin session bindings", () => {
-  test("creation returns workspace identity while project context remains separate", async () => {
+  test("created and current sessions name their workspace, and the project stays separate context", async () => {
     const { api } = fixture()
     expect(await api.sessions.create({ projectId: "project-1", prompt: "Ship" })).toEqual({ sessionId: "session-1", workspaceId: "workspace-1" })
-  })
-
-  test("current session identifies its workspace without embedding project metadata", () => {
-    const { api } = fixture()
     expect(api.context.currentSession()).toEqual({ sessionId: "session-1", workspaceId: "workspace-1" })
     expect(api.context.currentProjectId()).toBe("project-1")
   })
