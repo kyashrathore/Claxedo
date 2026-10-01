@@ -24,11 +24,7 @@ function cursorMcp(server: McpServerSpec): McpServerConfig {
 }
 
 export function projectCursorMcpServers(servers: readonly McpServerSpec[]): Record<string, McpServerConfig> {
-  const result: Record<string, McpServerConfig> = {}
-  for (const server of servers) {
-    result[server.name] = cursorMcp(server)
-  }
-  return result
+  return Object.fromEntries(servers.map((server) => [server.name, cursorMcp(server)]))
 }
 
 export function cursorHomeKey(accountOwner: string, binding: string,
