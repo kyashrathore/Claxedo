@@ -1,6 +1,7 @@
 import { spawn, spawnSync, type ChildProcess } from "node:child_process"
 import fs from "node:fs/promises"
 import path from "node:path"
+import { stripVTControlCharacters } from "node:util"
 import { SERVER_DIR } from "./node-loader"
 import { writeHostedE2eWranglerConfig } from "./hosted-wrangler-config"
 import { HOSTED_SIGNING_PRIVATE_KEY, HOSTED_SIGNING_PUBLIC_KEY } from "./hosted-keys"
@@ -50,6 +51,16 @@ function ready(child: ChildProcess, marker: string) {
   })
 }
 
+export type SentEmail = { from: string; to: string; subject: string; text: string }
+
+const SENT_EMAIL = /send_email binding called with MessageBuilder:\nFrom: (.+)\nTo: (.+)\nSubject: (.+)\n(?:[^\n]*\n)*?Text: (\S+)/g
+
+async function sentEmails(output: string): Promise<SentEmail[]> {
+  return Promise.all([...stripVTControlCharacters(output).matchAll(SENT_EMAIL)].map(async ([, from, to, subject, file]) => ({
+    from: from.trim(), to: to.trim(), subject: subject.trim(), text: await fs.readFile(file, "utf8"),
+  })))
+}
+
 export async function startHostedControlPlane(input: Input) {
   const credentials = input.credentials
   const config = await writeHostedE2eWranglerConfig()
@@ -73,6 +84,8 @@ export async function startHostedControlPlane(input: Input) {
       }),
     },
   })
+  let stdout = ""
+  child.stdout?.on("data", (data: Buffer) => { stdout += data.toString() })
   try {
     await ready(child, "[hosted-miniflare] ready")
     child.stderr?.on("data", (data: Buffer) => process.stderr.write(data))
@@ -95,6 +108,7 @@ export async function startHostedControlPlane(input: Input) {
         throw error
       }
     },
+    sentEmails: () => sentEmails(stdout),
     provisionOwnerClaim: (subject: string) => new Promise<string>((resolve, reject) => {
       const id = Math.floor(Math.random() * Number.MAX_SAFE_INTEGER)
       const timer = setTimeout(() => reject(new Error("hosted owner claim provisioning timed out")), 10_000)

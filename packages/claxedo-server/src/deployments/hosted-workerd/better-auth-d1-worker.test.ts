@@ -40,16 +40,6 @@ function env() {
 }
 
 describe("Better Auth D1 Worker", () => {
-  test("the email service binding reaches the composition and sends the original message", async () => {
-    const send = vi.fn(async (_request: Request) => new Response(null, { status: 204 }))
-    const input = betterAuthD1CompositionInput({ ...env(), AUTH_EMAIL_SERVICE: { fetch: send } })
-    expect(input.emailSender).toBeDefined()
-    const message = { kind: "verification" as const, recipient: "owner@example.test", actionUrl: "https://api.example.test/verify", token: "one-use-token" }
-    await input.emailSender!.send(message)
-    expect(send).toHaveBeenCalledTimes(1)
-    expect(JSON.parse(await send.mock.calls[0]![0].text())).toEqual(message)
-  })
-
   beforeEach(() => {
     vi.clearAllMocks()
     mocks.authHandler.mockImplementation(async () => Response.json({ auth: true }))

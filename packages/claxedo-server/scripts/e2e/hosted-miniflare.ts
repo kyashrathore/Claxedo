@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process"
-import { readFileSync, appendFileSync } from "node:fs"
+import { readFileSync } from "node:fs"
 import path from "node:path"
 import { Miniflare } from "miniflare"
 import { unstable_getMiniflareWorkerOptions } from "wrangler"
@@ -75,6 +75,7 @@ async function main(input: Input) {
     CLAXEDO_MCP_OAUTH_CLIENTS: JSON.stringify({ "https://auth.hosted-e2e.test": { clientId: "hosted-e2e-mcp-client" } }),
     CLAXEDO_USER_DEPLOYED_ORGANIZATION_ID: "hosted-e2e-organization",
     CLAXEDO_USER_DEPLOYED_ORGANIZATION_NAME: "Hosted E2E",
+    ...(input.emailPassword ? { CLAXEDO_EMAIL_FROM: "auth@hosted-e2e.test" } : {}),
   }
   env.CLAXEDO_AUTH_CONFIGURATION_ID = await betterAuthDeploymentConfigurationId({
     methods: input.emailPassword ? ["github", "email-password"] : ["github"], apiOrigin, appOrigin: input.appOrigin, githubClientId: env.GITHUB_CLIENT_ID,
@@ -91,13 +92,6 @@ async function main(input: Input) {
     d1Persist: path.join(persistence, "v3", "d1"),
     durableObjectsPersist: path.join(input.root, "hosted-do"),
     r2Persist: path.join(input.root, "hosted-r2"),
-    serviceBindings: {
-      ...(converted.workerOptions.serviceBindings ?? {}),
-      ...(input.emailPassword ? { AUTH_EMAIL_SERVICE: async (request: Request) => {
-        appendFileSync(path.join(input.root, "auth-email.jsonl"), `${await request.text()}\n`)
-        return new Response(null, { status: 204 })
-      } } : {}),
-    },
     host: "127.0.0.1",
     port: input.port,
     https: true,

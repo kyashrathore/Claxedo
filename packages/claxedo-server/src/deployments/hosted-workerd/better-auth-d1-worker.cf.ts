@@ -14,7 +14,7 @@ import {
   type BetterAuthD1UserDeployedCompositionInput,
 } from "../../authority/adapters/worker/better-auth-d1-compose"
 import type { HostedWorkerEnv } from "../../authority/provider-neutral-hosted-services"
-import { resolveBetterAuthConfiguration, type AuthEmailSender } from "../../platform/auth/better-auth-configuration"
+import { resolveBetterAuthConfiguration } from "../../platform/auth/better-auth-configuration"
 import {
   cloudflareRateLimitStore,
   createFixedWindowConnectionRateLimiter,
@@ -30,7 +30,6 @@ export { LiveSyncRoom }
 export type BetterAuthD1WorkerEnv = HostedCoreWorkerEnv & {
   AUTH_DB: D1Database
   CONTROL_PLANE_DB: D1Database
-  AUTH_EMAIL_SERVICE?: { fetch(request: Request): Promise<Response> }
   CF_VERSION_METADATA?: { id?: string; tag?: string }
   CLAXEDO_USER_DEPLOYED_ORGANIZATION_ID?: string
   CLAXEDO_USER_DEPLOYED_ORGANIZATION_NAME?: string
@@ -68,7 +67,6 @@ export function betterAuthD1CompositionInput(env: BetterAuthD1WorkerEnv): Better
     env: stringEnvironment(env),
     authDatabase: env.AUTH_DB,
     controlPlaneDatabase: env.CONTROL_PLANE_DB,
-    emailSender: authEmailSender(env),
     descriptorExpiresAt: Date.now() + AUTH_DESCRIPTOR_TTL_MS,
     product: {
       kind: "user-deployed",
@@ -77,21 +75,6 @@ export function betterAuthD1CompositionInput(env: BetterAuthD1WorkerEnv): Better
         name: requiredSetting(env.CLAXEDO_USER_DEPLOYED_ORGANIZATION_NAME, "CLAXEDO_USER_DEPLOYED_ORGANIZATION_NAME"),
       },
       ownerBootstrap: "one-use-claim",
-    },
-  }
-}
-
-function authEmailSender(env: BetterAuthD1WorkerEnv): AuthEmailSender | undefined {
-  const service = env.AUTH_EMAIL_SERVICE
-  if (!service) return undefined
-  return {
-    async send(message) {
-      const response = await service.fetch(new Request("https://auth-email.internal/send", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(message),
-      }))
-      if (!response.ok) throw new Error(`Auth email delivery failed: ${response.status}`)
     },
   }
 }
@@ -243,7 +226,7 @@ export function createBetterAuthD1Worker(input: {
       const cors = refusalCorsEntries(request, env)
       try {
         if (!env.AUTH_DB || !env.CONTROL_PLANE_DB) throw new Error("AUTH_DB and CONTROL_PLANE_DB are required")
-        const configured = resolveBetterAuthConfiguration({ env: stringEnvironment(env), emailSender: authEmailSender(env) })
+        const configured = resolveBetterAuthConfiguration({ env: stringEnvironment(env) })
         const url = new URL(request.url)
         if (url.origin !== configured.public.apiOrigin)
           throw new Error("observed request origin does not match BETTER_AUTH_URL")
