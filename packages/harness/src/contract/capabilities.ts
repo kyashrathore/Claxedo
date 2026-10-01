@@ -9,7 +9,6 @@ export type TransportCapabilities = {
   modelSelection: ModelSelection
   effortLevels: HarnessEffortLevels
   instructionChannel: HarnessInstructionChannel
-  configOwner: "harness" | "runtime"
   requests: {
     permissions: boolean
     questions: boolean

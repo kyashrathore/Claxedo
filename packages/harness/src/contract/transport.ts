@@ -73,11 +73,14 @@ export interface NativeGoalOperations {
 }
 
 export interface ConfigOperations {
-  read(session: HarnessSession): Promise<SessionConfig>
-  update(session: HarnessSession, update: SessionConfigUpdate): Promise<SessionConfig>
   options(target: ConfigPreviewTarget, mode: "probe" | "peek"): Promise<ConfigOptionsPreview>
   permissionModes(target: ConfigTarget): Promise<AgentPermissionModeState>
   setPermissionMode(session: HarnessSession, modeId: string): Promise<AgentPermissionModeState>
+}
+
+export interface HarnessConfigOperations {
+  read(session: HarnessSession): Promise<SessionConfig>
+  update(session: HarnessSession, update: SessionConfigUpdate): Promise<SessionConfig>
 }
 
 export interface HistoryOperations {
@@ -138,6 +141,7 @@ export interface HarnessTransport {
   readonly goals?: NativeGoalOperations
   readonly providerCatalog?: { providers(draft: DraftLaunch): Promise<readonly ProviderCatalogEntry[]> }
   readonly config?: ConfigOperations
+  readonly harnessConfig?: HarnessConfigOperations
   readonly history?: HistoryOperations
   readonly naming?: NamingOperations
   readonly commands?: CommandOperations

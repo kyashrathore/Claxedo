@@ -445,7 +445,6 @@ test("a permission mode set in the runtime's config reaches the next Claude laun
   try {
     state.config.permissionMode = "bypassPermissions"
     expect((await context.transport.config.permissionModes({ session: context.session() })).currentModeId).toBe("bypassPermissions")
-    expect(await context.transport.config.read(context.session())).toMatchObject({ permissionMode: "bypassPermissions" })
     state.server.scriptTool({ name: "Bash", input: { command: `printf hi > ${out}` } })
     await context.collectWithoutAsk("t1", "Run the scripted Bash tool")
     expect(await fs.readFile(out, "utf8")).toBe("hi")

@@ -1,12 +1,12 @@
 import os from "node:os"
 import path from "node:path"
-import { HARNESS_TABLE, type SessionConfigUpdate, type SessionTitleRequest } from "@claxedo/agent-runtime-contract"
+import { HARNESS_TABLE, type SessionTitleRequest } from "@claxedo/agent-runtime-contract"
 import type {
   AttachInput, CapabilityContext, ConfigApplied, ConfigOptionsPreview, ConfigPreviewTarget, ConfigTarget, Deadline, DraftLaunch,
   HarnessServices, HarnessSession, HarnessTransport, MachineLoginPolicy, RoutedEvent, SessionBroker, StartInput, TransportCapabilities,
   TransportConfigUpdate, TurnBroker, TurnInput, TurnRef,
 } from "../../contract"
-import { applySessionConfigUpdate, attachedSessionEntry, configOptionsPreview, mergeStartInput, selectedTurnAccount } from "../../contract"
+import { attachedSessionEntry, configOptionsPreview, mergeStartInput, selectedTurnAccount } from "../../contract"
 import { withTurnAccount } from "../../translate/turn-account"
 import { TransportError } from "../../contract/errors"
 import { composeCursorHome, cursorHomeKey } from "../../profiles/cursor"
@@ -31,7 +31,7 @@ function cursorCapabilities(models: readonly HostModel[] | undefined): Transport
   return {
     modelSelection: { status: "required", models: models ? cursorCatalogModels(models) : [] },
     effortLevels: { status: "unsupported", models: [] },
-    instructionChannel: "prompt-prefix", configOwner: "runtime",
+    instructionChannel: "prompt-prefix",
     requests: { permissions: false, questions: false, elicitation: false },
     subagents: true,
     goals: { implemented: true, available: true, actions: [], recovery: "blocked", optionalFields: ["lastReason"] },
@@ -187,15 +187,6 @@ export class CursorSdkTransport implements HarnessTransport {
   }
 
   readonly config = {
-    read: async (session: HarnessSession) => this.entry(session).input.config,
-    update: async (session: HarnessSession, update: SessionConfigUpdate) => {
-      const entry = this.entry(session)
-      return this.lifecycle.run(entry, async () => {
-        const config = applySessionConfigUpdate(entry.input.config, update)
-        entry.input = { ...entry.input, config }
-        return config
-      })
-    },
     options: (target: ConfigPreviewTarget, mode: "probe" | "peek") => this.modelOptions(target, mode),
     permissionModes: async (target: ConfigTarget) =>
       cursorPermissionModeState("session" in target ? this.entry(target.session).input.config : target.draft.config),

@@ -6,7 +6,7 @@ import type {
   RoutedEvent, SessionBroker, StartInput, TransportCapabilities, TransportConfigUpdate,
   TurnBroker, TurnInput, TurnRef,
 } from "../../contract"
-import { applySessionConfigUpdate, attachedSessionEntry, HarnessVersionGate, configOptionsPreview, mergeStartInput, selectedTurnAccount } from "../../contract"
+import { attachedSessionEntry, HarnessVersionGate, configOptionsPreview, mergeStartInput, selectedTurnAccount } from "../../contract"
 import { withTurnAccount } from "../../translate/turn-account"
 import { CLAUDE_CODE_RANGE } from "./cli-version"
 import { claudeBinding } from "./credentials"
@@ -23,7 +23,7 @@ function capability(models?: readonly ModelInfo[]): TransportCapabilities {
     modelSelection: { status: "optional" }, effortLevels: models ? { status: "resolved", models: models.map((model) => ({
       modelID: model.value, levels: model.supportsEffort ? model.supportedEffortLevels ?? [] : [],
     })) } : { status: "unresolved", models: [] },
-    instructionChannel: "turn-system-prompt", configOwner: "runtime",
+    instructionChannel: "turn-system-prompt",
     requests: { permissions: true, questions: true, elicitation: true }, subagents: true,
     goals: { implemented: true, available: true, actions: [], recovery: "blocked", optionalFields: ["iteration", "lastReason"] },
     todos: true, history: "store",
@@ -94,12 +94,6 @@ export class ClaudeSdkTransport implements HarnessTransport {
   }
 
   readonly config = {
-    read: async (session: HarnessSession) => this.entry(session).broker.config(),
-    update: async (session: HarnessSession, update: import("@claxedo/agent-runtime-contract").SessionConfigUpdate) => {
-      const entry = this.entry(session)
-      if (update.permissionMode) requireClaudeMode(update.permissionMode)
-      return applySessionConfigUpdate(entry.broker.config(), update)
-    },
     options: async (target: import("../../contract").ConfigPreviewTarget, mode: "probe" | "peek") => {
       const input = "session" in target ? this.entry(target.session).input : target.draft
       const current = "session" in target ? target.model?.modelID ?? this.entry(target.session).broker.config().model?.modelID

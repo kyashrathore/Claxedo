@@ -435,9 +435,9 @@ test("offers Cursor's permission modes and refuses an unknown one", async () => 
     expect(modes).toEqual({ modes: modes!.modes, appliesFrom: "next-turn" })
     expect(await context.transport.config?.permissionModes({ draft: draftOf(context) })).toEqual({ modes: modes!.modes, appliesFrom: "next-turn" })
     await expect(context.transport.config!.setPermissionMode(context.session, "yolo")).rejects.toThrow("Unknown Cursor permission mode yolo")
-    expect((await context.transport.config!.read(context.session)).permissionMode).toBeUndefined()
+    expect((await context.transport.config!.permissionModes({ session: context.session })).currentModeId).toBeUndefined()
     expect((await context.transport.config!.setPermissionMode(context.session, "unsandboxed")).currentModeId).toBe("unsandboxed")
-    expect((await context.transport.config!.read(context.session)).permissionMode).toBe("unsandboxed")
+    expect((await context.transport.config!.permissionModes({ session: context.session })).currentModeId).toBe("unsandboxed")
   } finally { await context.close() }
 }, 60_000)
 

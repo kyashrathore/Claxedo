@@ -521,14 +521,13 @@ test("a lost stream with no terminal outcome rejects the turn instead of yieldin
   } finally { target.runtime = actual; await context.close() }
 }, 60_000)
 
-test("a turn runs the resolved effort rather than the stored variant", async () => {
+test("a turn runs its resolved effort as the variant", async () => {
   const variants = { high: { reasoningEffort: "high" }, low: { reasoningEffort: "low" } }
   const context = await setupConformance({ name: "opencode-effort", backend,
     makeTransport: (services, state) => transport(services, state as OpenCodeBackend, {
       provider: { proof: proofProvider({}, { proof: { ...PROOF_MODEL, variants } }) } }) })
   try {
     const state = context.backend as OpenCodeBackend
-    await context.transport.config!.update(context.session, { variant: "low" })
     const events = await collect(context, { ...context.turn("Reply with exactly EFFORTHIGH"), effort: "high" })
     expect(events.some((item) => item.event.type === "finish")).toBe(true)
     const request = state.server.requests.find((row) => row.prompt.includes("EFFORTHIGH"))

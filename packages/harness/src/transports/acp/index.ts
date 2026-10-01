@@ -15,7 +15,7 @@ import { claudeOptionsMeta } from "./extensions/claude-options"
 import type { AcpStartupDeadline } from "./deadline"
 import type { AcpProviderTurn } from "./provider-turn"
 import { acpReceiver } from "./events"
-import { acpConfig } from "./config"
+import { acpConfig, acpHarnessConfig } from "./config"
 import { supportsAcpSubagents } from "./extensions/subagents"
 import { AcpDraftProbes } from "./probe"
 import { AcpPeerOwnership } from "./ownership"
@@ -87,6 +87,7 @@ export class AcpTransport implements HarnessTransport {
     ? this.entry(target.session).commands : this.probes.commands(target.draft) }
   readonly agents = acpAgentOperations((session) => this.entry(session), (draft) => this.probes.agents(draft))
   private readonly configOperations = acpConfig((session: HarnessSession) => this.entry(session), (draft, mode) => this.probes.catalog(draft, mode))
+  readonly harnessConfig = acpHarnessConfig((session) => this.entry(session))
   private readonly goalOperations = acpGoalOperations((session) => this.entry(session))
   private readonly steerOperations = acpSteerOperations((session) => this.entry(session), (entry) => this.delivery(entry))
   private readonly forkOperations = { fork: async (session: HarnessSession, _messageId: string, childSessionId: string) => {
@@ -119,7 +120,7 @@ export class AcpTransport implements HarnessTransport {
     const groups = entry ? acpGroups(entry.peer.handshake) : undefined
     return {
       modelSelection: acpModelSelection(entry), effortLevels: acpEffortCatalog(entry),
-      instructionChannel: "prompt-prefix", configOwner: "harness",
+      instructionChannel: "prompt-prefix",
       ...acpDeclaredCapabilities,
       subagents: Boolean(entry && supportsAcpSubagents(entry.peer.handshake)),
       goals: groups?.goals ?? { implemented: false, available: false, actions: [], recovery: "blocked", optionalFields: [] },

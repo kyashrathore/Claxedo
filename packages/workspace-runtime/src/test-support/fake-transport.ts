@@ -9,6 +9,7 @@ import type {
   ConfigOperations,
   Deadline,
   ForkOperations,
+  HarnessConfigOperations,
   HarnessServices,
   HistoryOperations,
   HarnessSession,
@@ -39,7 +40,6 @@ export const FAKE_TRANSPORT_CAPABILITIES: TransportCapabilities = {
   modelSelection: { status: "unsupported" },
   effortLevels: NO_HARNESS_EFFORT,
   instructionChannel: "turn-system-prompt",
-  configOwner: "runtime",
   requests: { permissions: false, questions: false, elicitation: false },
   subagents: false,
   goals: { implemented: false, available: false, unavailableReason: "fake transport", actions: [], optionalFields: [], recovery: "blocked" },
@@ -82,6 +82,7 @@ export type FakeTransportOptions = {
   steer?: (session: HarnessSession, turn: TurnRef, input: TurnInput) => Promise<SteerResult>
   fork?: ForkOperations["fork"]
   config?: ConfigOperations
+  harnessConfig?: HarnessConfigOperations
   providerCatalog?: HarnessTransport["providerCatalog"]
   history?: HistoryOperations
   commands?: CommandOperations
@@ -117,6 +118,7 @@ export class FakeTransport implements HarnessTransport {
   activeStarts = 0
   activeTurns = 0
   config: ConfigOperations | undefined
+  harnessConfig: HarnessConfigOperations | undefined
   providerCatalog: HarnessTransport["providerCatalog"]
   history: HistoryOperations | undefined
   commands: CommandOperations | undefined
@@ -133,6 +135,7 @@ export class FakeTransport implements HarnessTransport {
     this.options = options
     this.kind = options.kind ?? "acp"
     this.config = options.config
+    this.harnessConfig = options.harnessConfig
     this.providerCatalog = options.providerCatalog
     this.history = options.history
     this.commands = options.commands

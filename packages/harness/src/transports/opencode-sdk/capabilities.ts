@@ -18,7 +18,7 @@ export function openCodeCapabilities(models: readonly ModelEntry[]): TransportCa
     modelSelection: { status: "required", models: models.map((model) => ({ providerId: model.providerID,
       modelId: model.id, name: model.name ?? model.id })) },
     effortLevels: models.length ? { status: "resolved", models: effortLevels(models) } : { status: "unresolved", models: [] },
-    instructionChannel: "prompt-prefix", configOwner: "runtime",
+    instructionChannel: "prompt-prefix",
     requests: { permissions: true, questions: true, elicitation: false },
     subagents: false,
     goals: { implemented: false, available: false, actions: [], recovery: "blocked", optionalFields: [] },

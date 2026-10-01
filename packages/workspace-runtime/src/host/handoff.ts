@@ -24,7 +24,6 @@ type NativeSession = { agentSessionId: string; ownerKey: string | null }
 /** The target harness session a switch opened, and how to give it back. */
 export type OpenedTarget = {
   attached: AttachedSession
-  configOwner: "harness" | "runtime"
   rollback(): Promise<void>
 }
 
@@ -252,8 +251,9 @@ async function switchHarness(input: HandoffTransactionInput): Promise<SessionCon
       bindTarget(input, plan, { agentSessionId: input.sessionId, upstreamSessionId: input.sessionId, ownerKey: null })
       opened = await input.openTarget({ ...nextConfig, handoff: { from: plan.from, pending: true, transcript } }, plan.targetDirectory)
     }
-    const configured = opened?.configOwner === "harness"
-      ? await opened.attached.handle.transport.config!.update(opened.attached.session, configUpdateFor(input, plan.resumed))
+    const harnessConfig = opened?.attached.handle.transport.harnessConfig
+    const configured = opened && harnessConfig
+      ? await harnessConfig.update(opened.attached.session, configUpdateFor(input, plan.resumed))
       : nextConfig
     const next = commitSwitch(input, plan, configured, transcript)
     if (plan.resumed) input.resumeSource(plan.from, plan.resumed)

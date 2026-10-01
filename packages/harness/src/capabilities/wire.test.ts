@@ -4,10 +4,9 @@ import type { TransportCapabilities } from "../contract/capabilities"
 import type { TransportKind } from "../contract/transport"
 import { wireAgentCapabilities, wireConnectionCapabilities, type WireOperation, type WireOperations } from "./wire"
 
-function capabilities(input: { permissions: boolean; questions: boolean; elicitation?: boolean; todos: boolean; subagents: boolean;
-  configOwner?: "harness" | "runtime"; history?: "store" | "harness" }): TransportCapabilities {
+function capabilities(input: { permissions: boolean; questions: boolean; elicitation?: boolean; todos: boolean; subagents: boolean; history?: "store" | "harness" }): TransportCapabilities {
   return {
-    modelSelection: { status: "optional" }, effortLevels: { status: "unsupported", models: [] }, instructionChannel: "prompt-prefix", configOwner: input.configOwner ?? "harness",
+    modelSelection: { status: "optional" }, effortLevels: { status: "unsupported", models: [] }, instructionChannel: "prompt-prefix",
     requests: { permissions: input.permissions, questions: input.questions, elicitation: input.elicitation ?? false },
     subagents: input.subagents, goals: { implemented: false, available: false, unavailableReason: "none", actions: [], recovery: "blocked", optionalFields: [] },
     todos: input.todos, history: input.history ?? "store",
@@ -19,17 +18,17 @@ function operations(groups: readonly WireOperation[]): WireOperations {
 }
 
 const declared: readonly [string, TransportKind, TransportCapabilities, readonly WireOperation[], AgentCapabilities][] = [
-  ["claude", "claude-sdk", capabilities({ permissions: true, questions: true, todos: true, subagents: true, configOwner: "runtime" }), ["config", "commands"],
+  ["claude", "claude-sdk", capabilities({ permissions: true, questions: true, todos: true, subagents: true }), ["config", "commands"],
     { harness: "claude", modelSelection: { status: "optional" }, abort: true, reconnect: false, replay: true, permissions: true, questions: true, todos: true, commands: true, fork: false, revert: false, unrevert: false, configOptions: true, subagents: true }],
-  ["codex", "codex-app-server", capabilities({ permissions: true, questions: true, todos: true, subagents: false, configOwner: "runtime" }), ["config"],
+  ["codex", "codex-app-server", capabilities({ permissions: true, questions: true, todos: true, subagents: false }), ["config"],
     { harness: "codex", modelSelection: { status: "optional" }, abort: true, reconnect: false, replay: true, permissions: true, questions: true, todos: true, commands: false, fork: false, revert: false, unrevert: false, configOptions: true, subagents: false }],
-  ["cursor", "cursor-sdk", capabilities({ permissions: false, questions: false, todos: true, subagents: true, configOwner: "runtime" }), ["config"],
+  ["cursor", "cursor-sdk", capabilities({ permissions: false, questions: false, todos: true, subagents: true }), ["config"],
     { harness: "cursor", modelSelection: { status: "optional" }, abort: true, reconnect: false, replay: true, permissions: false, questions: false, todos: true, commands: false, fork: false, revert: false, unrevert: false, configOptions: true, subagents: true }],
   ["acp-agent", "acp", capabilities({ permissions: true, questions: false, todos: false, subagents: false }), ["config", "commands", "fork"],
     { harness: "acp-agent", modelSelection: { status: "optional" }, abort: true, reconnect: false, replay: true, permissions: true, questions: false, todos: false, commands: true, fork: true, revert: false, unrevert: false, configOptions: true, subagents: false }],
-  ["pi", "pi-rpc", capabilities({ permissions: false, questions: true, todos: false, subagents: false, configOwner: "runtime" }), ["commands"],
+  ["pi", "pi-rpc", capabilities({ permissions: false, questions: true, todos: false, subagents: false }), ["commands"],
     { harness: "pi", modelSelection: { status: "optional" }, abort: true, reconnect: false, replay: true, permissions: false, questions: true, todos: false, commands: true, fork: false, revert: false, unrevert: false, configOptions: false, subagents: false }],
-  ["opencode", "opencode-sdk", capabilities({ permissions: true, questions: true, todos: false, subagents: false, configOwner: "runtime" }), ["config", "commands", "fork"],
+  ["opencode", "opencode-sdk", capabilities({ permissions: true, questions: true, todos: false, subagents: false }), ["config", "commands", "fork"],
     { harness: "opencode", modelSelection: { status: "optional" }, abort: true, reconnect: false, replay: true, permissions: true, questions: true, todos: false, commands: true, fork: true, revert: false, unrevert: false, configOptions: true, subagents: false }],
 ]
 
@@ -51,7 +50,7 @@ test("abort requires the host's session-specific fact", () => {
 })
 
 test("runtime-owned config still advertises its options operation", () => {
-  const source = capabilities({ permissions: false, questions: false, todos: true, subagents: false, configOwner: "runtime" })
+  const source = capabilities({ permissions: false, questions: false, todos: true, subagents: false })
   expect(wireConnectionCapabilities(source, ["config"], { harness: "claude", transport: "claude-sdk", abort: true }).configOptions).toBe(true)
   expect(wireConnectionCapabilities(source, [], { harness: "claude", transport: "claude-sdk", abort: true }).configOptions).toBe(false)
 })

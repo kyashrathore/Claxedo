@@ -111,7 +111,7 @@ test("a Codex model without Codex's own multi-agent tools is offered no Claxedo 
   admitHostChild = () => context.sessionBroker.associateChild(HOST_CHILD.subagentKey, { sessionId: HOST_CHILD.sessionId, assistantMessageId: "child-a1", created: 10 })
   try {
     const server = (context.backend as CodexBackend).server
-    await context.transport.config!.update(context.session, { permissionMode: "full-access" })
+    await context.transport.config!.setPermissionMode(context.session, "full-access")
     server.scriptTool({ name: "tool_search", format: "tool_search", input: { query: "create_subagent" }, whenPromptIncludes: "CODEXFINDSPAWN" })
     for await (const _event of context.transport.send(context.session, context.turn("Find the subagent tool CODEXFINDSPAWN"), context.turnBroker())) {}
     const offered = server.requests.filter((request) => request.prompt.includes("CODEXFINDSPAWN")).flatMap((request) => request.tools)
@@ -495,7 +495,7 @@ test("Codex defers a projected configured MCP server's tools behind tool_search,
     }) })
   try {
     const server = (context.backend as CodexBackend).server
-    await context.transport.config!.update(context.session, { permissionMode: "full-access" })
+    await context.transport.config!.setPermissionMode(context.session, "full-access")
     server.scriptTool({ name: "tool_search", format: "tool_search", input: { query: "proof" }, whenPromptIncludes: "MCPSEARCH" })
     for await (const _event of context.transport.send(context.session, context.turn("Find the proof tool MCPSEARCH"), context.turnBroker())) {}
     const [search, loaded] = server.requests.filter((request) => request.prompt.includes("MCPSEARCH") && request.tools.length)

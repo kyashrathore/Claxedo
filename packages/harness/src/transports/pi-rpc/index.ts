@@ -62,7 +62,7 @@ export class PiRpcTransport implements HarnessTransport {
   async capabilities(): Promise<TransportCapabilities> {
     return {
       modelSelection: { status: "required", models: [] }, effortLevels: { status: "unresolved", models: [] },
-      instructionChannel: "prompt-prefix" as const, configOwner: "runtime" as const,
+      instructionChannel: "prompt-prefix" as const,
       requests: { permissions: false, questions: true, elicitation: false },
       subagents: false, goals: { implemented: false, available: false, actions: [], recovery: "blocked", optionalFields: [] },
       todos: false, history: "store" as const,

@@ -1,6 +1,6 @@
 import { piCredentialProviderIDs, type PromptModel, type TurnAccount } from "@claxedo/agent-runtime-contract"
 import type { ConfigOperations, DraftLaunch, HarnessSession, StartInput } from "../../contract"
-import { applySessionConfigUpdate, configOptionsPreview, modelAndEffortOptions, selectedTurnAccount } from "../../contract"
+import { configOptionsPreview, modelAndEffortOptions, selectedTurnAccount } from "../../contract"
 import { TransportError } from "../../contract/errors"
 import type { PiRpc } from "./rpc"
 import { asRecordOrEmpty, asString } from "@claxedo/helpers/guards"
@@ -50,13 +50,6 @@ export function createPiConfig(input: {
   catalog(draft: DraftLaunch, model: PromptModel | undefined, mode: "probe" | "peek"): Promise<PiCatalog>
 }): ConfigOperations {
   return {
-    read: async (session) => input.entry(session).start.config,
-    update: async (session, update) => {
-      const entry = input.entry(session)
-      const config = applySessionConfigUpdate(entry.start.config, update)
-      entry.start = { ...entry.start, config }
-      return entry.start.config
-    },
     options: async (target, mode) => {
       const draft = "session" in target ? input.entry(target.session).start : target.draft
       const model = ("session" in target ? target.model : undefined) ?? draft.config.model ?? draft.model

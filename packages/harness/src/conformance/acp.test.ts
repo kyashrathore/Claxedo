@@ -1415,14 +1415,14 @@ test("ACP refuses an effort or model the agent does not offer or keep, without p
     "ACP agent kept model scripted/alpha instead of scripted/beta")
 }, 60_000)
 
-test("the ACP agent picker reaches the agent through config.update, and the agent list comes from the mode option", async () => {
+test("the ACP agent picker reaches the agent through harnessConfig.update, and the agent list comes from the mode option", async () => {
   const context = await setupConformance({ name: "acp agent picker", backend: () => parityBackend(), makeTransport: parityTransport })
   try {
     expect(await context.transport.agents!.list({ session: context.session })).toEqual([
       { name: "default", description: "Default", mode: "primary" }, { name: "review", description: "Review", mode: "primary" }])
     const { sessionId: _sessionId, title: _title, instructions: _instructions, ...draft } = context.start
     expect(await context.transport.agents!.list({ draft })).toEqual(await context.transport.agents!.list({ session: context.session }))
-    await context.transport.config!.update(context.session, { agent: "review" })
+    await context.transport.harnessConfig!.update(context.session, { agent: "review" })
     expect((await (context.backend as ParityBackend).requests()).some((row) => row.method === "session/set_config_option" && row.params.configId === "mode" && row.params.value === "review")).toBe(true)
     expect((await context.transport.config!.permissionModes({ session: context.session })).currentModeId).toBe("review")
   } finally { await context.close() }

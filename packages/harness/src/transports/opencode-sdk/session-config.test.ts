@@ -1,6 +1,5 @@
-import { expect, spyOn, test } from "bun:test"
+import { expect, test } from "bun:test"
 import type { DraftLaunch, HarnessSession } from "../../contract"
-import * as contract from "../../contract"
 import type { Entry } from "./entry"
 import { openCodeConfigOperations } from "./session-config"
 import { WorkspaceScope } from "./scope"
@@ -28,25 +27,4 @@ test("draft previews use the resolved draft model", async () => {
 
 test("a preview without a current model does not resurrect the model saved at attachment", async () => {
   expect((await preview().options({ session: {} as HarnessSession }, "probe")).resolvedModel).toBeUndefined()
-})
-
-test("session config patches preserve omitted values and clear explicit null values", async () => {
-  const entry = { start: { ...draft, config: { ...draft.config, variant: "high", instructions: "keep" } } } as Entry
-  const config = openCodeConfigOperations({ entry: () => entry, targetScope: () => scope, models: async () => [] })
-  const session = {} as HarnessSession
-  expect(await config.update(session, { model: null, variant: null })).toEqual({
-    harness: draft.config.harness, model: undefined, variant: undefined, instructions: "keep",
-  })
-  expect(await config.read(session)).toEqual(entry.start.config)
-})
-
-test("session config updates delegate the merge to the shared contract", async () => {
-  const merge = spyOn(contract, "applySessionConfigUpdate")
-  try {
-    const config = preview()
-    await config.update({} as HarnessSession, { model: null })
-    expect(merge).toHaveBeenCalledWith(draft.config, { model: null })
-  } finally {
-    merge.mockRestore()
-  }
 })
