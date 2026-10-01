@@ -205,7 +205,13 @@ export const desktopMainComposition: Policy = {
   // `shared/` diagnostics transport — and with them `zod`,
   // `@vscode/windows-process-tree`, `node:readline` and `node:util`.
   // 87/24 with the plugin id subpath above, no headroom.
-  ceilings: { modules: 87, packages: 24 },
+  // +1 package: `@claxedo/account-contract/auth`, reached through the lazy
+  // account composition's `account/auth-descriptor.ts`. Reviewed owner: the
+  // native-auth descriptor decoder the server and the CLI also use, so the
+  // desktop refuses exactly what the server would never serve. One module
+  // with no imports; the module count is unchanged because it sits outside
+  // `roots`. 87/25, no headroom.
+  ceilings: { modules: 87, packages: 25 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-main.json",
     minModules: 35,
@@ -268,7 +274,10 @@ export const desktopAccountComposition: Policy = {
   // `string`) are leaves over node builtins already in this closure.
   // `@claxedo/plugin-api/id` is the plugin id rule `hosted-operations.ts`
   // applies to `plugin.request`, one zod-free module: 17 modules, 8 packages.
-  ceilings: { modules: 17, packages: 8 },
+  // `@claxedo/account-contract/auth` is the shared native-auth descriptor
+  // decoder `account/auth-descriptor.ts` binds the desktop credential through,
+  // one module with no imports: 17 modules, 9 packages.
+  ceilings: { modules: 17, packages: 9 },
   // The emitted list names the credential-bearing half only. `hosted-operations.ts`
   // and `account-ipc.ts` are reached from the base entry through
   // `lazy-account.ts`, so Rollup places them in `index.js`, and
