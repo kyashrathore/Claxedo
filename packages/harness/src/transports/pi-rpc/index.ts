@@ -1,4 +1,3 @@
-import { errorMessage, singleFlightUntil } from "@claxedo/helpers"
 import type { AdapterCancelOutcome, PromptModel, SessionTitleRequest, SteerResult } from "@claxedo/agent-runtime-contract"
 import type {
   AttachInput, ConfigApplied, ConfigTarget, Deadline, HarnessServices, HarnessSession, HarnessTransport,
@@ -29,8 +28,6 @@ type Entry = {
   broker: SessionBroker
   rpc: PiRpc
   stream: PiSessionStream
-  prompted: boolean
-  stopUnprompted?: () => void
 }
 
 export type { PiRpcOptions } from "./launch"
@@ -48,7 +45,6 @@ function piRpcPromptBody(turn: TurnInput): { message: string; images?: { type: "
 export class PiRpcTransport implements HarnessTransport {
   readonly kind = "pi-rpc" as const
   private readonly entries = new Map<string, Entry>()
-  private readonly stops = new WeakMap<PiRun, (deadline: Deadline) => Promise<AdapterCancelOutcome>>()
   private readonly disposeAbort = new AbortController()
   private readonly host: PiLaunchHost
   private readonly probes: PiDraftProbes
@@ -79,7 +75,7 @@ export class PiRpcTransport implements HarnessTransport {
   private async remember(input: StartInput, profile: PiProfile, launched: PiSessionLaunch, broker: SessionBroker, upstreamSessionId: string): Promise<HarnessSession> {
     const binding = await retiringOnFailure(this.host, launched.rpc, () => broker.rebind(upstreamSessionId))
     const session: HarnessSession = { binding, directory: input.directory, locality: input.locality }
-    this.entries.set(input.sessionId, { session, start: input, profile, broker, ...launched, prompted: false })
+    this.entries.set(input.sessionId, { session, start: input, profile, broker, ...launched })
     this.track(input.sessionId, launched.rpc)
     return session
   }
@@ -122,11 +118,9 @@ export class PiRpcTransport implements HarnessTransport {
   }
 
   private beginTurn(entry: Entry, turn: TurnInput, broker: TurnBroker, run: PiRun) {
-    let stopped = false
-    entry.stopUnprompted = () => { stopped = true; run.queue.end() }
     const onAbort = () => {
-      if (!entry.prompted) { entry.stopUnprompted?.(); return }
-      void this.cancel(entry.session, { turnId: turn.turnId, assistantMessageId: turn.assistantMessageId }, piDeadline(this.services.clock)).then(
+      if (!run.prompted) return run.withdraw()
+      void run.stop(piDeadline(this.services.clock)).then(
         (result) => { if (result.error) run.queue.fail(new TransportError("pi", "process", result.error.message)) },
         (error: unknown) => run.queue.fail(error),
       )
@@ -135,16 +129,13 @@ export class PiRpcTransport implements HarnessTransport {
     return {
       prompt: async (body: ReturnType<typeof piRpcPromptBody>) => {
         await this.applyTurnConfig(entry, turn.model, turn.effort)
-        if (stopped || broker.signal.aborted) return run.queue.end()
-        entry.prompted = true
+        if (run.withdrawn || broker.signal.aborted) return run.queue.end()
+        run.prompted = true
         const disposition = asRecordOrEmpty(await entry.rpc.request("prompt", body)).disposition
         if (disposition !== "started" && disposition !== "handled") throw new TransportError("pi", "protocol", `Pi answered a prompt with disposition ${String(disposition)}`)
         if (disposition === "handled" && !run.started) run.finishUnstarted()
       },
-      release: () => {
-        broker.signal.removeEventListener("abort", onAbort)
-        entry.stopUnprompted = undefined
-      },
+      release: () => broker.signal.removeEventListener("abort", onAbort),
     }
   }
 
@@ -154,7 +145,6 @@ export class PiRpcTransport implements HarnessTransport {
     const account = piTurnAccount(entry.start, turn.model)
     const run = new PiRun(entry.rpc, session.binding.sessionId, this.services.clock, broker)
     const release = entry.stream.claim(run)
-    entry.prompted = false
     const started = this.beginTurn(entry, turn, broker, run)
     try {
       await started.prompt(body)
@@ -172,26 +162,10 @@ export class PiRpcTransport implements HarnessTransport {
   }
 
   async cancel(session: HarnessSession, _turn: TurnRef, deadline: Deadline): Promise<AdapterCancelOutcome> {
-    const entry = this.entry(session)
-    const run = entry.stream.run
-    if (!run || !entry.prompted) {
-      entry.stopUnprompted?.()
-      return { execution: "terminal", cleanup: "unknown" }
-    }
-    const stop = this.stops.get(run) ?? singleFlightUntil((stopBy: Deadline) => this.stopPrompted(entry, run, stopBy), () => false)
-    this.stops.set(run, stop)
-    return stop(deadline)
-  }
-
-  private async stopPrompted(entry: Entry, run: PiRun, deadline: Deadline): Promise<AdapterCancelOutcome> {
-    try {
-      await entry.rpc.stop(deadline)
-      return { execution: run.settled ? "terminal" as const : "unknown" as const, cleanup: "unknown" as const }
-    } catch (error) {
-      return { execution: "unknown" as const, cleanup: "owned" as const,
-        error: { code: error instanceof TransportError && error.code === "timeout" ? "cancellation_timeout" as const : "provider_unreachable" as const,
-          message: errorMessage(error) } }
-    }
+    const run = this.entry(session).stream.run
+    if (run?.prompted) return run.stop(deadline)
+    run?.withdraw()
+    return { execution: "terminal", cleanup: "unknown" }
   }
 
   async configure(session: HarnessSession, update: TransportConfigUpdate): Promise<ConfigApplied> {

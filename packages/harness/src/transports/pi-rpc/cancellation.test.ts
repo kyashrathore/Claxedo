@@ -27,7 +27,8 @@ function fixture(clear: "stall" | "reject" | "ok") {
   const stream = new PiSessionStream({ sessionId: "s1", rpc, broker: {} as SessionBroker, clock, log, stop: async () => {} })
   const run = new PiRun(rpc, "s1", clock, { ask: async () => ({ kind: "cancelled" }) } as never)
   const idle = stream.claim(run)
-  const entry = { session, rpc, stream, prompted: true }
+  run.prompted = true
+  const entry = { session, rpc, stream }
   ;(transport as unknown as { entries: Map<string, typeof entry> }).entries.set("s1", entry)
   return { transport, session, commands, rpc, run, idle, stream, clock }
 }
@@ -95,6 +96,8 @@ test("a later turn's stop reports that turn's settlement, not the settlement of 
   f.run.settled = true
   expect(await f.transport.cancel(f.session, turn, deadline)).toEqual({ execution: "terminal", cleanup: "unknown" })
   f.idle()
-  f.stream.claim(new PiRun(f.rpc, "s1", f.clock, { ask: async () => ({ kind: "cancelled" }) } as never))
+  const later = new PiRun(f.rpc, "s1", f.clock, { ask: async () => ({ kind: "cancelled" }) } as never)
+  later.prompted = true
+  f.stream.claim(later)
   expect(await f.transport.cancel(f.session, turn, deadline)).toEqual({ execution: "unknown", cleanup: "unknown" })
 })
