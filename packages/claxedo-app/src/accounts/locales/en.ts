@@ -63,7 +63,6 @@ export default {
   "settings.providers.agents.removingAccount": "Removing…",
   "settings.providers.accountSource.own": "Your own account",
   "settings.providers.accountSource.team": "Team account",
-  "settings.providers.accountSource.missing": "No team account for this provider",
   "settings.providers.accountSource.unavailable": "{{name}} can't run for you: your organization has no team account for this provider. Choose your own account to use it.",
   "settings.providers.accountSource.label": "Account used for {{name}}",
   "settings.providers.cloudConsent.allow": "Allow in cloud sandboxes",

@@ -63,7 +63,6 @@ export default {
   "settings.providers.agents.removingAccount": "Kaldırılıyor…",
   "settings.providers.accountSource.own": "Kendi hesabınız",
   "settings.providers.accountSource.team": "Ekip hesabı",
-  "settings.providers.accountSource.missing": "Bu sağlayıcı için ekip hesabı yok",
   "settings.providers.accountSource.unavailable": "{{name}} sizin için çalışamıyor: kuruluşunuzun bu sağlayıcı için bir ekip hesabı yok. Kullanmak için kendi hesabınızı seçin.",
   "settings.providers.accountSource.label": "{{name}} için kullanılan hesap",
   "settings.providers.live.ok": "Çalışıyor",

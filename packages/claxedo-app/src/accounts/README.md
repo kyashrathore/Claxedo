@@ -12,7 +12,7 @@ Owns: the logins each agent harness runs on, and today's app's surfaces for them
 
 ## Team account and cloud consent
 
-- Every CLI harness lists a "Team account" entry after the person's own accounts and this computer's login. Choosing it writes `team` for all of the harness's providers (`server.accounts.setSource`); choosing any own entry writes `own` first. Only the chosen side is ever spent, so a team choice where the organization holds no team row is shown as unable to run, never as a fallback to the person's own key. The team entry is not the person's to check or remove.
+- A CLI harness lists a "Team account" entry after the person's own accounts and this computer's login only when the organization has an account for that harness, or the person has already selected the team source. An absent unselected team account renders no row; a selected team source with no account stays visible with its unavailable explanation until the person chooses their own account or machine login. Choosing it writes `team` for all of the harness's providers (`server.accounts.setSource`); choosing any own entry writes `own` first. Only the chosen side is ever spent, so a team choice where the organization holds no team row is shown as unable to run, never as a fallback to the person's own key. The team entry is not the person's to check. The server's `can_remove_team_accounts` fact permits the unsigned local operator to remove stored team provider credentials on the single-user installation; signed users remain limited to their own accounts. `useAccess().can("accounts.removeTeam", sources)` supplies this fact to the shared removal action, which deletes every stored binding in the account and refreshes the listings. The CLI's machine login never carries removable credential ids. Actions remain visible beside the last-check age; confirmation wraps below the account on narrow screens.
 - On a hosted plane, each Pi provider row offers the same own/team choice where the organization holds a team account or the person chose one (`HostedAccountSourceChoice`, `/auth/sources` and `/auth/:provider/source`).
 - A stored account that its provider can deliver to a cloud sandbox carries an "Allow in cloud sandboxes" switch, which writes `local` or `shared` to every row of the account (`server.accounts.setScope`); an account whose rows disagree says cloud use is allowed for some bindings, and a failed write stays on the row.
 
@@ -46,4 +46,6 @@ Success shows "{vendor} connected", rescans and closes the dialog.
 ## Flows
 
 - Flow 15, "Models lists each agent's accounts": add two Cursor keys through the dialog, switch between them, remove both (both apps).
+- Flow 15, "the local operator removes a saved team account": select the machine login, cancel removal, delete the saved team credential, and verify deletion and machine selection persist after reload (desktop and phone).
+- Flow 15, "an unavailable selected team account": show the selected source's failure, choose the machine login, and verify the empty team row disappears and the own-source selection persists after reload (desktop and phone).
 - Flow 1 checks the AI step lists the Claude Code card.

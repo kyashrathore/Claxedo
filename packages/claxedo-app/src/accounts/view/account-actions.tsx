@@ -39,22 +39,24 @@ function RestingActions(props: AccountActionsProps) {
   const t = useAccountsText()
   return (
     <>
-      <Show when={props.account.refused && props.account.ids[0]}>
+      <Show when={!props.account.team && props.account.refused && props.account.ids[0]}>
         {(credentialId) => (
           <Button size="small" variant="neutral" data-action="agent-reconnect" onClick={() => props.onReconnect(credentialId())}>
             {t("settings.providers.agents.reconnectAccount")}
           </Button>
         )}
       </Show>
-      <ClaxedoIconButton
-        icon="reload"
-        size="small"
-        variant="ghost"
-        data-action="agent-account-check"
-        aria-label={t("settings.providers.agents.checkAccount")}
-        disabled={props.checking}
-        onClick={() => props.onCheck()}
-      />
+      <Show when={!props.account.team}>
+        <ClaxedoIconButton
+          icon="reload"
+          size="small"
+          variant="ghost"
+          data-action="agent-account-check"
+          aria-label={t("settings.providers.agents.checkAccount")}
+          disabled={props.checking || props.removing !== undefined}
+          onClick={() => props.onCheck()}
+        />
+      </Show>
       <Show when={props.account.ids.length > 0}>
         <ClaxedoIconButton
           icon="trash"
@@ -62,6 +64,7 @@ function RestingActions(props: AccountActionsProps) {
           variant="ghost"
           data-action="agent-account-remove"
           aria-label={t("settings.providers.agents.removeAccount")}
+          disabled={props.removing !== undefined}
           onClick={() => props.onConfirm(true)}
         />
       </Show>
@@ -75,7 +78,7 @@ function ConfirmRemove(props: AccountActionsProps) {
     <>
       <span class="text-13-regular text-text-weak">{t("settings.providers.agents.removeAccountConfirm")}</span>
       <Button size="small" variant="contrast" disabled={props.removing !== undefined} data-action="agent-account-remove-confirm" onClick={() => props.onRemove()}>
-        {props.removing === props.account.key ? t("settings.providers.agents.removingAccount") : t("settings.providers.agents.removeAccount")}
+        {props.removing !== undefined && props.account.ids.includes(props.removing) ? t("settings.providers.agents.removingAccount") : t("settings.providers.agents.removeAccount")}
       </Button>
       <Button size="small" variant="ghost" disabled={props.removing !== undefined} data-action="agent-account-remove-cancel" onClick={() => props.onConfirm(false)}>
         {t("common.cancel")}
@@ -87,10 +90,7 @@ function ConfirmRemove(props: AccountActionsProps) {
 export function AccountActions(props: AccountActionsProps) {
   return (
     <Show when={props.account.ids.length > 0 || props.account.machine}>
-      <span
-        class="flex shrink-0 min-w-11 items-center justify-end gap-1 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100"
-        classList={{ "opacity-0": !props.confirming }}
-      >
+      <span class="flex min-w-11 flex-wrap items-center justify-end gap-1">
         <Show when={props.confirming} fallback={<RestingActions {...props} />}>
           <ConfirmRemove {...props} />
         </Show>

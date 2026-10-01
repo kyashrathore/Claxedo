@@ -63,7 +63,6 @@ export default {
   "settings.providers.agents.removingAccount": "正在移除…",
   "settings.providers.accountSource.own": "你自己的帳戶",
   "settings.providers.accountSource.team": "團隊帳戶",
-  "settings.providers.accountSource.missing": "此提供者沒有團隊帳戶",
   "settings.providers.accountSource.unavailable": "{{name}} 無法為你執行：你的組織沒有此提供者的團隊帳戶。選擇你自己的帳戶即可使用。",
   "settings.providers.accountSource.label": "{{name}} 使用的帳戶",
   "settings.providers.live.ok": "可用",

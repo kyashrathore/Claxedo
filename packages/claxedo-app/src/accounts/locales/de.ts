@@ -63,7 +63,6 @@ export default {
   "settings.providers.agents.removingAccount": "Wird entfernt…",
   "settings.providers.accountSource.own": "Ihr eigenes Konto",
   "settings.providers.accountSource.team": "Teamkonto",
-  "settings.providers.accountSource.missing": "Kein Teamkonto für diesen Anbieter",
   "settings.providers.accountSource.unavailable": "{{name}} kann für Sie nicht laufen: Ihre Organisation hat kein Teamkonto für diesen Anbieter. Wählen Sie Ihr eigenes Konto, um ihn zu nutzen.",
   "settings.providers.accountSource.label": "Konto für {{name}}",
   "settings.providers.live.ok": "Funktioniert",

@@ -62,7 +62,6 @@ export default {
   "settings.providers.agents.removingAccount": "Uklanjanje…",
   "settings.providers.accountSource.own": "Vaš vlastiti račun",
   "settings.providers.accountSource.team": "Timski račun",
-  "settings.providers.accountSource.missing": "Nema timskog računa za ovog pružaoca",
   "settings.providers.accountSource.unavailable": "{{name}} se ne može pokrenuti za vas: vaša organizacija nema timski račun za ovog pružaoca. Odaberite vlastiti račun da biste ga koristili.",
   "settings.providers.accountSource.label": "Račun koji se koristi za {{name}}",
   "settings.providers.live.ok": "Radi",

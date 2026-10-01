@@ -33,7 +33,7 @@ const teamRow = { id: "cred-team", provider_id: "claude-sdk", kind: "api_key", s
 
 test("accounts: the person's source per provider and the organization's team rows are read, and a choice is written for every provider of the harness", async () => {
   const { seen, transport } = serve((request) => {
-    if (request.path === "/api/claxedo/credentials/account-sources" && request.method === "GET") return Response.json({ sources: { "claude-sdk": "team" }, team: [teamRow] })
+    if (request.path === "/api/claxedo/credentials/account-sources" && request.method === "GET") return Response.json({ sources: { "claude-sdk": "team" }, team: [teamRow], can_remove_team_accounts: false })
     return Response.json({ sources: { "claude-sdk": "own" } })
   })
   const client = new QueryClient()
@@ -41,14 +41,24 @@ test("accounts: the person's source per provider and the organization's team row
   const sources = await client.fetchQuery(read)
   expect([...sources.sources]).toEqual([["claude-sdk", "team"]])
   expect(sources.team).toEqual([expect.objectContaining({ id: "cred-team", providerId: "claude-sdk", label: "Acme team", scope: "shared" })])
+  expect(sources.canRemoveTeamAccounts).toBe(false)
 
   await createAccountsApi(transport, client).setSource(["claude-sdk", "claude-acp"], "own")
   expect(seen.at(-1)).toEqual({ method: "PUT", path: "/api/claxedo/credentials/account-sources", body: { provider_ids: ["claude-sdk", "claude-acp"], source: "own" } })
 })
 
 test("accounts: a source answer naming anything but own or team is a contract mismatch, not an empty choice", async () => {
-  const { transport } = serve(() => Response.json({ sources: { "claude-sdk": "org" }, team: [] }))
+  const { transport } = serve(() => Response.json({ sources: { "claude-sdk": "org" }, team: [], can_remove_team_accounts: false }))
   await expect(new QueryClient().fetchQuery(accountQueries(transport).sources())).rejects.toMatchObject({ class: "internal" })
+})
+
+test("accounts: team removal is reported by the server, and an absent or malformed access fact is a contract mismatch", async () => {
+  const allowed = serve(() => Response.json({ sources: {}, team: [teamRow], can_remove_team_accounts: true }))
+  expect((await new QueryClient().fetchQuery(accountQueries(allowed.transport).sources())).canRemoveTeamAccounts).toBe(true)
+  for (const flag of [undefined, "true", null]) {
+    const invalid = serve(() => Response.json({ sources: {}, team: [teamRow], can_remove_team_accounts: flag }))
+    await expect(new QueryClient().fetchQuery(accountQueries(invalid.transport).sources())).rejects.toMatchObject({ class: "internal" })
+  }
 })
 
 test("accounts: the hosted plane's Pi sources are read per harness and a choice is written to the provider's source route", async () => {

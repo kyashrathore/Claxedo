@@ -100,17 +100,18 @@ export function storedAccountWords(words: Words, row: HarnessAccount, live: Live
   }
 }
 
-export function teamAccountWords(words: Words, harness: Harness, snapshot: AccountsSnapshot, chosen: boolean): AccountWords {
+export function teamAccountWords(words: Words, harness: Harness, snapshot: AccountsSnapshot, chosen: boolean, removable: boolean): AccountWords | undefined {
   const { t } = words
   const row = teamAccountOf(harness, snapshot)
   if (row === undefined) {
+    if (!chosen) return undefined
     const unavailable = t("settings.providers.accountSource.unavailable", { name: harness.label })
     return {
       key: TEAM_ACCOUNT_KEY,
       ids: [],
       label: t("settings.providers.accountSource.team"),
-      detail: chosen ? unavailable : t("settings.providers.accountSource.missing"),
-      ...(chosen ? { alert: unavailable } : {}),
+      detail: unavailable,
+      alert: unavailable,
       refused: false,
       machine: false,
       team: true,
@@ -122,7 +123,7 @@ export function teamAccountWords(words: Words, harness: Harness, snapshot: Accou
   const reach = accountReach(row.delivery)
   return {
     key: TEAM_ACCOUNT_KEY,
-    ids: [],
+    ids: removable ? row.ids : [],
     label: accountLabel(row),
     detail: [t("settings.providers.accountSource.team"), ...verdictWords(t, check), ...windowWords(words, check?.usage)].join(" · "),
     ...(alert === undefined ? {} : { alert }),

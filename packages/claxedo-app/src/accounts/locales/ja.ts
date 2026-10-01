@@ -63,7 +63,6 @@ export default {
   "settings.providers.agents.removingAccount": "削除中…",
   "settings.providers.accountSource.own": "自分のアカウント",
   "settings.providers.accountSource.team": "チームアカウント",
-  "settings.providers.accountSource.missing": "このプロバイダーのチームアカウントはありません",
   "settings.providers.accountSource.unavailable": "{{name}} を実行できません: 組織にこのプロバイダーのチームアカウントがありません。使用するには自分のアカウントを選択してください。",
   "settings.providers.accountSource.label": "{{name}} に使用するアカウント",
   "settings.providers.live.ok": "利用可能",

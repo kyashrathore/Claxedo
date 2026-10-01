@@ -1,4 +1,5 @@
 import { createMemo, createSignal, For, onMount, Show } from "solid-js"
+import { useAccess } from "@/access"
 import { harnessConnectContext, harnessIcon } from "@/lib/harness-catalog"
 import { useI18n } from "@/i18n"
 import { ClaxedoIcon, useDialog, Button, ProviderIcon, RadioGroup, RadioItem, Switch } from "@/ui"
@@ -20,14 +21,15 @@ export type HarnessRowProps = {
 }
 
 function useAccountRows(props: HarnessRowProps) {
+  const access = useAccess()
   const t = useAccountsText()
   const windowName = useWindowName()
   return createMemo((): AccountWords[] => {
     const words = { t, windowName }
     const stored = harnessAccounts(props.harness, props.snapshot.stored).map((row) => storedAccountWords(words, row, props.accounts.liveChecks()[row.id]))
     const login = machineLoginOf(props.harness, props.snapshot)
-    const team = teamAccountWords(words, props.harness, props.snapshot, selectedAccountKey(props.harness, props.snapshot) === TEAM_ACCOUNT_KEY)
-    return [...stored, ...(login ? [machineLoginWords(words, login, props.harness, props.snapshot)] : []), team]
+    const team = teamAccountWords(words, props.harness, props.snapshot, selectedAccountKey(props.harness, props.snapshot) === TEAM_ACCOUNT_KEY, access.can("accounts.removeTeam", props.snapshot.sources))
+    return [...stored, ...(login ? [machineLoginWords(words, login, props.harness, props.snapshot)] : []), ...(team ? [team] : [])]
   })
 }
 
@@ -81,7 +83,7 @@ function AccountItem(props: { readonly account: AccountWords; readonly row: Harn
   const account = () => props.account
   return (
     <div class="flex flex-col">
-      <div class="group flex items-start gap-2 py-1" data-slot="account-row" data-account={account().key} data-selected={props.selected ? "true" : "false"}>
+      <div class="group flex flex-wrap items-start gap-2 py-1" data-slot="account-row" data-account={account().key} data-selected={props.selected ? "true" : "false"}>
         <RadioItem
           class="min-w-0 flex-1"
           value={account().key}
@@ -91,14 +93,14 @@ function AccountItem(props: { readonly account: AccountWords; readonly row: Harn
           label={<AccountLabel account={account()} />}
           description={account().detail === undefined ? undefined : <span class="text-13-regular text-text-weak">{account().detail}</span>}
         />
-        <span class="relative flex shrink-0 items-center justify-end">
-          <Show when={account().checkedAt}>
+        <span class="flex shrink-0 items-center justify-end gap-2" classList={{ "w-full": confirming() }}>
+          <Show when={!confirming() && account().checkedAt}>
             {(at) => (
               <CheckedAge
                 at={at()}
                 t={t}
                 locale={i18n.intlTag()}
-                class="pointer-events-none absolute right-0 whitespace-nowrap text-13-regular text-text-weak transition-opacity group-hover:opacity-0 group-focus-within:opacity-0"
+                class="whitespace-nowrap text-13-regular text-text-weak"
               />
             )}
           </Show>

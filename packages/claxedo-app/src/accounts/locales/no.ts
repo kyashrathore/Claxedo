@@ -63,7 +63,6 @@ export default {
   "settings.providers.agents.removingAccount": "Fjerner…",
   "settings.providers.accountSource.own": "Din egen konto",
   "settings.providers.accountSource.team": "Teamkonto",
-  "settings.providers.accountSource.missing": "Ingen teamkonto for denne leverandøren",
   "settings.providers.accountSource.unavailable": "{{name}} kan ikke kjøre for deg: organisasjonen din har ingen teamkonto for denne leverandøren. Velg din egen konto for å bruke den.",
   "settings.providers.accountSource.label": "Konto brukt for {{name}}",
   "settings.providers.live.ok": "Fungerer",

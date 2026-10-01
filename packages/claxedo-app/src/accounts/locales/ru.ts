@@ -63,7 +63,6 @@ export default {
   "settings.providers.agents.removingAccount": "Удаление…",
   "settings.providers.accountSource.own": "Ваш собственный аккаунт",
   "settings.providers.accountSource.team": "Аккаунт команды",
-  "settings.providers.accountSource.missing": "Нет аккаунта команды для этого провайдера",
   "settings.providers.accountSource.unavailable": "{{name}} не может работать для вас: у вашей организации нет аккаунта команды для этого провайдера. Выберите собственный аккаунт, чтобы использовать его.",
   "settings.providers.accountSource.label": "Аккаунт для {{name}}",
   "settings.providers.live.ok": "Работает",

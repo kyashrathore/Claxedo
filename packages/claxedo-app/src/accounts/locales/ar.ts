@@ -63,7 +63,6 @@ export default {
   "settings.providers.agents.removingAccount": "جارٍ الإزالة…",
   "settings.providers.accountSource.own": "حسابك الخاص",
   "settings.providers.accountSource.team": "حساب الفريق",
-  "settings.providers.accountSource.missing": "لا يوجد حساب فريق لهذا المزوّد",
   "settings.providers.accountSource.unavailable": "لا يمكن تشغيل {{name}} لك: لا تملك مؤسستك حساب فريق لهذا المزوّد. اختر حسابك الخاص لاستخدامه.",
   "settings.providers.accountSource.label": "الحساب المستخدم لـ {{name}}",
   "settings.providers.live.ok": "يعمل",
