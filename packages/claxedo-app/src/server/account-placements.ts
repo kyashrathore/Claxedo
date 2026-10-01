@@ -35,6 +35,5 @@ export function createAccountPlacements(account: HostedAccount, serverUrl: strin
 }
 
 export function withAccountPlacements(local: BootstrapCatalog, linked: LinkedCatalog | undefined): BootstrapCatalog {
-  if (local.declaration.serverKind === "hosted" && linked) return { ...local, placements: linked.placements }
   return linked ? { ...local, placements: [...local.placements, ...linked.placements] } : local
 }

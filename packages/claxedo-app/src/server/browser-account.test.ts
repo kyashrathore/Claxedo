@@ -13,7 +13,6 @@ const machine = { workspace_id: "ws_machine", project_id: "prj_app", backing: "l
 const bootstrap = {
   deployment: { serverKind: "hosted", issuesSessions: true },
   events: { hostAggregate: false },
-  project: [{ id: "prj_app", workspaces: { ws_cloud: { id: "ws_cloud", backing: "cloud-vm", directory: "workspace:ws_cloud" } } }],
 }
 
 function worker(options: { unauthorized?: boolean; malformed?: boolean } = {}) {
