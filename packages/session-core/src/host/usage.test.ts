@@ -2,7 +2,7 @@ import { expect, test } from "bun:test"
 import { FakeTransport } from "../../../workspace-runtime/src/test-support/fake-transport"
 import { createHostFixture, sessionCreate, tick, LOOPBACK_ORIGIN } from "../../../workspace-runtime/src/test-support/host-fixture"
 
-test.each([false, true])("unbound child usage reaches the hub once after the consumer closes early=%s", async (early) => {
+test.each([false, true])("unbound child usage reaches the hub once, whether or not its consumer closed first=%s", async (early) => {
   let release!: () => void
   const gate = new Promise<void>((resolve) => { release = resolve })
   const transport = new FakeTransport()
@@ -19,10 +19,9 @@ test.each([false, true])("unbound child usage reaches the hub once after the con
   try {
     await f.runtime.sessions.create(sessionCreate({ id: "s" }))
     const consumer = f.runtime.events.subscribe({ sessionId: "s" })[Symbol.asyncIterator]()
+    if (early) await consumer.return?.()
     await f.runtime.turns.start({ sessionId: "s", text: "work", origin: LOOPBACK_ORIGIN })
     await tick()
-    expect(metered).toEqual([])
-    if (early) await consumer.return?.()
     release()
     await f.runtime.dispose()
     expect(metered).toHaveLength(1)

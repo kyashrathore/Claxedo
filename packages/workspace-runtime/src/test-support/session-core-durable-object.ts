@@ -81,6 +81,7 @@ export class SessionCoreObject {
         store: () => store,
         subagentAdmission: (parentSessionId, observation) => host.runtime.subagents.admit(parentSessionId, observation),
         deriveChildSessionId: (identity) => deriveChildSessionId(store.runtimeSecret("child-session"), identity),
+        backgroundWork: (sessionId) => host.backgroundWork.read(sessionId),
       }),
       sessionAccessPolicy,
       sessionStarts: store.sessionStarts,

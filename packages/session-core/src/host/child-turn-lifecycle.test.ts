@@ -178,3 +178,20 @@ test("a child terminal the store refuses keeps the child's lease until reconcile
     f.store.releaseTurnLease(child!.sessionId, next!)
   } finally { f.store.finishTurn = finish; f.control.finish(); await f.dispose() }
 })
+
+test("a host-minted child running its own turn is bound to the call that created it without a second turn", async () => {
+  const f = await fixture()
+  try {
+    await f.runtime.sessions.create(sessionCreate({ id: "host-child" }))
+    await f.runtime.subagents.admit("parent", { observationId: "create", subagentKey: "subagent_host", status: "pending",
+      providerKind: "claxedo", providerId: "host-child", childSessionId: "host-child", transcript: { kind: "live" } })
+    const ownTurn = f.store.acquireTurnLease("host-child")!
+    const bound = await f.broker.observeSubagent({ observationId: "codex:host-subagent:thread:call_1", harnessExecutionId: "thread",
+      subagentKey: "subagent_host", toolCallId: "call_1", toolCallRole: "spawn", status: "running",
+      providerId: "host-child", providerKind: "claxedo", childSessionId: "host-child", transcript: { kind: "live" } })
+    expect(bound?.sessionId).toBe("host-child")
+    expect(f.store.readTurnAuthority("host-child")?.leaseId).toBe(ownTurn)
+    expect(f.store.getMessages("host-child")).toEqual([])
+    f.store.releaseTurnLease("host-child", ownTurn)
+  } finally { f.control.finish(); await f.dispose() }
+})

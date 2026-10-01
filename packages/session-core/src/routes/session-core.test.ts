@@ -63,6 +63,8 @@ function refusingRuntime(what: string): () => Promise<AgentRuntime> {
   return async () => { throw new Error(`${what} must not resolve the runtime`) }
 }
 
+const ownSession = async (sessionId: string) => sessionId
+
 function runtimeDouble(double: unknown): () => Promise<AgentRuntime> {
   return async () => double as AgentRuntime
 }
@@ -1074,8 +1076,8 @@ describe("createSessionRoutes directory-less sessions", () => {
       getSession: () => untimed,
       getTurnOutline: () => ({ turns: [], complete: true }),
       runtime: runtimeDouble({
-        permissions: { list: async () => [] },
-        questions: { list: async () => [] },
+        permissions: { list: async () => [], askingSession: ownSession },
+        questions: { list: async () => [], askingSession: ownSession },
         reads: { capabilities: async () => ({ harness: "codex", todos: false }) },
         goals: { capabilities: async () => ({ implemented: false }) },
       }),
@@ -1257,12 +1259,14 @@ describe("createSessionRoutes directory-less sessions", () => {
     }
     const inventory = {
       permissions: {
+        askingSession: ownSession,
         list: async () => [
           { id: "perm_allowed", sessionID: "session_allowed" },
           { id: "perm_hidden", sessionID: "session_hidden" },
         ] as AgentPermission[],
       },
       questions: {
+        askingSession: ownSession,
         list: async () => [
           { id: "question_allowed", sessionID: "session_allowed", questions: [] },
           { id: "question_hidden", sessionID: "session_hidden", questions: [] },
@@ -1322,12 +1326,14 @@ describe("createSessionRoutes directory-less sessions", () => {
     const routes = sessionRoutes(undefined, {
       runtime: runtimeDouble({
         permissions: {
+          askingSession: ownSession,
           list: async () => [
             { id: "perm_open", sessionID: "session_open" },
             { id: "perm_other", sessionID: "session_other" },
           ] as AgentPermission[],
         },
         questions: {
+          askingSession: ownSession,
           list: async () => [
             { id: "question_open", sessionID: "session_open", questions: [] },
             { id: "question_other", sessionID: "session_other", questions: [] },
@@ -1970,7 +1976,7 @@ test("question listing filters the authoritative workspace inventory without res
   ] as AgentQuestion[]
   const app = sessionRoutes(undefined, {
     resolveDirectory: () => "/repo",
-    runtime: runtimeDouble({ questions: { list: async () => rows } }),
+    runtime: runtimeDouble({ questions: { list: async () => rows, askingSession: ownSession } }),
   })
   const selected = await app.request("http://localhost/question?sessionId=session_first")
   expect(selected.status).toBe(200)
@@ -2289,8 +2295,8 @@ describe("createSessionRoutes engine refusals", () => {
       getSession: (_c, _directory, sessionId) => ({ id: sessionId, title: "Held", time: { created: 1, updated: 1 } }) as AgentSession,
       getTodos: () => [],
       runtime: runtimeDouble({
-        permissions: { list },
-        questions: { list },
+        permissions: { list, askingSession: ownSession },
+        questions: { list, askingSession: ownSession },
         reads: { declaredCapabilities: async () => ({ harness: "codex", todos: true }) },
         goals: { capabilities: async () => ({ implemented: false, available: false, actions: [], optionalFields: [], recovery: "blocked" }) },
       }),

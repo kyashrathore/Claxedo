@@ -1,4 +1,4 @@
-import type { SubagentObservation, SubagentUpdatedEvent } from "@claxedo/agent-runtime-contract"
+import type { BackgroundWork, SubagentObservation, SubagentUpdatedEvent } from "@claxedo/agent-runtime-contract"
 import { HTTPException } from "hono/http-exception"
 import type { SessionDeliveryStore } from "../session/delivery-owner"
 import type { RuntimeStore } from "../store"
@@ -29,6 +29,8 @@ export type StoreSessionRoutesInput = {
   subagentAdmission: (parentSessionId: string, observation: SubagentObservation) => Promise<SubagentUpdatedEvent>
   /** The host's keyed child-session identity; a machine derives it with HMAC, a Durable Object with Web Crypto. */
   deriveChildSessionId: ChildSessionHost["deriveSessionId"]
+  /** The work a session's turn left running in the background, which keeps its status busy. */
+  backgroundWork: (sessionId: string) => BackgroundWork | undefined
 }
 
 /**
@@ -40,7 +42,7 @@ export function storeSessionRoutes(input: StoreSessionRoutesInput) {
   const { store } = input
   return {
     listSessions: async (_c, directory) => store().listSessions(directory),
-    getStatus: (_c, directory) => sessionStatusSnapshot(store().listSessions(directory)),
+    getStatus: (_c, directory) => sessionStatusSnapshot(store().listSessions(directory), input.backgroundWork),
     listSubagents: ({ parentSessionId }) => store().listSubagents(parentSessionId),
     childSessions: {
       admit: input.subagentAdmission,

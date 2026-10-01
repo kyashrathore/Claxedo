@@ -4,7 +4,6 @@ export {
   mountWorkspaceEvents,
   mountWorkspaceFiles,
   mountWorkspacePty,
-  mountWorkspaceTranscripts,
 } from "./core"
 export { createWorkspaceHost } from "./runtime"
 export type { WorkspaceHostOptions } from "./host-options"

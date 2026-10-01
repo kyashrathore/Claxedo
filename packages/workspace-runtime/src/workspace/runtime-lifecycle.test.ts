@@ -973,6 +973,25 @@ describe("host lifecycle", () => {
     await f.dispose()
   })
 
+  test("an attach tells the harness whether a turn ever started on the upstream session it binds", async () => {
+    const transport = new FakeTransport()
+    const f = createHostFixture({ transports: { pi: transport } })
+    await f.runtime.sessions.create(sessionCreate({ id: "s" }))
+    const reattach = async () => {
+      f.runtime.attachments.forget("s")
+      await f.runtime.transportFor("s")
+      return transport.attaches.at(-1)?.upstreamHasTurns
+    }
+    expect(await reattach()).toBe(false)
+    await f.runtime.turns.start({ sessionId: "s", text: "work", origin })
+    await hostUntil(() => transport.turns.length === 1 && transport.activeTurns === 0)
+    expect(await reattach()).toBe(true)
+    const binding = f.store.getExecutionBinding("s")!
+    f.store.bindSession({ ...binding, upstreamSessionId: "switched", agentSessionId: "switched" })
+    expect(await reattach()).toBe(false)
+    await f.dispose()
+  })
+
   test("missing execution binding rejects before a turn can become busy", async () => {
     const transport = new FakeTransport()
     const f = createHostFixture({ transports: { pi: transport } })

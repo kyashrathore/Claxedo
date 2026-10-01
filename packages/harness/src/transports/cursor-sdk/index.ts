@@ -1,7 +1,6 @@
 import os from "node:os"
 import path from "node:path"
 import { HARNESS_TABLE, type SessionConfigUpdate, type SessionTitleRequest } from "@claxedo/agent-runtime-contract"
-import { errorMessage } from "@claxedo/helpers"
 import type {
   AttachInput, CapabilityContext, ConfigApplied, ConfigOptionsPreview, ConfigPreviewTarget, ConfigTarget, Deadline, DraftLaunch,
   HarnessServices, HarnessSession, HarnessTransport, MachineLoginPolicy, RoutedEvent, SessionBroker, StartInput, TransportCapabilities,
@@ -11,6 +10,7 @@ import { applySessionConfigUpdate, attachedSessionEntry, configOptionsPreview, m
 import { withTurnAccount } from "../../translate/turn-account"
 import { TransportError } from "../../contract/errors"
 import { composeCursorHome, cursorHomeKey } from "../../profiles/cursor"
+import { cancelCursorTurn } from "./cancel"
 import { cursorCredential, type CursorCredential } from "./credentials"
 import { CursorEntryLifecycle, type CursorEntry as Entry } from "./entry"
 import { CursorGoals } from "./goals"
@@ -19,6 +19,7 @@ import { cursorModelId, hostSession } from "./launch"
 import { CursorModelCatalog, catalogKey, cursorCatalogModels, cursorModelOptions } from "./models"
 import { cursorPermissionModeState } from "./permission-modes"
 import type { HostModel } from "./protocol"
+import { steerCursorTurn } from "./steer"
 import { cursorSessionTitle } from "./title"
 import { cursorPrompt, streamCursorRun } from "./turn"
 
@@ -141,6 +142,8 @@ export class CursorSdkTransport implements HarnessTransport {
     turn?: Pick<TurnInput, "model" | "prompt">): AsyncIterable<RoutedEvent> {
     if (entry.busy) throw new TransportError("cursor", "session", "Cursor turn already active")
     entry.busy = true
+    const running = Promise.withResolvers<void>()
+    entry.running = running.promise
     try {
       const host = await this.current(entry)
       if (entry.reopen) await this.closeAgent(entry)
@@ -148,10 +151,11 @@ export class CursorSdkTransport implements HarnessTransport {
       if (broker.signal.aborted || entry.starting?.abort.signal.aborted) return
       if (entry.starting) entry.starting.launched = true
       entry.unsent = false
-      yield* streamCursorRun({ host, broker, prompt, services: this.services, ...(turn?.prompt.agent === "plan" ? { mode: "plan" as const } : {}),
+      yield* streamCursorRun({ host, broker, prompt, ...(turn?.prompt.agent === "plan" ? { mode: "plan" as const } : {}),
         session: hostSession(entry.input, this.services, entry.credential.apiKey, entry.plugins, entry.session.binding.upstreamSessionId, turn?.model?.modelID) })
     } finally {
       entry.busy = false
+      running.resolve()
     }
   }
 
@@ -229,28 +233,16 @@ export class CursorSdkTransport implements HarnessTransport {
     },
   }
 
+  readonly steer = {
+    steer: async (session: HarnessSession, _turn: TurnRef, input: TurnInput) => {
+      const entry = this.entry(session)
+      return steerCursorTurn(entry, this.registry.existing(entry.host), input)
+    },
+  }
+
   async cancel(session: HarnessSession, turn: TurnRef, deadline: Deadline) {
     const entry = this.entry(session)
-    if (this.goalRuntime.turnId(session.binding.sessionId) === turn.turnId) {
-      const settlement = await this.goalRuntime.interrupt(session.binding.sessionId)
-      if (settlement?.state === "cancelled") return { execution: "terminal" as const, cleanup: "unknown" as const }
-      return { execution: "unknown" as const, cleanup: "unknown" as const,
-        ...(settlement?.state === "failed" ? { error: { code: "internal_error" as const, message: settlement.error } } : {}) }
-    }
-    if (entry.starting?.turnId === turn.turnId && !entry.starting.launched) {
-      entry.starting.abort.abort()
-      return { execution: "terminal" as const, cleanup: "verified_clear" as const }
-    }
-    if (!entry.busy) return { execution: "terminal" as const, cleanup: "unknown" as const }
-    try {
-      const host = this.registry.existing(entry.host)
-      if (!host) throw new TransportError("cursor", "worker", "Cursor SDK host unavailable during cancellation")
-      await host.call({ kind: "cancel", sessionId: session.binding.sessionId }, undefined, deadline)
-      return { execution: "unknown" as const, cleanup: "unknown" as const }
-    } catch (error) {
-      return { execution: "unknown" as const, cleanup: "unknown" as const,
-        error: { code: "provider_unreachable" as const, message: errorMessage(error) } }
-    }
+    return cancelCursorTurn(entry, turn, deadline, { goals: this.goalRuntime, host: this.registry.existing(entry.host) })
   }
 
   async configure(session: HarnessSession, update: TransportConfigUpdate): Promise<ConfigApplied> {

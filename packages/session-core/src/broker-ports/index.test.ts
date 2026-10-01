@@ -3,7 +3,7 @@ import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"
 import { createRequestBroker, createSessionBroker, createTurnBroker } from "@claxedo/harness/broker"
-import { MemoryPorts, registerBrokerBehaviorCases, registerBrokerPortCases } from "@claxedo/harness/testing"
+import { MemoryPorts, registerBrokerBehaviorCases, registerBrokerPortCases, registerChildOwnedRequestCases, registerChildRequestCases } from "@claxedo/harness/testing"
 import type { PendingRequest, RoutedEvent } from "@claxedo/harness/contract"
 import type { BrokerEvent, TurnAuthority } from "@claxedo/harness/broker"
 import type { RuntimeStore } from "../store"
@@ -11,6 +11,8 @@ import { openRuntimeStore } from "../../../workspace-runtime/src/store-file"
 import { createRequestSurface } from "../host/requests"
 import { createRuntimeEventHub } from "../projection/runtime-event-hub"
 import { createStoreBrokerPorts, type StoreBrokerPortOptions } from "./index"
+import { harnessAuthor, providerTurnNotice } from "./provider-turn-message"
+import { assistantMessageIdForTurn, createMessageIds } from "@claxedo/agent-runtime-contract"
 
 const origin = { actor: { kind: "machine-owner" as const }, via: "loopback" as const, reissued: false }
 const question = (id: string) => ({
@@ -215,6 +217,43 @@ class StoreBehaviorPorts extends MemoryPorts {
   override bindChildCorrelation(...args: Parameters<typeof this.real.bindChildCorrelation>) {
     this.real.bindChildCorrelation(...args)
   }
+  override childRoute(...args: Parameters<typeof this.real.childRoute>) { return this.real.childRoute(...args) }
+  override sessionAuthority(sessionId: string) { return this.real.sessionAuthority(sessionId) }
+  override turnOpen(sessionId: string, turnId: string) { return this.real.turnOpen(sessionId, turnId) }
+  private readonly childLeases = new Map<string, string>()
+  private boundChild(parentSessionId: string, correlationKey: string) {
+    const route = this.real.childRoute(parentSessionId, correlationKey)
+    if (route.kind !== "bound") throw new Error(`No running child bound to ${correlationKey}`)
+    return route
+  }
+  override startChildTurn(parentSessionId: string, correlationKey: string) {
+    const route = this.boundChild(parentSessionId, correlationKey)
+    const leaseId = this.store.acquireTurnLease(route.childSessionId)
+    if (!leaseId) throw new Error(`No test lease for ${route.childSessionId}`)
+    this.store.startTurn({ sessionId: route.childSessionId, assistantMessageId: route.assistantMessageId, agent: "general", parts: [] })
+    this.childLeases.set(route.childSessionId, leaseId)
+  }
+  override finishChildTurn(parentSessionId: string, correlationKey: string) {
+    const route = this.boundChild(parentSessionId, correlationKey)
+    if (!this.childLeases.has(route.childSessionId)) this.startChildTurn(parentSessionId, correlationKey)
+    const leaseId = this.childLeases.get(route.childSessionId)!
+    this.store.finishTurn({ sessionId: route.childSessionId, assistantMessageId: route.assistantMessageId, leaseId,
+      outcome: { status: "completed", completedAt: 2 } })
+    this.store.releaseTurnLease(route.childSessionId, leaseId)
+    this.childLeases.delete(route.childSessionId)
+  }
+  override reopenChildTurn(parentSessionId: string, correlationKey: string) {
+    const route = this.boundChild(parentSessionId, correlationKey)
+    this.finishChildTurn(parentSessionId, correlationKey)
+    void this.real.admitChildSession(parentSessionId, route.childSessionId, { observationId: `reopen:${correlationKey}`,
+      providerKind: "claude-agent", toolCallId: correlationKey, status: "running" })
+    this.startChildTurn(parentSessionId, correlationKey)
+  }
+  override rebindConnection(sessionId: string, connectionId: string) {
+    const binding = this.store.getExecutionBinding(sessionId)
+    if (!binding) throw new Error(`Session ${sessionId} has no binding`)
+    this.store.bindSession({ ...binding, connectionId, agentSessionId: binding.upstreamSessionId })
+  }
   override async publishSubagent(...args: Parameters<typeof this.real.publishSubagent>) {
     await this.real.publishSubagent(...args)
     this.subagents.push(args[1])
@@ -236,6 +275,10 @@ class StoreBehaviorPorts extends MemoryPorts {
 }
 
 registerBrokerBehaviorCases("runtime store", () => new StoreBehaviorPorts())
+
+registerChildRequestCases("runtime store", () => new StoreBehaviorPorts())
+
+registerChildOwnedRequestCases("runtime store", () => new StoreBehaviorPorts())
 
 describe("store broker ports", () => {
   test("a permission that expires is published as expired, not as the person's rejection", async () => {
@@ -363,11 +406,11 @@ describe("store broker ports", () => {
     const pending: PendingRequest = { sessionId: "s1", request, askedAt: 10, upstreamSessionId: "up1" }
     await ports.publish({ id: "permission.asked:s1:grant", type: "permission.asked", properties: request.permission }, pending)
     store.database().exec("CREATE TRIGGER deny_broker_grant BEFORE UPDATE OF permission_state_json ON session BEGIN SELECT RAISE(ABORT, 'grant failed'); END")
-    await expect(ports.persistAnswer(pending, { kind: "permission", decision: "allow_always" }, false, '["c1","run"]')).rejects.toThrow("grant failed")
+    await expect(ports.persistAnswer(pending, { kind: "permission", decision: "allow_always" }, false, { sessionId: "s1", key: '["c1","run"]' })).rejects.toThrow("grant failed")
     expect(ports.readAnswer("s1", "grant")).toBeUndefined()
     expect(ports.readPermissionState("s1")?.brokerGrants).toBeUndefined()
     store.database().exec("DROP TRIGGER deny_broker_grant")
-    await ports.persistAnswer(pending, { kind: "permission", decision: "allow_always" }, false, '["c1","run"]')
+    await ports.persistAnswer(pending, { kind: "permission", decision: "allow_always" }, false, { sessionId: "s1", key: '["c1","run"]' })
     expect(ports.readAnswer("s1", "grant")).toEqual({ kind: "permission", decision: "allow_always" })
     expect(ports.readPermissionState("s1")?.brokerGrants).toEqual(['["c1","run"]'])
   })
@@ -396,6 +439,80 @@ describe("store broker ports", () => {
     if (failed.admitted) expect(await failed.settled).toEqual({ state: "failed", error: "failed" })
   })
 
+  test("a child request keyed by the agent id a result reported routes to that child before its spawn call is known", async () => {
+    const { store, ports, authority } = setup()
+    const owner = createRequestBroker(ports)
+    const turn = createTurnBroker(owner, { authority, origin, signal: new AbortController().signal })
+    const child = await turn.observeSubagent({ observationId: "result", providerKind: "claude-agent", providerId: "a64191ef39c5ecd63",
+      toolCallId: "toolu_agent", transcript: { kind: "messages" }, status: "running", mode: "background" })
+    if (!child) throw new Error("Missing child session")
+    if (!store.acquireTurnLease(child.sessionId)) throw new Error("Expected child lease")
+    store.startTurn({ sessionId: child.sessionId, assistantMessageId: child.assistantMessageId, agent: "general", parts: [] })
+    const waiting = turn.ask({ ...permission("by-agent"), child: { correlationKey: "a64191ef39c5ecd63" } })
+    await tick()
+    expect(owner.broker.list({ sessionId: child.sessionId }).map((row) => row.request.requestId)).toEqual(["by-agent"])
+    expect(await owner.broker.answer("by-agent", { kind: "permission", decision: "allow_once" }, { sessionId: child.sessionId })).toMatchObject({ ok: true })
+    expect(await waiting).toEqual({ kind: "permission", decision: "allow_once" })
+  })
+
+  test("a provider turn asked for while the ending turn still holds the session is admitted when that turn releases it", async () => {
+    const { store, ports } = setup()
+    const lease = store.readTurnAuthority("s1")!.leaseId
+    let decided = false
+    const admission = ports.admitProviderTurn("s1", { reason: "provider" }, async (turn) => {
+      await ports.drainProviderEvent("s1", turn, { event: { type: "finish", sessionId: "s1" } })
+    }).finally(() => { decided = true })
+    await tick()
+    expect(decided).toBe(false)
+    store.finishTurn({ sessionId: "s1", assistantMessageId: "t1", leaseId: lease, outcome: { status: "completed", completedAt: 10 } })
+    store.releaseTurnLease("s1", lease)
+    const result = await admission
+    expect(result.admitted).toBe(true)
+    if (result.admitted) expect(await result.settled).toEqual({ state: "completed" })
+    expect(store.readTurnAuthority("s1")).toBeUndefined()
+  })
+
+  test("a provider turn waits for a running provider turn's settlement, not a second lease", async () => {
+    const { store, ports } = setup()
+    const lease = store.readTurnAuthority("s1")!.leaseId
+    store.finishTurn({ sessionId: "s1", assistantMessageId: "t1", leaseId: lease, outcome: { status: "completed", completedAt: 10 } })
+    store.releaseTurnLease("s1", lease)
+    let finish!: () => void
+    const running = new Promise<void>((resolve) => { finish = resolve })
+    const order: string[] = []
+    const first = await ports.admitProviderTurn("s1", { reason: "goal" }, async (turn) => {
+      await running
+      await ports.drainProviderEvent("s1", turn, { event: { type: "finish", sessionId: "s1" } })
+      order.push("first ran")
+    })
+    const second = ports.admitProviderTurn("s1", { reason: "goal" }, async (turn) => {
+      order.push("second ran")
+      await ports.drainProviderEvent("s1", turn, { event: { type: "finish", sessionId: "s1" } })
+    })
+    await tick()
+    expect(order).toEqual([])
+    finish()
+    const admitted = await second
+    if (!first.admitted || !admitted.admitted) throw new Error("both provider turns must be admitted")
+    expect(await first.settled).toEqual({ state: "completed" })
+    expect(await admitted.settled).toEqual({ state: "completed" })
+    expect(order).toEqual(["first ran", "second ran"])
+  })
+
+  test("a provider turn whose session is not released within the bound is refused busy and takes nothing later", async () => {
+    const timers: (() => void)[] = []
+    const clock = { now: () => 0, setTimeout: (callback: () => void) => timers.push(callback), clearTimeout: () => {} }
+    const { store, ports } = setup({ clock })
+    const lease = store.readTurnAuthority("s1")!.leaseId
+    const admission = ports.admitProviderTurn("s1", { reason: "provider" }, async () => {})
+    await tick()
+    expect(timers).toHaveLength(1)
+    timers[0]()
+    expect(await admission).toEqual({ admitted: false, reason: "busy" })
+    store.releaseTurnLease("s1", lease)
+    expect(store.readTurnAuthority("s1")).toBeUndefined()
+  })
+
   test("a provider turn on a session that never picked an agent or model runs the defaults a prompted turn runs", async () => {
     const { store, ports } = setup()
     const lease = store.readTurnAuthority("s1")?.leaseId
@@ -409,6 +526,44 @@ describe("store broker ports", () => {
     if (!admitted.admitted) throw new Error("Provider turn was not admitted")
     expect(await admitted.settled).toEqual({ state: "completed" })
     expect(store.getMessages("s1").at(-1)?.info).toMatchObject({ agent: "build", providerID: "claude", modelID: "default" })
+  })
+
+  test("a provider turn after a prompted one opens with a message its harness authored, so the session's latest turn still pages", async () => {
+    const { store, ports } = setup()
+    const first = store.readTurnAuthority("s1")?.leaseId
+    if (!first) throw new Error("Missing initial lease")
+    store.finishTurn({ sessionId: "s1", assistantMessageId: "t1", leaseId: first, outcome: { status: "completed", completedAt: 10 } })
+    store.releaseTurnLease("s1", first)
+    const prompted = store.acquireTurnLease("s1")
+    if (!prompted) throw new Error("Missing prompted lease")
+    const promptId = createMessageIds()()
+    store.startTurn({ sessionId: "s1", userMessageId: promptId, assistantMessageId: assistantMessageIdForTurn(promptId), agent: "general",
+      model: { providerID: "anthropic", modelID: "test" }, parts: [{ type: "text", text: "start four agents" }] })
+    store.finishTurn({ sessionId: "s1", assistantMessageId: assistantMessageIdForTurn(promptId), leaseId: prompted, outcome: { status: "completed", completedAt: 20 } })
+    store.releaseTurnLease("s1", prompted)
+
+    const admitted = await ports.admitProviderTurn("s1", { reason: "provider", detail: "Agent \"Audit\" finished" }, async (turn) => {
+      await ports.drainProviderEvent("s1", turn, { event: { type: "text-delta", delta: "One task finished." } })
+      await ports.drainProviderEvent("s1", turn, { event: { type: "finish", sessionId: "s1" } })
+    })
+    if (!admitted.admitted) throw new Error("Provider turn was not admitted")
+    expect(await admitted.settled).toEqual({ state: "completed" })
+
+    const page = store.getMessagePage("s1", { view: "latest-surface" })
+    const [opening, reply] = page?.messages ?? []
+    expect(opening?.info).toMatchObject({ role: "user", claxedo: { author: { id: "harness:claude", name: "Claude Code", kind: "agent" } } })
+    expect(opening?.parts).toMatchObject([{ type: "text", text: "Agent \"Audit\" finished" }])
+    expect(reply?.info).toMatchObject({ id: admitted.turn.assistantMessageId, role: "assistant", parentID: opening?.info.id })
+    const laterPromptId = createMessageIds()()
+    expect([laterPromptId, opening!.info.id, promptId].sort()).toEqual([promptId, opening!.info.id, laterPromptId])
+    expect(store.getMessagePage("s1", { view: "latest-turn" })?.messages.map((message) => message.info.id))
+      .toEqual([opening?.info.id, admitted.turn.assistantMessageId])
+  })
+
+  test("a provider turn names its opening message after the reason it started", () => {
+    expect(providerTurnNotice({ reason: "goal", detail: "ship the fix" })).toBe("Goal: ship the fix")
+    expect(providerTurnNotice({ reason: "provider" })).toBe("Continued on its own")
+    expect(harnessAuthor("cursor-acp")).toEqual({ id: "harness:cursor-acp", name: "cursor-acp", kind: "agent" })
   })
 
   test("a provider turn settles from its own terminal event, and one exhausted without it fails", async () => {
@@ -449,6 +604,42 @@ describe("store broker ports", () => {
     expect(live).toContain("usage")
   })
 
+  test("background work is pushed live when it changes, never journaled, and leaves turn admission alone", async () => {
+    const { store, ports, publishers } = setup()
+    const live: unknown[] = []
+    publishers.subscribeGlobal((envelope) => live.push(envelope.payload))
+    const runtime: string[] = []
+    publishers.subscribeRuntime((envelope) => runtime.push(envelope.payload.type))
+    const lease = store.readTurnAuthority("s1")?.leaseId
+    if (!lease) throw new Error("Missing initial lease")
+    store.finishTurn({ sessionId: "s1", assistantMessageId: "t1", leaseId: lease, outcome: { status: "completed", completedAt: 10 } })
+    store.releaseTurnLease("s1", lease)
+
+    await ports.publishSessionEvent("s1", { type: "background-work", agents: 1, shells: 0, other: 0 })
+    await ports.publishSessionEvent("s1", { type: "background-work", agents: 1, shells: 0, other: 0 })
+    await ports.publishSessionEvent("s1", { type: "background-work", agents: 2, shells: 1, other: 0 })
+    expect(ports.backgroundWork.read("s1")).toEqual({ agents: 2, shells: 1, other: 0 })
+    const admitted = await ports.admitProviderTurn("s1", { reason: "provider" }, async (turn) => {
+      await ports.drainProviderEvent("s1", turn, { event: { type: "finish", sessionId: "s1" } })
+    })
+    expect(admitted.admitted).toBe(true)
+    if (admitted.admitted) expect(await admitted.settled).toEqual({ state: "completed" })
+    expect(ports.backgroundWork.read("s1")).toEqual({ agents: 2, shells: 1, other: 0 })
+    ports.backgroundWork.retireAll()
+
+    expect(ports.backgroundWork.read("s1")).toBeUndefined()
+    expect(live.filter((payload) => (payload as { type: string }).type === "session.background-work")).toEqual([
+      { type: "session.background-work", properties: { sessionID: "s1", agents: 1, shells: 0, other: 0 } },
+      { type: "session.background-work", properties: { sessionID: "s1", agents: 2, shells: 1, other: 0 } },
+      { type: "session.background-work", properties: { sessionID: "s1", agents: 0, shells: 0, other: 0 } },
+    ])
+    expect(runtime.filter((type) => type === "background-work")).toHaveLength(3)
+    const journaled = store.database().prepare<{ type: string }>(
+      "SELECT type FROM runtime_journal WHERE session_id = ? AND type = 'session.background-work'",
+    ).all("s1")
+    expect(journaled).toEqual([])
+  })
+
   test("child provider events project into the admitted child session", async () => {
     const { store, ports, publishers } = setup()
     const owner = createRequestBroker(ports)
@@ -472,6 +663,26 @@ describe("store broker ports", () => {
     ).all(child.sessionId)
     expect(childRows.length).toBeGreaterThan(0)
     expect(parentRows.map((row) => row.type)).not.toContain("message.part.updated")
+  })
+
+  test("a session broker delivers a background child's events while its parent has no turn", async () => {
+    const { store, ports, publishers } = setup()
+    const owner = createRequestBroker(ports)
+    const session = createSessionBroker(owner, { sessionId: "s1", directory: "/work", workspaceId: "w1", origin })
+    const child = await session.observeSubagent({ observationId: "background-start", providerKind: "claude-agent", toolCallId: "toolu_agent",
+      toolCallRole: "spawn", mode: "background", transcript: { kind: "messages" }, status: "running" })
+    if (!child) throw new Error("Missing child session")
+    session.associateChild("toolu_agent", child)
+    const leaseId = store.readTurnAuthority("s1")?.leaseId
+    if (!leaseId) throw new Error("Missing turn lease")
+    store.finishTurn({ sessionId: "s1", assistantMessageId: "t1", leaseId, outcome: { status: "completed", completedAt: 2 } })
+    store.releaseTurnLease("s1", leaseId)
+    expect(store.readTurnAuthority("s1")).toBeUndefined()
+    const seen: string[] = []
+    publishers.subscribeRuntime((envelope) => seen.push(envelope.sessionId))
+    await session.publishChild({ event: { type: "text-delta", delta: "background output" }, route: { kind: "child", correlationKey: "toolu_agent" } })
+    expect(seen).toEqual([child.sessionId])
+    await expect(session.publishChild({ event: { type: "text-delta", delta: "parent text" } })).rejects.toThrow("child-routed")
   })
 
   test("subagent admission keeps revisions and child identity across restart", async () => {
@@ -623,14 +834,17 @@ test("question cancellation publishes one rejection and preserves a sibling ques
 })
 
 test("provider admission refused as busy never runs its provisional producer", async () => {
-  const { ports } = setup()
+  const timers: (() => void)[] = []
+  const { ports } = setup({ clock: { now: () => 0, setTimeout: (callback: () => void) => timers.push(callback), clearTimeout: () => {} } })
   const session = createSessionBroker(createRequestBroker(ports), { sessionId: "s1", directory: "/work", workspaceId: "w1", origin })
   let runs = 0
-  const result = await session.admitProviderTurn({ reason: "provider" }, async function* () {
+  const admission = session.admitProviderTurn({ reason: "provider" }, async function* () {
     runs++
     yield { event: { type: "finish", sessionId: "s1" } }
   })
-  expect(result).toEqual({ admitted: false, reason: "busy" })
+  await tick()
+  for (const fire of timers) fire()
+  expect(await admission).toEqual({ admitted: false, reason: "busy" })
   expect(runs).toBe(0)
 })
 

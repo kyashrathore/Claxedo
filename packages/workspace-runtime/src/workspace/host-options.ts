@@ -5,7 +5,6 @@ import type { RuntimeEventEnvelope, RuntimeEventHub, RuntimeStore, SessionAccess
 import type { WorkspaceFirstPartyMcpLaunchOptions } from "../first-party-mcp/index"
 import type { RuntimeHarnessSelection } from "../routes/config"
 import type { WorkspaceTarget } from "../target"
-import type { WorkspaceTranscriptRoutesOptions } from "./core"
 
 export type WorkspaceRuntimeStore = RuntimeStore
 
@@ -27,8 +26,6 @@ export type WorkspaceHostOptions = {
   onRuntimeEvent?: (event: RuntimeEventEnvelope) => void
   /** Parent lookup for scoping a subagent child's frames as its parent's; defaults to this host's own store. */
   sessionParents?: WorkspaceEventParents
-  /** Host-mediated resolver endpoint for opaque file-backed transcript handles. */
-  transcripts?: WorkspaceTranscriptRoutesOptions
   /** Host-owned projection write that completes before the created lifecycle event. */
   afterCreateSession?: (input: { directory: string; session: unknown }) => Promise<void> | void
   /** The workspace that already holds a session id on this host; a create naming an id another workspace holds is refused before any harness launches. */

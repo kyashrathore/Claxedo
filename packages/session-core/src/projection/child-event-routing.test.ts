@@ -2,12 +2,8 @@ import { describe, expect, test } from "bun:test"
 import type { AgentRuntimeEvent, RuntimeUsageObservation, AgentPresentationEvent } from "@claxedo/agent-runtime-contract"
 import { asRecord } from "@claxedo/helpers/guards"
 import type { RuntimeEventEnvelopeInput } from "./runtime-event-hub"
-import {
-  CHILD_EVENT_BUFFER_MAX_BYTES,
-  CHILD_EVENT_BUFFER_MAX_COUNT,
-  createChildEventRouter,
-  type ChildProjectionTarget,
-} from "./child-event-routing"
+import { createChildEventRouter, type ChildProjectionTarget } from "./child-event-routing"
+import type { ChildRoute } from "./child-routes"
 import type { RuntimeAppendSource } from "./session-event-writer"
 import { testTurnProjector } from "../../../workspace-runtime/src/test-support/turn-projector"
 
@@ -28,17 +24,14 @@ function target(sessionId = "child-1"): ChildProjectionTarget {
   }
 }
 
-function fixture(input: {
-  setTimer?: (callback: () => void, delay: number) => ReturnType<typeof setTimeout>
-  clearTimer?: (timer: ReturnType<typeof setTimeout>) => void
-  maxCount?: number
-  maxBytes?: number
-} = {}) {
+function fixture() {
   const journal: Array<{ sessionId: string; agentSessionId?: string; payload: AgentPresentationEvent }> = []
   const parentEvents: AgentPresentationEvent[] = []
   const childEvents: AgentPresentationEvent[] = []
   const runtime: RuntimeEventEnvelopeInput[] = []
   const diagnostics: AgentRuntimeEvent[] = []
+  const routes = new Map<string, ChildRoute>()
+  const targetsAsked: string[] = []
   let childProjectors = 0
   const appendEvent = (event: { sessionId: string; agentSessionId?: string; payload: AgentPresentationEvent }) => {
     journal.push(event)
@@ -50,10 +43,18 @@ function fixture(input: {
     input: target("parent-1").input,
     assistantMessageId: "parent-assistant-1",
     onEvent: (event) => parentEvents.push(event),
-    onRuntimeEvent: (event) => runtime.push(event),
+    onRuntimeEvent: (event) => {
+      runtime.push(event)
+      if (event.payload.type === "diagnostic") diagnostics.push(event.payload)
+    },
   })
   const router = createChildEventRouter({
     parent,
+    resolve: (correlationKey) => routes.get(correlationKey) ?? { kind: "unbound" },
+    childTarget: (route) => {
+      targetsAsked.push(route.assistantMessageId)
+      return { ...target(route.childSessionId), assistantMessageId: route.assistantMessageId }
+    },
     createChildProjector: (child) => {
       childProjectors++
       return testTurnProjector({
@@ -66,21 +67,10 @@ function fixture(input: {
         onRuntimeEvent: (event) => runtime.push(event),
       })
     },
-    onDiagnostic: (event) => diagnostics.push(event),
-    setTimer: input.setTimer,
-    clearTimer: input.clearTimer,
-    maxCount: input.maxCount,
-    maxBytes: input.maxBytes,
   })
-  return {
-    router,
-    journal,
-    parentEvents,
-    childEvents,
-    runtime,
-    diagnostics,
-    childProjectors: () => childProjectors,
-  }
+  const bind = (correlationKey: string, childSessionId = "child-1", assistantMessageId = `${childSessionId}-assistant-1`) =>
+    routes.set(correlationKey, { kind: "bound", childSessionId, assistantMessageId })
+  return { router, journal, parentEvents, childEvents, runtime, diagnostics, routes, bind, targetsAsked, childProjectors: () => childProjectors }
 }
 
 function diagnosticCodes(events: AgentRuntimeEvent[]) {
@@ -118,335 +108,94 @@ function diagnosticDetails(events: AgentRuntimeEvent[]) {
 describe("createChildEventRouter", () => {
   test("persists and publishes child-owned events only under the child owner", () => {
     const item = fixture()
-
-    item.router.associate("thread-1", target())
-    item.router.project(
-      { type: "text-delta", delta: "child text" },
-      source,
-      { kind: "child", correlationKey: "thread-1" },
-    )
+    item.bind("thread-1")
+    item.router.project({ type: "text-delta", delta: "child text" }, source, { kind: "child", correlationKey: "thread-1" })
 
     expect(item.journal.length).toBeGreaterThan(0)
-    expect(item.journal.every((event) =>
-      event.sessionId === "child-1" && event.agentSessionId === "provider-child-1"
-    )).toBe(true)
+    expect(item.journal.every((event) => event.sessionId === "child-1" && event.agentSessionId === "provider-child-1")).toBe(true)
     expect(item.parentEvents).toEqual([])
     expect(item.childEvents.length).toBeGreaterThan(0)
-    expect(item.runtime.every((event) =>
-      event.sessionId === "child-1" && event.agentSessionId === "provider-child-1"
-    )).toBe(true)
-    item.router.dispose()
+    expect(item.runtime.every((event) => event.sessionId === "child-1" && event.agentSessionId === "provider-child-1")).toBe(true)
   })
 
-  test("flushes content received across a live reconnect in source order after association", () => {
+  test("reads the binding when each event arrives, so a child bound after an earlier event receives the later ones", () => {
     const item = fixture()
+    item.router.project({ type: "text-delta", delta: "before binding" }, source, { kind: "child", correlationKey: "thread-1" })
+    item.bind("thread-1")
+    item.router.project({ type: "text-delta", delta: "after binding" }, source, { kind: "child", correlationKey: "thread-1" })
 
-    item.router.project(
-      { type: "text-delta", delta: "before reconnect" },
-      { ...source, method: "connection-1" },
-      { kind: "child", correlationKey: "thread-1" },
-    )
-    item.router.project(
-      { type: "text-delta", delta: "after reconnect" },
-      { ...source, method: "connection-2" },
-      { kind: "child", correlationKey: "thread-1" },
-    )
-    expect(item.journal).toEqual([])
-
-    item.router.associate("thread-1", target())
-
-    expect(item.childEvents.flatMap((event) =>
-      event.type === "message.part.delta" ? [event.properties.delta] : []
-    )).toEqual(["before reconnect", "after reconnect"])
-    expect(item.journal.every((event) => event.sessionId === "child-1")).toBe(true)
-    item.router.dispose()
+    expect(item.childEvents.flatMap((event) => event.type === "message.part.delta" ? [event.properties.delta] : [])).toEqual(["after binding"])
+    expect(JSON.stringify(item.journal)).not.toContain("before binding")
+    expect(diagnosticDetails(item.diagnostics)).toEqual([{ eventType: "text-delta", correlationKey: "thread-1" }])
   })
 
-  test("expires the offending correlation at the 257th unresolved event", () => {
+  test("drops each event the store cannot route, journaling only one diagnostic on the parent", () => {
     const item = fixture()
+    item.routes.set("finished", { kind: "finished", childSessionId: "child-1", assistantMessageId: "child-1-assistant-1" })
+    item.router.project({ type: "text-delta", delta: "lost" }, source, { kind: "child", correlationKey: "unknown" })
+    item.router.project({ type: "text-delta", delta: "late" }, source, { kind: "child", correlationKey: "finished" })
+    item.router.project({ type: "text-delta", delta: "uncorrelated" }, source, { kind: "child" })
 
-    for (let index = 0; index <= CHILD_EVENT_BUFFER_MAX_COUNT; index++) {
-      item.router.project(
-        { type: "text-delta", delta: String(index) },
-        source,
-        { kind: "child", correlationKey: "overflow" },
-      )
-    }
-    item.router.associate("overflow", target())
-
-    expect(item.journal).toEqual([])
-    expect(diagnosticCodes(item.diagnostics)).toEqual(["child_event_route_buffer_count_exceeded"])
-    item.router.dispose()
-  })
-
-  test("expires an unresolved correlation that exceeds one MiB", () => {
-    const item = fixture()
-
-    item.router.project(
-      { type: "text-delta", delta: "x".repeat(CHILD_EVENT_BUFFER_MAX_BYTES) },
-      source,
-      { kind: "child", correlationKey: "too-large" },
-    )
-    item.router.associate("too-large", target())
-
-    expect(item.journal).toEqual([])
-    expect(diagnosticCodes(item.diagnostics)).toEqual(["child_event_route_buffer_bytes_exceeded"])
-    item.router.dispose()
-  })
-
-  test("expires unresolved content after thirty seconds without a journal write", () => {
-    let expire: (() => void) | undefined
-    let delay = 0
-    let cleared = 0
-    const item = fixture({
-      setTimer(callback, timeout) {
-        expire = callback
-        delay = timeout
-        return 1 as unknown as ReturnType<typeof setTimeout>
-      },
-      clearTimer() {
-        cleared++
-      },
-    })
-
-    item.router.project(
-      { type: "text-delta", delta: "waiting" },
-      source,
-      { kind: "child", correlationKey: "late" },
-    )
-    expire?.()
-    item.router.associate("late", target())
-
-    expect(delay).toBe(30_000)
-    expect(cleared).toBe(1)
-    expect(item.journal).toEqual([])
-    expect(diagnosticCodes(item.diagnostics)).toEqual(["child_event_route_buffer_expired"])
-    item.router.dispose()
-  })
-
-  test("keeps unrelated buffered correlations when one correlation overflows", () => {
-    const item = fixture({ maxCount: 2 })
-
-    item.router.project(
-      { type: "text-delta", delta: "survives" },
-      source,
-      { kind: "child", correlationKey: "healthy" },
-    )
-    item.router.project(
-      { type: "text-delta", delta: "first offender" },
-      source,
-      { kind: "child", correlationKey: "overflow" },
-    )
-    item.router.project(
-      { type: "text-delta", delta: "overflow" },
-      source,
-      { kind: "child", correlationKey: "overflow" },
-    )
-    item.router.associate("healthy", target())
-
-    expect(JSON.stringify(item.journal)).toContain("survives")
-    expect(JSON.stringify(item.journal)).not.toContain("first offender")
-    expect(diagnosticCodes(item.diagnostics)).toEqual(["child_event_route_buffer_count_exceeded"])
-    item.router.dispose()
-  })
-
-  test("drops unmeasurable child events without poisoning later serializable content", () => {
-    const item = fixture()
-    const circular: Record<string, unknown> = {}
-    circular.self = circular
-
-    item.router.project(
-      {
-        type: "tool-start",
-        toolCallId: "unmeasurable",
-        toolName: "test",
-        metadata: circular,
-      },
-      source,
-      { kind: "child", correlationKey: "thread-1" },
-    )
-    item.router.project(
-      { type: "text-delta", delta: "measurable" },
-      source,
-      { kind: "child", correlationKey: "thread-1" },
-    )
-    item.router.associate("thread-1", target())
-
-    expect(JSON.stringify(item.journal)).toContain("measurable")
-    expect(JSON.stringify(item.journal)).not.toContain("unmeasurable")
-    expect(diagnosticCodes(item.diagnostics)).toEqual(["child_event_route_unserializable"])
-    item.router.dispose()
-  })
-
-  test("drops uncorrelated child events diagnostically without writing either journal", () => {
-    const item = fixture()
-
-    item.router.project({ type: "text-delta", delta: "lost" }, source, { kind: "child" })
-
-    expect(item.journal).toEqual([])
-    expect(item.parentEvents).toEqual([])
+    expect(item.journal.map((event) => event.payload.type)).toEqual(["runtime.diagnostic", "runtime.diagnostic", "runtime.diagnostic"])
     expect(item.childEvents).toEqual([])
-    expect(diagnosticCodes(item.diagnostics)).toEqual(["child_event_route_missing_correlation"])
-    item.router.dispose()
-  })
-
-  test("keeps the original binding when a conflicting rebind is rejected diagnostically", () => {
-    const item = fixture()
-
-    item.router.associate("thread-1", target())
-    item.router.associate("thread-1", target())
-    item.router.associate("thread-1", target("child-2"))
-    item.router.project(
-      { type: "text-delta", delta: "owned by first" },
-      source,
-      { kind: "child", correlationKey: "thread-1" },
-    )
-
-    expect(item.journal.length).toBeGreaterThan(0)
-    expect(item.journal.every((event) => event.sessionId === "child-1")).toBe(true)
-    expect(diagnosticCodes(item.diagnostics)).toEqual(["child_event_route_binding_conflict"])
-    item.router.dispose()
+    expect(diagnosticCodes(item.diagnostics)).toEqual([
+      "child_event_route_unbound",
+      "child_event_route_finished",
+      "child_event_route_uncorrelated",
+    ])
   })
 
   test("aliases multiple correlation keys to one lazily created child projector", () => {
     const item = fixture()
-
-    item.router.associate("spawn", target())
-    item.router.associate("interaction", target())
+    item.bind("spawn")
+    item.bind("interaction")
     expect(item.childProjectors()).toBe(0)
-    item.router.project(
-      { type: "text-delta", delta: "spawn" },
-      source,
-      { kind: "child", correlationKey: "spawn" },
-    )
-    item.router.project(
-      { type: "text-delta", delta: "interaction" },
-      source,
-      { kind: "child", correlationKey: "interaction" },
-    )
+    item.router.project({ type: "text-delta", delta: "spawn" }, source, { kind: "child", correlationKey: "spawn" })
+    item.router.project({ type: "text-delta", delta: "interaction" }, source, { kind: "child", correlationKey: "interaction" })
 
     expect(item.childProjectors()).toBe(1)
     expect(item.journal.every((event) => event.sessionId === "child-1")).toBe(true)
-    item.router.dispose()
   })
 
-  test("dispose clears timers and drops unresolved content diagnostically", () => {
-    let cleared = 0
-    const item = fixture({
-      setTimer() {
-        return 1 as unknown as ReturnType<typeof setTimeout>
-      },
-      clearTimer() {
-        cleared++
-      },
-    })
+  test("a child's later turn gets its own projector under the assistant message the store now names", () => {
+    const item = fixture()
+    item.bind("toolu_agent", "child-1", "turn-1")
+    item.router.project({ type: "text-delta", delta: "first run" }, source, { kind: "child", correlationKey: "toolu_agent" })
+    item.bind("toolu_agent", "child-1", "turn-2")
+    item.router.project({ type: "text-delta", delta: "resumed run" }, source, { kind: "child", correlationKey: "toolu_agent" })
 
-    item.router.project(
-      { type: "text-delta", delta: "pending" },
-      source,
-      { kind: "child", correlationKey: "pending" },
-    )
-    item.router.dispose()
-    item.router.dispose()
-
-    expect(cleared).toBe(1)
-    expect(item.journal).toEqual([])
-    expect(diagnosticCodes(item.diagnostics)).toEqual(["child_event_route_disposed"])
+    expect(item.targetsAsked).toEqual(["turn-1", "turn-2"])
+    expect(item.childProjectors()).toBe(2)
   })
+
+  test("the router refuses events once its turn is disposed", () => {
+    const item = fixture()
+    item.router.dispose()
+    expect(() => item.router.project({ type: "text-delta", delta: "late" }, source)).toThrow("disposed")
+  })
+
   describe("usage a dropped child would lose", () => {
-    test("reaches the parent turn when its correlation expires, as each scope's latest cumulative and every delta", () => {
-      let expire: (() => void) | undefined
-      const item = fixture({
-        setTimer(callback) {
-          expire = callback
-          return 1 as unknown as ReturnType<typeof setTimeout>
-        },
-      })
+    test("reaches the parent turn in the child's own scope, while the child's transcript is dropped", () => {
+      const item = fixture()
       const child = { kind: "child" as const, correlationKey: "late" }
-
       item.router.project({ type: "text-delta", delta: "child text" }, source, child)
       item.router.project(usage(10), source, child)
       item.router.project(usage(3, { kind: "delta", providerObservationId: "step-1" }), source, child)
-      item.router.project(usage(25), source, child)
       item.router.project(usage(7, { scope: "thread-late:turn-1" }), source, child)
-      expire?.()
 
       expect(meteredOn(item.parentEvents)).toEqual([
+        { sessionID: "parent-1", kind: "cumulative", scope: "child:late", input: 10 },
         { sessionID: "parent-1", kind: "delta", scope: "child:late", input: 3 },
-        { sessionID: "parent-1", kind: "cumulative", scope: "child:late", input: 25 },
         { sessionID: "parent-1", kind: "cumulative", scope: "thread-late:turn-1", input: 7 },
       ])
       expect(JSON.stringify(item.journal)).not.toContain("child text")
       expect(item.childEvents).toEqual([])
-      expect(diagnosticCodes(item.diagnostics)).toEqual(["child_event_route_buffer_expired"])
-      expect(diagnosticDetails(item.diagnostics)).toEqual([{ correlationKey: "late", droppedEvents: 1, rolledUpUsage: 3 }])
-      item.router.dispose()
-    })
-
-    test("reaches the parent turn when the turn ends before its correlation binds", () => {
-      const item = fixture()
-
-      item.router.project({ type: "text-delta", delta: "unbound transcript" }, source, { kind: "child", correlationKey: "pending" })
-      item.router.project(usage(12, { scope: "thread-pending:turn-1" }), source, { kind: "child", correlationKey: "pending" })
-      item.router.dispose()
-
-      expect(meteredOn(item.parentEvents)).toEqual([
-        { sessionID: "parent-1", kind: "cumulative", scope: "thread-pending:turn-1", input: 12 },
-      ])
-      expect(JSON.stringify(item.journal)).not.toContain("unbound transcript")
-      expect(diagnosticCodes(item.diagnostics)).toEqual(["child_event_route_disposed"])
-      expect(diagnosticDetails(item.diagnostics)).toEqual([{ correlationKey: "pending", droppedEvents: 1, rolledUpUsage: 1 }])
-    })
-
-    test("reaches the parent turn when its correlation overflows the count or byte limit, the overflowing event included", () => {
-      const counted = fixture({ maxCount: 2 })
-      counted.router.project({ type: "text-delta", delta: "a" }, source, { kind: "child", correlationKey: "overflow" })
-      counted.router.project(usage(4), source, { kind: "child", correlationKey: "overflow" })
-      counted.router.project(usage(9, { kind: "delta", providerObservationId: "step-9" }), source, { kind: "child", correlationKey: "overflow" })
-
-      expect(meteredOn(counted.parentEvents)).toEqual([
-        { sessionID: "parent-1", kind: "cumulative", scope: "child:overflow", input: 4 },
-        { sessionID: "parent-1", kind: "delta", scope: "child:overflow", input: 9 },
-      ])
-      expect(diagnosticCodes(counted.diagnostics)).toEqual(["child_event_route_buffer_count_exceeded"])
-      expect(diagnosticDetails(counted.diagnostics)).toEqual([{ correlationKey: "overflow", droppedEvents: 1, rolledUpUsage: 2 }])
-      counted.router.dispose()
-
-      const sized = fixture({ maxBytes: 64 })
-      sized.router.project(usage(6), source, { kind: "child", correlationKey: "too-large" })
-      expect(meteredOn(sized.parentEvents)).toEqual([
-        { sessionID: "parent-1", kind: "cumulative", scope: "child:too-large", input: 6 },
-      ])
-      expect(diagnosticCodes(sized.diagnostics)).toEqual(["child_event_route_buffer_bytes_exceeded"])
-      sized.router.dispose()
-    })
-
-    test("reaches the parent turn after its correlation is poisoned, while the child's transcript stays dropped", () => {
-      const item = fixture({ maxCount: 1 })
-      item.router.project({ type: "text-delta", delta: "first" }, source, { kind: "child", correlationKey: "poisoned" })
-      item.router.project({ type: "text-delta", delta: "overflow" }, source, { kind: "child", correlationKey: "poisoned" })
-      item.router.project({ type: "text-delta", delta: "after poison" }, source, { kind: "child", correlationKey: "poisoned" })
-      item.router.project(usage(30), source, { kind: "child", correlationKey: "poisoned" })
-
-      expect(meteredOn(item.parentEvents)).toEqual([
-        { sessionID: "parent-1", kind: "cumulative", scope: "child:poisoned", input: 30 },
-      ])
-      expect(JSON.stringify(item.journal)).not.toContain("after poison")
-      expect(diagnosticCodes(item.diagnostics)).toEqual(["child_event_route_buffer_count_exceeded"])
-      item.router.dispose()
     })
 
     test("keeps metering on the parent once a rolled-up correlation binds, so its cumulative is counted once", () => {
-      let expire: (() => void) | undefined
-      const item = fixture({
-        setTimer(callback) {
-          expire = callback
-          return 1 as unknown as ReturnType<typeof setTimeout>
-        },
-      })
+      const item = fixture()
       item.router.project(usage(10), source, { kind: "child", correlationKey: "late" })
-      expire?.()
-      item.router.associate("late", target())
+      item.bind("late")
       item.router.project({ type: "text-delta", delta: "bound text" }, source, { kind: "child", correlationKey: "late" })
       item.router.project(usage(40), source, { kind: "child", correlationKey: "late" })
 
@@ -456,30 +205,10 @@ describe("createChildEventRouter", () => {
       ])
       expect(meteredOn(item.childEvents)).toEqual([])
       expect(JSON.stringify(item.childEvents)).toContain("bound text")
-      item.router.dispose()
-    })
-
-    test("reaches the parent turn without a correlation key, and other uncorrelated events are still dropped", () => {
-      const item = fixture()
-
-      item.router.project(usage(5), source, { kind: "child" })
-      item.router.project({ type: "text-delta", delta: "lost" }, source, { kind: "child" })
-
-      expect(meteredOn(item.parentEvents)).toEqual([
-        { sessionID: "parent-1", kind: "cumulative", scope: "child:uncorrelated:unknown", input: 5 },
-      ])
-      expect(JSON.stringify(item.journal)).not.toContain("lost")
-      expect(diagnosticCodes(item.diagnostics)).toEqual([
-        "child_event_route_missing_correlation",
-        "child_event_route_missing_correlation",
-      ])
-      expect(diagnosticDetails(item.diagnostics)).toEqual([{ eventType: "usage", rolledUpUsage: 1 }, { eventType: "text-delta" }])
-      item.router.dispose()
     })
 
     test("keeps two uncorrelated children apart by the provider session each reports from", () => {
       const item = fixture()
-
       item.router.project(usage(5, { nativeSessionId: "child-a" }), source, { kind: "child" })
       item.router.project(usage(7, { nativeSessionId: "child-b" }), source, { kind: "child" })
       item.router.project(usage(9, { nativeSessionId: "child-a" }), source, { kind: "child" })
@@ -489,7 +218,6 @@ describe("createChildEventRouter", () => {
         { sessionID: "parent-1", kind: "cumulative", scope: "child:uncorrelated:child-b", input: 7 },
         { sessionID: "parent-1", kind: "cumulative", scope: "child:uncorrelated:child-a", input: 9 },
       ])
-      item.router.dispose()
     })
   })
 })

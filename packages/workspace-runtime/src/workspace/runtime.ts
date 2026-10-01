@@ -8,7 +8,6 @@ import { inside } from "@claxedo/helpers/path"
 import { withSessionCore } from "../session-context"
 import type { RecoveryTurnTarget } from "@claxedo/agent-runtime-contract"
 import type { AgentRuntimeHealth } from "@claxedo/agent-runtime-contract"
-import type { BrokerPorts } from "@claxedo/harness/broker"
 import { createHarnessComposer } from "@claxedo/harness/compose"
 import type { HarnessServices } from "@claxedo/harness/contract"
 import type { Hono } from "hono"
@@ -65,6 +64,7 @@ import {
   type MountedWorkspaceEvents,
 } from "./core"
 import type { RuntimeConfigApplyStatus, WorkspaceConnectionState, WorkspaceHost, WorkspaceHostMountOptions } from "./host"
+import { scopedToolPrompt } from "./scoped-tool-prompt"
 import { mountSessionRoutes } from "./session-routes"
 import { assertConnectionRevision, connectionConfigHooks, harnessKey, persistRuntimeConfigApplyStatus, runnerForSelection, runtimeConfigApplyError, runtimeSnapshotSignature, sameAuth, sameRuntimeMcp, validateDescriptors, type RuntimeRunner } from "./snapshot"
 import { createWorkspaceTransports } from "./transports"
@@ -103,26 +103,6 @@ function resolveStoreFactory(options: WorkspaceHostOptions): WorkspaceRuntimeSto
     }
     return store
   }
-}
-
-function scopedToolPrompt(
-  sessionId: string,
-  registration: {
-    callbackUrl: string
-    tools: Array<{ name: string; description: string; inputSchema: Record<string, unknown> }>
-  },
-) {
-  return [
-    "<claxedo_scoped_session_tools>",
-    "These trusted tools apply only to the current Session. Their callback derives tenant, workspace, Stream, Task, Run, and lease identity from a nonce-bound host binding; never add or change those identities.",
-    "Invoke a tool from the sandbox shell by POSTing JSON shaped as {\"sessionID\",\"name\",\"toolCallID\",\"input\"} to the callback URL. Use a stable unique toolCallID and reuse it if the response is lost.",
-    `Session ID: ${JSON.stringify(sessionId)}`,
-    `Callback URL: ${JSON.stringify(registration.callbackUrl)}`,
-    "Available tools:",
-    ...registration.tools.map((tool) => `${tool.name}: ${tool.description}\nInput schema: ${JSON.stringify(tool.inputSchema)}`),
-    "Use progress tools only at meaningful logical boundaries. If a completion tool is available, call it with evidence before giving the final response.",
-    "</claxedo_scoped_session_tools>",
-  ].join("\n")
 }
 
 export function createWorkspaceHost(options: WorkspaceHostOptions): WorkspaceHost {
@@ -210,7 +190,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions): WorkspaceHos
   type Engine = {
     services: HarnessServices
     transports: ReturnType<typeof createWorkspaceTransports>
-    ports: BrokerPorts & { abortProviderTurn(sessionId: string): void }
+    ports: ReturnType<typeof createStoreBrokerPorts>
     runtime: AgentRuntime
     configuration: ReturnType<typeof createSessionConfiguration>
   }
@@ -229,7 +209,6 @@ export function createWorkspaceHost(options: WorkspaceHostOptions): WorkspaceHos
     const runtimeStore = store()
     const services = createHarnessServices({
       ownership: launchOwnership(),
-      ...(options.transcripts ? { transcripts: options.transcripts } : {}),
       ...(options.firstPartyMcpLaunch ? { firstPartyMcpLaunch: options.firstPartyMcpLaunch } : {}),
       log: { debug: (message, fields) => log.info(message, fields), info: (message, fields) => log.info(message, fields),
         warn: (message, fields) => log.warn(message, fields), error: (message, fields) => log.error(message, fields) },
@@ -455,7 +434,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions): WorkspaceHos
       return mountWorkspaceCore(app, mount.core.upgradeWebSocket, {
         core, directory, workspaceId: id, exposure: mount.exposure, sessionAccessPolicy,
         sessionStarts,
-        sessionParents: options.sessionParents ?? sessionParents, transcripts: options.transcripts, launchOwnership,
+        sessionParents: options.sessionParents ?? sessionParents, launchOwnership,
       })
     }
     const events = mountWorkspaceEvents(app, {
@@ -536,22 +515,19 @@ export function createWorkspaceHost(options: WorkspaceHostOptions): WorkspaceHos
         sessionAccessPolicy,
         checkpoint,
         currentRunner,
-        transcripts: options.transcripts,
         afterCreateSession: options.afterCreateSession,
         sessionToolPrompt: (sessionId) => {
           const registration = sessionToolPrompts.get(sessionId)
           return registration ? scopedToolPrompt(sessionId, registration) : undefined
         },
         subagentAdmission: (parentSessionId, observation) => harnessEngine().runtime.subagents.admit(parentSessionId, observation),
+        backgroundWork: (sessionId) => engine?.ports.backgroundWork.read(sessionId),
       })
       disposeDeliveries = sessions.dispose
       app.route("/", sessions.routes)
       reissueQueuedPrompts = () => durable.whenAdmitted("queued prompt recovery", () =>
         withSessionCore(core, () => withWorkspaceTarget(options.target, sessions.recoverQueuedPrompts)))
       if (runner) reissueQueuedPrompts()
-    },
-    hasSession(sessionId: string) {
-      return !!store().getSession(sessionId)
     },
     sessionTime(sessionId: string) {
       const session = store().getSession(sessionId)
@@ -690,6 +666,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions): WorkspaceHos
         const retired = engine
         engine = undefined
         appliedSignature = undefined
+        retired?.ports.backgroundWork.retireAll()
         if (retired) await retireTransports(retired.transports)
       },
       async resume() {

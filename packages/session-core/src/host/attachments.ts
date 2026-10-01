@@ -140,7 +140,7 @@ export class SessionAttachments {
     const session = await handle.transport.attach(attachInput(this.input.launch, {
       sessionId, directory, locality: handle.locality, config, owner,
       permissionModeKept: (mode) => this.input.writeMode(sessionId, mode),
-    }, binding), broker)
+    }, binding, this.input.store.upstreamHasTurns(sessionId, binding.upstreamSessionId)), broker)
     const attachment: AttachedSession = { handle, session, broker, context, owner }
     this.attached.set(sessionId, attachment)
     return attachment

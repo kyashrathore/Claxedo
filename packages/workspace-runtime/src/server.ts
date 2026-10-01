@@ -33,7 +33,6 @@ import {
 } from "./exposure"
 import { runtimeEnvText, workspaceRuntimeEpoch, workspaceRuntimeStoreDir } from "./env"
 import type { WorkspaceEventParents } from "@claxedo/session-core"
-import type { WorkspaceTranscriptRoutesOptions } from "./workspace/core"
 import {
   managedWorkspaceSessionAccessPolicy,
   sessionAccessContext,
@@ -68,7 +67,6 @@ export type WorkspaceRuntimeServerOptions = {
   onPresentationEvent?: WorkspaceHostOptions["onPresentationEvent"]
   onRuntimeEvent?: WorkspaceHostOptions["onRuntimeEvent"]
   sessionParents?: WorkspaceEventParents
-  transcripts?: WorkspaceTranscriptRoutesOptions
   relayHostAuth?: RelayHostAuthOptions
   hostTunnel?: WorkspaceRelayHostTunnelOptions
   configToken?: string
@@ -455,7 +453,6 @@ export function createWorkspaceRuntimeApp(options: WorkspaceRuntimeServerOptions
     ...(options.onPresentationEvent ? { onPresentationEvent: options.onPresentationEvent } : {}),
     ...(options.onRuntimeEvent ? { onRuntimeEvent: options.onRuntimeEvent } : {}),
     ...(options.sessionParents ? { sessionParents: options.sessionParents } : {}),
-    ...(options.transcripts ? { transcripts: options.transcripts } : {}),
     ...(options.firstPartyMcpLaunch ? { firstPartyMcpLaunch: options.firstPartyMcpLaunch } : {}),
   })
   options.bindSessionConfig?.((sessionId) => host.getSessionConfig(sessionId))

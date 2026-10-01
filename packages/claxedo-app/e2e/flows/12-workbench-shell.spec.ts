@@ -1,4 +1,5 @@
 import type { Page } from "@playwright/test"
+import { marketplacePanel } from "../harness/marketplace-panel"
 import { apiRequests, expect, expectNothingAnimating, SCRIPTED_ACP_HARNESS, sessionRoute, test, UI } from "../harness"
 
 function panes(app: Page) {
@@ -21,6 +22,10 @@ async function dragRowToRightEdge(app: Page, title: string) {
 }
 
 test.skip(({ isMobile }) => isMobile, "flow 12 runs at desktop width; flow 33 covers the phone")
+
+test("12 Marketplace details use a single shared panel tab, resize, maximize and replace selection", async ({ stack, app }, testInfo) => {
+  await marketplacePanel(stack, app, false, testInfo)
+})
 
 test("12 workbench and shell: a rail row dragged to the edge splits, compact tabs, close a pane and a tab, the palette", async ({ stack, api, app }) => {
   const workspace = await stack.daemon.makeWorkspace("bench", "Bench")
@@ -183,10 +188,14 @@ test("12 Tasks and Marketplace show no workspace panel and no panel toggle, and 
   await app.getByTestId("sidebar-marketplace-entry").click()
   await expect(app).toHaveURL(/\/marketplace$/)
   await expectNoPanel()
+  await app.getByRole("button", { name: "claxedo", exact: true }).click()
+  const details = app.getByRole("complementary", { name: "claxedo details", exact: true })
+  await expect(details).toBeVisible()
 
   await app.getByRole("navigation", { name: UI.rail }).getByRole("button", { name: "First", exact: true }).click()
   await expect(app).toHaveURL(new RegExp(`/${first.id}$`))
   await expect(panel).toBeVisible()
+  await expect(details).toHaveCount(0)
   await app.getByRole("button", { name: "Close workspace panel" }).first().click()
   await expect(panel).toHaveCount(0)
   await app.getByTestId("sidebar-tasks-entry").click()

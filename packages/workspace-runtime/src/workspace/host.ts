@@ -124,7 +124,6 @@ export type WorkspaceHost = {
    * with none would report an owner as having nothing left to reconcile.
    */
   unresolvedLaunches: () => Promise<LaunchOwnershipRecord[]>
-  hasSession: (sessionId: string) => boolean
   /** The session's times in this runtime's store; undefined when the store holds no such session or holds it without both times. */
   sessionTime: (sessionId: string) => RuntimeSessionTime | undefined
   /**

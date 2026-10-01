@@ -14,9 +14,9 @@ function upstreamStatus(status: SessionStatus): AgentRuntimeStatus | undefined {
     case "retrying":
       return {
         type: "retry",
-        attempt: status.attempt,
         message: status.message,
-        next: status.nextAt,
+        ...(status.attempt !== undefined ? { attempt: status.attempt } : {}),
+        ...(status.nextAt !== undefined ? { next: status.nextAt } : {}),
         ...("action" in status && status.action ? { action: status.action as NonNullable<Extract<AgentRuntimeStatus, { type: "retry" }>["action"]> } : {}),
       }
   }

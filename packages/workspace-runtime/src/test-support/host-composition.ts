@@ -64,6 +64,7 @@ export type HostComposition = {
   eventHub: RuntimeEventHub
   runtime: AgentRuntime
   ownerGeneration: string
+  backgroundWork: ReturnType<typeof createStoreBrokerPorts>["backgroundWork"]
 }
 
 /**
@@ -95,5 +96,5 @@ export function composeHost(input: HostCompositionInput): HostComposition {
     ...(input.recovery ? { recovery: input.recovery } : {}),
     ...(input.afterTurn ? { afterTurn: input.afterTurn } : {}),
   })
-  return { store, eventHub, runtime, ownerGeneration }
+  return { store, eventHub, runtime, ownerGeneration, backgroundWork: ports.backgroundWork }
 }

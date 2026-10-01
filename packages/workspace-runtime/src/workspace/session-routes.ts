@@ -3,13 +3,12 @@ import { deriveChildSessionId } from "../host/child-identity"
 import { readSessionAttachment } from "../host/attachment-files"
 import { flushRuntimeSessionDocuments, disposeRuntimeSessionDocuments } from "../routes/document-hydration"
 import { DEFAULT_RECOVERY_BUDGETS, type SubagentObservation } from "@claxedo/agent-runtime-contract"
-import type { AgentSessionStarts, SubagentUpdatedEvent } from "@claxedo/agent-runtime-contract"
+import type { AgentSessionStarts, BackgroundWork, SubagentUpdatedEvent } from "@claxedo/agent-runtime-contract"
 import { HTTPException } from "hono/http-exception"
 import type { AgentRuntime, AgentRuntimeRecovery } from "@claxedo/session-core"
 import type { SessionAccessPolicy } from "@claxedo/session-core"
 import type { RuntimeStore } from "@claxedo/session-core"
 import type { WorkspaceCheckpoint } from "./checkpoint"
-import type { WorkspaceTranscriptRoutesOptions } from "./core"
 import type { RuntimeRunner } from "./snapshot"
 
 export type SessionRoutesMountInput = {
@@ -22,10 +21,10 @@ export type SessionRoutesMountInput = {
   sessionAccessPolicy: SessionAccessPolicy
   checkpoint: WorkspaceCheckpoint
   currentRunner: () => RuntimeRunner
-  transcripts?: WorkspaceTranscriptRoutesOptions
   afterCreateSession?: (input: { directory: string; session: unknown }) => Promise<void> | void
   sessionToolPrompt: (sessionId: string) => string | undefined
   subagentAdmission: (parentSessionId: string, observation: SubagentObservation) => Promise<SubagentUpdatedEvent>
+  backgroundWork: (sessionId: string) => BackgroundWork | undefined
 }
 
 /** The session routes of one workspace host, reading the store and driving the runtime host. */
@@ -36,6 +35,7 @@ export function mountSessionRoutes(input: SessionRoutesMountInput) {
       store,
       subagentAdmission: input.subagentAdmission,
       deriveChildSessionId: (identity) => deriveChildSessionId(store().runtimeSecret("child-session"), identity),
+      backgroundWork: input.backgroundWork,
     }),
     flushSessionDocuments: flushRuntimeSessionDocuments,
     disposeSessionDocuments: disposeRuntimeSessionDocuments,
@@ -61,9 +61,6 @@ export function mountSessionRoutes(input: SessionRoutesMountInput) {
       if (stuck.length > 0) {
         throw new HTTPException(409, { message: `Session ${sessionId} still has running work: ${stuck.map((result) => result.reason).join(", ")}` })
       }
-    },
-    afterDeleteSession: ({ sessionId }) => {
-      input.transcripts?.resolver.invalidateParent?.(input.transcripts.workspaceId, sessionId)
     },
   })
 }

@@ -5,6 +5,11 @@ export { appIconNames } from "./icons/catalog"
 export { IconSkinContext, type IconSkinIcons } from "./icons/skin"
 export { ClaxedoLogo, ClaxedoSplash } from "./controls/claxedo-logo"
 export { animateHeightChanges } from "./controls/animate-height"
+export { SidePanel, SidePanelArea } from "./controls/side-panel"
+export { SidePanelSlot, SidePanelScope } from "./controls/side-panel-slot"
+export { SidePanelHeader, SidePanelToggle } from "./controls/side-panel-header"
+export { SidePanelTab } from "./controls/side-panel-tab"
+export { ResizeSeparator, type ResizeGrowth } from "./controls/resize-separator"
 export { DelayedLoading } from "./controls/delayed-loading"
 export {
   browserToolbarSlot,

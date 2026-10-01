@@ -205,14 +205,17 @@ export const localServer: Policy = {
   //    80/29, no headroom.
   // -1 module: `usage/adapters/token-tracker-local-history.ts` is gone with the
   // machine's CLI-history Total view. 79/29, no headroom.
+  // -1 module: `credentials/operations/drop-copied-harness-logins.ts` is gone;
+  // startup leaves stored credentials untouched. 78/29, no headroom.
   // +1 package: `@claxedo/session-core` (owner: the runtime-neutral session
   // core that every workspace runtime composes through `createSessionCore`).
   // The daemon's embedded runtime (`deployments/local/embedded-workspace-runtime.ts`),
   // its session authority and PTY attachment, and `shell/host-events.ts` read
   // the core's session access policy and event-stream frames from the core
   // itself; `@claxedo/workspace-runtime` composes the core and no longer
-  // re-exports them.
-  // 79/30, no headroom.
+  // re-exports them. The terminal attachment the embedded runtime admits is
+  // its own module (`deployments/local/embedded-pty-attachment.ts`, owner: the
+  // embedded runtime's PTY admission). 79/30, no headroom.
   ceilings: { modules: 79, packages: 30 },
 
   emitted: {

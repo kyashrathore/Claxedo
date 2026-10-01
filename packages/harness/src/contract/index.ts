@@ -21,3 +21,4 @@ export { ownerMayUseMachineLogin, selectedProviderProjection, selectedTurnAccoun
 export { goalSnapshotFromRecord, nativeGoalPrompt, NATIVE_GOAL_COMMAND } from "./goals.js"
 export { BROKER_GRANTS_KEY, namespacedGrantKey, connectionGrantKeys } from "./grants.js"
 export { readProviderDefinitions, type CustomProviderDefinition, type ProviderCatalogEntry, type ProviderModel } from "./provider-definitions"
+export { HarnessVersionGate, harnessVersionStanding, type HarnessVersionRange } from "./harness-version.js"
