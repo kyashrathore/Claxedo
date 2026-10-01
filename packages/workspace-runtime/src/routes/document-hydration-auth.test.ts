@@ -52,7 +52,7 @@ async function fixture() {
     return await new SignJWT({
       principal_kind: "user", actor_id: actorId, actor_kind: "human",
       org_id: "org_documents", workspace_id: target.workspaceId, host_id: target.hostId,
-      role, backing: "cloud-vm", parent_jti: "parent_doc",
+      role, scope: "workspace", backing: "cloud-vm", parent_jti: "parent_doc",
     }).setProtectedHeader({ alg: "EdDSA" }).setIssuer("workspace-relay").setAudience("workspace-host-service")
       .setIssuedAt().setExpirationTime("1m").setJti(`relay_${actorId}`).sign(relayKeys.privateKey)
   }
