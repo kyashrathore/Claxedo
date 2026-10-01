@@ -30,10 +30,12 @@ function PersonalFacts(props: { readonly entry: PersonalEntry; readonly harness:
   )
 }
 
-export function PersonalPane(props: { readonly entry: PersonalEntry; readonly onClose: () => void }): JSX.Element {
+export function PersonalDetails(props: { readonly entry: PersonalEntry }): JSX.Element {
   const t = useTranslator(marketplaceDictionary)
   const harness = () =>
-    props.entry.harnessId === "agents" ? t("marketplace.personal.agentsHarness") : (harnessLabel(props.entry.harnessId) ?? props.entry.harnessId)
+    props.entry.harnessId === "agents"
+      ? t("marketplace.personal.agentsHarness")
+      : (harnessLabel(props.entry.harnessId) ?? props.entry.harnessId)
   const version = () => (props.entry.kind === "plugin" ? props.entry.version : undefined)
   const installedBy = () =>
     version()
@@ -44,32 +46,16 @@ export function PersonalPane(props: { readonly entry: PersonalEntry; readonly on
       harness: harness(),
     })
   return (
-    <aside
-      aria-label={t("marketplace.details", { name: props.entry.name })}
-      class="flex h-full min-h-0 flex-col overflow-auto border-l border-border-weak-base bg-surface-base"
-      onKeyDown={(event) => {
-        if (event.key !== "Escape") return
-        event.stopPropagation()
-        props.onClose()
-      }}
-    >
-      <header class="grid grid-cols-[3rem_1fr_auto] items-start gap-3 border-b border-border-weak-base p-4">
+    <div class="flex h-full min-h-0 flex-col overflow-auto">
+      <header class="grid grid-cols-[3rem_1fr] items-start gap-3 border-b border-border-weak-base p-4">
         <PluginIconTile name={props.entry.name} size="pane" />
         <div class="min-w-0">
           <h3 class="truncate text-14-medium text-text-strong">{props.entry.name}</h3>
           <p class="text-12-regular text-text-weak">{installedBy()}</p>
         </div>
-        <button
-          type="button"
-          aria-label={t("marketplace.close")}
-          onClick={() => props.onClose()}
-          class="rounded px-1.5 text-text-weak hover:bg-surface-base-hover hover:text-text-strong"
-        >
-          ×
-        </button>
       </header>
       <PersonalFacts entry={props.entry} harness={harness()} />
       <p class="px-4 py-3 text-12-regular text-text-weak">{manages()}</p>
-    </aside>
+    </div>
   )
 }

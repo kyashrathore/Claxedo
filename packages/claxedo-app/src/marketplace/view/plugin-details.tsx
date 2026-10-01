@@ -1,19 +1,14 @@
-import { createSignal, onCleanup, onMount, Show, type JSX } from "solid-js"
-import { ResizeHandle } from "@/ui"
+import { createEffect, createSignal, on, Show, type JSX } from "solid-js"
 import { useTranslator } from "@/i18n"
 import type { PluginCandidate, PluginHarness, PluginToolGroup } from "@/server"
 import { marketplaceDictionary } from "../i18n"
 import { isBuiltIn, pluginLabel, pluginStatus } from "../model"
-import { createPaneWidth, PANE_MAX_FRACTION, PANE_MIN_WIDTH } from "../pane-width"
-import { GHOST_ICON_BUTTON } from "./chrome"
 import { PluginActions } from "./detail-actions"
 import { PluginFacts } from "./detail-facts"
 import { PluginSections } from "./detail-sections"
 import { PluginIconTile } from "./plugin-icon"
 import { SkillView } from "./skill-view"
 import { PluginStatusLine } from "./status"
-
-const RESIZE_STEP = 16
 
 export type DetailHandlers = {
   readonly pending: boolean
@@ -23,7 +18,7 @@ export type DetailHandlers = {
   readonly onToolGroup: (group: PluginToolGroup, enabled: boolean) => void
 }
 
-function DetailHeader(props: { readonly plugin: PluginCandidate; readonly onClose: () => void }): JSX.Element {
+function DetailHeader(props: { readonly plugin: PluginCandidate }): JSX.Element {
   const t = useTranslator(marketplaceDictionary)
   const name = () => pluginLabel(props.plugin)
   const builtIn = () => isBuiltIn(props.plugin)
@@ -47,14 +42,6 @@ function DetailHeader(props: { readonly plugin: PluginCandidate; readonly onClos
           )}
         </Show>
       </div>
-      <button
-        type="button"
-        aria-label={t("marketplace.closeDetails")}
-        class={`${GHOST_ICON_BUTTON} size-6`}
-        onClick={() => props.onClose()}
-      >
-        ×
-      </button>
     </header>
   )
 }
@@ -76,40 +63,20 @@ function DetailNotes(props: { readonly plugin: PluginCandidate }): JSX.Element {
   )
 }
 
-function createPaneSize() {
-  const [width, setWidth] = createPaneWidth()
-  const [surface, setSurface] = createSignal(window.innerWidth)
-  let pane: HTMLElement | undefined
-  const measure = () => setSurface(pane?.parentElement?.clientWidth || window.innerWidth)
-  onMount(() => {
-    measure()
-    window.addEventListener("resize", measure)
-    onCleanup(() => window.removeEventListener("resize", measure))
-  })
-  const maxWidth = () => Math.max(PANE_MIN_WIDTH, Math.round(surface() * PANE_MAX_FRACTION))
-  const resize = (next: number) => setWidth(Math.min(maxWidth(), Math.max(PANE_MIN_WIDTH, Math.round(next))))
-  const onKeyDown = (event: KeyboardEvent) => {
-    const step = event.key === "ArrowLeft" ? RESIZE_STEP : event.key === "ArrowRight" ? -RESIZE_STEP : 0
-    const edge = event.key === "Home" ? maxWidth() : event.key === "End" ? PANE_MIN_WIDTH : undefined
-    if (step === 0 && edge === undefined) return
-    event.preventDefault()
-    event.stopPropagation()
-    resize(edge ?? width() + step)
-  }
-  return { width, maxWidth, resize, onKeyDown, ref: (element: HTMLElement) => (pane = element) }
-}
-
-export function PluginDetailPane(
+export function PluginDetails(
   props: DetailHandlers & {
     readonly plugin: PluginCandidate
     readonly harnesses: readonly PluginHarness[]
-    readonly onClose: () => void
   },
 ): JSX.Element {
-  const t = useTranslator(marketplaceDictionary)
   const [skill, setSkill] = createSignal<string>()
-  const size = createPaneSize()
   const name = () => pluginLabel(props.plugin)
+  createEffect(
+    on(
+      () => props.plugin.pluginInstanceId,
+      () => setSkill(undefined),
+    ),
+  )
   const onKeyDown = (event: KeyboardEvent) => {
     if (event.key !== "Escape" || !skill()) return
     event.preventDefault()
@@ -117,34 +84,12 @@ export function PluginDetailPane(
     setSkill(undefined)
   }
   return (
-    <aside
-      ref={size.ref}
-      aria-label={t("marketplace.details", { name: name() })}
-      style={{ width: `${size.width()}px` }}
-      class="relative flex min-h-0 max-w-full shrink-0 flex-col border-l border-border-weak-base bg-surface-base"
-      onKeyDown={onKeyDown}
-    >
-      <ResizeHandle
-        direction="horizontal"
-        edge="start"
-        size={size.width()}
-        min={PANE_MIN_WIDTH}
-        max={size.maxWidth()}
-        onResize={size.resize}
-        role="separator"
-        tabIndex={0}
-        aria-label={t("marketplace.resizeDetails")}
-        aria-orientation="vertical"
-        aria-valuenow={size.width()}
-        aria-valuemin={PANE_MIN_WIDTH}
-        aria-valuemax={size.maxWidth()}
-        onKeyDown={size.onKeyDown}
-      />
+    <div class="flex h-full min-h-0 flex-col" onKeyDown={onKeyDown}>
       <Show
         when={skill()}
         fallback={
           <div class="flex min-h-0 flex-1 flex-col overflow-y-auto">
-            <DetailHeader plugin={props.plugin} onClose={props.onClose} />
+            <DetailHeader plugin={props.plugin} />
             <PluginFacts plugin={props.plugin} />
             <DetailNotes plugin={props.plugin} />
             <PluginActions {...props} />
@@ -161,6 +106,6 @@ export function PluginDetailPane(
           />
         )}
       </Show>
-    </aside>
+    </div>
   )
 }
