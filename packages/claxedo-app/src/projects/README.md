@@ -63,4 +63,4 @@ Every control is a kit component or a 44 px row; pages are one column with no ho
 - Flow 32: hosted-first add on signed web, the id read back, a deep link by id.
 - Flow 1 uses `ProjectCreateForm` as step 1 of `@/onboarding`.
 
-- Flows 24 and 38: signed browser account projects, placements and stored sessions appear in the rail while `/api/claxedo/projects` is never requested. The catalog uses the signed browser's Better Auth cookie on the Worker origin.
+- Flows 24 and 38: a browser signed in to a self-hosted node (the e2e signed stack, which declares `daemon`) lists the node's projects and opens a stopped sandbox's stored session from the node. No browser flow runs against the Worker; `src/server/browser-account.test.ts` proves its signed browser lists account projects, placements and sessions without requesting `/api/claxedo/projects`.

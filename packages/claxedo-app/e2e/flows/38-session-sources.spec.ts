@@ -151,5 +151,4 @@ test("38 a stopped sandbox's session paints its stored surface, and its project 
   expect(reads.filter((read) => read.includes(`/workspaces/${workspace.id}/`)), "runtime reads of the stopped sandbox").toEqual([])
   expect(reads.filter((read) => read.startsWith(`POST /api/workspace/${workspace.id}/connection`)), "wakes").toEqual([])
   expect(reads.filter((read) => read.includes("/api/wr/pty")), "terminal lists").toEqual([])
-  expect(reads.filter((read) => read.includes("/api/claxedo/projects")), "daemon project requests on hosted").toEqual([])
 })
