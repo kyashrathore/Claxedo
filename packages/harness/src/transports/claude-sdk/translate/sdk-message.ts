@@ -1,6 +1,5 @@
 import type { SDKMessage } from "@anthropic-ai/claude-agent-sdk"
-import type { AgentRuntimeEvent, RuntimeNoticeSeverity } from "@claxedo/agent-runtime-contract"
-import { runtimeDiagnostic } from "@claxedo/agent-runtime-contract"
+import { runtimeDiagnostic, type AgentRuntimeEvent, type RuntimeNoticeSeverity } from "@claxedo/agent-runtime-contract"
 import type { ClaudeTranslatorMemory } from "./translator-memory"
 
 export type ClaudeFrameEvent = { source: string; method?: string; payload: unknown }

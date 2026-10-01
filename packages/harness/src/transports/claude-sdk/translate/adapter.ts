@@ -1,5 +1,4 @@
-import { asText as text } from "@claxedo/agent-runtime-contract"
-import type { AgentRuntimeEvent } from "@claxedo/agent-runtime-contract"
+import { asText as text, type AgentRuntimeEvent } from "@claxedo/agent-runtime-contract"
 import type { SDKMessage } from "@anthropic-ai/claude-agent-sdk"
 import { asRecordOrEmpty } from "@claxedo/helpers/guards"
 import type { HarnessEventAdapter, HarnessEventAdapterContext } from "../../../translate/adapter"

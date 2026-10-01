@@ -1,7 +1,6 @@
 import { randomUUID } from "node:crypto"
 import { AbortError, type EffortLevel, type SDKMessage, type SDKUserMessage } from "@anthropic-ai/claude-agent-sdk"
-import { isHarnessEffortLevel, type PromptModel, type SteerResult } from "@claxedo/agent-runtime-contract"
-import type { AdapterCancelOutcome } from "@claxedo/agent-runtime-contract"
+import { isHarnessEffortLevel, type PromptModel, type SteerResult, type AdapterCancelOutcome } from "@claxedo/agent-runtime-contract"
 import { errorMessage } from "@claxedo/helpers"
 import type { BackgroundTaskRef, BackgroundTaskStopResult, Deadline, HarnessServices, HarnessSession, HarnessVersionGate, RoutedEvent, SessionBroker,
   StartInput, TurnBroker, TurnInput, TurnRef } from "../../contract"

@@ -1,6 +1,5 @@
 import type { SDKActiveGoalMessage, SessionStore, SessionStoreEntry } from "@anthropic-ai/claude-agent-sdk"
-import type { RuntimeGoalSnapshot } from "@claxedo/agent-runtime-contract"
-import { asRecord } from "@claxedo/agent-runtime-contract"
+import { asRecord, type RuntimeGoalSnapshot } from "@claxedo/agent-runtime-contract"
 import { goalSnapshotFromRecord, type SessionBroker } from "../../contract"
 import { TransportError } from "../../contract/errors"
 import { claudeTranscriptTitle } from "./translate/transcript-title"

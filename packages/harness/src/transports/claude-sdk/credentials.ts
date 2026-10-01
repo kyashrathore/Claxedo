@@ -1,8 +1,7 @@
 import { HARNESS_TABLE, type ProviderBinding } from "@claxedo/agent-runtime-contract"
-import type { ResolvedCredentials } from "../../contract"
+import { selectedProviderProjection, type ResolvedCredentials } from "../../contract"
 import { TransportError } from "../../contract/errors"
 import { stringRecord } from "@claxedo/helpers"
-import { selectedProviderProjection } from "../../contract"
 
 export function claudeBinding(credentials: ResolvedCredentials, now = Date.now()): ProviderBinding | undefined {
   const projection = selectedProviderProjection(credentials, HARNESS_TABLE.claude.providerIds)
