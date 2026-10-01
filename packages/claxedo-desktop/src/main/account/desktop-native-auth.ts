@@ -86,13 +86,22 @@ export async function revocationRejectedTheToken(response: Response) {
   )
 }
 
+/**
+ * Node's fetch rejects every network failure as `TypeError("fetch failed")`
+ * and names the socket's failure only on `cause.code`: a system errno, or
+ * undici's own code when the peer closed the socket or the connect timed out.
+ */
+const CONNECTION_FAILURE_CODES = new Set([
+  "ECONNRESET", "ECONNREFUSED", "EPIPE", "ETIMEDOUT", "EAI_AGAIN", "UND_ERR_SOCKET", "UND_ERR_CONNECT_TIMEOUT",
+])
+
 /** A failure before any HTTP response: the socket, not the server, said no. */
 function isConnectionLevelFailure(error: unknown): boolean {
   if (!(error instanceof Error)) return false
   if (error.name === "AbortError" || error.name === "TimeoutError") return false
   const cause = (error as { cause?: unknown }).cause
   const code = cause && typeof cause === "object" && "code" in cause ? String((cause as { code: unknown }).code) : ""
-  return new Set(["ECONNRESET", "ECONNREFUSED", "EPIPE", "ETIMEDOUT", "EAI_AGAIN"]).has(code)
+  return CONNECTION_FAILURE_CODES.has(code)
 }
 
 export function createDesktopNativeAuth(input: {
