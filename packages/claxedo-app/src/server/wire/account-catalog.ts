@@ -49,7 +49,7 @@ function placementRecordFromRow(row: Row, workspace: string, project: string): P
     ...(host ? { machineId: machineId(host) } : {}),
     ...(gitRemote ? { gitRemote } : {}),
   }
-  return { placement, route: { directory: `workspace:${workspace}`, workspaceId: workspace, remote: true } }
+  return { placement, route: { kind: placement.kind, directory: `workspace:${workspace}`, workspaceId: workspace, remote: true } }
 }
 
 function projectFromRows(id: string, rows: readonly Row[], placements: readonly PlacementRecord[]): Project {

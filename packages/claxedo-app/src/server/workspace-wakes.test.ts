@@ -21,7 +21,7 @@ function fixture(running: { value: boolean }) {
     ws_folder: { id: folder, projectId: "proj" as Placement["projectId"], kind: "folder", label: "repo", reachable: false },
   }
   const transport = {
-    startRuntime: (_workspaceId: string, options?: StartOptions) => {
+    startRuntime: (_route: RuntimeRoute, options?: StartOptions) => {
       options?.onProgress?.({ kind: "provisioning", bootMode: "resume" })
       return new Promise<void>((resolve, reject) => starts.push({ resolve, reject }))
     },
@@ -29,7 +29,7 @@ function fixture(running: { value: boolean }) {
   const workspaces = {
     load: async () => ({ declaration: { hostAggregate: false, issuesSessions: true, documents: false, connections: false }, placements: [] }),
     byId: (id: string) => ({ ...placements[id]!, reachable: id === "ws_cloud" && running.value }),
-    locate: async (id: string): Promise<RuntimeRoute> => ({ directory: `workspace:${id}`, workspaceId: id, remote: true }),
+    locate: async (id: string): Promise<RuntimeRoute> => ({ kind: placements[id]!.kind, directory: `workspace:${id}`, workspaceId: id, remote: true }),
     refresh: async () => undefined,
   } as Pick<Workspaces, "load" | "byId" | "locate" | "refresh"> as Workspaces
   return { starts, wakes: createRoot(() => createWorkspaceWakes(transport, workspaces)) }

@@ -6,6 +6,7 @@ import {
   makeCloudWorkspace,
   sendPrompt,
   sessionRoute,
+  signInDesktop,
   startCloudWorkspace,
   stopCloudWorkspace,
   storedMessages,
@@ -74,6 +75,32 @@ test("24 sending to a gone sandbox wakes it, shows the dock waking up, then send
   await expect(page.getByText(WAKING)).toHaveCount(0)
   expect(wakes.filter((request) => request.startsWith("POST /api/workspace/"))).toHaveLength(1)
   await expect.poll(async () => (await storedMessages(signedCloud, workspace, sessionId)).length).toBe(4)
+})
+
+test("24 signed desktop renders stopped cloud history, then a send wakes it through the account and streams the reply", { tag: "@desktop" }, async ({ signedCloud, signedDesktop, page }) => {
+  test.setTimeout(150_000)
+  const { workspace, sessionId } = await asleepWithHistory(signedCloud)
+  const window = signedDesktop.window
+  const daemonRequests: string[] = []
+  window.on("request", (request) => {
+    const url = new URL(request.url())
+    if (url.origin !== signedDesktop.url) return
+    if (url.pathname === `/api/workspace/${workspace.id}/connection` || url.pathname.startsWith(`/workspaces/${workspace.id}/`)) daemonRequests.push(`${request.method()} ${url.pathname}`)
+  })
+  await signInDesktop(signedCloud, signedDesktop, page)
+  await window.getByRole("navigation", { name: UI.rail }).getByRole("button", { name: "Cloud turn", exact: true }).click()
+  await expect(window.getByText("Stored in the cloud")).toBeVisible()
+  await expect(window.getByText(ASLEEP)).toBeVisible()
+  const stopped = await signedCloud.owner.transport({ method: "GET", url: `${signedCloud.stack.url}/api/workspace/${workspace.id}/connection` })
+  expect(stopped.status).toBe(200)
+  expect(JSON.parse(stopped.body)).toMatchObject({ status: "stopped" })
+  await signedCloud.stack.acp.write("desktop-awake", { steps: [{ kind: "text", text: "Awake on desktop" }] })
+  await sendPrompt(window, `Are you there? ${acpScriptToken("desktop-awake")}`, { waitForSend: false })
+  await expect(window.getByText(WAKING)).toBeVisible()
+  await expect(window.getByText("Awake on desktop")).toBeVisible({ timeout: 60_000 })
+  await expect(window.getByText(ASLEEP)).toHaveCount(0)
+  await expect.poll(async () => (await storedMessages(signedCloud, workspace, sessionId)).length).toBe(4)
+  expect(daemonRequests).toEqual([])
 })
 
 test("24 a live sandbox streams a turn as it runs", async ({ signedCloud, page }) => {

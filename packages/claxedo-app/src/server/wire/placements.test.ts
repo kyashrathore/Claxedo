@@ -26,8 +26,8 @@ test("placements: a hosted central's signed bootstrap places each cloud workspac
 
   expect(catalog.declaration).toEqual({ hostAggregate: false, issuesSessions: true, documents: false, connections: true })
   expect(catalog.placements.map(({ placement, route }) => ({ id: placement.id, kind: placement.kind, reachable: placement.reachable, route }))).toEqual([
-    { id: placementId("ws_running"), kind: "cloud", reachable: true, route: { directory: "workspace:ws_running", workspaceId: "ws_running", remote: true } },
-    { id: placementId("ws_stopped"), kind: "cloud", reachable: false, route: { directory: "workspace:ws_stopped", workspaceId: "ws_stopped", remote: true } },
+    { id: placementId("ws_running"), kind: "cloud", reachable: true, route: { kind: "cloud", directory: "workspace:ws_running", workspaceId: "ws_running", remote: true } },
+    { id: placementId("ws_stopped"), kind: "cloud", reachable: false, route: { kind: "cloud", directory: "workspace:ws_stopped", workspaceId: "ws_stopped", remote: true } },
   ])
 })
 

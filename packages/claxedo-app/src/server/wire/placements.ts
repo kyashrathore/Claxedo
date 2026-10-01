@@ -68,7 +68,7 @@ function placementRecord(project: Record<string, unknown>, key: string, row: Rec
       ...(machine ? { machineId: machine } : {}),
       ...(gitRemote ? { gitRemote } : {}),
     },
-    route: { directory: remote ? `workspace:${id}` : directory, workspaceId: id, remote },
+    route: { kind: placementKind(row, root), directory: remote ? `workspace:${id}` : directory, workspaceId: id, remote },
   }
 }
 

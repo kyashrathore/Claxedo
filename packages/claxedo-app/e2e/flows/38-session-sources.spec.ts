@@ -1,13 +1,17 @@
 import type { Page } from "@playwright/test"
 import {
   apiRequests,
+  acpScriptToken,
   cloudTurn,
   expect,
   makeCloudWorkspace,
   SCRIPTED_ACP_HARNESS,
+  sendPrompt,
   sessionRoute,
+  signInDesktop,
   startCloudWorkspace,
   stopCloudWorkspace,
+  storedMessages,
   test,
   UI,
   type ClaxedoApi,
@@ -49,6 +53,28 @@ async function createAll(api: ClaxedoApi, directory: string, titles: readonly st
 }
 
 test.skip(({ isMobile }) => isMobile, "flow 38 runs at desktop width; flow 33 owns the phone rail")
+
+test("38 signed desktop opens a live account cloud session and streams its next turn", { tag: "@desktop" }, async ({ signedCloud, signedDesktop, page }) => {
+  test.setTimeout(150_000)
+  const workspace = await makeCloudWorkspace(signedCloud, "Desktop live")
+  await startCloudWorkspace(signedCloud, workspace)
+  const sessionId = await cloudTurn(signedCloud, workspace, { title: "Desktop live turn", script: "desktop-first", reply: "First desktop answer" })
+  const window = signedDesktop.window
+  const daemonRequests: string[] = []
+  window.on("request", (request) => {
+    const url = new URL(request.url())
+    if (url.origin === signedDesktop.url && (url.pathname.startsWith(`/workspaces/${workspace.id}/`) || url.pathname === `/api/workspace/${workspace.id}/connection`)) daemonRequests.push(`${request.method()} ${url.pathname}`)
+  })
+  await signInDesktop(signedCloud, signedDesktop, page)
+  await window.getByRole("navigation", { name: UI.rail }).getByRole("button", { name: "Desktop live turn", exact: true }).click()
+  await expect(window.getByText("First desktop answer")).toBeVisible()
+  await expect(window.getByText("Session unavailable")).toHaveCount(0)
+  await signedCloud.stack.acp.write("desktop-streamed", { steps: [{ kind: "text", text: "Streamed on desktop" }] })
+  await sendPrompt(window, `Go on. ${acpScriptToken("desktop-streamed")}`)
+  await expect(window.getByText("Streamed on desktop")).toBeVisible()
+  await expect.poll(async () => (await storedMessages(signedCloud, workspace, sessionId)).length).toBe(4)
+  expect(daemonRequests).toEqual([])
+})
 
 test("38 a project's rail is one order across its folder and its worktree, a true prefix at every Show more", async ({ stack, api, app }) => {
   const workspace = await stack.daemon.makeWorkspace("sources", "Sources")

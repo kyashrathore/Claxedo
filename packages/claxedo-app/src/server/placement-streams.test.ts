@@ -3,6 +3,7 @@ import { expect, test } from "bun:test"
 import { QueryClient } from "@tanstack/solid-query"
 import { placementId, projectId, sessionId } from "./ids"
 import { createPlacementStreams } from "./placement-streams"
+import { queryKeys } from "./query-keys"
 import type { Transport } from "./transport"
 import type { Workspaces } from "./workspaces"
 
@@ -17,7 +18,7 @@ function openBody(): Response {
 const placement = placementId("ws_shared")
 const record = {
   placement: { id: placement, projectId: projectId("prj"), kind: "worktree", label: "Shared", reachable: true },
-  route: { directory: "workspace:ws_shared", workspaceId: "ws_shared", remote: true },
+  route: { kind: "worktree", directory: "workspace:ws_shared", workspaceId: "ws_shared", remote: true },
 }
 const workspaces = { catalog: () => ({ projects: [], placements: [record] }) } as unknown as Workspaces
 
@@ -25,7 +26,7 @@ function ref(id: string) {
   return { projectId: projectId("prj"), placementId: placement, sessionId: sessionId(id) }
 }
 
-test("a share grantee refused the workspace stream reads each attached session's own stream, and a refused session stream stays closed", async () => {
+test("remote streams request only attached session scopes, and a revoked session stream stays closed", async () => {
   const paths: string[] = []
   const transport = {
     serverUrl: "http://127.0.0.1:1",
@@ -45,8 +46,38 @@ test("a share grantee refused the workspace stream reads each attached session's
   await Bun.sleep(1_200)
   await settle()
 
-  expect(paths).toEqual(["/api/wr/events", "/api/wr/events?sessionID=ses_shared", "/api/wr/events?sessionID=ses_revoked"])
+  expect(paths).toEqual(["/api/wr/events?sessionID=ses_shared", "/api/wr/events?sessionID=ses_revoked"])
   detachShared()
   detachRevoked()
   streams.close()
+})
+
+test("an account catalog wake opens the attached stream and stopping closes it without waking", async () => {
+  let reachable = false
+  let signal: AbortSignal | undefined
+  const paths: string[] = []
+  const serverUrl = "http://127.0.0.1:1"
+  const queryClient = new QueryClient()
+  const workspaces = { catalog: () => ({ placements: [{ ...record, placement: { ...record.placement, kind: "cloud", reachable } }] }) } as unknown as Workspaces
+  const transport = { serverUrl, runtime: async (_route: unknown, path: string, init: RequestInit) => {
+    paths.push(path)
+    signal = init.signal ?? undefined
+    return openBody()
+  } } as unknown as Transport
+  const streams = createPlacementStreams({ transport, workspaces, queryClient, onFrame: () => undefined, onGap: () => undefined })
+  const detach = streams.attach(ref("ses_shared"))
+  await settle()
+  expect(paths).toEqual([])
+  reachable = true
+  queryClient.setQueryData(queryKeys.accountCatalog(serverUrl), { revision: 1 })
+  await settle()
+  expect(paths).toEqual(["/api/wr/events?sessionID=ses_shared"])
+  reachable = false
+  queryClient.setQueryData(queryKeys.accountCatalog(serverUrl), { revision: 2 })
+  await settle()
+  expect(signal?.aborted).toBe(true)
+  expect(paths).toHaveLength(1)
+  detach()
+  streams.close()
+  queryClient.clear()
 })

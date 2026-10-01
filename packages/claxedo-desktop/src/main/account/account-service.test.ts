@@ -671,6 +671,24 @@ describe("bound desktop account lifecycle", () => {
     expect(h.store.held()).toBeDefined()
   })
 
+  test("reads session connections at the bound account origin with main's credential", async () => {
+    const calls: { url: string; init: RequestInit }[] = []
+    const h = harness({
+      store: memoryStore(CREDENTIAL),
+      fetch: async (url, init) => {
+        calls.push({ url: String(url), init })
+        return Response.json({ status: "stopped", workspaceId: "ws_1" })
+      },
+    })
+    await h.service.restore()
+    await expect(h.service.run("workspace.connection.read", { id: "ws_1", sessionId: "ses/a", url: "https://evil.test" })).resolves.toEqual({ status: "stopped", workspaceId: "ws_1" })
+    expect(calls).toHaveLength(1)
+    expect(calls[0]?.url).toBe("https://core.example/api/workspace/ws_1/connection?sessionId=ses%2Fa")
+    expect(calls[0]?.init.method).toBe("GET")
+    expect(new Headers(calls[0]?.init.headers).get("authorization")).toBe("Bearer at_1")
+    expect(calls[0]?.init.body).toBeUndefined()
+  })
+
   test("preserves a body-controlled cloud connection retry across the account boundary", async () => {
     const h = harness({
       store: memoryStore(CREDENTIAL),

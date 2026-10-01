@@ -10,7 +10,7 @@ const placement = placementId("plc_app")
 const workspaces = {
   locate: async (id: string) => {
     if (id !== placement) throw new Error(`unexpected placement ${id}`)
-    return { directory: "/work/app", workspaceId: "ws_app", remote: false }
+    return { kind: "folder", directory: "/work/app", workspaceId: "ws_app", remote: false }
   },
 } as unknown as Workspaces
 

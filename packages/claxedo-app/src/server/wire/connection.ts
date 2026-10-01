@@ -14,6 +14,11 @@ export type ConnectionAnswer =
   | { readonly kind: "provisioning"; readonly retryAfterMs?: number; readonly bootMode?: WorkspaceBootMode }
   | { readonly kind: "stopped" }
 
+export type WorkspaceConnections = {
+  readonly read: (workspaceId: string, sessionId?: string) => Promise<ConnectionAnswer>
+  readonly start: (workspaceId: string) => Promise<ConnectionAnswer>
+}
+
 export const WORKSPACE_STOPPED = "workspace_stopped"
 export const CLOUD_RUNTIME_UNAVAILABLE = "cloud_runtime_unavailable"
 
@@ -21,8 +26,8 @@ export function workspaceStopped(workspaceId: string): ServerError {
   return new ServerError({ class: "conflict", code: WORKSPACE_STOPPED, message: `The cloud workspace ${workspaceId} is not running` })
 }
 
-export function isWorkspaceStopped(error: unknown): boolean {
-  return error instanceof ServerError && error.code === WORKSPACE_STOPPED
+export function isRuntimeUnavailable(error: unknown): boolean {
+  return error instanceof ServerError && (error.code === WORKSPACE_STOPPED || error.code === "workspace_host_offline")
 }
 
 function bootModeOf(value: unknown): WorkspaceBootMode | undefined {

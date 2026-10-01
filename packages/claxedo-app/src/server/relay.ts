@@ -1,6 +1,5 @@
-import { startWorkspace } from "./workspace-start"
-import { responseError, toAppError } from "./errors"
-import { connectionAnswerFromWire, workspaceStopped, type RelayConnection } from "./wire/connection"
+import { toAppError } from "./errors"
+import { workspaceStopped, type RelayConnection, type WorkspaceConnections } from "./wire/connection"
 
 export type Relay = {
   readonly fetch: (workspaceId: string, path: string, init?: RequestInit) => Promise<Response>
@@ -8,21 +7,12 @@ export type Relay = {
   readonly adopt: (link: RelayConnection) => void
 }
 
-const REFRESH_WINDOW_MS = 60_000
 const RUNTIME_ACCESS_TOKEN_PROTOCOL = "claxedo-rat."
+const MAX_CONNECTIONS = 128
+const REFRESH_WINDOW_MS = 60_000
 
 function workspaceUrl(link: RelayConnection, path: string) {
   return `${link.relayUrl}/workspaces/${encodeURIComponent(link.workspaceId)}${path}`
-}
-
-type Request = (path: string, init?: RequestInit) => Promise<Response>
-
-async function readRelayConnection(request: Request, workspaceId: string): Promise<RelayConnection> {
-  const response = await request(`/api/workspace/${encodeURIComponent(workspaceId)}/connection`)
-  if (!response.ok) throw await responseError(response, "Workspace connection")
-  const answer = connectionAnswerFromWire(await response.json(), workspaceId)
-  if (answer.kind !== "ready") throw workspaceStopped(workspaceId)
-  return answer.link
 }
 
 async function sendThroughRelay(link: RelayConnection, path: string, init?: RequestInit) {
@@ -36,33 +26,62 @@ async function sendThroughRelay(link: RelayConnection, path: string, init?: Requ
   }
 }
 
-export function createRelay(request: Request): Relay {
+function sessionScope(path: string): string | undefined {
+  const url = new URL(path, "http://route.local")
+  const session = url.pathname.match(/^\/session\/([^/]+)/)?.[1]
+  return session ? decodeURIComponent(session) : url.searchParams.get("sessionID") ?? url.searchParams.get("sessionId") ?? undefined
+}
+
+async function readConnection(read: WorkspaceConnections["read"], workspaceId: string, sessionId?: string): Promise<RelayConnection> {
+  const answer = await read(workspaceId, sessionId)
+  if (answer.kind !== "ready") throw workspaceStopped(workspaceId)
+  return answer.link
+}
+
+function createRelayConnections(read: WorkspaceConnections["read"]) {
   const connections = new Map<string, Promise<RelayConnection>>()
-  const hold = async (workspaceId: string, pending: Promise<RelayConnection>) => {
-    connections.set(workspaceId, pending)
+  const put = (key: string, pending: Promise<RelayConnection>) => {
+    connections.delete(key)
+    connections.set(key, pending)
+    if (connections.size > MAX_CONNECTIONS) connections.delete(connections.keys().next().value!)
+    return pending
+  }
+  const hold = async (key: string, pending: Promise<RelayConnection>) => {
+    put(key, pending)
     try {
       return await pending
     } catch (error) {
-      if (connections.get(workspaceId) === pending) connections.delete(workspaceId)
+      if (connections.get(key) === pending) connections.delete(key)
       throw error
     }
   }
-  const connection = (workspaceId: string, force = false) => (!force && connections.get(workspaceId)) || hold(workspaceId, readRelayConnection(request, workspaceId))
-  const fresh = async (workspaceId: string) => {
-    const current = await connection(workspaceId)
-    return current.tokenExpiresAt - Date.now() > REFRESH_WINDOW_MS ? current : connection(workspaceId, true)
+  const connection = (workspaceId: string, sessionId: string | undefined, force = false) => {
+    const key = JSON.stringify([workspaceId, sessionId])
+    const cached = !force && connections.get(key)
+    return cached ? put(key, cached) : hold(key, readConnection(read, workspaceId, sessionId))
   }
   return {
+    renew: (workspaceId: string, sessionId?: string) => connection(workspaceId, sessionId, true),
+    fresh: async (workspaceId: string, sessionId?: string) => {
+      const current = await connection(workspaceId, sessionId)
+      return current.tokenExpiresAt - Date.now() > REFRESH_WINDOW_MS ? current : connection(workspaceId, sessionId, true)
+    },
+    adopt: (link: RelayConnection) => { put(JSON.stringify([link.workspaceId, undefined]), Promise.resolve(link)) },
+  }
+}
+
+export function createRelay(read: WorkspaceConnections["read"]): Relay {
+  const connections = createRelayConnections(read)
+  return {
     fetch: async (workspaceId, path, init) => {
-      const response = await sendThroughRelay(await fresh(workspaceId), path, init)
-      return response.status === 401 ? sendThroughRelay(await hold(workspaceId, startWorkspace(request, workspaceId)), path, init) : response
+      const sessionId = sessionScope(path)
+      const response = await sendThroughRelay(await connections.fresh(workspaceId, sessionId), path, init)
+      return response.status === 401 ? sendThroughRelay(await connections.renew(workspaceId, sessionId), path, init) : response
     },
     webSocket: async (workspaceId, path) => {
-      const link = await fresh(workspaceId)
+      const link = await connections.fresh(workspaceId, sessionScope(path))
       return new WebSocket(workspaceUrl(link, path).replace(/^http/, "ws"), [`${RUNTIME_ACCESS_TOKEN_PROTOCOL}${link.runtimeAccessToken}`])
     },
-    adopt: (link) => {
-      connections.set(link.workspaceId, Promise.resolve(link))
-    },
+    adopt: connections.adopt,
   }
 }
