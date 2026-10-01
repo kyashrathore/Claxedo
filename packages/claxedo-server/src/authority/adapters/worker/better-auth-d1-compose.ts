@@ -236,6 +236,7 @@ export function composeBetterAuthD1UserDeployedControlPlane(
   const delivery = input.sandbox && plane.orgCredentials && plane.services.sandbox.sandboxManager
     ? createHostedRuntimeDelivery({
         authority,
+        database: input.controlPlaneDatabase,
         services: plane.services,
         sandboxManager: plane.services.sandbox.sandboxManager,
         driver: input.sandbox.driver,

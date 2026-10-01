@@ -63,8 +63,10 @@ export const serverWorkerd: Policy = {
   // with its index and managed store (`documents/backends/hosted/`), and the
   // runtime broker that hydrates a page into a session
   // (`documents/backends/hosted/runtime-broker.ts` with its relay client
-  // `documents/relay-http.ts`).
-  ceilings: { modules: 116, packages: 19 },
+  // `documents/relay-http.ts`). The hosted runtime delivery asks a workspace's
+  // recorded backing before it provisions a sandbox for it
+  // (`workspace/cloud-root-backing.ts`), so a machine-placed workspace gets none.
+  ceilings: { modules: 117, packages: 19 },
 
   emitted: {
     file: "packages/claxedo-server/.artifacts/u8-package-split/manifests/server-workerd.json",

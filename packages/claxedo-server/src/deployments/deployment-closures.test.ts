@@ -37,8 +37,10 @@ const ENTRIES = [
   // (`authority/adapters/d1/document-authority.ts`), the R2 documents backend
   // and its index and managed store (`documents/backends/hosted/`), and the
   // runtime broker that hydrates a page into a session with its relay client
-  // (`documents/relay-http.ts`).
-  { name: "worker", entry: BETTER_AUTH_D1_ENTRY, modules: 116, packages: 19 },
+  // (`documents/relay-http.ts`). The hosted runtime delivery reads a
+  // workspace's recorded backing (`workspace/cloud-root-backing.ts`) before it
+  // provisions a sandbox, which the Agent Plugins entries already carried.
+  { name: "worker", entry: BETTER_AUTH_D1_ENTRY, modules: 117, packages: 19 },
   // Both Agent Plugins entries carry the plugin-backend platform
   // (`src/plugin-backends/`): seven modules, `@claxedo/plugin-api` for the
   // manifest, and `cloudflare:workers` for the supervisor and its entrypoints.

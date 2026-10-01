@@ -1,5 +1,7 @@
-import { expect, test, vi } from "vitest"
+import { afterEach, expect, test, vi } from "vitest"
 import type { UserAgentConfig } from "@claxedo/server-core/agent-config/config"
+import type { ControlPlaneDatabase } from "../test-support/control-plane-migrations"
+import { workspaceBackingDatabase } from "../test-support/workspace-backing-database"
 import { createHostedRuntimeDelivery } from "./hosted-runtime-delivery"
 
 const configApplied = vi.hoisted(() => vi.fn(async (_snapshot: import("@claxedo/workspace-runtime/config").RuntimeSnapshot) => {}))
@@ -8,9 +10,15 @@ vi.mock("@claxedo/server-core/platform/auth/runtime-access-token", () => ({ mint
 
 type Input = Parameters<typeof createHostedRuntimeDelivery>[0]
 
+const active: ControlPlaneDatabase[] = []
+afterEach(async () => { await Promise.all(active.splice(0).map((instance) => instance.dispose())) })
+
 async function firstPush(config: UserAgentConfig) {
+  const instance = await workspaceBackingDatabase([{ id: "ws", backing: "cloud-vm" }])
+  active.push(instance)
   const delivery = createHostedRuntimeDelivery({
     authority: { resolveWorkspaceOwner: async () => ({ userId: "owner", orgId: "org" }) } as unknown as Input["authority"],
+    database: instance.database,
     services: { sandbox: { sandboxManager: { target: async () => ({ status: "ready", hostId: "host", url: "https://runtime.test" }) } } } as unknown as Input["services"],
     sandboxManager: {} as Input["sandboxManager"],
     driver: { metadata: { secretBrokering: "native" } } as Input["driver"],

@@ -1,4 +1,4 @@
-import { describe, expect, test, vi } from "vitest"
+import { afterEach, describe, expect, test, vi } from "vitest"
 import { createSandboxManager, type SandboxDriver, type SandboxDriverEnsureInput } from "@claxedo/sandbox-manager"
 import { createMemoryLeaseStore } from "@claxedo/sandbox-manager/stores/memory"
 import type { ControlPlaneTokenVerifier } from "@claxedo/server-core/platform/auth/auth"
@@ -7,10 +7,15 @@ import type { ControlPlaneServices } from "../authority/services"
 import { HostedWorkspaceRoutes } from "../routes/hosted/workspace"
 import { createHostedRuntimeDelivery } from "./hosted-runtime-delivery"
 import { hostedSandboxInput } from "./hosted-sandbox-input"
+import type { ControlPlaneDatabase } from "../test-support/control-plane-migrations"
+import { workspaceBackingDatabase } from "../test-support/workspace-backing-database"
 
 const CONTROL_PLANE_ORIGIN = "https://cp.claxedo.test"
 const REQUEST_ORIGIN = "https://edge.claxedo.test"
 const RELAY_URL = "https://relay.claxedo.test"
+
+const active: ControlPlaneDatabase[] = []
+afterEach(async () => { await Promise.all(active.splice(0).map((instance) => instance.dispose())) })
 
 const verifier: ControlPlaneTokenVerifier = async (token, config) => ({
   mode: "signed" as const,
@@ -51,7 +56,9 @@ function recreatingDriver() {
   return { driver, created, lose: () => hosts.clear() }
 }
 
-function composition() {
+async function composition() {
+  const instance = await workspaceBackingDatabase([])
+  active.push(instance)
   const { driver, created, lose } = recreatingDriver()
   const sandboxManager = createSandboxManager({ leaseStore: createMemoryLeaseStore(), driver })
   const rows = new Map<string, Record<string, unknown>>()
@@ -78,6 +85,9 @@ function composition() {
         ...(args.gitBranch ? { git_branch: args.gitBranch } : {}),
         ...(args.remoteDirectory ? { remote_directory: args.remoteDirectory } : {}),
       })
+      await instance.database.prepare(`insert into workspaces
+        (workspace_id, org_id, project_id, owner_user_id, backing, display_name, created_at, updated_at, deleted_at)
+        values (?, 'org', 'project', 'owner', 'cloud-vm', ?, 1, 1, null)`).bind(args.workspaceId, args.displayName).run()
       return { workspace_id: args.workspaceId }
     },
     openWorkspace: async (_auth: unknown, args: { workspaceId: string }) => ({ allowed: true, role: "owner", workspace: rows.get(args.workspaceId) }),
@@ -93,6 +103,7 @@ function composition() {
   const egress = { relayUrl: RELAY_URL, sandboxControlPlaneOrigin: CONTROL_PLANE_ORIGIN }
   const delivery = createHostedRuntimeDelivery({
     authority: authority as unknown as WorkspaceAuthority,
+    database: instance.database,
     services,
     sandboxManager,
     driver,
@@ -120,7 +131,7 @@ function composition() {
 
 describe("refreshing a running hosted sandbox", () => {
   test("a refresh that re-creates the host hands the driver everything the create did", async () => {
-    const { app, delivery, created, lose } = composition()
+    const { app, delivery, created, lose } = await composition()
     const res = await app.fetch(new Request(`${REQUEST_ORIGIN}/create`, {
       method: "POST",
       headers: { authorization: "Bearer owner", "content-type": "application/json" },

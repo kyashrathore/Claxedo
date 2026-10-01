@@ -1,6 +1,6 @@
 import { claxedoMcpToolGroupInventory } from "@claxedo/mcp"
 import type { D1Database } from "@cloudflare/workers-types"
-import { cloudRootBacking, isCloudRoot } from "./cloud-root-backing"
+import { cloudRootBacking, isCloudRoot } from "../workspace/cloud-root-backing"
 import type { Hono } from "hono"
 import { brokeredPlaceholderEnv } from "@claxedo/sandbox-manager"
 import { sandboxDriverCatalog, sandboxDriverId } from "@claxedo/sandbox-manager/driver-catalog"

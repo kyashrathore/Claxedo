@@ -3,7 +3,7 @@ import { vercelBrokeredNetworkPolicy } from "@claxedo/sandbox-manager/drivers/ve
 import { createHostedRuntimeDelivery } from "./hosted-runtime-delivery"
 import { hostedOrgCredentials, HOSTED_CREDENTIALS_FLAG } from "../credentials/worker"
 import { CREDENTIALS_KEK_ENV } from "@claxedo/server-core/credentials/envelope"
-import { controlPlaneMigrations, miniflareControlPlaneDatabase } from "../test-support/control-plane-migrations"
+import { workspaceBackingDatabase } from "../test-support/workspace-backing-database"
 
 const configApplied = vi.hoisted(() => vi.fn(async (_snapshot: import("@claxedo/workspace-runtime/config").RuntimeSnapshot) => {}))
 vi.mock("@claxedo/workspace-runtime/client", () => ({ createWorkspaceRuntimeClient: vi.fn(() => ({ applyConfig: configApplied })) }))
@@ -12,7 +12,7 @@ vi.mock("@claxedo/server-core/platform/auth/runtime-access-token", () => ({ mint
 const OWNERS: Record<string, string> = { "ws-a": "A", "ws-b": "B" }
 
 test("a workspace's sandbox is delivered its owner's account alone, and another person's placeholder buys no injection there", async () => {
-  const database = await miniflareControlPlaneDatabase(controlPlaneMigrations())
+  const database = await workspaceBackingDatabase([{ id: "ws-a", backing: "cloud-vm" }, { id: "ws-b", backing: "cloud-vm" }])
   try {
     const credentials = hostedOrgCredentials("org", { database: database.database, env: {
       [HOSTED_CREDENTIALS_FLAG]: "1", [CREDENTIALS_KEK_ENV]: Buffer.alloc(32, 7).toString("base64"),
@@ -23,6 +23,7 @@ test("a workspace's sandbox is delivered its owner's account alone, and another 
     type Input = Parameters<typeof createHostedRuntimeDelivery>[0]
     const delivery = createHostedRuntimeDelivery({
       authority: { resolveWorkspaceOwner: async (workspaceId: string) => ({ userId: OWNERS[workspaceId], orgId: "org" }) } as unknown as Input["authority"],
+      database: database.database,
       services: { sandbox: { sandboxManager: { target: async () => ({ status: "ready", hostId: "host", url: "https://runtime.test" }) } } } as unknown as Input["services"], sandboxManager: {} as Input["sandboxManager"],
       driver: { metadata: { secretBrokering: "native" } } as Input["driver"],
       sandboxInput: async () => { throw new Error("this test provisions no sandbox") },
