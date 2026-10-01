@@ -107,6 +107,7 @@ export function deltaText(
     return events
   }
   ctx.accumulatedThinkingText += delta
+  ctx.splitText = true
   const open = ctx.openReasoning?.partId === id ? ctx.openReasoning : undefined
   ctx.openReasoning = open
     ? { ...open, text: open.text + delta }
@@ -126,6 +127,7 @@ export const REASONING_ENDS_ON = new Set<AgentRuntimeEvent["type"]>([
   "permission-request",
   "question",
   "step-start",
+  "response-start",
   "finish",
   "cancelled",
   "error",

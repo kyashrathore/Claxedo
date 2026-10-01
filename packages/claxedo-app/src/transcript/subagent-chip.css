@@ -97,3 +97,37 @@ span[data-component="subagent-chip"] {
   text-decoration: underline;
   text-underline-offset: 2px;
 }
+
+[data-slot="subagent-stop"] {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-family-sans);
+  font-size: var(--transcript-meta-size, var(--font-size-small));
+
+  [data-action="subagent-stop"] {
+    height: 24px;
+    padding: 0 8px;
+    border-radius: var(--radius-pill);
+    border: 0.5px solid var(--border-weak-base);
+    background: none;
+    cursor: pointer;
+    font: inherit;
+    color: var(--text-weak);
+
+    &:hover,
+    &:focus-visible {
+      outline: none;
+      color: var(--text-strong);
+      border-color: var(--border-base, var(--border-weak-base));
+    }
+  }
+
+  [data-slot="subagent-stop-progress"] {
+    color: var(--text-weaker);
+  }
+
+  [data-slot="subagent-stop-refused"] {
+    color: var(--text-weak);
+  }
+}

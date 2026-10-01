@@ -8,12 +8,16 @@ import { TransportError } from "../../contract/errors"
 
 export type PiMessage = Record<string, unknown> & { type: string }
 
+const STDERR_TAIL = 2_000
+const ANSI = /\x1b\[[0-9;]*m/g
+
 export class PiRpc {
   private readonly channel: NdjsonOwnedProcess
   private readonly pending: PendingRpcRequests<string, string>
   private readonly listeners = new Set<(message: PiMessage) => void>()
   private exitReported = false
   private retired = false
+  private stderr = ""
 
   constructor(readonly process: OwnedProcess, clock: Clock,
     private readonly diagnostic: (event: ReturnType<typeof unrecognizedEvent>) => void) {
@@ -24,7 +28,8 @@ export class PiRpc {
         if (cause && typeof cause === "object" && "code" in cause) {
           const code = cause.code
           const signal = "signal" in cause ? cause.signal : undefined
-          return new TransportError("pi", "process", `Pi process exited (${String(signal ?? code)})`)
+          const reason = this.stderr.trim()
+          return new TransportError("pi", "process", `Pi process exited (${String(signal ?? code)})${reason ? `: ${reason}` : ""}`)
         }
         return new TransportError("pi", "process", "Pi exit observation failed", { cause })
       }
@@ -32,7 +37,8 @@ export class PiRpc {
         reason === "frame" ? "Invalid Pi RPC record" : `Pi ${reason} failed`, { cause })
     }, (error) => this.diagnostic(unrecognizedEvent("pi.rpc", "retirement", error)))
     this.channel.onFailure((error) => this.pending.fail(error))
-    process.stderr.resume()
+    process.stderr.setEncoding("utf8")
+    process.stderr.on("data", (chunk: string) => { this.stderr = `${this.stderr}${chunk.replace(ANSI, "")}`.slice(-STDERR_TAIL) })
   }
 
   get alive(): boolean { return this.channel.alive && !this.exitReported }

@@ -83,9 +83,10 @@ export async function piProbeInputs(profile: PiProfile, directory: string): Prom
 }
 
 export function piProjectionArgs(projection: PluginProjection): string[] {
-  if (projection.mcpServers.length) throw new Error("Pi has no MCP intake")
   return projection.pluginRoots.flatMap(({ root }) => ["-e", path.resolve(root)])
 }
+
+export { piMcpServerConfig, type PiMcpServerConfig } from "./mcp"
 
 export async function preparePiProfile(profile: PiProfile, model?: PromptModel): Promise<void> {
   await fs.mkdir(profile.sessionDir, { recursive: true, mode: 0o700 })

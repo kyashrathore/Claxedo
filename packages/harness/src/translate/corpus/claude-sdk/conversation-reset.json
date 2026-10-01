@@ -1,0 +1,113 @@
+{
+  "adapter": "claude-sdk",
+  "initialState": {
+    "blocksByIndex": {},
+    "toolsById": {},
+    "streamedAssistantTextByOwner": {},
+    "streamedThinkingByOwner": {},
+    "tasks": {}
+  },
+  "calls": [
+    {
+      "state": {
+        "blocksByIndex": {},
+        "toolsById": {},
+        "streamedAssistantTextByOwner": {},
+        "streamedThinkingByOwner": {},
+        "tasks": {}
+      },
+      "event": {
+        "source": "claude.sdk",
+        "method": "claude/conversation_reset",
+        "payload": {
+          "type": "conversation_reset",
+          "new_conversation_id": "00000000-0000-4000-8000-000000000002",
+          "trigger": "clear",
+          "user_message_uuid": "00000000-0000-4000-8000-000000000201",
+          "timestamp": "2026-09-30T06:55:12.243Z",
+          "uuid": "00000000-0000-4000-8000-000000000202",
+          "session_id": "00000000-0000-4000-8000-000000000001"
+        }
+      },
+      "context": {
+        "harness": "claude-sdk",
+        "threadId": "thread-1"
+      },
+      "callbacks": [],
+      "output": [
+        {
+          "type": "conversation-reset",
+          "trigger": "clear"
+        }
+      ]
+    },
+    {
+      "state": {
+        "blocksByIndex": {},
+        "toolsById": {},
+        "streamedAssistantTextByOwner": {},
+        "streamedThinkingByOwner": {},
+        "tasks": {}
+      },
+      "event": {
+        "source": "claude.sdk",
+        "method": "claude/system",
+        "payload": {
+          "type": "system",
+          "subtype": "init",
+          "cwd": "/workspace",
+          "session_id": "00000000-0000-4000-8000-000000000002",
+          "tools": [
+            "Bash",
+            "Read"
+          ],
+          "mcp_servers": [],
+          "model": "claude-opus-5-5",
+          "permissionMode": "default",
+          "slash_commands": [
+            "clear",
+            "compact"
+          ],
+          "apiKeySource": "none",
+          "claude_code_version": "2.1.285",
+          "output_style": "default",
+          "agents": [],
+          "skills": [],
+          "plugins": [],
+          "uuid": "00000000-0000-4000-8000-000000000203"
+        }
+      },
+      "context": {
+        "harness": "claude-sdk",
+        "threadId": "thread-1"
+      },
+      "callbacks": [],
+      "output": {
+        "state": {
+          "blocksByIndex": {},
+          "toolsById": {},
+          "streamedAssistantTextByOwner": {},
+          "streamedThinkingByOwner": {},
+          "tasks": {},
+          "cwd": "/workspace",
+          "model": "claude-opus-5-5"
+        },
+        "events": [
+          {
+            "type": "available-commands-update",
+            "commands": [
+              {
+                "name": "clear",
+                "description": "clear"
+              },
+              {
+                "name": "compact",
+                "description": "compact"
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

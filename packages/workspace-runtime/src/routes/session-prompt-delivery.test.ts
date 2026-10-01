@@ -13,7 +13,8 @@ import type { RuntimeStore } from "../store"
 import { openRuntimeStore } from "../store-file"
 import type { QueuedPromptRecord } from "../session/delivery-queue"
 import { FakeTransport } from "../test-support/fake-transport"
-import { LOOPBACK_ORIGIN, createHostFixture, sessionCreate, testLaunch } from "../test-support/host-fixture"
+import { testLaunch } from "../test-support/host-composition"
+import { LOOPBACK_ORIGIN, createHostFixture, sessionCreate } from "../test-support/host-fixture"
 import { sessionIdle } from "../projection/presentation-events"
 
 const roots: string[] = []

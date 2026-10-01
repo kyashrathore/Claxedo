@@ -19,7 +19,7 @@ test("Codex model pages drive the model, effort, and tier options", async () => 
   expect(options[1]?.currentValue).toBe("high")
   expect(options[2]?.selectOptions?.[0]?.id).toBe("priority")
   expect(codexTurnSettings(models, { model: "default", serviceTier: "priority" })).toEqual({
-    model: "gpt-5.5", effort: "high", serviceTier: "priority",
+    model: "gpt-5.5", effort: "high", serviceTier: "priority", summary: "auto",
   })
   expect(codexTurnSettings(models, { model: "gpt-5.4", serviceTier: "priority" }).serviceTier).toBeNull()
   expect(() => codexTurnSettings(models, { model: "gpt-5.5", effort: "xhigh" })).toThrow("does not run gpt-5.5 at effort xhigh")

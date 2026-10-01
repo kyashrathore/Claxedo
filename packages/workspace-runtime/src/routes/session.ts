@@ -15,7 +15,7 @@ import { isAgentRuntimeTurnAdmissionError, type AgentRuntime, type AgentRuntimeR
 import { runRuntimePromptTurn } from "../session/service"
 import type { AgentContentPart, AgentMessage, AgentMessageAuthor, AgentSession, PromptDelivery } from "@claxedo/agent-runtime-contract"
 import type { AgentMessagePage, AgentMessagePageInput, AgentTurnCoveragePage } from "@claxedo/agent-runtime-contract"
-import { workspaceRuntimeBus } from "../bus"
+import { workspaceRuntimeBus, type RuntimeBus } from "../bus"
 import { errorMessage } from "@claxedo/helpers"
 import { rec, str } from "../json-value"
 import { createRuntimeEventHub, type RuntimeEventHub } from "../projection/runtime-event-hub"
@@ -25,7 +25,7 @@ import type { SessionPromptBody } from "../session/service"
 import type { SessionAccessPolicy, SessionTurnOrigin } from "../session-access-policy"
 import type { AgentSessionStarts } from "@claxedo/agent-runtime-contract"
 
-function bridgeLifecycleEvent(event: Parameters<RuntimeEventHub["publishGlobal"]>[0]) {
+function bridgeLifecycleEvent(bus: Pick<RuntimeBus, "publish">, event: Parameters<RuntimeEventHub["publishGlobal"]>[0]) {
   const payload = event.payload as { type?: unknown; properties?: Record<string, unknown> }
   const sessionID = str(payload.properties?.sessionID) ?? str(payload.properties?.sessionId)
   const status = rec(payload.properties?.status)
@@ -39,7 +39,7 @@ function bridgeLifecycleEvent(event: Parameters<RuntimeEventHub["publishGlobal"]
     ? "Error"
     : undefined
   if (!eventType) return
-  workspaceRuntimeBus.publish({
+  bus.publish({
     type: "agent.lifecycle",
     tabId: sessionID ?? event.directory,
     workspaceId: workspaceId(),
@@ -76,6 +76,13 @@ type MessageSnapshot = {
 export type SessionRoutesOptions = {
   sessionStarts?: AgentSessionStarts
   eventHub?: RuntimeEventHub
+  /**
+   * Where queue, lifecycle and session-lifecycle frames are published; the
+   * process-wide runtime bus when unset. A host serving several workspaces in
+   * one isolate hands each its own, or every workspace's stream is offered
+   * every other's frames.
+   */
+  bus?: Pick<RuntimeBus, "publish">
   sessionAccessPolicy?: SessionAccessPolicy
   beforeSessionOperation?: (input: { sessionId: string; operation: string }) => Response | undefined
   /** The harness a draft read runs on: what the request named, or this host's default. */
@@ -135,6 +142,7 @@ export type SessionRoutesOptions = {
 
 export function SessionRoutes(runtimeFor: () => Promise<AgentRuntime>, options: SessionRoutesOptions) {
   const eventHub = options.eventHub ?? createRuntimeEventHub()
+  const bus = options.bus ?? workspaceRuntimeBus
   const childSessions = options.childSessions && options.listSubagents && options.getSession && options.getMessages
     ? createChildSessionHost({
         admit: options.childSessions.admit,
@@ -171,7 +179,7 @@ export function SessionRoutes(runtimeFor: () => Promise<AgentRuntime>, options: 
   function publishQueue(sessionId: string) {
     const directory = options.queuedPrompts?.()?.sessionDirectory(sessionId)
     if (!directory || !queuedPrompts) return
-    workspaceRuntimeBus.publish({ type: "session.queue", directory, sessionID: sessionId, queue: queuedPrompts.list(sessionId) })
+    bus.publish({ type: "session.queue", directory, sessionID: sessionId, queue: queuedPrompts.list(sessionId) })
   }
 
   const stopDeliveryWake = eventHub.subscribeGlobal(({ payload }) => {
@@ -374,9 +382,9 @@ export function SessionRoutes(runtimeFor: () => Promise<AgentRuntime>, options: 
     getStatus: options.getStatus ? (c, directory) => options.getStatus!(c, requiredDirectory(directory)) : undefined,
     publishGlobal: (event) => {
       eventHub.publishGlobal(event)
-      bridgeLifecycleEvent(event)
+      bridgeLifecycleEvent(bus, event)
     },
-    publishSessionLifecycle: (event) => workspaceRuntimeBus.publish(event),
+    publishSessionLifecycle: (event) => bus.publish(event),
     resolveWorkspaceId: () => options.resolveWorkspaceId?.() ?? workspaceId(),
     createActiveTurnScope: options.createActiveTurnScope
       ? ({ directory, sessionId }) => options.createActiveTurnScope?.({ directory: requiredDirectory(directory), sessionId })

@@ -65,7 +65,7 @@ export function registerToolNameCases(createClientPresentationProjection: Create
       expected: ["task"],
       events: [
         { source: "codex.app-server", method: "item/started", payload: { threadId: "t1", turnId: "u1", item: {
-          id: "spawn-1", type: "collabAgentToolCall", tool: "spawn_agent", status: "inProgress",
+          id: "spawn-1", type: "collabAgentToolCall", tool: "spawnAgent", status: "inProgress",
           senderThreadId: "t1", receiverThreadIds: ["t2"],
         } } },
       ],

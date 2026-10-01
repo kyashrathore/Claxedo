@@ -111,7 +111,7 @@ export function createSessionLifecycle(input: SessionLifecycleInput) {
       sessionId, directory: targetDirectory, locality: handle.locality,
       config: { ...current, harness, ...(source.model ? { model: source.model } : {}), variant: source.variant ?? undefined, agent: source.agent ?? undefined },
       owner,
-    }, left), detachedBroker(sessionId, targetDirectory, owner, left))
+    }, left, store.upstreamHasTurns(sessionId, left.upstreamSessionId)), detachedBroker(sessionId, targetDirectory, owner, left))
     await handle.transport.close(session)
   }
 

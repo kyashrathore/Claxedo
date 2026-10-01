@@ -20,7 +20,10 @@ export type SubagentView = {
   transcriptKind: "live" | "file" | "messages" | "none" | "unknown"
   resolution: "not-yet-bound" | "loading" | "ready" | "empty" | "unavailable"
   ambient: boolean
+  stopCall?: string
 }
+
+export type SubagentStopAnswer = { ok: true } | { ok: false; message: string }
 
 export type DataProviderProps = {
   directory: string
@@ -32,6 +35,7 @@ export type DataProviderProps = {
   fileUrl?: (path: string) => string | undefined
   readToolImage?: (attachment: AgentFilePart, signal: AbortSignal) => Promise<Blob>
   loadToolBody?: (part: AgentToolPart) => void
+  stopBackgroundTask?: (parentSessionId: string, toolCallId: string) => Promise<SubagentStopAnswer>
 }
 
 function transcriptData(props: DataProviderProps) {
@@ -47,6 +51,7 @@ function transcriptData(props: DataProviderProps) {
     fileUrl: props.fileUrl,
     readToolImage: props.readToolImage,
     loadToolBody: props.loadToolBody,
+    stopBackgroundTask: props.stopBackgroundTask,
   }
 }
 

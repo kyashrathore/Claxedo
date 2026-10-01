@@ -171,12 +171,33 @@ test("a missing native ACP session persists saved context before rebinding", asy
     }
     context.ports.rebind = async (_sessionId, upstreamSessionId) => { order.push("rebind"); return { ...context.started.binding, upstreamSessionId } }
     const attached = await context.transport.attach({ ...context.start,
-      binding: { ...context.session.binding, upstreamSessionId: "missing-session" } }, context.sessionBroker)
+      binding: { ...context.session.binding, upstreamSessionId: "missing-session" }, upstreamHasTurns: true }, context.sessionBroker)
     expect(attached.binding.upstreamSessionId).not.toBe("missing-session")
     expect(order).toEqual(["context", "persist", "rebind"])
     const requests = await readAcpRequests(context.backend.directory)
     expect(requests.map((item) => item.method)).toContain("session/resume")
     expect(requests.filter((item) => item.method === "session/new")).toHaveLength(2)
+  } finally { await context.close() }
+})
+
+test("ACP advertises session notices, and a notice the agent sends is a harness notice in the turn", async () => {
+  const context = await setupConformance({
+    name: "acp notice", backend: () => backend("process"),
+    makeTransport(services, state) {
+      return new AcpTransport(services, (state as AcpBackend).connection, filterMcpServers,
+        async () => { throw new Error("No saved transcript in this conformance scenario") })
+    },
+  })
+  try {
+    await writeAcpScript(context.backend.directory, "notice", { steps: [
+      { kind: "notice", severity: "warning", title: "Rate limit approaching", description: "Requests slow down after 80%." },
+      { kind: "text", text: "Done" },
+    ] })
+    const events: unknown[] = []
+    for await (const routed of context.transport.send(context.session, context.turn(acpScriptToken("notice")), context.turnBroker())) events.push(routed.event)
+    expect(events).toContainEqual(expect.objectContaining({ type: "harness-notice", code: "acp.notice", severity: "warn",
+      message: "Rate limit approaching. Requests slow down after 80%." }))
+    expect(JSON.stringify(events)).not.toContain("Rate limit approaching Requests")
   } finally { await context.close() }
 })
 
@@ -944,7 +965,7 @@ test("a stalled ACP resume times out without disturbing a sibling peer", async (
       timers.set(id, callback)
       return id
     }, clearTimeout(handle) { timers.delete(handle as number) } }
-    const attaching = context.transport.attach({ ...context.start, binding: context.session.binding }, context.sessionBroker)
+    const attaching = context.transport.attach({ ...context.start, binding: context.session.binding, upstreamHasTurns: false }, context.sessionBroker)
     for (let attempt = 0; attempt < 500; attempt++) {
       if ((await readAcpRequests(context.backend.directory)).some((row) => row.method === "session/resume")) break
       await new Promise((resolve) => setTimeout(resolve, 10))
@@ -1367,7 +1388,7 @@ function parityTransport(services: ReturnType<typeof createTestServices>, state:
     async () => { throw new Error("No saved transcript in this conformance scenario") })
 }
 
-const PNG = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/lp8AAAAASUVORK5CYII="
+const PNG = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+ip1sAAAAASUVORK5CYII="
 const TEXT_BASE64 = Buffer.from("ACP parity text attachment\n").toString("base64")
 const WAV_BASE64 = Buffer.from("RIFF....WAVEfmt ").toString("base64")
 

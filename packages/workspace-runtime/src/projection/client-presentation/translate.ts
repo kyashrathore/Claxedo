@@ -1,9 +1,13 @@
 import type { AgentEventEnvelope, AgentRuntimeEvent } from "@claxedo/agent-runtime-contract"
-import { messageCompleted, permissionAsked, questionAsked, questionReplied, todoUpdated, sessionStatus, sessionCompacted, sessionDiff, sessionIdle, sessionError, sessionUpdated, sessionAgent, sessionConfig, sessionUsage, runtimeDiagnostic, buildSession, recovering, withDir } from "../presentation-events"
+import { messageCompleted, permissionAsked, questionAsked, questionReplied, todoUpdated, sessionStatus, sessionDiff, sessionIdle, sessionError, sessionUpdated, sessionAgent, sessionConfig, sessionUsage, buildSession, recovering, withDir } from "../presentation-events"
 import { partEvent, seqId, type CompatContext } from "./context"
 import { lossyCompatDiagnostic } from "./diagnostics"
 import { snapshotFileDiff } from "./file-diff"
 import { dataUrl, extension, filePart } from "./file-parts"
+import { projectHarnessDiagnostic } from "./harness-diagnostics"
+import { projectNotice } from "./notices"
+import { enterResponse, retractResponses, WITHDRAWN_TOOL } from "./responses"
+import { projectRetry } from "./retry"
 import { deltaText, userMessageText } from "./text-parts"
 import {
   translateToolContent,
@@ -14,6 +18,7 @@ import {
   translateToolStart,
   translateToolStatus,
   translateToolTerminal,
+  terminalizeOpenTools,
 } from "./tool-lifecycle"
 
 /** Session metadata has no assistant message or turn owner. */
@@ -84,75 +89,24 @@ export function translateRuntimeEventToCompat(chunk: AgentRuntimeEvent, ctx: Com
       return [withDir(ctx.directory, sessionStatus(ctx.sessionId, { type: chunk.status }))]
 
     case "session-compaction":
-      return chunk.phase === "completed" && chunk.metadata?.aborted !== true && !chunk.metadata?.error
-        ? [withDir(ctx.directory, sessionCompacted(ctx.sessionId))]
-        : []
-
     case "harness-notice":
-      return [withDir(ctx.directory, runtimeDiagnostic({
-        sessionID: ctx.sessionId,
-        harness: chunk.harness,
-        threadId: chunk.threadId,
-        code: chunk.code,
-        message: chunk.message,
-        severity: chunk.severity ?? "info",
-        details: chunk.details,
-        raw: chunk.raw,
-      }))]
+    case "conversation-reset":
+      return projectNotice(ctx, chunk, now)
+
+    case "session-retry":
+      return projectRetry(ctx, chunk, now)
+
+    case "response-start":
+      return enterResponse(ctx, chunk)
+
+    case "response-retracted":
+      return retractResponses(ctx, chunk, (tools) => terminalizeOpenTools(ctx, WITHDRAWN_TOOL, now, tools))
 
     case "auth-status":
-      return [withDir(ctx.directory, runtimeDiagnostic({
-        sessionID: ctx.sessionId,
-        harness: chunk.harness,
-        threadId: chunk.threadId,
-        code: "runtime.auth_status",
-        message: `Auth status: ${chunk.status}`,
-        severity: chunk.status === "unauthenticated" ? "warn" : "info",
-        auth: {
-          status: chunk.status,
-          authMode: chunk.authMode,
-          planType: chunk.planType,
-          metadata: chunk.metadata,
-        },
-        raw: chunk.raw,
-      }))]
-
     case "rate-limit":
-      return [withDir(ctx.directory, runtimeDiagnostic({
-        sessionID: ctx.sessionId,
-        harness: chunk.harness,
-        threadId: chunk.threadId,
-        code: "runtime.rate_limit",
-        message: chunk.status === "limited" ? "Rate limit reached" : "Rate limit updated",
-        severity: chunk.status === "limited" ? "warn" : "info",
-        rateLimit: {
-          status: chunk.status,
-          usedPercent: chunk.usedPercent,
-          resetsAt: chunk.resetsAt,
-          windowDurationMins: chunk.windowDurationMins,
-          limitId: chunk.limitId,
-          limitName: chunk.limitName,
-          reason: chunk.reason,
-          metadata: chunk.metadata,
-        },
-        raw: chunk.raw,
-      }))]
-
     case "mcp-server-status":
-      return [withDir(ctx.directory, runtimeDiagnostic({
-        sessionID: ctx.sessionId,
-        harness: chunk.harness,
-        threadId: chunk.threadId,
-        code: "runtime.mcp_server_status",
-        message: chunk.error ?? `MCP server ${chunk.serverName} is ${chunk.status}`,
-        severity: chunk.status === "failed" || chunk.status === "cancelled" ? "warn" : "info",
-        mcp: {
-          serverName: chunk.serverName,
-          status: chunk.status,
-          error: chunk.error,
-        },
-        raw: chunk.raw,
-      }))]
+    case "diagnostic":
+      return [projectHarnessDiagnostic(ctx, chunk)]
 
     case "text-delta":
       return deltaText(ctx, "text", chunk.delta, now)
@@ -363,18 +317,6 @@ export function translateRuntimeEventToCompat(chunk: AgentRuntimeEvent, ctx: Com
         ...(chunk.cost ? { cost: chunk.cost } : {}),
       }))]
 
-    case "diagnostic":
-      return [withDir(ctx.directory, runtimeDiagnostic({
-        sessionID: ctx.sessionId,
-        harness: chunk.harness,
-        threadId: chunk.threadId,
-        code: chunk.diagnostic.code,
-        message: chunk.diagnostic.message,
-        severity: chunk.diagnostic.severity,
-        diagnostic: chunk.diagnostic,
-        raw: chunk.raw,
-      }))]
-
     case "subagent-updated": {
       const { type: _type, ...update } = chunk
       return [withDir(ctx.directory, {
@@ -382,9 +324,11 @@ export function translateRuntimeEventToCompat(chunk: AgentRuntimeEvent, ctx: Com
         type: "subagent.updated", properties: { sessionID: ctx.sessionId, update },
       })]
     }
+
     case "goal-updated":
     case "goal-cleared":
     case "input-incorporated":
+    case "background-work":
       return []
 
     default: {

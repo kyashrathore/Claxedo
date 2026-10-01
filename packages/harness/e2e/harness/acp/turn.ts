@@ -16,6 +16,7 @@ export type TurnContext = {
   prompt: string
   mcp?: { url: string; headers: Record<string, string> }
   reportsCancel: boolean
+  notices: boolean
 }
 
 type Update = SessionNotification["update"]
@@ -129,7 +130,7 @@ async function playQuestion(context: TurnContext, step: Extract<AcpStep, { kind:
         required: ["answer"],
       },
     }
-  const response = await context.connection.unstable_createElicitation(request)
+  const response = await context.connection.createElicitation(request)
   await recordElicitationReceipt(context.scriptDir, {
     sessionId: context.sessionId, message: step.message, action: response.action,
     ...(response.action === "accept" ? { content: response.content } : {}),
@@ -201,6 +202,10 @@ async function playStep(context: TurnContext, step: AcpStep): Promise<PromptResp
       return undefined
     case "image":
       await update(context, { sessionUpdate: "agent_message_chunk", content: { type: "image", data: step.data, mimeType: step.mimeType } })
+      return undefined
+    case "notice":
+      if (!context.notices) await sendText(context, `${step.title} ${step.description ?? ""}`.trim())
+      else await update(context, { sessionUpdate: "notice", severity: step.severity, title: step.title, description: step.description })
       return undefined
     case "plan":
       await update(context, { sessionUpdate: "plan", entries: step.entries })

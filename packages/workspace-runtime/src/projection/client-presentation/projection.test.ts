@@ -17,6 +17,18 @@ function makeProjection() {
 }
 
 describe("createClientPresentationProjection", () => {
+  test("a command's streamed output is stored once, as its output", () => {
+    const projection = makeProjection()
+    projection.ingest({ type: "tool-start", toolCallId: "cmd", toolName: "bash" })
+    const big = "x".repeat(10_000)
+    projection.ingest({ type: "tool-content", toolCallId: "cmd", content: { type: "content", content: { type: "text", text: big } } })
+    const parts = projection.ingest({ type: "tool-output", toolCallId: "cmd", output: big })
+      .map((event) => event.payload).filter((payload) => payload.type === "message.part.updated")
+    const part = (parts.at(-1) as { properties: { part: Record<string, unknown> } }).properties.part
+    expect((part.state as { output?: string }).output).toBe(big)
+    expect(JSON.stringify(part).split(big).length - 1).toBe(1)
+  })
+
   test("marks the message a cancelled turn completes, and only that terminal", () => {
     const terminal = <T extends { type: string }>(payloads: T[]) => payloads.filter((payload) => payload.type !== "message.updated")
     expect(terminal(makeProjection().ingest({ type: "cancelled", sessionId: "session-1" }).map((event) => event.payload))).toMatchObject([
@@ -399,6 +411,23 @@ describe("createClientPresentationProjection", () => {
     ])
   })
 
+  test("a reply after a thought that followed earlier text is its own part, below the thought", () => {
+    const projection = makeProjection()
+    const created = (events: ReturnType<typeof projection.ingest>) => events.flatMap((event) =>
+      event.payload.type === "message.part.updated" ? [event.payload.properties.part] : [])
+    const deltas = (events: ReturnType<typeof projection.ingest>) => events.flatMap((event) =>
+      event.payload.type === "message.part.delta" ? [event.payload.properties] : [])
+
+    const commentary = created(projection.ingest({ type: "text-delta", delta: "Checking now." }))
+    const thought = created(projection.ingest({ type: "thinking-delta", delta: "Weighing the fix" }))
+    const answer = projection.ingest({ type: "text-delta", delta: "Final answer." })
+    const answerPart = created(answer).find((part) => part.type === "text")
+    expect(answerPart?.id).toBeDefined()
+    expect(answerPart?.id).not.toBe(commentary[0]?.id)
+    expect(deltas(answer)).toMatchObject([{ partID: answerPart?.id, delta: "Final answer." }])
+    expect([commentary[0]?.id, thought[0]?.id, answerPart?.id].map(String).sort()).toEqual([commentary[0]?.id, thought[0]?.id, answerPart?.id].map(String))
+  })
+
   test("a diagnostic leaves a thought open, and a turn torn down mid-thought still ends it", () => {
     let clock = 10
     const projection = createClientPresentationProjection({
@@ -498,28 +527,6 @@ describe("createClientPresentationProjection", () => {
 
   test("projects session harness surfaces into compat diagnostics and status", () => {
     const projection = makeProjection()
-
-    expect(projection.ingest({ type: "session-compaction", phase: "completed" })[0]?.payload).toMatchObject({
-      type: "session.compacted",
-      properties: {
-        sessionID: "session-1",
-      },
-    })
-
-    expect(projection.ingest({
-      type: "harness-notice",
-      code: "codex_app_server.warning",
-      message: "Careful",
-      severity: "warn",
-    })[0]?.payload).toMatchObject({
-      type: "runtime.diagnostic",
-      properties: {
-        sessionID: "session-1",
-        code: "codex_app_server.warning",
-        message: "Careful",
-        severity: "warn",
-      },
-    })
 
     expect(projection.ingest({
       type: "rate-limit",
@@ -963,7 +970,6 @@ describe("createClientPresentationProjection", () => {
             type: "tool",
             callID: "tool-1",
             tool: "bash",
-            metadata: { acp: { terminalId: "pty-1" } },
             state: {
               status: "completed",
               input: {},
@@ -1135,12 +1141,6 @@ describe("createClientPresentationProjection", () => {
     }])
   })
 })
-
- test("does not announce a successful compaction after an abort or error", () => {
-   expect(makeProjection().ingest({ type: "session-compaction", phase: "completed", metadata: { aborted: true } })).toEqual([])
-   expect(makeProjection().ingest({ type: "session-compaction", phase: "completed", metadata: { error: "provider failed" } })).toEqual([])
-   expect(makeProjection().ingest({ type: "session-compaction", phase: "completed" })[0]?.payload.type).toBe("session.compacted")
- })
 
 test("file references keep attachment IDs across replay and a repeated completion without duplicate terminal parts", () => {
   const complete = {

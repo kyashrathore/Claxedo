@@ -2,6 +2,7 @@ import { For, Index, Show, type Accessor } from "solid-js"
 import { ClaxedoIconButton as IconButton, Tooltip } from "@/ui"
 import { ClaxedoIcon as Icon } from "@/ui"
 import { queuedMessageText, type QueuedMessage, type QueuedMessages, type TimelineTranslate } from "./model"
+import { queuedMessageStatus } from "./queued-message-status"
 
 export function TimelineQueuedMessages(props: {
   queued: QueuedMessages
@@ -39,10 +40,7 @@ function QueuedMessageBubble(props: { item: QueuedMessage; queued: QueuedMessage
   const editing = () => props.queued.editing() === props.item.seq
   const heldElsewhere = () => props.item.held && !editing()
   const busy = () => props.queued.pending() !== undefined || !!props.item.steering && props.item.steering.state !== "rejected"
-  const status = () => props.item.steering?.state === "accepted" ? props.t("ui.message.queued.accepted")
-    : props.item.steering?.state === "dispatching" ? props.t("ui.message.queued.dispatching")
-    : props.item.steering?.state === "unknown" ? props.t("ui.message.queued.unknown")
-    : props.t(editing() || heldElsewhere() ? "ui.message.queued.editing" : "ui.message.queued")
+  const status = () => queuedMessageStatus(props.item, editing() || heldElsewhere(), props.t)
   const text = () => queuedMessageText(props.item)
   const attachments = () => props.item.parts.filter((part) => part.type === "file")
   const action = (input: { icon: "arrow-up" | "pencil" | "close-small"; label: string; onClick: () => void }) => (
@@ -77,10 +75,12 @@ function QueuedMessageBubble(props: { item: QueuedMessage; queued: QueuedMessage
         class="ui-user-message-copy-wrapper"
         classList={{ "opacity-100! pointer-events-auto!": editing() || heldElsewhere() }}
       >
-        <span class="inline-flex items-center gap-1.5 text-12-regular text-text-weak">
-          <Icon name={editing() || heldElsewhere() ? "pencil" : "circle-dashed"} size="small" />
-          {status()}
-        </span>
+        <Tooltip value={status().reason} inactive={!status().reason} placement="top" gutter={4}>
+          <span class="inline-flex items-center gap-1.5 text-12-regular text-text-weak" data-queued-status={props.item.steering?.state}>
+            <Icon name={editing() || heldElsewhere() ? "pencil" : "circle-dashed"} size="small" />
+            {status().label}
+          </span>
+        </Tooltip>
         <Show
           when={!editing() && !heldElsewhere()}
           fallback={
@@ -97,7 +97,7 @@ function QueuedMessageBubble(props: { item: QueuedMessage; queued: QueuedMessage
         >
           <span class="inline-flex items-center" data-claxedo-compact-touch>
             {action({ icon: "pencil", label: props.t("ui.message.queued.edit"), onClick: () => props.queued.beginEdit(props.item) })}
-            {action({ icon: "arrow-up", label: props.t("ui.message.queued.sendNow"), onClick: () => props.queued.sendNow(props.item.seq) })}
+            {action({ icon: "arrow-up", label: status().send, onClick: () => props.queued.sendNow(props.item.seq) })}
             {action({ icon: "close-small", label: props.t("ui.message.queued.remove"), onClick: () => props.queued.remove(props.item.seq) })}
           </span>
         </Show>

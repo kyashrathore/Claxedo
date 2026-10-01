@@ -15,7 +15,8 @@ import {
   type SessionTurnOrigin,
 } from "../session-access-policy"
 import { FakeTransport } from "../test-support/fake-transport"
-import { createHostFixture, sessionCreate, testLaunch, type HostFixture } from "../test-support/host-fixture"
+import { testLaunch } from "../test-support/host-composition"
+import { createHostFixture, sessionCreate, type HostFixture } from "../test-support/host-fixture"
 import type { EmbeddedRelayHostIdentity } from "../workspace-host-service-auth"
 import { SessionRoutes } from "./session"
 
