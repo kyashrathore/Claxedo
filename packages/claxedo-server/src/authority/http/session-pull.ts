@@ -19,7 +19,6 @@ import {
   pullStartOrdinal,
   relayRole,
   runtimePath,
-  sessionIsIdle,
   workspaceRoleAllowsWrite,
 } from "../pulled-session"
 
@@ -102,17 +101,6 @@ export async function pullControlSessionMessages(
   const { updatedAt } = pulledSession(payload.session, input.sessionId, ControlPlaneProtocolError)
   const syncAuthority = async () => {
     if (auth?.mode !== "signed") return
-    const intakeReady = await runtimeJson(services, options, {
-      workspaceId: ws.id,
-      ws,
-      ...(scope.authorityWorkspace ? { authorityWorkspace: scope.authorityWorkspace } : {}),
-      ...(scope.authorityRole ? { authorityRole: scope.authorityRole } : {}),
-      auth,
-      path: "/session/status",
-    }).then(
-      (status) => sessionIsIdle(status, input.sessionId),
-      () => false,
-    )
     await requireAuthority(services).syncSessionMessages(auth, {
       workspaceId: ws.id,
       sessionId: input.sessionId,
@@ -121,7 +109,6 @@ export async function pullControlSessionMessages(
       maxEventOrdinal: payload.maxEventOrdinal
         ?? services.projectionStore.read_session_max_event_ordinal(input.sessionId),
       ...(payload.fencingToken === undefined ? {} : { fencingToken: payload.fencingToken }),
-      intakeReady,
     })
   }
   const skipped = await projectPulledMessages({

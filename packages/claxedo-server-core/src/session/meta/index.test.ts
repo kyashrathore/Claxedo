@@ -189,6 +189,29 @@ describe("a synced session's times come only from its runtime", () => {
 })
 
 describe("a put session row's times come only from its runtime", () => {
+  test("an older runtime put cannot replace newer metadata or its attachments and tags", async () => {
+    await putSessionMeta("ses_ordered", {
+      ws, title: "Newer", createdAt: 1, updatedAt: 200,
+      model: { providerID: "provider", modelID: "new" },
+      tags: ["new"], attachments: [{ kind: "page", targetID: "new" }],
+    })
+    await putSessionMeta("ses_ordered", {
+      ws, title: "Older", createdAt: 1, updatedAt: 100,
+      model: { providerID: "provider", modelID: "old" },
+      tags: ["old"], attachments: [{ kind: "page", targetID: "old" }],
+    })
+    expect(await sessionMeta("ses_ordered")).toMatchObject({
+      title: "Newer", updatedAt: 200, model: { providerID: "provider", modelID: "new" },
+      tags: ["new"], attachments: [{ kind: "page", targetID: "new" }],
+    })
+    await putSessionMeta("ses_ordered", { title: "Equal", updatedAt: 200 })
+    expect((await sessionMeta("ses_ordered"))?.title).toBe("Equal")
+    await putSessionMeta("ses_ordered", { title: "Local edit" })
+    expect((await sessionMeta("ses_ordered"))?.title).toBe("Local edit")
+    await putSessionMeta("ses_ordered", { title: "Latest runtime", updatedAt: 300 })
+    expect((await sessionMeta("ses_ordered"))?.title).toBe("Latest runtime")
+  })
+
   test.each([
     ["no times", {}],
     ["no creation time", { updatedAt: 2 }],

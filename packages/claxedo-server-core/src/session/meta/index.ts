@@ -168,6 +168,9 @@ export async function putSessionMeta(
   const inserted = ClaxedoDB.transaction((db) => {
     const prevByID = db.select().from(ClaxedoSessionMetaTable).where(eq(ClaxedoSessionMetaTable.session_id, sessionID)).get()
     if (prevByID && !host(prevByID.host)) throw new Error("Unsupported session metadata scope")
+    if (input.updatedAt !== undefined && prevByID?.runtime_updated_at != null && input.updatedAt < prevByID.runtime_updated_at) {
+      return { inserted: [], workspaceID: undefined }
+    }
     const workspaceID = input.workspaceID === undefined
       ? input.ws?.id ?? prevByID?.workspace_id ?? null
       : input.workspaceID

@@ -1579,7 +1579,6 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
       sessionId: string
       workspaceId: string
       messages: unknown[]
-      intakeReady?: boolean
       maxEventOrdinal?: number
       fencingToken?: number
       updatedAt: number
@@ -1590,9 +1589,6 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
     const workspaceId = requireText(args.workspaceId, "workspaceId")
     const updatedAt = requireRuntimeSessionTime(args.updatedAt, "updatedAt", (message) => new D1SessionAuthorityError("invalid_input", message))
     await this.requireSessionAccess(who, sessionId, workspaceId, "agent_turn")
-    if (args.intakeReady) {
-      throw new D1SessionAuthorityError("invalid_input", "Session intake is not owned by the D1 session authority")
-    }
     const maxEventOrdinal = optionalOrdinal(args.maxEventOrdinal)
     const messages = canonicalMessages(args.messages)
     const hasUserMessages = messages.some((message) => message.role === "user")

@@ -1,5 +1,4 @@
 import type { ClaxedoRegion } from "@claxedo/server-core/platform/runtime/region/index"
-import type { SessionProjectionWorkspace } from "@claxedo/server-core/workspace/store/index"
 import type { ControlPlaneAuthContext } from "@claxedo/server-core/platform/auth/auth"
 import { requireAuthority } from "@claxedo/server-core/platform/auth/authority"
 import { resolveRuntimeActor } from "@claxedo/server-core/platform/auth/runtime-actor"
@@ -10,14 +9,10 @@ import { WORKSPACE_RUNTIME_IDENTITY_PATH } from "@claxedo/server-core/platform/g
 import { asRecord } from "@claxedo/helpers/guards"
 import {
   messagesPayload,
-  projectPulledMessages,
   pulledCloudWorkspace,
   pulledSession,
-  pullReachesAuthority,
-  pullStartOrdinal,
   relayRole,
   runtimePath,
-  sessionIsIdle,
   workspaceRoleAllowsWrite,
 } from "./pulled-session"
 import { createRelayRuntimeClient } from "../workspace/relay-runtime-client"
@@ -138,8 +133,18 @@ export async function pullHostedControlSessionMessages(
     sessionId: input.sessionId,
     workspaceId: input.workspaceId,
   })
-  const currentOrdinal = pullStartOrdinal(services.projectionStore, input.sessionId, input.expectedEventOrdinal)
-  if (typeof currentOrdinal !== "number") return currentOrdinal
+  if (input.expectedEventOrdinal !== undefined) {
+    const current = asRecord(await requireAuthority(services).readSessionMessages(signed, {
+      workspaceId: input.workspaceId, sessionId: input.sessionId, limit: 1,
+    }))
+    if (current?.allowed === false) throw new HostedSessionPullError(403, "workspace_authorization_denied", "Session access is denied")
+    if (current?.allowed !== true || typeof current.maxEventOrdinal !== "number" || !Number.isSafeInteger(current.maxEventOrdinal) || current.maxEventOrdinal < 0) {
+      throw new HostedSessionPullError(503, "workspace_authority_unavailable", "Session authority returned no event ordinal")
+    }
+    if (input.expectedEventOrdinal < current.maxEventOrdinal) {
+      return { ok: true, skipped: true, reason: "older_expected_ordinal", currentOrdinal: current.maxEventOrdinal }
+    }
+  }
   const target = {
     ...workspace,
     ...await resolveWorkspaceRuntimeTarget(services, signed, workspace),
@@ -149,59 +154,41 @@ export async function pullHostedControlSessionMessages(
     path: runtimePath(`/session/${encodeURIComponent(input.sessionId)}/message`, { snapshot: "1" }),
   })
   const payload = messagesPayload(pulled, HostedSessionPullError)
+  if (payload.maxEventOrdinal === undefined) {
+    throw new HostedSessionPullError(502, "workspace_runtime_snapshot_invalid", "Workspace runtime returned no snapshot event ordinal")
+  }
   const { updatedAt } = pulledSession(payload.session, input.sessionId, HostedSessionPullError)
-  const syncAuthority = async (messages: unknown[], maxEventOrdinal: number, fencingToken?: number) => {
-    const intakeReady = await runtimeJson(services, signed, {
-      ...target,
-      path: "/session/status",
-    }).then(
-      (status) => sessionIsIdle(status, input.sessionId),
-      () => false,
-    )
-    await requireAuthority(services).syncSessionMessages(signed, {
-      workspaceId: target.workspaceId,
-      sessionId: input.sessionId,
-      messages,
-      updatedAt,
-      maxEventOrdinal,
-      ...(fencingToken === undefined ? {} : { fencingToken }),
-      intakeReady,
-    })
-  }
-  const skipped = await projectPulledMessages({
-    store: services.projectionStore,
-    ws: target.ws,
+  const applied = asRecord(await requireAuthority(services).syncSessionMessages(signed, {
+    workspaceId: target.workspaceId,
     sessionId: input.sessionId,
-    payload,
-    currentOrdinal,
-    refreshMetadata: () => syncHostedSessionMetadata(services, signed, target, input.sessionId, payload.session),
-  })
-  if (pullReachesAuthority(skipped)) {
-    await syncAuthority(
-      payload.messages,
-      payload.maxEventOrdinal ?? services.projectionStore.read_session_max_event_ordinal(input.sessionId),
-      payload.fencingToken,
-    )
-  }
-  if (skipped) return skipped
+    messages: payload.messages,
+    updatedAt,
+    maxEventOrdinal: payload.maxEventOrdinal,
+    ...(payload.fencingToken === undefined ? {} : { fencingToken: payload.fencingToken }),
+  }))
   await syncHostedSessionMetadata(services, signed, target, input.sessionId, payload.session)
+  if (applied?.applied === false) {
+    return {
+      ok: true, skipped: true, reason: "older_snapshot_ordinal",
+      currentOrdinal: applied.maxEventOrdinal, snapshotOrdinal: payload.maxEventOrdinal,
+    }
+  }
   return {
     ok: true,
     sessionId: input.sessionId,
     messages: payload.messages.length,
-    ...(payload.maxEventOrdinal === undefined ? {} : { maxEventOrdinal: payload.maxEventOrdinal }),
+    maxEventOrdinal: payload.maxEventOrdinal,
   }
 }
 
 async function syncHostedSessionMetadata(
   services: ControlPlaneServices,
   auth: ReturnType<typeof requireSignedAuth>,
-  target: { workspaceId: string; ws: SessionProjectionWorkspace },
+  target: { workspaceId: string },
   sessionId: string,
   session: unknown,
 ) {
   const visibility = pulledSession(session, sessionId, HostedSessionPullError)
-  await services.projectionStore.sync_session_meta(target.ws, session)
   await requireAuthority(services).upsertSessionVisibility(auth, {
     workspaceId: target.workspaceId,
     sessions: [visibility],
