@@ -26,6 +26,7 @@
       "version": "0.1.0",
       "dependencies": {
         "@claxedo/helpers": "workspace:*",
+        "@claxedo/plugin-api": "workspace:*",
       },
       "devDependencies": {
         "@tsconfig/node-lts": "22.0.4",

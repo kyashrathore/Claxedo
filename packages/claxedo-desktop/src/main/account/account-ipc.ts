@@ -18,6 +18,7 @@ import { asRecord } from "@claxedo/helpers/guards"
 import { readRecord, readString } from "@claxedo/helpers/readers"
 import {
   HOSTED_OPERATION_NAMES,
+  HOSTED_OPERATIONS,
   hostedOperationChannel,
   isStreamHostedOperation,
   type HostedOperationName,
@@ -36,61 +37,9 @@ export const ACCOUNT_STREAM_END_CHANNEL = "claxedo.account.stream.end"
 export const ACCOUNT_STREAM_ERROR_CHANNEL = "claxedo.account.stream.error"
 const ACCOUNT_STREAM_RESERVATION_TTL_MS = 30_000
 
-/**
- * Operations the renderer may not ask for, though main itself performs them.
- * `HOSTED_OPERATIONS` is the closed set of authenticated calls this process may
- * make; it is not the set the renderer may trigger.
- *
- * Result is a credential — `account.cliExchange`. `POST /api/auth/cli/exchange`
- * answers with a long-lived CLI access + refresh pair, and the renderer never
- * receives account bearer or refresh tokens (`signIn` below returns the state,
- * not the flow's token set, for the same reason). Refused before the call, not
- * redacted after: every exchange is a real mint recorded in the revocation
- * registry, and no renderer code needs it — `cli-login` in `@claxedo/app` is a
- * web flow that fetches the exchange with the page's own session.
- *
- * Parameters are a credential — the `host.*` operations. The machine identity
- * is a P-256 private key owned by `host-connector/identity-store.ts`; the
- * renderer cannot produce one. But `host.enrollCurrentMachine` takes
- * `publicKey` and `signature` from the caller and the route stores whatever
- * key it is handed (`enrollBody` in `routes/hosted/host-enrollment.ts`), so a
- * renderer holding this channel could enroll its own keypair under the owner's
- * account and — because `enrollHost` upserts on (owner, `host_id`),
- * overwriting `public_key` and clearing `paused_at`/`revoked_at` — take over
- * or un-revoke an honest machine. `host.enrollmentNonce` is step one of the
- * same handshake. These stay in the table because main brokers them for the
- * Host Connector child, which fills the key fields itself; the renderer's
- * route to the feature is the connector's own `start`, which takes nothing
- * (`host-connector/ipc.ts`). Withheld rather than re-shaped because `account/`
- * must not read the machine key and the child must not see the account
- * credential (`host-connector/child-supervisor.ts`).
- *
- * Withheld channels stay registered: the IPC surface must equal the operation
- * table so `account-ipc.test.ts` can catch an extra channel, and a registered
- * refusal says what it is where a missing channel says nothing.
- *
- * Adding a name here narrows and needs no matrix change. Removing one means a
- * renderer surface is about to reach an operation main was reserving: for a
- * result credential, expose the field the surface needs, not the body; for a
- * parameter credential, add an operation on the Host Connector's IPC that
- * carries data only, where main supplies the identity.
- */
-export const RENDERER_WITHHELD_OPERATIONS: readonly HostedOperationName[] = [
-  "account.cliExchange",
-  "host.enrollCurrentMachine",
-  "host.enrollmentNonce",
-  // Names an enrollment id, and every enrollment the owner holds answers to
-  // it; the renderer's route is the connector's own `rename`, which carries a
-  // name only.
-  "host.renameCurrentMachine",
-  // Assignments name a host id the renderer must not choose (the supervisor
-  // supplies this machine's own); the renderer's route is hostConnector.share.
-  "workspace.assignHost",
-  "workspace.unassignHost",
-  // The signed Agent Plugins world carries MCP gateway bearer credentials;
-  // main pulls it and hands it to the daemon, never to a page.
-  "agentPlugins.runtimeSelf",
-]
+// Renderer requests must not supply machine identities or receive bearer credentials.
+export const RENDERER_WITHHELD_OPERATIONS: readonly HostedOperationName[] =
+  HOSTED_OPERATION_NAMES.filter((name) => !HOSTED_OPERATIONS[name].exposure.renderer)
 
 /**
  * The registration surface, matching Electron's own so the real `ipcMain`

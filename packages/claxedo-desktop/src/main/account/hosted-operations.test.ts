@@ -26,7 +26,7 @@ describe("HOSTED_OPERATIONS", () => {
     // account. An entry here would spend the account credential on them.
     const forbidden = ["/enrollments/redeem", "/enrollments/acquire", "/enrollments/heartbeat", "/host/invitations", "/internal/relay/"]
     const reached = Object.entries(HOSTED_OPERATIONS)
-      .filter(([, operation]) => forbidden.some((fragment) => operation.path.includes(fragment)))
+      .filter(([, operation]) => forbidden.some((fragment) => operation.path.pattern!.includes(fragment)))
       .map(([name]) => name)
 
     expect(reached).toEqual([])
@@ -34,15 +34,15 @@ describe("HOSTED_OPERATIONS", () => {
 
   test("declares no generic proxy", () => {
     const callerChosen = Object.entries(HOSTED_OPERATIONS)
-      .filter(([, operation]) => typeof operation.method !== "string" || operation.path.endsWith("/*"))
-      .map(([name, operation]) => [name, operation.path])
+      .filter(([, operation]) => typeof operation.method !== "string" || operation.path.pattern!.endsWith("/*"))
+      .map(([name, operation]) => [name, operation.path.pattern])
     expect(callerChosen).toEqual([["plugin.request", "/api/plugins/:pluginId/*"]])
     for (const name of Object.keys(HOSTED_OPERATIONS).filter((name) => name !== "plugin.request")) {
       expect(name).not.toMatch(/fetch|proxy|request$/i)
     }
     for (const operation of Object.values(HOSTED_OPERATIONS)) {
-      expect(operation.path.startsWith("/")).toBe(true)
-      expect(operation.path).not.toContain("://")
+      expect(operation.path.pattern!.startsWith("/")).toBe(true)
+      expect(operation.path.pattern).not.toContain("://")
     }
   })
 
@@ -55,7 +55,7 @@ describe("HOSTED_OPERATIONS", () => {
     // the closed set opening by one character, which is why it is asserted
     // rather than left to review.
     const substitutedQuery = Object.entries(HOSTED_OPERATIONS)
-      .filter(([, operation]) => /:[A-Za-z]/.test(operation.path.split("?")[1] ?? ""))
+      .filter(([, operation]) => /:[A-Za-z]/.test(operation.path.pattern!.split("?")[1] ?? ""))
       .map(([name]) => name)
 
     expect(substitutedQuery).toEqual([])
@@ -84,6 +84,12 @@ describe("HOSTED_OPERATIONS", () => {
 })
 
 describe("resolveHostedOperation", () => {
+  test("content saves require the version token on desktop too", () => {
+    expect(() => resolveHostedOperation("documents.content.put", { id: "d", markdown: "# Hi" })).toThrow(MissingOperationParameter)
+  })
+  test("snapshot restores require the version token on desktop too", () => {
+    expect(() => resolveHostedOperation("documents.snapshots.restore", { id: "d", snapshotId: "s" })).toThrow(MissingOperationParameter)
+  })
   test("a project's session page keeps its fixed scope and appends only the declared keys", () => {
     expect(resolveHostedOperation("session.page", {
       projectId: "prj_1",
