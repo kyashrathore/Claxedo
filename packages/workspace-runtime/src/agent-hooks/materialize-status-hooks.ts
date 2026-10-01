@@ -99,7 +99,7 @@ export function agentHookConfigPaths(homeDir: string, templates: readonly Status
   return Object.fromEntries(
     templates.flatMap((template) =>
       template.install.type === "config-merge"
-        ? [[template.id ?? template.command, path.join(homeDir, template.install.path.slice(2))]]
+        ? [[template.command, path.join(homeDir, template.install.path.slice(2))]]
         : [],
     ),
   )
@@ -181,7 +181,7 @@ export async function materializeAgentHooks(
     if (template.install.type !== "config-merge") continue
     const file = path.join(input.homeDir, template.install.path.slice(2))
     const result = {
-      runner: template.id ?? template.command,
+      runner: template.command,
       component: "hooks" as const,
       type: "hook" as const,
       path: file,

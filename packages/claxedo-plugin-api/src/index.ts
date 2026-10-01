@@ -73,5 +73,5 @@ export { isPluginId, PLUGIN_ID_MAX_LENGTH, PLUGIN_ID_PATTERN } from "./id"
 export { isPluginRuntimeModule, PLUGIN_RUNTIME_GLOBAL, PLUGIN_RUNTIME_MODULES } from "./runtime"
 export type { PluginRuntime, PluginRuntimeModule } from "./runtime"
 
-export { readStatusHookTemplates, statusHookTemplateSchema } from "./status-hooks"
+export { readStatusHookTemplates } from "./status-hooks"
 export type { StatusHookTemplate, StatusHookEventRule } from "./status-hooks"

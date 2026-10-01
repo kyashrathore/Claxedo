@@ -43,7 +43,7 @@ A hook that carries `agent_id` or `agentId` belongs to a subagent; Claude and Co
 
 ## Template ownership
 
-The nine CLI declarations live in the bundled `@claxedo/status-hooks` package's `package.json`, under `claxedo.statusHooks`; that package validates them and `src/status-hooks.ts` composes its list. The engine takes the template list as input: `writeStatusHooksArtifacts` writes artifacts and wrappers, `materializeAgentHooks` merges configs through `config-merge.ts`, and `providerLifecycle` maps a raw event with the declaration of the terminal's provider. Project-file installation is shared wrapper machinery.
+The nine CLI declarations live in the bundled `@claxedo/status-hooks` package, which validates them; `src/status-hooks.ts` composes its list. The engine takes the template list as input: `writeStatusHooksArtifacts` writes artifacts and wrappers, `materializeAgentHooks` merges configs through `config-merge.ts`, and `providerLifecycle` maps a raw event with the declaration of the terminal's provider. Project-file installation is shared wrapper machinery.
 
 Templates come only from that bundled package: a plugin manifest that declares `statusHooks` is refused with `PluginStatusHooksRefusedError`, because a template defines shell wrappers and rewrites files in the person's home. `setupAgentHooks({ templates })` and `AgentHookRoutes({ statusHooks })` default to the bundled list; tests pass their own.
 

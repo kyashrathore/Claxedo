@@ -65,11 +65,10 @@ const merge = z
     }
   })
 
-export const statusHookTemplateSchema = z
+const statusHookTemplateSchema = z
   .object({
     command,
     provider: command,
-    id: command.optional(),
     aliases: z.array(command).optional(),
     install: z.union([
       z.object({ type: z.literal("wrapper-flags"), args: z.array(z.string()) }).strict(),
