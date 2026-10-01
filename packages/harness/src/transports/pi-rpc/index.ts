@@ -53,7 +53,8 @@ export class PiRpcTransport implements HarnessTransport {
 
   constructor(private readonly services: HarnessServices, private readonly options: PiRpcOptions) {
     this.host = { services, options, signal: this.disposeAbort.signal, disposed: () => this.disposed,
-      unsettled: new UnsettledPiLaunches(services.clock, services.log), versions: new HarnessVersionGate(PI_RANGE, "pi.rpc"), versionReadings: new DraftProbeCache<string>() }
+      unsettled: new UnsettledPiLaunches(services.clock, services.log), versions: new HarnessVersionGate(PI_RANGE, "pi.rpc"),
+      versionReadings: new DraftProbeCache<string>() }
     this.probes = new PiDraftProbes(this.host)
     this.losses = new ProcessLosses(() => services.healthChanged())
   }
