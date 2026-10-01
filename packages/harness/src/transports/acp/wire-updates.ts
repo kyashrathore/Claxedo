@@ -1,4 +1,5 @@
 import type { AnyMessage, SessionNotification, Stream } from "@agentclientprotocol/sdk"
+import { asRecord } from "@claxedo/helpers/guards"
 import type { AcpHandlers } from "./connection"
 import type { AcpRequestScope } from "./request-scope"
 import { isAdvertisedUpdate } from "./translate/translate-session-update"
@@ -46,9 +47,9 @@ function deliverInWireOrder(handlers: UpdateHandlers, notification: SessionNotif
 }
 
 function carriedUpdate(value: unknown): Carried | undefined {
-  if (!value || typeof value !== "object" || !("path" in value) || !("update" in value)) return undefined
-  if (value.path !== "extension" && value.path !== "unknown") return undefined
-  return { path: value.path, update: value.update }
+  const row = asRecord(value)
+  if (!row || !("update" in row) || (row.path !== "extension" && row.path !== "unknown")) return undefined
+  return { path: row.path, update: row.update }
 }
 
 function subagentUpdate(type: string): boolean {
@@ -56,12 +57,9 @@ function subagentUpdate(type: string): boolean {
 }
 
 function sessionUpdateWire(message: unknown): { sessionId: string; kind: string; update: unknown } | undefined {
-  if (!message || typeof message !== "object" || !("method" in message) || message.method !== "session/update" ||
-    !("params" in message)) return undefined
-  const params = message.params
-  if (!params || typeof params !== "object" || !("sessionId" in params) || typeof params.sessionId !== "string" ||
-    !("update" in params)) return undefined
-  const update = params.update
-  if (!update || typeof update !== "object" || !("sessionUpdate" in update) || typeof update.sessionUpdate !== "string") return undefined
+  const row = asRecord(message)
+  const params = row?.method === "session/update" ? asRecord(row.params) : undefined
+  const update = asRecord(params?.update)
+  if (typeof params?.sessionId !== "string" || typeof update?.sessionUpdate !== "string") return undefined
   return { sessionId: params.sessionId, kind: update.sessionUpdate, update }
 }
