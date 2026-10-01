@@ -58,7 +58,7 @@ export class CodexSessions implements CodexSessionHost {
 
   private async apply(entry: Entry): Promise<void> {
     const next = mergeStartInput(entry.start, entry.pendingUpdate ?? {})
-    if (entry.state !== "lost" && codexLaunch(next) !== codexLaunch(entry.start)) {
+    if (codexLaunch(next) !== codexLaunch(entry.start)) {
       await this.reopen(entry)
       return
     }
@@ -76,10 +76,8 @@ export class CodexSessions implements CodexSessionHost {
   }
 
   private async replace(entry: Entry): Promise<Entry> {
-    if (entry.state !== "lost") {
-      entry.state = "retiring"
-      await entry.rpc.retire(codexRetirementDeadline(this.services))
-    }
+    entry.state = "retiring"
+    await entry.rpc.retire(codexRetirementDeadline(this.services))
     entry.state = "lost"
     entry.start = mergeStartInput(entry.start, entry.pendingUpdate ?? {})
     entry.pendingUpdate = undefined

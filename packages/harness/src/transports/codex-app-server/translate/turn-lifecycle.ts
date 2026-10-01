@@ -75,7 +75,6 @@ export const turnHandlers: CodexHandlers = {
       { type: "finish", sessionId: codexSessionId(event, context) },
     ],
   }),
-  "thread/started": () => [],
   "thread/goal/updated": () => [],
   "thread/goal/cleared": () => [],
   "turn/plan/updated": ({ row }) => {

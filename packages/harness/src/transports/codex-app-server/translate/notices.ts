@@ -4,32 +4,18 @@ import type { CodexHandler, CodexHandlers } from "./frame"
 
 type Severity = "debug" | "info" | "warn" | "error"
 
-export function diagnosticForEvent(input: {
-  code: string
-  message: string
-  severity?: Severity
-  event: { source: string; method?: string; payload: unknown }
-}) {
-  const { event, ...diagnostic } = input
-  return {
+export function unmappedCodexAppServerEvent(event: { source: string; method?: string; payload: unknown }) {
+  return [{
     type: "diagnostic",
     diagnostic: runtimeDiagnostic({
-      ...diagnostic,
+      code: "codex_app_server.unmapped_event",
+      message: `${event.method ?? "unknown"}: Codex app-server method has no AgentRuntimeEvent mapping`,
+      severity: "info",
       source: event.source,
       method: event.method,
       raw: event.payload,
     }),
-  } satisfies AgentRuntimeEvent
-}
-
-export function unmappedCodexAppServerEvent(event: { source: string; method?: string; payload: unknown }) {
-  const method = event.method ?? "unknown"
-  return [diagnosticForEvent({
-    code: "codex_app_server.unmapped_event",
-    message: `${method}: Codex app-server method has no AgentRuntimeEvent mapping`,
-    severity: "info",
-    event,
-  })]
+  } satisfies AgentRuntimeEvent]
 }
 
 export function harnessNotice(input: Omit<AgentRuntimeEventOf<"harness-notice">, "type" | "severity"> & { severity?: Severity }) {
@@ -42,10 +28,6 @@ const warning: CodexHandler = ({ method, row }) => [harnessNotice({
   severity: "warn",
   details: row,
 })]
-
-function protocolNotice(code: string, message: string, severity: Severity, field?: string): CodexHandler {
-  return ({ row }) => [harnessNotice({ code: `codex_app_server.${code}`, message: field ? text(row[field]) ?? message : message, severity, details: row })]
-}
 
 export const noticeHandlers: CodexHandlers = {
   "mcpServer/startupStatus/updated": ({ row }) => [{
@@ -64,14 +46,10 @@ export const noticeHandlers: CodexHandlers = {
   })],
   warning,
   guardianWarning: warning,
-  configWarning: protocolNotice("config_warning", "Codex config warning", "warn", "summary"),
-  deprecationNotice: protocolNotice("deprecation_notice", "Codex deprecation notice", "info", "summary"),
-  "model/verification": protocolNotice("model_verification", "Codex model verification updated", "debug"),
-  "windows/worldWritableWarning": protocolNotice("windows_world_writable_warning", "Windows world-writable path warning", "warn", "message"),
-  "windowsSandbox/setupCompleted": ({ row, event }) => row.success === false
-    ? [
-      { type: "session-status", status: "error" },
-      diagnosticForEvent({ code: "codex_app_server.sandbox_setup_failed", message: text(row.error) ?? "Sandbox setup failed", severity: "warn", event }),
-    ]
-    : [],
+  "model/verification": ({ row }) => [harnessNotice({
+    code: "codex_app_server.model_verification",
+    message: "Codex model verification updated",
+    severity: "debug",
+    details: row,
+  })],
 }

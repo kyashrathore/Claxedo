@@ -1,5 +1,4 @@
 export { codexAppServerAdapter } from "./adapter"
-export type { CodexThreadModel } from "./frame"
 export { codexMcpApproval } from "./mcp-elicitation"
 export { codexReportedModel } from "./reported-model"
 export type { CodexAppServerAdapterState, CodexTurnUsageState } from "./state"
