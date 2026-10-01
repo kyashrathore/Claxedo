@@ -86,34 +86,18 @@ async function fixture() {
   }
   await authority.addTeamMember!(creator, { teamId: team.team_id, userPublicId: people.get("teammate")!.user.subject })
   const queries = { count: 0 }
-  // A step run just before a share write reaches D1, where a concurrent writer
-  // lands in production. Miniflare's D1 handle drops property sets, so a share
-  // write is wrapped at `prepare` and unwrapped again for `batch`.
+  // A step run just before the next batch, the share write, reaches D1, where
+  // a concurrent writer lands in production.
   let beforeShareWrite: (() => Promise<unknown>) | undefined
-  const runBeforeShareWrite = async () => {
-    const step = beforeShareWrite
-    beforeShareWrite = undefined
-    if (step) await step()
-  }
-  const shareWrite = Symbol("share write")
   const counted = new Proxy(database as D1Database, {
     get(target, property) {
-      if (property === "prepare")
-        return (sql: string) => {
-          queries.count++
-          const statement = target.prepare(sql)
-          if (!/^\s*(insert into|update) document_shares\b/.test(sql)) return statement
-          return {
-            bind: (...values: unknown[]) => {
-              const bound = statement.bind(...values)
-              return { [shareWrite]: bound, run: async () => (await runBeforeShareWrite(), await bound.run()) }
-            },
-          }
-        }
+      if (property === "prepare") return (sql: string) => (queries.count++, target.prepare(sql))
       if (property === "batch")
-        return async (statements: Record<symbol, D1PreparedStatement>[]) => {
-          if (statements.some((statement) => shareWrite in statement)) await runBeforeShareWrite()
-          return await target.batch(statements.map((statement) => statement[shareWrite] ?? (statement as never)))
+        return async (statements: D1PreparedStatement[]) => {
+          const step = beforeShareWrite
+          beforeShareWrite = undefined
+          if (step) await step()
+          return await target.batch(statements)
         }
       const value = Reflect.get(target, property)
       return typeof value === "function" ? value.bind(target) : value
@@ -298,28 +282,16 @@ describe("a share write re-asks every standing it was admitted under", () => {
     expect(await f.shareRows()).toEqual([])
   })
 
-  test("a person who leaves the organization before the insert is granted nothing", async () => {
+  test.each([
+    ["a person who leaves the organization", "person", "update org_memberships set revoked_at = 1 where org_id = 'org_pages' and user_id = ?"],
+    ["a team deleted", "team", "update teams set deleted_at = 1 where team_id = ?"],
+  ] as const)("%s before the insert is granted nothing", async (_, target, removal) => {
     const f = await fixture()
-    const member = f.people.get("member")!.user.subject
-    f.beforeShareWrite(() =>
-      f.database
-        .prepare("update org_memberships set revoked_at = 1 where org_id = 'org_pages' and user_id = ?")
-        .bind(member)
-        .run(),
-    )
-    const response = await sharePage(f, { target: "person", target_id: member, level: "view" })
+    const targetId = target === "team" ? f.team.team_id : f.people.get("member")!.user.subject
+    f.beforeShareWrite(() => f.database.prepare(removal).bind(targetId).run())
+    const response = await sharePage(f, { target, target_id: targetId, level: "view" })
     expect(response.status).toBe(400)
     expect(await response.json()).toMatchObject({ error: { code: "document_share_target_outside_organization" } })
-    expect(await f.shareRows()).toEqual([])
-  })
-
-  test("a team deleted before the insert is granted nothing", async () => {
-    const f = await fixture()
-    f.beforeShareWrite(() =>
-      f.database.prepare("update teams set deleted_at = 1 where team_id = ?").bind(f.team.team_id).run(),
-    )
-    const response = await sharePage(f, { target: "team", target_id: f.team.team_id, level: "edit" })
-    expect(response.status).toBe(400)
     expect(await f.shareRows()).toEqual([])
   })
 

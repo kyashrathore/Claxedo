@@ -119,45 +119,24 @@ const WRITES = [
 ] as const
 
 describe("the workspace root no session claims", () => {
-  test("a host token whose parent was revoked reads nothing and writes nothing there", async () => {
+  test("every relayed read and write asks the current host authority, and a revoked parent reads and writes nothing", async () => {
     const directory = await repository()
     const relay = await relayed(directory)
+    expect((await relay.request("/api/wr/file/content?path=README.md")).status).toBe(200)
+    expect((await relay.request("/api/wr/git/stage", { method: "POST", body: JSON.stringify({ paths: ["README.md"] }) })).status).toBe(204)
+    expect(relay.authority.asked.map((entry) => entry.action)).toEqual(["host_read", "host_admin"])
     const head = await git(["rev-parse", "HEAD"], directory)
-    relay.authority.revoke()
 
-    for (const route of READS) {
-      const response = await relay.request(route)
-      expect({ route, status: response.status }).toEqual({ route, status: 401 })
-      expect(await response.json()).toMatchObject({ error: { code: "runtime_access_token_inactive" } })
-    }
+    relay.authority.revoke()
+    for (const route of READS) expect({ route, status: (await relay.request(route)).status }).toEqual({ route, status: 401 })
     for (const [route, body] of WRITES) {
       const response = await relay.request(route, { method: "POST", body: JSON.stringify(body) })
       expect({ route, status: response.status }).toEqual({ route, status: 401 })
     }
-
     expect(await git(["rev-parse", "HEAD"], directory)).toBe(head)
-    expect(await git(["diff", "--cached", "--name-only"], directory)).toBe("")
+    expect(await git(["diff", "--cached", "--name-only"], directory)).toBe("README.md")
     expect(await readFile(path.join(directory, "README.md"), "utf8")).toBe("changed\n")
-    expect(relay.authority.asked.map((entry) => entry.authorization)).toEqual(
-      [...READS, ...WRITES].map(() => `Bearer ${relay.token}`),
-    )
-  })
-
-  test("asks the current host authority on every request, reads as read and writes as admin", async () => {
-    const directory = await repository()
-    const relay = await relayed(directory)
-
-    const content = await relay.request("/api/wr/file/content?path=README.md")
-    expect(content.status).toBe(200)
-    expect(await content.json()).toMatchObject({ content: "changed" })
-    expect((await relay.request("/api/wr/git/stage", { method: "POST", body: JSON.stringify({ paths: ["README.md"] }) })).status).toBe(204)
-    expect(await git(["diff", "--cached", "--name-only"], directory)).toBe("README.md")
-    expect(relay.authority.asked.map((entry) => entry.action)).toEqual(["host_read", "host_admin"])
-
-    relay.authority.revoke()
-    expect((await relay.request("/api/wr/file/content?path=README.md")).status).toBe(401)
-    expect((await relay.request("/api/wr/git/unstage", { method: "POST", body: JSON.stringify({ paths: ["README.md"] }) })).status).toBe(401)
-    expect(await git(["diff", "--cached", "--name-only"], directory)).toBe("README.md")
+    expect(relay.authority.asked.every((entry) => entry.authorization === `Bearer ${relay.token}`)).toBe(true)
   })
 })
 

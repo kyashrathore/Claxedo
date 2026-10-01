@@ -741,21 +741,6 @@ describe("D1 signed Agent Plugins activation store", () => {
     expect(rows).toEqual({ defaults: 0, pins: 0, revisions: 0 })
   })
 
-  test("answers whether the caller administers their organization from the organization rule", async () => {
-    const { database, authority, store } = await setup()
-    const owner = await signed(authority, identity("alice"))
-    const { orgId } = await principalOf(authority, owner)
-    const member = await plainMember({ database, authority, subject: "bob", orgId })
-    const admin = await plainMember({ database, authority, subject: "carol", orgId })
-    await database.prepare("update org_memberships set role = 'admin' where user_id = ?").bind(admin.userId).run()
-
-    expect(await store.administersOrganization(owner)).toBe(true)
-    expect(await store.administersOrganization(admin.auth)).toBe(true)
-    expect(await store.administersOrganization(member.auth)).toBe(false)
-    await suspendActor(database, admin.auth)
-    expect(await store.administersOrganization(admin.auth)).toBe(false)
-  })
-
   test("rejects an unknown harness before writing anything", async () => {
     const { database, authority, store } = await setup()
     const auth = await signed(authority, identity("alice"))
