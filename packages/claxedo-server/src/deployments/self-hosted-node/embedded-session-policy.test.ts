@@ -75,6 +75,7 @@ function authorityStub(overrides: Partial<Record<string, unknown>> = {}) {
     releaseSessionTurn: async () => ({ released: true, sessionId: turnLease.sessionId, turnId: turnLease.turnId, fencingToken: turnLease.fencingToken }),
     grantSessionTurn: async () => { throw new Error("deferred turn grants are not under test") },
     revokeSessionTurnGrants: async () => ({ revoked: 0 }),
+    resolveWorkspaceOwner: async () => ({ userId: "alice", actorId: "actor_alice", orgId: "org_1", projectId: "project_1" }),
     ...overrides,
   } as unknown as WorkspaceAuthority
 }
@@ -218,6 +219,23 @@ describe("embeddedManagedPrivateSessionPolicy", () => {
     })
     if (!acquired.allowed) throw new Error("the turn was refused")
     expect(turns.resolve(acquired.connectionCredential)).toMatchObject({ sessionId: "ses_private", subject: "alice" })
+    turns.dispose()
+  })
+
+  test("a turn on a workspace whose owner cannot be named is refused before any lease is taken", async () => {
+    const turns = createConnectionTurnCredentials()
+    const acquireSessionTurn = vi.fn(async () => turnLease)
+    const policy = embeddedManagedPrivateSessionPolicy(authorityStub({
+      acquireSessionTurn,
+      resolveWorkspaceOwner: async () => undefined,
+    }), turns)
+
+    expect(await policy.acquireTurn!({ ...input, operation: "prompt", turnId: "msg_1" })).toMatchObject({
+      allowed: false,
+      status: 403,
+      code: "session_owner_unresolved",
+    })
+    expect(acquireSessionTurn).not.toHaveBeenCalled()
     turns.dispose()
   })
 

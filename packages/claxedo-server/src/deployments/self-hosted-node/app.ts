@@ -407,19 +407,22 @@ export function embeddedManagedPrivateSessionPolicy(
   // A session spends its owner's accounts whoever sends, so the turn's
   // connection credential binds the workspace owner's partition: their
   // user-scoped id is the key `createConnectionsHost` writes into `owner`.
-  // A workspace whose owner can no longer be named mints a session-bound
-  // credential without one rather than failing the turn.
-  const mintTurnCredential = async (input: SessionAuthorityInput, lease: SessionTurnLease) => {
+  // It is resolved before the lease is taken, so a turn no owner answers for
+  // is refused rather than left holding the lease.
+  const turnCredentialOwner = async (workspaceId: string) => {
     if (!turnCredentials) return undefined
-    const subject = (await authority.resolveWorkspaceOwner?.(input.authority.workspaceId).catch(() => undefined))?.userId
-    return turnCredentials.mint({
+    const owner = await authority.resolveWorkspaceOwner?.(workspaceId)
+    if (!owner) throw new ControlPlaneAuthError(403, "session_owner_unresolved", "The session's owner cannot be resolved for its connections")
+    return owner.userId
+  }
+  const mintTurnCredential = (subject: string | undefined, input: SessionAuthorityInput, lease: SessionTurnLease) =>
+    subject === undefined ? undefined : turnCredentials?.mint({
       sessionId: lease.sessionId,
       leaseId: lease.leaseId,
       expiresAt: lease.expiresAt,
-      ...(subject ? { subject } : {}),
+      subject,
       orgId: input.authority.orgId,
     })
-  }
   const policy = managedWorkspaceSessionAccessPolicy({
     authority: {
       authorizeSessionStart: async (input) => {
@@ -449,8 +452,9 @@ export function embeddedManagedPrivateSessionPolicy(
           const grantId = input.grant === undefined
             ? undefined
             : (await verifyDeferredTurnGrant(input.grant, process.env, { sessionId: input.sessionId })).grantId
+          const subject = await turnCredentialOwner(input.authority.workspaceId)
           const lease = await turnAuthority.acquireSessionTurn({ ...turnInput(input), ...(grantId === undefined ? {} : { grantId }) })
-          const connectionCredential = await mintTurnCredential(input, lease)
+          const connectionCredential = mintTurnCredential(subject, input, lease)
           return { allowed: true as const, ...lease, ...(connectionCredential ? { connectionCredential } : {}) }
         } catch (error) {
           return turnDenied(error)

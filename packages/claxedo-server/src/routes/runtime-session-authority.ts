@@ -615,27 +615,17 @@ export function RuntimeSessionAuthorityRoutes(options: RuntimeSessionAuthorityOp
   }
 
   /**
-   * The admitted turn's connection credential, bound to the authority lease.
-   * A session spends its owner's accounts whoever sends, so `subject` is the
-   * workspace owner's user-scoped partition key, resolved through the
-   * authority and never read from the token. A workspace whose owner can no
-   * longer be named mints a session-bound credential without one.
+   * A session spends its owner's accounts whoever sends, so a turn's
+   * connection credential binds the workspace owner's user-scoped partition,
+   * resolved through the authority and never read from the token. It is
+   * resolved before the lease is taken, so a turn no owner answers for is
+   * refused rather than left holding the lease.
    */
-  async function mintConnectionTurn(
-    claims: Pick<SessionProofClaims, "orgId" | "workspaceId">,
-    sessionId: string,
-    lease: { leaseId: string; expiresAt: number },
-  ) {
-    const turnCredentials = options.turnCredentials
-    if (!turnCredentials) return undefined
-    const subject = (await options.authority.resolveWorkspaceOwner?.(claims.workspaceId).catch(() => undefined))?.userId
-    return turnCredentials.mint({
-      sessionId,
-      leaseId: lease.leaseId,
-      expiresAt: lease.expiresAt,
-      ...(subject ? { subject } : {}),
-      orgId: claims.orgId,
-    })
+  async function connectionTurnOwner(workspaceId: string) {
+    if (!options.turnCredentials) return undefined
+    const owner = await options.authority.resolveWorkspaceOwner?.(workspaceId)
+    if (!owner) throw new ControlPlaneAuthError(403, "session_owner_unresolved", "The session's owner cannot be resolved for its connections")
+    return owner.userId
   }
 
   async function applyTurnAction(
@@ -694,6 +684,7 @@ export function RuntimeSessionAuthorityRoutes(options: RuntimeSessionAuthorityOp
       turnId: turnId!,
     }
     if (action === "turn_acquire") {
+      const subject = await connectionTurnOwner(claims.workspaceId)
       const acquired = await options.turnAuthority.acquireSessionTurn({
         ...turn,
         ...(claims.transport === "deferred-grant" ? { grantId: claims.grantId } : {}),
@@ -707,9 +698,12 @@ export function RuntimeSessionAuthorityRoutes(options: RuntimeSessionAuthorityOp
         acquiredAt: acquired.acquiredAt,
         expiresAt: acquired.expiresAt,
       })
-      const connectionCredential = await mintConnectionTurn(claims, acquired.sessionId, {
+      const connectionCredential = subject === undefined ? undefined : options.turnCredentials?.mint({
+        sessionId: acquired.sessionId,
         leaseId: acquired.leaseId,
         expiresAt: acquired.expiresAt,
+        subject,
+        orgId: claims.orgId,
       })
       return context.json({
         ...acquired,

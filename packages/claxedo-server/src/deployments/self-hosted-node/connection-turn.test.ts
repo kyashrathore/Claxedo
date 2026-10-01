@@ -125,7 +125,9 @@ describe("connection turn credentials on the session authority", () => {
           ...transitionStubs,
           resolveWorkspaceOwner: async (workspaceId: string) => workspaceId === "ws_1"
             ? { userId: "alice", actorId: "actor_alice", orgId: "org_1", projectId: "project_1" }
-            : { userId: "bob", actorId: "actor_bob", orgId: "org_1", projectId: "project_2" },
+            : workspaceId === "ws_2"
+              ? { userId: "bob", actorId: "actor_bob", orgId: "org_1", projectId: "project_2" }
+              : undefined,
         },
         turnAuthority,
         turnCredentials: turns,
@@ -203,6 +205,18 @@ describe("connection turn credentials on the session authority", () => {
       const allowed = await readToken(body.connectionCredential)
       expect(allowed.status).toBe(200)
       expect(await allowed.json()).toMatchObject({ token: "alice-secret" })
+    } finally {
+      host.dispose()
+    }
+  })
+
+  test("a turn on a workspace whose owner cannot be named is refused rather than minted without a partition", async () => {
+    const { app, relayToken, host } = await target()
+    try {
+      const orphaned = await relayToken({ ...relayInput, workspaceId: "ws_orphaned", jti: "rht_4" })
+      const acquired = await request(app, orphaned, { action: "turn_acquire", sessionId: "ses_4", turnId: "msg_4" })
+      expect(acquired.status).toBe(403)
+      expect(await acquired.json()).toMatchObject({ error: { code: "session_owner_unresolved" } })
     } finally {
       host.dispose()
     }
