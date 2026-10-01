@@ -29,7 +29,10 @@ function descriptor(overrides: Record<string, unknown> = {}, origin = ORIGIN) {
     issuer,
     methods: ["email-password"],
     browser: {},
-    native: { cli: client("device-authorization", "claxedo-cli"), desktop: client("authorization-code-pkce", "claxedo-desktop") },
+    native: {
+      cli: client("device-authorization", "claxedo-cli"),
+      desktop: client("authorization-code-pkce", "claxedo-desktop"),
+    },
     ...overrides,
   }
 }
@@ -42,7 +45,13 @@ type Outcome = "approved" | "denied" | "expired"
  * bodies, one `slow_down` for the first poll, userinfo behind the token.
  */
 function fakeIssuer(
-  input: { outcome?: Outcome; descriptor?: unknown; device?: Record<string, unknown>; origin?: string; redirectTo?: { path: string; location: string } } = {},
+  input: {
+    outcome?: Outcome
+    descriptor?: unknown
+    device?: Record<string, unknown>
+    origin?: string
+    redirectTo?: { path: string; location: string }
+  } = {},
 ) {
   const outcome = input.outcome ?? "approved"
   const origin = input.origin ?? ORIGIN
@@ -66,22 +75,42 @@ function fakeIssuer(
     if (url.pathname === "/api/auth/device/code") {
       if (!body.client_id) return json({ error: "invalid_request", error_description: "client_id is required" }, 400)
       if (body.client_id !== "claxedo-cli") return json({ error: "invalid_client" }, 401)
-      return json({ device_code: "dev_1", user_code: "ABCD-EFGH", verification_uri: `${origin}/device`, verification_uri_complete: `${origin}/device?user_code=ABCD-EFGH`, interval: 1, expires_in: 600, ...input.device })
+      return json({
+        device_code: "dev_1",
+        user_code: "ABCD-EFGH",
+        verification_uri: `${origin}/device`,
+        verification_uri_complete: `${origin}/device?user_code=ABCD-EFGH`,
+        interval: 1,
+        expires_in: 600,
+        ...input.device,
+      })
     }
     if (url.pathname === "/api/auth/oauth2/token") {
       if (!contentType.includes("application/x-www-form-urlencoded")) return json({ error: "invalid_request" }, 400)
       if (body.grant_type === DEVICE_CODE_GRANT) {
-        if (body.device_code !== "dev_1" || body.client_id !== "claxedo-cli") return json({ error: "invalid_grant" }, 400)
+        if (body.device_code !== "dev_1" || body.client_id !== "claxedo-cli")
+          return json({ error: "invalid_grant" }, 400)
         polls += 1
         if (polls === 1) return json({ error: "authorization_pending" }, 400)
         if (polls === 2) return json({ error: "slow_down", error_description: "Polling too frequently" }, 400)
         if (outcome === "denied") return json({ error: "access_denied" }, 400)
         if (outcome === "expired") return json({ error: "expired_token" }, 400)
-        return json({ access_token: "at_1", refresh_token: "rt_1", token_type: "Bearer", expires_in: 300, scope: SCOPES.join(" ") })
+        return json({
+          access_token: "at_1",
+          refresh_token: "rt_1",
+          token_type: "Bearer",
+          expires_in: 300,
+          scope: SCOPES.join(" "),
+        })
       }
       if (body.grant_type === "refresh_token") {
         if (body.refresh_token !== "rt_1") return json({ error: "invalid_grant" }, 400)
-        return json({ access_token: `at_2_${body.client_id}`, refresh_token: "rt_2", token_type: "Bearer", expires_in: 300 })
+        return json({
+          access_token: `at_2_${body.client_id}`,
+          refresh_token: "rt_2",
+          token_type: "Bearer",
+          expires_in: 300,
+        })
       }
       return json({ error: "unsupported_grant_type" }, 400)
     }
@@ -103,11 +132,20 @@ function loginDeps(issuer: ReturnType<typeof fakeIssuer>, overrides: Partial<Log
   const deps: LoginDeps = {
     controlPlaneUrl: ORIGIN,
     fetch: issuer.fetch,
-    openBrowser: (target) => { opened.push(target) },
-    sleep: async (ms) => { slept.push(ms); now += ms },
+    openBrowser: (target) => {
+      opened.push(target)
+    },
+    sleep: async (ms) => {
+      slept.push(ms)
+      now += ms
+    },
     now: () => now,
-    log: (line) => { lines.push(line) },
-    writeCredentials: async (credentials) => { written.push(credentials) },
+    log: (line) => {
+      lines.push(line)
+    },
+    writeCredentials: async (credentials) => {
+      written.push(credentials)
+    },
     ...overrides,
   }
   return { deps, lines, opened, written, slept }
@@ -128,12 +166,28 @@ describe("claxedo login", () => {
       "/api/auth/oauth2/userinfo",
     ])
     expect(issuer.calls[1]?.body).toEqual({ client_id: "claxedo-cli", scope: SCOPES.join(" "), resource: RESOURCE })
-    expect(issuer.calls[2]?.body).toEqual({ grant_type: DEVICE_CODE_GRANT, device_code: "dev_1", client_id: "claxedo-cli", resource: RESOURCE })
+    expect(issuer.calls[2]?.body).toEqual({
+      grant_type: DEVICE_CODE_GRANT,
+      device_code: "dev_1",
+      client_id: "claxedo-cli",
+      resource: RESOURCE,
+    })
     expect(h.slept, "the interval, then +5s after slow_down").toEqual([1000, 1000, 6000])
     expect(h.opened).toEqual([`${ORIGIN}/device?user_code=ABCD-EFGH`])
-    expect(h.lines).toEqual([`Open ${ORIGIN}/device?user_code=ABCD-EFGH`, "Enter code: ABCD-EFGH", "Signed in as owner@example.test"])
+    expect(h.lines).toEqual([
+      `Open ${ORIGIN}/device?user_code=ABCD-EFGH`,
+      "Enter code: ABCD-EFGH",
+      "Signed in as owner@example.test",
+    ])
     expect(h.written).toEqual([
-      { controlPlaneUrl: ORIGIN, accessToken: "at_1", refreshToken: "rt_1", tokenType: "Bearer", expiresAt: 1_000_000 + 8000 + 300_000, identity: "owner@example.test" },
+      {
+        controlPlaneUrl: ORIGIN,
+        accessToken: "at_1",
+        refreshToken: "rt_1",
+        tokenType: "Bearer",
+        expiresAt: 1_000_000 + 8000 + 300_000,
+        identity: "owner@example.test",
+      },
     ])
   })
 
@@ -149,14 +203,20 @@ describe("claxedo login", () => {
 
   test("a control plane without a descriptor names what is missing", async () => {
     const h = loginDeps(fakeIssuer(), {
-      fetch: async () => new Response(JSON.stringify({ error: { code: "not_found" } }), { status: 404, headers: { "content-type": "application/json" } }),
+      fetch: async () =>
+        new Response(JSON.stringify({ error: { code: "not_found" } }), {
+          status: 404,
+          headers: { "content-type": "application/json" },
+        }),
     })
     await expect(login(h.deps)).rejects.toThrow(`${ORIGIN} serves no auth descriptor`)
     expect(h.opened).toEqual([])
   })
 
   test("a verification URL on another origin ends the login before anything is opened or printed", async () => {
-    const h = loginDeps(fakeIssuer({ device: { verification_uri_complete: "https://evil.example.test/device?user_code=ABCD-EFGH" } }))
+    const h = loginDeps(
+      fakeIssuer({ device: { verification_uri_complete: "https://evil.example.test/device?user_code=ABCD-EFGH" } }),
+    )
     await expect(login(h.deps)).rejects.toThrow("verification_uri_complete points at https://evil.example.test")
     expect(h.opened).toEqual([])
     expect(h.lines).toEqual([])
@@ -168,7 +228,11 @@ describe("claxedo login", () => {
     await expect(login(script.deps)).rejects.toThrow("verification_uri_complete is a javascript: URL, not a web page")
     expect(script.opened).toEqual([])
 
-    const file = loginDeps(fakeIssuer({ device: { verification_uri: "file:///Applications/Calculator.app", verification_uri_complete: undefined } }))
+    const file = loginDeps(
+      fakeIssuer({
+        device: { verification_uri: "file:///Applications/Calculator.app", verification_uri_complete: undefined },
+      }),
+    )
     await expect(login(file.deps)).rejects.toThrow("verification_uri is a file: URL, not a web page")
     expect(file.opened).toEqual([])
   })
@@ -178,7 +242,9 @@ describe("claxedo login", () => {
     const complete = `${appOrigin}/device?user_code=ABCD-EFGH&next=%26whoami`
     const h = loginDeps(
       fakeIssuer({
-        descriptor: descriptor({ browser: { trustedOrigins: [appOrigin], clientId: "claxedo-web", resource: RESOURCE, scopes: SCOPES } }),
+        descriptor: descriptor({
+          browser: { trustedOrigins: [appOrigin], clientId: "claxedo-web", resource: RESOURCE, scopes: SCOPES },
+        }),
         device: { verification_uri: `${appOrigin}/device`, verification_uri_complete: complete },
       }),
     )
@@ -189,6 +255,26 @@ describe("claxedo login", () => {
 })
 
 describe("parseCliAuthDescriptor", () => {
+  test("refuses incomplete deployment metadata and an invalid native revocation contract", () => {
+    expect(() => parseCliAuthDescriptor(descriptor({ deploymentId: "" }), ORIGIN, 1)).toThrow(/deploymentId/)
+    expect(() => parseCliAuthDescriptor(descriptor({ configurationVersion: "" }), ORIGIN, 1)).toThrow(
+      /configurationVersion/,
+    )
+    const raw = descriptor()
+    raw.native.cli.revocation.tokenEndpointAuthMethod = "client-secret"
+    expect(() => parseCliAuthDescriptor(raw, ORIGIN, 1)).toThrow(/revocation/)
+  })
+  test("refuses duplicate and malformed scope entries instead of silently filtering them", () => {
+    for (const scopes of [
+      ["openid", "openid"],
+      ["openid", ""],
+      ["openid", 7],
+    ]) {
+      const raw = descriptor()
+      raw.native.cli.scopes = scopes as string[]
+      expect(() => parseCliAuthDescriptor(raw, ORIGIN, 1)).toThrow(/scopes/)
+    }
+  })
   test("binds the CLI and desktop clients to the issuer", () => {
     const binding = parseCliAuthDescriptor(descriptor(), ORIGIN, 1_000_000)
     expect(binding).toEqual({
@@ -278,7 +364,9 @@ describe("the transport a descriptor may name", () => {
     scheme.issuer = "file:///etc/passwd"
     expect(() => parseCliAuthDescriptor(scheme, ORIGIN, 1)).toThrow(`issuer ${CLEARTEXT}`)
 
-    expect(() => parseCliAuthDescriptor(descriptor(), "http://cp.example.test", 1)).toThrow(`control plane URL ${CLEARTEXT}`)
+    expect(() => parseCliAuthDescriptor(descriptor(), "http://cp.example.test", 1)).toThrow(
+      `control plane URL ${CLEARTEXT}`,
+    )
   })
 
   test("an issuer carrying a query or fragment is refused: the endpoints below it would not mean what they read", () => {
@@ -298,7 +386,9 @@ describe("the transport a descriptor may name", () => {
   })
 
   test("a verification URL carrying userinfo is refused before the browser sees it", async () => {
-    const h = loginDeps(fakeIssuer({ device: { verification_uri_complete: `https://evil.example.test@cp.example.test/device` } }))
+    const h = loginDeps(
+      fakeIssuer({ device: { verification_uri_complete: `https://evil.example.test@cp.example.test/device` } }),
+    )
     await expect(login(h.deps)).rejects.toThrow("verification_uri_complete carries a user or password")
     expect(h.opened).toEqual([])
   })
@@ -316,31 +406,46 @@ describe("the transport a descriptor may name", () => {
   })
 
   test("every auth request refuses to follow a redirect rather than carry the grant to wherever it points", async () => {
-    const issuer = fakeIssuer({ redirectTo: { path: "/api/auth/device/code", location: "http://clear.example/device/code" } })
+    const issuer = fakeIssuer({
+      redirectTo: { path: "/api/auth/device/code", location: "http://clear.example/device/code" },
+    })
     const h = loginDeps(issuer)
 
-    await expect(login(h.deps)).rejects.toThrow(`POST ${ISSUER}/device/code was redirected to http://clear.example/device/code`)
+    await expect(login(h.deps)).rejects.toThrow(
+      `POST ${ISSUER}/device/code was redirected to http://clear.example/device/code`,
+    )
 
-    expect(issuer.requests.map((request) => request.redirect), "the global fetch is never allowed to follow one either").toEqual([
-      "manual",
-      "manual",
-    ])
+    expect(
+      issuer.requests.map((request) => request.redirect),
+      "the global fetch is never allowed to follow one either",
+    ).toEqual(["manual", "manual"])
     expect(h.opened).toEqual([])
     expect(h.written).toEqual([])
   })
 
   test("a token endpoint that redirects never receives the device code twice", async () => {
-    const issuer = fakeIssuer({ redirectTo: { path: "/api/auth/oauth2/token", location: "http://clear.example/token" } })
+    const issuer = fakeIssuer({
+      redirectTo: { path: "/api/auth/oauth2/token", location: "http://clear.example/token" },
+    })
     const h = loginDeps(issuer)
 
-    await expect(login(h.deps)).rejects.toThrow(`POST ${ISSUER}/oauth2/token was redirected to http://clear.example/token`)
+    await expect(login(h.deps)).rejects.toThrow(
+      `POST ${ISSUER}/oauth2/token was redirected to http://clear.example/token`,
+    )
     expect(issuer.requests.at(-1)?.redirect).toBe("manual")
     expect(h.written).toEqual([])
   })
 })
 
 describe("refreshCredentials", () => {
-  const stored: Credentials = { controlPlaneUrl: ORIGIN, accessToken: "at_1", refreshToken: "rt_1", tokenType: "Bearer", expiresAt: 5, identity: "owner@example.test" }
+  const stored: Credentials = {
+    controlPlaneUrl: ORIGIN,
+    accessToken: "at_1",
+    refreshToken: "rt_1",
+    tokenType: "Bearer",
+    expiresAt: 5,
+    identity: "owner@example.test",
+  }
 
   test("refreshes as the CLI client at the issuer's token endpoint", async () => {
     const issuer = fakeIssuer()
@@ -349,19 +454,31 @@ describe("refreshCredentials", () => {
       path: "/api/auth/oauth2/token",
       body: { grant_type: "refresh_token", refresh_token: "rt_1", client_id: "claxedo-cli", resource: RESOURCE },
     })
-    expect(refreshed).toEqual({ controlPlaneUrl: ORIGIN, accessToken: "at_2_claxedo-cli", refreshToken: "rt_2", tokenType: "Bearer", expiresAt: 307_000, identity: "owner@example.test" })
+    expect(refreshed).toEqual({
+      controlPlaneUrl: ORIGIN,
+      accessToken: "at_2_claxedo-cli",
+      refreshToken: "rt_2",
+      tokenType: "Bearer",
+      expiresAt: 307_000,
+      identity: "owner@example.test",
+    })
   })
 
   test("a credential the desktop mirrored refreshes as the desktop client", async () => {
     const issuer = fakeIssuer()
-    const refreshed = await refreshCredentials({ ...stored, identity: "claxedo-desktop" }, { fetch: issuer.fetch, now: () => 0 })
+    const refreshed = await refreshCredentials(
+      { ...stored, identity: "claxedo-desktop" },
+      { fetch: issuer.fetch, now: () => 0 },
+    )
     expect(issuer.calls.at(-1)?.body).toMatchObject({ client_id: "claxedo-desktop" })
     expect(refreshed.accessToken).toBe("at_2_claxedo-desktop")
   })
 
   test("without a refresh token the user signs in again", async () => {
     const issuer = fakeIssuer()
-    await expect(refreshCredentials({ controlPlaneUrl: ORIGIN, accessToken: "at_1" }, { fetch: issuer.fetch, now: () => 0 })).rejects.toThrow("Run `claxedo login` again")
+    await expect(
+      refreshCredentials({ controlPlaneUrl: ORIGIN, accessToken: "at_1" }, { fetch: issuer.fetch, now: () => 0 }),
+    ).rejects.toThrow("Run `claxedo login` again")
     expect(issuer.calls).toEqual([])
   })
 })

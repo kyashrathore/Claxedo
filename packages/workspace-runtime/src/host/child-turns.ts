@@ -3,7 +3,7 @@ import type { SubagentUpdatedEvent, AgentPresentationEvent } from "@claxedo/agen
 import type { BrokerPorts } from "@claxedo/harness/broker"
 import type { ChildSessionRef } from "@claxedo/harness/contract"
 import type { ChildProjectionTarget } from "../projection/child-event-routing"
-import type { RuntimeAppendSource } from "../projection/turn-projection"
+import type { RuntimeAppendSource } from "../projection/session-event-writer"
 import type { AgentRuntimeStore } from "./contracts"
 import { AgentRuntimeStaleTurnError } from "../store"
 import type { LeasedTurnFailure } from "../broker-ports"

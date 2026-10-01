@@ -355,9 +355,9 @@ export function controlPlaneAuthErrorBody(err: ControlPlaneAuthError) {
   return encodeApiError(err)
 }
 import { bearerToken } from "@claxedo/helpers/string"
+import { type AuthAdapterId } from "@claxedo/account-contract/auth"
 import {
   AuthenticationError,
-  type AuthAdapterId,
   type ControlPlanePrincipal,
   type RequestAuthenticationAdapter,
 } from "./authentication"

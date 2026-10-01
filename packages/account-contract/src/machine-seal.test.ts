@@ -1,19 +1,12 @@
-import { describe, expect, test } from "vitest"
+import { describe, expect, test } from "bun:test"
 import {
   MACHINE_SEAL_DOMAIN,
   MACHINE_SEAL_VERSION,
-  isMachineSealingPublicKey,
   machineSealAad,
-  machineSealingPublicKey,
-  sealForMachine,
-} from "./machine-seal"
+  publicKeyJwk,
+} from "@claxedo/account-contract/machine"
+import { isMachineSealingPublicKey, sealForMachine } from "@claxedo/account-contract/machine-seal"
 
-/**
- * This package has no opener, so a round trip cannot prove the format here.
- * The literal below is what `packages/claxedo-host-connector/src/machine-seal.test.ts`
- * opens with the matching recipient private key: a drift in either copy of
- * the format fails one of the two files.
- */
 const RECIPIENT_PUBLIC_JWK =
   '{"crv":"P-256","ext":true,"key_ops":[],"kty":"EC","x":"yvfG-RnxA0zy6NThVgGjtkG-EDuxyzg6XaucwBBsxPo","y":"0wgNIB6PTjxf3_LKFkNusgqYtsXGr9dfvfVYZiwB-kg"}'
 
@@ -69,7 +62,12 @@ describe("sealForMachine", () => {
 
   test("binds the blob to the AAD: the same key and iv under another revision seal differently", async () => {
     const fixed = { ephemeralKeyPair: await fixedEphemeralKeyPair(), iv: IV }
-    const other = await sealForMachine(RECIPIENT_PUBLIC_JWK, PLAINTEXT, machineSealAad({ enrollmentId: "enr_vector", revision: 8 }), fixed)
+    const other = await sealForMachine(
+      RECIPIENT_PUBLIC_JWK,
+      PLAINTEXT,
+      machineSealAad({ enrollmentId: "enr_vector", revision: 8 }),
+      fixed,
+    )
 
     expect(other).not.toBe(SEALED)
     expect(other.split(".").slice(0, 3)).toEqual(SEALED.split(".").slice(0, 3))
@@ -91,7 +89,7 @@ describe("sealForMachine", () => {
   })
 })
 
-describe("machineSealingPublicKey", () => {
+describe("publicKeyJwk", () => {
   const p384 = JSON.stringify({
     kty: "EC",
     crv: "P-384",
@@ -100,7 +98,7 @@ describe("machineSealingPublicKey", () => {
   })
 
   test("keeps exactly the four members the sealer imports", () => {
-    expect(machineSealingPublicKey(RECIPIENT_PUBLIC_JWK)).toEqual({
+    expect(publicKeyJwk(RECIPIENT_PUBLIC_JWK)).toEqual({
       kty: "EC",
       crv: "P-256",
       x: "yvfG-RnxA0zy6NThVgGjtkG-EDuxyzg6XaucwBBsxPo",
@@ -110,11 +108,11 @@ describe("machineSealingPublicKey", () => {
   })
 
   test("rejects a JWK that is not a P-256 EC key, and the predicate says so without throwing", () => {
-    expect(() => machineSealingPublicKey(p384)).toThrow(TypeError)
-    expect(() => machineSealingPublicKey({ kty: "RSA", n: "a", e: "AQAB" })).toThrow(TypeError)
-    expect(() => machineSealingPublicKey('{"kty":"EC","crv":"P-256","x":"only"}')).toThrow(TypeError)
-    expect(() => machineSealingPublicKey("[]")).toThrow(TypeError)
-    expect(() => machineSealingPublicKey("not json")).toThrow(SyntaxError)
+    expect(() => publicKeyJwk(p384)).toThrow(TypeError)
+    expect(() => publicKeyJwk({ kty: "RSA", n: "a", e: "AQAB" })).toThrow(TypeError)
+    expect(() => publicKeyJwk('{"kty":"EC","crv":"P-256","x":"only"}')).toThrow(TypeError)
+    expect(() => publicKeyJwk("[]")).toThrow(TypeError)
+    expect(() => publicKeyJwk("not json")).toThrow(SyntaxError)
 
     expect(isMachineSealingPublicKey(p384)).toBe(false)
     expect(isMachineSealingPublicKey({ kty: "RSA", n: "a", e: "AQAB" })).toBe(false)

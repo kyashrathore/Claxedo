@@ -1,4 +1,12 @@
 import { createRequireText } from "@claxedo/helpers"
+import {
+  enrollmentPayload,
+  invitationRedeemPayload,
+  invitationToken,
+  publicKeyFingerprint,
+  MACHINE_SEAL_VERSION,
+  publicKeyJwk,
+} from "@claxedo/account-contract/machine"
 import type { D1Database, D1PreparedStatement } from "@cloudflare/workers-types"
 import { ControlPlaneAuthError, type SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import {
@@ -32,13 +40,9 @@ import type {
 } from "@claxedo/server-core/platform/auth/authority"
 import {
   directoryWithinRoots,
-  invitationRedeemPayload,
-  invitationToken,
   normalizePosixDirectory,
   normalizeStoredDirectory,
-  publicKeyFingerprint,
 } from "@claxedo/server-core/platform/auth/host-connect-contract"
-import { MACHINE_SEAL_VERSION, machineSealingPublicKey } from "@claxedo/server-core/platform/auth/machine-seal"
 import { timingSafeEqualStrings } from "@claxedo/server-core/platform/auth/web-crypto"
 import { sha256Hex } from "@claxedo/helpers/crypto"
 import { asRecord, parseJson } from "@claxedo/server-core/platform/json/index"
@@ -560,7 +564,7 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
     const signatureHash = await verifyHostSignature({
       publicKey,
       signature: args.signature,
-      payload: hostEnrollmentPayload({ hostId, requestId, nonce: request.nonce }),
+      payload: enrollmentPayload({ hostId, requestId, nonce: request.nonce }),
     })
     const expiresAt = now + normalizedTtl(args.ttlMs)
     const enrollmentId = this.randomId("enrollment")
@@ -1580,15 +1584,6 @@ class SqlJson {
 }
 
 
-export function hostEnrollmentPayload(input: { hostId: string; requestId: string; nonce: string }) {
-  return [
-    "claxedo.host-enrollment.enroll.v1",
-    `host_id=${input.hostId}`,
-    `request_id=${input.requestId}`,
-    `nonce=${input.nonce}`,
-  ].join("\n")
-}
-
 function requireScope(input: HostScopeDefinition): HostScopeDefinition {
   if (!input || typeof input !== "object" || !Array.isArray(input.allowed_roots)) {
     throw new D1HostAccessAuthorityError("invalid_input", "scope.allowed_roots must be a list of absolute paths")
@@ -1633,7 +1628,7 @@ function requireRevision(value: number, name: string, minimum: 0 | 1) {
 }
 
 /**
- * Stored as the four members `machineSealingPublicKey` keeps, so one key
+ * Stored as the four members `publicKeyJwk` keeps, so one key
  * always serializes to one text and the push's key assertion is a string
  * comparison. A key the sealer could not use is refused at the beat, where
  * the machine can fix it, rather than at the owner's push.
@@ -1641,7 +1636,7 @@ function requireRevision(value: number, name: string, minimum: 0 | 1) {
 function declaredSealingPublicKey(input: string) {
   const text = requireText(input, "sealingPublicKey", MAX_SEALING_PUBLIC_KEY_LENGTH)
   try {
-    return JSON.stringify(machineSealingPublicKey(text))
+    return JSON.stringify(publicKeyJwk(text))
   } catch {
     throw new D1HostAccessAuthorityError("invalid_input", "sealingPublicKey must be an ECDH P-256 public JWK")
   }

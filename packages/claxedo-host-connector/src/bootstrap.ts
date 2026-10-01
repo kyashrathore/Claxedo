@@ -11,8 +11,15 @@
  * file removed and the marker cleared.
  */
 
-import { hostInvitationRedeemPayload, parseInvitationToken, hostPublicKeyFingerprint, type HostKeyPair } from "./host-identity"
-import { canonicalControlPlaneUrl, ControlPlaneUrlError, isPlainRecord, type HostState, type HostStateStore } from "./host-state"
+import { type HostKeyPair } from "./host-identity"
+import { invitationRedeemPayload, decodeInvitationToken, publicKeyFingerprint } from "@claxedo/account-contract/machine"
+import {
+  canonicalControlPlaneUrl,
+  ControlPlaneUrlError,
+  isPlainRecord,
+  type HostState,
+  type HostStateStore,
+} from "./host-state"
 import {
   HOST_ENROLLMENT_REDEEM_PATH,
   HostedHttpError,
@@ -93,13 +100,17 @@ export async function redeemInvitation(input: {
     controlPlaneUrl = canonicalControlPlaneUrl(input.state.control_plane_url)
   } catch (error) {
     if (!(error instanceof ControlPlaneUrlError)) throw error
-    throw new HostConnectDecisionError(`${error.message}; enroll against an https:// control plane instead`, { cause: error })
+    throw new HostConnectDecisionError(`${error.message}; enroll against an https:// control plane instead`, {
+      cause: error,
+    })
   }
   const tokenText = await input.store.fs.readFile(input.tokenFile)
   if (tokenText === null) {
     throw new HostConnectDecisionError(`invitation token file not found: ${input.tokenFile}`, {})
   }
-  const token = parseInvitationToken(tokenText)
+  const token = decodeInvitationToken(tokenText.trim())
+  if (!token)
+    throw new Error("invitation token is not of the form chx_inv_1.<invitation_id>.<secret> with base64url parts")
   if (input.state.bootstrap && input.state.bootstrap.invitation_id !== token.invitationId) {
     // "resume" applies only to the invitation that created the enrollment;
     // a different invitation while the first is unresolved would enroll the
@@ -117,14 +128,14 @@ export async function redeemInvitation(input: {
   }
   await input.store.save(pending)
 
-  const publicKeySha256 = await hostPublicKeyFingerprint(input.keys.publicKey)
+  const publicKeySha256 = await publicKeyFingerprint(input.keys.publicKey)
   const bodyText = JSON.stringify({
     invitationId: token.invitationId,
     secret: token.secret,
     hostId: pending.host_id,
     publicKey: input.keys.publicKey,
     signature: await input.keys.sign(
-      hostInvitationRedeemPayload({ invitationId: token.invitationId, hostId: pending.host_id, publicKeySha256 }),
+      invitationRedeemPayload({ invitationId: token.invitationId, hostId: pending.host_id, publicKeySha256 }),
     ),
     ...(input.displayName ? { displayName: input.displayName } : {}),
   })
@@ -154,7 +165,8 @@ export async function redeemInvitation(input: {
       owner_display: typeof value.owner_display_name === "string" ? value.owner_display_name : "",
       org_id: typeof value.org_id === "string" ? value.org_id : "",
       enrolled_via: "invitation",
-      enrolled_at: typeof value.enrollment.created_at === "number" ? value.enrollment.created_at : (input.now ?? Date.now)(),
+      enrolled_at:
+        typeof value.enrollment.created_at === "number" ? value.enrollment.created_at : (input.now ?? Date.now)(),
       key_version: requireNumber(value.key_version, "key_version"),
     },
     ...decodeEndpoints(value),

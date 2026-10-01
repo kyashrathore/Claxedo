@@ -107,13 +107,6 @@ export function pulledSession(input: unknown, sessionId: string, Refusal: Refusa
   }
 }
 
-export function sessionIsIdle(input: unknown, sessionId: string) {
-  const statuses = asRecord(input)
-  if (!statuses) return false
-  if (!(sessionId in statuses)) return true
-  return asRecord(statuses[sessionId])?.type === "idle"
-}
-
 type PullProjection = Pick<SessionProjectionStore, "read_session_max_event_ordinal" | "read_session_messages" | "sync_session_messages">
 
 export type PullSkip =

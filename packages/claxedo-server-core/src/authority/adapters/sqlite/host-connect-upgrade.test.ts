@@ -6,7 +6,7 @@ import Database from "better-sqlite3"
 import { afterEach, describe, expect, test } from "vitest"
 import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import { sha256Hex } from "@claxedo/helpers/crypto"
-import { MACHINE_REQUEST_HEADERS, machineRequestPayload } from "@claxedo/server-core/platform/auth/host-connect-contract"
+import { MACHINE_REQUEST_HEADERS, machineRequestPayload } from "@claxedo/account-contract/machine"
 import { verifyMachineRequest } from "@claxedo/server-core/platform/auth/machine-auth"
 import { createSqliteWorkspaceAuthority } from "./workspace-authority"
 import { closeAuthorityDatabases, openAuthorityDb } from "./workspace-authority-store"
@@ -95,8 +95,13 @@ describe("SQLite host-connect upgrade", () => {
     expect(columns(db, "host_enrollments")).not.toContain("key_version")
     expect(columns(db, "host_workspace_assignments")).not.toContain("revision")
     expect(columns(db, "workspaces")).not.toContain("host_assignment_revision")
-    expect(db.prepare(`SELECT name FROM sqlite_master WHERE type = 'table' AND name IN ('host_invitations', 'host_request_nonces', 'host_assignment_readiness')`).all())
-      .toEqual([])
+    expect(
+      db
+        .prepare(
+          `SELECT name FROM sqlite_master WHERE type = 'table' AND name IN ('host_invitations', 'host_request_nonces', 'host_assignment_readiness')`,
+        )
+        .all(),
+    ).toEqual([])
     db.close()
   })
 
@@ -104,27 +109,53 @@ describe("SQLite host-connect upgrade", () => {
     const file = preConnectDatabase()
     const db = openAuthorityDb({ path: file })()
 
-    expect(db.prepare(`
+    expect(
+      db
+        .prepare(
+          `
       SELECT enrollment_id, host_id, revoked_at, key_version, serving_generation, generation_acquired_at,
         enrolled_via, scope_json, scope_revision, acked_workspace_ids, session_authority
       FROM host_enrollments ORDER BY enrollment_id
-    `).all()).toEqual([
+    `,
+        )
+        .all(),
+    ).toEqual([
       {
-        enrollment_id: "enr_gone", host_id: "host_gone", revoked_at: 7,
-        key_version: 1, serving_generation: 0, generation_acquired_at: null,
-        enrolled_via: "account", scope_json: null, scope_revision: 0,
-        acked_workspace_ids: null, session_authority: null,
+        enrollment_id: "enr_gone",
+        host_id: "host_gone",
+        revoked_at: 7,
+        key_version: 1,
+        serving_generation: 0,
+        generation_acquired_at: null,
+        enrolled_via: "account",
+        scope_json: null,
+        scope_revision: 0,
+        acked_workspace_ids: null,
+        session_authority: null,
       },
       {
-        enrollment_id: "enr_live", host_id: "host_live", revoked_at: null,
-        key_version: 1, serving_generation: 0, generation_acquired_at: null,
-        enrolled_via: "account", scope_json: null, scope_revision: 0,
-        acked_workspace_ids: '["ws_served"]', session_authority: "local",
+        enrollment_id: "enr_live",
+        host_id: "host_live",
+        revoked_at: null,
+        key_version: 1,
+        serving_generation: 0,
+        generation_acquired_at: null,
+        enrolled_via: "account",
+        scope_json: null,
+        scope_revision: 0,
+        acked_workspace_ids: '["ws_served"]',
+        session_authority: "local",
       },
     ])
-    expect(db.prepare(`
+    expect(
+      db
+        .prepare(
+          `
       SELECT workspace_id, host_id, revision FROM host_workspace_assignments ORDER BY workspace_id
-    `).all()).toEqual([
+    `,
+        )
+        .all(),
+    ).toEqual([
       { workspace_id: "ws_idle", host_id: "host_live", revision: 1 },
       { workspace_id: "ws_served", host_id: "host_live", revision: 1 },
     ])
@@ -140,15 +171,25 @@ describe("SQLite host-connect upgrade", () => {
     for (const table of ["host_invitations", "host_request_nonces", "host_assignment_readiness"]) {
       expect(db.prepare(`SELECT COUNT(*) AS count FROM ${table}`).get()).toEqual({ count: 0 })
     }
-    expect(db.prepare(`SELECT name FROM sqlite_master WHERE type = 'index' AND name = 'host_request_nonces_by_expires_at'`).get())
-      .toEqual({ name: "host_request_nonces_by_expires_at" })
+    expect(
+      db
+        .prepare(`SELECT name FROM sqlite_master WHERE type = 'index' AND name = 'host_request_nonces_by_expires_at'`)
+        .get(),
+    ).toEqual({ name: "host_request_nonces_by_expires_at" })
   })
 
   test("the upgraded database has exactly the columns a fresh one has, and reopening changes nothing", () => {
     const file = preConnectDatabase()
     const upgraded = openAuthorityDb({ path: file })()
     const fresh = openAuthorityDb({ path: ":memory:" })()
-    for (const table of ["host_enrollments", "host_workspace_assignments", "workspaces", "host_invitations", "host_request_nonces", "host_assignment_readiness"]) {
+    for (const table of [
+      "host_enrollments",
+      "host_workspace_assignments",
+      "workspaces",
+      "host_invitations",
+      "host_request_nonces",
+      "host_assignment_readiness",
+    ]) {
       expect(columns(upgraded, table).sort()).toEqual(columns(fresh, table).sort())
     }
     const before = upgraded.prepare(`SELECT * FROM host_enrollments ORDER BY enrollment_id`).all()
@@ -173,22 +214,43 @@ describe("SQLite host-connect upgrade", () => {
     const freshFile = path.join(path.dirname(file), "fresh.db")
     const fresh = createSqliteWorkspaceAuthority({ path: freshFile })
     const request = await fresh.createHostEnrollmentRequest(ownerAuth, { hostId: "host_live" })
-    const payload = ["claxedo.host-enrollment.enroll.v1", "host_id=host_live", `request_id=${request.request_id}`, `nonce=${request.nonce}`].join("\n")
+    const payload = [
+      "claxedo.host-enrollment.enroll.v1",
+      "host_id=host_live",
+      `request_id=${request.request_id}`,
+      `nonce=${request.nonce}`,
+    ].join("\n")
     await fresh.enrollHost(ownerAuth, {
       hostId: "host_live",
       publicKey: LIVE_PUBLIC_KEY,
       requestId: request.request_id,
-      signature: signData("sha256", Buffer.from(payload), { key: liveKeys.privateKey, dsaEncoding: "ieee-p1363" }).toString("base64url"),
+      signature: signData("sha256", Buffer.from(payload), {
+        key: liveKeys.privateKey,
+        dsaEncoding: "ieee-p1363",
+      }).toString("base64url"),
     })
-    expect(openAuthorityDb({ path: freshFile })().prepare(`SELECT ${columns} FROM host_enrollments WHERE host_id = 'host_live'`).get())
-      .toEqual(upgraded)
+    expect(
+      openAuthorityDb({ path: freshFile })()
+        .prepare(`SELECT ${columns} FROM host_enrollments WHERE host_id = 'host_live'`)
+        .get(),
+    ).toEqual(upgraded)
 
     const api = createSqliteWorkspaceAuthority({ path: file })
     expect(await api.listHostEnrollments!(ownerAuth)).toMatchObject([
-      { enrollment_id: "enr_live", provider_config_revision: 0, provider_config_acked_revision: 0, sealing_key_declared: false },
+      {
+        enrollment_id: "enr_live",
+        provider_config_revision: 0,
+        provider_config_acked_revision: 0,
+        sealing_key_declared: false,
+      },
     ])
-    expect(await api.hostProviderConfigTarget!(ownerAuth, { enrollmentId: "enr_live" }))
-      .toEqual({ enrollment_id: "enr_live", host_id: "host_live", display_name: "Laptop", sealing_public_key: null, next_revision: 1 })
+    expect(await api.hostProviderConfigTarget!(ownerAuth, { enrollmentId: "enr_live" })).toEqual({
+      enrollment_id: "enr_live",
+      host_id: "host_live",
+      display_name: "Laptop",
+      sealing_public_key: null,
+      next_revision: 1,
+    })
   })
 
   test("the revision counter starts at the revision a connect-era database already issued", async () => {
@@ -199,12 +261,20 @@ describe("SQLite host-connect upgrade", () => {
     const file = path.join(root, "authority.db")
     const api = createSqliteWorkspaceAuthority({ path: file })
     const request = await api.createHostEnrollmentRequest(ownerAuth, { hostId: "host_live" })
-    const payload = ["claxedo.host-enrollment.enroll.v1", "host_id=host_live", `request_id=${request.request_id}`, `nonce=${request.nonce}`].join("\n")
+    const payload = [
+      "claxedo.host-enrollment.enroll.v1",
+      "host_id=host_live",
+      `request_id=${request.request_id}`,
+      `nonce=${request.nonce}`,
+    ].join("\n")
     await api.enrollHost(ownerAuth, {
       hostId: "host_live",
       publicKey: LIVE_PUBLIC_KEY,
       requestId: request.request_id,
-      signature: signData("sha256", Buffer.from(payload), { key: liveKeys.privateKey, dsaEncoding: "ieee-p1363" }).toString("base64url"),
+      signature: signData("sha256", Buffer.from(payload), {
+        key: liveKeys.privateKey,
+        dsaEncoding: "ieee-p1363",
+      }).toString("base64url"),
     })
     await api.assignWorkspaceHost(ownerAuth, { workspaceId: "ws_a", hostId: "host_live", remoteDirectory: "/srv/a" })
     await api.assignWorkspaceHost(ownerAuth, { workspaceId: "ws_b", hostId: "host_live", remoteDirectory: "/srv/b" })
@@ -217,10 +287,20 @@ describe("SQLite host-connect upgrade", () => {
     closeAuthorityDatabases()
 
     const upgraded = openAuthorityDb({ path: file })()
-    expect(upgraded.prepare(`SELECT workspace_id, host_assignment_revision FROM workspaces ORDER BY workspace_id`).all())
-      .toEqual([{ workspace_id: "ws_a", host_assignment_revision: 4 }, { workspace_id: "ws_b", host_assignment_revision: 0 }])
-    await api.assignWorkspaceHost(ownerAuth, { workspaceId: "ws_a", hostId: "host_live", remoteDirectory: "/srv/a-moved" })
-    expect(upgraded.prepare(`SELECT revision FROM host_workspace_assignments WHERE workspace_id = 'ws_a'`).get()).toEqual({ revision: 5 })
+    expect(
+      upgraded.prepare(`SELECT workspace_id, host_assignment_revision FROM workspaces ORDER BY workspace_id`).all(),
+    ).toEqual([
+      { workspace_id: "ws_a", host_assignment_revision: 4 },
+      { workspace_id: "ws_b", host_assignment_revision: 0 },
+    ])
+    await api.assignWorkspaceHost(ownerAuth, {
+      workspaceId: "ws_a",
+      hostId: "host_live",
+      remoteDirectory: "/srv/a-moved",
+    })
+    expect(
+      upgraded.prepare(`SELECT revision FROM host_workspace_assignments WHERE workspace_id = 'ws_a'`).get(),
+    ).toEqual({ revision: 5 })
   })
 
   test("a boot interrupted between the counter column and its backfill is repaired on the next open, never lowering", async () => {
@@ -232,12 +312,20 @@ describe("SQLite host-connect upgrade", () => {
     const file = path.join(root, "authority.db")
     const api = createSqliteWorkspaceAuthority({ path: file })
     const request = await api.createHostEnrollmentRequest(ownerAuth, { hostId: "host_live" })
-    const payload = ["claxedo.host-enrollment.enroll.v1", "host_id=host_live", `request_id=${request.request_id}`, `nonce=${request.nonce}`].join("\n")
+    const payload = [
+      "claxedo.host-enrollment.enroll.v1",
+      "host_id=host_live",
+      `request_id=${request.request_id}`,
+      `nonce=${request.nonce}`,
+    ].join("\n")
     await api.enrollHost(ownerAuth, {
       hostId: "host_live",
       publicKey: LIVE_PUBLIC_KEY,
       requestId: request.request_id,
-      signature: signData("sha256", Buffer.from(payload), { key: liveKeys.privateKey, dsaEncoding: "ieee-p1363" }).toString("base64url"),
+      signature: signData("sha256", Buffer.from(payload), {
+        key: liveKeys.privateKey,
+        dsaEncoding: "ieee-p1363",
+      }).toString("base64url"),
     })
     await api.assignWorkspaceHost(ownerAuth, { workspaceId: "ws_a", hostId: "host_live", remoteDirectory: "/srv/a" })
     await api.assignWorkspaceHost(ownerAuth, { workspaceId: "ws_b", hostId: "host_live", remoteDirectory: "/srv/b" })
@@ -251,12 +339,28 @@ describe("SQLite host-connect upgrade", () => {
     closeAuthorityDatabases()
 
     const repaired = openAuthorityDb({ path: file })()
-    expect(repaired.prepare(`SELECT workspace_id, host_assignment_revision FROM workspaces ORDER BY workspace_id`).all())
-      .toEqual([{ workspace_id: "ws_a", host_assignment_revision: 7 }, { workspace_id: "ws_b", host_assignment_revision: 5 }])
-    await api.assignWorkspaceHost(ownerAuth, { workspaceId: "ws_a", hostId: "host_live", remoteDirectory: "/srv/a-moved" })
-    expect(repaired.prepare(`SELECT revision FROM host_workspace_assignments WHERE workspace_id = 'ws_a'`).get()).toEqual({ revision: 8 })
-    await api.assignWorkspaceHost(ownerAuth, { workspaceId: "ws_b", hostId: "host_live", remoteDirectory: "/srv/b-again" })
-    expect(repaired.prepare(`SELECT revision FROM host_workspace_assignments WHERE workspace_id = 'ws_b'`).get()).toEqual({ revision: 6 })
+    expect(
+      repaired.prepare(`SELECT workspace_id, host_assignment_revision FROM workspaces ORDER BY workspace_id`).all(),
+    ).toEqual([
+      { workspace_id: "ws_a", host_assignment_revision: 7 },
+      { workspace_id: "ws_b", host_assignment_revision: 5 },
+    ])
+    await api.assignWorkspaceHost(ownerAuth, {
+      workspaceId: "ws_a",
+      hostId: "host_live",
+      remoteDirectory: "/srv/a-moved",
+    })
+    expect(
+      repaired.prepare(`SELECT revision FROM host_workspace_assignments WHERE workspace_id = 'ws_a'`).get(),
+    ).toEqual({ revision: 8 })
+    await api.assignWorkspaceHost(ownerAuth, {
+      workspaceId: "ws_b",
+      hostId: "host_live",
+      remoteDirectory: "/srv/b-again",
+    })
+    expect(
+      repaired.prepare(`SELECT revision FROM host_workspace_assignments WHERE workspace_id = 'ws_b'`).get(),
+    ).toEqual({ revision: 6 })
   })
 
   test("a legacy machine-placed directory is stored normalized after the open; cloud rows are untouched", () => {
@@ -270,7 +374,9 @@ describe("SQLite host-connect upgrade", () => {
     `)
     legacy.close()
     const upgraded = openAuthorityDb({ path: file })()
-    expect(upgraded.prepare(`SELECT workspace_id, remote_directory FROM workspaces ORDER BY workspace_id`).all()).toEqual([
+    expect(
+      upgraded.prepare(`SELECT workspace_id, remote_directory FROM workspaces ORDER BY workspace_id`).all(),
+    ).toEqual([
       { workspace_id: "ws_cloud", remote_directory: "/workspace/" },
       { workspace_id: "ws_idle", remote_directory: "/srv/idle" },
       { workspace_id: "ws_served", remote_directory: "/srv/app" },
@@ -284,14 +390,25 @@ describe("SQLite host-connect upgrade", () => {
     // one-beat gap a restart already has. Nothing is fabricated at upgrade.
     const file = preConnectDatabase()
     const api = createSqliteWorkspaceAuthority({ path: file })
-    const online = async () => Object.fromEntries(
-      (await api.listWorkspaces(ownerAuth) as Array<{ workspace_id: string; host_online?: boolean }>)
-        .map((row) => [row.workspace_id, row.host_online]),
-    )
+    const online = async () =>
+      Object.fromEntries(
+        ((await api.listWorkspaces(ownerAuth)) as Array<{ workspace_id: string; host_online?: boolean }>).map((row) => [
+          row.workspace_id,
+          row.host_online,
+        ]),
+      )
     expect(await api.activeWorkspaceHost(ownerAuth, { workspaceId: "ws_served" })).toEqual({ active: false })
     expect(await online()).toEqual({ ws_idle: false, ws_served: false })
     expect(await api.listHostEnrollments!(ownerAuth)).toMatchObject([
-      { enrollment_id: "enr_live", host_id: "host_live", key_version: 1, enrolled_via: "account", serving_generation: 0, acked: [], scope: undefined },
+      {
+        enrollment_id: "enr_live",
+        host_id: "host_live",
+        key_version: 1,
+        enrolled_via: "account",
+        serving_generation: 0,
+        acked: [],
+        scope: undefined,
+      },
     ])
 
     // Through the verifier, not around it: the upgraded row has to admit a
@@ -309,25 +426,40 @@ describe("SQLite host-connect upgrade", () => {
       [MACHINE_REQUEST_HEADERS.enrollmentId, body.enrollmentId],
       [MACHINE_REQUEST_HEADERS.ts, String(ts)],
       [MACHINE_REQUEST_HEADERS.nonce, nonce],
-      [MACHINE_REQUEST_HEADERS.signature, signData("sha256", Buffer.from(machineRequestPayload({
+      [
+        MACHINE_REQUEST_HEADERS.signature,
+        signData(
+          "sha256",
+          Buffer.from(
+            machineRequestPayload({
+              method: "POST",
+              pathname: "/api/claxedo/host/enrollments/heartbeat",
+              bodySha256Hex: await sha256Hex(bodyText),
+              ts,
+              nonce,
+              enrollmentId: body.enrollmentId,
+            }),
+          ),
+          { key: liveKeys.privateKey, dsaEncoding: "ieee-p1363" },
+        ).toString("base64url"),
+      ],
+    ])
+    const verified = await verifyMachineRequest(
+      {
         method: "POST",
         pathname: "/api/claxedo/host/enrollments/heartbeat",
-        bodySha256Hex: await sha256Hex(bodyText),
-        ts,
-        nonce,
-        enrollmentId: body.enrollmentId,
-      })), { key: liveKeys.privateKey, dsaEncoding: "ieee-p1363" }).toString("base64url")],
-    ])
-    const verified = await verifyMachineRequest({
-      method: "POST",
-      pathname: "/api/claxedo/host/enrollments/heartbeat",
-      headers: { get: (name: string) => headers.get(name) ?? null },
-      bodyText,
-    }, { ...api.machineAuth!, now: Date.now })
+        headers: { get: (name: string) => headers.get(name) ?? null },
+        bodyText,
+      },
+      { ...api.machineAuth!, now: Date.now },
+    )
     if (!verified.ok) throw new Error(`verifier refused the upgraded enrollment: ${verified.code}`)
     const beat = await api.heartbeatHostEnrollmentByMachine!(verified.machine, body)
     expect(beat.assigned_workspace_ids).toEqual(["ws_idle", "ws_served"])
-    expect(await api.activeWorkspaceHost(ownerAuth, { workspaceId: "ws_served" })).toMatchObject({ active: true, host_id: "host_live" })
+    expect(await api.activeWorkspaceHost(ownerAuth, { workspaceId: "ws_served" })).toMatchObject({
+      active: true,
+      host_id: "host_live",
+    })
     expect(await online()).toEqual({ ws_idle: false, ws_served: true })
     expect(await api.listHostEnrollments!(ownerAuth)).toMatchObject([
       { enrollment_id: "enr_live", acked: [{ workspaceId: "ws_served", revision: 1 }] },

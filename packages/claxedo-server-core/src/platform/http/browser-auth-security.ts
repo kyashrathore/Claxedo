@@ -1,6 +1,6 @@
 import type { Context, MiddlewareHandler } from "hono"
 
-import type { BrowserAuthDescriptor } from "../auth/authentication"
+import type { BrowserAuthDescriptor } from "@claxedo/account-contract/auth"
 
 /**
  * Request headers a browser on a different origin may send to this server.

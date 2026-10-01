@@ -174,7 +174,7 @@ CREATE TABLE IF NOT EXISTS host_enrollments (
   scope_json TEXT,
   scope_revision INTEGER NOT NULL DEFAULT 0,
   -- The ECDH P-256 public JWK the machine declared on a beat, stored as
-  -- machineSealingPublicKey normalizes it so a push can re-assert it by
+  -- publicKeyJwk normalizes it so a push can re-assert it by
   -- text equality. NULL until a beat declares one; never cleared.
   sealing_public_key_json TEXT,
   -- The owner's provider configuration sealed for that key, or NULL: at
