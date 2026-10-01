@@ -412,7 +412,10 @@ export const desktopRenderer: Policy = {
   // SidePanel owns shared frame, header, tab, resize and motion; the panel and
   // Marketplace wrappers reach it through ui, with workspace data kept outside.
   // side-panel-slot lets the active page use that full-height shell host.
-  ceilings: { modules: 1245, packages: 36 },
+  // +1 model-rows owns shared SettingsRow rendering and large-provider
+  // virtualization, reached through accounts/view/models-tab. Its imports
+  // already belong to the renderer closure; no package edge is added.
+  ceilings: { modules: 1246, packages: 36 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,
