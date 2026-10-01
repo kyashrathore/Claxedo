@@ -3,7 +3,7 @@ import { Hono } from "hono"
 import { PublicDocumentRoutes } from "@claxedo/server-core/documents/routes/public"
 import { DocumentsRoutes } from "@claxedo/server-core/documents/routes/index"
 import type { DocumentsBackend } from "@claxedo/server-core/documents/backend"
-import type { DocumentAccess, DocumentShare, DocumentSharing } from "@claxedo/server-core/documents/access"
+import { DocumentAccessError, type DocumentAccess, type DocumentShare, type DocumentSharing } from "@claxedo/server-core/documents/access"
 import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import type { WorkspaceAuthority } from "@claxedo/server-core/platform/auth/authority"
 
@@ -14,12 +14,27 @@ export function privatePagesFixture(env?: NodeJS.ProcessEnv) {
   const teams = new Map([["team", new Set(["teammate"])]])
   const sharing: DocumentSharing = {
     list: async (id) => shares.filter((share) => share.document_id === id),
-    create: async (share) => {
+    create: async (principal, page, input) => {
+      if (page.creator_id !== principal.userId) throw new DocumentAccessError()
+      if (
+        (input.target === "person" && !members.has(input.target_id)) ||
+        (input.target === "team" && !teams.has(input.target_id))
+      ) {
+        throw new DocumentAccessError("document_share_target_outside_organization", 400)
+      }
+      const share = {
+        ...input,
+        document_id: page.id,
+        org_id: page.org_id,
+        created_by: principal.userId,
+        revoked_at: null,
+      }
       shares.push(share)
       return share
     },
-    revoke: async (id, shareId) => {
-      const index = shares.findIndex((share) => share.document_id === id && share.id === shareId)
+    revoke: async (principal, page, shareId) => {
+      if (page.creator_id !== principal.userId) throw new DocumentAccessError()
+      const index = shares.findIndex((share) => share.document_id === page.id && share.id === shareId)
       if (index >= 0) shares[index] = { ...shares[index]!, revoked_at: Date.now() }
     },
     findLink: async (hash) =>
@@ -32,7 +47,6 @@ export function privatePagesFixture(env?: NodeJS.ProcessEnv) {
           ((share.target === "person" && share.target_id === userId) ||
             (share.target === "team" && !!teams.get(share.target_id)?.has(userId))),
       ),
-    isTeamInOrg: async (teamId, orgId) => orgId === "org" && teams.has(teamId),
   }
   const access: { -readonly [K in keyof DocumentAccess]: DocumentAccess[K] } = {
     principal: async (auth: SignedControlPlaneAuth, orgId?: string) => ({

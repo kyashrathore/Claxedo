@@ -259,16 +259,64 @@ describe("one authorization owner", () => {
     await expect(token(sender, "jti_share_owner", { sessionId: "ses_alice", role: "owner" })).rejects.toMatchObject({ status: 403 })
     await token(alice, "jti_owner", { role: "owner" })
 
-    // Revoking a share revokes the session tokens of everyone it named, the
-    // organization's founder included, and never a workspace token.
+    // The token is recorded under the share naming the sender, so ending the
+    // organization's share leaves it, and ending theirs revokes it.
     await authority.revokeSessionShare!(alice, { sessionId: "ses_alice", workspaceId, grantedToOrgId: "org_acme" })
+    expect(await active("jti_share")).toEqual({ active: true })
     expect(await active("jti_owner")).toEqual({ active: true })
     await token(sender, "jti_share_again", { sessionId: "ses_alice" })
     expect(await authority.revokeSessionShare!(alice, { sessionId: "ses_alice", workspaceId, grantedToUserId: id(sender) }))
-      .toMatchObject({ revoked: true, runtime_tokens_revoked: 1 })
+      .toMatchObject({ revoked: true, runtime_tokens_revoked: 2 })
+    expect(await active("jti_share")).toMatchObject({ active: false, code: "runtime_access_token_revoked" })
     expect(await active("jti_share_again")).toMatchObject({ active: false, code: "runtime_access_token_revoked" })
     await expect(token(sender, "jti_after_revoke", { sessionId: "ses_alice" })).rejects.toMatchObject({ status: 403 })
     expect(await active("jti_owner")).toEqual({ active: true })
+  })
+
+  test("a runtime token a team share admitted ends with its holder's team membership and never comes back", async () => {
+    const { authority, alice, teamId, grantees: { teamEditor } } = await setup()
+    const workspaceId = "ws_alice"
+    await authority.grantSessionShare!(alice, { sessionId: "ses_alice", workspaceId, grantedToTeamId: teamId })
+    await authority.recordRuntimeAccessToken(teamEditor, {
+      jti: "jti_team", workspaceId, hostId: "host_alice", ...runtime(teamEditor), role: "viewer", sessionId: "ses_alice",
+      expiresAt: 1_900_000_000_000,
+    })
+    await authority.recordRuntimeAccessToken(alice, {
+      jti: "jti_owner", workspaceId, hostId: "host_alice", ...runtime(alice), role: "owner", expiresAt: 1_900_000_000_000,
+    })
+    const active = (jti: string) => authority.runtimeAccessTokenActive({ jti, workspaceId, hostId: "host_alice" })
+    expect(await active("jti_team")).toEqual({ active: true })
+
+    await authority.removeTeamMember!(alice, { teamId, userPublicId: id(teamEditor) })
+    await authority.grantSessionShare!(alice, { sessionId: "ses_alice", workspaceId, grantedToUserId: id(teamEditor) })
+    await authority.authorizeRuntimeSession({ ...runtime(teamEditor), sessionId: "ses_alice", workspaceId, action: "read" })
+    expect(await active("jti_team")).toMatchObject({ active: false, code: "runtime_access_token_revoked" })
+    expect(await active("jti_owner")).toEqual({ active: true })
+  })
+
+  test("revoking a share revokes exactly the runtime tokens it admitted, whoever is on its team by then", async () => {
+    const { authority, database, alice, teamId, grantees: { teamEditor }, sender } = await setup()
+    const workspaceId = "ws_alice"
+    const token = (who: SignedControlPlaneAuth, jti: string) => authority.recordRuntimeAccessToken(who, {
+      jti, workspaceId, hostId: "host_alice", ...runtime(who), role: "viewer", sessionId: "ses_alice", expiresAt: 1_900_000_000_000,
+    })
+    const revokedAt = async (jti: string) =>
+      (await database.prepare(`select revoked_at from runtime_access_tokens where jti = ?`).bind(jti).first<{ revoked_at: number | null }>())?.revoked_at
+    await authority.addTeamMember!(alice, { teamId, userPublicId: id(sender) })
+    await authority.grantSessionShare!(alice, { sessionId: "ses_alice", workspaceId, grantedToUserId: id(sender) })
+    await authority.grantSessionShare!(alice, { sessionId: "ses_alice", workspaceId, grantedToTeamId: teamId })
+    await token(sender, "jti_direct")
+    await token(teamEditor, "jti_team")
+    // The holder is off the team by a path that stamps nothing, so only the
+    // token's own record can say which share admitted it.
+    await database.prepare(`update team_memberships set revoked_at = 1 where team_id = ? and user_id = ?`)
+      .bind(teamId, id(teamEditor)).run()
+
+    expect(await authority.revokeSessionShare!(alice, { sessionId: "ses_alice", workspaceId, grantedToTeamId: teamId }))
+      .toMatchObject({ revoked: true, runtime_tokens_revoked: 1 })
+    expect(await revokedAt("jti_team")).toEqual(expect.any(Number))
+    expect(await revokedAt("jti_direct")).toBeNull()
+    expect(await authority.runtimeAccessTokenActive({ jti: "jti_direct", workspaceId, hostId: "host_alice" })).toEqual({ active: true })
   })
 
   test("a share lives on its owner's standing: suspending the owner stops it, and removing them revokes it and its tokens", async () => {

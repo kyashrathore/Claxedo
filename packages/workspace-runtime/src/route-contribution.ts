@@ -40,8 +40,6 @@ export type WorkspaceRuntimeRouteContext = {
   directory: string
   /** Per-workspace runtime state root owned by the host, outside the checkout. */
   stateDirectory: string
-  /** Apply opaque launch metadata without replacing accepted model/auth/MCP state. */
-  applyHarnessLaunch(harnessLaunch: Record<string, Record<string, unknown>>): Promise<void>
   /**
    * Call this runtime's own routes without leaving the process.
    *

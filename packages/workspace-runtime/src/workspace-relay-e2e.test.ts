@@ -110,11 +110,12 @@ async function readAll(reader: ReadableStreamDefaultReader<Uint8Array>, first?: 
 /**
  * The relay-exposed runtime composes `remoteWorkspaceSessionAccessPolicy`, so
  * every session-scoped operation (PTY create included) is decided by a control
- * plane over HTTP. These e2e tests own no control plane, so they stand up the
- * narrowest possible one: it authorizes exactly the session the test creates a
- * PTY for, for exactly the actor the Runtime Access Token carries, and denies
- * everything else. Anything looser would stop proving that the runtime actually
- * consults the authority — the whole point of the M2c seam.
+ * plane over HTTP, and so is every read or write of the workspace root, which
+ * belongs to no session. These e2e tests own no control plane, so they stand up
+ * the narrowest possible one: for exactly the actor the Runtime Access Token
+ * carries, it admits the host and exactly the session the test creates a PTY
+ * for, and denies everything else. Anything looser would stop proving that the
+ * runtime actually consults the authority — the whole point of the M2c seam.
  */
 function sessionAuthorityStub(input: {
   sessionId: string
@@ -145,6 +146,7 @@ function sessionAuthorityStub(input: {
         : undefined
       requests.push({ sessionId: body.sessionId, action: body.action, actorId: claims?.actor_id })
       if (!claims || claims.actor_id !== input.actorId) return new Response(null, { status: 401 })
+      if (body.action === "host_read" || body.action === "host_admin") return Response.json({ allowed: true })
       if (body.sessionId !== input.sessionId) return new Response(null, { status: 403 })
       return Response.json(body.stream
         ? {
@@ -541,6 +543,7 @@ describe("workspace relay composed runtime path", () => {
       await fs.writeFile(path.join(relay.workspaceDir, "large.bin"), large)
       const streamed = await relayFetch("/file/content?path=large.bin")
       expect(streamed.status).toBe(200)
+      expect(relay.authorityRequests).toContainEqual({ action: "host_read", actorId: "actor_1" })
       expect(streamed.headers.get("content-type")).toContain("application/json")
       const streamedReader = streamed.body!.getReader()
       const first = await streamedReader.read()
