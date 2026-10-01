@@ -21,6 +21,7 @@ export function renderHostedE2eWranglerConfig(): HostedWranglerConfig {
     controlPlaneDatabase: { name: "claxedo-hosted-e2e-control", id: "22222222-2222-4222-8222-222222222222" },
     controlPlaneMigrationsDir: "../migrations/control-plane",
     requestLimiterNamespaceId: "1930000001",
+    documentsBucket: "claxedo-documents-e2e",
     agentPluginsBucket: "claxedo-agent-plugins-e2e",
     variables: {
       CLAXEDO_ADAPTER_PROFILE: "better-auth-d1",

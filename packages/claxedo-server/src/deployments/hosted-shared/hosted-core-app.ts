@@ -1,7 +1,3 @@
-import { DocumentsRoutes } from "@claxedo/server-core/documents/routes/index"
-import { PublicDocumentRoutes } from "@claxedo/server-core/documents/routes/public"
-import type { DocumentsBackend } from "@claxedo/server-core/documents/backend"
-import type { D1AccessContext } from "../../authority/adapters/d1/access-context"
 import { requireAuthority } from "@claxedo/server-core/platform/auth/authority"
 import { Hono } from "hono"
 import { cors } from "hono/cors"
@@ -9,6 +5,9 @@ import { allowedOriginPatterns } from "@claxedo/server-core/platform/http/cors-o
 import { securityHeaders } from "@claxedo/server-core/platform/http/security-headers"
 import { browserAuthHttpSecurity } from "@claxedo/server-core/platform/http/browser-auth-security"
 import type { RequestAuthenticationAdapter } from "@claxedo/server-core/platform/auth/authentication"
+import type { DocumentsBackend } from "@claxedo/server-core/documents/backend"
+import { DocumentsRoutes } from "@claxedo/server-core/documents/routes/index"
+import { PublicDocumentRoutes } from "@claxedo/server-core/documents/routes/public"
 import {
   DEPLOYMENT_MODE_ENV,
   DeploymentModeError,
@@ -96,7 +95,6 @@ export type HostedCoreProductWorkspaceOptions = Pick<
 
 export type HostedCoreAppOptions = {
   documents?: DocumentsBackend
-  documentAccessContext?: D1AccessContext
   idempotency: IdempotencyCoordinator
   authentication: RequestAuthenticationAdapter
   relayTargetLookup?: RelayTargetLookup
@@ -393,8 +391,22 @@ export function createHostedCoreApp(plane: HostedControlPlane, options: HostedCo
   )
 
   if (options.documents) {
-    app.route("/documents", DocumentsRoutes({ backend: options.documents, authority: requireAuthority(services), authentication: options.authentication, env: plane.env }))
-    app.route("/p", PublicDocumentRoutes({ backend: options.documents, rateLimit: async (key) => (await options.sharedRateLimitStore.check(key)).allowed }))
+    app.route(
+      "/documents",
+      DocumentsRoutes({
+        backend: options.documents,
+        authority: requireAuthority(services),
+        authentication: options.authentication,
+        env: plane.env,
+      }),
+    )
+    app.route(
+      "/p",
+      PublicDocumentRoutes({
+        backend: options.documents,
+        rateLimit: async (key) => (await options.sharedRateLimitStore.check(key)).allowed,
+      }),
+    )
   }
   mountSessionReadRoutes(app, plane, options.authentication)
 

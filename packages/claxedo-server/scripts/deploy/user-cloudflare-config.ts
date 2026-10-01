@@ -32,6 +32,7 @@ export type UserCloudflareDeployment = UserCloudflareTarget & Readonly<{
   providerClientIds: Readonly<Record<string, string>>
   requestLimiterNamespaceId: string
   artifact: CertifiedHostedWorkerArtifact
+  documentsBucket: string
   agentPluginsBucket?: string
   sandbox?: Readonly<{ driver: SandboxDriver; variables: Readonly<Record<string, string>> }>
   requiredSecrets: readonly string[]
@@ -165,6 +166,7 @@ export function userCloudflareDeployment(
     providerClientIds,
     requestLimiterNamespaceId: allocatedRequestLimiterNamespaceId(target.deploymentId, target.workerName),
     artifact,
+    documentsBucket: setting(env, "CLAXEDO_DOCUMENTS_BUCKET", `${target.workerName}-documents`),
     ...(artifact.agentPlugins
       ? { agentPluginsBucket: setting(env, "CLAXEDO_AGENT_PLUGINS_BUCKET", `${target.workerName}-agent-plugins`) }
       : {}),

@@ -15,7 +15,7 @@ export type WorkerWranglerConfigInput = Readonly<{
   /** `migrations_dir` for CONTROL_PLANE_DB relative to `configDirectory`, as `stageWorkerControlPlaneMigrations` answers it. */
   controlPlaneMigrationsDir: string
   requestLimiterNamespaceId: string
-  documentsBucket?: string
+  documentsBucket: string
   agentPluginsBucket?: string
   variables: Readonly<Record<string, string>>
 }>
@@ -107,7 +107,7 @@ migrations_dir = ${quote(input.controlPlaneMigrationsDir)}
 
 [[r2_buckets]]
 binding = "CLAXEDO_DOCUMENTS"
-bucket_name = ${quote(input.documentsBucket ?? `${input.workerName}-documents`)}
+bucket_name = ${quote(input.documentsBucket)}
 
 [[ratelimits]]
 name = "CLAXEDO_REQUEST_LIMITER"

@@ -8,7 +8,7 @@ vi.mock("../hosted-shared/hosted-core-app", () => ({
 
 import { createHostedCoreWorker } from "./core-worker.cf"
 
-const documentAccessContext = { database: { prepare: vi.fn() }, now: Date.now }
+const documentAccess = { database: { prepare: vi.fn() }, now: Date.now } as never
 
 function app() {
   return {
@@ -19,7 +19,7 @@ function app() {
 
 function env() {
   return {
-    CLAXEDO_DOCUMENTS: {} as never,
+    CLAXEDO_DOCUMENTS: { get: vi.fn(), put: vi.fn(), delete: vi.fn(), list: vi.fn() } as never,
     CONTROL_PLANE_DB: { prepare: vi.fn() } as never,
     CLAXEDO_REQUEST_LIMITER: {
       limit: vi.fn(async () => ({ success: true })),
@@ -36,7 +36,7 @@ describe("hosted core Worker root", () => {
     const application = app()
     mocks.createHostedCoreApp.mockReturnValue(application)
     const product = { productPosture: "user-deployed" }
-    const selected = { plane: {} as never, options: { product, documentAccessContext } as never }
+    const selected = { plane: {} as never, options: { product } as never, documentAccess }
     const compose = vi.fn(() => selected)
     const worker = createHostedCoreWorker(compose)
     const bindings = env()
@@ -71,7 +71,7 @@ describe("hosted core Worker root", () => {
     mocks.createHostedCoreApp.mockReset()
     mocks.createHostedCoreApp.mockReturnValueOnce(firstApp).mockReturnValueOnce(secondApp)
     const planes = [{ wedged: true }, { settled: true }]
-    const compose = vi.fn(() => ({ plane: (planes.shift() ?? { settled: true }) as never, options: { documentAccessContext } as never }))
+    const compose = vi.fn(() => ({ plane: (planes.shift() ?? { settled: true }) as never, options: {} as never, documentAccess }))
     const worker = createHostedCoreWorker(compose)
     const bindings = env()
 
@@ -87,7 +87,7 @@ describe("hosted core Worker root", () => {
     "fails closed before composition when %s is absent",
     async (binding) => {
       mocks.createHostedCoreApp.mockReturnValue(app())
-      const compose = vi.fn(() => ({ plane: {} as never, options: { documentAccessContext } as never }))
+      const compose = vi.fn(() => ({ plane: {} as never, options: {} as never, documentAccess }))
       const worker = createHostedCoreWorker(compose)
       const bindings: Partial<ReturnType<typeof env>> = env()
       delete bindings[binding]
@@ -113,8 +113,9 @@ describe("hosted core Worker root", () => {
   test.each([
     ["CLAXEDO_REQUEST_LIMITER", {}],
     ["LIVE_SYNC_ROOM", { idFromName: vi.fn() }],
+    ["CLAXEDO_DOCUMENTS", {}],
   ] as const)("rejects a malformed %s binding instead of degrading", async (binding, malformed) => {
-    const compose = vi.fn(() => ({ plane: {} as never, options: { documentAccessContext } as never }))
+    const compose = vi.fn(() => ({ plane: {} as never, options: {} as never, documentAccess }))
     const worker = createHostedCoreWorker(compose)
     const bindings = { ...env(), [binding]: malformed }
 

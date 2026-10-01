@@ -25,6 +25,7 @@ function coreConfig(artifactId: (typeof CERTIFIED_HOSTED_WORKER_ARTIFACT_IDS)[nu
     controlPlaneDatabase: { name: "claxedo-control-plane", id: "22222222-2222-4222-8222-222222222222" },
     controlPlaneMigrationsDir: STAGED_CONTROL_PLANE_MIGRATIONS_DIR,
     requestLimiterNamespaceId: "3123456789",
+    documentsBucket: "claxedo-documents",
     ...(artifact.agentPlugins ? { agentPluginsBucket: "claxedo-agent-plugins" } : {}),
     variables: { CLAXEDO_SANDBOX_POSTURE: artifact.sandboxPosture },
   })

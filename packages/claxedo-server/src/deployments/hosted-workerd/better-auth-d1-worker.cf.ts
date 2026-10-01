@@ -218,7 +218,7 @@ export function createBetterAuthD1Worker(input: {
     })
   const core = createHostedCoreWorker<BetterAuthD1WorkerEnv>((env) => {
     const selected = composition(env)
-    return { plane: selected.plane, options: selected.options }
+    return { plane: selected.plane, options: selected.options, documentAccess: selected.documentAccess }
   })
 
   return {

@@ -1,17 +1,11 @@
-import { asRecord } from "@claxedo/server-core/platform/json/index"
-import { requireAuthority } from "@claxedo/server-core/platform/auth/authority"
-import { createHostedDocumentsBackend } from "../../documents/backends/hosted/backend"
-import type { R2BucketBinding } from "../../documents/backends/hosted/r2-object-store.cf"
-import { d1DocumentAccess } from "../../authority/adapters/d1/document-authority"
-import { createHostedDocumentRuntimeBroker } from "../../documents/backends/hosted/runtime-broker"
 /**
  * Provider-independent Cloudflare Worker root for the hosted core.
  *
  * Certified product/profile entrypoints inject exactly one static composition
  * through `createHostedCoreWorker`. This module owns the Cloudflare-only core
  * resources shared by every profile: the cross-isolate request limiter,
- * `LIVE_SYNC_ROOM`, and the projection-command idempotency store in
- * `CONTROL_PLANE_DB`.
+ * `LIVE_SYNC_ROOM`, the projection-command idempotency store in
+ * `CONTROL_PLANE_DB`, and the hosted Pages backend over `CLAXEDO_DOCUMENTS`.
  */
 
 import type { D1Database } from "@cloudflare/workers-types"
@@ -22,7 +16,11 @@ import {
   securityHeaderEntries,
   withSecurityHeaders,
 } from "@claxedo/server-core/platform/http/security-headers"
+import { asRecord } from "@claxedo/server-core/platform/json/index"
+import { requireAuthority } from "@claxedo/server-core/platform/auth/authority"
 
+import type { D1AccessContext } from "../../authority/adapters/d1/access-context"
+import { d1DocumentAccess } from "../../authority/adapters/d1/document-authority"
 import type { HostedControlPlane } from "../../authority/hosted-services"
 import { createIdempotencyCoordinator, d1ProjectionCommandIdempotency } from "../../authority/http/idempotency"
 import { HostedWorkerCompositionError } from "../../authority/composition-error"
@@ -38,6 +36,9 @@ import { CLAXEDO_MCP_TOOL_GROUPS } from "@claxedo/mcp"
 import { createClaxedoMcpClient } from "@claxedo/mcp/client"
 import { LiveSyncRoom } from "./live-sync-room.cf"
 import type { LiveSyncRoomNamespace } from "../../platform/http/live-sync-publish"
+import { createHostedDocumentsBackend } from "../../documents/backends/hosted/backend"
+import type { R2BucketBinding } from "../../documents/backends/hosted/r2-object-store.cf"
+import { createHostedDocumentRuntimeBroker } from "../../documents/backends/hosted/runtime-broker"
 
 export { LiveSyncRoom }
 
@@ -52,7 +53,8 @@ export type HostedCoreWorkerComposition<Env extends HostedCoreWorkerEnv> = (
   env: Env,
 ) => {
   plane: HostedControlPlane
-  options: Omit<HostedCoreAppOptions, "liveSyncRoom" | "sharedRateLimitStore" | "idempotency">
+  options: Omit<HostedCoreAppOptions, "liveSyncRoom" | "sharedRateLimitStore" | "idempotency" | "documents">
+  documentAccess: D1AccessContext
 }
 
 function bindingError(name: string): never {
@@ -76,6 +78,11 @@ function requiredLiveSyncRoom(value: LiveSyncRoomNamespace | undefined) {
 
 function requiredControlPlaneDatabase(value: D1Database | undefined) {
   if (!value || typeof value.prepare !== "function") bindingError("CONTROL_PLANE_DB")
+  return value
+}
+
+function requiredDocumentsBucket(value: R2BucketBinding | undefined) {
+  if (!value || typeof value.get !== "function" || typeof value.put !== "function") bindingError("CLAXEDO_DOCUMENTS")
   return value
 }
 
@@ -114,17 +121,15 @@ export function createHostedCoreWorker<Env extends HostedCoreWorkerEnv>(
     const limiter = requiredRateLimiter(env.CLAXEDO_REQUEST_LIMITER)
     const liveSyncRoom = requiredLiveSyncRoom(env.LIVE_SYNC_ROOM)
     const controlPlaneDatabase = requiredControlPlaneDatabase(env.CONTROL_PLANE_DB)
-    if (!env.CLAXEDO_DOCUMENTS) bindingError("CLAXEDO_DOCUMENTS")
+    const documentsBucket = requiredDocumentsBucket(env.CLAXEDO_DOCUMENTS)
     const selected = compose(env)
     const key = selected.plane as object
     const existing = appByPlane.get(key)
     if (existing) return existing
 
-    const accessContext = selected.options.documentAccessContext
-    if (!accessContext) bindingError("documentAccessContext")
-    const documents = createHostedDocumentsBackend(env.CLAXEDO_DOCUMENTS, {
+    const documents = createHostedDocumentsBackend(documentsBucket, {
       env: selected.plane.env,
-      access: (index) => d1DocumentAccess(accessContext, index),
+      access: (index) => d1DocumentAccess(selected.documentAccess, index),
       runtime: createHostedDocumentRuntimeBroker(selected.plane.services, selected.plane.env),
       resolveSessionWorkspace: async (auth, sessionId) => {
         const authority = requireAuthority(selected.plane.services)
