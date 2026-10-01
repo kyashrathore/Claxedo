@@ -1,6 +1,7 @@
+import { asRecord } from "@claxedo/helpers/guards"
 import { asText as text } from "@claxedo/agent-runtime-contract"
+import type { LocalRunStreamEvent, ShellOutputDeltaUpdate } from "@cursor/sdk"
 import type { HarnessEventAdapter } from "../../../translate/adapter"
-import { isLocalRunStreamEvent, isSdkMessage, isShellOutputDelta, payload, unknownKind } from "./frames"
 import { localRunTerminalEvents } from "./run-status"
 import { translateSdkMessage } from "./sdk-message"
 import { shellOutputEvents } from "./shell-output"
@@ -13,16 +14,16 @@ export { cursorRuntimeMessage, cursorSubagentObservations } from "./tasks"
 export { nestedTaskMessage } from "./nested"
 
 function translateRow(state: CursorSdkAdapterState, row: Record<string, unknown>): CursorTranslation {
-  if (isLocalRunStreamEvent(row)) return row.type === "sdk_message" ? translateSdkMessage(state, row.message) : localRunTerminalEvents(state, row)
-  if (isSdkMessage(row)) return translateSdkMessage(state, row)
-  if (isShellOutputDelta(row)) return shellOutputEvents(state, row)
-  return unknownKind(state, `message:${text(row.type) ?? typeof row.type}`)
+  if (row.type === "sdk_message") return translateSdkMessage(state, row.message as Record<string, unknown>)
+  if (row.type === "result" || row.type === "done") return localRunTerminalEvents(state, row as unknown as Exclude<LocalRunStreamEvent, { type: "sdk_message" }>)
+  if (row.type === "shell-output-delta" && asRecord(row.event)) return shellOutputEvents(state, row as unknown as ShellOutputDeltaUpdate)
+  return translateSdkMessage(state, row, text(row.type) ?? typeof row.type)
 }
 
 export function cursorSdkAdapter(): HarnessEventAdapter<CursorSdkAdapterState> {
   return {
     name: "cursor-sdk",
     createInitialState: createCursorSdkAdapterState,
-    translate: ({ state, event }) => translateRow(state, payload(event)),
+    translate: ({ state, event }) => translateRow(state, asRecord(event.payload) ?? {}),
   }
 }
