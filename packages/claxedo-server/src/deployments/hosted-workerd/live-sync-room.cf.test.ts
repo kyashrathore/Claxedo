@@ -155,10 +155,16 @@ const sessionShareChanged = (ownerUserId: string): ControlPlaneEvent => ({
 
 const documentChanged = (orgId: string): ControlPlaneEvent => ({
   type: "document.changed",
-  documentId: "doc_1",
   orgId,
   projectId: "proj_1",
   ts: Date.now(),
+})
+
+/** A Page notice as a publisher that still names the Page would ring it. */
+const pageNamingDocumentChanged = (orgId: string) => ({
+  ...documentChanged(orgId),
+  documentId: "doc_private_to_alice",
+  version: "version_private_to_alice",
 })
 
 // Read exactly one SSE `data:` frame (one enqueue = one full frame) and return
@@ -235,7 +241,7 @@ async function openRoom(room: LiveSyncRoom, init: { subject?: string; org?: stri
   }
 }
 
-async function pushEvent(room: LiveSyncRoom, event: ControlPlaneEvent) {
+async function pushEvent(room: LiveSyncRoom, event: ControlPlaneEvent | Record<string, unknown>) {
   const response = await room.fetch(new Request("https://live-sync-room.internal/nudge", {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -244,10 +250,11 @@ async function pushEvent(room: LiveSyncRoom, event: ControlPlaneEvent) {
   expect(response.status).toBe(200)
 }
 
-const provisionStep = (workspaceId: string, step: "cloning" | "ready"): ControlPlaneEvent => ({
+const provisionStep = (workspaceId: string, step: "cloning" | "ready", ownerUserId = "alice"): ControlPlaneEvent => ({
   type: "provision",
   workspaceId,
   orgId: "acme",
+  ownerUserId,
   step,
   ts: Date.now(),
 })
@@ -396,7 +403,7 @@ describe("LiveSyncRoom — fan-out core", () => {
     expect(await readFrame(aliceReader)).toEqual(event)
   })
 
-  test("an org-scoped document.changed fans to every member of the org room", async () => {
+  test("a Page notice reaches every member of the org room without naming the Page or its version", async () => {
     const namespace = createFakeNamespace()
     const alice = subscriber("alice", "org_internal_acme")
     const carol = subscriber("carol", "org_internal_acme")
@@ -407,17 +414,32 @@ describe("LiveSyncRoom — fan-out core", () => {
     expect(await readFrame(aliceReader)).toEqual({ type: "heartbeat" })
     expect(await readFrame(carolReader)).toEqual({ type: "heartbeat" })
 
-    // The event's orgId is the authority-internal id — the same value the
-    // subscribers resolved at connect — so BOTH members receive the frame.
-    const event = documentChanged("org_internal_acme")
     const result = await nudgeLiveSyncRoom(
       namespace,
       liveSyncRoomNameForPrincipal({ orgId: "org_internal_acme" }),
-      event,
+      pageNamingDocumentChanged("org_internal_acme"),
     )
     expect(result).toEqual({ delivered: 2, held: 2 })
+    const delivered = documentChanged("org_internal_acme")
+    expect(await readFrame(aliceReader)).toEqual({ ...delivered, ts: expect.any(Number) })
+    expect(await readFrame(carolReader)).toEqual({ ...delivered, ts: expect.any(Number) })
+  })
+
+  test("a workspace notice reaches the workspace's owner and not an org peer sharing the room", async () => {
+    const namespace = createFakeNamespace()
+    const aliceRes = await connectLiveSyncRoom(namespace, subscriber("alice", "org_internal_acme"), 60_000)
+    const carolRes = await connectLiveSyncRoom(namespace, subscriber("carol", "org_internal_acme"), 60_000)
+    const aliceReader = aliceRes.body!.getReader()
+    const carolReader = carolRes.body!.getReader()
+    expect(await readFrame(aliceReader)).toEqual({ type: "heartbeat" })
+    expect(await readFrame(carolReader)).toEqual({ type: "heartbeat" })
+
+    const event = { ...provisionStep("ws_alice", "ready"), orgId: "org_internal_acme" }
+    const result = await nudgeLiveSyncRoom(namespace, "org:org_internal_acme", event)
+    expect(result).toEqual({ delivered: 1, held: 2 })
     expect(await readFrame(aliceReader)).toEqual(event)
-    expect(await readFrame(carolReader)).toEqual(event)
+    await aliceReader.cancel()
+    await carolReader.cancel()
   })
 
   test("cancelling the client stream drops the held connection", async () => {
@@ -687,12 +709,28 @@ describe("LiveSyncRoom — Last-Event-ID replay", () => {
     expect(reconnected.frames[1]).toMatchObject({ id: "1", data: { ownerUserId: "carol" } })
   })
 
-  test("an org-scoped frame is not replayed to a signed caller from another org", async () => {
+  test("a workspace notice is replayed to its owner and to no one else, an org peer included", async () => {
     const room = new LiveSyncRoom({}, {})
     await pushEvent(room, provisionStep("ws_acme", "ready"))
 
-    const opened = await openRoom(room, { subject: "mallory", org: "other", lastEventId: "0" })
-    expect(opened.frames).toEqual([{ id: "0", data: { type: "heartbeat" } }])
+    const peer = await openRoom(room, { subject: "carol", lastEventId: "0" })
+    expect(peer.frames).toEqual([{ id: "0", data: { type: "heartbeat" } }])
+    const stranger = await openRoom(room, { subject: "mallory", org: "other", lastEventId: "0" })
+    expect(stranger.frames).toEqual([{ id: "0", data: { type: "heartbeat" } }])
+    const owner = await openRoom(room, { lastEventId: "0" })
+    expect(owner.frames[1]).toMatchObject({ id: "1", data: { type: "provision", workspaceId: "ws_acme", ownerUserId: "alice" } })
+  })
+
+  test("a retained Page notice replays to an org peer without the Page's id or version", async () => {
+    const room = new LiveSyncRoom({}, {})
+    await pushEvent(room, pageNamingDocumentChanged("acme"))
+
+    const opened = await openRoom(room, { subject: "carol", lastEventId: "0" })
+    expect(opened.frames[1]).toEqual({
+      id: "1",
+      data: { type: "document.changed", orgId: "acme", projectId: "proj_1", ts: expect.any(Number) },
+    })
+    expect(JSON.stringify(opened.frames)).not.toContain("private_to_alice")
   })
 })
 

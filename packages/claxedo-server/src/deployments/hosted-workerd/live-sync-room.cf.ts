@@ -246,13 +246,13 @@ function replayPrincipalKey(principal: EventScopePrincipal) {
 }
 
 /**
- * Derive the DO room name from a resolved subscriber. Org-scoped events
- * (document.changed, provision) fan to every member of an org, so a subscriber
- * joins the room of their active org — named by the authority-internal org id
- * resolved at connect — and one POST reaches all members; owner-scoped events
- * (session.share.changed) are still narrowed to the right subject by the
- * per-connection `eventVisibleTo` filter inside the room. Signed callers with
- * no resolved org, and unsigned-local/loopback, key by subject.
+ * Derive the DO room name from a resolved subscriber. A Page notice fans to
+ * every member of an org, so a subscriber joins the room of their active org —
+ * named by the authority-internal org id resolved at connect — and one POST
+ * reaches all members; owner-scoped notices (a share, a workspace's provision)
+ * are narrowed to their one subject by the per-connection `eventVisibleTo`
+ * filter inside the room. Signed callers with no resolved org, and
+ * unsigned-local/loopback, key by subject.
  */
 export function liveSyncRoomName(subscriber: LiveSyncSubscriber): string {
   if (subscriber.auth.mode !== "signed") return "owner:local"
@@ -328,18 +328,16 @@ const PROVISION_STEPS = [
 
 /**
  * The three event shapes this room admits onto a client stream, rebuilt field
- * by field.
- *
- * Each branch already checked every field it needed and then returned the raw
- * row `as ControlPlaneEvent`, which also carried whatever ELSE the sender put in the
- * object straight through to every subscriber. Constructing the event means the
- * room forwards exactly the fields it verified.
+ * by field. Every row is retained and fanned to a whole org room, so a field
+ * the sender adds beyond the shape, such as a Page id on a Page notice, must
+ * never reach a subscriber or the ring; constructing the event forwards only
+ * the fields checked here.
  */
 function liveSyncEvent(input: unknown): ControlPlaneEvent | undefined {
   const row = asRecord(input)
   const ts = row?.ts
   if (!row || typeof ts !== "number" || !Number.isFinite(ts)) return undefined
-  const { ownerUserId, sessionId, workspaceId, phase, documentId, orgId, projectId, version, message, totalMs } = row
+  const { ownerUserId, sessionId, workspaceId, phase, orgId, projectId, message, totalMs } = row
   if (
     row.type === "session.share.changed"
     && typeof ownerUserId === "string" && ownerUserId
@@ -352,20 +350,15 @@ function liveSyncEvent(input: unknown): ControlPlaneEvent | undefined {
       ? { ...base, phase, level: storedSessionShareLevel(row.level) }
       : { ...base, phase }
   }
-  if (
-    row.type === "document.changed"
-    && typeof documentId === "string"
-    && typeof orgId === "string"
-    && typeof projectId === "string"
-    && (version === undefined || typeof version === "string")
-  ) {
-    return { type: "document.changed", ts, documentId, orgId, projectId, ...(version === undefined ? {} : { version }) }
+  if (row.type === "document.changed" && typeof orgId === "string" && typeof projectId === "string") {
+    return { type: "document.changed", ts, orgId, projectId }
   }
   const step = PROVISION_STEPS.find((candidate) => candidate === row.step)
   if (
     row.type === "provision"
     && typeof workspaceId === "string"
     && (orgId === undefined || typeof orgId === "string")
+    && (ownerUserId === undefined || typeof ownerUserId === "string")
     && step !== undefined
     && (message === undefined || typeof message === "string")
     && (totalMs === undefined || typeof totalMs === "number")
@@ -376,6 +369,7 @@ function liveSyncEvent(input: unknown): ControlPlaneEvent | undefined {
       workspaceId,
       step,
       ...(orgId === undefined ? {} : { orgId }),
+      ...(ownerUserId === undefined ? {} : { ownerUserId }),
       ...(message === undefined ? {} : { message }),
       ...(totalMs === undefined ? {} : { totalMs }),
     }
@@ -654,8 +648,8 @@ export class LiveSyncRoom {
   }
 
   /**
-   * Fan a nudge (a `ControlPlaneEvent`, typically `{type:"document.changed",...}`)
-   * to every held connection the event is visible to. Returns
+   * Fan a nudge (a `ControlPlaneEvent` `liveSyncEvent` admits) to every held
+   * connection the event is visible to. Returns
    * `{ delivered, held }` for the caller's diagnostics.
    */
   private async handleNudge(request: Request): Promise<Response> {

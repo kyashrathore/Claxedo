@@ -14,7 +14,7 @@ const prev = {
 process.env.CLAXEDO_DATA_DIR = root
 process.env.CLAXEDO_STATE_DIR = path.join(root, "state")
 
-const [{ deleteSessionMeta, listSessionNavigationMetas, putSessionMeta, sessionMeta, syncSessionMeta, syncSessionMetas }, { ClaxedoDB }, { controlBus }] = await Promise.all([
+const [{ deleteSessionMeta, listSessionNavigationMetas, putSessionMeta, sessionMeta, setInventoryNoticeOwner, syncSessionMeta, syncSessionMetas }, { ClaxedoDB }, { controlBus }] = await Promise.all([
   import("./index"),
   import("../../platform/db"),
   import("../../platform/runtime/lib/bus"),
@@ -168,6 +168,51 @@ describe("session inventory notices on cp/events", () => {
       expect(notices).toEqual([ws.id, ws.id, ws.id])
       expect(await sessionMeta("ses_new")).toBeUndefined()
     } finally {
+      unsubscribe()
+    }
+  })
+
+  test("a notice names the workspace owner the composition resolves, and no owner without a resolver", async () => {
+    const notices: Array<{ workspaceId: string; ownerUserId?: string }> = []
+    const unsubscribe = controlBus.subscribe((event) => {
+      if (event.type === "session.inventory.changed") notices.push({ workspaceId: event.workspaceId, ownerUserId: event.ownerUserId })
+    })
+    const asked: string[] = []
+    const restore = setInventoryNoticeOwner(async (workspaceId) => {
+      asked.push(workspaceId)
+      return "user_owner"
+    })
+    try {
+      await syncSessionMeta(ws, engineSession({ id: "ses_owned", created: 1, updated: 1 }))
+      await deleteSessionMeta("ses_owned")
+      restore()
+      await syncSessionMeta(ws, engineSession({ id: "ses_unowned", created: 1, updated: 1 }))
+      expect(asked).toEqual([ws.id, ws.id])
+      expect(notices).toEqual([
+        { workspaceId: ws.id, ownerUserId: "user_owner" },
+        { workspaceId: ws.id, ownerUserId: "user_owner" },
+        { workspaceId: ws.id, ownerUserId: undefined },
+      ])
+    } finally {
+      restore()
+      unsubscribe()
+    }
+  })
+
+  test("an owner the resolver cannot name leaves the notice ownerless rather than failing the write", async () => {
+    const owners: Array<string | undefined> = []
+    const unsubscribe = controlBus.subscribe((event) => {
+      if (event.type === "session.inventory.changed") owners.push(event.ownerUserId)
+    })
+    const restore = setInventoryNoticeOwner(async () => {
+      throw new Error("authority down")
+    })
+    try {
+      await syncSessionMeta(ws, engineSession({ id: "ses_authority_down", created: 1, updated: 1 }))
+      expect(owners).toEqual([undefined])
+      expect(await sessionMeta("ses_authority_down")).toBeDefined()
+    } finally {
+      restore()
       unsubscribe()
     }
   })

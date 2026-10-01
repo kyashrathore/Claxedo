@@ -15,15 +15,14 @@ import type { ControlPlaneAuthContext } from "@claxedo/server-core/platform/auth
  * The subscriber identity the event plane scopes on.
  *
  * NAMESPACE CONTRACT — the event plane's org identity is the
- * AUTHORITY-INTERNAL org id (the authority `orgs._id`, SQLite `org_id`), NEVER the
- * the identity provider `org_...` claim. Events are stamped with internal ids at publish
- * (documents routes scope via `authority.resolveOrgId`, provision via
- * `Workspace.org_id`, hosted runtime tokens carry the launch tenant's
- * internal org id), so the subscriber side must present the SAME namespace:
- * `orgId` here is resolved via `authority.resolveOrgId(auth)` at subscribe
- * time. Passing the raw the identity provider claim compares disjoint namespaces and silently
- * blinds the subscriber to every org-scoped event. `subject` is the issuer
- * subject (`user_...`) — subjects are shared across both namespaces.
+ * AUTHORITY-INTERNAL org id (the authority `orgs._id`, SQLite `org_id`), NEVER
+ * the identity provider's `org_...` claim. Page notices are stamped with the
+ * internal id at publish (documents routes scope via `authority.resolveOrgId`),
+ * so the subscriber side must present the SAME namespace: `orgId` here is
+ * resolved via `authority.resolveOrgId(auth)` at subscribe time. Passing the
+ * raw identity provider claim compares disjoint namespaces and silently blinds
+ * the subscriber to every org-scoped event. `subject` is the issuer subject
+ * (`user_...`), the namespace every owner-scoped notice names its recipient in.
  *
  * `orgId` is the caller's ACTIVE org: the org matching their the identity provider org claim
  * when they are a member, else their personal org (`resolveOrgId` is total for
@@ -66,19 +65,14 @@ export function eventVisibleTo(principal: EventScopePrincipal, event: ControlPla
 
   switch (event.type) {
     case "session.share.changed":
-      // ownerUserId is the *recipient* the identity provider subject stamped at grant/revoke
-      // publish (session share fanout), not the granter.
-      return event.ownerUserId === principal.subject
-    case "document.changed":
-      // event.orgId is the authority-internal org id (documents routes scope
-      // via `authority.resolveOrgId`); principal.orgId is resolved through the
-      // same authority call at subscribe time, so both sides share a namespace.
-      return !!principal.orgId && event.orgId === principal.orgId
+      // ownerUserId is the share's recipient, not the granter.
     case "provision":
     case "session.inventory.changed":
-      // orgId is stamped from Workspace.org_id at publish — the same
-      // authority-internal namespace as principal.orgId. Org-less (local)
-      // workspaces stay invisible to signed subscribers.
+      // ownerUserId is the workspace's owner; an org peer of the owner holds
+      // no standing on the workspace.
+      return !!event.ownerUserId && event.ownerUserId === principal.subject
+    case "document.changed":
+      // Org-wide because it names no Page; see `DocumentChangedEvent`.
       return !!principal.orgId && event.orgId === principal.orgId
     case "usage.quota.changed":
       // Carries no figures and names no account: the quota read it provokes

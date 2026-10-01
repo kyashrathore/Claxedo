@@ -1,6 +1,7 @@
 import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
 import { configureWorkspaceStore, updateWorkspace, getWorkspace, type Workspace } from "@claxedo/server-core/workspace/store/index"
 import { configureWorkspaceSupervisorPort } from "@claxedo/server-core/workspace/supervisor-port"
+import { setInventoryNoticeOwner } from "@claxedo/server-core/session/meta/index"
 import { CredentialDeliveryError } from "@claxedo/server-core/credentials/delivery"
 import { IDLE_MS, now } from "./clock"
 import {
@@ -66,6 +67,9 @@ export function configureWorkspaceSupervisor(input: ConfiguredWorkspaceSuperviso
   // module that reads local workspace inventory. A composition without a
   // supervisor has no cloud workspaces, so it needs no reader.
   configureWorkspaceStore({ sandboxLease: (workspaceId) => getSupervisorSandboxLease(workspaceId) })
+  // The owner a sandbox delivers accounts for is the auth subject a workspace's
+  // inventory notices are addressed to; provision notices read the same answer.
+  setInventoryNoticeOwner(input.sandboxOwner)
   // Local request paths speak to the supervisor through a seven-method port so
   // they do not import the cloud provisioning graph to say "still in use".
   configureWorkspaceSupervisorPort({

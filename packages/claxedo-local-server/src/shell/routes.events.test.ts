@@ -54,7 +54,7 @@ describe("shell control-plane events entrypoint", () => {
       expect(new TextDecoder().decode((await reader.read()).value)).toContain('"type":"heartbeat"')
       controlBus.publish({ type: "session.share.changed", phase: "granted", level: "follow", ownerUserId: "user_b", sessionId: "private_b", workspaceId: "ws_b", ts: 1 })
       // An issuer org claim cannot substitute for an authority-resolved org ID.
-      controlBus.publish({ type: "document.changed", orgId: "org_a", projectId: "project_a", documentId: "unresolved_org", ts: 2 })
+      controlBus.publish({ type: "document.changed", orgId: "org_a", projectId: "unresolved_org", ts: 2 })
       controlBus.publish({ type: "plugins.changed", pluginId: "machine_plugin", status: "ready", hash: "a".repeat(16), ts: 3 })
       controlBus.publish({ type: "session.share.changed", phase: "granted", level: "follow", ownerUserId: "user_a", sessionId: "visible_a", workspaceId: "ws_a", ts: 4 })
       const frame = new TextDecoder().decode((await reader.read()).value)

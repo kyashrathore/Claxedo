@@ -144,10 +144,8 @@ describe("Documents service", () => {
 
     expect(documentChangedSink).toHaveBeenCalledWith({
       type: "document.changed",
-      documentId: "document_1",
       orgId: "org_1",
       projectId: "project_1",
-      version: "v2",
       ts: expect.any(Number),
     })
   })

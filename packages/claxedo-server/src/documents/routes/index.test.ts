@@ -1151,26 +1151,19 @@ describe("DocumentsRoutes", () => {
     unsubscribe()
   })
 
-  test("publishes a camelCase document.changed doorbell for saves", async () => {
+  test("publishes an org doorbell that names neither the Page nor its version", async () => {
     const published: Record<string, unknown>[] = []
     const restore = setDocumentChangedSink((event) => published.push(event))
     try {
       const app = localApp()
       const document = await createDocument(app, { display_name: "Doorbell" })
-      // ⚠ The two `document.changed` shapes share a discriminant. The bus envelope
-      // must be the camelCase one, carrying identity only — never the legacy
-      // snake_case SSE payload with `reason`/`invalidate` passed straight through.
-      expect(published.at(-1)).toEqual({
+      const doorbell = {
         type: "document.changed",
-        documentId: document.id,
         orgId: "__local__",
         projectId: "project_local",
-        version: expect.any(String),
         ts: expect.any(Number),
-      })
-      expect(published.at(-1)).not.toHaveProperty("document_id")
-      expect(published.at(-1)).not.toHaveProperty("reason")
-      expect(published.at(-1)).not.toHaveProperty("invalidate")
+      }
+      expect(published.at(-1)).toEqual(doorbell)
 
       const content = await app.request(`http://localhost/documents/${document.id}/content`, {
         method: "PUT",
@@ -1178,9 +1171,8 @@ describe("DocumentsRoutes", () => {
         body: JSON.stringify({ markdown: "doorbell content" }),
       })
       expect(content.status).toBe(200)
-      expect(published.at(-1)).toMatchObject({ documentId: document.id, type: "document.changed" })
+      expect(published.at(-1)).toEqual(doorbell)
 
-      // Metadata-only changes are not content writes, so they ring without a version.
       const renamed = await app.request(`http://localhost/documents/${document.id}`, {
         method: "PATCH",
         headers: {
@@ -1190,7 +1182,8 @@ describe("DocumentsRoutes", () => {
         body: JSON.stringify({ display_name: "Doorbell renamed" }),
       })
       expect(renamed.status).toBe(200)
-      expect(published.at(-1)).not.toHaveProperty("version")
+      expect(published.at(-1)).toEqual(doorbell)
+      expect(JSON.stringify(published)).not.toContain(document.id)
     } finally {
       restore()
     }

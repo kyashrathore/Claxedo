@@ -230,11 +230,10 @@ export async function publishDocumentEvent(
 ) {
   const ts = Date.now()
   // ⚠ TWO SHAPES, ONE `type` DISCRIMINANT — do not pass one where the other is
-  // expected. `event` below is the LEGACY in-process listener payload
-  // (`subscribeDocumentEvents`): snake_case and wider (`reason`, `invalidate`).
-  // The bus envelope is camelCase and carries identity only. This function is the
-  // single boundary where the legacy shape is CONVERTED into the bus shape;
-  // nothing else may forward one as the other.
+  // expected. `event` below is the in-process listener payload
+  // (`subscribeDocumentEvents`): snake_case, and it names the Page. The sink
+  // feeds `cp/events`, which reaches org members the Page is not shared with,
+  // so the sink's envelope names only the org and project.
   const event = {
     type: "document.changed",
     document_id: documentId,
@@ -253,14 +252,7 @@ export async function publishDocumentEvent(
   // must never fail the mutation that triggered it.
   if (!sink) return
   try {
-    await sink({
-      type: "document.changed",
-      documentId,
-      orgId: scope.orgId,
-      projectId: scope.projectId,
-      ...(version ? { version } : {}),
-      ts,
-    })
+    await sink({ type: "document.changed", orgId: scope.orgId, projectId: scope.projectId, ts })
   } catch (error) {
     console.error("[claxedo-server] WARN  document.changed publish failed:", error)
   }

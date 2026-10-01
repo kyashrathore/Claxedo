@@ -42,35 +42,25 @@ export function createBus<T>(options: BusOptions<T> = {}) {
   }
 }
 
-// Doorbell nudge for Documents live sync: the one live-sync mechanism a
-// document has. It carries no content, so an open editor is not refreshed by
-// it — an external write surfaces as a CAS conflict on the next save.
-//
-// Publisher: the documents backend, from its save paths
-// (`documents/backend.ts` `publishDocumentEvent`).
-// Consumer: claxedo-app `features/documents`, off `cp/events`, to refresh
-// the document INDEX.
-//
-// ⚠ SHAPE COLLISION — read before wiring. A DIFFERENT `document.changed` payload
-// exists in-process on the `subscribeDocumentEvents` listener registry: it
-// is snake_case and wider (`document_id`, `org_id`, `project_id`, `reason`,
-// `invalidate`, `ts`; see `documents/backend.ts`). This bus envelope is camelCase,
-// matching every other event in this union. The two share a `type` discriminant
-// but are NOT interchangeable: convert at the boundary, never pass through.
-//
-// `orgId`/`projectId` are required so a consumer can filter to its own project.
-// `orgId` is the AUTHORITY-INTERNAL org id (`authority.resolveOrgId` at the
-// documents routes — the authority's internal org id (SQLite `org_id`), NEVER the issuer org
-// claim) and is enforced server-side (`platform/http/event-visibility.ts`: signed
-// subscribers resolve the same internal id at connect and only see their own
-// org's events); `projectId` remains a client-side routing hint.
+/**
+ * Some Page in `projectId` changed. The doorbell names no Page and no version:
+ * a Page is private to its creator until shared, and every `cp/events` filter
+ * decides on the subscriber's subject and org alone, so anything finer would
+ * reach org members the Page is not shared with. A reader re-reads its Page
+ * list, and that read applies Page access.
+ *
+ * `orgId` is the authority-internal org id (`authority.resolveOrgId`, never the
+ * issuer's org claim). `projectId` names nothing an org member cannot already
+ * read: every member holds at least read on every project of the org.
+ *
+ * Publisher: `publishDocumentEvent` in `documents/backend.ts`, the one place
+ * the documents backend's own snake_case listener payload, which names the
+ * Page, is narrowed to this.
+ */
 export type DocumentChangedEvent = {
   type: "document.changed"
-  documentId: string
   orgId: string
   projectId: string
-  /** Absent when the change is not a content write (e.g. rename/archive). */
-  version?: string
   ts: number
 }
 
@@ -107,11 +97,20 @@ export type SessionShareChangedEvent = {
  * Membership only: a title or model change is the runtime's own frame on
  * `wr/events`, and rings nothing here.
  */
-export type SessionInventoryChangedEvent = {
-  type: "session.inventory.changed"
+export type SessionInventoryChangedEvent = WorkspaceNotice & { type: "session.inventory.changed" }
+
+/** A notice about one workspace. A workspace is its owner's, so the notice is too. */
+type WorkspaceNotice = {
   workspaceId: string
-  /** Authority-internal org id, when the workspace has one; absent for a machine's own workspaces. */
+  /** Authority-internal org id (`Workspace.org_id`); absent for a machine's own workspaces. */
   orgId?: string
+  /**
+   * The owner's auth subject (`ControlPlaneAuthContext.user.subject`), the only
+   * signed subscriber the notice reaches. Absent when the publishing
+   * composition has no authority to name the owner, which leaves the notice to
+   * the unsigned local operator.
+   */
+  ownerUserId?: string
   ts: number
 }
 
@@ -159,21 +158,11 @@ export type PluginsChangedEvent = {
  * session created elsewhere by its next inventory read, not by a notice.
  */
 export type ControlPlaneEvent =
-  | {
+  | WorkspaceNotice & {
       type: "provision"
-      workspaceId: string
-      /**
-       * Org that owns the workspace (`Workspace.org_id`, the AUTHORITY-INTERNAL
-       * org id namespace), stamped at publish. `routes/event-visibility.ts`
-       * uses it to scope delivery in signed mode (subscribers resolve the same
-       * internal id at connect); absent (local workspaces) means the event is
-       * only visible to unsigned-local/loopback subscribers.
-       */
-      orgId?: string
       step: "acquiring_sandbox" | "cloning" | "starting_runtime" | "waiting_health" | "ready" | "error"
       message?: string
       totalMs?: number
-      ts: number
     }
   | { type: "worktree.ready"; directory: string; name: string; branch: string }
   | { type: "worktree.failed"; directory: string; message: string }
