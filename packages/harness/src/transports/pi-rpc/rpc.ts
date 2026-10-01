@@ -85,6 +85,12 @@ export class PiRpc {
       () => { this.pending.reject(id, timeout()) }, timeout)
   }
 
+  async stop(deadline: Deadline): Promise<void> {
+    const results = await Promise.allSettled([this.request("clear_queue", {}, deadline), this.request("abort", {}, deadline)])
+    const failure = results.find((result) => result.status === "rejected")
+    if (failure?.status === "rejected") throw failure.reason
+  }
+
   retire(deadline: Deadline): Promise<void> {
     this.retired = true
     this.channel.fail(new TransportError("pi", "process", "Pi process retired"), false)

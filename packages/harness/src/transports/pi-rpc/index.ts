@@ -7,19 +7,17 @@ import type {
 import { attachedSessionEntry, HarnessVersionGate, mergeStartInput, ProcessLosses, sessionConnectionHealth } from "../../contract"
 import { selectPiProfile, type PiProfile } from "../../profiles/pi"
 import { TransportError } from "../../contract/errors"
-import { asRecordOrEmpty } from "@claxedo/helpers/guards"
+import { asRecordOrEmpty, asString } from "@claxedo/helpers/guards"
 import type { PiRpc } from "./rpc"
 import { PiRun } from "./run"
 import type { PiSessionStream } from "./session-stream"
-import { stopPiRun } from "./stop"
 import { piSteerResult } from "./steers"
-import { piCommands } from "./commands"
 import { PiDraftProbes } from "./probes"
 import { UnsettledPiLaunches } from "./retirements"
 import { inlineDataUrl, flattenTurnPrompt } from "../../translate/prompt"
-import { createPiConfig, piModelSelection, piThinkingLevel, piTurnAccount } from "./config"
+import { createPiConfig, piModelSelection, piTurnAccount } from "./config"
 import { withTurnAccount } from "../../translate/turn-account"
-import { piSessionTitle } from "./title"
+import { piCommands, piSessionTitle } from "./title"
 import { PI_RANGE, PiVersionReadings } from "./version"
 import { launchPiSession, piDeadline, piUpstreamOf, resumePi, retiringOnFailure, type PiLaunchHost, type PiRpcOptions,
   type PiSessionLaunch } from "./launch"
@@ -116,7 +114,7 @@ export class PiRpcTransport implements HarnessTransport {
     if (model) await entry.rpc.request("set_model", piModelSelection(model))
     if (!effort) return
     await entry.rpc.request("set_thinking_level", { level: effort })
-    const kept = await piThinkingLevel(entry.rpc)
+    const kept = asString(asRecordOrEmpty(await entry.rpc.request("get_state")).thinkingLevel) || undefined
     if (kept !== effort) {
       throw new TransportError("pi", "configuration",
         `Pi does not run ${model?.modelID ?? "its current model"} at thinking level ${effort}${kept ? `; it kept ${kept}` : ""}`)
@@ -187,7 +185,7 @@ export class PiRpcTransport implements HarnessTransport {
 
   private async stopPrompted(entry: Entry, run: PiRun, deadline: Deadline): Promise<AdapterCancelOutcome> {
     try {
-      await stopPiRun(entry.rpc, deadline)
+      await entry.rpc.stop(deadline)
       return { execution: run.settled ? "terminal" as const : "unknown" as const, cleanup: "unknown" as const }
     } catch (error) {
       return { execution: "unknown" as const, cleanup: "owned" as const,

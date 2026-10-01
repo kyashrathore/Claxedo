@@ -10,7 +10,6 @@ import { installPiTitleExtension } from "./title"
 import { piMcpHandoff, type PiMcpHandoff } from "./mcp"
 import type { UnsettledPiLaunches } from "./retirements"
 import { PiSessionStream } from "./session-stream"
-import { stopPiRun } from "./stop"
 import { PI_RANGE, piReportedVersion, type PiVersionReadings } from "./version"
 
 export type PiRpcOptions = PiProfileOptions & { binary: string; runtime: string; args?: readonly string[]; env: NodeJS.ProcessEnv }
@@ -94,7 +93,7 @@ export async function launchPiSession(host: PiLaunchHost, input: StartInput, pro
   resume?: PiResume): Promise<PiSessionLaunch> {
   const { clock, log } = host.services
   const { rpc, observed } = await spawnPi(host, input, profile, broker, { role: "harness", ...(resume ? { resume } : {}) }, (rpc) =>
-    new PiSessionStream({ sessionId: input.sessionId, rpc, broker, clock, log, stop: () => stopPiRun(rpc, piDeadline(clock)) }))
+    new PiSessionStream({ sessionId: input.sessionId, rpc, broker, clock, log, stop: () => rpc.stop(piDeadline(clock)) }))
   return { rpc, stream: observed }
 }
 
