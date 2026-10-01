@@ -17,8 +17,22 @@ import { composeHost } from "./host-composition"
 const SESSION_CORE_DIRECTORY = "/workspace"
 const SESSION_CORE_WORKSPACE_HEADER = "x-workspace-id"
 
+const HELD = "hold: "
+const HOUR_MS = 3_600_000
+
+/**
+ * Echoes each prompt and finishes. A prompt starting `hold: ` instead starts
+ * its answer and a tool call and then never ends, so the test can evict the
+ * object while that turn is streaming.
+ */
 async function* echoTurn({ session, turn }: FakeTurn): AsyncIterable<AgentRuntimeEvent> {
   const text = turn.prompt.parts.map((part) => ("text" in part ? part.text : "")).join("")
+  if (text.startsWith(HELD)) {
+    yield { type: "text-delta", delta: `working on ${text.slice(HELD.length)}` }
+    yield { type: "tool-start", toolCallId: "call_held", toolName: "bash" }
+    yield { type: "tool-input", toolCallId: "call_held", input: { command: "sleep 3600" } }
+    await new Promise((resolve) => setTimeout(resolve, HOUR_MS))
+  }
   yield { type: "text-delta", delta: `echo: ${text}` }
   yield { type: "finish", sessionId: session.binding.sessionId }
 }
@@ -27,13 +41,15 @@ async function* echoTurn({ session, turn }: FakeTurn): AsyncIterable<AgentRuntim
  * One workspace's session core inside a Durable Object: the store over the
  * object's own SQLite, the host the workspace runtime composes, the session
  * routes `mountSessionRoutes` mounts and the workspace event stream, with a
- * scripted harness that echoes each prompt in place of a real one.
+ * scripted harness that echoes each prompt in place of a real one. It boots
+ * the way the machine runtime does after a crash: the previous owner's turns
+ * are ended, then the prompts still queued are re-issued.
  */
 export class SessionCoreObject {
   private readonly app: Hono
   private readonly target: { workspaceId: string; directory: string }
 
-  constructor(ctx: { id: { name?: string }; storage: DurableObjectSqlStorage }) {
+  constructor(ctx: { id: { name?: string }; storage: DurableObjectSqlStorage; blockConcurrencyWhile<T>(run: () => Promise<T>): Promise<T> }) {
     const workspaceId = ctx.id.name
     if (!workspaceId) throw new Error("A session core object is addressed by its workspace name")
     const directory = SESSION_CORE_DIRECTORY
@@ -70,6 +86,10 @@ export class SessionCoreObject {
       sessionStarts: store.sessionStarts,
     })
     this.app = new Hono().get(WorkspaceRuntimeRoutes.events, events).route("/", sessions.routes)
+    void ctx.blockConcurrencyWhile(() => withWorkspaceTarget(this.target, () => {
+      store.recoverBusySessions()
+      return sessions.recoverQueuedPrompts()
+    }))
   }
 
   fetch(request: Request) {

@@ -9,7 +9,9 @@ proves it end to end, through the object's `fetch`:
 - it reads the transcript back;
 - it restarts the workerd process on the same storage and finds the same
   session and transcript;
-- it prompts that session again after the restart.
+- it prompts that session again after the restart;
+- it evicts the object while a turn is streaming, and while a prompt is queued
+  behind that turn, and reopens it (see [Eviction and boot](#eviction-and-boot)).
 
 It runs only because the worker is built with `nodejs_compat`. This note lists
 every place the core still reaches Node or a process-wide global, as a port the
@@ -56,7 +58,7 @@ object leaves it out and the feature is absent.
 | 7 | Subagent key hashing and child ids | `harness/src/broker/subagents` `createHash`, `randomUUID` | `node:crypto` | `node:crypto` under `nodejs_compat` | required |
 | 8 | Harness probe cache | `harness/src/contract/probe-cache.ts`, imported through the contract index | disk | none: imported, never called | optional |
 | 9 | `TransportResolver` and `LaunchComposer` | `createAgentRuntime` input | the composed CLI and SDK transports; machine credentials and MCP projection | Pi in process; hosted credentials; placement `cloud` | required, exists |
-| 10 | Boot: re-issue queued prompts | `SessionRoutes().recoverQueuedPrompts()` | `workspace/runtime.ts` when the runtime is admitted | the object's constructor, inside `blockConcurrencyWhile` | required, not exercised by the test |
+| 10 | Boot: end the previous owner's turns, then re-issue queued prompts | `RuntimeStore.recoverBusySessions()`, then `SessionRoutes().recoverQueuedPrompts()` | `workspace/durable-state.ts` when the store opens, then `workspace/runtime.ts` once it is admitted | the object's constructor, both inside one `blockConcurrencyWhile` | required |
 
 Some reaches need no port, because both hosts already provide them:
 
@@ -94,6 +96,46 @@ The isolation case in the test asserts that this line never appears.
 own bus, and the machine runtime keeps the global one. The machine needs the
 global bus because PTY and agent hooks publish to it from separate bundles.
 
+## Eviction and boot
+
+An evicted object loses everything in memory: the turn's admission, its
+producer and the harness behind it. Its store keeps the session `busy` and
+the turn lease the dead owner never released. The machine runtime has the
+same problem after a crash, and the same two calls answer it at boot. The
+object makes them in its constructor, inside `blockConcurrencyWhile`, so no
+request reaches it before they finish:
+
+1. `store.recoverBusySessions()` deletes every turn lease and commits a
+   `session.interrupted` row for each busy session. That row moves the session
+   to `recovering` with the message "ACP process restarted; pending
+   interactive state must be rerun". It ends the session's running tool calls
+   with "Tool execution interrupted by ACP restart" and marks its pending
+   permissions and questions stale. The text the turn had already streamed
+   stays in the transcript.
+2. `sessions.recoverQueuedPrompts()` wakes every session that has an eligible
+   queued row: one not held, and with no delivery attempt still outstanding.
+   Each one runs as its own turn once the session is idle.
+
+Deleting every lease is safe only because no turn from the previous owner can
+still be running. A Durable Object gives that guarantee: Cloudflare runs at
+most one instance of an object at a time.
+
+The tests check the outcome at each boundary:
+
+- A turn evicted mid-stream reads back as `recovering`, with its partial text
+  and its tool call ended as above, and the next prompt runs normally.
+- A prompt queued behind that turn runs exactly once after the reopen, and its
+  row is deleted. A third boot runs nothing and leaves the transcript as it
+  was.
+- Removing either call turns a test red. Without the first, the dead owner's
+  lease refuses every new turn. Without the second, the queued row waits for a
+  prompt that may never come.
+
+A queued prompt re-issued at boot runs before the request that woke the
+object can subscribe to its stream. The SSE replay ring lives in memory and
+dies with the object. A client that reconnects after an eviction therefore
+learns about that turn from the transcript, not from the stream.
+
 ## Not yet proven
 
 These would block a production Durable Object host:
@@ -103,8 +145,8 @@ These would block a production Durable Object host:
   behind its port so the session core bundles without it.
 - **Placement:** port 3 works today only through `AsyncLocalStorage` and the
   module-level registry. It is not a real port.
-- **Interrupted turns:** the test restarts between turns. It does not evict an
-  object mid-turn. A turn interrupted that way goes to the recovery path, and
-  the test does not exercise it.
-- **Queued prompts on boot:** the object does not call port 10, so it does not
-  re-issue prompts that were still queued when it was evicted.
+- **A delivery in flight at eviction:** a queued row that a delivery attempt
+  had already claimed is not re-issued. Its outcome is unknown, so it stays
+  ineligible until someone reconciles it. The tests don't cover this.
+- **Stream continuity across an eviction:** the replay ring does not survive
+  an eviction. A client must re-read the transcript after it reconnects.
