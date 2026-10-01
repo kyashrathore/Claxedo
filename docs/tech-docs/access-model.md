@@ -295,6 +295,39 @@ owns the final session placement, message membership, author, model, and
 lifecycle. An empty canonical result is authoritative; the client must not fall
 back to stale data from another transport.
 
+## Private pages
+
+A document records its canonical user creator id on creation. After the project
+read gate, only its creator or an explicit share can read it. Organization and
+project administrators have no private-page override. A person target must be an
+active member of the page's organization; a team target must belong to that
+organization, and its members must still be active organization members. Shares
+have `view` or `edit` permission. Only the creator manages shares and archives or
+restores the page.
+
+`authorizeDocument` in `packages/claxedo-server-core/src/documents/access.ts`
+owns this policy, and `filterDocuments` applies it to listings with one
+membership, project and share read per organization and project. Hosted routes,
+the local document service, installation broker reads, runtime writeback and
+the runtime's hydration callback (`POST /documents/:id/runtime-authorization`)
+use it. MCP and the CLI open a page through `/documents/:id/agent-open`, which
+authorizes on the server. Document access denials return 404, including denials
+after share revocation.
+
+The share API is `GET/POST/DELETE /documents/:id/shares`; DELETE accepts
+`{ "share_id": "..." }`. A link share is view only. Its token is returned once
+on creation, and only its SHA-256 hash is stored in `document_shares`. Public
+`GET /p/:token` is rate limited and returns no cached content. Revoked links and
+archived documents return 404. A link reads its page only while the page's
+creator could still read it. A link grants no machine or session access.
+
+Cloudflare Workers mount the hosted backend with `CLAXEDO_DOCUMENTS` (R2) and
+`CONTROL_PLANE_DB` (D1 shares). The local backend serves only the machine's own
+person: a signed caller gets `document_signed_access_unavailable` and a share
+request gets `document_sharing_unavailable` (both 501). Creation requires a
+creator; existing rows without one remain unreadable. No stored row is
+backfilled or assigned a guessed creator.
+
 ## Installation order
 
 The control plane installs the target model through expand–migrate–contract

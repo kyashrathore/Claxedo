@@ -9,6 +9,7 @@ import type {
   DocumentWorkspace,
   WriteResult,
 } from "@claxedo/server-core/documents/port"
+import type { DocumentAccess } from "@claxedo/server-core/documents/access"
 
 type Awaitable<T> = T | Promise<T>
 
@@ -27,6 +28,7 @@ export type DocumentWorkspaceAdapter<H extends DocumentHandle> = DocumentWorkspa
   }>
 
 export type DocumentsBackend<H extends DocumentHandle = DocumentHandle> = Readonly<{
+  access: DocumentAccess
   index: Readonly<{
     list(
       scope: DocumentIndexScope,
@@ -129,16 +131,6 @@ export type DocumentsBackend<H extends DocumentHandle = DocumentHandle> = Readon
       expectedVersion: string
     }>,
   ): Promise<WriteResult>
-  runtimeEntry?(
-    documentId: string,
-    input: Readonly<{
-      token: string
-      orgId: string
-      projectId: string
-      workspaceId: string
-      sessionId: string
-    }>,
-  ): Promise<DocumentIndexEntry>
   runtimeResolve?(
     entry: DocumentIndexEntry,
     input: Readonly<{
@@ -177,13 +169,6 @@ export type DocumentsBackend<H extends DocumentHandle = DocumentHandle> = Readon
       sessionId: string
     }>,
   ): Promise<DocumentIndexEntry[]>
-  remoteFind?(
-    input: Readonly<{
-      auth: SignedControlPlaneAuth
-      orgId: string
-      documentId: string
-    }>,
-  ): Promise<DocumentIndexEntry | undefined>
   moveToRepository?(
     entry: DocumentIndexEntry,
     destination: Readonly<{ workspaceId: string; relativePath: string }>,
@@ -197,6 +182,7 @@ export type DocumentsBackend<H extends DocumentHandle = DocumentHandle> = Readon
  * only broker documents supply this instead of a whole `DocumentsBackend`.
  */
 export type DocumentBrokerBackend<H extends DocumentHandle = DocumentHandle> = Readonly<{
+  access: DocumentAccess
   index: Pick<DocumentsBackend<H>["index"], "list" | "find" | "update">
   workspace: Pick<DocumentsBackend<H>["workspace"], "resolve" | "read" | "write">
 }>
@@ -245,22 +231,7 @@ export function subscribeDocumentEvents(
   }
 }
 
-/**
- * Doorbell sink for the CENTRAL bus.
- *
- * Injected, never imported: this module is reached today only by the
- * self-hosted Node composition (`self-hosted-node/app.ts` →
- * `documents/routes/index.ts` → here) — no hosted Worker composition mounts
- * documents at present — but it stays Worker-safe on purpose: `../bus` pulls
- * `@claxedo/workspace-runtime`, a dependency forbidden from any Worker
- * bundle. Composition roots inject the local bus (or, for a hosted
- * composition that mounts documents, a `LiveSyncRoom` sink) without adding
- * either transport here.
- *
- * The `DocumentChangedEvent` import is type-only, so it is erased and never
- * enters the bundle — while still keeping this envelope in lockstep with the
- * bus union.
- */
+/** The sink must be injected: a runtime bus import would pull machine code into the Worker. */
 export type DocumentChangedSink = (event: DocumentChangedEvent) => unknown
 
 let documentChangedSink: DocumentChangedSink | undefined

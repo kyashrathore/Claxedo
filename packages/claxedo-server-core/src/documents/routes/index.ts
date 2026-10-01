@@ -1,6 +1,7 @@
 import { Hono } from "hono"
 import { z } from "zod"
 import {
+  localControlPlaneAuth,
   ControlPlaneAuthError,
   controlPlaneAuthContext,
   controlPlaneAuthErrorBody,
@@ -19,6 +20,16 @@ import type { DocumentIndexEntry } from "@claxedo/server-core/documents/index-st
 import { DocumentVersionConflictError, DocumentWorkspaceError } from "@claxedo/server-core/documents/errors"
 import { toDocumentVersion, toSnapshotID, type DocumentHandle } from "@claxedo/server-core/documents/port"
 import { createDocumentsService, DocumentsServiceError, type DocumentsServiceScope } from "@claxedo/server-core/documents/service"
+import {
+  authorizeDocument,
+  createDocumentShare,
+  DocumentAccessError,
+  requireDocumentSharing,
+  type DocumentAction,
+  type DocumentPrincipal,
+} from "@claxedo/server-core/documents/access"
+import { verifyDocumentRelayJobToken } from "@claxedo/server-core/platform/auth/runtime-access-token"
+import type { RequestAuthenticationAdapter } from "@claxedo/server-core/platform/auth/authentication"
 import { isLoopbackLocalRequest } from "@claxedo/server-core/platform/http/peer-address"
 
 export { DocumentAgentOpenError } from "@claxedo/server-core/documents/backend"
@@ -98,6 +109,25 @@ const WorkSourceBody = z
     repository_url: z.string().url().optional(),
   })
   .strict()
+const RuntimeAuthorizationBody = z
+  .object({
+    userId: z.string().min(1),
+    orgId: z.string().min(1),
+    projectId: z.string().min(1),
+    localWorkspaceId: z.string().min(1),
+    cloudWorkspaceId: z.string().min(1),
+    sessionId: z.string().min(1),
+    operation: z.enum(["hydrate", "write", "resolve"]),
+  })
+  .strict()
+const CreateShareBody = z
+  .object({
+    target: z.enum(["person", "team", "link"]),
+    target_id: z.string().trim().min(1).optional(),
+    level: z.enum(["view", "edit"]),
+  })
+  .strict()
+const RevokeShareBody = z.object({ share_id: z.string().trim().min(1) }).strict()
 const WorkSourcePinBody = z
   .object({
     work_source_id: z.string().min(1),
@@ -109,6 +139,8 @@ export type DocumentsRouteOptions<H extends DocumentHandle = DocumentHandle> = R
   backend?: DocumentsBackend<H>
   services?: { authority?: WorkspaceAuthority }
   authConfig?: ControlPlaneAuthConfig
+  env?: NodeJS.ProcessEnv
+  authentication?: RequestAuthenticationAdapter
   verifier?: ControlPlaneTokenVerifier
   authority?: WorkspaceAuthority
   documentChangedSink?: DocumentChangedSink
@@ -118,6 +150,7 @@ type AuthenticatedScope = Readonly<{
   orgId: string
   projectId: string
   auth?: SignedControlPlaneAuth
+  principal: DocumentPrincipal
 }>
 
 type DirectScope = AuthenticatedScope & Readonly<{ entry: DocumentIndexEntry }>
@@ -147,10 +180,6 @@ export function DocumentsRoutes<H extends DocumentHandle>(options: DocumentsRout
         }),
       )
     })
-    // NOTE: the document-scoped `/events` SSE (external-change watch lease + change
-    // stream) was REMOVED. External-change detection is
-    // retired; CAS-at-write (`if-match`) is the correctness floor, and the
-    // `document.changed` doorbell on the control bus carries save notifications.
     .get("/", async (context) => {
       const scope = await routeScope(context.req.raw, options, "read", {
         projectId: context.req.query("project_id"),
@@ -159,7 +188,7 @@ export function DocumentsRoutes<H extends DocumentHandle>(options: DocumentsRout
       const archived = context.req.query("archived")
         ? queryAs(z.enum(["active", "archived", "all"]), context.req.query("archived"))
         : "active"
-      const listed = await documents().listPage(scope, archived)
+      const listed = await documents().listPage(serviceScope(scope), archived)
       // The body stays a plain array — that shape is the client contract. Truncation rides a header
       // so a project past the storage listing bound is never silently presented as complete.
       if (listed.truncated) context.header("x-claxedo-documents-truncated", "true")
@@ -190,45 +219,79 @@ export function DocumentsRoutes<H extends DocumentHandle>(options: DocumentsRout
       })
       return result.created ? context.json(result.entry, 201) : context.json(result.entry)
     })
+    .post("/:id/runtime-authorization", async (context) => {
+      const body = await bodyAs(context.req.raw, RuntimeAuthorizationBody)
+      const token = context.req.header("authorization")?.match(/^Bearer\s+(.+)$/i)?.[1]
+      if (!token) throw new DocumentAccessError()
+      const verified = await verifyDocumentRelayJobToken(
+        token,
+        { ...body, documentId: context.req.param("id") },
+        options.env,
+      ).catch(() => {
+        throw new DocumentAccessError()
+      })
+      const entry = await authorizeDocument(
+        { userId: verified.userId, orgId: verified.orgId, access: requireBackend(options).access },
+        verified.documentId,
+        "edit",
+      )
+      if (entry.project_id !== verified.projectId || entry.archived_at) throw new DocumentAccessError()
+      return context.body(null, 204)
+    })
+    .get("/:id/shares", async (context) => {
+      const scope = await directScope(context.req.raw, options, "manage", context.req.param("id"), true)
+      return context.json(await requireDocumentSharing(scope.principal.access).list(scope.entry.id))
+    })
+    .post("/:id/shares", async (context) => {
+      const scope = await directScope(context.req.raw, options, "manage", context.req.param("id"), true)
+      const body = await bodyAs(context.req.raw, CreateShareBody)
+      return context.json(await createDocumentShare(scope.principal, scope.entry.id, body), 201)
+    })
+    .delete("/:id/shares", async (context) => {
+      const scope = await directScope(context.req.raw, options, "manage", context.req.param("id"), true)
+      const body = await bodyAs(context.req.raw, RevokeShareBody)
+      await requireDocumentSharing(scope.principal.access).revoke(scope.entry.id, body.share_id)
+      return context.body(null, 204)
+    })
     .get("/:id", async (context) => {
-      const scope = await directScope(context.req.raw, options, "read", context.req.param("id"), true)
+      const scope = await directScope(context.req.raw, options, "view", context.req.param("id"), true)
       requireBackend(options)
       return context.json(scope.entry)
     })
     .patch("/:id", async (context) => {
       const body = await bodyAs(context.req.raw, MetadataBody)
       const expectedVersion = body.display_name ? requiredVersion(context.req.header("if-match")) : undefined
-      const scope = await directScope(context.req.raw, options, "write", context.req.param("id"))
+      const scope = await directScope(context.req.raw, options, "edit", context.req.param("id"))
       return context.json(await documents().updateMetadata(serviceScope(scope), scope.entry.id, body, expectedVersion))
     })
     .patch("/:id/session", async (context) => {
       const body = await bodyAs(context.req.raw, SessionBody)
-      const scope = await directScope(context.req.raw, options, "write", context.req.param("id"))
+      const scope = await directScope(context.req.raw, options, "edit", context.req.param("id"))
       return context.json(await documents().updateSession(serviceScope(scope), scope.entry.id, body.session_id))
     })
     .post("/:id/archive", async (context) => {
       await optionalEmptyBody(context.req.raw)
-      const scope = await directScope(context.req.raw, options, "admin", context.req.param("id"), true)
+      const scope = await directScope(context.req.raw, options, "manage", context.req.param("id"), true)
       return context.json(await documents().archive(serviceScope(scope), scope.entry.id))
     })
     .post("/:id/restore", async (context) => {
       await optionalEmptyBody(context.req.raw)
-      const scope = await directScope(context.req.raw, options, "admin", context.req.param("id"), true)
+      const scope = await directScope(context.req.raw, options, "manage", context.req.param("id"), true)
       return context.json(await documents().restoreIndex(serviceScope(scope), scope.entry.id))
     })
     .get("/:id/availability", async (context) => {
-      const scope = await directScope(context.req.raw, options, "read", context.req.param("id"), true)
+      const scope = await directScope(context.req.raw, options, "view", context.req.param("id"), true)
       return context.json(await documents().availability(serviceScope(scope), scope.entry.id))
     })
     .post("/:id/relocate", async (context) => {
       const body = await bodyAs(context.req.raw, RelocateBody)
       const expectedVersion = requiredVersion(context.req.header("if-match"))
-      const scope = await directScope(context.req.raw, options, "write", context.req.param("id"), true)
+      const scope = await directScope(context.req.raw, options, "edit", context.req.param("id"), true)
       return context.json(await documents().relocate(serviceScope(scope), scope.entry.id, body.path, expectedVersion))
     })
     .post("/:id/move-to-repository", async (context) => {
       const body = await bodyAs(context.req.raw, MoveToRepositoryBody)
-      const scope = await directScope(context.req.raw, options, "write", context.req.param("id"), true)
+      const scope = await directScope(context.req.raw, options, "edit", context.req.param("id"), true)
       return context.json(
         await documents().moveToRepository(serviceScope(scope), scope.entry.id, {
           workspaceId: body.workspace_id,
@@ -237,20 +300,18 @@ export function DocumentsRoutes<H extends DocumentHandle>(options: DocumentsRout
       )
     })
     .get("/:id/git/snapshot", async (context) => {
-      const scope = await directScope(context.req.raw, options, "read", context.req.param("id"))
+      const scope = await directScope(context.req.raw, options, "view", context.req.param("id"))
       return context.json(await documents().gitSnapshot(serviceScope(scope), scope.entry.id))
     })
     .post("/:id/git/commit", async (context) => {
       const body = await bodyAs(context.req.raw, GitCommitBody)
-      const scope = await directScope(context.req.raw, options, "write", context.req.param("id"))
+      const scope = await directScope(context.req.raw, options, "edit", context.req.param("id"))
       return context.json(await documents().gitCommit(serviceScope(scope), scope.entry.id, body))
     })
     .post("/:id/agent-open", async (context) => {
       const body = await bodyAs(context.req.raw, AgentOpenBody)
-      const authenticated = await authenticate(context.req.raw, options)
-      const entry = await documents().findAgentEntry(authenticated.orgId, context.req.param("id"), authenticated.auth)
-      if (authenticated.auth)
-        await authorize(options, authenticated.auth, authenticated.orgId, entry.project_id, "write")
+      const authenticated = await directScope(context.req.raw, options, "edit", context.req.param("id"))
+      const entry = authenticated.entry
       const opened = await documents().agentOpen(entry, body.session_id, {
         ...(authenticated.auth ? { auth: authenticated.auth } : {}),
         origin: new URL(context.req.url).origin,
@@ -301,15 +362,10 @@ export function DocumentsRoutes<H extends DocumentHandle>(options: DocumentsRout
     })
     .post("/:id/runtime-conflict/resolve", async (context) => {
       const body = await bodyAs(context.req.raw, RuntimeConflictResolveBody)
-      const authenticated = await authenticate(context.req.raw, options)
+      const authenticated = await directScope(context.req.raw, options, "edit", context.req.param("id"))
       if (!authenticated.auth)
         throw new DocumentHttpError(401, "missing_bearer_token", "Signed authentication is required")
-      const entry = await documents().findRuntimeConflictEntry(
-        authenticated.orgId,
-        context.req.param("id"),
-        authenticated.auth,
-      )
-      await authorize(options, authenticated.auth, authenticated.orgId, entry.project_id, "write")
+      const entry = authenticated.entry
       return context.json(
         await documents().runtimeResolve(entry, {
           auth: authenticated.auth,
@@ -335,12 +391,12 @@ export function DocumentsRoutes<H extends DocumentHandle>(options: DocumentsRout
       return context.body(null, 204)
     })
     .get("/:id/content", async (context) => {
-      const scope = await directScope(context.req.raw, options, "read", context.req.param("id"))
+      const scope = await directScope(context.req.raw, options, "view", context.req.param("id"))
       return context.json(await documents().readContent(serviceScope(scope), scope.entry.id))
     })
     .post("/:id/work-source", async (context) => {
       const body = await bodyAs(context.req.raw, WorkSourceBody)
-      const scope = await directScope(context.req.raw, options, "read", context.req.param("id"))
+      const scope = await directScope(context.req.raw, options, "view", context.req.param("id"))
       return context.json(
         await documents().workSource(serviceScope(scope), scope.entry.id, {
           ...(body.target_stream_id ? { targetStreamId: body.target_stream_id } : {}),
@@ -351,7 +407,7 @@ export function DocumentsRoutes<H extends DocumentHandle>(options: DocumentsRout
     })
     .post("/:id/snapshots/:snapshotId/work-source-pin", async (context) => {
       const body = await bodyAs(context.req.raw, WorkSourcePinBody)
-      const scope = await directScope(context.req.raw, options, "write", context.req.param("id"))
+      const scope = await directScope(context.req.raw, options, "edit", context.req.param("id"))
       return context.json(
         await documents().pinWorkSource(
           serviceScope(scope),
@@ -364,7 +420,7 @@ export function DocumentsRoutes<H extends DocumentHandle>(options: DocumentsRout
     .put("/:id/content", async (context) => {
       const expectedVersion = requiredVersion(context.req.header("if-match"))
       const body = await bodyAs(context.req.raw, ContentBody)
-      const scope = await directScope(context.req.raw, options, "write", context.req.param("id"))
+      const scope = await directScope(context.req.raw, options, "edit", context.req.param("id"))
       return context.json(
         await documents().writeContent(serviceScope(scope), scope.entry.id, {
           markdown: body.markdown,
@@ -374,13 +430,13 @@ export function DocumentsRoutes<H extends DocumentHandle>(options: DocumentsRout
       )
     })
     .get("/:id/snapshots", async (context) => {
-      const scope = await directScope(context.req.raw, options, "read", context.req.param("id"))
+      const scope = await directScope(context.req.raw, options, "view", context.req.param("id"))
       return context.json(await documents().listSnapshots(serviceScope(scope), scope.entry.id))
     })
     .post("/:id/snapshots/:snapshotId/restore", async (context) => {
       const expectedVersion = requiredVersion(context.req.header("if-match"))
       await optionalEmptyBody(context.req.raw)
-      const scope = await directScope(context.req.raw, options, "write", context.req.param("id"))
+      const scope = await directScope(context.req.raw, options, "edit", context.req.param("id"))
       return context.json(
         await documents().restoreSnapshot(
           serviceScope(scope),
@@ -391,7 +447,7 @@ export function DocumentsRoutes<H extends DocumentHandle>(options: DocumentsRout
       )
     })
     .get("/:id/export", async (context) => {
-      const scope = await directScope(context.req.raw, options, "read", context.req.param("id"))
+      const scope = await directScope(context.req.raw, options, "view", context.req.param("id"))
       const read = await documents().exportContent(serviceScope(scope), scope.entry.id)
       return new Response(read.markdown, {
         headers: {
@@ -416,28 +472,31 @@ async function routeScope<H extends DocumentHandle>(
       ? await requireBackend(options).index.resolveLocalProjectId(input.directory)
       : explicitProject
   if (!projectId) throw new DocumentHttpError(400, "document_project_required", "project_id or directory is required")
-  if (!auth.auth) return { ...auth, projectId }
-  await authorize(options, auth.auth, auth.orgId, projectId, action)
-  return { ...auth, projectId }
+  if (!auth.auth) return { ...auth, orgId: LOCAL_ORG, projectId }
+  const orgId = await authorize(options, auth.auth, auth.orgId, projectId, action)
+  return { ...auth, orgId, projectId }
 }
 
 async function directScope<H extends DocumentHandle>(
   request: Request,
   options: DocumentsRouteOptions<H>,
-  action: ProjectAction,
+  action: DocumentAction,
   documentId: string,
   includeArchived = false,
 ): Promise<DirectScope> {
   const auth = await authenticate(request, options)
-  const entry = await requireBackend(options).index.find(auth.orgId, documentId)
-  if (!entry || (!includeArchived && entry.archived_at)) throw notFound()
-  if (auth.auth) await authorize(options, auth.auth, auth.orgId, entry.project_id, action)
-  return { ...auth, projectId: entry.project_id, entry }
+  const entry = await authorizeDocument(auth.principal, documentId, action)
+  if (!includeArchived && entry.archived_at) throw notFound()
+  return { ...auth, orgId: entry.org_id, projectId: entry.project_id, entry }
 }
 
 async function authenticate<H extends DocumentHandle>(request: Request, options: DocumentsRouteOptions<H>) {
-  if (isLoopbackLocalRequest(request)) return { orgId: LOCAL_ORG }
+  const { access } = requireBackend(options)
+  if (!request.headers.has("authorization") && isLoopbackLocalRequest(request)) {
+    return { orgId: LOCAL_ORG, principal: await access.principal(localControlPlaneAuth(), LOCAL_ORG) }
+  }
   const auth = await controlPlaneAuthContext(request, {
+    ...(options.authentication ? { authentication: options.authentication } : {}),
     ...(options.authConfig ? { config: options.authConfig } : {}),
     ...(options.verifier ? { verifier: options.verifier } : {}),
   })
@@ -446,22 +505,25 @@ async function authenticate<H extends DocumentHandle>(request: Request, options:
   }
   const authority = routeAuthority(options)
   await authority.usersMe(auth)
-  return { orgId: await authority.resolveOrgId(auth), auth }
+  const orgId = new URL(request.url).searchParams.get("org_id") ?? undefined
+  return { orgId, auth, principal: await access.principal(auth, orgId) }
 }
 
 async function authorize<H extends DocumentHandle>(
   options: DocumentsRouteOptions<H>,
   auth: SignedControlPlaneAuth,
-  orgId: string,
+  orgId: string | undefined,
   projectId: string,
   action: ProjectAction,
 ) {
   const result = await routeAuthority(options).authorizeProject(auth, {
-    orgId: asOrgId(orgId),
+    ...(orgId ? { orgId: asOrgId(orgId) } : {}),
     projectId: asProjectId(projectId),
     action,
   })
   if (!result.ok) throw notFound()
+  if (!result.orgId) throw new DocumentHttpError(503, "document_project_authority_unavailable", "Project organization is unavailable")
+  return result.orgId
 }
 
 function routeAuthority<H extends DocumentHandle>(options: DocumentsRouteOptions<H>) {
@@ -550,7 +612,7 @@ function serviceScope(scope: AuthenticatedScope): DocumentsServiceScope {
   return {
     orgId: scope.orgId,
     projectId: scope.projectId,
-    actor: { type: "user", id: scope.auth?.user.subject ?? "local_user" },
+    actor: { type: "user", id: scope.principal.userId },
   }
 }
 
@@ -571,6 +633,9 @@ function notFound() {
 }
 
 function errorResponse(error: unknown) {
+  if (error instanceof DocumentAccessError) {
+    return Response.json({ error: { code: error.code, message: error.message } }, { status: error.status })
+  }
   if (error instanceof ControlPlaneAuthError) {
     return Response.json(controlPlaneAuthErrorBody(error), { status: error.status })
   }

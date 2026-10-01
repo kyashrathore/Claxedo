@@ -16,6 +16,7 @@ import { documentRelayJobTokenAudience, mintDocumentRelayJobToken } from "@claxe
 import { runtimeAccessTokenIssuer } from "@claxedo/workspace-relay"
 import { captureWorkspaceRuntimeInternalSecrets } from "../../../../../workspace-runtime/src/internal-secrets"
 import { loopbackMachineLoginPolicy } from "@claxedo/workspace-runtime/testing"
+import { documentTestAccess } from "../../../test-support/document-access"
 
 describe("hosted local document relay", () => {
   const originalFetch = globalThis.fetch
@@ -56,7 +57,8 @@ describe("hosted local document relay", () => {
     const managed = createLocalManagedDocumentWorkspace({ dataRoot: root })
     const entry = {
       id: "document_1",
-      org_id: "__local__",
+      org_id: "org_1",
+      creator_id: "user_1",
       project_id: "project_1",
       display_name: "Plan",
       origin_kind: "managed",
@@ -80,14 +82,12 @@ describe("hosted local document relay", () => {
       last_known_file_version: null,
     } satisfies DocumentIndexEntry
     const entries: DocumentIndexEntry[] = [entry]
-    const backend = {
-      index: {
-        list: async () => entries,
-        find: async (_org: string, id: string) => entries.find((entry) => entry.id === id),
-        update: async () => entry,
-      },
-      workspace: managed,
-    } as unknown as DocumentsRouteBackend
+    const index = {
+      list: async () => entries,
+      find: async (orgId: string, id: string) => entries.find((entry) => entry.org_id === orgId && entry.id === id),
+      update: async () => entry,
+    }
+    const backend = { index, access: documentTestAccess(index, ["org_1"]), workspace: managed } as unknown as DocumentsRouteBackend
     const reads = vi.spyOn(managed, "read")
     const writes = vi.spyOn(managed, "write")
     const created = await managed.create(

@@ -1,7 +1,8 @@
+import { documentAuthorizedFetch } from "../test-support/document-authorized-fetch"
 import fs from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
-import { afterEach, describe, expect, test } from "bun:test"
+import { afterEach, beforeEach, describe, expect, test } from "bun:test"
 import { exportSPKI, generateKeyPair, SignJWT } from "jose"
 import { createWorkspaceRuntimeApp } from "../server"
 import { relayWorkspaceRuntimeExposure } from "../exposure"
@@ -147,6 +148,7 @@ function restoreEnv(key: string, value: string | undefined) {
 
 describe("runtime document session authorization", () => {
   const originalFetch = globalThis.fetch
+  beforeEach(() => { globalThis.fetch = documentAuthorizedFetch(originalFetch) })
   afterEach(() => {
     globalThis.fetch = originalFetch
   })
@@ -217,7 +219,7 @@ describe("runtime document session authorization", () => {
 
   test("the authorized caller still activates and resolves a conflicted document", async () => {
     const f = await fixture()
-    globalThis.fetch = fetchDouble(async () => new Response("conflict", { status: 409 }))
+    globalThis.fetch = documentAuthorizedFetch(async () => new Response("conflict", { status: 409 }))
     try {
       const hydrated = await f.hydrate(await f.relay(owner), await f.documentJob("user_doc_owner", ["hydrate", "write"]))
       expect(hydrated.status).toBe(200)

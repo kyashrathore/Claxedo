@@ -30,13 +30,18 @@ const ENTRIES = [
   // Every entry carries the D1 access model: the project-role query, the access
   // context, the org-member, project-member and team authorities, the host
   // access error contract, the D1 session authority's input validation and
-  // access predicates, and the verified-email account lookup.
-  { name: "worker", entry: BETTER_AUTH_D1_ENTRY, modules: 106, packages: 19 },
+  // access predicates, and the verified-email account lookup. Every entry also
+  // mounts hosted Pages from `core-worker.cf.ts`: the D1 document authority
+  // (`authority/adapters/d1/document-authority.ts`), the R2 documents backend
+  // and its index, managed store and local-relay schemas
+  // (`documents/backends/hosted/`), and the runtime broker that hydrates a page
+  // into a session with its relay client (`documents/relay-http.ts`).
+  { name: "worker", entry: BETTER_AUTH_D1_ENTRY, modules: 115, packages: 19 },
   // Both Agent Plugins entries carry the plugin-backend platform
   // (`src/plugin-backends/`): seven modules, `@claxedo/plugin-api` for the
   // manifest, and `cloudflare:workers` for the supervisor and its entrypoints.
-  { name: "worker-agent-plugins", entry: BETTER_AUTH_D1_AGENT_PLUGINS_ENTRY, modules: 157, packages: 23 },
-  { name: "worker-agent-plugins-full-hosted", entry: BETTER_AUTH_D1_AGENT_PLUGINS_FULL_HOSTED_ENTRY, modules: 162, packages: 23 },
+  { name: "worker-agent-plugins", entry: BETTER_AUTH_D1_AGENT_PLUGINS_ENTRY, modules: 166, packages: 23 },
+  { name: "worker-agent-plugins-full-hosted", entry: BETTER_AUTH_D1_AGENT_PLUGINS_FULL_HOSTED_ENTRY, modules: 171, packages: 23 },
 ] as const
 
 function closure(entry: string, options: { runtimeOnly?: boolean } = {}) {
@@ -44,7 +49,7 @@ function closure(entry: string, options: { runtimeOnly?: boolean } = {}) {
 }
 
 describe("server deployment entry closures", () => {
-  it("keeps the provider-independent hosted core physically free of the documents backends", () => {
+  it("mounts the hosted Pages backend in the provider-independent hosted core and never the local one", () => {
     const result = closure(HOSTED_CORE_WORKER_ROOT, { runtimeOnly: true })
     const files = result.modules.map((module) => module.relative)
     expect(files).toContain(HOSTED_CORE_WORKER_ROOT)
@@ -53,7 +58,8 @@ describe("server deployment entry closures", () => {
     expect(result.unresolved).toEqual([])
     expect(result.opaque).toEqual([])
 
-    expect(files.filter((file) => file.includes("src/documents/"))).toEqual([])
+    expect(files).toContain("src/documents/backends/hosted/backend.ts")
+    expect(files.filter((file) => file.includes("src/documents/backends/local/"))).toEqual([])
   })
 
   it("keeps the Better Auth D1 Worker free of optional provider implementations", () => {
@@ -63,7 +69,7 @@ describe("server deployment entry closures", () => {
     expect(files).toContain("src/deployments/hosted-workerd/core-worker.cf.ts")
     expect(result.unresolved).toEqual([])
     expect(result.opaque).toEqual([])
-    expect(files.filter((file) => file.toLowerCase().includes("documents/"))).toEqual([])
+    expect(files.filter((file) => file.includes("src/documents/backends/local/"))).toEqual([])
   })
 
   it("keeps the plain Worker free of Agent Plugins and the feature Worker closed over exactly it", () => {
@@ -86,7 +92,7 @@ describe("server deployment entry closures", () => {
       files.filter((file) =>
         [
           "packages/claxedo-local-server/src",
-          "documents/",
+          "documents/backends/local/",
           "convex",
         ].some((value) => file.toLowerCase().includes(value)),
       ),

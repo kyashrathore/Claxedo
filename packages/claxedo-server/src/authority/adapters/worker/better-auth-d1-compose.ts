@@ -7,8 +7,9 @@ import type { AuthAdapterDescriptor } from "@claxedo/server-core/platform/auth/a
 import type { AuthIdentity } from "@claxedo/server-core/platform/auth/authentication"
 import { browserAuthHttpSecurity } from "@claxedo/server-core/platform/http/browser-auth-security"
 
+import type { D1AccessContext } from "../d1/access-context"
 import { createD1CoreAuthority, type D1CoreAuthorityBoundary } from "../d1/core-authority"
-import { USER_DEPLOYED_OWNER_CLAIM_HEADER, type D1AuthorityProductPolicy } from "../d1/workspace-authority"
+import { D1WorkspaceAuthority, USER_DEPLOYED_OWNER_CLAIM_HEADER, type D1AuthorityProductPolicy } from "../d1/workspace-authority"
 import { createD1HostTunnelTargetResolver } from "../d1/host-tunnel-relay-target"
 import { hostedCredentialsEnabled, hostedOrgCredentials } from "../../../credentials/worker/index"
 import { d1UserAgentConfigRepository } from "../d1/user-agent-config"
@@ -110,7 +111,9 @@ export type BetterAuthD1UserDeployedComposition = {
   plane: HostedControlPlane
   /** The sandbox delivery stack a feature entry composes onto; absent without a sandbox driver. */
   runtimeDelivery?: ReturnType<typeof createHostedRuntimeDelivery>
-  options: Omit<HostedCoreAppOptions, "liveSyncRoom" | "sharedRateLimitStore" | "idempotency">
+  options: Omit<HostedCoreAppOptions, "liveSyncRoom" | "sharedRateLimitStore" | "idempotency" | "documents">
+  /** The membership, team and project rows hosted Pages authorize against. */
+  documentAccess: D1AccessContext
   /** Better Auth owns browser and native protocol routes plus AUTH_DB state. */
   authHandler(request: Request): Promise<Response>
   verifyIdentity(request: Request): Promise<AuthIdentity>
@@ -239,6 +242,11 @@ export function composeBetterAuthD1UserDeployedControlPlane(
   return {
     plane,
     ...(delivery ? { runtimeDelivery: delivery } : {}),
+    documentAccess: new D1WorkspaceAuthority(input.controlPlaneDatabase, {
+      deploymentId,
+      product: input.product,
+      ...(input.now ? { now: input.now } : {}),
+    }).accessContext(),
     options: {
       authentication,
       agentConfigRepository: settings,

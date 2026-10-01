@@ -21,6 +21,7 @@ function render(overrides: Partial<Parameters<typeof renderWorkerWranglerConfig>
     controlPlaneDatabase: { name: "claxedo-control-plane", id: "33333333-3333-4333-8333-333333333333" },
     controlPlaneMigrationsDir: "migrations/control-plane",
     requestLimiterNamespaceId: "2101",
+    documentsBucket: "claxedo-documents",
     variables: { CLAXEDO_DEPLOYMENT_ID: "claxedo", BETTER_AUTH_URL: "https://api.example.com" },
     ...overrides,
   })
@@ -36,6 +37,10 @@ describe("the user-deployed Worker Wrangler config", () => {
     expect(config).toContain('database_id = "11111111-1111-4111-8111-111111111111"')
     expect(config).toContain("workers_dev = false")
     expect(config).toContain('[vars]\nBETTER_AUTH_URL = "https://api.example.com"\nCLAXEDO_DEPLOYMENT_ID = "claxedo"')
+  })
+
+  test("binds the documents bucket on every Worker profile", () => {
+    expect(render()).toContain('binding = "CLAXEDO_DOCUMENTS"\nbucket_name = "claxedo-documents"')
   })
 
   test("pins the shared rate-limit window and ceiling to the local fuse", () => {

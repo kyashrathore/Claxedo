@@ -28,8 +28,11 @@ describe("user-deployed Cloudflare configuration", () => {
       organization: { id: "claxedo", name: "Acme" },
       authMethods: ["github"],
       databases: { AUTH_DB: "claxedo-auth", CONTROL_PLANE_DB: "claxedo-control-plane" },
+      documentsBucket: "claxedo-documents",
       requestLimiterNamespaceId: allocatedRequestLimiterNamespaceId("claxedo", "claxedo"),
     })
+    expect(userCloudflareDeployment({ ...env, CLAXEDO_DOCUMENTS_BUCKET: "pages-staging" }, { agentPlugins: false }))
+      .toMatchObject({ documentsBucket: "pages-staging" })
     expect(deployment.artifact.artifactId).toBe("user-deployed-better-auth-d1")
     expect(deployment.workerName).not.toContain("locked")
     expect(deployment.requiredSecrets).toEqual([
