@@ -1,4 +1,4 @@
-import { inviteOrgMember } from "../../test-support/invite-org-member"
+import { inviteIdentity } from "../../test-support/invite-identity"
 import { afterEach, describe, expect, test } from "vitest"
 import { Hono } from "hono"
 import { Miniflare } from "miniflare"
@@ -197,8 +197,9 @@ async function rig(options: RigOptions = {}) {
   })
   const owner = await signed(authority, ownerIdentity)
   const memberIdentity = identity("member")
+  const accept = await inviteIdentity(authority, owner, { orgId: "org_deployment", identity: memberIdentity, role: "member" })
   const member = await signed(authority, memberIdentity)
-  await inviteOrgMember(target, owner, { orgId: "org_deployment", userPublicId: member.principal!.userId, role: "member" })
+  await accept(member)
 
   const credentials = credentialFake()
   // The setup's clock, movable so an attempt TTL is crossed exactly rather
