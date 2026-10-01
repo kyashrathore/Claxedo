@@ -43,10 +43,10 @@ A hook that carries `agent_id` or `agentId` belongs to a subagent; Claude and Co
 
 ## Template ownership
 
-The nine CLI declarations live in the first-party `@claxedo/status-hooks` plugin's `package.json`, under `claxedo.statusHooks`. `src/status-hooks.ts` validates that manifest and supplies its list by default. Core receives the list explicitly: `writeStatusHooksArtifacts` writes artifacts and wrappers, `materializeAgentHooks` applies config policy through `config-merge.ts`, and `providerLifecycle` maps raw events using the active provider's declaration. Project-file installation is shared wrapper machinery.
+The nine CLI declarations live in the first-party `@claxedo/status-hooks` plugin's `package.json`, under `claxedo.statusHooks`; `src/status-hooks.ts` validates that manifest. The engine takes the template list as input: `writeStatusHooksArtifacts` writes artifacts and wrappers, `materializeAgentHooks` merges configs through `config-merge.ts`, and `providerLifecycle` maps a raw event with the declaration of the terminal's provider. Project-file installation is shared wrapper machinery.
 
-The machine does not yet expose an activated-manifest runtime: the daemon's live-plugin service builds app bundles, and app activation is owned by the app. Until that path exists, runtime composition injects templates. `setupAgentHooks({ templates })` and `AgentHookRoutes({ statusHooks })` accept the same composed list; the machine's future activation owner must supply it to both. This is not a claim that Marketplace activation currently installs machine hooks.
+No machine-side path activates plugin manifests yet, so `setupAgentHooks({ templates })` and `AgentHookRoutes({ statusHooks })` default to the first-party list; whatever activates plugins on the machine must pass the same list to both.
 
 Amp declares a guarded text-file install; Antigravity declares a guarded named JSON entry. Droid declares the existing effective-file rule. Conditional event rules preserve native Amp and Antigravity outcomes, while core retains tool-ask pairing, subagent isolation and background-work suppression.
 
-Generic custom wrappers emit canonical `eventType` values owned by core. They do not require a provider-specific template to report busy, idle or failure.
+A generic or custom wrapper has no template. It reports `hook_event_name` `Busy`, `Idle` or `Error`, and `providerLifecycle` takes those as the engine's own statuses under the wrapper's command name.
