@@ -5,23 +5,23 @@ import { asText as text } from "@claxedo/agent-runtime-contract"
 import { unknownKind } from "./frames"
 import { cursorErrorClass } from "./run-errors"
 import { endedRunState, unchanged, type CursorSdkAdapterState, type CursorTranslation } from "./state"
+import { own } from "../../../translate/value"
 
 export type CursorRunResult = LocalRunStreamResultEvent & { error?: { message: string; code?: string } }
 
+const statusProtocolMap: Partial<Record<Extract<SDKMessage, { type: "status" }>["status"], "busy" | null>> = {
+  CREATING: "busy",
+  RUNNING: "busy",
+  FINISHED: null,
+  CANCELLED: null,
+  ERROR: null,
+  EXPIRED: null,
+}
+
 export function statusEvents(state: CursorSdkAdapterState, message: Extract<SDKMessage, { type: "status" }>): CursorTranslation {
-  const status = message.status
-  switch (status) {
-    case "CREATING":
-    case "RUNNING":
-      return unchanged(state, [{ type: "session-status", status: "busy" }])
-    case "FINISHED":
-    case "CANCELLED":
-    case "ERROR":
-    case "EXPIRED":
-      return unchanged(state)
-    default:
-      return unknownKind(state, `status:${String(status)}`)
-  }
+  const status = own(statusProtocolMap, message.status)
+  if (status === undefined) return unknownKind(state, `status:${String(message.status)}`)
+  return unchanged(state, status ? [{ type: "session-status", status }] : [])
 }
 
 function failedRun(row: CursorRunResult): AgentRuntimeEvent[] {
@@ -34,25 +34,10 @@ function failedRun(row: CursorRunResult): AgentRuntimeEvent[] {
   ]
 }
 
-function runEndEvents(state: CursorSdkAdapterState, row: CursorRunResult): CursorTranslation {
-  const status = row.status
-  switch (status) {
-    case "finished":
-      return { state: endedRunState(state), events: [{ type: "session-status", status: "idle" }, { type: "finish", sessionId: row.runId }] }
-    case "cancelled":
-      return { state: endedRunState(state), events: [{ type: "session-status", status: "idle" }, { type: "cancelled", sessionId: row.runId }] }
-    case "error":
-      return { state: endedRunState(state), events: failedRun(row) }
-    default:
-      return unknownKind(state, `result:${String(status)}`)
-  }
-}
-
 export function localRunTerminalEvents(state: CursorSdkAdapterState, row: Exclude<LocalRunStreamEvent, { type: "sdk_message" }>): CursorTranslation {
-  switch (row.type) {
-    case "result":
-      return runEndEvents(state, row)
-    case "done":
-      return { state: endedRunState(state), events: [{ type: "session-status", status: "idle" }, { type: "finish", sessionId: row.runId }] }
+  if (row.type === "done" || row.status === "finished" || row.status === "cancelled") {
+    const type = row.type === "result" && row.status === "cancelled" ? "cancelled" : "finish"
+    return { state: endedRunState(state), events: [{ type: "session-status", status: "idle" }, { type, sessionId: row.runId }] }
   }
+  return row.status === "error" ? { state: endedRunState(state), events: failedRun(row) } : unknownKind(state, `result:${String(row.status)}`)
 }

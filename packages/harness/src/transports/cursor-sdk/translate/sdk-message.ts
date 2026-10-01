@@ -1,6 +1,7 @@
 import type { SDKMessage } from "@cursor/sdk"
 import type { AgentRuntimeEvent } from "@claxedo/agent-runtime-contract"
 import { asText as text } from "@claxedo/agent-runtime-contract"
+import { own } from "../../../translate/value"
 import { unknownKind } from "./frames"
 import { statusEvents } from "./run-status"
 import { closedShell, openedShell } from "./shell-output"
@@ -52,25 +53,20 @@ function compactionEvents(state: CursorSdkAdapterState, message: Extract<SDKMess
   return unchanged(state, summary ? [{ type: "session-compaction", phase: "completed", summary }] : [])
 }
 
-export function translateSdkMessage(state: CursorSdkAdapterState, message: SDKMessage): CursorTranslation {
-  switch (message.type) {
-    case "assistant":
-      return assistantEvents(state, message)
-    case "thinking":
-      return unchanged(state, message.text ? [{ type: "thinking-delta", delta: message.text }] : [])
-    case "tool_call":
-      return toolCallEvents(state, message)
-    case "status":
-      return statusEvents(state, message)
-    case "usage":
-      return summedUsageEvents(state, message)
-    case "task":
-      return compactionEvents(state, message)
-    case "system":
-    case "request":
-    case "user":
-      return unchanged(state)
-    default:
-      return unknownKind(state, `message:${String((message as { type: unknown }).type)}`)
-  }
+const sdkMessageProtocolMap = {
+  assistant: assistantEvents,
+  thinking: (state, message) => unchanged(state, message.text ? [{ type: "thinking-delta", delta: message.text }] : []),
+  tool_call: toolCallEvents,
+  status: statusEvents,
+  usage: summedUsageEvents,
+  task: compactionEvents,
+  system: (state) => unchanged(state),
+  request: (state) => unchanged(state),
+  user: (state) => unchanged(state),
+} satisfies { [Kind in SDKMessage["type"]]: (state: CursorSdkAdapterState, message: Extract<SDKMessage, { type: Kind }>) => CursorTranslation }
+
+export function translateSdkMessage(state: CursorSdkAdapterState, row: Record<string, unknown>, unknownType = String(row.type)): CursorTranslation {
+  const handlers = sdkMessageProtocolMap as Record<string, (state: CursorSdkAdapterState, message: SDKMessage) => CursorTranslation>
+  const translate = typeof row.type === "string" ? own(handlers, row.type) : undefined
+  return translate ? translate(state, row as unknown as SDKMessage) : unknownKind(state, `message:${unknownType}`)
 }
