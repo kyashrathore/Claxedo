@@ -205,6 +205,7 @@ async function startCloudRuntime(input) {
     relayHostAuth,
     configToken: runtimeConfigToken,
     harness: { kind: "native", harnessId: "pi" },
+    sessionIdWorkspace: sessionMetaWorkspace,
   })
   if (scriptedModelAuth) {
     await runtime.host.apply({
@@ -710,6 +711,11 @@ const runtimeAccessTokenSigner = async (input) => {
   }
 }
 const centralStore = createSqliteCentralStore({ mode: () => "central_canonical" })
+/** Whose workspace a session id belongs to, read from the projection the self-hosted node keeps, as production does. */
+async function sessionMetaWorkspace(sessionId) {
+  return (await services.projectionStore.session_meta(sessionId))?.workspaceID
+}
+
 const services = createControlPlaneServices(
   {
     projectionStore: centralStore.projectionStore,
@@ -921,6 +927,7 @@ if (hostMode === "embedded") {
 // before any tunnel request can create the runtime host.
 configureEmbeddedWorkspaceRuntime({
   sessionAccessPolicy: embeddedSessionPolicy,
+  sessionIdWorkspace: sessionMetaWorkspace,
 })
 
 const built = createSelfHostedApp(services, {
