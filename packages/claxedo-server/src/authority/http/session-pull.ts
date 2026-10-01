@@ -1,10 +1,15 @@
-import { resolveWorkspace, type SessionProjectionWorkspace } from "@claxedo/server-core/workspace/store/index"
+import { resolveWorkspace, type SessionProjectionWorkspace, type Workspace } from "@claxedo/server-core/workspace/store/index"
 import type { ControlPlaneAuthContext, SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
-import { requireAuthority } from "@claxedo/server-core/platform/auth/authority"
+import { requireAuthority, type WorkspaceRecord } from "@claxedo/server-core/platform/auth/authority"
+import { CONTROL_PLANE_RUNTIME_ACTOR, resolveRuntimeActor } from "@claxedo/server-core/platform/auth/runtime-actor"
+import { WORKSPACE_RUNTIME_IDENTITY_PATH } from "@claxedo/server-core/platform/governance/route-ownership"
+import type { RelayRole } from "@claxedo/workspace-relay"
+import { asRecord } from "@claxedo/helpers/guards"
 import type { ControlPlaneServices } from "../services"
+import { resolveWorkspaceRuntimeTarget } from "../runtime-target"
+import { createRelayRuntimeClient, decodeRelayRuntimeJson, type RelayRuntimeCapability } from "../../workspace/relay-runtime-client"
 import { ControlPlaneProtocolError, type ControlPlaneHttpOptions } from "./protocol"
 import { txt } from "@claxedo/server-core/session/meta/shape"
-import { runtimeJson, verifiedRuntimeJson } from "./runtime-transport"
 import {
   messagesPayload,
   projectPulledMessages,
@@ -196,3 +201,80 @@ async function workspaceForPull(
   return { ws, authorityWorkspace: opened?.workspace, authorityRole: relayRole(opened?.role) }
 }
 
+type SessionRuntimeInput = {
+  workspaceId: string
+  ws: Pick<Workspace, "org_id">
+  authorityWorkspace?: WorkspaceRecord
+  authorityRole?: RelayRole
+  auth?: ControlPlaneAuthContext
+  path: string
+}
+
+async function verifiedRuntimeJson(services: ControlPlaneServices, options: ControlPlaneHttpOptions, input: SessionRuntimeInput) {
+  const health = asRecord(await runtimeJson(services, options, {
+    ...input,
+    path: WORKSPACE_RUNTIME_IDENTITY_PATH,
+  }))
+  if (txt(health?.workspaceId) !== input.workspaceId) {
+    throw new ControlPlaneProtocolError(
+      409,
+      "workspace_runtime_mismatch",
+      "Workspace runtime identity does not match requested workspace",
+    )
+  }
+  return await runtimeJson(services, options, input)
+}
+
+async function runtimeJson(
+  services: ControlPlaneServices,
+  options: ControlPlaneHttpOptions,
+  input: SessionRuntimeInput,
+) {
+  const error = (status: number, code: string, message: string) => new ControlPlaneProtocolError(status, code, message)
+  if (options.runtimeFetch) {
+    return await decodeRelayRuntimeJson(await options.runtimeFetch({ ...input, init: { headers: { accept: "application/json" } } }), error)
+  }
+  const capability = await sessionRuntimeCapability(services, input)
+  const provider = services.relay.provider
+  if (!provider) throw new ControlPlaneProtocolError(503, "workspace_runtime_unavailable", "Workspace runtime pull transport is not configured")
+  return await createRelayRuntimeClient({ provider, error }).json(capability, input.path)
+}
+
+async function sessionRuntimeCapability(services: ControlPlaneServices, input: SessionRuntimeInput): Promise<RelayRuntimeCapability> {
+  const target = await resolveWorkspaceRuntimeTarget(services, input.auth, {
+    workspaceId: input.workspaceId,
+    ...(input.authorityWorkspace ? { workspace: input.authorityWorkspace } : {}),
+  })
+  const orgId = input.ws.org_id
+  if (!orgId) {
+    throw new ControlPlaneProtocolError(
+      409,
+      "workspace_org_required",
+      "Workspace is missing org identity for runtime token minting",
+    )
+  }
+  if (input.auth?.mode === "signed" && !input.authorityRole) {
+    throw new ControlPlaneProtocolError(
+      403,
+      "workspace_authorization_denied",
+      "Workspace role is required for runtime token minting",
+    )
+  }
+  return {
+    workspaceId: input.workspaceId,
+    hostId: target.hostId,
+    routingId: target.routingId,
+    ...(input.auth?.mode === "signed"
+      ? { principalKind: "user" as const, auth: input.auth, ...await resolveRuntimeActor(requireAuthority(services), input.auth) }
+      : CONTROL_PLANE_RUNTIME_ACTOR),
+    orgId,
+    role: input.auth?.mode === "signed" ? requiredRole(input.authorityRole) : "owner",
+    ttlMs: 10 * 60_000,
+    homeRegion: target.homeRegion,
+  }
+}
+
+function requiredRole(role: RelayRole | undefined): RelayRole {
+  if (role) return role
+  throw new ControlPlaneProtocolError(403, "workspace_authorization_denied", "Workspace role is required for runtime token minting")
+}

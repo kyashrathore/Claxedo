@@ -3,7 +3,7 @@ import type { WorkspaceAuthority } from "@claxedo/server-core/platform/auth/auth
 import type { UserAgentConfigRepository } from "@claxedo/server-core/agent-config/repository"
 import { userAgentConfigStore } from "@claxedo/server-core/agent-config/repository"
 import { snapshotDefaultHarness } from "@claxedo/server-core/agent-config/connections"
-import type { RuntimeNativeHarnessId } from "@claxedo/workspace-runtime/config"
+import type { RuntimeNativeHarnessId, RuntimeSnapshot } from "@claxedo/workspace-runtime/config"
 import type { AcpRuntimeMcpServer } from "@claxedo/server-core/agent-plugins/runtime/mcp-projection"
 import { builtInProviderRow } from "@claxedo/server-core/credentials/built-in-destinations"
 import {
@@ -13,7 +13,22 @@ import {
 } from "@claxedo/server-core/credentials/native-delivery-plan"
 import type { ControlPlaneCredentials, ControlPlaneServices } from "../authority/services"
 import type { WorkspaceRuntimeContext, WorkspaceRuntimePreparation } from "./route-support"
-import { hostedRuntimeConfigApply } from "./hosted-runtime-fetch"
+import { mintSupervisorBackplaneToken } from "@claxedo/server-core/platform/auth/runtime-access-token"
+import { createWorkspaceRuntimeClient } from "@claxedo/workspace-runtime/client"
+
+async function applyConfig(
+  services: ControlPlaneServices,
+  workspaceId: string,
+  snapshot: RuntimeSnapshot,
+  signingEnv: Record<string, string | undefined>,
+) {
+  const manager = services.sandbox.sandboxManager
+  if (!manager) throw new Error("hosted sandbox manager is unavailable")
+  const target = await manager.target(workspaceId)
+  if (target.status !== "ready") throw new Error(`hosted sandbox ${workspaceId} is unavailable`)
+  const token = await mintSupervisorBackplaneToken({ workspaceId, hostId: target.hostId, subject: "workspace-supervisor" }, signingEnv)
+  await createWorkspaceRuntimeClient({ baseUrl: target.url }).applyConfig(snapshot, { token: token.supervisorBackplaneToken })
+}
 
 /**
  * The whole stack a sandbox is provisioned with. The base delivery supplies
@@ -75,7 +90,7 @@ export function createHostedRuntimeDelivery(input: {
     const { delivered, selections } = await deliveries(person)
     const auth = nativeProviderAuth(delivered, { owner: person.userId, machineOwnerUserId: person.userId, selections })
     const defaultHarness = snapshotDefaultHarness(config, input.provisionedRunner)
-    await hostedRuntimeConfigApply(input.services, workspaceId, {
+    await applyConfig(input.services, workspaceId, {
       version: 4 as const,
       commands: [],
       mcp: await hooks.acpMcp?.(workspaceId, preparation) ?? {},

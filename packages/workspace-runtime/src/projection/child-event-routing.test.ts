@@ -8,7 +8,7 @@ import {
   createChildEventRouter,
   type ChildProjectionTarget,
 } from "./child-event-routing"
-import type { RuntimeAppendSource } from "./turn-projection"
+import type { RuntimeAppendSource } from "./session-event-writer"
 import { testTurnProjector } from "../test-support/turn-projector"
 
 const source: RuntimeAppendSource = { dir: "in", method: "test" }
