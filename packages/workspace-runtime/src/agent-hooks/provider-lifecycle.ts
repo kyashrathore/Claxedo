@@ -1,36 +1,6 @@
+import type { StatusHookTemplate, StatusHookEventRule } from "@claxedo/plugin-api"
 import { arr, rec, str } from "../json-value"
 
-const eventTypes: Record<string, "Busy" | "Idle" | "UserActionRequired" | "Error"> = {
-  Busy: "Busy", Start: "Busy", SessionStart: "Busy", UserPromptSubmit: "Busy", PostToolUse: "Busy",
-  BeforeAgent: "Busy", AfterTool: "Busy", beforeSubmitPrompt: "Busy", sessionStart: "Busy",
-  userPromptSubmitted: "Busy", postToolUse: "Busy", "agent-turn-start": "Busy",
-  PostToolUseFailure: "Busy", postToolUseFailure: "Busy", PermissionDenied: "Busy",
-  Idle: "Idle", Interrupt: "Idle", Stop: "Idle", SessionEnd: "Idle", AfterAgent: "Idle", stop: "Idle", sessionEnd: "Idle",
-  "agent-turn-complete": "Idle",
-  Error: "Error", Failed: "Error", StopFailure: "Error",
-  "session.error": "Error", sessionError: "Error", "agent-turn-error": "Error", "task-failed": "Error",
-  UserActionRequired: "UserActionRequired", beforeShellExecution: "UserActionRequired",
-  beforeMCPExecution: "UserActionRequired", PermissionRequest: "UserActionRequired",
-  QuestionRequest: "UserActionRequired", question: "UserActionRequired", "question.asked": "UserActionRequired",
-  Notification: "UserActionRequired", "permission-request": "UserActionRequired", "question-request": "UserActionRequired",
-}
-
-/**
- * Hooks that end one tool call while the turn goes on. A failed or denied tool
- * is a completion, not the turn's error: Claude's StopFailure is the hook that
- * ends a turn in failure.
- */
-const toolCompletionHooks = new Set([
-  "PostToolUse", "postToolUse", "AfterTool", "PostToolUseFailure", "postToolUseFailure", "PermissionDenied",
-])
-
-/**
- * Identity that pairs a tool's ask with its completion. Claude repeats
- * `tool_input` on PermissionRequest and PostToolUse; Cursor sends only
- * `command` on beforeShellExecution and `tool_input.command` on postToolUse.
- * Cursor's beforeMCPExecution carries `tool_input` as a JSON string and a
- * `command` naming the MCP server process, so it pairs with nothing.
- */
 function toolKey(input: Record<string, unknown>): string | null {
   if (input.tool_input !== undefined) {
     const tool = rec(input.tool_input)
@@ -53,65 +23,93 @@ export type ProviderLifecycle = {
   subagent?: true
 }
 
-/** Normalize raw CLI hook JSON before it can mutate terminal lifecycle state. */
-export function providerLifecycle(input: Record<string, unknown>): ProviderLifecycle | undefined {
+function at(input: unknown, field: string): unknown {
+  return field.split(".").reduce((value, key) => rec(value)?.[key], input)
+}
+
+export function providerLifecycle(
+  input: Record<string, unknown>,
+  templates: readonly StatusHookTemplate[],
+  envelopeProvider?: string,
+): ProviderLifecycle | undefined {
   const first = (...keys: string[]) => keys.map((key) => str(input[key])).find((value) => !!value)
+  const canonical = input.eventType
+  if (canonical === "Busy" || canonical === "Idle" || canonical === "Error") {
+    return {
+      eventType: canonical,
+      provider: envelopeProvider || first("provider", "provider_id", "providerId", "agent", "cli"),
+    }
+  }
   const hook = first("hook_event_name")
   const type = hook ?? first("type")
-  if (input.provider === "antigravity") {
-    const event = rec(input.event)
-    const sessionId = str(event?.conversationId)
-    if (!event || !sessionId) return undefined
-    const identity = { provider: "antigravity", sessionId, transcriptPath: str(event.transcriptPath) }
-    if (hook === "PreInvocation") return { ...identity, eventType: "Busy" as const }
-    if (hook !== "Stop" || event.fullyIdle !== true) return undefined
-    if (event.terminationReason === "model_stop") return { ...identity, eventType: "Idle" as const, outcome: "done" as const }
-    if (event.terminationReason === "error" || event.terminationReason === "max_steps_exceeded") {
-      return { ...identity, eventType: "Error" as const, outcome: "error" as const }
-    }
-    return undefined
-  }
-  if (input.provider === "amp" && (hook === "agent.start" || hook === "agent.end")) {
-    const event = rec(input.event)
-    const sessionId = str(rec(event?.thread)?.id)
-    if (!event || !sessionId) return undefined
-    const outcome = event.status
-    const ended = outcome === "done" || outcome === "error" || outcome === "cancelled" ? outcome : undefined
-    if (hook === "agent.end" && !ended) return undefined
+  if (!type) return undefined
+  const provider = envelopeProvider || first("provider", "provider_id", "providerId", "agent", "cli")
+  const template = provider
+    ? templates.find(
+        (item) => item.provider === provider || item.command === provider || item.aliases?.includes(provider),
+      )
+    : templates.find((item) => Object.hasOwn(item.events, type))
+  if (!template || !Object.hasOwn(template.events, type)) return undefined
+  const declared = template.events[type]
+  const rules: StatusHookEventRule[] =
+    typeof declared === "string" ? [{ status: declared }] : Array.isArray(declared) ? declared : [declared]
+  const rule = rules.find((candidate) => {
+    const payload = candidate.payload ?? template.payload
+    const value = payload ? at(input, payload.path) : input
+    return Object.entries(candidate.when ?? {}).every(([field, expected]) =>
+      Array.isArray(expected) ? expected.includes(at(value, field)) : at(value, field) === expected,
+    )
+  })
+  if (!rule || rule.status === "ignored") return undefined
+  const eventType =
+    rule.status === "running"
+      ? "Busy"
+      : rule.status === "waiting"
+        ? "UserActionRequired"
+        : rule.outcome === "error"
+          ? "Error"
+          : "Idle"
+  const payload = rule.payload ?? template.payload
+  if (payload) {
+    const event = rec(at(input, payload.path))
+    const sessionId = str(at(event, payload.sessionId))
+    if (!event || (payload.requireSession && !sessionId)) return undefined
     return {
-      provider: "amp",
+      provider: template.provider,
       sessionId,
-      eventType: hook === "agent.start" ? "Busy" as const : ended === "error" ? "Error" as const : "Idle" as const,
-      outcome: hook === "agent.end" ? ended : undefined,
-      prompt: str(event.message)?.slice(0, 800),
+      eventType,
+      ...(payload.transcriptPath ? { transcriptPath: str(at(event, payload.transcriptPath)) } : {}),
+      ...(payload.prompt ? { prompt: str(at(event, payload.prompt))?.slice(0, 800) } : {}),
+      ...(rule.outcome ? { outcome: rule.outcome } : {}),
     }
   }
-  if (!type || type === "SubagentStart" || type === "SubagentStop") return undefined
-  const eventType = hook === "PreToolUse"
-    ? first("tool_name") === "request_user_input" ? "UserActionRequired" as const : undefined
-    : Object.hasOwn(eventTypes, type) ? eventTypes[type] : undefined
-  if (!eventType) return undefined
-  // Claude and Codex set agent_id only on hooks a subagent fires, and the
-  // parent's turn may end while one still runs. A subagent's ask still waits on
-  // the person, and its completion of that same tool settles it; nothing else
-  // a subagent reports is the terminal's turn.
-  const subagent = !!first("agent_id", "agentId")
-  if (subagent && eventType !== "UserActionRequired" && !(type && toolCompletionHooks.has(type) && toolKey(input) !== null)) return undefined
-  // Claude can finish a response while waiting for its background agent. The
-  // provider explicitly reports that work; this is not a completed terminal turn.
+  // Subagent completion can settle its own ask, but cannot end the parent's turn.
+  const subagent = !!template.subagent.map((field) => str(at(input, field))).find(Boolean)
+  if (subagent && eventType !== "UserActionRequired" && !(rule.toolCompletion && toolKey(input) !== null))
+    return undefined
   if (hook === "Stop" && arr(input.background_tasks)?.some((task) => rec(task)?.status === "running")) return undefined
   const prompts = ["input-messages", "input_messages", "inputMessages", "prompts"]
-    .map((key) => arr(input[key])).find((value) => value?.length)
+    .map((key) => arr(input[key]))
+    .find((value) => value?.length)
   return {
     eventType,
     ...(subagent ? { subagent: true } : {}),
     ...(eventType === "UserActionRequired" ? { userAction: { toolKey: toolKey(input) } } : {}),
-    ...(type && toolCompletionHooks.has(type) ? { toolCompletion: { toolKey: toolKey(input) } } : {}),
-    ...(hook === "Interrupt" ? { outcome: "cancelled" as const } : {}),
-    provider: first("provider", "provider_id", "providerId", "agent", "cli") ?? (!hook ? "codex" : undefined),
+    ...(rule.toolCompletion ? { toolCompletion: { toolKey: toolKey(input) } } : {}),
+    ...(rule.outcome === "cancelled" ? { outcome: rule.outcome } : {}),
+    provider:
+      provider ??
+      (!hook ? templates.find((item) => item.typeProvider && Object.hasOwn(item.events, type))?.provider : undefined),
     sessionId: first("session_id", "sessionId", "conversation_id", "conversationId", "thread-id", "thread_id"),
     transcriptPath: first("transcript_path", "transcriptPath"),
     prompt: (first("prompt", "user_prompt", "userPrompt") ?? str(prompts?.at(-1)))?.slice(0, 800),
-    lastAssistantMessage: first("last_assistant_message", "last-assistant-message", "lastAssistantMessage", "assistant_message", "assistant-message", "assistantMessage")?.slice(0, 1500),
+    lastAssistantMessage: first(
+      "last_assistant_message",
+      "last-assistant-message",
+      "lastAssistantMessage",
+      "assistant_message",
+      "assistant-message",
+      "assistantMessage",
+    )?.slice(0, 1500),
   }
 }

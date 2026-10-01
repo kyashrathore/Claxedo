@@ -1,4 +1,5 @@
 import { z } from "zod"
+import { statusHookTemplateSchema } from "./status-hooks"
 import { PLUGIN_ID_MAX_LENGTH, PLUGIN_ID_PATTERN } from "./id"
 
 export const PLUGIN_NAME_MAX_LENGTH = 80
@@ -47,6 +48,7 @@ export const pluginManifestSchema = z
     requires: z.array(z.enum(PLUGIN_CAPABILITIES)).default([]),
     server: pluginServerAccessSchema.default({ routes: [], operations: [] }),
     backend: pluginBackendSchema.optional(),
+    statusHooks: z.array(statusHookTemplateSchema).optional(),
   })
   .strict()
 

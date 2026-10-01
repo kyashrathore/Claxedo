@@ -1,18 +1,10 @@
+import { wrapper, argumentsFor } from "../test-support/status-hooks"
 import { afterEach, beforeEach, describe, expect, it } from "bun:test"
 import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "fs"
 import { execFileSync } from "child_process"
 import { tmpdir } from "os"
 import path from "path"
-import {
-  buildWrapperScript,
-  generateClaudeWrapper,
-  codexHookFlags,
-  generateCodexWrapper,
-  generatePassthroughWrapper,
-  generateGenericWrapper,
-  generateCopilotWrapper,
-  normalizeWrappers,
-} from "./core/wrappers"
+import { buildWrapperScript, generateGenericWrapper, normalizeWrappers } from "./core/wrappers"
 import { WRAPPER_MARKER } from "./core/constants"
 
 const TEST_ROOT = path.join(tmpdir(), `claxedo-wrappers-test-${process.pid}-${Date.now()}`)
@@ -43,28 +35,9 @@ describe("buildWrapperScript", () => {
   })
 })
 
-describe("generatePassthroughWrapper", () => {
-  it("creates a simple exec passthrough for the named binary", () => {
-    const script = generatePassthroughWrapper("gemini")
-
-    expect(script).toContain(WRAPPER_MARKER)
-    expect(script).toContain('find_real_binary "gemini"')
-    expect(script).toContain('exec "$REAL_BIN" "$@"')
-    expect(script).toContain('export CLAXEDO_AGENT="gemini"')
-  })
-
-  for (const agent of ["droid", "mastracode", "cursor-agent"]) {
-    it(`creates passthrough for ${agent}`, () => {
-      const script = generatePassthroughWrapper(agent)
-      expect(script).toContain(`find_real_binary "${agent}"`)
-      expect(script).toContain('exec "$REAL_BIN" "$@"')
-    })
-  }
-})
-
-describe("generateClaudeWrapper", () => {
+describe("Claude template wrapper", () => {
   it("includes exit trap for idle/error notification", () => {
-    const script = generateClaudeWrapper("/tmp/hooks/notify.sh", "/tmp/hooks/claude-settings.json")
+    const script = wrapper("claude", "/tmp/hooks/notify.sh")
 
     expect(script).toContain("trap cleanup EXIT")
     expect(script).toContain('hook_event_name":"Idle"')
@@ -74,9 +47,9 @@ describe("generateClaudeWrapper", () => {
   })
 })
 
-describe("codexHookFlags", () => {
+describe("Codex template arguments", () => {
   it("registers every lifecycle event as a session flag that runs the notify script for codex", () => {
-    const flags = codexHookFlags("/tmp/hooks/notify.sh")
+    const flags = argumentsFor("codex", "/tmp/hooks/notify.sh")
     const events = flags.filter((_, index) => index % 2 === 1).map((flag) => flag.slice("hooks.".length, flag.indexOf("=")))
     expect(events).toEqual(["SessionStart", "SessionEnd", "UserPromptSubmit", "PreToolUse", "PostToolUse", "PermissionRequest", "Stop", "Interrupt", "SubagentStart", "SubagentStop"])
     expect(flags.filter((_, index) => index % 2 === 0).every((flag) => flag === "-c")).toBe(true)
@@ -88,18 +61,18 @@ describe("generateGenericWrapper", () => {
   it("sends busy/idle/error notifications around the real binary", () => {
     const script = generateGenericWrapper("aider", "/tmp/hooks/notify.sh")
 
-    expect(script).toContain('hook_event_name":"Busy"')
-    expect(script).toContain('hook_event_name":"Idle"')
-    expect(script).toContain('hook_event_name":"Error"')
+    expect(script).toContain('eventType":"Busy"')
+    expect(script).toContain('eventType":"Idle"')
+    expect(script).toContain('eventType":"Error"')
     expect(script).toContain('"$REAL_BIN" "$@"')
     expect(script).toContain("CLAXEDO_TAB_ID")
   })
 
 })
 
-describe("generateCopilotWrapper", () => {
+describe("Copilot template wrapper", () => {
   it("injects project-level hooks JSON and git exclude", () => {
-    const script = generateCopilotWrapper("/tmp/hooks/copilot-hook.sh")
+    const script = wrapper("copilot", "/tmp/hooks/copilot-hook.sh".replace(/copilot-hook\.sh$/, "notify.sh"))
 
     expect(script).toContain("COPILOT_HOOKS_DIR")
     expect(script).toContain("claxedo-notify.json")
@@ -131,7 +104,7 @@ describe("copilot wrapper integration", () => {
     writeFileSync(realCopilot, "#!/bin/bash\necho real-copilot\n", { mode: 0o755 })
     chmodSync(realCopilot, 0o755)
 
-    const script = generateCopilotWrapper(hookScriptPath)
+    const script = wrapper("copilot", hookScriptPath.replace(/copilot-hook\.sh$/, "notify.sh"))
     writeFileSync(wrapperPath, script, { mode: 0o755 })
     chmodSync(wrapperPath, 0o755)
 
@@ -165,7 +138,7 @@ describe("copilot project hooks", () => {
     }
     writeFileSync(hookScriptPath, "#!/bin/bash\nexit 0\n", { mode: 0o755 })
     writeFileSync(path.join(realBinDir, "copilot"), "#!/bin/bash\nexit 0\n", { mode: 0o755 })
-    writeFileSync(wrapperPath, generateCopilotWrapper(hookScriptPath), { mode: 0o755 })
+    writeFileSync(wrapperPath, wrapper("copilot", hookScriptPath.replace(/copilot-hook\.sh$/, "notify.sh")), { mode: 0o755 })
     const run = (tab: string) => execFileSync(wrapperPath, [], {
       cwd: projectDir, env: { ...process.env, PATH: `${realBinDir}:${process.env.PATH || ""}`, CLAXEDO_TAB_ID: tab }, encoding: "utf-8",
     })
@@ -208,10 +181,10 @@ describe("codex wrapper integration", () => {
     mkdirSync(path.dirname(wrapperPath), { recursive: true })
     writeFileSync(path.join(realBinDir, "codex"), `#!/bin/bash\nprintf '%s\\n' "$@" > "${argsFile}"\nexit 0\n`, { mode: 0o755 })
     chmodSync(path.join(realBinDir, "codex"), 0o755)
-    writeFileSync(wrapperPath, generateCodexWrapper(notifyPath), { mode: 0o755 })
+    writeFileSync(wrapperPath, wrapper("codex", notifyPath), { mode: 0o755 })
     chmodSync(wrapperPath, 0o755)
     execFileSync(wrapperPath, args, { env: { ...process.env, CLAXEDO_TAB_ID: "", ...env, PATH: `${realBinDir}:${process.env.PATH || ""}` }, encoding: "utf-8" })
-    return { args: readFileSync(argsFile, "utf-8").trimEnd().split("\n"), flags: codexHookFlags(notifyPath) }
+    return { args: readFileSync(argsFile, "utf-8").trimEnd().split("\n"), flags: argumentsFor("codex", notifyPath) }
   }
 
   it("inside a tab, turns hooks on, bypasses hook trust once and adds the hook flags ahead of the caller's arguments", () => {

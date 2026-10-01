@@ -1,11 +1,19 @@
 import fs from "fs/promises"
 import path from "path"
 import { isDeepStrictEqual } from "util"
-import { ConfigChangedError, ConfigEdits, readConfig, reconcileFlatEntries, reconcileNestedEntries, writeMergedConfig, type IsManagedCommand } from "./config-merge"
-import { writeIfChanged as writeFileAtomically } from "./core/utils"
+import {
+  ConfigChangedError,
+  ConfigEdits,
+  readConfig,
+  reconcileFlatEntries,
+  reconcileNestedEntries,
+  writeMergedConfig,
+  type IsManagedCommand,
+} from "./config-merge"
 import { arr, rec, str } from "../json-value"
-import { generateAmpPlugin, generateAntigravityHook } from "./core/hooks"
-import { ANTIGRAVITY_HOOK, CURSOR_HOOK, GEMINI_HOOK, NOTIFY_MARKER, NOTIFY_SCRIPT } from "./core/constants"
+import type { StatusHookTemplate } from "@claxedo/plugin-api"
+import { hookVariables, renderHookText, renderHookValue } from "./core/render"
+import { NOTIFY_MARKER } from "./core/constants"
 import { isMissingFile } from "@claxedo/helpers/fs"
 
 async function readFileIfExists(filePath: string): Promise<string | undefined> {
@@ -17,10 +25,8 @@ async function readFileIfExists(filePath: string): Promise<string | undefined> {
   }
 }
 
-export type AgentHookRunner = "cursor" | "droid" | "gemini" | "mastra" | "amp" | "antigravity"
-
 export type AgentHookMaterializationResult = {
-  runner: AgentHookRunner
+  runner: string
   component: "hooks"
   type: "hook"
   status: "applied" | "failed" | "skipped"
@@ -31,27 +37,11 @@ export type AgentHookMaterializationResult = {
 export type MaterializeAgentHooksOptions = {
   homeDir: string
   notifyPath: string
-  geminiHookPath: string
-  cursorHookPath: string
-  force?: boolean
+  templates: readonly StatusHookTemplate[]
 }
 
 // `[bash] <script> [--harness=<name> | <Event>]`, the script shell-quoted or bare.
 const GENERATED_HOOK_COMMAND = /^(?:bash\s+)?(?:'((?:[^']|'\\'')+)'|([^\s'"]+))(?:\s+(?:--harness=[\w-]+|[A-Za-z]+))?$/
-
-function shellQuote(value: string) {
-  return "'" + value.replaceAll("'", "'\\''") + "'"
-}
-
-async function writeIfChanged(filePath: string, content: string, mode: number, force: boolean) {
-  if (!force) {
-    const existing = await fs.readFile(filePath, "utf-8").catch(() => undefined)
-    if (existing === content) return false
-  }
-  await fs.mkdir(path.dirname(filePath), { recursive: true, mode: 0o755 })
-  await writeFileAtomically(filePath, content, mode, true)
-  return true
-}
 
 function generatedScriptPath(command: string, scriptName: string) {
   const match = GENERATED_HOOK_COMMAND.exec(command.trim())
@@ -73,7 +63,10 @@ function hookCommands(value: unknown): string[] {
   if (Array.isArray(value)) return value.flatMap(hookCommands)
   const record = rec(value)
   if (!record) return []
-  return [...(typeof record.command === "string" ? [record.command] : []), ...Object.values(record).flatMap(hookCommands)]
+  return [
+    ...(typeof record.command === "string" ? [record.command] : []),
+    ...Object.values(record).flatMap(hookCommands),
+  ]
 }
 
 /**
@@ -91,195 +84,121 @@ async function loadManagedHookCommands(scriptName: string, ...configs: unknown[]
     if (script) scripts.set(command, script)
   }
   const owned = new Set<string>()
-  await Promise.all([...new Set(scripts.values())].map(async (script) => {
-    if (await isGeneratedScript(script)) owned.add(script)
-  }))
+  await Promise.all(
+    [...new Set(scripts.values())].map(async (script) => {
+      if (await isGeneratedScript(script)) owned.add(script)
+    }),
+  )
   return (command) => {
     const script = command === undefined ? undefined : scripts.get(command)
     return script !== undefined && owned.has(script)
   }
 }
 
-export function agentHookConfigPaths(homeDir: string) {
-  return {
-    antigravity: path.join(homeDir, ".gemini", "config", "hooks.json"),
-    amp: path.join(homeDir, ".config", "amp", "plugins", "claxedo-lifecycle.ts"),
-    cursor: path.join(homeDir, ".cursor", "hooks.json"),
-    droid: path.join(homeDir, ".factory", "settings.json"),
-    gemini: path.join(homeDir, ".gemini", "settings.json"),
-    mastra: path.join(homeDir, ".mastracode", "hooks.json"),
+export function agentHookConfigPaths(homeDir: string, templates: readonly StatusHookTemplate[]) {
+  return Object.fromEntries(
+    templates.flatMap((template) =>
+      template.install.type === "config-merge"
+        ? [[template.id ?? template.command, path.join(homeDir, template.install.path.slice(2))]]
+        : [],
+    ),
+  )
+}
+
+function valueAt(value: Record<string, unknown>, keys: string[]): Record<string, unknown> | undefined {
+  let current: unknown = value
+  for (const key of keys) current = rec(current)?.[key]
+  if (current !== undefined && !rec(current))
+    throw new Error("Hook config has a non-object container; refusing to rewrite it")
+  return rec(current)
+}
+
+async function mergeTemplate(template: StatusHookTemplate, input: MaterializeAgentHooksOptions) {
+  const install = template.install
+  if (install.type !== "config-merge") return
+  const file = path.join(input.homeDir, install.path.slice(2))
+  if (install.shape === "text") {
+    const original = await readFileIfExists(file)
+    if (original !== undefined && !original.startsWith(install.ownedPrefix!))
+      throw new Error(`Refusing to overwrite an unrecognized plugin at ${file}`)
+    await writeMergedConfig(
+      file,
+      original,
+      renderHookText(install.entries as string, hookVariables(template, input.notifyPath)),
+    )
+    return
   }
-}
-
-/** The notify command a foreign hook config runs, labelled with the harness that owns the config. */
-function notifyCommand(notifyPath: string, harness: string) {
-  return `${shellQuote(notifyPath)} --harness=${harness}`
-}
-
-async function materializeDroid(input: { file: string; notifyPath: string }) {
-  const settingsFile = input.file
-  const standaloneFile = path.join(path.dirname(input.file), "hooks.json")
-  const standalone = await readConfig(standaloneFile)
-  const settings = await readConfig(settingsFile)
-  const settingsHooks = rec(settings.value.hooks)
-  if (settings.value.hooks !== undefined && !settingsHooks) throw new Error(`Droid settings ${settingsFile} has a non-object hooks field; refusing to rewrite it`)
-  const isManaged = await loadManagedHookCommands(NOTIFY_SCRIPT, standalone.value, settingsHooks ?? {})
-  const command = { type: "command", command: notifyCommand(input.notifyPath, "droid") }
-  const desired = {
-    UserPromptSubmit: { hooks: [command] },
-    Notification: { hooks: [command] },
-    Stop: { hooks: [command] },
-    PostToolUse: { matcher: "*", hooks: [command] },
+  const primary = await readConfig(file)
+  const base = install.base ?? []
+  const current = valueAt(primary.value, base)
+  const effective = install.effectiveFile
+  const alternateFile = effective && path.join(input.homeDir, effective.path.slice(2))
+  const alternate = alternateFile ? await readConfig(alternateFile) : undefined
+  const selected = alternate?.original !== undefined ? alternate : primary
+  const target = selected === alternate ? alternateFile! : file
+  const targetBase = selected === alternate ? effective!.base : base
+  const container = valueAt(selected.value, targetBase)
+  const entries = renderHookValue(install.entries, hookVariables(template, input.notifyPath)) as Record<
+    string,
+    Record<string, unknown>
+  >
+  const isManaged = await loadManagedHookCommands(install.managedScript!, primary.value, alternate?.value)
+  const desiredCommands = new Set(hookCommands(entries))
+  const owns = (command: string | undefined) =>
+    command !== undefined && (desiredCommands.has(command) || isManaged(command))
+  const edits = new ConfigEdits(selected.original)
+  for (const [key, value] of Object.entries(install.defaults ?? {})) {
+    if (typeof selected.value[key] !== typeof value) edits.set([key], value)
   }
-  // Droid reads hooks.json in place of settings.json's hooks once it exists,
-  // so Claxedo registers in whichever file is in effect and never creates one.
-  const effective = standalone.original !== undefined
-  const target = new ConfigEdits(effective ? standalone.original : settings.original)
-  reconcileNestedEntries(target, effective ? [] : ["hooks"], effective ? standalone.value : settingsHooks, desired, isManaged)
-  await writeMergedConfig(effective ? standaloneFile : settingsFile, effective ? standalone.original : settings.original, target.result())
-  if (!effective || !settingsHooks) return
-  const retired = new ConfigEdits(settings.original)
-  reconcileNestedEntries(retired, ["hooks"], settingsHooks, {}, isManaged)
-  await writeMergedConfig(settingsFile, settings.original, retired.result())
-}
-
-async function materializeGemini(input: { file: string; hookPath: string }) {
-  const { original, value } = await readConfig(input.file)
-  const hooks = rec(value.hooks)
-  if (value.hooks !== undefined && !hooks) throw new Error(`Gemini settings ${input.file} has a non-object hooks field; refusing to rewrite it`)
-  const isGenerated = await loadManagedHookCommands(GEMINI_HOOK, hooks ?? {})
-  const definition = { hooks: [{ type: "command", command: input.hookPath }] }
-  const edits = new ConfigEdits(original)
-  reconcileNestedEntries(edits, ["hooks"], hooks, { BeforeAgent: definition, AfterAgent: definition, AfterTool: definition },
-    (command) => command === input.hookPath || isGenerated(command))
-  await writeMergedConfig(input.file, original, edits.result())
-}
-
-const CURSOR_TOOL_MATCHER = "^(Shell|MCP:.+)$"
-
-function cursorEntries(hookPath: string): Record<string, Record<string, unknown>> {
-  // Cursor has no hook for "waiting on approval": the before-hooks fire for
-  // every shell/MCP call and the runtime holds the terminal on that ask until
-  // the same call completes or fails. Cursor applies the matcher itself, so
-  // file-tool completions never spawn the hook.
-  return {
-    beforeSubmitPrompt: { command: `${hookPath} Start` },
-    stop: { command: `${hookPath} Stop` },
-    beforeShellExecution: { command: `${hookPath} PermissionRequest` },
-    beforeMCPExecution: { command: `${hookPath} PermissionRequest` },
-    postToolUse: { command: `${hookPath} PostToolUse`, matcher: CURSOR_TOOL_MATCHER },
-    postToolUseFailure: { command: `${hookPath} PostToolUse`, matcher: CURSOR_TOOL_MATCHER },
+  if (install.shape === "named") {
+    if (
+      container &&
+      !Object.values(container).every((handlers) =>
+        arr(handlers)?.every((handler) => isManaged(str(rec(handler)?.command))),
+      )
+    ) {
+      throw new Error(`Refusing to overwrite an unrecognized hook named ${targetBase.join(".")}`)
+    }
+    const desired = Object.fromEntries(Object.entries(entries).map(([event, entry]) => [event, [entry]]))
+    if (!isDeepStrictEqual(container, desired)) edits.set(targetBase, desired)
+  } else {
+    const reconcile = install.shape === "nested" ? reconcileNestedEntries : reconcileFlatEntries
+    reconcile(edits, targetBase, container, entries, owns)
   }
+  await writeMergedConfig(target, selected.original, edits.result())
+  if (selected !== alternate || !current) return
+  const retired = new ConfigEdits(primary.original)
+  const reconcile = install.shape === "nested" ? reconcileNestedEntries : reconcileFlatEntries
+  reconcile(retired, base, current, {}, isManaged)
+  await writeMergedConfig(file, primary.original, retired.result())
 }
 
-// ~/.cursor/hooks.json is the person's file, and the one place cursor-agent
-// reads user hooks from. Only Claxedo's own entries are ever added or removed;
-// every other byte of the file is kept, so the person's entries keep their
-// order and formatting.
-async function materializeCursor(input: { file: string; hookPath: string }) {
-  const { original, value } = await readConfig(input.file)
-  const hooks = rec(value.hooks)
-  if (value.hooks !== undefined && !hooks) throw new Error(`Cursor hooks file ${input.file} has a non-object hooks field; refusing to rewrite it`)
-  const isGenerated = await loadManagedHookCommands(CURSOR_HOOK, hooks ?? {})
-  const edits = new ConfigEdits(original)
-  if (typeof value.version !== "number") edits.set(["version"], 1)
-  reconcileFlatEntries(edits, ["hooks"], hooks, cursorEntries(input.hookPath),
-    (command) => !!command?.startsWith(`${input.hookPath} `) || isGenerated(command))
-  await writeMergedConfig(input.file, original, edits.result())
-}
-
-async function materializeMastra(input: { file: string; notifyPath: string }) {
-  const { original, value } = await readConfig(input.file)
-  const entry = { type: "command", command: `bash ${notifyCommand(input.notifyPath, "mastracode")}` }
-  const edits = new ConfigEdits(original)
-  reconcileFlatEntries(edits, [], value, { UserPromptSubmit: entry, Stop: entry, PostToolUse: entry },
-    await loadManagedHookCommands(NOTIFY_SCRIPT, value))
-  await writeMergedConfig(input.file, original, edits.result())
-}
-
-async function applyHook(input: {
-  runner: AgentHookRunner
-  file: string
-  run: () => Promise<void>
-}): Promise<AgentHookMaterializationResult> {
-  try {
-    for (let attempt = 1; ; attempt++) {
-      try {
-        await input.run()
-        break
-      } catch (error) {
-        if (!(error instanceof ConfigChangedError) || attempt === 3) throw error
+export async function materializeAgentHooks(
+  input: MaterializeAgentHooksOptions,
+): Promise<AgentHookMaterializationResult[]> {
+  const results: AgentHookMaterializationResult[] = []
+  for (const template of input.templates) {
+    if (template.install.type !== "config-merge") continue
+    const file = path.join(input.homeDir, template.install.path.slice(2))
+    const result = {
+      runner: template.id ?? template.command,
+      component: "hooks" as const,
+      type: "hook" as const,
+      path: file,
+    }
+    try {
+      for (let attempt = 1; ; attempt++) {
+        try {
+          await mergeTemplate(template, input)
+          break
+        } catch (error) {
+          if (!(error instanceof ConfigChangedError) || attempt === 3) throw error
+        }
       }
-    }
-    return { runner: input.runner, component: "hooks", type: "hook", status: "applied", path: input.file }
-  } catch (error) {
-    return {
-      runner: input.runner,
-      component: "hooks",
-      type: "hook",
-      status: "failed",
-      path: input.file,
-      reason: error instanceof Error ? error.message : String(error),
+      results.push({ ...result, status: "applied" })
+    } catch (error) {
+      results.push({ ...result, status: "failed", reason: error instanceof Error ? error.message : String(error) })
     }
   }
-}
-
-export async function materializeAgentHooks(input: MaterializeAgentHooksOptions) {
-  const files = agentHookConfigPaths(input.homeDir)
-  const force = input.force ?? false
-  return Promise.all([
-    applyHook({
-      runner: "antigravity",
-      file: files.antigravity,
-      run: async () => {
-        const { original, value: root } = await readConfig(files.antigravity)
-        const hookPath = path.join(path.dirname(input.notifyPath), ANTIGRAVITY_HOOK)
-        const desired = Object.fromEntries(["PreInvocation", "Stop"].map((event) => [event, [
-          { type: "command", command: `bash ${shellQuote(hookPath)} ${event}`, timeout: 3 },
-        ]]))
-        const current = rec(root["claxedo-lifecycle"])
-        const isManaged = await loadManagedHookCommands(ANTIGRAVITY_HOOK, current)
-        if (root["claxedo-lifecycle"] !== undefined && (!current || !Object.values(current).every((handlers) =>
-          arr(handlers)?.every((handler) => isManaged(str(rec(handler)?.command)))))) {
-          throw new Error("Refusing to overwrite an unrecognized Antigravity hook named claxedo-lifecycle")
-        }
-        await writeIfChanged(hookPath, generateAntigravityHook(input.notifyPath), 0o755, force)
-        if (isDeepStrictEqual(current, desired)) return
-        const edits = new ConfigEdits(original)
-        edits.set(["claxedo-lifecycle"], desired)
-        await writeMergedConfig(files.antigravity, original, edits.result())
-      },
-    }),
-    applyHook({
-      runner: "amp",
-      file: files.amp,
-      run: async () => {
-        const existing = await readFileIfExists(files.amp)
-        if (existing !== undefined && !existing.startsWith("// Claxedo Amp lifecycle plugin v1\n")) {
-          throw new Error("Refusing to overwrite an unrecognized Amp plugin at " + files.amp)
-        }
-        await writeMergedConfig(files.amp, existing, generateAmpPlugin())
-      },
-    }),
-    applyHook({
-      runner: "droid",
-      file: files.droid,
-      run: () => materializeDroid({ file: files.droid, notifyPath: input.notifyPath }),
-    }),
-    applyHook({
-      runner: "gemini",
-      file: files.gemini,
-      run: () => materializeGemini({ file: files.gemini, hookPath: input.geminiHookPath }),
-    }),
-    applyHook({
-      runner: "cursor",
-      file: files.cursor,
-      run: () => materializeCursor({ file: files.cursor, hookPath: input.cursorHookPath }),
-    }),
-    applyHook({
-      runner: "mastra",
-      file: files.mastra,
-      run: () => materializeMastra({ file: files.mastra, notifyPath: input.notifyPath }),
-    }),
-  ])
+  return results
 }

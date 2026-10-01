@@ -1,32 +1,11 @@
-/**
- * Agent Wrappers
- *
- * Binary wrapper generation and custom wrapper management.
- * Uses buildWrapperScript() composition to avoid boilerplate duplication.
- */
-
 import * as fs from "fs"
 import * as path from "path"
-import {
-  CLAXEDO_DIR,
-  COPILOT_PROJECT_HOOK,
-  FIND_REAL_BINARY,
-  WRAPPER_MARKER,
-  WRAPPER_NAME,
-  WRAPPERS_JSON,
-  DEFAULT_GENERIC_WRAPPERS,
-  SHIMMED_BINARIES,
-} from "./constants"
+import { CLAXEDO_DIR, FIND_REAL_BINARY, WRAPPER_MARKER, WRAPPER_NAME, WRAPPERS_JSON } from "./constants"
 import { loadTemplate, shellQuote, writeIfChanged } from "./utils"
 import { arr, rec } from "../../json-value"
-import { generateCopilotProjectHooks } from "./hooks"
+import type { StatusHookTemplate } from "@claxedo/plugin-api"
+import { hookArguments, hookVariables, projectHookContent, renderHookText } from "./render"
 
-// ── Wrapper composition ────────────────────────────────────────────────────
-
-/**
- * Build a complete wrapper script with common boilerplate.
- * Composes: shebang + marker + find_real_binary + missing-binary check + exec block.
- */
 export function buildWrapperScript(binaryName: string, execBlock: string): string {
   return loadTemplate("wrapper-common.template.sh", {
     MARKER: WRAPPER_MARKER,
@@ -36,59 +15,11 @@ export function buildWrapperScript(binaryName: string, execBlock: string): strin
   })
 }
 
-// ── Wrapper generators ──────────────────────────────────────────────────────
-
-export function generateClaudeWrapper(notifyPath: string, settingsPath: string): string {
-  return buildWrapperScript("claude", `# Ensure status is cleared even if Claude crashes, hits a limit, or is killed
-cleanup() {
-  EXIT_CODE=$?
-  if [ "$EXIT_CODE" -eq 0 ]; then
-    echo '{"hook_event_name":"Idle"}' | bash ${shellQuote(notifyPath)} >/dev/null 2>&1 &
-  else
-    echo '{"hook_event_name":"Error"}' | bash ${shellQuote(notifyPath)} >/dev/null 2>&1 &
-  fi
-}
-trap cleanup EXIT
-
-# Do not use exec here — exec replaces the shell process, which
-# prevents the EXIT trap from firing.
-"$REAL_BIN" --settings ${shellQuote(settingsPath)} "$@"`)
-}
-
-const CODEX_LIFECYCLE_HOOKS: readonly { event: string; matcher?: string }[] = [
-  { event: "SessionStart" },
-  { event: "SessionEnd" },
-  { event: "UserPromptSubmit" },
-  { event: "PreToolUse", matcher: "^request_user_input$" },
-  { event: "PostToolUse", matcher: "*" },
-  { event: "PermissionRequest" },
-  { event: "Stop" },
-  { event: "Interrupt" },
-  { event: "SubagentStart" },
-  { event: "SubagentStop" },
-]
-
-export function codexHookFlags(notifyPath: string): string[] {
-  const command = JSON.stringify(`${shellQuote(notifyPath)} --harness=codex`)
-  return CODEX_LIFECYCLE_HOOKS.flatMap(({ event, matcher }) => [
-    "-c",
-    `hooks.${event}=[{${matcher ? `matcher=${JSON.stringify(matcher)},` : ""}hooks=[{type="command",command=${command}}]}]`,
-  ])
-}
-
-export function generateCodexWrapper(notifyPath: string): string {
-  return buildWrapperScript("codex", loadTemplate("codex-wrapper-exec.template.sh", {
-    HOOK_FLAGS: codexHookFlags(notifyPath).map(shellQuote).join(" "),
-  }))
-}
-
-export function generatePassthroughWrapper(binaryName: string): string {
-  return buildWrapperScript(binaryName, `exec "$REAL_BIN" "$@"`)
-}
-
 export function generateGenericWrapper(binaryName: string, notifyPath: string): string {
-  return buildWrapperScript(binaryName, `if [ -n "\${CLAXEDO_TAB_ID:-}" ]; then
-  echo '{"hook_event_name":"Busy"}' | ${shellQuote(notifyPath)} 2>/dev/null &
+  return buildWrapperScript(
+    binaryName,
+    `if [ -n "\${CLAXEDO_TAB_ID:-}" ]; then
+  echo '{"eventType":"Busy"}' | ${shellQuote(notifyPath)} 2>/dev/null &
 fi
 
 "$REAL_BIN" "$@"
@@ -96,44 +27,15 @@ EXIT_CODE=$?
 
 if [ -n "\${CLAXEDO_TAB_ID:-}" ]; then
   if [ $EXIT_CODE -ne 0 ]; then
-    echo '{"hook_event_name":"Error"}' | ${shellQuote(notifyPath)} 2>/dev/null &
+    echo '{"eventType":"Error"}' | ${shellQuote(notifyPath)} 2>/dev/null &
   else
-    echo '{"hook_event_name":"Idle"}' | ${shellQuote(notifyPath)} 2>/dev/null &
+    echo '{"eventType":"Idle"}' | ${shellQuote(notifyPath)} 2>/dev/null &
   fi
 fi
 
-exit $EXIT_CODE`)
+exit $EXIT_CODE`,
+  )
 }
-
-export function generateCopilotWrapper(copilotHookPath: string): string {
-  const hooksJson = generateCopilotProjectHooks(copilotHookPath)
-  const escapedJson = hooksJson.replace(/'/g, "'\\''")
-
-  return buildWrapperScript("copilot", `# Copilot CLI only supports project-level hooks (.github/hooks/*.json in CWD).
-# Auto-inject Claxedo notification hooks when running inside a Claxedo terminal.
-if [ -n "$CLAXEDO_TAB_ID" ] && [ -f ${shellQuote(copilotHookPath)} ]; then
-  COPILOT_HOOKS_DIR=".github/hooks"
-  COPILOT_HOOK_FILE="$COPILOT_HOOKS_DIR/${COPILOT_PROJECT_HOOK}"
-  COPILOT_HOOKS='${escapedJson}'
-
-  if [ "$(cat "$COPILOT_HOOK_FILE" 2>/dev/null)" != "$(printf '%s\\n' "$COPILOT_HOOKS")" ]; then
-    mkdir -p "$COPILOT_HOOKS_DIR" 2>/dev/null &&
-      printf '%s\\n' "$COPILOT_HOOKS" > "$COPILOT_HOOK_FILE.tmp.$$" 2>/dev/null &&
-      mv -f "$COPILOT_HOOK_FILE.tmp.$$" "$COPILOT_HOOK_FILE" 2>/dev/null
-  fi
-
-  COPILOT_EXCLUDE=".git/info/exclude"
-  if [ -d ".git/info" ] && ! grep -qxF ".github/hooks/${COPILOT_PROJECT_HOOK}" "$COPILOT_EXCLUDE" 2>/dev/null; then
-    # Never join the line onto a last entry the person left without a newline.
-    [ -s "$COPILOT_EXCLUDE" ] && [ -n "$(tail -c 1 "$COPILOT_EXCLUDE")" ] && printf '\\n' >> "$COPILOT_EXCLUDE"
-    printf '%s\\n' ".github/hooks/${COPILOT_PROJECT_HOOK}" >> "$COPILOT_EXCLUDE" 2>/dev/null
-  fi
-fi
-
-exec "$REAL_BIN" "$@"`)
-}
-
-// ── Custom wrapper management ───────────────────────────────────────────────
 
 export const normalizeWrappers = (items: string[]) => {
   const seen = new Set<string>()
@@ -168,9 +70,55 @@ export const saveCustomWrappers = async (custom: string[], root = CLAXEDO_DIR) =
   return next
 }
 
-export async function listWrapperAgents(root = CLAXEDO_DIR) {
+export async function readWrapperInventory(
+  root: string,
+  templates: readonly StatusHookTemplate[],
+  generic: readonly string[],
+) {
   const custom = await loadCustomWrappers(root)
-  const defaults = normalizeWrappers(DEFAULT_GENERIC_WRAPPERS)
-  const all = normalizeWrappers([...defaults, ...custom, ...SHIMMED_BINARIES])
+  const defaults = normalizeWrappers([...generic])
+  const all = normalizeWrappers([
+    ...defaults,
+    ...custom,
+    ...templates.flatMap((template) =>
+      template.wrapper === false ? [] : [template.command, ...(template.aliases ?? [])],
+    ),
+  ])
   return { defaults, custom, all }
+}
+
+export function generateTemplateWrapper(
+  template: StatusHookTemplate,
+  notify: string,
+  command = template.command,
+): string {
+  const args = hookArguments(template, notify)
+  const variables = {
+    ...Object.fromEntries(args.map((arg, index) => [`arg${index}`, arg])),
+    ...hookVariables(template, notify),
+    args: args.map(shellQuote).join(" "),
+    ...(template.install.type === "project-file"
+      ? { projectInstall: generateProjectInstallation(template, notify) }
+      : {}),
+  }
+  return buildWrapperScript(
+    command,
+    template.wrapper
+      ? renderHookText(template.wrapper, variables)
+      : `${variables.projectInstall ? variables.projectInstall + "\n\n" : ""}exec "$REAL_BIN" ${variables.args ? variables.args + " " : ""}"$@"`,
+  )
+}
+
+function generateProjectInstallation(template: StatusHookTemplate, notify: string): string {
+  if (template.install.type !== "project-file") throw new Error("Template does not install a project file")
+  const install = template.install
+  const quotedDirectory = JSON.stringify(path.dirname(install.path)).replaceAll("$", "\\$").replaceAll("`", "\\`")
+  return renderHookText(loadTemplate("project-file.template.sh", {}), {
+    prefix: template.command.toUpperCase().replace(/[^A-Z0-9_]/g, "_"),
+    hookScript: path.join(path.dirname(notify), install.hookFile),
+    projectDir: quotedDirectory,
+    projectFile: path.basename(install.path),
+    projectPath: install.path,
+    project: projectHookContent(template, notify),
+  }).trimEnd()
 }

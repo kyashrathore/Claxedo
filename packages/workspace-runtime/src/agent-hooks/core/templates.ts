@@ -1,11 +1,7 @@
 /// <reference path="../../asset-imports.d.ts" />
 
 import bashrc from "../templates/bashrc.template.sh?raw"
-import codexWrapperExec from "../templates/codex-wrapper-exec.template.sh?raw"
-import copilotHook from "../templates/copilot-hook.template.sh?raw"
-import cursorHook from "../templates/cursor-hook.template.sh?raw"
-import geminiHook from "../templates/gemini-hook.template.sh?raw"
-import antigravityHook from "../templates/antigravity-hook.template.sh?raw"
+import projectFile from "../templates/project-file.template.sh?raw"
 import notify from "../templates/notify.template.sh?raw"
 import wrapperCommon from "../templates/wrapper-common.template.sh?raw"
 import zshenv from "../templates/zshenv.template.sh?raw"
@@ -15,12 +11,8 @@ import zshrc from "../templates/zshrc.template.sh?raw"
 
 export const templates = {
   "bashrc.template.sh": bashrc,
-  "codex-wrapper-exec.template.sh": codexWrapperExec,
-  "copilot-hook.template.sh": copilotHook,
-  "cursor-hook.template.sh": cursorHook,
-  "gemini-hook.template.sh": geminiHook,
-  "antigravity-hook.template.sh": antigravityHook,
   "notify.template.sh": notify,
+  "project-file.template.sh": projectFile,
   "wrapper-common.template.sh": wrapperCommon,
   "zshenv.template.sh": zshenv,
   "zshlogin.template.sh": zshlogin,
