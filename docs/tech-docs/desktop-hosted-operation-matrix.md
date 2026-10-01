@@ -102,9 +102,10 @@ key. `unsafe` means an uncertain result must be surfaced, never silently
 retried — a duplicate here creates a duplicate workspace, charge, or document.
 
 **There is no client-side idempotency-key mechanism today, and the desktop
-cannot grow one on its own.** `claxedo-desktop/src/main/account/hosted-operations.ts`
-expresses a request as a method, a path template, and a list of declared body
-fields; it has no header seam, and every route named below that accepts a key
+cannot grow one on its own.** `HOSTED_OPERATIONS` in
+`packages/account-contract/src/hosted-operations.ts` declares each request's
+method, path template, body fields and headers; no declaration sends an
+idempotency key header, and every route named below that accepts a key
 accepts it as a body field its schema must declare. So an `idempotency-key` row
 is only true when the ROUTE already carries the key, and each one says which
 field that is. A row that named a key the route does not accept would be worse
@@ -143,8 +144,6 @@ is the authoritative source for this column.
 | `project.members.grant` | none yet | `POST /api/control/projects/:projectId/members` | unary | unsafe | Grants or changes one person's project role; project and org admins only, never the owner. |
 | `project.members.revoke` | none yet | `DELETE /api/control/projects/:projectId/members/:userPublicId` | unary | unsafe | Revokes one person's project grant. |
 | `project.access` | none yet | `GET /api/control/projects/:projectId/access` | unary | safe | Everyone who reaches the project, one entry per source (`owner`, `member`, `team:<teamId>`, `org-role`); project and org admins only. |
-| `account.agentSettings.read` | `features/settings/data/agent-settings-api.ts` | `GET /api/account/agent-settings` | unary | safe | Reads the caller's agent-cross-machine-writes setting. |
-| `account.agentSettings.write` | `features/settings/data/agent-settings-api.ts` | `PUT /api/account/agent-settings` | unary | unsafe | Updates the caller's agent-cross-machine-writes setting; each update sets the exact state in the body. |
 
 ### Workspace authority
 
@@ -201,7 +200,6 @@ are withheld from the renderer (see "Withheld from the renderer" below).
 | Operation ID | Owner module | Method + path | Transport | Retry | Notes |
 |---|---|---|---|---|---|
 | `session.list` | `platform/runtime/cloud/workspace-runtime-store.ts` | `GET /api/control/sessions` | unary | safe | Flat inventory for a workspace. |
-| `session.create` | `platform/runtime/cloud/workspace-runtime-store.ts` | `POST /api/control/sessions` | unary | unsafe | A retried create is a duplicate session. Prompt admission is never repeated on transport loss. |
 | `session.messages` | `platform/runtime/cloud/workspace-runtime-store.ts` | `GET /api/control/sessions/:sessionId/messages` | unary | safe | |
 | `session.gateway` | `platform/runtime/cloud/workspace-runtime-store.ts` | `GET /api/control/sessions/:sessionId/gateway` | unary | safe | |
 | `session.projection.register` | `platform/runtime/agent/session-projection.ts` | `POST /api/control/workspaces/:workspaceId/sessions/:sessionId/register` | unary | unsafe | Sync-back into the control plane; body carries `idempotencyKey`. |
@@ -326,21 +324,17 @@ which blocks Unit 9 until it gets a typed broker contract. One remains flagged:
 - `packages/account-contract/src/hosted-operations.test.ts` checks the shared
   declarations and result codecs. `hosted-operations.test-d.ts` checks that
   input and output types derive from those codecs.
-- `packages/claxedo-desktop/src/main/account/hosted-operations.test.ts` refuses
+- `packages/account-contract/src/hosted-operation-requests.test.ts` refuses
   a generic proxy, a caller-selected query, a parameter that adds a path
   segment, and any entry that reaches a machine-signed, invitation or
   relay-fence route.
 
-`packages/claxedo-desktop/src/main/account/account-ipc.test.ts` pins all 84
+`packages/claxedo-desktop/src/main/account/account-ipc.test.ts` pins all 81
 renderer-visible names, verifies the registry exposure agrees with main's
 withheld set, and invokes the registered unary channels.
 
 `packages/claxedo-server/src/deployments/hosted-shared/hosted-operation-routes.test.ts`
-compares every declaration's method and path pattern against the hosted route
-table. It currently fails for 19 operations already present in the base:
-`account.agentSettings.read/write`, all 16 `documents.*` operations, and
-`session.create`. Their route implementations exist, but the hosted composition
-does not mount them. The plugin wildcard is read from its production source
-because its Cloudflare supervisor cannot load in Bun. The CLI exchange is
-checked under the hosted core's explicit native-auth branch; Better Auth uses
-its own OAuth routes instead.
+compares every declaration's method and path pattern against the route table
+of the full hosted product: the core app with Pages, Agent Plugins and plugin
+backends. The CLI exchange is checked under the hosted core's explicit
+native-auth branch; Better Auth uses its own OAuth routes instead.

@@ -17,12 +17,11 @@ import type { IpcMainInvokeEvent } from "electron"
 import { asRecord } from "@claxedo/helpers/guards"
 import { readRecord, readString } from "@claxedo/helpers/readers"
 import {
-  HOSTED_OPERATION_NAMES,
   HOSTED_OPERATIONS,
-  hostedOperationChannel,
+  hostedOperationNames,
   isStreamHostedOperation,
   type HostedOperationName,
-} from "./hosted-operations"
+} from "@claxedo/account-contract"
 import type { AccountState } from "./account-service"
 
 export const ACCOUNT_STATE_CHANNEL = "claxedo.account.state"
@@ -37,9 +36,21 @@ export const ACCOUNT_STREAM_END_CHANNEL = "claxedo.account.stream.end"
 export const ACCOUNT_STREAM_ERROR_CHANNEL = "claxedo.account.stream.error"
 const ACCOUNT_STREAM_RESERVATION_TTL_MS = 30_000
 
-// Renderer requests must not supply machine identities or receive bearer credentials.
-export const RENDERER_WITHHELD_OPERATIONS: readonly HostedOperationName[] =
-  HOSTED_OPERATION_NAMES.filter((name) => !HOSTED_OPERATIONS[name].exposure.renderer)
+/**
+ * Operations main performs but the renderer may not ask for: the declarations
+ * with `exposure.renderer: false`, each of which says why next to it in
+ * `@claxedo/account-contract`. Withheld channels stay registered, so the IPC
+ * surface equals the operation table and a call to one is a named refusal
+ * rather than a missing channel.
+ */
+export const RENDERER_WITHHELD_OPERATIONS: readonly HostedOperationName[] = hostedOperationNames().filter(
+  (name) => !HOSTED_OPERATIONS[name].exposure.renderer,
+)
+
+/** One channel per operation: a single channel taking a name is a place for a future argument to become the route. */
+export function hostedOperationChannel(name: HostedOperationName) {
+  return `claxedo.account.operation:${name}`
+}
 
 /**
  * The registration surface, matching Electron's own so the real `ipcMain`
@@ -119,7 +130,7 @@ export function registerAccountIpc(input: { ipcMain: AccountIpcTarget; service: 
     }
   }
 
-  for (const name of HOSTED_OPERATION_NAMES) {
+  for (const name of hostedOperationNames()) {
     if (withheld.has(name)) {
       // Refused before `service.run`, so no request is made: no token is
       // minted, no nonce is burned, and no renderer-supplied public key

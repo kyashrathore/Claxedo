@@ -42,7 +42,8 @@ export function defineOperation<I, O>(definition: OperationDefinition<I, O>) {
       if (body && method === "GET") throw new MissingOperationParameter("GET cannot send a body")
       const headers = definition.headers?.(input)
       return {
-        method, path,
+        method,
+        path,
         ...(body ? { body } : {}),
         ...(headers && Object.keys(headers).length ? { headers } : {}),
         ...(definition.response ? { response: definition.response } : {}),
@@ -69,7 +70,9 @@ type DecodedFields<S extends Record<string, Decoder<unknown>>> = {
 }
 type DecodedField<D> = D extends Decoder<infer T> ? T : never
 
-export function operationInput<const S extends Record<string, Decoder<unknown>>>(fields: S): NoInfer<Decoder<DecodedFields<S>>> {
+export function operationInput<const S extends Record<string, Decoder<unknown>>>(
+  fields: S,
+): NoInfer<Decoder<DecodedFields<S>>> {
   return (raw: unknown): DecodeResult<DecodedFields<S>> => {
     const input = raw === undefined ? {} : asRecord(raw)
     if (!input) return { ok: false, reason: "the input is not an object" }
@@ -140,11 +143,16 @@ export function selectBody(...keys: string[]) {
 
 export function operationHeaders(fields: Readonly<Record<string, string>>) {
   return (input: Input): Record<string, string> =>
-    Object.fromEntries(Object.entries(fields).filter(([key]) => input[key] !== undefined).map(([key, header]) => [header, String(input[key])]))
+    Object.fromEntries(
+      Object.entries(fields)
+        .filter(([key]) => input[key] !== undefined)
+        .map(([key, header]) => [header, String(input[key])]),
+    )
 }
 
 export const pluginMethod: Decoder<Method> = (raw) => {
-  if (raw === "GET" || raw === "POST" || raw === "PUT" || raw === "PATCH" || raw === "DELETE") return { ok: true, value: raw }
+  if (raw === "GET" || raw === "POST" || raw === "PUT" || raw === "PATCH" || raw === "DELETE")
+    return { ok: true, value: raw }
   return { ok: false, reason: "requires method to be GET, POST, PUT, PATCH or DELETE" }
 }
 

@@ -20,25 +20,15 @@ export const HOSTED_OPERATIONS = {
     output: object, retry: "safe",
     exposure: { renderer: true, app: false },
   }),
+  // Withheld from the renderer: the answer is a long-lived CLI access and
+  // refresh pair, and every exchange is a real mint in the revocation registry.
+  // The web CLI login fetches the exchange with the page's own session.
   "account.cliExchange": defineOperation({
     method: "POST", path: operationPath("/api/auth/cli/exchange"),
     input: operationInput({ code: bodyField }),
     output: object, retry: "never",
     exposure: { renderer: false, app: false },
     body: selectBody("code"),
-  }),
-  "account.agentSettings.read": defineOperation({
-    method: "GET", path: operationPath("/api/account/agent-settings"),
-    input: operationInput({}),
-    output: object, retry: "safe",
-    exposure: { renderer: true, app: false },
-  }),
-  "account.agentSettings.write": defineOperation({
-    method: "PUT", path: operationPath("/api/account/agent-settings"),
-    input: operationInput({ cross_machine_writes: bodyField }),
-    output: object, retry: "never",
-    exposure: { renderer: true, app: false },
-    body: selectBody("cross_machine_writes"),
   }),
   "agentPlugins.catalog": defineOperation({
     method: "GET", path: operationPath("/api/claxedo/plugins"),
@@ -128,6 +118,8 @@ export const HOSTED_OPERATIONS = {
     exposure: { renderer: true, app: false },
     response: "http",
   }),
+  // Withheld from the renderer: the answer carries MCP gateway bearer
+  // credentials, which main hands to the daemon and never to a page.
   "agentPlugins.runtimeSelf": defineOperation({
     method: "GET", path: operationPath("/api/claxedo/plugins/runtime/self"),
     input: operationInput({}),
@@ -148,7 +140,7 @@ export const HOSTED_OPERATIONS = {
     exposure: { renderer: true, app: false },
   }),
   "workspace.resolve": defineOperation({
-    method: "GET", path: operationPath("/api/workspace/resolve", {"optionalQuery": ["workspaceId", "directory"]}),
+    method: "GET", path: operationPath("/api/workspace/resolve", { optionalQuery: ["workspaceId", "directory"] }),
     input: operationInput({ workspaceId: optionalParameter, directory: optionalParameter }),
     output: nullable(object), retry: "safe",
     exposure: { renderer: true, app: false },
@@ -201,13 +193,13 @@ export const HOSTED_OPERATIONS = {
     body: selectBody("previousJti"),
   }),
   "session.list": defineOperation({
-    method: "GET", path: operationPath("/api/control/sessions", {"query": ["workspaceId"]}),
+    method: "GET", path: operationPath("/api/control/sessions", { query: ["workspaceId"] }),
     input: operationInput({ workspaceId: requiredParameter }),
     output: withArrays("sessions"), retry: "safe",
     exposure: { renderer: true, app: false },
   }),
   "session.page": defineOperation({
-    method: "GET", path: operationPath("/api/control/session-list?scope=project", {"query": ["projectId", "limit"], "optionalQuery": ["sort", "after"]}),
+    method: "GET", path: operationPath("/api/control/session-list?scope=project", { query: ["projectId", "limit"], optionalQuery: ["sort", "after"] }),
     input: operationInput({ projectId: requiredParameter, limit: requiredParameter, sort: optionalParameter, after: optionalParameter }),
     output: withArrays("items"), retry: "safe",
     exposure: { renderer: true, app: false },
@@ -238,8 +230,14 @@ export const HOSTED_OPERATIONS = {
     input: operationInput({ lastEventId: optionalParameter }),
     output: object, retry: "safe",
     exposure: { renderer: true, app: false, stream: true },
-    headers: operationHeaders({"lastEventId": "Last-Event-ID"}),
+    headers: operationHeaders({ lastEventId: "Last-Event-ID" }),
   }),
+  // Withheld from the renderer: the route stores whatever public key and
+  // signature it is handed and upserts on (owner, host_id), so a renderer could
+  // enroll its own keypair under the owner, or take over or un-revoke a
+  // machine. Main brokers it for the Host Connector child, which supplies the
+  // key from the machine identity store; the renderer's route is the
+  // connector's own `start`.
   "host.enrollCurrentMachine": defineOperation({
     method: "POST", path: operationPath("/api/claxedo/host/enrollments"),
     input: operationInput({ hostId: bodyField, publicKey: bodyField, requestId: bodyField, signature: bodyField, displayName: bodyField }),
@@ -247,6 +245,7 @@ export const HOSTED_OPERATIONS = {
     exposure: { renderer: false, app: false },
     body: selectBody("hostId", "publicKey", "requestId", "signature", "displayName"),
   }),
+  // Withheld from the renderer: step one of the enrollment handshake above.
   "host.enrollmentNonce": defineOperation({
     method: "POST", path: operationPath("/api/claxedo/host/enrollments/requests"),
     input: operationInput({ hostId: bodyField }),
@@ -254,6 +253,9 @@ export const HOSTED_OPERATIONS = {
     exposure: { renderer: false, app: false },
     body: selectBody("hostId"),
   }),
+  // Withheld from the renderer: it names an enrollment id, and every
+  // enrollment the owner holds answers to it; the renderer's route is the
+  // connector's own `rename`, which carries a name only.
   "host.renameCurrentMachine": defineOperation({
     method: "PATCH", path: operationPath("/api/claxedo/host/enrollments/:enrollmentId/display-name"),
     input: operationInput({ enrollmentId: requiredParameter, displayName: bodyField }),
@@ -262,7 +264,7 @@ export const HOSTED_OPERATIONS = {
     body: selectBody("displayName"),
   }),
   "session.shares.list": defineOperation({
-    method: "GET", path: operationPath("/api/control/sessions/:sessionId/shares", {"query": ["workspaceId"]}),
+    method: "GET", path: operationPath("/api/control/sessions/:sessionId/shares", { query: ["workspaceId"] }),
     input: operationInput({ sessionId: requiredParameter, workspaceId: requiredParameter }),
     output: sessionPeople, retry: "safe",
     exposure: { renderer: true, app: false },
@@ -443,7 +445,7 @@ export const HOSTED_OPERATIONS = {
     exposure: { renderer: true, app: false },
   }),
   "documents.list": defineOperation({
-    method: "GET", path: operationPath("/documents", {"optionalQuery": ["project_id", "document_id", "directory", "archived"]}),
+    method: "GET", path: operationPath("/documents", { optionalQuery: ["project_id", "document_id", "directory", "archived"] }),
     input: operationInput({ project_id: optionalParameter, document_id: optionalParameter, directory: optionalParameter, archived: optionalParameter }),
     output: array, retry: "safe",
     exposure: { renderer: true, app: true },
@@ -467,7 +469,7 @@ export const HOSTED_OPERATIONS = {
     output: object, retry: "safe",
     exposure: { renderer: true, app: true },
     body: selectBody("display_name", "session_id"),
-    headers: operationHeaders({"ifMatch": "If-Match"}),
+    headers: operationHeaders({ ifMatch: "If-Match" }),
   }),
   "documents.content.get": defineOperation({
     method: "GET", path: operationPath("/documents/:id/content"),
@@ -481,7 +483,7 @@ export const HOSTED_OPERATIONS = {
     output: object, retry: "never",
     exposure: { renderer: true, app: true },
     body: selectBody("display_name", "markdown"),
-    headers: operationHeaders({"ifMatch": "If-Match"}),
+    headers: operationHeaders({ ifMatch: "If-Match" }),
   }),
   "documents.snapshots": defineOperation({
     method: "GET", path: operationPath("/documents/:id/snapshots"),
@@ -494,7 +496,7 @@ export const HOSTED_OPERATIONS = {
     input: operationInput({ id: requiredParameter, snapshotId: requiredParameter, ifMatch: requiredParameter }),
     output: object, retry: "never",
     exposure: { renderer: true, app: true },
-    headers: operationHeaders({"ifMatch": "If-Match"}),
+    headers: operationHeaders({ ifMatch: "If-Match" }),
   }),
   "documents.workSource": defineOperation({
     method: "POST", path: operationPath("/documents/:id/work-source"),
@@ -511,48 +513,44 @@ export const HOSTED_OPERATIONS = {
     body: selectBody("work_source_id", "revision_id"),
   }),
   "documents.statuses": defineOperation({
-    method: "GET", path: operationPath("/documents/statuses", {"optionalQuery": ["project_id", "document_id", "directory", "archived"]}),
+    method: "GET", path: operationPath("/documents/statuses", { optionalQuery: ["project_id", "document_id", "directory", "archived"] }),
     input: operationInput({ project_id: optionalParameter, document_id: optionalParameter, directory: optionalParameter, archived: optionalParameter }),
     output: array, retry: "safe",
     exposure: { renderer: true, app: true },
   }),
-  "session.create": defineOperation({
-    method: "POST", path: operationPath("/api/control/sessions"),
-    input: operationInput({ mode: bodyField, workspaceId: bodyField, title: bodyField, directory: bodyField, harness: bodyField, model: bodyField, toolSandbox: bodyField }),
-    output: object, retry: "never",
-    exposure: { renderer: true, app: false },
-    body: selectBody("mode", "workspaceId", "title", "directory", "harness", "model", "toolSandbox"),
-  }),
   "session.messages": defineOperation({
-    method: "GET", path: operationPath("/api/control/sessions/:sessionId/messages", {"optionalQuery": ["workspaceId", "view", "limit", "before", "after"]}),
+    method: "GET", path: operationPath("/api/control/sessions/:sessionId/messages", { optionalQuery: ["workspaceId", "view", "limit", "before", "after"] }),
     input: operationInput({ sessionId: requiredParameter, workspaceId: optionalParameter, view: optionalParameter, limit: optionalParameter, before: optionalParameter, after: optionalParameter }),
     output: object, retry: "safe",
     exposure: { renderer: true, app: false },
   }),
   "session.outline": defineOperation({
-    method: "GET", path: operationPath("/api/control/sessions/:sessionId/outline", {"optionalQuery": ["workspaceId", "rows", "cols", "reasoning", "shell", "edit"]}),
+    method: "GET", path: operationPath("/api/control/sessions/:sessionId/outline", { optionalQuery: ["workspaceId", "rows", "cols", "reasoning", "shell", "edit"] }),
     input: operationInput({ sessionId: requiredParameter, workspaceId: optionalParameter, rows: optionalParameter, cols: optionalParameter, reasoning: optionalParameter, shell: optionalParameter, edit: optionalParameter }),
     output: object, retry: "safe",
     exposure: { renderer: true, app: false },
   }),
   "session.turnPage": defineOperation({
-    method: "GET", path: operationPath("/api/control/sessions/:sessionId/page", {"query": ["workspaceId", "before", "rows", "cols", "reasoning", "shell", "edit"]}),
+    method: "GET", path: operationPath("/api/control/sessions/:sessionId/page", { query: ["workspaceId", "before", "rows", "cols", "reasoning", "shell", "edit"] }),
     input: operationInput({ sessionId: requiredParameter, workspaceId: requiredParameter, before: requiredParameter, rows: requiredParameter, cols: requiredParameter, reasoning: requiredParameter, shell: requiredParameter, edit: requiredParameter }),
     output: withArrays("turns"), retry: "safe",
     exposure: { renderer: true, app: false },
   }),
   "session.part": defineOperation({
-    method: "GET", path: operationPath("/api/control/sessions/:sessionId/part", {"query": ["workspaceId", "messageId", "partId"]}),
+    method: "GET", path: operationPath("/api/control/sessions/:sessionId/part", { query: ["workspaceId", "messageId", "partId"] }),
     input: operationInput({ sessionId: requiredParameter, workspaceId: requiredParameter, messageId: requiredParameter, partId: requiredParameter }),
     output: object, retry: "safe",
     exposure: { renderer: true, app: false },
   }),
   "session.gateway": defineOperation({
-    method: "GET", path: operationPath("/api/control/sessions/:sessionId/gateway", {"optionalQuery": ["workspaceId"]}),
+    method: "GET", path: operationPath("/api/control/sessions/:sessionId/gateway", { optionalQuery: ["workspaceId"] }),
     input: operationInput({ sessionId: requiredParameter, workspaceId: optionalParameter }),
     output: object, retry: "safe",
     exposure: { renderer: true, app: false },
   }),
+  // Withheld from the renderer, with `workspace.unassignHost`: an assignment
+  // names a host id the renderer must not choose. The supervisor supplies this
+  // machine's own; the renderer's route is hostConnector.share.
   "workspace.assignHost": defineOperation({
     method: "POST", path: operationPath("/api/workspace/:id/host-assignment"),
     input: operationInput({ id: requiredParameter, hostId: bodyField, displayName: bodyField, orgId: bodyField, projectId: bodyField, repoUrl: bodyField, repoName: bodyField, gitBranch: bodyField, remoteDirectory: bodyField }),
@@ -567,7 +565,7 @@ export const HOSTED_OPERATIONS = {
     exposure: { renderer: false, app: false },
   }),
   "usage.cloudFacts": defineOperation({
-    method: "GET", path: operationPath("/api/claxedo/usage/cloud-facts", {"query": ["since", "until"]}),
+    method: "GET", path: operationPath("/api/claxedo/usage/cloud-facts", { query: ["since", "until"] }),
     input: operationInput({ since: requiredParameter, until: requiredParameter }),
     output: withArrays("facts"), retry: "safe",
     exposure: { renderer: true, app: false },

@@ -1,12 +1,6 @@
 import { describe, expect, test } from "bun:test"
-import { hostedOperationNames } from "@claxedo/account-contract"
-import {
-  HOSTED_OPERATIONS,
-  MissingOperationParameter,
-  UnknownHostedOperation,
-  hostedOperationChannel,
-  resolveHostedOperation,
-} from "./hosted-operations"
+import { HOSTED_OPERATIONS, resolveHostedOperation } from "./hosted-operations"
+import { MissingOperationParameter, UnknownHostedOperation } from "./operation-definition"
 
 /**
  * The table is a security control, so it is tested like one.
@@ -17,10 +11,6 @@ import {
  */
 
 describe("HOSTED_OPERATIONS", () => {
-  test("routes exactly the contract's operations", () => {
-    expect(Object.keys(HOSTED_OPERATIONS).toSorted()).toEqual(hostedOperationNames().toSorted())
-  })
-
   test("reaches no machine-signed, invitation or relay-fence route", () => {
     // Those routes authenticate a machine or an invitation secret, never an
     // account. An entry here would spend the account credential on them.
@@ -84,10 +74,10 @@ describe("HOSTED_OPERATIONS", () => {
 })
 
 describe("resolveHostedOperation", () => {
-  test("content saves require the version token on desktop too", () => {
+  test("content saves require the version token", () => {
     expect(() => resolveHostedOperation("documents.content.put", { id: "d", markdown: "# Hi" })).toThrow(MissingOperationParameter)
   })
-  test("snapshot restores require the version token on desktop too", () => {
+  test("snapshot restores require the version token", () => {
     expect(() => resolveHostedOperation("documents.snapshots.restore", { id: "d", snapshotId: "s" })).toThrow(MissingOperationParameter)
   })
   test("a project's session page keeps its fixed scope and appends only the declared keys", () => {
@@ -610,17 +600,5 @@ describe("resolveHostedOperation", () => {
       body: { owner: "acme", repository: "plugins", ref: "main", authority: "user" },
       response: "http",
     })
-  })
-})
-
-describe("hostedOperationChannel", () => {
-  test("gives each operation its own channel", () => {
-    // One channel per operation, rather than one channel taking an operation
-    // name: a single channel is a place for a future argument to become the
-    // route.
-    const channels = Object.keys(HOSTED_OPERATIONS).map((name) => hostedOperationChannel(name as never))
-
-    expect(new Set(channels).size).toBe(channels.length)
-    expect(hostedOperationChannel("account.mode")).toBe("claxedo.account.operation:account.mode")
   })
 })

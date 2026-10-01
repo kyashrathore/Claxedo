@@ -8,10 +8,11 @@ import {
   ACCOUNT_STREAM_OPEN_CHANNEL,
   ACCOUNT_STREAM_START_CHANNEL,
   RENDERER_WITHHELD_OPERATIONS,
+  hostedOperationChannel,
   registerAccountIpc,
   type AccountIpcService,
 } from "./account-ipc"
-import { HOSTED_OPERATIONS, hostedOperationChannel, type HostedOperationName } from "./hosted-operations"
+import { HOSTED_OPERATIONS, isStreamHostedOperation, type HostedOperationName } from "@claxedo/account-contract"
 
 /**
  * The IPC surface, checked in both directions.
@@ -357,7 +358,6 @@ describe("operations whose result is a credential", () => {
     // Stream ops refuse unary invoke on purpose (open via stream IPC).
     const h = harness()
     const withheld = new Set<string>(RENDERER_WITHHELD_OPERATIONS)
-    const { isStreamHostedOperation } = await import("./hosted-operations")
     const ran: string[] = []
 
     for (const name of Object.keys(HOSTED_OPERATIONS)) {
@@ -499,8 +499,6 @@ describe("account channels", () => {
 
 test("the renderer-visible operation set stays pinned", async () => {
   const expected = [
-    "account.agentSettings.read",
-    "account.agentSettings.write",
     "account.compatibility",
     "account.mode",
     "agentPlugins.activation",
@@ -551,7 +549,6 @@ test("the renderer-visible operation set stays pinned", async () => {
     "project.access",
     "project.members.grant",
     "project.members.revoke",
-    "session.create",
     "session.gateway",
     "session.list",
     "session.messages",
@@ -593,4 +590,16 @@ test("the renderer-visible operation set stays pinned", async () => {
   for (const name of RENDERER_WITHHELD_OPERATIONS) {
     await expect(h.invoke(hostedOperationChannel(name))).rejects.toThrow()
   }
+})
+
+describe("hostedOperationChannel", () => {
+  test("gives each operation its own channel", () => {
+    // One channel per operation, rather than one channel taking an operation
+    // name: a single channel is a place for a future argument to become the
+    // route.
+    const channels = Object.keys(HOSTED_OPERATIONS).map((name) => hostedOperationChannel(name as never))
+
+    expect(new Set(channels).size).toBe(channels.length)
+    expect(hostedOperationChannel("account.mode")).toBe("claxedo.account.operation:account.mode")
+  })
 })
