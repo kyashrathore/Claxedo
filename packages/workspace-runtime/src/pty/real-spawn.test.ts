@@ -1,6 +1,5 @@
 import { testSessionCore } from "../test-support/session-core"
 import { withSessionCore } from "../session-context"
-import { testSessionCore } from "../test-support/session-core"
 // `node:test`'s `describe`/`test` return a promise the runner already owns: it
 // settles when the suite finishes and reports failures through the runner
 // rather than rejecting, so every registration below is deliberately `void`ed.
