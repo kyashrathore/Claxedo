@@ -418,7 +418,11 @@ export const desktopRenderer: Policy = {
   // +2 folded-user-message-body and its stylesheet own the rendered-height
   // preview for user prompts, through message-part and transcript/styles.
   // Existing Solid and transcript i18n owners add no package edge.
-  ceilings: { modules: 1248, packages: 36 },
+  // +1 agent-message-notice.css owns the expandable peer report presentation
+  // through transcript/styles; the existing notice renderer adds no package edge.
+  // +1 module (2026-10-01): transcript/agent-message-event owns the event chrome
+  // shared by incoming reports and stored agent-authored openings, with no package edge.
+  ceilings: { modules: 1250, packages: 36 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,

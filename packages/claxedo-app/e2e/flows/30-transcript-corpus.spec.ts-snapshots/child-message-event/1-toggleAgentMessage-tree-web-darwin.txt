@@ -1,0 +1,16 @@
+scrollTop: 0
+background subagents:
+(none)
+row 0:
+- text: "Start a background agent, then reply with exactly this one token: CHILDEVENTPARENT Build · default · <time>"
+- button "Copy message"
+row 1:
+- button "Worked for <duration>"
+row 2:
+- note: CHILDREADY
+row 3:
+- group: Message from general-purpose CHILDREPORT
+row 4:
+- paragraph: CHILDREADY
+- button "Copy response"
+- text: Build · default · <duration>

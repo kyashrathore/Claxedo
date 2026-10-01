@@ -2,6 +2,11 @@
 import { expect, test } from "bun:test"
 import { noticeView, retractionLabel } from "./notice-view"
 
+test("an incoming agent report has its own sender and expandable body", () => {
+  expect(noticeView({ kind: "agent-message", sender: "reviewer", message: "Review completed." }))
+    .toEqual({ shape: "agent-message", sender: "reviewer", message: "Review completed." })
+})
+
 test("a harness notice reads as its own sentence in its severity", () => {
   expect(noticeView({ kind: "harness", code: "claude_sdk.informational", message: "UserPromptSubmit hook blocked the prompt", severity: "warn" }))
     .toEqual({ shape: "row", tone: "warn", message: { text: "UserPromptSubmit hook blocked the prompt" } })

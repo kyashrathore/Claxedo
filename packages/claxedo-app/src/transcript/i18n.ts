@@ -41,6 +41,7 @@ const en = {
   "transcript.sessionTurn.retry.geminiHot": "gemini is way too hot right now",
   "transcript.notice.compacting": "Compacting conversation…",
   "transcript.notice.compactionFailed": "Compaction failed: {{error}}",
+  "transcript.notice.agentMessage": "Message from {{sender}}",
   "transcript.notice.conversationCleared": "Conversation cleared: the agent starts fresh from here",
   "transcript.notice.conversationReset": "Conversation reset: the agent starts fresh from here",
   "transcript.retracted.refusal": "Response withdrawn: the model refused it",

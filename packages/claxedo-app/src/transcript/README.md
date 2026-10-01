@@ -154,3 +154,7 @@ A logic change here is its own slice, proven by the transcript corpus (flow 30, 
 
 - Each renderer is registered under one `part.type` and re-checks the discriminant, which lets TypeScript narrow; reaching the throw means the registry was wired wrong.
 - A user message's image attachment draws its hairline as an `::after` overlay, since an inset box-shadow does not paint over an `<img>`.
+
+## Child message events
+
+A typed `agent-message` notice renders as a compact native details row: “Message from” and the provider’s sender name, with the complete report behind expand/collapse. It uses the SDK’s canonical report body. Completion notices are separate harness events. Neither becomes a user-message bubble. Cold final rendering retains notice-bearing assistant messages as well as the final continuation reply, so a later answer cannot hide an earlier report. Event ownership and replay identity are fixed by the runtime, not inferred by the renderer. Flow 45 exercises a real native Claude background agent and SendMessage; the child-message-event corpus case covers desktop and phone expansion, collapse and reload.

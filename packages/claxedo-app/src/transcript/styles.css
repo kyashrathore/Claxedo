@@ -1,6 +1,7 @@
 @layer theme, base, components, utilities;
 
 @import "./agent-glyph.css" layer(components);
+@import "./agent-message-notice.css" layer(components);
 @import "./basic-tool.css" layer(components);
 @import "./claxedo-tool.css" layer(components);
 @import "./file.css" layer(components);
