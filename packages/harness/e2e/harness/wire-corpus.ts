@@ -300,18 +300,21 @@ export function observeStream(url: URL) {
   }
 }
 
+/** Records one loopback HTTP exchange made outside the global `fetch`. */
+export async function observeHttp(target: URL, method: string, accept: string | null, reply: Response) {
+  const unsynchronizedReadback = method === "GET" && flow !== "H0-smoke" && (target.pathname === "/api/claxedo/health" || target.pathname.endsWith("/api/wr/health"))
+  const capture = active && !unsynchronizedReadback && (target.hostname === "127.0.0.1" || target.hostname === "localhost") && accept !== "text/event-stream"
+  if (capture && !reply.headers.get("content-type")?.includes("text/event-stream")) {
+    observations.push({ kind: "http", method, route: `${target.pathname}${target.search}`, status: reply.status, body: parsed(await reply.clone().text()) })
+  }
+}
+
 if (mode) {
   const nativeFetch = globalThis.fetch
   const observedFetch = async (input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {
-    const target = new URL(input instanceof Request ? input.url : String(input))
-    const method = init?.method ?? (input instanceof Request ? input.method : "GET")
-    const accept = new Headers(init?.headers ?? (input instanceof Request ? input.headers : undefined)).get("accept")
-    const unsynchronizedReadback = method === "GET" && flow !== "H0-smoke" && (target.pathname === "/api/claxedo/health" || target.pathname.endsWith("/api/wr/health"))
-    const capture = active && !unsynchronizedReadback && (target.hostname === "127.0.0.1" || target.hostname === "localhost") && accept !== "text/event-stream"
     const reply = await nativeFetch(input, init)
-    if (capture && !reply.headers.get("content-type")?.includes("text/event-stream")) {
-      observations.push({ kind: "http", method, route: `${target.pathname}${target.search}`, status: reply.status, body: parsed(await reply.clone().text()) })
-    }
+    await observeHttp(new URL(input instanceof Request ? input.url : String(input)), init?.method ?? (input instanceof Request ? input.method : "GET"),
+      new Headers(init?.headers ?? (input instanceof Request ? input.headers : undefined)).get("accept"), reply)
     return reply
   }
   globalThis.fetch = new Proxy(nativeFetch, { apply: (_target, _this, args: Parameters<typeof fetch>) => observedFetch(...args) })

@@ -2,6 +2,7 @@ import fs from "node:fs/promises"
 import { request } from "node:https"
 import type { LookupFunction } from "node:net"
 import type { startHostedStack } from "./hosted-stack"
+import { observeHttp } from "./wire-corpus"
 
 type HostedStack = Awaited<ReturnType<typeof startHostedStack>>
 export type HostedPerson = { id: string; email: string; cookie: string }
@@ -26,7 +27,7 @@ export async function hostedFetch(
   // intermittently fails with ECONNRESET, so each request takes its own.
   headers.set("connection", "close")
   const url = new URL(route, stack.workerUrl)
-  return new Promise<Response>((resolve, reject) => {
+  const reply = await new Promise<Response>((resolve, reject) => {
     const upstream = request(url, {
       method: options.method ?? "GET", headers: Object.fromEntries(headers), ca, signal: options.signal ?? undefined,
       lookup: fixtureLoopback,
@@ -44,6 +45,8 @@ export async function hostedFetch(
     upstream.on("error", reject)
     upstream.end(options.body as string | undefined)
   })
+  await observeHttp(url, options.method ?? "GET", headers.get("accept"), reply)
+  return reply
 }
 
 export async function signInHostedPerson(stack: HostedStack, code: "hosted-person-a" | "hosted-person-b") {
