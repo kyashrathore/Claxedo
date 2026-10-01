@@ -1,5 +1,4 @@
 import { accountBinding } from "#account-binding"
-import type { RunHostedOperation } from "@claxedo/account-contract"
 import { createMemo, Show, type JSX, type ParentProps } from "solid-js"
 import { AuthProvider, useAuth, type Auth, type AuthState } from "@/auth"
 import { I18nProvider } from "@/i18n"
@@ -7,7 +6,7 @@ import { desktopMachineReport } from "@/lib/desktop-bridge"
 import { ClockProvider } from "@/lib/clock"
 import { ProjectListProvider } from "@/projects"
 import { CompactSwitcher, MainSidebar } from "@/rail"
-import { createServer, ServerProvider, type AuthSource } from "@/server"
+import { createServer, ServerProvider, type ServerConfig } from "@/server"
 import { SessionStoresProvider } from "@/session"
 import { AttentionAlerts } from "@/notifications"
 import { PreferencesProvider, usePreferences } from "@/settings"
@@ -21,7 +20,7 @@ function principalOf(state: AuthState): string | undefined {
   return state.kind === "signedIn" ? state.user.id : undefined
 }
 
-type ServerAccess = { readonly auth: AuthSource; readonly account?: RunHostedOperation; readonly cookies?: true }
+type ServerAccess = Pick<ServerConfig, "auth" | "account" | "cookies">
 
 function serverAccess(auth: Auth, principal: string | undefined): ServerAccess {
   if (principal === undefined) return { auth: { kind: "none" } }
