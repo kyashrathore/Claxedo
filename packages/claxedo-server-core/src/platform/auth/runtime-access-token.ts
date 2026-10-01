@@ -246,7 +246,7 @@ export function runtimeAccessTokenSigner(env: NodeJS.ProcessEnv = process.env): 
       host_id: input.hostId,
       ...(input.routingId !== undefined ? { routing_id: input.routingId } : {}),
       role: input.role,
-      ...(input.sessionId !== undefined ? { session_id: input.sessionId } : {}),
+      ...(input.sessionId === undefined ? { scope: "workspace" } : { scope: "session", session_id: input.sessionId }),
     })
       .setProtectedHeader({ alg, kid })
       .setIssuer(runtimeAccessTokenIssuer)

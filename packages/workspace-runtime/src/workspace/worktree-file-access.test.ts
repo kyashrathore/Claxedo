@@ -46,6 +46,7 @@ function relayAuth(role: NonNullable<RelayHostAuthContext["relayHostAuth"]>["rol
     workspace_id: WORKSPACE_ID,
     host_id: "host_1",
     role,
+    scope: "workspace",
     backing: "cloud-vm",
     exp: now + 60,
     iat: now,

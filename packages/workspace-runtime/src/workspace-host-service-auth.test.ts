@@ -1,8 +1,8 @@
 import { describe, expect, test } from "bun:test"
 import type { RelayHostVerifierClaims } from "@claxedo/workspace-relay-protocol"
 import { Hono } from "hono"
-import { exportJWK, exportSPKI, generateKeyPair } from "jose"
-import { mintRelayHostToken, mintRuntimeAccessToken } from "@claxedo/workspace-relay"
+import { SignJWT, exportJWK, exportSPKI, generateKeyPair } from "jose"
+import { mintRelayHostToken, mintRuntimeAccessToken, relayHostTokenAudience, relayHostTokenIssuer } from "@claxedo/workspace-relay"
 import { createServer } from "node:http"
 import {
   createRelayHostAuthMiddleware,
@@ -120,6 +120,24 @@ describe("workspace host service relay auth", () => {
       path: "/api/wr/pty",
       method: "GET",
     })
+  })
+
+  test("a relay host token that names neither the workspace scope nor a session reaches nothing", async () => {
+    const harness = await app()
+    harness.app.all("*", (c) => c.json({ reached: true }))
+    const unscoped = await new SignJWT({
+      principal_kind: "user", actor_id: "actor_viewer", actor_kind: "human", org_id: "org_1",
+      workspace_id: "ws_1", host_id: "host_1", role: "viewer", backing: "local-worktree", parent_jti: "rat_viewer",
+    }).setProtectedHeader({ alg: "EdDSA" }).setIssuer(relayHostTokenIssuer).setAudience(relayHostTokenAudience)
+      .setIssuedAt().setExpirationTime("60s").setJti("rht_unscoped").sign(harness.key.privateKey)
+
+    for (const [path, method] of [["/api/wr/git/status", "GET"], ["/file/content?path=a", "PUT"], ["/api/wr/health", "GET"]] as const) {
+      const refused = await harness.app.request(`http://localhost${path}`, {
+        method,
+        headers: { authorization: `Bearer ${unscoped}`, "x-workspace-id": "ws_1", "x-forwarded-by": "workspace-relay" },
+      })
+      expect(refused.status, `${method} ${path}`).toBe(401)
+    }
   })
 
   test("rejects direct client Runtime Access Tokens", async () => {
@@ -634,6 +652,7 @@ describe("x-forwarded-by: workspace-relay marker enforcement", () => {
             workspace_id: "ws_static",
             host_id: "host_static",
             role: "editor",
+            scope: "workspace",
             backing: "cloud-vm",
             iat: Math.floor(Date.now() / 1000),
             exp: Math.floor(Date.now() / 1000) + 60,
@@ -687,6 +706,7 @@ describe("x-forwarded-by: workspace-relay marker enforcement", () => {
             workspace_id: "ws_static",
             host_id: "host_static",
             role: "editor",
+            scope: "workspace",
             backing: "cloud-vm",
             actor_avatar_url: "https://images.example.test/actor.png",
             iat: now,
@@ -732,6 +752,7 @@ describe("x-forwarded-by: workspace-relay marker enforcement", () => {
       org_id: "org_static",
       workspace_id: "ws_static",
       host_id: "host_static",
+      scope: "workspace",
       backing: "cloud-vm",
       iat: now,
       exp: now + 60,
@@ -797,6 +818,7 @@ describe("x-forwarded-by: workspace-relay marker enforcement", () => {
             workspace_id: "ws_static",
             host_id: "host_other",
             role: "editor",
+            scope: "workspace",
             backing: "cloud-vm",
             iat: Math.floor(Date.now() / 1000),
             exp: Math.floor(Date.now() / 1000) + 60,
@@ -844,6 +866,7 @@ describe("x-forwarded-by: workspace-relay marker enforcement", () => {
       workspace_id: "ws_static",
       host_id: "host_static",
       role: "editor",
+      scope: "workspace",
       iat: Math.floor(Date.now() / 1000),
       exp: Math.floor(Date.now() / 1000) + 60,
       jti: "jti-static",

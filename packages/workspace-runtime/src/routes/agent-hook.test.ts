@@ -215,7 +215,7 @@ function relayAuth(
     iat: now,
     jti: `jti_${actorId}`,
     parent_jti: "rat_jti_1",
-    ...(sessionScope ? { session_id: sessionScope } : {}),
+    ...(sessionScope ? { scope: "session" as const, session_id: sessionScope } : { scope: "workspace" as const }),
   }
 }
 

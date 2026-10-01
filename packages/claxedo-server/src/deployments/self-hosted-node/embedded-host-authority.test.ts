@@ -146,7 +146,7 @@ test("checkpoint HTTP mutations reject a stale owner token once its holder no lo
     const token = await new SignJWT({
       principal_kind: "user", actor_id: f.input.actor.actorId, actor_kind: "human",
       org_id: f.input.authority.orgId, workspace_id: "ws_current", host_id: "host_local",
-      role: "owner", backing: "cloud-vm", parent_jti: "parent_checkpoint",
+      role: "owner", scope: "workspace", backing: "cloud-vm", parent_jti: "parent_checkpoint",
     }).setProtectedHeader({ alg: "EdDSA" }).setIssuer("workspace-relay").setAudience("workspace-host-service")
       .setIssuedAt().setExpirationTime("1m").setJti("stale_admin").sign(key.privateKey)
     const request = (operation: string) => runtime.app.request(`/api/wr/checkpoint/${operation}`, {

@@ -5,6 +5,7 @@ import {
   RUNTIME_ACCESS_TOKEN_ISSUED_AT_FLOOR_SECONDS,
   WorkspaceRelayAuthError,
   relayHostTokenAudience,
+  relayHostTokenIssuer,
   mintHostTunnelToken,
   mintRelayHostToken,
   mintRuntimeAccessToken,
@@ -76,6 +77,29 @@ describe("workspace relay auth", () => {
     await expect(verifyRuntimeAccessToken(empty, key.publicKey, target)).rejects.toMatchObject({ code: "relay_token_claims_invalid" })
   })
 
+  test("names its reach on every token: the workspace scope or one session, never neither and never both", async () => {
+    const key = await keys()
+    const target = { workspaceId: "ws_1", hostId: "host_1" }
+    const workspaceWide = await verifyRuntimeAccessToken(await mintRuntimeAccessToken(base, key.privateKey, "EdDSA"), key.publicKey, target)
+    const scoped = await verifyRuntimeAccessToken(await mintRuntimeAccessToken({ ...base, role: "viewer", sessionId: "ses_1" }, key.privateKey, "EdDSA"), key.publicKey, target)
+    expect(workspaceWide.scope).toBe("workspace")
+    expect(scoped.scope).toBe("session")
+
+    const signed = (claims: Record<string, unknown>, host = false) => new SignJWT({
+      principal_kind: "user", actor_id: "actor_1", actor_kind: "human", org_id: "org_1",
+      workspace_id: "ws_1", host_id: "host_1", role: "viewer", backing: "local-worktree", parent_jti: "jti_parent", ...claims,
+    }).setProtectedHeader({ alg: "EdDSA" })
+      .setIssuer(host ? relayHostTokenIssuer : runtimeAccessTokenIssuer)
+      .setAudience(host ? relayHostTokenAudience : runtimeAccessTokenAudience)
+      .setIssuedAt().setExpirationTime("10m").setJti("jti_reach").sign(key.privateKey)
+    for (const claims of [{}, { scope: "workspace", session_id: "ses_1" }, { scope: "session" }, { scope: "host" }]) {
+      await expect(verifyRuntimeAccessToken(await signed(claims), key.publicKey, target))
+        .rejects.toMatchObject({ code: "relay_token_claims_invalid" })
+      await expect(verifyRelayHostToken(await signed(claims, true), key.publicKey, target))
+        .rejects.toMatchObject({ code: "relay_token_claims_invalid" })
+    }
+  })
+
   test("verifies Runtime Access Tokens for the expected workspace and host", async () => {
     const key = await keys()
     const token = await mintRuntimeAccessToken(base, key.privateKey, "EdDSA")
@@ -107,6 +131,7 @@ describe("workspace relay auth", () => {
       workspace_id: base.workspaceId,
       host_id: base.hostId,
       role: base.role,
+      scope: "workspace",
     })
       .setProtectedHeader({ alg: "EdDSA" })
       .setIssuer(runtimeAccessTokenIssuer)
@@ -198,6 +223,7 @@ describe("workspace relay auth", () => {
       workspace_id: base.workspaceId,
       host_id: base.hostId,
       role: base.role,
+      scope: "workspace",
     })
       .setProtectedHeader({ alg: "EdDSA" })
       .setIssuer("other-control-plane")
@@ -211,6 +237,7 @@ describe("workspace relay auth", () => {
       workspace_id: base.workspaceId,
       host_id: base.hostId,
       role: base.role,
+      scope: "workspace",
     })
       .setProtectedHeader({ alg: "EdDSA" })
       .setIssuer(runtimeAccessTokenIssuer)
@@ -254,6 +281,7 @@ describe("workspace relay auth", () => {
       workspace_id: base.workspaceId,
       host_id: base.hostId,
       role: base.role,
+      scope: "workspace",
     })
       .setProtectedHeader({ alg: "EdDSA" })
       .setIssuer(runtimeAccessTokenIssuer)
@@ -430,6 +458,7 @@ describe("workspace relay auth", () => {
       workspace_id: base.workspaceId,
       host_id: base.hostId,
       role: base.role,
+      scope: "workspace",
     })
       .setProtectedHeader({ alg: "HS256" })
       .setIssuer(runtimeAccessTokenIssuer)
@@ -583,6 +612,7 @@ describe("workspace relay auth", () => {
       workspace_id: base.workspaceId,
       host_id: base.hostId,
       role: base.role,
+      scope: "workspace",
     })
       .setProtectedHeader({ alg: "EdDSA", kid: "key-b" })
       .setIssuer(runtimeAccessTokenIssuer)

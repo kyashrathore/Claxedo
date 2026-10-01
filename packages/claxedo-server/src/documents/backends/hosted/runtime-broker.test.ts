@@ -53,7 +53,7 @@ async function relayedRuntime() {
   const token = await new SignJWT({
     principal_kind: "user", actor_id: "actor_1", actor_kind: "human",
     org_id: "org_1", workspace_id: "ws_1", host_id: "host_1",
-    role: "editor", backing: "cloud-vm", parent_jti: "parent_1",
+    role: "editor", scope: "workspace", backing: "cloud-vm", parent_jti: "parent_1",
   }).setProtectedHeader({ alg: "EdDSA" }).setIssuer("workspace-relay").setAudience("workspace-host-service")
     .setIssuedAt().setExpirationTime("1m").setJti("relay_actor_1").sign(relayKeys.privateKey)
   return { runtime, token, asked }
