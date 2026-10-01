@@ -425,6 +425,9 @@
     "packages/claxedo-status-hooks": {
       "name": "@claxedo/status-hooks",
       "version": "0.1.0",
+      "dependencies": {
+        "@claxedo/plugin-api": "workspace:*",
+      },
     },
     "packages/claxedo-tasks": {
       "name": "@claxedo/tasks",

@@ -65,7 +65,7 @@ Built plugin bundles do not carry `solid-js`, `solid-js/web`, `solid-js/store`, 
 
 ## Terminal status templates
 
-`claxedo.statusHooks` is an optional array of `StatusHookTemplate` declarations. A template names `command`, `provider`, optional command `aliases`, `install`, `events` and `subagent` payload fields. Templates run on the machine with the plugin's authority to install hooks.
+`StatusHookTemplate` declares how one CLI reports terminal status: `command`, `provider`, optional command `aliases`, `install`, `events` and `subagent` payload fields. A template defines shell wrappers and rewrites files in the person's home, so templates are honored only from `@claxedo/status-hooks`, the package bundled with Claxedo, which the runtime imports directly. A plugin manifest that declares `claxedo.statusHooks` is refused: `readPluginManifest` throws `PluginStatusHooksRefusedError` (code `status_hooks_first_party_only`), `pluginManifestSchema` fails at every other parse site, and a plugin build reports a `manifest` diagnostic with that code. `readStatusHookTemplates` validates the bundled package's templates.
 
 `install.type` is one of:
 
@@ -76,5 +76,3 @@ Built plugin bundles do not carry `solid-js`, `solid-js/web`, `solid-js/store`, 
 `events` maps CLI event names to `running`, `waiting`, `done`, or `ignored`. A rule may carry `outcome` (`done`, `error`, `cancelled`), `when` payload-field predicates, `toolCompletion`, and a nested `payload` descriptor for session identity. An ordered rule array selects the first matching predicate. `subagent` names payload fields marking child work; core permits only a child's asks and matching tool completions to affect the parent terminal.
 
 `artifacts` declares hook filenames, text and modes. Template values support `{{notify}}`, `{{hooks}}`, `{{notifyCommand}}` and artifact filenames as variables; `|sh` shell-quotes and `|json` JSON-quotes a value. Wrapper text can refer to `{{args}}` (the quoted argument list), `{{arg0}}` and subsequent argument values, and `{{projectInstall}}` (shared project-file installation). With no wrapper text, the engine uses its standard wrapper. `wrapper: false` installs config without wrapping the command. `replayGuard.env` identifies a foreign CLI's environment marker for rejecting replayed hooks.
-
-The runtime currently injects the template list at composition, with `@claxedo/status-hooks` active by default. Machine-side Marketplace activation remains a separate integration.

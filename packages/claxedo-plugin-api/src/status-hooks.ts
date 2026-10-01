@@ -1,4 +1,5 @@
 import { z } from "zod"
+import { PluginManifestError } from "./manifest"
 
 const command = z.string().regex(/^[a-z0-9][a-z0-9._-]{0,31}$/)
 const relativePath = z
@@ -103,3 +104,11 @@ export const statusHookTemplateSchema = z
 
 export type StatusHookTemplate = z.infer<typeof statusHookTemplateSchema>
 export type StatusHookEventRule = z.infer<typeof eventRule>
+
+export function readStatusHookTemplates(value: unknown): StatusHookTemplate[] {
+  const parsed = z.array(statusHookTemplateSchema).safeParse(value)
+  if (parsed.success) return parsed.data
+  throw new PluginManifestError(
+    parsed.error.issues.map((issue) => `statusHooks${issue.path.map((part) => `.${String(part)}`).join("")}: ${issue.message}`),
+  )
+}

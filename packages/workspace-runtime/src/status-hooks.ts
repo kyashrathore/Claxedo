@@ -1,7 +1,6 @@
-import { readPluginManifest } from "@claxedo/plugin-api/manifest"
 import type { StatusHookTemplate } from "@claxedo/plugin-api"
-import firstParty from "@claxedo/status-hooks/manifest"
+import { firstPartyStatusHooks } from "@claxedo/status-hooks"
 
-export const defaultStatusHooks: readonly StatusHookTemplate[] = readPluginManifest(firstParty).statusHooks!
+export const defaultStatusHooks: readonly StatusHookTemplate[] = firstPartyStatusHooks
 
 export const defaultGenericWrappers = ["aider", "goose", "cline"]

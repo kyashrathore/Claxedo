@@ -1,5 +1,4 @@
-import type { StatusHookTemplate } from "@claxedo/plugin-api"
-import { readPluginManifest } from "@claxedo/plugin-api/manifest"
+import { readStatusHookTemplates, type StatusHookTemplate } from "@claxedo/plugin-api"
 import { expect, test } from "bun:test"
 import fs from "node:fs/promises"
 import os from "node:os"
@@ -24,11 +23,9 @@ const declaration: StatusHookTemplate = {
   events: { TurnOpened: "running", Approval: "waiting", Finished: "done", Heartbeat: "ignored" },
   subagent: ["worker_id"],
 }
-const template = readPluginManifest({
-  claxedo: { id: "hook-example", name: "Hook example", version: "1.0.0", app: "./app.ts", statusHooks: [declaration] },
-}).statusHooks![0]
+const [template] = readStatusHookTemplates([declaration])
 
-test("an injected plugin template installs its wrapper and config", async () => {
+test("an injected template installs its wrapper and config", async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "new-status-hook-"))
   try {
     const manifest = createStatusHooksManifest(path.join(root, "data"))
@@ -44,7 +41,7 @@ test("an injected plugin template installs its wrapper and config", async () => 
     await fs.rm(root, { recursive: true, force: true })
   }
 })
-test("an injected plugin maps new events and uses its own subagent field", () => {
+test("an injected template maps new events and uses its own subagent field", () => {
   const map = (input: Record<string, unknown>) => providerLifecycle(input, [template])
   expect(map({ provider: "new-agent", hook_event_name: "TurnOpened" })).toMatchObject({ eventType: "Busy" })
   expect(map({ provider: "new-agent", hook_event_name: "Approval", worker_id: "child" })).toMatchObject({
@@ -56,7 +53,7 @@ test("an injected plugin maps new events and uses its own subagent field", () =>
   expect(map({ provider: "new-agent", hook_event_name: "Finished", worker_id: "child" })).toBeUndefined()
 })
 
-test("a plugin project-file template installs and excludes its own hook file when its wrapper runs", async () => {
+test("an injected project-file template installs and excludes its own hook file when its wrapper runs", async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "plugin-project-hook-"))
   try {
     const project = path.join(root, "project"),

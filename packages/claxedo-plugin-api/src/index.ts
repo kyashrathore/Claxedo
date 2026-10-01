@@ -58,6 +58,7 @@ export {
   PLUGIN_NAME_MAX_LENGTH,
   PLUGIN_SERVER_ROUTE_PREFIX,
   PluginManifestError,
+  PluginStatusHooksRefusedError,
   pluginBackendRouteAllowed,
   pluginBackendSchema,
   pluginManifestSchema,
@@ -72,5 +73,5 @@ export { isPluginId, PLUGIN_ID_MAX_LENGTH, PLUGIN_ID_PATTERN } from "./id"
 export { isPluginRuntimeModule, PLUGIN_RUNTIME_GLOBAL, PLUGIN_RUNTIME_MODULES } from "./runtime"
 export type { PluginRuntime, PluginRuntimeModule } from "./runtime"
 
-export { statusHookTemplateSchema } from "./status-hooks"
+export { readStatusHookTemplates, statusHookTemplateSchema } from "./status-hooks"
 export type { StatusHookTemplate, StatusHookEventRule } from "./status-hooks"

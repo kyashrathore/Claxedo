@@ -1191,6 +1191,14 @@
     ]
   },
   "exports": {
-    "./manifest": "./package.json"
+    ".": {
+      "types": "./src/index.ts",
+      "development": "./src/index.ts",
+      "default": "./src/index.ts"
+    },
+    "./package.json": "./package.json"
+  },
+  "dependencies": {
+    "@claxedo/plugin-api": "workspace:*"
   }
 }
