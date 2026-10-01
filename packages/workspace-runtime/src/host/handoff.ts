@@ -168,7 +168,7 @@ function planSwitch(input: HandoffTransactionInput): SwitchPlan {
   if (!agentSessionId) throw new Error(`Session ${input.sessionId} has no native harness session`)
   const previous: NativeSession = { agentSessionId, ownerKey: input.store.getSessionOwnerKey(input.sessionId) ?? null }
   const pending = input.current.handoff
-  const unsent = pending?.pending && !pending.announced && !pending.reason ? pending : undefined
+  const unsent = pending?.pending && !pending.announced ? pending : undefined
   const from = unsent?.from ?? input.current.harness
   const left = leftSource(input, previous)
   const resumed = unsent?.source && sameSessionHarness(from, input.update.harness) ? unsent.source : undefined
