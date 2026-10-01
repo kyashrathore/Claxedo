@@ -3,7 +3,8 @@ import type { AgentRuntimeEvent } from "@claxedo/agent-runtime-contract"
 import type { AgentRuntimeStreamEvent, RuntimeDirectory } from "./contracts"
 import { createTurnBroker, type BrokerOwner, type TurnAuthority } from "@claxedo/harness/broker"
 import { TransportError, type RoutedEvent, type TurnOrigin } from "@claxedo/harness/contract"
-import { createChildEventRouter } from "../projection/child-event-routing"
+import { createChildEventRouter, type ChildProjectionTarget } from "../projection/child-event-routing"
+import { resolveChildRoute, type BoundChildRoute } from "../projection/child-routes"
 import { createTurnEventProjector } from "../projection/turn-projection"
 import type { RuntimeAppendSource } from "../projection/session-event-writer"
 import type { AttachedSession } from "./attachments"
@@ -32,6 +33,7 @@ export type TurnRunnerHost = {
   commit: (sessionId: string, directory: RuntimeDirectory, payload: AgentRuntimeStreamEvent, source: RuntimeAppendSource,
     fence: Fence, emit: (event: AgentRuntimeEventEnvelope) => void) => AgentRuntimeStreamEvent
   beginChildTurns: (parentSessionId: string, context: ParentTurnContext) => () => void
+  childTarget: (childSessionId: string, assistantMessageId: string) => ChildProjectionTarget | undefined
 }
 
 export type TurnRun = {
@@ -69,8 +71,17 @@ function projectors(host: TurnRunnerHost, run: TurnRun, publishTurn: (event: Age
     onEvent: (payload) => publishTurn({ sessionId, directory, payload }),
     onRuntimeEvent,
   })
+  const unseededTarget = (route: BoundChildRoute): ChildProjectionTarget => ({
+    sessionId: route.childSessionId,
+    getAgentSessionId: () => store.getAgentSessionId(route.childSessionId) ?? route.childSessionId,
+    assistantMessageId: route.assistantMessageId,
+    created: Date.now(),
+    input: { agent: run.prompt.agent, model: run.prompt.model, ...(run.prompt.variant ? { variant: run.prompt.variant } : {}) },
+  })
   const router = createChildEventRouter({
     parent,
+    resolve: (correlationKey) => resolveChildRoute(store, sessionId, correlationKey),
+    childTarget: (route) => host.childTarget(route.childSessionId, route.assistantMessageId) ?? unseededTarget(route),
     createChildProjector: (target) => createTurnEventProjector({
       store,
       owner: { sessionId: target.sessionId, getAgentSessionId: target.getAgentSessionId },
@@ -78,11 +89,10 @@ function projectors(host: TurnRunnerHost, run: TurnRun, publishTurn: (event: Age
       input: target.input,
       assistantMessageId: target.assistantMessageId,
       created: target.created,
-      ...fenced,
+      ...(target.fencingToken === undefined ? {} : { fencingToken: target.fencingToken }),
       onEvent: (payload) => publishTurn({ sessionId: target.sessionId, directory, payload }),
       onRuntimeEvent,
     }),
-    onDiagnostic: (payload) => { if (admitted()) publishTurn({ sessionId, directory, payload }) },
   })
   return router
 }
@@ -110,7 +120,6 @@ export async function runTurn(host: TurnRunnerHost, run: TurnRun): Promise<void>
     directory: normalizeDirectory(directory),
     input: prompt,
     ...(fence ? { fencingToken: fence.fencingToken() } : {}),
-    associate: (key, target) => router.associate(key, target),
     projectChild: (target, event, source) => router.projectChild(target, event, source),
   })
   let finalized: TurnFinalization | undefined

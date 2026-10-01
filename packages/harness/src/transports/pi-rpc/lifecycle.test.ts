@@ -110,7 +110,7 @@ test("a Pi process lost under a session reads degraded until its replacement sta
     await first.exited
     expect(pi.transport.health.runtime(pi.directory, "s1")).toEqual({ status: "degraded", reason: "harness_process_lost", message: "Pi process exited (9)" })
     expect(pi.health.changes).toBe(1)
-    const replaced = await pi.transport.attach({ ...pi.start(), binding: session.binding }, pi.broker)
+    const replaced = await pi.transport.attach({ ...pi.start(), binding: session.binding, upstreamHasTurns: false }, pi.broker)
     expect(pi.transport.health.runtime(pi.directory, "s1")).toEqual({ status: "ok" })
     expect(pi.health.changes).toBe(2)
     await pi.transport.close(replaced)
@@ -120,45 +120,54 @@ test("a Pi process lost under a session reads degraded until its replacement sta
   } finally { await pi.close() }
 })
 
-test("a local Pi session connects Claxedo's MCP through its extension, and a remote one is launched without it", async () => {
+test("a local Pi session hands Claxedo's MCP server to Pi's own MCP once through a private file, and a remote one gets none", async () => {
   const server = { kind: "http" as const, name: "claxedo", url: "http://127.0.0.1:1/mcp", headers: { Authorization: "Bearer session-token" } }
   const pi = await scriptedPi({ firstPartyMcp: (_sessionId, locality) => locality === "local" ? server : undefined })
   try {
     await pi.transport.start(pi.start("remote"), pi.broker)
     await pi.transport.start(pi.start("local"), pi.broker)
-    expect(pi.mcpRequests).toEqual([["s1", "remote"], ["s1", "local"]])
+    expect(pi.mcpRequests).toEqual([["s1", "local"]])
     const [remote, local] = pi.launches
-    expect(remote!.command.args.some((arg) => arg.endsWith("claxedo-first-party-mcp.ts"))).toBe(false)
-    expect(JSON.stringify(remote!.wire.received)).not.toContain("session-token")
-    expect(local!.command.args.some((arg) => arg.endsWith("claxedo-first-party-mcp.ts"))).toBe(true)
+    expect(remote!.command.args.some((arg) => arg.endsWith("claxedo-mcp.ts"))).toBe(false)
+    expect(remote!.command.env.CLAXEDO_PI_MCP_HANDOFF).toBeUndefined()
+    expect(local!.command.args.some((arg) => arg.endsWith("claxedo-mcp.ts"))).toBe(true)
     const [handoff] = local!.handoffs
-    expect(handoff).toEqual({ file: expect.stringContaining(path.join(pi.root, "state")), mode: 0o600,
-      content: JSON.stringify({ name: "claxedo", url: server.url, headers: server.headers }) })
-    expect(local!.wire.received.filter((frame) => frame.type === "prompt").map((frame) => frame.message)).toEqual([`/claxedo-mcp ${handoff!.file}`])
-    expect(JSON.stringify(local!.wire.received)).not.toContain("session-token")
+    expect(handoff?.file).toBe(String(local!.command.env.CLAXEDO_PI_MCP_HANDOFF))
+    expect(handoff).toEqual({ file: expect.any(String), mode: 0o600, content: JSON.stringify({
+      claxedo: { type: "http", url: server.url, headers: server.headers, exposure: "direct" } }) })
+    expect(handoff!.file.startsWith(path.join(pi.root, "state", "mcp-handoff"))).toBe(true)
     await expect(fs.stat(handoff!.file)).rejects.toThrow("ENOENT")
-    expect(JSON.stringify(local!.command)).not.toContain("session-token")
+    for (const launch of [remote!, local!]) {
+      expect(JSON.stringify(launch.command)).not.toContain("session-token")
+      expect(JSON.stringify(launch.wire.received)).not.toContain("session-token")
+    }
   } finally { await pi.close() }
 })
 
-test("a Pi launch whose Claxedo MCP command is not registered sends nothing to the model, is retired and refuses the start", async () => {
-  const pi = await scriptedPi({ unregistered: ["claxedo-mcp"],
+test("a Pi session carries the person's configured MCP servers, and a remote one refuses a stdio server by name", async () => {
+  const pi = await scriptedPi()
+  const servers = [{ kind: "http" as const, name: "docs", url: "https://docs.example.test/mcp", headers: { authorization: "Bearer $DOCS" }, origin: "configured" as const },
+    { kind: "stdio" as const, name: "local", command: "node", args: ["server.js"], env: { KEY: "!secret" }, origin: "configured" as const }]
+  const input = (locality: "local" | "remote") => ({ ...pi.start(locality), projection: { ...pi.start().projection, mcpServers: servers } })
+  try {
+    await pi.transport.start(input("local"), pi.broker)
+    expect(JSON.parse(pi.launches[0]!.handoffs[0]!.content)).toEqual({
+      docs: { type: "http", url: "https://docs.example.test/mcp", headers: { authorization: "Bearer $$DOCS" }, exposure: "direct" },
+      local: { type: "stdio", command: "node", args: ["server.js"], env: { KEY: "$!secret" }, exposure: "direct" },
+    })
+    await expect(pi.transport.start(input("remote"), pi.broker)).rejects.toMatchObject({ transport: "pi", code: "configuration",
+      message: "Pi cannot run stdio MCP server local for a remote session" })
+    expect(pi.launches).toHaveLength(1)
+  } finally { await pi.close() }
+})
+
+test("a Pi launch that did not load Claxedo's MCP extension is retired, refuses the start, and leaves no handoff behind", async () => {
+  const pi = await scriptedPi({ mcpUnloaded: true,
     firstPartyMcp: () => ({ kind: "http", name: "claxedo", url: "http://127.0.0.1:1/mcp", headers: { Authorization: "Bearer session-token" } }) })
   try {
-    await expect(pi.transport.start(pi.start(), pi.broker)).rejects.toThrow("Pi has not registered /claxedo-mcp")
-    const launch = pi.launches[0]!
-    expect(launch.wire.received.filter((frame) => frame.type === "prompt")).toEqual([])
-    expect(launch.wire.retirements).toBe(1)
-    expect(await fs.readdir(path.join(pi.root, "state", "mcp-handoff"))).toEqual([])
-  } finally { await pi.close() }
-})
-
-test("a Pi launch whose Claxedo MCP connection fails is retired and refuses the start", async () => {
-  const pi = await scriptedPi({ mcpFailure: "Claxedo MCP initialize failed (401)",
-    firstPartyMcp: () => ({ kind: "http", name: "claxedo", url: "http://127.0.0.1:1/mcp", headers: {} }) })
-  try {
-    await expect(pi.transport.start(pi.start(), pi.broker)).rejects.toThrow("Claxedo MCP initialize failed (401)")
+    await expect(pi.transport.start(pi.start(), pi.broker)).rejects.toThrow("Pi did not load Claxedo's MCP extension")
     expect(pi.launches[0]!.wire.retirements).toBe(1)
+    expect(await fs.readdir(path.join(pi.root, "state", "mcp-handoff"))).toEqual([])
     expect(pi.transport.health.connection(pi.directory, "s1").state).toBe("disconnected")
   } finally { await pi.close() }
 })

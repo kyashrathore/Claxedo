@@ -5,8 +5,6 @@ import { PtyRoutes, type PtyRouteOptions } from "../routes/pty"
 import { Pty } from "../pty/index"
 import { AgentHookRoutes } from "../routes/agent-hook"
 import { workspaceEventsHandler, type WorkspaceEventFramesTap, type WorkspaceEventParents } from "../routes/events"
-import { TranscriptRoutes } from "../routes/transcript"
-import type { TranscriptResolution, TranscriptUnavailable } from "../transcript-resolver"
 import { createDiffRoutes } from "../routes/diff"
 import { FileRoutes } from "../routes/file"
 import { GitSourceRoutes } from "../routes/git-source"
@@ -68,24 +66,6 @@ export function mountWorkspaceEvents(app: Hono, options: {
   return { close: handler.close, frames: handler.frames }
 }
 
-export type WorkspaceTranscriptRoutesOptions = {
-  workspaceId: string
-  resolver: {
-    open(input: { workspaceId: string; parentSessionId: string; handle: string }): Promise<TranscriptResolution>
-    register?(input: {
-      workspaceId: string
-      parentSessionId: string
-      providerKind: string
-      filePath: string
-    }): Promise<{ state: "ready"; handle: string } | TranscriptUnavailable>
-    invalidateParent?(workspaceId: string, parentSessionId: string): void
-  }
-}
-
-export function mountWorkspaceTranscripts(app: Hono, options: WorkspaceTranscriptRoutesOptions) {
-  app.route(WorkspaceRuntimeRoutes.subagentTranscripts, TranscriptRoutes(options))
-}
-
 export function mountWorkspaceFiles(app: Hono, sessionAccessPolicy?: SessionAccessPolicy) {
   // Every family here takes a directory, and a registered per-session worktree
   // is one of the directories this runtime serves: the policy is what decides
@@ -111,7 +91,6 @@ export function mountWorkspaceCore(
     sessionParents?: WorkspaceEventParents
     sessionStarts?: Pick<AgentSessionStarts, "get">
     sessionAccessPolicy?: SessionAccessPolicy
-    transcripts?: WorkspaceTranscriptRoutesOptions
     /** Resolved per launch, not captured: one process serves many workspaces. */
     launchOwnership?: () => LaunchOwnershipStore
   },
@@ -121,7 +100,6 @@ export function mountWorkspaceCore(
   mountWorkspacePty(app, upgradeWebSocket, options.sessionAccessPolicy, ownership)
   mountWorkspaceAgentHooks(app, options.sessionAccessPolicy)
   const events = mountWorkspaceEvents(app, options)
-  if (options.transcripts) mountWorkspaceTranscripts(app, options.transcripts)
   mountWorkspaceFiles(app, options.sessionAccessPolicy)
   return events
 }

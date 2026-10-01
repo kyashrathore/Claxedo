@@ -55,3 +55,28 @@ test("an aborted Cursor turn signal ends the stream cleanly instead of throwing"
   expect(events).toEqual([])
   expect(f.commands).toEqual([])
 })
+
+function busyFixture(running: Promise<void>) {
+  const f = fixture()
+  const commands: string[] = []
+  const host = { call: async (command: { kind: string }) => { commands.push(command.kind); return { id: 1, kind: "result" } } } as unknown as CursorHost
+  const internals = f.transport as unknown as { entries: Map<string, { busy: boolean; running?: Promise<void> }>; registry: { existing: () => CursorHost } }
+  Object.assign(internals.entries.get("s1")!, { busy: true, running })
+  internals.registry.existing = () => host
+  return { ...f, commands }
+}
+
+test("a stop reports the Cursor run terminal once the run it cancelled has ended", async () => {
+  const ended = Promise.withResolvers<void>()
+  const f = busyFixture(ended.promise)
+  const outcome = f.transport.cancel(f.session, { turnId: "t1", assistantMessageId: "a1" }, { at: Date.now() + 1_000, signal: new AbortController().signal })
+  ended.resolve()
+  expect(await outcome).toEqual({ execution: "terminal", cleanup: "unknown" })
+  expect(f.commands).toEqual(["cancel"])
+})
+
+test("a Cursor run still going at the stop deadline is reported unknown, with the timeout named", async () => {
+  const f = busyFixture(new Promise<void>(() => {}))
+  expect(await f.transport.cancel(f.session, { turnId: "t1", assistantMessageId: "a1" }, { at: Date.now() + 20, signal: new AbortController().signal }))
+    .toMatchObject({ execution: "unknown", cleanup: "unknown", error: { code: "cancellation_timeout" } })
+})

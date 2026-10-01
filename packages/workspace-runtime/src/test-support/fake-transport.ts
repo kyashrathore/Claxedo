@@ -3,6 +3,7 @@ import { NO_HARNESS_EFFORT, type AdapterCancelOutcome, type HarnessConnectionCap
 import type {
   AgentListOperations,
   AttachInput,
+  BackgroundTaskOperations,
   CommandOperations,
   ConfigApplied,
   ConfigOperations,
@@ -66,7 +67,7 @@ export type FakeTransportOptions = {
   kind?: TransportKind
   capabilities?: Partial<TransportCapabilities>
   /** What one turn yields; the default answers "ack" and finishes. */
-  turn?: (input: FakeTurn) => AsyncIterable<AgentRuntimeEvent>
+  turn?: (input: FakeTurn) => AsyncIterable<AgentRuntimeEvent | RoutedEvent>
   /** The upstream id a started session is bound to; the default derives one from the session id. */
   upstreamSessionId?: (input: StartInput) => string
   onStart?: (input: StartInput, config: SessionConfig) => void
@@ -90,6 +91,7 @@ export type FakeTransportOptions = {
   commands?: CommandOperations
   agents?: AgentListOperations
   goals?: NativeGoalOperations
+  backgroundTasks?: BackgroundTaskOperations
   naming?: NamingOperations
   health?: HealthOperations
 }
@@ -124,6 +126,7 @@ export class FakeTransport implements HarnessTransport {
   commands: CommandOperations | undefined
   agents: AgentListOperations | undefined
   goals: NativeGoalOperations | undefined
+  backgroundTasks: BackgroundTaskOperations | undefined
   naming: NamingOperations | undefined
   health: HealthOperations | undefined
   readonly steer: SteerOperations | undefined
@@ -139,6 +142,7 @@ export class FakeTransport implements HarnessTransport {
     this.commands = options.commands
     this.agents = options.agents
     this.goals = options.goals
+    this.backgroundTasks = options.backgroundTasks
     this.naming = options.naming
     this.health = options.health
     this.steer = options.steer ? { steer: options.steer } : undefined
@@ -179,7 +183,7 @@ export class FakeTransport implements HarnessTransport {
     try {
       for await (const event of (this.options.turn ?? ackTurn)(input)) {
         if (broker.signal.aborted && !this.options.drainsAfterAbort) return
-        yield { event }
+        yield "event" in event ? event : { event }
       }
     } finally {
       this.activeTurns--

@@ -18,6 +18,7 @@ describe("canonicalToolName", () => {
     expect(canonicalToolName("AskUserQuestion")).toBe("question")
     expect(canonicalToolName("local_shell")).toBe("bash")
     expect(canonicalToolName("read_file")).toBe("read")
+    expect(canonicalToolName("createPlan")).toBe("exitplanmode")
   })
 
   test("keeps multiedit off the edit renderer, which cannot read an edits[] array", () => {

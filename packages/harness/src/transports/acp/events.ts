@@ -112,6 +112,7 @@ export async function acpObserveSubagent(entry: AcpEntry | undefined, update: un
   if (!entry?.turnBroker || !supportsAcpSubagents(entry.peer.handshake)) return
   const child = acpSubagentObservation(update)
   if (!child) return
+  if (child.observation.status !== "running") await (entry.queue ?? entry.providerTurn?.queue)?.drained()
   const ref = await entry.turnBroker.observeSubagent(child.observation)
   if (ref) entry.turnBroker.associateChild(child.key, ref)
 }

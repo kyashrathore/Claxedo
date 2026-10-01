@@ -110,14 +110,14 @@ export function registerPlanModeCases(createClientPresentationProjection: Create
       expect(settled).toEqual({ tools: [], text: PLAN, todos: ["Inspect source", "Verify behavior"] })
     })
 
-    test("Cursor SDK: createPlan carries its markdown under input.plan but is named `createplan`, so it misses the plan row", () => {
+    test("Cursor SDK: createPlan is the plan row, with its markdown under input.plan", () => {
       const settled = settle(harnessRuntime("cursor", cursorSdkAdapter()), [
         { source: "cursor.sdk.message", payload: {
           type: "tool_call", agent_id: "agent-1", run_id: "run-1", call_id: "plan-1",
           name: "createPlan", status: "completed", args: { plan: PLAN },
         } },
       ])
-      expect(settled).toEqual({ tools: [{ tool: "createplan", plan: PLAN }], text: "", todos: [] })
+      expect(settled).toEqual({ tools: [{ tool: "exitplanmode", plan: PLAN }], text: "", todos: [] })
     })
 
     test("generic ACP: a plan is a checklist of entries, never markdown or a tool part", () => {

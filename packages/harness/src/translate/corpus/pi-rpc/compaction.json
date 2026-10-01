@@ -1,0 +1,452 @@
+{
+  "adapter": "pi-rpc",
+  "initialState": {
+    "blocks": {},
+    "finished": false,
+    "stopped": false,
+    "noted": []
+  },
+  "calls": [
+    {
+      "state": {
+        "blocks": {},
+        "finished": false,
+        "stopped": false,
+        "noted": []
+      },
+      "event": {
+        "source": "pi.rpc",
+        "method": "compaction_start",
+        "payload": {
+          "type": "compaction_start",
+          "reason": "manual"
+        }
+      },
+      "context": {
+        "harness": "pi",
+        "threadId": "native-pi"
+      },
+      "callbacks": [],
+      "output": {
+        "state": {
+          "blocks": {},
+          "finished": false,
+          "stopped": false,
+          "noted": []
+        },
+        "events": [
+          {
+            "type": "session-compaction",
+            "phase": "started",
+            "reason": "manual"
+          }
+        ]
+      }
+    },
+    {
+      "state": {
+        "blocks": {},
+        "finished": false,
+        "stopped": false,
+        "noted": []
+      },
+      "event": {
+        "source": "pi.rpc",
+        "method": "compaction_end",
+        "payload": {
+          "type": "compaction_end",
+          "reason": "manual",
+          "result": {
+            "summary": "TWO\n\n---\n\n**Turn Context (split turn):**\n\nTHREE",
+            "firstKeptEntryId": "3aa28460",
+            "tokensBefore": 2,
+            "estimatedTokensAfter": 4202,
+            "usage": {
+              "input": 2,
+              "output": 2,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "reasoning": 0,
+              "totalTokens": 4,
+              "cost": {
+                "input": 0.000004,
+                "output": 0.000016,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0.000019999999999999998
+              }
+            },
+            "details": {
+              "readFiles": [],
+              "modifiedFiles": []
+            }
+          },
+          "aborted": false,
+          "willRetry": false
+        }
+      },
+      "context": {
+        "harness": "pi",
+        "threadId": "native-pi"
+      },
+      "callbacks": [],
+      "output": {
+        "state": {
+          "blocks": {},
+          "finished": false,
+          "stopped": false,
+          "noted": []
+        },
+        "events": [
+          {
+            "type": "usage",
+            "contextSize": 0,
+            "contextUsed": 2,
+            "observation": {
+              "kind": "delta",
+              "tokens": {
+                "input": 2,
+                "output": 2,
+                "reasoning": 0,
+                "cache": {
+                  "read": 0,
+                  "write": 0
+                }
+              }
+            }
+          },
+          {
+            "type": "session-compaction",
+            "phase": "completed",
+            "reason": "manual",
+            "summary": "TWO\n\n---\n\n**Turn Context (split turn):**\n\nTHREE",
+            "metadata": {
+              "aborted": false
+            }
+          }
+        ]
+      }
+    },
+    {
+      "state": {
+        "blocks": {},
+        "finished": false,
+        "stopped": false,
+        "noted": []
+      },
+      "event": {
+        "source": "pi.rpc",
+        "method": "compaction_start",
+        "payload": {
+          "type": "compaction_start",
+          "reason": "manual"
+        }
+      },
+      "context": {
+        "harness": "pi",
+        "threadId": "native-pi"
+      },
+      "callbacks": [],
+      "output": {
+        "state": {
+          "blocks": {},
+          "finished": false,
+          "stopped": false,
+          "noted": []
+        },
+        "events": [
+          {
+            "type": "session-compaction",
+            "phase": "started",
+            "reason": "manual"
+          }
+        ]
+      }
+    },
+    {
+      "state": {
+        "blocks": {},
+        "finished": false,
+        "stopped": false,
+        "noted": []
+      },
+      "event": {
+        "source": "pi.rpc",
+        "method": "summarization_retry_scheduled",
+        "payload": {
+          "type": "summarization_retry_scheduled",
+          "attempt": 1,
+          "maxAttempts": 3,
+          "delayMs": 2000,
+          "errorMessage": "OpenAI API error (503): {\"type\":\"invalid_request_error\",\"message\":\"busy\"}"
+        }
+      },
+      "context": {
+        "harness": "pi",
+        "threadId": "native-pi"
+      },
+      "callbacks": [],
+      "output": {
+        "state": {
+          "blocks": {},
+          "finished": false,
+          "stopped": false,
+          "noted": []
+        },
+        "events": [
+          {
+            "type": "session-retry",
+            "message": "OpenAI API error (503): {\"type\":\"invalid_request_error\",\"message\":\"busy\"}",
+            "attempt": 1,
+            "delayMs": 2000
+          }
+        ]
+      }
+    },
+    {
+      "state": {
+        "blocks": {},
+        "finished": false,
+        "stopped": false,
+        "noted": []
+      },
+      "event": {
+        "source": "pi.rpc",
+        "method": "summarization_retry_attempt_start",
+        "payload": {
+          "type": "summarization_retry_attempt_start",
+          "source": "compaction",
+          "reason": "manual"
+        }
+      },
+      "context": {
+        "harness": "pi",
+        "threadId": "native-pi"
+      },
+      "callbacks": [],
+      "output": {
+        "state": {
+          "blocks": {},
+          "finished": false,
+          "stopped": false,
+          "noted": []
+        },
+        "events": []
+      }
+    },
+    {
+      "state": {
+        "blocks": {},
+        "finished": false,
+        "stopped": false,
+        "noted": []
+      },
+      "event": {
+        "source": "pi.rpc",
+        "method": "summarization_retry_scheduled",
+        "payload": {
+          "type": "summarization_retry_scheduled",
+          "attempt": 2,
+          "maxAttempts": 3,
+          "delayMs": 4000,
+          "errorMessage": "OpenAI API error (503): {\"type\":\"invalid_request_error\",\"message\":\"busy\"}"
+        }
+      },
+      "context": {
+        "harness": "pi",
+        "threadId": "native-pi"
+      },
+      "callbacks": [],
+      "output": {
+        "state": {
+          "blocks": {},
+          "finished": false,
+          "stopped": false,
+          "noted": []
+        },
+        "events": [
+          {
+            "type": "session-retry",
+            "message": "OpenAI API error (503): {\"type\":\"invalid_request_error\",\"message\":\"busy\"}",
+            "attempt": 2,
+            "delayMs": 4000
+          }
+        ]
+      }
+    },
+    {
+      "state": {
+        "blocks": {},
+        "finished": false,
+        "stopped": false,
+        "noted": []
+      },
+      "event": {
+        "source": "pi.rpc",
+        "method": "summarization_retry_attempt_start",
+        "payload": {
+          "type": "summarization_retry_attempt_start",
+          "source": "compaction",
+          "reason": "manual"
+        }
+      },
+      "context": {
+        "harness": "pi",
+        "threadId": "native-pi"
+      },
+      "callbacks": [],
+      "output": {
+        "state": {
+          "blocks": {},
+          "finished": false,
+          "stopped": false,
+          "noted": []
+        },
+        "events": []
+      }
+    },
+    {
+      "state": {
+        "blocks": {},
+        "finished": false,
+        "stopped": false,
+        "noted": []
+      },
+      "event": {
+        "source": "pi.rpc",
+        "method": "summarization_retry_scheduled",
+        "payload": {
+          "type": "summarization_retry_scheduled",
+          "attempt": 3,
+          "maxAttempts": 3,
+          "delayMs": 8000,
+          "errorMessage": "OpenAI API error (503): {\"type\":\"invalid_request_error\",\"message\":\"busy\"}"
+        }
+      },
+      "context": {
+        "harness": "pi",
+        "threadId": "native-pi"
+      },
+      "callbacks": [],
+      "output": {
+        "state": {
+          "blocks": {},
+          "finished": false,
+          "stopped": false,
+          "noted": []
+        },
+        "events": [
+          {
+            "type": "session-retry",
+            "message": "OpenAI API error (503): {\"type\":\"invalid_request_error\",\"message\":\"busy\"}",
+            "attempt": 3,
+            "delayMs": 8000
+          }
+        ]
+      }
+    },
+    {
+      "state": {
+        "blocks": {},
+        "finished": false,
+        "stopped": false,
+        "noted": []
+      },
+      "event": {
+        "source": "pi.rpc",
+        "method": "summarization_retry_attempt_start",
+        "payload": {
+          "type": "summarization_retry_attempt_start",
+          "source": "compaction",
+          "reason": "manual"
+        }
+      },
+      "context": {
+        "harness": "pi",
+        "threadId": "native-pi"
+      },
+      "callbacks": [],
+      "output": {
+        "state": {
+          "blocks": {},
+          "finished": false,
+          "stopped": false,
+          "noted": []
+        },
+        "events": []
+      }
+    },
+    {
+      "state": {
+        "blocks": {},
+        "finished": false,
+        "stopped": false,
+        "noted": []
+      },
+      "event": {
+        "source": "pi.rpc",
+        "method": "summarization_retry_finished",
+        "payload": {
+          "type": "summarization_retry_finished"
+        }
+      },
+      "context": {
+        "harness": "pi",
+        "threadId": "native-pi"
+      },
+      "callbacks": [],
+      "output": {
+        "state": {
+          "blocks": {},
+          "finished": false,
+          "stopped": false,
+          "noted": []
+        },
+        "events": []
+      }
+    },
+    {
+      "state": {
+        "blocks": {},
+        "finished": false,
+        "stopped": false,
+        "noted": []
+      },
+      "event": {
+        "source": "pi.rpc",
+        "method": "compaction_end",
+        "payload": {
+          "type": "compaction_end",
+          "reason": "manual",
+          "aborted": false,
+          "willRetry": false,
+          "errorMessage": "Compaction failed: Turn prefix summarization failed: OpenAI API error (503): {\"type\":\"invalid_request_error\",\"message\":\"busy\"}"
+        }
+      },
+      "context": {
+        "harness": "pi",
+        "threadId": "native-pi"
+      },
+      "callbacks": [],
+      "output": {
+        "state": {
+          "blocks": {},
+          "finished": false,
+          "stopped": false,
+          "noted": []
+        },
+        "events": [
+          {
+            "type": "session-compaction",
+            "phase": "completed",
+            "reason": "manual",
+            "metadata": {
+              "aborted": false,
+              "error": "Compaction failed: Turn prefix summarization failed: OpenAI API error (503): {\"type\":\"invalid_request_error\",\"message\":\"busy\"}"
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

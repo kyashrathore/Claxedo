@@ -16,11 +16,11 @@ import {
   submittedOperation,
   tempStoreRoot,
   tick,
-  transportHandle,
   until,
   type HostFixture,
   type TurnControl,
 } from "../test-support/host-fixture"
+import { transportHandle } from "../test-support/host-composition"
 import { createWorkspaceTransports, type WorkspaceTransportsInput } from "../workspace/transports"
 import type { RuntimeConnectionDescriptor } from "../routes/config"
 import { FakeTransport } from "../test-support/fake-transport"
@@ -31,6 +31,13 @@ import { createRuntimeRecovery } from "./recovery"
 import { createTurnAdmissions } from "./turn-admission"
 
 const BUDGETS = { ackMs: 40, providerQueryMs: 40, gracefulCancelMs: 40, reconcileMs: 40 }
+/**
+ * For a harness the test answers within the deadline. The 40 ms cancellation
+ * deadline is wall-clock and runs across the test's own polling waits, so a
+ * scheduler stall on a loaded machine lands the answer after it and turns the
+ * attempt into a `cancellation_timeout` the scenario never meant.
+ */
+const ANSWERED_IN_TIME = { ...BUDGETS, providerQueryMs: 5_000, gracefulCancelMs: 5_000 }
 
 const opened: Array<{ store: RuntimeStore; root: string }> = []
 
@@ -65,7 +72,7 @@ type Cancellation = {
   settle: (outcome: AdapterCancelOutcome) => void
 }
 
-function fixture(options: { store?: RuntimeStore; cancels?: Cancellation[]; cancelThrows?: string; now?: () => number } = {}) {
+function fixture(options: { store?: RuntimeStore; cancels?: Cancellation[]; cancelThrows?: string; now?: () => number; budgets?: typeof BUDGETS } = {}) {
   const turns: TurnControl[] = []
   const cancels = options.cancels ?? []
   const transport = new FakeTransport({
@@ -85,7 +92,7 @@ function fixture(options: { store?: RuntimeStore; cancels?: Cancellation[]; canc
   const host = createHostFixture({
     ...(options.store ? { store: options.store } : {}),
     transports: { pi: transport },
-    recovery: { budgets: BUDGETS, ...(options.now ? { now: options.now } : {}) },
+    recovery: { budgets: options.budgets ?? BUDGETS, ...(options.now ? { now: options.now } : {}) },
   })
   return { runtime: host.runtime, store: host.store, turns, cancels, transport, dispose: host.dispose }
 }
@@ -155,7 +162,7 @@ describe("cancelling a turn across an asynchronous boundary", () => {
   })
 
   test("a harness that ends the turn's stream before answering the cancellation reports the turn saved", async () => {
-    const { runtime, store, turns, cancels, dispose } = fixture()
+    const { runtime, store, turns, cancels, dispose } = fixture({ budgets: ANSWERED_IN_TIME })
     const sessionId = await openSession(runtime, "ses_stream_first")
     const started = await runtime.turns.start({ sessionId, messageId: "msg_a", text: "first", origin })
 
@@ -936,7 +943,7 @@ describe("the lease a finalization must carry", () => {
 
 describe("a containment attempt that never became an operation", () => {
   test("is retained against the session, and finishing that turn does not clear it", async () => {
-    const { runtime, turns, cancels, dispose } = fixture()
+    const { runtime, turns, cancels, dispose } = fixture({ budgets: ANSWERED_IN_TIME })
     const sessionId = await openSession(runtime, "ses_containment")
     const started = await runtime.turns.start({ sessionId, messageId: "msg_a", text: "first", origin })
 

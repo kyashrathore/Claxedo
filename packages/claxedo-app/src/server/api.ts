@@ -80,6 +80,7 @@ import type {
   TranscriptPage,
   TranscriptPart,
 } from "./types"
+import type { BackgroundTaskStop } from "./status-types"
 import type { UsageRequest, UsageSummary } from "./usage-types"
 import type { LivePlugin } from "./live-plugin-types"
 
@@ -92,6 +93,7 @@ export type SessionsApi = {
   readonly create: (input: SessionCreateInput) => Promise<SessionRow>
   readonly prompt: (ref: SessionRef, input: PromptInput) => Promise<PromptDelivery>
   readonly stop: (ref: SessionRef) => Promise<void>
+  readonly stopBackgroundTask: (ref: SessionRef, toolCallId: string) => Promise<BackgroundTaskStop>
   readonly reply: (ref: SessionRef, requestId: RequestId, reply: AgentRequestReply) => Promise<void>
   readonly rename: (ref: SessionRef, title: string) => Promise<void>
   readonly archive: (ref: SessionRef, archived: boolean) => Promise<void>
@@ -230,6 +232,7 @@ export type ServerQueries = {
   readonly harnesses: {
     readonly options: (placementId: PlacementId, harness: string) => FetchQuery<HarnessOptions>
     readonly commands: (placementId: PlacementId, harness: string) => FetchQuery<readonly RuntimeCommand[]>
+    readonly stopsBackgroundTasks: (ref: SessionRef) => FetchQuery<boolean>
   }
   readonly files: {
     readonly tree: (placementId: PlacementId, path: string) => FetchQuery<readonly FileNode[]>
