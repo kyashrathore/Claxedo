@@ -1,7 +1,7 @@
 import { Database } from "bun:sqlite"
 import { existsSync, readFileSync, readdirSync, renameSync, unlinkSync, writeFileSync } from "node:fs"
 import path from "node:path"
-import { CONTROL_PLANE_BASELINE, baselineStatements } from "./control-plane-schema"
+import { CONTROL_PLANE_BASELINE, CONTROL_PLANE_MIGRATIONS_DIRECTORY, baselineStatements } from "./control-plane-schema"
 
 type SchemaObject = { type: string; name: string; tbl_name: string; sql: string }
 
@@ -97,7 +97,7 @@ if (import.meta.main) {
   if (rest.length && (rest.length !== 2 || rest[0] !== "--directory" || !rest[1])) {
     throw new Error("Usage: bun run scripts/control-plane-baseline.ts [--check] [--directory <migrations directory>]")
   }
-  const directory = path.resolve(rest[1] ?? path.join(import.meta.dirname, "../migrations/control-plane"))
+  const directory = path.resolve(rest[1] ?? CONTROL_PLANE_MIGRATIONS_DIRECTORY)
   if (check) {
     checkControlPlaneBaseline(directory)
     console.log(`${CONTROL_PLANE_BASELINE} is current`)

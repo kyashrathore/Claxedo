@@ -1,6 +1,6 @@
 import { beforeEach, expect, test, vi } from "vitest"
-import { readFileSync } from "node:fs"
 import Database from "better-sqlite3"
+import { currentControlPlaneBaseline } from "../control-plane-schema"
 import { prepareD1Databases } from "./d1-databases"
 
 const wrangler = vi.hoisted(() => ({ run: vi.fn() }))
@@ -8,7 +8,7 @@ vi.mock("./wrangler-cli", () => ({ runWrangler: wrangler.run }))
 const input = { configArgs: ["--config", "staging.toml"], apiOrigin: "https://api.test", betterAuthSecret: "a".repeat(32), introspectionSecret: "b".repeat(32) }
 beforeEach(() => { wrangler.run.mockReset() })
 
-const BASELINE = readFileSync(new URL("../../migrations/control-plane/0001_baseline.sql", import.meta.url), "utf8")
+const BASELINE = currentControlPlaneBaseline()
 
 // The table `wrangler d1 migrations apply` creates (wrangler 4.114, getCreateMigrationsTableQuery).
 const WRANGLER_MIGRATIONS_TABLE = `CREATE TABLE IF NOT EXISTS "d1_migrations"(

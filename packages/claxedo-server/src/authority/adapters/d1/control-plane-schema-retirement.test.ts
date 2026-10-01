@@ -1,16 +1,12 @@
-import { readdirSync, readFileSync } from "node:fs"
 import Database from "better-sqlite3"
 import { describe, expect, test } from "vitest"
-
-const migrations = new URL("../../../../migrations/control-plane/", import.meta.url)
+import { currentControlPlaneBaseline } from "../../../../scripts/control-plane-schema"
 
 describe("the shipped control-plane schema", () => {
   test("has no account agent settings table and retains the task start policy columns", () => {
     const database = new Database(":memory:")
     try {
-      for (const name of readdirSync(migrations).filter((name) => name.endsWith(".sql")).sort()) {
-        database.exec(readFileSync(new URL(name, migrations), "utf8"))
-      }
+      database.exec(currentControlPlaneBaseline())
       const settingsTables = () => database.prepare(
         "select name from sqlite_master where type = 'table' and name like '%_agent_settings'",
       ).all()
