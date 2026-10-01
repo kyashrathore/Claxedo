@@ -6,7 +6,7 @@ type ProjectorInput = Parameters<typeof createTurnEventProjector>[0]
 /** A turn projector over a journal the test owns, with the defaults every projection test shares. */
 export function testTurnProjector(input: Partial<Omit<ProjectorInput, "store">> & {
   appendEvent?: (event: { sessionId: string; agentSessionId?: string; payload: AgentPresentationEvent }) => { payload: AgentPresentationEvent }
-}) {
+}): ReturnType<typeof createTurnEventProjector> {
   const { appendEvent, ...options } = input
   return createTurnEventProjector({
     store: { appendEvent: appendEvent ?? ((event) => ({ payload: event.payload })) },
