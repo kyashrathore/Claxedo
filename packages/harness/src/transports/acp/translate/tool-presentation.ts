@@ -1,5 +1,4 @@
-import type { ToolDisplay, ToolIntent } from "@claxedo/agent-runtime-contract"
-import { asText as str } from "@claxedo/agent-runtime-contract"
+import { asText as str, type ToolDisplay, type ToolIntent } from "@claxedo/agent-runtime-contract"
 import type { ToolState, Spot } from "./state"
 import { toolFacts } from "./tool-facts"
 
