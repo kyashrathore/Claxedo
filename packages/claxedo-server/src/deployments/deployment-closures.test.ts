@@ -40,12 +40,15 @@ const ENTRIES = [
   // (`documents/relay-http.ts`). The hosted runtime delivery reads a
   // workspace's recorded backing (`workspace/cloud-root-backing.ts`) before it
   // provisions a sandbox, which the Agent Plugins entries already carried.
-  { name: "worker", entry: BETTER_AUTH_D1_ENTRY, modules: 117, packages: 19 },
+  // Every entry carries the D1 workspace authority's refusal type and owner
+  // identity helpers as modules of their own (`d1/workspace-authority-error.ts`,
+  // `d1/owner-identity.ts`).
+  { name: "worker", entry: BETTER_AUTH_D1_ENTRY, modules: 119, packages: 19 },
   // Both Agent Plugins entries carry the plugin-backend platform
   // (`src/plugin-backends/`): seven modules, `@claxedo/plugin-api` for the
   // manifest, and `cloudflare:workers` for the supervisor and its entrypoints.
-  { name: "worker-agent-plugins", entry: BETTER_AUTH_D1_AGENT_PLUGINS_ENTRY, modules: 166, packages: 23 },
-  { name: "worker-agent-plugins-full-hosted", entry: BETTER_AUTH_D1_AGENT_PLUGINS_FULL_HOSTED_ENTRY, modules: 171, packages: 23 },
+  { name: "worker-agent-plugins", entry: BETTER_AUTH_D1_AGENT_PLUGINS_ENTRY, modules: 168, packages: 23 },
+  { name: "worker-agent-plugins-full-hosted", entry: BETTER_AUTH_D1_AGENT_PLUGINS_FULL_HOSTED_ENTRY, modules: 173, packages: 23 },
 ] as const
 
 function closure(entry: string, options: { runtimeOnly?: boolean } = {}) {

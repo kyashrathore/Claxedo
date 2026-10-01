@@ -6,7 +6,7 @@ import { unstable_getMiniflareWorkerOptions } from "wrangler"
 import { betterAuthDeploymentConfigurationId } from "../../src/platform/auth/better-auth-configuration"
 import { provisionBetterAuthNativeClients } from "../../src/platform/auth/better-auth-native-clients"
 import { generateCanonicalOwnerClaim, ownerClaimMutationSql } from "../deploy/claim-owner"
-import { userDeployedOwnerBootstrapClaimHash, userDeployedOwnerIdentityHash } from "../../src/authority/adapters/d1/workspace-authority"
+import { userDeployedOwnerBootstrapClaimHash, userDeployedOwnerIdentityHash } from "../../src/authority/adapters/d1/owner-identity"
 import { recordedEmailOutbox } from "../../src/test-support/recorded-email"
 
 type Input = {

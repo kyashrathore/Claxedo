@@ -1,7 +1,5 @@
-import { publicApiErrorShape } from "@claxedo/helpers/api-error"
 import type { D1Database, D1PreparedStatement } from "@cloudflare/workers-types"
 import { ControlPlaneAuthError, type SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
-import { AUTH_ADAPTERS } from "@claxedo/account-contract/auth"
 import {
   type ApplicationIdentityResolution,
   type AuthIdentity,
@@ -14,7 +12,6 @@ import type {
 } from "@claxedo/server-core/platform/auth/authority"
 import type { PrivateSessionRuntimePrincipal } from "@claxedo/server-core/platform/auth/private-session-authority"
 import { canonicalRepositoryKey } from "@claxedo/server-core/authority/repository-key"
-import { ClaxedoError } from "@claxedo/server-core/platform/errors/base"
 import { normalizeStoredDirectory } from "@claxedo/server-core/platform/auth/host-connect-contract"
 import { HOST_SERVING_WORKSPACE_SQL } from "./host-access-authority"
 import { batchUnder, may, mayGuard, maySql, readProjectRole, roleRank, type AuthorizationPrincipal, type BoundSql } from "./authorization"
@@ -22,6 +19,8 @@ import { ownerMembershipStatements, requireHuman, requireText, type D1AccessCont
 import { prepareInvitationAdmission } from "./org-invitation-authority"
 import { asOrgId, type OrgId } from "@claxedo/server-core/platform/auth/branded-id"
 import { d1BatchAssertionFailed } from "../../../platform/db/d1-constraint"
+import { D1WorkspaceAuthorityError } from "./workspace-authority-error"
+import { requireBootstrapClaim, sameIdentity, userDeployedOwnerBootstrapClaimHash, userDeployedOwnerIdentityHash, validateIdentity } from "./owner-identity"
 
 const KNOWN_HOME_REGIONS = new Set(["apac-south", "apac-east", "eu-west", "us-east", "us-west"])
 
@@ -59,8 +58,6 @@ export type D1AuthorityProductPolicy =
       ownerIdentity?: never
       ownerBootstrap: "one-use-claim"
     }
-
-export const USER_DEPLOYED_OWNER_CLAIM_HEADER = "x-claxedo-bootstrap-owner-claim"
 
 /** The display identity a signed caller's sign-in provider holds for them. */
 export type D1ActorProfile = (auth: SignedControlPlaneAuth) => Promise<{ name?: string; image?: string } | undefined>
@@ -132,23 +129,6 @@ type WorkspaceAccessRow = {
   remote_directory: string | null
   host_enrollment_id: string | null
   deleted_at: number | null
-}
-
-export type D1WorkspaceAuthorityErrorCode =
-  | "invalid_input"
-  | "identity_conflict"
-  | "organization_policy_denied"
-  | "resource_conflict"
-
-/**
- * Carries its HTTP status like every other authority refusal
- * (`D1HostAccessAuthorityError`), so a route that hands the caller a
- * conflict answers 409 rather than reporting a fault it did not have.
- */
-export class D1WorkspaceAuthorityError extends ClaxedoError<D1WorkspaceAuthorityErrorCode> {
-  constructor(code: D1WorkspaceAuthorityErrorCode, message: string) {
-    super({ code, message, ...publicApiErrorShape(code) })
-  }
 }
 
 /**
@@ -1178,47 +1158,6 @@ function requireActor(row: IdentityRow) {
     throw new D1WorkspaceAuthorityError("identity_conflict", "Canonical human actor is unavailable")
   }
   return row.actor_id
-}
-
-function validateIdentity(identity: AuthIdentity) {
-  if (!AUTH_ADAPTERS.includes(identity.adapter)) {
-    throw new D1WorkspaceAuthorityError("invalid_input", "Unknown authentication adapter")
-  }
-  requireText(identity.issuer, "identity.issuer")
-  requireText(identity.subject, "identity.subject")
-}
-
-function sameIdentity(a: AuthIdentity, b: AuthIdentity) {
-  return a.adapter === b.adapter && a.issuer === b.issuer && a.subject === b.subject
-}
-
-function requireBootstrapClaim(value: string) {
-  if (value.trim() !== value || !/^[A-Za-z0-9_-]{43,128}$/.test(value)) {
-    throw new D1WorkspaceAuthorityError(
-      "invalid_input",
-      "Bootstrap owner claim must be a canonical 256-bit-or-stronger base64url value",
-    )
-  }
-  return value
-}
-
-export async function userDeployedOwnerBootstrapClaimHash(claim: string) {
-  const canonical = requireBootstrapClaim(claim)
-  const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(canonical)))
-  return `sha256:${Array.from(digest, (byte) => byte.toString(16).padStart(2, "0")).join("")}`
-}
-
-/** Stable hash recorded by the release admission and bootstrap claim rows. */
-export async function userDeployedOwnerIdentityHash(identity: AuthIdentity) {
-  validateIdentity(identity)
-  const canonical = JSON.stringify([
-    "claxedo:user-deployed-owner:v1",
-    identity.adapter,
-    identity.issuer,
-    identity.subject,
-  ])
-  const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(canonical)))
-  return `sha256:${Array.from(digest, (byte) => byte.toString(16).padStart(2, "0")).join("")}`
 }
 
 function validateHomeRegion(value?: string) {

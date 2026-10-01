@@ -66,7 +66,10 @@ export const serverWorkerd: Policy = {
   // `documents/relay-http.ts`). The hosted runtime delivery asks a workspace's
   // recorded backing before it provisions a sandbox for it
   // (`workspace/cloud-root-backing.ts`), so a machine-placed workspace gets none.
-  ceilings: { modules: 117, packages: 19 },
+  // The D1 workspace authority's refusal type and its owner identity and
+  // bootstrap-claim helpers are modules of their own
+  // (`authority/adapters/d1/workspace-authority-error.ts`, `owner-identity.ts`).
+  ceilings: { modules: 119, packages: 19 },
 
   emitted: {
     file: "packages/claxedo-server/.artifacts/u8-package-split/manifests/server-workerd.json",

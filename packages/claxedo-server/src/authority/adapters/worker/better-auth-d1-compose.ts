@@ -9,7 +9,8 @@ import { browserAuthHttpSecurity } from "@claxedo/server-core/platform/http/brow
 
 import type { D1AccessContext } from "../d1/access-context"
 import { createD1CoreAuthority, type D1CoreAuthorityBoundary } from "../d1/core-authority"
-import { D1WorkspaceAuthority, USER_DEPLOYED_OWNER_CLAIM_HEADER, type D1ActorProfile, type D1AuthorityProductPolicy } from "../d1/workspace-authority"
+import { D1WorkspaceAuthority, type D1ActorProfile, type D1AuthorityProductPolicy } from "../d1/workspace-authority"
+import { USER_DEPLOYED_OWNER_CLAIM_HEADER } from "../d1/owner-identity"
 import { createD1HostTunnelTargetResolver } from "../d1/host-tunnel-relay-target"
 import { hostedCredentialsEnabled, hostedOrgCredentials } from "../../../credentials/worker/index"
 import { d1UserAgentConfigRepository } from "../d1/user-agent-config"
