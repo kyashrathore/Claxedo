@@ -93,6 +93,7 @@ export function mountWorkspaceCore(
     sessionAccessPolicy?: SessionAccessPolicy
     /** Resolved per launch, not captured: one process serves many workspaces. */
     launchOwnership?: () => LaunchOwnershipStore
+    renewalIntervalMs?: number
   },
 ): MountedWorkspaceEvents {
   assertWorkspaceRuntimeExposure({ exposure: options.exposure, env: process.env })
