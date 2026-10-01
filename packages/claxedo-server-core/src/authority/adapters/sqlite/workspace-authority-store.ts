@@ -96,17 +96,6 @@ CREATE TABLE session_history (
 );
 CREATE INDEX session_history_by_workspace_updated
   ON session_history (workspace_id, updated_at DESC);
-CREATE TABLE session_participants (
-  session_id TEXT NOT NULL,
-  workspace_id TEXT NOT NULL,
-  participant_actor_id TEXT NOT NULL,
-  added_by_actor_id TEXT NOT NULL,
-  created_at INTEGER NOT NULL,
-  revoked_at INTEGER,
-  PRIMARY KEY (session_id, participant_actor_id)
-);
-CREATE INDEX session_participants_by_actor
-  ON session_participants (participant_actor_id, revoked_at);
 CREATE TABLE session_messages (
   session_id TEXT NOT NULL,
   workspace_id TEXT NOT NULL,
@@ -394,16 +383,6 @@ CREATE TABLE IF NOT EXISTS session_messages (
   updated_at INTEGER NOT NULL,
   PRIMARY KEY (session_id, message_id)
 );
-CREATE TABLE IF NOT EXISTS session_participants (
-  session_id TEXT NOT NULL,
-  workspace_id TEXT NOT NULL,
-  actor_token_identifier TEXT NOT NULL,
-  added_by_token_identifier TEXT NOT NULL,
-  created_at INTEGER NOT NULL,
-  revoked_at INTEGER,
-  PRIMARY KEY (session_id, actor_token_identifier)
-);
-CREATE INDEX IF NOT EXISTS session_participants_by_actor ON session_participants (actor_token_identifier);
 -- Nested teams under an org (D17) and private-session share grants (D18).
 -- Evaluate-time membership joins mirror the authority; methods land with authority ports.
 CREATE TABLE IF NOT EXISTS teams (
@@ -473,14 +452,13 @@ function migratePrivateSessionSchema(db: SqliteAuthorityDb) {
     if (!hasTable(db, "session_registration_operations")) {
       throw new Error("private_session_registration_schema_missing")
     }
-    ensureSessionTurnSchema(db)
+    ensurePrivateSessionRuntimeSchema(db)
     return
   }
 
   for (const archive of [
     "legacy_session_history_pre_private_sessions",
     "legacy_session_messages_pre_private_sessions",
-    "legacy_session_participants_pre_private_sessions",
   ]) {
     if (hasTable(db, archive)) throw new Error(`private_session_archive_collision:${archive}`)
   }
@@ -491,17 +469,20 @@ function migratePrivateSessionSchema(db: SqliteAuthorityDb) {
   db.exec(`
     DROP INDEX IF EXISTS session_history_by_creator;
     DROP INDEX IF EXISTS session_history_by_workspace_creator;
-    DROP INDEX IF EXISTS session_participants_by_actor;
     ALTER TABLE session_history RENAME TO legacy_session_history_pre_private_sessions;
     ALTER TABLE session_messages RENAME TO legacy_session_messages_pre_private_sessions;
-    ALTER TABLE session_participants RENAME TO legacy_session_participants_pre_private_sessions;
     ${CANONICAL_PRIVATE_SESSIONS_SCHEMA}
   `)
-  ensureSessionTurnSchema(db)
+  ensurePrivateSessionRuntimeSchema(db)
 }
 
-function ensureSessionTurnSchema(db: SqliteAuthorityDb) {
+function ensurePrivateSessionRuntimeSchema(db: SqliteAuthorityDb) {
   db.exec(`
+    CREATE TABLE IF NOT EXISTS session_agent_assignments (
+      session_id TEXT NOT NULL REFERENCES session_history (session_id) ON DELETE CASCADE,
+      agent_actor_id TEXT NOT NULL REFERENCES users (token_identifier) ON DELETE CASCADE,
+      PRIMARY KEY (session_id, agent_actor_id)
+    );
     CREATE TABLE IF NOT EXISTS session_turn_leases (
       session_id TEXT PRIMARY KEY,
       workspace_id TEXT NOT NULL,

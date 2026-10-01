@@ -55,7 +55,6 @@ export type HostedOperationName =
   | "session.shares.list"
   | "session.shares.grant"
   | "session.shares.revoke"
-  | "session.participants.add"
   | "org.list"
   | "org.create"
   | "org.teams.list"

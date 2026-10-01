@@ -303,7 +303,6 @@ describe("resource-closed hosted core app", () => {
       "/api/control/teams/:teamId/members",
       "/api/control/sessions/:sessionId/messages",
       "/api/control/sessions/:sessionId/outline",
-      "/api/control/sessions/:sessionId/participants",
       "/api/control/sessions/:sessionId/shares",
       "/api/control/user-deployed/identity-admissions",
       "/api/control/session-registrations/reserve",
@@ -313,6 +312,7 @@ describe("resource-closed hosted core app", () => {
     ]) {
       expect(paths).toContain(expected)
     }
+    expect(paths).not.toContain("/api/control/sessions/:sessionId/participants")
     expect(paths.filter((route) =>
       route.startsWith("/documents") ||
       route.startsWith("/api/billing")

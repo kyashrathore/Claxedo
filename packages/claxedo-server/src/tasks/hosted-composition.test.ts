@@ -384,10 +384,8 @@ describe("hosted Tasks composition", () => {
   })
 
   test("hands the session bridge the canonical person the caller's actor was minted from", async () => {
-    // The hosted session authority records a creator and grants read access
-    // only to that creator, a participant or a share, so a session reserved as
-    // the control plane's own service actor would be invisible to the person
-    // who started it.
+    // A service actor without the workspace owner's user cannot reserve its
+    // sessions. Tasks ownerId is a user id; the reservation needs an actor id.
     const app = await hostedApp()
     await command(app, "alice", "request-preset-1", PRESET)
     const created = await command(app, "alice", "request-task-1", TASK)

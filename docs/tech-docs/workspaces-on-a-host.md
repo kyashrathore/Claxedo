@@ -568,8 +568,9 @@ drops the share branch. No rank on the organization or the project admits
 anyone, and a share reaches its session only while the owner still stands.
 The SQLite store (`hasPrivateAccess` in
 `packages/claxedo-server-core/src/authority/adapters/sqlite/private-session-authority.ts`)
-answers the same, and admits an agent by its creator or participant row; a
-person's creator or participant row admits nothing.
+answers the same, and admits an agent by its creator attribution or internal
+`session_agent_assignments` row. These assignments have no public grant API
+and never admit a human. A person's creator attribution admits nothing.
 
 **F.3 Frame address** — every frame a runtime publishes names its own
 filesystem directory: this machine's path, another machine's path, or the

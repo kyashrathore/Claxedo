@@ -380,7 +380,7 @@ export function createTasksAuthorization(input: {
       const grant = input.principals.capabilityOf(actor)
       if (grant) {
         // Project membership is not session access: a shared task can link a
-        // session of another participant's that the workspace's owner may not
+        // session on another person's workspace that the workspace's owner may not
         // open. The scope rule refuses a link into another project without
         // asking, and the rest is the session authority's answer for the owner
         // the grant resolved to — asked by canonical actor because a grant

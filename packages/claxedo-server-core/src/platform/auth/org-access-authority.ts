@@ -29,7 +29,6 @@ export type OrgMemberRemoval = {
   team_memberships_revoked: number
   project_memberships_revoked: number
   session_shares_revoked: number
-  session_participations_revoked: number
   runtime_tokens_revoked: number
 }
 

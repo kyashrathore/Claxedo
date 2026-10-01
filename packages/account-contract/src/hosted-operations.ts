@@ -76,13 +76,12 @@ function withArrays(...fields: string[]) {
 }
 
 function sessionPeople(raw: unknown): DecodeResult<Record<string, unknown>> {
-  const shape = withArrays("grants", "participants", "teams")(raw)
+  const shape = withArrays("grants", "teams")(raw)
   if (!shape.ok) return shape
   if (typeof shape.value.can_manage_shares !== "boolean") {
     return { ok: false, reason: 'expected a boolean "can_manage_shares"' }
   }
   const teams = asArray(shape.value.teams)
-  const participants = asArray(shape.value.participants)
   const grants = asArray(shape.value.grants)
   for (const [index, team] of teams.entries()) {
     const row = object(team)
@@ -92,12 +91,6 @@ function sessionPeople(raw: unknown): DecodeResult<Record<string, unknown>> {
       if (typeof row.value[field] !== expected) {
         return { ok: false, reason: `expected teams[${index}].${field} to be a ${expected}` }
       }
-    }
-  }
-  for (const [index, participant] of participants.entries()) {
-    const row = object(participant)
-    if (!row.ok || typeof row.value.user_id !== "string") {
-      return { ok: false, reason: `expected participants[${index}].user_id to be a string` }
     }
   }
   for (const [index, grant] of grants.entries()) {
@@ -270,11 +263,9 @@ export const HOSTED_OPERATIONS = {
   "session.projection.repair": { safe: false, decode: object },
   // `GET /api/cp/events`. Stream IPC, not unary `run`.
   "controlPlane.events": { safe: true, decode: object },
-  // Private-session People capability, grants, participants, and session-org teams.
   "session.shares.list": { safe: true, decode: sessionPeople },
   "session.shares.grant": { safe: false, decode: object },
   "session.shares.revoke": { safe: false, decode: object },
-  "session.participants.add": { safe: false, decode: object },
   // Org / team settings (Settings + rail switcher). Desktop signed mode goes
   // through AccountPort; browser keeps authFetch in org-team-api.
   "org.list": { safe: true, decode: array },

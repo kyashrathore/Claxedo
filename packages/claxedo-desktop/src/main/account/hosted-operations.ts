@@ -295,8 +295,7 @@ export const HOSTED_OPERATIONS = {
     path: "/api/claxedo/host/enrollments/:enrollmentId/display-name",
     body: ["displayName"],
   },
-  // Session people (private share grants + participants). Hosted control plane
-  // only — the desktop local sidecar deliberately does not mount these routes.
+  // The desktop local sidecar does not mount session sharing routes.
   "session.shares.list": {
     method: "GET",
     path: "/api/control/sessions/:sessionId/shares",
@@ -323,11 +322,6 @@ export const HOSTED_OPERATIONS = {
       "grantedToTokenIdentifier",
       "grantedToTeamPublicId",
     ],
-  },
-  "session.participants.add": {
-    method: "POST",
-    path: "/api/control/sessions/:sessionId/participants",
-    body: ["workspaceId", "participantActorId"],
   },
   "org.list": { method: "GET", path: "/api/control/orgs" },
   "org.create": {

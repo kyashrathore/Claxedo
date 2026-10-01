@@ -7,27 +7,33 @@ import {
 } from "./hosted-operations"
 
 describe("decodeHostedResult", () => {
+  test("exposes no participant grant operation", () => {
+    expect(hostedOperationNames()).not.toContain("session.participants.add")
+    expect(() => decodeHostedResult("session.participants.add" as never, {})).toThrow(/no hosted operation/)
+  })
+
+  test("reads session shares without a participant collection", () => {
+    const shares = { can_manage_shares: true, grants: [], teams: [] }
+    expect(decodeHostedResult("session.shares.list", shares)).toEqual(shares)
+  })
+
   test("requires the complete session People capability envelope", () => {
     expect(decodeHostedResult("session.shares.list", {
       can_manage_shares: true,
       grants: [],
-      participants: [],
       teams: [{ team_id: "team_1", name: "Everyone", is_shared: false }],
     })).toEqual({
       can_manage_shares: true,
       grants: [],
-      participants: [],
       teams: [{ team_id: "team_1", name: "Everyone", is_shared: false }],
     })
     expect(() => decodeHostedResult("session.shares.list", {
       grants: [],
-      participants: [],
       teams: [],
     })).toThrow(/can_manage_shares/)
     expect(() => decodeHostedResult("session.shares.list", {
       can_manage_shares: false,
       grants: [],
-      participants: [],
     })).toThrow(/teams/)
   })
 
@@ -36,7 +42,6 @@ describe("decodeHostedResult", () => {
     expect(decodeHostedResult("session.shares.list", {
       can_manage_shares: true,
       grants: [grant],
-      participants: [],
       teams: [{ team_id: "team_1", name: "Everyone", is_shared: true }],
     })).toMatchObject({ grants: [grant] })
   })
@@ -45,7 +50,6 @@ describe("decodeHostedResult", () => {
     const valid = {
       can_manage_shares: true,
       grants: [],
-      participants: [],
       teams: [],
     }
 
@@ -53,10 +57,6 @@ describe("decodeHostedResult", () => {
       ...valid,
       teams: [{ team_id: "team_1", name: "Everyone", is_shared: "false" }],
     })).toThrow(/session\.shares\.list.*teams\[0\]\.is_shared/)
-    expect(() => decodeHostedResult("session.shares.list", {
-      ...valid,
-      participants: [{ user_id: 1 }],
-    })).toThrow(/session\.shares\.list.*participants\[0\]\.user_id/)
     expect(() => decodeHostedResult("session.shares.list", {
       ...valid,
       grants: [{ grant_id: "ssg_1", granted_to_team_id: 1 }],

@@ -240,7 +240,7 @@ describe("D1 private multiplayer session authority", () => {
         "explicit-runtime-principal",
       ],
       lifecycle: { reserved: true, reconciled: true, compensated: true, released: true },
-      access: { memberRefusedTheSession: true, memberRefusedCreation: true, participantGrantRefused: true },
+      access: { memberRefusedTheSession: true, memberRefusedCreation: true },
       attribution: { canonicalActorPreserved: true, forgedActorRemoved: true },
     })
   })
@@ -819,11 +819,6 @@ describe("D1 private multiplayer session authority", () => {
         workspaceId: "ws_main",
       }),
     ).toEqual({ allowed: false, messages: [] })
-    await expect(input.sessions.grantSessionParticipant(alice, {
-      sessionId: "ses_private",
-      workspaceId: "ws_main",
-      participantActorId: bob.principal!.actorId,
-    })).rejects.toMatchObject({ status: 403 })
     const share = { sessionId: "ses_private", workspaceId: "ws_main", grantedToUserId: bob.principal!.userId }
     await input.sessions.grantSessionShare(alice, { ...share, level: "send" })
     await expect(
@@ -1355,7 +1350,7 @@ describe("D1 session authority, shares of a session this plane never registered"
     await expect(input.sessions.listSessionShares(teammate, {
       sessionId: "ses_created_on_the_machine",
       workspaceId: "ws_main",
-    })).resolves.toEqual({ can_manage_shares: false, grants: [], participants: [], teams: [] })
+    })).resolves.toEqual({ can_manage_shares: false, grants: [], teams: [] })
     await expect(input.sessions.listSessionShares(outsider, {
       sessionId: "ses_created_on_the_machine",
       workspaceId: "ws_main",
