@@ -1,6 +1,7 @@
 import { DEFAULT_RECOVERY_BUDGETS, type SubagentObservation } from "@claxedo/agent-runtime-contract"
 import type { AgentSessionStarts, SubagentUpdatedEvent } from "@claxedo/agent-runtime-contract"
 import { HTTPException } from "hono/http-exception"
+import type { RuntimeBus } from "../bus"
 import type { AgentRuntime, AgentRuntimeRecovery } from "../host/runtime"
 import type { RuntimeEventHub } from "../projection/runtime-event-hub"
 import { SessionRoutes } from "../routes/session"
@@ -20,6 +21,8 @@ export type SessionRoutesMountInput = {
   store: () => RuntimeStore
   sessionStarts: AgentSessionStarts
   eventHub: RuntimeEventHub
+  /** The bus this workspace's stream subscribes to; the process-wide runtime bus when unset. */
+  bus?: Pick<RuntimeBus, "publish">
   sessionAccessPolicy: SessionAccessPolicy
   checkpoint: WorkspaceCheckpoint
   currentRunner: () => RuntimeRunner
@@ -52,6 +55,7 @@ export function mountSessionRoutes(input: SessionRoutesMountInput) {
   const { store, checkpoint } = input
   return SessionRoutes(input.runtime, {
     eventHub: input.eventHub,
+    ...(input.bus ? { bus: input.bus } : {}),
     sessionAccessPolicy: input.sessionAccessPolicy,
     sessionStarts: input.sessionStarts,
     requestedSessionHarness: (requested) => requested ?? input.currentRunner(),
