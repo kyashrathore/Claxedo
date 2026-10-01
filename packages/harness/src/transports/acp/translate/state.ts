@@ -41,25 +41,10 @@ export type SessionState = {
   tools: Map<string, ToolState>
 }
 
-export function toKeyedMap<V>(value: Map<string, V> | Record<string, V> | undefined): Map<string, V> {
-  return value instanceof Map ? value : new Map(Object.entries(value ?? {}))
-}
-
-function metaName(meta: unknown) {
-  const item = asRecord(meta)
-  return str(item?.tool_name) ?? str(item?.toolName)
-}
-
 function name(raw: unknown, meta?: unknown) {
   const item = asRecord(raw)
-  return metaName(meta) ?? str(item?._toolName) ?? str(item?.toolName) ?? str(item?.tool) ?? str(item?.name)
-}
-
-function merge(left: Record<string, unknown> | undefined, right: unknown) {
-  const next = asRecord(right)
-  if (!left) return next
-  if (!next) return left
-  return { ...left, ...next }
+  const metadata = asRecord(meta)
+  return str(metadata?.tool_name) ?? str(metadata?.toolName) ?? str(item?._toolName) ?? str(item?.toolName) ?? str(item?.tool) ?? str(item?.name)
 }
 
 function newTool(id: string, client: string): ToolState {
@@ -88,19 +73,16 @@ export function createAcpTranslatorState(client?: string): SessionState {
   }
 }
 
+type ToolChange = Partial<Pick<ToolState, "title" | "kind" | "status" | "meta" | "rawOutput">> & {
+  rawInput?: unknown
+  content?: ToolCallContent[] | null
+  locations?: Spot[] | null
+}
+
 export function reduceTool(
   session: SessionState,
   id: string,
-  update: {
-    title?: string
-    kind?: ToolKind
-    status?: RuntimeToolStatus
-    rawInput?: unknown
-    rawOutput?: unknown
-    meta?: Record<string, unknown>
-    content?: ToolCallContent[] | null
-    locations?: Spot[] | null
-  },
+  update: ToolChange,
   diagnostics: AcpDiagnostics,
 ) {
   const prev = session.tools.get(id) ?? newTool(id, session.client)
@@ -119,12 +101,13 @@ export function reduceTool(
   return next
 }
 
-function updatedTool(prev: ToolState, update: Parameters<typeof reduceTool>[2]): ToolState {
+function updatedTool(prev: ToolState, update: ToolChange): ToolState {
   const title = update.title ?? prev.title ?? prev.firstTitle
   const kind = update.kind ?? prev.kind ?? prev.firstKind
-  const rawInput = merge(prev.rawInput, update.rawInput)
-  const content = boundList(mergeContent(prev.content, update.content), RETAINED_TOOL_ITEMS_MAX)
-  const locations = boundList(mergeLocations(prev.locations, update.locations), RETAINED_TOOL_ITEMS_MAX)
+  const input = asRecord(update.rawInput)
+  const rawInput = prev.rawInput && input ? { ...prev.rawInput, ...input } : input ?? prev.rawInput
+  const content = boundList(mergeItems(prev.content, update.content, retainedContentKey), RETAINED_TOOL_ITEMS_MAX)
+  const locations = boundList(mergeItems(prev.locations, update.locations, pathKey), RETAINED_TOOL_ITEMS_MAX)
   const terminal = content.find((item) => item.type === "terminal")
   return {
     ...prev,
@@ -136,12 +119,7 @@ function updatedTool(prev: ToolState, update: Parameters<typeof reduceTool>[2]):
     name: prev.name ?? name(rawInput, update.meta ?? prev.meta),
     meta: update.meta ?? prev.meta,
     rawInput,
-    rawOutput:
-      update.rawOutput !== undefined
-        ? update.rawOutput !== null
-          ? update.rawOutput
-          : (prev.rawOutput ?? null)
-        : prev.rawOutput,
+    rawOutput: update.rawOutput === undefined ? prev.rawOutput : update.rawOutput ?? prev.rawOutput ?? null,
     content,
     locations,
     terminalId: terminal?.type === "terminal" ? terminal.terminalId : prev.terminalId,
@@ -180,10 +158,6 @@ function mergeItems<T>(left: T[], right: T[] | null | undefined, keyOf: (item: T
   }
   return next
 }
-
-const mergeContent = (left: ToolCallContent[], right: ToolCallContent[] | null | undefined): ToolCallContent[] =>
-  mergeItems(left, right, retainedContentKey)
-const mergeLocations = (left: Spot[], right: Spot[] | null | undefined): Spot[] => mergeItems(left, right, pathKey)
 
 function remember(seen: string[], key: string): boolean {
   if (!key || seen.includes(key)) return false

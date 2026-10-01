@@ -38,7 +38,6 @@ Never assume its files are ours, and never report a remote stop as proven.
 None, except these owners, each with its reason in its folder's `README.md`:
 - `src/translate/runtime.ts`: the constant set of event types that carry diagnostics;
 - `src/transports/acp/translate/state.ts`: the process-wide sequence that names unserializable ACP content;
-- `src/transports/acp/translate/validation.ts`: the constant table of required fields per ACP session update.
 
 Adding an owner adds its exact path here; `bun run check` reads this list.
 

@@ -3,25 +3,8 @@ import { asText as str } from "@claxedo/agent-runtime-contract"
 import type { ToolState, Spot } from "./state"
 import { toolFacts } from "./tool-facts"
 
-export type AcpToolMetadata = Record<string, unknown> & {
-  acp: Record<string, unknown> & { intent: ToolIntent }
-}
-
-export type ToolView = {
-  toolName: string
-  input?: Record<string, unknown>
-  display: ToolDisplay
-  metadata: AcpToolMetadata
-}
-
 function toolLocations(locations: Spot[]) {
   return locations.map((item) => ({ path: item.path, ...(item.line != null ? { line: item.line } : {}) }))
-}
-
-export function viewTool(state: ToolState) {
-  const facts = toolFacts(state)
-  const { short, modeValue } = toolName(facts)
-  return toolView(state, facts, short, modeValue)
 }
 
 function toolName(facts: ReturnType<typeof toolFacts>) {
@@ -46,41 +29,28 @@ function toolName(facts: ReturnType<typeof toolFacts>) {
 }
 
 function toolDetails(facts: ReturnType<typeof toolFacts>, modeValue: string | undefined) {
-  const {
-    toolLabel,
-    kind,
-    all,
-    nextIntent,
-    cmd,
-    urlValue,
-    targetPath,
-    pattern,
-    path,
-    filePath,
-    query,
-  } = facts
+  const fields: ToolDisplay = {
+    mode: modeValue,
+    command: facts.cmd,
+    query: facts.query,
+    pattern: facts.pattern,
+    url: facts.urlValue,
+    path: facts.path,
+    filePath: facts.filePath,
+    targetPath: facts.targetPath,
+    files: facts.all.length ? facts.all : undefined,
+  }
   return {
-    kind: kind ?? "other",
-    intent: nextIntent,
-    summary: toolLabel,
-    ...(modeValue ? { mode: modeValue } : {}),
-    ...(cmd ? { command: cmd } : {}),
-    ...(query ? { query } : {}),
-    ...(pattern ? { pattern } : {}),
-    ...(urlValue ? { url: urlValue } : {}),
-    ...(path ? { path } : {}),
-    ...(filePath ? { filePath } : {}),
-    ...(targetPath ? { targetPath } : {}),
-    ...(all.length ? { files: all } : {}),
+    kind: facts.kind ?? "other",
+    intent: facts.nextIntent,
+    summary: facts.toolLabel,
+    ...Object.fromEntries(Object.entries(fields).filter(([, value]) => value)),
   }
 }
 
-function toolView(
-  state: ToolState,
-  facts: ReturnType<typeof toolFacts>,
-  short: string,
-  modeValue: string | undefined,
-): ToolView {
+export function viewTool(state: ToolState) {
+  const facts = toolFacts(state)
+  const { short, modeValue } = toolName(facts)
   const { raw, cmd, sourcePath, diffValue, nextIntent } = facts
   const details = toolDetails(facts, modeValue)
   const presentation = {
@@ -108,7 +78,7 @@ function toolMetadata(
   state: ToolState,
   facts: ReturnType<typeof toolFacts>,
   presentation: ToolDisplay & { intent: ToolIntent },
-): AcpToolMetadata {
+) {
   const { toolLabel, diffValue, patchValue, hasDiff } = facts
   return {
     ...(diffValue ? { filediff: diffValue } : {}),
