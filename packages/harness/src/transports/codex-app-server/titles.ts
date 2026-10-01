@@ -74,7 +74,3 @@ export async function codexSessionTitle(entry: TitleEntry, request: SessionTitle
     await entry.rpc.request("thread/archive", { threadId }).catch((error: unknown) => entry.broker.reportFailure(error))
   }
 }
-
-export async function codexRename(entry: Pick<TitleEntry, "rpc">, threadId: string, name: string): Promise<void> {
-  await entry.rpc.request("thread/name/set", { threadId, name })
-}
