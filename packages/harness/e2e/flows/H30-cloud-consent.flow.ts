@@ -3,11 +3,10 @@ import { execFileSync } from "node:child_process"
 import fs from "node:fs/promises"
 import path from "node:path"
 import { request as httpRequest } from "node:http"
-import { hostedWorkspace } from "../harness/hosted-flow"
-import { hostedFetch } from "../harness/hosted-auth"
-import { hostedRuntimeTarget, startHostedCloudStack } from "../harness/hosted-cloud"
-
-import { sendJson } from "../harness/transport"
+import { hostedOwner, hostedWorkspace, type HostedStack } from "../harness/hosted-flow"
+import { hostedFetch, type HostedPerson } from "../harness/hosted-auth"
+import { hostedRuntimeTarget } from "../harness/hosted-cloud"
+import { startHostedStack } from "../harness/hosted-stack"
 
 async function sandboxFiles(directory: string) {
   const contents: string[] = []
@@ -41,35 +40,41 @@ async function refusedBrokerUse(pid: number, target: string, name: string) {
   })
 }
 
+async function connectedPiProviders(stack: HostedStack, owner: HostedPerson) {
+  const catalog = await hostedFetch(stack, "/api/claxedo/agent-config/providers?nativeHarness=pi", {}, owner)
+  assert.equal(catalog.status, 200, `Pi provider catalog: ${catalog.status}`)
+  return (await catalog.json() as { connected: string[] }).connected
+}
+
 export async function run() {
-  const stack = await startHostedCloudStack("h30-cloud-consent")
+  const stack = await startHostedStack("h30-cloud-consent")
   try {
+    const owner = await hostedOwner(stack)
     const key = `h30-secret-${crypto.randomUUID()}`
-    const stored = await sendJson(stack.control, "PUT", `${stack.workerUrl}/api/claxedo/credentials`, {
-      provider_id: "openai", kind: "api_key", source: "managed", scope: "shared", secret: key,
-    }, "Storing a cloud-consented account")
-    const credential = (JSON.parse(stored) as { credential: { id: string } }).credential
-    await sendJson(stack.control, "POST", `${stack.workerUrl}/api/claxedo/credentials/activate`, { ids: [credential.id] }, "Activating cloud credential")
-    const effective = await hostedFetch(stack, "/api/claxedo/credentials/effective?scope=shared", {}, stack.owner)
-    const effectiveBody = await effective.json() as { credentials?: Array<{ provider_id?: string; status?: string; scope?: string; is_active?: boolean }> }
-    assert.equal(effective.status, 200)
-    assert.ok(effectiveBody.credentials?.some((row) => row.provider_id === "openai" && row.scope === "shared" && row.is_active), "shared account was not active in the server readback")
-    const workspace = await hostedWorkspace(stack, stack.owner, "h30-consent")
-    const connection = await hostedFetch(stack, `/api/workspace/${workspace.id}/connection`, {}, stack.owner)
+    const stored = await hostedFetch(stack, "/auth/openai?harness=pi", {
+      method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ auth: { key } }),
+    }, owner)
+    assert.equal(stored.status, 200, `Storing a cloud account: ${await stored.text()}`)
+    assert.ok((await connectedPiProviders(stack, owner)).includes("openai"), "stored account was not connected in the server readback")
+    const workspace = await hostedWorkspace(stack, owner, "h30-consent")
+    const connection = await hostedFetch(stack, `/api/workspace/${workspace.id}/connection`, {}, owner)
     assert.equal(connection.status, 200, `Cloud connection: ${await connection.text()}`)
     const first = await hostedRuntimeTarget(stack, workspace.id)
     const names = first.secretNames.filter((name) => name.startsWith("CLAXEDO_PROVIDER_OPENAI_"))
-    assert.equal(names.length, 1, `one person's shared account must reach the sandbox under one name: ${first.secretNames.join(",")}`)
+    assert.equal(names.length, 1, `one person's account must reach the sandbox under one name: ${first.secretNames.join(",")}`)
     const name = names[0]
     const placeholder = `${name}=claxedo-broker:${name}`
     assert.ok(!sandboxEnvironment(first.pid).includes(key), "real cloud account key entered sandbox process environment")
     assert.ok(!(await sandboxFiles(first.home)).includes(key), "real cloud account key entered sandbox home files")
     assert.ok(!(await sandboxFiles(first.directory)).includes(key), "real cloud account key entered sandbox workspace files")
     if (!sandboxEnvironment(first.pid).includes(placeholder)) {
-      throw new Error(`The signed shared credential did not reach its cloud sandbox as a placeholder; delivered names: ${first.secretNames.join(",")}`)
+      throw new Error(`The stored account did not reach its cloud sandbox as a placeholder; delivered names: ${first.secretNames.join(",")}`)
     }
 
-    await sendJson(stack.control, "PATCH", `${stack.workerUrl}/api/claxedo/credentials/${credential.id}/scope`, { scope: "local" }, "Revoking cloud consent")
+    const revoked = await hostedFetch(stack, "/auth/openai?harness=pi", {
+      method: "DELETE", headers: { "content-type": "application/json" }, body: "{}",
+    }, owner)
+    assert.equal(revoked.status, 200, `Revoking the cloud account: ${await revoked.text()}`)
     const until = Date.now() + 20_000
     let next = first
     while (Date.now() < until) {
@@ -81,8 +86,7 @@ export async function run() {
     assert.ok(!sandboxEnvironment(next.pid).includes(placeholder), "revoked placeholder remained in sandbox process")
     assert.ok(!sandboxEnvironment(next.pid).includes(key), "real cloud account key entered renewed sandbox process")
     assert.equal(await refusedBrokerUse(next.pid, `${stack.model.v1Url}/chat/completions`, name), 403, "revoked placeholder was accepted by the sandbox broker")
-    const readback = await hostedFetch(stack, "/api/claxedo/credentials/openai", {}, stack.owner)
-    assert.equal((await readback.json() as { credential: { scope: string } }).credential.scope, "local")
+    assert.ok(!(await connectedPiProviders(stack, owner)).includes("openai"), "revoked account is still connected in the server readback")
     assert.deepEqual(await stack.outboundAttempts(), [])
   } finally {
     await stack.close()

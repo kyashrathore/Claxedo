@@ -5,15 +5,14 @@ import { hostedFetch } from "../harness/hosted-auth"
 import { startHostedCloudStack } from "../harness/hosted-cloud"
 import { frameSessionId, frameType, openEventStream } from "../harness/stream"
 import { waitForTitle } from "../harness/turn-observations"
-import { sendJson } from "../harness/transport"
 
 export async function run() {
   const stack = await startHostedCloudStack("h19-cloud-pi")
   try {
-    const stored = await sendJson(stack.control, "PUT", `${stack.workerUrl}/api/claxedo/credentials`, {
-      provider_id: "openai", kind: "api_key", source: "managed", scope: "shared", secret: "test-key",
-    }, "Storing the signed Pi account")
-    await sendJson(stack.control, "POST", `${stack.workerUrl}/api/claxedo/credentials/activate`, { ids: [(JSON.parse(stored) as { credential: { id: string } }).credential.id] }, "Activating cloud credential")
+    const stored = await hostedFetch(stack, "/auth/openai?harness=pi", {
+      method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ auth: { key: "test-key" } }),
+    }, stack.owner)
+    assert.equal(stored.status, 200, `Storing the signed Pi account: ${await stored.text()}`)
     const workspace = await hostedWorkspace(stack, stack.owner, "h19-pi")
     const connection = await hostedFetch(stack, `/api/workspace/${workspace.id}/connection`, {}, stack.owner)
     assert.equal(connection.status, 200, `Cloud connection: ${await connection.text()}`)
