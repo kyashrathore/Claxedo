@@ -29,7 +29,7 @@ function fixture(clear: "stall" | "reject" | "ok") {
   const idle = stream.claim(run)
   const entry = { session, rpc, stream, prompted: true }
   ;(transport as unknown as { entries: Map<string, typeof entry> }).entries.set("s1", entry)
-  return { transport, session, commands, rpc, run, idle }
+  return { transport, session, commands, rpc, run, idle, stream, clock }
 }
 const turn = { turnId: "t1", assistantMessageId: "a1" }
 
@@ -87,4 +87,14 @@ test("Pi sends one clear_queue and one abort for concurrent stops of one turn, a
   expect(second).toEqual(first)
   await f.transport.cancel(f.session, turn, deadline)
   expect(f.commands).toEqual(["clear_queue", "abort", "clear_queue", "abort"])
+})
+
+test("a later turn's stop reports that turn's settlement, not the settlement of an earlier turn it stopped", async () => {
+  const f = fixture("ok")
+  const deadline = { at: Date.now() + 1000, signal: new AbortController().signal }
+  f.run.settled = true
+  expect(await f.transport.cancel(f.session, turn, deadline)).toEqual({ execution: "terminal", cleanup: "unknown" })
+  f.idle()
+  f.stream.claim(new PiRun(f.rpc, "s1", f.clock, { ask: async () => ({ kind: "cancelled" }) } as never))
+  expect(await f.transport.cancel(f.session, turn, deadline)).toEqual({ execution: "unknown", cleanup: "unknown" })
 })

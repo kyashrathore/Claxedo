@@ -48,7 +48,7 @@ function piRpcPromptBody(turn: TurnInput): { message: string; images?: { type: "
 export class PiRpcTransport implements HarnessTransport {
   readonly kind = "pi-rpc" as const
   private readonly entries = new Map<string, Entry>()
-  private readonly stops = new WeakMap<Entry, (deadline: Deadline) => Promise<AdapterCancelOutcome>>()
+  private readonly stops = new WeakMap<PiRun, (deadline: Deadline) => Promise<AdapterCancelOutcome>>()
   private readonly disposeAbort = new AbortController()
   private readonly host: PiLaunchHost
   private readonly probes: PiDraftProbes
@@ -178,8 +178,8 @@ export class PiRpcTransport implements HarnessTransport {
       entry.stopUnprompted?.()
       return { execution: "terminal", cleanup: "unknown" }
     }
-    const stop = this.stops.get(entry) ?? singleFlightUntil((stopBy: Deadline) => this.stopPrompted(entry, run, stopBy), () => false)
-    this.stops.set(entry, stop)
+    const stop = this.stops.get(run) ?? singleFlightUntil((stopBy: Deadline) => this.stopPrompted(entry, run, stopBy), () => false)
+    this.stops.set(run, stop)
     return stop(deadline)
   }
 
