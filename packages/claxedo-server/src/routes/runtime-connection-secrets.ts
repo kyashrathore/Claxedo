@@ -40,7 +40,7 @@ export function RuntimeConnectionSecretRoutes(input: RuntimeConnectionSecretOpti
 }) {
   const denied = (c: Context) => c.json({ error: { code: "connection_secret_denied" } }, 403)
 
-  /** A request proves itself with its relay proof: an editor's, from a cloud sandbox, whose parent token is still active. */
+  /** A request proves itself with its relay proof: the owner's workspace-wide one, from a cloud sandbox, whose parent token is still active. */
   async function relayAuthority(c: Context, token: string): Promise<LeaseAuthority | Response> {
     let proof: Awaited<ReturnType<typeof input.verifyRelayProof>>
     let expiresAt: number
@@ -52,9 +52,9 @@ export function RuntimeConnectionSecretRoutes(input: RuntimeConnectionSecretOpti
     } catch {
       return c.json({ error: { code: "relay_host_token_invalid" } }, 401)
     }
-    if (!proof.role || proof.role === "viewer") return denied(c)
+    if (proof.session_id !== undefined) return denied(c)
     const active = asRecord(await input.authority.runtimeAccessTokenActive({
-      jti: proof.parent_jti, workspaceId: proof.workspace_id, hostId: proof.host_id, minimumRole: "editor",
+      jti: proof.parent_jti, workspaceId: proof.workspace_id, hostId: proof.host_id,
     }))
     if (active?.active !== true) return denied(c)
     return { orgId: proof.org_id, workspaceId: proof.workspace_id, expiresAt }

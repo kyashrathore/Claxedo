@@ -55,7 +55,7 @@ export function createFakeConnectControlPlane(options: { now?: () => number; url
       const scope = asRecordOrEmpty(body.scope)
       const minted = await cp.createInvitation({
         ...(typeof body.displayName === "string" ? { displayName: body.displayName } : {}),
-        scope: { allowed_roots: stringsOf(scope.allowed_roots), visibility: scope.visibility === "org" ? "org" : "owner" },
+        scope: { allowed_roots: stringsOf(scope.allowed_roots) },
         ...(typeof body.expiresInMs === "number" ? { expiresInMs: body.expiresInMs } : {}),
       })
       return { invitation_id: minted.invitationId, token: minted.token, expires_at: minted.expiresAt }
@@ -63,10 +63,7 @@ export function createFakeConnectControlPlane(options: { now?: () => number; url
     if (method === "GET" && pathname === "/api/claxedo/host/enrollments") return { active: null, machines: machines() }
     const scopeMatch = /^\/api\/claxedo\/host\/enrollments\/([^/]+)\/scope$/.exec(pathname)
     if (method === "PATCH" && scopeMatch) {
-      return cp.setScope(decodeURIComponent(scopeMatch[1]), {
-        allowed_roots: stringsOf(body.allowed_roots),
-        visibility: body.visibility === "org" ? "org" : "owner",
-      })
+      return cp.setScope(decodeURIComponent(scopeMatch[1]), { allowed_roots: stringsOf(body.allowed_roots) })
     }
     const providerConfigMatch = /^\/api\/claxedo\/host\/enrollments\/([^/]+)\/provider-config$/.exec(pathname)
     if (method === "POST" && providerConfigMatch) {

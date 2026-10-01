@@ -2,20 +2,18 @@ import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/
 import type { WorkspaceAuthority } from "@claxedo/server-core/platform/auth/authority"
 import {
   accessAuditStatement,
-  canAdminOrganization,
   D1AccessAuthorityError,
-  isActiveOrgMember,
   requireText,
-  resolveMemberUser,
-  type BoundSql,
+  resolveTeamMemberUser,
+  type AccessPrincipal,
   type D1AccessContext,
 } from "./access-context"
 import type {
-  MemberSelector,
+  TeamMemberSelector,
   OrgMemberRole,
   ProjectGrantRole,
 } from "@claxedo/server-core/platform/auth/org-access-authority"
-import { organizationAdminSql } from "./project-role"
+import { may, mayGuard, maySql, type BoundSql } from "./authorization"
 
 export const D1_TEAM_AUTHORITY_METHODS = [
   "listTeams",
@@ -41,7 +39,7 @@ export class D1TeamAuthority implements D1TeamAuthorityPort {
   async listTeams(auth: SignedControlPlaneAuth, args: { orgId: string }) {
     const who = await this.context.principal(auth)
     const orgId = requireText(args.orgId, "orgId")
-    if (!(await isActiveOrgMember(this.database, who.userId, orgId))) return []
+    if (!(await may(this.database, who, "member", { kind: "org", orgId }))) return []
     const result = await this.database
       .prepare(`
         select team_id, org_id, name, is_default
@@ -65,12 +63,12 @@ export class D1TeamAuthority implements D1TeamAuthorityPort {
       .first<{ kind: "personal" | "team" | "deployment" }>()
     if (!org) throw new D1AccessAuthorityError("organization_not_found")
     if (org.kind === "personal") throw new D1AccessAuthorityError("team_not_allowed_on_personal_org")
-    if (!(await canAdminOrganization(this.database, who.userId, orgId))) {
+    if (!(await may(this.database, who, "administer", { kind: "org", orgId }))) {
       throw new D1AccessAuthorityError("org_admin_required")
     }
     const teamId = this.context.randomId("team")
     const now = this.context.now()
-    const guard: BoundSql = { sql: organizationAdminSql("?", "?"), bind: [who.userId, orgId, who.userId] }
+    const guard = mayGuard(who, "administer", { kind: "org", orgId })
     await this.database.batch([
       accessAuditStatement(this.context, {
         who,
@@ -114,7 +112,7 @@ export class D1TeamAuthority implements D1TeamAuthorityPort {
     const who = await this.context.principal(auth)
     const orgId = requireText(args.orgId, "orgId")
     this.context.assertOrganizationAllowed(orgId)
-    if (!(await canAdminOrganization(this.database, who.userId, orgId))) {
+    if (!(await may(this.database, who, "administer", { kind: "org", orgId }))) {
       throw new D1AccessAuthorityError("org_admin_required")
     }
     const org = await this.database
@@ -129,7 +127,7 @@ export class D1TeamAuthority implements D1TeamAuthorityPort {
       .first<{ team_id: string }>()
     const teamId = existing?.team_id ?? this.context.randomId("team")
     const now = this.context.now()
-    const guard: BoundSql = { sql: organizationAdminSql("?", "?"), bind: [who.userId, orgId, who.userId] }
+    const guard = mayGuard(who, "administer", { kind: "org", orgId })
     const noDefaultTeam: BoundSql = {
       sql: `${guard.sql} and not exists (
         select 1 from teams current where current.org_id = ? and current.is_default = 1 and current.deleted_at is null
@@ -220,17 +218,16 @@ export class D1TeamAuthority implements D1TeamAuthorityPort {
     }
   }
 
-  async addTeamMember(auth: SignedControlPlaneAuth, args: MemberSelector & { teamId: string; role?: OrgMemberRole }) {
+  async addTeamMember(auth: SignedControlPlaneAuth, args: TeamMemberSelector & { teamId: string; role?: OrgMemberRole }) {
     const who = await this.context.principal(auth)
-    const team = await this.adminTeam(who.userId, args.teamId)
-    const target = await resolveMemberUser(this.context, args, "team_member_target_required")
-    if (!target) throw new D1AccessAuthorityError("team_member_not_found")
-    if (!(await isActiveOrgMember(this.database, target.user_id, team.org_id))) {
+    const team = await this.adminTeam(who, args.teamId)
+    const target = await resolveTeamMemberUser(this.context, args)
+    if (!target || !(await may(this.database, { userId: target.user_id }, "member", { kind: "org", orgId: team.org_id }))) {
       throw new D1AccessAuthorityError("team_member_org_membership_required")
     }
     const role = args.role ?? "member"
     const now = this.context.now()
-    const guard = this.teamAdminGuard(who.userId, team.team_id, `
+    const guard = this.teamAdminGuard(who, team.team_id, `
       and exists (
         select 1 from org_memberships target
         join users target_user on target_user.user_id = target.user_id and target_user.state = 'active'
@@ -268,13 +265,13 @@ export class D1TeamAuthority implements D1TeamAuthorityPort {
     return { team_id: team.team_id, user_id: target.user_id, public_id: target.user_id, role }
   }
 
-  async removeTeamMember(auth: SignedControlPlaneAuth, args: MemberSelector & { teamId: string }) {
+  async removeTeamMember(auth: SignedControlPlaneAuth, args: TeamMemberSelector & { teamId: string }) {
     const who = await this.context.principal(auth)
-    const team = await this.adminTeam(who.userId, args.teamId)
-    const target = await resolveMemberUser(this.context, args, "team_member_target_required")
+    const team = await this.adminTeam(who, args.teamId)
+    const target = await resolveTeamMemberUser(this.context, args)
     if (!target) return { removed: false }
     const now = this.context.now()
-    const guard = this.teamAdminGuard(who.userId, team.team_id, `
+    const guard = this.teamAdminGuard(who, team.team_id, `
       and exists (
         select 1 from team_memberships current
         where current.team_id = guard_team.team_id and current.user_id = ? and current.revoked_at is null
@@ -300,7 +297,7 @@ export class D1TeamAuthority implements D1TeamAuthorityPort {
   async listTeamMembers(auth: SignedControlPlaneAuth, args: { teamId: string }) {
     const who = await this.context.principal(auth)
     const team = await this.team(requireText(args.teamId, "teamId"))
-    if (!team || !(await isActiveOrgMember(this.database, who.userId, team.org_id))) return []
+    if (!team || !(await may(this.database, who, "member", { kind: "org", orgId: team.org_id }))) return []
     const result = await this.database
       .prepare(`
         select tm.user_id, tm.user_id as public_id, tm.role,
@@ -323,7 +320,7 @@ export class D1TeamAuthority implements D1TeamAuthorityPort {
 
   async grantTeamProject(auth: SignedControlPlaneAuth, args: { teamId: string; projectId: string; role: ProjectGrantRole }) {
     const who = await this.context.principal(auth)
-    const team = await this.adminTeam(who.userId, args.teamId)
+    const team = await this.adminTeam(who, args.teamId)
     const projectId = requireText(args.projectId, "projectId")
     const project = await this.database
       .prepare(`select org_id from projects where project_id = ? and deleted_at is null`)
@@ -331,7 +328,7 @@ export class D1TeamAuthority implements D1TeamAuthorityPort {
       .first<{ org_id: string }>()
     if (!project || project.org_id !== team.org_id) throw new D1AccessAuthorityError("project_not_found")
     const now = this.context.now()
-    const guard = this.teamAdminGuard(who.userId, team.team_id, `
+    const guard = this.teamAdminGuard(who, team.team_id, `
       and exists (
         select 1 from projects project
         where project.project_id = ? and project.org_id = guard_team.org_id and project.deleted_at is null
@@ -375,10 +372,10 @@ export class D1TeamAuthority implements D1TeamAuthorityPort {
 
   async revokeTeamProject(auth: SignedControlPlaneAuth, args: { teamId: string; projectId: string }) {
     const who = await this.context.principal(auth)
-    const team = await this.adminTeam(who.userId, args.teamId)
+    const team = await this.adminTeam(who, args.teamId)
     const projectId = requireText(args.projectId, "projectId")
     const now = this.context.now()
-    const guard = this.teamAdminGuard(who.userId, team.team_id, `
+    const guard = this.teamAdminGuard(who, team.team_id, `
       and exists (
         select 1 from team_project_grants current
         where current.team_id = guard_team.team_id and current.project_id = ? and current.revoked_at is null
@@ -405,7 +402,7 @@ export class D1TeamAuthority implements D1TeamAuthorityPort {
   async listTeamProjects(auth: SignedControlPlaneAuth, args: { teamId: string }) {
     const who = await this.context.principal(auth)
     const team = await this.team(requireText(args.teamId, "teamId"))
-    if (!team || !(await isActiveOrgMember(this.database, who.userId, team.org_id))) return []
+    if (!team || !(await may(this.database, who, "member", { kind: "org", orgId: team.org_id }))) return []
     const result = await this.database
       .prepare(`
         select grant_row.team_id, grant_row.project_id, grant_row.role, grant_row.updated_at
@@ -427,10 +424,10 @@ export class D1TeamAuthority implements D1TeamAuthorityPort {
       .first<{ team_id: string; org_id: string }>()
   }
 
-  private async adminTeam(userId: string, teamId: string) {
+  private async adminTeam(who: AccessPrincipal, teamId: string) {
     const team = await this.team(requireText(teamId, "teamId"))
     if (!team) throw new D1AccessAuthorityError("team_not_found")
-    if (!(await canAdminOrganization(this.database, userId, team.org_id))) {
+    if (!(await may(this.database, who, "administer", { kind: "org", orgId: team.org_id }))) {
       throw new D1AccessAuthorityError("org_admin_required")
     }
     return team
@@ -441,15 +438,16 @@ export class D1TeamAuthority implements D1TeamAuthorityPort {
    * inside the batch that changes it, plus the change's own condition written
    * over `guard_team`.
    */
-  private teamAdminGuard(userId: string, teamId: string, condition: string, bind: unknown[]): BoundSql {
+  private teamAdminGuard(who: AccessPrincipal, teamId: string, condition: string, bind: unknown[]): BoundSql {
+    const administers = maySql(who, "administer", { kind: "org", orgId: "guard_team.org_id" })
     return {
       sql: `exists (
         select 1 from teams guard_team
         where guard_team.team_id = ? and guard_team.deleted_at is null
-          and ${organizationAdminSql("guard_team.org_id", "?")}
+          and ${administers.sql}
           ${condition}
       )`,
-      bind: [teamId, userId, userId, ...bind],
+      bind: [teamId, ...administers.bind, ...bind],
     }
   }
 

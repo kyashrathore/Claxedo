@@ -20,6 +20,8 @@ export type SessionWorkspaceAuthority = {
   workspaceId: string
   orgId: string
   role: "viewer" | "editor" | "admin" | "owner"
+  /** The one session the caller's token reaches, when it is a share holder's; absent on the workspace owner's. */
+  sessionId?: string
 }
 
 /**
@@ -170,7 +172,7 @@ export type SessionAccessPolicy = {
    * that lease (`lease`) in turn.
    */
   authorizeHost?(
-    input: SessionAccessPolicyInput & { minimumRole: "viewer" | "editor" | "admin" | "owner"; lease?: string },
+    input: SessionAccessPolicyInput & { hostAccess: "read" | "admin"; lease?: string },
   ): Promise<SessionHostAccessDecision> | SessionHostAccessDecision
   authorizeSessionStartStatus(input: SessionAccessPolicyInput & { sessionId: string; registrationOperationId: string }): Promise<SessionAccessDecision> | SessionAccessDecision
   authorizeSessionStart(input: SessionAccessPolicyInput & { sessionId: string; registrationOperationId: string }): Promise<SessionAccessDecision> | SessionAccessDecision
@@ -408,13 +410,11 @@ const SESSION_CONTROL_OPERATIONS = new Set<SessionAccessOperation>([
 
 const SESSION_FILTER_CONCURRENCY = 16
 
-const ROLE_RANK = { viewer: 0, editor: 1, admin: 2, owner: 3 } as const
-
 /**
- * A write carrying no session is the workspace's own, and the relay role is
- * the only thing that answers for it. A session-scoped write is the session
- * authority's question instead, because a `send` share admits someone the
- * workspace ranks below editor — or not at all.
+ * The caller's token decides its reach before any authority is asked: a
+ * token scoped to one session reaches that session and nothing else, not the
+ * workspace's own operations and not another session. What a request inside
+ * that reach may do is the session authority's question.
  */
 function authorizeManaged(input: SessionAccessPolicyInput, requireActor: boolean): SessionAccessDecision {
   if (!input.authority && !requireActor) return { allowed: true }
@@ -426,17 +426,12 @@ function authorizeManaged(input: SessionAccessPolicyInput, requireActor: boolean
       message: "Managed session access requires verified actor claims",
     }
   }
-  if (
-    input.authority
-    && !input.sessionId
-    && sessionAccessRequiresWrite(input)
-    && ROLE_RANK[input.authority.role] < ROLE_RANK.editor
-  ) {
+  if (input.authority?.sessionId !== undefined && input.sessionId !== input.authority.sessionId) {
     return {
       allowed: false,
       status: 403,
-      code: "workspace_write_forbidden",
-      message: "Workspace mutation requires workspace editor authority",
+      code: "session_scope_denied",
+      message: "This token reaches one session and nothing else",
     }
   }
   return { allowed: true }
@@ -711,6 +706,7 @@ export function sessionAccessContext(input: SessionAccessContextReader):
       workspaceId: auth.workspace_id,
       orgId: auth.org_id,
       role: auth.role,
+      ...(auth.session_id ? { sessionId: auth.session_id } : {}),
     },
   }
 }

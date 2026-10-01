@@ -17,6 +17,14 @@ import {
 } from "./target"
 
 describe("workspaceDir", () => {
+  it("pins a directory with a typed refusal", () => {
+    try {
+      assertTarget("/other", { WORKSPACE_RUNTIME_DIRECTORY: "/repo", WORKSPACE_RUNTIME_WORKSPACE_ID: "ws_1" })
+      throw new Error("expected refusal")
+    } catch (error) {
+      expect(error).toMatchObject({ code: "workspace_target_pinned", status: 400, retryable: false })
+    }
+  })
   it("rejects multi-directory configuration", () => {
     expect(() =>
       workspaceDir({ WORKSPACE_RUNTIME_DIRECTORY: "/tmp/a,/tmp/b" } as NodeJS.ProcessEnv)

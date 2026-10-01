@@ -119,7 +119,8 @@ are forward-only; restore data to a point in time with
 | `CLAXEDO_API_ORIGIN`, `CLAXEDO_APP_ORIGIN` | required | Custom-domain origins of the control plane and the web app. |
 | `CLAXEDO_WORKSPACE_RELAY_URL` | required | Origin of your Workspace Relay. |
 | `CLAXEDO_USER_DEPLOYED_ORGANIZATION_NAME` | required | Your organization's display name. |
-| `CLAXEDO_AUTH_METHODS` | `github` | `github`, `google`, or `github,google`; each needs its `*_CLIENT_ID` and `*_CLIENT_SECRET`. |
+| `CLAXEDO_AUTH_METHODS` | `github` | Comma-separated `github`, `google`, `email-password`; OAuth methods need their `*_CLIENT_ID` and `*_CLIENT_SECRET`. Email-password requires `CLAXEDO_EMAIL_FROM`. |
+| `CLAXEDO_EMAIL_FROM` | unset | Transactional sender address on an onboarded Cloudflare Email Service domain. Enables invitations; required for email-password. |
 | `CLAXEDO_WORKER_NAME` | `claxedo` | The control plane Worker. |
 | `CLAXEDO_APP_WORKER_NAME` | `<worker>-app` | The web app Worker. |
 | `CLAXEDO_DEPLOYMENT_ID`, `CLAXEDO_USER_DEPLOYED_ORGANIZATION_ID` | the Worker name | Stable identities stored with your data; never change them after the first deploy. |
@@ -131,3 +132,13 @@ bucket `CLAXEDO_AGENT_PLUGINS_BUCKET` (default `<worker>-agent-plugins`, created
 `wrangler r2 bucket create`) and needs a `CLAXEDO_CREDENTIALS_KEK` secret (`openssl rand -base64 32`). With
 `CLAXEDO_SANDBOX_POSTURE=full-hosted` and `CLAXEDO_SANDBOX_DRIVER` it also runs cloud workspaces in your sandbox
 provider; see [Sandbox egress](./sandbox-egress.md).
+
+## Invitation email
+
+The API Worker binds Cloudflare Email Service as `EMAIL` (`send_email` in the generated Wrangler configuration). Set `CLAXEDO_EMAIL_FROM` to a sender on your sending domain. Email Service requires Workers Paid, the domain on Cloudflare DNS, and sending-domain onboarding with its SPF/DKIM records verified. See [Cloudflare's sending setup](https://developers.cloudflare.com/email-service/get-started/send-emails/). No third-party email provider is used.
+
+Without both the binding and sender setting, invitation creation returns `org_invitation_delivery_unavailable`; OAuth sign-in remains available. Email-password uses the same sender for verification and password resets and requires it at startup. Delivery failures revoke the invitation while keeping the same non-enumerating receipt.
+
+Only one unexpired pending invitation per normalized address and organization is allowed; a duplicate returns `org_invitation_pending`, preserving the first link. Each organization may create 20 invitations per rolling hour, including invitations later revoked or whose delivery failed. The database enforces both limits across Worker isolates; `org_invitation_rate_limited` returns HTTP 429.
+
+An acceptance link is `/invitations#<token>`. The app sends the token in the body of `POST /api/control/invitations/accept`. Acceptance rechecks the inviter's current authority in the membership transaction and records the invitation ID and inviter in its audit row. Revocation retires any control-plane identity the invitation admitted if it has no membership and no other pending invitation, so it can no longer sign in until invited again. The authentication account in `AUTH_DB` remains available for sign-in if invited again.

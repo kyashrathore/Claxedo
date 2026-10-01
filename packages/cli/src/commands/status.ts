@@ -1,5 +1,5 @@
 import fs from "node:fs/promises"
-import { hostPublicKeyFingerprint } from "@claxedo/host-connector/host-identity"
+import { publicKeyFingerprint } from "@claxedo/account-contract/machine"
 import { resolveRoots, type HostState } from "@claxedo/host-connector/host-state"
 import { connectPaths, connectStateStore } from "../connect/paths"
 
@@ -45,8 +45,11 @@ function iso(value: number | undefined) {
 
 export async function statusLines(deps: StatusDeps): Promise<string[]> {
   const state = await deps.load()
-  if (!state) return [`No connect host on this machine (${deps.stateFile} absent). \`claxedo connect --help\` explains enrollment.`]
-  const fingerprint = await hostPublicKeyFingerprint(state.private_key_jwk).catch(() => "-")
+  if (!state)
+    return [
+      `No connect host on this machine (${deps.stateFile} absent). \`claxedo connect --help\` explains enrollment.`,
+    ]
+  const fingerprint = await publicKeyFingerprint(state.private_key_jwk).catch(() => "-")
   const online = hostOnline(state, deps)
   const lines = [
     "Machine",
@@ -72,13 +75,17 @@ export async function statusLines(deps: StatusDeps): Promise<string[]> {
   const { roots, drifted } = await resolveRoots(state, deps.resolvePath)
   lines.push(`  roots        ${roots.length ? roots.join(", ") : "none (nothing is servable)"}`)
   for (const drift of drifted) {
-    lines.push(`  refused      ${drift.root} now resolves to ${drift.resolved}, not ${drift.recorded} as first recorded; \`claxedo connect --reset-roots\` re-records it`)
+    lines.push(
+      `  refused      ${drift.root} now resolves to ${drift.resolved}, not ${drift.recorded} as first recorded; \`claxedo connect --reset-roots\` re-records it`,
+    )
   }
   if (state.service) lines.push(`  service      ${state.service.kind} ${state.service.unit}`)
   const served = run?.served ?? []
   lines.push(served.length ? "Served folders" : "Served folders: none")
   for (const entry of served) {
-    lines.push(`  ${entry.workspace_id}  revision ${entry.revision}  ${entry.connected && online ? "connected" : "not connected"}`)
+    lines.push(
+      `  ${entry.workspace_id}  revision ${entry.revision}  ${entry.connected && online ? "connected" : "not connected"}`,
+    )
   }
   return lines
 }

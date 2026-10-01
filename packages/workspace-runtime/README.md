@@ -200,7 +200,7 @@ stream and have their own transport:
 
 | Surface | Transport | Event family | Contract |
 | --- | --- | --- | --- |
-| `GET /api/wr/events` | SSE | `{ directory, payload }` frames: the runtime's projected client-presentation events (parts, deltas, tool state, status, permission and question asks, todo, diagnostics), the projected `subagent.updated` / `goal.*` runtime-channel events, `harness.health` (a session's `harnessHealth` and `connectionState`, as `/api/wr/health?sessionId=` answers them, sent when either changes around a turn), and the workspace's control frames from `workspaceRuntimeBus` (PTY lifecycle and stream summaries, agent lifecycle, session lifecycle) | The one stream a workspace runtime serves. Mounted by `mountWorkspaceCore()`; resumable by `Last-Event-ID`, with a second retained ring for the frames that settle a state machine. A principal the workspace authority admits reads it unscoped, on a workspace lease the control plane mints for the read and the delivery policy renews, and the session authority decides per session what reaches it — the workspace's owner is no exception; a principal it refuses is answered 403 `workspace_event_stream_denied` and reads `?sessionID=` under a session lease, that session and its subagent children. A connection lives at most one runtime-access-token lifetime and reconnects by cursor into the reader's actor-keyed replay scope; a self-hosted node admits the unscoped arm by stamped role with no lease and re-checks only session grants. |
+| `GET /api/wr/events` | SSE | `{ directory, payload }` frames: the runtime's projected client-presentation events (parts, deltas, tool state, status, permission and question asks, todo, diagnostics), the committed `subagent.updated` / `goal.*` presentation events, `harness.health` (a session's `harnessHealth` and `connectionState`, as `/api/wr/health?sessionId=` answers them, sent when either changes around a turn), and the workspace's control frames from `workspaceRuntimeBus` (PTY lifecycle and stream summaries, agent lifecycle, session lifecycle) | The one stream a workspace runtime serves. Mounted by `mountWorkspaceCore()`; resumable by `Last-Event-ID`, with a second retained ring for the frames that settle a state machine. A principal the workspace authority admits reads it unscoped, on a workspace lease the control plane mints for the read and the delivery policy renews, and the session authority decides per session what reaches it — the workspace's owner is no exception; a principal it refuses is answered 403 `workspace_event_stream_denied` and reads `?sessionID=` under a session lease, that session and its subagent children. A connection lives at most one runtime-access-token lifetime and reconnects by cursor into the reader's actor-keyed replay scope; a self-hosted node admits the unscoped arm by stamped role with no lease and re-checks only session grants. |
 | `GET /api/wr/pty/:ptyID/connect` | WebSocket | PTY bytes plus cursor metadata | Supported PTY data stream. PTY lifecycle summaries also appear on `/api/wr/events`, but terminal bytes are delivered over this WebSocket. |
 
 `harness.health` is owned by `src/workspace/harness-health-feed.ts`. A session is
@@ -212,9 +212,11 @@ watched session on the next task; a read that differs from the last one sent for
 that session is published.
 
 `RuntimeEventHub` is the hub for session/runtime events: session routes
-publish client-presentation events to its global channel, which `/api/wr/events`
-serves, and runtime-channel events (subagent revisions, goal changes) to its
-runtime channel, which `/api/wr/events` projects onto the wire. The session
+publish committed client-presentation events to its global channel, which
+`/api/wr/events` serves. `createSessionEventWriter` appends each projected event,
+subagent revisions included, before publication; a goal change is appended and
+published by the store's goal write. Raw runtime events stay on its runtime
+channel for in-process subscribers. The session
 routes' `publishGlobal` (`bridgeLifecycleEvent` in
 [`routes/session.ts`](src/routes/session.ts)) also forwards a session's
 lifecycle states onto `workspaceRuntimeBus` as `agent.lifecycle` frames:

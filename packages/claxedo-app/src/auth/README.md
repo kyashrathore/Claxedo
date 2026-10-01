@@ -1,6 +1,6 @@
 # auth
 
-Owns: the account, as one port with two bindings: the browser's own sign-in session with the identity provider (Better Auth), and on the desktop Electron main's account, reached over the preload's `api.account` bridge. Also the four full-screen auth routes and the origins they talk to. It does not own who may do what; that is `src/access/`.
+Owns: the account, as one port with two bindings: the browser's own sign-in session with the identity provider (Better Auth), and on the desktop Electron main's account, reached over the preload's `api.account` bridge. Also the full-screen auth routes and the origins they talk to. It does not own who may do what; that is `src/access/`.
 
 ## Concepts
 
@@ -14,13 +14,17 @@ Owns: the account, as one port with two bindings: the browser's own sign-in sess
 - The auth routes answer JSON, and a proxy's HTML error page has no fields to read, so `authResponseBody` reads a body only when the response says it is JSON (`better-auth-error.ts`).
 - Origins (`origins.ts`): `apiOrigin()` is `VITE_CLAXEDO_SERVER_URL` or the page origin; `appOrigin()` is the page origin; `serverIssuesSessions()` is `VITE_CLAXEDO_ISSUES_SESSIONS !== "0"`.
 
+- Invitation continuation (`login-continuation.ts`): sign-in or sign-up retains `/invitations#<token>`, then calls the server's typed `acceptOrgInvitation` action. The server owns email matching, expiry, revocation, single use and membership; the app owns only the authentication and acceptance screen.
+
 ## Machine
 
 `AuthState`: `signedOut(reason?)` → `signingIn` → `signedIn(user)`; `signedIn` → `expired` when a refresh is refused. Events: `started`, `settled(user, reason?)`, `signedOut`, `expired`. The session's `loading`, `user` and `unavailable` signals feed `settled`; nothing else decides the state. Main's desktop states map onto it: `pending` → `signingIn`, `signed` → `signedIn` (with `identityResolving` while its name is still being looked up), `unsigned` → `signedOut`, `unavailable` → `signedOut` with main's detail as the reason. A state main never sends decodes as unavailable, never as signed.
 
+`InvitationState` (`model.ts`): `idle` → `authenticating` → `accepting` → `joined(result)` or `failed(failure)`. Pending email verification returns to `idle`. A refused acceptance can be retried explicitly; a successful acceptance is retained so the screen sends no second consume request.
+
 ## Routes
 
-`authRoutes` (`routes.ts`): `/login`, `/device` (device grant approval), `/oauth/consent` (MCP scope consent), `/cli-login` (CLI token handoff, loopback callback only). The shell registers them outside the app shell.
+`authRoutes` (`routes.ts`): `/login`, `/device` (device grant approval), `/oauth/consent` (MCP scope consent), `/cli-login` (CLI token handoff, loopback callback only), `/invitations#<token>` (sign-up/sign-in and invitation acceptance). The shell registers them outside the app shell.
 
 ## Invariants
 
@@ -34,3 +38,5 @@ Owns: the account, as one port with two bindings: the browser's own sign-in sess
 ## Flows
 
 21 (sign-in on a machine used unsigned: the desktop signs in through main, the account card, sign-out, and a cloud workspace from the account catalog), 23 (team sharing, two browsers), 36 (access).
+
+Invitation acceptance and email verification need the real D1 Worker with a deployment-owned email sender. The focused continuation tests cover the shared accept action; browser acceptance and flow 33 phone layout remain acceptance checks for the integration runner.

@@ -296,7 +296,7 @@ async function relayHarness() {
       hostId: "host_1",
       role: "editor",
     }, runtime.privateKey, "EdDSA"),
-    viewerRuntimeAccessToken: await mintRuntimeAccessToken({
+    sessionRuntimeAccessToken: await mintRuntimeAccessToken({
       principalKind: "user",
       actorId: "actor_viewer",
       actorKind: "human",
@@ -304,6 +304,7 @@ async function relayHarness() {
       workspaceId: "ws_1",
       hostId: "host_1",
       role: "viewer",
+      sessionId: PTY_SESSION_ID,
     }, runtime.privateKey, "EdDSA"),
     revokedRuntimeAccessToken: await mintRuntimeAccessToken({
       principalKind: "user",
@@ -509,14 +510,12 @@ describe("workspace relay composed runtime path", () => {
         service: "workspace-runtime",
       })
 
-      const viewerHealth = await relayFetch("/api/wr/health", {}, relay.viewerRuntimeAccessToken)
-      expect(viewerHealth.status).toBe(200)
-      const viewerPty = await relayFetch("/api/wr/pty", {}, relay.viewerRuntimeAccessToken)
-      expect(viewerPty.status).toBe(403)
-      await expect(viewerPty.json()).resolves.toEqual({
+      const sessionPty = await relayFetch("/api/wr/pty", {}, relay.sessionRuntimeAccessToken)
+      expect(sessionPty.status).toBe(403)
+      await expect(sessionPty.json()).resolves.toEqual({
         error: {
-          code: "relay_role_denied",
-          message: "Workspace role does not allow this relay request",
+          code: "relay_scope_denied",
+          message: "Runtime Access Token scope does not reach this relay request",
         },
       })
 

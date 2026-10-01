@@ -13,6 +13,18 @@
     "./vocabulary": {
       "types": "./src/vocabulary.ts",
       "default": "./src/vocabulary.ts"
+    },
+    "./machine": {
+      "types": "./src/machine.ts",
+      "default": "./src/machine.ts"
+    },
+    "./machine-seal": {
+      "types": "./src/machine-seal.ts",
+      "default": "./src/machine-seal.ts"
+    },
+    "./auth": {
+      "types": "./src/auth.ts",
+      "default": "./src/auth.ts"
     }
   },
   "scripts": {

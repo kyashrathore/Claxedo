@@ -5,6 +5,7 @@ import type { D1Database } from "@cloudflare/workers-types"
 import {
   AuthenticationError,
   type AuthAssurance,
+  type AuthIdentity,
   type AuthenticationEvidenceMethod,
 } from "@claxedo/server-core/platform/auth/authentication"
 
@@ -217,4 +218,13 @@ export function createBetterAuthD1AuthenticationEvidenceResolver(
       assurance: evidence.assurance,
     }
   }
+}
+
+export async function betterAuthVerifiedEmail(input: { database: D1Database; issuer: string }, identity: AuthIdentity | undefined) {
+  if (!identity || identity.adapter !== "better-auth" || identity.issuer !== input.issuer) return undefined
+  const account = await input.database
+    .prepare('select email from "user" where id = ? and "emailVerified" = 1')
+    .bind(identity.subject)
+    .first<{ email: string }>()
+  return account?.email
 }

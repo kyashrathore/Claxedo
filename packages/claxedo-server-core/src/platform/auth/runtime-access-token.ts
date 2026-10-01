@@ -72,6 +72,8 @@ type RuntimeAccessTokenSignerBaseInput = {
   actorName?: string
   actorAvatarUrl?: string
   role: RelayRole
+  /** The one session a share holder's token reaches; absent on the workspace owner's token. */
+  sessionId?: string
   /** Present only for a token a channel binding authorized; the relay checks its generation. */
   channelIdentity?: ChannelIdentityInput
   /** Present for cloud workspaces; assigned atomically with the sandbox address. */
@@ -238,6 +240,7 @@ export function runtimeAccessTokenSigner(env: NodeJS.ProcessEnv = process.env): 
       host_id: input.hostId,
       ...(input.routingId !== undefined ? { routing_id: input.routingId } : {}),
       role: input.role,
+      ...(input.sessionId === undefined ? { scope: "workspace" } : { scope: "session", session_id: input.sessionId }),
     })
       .setProtectedHeader({ alg, kid })
       .setIssuer(runtimeAccessTokenIssuer)

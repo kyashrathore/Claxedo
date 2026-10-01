@@ -1,7 +1,8 @@
 import type { D1Database } from "@cloudflare/workers-types"
-import { ControlPlaneAuthError, type SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
+import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import type { WorkspaceAuthority } from "@claxedo/server-core/platform/auth/authority"
-import { accessChangeRowSql } from "./access-context"
+import { accessChangeRowSql, requireHuman, type HumanPrincipal } from "./access-context"
+import { maySql } from "./authorization"
 
 export const D1_AUDIT_AUTHORITY_METHODS = ["auditDeny", "auditAllow"] as const satisfies readonly (keyof WorkspaceAuthority)[]
 export type D1AuditAuthorityPort = Pick<WorkspaceAuthority, (typeof D1_AUDIT_AUTHORITY_METHODS)[number]>
@@ -19,15 +20,7 @@ export type D1AuditAuthorityOptions = {
   retentionLimit?: number
 }
 
-type Principal = { userId: string; actorId: string }
-type PrincipalRow = {
-  user_id: string
-  user_state: "active" | "suspended" | "deleted"
-  actor_id: string
-  actor_kind: "human" | "agent"
-  actor_state: "active" | "suspended" | "revoked"
-  unlinked_at: number | null
-}
+type Principal = HumanPrincipal
 type WorkspaceRow = { workspace_id: string; org_id: string; project_id: string }
 
 const AUDIT_METADATA_KEYS = new Set([
@@ -55,8 +48,8 @@ const MAX_AUDIT_METADATA_BYTES = 4096
 /**
  * Worker-safe bounded audit writer.
  *
- * Workspace attribution follows the retained rule: only a caller with
- * read access may file an event under a workspace. Denied or missing workspace
+ * Workspace attribution follows the workspace rule: only a caller who may
+ * open the workspace, its owner, files an event under it. Denied or missing workspace
  * claims are kept separately as unverified attempts and never enter tenant
  * audit indexes. Metadata is a fixed scalar allowlist, not arbitrary JSON.
  */
@@ -162,10 +155,10 @@ export class D1AuditAuthority implements D1AuditAuthorityPort {
   }
 
   private async attributedWorkspace(who: Principal, workspaceId: string) {
+    const opens = maySql(who, "open", { kind: "workspace", alias: "w" })
     return await this.database.prepare(`
-      ${workspaceReadAccessCte()}
-      select workspace_id, org_id, project_id from authorized_workspace
-    `).bind(who.actorId, workspaceId).first<WorkspaceRow>()
+      select w.workspace_id, w.org_id, w.project_id from workspaces w where w.workspace_id = ? and ${opens.sql}
+    `).bind(workspaceId, ...opens.bind).first<WorkspaceRow>()
   }
 
   private async tryPrincipal(auth: SignedControlPlaneAuth) {
@@ -176,57 +169,9 @@ export class D1AuditAuthority implements D1AuditAuthorityPort {
     }
   }
 
-  private async requirePrincipal(auth: SignedControlPlaneAuth): Promise<Principal> {
-    const principal = auth.principal
-    if (!principal) throw new ControlPlaneAuthError(503, "identity_provisioning", "Canonical application identity is required")
-    if (principal.deploymentId !== this.options.deploymentId || principal.actorKind !== "human") {
-      throw new ControlPlaneAuthError(401, "invalid_bearer_token", "Application principal belongs to another authority domain")
-    }
-    const row = await this.database.prepare(`
-      select identity.user_id, user.state as user_state, actor.actor_id, actor.kind as actor_kind,
-        actor.state as actor_state, identity.unlinked_at
-      from auth_identities identity
-      join users user on user.user_id = identity.user_id
-      join actors actor on actor.actor_id = ? and actor.user_id = user.user_id
-      where identity.adapter = ? and identity.issuer = ? and identity.subject = ?
-    `).bind(
-      principal.actorId,
-      principal.identity.adapter,
-      principal.identity.issuer,
-      principal.identity.subject,
-    ).first<PrincipalRow>()
-    if (
-      !row || row.unlinked_at !== null || row.user_id !== principal.userId || row.actor_id !== principal.actorId
-      || row.actor_kind !== "human"
-    ) throw new ControlPlaneAuthError(401, "invalid_bearer_token", "Application principal is stale or unlinked")
-    if (row.user_state === "deleted") throw new ControlPlaneAuthError(403, "account_deleted", "Application account is deleted")
-    if (row.user_state !== "active" || row.actor_state !== "active") {
-      throw new ControlPlaneAuthError(403, "account_suspended", "Application account is suspended")
-    }
-    return { userId: row.user_id, actorId: row.actor_id }
+  private requirePrincipal(auth: SignedControlPlaneAuth): Promise<Principal> {
+    return requireHuman(this.database, this.options.deploymentId, auth)
   }
-}
-
-function workspaceReadAccessCte() {
-  return `with current_actor as (
-    select actor.actor_id, actor.user_id
-    from actors actor join users user on user.user_id = actor.user_id and user.state = 'active'
-    where actor.actor_id = ? and actor.state = 'active'
-  ), authorized_workspace as (
-    select workspace.workspace_id, workspace.org_id, workspace.project_id
-    from current_actor
-    join workspaces workspace on workspace.workspace_id = ? and workspace.deleted_at is null
-    join projects project
-      on project.project_id = workspace.project_id and project.org_id = workspace.org_id and project.deleted_at is null
-    join orgs organization on organization.org_id = workspace.org_id and organization.deleted_at is null
-    left join project_memberships project_member
-      on project_member.project_id = workspace.project_id and project_member.user_id = current_actor.user_id
-      and project_member.revoked_at is null
-    left join org_memberships org_member
-      on org_member.org_id = workspace.org_id and org_member.user_id = current_actor.user_id and org_member.revoked_at is null
-    where organization.owner_user_id = current_actor.user_id or org_member.user_id is not null
-      or project_member.user_id is not null
-  )`
 }
 
 /** Exported for the pin that every key an MCP audit record carries is allowlisted here. */

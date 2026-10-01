@@ -8,7 +8,6 @@ import type { RelayHostAuthContext } from "../workspace-host-service-auth"
 import { rec, str } from "../json-value"
 import { boundedJsonRecord, isRequestBodyTooLarge, requestBodyTooLargeBody } from "./http"
 import { workspaceDir } from "../target"
-import { denyWorkspaceViewers } from "./workspace-role"
 import { authorizeWorktreeTarget, type WorktreeTargetAccessOptions } from "./worktree-target-access"
 import { trimToUndefined } from "@claxedo/helpers/string"
 
@@ -49,7 +48,7 @@ export function GitSourceRoutes(options: WorktreeTargetAccessOptions = {}) {
         return error("git_source_invalid_path", err instanceof Error ? err.message : "invalid path")
       }
     })
-    .post("/commit", denyWorkspaceViewers("Workspace role does not allow Git writes"), async (c) => {
+    .post("/commit", async (c) => {
       const body = await boundedJsonRecord(c)
       const sourcePath = trimToUndefined(str(body.path))
       const message = trimToUndefined(str(body.message))

@@ -192,7 +192,7 @@ describe("the signed desktop's session sources", () => {
   test("reads the organization member and project access answers the access routes give", () => {
     const member = { user_id: "usr_1", public_id: "usr_1", role: "admin", joined_at: 1 }
     expect(decodeHostedResult("org.members.update", member)).toEqual(member)
-    expect(() => decodeHostedResult("org.members.add", { user_id: "usr_1" })).toThrow(/org\.members\.add.*role/)
+    expect(() => decodeHostedResult("org.invitations.accept", { user_id: "usr_1" })).toThrow(/org\.invitations\.accept.*role/)
     const access = { project_id: "prj_1", org_id: "org_1", entries: [{ kind: "user", user_id: "usr_1", role: "owner", source: "owner" }] }
     expect(decodeHostedResult("project.access", access)).toEqual(access)
     expect(() => decodeHostedResult("project.access", [])).toThrow(/project\.access/)
@@ -255,4 +255,11 @@ describe("isSafeOperation", () => {
       expect(["safe", "never"], name).toContain(HOSTED_OPERATIONS[name].retry)
     }
   })
+})
+
+test("invitation results decode the receipt and declare retry policy", () => {
+  expect(decodeHostedResult("org.invitations.create", { message: "invitation sent" })).toEqual({ message: "invitation sent" })
+  expect(isSafeOperation("org.invitations.create")).toBe(false)
+  expect(isSafeOperation("org.invitations.accept")).toBe(false)
+  expect(isSafeOperation("org.invitations.list")).toBe(true)
 })

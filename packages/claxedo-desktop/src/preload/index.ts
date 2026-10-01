@@ -1,4 +1,3 @@
-import "./zod-jitless"
 import { contextBridge, ipcRenderer, webUtils } from "electron"
 import type {
   BrowserBridge,

@@ -4,6 +4,7 @@ import { latestViewPage, type LatestView } from "@claxedo/server-core/session/la
 import type { D1Database } from "@cloudflare/workers-types"
 import type { SessionPageQuery } from "@claxedo/server-core/platform/auth/private-session-authority"
 import { sessionOrderSql } from "@claxedo/server-core/session/navigation-order"
+import type { BoundSql } from "./authorization"
 
 type SessionPageRow = {
   session_id: string
@@ -27,13 +28,9 @@ const COLUMNS = {
 }
 
 /** `access` is the caller's read predicate over `s`, with the values its placeholders bind. */
-export async function readD1SessionPage(
-  database: D1Database,
-  query: SessionPageQuery,
-  access: { sql: string; params: string[] },
-) {
+export async function readD1SessionPage(database: D1Database, query: SessionPageQuery, access: BoundSql) {
   const where = ["s.deleted_at is null"]
-  const params: Array<string | number | null> = []
+  const params: unknown[] = []
   if ("projectId" in query) {
     where.push("s.project_id = ?")
     params.push(query.projectId)
@@ -48,7 +45,7 @@ export async function readD1SessionPage(
     params.push(`%${query.search.toLowerCase()}%`)
   }
   where.push(access.sql)
-  params.push(...access.params)
+  params.push(...access.bind)
   const order = sessionOrderSql(COLUMNS, query.sort, query.after)
   if (order.keyset) {
     where.push(order.keyset.sql)

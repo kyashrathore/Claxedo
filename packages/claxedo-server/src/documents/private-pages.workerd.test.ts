@@ -11,6 +11,7 @@ import { d1DocumentAccess } from "../authority/adapters/d1/document-authority"
 import { applyControlPlaneMigration, controlPlaneMigrations } from "../test-support/control-plane-migrations"
 import { createHostedDocumentsBackend } from "./backends/hosted/backend"
 import type { R2BucketBinding } from "./backends/hosted/managed"
+import { inviteOrgMember } from "../test-support/invite-org-member"
 
 const instances: Miniflare[] = []
 afterEach(async () => {
@@ -69,7 +70,7 @@ async function fixture() {
     repoUrl: "https://github.com/test/pages",
   })
   for (const name of ["member", "teammate", "org-admin", "project-admin"])
-    await authority.addOrgMember!(creator, {
+    await inviteOrgMember(database, creator, {
       orgId: "org_pages",
       userPublicId: people.get(name)!.user.subject,
       role: name === "org-admin" ? "admin" : "member",

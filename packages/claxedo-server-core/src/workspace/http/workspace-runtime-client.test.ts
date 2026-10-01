@@ -2,9 +2,14 @@ import { afterEach, describe, expect, test, vi } from "vitest"
 import type { RelayProvider } from "../../adapters/relay-port"
 import type { SandboxManagerPort } from "../../sandbox/manager-port"
 import type { Workspace } from "../store/index"
-import { createWorkspaceRuntimeClient } from "./workspace-runtime-client"
+import { createWorkspaceRuntimeClient, workspaceRuntimeRequestError } from "./workspace-runtime-client"
 
 type FetchCall = (...args: Parameters<typeof fetch>) => ReturnType<typeof fetch>
+
+test("runtime errors preserve authority retryability", async () => {
+  const error = await workspaceRuntimeRequestError("freeze", Response.json({ error: { code: "busy", message: "Busy", retryable: true } }, { status: 409 }))
+  expect(error).toMatchObject({ code: "busy", status: 409, retryable: true })
+})
 
 const workspace = {
   id: "ws-1",

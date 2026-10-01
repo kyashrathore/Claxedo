@@ -55,6 +55,9 @@ describe("SQLite organization/team authority invariants", () => {
         role: "member",
       }),
     ).rejects.toThrow("team_member_org_membership_required")
+    await expect(
+      authority.addTeamMember!(alice, { teamId: org.default_team_id, tokenIdentifier: "issuer|no-such-account", role: "member" }),
+    ).rejects.toThrow("team_member_org_membership_required")
 
     const now = Date.now()
     db()

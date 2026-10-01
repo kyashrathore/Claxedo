@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test"
 
 import { createFakeControlPlane } from "@claxedo/host-connector/test-support"
 import { hostKeyPairFromJwk } from "@claxedo/host-connector/host-identity"
-import { sealingPublicKeyJwk } from "@claxedo/host-connector/machine-seal"
+import { publicKeyJwk } from "@claxedo/account-contract/machine"
 
 import { runHostConnectorChild } from "./entry"
 import type { HostConnectorChildMessage, HostConnectorParentMessage } from "../main/host-connector/child-protocol"
@@ -92,7 +92,12 @@ function childHarness(options?: {
           send(
             ok
               ? { type: "provider-config-stored", requestId: message.requestId, ok: true }
-              : { type: "provider-config-stored", requestId: message.requestId, ok: false, error: "safeStorage refused the write" },
+              : {
+                  type: "provider-config-stored",
+                  requestId: message.requestId,
+                  ok: false,
+                  error: "safeStorage refused the write",
+                },
           )
           return
         }
@@ -108,12 +113,14 @@ function childHarness(options?: {
               message.name === "host.enrollmentNonce"
                 ? { request_id: "req_1", nonce: "nonce_1", expires_at: 9_999 }
                 : {
-                  enrollment: await cp.enrollAccountHost({
-                    hostId: String(message.input?.hostId),
-                    publicKey: String(message.input?.publicKey),
-                    ...(typeof message.input?.displayName === "string" ? { displayName: message.input.displayName } : {}),
-                  }),
-                }
+                    enrollment: await cp.enrollAccountHost({
+                      hostId: String(message.input?.hostId),
+                      publicKey: String(message.input?.publicKey),
+                      ...(typeof message.input?.displayName === "string"
+                        ? { displayName: message.input.displayName }
+                        : {}),
+                    }),
+                  }
             send({ type: "account-result", requestId: message.requestId, ok: true, value })
           })()
         if (message.name === options?.stall) {
@@ -147,7 +154,13 @@ describe("the private bootstrap protocol", () => {
     const child = childHarness()
     const requestId = "bootstrap_1"
 
-    child.send({ type: "bootstrap", requestId, controlPlaneUrl: CONTROL_PLANE_URL, heartbeatIntervalMs: 20_000, displayName: "Work laptop" })
+    child.send({
+      type: "bootstrap",
+      requestId,
+      controlPlaneUrl: CONTROL_PLANE_URL,
+      heartbeatIntervalMs: 20_000,
+      displayName: "Work laptop",
+    })
     await until(
       () => child.sent.some((message) => message.type === "status" && message.status.status === "enrolled"),
       "enrolled status push",
@@ -177,7 +190,12 @@ describe("the private bootstrap protocol", () => {
   test("answers the bootstrap while the first enrollment call is still stalled", async () => {
     const child = childHarness({ stall: "host.enrollmentNonce" })
 
-    child.send({ type: "bootstrap", requestId: "stalled", controlPlaneUrl: CONTROL_PLANE_URL, heartbeatIntervalMs: 20_000 })
+    child.send({
+      type: "bootstrap",
+      requestId: "stalled",
+      controlPlaneUrl: CONTROL_PLANE_URL,
+      heartbeatIntervalMs: 20_000,
+    })
     await until(
       () => child.sent.some((message) => message.type === "response" && message.requestId === "stalled"),
       "bootstrap response",
@@ -208,7 +226,12 @@ describe("the private bootstrap protocol", () => {
   test("a stalled enrollment that is stopped mid-flight never claims an enrollment", async () => {
     const child = childHarness({ stall: "host.enrollmentNonce" })
 
-    child.send({ type: "bootstrap", requestId: "stalled", controlPlaneUrl: CONTROL_PLANE_URL, heartbeatIntervalMs: 20_000 })
+    child.send({
+      type: "bootstrap",
+      requestId: "stalled",
+      controlPlaneUrl: CONTROL_PLANE_URL,
+      heartbeatIntervalMs: 20_000,
+    })
     await until(() => child.accountOperations.length === 1, "the stalled nonce request")
     child.send({ type: "stop", requestId: "stop_1" })
     await until(
@@ -232,17 +255,21 @@ describe("the private bootstrap protocol", () => {
     // `heartbeatIntervalMs` is small here so a real timer tick fires inside the
     // test without a fake clock.
     const child = childHarness()
-    child.send({ type: "bootstrap", requestId: "bootstrap", controlPlaneUrl: CONTROL_PLANE_URL, heartbeatIntervalMs: 20 })
+    child.send({
+      type: "bootstrap",
+      requestId: "bootstrap",
+      controlPlaneUrl: CONTROL_PLANE_URL,
+      heartbeatIntervalMs: 20,
+    })
     await until(
       () => child.sent.some((message) => message.type === "status" && message.status.status === "enrolled"),
       "enrolled status push",
     )
-    const enrolledPush = child.sent.find(
-      (message) => message.type === "status" && message.status.status === "enrolled",
-    )
-    const firstLease = enrolledPush?.type === "status" && enrolledPush.status.status === "enrolled"
-      ? enrolledPush.status.enrollment.expires_at
-      : 0
+    const enrolledPush = child.sent.find((message) => message.type === "status" && message.status.status === "enrolled")
+    const firstLease =
+      enrolledPush?.type === "status" && enrolledPush.status.status === "enrolled"
+        ? enrolledPush.status.enrollment.expires_at
+        : 0
     expect(firstLease).toBeGreaterThan(0)
 
     const beatsAfterStart = child.beats().length
@@ -251,9 +278,9 @@ describe("the private bootstrap protocol", () => {
       () =>
         child.sent.some(
           (message) =>
-            message.type === "status"
-            && message.status.status === "enrolled"
-            && message.status.enrollment.expires_at > firstLease,
+            message.type === "status" &&
+            message.status.status === "enrolled" &&
+            message.status.enrollment.expires_at > firstLease,
         ),
       "a status push carrying the heartbeat-renewed lease",
     )
@@ -319,11 +346,13 @@ describe("the private bootstrap protocol", () => {
     // only when they change, so a push without them would leave the daemon
     // answering 503 and publishing nothing for the life of the credential.
     const child = childHarness()
-    child.send({ type: "bootstrap", requestId: "bootstrap", controlPlaneUrl: CONTROL_PLANE_URL, heartbeatIntervalMs: 20_000 })
-    await until(
-      () => child.sent.some((message) => message.type === "serving"),
-      "the first serving push",
-    )
+    child.send({
+      type: "bootstrap",
+      requestId: "bootstrap",
+      controlPlaneUrl: CONTROL_PLANE_URL,
+      heartbeatIntervalMs: 20_000,
+    })
+    await until(() => child.sent.some((message) => message.type === "serving"), "the first serving push")
 
     expect(child.sent.find((message) => message.type === "serving")).toEqual({
       type: "serving",
@@ -357,7 +386,12 @@ describe("the private bootstrap protocol", () => {
 
   test("a workspace nobody shared here is never acked, however the owner assigned it", async () => {
     const child = childHarness()
-    child.send({ type: "bootstrap", requestId: "bootstrap", controlPlaneUrl: CONTROL_PLANE_URL, heartbeatIntervalMs: 20 })
+    child.send({
+      type: "bootstrap",
+      requestId: "bootstrap",
+      controlPlaneUrl: CONTROL_PLANE_URL,
+      heartbeatIntervalMs: 20,
+    })
     await until(
       () => child.sent.some((message) => message.type === "status" && message.status.status === "enrolled"),
       "enrolled status push",
@@ -375,7 +409,12 @@ describe("the private bootstrap protocol", () => {
 
   test("unsharing withdraws the ack within one beat", async () => {
     const child = childHarness()
-    child.send({ type: "bootstrap", requestId: "bootstrap", controlPlaneUrl: CONTROL_PLANE_URL, heartbeatIntervalMs: 20_000 })
+    child.send({
+      type: "bootstrap",
+      requestId: "bootstrap",
+      controlPlaneUrl: CONTROL_PLANE_URL,
+      heartbeatIntervalMs: 20_000,
+    })
     await until(
       () => child.sent.some((message) => message.type === "status" && message.status.status === "enrolled"),
       "enrolled status push",
@@ -398,7 +437,12 @@ describe("the private bootstrap protocol", () => {
 
   test("the shares a restart carries back are re-acked from the owner's own assignments", async () => {
     const first = childHarness()
-    first.send({ type: "bootstrap", requestId: "first", controlPlaneUrl: CONTROL_PLANE_URL, heartbeatIntervalMs: 20_000 })
+    first.send({
+      type: "bootstrap",
+      requestId: "first",
+      controlPlaneUrl: CONTROL_PLANE_URL,
+      heartbeatIntervalMs: 20_000,
+    })
     await until(() => !!first.createdIdentity(), "new identity")
     await until(
       () => first.sent.some((message) => message.type === "status" && message.status.status === "enrolled"),
@@ -435,13 +479,24 @@ describe("the private bootstrap protocol", () => {
 
   test("restores an acknowledged identity without creating or exporting another", async () => {
     const first = childHarness()
-    first.send({ type: "bootstrap", requestId: "first", controlPlaneUrl: CONTROL_PLANE_URL, heartbeatIntervalMs: 20_000 })
+    first.send({
+      type: "bootstrap",
+      requestId: "first",
+      controlPlaneUrl: CONTROL_PLANE_URL,
+      heartbeatIntervalMs: 20_000,
+    })
     await until(() => !!first.createdIdentity(), "new identity")
     const identity = first.createdIdentity()!
     first.runtime.close()
 
     const restored = childHarness()
-    restored.send({ type: "bootstrap", requestId: "restored", controlPlaneUrl: CONTROL_PLANE_URL, heartbeatIntervalMs: 20_000, identity })
+    restored.send({
+      type: "bootstrap",
+      requestId: "restored",
+      controlPlaneUrl: CONTROL_PLANE_URL,
+      heartbeatIntervalMs: 20_000,
+      identity,
+    })
     await until(
       () => restored.sent.some((message) => message.type === "response" && message.requestId === "restored"),
       "restored bootstrap response",
@@ -454,7 +509,12 @@ describe("the private bootstrap protocol", () => {
 
   test("stop closes the child-owned connector and acknowledges the terminal state", async () => {
     const child = childHarness()
-    child.send({ type: "bootstrap", requestId: "bootstrap", controlPlaneUrl: CONTROL_PLANE_URL, heartbeatIntervalMs: 20_000 })
+    child.send({
+      type: "bootstrap",
+      requestId: "bootstrap",
+      controlPlaneUrl: CONTROL_PLANE_URL,
+      heartbeatIntervalMs: 20_000,
+    })
     await until(
       () => child.sent.some((message) => message.type === "response" && message.requestId === "bootstrap"),
       "bootstrap response",
@@ -505,7 +565,7 @@ describe("provider configuration sealed for this machine", () => {
 
     const sealingPrivateKeyJwk = child.createdIdentity()?.sealingPrivateKeyJwk
     expect(sealingPrivateKeyJwk).toHaveProperty("d")
-    const declared = JSON.stringify(sealingPublicKeyJwk(sealingPrivateKeyJwk!))
+    const declared = JSON.stringify(publicKeyJwk(sealingPrivateKeyJwk!))
     expect(child.beats()[0]?.body).toMatchObject({ sealingPublicKey: declared })
     expect(child.cp.sealingPublicKey(enrollmentId)).toBe(declared)
     // The public half is derived, never stored on its own; the private half
@@ -521,7 +581,13 @@ describe("provider configuration sealed for this machine", () => {
     first.runtime.close()
 
     const restored = childHarness({ controlPlane: first.cp })
-    restored.send({ type: "bootstrap", requestId: "restored", controlPlaneUrl: CONTROL_PLANE_URL, heartbeatIntervalMs: 20_000, identity: older })
+    restored.send({
+      type: "bootstrap",
+      requestId: "restored",
+      controlPlaneUrl: CONTROL_PLANE_URL,
+      heartbeatIntervalMs: 20_000,
+      identity: older,
+    })
     await until(
       () => restored.sent.some((message) => message.type === "status" && message.status.status === "enrolled"),
       "enrolled status push after the restart",
@@ -536,7 +602,7 @@ describe("provider configuration sealed for this machine", () => {
     const answeredAt = restored.sent.findIndex((message) => message.type === "response")
     expect(storedAt).toBeGreaterThanOrEqual(0)
     expect(storedAt).toBeLessThan(answeredAt)
-    expect(restored.cp.sealingPublicKey(restored.enrollmentId())).toBe(JSON.stringify(sealingPublicKeyJwk(stored!)))
+    expect(restored.cp.sealingPublicKey(restored.enrollmentId())).toBe(JSON.stringify(publicKeyJwk(stored!)))
     restored.runtime.close()
   })
 
@@ -598,7 +664,9 @@ describe("provider configuration sealed for this machine", () => {
     expect(reported.stage).toBe("provider-config")
     expect(reported.detail).not.toBe("")
     expect(child.cp.providerConfigAckedRevision(enrollmentId)).toBe(revision)
-    expect(child.providerConfigs.some((entry) => entry.kind === "opened" && entry.revision === revision + 1)).toBe(false)
+    expect(child.providerConfigs.some((entry) => entry.kind === "opened" && entry.revision === revision + 1)).toBe(
+      false,
+    )
     child.runtime.close()
   })
 
@@ -606,7 +674,10 @@ describe("provider configuration sealed for this machine", () => {
     const child = childHarness()
     const enrollmentId = await enrolled(child, { heartbeatIntervalMs: 20 })
     const configured = await child.cp.pushProviderConfig(enrollmentId, PROVIDER_CONFIG)
-    await untilElapsed(() => child.cp.providerConfigAckedRevision(enrollmentId) === configured, "the configured revision")
+    await untilElapsed(
+      () => child.cp.providerConfigAckedRevision(enrollmentId) === configured,
+      "the configured revision",
+    )
 
     const withdrawn = await child.cp.pushProviderConfig(enrollmentId, null)
     await untilElapsed(() => child.cp.providerConfigAckedRevision(enrollmentId) === withdrawn, "the withdrawn revision")

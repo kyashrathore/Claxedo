@@ -7,6 +7,7 @@ import type { AgentRuntimeStore } from "./contracts"
 import { deriveSessionTitle, extractPromptTitleText, isPlaceholderTitle } from "../session/session-title"
 import { acceptGeneratedTitle, sessionTitleRequest, TITLE_TURN_TIMEOUT_MS } from "./title-generation"
 import { buildSession, sessionUpdated, withDir } from "../projection/presentation-events"
+import { createSessionEventWriter } from "../projection/session-event-writer"
 
 const log = Log.create({ service: "agent-runtime" })
 
@@ -28,6 +29,10 @@ type NamedSession = Pick<TitleTarget, "transport" | "session">
  */
 export function createSessionTitleOwner(input: { store: AgentRuntimeStore; eventHub: RuntimeEventHub; deadlineMs?: number }) {
   const { store, eventHub } = input
+  const writer = createSessionEventWriter({
+    store,
+    publishPresentation: (context, payload) => eventHub.publishGlobal(withDir(context.directory ?? "", payload)),
+  })
   const deadlineMs = input.deadlineMs ?? TITLE_TURN_TIMEOUT_MS
   const attempted = new Set<string>()
 
@@ -90,25 +95,25 @@ export function createSessionTitleOwner(input: { store: AgentRuntimeStore; event
       const created = current?.time?.created
       if (!current || created === undefined || current.titleSource === "user" || current.titleSource === "harness") return
       const agentSessionId = store.getAgentSessionId(sessionId) ?? undefined
-      const committed = store.appendEvent({
+      await writer.writePresentationAfter({
         sessionId,
+        directory,
         ...(agentSessionId ? { agentSessionId } : {}),
-        payload: sessionUpdated(buildSession({
+        source: { dir: "in", method: "generated-title" },
+      }, sessionUpdated(buildSession({
           id: sessionId,
           directory,
           title,
           titleSource: "harness",
           created,
           updated: Date.now(),
-        })),
-        source: { dir: "in", method: "generated-title" },
-      }).payload
-      try {
-        await settleAtRequestDeadline("Session title rename", deadline, push(sessionId, title, async () => target), () => {}, expired)
-      } catch (error) {
-        log.warn("Harness did not take the session title in time", { sessionId, error: error instanceof Error ? error.message : String(error) })
-      }
-      eventHub.publishGlobal(withDir(directory, committed))
+      })), async () => {
+        try {
+          await settleAtRequestDeadline("Session title rename", deadline, push(sessionId, title, async () => target), () => {}, expired)
+        } catch (error) {
+          log.warn("Harness did not take the session title in time", { sessionId, error: error instanceof Error ? error.message : String(error) })
+        }
+      })
     } catch (error) {
       log.warn("Session title generation failed", { sessionId, harness: target.session.binding.connectionId, error: error instanceof Error ? error.message : String(error) })
     }

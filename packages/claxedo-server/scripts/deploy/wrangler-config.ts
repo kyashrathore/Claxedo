@@ -109,6 +109,9 @@ migrations_dir = ${quote(input.controlPlaneMigrationsDir)}
 binding = "CLAXEDO_DOCUMENTS"
 bucket_name = ${quote(input.documentsBucket)}
 
+[[send_email]]
+name = "EMAIL"
+
 [[ratelimits]]
 name = "CLAXEDO_REQUEST_LIMITER"
 namespace_id = ${quote(positiveNamespaceId(input.requestLimiterNamespaceId))}
