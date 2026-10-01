@@ -74,8 +74,8 @@ test("a subagent's permission is listed on its child and answered only through t
     expect(await (await app.request("http://localhost/permission")).json()).toMatchObject([{ id: "perm", sessionID: child }])
     for (const other of ["parent", sibling]) {
       const refused = await post(app, `/session/${other}/permissions/perm`, { response: "once" })
-      expect(refused.status).toBe(409)
-      expect(await refused.json()).toMatchObject({ error: { code: "interaction_session_mismatch" } })
+      expect(refused.status).toBe(404)
+      expect(await refused.json()).toMatchObject({ error: { code: "interaction_not_found" } })
     }
     const foreign = createHostFixture({ transports: { pi: new FakeTransport({ capabilities: REQUESTS }) } })
     hosts.push(foreign)
@@ -93,7 +93,7 @@ test("a subagent's question is answered only on its child, whichever session the
   try {
     expect(await (await app.request("http://localhost/question")).json()).toMatchObject([{ id: "ask", sessionID: child }])
     for (const other of ["parent", sibling]) {
-      expect((await post(app, `/question/ask/reply?sessionId=${other}`, { answers: [["a"]] })).status).toBe(409)
+      expect((await post(app, `/question/ask/reply?sessionId=${other}`, { answers: [["a"]] })).status).toBe(404)
     }
     expect((await post(app, `/question/ask/reply?sessionId=${child}`, { answers: [["a"]] })).status).toBe(200)
     await until(() => answers.length === 1, "harness released")
@@ -111,7 +111,7 @@ test("a background subagent's request asked during its parent's turn survives th
   const app = routes(f, onlySessions(() => allowed))
   expect((await post(app, `/session/${child}/permissions/perm`, { response: "once" })).status).toBe(403)
   allowed = ["parent"]
-  for (const other of ["parent", sibling]) expect((await post(app, `/session/${other}/permissions/perm`, { response: "once" })).status).toBe(409)
+  for (const other of ["parent", sibling]) expect((await post(app, `/session/${other}/permissions/perm`, { response: "once" })).status).toBe(404)
   expect((await post(app, `/session/${child}/permissions/perm`, { response: "once" })).status).toBe(200)
   expect((await post(app, `/question/ask/reply?sessionId=${child}`, { answers: [["a"]] })).status).toBe(200)
   await until(() => answers.length === 2, "harness released")
@@ -168,7 +168,7 @@ test("a background subagent's request while its parent is idle is answered on it
   expect(f.store.getSession("parent")?.status).not.toBe("busy")
   await ask(idlePermission)
   expect(await (await app.request("http://localhost/permission")).json()).toMatchObject([{ id: "idle-perm", sessionID: child }])
-  for (const other of ["parent", sibling]) expect((await post(app, `/session/${other}/permissions/idle-perm`, { response: "once" })).status).toBe(409)
+  for (const other of ["parent", sibling]) expect((await post(app, `/session/${other}/permissions/idle-perm`, { response: "once" })).status).toBe(404)
   const foreign = createHostFixture({ transports: { pi: new FakeTransport({ capabilities: REQUESTS }) } })
   hosts.push(foreign)
   expect((await post(routes(foreign), `/session/${child}/permissions/idle-perm`, { response: "once" })).status).toBe(404)

@@ -112,7 +112,6 @@ function fakeAuthority(): WorkspaceAuthority {
     syncSessionMessages: fn(),
     upsertSessionVisibility: fn(),
     replaceSessionVisibility: fn(),
-    deleteSessionVisibility: fn(),
     recordRuntimeAccessToken: fn(),
     runtimeAccessTokenActive: fn(),
     revokeRuntimeAccessToken: fn(),

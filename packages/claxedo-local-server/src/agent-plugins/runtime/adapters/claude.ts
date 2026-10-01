@@ -6,7 +6,7 @@ import { pluginMcpProjection, type RuntimeMcpServerProjection } from "@claxedo/s
 import type { NotApplied } from "@claxedo/harness/contract"
 import { writeDotMcpFile } from "./dot-mcp-file"
 
-async function projectPlugin(viewRoot: string, input: GenerationPluginRoot, mcpServers: readonly RuntimeMcpServerProjection[]) {
+export async function writeClaudePluginRoot(viewRoot: string, input: GenerationPluginRoot): Promise<string> {
   const root = path.join(viewRoot, `${input.plugin.manifest.name}-${pluginInstanceStorageKey(input.pluginInstanceId).slice(0, 12)}`)
   await fs.cp(input.root, root, { recursive: true, dereference: true, force: false, errorOnExist: true })
   await fs.mkdir(path.join(root, ".claude-plugin"), { recursive: true })
@@ -15,6 +15,12 @@ async function projectPlugin(viewRoot: string, input: GenerationPluginRoot, mcpS
     ...(input.plugin.manifest.version ? { version: input.plugin.manifest.version } : {}),
     ...(input.plugin.manifest.description ? { description: input.plugin.manifest.description } : {}),
   }, null, 2)}\n`)
+  await fs.rm(path.join(root, ".mcp.json"), { force: true })
+  return root
+}
+
+async function projectPlugin(viewRoot: string, input: GenerationPluginRoot, mcpServers: readonly RuntimeMcpServerProjection[]) {
+  const root = await writeClaudePluginRoot(viewRoot, input)
   const projected = await pluginMcpProjection([{ ...input, root }], mcpServers, "claude")
   const carried = projected.byPlugin.get(input.pluginInstanceId) ?? []
   if (input.plugin.mcp.status === "valid" && carried.length) await writeDotMcpFile(root, carried)
