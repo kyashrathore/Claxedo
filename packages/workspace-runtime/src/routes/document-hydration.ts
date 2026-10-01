@@ -21,8 +21,6 @@ const Job = z
     userId: z.string().min(1),
     orgId: z.string().min(1),
     projectId: z.string().min(1),
-    localWorkspaceId: z.string().min(1),
-    cloudWorkspaceId: z.string().min(1),
   })
   .strict()
 
@@ -108,7 +106,8 @@ const DEFAULT_REQUEST_TIMEOUT_MS = 30_000
 export function RuntimeDocumentHydrationRoutes(
   options: {
     workspaceRoot?: string
-    trustedTransport?: boolean
+    /** The relay-exposed workspace this runtime serves; without it the routes are not served. */
+    workspaceId?: string
     controlPlaneOrigin?: string
     verifyJob?: (token: string, expected: Parameters<typeof verifyDocumentJobCapability>[1]) => Promise<unknown>
     beforeReadOpen?: () => void | Promise<void>
@@ -120,6 +119,7 @@ export function RuntimeDocumentHydrationRoutes(
   } = {},
 ) {
   const requestTimeoutMs = options.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS
+  const { workspaceId } = options
   if (!Number.isFinite(requestTimeoutMs) || requestTimeoutMs <= 0) {
     throw new Error("Runtime document request timeout must be positive")
   }
@@ -133,15 +133,14 @@ export function RuntimeDocumentHydrationRoutes(
       throw error
     })
     .post("/api/wr/documents/hydrate", async (context) => {
-      if (!options.trustedTransport) return context.notFound()
+      if (!workspaceId) return context.notFound()
       const input = Input.parse(await boundedJson(context.req.raw, MAX_DOCUMENT_BYTES))
       return await withSessionLifecycle(input.sessionId, async () => {
         const authorized = await (options.verifyJob ?? verifyDocumentJobCapability)(input.job.token, {
           userId: input.job.userId,
           orgId: input.job.orgId,
           projectId: input.job.projectId,
-          localWorkspaceId: input.job.localWorkspaceId,
-          cloudWorkspaceId: input.job.cloudWorkspaceId,
+          workspaceId,
           sessionId: input.sessionId,
           documentId: input.documentId,
           operation: "hydrate",
@@ -161,6 +160,7 @@ export function RuntimeDocumentHydrationRoutes(
         }
         await authorizeRuntimeDocument(
           controlPlaneOrigin,
+          workspaceId,
           input.job,
           input.sessionId,
           input.documentId,
@@ -222,7 +222,7 @@ export function RuntimeDocumentHydrationRoutes(
       })
     })
     .post("/api/wr/documents/:sessionId/:documentId/activate", async (context) => {
-      if (!options.trustedTransport) return context.notFound()
+      if (!workspaceId) return context.notFound()
       const sessionId = context.req.param("sessionId")
       const documentId = context.req.param("documentId")
       if (!/^[A-Za-z0-9_-]+$/.test(sessionId) || !/^[A-Za-z0-9_-]+$/.test(documentId)) {
@@ -244,8 +244,7 @@ export function RuntimeDocumentHydrationRoutes(
           userId: document.job.userId,
           orgId: document.job.orgId,
           projectId: document.job.projectId,
-          localWorkspaceId: document.job.localWorkspaceId,
-          cloudWorkspaceId: document.job.cloudWorkspaceId,
+          workspaceId,
           sessionId,
           documentId,
           operation: "write",
@@ -256,6 +255,7 @@ export function RuntimeDocumentHydrationRoutes(
         if (!authorized) return context.json({ error: "document_activation_capability_invalid" }, 403)
         await authorizeRuntimeDocument(
           new URL(document.writeback.url).origin,
+          workspaceId,
           document.job,
           sessionId,
           documentId,
@@ -277,7 +277,7 @@ export function RuntimeDocumentHydrationRoutes(
       })
     })
     .post("/api/wr/documents/:sessionId/:documentId/resolve", async (context) => {
-      if (!options.trustedTransport) return context.notFound()
+      if (!workspaceId) return context.notFound()
       const sessionId = context.req.param("sessionId")
       const documentId = context.req.param("documentId")
       const denied = await authorizeHostCapability(
@@ -301,8 +301,7 @@ export function RuntimeDocumentHydrationRoutes(
           userId: job.userId,
           orgId: job.orgId,
           projectId: job.projectId,
-          localWorkspaceId: job.localWorkspaceId,
-          cloudWorkspaceId: job.cloudWorkspaceId,
+          workspaceId,
           sessionId,
           documentId,
           operation: "resolve",
@@ -313,6 +312,7 @@ export function RuntimeDocumentHydrationRoutes(
         if (!authorized) return context.json({ error: "document_resolution_capability_invalid" }, 403)
         await authorizeRuntimeDocument(
           new URL(document.writeback.url).origin,
+          workspaceId,
           job,
           sessionId,
           documentId,
@@ -437,6 +437,7 @@ class RuntimeDocumentDenied extends Error {}
 /** The control plane decides whether the job's person may still edit the page; the runtime only asks. */
 async function authorizeRuntimeDocument(
   origin: string,
+  workspaceId: string,
   job: z.infer<typeof Job>,
   sessionId: string,
   documentId: string,
@@ -452,8 +453,7 @@ async function authorizeRuntimeDocument(
         userId: job.userId,
         orgId: job.orgId,
         projectId: job.projectId,
-        localWorkspaceId: job.localWorkspaceId,
-        cloudWorkspaceId: job.cloudWorkspaceId,
+        workspaceId,
         sessionId,
         operation,
       }),

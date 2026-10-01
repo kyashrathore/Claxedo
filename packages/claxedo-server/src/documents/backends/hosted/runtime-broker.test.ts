@@ -217,7 +217,7 @@ describe("hosted document runtime broker", () => {
       expect(body).toMatchObject({ strategy: "use-remote", remoteVersion: "canonical-v3", remoteMarkdown: "canonical" })
       await expect(verifyDocumentRelayJobToken(body.job.token, {
         userId: "user_1", orgId: "org_1", projectId: "project_1",
-        localWorkspaceId: "local_ws", cloudWorkspaceId: "cloud_ws",
+        workspaceId: "cloud_ws",
         sessionId: "session_1", documentId: "document_1", operation: "resolve",
       }, env)).resolves.toMatchObject({ operations: ["resolve"] })
       return Response.json({ path: "/workspace/plan.md", preserved: "/workspace/plan.conflict.md" })
@@ -226,8 +226,7 @@ describe("hosted document runtime broker", () => {
       entry,
       sessionId: "session_1",
       auth,
-      localWorkspaceId: "local_ws",
-      cloudWorkspaceId: "cloud_ws",
+      workspaceId: "cloud_ws",
       choice: "durable",
       current: { markdown: "canonical", version: "canonical-v3" as never, modifiedAt: 3 },
       jobExpiresAt: Math.floor(Date.now() / 1000) + 900,
