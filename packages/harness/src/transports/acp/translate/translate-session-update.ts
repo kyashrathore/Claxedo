@@ -27,7 +27,7 @@ function unadvertised(update: SessionUpdate, ctx: TranslatorContext): AgentRunti
   return []
 }
 
-function availableCommands(update: UpdateOf<"available_commands_update">): AgentRuntimeEvent[] {
+function availableCommandsUpdate(update: UpdateOf<"available_commands_update">): AgentRuntimeEvent[] {
   return [
     {
       type: "available-commands-update",
@@ -36,11 +36,11 @@ function availableCommands(update: UpdateOf<"available_commands_update">): Agent
   ]
 }
 
-function currentMode(update: UpdateOf<"current_mode_update">): AgentRuntimeEvent[] {
+function currentModeUpdate(update: UpdateOf<"current_mode_update">): AgentRuntimeEvent[] {
   return [{ type: "session-agent", agentId: update.currentModeId }]
 }
 
-function sessionInfo(update: UpdateOf<"session_info_update">): AgentRuntimeEvent[] {
+function sessionInfoUpdate(update: UpdateOf<"session_info_update">): AgentRuntimeEvent[] {
   return [
     {
       type: "session-info",
@@ -50,7 +50,7 @@ function sessionInfo(update: UpdateOf<"session_info_update">): AgentRuntimeEvent
   ]
 }
 
-function usage(update: UpdateOf<"usage_update">): AgentRuntimeEvent[] {
+function usageUpdate(update: UpdateOf<"usage_update">): AgentRuntimeEvent[] {
   return [
     {
       type: "usage",
@@ -70,11 +70,11 @@ const handlers: Handlers = {
   plan: { translate: planUpdate },
   plan_update: { translate: planUpdate },
   plan_removed: { translate: planUpdate },
-  available_commands_update: { translate: availableCommands },
-  current_mode_update: { required: [["currentModeId", "string"]], translate: currentMode },
+  available_commands_update: { translate: availableCommandsUpdate },
+  current_mode_update: { required: [["currentModeId", "string"]], translate: currentModeUpdate },
   config_option_update: { translate: configOptionUpdate },
-  session_info_update: { translate: sessionInfo },
-  usage_update: { required: [["size", "number"], ["used", "number"]], translate: usage },
+  session_info_update: { translate: sessionInfoUpdate },
+  usage_update: { required: [["size", "number"], ["used", "number"]], translate: usageUpdate },
   notice: { required: [["severity", "string"], ["title", "string"]], translate: (update) => [noticeEvent(update)] },
   compaction_update: {
     required: [["compactionId", "string"], ["status", "string"]],
