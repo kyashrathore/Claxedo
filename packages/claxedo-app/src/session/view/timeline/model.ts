@@ -1,7 +1,7 @@
 import type { Accessor } from "solid-js"
 import type { AgentTurnOutcome, FirstTurnErrorClass } from "@claxedo/agent-runtime-contract"
 import { type PairedTranscriptTypography } from "@/ui/utils"
-import type { SessionStatus } from "@/server"
+import type { BackgroundWork, SessionStatus } from "@/server"
 import type { MessageNavMessage, MessageNavPreview, TranscriptConversation } from "@/transcript"
 
 export type TurnOutcome = AgentTurnOutcome
@@ -28,6 +28,8 @@ export type TimelineTextKey =
   | "session.delete.confirm"
   | "session.delete.failed.title"
   | "session.delete.title"
+  | `session.timeline.backgroundWork.${"agents" | "shells" | "tasks" | "shellsRunning" | "tasksRunning"}.${"one" | "other"}`
+  | "session.timeline.backgroundWork.hint"
   | "session.timeline.collapseTranscript"
   | "session.timeline.previousMessages.one"
   | "session.timeline.previousMessages.other"
@@ -40,6 +42,7 @@ export type TimelineTextKey =
   | "ui.message.queued"
   | "ui.message.queued.accepted"
   | "ui.message.queued.cancelEdit"
+  | "ui.message.queued.declined"
   | "ui.message.queued.dispatching"
   | "ui.message.queued.edit"
   | "ui.message.queued.editing"
@@ -99,6 +102,7 @@ export type TimelineHost = {
   readonly parentConversation: Accessor<TranscriptConversation | undefined>
   readonly sessions: Accessor<readonly TimelineSessionRow[]>
   readonly status: Accessor<SessionStatus>
+  readonly backgroundWork: Accessor<BackgroundWork>
   readonly turnSettlePending: (userMessageId: string) => boolean
   readonly recordViewport: (size: { readonly width: number; readonly height: number }) => void
   readonly syncSession?: (sessionId: string) => Promise<unknown>

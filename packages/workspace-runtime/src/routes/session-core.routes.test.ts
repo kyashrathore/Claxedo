@@ -51,6 +51,7 @@ const EXPECTED_SESSION_CORE_ROUTES = [
   "POST /question/:id/reject",
   "POST /question/:id/reply",
   "POST /session",
+  "POST /session/:id/background-task/stop",
   "POST /session/:id/fork",
   "POST /session/:id/goal",
   "POST /session/:id/goal/pause",
@@ -126,6 +127,7 @@ describe("Claxedo client-presentation session route inventory", () => {
     expect(byClass.agent_turn).toEqual([
       "POST /question/:id/reject",
       "POST /question/:id/reply",
+      "POST /session/:id/background-task/stop",
       "POST /session/:id/message",
       "POST /session/:id/prompt_async",
       "POST /session/:id/queue/:seq/:action",

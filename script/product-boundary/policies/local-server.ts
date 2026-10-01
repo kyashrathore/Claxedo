@@ -205,7 +205,9 @@ export const localServer: Policy = {
   //    80/29, no headroom.
   // -1 module: `usage/adapters/token-tracker-local-history.ts` is gone with the
   // machine's CLI-history Total view. 79/29, no headroom.
-  ceilings: { modules: 79, packages: 29 },
+  // -1 module: `credentials/operations/drop-copied-harness-logins.ts` is gone;
+  // startup leaves stored credentials untouched. 78/29, no headroom.
+  ceilings: { modules: 78, packages: 29 },
 
   emitted: {
     file: "packages/claxedo-local-server/.artifacts/u8-package-split/manifests/local-server.json",

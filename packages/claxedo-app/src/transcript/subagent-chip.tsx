@@ -7,6 +7,7 @@ import { clampLabel } from "./message-part-text"
 import { asRecord } from "@claxedo/helpers/guards"
 import { claxedoToolArguments } from "./claxedo-tool-view"
 import { safeLinkHref } from "./safe-link"
+import { SubagentStopControl } from "./subagent-stop"
 
 export function subagentSubtitle(subagent: Pick<SubagentView, "description" | "mode" | "resolution">) {
   return [
@@ -28,6 +29,7 @@ type ChipModel = {
   resolution: SubagentView["resolution"]
   toolCallRole?: SubagentView["toolCallRole"]
   parentSessionId: string
+  stopCall?: string
   color?: string
 }
 
@@ -73,6 +75,7 @@ function chipFromView(view: SubagentView, detail?: string): ChipModel {
     resolution: view.resolution,
     ...(view.toolCallRole ? { toolCallRole: view.toolCallRole } : {}),
     parentSessionId: view.parentSessionId,
+    ...(view.stopCall ? { stopCall: view.stopCall } : {}),
   }
 }
 
@@ -216,42 +219,47 @@ export function SubagentChipRow(props: {
               "data-status": chip.status,
             })
             return (
-              <Show
-                when={openable() || interaction()}
-                fallback={
-                  <span
-                    {...chipAttributes()}
-                    aria-label={`${chip.name}, ${statusLabel(chip.status, i18n)}, transcript unavailable`}
-                  >
-                    {content()}
-                  </span>
-                }
-              >
+              <>
                 <Show
-                  when={href()}
+                  when={openable() || interaction()}
                   fallback={
-                    <button
-                      type="button"
+                    <span
                       {...chipAttributes()}
-                      aria-label={`${chip.name}, ${statusLabel(chip.status, i18n)}`}
-                      onClick={activate}
+                      aria-label={`${chip.name}, ${statusLabel(chip.status, i18n)}, transcript unavailable`}
                     >
                       {content()}
-                    </button>
+                    </span>
                   }
                 >
-                  {(value) => (
-                    <a
-                      href={value()}
-                      {...chipAttributes()}
-                      aria-label={`${chip.name}, ${statusLabel(chip.status, i18n)}`}
-                      onClick={activate}
-                    >
-                      {content()}
-                    </a>
-                  )}
+                  <Show
+                    when={href()}
+                    fallback={
+                      <button
+                        type="button"
+                        {...chipAttributes()}
+                        aria-label={`${chip.name}, ${statusLabel(chip.status, i18n)}`}
+                        onClick={activate}
+                      >
+                        {content()}
+                      </button>
+                    }
+                  >
+                    {(value) => (
+                      <a
+                        href={value()}
+                        {...chipAttributes()}
+                        aria-label={`${chip.name}, ${statusLabel(chip.status, i18n)}`}
+                        onClick={activate}
+                      >
+                        {content()}
+                      </a>
+                    )}
+                  </Show>
                 </Show>
-              </Show>
+                <Show when={chip.stopCall}>
+                  {(call) => <SubagentStopControl parentSessionId={chip.parentSessionId} call={call()} name={chip.name} />}
+                </Show>
+              </>
             )
           }}
         </For>

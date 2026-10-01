@@ -1,7 +1,7 @@
 import { createEffect } from "solid-js"
 import type { ControllerContext } from "./controller-context"
 import type { ContextItem, PromptPart } from "./model"
-import { emptyPrompt, promptImages, randomId } from "./model"
+import { promptImages, promptWithoutText, randomId } from "./model"
 import type { AtItem, SlashItem } from "./suggestions"
 
 function atTrigger(text: string, cursor: number) {
@@ -87,7 +87,7 @@ export function selectSlash(context: ControllerContext, item: SlashItem): void {
     requestAnimationFrame(() => context.focusEditor(text.length))
     return
   }
-  context.input.store.setPrompt(context.input.key(), emptyPrompt(), 0)
+  context.input.store.setPrompt(context.input.key(), promptWithoutText(context.draft().prompt), 0)
   context.input.runCommand(item)
 }
 

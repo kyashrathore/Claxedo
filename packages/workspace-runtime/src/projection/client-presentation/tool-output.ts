@@ -98,3 +98,17 @@ export function toolContentText(content: Extract<AgentRuntimeEvent, { type: "too
   const row = asRecord(content.content)
   return text(row?.text)
 }
+
+function isTextContent(item: unknown): boolean {
+  if (!item || typeof item !== "object" || (item as { type?: unknown }).type !== "content") return false
+  const inner = (item as { content?: unknown }).content
+  return !!inner && typeof inner === "object" && (inner as { type?: unknown }).type === "text"
+}
+
+export function withoutOutputText(metadata: Record<string, unknown>): Record<string, unknown> {
+  const acp = metadata.acp
+  if (!acp || typeof acp !== "object" || !Array.isArray((acp as { content?: unknown }).content)) return metadata
+  const { content, ...rest } = acp as { content: unknown[] } & Record<string, unknown>
+  const kept = content.filter((item) => !isTextContent(item))
+  return { ...metadata, acp: kept.length ? { ...rest, content: kept } : rest }
+}

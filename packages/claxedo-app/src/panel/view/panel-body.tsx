@@ -9,7 +9,7 @@ import { useServer, type PlacementId } from "@/server"
 import { usePreferences } from "@/settings"
 import { useShellRegistries, type PanelView } from "@/shell"
 import { Markdown } from "@/transcript"
-import { createExposed } from "../exposed"
+import { createSidePanelExposed } from "@/lib/side-panel-motion"
 import { filePathFromTab } from "../focus"
 import { panelDictionary } from "../i18n"
 import { usePanel, type Panel } from "../store"
@@ -56,7 +56,7 @@ function NavigatorColumn(props: { readonly placementId: PlacementId }): JSX.Elem
   const left = () => side() === "left"
   const selected = () => panel.navigator() !== null && !panel.phone()
   const visited = createMemo<boolean>((was) => was || (panel.open() && selected()), false)
-  const shown = createExposed(() => panel.open() && selected())
+  const shown = createSidePanelExposed(() => panel.open() && selected())
   const [dragging, setDragging] = createSignal(false)
   const width = () => `${panel.navigatorWidth()}px`
   return (

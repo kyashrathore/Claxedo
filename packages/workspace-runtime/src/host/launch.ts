@@ -45,9 +45,9 @@ export function startInput(launch: LaunchComposer, session: SessionLaunch): Star
   }
 }
 
-export function attachInput(launch: LaunchComposer, session: SessionLaunch, binding: HarnessBinding): AttachInput {
+export function attachInput(launch: LaunchComposer, session: SessionLaunch, binding: HarnessBinding, upstreamHasTurns: boolean): AttachInput {
   const { title: _title, instructions: _instructions, ...rest } = startInput(launch, session)
-  return { ...rest, binding }
+  return { ...rest, binding, upstreamHasTurns }
 }
 
 export function draftLaunch(launch: LaunchComposer, input: {

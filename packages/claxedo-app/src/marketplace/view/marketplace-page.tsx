@@ -9,12 +9,11 @@ import { useTranslator } from "@/i18n"
 import { marketplaceDictionary } from "../i18n"
 import { AddSourceForm } from "./add-source"
 import type { CardAction } from "./card"
-import { PluginDetailPane } from "./detail-pane"
+import { MarketplaceDetailsPanel } from "./details-panel"
 import { CategoryChips, SourceChips } from "./directory-chips"
 import { DirectoryHeader } from "./directory-header"
 import { CatalogSkeleton, DirectoryAlerts, PersonalSection, PluginSectionList } from "./directory-sections"
 import { useInstallSheet } from "./install-sheet"
-import { PersonalPane } from "./personal-pane"
 
 function moveCardFocus(grid: HTMLElement | undefined, step: number) {
   if (!grid) return
@@ -56,9 +55,10 @@ function createCardAction(
 
 function directoryKeys(selection: ReturnType<typeof createSelection>, grid: () => HTMLElement | undefined) {
   return (event: KeyboardEvent) => {
-    if (event.key === "Escape" && selection.selectedId()) {
+    if (event.key === "Escape" && (selection.selectedId() || selection.personalKey())) {
       event.preventDefault()
-      return selection.closePlugin()
+      selection.closePlugin()
+      return selection.closePersonal()
     }
     const forward = event.key === "ArrowDown" || event.key === "ArrowRight"
     const back = event.key === "ArrowUp" || event.key === "ArrowLeft"
@@ -91,83 +91,76 @@ export function MarketplacePage(): JSX.Element {
   return (
     <main
       data-agent-plugins-directory
-      class="grid h-full min-h-0 grid-cols-[1fr_auto] bg-background-base"
+      class="relative flex h-full min-h-0 min-w-0 bg-background-base"
       onKeyDown={onKeyDown}
     >
-      <div class="min-w-0 overflow-y-auto px-6 py-5">
-        <div class="mx-auto flex max-w-5xl flex-col gap-4">
-          <DirectoryHeader
-            query={directory.query()}
-            onQuery={directory.setQuery}
-            refreshing={controls.refreshing()}
-            onRefresh={() => void controls.refresh()}
-          />
-          <SourceChips
-            sources={directory.sourceViews()}
-            count={directory.sourceCount}
-            personalCount={directory.personalCount()}
-            filter={directory.filter()}
-            onFilter={directory.setFilter}
-            removable={directory.removable()}
-            onToggleAdd={() => setAdding((value) => !value)}
-            onRemove={(source) => void sources.remove(source)}
-          />
-          <CategoryChips
-            categories={directory.categories()}
-            category={directory.category()}
-            onCategory={directory.setCategory}
-          />
-          <Show when={adding()}>
-            <AddSourceForm onAdd={sources.add} onCancel={() => setAdding(false)} />
-          </Show>
-          <DirectoryAlerts
-            catalogError={directory.catalog.error?.message}
-            sourcesError={directory.sources.error?.message}
-            errors={directory.catalog.data?.errors ?? []}
-          />
-          <Show when={directory.catalog.isPending && !directory.catalog.data}>
-            <CatalogSkeleton />
-          </Show>
-          <div ref={grid} class="flex flex-col gap-6">
-            <PluginSectionList
-              sections={directory.sections()}
-              selectedId={selection.selectedId()}
-              action={cardAction}
-              onOpen={(plugin) => selection.openPlugin(plugin.pluginInstanceId)}
+      <MarketplaceDetailsPanel
+        selection={selection}
+        harnesses={directory.catalog.data?.supportedHarnesses ?? []}
+        pending={actions.pending()}
+        onAdd={(plugin) => void add(plugin)}
+        onActivate={(plugin, choice) => void actions.activate(plugin, choice)}
+        onUpdate={(plugin) => void actions.update(plugin)}
+        onToolGroup={(plugin, group, enabled) => void actions.setToolGroup(plugin, group, enabled)}
+      >
+        <div class="min-h-0 min-w-0 flex-1 overflow-y-auto px-6 py-5">
+          <div class="mx-auto flex max-w-5xl flex-col gap-4">
+            <DirectoryHeader
+              query={directory.query()}
+              onQuery={directory.setQuery}
+              refreshing={controls.refreshing()}
+              onRefresh={() => void controls.refresh()}
             />
-            <PersonalSection
-              entries={directory.personal()}
-              error={directory.machine.error?.message}
-              selectedKey={selection.personalKey()}
-              onOpen={(entry) => selection.openPersonal(personalEntryKey(entry))}
+            <SourceChips
+              sources={directory.sourceViews()}
+              count={directory.sourceCount}
+              personalCount={directory.personalCount()}
+              filter={directory.filter()}
+              onFilter={directory.setFilter}
+              removable={directory.removable()}
+              onToggleAdd={() => setAdding((value) => !value)}
+              onRemove={(source) => void sources.remove(source)}
             />
-            <Show
-              when={
-                directory.sections().length === 0 && directory.personal().length === 0 && !directory.catalog.isPending
-              }
-            >
-              <p class="text-13-regular text-text-weak">{t("marketplace.noMatches")}</p>
+            <CategoryChips
+              categories={directory.categories()}
+              category={directory.category()}
+              onCategory={directory.setCategory}
+            />
+            <Show when={adding()}>
+              <AddSourceForm onAdd={sources.add} onCancel={() => setAdding(false)} />
             </Show>
+            <DirectoryAlerts
+              catalogError={directory.catalog.error?.message}
+              sourcesError={directory.sources.error?.message}
+              errors={directory.catalog.data?.errors ?? []}
+            />
+            <Show when={directory.catalog.isPending && !directory.catalog.data}>
+              <CatalogSkeleton />
+            </Show>
+            <div ref={grid} class="flex flex-col gap-6">
+              <PluginSectionList
+                sections={directory.sections()}
+                selectedId={selection.selectedId()}
+                action={cardAction}
+                onOpen={(plugin) => selection.openPlugin(plugin.pluginInstanceId)}
+              />
+              <PersonalSection
+                entries={directory.personal()}
+                error={directory.machine.error?.message}
+                selectedKey={selection.personalKey()}
+                onOpen={(entry) => selection.openPersonal(personalEntryKey(entry))}
+              />
+              <Show
+                when={
+                  directory.sections().length === 0 && directory.personal().length === 0 && !directory.catalog.isPending
+                }
+              >
+                <p class="text-13-regular text-text-weak">{t("marketplace.noMatches")}</p>
+              </Show>
+            </div>
           </div>
         </div>
-      </div>
-      <Show when={selection.selectedPersonal()}>
-        {(entry) => <PersonalPane entry={entry()} onClose={selection.closePersonal} />}
-      </Show>
-      <Show when={selection.selected()}>
-        {(plugin) => (
-          <PluginDetailPane
-            plugin={plugin()}
-            harnesses={directory.catalog.data?.supportedHarnesses ?? []}
-            pending={actions.pending() === plugin().pluginInstanceId}
-            onAdd={() => void add(plugin())}
-            onActivate={(choice) => void actions.activate(plugin(), choice)}
-            onUpdate={() => void actions.update(plugin())}
-            onToolGroup={(group, enabled) => void actions.setToolGroup(plugin(), group, enabled)}
-            onClose={selection.closePlugin}
-          />
-        )}
-      </Show>
+      </MarketplaceDetailsPanel>
     </main>
   )
 }

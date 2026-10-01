@@ -90,7 +90,7 @@ export type WorkspaceRuntimeEvent =
   | { type: "session.queue"; directory: string; sessionID: string; queue: QueuedPromptView[] }
   | SessionLifecycleEvent
 
-type RuntimeBus = ReturnType<typeof createBus<WorkspaceRuntimeEvent>>
+export type RuntimeBus = ReturnType<typeof createBus<WorkspaceRuntimeEvent>>
 
 // Each public dist entry (index/host/routes/…) is bundled separately, so this
 // module is instantiated once per entry in the same process. Pin the bus on

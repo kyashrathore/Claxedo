@@ -17,7 +17,7 @@ import type {
 import { isRecoveryOutcome, parseRecoveryOutcome } from "@claxedo/agent-runtime-contract"
 import type { HarnessCapabilities } from "../host/capabilities"
 import type { RuntimeGoalSnapshot } from "@claxedo/agent-runtime-contract"
-import type { ConfigOptionsPreview } from "@claxedo/harness/contract"
+import type { BackgroundTaskStopResult, ConfigOptionsPreview } from "@claxedo/harness/contract"
 import type { AgentRuntimeRecoveryInspection } from "../host/contracts"
 import type { AgentTurnCoveragePage } from "@claxedo/agent-runtime-contract"
 import type { FirstRead, TurnPage } from "@claxedo/agent-runtime-contract"
@@ -147,6 +147,9 @@ export type WorkspaceSessionClient = {
     resume(input: SessionInput, options?: Options): Reply<AgentGoalMutationResult>
     stop(input: SessionInput, options?: Options): Reply<AgentGoalMutationResult>
     delete(input: SessionInput, options?: Options): Reply<AgentGoalMutationResult>
+  }
+  backgroundTasks: {
+    stop(input: SessionInput & { toolCallId: string }, options?: Options): Reply<BackgroundTaskStopResult>
   }
 }
 
@@ -317,6 +320,9 @@ export function sessionClient(caller: WorkspaceRuntimeCaller): WorkspaceSessionC
       resume: goalWrite("session.goal.resume", "POST", "/goal/resume"),
       stop: goalWrite("session.goal.stop", "POST", "/goal/stop"),
       delete: goalWrite("session.goal.delete", "DELETE", "/goal"),
+    },
+    backgroundTasks: {
+      stop: (input, options) => write<BackgroundTaskStopResult>("session.backgroundTasks.stop", "POST", input, "/background-task/stop", options, { toolCallId: input.toolCallId }),
     },
   }
 }

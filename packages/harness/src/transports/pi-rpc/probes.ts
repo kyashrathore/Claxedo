@@ -4,7 +4,7 @@ import { draftProbeKey, DraftProbeCache, type DraftLaunch, type StartInput } fro
 import { piProbeInputs, selectPiProfile } from "../../profiles/pi"
 import { piCommands } from "./commands"
 import { piCatalog, type PiCatalog } from "./config"
-import { launchPi, type PiLaunchHost } from "./launch"
+import { launchPiProbe, type PiLaunchHost } from "./launch"
 import type { PiRpc } from "./rpc"
 
 export class PiDraftProbes {
@@ -26,7 +26,7 @@ export class PiDraftProbes {
   private async probe<T>(draft: DraftLaunch, model: PromptModel | undefined, read: (rpc: PiRpc) => Promise<T>): Promise<T> {
     const input: StartInput = { ...draft, sessionId: prefixedRandomId("probe", "-"), ...(model ? { model } : {}) }
     const profile = selectPiProfile(input.credentials, input.directory, input.sessionId, this.host.options)
-    const rpc = await launchPi(this.host, input, profile, undefined, { role: "probe" })
+    const rpc = await launchPiProbe(this.host, input, profile)
     try { return await read(rpc) }
     finally { await this.host.unsettled.retire(rpc) }
   }

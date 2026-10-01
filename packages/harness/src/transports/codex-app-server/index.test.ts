@@ -22,13 +22,13 @@ const input: StartInput = {
 
 test("Codex receives every projected MCP server and local first-party server", () => {
   const services = { firstPartyMcp: () => ({ kind: "http", name: "claxedo", url: "http://127.0.0.1:47503" }) } as unknown as HarnessServices
-  const config = projectCodexThreadConfig(input, services)
+  const config = projectCodexThreadConfig(input, services, [])
   expect(config.mcp_servers).toEqual({
     configured: { command: "server", args: ["--port", "47501"], env: { TOKEN: "sentinel" } },
     plugin: { url: "http://127.0.0.1:47502", http_headers: { Authorization: "Bearer sentinel" } },
     claxedo: { url: "http://127.0.0.1:47503", http_headers: {} },
   })
-  expect((projectCodexThreadConfig({ ...input, locality: "remote" }, services).mcp_servers as Record<string, unknown>).claxedo).toBeUndefined()
+  expect((projectCodexThreadConfig({ ...input, locality: "remote" }, services, []).mcp_servers as Record<string, unknown>).claxedo).toBeUndefined()
 })
 
 test("disposing during pending initialize retires the process before start rejects", async () => {
@@ -38,7 +38,7 @@ test("disposing during pending initialize retires the process before start rejec
   const wire = new ScriptedProcess<Frame>((frame) => { if (frame.method === "initialize") initialized() })
   const services = { spawn: async () => wire.owned(), recordHomeUse: async () => {}, healthChanged: () => {},
     clock: { now: Date.now, setTimeout, clearTimeout } } as unknown as HarnessServices
-  const transport = new CodexAppServerTransport(services, { binary: "unused", homeRoot: root })
+  const transport = new CodexAppServerTransport(services, { binary: "unused", homeRoot: root, ownerHome: path.join(root, "owner") })
   const starting = transport.start({ ...input, projection: { generation: "g1", pluginRoots: [], notApplied: [], mcpServers: [] } },
     {} as SessionBroker)
   try {
@@ -67,7 +67,7 @@ test("Codex refuses an unbound member before spawning or touching the owner's ho
   } finally { await peer.close() }
 })
 
-test("Codex refuses the external-auth token refresh request as an unsupported method and answers tool calls outside a turn", async () => {
+test("Codex starts its thread with no Claxedo dynamic tool and refuses the token refresh and any dynamic tool call as unsupported methods", async () => {
   const peer = await scriptedTransport()
   const responses = new Map<number, (value: Frame & { result?: unknown; error?: { code: number } }) => void>()
   const send = (id: number, method: string, params: unknown) => new Promise<Frame & { result?: unknown; error?: { code: number } }>((resolve) => {
@@ -87,9 +87,11 @@ test("Codex refuses the external-auth token refresh request as an unsupported me
     const refresh = send(0, "account/chatgptAuthTokens/refresh", { reason: "unauthorized" })
     await poll(0)
     expect((await refresh).error?.code).toBe(-32601)
-    const tool = send(1, "item/tool/call", { tool: "spawn_agent", arguments: { task_name: "x", message: "y" } })
+    const tool = send(1, "item/tool/call", { threadId: "thread-1", turnId: "turn-1", callId: "call-1", tool: "spawn_agent", arguments: { task_name: "x", message: "y" } })
     await poll(1)
-    expect((await tool).result).toEqual({ contentItems: [{ type: "inputText", text: "Dynamic tool spawn_agent is unavailable." }], success: false })
+    expect((await tool).error?.code).toBe(-32601)
+    expect(peer.frames.filter((frame) => frame.method === "thread/start").map((frame) => Object.keys(frame.params ?? {}))).toEqual([
+      expect.not.arrayContaining(["dynamicTools"])])
   } finally { await peer.close() }
 })
 
@@ -99,7 +101,7 @@ test("failed Codex rebind leaves no attached entry for the retired process", asy
   try {
     await expect(peer.transport.start(peer.startInput, broker)).rejects.toThrow("rebind rejected")
     expect(peer.retired()).toBe(1)
-    expect((peer.transport as unknown as { entries: Map<string, unknown> }).entries.has("s1")).toBe(false)
+    expect((peer.transport as unknown as { sessions: { entries: Map<string, unknown> } }).sessions.entries.has("s1")).toBe(false)
   } finally { await peer.close() }
 })
 
@@ -154,7 +156,7 @@ test("a process exit mid-turn fails the streamed turn through the channel's fail
       { signal: new AbortController().signal } as TurnBroker)) {} })()
     await peer.started
     peer.exitLatest()
-    await expect(running).rejects.toThrow("Codex exit failed")
+    await expect(running).rejects.toThrow("Codex app-server exited with code 1")
   } finally { await peer.close() }
 })
 

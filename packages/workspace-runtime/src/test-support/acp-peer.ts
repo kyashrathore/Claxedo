@@ -7,7 +7,6 @@ export function acpPeer() {
     spawn: async () => { throw new Error("Peer not installed") },
     recordHomeUse: async () => {},
     firstPartyMcp: () => undefined,
-    transcripts: { register: async () => { throw new Error("No transcript in this fixture") } },
     patternEvaluator: async () => {},
     log: { debug() {}, info() {}, warn() {}, error() {} },
     clock: { now: Date.now, setTimeout, clearTimeout },

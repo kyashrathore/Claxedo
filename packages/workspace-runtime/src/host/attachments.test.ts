@@ -2,7 +2,8 @@ import { expect, test } from "bun:test"
 import { createHarnessComposer } from "@claxedo/harness/compose"
 import { volatileLaunchOwnership } from "@claxedo/process-ownership/launch"
 import { createHarnessServices } from "../harness-services"
-import { createHostFixture, transportHandle, LOOPBACK_ORIGIN, MACHINE_OWNER } from "../test-support/host-fixture"
+import { transportHandle } from "../test-support/host-composition"
+import { createHostFixture, LOOPBACK_ORIGIN, MACHINE_OWNER } from "../test-support/host-fixture"
 
 type RpcRequest = { id?: string | number; method: string; params?: { sessionId?: string } }
 
