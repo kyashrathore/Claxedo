@@ -96,8 +96,15 @@ function first(value: unknown): string | undefined {
 }
 
 const toolIntents: Partial<Record<ToolKind, ToolIntent>> = {
-  execute: "shell", read: "read", edit: "edit", fetch: "fetch", move: "move", delete: "delete",
-  think: "reasoning", switch_mode: "switch_mode", search: "search",
+  execute: "shell",
+  read: "read",
+  edit: "edit",
+  fetch: "fetch",
+  move: "move",
+  delete: "delete",
+  think: "reasoning",
+  switch_mode: "switch_mode",
+  search: "search",
 }
 
 function resolvedIntent(
@@ -144,8 +151,8 @@ function toolPaths(
 }
 
 export function toolFacts(state: ToolState) {
-  const toolLabel = state.title ?? state.firstTitle ?? "Tool"
-  const kind = state.kind ?? state.firstKind
+  const toolLabel = state.title ?? "Tool"
+  const kind = state.kind
   const base = parseTitle(toolLabel, kind)
   const raw = state.rawInput
   const items = parsed(raw)
@@ -165,19 +172,25 @@ export function toolFacts(state: ToolState) {
   return {
     toolLabel,
     kind,
-    base,
-    raw,
-    all,
-    nextIntent,
-    nextMode,
+    titleInput: base,
+    rawInput: raw,
+    files: all,
+    intent: nextIntent,
+    mode: nextMode,
     cmd,
-    urlValue,
+    url: urlValue,
     query,
     shellMode,
     list,
     ...toolPaths(state, base, all, search, list),
     ...toolDiffs(state.content),
   }
+}
+
+function patchType(before: string, after: string) {
+  if (!before && after) return "add" as const
+  if (before && !after) return "delete" as const
+  return "update" as const
 }
 
 const lineCount = (value: string): number => (value ? value.split("\n").length : 0)
@@ -202,7 +215,7 @@ function toolDiffs(content: ToolCallContent[]) {
     patchValue: diffs.map((item) => ({
       filePath: item.file,
       relativePath: item.file,
-      type: !item.before && item.after ? "add" : item.before && !item.after ? "delete" : "update",
+      type: patchType(item.before, item.after),
       diff: "",
       before: item.before,
       after: item.after,

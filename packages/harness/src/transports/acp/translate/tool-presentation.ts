@@ -3,27 +3,27 @@ import { asText as str } from "@claxedo/agent-runtime-contract"
 import type { ToolState, Spot } from "./state"
 import { toolFacts } from "./tool-facts"
 
-function toolLocations(locations: Spot[]) {
-  return locations.map((item) => ({ path: item.path, ...(item.line != null ? { line: item.line } : {}) }))
+export function toolLocation(item: Spot) {
+  return { path: item.path, ...(item.line != null ? { line: item.line } : {}) }
 }
 
 function toolName(facts: ReturnType<typeof toolFacts>) {
-  const { base, nextIntent, nextMode, shellMode, urlValue, query, pattern, path, list } = facts
-  let short = base.short
+  const { titleInput, intent, mode, shellMode, url, query, pattern, path, list } = facts
+  let short = titleInput.short
   const modeValue =
-    nextMode ??
+    mode ??
     shellMode ??
-    ((nextIntent === "fetch" || nextIntent === "search") && urlValue ? "web" : undefined) ??
-    (nextIntent === "search" && query ? "web" : undefined)
-  if (nextIntent === "shell") short = "bash"
-  if (nextIntent === "search" && nextMode === "web" && query) short = "websearch"
-  if (nextIntent === "search" && nextMode === "codebase" && query) short = "codesearch"
-  if (nextIntent === "search" && pattern && path) short = "grep"
-  if (nextIntent === "list" && list) short = str(list.pattern) ? "glob" : "list"
-  if (nextIntent === "read") short = "read"
-  if (nextIntent === "lint") short = "lint"
-  if (nextIntent === "edit") short = "edit"
-  if (nextIntent === "fetch" && modeValue === "web") short = "webfetch"
+    ((intent === "fetch" || intent === "search") && url ? "web" : undefined) ??
+    (intent === "search" && query ? "web" : undefined)
+  if (intent === "shell") short = "bash"
+  if (intent === "search" && mode === "web" && query) short = "websearch"
+  if (intent === "search" && mode === "codebase" && query) short = "codesearch"
+  if (intent === "search" && pattern && path) short = "grep"
+  if (intent === "list" && list) short = str(list.pattern) ? "glob" : "list"
+  if (intent === "read") short = "read"
+  if (intent === "lint") short = "lint"
+  if (intent === "edit") short = "edit"
+  if (intent === "fetch" && modeValue === "web") short = "webfetch"
 
   return { short, modeValue }
 }
@@ -34,15 +34,15 @@ function toolDetails(facts: ReturnType<typeof toolFacts>, modeValue: string | un
     command: facts.cmd,
     query: facts.query,
     pattern: facts.pattern,
-    url: facts.urlValue,
+    url: facts.url,
     path: facts.path,
     filePath: facts.filePath,
     targetPath: facts.targetPath,
-    files: facts.all.length ? facts.all : undefined,
+    files: facts.files.length ? facts.files : undefined,
   }
   return {
     kind: facts.kind ?? "other",
-    intent: facts.nextIntent,
+    intent: facts.intent,
     summary: facts.toolLabel,
     ...Object.fromEntries(Object.entries(fields).filter(([, value]) => value)),
   }
@@ -51,24 +51,24 @@ function toolDetails(facts: ReturnType<typeof toolFacts>, modeValue: string | un
 export function viewTool(state: ToolState) {
   const facts = toolFacts(state)
   const { short, modeValue } = toolName(facts)
-  const { raw, cmd, sourcePath, diffValue, nextIntent } = facts
+  const { rawInput, cmd, sourcePath, diffValue, intent } = facts
   const details = toolDetails(facts, modeValue)
   const presentation = {
     ...details,
     ...(sourcePath ? { sourcePath } : {}),
-    ...(state.locations.length ? { locations: toolLocations(state.locations) } : {}),
+    ...(state.locations.length ? { locations: state.locations.map(toolLocation) } : {}),
   }
   const input = {
-    ...raw,
+    ...rawInput,
     ...details,
     ...(cmd ? { description: cmd } : {}),
-    ...(sourcePath && nextIntent === "move" ? { sourcePath, filePath: sourcePath } : {}),
-    ...(diffValue && nextIntent === "edit" ? { oldString: diffValue.before, newString: diffValue.after } : {}),
+    ...(sourcePath && intent === "move" ? { sourcePath, filePath: sourcePath } : {}),
+    ...(diffValue && intent === "edit" ? { oldString: diffValue.before, newString: diffValue.after } : {}),
   }
   const display = {
     ...presentation,
     ...(cmd ? { description: cmd } : {}),
-    ...(raw !== undefined ? { input: raw } : {}),
+    ...(rawInput !== undefined ? { input: rawInput } : {}),
   } satisfies ToolDisplay
   const metadata = toolMetadata(state, facts, presentation)
   return { toolName: short || state.id, input, display, metadata }

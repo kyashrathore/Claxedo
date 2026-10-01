@@ -1,10 +1,9 @@
 import { asRecord } from "@claxedo/helpers/guards"
 import { type AgentRuntimeEvent, type RuntimeToolStatus, asText as text } from "@claxedo/agent-runtime-contract"
 import type { SessionUpdate } from "./types"
-import type { TranslatorContext } from "./state"
-import { reduceTool, type ToolState } from "./state"
+import { reduceTool, type ToolState, type TranslatorContext } from "./state"
+import { drainContent, drainSpots } from "./tool-content"
 import { viewTool } from "./tool-presentation"
-import { drainContent, drainSpots } from "./state"
 import { diagnoseTranslation, shape } from "./diagnostics"
 import { safeContent, safeLocations, safeMeta, safeRawInput, safeRawOutput } from "./validation"
 import { jsonText } from "../../../translate/value"
@@ -51,8 +50,8 @@ function prepared(update: ToolUpdate, ctx: TranslatorContext) {
   }
   const tool = reduceTool(ctx.state, update.toolCallId, safe, ctx.diagnostics)
   const view = viewTool(tool)
-  const eventFields = { toolCallId: tool.id, display: view.display, metadata: view.metadata }
-  return { ...safe, tool, view, eventFields, sessionSurface: view.metadata.acp.intent === "reasoning" }
+  const presentation = { display: view.display, metadata: view.metadata }
+  return { ...safe, tool, view, presentation, sessionSurface: view.metadata.acp.intent === "reasoning" }
 }
 
 type Prepared = ReturnType<typeof prepared>
@@ -88,9 +87,10 @@ function completedToolUpdate(tool: ToolState, next: Prepared): AgentRuntimeEvent
   )
   return {
     type: "tool-output",
-    ...next.eventFields,
+    toolCallId: tool.id,
     output: tool.rawOutput ?? next.content ?? null,
     ...(attachments.length ? { attachments } : {}),
+    ...next.presentation,
   }
 }
 
@@ -108,10 +108,11 @@ function failedTool(update: ToolUpdate, next: Prepared, ctx: TranslatorContext):
   }
   return {
     type: "tool-error",
-    ...next.eventFields,
+    toolCallId: next.tool.id,
     error:
       error ||
       (update.sessionUpdate === "tool_call_update" && raw !== undefined && raw !== null ? jsonText({ raw }) : ""),
+    ...next.presentation,
   }
 }
 
@@ -122,7 +123,7 @@ function statusEvent(update: ToolUpdate, next: Prepared): AgentRuntimeEvent[] {
       ? update.status !== undefined
       : Object.hasOwn(update, "status") || hasUsefulUpdate(update, next)
   return present && (next.sessionSurface || !terminal)
-    ? [{ type: "tool-status", ...next.eventFields, status: next.status }]
+    ? [{ type: "tool-status", toolCallId: next.tool.id, status: next.status, ...next.presentation }]
     : []
 }
 
@@ -130,10 +131,12 @@ export function toolUpdate(update: ToolUpdate, ctx: TranslatorContext): AgentRun
   const next = prepared(update, ctx)
   const events = statusEvent(update, next)
   if (!next.sessionSurface) {
-    if (update.sessionUpdate === "tool_call")
-      events.push({ type: "tool-start", ...next.eventFields, toolName: next.view.toolName, kind: next.tool.kind })
-    if (shouldEmitInput(update, next))
-      events.push({ type: "tool-input", ...next.eventFields, input: next.view.input })
+    if (update.sessionUpdate === "tool_call") {
+      events.push({ type: "tool-start", toolCallId: next.tool.id, toolName: next.view.toolName, kind: next.tool.kind, ...next.presentation })
+    }
+    if (shouldEmitInput(update, next)) {
+      events.push({ type: "tool-input", toolCallId: next.tool.id, input: next.view.input, ...next.presentation })
+    }
     if (update.sessionUpdate === "tool_call_update" && next.status === "failed")
       events.push(failedTool(update, next, ctx))
   }
