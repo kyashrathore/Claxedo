@@ -20,6 +20,8 @@ export type HarnessCapabilities = Omit<AgentCapabilities, "harness" | "modelSele
   subagents: boolean
   /** Runtime availability only. Detailed support is read from the transport's declared goal capabilities. */
   goals: boolean
+  /** Whether the harness can stop one background task while its session and other tasks go on. */
+  backgroundTasks: boolean
   /**
    * Which effort levels this harness accepts, per model. Required because a
    * missing catalog reads as `unresolved` to every consumer, which accepts —
@@ -42,7 +44,7 @@ export type HarnessCapabilities = Omit<AgentCapabilities, "harness" | "modelSele
  */
 export function harnessCapabilitiesFor(
   handle: Pick<HarnessHandle, "runner" | "kind">,
-  transport: Pick<HarnessTransport, "config" | "history" | "commands" | "fork">,
+  transport: Pick<HarnessTransport, "config" | "history" | "commands" | "fork" | "backgroundTasks">,
   declared: TransportCapabilities,
   session: { child: boolean },
 ): HarnessCapabilities {
@@ -52,6 +54,7 @@ export function harnessCapabilitiesFor(
     ...wire,
     harness: handle.runner.id,
     goals: declared.goals.implemented,
+    backgroundTasks: transport.backgroundTasks !== undefined,
     effortLevels: declared.effortLevels,
     instructionChannel: declared.instructionChannel,
   }

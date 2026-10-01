@@ -27,11 +27,6 @@
             "time": {
               "start": 100
             }
-          },
-          "metadata": {
-            "codex": {
-              "itemType": "dynamic_tool_call"
-            }
           }
         },
         "time": 100
@@ -68,11 +63,6 @@
             "time": {
               "start": 100,
               "end": 100
-            }
-          },
-          "metadata": {
-            "codex": {
-              "itemType": "dynamic_tool_call"
             }
           }
         },

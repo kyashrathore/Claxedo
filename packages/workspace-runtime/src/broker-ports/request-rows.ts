@@ -1,7 +1,7 @@
 import type { AgentPresentationEvent } from "@claxedo/agent-runtime-contract"
 import type { AgentRuntimeEvent } from "@claxedo/agent-runtime-contract"
 import type { PendingRequest, RequestAnswer, RequestScope } from "@claxedo/harness/contract"
-import type { BrokerEvent } from "@claxedo/harness/broker"
+import type { BrokerEvent, RequestGrant } from "@claxedo/harness/broker"
 import type { SqliteDatabase } from "../sqlite/database"
 import type { RuntimeStore } from "../store"
 import type { BrokerEventDelivery } from "./delivery"
@@ -138,7 +138,7 @@ export class BrokerRequestRows {
   }
 
   async persistAnswer(
-    pending: PendingRequest, answer: RequestAnswer, automatic: boolean, grantKey?: string,
+    pending: PendingRequest, answer: RequestAnswer, automatic: boolean, grant?: RequestGrant,
   ): Promise<readonly AgentRuntimeEvent[]> {
     const published = this.store.brokerTransaction(() => {
       const db = this.store.database()
@@ -164,7 +164,7 @@ export class BrokerRequestRows {
               JSON.stringify(pending.request))
         }
       }
-      if (grantKey) this.store.brokerPersistGrantInside(pending.sessionId, grantKey)
+      if (grant) this.store.brokerPersistGrantInside(grant.sessionId, grant.key)
       const replied = !!prior || automatic
       if (replied) this.store.brokerAppendInside(pending.sessionId, replyEvent(pending, answer))
       db.prepare(`UPDATE ${name} SET status = 'answered', broker_answer_json = ?, broker_automatic = ?, updated_at = ?

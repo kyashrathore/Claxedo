@@ -13,7 +13,8 @@ export type QueuedProviderTurn = { queue: AsyncPushQueue<RoutedEvent>; admission
 
 export function admitQueuedProviderTurn(broker: SessionBroker, hooks: QueuedProviderTurnHooks): QueuedProviderTurn {
   const queue = new AsyncPushQueue<RoutedEvent>()
-  const admission = broker.admitProviderTurn({ reason: "goal" }, async function* (turnBroker, turn) {
+  const objective = broker.goal.read()?.objective
+  const admission = broker.admitProviderTurn({ reason: "goal", ...(objective ? { detail: objective } : {}) }, async function* (turnBroker, turn) {
     hooks.started(turnBroker, turn)
     try { for await (const event of queue) yield event }
     finally { hooks.ended(turnBroker) }

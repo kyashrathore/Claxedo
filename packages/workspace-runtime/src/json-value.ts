@@ -28,6 +28,12 @@ export function str(input: unknown): string | undefined {
   return typeof input === "string" ? input : undefined
 }
 
+/** `null` kept as `null`, a string as itself, anything else `undefined`: a nullable text column's read. */
+export function nullable(input: unknown): string | null | undefined {
+  if (input === null) return null
+  return typeof input === "string" ? input : undefined
+}
+
 /** The number value of `input`, or `undefined` when it is not a number. */
 export function num(input: unknown): number | undefined {
   return typeof input === "number" ? input : undefined

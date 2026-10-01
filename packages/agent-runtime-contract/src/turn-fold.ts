@@ -44,7 +44,7 @@ export const WEB_TOOL_NAMES = new Set(["webfetch", "websearch"])
 
 const HIDDEN_TOOLS = new Set(["todowrite"])
 
-const GROUPABLE_PART_TYPES = new Set(["compaction", "handoff", "text", "reasoning", "tool", "file"])
+const GROUPABLE_PART_TYPES = new Set(["compaction", "handoff", "notice", "text", "reasoning", "tool", "file"])
 
 const NON_BLANK = /\S/
 

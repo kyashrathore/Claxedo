@@ -148,6 +148,7 @@ The suite must be robust, working, honest and fast.
 
 ## One owner per concept
 
+- Right side panels use the shared components and full-height shell mounting in [`src/ui/AGENTS.md`](src/ui/AGENTS.md); caller-specific state and policy stay in domain wrappers.
 - Before writing code, find the concept's owner (the domain `README.md` owner lists first, then the code) and extend it. Two implementations of one concept are a defect even when both work.
 - A domain `README.md` lists the concepts it owns, its state machines and its flows. Adding a concept adds it there.
 - Before starting a task, check the plan's progress notes and open branches for the same work. Claim the task in the plan, and edit only the files your lane owns.

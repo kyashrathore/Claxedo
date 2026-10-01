@@ -1,0 +1,933 @@
+{
+  "adapter": "pi-rpc",
+  "initialState": {
+    "blocks": {},
+    "finished": false,
+    "stopped": false,
+    "noted": []
+  },
+  "calls": [
+    {
+      "state": {
+        "blocks": {},
+        "finished": false,
+        "stopped": false,
+        "noted": []
+      },
+      "event": {
+        "source": "pi.rpc",
+        "method": "agent_start",
+        "payload": {
+          "type": "agent_start"
+        }
+      },
+      "context": {
+        "harness": "pi",
+        "threadId": "native-pi"
+      },
+      "callbacks": [],
+      "output": {
+        "state": {
+          "blocks": {},
+          "finished": false,
+          "stopped": false,
+          "noted": []
+        },
+        "events": []
+      }
+    },
+    {
+      "state": {
+        "blocks": {},
+        "finished": false,
+        "stopped": false,
+        "noted": []
+      },
+      "event": {
+        "source": "pi.rpc",
+        "method": "future_record",
+        "payload": {
+          "type": "future_record",
+          "messages": [
+            {
+              "role": "system",
+              "content": "",
+              "sections": {
+                "preamble": "You are an expert coding assistant operating inside pi, a coding agent harness. You help users by reading files, executing commands, editing code, and writing new files.",
+                "tools": "<tools>\n- read: Read file contents\n- bash: Execute bash commands (ls, grep, find, etc.)\n- edit: Make precise file edits with exact text replacement, including multiple disjoint edits in one call\n- write: Create or overwrite files\n\nIn addition to the tools above, you may have access to other custom tools depending on the project.\n</tools>",
+                "rules": "<rules>\n- Use bash for file operations like ls, rg, find\n- Use read to examine files instead of cat or sed.\n- You can inspect PI_* environment variables for current model and session details.\n- Use edit for precise changes (edits[].oldText must match exactly)\n- When changing multiple separate locations in one file, use one edit call with multiple entries in edits[] instead of multiple edit calls\n- Each edits[].oldText is matched against the original file, not after earlier edits are applied. Do not emit overlapping or nested edits. Merge nearby changes into one edit.\n- Keep edits[].oldText as small as possible while still being unique in the file. Do not pad with large unchanged regions.\n- Use write only for new files or complete rewrites.\n- Be concise in your responses\n- Show file paths clearly when working with files\n</rules>",
+                "docs": "<docs>\nPi documentation (read only when the user asks about pi itself, its SDK, extensions, themes, skills, or TUI):\n- Main documentation: /Users/yashvardhansingh/test/opencode-app-v2-lanes/pi-audit/packages/harness/e2e/.artifacts/pi/0.99.1/node_modules/@earendil-works/pi-coding-agent/README.md\n- Additional docs: /Users/yashvardhansingh/test/opencode-app-v2-lanes/pi-audit/packages/harness/e2e/.artifacts/pi/0.99.1/node_modules/@earendil-works/pi-coding-agent/docs\n- Examples: /Users/yashvardhansingh/test/opencode-app-v2-lanes/pi-audit/packages/harness/e2e/.artifacts/pi/0.99.1/node_modules/@earendil-works/pi-coding-agent/examples (extensions, custom tools, SDK)\n- When reading pi docs or examples, resolve docs/... under Additional docs and examples/... under Examples, not the current working directory\n- When asked about: extensions (docs/extensions.md, examples/extensions/), themes (docs/themes.md), skills (docs/skills.md), prompt templates (docs/prompt-templates.md), TUI components (docs/tui.md), keybindings (docs/keybindings.md), SDK integrations (docs/sdk.md), custom providers (docs/custom-provider.md), adding models (docs/models.md), pi packages (docs/packages.md), environment variables (docs/environment-variables.md), MCP servers (docs/mcp.md)\n- When working on pi topics, read the docs and examples, and follow .md cross-references before implementing\n- Always read pi .md files completely and follow links to related docs (e.g., tui.md for TUI API details)\n</docs>",
+                "skills": "<skills>\nThe following skills provide specialized instructions for specific tasks.\nUse the read tool to load a skill's file when the task matches its description.\nWhen a skill file references a relative path, resolve it against the skill directory (parent of SKILL.md / dirname of the path) and use that absolute path in tool commands.\n\n<available_skills>\n  <skill>\n    <name>browser-use</name>\n    <description>Automates browser interactions for web testing, form filling, screenshots, and data extraction. Use when the user needs to navigate websites, interact with web pages, fill forms, take screenshots, or extract information from web pages.</description>\n    <location>/Users/yashvardhansingh/.agents/skills/browser-use/SKILL.md</location>\n  </skill>\n  <skill>\n    <name>cleanmymac</name>\n    <description>Use when the user wants to free disk space on a Mac. Triggers on &quot;clean my Mac&quot;, &quot;free up space&quot;, &quot;disk full&quot;, &quot;where did my storage go&quot;, &quot;全自动清理 Mac&quot;, &quot;清理储存空间&quot;, &quot;Xcode is eating my disk&quot;, &quot;Docker is huge&quot;, &quot;what&apos;s taking my disk&quot;, &quot;show me a disk map&quot;, &quot;set up auto cleanup&quot;, &quot;find large unused folders&quot;, &quot;find old AI models&quot;, &quot;schedule cleanup&quot;. Walks the filesystem from any path, annotates every folder with auto-safe / review / never-touch / unknown based on a 51-module judgment registry, and supports both bulk auto-clean and per-item interactive review. Can install recurring auto-cleanup via launchd.</description>\n    <location>/Users/yashvardhansingh/.agents/skills/cleanmymac/SKILL.md</location>\n  </skill>\n  <skill>\n    <name>find-skills</name>\n    <description>Helps users discover and install agent skills when they ask questions like &quot;how do I do X&quot;, &quot;find a skill for X&quot;, &quot;is there a skill that can...&quot;, or express interest in extending capabilities. This skill should be used when the user is looking for functionality that might exist as an installable skill.</description>\n    <location>/Users/yashvardhansingh/.agents/skills/find-skills/SKILL.md</location>\n  </skill>\n  <skill>\n    <name>frontend-design</name>\n    <description>Create distinctive, production-grade frontend interfaces with high design quality. Use this skill when the user asks to build web components, pages, artifacts, posters, or applications (examples include websites, landing pages, dashboards, React components, HTML/CSS layouts, or when styling/beautifying any web UI). Generates creative, polished code and UI design that avoids generic AI aesthetics.</description>\n    <location>/Users/yashvardhansingh/.agents/skills/frontend-design/SKILL.md</location>\n  </skill>\n  <skill>\n    <name>make-interfaces-feel-better</name>\n    <description>Design engineering principles for making interfaces feel polished. Use when building UI components, reviewing frontend code, implementing animations, hover states, shadows, borders, typography, micro-interactions, enter/exit animations, or any visual detail work. Triggers on UI polish, design details, &quot;make it feel better&quot;, &quot;feels off&quot;, stagger animations, border radius, optical alignment, font smoothing, tabular numbers, image outlines, box shadows.</description>\n    <location>/Users/yashvardhansingh/.agents/skills/make-interfaces-feel-better/SKILL.md</location>\n  </skill>\n  <skill>\n    <name>orca-cli</name>\n    <description>Use the public `orca` CLI to operate Orca-managed worktrees, folder contexts, terminals, repos, automations, worktree comments, and the browser embedded inside the Orca app. Use when the user says &quot;$orca-cli&quot;, &quot;use orca cli&quot;, &quot;Orca worktree&quot;, &quot;child worktree&quot;, &quot;cardStatus&quot;, &quot;spawn codex/claude in a worktree&quot;, &quot;read/wait/send Orca terminal&quot;, &quot;terminal send&quot;, &quot;full handoff&quot;, &quot;handover&quot;, &quot;give this to another agent&quot;, &quot;another worktree&quot;, &quot;Orca browser&quot;, or &quot;control the browser inside Orca&quot;. Prefer this over raw `git worktree`, ad hoc PTYs, Playwright, or Computer Use when the task touches Orca-managed state. Use Computer Use for browser windows, webviews, or desktop UI outside Orca&apos;s embedded browser.</description>\n    <location>/Users/yashvardhansingh/.agents/skills/orca-cli/SKILL.md</location>\n  </skill>\n  <skill>\n    <name>orchestration</name>\n    <description>Use Orca orchestration for structured multi-agent coordination: threaded messages, blocking ask/reply flows, task dispatch, worker_done/escalation waits, task DAGs, decision gates, coordinator loops, or decomposing work across agents. Use `orca-cli` instead for full ownership handoffs, including requests phrased as &quot;hand off&quot;, &quot;handoff&quot;, &quot;handover&quot;, &quot;give this to another agent&quot;, or &quot;another worktree&quot; when the user did not explicitly ask to supervise, monitor, wait for results, or coordinate a DAG. Use `orca-cli` for ordinary terminal control, lightweight terminal prompts, shell commands, Orca worktree management, reading or waiting on terminals, and automation of the browser embedded inside Orca. Use Computer Use for browser windows, webviews, Orca app UI, or desktop UI outside Orca&apos;s embedded browser.</description>\n    <location>/Users/yashvardhansingh/.agents/skills/orchestration/SKILL.md</location>\n  </skill>\n  <skill>\n    <name>pdf</name>\n    <description>Use this skill whenever the user wants to do anything with PDF files. This includes reading or extracting text/tables from PDFs, combining or merging multiple PDFs into one, splitting PDFs apart, rotating pages, adding watermarks, creating new PDFs, filling PDF forms, encrypting/decrypting PDFs, extracting images, and OCR on scanned PDFs to make them searchable. If the user mentions a .pdf file or asks to produce one, use this skill.</description>\n    <location>/Users/yashvardhansingh/.agents/skills/pdf/SKILL.md</location>\n  </skill>\n  <skill>\n    <name>remotion-best-practices</name>\n    <description>Best practices for Remotion - Video creation in React</description>\n    <location>/Users/yashvardhansingh/.agents/skills/remotion-best-practices/SKILL.md</location>\n  </skill>\n  <skill>\n    <name>tdd</name>\n    <description>Test-driven development with red-green-refactor loop. Use when user wants to build features or fix bugs using TDD, mentions &quot;red-green-refactor&quot;, wants integration tests, or asks for test-first development.</description>\n    <location>/Users/yashvardhansingh/.agents/skills/tdd/SKILL.md</location>\n  </skill>\n  <skill>\n    <name>to-prd</name>\n    <description>Turn the current conversation context into a PRD and publish it to the project issue tracker. Use when user wants to create a PRD from the current context.</description>\n    <location>/Users/yashvardhansingh/.agents/skills/to-prd/SKILL.md</location>\n  </skill>\n  <skill>\n    <name>transitions-dev</name>\n    <description>Production-ready CSS transitions for web apps. Use when implementing notification badges, dropdowns, modals, panel reveals, page transitions, card resizes, number pop-ins, text swaps, icon swaps, success checks, avatar group hovers, error state shakes, search/input clear, skeleton loaders, shimmer text, sliding tabs, tooltips, staggered text reveals, card hover tilt, plus-to-menu morph, accordions, toasts, like buttons, learn-more hovers, checkbox checks, spinning counters, toggles, AI thinking states, reasoning streams, streaming text, matrix dot loaders, or banner stacking. Triggers on &quot;add a transition&quot;, &quot;animate the dropdown&quot;, &quot;make the modal open smoothly&quot;, &quot;swap icon&quot;, &quot;page slide&quot;, &quot;stagger animation&quot;, &quot;open / close transition&quot;, &quot;make it animate&quot;, &quot;fade between&quot;, &quot;success animation&quot;, &quot;form error&quot;, &quot;shake on invalid&quot;, &quot;hover lift&quot;, &quot;avatar stack hover&quot;, &quot;clear the search&quot;, &quot;skeleton loader&quot;, &quot;loading shimmer&quot;, &quot;shimmer text&quot;, &quot;sliding tabs&quot;, &quot;segmented control&quot;, &quot;tooltip&quot;, &quot;reveal text&quot;, &quot;tilt card&quot;, &quot;3D hover tilt&quot;, &quot;cursor glare&quot;, &quot;plus to menu&quot;, &quot;FAB morph&quot;, &quot;accordion&quot;, &quot;collapsible&quot;, &quot;expand / collapse&quot;, &quot;disclosure&quot;, &quot;toast&quot;, &quot;snackbar&quot;, &quot;like button&quot;, &quot;heart animation&quot;, &quot;learn more arrow&quot;, &quot;checkbox&quot;, &quot;check animation&quot;, &quot;spinning counter&quot;, &quot;odometer&quot;, &quot;slot machine digits&quot;, &quot;toggle&quot;, &quot;switch&quot;, &quot;thinking states&quot;, &quot;AI status line&quot;, &quot;agent reasoning&quot;, &quot;reasoning stream&quot;, &quot;streaming text&quot;, &quot;stream words in&quot;, &quot;matrix loader&quot;, &quot;dot loader&quot;, &quot;banner stack&quot;, &quot;stacked toasts&quot;. Also &quot;motion tokens&quot;, &quot;scan for ad-hoc transitions&quot;, &quot;replace hardcoded durations with motion tokens&quot;, &quot;tokenize my animations&quot;, and the commands transitions reveal, transitions review, transitions apply, transitions refine.</description>\n    <location>/Users/yashvardhansingh/.agents/skills/transitions-dev/SKILL.md</location>\n  </skill>\n  <skill>\n    <name>transitions-polish</name>\n    <description>Polish and refine existing motion against the transitions.dev motion-token scale — duration, distance, scale, blur, and easing — plus the rules for WHEN each token applies (open/close asymmetry, hover-in vs hover-out, stagger offsets, and intent delays). An add-on to the transitions-dev skill, focused on tuning what already animates rather than adding new transitions. Use when the user asks to &quot;polish my transitions&quot;, &quot;refine the motion&quot;, &quot;tune the timing / easing&quot;, &quot;make the animation feel better / less janky&quot;, &quot;tighten the durations&quot;, &quot;fix the stagger&quot;, &quot;align to the motion tokens&quot;, &quot;audit the motion&quot;, &quot;review my animations&quot;, &quot;scan for ad-hoc transitions&quot;, &quot;tokenize my animations&quot;, or runs the commands transitions review or transitions polish. Also drives the Refine panel&apos;s Small refinement feature. Triggers on &quot;motion polish&quot;, &quot;transition polish&quot;, &quot;refine motion&quot;, &quot;timing feels off&quot;, &quot;too slow / too fast&quot;, &quot;stagger&quot;, &quot;delay&quot;, &quot;open close timing&quot;, &quot;hover in out&quot;.</description>\n    <location>/Users/yashvardhansingh/.agents/skills/transitions-polish/SKILL.md</location>\n  </skill>\n</available_skills>\n</skills>",
+                "cwd": "<cwd>\n/private/var/folders/t2/23hmqy6j43j7f3fg3m70gzhh0000gn/T/pi-capture-06Jwsc/work\n</cwd>"
+              },
+              "timestamp": 1790766445564,
+              "toolsAdded": [
+                {
+                  "name": "read",
+                  "description": "Read the contents of a file. Supports text files and images (jpg, png, gif, webp, bmp). Images are sent as attachments. For text files, output is truncated to 2000 lines or 50KB (whichever is hit first). Use offset/limit for large files. When you need the full file, continue with offset until complete.",
+                  "parameters": {
+                    "type": "object",
+                    "required": [
+                      "path"
+                    ],
+                    "properties": {
+                      "path": {
+                        "type": "string",
+                        "description": "Path to the file to read (relative or absolute)"
+                      },
+                      "offset": {
+                        "type": "number",
+                        "description": "Line number to start reading from (1-indexed)"
+                      },
+                      "limit": {
+                        "type": "number",
+                        "description": "Maximum number of lines to read"
+                      }
+                    }
+                  },
+                  "constrainedSampling": {
+                    "type": "json_schema",
+                    "strict": "prefer"
+                  }
+                },
+                {
+                  "name": "bash",
+                  "description": "Execute a bash command in the current working directory. Returns stdout and stderr. Output is truncated to last 2000 lines or 50KB (whichever is hit first). If truncated, full output is saved to a temp file. Optionally provide a timeout in seconds.",
+                  "parameters": {
+                    "type": "object",
+                    "required": [
+                      "command"
+                    ],
+                    "properties": {
+                      "command": {
+                        "type": "string",
+                        "description": "Shell command to execute"
+                      },
+                      "timeout": {
+                        "type": "number",
+                        "description": "Timeout in seconds (optional, no default timeout)"
+                      }
+                    }
+                  },
+                  "constrainedSampling": {
+                    "type": "json_schema",
+                    "strict": "prefer"
+                  }
+                },
+                {
+                  "name": "edit",
+                  "description": "Edit a single file using exact text replacement. Every edits[].oldText must match a unique, non-overlapping region of the original file. If two changes affect the same block or nearby lines, merge them into one edit instead of emitting overlapping edits. Do not include large unchanged regions just to connect distant changes.",
+                  "parameters": {
+                    "type": "object",
+                    "required": [
+                      "path",
+                      "edits"
+                    ],
+                    "properties": {
+                      "path": {
+                        "type": "string",
+                        "description": "Path to the file to edit (relative or absolute)"
+                      },
+                      "edits": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "required": [
+                            "oldText",
+                            "newText"
+                          ],
+                          "properties": {
+                            "oldText": {
+                              "type": "string",
+                              "description": "Exact text for one targeted replacement. It must be unique in the original file and must not overlap with any other edits[].oldText in the same call."
+                            },
+                            "newText": {
+                              "type": "string",
+                              "description": "Replacement text for this targeted edit."
+                            }
+                          }
+                        },
+                        "description": "One or more targeted replacements. Each edit is matched against the original file, not incrementally. Do not include overlapping or nested edits. If two changes touch the same block or nearby lines, merge them into one edit instead."
+                      }
+                    }
+                  },
+                  "constrainedSampling": {
+                    "type": "json_schema",
+                    "strict": "prefer"
+                  }
+                },
+                {
+                  "name": "write",
+                  "description": "Write content to a file. Creates the file if it doesn't exist, overwrites if it does. Automatically creates parent directories.",
+                  "parameters": {
+                    "type": "object",
+                    "required": [
+                      "path",
+                      "content"
+                    ],
+                    "properties": {
+                      "path": {
+                        "type": "string",
+                        "description": "Path to the file to write (relative or absolute)"
+                      },
+                      "content": {
+                        "type": "string",
+                        "description": "Content to write to the file"
+                      }
+                    }
+                  },
+                  "constrainedSampling": {
+                    "type": "json_schema",
+                    "strict": "prefer"
+                  }
+                }
+              ]
+            },
+            {
+              "role": "user",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "Reply with exactly this one token: PLAIN"
+                }
+              ],
+              "timestamp": 1790766445563
+            },
+            {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "PLAIN",
+                  "textSignature": "{\"v\":1,\"id\":\"msg_1\"}"
+                }
+              ],
+              "api": "openai-responses",
+              "provider": "openai",
+              "model": "gpt-4.1",
+              "usage": {
+                "input": 1,
+                "output": 1,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "reasoning": 0,
+                "totalTokens": 2,
+                "cost": {
+                  "input": 0.000002,
+                  "output": 0.000008,
+                  "cacheRead": 0,
+                  "cacheWrite": 0,
+                  "total": 0.000009999999999999999
+                }
+              },
+              "stopReason": "stop",
+              "timestamp": 1790766445576,
+              "responseId": "resp_1",
+              "rawStopReason": "completed",
+              "thinkingLevel": "off"
+            }
+          ],
+          "willRetry": false
+        }
+      },
+      "context": {
+        "harness": "pi",
+        "threadId": "native-pi"
+      },
+      "callbacks": [],
+      "output": {
+        "state": {
+          "blocks": {},
+          "finished": false,
+          "stopped": false,
+          "noted": [
+            "future_record"
+          ]
+        },
+        "events": [
+          {
+            "type": "diagnostic",
+            "diagnostic": {
+              "code": "pi_rpc.ignored_frame",
+              "message": "Pi record future_record is not known to this transport and is ignored",
+              "severity": "debug",
+              "source": "pi.rpc",
+              "details": {
+                "kind": "future_record"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "state": {
+        "blocks": {},
+        "finished": false,
+        "stopped": false,
+        "noted": [
+          "future_record"
+        ]
+      },
+      "event": {
+        "source": "pi.rpc",
+        "method": "future_record",
+        "payload": {
+          "type": "future_record",
+          "messages": [
+            {
+              "role": "system",
+              "content": "",
+              "sections": {
+                "preamble": "You are an expert coding assistant operating inside pi, a coding agent harness. You help users by reading files, executing commands, editing code, and writing new files.",
+                "tools": "<tools>\n- read: Read file contents\n- bash: Execute bash commands (ls, grep, find, etc.)\n- edit: Make precise file edits with exact text replacement, including multiple disjoint edits in one call\n- write: Create or overwrite files\n\nIn addition to the tools above, you may have access to other custom tools depending on the project.\n</tools>",
+                "rules": "<rules>\n- Use bash for file operations like ls, rg, find\n- Use read to examine files instead of cat or sed.\n- You can inspect PI_* environment variables for current model and session details.\n- Use edit for precise changes (edits[].oldText must match exactly)\n- When changing multiple separate locations in one file, use one edit call with multiple entries in edits[] instead of multiple edit calls\n- Each edits[].oldText is matched against the original file, not after earlier edits are applied. Do not emit overlapping or nested edits. Merge nearby changes into one edit.\n- Keep edits[].oldText as small as possible while still being unique in the file. Do not pad with large unchanged regions.\n- Use write only for new files or complete rewrites.\n- Be concise in your responses\n- Show file paths clearly when working with files\n</rules>",
+                "docs": "<docs>\nPi documentation (read only when the user asks about pi itself, its SDK, extensions, themes, skills, or TUI):\n- Main documentation: /Users/yashvardhansingh/test/opencode-app-v2-lanes/pi-audit/packages/harness/e2e/.artifacts/pi/0.99.1/node_modules/@earendil-works/pi-coding-agent/README.md\n- Additional docs: /Users/yashvardhansingh/test/opencode-app-v2-lanes/pi-audit/packages/harness/e2e/.artifacts/pi/0.99.1/node_modules/@earendil-works/pi-coding-agent/docs\n- Examples: /Users/yashvardhansingh/test/opencode-app-v2-lanes/pi-audit/packages/harness/e2e/.artifacts/pi/0.99.1/node_modules/@earendil-works/pi-coding-agent/examples (extensions, custom tools, SDK)\n- When reading pi docs or examples, resolve docs/... under Additional docs and examples/... under Examples, not the current working directory\n- When asked about: extensions (docs/extensions.md, examples/extensions/), themes (docs/themes.md), skills (docs/skills.md), prompt templates (docs/prompt-templates.md), TUI components (docs/tui.md), keybindings (docs/keybindings.md), SDK integrations (docs/sdk.md), custom providers (docs/custom-provider.md), adding models (docs/models.md), pi packages (docs/packages.md), environment variables (docs/environment-variables.md), MCP servers (docs/mcp.md)\n- When working on pi topics, read the docs and examples, and follow .md cross-references before implementing\n- Always read pi .md files completely and follow links to related docs (e.g., tui.md for TUI API details)\n</docs>",
+                "skills": "<skills>\nThe following skills provide specialized instructions for specific tasks.\nUse the read tool to load a skill's file when the task matches its description.\nWhen a skill file references a relative path, resolve it against the skill directory (parent of SKILL.md / dirname of the path) and use that absolute path in tool commands.\n\n<available_skills>\n  <skill>\n    <name>browser-use</name>\n    <description>Automates browser interactions for web testing, form filling, screenshots, and data extraction. Use when the user needs to navigate websites, interact with web pages, fill forms, take screenshots, or extract information from web pages.</description>\n    <location>/Users/yashvardhansingh/.agents/skills/browser-use/SKILL.md</location>\n  </skill>\n  <skill>\n    <name>cleanmymac</name>\n    <description>Use when the user wants to free disk space on a Mac. Triggers on &quot;clean my Mac&quot;, &quot;free up space&quot;, &quot;disk full&quot;, &quot;where did my storage go&quot;, &quot;全自动清理 Mac&quot;, &quot;清理储存空间&quot;, &quot;Xcode is eating my disk&quot;, &quot;Docker is huge&quot;, &quot;what&apos;s taking my disk&quot;, &quot;show me a disk map&quot;, &quot;set up auto cleanup&quot;, &quot;find large unused folders&quot;, &quot;find old AI models&quot;, &quot;schedule cleanup&quot;. Walks the filesystem from any path, annotates every folder with auto-safe / review / never-touch / unknown based on a 51-module judgment registry, and supports both bulk auto-clean and per-item interactive review. Can install recurring auto-cleanup via launchd.</description>\n    <location>/Users/yashvardhansingh/.agents/skills/cleanmymac/SKILL.md</location>\n  </skill>\n  <skill>\n    <name>find-skills</name>\n    <description>Helps users discover and install agent skills when they ask questions like &quot;how do I do X&quot;, &quot;find a skill for X&quot;, &quot;is there a skill that can...&quot;, or express interest in extending capabilities. This skill should be used when the user is looking for functionality that might exist as an installable skill.</description>\n    <location>/Users/yashvardhansingh/.agents/skills/find-skills/SKILL.md</location>\n  </skill>\n  <skill>\n    <name>frontend-design</name>\n    <description>Create distinctive, production-grade frontend interfaces with high design quality. Use this skill when the user asks to build web components, pages, artifacts, posters, or applications (examples include websites, landing pages, dashboards, React components, HTML/CSS layouts, or when styling/beautifying any web UI). Generates creative, polished code and UI design that avoids generic AI aesthetics.</description>\n    <location>/Users/yashvardhansingh/.agents/skills/frontend-design/SKILL.md</location>\n  </skill>\n  <skill>\n    <name>make-interfaces-feel-better</name>\n    <description>Design engineering principles for making interfaces feel polished. Use when building UI components, reviewing frontend code, implementing animations, hover states, shadows, borders, typography, micro-interactions, enter/exit animations, or any visual detail work. Triggers on UI polish, design details, &quot;make it feel better&quot;, &quot;feels off&quot;, stagger animations, border radius, optical alignment, font smoothing, tabular numbers, image outlines, box shadows.</description>\n    <location>/Users/yashvardhansingh/.agents/skills/make-interfaces-feel-better/SKILL.md</location>\n  </skill>\n  <skill>\n    <name>orca-cli</name>\n    <description>Use the public `orca` CLI to operate Orca-managed worktrees, folder contexts, terminals, repos, automations, worktree comments, and the browser embedded inside the Orca app. Use when the user says &quot;$orca-cli&quot;, &quot;use orca cli&quot;, &quot;Orca worktree&quot;, &quot;child worktree&quot;, &quot;cardStatus&quot;, &quot;spawn codex/claude in a worktree&quot;, &quot;read/wait/send Orca terminal&quot;, &quot;terminal send&quot;, &quot;full handoff&quot;, &quot;handover&quot;, &quot;give this to another agent&quot;, &quot;another worktree&quot;, &quot;Orca browser&quot;, or &quot;control the browser inside Orca&quot;. Prefer this over raw `git worktree`, ad hoc PTYs, Playwright, or Computer Use when the task touches Orca-managed state. Use Computer Use for browser windows, webviews, or desktop UI outside Orca&apos;s embedded browser.</description>\n    <location>/Users/yashvardhansingh/.agents/skills/orca-cli/SKILL.md</location>\n  </skill>\n  <skill>\n    <name>orchestration</name>\n    <description>Use Orca orchestration for structured multi-agent coordination: threaded messages, blocking ask/reply flows, task dispatch, worker_done/escalation waits, task DAGs, decision gates, coordinator loops, or decomposing work across agents. Use `orca-cli` instead for full ownership handoffs, including requests phrased as &quot;hand off&quot;, &quot;handoff&quot;, &quot;handover&quot;, &quot;give this to another agent&quot;, or &quot;another worktree&quot; when the user did not explicitly ask to supervise, monitor, wait for results, or coordinate a DAG. Use `orca-cli` for ordinary terminal control, lightweight terminal prompts, shell commands, Orca worktree management, reading or waiting on terminals, and automation of the browser embedded inside Orca. Use Computer Use for browser windows, webviews, Orca app UI, or desktop UI outside Orca&apos;s embedded browser.</description>\n    <location>/Users/yashvardhansingh/.agents/skills/orchestration/SKILL.md</location>\n  </skill>\n  <skill>\n    <name>pdf</name>\n    <description>Use this skill whenever the user wants to do anything with PDF files. This includes reading or extracting text/tables from PDFs, combining or merging multiple PDFs into one, splitting PDFs apart, rotating pages, adding watermarks, creating new PDFs, filling PDF forms, encrypting/decrypting PDFs, extracting images, and OCR on scanned PDFs to make them searchable. If the user mentions a .pdf file or asks to produce one, use this skill.</description>\n    <location>/Users/yashvardhansingh/.agents/skills/pdf/SKILL.md</location>\n  </skill>\n  <skill>\n    <name>remotion-best-practices</name>\n    <description>Best practices for Remotion - Video creation in React</description>\n    <location>/Users/yashvardhansingh/.agents/skills/remotion-best-practices/SKILL.md</location>\n  </skill>\n  <skill>\n    <name>tdd</name>\n    <description>Test-driven development with red-green-refactor loop. Use when user wants to build features or fix bugs using TDD, mentions &quot;red-green-refactor&quot;, wants integration tests, or asks for test-first development.</description>\n    <location>/Users/yashvardhansingh/.agents/skills/tdd/SKILL.md</location>\n  </skill>\n  <skill>\n    <name>to-prd</name>\n    <description>Turn the current conversation context into a PRD and publish it to the project issue tracker. Use when user wants to create a PRD from the current context.</description>\n    <location>/Users/yashvardhansingh/.agents/skills/to-prd/SKILL.md</location>\n  </skill>\n  <skill>\n    <name>transitions-dev</name>\n    <description>Production-ready CSS transitions for web apps. Use when implementing notification badges, dropdowns, modals, panel reveals, page transitions, card resizes, number pop-ins, text swaps, icon swaps, success checks, avatar group hovers, error state shakes, search/input clear, skeleton loaders, shimmer text, sliding tabs, tooltips, staggered text reveals, card hover tilt, plus-to-menu morph, accordions, toasts, like buttons, learn-more hovers, checkbox checks, spinning counters, toggles, AI thinking states, reasoning streams, streaming text, matrix dot loaders, or banner stacking. Triggers on &quot;add a transition&quot;, &quot;animate the dropdown&quot;, &quot;make the modal open smoothly&quot;, &quot;swap icon&quot;, &quot;page slide&quot;, &quot;stagger animation&quot;, &quot;open / close transition&quot;, &quot;make it animate&quot;, &quot;fade between&quot;, &quot;success animation&quot;, &quot;form error&quot;, &quot;shake on invalid&quot;, &quot;hover lift&quot;, &quot;avatar stack hover&quot;, &quot;clear the search&quot;, &quot;skeleton loader&quot;, &quot;loading shimmer&quot;, &quot;shimmer text&quot;, &quot;sliding tabs&quot;, &quot;segmented control&quot;, &quot;tooltip&quot;, &quot;reveal text&quot;, &quot;tilt card&quot;, &quot;3D hover tilt&quot;, &quot;cursor glare&quot;, &quot;plus to menu&quot;, &quot;FAB morph&quot;, &quot;accordion&quot;, &quot;collapsible&quot;, &quot;expand / collapse&quot;, &quot;disclosure&quot;, &quot;toast&quot;, &quot;snackbar&quot;, &quot;like button&quot;, &quot;heart animation&quot;, &quot;learn more arrow&quot;, &quot;checkbox&quot;, &quot;check animation&quot;, &quot;spinning counter&quot;, &quot;odometer&quot;, &quot;slot machine digits&quot;, &quot;toggle&quot;, &quot;switch&quot;, &quot;thinking states&quot;, &quot;AI status line&quot;, &quot;agent reasoning&quot;, &quot;reasoning stream&quot;, &quot;streaming text&quot;, &quot;stream words in&quot;, &quot;matrix loader&quot;, &quot;dot loader&quot;, &quot;banner stack&quot;, &quot;stacked toasts&quot;. Also &quot;motion tokens&quot;, &quot;scan for ad-hoc transitions&quot;, &quot;replace hardcoded durations with motion tokens&quot;, &quot;tokenize my animations&quot;, and the commands transitions reveal, transitions review, transitions apply, transitions refine.</description>\n    <location>/Users/yashvardhansingh/.agents/skills/transitions-dev/SKILL.md</location>\n  </skill>\n  <skill>\n    <name>transitions-polish</name>\n    <description>Polish and refine existing motion against the transitions.dev motion-token scale — duration, distance, scale, blur, and easing — plus the rules for WHEN each token applies (open/close asymmetry, hover-in vs hover-out, stagger offsets, and intent delays). An add-on to the transitions-dev skill, focused on tuning what already animates rather than adding new transitions. Use when the user asks to &quot;polish my transitions&quot;, &quot;refine the motion&quot;, &quot;tune the timing / easing&quot;, &quot;make the animation feel better / less janky&quot;, &quot;tighten the durations&quot;, &quot;fix the stagger&quot;, &quot;align to the motion tokens&quot;, &quot;audit the motion&quot;, &quot;review my animations&quot;, &quot;scan for ad-hoc transitions&quot;, &quot;tokenize my animations&quot;, or runs the commands transitions review or transitions polish. Also drives the Refine panel&apos;s Small refinement feature. Triggers on &quot;motion polish&quot;, &quot;transition polish&quot;, &quot;refine motion&quot;, &quot;timing feels off&quot;, &quot;too slow / too fast&quot;, &quot;stagger&quot;, &quot;delay&quot;, &quot;open close timing&quot;, &quot;hover in out&quot;.</description>\n    <location>/Users/yashvardhansingh/.agents/skills/transitions-polish/SKILL.md</location>\n  </skill>\n</available_skills>\n</skills>",
+                "cwd": "<cwd>\n/private/var/folders/t2/23hmqy6j43j7f3fg3m70gzhh0000gn/T/pi-capture-06Jwsc/work\n</cwd>"
+              },
+              "timestamp": 1790766445564,
+              "toolsAdded": [
+                {
+                  "name": "read",
+                  "description": "Read the contents of a file. Supports text files and images (jpg, png, gif, webp, bmp). Images are sent as attachments. For text files, output is truncated to 2000 lines or 50KB (whichever is hit first). Use offset/limit for large files. When you need the full file, continue with offset until complete.",
+                  "parameters": {
+                    "type": "object",
+                    "required": [
+                      "path"
+                    ],
+                    "properties": {
+                      "path": {
+                        "type": "string",
+                        "description": "Path to the file to read (relative or absolute)"
+                      },
+                      "offset": {
+                        "type": "number",
+                        "description": "Line number to start reading from (1-indexed)"
+                      },
+                      "limit": {
+                        "type": "number",
+                        "description": "Maximum number of lines to read"
+                      }
+                    }
+                  },
+                  "constrainedSampling": {
+                    "type": "json_schema",
+                    "strict": "prefer"
+                  }
+                },
+                {
+                  "name": "bash",
+                  "description": "Execute a bash command in the current working directory. Returns stdout and stderr. Output is truncated to last 2000 lines or 50KB (whichever is hit first). If truncated, full output is saved to a temp file. Optionally provide a timeout in seconds.",
+                  "parameters": {
+                    "type": "object",
+                    "required": [
+                      "command"
+                    ],
+                    "properties": {
+                      "command": {
+                        "type": "string",
+                        "description": "Shell command to execute"
+                      },
+                      "timeout": {
+                        "type": "number",
+                        "description": "Timeout in seconds (optional, no default timeout)"
+                      }
+                    }
+                  },
+                  "constrainedSampling": {
+                    "type": "json_schema",
+                    "strict": "prefer"
+                  }
+                },
+                {
+                  "name": "edit",
+                  "description": "Edit a single file using exact text replacement. Every edits[].oldText must match a unique, non-overlapping region of the original file. If two changes affect the same block or nearby lines, merge them into one edit instead of emitting overlapping edits. Do not include large unchanged regions just to connect distant changes.",
+                  "parameters": {
+                    "type": "object",
+                    "required": [
+                      "path",
+                      "edits"
+                    ],
+                    "properties": {
+                      "path": {
+                        "type": "string",
+                        "description": "Path to the file to edit (relative or absolute)"
+                      },
+                      "edits": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "required": [
+                            "oldText",
+                            "newText"
+                          ],
+                          "properties": {
+                            "oldText": {
+                              "type": "string",
+                              "description": "Exact text for one targeted replacement. It must be unique in the original file and must not overlap with any other edits[].oldText in the same call."
+                            },
+                            "newText": {
+                              "type": "string",
+                              "description": "Replacement text for this targeted edit."
+                            }
+                          }
+                        },
+                        "description": "One or more targeted replacements. Each edit is matched against the original file, not incrementally. Do not include overlapping or nested edits. If two changes touch the same block or nearby lines, merge them into one edit instead."
+                      }
+                    }
+                  },
+                  "constrainedSampling": {
+                    "type": "json_schema",
+                    "strict": "prefer"
+                  }
+                },
+                {
+                  "name": "write",
+                  "description": "Write content to a file. Creates the file if it doesn't exist, overwrites if it does. Automatically creates parent directories.",
+                  "parameters": {
+                    "type": "object",
+                    "required": [
+                      "path",
+                      "content"
+                    ],
+                    "properties": {
+                      "path": {
+                        "type": "string",
+                        "description": "Path to the file to write (relative or absolute)"
+                      },
+                      "content": {
+                        "type": "string",
+                        "description": "Content to write to the file"
+                      }
+                    }
+                  },
+                  "constrainedSampling": {
+                    "type": "json_schema",
+                    "strict": "prefer"
+                  }
+                }
+              ]
+            },
+            {
+              "role": "user",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "Reply with exactly this one token: PLAIN"
+                }
+              ],
+              "timestamp": 1790766445563
+            },
+            {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "PLAIN",
+                  "textSignature": "{\"v\":1,\"id\":\"msg_1\"}"
+                }
+              ],
+              "api": "openai-responses",
+              "provider": "openai",
+              "model": "gpt-4.1",
+              "usage": {
+                "input": 1,
+                "output": 1,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "reasoning": 0,
+                "totalTokens": 2,
+                "cost": {
+                  "input": 0.000002,
+                  "output": 0.000008,
+                  "cacheRead": 0,
+                  "cacheWrite": 0,
+                  "total": 0.000009999999999999999
+                }
+              },
+              "stopReason": "stop",
+              "timestamp": 1790766445576,
+              "responseId": "resp_1",
+              "rawStopReason": "completed",
+              "thinkingLevel": "off"
+            }
+          ],
+          "willRetry": false
+        }
+      },
+      "context": {
+        "harness": "pi",
+        "threadId": "native-pi"
+      },
+      "callbacks": [],
+      "output": {
+        "state": {
+          "blocks": {},
+          "finished": false,
+          "stopped": false,
+          "noted": [
+            "future_record"
+          ]
+        },
+        "events": []
+      }
+    },
+    {
+      "state": {
+        "blocks": {},
+        "finished": false,
+        "stopped": false,
+        "noted": [
+          "future_record"
+        ]
+      },
+      "event": {
+        "source": "pi.rpc",
+        "method": "message_start",
+        "payload": {
+          "type": "message_start",
+          "message": {
+            "role": "futureRole",
+            "content": [
+              {
+                "type": "text",
+                "text": "PLAIN",
+                "textSignature": "{\"v\":1,\"id\":\"msg_1\"}"
+              }
+            ],
+            "api": "openai-responses",
+            "provider": "openai",
+            "model": "gpt-4.1",
+            "usage": {
+              "input": 1,
+              "output": 1,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "reasoning": 0,
+              "totalTokens": 2,
+              "cost": {
+                "input": 0.000002,
+                "output": 0.000008,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0.000009999999999999999
+              }
+            },
+            "stopReason": "stop",
+            "timestamp": 1790766445576,
+            "responseId": "resp_1",
+            "rawStopReason": "completed",
+            "thinkingLevel": "off"
+          }
+        }
+      },
+      "context": {
+        "harness": "pi",
+        "threadId": "native-pi"
+      },
+      "callbacks": [],
+      "output": {
+        "state": {
+          "blocks": {},
+          "finished": false,
+          "stopped": false,
+          "noted": [
+            "future_record",
+            "message.futureRole"
+          ]
+        },
+        "events": [
+          {
+            "type": "diagnostic",
+            "diagnostic": {
+              "code": "pi_rpc.ignored_frame",
+              "message": "Pi record message.futureRole is not known to this transport and is ignored",
+              "severity": "debug",
+              "source": "pi.rpc",
+              "details": {
+                "kind": "message.futureRole"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "state": {
+        "blocks": {},
+        "finished": false,
+        "stopped": false,
+        "noted": [
+          "future_record",
+          "message.futureRole"
+        ]
+      },
+      "event": {
+        "source": "pi.rpc",
+        "method": "message_update",
+        "payload": {
+          "type": "message_update",
+          "usage": {
+            "input": 1,
+            "output": 1,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "reasoning": 0,
+            "totalTokens": 2,
+            "cost": {
+              "input": 0.000002,
+              "output": 0.000008,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "total": 0.000009999999999999999
+            }
+          },
+          "assistantMessageEvent": {
+            "type": "future_delta",
+            "contentIndex": 0,
+            "delta": "PLAIN"
+          }
+        }
+      },
+      "context": {
+        "harness": "pi",
+        "threadId": "native-pi"
+      },
+      "callbacks": [],
+      "output": {
+        "state": {
+          "blocks": {},
+          "finished": false,
+          "stopped": false,
+          "noted": [
+            "future_record",
+            "message.futureRole",
+            "message_update.future_delta"
+          ]
+        },
+        "events": [
+          {
+            "type": "diagnostic",
+            "diagnostic": {
+              "code": "pi_rpc.ignored_frame",
+              "message": "Pi record message_update.future_delta is not known to this transport and is ignored",
+              "severity": "debug",
+              "source": "pi.rpc",
+              "details": {
+                "kind": "message_update.future_delta"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "state": {
+        "blocks": {},
+        "finished": false,
+        "stopped": false,
+        "noted": [
+          "future_record",
+          "message.futureRole",
+          "message_update.future_delta"
+        ]
+      },
+      "event": {
+        "source": "pi.rpc",
+        "method": "message_update",
+        "payload": {
+          "type": "message_update",
+          "usage": {
+            "input": 1,
+            "output": 1,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "reasoning": 0,
+            "totalTokens": 2,
+            "cost": {
+              "input": 0.000002,
+              "output": 0.000008,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "total": 0.000009999999999999999
+            }
+          },
+          "assistantMessageEvent": {
+            "type": "future_delta",
+            "contentIndex": 0,
+            "delta": "PLAIN"
+          }
+        }
+      },
+      "context": {
+        "harness": "pi",
+        "threadId": "native-pi"
+      },
+      "callbacks": [],
+      "output": {
+        "state": {
+          "blocks": {},
+          "finished": false,
+          "stopped": false,
+          "noted": [
+            "future_record",
+            "message.futureRole",
+            "message_update.future_delta"
+          ]
+        },
+        "events": []
+      }
+    },
+    {
+      "state": {
+        "blocks": {},
+        "finished": false,
+        "stopped": false,
+        "noted": [
+          "future_record",
+          "message.futureRole",
+          "message_update.future_delta"
+        ]
+      },
+      "event": {
+        "source": "pi.rpc",
+        "method": "message_end",
+        "payload": {
+          "type": "message_end",
+          "message": {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "PLAIN",
+                "textSignature": "{\"v\":1,\"id\":\"msg_1\"}"
+              }
+            ],
+            "api": "openai-responses",
+            "provider": "openai",
+            "model": "gpt-4.1",
+            "usage": {
+              "input": 1,
+              "output": 1,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "reasoning": 0,
+              "totalTokens": 2,
+              "cost": {
+                "input": 0.000002,
+                "output": 0.000008,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0.000009999999999999999
+              }
+            },
+            "stopReason": "futureStop",
+            "timestamp": 1790766445576,
+            "responseId": "resp_1",
+            "rawStopReason": "completed",
+            "thinkingLevel": "off"
+          }
+        }
+      },
+      "context": {
+        "harness": "pi",
+        "threadId": "native-pi"
+      },
+      "callbacks": [],
+      "output": {
+        "state": {
+          "blocks": {},
+          "finished": false,
+          "stopped": false,
+          "noted": [
+            "future_record",
+            "message.futureRole",
+            "message_update.future_delta",
+            "stop_reason.futureStop"
+          ]
+        },
+        "events": [
+          {
+            "type": "text-delta",
+            "delta": "PLAIN"
+          },
+          {
+            "type": "usage",
+            "contextSize": 0,
+            "contextUsed": 1,
+            "observation": {
+              "kind": "delta",
+              "providerObservationId": "1790766445576",
+              "tokens": {
+                "input": 1,
+                "output": 1,
+                "reasoning": 0,
+                "cache": {
+                  "read": 0,
+                  "write": 0
+                }
+              }
+            }
+          },
+          {
+            "type": "diagnostic",
+            "diagnostic": {
+              "code": "pi_rpc.ignored_frame",
+              "message": "Pi record stop_reason.futureStop is not known to this transport and is ignored",
+              "severity": "debug",
+              "source": "pi.rpc",
+              "details": {
+                "kind": "stop_reason.futureStop"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "state": {
+        "blocks": {},
+        "finished": false,
+        "stopped": false,
+        "noted": [
+          "future_record",
+          "message.futureRole",
+          "message_update.future_delta",
+          "stop_reason.futureStop"
+        ]
+      },
+      "event": {
+        "source": "pi.rpc",
+        "method": "extension_ui_request",
+        "payload": {
+          "type": "extension_ui_request",
+          "id": "u1",
+          "method": "futureMethod"
+        }
+      },
+      "context": {
+        "harness": "pi",
+        "threadId": "native-pi"
+      },
+      "callbacks": [],
+      "output": {
+        "state": {
+          "blocks": {},
+          "finished": false,
+          "stopped": false,
+          "noted": [
+            "future_record",
+            "message.futureRole",
+            "message_update.future_delta",
+            "stop_reason.futureStop",
+            "extension_ui.futureMethod"
+          ]
+        },
+        "events": [
+          {
+            "type": "diagnostic",
+            "diagnostic": {
+              "code": "pi_rpc.ignored_frame",
+              "message": "Pi record extension_ui.futureMethod is not known to this transport and is ignored",
+              "severity": "debug",
+              "source": "pi.rpc",
+              "details": {
+                "kind": "extension_ui.futureMethod"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "state": {
+        "blocks": {},
+        "finished": false,
+        "stopped": false,
+        "noted": [
+          "future_record",
+          "message.futureRole",
+          "message_update.future_delta",
+          "stop_reason.futureStop",
+          "extension_ui.futureMethod"
+        ]
+      },
+      "event": {
+        "source": "pi.rpc",
+        "method": "extension_ui_request",
+        "payload": {
+          "type": "extension_ui_request",
+          "id": "u1",
+          "method": "futureMethod"
+        }
+      },
+      "context": {
+        "harness": "pi",
+        "threadId": "native-pi"
+      },
+      "callbacks": [],
+      "output": {
+        "state": {
+          "blocks": {},
+          "finished": false,
+          "stopped": false,
+          "noted": [
+            "future_record",
+            "message.futureRole",
+            "message_update.future_delta",
+            "stop_reason.futureStop",
+            "extension_ui.futureMethod"
+          ]
+        },
+        "events": []
+      }
+    },
+    {
+      "state": {
+        "blocks": {},
+        "finished": false,
+        "stopped": false,
+        "noted": [
+          "future_record",
+          "message.futureRole",
+          "message_update.future_delta",
+          "stop_reason.futureStop",
+          "extension_ui.futureMethod"
+        ]
+      },
+      "event": {
+        "source": "pi.rpc",
+        "method": "agent_settled",
+        "payload": {
+          "type": "agent_settled"
+        }
+      },
+      "context": {
+        "harness": "pi",
+        "threadId": "native-pi"
+      },
+      "callbacks": [],
+      "output": {
+        "state": {
+          "blocks": {},
+          "finished": true,
+          "stopped": false,
+          "noted": [
+            "future_record",
+            "message.futureRole",
+            "message_update.future_delta",
+            "stop_reason.futureStop",
+            "extension_ui.futureMethod"
+          ]
+        },
+        "events": [
+          {
+            "type": "finish",
+            "sessionId": "native-pi"
+          }
+        ]
+      }
+    }
+  ]
+}

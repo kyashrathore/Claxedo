@@ -14,7 +14,7 @@ export function registerCodexSubagentParentCases(createClientPresentationProject
         item: {
           id: "spawn-1",
           type: "collabAgentToolCall",
-          tool: "spawn_agent",
+          tool: "spawnAgent",
           status: "inProgress",
           senderThreadId: "thread-parent-1",
           receiverThreadIds: ["thread-child-1"],
@@ -30,7 +30,7 @@ export function registerCodexSubagentParentCases(createClientPresentationProject
         item: {
           id: "spawn-1",
           type: "collabAgentToolCall",
-          tool: "spawn_agent",
+          tool: "spawnAgent",
           status: "completed",
           senderThreadId: "thread-parent-1",
           receiverThreadIds: ["thread-child-1"],

@@ -1,6 +1,6 @@
 import type { CreateElicitationRequest, CreateElicitationResponse, RequestPermissionRequest } from "@agentclientprotocol/sdk"
 import { createKeyedSerializer } from "@claxedo/helpers"
-import type { AttachInput, HarnessServices, HarnessSession, McpServerSpec, SessionBroker, StartInput } from "../../contract"
+import type { HarnessServices, HarnessSession, McpServerSpec, SessionBroker, StartInput } from "../../contract"
 import { connectAcp, type AcpConnectionOptions, type AcpPeer } from "./connection"
 import type { AcpConnectionHealth } from "./health"
 import { AcpStartupDeadline } from "./deadline"
@@ -12,7 +12,7 @@ import { acpModeState } from "./options"
 import type { AcpPeerOwnership } from "./ownership"
 import { acpElicitation, acpMcp, acpPermission } from "./protocol"
 import { acpMcpProjection } from "./projection"
-import { restoreAcp, type AcpRestored, type MissingSessionContext } from "./restore"
+import { restoreAcp, type AcpRestored, type AcpRestoreInput, type MissingSessionContext } from "./restore"
 
 export type AcpHost = {
   readonly health: AcpConnectionHealth
@@ -135,7 +135,7 @@ export async function startAcpEntry(host: AcpHost, input: StartInput, broker: Se
   } catch (error) { return abandon(host, entry, error) }
 }
 
-export async function attachAcpEntry(host: AcpHost, input: AttachInput, broker: SessionBroker, prior?: AcpEntry, signal?: AbortSignal): Promise<HarnessSession> {
+export async function attachAcpEntry(host: AcpHost, input: AcpRestoreInput, broker: SessionBroker, prior?: AcpEntry, signal?: AbortSignal): Promise<HarnessSession> {
   const entry = await openAcpEntry(host, input, broker, signal)
   if (prior) {
     entry.options = prior.options

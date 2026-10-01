@@ -1,6 +1,7 @@
 import { SessionAuthoringOwnership } from "./session/authoring-ownership"
 import type { TurnOutline, AgentPresentationEvent } from "@claxedo/agent-runtime-contract"
 import { readTurnOutline } from "./session/turn-outline"
+import { readTurnEvidence, readUpstreamHasTurns } from "./session/turn-evidence"
 import type { SessionConfig, SessionConfigUpdate, SessionHandoff, SessionHandoffSource, SubagentObservation } from "@claxedo/agent-runtime-contract"
 import { recoveryScopeKey, recoveryTargetSessionId, decodeMessagePageCursor, encodeMessagePageCursor, AgentMessagePageError, type AgentMessagePage, type AgentMessagePageInput } from "@claxedo/agent-runtime-contract"
 import { AGENT_MESSAGE_PAGE_LIMIT, projectLatestSurfaceMessages, type AgentTurnCoverage, type AgentTurnCoveragePage } from "@claxedo/agent-runtime-contract"
@@ -9,6 +10,9 @@ import { firstTurnErrorData, normalizeHarnessIdentity, parseStoredSessionModelGr
 import { createMemorySubagentAdmissionStore } from "@claxedo/harness/broker"
 import { sqliteSessionStarts } from "./session/session-starts"
 import { DeliveryQueue } from "./session/delivery-queue"
+import { TurnLeases } from "./session/turn-leases"
+import { retractStoredParts } from "./session/part-retraction"
+import { sessionHandoff, sessionHandoffJson } from "./session/handoff-column"
 import type { AgentMessage, AgentPermission, AgentQuestion, AgentTurnOutcome, PromptFormat, PromptInput, SessionHarness, SessionModelGroup } from "@claxedo/agent-runtime-contract"
 import type { AdmittedSubagentObservation } from "@claxedo/harness/broker"
 import type { ChildSessionRef, TurnActor } from "@claxedo/harness/contract"
@@ -21,13 +25,14 @@ import {
   type RecoveryOperation,
 } from "@claxedo/agent-runtime-contract"
 import { foldUsageObservations, type RuntimeUsageObservation } from "@claxedo/agent-runtime-contract"
-import { isTerminalSubagentStatus, type RuntimeGoalSnapshot, type SubagentUpdatedEvent } from "@claxedo/agent-runtime-contract"
+import { type RuntimeGoalSnapshot, type SubagentUpdatedEvent } from "@claxedo/agent-runtime-contract"
 import { base64UrlEncode } from "@claxedo/helpers/crypto"
 import { asRecord } from "@claxedo/helpers/guards"
 import type { SqliteDatabase } from "./sqlite/database"
 import { openRuntimeStoreSchema } from "./store-schema"
 import type { SessionTurnOrigin } from "./session-access-policy"
-import { actorKind, isRecord, num, rec, str } from "./json-value"
+import { actorKind, isRecord, nullable, num, rec, str } from "./json-value"
+import { observationStartsNewRun, subagentStatusAdvances } from "./subagent-status"
 import { buildAssistantMessage, buildUserMessage, buildUserPromptParts, messageCompleted, messagePartUpdated, messageUpdated, sessionError, sessionIdle, sessionStatus } from "./projection/presentation-events"
 
 export const ACP_RECOVER = "ACP process restarted; pending interactive state must be rerun"
@@ -427,64 +432,6 @@ function subagentCorrelationKeys(observation: SubagentObservation) {
   ].filter((key): key is string => !!key)
 }
 
-function nullable(input: unknown): string | null | undefined {
-  if (input === null) return null
-  return typeof input === "string" ? input : undefined
-}
-
-function sessionHandoff(input: string | null | undefined): SessionHandoff | undefined {
-  if (!input) return undefined
-  try {
-    const value: unknown = JSON.parse(input)
-    const handoff = pendingHandoff(value)
-    const source = handoff && handoffSource(asRecord(value)?.source)
-    return source ? { ...handoff, source } : handoff
-  } catch {
-    return undefined
-  }
-}
-
-function pendingHandoff(input: unknown): Omit<SessionHandoff, "source"> | undefined {
-  const value = asRecord(input)
-  if (!value || value.pending !== true || typeof value.transcript !== "string") return undefined
-  const from = normalizeHarnessIdentity(value.from)
-  if (!from) return undefined
-  return {
-    from,
-    pending: true,
-    transcript: value.transcript,
-    ...(value.reason === "missing-session" ? { reason: value.reason } : {}),
-    ...(value.announced === true ? { announced: true } : {}),
-  }
-}
-
-function handoffSource(input: unknown): SessionHandoffSource | undefined {
-  const value = asRecord(input)
-  const ownerKey = nullable(value?.ownerKey)
-  if (!value || typeof value.agentSessionId !== "string" || typeof value.upstreamSessionId !== "string" || ownerKey === undefined) {
-    return undefined
-  }
-  const model = asRecord(value.model)
-  const variant = nullable(value.variant)
-  const agent = nullable(value.agent)
-  const handoff = pendingHandoff(value.handoff)
-  return {
-    agentSessionId: value.agentSessionId,
-    upstreamSessionId: value.upstreamSessionId,
-    ownerKey,
-    ...(typeof model?.providerID === "string" && typeof model.modelID === "string"
-      ? { model: { providerID: model.providerID, modelID: model.modelID } }
-      : {}),
-    ...(variant !== undefined ? { variant } : {}),
-    ...(agent !== undefined ? { agent } : {}),
-    ...(handoff ? { handoff } : {}),
-  }
-}
-
-function sessionHandoffJson(input: SessionConfig["handoff"] | undefined) {
-  return input ? JSON.stringify(input) : null
-}
-
 function sessionHarness(input: {
   harness_id?: string | null
   harness_access?: string | null
@@ -558,6 +505,7 @@ export type RuntimeStoreDatabase = {
 export class RuntimeStore {
   readonly sessionStarts: AgentSessionStarts
   readonly deliveryQueue: DeliveryQueue
+  readonly turnLeases: TurnLeases
   private opened: RuntimeStoreDatabase
   private db: SqliteDatabase
   private subagentAdmission = createMemorySubagentAdmissionStore()
@@ -584,6 +532,7 @@ export class RuntimeStore {
     openRuntimeStoreSchema(this.db, database.location)
     this.authoringOwnership = new SessionAuthoringOwnership(this.db)
     this.sessionStarts = sqliteSessionStarts(this.db)
+    this.turnLeases = new TurnLeases(this.db)
     this.deliveryQueue = new DeliveryQueue(this.db, (sessionId, actorId) => this.authoringOwnership.record(sessionId, actorId))
     this.hydrateSubagentAdmission()
     this.replay()
@@ -795,18 +744,10 @@ export class RuntimeStore {
           )
           .get(input.parentSessionId, input.observation.observationId)
         if (existing) return { ...admitted, published: !!existing.published }
-        this.persistSubagentEvent(input.parentSessionId, admitted.event)
-        for (const correlationKey of subagentCorrelationKeys(input.observation)) {
-          this.db
-            .prepare(
-              `
-            INSERT OR IGNORE INTO session_subagent_correlation (
-              parent_session_id, correlation_key, subagent_key
-            ) VALUES (?, ?, ?)
-          `,
-            )
-            .run(input.parentSessionId, correlationKey, admitted.event.subagentKey)
-        }
+        const freshKeys = subagentCorrelationKeys(input.observation).filter((correlationKey) => this.db.prepare(`INSERT OR IGNORE
+          INTO session_subagent_correlation (parent_session_id, correlation_key, subagent_key) VALUES (?, ?, ?)`)
+          .run(input.parentSessionId, correlationKey, admitted.event.subagentKey).changes === 1)
+        this.persistSubagentEvent(input.parentSessionId, admitted.event, observationStartsNewRun(input.observation, freshKeys))
         this.db
           .prepare(
             `
@@ -1034,7 +975,7 @@ export class RuntimeStore {
     }
   }
 
-  private persistSubagentEvent(parentSessionId: string, event: SubagentUpdatedEvent) {
+  private persistSubagentEvent(parentSessionId: string, event: SubagentUpdatedEvent, startsNewRun: boolean) {
     const now = Date.now()
     this.db
       .prepare(
@@ -1087,12 +1028,7 @@ export class RuntimeStore {
           .get(parentSessionId, event.subagentKey),
         "session_subagent",
       )
-      const currentTerminal = isTerminalSubagentStatus(current.status)
-      const incomingTerminal = isTerminalSubagentStatus(event.status)
-      if (
-        (!currentTerminal && incomingTerminal) ||
-        (currentTerminal === incomingTerminal && event.revision > current.status_revision)
-      ) {
+      if (subagentStatusAdvances(current, { status: event.status, revision: event.revision }, startsNewRun)) {
         this.db
           .prepare(
             `
@@ -1411,7 +1347,7 @@ export class RuntimeStore {
     // can still be active. A crash cannot release its durable lease, so clear
     // those stale ownership rows at the same boundary that interrupts busy
     // sessions and their pending tools.
-    this.db.exec("DELETE FROM session_turn_lease")
+    this.turnLeases.clear()
     this.normalizeRecoveringTools()
   }
 
@@ -2305,6 +2241,9 @@ export class RuntimeStore {
       case "message.part.updated":
         this.upsertPart(event.properties.part, row.ts)
         return
+
+      case "message.part.retracted":
+        return retractStoredParts(this.db, event.properties, (part) => this.upsertPart(part, row.ts))
 
       case "message.part.delta":
         this.delta(
@@ -3798,60 +3737,24 @@ export class RuntimeStore {
   }
 
   acquireTurnLease(sessionId: string) {
-    const leaseId = `${sessionId}:${crypto.randomUUID()}`
-    const result = this.db.prepare(`
-      INSERT OR IGNORE INTO session_turn_lease (session_id, lease_id, acquired_at)
-      VALUES (?, ?, ?)
-    `).run(sessionId, leaseId, Date.now())
-    return result.changes === 1 ? leaseId : undefined
+    return this.turnLeases.acquire(sessionId)
   }
 
   releaseTurnLease(sessionId: string, leaseId: string) {
-    this.db.prepare(`DELETE FROM session_turn_lease WHERE session_id = ? AND lease_id = ?`).run(sessionId, leaseId)
+    this.turnLeases.release(sessionId, leaseId)
   }
 
   /** Who may currently write for this session, as the durable lease row says. */
   readTurnAuthority(sessionId: string) {
-    const row = this.db
-      .prepare<{ lease_id: string; acquired_at: number }>(
-        "SELECT lease_id, acquired_at FROM session_turn_lease WHERE session_id = ?",
-      )
-      .get(sessionId)
-    return row ? { leaseId: row.lease_id, acquiredAt: row.acquired_at } : undefined
+    return this.turnLeases.read(sessionId)
   }
 
-  /**
-   * What the journal records about one turn, for a caller deciding whether a
-   * cancellation still has anything to cancel.
-   *
-   * Either of the turn's two message ids identifies it. The journal keys turn
-   * rows on the assistant message id, while a recovery target carries the user
-   * message id the caller was given at admission, and neither side can derive
-   * the other without this lookup.
-   */
   turnEvidence(sessionId: string, turnId: string) {
-    const start = this.db
-      .prepare<{ assistant_message_id: string }>(
-        `
-        SELECT assistant_message_id FROM runtime_journal
-        WHERE session_id = ? AND kind = 'control' AND type = 'turn.start'
-          AND (assistant_message_id = ? OR user_message_id = ?)
-        ORDER BY seq DESC LIMIT 1
-      `,
-      )
-      .get(sessionId, turnId, turnId)
-    if (!start) return { started: false, finished: false }
-    const finish = this.db
-      .prepare<{ payload_json: string }>(
-        `
-        SELECT payload_json FROM runtime_journal
-        WHERE session_id = ? AND kind = 'control' AND type = 'turn.finish' AND assistant_message_id = ?
-        ORDER BY seq DESC LIMIT 1
-      `,
-      )
-      .get(sessionId, start.assistant_message_id)
-    if (!finish) return { started: true, finished: false }
-    return { started: true, finished: true, outcome: readColumn.turnFinish(finish.payload_json).outcome }
+    return readTurnEvidence(this.db, sessionId, turnId)
+  }
+
+  upstreamHasTurns(sessionId: string, upstreamSessionId: string) {
+    return readUpstreamHasTurns(this.db, sessionId, upstreamSessionId)
   }
 
   /**

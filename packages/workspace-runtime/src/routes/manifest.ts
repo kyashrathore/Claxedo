@@ -12,7 +12,6 @@ export const WorkspaceRuntimeRoutes = {
   harnessProviders: `${WorkspaceRuntimeApiPrefix}/harness-providers`,
   pty: `${WorkspaceRuntimeApiPrefix}/pty`,
   events: `${WorkspaceRuntimeApiPrefix}/events`,
-  subagentTranscripts: `${WorkspaceRuntimeApiPrefix}/subagent-transcripts`,
   file: `${WorkspaceRuntimeApiPrefix}/file`,
   fileSearch: `${WorkspaceRuntimeApiPrefix}/find/file`,
   diff: `${WorkspaceRuntimeApiPrefix}/diff`,
