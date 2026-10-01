@@ -36,6 +36,7 @@ function documentsService(input: Partial<Service> = {}): Service & { fetch: Clax
       const archived = url.searchParams.get("archived")
       return Response.json(state.rows.filter((row) => archived === "all" || !row.archived_at))
     }
+    if (url.pathname.endsWith("/authorization")) return new Response(null, { status: 204 })
     const open = /^\/documents\/([^/]+)\/agent-open$/.exec(url.pathname)
     if (open) {
       const row = state.rows.find((candidate) => candidate.id === decodeURIComponent(open[1]))

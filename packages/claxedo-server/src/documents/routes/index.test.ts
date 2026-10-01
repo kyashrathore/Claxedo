@@ -1,3 +1,4 @@
+import { documentTestAccess } from "../test-access"
 import { afterAll, beforeAll, describe, expect, test, vi } from "vitest"
 import { mkdirSync, realpathSync } from "node:fs"
 import fs from "node:fs/promises"
@@ -93,6 +94,8 @@ const backend: DocumentsRouteBackend<Awaited<ReturnType<typeof workspace.resolve
   },
 }
 
+Object.assign(backend, { access: documentTestAccess(backend.index) })
+
 const authConfig: ControlPlaneAuthConfig = {
   enabled: true,
   issuer: "https://issuer.example.test",
@@ -121,8 +124,10 @@ function authority(allowed: readonly ProjectAction[] = ["read", "write", "admin"
 }
 
 function signedApp(allowed?: readonly ProjectAction[]) {
+  const access = documentTestAccess(backend.index)
+  access.hasProjectAccess = async () => !allowed || allowed.includes("read")
   const services = { auth: { config: authConfig, verifier }, authority: authority(allowed) } as never
-  return new Hono().route("/documents", DocumentsRoutes({ backend, services, authConfig, verifier }))
+  return new Hono().route("/documents", DocumentsRoutes({ backend: { ...backend, access }, services, authConfig, verifier }))
 }
 
 function localApp() {
@@ -360,16 +365,19 @@ describe("DocumentsRoutes", () => {
     const created = (await createdResponse.json()) as DocumentIndexEntry
     const resolve = vi.fn(async () => ({ path: "/workspace/conflict.md", version: "canonical-v3" }))
     const routeBackend = { ...backend, runtimeResolve: resolve }
-    const app = (allowed: readonly ProjectAction[] = ["read", "write", "admin"]) =>
-      new Hono().route(
+    const app = (allowed: readonly ProjectAction[] = ["read", "write", "admin"]) => {
+      const access = documentTestAccess(backend.index)
+      access.hasProjectAccess = async () => allowed.includes("read")
+      return new Hono().route(
         "/documents",
         DocumentsRoutes({
-          backend: routeBackend,
+          backend: { ...routeBackend, access },
           services: { auth: { config: authConfig, verifier }, authority: authority(allowed) } as never,
           authConfig,
           verifier,
         }),
       )
+    }
     const url = `http://signed.test/documents/${created.id}/runtime-conflict/resolve`
     expect(
       (
@@ -382,7 +390,7 @@ describe("DocumentsRoutes", () => {
     ).toBe(401)
     expect(
       (
-        await app(["read"]).request(url, {
+        await app([]).request(url, {
           method: "POST",
           headers: { authorization: "Bearer user_1", "content-type": "application/json" },
           body: JSON.stringify({ session_id: "session_1", choice: "draft" }),
@@ -561,7 +569,7 @@ describe("DocumentsRoutes", () => {
     expect(pinSnapshot.mock.invocationCallOrder[0]).toBeLessThan(unpinSnapshot.mock.invocationCallOrder[0])
   })
 
-  test("enforces signed read/write/admin actions and hides unauthorized ids", async () => {
+  test("requires a project gate and then uses document permission for changes", async () => {
     const created = await createDocument()
     const readOnly = signedApp(["read"])
     expect(
@@ -597,7 +605,7 @@ describe("DocumentsRoutes", () => {
     const pinUrl = `http://app.example/documents/${document.id}/snapshots/${intake.locator.snapshotId}/work-source-pin`
     expect(
       (
-        await signedApp(["read"]).request(pinUrl, {
+        await signedApp([]).request(pinUrl, {
           method: "POST",
           headers: { authorization: "Bearer tenant_a", "content-type": "application/json" },
           body: JSON.stringify({ work_source_id: "source_auth", revision_id: "revision_auth" }),
@@ -615,7 +623,7 @@ describe("DocumentsRoutes", () => {
     ).toBe(200)
     expect(
       (
-        await signedApp(["read"]).request(`http://app.example/documents/${document.id}/content`, {
+        await signedApp([]).request(`http://app.example/documents/${document.id}/content`, {
           method: "PUT",
           headers: {
             authorization: "Bearer tenant_a",
@@ -628,7 +636,7 @@ describe("DocumentsRoutes", () => {
     ).toBe(404)
     expect(
       (
-        await signedApp(["read", "write"]).request(`http://app.example/documents/${document.id}/archive`, {
+        await signedApp([]).request(`http://app.example/documents/${document.id}/archive`, {
           method: "POST",
           headers: { authorization: "Bearer tenant_a", "content-type": "application/json" },
           body: "{}",

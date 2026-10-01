@@ -1,7 +1,10 @@
+import { authorizeDocument } from "@claxedo/account-contract/document-access"
+import type { DocumentAccess } from "@claxedo/server-core/documents/access"
+import { localDocumentAccess } from "./access"
 import fs from "node:fs"
 import path from "node:path"
 import { createHash, randomUUID } from "node:crypto"
-import { ControlPlaneAuthError, type SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
+import { ControlPlaneAuthError, localControlPlaneAuth, type SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import type { WorkspaceAuthority } from "@claxedo/server-core/platform/auth/authority"
 import type { SessionMeta } from "@claxedo/server-core/session/meta/types"
 import type { Workspace } from "@claxedo/server-core/workspace/store/index"
@@ -45,6 +48,7 @@ import { isMissingFile } from "@claxedo/helpers/fs"
 type Handle = LocalManagedDocumentHandle | RepositoryDocumentHandle
 
 export type LocalDocumentsBackendDependencies = Readonly<{
+  documentAccess?: DocumentAccess
   resolveWorkspace(input: Readonly<{ workspaceId?: string; directory?: string }>): Promise<Workspace | undefined>
   sessionMeta(sessionId: string): Promise<SessionMeta | undefined>
   sessionAuthority?: Pick<WorkspaceAuthority, "authorizeSessionWrite">
@@ -74,6 +78,7 @@ export function createLocalDocumentsBackend(
   dependencies: LocalDocumentsBackendDependencies,
   options: LocalDocumentsBackendOptions = {},
 ) {
+  const access = dependencies.documentAccess ?? localDocumentAccess()
   const dataRoot = dependencies.dataDir()
   const managed = createLocalManagedDocumentWorkspace({ ...options.managed, dataRoot })
   const repository = createRepositoryDocumentWorkspace({
@@ -185,6 +190,7 @@ export function createLocalDocumentsBackend(
   }
 
   return {
+    access,
     index: {
       list: listDocumentIndex,
       find: findDocumentIndexEntry,
@@ -430,6 +436,7 @@ export function createLocalDocumentsBackend(
       return updated
     },
     async agentOpen(entry: DocumentIndexEntry, sessionId: string, context: { auth?: SignedControlPlaneAuth; origin: string }) {
+      await authorizeDocument(await access.principal(context.auth ?? localControlPlaneAuth(), entry.org_id), entry.id, "edit")
       if (entry.placement_kind !== "local") {
         throw new DocumentAgentOpenError(
           409,

@@ -1,3 +1,9 @@
+import { asRecord } from "@claxedo/server-core/platform/json/index"
+import { requireAuthority } from "@claxedo/server-core/platform/auth/authority"
+import { createHostedDocumentsBackend } from "../../documents/backends/hosted/backend"
+import type { R2BucketBinding } from "../../documents/backends/hosted/r2-object-store.cf"
+import { d1DocumentAccess } from "../../authority/adapters/d1/document-authority"
+import { createHostedDocumentRuntimeBroker } from "../../documents/backends/hosted/runtime-broker"
 /**
  * Provider-independent Cloudflare Worker root for the hosted core.
  *
@@ -36,6 +42,7 @@ import type { LiveSyncRoomNamespace } from "../../platform/http/live-sync-publis
 export { LiveSyncRoom }
 
 export type HostedCoreWorkerEnv = Record<string, unknown> & {
+  CLAXEDO_DOCUMENTS?: R2BucketBinding
   CONTROL_PLANE_DB?: D1Database
   CLAXEDO_REQUEST_LIMITER?: CloudflareRateLimitBinding
   LIVE_SYNC_ROOM?: LiveSyncRoomNamespace
@@ -107,13 +114,29 @@ export function createHostedCoreWorker<Env extends HostedCoreWorkerEnv>(
     const limiter = requiredRateLimiter(env.CLAXEDO_REQUEST_LIMITER)
     const liveSyncRoom = requiredLiveSyncRoom(env.LIVE_SYNC_ROOM)
     const controlPlaneDatabase = requiredControlPlaneDatabase(env.CONTROL_PLANE_DB)
+    if (!env.CLAXEDO_DOCUMENTS) bindingError("CLAXEDO_DOCUMENTS")
     const selected = compose(env)
     const key = selected.plane as object
     const existing = appByPlane.get(key)
     if (existing) return existing
 
+    const accessContext = selected.options.documentAccessContext
+    if (!accessContext) bindingError("documentAccessContext")
+    const documents = createHostedDocumentsBackend(env.CLAXEDO_DOCUMENTS, {
+      env: selected.plane.env,
+      access: (index) => d1DocumentAccess(accessContext, index),
+      runtime: createHostedDocumentRuntimeBroker(selected.plane.services, selected.plane.env),
+      resolveSessionWorkspace: async (auth, sessionId) => {
+        const authority = requireAuthority(selected.plane.services)
+        if (!authority.resolveSession) throw new Error("Session placement resolution is unavailable")
+        const resolved = asRecord(await authority.resolveSession(auth, { sessionId }))
+        if (typeof resolved?.workspace_id !== "string") throw new Error("Session placement is unavailable")
+        return resolved.workspace_id
+      },
+    })
     const app = createHostedCoreApp(selected.plane, {
       ...selected.options,
+      documents,
       idempotency: createIdempotencyCoordinator(d1ProjectionCommandIdempotency(controlPlaneDatabase)),
       liveSyncRoom,
       sharedRateLimitStore: cloudflareRateLimitStore(limiter, { periodSeconds: 60 }),

@@ -1,3 +1,5 @@
+import { authorizeDocument, DocumentAccessError } from "@claxedo/account-contract/document-access"
+import { filterDocuments, requireDocumentAccess } from "@claxedo/server-core/documents/access"
 import { Hono, type Context } from "hono"
 import { timingSafeEqualStrings } from "@claxedo/server-core/platform/auth/web-crypto"
 import { withDocumentOperation, type DocumentBrokerBackend } from "@claxedo/server-core/documents/backend"
@@ -16,7 +18,10 @@ export function LocalInstallationDocumentBroker(options: {
   jobState?: ReturnType<typeof createLocalDocumentJobState>
 }) {
   const jobs = options.jobState ?? createLocalDocumentJobState()
-  const app = new Hono()
+  const app = new Hono().onError((error, context) => {
+    if (error instanceof DocumentAccessError) return context.json({ error: "document_not_found" }, 404)
+    throw error
+  })
   app.use("*", async (context, next) => {
     const token = context.req.header("authorization")?.match(/^Bearer\s+(.+)$/i)?.[1]
     if (
@@ -49,20 +54,18 @@ export function LocalInstallationDocumentBroker(options: {
     if (!job)
       return context.json({ error: "document_capability_denied" }, 403)
     return context.json(
-      (await options.backend.index.list({ orgId: "__local__", projectId: job.projectId })).filter((entry) => entryInJob(entry, job)).map((entry) => ({
-        ...entry,
-        org_id: job.orgId,
-      })),
+      await filterDocuments({ userId: job.userId, orgId: job.orgId, access: requireDocumentAccess(options.backend.access) },
+        (await options.backend.index.list({ orgId: job.orgId, projectId: job.projectId })).filter((entry) => entryInJob(entry, job))),
     )
   })
   app.get("/:id", async (context) => {
     const job = await requireActiveJob(context, jobs, "read", options.env)
     if (!job)
       return context.json({ error: "document_capability_denied" }, 403)
-    const entry = await entryFor(options.backend, job)
+    const entry = await entryFor(options.backend, job, "view")
     if (!entry) return context.json({ error: "not_found" }, 404)
     const read = await options.backend.workspace.read(await options.backend.workspace.resolve(portEntry(entry)))
-    return context.json({ entry: { ...entry, org_id: job.orgId }, read })
+    return context.json({ entry, read })
   })
   app.put("/:id", async (context) => {
     const job = await requireActiveJob(context, jobs, "write", options.env)
@@ -83,7 +86,7 @@ export function LocalInstallationDocumentBroker(options: {
     if (!expected) return context.json({ error: "version_required" }, 428)
     return await withDocumentOperation(options.backend, context.req.param("id"), async () => {
       if (!jobs.active(job.jti, job.jobExpiresAt)) return context.json({ error: "document_capability_revoked" }, 403)
-      const entry = await entryFor(options.backend, job)
+      const entry = await entryFor(options.backend, job, "edit")
       if (!entry) return context.json({ error: "not_found" }, 404)
       if (entry.archived_at) return context.json({ error: "archived" }, 409)
       const written = await options.backend.workspace
@@ -232,8 +235,8 @@ function entryInJob(entry: DocumentIndexEntry, job: VerifiedDocumentJob) {
     && (entry.workspace_id === null || entry.workspace_id === job.localWorkspaceId)
 }
 
-async function entryFor(backend: DocumentBrokerBackend, job: VerifiedDocumentJob) {
-  const entry = await backend.index.find("__local__", job.documentId)
+async function entryFor(backend: DocumentBrokerBackend, job: VerifiedDocumentJob, action: "view" | "edit") {
+  const entry = await authorizeDocument({ userId: job.userId, orgId: job.orgId, access: requireDocumentAccess(backend.access) }, job.documentId, action)
   return entry && entryInJob(entry, job) ? entry : undefined
 }
 

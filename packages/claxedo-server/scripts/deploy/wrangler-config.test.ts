@@ -38,6 +38,10 @@ describe("the user-deployed Worker Wrangler config", () => {
     expect(config).toContain('[vars]\nBETTER_AUTH_URL = "https://api.example.com"\nCLAXEDO_DEPLOYMENT_ID = "claxedo"')
   })
 
+  test("binds the documents bucket on every Worker profile", () => {
+    expect(render()).toContain('binding = "CLAXEDO_DOCUMENTS"\nbucket_name = "claxedo-documents"')
+  })
+
   test("pins the shared rate-limit window and ceiling to the local fuse", () => {
     // Cloudflare accepts only 10 or 60 for `period`, and the hosted app's own
     // limiter runs on a 60_000 ms window, so 10 would make the shared ceiling

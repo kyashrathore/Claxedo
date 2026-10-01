@@ -295,6 +295,36 @@ owns the final session placement, message membership, author, model, and
 lifecycle. An empty canonical result is authoritative; the client must not fall
 back to stale data from another transport.
 
+## Private pages
+
+A document records its canonical user creator id on creation. After the project
+read gate, only its creator or an explicit share can read it. Organization and
+project administrators have no private-page override. A person target must be an
+active member of the page's organization; a team target must belong to that
+organization, and its members must still be active organization members. Shares
+have `view` or `edit` permission. Only the creator can manage shares.
+
+`authorizeDocument` in `packages/account-contract/src/document-access.ts` owns
+this policy. Hosted routes, the local document service, installation broker
+reads, MCP, CLI, runtime hydration, and runtime writeback use it. Remote callers
+ask the hosted boundary to authorize their action; they do not compute roles.
+Lists filter each document through the same policy. Document access denials
+return 404, including denials after share revocation.
+
+The share API is `GET/POST/DELETE /documents/:id/shares`; DELETE accepts
+`{ "share_id": "..." }`. A link share is view only. Its token is returned once
+on creation, and only its SHA-256 hash is stored in `document_shares`. Public
+`GET /p/:token` is rate limited and returns no cached content. Revoked links and
+archived documents return 404. Link access also requires its creator to remain
+an active organization member with project access. A link grants no machine or
+session access.
+
+Cloudflare Workers mount the hosted backend with `CLAXEDO_DOCUMENTS` (R2) and
+`CONTROL_PLANE_DB` (D1 shares). The unsigned local backend belongs to its local
+principal; signed compositions must supply their authoritative document access
+adapter. Creation requires a creator; existing rows without one remain
+unreadable. No stored row is backfilled or assigned a guessed creator.
+
 ## Installation order
 
 The control plane installs the target model through expand–migrate–contract

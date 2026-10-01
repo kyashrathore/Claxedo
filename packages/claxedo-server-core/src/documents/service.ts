@@ -1,3 +1,5 @@
+import { authorizeDocument, DocumentAccessError, hashDocumentLink } from "@claxedo/account-contract/document-access"
+import { filterDocuments, requireDocumentAccess, type DocumentPrincipal } from "@claxedo/server-core/documents/access"
 import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import {
   DocumentAgentOpenError,
@@ -46,7 +48,8 @@ export function createDocumentsService<H extends DocumentHandle>(
   ) => publishDocumentEvent(scope, documentId, reason, version, options.documentChangedSink)
   const findEntry = async (orgId: string, documentId: string) => await backend.index.find(orgId, documentId)
 
-  const requireEntry = async (scope: DocumentIndexScope, documentId: string, includeArchived = false) => {
+  const requireEntry = async (scope: DocumentsServiceScope, documentId: string, includeArchived = false, action: "view" | "edit" = "edit") => {
+    await authorizeDocument({ userId: scope.actor.id, orgId: scope.orgId, access: requireDocumentAccess(backend.access) }, documentId, action)
     const entry = await findEntry(scope.orgId, documentId)
     if (!entry || entry.project_id !== scope.projectId || (!includeArchived && entry.archived_at)) throw notFound()
     return entry
@@ -80,24 +83,19 @@ export function createDocumentsService<H extends DocumentHandle>(
     documentId: string,
     input: Readonly<{ token: string; orgId: string; projectId: string; workspaceId: string; sessionId: string }>,
   ) => {
-    const entry = (await findEntry(input.orgId, documentId)) ?? (await backend.runtimeEntry?.(documentId, input))
+    const entry = await findEntry(input.orgId, documentId)
     if (!entry || entry.project_id !== input.projectId) throw notFound()
     return entry
   }
 
-  const runtimeConflictEntry = async (orgId: string, documentId: string, auth: SignedControlPlaneAuth) => {
-    const entry = (await findEntry(orgId, documentId)) ?? (await backend.remoteFind?.({ auth, orgId, documentId }))
-    if (!entry || entry.archived_at) throw notFound()
-    return entry
-  }
 
   return {
     listStatuses(projectId: string) {
       return backend.index.listStatuses(projectId)
     },
 
-    list(scope: DocumentIndexScope, archived: "active" | "archived" | "all") {
-      return backend.index.list(scope, { archived })
+    async list(scope: DocumentsServiceScope, archived: "active" | "archived" | "all") {
+      return await filterDocuments({ userId: scope.actor.id, orgId: scope.orgId, access: requireDocumentAccess(backend.access) }, await backend.index.list(scope, { archived }))
     },
 
     /**
@@ -105,12 +103,10 @@ export function createDocumentsService<H extends DocumentHandle>(
      * not present a partial project as complete read this; a backend without the richer form always
      * enumerates fully, so `truncated` is false.
      */
-    async listPage(scope: DocumentIndexScope, archived: "active" | "archived" | "all") {
-      if (backend.index.listPage) return await backend.index.listPage(scope, { archived })
-      return { entries: await backend.index.list(scope, { archived }), truncated: false }
+    async listPage(scope: DocumentsServiceScope, archived: "active" | "archived" | "all") {
+      const page = backend.index.listPage ? await backend.index.listPage(scope, { archived }) : { entries: await backend.index.list(scope, { archived }), truncated: false }
+      return { ...page, entries: await filterDocuments({ userId: scope.actor.id, orgId: scope.orgId, access: requireDocumentAccess(backend.access) }, page.entries) }
     },
-
-    findEntry,
 
     async remoteList(
       input: Readonly<{
@@ -135,11 +131,13 @@ export function createDocumentsService<H extends DocumentHandle>(
         sessionId: string | null
       }>,
     ) {
+      if (scope.actor.type !== "user" || !scope.actor.id) throw notFound()
       const documentId = `document_${crypto.randomUUID().replaceAll("-", "")}`
       const now = new Date().toISOString()
       const entry = {
         id: documentId,
         org_id: scope.orgId,
+        creator_id: scope.actor.id,
         project_id: scope.projectId,
         display_name: input.displayName,
         origin_kind: "managed" as const,
@@ -189,6 +187,7 @@ export function createDocumentsService<H extends DocumentHandle>(
       }>,
     ) {
       const repository = repositoryFor()
+      if (scope.actor.type !== "user" || !scope.actor.id) throw notFound()
       const documentId = `document_${crypto.randomUUID().replaceAll("-", "")}`
       const inspected = await repository.inspect({
         origin: "repository",
@@ -208,11 +207,15 @@ export function createDocumentsService<H extends DocumentHandle>(
       const version = inspected.availability.version
       return await withDocumentOperation(backend, `repository:${scope.orgId}:${inspected.identityKey}`, async () => {
         const existing = await backend.index.findRepository(scope, inspected.identityKey)
-        if (existing) return { entry: existing, created: false }
+        if (existing) {
+          await requireEntry(scope, existing.id)
+          return { entry: existing, created: false }
+        }
         const now = new Date().toISOString()
         const entry = {
           id: documentId,
           org_id: scope.orgId,
+          creator_id: scope.actor.id,
           project_id: scope.projectId,
           display_name: input.displayName ?? inspected.relativePath.split("/").at(-1) ?? "Document",
           origin_kind: "repository" as const,
@@ -276,7 +279,7 @@ export function createDocumentsService<H extends DocumentHandle>(
 
     availability(scope: DocumentsServiceScope, documentId: string) {
       return withDocumentOperation(backend, documentId, async () => {
-        const entry = await requireEntry(scope, documentId, true)
+        const entry = await requireEntry(scope, documentId, true, "view")
         const availability = await repositoryFor(entry).availability(
           portEntry(entry),
           entry.last_known_file_version ? toDocumentVersion(entry.last_known_file_version) : undefined,
@@ -333,7 +336,7 @@ export function createDocumentsService<H extends DocumentHandle>(
     },
 
     async gitSnapshot(scope: DocumentsServiceScope, documentId: string) {
-      const entry = await requireEntry(scope, documentId)
+      const entry = await requireEntry(scope, documentId, false, "view")
       return await repositoryFor(entry).gitSnapshot(portEntry(entry))
     },
 
@@ -351,14 +354,6 @@ export function createDocumentsService<H extends DocumentHandle>(
       })
     },
 
-    async findAgentEntry(orgId: string, documentId: string, auth?: SignedControlPlaneAuth) {
-      const entry =
-        (await findEntry(orgId, documentId)) ??
-        (auth && backend.remoteFind ? await backend.remoteFind({ auth, orgId, documentId }) : undefined)
-      if (!entry || entry.archived_at) throw notFound()
-      return entry
-    },
-
     async agentOpen(
       entry: DocumentIndexEntry,
       sessionId: string,
@@ -371,7 +366,7 @@ export function createDocumentsService<H extends DocumentHandle>(
         )
       }
       return await backend.agentOpen(entry, sessionId, context).catch((error) => {
-        if (error instanceof DocumentAgentOpenError) throw error
+        if (error instanceof DocumentAgentOpenError || error instanceof DocumentAccessError) throw error
         throw new DocumentsServiceError(
           "document_placement_unreachable",
           "This session runtime cannot hydrate the document",
@@ -399,7 +394,7 @@ export function createDocumentsService<H extends DocumentHandle>(
           throw new DocumentsServiceError("document_capability_denied", "Document Session Token was rejected")
         }
         const written = await runtimeWriteback(entry, input).catch((error) => {
-          if (error instanceof DocumentVersionConflictError) throw error
+          if (error instanceof DocumentVersionConflictError || error instanceof DocumentAccessError) throw error
           throw new DocumentsServiceError("document_capability_denied", "Document Session Token was rejected")
         })
         await publish(input, entry.id, "document.content_updated", written.version)
@@ -418,14 +413,11 @@ export function createDocumentsService<H extends DocumentHandle>(
         if (entry.archived_at) {
           throw new DocumentsServiceError("document_capability_denied", "Document Session Token was rejected")
         }
-        return await runtimeRenew(entry, input).catch(() => {
+        return await runtimeRenew(entry, input).catch((error) => {
+          if (error instanceof DocumentAccessError) throw error
           throw new DocumentsServiceError("document_capability_denied", "Document Session Token was rejected")
         })
       })
-    },
-
-    async findRuntimeConflictEntry(orgId: string, documentId: string, auth: SignedControlPlaneAuth) {
-      return await runtimeConflictEntry(orgId, documentId, auth)
     },
 
     async runtimeResolve(
@@ -435,9 +427,11 @@ export function createDocumentsService<H extends DocumentHandle>(
       const runtimeResolve = backend.runtimeResolve
       if (!runtimeResolve) throw notFound()
       return await withDocumentOperation(backend, entry.id, async () => {
-        const current = await runtimeConflictEntry(entry.org_id, entry.id, input.auth)
-        if (current.project_id !== entry.project_id) throw notFound()
-        return await runtimeResolve(current, input).catch(() => {
+        const access = requireDocumentAccess(backend.access)
+        const current = await authorizeDocument(await access.principal(input.auth, entry.org_id), entry.id, "edit")
+        if (current.project_id !== entry.project_id || current.archived_at) throw notFound()
+        return await runtimeResolve(current, input).catch((error) => {
+          if (error instanceof DocumentAccessError) throw error
           throw new DocumentsServiceError(
             "document_conflict_resolution_denied",
             "Document conflict resolution was rejected",
@@ -452,14 +446,20 @@ export function createDocumentsService<H extends DocumentHandle>(
     ) {
       if (!backend.runtimeDispose) throw notFound()
       const entry = await runtimeEntry(documentId, input)
-      await backend.runtimeDispose(entry, input).catch(() => {
+      await backend.runtimeDispose(entry, input).catch((error) => {
+        if (error instanceof DocumentAccessError) throw error
         throw new DocumentsServiceError("document_capability_denied", "Document Session Token was rejected")
       })
     },
 
+    async readPublicContent(principal: DocumentPrincipal, documentId: string) {
+      const entry = await authorizeDocument(principal, documentId, "view")
+      return await backend.workspace.read(await backend.workspace.resolve(portEntry(entry)))
+    },
+
     readContent(scope: DocumentsServiceScope, documentId: string) {
       return withDocumentOperation(backend, documentId, async () => {
-        const entry = await requireEntry(scope, documentId)
+        const entry = await requireEntry(scope, documentId, false, "view")
         const read = await backend.workspace.read(await backend.workspace.resolve(portEntry(entry)))
         if (entry.last_known_file_version !== read.version) {
           await backend.index.update(scope, documentId, { last_known_file_version: read.version })
@@ -566,7 +566,7 @@ export function createDocumentsService<H extends DocumentHandle>(
     },
 
     async listSnapshots(scope: DocumentsServiceScope, documentId: string) {
-      const entry = await requireEntry(scope, documentId)
+      const entry = await requireEntry(scope, documentId, false, "view")
       return await backend.workspace.listSnapshots(await backend.workspace.resolve(portEntry(entry)))
     },
 
@@ -607,7 +607,7 @@ export function createDocumentsService<H extends DocumentHandle>(
     },
 
     async exportContent(scope: DocumentsServiceScope, documentId: string) {
-      const entry = await requireEntry(scope, documentId)
+      const entry = await requireEntry(scope, documentId, false, "view")
       return await backend.workspace.read(await backend.workspace.resolve(portEntry(entry)))
     },
   }

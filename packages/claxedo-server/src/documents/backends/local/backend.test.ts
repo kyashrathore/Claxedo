@@ -1,3 +1,5 @@
+import { documentTestAccess } from "../../test-access"
+import { findDocumentIndexEntry } from "@claxedo/server-core/documents/index-store"
 import { execFile } from "node:child_process"
 import fs from "node:fs/promises"
 import os from "node:os"
@@ -63,7 +65,7 @@ describe("local documents backend composition", () => {
       sessionAuthority: authority,
       sessionMeta: async (sessionID) => ({ sessionID, workspaceID: "workspace_1", projectID: projectId, host: "workspace",
         createdAt: 1, updatedAt: 1, tags: [], attachments: [] }),
-    }, projectId, orgId)
+    }, projectId, orgId, bob.user.subject)
     const app = new Hono().route("/documents", DocumentsRoutes({
       backend: fixture.backend, authority,
       authConfig: { enabled: true, issuer: "https://idp.example", jwksUrl: "https://idp.example/jwks" },
@@ -105,7 +107,7 @@ describe("local documents backend composition", () => {
     const fixture = await moveFixture(undefined, {
       sessionMeta: async (sessionID) => ({ sessionID, workspaceID: "workspace_1", projectID: "project_1", host: "workspace",
         createdAt: 1, updatedAt: 1, tags: [], attachments: [] }),
-    })
+    }, "project_1", "org_1", "bob")
     await expect(fixture.backend.agentOpen(fixture.indexed, "ses_missing_authority", {
       auth: { mode: "signed", token: "token", user: { subject: "bob", tokenIdentifier: "actor_bob", issuer: "test" } }, origin: "https://local.example",
     })).rejects.toMatchObject({ status: 503, code: "document_session_authority_unavailable" })
@@ -117,6 +119,7 @@ describe("local documents backend composition", () => {
     roots.push(root)
     const dataDir = vi.fn(() => root)
     const backend = createLocalDocumentsBackend({
+      documentAccess: documentTestAccess({ find: findDocumentIndexEntry } as never),
       dataDir,
       async resolveWorkspace() {
         return undefined
@@ -173,6 +176,7 @@ describe("local documents backend composition", () => {
     let race = false
     const backend = createLocalDocumentsBackend(
       {
+        documentAccess: documentTestAccess({ find: findDocumentIndexEntry } as never),
         dataDir: () => root,
         async resolveWorkspace(input) {
           if (input.workspaceId !== "workspace_1") return undefined
@@ -220,7 +224,7 @@ describe("local documents backend composition", () => {
     const timestamp = new Date().toISOString()
     const indexed = backend.index.create({
       id: "document_1",
-      org_id: "org_1",
+      org_id: "org_1", creator_id: "local",
       project_id: "project_1",
       display_name: "Plan",
       origin_kind: "managed",
@@ -260,6 +264,7 @@ describe("local documents backend composition", () => {
     await git(repository, ["init"])
     await fs.symlink(outside, path.join(repository, "escape"))
     const backend = createLocalDocumentsBackend({
+      documentAccess: documentTestAccess({ find: findDocumentIndexEntry } as never),
       dataDir: () => root,
       async resolveWorkspace(input) {
         if (input.workspaceId !== "workspace_1") return undefined
@@ -293,7 +298,7 @@ describe("local documents backend composition", () => {
     const timestamp = new Date().toISOString()
     const indexed = backend.index.create({
       id: "document_symlink",
-      org_id: "org_1",
+      org_id: "org_1", creator_id: "local",
       project_id: "project_1",
       display_name: "Plan",
       origin_kind: "managed",
@@ -380,7 +385,7 @@ describe("local documents backend composition", () => {
   })
 })
 
-async function moveFixture(options?: Parameters<typeof createLocalDocumentsBackend>[1], dependencies: Partial<LocalDocumentsBackendDependencies> = {}, projectId = "project_1", orgId = "org_1") {
+async function moveFixture(options?: Parameters<typeof createLocalDocumentsBackend>[1], dependencies: Partial<LocalDocumentsBackendDependencies> = {}, projectId = "project_1", orgId = "org_1", creatorId = "local") {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "local-documents-backend-move-fixture-"))
   const repository = await fs.mkdtemp(path.join(os.tmpdir(), "local-documents-backend-move-repository-"))
   roots.push(root, repository)
@@ -392,6 +397,7 @@ async function moveFixture(options?: Parameters<typeof createLocalDocumentsBacke
   await git(repository, ["commit", "-m", "initial"])
   const backend = createLocalDocumentsBackend(
     {
+      documentAccess: documentTestAccess({ find: findDocumentIndexEntry } as never, [orgId]),
       dataDir: () => root,
       async resolveWorkspace(input) {
         if (input.workspaceId !== "workspace_1") return undefined
@@ -431,7 +437,7 @@ async function moveFixture(options?: Parameters<typeof createLocalDocumentsBacke
   const timestamp = new Date().toISOString()
   const indexed = backend.index.create({
     id: "document_fixture",
-    org_id: orgId,
+    org_id: orgId, creator_id: creatorId,
     project_id: projectId,
     display_name: "Plan",
     origin_kind: "managed",

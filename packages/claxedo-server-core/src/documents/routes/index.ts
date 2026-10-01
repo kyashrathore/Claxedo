@@ -1,6 +1,9 @@
+import { verifyDocumentRelayJobToken } from "@claxedo/server-core/platform/auth/runtime-access-token"
+import { authorizeDocument, DocumentAccessError } from "@claxedo/account-contract/document-access"
 import { Hono } from "hono"
 import { z } from "zod"
 import {
+  localControlPlaneAuth,
   ControlPlaneAuthError,
   controlPlaneAuthContext,
   controlPlaneAuthErrorBody,
@@ -19,6 +22,8 @@ import type { DocumentIndexEntry } from "@claxedo/server-core/documents/index-st
 import { DocumentVersionConflictError, DocumentWorkspaceError } from "@claxedo/server-core/documents/errors"
 import { toDocumentVersion, toSnapshotID, type DocumentHandle } from "@claxedo/server-core/documents/port"
 import { createDocumentsService, DocumentsServiceError, type DocumentsServiceScope } from "@claxedo/server-core/documents/service"
+import { createDocumentShare, requireDocumentAccess, type DocumentPrincipal } from "@claxedo/server-core/documents/access"
+import type { RequestAuthenticationAdapter } from "@claxedo/server-core/platform/auth/authentication"
 import { isLoopbackLocalRequest } from "@claxedo/server-core/platform/http/peer-address"
 
 export { DocumentAgentOpenError } from "@claxedo/server-core/documents/backend"
@@ -109,6 +114,8 @@ export type DocumentsRouteOptions<H extends DocumentHandle = DocumentHandle> = R
   backend?: DocumentsBackend<H>
   services?: { authority?: WorkspaceAuthority }
   authConfig?: ControlPlaneAuthConfig
+  env?: NodeJS.ProcessEnv
+  authentication?: RequestAuthenticationAdapter
   verifier?: ControlPlaneTokenVerifier
   authority?: WorkspaceAuthority
   documentChangedSink?: DocumentChangedSink
@@ -118,6 +125,7 @@ type AuthenticatedScope = Readonly<{
   orgId: string
   projectId: string
   auth?: SignedControlPlaneAuth
+  principal: DocumentPrincipal
 }>
 
 type DirectScope = AuthenticatedScope & Readonly<{ entry: DocumentIndexEntry }>
@@ -147,10 +155,6 @@ export function DocumentsRoutes<H extends DocumentHandle>(options: DocumentsRout
         }),
       )
     })
-    // NOTE: the document-scoped `/events` SSE (external-change watch lease + change
-    // stream) was REMOVED. External-change detection is
-    // retired; CAS-at-write (`if-match`) is the correctness floor, and the
-    // `document.changed` doorbell on the control bus carries save notifications.
     .get("/", async (context) => {
       const scope = await routeScope(context.req.raw, options, "read", {
         projectId: context.req.query("project_id"),
@@ -159,7 +163,7 @@ export function DocumentsRoutes<H extends DocumentHandle>(options: DocumentsRout
       const archived = context.req.query("archived")
         ? queryAs(z.enum(["active", "archived", "all"]), context.req.query("archived"))
         : "active"
-      const listed = await documents().listPage(scope, archived)
+      const listed = await documents().listPage(serviceScope(scope), archived)
       // The body stays a plain array — that shape is the client contract. Truncation rides a header
       // so a project past the storage listing bound is never silently presented as complete.
       if (listed.truncated) context.header("x-claxedo-documents-truncated", "true")
@@ -189,6 +193,45 @@ export function DocumentsRoutes<H extends DocumentHandle>(options: DocumentsRout
         sessionId: body.session_id,
       })
       return result.created ? context.json(result.entry, 201) : context.json(result.entry)
+    })
+    .post("/:id/runtime-authorization", async (context) => {
+      const body = await bodyAs(context.req.raw, z.object({
+        userId: z.string().min(1), orgId: z.string().min(1), projectId: z.string().min(1),
+        localWorkspaceId: z.string().min(1), cloudWorkspaceId: z.string().min(1), sessionId: z.string().min(1),
+        operation: z.enum(["hydrate", "write", "resolve"]),
+      }).strict())
+      const token = context.req.header("authorization")?.match(/^Bearer\s+(.+)$/i)?.[1]
+      if (!token) throw new DocumentAccessError()
+      const verified = await verifyDocumentRelayJobToken(token, { ...body, documentId: context.req.param("id") }, options.env).catch(() => { throw new DocumentAccessError() })
+      const access = requireDocumentAccess(requireBackend(options).access)
+      const entry = await authorizeDocument({ userId: verified.userId, orgId: verified.orgId, access }, verified.documentId, "edit")
+      if (entry.project_id !== verified.projectId || entry.archived_at) throw new DocumentAccessError()
+      return context.body(null, 204)
+    })
+    .get("/:id/authorization", async (context) => {
+      const action = queryAs(z.enum(["view", "edit", "share"]), context.req.query("action"))
+      const scope = await directScope(context.req.raw, options, "read", context.req.param("id"))
+      await authorizeDocument(scope.principal, scope.entry.id, action)
+      return context.body(null, 204)
+    })
+    .get("/:id/shares", async (context) => {
+      const scope = await directScope(context.req.raw, options, "read", context.req.param("id"), true)
+      await authorizeDocument(scope.principal, scope.entry.id, "share")
+      return context.json(await requireDocumentAccess(requireBackend(options).access).shares.list(scope.entry.id))
+    })
+    .post("/:id/shares", async (context) => {
+      const scope = await directScope(context.req.raw, options, "read", context.req.param("id"), true)
+      const body = await bodyAs(context.req.raw, z.object({
+        target: z.enum(["person", "team", "link"]), target_id: z.string().trim().min(1).optional(), level: z.enum(["view", "edit"]),
+      }).strict())
+      return context.json(await createDocumentShare(scope.principal, scope.entry.id, body), 201)
+    })
+    .delete("/:id/shares", async (context) => {
+      const scope = await directScope(context.req.raw, options, "read", context.req.param("id"), true)
+      await authorizeDocument(scope.principal, scope.entry.id, "share")
+      const body = await bodyAs(context.req.raw, z.object({ share_id: z.string().trim().min(1) }).strict())
+      await requireDocumentAccess(requireBackend(options).access).shares.revoke(scope.entry.id, body.share_id)
+      return context.body(null, 204)
     })
     .get("/:id", async (context) => {
       const scope = await directScope(context.req.raw, options, "read", context.req.param("id"), true)
@@ -247,10 +290,8 @@ export function DocumentsRoutes<H extends DocumentHandle>(options: DocumentsRout
     })
     .post("/:id/agent-open", async (context) => {
       const body = await bodyAs(context.req.raw, AgentOpenBody)
-      const authenticated = await authenticate(context.req.raw, options)
-      const entry = await documents().findAgentEntry(authenticated.orgId, context.req.param("id"), authenticated.auth)
-      if (authenticated.auth)
-        await authorize(options, authenticated.auth, authenticated.orgId, entry.project_id, "write")
+      const authenticated = await directScope(context.req.raw, options, "write", context.req.param("id"))
+      const entry = authenticated.entry
       const opened = await documents().agentOpen(entry, body.session_id, {
         ...(authenticated.auth ? { auth: authenticated.auth } : {}),
         origin: new URL(context.req.url).origin,
@@ -301,15 +342,10 @@ export function DocumentsRoutes<H extends DocumentHandle>(options: DocumentsRout
     })
     .post("/:id/runtime-conflict/resolve", async (context) => {
       const body = await bodyAs(context.req.raw, RuntimeConflictResolveBody)
-      const authenticated = await authenticate(context.req.raw, options)
+      const authenticated = await directScope(context.req.raw, options, "write", context.req.param("id"))
       if (!authenticated.auth)
         throw new DocumentHttpError(401, "missing_bearer_token", "Signed authentication is required")
-      const entry = await documents().findRuntimeConflictEntry(
-        authenticated.orgId,
-        context.req.param("id"),
-        authenticated.auth,
-      )
-      await authorize(options, authenticated.auth, authenticated.orgId, entry.project_id, "write")
+      const entry = authenticated.entry
       return context.json(
         await documents().runtimeResolve(entry, {
           auth: authenticated.auth,
@@ -416,9 +452,9 @@ async function routeScope<H extends DocumentHandle>(
       ? await requireBackend(options).index.resolveLocalProjectId(input.directory)
       : explicitProject
   if (!projectId) throw new DocumentHttpError(400, "document_project_required", "project_id or directory is required")
-  if (!auth.auth) return { ...auth, projectId }
-  await authorize(options, auth.auth, auth.orgId, projectId, action)
-  return { ...auth, projectId }
+  if (!auth.auth) return { ...auth, orgId: LOCAL_ORG, projectId }
+  const orgId = await authorize(options, auth.auth, auth.orgId, projectId, action)
+  return { ...auth, orgId, projectId }
 }
 
 async function directScope<H extends DocumentHandle>(
@@ -429,15 +465,16 @@ async function directScope<H extends DocumentHandle>(
   includeArchived = false,
 ): Promise<DirectScope> {
   const auth = await authenticate(request, options)
-  const entry = await requireBackend(options).index.find(auth.orgId, documentId)
-  if (!entry || (!includeArchived && entry.archived_at)) throw notFound()
-  if (auth.auth) await authorize(options, auth.auth, auth.orgId, entry.project_id, action)
-  return { ...auth, projectId: entry.project_id, entry }
+  const entry = await authorizeDocument(auth.principal, documentId, action === "read" ? "view" : "edit")
+  if (!includeArchived && entry.archived_at) throw notFound()
+  return { ...auth, orgId: entry.org_id, projectId: entry.project_id, entry }
 }
 
 async function authenticate<H extends DocumentHandle>(request: Request, options: DocumentsRouteOptions<H>) {
-  if (isLoopbackLocalRequest(request)) return { orgId: LOCAL_ORG }
+  const access = requireDocumentAccess(requireBackend(options).access)
+  if (!request.headers.has("authorization") && isLoopbackLocalRequest(request)) return { orgId: LOCAL_ORG, principal: await access.principal(localControlPlaneAuth(), LOCAL_ORG) }
   const auth = await controlPlaneAuthContext(request, {
+    ...(options.authentication ? { authentication: options.authentication } : {}),
     ...(options.authConfig ? { config: options.authConfig } : {}),
     ...(options.verifier ? { verifier: options.verifier } : {}),
   })
@@ -446,22 +483,25 @@ async function authenticate<H extends DocumentHandle>(request: Request, options:
   }
   const authority = routeAuthority(options)
   await authority.usersMe(auth)
-  return { orgId: await authority.resolveOrgId(auth), auth }
+  const orgId = new URL(request.url).searchParams.get("org_id") ?? undefined
+  return { orgId, auth, principal: await access.principal(auth, orgId) }
 }
 
 async function authorize<H extends DocumentHandle>(
   options: DocumentsRouteOptions<H>,
   auth: SignedControlPlaneAuth,
-  orgId: string,
+  orgId: string | undefined,
   projectId: string,
   action: ProjectAction,
 ) {
   const result = await routeAuthority(options).authorizeProject(auth, {
-    orgId: asOrgId(orgId),
+    ...(orgId ? { orgId: asOrgId(orgId) } : {}),
     projectId: asProjectId(projectId),
     action,
   })
   if (!result.ok) throw notFound()
+  if (!result.orgId) throw new DocumentHttpError(503, "document_project_authority_unavailable", "Project organization is unavailable")
+  return result.orgId
 }
 
 function routeAuthority<H extends DocumentHandle>(options: DocumentsRouteOptions<H>) {
@@ -550,7 +590,7 @@ function serviceScope(scope: AuthenticatedScope): DocumentsServiceScope {
   return {
     orgId: scope.orgId,
     projectId: scope.projectId,
-    actor: { type: "user", id: scope.auth?.user.subject ?? "local_user" },
+    actor: { type: "user", id: "userId" in scope.principal ? scope.principal.userId : "" },
   }
 }
 
@@ -571,6 +611,7 @@ function notFound() {
 }
 
 function errorResponse(error: unknown) {
+  if (error instanceof DocumentAccessError) return Response.json({ error: { code: error.code, message: error.message } }, { status: error.status })
   if (error instanceof ControlPlaneAuthError) {
     return Response.json(controlPlaneAuthErrorBody(error), { status: error.status })
   }

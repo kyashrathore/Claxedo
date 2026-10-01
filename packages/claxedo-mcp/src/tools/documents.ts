@@ -1,12 +1,4 @@
-/**
- * Claxedo documents, as an agent uses them: find the ones a project has, and
- * turn a `claxedo://document/...` reference into a real path this session may
- * open.
- *
- * The service is mounted on the self-hosted node and nowhere else today, so
- * every tool here has to answer a deployment that does not serve `/documents`
- * with a sentence rather than a stack trace.
- */
+import { authorizeDocument, DocumentAccessError } from "@claxedo/account-contract/document-access"
 import path from "node:path"
 import { z } from "zod"
 import { claxedoDocumentReferenceId, InvalidDocumentReferenceError } from "@claxedo/helpers/claxedo-document"
@@ -21,6 +13,7 @@ import { toolJson, WORKSPACE_TARGET_SCHEMA } from "./target"
 /** The index fields a caller can act on; the rest of a row is service bookkeeping. */
 const METADATA_KEYS = [
   "id",
+  "creator_id",
   "project_id",
   "display_name",
   "origin_kind",
@@ -95,6 +88,8 @@ export function registerDocumentTools(registry: ToolRegistrar) {
       }
       const match = resolveDocument(documents.rows, reference)
       if ("refusal" in match) return match.refusal
+
+      await authorizeDocument({ requestAuthorization: (id, action) => documentsService(ctx)(`/documents/${encodeURIComponent(id)}/authorization?action=${action}`) }, match.id, "edit")
 
       const opened = record(
         await documentsJson(ctx, `/documents/${encodeURIComponent(match.id)}/agent-open`, {
@@ -185,7 +180,7 @@ async function answering(handle: () => Promise<McpToolResult>): Promise<McpToolR
   try {
     return await handle()
   } catch (error) {
-    if (error instanceof DocumentsUnavailable) return mcpToolRefusal(error.message)
+    if (error instanceof DocumentsUnavailable || error instanceof DocumentAccessError) return mcpToolRefusal(error.message)
     throw error
   }
 }

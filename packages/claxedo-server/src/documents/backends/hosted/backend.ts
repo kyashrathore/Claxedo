@@ -1,3 +1,6 @@
+import type { DocumentsBackend } from "@claxedo/server-core/documents/backend"
+import { authorizeDocument } from "@claxedo/account-contract/document-access"
+import { requireDocumentAccess, type DocumentAccess } from "@claxedo/server-core/documents/access"
 import { createHostedDocumentIndex } from "./index"
 import {
   createHostedManagedDocumentWorkspace,
@@ -21,6 +24,7 @@ import {
 export function createHostedDocumentsBackend(
   bucket: R2BucketBinding,
   options: Readonly<{
+    access?: (index: DocumentsBackend["index"]) => DocumentAccess
     runtime?: Readonly<{ open(input: {
       entry: DocumentIndexEntry
       sessionId: string
@@ -64,12 +68,12 @@ export function createHostedDocumentsBackend(
       cloudWorkspaceId: string
       localWorkspaceId: string
     }) => Promise<void>
-    listLocalWorkspaces?: (auth: SignedControlPlaneAuth) => Promise<readonly { workspaceId: string; projectId: string }[]>
   }> = {},
 ) {
   const store = createR2ConditionalObjectStore(bucket)
   const workspace = createHostedManagedDocumentWorkspace({ store })
   const index = createHostedDocumentIndex(store)
+  const access = options.access?.(index)
   const env = options.env ?? process.env
 
   async function putJob(sessionId: string, documentId: string, job: HostedDocumentJob) {
@@ -125,7 +129,10 @@ export function createHostedDocumentsBackend(
       job.value.projectId !== input.projectId || job.value.cloudWorkspaceId !== input.workspaceId) {
       throw new Error("Document job capability is inactive")
     }
-    return { ...job, claims, auth: await openJobAuth(job.value.sealedAuth, env) }
+    const auth = await openJobAuth(job.value.sealedAuth, env)
+    const authority = requireDocumentAccess(access)
+    await authorizeDocument(await authority.principal(auth, input.orgId), documentId, "edit")
+    return { ...job, claims, auth }
   }
 
   async function liveEntry(documentId: string, input: {
@@ -158,9 +165,10 @@ export function createHostedDocumentsBackend(
   }
   return {
     index,
+    access,
     workspace,
     managedRelativePath: (input: Readonly<{ documentId: string; slug: string }>) => hostedManagedRelativePath(input),
-    placement: "hosted",
+    placement: "hosted" as const,
     placementId: "r2",
     ...(options.runtime ? {
       ...(options.localRelay ? { remoteList: async (input: {
@@ -184,31 +192,12 @@ export function createHostedDocumentsBackend(
           result,
           "Local document index response is invalid",
         )
-      }, remoteFind: async (input: { auth: SignedControlPlaneAuth; orgId: string; documentId: string }) => {
-        if (!options.listLocalWorkspaces) return undefined
-        const workspaces = await options.listLocalWorkspaces(input.auth)
-        if (workspaces.length > 100) throw new Error("Remote document installation discovery exceeds its bound")
-        const matches = (await Promise.all(workspaces.map(async (workspace) => {
-          const result = await options.localRelay!.request({
-            auth: input.auth,
-            orgId: input.orgId,
-            projectId: workspace.projectId,
-            localWorkspaceId: workspace.workspaceId,
-            cloudWorkspaceId: workspace.workspaceId,
-            sessionId: `discovery_${input.documentId}`,
-            documentId: "*",
-            operation: "list",
-            jobExpiresAt: Math.floor(Date.now() / 1000) + 5 * 60,
-          }).catch(() => undefined)
-          return LocalDocumentIndexResponseSchema.safeParse(result)
-            .data?.find((entry) => entry.id === input.documentId)
-        }))).filter((entry): entry is DocumentIndexEntry => Boolean(entry))
-        if (matches.length > 1) throw new Error("Remote document identity is ambiguous")
-        return matches[0]
       } } : {}),
       agentOpen: async (entry: DocumentIndexEntry, sessionId: string, context: { auth?: SignedControlPlaneAuth; origin: string }) => {
         if (!context.auth) throw new Error("Hosted document hydration requires signed authentication")
         const auth = context.auth
+        const authority = requireDocumentAccess(access)
+        await authorizeDocument(await authority.principal(auth, entry.org_id), entry.id, "edit")
         const cloudWorkspaceId = options.resolveSessionWorkspace
           ? await options.resolveSessionWorkspace(auth, sessionId)
           : entry.workspace_id ?? ""
@@ -257,15 +246,14 @@ export function createHostedDocumentsBackend(
           throw error
         })
       },
-      runtimeEntry: async (documentId: string, input: {
-        token: string; orgId: string; projectId: string; workspaceId: string; sessionId: string
-      }) => (await liveEntry(documentId, input)).entry,
       runtimeResolve: async (entry: DocumentIndexEntry, input: {
         auth: SignedControlPlaneAuth; sessionId: string; choice: "durable" | "draft"
       }) => {
         if (!options.runtime?.resolve || entry.archived_at) throw new Error("Document conflict resolution is unavailable")
         const job = await loadJob(input.sessionId, entry.id)
         const original = await openJobAuth(job.value.sealedAuth, env)
+        const authority = requireDocumentAccess(access)
+        await authorizeDocument(await authority.principal(input.auth, entry.org_id), entry.id, "edit")
         if (!job.value.activeJti || job.value.jobExpiresAt <= Math.floor(Date.now() / 1000) ||
           original.user.subject !== input.auth.user.subject || job.value.orgId !== entry.org_id ||
           job.value.projectId !== entry.project_id) throw new Error("Document conflict job is inactive")

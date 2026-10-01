@@ -1,3 +1,4 @@
+import { documentTestAccess } from "./test-access"
 import { describe, expect, test, vi } from "vitest"
 import type { DocumentsBackend } from "@claxedo/server-core/documents/backend"
 import { createDocumentsService } from "@claxedo/server-core/documents/service"
@@ -24,7 +25,7 @@ const snapshot = (pins: readonly string[]): SnapshotRef => ({
 function fixture() {
   let entry: DocumentIndexEntry | undefined = {
     id: "document_1",
-    org_id: "org_1",
+    org_id: "org_1", creator_id: "user_1",
     project_id: "project_1",
     display_name: "Plan",
     origin_kind: "managed",
@@ -106,6 +107,7 @@ function fixture() {
     runtimeRenew,
     runtimeResolve,
   } satisfies DocumentsBackend<typeof handle>
+  Object.assign(backend, { access: documentTestAccess(backend.index) })
   return {
     backend,
     workspace,

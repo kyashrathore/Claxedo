@@ -37,6 +37,7 @@ function serve(rows: readonly Record<string, unknown>[] = ROWS) {
       const archived = target.searchParams.get("archived")
       return Response.json(rows.filter((row) => archived === "all" || !row.archived_at))
     }
+    if (target.pathname.endsWith("/authorization")) return new Response(null, { status: 204 })
     const open = /^\/documents\/([^/]+)\/agent-open$/.exec(target.pathname)
     if (open) return Response.json({ document_id: open[1], display_name: "Plan", path: `/data/documents/${open[1]}/plan.md` })
     return Response.json({ error: { code: "not_found", message: target.pathname } }, { status: 404 })
@@ -76,7 +77,7 @@ test("documents list scopes to the working directory when no project is named", 
 test("documents open resolves a reference and prints the path the service granted", async () => {
   const service = serve()
   await documents(["open", "claxedo://document/doc_plan", "--project", "proj_1", "--session", "ses_1"])
-  expect(service.calls[1]).toEqual({
+  expect(service.calls[2]).toEqual({
     url: "/documents/doc_plan/agent-open",
     method: "POST",
     body: { session_id: "ses_1" },
@@ -89,7 +90,7 @@ test("documents open takes the session from the environment a Claxedo terminal s
   const service = serve()
   process.env.CLAXEDO_SESSION_ID = "ses_env"
   await documents(["open", "Plan", "--project", "proj_1"])
-  expect(service.calls[1].body).toEqual({ session_id: "ses_env" })
+  expect(service.calls[2].body).toEqual({ session_id: "ses_env" })
 })
 
 test("documents open refuses an archived document, an unknown one, and a call with no session", async () => {

@@ -8,7 +8,7 @@ import type { AuthIdentity } from "@claxedo/server-core/platform/auth/authentica
 import { browserAuthHttpSecurity } from "@claxedo/server-core/platform/http/browser-auth-security"
 
 import { createD1CoreAuthority, type D1CoreAuthorityBoundary } from "../d1/core-authority"
-import { USER_DEPLOYED_OWNER_CLAIM_HEADER, type D1AuthorityProductPolicy } from "../d1/workspace-authority"
+import { D1WorkspaceAuthority, USER_DEPLOYED_OWNER_CLAIM_HEADER, type D1AuthorityProductPolicy } from "../d1/workspace-authority"
 import { createD1HostTunnelTargetResolver } from "../d1/host-tunnel-relay-target"
 import { hostedCredentialsEnabled, hostedOrgCredentials } from "../../../credentials/worker/index"
 import { d1UserAgentConfigRepository } from "../d1/user-agent-config"
@@ -241,6 +241,7 @@ export function composeBetterAuthD1UserDeployedControlPlane(
     ...(delivery ? { runtimeDelivery: delivery } : {}),
     options: {
       authentication,
+      documentAccessContext: new D1WorkspaceAuthority(input.controlPlaneDatabase, { deploymentId, product: input.product }).accessContext(),
       agentConfigRepository: settings,
       ...(delivery ? {
         settingsChanged: delivery.settingsChanged,

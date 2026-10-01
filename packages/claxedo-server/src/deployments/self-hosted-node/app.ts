@@ -1267,14 +1267,6 @@ export function createSelfHostedApp(
   }
 
   const documentsBackend = localDocumentsBackend(services.authority)
-  // Documents doorbell. The documents backend is
-  // Worker-safe and cannot import the bus, so the local composition root injects
-  // the publish here. Every document mutation — saves AND `fs.watch` external
-  // changes — funnels through `publishDocumentEvent`, so this one line covers
-  // both paths. No hosted Worker composition (`hosted-core-app.ts`) mounts
-  // documents at present; a hosted composition that did would inject a
-  // LiveSyncRoom nudge sink through the DocumentsRoutes option instead of
-  // this process-global one.
   setDocumentChangedSink((event) => controlBus.publish(event))
   app.route(
     "/documents",

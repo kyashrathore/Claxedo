@@ -18,7 +18,7 @@ import {
   relayWorkspaceRuntimeExposure,
   remoteWorkspaceSessionAccessPolicy,
 } from "../../../workspace-runtime/src/index"
-import { localOnlyAuthAdapter, type ControlPlaneTokenVerifier, type ControlPlaneAuthConfig, type SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
+import { type ControlPlaneTokenVerifier, type ControlPlaneAuthConfig, type SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import type { ControlPlaneServices } from "../authority/services"
 import { DocumentsRoutes, type DocumentsRouteBackend } from "@claxedo/server-core/documents/routes/index"
 import { createHostedDocumentsBackend } from "./backends/hosted/backend"
@@ -32,6 +32,7 @@ import {
   createLocalRepositoryGitAuthority,
   createRepositoryDocumentWorkspace,
 } from "@claxedo/server-core/documents/repository/index"
+import { documentTestAccess } from "./test-access"
 import type { DocumentEntry } from "@claxedo/server-core/documents/port"
 import { loopbackMachineLoginPolicy } from "@claxedo/workspace-runtime/testing"
 
@@ -98,6 +99,16 @@ describe("hosted remote documents genuine integration", () => {
     await managed.create(portEntry(managedEntry), { markdown: "managed before", actor: { type: "user", id: "user_1" } })
     const localBackend = localDocumentsBackend(rows, managed, repository)
 
+    const signed: SignedControlPlaneAuth = {
+      mode: "signed",
+      token: "user-bearer",
+      user: { subject: "user_1", tokenIdentifier: "token_1", issuer: "https://issuer.test" },
+    }
+    const services = controlPlaneServices(signing.privateKey, signed)
+    const authConfig: ControlPlaneAuthConfig = {
+      enabled: true, issuer: "https://issuer.test", jwksUrl: "https://issuer.test/jwks",
+    }
+    const verifier: ControlPlaneTokenVerifier = async () => ({ ...signed, token: undefined } as never)
     const localControl = new Hono()
       .route("/internal/documents", LocalInstallationDocumentBroker({
         backend: localBackend,
@@ -106,7 +117,7 @@ describe("hosted remote documents genuine integration", () => {
       }))
       .route("/documents", DocumentsRoutes({
         backend: localBackend,
-        services: { auth: localOnlyAuthAdapter() } as never,
+        services, authConfig, verifier, env,
       }))
 
     const sessionAccessPolicy = remoteWorkspaceSessionAccessPolicy({
@@ -157,19 +168,13 @@ describe("hosted remote documents genuine integration", () => {
     const relayFetch = (async (input: string | URL | Request, init?: RequestInit) =>
       await relay.fetch(input instanceof Request ? input : new Request(input, init))) as unknown as typeof fetch
 
-    const signed: SignedControlPlaneAuth = {
-      mode: "signed",
-      token: "user-bearer",
-      user: { subject: "user_1", tokenIdentifier: "token_1", issuer: "https://issuer.test" },
-    }
-    const services = controlPlaneServices(signing.privateKey, signed)
     const bucket = r2Bucket()
     const options = {
       runtime: createHostedDocumentRuntimeBroker(services, env, relayFetch),
       localRelay: createHostedLocalDocumentRelay(services, env, relayFetch),
       resolveSessionWorkspace: async () => "cloud_ws",
       resolveLocalWorkspace: async () => "local_ws",
-      listLocalWorkspaces: async () => [{ workspaceId: "local_ws", projectId: "project_1" }],
+      access: documentTestAccess,
       reauthorizeJob: async ({ auth, entry: current }: { auth: SignedControlPlaneAuth; entry: DocumentIndexEntry }) => {
         if (auth.user.subject !== signed.user.subject || current.project_id !== "project_1") throw new Error("reauthorization denied")
       },
@@ -177,13 +182,11 @@ describe("hosted remote documents genuine integration", () => {
     }
     const firstBackend = createHostedDocumentsBackend(bucket, options)
     const secondBackend = createHostedDocumentsBackend(bucket, options)
-    const authConfig: ControlPlaneAuthConfig = {
-      enabled: true, issuer: "https://issuer.test", jwksUrl: "https://issuer.test/jwks",
-    }
-    const verifier: ControlPlaneTokenVerifier = async () => ({ ...signed, token: undefined } as never)
+    await firstBackend.index.create(managedEntry)
+    await firstBackend.index.create(repositoryEntry)
     const central = (backend: ReturnType<typeof createHostedDocumentsBackend>) => new Hono().route(
       "/documents",
-      DocumentsRoutes({ backend: backend as never, services, authConfig, verifier }),
+      DocumentsRoutes({ backend: backend as never, services, authConfig, verifier, env }),
     )
     const firstApp = central(firstBackend)
     const secondApp = central(secondBackend)
@@ -211,7 +214,7 @@ describe("hosted remote documents genuine integration", () => {
 
       const external = await managed.read(await managed.resolve(portEntry(managedEntry)))
       await localControl.request(`http://localhost/documents/managed_remote/content?project_id=project_1`, {
-        method: "PUT", headers: { "content-type": "application/json", "if-match": external.version },
+        method: "PUT", headers: { ...headers, "if-match": external.version },
         body: JSON.stringify({ markdown: "managed durable" }),
       })
       await fs.writeFile(managedOpen.path, "managed draft")
@@ -256,7 +259,7 @@ function entry(input: {
   id: string; displayName: string; origin: "managed" | "repository"; managedPath?: string; repositoryPath?: string
 }, now: string): DocumentIndexEntry {
   const common = {
-    id: input.id, org_id: "__local__", project_id: "project_1", display_name: input.displayName,
+    id: input.id, org_id: "org_1", creator_id: "user_1", project_id: "project_1", display_name: input.displayName,
     placement_kind: "local" as const, placement_id: "local",
     status: "draft", session_id: null, archived_at: null, created_at: now, updated_at: now,
     last_opened_at: null, last_known_file_version: null,
@@ -289,7 +292,7 @@ function localDocumentsBackend(
   const index = {
     list: async (scope: { projectId: string }, options?: { archived?: "active" | "archived" | "all" }) => [...rows.values()].filter((row) =>
       row.project_id === scope.projectId && (options?.archived === "all" || !row.archived_at)),
-    find: async (_orgId: string, id: string) => rows.get(id),
+    find: async (orgId: string, id: string) => { const row = rows.get(id); return row?.org_id === orgId ? row : undefined },
     findRepository: async (_scope: unknown, id: string) => [...rows.values()].find((row) => row.repository_id === id),
     create: async (value: DocumentIndexEntry) => (rows.set(value.id, value), value),
     remove: async (_scope: unknown, id: string) => { rows.delete(id) },
@@ -326,7 +329,7 @@ function localDocumentsBackend(
     restore: (handle: Awaited<ReturnType<typeof managed.resolve>> | Awaited<ReturnType<typeof repository.resolve>>, snapshotId: never, request: never) =>
       handle.origin === "managed" ? managed.restore(handle, snapshotId, request) : repository.restore(handle, snapshotId, request),
   }
-  return { index, workspace, managedRelativePath: managedDocumentRelativePath, placement: "local" as const } as unknown as DocumentsRouteBackend
+  return { index, workspace, access: documentTestAccess(index), managedRelativePath: managedDocumentRelativePath, placement: "local" as const } as unknown as DocumentsRouteBackend
 }
 
 function portEntry(value: DocumentIndexEntry): DocumentEntry {
