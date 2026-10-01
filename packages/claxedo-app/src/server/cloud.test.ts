@@ -6,7 +6,6 @@ import { createHostedAccount } from "./account"
 import { createCloudApi } from "./cloud"
 import { placementId, projectId, type ProjectId } from "./ids"
 import type { Transport } from "./transport"
-import { bootstrapCatalog } from "./wire/placements"
 import type { Project } from "./types"
 import type { WorkspaceWakes } from "./workspace-wakes"
 import { createWorkspaces } from "./workspaces"
@@ -28,7 +27,7 @@ function transport(posted: Posted[]): Transport {
     posted.push({ path, body: typeof init?.body === "string" ? JSON.parse(init.body) : init?.body })
     return { workspaceId: "ws_new", directory: "/workspace/widgets" }
   }
-  return { serverUrl: "http://127.0.0.1:1", loopback: true, serverKind: () => "daemon", bootstrap: async () => bootstrapCatalog(bootstrap), json } as Pick<Transport, "serverUrl" | "loopback" | "json"> as Transport
+  return { serverUrl: "http://127.0.0.1:1", loopback: true, json } as Pick<Transport, "serverUrl" | "loopback" | "json"> as Transport
 }
 
 function world(signed: boolean) {

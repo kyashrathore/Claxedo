@@ -2,7 +2,6 @@ import { afterEach, expect, test } from "bun:test"
 import { createRoot } from "solid-js"
 import { createServer } from "./server"
 import { projectId } from "./ids"
-import { serverAccess } from "./config"
 import { stored, shape } from "./test-session-server"
 
 const originalFetch = globalThis.fetch
@@ -11,19 +10,18 @@ afterEach(() => { globalThis.fetch = originalFetch })
 
 const cloud = { workspace_id: "ws_cloud", project_id: "prj_app", project_name: "App", backing: "cloud-vm", reachable: false }
 const machine = { workspace_id: "ws_machine", project_id: "prj_app", backing: "local-worktree", host_online: false, placement: { host_enrollment_id: "enr_1" } }
-const bootstrap = (serverKind: "hosted" | "daemon") => ({
-  deployment: { serverKind, issuesSessions: true },
+const bootstrap = {
+  deployment: { serverKind: "hosted", issuesSessions: true },
   events: { hostAggregate: false },
   project: [{ id: "prj_app", workspaces: { ws_cloud: { id: "ws_cloud", backing: "cloud-vm", directory: "workspace:ws_cloud" } } }],
-})
+}
 
-function worker(options: { unauthorized?: boolean; malformed?: boolean; serverKind?: "hosted" | "daemon" } = {}) {
+function worker(options: { unauthorized?: boolean; malformed?: boolean } = {}) {
   const calls: { path: string; init?: RequestInit }[] = []
   globalThis.fetch = Object.assign(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = new URL(input instanceof Request ? input.url : input)
     calls.push({ path: `${url.pathname}${url.search}`, init })
-    if (url.pathname === "/api/claxedo/bootstrap") return Response.json(bootstrap(options.serverKind ?? "hosted"))
-    if (url.pathname === "/api/claxedo/projects" && options.serverKind === "daemon") return Response.json({ projects: [] })
+    if (url.pathname === "/api/claxedo/bootstrap") return Response.json(bootstrap)
     if (url.pathname === "/api/cp/events") {
       return new Response(new ReadableStream({ start(controller) { init?.signal?.addEventListener("abort", () => controller.close(), { once: true }) } }))
     }
@@ -42,7 +40,7 @@ function worker(options: { unauthorized?: boolean; malformed?: boolean; serverKi
 test("signed browser build lists account projects, placements and sessions with no daemon", async () => {
   const calls = worker()
   await createRoot(async (dispose) => {
-    const server = createServer({ serverUrl: "https://worker.test", ...serverAccess({ controlPlane: { kind: "cookie" } }, "user_1") })
+    const server = createServer({ serverUrl: "https://worker.test", auth: { kind: "none" }, cookies: true })
     try {
       await server.ready
       const projects = await server.queryClient.fetchQuery(server.queries.projects.list())
@@ -57,21 +55,6 @@ test("signed browser build lists account projects, placements and sessions with 
       expect(calls.some((call) => call.path.startsWith("/api/claxedo/projects"))).toBe(false)
       expect(calls.filter((call) => call.path.startsWith("/api/control/session-list"))).toHaveLength(1)
       expect(calls.every((call) => call.init?.credentials === "include" && !new Headers(call.init?.headers).has("Authorization"))).toBe(true)
-      await expect(server.operation("workspace.assignHost", { id: "ws_cloud" })).rejects.toMatchObject({ class: "invalid" })
-    } finally { server.dispose(); dispose() }
-  })
-})
-
-test("a signed browser on a self-hosted node reads stored sessions from the node, not through the account's app catalog", async () => {
-  const calls = worker({ serverKind: "daemon" })
-  await createRoot(async (dispose) => {
-    const server = createServer({ serverUrl: "https://node.test", ...serverAccess({ controlPlane: { kind: "cookie" } }, "user_1") })
-    try {
-      await server.ready
-      const page = await server.sessions.list({ projectId: projectId("prj_app"), limit: 5 })
-      const reads = server.sessions.read(page.rows[0]!.ref, shape)
-      expect((await reads.first).transcript.entries.map((entry) => entry.info.id)).toEqual(["msg_1", "msg_2"])
-      expect(calls.some((call) => call.path.startsWith("/api/control/sessions/ses_1/outline"))).toBe(true)
     } finally { server.dispose(); dispose() }
   })
 })
@@ -83,7 +66,7 @@ for (const [options, failure] of [
   test(`signed browser catalog surfaces ${failure.class} failures and recovers on the next read`, async () => {
     worker(options)
     await createRoot(async (dispose) => {
-      const server = createServer({ serverUrl: "https://worker.test", ...serverAccess({ controlPlane: { kind: "cookie" } }, "user_1") })
+      const server = createServer({ serverUrl: "https://worker.test", auth: { kind: "none" }, cookies: true })
       const originalError = console.error
       console.error = () => undefined
       try {
@@ -100,7 +83,7 @@ for (const [options, failure] of [
 for (const action of ["create", "update", "remove", "reclone"] as const) {
   test(`hosted project ${action} refuses daemon configuration without a request`, async () => {
     const calls = worker()
-    const server = createServer({ serverUrl: "https://worker.test", ...serverAccess({ controlPlane: { kind: "cookie" } }, "user_1") })
+    const server = createServer({ serverUrl: "https://worker.test", auth: { kind: "none" }, cookies: true })
     try {
       await server.ready
       const id = projectId("prj_app")

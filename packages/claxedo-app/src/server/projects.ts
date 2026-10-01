@@ -16,16 +16,15 @@ function projectPath(id: ProjectId) {
 }
 
 export function projectQueries(transport: Transport, workspaces: Pick<Workspaces, "accountProjects" | "load">) {
+  const hosted = async () => (await workspaces.load()).declaration.serverKind === "hosted"
   const list = async () => {
-    await workspaces.load()
-    if (transport.serverKind() === "hosted") return workspaces.accountProjects()
+    if (await hosted()) return workspaces.accountProjects()
     const [local, account] = await Promise.all([transport.json<unknown>(PROJECTS_PATH), workspaces.accountProjects()])
     return [...projectsFromWire(local), ...account]
   }
   const byId = async (id: ProjectId) => {
-    await workspaces.load()
     const account = (await workspaces.accountProjects()).find((project) => project.id === id)
-    if (!account && transport.serverKind() === "hosted") throw new ServerError({ class: "not_found", message: `Project ${id} is not in the account catalog` })
+    if (!account && (await hosted())) throw new ServerError({ class: "not_found", message: `Project ${id} is not in the account catalog` })
     return account ?? oneProjectFromWire(await transport.json<unknown>(projectPath(id)))
   }
   return {
@@ -43,12 +42,11 @@ function projectCache(queryClient: QueryClient, serverUrl: string) {
   }
 }
 
-export function createProjectsApi(transport: Transport, queryClient: QueryClient, workspaces: Pick<Workspaces, "load" | "refresh">): ProjectsApi {
+export function createProjectsApi(transport: Transport, queryClient: QueryClient, workspaces: Pick<Workspaces, "catalog" | "load" | "refresh">): ProjectsApi {
   const remember = projectCache(queryClient, transport.serverUrl)
-  const configurationAvailable = () => transport.serverKind() === "daemon"
+  const configurationAvailable = () => workspaces.catalog()?.declaration.serverKind === "daemon"
   const requireConfiguration = async () => {
-    await workspaces.load()
-    if (!configurationAvailable()) throw new ServerError({ class: "invalid", code: "project_configuration_unavailable", message: "Project configuration requires a daemon" })
+    if ((await workspaces.load()).declaration.serverKind !== "daemon") throw new ServerError({ class: "invalid", code: "project_configuration_unavailable", message: "Project configuration requires a daemon" })
   }
   return {
     configurationAvailable,

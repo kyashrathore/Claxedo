@@ -1,8 +1,7 @@
 import { isLoopbackUrl, resolveServerUrl, type AuthSource, type ServerConfig } from "./config"
-import { responseError, responseErrorCode, ServerError, toAppError } from "./errors"
+import { responseError, responseErrorCode, toAppError } from "./errors"
 import { createRelay } from "./relay"
 import { startWorkspace, type StartOptions } from "./workspace-start"
-import { bootstrapCatalog, type BootstrapCatalog, type ServerKind } from "./wire/placements"
 
 export type RuntimeRoute = {
   readonly directory: string
@@ -13,8 +12,6 @@ export type RuntimeRoute = {
 export type Transport = {
   readonly serverUrl: string
   readonly loopback: boolean
-  readonly serverKind: () => ServerKind
-  readonly bootstrap: () => Promise<BootstrapCatalog>
   readonly request: (path: string, init?: RequestInit) => Promise<Response>
   readonly runtime: (route: RuntimeRoute, path: string, init?: RequestInit) => Promise<Response>
   readonly runtimeSocket: (route: RuntimeRoute, path: string) => Promise<WebSocket>
@@ -93,21 +90,6 @@ function workspaceProxyPath(route: RuntimeRoute, path: string) {
   return `/workspaces/${encodeURIComponent(route.workspaceId)}${withoutRouteQuery(path)}`
 }
 
-function serverDiscovery(request: Transport["request"]): Pick<Transport, "serverKind" | "bootstrap"> {
-  let kind: ServerKind | undefined
-  return {
-    serverKind: () => {
-      if (!kind) throw new ServerError({ class: "internal", message: "The server's bootstrap has not declared its kind" })
-      return kind
-    },
-    bootstrap: async () => {
-      const catalog = bootstrapCatalog(await readJsonResponse(await request("/api/claxedo/bootstrap"), "GET /api/claxedo/bootstrap"))
-      kind = catalog.declaration.serverKind
-      return catalog
-    },
-  }
-}
-
 export function createTransport(config: ServerConfig): Transport {
   const serverUrl = resolveServerUrl(config)
   const loopback = isLoopbackUrl(serverUrl)
@@ -127,7 +109,6 @@ export function createTransport(config: ServerConfig): Transport {
   return {
     serverUrl,
     loopback,
-    ...serverDiscovery(request),
     request,
     runtime,
     runtimeSocket,

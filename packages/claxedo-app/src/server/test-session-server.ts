@@ -7,7 +7,6 @@ import type { TranscriptPart } from "./types"
 import { workspaceStopped } from "./wire/connection"
 import { viewportQuery } from "./wire/turn-page"
 import { createWorkspaces } from "./workspaces"
-import { bootstrapCatalog } from "./wire/placements"
 
 export const ref = { projectId: projectId("proj_1"), placementId: placementId("ws_cloud"), sessionId: sessionId("ses_1") }
 export const shape = { rows: 40, cols: 100, reasoning: false, shell: false, edit: false }
@@ -84,8 +83,6 @@ export function fakeServer(options: FakeServerOptions) {
   }
   const readJson = async <T>(response: Response) => (await response.json()) as T
   const transport = {
-    serverKind: () => "daemon",
-    bootstrap: async () => bootstrapCatalog(await readJson(await request("/api/claxedo/bootstrap"))),
     serverUrl: "https://cp.test",
     loopback: false,
     request,

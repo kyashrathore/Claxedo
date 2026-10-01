@@ -4,7 +4,6 @@ import { QueryClient } from "@tanstack/solid-query"
 import { createRoot } from "solid-js"
 import { placementId, projectId } from "./ids"
 import type { Transport } from "./transport"
-import { bootstrapCatalog } from "./wire/placements"
 import { createWorkspaces } from "./workspaces"
 
 const bootstrap = {
@@ -16,8 +15,6 @@ function transport(reads: string[]): Transport {
   return {
     serverUrl: "http://127.0.0.1:1",
     loopback: true,
-    serverKind: () => "daemon",
-    bootstrap: async () => (reads.push("/api/claxedo/bootstrap"), bootstrapCatalog(bootstrap)),
     json: async (path: string) => (reads.push(path), bootstrap),
   } as Pick<Transport, "serverUrl" | "loopback" | "json"> as Transport
 }

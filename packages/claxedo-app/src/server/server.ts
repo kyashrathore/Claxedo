@@ -88,8 +88,7 @@ function createStartup(input: {
   return { ready: start(), retry }
 }
 
-function serverApis(transport: Transport, workspaces: Workspaces, status: StatusOwner, queryClient: QueryClient, queries: ServerQueries, projection: SessionProjection, account: HostedAccount | undefined) {
-  const port = account?.channel === "port" ? account : undefined
+function serverApis(transport: Transport, workspaces: Workspaces, status: StatusOwner, queryClient: QueryClient, queries: ServerQueries, projection: SessionProjection, account: HostedAccount | undefined, port: HostedAccount | undefined) {
   const operations = createOperations(transport, port)
   const project = (id: ProjectId) => queryClient.fetchQuery(queries.projects.byId(id))
   const wakes = createWorkspaceWakes(transport, workspaces)
@@ -127,7 +126,8 @@ function serverApis(transport: Transport, workspaces: Workspaces, status: Status
 export function createServer(config: ServerConfig): ServerHandle {
   const queryClient = createQueryClient()
   const transport = createTransport(config)
-  const account = config.account ? createHostedAccount(config.account) : config.cookies ? createBrowserHostedAccount(transport) : undefined
+  const port = config.account ? createHostedAccount(config.account) : undefined
+  const account = port ?? (config.cookies ? createBrowserHostedAccount(transport) : undefined)
   const workspaces = createWorkspaces(transport, queryClient, account)
   const status = createStatusOwner(transport)
   const intake = createEventIntake({ serverUrl: transport.serverUrl, queryClient, workspaces, status })
@@ -145,7 +145,7 @@ export function createServer(config: ServerConfig): ServerHandle {
     capabilities: capabilities.value,
     queryClient,
     subscribe: intake.subscribe,
-    ...serverApis(transport, workspaces, status, queryClient, queries, projection, account),
+    ...serverApis(transport, workspaces, status, queryClient, queries, projection, account, port),
     attachPlacement: placementStreams.attach,
     queries,
     retryConnection: startup.retry,

@@ -6,7 +6,6 @@ import { createHostedAccount } from "./account"
 import { projectId } from "./ids"
 import { projectQueries } from "./projects"
 import type { Transport } from "./transport"
-import { bootstrapCatalog } from "./wire/placements"
 import { createWorkspaces } from "./workspaces"
 
 const bootstrap = {
@@ -21,7 +20,7 @@ const machines = { workspaces: [{ workspace_id: "ws_shared", project_id: "prj_ap
 
 function transport(): Transport {
   const answers: Record<string, unknown> = { "/api/claxedo/bootstrap": bootstrap, "/api/claxedo/projects": projects }
-  return { serverUrl: "http://127.0.0.1:1", loopback: true, serverKind: () => "daemon", bootstrap: async () => bootstrapCatalog(bootstrap), json: async (path: string) => answers[path] } as Pick<Transport, "serverUrl" | "loopback" | "json"> as Transport
+  return { serverUrl: "http://127.0.0.1:1", loopback: true, json: async (path: string) => answers[path] } as Pick<Transport, "serverUrl" | "loopback" | "json"> as Transport
 }
 
 function world(run: (operation: string) => Promise<unknown>, gcTime?: number) {
@@ -52,7 +51,7 @@ test("signed desktop catalog: the account's catalog is asked while the bootstrap
   await createRoot(async (dispose) => {
     let answer = () => {}
     const answered = new Promise<void>((resolve) => { answer = resolve })
-    const slow = { ...transport(), bootstrap: async () => { await answered; return bootstrapCatalog(bootstrap) } } as Transport
+    const slow = { ...transport(), json: async (path: string) => { await answered; return path === "/api/claxedo/bootstrap" ? bootstrap : projects } } as Transport
     const calls: string[] = []
     const account = createHostedAccount(async (operation) => (calls.push(operation), operation === "workspace.list.machine" ? machines : provisioned))
     const workspaces = createWorkspaces(slow, new QueryClient({ defaultOptions: { queries: { retry: false } } }), account)

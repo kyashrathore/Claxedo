@@ -34,7 +34,6 @@ test("session reads: a signed desktop reads a stopped cloud session through its 
   const server = fakeServer({ reachable: () => false })
   const calls: { operation: string; input?: Readonly<Record<string, unknown>> }[] = []
   const account = {
-    channel: "port",
     run: async (operation: string, input?: Readonly<Record<string, unknown>>) => {
       calls.push({ operation, ...(input ? { input } : {}) })
       if (operation === "session.turnPage") return { turns: [{ messages: stored }] }
