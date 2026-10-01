@@ -9,6 +9,8 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js"
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js"
 import { createDiffRoutes } from "@claxedo/workspace-runtime/routes"
 import { createSessionRoutes } from "@claxedo/session-core"
+import { testSessionCore } from "@claxedo/session-core/testing"
+import { withSessionCore } from "@claxedo/workspace-runtime/testing"
 import { createClaxedoMcpClient } from "../client/index"
 import { CLAXEDO_MCP_PATH, createClaxedoMcpRoutes, fullUserCredential, inProcessFetch } from "../server"
 import { registerReviewTools } from "./review"
@@ -57,7 +59,8 @@ function runtimeApp() {
     },
     publishGlobal: () => {},
   })
-  return new Hono().route("/api/wr/diff", createDiffRoutes()).route("/", routes)
+  const core = testSessionCore(repository)
+  return new Hono().use("*", (_c, next) => withSessionCore(core, next)).route("/api/wr/diff", createDiffRoutes()).route("/", routes)
 }
 
 const servers: Array<ReturnType<typeof serve>> = []
