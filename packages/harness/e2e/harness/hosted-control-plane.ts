@@ -47,7 +47,7 @@ function ready(child: ChildProcess, marker: string) {
   })
 }
 
-function requestProvisioning(child: ChildProcess, input: Record<string, string>, field: "claim" | "token") {
+function requestProvisioning(child: ChildProcess, input: Record<string, string>, field: "claim" | "actionUrl") {
   return new Promise<string>((resolve, reject) => {
     const id = Math.floor(Math.random() * Number.MAX_SAFE_INTEGER)
     const timer = setTimeout(() => {
@@ -109,7 +109,8 @@ export async function startHostedControlPlane(input: Input) {
         throw error
       }
     },
-    recordedInvitationToken: (email: string) => requestProvisioning(child, { invitationTo: email }, "token"),
+    /** The link in the last email the Worker's `EMAIL` binding sent `to` with `subject`. */
+    recordedEmailActionUrl: (to: string, subject: string) => requestProvisioning(child, { emailTo: to, emailSubject: subject }, "actionUrl"),
     provisionOwnerClaim: (subject: string) => requestProvisioning(child, { subject }, "claim"),
     close: async () => {
       if (child.exitCode === null && child.signalCode === null) {

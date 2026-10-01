@@ -59,5 +59,5 @@ export async function inviteHostedPerson(stack: HostedStack, owner: HostedPerson
     method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ email: invitee.email, role: "member" }),
   }, owner)
   if (created.status !== 202) throw new Error(`hosted invitation creation failed: ${created.status} ${await created.text()}`)
-  return await stack.recordedInvitationToken(invitee.email)
+  return new URL(await stack.recordedEmailActionUrl(invitee.email, "Join your Claxedo organization")).hash.slice(1)
 }

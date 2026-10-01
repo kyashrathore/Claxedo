@@ -116,11 +116,10 @@ async function main(input: Input) {
     await mf.ready
     process.on("message", (message: unknown) => {
       if (!message || typeof message !== "object" || !("id" in message) || typeof message.id !== "number") return
-      if ("invitationTo" in message && typeof message.invitationTo === "string") {
-        const recipient = message.invitationTo
-        void outbox.waitFor((email) => email.to === recipient).then((email) => {
-          const token = email.actionUrl ? new URL(email.actionUrl).hash.slice(1) : ""
-          process.send?.(token ? { id: message.id, token } : { id: message.id, error: "the invitation email carried no token" })
+      if ("emailTo" in message && typeof message.emailTo === "string" && "emailSubject" in message && typeof message.emailSubject === "string") {
+        const { emailTo, emailSubject } = message
+        void outbox.waitFor((email) => email.to === emailTo && email.subject === emailSubject).then((email) => {
+          process.send?.(email.actionUrl ? { id: message.id, actionUrl: email.actionUrl } : { id: message.id, error: "the recorded email carried no link" })
         }, (cause: unknown) => process.send?.({ id: message.id, error: String(cause) }))
         return
       }

@@ -47,11 +47,11 @@ export function recordedEmailOutbox(forward?: { stdout: NodeJS.WritableStream; s
       else stderr.resume()
     },
     messages,
-    /** The first recorded message `match` accepts; the log line can trail the binding's answer, so it waits up to `timeoutMs`. */
+    /** The latest recorded message `match` accepts; the log line can trail the binding's answer, so it waits up to `timeoutMs`. */
     async waitFor(match: (email: RecordedEmail) => boolean, timeoutMs = 5_000) {
       const deadline = Date.now() + timeoutMs
       for (;;) {
-        const found = (await messages()).find(match)
+        const found = (await messages()).findLast(match)
         if (found) return found
         if (Date.now() > deadline) throw new Error(`no recorded email matched within ${timeoutMs} ms`)
         await new Promise((resolve) => setTimeout(resolve, 50))
