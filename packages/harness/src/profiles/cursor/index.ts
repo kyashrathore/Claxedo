@@ -2,10 +2,10 @@ import { createHash, randomUUID } from "node:crypto"
 import fs from "node:fs/promises"
 import path from "node:path"
 import type { McpServerConfig, SettingSource } from "@cursor/sdk"
-import { lstatIfExists, realPathWithinRoot } from "@claxedo/helpers/fs"
+import { lstatIfExists, readTextIfExists, realPathWithinRoot } from "@claxedo/helpers/fs"
 import { asRecord } from "@claxedo/helpers/guards"
 import type { McpServerSpec, PluginProjection, SkillRoot } from "../../contract"
-import { mirrorConfigTree, type ConfigMirrorOptions } from "../config-mirror"
+import { mirrorConfigEntries, mirrorConfigTree, type ConfigMirrorOptions } from "../config-mirror"
 
 const OWNER = "claxedo-agent-plugins"
 const PREFIX = "claxedo--"
@@ -43,12 +43,11 @@ function managedPluginName(plugin: SkillRoot): string {
 }
 
 async function readPluginMarker(folder: string, name: string): Promise<Record<string, unknown> | undefined> {
-  let content: string
-  try { content = await fs.readFile(path.join(folder, name, MARKER), "utf8") }
-  catch (error) {
-    if (error instanceof Error && "code" in error && (error.code === "ENOENT" || error.code === "ENOTDIR")) return undefined
+  const content = await readTextIfExists(path.join(folder, name, MARKER)).catch((error: NodeJS.ErrnoException) => {
+    if (error.code === "ENOTDIR") return undefined
     throw error
-  }
+  })
+  if (content === undefined) return undefined
   const marker = asRecord(JSON.parse(content))
   return marker?.owner === OWNER && marker.directory === name ? marker : undefined
 }
@@ -132,16 +131,8 @@ async function mirrorPersonalPlugins(personalFolder: string, folder: string, per
 }
 
 async function mirrorPersonalConfig(personal: string | undefined, cursorDir: string, includePersonalPlugins: boolean): Promise<void> {
-  const root = personal && (await lstatIfExists(personal))?.isDirectory() ? await fs.realpath(personal) : undefined
-  for (const name of MIRRORED) {
-    const target = path.join(cursorDir, name)
-    const source = root ? path.join(root, name) : undefined
-    if (!source || !(await lstatIfExists(source))) {
-      await fs.rm(target, { recursive: true, force: true })
-      continue
-    }
-    await mirrorConfigTree(source, target, root!, mirror, name)
-  }
+  const source = personal && (await lstatIfExists(personal))?.isDirectory() ? personal : undefined
+  const root = await mirrorConfigEntries(source, cursorDir, MIRRORED, mirror)
   const folder = path.join(cursorDir, "plugins", "local")
   await fs.mkdir(folder, { recursive: true, mode: 0o700 })
   if (root) await mirrorPersonalPlugins(path.join(root, "plugins", "local"), folder, root, includePersonalPlugins)
