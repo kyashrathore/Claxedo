@@ -41,6 +41,7 @@ import {
   type UsageReportWriter,
 } from "@claxedo/server-core/usage/usage-report"
 import type { ConnectionTurnCredentials } from "../connections/turn-credentials"
+import { connectionTurnOwner } from "../connections/turn-owner"
 import {
   deferredTurnGrantClaims,
   mintDeferredTurnGrant,
@@ -614,19 +615,6 @@ export function RuntimeSessionAuthorityRoutes(options: RuntimeSessionAuthorityOp
     return { claims, relayScope, rechecked: false }
   }
 
-  /**
-   * A session spends its owner's accounts whoever sends, so a turn's
-   * connection credential binds the workspace owner's user-scoped partition,
-   * resolved through the authority and never read from the token. It is
-   * resolved before the lease is taken, so a turn no owner answers for is
-   * refused rather than left holding the lease.
-   */
-  async function connectionTurnOwner(workspaceId: string) {
-    if (!options.turnCredentials) return undefined
-    const owner = await options.authority.resolveWorkspaceOwner?.(workspaceId)
-    if (!owner) throw new ControlPlaneAuthError(403, "session_owner_unresolved", "The session's owner cannot be resolved for its connections")
-    return owner.userId
-  }
 
   async function applyTurnAction(
     context: Context,
@@ -684,7 +672,7 @@ export function RuntimeSessionAuthorityRoutes(options: RuntimeSessionAuthorityOp
       turnId: turnId!,
     }
     if (action === "turn_acquire") {
-      const subject = await connectionTurnOwner(claims.workspaceId)
+      const subject = await connectionTurnOwner(options.turnCredentials, (id) => options.authority.resolveWorkspaceOwner?.(id) ?? Promise.resolve(undefined), claims.workspaceId)
       const acquired = await options.turnAuthority.acquireSessionTurn({
         ...turn,
         ...(claims.transport === "deferred-grant" ? { grantId: claims.grantId } : {}),

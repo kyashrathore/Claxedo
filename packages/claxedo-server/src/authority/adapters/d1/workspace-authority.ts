@@ -16,7 +16,7 @@ import { canonicalRepositoryKey } from "@claxedo/server-core/authority/repositor
 import { ClaxedoError } from "@claxedo/server-core/platform/errors/base"
 import { normalizeStoredDirectory } from "@claxedo/server-core/platform/auth/host-connect-contract"
 import { HOST_SERVING_WORKSPACE_SQL } from "./host-access-authority"
-import { batchUnder, may, mayGuard, maySql, readProjectRole, roleRank, type AuthorizationPrincipal } from "./authorization"
+import { batchAssertionFailed, batchUnder, may, mayGuard, maySql, readProjectRole, roleRank, type AuthorizationPrincipal } from "./authorization"
 import { ownerMembershipStatements, requireHuman, requireText, type D1AccessContext } from "./access-context"
 import { D1OrgMemberAuthority } from "./org-member-authority"
 import type { FindAccountByEmail } from "@claxedo/server-core/platform/auth/org-access-authority"
@@ -1284,13 +1284,6 @@ function validateHomeRegion(value?: string) {
 
 function denied(message = "Workspace authority denied access") {
   return new ControlPlaneAuthError(403, "workspace_authorization_denied", message)
-}
-
-/** A guarded batch aborted on its `authority_batch_assertions` row; the cause chain is searched because D1 wraps the SQLite error. */
-export function batchAssertionFailed(error: unknown): boolean {
-  if (!(error instanceof Error)) return false
-  if (error.message.includes("passed = 1")) return true
-  return batchAssertionFailed(error.cause)
 }
 
 function randomId(prefix: "usr" | "act" | "org" | "prj" | "team" | "assert" | "audit") {

@@ -41,8 +41,10 @@ import { MACHINE_SEAL_VERSION, machineSealingPublicKey } from "@claxedo/server-c
 import { timingSafeEqualStrings } from "@claxedo/server-core/platform/auth/web-crypto"
 import { sha256Hex } from "@claxedo/helpers/crypto"
 import { asRecord, parseJson } from "@claxedo/server-core/platform/json/index"
-import { batchAssertionFailed, type D1WorkspaceAuthority } from "./workspace-authority"
-import { activeGuard, batchUnder, mayGuard, maySql, type WorkspaceAction } from "./authorization"
+import type { D1WorkspaceAuthority } from "./workspace-authority"
+import {
+  activeGuard, batchAssertionFailed, batchUnder, deleteAssertion, mayGuard, maySql, wonAssertion, type WorkspaceAction,
+} from "./authorization"
 import { requireHuman } from "./access-context"
 import { D1HostAccessAuthorityError } from "./host-access-errors"
 
@@ -397,7 +399,7 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
         hostId,
         enrollment.scope_revision,
       ),
-      this.wonAssertion(assertionId),
+      wonAssertion(this.database, assertionId),
       this.database.prepare(`
         insert into host_workspace_assignments (
           workspace_id, host_id, org_id, owner_user_id, owner_actor_id,
@@ -412,7 +414,7 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
           updated_at = excluded.updated_at,
           revision = excluded.revision
       `).bind(hostId, who.userId, who.actorId, now, now, workspaceId),
-      this.deleteAssertion(assertionId),
+      deleteAssertion(this.database, assertionId),
     ], (statements) => this.guardedBatch(statements, "Host assignment raced with a scope, assignment or workspace identity change"))
     return { assigned: true as const, workspace_id: workspaceId, host_id: hostId }
   }
@@ -620,7 +622,7 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
             and revoked_at is null and paused_at is null
         ) then 1 else 0 end)
       `).bind(assertionId, who.actorId, hostId, signatureHash),
-      this.deleteAssertion(assertionId),
+      deleteAssertion(this.database, assertionId),
     ], (statements) => this.guardedBatch(statements, "Host enrollment raced with another request"))
     return enrollmentJson((await this.enrollment(who.actorId, hostId))!)
   }
@@ -687,7 +689,7 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
             where ${MACHINE_ELIGIBLE_SQL} and serving_generation = ? and expires_at = ?
           ) then 1 else 0 end)
         `).bind(assertionId, machine.enrollmentId, machine.keyVersion, generation, expiresAt),
-        this.deleteAssertion(assertionId),
+        deleteAssertion(this.database, assertionId),
       ])
     } catch (error) {
       if (!batchAssertionFailed(error)) throw error
@@ -718,7 +720,7 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
             serving_generation = serving_generation + 1, generation_acquired_at = ?, updated_at = ?
           where ${MACHINE_ELIGIBLE_SQL} and serving_generation = ?
         `).bind(now, now, machine.enrollmentId, machine.keyVersion, machine.generation),
-        this.wonAssertion(assertionId),
+        wonAssertion(this.database, assertionId),
         this.database.prepare(`
           delete from host_assignment_readiness where enrollment_id = ? and generation < ?
         `).bind(machine.enrollmentId, generation),
@@ -728,7 +730,7 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
           metadata: { enrollmentId: machine.enrollmentId, hostId: machine.hostId, generation },
           now,
         }),
-        this.deleteAssertion(assertionId),
+        deleteAssertion(this.database, assertionId),
       ])
     } catch (error) {
       if (!batchAssertionFailed(error)) throw error
@@ -862,7 +864,7 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
         update host_enrollments set scope_json = ?, scope_revision = ?, updated_at = ?
         where enrollment_id = ? and owner_actor_id = ? and scope_revision = ? and revoked_at is null
       `).bind(JSON.stringify(scope), revision, now, enrollmentId, who.actorId, row.scope_revision),
-      this.wonAssertion(assertionId),
+      wonAssertion(this.database, assertionId),
       this.database.prepare(retireMachinePlacedWorkspaceSql(`workspace_id in (${outsideRootsSql})`))
         .bind(now, now, ...outsideRoots()),
       this.database.prepare(`
@@ -882,7 +884,7 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
       this.database.prepare(`
         delete from host_workspace_assignments where workspace_id in (${outsideRootsSql})
       `).bind(...outsideRoots()),
-      this.deleteAssertion(assertionId),
+      deleteAssertion(this.database, assertionId),
     ], (statements) => this.guardedBatch(statements, "Host enrollment scope changed concurrently"))
     const audit = await this.database.prepare(`select metadata_json from authority_audit_events where event_id = ?`)
       .bind(auditId).first<{ metadata_json: string }>()
@@ -991,8 +993,8 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
           revision - 1,
           sealingPublicKey,
         ),
-        this.wonAssertion(assertionId),
-        this.deleteAssertion(assertionId),
+        wonAssertion(this.database, assertionId),
+        deleteAssertion(this.database, assertionId),
       ])
     } catch (error) {
       if (!batchAssertionFailed(error)) throw error
@@ -1157,7 +1159,7 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
             select 1 from host_enrollments where enrollment_id = ? and enrolled_via = 'invitation'
           ) then 1 else 0 end)
         `).bind(assertionId, enrollmentId),
-        this.deleteAssertion(assertionId),
+        deleteAssertion(this.database, assertionId),
       ])
     } catch (error) {
       if (isUniqueFailure(error) && String(error).includes("host_enrollments")) {
@@ -1538,16 +1540,6 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
    * its statements in order on one, so this is the batch's own write being
    * counted, not a state another caller could have produced.
    */
-  private wonAssertion(assertionId: string) {
-    return this.database.prepare(`
-      insert into authority_batch_assertions (assertion_id, passed) values (?, changes())
-    `).bind(assertionId)
-  }
-
-  private deleteAssertion(assertionId: string) {
-    return this.database.prepare(`delete from authority_batch_assertions where assertion_id = ?`).bind(assertionId)
-  }
-
   private expiredRowSweep(table: "host_enrollment_requests", id: string, now: number) {
     return this.database.prepare(`
       delete from ${table} where ${id} in (

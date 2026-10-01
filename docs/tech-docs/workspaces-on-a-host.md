@@ -565,10 +565,11 @@ Standing in the session's organization is necessary and never sufficient;
 then the workspace's owner or a share grant admits: `follow` reads and
 streams, `send` also drives the agent's turn, and a `session_control` write
 drops the share branch. No rank on the organization or the project admits
-anyone. The SQLite store (`hasPrivateAccess` in
+anyone, and a share reaches its session only while the owner still stands.
+The SQLite store (`hasPrivateAccess` in
 `packages/claxedo-server-core/src/authority/adapters/sqlite/private-session-authority.ts`)
-admits the creator and participants, which it grants only to the
-workspace's owner and agents, where D1 names the owner.
+answers the same, and admits an agent by its creator or participant row; a
+person's creator or participant row admits nothing.
 
 **F.3 Frame address** — every frame a runtime publishes names its own
 filesystem directory: this machine's path, another machine's path, or the

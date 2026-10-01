@@ -55,13 +55,20 @@ kind:
 The same rules come in two more shapes, so a statement that writes can carry
 its own guard: `maySql(principal, action, row)` is the rule as a SQL
 predicate over a row already in the query (a table alias), and
-`mayGuard(principal, action, resource)` is `exists (...)` of it, for an
-`authority_batch_assertions` row in the same D1 batch. Nothing else on D1
-decides access: the workspace, session, host access, channel runtime, audit,
-org member, team and project member authorities and the Agent Plugins
-activation and source stores all ask it. Each request resolves its signed
-caller to an active human principal once (`requireHuman` in
+`mayGuard(principal, action, resource)` is `exists (...)` of it. Nothing
+else on D1 decides access: the workspace, session, host access, channel
+runtime, audit, org member, team and project member authorities and the
+Agent Plugins activation and source stores all ask it. Each request resolves
+its signed caller to an active human principal once (`requireHuman` in
 `access-context.ts`); an agent actor never passes it.
+
+That resolution is cached for the request, so it is never the last word on
+a write. Every write asks its rule again inside the statement or batch that
+makes it: a guard in the write's own `where`, or `batchUnder(database, guard,
+statements)`, which puts the guard as the batch's first
+`authority_batch_assertions` row (`activeGuard(principal)` when the write
+names no resource). A suspension, a removal or a lost workspace between the
+check and the write aborts the whole batch with 403.
 
 Every rule first requires an active principal (an active user, and an
 active actor that belongs to them) and an active membership of the
@@ -73,7 +80,8 @@ resource's org. Then:
 - a session answers `read` to its workspace's owner and to the holder of a
   share on it, `send` to its workspace's owner and the holder of a `send`
   share, and `control` and `manage_shares` to its workspace's owner alone; a
-  share reaches a human actor only;
+  share reaches a human actor only, and only while the workspace's owner is
+  an active user standing in the organization;
 - a project answers the action when the principal's project role is at least
   that role;
 - an org answers `member` to an active member, `administer` to its owners and
@@ -104,16 +112,18 @@ Admitting a user-deployed identity is the same add, under the same owner
 rules.
 
 Removing an org member revokes, in the same D1 batch, their team memberships
-in that org's teams, their member grants on its projects, their direct
-session shares and session participations in the org, and their runtime
-access tokens in the org. A project or workspace they own stays theirs and
+in that org's teams, their member grants on its projects, the session shares
+naming them and the shares they made on their own workspaces' sessions, their
+session participations in the org, their runtime access tokens in the org,
+and the session tokens their shares admitted. A project or workspace they own stays theirs and
 admits them to nothing without the membership. Re-admitting them restores
 none of it. Every decision reads the rows at request time, so the removed
 person's next request is refused.
 
 A runtime access token's activity is re-read against `may` at check time:
 a workspace token needs its holder to still `operate` the workspace, a
-session token needs its holder to still `read` the session. Removing the
+session token needs its holder to still `read` the session, which a
+suspended owner's session no longer answers to anyone. Removing the
 owner from the org revokes their tokens outright, because re-admission would
 otherwise bring the old token back to life. Revoking a session share revokes
 the session tokens it admitted. Lowering or revoking a project grant, leaving
@@ -223,18 +233,30 @@ The runtime names which class a write is (`sessionAccessWriteClass` in
 it. Read and write checks live in both the managed route policy and the
 storage authority so alternate clients cannot bypass the rule.
 
-A share holder reaches the runtime with a session-scoped token:
+Every Runtime Access Token and Relay Host Token names its reach in a
+`scope` claim: `workspace` on the owner's token, `session` with the
+session's id in `session_id` on a share holder's. The verifier
+(`tokenScopeClaims` in `packages/workspace-relay/src/auth.ts`, the relay's,
+the runtime's and the injected-verifier path alike) refuses a token that
+names neither or both, so a token minted before reach was named reaches
+nothing. A share holder reaches the runtime with a session-scoped token:
 `GET /api/control/workspaces/:id/connection?sessionId=` checks `read` on the
-session and mints a `viewer` Runtime Access Token carrying the session's id
-(`session_id`), recorded with it. The relay and the runtime verify that
-scope instead of recomputing anyone's role: `sessionScopeReaches` in
+session and mints a `viewer` token scoped to it, recorded with its
+`session_id`. The relay and the runtime verify that scope instead of
+recomputing anyone's role: `sessionScopeReaches` in
 `packages/workspace-relay-protocol/src/index.ts` admits only that session's
 routes, its events on `/api/wr/events?sessionID=`, and question replies, and
 refuses everything else with 403 `relay_scope_denied`; the runtime's managed
 authority refuses a scoped token on any other session
 (`session_scope_denied`) and the control-plane oracle refuses a scoped proof
-wherever the whole workspace or host is asked for. A token with no session
-reaches the workspace and is minted only for its owner.
+wherever the whole workspace or host is asked for. A workspace-scoped token
+is minted only for the workspace's owner.
+
+A session spends its owner's accounts whoever sends: a turn's connection
+credential binds the workspace owner's partition (`connectionTurnOwner` in
+`packages/claxedo-server/src/connections/turn-owner.ts`), resolved before the
+turn's lease is taken, and a turn whose owner cannot be resolved is refused
+with 403 `session_owner_unresolved`.
 
 Session privacy protects transcript-derived content: metadata, messages,
 prompts, tool activity, questions, permissions, checkpoints, and live or

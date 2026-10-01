@@ -134,6 +134,7 @@ import {
   type SessionStreamLeaseClaims,
 } from "../../routes/runtime-session-authority"
 import { PrivateSessionRegistrationRoutes } from "../../routes/private-session-registration"
+import { connectionTurnOwner } from "../../connections/turn-owner"
 import {
   SESSION_TURN_AUTHORITY_METHODS,
   SessionTurnConflictError,
@@ -404,17 +405,6 @@ export function embeddedManagedPrivateSessionPolicy(
     workspaceId: input.authority.workspaceId,
     turnId: input.turnId,
   })
-  // A session spends its owner's accounts whoever sends, so the turn's
-  // connection credential binds the workspace owner's partition: their
-  // user-scoped id is the key `createConnectionsHost` writes into `owner`.
-  // It is resolved before the lease is taken, so a turn no owner answers for
-  // is refused rather than left holding the lease.
-  const turnCredentialOwner = async (workspaceId: string) => {
-    if (!turnCredentials) return undefined
-    const owner = await authority.resolveWorkspaceOwner?.(workspaceId)
-    if (!owner) throw new ControlPlaneAuthError(403, "session_owner_unresolved", "The session's owner cannot be resolved for its connections")
-    return owner.userId
-  }
   const mintTurnCredential = (subject: string | undefined, input: SessionAuthorityInput, lease: SessionTurnLease) =>
     subject === undefined ? undefined : turnCredentials?.mint({
       sessionId: lease.sessionId,
@@ -452,7 +442,7 @@ export function embeddedManagedPrivateSessionPolicy(
           const grantId = input.grant === undefined
             ? undefined
             : (await verifyDeferredTurnGrant(input.grant, process.env, { sessionId: input.sessionId })).grantId
-          const subject = await turnCredentialOwner(input.authority.workspaceId)
+          const subject = await connectionTurnOwner(turnCredentials, (id) => authority.resolveWorkspaceOwner?.(id) ?? Promise.resolve(undefined), input.authority.workspaceId)
           const lease = await turnAuthority.acquireSessionTurn({ ...turnInput(input), ...(grantId === undefined ? {} : { grantId }) })
           const connectionCredential = mintTurnCredential(subject, input, lease)
           return { allowed: true as const, ...lease, ...(connectionCredential ? { connectionCredential } : {}) }

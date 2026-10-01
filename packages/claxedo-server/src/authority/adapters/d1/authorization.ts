@@ -119,13 +119,13 @@ export async function batchUnder(
   statements: D1PreparedStatement[],
   run: (statements: D1PreparedStatement[]) => Promise<D1Result[]> = (all) => database.batch(all),
 ): Promise<D1Result[]> {
-  const assertionId = `assert_${crypto.randomUUID()}`
+  const id = assertionId()
   try {
     return (await run([
       database
         .prepare(`insert into authority_batch_assertions (assertion_id, passed) values (?, case when ${guard.sql} then 1 else 0 end)`)
-        .bind(assertionId, ...guard.bind),
-      database.prepare(`delete from authority_batch_assertions where assertion_id = ?`).bind(assertionId),
+        .bind(id, ...guard.bind),
+      deleteAssertion(database, id),
       ...statements,
     ])).slice(2)
   } catch (error) {
@@ -133,6 +133,26 @@ export async function batchUnder(
     if (holds?.holds === 1) throw error
     throw new ControlPlaneAuthError(403, "workspace_authorization_denied", "Authorization changed before the write")
   }
+}
+
+export function assertionId() {
+  return `assert_${crypto.randomUUID()}`
+}
+
+/** Asserts the statement before it changed a row; a batch whose write landed on nothing aborts whole. */
+export function wonAssertion(database: D1Database, id: string) {
+  return database.prepare(`insert into authority_batch_assertions (assertion_id, passed) values (?, changes())`).bind(id)
+}
+
+export function deleteAssertion(database: D1Database, id: string) {
+  return database.prepare(`delete from authority_batch_assertions where assertion_id = ?`).bind(id)
+}
+
+/** A batch aborted on its `authority_batch_assertions` row; the cause chain is searched because D1 wraps the SQLite error. */
+export function batchAssertionFailed(error: unknown): boolean {
+  if (!(error instanceof Error)) return false
+  if (error.message.includes("passed = 1")) return true
+  return batchAssertionFailed(error.cause)
 }
 
 /** The person's role on a live project in an organization they stand in, or nothing. */
