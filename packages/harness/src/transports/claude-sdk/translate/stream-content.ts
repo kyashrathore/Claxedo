@@ -1,11 +1,11 @@
 import { asText as text } from "@claxedo/agent-runtime-contract"
-import { asRecord } from "@claxedo/helpers/guards"
+import { asRecord, asRecordOrEmpty as toolInput } from "@claxedo/helpers/guards"
 import { own } from "../../../translate/value"
 import type { ClaudeBlockState, ClaudeSdkAdapterState, ClaudeTranslation } from "./adapter-state"
 import { parseJsonRecord, readPartialJsonRecord } from "./partial-json"
 import { ignoredFrame, type ClaudeSdkStreamEvent } from "./sdk-message"
 import { claudeStreamOwner } from "./subagent-routing"
-import { toolInput, toolInputEvents, toolStartEvents } from "./tool-blocks"
+import { toolInputEvents, toolStartEvents } from "./tool-blocks"
 import { isServerToolResult, serverToolResult } from "./tool-results"
 import type { ClaudeTranslatorMemory } from "./translator-memory"
 
@@ -72,18 +72,14 @@ function markEmitted(state: ClaudeSdkAdapterState, index: string) {
   return block ? { ...state.blocksByIndex, [index]: { ...block, emittedText: true } } : state.blocksByIndex
 }
 
-function textDelta(state: ClaudeSdkAdapterState, index: string, deltaText: string | undefined, owner: string): ClaudeTranslation {
-  if (!deltaText) return []
+function contentDelta(state: ClaudeSdkAdapterState, index: string, delta: string | undefined, owner: string,
+  kind: "text" | "thinking"): ClaudeTranslation {
+  if (!delta) return []
+  const key = kind === "text" ? "streamedAssistantTextByOwner" : "streamedThinkingByOwner"
   return {
-    state: { ...state, streamedAssistantTextByOwner: appendOwnerText(state.streamedAssistantTextByOwner, owner, deltaText), blocksByIndex: markEmitted(state, index) },
-    events: [{ type: "text-delta", delta: deltaText }],
+    state: { ...state, [key]: appendOwnerText(state[key], owner, delta), blocksByIndex: markEmitted(state, index) },
+    events: [{ type: kind === "text" ? "text-delta" : "thinking-delta", delta }],
   }
-}
-
-function thinkingDelta(state: ClaudeSdkAdapterState, index: string, thinking: string | undefined, owner: string): ClaudeTranslation {
-  if (!thinking) return []
-  return { state: { ...state, streamedThinkingByOwner: appendOwnerText(state.streamedThinkingByOwner, owner, thinking), blocksByIndex: markEmitted(state, index) },
-    events: [{ type: "thinking-delta", delta: thinking }] }
 }
 
 function inputJsonDelta(state: ClaudeSdkAdapterState, index: string, partial: string | undefined): ClaudeTranslation {
@@ -120,9 +116,9 @@ export function translateContentBlockDelta(
   if (ignoredDeltas.includes(kind)) return []
   switch (row.type) {
     case "text_delta":
-      return textDelta(state, index, text(row.text), claudeStreamOwner(message))
+      return contentDelta(state, index, text(row.text), claudeStreamOwner(message), "text")
     case "thinking_delta":
-      return thinkingDelta(state, index, text(row.thinking), claudeStreamOwner(message))
+      return contentDelta(state, index, text(row.thinking), claudeStreamOwner(message), "thinking")
     case "input_json_delta":
       return inputJsonDelta(state, index, text(row.partial_json))
     default:
@@ -133,7 +129,5 @@ export function translateContentBlockDelta(
 export function translateContentBlockStop(index: string, message: Record<string, unknown>, state: ClaudeSdkAdapterState): ClaudeTranslation {
   const block = state.blocksByIndex[index]
   if (!block?.fallbackText || block.emittedText || block.type === "tool") return []
-  return block.type === "text"
-    ? textDelta(state, index, block.fallbackText, claudeStreamOwner(message))
-    : thinkingDelta(state, index, block.fallbackText, claudeStreamOwner(message))
+  return contentDelta(state, index, block.fallbackText, claudeStreamOwner(message), block.type)
 }

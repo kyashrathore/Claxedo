@@ -1,4 +1,3 @@
-import { asRecord } from "@claxedo/helpers/guards"
 import type { SDKMessage } from "@anthropic-ai/claude-agent-sdk"
 import type { AgentRuntimeEvent, RuntimeNoticeSeverity } from "@claxedo/agent-runtime-contract"
 import { runtimeDiagnostic } from "@claxedo/agent-runtime-contract"
@@ -9,27 +8,16 @@ export type ClaudeSdkSystemMessage = Extract<SDKMessage, { type: "system" }>
 export type ClaudeSdkAssistantMessage = Extract<SDKMessage, { type: "assistant" }>
 export type ClaudeSdkStreamEvent = Extract<SDKMessage, { type: "stream_event" }>["event"]
 
-export function sdkMessage(event: { payload: unknown }) {
-  return asRecord(event.payload) ?? {}
-}
+type DiagnosticInput = Omit<Parameters<typeof runtimeDiagnostic>[0], "source" | "method" | "raw"> & { event: ClaudeFrameEvent }
 
-export function diagnosticForEvent(input: {
-  code: string
-  message: string
-  event: { source: string; method?: string; payload: unknown }
-  severity?: "debug" | "info" | "warn" | "error"
-  details?: Record<string, unknown>
-}) {
+export function diagnosticForEvent({ event, ...input }: DiagnosticInput) {
   return {
     type: "diagnostic",
     diagnostic: runtimeDiagnostic({
-      code: input.code,
-      message: input.message,
-      severity: input.severity,
-      source: input.event.source,
-      method: input.event.method,
-      raw: input.event.payload,
-      details: input.details,
+      ...input,
+      source: event.source,
+      method: event.method,
+      raw: event.payload,
     }),
   } satisfies AgentRuntimeEvent
 }

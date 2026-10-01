@@ -5,6 +5,8 @@ import { asText as text } from "@claxedo/agent-runtime-contract"
 import type { ClaudeRequestUsage, ClaudeSdkAdapterState, ClaudeTranslation } from "./adapter-state"
 import type { ClaudeTranslatorMemory } from "./translator-memory"
 
+const tokenFields = ["input", "output", "reasoning", "cacheRead", "cacheWrite", "cacheWrite1h"] as const
+
 function requestUsage(usage: Record<string, unknown> | undefined, model: string | undefined): ClaudeRequestUsage | undefined {
   if (!usage) return undefined
   const tokens = {
@@ -19,48 +21,27 @@ function requestUsage(usage: Record<string, unknown> | undefined, model: string 
   return model ? { ...tokens, model } : tokens
 }
 
-function larger(previous: number | null, next: number | null) {
-  if (previous === null) return next
-  if (next === null) return previous
-  return Math.max(previous, next)
-}
-
 function mergeRequestUsage(previous: ClaudeRequestUsage | undefined, next: ClaudeRequestUsage): ClaudeRequestUsage {
   if (!previous) return next
-  return {
-    input: larger(previous.input, next.input),
-    output: larger(previous.output, next.output),
-    reasoning: larger(previous.reasoning, next.reasoning),
-    cacheRead: larger(previous.cacheRead, next.cacheRead),
-    cacheWrite: larger(previous.cacheWrite, next.cacheWrite),
-    cacheWrite1h: larger(previous.cacheWrite1h, next.cacheWrite1h),
-    ...(previous.model ? { model: previous.model } : {}),
+  const merged = { ...previous }
+  for (const field of tokenFields) {
+    const left = previous[field]
+    const right = next[field]
+    merged[field] = left === null ? right : right === null ? left : Math.max(left, right)
   }
+  return merged
 }
 
 function sameRequestUsage(left: ClaudeRequestUsage, right: ClaudeRequestUsage) {
-  return left.input === right.input &&
-    left.output === right.output &&
-    left.reasoning === right.reasoning &&
-    left.cacheRead === right.cacheRead &&
-    left.cacheWrite === right.cacheWrite &&
-    left.cacheWrite1h === right.cacheWrite1h
-}
-
-function addNullable(previous: number | null, value: number | null) {
-  if (value === null) return previous
-  return (previous ?? 0) + value
+  return tokenFields.every((field) => left[field] === right[field])
 }
 
 function sumRequestUsage(requests: Record<string, ClaudeRequestUsage>): ClaudeRequestUsage {
   const sum: ClaudeRequestUsage = { input: null, output: null, reasoning: null, cacheRead: null, cacheWrite: null, cacheWrite1h: null }
   for (const tokens of Object.values(requests)) {
-    sum.input = addNullable(sum.input, tokens.input)
-    sum.output = addNullable(sum.output, tokens.output)
-    sum.reasoning = addNullable(sum.reasoning, tokens.reasoning)
-    sum.cacheRead = addNullable(sum.cacheRead, tokens.cacheRead)
-    sum.cacheWrite = addNullable(sum.cacheWrite, tokens.cacheWrite)
-    sum.cacheWrite1h = addNullable(sum.cacheWrite1h, tokens.cacheWrite1h)
+    for (const field of tokenFields) {
+      if (tokens[field] !== null) sum[field] = (sum[field] ?? 0) + tokens[field]
+    }
   }
   return sum
 }

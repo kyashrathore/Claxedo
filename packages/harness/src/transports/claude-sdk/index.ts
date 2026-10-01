@@ -54,21 +54,19 @@ export class ClaudeSdkTransport implements HarnessTransport {
   }
 
   async start(input: StartInput, broker: SessionBroker): Promise<HarnessSession> {
-    if (this.disposed) throw new TransportError("claude", "session", "Claude transport disposed")
-    if (this.entries.has(input.sessionId)) throw new TransportError("claude", "session", "Claude session already attached")
-    claudeBinding(input.credentials)
-    const session: HarnessSession = { directory: input.directory, locality: input.locality,
-      binding: await broker.rebind(`claude-sdk:${randomUUID()}`) }
-    this.entries.set(input.sessionId, { input, revision: 0, session, broker: this.goalRuntime.watch(input.sessionId, broker) })
-    return session
+    return this.bind(input, broker, `claude-sdk:${randomUUID()}`)
   }
 
   async attach(input: AttachInput, broker: SessionBroker): Promise<HarnessSession> {
+    return this.bind(input, broker, input.binding.upstreamSessionId)
+  }
+
+  private async bind(input: StartInput, broker: SessionBroker, upstreamSessionId: string): Promise<HarnessSession> {
     if (this.disposed) throw new TransportError("claude", "session", "Claude transport disposed")
     if (this.entries.has(input.sessionId)) throw new TransportError("claude", "session", "Claude session already attached")
     claudeBinding(input.credentials)
     const session: HarnessSession = { directory: input.directory, locality: input.locality,
-      binding: await broker.rebind(input.binding.upstreamSessionId) }
+      binding: await broker.rebind(upstreamSessionId) }
     this.entries.set(input.sessionId, { input, revision: 0, session, broker: this.goalRuntime.watch(input.sessionId, broker) })
     return session
   }
