@@ -32,7 +32,6 @@ function stringCharacter(scan: Scan, ch: string, i: number): void {
     const top = scan.frames.at(-1)
     if (top && !scan.stringIsKey) top.cut = i + 1
   }
-  return
 }
 
 function structuralCharacter(scan: Scan, ch: string, i: number): void {
