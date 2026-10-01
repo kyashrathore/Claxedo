@@ -50,8 +50,11 @@ function runtimeApp() {
     defaultHarness: () => ({ id: "claude", access: "native" }),
     requestedSessionHarness: () => undefined,
     resolveDirectory: () => repository,
-    listSessions: async () => sessions.map((row) => ({ ...row })),
-    getSession: (_c, _directory, sessionId) => sessions.find((row) => row.id === sessionId) ?? null,
+    listSessions: async () => sessions.map((row) => ({ ...row, time: { created: 1, updated: 1 } })),
+    getSession: (_c, _directory, sessionId) => {
+      const row = sessions.find((candidate) => candidate.id === sessionId)
+      return row ? { ...row, time: { created: 1, updated: 1 } } : null
+    },
     publishGlobal: () => {},
   })
   return new Hono().route("/api/wr/diff", createDiffRoutes()).route("/", routes)

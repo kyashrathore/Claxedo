@@ -29,6 +29,7 @@ export class OpenCodeSdkTransport implements HarnessTransport {
   private providerInput?: DraftLaunch
   private owner?: string
   private disposed = false
+  private readonly closing = new AbortController()
 
   constructor(private readonly services: HarnessServices, options: OpenCodeSdkTransportOptions) {
     this.runtime = createOpenCodeRuntime(options)
@@ -149,7 +150,7 @@ export class OpenCodeSdkTransport implements HarnessTransport {
 
   send(session: HarnessSession, turn: TurnInput, broker: TurnBroker) {
     const entry = this.entry(session)
-    return runOpenCodeTurn(this.runtime, entry, turn, broker)
+    return runOpenCodeTurn(this.runtime, entry, turn, broker, this.closing.signal)
   }
 
   async cancel(session: HarnessSession, _turn: TurnRef, deadline: Deadline) {
@@ -208,6 +209,7 @@ export class OpenCodeSdkTransport implements HarnessTransport {
 
   async dispose(): Promise<void> {
     this.disposed = true
+    this.closing.abort()
     await this.retire()
   }
 

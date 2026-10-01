@@ -393,6 +393,7 @@ export async function runHost(input: HostRunInput): Promise<number> {
         ...state,
         ...(endpoints.relay ? { relay: endpoints.relay } : {}),
         ...(endpoints.authority ? { authority: endpoints.authority } : {}),
+        ...(endpoints.sessionRows ? { sessionRows: endpoints.sessionRows } : {}),
       }),
     // Stored, then opened, then applied. The connector acks a revision only
     // when this resolves, so a write that fails throws here and the control

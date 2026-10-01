@@ -137,8 +137,9 @@ function deliveredSteer(event: ProjectedEvent, state: OpenCodeTurnState): string
   return inboxID
 }
 
+/** `closed` aborts when the transport is disposed: the engine is closing, so no event can settle the turn. */
 export async function* runOpenCodeTurn(runtime: OpenCodeRuntime, state: OpenCodeTurnState, turn: TurnInput,
-  broker: TurnBroker): AsyncIterable<RoutedEvent> {
+  broker: TurnBroker, closed: AbortSignal): AsyncIterable<RoutedEvent> {
   if (state.active) throw new TransportError("opencode", "session", "OpenCode session already has an active turn")
   if (!runtime.events.subscribeLoss) throw new TransportError("opencode", "engine", "OpenCode event loss subscription is unavailable")
   state.active = true
@@ -148,6 +149,9 @@ export async function* runOpenCodeTurn(runtime: OpenCodeRuntime, state: OpenCode
   const abort = () => queue.fail(new TurnAborted("OpenCode turn was aborted"))
   broker.signal.addEventListener("abort", abort, { once: true })
   if (broker.signal.aborted) abort()
+  const dispose = () => queue.fail(new TransportError("opencode", "engine", "OpenCode transport was disposed during the turn"))
+  closed.addEventListener("abort", dispose, { once: true })
+  if (closed.aborted) dispose()
   try {
     const { usage, admittedAt } = await admitOpenCodeTurn(runtime, state, turn, broker.signal)
     try { yield* streamOpenCodeTurn(runtime, state, queue, usage) }
@@ -160,6 +164,7 @@ export async function* runOpenCodeTurn(runtime: OpenCodeRuntime, state: OpenCode
     unsubscribe()
     unsubscribeLoss()
     broker.signal.removeEventListener("abort", abort)
+    closed.removeEventListener("abort", dispose)
     state.active = false
     state.assistantMessageID = undefined
     state.steers.clear()
