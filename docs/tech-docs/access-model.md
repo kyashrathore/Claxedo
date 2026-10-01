@@ -220,10 +220,9 @@ may control the session (shell, permission mode, delete, fork, revert,
 
 A share never opens the workspace, lists it or its other sessions, reaches
 its files, terminals or machine, creates or forks a session, or mints a
-token beyond its one session. The owner's active actors act through workspace
-ownership. There is no participant grant API or participant collection in the
-session share response.
-Only the owner may add or revoke shares (`session_share_admin_required`
+token beyond its one session. The owner's active actors, their agents
+included, act through workspace ownership, and a share is the only way
+anyone else reaches a session. Only the owner may add or revoke shares (`session_share_admin_required`
 otherwise), and a share may be offered only to a member of the session's
 organization (`session_share_target_outside_organization`).
 

@@ -452,7 +452,7 @@ function migratePrivateSessionSchema(db: SqliteAuthorityDb) {
     if (!hasTable(db, "session_registration_operations")) {
       throw new Error("private_session_registration_schema_missing")
     }
-    ensurePrivateSessionRuntimeSchema(db)
+    ensureSessionTurnSchema(db)
     return
   }
 
@@ -473,16 +473,11 @@ function migratePrivateSessionSchema(db: SqliteAuthorityDb) {
     ALTER TABLE session_messages RENAME TO legacy_session_messages_pre_private_sessions;
     ${CANONICAL_PRIVATE_SESSIONS_SCHEMA}
   `)
-  ensurePrivateSessionRuntimeSchema(db)
+  ensureSessionTurnSchema(db)
 }
 
-function ensurePrivateSessionRuntimeSchema(db: SqliteAuthorityDb) {
+function ensureSessionTurnSchema(db: SqliteAuthorityDb) {
   db.exec(`
-    CREATE TABLE IF NOT EXISTS session_agent_assignments (
-      session_id TEXT NOT NULL REFERENCES session_history (session_id) ON DELETE CASCADE,
-      agent_actor_id TEXT NOT NULL REFERENCES users (token_identifier) ON DELETE CASCADE,
-      PRIMARY KEY (session_id, agent_actor_id)
-    );
     CREATE TABLE IF NOT EXISTS session_turn_leases (
       session_id TEXT PRIMARY KEY,
       workspace_id TEXT NOT NULL,

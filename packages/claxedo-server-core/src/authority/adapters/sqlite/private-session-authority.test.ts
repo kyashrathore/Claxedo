@@ -602,10 +602,9 @@ describe("SQLite private-session authority", () => {
       sessionId: "session_1",
       workspaceId: "workspace_main",
     })
-    orgMember(seed, "workspace_main", "actor_agent", "member")
-    seed().prepare(`
-      INSERT INTO session_agent_assignments (session_id, agent_actor_id) VALUES (?, ?)
-    `).run("session_1", "actor_agent")
+    // No route makes an agent a session's creator on this store; the
+    // attribution is written directly to put the agent's own turn to it.
+    seed().prepare(`UPDATE session_history SET creator_actor_id = 'actor_agent' WHERE session_id = 'session_1'`).run()
 
     upsertUser(seed(), { token_identifier: "actor_unassigned", kind: "agent" })
     await expect(store.authorizeRuntimeSession({
@@ -878,7 +877,7 @@ describe("SQLite latest views", () => {
   })
 })
 
-describe("SQLite private-session authority, creator attribution and agent assignments", () => {
+describe("SQLite private-session authority, creator attribution", () => {
   test("a non-owner creator or member who does not own the workspace holds nothing of its session; its owner holds all of it", async () => {
     const owner = auth("owner")
     const historicCreator = auth("historic-creator")
@@ -896,10 +895,6 @@ describe("SQLite private-session authority, creator attribution and agent assign
     })
     seed().prepare(`UPDATE session_history SET creator_actor_id = ? WHERE session_id = 'session_history'`)
       .run(historicCreator.user.tokenIdentifier)
-    seed().prepare(`
-      INSERT INTO session_agent_assignments (session_id, agent_actor_id)
-      VALUES ('session_history', ?)
-    `).run(member.user.tokenIdentifier)
     const ask = (who: SignedControlPlaneAuth, action: "read" | "write", writeClass?: "agent_turn" | "session_control") =>
       store.authorizeRuntimeSession({
         principalKind: "user", actorId: who.user.tokenIdentifier, actorKind: "human",

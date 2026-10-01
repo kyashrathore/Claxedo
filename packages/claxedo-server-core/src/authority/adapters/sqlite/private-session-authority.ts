@@ -143,8 +143,8 @@ export function createSqlitePrivateSessionAuthority(input: {
     SELECT * FROM session_history WHERE session_id = ?
   `).get(sessionId)
 
-  // SQLite agents have no owning human or organization membership. Their
-  // session assignment or creator attribution must authorize them separately.
+  // SQLite agents have no owning human or organization membership; only their
+  // creator attribution authorizes them.
   const organizationStandingHolds = (db: SqliteAuthorityDb, actorId: string, orgId: string) => {
     const actor = db.prepare<unknown[], { kind: string }>(`SELECT kind FROM users WHERE token_identifier = ?`)
       .get(actorId)
@@ -163,10 +163,7 @@ export function createSqlitePrivateSessionAuthority(input: {
     if (!workspace || !organizationStandingHolds(db, actorId, workspace.org_id)) return false
     if (workspace.owner_token_identifier === actorId) return true
     if (db.prepare<unknown[], { kind: string }>(`SELECT kind FROM users WHERE token_identifier = ?`).get(actorId)?.kind === "agent") {
-      return row.creator_actor_id === actorId || !!db.prepare(`
-        SELECT 1 FROM session_agent_assignments
-        WHERE session_id = ? AND agent_actor_id = ?
-      `).get(row.session_id, actorId)
+      return row.creator_actor_id === actorId
     }
     if (access === "session_control" || !organizationStandingHolds(db, workspace.owner_token_identifier, workspace.org_id)) return false
     const grants = db.prepare<unknown[], SessionShareTargetRow & { level: string }>(`

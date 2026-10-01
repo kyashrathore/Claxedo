@@ -91,6 +91,15 @@ CREATE TABLE "legacy_session_messages_pre_private_sessions" (
   updated_at INTEGER NOT NULL,
   PRIMARY KEY (session_id, message_id)
 );
+CREATE TABLE "legacy_session_participants_pre_private_sessions" (
+  session_id TEXT NOT NULL,
+  workspace_id TEXT NOT NULL,
+  actor_token_identifier TEXT NOT NULL,
+  added_by_token_identifier TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  revoked_at INTEGER,
+  PRIMARY KEY (session_id, actor_token_identifier)
+);
 CREATE TABLE org_memberships (
   org_id TEXT NOT NULL,
   token_identifier TEXT NOT NULL,
@@ -163,6 +172,15 @@ CREATE TABLE session_messages (
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL,
   PRIMARY KEY (session_id, message_id)
+);
+CREATE TABLE session_participants (
+  session_id TEXT NOT NULL,
+  workspace_id TEXT NOT NULL,
+  participant_actor_id TEXT NOT NULL,
+  added_by_actor_id TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  revoked_at INTEGER,
+  PRIMARY KEY (session_id, participant_actor_id)
 );
 CREATE TABLE session_registration_operations (
   operation_id TEXT PRIMARY KEY,
@@ -306,6 +324,8 @@ CREATE INDEX projects_by_org ON projects (org_id);
 CREATE UNIQUE INDEX projects_by_org_repo_key ON projects (org_id, repo_key);
 CREATE INDEX session_history_by_workspace_updated
   ON session_history (workspace_id, updated_at DESC);
+CREATE INDEX session_participants_by_actor
+  ON session_participants (participant_actor_id, revoked_at);
 CREATE INDEX session_share_grants_by_session ON session_share_grants (session_id);
 CREATE INDEX session_share_grants_by_team ON session_share_grants (granted_to_team_id);
 CREATE INDEX session_share_grants_by_workspace ON session_share_grants (workspace_id);

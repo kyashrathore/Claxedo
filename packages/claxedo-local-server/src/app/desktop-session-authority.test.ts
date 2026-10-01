@@ -53,7 +53,7 @@ const authorityCalls: AuthorityCall[] = []
 let admitted = new Set<string>()
 /**
  * Actors admitted through a SHARE, and at what level. An actor admitted by
- * their own standing — creator attribution or organization role — has no entry,
+ * their own standing — owning the workspace — has no entry,
  * because the level narrows the share and not the person.
  */
 let shareLevels = new Map<string, "follow" | "send">()
