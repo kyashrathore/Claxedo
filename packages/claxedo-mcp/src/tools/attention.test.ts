@@ -77,6 +77,8 @@ const RECOVERY_FACTS = {
  * produced, and the recovery owner, whose cancellation is where the ACP fix
  * clears one.
  */
+const ownSession = async (sessionId: string) => sessionId
+
 function runtimeApp(state: Harness) {
   const recovery = {
     inspect: (sessionId: string) => ({
@@ -126,6 +128,7 @@ function runtimeApp(state: Harness) {
       }),
     },
     permissions: {
+      askingSession: ownSession,
       list: async () => state.pendingPermissions,
       respond: async (permId: string, decision: { kind: "permission"; decision: string; optionId?: string }) => {
         state.answered.push({ id: permId, decision })
@@ -134,6 +137,7 @@ function runtimeApp(state: Harness) {
       },
     },
     questions: {
+      askingSession: ownSession,
       list: async () => state.pendingQuestions,
       answer: async (id: string, answers: string[][]) => {
         state.replied.push({ id, answers })
