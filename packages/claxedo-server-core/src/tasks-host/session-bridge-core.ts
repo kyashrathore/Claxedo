@@ -29,7 +29,7 @@ import {
   type SessionHandoffState,
   type SessionLiveness,
   type SessionOrigin,
-  type SessionReference,
+  type SessionRef,
   type StartBlocker,
   type StartCommand,
   type StartPreview,
@@ -192,7 +192,7 @@ export function createTasksSessionBridge(host: TasksSessionHost): TasksSessionBr
   }
 }
 
-type Handoff = { session: SessionReference; transcript: string }
+type Handoff = { session: SessionRef; transcript: string }
 
 type ResolvedStart = {
   ok: true
@@ -214,7 +214,7 @@ type Refusal = { ok: false; error: TasksErrorDetail }
 async function sessionStates(
   host: TasksSessionHost,
   origins: readonly SessionOrigin[],
-): Promise<ReadonlyArray<{ session: SessionReference; state: SessionLiveness; handoff: SessionHandoffState }>> {
+): Promise<ReadonlyArray<{ session: SessionRef; state: SessionLiveness; handoff: SessionHandoffState }>> {
   if (origins.length === 0) return []
   const metas = await host.sessionMetas(origins.map((origin) => origin.sessionRef.sessionId))
   return Promise.all(origins.map(async (origin) => {
@@ -223,7 +223,7 @@ async function sessionStates(
     const meta = metas.get(session.sessionId)
     if (!meta) return unread("deleted")
     if (meta.archived) return unread("archived")
-    const target = await host.target(meta.workspaceID ?? session.workspaceId ?? "", null)
+    const target = await host.target(meta.workspaceID ?? session.workspaceId, null)
     if (!target) return unread("unavailable")
     const reachable = await target.request(`/session/${encodeURIComponent(session.sessionId)}`).catch(() => undefined)
     if (!reachable) return unread("unavailable")
@@ -347,11 +347,11 @@ async function readSessionConfiguration(
 async function readHandoff(
   host: TasksSessionHost,
   fallback: TasksRuntimeTarget,
-  previous: SessionReference | null,
+  previous: SessionRef | null,
   authorize: TranscriptGrant,
 ): Promise<{ ok: true; handoff: Handoff | null } | Refusal> {
   if (!previous) return { ok: true, handoff: null }
-  const target = previous.workspaceId && previous.workspaceId !== fallback.workspace.id
+  const target = previous.workspaceId !== fallback.workspace.id
     ? await host.target(previous.workspaceId, null)
     : fallback
   if (!target) return { ok: true, handoff: null }
@@ -380,7 +380,7 @@ async function readHandoff(
  * there is something to open — so reading its transcript here would be reading
  * one nobody authorized.
  */
-function previousSessionOf(command: StartPreviewCommand | StartCommand): SessionReference | null {
+function previousSessionOf(command: StartPreviewCommand | StartCommand): SessionRef | null {
   if ("previousSession" in command) return command.previousSession
   if (command.currentState === "deleted") return null
   return command.currentLink?.sessionRef ?? null
@@ -665,7 +665,7 @@ async function sendFirstMessage(
   host: TasksSessionHost,
   command: SessionHandoffCommand,
 ): Promise<TasksResult<{ sent: boolean }>> {
-  const target = await host.target(command.session.workspaceId ?? "", command.actor)
+  const target = await host.target(command.session.workspaceId, command.actor)
   if (!target) {
     return {
       ok: false,
@@ -725,7 +725,7 @@ async function abandonSession(
   host: TasksSessionHost,
   command: SessionAbandonCommand,
 ): Promise<TasksResult<{ removed: boolean }>> {
-  const target = await host.target(command.sessionRef.workspaceId ?? "", null)
+  const target = await host.target(command.sessionRef.workspaceId, null)
   if (!target) {
     return {
       ok: false,

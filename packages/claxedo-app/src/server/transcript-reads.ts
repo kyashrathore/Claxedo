@@ -2,7 +2,7 @@ import { readCentralPart, readCentralTurnPage } from "./central-session"
 import { responseError, ServerError } from "./errors"
 import { onRuntime, sessionEndpoint, type SessionContext } from "./session-context"
 import { withQuery, type RuntimeRoute } from "./transport"
-import type { PageShape, SessionRef, TranscriptPage, TranscriptPart } from "./types"
+import type { PageShape, SessionLocation, TranscriptPage, TranscriptPart } from "./types"
 import { partFromWire, turnPageFromWire, viewportQuery } from "./wire/turn-page"
 
 async function runtimeBody(context: SessionContext, where: RuntimeRoute, path: string, what: string): Promise<unknown> {
@@ -13,7 +13,7 @@ async function runtimeBody(context: SessionContext, where: RuntimeRoute, path: s
 
 async function readHistory<T>(
   context: SessionContext,
-  ref: SessionRef,
+  ref: SessionLocation,
   runtime: (where: RuntimeRoute) => Promise<T>,
   central: (workspaceId: string) => Promise<T>,
   offline: () => T,
@@ -27,7 +27,7 @@ function offlineRefusal(what: string): never {
   throw new ServerError({ class: "network", message: `${what} cannot be read while the session's machine is offline` })
 }
 
-export function readTurnPageBefore(context: SessionContext, ref: SessionRef, shape: PageShape, before: string): Promise<TranscriptPage> {
+export function readTurnPageBefore(context: SessionContext, ref: SessionLocation, shape: PageShape, before: string): Promise<TranscriptPage> {
   const path = withQuery(sessionEndpoint(ref, "/page"), { before, ...viewportQuery(shape) })
   return readHistory(
     context,
@@ -38,7 +38,7 @@ export function readTurnPageBefore(context: SessionContext, ref: SessionRef, sha
   )
 }
 
-export function readPart(context: SessionContext, ref: SessionRef, messageId: string, partId: string): Promise<TranscriptPart> {
+export function readPart(context: SessionContext, ref: SessionLocation, messageId: string, partId: string): Promise<TranscriptPart> {
   const path = sessionEndpoint(ref, `/message/${encodeURIComponent(messageId)}/part/${encodeURIComponent(partId)}`)
   return readHistory(
     context,

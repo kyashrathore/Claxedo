@@ -6,7 +6,7 @@ import {
   type Preset,
   type SessionHandoffState,
   type SessionLiveness,
-  type SessionReference,
+  type SessionRef,
   type StartPreview,
   type StartPreviewRequest,
   type StartRequest,
@@ -85,7 +85,7 @@ export function createTasksService(deps: TasksServiceDeps): TasksService {
    * records the credential's, because a person and a session are not the same
    * author and only the credential can say which asked.
    */
-  const provenance = (actor: TasksActor, claimed: SessionReference | undefined, path: string): SessionReference | null => {
+  const provenance = (actor: TasksActor, claimed: SessionRef | undefined, path: string): SessionRef | null => {
     if (
       claimed !== undefined
       && (actor.session === undefined
@@ -327,7 +327,7 @@ export function createTasksService(deps: TasksServiceDeps): TasksService {
     task: Task,
     request: StartRequest,
     configurationDigest: string,
-    sessionRef: SessionReference,
+    sessionRef: SessionRef,
   ): Promise<void> => {
     const held = await deps.store.links.getCurrent(actor.scopeId, task.id, request.slot)
     if (held?.sessionRef.sessionId === sessionRef.sessionId) return
@@ -345,7 +345,7 @@ export function createTasksService(deps: TasksServiceDeps): TasksService {
    * Whether this actor may still read the slot's previous transcript, asked at
    * the moment the host reads it rather than when the slot was read here.
    */
-  const transcriptGrant = (actor: TasksActor, session: SessionReference | null) => async (): Promise<boolean> =>
+  const transcriptGrant = (actor: TasksActor, session: SessionRef | null) => async (): Promise<boolean> =>
     session !== null && (await deps.authorization.authorizeSessionOpen(actor, session))
 
   return {

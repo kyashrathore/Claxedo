@@ -31,7 +31,7 @@ calling the shared channel core.
 | `InboundEnvelope`, `OutboundChunk`, `ApprovalRequest`, `ApprovalDecision`, `Attachment`, `ChannelId` | Shared channel event contracts. |
 | `createChannelCore`, `ChannelCore` | Core inbound command handling, session resolution, runtime message forwarding, approval handling, and replies. |
 | `createMemoryDedupStore`, `DedupStore` | In-memory idempotency/replay guard for demos, tests, and single-process deployments. |
-| `createMemorySessionResolver`, `SessionResolver`, `ChannelRuntime`, `SessionRef` | Maps channel threads to Claxedo sessions. |
+| `createMemorySessionResolver`, `SessionResolver`, `ChannelRuntime`, `ChannelSession` | Maps channel threads to Claxedo sessions. `ChannelSession` adds thread metadata to the runtime contract's `{ sessionId, workspaceId }`; creation returns the registered workspace identity. |
 | `createMemoryApprovalBridge`, `ApprovalBridge` | Pending approval prompt storage and token resolution. |
 | `sanitizeChannelText`, `ChannelTextMinimizationOptions` | Redacts common token patterns and truncates long channel output. |
 | `streamRuntimeReplies` | Converts runtime event streams into channel reply chunks. |

@@ -1,5 +1,5 @@
 import { createSignal } from "solid-js"
-import type { ConfigurationSlot, Preset, SessionReference, StartPreview, Task, TaskSummary } from "@claxedo/tasks"
+import type { ConfigurationSlot, Preset, SessionRef, StartPreview, Task, TaskSummary } from "@claxedo/tasks"
 import { useTranslator, type DomainTranslate } from "@/i18n"
 import { uuid } from "@/lib/uuid"
 import { tasksDictionary, type TasksKey } from "../i18n"
@@ -54,7 +54,7 @@ function createStartCalls() {
     const { taskId, ...body } = request
     return (await api.client.startPreview(taskId, body)).preview
   }
-  const send = async (request: StartRequest, previewDigest: string): Promise<SessionReference> => {
+  const send = async (request: StartRequest, previewDigest: string): Promise<SessionRef> => {
     const { taskId, ...body } = request
     const response = await api.client.start(taskId, {
       ...body,

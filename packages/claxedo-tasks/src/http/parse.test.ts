@@ -267,7 +267,7 @@ describe("parseCommandRequest", () => {
           description: "",
           workspaceId: null,
           parentTaskId: null,
-          createdFrom: { sessionId: "ses_1", workspaceId: null },
+          createdFrom: { sessionId: "ses_1", workspaceId: "workspace-local" },
         },
       },
     })
@@ -275,7 +275,7 @@ describe("parseCommandRequest", () => {
       fromSession.ok && fromSession.value.command.type === "task.create" && fromSession.value.command.input.createdFrom,
     ).toEqual({
       sessionId: "ses_1",
-      workspaceId: null,
+      workspaceId: "workspace-local",
     })
 
     const fromTheApp = parseCommandRequest({
@@ -464,8 +464,8 @@ describe("start provenance", () => {
     const from = { sessionId: "ses_caller", workspaceId: "ws_root" }
     const preview = parseStartPreviewRequest({ ...previewBody, startedFrom: from })
     expect(preview.ok && preview.value.startedFrom).toEqual(from)
-    const start = parseStartRequest({ ...startBody, startedFrom: { sessionId: "ses_caller", workspaceId: null } })
-    expect(start.ok && start.value.startedFrom).toEqual({ sessionId: "ses_caller", workspaceId: null })
+    const start = parseStartRequest({ ...startBody, startedFrom: { sessionId: "ses_caller", workspaceId: "workspace-local" } })
+    expect(start.ok && start.value.startedFrom).toEqual({ sessionId: "ses_caller", workspaceId: "workspace-local" })
     const unsaid = parseStartRequest(startBody)
     expect(unsaid.ok && unsaid.value.startedFrom).toBeUndefined()
   })

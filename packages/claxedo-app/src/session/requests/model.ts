@@ -1,9 +1,9 @@
 import { unreachable } from "@/lib/machine"
-import type { AgentRequest, AppError, RequestId, SessionId, SessionRef } from "@/server"
+import type { AgentRequest, AppError, RequestId, SessionId, SessionLocation } from "@/server"
 import type { RequestState } from "@/session"
 
 export type RequestEntry = {
-  readonly ref: SessionRef
+  readonly ref: SessionLocation
   readonly request: AgentRequest
   readonly state: RequestState
   readonly at: number
@@ -25,10 +25,10 @@ export type RequestMachineEvent =
   | { readonly type: "replyRejected"; readonly error: AppError }
 
 export type RequestsEvent =
-  | { readonly type: "opened"; readonly ref: SessionRef; readonly request: AgentRequest; readonly at: number }
+  | { readonly type: "opened"; readonly ref: SessionLocation; readonly request: AgentRequest; readonly at: number }
   | { readonly type: "closed"; readonly requestId: RequestId; readonly at: number }
-  | { readonly type: "read"; readonly ref: SessionRef; readonly requests: readonly AgentRequest[]; readonly sentAt: number }
-  | { readonly type: "readFailed"; readonly ref: SessionRef; readonly error: AppError; readonly sentAt: number }
+  | { readonly type: "read"; readonly ref: SessionLocation; readonly requests: readonly AgentRequest[]; readonly sentAt: number }
+  | { readonly type: "readFailed"; readonly ref: SessionLocation; readonly error: AppError; readonly sentAt: number }
   | ({ readonly requestId: RequestId } & RequestMachineEvent)
 
 export const OPEN: RequestState = { kind: "open" }
@@ -68,7 +68,7 @@ function rememberClosed(data: RequestsData, requestId: RequestId, at: number): R
   return closedAt
 }
 
-function opened(data: RequestsData, ref: SessionRef, request: AgentRequest, at: number): RequestsData {
+function opened(data: RequestsData, ref: SessionLocation, request: AgentRequest, at: number): RequestsData {
   const current = data.entries.get(request.id)
   const entries = new Map(data.entries)
   entries.set(request.id, { ref, request, at, state: current?.state ?? OPEN })
@@ -81,7 +81,7 @@ function closed(data: RequestsData, requestId: RequestId, at: number): RequestsD
   return { ...data, entries, closedAt: rememberClosed(data, requestId, at) }
 }
 
-function withOutcome(data: RequestsData, ref: SessionRef, outcome: RequestsReadOutcome): RequestsData {
+function withOutcome(data: RequestsData, ref: SessionLocation, outcome: RequestsReadOutcome): RequestsData {
   const current = data.lastRead.get(ref.sessionId)
   if (current && current.sentAt > outcome.sentAt) return data
   const lastRead = new Map(data.lastRead)
@@ -94,7 +94,7 @@ export function readErrorOf(data: RequestsData, sessionId: SessionId): AppError 
   return outcome?.kind === "failed" ? outcome.error : undefined
 }
 
-function applyRequestRead(data: RequestsData, ref: SessionRef, requests: readonly AgentRequest[], sentAt: number): RequestsData {
+function applyRequestRead(data: RequestsData, ref: SessionLocation, requests: readonly AgentRequest[], sentAt: number): RequestsData {
   const listed = new Set(requests.map((request) => request.id))
   const entries = new Map(data.entries)
   for (const [id, entry] of data.entries) {

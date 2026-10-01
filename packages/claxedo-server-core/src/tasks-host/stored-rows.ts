@@ -11,6 +11,7 @@
 import {
   decodeCommandResponse,
   decodePreset,
+  decodeTaskSessionRef,
   decodeTask,
   PRESET_PLACEMENTS,
   isConfigurationSlot,
@@ -19,7 +20,7 @@ import {
   isTasksCommandName,
   type Preset,
   type PresetPlacement,
-  type SessionReference,
+  type SessionRef,
   type Task,
   type TaskAttachment,
   type TaskAttachmentRecord,
@@ -172,13 +173,7 @@ export function taskColumns(task: Task): StoredTaskColumns {
 }
 
 export function taskOfColumns(row: StoredTaskColumns): Task {
-  // A workspace without its session is a half-written origin, not "created
-  // from the workspace": the pair is stored and read together, and a session
-  // that belongs to no workspace stores a null workspace.
-  const createdFrom: SessionReference | null =
-    row.created_from_session_id === null
-      ? null
-      : { sessionId: row.created_from_session_id, workspaceId: row.created_from_workspace_id }
+  const createdFrom = optionalTaskSessionRefOfColumns(row.created_from_session_id, row.created_from_workspace_id, "task", row.task_id, "createdFrom")
   const decoded = decodeTask({
     id: row.task_id,
     revision: row.revision,
@@ -238,22 +233,14 @@ export function linkOfColumns(row: StoredLinkColumns): TaskSessionLink {
   if (!isSessionStarter(row.started_by)) {
     throw new TasksStoredRowError(`Stored task session link ${row.task_id} names an unknown starter ${row.started_by}`)
   }
-  // A continued-from workspace without its session is a half-written origin,
-  // not "continued from the workspace": the pair is stored and read together.
-  const continuedFrom: SessionReference | null =
-    row.continued_from_session_id === null
-      ? null
-      : { sessionId: row.continued_from_session_id, workspaceId: row.continued_from_workspace_id }
-  const startedFrom: SessionReference | null =
-    row.started_from_session_id === null
-      ? null
-      : { sessionId: row.started_from_session_id, workspaceId: row.started_from_workspace_id }
+  const continuedFrom = optionalTaskSessionRefOfColumns(row.continued_from_session_id, row.continued_from_workspace_id, "task session link", row.task_id, "continuedFrom")
+  const startedFrom = optionalTaskSessionRefOfColumns(row.started_from_session_id, row.started_from_workspace_id, "task session link", row.task_id, "startedFrom")
   return {
     scopeId: row.scope_id,
     taskId: row.task_id,
     slot: row.slot,
     attempt: row.attempt,
-    sessionRef: { sessionId: row.session_id, workspaceId: row.session_workspace_id },
+    sessionRef: taskSessionRefOfColumns(row.session_id, row.session_workspace_id, "task session link", row.task_id, "sessionRef"),
     continuedFrom,
     presetId: row.preset_id,
     presetRevision: row.preset_revision,
@@ -342,6 +329,17 @@ export function receiptOfColumns(row: StoredReceiptColumns): TasksCommandReceipt
     result: decoded.value.result,
     createdAt: row.created_at,
   }
+}
+
+function optionalTaskSessionRefOfColumns(sessionId: string | null, workspaceId: string | null, kind: string, id: string, path: string): SessionRef | null {
+  if (sessionId === null && workspaceId === null) return null
+  return taskSessionRefOfColumns(sessionId, workspaceId, kind, id, path)
+}
+
+function taskSessionRefOfColumns(sessionId: string | null, workspaceId: string | null, kind: string, id: string, path: string): SessionRef {
+  const decoded = decodeTaskSessionRef({ sessionId, workspaceId }, path)
+  if (!decoded.ok) throw storedRowError(kind, id, decoded.fields)
+  return decoded.value
 }
 
 function storedRowError(kind: string, id: string, fields: readonly { path: string; reason: string }[]) {

@@ -2,7 +2,7 @@ import { responseError } from "./errors"
 import type { PlacementId } from "./ids"
 import { readPermissionModes, writePermissionMode, type PermissionModesRequest } from "./permission-modes"
 import { withQuery, type Transport } from "./transport"
-import type { SessionRef } from "./types"
+import type { SessionLocation } from "./types"
 import type { Workspaces } from "./workspaces"
 import { readHarnessOptions, type HarnessOptionsRequest } from "./harness-options"
 import type { HarnessOptions, HarnessState } from "./harness-types"
@@ -16,9 +16,9 @@ export type HarnessConfigApi = {
   readonly serverUrl: string
   readonly folderHarness: (placementId: PlacementId, sessionId?: string) => Promise<HarnessState | undefined>
   readonly options: (request: HarnessOptionsRequest) => Promise<HarnessOptions>
-  readonly updateSessionConfig: (ref: SessionRef, patch: SessionConfigPatch) => Promise<void>
+  readonly updateSessionConfig: (ref: SessionLocation, patch: SessionConfigPatch) => Promise<void>
   readonly permissionModes: (request: PermissionModesRequest) => Promise<PermissionModeState>
-  readonly setPermissionMode: (ref: SessionRef, modeId: string) => Promise<void>
+  readonly setPermissionMode: (ref: SessionLocation, modeId: string) => Promise<void>
 }
 
 export function createHarnessConfigApi(transport: Transport, workspaces: Workspaces): HarnessConfigApi {

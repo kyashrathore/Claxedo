@@ -1,5 +1,5 @@
 import { createSignal, type Accessor, type Setter } from "solid-js"
-import { toAppError, type AppError, type PromptInput, type QueuedPrompt, type QueuedPromptAction, type Server, type SessionRef } from "@/server"
+import { toAppError, type AppError, type PromptInput, type QueuedPrompt, type QueuedPromptAction, type Server, type SessionLocation } from "@/server"
 import type { QueuedMessage, QueuedMessages } from "../view/timeline/model"
 
 export type QueueInternal = QueuedMessages & {
@@ -11,7 +11,7 @@ type Field<T> = { readonly get: Accessor<T>; readonly set: Setter<T> }
 
 type QueueContext = {
   readonly server: Server
-  readonly ref: SessionRef
+  readonly ref: SessionLocation
   readonly onRead: (items: readonly QueuedPrompt[]) => void
   readonly items: Field<readonly QueuedPrompt[]>
   readonly readError: Field<AppError | undefined>
@@ -80,7 +80,7 @@ async function beginEdit(context: QueueContext, record: QueuedMessage): Promise<
   if (await control(context, record.seq, "hold")) context.editing.set(record.seq)
 }
 
-export function createQueue(server: Server, ref: SessionRef, onRead: (items: readonly QueuedPrompt[]) => void): QueueInternal {
+export function createQueue(server: Server, ref: SessionLocation, onRead: (items: readonly QueuedPrompt[]) => void): QueueInternal {
   const context: QueueContext = {
     server,
     ref,
