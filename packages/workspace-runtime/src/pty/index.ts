@@ -1,8 +1,8 @@
-import { selectPtyCommand } from "./shell-selection"
 /**
  * PTY Module
  *
- * Owns terminal lifecycle and uses the runtime event bus directly.
+ * Owns terminal lifecycle; each terminal publishes on the bus of the session
+ * core that created it.
  */
 
 import { type IPty } from "@lydell/node-pty"
@@ -10,8 +10,8 @@ import { timingSafeEqualStrings } from "@claxedo/helpers"
 import z from "zod/v3"
 import { Log } from "../log"
 import * as fs from "fs"
-import * as os from "os"
 import * as path from "path"
+import { selectPtyCommand } from "./shell-selection"
 import { DEFAULT_RECOVERY_BUDGETS } from "@claxedo/agent-runtime-contract"
 import {
   LaunchRefusedError,

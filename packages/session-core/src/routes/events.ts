@@ -165,7 +165,7 @@ export type WorkspaceEventParents = {
 export type WorkspaceEventsOptions = EventDeliveryOptions<StreamFrame> & {
   /** The runtime's own directory: what its control frames are addressed as, and what admits a bus frame as its own. */
   directory: string
-  /** The workspace whose per-session worktrees (`registerWorkspaceDirectory`) this runtime also serves. */
+  /** The workspace this runtime serves: a control frame naming another is not its own, and naming it admits its registered worktrees. */
   workspaceId?: string
   eventHub: RuntimeEventHub
   bus: Pick<RuntimeBus, "subscribe">
@@ -178,16 +178,16 @@ export type WorkspaceEventsOptions = EventDeliveryOptions<StreamFrame> & {
 }
 
 function ownsControlFrames(options: Pick<WorkspaceEventsOptions, "directory" | "workspaceId" | "ptyDirectory" | "placement">) {
-  const realDirectoryPath = options.placement.canonicalDirectory
-  const root = realDirectoryPath(options.directory)
+  const canonical = options.placement.canonicalDirectory
+  const root = canonical(options.directory)
   const ptys = new Set<string>()
-  const roots = () => [root, ...(options.workspaceId ? options.placement.registeredDirectories().map(realDirectoryPath) : [])]
+  const roots = () => [root, ...(options.workspaceId ? options.placement.registeredDirectories().map(canonical) : [])]
   const under = (directory: string | undefined) => {
     if (!directory) return false
-    const real = realDirectoryPath(directory)
+    const real = canonical(directory)
     return roots().some((base) => options.placement.containsDirectory(base, real))
   }
-  const served = (directory: string | undefined) => !!directory && roots().includes(realDirectoryPath(directory))
+  const served = (directory: string | undefined) => !!directory && roots().includes(canonical(directory))
   const ownsPty = (id: string) => {
     if (ptys.has(id)) return true
     if (!under(options.ptyDirectory?.(id))) return false

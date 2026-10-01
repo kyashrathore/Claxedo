@@ -67,22 +67,6 @@ export function assertTarget(requested: string | undefined, env: NodeJS.ProcessE
   throw new WorkspaceTargetError(`workspace-runtime is pinned to ${dir}`, "workspace_target_pinned")
 }
 
-export function registerWorkspaceDirectory(input: { workspaceId: string; sessionId: string; directory: string }) {
-  const placement = currentSessionCore().placement
-  if (input.workspaceId !== placement.workspaceId) throw new WorkspaceTargetError("Workspace registry owner mismatch")
-  placement.register(input)
-}
-
-export function unregisterWorkspaceDirectory(input: { workspaceId: string; sessionId: string }) {
-  const placement = currentSessionCore().placement
-  if (input.workspaceId !== placement.workspaceId) throw new WorkspaceTargetError("Workspace registry owner mismatch")
-  placement.unregister(input.sessionId)
-}
-
-export function registeredWorkspaceDirectory(sessionId: string) {
-  return currentSessionCore().placement.registeredDirectory(sessionId)
-}
-
 export type RegisteredWorkspaceDirectory = { sessionId: string; directory: string }
 
 function registeredEntries(): RegisteredWorkspaceDirectory[] {

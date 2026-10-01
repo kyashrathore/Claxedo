@@ -2,7 +2,6 @@ import { requestedSessionHarness, RUNTIME_NATIVE_HARNESS_IDS } from "@claxedo/se
 import { readProviderDefinitions, type CustomProviderDefinition } from "@claxedo/harness/contract"
 import type { CredentialSnapshot, PlaceholderEnvironment, ProviderProjection, ProviderProjectionSource, SavedCommand } from "@claxedo/agent-runtime-contract"
 import { Hono } from "hono"
-import { HTTPException } from "hono/http-exception"
 import { Log } from "../log"
 import { isAgentHarnessId, credentialSnapshot, type HarnessConnectionDescriptor, type SessionHarness } from "@claxedo/agent-runtime-contract"
 import { isRecord } from "@claxedo/helpers/guards"

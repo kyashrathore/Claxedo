@@ -1,5 +1,5 @@
 import { testSessionCore } from "../test-support/session-core"
-import { withSessionCore } from "../session-context"
+import { currentSessionCore, withSessionCore } from "../session-context"
 import { describe, expect, test } from "bun:test"
 import { Hono } from "hono"
 import { execFile } from "node:child_process"
@@ -9,7 +9,7 @@ import path from "node:path"
 import { promisify } from "node:util"
 import { createWorkspaceRuntimeClient, WorkspaceRuntimeClientError } from "../client"
 import type { GitCommitSummary, GitWorktreeStatus } from "../workspace-files/git-worktree"
-import { registerWorkspaceDirectory, unregisterWorkspaceDirectory, workspaceId } from "../target"
+import { workspaceId } from "../target"
 import { GitWorktreeRoutes, type GitWorktreeRoutesOptions } from "./git-worktree"
 
 const execFileAsync = promisify(execFile)
@@ -482,7 +482,7 @@ describe("GitWorktreeRoutes workspace scoping", () => {
       await expect(elsewhere.json()).resolves.toMatchObject({ error: { code: "git_invalid_path" } })
 
       const sibling = await mkdtemp(path.join(tmpdir(), "workspace-runtime-git-sibling-"))
-      registerWorkspaceDirectory({ workspaceId: workspaceId(), sessionId: "ses-sibling", directory: sibling })
+      currentSessionCore().placement.register({ sessionId: "ses-sibling", directory: sibling })
       try {
         await git(sibling, ["init", "-b", "main"])
         await writeFile(path.join(sibling, "sibling.md"), "hello\n")
@@ -494,7 +494,7 @@ describe("GitWorktreeRoutes workspace scoping", () => {
         expect((await status()).unstaged).toEqual([])
         expect(directory).not.toBe(sibling)
       } finally {
-        unregisterWorkspaceDirectory({ workspaceId: workspaceId(), sessionId: "ses-sibling" })
+        currentSessionCore().placement.unregister("ses-sibling")
         await rm(sibling, { recursive: true, force: true })
       }
     })

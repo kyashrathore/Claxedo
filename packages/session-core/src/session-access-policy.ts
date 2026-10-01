@@ -1,3 +1,7 @@
+import { errorBody } from "./routes/error-body"
+import type { RuntimeSessionTime } from "./session/session-time"
+
+/** The fields the core reads from either host's verified caller, a relay host token's claims or the embedded stamp; the core imports neither host. */
 export type SessionRequestIdentity = {
   actor_id: string
   user_id?: string
@@ -10,8 +14,6 @@ export type SessionRequestIdentity = {
   role: "viewer" | "editor" | "admin" | "owner"
   session_id?: string
 }
-import { errorBody } from "./routes/error-body"
-import type { RuntimeSessionTime } from "./session/session-time"
 
 export type SessionAccessActor = {
   actorId: string

@@ -1,5 +1,5 @@
 import { testSessionCore } from "./test-support/session-core"
-import { withSessionCore } from "./session-context"
+import { currentSessionCore, withSessionCore } from "./session-context"
 import { describe, expect, it } from "bun:test"
 import fs from "node:fs/promises"
 import os from "node:os"
@@ -7,12 +7,10 @@ import path from "node:path"
 import {
   assertTarget,
   authoritativeWorkspaceId,
-  registerWorkspaceDirectory,
   registeredWorkspaceDirectoriesUnder,
   registeredWorkspaceDirectoryOwners,
   resolveWorkspaceCommandPaths,
   resolveWorkspacePath,
-  unregisterWorkspaceDirectory,
   withWorkspaceTarget,
   workspaceDir,
   workspaceId,
@@ -232,8 +230,8 @@ describe("registered worktree ownership", () => {
       await fs.mkdir(inner, { recursive: true })
       await fs.writeFile(path.join(inner, "file.txt"), "")
       await fs.symlink(inner, path.join(tmp, "link"))
-      registerWorkspaceDirectory({ workspaceId: "ws_owners", sessionId: "ses_outer", directory: outer })
-      registerWorkspaceDirectory({ workspaceId: "ws_owners", sessionId: "ses_inner", directory: inner })
+      currentSessionCore().placement.register({ sessionId: "ses_outer", directory: outer })
+      currentSessionCore().placement.register({ sessionId: "ses_inner", directory: inner })
 
       expect(registeredWorkspaceDirectoryOwners(outer)).toEqual(["ses_outer"])
       expect(registeredWorkspaceDirectoryOwners(path.join(inner, "file.txt")).sort()).toEqual([
@@ -274,8 +272,8 @@ describe("registered worktree ownership", () => {
         .map((entry) => entry.sessionId)).toEqual(["ses_inner"])
       expect(registeredWorkspaceDirectoriesUnder(inner)).toEqual([])
     } finally {
-      unregisterWorkspaceDirectory({ workspaceId: "ws_owners", sessionId: "ses_outer" })
-      unregisterWorkspaceDirectory({ workspaceId: "ws_owners", sessionId: "ses_inner" })
+      currentSessionCore().placement.unregister("ses_outer")
+      currentSessionCore().placement.unregister("ses_inner")
       await fs.rm(tmp, { recursive: true, force: true })
     }
   }))

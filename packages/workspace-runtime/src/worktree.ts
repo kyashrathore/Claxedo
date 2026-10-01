@@ -5,7 +5,6 @@ import { runGit } from "./git"
 import { workspaceRuntimeWorkspacesDir } from "./env"
 import type { RuntimeStore, WorkspaceWorktreeRecord } from "@claxedo/session-core"
 import { WorkspaceTargetError } from "@claxedo/session-core"
-import { registerWorkspaceDirectory, unregisterWorkspaceDirectory} from "./target"
 
 const SEGMENT = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/
 

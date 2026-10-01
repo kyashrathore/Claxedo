@@ -1,5 +1,4 @@
 export { createSpawnService } from "./spawn-service"
-
 export {
   createWorkspaceHost,
   mountWorkspaceAgentHooks,
@@ -18,7 +17,6 @@ export {
   workspaceDir,
   workspaceId,
   assertTarget,
-  registeredWorkspaceDirectory,
 } from "./target"
 export { workspaceRuntimeStoreDir } from "./env"
 export { storeBackedSessionPlacement } from "./store-file"
