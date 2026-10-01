@@ -1,31 +1,16 @@
-import { readdirSync } from "node:fs"
-import { readFile } from "node:fs/promises"
-import { fileURLToPath } from "node:url"
 import { Miniflare } from "miniflare"
 import type { D1Database } from "@cloudflare/workers-types"
-import { CONTROL_PLANE_BASELINE, requireBaselineFiles, requireControlPlaneBaseline } from "../../scripts/control-plane-schema"
-
-// Trigger bodies contain semicolons; schema objects are separated by blank lines.
-function migrationChunks(source: string): string[] {
-  return source
-    .replace(/^\s*--.*$/gm, "")
-    .split(/;\s*\n\s*\n/)
-    .map((part) => part.trim().replace(/;$/, "").trim())
-    .filter(Boolean)
-}
-
-const CONTROL_PLANE_MIGRATIONS_DIRECTORY = fileURLToPath(
-  new URL("../../migrations/control-plane/", import.meta.url),
-)
+import {
+  CONTROL_PLANE_BASELINE,
+  baselineStatements,
+  currentControlPlaneBaseline,
+  requireBaselineFiles,
+  requireControlPlaneBaseline,
+} from "../../scripts/control-plane-schema"
 
 export function controlPlaneMigrations(): readonly string[] {
-  const names = readdirSync(CONTROL_PLANE_MIGRATIONS_DIRECTORY).filter((name) => name.endsWith(".sql")).sort()
-  requireBaselineFiles(names)
-  return names
-}
-
-function controlPlaneMigrationPath(name: string): string {
-  return `${CONTROL_PLANE_MIGRATIONS_DIRECTORY}${name}`
+  currentControlPlaneBaseline()
+  return [CONTROL_PLANE_BASELINE]
 }
 
 export type ControlPlaneDatabase = {
@@ -55,10 +40,10 @@ export async function miniflareControlPlaneDatabase(
 
 export async function applyControlPlaneMigration(database: D1Database, name: string): Promise<void> {
   requireBaselineFiles([name])
-  const state = await requireControlPlaneBaseline(async (sql) => (await database.prepare(sql).all()).results)
+  const baseline = currentControlPlaneBaseline()
+  const state = await requireControlPlaneBaseline(async (sql) => (await database.prepare(sql).all()).results, baseline)
   if (state === "baseline") return
-  const path = controlPlaneMigrationPath(name)
-  const statements = migrationChunks(await readFile(path, "utf8")).map((chunk) => database.prepare(chunk))
+  const statements = baselineStatements(baseline).map((statement) => database.prepare(statement))
   await database.batch([
     database.prepare("create table if not exists d1_migrations (id integer primary key autoincrement, name text unique, applied_at timestamp default current_timestamp not null)"),
     ...statements,

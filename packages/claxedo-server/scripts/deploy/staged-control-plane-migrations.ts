@@ -1,14 +1,12 @@
 import fs from "node:fs"
 import path from "node:path"
-import { requireBaselineFiles } from "../control-plane-schema"
-
-const serverRoot = path.resolve(import.meta.dirname, "../..")
+import { CONTROL_PLANE_BASELINE, currentControlPlaneBaseline } from "../control-plane-schema"
 
 /** `migrations_dir` for a config written beside its staged migrations. */
 export const STAGED_CONTROL_PLANE_MIGRATIONS_DIR = "migrations/control-plane"
 
 /**
- * Copy the control-plane migrations beside a rendered Wrangler config, and
+ * Copy the control-plane baseline beside a rendered Wrangler config, and
  * answer with the `migrations_dir` that names them from the config file.
  *
  * `wrangler d1 migrations apply` reads whatever the config points at, so the
@@ -23,8 +21,9 @@ export function stageWorkerControlPlaneMigrations(input: {
   stageInto?: string
 }): { migrationsDir: string } {
   const destination = path.join(input.stageInto ?? path.join(input.configDirectory, "migrations"), "control-plane")
-  requireBaselineFiles(fs.readdirSync(path.join(serverRoot, "migrations/control-plane")).filter((name) => name.endsWith(".sql")).sort())
+  const baseline = currentControlPlaneBaseline()
   fs.rmSync(destination, { recursive: true, force: true })
-  fs.cpSync(path.join(serverRoot, "migrations/control-plane"), destination, { recursive: true })
+  fs.mkdirSync(destination, { recursive: true })
+  fs.writeFileSync(path.join(destination, CONTROL_PLANE_BASELINE), baseline)
   return { migrationsDir: path.relative(input.configDirectory, destination).split(path.sep).join("/") }
 }

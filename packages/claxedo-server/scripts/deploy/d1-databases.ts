@@ -1,5 +1,5 @@
 import { isRecordArray, parseJson, stringField } from "@claxedo/server-core/platform/json/index"
-import { requireControlPlaneBaseline } from "../control-plane-schema"
+import { currentControlPlaneBaseline, requireControlPlaneBaseline } from "../control-plane-schema"
 
 import {
   BETTER_AUTH_CLI_CLIENT_ID,
@@ -61,6 +61,12 @@ export function verifyNativeClientProvisioning(output: string) {
   }
 }
 
+/**
+ * Refuses a control plane that is neither empty nor the current baseline,
+ * applies both databases' migrations, then upserts the native OAuth clients.
+ * Every step converges on a re-run, so a redeploy runs the same sequence a
+ * first deploy does.
+ */
 export async function prepareD1Databases(input: {
   configArgs: readonly string[]
   apiOrigin: string
@@ -70,7 +76,7 @@ export async function prepareD1Databases(input: {
   await requireControlPlaneBaseline(async (sql) => d1Rows(await runWrangler(
     ["d1", "execute", "CONTROL_PLANE_DB", "--remote", ...input.configArgs, "--command", sql, "--json"],
     { capture: true },
-  ), "control-plane schema admission"))
+  ), "control-plane schema admission"), currentControlPlaneBaseline())
   for (const binding of ["AUTH_DB", "CONTROL_PLANE_DB"]) {
     await runWrangler(["d1", "migrations", "apply", binding, "--remote", ...input.configArgs])
   }

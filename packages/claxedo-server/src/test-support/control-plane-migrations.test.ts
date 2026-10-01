@@ -53,6 +53,13 @@ test("empty test databases apply and record the baseline once, and a repeated ap
   expect(sqlite.prepare("select user_id from users").all()).toEqual([{ user_id: "keep" }])
 })
 
+test("test migration application refuses a recorded baseline whose schema differs from the current file", async () => {
+  const { sqlite, d1 } = fixture()
+  await applyControlPlaneMigration(d1, "0001_baseline.sql")
+  sqlite.exec("drop index auth_identities_by_user")
+  await expect(applyControlPlaneMigration(d1, "0001_baseline.sql")).rejects.toThrow(/different schema than the current 0001_baseline.sql/)
+})
+
 test("test migration application refuses untracked nonempty schemas", async () => {
   const { sqlite, d1 } = fixture()
   sqlite.exec("create table old_rows(value text)")
