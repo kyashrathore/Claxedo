@@ -23,6 +23,11 @@ export type ProviderLifecycle = {
   subagent?: true
 }
 
+/** What a wrapper with no template reports: the engine's own statuses, under its own command name. */
+function isEngineStatus(value: string): value is "Busy" | "Idle" | "Error" {
+  return value === "Busy" || value === "Idle" || value === "Error"
+}
+
 function at(input: unknown, field: string): unknown {
   return field.split(".").reduce((value, key) => rec(value)?.[key], input)
 }
@@ -33,13 +38,6 @@ export function providerLifecycle(
   envelopeProvider?: string,
 ): ProviderLifecycle | undefined {
   const first = (...keys: string[]) => keys.map((key) => str(input[key])).find((value) => !!value)
-  const canonical = input.eventType
-  if (canonical === "Busy" || canonical === "Idle" || canonical === "Error") {
-    return {
-      eventType: canonical,
-      provider: envelopeProvider || first("provider", "provider_id", "providerId", "agent", "cli"),
-    }
-  }
   const hook = first("hook_event_name")
   const type = hook ?? first("type")
   if (!type) return undefined
@@ -49,7 +47,8 @@ export function providerLifecycle(
         (item) => item.provider === provider || item.command === provider || item.aliases?.includes(provider),
       )
     : templates.find((item) => Object.hasOwn(item.events, type))
-  if (!template || !Object.hasOwn(template.events, type)) return undefined
+  if (!template) return hook && isEngineStatus(hook) ? { eventType: hook, provider } : undefined
+  if (!Object.hasOwn(template.events, type)) return undefined
   const declared = template.events[type]
   const rules: StatusHookEventRule[] =
     typeof declared === "string" ? [{ status: declared }] : Array.isArray(declared) ? declared : [declared]

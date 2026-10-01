@@ -3,7 +3,10 @@
 # Forward provider JSON unchanged. The runtime owns normalization and state.
 [ -z "$CLAXEDO_TAB_ID" ] && exit 0
 
-# A config firing under another agent is not this terminal's lifecycle.
+# Every hook config Claxedo writes names the harness that owns it. Agents
+# replay each other's configs and run each other as tools; a config firing
+# under a different agent than this terminal's is not this terminal's
+# lifecycle.
 HARNESS=""
 case "${1:-}" in
   --harness=*) HARNESS="${1#--harness=}"; shift ;;

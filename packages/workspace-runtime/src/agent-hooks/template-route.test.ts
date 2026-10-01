@@ -72,7 +72,7 @@ test("a template's command can carry its provider identity at the lifecycle rout
   }
 })
 
-test("core wrappers send canonical lifecycle values without requiring a CLI template", async () => {
+test("a wrapper with no template reports the engine's own statuses at the lifecycle route", async () => {
   const terminalId = "generic-wrapper-route"
   const terminal = spyOn(Pty, "get").mockImplementation((id) =>
     id === terminalId
@@ -81,7 +81,7 @@ test("core wrappers send canonical lifecycle values without requiring a CLI temp
   )
   try {
     const app = AgentHookRoutes({ statusHooks: [] })
-    for (const eventType of ["Busy", "Idle", "Error"]) {
+    for (const status of ["Busy", "Idle", "Error"]) {
       await app.request("http://localhost/agent-lifecycle", {
         method: "POST",
         headers: { "content-type": "application/x-www-form-urlencoded" },
@@ -89,11 +89,11 @@ test("core wrappers send canonical lifecycle values without requiring a CLI temp
           tabId: terminalId,
           terminalId,
           provider: "custom-tool",
-          providerEvent: JSON.stringify({ eventType }),
+          providerEvent: JSON.stringify({ hook_event_name: status }),
         }),
       })
       const state = await (await app.request(`http://localhost/terminal-session?terminalId=${terminalId}`)).json()
-      expect(state.session?.eventType).toBe(eventType)
+      expect(state.session?.eventType).toBe(status)
     }
   } finally {
     terminal.mockRestore()

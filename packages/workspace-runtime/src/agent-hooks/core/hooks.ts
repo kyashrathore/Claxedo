@@ -1,12 +1,12 @@
 import type { StatusHookTemplate } from "@claxedo/plugin-api"
 import { NOTIFY_MARKER } from "./constants"
-import { loadTemplate, shellQuote } from "./utils"
+import { loadTemplate } from "./utils"
 
 export function generateNotifyScript(port: number, templates: readonly StatusHookTemplate[]): string {
   const aliases = templates
     .flatMap((template) =>
       [...(template.command === template.provider ? [] : [template.command]), ...(template.aliases ?? [])].map(
-        (alias) => `  ${alias}) AGENT=${shellQuote(template.provider)} ;;`,
+        (alias) => `  ${alias}) AGENT="${template.provider}" ;;`,
       ),
     )
     .join("\n")
@@ -14,7 +14,7 @@ export function generateNotifyScript(port: number, templates: readonly StatusHoo
     .flatMap((template) =>
       template.replayGuard
         ? [
-            `    if [ "$HARNESS" = ${shellQuote(template.provider)} ] && [ -n "$${template.replayGuard.env}" ]; then exit 0; fi`,
+            `    if [ "$HARNESS" = "${template.provider}" ] && [ -n "$${template.replayGuard.env}" ]; then exit 0; fi`,
           ]
         : [],
     )

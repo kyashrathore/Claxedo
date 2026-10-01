@@ -19,7 +19,7 @@ export function generateGenericWrapper(binaryName: string, notifyPath: string): 
   return buildWrapperScript(
     binaryName,
     `if [ -n "\${CLAXEDO_TAB_ID:-}" ]; then
-  echo '{"eventType":"Busy"}' | ${shellQuote(notifyPath)} 2>/dev/null &
+  echo '{"hook_event_name":"Busy"}' | ${shellQuote(notifyPath)} 2>/dev/null &
 fi
 
 "$REAL_BIN" "$@"
@@ -27,9 +27,9 @@ EXIT_CODE=$?
 
 if [ -n "\${CLAXEDO_TAB_ID:-}" ]; then
   if [ $EXIT_CODE -ne 0 ]; then
-    echo '{"eventType":"Error"}' | ${shellQuote(notifyPath)} 2>/dev/null &
+    echo '{"hook_event_name":"Error"}' | ${shellQuote(notifyPath)} 2>/dev/null &
   else
-    echo '{"eventType":"Idle"}' | ${shellQuote(notifyPath)} 2>/dev/null &
+    echo '{"hook_event_name":"Idle"}' | ${shellQuote(notifyPath)} 2>/dev/null &
   fi
 fi
 

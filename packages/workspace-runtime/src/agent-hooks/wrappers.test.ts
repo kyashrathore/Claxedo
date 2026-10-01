@@ -61,9 +61,9 @@ describe("generateGenericWrapper", () => {
   it("sends busy/idle/error notifications around the real binary", () => {
     const script = generateGenericWrapper("aider", "/tmp/hooks/notify.sh")
 
-    expect(script).toContain('eventType":"Busy"')
-    expect(script).toContain('eventType":"Idle"')
-    expect(script).toContain('eventType":"Error"')
+    expect(script).toContain('hook_event_name":"Busy"')
+    expect(script).toContain('hook_event_name":"Idle"')
+    expect(script).toContain('hook_event_name":"Error"')
     expect(script).toContain('"$REAL_BIN" "$@"')
     expect(script).toContain("CLAXEDO_TAB_ID")
   })

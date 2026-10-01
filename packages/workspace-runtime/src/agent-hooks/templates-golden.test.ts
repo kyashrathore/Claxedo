@@ -11,6 +11,14 @@ import { providerLifecycle } from "./provider-lifecycle"
 import files from "./fixtures/base-files.json"
 import cases from "./fixtures/base-lifecycle.json"
 
+// The base notify script explained its alias and replay guard by naming the CLIs; the engine no longer knows them.
+function withoutComments(script: string) {
+  return script
+    .split("\n")
+    .filter((line, index) => index < 2 || !line.trimStart().startsWith("#"))
+    .join("\n")
+}
+
 test("nine first-party templates reproduce the base wrappers, configs, hook artifacts and project file", async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "status-hooks-golden-"))
   try {
@@ -33,7 +41,7 @@ test("nine first-party templates reproduce the base wrappers, configs, hook arti
     for (const dir of ["data/hooks", "data/bin", "home"]) {
       for (const name of await fs.readdir(path.join(root, dir), { recursive: true })) {
         const file = path.join(root, dir, name)
-        if (!(await fs.stat(file)).isFile() || name === "notify.sh") continue
+        if (!(await fs.stat(file)).isFile()) continue
         actual[`${dir}/${name}`] = (await fs.readFile(file, "utf8"))
           .replaceAll(BIN_DIR, "{{bin}}")
           .replaceAll(root, "{{root}}")
@@ -44,13 +52,10 @@ test("nine first-party templates reproduce the base wrappers, configs, hook arti
       project,
       manifest.files.notify,
     ).replaceAll(root, "{{root}}")
-    const { "data/hooks/notify.sh": _notify, ...expected } = files
     expect(defaultStatusHooks).toHaveLength(9)
-    for (const command of defaultGenericWrappers) {
-      const file = `data/bin/${command}` as keyof typeof expected
-      expected[file] = expected[file].replaceAll('"hook_event_name":', '"eventType":')
-    }
-    expect(actual).toEqual(expected)
+    const notify = "data/hooks/notify.sh"
+    expect(withoutComments(actual[notify]!)).toBe(withoutComments(files[notify]))
+    expect({ ...actual, [notify]: "" }).toEqual({ ...files, [notify]: "" })
   } finally {
     await fs.rm(root, { recursive: true, force: true })
   }
