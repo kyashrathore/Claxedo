@@ -4,7 +4,7 @@ import type { RequestAuthenticationAdapter } from "@claxedo/server-core/platform
 import {
   pullHostedControlSession as pullControlSession,
   pullHostedControlSessionMessages as pullControlSessionMessages,
-} from "../../authority/hosted-session-pull"
+} from "../../authority/hosted-session-sync"
 import type { ControlPlaneServices } from "../../authority/services"
 import { requireAuthority } from "@claxedo/server-core/platform/auth/authority"
 import {

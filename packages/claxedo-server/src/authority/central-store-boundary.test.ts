@@ -11,7 +11,7 @@ import { importPattern } from "../test-support/guards"
 // Files that make up the control-plane central-storage seam.
 const centralStoreFiles = [
   "http/session-pull.ts",
-  "hosted-session-pull.ts",
+  "hosted-session-sync.ts",
   "pulled-session.ts",
   "projection-store.ts",
   "../../../claxedo-server-core/src/platform/auth/durable-session-log.ts",

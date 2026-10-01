@@ -3,6 +3,7 @@ import { CONTROL_PLANE_RUNTIME_ACTOR } from "@claxedo/server-core/platform/auth/
 import { createWorkspaceRuntimeClient } from "@claxedo/workspace-runtime/client"
 import type { RuntimeSnapshot } from "@claxedo/workspace-runtime/config"
 import type { ControlPlaneServices } from "../authority/services"
+import { createRelayRuntimeClient } from "./relay-runtime-client"
 
 async function readyTarget(services: ControlPlaneServices, workspaceId: string) {
   const manager = services.sandbox.sandboxManager
@@ -12,11 +13,6 @@ async function readyTarget(services: ControlPlaneServices, workspaceId: string) 
   return target
 }
 
-/**
- * A sandbox behind a relay-access driver verifies relay host tokens, so the
- * plane reaches its routes the way every other caller does: through the relay,
- * which exchanges the runtime access token minted here.
- */
 export async function hostedRuntimeFetch(
   services: ControlPlaneServices,
   workspaceId: string,
@@ -27,7 +23,7 @@ export async function hostedRuntimeFetch(
   const target = await readyTarget(services, workspaceId)
   const relay = services.relay.provider
   if (!relay) throw new Error("hosted runtime token issuer is unavailable")
-  const token = await relay.mintRuntimeAccessToken({
+  return await createRelayRuntimeClient({ provider: relay, error: (_status, _code, message) => new Error(message) }).fetch({
     workspaceId,
     hostId: target.hostId,
     routingId: target.routingId,
@@ -35,12 +31,8 @@ export async function hostedRuntimeFetch(
     ...CONTROL_PLANE_RUNTIME_ACTOR,
     role: "owner",
     ttlMs: 10 * 60_000,
-  })
-  const relayUrl = await relay.getRelayEndpoint(workspaceId, target.homeRegion)
-  const headers = new Headers(init.headers)
-  headers.set("authorization", `Bearer ${token.token}`)
-  headers.set("x-claxedo-directory", `workspace:${workspaceId}`)
-  return fetch(`${relayUrl.replace(/\/+$/, "")}/workspaces/${encodeURIComponent(workspaceId)}${requestPath}`, { ...init, headers })
+    homeRegion: target.homeRegion,
+  }, requestPath, init)
 }
 
 export async function hostedRuntimeConfigApply(

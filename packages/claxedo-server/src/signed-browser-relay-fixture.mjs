@@ -883,7 +883,7 @@ if (hostMode === "embedded") {
   //      must be the user message's own id.
   //   4. `syncSessionMessages` carrying that fencing token, then
   //      `releaseSessionTurn` — exactly what a host does when it checkpoints a
-  //      completed turn (`authority/hosted-session-pull.ts` forwards the
+  //      completed turn (`authority/hosted-session-sync.ts` forwards the
   //      runtime snapshot's `fencingToken` the same way).
   const seedRuntimePrincipal = {
     principalKind: "user",

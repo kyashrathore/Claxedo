@@ -35,14 +35,14 @@ for the full auth/env matrix.
 `workspace-runtime` serves one event stream, `GET /api/wr/events`, fed by two
 in-process sources with different jobs:
 
-- **`RuntimeEventHub`** ([`src/runtime-event-hub.ts`](../src/runtime-event-hub.ts))
+- **`RuntimeEventHub`** ([`src/projection/runtime-event-hub.ts`](../src/projection/runtime-event-hub.ts))
   is the hub for session/runtime events. Session routes publish Claxedo
-  presentation events (`AgentEventEnvelope`) to its global channel and
-  runtime-channel events (subagent revisions, goal changes) to its runtime
-  channel. `GET /api/wr/events` (SSE, `mountWorkspaceCore()`) serves the
-  first and projects the second onto the wire as `subagent.updated` /
-  `goal.*` presentation events; raw `AgentRuntimeEvent` payloads never leave
-  the runtime.
+  presentation events (`AgentEventEnvelope`) to its global channel after
+  `createSessionEventWriter` commits them. Subagent revisions and goal changes
+  are projected by their producer before publication. Raw runtime events stay
+  on the runtime channel for in-process subscribers. `GET /api/wr/events`
+  (SSE, `mountWorkspaceCore()`) serves only committed presentation events and
+  workspace control frames; it does not project the runtime channel.
 - **`workspaceRuntimeBus`** ([`src/bus.ts`](../src/bus.ts)) is intentionally
   process-global runtime state, used by PTY, process, and agent-hook code
   that already lives inside the workspace-runtime process. The same

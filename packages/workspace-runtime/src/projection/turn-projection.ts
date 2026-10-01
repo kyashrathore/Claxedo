@@ -2,6 +2,7 @@ import { assistantMessageIdForTurn, type AgentRuntimeEvent, type AgentPresentati
 import { createClientPresentationProjection } from "./client-presentation/projection"
 import { asRecord } from "@claxedo/helpers/guards"
 import type { RuntimeEventEnvelopeInput } from "./runtime-event-hub"
+import { createSessionEventWriter, type RuntimeAppendSource, type SessionEventStore } from "./session-event-writer"
 import type { PromptInput } from "@claxedo/agent-runtime-contract"
 import {
   buildAssistantMessage,
@@ -12,38 +13,17 @@ import {
   runtimeDiagnostic,
 } from "./presentation-events"
 
-export type RuntimeAppendSource = {
-  dir: "in" | "out"
-  method: string
-  requestId?: string
-}
-
 export type TurnProjectionOwner = {
   sessionId: string
   getAgentSessionId: () => string
-}
-
-type RuntimeEventStore = {
-  appendEvent(input: {
-    sessionId: string
-    agentSessionId?: string
-    payload: AgentPresentationEvent
-    source?: RuntimeAppendSource
-    fencingToken?: number
-  }): { payload: AgentPresentationEvent; messageUpdate?: AgentPresentationEvent }
 }
 
 export type SteeredInput = Pick<PromptInput, "parts" | "agent" | "model" | "tools" | "format" | "system" | "variant" | "author"> & {
   userMessageId: string
 }
 
-function committed(output: { payload: AgentPresentationEvent; messageUpdate?: AgentPresentationEvent }) {
-  if (!output) throw new Error("Runtime store appendEvent must return committed output")
-  return output
-}
-
 export function createTurnEventProjector(options: {
-  store: RuntimeEventStore
+  store: SessionEventStore
   owner: TurnProjectionOwner
   directory: string
   input: Pick<PromptInput, "userMessageId" | "parentMessageId" | "agent" | "model" | "variant">
@@ -62,26 +42,22 @@ export function createTurnEventProjector(options: {
     directory: options.directory,
     assistantMessageId,
   })
-  const publishRuntime = (payload: AgentRuntimeEvent) => {
-    options.onRuntimeEvent?.({
-      directory: options.directory,
-      sessionId: options.owner.sessionId,
-      agentSessionId: options.owner.getAgentSessionId(),
-      assistantMessageId: runtimeProjectionMessageId,
-      payload,
-    })
-  }
-  const append = (payload: AgentPresentationEvent, source: RuntimeAppendSource) => {
-    const output = committed(options.store.appendEvent({
-      sessionId: options.owner.sessionId,
-      agentSessionId: options.owner.getAgentSessionId(),
-      payload,
-      source,
-      ...(options.fencingToken !== undefined ? { fencingToken: options.fencingToken } : {}),
-    }))
-    options.onEvent(output.payload)
-    if (output.messageUpdate) options.onEvent(output.messageUpdate)
-  }
+  const context = () => ({
+    sessionId: options.owner.sessionId, directory: options.directory,
+    agentSessionId: options.owner.getAgentSessionId(),
+    assistantMessageId: runtimeProjectionMessageId,
+    ...(options.fencingToken !== undefined ? { fencingToken: options.fencingToken } : {}),
+  })
+  const writer = createSessionEventWriter({
+    store: options.store,
+    publishPresentation: (_context, payload) => options.onEvent(payload),
+    publishRuntime: (context, payload) => options.onRuntimeEvent?.({
+      sessionId: context.sessionId, directory: options.directory,
+      agentSessionId: context.agentSessionId, assistantMessageId: context.assistantMessageId, payload,
+    }),
+  })
+  const append = (payload: AgentPresentationEvent, source: RuntimeAppendSource) =>
+    writer.writePresentation({ ...context(), source }, payload)
 
   const beginReply = (id: string, parentID: string, source: RuntimeAppendSource) => {
     for (const event of projection.ingest({ type: "step-start", newMessageId: id })) append(event.payload, source)
@@ -139,26 +115,18 @@ export function createTurnEventProjector(options: {
       return created
     },
     project(runtimeEvent: AgentRuntimeEvent, source: RuntimeAppendSource) {
-      if (runtimeEvent.type === "input-incorporated") incorporate(runtimeEvent.messageId, source)
-      else if (runtimeEvent.type === "step-start") {
-        beginReply(runtimeEvent.newMessageId, options.input.userMessageId ?? options.input.parentMessageId ?? options.owner.sessionId, source)
-      } else for (const event of projection.ingest(runtimeEvent)) append(event.payload, source)
-      publishRuntime(runtimeEvent)
+      writer.writeRuntime({ ...context(), source }, runtimeEvent, () => {
+        if (runtimeEvent.type === "input-incorporated") incorporate(runtimeEvent.messageId, source)
+        else if (runtimeEvent.type === "step-start") {
+          beginReply(runtimeEvent.newMessageId, options.input.userMessageId ?? options.input.parentMessageId ?? options.owner.sessionId, source)
+        } else for (const event of projection.ingest(runtimeEvent)) append(event.payload, source)
+      })
     },
     terminalizeOpenTools(message: string, source: RuntimeAppendSource) {
       return projection.terminalizeOpenTools(message).map((event) => {
-        const payload = event.payload
-        const appended = committed(options.store.appendEvent({
-          sessionId: options.owner.sessionId,
-          agentSessionId: options.owner.getAgentSessionId(),
-          payload,
-          source,
-          ...(options.fencingToken !== undefined ? { fencingToken: options.fencingToken } : {}),
-        }))
-        if (appended.messageUpdate) options.onEvent(appended.messageUpdate)
-        const output = appended.payload
+        const output = writer.writePresentation({ ...context(), source }, event.payload, () => {})
         const runtimeEvent = terminalizedToolRuntimeEvent(output, message)
-        if (runtimeEvent) publishRuntime(runtimeEvent)
+        if (runtimeEvent) writer.writeRuntime(context(), runtimeEvent, () => {})
         return output
       })
     },

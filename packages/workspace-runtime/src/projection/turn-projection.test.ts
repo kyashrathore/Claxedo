@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import type { AgentRuntimeEvent, AgentPresentationEvent } from "@claxedo/agent-runtime-contract"
 import type { RuntimeEventEnvelopeInput } from "./runtime-event-hub"
-import type { RuntimeAppendSource } from "./turn-projection"
+import type { RuntimeAppendSource } from "./session-event-writer"
 import { testTurnProjector } from "../test-support/turn-projector"
 
 const source: RuntimeAppendSource = {

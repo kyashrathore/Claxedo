@@ -41,6 +41,7 @@ import { authorityRowBacking, readyCloudWorkspaces } from "@claxedo/server-core/
 import { authorityRowReachable } from "@claxedo/server-core/workspace/placement-reachability"
 import { connectLiveSyncRoom, type LiveSyncRoomNamespace } from "../../deployments/hosted-workerd/live-sync-room.cf"
 import { requireAuthority, type WorkspaceRecord } from "@claxedo/server-core/platform/auth/authority"
+import { createRelayRuntimeClient, decodeRelayRuntimeJson } from "../../workspace/relay-runtime-client"
 import { resolveRuntimeActor } from "@claxedo/server-core/platform/auth/runtime-actor"
 import { WORKSPACE_RUNTIME_IDENTITY_PATH } from "@claxedo/server-core/platform/governance/route-ownership"
 import type { ControlPlaneServices } from "../../authority/services"
@@ -269,37 +270,8 @@ function decodeSandboxHealth(input: unknown): HostedHarnessProbe {
   }
 }
 
-/**
- * Production `harnessStatus` for `HostedShellRouteOptions`: resolves the
- * caller's access to `workspaceId` through the authority (the same
- * `openWorkspace` gate every other signed workspace read on this plane uses),
- * then asks that workspace's runtime for `/api/wr/health` through the
- * relay-backed `verifiedRuntimeJson` — the identity probe it runs first
- * (`WORKSPACE_RUNTIME_IDENTITY_PATH`) refuses to answer for a relay target
- * that is not actually serving this workspace (see
- * `authority/hosted-session-pull.ts` for the same resolve-then-verify shape
- * on the session-pull path). `httpOptions.runtimeFetch` is a test seam only —
- * production composition passes none, so `verifiedRuntimeJson` mints a real
- * runtime access token and calls the relay.
- *
- * A workspace the caller cannot open (unknown id, revoked share, wrong org)
- * answers `undefined` — the route's 404 — rather than throwing, so a stale
- * project reference degrades to "not found" instead of a 401/403 that would
- * misreport the caller's own auth as invalid. Once the workspace is known,
- * any further failure (relay down, runtime unreachable, identity mismatch)
- * is reported as a DEGRADED probe (`ok: false`, `status: "error"`, `error`)
- * rather than re-thrown, matching the local proxy's own
- * catch-and-degrade for the same unreachable-runtime case.
- *
- * This resolves and calls the relay directly (mint token, fetch) rather than
- * through `authority/http/runtime-transport.ts`'s `verifiedRuntimeJson`: that
- * module pulls in `authority/http/protocol.ts`, which pulls in
- * `workspace/supervisor` — the desktop-only control-token verifier — and
- * `@claxedo/workspace-runtime` with it, a package this Worker bundle must
- * never reach (`test:architecture-ratchets` catches exactly this edge). The
- * shape below mirrors `authority/hosted-session-pull.ts`'s OWN private
- * `runtimeJson`/`verifiedRuntimeJson`, written for the identical reason.
- */
+// Importing the generic session HTTP protocol reaches the desktop supervisor
+// and runtime package, which cannot run in this Worker.
 type HarnessRuntimeFetch = (input: { workspaceId: string; path: string }) => Promise<Response>
 
 async function harnessRelayFetch(
@@ -321,7 +293,7 @@ async function harnessRelayFetch(
     workspaceId: input.workspaceId,
     ...(input.authorityWorkspace ? { workspace: input.authorityWorkspace } : {}),
   })
-  const token = await provider.mintRuntimeAccessToken({
+  return await createRelayRuntimeClient({ provider, error: (_status, _code, message) => new Error(message) }).fetch({
     workspaceId: input.workspaceId,
     hostId: target.hostId,
     routingId: target.routingId,
@@ -331,25 +303,11 @@ async function harnessRelayFetch(
     orgId,
     role: input.authorityRole,
     ttlMs: 10 * 60_000,
-  })
-  const relayUrl = await provider.getRelayEndpoint(input.workspaceId, target.homeRegion)
-  return await fetch(
-    `${relayUrl.replace(/\/+$/, "")}/workspaces/${encodeURIComponent(input.workspaceId)}${input.path}`,
-    {
-      headers: {
-        accept: "application/json",
-        authorization: `Bearer ${token.token}`,
-        "x-claxedo-directory": `workspace:${input.workspaceId}`,
-      },
-    },
-  )
+    homeRegion: target.homeRegion,
+  }, input.path, { headers: { accept: "application/json" } })
+
 }
 
-/**
- * The parsed body, as `unknown`. A caller-chosen type parameter here would only
- * assert a shape nothing checks: every caller either narrows with `asRecord` or
- * hands the value to a schema.
- */
 async function harnessRuntimeJson(
   services: ControlPlaneServices,
   auth: SignedControlPlaneAuth,
@@ -359,10 +317,7 @@ async function harnessRuntimeJson(
   const res = runtimeFetch
     ? await runtimeFetch({ workspaceId: input.workspaceId, path: input.path })
     : await harnessRelayFetch(services, auth, input)
-  if (!res.ok) {
-    throw new Error((await res.text().catch(() => "")) || `Workspace runtime pull failed: ${res.status}`)
-  }
-  return await res.json().catch(() => undefined)
+  return await decodeRelayRuntimeJson(res, (_status, _code, message) => new Error(message))
 }
 
 type HarnessRelayTarget = Parameters<typeof harnessRelayFetch>[2]

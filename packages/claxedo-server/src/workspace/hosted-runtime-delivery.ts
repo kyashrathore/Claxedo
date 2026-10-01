@@ -13,7 +13,7 @@ import {
 } from "@claxedo/server-core/credentials/native-delivery-plan"
 import type { ControlPlaneCredentials, ControlPlaneServices } from "../authority/services"
 import type { WorkspaceRuntimeContext, WorkspaceRuntimePreparation } from "./route-support"
-import { hostedRuntimeConfigApply } from "./hosted-runtime-fetch"
+import { hostedRuntimeConfigApply } from "./hosted-runtime"
 
 /**
  * The whole stack a sandbox is provisioned with. The base delivery supplies

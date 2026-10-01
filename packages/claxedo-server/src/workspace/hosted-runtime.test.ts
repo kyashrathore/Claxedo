@@ -1,6 +1,6 @@
 import { afterEach, expect, test, vi } from "vitest"
 import type { ControlPlaneServices } from "../authority/services"
-import { hostedRuntimeFetch } from "./hosted-runtime-fetch"
+import { hostedRuntimeFetch } from "./hosted-runtime"
 
 afterEach(() => vi.unstubAllGlobals())
 

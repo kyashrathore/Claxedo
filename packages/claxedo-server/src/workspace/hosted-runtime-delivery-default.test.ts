@@ -1,9 +1,9 @@
 import { expect, test, vi } from "vitest"
 import type { UserAgentConfig } from "@claxedo/server-core/agent-config/config"
 import { createHostedRuntimeDelivery } from "./hosted-runtime-delivery"
-import { hostedRuntimeConfigApply } from "./hosted-runtime-fetch"
+import { hostedRuntimeConfigApply } from "./hosted-runtime"
 
-vi.mock("./hosted-runtime-fetch", () => ({ hostedRuntimeConfigApply: vi.fn(async () => {}) }))
+vi.mock("./hosted-runtime", () => ({ hostedRuntimeConfigApply: vi.fn(async () => {}) }))
 
 type Input = Parameters<typeof createHostedRuntimeDelivery>[0]
 

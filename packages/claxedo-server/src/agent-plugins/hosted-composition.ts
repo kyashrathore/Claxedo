@@ -31,7 +31,7 @@ import {
   hostedConnectionsAuthenticate,
 } from "../connections/hosted-d1/setup"
 import type { WorkspaceRuntimeContext, WorkspaceRuntimePreparation } from "../workspace/route-support"
-import { hostedRuntimeFetch } from "../workspace/hosted-runtime-fetch"
+import { hostedRuntimeFetch } from "../workspace/hosted-runtime"
 import { D1SignedAgentPluginActivationStore } from "./activation/d1-store"
 import { hostedAgentPluginArtifactStore, type AgentPluginR2Bucket } from "./artifacts/r2-artifact-adapter"
 import { hostedAgentPluginsModule } from "./module"

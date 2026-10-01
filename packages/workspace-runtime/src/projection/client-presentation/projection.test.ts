@@ -97,13 +97,24 @@ describe("createClientPresentationProjection", () => {
     })
   })
 
-  test("keeps subagent lifecycle out of the compatibility projection", () => {
-    expect(makeProjection().ingest({
-      type: "subagent-updated",
-      subagentKey: "child-1",
-      revision: 1,
-      childSessionId: "child-session-1",
-    })).toEqual([])
+  test("projects a subagent revision once with its stable row identity", () => {
+    const projection = createClientPresentationProjection({ sessionId: "parent", directory: "/w", assistantMessageId: "" })
+    expect(projection.ingest({ type: "subagent-updated", subagentKey: "child-1", revision: 3, status: "running", label: "Explore" }))
+      .toEqual([{
+        directory: "/w", payload: {
+          id: "subagent.updated:parent:child-1:3", type: "subagent.updated",
+          properties: { sessionID: "parent", update: { subagentKey: "child-1", revision: 3, status: "running", label: "Explore" } },
+        },
+      }])
+  })
+
+  test("projects goal changes for the goal's own session before publication", () => {
+    const projection = createClientPresentationProjection({ sessionId: "ses", directory: "/w", assistantMessageId: "" })
+    const goal = { sessionId: "ses", objective: "ship", status: "active" as const, createdAt: 1, updatedAt: 2 }
+    expect(projection.ingest({ type: "goal-updated", sessionId: "ses", goal }))
+      .toEqual([{ directory: "/w", payload: { id: "goal.updated:ses:2", type: "goal.updated", properties: { sessionID: "ses", goal } } }])
+    expect(projection.ingest({ type: "goal-cleared", sessionId: "ses" }))
+      .toEqual([{ directory: "/w", payload: { id: "goal.cleared:ses", type: "goal.cleared", properties: { sessionID: "ses" } } }])
   })
 
   // A raw `AgentRuntimeEvent` names the turn's assistant message without ever

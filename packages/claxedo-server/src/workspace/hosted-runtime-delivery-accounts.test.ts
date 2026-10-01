@@ -4,9 +4,9 @@ import { createHostedRuntimeDelivery } from "./hosted-runtime-delivery"
 import { hostedOrgCredentials, HOSTED_CREDENTIALS_FLAG } from "../credentials/worker"
 import { CREDENTIALS_KEK_ENV } from "@claxedo/server-core/credentials/envelope"
 import { controlPlaneMigrations, miniflareControlPlaneDatabase } from "../test-support/control-plane-migrations"
-import { hostedRuntimeConfigApply } from "./hosted-runtime-fetch"
+import { hostedRuntimeConfigApply } from "./hosted-runtime"
 
-vi.mock("./hosted-runtime-fetch", () => ({ hostedRuntimeConfigApply: vi.fn(async () => {}) }))
+vi.mock("./hosted-runtime", () => ({ hostedRuntimeConfigApply: vi.fn(async () => {}) }))
 
 const OWNERS: Record<string, string> = { "ws-a": "A", "ws-b": "B" }
 

@@ -32,6 +32,7 @@ import { turnInputFor } from "./turn-input"
 import { turnPrompt, turnStartRecord } from "./turn-record"
 import { runTurn, type TurnRunnerHost } from "./turn-runner"
 import { createSteeredInputs } from "./steered-inputs"
+import { createSessionEventWriter } from "../projection/session-event-writer"
 import { eventSessionId, sessionIdle, toPresentationEvent } from "../projection/presentation-events"
 
 export {
@@ -119,17 +120,15 @@ export function createAgentRuntime(input: AgentRuntimeCompositionInput) {
       emit({ sessionId, directory, payload })
       return payload
     }
-    const agentSessionId = store.getAgentSessionId(sessionId) ?? undefined
-    const appended = store.appendEvent({
-      sessionId,
-      ...(agentSessionId ? { agentSessionId } : {}),
-      payload: presentation,
-      source,
-      ...(fence ? { fencingToken: fence.fencingToken() } : {}),
+    const writer = createSessionEventWriter({
+      store,
+      publishPresentation: (context, payload) => emit({ sessionId: context.sessionId, directory: context.directory, payload }),
+      publishRuntime: (context, payload) => emit({ sessionId: context.sessionId, directory: context.directory, payload }),
     })
-    emit({ sessionId, directory, payload: appended.payload })
-    if (appended.messageUpdate) emit({ sessionId, directory, payload: appended.messageUpdate })
-    return appended.payload
+    return writer.writePresentation({
+      sessionId, directory, agentSessionId: store.getAgentSessionId(sessionId) ?? undefined,
+      source, ...(fence ? { fencingToken: fence.fencingToken() } : {}),
+    }, presentation)
   }
 
   const titles = createSessionTitleOwner({ store, eventHub })

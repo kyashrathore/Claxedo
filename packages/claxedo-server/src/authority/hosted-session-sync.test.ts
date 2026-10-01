@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test, vi } from "vitest"
 import type { ControlPlaneServices } from "./services"
 import { localOnlyAuthAdapter } from "@claxedo/server-core/platform/auth/auth"
-import { pullHostedControlSessionMessages } from "./hosted-session-pull"
+import { pullHostedControlSessionMessages } from "./hosted-session-sync"
 import { fetchUrl } from "../test-support/fetch-calls"
 
 const originalFetch = globalThis.fetch

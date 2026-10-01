@@ -1,6 +1,7 @@
 import type { AgentRuntimeEvent, AgentRuntimeEventOf, RuntimeUsageObservation } from "@claxedo/agent-runtime-contract"
 import type { PromptInput } from "@claxedo/agent-runtime-contract"
-import type { RuntimeAppendSource, TurnEventProjector } from "./turn-projection"
+import type { TurnEventProjector } from "./turn-projection"
+import type { RuntimeAppendSource } from "./session-event-writer"
 
 export const CHILD_EVENT_BUFFER_MAX_COUNT = 256
 export const CHILD_EVENT_BUFFER_MAX_BYTES = 1024 * 1024

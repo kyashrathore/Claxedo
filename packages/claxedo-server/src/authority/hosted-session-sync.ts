@@ -20,6 +20,7 @@ import {
   sessionIsIdle,
   workspaceRoleAllowsWrite,
 } from "./pulled-session"
+import { createRelayRuntimeClient } from "../workspace/relay-runtime-client"
 import { txt } from "@claxedo/server-core/session/meta/shape"
 
 export class HostedSessionPullError extends Error {
@@ -60,61 +61,24 @@ type RuntimePullInput = {
   path: string
 }
 
-async function runtimeFetch(
+async function runtimeJson(
   services: ControlPlaneServices,
   auth: ControlPlaneAuthContext | undefined,
   input: RuntimePullInput,
 ) {
   const provider = services.relay.provider
   if (!provider) {
-    throw new HostedSessionPullError(
-      503,
-      "workspace_runtime_unavailable",
-      "Workspace runtime pull transport is not configured",
-    )
+    throw new HostedSessionPullError(503, "workspace_runtime_unavailable", "Workspace runtime pull transport is not configured")
   }
   const signed = requireSignedAuth(auth)
-  const token = await provider.mintRuntimeAccessToken({
-    workspaceId: input.workspaceId,
-    hostId: input.hostId,
-    routingId: input.routingId,
-    principalKind: "user",
-    auth: signed,
+  return await createRelayRuntimeClient({
+    provider, error: (status, code, message) => new HostedSessionPullError(status, code, message),
+  }).json({
+    workspaceId: input.workspaceId, hostId: input.hostId, routingId: input.routingId,
+    homeRegion: input.homeRegion, principalKind: "user", auth: signed,
     ...await resolveRuntimeActor(requireAuthority(services), signed),
-    orgId: input.ws.org_id,
-    role: input.role,
-    ttlMs: 10 * 60_000,
-  })
-  const relayUrl = await provider.getRelayEndpoint(input.workspaceId, input.homeRegion)
-  return await fetch(
-    `${relayUrl.replace(/\/+$/, "")}/workspaces/${encodeURIComponent(input.workspaceId)}${input.path}`,
-    {
-      headers: {
-        accept: "application/json",
-        authorization: `Bearer ${token.token}`,
-        "x-claxedo-directory": `workspace:${input.workspaceId}`,
-      },
-    },
-  )
-}
-
-/**
- * The parsed body, as `unknown`. Every caller either wants a record (and reaches
- * it through `asRecord`) or passes the value straight to a schema, so the
- * caller-chosen `<T>` this used to carry only asserted a shape nobody checked.
- */
-async function runtimeJson(
-  services: ControlPlaneServices,
-  auth: ControlPlaneAuthContext | undefined,
-  input: RuntimePullInput,
-) {
-  const res = await runtimeFetch(services, auth, input)
-  if (res.ok) return await res.json().catch(() => undefined)
-  throw new HostedSessionPullError(
-    res.status,
-    "workspace_runtime_pull_failed",
-    (await res.text().catch(() => "")) || `Workspace runtime pull failed: ${res.status}`,
-  )
+    orgId: input.ws.org_id, role: input.role, ttlMs: 10 * 60_000,
+  }, input.path)
 }
 
 async function verifiedRuntimeJson(
