@@ -1,7 +1,6 @@
 import type { AgentRuntimeEvent } from "@claxedo/agent-runtime-contract"
-import type { ContentBlock, SessionUpdate } from "./types"
-import { RETAINED_MESSAGE_TEXTS_MAX, type SessionState } from "./state"
-import type { TranslatorContext } from "./state"
+import type { ContentBlock, SessionUpdate } from "@agentclientprotocol/sdk"
+import { RETAINED_MESSAGE_TEXTS_MAX, type SessionState, type TranslatorContext } from "./state"
 import { checkContentBlock } from "./validation"
 import { diagnoseTranslation, shape } from "./diagnostics"
 import { boundKeyedMap } from "../../../translate/value"
@@ -79,23 +78,4 @@ export function agentMessage(update: AgentChunk, ctx: TranslatorContext): AgentR
       reason: "unknown_content_block",
     })
   return events
-}
-
-export function userMessageChunk(
-  update: Extract<SessionUpdate, { sessionUpdate: "user_message_chunk" }>,
-  ctx: TranslatorContext,
-): AgentRuntimeEvent[] {
-  if (!ctx.preserveUserMessageChunks) return []
-  const check = checkContentBlock(update.content)
-  if (!check.ok) {
-    diagnoseTranslation(ctx.diagnostics, "acp.malformed_content", {
-      kind: update.sessionUpdate,
-      reason: check.reason,
-      shape: shape(update.content),
-    })
-    return []
-  }
-  return [
-    { type: "user-message-delta", ...(update.messageId ? { messageId: update.messageId } : {}), content: check.block },
-  ]
 }

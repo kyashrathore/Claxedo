@@ -1,9 +1,8 @@
 import { boundKeyedMap, boundList } from "../../../translate/value"
 import { asRecord } from "@claxedo/helpers/guards"
-import type { ToolCallContent, ToolKind } from "./types"
-import { type AgentRuntimeEvent, type RuntimeToolStatus, asText as str } from "@claxedo/agent-runtime-contract"
+import type { ToolCallContent, ToolKind } from "@agentclientprotocol/sdk"
+import { type RuntimeToolStatus, asText as str } from "@claxedo/agent-runtime-contract"
 import { diagnoseTranslation, type AcpDiagnostics } from "./diagnostics"
-import { viewTool } from "./tool-presentation"
 
 export type Spot = { path: string; line?: number | null }
 export type ToolState = {
@@ -11,9 +10,7 @@ export type ToolState = {
   client: string
   status: RuntimeToolStatus
   title?: string
-  firstTitle?: string
   kind?: ToolKind
-  firstKind?: ToolKind
   name?: string
   meta?: Record<string, unknown>
   rawInput?: Record<string, unknown>
@@ -102,8 +99,6 @@ export function reduceTool(
 }
 
 function updatedTool(prev: ToolState, update: ToolChange): ToolState {
-  const title = update.title ?? prev.title ?? prev.firstTitle
-  const kind = update.kind ?? prev.kind ?? prev.firstKind
   const input = asRecord(update.rawInput)
   const rawInput = prev.rawInput && input ? { ...prev.rawInput, ...input } : input ?? prev.rawInput
   const content = boundList(mergeItems(prev.content, update.content, retainedContentKey), RETAINED_TOOL_ITEMS_MAX)
@@ -112,10 +107,8 @@ function updatedTool(prev: ToolState, update: ToolChange): ToolState {
   return {
     ...prev,
     status: update.status ?? prev.status,
-    title,
-    firstTitle: prev.firstTitle ?? update.title,
-    kind,
-    firstKind: prev.firstKind ?? update.kind,
+    title: update.title ?? prev.title,
+    kind: update.kind ?? prev.kind,
     name: prev.name ?? name(rawInput, update.meta ?? prev.meta),
     meta: update.meta ?? prev.meta,
     rawInput,
@@ -126,20 +119,9 @@ function updatedTool(prev: ToolState, update: ToolChange): ToolState {
   } satisfies ToolState
 }
 
-const pathKey = (item: Spot): string => `${item.path}:${item.line ?? ""}`
-const diffKey = (item: Extract<ToolCallContent, { type: "diff" }>): string =>
+export const pathKey = (item: Spot): string => `${item.path}:${item.line ?? ""}`
+export const diffKey = (item: Extract<ToolCallContent, { type: "diff" }>): string =>
   `${item.path ?? ""}:${item.oldText ?? ""}:${item.newText ?? ""}`
-
-let unserializableContentSeq = 0
-
-function contentKey(item: ToolCallContent): string {
-  try {
-    return `${item.type}:${JSON.stringify(item)}`
-  } catch {
-    unserializableContentSeq += 1
-    return `${item.type}:unserializable:${unserializableContentSeq}`
-  }
-}
 
 function retainedContentKey(item: ToolCallContent): string {
   if (item.type === "diff") return `diff:${diffKey(item)}`
@@ -159,48 +141,7 @@ function mergeItems<T>(left: T[], right: T[] | null | undefined, keyOf: (item: T
   return next
 }
 
-function remember(seen: string[], key: string): boolean {
-  if (!key || seen.includes(key)) return false
-  seen.push(key)
-  boundList(seen, RETAINED_TOOL_ITEMS_MAX)
-  return true
-}
-
-function toolContentEvents(state: ToolState, item: ToolCallContent): AgentRuntimeEvent[] {
-  const key =
-    item.type === "diff" ? diffKey(item) : item.type === "terminal" ? (item.terminalId ?? "") : contentKey(item)
-  const seen = item.type === "diff" ? state.seenDiffs : item.type === "terminal" ? state.seenTerms : state.seenContent
-  if (!remember(seen, key)) return []
-  const tool = viewTool(state)
-  const events: AgentRuntimeEvent[] = [
-    { type: "tool-content", toolCallId: state.id, content: item, display: tool.display, metadata: tool.metadata },
-  ]
-  if (item.type === "diff")
-    events.push({
-      type: "file-diff",
-      toolCallId: state.id,
-      path: item.path ?? "",
-      oldText: item.oldText ?? undefined,
-      newText: item.newText ?? "",
-    })
-  if (item.type === "terminal" && item.terminalId)
-    events.push({ type: "tool-terminal", toolCallId: state.id, terminalId: item.terminalId })
-  return events
-}
-
-export function drainContent(state: ToolState, content: ToolCallContent[] | null | undefined): AgentRuntimeEvent[] {
-  return (content ?? []).flatMap((item) => toolContentEvents(state, item))
-}
-
-export function drainSpots(state: ToolState, locations: Spot[] | null | undefined): AgentRuntimeEvent[] {
-  const next = (locations ?? [])
-    .filter((item) => remember(state.seenSpots, pathKey(item)))
-    .map((item) => ({ path: item.path, ...(item.line != null ? { line: item.line } : {}) }))
-  return next.length ? [{ type: "tool-location", toolCallId: state.id, locations: next }] : []
-}
-
 export interface TranslatorContext {
   state: SessionState
   diagnostics: AcpDiagnostics
-  preserveUserMessageChunks?: boolean
 }

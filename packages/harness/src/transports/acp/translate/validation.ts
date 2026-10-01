@@ -1,5 +1,5 @@
 import { isRecord, asRecord } from "@claxedo/agent-runtime-contract"
-import type { ContentBlock, ToolCallContent } from "./types"
+import type { ContentBlock, ToolCallContent } from "@agentclientprotocol/sdk"
 import { own } from "../../../translate/value"
 import { diagnoseTranslation, shape, type AcpDiagnostics, type AcpTranslationDiagnostic } from "./diagnostics"
 
@@ -40,8 +40,14 @@ export function safeRawOutput(value: unknown, ctx: ValidationContext) {
   return value
 }
 
-function safeItems<T>(value: unknown, ctx: ValidationContext, event: AcpTranslationDiagnostic,
-  arrayReason: string, itemReason: string, decode: (item: unknown) => T | undefined) {
+function safeItems<T>(
+  value: unknown,
+  ctx: ValidationContext,
+  event: AcpTranslationDiagnostic,
+  arrayReason: string,
+  itemReason: string,
+  decode: (item: unknown) => T | undefined,
+) {
   if (value === undefined || value === null) return value
   if (!Array.isArray(value)) {
     malformed(ctx, event, arrayReason, value)
@@ -66,23 +72,38 @@ export function safeLocations(value: unknown, ctx: ValidationContext) {
 }
 
 export function safeContent(value: unknown, ctx: ValidationContext) {
-  return safeItems(value, ctx, "acp.dropped_content", "content_not_array", "content_item_invalid",
-    (item) => isToolCallContent(item) ? item : undefined)
+  return safeItems(value, ctx, "acp.dropped_content", "content_not_array", "content_item_invalid", (item) =>
+    isToolCallContent(item) ? item : undefined,
+  )
 }
 
+const CONTENT_BLOCK_TYPES = {
+  text: true,
+  image: true,
+  audio: true,
+  resource_link: true,
+  resource: true,
+} satisfies Record<ContentBlock["type"], true>
 
-const contentFields: Record<ContentBlock["type"], readonly string[]> = {
-  text: ["text"], image: ["mimeType", "data"], audio: ["mimeType", "data"],
-  resource_link: ["uri", "name"], resource: ["resource"],
-}
-
-export function isContentBlock(value: unknown): value is ContentBlock {
+function isContentBlock(value: unknown): value is ContentBlock {
   const row = asRecord(value)
-  const fields = typeof row?.type === "string" ? own(contentFields, row.type) : undefined
-  return !!fields && fields.every((field) => row!.type === "resource" ? isRecord(row![field]) : typeof row![field] === "string")
+  if (!row) return false
+  switch (row.type) {
+    case "text":
+      return typeof row.text === "string"
+    case "image":
+    case "audio":
+      return typeof row.mimeType === "string" && typeof row.data === "string"
+    case "resource_link":
+      return typeof row.uri === "string" && typeof row.name === "string"
+    case "resource":
+      return isRecord(row.resource)
+    default:
+      return false
+  }
 }
 
-export function isToolCallContent(value: unknown): value is ToolCallContent {
+function isToolCallContent(value: unknown): value is ToolCallContent {
   const row = asRecord(value)
   if (!row) return false
   switch (row.type) {
@@ -97,14 +118,14 @@ export function isToolCallContent(value: unknown): value is ToolCallContent {
   }
 }
 
-export type ContentBlockCheck =
+type ContentBlockCheck =
   | { ok: true; block: ContentBlock }
   | { ok: false; reason: "content_missing_type" | "content_missing_required_fields" | "unknown_content_block" }
 
 export function checkContentBlock(value: unknown): ContentBlockCheck {
   const row = asRecord(value)
   if (!row || typeof row.type !== "string") return { ok: false, reason: "content_missing_type" }
-  if (!own(contentFields, row.type)) return { ok: false, reason: "unknown_content_block" }
+  if (!own(CONTENT_BLOCK_TYPES, row.type)) return { ok: false, reason: "unknown_content_block" }
   if (!isContentBlock(value)) return { ok: false, reason: "content_missing_required_fields" }
   return { ok: true, block: value }
 }

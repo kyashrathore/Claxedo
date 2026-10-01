@@ -1,11 +1,9 @@
-import { asText as text } from "@claxedo/agent-runtime-contract"
-import type { AgentRuntimeEvent } from "@claxedo/agent-runtime-contract"
+import { asText as text, type AgentRuntimeEvent } from "@claxedo/agent-runtime-contract"
 import type { SDKMessage } from "@anthropic-ai/claude-agent-sdk"
 import { asRecordOrEmpty } from "@claxedo/helpers/guards"
 import type { HarnessEventAdapter, HarnessEventAdapterContext } from "../../../translate/adapter"
 import type { ClaudeSdkAdapterState, ClaudeTranslation } from "./adapter-state"
 import { translateAssistantMessage } from "./assistant-message"
-import { translateCanUseTool } from "./can-use-tool"
 import { translateRateLimitEvent } from "./rate-limits"
 import { CLAUDE_SUBAGENT_USAGE_METHOD, translateMessageDelta, translateMessageStart, translateMessageStop, translateSubagentUsage } from "./request-stream"
 import { translateResult } from "./result-events"
@@ -14,7 +12,6 @@ import { translateContentBlockDelta, translateContentBlockStart, translateConten
 import { translateSystemMessage } from "./system-message"
 import type { ClaudeTrackedTask } from "./task-tracking"
 import { translateToolResults } from "./tool-results"
-import { claudeTranscriptTitle } from "./transcript-title"
 import { createClaudeTranslatorMemory, type ClaudeTranslatorMemory } from "./translator-memory"
 
 type Frame = { message: Record<string, unknown>; state: ClaudeSdkAdapterState; event: ClaudeFrameEvent; context: HarnessEventAdapterContext;
@@ -33,8 +30,6 @@ export function claudeSdkAdapter(initialTasks: ClaudeTrackedTask[] = [], memory 
 
 function translateClaudeFrame(frame: Frame): ClaudeTranslation {
   const { message, state, event, context, memory } = frame
-  if (event.method === "claude/can-use-tool") return translateCanUseTool(message, context)
-  if (event.method === "claude/session-store") return claudeTranscriptTitle(message)
   if (event.method === CLAUDE_SUBAGENT_USAGE_METHOD) return translateSubagentUsage(state, memory, message)
   const type = text(message.type) ?? "unknown"
   if (ignoredTypes.includes(type)) return []

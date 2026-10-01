@@ -7,7 +7,6 @@ import type { CustomHarnessProvider } from "./registry/providers/types"
 import { connectionTransport, type ConnectionTransportInput } from "./registry/providers/connection"
 import { filterMcpServers } from "./capabilities/mcp-filter"
 import { AcpTransport } from "./transports/acp"
-import type { MissingSessionContext } from "./transports/acp/restore"
 import { PiRpcTransport, type PiRpcOptions } from "./transports/pi-rpc"
 import { CodexAppServerTransport, type CodexTransportOptions } from "./transports/codex-app-server"
 import { ClaudeSdkTransport } from "./transports/claude-sdk"
@@ -17,7 +16,6 @@ export { CURSOR_WORKER_FILE } from "./transports/cursor-sdk"
 import { OpenCodeSdkTransport, type OpenCodeSdkTransportOptions } from "./transports/opencode-sdk/transport"
 
 export type HarnessCompositionOptions = {
-  acp: () => { missingContext: MissingSessionContext }
   pi: (command?: string) => PiRpcOptions
   codex: () => CodexTransportOptions
   claude: () => ClaudeSdkOptions
@@ -30,7 +28,7 @@ export function createHarnessComposer(
   options: HarnessCompositionOptions,
   custom: readonly CustomHarnessProvider<unknown>[] = [],
 ) {
-  const acp = createAcpProvider((config, host) => new AcpTransport(host, config.connection, filterMcpServers, options.acp().missingContext))
+  const acp = createAcpProvider((config, host) => new AcpTransport(host, config.connection, filterMcpServers))
   const pi = createPiRpcProvider((config, host) => {
     const base = options.pi(config.command)
     return new PiRpcTransport(host, {

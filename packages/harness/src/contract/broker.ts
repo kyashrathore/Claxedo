@@ -6,7 +6,6 @@ import type {
   PermissionDecision,
   RuntimeGoalSnapshot,
   SessionConfig,
-  SessionHandoff,
   SubagentObservation,
 } from "@claxedo/agent-runtime-contract"
 import type { AgentRuntimeEvent, AgentRuntimeEventOf } from "@claxedo/agent-runtime-contract"
@@ -103,7 +102,6 @@ export interface SessionBroker {
   ask(request: TurnRequest, options?: { signal?: AbortSignal }): Promise<RequestAnswer>
   completeElicitation(elicitationId: string): Promise<void>
   rebind(upstreamSessionId: string): Promise<HarnessBinding>
-  persistHandoff(context: SessionHandoff): Promise<void>
   admitProviderTurn(
     input: ProviderTurnInput,
     run: (broker: TurnBroker, turn: TurnRef) => AsyncIterable<RoutedEvent>,

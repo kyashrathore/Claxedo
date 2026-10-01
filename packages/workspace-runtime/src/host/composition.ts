@@ -4,8 +4,6 @@ import { sweepHarnessHomeRoot } from "./home-use"
 import { userHomeDir } from "@claxedo/helpers/path"
 import type { HarnessCompositionOptions } from "@claxedo/harness/compose"
 import type { MachineLoginPolicy } from "@claxedo/harness/contract"
-import type { AgentRuntimeStore } from "./contracts"
-import { missingSessionHandoff } from "./handoff"
 import { requireCursorWorker } from "./executables/cursor"
 import { requireClaudeExecutable } from "./executables/claude"
 import { requireCodexExecutable } from "./executables/codex"
@@ -18,7 +16,6 @@ export type HarnessCompositionInput = {
   harnessStateRoot: string
   /** Where the OpenCode engine of this host keeps its database. */
   opencodeRoot: string
-  store: () => AgentRuntimeStore
 }
 
 export function defaultHarnessStateRoot(env: NodeJS.ProcessEnv = process.env): string {
@@ -29,9 +26,6 @@ export function harnessCompositionOptions(input: HarnessCompositionInput): Harne
   const { env, placement, harnessStateRoot } = input
   const home = userHomeDir(env)
   return {
-    acp: () => ({
-      missingContext: async (attach) => missingSessionHandoff(input.store().getMessages(attach.sessionId), attach.config.harness),
-    }),
     pi: (command) => ({
       binary: command ?? requirePiExecutable(env),
       runtime: piRuntime(),

@@ -1,5 +1,4 @@
-import { asText as text } from "@claxedo/agent-runtime-contract"
-import type { AgentRuntimeEvent } from "@claxedo/agent-runtime-contract"
+import { asText as text, type AgentRuntimeEvent } from "@claxedo/agent-runtime-contract"
 import { asRecord } from "@claxedo/helpers/guards"
 import { own } from "../../../translate/value"
 import { withoutKey, type ClaudeSdkAdapterState, type ClaudeTranslation } from "./adapter-state"

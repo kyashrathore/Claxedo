@@ -86,7 +86,6 @@ export function createStoreBrokerPorts(store: RuntimeStore, options: StoreBroker
     publishSubagent: (parentSessionId, event) => events.publishSubagent(parentSessionId, event),
     publishSubagentDiagnostic: (parentSessionId, diagnostic) => events.publishSubagentDiagnostic(parentSessionId, diagnostic),
     rebind: (sessionId, upstreamSessionId) => authority.rebind(sessionId, upstreamSessionId),
-    persistHandoff: (sessionId, context) => authority.persistHandoff(sessionId, context),
     config: (sessionId) => state.config(sessionId),
     reportOwnerFailure: (sessionId, error) => options.reportOwnerFailure(sessionId, error),
     abortProviderTurn: (sessionId) => providerTurns.abort(sessionId),

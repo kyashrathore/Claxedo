@@ -1,22 +1,11 @@
-import { asText as text } from "@claxedo/agent-runtime-contract"
-import type { AgentRuntimeEvent, RuntimeNoticeSeverity } from "@claxedo/agent-runtime-contract"
+import { asText as text, type AgentRuntimeEvent, type RuntimeNoticeSeverity } from "@claxedo/agent-runtime-contract"
 import { asFiniteNumber, asRecord } from "@claxedo/helpers/guards"
-import { own } from "../../../translate/value"
 import { refusalRetraction } from "./responses"
 import { claudeNotice, type ClaudeFrameEvent } from "./sdk-message"
 import type { ClaudeTranslatorMemory } from "./translator-memory"
 
-type Notice = { message: (frame: Record<string, unknown>) => string | undefined; severity?: RuntimeNoticeSeverity }
-
-const noticeProtocolMap: Record<string, Notice> = {
-  notification: { message: (frame) => text(frame.text) },
-  memory_recall: { message: recalledPaths },
-  informational: { message: (frame) => text(frame.content) },
-  model_fallback: { message: fallbackMessage, severity: "warn" },
-  model_consent_fallback: { message: fallbackMessage, severity: "warn" },
-  model_refusal_fallback: { message: fallbackMessage, severity: "warn" },
-  model_refusal_no_fallback: { message: (frame) => text(frame.content), severity: "warn" },
-  mirror_error: { message: (frame) => text(frame.error), severity: "warn" },
+function notice(code: string, message: string | undefined, severity: RuntimeNoticeSeverity = "info") {
+  return message ? [claudeNotice(code, message, severity)] : []
 }
 
 function retryCause(frame: Record<string, unknown>) {
@@ -45,11 +34,25 @@ function fallbackMessage(frame: Record<string, unknown>) {
 }
 
 export function systemNotice(subtype: string, frame: Record<string, unknown>, memory: ClaudeTranslatorMemory, event: ClaudeFrameEvent): AgentRuntimeEvent[] | undefined {
-  if (subtype === "api_retry") return retryEvents(frame)
-  const spec = own(noticeProtocolMap, subtype)
-  if (!spec) return undefined
-  const message = spec.message(frame)
-  const severity = subtype === "informational" && (frame.level === "warning" || frame.prevent_continuation === true) ? "warn" : spec.severity
-  const retracted = subtype === "model_refusal_fallback" ? refusalRetraction(memory, frame.retracted_message_uuids, event) : []
-  return [...retracted, ...(message ? [claudeNotice(subtype, message, severity)] : [])]
+  switch (subtype) {
+    case "api_retry":
+      return retryEvents(frame)
+    case "notification":
+      return notice(subtype, text(frame.text))
+    case "memory_recall":
+      return notice(subtype, recalledPaths(frame))
+    case "informational":
+      return notice(subtype, text(frame.content), frame.level === "warning" || frame.prevent_continuation === true ? "warn" : "info")
+    case "model_fallback":
+    case "model_consent_fallback":
+      return notice(subtype, fallbackMessage(frame), "warn")
+    case "model_refusal_fallback":
+      return [...refusalRetraction(memory, frame.retracted_message_uuids, event), ...notice(subtype, fallbackMessage(frame), "warn")]
+    case "model_refusal_no_fallback":
+      return notice(subtype, text(frame.content), "warn")
+    case "mirror_error":
+      return notice(subtype, text(frame.error), "warn")
+    default:
+      return undefined
+  }
 }

@@ -20,7 +20,7 @@ import type {
 } from "./contracts"
 import { normalizeDirectory as runtimeDirectory, requireExecutionBinding } from "./execution-binding"
 import { createRuntimeGoalController } from "./goal-controller"
-import { announceContextRebuild, announceHandoff } from "./handoff"
+import { announceHandoff } from "./handoff"
 import { createRuntimeLifecycle } from "./lifecycle"
 import { createRuntimeRecovery } from "./recovery"
 import { recoveryWiring } from "./recovery-wiring"
@@ -211,14 +211,9 @@ export function createAgentRuntime(input: AgentRuntimeCompositionInput) {
     const unpin = attached.handle.pin()
     let launched = false
     try {
-      if (!controlTarget && !admissions.active(turn.sessionId) && attached.handle.transport.restore) {
-        attached = { ...attached, session: await attached.handle.transport.restore(attached.session) }
-      }
       const declared = await attached.handle.transport.capabilities({ directory: attached.session.directory, sessionId: turn.sessionId })
       if (lifecycle.closing) throw new Error("AgentRuntime is disposed")
       if (turn.admission && !turn.admission.valid()) throw new Error("Durable session turn admission is no longer valid")
-      // Read after attaching: an attach that replaced a lost native session
-      // persisted the handoff this turn has to carry.
       const config = store.getSessionConfig(turn.sessionId)
       if (!config) throw new Error(`Session ${turn.sessionId} has no runtime config`)
       const directory = session.directory ?? undefined
@@ -276,10 +271,6 @@ export function createAgentRuntime(input: AgentRuntimeCompositionInput) {
           if (turn.admission && !turn.admission.valid()) break
           publish({ sessionId: turn.sessionId, directory, payload })
         }
-        announceContextRebuild({
-          sessionId: turn.sessionId, assistantMessageId, config, binding, store,
-          commit: (event) => commitAndPublish(turn.sessionId, directory, event, { dir: "out", method: "session.context-recovery" }, turn.admission, publish),
-        })
         announceHandoff({
           sessionId: turn.sessionId, userMessageId, directory, config, store,
           closeSource: (harness, source, dir) => sessions.closeSource(harness, source, turn.sessionId, dir, authority),

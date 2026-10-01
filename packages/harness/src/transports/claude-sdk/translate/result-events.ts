@@ -1,5 +1,4 @@
-import { asText as text } from "@claxedo/agent-runtime-contract"
-import type { AgentRuntimeEvent, AgentRuntimeEventOf } from "@claxedo/agent-runtime-contract"
+import { asText as text, type AgentRuntimeEvent, type AgentRuntimeEventOf } from "@claxedo/agent-runtime-contract"
 import type { HarnessEventAdapterContext } from "../../../translate/adapter"
 import type { ClaudeSdkAdapterState, ClaudeTranslation } from "./adapter-state"
 import { rememberContextWindow, resultUsageEvent } from "./request-usage"
