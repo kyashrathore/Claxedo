@@ -8,7 +8,7 @@
  */
 import { describe, expect, test, vi } from "vitest"
 import { createMemoryTasksStore, fakeBridge, presetRow, taskRow } from "@claxedo/tasks/test-support"
-import type { StartPreviewCommand, TasksActor } from "@claxedo/tasks"
+import type { SessionRef, StartPreviewCommand, TasksActor } from "@claxedo/tasks"
 import type { WorkspaceAuthority } from "../platform/auth/authority"
 import type { TasksCapabilityOwner, TasksCapabilityScope } from "./capability"
 import { signedTasksIdentity } from "./contribution"
@@ -48,7 +48,7 @@ function identity(
     ...(options.authorizeRuntimeSession ? { authorizeRuntimeSession: options.authorizeRuntimeSession } : {}),
   } as unknown as WorkspaceAuthority
   const ownerMayReadSession = vi.fn(
-    async (owner: TasksCapabilityOwner, session: { sessionId: string; workspaceId: string | null }) =>
+    async (owner: TasksCapabilityOwner, session: SessionRef) =>
       owner.actorId === ALICE.actorId && SESSION_WORKSPACES[session.sessionId] === session.workspaceId,
   )
   const composed = signedTasksIdentity({

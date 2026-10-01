@@ -18,7 +18,7 @@ import { bearerToken } from "@claxedo/server-core/platform/auth/auth"
 import { AuthenticationError, type RequestAuthenticationAdapter } from "@claxedo/server-core/platform/auth/authentication"
 import { deleteWorkspace, ensureWorkspace, listWorkspaces } from "@claxedo/server-core/workspace/store/index"
 import { memorySandboxPassRegister, type SandboxPassRegister } from "../platform/auth/sandbox-pass-register"
-import type { TasksActor, TasksSessionBridgePort } from "@claxedo/tasks"
+import type { SessionRef, TasksActor, TasksSessionBridgePort } from "@claxedo/tasks"
 import type { TasksRuntimePrincipal } from "@claxedo/server-core/tasks-host/authorization"
 
 import { createHostedCoreApp } from "../deployments/hosted-shared/hosted-core-app"
@@ -573,7 +573,7 @@ describe("hosted Tasks capability", () => {
     const signingEnv = await signing()
     const app = await hostedApp({}, { signingEnv })
     const { token } = await grant(signingEnv)
-    const create = (clientRequestId: string, createdFrom: { workspaceId: string | null; sessionId: string }) =>
+    const create = (clientRequestId: string, createdFrom: SessionRef) =>
       app.request(`https://core.test${TASKS}/commands`, {
         method: "POST",
         headers: bearer(token),
@@ -600,7 +600,7 @@ describe("hosted Tasks capability", () => {
     const signingEnv = await signing()
     const app = await hostedApp({}, { signingEnv })
     const { token } = await rootGrant(signingEnv)
-    const create = (clientRequestId: string, createdFrom: { workspaceId: string | null; sessionId: string }) =>
+    const create = (clientRequestId: string, createdFrom: SessionRef) =>
       app.request(`https://core.test${TASKS}/commands`, {
         method: "POST",
         headers: bearer(token),
@@ -636,7 +636,7 @@ describe("hosted Tasks capability", () => {
     await command(app, "alice", "owner-preset", { ...PRESET, input: { ...PRESET.input, agentStartable: true } })
     const created = await command(app, "alice", "owner-task", TASK)
     const taskId = (created.body.result as { task: { id: string } }).task.id
-    const preview = async (startedFrom: { workspaceId: string | null; sessionId: string }) =>
+    const preview = async (startedFrom: SessionRef) =>
       app.request(`https://core.test${TASKS}/tasks/${taskId}/start-preview`, {
         method: "POST",
         headers: bearer(token),
