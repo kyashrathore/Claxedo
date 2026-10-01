@@ -15,7 +15,7 @@ import { readdirSync } from "node:fs"
 import { readFile } from "node:fs/promises"
 import { fileURLToPath } from "node:url"
 import { Miniflare } from "miniflare"
-import { betterAuthVerifiedEmail } from "../../platform/auth/better-auth-d1-authentication-evidence"
+import { betterAuthAccount } from "../../platform/auth/better-auth-d1-authentication-evidence"
 import { orgInvitationEmailDelivery } from "../../platform/auth/auth-email-delivery"
 import { testRequestAuthenticationAdapter } from "../../test-support/request-authentication"
 import {
@@ -68,7 +68,7 @@ async function hosted() {
       CONTROL_PLANE_DB: controlPlane.database,
     },
     product: { kind: "claxedo-hosted" },
-    invitations: orgInvitationEmailDelivery({ verifiedEmail: (auth) => betterAuthVerifiedEmail({ database: accounts, issuer: "https://auth.test" }, auth.principal?.identity), appOrigin: "https://app.test", sender: { send: async (message) => { sent.push(message) } } }),
+    invitations: orgInvitationEmailDelivery({ verifiedEmail: async (auth) => (await betterAuthAccount({ database: accounts, issuer: "https://auth.test" }, auth.principal?.identity))?.verifiedEmail, appOrigin: "https://app.test", sender: { send: async (message) => { sent.push(message) } } }),
   })
   const principals = new Map<string, ControlPlanePrincipal>()
   const authentication: RequestAuthenticationAdapter = {

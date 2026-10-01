@@ -62,9 +62,13 @@ export type D1AuthorityProductPolicy =
 
 export const USER_DEPLOYED_OWNER_CLAIM_HEADER = "x-claxedo-bootstrap-owner-claim"
 
+/** The display identity a signed caller's sign-in provider holds for them. */
+export type D1ActorProfile = (auth: SignedControlPlaneAuth) => Promise<{ name?: string; image?: string } | undefined>
+
 export type D1WorkspaceAuthorityOptions = {
   deploymentId: string
   product: D1AuthorityProductPolicy
+  actorProfile?: D1ActorProfile
   now?: () => number
   randomId?: (prefix: "usr" | "act" | "org" | "prj" | "team" | "assert" | "audit") => string
 }
@@ -548,11 +552,14 @@ export class D1WorkspaceAuthority implements D1WorkspaceAuthorityCore {
 
   async usersMe(auth: SignedControlPlaneAuth) {
     const who = await this.requirePrincipal(auth)
-    const orgs = await this.organizationRows(who.userId)
+    const [orgs, profile] = await Promise.all([this.organizationRows(who.userId), this.options.actorProfile?.(auth)])
     return {
       user_id: who.userId,
       actor_id: who.actorId,
       actor_kind: "human" as const,
+      actor_public_id: who.userId,
+      actor_name: profile?.name ?? "User",
+      ...(profile?.image ? { actor_avatar_url: profile.image } : {}),
       ...(orgs.length === 1 ? { org_id: orgs[0].org_id } : {}),
     }
   }

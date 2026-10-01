@@ -9,7 +9,7 @@ import { browserAuthHttpSecurity } from "@claxedo/server-core/platform/http/brow
 
 import type { D1AccessContext } from "../d1/access-context"
 import { createD1CoreAuthority, type D1CoreAuthorityBoundary } from "../d1/core-authority"
-import { D1WorkspaceAuthority, USER_DEPLOYED_OWNER_CLAIM_HEADER, type D1AuthorityProductPolicy } from "../d1/workspace-authority"
+import { D1WorkspaceAuthority, USER_DEPLOYED_OWNER_CLAIM_HEADER, type D1ActorProfile, type D1AuthorityProductPolicy } from "../d1/workspace-authority"
 import { createD1HostTunnelTargetResolver } from "../d1/host-tunnel-relay-target"
 import { hostedCredentialsEnabled, hostedOrgCredentials } from "../../../credentials/worker/index"
 import { d1UserAgentConfigRepository } from "../d1/user-agent-config"
@@ -41,7 +41,7 @@ import {
   BETTER_AUTH_INTROSPECTION_CLIENT_ID,
   betterAuthNativeResource,
 } from "../../../platform/auth/better-auth-native-clients"
-import { createBetterAuthD1AuthenticationEvidenceResolver, betterAuthVerifiedEmail } from "../../../platform/auth/better-auth-d1-authentication-evidence"
+import { createBetterAuthD1AuthenticationEvidenceResolver, betterAuthAccount } from "../../../platform/auth/better-auth-d1-authentication-evidence"
 import { createBetterAuthD1RequestAuthenticationAdapter } from "../../../platform/auth/better-auth-d1-request-authentication"
 import { orgInvitationEmailDelivery } from "../../../platform/auth/auth-email-delivery"
 import type { OrgInvitationDelivery } from "@claxedo/server-core/platform/auth/org-access-authority"
@@ -61,6 +61,7 @@ export function composeBetterAuthD1Authority(input: {
   env: BetterAuthD1AuthorityEnv
   product: D1AuthorityProductPolicy
   invitations?: OrgInvitationDelivery
+  actorProfile?: D1ActorProfile
 }): D1CoreAuthorityBoundary {
   if (input.env.CLAXEDO_ADAPTER_PROFILE !== "better-auth-d1") {
     throw new HostedWorkerCompositionError(
@@ -88,6 +89,7 @@ export function composeBetterAuthD1Authority(input: {
     deploymentId: required(input.env.CLAXEDO_DEPLOYMENT_ID, "CLAXEDO_DEPLOYMENT_ID"),
     product: input.product,
     ...(input.invitations ? { invitations: input.invitations } : {}),
+    ...(input.actorProfile ? { actorProfile: input.actorProfile } : {}),
   })
 }
 
@@ -166,8 +168,9 @@ export function composeBetterAuthD1UserDeployedControlPlane(
       CONTROL_PLANE_DB: input.controlPlaneDatabase,
     },
     product: input.product,
+    actorProfile: (auth) => betterAuthAccount({ database: input.authDatabase, issuer: descriptor.issuer }, auth.principal?.identity),
     invitations: orgInvitationEmailDelivery({
-      verifiedEmail: (auth) => betterAuthVerifiedEmail({ database: input.authDatabase, issuer: descriptor.issuer }, auth.principal?.identity),
+      verifiedEmail: async (auth) => (await betterAuthAccount({ database: input.authDatabase, issuer: descriptor.issuer }, auth.principal?.identity))?.verifiedEmail,
       appOrigin: configured.public.appOrigin,
       ...(configured.private.emailSender ? { sender: configured.private.emailSender } : {}),
     }),
@@ -200,7 +203,7 @@ export function composeBetterAuthD1UserDeployedControlPlane(
         ? request?.headers.get(USER_DEPLOYED_OWNER_CLAIM_HEADER)
         : undefined
       if (claim) return await authority.claimUserDeployedOwner(identity, claim)
-      const email = await betterAuthVerifiedEmail({ database: input.authDatabase, issuer: descriptor.issuer }, identity)
+      const email = (await betterAuthAccount({ database: input.authDatabase, issuer: descriptor.issuer }, identity))?.verifiedEmail
       const admitted = email ? await authority.admitInvitedIdentity(identity, email) : undefined
       return admitted?.state === "active" ? admitted : existing
     },
