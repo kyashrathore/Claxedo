@@ -1372,7 +1372,7 @@ describe("D1 latest views", () => {
 })
 
 describe("D1 session authority, shares of a session this plane never registered", () => {
-  test("answers the organization it belongs to and refuses everyone else", async () => {
+  test("answer its workspace's owner, and refuse everyone else exactly as for another person's or an unknown session", async () => {
     const input = await setup()
     const { alice, outsider } = await sharedWorkspace(input)
     const teammate = await signed(input.workspace, "teammate")
@@ -1381,15 +1381,23 @@ describe("D1 session authority, shares of a session this plane never registered"
       userPublicId: teammate.principal!.userId,
       role: "member",
     })
+    await reserveAndRegister(input.sessions, alice, { operationId: "op_a", sessionId: "ses_a" })
+    const refusal = async (who: SignedControlPlaneAuth, sessionId: string, workspaceId = "ws_main") => {
+      const error = await input.sessions.listSessionShares(who, { sessionId, workspaceId })
+        .then(() => undefined, (cause: unknown) => cause as { code?: string; status?: number })
+      return { code: error?.code, status: error?.status }
+    }
 
-    await expect(input.sessions.listSessionShares(teammate, {
+    await expect(input.sessions.listSessionShares(alice, {
       sessionId: "ses_created_on_the_machine",
       workspaceId: "ws_main",
     })).resolves.toEqual({ can_manage_shares: false, grants: [], participants: [], teams: [] })
-    await expect(input.sessions.listSessionShares(outsider, {
-      sessionId: "ses_created_on_the_machine",
-      workspaceId: "ws_main",
-    })).rejects.toMatchObject({ code: "workspace_authorization_denied" })
+    const denied = { code: "workspace_authorization_denied", status: 403 }
+    for (const who of [teammate, outsider]) {
+      expect(await refusal(who, "ses_created_on_the_machine")).toEqual(denied)
+      expect(await refusal(who, "ses_a")).toEqual(denied)
+      expect(await refusal(who, "ses_a", "ws_unknown")).toEqual(denied)
+    }
   })
 })
 

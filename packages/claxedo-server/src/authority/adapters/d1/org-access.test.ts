@@ -301,16 +301,45 @@ describe("D1 team project grants", () => {
     await expect(authority.grantTeamProject!(outsider, { teamId: otherTeam.team_id, projectId, role: "editor" }))
       .rejects.toMatchObject({ code: "project_not_found" })
     await expect(authority.grantTeamProject!(alice, { teamId: otherTeam.team_id, projectId, role: "editor" }))
-      .rejects.toMatchObject({ code: "org_admin_required" })
+      .rejects.toMatchObject({ code: "team_not_found" })
     await expect(authority.addTeamMember!(alice, { teamId: acmeTeam.team_id, userPublicId: id(outsider) }))
       .rejects.toMatchObject({ code: "team_member_org_membership_required" })
     await expect(authority.addTeamMember!(alice, { teamId: acmeTeam.team_id, providerSubject: "no-such-account" }))
       .rejects.toMatchObject({ code: "team_member_org_membership_required" })
     await expect(authority.grantTeamProject!(bob, { teamId: acmeTeam.team_id, projectId, role: "editor" }))
-      .rejects.toMatchObject({ code: "org_admin_required" })
+      .rejects.toMatchObject({ code: "team_not_found" })
     await expect(authority.revokeTeamProject!(bob, { teamId: acmeTeam.team_id, projectId }))
-      .rejects.toMatchObject({ code: "org_admin_required" })
+      .rejects.toMatchObject({ code: "team_not_found" })
     expect(await authority.listTeamProjects!(outsider, { teamId: acmeTeam.team_id })).toEqual([])
+  })
+})
+
+describe("D1 organization and team lookups", () => {
+  test("an organization or team the caller cannot administer answers exactly as one that does not exist", async () => {
+    const { authority, alice, bob, outsider, projectId, database } = await setup()
+    await inviteOrgMember(database, alice, { orgId: "org_acme", userPublicId: id(bob), role: "member" })
+    const acmeTeam = (await authority.createTeamInOrg!(alice, { orgId: "org_acme", name: "Eng" })) as { team_id: string }
+    const refusal = async (attempt: Promise<unknown>) => {
+      const error = await attempt.then(() => undefined, (cause: unknown) => cause as { code?: string; status?: number })
+      return { code: error?.code, status: error?.status }
+    }
+
+    expect(await refusal(authority.createTeamInOrg!(bob, { orgId: "org_other", name: "X" })))
+      .toEqual(await refusal(authority.createTeamInOrg!(bob, { orgId: "org_missing", name: "X" })))
+    for (const who of [bob, outsider]) {
+      const missingOrg = await refusal(authority.createTeamInOrg!(who, { orgId: "org_missing", name: "X" }))
+      expect(await refusal(authority.createTeamInOrg!(who, { orgId: "org_acme", name: "X" }))).toEqual(missingOrg)
+      expect(await refusal(authority.ensureDefaultTeam!(who, { orgId: "org_acme" })))
+        .toEqual(await refusal(authority.ensureDefaultTeam!(who, { orgId: "org_missing" })))
+      for (const change of [
+        (teamId: string) => authority.addTeamMember!(who, { teamId, userPublicId: id(bob) }),
+        (teamId: string) => authority.removeTeamMember!(who, { teamId, userPublicId: id(bob) }),
+        (teamId: string) => authority.grantTeamProject!(who, { teamId, projectId, role: "editor" }),
+        (teamId: string) => authority.revokeTeamProject!(who, { teamId, projectId }),
+      ]) {
+        expect(await refusal(change(acmeTeam.team_id))).toEqual(await refusal(change("team_missing")))
+      }
+    }
   })
 })
 

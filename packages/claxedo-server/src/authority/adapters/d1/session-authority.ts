@@ -1333,13 +1333,11 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
     const sessionId = requireText(args.sessionId, "sessionId")
     const workspaceId = requireText(args.workspaceId, "workspaceId")
     const session = await this.requireSessionAccess(who, sessionId, workspaceId, "read").catch(async (err) => {
-      // A session the control plane does not hold — one a machine created in
-      // a workspace it serves and never registered — has no shares here and
-      // none to manage. There is no standing on it to ask about, so the
-      // definite empty answer goes to the organization that owns the
-      // workspace, which is also who a share could have been offered to.
+      // A session a machine created and never registered is its workspace
+      // owner's, with no shares to manage. To anyone else it, an unknown
+      // workspace and another person's session are the same refusal.
       if (!(err instanceof ControlPlaneAuthError)) throw err
-      await this.requireOrganizationStanding(who, workspaceId)
+      if (!(await may(this.database, who, "open", { kind: "workspace", workspaceId }))) throw err
       return undefined
     })
     if (!session) return { can_manage_shares: false, grants: [], participants: [], teams: [] }
@@ -2107,15 +2105,6 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
     if (!session) throw denied()
     const { owns, ...row } = session
     return { ...row, role: owns === 1 ? "owner" : "viewer" }
-  }
-
-  private async requireOrganizationStanding(actor: Principal, workspaceId: string) {
-    const member = maySql(actor, "member", { kind: "org", orgId: "w.org_id" })
-    const row = await this.database
-      .prepare(`select 1 from workspaces w where w.workspace_id = ? and w.deleted_at is null and ${member.sql}`)
-      .bind(workspaceId, ...member.bind)
-      .first()
-    if (!row) throw denied()
   }
 
   private async requireWorkspace(actor: Principal, workspaceId: string, action: WorkspaceAction) {
