@@ -45,7 +45,7 @@ export async function run() {
     await api.promptAsync(directory, other.id, acpScriptToken("h3-foreign"))
     const foreign = await pending(api, stream, directory, other.id, "Other session request")
     const beforeForeign = await readPermissionReceipts(stack.acp.scriptDir)
-    await refused(() => api.replyPermission(directory, session.id, foreign.id, "once"), 409)
+    await refused(() => api.replyPermission(directory, session.id, foreign.id, "once"), 404)
     assert.deepEqual(await readPermissionReceipts(stack.acp.scriptDir), beforeForeign, "foreign reply reached the agent")
     await api.replyPermission(directory, other.id, foreign.id, "reject")
     await api.replyPermission(directory, session.id, once.id, "once")
@@ -99,7 +99,7 @@ export async function run() {
     assert.equal(permissionFrames(stream, session.id, "permission.asked").length, 4)
     assert.equal(permissionFrames(stream, session.id, "permission.replied").length, 5)
     assert.deepEqual(stack.egress.attempts, [])
-    console.log("H3 ACP: once, always, deny, refused 409/404 replies; live frames, stored tools, session and permission readbacks passed")
+    console.log("H3 ACP: once, always, deny, refused 404 replies; live frames, stored tools, session and permission readbacks passed")
   } finally {
     await stack.close()
   }

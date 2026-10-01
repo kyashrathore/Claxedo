@@ -449,6 +449,17 @@ describe("hosted managed documents and session write-back", () => {
     })
   })
 
+  test("hosted index keeps a page's creator for the page's whole life", async () => {
+    const storage = emulator()
+    const index = createHostedDocumentIndex(storage.store)
+    await index.create(indexEntry())
+
+    await expect(
+      index.update({ orgId: "org_1", projectId: "project_1" }, "document_1", { creator_id: "user_2" }),
+    ).rejects.toMatchObject({ code: "document_index_identity_immutable" })
+    expect((await index.find("org_1", "document_1"))?.creator_id).toBe("user_1")
+  })
+
   test("hosted index ignores locator-less objects and never mutates them", async () => {
     const storage = emulator()
     const index = createHostedDocumentIndex(storage.store)

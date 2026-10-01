@@ -2,7 +2,7 @@ import type { D1Database } from "@cloudflare/workers-types"
 import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import type { WorkspaceAuthority } from "@claxedo/server-core/platform/auth/authority"
 import { accessChangeRowSql, requireHuman, type HumanPrincipal } from "./access-context"
-import { maySql } from "./authorization"
+import { maySql, type BoundSql } from "./authorization"
 
 export const D1_AUDIT_AUTHORITY_METHODS = ["auditDeny", "auditAllow"] as const satisfies readonly (keyof WorkspaceAuthority)[]
 export type D1AuditAuthorityPort = Pick<WorkspaceAuthority, (typeof D1_AUDIT_AUTHORITY_METHODS)[number]>
@@ -21,7 +21,6 @@ export type D1AuditAuthorityOptions = {
 }
 
 type Principal = HumanPrincipal
-type WorkspaceRow = { workspace_id: string; org_id: string; project_id: string }
 
 const AUDIT_METADATA_KEYS = new Set([
   "activeLeases",
@@ -116,31 +115,33 @@ export class D1AuditAuthority implements D1AuditAuthorityPort {
     workspaceId?: string
     metadata?: string
   }) {
-    const workspace = who && input.workspaceId
-      ? await this.attributedWorkspace(who, input.workspaceId)
-      : undefined
-    const attemptedWorkspaceId = input.workspaceId && !workspace ? input.workspaceId : null
+    const opens: BoundSql = who && input.workspaceId
+      ? maySql(who, "open", { kind: "workspace", alias: "w" })
+      : { sql: "0", bind: [] }
     const now = this.now()
     await this.database.batch([
       this.database.prepare(`
         insert into authority_audit_events (
           event_id, deployment_id, user_id, actor_id, org_id, project_id, workspace_id,
           unverified_attempted_workspace_id, action, result, reason, metadata_json, created_at
-        ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        )
+        select ?, ?, ?, ?, w.org_id, w.project_id, w.workspace_id,
+          case when w.workspace_id is null then ? end, ?, ?, ?, ?, ?
+        from (select 1) audit_row
+        left join workspaces w on w.workspace_id = ? and ${opens.sql}
       `).bind(
         this.randomId(),
         this.options.deploymentId,
         who?.userId ?? null,
         who?.actorId ?? null,
-        workspace?.org_id ?? null,
-        workspace?.project_id ?? null,
-        workspace?.workspace_id ?? null,
-        attemptedWorkspaceId,
+        input.workspaceId ?? null,
         input.action,
         input.result,
         input.reason ?? null,
         input.metadata ?? null,
         now,
+        input.workspaceId ?? null,
+        ...opens.bind,
       ),
       this.database.prepare(`
         delete from authority_audit_events
@@ -152,13 +153,6 @@ export class D1AuditAuthority implements D1AuditAuthorityPort {
         )
       `).bind(this.options.deploymentId, this.options.deploymentId, this.retentionLimit),
     ])
-  }
-
-  private async attributedWorkspace(who: Principal, workspaceId: string) {
-    const opens = maySql(who, "open", { kind: "workspace", alias: "w" })
-    return await this.database.prepare(`
-      select w.workspace_id, w.org_id, w.project_id from workspaces w where w.workspace_id = ? and ${opens.sql}
-    `).bind(workspaceId, ...opens.bind).first<WorkspaceRow>()
   }
 
   private async tryPrincipal(auth: SignedControlPlaneAuth) {

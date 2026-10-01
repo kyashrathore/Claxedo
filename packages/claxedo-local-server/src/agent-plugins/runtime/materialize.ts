@@ -383,8 +383,8 @@ export async function materializeAgentPluginGeneration(input: {
 
 /**
  * The launch rows the workspace runtime turns into each harness's
- * `StartInput.projection`. The ACP projection is not a launch row: custom
- * connections take it as the snapshot's MCP map (`agentPluginAcpMcp`).
+ * `StartInput.projection`. ACP's MCP servers travel separately in the
+ * snapshot's MCP map, so its launch row carries plugin roots only.
  */
 export function agentPluginHarnessLaunch(
   generation: Pick<MaterializedAgentPluginGeneration, "generationId" | "execution" | "projections"> | undefined,
@@ -392,7 +392,7 @@ export function agentPluginHarnessLaunch(
   const result: Record<string, Record<string, unknown>> = {}
   if (!generation) return result
   for (const [harnessId, projection] of Object.entries(generation.projections)) {
-    if (!projection || harnessId === "acp") continue
+    if (!projection) continue
     result[harnessId] = {
       generation: generation.generationId,
       execution: generation.execution,

@@ -5,6 +5,7 @@ import { afterEach, describe, expect, test } from "vitest"
 import { validatePluginTree } from "@claxedo/server-core/agent-plugins/catalog/validate-plugin"
 import { loadAgentPluginTreeFromDirectory } from "@claxedo/server-core/agent-plugins/artifacts/node-tree"
 import { claudeAgentPluginAdapter } from "./claude"
+import { acpAgentPluginAdapter } from "./acp"
 
 const roots: string[] = []
 async function temporary(prefix: string) {
@@ -14,8 +15,8 @@ async function temporary(prefix: string) {
 }
 afterEach(async () => Promise.all(roots.splice(0).map((root) => fs.rm(root, { recursive: true, force: true }))))
 
-describe("claudeAgentPluginAdapter", () => {
-  test("creates one Claude directory plugin without writing user configuration", async () => {
+describe("Claude directory plugin adapters", () => {
+  test.each([claudeAgentPluginAdapter(), acpAgentPluginAdapter()])("$harnessId creates one Claude directory view without duplicating MCP delivery", async (adapter) => {
     const pluginRoot = await temporary("claxedo-standard-plugin-")
     const generationRoot = await temporary("claxedo-generation-")
     const dataRoot = await temporary("claxedo-plugin-data-")
@@ -38,7 +39,8 @@ describe("claudeAgentPluginAdapter", () => {
     const validated = validatePluginTree(await loadAgentPluginTreeFromDirectory(pluginRoot), pluginRoot)
     if (validated.status !== "valid") throw new Error("invalid fixture")
 
-    const result = await claudeAgentPluginAdapter().project({
+    await fs.writeFile(path.join(pluginRoot, ".mcp.json"), JSON.stringify({ mcpServers: { stale: { command: "stale-server" } } }))
+    const result = await adapter.project({
       generationRoot,
       plugins: [{ pluginInstanceId: "claxedo/review", artifactDigest: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", plugin: validated.plugin, root: pluginRoot, dataRoot }],
     })
@@ -48,11 +50,19 @@ describe("claudeAgentPluginAdapter", () => {
       name: "review",
       version: "1.0.0",
     })
-    expect(JSON.parse(await fs.readFile(path.join(view, ".mcp.json"), "utf8"))).toMatchObject({
-      mcpServers: { review: { command: "review-server", args: [`${dataRoot}/state`] } },
-    })
-    expect(JSON.parse(await fs.readFile(path.join(view, ".mcp.json"), "utf8")).mcpServers.cwd).toBeUndefined()
-    expect(result.notApplied).toEqual([{ item: expect.stringMatching(/^review-[0-9a-f]{8}-cwd$/), reason: "unsupported-by-harness" }])
+    if (adapter.harnessId === "claude") {
+      expect(JSON.parse(await fs.readFile(path.join(view, ".mcp.json"), "utf8"))).toMatchObject({
+        mcpServers: { review: { command: "review-server", args: [`${dataRoot}/state`] } },
+      })
+      expect(JSON.parse(await fs.readFile(path.join(view, ".mcp.json"), "utf8")).mcpServers.cwd).toBeUndefined()
+      expect(result.notApplied).toEqual([{ item: expect.stringMatching(/^review-[0-9a-f]{8}-cwd$/), reason: "unsupported-by-harness" }])
+    } else {
+      await expect(fs.stat(path.join(view, ".mcp.json"))).rejects.toMatchObject({ code: "ENOENT" })
+      const config = JSON.parse(await fs.readFile(result.configFile!, "utf8"))
+      expect(Object.values(config.servers)).toContainEqual(expect.objectContaining({ command: "review-server", args: [`${dataRoot}/state`] }))
+      expect(Object.values(config.servers)).toContainEqual(expect.objectContaining({ cwd: path.join(pluginRoot, "data") }))
+      expect(result.notApplied).toEqual([])
+    }
     expect(await fs.stat(path.join(view, "skills", "review", "SKILL.md")).then((item) => item.isFile())).toBe(true)
   })
 })

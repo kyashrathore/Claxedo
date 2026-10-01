@@ -980,19 +980,22 @@ export function createSqliteWorkspaceAuthority(
       })()
       return { team_id: teamId, name, role: "owner" as const }
     },
+    /**
+     * Creates the organization's default team with every member on it, and an
+     * editor grant on each project it never had one on. A team that exists
+     * keeps its members as its admins left them: removal deletes the row, so
+     * re-seeding would put removed members back.
+     */
     async ensureDefaultTeam(auth: SignedControlPlaneAuth, args: { orgId: string }) {
       const db = database()
       const who = user(auth)
-      const org = db.prepare<unknown[], { org_id: string; kind: string; name: string; owner_token_identifier: string }>(`SELECT org_id, kind, name, owner_token_identifier FROM orgs WHERE org_id = ? AND deleted_at IS NULL`)
-        .get(args.orgId)
-      if (!org) throw new PublicApiError("organization_not_found", "Organization not found")
-      if (org.kind === "personal") return { skipped: true as const }
-      const membership = db.prepare(`
-        SELECT 1 FROM org_memberships WHERE org_id = ? AND token_identifier = ?
-      `).get(args.orgId, who.token_identifier)
-      if (!membership && org.owner_token_identifier !== who.token_identifier) throw new PublicApiError("org_membership_required", "org_membership_required")
       const now = Date.now()
       return db.transaction(() => {
+        const org = db.prepare<unknown[], { kind: string; name: string }>(`SELECT kind, name FROM orgs WHERE org_id = ? AND deleted_at IS NULL`)
+          .get(args.orgId)
+        if (!org) throw new PublicApiError("organization_not_found", "Organization not found")
+        if (org.kind === "personal") return { skipped: true as const }
+        if (!orgAdminForUser(db, who, args.orgId)) throw new PublicApiError("org_admin_required", "org_admin_required")
         let defaultTeam = db.prepare<unknown[], { team_id: string }>(`
           SELECT team_id FROM teams WHERE org_id = ? AND is_default = 1 AND deleted_at IS NULL
         `).get(args.orgId)
@@ -1003,20 +1006,11 @@ export function createSqliteWorkspaceAuthority(
             VALUES (?, ?, ?, 1, ?, ?, ?)
           `).run(teamId, args.orgId, org.name || "Everyone", who.token_identifier, now, now)
           defaultTeam = { team_id: teamId }
-        }
-        const orgMembers = db.prepare<unknown[], { token_identifier: string; role: string }>(`
-          SELECT token_identifier, role FROM org_memberships WHERE org_id = ?
-        `).all(args.orgId)
-        for (const member of orgMembers) {
-          const existing = db.prepare(`
-            SELECT 1 FROM team_memberships WHERE team_id = ? AND user_token_identifier = ?
-          `).get(defaultTeam.team_id, member.token_identifier)
-          if (existing) continue
-          const role = member.role === "owner" || member.role === "admin" ? member.role : "member"
           db.prepare(`
             INSERT INTO team_memberships (team_id, user_token_identifier, role, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?)
-          `).run(defaultTeam.team_id, member.token_identifier, role, now, now)
+            SELECT ?, token_identifier, CASE WHEN role IN ('owner', 'admin') THEN role ELSE 'member' END, ?, ?
+            FROM org_memberships WHERE org_id = ?
+          `).run(teamId, now, now, args.orgId)
         }
         const projects = db.prepare<unknown[], { project_id: string }>(`
           SELECT project_id FROM projects WHERE org_id = ? AND deleted_at IS NULL
@@ -1032,36 +1026,7 @@ export function createSqliteWorkspaceAuthority(
             ) VALUES (?, ?, 'editor', ?, ?)
           `).run(defaultTeam.team_id, project.project_id, who.token_identifier, now)
         }
-
-        // D18: retarget interim org-scoped shares onto the default team.
-        let sessionSharesRetargeted = 0
-        const orgSessionShares = db.prepare<unknown[], { grant_id: string; session_id: string }>(`
-          SELECT grant_id, session_id FROM session_share_grants
-          WHERE granted_to_org_id = ? AND revoked_at IS NULL
-        `).all(args.orgId)
-        for (const share of orgSessionShares) {
-          const existingTeam = db.prepare<unknown[], { grant_id: string }>(`
-            SELECT grant_id FROM session_share_grants
-            WHERE session_id = ? AND granted_to_team_id = ? AND revoked_at IS NULL
-          `).get(share.session_id, defaultTeam.team_id)
-          if (existingTeam) {
-            db.prepare(`UPDATE session_share_grants SET revoked_at = ? WHERE grant_id = ?`)
-              .run(now, share.grant_id)
-            continue
-          }
-          db.prepare(`
-            UPDATE session_share_grants
-            SET granted_to_org_id = NULL, granted_to_team_id = ?
-            WHERE grant_id = ?
-          `).run(defaultTeam.team_id, share.grant_id)
-          sessionSharesRetargeted += 1
-        }
-
-        return {
-          team_id: defaultTeam.team_id,
-          org_id: args.orgId,
-          session_shares_retargeted: sessionSharesRetargeted,
-        }
+        return { team_id: defaultTeam.team_id, org_id: args.orgId }
       })()
     },
     async addTeamMember(auth: SignedControlPlaneAuth, args: {
@@ -2553,39 +2518,24 @@ export function createSqliteWorkspaceAuthority(
         }
         return []
       })
-      const tokenIdentifiers = new Set<string>()
+      // This store records only the workspace owner's runtime tokens, so a
+      // share admitted none and ending it revokes none.
       for (const grant of grants) {
         db.prepare(`UPDATE session_share_grants SET revoked_at = ? WHERE grant_id = ?`).run(now, grant.grant_id)
-        if (grant.granted_to_user_token_identifier) tokenIdentifiers.add(grant.granted_to_user_token_identifier)
-        if (grant.granted_to_org_id) {
-          for (const membership of db.prepare<unknown[], { token_identifier: string }>(`SELECT token_identifier FROM org_memberships WHERE org_id = ?`)
-            .all(grant.granted_to_org_id)) {
-            tokenIdentifiers.add(membership.token_identifier)
-          }
-        }
-        if (grant.granted_to_team_id) {
-          for (const membership of db.prepare<unknown[], { user_token_identifier: string }>(`SELECT user_token_identifier FROM team_memberships WHERE team_id = ?`)
-            .all(grant.granted_to_team_id)) {
-            tokenIdentifiers.add(membership.user_token_identifier)
-          }
-        }
       }
-      return {
-        revoked: true,
-        runtime_tokens_revoked: revokeRuntimeTokensForUsers(db, args.workspaceId, [...tokenIdentifiers]),
-        revokedTargets,
-      }
+      return { revoked: true, runtime_tokens_revoked: 0, revokedTargets }
     },
     async listSessionShares(auth: SignedControlPlaneAuth, args) {
       const db = database()
       const who = user(auth)
       const workspace = workspaceByPublicId(db, args.workspaceId)
-      if (!workspace || workspace.deleted_at) throw new PublicApiError("session_not_found", "Session not found")
+      if (!workspace || workspace.deleted_at) throw new PublicApiError("session_share_admin_required", "session_share_admin_required")
       const session = db.prepare<unknown[], SessionRow>(`SELECT * FROM session_history WHERE session_id = ?`).get(args.sessionId)
-      // A session this authority does not hold has no shares here and none to
-      // manage — a definite answer for anyone the session admits, not an error.
+      // A session a machine created and never registered is its workspace
+      // owner's, with no shares to manage; to anyone else it is refused like
+      // another person's session.
       if (!session || session.workspace_id !== args.workspaceId || session.deleted_at) {
-        if (!orgMemberForUser(db, who, workspace.org_id)) throw new PublicApiError("session_share_admin_required", "session_share_admin_required")
+        if (!workspaceRoleForUser(db, workspace, who)) throw new PublicApiError("session_share_admin_required", "session_share_admin_required")
         return { can_manage_shares: false, grants: [], teams: [] }
       }
       if (workspace.owner_token_identifier !== who.token_identifier) {

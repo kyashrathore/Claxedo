@@ -1,7 +1,7 @@
-import { afterEach, expect, test } from "vitest"
+import { afterEach, describe, expect, test } from "vitest"
 import { Miniflare } from "miniflare"
 import { Hono } from "hono"
-import type { D1Database } from "@cloudflare/workers-types"
+import type { D1Database, D1PreparedStatement } from "@cloudflare/workers-types"
 import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import { DocumentsRoutes } from "@claxedo/server-core/documents/routes/index"
 import { PublicDocumentRoutes } from "@claxedo/server-core/documents/routes/public"
@@ -86,9 +86,19 @@ async function fixture() {
   }
   await authority.addTeamMember!(creator, { teamId: team.team_id, userPublicId: people.get("teammate")!.user.subject })
   const queries = { count: 0 }
+  // A step run just before the next batch, the share write, reaches D1, where
+  // a concurrent writer lands in production.
+  let beforeShareWrite: (() => Promise<unknown>) | undefined
   const counted = new Proxy(database as D1Database, {
     get(target, property) {
       if (property === "prepare") return (sql: string) => (queries.count++, target.prepare(sql))
+      if (property === "batch")
+        return async (statements: D1PreparedStatement[]) => {
+          const step = beforeShareWrite
+          beforeShareWrite = undefined
+          if (step) await step()
+          return await target.batch(statements)
+        }
       const value = Reflect.get(target, property)
       return typeof value === "function" ? value.bind(target) : value
     },
@@ -122,7 +132,27 @@ async function fixture() {
   })
   expect(created.status).toBe(201)
   const page = (await created.json()) as { id: string }
-  return { database, people, backend, request, page, team, project, queries }
+  const shareRows = async (documentId = page.id) =>
+    (
+      await database
+        .prepare("select target, target_id, revoked_at from document_shares where document_id = ? order by id")
+        .bind(documentId)
+        .all()
+    ).results
+  return {
+    database,
+    people,
+    backend,
+    request,
+    page,
+    team,
+    project,
+    queries,
+    shareRows,
+    beforeShareWrite: (step: () => Promise<unknown>) => {
+      beforeShareWrite = step
+    },
+  }
 }
 
 test("real D1 membership and R2 content enforce creator, person and team shares without admin overrides", async () => {
@@ -232,4 +262,60 @@ test("real D1 stores only the link hash and a revoked link cannot read R2", asyn
   expect((await f.request("", `/p/${share.token}`, "PUT", { markdown: "changed" })).status).toBe(404)
   expect((await f.request("creator", `${path}/shares`, "DELETE", { share_id: share.id })).status).toBe(204)
   expect((await f.request("", `/p/${share.token}`)).status).toBe(404)
+})
+
+describe("a share write re-asks every standing it was admitted under", () => {
+  const sharePage = (f: Awaited<ReturnType<typeof fixture>>, body: unknown, user = "creator", page = f.page.id) =>
+    f.request(user, `/documents/${page}/shares`, "POST", body)
+
+  test.each([
+    ["person", "update users set state = 'suspended', suspended_at = 1 where user_id = ?", "subject"],
+    ["actor", "update actors set state = 'suspended' where actor_id = ?", "actor"],
+  ] as const)("a creator whose %s is suspended before the insert shares nothing", async (_, suspend, id) => {
+    const f = await fixture()
+    const creator = f.people.get("creator")!
+    f.beforeShareWrite(() =>
+      f.database.prepare(suspend).bind(id === "actor" ? creator.principal!.actorId : creator.user.subject).run(),
+    )
+    const response = await sharePage(f, { target: "person", target_id: f.people.get("member")!.user.subject, level: "view" })
+    expect(response.status).toBe(404)
+    expect(await f.shareRows()).toEqual([])
+  })
+
+  test.each([
+    ["a person who leaves the organization", "person", "update org_memberships set revoked_at = 1 where org_id = 'org_pages' and user_id = ?"],
+    ["a team deleted", "team", "update teams set deleted_at = 1 where team_id = ?"],
+  ] as const)("%s before the insert is granted nothing", async (_, target, removal) => {
+    const f = await fixture()
+    const targetId = target === "team" ? f.team.team_id : f.people.get("member")!.user.subject
+    f.beforeShareWrite(() => f.database.prepare(removal).bind(targetId).run())
+    const response = await sharePage(f, { target, target_id: targetId, level: "view" })
+    expect(response.status).toBe(400)
+    expect(await response.json()).toMatchObject({ error: { code: "document_share_target_outside_organization" } })
+    expect(await f.shareRows()).toEqual([])
+  })
+
+  test("a creator who leaves the organization before the revoke leaves the share in place", async () => {
+    const f = await fixture()
+    const creator = f.people.get("project-admin")!.user.subject
+    const created = await f.request("project-admin", "/documents", "POST", {
+      project_id: f.project.project_id,
+      display_name: "Theirs",
+      markdown: "theirs",
+    })
+    expect(created.status).toBe(201)
+    const page = ((await created.json()) as { id: string }).id
+    const shared = await sharePage(f, { target: "person", target_id: f.people.get("member")!.user.subject, level: "view" }, "project-admin", page)
+    expect(shared.status).toBe(201)
+    const share = (await shared.json()) as { id: string }
+    f.beforeShareWrite(() =>
+      f.database
+        .prepare("update org_memberships set revoked_at = 1 where org_id = 'org_pages' and user_id = ?")
+        .bind(creator)
+        .run(),
+    )
+    const revoked = await f.request("project-admin", `/documents/${page}/shares`, "DELETE", { share_id: share.id })
+    expect(revoked.status).toBe(404)
+    expect(await f.shareRows(page)).toEqual([expect.objectContaining({ revoked_at: null })])
+  })
 })

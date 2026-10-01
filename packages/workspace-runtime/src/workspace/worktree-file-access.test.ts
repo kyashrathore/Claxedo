@@ -57,13 +57,13 @@ function relayAuth(role: NonNullable<RelayHostAuthContext["relayHostAuth"]>["rol
 
 /**
  * The authority a relay composition delegates to: one session is shared with
- * this actor, every other one is not. `requireActor` is the hosted flavour's
- * default — a machine with no local owner, where an unattributed request is
- * nobody's.
+ * this actor, every other one is not, and the host itself admits the actor.
+ * `requireActor` is the hosted flavour's default — a machine with no local
+ * owner, where an unattributed request is nobody's.
  */
 function sharedSessionPolicy(shared: string, options: { requireActor?: boolean } = {}): SessionAccessPolicy {
   const owns = ({ sessionId }: { sessionId: string }) => sessionId === shared
-  return managedWorkspaceSessionAccessPolicy({
+  const policy = managedWorkspaceSessionAccessPolicy({
     requireActor: options.requireActor ?? true,
     authority: {
       authorizeSessionRead: owns,
@@ -91,6 +91,7 @@ function sharedSessionPolicy(shared: string, options: { requireActor?: boolean }
       releaseTurn: () => ({ released: true }),
     },
   })
+  return { ...policy, authorizeHost: () => ({ allowed: true }) }
 }
 
 /**
