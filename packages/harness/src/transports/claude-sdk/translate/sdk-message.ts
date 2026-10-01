@@ -1,6 +1,6 @@
 import { asRecord } from "@claxedo/helpers/guards"
 import type { SDKMessage } from "@anthropic-ai/claude-agent-sdk"
-import type { AgentRuntimeEvent, RuntimeNoticeSeverity } from "@claxedo/agent-runtime-contract"
+import type { AgentRuntimeEvent, AgentRuntimeEventOf, RuntimeNoticeSeverity } from "@claxedo/agent-runtime-contract"
 import { runtimeDiagnostic } from "@claxedo/agent-runtime-contract"
 import type { ClaudeTranslatorMemory } from "./translator-memory"
 
@@ -41,6 +41,6 @@ export function ignoredFrame(memory: ClaudeTranslatorMemory, kind: string): Agen
     message: `Claude frame ${kind} is not known to this transport and is ignored`, details: { kind } }) }]
 }
 
-export function claudeNotice(code: string, message: string, severity: RuntimeNoticeSeverity = "info", details?: Record<string, unknown>): AgentRuntimeEvent {
+export function claudeNotice(code: string, message: string, severity: RuntimeNoticeSeverity = "info", details?: Record<string, unknown>): AgentRuntimeEventOf<"harness-notice"> {
   return { type: "harness-notice", code: `claude_sdk.${code}`, message, severity, ...(details ? { details } : {}) }
 }

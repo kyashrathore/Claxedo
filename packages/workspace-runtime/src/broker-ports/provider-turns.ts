@@ -74,16 +74,24 @@ export class BrokerProviderTurns {
       this.store.releaseTurnLease(sessionId, leaseId)
       return { admitted: false, reason: "closed" }
     }
-    const userMessageId = this.messageIds()
-    const turnId = assistantMessageIdForTurn(userMessageId)
+    if (input.reason === "continuation" && !input.current()) {
+      this.store.releaseTurnLease(sessionId, leaseId)
+      return { admitted: false, reason: "busy" }
+    }
+    const messageId = this.messageIds()
+    const turnId = input.reason === "continuation" ? messageId : assistantMessageIdForTurn(messageId)
     const turn: TurnRef = { turnId, assistantMessageId: turnId }
     const controller = new AbortController()
     try {
+      const opening = input.reason === "continuation"
+        ? { parentMessageId: this.store.getLatestUserMessageId(sessionId), parts: [] }
+        : { userMessageId: messageId, parts: [{ type: "text" as const, text: providerTurnNotice(input) }], author: harnessAuthor(config.harness.id) }
+      if (input.reason === "continuation" && !opening.parentMessageId) {
+        throw new Error(`Continuation ${sessionId} has no prompt to answer`)
+      }
       const started = this.store.startTurn({
         sessionId, agentSessionId: this.store.getAgentSessionId(sessionId) ?? undefined,
-        userMessageId, assistantMessageId: turnId, agent: sessionTurnAgent(config), ...(model ? { model } : {}),
-        parts: [{ type: "text", text: providerTurnNotice(input) }],
-        author: harnessAuthor(config.harness.id),
+        ...opening, assistantMessageId: turnId, agent: sessionTurnAgent(config), ...(model ? { model } : {}),
       })
       for (const event of started.events) this.delivery.broadcast(sessionId, event)
     } catch (error) {

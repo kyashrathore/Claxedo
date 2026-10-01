@@ -22,12 +22,6 @@ export class ClaudeHeldFrames {
     this.dropped += 1
   }
 
-  notice(): string | undefined {
-    const summaries = this.frames.flatMap((frame) =>
-      frame.type === "system" && frame.subtype === "task_notification" && frame.summary ? [frame.summary] : [])
-    return summaries.length > 0 ? summaries.join("\n") : undefined
-  }
-
   take(): { frames: Frame[]; dropped?: RoutedEvent } {
     const frames = this.frames
     const dropped = this.dropped

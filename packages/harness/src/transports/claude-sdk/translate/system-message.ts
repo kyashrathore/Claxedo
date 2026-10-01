@@ -74,7 +74,6 @@ export function translateSystemMessage(message: Record<string, unknown>, state: 
     case "permission_denied":
       return permissionDeniedEvents(text(message.tool_use_id), text(message.message))
     case "task_started":
-    case "task_notification":
     case "background_tasks_changed":
     case "task_updated":
       return []

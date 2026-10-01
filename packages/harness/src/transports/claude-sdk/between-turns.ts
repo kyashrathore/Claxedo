@@ -4,15 +4,23 @@ import { claudeTranslator, translateClaude } from "./events"
 import type { ClaudeLiveQuery } from "./live-query"
 import type { ClaudeEntry } from "./turns"
 
-export function claudeChildDelivery(entry: ClaudeEntry, live: () => ClaudeLiveQuery): (frame: SDKMessage) => Promise<void> {
+export function claudeOutsideTurnDelivery(entry: ClaudeEntry, live: () => ClaudeLiveQuery): (frame: SDKMessage) => () => Promise<void> {
   let translator: { live: ClaudeLiveQuery; runtime: ReturnType<typeof claudeTranslator>["runtime"] } | undefined
-  return async (frame) => {
-    try {
-      const current = live()
-      if (translator?.live !== current) translator = { live: current, runtime: claudeTranslator(entry.session.binding.sessionId, [], current.tasks, current.memory).runtime }
-      for (const event of await translateClaude(frame, translator.runtime, current.tasks, entry.broker)) await entry.broker.publishChild(event)
-    } catch (error) {
-      entry.broker.reportFailure(error)
+  return (frame) => {
+    const current = live()
+    const assistantMessageId = current.transcriptOwner
+    return async () => {
+      try {
+        if (translator?.live !== current) translator = { live: current, runtime: claudeTranslator(entry.session.binding.sessionId, [], current.tasks, current.memory).runtime }
+        for (const event of await translateClaude(frame, translator.runtime, current.tasks, entry.broker)) {
+          if (event.route?.kind === "child") await entry.broker.publishChild(event)
+          else if (event.event.type === "harness-notice" || event.event.type === "agent-message" || event.event.type === "diagnostic") {
+            await entry.broker.publish(event.event, assistantMessageId)
+          }
+        }
+      } catch (error) {
+        entry.broker.reportFailure(error)
+      }
     }
   }
 }

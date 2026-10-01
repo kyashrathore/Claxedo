@@ -81,7 +81,7 @@ export interface BrokerPorts {
   ): Promise<ProviderTurnResult>
   drainProviderEvent(sessionId: string, turn: TurnRef, event: RoutedEvent): Promise<void>
   drainChildEvent(sessionId: string, event: RoutedEvent): Promise<void>
-  publishSessionEvent(sessionId: string, event: OutsideTurnEvent): Promise<void>
+  publishSessionEvent(sessionId: string, event: OutsideTurnEvent, assistantMessageId?: string): Promise<void>
   meterUsage(usage: OutsideTurnUsage): void
   readonly subagentAdmissionStore: SubagentAdmissionStore
   bindChildCorrelation(parentSessionId: string, correlationKey: string, childSessionId: string): void

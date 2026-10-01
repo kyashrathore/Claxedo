@@ -6,6 +6,7 @@ import { messagePartUpdated, messagePartDelta, messageCompleted, permissionAsked
 import { normalizePresentationEventWithDiagnostics } from "./normalize"
 import { partEvent, seen, seqId, type CompatContext } from "./context"
 import { projectNotice } from "./notices"
+import { projectSessionCommands } from "./commands"
 import { projectHarnessDiagnostic } from "./harness-diagnostics"
 import { projectRetry, resumeAfterRetry } from "./retry"
 import { endReasoning, REASONING_ENDS_ON } from "./reasoning"
@@ -24,18 +25,6 @@ export type ClientPresentationProjection = {
   ingest: (event: AgentRuntimeEvent) => AgentEventEnvelope[]
   state: () => ClientPresentationProjectionState
   terminalizeOpenTools: (error: string) => AgentEventEnvelope[]
-}
-
-/** Session metadata has no assistant message or turn owner. */
-export function projectSessionCommands(
-  sessionId: string,
-  directory: string,
-  chunk: Extract<AgentRuntimeEvent, { type: "available-commands-update" }>,
-): AgentEventEnvelope {
-  return withDir(directory, {
-    type: "session.commands",
-    properties: { sessionID: sessionId, commands: chunk.commands },
-  })
 }
 
 export type ClientPresentationProjectionOptions = {
@@ -782,6 +771,7 @@ function translateRuntimeEventToCompat(chunk: AgentRuntimeEvent, ctx: CompatCont
 
     case "session-compaction":
     case "harness-notice":
+    case "agent-message":
     case "conversation-reset":
       return projectNotice(ctx, chunk, now)
 

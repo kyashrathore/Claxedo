@@ -75,7 +75,7 @@ export function createSessionBroker(owner: BrokerOwner, context: SessionBrokerCo
       }
       ports.meterUsage(usage)
     },
-    publish: (event) => ports.publishSessionEvent(context.sessionId, event),
+    publish: (event, assistantMessageId) => ports.publishSessionEvent(context.sessionId, event, assistantMessageId),
     ...sessionChildren(owner, context.sessionId),
     goal: goalPort(ports, context.sessionId),
     config: () => ports.config(context.sessionId),
