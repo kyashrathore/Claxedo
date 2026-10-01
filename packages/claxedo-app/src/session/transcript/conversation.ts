@@ -1,6 +1,6 @@
 import { batch } from "solid-js"
 import { produce, unwrap, type SetStoreFunction } from "solid-js/store"
-import type { QueuedPrompt, TranscriptPage, TranscriptPart } from "@/server"
+import type { PartAddress, QueuedPrompt, TranscriptPage, TranscriptPart } from "@/server"
 import type { ConversationMessage } from "@/transcript"
 import { isOptimisticMessage, isPresentationMessage, mergeSortedById, mergedMessage, mergedPart, searchById } from "./merge"
 import type { TranscriptData } from "./model"
@@ -69,6 +69,16 @@ export function upsertPart(set: SetTranscript, part: TranscriptPart): void {
 
 export function removePart(set: SetTranscript, messageId: string, partId: string): void {
   set("parts", messageId, (parts) => (parts ? parts.filter((part) => part.id !== partId) : parts))
+}
+
+export function retractParts(set: SetTranscript, data: TranscriptData, parts: readonly PartAddress[], reason: string): void {
+  batch(() => {
+    for (const { messageId, partId } of parts) {
+      const index = data.parts[messageId]?.findIndex((part) => part.id === partId) ?? -1
+      const part = index < 0 ? undefined : data.parts[messageId]?.[index]
+      if (part?.type === "text" || part?.type === "reasoning") set("parts", messageId, index, { ...unwrap(part), retracted: { reason } })
+    }
+  })
 }
 
 export function appendDelta(set: SetTranscript, data: TranscriptData, messageId: string, partId: string, field: string, text: string): void {

@@ -1,5 +1,5 @@
 import { DEFAULT_RECOVERY_BUDGETS, type SubagentObservation } from "@claxedo/agent-runtime-contract"
-import type { AgentSessionStarts, SubagentUpdatedEvent } from "@claxedo/agent-runtime-contract"
+import type { AgentSessionStarts, BackgroundWork, SubagentUpdatedEvent } from "@claxedo/agent-runtime-contract"
 import { HTTPException } from "hono/http-exception"
 import type { AgentRuntime, AgentRuntimeRecovery } from "../host/runtime"
 import type { RuntimeEventHub } from "../projection/runtime-event-hub"
@@ -10,7 +10,6 @@ import type { SessionDeliveryStore } from "../session/delivery-owner"
 import type { RuntimeStore } from "../store"
 import { workspaceId } from "../target"
 import type { WorkspaceCheckpoint } from "./checkpoint"
-import type { WorkspaceTranscriptRoutesOptions } from "./core"
 import type { RuntimeRunner } from "./snapshot"
 
 export type SessionRoutesMountInput = {
@@ -23,11 +22,11 @@ export type SessionRoutesMountInput = {
   sessionAccessPolicy: SessionAccessPolicy
   checkpoint: WorkspaceCheckpoint
   currentRunner: () => RuntimeRunner
-  transcripts?: WorkspaceTranscriptRoutesOptions
   afterCreateSession?: (input: { directory: string; session: unknown }) => Promise<void> | void
   sessionIdWorkspace?: (sessionId: string) => Promise<string | undefined> | string | undefined
   sessionToolPrompt: (sessionId: string) => string | undefined
   subagentAdmission: (parentSessionId: string, observation: SubagentObservation) => Promise<SubagentUpdatedEvent>
+  backgroundWork: (sessionId: string) => BackgroundWork | undefined
 }
 
 export function queuedPromptStore(store: RuntimeStore): SessionDeliveryStore {
@@ -57,7 +56,7 @@ export function mountSessionRoutes(input: SessionRoutesMountInput) {
     requestedSessionHarness: (requested) => requested ?? input.currentRunner(),
     resolveRecoveryOwner: () => input.recovery(),
     listSessions: async (_c, directory) => store().listSessions(directory),
-    getStatus: (_c, directory) => sessionStatusSnapshot(store().listSessions(directory)),
+    getStatus: (_c, directory) => sessionStatusSnapshot(store().listSessions(directory), input.backgroundWork),
     listSubagents: ({ parentSessionId }) => store().listSubagents(parentSessionId),
     childSessions: {
       admit: input.subagentAdmission,
@@ -130,9 +129,6 @@ export function mountSessionRoutes(input: SessionRoutesMountInput) {
       if (stuck.length > 0) {
         throw new HTTPException(409, { message: `Session ${sessionId} still has running work: ${stuck.map((result) => result.reason).join(", ")}` })
       }
-    },
-    afterDeleteSession: ({ sessionId }) => {
-      input.transcripts?.resolver.invalidateParent?.(input.transcripts.workspaceId, sessionId)
     },
     resolveWorkspaceId: () => workspaceId(),
   })

@@ -18,7 +18,7 @@ export class CursorGoals {
     const sessionId = session.binding.sessionId
     if (this.running.has(sessionId)) return { ok: false, status: "conflict", message: "Cursor Goal is running" }
     const abort = new AbortController()
-    const admitted = await broker.admitProviderTurn({ reason: "goal" }, (turnBroker, turn) =>
+    const admitted = await broker.admitProviderTurn({ reason: "goal", detail: objective }, (turnBroker, turn) =>
       run({ ...turnBroker, signal: AbortSignal.any([turnBroker.signal, abort.signal]) }, turn, nativeGoalPrompt(objective)))
     if (!admitted.admitted) return { ok: false, status: "conflict", message: `Cursor Goal admission ${admitted.reason}` }
     const now = Date.now()

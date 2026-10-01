@@ -175,7 +175,7 @@ describe("build-sandbox-image", () => {
       "better-sqlite3",
       "@lydell/node-pty",
     ]))
-    expect(deps["@anthropic-ai/claude-agent-sdk"]).toBe("0.3.220")
+    expect(deps["@anthropic-ai/claude-agent-sdk"]).toBe("0.3.285")
     expect(deps.zod).toBe("4.4.3")
     expect(deps["@opencode-ai/sdk"]).toBe("0.0.0-beta-19271")
   })

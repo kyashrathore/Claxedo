@@ -1,10 +1,11 @@
-import type { AgentSession, AgentTurnOutcome } from "@claxedo/agent-runtime-contract"
+import { backgroundWorkActive, type AgentSession, type AgentTurnOutcome, type BackgroundWork } from "@claxedo/agent-runtime-contract"
 import { ServerError } from "./errors"
 import type { ServerEvent } from "./events"
 import { sessionEndpoint } from "./session-context"
 import type { PlacementId } from "./ids"
 import { withQuery, type RuntimeRoute, type Transport } from "./transport"
-import type { SessionRef, SessionStatus } from "./types"
+import type { SessionStatus } from "./status-types"
+import type { SessionRef } from "./types"
 import { OPEN_VIEW, sessionOpenFromWire, type SessionFact } from "./wire/session-open"
 
 export type StatusAdmission =
@@ -20,6 +21,12 @@ export type StatusOwner = {
 }
 
 type FailedStatus = Extract<SessionStatus, { kind: "failed" }>
+
+export const RUNNING_IN_BACKGROUND: Extract<SessionStatus, { kind: "runningInBackground" }> = { kind: "runningInBackground" }
+
+export function sessionStatusWithBackgroundWork<S extends { readonly kind: string }>(status: S, work: BackgroundWork): S | typeof RUNNING_IN_BACKGROUND {
+  return backgroundWorkActive(work) && (status.kind === "idle" || status.kind === "unknown") ? RUNNING_IN_BACKGROUND : status
+}
 
 function statusFromLastTurn(outcome: AgentTurnOutcome | undefined): SessionStatus {
   if (outcome?.status !== "failed") return { kind: "idle" }

@@ -5,7 +5,7 @@ import { withDir } from "../presentation-events"
 import type { CompatContext } from "./context"
 import { lossyCompatDiagnostic, projectionDiagnostic } from "./diagnostics"
 import { hydrateToolInput, mergeDisplay, mergeInput, mergeMetadata, normalizeInputKeys, normalizeLocationInput } from "./tool-input"
-import { formatToolOutput, toolContentText } from "./tool-output"
+import { formatToolOutput, toolContentText, withoutOutputText } from "./tool-output"
 import { toolEvent } from "./tool-part"
 
 type RuntimeEvent<T extends AgentRuntimeEvent["type"]> = Extract<AgentRuntimeEvent, { type: T }>
@@ -149,7 +149,7 @@ export function translateToolContent(ctx: CompatContext, chunk: RuntimeEvent<"to
 
 export function translateToolOutput(ctx: CompatContext, chunk: RuntimeEvent<"tool-output">, now: () => number): AgentEventEnvelope[] {
   const tool = ctx.toolNamesByCallId.get(chunk.toolCallId) ?? chunk.toolCallId
-  const metadata = mergeMetadata(ctx.toolMetadataByCallId.get(chunk.toolCallId), chunk.metadata)
+  const metadata = withoutOutputText(mergeMetadata(ctx.toolMetadataByCallId.get(chunk.toolCallId), chunk.metadata))
   const display = mergeDisplay(ctx.toolDisplaysByCallId.get(chunk.toolCallId), chunk.display)
   const input = hydrateToolInput(tool, ctx.toolInputsByCallId.get(chunk.toolCallId), metadata, display)
   const formatted = formatToolOutput(chunk.output, input, metadata)
@@ -260,11 +260,11 @@ export function translateToolTerminal(ctx: CompatContext, chunk: RuntimeEvent<"t
   })]
 }
 
-export function terminalizeOpenTools(ctx: CompatContext, error: string, now: () => number): AgentEventEnvelope[] {
+export function terminalizeOpenTools(ctx: CompatContext, error: string, now: () => number, only?: ReadonlySet<string>): AgentEventEnvelope[] {
   const endedAt = now()
   const events: AgentEventEnvelope[] = []
   for (const [toolCallId, status] of ctx.toolStatusByCallId) {
-    if (status !== "running" && status !== "pending") continue
+    if ((status !== "running" && status !== "pending") || (only && !only.has(toolCallId))) continue
     const tool = ctx.toolNamesByCallId.get(toolCallId) ?? toolCallId
     const metadata = ctx.toolMetadataByCallId.get(toolCallId) ?? {}
     const input = hydrateToolInput(tool, ctx.toolInputsByCallId.get(toolCallId), metadata, ctx.toolDisplaysByCallId.get(toolCallId))

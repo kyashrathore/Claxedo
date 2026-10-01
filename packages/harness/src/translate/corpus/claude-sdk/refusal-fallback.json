@@ -1,0 +1,1220 @@
+{
+  "adapter": "claude-sdk",
+  "initialState": {
+    "blocksByIndex": {},
+    "toolsById": {},
+    "streamedAssistantTextByOwner": {},
+    "streamedThinkingByOwner": {},
+    "tasks": {}
+  },
+  "calls": [
+    {
+      "state": {
+        "blocksByIndex": {},
+        "toolsById": {},
+        "streamedAssistantTextByOwner": {},
+        "streamedThinkingByOwner": {},
+        "tasks": {}
+      },
+      "event": {
+        "source": "claude.sdk",
+        "method": "claude/stream_event",
+        "payload": {
+          "type": "stream_event",
+          "event": {
+            "type": "message_start",
+            "message": {
+              "id": "msg_01Refused",
+              "type": "message",
+              "role": "assistant",
+              "model": "claude-opus-5-5",
+              "content": [],
+              "stop_reason": null,
+              "stop_sequence": null,
+              "usage": {
+                "input_tokens": 12,
+                "cache_creation_input_tokens": 0,
+                "cache_read_input_tokens": 0,
+                "output_tokens": 1
+              }
+            }
+          },
+          "parent_tool_use_id": null,
+          "uuid": "00000000-0000-4000-8000-000000000101",
+          "session_id": "00000000-0000-4000-8000-000000000001"
+        }
+      },
+      "context": {
+        "harness": "claude-sdk",
+        "threadId": "thread-1"
+      },
+      "callbacks": [],
+      "output": {
+        "state": {
+          "blocksByIndex": {},
+          "toolsById": {},
+          "streamedAssistantTextByOwner": {},
+          "streamedThinkingByOwner": {},
+          "tasks": {},
+          "responseByOwner": {
+            "": "msg_01Refused"
+          },
+          "streamingRequestByOwner": {
+            "": "msg_01Refused"
+          },
+          "lastMainRequest": "msg_01Refused",
+          "mainRequests": {
+            "msg_01Refused": {
+              "input": 12,
+              "output": 1,
+              "reasoning": null,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "cacheWrite1h": null,
+              "model": "claude-opus-5-5"
+            }
+          }
+        },
+        "events": [
+          {
+            "type": "response-start",
+            "responseId": "msg_01Refused"
+          },
+          {
+            "type": "usage",
+            "contextSize": 0,
+            "contextUsed": 13,
+            "observation": {
+              "kind": "cumulative",
+              "nativeSessionId": "00000000-0000-4000-8000-000000000001",
+              "model": "claude-opus-5-5",
+              "tokens": {
+                "input": 12,
+                "output": 1,
+                "reasoning": null,
+                "cache": {
+                  "read": 0,
+                  "write": 0
+                }
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "state": {
+        "blocksByIndex": {},
+        "toolsById": {},
+        "streamedAssistantTextByOwner": {},
+        "streamedThinkingByOwner": {},
+        "tasks": {},
+        "responseByOwner": {
+          "": "msg_01Refused"
+        },
+        "streamingRequestByOwner": {
+          "": "msg_01Refused"
+        },
+        "lastMainRequest": "msg_01Refused",
+        "mainRequests": {
+          "msg_01Refused": {
+            "input": 12,
+            "output": 1,
+            "reasoning": null,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "cacheWrite1h": null,
+            "model": "claude-opus-5-5"
+          }
+        }
+      },
+      "event": {
+        "source": "claude.sdk",
+        "method": "claude/stream_event",
+        "payload": {
+          "type": "stream_event",
+          "event": {
+            "type": "content_block_start",
+            "index": 0,
+            "content_block": {
+              "type": "text",
+              "text": ""
+            }
+          },
+          "parent_tool_use_id": null,
+          "uuid": "00000000-0000-4000-8000-000000000102",
+          "session_id": "00000000-0000-4000-8000-000000000001"
+        }
+      },
+      "context": {
+        "harness": "claude-sdk",
+        "threadId": "thread-1"
+      },
+      "callbacks": [],
+      "output": {
+        "state": {
+          "blocksByIndex": {
+            "0": {
+              "type": "text"
+            }
+          },
+          "toolsById": {},
+          "streamedAssistantTextByOwner": {},
+          "streamedThinkingByOwner": {},
+          "tasks": {},
+          "responseByOwner": {
+            "": "msg_01Refused"
+          },
+          "streamingRequestByOwner": {
+            "": "msg_01Refused"
+          },
+          "lastMainRequest": "msg_01Refused",
+          "mainRequests": {
+            "msg_01Refused": {
+              "input": 12,
+              "output": 1,
+              "reasoning": null,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "cacheWrite1h": null,
+              "model": "claude-opus-5-5"
+            }
+          }
+        },
+        "events": []
+      }
+    },
+    {
+      "state": {
+        "blocksByIndex": {
+          "0": {
+            "type": "text"
+          }
+        },
+        "toolsById": {},
+        "streamedAssistantTextByOwner": {},
+        "streamedThinkingByOwner": {},
+        "tasks": {},
+        "responseByOwner": {
+          "": "msg_01Refused"
+        },
+        "streamingRequestByOwner": {
+          "": "msg_01Refused"
+        },
+        "lastMainRequest": "msg_01Refused",
+        "mainRequests": {
+          "msg_01Refused": {
+            "input": 12,
+            "output": 1,
+            "reasoning": null,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "cacheWrite1h": null,
+            "model": "claude-opus-5-5"
+          }
+        }
+      },
+      "event": {
+        "source": "claude.sdk",
+        "method": "claude/stream_event",
+        "payload": {
+          "type": "stream_event",
+          "event": {
+            "type": "content_block_delta",
+            "index": 0,
+            "delta": {
+              "type": "text_delta",
+              "text": "Here is how"
+            }
+          },
+          "parent_tool_use_id": null,
+          "uuid": "00000000-0000-4000-8000-000000000103",
+          "session_id": "00000000-0000-4000-8000-000000000001"
+        }
+      },
+      "context": {
+        "harness": "claude-sdk",
+        "threadId": "thread-1"
+      },
+      "callbacks": [],
+      "output": {
+        "state": {
+          "blocksByIndex": {
+            "0": {
+              "type": "text",
+              "emittedText": true
+            }
+          },
+          "toolsById": {},
+          "streamedAssistantTextByOwner": {
+            "": "Here is how"
+          },
+          "streamedThinkingByOwner": {},
+          "tasks": {},
+          "responseByOwner": {
+            "": "msg_01Refused"
+          },
+          "streamingRequestByOwner": {
+            "": "msg_01Refused"
+          },
+          "lastMainRequest": "msg_01Refused",
+          "mainRequests": {
+            "msg_01Refused": {
+              "input": 12,
+              "output": 1,
+              "reasoning": null,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "cacheWrite1h": null,
+              "model": "claude-opus-5-5"
+            }
+          }
+        },
+        "events": [
+          {
+            "type": "text-delta",
+            "delta": "Here is how"
+          }
+        ]
+      }
+    },
+    {
+      "state": {
+        "blocksByIndex": {
+          "0": {
+            "type": "text",
+            "emittedText": true
+          }
+        },
+        "toolsById": {},
+        "streamedAssistantTextByOwner": {
+          "": "Here is how"
+        },
+        "streamedThinkingByOwner": {},
+        "tasks": {},
+        "responseByOwner": {
+          "": "msg_01Refused"
+        },
+        "streamingRequestByOwner": {
+          "": "msg_01Refused"
+        },
+        "lastMainRequest": "msg_01Refused",
+        "mainRequests": {
+          "msg_01Refused": {
+            "input": 12,
+            "output": 1,
+            "reasoning": null,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "cacheWrite1h": null,
+            "model": "claude-opus-5-5"
+          }
+        }
+      },
+      "event": {
+        "source": "claude.sdk",
+        "method": "claude/assistant",
+        "payload": {
+          "type": "assistant",
+          "message": {
+            "id": "msg_01Refused",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-opus-5-5",
+            "content": [
+              {
+                "type": "text",
+                "text": "Here is how"
+              }
+            ],
+            "stop_reason": null,
+            "stop_sequence": null,
+            "usage": {
+              "input_tokens": 12,
+              "cache_creation_input_tokens": 0,
+              "cache_read_input_tokens": 0,
+              "output_tokens": 4
+            }
+          },
+          "parent_tool_use_id": null,
+          "session_id": "00000000-0000-4000-8000-000000000001",
+          "uuid": "00000000-0000-4000-8000-000000000104"
+        }
+      },
+      "context": {
+        "harness": "claude-sdk",
+        "threadId": "thread-1"
+      },
+      "callbacks": [],
+      "output": {
+        "state": {
+          "blocksByIndex": {
+            "0": {
+              "type": "text",
+              "emittedText": true
+            }
+          },
+          "toolsById": {},
+          "streamedAssistantTextByOwner": {},
+          "streamedThinkingByOwner": {},
+          "tasks": {},
+          "responseByOwner": {
+            "": "msg_01Refused"
+          },
+          "streamingRequestByOwner": {
+            "": "msg_01Refused"
+          },
+          "lastMainRequest": "msg_01Refused",
+          "mainRequests": {
+            "msg_01Refused": {
+              "input": 12,
+              "output": 4,
+              "reasoning": null,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "cacheWrite1h": null,
+              "model": "claude-opus-5-5"
+            }
+          },
+          "reconciledFrames": {
+            "00000000-0000-4000-8000-000000000104": true
+          }
+        },
+        "events": [
+          {
+            "type": "usage",
+            "contextSize": 0,
+            "contextUsed": 16,
+            "observation": {
+              "kind": "cumulative",
+              "nativeSessionId": "00000000-0000-4000-8000-000000000001",
+              "model": "claude-opus-5-5",
+              "tokens": {
+                "input": 12,
+                "output": 4,
+                "reasoning": null,
+                "cache": {
+                  "read": 0,
+                  "write": 0
+                }
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "state": {
+        "blocksByIndex": {
+          "0": {
+            "type": "text",
+            "emittedText": true
+          }
+        },
+        "toolsById": {},
+        "streamedAssistantTextByOwner": {},
+        "streamedThinkingByOwner": {},
+        "tasks": {},
+        "responseByOwner": {
+          "": "msg_01Refused"
+        },
+        "streamingRequestByOwner": {
+          "": "msg_01Refused"
+        },
+        "lastMainRequest": "msg_01Refused",
+        "mainRequests": {
+          "msg_01Refused": {
+            "input": 12,
+            "output": 4,
+            "reasoning": null,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "cacheWrite1h": null,
+            "model": "claude-opus-5-5"
+          }
+        },
+        "reconciledFrames": {
+          "00000000-0000-4000-8000-000000000104": true
+        }
+      },
+      "event": {
+        "source": "claude.sdk",
+        "method": "claude/stream_event",
+        "payload": {
+          "type": "stream_event",
+          "event": {
+            "type": "content_block_stop",
+            "index": 0
+          },
+          "parent_tool_use_id": null,
+          "uuid": "00000000-0000-4000-8000-000000000105",
+          "session_id": "00000000-0000-4000-8000-000000000001"
+        }
+      },
+      "context": {
+        "harness": "claude-sdk",
+        "threadId": "thread-1"
+      },
+      "callbacks": [],
+      "output": []
+    },
+    {
+      "state": {
+        "blocksByIndex": {
+          "0": {
+            "type": "text",
+            "emittedText": true
+          }
+        },
+        "toolsById": {},
+        "streamedAssistantTextByOwner": {},
+        "streamedThinkingByOwner": {},
+        "tasks": {},
+        "responseByOwner": {
+          "": "msg_01Refused"
+        },
+        "streamingRequestByOwner": {
+          "": "msg_01Refused"
+        },
+        "lastMainRequest": "msg_01Refused",
+        "mainRequests": {
+          "msg_01Refused": {
+            "input": 12,
+            "output": 4,
+            "reasoning": null,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "cacheWrite1h": null,
+            "model": "claude-opus-5-5"
+          }
+        },
+        "reconciledFrames": {
+          "00000000-0000-4000-8000-000000000104": true
+        }
+      },
+      "event": {
+        "source": "claude.sdk",
+        "method": "claude/stream_event",
+        "payload": {
+          "type": "stream_event",
+          "event": {
+            "type": "message_delta",
+            "delta": {
+              "stop_reason": "refusal",
+              "stop_sequence": null
+            },
+            "usage": {
+              "output_tokens": 4
+            }
+          },
+          "parent_tool_use_id": null,
+          "uuid": "00000000-0000-4000-8000-000000000106",
+          "session_id": "00000000-0000-4000-8000-000000000001"
+        }
+      },
+      "context": {
+        "harness": "claude-sdk",
+        "threadId": "thread-1"
+      },
+      "callbacks": [],
+      "output": []
+    },
+    {
+      "state": {
+        "blocksByIndex": {
+          "0": {
+            "type": "text",
+            "emittedText": true
+          }
+        },
+        "toolsById": {},
+        "streamedAssistantTextByOwner": {},
+        "streamedThinkingByOwner": {},
+        "tasks": {},
+        "responseByOwner": {
+          "": "msg_01Refused"
+        },
+        "streamingRequestByOwner": {
+          "": "msg_01Refused"
+        },
+        "lastMainRequest": "msg_01Refused",
+        "mainRequests": {
+          "msg_01Refused": {
+            "input": 12,
+            "output": 4,
+            "reasoning": null,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "cacheWrite1h": null,
+            "model": "claude-opus-5-5"
+          }
+        },
+        "reconciledFrames": {
+          "00000000-0000-4000-8000-000000000104": true
+        }
+      },
+      "event": {
+        "source": "claude.sdk",
+        "method": "claude/stream_event",
+        "payload": {
+          "type": "stream_event",
+          "event": {
+            "type": "message_stop"
+          },
+          "parent_tool_use_id": null,
+          "uuid": "00000000-0000-4000-8000-000000000107",
+          "session_id": "00000000-0000-4000-8000-000000000001"
+        }
+      },
+      "context": {
+        "harness": "claude-sdk",
+        "threadId": "thread-1"
+      },
+      "callbacks": [],
+      "output": {
+        "state": {
+          "blocksByIndex": {
+            "0": {
+              "type": "text",
+              "emittedText": true
+            }
+          },
+          "toolsById": {},
+          "streamedAssistantTextByOwner": {},
+          "streamedThinkingByOwner": {},
+          "tasks": {},
+          "responseByOwner": {
+            "": "msg_01Refused"
+          },
+          "streamingRequestByOwner": {},
+          "lastMainRequest": "msg_01Refused",
+          "mainRequests": {
+            "msg_01Refused": {
+              "input": 12,
+              "output": 4,
+              "reasoning": null,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "cacheWrite1h": null,
+              "model": "claude-opus-5-5"
+            }
+          },
+          "reconciledFrames": {
+            "00000000-0000-4000-8000-000000000104": true
+          }
+        },
+        "events": []
+      }
+    },
+    {
+      "state": {
+        "blocksByIndex": {
+          "0": {
+            "type": "text",
+            "emittedText": true
+          }
+        },
+        "toolsById": {},
+        "streamedAssistantTextByOwner": {},
+        "streamedThinkingByOwner": {},
+        "tasks": {},
+        "responseByOwner": {
+          "": "msg_01Refused"
+        },
+        "streamingRequestByOwner": {},
+        "lastMainRequest": "msg_01Refused",
+        "mainRequests": {
+          "msg_01Refused": {
+            "input": 12,
+            "output": 4,
+            "reasoning": null,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "cacheWrite1h": null,
+            "model": "claude-opus-5-5"
+          }
+        },
+        "reconciledFrames": {
+          "00000000-0000-4000-8000-000000000104": true
+        }
+      },
+      "event": {
+        "source": "claude.sdk",
+        "method": "claude/stream_event",
+        "payload": {
+          "type": "stream_event",
+          "event": {
+            "type": "message_start",
+            "message": {
+              "id": "msg_01Fallback",
+              "type": "message",
+              "role": "assistant",
+              "model": "claude-sonnet-4-6",
+              "content": [],
+              "stop_reason": null,
+              "stop_sequence": null,
+              "usage": {
+                "input_tokens": 12,
+                "cache_creation_input_tokens": 0,
+                "cache_read_input_tokens": 0,
+                "output_tokens": 1
+              }
+            }
+          },
+          "parent_tool_use_id": null,
+          "uuid": "00000000-0000-4000-8000-000000000108",
+          "session_id": "00000000-0000-4000-8000-000000000001"
+        }
+      },
+      "context": {
+        "harness": "claude-sdk",
+        "threadId": "thread-1"
+      },
+      "callbacks": [],
+      "output": {
+        "state": {
+          "blocksByIndex": {
+            "0": {
+              "type": "text",
+              "emittedText": true
+            }
+          },
+          "toolsById": {},
+          "streamedAssistantTextByOwner": {},
+          "streamedThinkingByOwner": {},
+          "tasks": {},
+          "responseByOwner": {
+            "": "msg_01Fallback"
+          },
+          "streamingRequestByOwner": {
+            "": "msg_01Fallback"
+          },
+          "lastMainRequest": "msg_01Fallback",
+          "mainRequests": {
+            "msg_01Refused": {
+              "input": 12,
+              "output": 4,
+              "reasoning": null,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "cacheWrite1h": null,
+              "model": "claude-opus-5-5"
+            },
+            "msg_01Fallback": {
+              "input": 12,
+              "output": 1,
+              "reasoning": null,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "cacheWrite1h": null,
+              "model": "claude-sonnet-4-6"
+            }
+          },
+          "reconciledFrames": {
+            "00000000-0000-4000-8000-000000000104": true
+          }
+        },
+        "events": [
+          {
+            "type": "response-start",
+            "responseId": "msg_01Fallback"
+          },
+          {
+            "type": "usage",
+            "contextSize": 0,
+            "contextUsed": 13,
+            "observation": {
+              "kind": "cumulative",
+              "scope": "main@claude-sonnet-4-6",
+              "nativeSessionId": "00000000-0000-4000-8000-000000000001",
+              "model": "claude-sonnet-4-6",
+              "tokens": {
+                "input": 12,
+                "output": 1,
+                "reasoning": null,
+                "cache": {
+                  "read": 0,
+                  "write": 0
+                }
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "state": {
+        "blocksByIndex": {
+          "0": {
+            "type": "text",
+            "emittedText": true
+          }
+        },
+        "toolsById": {},
+        "streamedAssistantTextByOwner": {},
+        "streamedThinkingByOwner": {},
+        "tasks": {},
+        "responseByOwner": {
+          "": "msg_01Fallback"
+        },
+        "streamingRequestByOwner": {
+          "": "msg_01Fallback"
+        },
+        "lastMainRequest": "msg_01Fallback",
+        "mainRequests": {
+          "msg_01Refused": {
+            "input": 12,
+            "output": 4,
+            "reasoning": null,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "cacheWrite1h": null,
+            "model": "claude-opus-5-5"
+          },
+          "msg_01Fallback": {
+            "input": 12,
+            "output": 1,
+            "reasoning": null,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "cacheWrite1h": null,
+            "model": "claude-sonnet-4-6"
+          }
+        },
+        "reconciledFrames": {
+          "00000000-0000-4000-8000-000000000104": true
+        }
+      },
+      "event": {
+        "source": "claude.sdk",
+        "method": "claude/stream_event",
+        "payload": {
+          "type": "stream_event",
+          "event": {
+            "type": "content_block_start",
+            "index": 0,
+            "content_block": {
+              "type": "text",
+              "text": ""
+            }
+          },
+          "parent_tool_use_id": null,
+          "uuid": "00000000-0000-4000-8000-000000000109",
+          "session_id": "00000000-0000-4000-8000-000000000001"
+        }
+      },
+      "context": {
+        "harness": "claude-sdk",
+        "threadId": "thread-1"
+      },
+      "callbacks": [],
+      "output": {
+        "state": {
+          "blocksByIndex": {
+            "0": {
+              "type": "text"
+            }
+          },
+          "toolsById": {},
+          "streamedAssistantTextByOwner": {},
+          "streamedThinkingByOwner": {},
+          "tasks": {},
+          "responseByOwner": {
+            "": "msg_01Fallback"
+          },
+          "streamingRequestByOwner": {
+            "": "msg_01Fallback"
+          },
+          "lastMainRequest": "msg_01Fallback",
+          "mainRequests": {
+            "msg_01Refused": {
+              "input": 12,
+              "output": 4,
+              "reasoning": null,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "cacheWrite1h": null,
+              "model": "claude-opus-5-5"
+            },
+            "msg_01Fallback": {
+              "input": 12,
+              "output": 1,
+              "reasoning": null,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "cacheWrite1h": null,
+              "model": "claude-sonnet-4-6"
+            }
+          },
+          "reconciledFrames": {
+            "00000000-0000-4000-8000-000000000104": true
+          }
+        },
+        "events": []
+      }
+    },
+    {
+      "state": {
+        "blocksByIndex": {
+          "0": {
+            "type": "text"
+          }
+        },
+        "toolsById": {},
+        "streamedAssistantTextByOwner": {},
+        "streamedThinkingByOwner": {},
+        "tasks": {},
+        "responseByOwner": {
+          "": "msg_01Fallback"
+        },
+        "streamingRequestByOwner": {
+          "": "msg_01Fallback"
+        },
+        "lastMainRequest": "msg_01Fallback",
+        "mainRequests": {
+          "msg_01Refused": {
+            "input": 12,
+            "output": 4,
+            "reasoning": null,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "cacheWrite1h": null,
+            "model": "claude-opus-5-5"
+          },
+          "msg_01Fallback": {
+            "input": 12,
+            "output": 1,
+            "reasoning": null,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "cacheWrite1h": null,
+            "model": "claude-sonnet-4-6"
+          }
+        },
+        "reconciledFrames": {
+          "00000000-0000-4000-8000-000000000104": true
+        }
+      },
+      "event": {
+        "source": "claude.sdk",
+        "method": "claude/stream_event",
+        "payload": {
+          "type": "stream_event",
+          "event": {
+            "type": "content_block_delta",
+            "index": 0,
+            "delta": {
+              "type": "text_delta",
+              "text": "I can help with the safe part."
+            }
+          },
+          "parent_tool_use_id": null,
+          "uuid": "00000000-0000-4000-8000-000000000110",
+          "session_id": "00000000-0000-4000-8000-000000000001"
+        }
+      },
+      "context": {
+        "harness": "claude-sdk",
+        "threadId": "thread-1"
+      },
+      "callbacks": [],
+      "output": {
+        "state": {
+          "blocksByIndex": {
+            "0": {
+              "type": "text",
+              "emittedText": true
+            }
+          },
+          "toolsById": {},
+          "streamedAssistantTextByOwner": {
+            "": "I can help with the safe part."
+          },
+          "streamedThinkingByOwner": {},
+          "tasks": {},
+          "responseByOwner": {
+            "": "msg_01Fallback"
+          },
+          "streamingRequestByOwner": {
+            "": "msg_01Fallback"
+          },
+          "lastMainRequest": "msg_01Fallback",
+          "mainRequests": {
+            "msg_01Refused": {
+              "input": 12,
+              "output": 4,
+              "reasoning": null,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "cacheWrite1h": null,
+              "model": "claude-opus-5-5"
+            },
+            "msg_01Fallback": {
+              "input": 12,
+              "output": 1,
+              "reasoning": null,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "cacheWrite1h": null,
+              "model": "claude-sonnet-4-6"
+            }
+          },
+          "reconciledFrames": {
+            "00000000-0000-4000-8000-000000000104": true
+          }
+        },
+        "events": [
+          {
+            "type": "text-delta",
+            "delta": "I can help with the safe part."
+          }
+        ]
+      }
+    },
+    {
+      "state": {
+        "blocksByIndex": {
+          "0": {
+            "type": "text",
+            "emittedText": true
+          }
+        },
+        "toolsById": {},
+        "streamedAssistantTextByOwner": {
+          "": "I can help with the safe part."
+        },
+        "streamedThinkingByOwner": {},
+        "tasks": {},
+        "responseByOwner": {
+          "": "msg_01Fallback"
+        },
+        "streamingRequestByOwner": {
+          "": "msg_01Fallback"
+        },
+        "lastMainRequest": "msg_01Fallback",
+        "mainRequests": {
+          "msg_01Refused": {
+            "input": 12,
+            "output": 4,
+            "reasoning": null,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "cacheWrite1h": null,
+            "model": "claude-opus-5-5"
+          },
+          "msg_01Fallback": {
+            "input": 12,
+            "output": 1,
+            "reasoning": null,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "cacheWrite1h": null,
+            "model": "claude-sonnet-4-6"
+          }
+        },
+        "reconciledFrames": {
+          "00000000-0000-4000-8000-000000000104": true
+        }
+      },
+      "event": {
+        "source": "claude.sdk",
+        "method": "claude/assistant",
+        "payload": {
+          "type": "assistant",
+          "message": {
+            "id": "msg_01Fallback",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-sonnet-4-6",
+            "content": [
+              {
+                "type": "text",
+                "text": "I can help with the safe part."
+              }
+            ],
+            "stop_reason": null,
+            "stop_sequence": null,
+            "usage": {
+              "input_tokens": 12,
+              "cache_creation_input_tokens": 0,
+              "cache_read_input_tokens": 0,
+              "output_tokens": 9
+            }
+          },
+          "parent_tool_use_id": null,
+          "supersedes": [
+            "00000000-0000-4000-8000-000000000104"
+          ],
+          "session_id": "00000000-0000-4000-8000-000000000001",
+          "uuid": "00000000-0000-4000-8000-000000000111"
+        }
+      },
+      "context": {
+        "harness": "claude-sdk",
+        "threadId": "thread-1"
+      },
+      "callbacks": [],
+      "output": {
+        "state": {
+          "blocksByIndex": {
+            "0": {
+              "type": "text",
+              "emittedText": true
+            }
+          },
+          "toolsById": {},
+          "streamedAssistantTextByOwner": {},
+          "streamedThinkingByOwner": {},
+          "tasks": {},
+          "responseByOwner": {
+            "": "msg_01Fallback"
+          },
+          "streamingRequestByOwner": {
+            "": "msg_01Fallback"
+          },
+          "lastMainRequest": "msg_01Fallback",
+          "mainRequests": {
+            "msg_01Refused": {
+              "input": 12,
+              "output": 4,
+              "reasoning": null,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "cacheWrite1h": null,
+              "model": "claude-opus-5-5"
+            },
+            "msg_01Fallback": {
+              "input": 12,
+              "output": 9,
+              "reasoning": null,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "cacheWrite1h": null,
+              "model": "claude-sonnet-4-6"
+            }
+          },
+          "reconciledFrames": {
+            "00000000-0000-4000-8000-000000000104": true,
+            "00000000-0000-4000-8000-000000000111": true
+          }
+        },
+        "events": [
+          {
+            "type": "response-retracted",
+            "responseIds": [
+              "msg_01Refused"
+            ],
+            "reason": "refusal"
+          },
+          {
+            "type": "usage",
+            "contextSize": 0,
+            "contextUsed": 21,
+            "observation": {
+              "kind": "cumulative",
+              "scope": "main@claude-sonnet-4-6",
+              "nativeSessionId": "00000000-0000-4000-8000-000000000001",
+              "model": "claude-sonnet-4-6",
+              "tokens": {
+                "input": 12,
+                "output": 9,
+                "reasoning": null,
+                "cache": {
+                  "read": 0,
+                  "write": 0
+                }
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "state": {
+        "blocksByIndex": {
+          "0": {
+            "type": "text",
+            "emittedText": true
+          }
+        },
+        "toolsById": {},
+        "streamedAssistantTextByOwner": {},
+        "streamedThinkingByOwner": {},
+        "tasks": {},
+        "responseByOwner": {
+          "": "msg_01Fallback"
+        },
+        "streamingRequestByOwner": {
+          "": "msg_01Fallback"
+        },
+        "lastMainRequest": "msg_01Fallback",
+        "mainRequests": {
+          "msg_01Refused": {
+            "input": 12,
+            "output": 4,
+            "reasoning": null,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "cacheWrite1h": null,
+            "model": "claude-opus-5-5"
+          },
+          "msg_01Fallback": {
+            "input": 12,
+            "output": 9,
+            "reasoning": null,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "cacheWrite1h": null,
+            "model": "claude-sonnet-4-6"
+          }
+        },
+        "reconciledFrames": {
+          "00000000-0000-4000-8000-000000000104": true,
+          "00000000-0000-4000-8000-000000000111": true
+        }
+      },
+      "event": {
+        "source": "claude.sdk",
+        "method": "claude/system",
+        "payload": {
+          "type": "system",
+          "subtype": "model_refusal_fallback",
+          "direction": "retry",
+          "trigger": "refusal",
+          "original_model": "claude-opus-5-5",
+          "fallback_model": "claude-sonnet-4-6",
+          "request_id": "req_01",
+          "api_refusal_category": null,
+          "api_refusal_explanation": null,
+          "retracted_message_uuids": [
+            "00000000-0000-4000-8000-000000000104"
+          ],
+          "refused_user_message_uuid": "00000000-0000-4000-8000-000000000100",
+          "content": "Opus 5.5 declined this request, so Sonnet 4.6 answered it.",
+          "session_id": "00000000-0000-4000-8000-000000000001",
+          "uuid": "00000000-0000-4000-8000-000000000112"
+        }
+      },
+      "context": {
+        "harness": "claude-sdk",
+        "threadId": "thread-1"
+      },
+      "callbacks": [],
+      "output": [
+        {
+          "type": "response-retracted",
+          "responseIds": [
+            "msg_01Refused"
+          ],
+          "reason": "refusal"
+        },
+        {
+          "type": "harness-notice",
+          "code": "claude_sdk.model_refusal_fallback",
+          "message": "Opus 5.5 declined this request, so Sonnet 4.6 answered it.",
+          "severity": "warn"
+        }
+      ]
+    }
+  ]
+}

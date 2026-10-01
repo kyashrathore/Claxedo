@@ -6,7 +6,6 @@ import { singleFlightUntil } from "@claxedo/helpers"
 export type TestServices = HarnessServices & {
   processes: OwnedProcess[]
   entries: { level: string; message: string }[]
-  transcriptRows: Map<string, unknown[]>
   healthChanges: { count: number }
 }
 
@@ -65,11 +64,10 @@ function childProcess(command: SpawnCommand, options: SpawnOptions): OwnedProces
 export function createTestServices(): TestServices {
   const processes: OwnedProcess[] = []
   const entries: { level: string; message: string }[] = []
-  const transcriptRows = new Map<string, unknown[]>()
   const healthChanges = { count: 0 }
   const record = (level: string, message: string) => entries.push({ level, message })
   return {
-    processes, entries, transcriptRows, healthChanges,
+    processes, entries, healthChanges,
     spawn: async (command, options) => {
       const process = childProcess(command, options)
       processes.push(process)
@@ -78,13 +76,6 @@ export function createTestServices(): TestServices {
     recordHomeUse: async () => {},
     firstPartyMcp: () => undefined,
     healthChanged: () => { healthChanges.count += 1 },
-    transcripts: {
-      register: async ({ filePath }) => { transcriptRows.set(filePath, []); return { state: "ready", handle: filePath } },
-      open: async ({ handle }) => {
-        const messages = transcriptRows.get(handle)
-        return messages ? { state: "ready", messages } : { state: "unavailable", reason: "Unknown transcript" }
-      },
-    },
     patternEvaluator: async (checks, signal) => {
       for (const check of checks) {
         if (signal?.aborted) throw new Error("Pattern validation cancelled")

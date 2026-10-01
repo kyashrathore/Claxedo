@@ -107,6 +107,10 @@ export function promptImages(prompt: readonly PromptPart[]): ImagePart[] {
   return prompt.filter((part): part is ImagePart => part.type === "image")
 }
 
+export function promptWithoutText(prompt: readonly PromptPart[]): Prompt {
+  return [...emptyPrompt(), ...promptImages(prompt)]
+}
+
 export function promptFilled(draft: Pick<Draft, "prompt" | "context">) {
   if (promptImages(draft.prompt).length > 0) return true
   if (draft.context.some((item) => item.type === "text" || !!item.comment?.trim())) return true

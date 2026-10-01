@@ -3394,6 +3394,32 @@ void describe("session ordering timestamps", () => {
   })
 })
 
+void describe("retracted parts", () => {
+  void it("marks the withdrawn text and reasoning, keeps their content, and leaves every other part alone", () => {
+    const store = new RuntimeStore(tmp())
+    store.bindSession({ sessionId: "s1", directory: "/w", agentSessionId: "a1" })
+    store.appendEvent({ sessionId: "s1", payload: { type: "message.updated", properties: { info: { id: "m1", sessionID: "s1", role: "assistant" } } } } as never)
+    const part = (id: string, fields: Record<string, unknown>) => store.appendEvent({
+      sessionId: "s1", payload: messagePartUpdated({ id, sessionID: "s1", messageID: "m1", ...fields } as never, 1),
+    })
+    part("thought", { type: "reasoning", text: "Considering", time: { start: 1, end: 2 } })
+    part("refused", { type: "text", text: "Here is how" })
+    store.appendEvent({ sessionId: "s1", payload: { type: "message.part.delta", properties: { sessionID: "s1", messageID: "m1", partID: "refused", field: "text", delta: " to" } } } as never)
+    part("answer", { type: "text", text: "Safe answer" })
+    store.appendEvent({ sessionId: "s1", payload: {
+      id: "message.part.retracted:s1:r", type: "message.part.retracted",
+      properties: { sessionID: "s1", reason: "refusal", parts: [{ messageID: "m1", partID: "thought" }, { messageID: "m1", partID: "refused" }, { messageID: "m2", partID: "answer" }] },
+    } })
+    const parts = store.getMessages("s1").flatMap((message) => message.parts) as Array<{ id: string; text?: string; retracted?: unknown }>
+    assert.deepEqual(parts.map((item) => [item.id, item.text, item.retracted]), [
+      ["thought", "Considering", { reason: "refusal" }],
+      ["refused", "Here is how to", { reason: "refusal" }],
+      ["answer", "Safe answer", undefined],
+    ])
+    store.close()
+  })
+})
+
 void describe("streamed delta settlement", () => {
   const db = (store: RuntimeStore) => (store as unknown as { db: { prepare(sql: string): { all(...params: unknown[]): unknown[]; get(...params: unknown[]): unknown } } }).db
   const text = (store: RuntimeStore, sessionId: string) =>

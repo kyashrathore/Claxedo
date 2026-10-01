@@ -77,6 +77,7 @@ async function withRuntimeStatus(metas: readonly SessionMeta[], read: RuntimeSta
   return metas.map((meta) => {
     const read = meta.workspaceID ? activity.get(meta.workspaceID) : undefined
     const session: RuntimeSessionActivity | undefined = read?.get(meta.sessionID)
-    return { ...meta, status: { kind: session?.kind ?? "idle", awaitingInput: (session?.pending.size ?? 0) > 0, at } }
+    const background = session?.backgroundWork ? { backgroundWork: session.backgroundWork } : {}
+    return { ...meta, status: { kind: session?.kind ?? "idle", awaitingInput: (session?.pending.size ?? 0) > 0, ...background, at } }
   })
 }

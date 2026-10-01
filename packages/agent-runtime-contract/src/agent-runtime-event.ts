@@ -1,3 +1,4 @@
+import type { BackgroundWork } from "./background-work"
 import type { AgentSubagentUpdate, RuntimeGoalSnapshot } from "./subagents"
 import type { RuntimeQuestion, RuntimeUsageObservation } from "./events"
 import type { AgentSessionCommand } from "./sessions"
@@ -100,6 +101,14 @@ export type AgentRuntimeEvent = RuntimeEventMeta & (
   | { type: "session-status"; status: RuntimeStatus }
   | { type: "session-compaction"; phase: "started" | "completed"; reason?: string; summary?: string; metadata?: Record<string, unknown> }
   | { type: "harness-notice"; code: string; message: string; severity?: RuntimeNoticeSeverity; details?: unknown }
+  /** The harness is retrying a failed model request itself; `attempt` and `delayMs` only when it reports them. */
+  | { type: "session-retry"; message: string; attempt?: number; delayMs?: number }
+  /** The model began a response; the content after it, until the next start, is that response's. */
+  | { type: "response-start"; responseId: string }
+  /** The harness withdrew these responses; their content stays on record, marked withdrawn. */
+  | { type: "response-retracted"; responseIds: string[]; reason: string }
+  /** The harness discarded its conversation (Claude's `/clear`); the turns after it start from fresh context in the same session. */
+  | { type: "conversation-reset"; trigger: string }
   | { type: "auth-status"; status: "authenticated" | "unauthenticated" | "unknown"; authMode?: string | null; planType?: string | null; metadata?: Record<string, unknown> }
   | { type: "rate-limit"; status: "ok" | "limited"; usedPercent?: number; resetsAt?: number | null; windowDurationMins?: number | null; limitId?: string | null; limitName?: string | null; reason?: string | null; metadata?: Record<string, unknown> }
   | { type: "mcp-server-status"; serverName: string; status: "starting" | "ready" | "failed" | "cancelled"; error?: string | null }
@@ -136,6 +145,8 @@ export type AgentRuntimeEvent = RuntimeEventMeta & (
       workspaceID?: string
     }
   | { type: "session-title"; title: string; titleSource?: "harness" | "user" }
+  /** The work the harness runs for the session outside any turn (background agents, shells, other tasks), restated whole whenever it changes; all zero once it settled. Never a turn state. */
+  | ({ type: "background-work" } & BackgroundWork)
   | {
       type: "usage"
       contextSize: number
@@ -174,6 +185,10 @@ export const AGENT_RUNTIME_EVENT_TYPE_REGISTRY = {
   "session-status": true,
   "session-compaction": true,
   "harness-notice": true,
+  "session-retry": true,
+  "response-start": true,
+  "response-retracted": true,
+  "conversation-reset": true,
   "auth-status": true,
   "rate-limit": true,
   "mcp-server-status": true,
@@ -196,6 +211,7 @@ export const AGENT_RUNTIME_EVENT_TYPE_REGISTRY = {
   "config-update": true,
   "session-info": true,
   "session-title": true,
+  "background-work": true,
   usage: true,
   diagnostic: true,
 } satisfies Record<AgentRuntimeEventType, true>
@@ -230,6 +246,10 @@ export const AGENT_RUNTIME_EVENT_FACTORY_TYPES = {
   sessionStatus: "session-status",
   sessionCompaction: "session-compaction",
   harnessNotice: "harness-notice",
+  sessionRetry: "session-retry",
+  responseStart: "response-start",
+  responseRetracted: "response-retracted",
+  conversationReset: "conversation-reset",
   authStatus: "auth-status",
   rateLimit: "rate-limit",
   mcpServerStatus: "mcp-server-status",
@@ -252,6 +272,7 @@ export const AGENT_RUNTIME_EVENT_FACTORY_TYPES = {
   configUpdate: "config-update",
   sessionInfo: "session-info",
   sessionTitle: "session-title",
+  backgroundWork: "background-work",
   usage: "usage",
   diagnostic: "diagnostic",
 } as const satisfies Record<string, AgentRuntimeEventType>
@@ -293,6 +314,10 @@ export const agentRuntimeEvent = {
   sessionStatus: (input) => ({ type: "session-status", ...input }),
   sessionCompaction: (input) => ({ type: "session-compaction", ...input }),
   harnessNotice: (input) => ({ type: "harness-notice", ...input }),
+  sessionRetry: (input) => ({ type: "session-retry", ...input }),
+  responseStart: (input) => ({ type: "response-start", ...input }),
+  responseRetracted: (input) => ({ type: "response-retracted", ...input }),
+  conversationReset: (input) => ({ type: "conversation-reset", ...input }),
   authStatus: (input) => ({ type: "auth-status", ...input }),
   rateLimit: (input) => ({ type: "rate-limit", ...input }),
   mcpServerStatus: (input) => ({ type: "mcp-server-status", ...input }),
@@ -315,6 +340,7 @@ export const agentRuntimeEvent = {
   configUpdate: (input) => ({ type: "config-update", ...input }),
   sessionInfo: (input) => ({ type: "session-info", ...input }),
   sessionTitle: (input) => ({ type: "session-title", ...input }),
+  backgroundWork: (input) => ({ type: "background-work", ...input }),
   usage: (input) => ({ type: "usage", ...input }),
   diagnostic: (input) => ({ type: "diagnostic", ...input }),
 } satisfies AgentRuntimeEventFactoriesFor<AgentRuntimeEventFactoryTypes>

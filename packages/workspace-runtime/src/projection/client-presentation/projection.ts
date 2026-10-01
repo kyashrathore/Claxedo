@@ -5,6 +5,8 @@ import { withAnnouncedAssistantMessage, type AnnouncedAssistantIdentity } from "
 import type { CompatContext } from "./context"
 import { projectionDiagnostic, projectionException } from "./diagnostics"
 import { normalizePresentationEventWithDiagnostics } from "./normalize"
+import { recordResponseMembers } from "./responses"
+import { resumeAfterRetry } from "./retry"
 import {
   createClientPresentationProjectionState,
   RETAINED_PART_IDS_MAX,
@@ -144,10 +146,11 @@ export function createClientPresentationProjection(options: ClientPresentationPr
   return {
     name: "client-presentation",
     ingest(event) {
-      return run("ingest", event.type, (ctx) => [
+      return run("ingest", event.type, (ctx) => recordResponseMembers(ctx, event, [
+        ...resumeAfterRetry(ctx, event),
         ...(REASONING_ENDS_ON.has(event.type) ? endReasoning(ctx, now) : []),
         ...translateRuntimeEventToCompat(event, ctx, now),
-      ])
+      ]))
     },
     terminalizeOpenTools(error) {
       return run("terminalize", undefined, (ctx) => [...endReasoning(ctx, now), ...terminalizeOpenTools(ctx, error, now)])

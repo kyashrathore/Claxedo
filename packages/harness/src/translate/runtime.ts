@@ -5,6 +5,7 @@ import { createSequentialIdFactory, systemClock } from "@claxedo/agent-runtime-c
 import type { RawHarnessEvent } from "@claxedo/agent-runtime-contract"
 import { rawHarnessEvent } from "@claxedo/agent-runtime-contract"
 import type { HarnessEventAdapter, HarnessEventAdapterContext, HarnessEventAdapterResult } from "./adapter"
+import { frameExcerpt } from "./frame-excerpt"
 
 export type TranslateRawHarnessEventInput<State = unknown> = {
   adapter: HarnessEventAdapter<State>
@@ -30,52 +31,44 @@ export type AgentEventRuntime<State = unknown> = {
   ingest: (event: RawHarnessEvent) => TranslateRawHarnessEventResult<State>
 }
 
-export function translateRawHarnessEvent<State>(
-  input: TranslateRawHarnessEventInput<State>,
-): TranslateRawHarnessEventResult<State> {
-  try {
-    const translated = input.adapter.translate({
-      state: input.state,
-      event: rawHarnessEvent(input.event),
-      context: input.context,
-    })
-    const result = Array.isArray(translated)
-      ? { events: translated }
-      : translated satisfies HarnessEventAdapterResult<State>
-    const diagnostics = normalizeDiagnostics(result.diagnostics)
-    const diagnosticEvents = diagnostics.map((diagnostic): AgentRuntimeEvent => agentRuntimeEvent.diagnostic({
-      diagnostic,
-      harness: input.context.harness,
-      threadId: input.context.threadId,
-      raw: input.event,
-    }))
-    return {
-      state: result.state ?? input.state,
-      events: [...(result.events ?? []), ...diagnosticEvents].map((event) => ({
-        harness: input.context.harness,
-        threadId: input.context.threadId,
-        ...(DIAGNOSTIC_SURFACE_TYPES.has(event.type) ? { raw: input.event } : {}),
-        ...event,
-      })),
-    }
-  } catch (error) {
-    const diagnostic = runtimeDiagnostic({
+function withRuntimeMeta(event: AgentRuntimeEvent, context: HarnessEventAdapterContext, frame: RawHarnessEvent): AgentRuntimeEvent {
+  const located = { harness: context.harness, threadId: context.threadId, ...event }
+  if (!DIAGNOSTIC_SURFACE_TYPES.has(event.type)) return located
+  if (located.type !== "diagnostic") return { ...located, raw: frame }
+  const { raw: _raw, ...diagnostic } = located.diagnostic
+  return { ...located, diagnostic, raw: frame }
+}
+
+function adapterEvents<State>(input: TranslateRawHarnessEventInput<State>) {
+  const translated = input.adapter.translate({ state: input.state, event: rawHarnessEvent(input.event), context: input.context })
+  const result = Array.isArray(translated) ? { events: translated } : translated satisfies HarnessEventAdapterResult<State>
+  const diagnostics = normalizeDiagnostics(result.diagnostics).map((diagnostic) => agentRuntimeEvent.diagnostic({ diagnostic }))
+  return { state: result.state ?? input.state, events: [...(result.events ?? []), ...diagnostics] }
+}
+
+function adapterFailure(event: RawHarnessEvent, error: unknown): AgentRuntimeEvent {
+  return agentRuntimeEvent.diagnostic({
+    diagnostic: runtimeDiagnostic({
       code: "runtime.adapter_error",
       message: error instanceof Error ? error.message : String(error),
       severity: "error",
-      source: input.event.source,
-      method: input.event.method,
-      raw: input.event.payload,
-    })
-    return {
-      state: input.state,
-      events: [agentRuntimeEvent.diagnostic({
-        diagnostic,
-        harness: input.context.harness,
-        threadId: input.context.threadId,
-        raw: input.event,
-      })],
-    }
+      source: event.source,
+      method: event.method,
+    }),
+  })
+}
+
+export function translateRawHarnessEvent<State>(
+  input: TranslateRawHarnessEventInput<State>,
+): TranslateRawHarnessEventResult<State> {
+  const { source, method, payload } = input.event
+  const frame = { source, ...(method ? { method } : {}), payload: frameExcerpt(payload) }
+  const located = (events: AgentRuntimeEvent[]) => events.map((event) => withRuntimeMeta(event, input.context, frame))
+  try {
+    const result = adapterEvents(input)
+    return { state: result.state, events: located(result.events) }
+  } catch (error) {
+    return { state: input.state, events: located([adapterFailure(input.event, error)]) }
   }
 }
 

@@ -204,7 +204,6 @@ mountWorkspaceCore(app, upgradeWebSocket, {
 | `/api/wr/pty/*` | PTY lifecycle and WebSocket connect routes. |
 | `/api/wr/process/*` | Managed process config, lifecycle, diagnostics, port map, logs. |
 | `/api/wr/hook/*` | Agent hook routes. |
-| `/api/wr/subagent-transcripts/*` | Resolve authorized opaque transcript handles for a parent session. |
 | `/api/wr/worktrees/*` | Registered per-session Git worktree creation, inspection, and repair. |
 | `/session/*` | Session create/list/read/update/delete/message/abort/revert/fork/command routes. |
 | `/agent`, `/permission`, `/question`, `/command` | Compatibility and session support routes. |
