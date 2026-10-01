@@ -1,9 +1,3 @@
-/**
- * Agent Hooks Core Constants
- *
- * Directory paths, generic markers, file names, and shared templates.
- */
-
 import * as path from "path"
 import { dataDir } from "../../paths"
 
@@ -18,26 +12,7 @@ export const NOTIFY_MARKER = "# Claxedo agent notification hook v1"
 export const SHELL_MARKER = "# Claxedo shell integration v1"
 
 export const NOTIFY_SCRIPT = "notify.sh"
-export const GEMINI_HOOK = "gemini-hook.sh"
-export const CLAUDE_HOOK_SETTINGS = "claude-settings.json"
-export const CURSOR_HOOK = "cursor-hook.sh"
-export const ANTIGRAVITY_HOOK = "antigravity-hook.sh"
-export const COPILOT_HOOK = "copilot-hook.sh"
-export const COPILOT_PROJECT_HOOK = "claxedo-notify.json"
 export const WRAPPERS_JSON = "wrappers.json"
-
-export const DEFAULT_GENERIC_WRAPPERS = ["aider", "goose", "cline"]
-export const SHIMMED_BINARIES = new Set([
-  "amp",
-  "claude",
-  "codex",
-  "gemini",
-  "cursor",
-  "cursor-agent",
-  "copilot",
-  "mastracode",
-  "droid",
-])
 
 export const WRAPPER_NAME = /^[a-z0-9][a-z0-9._-]{0,31}$/
 

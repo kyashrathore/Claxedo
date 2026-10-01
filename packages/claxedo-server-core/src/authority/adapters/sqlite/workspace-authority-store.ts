@@ -318,16 +318,6 @@ CREATE TABLE IF NOT EXISTS session_messages (
   updated_at INTEGER NOT NULL,
   PRIMARY KEY (session_id, message_id)
 );
-CREATE TABLE IF NOT EXISTS session_participants (
-  session_id TEXT NOT NULL,
-  workspace_id TEXT NOT NULL,
-  actor_token_identifier TEXT NOT NULL,
-  added_by_token_identifier TEXT NOT NULL,
-  created_at INTEGER NOT NULL,
-  revoked_at INTEGER,
-  PRIMARY KEY (session_id, actor_token_identifier)
-);
-CREATE INDEX IF NOT EXISTS session_participants_by_actor ON session_participants (actor_token_identifier);
 -- Nested teams under an org (D17) and private-session share grants (D18).
 -- Evaluate-time membership joins mirror the authority; methods land with authority ports.
 CREATE TABLE IF NOT EXISTS teams (

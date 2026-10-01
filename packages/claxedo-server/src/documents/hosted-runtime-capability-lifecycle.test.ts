@@ -119,7 +119,7 @@ describe("hosted runtime capability lifecycle", () => {
     let capabilityToken = ""
     const runtime = RuntimeDocumentHydrationRoutes({
       workspaceRoot: root,
-      trustedTransport: true,
+      workspaceId: "ws_1",
       controlPlaneOrigin: "https://control.test",
       verifyJob: async (_token, expected) => {
         if (expected.operation !== "write") return {}

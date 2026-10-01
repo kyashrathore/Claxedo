@@ -1,45 +1,29 @@
-/**
- * Agent Hooks Setup
- *
- * Orchestration — wires together core status hooks and Claxedo integrations.
- */
-
 import * as fs from "fs"
 import { materializeAgentHooks } from "./materialize-status-hooks"
 import { Log } from "../log"
 import { userHomeDir } from "@claxedo/helpers/path"
+import { defaultStatusHooks, defaultGenericWrappers } from "../status-hooks"
+import { BIN_DIR, CLAXEDO_DIR } from "./core/constants"
 import {
-  BIN_DIR,
-  CLAXEDO_DIR,
-} from "./core/constants"
-import { setupStatusHooks, isStatusHooksSetupComplete, type StatusHooksSetupOptions } from "./core/setup"
+  createStatusHooksManifest,
+  writeStatusHooksArtifacts,
+  isStatusHooksSetupComplete,
+  type StatusHooksSetupOptions,
+} from "./core/setup"
+import { readWrapperInventory } from "./core/wrappers"
+import type { StatusHookTemplate } from "@claxedo/plugin-api"
 
 const log = Log.create({ service: "agent-hooks" })
-
-// ── Setup options ──────────────────────────────────────────────────────────
-
-export type SetupOptions = StatusHooksSetupOptions
-
-// ── Main setup ─────────────────────────────────────────────────────────────
+export type SetupOptions = StatusHooksSetupOptions & { templates?: readonly StatusHookTemplate[] }
 
 export async function setupAgentHooks(options: SetupOptions = {}): Promise<void> {
-  const {
-    port = 7860,
-    force = false,
-    wrappers,
-    replaceWrappers = false,
-  } = options
-
-  log.info("Setting up agent hooks", { port, force })
-
-  const manifest = await setupStatusHooks({ port, force, wrappers, replaceWrappers })
-  const results = await materializeAgentHooks({
-    homeDir: userHomeDir(),
-    notifyPath: manifest.files.notify,
-    geminiHookPath: manifest.files.geminiHook,
-    cursorHookPath: manifest.files.cursorHook,
-    force,
+  const templates = options.templates ?? defaultStatusHooks
+  const manifest = await writeStatusHooksArtifacts(createStatusHooksManifest(), {
+    ...options,
+    templates,
+    genericWrappers: defaultGenericWrappers,
   })
+  const results = await materializeAgentHooks({ homeDir: userHomeDir(), notifyPath: manifest.files.notify, templates })
   for (const result of results) {
     if (result.status !== "failed") continue
     log.warn("Failed to materialize agent hooks", { runner: result.runner, path: result.path, reason: result.reason })
@@ -47,16 +31,14 @@ export async function setupAgentHooks(options: SetupOptions = {}): Promise<void>
   log.info("Agent hooks setup complete", { binDir: BIN_DIR })
 }
 
-// ── Status check ───────────────────────────────────────────────────────────
-
-export function isSetupComplete(): boolean {
-  return isStatusHooksSetupComplete()
+export function listWrapperAgents(root = CLAXEDO_DIR, templates = defaultStatusHooks) {
+  return readWrapperInventory(root, templates, defaultGenericWrappers)
 }
 
-// ── Cleanup ────────────────────────────────────────────────────────────────
+export function isSetupComplete(templates = defaultStatusHooks): boolean {
+  return isStatusHooksSetupComplete(templates)
+}
 
 export async function cleanupAgentHooks(): Promise<void> {
-  log.info("Cleaning up agent hooks")
   await fs.promises.rm(CLAXEDO_DIR, { recursive: true, force: true })
-  log.info("Agent hooks cleanup complete")
 }
