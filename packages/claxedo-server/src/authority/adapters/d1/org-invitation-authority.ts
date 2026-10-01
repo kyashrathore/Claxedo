@@ -6,7 +6,7 @@ import {
   type OrgInvitationDelivery,
   type OrgMemberRole,
 } from "@claxedo/server-core/platform/auth/org-access-authority"
-import { D1AccessAuthorityError, requireText, type AccessPrincipal, type D1AccessContext } from "./access-context"
+import { accessAuditStatement, D1AccessAuthorityError, requireText, type AccessPrincipal, type D1AccessContext } from "./access-context"
 import { may, maySql } from "./authorization"
 import { D1OrgMemberAuthority } from "./org-member-authority"
 
@@ -52,28 +52,33 @@ export class D1OrgInvitationAuthority implements D1OrgInvitationAuthorityPort {
     ).join("")
     const tokenHash = await invitationTokenHash(token)
     const now = this.context.now()
+    const invitationId = `inv_${crypto.randomUUID()}`
     const administers = maySql(who, args.role === "owner" ? "own" : "administer", { kind: "org", orgId: "org.org_id" })
-    const result = await this.context.database
-      .prepare(
-        `
-      insert into org_invitations (id, org_id, email, role, token_hash, invited_by, created_at, expires_at)
-      select ?, org.org_id, ?, ?, ?, ?, ?, ? from orgs org
-      where org.org_id = ? and org.deleted_at is null and ${administers.sql}
-    `,
-      )
-      .bind(
-        `inv_${crypto.randomUUID()}`,
-        email,
-        args.role,
-        tokenHash,
-        who.userId,
+    const permitted = {
+      sql: `exists (select 1 from orgs org where org.org_id = ? and org.deleted_at is null and ${administers.sql})`,
+      bind: [orgId, ...administers.bind],
+    }
+    const [, result] = await this.context.database.batch([
+      accessAuditStatement(this.context, {
+        who,
+        action: "org.invitation.created",
+        metadata: {
+          sql: "json_object('orgId', ?, 'invitationId', ?, 'email', ?, 'role', ?)",
+          bind: [orgId, invitationId, email, args.role],
+        },
+        guard: permitted,
         now,
-        now + INVITATION_TTL_MS,
-        orgId,
-        ...administers.bind,
-      )
-      .run()
-    if (result.meta.changes !== 1) throw new D1AccessAuthorityError("org_admin_required")
+      }),
+      this.context.database
+        .prepare(
+          `
+        insert into org_invitations (id, org_id, email, role, token_hash, invited_by, created_at, expires_at)
+        select ?, ?, ?, ?, ?, ?, ?, ? where ${permitted.sql}
+      `,
+        )
+        .bind(invitationId, orgId, email, args.role, tokenHash, who.userId, now, now + INVITATION_TTL_MS, ...permitted.bind),
+    ])
+    if (result!.meta.changes !== 1) throw new D1AccessAuthorityError("org_admin_required")
     try {
       await this.delivery.sendInvitation({ email, token })
     } catch {
@@ -99,17 +104,30 @@ export class D1OrgInvitationAuthority implements D1OrgInvitationAuthorityPort {
   async revokeOrgInvitation(auth: SignedControlPlaneAuth, args: { orgId: string; invitationId: string }) {
     const who = await this.context.principal(auth)
     const orgId = await this.adminOrganization(who, args.orgId)
-    const administers = maySql(who, "administer", { kind: "org", orgId: "org_invitations.org_id" })
-    const result = await this.context.database
-      .prepare(
-        `
-      update org_invitations set revoked_at = ?
-      where id = ? and org_id = ? and revoked_at is null and accepted_at is null and ${administers.sql}
-    `,
-      )
-      .bind(this.context.now(), requireText(args.invitationId, "invitationId"), orgId, ...administers.bind)
-      .run()
-    return { revoked: result.meta.changes === 1 }
+    const invitationId = requireText(args.invitationId, "invitationId")
+    const now = this.context.now()
+    const administers = maySql(who, "administer", { kind: "org", orgId: "invitation.org_id" })
+    const pending = {
+      sql: `exists (
+        select 1 from org_invitations invitation
+        where invitation.id = ? and invitation.org_id = ? and invitation.revoked_at is null and invitation.accepted_at is null
+          and ${administers.sql}
+      )`,
+      bind: [invitationId, orgId, ...administers.bind],
+    }
+    const [, result] = await this.context.database.batch([
+      accessAuditStatement(this.context, {
+        who,
+        action: "org.invitation.revoked",
+        metadata: { sql: "json_object('orgId', ?, 'invitationId', ?)", bind: [orgId, invitationId] },
+        guard: pending,
+        now,
+      }),
+      this.context.database
+        .prepare(`update org_invitations set revoked_at = ? where id = ? and ${pending.sql}`)
+        .bind(now, invitationId, ...pending.bind),
+    ])
+    return { revoked: result!.meta.changes === 1 }
   }
 
   async acceptOrgInvitation(auth: SignedControlPlaneAuth, args: { token: string }) {

@@ -86,6 +86,23 @@ describe("D1 organization invitations", () => {
     expect(stored.results).toHaveLength(2)
   })
 
+  test("creating and revoking an invitation are each audited once, attributed to the admin", async () => {
+    const { invite, invitations, owner, invitee, database } = await setup()
+    const { id } = await invite("audited@example.com", "member")
+    await expect(
+      invitations.createOrgInvitation(invitee, { orgId: "org_acme", email: "x@example.com", role: "member" }),
+    ).rejects.toMatchObject({ code: "org_admin_required" })
+    await invitations.revokeOrgInvitation(owner, { orgId: "org_acme", invitationId: id })
+    expect(await invitations.revokeOrgInvitation(owner, { orgId: "org_acme", invitationId: id })).toEqual({ revoked: false })
+    const audits = await database
+      .prepare("select action, user_id, metadata_json from authority_audit_events where action like 'org.invitation.%' order by created_at, action")
+      .all<{ action: string; user_id: string; metadata_json: string }>()
+    expect(audits.results.map((row) => [row.action, row.user_id, JSON.parse(row.metadata_json)])).toEqual([
+      ["org.invitation.created", owner.principal!.userId, { orgId: "org_acme", invitationId: id, email: "audited@example.com", role: "member" }],
+      ["org.invitation.revoked", owner.principal!.userId, { orgId: "org_acme", invitationId: id }],
+    ])
+  })
+
   test("acceptance grants the invited role and writes exactly one membership audit", async () => {
     const { invite, invitations, invitee, database } = await setup()
     const { token } = await invite()
@@ -100,7 +117,7 @@ describe("D1 organization invitations", () => {
     expect(membership).toEqual({ role: "admin" })
     const audits = await database
       .prepare(
-        "select action, user_id, metadata_json from authority_audit_events where action = 'org.member.added' and user_id = ?",
+        "select action, user_id, metadata_json from authority_audit_events where action = 'org.member.added' and user_id = ? and json_extract(metadata_json, '$.orgId') = 'org_acme'",
       )
       .bind(invitee.principal!.userId)
       .all<{ action: string; user_id: string; metadata_json: string }>()
@@ -116,7 +133,7 @@ describe("D1 organization invitations", () => {
     })
     expect(
       (await database
-        .prepare("select count(*) as n from authority_audit_events where action = 'org.member.added' and user_id = ?")
+        .prepare("select count(*) as n from authority_audit_events where action = 'org.member.added' and user_id = ? and json_extract(metadata_json, '$.orgId') = 'org_acme'")
         .bind(invitee.principal!.userId)
         .first<{ n: number }>())!.n,
     ).toBe(1)
@@ -194,7 +211,7 @@ describe("D1 organization invitations", () => {
     expect(outcomes.filter((result) => result.status === "rejected")).toHaveLength(1)
     expect(
       (await database
-        .prepare("select count(*) as n from authority_audit_events where action = 'org.member.added' and user_id = ?")
+        .prepare("select count(*) as n from authority_audit_events where action = 'org.member.added' and user_id = ? and json_extract(metadata_json, '$.orgId') = 'org_acme'")
         .bind(invitee.principal!.userId)
         .first<{ n: number }>())!.n,
     ).toBe(1)
