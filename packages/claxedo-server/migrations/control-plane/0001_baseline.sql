@@ -1,14 +1,3 @@
-CREATE TABLE users (
-  user_id text primary key,
-  state text not null check (state in ('active', 'suspended', 'deleted')),
-  created_at integer not null,
-  updated_at integer not null,
-  suspended_at integer,
-  deleted_at integer,
-  check ((state = 'suspended') = (suspended_at is not null)),
-  check ((state = 'deleted') = (deleted_at is not null))
-);
-
 CREATE TABLE actors (
   actor_id text primary key,
   user_id text references users (user_id) deferrable initially deferred,
@@ -19,18 +8,6 @@ CREATE TABLE actors (
   revoked_at integer,
   check ((kind = 'human' and user_id is not null) or kind = 'agent'),
   check ((state = 'revoked') = (revoked_at is not null))
-);
-
-CREATE TABLE orgs (
-  org_id text primary key,
-  name text not null,
-  kind text not null check (kind in ('personal', 'shared', 'deployment')),
-  owner_user_id text not null references users (user_id) deferrable initially deferred,
-  deployment_id text,
-  created_at integer not null,
-  updated_at integer not null,
-  deleted_at integer,
-  check ((kind = 'deployment') = (deployment_id is not null))
 );
 
 CREATE TABLE agent_plugin_artifact_pins (
@@ -75,18 +52,6 @@ CREATE TABLE agent_plugin_organization_defaults (
   harness_id text not null check (harness_id in ('opencode', 'claude', 'codex', 'cursor', 'acp')),
   updated_at integer not null,
   primary key (org_id, plugin_instance_id, harness_id)
-);
-
-CREATE TABLE projects (
-  project_id text primary key,
-  org_id text not null references orgs (org_id) deferrable initially deferred,
-  repo_key text not null,
-  owner_user_id text not null references users (user_id) deferrable initially deferred,
-  created_at integer not null,
-  updated_at integer not null,
-  deleted_at integer,
-  unique (project_id, org_id),
-  unique (org_id, repo_key)
 );
 
 CREATE TABLE agent_plugin_project_overrides (
@@ -148,25 +113,6 @@ CREATE TABLE "auth_identities" (
   linked_at integer not null,
   unlinked_at integer,
   primary key (adapter, issuer, subject)
-);
-
-CREATE TABLE workspaces (
-  workspace_id text primary key,
-  org_id text not null,
-  project_id text not null,
-  owner_user_id text not null references users (user_id) deferrable initially deferred,
-  backing text not null check (backing in ('local-worktree', 'cloud-vm')),
-  display_name text not null,
-  home_region text,
-  repo_url text,
-  repo_name text,
-  git_branch text,
-  remote_directory text,
-  created_at integer not null,
-  updated_at integer not null,
-  deleted_at integer, org_member_visible integer not null default 1
-  check (org_member_visible in (0, 1)), host_assignment_revision integer not null default 0,
-  foreign key (project_id, org_id) references projects (project_id, org_id) deferrable initially deferred
 );
 
 CREATE TABLE authority_audit_events (
@@ -395,6 +341,18 @@ CREATE TABLE org_memberships (
   primary key (org_id, user_id)
 );
 
+CREATE TABLE orgs (
+  org_id text primary key,
+  name text not null,
+  kind text not null check (kind in ('personal', 'shared', 'deployment')),
+  owner_user_id text not null references users (user_id) deferrable initially deferred,
+  deployment_id text,
+  created_at integer not null,
+  updated_at integer not null,
+  deleted_at integer,
+  check ((kind = 'deployment') = (deployment_id is not null))
+);
+
 CREATE TABLE plugin_backend_activations (
   org_id text not null references orgs (org_id) deferrable initially deferred,
   plugin_id text not null,
@@ -424,6 +382,18 @@ CREATE TABLE projection_command_idempotency (
   claim_id text not null,
   result_json text,
   expires_at integer not null
+);
+
+CREATE TABLE projects (
+  project_id text primary key,
+  org_id text not null references orgs (org_id) deferrable initially deferred,
+  repo_key text not null,
+  owner_user_id text not null references users (user_id) deferrable initially deferred,
+  created_at integer not null,
+  updated_at integer not null,
+  deleted_at integer,
+  unique (project_id, org_id),
+  unique (org_id, repo_key)
 );
 
 CREATE TABLE runtime_access_tokens (
@@ -492,51 +462,6 @@ CREATE TABLE sandbox_passes (
   revoked_reason text
 );
 
-CREATE TABLE session_registration_operations (
-  operation_id text primary key,
-  session_id text not null unique,
-  workspace_id text not null,
-  org_id text not null,
-  project_id text not null,
-  creator_actor_id text not null references actors (actor_id) deferrable initially deferred,
-  operation_kind text not null check (operation_kind in ('create', 'fork')),
-  parent_session_id text,
-  requested_title text,
-  state text not null check (
-    state in ('reserved', 'registered', 'reconciliation_required', 'compensation_pending', 'compensated')
-  ),
-  state_reason text,
-  created_at integer not null,
-  updated_at integer not null,
-  foreign key (workspace_id, org_id, project_id)
-    references workspaces (workspace_id, org_id, project_id) deferrable initially deferred,
-  check (
-    (operation_kind = 'create' and parent_session_id is null)
-    or (operation_kind = 'fork' and parent_session_id is not null)
-  )
-);
-
-CREATE TABLE sessions (
-  session_id text primary key,
-  operation_id text not null unique references session_registration_operations (operation_id) deferrable initially deferred,
-  workspace_id text not null,
-  org_id text not null,
-  project_id text not null,
-  creator_actor_id text not null references actors (actor_id) deferrable initially deferred,
-  lifecycle_generation integer not null check (lifecycle_generation >= 1),
-  title text,
-  created_at integer not null,
-  updated_at integer not null,
-  deleted_at integer,
-  max_event_ordinal integer not null default 0 check (max_event_ordinal >= 0),
-  snapshot_generation integer not null default 0 check (snapshot_generation >= 0),
-  snapshot_hash text,
-  snapshot_token text, last_human_turn_at integer, archived_at integer, status text check (status is null or status in ('idle', 'busy', 'retry', 'recovering')), status_at integer, awaiting_input integer not null default 0 check (awaiting_input in (0, 1)), runtime_updated_at integer,
-  unique (session_id, workspace_id, org_id, project_id),
-  foreign key (workspace_id, org_id, project_id)
-    references workspaces (workspace_id, org_id, project_id) deferrable initially deferred
-);
-
 CREATE TABLE session_messages (
   session_id text not null,
   workspace_id text not null,
@@ -570,15 +495,28 @@ CREATE TABLE session_participants (
     references sessions (session_id, workspace_id, org_id, project_id) deferrable initially deferred
 );
 
-CREATE TABLE teams (
-  team_id text primary key,
-  org_id text not null references orgs (org_id) deferrable initially deferred,
-  name text not null,
-  is_default integer not null default 0 check (is_default in (0, 1)),
-  created_by_user_id text not null references users (user_id) deferrable initially deferred,
+CREATE TABLE session_registration_operations (
+  operation_id text primary key,
+  session_id text not null unique,
+  workspace_id text not null,
+  org_id text not null,
+  project_id text not null,
+  creator_actor_id text not null references actors (actor_id) deferrable initially deferred,
+  operation_kind text not null check (operation_kind in ('create', 'fork')),
+  parent_session_id text,
+  requested_title text,
+  state text not null check (
+    state in ('reserved', 'registered', 'reconciliation_required', 'compensation_pending', 'compensated')
+  ),
+  state_reason text,
   created_at integer not null,
   updated_at integer not null,
-  deleted_at integer
+  foreign key (workspace_id, org_id, project_id)
+    references workspaces (workspace_id, org_id, project_id) deferrable initially deferred,
+  check (
+    (operation_kind = 'create' and parent_session_id is null)
+    or (operation_kind = 'fork' and parent_session_id is not null)
+  )
 );
 
 CREATE TABLE session_share_grants (
@@ -654,6 +592,27 @@ CREATE TABLE session_turn_producers (
   unique (session_id, fencing_token),
   foreign key (session_id, workspace_id, org_id, project_id)
     references sessions (session_id, workspace_id, org_id, project_id) deferrable initially deferred
+);
+
+CREATE TABLE sessions (
+  session_id text primary key,
+  operation_id text not null unique references session_registration_operations (operation_id) deferrable initially deferred,
+  workspace_id text not null,
+  org_id text not null,
+  project_id text not null,
+  creator_actor_id text not null references actors (actor_id) deferrable initially deferred,
+  lifecycle_generation integer not null check (lifecycle_generation >= 1),
+  title text,
+  created_at integer not null,
+  updated_at integer not null,
+  deleted_at integer,
+  max_event_ordinal integer not null default 0 check (max_event_ordinal >= 0),
+  snapshot_generation integer not null default 0 check (snapshot_generation >= 0),
+  snapshot_hash text,
+  snapshot_token text, last_human_turn_at integer, archived_at integer, status text check (status is null or status in ('idle', 'busy', 'retry', 'recovering')), status_at integer, awaiting_input integer not null default 0 check (awaiting_input in (0, 1)), runtime_updated_at integer,
+  unique (session_id, workspace_id, org_id, project_id),
+  foreign key (workspace_id, org_id, project_id)
+    references workspaces (workspace_id, org_id, project_id) deferrable initially deferred
 );
 
 CREATE TABLE task_attachments (
@@ -758,6 +717,17 @@ CREATE TABLE team_project_grants (
   primary key (team_id, project_id)
 );
 
+CREATE TABLE teams (
+  team_id text primary key,
+  org_id text not null references orgs (org_id) deferrable initially deferred,
+  name text not null,
+  is_default integer not null default 0 check (is_default in (0, 1)),
+  created_by_user_id text not null references users (user_id) deferrable initially deferred,
+  created_at integer not null,
+  updated_at integer not null,
+  deleted_at integer
+);
+
 CREATE TABLE usage_turn_facts (
   host_id text not null,
   session_ref text not null,
@@ -818,6 +788,36 @@ CREATE TABLE "user_deployed_owner_bootstrap_claims" (
     or
     (consumed_at is not null and consumed_adapter is not null and consumed_issuer is not null and consumed_subject is not null)
   )
+);
+
+CREATE TABLE users (
+  user_id text primary key,
+  state text not null check (state in ('active', 'suspended', 'deleted')),
+  created_at integer not null,
+  updated_at integer not null,
+  suspended_at integer,
+  deleted_at integer,
+  check ((state = 'suspended') = (suspended_at is not null)),
+  check ((state = 'deleted') = (deleted_at is not null))
+);
+
+CREATE TABLE workspaces (
+  workspace_id text primary key,
+  org_id text not null,
+  project_id text not null,
+  owner_user_id text not null references users (user_id) deferrable initially deferred,
+  backing text not null check (backing in ('local-worktree', 'cloud-vm')),
+  display_name text not null,
+  home_region text,
+  repo_url text,
+  repo_name text,
+  git_branch text,
+  remote_directory text,
+  created_at integer not null,
+  updated_at integer not null,
+  deleted_at integer, org_member_visible integer not null default 1
+  check (org_member_visible in (0, 1)), host_assignment_revision integer not null default 0,
+  foreign key (project_id, org_id) references projects (project_id, org_id) deferrable initially deferred
 );
 
 CREATE UNIQUE INDEX actors_one_human_per_user

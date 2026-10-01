@@ -81,24 +81,19 @@ clients, deploys the Worker with `wrangler deploy`, and waits until `/health`
 names the version it deployed. The new version serves as soon as Cloudflare
 switches traffic.
 
-A control-plane D1 that records older migrations, or a baseline other than
-the current `0001_baseline.sql`, stops the deploy before any migration runs,
-and the error names the reset. The reset deletes and recreates staging's
-control-plane D1; it discards every row, converts nothing, and leaves
-`AUTH_DB` alone. From `packages/claxedo-server`, with Cloudflare credentials
-in the environment and the staging environment's
-`CLAXEDO_STAGING_CONTROL_PLANE_D1_DATABASE_NAME` value:
+The deploy refuses a control-plane D1 that does not hold exactly the current
+baseline; rows are never converted. To reset staging, delete that database
+(wrangler asks to confirm) and rerun the `control-plane` job, which recreates
+it empty by name and applies the baseline. `AUTH_DB` is untouched. Claim the
+deployment's owner again afterwards (`bun run deploy:user-cloudflare:claim-owner`):
 
 ```sh
-export CLAXEDO_STAGING_CONTROL_PLANE_D1_DATABASE_NAME=<staging control-plane database name>
-bun run d1:reset:staging -- --confirm <staging control-plane database name>
+bunx wrangler d1 delete <CLAXEDO_STAGING_CONTROL_PLANE_D1_DATABASE_NAME>
 ```
 
-Then rerun the staging workflow's `control-plane` job. The deploy finds the
-recreated database by name, binds its new UUID, and applies the baseline. The
-deployment has no owner afterwards, so claim it again with
-`bun run deploy:user-cloudflare:claim-owner`
-(`public-docs/user-deployed-cloudflare.md`).
+Staging's auth database still holds tables no code reads: `deploymentRelease*`,
+`deploymentCutover*` and `deploymentRecoveryEpoch`. Their restrict foreign keys
+make a drop impossible on D1, and a fresh database never creates them.
 
 A deploy also drops the `CLAXEDO_CREDENTIALS` KV binding that was added to the
 Worker out of band. That is correct: hosted credentials moved to
@@ -137,9 +132,9 @@ workflow, not to this one.
 
 **A deploy broke staging.** Roll the Worker back to the previous version with
 `wrangler rollback --name claxedo-user-deployed-locked-staging` (and
-`--name claxedo-user-deployed-app-staging` for the app). The control-plane
-baseline cannot upgrade an old schema; a D1 restore must contain the same
-baseline schema before redeploying.
+`--name claxedo-user-deployed-app-staging` for the app).
+`wrangler d1 time-travel restore` restores data; the next deploy admits the
+control-plane database only if it holds the current baseline.
 
 **The relay answers `mode: "node"` or stops resolving targets.** A deploy that
 omitted `CLAXEDO_CENTRAL_URL` removed it from the Worker. Rerun the `relay`

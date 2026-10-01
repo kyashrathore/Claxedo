@@ -1,12 +1,6 @@
 import { Miniflare } from "miniflare"
 import type { D1Database } from "@cloudflare/workers-types"
-import {
-  CONTROL_PLANE_BASELINE,
-  baselineStatements,
-  currentControlPlaneBaseline,
-  requireBaselineFiles,
-  requireControlPlaneBaseline,
-} from "../../scripts/control-plane-schema"
+import { CONTROL_PLANE_BASELINE, baselineStatements, currentControlPlaneBaseline } from "../../scripts/control-plane-schema"
 
 export function controlPlaneMigrations(): readonly string[] {
   currentControlPlaneBaseline()
@@ -21,7 +15,6 @@ export type ControlPlaneDatabase = {
 export async function miniflareControlPlaneDatabase(
   migrations: readonly string[],
 ): Promise<ControlPlaneDatabase> {
-  requireBaselineFiles(migrations)
   const instance = new Miniflare({
     modules: true,
     script: "export default { fetch() { return new Response('ok') } }",
@@ -39,14 +32,6 @@ export async function miniflareControlPlaneDatabase(
 }
 
 export async function applyControlPlaneMigration(database: D1Database, name: string): Promise<void> {
-  requireBaselineFiles([name])
-  const baseline = currentControlPlaneBaseline()
-  const state = await requireControlPlaneBaseline(async (sql) => (await database.prepare(sql).all()).results, baseline)
-  if (state === "baseline") return
-  const statements = baselineStatements(baseline).map((statement) => database.prepare(statement))
-  await database.batch([
-    database.prepare("create table if not exists d1_migrations (id integer primary key autoincrement, name text unique, applied_at timestamp default current_timestamp not null)"),
-    ...statements,
-    database.prepare(`insert into d1_migrations(name) values ('${CONTROL_PLANE_BASELINE}')`),
-  ])
+  if (name !== CONTROL_PLANE_BASELINE) throw new Error(`${name} is not ${CONTROL_PLANE_BASELINE}`)
+  await database.batch(baselineStatements(currentControlPlaneBaseline()).map((statement) => database.prepare(statement)))
 }
