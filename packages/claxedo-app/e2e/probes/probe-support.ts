@@ -1,7 +1,7 @@
 import type { Stack } from "../harness"
 import type { Workspace } from "../harness/daemon"
 import type { ServerEvent } from "../../src/server/events"
-import type { SessionRef } from "../../src/server/types"
+import type { SessionLocation } from "../../src/server/types"
 import type { ServerHandle } from "../../src/server/server"
 import type { Proxy } from "./tcp-proxy"
 
@@ -50,7 +50,7 @@ export function eventLog(server: ServerHandle) {
 
 export const PROBE_VIEWPORT = { rows: 40, cols: 100, reasoning: false, shell: false, edit: false }
 
-export async function surfaceOf(server: ServerHandle, ref: SessionRef) {
+export async function surfaceOf(server: ServerHandle, ref: SessionLocation) {
   const reads = server.sessions.read(ref, PROBE_VIEWPORT)
   const [first] = await Promise.all([reads.first, reads.status, reads.backgroundWork, reads.requests, reads.todos, reads.goal])
   return first

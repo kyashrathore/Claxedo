@@ -1,5 +1,5 @@
 import { placementId, sessionId, terminalId } from "@/server"
-import type { MachineId, Placement, PlacementId, SessionId, SessionRef, TerminalId } from "@/server"
+import type { MachineId, Placement, PlacementId, SessionId, SessionLocation, TerminalId } from "@/server"
 import type { PageEntry, PaneRoute, RouteEntry } from "./types"
 
 export type RouteParams = Readonly<Record<string, string>>
@@ -20,7 +20,7 @@ export function draftPath(placement: PlacementId): string {
   return `/w/${encodeURIComponent(placement)}/session`
 }
 
-export function sessionPath(ref: Pick<SessionRef, "placementId" | "sessionId">): string {
+export function sessionPath(ref: Pick<SessionLocation, "placementId" | "sessionId">): string {
   return `${draftPath(ref.placementId)}/${encodeURIComponent(ref.sessionId)}`
 }
 
@@ -29,7 +29,7 @@ export function localSessionPath(session: SessionId): string {
 }
 
 export function sessionLinkPath(
-  ref: Pick<SessionRef, "placementId" | "sessionId">,
+  ref: Pick<SessionLocation, "placementId" | "sessionId">,
   placement: Placement | undefined,
   thisMachine: MachineId | undefined,
 ): string {

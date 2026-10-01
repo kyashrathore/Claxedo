@@ -84,7 +84,7 @@ function declaresSessions(options: Options) {
 }
 
 function deployment(options: Options) {
-  return { issuesSessions: declaresSessions(options), documents: true, connections: options.connections }
+  return { serverKind: "daemon", issuesSessions: declaresSessions(options), documents: true, connections: options.connections }
 }
 
 function bootstrapHostIdentity(options: Options) {

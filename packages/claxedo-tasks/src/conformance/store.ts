@@ -174,7 +174,7 @@ export function tasksStoreConformance(factory: TasksStoreConformanceFactory): re
 
     conformanceCase("a second link for one origin converges on the stored session", async () => {
       const store = await start()
-      const first = linkRow({ taskId: "task-slotted", attempt: 1, sessionRef: { sessionId: "session-one", workspaceId: null } })
+      const first = linkRow({ taskId: "task-slotted", attempt: 1, sessionRef: { sessionId: "session-one", workspaceId: "workspace-local" } })
       assertEqual((await store.links.insert(first)).status, "inserted", "the first link for an empty origin was refused")
 
       const again = await store.links.insert(first)
@@ -185,7 +185,7 @@ export function tasksStoreConformance(factory: TasksStoreConformanceFactory): re
 
     conformanceCase("a second link naming another session is reported as a conflict", async () => {
       const store = await start()
-      await store.links.insert(linkRow({ taskId: "task-slotted", attempt: 1, sessionRef: { sessionId: "session-one", workspaceId: null } }))
+      await store.links.insert(linkRow({ taskId: "task-slotted", attempt: 1, sessionRef: { sessionId: "session-one", workspaceId: "workspace-local" } }))
 
       const other = await store.links.insert(
         linkRow({ taskId: "task-slotted", attempt: 1, sessionRef: { sessionId: "session-two", workspaceId: "workspace-two" } }),
@@ -570,10 +570,8 @@ export function tasksStoreConformance(factory: TasksStoreConformanceFactory): re
       await store.tasks.insert(
         taskRow({ id: "child-from-session", parentTaskId: "task-from-session", createdFrom: origin, createdAt: 3_000 }),
       )
-      // A local session has no workspace, and a row keyed on the workspace
-      // column would read this one as created by nobody.
       await store.tasks.insert(
-        taskRow({ id: "task-from-local", createdFrom: { sessionId: "session-local", workspaceId: null }, createdAt: 2_000 }),
+        taskRow({ id: "task-from-local", createdFrom: { sessionId: "session-local", workspaceId: "workspace-local" }, createdAt: 2_000 }),
       )
       await store.tasks.insert(taskRow({ id: "task-from-the-app", createdAt: 1_000 }))
 
@@ -582,8 +580,8 @@ export function tasksStoreConformance(factory: TasksStoreConformanceFactory): re
       assertEqual(stored?.createdFrom?.workspaceId, "workspace-author", "a read dropped the creating session's workspace")
 
       const local = await store.tasks.get(CONFORMANCE_SCOPES.first, "task-from-local")
-      assertEqual(local?.createdFrom?.sessionId, "session-local", "a creating session without a workspace was read as none")
-      assertEqual(local?.createdFrom?.workspaceId, null, "a creating session was given a workspace it never named")
+      assertEqual(local?.createdFrom?.sessionId, "session-local", "a local session origin was read as none")
+      assertEqual(local?.createdFrom?.workspaceId, "workspace-local", "a local session origin lost its workspace")
 
       assertEqual(
         (await store.tasks.get(CONFORMANCE_SCOPES.first, "task-from-the-app"))?.createdFrom,
@@ -645,7 +643,7 @@ export function tasksStoreConformance(factory: TasksStoreConformanceFactory): re
         }),
       )
       await store.links.insert(
-        linkRow({ taskId: "task-person", attempt: 1, sessionRef: { sessionId: "ses_person", workspaceId: null } }),
+        linkRow({ taskId: "task-person", attempt: 1, sessionRef: { sessionId: "ses_person", workspaceId: "workspace-local" } }),
       )
       // The same session id in the other scope, started by nobody: a lookup
       // that dropped the scope would answer this one for the first.
@@ -654,7 +652,7 @@ export function tasksStoreConformance(factory: TasksStoreConformanceFactory): re
           taskId: "task-agent",
           scopeId: CONFORMANCE_SCOPES.second,
           attempt: 1,
-          sessionRef: { sessionId: "ses_agent", workspaceId: null },
+          sessionRef: { sessionId: "ses_agent", workspaceId: "workspace-local" },
         }),
       )
 

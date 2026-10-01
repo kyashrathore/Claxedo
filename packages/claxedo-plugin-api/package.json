@@ -38,6 +38,7 @@
     "test": "bun test src"
   },
   "dependencies": {
+    "@claxedo/agent-runtime-contract": "workspace:*",
     "zod": "4.4.3"
   },
   "peerDependencies": {

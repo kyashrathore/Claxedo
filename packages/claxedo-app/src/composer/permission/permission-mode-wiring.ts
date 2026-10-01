@@ -1,6 +1,6 @@
 import { createMemo, createResource, createSignal, type Accessor } from "solid-js"
 import { declaredPermissionModes, effectivePermissionModeId } from "@claxedo/agent-runtime-contract"
-import { harnessIdentityOf, type HarnessConfigApi, type PermissionModesRequest, type PlacementId, type SessionRef, type SessionRow } from "@/server"
+import { harnessIdentityOf, type HarnessConfigApi, type PermissionModesRequest, type PlacementId, type SessionLocation, type SessionRow } from "@/server"
 import { harnessSelectionValue, sameHarnessSelection, type HarnessSelection } from "@/lib/harness-selection"
 import type { HarnessId } from "./mechanisms"
 import { createComposerPermissionMode } from "./permission-mode"
@@ -9,7 +9,7 @@ import type { HarnessModeReport, PermissionSelection } from "./modes"
 type WiringInput = {
   api: HarnessConfigApi
   placementId: () => PlacementId | undefined
-  sessionRef: () => SessionRef | undefined
+  sessionRef: () => SessionLocation | undefined
   sessionRow: () => SessionRow | undefined
   harness: () => string | undefined
   harnessSelection: () => HarnessSelection | undefined

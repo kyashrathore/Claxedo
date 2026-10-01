@@ -1,4 +1,4 @@
-import { catchError, createRoot } from "solid-js"
+import { catchError, createRoot, type Owner } from "solid-js"
 import type { PluginApi } from "@claxedo/plugin-api"
 import { failureReason } from "./failure"
 import { buildIdOf, type PluginBuild } from "./model"
@@ -10,6 +10,7 @@ export type ActivationScope = { readonly sink: RegistrationSink; readonly signal
 
 export type ActivationInput = {
   readonly build: PluginBuild
+  readonly owner: Owner
   readonly buildApi: (build: PluginBuild, scope: ActivationScope) => PluginApi
   readonly onCrash: (reason: string) => void
 }
@@ -41,6 +42,6 @@ export function activatePlugin(input: ActivationInput): Promise<Activation> {
         const api = input.buildApi(input.build, { sink, signal: abort.signal })
         Promise.resolve(input.build.definition.activate(api)).then(succeed, fail)
       }, fail)
-    })
+    }, input.owner)
   })
 }

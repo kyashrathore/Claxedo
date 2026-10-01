@@ -28,7 +28,7 @@ export type AppError = {
   readonly cause?: unknown
 }
 
-export type SessionRef = {
+export type SessionLocation = {
   readonly projectId: ProjectId
   readonly placementId: PlacementId
   readonly sessionId: SessionId
@@ -97,7 +97,7 @@ export type SessionSelections = {
 }
 
 export type SessionRow = SessionSelections & {
-  readonly ref: SessionRef
+  readonly ref: SessionLocation
   readonly title: string
   readonly createdAt: number
   readonly updatedAt: number

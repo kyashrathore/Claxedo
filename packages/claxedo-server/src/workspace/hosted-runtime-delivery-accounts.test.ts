@@ -9,7 +9,7 @@ const configApplied = vi.hoisted(() => vi.fn(async (_snapshot: import("@claxedo/
 vi.mock("@claxedo/workspace-runtime/client", () => ({ createWorkspaceRuntimeClient: vi.fn(() => ({ applyConfig: configApplied })) }))
 vi.mock("@claxedo/server-core/platform/auth/runtime-access-token", () => ({ mintSupervisorBackplaneToken: vi.fn(async () => ({ supervisorBackplaneToken: "supervisor-token" })) }))
 
-const OWNERS: Record<string, string> = { "ws-a": "A", "ws-b": "B" }
+const OWNERS: Record<string, string> = { "ws-a": "owner-A", "ws-b": "owner-B" }
 
 test("a workspace's sandbox is delivered its owner's account alone, and another person's placeholder buys no injection there", async () => {
   const database = await workspaceBackingDatabase([{ id: "ws-a", backing: "cloud-vm" }, { id: "ws-b", backing: "cloud-vm" }])
@@ -17,7 +17,7 @@ test("a workspace's sandbox is delivered its owner's account alone, and another 
     const credentials = hostedOrgCredentials("org", { database: database.database, env: {
       [HOSTED_CREDENTIALS_FLAG]: "1", [CREDENTIALS_KEK_ENV]: Buffer.alloc(32, 7).toString("base64"),
     } })
-    for (const owner of ["A", "B"]) {
+    for (const owner of Object.values(OWNERS)) {
       await credentials.putCredential({ owner, provider_id: "openai", kind: "api_key", source: "managed", secret: `account-${owner}` })
     }
     type Input = Parameters<typeof createHostedRuntimeDelivery>[0]
@@ -38,12 +38,12 @@ test("a workspace's sandbox is delivered its owner's account alone, and another 
     const a = await deliveredTo("ws-a")
     const b = await deliveredTo("ws-b")
 
-    expect(a.secrets.map((secret) => secret.value)).toEqual(["account-A"])
-    expect(Object.keys(a.snapshot.auth.accounts)).toEqual(["A"])
-    expect(JSON.stringify(a)).not.toContain("account-B")
+    expect(a.secrets.map((secret) => secret.value)).toEqual(["account-owner-A"])
+    expect(Object.keys(a.snapshot.auth.accounts)).toEqual([OWNERS["ws-a"]])
+    expect(JSON.stringify(a)).not.toContain("account-owner-B")
     const bName = b.secrets[0].name
-    expect(b.secrets.map((secret) => secret.value)).toEqual(["account-B"])
-    expect(bName).not.toContain(Buffer.from("B").toString("hex").toUpperCase())
+    expect(b.secrets.map((secret) => secret.value)).toEqual(["account-owner-B"])
+    expect(bName).not.toContain(OWNERS["ws-b"])
     expect(JSON.stringify(a)).not.toContain(bName)
 
     type Rule = { match?: { headers?: Array<{ value?: { exact?: string } }> } }

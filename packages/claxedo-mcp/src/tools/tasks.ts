@@ -17,7 +17,7 @@ import {
   TasksClientPayloadError,
   type TasksClient,
 } from "@claxedo/tasks/client"
-import type { ConfigurationSlot, Preset, SessionReference, TaskSessionLinkView, TaskSummary } from "@claxedo/tasks"
+import type { ConfigurationSlot, Preset, SessionRef, TaskSessionLinkView, TaskSummary } from "@claxedo/tasks"
 import { CONFIGURATION_SLOTS, TASK_CREATE_STATUSES, TASK_STATUSES, admissibleAttempt, taskNumber } from "@claxedo/tasks"
 import { record, text } from "../json"
 import { decodeApiError } from "@claxedo/helpers/api-error"
@@ -264,7 +264,7 @@ export function registerTaskTools(registry: ToolRegistrar) {
 }
 
 /** The session this call is made from, as the Tasks contract records provenance. */
-function callingSession(ctx: McpToolContext): SessionReference | undefined {
+function callingSession(ctx: McpToolContext): SessionRef | undefined {
   const { credential } = ctx
   if (credential.kind !== "runtime" || !credential.sessionId) return undefined
   return { sessionId: credential.sessionId, workspaceId: credential.workspaceId }

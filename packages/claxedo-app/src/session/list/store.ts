@@ -15,7 +15,7 @@ import {
   type ServerEvent,
   type SessionCreateInput,
   type SessionId,
-  type SessionRef,
+  type SessionLocation,
   type SessionRow,
   type SessionStatus,
 } from "@/server"
@@ -33,8 +33,8 @@ export type SessionListInternal = SessionList & {
   readonly backgroundWorkOf: (sessionId: SessionId) => BackgroundWork
   readonly apply: (event: ServerEvent) => void
   readonly readRow: (row: SessionRow) => void
-  readonly readStatus: (ref: SessionRef, status: SessionStatus, sentAt: number) => void
-  readonly readBackgroundWork: (ref: SessionRef, work: BackgroundWork, sentAt: number) => void
+  readonly readStatus: (ref: SessionLocation, status: SessionStatus, sentAt: number) => void
+  readonly readBackgroundWork: (ref: SessionLocation, work: BackgroundWork, sentAt: number) => void
   readonly opened: (sessionId: SessionId) => void
   readonly closed: (sessionId: SessionId) => void
   readonly sendStarted: (sessionId: SessionId, clientRequestId: string, at: number) => void
@@ -67,7 +67,7 @@ const unknownPlacement = (placementId: PlacementId): AppError => ({
   retryable: false,
 })
 
-function pendingRow(ref: SessionRef, input: SessionCreateInput, at: number): SessionRow {
+function pendingRow(ref: SessionLocation, input: SessionCreateInput, at: number): SessionRow {
   return {
     ref,
     title: input.title ?? "",
@@ -79,11 +79,11 @@ function pendingRow(ref: SessionRef, input: SessionCreateInput, at: number): Ses
   }
 }
 
-async function createPendingSession(server: Server, list: Machine<ListState, ListEvent>, input: SessionCreateInput): Promise<SessionRef> {
+async function createPendingSession(server: Server, list: Machine<ListState, ListEvent>, input: SessionCreateInput): Promise<SessionLocation> {
   const placement = server.placements.byId(input.placementId)
   if (!placement) throw unknownPlacement(input.placementId)
   const clientRequestId = uuid()
-  const ref: SessionRef = { projectId: placement.projectId, placementId: placement.id, sessionId: asSessionId(`pending:${clientRequestId}`) }
+  const ref: SessionLocation = { projectId: placement.projectId, placementId: placement.id, sessionId: asSessionId(`pending:${clientRequestId}`) }
   list.send({ type: "createStarted", clientRequestId, row: pendingRow(ref, input, Date.now()) })
   try {
     const created = await server.sessions.create(input)

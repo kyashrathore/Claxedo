@@ -9,7 +9,7 @@ import type { Transport } from "./transport"
 import { createWorkspaces } from "./workspaces"
 
 const bootstrap = {
-  deployment: { issuesSessions: false },
+  deployment: { serverKind: "daemon", issuesSessions: false },
   project: [{ id: "local_app", worktree: "/Users/ada/app", workspaces: { "/Users/ada/app": { id: "ws_shared", directory: "/Users/ada/app", reachable: true } } }],
 }
 
@@ -42,6 +42,25 @@ test("signed desktop catalog: the account's cloud workspace joins the local proj
       ["ws_web", "prj_web", "cloud"],
     ])
     expect(workspaces.accountProjectIds(projectId("local_app"))).toEqual([projectId("prj_app")])
+    workspaces.dispose()
+    dispose()
+  })
+})
+
+test("signed desktop catalog: the account's catalog is asked while the bootstrap is still answering", async () => {
+  await createRoot(async (dispose) => {
+    let answer = () => {}
+    const answered = new Promise<void>((resolve) => { answer = resolve })
+    const slow = { ...transport(), json: async (path: string) => { await answered; return path === "/api/claxedo/bootstrap" ? bootstrap : projects } } as Transport
+    const calls: string[] = []
+    const account = createHostedAccount(async (operation) => (calls.push(operation), operation === "workspace.list.machine" ? machines : provisioned))
+    const workspaces = createWorkspaces(slow, new QueryClient({ defaultOptions: { queries: { retry: false } } }), account)
+    const loaded = workspaces.load()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(calls.toSorted()).toEqual(["workspace.list.machine", "workspace.list.provisioner"])
+    answer()
+    await loaded
+    expect(workspaces.list()).toHaveLength(3)
     workspaces.dispose()
     dispose()
   })
