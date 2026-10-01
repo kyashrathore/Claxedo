@@ -112,6 +112,36 @@ export function mirrorCodexTokens(next: RenewedCodexTokens, homeDir = home()): s
   return written
 }
 
+function replaceWith(target: string, create: (temporary: string) => void) {
+  const temporary = `${target}.${process.pid}.${Date.now()}.tmp`
+  create(temporary)
+  fs.renameSync(temporary, target)
+}
+
+/**
+ * A Claxedo-owned Codex home for asking the CLI about the machine login, so
+ * `codex login status` and the app-server write their logs, sqlite state and
+ * installation id there instead of into the person's own `~/.codex`. The login
+ * is linked, not copied, because Codex writes a refreshed token through the
+ * link into the person's file (0.156.1 and 0.159.0 both keep the link); the
+ * config is copied, because Codex also writes notices into its config.
+ */
+export function codexAccountReadHome(stateRoot: string, homeDir = home()): string {
+  const owner = process.env.CODEX_HOME ?? path.join(homeDir, ".codex")
+  const accountHome = path.join(stateRoot, "codex-account-read")
+  fs.mkdirSync(accountHome, { recursive: true, mode: 0o700 })
+  const login = path.join(owner, "auth.json")
+  const linked = path.join(accountHome, "auth.json")
+  if (!fs.existsSync(login)) fs.rmSync(linked, { force: true })
+  else if (!fs.lstatSync(linked, { throwIfNoEntry: false })?.isSymbolicLink() || fs.readlinkSync(linked) !== fs.realpathSync(login)) {
+    replaceWith(linked, (temporary) => fs.symlinkSync(fs.realpathSync(login), temporary))
+  }
+  const config = path.join(owner, "config.toml")
+  if (fs.existsSync(config)) replaceWith(path.join(accountHome, "config.toml"), (temporary) => fs.copyFileSync(config, temporary))
+  else fs.rmSync(path.join(accountHome, "config.toml"), { force: true })
+  return accountHome
+}
+
 function home() {
   return process.env.HOME ?? os.homedir()
 }

@@ -48,3 +48,15 @@ export class AgentHarnessEngineError extends Error {
 export function isAgentHarnessEngineError(error: unknown): error is AgentHarnessEngineError {
   return error instanceof AgentHarnessEngineError
 }
+
+type VersionedProgram = { readonly transport: TransportErrorKind; readonly program: string; readonly min: string }
+
+export function harnessVersionTooOld(range: VersionedProgram, installed: string): TransportError {
+  return new TransportError(range.transport, "configuration", `${range.program} ${installed} is installed, and Claxedo needs ${range.program} ${range.min} or newer. Update ${range.program}, then send the message again.`,
+    { retryable: false, detail: { installed, minimum: range.min } })
+}
+
+export function harnessVersionUnreadable(range: VersionedProgram, reported: unknown): TransportError {
+  return new TransportError(range.transport, "protocol", `${range.program} reported no readable version: ${JSON.stringify(reported) ?? "undefined"}`,
+    { retryable: false })
+}

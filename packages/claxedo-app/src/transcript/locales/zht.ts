@@ -20,7 +20,6 @@ const translations: Partial<Record<TranscriptTextKey, string>> = {
   "transcript.lineComment.submit": "評論",
   "transcript.sessionTurn.retry.retrying": "重試中",
   "transcript.sessionTurn.retry.inSeconds": "{{seconds}} 秒後",
-  "transcript.sessionTurn.retry.attempt": "第 {{attempt}} 次",
   "transcript.sessionTurn.retry.attemptLine": "{{line}} - 第 {{attempt}} 次",
   "transcript.sessionTurn.retry.geminiHot": "gemini 目前過載",
   "transcript.sessionTurn.status.gatheringContext": "正在探索",

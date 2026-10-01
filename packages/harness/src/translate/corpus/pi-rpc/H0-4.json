@@ -2,13 +2,17 @@
   "adapter": "pi-rpc",
   "initialState": {
     "blocks": {},
-    "finished": false
+    "finished": false,
+    "stopped": false,
+    "noted": []
   },
   "calls": [
     {
       "state": {
         "blocks": {},
-        "finished": false
+        "finished": false,
+        "stopped": false,
+        "noted": []
       },
       "event": {
         "source": "pi.rpc",
@@ -25,7 +29,9 @@
       "output": {
         "state": {
           "blocks": {},
-          "finished": false
+          "finished": false,
+          "stopped": false,
+          "noted": []
         },
         "events": []
       }
@@ -33,7 +39,9 @@
     {
       "state": {
         "blocks": {},
-        "finished": false
+        "finished": false,
+        "stopped": false,
+        "noted": []
       },
       "event": {
         "source": "pi.rpc",
@@ -47,12 +55,22 @@
         "threadId": "01a0d7a9-f970-72f1-a6dd-b87874fb49a4"
       },
       "callbacks": [],
-      "output": []
+      "output": {
+        "state": {
+          "blocks": {},
+          "finished": false,
+          "stopped": false,
+          "noted": []
+        },
+        "events": []
+      }
     },
     {
       "state": {
         "blocks": {},
-        "finished": false
+        "finished": false,
+        "stopped": false,
+        "noted": []
       },
       "event": {
         "source": "pi.rpc",
@@ -76,12 +94,22 @@
         "threadId": "01a0d7a9-f970-72f1-a6dd-b87874fb49a4"
       },
       "callbacks": [],
-      "output": []
+      "output": {
+        "state": {
+          "blocks": {},
+          "finished": false,
+          "stopped": false,
+          "noted": []
+        },
+        "events": []
+      }
     },
     {
       "state": {
         "blocks": {},
-        "finished": false
+        "finished": false,
+        "stopped": false,
+        "noted": []
       },
       "event": {
         "source": "pi.rpc",
@@ -105,12 +133,22 @@
         "threadId": "01a0d7a9-f970-72f1-a6dd-b87874fb49a4"
       },
       "callbacks": [],
-      "output": []
+      "output": {
+        "state": {
+          "blocks": {},
+          "finished": false,
+          "stopped": false,
+          "noted": []
+        },
+        "events": []
+      }
     },
     {
       "state": {
         "blocks": {},
-        "finished": false
+        "finished": false,
+        "stopped": false,
+        "noted": []
       },
       "event": {
         "source": "pi.rpc",
@@ -151,7 +189,9 @@
       "output": {
         "state": {
           "blocks": {},
-          "finished": false
+          "finished": false,
+          "stopped": false,
+          "noted": []
         },
         "events": []
       }
@@ -159,7 +199,9 @@
     {
       "state": {
         "blocks": {},
-        "finished": false
+        "finished": false,
+        "stopped": false,
+        "noted": []
       },
       "event": {
         "source": "pi.rpc",
@@ -192,12 +234,22 @@
         "threadId": "01a0d7a9-f970-72f1-a6dd-b87874fb49a4"
       },
       "callbacks": [],
-      "output": []
+      "output": {
+        "state": {
+          "blocks": {},
+          "finished": false,
+          "stopped": false,
+          "noted": []
+        },
+        "events": []
+      }
     },
     {
       "state": {
         "blocks": {},
-        "finished": false
+        "finished": false,
+        "stopped": false,
+        "noted": []
       },
       "event": {
         "source": "pi.rpc",
@@ -236,7 +288,9 @@
           "blocks": {
             "0": "PINNEDPISMOKE"
           },
-          "finished": false
+          "finished": false,
+          "stopped": false,
+          "noted": []
         },
         "events": [
           {
@@ -251,7 +305,9 @@
         "blocks": {
           "0": "PINNEDPISMOKE"
         },
-        "finished": false
+        "finished": false,
+        "stopped": false,
+        "noted": []
       },
       "event": {
         "source": "pi.rpc",
@@ -285,14 +341,26 @@
         "threadId": "01a0d7a9-f970-72f1-a6dd-b87874fb49a4"
       },
       "callbacks": [],
-      "output": []
+      "output": {
+        "state": {
+          "blocks": {
+            "0": "PINNEDPISMOKE"
+          },
+          "finished": false,
+          "stopped": false,
+          "noted": []
+        },
+        "events": []
+      }
     },
     {
       "state": {
         "blocks": {
           "0": "PINNEDPISMOKE"
         },
-        "finished": false
+        "finished": false,
+        "stopped": false,
+        "noted": []
       },
       "event": {
         "source": "pi.rpc",
@@ -341,7 +409,9 @@
       "output": {
         "state": {
           "blocks": {},
-          "finished": false
+          "finished": false,
+          "stopped": false,
+          "noted": []
         },
         "events": [
           {
@@ -354,7 +424,7 @@
               "tokens": {
                 "input": 1,
                 "output": 1,
-                "reasoning": null,
+                "reasoning": 0,
                 "cache": {
                   "read": 0,
                   "write": 0
@@ -368,7 +438,9 @@
     {
       "state": {
         "blocks": {},
-        "finished": false
+        "finished": false,
+        "stopped": false,
+        "noted": []
       },
       "event": {
         "source": "pi.rpc",
@@ -415,12 +487,22 @@
         "threadId": "01a0d7a9-f970-72f1-a6dd-b87874fb49a4"
       },
       "callbacks": [],
-      "output": []
+      "output": {
+        "state": {
+          "blocks": {},
+          "finished": false,
+          "stopped": false,
+          "noted": []
+        },
+        "events": []
+      }
     },
     {
       "state": {
         "blocks": {},
-        "finished": false
+        "finished": false,
+        "stopped": false,
+        "noted": []
       },
       "event": {
         "source": "pi.rpc",
@@ -479,12 +561,22 @@
         "threadId": "01a0d7a9-f970-72f1-a6dd-b87874fb49a4"
       },
       "callbacks": [],
-      "output": []
+      "output": {
+        "state": {
+          "blocks": {},
+          "finished": false,
+          "stopped": false,
+          "noted": []
+        },
+        "events": []
+      }
     },
     {
       "state": {
         "blocks": {},
-        "finished": false
+        "finished": false,
+        "stopped": false,
+        "noted": []
       },
       "event": {
         "source": "pi.rpc",
@@ -501,7 +593,9 @@
       "output": {
         "state": {
           "blocks": {},
-          "finished": true
+          "finished": true,
+          "stopped": false,
+          "noted": []
         },
         "events": [
           {

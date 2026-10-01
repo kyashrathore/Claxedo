@@ -43,6 +43,7 @@ export type AcpStep =
   | { kind: "env-digest"; name: string }
   | { kind: "mcp"; marker: string }
   | { kind: "reasoning"; text: string }
+  | { kind: "notice"; severity: string; title: string; description?: string }
   | { kind: "image"; data: string; mimeType: string }
   | { kind: "plan"; entries: PlanEntry[] }
   | AcpToolStep

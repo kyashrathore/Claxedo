@@ -33,7 +33,9 @@ export type ScriptedModelRequest = {
   tools: ScriptedModelTool[]
 }
 
-export type ScriptedToolCall = { name: string; input: unknown; namespace?: string; format?: ScriptedToolFormat; whenPromptIncludes?: string; autoModeSeverity?: 0 }
+export type ScriptedToolCall = { name: string; input: unknown; namespace?: string; format?: ScriptedToolFormat; whenPromptIncludes?: string; autoModeSeverity?: 0
+  /** Only a conversation's opening request, one with no tool result yet: a subagent's first request, not its parent's that carries its spawn. */
+  opening?: true }
 export type ScriptedError = { marker: string; status: number; message: string; model?: string }
 
 export type ScriptedModelServer = {
@@ -48,6 +50,7 @@ export type ScriptedModelServer = {
   scriptText(input: { marker: string; text: string; reasoning?: string }): void
   scriptError(input: ScriptedError): () => void
   holdTextReplies(marker: string): () => void
+  holdOpeningReplies(marker: string): () => void
   textGateReached(marker: string): Promise<void>
   refuseAuthorization(fragment: string): void
   setReplyDelayMs(ms: number): void
@@ -55,7 +58,12 @@ export type ScriptedModelServer = {
   close(): Promise<void>
 }
 
-type TextGate = { marker: string; promise: Promise<void>; release: () => void; reached: Promise<void>; arrive: () => void }
+type TextGate = { marker: string; opening: boolean; promise: Promise<void>; release: () => void; reached: Promise<void>; arrive: () => void }
+
+function gated(gate: TextGate | undefined, request: ScriptedModelBody, prompt: string, reply: ScriptedReply): gate is TextGate {
+  if (!gate || !prompt.includes(gate.marker) || isTitlePrompt(JSON.stringify(request.body))) return false
+  return gate.opening ? reply.kind !== "error" && !hasToolResult(request) : reply.kind === "text"
+}
 
 type ServerState = {
   counts: Record<ScriptedDialect, number>
@@ -73,6 +81,18 @@ type ServerState = {
 }
 
 const SCRIPTED_TITLE = "Scripted Session"
+
+function holdReplies(state: ServerState, marker: string, opening: boolean): () => void {
+  if (state.textGate) throw new Error("A scripted reply gate is already active")
+  const { promise, resolve: release } = Promise.withResolvers<void>()
+  const { promise: reached, resolve: arrive } = Promise.withResolvers<void>()
+  const gate: TextGate = { marker, opening, promise, release, reached, arrive }
+  state.textGate = gate
+  return () => {
+    gate.release()
+    if (state.textGate === gate) state.textGate = undefined
+  }
+}
 
 function freshCounts(): Record<ScriptedDialect, number> {
   return { chat: 0, messages: 0, responses: 0 }
@@ -104,7 +124,8 @@ function pendingReply(state: ServerState, request: ScriptedModelBody, prompt: st
     return toolReply(next)
   }
   const tool = state.pendingTools[0]
-  if (tool && modelTools(request.body).length && (tool.whenPromptIncludes ? prompt.includes(tool.whenPromptIncludes) : !hasToolResult(request))) {
+  const opening = !hasToolResult(request)
+  if (tool && modelTools(request.body).length && (tool.whenPromptIncludes ? prompt.includes(tool.whenPromptIncludes) && (opening || !tool.opening) : opening)) {
     state.pendingTools.shift()
     return toolReply(tool)
   }
@@ -131,7 +152,7 @@ function decideReply(state: ServerState, request: ScriptedModelBody, prompt: str
 async function writeReply(outgoing: ServerResponse, state: ServerState, sequence: number, request: ScriptedModelBody, prompt: string, reply: ScriptedReply) {
   if (reply.kind === "error") return writeErrorReply(outgoing, reply)
   const gate = state.textGate
-  if (reply.kind === "text" && gate && prompt.includes(gate.marker) && !isTitlePrompt(JSON.stringify(request.body))) {
+  if (gated(gate, request, prompt, reply)) {
     gate.arrive()
     await gate.promise
   }
@@ -211,23 +232,8 @@ export async function startScriptedModelServer(input: { port: number; red?: bool
       if (state.pendingText) throw new Error("A scripted text reply is already pending")
       state.pendingText = text
     },
-    holdTextReplies: (marker) => {
-      if (state.textGate) throw new Error("A scripted text reply gate is already active")
-      let release: () => void = () => {}
-      const promise = new Promise<void>((resolve) => {
-        release = resolve
-      })
-      let arrive: () => void = () => {}
-      const reached = new Promise<void>((resolve) => {
-        arrive = resolve
-      })
-      const gate: TextGate = { marker, promise, release, reached, arrive }
-      state.textGate = gate
-      return () => {
-        gate.release()
-        if (state.textGate === gate) state.textGate = undefined
-      }
-    },
+    holdTextReplies: (marker) => holdReplies(state, marker, false),
+    holdOpeningReplies: (marker) => holdReplies(state, marker, true),
     textGateReached: (marker) => {
       const gate = state.textGate
       if (!gate || gate.marker !== marker) throw new Error(`No scripted text reply gate is held for ${marker}`)

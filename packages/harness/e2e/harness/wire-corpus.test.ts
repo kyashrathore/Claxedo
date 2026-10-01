@@ -110,6 +110,8 @@ test("latest-status subjects separate server, native event kind, and rate limit"
     rateLimit: { limitId: "codex" },
   }))).toBe("runtime.rate_limit:codex")
   expect(latestStatusSubject(diagnostic("pi.retry", {}))).toBeUndefined()
+  expect(latestStatusSubject({ data: { payload: { type: "session.background-work", properties: { sessionID: "ses_11111111", agents: 0 } } } }))
+    .toBe("session.background-work")
 })
 
 test("an extra ID in one entity does not renumber another entity", () => {
@@ -148,17 +150,29 @@ test("a hosted stack's temporary root normalizes like the local stack's data dir
   expect(result.product).toBe("<workspace:value:1>")
 })
 
-test("run-local values normalize: an actor id, a digest and a timestamp inside a raw harness line", () => {
+test("run-local values normalize: an actor id, a digest and timestamps inside raw harness lines", () => {
   const result = normalizeWireCorpus({
     actorId: "act_4c24c830a021c693c5c6bcace9d15828",
     delta: "56d2fe28c7026db5dfa4144d76f482bb855f00ecf31b40f5a4306407f6225107",
     raw: "{\"isError\":false,\"timestamp\":1790640318314}",
+    excerpt: "{\"subtype\":\"informational\",\"timestamp\":\"2026-09-30T09:25:53.257Z\"}",
     title: "5822feb31efae0d63b8ab72cb3e383bf64187deb7815820b794a1f7ab47…",
   }) as Record<string, string>
   expect(result.actorId).toBe("<id:value:1>")
   expect(result.delta).toBe("<sha256>")
   expect(result.raw).toBe("{\"isError\":false,\"timestamp\":<time>}")
+  expect(result.excerpt).toBe("{\"subtype\":\"informational\",\"timestamp\":\"<time>\"}")
   expect(result.title).toBe("<sha256>…")
+})
+
+test("a Codex session home named in a Codex warning is run-local", () => {
+  const warning = (home: string) => normalizeWireCorpus({ message: `To suppress this warning, set it in /tmp/claxedo-e2e-h5-abc/.claxedo/harness/codex/homes/codex-owner-1d71abcc5dcbef36/homes/codex-${home}/config.toml.` })
+  expect(warning("e614cd53e077b5e8")).toEqual(warning("86cd0cb8fdc841a9"))
+})
+
+test("a Claude background agent's id and its task file under Claude's temp root are run-local", () => {
+  const launched = (agent: string) => normalizeWireCorpus({ output: `agentId: ${agent} (Use SendMessage with to: '${agent}')\noutput_file: /private/tmp/claude-501/-private-var-folders-t2-x/ses_11111111/tasks/${agent}.output` })
+  expect(launched("a8a58028709803b6d")).toEqual(launched("a010a4860fd4930ec"))
 })
 
 test("the checkout root and the runtime executable are environment facts", () => {

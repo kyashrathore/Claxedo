@@ -55,6 +55,7 @@ function sessionView(context: TranscriptContext): SessionView {
     state,
     row: () => deps.list.rowOf(ref.sessionId),
     status: () => deps.list.statusOf(ref.sessionId),
+    backgroundWork: () => deps.list.backgroundWorkOf(ref.sessionId),
     messages: () => data.messages,
     parts: (messageId) => data.parts[messageId] ?? NO_PARTS,
     pendingDeltas: context.deltas.pending,
