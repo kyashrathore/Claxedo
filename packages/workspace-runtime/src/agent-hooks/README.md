@@ -40,3 +40,13 @@ A hook that carries `agent_id` or `agentId` belongs to a subagent; Claude and Co
 - **A subagent's ask** marks the tab as waiting, because the person must answer it.
 - **Its completion of that same tool** settles the ask.
 - **Nothing else a subagent reports changes the tab:** not SubagentStart or SubagentStop, not its Stop, SessionEnd, Interrupt or failure, and not its busy signals.
+
+## Template ownership
+
+The nine CLI declarations live in the bundled `@claxedo/status-hooks` package, which validates them; `src/status-hooks.ts` composes its list. The engine takes the template list as input: `writeStatusHooksArtifacts` writes artifacts and wrappers, `materializeAgentHooks` merges configs through `config-merge.ts`, and `providerLifecycle` maps a raw event with the declaration of the terminal's provider. Project-file installation is shared wrapper machinery.
+
+Templates come only from that bundled package: a plugin manifest that declares `statusHooks` is refused with `PluginStatusHooksRefusedError`, because a template defines shell wrappers and rewrites files in the person's home. `setupAgentHooks({ templates })` and `AgentHookRoutes({ statusHooks })` default to the bundled list; tests pass their own.
+
+Amp declares a guarded text-file install; Antigravity declares a guarded named JSON entry. Droid declares the existing effective-file rule. Conditional event rules preserve native Amp and Antigravity outcomes, while core retains tool-ask pairing, subagent isolation and background-work suppression.
+
+A generic or custom wrapper has no template. It reports `hook_event_name` `Busy`, `Idle` or `Error`, and `providerLifecycle` takes those as the engine's own statuses under the wrapper's command name.

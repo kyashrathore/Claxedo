@@ -1,0 +1,6423 @@
+[
+  {
+    "input": {
+      "hook_event_name": "Busy"
+    },
+    "output": {
+      "eventType": "Busy"
+    }
+  },
+  {
+    "input": {
+      "hook_event_name": "Start"
+    },
+    "output": {
+      "eventType": "Busy"
+    }
+  },
+  {
+    "input": {
+      "hook_event_name": "SessionStart"
+    },
+    "output": {
+      "eventType": "Busy"
+    }
+  },
+  {
+    "input": {
+      "hook_event_name": "UserPromptSubmit"
+    },
+    "output": {
+      "eventType": "Busy"
+    }
+  },
+  {
+    "input": {
+      "hook_event_name": "PostToolUse"
+    },
+    "output": {
+      "eventType": "Busy",
+      "toolCompletion": {
+        "toolKey": null
+      }
+    }
+  },
+  {
+    "input": {
+      "hook_event_name": "BeforeAgent"
+    },
+    "output": {
+      "eventType": "Busy"
+    }
+  },
+  {
+    "input": {
+      "hook_event_name": "AfterTool"
+    },
+    "output": {
+      "eventType": "Busy",
+      "toolCompletion": {
+        "toolKey": null
+      }
+    }
+  },
+  {
+    "input": {
+      "hook_event_name": "beforeSubmitPrompt"
+    },
+    "output": {
+      "eventType": "Busy"
+    }
+  },
+  {
+    "input": {
+      "hook_event_name": "sessionStart"
+    },
+    "output": {
+      "eventType": "Busy"
+    }
+  },
+  {
+    "input": {
+      "hook_event_name": "userPromptSubmitted"
+    },
+    "output": {
+      "eventType": "Busy"
+    }
+  },
+  {
+    "input": {
+      "hook_event_name": "postToolUse"
+    },
+    "output": {
+      "eventType": "Busy",
+      "toolCompletion": {
+        "toolKey": null
+      }
+    }
+  },
+  {
+    "input": {
+      "hook_event_name": "agent-turn-start"
+    },
+    "output": {
+      "eventType": "Busy"
+    }
+  },
+  {
+    "input": {
+      "hook_event_name": "PostToolUseFailure"
+    },
+    "output": {
+      "eventType": "Busy",
+      "toolCompletion": {
+        "toolKey": null
+      }
+    }
+  },
+  {
+    "input": {
+      "hook_event_name": "postToolUseFailure"
+    },
+    "output": {
+      "eventType": "Busy",
+      "toolCompletion": {
+        "toolKey": null
+      }
+    }
+  },
+  {
+    "input": {
+      "hook_event_name": "PermissionDenied"
+    },
+    "output": {
+      "eventType": "Busy",
+      "toolCompletion": {
+        "toolKey": null
+      }
+    }
+  },
+  {
+    "input": {
+      "hook_event_name": "Idle"
+    },
+    "output": {
+      "eventType": "Idle"
+    }
+  },
+  {
+    "input": {
+      "hook_event_name": "Interrupt"
+    },
+    "output": {
+      "eventType": "Idle",
+      "outcome": "cancelled"
+    }
+  },
+  {
+    "input": {
+      "hook_event_name": "Stop"
+    },
+    "output": {
+      "eventType": "Idle"
+    }
+  },
+  {
+    "input": {
+      "hook_event_name": "SessionEnd"
+    },
+    "output": {
+      "eventType": "Idle"
+    }
+  },
+  {
+    "input": {
+      "hook_event_name": "AfterAgent"
+    },
+    "output": {
+      "eventType": "Idle"
+    }
+  },
+  {
+    "input": {
+      "hook_event_name": "stop"
+    },
+    "output": {
+      "eventType": "Idle"
+    }
+  },
+  {
+    "input": {
+      "hook_event_name": "sessionEnd"
+    },
+    "output": {
+      "eventType": "Idle"
+    }
+  },
+  {
+    "input": {
+      "hook_event_name": "agent-turn-complete"
+    },
+    "output": {
+      "eventType": "Idle"
+    }
+  },
+  {
+    "input": {
+      "hook_event_name": "Error"
+    },
+    "output": {
+      "eventType": "Error"
+    }
+  },
+  {
+    "input": {
+      "hook_event_name": "Failed"
+    },
+    "output": {
+      "eventType": "Error"
+    }
+  },
+  {
+    "input": {
+      "hook_event_name": "StopFailure"
+    },
+    "output": {
+      "eventType": "Error"
+    }
+  },
+  {
+    "input": {
+      "hook_event_name": "session.error"
+    },
+    "output": {
+      "eventType": "Error"
+    }
+  },
+  {
+    "input": {
+      "hook_event_name": "sessionError"
+    },
+    "output": {
+      "eventType": "Error"
+    }
+  },
+  {
+    "input": {
+      "hook_event_name": "agent-turn-error"
+    },
+    "output": {
+      "eventType": "Error"
+    }
+  },
+  {
+    "input": {
+      "hook_event_name": "task-failed"
+    },
+    "output": {
+      "eventType": "Error"
+    }
+  },
+  {
+    "input": {
+      "hook_event_name": "UserActionRequired"
+    },
+    "output": {
+      "eventType": "UserActionRequired",
+      "userAction": {
+        "toolKey": null
+      }
+    }
+  },
+  {
+    "input": {
+      "hook_event_name": "beforeShellExecution"
+    },
+    "output": {
+      "eventType": "UserActionRequired",
+      "userAction": {
+        "toolKey": null
+      }
+    }
+  },
+  {
+    "input": {
+      "hook_event_name": "beforeMCPExecution"
+    },
+    "output": {
+      "eventType": "UserActionRequired",
+      "userAction": {
+        "toolKey": null
+      }
+    }
+  },
+  {
+    "input": {
+      "hook_event_name": "PermissionRequest"
+    },
+    "output": {
+      "eventType": "UserActionRequired",
+      "userAction": {
+        "toolKey": null
+      }
+    }
+  },
+  {
+    "input": {
+      "hook_event_name": "QuestionRequest"
+    },
+    "output": {
+      "eventType": "UserActionRequired",
+      "userAction": {
+        "toolKey": null
+      }
+    }
+  },
+  {
+    "input": {
+      "hook_event_name": "question"
+    },
+    "output": {
+      "eventType": "UserActionRequired",
+      "userAction": {
+        "toolKey": null
+      }
+    }
+  },
+  {
+    "input": {
+      "hook_event_name": "question.asked"
+    },
+    "output": {
+      "eventType": "UserActionRequired",
+      "userAction": {
+        "toolKey": null
+      }
+    }
+  },
+  {
+    "input": {
+      "hook_event_name": "Notification"
+    },
+    "output": {
+      "eventType": "UserActionRequired",
+      "userAction": {
+        "toolKey": null
+      }
+    }
+  },
+  {
+    "input": {
+      "hook_event_name": "permission-request"
+    },
+    "output": {
+      "eventType": "UserActionRequired",
+      "userAction": {
+        "toolKey": null
+      }
+    }
+  },
+  {
+    "input": {
+      "hook_event_name": "question-request"
+    },
+    "output": {
+      "eventType": "UserActionRequired",
+      "userAction": {
+        "toolKey": null
+      }
+    }
+  },
+  {
+    "input": {
+      "hook_event_name": "PreToolUse"
+    },
+    "output": null
+  },
+  {
+    "input": {
+      "hook_event_name": "SubagentStart"
+    },
+    "output": null
+  },
+  {
+    "input": {
+      "hook_event_name": "SubagentStop"
+    },
+    "output": null
+  },
+  {
+    "input": {
+      "hook_event_name": "unknown"
+    },
+    "output": null
+  },
+  {
+    "input": {
+      "provider": "claude",
+      "hook_event_name": "Busy"
+    },
+    "output": {
+      "eventType": "Busy",
+      "provider": "claude"
+    }
+  },
+  {
+    "input": {
+      "provider": "claude",
+      "hook_event_name": "Start"
+    },
+    "output": {
+      "eventType": "Busy",
+      "provider": "claude"
+    }
+  },
+  {
+    "input": {
+      "provider": "claude",
+      "hook_event_name": "SessionStart"
+    },
+    "output": {
+      "eventType": "Busy",
+      "provider": "claude"
+    }
+  },
+  {
+    "input": {
+      "provider": "claude",
+      "hook_event_name": "UserPromptSubmit"
+    },
+    "output": {
+      "eventType": "Busy",
+      "provider": "claude"
+    }
+  },
+  {
+    "input": {
+      "provider": "claude",
+      "hook_event_name": "PostToolUse"
+    },
+    "output": {
+      "eventType": "Busy",
+      "toolCompletion": {
+        "toolKey": null
+      },
+      "provider": "claude"
+    }
+  },
+  {
+    "input": {
+      "provider": "claude",
+      "hook_event_name": "BeforeAgent"
+    },
+    "output": {
+      "eventType": "Busy",
+      "provider": "claude"
+    }
+  },
+  {
+    "input": {
+      "provider": "claude",
+      "hook_event_name": "AfterTool"
+    },
+    "output": {
+      "eventType": "Busy",
+      "toolCompletion": {
+        "toolKey": null
+      },
+      "provider": "claude"
+    }
+  },
+  {
+    "input": {
+      "provider": "claude",
+      "hook_event_name": "beforeSubmitPrompt"
+    },
+    "output": {
+      "eventType": "Busy",
+      "provider": "claude"
+    }
+  },
+  {
+    "input": {
+      "provider": "claude",
+      "hook_event_name": "sessionStart"
+    },
+    "output": {
+      "eventType": "Busy",
+      "provider": "claude"
+    }
+  },
+  {
+    "input": {
+      "provider": "claude",
+      "hook_event_name": "userPromptSubmitted"
+    },
+    "output": {
+      "eventType": "Busy",
+      "provider": "claude"
+    }
+  },
+  {
+    "input": {
+      "provider": "claude",
+      "hook_event_name": "postToolUse"
+    },
+    "output": {
+      "eventType": "Busy",
+      "toolCompletion": {
+        "toolKey": null
+      },
+      "provider": "claude"
+    }
+  },
+  {
+    "input": {
+      "provider": "claude",
+      "hook_event_name": "agent-turn-start"
+    },
+    "output": {
+      "eventType": "Busy",
+      "provider": "claude"
+    }
+  },
+  {
+    "input": {
+      "provider": "claude",
+      "hook_event_name": "PostToolUseFailure"
+    },
+    "output": {
+      "eventType": "Busy",
+      "toolCompletion": {
+        "toolKey": null
+      },
+      "provider": "claude"
+    }
+  },
+  {
+    "input": {
+      "provider": "claude",
+      "hook_event_name": "postToolUseFailure"
+    },
+    "output": {
+      "eventType": "Busy",
+      "toolCompletion": {
+        "toolKey": null
+      },
+      "provider": "claude"
+    }
+  },
+  {
+    "input": {
+      "provider": "claude",
+      "hook_event_name": "PermissionDenied"
+    },
+    "output": {
+      "eventType": "Busy",
+      "toolCompletion": {
+        "toolKey": null
+      },
+      "provider": "claude"
+    }
+  },
+  {
+    "input": {
+      "provider": "claude",
+      "hook_event_name": "Idle"
+    },
+    "output": {
+      "eventType": "Idle",
+      "provider": "claude"
+    }
+  },
+  {
+    "input": {
+      "provider": "claude",
+      "hook_event_name": "Interrupt"
+    },
+    "output": {
+      "eventType": "Idle",
+      "outcome": "cancelled",
+      "provider": "claude"
+    }
+  },
+  {
+    "input": {
+      "provider": "claude",
+      "hook_event_name": "Stop"
+    },
+    "output": {
+      "eventType": "Idle",
+      "provider": "claude"
+    }
+  },
+  {
+    "input": {
+      "provider": "claude",
+      "hook_event_name": "SessionEnd"
+    },
+    "output": {
+      "eventType": "Idle",
+      "provider": "claude"
+    }
+  },
+  {
+    "input": {
+      "provider": "claude",
+      "hook_event_name": "AfterAgent"
+    },
+    "output": {
+      "eventType": "Idle",
+      "provider": "claude"
+    }
+  },
+  {
+    "input": {
+      "provider": "claude",
+      "hook_event_name": "stop"
+    },
+    "output": {
+      "eventType": "Idle",
+      "provider": "claude"
+    }
+  },
+  {
+    "input": {
+      "provider": "claude",
+      "hook_event_name": "sessionEnd"
+    },
+    "output": {
+      "eventType": "Idle",
+      "provider": "claude"
+    }
+  },
+  {
+    "input": {
+      "provider": "claude",
+      "hook_event_name": "agent-turn-complete"
+    },
+    "output": {
+      "eventType": "Idle",
+      "provider": "claude"
+    }
+  },
+  {
+    "input": {
+      "provider": "claude",
+      "hook_event_name": "Error"
+    },
+    "output": {
+      "eventType": "Error",
+      "provider": "claude"
+    }
+  },
+  {
+    "input": {
+      "provider": "claude",
+      "hook_event_name": "Failed"
+    },
+    "output": {
+      "eventType": "Error",
+      "provider": "claude"
+    }
+  },
+  {
+    "input": {
+      "provider": "claude",
+      "hook_event_name": "StopFailure"
+    },
+    "output": {
+      "eventType": "Error",
+      "provider": "claude"
+    }
+  },
+  {
+    "input": {
+      "provider": "claude",
+      "hook_event_name": "session.error"
+    },
+    "output": {
+      "eventType": "Error",
+      "provider": "claude"
+    }
+  },
+  {
+    "input": {
+      "provider": "claude",
+      "hook_event_name": "sessionError"
+    },
+    "output": {
+      "eventType": "Error",
+      "provider": "claude"
+    }
+  },
+  {
+    "input": {
+      "provider": "claude",
+      "hook_event_name": "agent-turn-error"
+    },
+    "output": {
+      "eventType": "Error",
+      "provider": "claude"
+    }
+  },
+  {
+    "input": {
+      "provider": "claude",
+      "hook_event_name": "task-failed"
+    },
+    "output": {
+      "eventType": "Error",
+      "provider": "claude"
+    }
+  },
+  {
+    "input": {
+      "provider": "claude",
+      "hook_event_name": "UserActionRequired"
+    },
+    "output": {
+      "eventType": "UserActionRequired",
+      "userAction": {
+        "toolKey": null
+      },
+      "provider": "claude"
+    }
+  },
+  {
+    "input": {
+      "provider": "claude",
+      "hook_event_name": "beforeShellExecution"
+    },
+    "output": {
+      "eventType": "UserActionRequired",
+      "userAction": {
+        "toolKey": null
+      },
+      "provider": "claude"
+    }
+  },
+  {
+    "input": {
+      "provider": "claude",
+      "hook_event_name": "beforeMCPExecution"
+    },
+    "output": {
+      "eventType": "UserActionRequired",
+      "userAction": {
+        "toolKey": null
+      },
+      "provider": "claude"
+    }
+  },
+  {
+    "input": {
+      "provider": "claude",
+      "hook_event_name": "PermissionRequest"
+    },
+    "output": {
+      "eventType": "UserActionRequired",
+      "userAction": {
+        "toolKey": null
+      },
+      "provider": "claude"
+    }
+  },
+  {
+    "input": {
+      "provider": "claude",
+      "hook_event_name": "QuestionRequest"
+    },
+    "output": {
+      "eventType": "UserActionRequired",
+      "userAction": {
+        "toolKey": null
+      },
+      "provider": "claude"
+    }
+  },
+  {
+    "input": {
+      "provider": "claude",
+      "hook_event_name": "question"
+    },
+    "output": {
+      "eventType": "UserActionRequired",
+      "userAction": {
+        "toolKey": null
+      },
+      "provider": "claude"
+    }
+  },
+  {
+    "input": {
+      "provider": "claude",
+      "hook_event_name": "question.asked"
+    },
+    "output": {
+      "eventType": "UserActionRequired",
+      "userAction": {
+        "toolKey": null
+      },
+      "provider": "claude"
+    }
+  },
+  {
+    "input": {
+      "provider": "claude",
+      "hook_event_name": "Notification"
+    },
+    "output": {
+      "eventType": "UserActionRequired",
+      "userAction": {
+        "toolKey": null
+      },
+      "provider": "claude"
+    }
+  },
+  {
+    "input": {
+      "provider": "claude",
+      "hook_event_name": "permission-request"
+    },
+    "output": {
+      "eventType": "UserActionRequired",
+      "userAction": {
+        "toolKey": null
+      },
+      "provider": "claude"
+    }
+  },
+  {
+    "input": {
+      "provider": "claude",
+      "hook_event_name": "question-request"
+    },
+    "output": {
+      "eventType": "UserActionRequired",
+      "userAction": {
+        "toolKey": null
+      },
+      "provider": "claude"
+    }
+  },
+  {
+    "input": {
+      "provider": "claude",
+      "hook_event_name": "PreToolUse"
+    },
+    "output": null
+  },
+  {
+    "input": {
+      "provider": "claude",
+      "hook_event_name": "SubagentStart"
+    },
+    "output": null
+  },
+  {
+    "input": {
+      "provider": "claude",
+      "hook_event_name": "SubagentStop"
+    },
+    "output": null
+  },
+  {
+    "input": {
+      "provider": "claude",
+      "hook_event_name": "unknown"
+    },
+    "output": null
+  },
+  {
+    "input": {
+      "provider": "codex",
+      "hook_event_name": "Busy"
+    },
+    "output": {
+      "eventType": "Busy",
+      "provider": "codex"
+    }
+  },
+  {
+    "input": {
+      "provider": "codex",
+      "hook_event_name": "Start"
+    },
+    "output": {
+      "eventType": "Busy",
+      "provider": "codex"
+    }
+  },
+  {
+    "input": {
+      "provider": "codex",
+      "hook_event_name": "SessionStart"
+    },
+    "output": {
+      "eventType": "Busy",
+      "provider": "codex"
+    }
+  },
+  {
+    "input": {
+      "provider": "codex",
+      "hook_event_name": "UserPromptSubmit"
+    },
+    "output": {
+      "eventType": "Busy",
+      "provider": "codex"
+    }
+  },
+  {
+    "input": {
+      "provider": "codex",
+      "hook_event_name": "PostToolUse"
+    },
+    "output": {
+      "eventType": "Busy",
+      "toolCompletion": {
+        "toolKey": null
+      },
+      "provider": "codex"
+    }
+  },
+  {
+    "input": {
+      "provider": "codex",
+      "hook_event_name": "BeforeAgent"
+    },
+    "output": {
+      "eventType": "Busy",
+      "provider": "codex"
+    }
+  },
+  {
+    "input": {
+      "provider": "codex",
+      "hook_event_name": "AfterTool"
+    },
+    "output": {
+      "eventType": "Busy",
+      "toolCompletion": {
+        "toolKey": null
+      },
+      "provider": "codex"
+    }
+  },
+  {
+    "input": {
+      "provider": "codex",
+      "hook_event_name": "beforeSubmitPrompt"
+    },
+    "output": {
+      "eventType": "Busy",
+      "provider": "codex"
+    }
+  },
+  {
+    "input": {
+      "provider": "codex",
+      "hook_event_name": "sessionStart"
+    },
+    "output": {
+      "eventType": "Busy",
+      "provider": "codex"
+    }
+  },
+  {
+    "input": {
+      "provider": "codex",
+      "hook_event_name": "userPromptSubmitted"
+    },
+    "output": {
+      "eventType": "Busy",
+      "provider": "codex"
+    }
+  },
+  {
+    "input": {
+      "provider": "codex",
+      "hook_event_name": "postToolUse"
+    },
+    "output": {
+      "eventType": "Busy",
+      "toolCompletion": {
+        "toolKey": null
+      },
+      "provider": "codex"
+    }
+  },
+  {
+    "input": {
+      "provider": "codex",
+      "hook_event_name": "agent-turn-start"
+    },
+    "output": {
+      "eventType": "Busy",
+      "provider": "codex"
+    }
+  },
+  {
+    "input": {
+      "provider": "codex",
+      "hook_event_name": "PostToolUseFailure"
+    },
+    "output": {
+      "eventType": "Busy",
+      "toolCompletion": {
+        "toolKey": null
+      },
+      "provider": "codex"
+    }
+  },
+  {
+    "input": {
+      "provider": "codex",
+      "hook_event_name": "postToolUseFailure"
+    },
+    "output": {
+      "eventType": "Busy",
+      "toolCompletion": {
+        "toolKey": null
+      },
+      "provider": "codex"
+    }
+  },
+  {
+    "input": {
+      "provider": "codex",
+      "hook_event_name": "PermissionDenied"
+    },
+    "output": {
+      "eventType": "Busy",
+      "toolCompletion": {
+        "toolKey": null
+      },
+      "provider": "codex"
+    }
+  },
+  {
+    "input": {
+      "provider": "codex",
+      "hook_event_name": "Idle"
+    },
+    "output": {
+      "eventType": "Idle",
+      "provider": "codex"
+    }
+  },
+  {
+    "input": {
+      "provider": "codex",
+      "hook_event_name": "Interrupt"
+    },
+    "output": {
+      "eventType": "Idle",
+      "outcome": "cancelled",
+      "provider": "codex"
+    }
+  },
+  {
+    "input": {
+      "provider": "codex",
+      "hook_event_name": "Stop"
+    },
+    "output": {
+      "eventType": "Idle",
+      "provider": "codex"
+    }
+  },
+  {
+    "input": {
+      "provider": "codex",
+      "hook_event_name": "SessionEnd"
+    },
+    "output": {
+      "eventType": "Idle",
+      "provider": "codex"
+    }
+  },
+  {
+    "input": {
+      "provider": "codex",
+      "hook_event_name": "AfterAgent"
+    },
+    "output": {
+      "eventType": "Idle",
+      "provider": "codex"
+    }
+  },
+  {
+    "input": {
+      "provider": "codex",
+      "hook_event_name": "stop"
+    },
+    "output": {
+      "eventType": "Idle",
+      "provider": "codex"
+    }
+  },
+  {
+    "input": {
+      "provider": "codex",
+      "hook_event_name": "sessionEnd"
+    },
+    "output": {
+      "eventType": "Idle",
+      "provider": "codex"
+    }
+  },
+  {
+    "input": {
+      "provider": "codex",
+      "hook_event_name": "agent-turn-complete"
+    },
+    "output": {
+      "eventType": "Idle",
+      "provider": "codex"
+    }
+  },
+  {
+    "input": {
+      "provider": "codex",
+      "hook_event_name": "Error"
+    },
+    "output": {
+      "eventType": "Error",
+      "provider": "codex"
+    }
+  },
+  {
+    "input": {
+      "provider": "codex",
+      "hook_event_name": "Failed"
+    },
+    "output": {
+      "eventType": "Error",
+      "provider": "codex"
+    }
+  },
+  {
+    "input": {
+      "provider": "codex",
+      "hook_event_name": "StopFailure"
+    },
+    "output": {
+      "eventType": "Error",
+      "provider": "codex"
+    }
+  },
+  {
+    "input": {
+      "provider": "codex",
+      "hook_event_name": "session.error"
+    },
+    "output": {
+      "eventType": "Error",
+      "provider": "codex"
+    }
+  },
+  {
+    "input": {
+      "provider": "codex",
+      "hook_event_name": "sessionError"
+    },
+    "output": {
+      "eventType": "Error",
+      "provider": "codex"
+    }
+  },
+  {
+    "input": {
+      "provider": "codex",
+      "hook_event_name": "agent-turn-error"
+    },
+    "output": {
+      "eventType": "Error",
+      "provider": "codex"
+    }
+  },
+  {
+    "input": {
+      "provider": "codex",
+      "hook_event_name": "task-failed"
+    },
+    "output": {
+      "eventType": "Error",
+      "provider": "codex"
+    }
+  },
+  {
+    "input": {
+      "provider": "codex",
+      "hook_event_name": "UserActionRequired"
+    },
+    "output": {
+      "eventType": "UserActionRequired",
+      "userAction": {
+        "toolKey": null
+      },
+      "provider": "codex"
+    }
+  },
+  {
+    "input": {
+      "provider": "codex",
+      "hook_event_name": "beforeShellExecution"
+    },
+    "output": {
+      "eventType": "UserActionRequired",
+      "userAction": {
+        "toolKey": null
+      },
+      "provider": "codex"
+    }
+  },
+  {
+    "input": {
+      "provider": "codex",
+      "hook_event_name": "beforeMCPExecution"
+    },
+    "output": {
+      "eventType": "UserActionRequired",
+      "userAction": {
+        "toolKey": null
+      },
+      "provider": "codex"
+    }
+  },
+  {
+    "input": {
+      "provider": "codex",
+      "hook_event_name": "PermissionRequest"
+    },
+    "output": {
+      "eventType": "UserActionRequired",
+      "userAction": {
+        "toolKey": null
+      },
+      "provider": "codex"
+    }
+  },
+  {
+    "input": {
+      "provider": "codex",
+      "hook_event_name": "QuestionRequest"
+    },
+    "output": {
+      "eventType": "UserActionRequired",
+      "userAction": {
+        "toolKey": null
+      },
+      "provider": "codex"
+    }
+  },
+  {
+    "input": {
+      "provider": "codex",
+      "hook_event_name": "question"
+    },
+    "output": {
+      "eventType": "UserActionRequired",
+      "userAction": {
+        "toolKey": null
+      },
+      "provider": "codex"
+    }
+  },
+  {
+    "input": {
+      "provider": "codex",
+      "hook_event_name": "question.asked"
+    },
+    "output": {
+      "eventType": "UserActionRequired",
+      "userAction": {
+        "toolKey": null
+      },
+      "provider": "codex"
+    }
+  },
+  {
+    "input": {
+      "provider": "codex",
+      "hook_event_name": "Notification"
+    },
+    "output": {
+      "eventType": "UserActionRequired",
+      "userAction": {
+        "toolKey": null
+      },
+      "provider": "codex"
+    }
+  },
+  {
+    "input": {
+      "provider": "codex",
+      "hook_event_name": "permission-request"
+    },
+    "output": {
+      "eventType": "UserActionRequired",
+      "userAction": {
+        "toolKey": null
+      },
+      "provider": "codex"
+    }
+  },
+  {
+    "input": {
+      "provider": "codex",
+      "hook_event_name": "question-request"
+    },
+    "output": {
+      "eventType": "UserActionRequired",
+      "userAction": {
+        "toolKey": null
+      },
+      "provider": "codex"
+    }
+  },
+  {
+    "input": {
+      "provider": "codex",
+      "hook_event_name": "PreToolUse"
+    },
+    "output": null
+  },
+  {
+    "input": {
+      "provider": "codex",
+      "hook_event_name": "SubagentStart"
+    },
+    "output": null
+  },
+  {
+    "input": {
+      "provider": "codex",
+      "hook_event_name": "SubagentStop"
+    },
+    "output": null
+  },
+  {
+    "input": {
+      "provider": "codex",
+      "hook_event_name": "unknown"
+    },
+    "output": null
+  },
+  {
+    "input": {
+      "provider": "cursor",
+      "hook_event_name": "Busy"
+    },
+    "output": {
+      "eventType": "Busy",
+      "provider": "cursor"
+    }
+  },
+  {
+    "input": {
+      "provider": "cursor",
+      "hook_event_name": "Start"
+    },
+    "output": {
+      "eventType": "Busy",
+      "provider": "cursor"
+    }
+  },
+  {
+    "input": {
+      "provider": "cursor",
+      "hook_event_name": "SessionStart"
+    },
+    "output": {
+      "eventType": "Busy",
+      "provider": "cursor"
+    }
+  },
+  {
+    "input": {
+      "provider": "cursor",
+      "hook_event_name": "UserPromptSubmit"
+    },
+    "output": {
+      "eventType": "Busy",
+      "provider": "cursor"
+    }
+  },
+  {
+    "input": {
+      "provider": "cursor",
+      "hook_event_name": "PostToolUse"
+    },
+    "output": {
+      "eventType": "Busy",
+      "toolCompletion": {
+        "toolKey": null
+      },
+      "provider": "cursor"
+    }
+  },
+  {
+    "input": {
+      "provider": "cursor",
+      "hook_event_name": "BeforeAgent"
+    },
+    "output": {
+      "eventType": "Busy",
+      "provider": "cursor"
+    }
+  },
+  {
+    "input": {
+      "provider": "cursor",
+      "hook_event_name": "AfterTool"
+    },
+    "output": {
+      "eventType": "Busy",
+      "toolCompletion": {
+        "toolKey": null
+      },
+      "provider": "cursor"
+    }
+  },
+  {
+    "input": {
+      "provider": "cursor",
+      "hook_event_name": "beforeSubmitPrompt"
+    },
+    "output": {
+      "eventType": "Busy",
+      "provider": "cursor"
+    }
+  },
+  {
+    "input": {
+      "provider": "cursor",
+      "hook_event_name": "sessionStart"
+    },
+    "output": {
+      "eventType": "Busy",
+      "provider": "cursor"
+    }
+  },
+  {
+    "input": {
+      "provider": "cursor",
+      "hook_event_name": "userPromptSubmitted"
+    },
+    "output": {
+      "eventType": "Busy",
+      "provider": "cursor"
+    }
+  },
+  {
+    "input": {
+      "provider": "cursor",
+      "hook_event_name": "postToolUse"
+    },
+    "output": {
+      "eventType": "Busy",
+      "toolCompletion": {
+        "toolKey": null
+      },
+      "provider": "cursor"
+    }
+  },
+  {
+    "input": {
+      "provider": "cursor",
+      "hook_event_name": "agent-turn-start"
+    },
+    "output": {
+      "eventType": "Busy",
+      "provider": "cursor"
+    }
+  },
+  {
+    "input": {
+      "provider": "cursor",
+      "hook_event_name": "PostToolUseFailure"
+    },
+    "output": {
+      "eventType": "Busy",
+      "toolCompletion": {
+        "toolKey": null
+      },
+      "provider": "cursor"
+    }
+  },
+  {
+    "input": {
+      "provider": "cursor",
+      "hook_event_name": "postToolUseFailure"
+    },
+    "output": {
+      "eventType": "Busy",
+      "toolCompletion": {
+        "toolKey": null
+      },
+      "provider": "cursor"
+    }
+  },
+  {
+    "input": {
+      "provider": "cursor",
+      "hook_event_name": "PermissionDenied"
+    },
+    "output": {
+      "eventType": "Busy",
+      "toolCompletion": {
+        "toolKey": null
+      },
+      "provider": "cursor"
+    }
+  },
+  {
+    "input": {
+      "provider": "cursor",
+      "hook_event_name": "Idle"
+    },
+    "output": {
+      "eventType": "Idle",
+      "provider": "cursor"
+    }
+  },
+  {
+    "input": {
+      "provider": "cursor",
+      "hook_event_name": "Interrupt"
+    },
+    "output": {
+      "eventType": "Idle",
+      "outcome": "cancelled",
+      "provider": "cursor"
+    }
+  },
+  {
+    "input": {
+      "provider": "cursor",
+      "hook_event_name": "Stop"
+    },
+    "output": {
+      "eventType": "Idle",
+      "provider": "cursor"
+    }
+  },
+  {
+    "input": {
+      "provider": "cursor",
+      "hook_event_name": "SessionEnd"
+    },
+    "output": {
+      "eventType": "Idle",
+      "provider": "cursor"
+    }
+  },
+  {
+    "input": {
+      "provider": "cursor",
+      "hook_event_name": "AfterAgent"
+    },
+    "output": {
+      "eventType": "Idle",
+      "provider": "cursor"
+    }
+  },
+  {
+    "input": {
+      "provider": "cursor",
+      "hook_event_name": "stop"
+    },
+    "output": {
+      "eventType": "Idle",
+      "provider": "cursor"
+    }
+  },
+  {
+    "input": {
+      "provider": "cursor",
+      "hook_event_name": "sessionEnd"
+    },
+    "output": {
+      "eventType": "Idle",
+      "provider": "cursor"
+    }
+  },
+  {
+    "input": {
+      "provider": "cursor",
+      "hook_event_name": "agent-turn-complete"
+    },
+    "output": {
+      "eventType": "Idle",
+      "provider": "cursor"
+    }
+  },
+  {
+    "input": {
+      "provider": "cursor",
+      "hook_event_name": "Error"
+    },
+    "output": {
+      "eventType": "Error",
+      "provider": "cursor"
+    }
+  },
+  {
+    "input": {
+      "provider": "cursor",
+      "hook_event_name": "Failed"
+    },
+    "output": {
+      "eventType": "Error",
+      "provider": "cursor"
+    }
+  },
+  {
+    "input": {
+      "provider": "cursor",
+      "hook_event_name": "StopFailure"
+    },
+    "output": {
+      "eventType": "Error",
+      "provider": "cursor"
+    }
+  },
+  {
+    "input": {
+      "provider": "cursor",
+      "hook_event_name": "session.error"
+    },
+    "output": {
+      "eventType": "Error",
+      "provider": "cursor"
+    }
+  },
+  {
+    "input": {
+      "provider": "cursor",
+      "hook_event_name": "sessionError"
+    },
+    "output": {
+      "eventType": "Error",
+      "provider": "cursor"
+    }
+  },
+  {
+    "input": {
+      "provider": "cursor",
+      "hook_event_name": "agent-turn-error"
+    },
+    "output": {
+      "eventType": "Error",
+      "provider": "cursor"
+    }
+  },
+  {
+    "input": {
+      "provider": "cursor",
+      "hook_event_name": "task-failed"
+    },
+    "output": {
+      "eventType": "Error",
+      "provider": "cursor"
+    }
+  },
+  {
+    "input": {
+      "provider": "cursor",
+      "hook_event_name": "UserActionRequired"
+    },
+    "output": {
+      "eventType": "UserActionRequired",
+      "userAction": {
+        "toolKey": null
+      },
+      "provider": "cursor"
+    }
+  },
+  {
+    "input": {
+      "provider": "cursor",
+      "hook_event_name": "beforeShellExecution"
+    },
+    "output": {
+      "eventType": "UserActionRequired",
+      "userAction": {
+        "toolKey": null
+      },
+      "provider": "cursor"
+    }
+  },
+  {
+    "input": {
+      "provider": "cursor",
+      "hook_event_name": "beforeMCPExecution"
+    },
+    "output": {
+      "eventType": "UserActionRequired",
+      "userAction": {
+        "toolKey": null
+      },
+      "provider": "cursor"
+    }
+  },
+  {
+    "input": {
+      "provider": "cursor",
+      "hook_event_name": "PermissionRequest"
+    },
+    "output": {
+      "eventType": "UserActionRequired",
+      "userAction": {
+        "toolKey": null
+      },
+      "provider": "cursor"
+    }
+  },
+  {
+    "input": {
+      "provider": "cursor",
+      "hook_event_name": "QuestionRequest"
+    },
+    "output": {
+      "eventType": "UserActionRequired",
+      "userAction": {
+        "toolKey": null
+      },
+      "provider": "cursor"
+    }
+  },
+  {
+    "input": {
+      "provider": "cursor",
+      "hook_event_name": "question"
+    },
+    "output": {
+      "eventType": "UserActionRequired",
+      "userAction": {
+        "toolKey": null
+      },
+      "provider": "cursor"
+    }
+  },
+  {
+    "input": {
+      "provider": "cursor",
+      "hook_event_name": "question.asked"
+    },
+    "output": {
+      "eventType": "UserActionRequired",
+      "userAction": {
+        "toolKey": null
+      },
+      "provider": "cursor"
+    }
+  },
+  {
+    "input": {
+      "provider": "cursor",
+      "hook_event_name": "Notification"
+    },
+    "output": {
+      "eventType": "UserActionRequired",
+      "userAction": {
+        "toolKey": null
+      },
+      "provider": "cursor"
+    }
+  },
+  {
+    "input": {
+      "provider": "cursor",
+      "hook_event_name": "permission-request"
+    },
+    "output": {
+      "eventType": "UserActionRequired",
+      "userAction": {
+        "toolKey": null
+      },
+      "provider": "cursor"
+    }
+  },
+  {
+    "input": {
+      "provider": "cursor",
+      "hook_event_name": "question-request"
+    },
+    "output": {
+      "eventType": "UserActionRequired",
+      "userAction": {
+        "toolKey": null
+      },
+      "provider": "cursor"
+    }
+  },
+  {
+    "input": {
+      "provider": "cursor",
+      "hook_event_name": "PreToolUse"
+    },
+    "output": null
+  },
+  {
+    "input": {
+      "provider": "cursor",
+      "hook_event_name": "SubagentStart"
+    },
+    "output": null
+  },
+  {
+    "input": {
+      "provider": "cursor",
+      "hook_event_name": "SubagentStop"
+    },
+    "output": null
+  },
+  {
+    "input": {
+      "provider": "cursor",
+      "hook_event_name": "unknown"
+    },
+    "output": null
+  },
+  {
+    "input": {
+      "provider": "gemini",
+      "hook_event_name": "Busy"
+    },
+    "output": {
+      "eventType": "Busy",
+      "provider": "gemini"
+    }
+  },
+  {
+    "input": {
+      "provider": "gemini",
+      "hook_event_name": "Start"
+    },
+    "output": {
+      "eventType": "Busy",
+      "provider": "gemini"
+    }
+  },
+  {
+    "input": {
+      "provider": "gemini",
+      "hook_event_name": "SessionStart"
+    },
+    "output": {
+      "eventType": "Busy",
+      "provider": "gemini"
+    }
+  },
+  {
+    "input": {
+      "provider": "gemini",
+      "hook_event_name": "UserPromptSubmit"
+    },
+    "output": {
+      "eventType": "Busy",
+      "provider": "gemini"
+    }
+  },
+  {
+    "input": {
+      "provider": "gemini",
+      "hook_event_name": "PostToolUse"
+    },
+    "output": {
+      "eventType": "Busy",
+      "toolCompletion": {
+        "toolKey": null
+      },
+      "provider": "gemini"
+    }
+  },
+  {
+    "input": {
+      "provider": "gemini",
+      "hook_event_name": "BeforeAgent"
+    },
+    "output": {
+      "eventType": "Busy",
+      "provider": "gemini"
+    }
+  },
+  {
+    "input": {
+      "provider": "gemini",
+      "hook_event_name": "AfterTool"
+    },
+    "output": {
+      "eventType": "Busy",
+      "toolCompletion": {
+        "toolKey": null
+      },
+      "provider": "gemini"
+    }
+  },
+  {
+    "input": {
+      "provider": "gemini",
+      "hook_event_name": "beforeSubmitPrompt"
+    },
+    "output": {
+      "eventType": "Busy",
+      "provider": "gemini"
+    }
+  },
+  {
+    "input": {
+      "provider": "gemini",
+      "hook_event_name": "sessionStart"
+    },
+    "output": {
+      "eventType": "Busy",
+      "provider": "gemini"
+    }
+  },
+  {
+    "input": {
+      "provider": "gemini",
+      "hook_event_name": "userPromptSubmitted"
+    },
+    "output": {
+      "eventType": "Busy",
+      "provider": "gemini"
+    }
+  },
+  {
+    "input": {
+      "provider": "gemini",
+      "hook_event_name": "postToolUse"
+    },
+    "output": {
+      "eventType": "Busy",
+      "toolCompletion": {
+        "toolKey": null
+      },
+      "provider": "gemini"
+    }
+  },
+  {
+    "input": {
+      "provider": "gemini",
+      "hook_event_name": "agent-turn-start"
+    },
+    "output": {
+      "eventType": "Busy",
+      "provider": "gemini"
+    }
+  },
+  {
+    "input": {
+      "provider": "gemini",
+      "hook_event_name": "PostToolUseFailure"
+    },
+    "output": {
+      "eventType": "Busy",
+      "toolCompletion": {
+        "toolKey": null
+      },
+      "provider": "gemini"
+    }
+  },
+  {
+    "input": {
+      "provider": "gemini",
+      "hook_event_name": "postToolUseFailure"
+    },
+    "output": {
+      "eventType": "Busy",
+      "toolCompletion": {
+        "toolKey": null
+      },
+      "provider": "gemini"
+    }
+  },
+  {
+    "input": {
+      "provider": "gemini",
+      "hook_event_name": "PermissionDenied"
+    },
+    "output": {
+      "eventType": "Busy",
+      "toolCompletion": {
+        "toolKey": null
+      },
+      "provider": "gemini"
+    }
+  },
+  {
+    "input": {
+      "provider": "gemini",
+      "hook_event_name": "Idle"
+    },
+    "output": {
+      "eventType": "Idle",
+      "provider": "gemini"
+    }
+  },
+  {
+    "input": {
+      "provider": "gemini",
+      "hook_event_name": "Interrupt"
+    },
+    "output": {
+      "eventType": "Idle",
+      "outcome": "cancelled",
+      "provider": "gemini"
+    }
+  },
+  {
+    "input": {
+      "provider": "gemini",
+      "hook_event_name": "Stop"
+    },
+    "output": {
+      "eventType": "Idle",
+      "provider": "gemini"
+    }
+  },
+  {
+    "input": {
+      "provider": "gemini",
+      "hook_event_name": "SessionEnd"
+    },
+    "output": {
+      "eventType": "Idle",
+      "provider": "gemini"
+    }
+  },
+  {
+    "input": {
+      "provider": "gemini",
+      "hook_event_name": "AfterAgent"
+    },
+    "output": {
+      "eventType": "Idle",
+      "provider": "gemini"
+    }
+  },
+  {
+    "input": {
+      "provider": "gemini",
+      "hook_event_name": "stop"
+    },
+    "output": {
+      "eventType": "Idle",
+      "provider": "gemini"
+    }
+  },
+  {
+    "input": {
+      "provider": "gemini",
+      "hook_event_name": "sessionEnd"
+    },
+    "output": {
+      "eventType": "Idle",
+      "provider": "gemini"
+    }
+  },
+  {
+    "input": {
+      "provider": "gemini",
+      "hook_event_name": "agent-turn-complete"
+    },
+    "output": {
+      "eventType": "Idle",
+      "provider": "gemini"
+    }
+  },
+  {
+    "input": {
+      "provider": "gemini",
+      "hook_event_name": "Error"
+    },
+    "output": {
+      "eventType": "Error",
+      "provider": "gemini"
+    }
+  },
+  {
+    "input": {
+      "provider": "gemini",
+      "hook_event_name": "Failed"
+    },
+    "output": {
+      "eventType": "Error",
+      "provider": "gemini"
+    }
+  },
+  {
+    "input": {
+      "provider": "gemini",
+      "hook_event_name": "StopFailure"
+    },
+    "output": {
+      "eventType": "Error",
+      "provider": "gemini"
+    }
+  },
+  {
+    "input": {
+      "provider": "gemini",
+      "hook_event_name": "session.error"
+    },
+    "output": {
+      "eventType": "Error",
+      "provider": "gemini"
+    }
+  },
+  {
+    "input": {
+      "provider": "gemini",
+      "hook_event_name": "sessionError"
+    },
+    "output": {
+      "eventType": "Error",
+      "provider": "gemini"
+    }
+  },
+  {
+    "input": {
+      "provider": "gemini",
+      "hook_event_name": "agent-turn-error"
+    },
+    "output": {
+      "eventType": "Error",
+      "provider": "gemini"
+    }
+  },
+  {
+    "input": {
+      "provider": "gemini",
+      "hook_event_name": "task-failed"
+    },
+    "output": {
+      "eventType": "Error",
+      "provider": "gemini"
+    }
+  },
+  {
+    "input": {
+      "provider": "gemini",
+      "hook_event_name": "UserActionRequired"
+    },
+    "output": {
+      "eventType": "UserActionRequired",
+      "userAction": {
+        "toolKey": null
+      },
+      "provider": "gemini"
+    }
+  },
+  {
+    "input": {
+      "provider": "gemini",
+      "hook_event_name": "beforeShellExecution"
+    },
+    "output": {
+      "eventType": "UserActionRequired",
+      "userAction": {
+        "toolKey": null
+      },
+      "provider": "gemini"
+    }
+  },
+  {
+    "input": {
+      "provider": "gemini",
+      "hook_event_name": "beforeMCPExecution"
+    },
+    "output": {
+      "eventType": "UserActionRequired",
+      "userAction": {
+        "toolKey": null
+      },
+      "provider": "gemini"
+    }
+  },
+  {
+    "input": {
+      "provider": "gemini",
+      "hook_event_name": "PermissionRequest"
+    },
+    "output": {
+      "eventType": "UserActionRequired",
+      "userAction": {
+        "toolKey": null
+      },
+      "provider": "gemini"
+    }
+  },
+  {
+    "input": {
+      "provider": "gemini",
+      "hook_event_name": "QuestionRequest"
+    },
+    "output": {
+      "eventType": "UserActionRequired",
+      "userAction": {
+        "toolKey": null
+      },
+      "provider": "gemini"
+    }
+  },
+  {
+    "input": {
+      "provider": "gemini",
+      "hook_event_name": "question"
+    },
+    "output": {
+      "eventType": "UserActionRequired",
+      "userAction": {
+        "toolKey": null
+      },
+      "provider": "gemini"
+    }
+  },
+  {
+    "input": {
+      "provider": "gemini",
+      "hook_event_name": "question.asked"
+    },
+    "output": {
+      "eventType": "UserActionRequired",
+      "userAction": {
+        "toolKey": null
+      },
+      "provider": "gemini"
+    }
+  },
+  {
+    "input": {
+      "provider": "gemini",
+      "hook_event_name": "Notification"
+    },
+    "output": {
+      "eventType": "UserActionRequired",
+      "userAction": {
+        "toolKey": null
+      },
+      "provider": "gemini"
+    }
+  },
+  {
+    "input": {
+      "provider": "gemini",
+      "hook_event_name": "permission-request"
+    },
+    "output": {
+      "eventType": "UserActionRequired",
+      "userAction": {
+        "toolKey": null
+      },
+      "provider": "gemini"
+    }
+  },
+  {
+    "input": {
+      "provider": "gemini",
+      "hook_event_name": "question-request"
+    },
+    "output": {
+      "eventType": "UserActionRequired",
+      "userAction": {
+        "toolKey": null
+      },
+      "provider": "gemini"
+    }
+  },
+  {
+    "input": {
+      "provider": "gemini",
+      "hook_event_name": "PreToolUse"
+    },
+    "output": null
+  },
+  {
+    "input": {
+      "provider": "gemini",
+      "hook_event_name": "SubagentStart"
+    },
+    "output": null
+  },
+  {
+    "input": {
+      "provider": "gemini",
+      "hook_event_name": "SubagentStop"
+    },
+    "output": null
+  },
+  {
+    "input": {
+      "provider": "gemini",
+      "hook_event_name": "unknown"
+    },
+    "output": null
+  },
+  {
+    "input": {
+      "provider": "antigravity",
+      "hook_event_name": "Busy"
+    },
+    "output": null
+  },
+  {
+    "input": {
+      "provider": "antigravity",
+      "hook_event_name": "Start"
+    },
+    "output": null
+  },
+  {
+    "input": {
+      "provider": "antigravity",
+      "hook_event_name": "SessionStart"
+    },
+    "output": null
+  },
+  {
+    "input": {
+      "provider": "antigravity",
+      "hook_event_name": "UserPromptSubmit"
+    },
+    "output": null
+  },
+  {
+    "input": {
+      "provider": "antigravity",
+      "hook_event_name": "PostToolUse"
+    },
+    "output": null
+  },
+  {
+    "input": {
+      "provider": "antigravity",
+      "hook_event_name": "BeforeAgent"
+    },
+    "output": null
+  },
+  {
+    "input": {
+      "provider": "antigravity",
+      "hook_event_name": "AfterTool"
+    },
+    "output": null
+  },
+  {
+    "input": {
+      "provider": "antigravity",
+      "hook_event_name": "beforeSubmitPrompt"
+    },
+    "output": null
+  },
+  {
+    "input": {
+      "provider": "antigravity",
+      "hook_event_name": "sessionStart"
+    },
+    "output": null
+  },
+  {
+    "input": {
+      "provider": "antigravity",
+      "hook_event_name": "userPromptSubmitted"
+    },
+    "output": null
+  },
+  {
+    "input": {
+      "provider": "antigravity",
+      "hook_event_name": "postToolUse"
+    },
+    "output": null
+  },
+  {
+    "input": {
+      "provider": "antigravity",
+      "hook_event_name": "agent-turn-start"
+    },
+    "output": null
+  },
+  {
+    "input": {
+      "provider": "antigravity",
+      "hook_event_name": "PostToolUseFailure"
+    },
+    "output": null
+  },
+  {
+    "input": {
+      "provider": "antigravity",
+      "hook_event_name": "postToolUseFailure"
+    },
+    "output": null
+  },
+  {
+    "input": {
+      "provider": "antigravity",
+      "hook_event_name": "PermissionDenied"
+    },
+    "output": null
+  },
+  {
+    "input": {
+      "provider": "antigravity",
+      "hook_event_name": "Idle"
+    },
+    "output": null
+  },
+  {
+    "input": {
+      "provider": "antigravity",
+      "hook_event_name": "Interrupt"
+    },
+    "output": null
+  },
+  {
+    "input": {
+      "provider": "antigravity",
+      "hook_event_name": "Stop"
+    },
+    "output": null
+  },
+  {
+    "input": {
+      "provider": "antigravity",
+      "hook_event_name": "SessionEnd"
+    },
+    "output": null
+  },
+  {
+    "input": {
+      "provider": "antigravity",
+      "hook_event_name": "AfterAgent"
+    },
+    "output": null
+  },
+  {
+    "input": {
+      "provider": "antigravity",
+      "hook_event_name": "stop"
+    },
+    "output": null
+  },
+  {
+    "input": {
+      "provider": "antigravity",
+      "hook_event_name": "sessionEnd"
+    },
+    "output": null
+  },
+  {
+    "input": {
+      "provider": "antigravity",
+      "hook_event_name": "agent-turn-complete"
+    },
+    "output": null
+  },
+  {
+    "input": {
+      "provider": "antigravity",
+      "hook_event_name": "Error"
+    },
+    "output": null
+  },
+  {
+    "input": {
+      "provider": "antigravity",
+      "hook_event_name": "Failed"
+    },
+    "output": null
+  },
+  {
+    "input": {
+      "provider": "antigravity",
+      "hook_event_name": "StopFailure"
+    },
+    "output": null
+  },
+  {
+    "input": {
+      "provider": "antigravity",
+      "hook_event_name": "session.error"
+    },
+    "output": null
+  },
+  {
+    "input": {
+      "provider": "antigravity",
+      "hook_event_name": "sessionError"
+    },
+    "output": null
+  },
+  {
+    "input": {
+      "provider": "antigravity",
+      "hook_event_name": "agent-turn-error"
+    },
+    "output": null
+  },
+  {
+    "input": {
+      "provider": "antigravity",
+      "hook_event_name": "task-failed"
+    },
+    "output": null
+  },
+  {
+    "input": {
+      "provider": "antigravity",
+      "hook_event_name": "UserActionRequired"
+    },
+    "output": null
+  },
+  {
+    "input": {
+      "provider": "antigravity",
+      "hook_event_name": "beforeShellExecution"
+    },
+    "output": null
+  },
+  {
+    "input": {
+      "provider": "antigravity",
+      "hook_event_name": "beforeMCPExecution"
+    },
+    "output": null
+  },
+  {
+    "input": {
+      "provider": "antigravity",
+      "hook_event_name": "PermissionRequest"
+    },
+    "output": null
+  },
+  {
+    "input": {
+      "provider": "antigravity",
+      "hook_event_name": "QuestionRequest"
+    },
+    "output": null
+  },
+  {
+    "input": {
+      "provider": "antigravity",
+      "hook_event_name": "question"
+    },
+    "output": null
+  },
+  {
+    "input": {
+      "provider": "antigravity",
+      "hook_event_name": "question.asked"
+    },
+    "output": null
+  },
+  {
+    "input": {
+      "provider": "antigravity",
+      "hook_event_name": "Notification"
+    },
+    "output": null
+  },
+  {
+    "input": {
+      "provider": "antigravity",
+      "hook_event_name": "permission-request"
+    },
+    "output": null
+  },
+  {
+    "input": {
+      "provider": "antigravity",
+      "hook_event_name": "question-request"
+    },
+    "output": null
+  },
+  {
+    "input": {
+      "provider": "antigravity",
+      "hook_event_name": "PreToolUse"
+    },
+    "output": null
+  },
+  {
+    "input": {
+      "provider": "antigravity",
+      "hook_event_name": "SubagentStart"
+    },
+    "output": null
+  },
+  {
+    "input": {
+      "provider": "antigravity",
+      "hook_event_name": "SubagentStop"
+    },
+    "output": null
+  },
+  {
+    "input": {
+      "provider": "antigravity",
+      "hook_event_name": "unknown"
+    },
+    "output": null
+  },
+  {
+    "input": {
+      "provider": "droid",
+      "hook_event_name": "Busy"
+    },
+    "output": {
+      "eventType": "Busy",
+      "provider": "droid"
+    }
+  },
+  {
+    "input": {
+      "provider": "droid",
+      "hook_event_name": "Start"
+    },
+    "output": {
+      "eventType": "Busy",
+      "provider": "droid"
+    }
+  },
+  {
+    "input": {
+      "provider": "droid",
+      "hook_event_name": "SessionStart"
+    },
+    "output": {
+      "eventType": "Busy",
+      "provider": "droid"
+    }
+  },
+  {
+    "input": {
+      "provider": "droid",
+      "hook_event_name": "UserPromptSubmit"
+    },
+    "output": {
+      "eventType": "Busy",
+      "provider": "droid"
+    }
+  },
+  {
+    "input": {
+      "provider": "droid",
+      "hook_event_name": "PostToolUse"
+    },
+    "output": {
+      "eventType": "Busy",
+      "toolCompletion": {
+        "toolKey": null
+      },
+      "provider": "droid"
+    }
+  },
+  {
+    "input": {
+      "provider": "droid",
+      "hook_event_name": "BeforeAgent"
+    },
+    "output": {
+      "eventType": "Busy",
+      "provider": "droid"
+    }
+  },
+  {
+    "input": {
+      "provider": "droid",
+      "hook_event_name": "AfterTool"
+    },
+    "output": {
+      "eventType": "Busy",
+      "toolCompletion": {
+        "toolKey": null
+      },
+      "provider": "droid"
+    }
+  },
+  {
+    "input": {
+      "provider": "droid",
+      "hook_event_name": "beforeSubmitPrompt"
+    },
+    "output": {
+      "eventType": "Busy",
+      "provider": "droid"
+    }
+  },
+  {
+    "input": {
+      "provider": "droid",
+      "hook_event_name": "sessionStart"
+    },
+    "output": {
+      "eventType": "Busy",
+      "provider": "droid"
+    }
+  },
+  {
+    "input": {
+      "provider": "droid",
+      "hook_event_name": "userPromptSubmitted"
+    },
+    "output": {
+      "eventType": "Busy",
+      "provider": "droid"
+    }
+  },
+  {
+    "input": {
+      "provider": "droid",
+      "hook_event_name": "postToolUse"
+    },
+    "output": {
+      "eventType": "Busy",
+      "toolCompletion": {
+        "toolKey": null
+      },
+      "provider": "droid"
+    }
+  },
+  {
+    "input": {
+      "provider": "droid",
+      "hook_event_name": "agent-turn-start"
+    },
+    "output": {
+      "eventType": "Busy",
+      "provider": "droid"
+    }
+  },
+  {
+    "input": {
+      "provider": "droid",
+      "hook_event_name": "PostToolUseFailure"
+    },
+    "output": {
+      "eventType": "Busy",
+      "toolCompletion": {
+        "toolKey": null
+      },
+      "provider": "droid"
+    }
+  },
+  {
+    "input": {
+      "provider": "droid",
+      "hook_event_name": "postToolUseFailure"
+    },
+    "output": {
+      "eventType": "Busy",
+      "toolCompletion": {
+        "toolKey": null
+      },
+      "provider": "droid"
+    }
+  },
+  {
+    "input": {
+      "provider": "droid",
+      "hook_event_name": "PermissionDenied"
+    },
+    "output": {
+      "eventType": "Busy",
+      "toolCompletion": {
+        "toolKey": null
+      },
+      "provider": "droid"
+    }
+  },
+  {
+    "input": {
+      "provider": "droid",
+      "hook_event_name": "Idle"
+    },
+    "output": {
+      "eventType": "Idle",
+      "provider": "droid"
+    }
+  },
+  {
+    "input": {
+      "provider": "droid",
+      "hook_event_name": "Interrupt"
+    },
+    "output": {
+      "eventType": "Idle",
+      "outcome": "cancelled",
+      "provider": "droid"
+    }
+  },
+  {
+    "input": {
+      "provider": "droid",
+      "hook_event_name": "Stop"
+    },
+    "output": {
+      "eventType": "Idle",
+      "provider": "droid"
+    }
+  },
+  {
+    "input": {
+      "provider": "droid",
+      "hook_event_name": "SessionEnd"
+    },
+    "output": {
+      "eventType": "Idle",
+      "provider": "droid"
+    }
+  },
+  {
+    "input": {
+      "provider": "droid",
+      "hook_event_name": "AfterAgent"
+    },
+    "output": {
+      "eventType": "Idle",
+      "provider": "droid"
+    }
+  },
+  {
+    "input": {
+      "provider": "droid",
+      "hook_event_name": "stop"
+    },
+    "output": {
+      "eventType": "Idle",
+      "provider": "droid"
+    }
+  },
+  {
+    "input": {
+      "provider": "droid",
+      "hook_event_name": "sessionEnd"
+    },
+    "output": {
+      "eventType": "Idle",
+      "provider": "droid"
+    }
+  },
+  {
+    "input": {
+      "provider": "droid",
+      "hook_event_name": "agent-turn-complete"
+    },
+    "output": {
+      "eventType": "Idle",
+      "provider": "droid"
+    }
+  },
+  {
+    "input": {
+      "provider": "droid",
+      "hook_event_name": "Error"
+    },
+    "output": {
+      "eventType": "Error",
+      "provider": "droid"
+    }
+  },
+  {
+    "input": {
+      "provider": "droid",
+      "hook_event_name": "Failed"
+    },
+    "output": {
+      "eventType": "Error",
+      "provider": "droid"
+    }
+  },
+  {
+    "input": {
+      "provider": "droid",
+      "hook_event_name": "StopFailure"
+    },
+    "output": {
+      "eventType": "Error",
+      "provider": "droid"
+    }
+  },
+  {
+    "input": {
+      "provider": "droid",
+      "hook_event_name": "session.error"
+    },
+    "output": {
+      "eventType": "Error",
+      "provider": "droid"
+    }
+  },
+  {
+    "input": {
+      "provider": "droid",
+      "hook_event_name": "sessionError"
+    },
+    "output": {
+      "eventType": "Error",
+      "provider": "droid"
+    }
+  },
+  {
+    "input": {
+      "provider": "droid",
+      "hook_event_name": "agent-turn-error"
+    },
+    "output": {
+      "eventType": "Error",
+      "provider": "droid"
+    }
+  },
+  {
+    "input": {
+      "provider": "droid",
+      "hook_event_name": "task-failed"
+    },
+    "output": {
+      "eventType": "Error",
+      "provider": "droid"
+    }
+  },
+  {
+    "input": {
+      "provider": "droid",
+      "hook_event_name": "UserActionRequired"
+    },
+    "output": {
+      "eventType": "UserActionRequired",
+      "userAction": {
+        "toolKey": null
+      },
+      "provider": "droid"
+    }
+  },
+  {
+    "input": {
+      "provider": "droid",
+      "hook_event_name": "beforeShellExecution"
+    },
+    "output": {
+      "eventType": "UserActionRequired",
+      "userAction": {
+        "toolKey": null
+      },
+      "provider": "droid"
+    }
+  },
+  {
+    "input": {
+      "provider": "droid",
+      "hook_event_name": "beforeMCPExecution"
+    },
+    "output": {
+      "eventType": "UserActionRequired",
+      "userAction": {
+        "toolKey": null
+      },
+      "provider": "droid"
+    }
+  },
+  {
+    "input": {
+      "provider": "droid",
+      "hook_event_name": "PermissionRequest"
+    },
+    "output": {
+      "eventType": "UserActionRequired",
+      "userAction": {
+        "toolKey": null
+      },
+      "provider": "droid"
+    }
+  },
+  {
+    "input": {
+      "provider": "droid",
+      "hook_event_name": "QuestionRequest"
+    },
+    "output": {
+      "eventType": "UserActionRequired",
+      "userAction": {
+        "toolKey": null
+      },
+      "provider": "droid"
+    }
+  },
+  {
+    "input": {
+      "provider": "droid",
+      "hook_event_name": "question"
+    },
+    "output": {
+      "eventType": "UserActionRequired",
+      "userAction": {
+        "toolKey": null
+      },
+      "provider": "droid"
+    }
+  },
+  {
+    "input": {
+      "provider": "droid",
+      "hook_event_name": "question.asked"
+    },
+    "output": {
+      "eventType": "UserActionRequired",
+      "userAction": {
+        "toolKey": null
+      },
+      "provider": "droid"
+    }
+  },
+  {
+    "input": {
+      "provider": "droid",
+      "hook_event_name": "Notification"
+    },
+    "output": {
+      "eventType": "UserActionRequired",
+      "userAction": {
+        "toolKey": null
+      },
+      "provider": "droid"
+    }
+  },
+  {
+    "input": {
+      "provider": "droid",
+      "hook_event_name": "permission-request"
+    },
+    "output": {
+      "eventType": "UserActionRequired",
+      "userAction": {
+        "toolKey": null
+      },
+      "provider": "droid"
+    }
+  },
+  {
+    "input": {
+      "provider": "droid",
+      "hook_event_name": "question-request"
+    },
+    "output": {
+      "eventType": "UserActionRequired",
+      "userAction": {
+        "toolKey": null
+      },
+      "provider": "droid"
+    }
+  },
+  {
+    "input": {
+      "provider": "droid",
+      "hook_event_name": "PreToolUse"
+    },
+    "output": null
+  },
+  {
+    "input": {
+      "provider": "droid",
+      "hook_event_name": "SubagentStart"
+    },
+    "output": null
+  },
+  {
+    "input": {
+      "provider": "droid",
+      "hook_event_name": "SubagentStop"
+    },
+    "output": null
+  },
+  {
+    "input": {
+      "provider": "droid",
+      "hook_event_name": "unknown"
+    },
+    "output": null
+  },
+  {
+    "input": {
+      "provider": "mastracode",
+      "hook_event_name": "Busy"
+    },
+    "output": {
+      "eventType": "Busy",
+      "provider": "mastracode"
+    }
+  },
+  {
+    "input": {
+      "provider": "mastracode",
+      "hook_event_name": "Start"
+    },
+    "output": {
+      "eventType": "Busy",
+      "provider": "mastracode"
+    }
+  },
+  {
+    "input": {
+      "provider": "mastracode",
+      "hook_event_name": "SessionStart"
+    },
+    "output": {
+      "eventType": "Busy",
+      "provider": "mastracode"
+    }
+  },
+  {
+    "input": {
+      "provider": "mastracode",
+      "hook_event_name": "UserPromptSubmit"
+    },
+    "output": {
+      "eventType": "Busy",
+      "provider": "mastracode"
+    }
+  },
+  {
+    "input": {
+      "provider": "mastracode",
+      "hook_event_name": "PostToolUse"
+    },
+    "output": {
+      "eventType": "Busy",
+      "toolCompletion": {
+        "toolKey": null
+      },
+      "provider": "mastracode"
+    }
+  },
+  {
+    "input": {
+      "provider": "mastracode",
+      "hook_event_name": "BeforeAgent"
+    },
+    "output": {
+      "eventType": "Busy",
+      "provider": "mastracode"
+    }
+  },
+  {
+    "input": {
+      "provider": "mastracode",
+      "hook_event_name": "AfterTool"
+    },
+    "output": {
+      "eventType": "Busy",
+      "toolCompletion": {
+        "toolKey": null
+      },
+      "provider": "mastracode"
+    }
+  },
+  {
+    "input": {
+      "provider": "mastracode",
+      "hook_event_name": "beforeSubmitPrompt"
+    },
+    "output": {
+      "eventType": "Busy",
+      "provider": "mastracode"
+    }
+  },
+  {
+    "input": {
+      "provider": "mastracode",
+      "hook_event_name": "sessionStart"
+    },
+    "output": {
+      "eventType": "Busy",
+      "provider": "mastracode"
+    }
+  },
+  {
+    "input": {
+      "provider": "mastracode",
+      "hook_event_name": "userPromptSubmitted"
+    },
+    "output": {
+      "eventType": "Busy",
+      "provider": "mastracode"
+    }
+  },
+  {
+    "input": {
+      "provider": "mastracode",
+      "hook_event_name": "postToolUse"
+    },
+    "output": {
+      "eventType": "Busy",
+      "toolCompletion": {
+        "toolKey": null
+      },
+      "provider": "mastracode"
+    }
+  },
+  {
+    "input": {
+      "provider": "mastracode",
+      "hook_event_name": "agent-turn-start"
+    },
+    "output": {
+      "eventType": "Busy",
+      "provider": "mastracode"
+    }
+  },
+  {
+    "input": {
+      "provider": "mastracode",
+      "hook_event_name": "PostToolUseFailure"
+    },
+    "output": {
+      "eventType": "Busy",
+      "toolCompletion": {
+        "toolKey": null
+      },
+      "provider": "mastracode"
+    }
+  },
+  {
+    "input": {
+      "provider": "mastracode",
+      "hook_event_name": "postToolUseFailure"
+    },
+    "output": {
+      "eventType": "Busy",
+      "toolCompletion": {
+        "toolKey": null
+      },
+      "provider": "mastracode"
+    }
+  },
+  {
+    "input": {
+      "provider": "mastracode",
+      "hook_event_name": "PermissionDenied"
+    },
+    "output": {
+      "eventType": "Busy",
+      "toolCompletion": {
+        "toolKey": null
+      },
+      "provider": "mastracode"
+    }
+  },
+  {
+    "input": {
+      "provider": "mastracode",
+      "hook_event_name": "Idle"
+    },
+    "output": {
+      "eventType": "Idle",
+      "provider": "mastracode"
+    }
+  },
+  {
+    "input": {
+      "provider": "mastracode",
+      "hook_event_name": "Interrupt"
+    },
+    "output": {
+      "eventType": "Idle",
+      "outcome": "cancelled",
+      "provider": "mastracode"
+    }
+  },
+  {
+    "input": {
+      "provider": "mastracode",
+      "hook_event_name": "Stop"
+    },
+    "output": {
+      "eventType": "Idle",
+      "provider": "mastracode"
+    }
+  },
+  {
+    "input": {
+      "provider": "mastracode",
+      "hook_event_name": "SessionEnd"
+    },
+    "output": {
+      "eventType": "Idle",
+      "provider": "mastracode"
+    }
+  },
+  {
+    "input": {
+      "provider": "mastracode",
+      "hook_event_name": "AfterAgent"
+    },
+    "output": {
+      "eventType": "Idle",
+      "provider": "mastracode"
+    }
+  },
+  {
+    "input": {
+      "provider": "mastracode",
+      "hook_event_name": "stop"
+    },
+    "output": {
+      "eventType": "Idle",
+      "provider": "mastracode"
+    }
+  },
+  {
+    "input": {
+      "provider": "mastracode",
+      "hook_event_name": "sessionEnd"
+    },
+    "output": {
+      "eventType": "Idle",
+      "provider": "mastracode"
+    }
+  },
+  {
+    "input": {
+      "provider": "mastracode",
+      "hook_event_name": "agent-turn-complete"
+    },
+    "output": {
+      "eventType": "Idle",
+      "provider": "mastracode"
+    }
+  },
+  {
+    "input": {
+      "provider": "mastracode",
+      "hook_event_name": "Error"
+    },
+    "output": {
+      "eventType": "Error",
+      "provider": "mastracode"
+    }
+  },
+  {
+    "input": {
+      "provider": "mastracode",
+      "hook_event_name": "Failed"
+    },
+    "output": {
+      "eventType": "Error",
+      "provider": "mastracode"
+    }
+  },
+  {
+    "input": {
+      "provider": "mastracode",
+      "hook_event_name": "StopFailure"
+    },
+    "output": {
+      "eventType": "Error",
+      "provider": "mastracode"
+    }
+  },
+  {
+    "input": {
+      "provider": "mastracode",
+      "hook_event_name": "session.error"
+    },
+    "output": {
+      "eventType": "Error",
+      "provider": "mastracode"
+    }
+  },
+  {
+    "input": {
+      "provider": "mastracode",
+      "hook_event_name": "sessionError"
+    },
+    "output": {
+      "eventType": "Error",
+      "provider": "mastracode"
+    }
+  },
+  {
+    "input": {
+      "provider": "mastracode",
+      "hook_event_name": "agent-turn-error"
+    },
+    "output": {
+      "eventType": "Error",
+      "provider": "mastracode"
+    }
+  },
+  {
+    "input": {
+      "provider": "mastracode",
+      "hook_event_name": "task-failed"
+    },
+    "output": {
+      "eventType": "Error",
+      "provider": "mastracode"
+    }
+  },
+  {
+    "input": {
+      "provider": "mastracode",
+      "hook_event_name": "UserActionRequired"
+    },
+    "output": {
+      "eventType": "UserActionRequired",
+      "userAction": {
+        "toolKey": null
+      },
+      "provider": "mastracode"
+    }
+  },
+  {
+    "input": {
+      "provider": "mastracode",
+      "hook_event_name": "beforeShellExecution"
+    },
+    "output": {
+      "eventType": "UserActionRequired",
+      "userAction": {
+        "toolKey": null
+      },
+      "provider": "mastracode"
+    }
+  },
+  {
+    "input": {
+      "provider": "mastracode",
+      "hook_event_name": "beforeMCPExecution"
+    },
+    "output": {
+      "eventType": "UserActionRequired",
+      "userAction": {
+        "toolKey": null
+      },
+      "provider": "mastracode"
+    }
+  },
+  {
+    "input": {
+      "provider": "mastracode",
+      "hook_event_name": "PermissionRequest"
+    },
+    "output": {
+      "eventType": "UserActionRequired",
+      "userAction": {
+        "toolKey": null
+      },
+      "provider": "mastracode"
+    }
+  },
+  {
+    "input": {
+      "provider": "mastracode",
+      "hook_event_name": "QuestionRequest"
+    },
+    "output": {
+      "eventType": "UserActionRequired",
+      "userAction": {
+        "toolKey": null
+      },
+      "provider": "mastracode"
+    }
+  },
+  {
+    "input": {
+      "provider": "mastracode",
+      "hook_event_name": "question"
+    },
+    "output": {
+      "eventType": "UserActionRequired",
+      "userAction": {
+        "toolKey": null
+      },
+      "provider": "mastracode"
+    }
+  },
+  {
+    "input": {
+      "provider": "mastracode",
+      "hook_event_name": "question.asked"
+    },
+    "output": {
+      "eventType": "UserActionRequired",
+      "userAction": {
+        "toolKey": null
+      },
+      "provider": "mastracode"
+    }
+  },
+  {
+    "input": {
+      "provider": "mastracode",
+      "hook_event_name": "Notification"
+    },
+    "output": {
+      "eventType": "UserActionRequired",
+      "userAction": {
+        "toolKey": null
+      },
+      "provider": "mastracode"
+    }
+  },
+  {
+    "input": {
+      "provider": "mastracode",
+      "hook_event_name": "permission-request"
+    },
+    "output": {
+      "eventType": "UserActionRequired",
+      "userAction": {
+        "toolKey": null
+      },
+      "provider": "mastracode"
+    }
+  },
+  {
+    "input": {
+      "provider": "mastracode",
+      "hook_event_name": "question-request"
+    },
+    "output": {
+      "eventType": "UserActionRequired",
+      "userAction": {
+        "toolKey": null
+      },
+      "provider": "mastracode"
+    }
+  },
+  {
+    "input": {
+      "provider": "mastracode",
+      "hook_event_name": "PreToolUse"
+    },
+    "output": null
+  },
+  {
+    "input": {
+      "provider": "mastracode",
+      "hook_event_name": "SubagentStart"
+    },
+    "output": null
+  },
+  {
+    "input": {
+      "provider": "mastracode",
+      "hook_event_name": "SubagentStop"
+    },
+    "output": null
+  },
+  {
+    "input": {
+      "provider": "mastracode",
+      "hook_event_name": "unknown"
+    },
+    "output": null
+  },
+  {
+    "input": {
+      "provider": "amp",
+      "hook_event_name": "Busy"
+    },
+    "output": {
+      "eventType": "Busy",
+      "provider": "amp"
+    }
+  },
+  {
+    "input": {
+      "provider": "amp",
+      "hook_event_name": "Start"
+    },
+    "output": {
+      "eventType": "Busy",
+      "provider": "amp"
+    }
+  },
+  {
+    "input": {
+      "provider": "amp",
+      "hook_event_name": "SessionStart"
+    },
+    "output": {
+      "eventType": "Busy",
+      "provider": "amp"
+    }
+  },
+  {
+    "input": {
+      "provider": "amp",
+      "hook_event_name": "UserPromptSubmit"
+    },
+    "output": {
+      "eventType": "Busy",
+      "provider": "amp"
+    }
+  },
+  {
+    "input": {
+      "provider": "amp",
+      "hook_event_name": "PostToolUse"
+    },
+    "output": {
+      "eventType": "Busy",
+      "toolCompletion": {
+        "toolKey": null
+      },
+      "provider": "amp"
+    }
+  },
+  {
+    "input": {
+      "provider": "amp",
+      "hook_event_name": "BeforeAgent"
+    },
+    "output": {
+      "eventType": "Busy",
+      "provider": "amp"
+    }
+  },
+  {
+    "input": {
+      "provider": "amp",
+      "hook_event_name": "AfterTool"
+    },
+    "output": {
+      "eventType": "Busy",
+      "toolCompletion": {
+        "toolKey": null
+      },
+      "provider": "amp"
+    }
+  },
+  {
+    "input": {
+      "provider": "amp",
+      "hook_event_name": "beforeSubmitPrompt"
+    },
+    "output": {
+      "eventType": "Busy",
+      "provider": "amp"
+    }
+  },
+  {
+    "input": {
+      "provider": "amp",
+      "hook_event_name": "sessionStart"
+    },
+    "output": {
+      "eventType": "Busy",
+      "provider": "amp"
+    }
+  },
+  {
+    "input": {
+      "provider": "amp",
+      "hook_event_name": "userPromptSubmitted"
+    },
+    "output": {
+      "eventType": "Busy",
+      "provider": "amp"
+    }
+  },
+  {
+    "input": {
+      "provider": "amp",
+      "hook_event_name": "postToolUse"
+    },
+    "output": {
+      "eventType": "Busy",
+      "toolCompletion": {
+        "toolKey": null
+      },
+      "provider": "amp"
+    }
+  },
+  {
+    "input": {
+      "provider": "amp",
+      "hook_event_name": "agent-turn-start"
+    },
+    "output": {
+      "eventType": "Busy",
+      "provider": "amp"
+    }
+  },
+  {
+    "input": {
+      "provider": "amp",
+      "hook_event_name": "PostToolUseFailure"
+    },
+    "output": {
+      "eventType": "Busy",
+      "toolCompletion": {
+        "toolKey": null
+      },
+      "provider": "amp"
+    }
+  },
+  {
+    "input": {
+      "provider": "amp",
+      "hook_event_name": "postToolUseFailure"
+    },
+    "output": {
+      "eventType": "Busy",
+      "toolCompletion": {
+        "toolKey": null
+      },
+      "provider": "amp"
+    }
+  },
+  {
+    "input": {
+      "provider": "amp",
+      "hook_event_name": "PermissionDenied"
+    },
+    "output": {
+      "eventType": "Busy",
+      "toolCompletion": {
+        "toolKey": null
+      },
+      "provider": "amp"
+    }
+  },
+  {
+    "input": {
+      "provider": "amp",
+      "hook_event_name": "Idle"
+    },
+    "output": {
+      "eventType": "Idle",
+      "provider": "amp"
+    }
+  },
+  {
+    "input": {
+      "provider": "amp",
+      "hook_event_name": "Interrupt"
+    },
+    "output": {
+      "eventType": "Idle",
+      "outcome": "cancelled",
+      "provider": "amp"
+    }
+  },
+  {
+    "input": {
+      "provider": "amp",
+      "hook_event_name": "Stop"
+    },
+    "output": {
+      "eventType": "Idle",
+      "provider": "amp"
+    }
+  },
+  {
+    "input": {
+      "provider": "amp",
+      "hook_event_name": "SessionEnd"
+    },
+    "output": {
+      "eventType": "Idle",
+      "provider": "amp"
+    }
+  },
+  {
+    "input": {
+      "provider": "amp",
+      "hook_event_name": "AfterAgent"
+    },
+    "output": {
+      "eventType": "Idle",
+      "provider": "amp"
+    }
+  },
+  {
+    "input": {
+      "provider": "amp",
+      "hook_event_name": "stop"
+    },
+    "output": {
+      "eventType": "Idle",
+      "provider": "amp"
+    }
+  },
+  {
+    "input": {
+      "provider": "amp",
+      "hook_event_name": "sessionEnd"
+    },
+    "output": {
+      "eventType": "Idle",
+      "provider": "amp"
+    }
+  },
+  {
+    "input": {
+      "provider": "amp",
+      "hook_event_name": "agent-turn-complete"
+    },
+    "output": {
+      "eventType": "Idle",
+      "provider": "amp"
+    }
+  },
+  {
+    "input": {
+      "provider": "amp",
+      "hook_event_name": "Error"
+    },
+    "output": {
+      "eventType": "Error",
+      "provider": "amp"
+    }
+  },
+  {
+    "input": {
+      "provider": "amp",
+      "hook_event_name": "Failed"
+    },
+    "output": {
+      "eventType": "Error",
+      "provider": "amp"
+    }
+  },
+  {
+    "input": {
+      "provider": "amp",
+      "hook_event_name": "StopFailure"
+    },
+    "output": {
+      "eventType": "Error",
+      "provider": "amp"
+    }
+  },
+  {
+    "input": {
+      "provider": "amp",
+      "hook_event_name": "session.error"
+    },
+    "output": {
+      "eventType": "Error",
+      "provider": "amp"
+    }
+  },
+  {
+    "input": {
+      "provider": "amp",
+      "hook_event_name": "sessionError"
+    },
+    "output": {
+      "eventType": "Error",
+      "provider": "amp"
+    }
+  },
+  {
+    "input": {
+      "provider": "amp",
+      "hook_event_name": "agent-turn-error"
+    },
+    "output": {
+      "eventType": "Error",
+      "provider": "amp"
+    }
+  },
+  {
+    "input": {
+      "provider": "amp",
+      "hook_event_name": "task-failed"
+    },
+    "output": {
+      "eventType": "Error",
+      "provider": "amp"
+    }
+  },
+  {
+    "input": {
+      "provider": "amp",
+      "hook_event_name": "UserActionRequired"
+    },
+    "output": {
+      "eventType": "UserActionRequired",
+      "userAction": {
+        "toolKey": null
+      },
+      "provider": "amp"
+    }
+  },
+  {
+    "input": {
+      "provider": "amp",
+      "hook_event_name": "beforeShellExecution"
+    },
+    "output": {
+      "eventType": "UserActionRequired",
+      "userAction": {
+        "toolKey": null
+      },
+      "provider": "amp"
+    }
+  },
+  {
+    "input": {
+      "provider": "amp",
+      "hook_event_name": "beforeMCPExecution"
+    },
+    "output": {
+      "eventType": "UserActionRequired",
+      "userAction": {
+        "toolKey": null
+      },
+      "provider": "amp"
+    }
+  },
+  {
+    "input": {
+      "provider": "amp",
+      "hook_event_name": "PermissionRequest"
+    },
+    "output": {
+      "eventType": "UserActionRequired",
+      "userAction": {
+        "toolKey": null
+      },
+      "provider": "amp"
+    }
+  },
+  {
+    "input": {
+      "provider": "amp",
+      "hook_event_name": "QuestionRequest"
+    },
+    "output": {
+      "eventType": "UserActionRequired",
+      "userAction": {
+        "toolKey": null
+      },
+      "provider": "amp"
+    }
+  },
+  {
+    "input": {
+      "provider": "amp",
+      "hook_event_name": "question"
+    },
+    "output": {
+      "eventType": "UserActionRequired",
+      "userAction": {
+        "toolKey": null
+      },
+      "provider": "amp"
+    }
+  },
+  {
+    "input": {
+      "provider": "amp",
+      "hook_event_name": "question.asked"
+    },
+    "output": {
+      "eventType": "UserActionRequired",
+      "userAction": {
+        "toolKey": null
+      },
+      "provider": "amp"
+    }
+  },
+  {
+    "input": {
+      "provider": "amp",
+      "hook_event_name": "Notification"
+    },
+    "output": {
+      "eventType": "UserActionRequired",
+      "userAction": {
+        "toolKey": null
+      },
+      "provider": "amp"
+    }
+  },
+  {
+    "input": {
+      "provider": "amp",
+      "hook_event_name": "permission-request"
+    },
+    "output": {
+      "eventType": "UserActionRequired",
+      "userAction": {
+        "toolKey": null
+      },
+      "provider": "amp"
+    }
+  },
+  {
+    "input": {
+      "provider": "amp",
+      "hook_event_name": "question-request"
+    },
+    "output": {
+      "eventType": "UserActionRequired",
+      "userAction": {
+        "toolKey": null
+      },
+      "provider": "amp"
+    }
+  },
+  {
+    "input": {
+      "provider": "amp",
+      "hook_event_name": "PreToolUse"
+    },
+    "output": null
+  },
+  {
+    "input": {
+      "provider": "amp",
+      "hook_event_name": "SubagentStart"
+    },
+    "output": null
+  },
+  {
+    "input": {
+      "provider": "amp",
+      "hook_event_name": "SubagentStop"
+    },
+    "output": null
+  },
+  {
+    "input": {
+      "provider": "amp",
+      "hook_event_name": "unknown"
+    },
+    "output": null
+  },
+  {
+    "input": {
+      "provider": "copilot",
+      "hook_event_name": "Busy"
+    },
+    "output": {
+      "eventType": "Busy",
+      "provider": "copilot"
+    }
+  },
+  {
+    "input": {
+      "provider": "copilot",
+      "hook_event_name": "Start"
+    },
+    "output": {
+      "eventType": "Busy",
+      "provider": "copilot"
+    }
+  },
+  {
+    "input": {
+      "provider": "copilot",
+      "hook_event_name": "SessionStart"
+    },
+    "output": {
+      "eventType": "Busy",
+      "provider": "copilot"
+    }
+  },
+  {
+    "input": {
+      "provider": "copilot",
+      "hook_event_name": "UserPromptSubmit"
+    },
+    "output": {
+      "eventType": "Busy",
+      "provider": "copilot"
+    }
+  },
+  {
+    "input": {
+      "provider": "copilot",
+      "hook_event_name": "PostToolUse"
+    },
+    "output": {
+      "eventType": "Busy",
+      "toolCompletion": {
+        "toolKey": null
+      },
+      "provider": "copilot"
+    }
+  },
+  {
+    "input": {
+      "provider": "copilot",
+      "hook_event_name": "BeforeAgent"
+    },
+    "output": {
+      "eventType": "Busy",
+      "provider": "copilot"
+    }
+  },
+  {
+    "input": {
+      "provider": "copilot",
+      "hook_event_name": "AfterTool"
+    },
+    "output": {
+      "eventType": "Busy",
+      "toolCompletion": {
+        "toolKey": null
+      },
+      "provider": "copilot"
+    }
+  },
+  {
+    "input": {
+      "provider": "copilot",
+      "hook_event_name": "beforeSubmitPrompt"
+    },
+    "output": {
+      "eventType": "Busy",
+      "provider": "copilot"
+    }
+  },
+  {
+    "input": {
+      "provider": "copilot",
+      "hook_event_name": "sessionStart"
+    },
+    "output": {
+      "eventType": "Busy",
+      "provider": "copilot"
+    }
+  },
+  {
+    "input": {
+      "provider": "copilot",
+      "hook_event_name": "userPromptSubmitted"
+    },
+    "output": {
+      "eventType": "Busy",
+      "provider": "copilot"
+    }
+  },
+  {
+    "input": {
+      "provider": "copilot",
+      "hook_event_name": "postToolUse"
+    },
+    "output": {
+      "eventType": "Busy",
+      "toolCompletion": {
+        "toolKey": null
+      },
+      "provider": "copilot"
+    }
+  },
+  {
+    "input": {
+      "provider": "copilot",
+      "hook_event_name": "agent-turn-start"
+    },
+    "output": {
+      "eventType": "Busy",
+      "provider": "copilot"
+    }
+  },
+  {
+    "input": {
+      "provider": "copilot",
+      "hook_event_name": "PostToolUseFailure"
+    },
+    "output": {
+      "eventType": "Busy",
+      "toolCompletion": {
+        "toolKey": null
+      },
+      "provider": "copilot"
+    }
+  },
+  {
+    "input": {
+      "provider": "copilot",
+      "hook_event_name": "postToolUseFailure"
+    },
+    "output": {
+      "eventType": "Busy",
+      "toolCompletion": {
+        "toolKey": null
+      },
+      "provider": "copilot"
+    }
+  },
+  {
+    "input": {
+      "provider": "copilot",
+      "hook_event_name": "PermissionDenied"
+    },
+    "output": {
+      "eventType": "Busy",
+      "toolCompletion": {
+        "toolKey": null
+      },
+      "provider": "copilot"
+    }
+  },
+  {
+    "input": {
+      "provider": "copilot",
+      "hook_event_name": "Idle"
+    },
+    "output": {
+      "eventType": "Idle",
+      "provider": "copilot"
+    }
+  },
+  {
+    "input": {
+      "provider": "copilot",
+      "hook_event_name": "Interrupt"
+    },
+    "output": {
+      "eventType": "Idle",
+      "outcome": "cancelled",
+      "provider": "copilot"
+    }
+  },
+  {
+    "input": {
+      "provider": "copilot",
+      "hook_event_name": "Stop"
+    },
+    "output": {
+      "eventType": "Idle",
+      "provider": "copilot"
+    }
+  },
+  {
+    "input": {
+      "provider": "copilot",
+      "hook_event_name": "SessionEnd"
+    },
+    "output": {
+      "eventType": "Idle",
+      "provider": "copilot"
+    }
+  },
+  {
+    "input": {
+      "provider": "copilot",
+      "hook_event_name": "AfterAgent"
+    },
+    "output": {
+      "eventType": "Idle",
+      "provider": "copilot"
+    }
+  },
+  {
+    "input": {
+      "provider": "copilot",
+      "hook_event_name": "stop"
+    },
+    "output": {
+      "eventType": "Idle",
+      "provider": "copilot"
+    }
+  },
+  {
+    "input": {
+      "provider": "copilot",
+      "hook_event_name": "sessionEnd"
+    },
+    "output": {
+      "eventType": "Idle",
+      "provider": "copilot"
+    }
+  },
+  {
+    "input": {
+      "provider": "copilot",
+      "hook_event_name": "agent-turn-complete"
+    },
+    "output": {
+      "eventType": "Idle",
+      "provider": "copilot"
+    }
+  },
+  {
+    "input": {
+      "provider": "copilot",
+      "hook_event_name": "Error"
+    },
+    "output": {
+      "eventType": "Error",
+      "provider": "copilot"
+    }
+  },
+  {
+    "input": {
+      "provider": "copilot",
+      "hook_event_name": "Failed"
+    },
+    "output": {
+      "eventType": "Error",
+      "provider": "copilot"
+    }
+  },
+  {
+    "input": {
+      "provider": "copilot",
+      "hook_event_name": "StopFailure"
+    },
+    "output": {
+      "eventType": "Error",
+      "provider": "copilot"
+    }
+  },
+  {
+    "input": {
+      "provider": "copilot",
+      "hook_event_name": "session.error"
+    },
+    "output": {
+      "eventType": "Error",
+      "provider": "copilot"
+    }
+  },
+  {
+    "input": {
+      "provider": "copilot",
+      "hook_event_name": "sessionError"
+    },
+    "output": {
+      "eventType": "Error",
+      "provider": "copilot"
+    }
+  },
+  {
+    "input": {
+      "provider": "copilot",
+      "hook_event_name": "agent-turn-error"
+    },
+    "output": {
+      "eventType": "Error",
+      "provider": "copilot"
+    }
+  },
+  {
+    "input": {
+      "provider": "copilot",
+      "hook_event_name": "task-failed"
+    },
+    "output": {
+      "eventType": "Error",
+      "provider": "copilot"
+    }
+  },
+  {
+    "input": {
+      "provider": "copilot",
+      "hook_event_name": "UserActionRequired"
+    },
+    "output": {
+      "eventType": "UserActionRequired",
+      "userAction": {
+        "toolKey": null
+      },
+      "provider": "copilot"
+    }
+  },
+  {
+    "input": {
+      "provider": "copilot",
+      "hook_event_name": "beforeShellExecution"
+    },
+    "output": {
+      "eventType": "UserActionRequired",
+      "userAction": {
+        "toolKey": null
+      },
+      "provider": "copilot"
+    }
+  },
+  {
+    "input": {
+      "provider": "copilot",
+      "hook_event_name": "beforeMCPExecution"
+    },
+    "output": {
+      "eventType": "UserActionRequired",
+      "userAction": {
+        "toolKey": null
+      },
+      "provider": "copilot"
+    }
+  },
+  {
+    "input": {
+      "provider": "copilot",
+      "hook_event_name": "PermissionRequest"
+    },
+    "output": {
+      "eventType": "UserActionRequired",
+      "userAction": {
+        "toolKey": null
+      },
+      "provider": "copilot"
+    }
+  },
+  {
+    "input": {
+      "provider": "copilot",
+      "hook_event_name": "QuestionRequest"
+    },
+    "output": {
+      "eventType": "UserActionRequired",
+      "userAction": {
+        "toolKey": null
+      },
+      "provider": "copilot"
+    }
+  },
+  {
+    "input": {
+      "provider": "copilot",
+      "hook_event_name": "question"
+    },
+    "output": {
+      "eventType": "UserActionRequired",
+      "userAction": {
+        "toolKey": null
+      },
+      "provider": "copilot"
+    }
+  },
+  {
+    "input": {
+      "provider": "copilot",
+      "hook_event_name": "question.asked"
+    },
+    "output": {
+      "eventType": "UserActionRequired",
+      "userAction": {
+        "toolKey": null
+      },
+      "provider": "copilot"
+    }
+  },
+  {
+    "input": {
+      "provider": "copilot",
+      "hook_event_name": "Notification"
+    },
+    "output": {
+      "eventType": "UserActionRequired",
+      "userAction": {
+        "toolKey": null
+      },
+      "provider": "copilot"
+    }
+  },
+  {
+    "input": {
+      "provider": "copilot",
+      "hook_event_name": "permission-request"
+    },
+    "output": {
+      "eventType": "UserActionRequired",
+      "userAction": {
+        "toolKey": null
+      },
+      "provider": "copilot"
+    }
+  },
+  {
+    "input": {
+      "provider": "copilot",
+      "hook_event_name": "question-request"
+    },
+    "output": {
+      "eventType": "UserActionRequired",
+      "userAction": {
+        "toolKey": null
+      },
+      "provider": "copilot"
+    }
+  },
+  {
+    "input": {
+      "provider": "copilot",
+      "hook_event_name": "PreToolUse"
+    },
+    "output": null
+  },
+  {
+    "input": {
+      "provider": "copilot",
+      "hook_event_name": "SubagentStart"
+    },
+    "output": null
+  },
+  {
+    "input": {
+      "provider": "copilot",
+      "hook_event_name": "SubagentStop"
+    },
+    "output": null
+  },
+  {
+    "input": {
+      "provider": "copilot",
+      "hook_event_name": "unknown"
+    },
+    "output": null
+  },
+  {
+    "input": {
+      "provider": "amp",
+      "hook_event_name": "agent.start",
+      "event": {
+        "thread": {
+          "id": "T-1"
+        },
+        "message": "hi",
+        "status": "done"
+      }
+    },
+    "output": {
+      "provider": "amp",
+      "sessionId": "T-1",
+      "eventType": "Busy",
+      "prompt": "hi"
+    }
+  },
+  {
+    "input": {
+      "provider": "amp",
+      "hook_event_name": "agent.end",
+      "event": {
+        "thread": {
+          "id": "T-1"
+        },
+        "message": "hi",
+        "status": "done"
+      }
+    },
+    "output": {
+      "provider": "amp",
+      "sessionId": "T-1",
+      "eventType": "Idle",
+      "outcome": "done",
+      "prompt": "hi"
+    }
+  },
+  {
+    "input": {
+      "provider": "amp",
+      "hook_event_name": "agent.start",
+      "event": {
+        "thread": {
+          "id": "T-1"
+        },
+        "message": "hi",
+        "status": "error"
+      }
+    },
+    "output": {
+      "provider": "amp",
+      "sessionId": "T-1",
+      "eventType": "Busy",
+      "prompt": "hi"
+    }
+  },
+  {
+    "input": {
+      "provider": "amp",
+      "hook_event_name": "agent.end",
+      "event": {
+        "thread": {
+          "id": "T-1"
+        },
+        "message": "hi",
+        "status": "error"
+      }
+    },
+    "output": {
+      "provider": "amp",
+      "sessionId": "T-1",
+      "eventType": "Error",
+      "outcome": "error",
+      "prompt": "hi"
+    }
+  },
+  {
+    "input": {
+      "provider": "amp",
+      "hook_event_name": "agent.start",
+      "event": {
+        "thread": {
+          "id": "T-1"
+        },
+        "message": "hi",
+        "status": "cancelled"
+      }
+    },
+    "output": {
+      "provider": "amp",
+      "sessionId": "T-1",
+      "eventType": "Busy",
+      "prompt": "hi"
+    }
+  },
+  {
+    "input": {
+      "provider": "amp",
+      "hook_event_name": "agent.end",
+      "event": {
+        "thread": {
+          "id": "T-1"
+        },
+        "message": "hi",
+        "status": "cancelled"
+      }
+    },
+    "output": {
+      "provider": "amp",
+      "sessionId": "T-1",
+      "eventType": "Idle",
+      "outcome": "cancelled",
+      "prompt": "hi"
+    }
+  },
+  {
+    "input": {
+      "provider": "amp",
+      "hook_event_name": "agent.start",
+      "event": {
+        "thread": {
+          "id": "T-1"
+        },
+        "message": "hi",
+        "status": "unknown"
+      }
+    },
+    "output": {
+      "provider": "amp",
+      "sessionId": "T-1",
+      "eventType": "Busy",
+      "prompt": "hi"
+    }
+  },
+  {
+    "input": {
+      "provider": "amp",
+      "hook_event_name": "agent.end",
+      "event": {
+        "thread": {
+          "id": "T-1"
+        },
+        "message": "hi",
+        "status": "unknown"
+      }
+    },
+    "output": null
+  },
+  {
+    "input": {
+      "provider": "amp",
+      "hook_event_name": "agent.start",
+      "event": {
+        "thread": {
+          "id": "T-1"
+        },
+        "message": "hi"
+      }
+    },
+    "output": {
+      "provider": "amp",
+      "sessionId": "T-1",
+      "eventType": "Busy",
+      "prompt": "hi"
+    }
+  },
+  {
+    "input": {
+      "provider": "amp",
+      "hook_event_name": "agent.end",
+      "event": {
+        "thread": {
+          "id": "T-1"
+        },
+        "message": "hi"
+      }
+    },
+    "output": null
+  },
+  {
+    "input": {
+      "provider": "antigravity",
+      "hook_event_name": "PreInvocation",
+      "event": {
+        "conversationId": "A-1",
+        "transcriptPath": "/tmp/transcript",
+        "fullyIdle": true,
+        "terminationReason": "model_stop"
+      }
+    },
+    "output": {
+      "provider": "antigravity",
+      "sessionId": "A-1",
+      "transcriptPath": "/tmp/transcript",
+      "eventType": "Busy"
+    }
+  },
+  {
+    "input": {
+      "provider": "antigravity",
+      "hook_event_name": "Stop",
+      "event": {
+        "conversationId": "A-1",
+        "transcriptPath": "/tmp/transcript",
+        "fullyIdle": true,
+        "terminationReason": "model_stop"
+      }
+    },
+    "output": {
+      "provider": "antigravity",
+      "sessionId": "A-1",
+      "transcriptPath": "/tmp/transcript",
+      "eventType": "Idle",
+      "outcome": "done"
+    }
+  },
+  {
+    "input": {
+      "provider": "antigravity",
+      "hook_event_name": "PostInvocation",
+      "event": {
+        "conversationId": "A-1",
+        "transcriptPath": "/tmp/transcript",
+        "fullyIdle": true,
+        "terminationReason": "model_stop"
+      }
+    },
+    "output": null
+  },
+  {
+    "input": {
+      "provider": "antigravity",
+      "hook_event_name": "PreInvocation",
+      "event": {
+        "conversationId": "A-1",
+        "transcriptPath": "/tmp/transcript",
+        "fullyIdle": true,
+        "terminationReason": "error"
+      }
+    },
+    "output": {
+      "provider": "antigravity",
+      "sessionId": "A-1",
+      "transcriptPath": "/tmp/transcript",
+      "eventType": "Busy"
+    }
+  },
+  {
+    "input": {
+      "provider": "antigravity",
+      "hook_event_name": "Stop",
+      "event": {
+        "conversationId": "A-1",
+        "transcriptPath": "/tmp/transcript",
+        "fullyIdle": true,
+        "terminationReason": "error"
+      }
+    },
+    "output": {
+      "provider": "antigravity",
+      "sessionId": "A-1",
+      "transcriptPath": "/tmp/transcript",
+      "eventType": "Error",
+      "outcome": "error"
+    }
+  },
+  {
+    "input": {
+      "provider": "antigravity",
+      "hook_event_name": "PostInvocation",
+      "event": {
+        "conversationId": "A-1",
+        "transcriptPath": "/tmp/transcript",
+        "fullyIdle": true,
+        "terminationReason": "error"
+      }
+    },
+    "output": null
+  },
+  {
+    "input": {
+      "provider": "antigravity",
+      "hook_event_name": "PreInvocation",
+      "event": {
+        "conversationId": "A-1",
+        "transcriptPath": "/tmp/transcript",
+        "fullyIdle": true,
+        "terminationReason": "max_steps_exceeded"
+      }
+    },
+    "output": {
+      "provider": "antigravity",
+      "sessionId": "A-1",
+      "transcriptPath": "/tmp/transcript",
+      "eventType": "Busy"
+    }
+  },
+  {
+    "input": {
+      "provider": "antigravity",
+      "hook_event_name": "Stop",
+      "event": {
+        "conversationId": "A-1",
+        "transcriptPath": "/tmp/transcript",
+        "fullyIdle": true,
+        "terminationReason": "max_steps_exceeded"
+      }
+    },
+    "output": {
+      "provider": "antigravity",
+      "sessionId": "A-1",
+      "transcriptPath": "/tmp/transcript",
+      "eventType": "Error",
+      "outcome": "error"
+    }
+  },
+  {
+    "input": {
+      "provider": "antigravity",
+      "hook_event_name": "PostInvocation",
+      "event": {
+        "conversationId": "A-1",
+        "transcriptPath": "/tmp/transcript",
+        "fullyIdle": true,
+        "terminationReason": "max_steps_exceeded"
+      }
+    },
+    "output": null
+  },
+  {
+    "input": {
+      "provider": "antigravity",
+      "hook_event_name": "PreInvocation",
+      "event": {
+        "conversationId": "A-1",
+        "transcriptPath": "/tmp/transcript",
+        "fullyIdle": true,
+        "terminationReason": "unknown"
+      }
+    },
+    "output": {
+      "provider": "antigravity",
+      "sessionId": "A-1",
+      "transcriptPath": "/tmp/transcript",
+      "eventType": "Busy"
+    }
+  },
+  {
+    "input": {
+      "provider": "antigravity",
+      "hook_event_name": "Stop",
+      "event": {
+        "conversationId": "A-1",
+        "transcriptPath": "/tmp/transcript",
+        "fullyIdle": true,
+        "terminationReason": "unknown"
+      }
+    },
+    "output": null
+  },
+  {
+    "input": {
+      "provider": "antigravity",
+      "hook_event_name": "PostInvocation",
+      "event": {
+        "conversationId": "A-1",
+        "transcriptPath": "/tmp/transcript",
+        "fullyIdle": true,
+        "terminationReason": "unknown"
+      }
+    },
+    "output": null
+  },
+  {
+    "input": {
+      "provider": "antigravity",
+      "hook_event_name": "PreInvocation",
+      "event": {
+        "conversationId": "A-1",
+        "transcriptPath": "/tmp/transcript",
+        "fullyIdle": false,
+        "terminationReason": "model_stop"
+      }
+    },
+    "output": {
+      "provider": "antigravity",
+      "sessionId": "A-1",
+      "transcriptPath": "/tmp/transcript",
+      "eventType": "Busy"
+    }
+  },
+  {
+    "input": {
+      "provider": "antigravity",
+      "hook_event_name": "Stop",
+      "event": {
+        "conversationId": "A-1",
+        "transcriptPath": "/tmp/transcript",
+        "fullyIdle": false,
+        "terminationReason": "model_stop"
+      }
+    },
+    "output": null
+  },
+  {
+    "input": {
+      "provider": "antigravity",
+      "hook_event_name": "PostInvocation",
+      "event": {
+        "conversationId": "A-1",
+        "transcriptPath": "/tmp/transcript",
+        "fullyIdle": false,
+        "terminationReason": "model_stop"
+      }
+    },
+    "output": null
+  },
+  {
+    "input": {
+      "provider": "antigravity",
+      "hook_event_name": "PreInvocation",
+      "event": {
+        "conversationId": "A-1",
+        "transcriptPath": "/tmp/transcript",
+        "fullyIdle": false,
+        "terminationReason": "error"
+      }
+    },
+    "output": {
+      "provider": "antigravity",
+      "sessionId": "A-1",
+      "transcriptPath": "/tmp/transcript",
+      "eventType": "Busy"
+    }
+  },
+  {
+    "input": {
+      "provider": "antigravity",
+      "hook_event_name": "Stop",
+      "event": {
+        "conversationId": "A-1",
+        "transcriptPath": "/tmp/transcript",
+        "fullyIdle": false,
+        "terminationReason": "error"
+      }
+    },
+    "output": null
+  },
+  {
+    "input": {
+      "provider": "antigravity",
+      "hook_event_name": "PostInvocation",
+      "event": {
+        "conversationId": "A-1",
+        "transcriptPath": "/tmp/transcript",
+        "fullyIdle": false,
+        "terminationReason": "error"
+      }
+    },
+    "output": null
+  },
+  {
+    "input": {
+      "provider": "antigravity",
+      "hook_event_name": "PreInvocation",
+      "event": {
+        "conversationId": "A-1",
+        "transcriptPath": "/tmp/transcript",
+        "fullyIdle": false,
+        "terminationReason": "max_steps_exceeded"
+      }
+    },
+    "output": {
+      "provider": "antigravity",
+      "sessionId": "A-1",
+      "transcriptPath": "/tmp/transcript",
+      "eventType": "Busy"
+    }
+  },
+  {
+    "input": {
+      "provider": "antigravity",
+      "hook_event_name": "Stop",
+      "event": {
+        "conversationId": "A-1",
+        "transcriptPath": "/tmp/transcript",
+        "fullyIdle": false,
+        "terminationReason": "max_steps_exceeded"
+      }
+    },
+    "output": null
+  },
+  {
+    "input": {
+      "provider": "antigravity",
+      "hook_event_name": "PostInvocation",
+      "event": {
+        "conversationId": "A-1",
+        "transcriptPath": "/tmp/transcript",
+        "fullyIdle": false,
+        "terminationReason": "max_steps_exceeded"
+      }
+    },
+    "output": null
+  },
+  {
+    "input": {
+      "provider": "antigravity",
+      "hook_event_name": "PreInvocation",
+      "event": {
+        "conversationId": "A-1",
+        "transcriptPath": "/tmp/transcript",
+        "fullyIdle": false,
+        "terminationReason": "unknown"
+      }
+    },
+    "output": {
+      "provider": "antigravity",
+      "sessionId": "A-1",
+      "transcriptPath": "/tmp/transcript",
+      "eventType": "Busy"
+    }
+  },
+  {
+    "input": {
+      "provider": "antigravity",
+      "hook_event_name": "Stop",
+      "event": {
+        "conversationId": "A-1",
+        "transcriptPath": "/tmp/transcript",
+        "fullyIdle": false,
+        "terminationReason": "unknown"
+      }
+    },
+    "output": null
+  },
+  {
+    "input": {
+      "provider": "antigravity",
+      "hook_event_name": "PostInvocation",
+      "event": {
+        "conversationId": "A-1",
+        "transcriptPath": "/tmp/transcript",
+        "fullyIdle": false,
+        "terminationReason": "unknown"
+      }
+    },
+    "output": null
+  },
+  {
+    "input": {
+      "provider": "antigravity",
+      "hook_event_name": "PreInvocation",
+      "event": {
+        "conversationId": "A-1",
+        "transcriptPath": "/tmp/transcript",
+        "terminationReason": "model_stop"
+      }
+    },
+    "output": {
+      "provider": "antigravity",
+      "sessionId": "A-1",
+      "transcriptPath": "/tmp/transcript",
+      "eventType": "Busy"
+    }
+  },
+  {
+    "input": {
+      "provider": "antigravity",
+      "hook_event_name": "Stop",
+      "event": {
+        "conversationId": "A-1",
+        "transcriptPath": "/tmp/transcript",
+        "terminationReason": "model_stop"
+      }
+    },
+    "output": null
+  },
+  {
+    "input": {
+      "provider": "antigravity",
+      "hook_event_name": "PostInvocation",
+      "event": {
+        "conversationId": "A-1",
+        "transcriptPath": "/tmp/transcript",
+        "terminationReason": "model_stop"
+      }
+    },
+    "output": null
+  },
+  {
+    "input": {
+      "provider": "antigravity",
+      "hook_event_name": "PreInvocation",
+      "event": {
+        "conversationId": "A-1",
+        "transcriptPath": "/tmp/transcript",
+        "terminationReason": "error"
+      }
+    },
+    "output": {
+      "provider": "antigravity",
+      "sessionId": "A-1",
+      "transcriptPath": "/tmp/transcript",
+      "eventType": "Busy"
+    }
+  },
+  {
+    "input": {
+      "provider": "antigravity",
+      "hook_event_name": "Stop",
+      "event": {
+        "conversationId": "A-1",
+        "transcriptPath": "/tmp/transcript",
+        "terminationReason": "error"
+      }
+    },
+    "output": null
+  },
+  {
+    "input": {
+      "provider": "antigravity",
+      "hook_event_name": "PostInvocation",
+      "event": {
+        "conversationId": "A-1",
+        "transcriptPath": "/tmp/transcript",
+        "terminationReason": "error"
+      }
+    },
+    "output": null
+  },
+  {
+    "input": {
+      "provider": "antigravity",
+      "hook_event_name": "PreInvocation",
+      "event": {
+        "conversationId": "A-1",
+        "transcriptPath": "/tmp/transcript",
+        "terminationReason": "max_steps_exceeded"
+      }
+    },
+    "output": {
+      "provider": "antigravity",
+      "sessionId": "A-1",
+      "transcriptPath": "/tmp/transcript",
+      "eventType": "Busy"
+    }
+  },
+  {
+    "input": {
+      "provider": "antigravity",
+      "hook_event_name": "Stop",
+      "event": {
+        "conversationId": "A-1",
+        "transcriptPath": "/tmp/transcript",
+        "terminationReason": "max_steps_exceeded"
+      }
+    },
+    "output": null
+  },
+  {
+    "input": {
+      "provider": "antigravity",
+      "hook_event_name": "PostInvocation",
+      "event": {
+        "conversationId": "A-1",
+        "transcriptPath": "/tmp/transcript",
+        "terminationReason": "max_steps_exceeded"
+      }
+    },
+    "output": null
+  },
+  {
+    "input": {
+      "provider": "antigravity",
+      "hook_event_name": "PreInvocation",
+      "event": {
+        "conversationId": "A-1",
+        "transcriptPath": "/tmp/transcript",
+        "terminationReason": "unknown"
+      }
+    },
+    "output": {
+      "provider": "antigravity",
+      "sessionId": "A-1",
+      "transcriptPath": "/tmp/transcript",
+      "eventType": "Busy"
+    }
+  },
+  {
+    "input": {
+      "provider": "antigravity",
+      "hook_event_name": "Stop",
+      "event": {
+        "conversationId": "A-1",
+        "transcriptPath": "/tmp/transcript",
+        "terminationReason": "unknown"
+      }
+    },
+    "output": null
+  },
+  {
+    "input": {
+      "provider": "antigravity",
+      "hook_event_name": "PostInvocation",
+      "event": {
+        "conversationId": "A-1",
+        "transcriptPath": "/tmp/transcript",
+        "terminationReason": "unknown"
+      }
+    },
+    "output": null
+  },
+  {
+    "input": {
+      "hook_event_name": "Busy",
+      "agent_id": "child",
+      "tool_name": "request_user_input",
+      "tool_input": {
+        "command": "ls"
+      }
+    },
+    "output": null
+  },
+  {
+    "input": {
+      "hook_event_name": "Start",
+      "agent_id": "child",
+      "tool_name": "request_user_input",
+      "tool_input": {
+        "command": "ls"
+      }
+    },
+    "output": null
+  },
+  {
+    "input": {
+      "hook_event_name": "SessionStart",
+      "agent_id": "child",
+      "tool_name": "request_user_input",
+      "tool_input": {
+        "command": "ls"
+      }
+    },
+    "output": null
+  },
+  {
+    "input": {
+      "hook_event_name": "UserPromptSubmit",
+      "agent_id": "child",
+      "tool_name": "request_user_input",
+      "tool_input": {
+        "command": "ls"
+      }
+    },
+    "output": null
+  },
+  {
+    "input": {
+      "hook_event_name": "PostToolUse",
+      "agent_id": "child",
+      "tool_name": "request_user_input",
+      "tool_input": {
+        "command": "ls"
+      }
+    },
+    "output": {
+      "eventType": "Busy",
+      "subagent": true,
+      "toolCompletion": {
+        "toolKey": "ls"
+      }
+    }
+  },
+  {
+    "input": {
+      "hook_event_name": "BeforeAgent",
+      "agent_id": "child",
+      "tool_name": "request_user_input",
+      "tool_input": {
+        "command": "ls"
+      }
+    },
+    "output": null
+  },
+  {
+    "input": {
+      "hook_event_name": "AfterTool",
+      "agent_id": "child",
+      "tool_name": "request_user_input",
+      "tool_input": {
+        "command": "ls"
+      }
+    },
+    "output": {
+      "eventType": "Busy",
+      "subagent": true,
+      "toolCompletion": {
+        "toolKey": "ls"
+      }
+    }
+  },
+  {
+    "input": {
+      "hook_event_name": "beforeSubmitPrompt",
+      "agent_id": "child",
+      "tool_name": "request_user_input",
+      "tool_input": {
+        "command": "ls"
+      }
+    },
+    "output": null
+  },
+  {
+    "input": {
+      "hook_event_name": "sessionStart",
+      "agent_id": "child",
+      "tool_name": "request_user_input",
+      "tool_input": {
+        "command": "ls"
+      }
+    },
+    "output": null
+  },
+  {
+    "input": {
+      "hook_event_name": "userPromptSubmitted",
+      "agent_id": "child",
+      "tool_name": "request_user_input",
+      "tool_input": {
+        "command": "ls"
+      }
+    },
+    "output": null
+  },
+  {
+    "input": {
+      "hook_event_name": "postToolUse",
+      "agent_id": "child",
+      "tool_name": "request_user_input",
+      "tool_input": {
+        "command": "ls"
+      }
+    },
+    "output": {
+      "eventType": "Busy",
+      "subagent": true,
+      "toolCompletion": {
+        "toolKey": "ls"
+      }
+    }
+  },
+  {
+    "input": {
+      "hook_event_name": "agent-turn-start",
+      "agent_id": "child",
+      "tool_name": "request_user_input",
+      "tool_input": {
+        "command": "ls"
+      }
+    },
+    "output": null
+  },
+  {
+    "input": {
+      "hook_event_name": "PostToolUseFailure",
+      "agent_id": "child",
+      "tool_name": "request_user_input",
+      "tool_input": {
+        "command": "ls"
+      }
+    },
+    "output": {
+      "eventType": "Busy",
+      "subagent": true,
+      "toolCompletion": {
+        "toolKey": "ls"
+      }
+    }
+  },
+  {
+    "input": {
+      "hook_event_name": "postToolUseFailure",
+      "agent_id": "child",
+      "tool_name": "request_user_input",
+      "tool_input": {
+        "command": "ls"
+      }
+    },
+    "output": {
+      "eventType": "Busy",
+      "subagent": true,
+      "toolCompletion": {
+        "toolKey": "ls"
+      }
+    }
+  },
+  {
+    "input": {
+      "hook_event_name": "PermissionDenied",
+      "agent_id": "child",
+      "tool_name": "request_user_input",
+      "tool_input": {
+        "command": "ls"
+      }
+    },
+    "output": {
+      "eventType": "Busy",
+      "subagent": true,
+      "toolCompletion": {
+        "toolKey": "ls"
+      }
+    }
+  },
+  {
+    "input": {
+      "hook_event_name": "Idle",
+      "agent_id": "child",
+      "tool_name": "request_user_input",
+      "tool_input": {
+        "command": "ls"
+      }
+    },
+    "output": null
+  },
+  {
+    "input": {
+      "hook_event_name": "Interrupt",
+      "agent_id": "child",
+      "tool_name": "request_user_input",
+      "tool_input": {
+        "command": "ls"
+      }
+    },
+    "output": null
+  },
+  {
+    "input": {
+      "hook_event_name": "Stop",
+      "agent_id": "child",
+      "tool_name": "request_user_input",
+      "tool_input": {
+        "command": "ls"
+      }
+    },
+    "output": null
+  },
+  {
+    "input": {
+      "hook_event_name": "SessionEnd",
+      "agent_id": "child",
+      "tool_name": "request_user_input",
+      "tool_input": {
+        "command": "ls"
+      }
+    },
+    "output": null
+  },
+  {
+    "input": {
+      "hook_event_name": "AfterAgent",
+      "agent_id": "child",
+      "tool_name": "request_user_input",
+      "tool_input": {
+        "command": "ls"
+      }
+    },
+    "output": null
+  },
+  {
+    "input": {
+      "hook_event_name": "stop",
+      "agent_id": "child",
+      "tool_name": "request_user_input",
+      "tool_input": {
+        "command": "ls"
+      }
+    },
+    "output": null
+  },
+  {
+    "input": {
+      "hook_event_name": "sessionEnd",
+      "agent_id": "child",
+      "tool_name": "request_user_input",
+      "tool_input": {
+        "command": "ls"
+      }
+    },
+    "output": null
+  },
+  {
+    "input": {
+      "hook_event_name": "agent-turn-complete",
+      "agent_id": "child",
+      "tool_name": "request_user_input",
+      "tool_input": {
+        "command": "ls"
+      }
+    },
+    "output": null
+  },
+  {
+    "input": {
+      "hook_event_name": "Error",
+      "agent_id": "child",
+      "tool_name": "request_user_input",
+      "tool_input": {
+        "command": "ls"
+      }
+    },
+    "output": null
+  },
+  {
+    "input": {
+      "hook_event_name": "Failed",
+      "agent_id": "child",
+      "tool_name": "request_user_input",
+      "tool_input": {
+        "command": "ls"
+      }
+    },
+    "output": null
+  },
+  {
+    "input": {
+      "hook_event_name": "StopFailure",
+      "agent_id": "child",
+      "tool_name": "request_user_input",
+      "tool_input": {
+        "command": "ls"
+      }
+    },
+    "output": null
+  },
+  {
+    "input": {
+      "hook_event_name": "session.error",
+      "agent_id": "child",
+      "tool_name": "request_user_input",
+      "tool_input": {
+        "command": "ls"
+      }
+    },
+    "output": null
+  },
+  {
+    "input": {
+      "hook_event_name": "sessionError",
+      "agent_id": "child",
+      "tool_name": "request_user_input",
+      "tool_input": {
+        "command": "ls"
+      }
+    },
+    "output": null
+  },
+  {
+    "input": {
+      "hook_event_name": "agent-turn-error",
+      "agent_id": "child",
+      "tool_name": "request_user_input",
+      "tool_input": {
+        "command": "ls"
+      }
+    },
+    "output": null
+  },
+  {
+    "input": {
+      "hook_event_name": "task-failed",
+      "agent_id": "child",
+      "tool_name": "request_user_input",
+      "tool_input": {
+        "command": "ls"
+      }
+    },
+    "output": null
+  },
+  {
+    "input": {
+      "hook_event_name": "UserActionRequired",
+      "agent_id": "child",
+      "tool_name": "request_user_input",
+      "tool_input": {
+        "command": "ls"
+      }
+    },
+    "output": {
+      "eventType": "UserActionRequired",
+      "subagent": true,
+      "userAction": {
+        "toolKey": "ls"
+      }
+    }
+  },
+  {
+    "input": {
+      "hook_event_name": "beforeShellExecution",
+      "agent_id": "child",
+      "tool_name": "request_user_input",
+      "tool_input": {
+        "command": "ls"
+      }
+    },
+    "output": {
+      "eventType": "UserActionRequired",
+      "subagent": true,
+      "userAction": {
+        "toolKey": "ls"
+      }
+    }
+  },
+  {
+    "input": {
+      "hook_event_name": "beforeMCPExecution",
+      "agent_id": "child",
+      "tool_name": "request_user_input",
+      "tool_input": {
+        "command": "ls"
+      }
+    },
+    "output": {
+      "eventType": "UserActionRequired",
+      "subagent": true,
+      "userAction": {
+        "toolKey": "ls"
+      }
+    }
+  },
+  {
+    "input": {
+      "hook_event_name": "PermissionRequest",
+      "agent_id": "child",
+      "tool_name": "request_user_input",
+      "tool_input": {
+        "command": "ls"
+      }
+    },
+    "output": {
+      "eventType": "UserActionRequired",
+      "subagent": true,
+      "userAction": {
+        "toolKey": "ls"
+      }
+    }
+  },
+  {
+    "input": {
+      "hook_event_name": "QuestionRequest",
+      "agent_id": "child",
+      "tool_name": "request_user_input",
+      "tool_input": {
+        "command": "ls"
+      }
+    },
+    "output": {
+      "eventType": "UserActionRequired",
+      "subagent": true,
+      "userAction": {
+        "toolKey": "ls"
+      }
+    }
+  },
+  {
+    "input": {
+      "hook_event_name": "question",
+      "agent_id": "child",
+      "tool_name": "request_user_input",
+      "tool_input": {
+        "command": "ls"
+      }
+    },
+    "output": {
+      "eventType": "UserActionRequired",
+      "subagent": true,
+      "userAction": {
+        "toolKey": "ls"
+      }
+    }
+  },
+  {
+    "input": {
+      "hook_event_name": "question.asked",
+      "agent_id": "child",
+      "tool_name": "request_user_input",
+      "tool_input": {
+        "command": "ls"
+      }
+    },
+    "output": {
+      "eventType": "UserActionRequired",
+      "subagent": true,
+      "userAction": {
+        "toolKey": "ls"
+      }
+    }
+  },
+  {
+    "input": {
+      "hook_event_name": "Notification",
+      "agent_id": "child",
+      "tool_name": "request_user_input",
+      "tool_input": {
+        "command": "ls"
+      }
+    },
+    "output": {
+      "eventType": "UserActionRequired",
+      "subagent": true,
+      "userAction": {
+        "toolKey": "ls"
+      }
+    }
+  },
+  {
+    "input": {
+      "hook_event_name": "permission-request",
+      "agent_id": "child",
+      "tool_name": "request_user_input",
+      "tool_input": {
+        "command": "ls"
+      }
+    },
+    "output": {
+      "eventType": "UserActionRequired",
+      "subagent": true,
+      "userAction": {
+        "toolKey": "ls"
+      }
+    }
+  },
+  {
+    "input": {
+      "hook_event_name": "question-request",
+      "agent_id": "child",
+      "tool_name": "request_user_input",
+      "tool_input": {
+        "command": "ls"
+      }
+    },
+    "output": {
+      "eventType": "UserActionRequired",
+      "subagent": true,
+      "userAction": {
+        "toolKey": "ls"
+      }
+    }
+  },
+  {
+    "input": {
+      "hook_event_name": "PreToolUse",
+      "agent_id": "child",
+      "tool_name": "request_user_input",
+      "tool_input": {
+        "command": "ls"
+      }
+    },
+    "output": {
+      "eventType": "UserActionRequired",
+      "subagent": true,
+      "userAction": {
+        "toolKey": "ls"
+      }
+    }
+  },
+  {
+    "input": {
+      "hook_event_name": "SubagentStart",
+      "agent_id": "child",
+      "tool_name": "request_user_input",
+      "tool_input": {
+        "command": "ls"
+      }
+    },
+    "output": null
+  },
+  {
+    "input": {
+      "hook_event_name": "SubagentStop",
+      "agent_id": "child",
+      "tool_name": "request_user_input",
+      "tool_input": {
+        "command": "ls"
+      }
+    },
+    "output": null
+  },
+  {
+    "input": {
+      "hook_event_name": "unknown",
+      "agent_id": "child",
+      "tool_name": "request_user_input",
+      "tool_input": {
+        "command": "ls"
+      }
+    },
+    "output": null
+  },
+  {
+    "input": {
+      "hook_event_name": "Busy",
+      "tool_name": "request_user_input",
+      "tool_input": {
+        "command": "ls"
+      }
+    },
+    "output": {
+      "eventType": "Busy"
+    }
+  },
+  {
+    "input": {
+      "hook_event_name": "Start",
+      "tool_name": "request_user_input",
+      "tool_input": {
+        "command": "ls"
+      }
+    },
+    "output": {
+      "eventType": "Busy"
+    }
+  },
+  {
+    "input": {
+      "hook_event_name": "SessionStart",
+      "tool_name": "request_user_input",
+      "tool_input": {
+        "command": "ls"
+      }
+    },
+    "output": {
+      "eventType": "Busy"
+    }
+  },
+  {
+    "input": {
+      "hook_event_name": "UserPromptSubmit",
+      "tool_name": "request_user_input",
+      "tool_input": {
+        "command": "ls"
+      }
+    },
+    "output": {
+      "eventType": "Busy"
+    }
+  },
+  {
+    "input": {
+      "hook_event_name": "PostToolUse",
+      "tool_name": "request_user_input",
+      "tool_input": {
+        "command": "ls"
+      }
+    },
+    "output": {
+      "eventType": "Busy",
+      "toolCompletion": {
+        "toolKey": "ls"
+      }
+    }
+  },
+  {
+    "input": {
+      "hook_event_name": "BeforeAgent",
+      "tool_name": "request_user_input",
+      "tool_input": {
+        "command": "ls"
+      }
+    },
+    "output": {
+      "eventType": "Busy"
+    }
+  },
+  {
+    "input": {
+      "hook_event_name": "AfterTool",
+      "tool_name": "request_user_input",
+      "tool_input": {
+        "command": "ls"
+      }
+    },
+    "output": {
+      "eventType": "Busy",
+      "toolCompletion": {
+        "toolKey": "ls"
+      }
+    }
+  },
+  {
+    "input": {
+      "hook_event_name": "beforeSubmitPrompt",
+      "tool_name": "request_user_input",
+      "tool_input": {
+        "command": "ls"
+      }
+    },
+    "output": {
+      "eventType": "Busy"
+    }
+  },
+  {
+    "input": {
+      "hook_event_name": "sessionStart",
+      "tool_name": "request_user_input",
+      "tool_input": {
+        "command": "ls"
+      }
+    },
+    "output": {
+      "eventType": "Busy"
+    }
+  },
+  {
+    "input": {
+      "hook_event_name": "userPromptSubmitted",
+      "tool_name": "request_user_input",
+      "tool_input": {
+        "command": "ls"
+      }
+    },
+    "output": {
+      "eventType": "Busy"
+    }
+  },
+  {
+    "input": {
+      "hook_event_name": "postToolUse",
+      "tool_name": "request_user_input",
+      "tool_input": {
+        "command": "ls"
+      }
+    },
+    "output": {
+      "eventType": "Busy",
+      "toolCompletion": {
+        "toolKey": "ls"
+      }
+    }
+  },
+  {
+    "input": {
+      "hook_event_name": "agent-turn-start",
+      "tool_name": "request_user_input",
+      "tool_input": {
+        "command": "ls"
+      }
+    },
+    "output": {
+      "eventType": "Busy"
+    }
+  },
+  {
+    "input": {
+      "hook_event_name": "PostToolUseFailure",
+      "tool_name": "request_user_input",
+      "tool_input": {
+        "command": "ls"
+      }
+    },
+    "output": {
+      "eventType": "Busy",
+      "toolCompletion": {
+        "toolKey": "ls"
+      }
+    }
+  },
+  {
+    "input": {
+      "hook_event_name": "postToolUseFailure",
+      "tool_name": "request_user_input",
+      "tool_input": {
+        "command": "ls"
+      }
+    },
+    "output": {
+      "eventType": "Busy",
+      "toolCompletion": {
+        "toolKey": "ls"
+      }
+    }
+  },
+  {
+    "input": {
+      "hook_event_name": "PermissionDenied",
+      "tool_name": "request_user_input",
+      "tool_input": {
+        "command": "ls"
+      }
+    },
+    "output": {
+      "eventType": "Busy",
+      "toolCompletion": {
+        "toolKey": "ls"
+      }
+    }
+  },
+  {
+    "input": {
+      "hook_event_name": "Idle",
+      "tool_name": "request_user_input",
+      "tool_input": {
+        "command": "ls"
+      }
+    },
+    "output": {
+      "eventType": "Idle"
+    }
+  },
+  {
+    "input": {
+      "hook_event_name": "Interrupt",
+      "tool_name": "request_user_input",
+      "tool_input": {
+        "command": "ls"
+      }
+    },
+    "output": {
+      "eventType": "Idle",
+      "outcome": "cancelled"
+    }
+  },
+  {
+    "input": {
+      "hook_event_name": "Stop",
+      "tool_name": "request_user_input",
+      "tool_input": {
+        "command": "ls"
+      }
+    },
+    "output": {
+      "eventType": "Idle"
+    }
+  },
+  {
+    "input": {
+      "hook_event_name": "SessionEnd",
+      "tool_name": "request_user_input",
+      "tool_input": {
+        "command": "ls"
+      }
+    },
+    "output": {
+      "eventType": "Idle"
+    }
+  },
+  {
+    "input": {
+      "hook_event_name": "AfterAgent",
+      "tool_name": "request_user_input",
+      "tool_input": {
+        "command": "ls"
+      }
+    },
+    "output": {
+      "eventType": "Idle"
+    }
+  },
+  {
+    "input": {
+      "hook_event_name": "stop",
+      "tool_name": "request_user_input",
+      "tool_input": {
+        "command": "ls"
+      }
+    },
+    "output": {
+      "eventType": "Idle"
+    }
+  },
+  {
+    "input": {
+      "hook_event_name": "sessionEnd",
+      "tool_name": "request_user_input",
+      "tool_input": {
+        "command": "ls"
+      }
+    },
+    "output": {
+      "eventType": "Idle"
+    }
+  },
+  {
+    "input": {
+      "hook_event_name": "agent-turn-complete",
+      "tool_name": "request_user_input",
+      "tool_input": {
+        "command": "ls"
+      }
+    },
+    "output": {
+      "eventType": "Idle"
+    }
+  },
+  {
+    "input": {
+      "hook_event_name": "Error",
+      "tool_name": "request_user_input",
+      "tool_input": {
+        "command": "ls"
+      }
+    },
+    "output": {
+      "eventType": "Error"
+    }
+  },
+  {
+    "input": {
+      "hook_event_name": "Failed",
+      "tool_name": "request_user_input",
+      "tool_input": {
+        "command": "ls"
+      }
+    },
+    "output": {
+      "eventType": "Error"
+    }
+  },
+  {
+    "input": {
+      "hook_event_name": "StopFailure",
+      "tool_name": "request_user_input",
+      "tool_input": {
+        "command": "ls"
+      }
+    },
+    "output": {
+      "eventType": "Error"
+    }
+  },
+  {
+    "input": {
+      "hook_event_name": "session.error",
+      "tool_name": "request_user_input",
+      "tool_input": {
+        "command": "ls"
+      }
+    },
+    "output": {
+      "eventType": "Error"
+    }
+  },
+  {
+    "input": {
+      "hook_event_name": "sessionError",
+      "tool_name": "request_user_input",
+      "tool_input": {
+        "command": "ls"
+      }
+    },
+    "output": {
+      "eventType": "Error"
+    }
+  },
+  {
+    "input": {
+      "hook_event_name": "agent-turn-error",
+      "tool_name": "request_user_input",
+      "tool_input": {
+        "command": "ls"
+      }
+    },
+    "output": {
+      "eventType": "Error"
+    }
+  },
+  {
+    "input": {
+      "hook_event_name": "task-failed",
+      "tool_name": "request_user_input",
+      "tool_input": {
+        "command": "ls"
+      }
+    },
+    "output": {
+      "eventType": "Error"
+    }
+  },
+  {
+    "input": {
+      "hook_event_name": "UserActionRequired",
+      "tool_name": "request_user_input",
+      "tool_input": {
+        "command": "ls"
+      }
+    },
+    "output": {
+      "eventType": "UserActionRequired",
+      "userAction": {
+        "toolKey": "ls"
+      }
+    }
+  },
+  {
+    "input": {
+      "hook_event_name": "beforeShellExecution",
+      "tool_name": "request_user_input",
+      "tool_input": {
+        "command": "ls"
+      }
+    },
+    "output": {
+      "eventType": "UserActionRequired",
+      "userAction": {
+        "toolKey": "ls"
+      }
+    }
+  },
+  {
+    "input": {
+      "hook_event_name": "beforeMCPExecution",
+      "tool_name": "request_user_input",
+      "tool_input": {
+        "command": "ls"
+      }
+    },
+    "output": {
+      "eventType": "UserActionRequired",
+      "userAction": {
+        "toolKey": "ls"
+      }
+    }
+  },
+  {
+    "input": {
+      "hook_event_name": "PermissionRequest",
+      "tool_name": "request_user_input",
+      "tool_input": {
+        "command": "ls"
+      }
+    },
+    "output": {
+      "eventType": "UserActionRequired",
+      "userAction": {
+        "toolKey": "ls"
+      }
+    }
+  },
+  {
+    "input": {
+      "hook_event_name": "QuestionRequest",
+      "tool_name": "request_user_input",
+      "tool_input": {
+        "command": "ls"
+      }
+    },
+    "output": {
+      "eventType": "UserActionRequired",
+      "userAction": {
+        "toolKey": "ls"
+      }
+    }
+  },
+  {
+    "input": {
+      "hook_event_name": "question",
+      "tool_name": "request_user_input",
+      "tool_input": {
+        "command": "ls"
+      }
+    },
+    "output": {
+      "eventType": "UserActionRequired",
+      "userAction": {
+        "toolKey": "ls"
+      }
+    }
+  },
+  {
+    "input": {
+      "hook_event_name": "question.asked",
+      "tool_name": "request_user_input",
+      "tool_input": {
+        "command": "ls"
+      }
+    },
+    "output": {
+      "eventType": "UserActionRequired",
+      "userAction": {
+        "toolKey": "ls"
+      }
+    }
+  },
+  {
+    "input": {
+      "hook_event_name": "Notification",
+      "tool_name": "request_user_input",
+      "tool_input": {
+        "command": "ls"
+      }
+    },
+    "output": {
+      "eventType": "UserActionRequired",
+      "userAction": {
+        "toolKey": "ls"
+      }
+    }
+  },
+  {
+    "input": {
+      "hook_event_name": "permission-request",
+      "tool_name": "request_user_input",
+      "tool_input": {
+        "command": "ls"
+      }
+    },
+    "output": {
+      "eventType": "UserActionRequired",
+      "userAction": {
+        "toolKey": "ls"
+      }
+    }
+  },
+  {
+    "input": {
+      "hook_event_name": "question-request",
+      "tool_name": "request_user_input",
+      "tool_input": {
+        "command": "ls"
+      }
+    },
+    "output": {
+      "eventType": "UserActionRequired",
+      "userAction": {
+        "toolKey": "ls"
+      }
+    }
+  },
+  {
+    "input": {
+      "hook_event_name": "PreToolUse",
+      "tool_name": "request_user_input",
+      "tool_input": {
+        "command": "ls"
+      }
+    },
+    "output": {
+      "eventType": "UserActionRequired",
+      "userAction": {
+        "toolKey": "ls"
+      }
+    }
+  },
+  {
+    "input": {
+      "hook_event_name": "SubagentStart",
+      "tool_name": "request_user_input",
+      "tool_input": {
+        "command": "ls"
+      }
+    },
+    "output": null
+  },
+  {
+    "input": {
+      "hook_event_name": "SubagentStop",
+      "tool_name": "request_user_input",
+      "tool_input": {
+        "command": "ls"
+      }
+    },
+    "output": null
+  },
+  {
+    "input": {
+      "hook_event_name": "unknown",
+      "tool_name": "request_user_input",
+      "tool_input": {
+        "command": "ls"
+      }
+    },
+    "output": null
+  },
+  {
+    "input": {
+      "type": "agent-turn-complete",
+      "thread-id": "T-2",
+      "input-messages": [
+        "a",
+        "b"
+      ],
+      "last-assistant-message": "answer"
+    },
+    "output": {
+      "eventType": "Idle",
+      "provider": "codex",
+      "sessionId": "T-2",
+      "prompt": "b",
+      "lastAssistantMessage": "answer"
+    }
+  },
+  {
+    "input": {
+      "hook_event_name": "Stop",
+      "background_tasks": [
+        {
+          "status": "running"
+        }
+      ]
+    },
+    "output": null
+  }
+]
