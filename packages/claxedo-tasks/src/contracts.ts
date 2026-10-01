@@ -1,3 +1,9 @@
+/**
+ * Every record, request and response the Tasks kit exchanges with a host or a
+ * client. Nothing here imports a host type: session identity is the runtime
+ * contract's, the package defines its own actor and harness references, and
+ * hosts map their principals into them.
+ */
 import type { SessionRef } from "@claxedo/agent-runtime-contract"
 export type { SessionRef } from "@claxedo/agent-runtime-contract"
 

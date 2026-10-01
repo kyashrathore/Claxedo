@@ -155,7 +155,7 @@ function handoffState(ctx: DecodeContext, value: unknown, path: string): Session
   return known ?? "unknown"
 }
 
-export function decodeTaskSessionRef(value: unknown, path = "session"): Parsed<SessionRef> {
+export function decodeTaskSessionRef(value: unknown, path: string): Parsed<SessionRef> {
   const ctx = decodeContext()
   return finishDecode(ctx, () => readTaskSessionRef(ctx, value, path))
 }
