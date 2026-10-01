@@ -1,29 +1,15 @@
 import { afterEach, describe, expect, test, vi } from "vitest"
 import type { ControlPlaneServices } from "./services"
 import { localOnlyAuthAdapter } from "@claxedo/server-core/platform/auth/auth"
-import { pullHostedControlSessionMessages } from "./hosted-session-pull"
+import { pullHostedControlSession, pullHostedControlSessionMessages } from "./hosted-session-pull"
+import { UNUSED_PROJECTION_STORE } from "./unavailable-session-stores"
 import { fetchUrl } from "../test-support/fetch-calls"
 
 const originalFetch = globalThis.fetch
 
 function services(): ControlPlaneServices {
-  let projectedMessages: Array<{ info: Record<string, unknown>; parts: Array<Record<string, unknown>> }> = []
   return {
-    projectionStore: {
-      sync_session_meta: vi.fn(async () => {}),
-      sync_session_metas: vi.fn(async () => {}),
-      sync_session_messages: vi.fn(async (_ws, _sessionId, messages) => {
-        projectedMessages = messages as typeof projectedMessages
-      }),
-      put_session_meta: vi.fn(async () => {}),
-      delete_session_meta: vi.fn(async () => {}),
-      session_meta: vi.fn(async () => undefined),
-      session_metas: vi.fn(async () => new Map()),
-      list_session_metas: vi.fn(async () => []),
-      tagged_session_metas: vi.fn(async () => []),
-      read_session_messages: vi.fn(() => projectedMessages),
-      read_session_max_event_ordinal: vi.fn(() => 0),
-    },
+    projectionStore: UNUSED_PROJECTION_STORE,
     durableSessionLog: {
       persist_message_event: vi.fn(),
     },
@@ -56,6 +42,54 @@ describe("hosted session pull", () => {
     globalThis.fetch = originalFetch
   })
 
+  function authorityServices(ordinal = 7) {
+    const svc = services()
+    svc.authority = {
+      usersMe: canonicalUsersMe(),
+      openWorkspace: vi.fn(async () => ({ role: "owner", workspace: { backing: "cloud-vm", org_id: "org", project_id: "project" } })),
+      authorizeSessionWrite: vi.fn(async () => {}),
+      readSessionMessages: vi.fn(async () => ({ allowed: true, messages: [], maxEventOrdinal: ordinal })),
+      upsertSessionVisibility: vi.fn(async () => ({ ok: true })),
+      syncSessionMessages: vi.fn(async () => ({ ok: true, applied: true, maxEventOrdinal: ordinal })),
+    } as never
+    svc.sandbox.sandboxManager = { target: async () => ({ status: "ready", hostId: "host", homeRegion: "us-east" }) } as never
+    svc.relay.provider = {
+      mintRuntimeAccessToken: async () => ({ token: "runtime" }), getRelayEndpoint: async () => "https://runtime.test",
+    } as never
+    return svc
+  }
+
+  test("register refreshes D1 metadata without touching the unavailable projection", async () => {
+    const svc = authorityServices()
+    globalThis.fetch = vi.fn(async (input) => fetchUrl(input).endsWith("/global/health")
+      ? Response.json({ workspaceId: "ws" })
+      : Response.json({ id: "ses", title: "Registered", time: { created: 1, updated: 200 } })) as unknown as typeof fetch
+    await expect(pullHostedControlSession(svc, {}, signed, { workspaceId: "ws", sessionId: "ses" })).resolves.toEqual({ ok: true, sessionId: "ses" })
+    expect(svc.authority!.upsertSessionVisibility).toHaveBeenCalledWith(signed, {
+      workspaceId: "ws", sessions: [{ sessionId: "ses", title: "Registered", updatedAt: 200 }],
+    })
+  })
+
+  test("an expected ordinal behind D1 skips the runtime entirely", async () => {
+    const svc = authorityServices(8)
+    globalThis.fetch = vi.fn() as unknown as typeof fetch
+    await expect(pullHostedControlSessionMessages(svc, {}, signed, { workspaceId: "ws", sessionId: "ses", expectedEventOrdinal: 7 }))
+      .resolves.toEqual({ ok: true, skipped: true, reason: "older_expected_ordinal", currentOrdinal: 8 })
+    expect(globalThis.fetch).not.toHaveBeenCalled()
+    expect(svc.authority!.syncSessionMessages).not.toHaveBeenCalled()
+  })
+
+  test("a hosted snapshot without the runtime ordinal is refused before any write", async () => {
+    const svc = authorityServices()
+    globalThis.fetch = vi.fn(async (input) => fetchUrl(input).endsWith("/global/health")
+      ? Response.json({ workspaceId: "ws" })
+      : Response.json({ session: { id: "ses", time: { created: 1, updated: 200 } }, messages: [] })) as unknown as typeof fetch
+    await expect(pullHostedControlSessionMessages(svc, {}, signed, { workspaceId: "ws", sessionId: "ses" }))
+      .rejects.toMatchObject({ status: 502, code: "workspace_runtime_snapshot_invalid" })
+    expect(svc.authority!.syncSessionMessages).not.toHaveBeenCalled()
+    expect(svc.authority!.upsertSessionVisibility).not.toHaveBeenCalled()
+  })
+
   test("pulls through the canonical sandbox target without provisioning", async () => {
     const svc = services()
     const target = vi.fn(async () => ({
@@ -86,6 +120,7 @@ describe("hosted session pull", () => {
         },
       })),
       authorizeSessionWrite: vi.fn(async () => {}),
+      readSessionMessages: vi.fn(async () => ({ allowed: true, messages: [], maxEventOrdinal: 0 })),
       upsertSessionVisibility: vi.fn(async () => ({})),
       syncSessionMessages,
     } as never
@@ -168,6 +203,7 @@ describe("hosted session pull", () => {
         },
       })),
       authorizeSessionWrite: vi.fn(async () => {}),
+      readSessionMessages: vi.fn(async () => ({ allowed: true, messages: [], maxEventOrdinal: 0 })),
       upsertSessionVisibility: vi.fn(async () => ({})),
       activeWorkspaceHost,
       syncSessionMessages,
@@ -264,14 +300,12 @@ describe("hosted session pull", () => {
     expect(fetch).not.toHaveBeenCalled()
   })
 
-  test("a snapshot the projection already holds is offered to the authority at its own ordinal", async () => {
+  test("the authority decides whether an equal-ordinal snapshot applies", async () => {
     const svc = services()
     const messages = [
       { info: { id: "msg-1", role: "user" }, parts: [{ type: "text", text: "hello" }] },
       { info: { id: "msg-2", role: "assistant" }, parts: [{ type: "text", text: "summary" }] },
     ]
-    ;(svc.projectionStore.read_session_messages as ReturnType<typeof vi.fn>).mockReturnValue(messages)
-    ;(svc.projectionStore.read_session_max_event_ordinal as ReturnType<typeof vi.fn>).mockReturnValue(7)
     svc.sandbox.sandboxManager = {
       target: vi.fn(async () => ({
         status: "ready",
@@ -288,7 +322,7 @@ describe("hosted session pull", () => {
       mintRuntimeAccessToken: vi.fn(async () => ({ token: "relay-runtime-token" })),
       getRelayEndpoint: vi.fn(async () => "https://relay.eu.test"),
     } as never
-    const syncSessionMessages = vi.fn(async () => ({}))
+    const syncSessionMessages = vi.fn(async () => ({ ok: true, applied: false, maxEventOrdinal: 7 }))
     svc.authority = {
       usersMe: canonicalUsersMe(),
       openWorkspace: vi.fn(async () => ({
@@ -296,6 +330,7 @@ describe("hosted session pull", () => {
         workspace: { backing: "cloud-vm", org_id: "org_1", project_id: "project_1" },
       })),
       authorizeSessionWrite: vi.fn(async () => {}),
+      readSessionMessages: vi.fn(async () => ({ allowed: true, messages, maxEventOrdinal: 7 })),
       upsertSessionVisibility: vi.fn(async () => ({})),
       syncSessionMessages,
     } as never
@@ -304,8 +339,9 @@ describe("hosted session pull", () => {
       if (url.endsWith("/global/health")) return Response.json({ workspaceId: "ws_1" })
       if (url.endsWith("/session/session-1/message?snapshot=1")) {
         return Response.json({
-          messages: messages.slice(0, 1),
+          messages,
           maxEventOrdinal: 7,
+          fencingToken: 3,
           session: { id: "session-1", title: "Settled title", time: { created: 100, updated: 200 } },
         })
       }
@@ -323,10 +359,10 @@ describe("hosted session pull", () => {
       }),
     ).resolves.toMatchObject({ skipped: true, snapshotOrdinal: 7 })
 
-    expect(svc.projectionStore.sync_session_messages).not.toHaveBeenCalled()
     expect(syncSessionMessages).toHaveBeenCalledWith(signed, expect.objectContaining({
-      messages: messages.slice(0, 1),
+      messages,
       maxEventOrdinal: 7,
+      fencingToken: 3,
     }))
   })
 
@@ -356,6 +392,7 @@ describe("hosted session pull", () => {
         workspace: { backing: "cloud-vm", org_id: "org_1", project_id: "project_1" },
       })),
       authorizeSessionWrite: vi.fn(async () => {}),
+      readSessionMessages: vi.fn(async () => ({ allowed: true, messages: [], maxEventOrdinal: 0 })),
       syncSessionMessages,
     } as never
     const fetch = vi.fn(async (input: string | URL | Request) => {
@@ -378,6 +415,5 @@ describe("hosted session pull", () => {
     expect(fetch).toHaveBeenCalledTimes(1)
     expect(fetchUrl(fetch.mock.calls[0]?.[0])).toBe("https://relay.eu.test/workspaces/ws_1/global/health")
     expect(syncSessionMessages).not.toHaveBeenCalled()
-    expect(svc.projectionStore.sync_session_messages).not.toHaveBeenCalled()
   })
 })
