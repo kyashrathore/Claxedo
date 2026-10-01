@@ -183,7 +183,7 @@ export function workspaceRuntimeClientErrorFrom(operation: string, status: numbe
   const envelope = decodeApiError(status, body)
   return new WorkspaceRuntimeClientError(
     operation, status, envelope?.code ?? `http_${status}`, body ?? text,
-    envelope?.message ?? `Workspace runtime request failed with status ${status}`,
+    envelope?.message ?? (text || `Workspace runtime request failed with status ${status}`),
     envelope?.retryable ?? false,
   )
 }
