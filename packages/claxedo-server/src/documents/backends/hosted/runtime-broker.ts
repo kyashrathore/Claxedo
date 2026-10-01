@@ -39,9 +39,6 @@ export function createHostedDocumentRuntimeBroker(
       if (workspaceProjectId !== input.entry.project_id) {
         throw new Error("Session workspace project does not match document scope")
       }
-      if (!["editor", "admin", "owner"].includes(opened.role ?? "")) {
-        throw new Error("Session workspace write access is denied")
-      }
       const manager = services.sandbox.sandboxManager
       const provider = services.relay.provider
       if (!manager || !provider) throw new Error("Session runtime transport is unavailable")
@@ -171,12 +168,8 @@ export function createHostedDocumentRuntimeBroker(
       if (!workspaceId || workspaceId !== input.workspaceId) throw new Error("Session placement changed")
       await authority.authorizeSessionRead(input.auth, { sessionId: input.sessionId, workspaceId })
       const opened = await authority.openWorkspace(input.auth, { workspaceId })
-      if (
-        opened.workspace?.org_id !== input.entry.org_id ||
-        opened.workspace.project_id !== input.entry.project_id ||
-        !["editor", "admin", "owner"].includes(opened.role ?? "")
-      ) {
-        throw new Error("Session workspace write access is denied")
+      if (opened.workspace?.org_id !== input.entry.org_id || opened.workspace.project_id !== input.entry.project_id) {
+        throw new Error("Session workspace does not match document scope")
       }
       const target = await services.sandbox.sandboxManager?.target(workspaceId).catch(() => undefined)
       if (target?.status !== "ready") throw new Error("Session runtime is unreachable")

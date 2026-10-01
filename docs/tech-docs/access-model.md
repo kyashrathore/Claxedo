@@ -94,7 +94,8 @@ resource's org. Then:
 | Invite a member, change a member's role, remove a member | org owners and admins | `org_admin_required` |
 | Grant, change or remove the `owner` role | org owners | `org_owner_required` |
 | Demote or remove the founding owner | nobody, which is what keeps every org owned | `org_owner_protected` |
-| Create a team, set up the default team, add or remove team members, grant or revoke a team's project role | org owners and admins | `org_admin_required` |
+| Create a team, set up the default team | org owners and admins | `org_admin_required` |
+| Add or remove team members, grant or revoke a team's project role | org owners and admins | `team_not_found` |
 | Grant or revoke one person's project role | project admins (org owners and admins included) | `project_admin_required` |
 | Read a project's access listing | project admins (org owners and admins included) | `project_admin_required` |
 | Create a workspace in an org | org owners and admins | `workspace_authorization_denied` |
@@ -103,7 +104,10 @@ A team member, a team's project and a member grant's grantee must all belong
 to the same org (`team_member_org_membership_required`,
 `project_member_org_membership_required`, `project_not_found`). A project's
 owner is never granted or revoked (`project_member_owner_immutable`). A
-project the caller has no role on answers `project_not_found`.
+project the caller has no role on answers `project_not_found`. Authorization
+comes before existence: an organization the caller does not administer
+answers `org_admin_required` whether or not it exists, and a team in such an
+organization answers `team_not_found` like an absent one.
 
 Adding a member writes the membership in any state, which is how a removed
 member is reinstated; changing a role changes only a membership still active
@@ -125,10 +129,15 @@ a workspace token needs its holder to still `operate` the workspace, a
 session token needs its holder to still `read` the session, which a
 suspended owner's session no longer answers to anyone. Removing the
 owner from the org revokes their tokens outright, because re-admission would
-otherwise bring the old token back to life. Revoking a session share revokes
-the session tokens it admitted. Lowering or revoking a project grant, leaving
-a team and a change of org role reach no workspace or session and revoke no
-token.
+otherwise bring the old token back to life. A share holder's session token
+records the share that admitted it (`runtime_access_tokens.share_grant_id`;
+`admittingShareSql` picks the share naming them directly, then one through a
+team, then one through their organization). Revoking a share revokes exactly
+the tokens it admitted, whoever its target reaches by then, and removing a
+person from a team revokes their tokens that team's shares admitted, so a
+later share or readmission never revives them. Lowering or revoking a project
+grant and a change of org role reach no workspace or session and revoke no
+token, and no change revokes a workspace owner's own token.
 
 Setting up the default team creates only what is missing: the team, a
 membership for each org member who never had one, and an editor grant on each
@@ -228,7 +237,10 @@ token beyond its one session. The owner's active actors, their agents
 included, act through workspace ownership, and a share is the only way
 anyone else reaches a session. Only the owner may add or revoke shares (`session_share_admin_required`
 otherwise), and a share may be offered only to a member of the session's
-organization (`session_share_target_outside_organization`).
+organization (`session_share_target_outside_organization`). Listing a
+session's shares answers a session the control plane never registered only
+to its workspace's owner, with an empty list; to anyone else it, another
+person's session and an unknown workspace are the same refusal.
 
 The runtime names which class a write is (`sessionAccessWriteClass` in
 `packages/workspace-runtime/src/session-access-policy.ts`: `agent_turn` is
@@ -255,6 +267,16 @@ authority refuses a scoped token on any other session
 wherever the whole workspace or host is asked for. A workspace-scoped token
 is minted only for the workspace's owner.
 
+The runtime admits a caller on the session a question or permission reply
+names before it resolves the request id, and looks the id up only among that
+session's requests, so another session's request and an unknown one answer
+the same 404 `interaction_not_found`. A file, diff or git request that
+reaches no session's worktree acts on the machine itself: a relayed caller is
+admitted to it by the current host authority (`authorizeHost`) on every
+request, so a relay host token whose parent token was revoked reads and
+writes nothing there; the machine's own unrelayed user keeps the local
+decision.
+
 A session spends its owner's accounts whoever sends: a turn's connection
 credential binds the workspace owner's partition (`connectionTurnOwner` in
 `packages/claxedo-server/src/connections/turn-owner.ts`), resolved before the
@@ -275,10 +297,8 @@ The existing `users` registry is the actor registry for humans and agents.
 Signed managed access carries verified `actor_id` and `actor_kind` claims from
 the control plane through the relay to the runtime. Request bodies cannot
 assert an actor. Unsigned local use remains anonymous in the UI; a signed
-deployment applies an explicit policy to missing actor identity. The token
-rollout order is accept optional claims, mint actor-bearing RATs and RHTs, wait
-one maximum RAT lifetime, then require actor claims at managed session and
-event boundaries. Actor claims participate in the relay RHT cache key so one
+deployment applies an explicit policy to missing actor identity, and managed
+session and event boundaries require actor claims. Actor claims participate in the relay RHT cache key so one
 actor's cached host token cannot be served to another actor.
 
 An admitted user message stores its verified author actor. OpenCode event names
@@ -297,8 +317,8 @@ fan-out, replay, reconnect, proxied streams, and transcript-bearing compatibilit
 events. Visibility-specific replay sequencing prevents filtered events from
 appearing as data-loss gaps.
 
-Org membership removal and session share revocation revoke the affected
-user's runtime access tokens. Open connections are closed by the hosting adapter's revocation check;
+Org membership removal, team membership removal and session share revocation
+revoke the affected user's runtime access tokens. Open connections are closed by the hosting adapter's revocation check;
 the relay polls every 30 seconds and caches a positive revocation result for
 at most 10 seconds, with every lifetime capped by token expiry. Revoked sockets
 close with policy code `1008`. WebSocket origins are evaluated against the
@@ -364,7 +384,12 @@ project administrators have no private-page override. A person target must be an
 active member of the page's organization; a team target must belong to that
 organization, and its members must still be active organization members. Shares
 have `view` or `edit` permission. Only the creator manages shares and archives or
-restores the page.
+restores the page. Creating or revoking a share is a write of the document
+authority (`d1DocumentAccess`) that re-asks, inside its D1 batch, the
+creator's active user and actor and their read on the page's project, and a
+person or team target's standing in the page's organization; the hosted
+index refuses any change to a page's id, organization, project or creator,
+so the entry the decision read cannot have moved.
 
 `authorizeDocument` in `packages/claxedo-server-core/src/documents/access.ts`
 owns this policy, and `filterDocuments` applies it to listings with one
@@ -392,42 +417,19 @@ Hosted Pages live in R2 and hydrate only into the selected session's runtime.
 A page on a machine is served by that machine's local backend alone; no route
 carries a machine's pages to the hosted control plane or to another runtime.
 
-## Installation order
-
-The control plane installs the target model through expand–migrate–contract
-releases so a schema push never requires a value before the resumable migration can populate
-it. The migration envelope is operational and is removed by the contract
-release; it is not an internal API compatibility promise.
-
-1. expand with optional user identity, project tenancy, workspace tenancy, and
-   session provenance fields plus message-author storage;
-2. deploy code that writes the target shape and remains able to read rows still
-   awaiting migration;
-3. run the ledger-backed user, project, project-membership, workspace, and
-   session migrations on staging and production;
-4. run complete batched contract probes and retain their successful ledger
-   output for every deployment;
-5. contract the fields to required and remove legacy project fields in a
-   separate schema-only release;
-6. deploy actor-bearing token policy, identity-aware event delivery, and
-   revocation teardown against the contracted model.
-
-SQLite performs the corresponding legacy backfill, validation, table rebuild,
-and constraint installation atomically, with a WAL-checkpointed pre-upgrade
-snapshot. No migration step reassigns a personal workspace to a team.
-
 ## Scope boundaries
 
-The internal schema converges on this model after its operational migration
-release; legacy development and staging tenancy rows are migrated or discarded
-before contract. The OpenCode HTTP and event contract remains the external
-compatibility boundary.
+The OpenCode HTTP and event contract remains the external compatibility
+boundary.
 
 Two event streams exist. The control plane's `GET /api/cp/events` carries
-notices only (provision, worktree readiness, document and session-share
-doorbells, a workspace's inventory change), never a session's content; hosted, `eventVisibleTo` filters each
-notice per subscriber by the authority-internal org id and, for share
-doorbells, the recipient. A workspace runtime's `GET /api/wr/events` carries
+notices only (provision, worktree readiness, Page and session-share
+doorbells, a workspace's inventory change), never a session's content.
+`eventVisibleTo` (`packages/claxedo-server-core/src/platform/http/event-visibility.ts`)
+filters each notice per subscriber, live and on replay: a signed subscriber
+receives a share doorbell naming them and the quota doorbell, and no Page,
+provision, inventory or worktree notice; the hosted room admits share
+doorbells alone. A workspace runtime's `GET /api/wr/events` carries
 that runtime's session frames, and the arm is decided per request
 (`authorizeSessionEventScope`,
 `packages/workspace-runtime/src/routes/session-event-privacy.ts`): a

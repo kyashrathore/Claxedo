@@ -19,6 +19,7 @@ export function hostedAgentPluginsModule(input: {
   authentication?: RequestAuthenticationAdapter
   sources(auth: SignedControlPlaneAuth): CatalogSourceProvider
   activations: SignedAgentPluginActivationStore
+  administersOrganization: (auth: SignedControlPlaneAuth) => Promise<boolean>
   artifacts: AgentPluginArtifactStore
   reconcile: AgentPluginReconcilePort
   builtIn: { groups: readonly BuiltinToolGroup[]; deployment: BuiltinDeployment }

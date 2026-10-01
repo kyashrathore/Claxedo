@@ -57,7 +57,7 @@ test("the local store refuses signed callers and sharing with a clear error inst
     status: 501,
   })
   const principal = await backend.access.principal(local)
-  await expect(createDocumentShare(principal, page.id, { target: "link", level: "view" })).rejects.toMatchObject({
+  await expect(createDocumentShare(principal, page, { target: "link", level: "view" })).rejects.toMatchObject({
     code: "document_sharing_unavailable",
     status: 501,
   })

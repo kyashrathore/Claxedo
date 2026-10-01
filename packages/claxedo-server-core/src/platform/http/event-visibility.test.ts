@@ -9,10 +9,13 @@ describe("control-plane event visibility", () => {
     expect(eventVisibleTo({ mode: "signed", subject: "user_b" }, event)).toBe(true)
   })
 
-  test("an org-scoped doorbell still stops at its org", () => {
-    const event = { type: "session.inventory.changed", workspaceId: "ws", orgId: "org_a", ts: 1 } as const
-    expect(eventVisibleTo({ mode: "signed", subject: "user_a", orgId: "org_a" }, event)).toBe(true)
-    expect(eventVisibleTo({ mode: "signed", subject: "user_b", orgId: "org_b" }, event)).toBe(false)
+  test.each([
+    { type: "document.changed", documentId: "doc_private", orgId: "org_a", projectId: "project_a", version: "v1", ts: 1 },
+    { type: "provision", workspaceId: "ws_owner", orgId: "org_a", step: "ready", ts: 1 },
+    { type: "session.inventory.changed", workspaceId: "ws_owner", orgId: "org_a", ts: 1 },
+  ] as const)("a $type notice reaches no signed subscriber, its org's members included, only the unsigned machine's user", (event) => {
+    expect(eventVisibleTo({ mode: "signed", subject: "user_a", orgId: "org_a" }, event)).toBe(false)
+    expect(eventVisibleTo({ mode: "unsigned-local" }, event)).toBe(true)
   })
 
   test("a live plugin notice reaches no signed subscriber, only the unsigned machine's single user", () => {
