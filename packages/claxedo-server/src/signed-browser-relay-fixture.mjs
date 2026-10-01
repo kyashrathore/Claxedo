@@ -1,10 +1,10 @@
 import { root } from "./test-support/signed-browser-relay-fixture-root.mjs"
 import { startEmbeddedRelayHostEnrollment } from "./test-support/embedded-relay-host-enrollment.ts"
+import { attachHttpServerErrorHandlers, closeHttp, serverPort } from "./test-support/fixture-http-server.mjs"
 import fs from "node:fs/promises"
 import path from "node:path"
 import { execFile, spawn } from "node:child_process"
 import { promisify } from "node:util"
-import { once } from "node:events"
 import { serve } from "@hono/node-server"
 import { createRemoteJWKSet, errors as joseErrors, exportJWK, exportPKCS8, exportSPKI, generateKeyPair, jwtVerify } from "jose"
 import { mintHostTunnelToken, mintRuntimeAccessToken } from "@claxedo/workspace-relay"
@@ -142,40 +142,6 @@ const resolverToken = hostMode === "connect" ? `resolver_${Math.random().toStrin
 
 async function run(cwd, ...args) {
   await execFileAsync(args[0], args.slice(1), { cwd })
-}
-
-function attachHttpServerErrorHandlers(server) {
-  server.on("clientError", (error, socket) => {
-    if (error?.code === "ECONNRESET" || error?.code === "EPIPE") {
-      socket.destroy()
-      return
-    }
-    socket.end("HTTP/1.1 400 Bad Request\r\n\r\n")
-  })
-  server.on("connection", (socket) => {
-    socket.setKeepAlive(false)
-    socket.on("error", (error) => {
-      if (error?.code === "ECONNRESET" || error?.code === "EPIPE") return
-      console.error("signed-browser-relay-fixture: socket error", error)
-    })
-  })
-}
-
-async function closeHttp(server) {
-  if (!server.listening) return
-  await new Promise((resolve, reject) => {
-    server.close((error) => error ? reject(error) : resolve())
-    // Fixture teardown must not wait forever for an SSE connection whose
-    // peer disappeared with the owning test process.
-    server.closeAllConnections?.()
-  })
-}
-
-async function serverPort(server, label) {
-  if (!server.listening) await once(server, "listening")
-  const address = server.address()
-  if (!address || typeof address === "string") throw new Error(`${label} did not bind`)
-  return address.port
 }
 
 async function startCloudRuntime(input) {

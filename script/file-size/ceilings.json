@@ -26,7 +26,7 @@
   "packages/claxedo-server/src/deployments/hosted-workerd/live-sync-room.cf.ts": 976,
   "packages/claxedo-server/src/deployments/self-hosted-node/app.ts": 2013,
   "packages/claxedo-server/src/routes/runtime-session-authority.ts": 1341,
-  "packages/claxedo-server/src/signed-browser-relay-fixture.mjs": 1311,
+  "packages/claxedo-server/src/signed-browser-relay-fixture.mjs": 1284,
   "packages/claxedo-server/src/workspace/supervisor/sandbox.ts": 827,
   "packages/harness/src/transports/claude-sdk/translate/adapter.ts": 1439,
   "packages/harness/src/transports/codex-app-server/translate/adapter.ts": 1312,
