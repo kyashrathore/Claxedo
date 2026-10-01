@@ -72,7 +72,7 @@ export type AgentRuntimeRecovery = {
 }
 
 export type CreateAgentRuntimeInput = {
-  log?: { warn(message: string, extra: Record<string, unknown>): void }
+  log: { warn(message: string, extra: Record<string, unknown>): void }
   store: AgentRuntimeStore
   eventHub: RuntimeEventHub
   transports: TransportResolver

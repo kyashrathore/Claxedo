@@ -8,8 +8,6 @@ import { acceptGeneratedTitle, sessionTitleRequest, TITLE_TURN_TIMEOUT_MS } from
 import { buildSession, sessionUpdated, withDir } from "../projection/presentation-events"
 import { createSessionEventWriter } from "../projection/session-event-writer"
 
-
-
 export type TitleTarget = {
   sessionId: string
   directory: string
@@ -26,9 +24,8 @@ type NamedSession = Pick<TitleTarget, "transport" | "session">
  * streamed during the turn, `user` rename) has landed. Child sessions are
  * named by their spawn observation and never titled here.
  */
-export function createSessionTitleOwner(input: { store: AgentRuntimeStore; eventHub: RuntimeEventHub; deadlineMs?: number; log?: { warn(message: string, extra: Record<string, unknown>): void } }) {
-  const { store, eventHub } = input
-  const log = input.log ?? console
+export function createSessionTitleOwner(input: { store: AgentRuntimeStore; eventHub: RuntimeEventHub; deadlineMs?: number; log: { warn(message: string, extra: Record<string, unknown>): void } }) {
+  const { store, eventHub, log } = input
   const writer = createSessionEventWriter({
     store,
     publishPresentation: (context, payload) => eventHub.publishGlobal(withDir(context.directory ?? "", payload)),

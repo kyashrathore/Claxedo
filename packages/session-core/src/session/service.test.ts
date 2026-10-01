@@ -51,7 +51,7 @@ function host(options: FakeTransportOptions = {}): Host {
     retainLeasedTurnFailure: (sessionId, turn, error) => runtime.recovery.retainLeasedTurnFailure(sessionId, turn, error),
   })
   const runtime = createAgentRuntime({
-    store, eventHub, ports, ownerGeneration, launch,
+    store, eventHub, ports, ownerGeneration, launch, log: console,
     transports: { forHarness: async () => handle, composed: () => [handle], onRetire: () => () => {} },
     identity: { workspaceId: WORKSPACE },
     savedCommands: () => [],

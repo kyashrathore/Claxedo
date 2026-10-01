@@ -34,7 +34,7 @@ core that created that PTY.
 | `childSessions.deriveSessionId(identity)` | Derive a stable keyed child id synchronously or asynchronously. The machine adapter supplies HMAC; the core receives no key or synchronous crypto implementation. |
 | `readAttachment(key, maximumBytes)` | Read bounded bytes as `Uint8Array`. Optional; absent capability answers image unavailable. The machine adapter validates filesystem reads; other hosts may use object keys. |
 | `flushSessionDocuments`, `disposeSessionDocuments` | Optional Pages lifecycle capabilities. There is no machine implementation selected by the core. |
-| `log.warn` | Optional diagnostic sink. |
+| `log.warn` | The diagnostic sink for failures the core recovers from (a title the harness refused or timed out). Required. |
 
 `storeSessionRoutes({ store, subagentAdmission, deriveChildSessionId })` returns
 the session route options every host answers from its own store: listings,

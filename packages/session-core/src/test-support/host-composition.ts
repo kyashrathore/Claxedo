@@ -83,6 +83,7 @@ export function composeHost(input: HostCompositionInput): HostComposition {
     retainLeasedTurnFailure: (sessionId, turn, error) => runtime?.recovery.retainLeasedTurnFailure(sessionId, turn, error) ?? false,
   })
   runtime = createAgentRuntime({
+    log: console,
     store, eventHub, transports, ports, ownerGeneration,
     launch: input.launch ?? testLaunch(workspaceId),
     identity: input.identity ?? { workspaceId },

@@ -123,7 +123,7 @@ describe("a title side turn that never answers", () => {
     const f = createHostFixture({ transports: { pi: new FakeTransport() } })
     fixtures.push(f)
     const { id } = await f.runtime.sessions.create(sessionCreate({ id: "ses_title_hangs", harness: PI }))
-    const titles = createSessionTitleOwner({ store: f.store, eventHub: f.eventHub, deadlineMs: 20 })
+    const titles = createSessionTitleOwner({ store: f.store, eventHub: f.eventHub, deadlineMs: 20, log: console })
     const attached = await f.runtime.transportFor(id)
     const seen = sessionFrames(f, id)
     const generated = titles.generate({ sessionId: id, directory: attached.session.directory,
