@@ -1,34 +1,20 @@
 import { describe, expect, mock, test } from "bun:test"
-import * as ids from "../../server/ids"
 import type { BindingScope } from "./services"
 
-mock.module("@/server", () => ids)
-const routes = await import("../../shell/routes")
-mock.module("@/shell", () => routes)
+mock.module("@/session", () => ({ sessionActivity: () => "working" }))
+mock.module("@/shell", () => ({ sessionPath: (ref: { placementId: string; sessionId: string }) => `${ref.placementId}/${ref.sessionId}` }))
 const { dataBindings } = await import("./data")
 
 function fixture() {
   const ref = { projectId: "project-1", placementId: "workspace-1", sessionId: "session-1" }
   const placement = { id: ref.placementId, projectId: ref.projectId, kind: "folder" }
   const navigated: string[] = []
-  const row = { ref, status: { kind: "working" } }
   const scope = {
     manifest: { id: "fixture", version: "0.1.0" },
-    signal: new AbortController().signal,
     services: {
-      platform: "desktop",
-      i18n: { locale: () => "en" },
-      projects: () => [],
-      routing: {
-        route: () => ({ kind: "session", placementId: ref.placementId, sessionId: ref.sessionId }),
-        placementId: () => ref.placementId,
-        navigate: (path: string) => navigated.push(path),
-      },
+      routing: { route: () => ({ kind: "session", ...ref }), placementId: () => ref.placementId, navigate: (path: string) => navigated.push(path) },
       server: { placements: { list: () => [placement], byId: () => placement } },
-      sessions: {
-        list: { create: async () => ref, view: () => row },
-        open: () => ({ send: async () => undefined }),
-      },
+      sessions: { list: { create: async () => ref, view: () => ({ ref }) }, open: () => ({ send: async () => undefined }) },
     },
   } as unknown as BindingScope
   return { api: dataBindings(scope), navigated }
@@ -55,6 +41,6 @@ describe("plugin session bindings", () => {
     const own = { sessionId: "session-1", workspaceId: "workspace-1" }
     expect(api.sessions.status(own)).toBe("running")
     api.sessions.open(own)
-    expect(navigated).toEqual(["/w/workspace-1/session/session-1"])
+    expect(navigated).toEqual(["workspace-1/session-1"])
   })
 })
