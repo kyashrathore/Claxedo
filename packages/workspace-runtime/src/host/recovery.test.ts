@@ -16,11 +16,11 @@ import {
   submittedOperation,
   tempStoreRoot,
   tick,
-  transportHandle,
   until,
   type HostFixture,
   type TurnControl,
 } from "../test-support/host-fixture"
+import { transportHandle } from "../test-support/host-composition"
 import { createWorkspaceTransports, type WorkspaceTransportsInput } from "../workspace/transports"
 import type { RuntimeConnectionDescriptor } from "../routes/config"
 import { FakeTransport } from "../test-support/fake-transport"
