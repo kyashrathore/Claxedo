@@ -81,27 +81,24 @@ clients, deploys the Worker with `wrangler deploy`, and waits until `/health`
 names the version it deployed. The new version serves as soon as Cloudflare
 switches traffic.
 
-Before deploying the control-plane baseline, reset staging's control-plane D1.
-From `packages/claxedo-server`, with Cloudflare credentials in the environment:
+A control-plane D1 that records older migrations, or a baseline other than
+the current `0001_baseline.sql`, stops the deploy before any migration runs,
+and the error names the reset. The reset deletes and recreates staging's
+control-plane D1; it discards every row, converts nothing, and leaves
+`AUTH_DB` alone. From `packages/claxedo-server`, with Cloudflare credentials
+in the environment and the staging environment's
+`CLAXEDO_STAGING_CONTROL_PLANE_D1_DATABASE_NAME` value:
 
 ```sh
 export CLAXEDO_STAGING_CONTROL_PLANE_D1_DATABASE_NAME=<staging control-plane database name>
-bun run d1:reset:staging
-bun run deploy:user-cloudflare -- --agent-plugins
+bun run d1:reset:staging -- --confirm <staging control-plane database name>
 ```
 
-The reset deletes and recreates only the named control-plane database. It
-discards its rows; it does not convert them or reset `AUTH_DB`. The deploy
-rediscovers the database UUID and binds it to the Worker. Use the same name
-as the staging environment's `CLAXEDO_STAGING_CONTROL_PLANE_D1_DATABASE_NAME`
-variable; deploy receives it as `CLAXEDO_CONTROL_PLANE_D1_DATABASE_NAME`.
-An old `d1_migrations` history or a nonempty untracked schema stops deploy
-before migrations and names the reset command.
-
-Whenever another lane adds a numbered migration, run
-`bun run d1:baseline:generate` before deploying. This folds every current migration into
-`migrations/control-plane/0001_baseline.sql` on an empty SQLite database and
-removes the numbered inputs. Generation never touches remote D1.
+Then rerun the staging workflow's `control-plane` job. The deploy finds the
+recreated database by name, binds its new UUID, and applies the baseline. The
+deployment has no owner afterwards, so claim it again with
+`bun run deploy:user-cloudflare:claim-owner`
+(`public-docs/user-deployed-cloudflare.md`).
 
 A deploy also drops the `CLAXEDO_CREDENTIALS` KV binding that was added to the
 Worker out of band. That is correct: hosted credentials moved to
