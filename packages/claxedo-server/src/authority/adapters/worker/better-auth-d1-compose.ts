@@ -42,7 +42,7 @@ import {
 } from "../../../platform/auth/better-auth-native-clients"
 import { createBetterAuthD1AuthenticationEvidenceResolver } from "../../../platform/auth/better-auth-d1-authentication-evidence"
 import { createBetterAuthD1RequestAuthenticationAdapter } from "../../../platform/auth/better-auth-d1-request-authentication"
-import { betterAuthOrgInvitationDelivery } from "../../../platform/auth/better-auth-org-invitations"
+import { betterAuthOrgInvitationDelivery, betterAuthVerifiedEmail } from "../../../platform/auth/better-auth-org-invitations"
 import type { OrgInvitationDelivery } from "@claxedo/server-core/platform/auth/org-access-authority"
 import { STATIC_PRODUCT_DESCRIPTORS } from "../../../deployments/hosted-shared/deployment-profile"
 import type { HostedCoreAppOptions } from "../../../deployments/hosted-shared/hosted-core-app"
@@ -193,10 +193,14 @@ export function composeBetterAuthD1UserDeployedControlPlane(
     resolveAuthenticationEvidence: createBetterAuthD1AuthenticationEvidenceResolver(input.authDatabase),
     resolveIdentity: async (identity, request) => {
       const existing = await authority.ensureApplicationIdentity(identity)
-      if (existing.state !== "unavailable" || input.product.ownerBootstrap !== "one-use-claim") return existing
-      const claim = request?.headers.get(USER_DEPLOYED_OWNER_CLAIM_HEADER)
-      if (!claim) return existing
-      return await authority.claimUserDeployedOwner(identity, claim)
+      if (existing.state !== "unavailable" && existing.state !== "provisioning") return existing
+      const claim = existing.state === "unavailable" && input.product.ownerBootstrap === "one-use-claim"
+        ? request?.headers.get(USER_DEPLOYED_OWNER_CLAIM_HEADER)
+        : undefined
+      if (claim) return await authority.claimUserDeployedOwner(identity, claim)
+      const email = await betterAuthVerifiedEmail({ database: input.authDatabase, issuer: descriptor.issuer }, identity)
+      const admitted = email ? await authority.admitInvitedIdentity(identity, email) : undefined
+      return admitted?.state === "active" ? admitted : existing
     },
     ...(input.now ? { now: input.now } : {}),
   })

@@ -235,18 +235,10 @@ export class D1WorkspaceAuthority implements D1WorkspaceAuthorityCore {
     }
 
     const existing = await this.identityResolution(identity)
-    const isPinnedOwner = this.options.product.ownerIdentity && sameIdentity(identity, this.options.product.ownerIdentity)
-    if (!isPinnedOwner) {
+    if (!this.options.product.ownerIdentity) return existing
+    if (!sameIdentity(identity, this.options.product.ownerIdentity)) {
       if (existing.state !== "unavailable") return existing
-      const org = await this.database.prepare("select org_id from orgs where org_id = ? and deployment_id = ? and deleted_at is null")
-        .bind(this.options.product.organization.id, this.options.deploymentId).first()
-      if (!org) return existing
-      await this.database.batch([
-        this.insertIdentity(identity, candidate.userId, now),
-        this.insertMappedUser(identity, candidate.userId, now),
-        this.insertHumanActor(identity, candidate.actorId, now),
-      ])
-      return this.identityResolution(identity)
+      return { state: "provisioning", retryAfterMs: 5_000 }
     }
     if (existing.state === "suspended" || existing.state === "deleted") return existing
 
@@ -290,6 +282,33 @@ export class D1WorkspaceAuthority implements D1WorkspaceAuthorityCore {
       return { state: "unavailable" }
     }
     return resolution
+  }
+
+  /**
+   * A user-deployed instance admits anyone but its owner only while an
+   * invitation to their verified email is pending, so a stranger who signs in
+   * stays unavailable. Membership still waits for the accept.
+   */
+  async admitInvitedIdentity(identity: AuthIdentity, verifiedEmail: string): Promise<ApplicationIdentityResolution> {
+    validateIdentity(identity)
+    const existing = await this.identityResolution(identity)
+    if (this.options.product.kind !== "user-deployed" || existing.state !== "unavailable") return existing
+    const now = this.now()
+    const pending = await this.database
+      .prepare(`
+        select 1 from org_invitations
+        where org_id = ? and email = ? and accepted_at is null and revoked_at is null and expires_at > ?
+      `)
+      .bind(this.options.product.organization.id, verifiedEmail.trim().toLowerCase(), now)
+      .first()
+    if (!pending) return existing
+    const userId = this.randomId("usr")
+    await this.database.batch([
+      this.insertIdentity(identity, userId, now),
+      this.insertMappedUser(identity, userId, now),
+      this.insertHumanActor(identity, this.randomId("act"), now),
+    ])
+    return await this.identityResolution(identity)
   }
 
   /**

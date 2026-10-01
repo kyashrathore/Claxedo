@@ -62,6 +62,7 @@ const WORKSPACE_LIFECYCLE_METHODS = [
   "createHostedOrganization",
   "createWorkspace",
   "claimUserDeployedOwner",
+  "admitInvitedIdentity",
 ] as const satisfies readonly (keyof D1WorkspaceAuthority)[]
 
 const HOST_LIFECYCLE_METHODS = [

@@ -677,18 +677,32 @@ describe("D1 access changes that must not undo or outlive a decision", () => {
 })
 
 describe("D1 user-deployed invitation membership", () => {
-  test("sign-up creates an identity without membership; accepted invitations are required to join", async () => {
+  test("a stranger stays out; a pending invitation to their verified email admits them, and only the accept makes them a member", async () => {
     const controlPlane = await miniflareControlPlaneDatabase(controlPlaneMigrations())
     active.push(controlPlane)
     const identity = (subject: string): AuthIdentity => ({ adapter: "better-auth", issuer: "https://auth.example.test", subject })
+    const tokens: string[] = []
     const authority = composeBetterAuthD1Authority({
       env: { CLAXEDO_ADAPTER_PROFILE: "better-auth-d1", CLAXEDO_PRODUCT_POSTURE: "user-deployed", CLAXEDO_DEPLOYMENT_ID: "deployment-a", CONTROL_PLANE_DB: controlPlane.database },
       product: { kind: "user-deployed", organization: { id: "org_deploy", name: "Deploy" }, ownerIdentity: identity("alice") },
+      invitations: {
+        sendInvitation: async ({ token }) => { tokens.push(token) },
+        verifiedEmail: async (auth) => `${auth.principal!.identity.subject}@example.test`,
+      },
     })
     const alice = await signed(authority, "alice")
+    expect(await authority.ensureApplicationIdentity(identity("bob"))).toMatchObject({ state: "provisioning" })
+    expect(await authority.admitInvitedIdentity(identity("bob"), "bob@example.test")).toMatchObject({ state: "unavailable" })
+
+    await authority.createOrgInvitation!(alice, { orgId: "org_deploy", email: "bob@example.test", role: "admin" })
+    expect(await authority.admitInvitedIdentity(identity("mallory"), "mallory@example.test")).toMatchObject({ state: "unavailable" })
+    expect(await authority.admitInvitedIdentity(identity("bob"), " Bob@Example.test ")).toMatchObject({ state: "active" })
     const bob = await signed(authority, "bob")
     expect(await authority.listOrgs(bob)).toEqual([])
-    await inviteOrgMember(controlPlane.database, alice, { orgId: "org_deploy", userPublicId: id(bob), role: "admin" })
-    expect(await authority.listOrgMembers!(alice, { orgId: "org_deploy" })).toEqual(expect.arrayContaining([expect.objectContaining({ user_id: id(bob), role: "admin" })]))
+
+    await authority.acceptOrgInvitation!(bob, { token: tokens[0]! })
+    expect(await authority.listOrgMembers!(alice, { orgId: "org_deploy" }))
+      .toEqual(expect.arrayContaining([expect.objectContaining({ user_id: id(bob), role: "admin" })]))
+    expect(await authority.admitInvitedIdentity(identity("carol"), "bob@example.test")).toMatchObject({ state: "unavailable" })
   })
 })

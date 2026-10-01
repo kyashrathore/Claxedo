@@ -13,6 +13,7 @@ import {
   type D1AuthorityProductPolicy,
 } from "./workspace-authority"
 import { D1SessionAuthority } from "./session-authority"
+import { D1OrgInvitationAuthority } from "./org-invitation-authority"
 import { D1AuditAuthority } from "./audit-authority"
 
 const MIGRATIONS_DIRECTORY = fileURLToPath(new URL("../../../../migrations/control-plane/", import.meta.url))
@@ -501,7 +502,8 @@ describe("D1 user-deployed workspace authority", () => {
       ownerIdentity,
     })
     expect(await authority.ensureApplicationIdentity(identity("uninvited"))).toEqual({
-      state: "unavailable",
+      state: "provisioning",
+      retryAfterMs: 5_000,
     })
 
     const owner = await signed(authority, ownerIdentity)
@@ -545,8 +547,15 @@ describe("D1 user-deployed workspace authority", () => {
     })
 
     const memberIdentity = identity("member")
+    let token = ""
+    const invitations = new D1OrgInvitationAuthority(authority.accessContext(), {
+      sendInvitation: async (invitation) => { token = invitation.token },
+      verifiedEmail: async () => "member@example.test",
+    })
+    await invitations.createOrgInvitation(owner, { orgId: "org_deployment", email: "member@example.test", role: "member" })
+    expect(await authority.admitInvitedIdentity(memberIdentity, "member@example.test")).toMatchObject({ state: "active" })
     const member = await signed(authority, memberIdentity)
-    await inviteOrgMember(database, owner, { orgId: "org_deployment", userPublicId: member.principal!.userId, role: "member" })
+    await invitations.acceptOrgInvitation(member, { token })
     await authority.createWorkspace(owner, {
       workspaceId: "ws_shared",
       orgId: "org_deployment",
