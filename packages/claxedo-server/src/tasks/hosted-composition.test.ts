@@ -58,7 +58,7 @@ afterEach(async () => {
 })
 
 async function database(): Promise<D1Database> {
-  const instance = await miniflareControlPlaneDatabase(["0025_claxedo_tasks.sql", "0026_agent_cross_machine_writes.sql", "0032_task_attachments.sql", "0033_task_child_number.sql"])
+  const instance = await miniflareControlPlaneDatabase(["0025_claxedo_tasks.sql", "0026_task_agent_starts.sql", "0032_task_attachments.sql", "0033_task_child_number.sql"])
   active.push(instance)
   return instance.database
 }

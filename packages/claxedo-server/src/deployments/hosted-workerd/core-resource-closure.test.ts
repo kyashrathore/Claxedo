@@ -122,6 +122,8 @@ describe("the hosted Worker Tasks closure", () => {
     const emitted = await emittedTasksClosure()
 
     expect(emitted.modules).toContain(TASKS_MODULE)
+    expect(emitted.modules.filter((module) => module.endsWith("/agent-settings.ts"))).toEqual([])
+    expect(emitted.imports).not.toContain("@claxedo/server-core/platform/auth/cross-machine-writes")
     expect(emitted.modules.filter((module) => module.startsWith("src/tasks/")).sort()).toEqual([
       // The grant a cloud root launches with, and the signer that mints it.
       "src/tasks/capability.ts",

@@ -14,7 +14,6 @@ import { createTasksRootCapability, createTasksRootGrant } from "../../tasks/roo
 import { createOwnerGrantMinter, createOwnerRootCapability } from "../../session/owner-grant"
 import { createD1SandboxPassRegister } from "../../platform/auth/d1-sandbox-pass-register"
 import { hostedControlPlaneOrigin } from "../../authority/adapters/worker/control-plane-origin"
-import { d1CrossMachineWrites } from "../../authority/adapters/d1/agent-settings"
 import type { WorkspaceRuntimeContext, WorkspaceRuntimePreparation } from "../../workspace/route-support"
 import { HostedWorkerCompositionError } from "../../authority/composition-error"
 import { pluginBackendRouteContribution } from "../../plugin-backends/routes"
@@ -52,16 +51,9 @@ export function composeBetterAuthD1AgentPlugins(
     ...betterAuthD1CompositionInput(env),
     ...extra,
   })
-  // One signing key decides both halves: the deployment that mints a root's
-  // Tasks grant is exactly the one whose routes will verify it.
   const signingEnv = stringEnvironment(env)
-  // Every pass a root is launched with is written here, and every verifier
-  // asks here first: the switch and the workspace's deletion revoke by
-  // workspace, and a renewal is refused for a revoked grant like any request.
   const passes = createD1SandboxPassRegister({ database: env.CONTROL_PLANE_DB })
-  // One input for the launch grant and the renewed one, so `start` follows
-  // the account's setting at both.
-  const tasksRoot = { signingEnv, passes, crossMachineWrites: d1CrossMachineWrites(env.CONTROL_PLANE_DB) }
+  const tasksRoot = { signingEnv, passes }
   const authority = requireAuthority(base.plane.services)
   if (!authority.resolveWorkspaceOwner) {
     throw new Error("Enabled Agent Plugins build requires an authority that resolves workspace owners")
