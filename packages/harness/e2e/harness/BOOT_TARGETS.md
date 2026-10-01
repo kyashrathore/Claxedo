@@ -12,7 +12,9 @@ Local flows boot the local daemon. Signed and cloud flows boot the hosted Cloudf
 | `startHostedRelay` | `workerd-relay.ts` → Node `relay-workerd.mjs` → `workspace-relay/wrangler.toml`, `WorkspaceRelayRoom` | Runtime HTTP/SSE/WebSockets, capability verification, host signing |
 | H19.default, H19.opencode | `cloud-product-host.ts` → `host-entry.agent-plugins.ts` | Runtime composition and signed config delivery without a control plane or relay |
 
-Ports come from `ports.ts` (`46100-46199` by default; `CLAXEDO_E2E_PORT_RANGE` overrides). A hosted stack leases control-plane, sandbox API, model, Git and relay ports; a signed browser stack also leases its public HTTPS origin, whose front serves the built app and forwards control-plane paths to workerd. The sandbox API fixture launches the real runtime through the local brokering driver and records each runtime's pid, environment, home and secret names in `local-broker-targets`.
+The signed browser's origin is `https://claxedo-e2e.localhost:<front port>`: the app runs its local-daemon path for any loopback server URL, so a hosted origin has to be a name. The front listens on 127.0.0.1 and ::1, Node fixture requests and sandboxed runtimes (`localhost-resolver.mjs`) resolve the name to 127.0.0.1, and each signed build reserves the relay port its Content-Security-Policy names.
+
+Ports come from `ports.ts` (`46100-46199` by default; `CLAXEDO_E2E_PORT_RANGE` overrides). A hosted stack leases control-plane, sandbox API, model, Git and relay ports; a signed browser stack also leases its public HTTPS origin, whose front serves the built app and forwards control-plane paths to workerd. The sandbox API fixture launches the real runtime through the local brokering driver, records each runtime's pid, environment, home and secret names in `local-broker-targets`, and answers the driver's backup and restore by copying the sandbox's workspace and runtime data.
 
 ## Assertions with no hosted equivalent
 
