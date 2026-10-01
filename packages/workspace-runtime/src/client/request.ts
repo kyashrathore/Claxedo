@@ -1,3 +1,4 @@
+import { decodeApiError } from "@claxedo/helpers/api-error"
 import { errorMessage } from "@claxedo/helpers"
 import { asRecord, asRecordOrEmpty } from "@claxedo/helpers/guards"
 
@@ -48,7 +49,7 @@ export type WorkspaceRuntimeCaller = {
 }
 
 export class WorkspaceRuntimeClientError extends Error {
-  constructor(readonly operation: string, readonly status: number, readonly code: string, readonly body: unknown, message: string) {
+  constructor(readonly operation: string, readonly status: number, readonly code: string, readonly body: unknown, message: string, readonly retryable = false) {
     super(message)
     this.name = "WorkspaceRuntimeClientError"
   }
@@ -179,28 +180,12 @@ export function workspaceRuntimeClientErrorFrom(operation: string, status: numbe
   } catch {
     body = undefined
   }
-  const envelope = claxedoErrorEnvelope(body)
-  const row = asRecordOrEmpty(body)
-  const code = envelope?.code ?? (typeof row.code === "string" ? row.code : `http_${status}`)
-  const message = envelope?.message
-    ?? (typeof row.message === "string" ? row.message : text || `Workspace runtime request failed with status ${status}`)
-  return new WorkspaceRuntimeClientError(operation, status, code, body ?? text, message)
-}
-
-/**
- * The `{ error: { code, message } }` envelope every runtime route answers a
- * failure with — and, more to the point, the one a relay or proxy synthesizes
- * when the runtime never answered at all (`upstream_timeout`,
- * `upstream_unavailable`, an oversized body). A route whose own refusals have
- * a typed body still meets this shape from the hops in front of it, so
- * recognising it is what tells "the owner refused" apart from "nothing reached
- * the owner".
- */
-export function claxedoErrorEnvelope(body: unknown): { code: string; message: string } | undefined {
-  const nested = asRecordOrEmpty(asRecordOrEmpty(body).error)
-  return typeof nested.code === "string" && typeof nested.message === "string"
-    ? { code: nested.code, message: nested.message }
-    : undefined
+  const envelope = decodeApiError(status, body)
+  return new WorkspaceRuntimeClientError(
+    operation, status, envelope?.code ?? `http_${status}`, body ?? text,
+    envelope?.message ?? `Workspace runtime request failed with status ${status}`,
+    envelope?.retryable ?? false,
+  )
 }
 
 function appendQuery(url: URL, key: string, value: unknown) {

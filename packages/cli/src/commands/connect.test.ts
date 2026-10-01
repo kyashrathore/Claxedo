@@ -1012,7 +1012,7 @@ describe("exit-code mapping and bootstrap retry", () => {
           throw new HostedHttpError(503, { error: { code: "deploying" } })
         },
       ),
-    ).rejects.toThrow(/^redeem failed for 299s: HOSTED_HTTP 503/)
+    ).rejects.toThrow(/^redeem failed for 299s: HTTP 503/)
     expect(delays.slice(0, 6)).toEqual([1_000, 2_000, 4_000, 8_000, 16_000, 30_000])
     expect(attempts.map((attempt) => attempt.timeoutMs)).toEqual(attempts.map((attempt) => 5 * 60_000 - attempt.at))
     expect(attempts.at(-1)!.at, "the last sleep was cut to leave exactly the minimum, and that attempt ran").toBe(5 * 60_000 - 1_000)
@@ -1061,7 +1061,7 @@ describe("exit-code mapping and bootstrap retry", () => {
     ).catch((e: unknown) => e)
 
     expect(attempts).toEqual([0])
-    expect(String(error)).toMatch(/^Error: acquire failed for 299s: HOSTED_HTTP 503/)
+    expect(String(error)).toMatch(/^Error: acquire failed for 299s: HTTP 503/)
   })
 
   test("the beat interval is a third of the lease, capped at 20 s", () => {

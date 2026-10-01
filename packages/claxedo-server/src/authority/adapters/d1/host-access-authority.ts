@@ -1,3 +1,4 @@
+import { createRequireText } from "@claxedo/helpers"
 import type { D1Database, D1PreparedStatement } from "@cloudflare/workers-types"
 import { ControlPlaneAuthError, type SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import {
@@ -1778,21 +1779,7 @@ function normalizedTtl(input: number | undefined) {
 }
 
 
-function optionalText(value: string | undefined, name: string, max = 512) {
-  if (value === undefined) return undefined
-  return requireText(value, name, max)
-}
-
-function requireText(value: unknown, name: string, max = 512) {
-  if (typeof value !== "string") {
-    throw new D1HostAccessAuthorityError("invalid_input", `${name} must be a string`)
-  }
-  const result = value.trim()
-  if (!result || result.length > max) {
-    throw new D1HostAccessAuthorityError("invalid_input", `${name} must be a non-empty string of at most ${max} characters`)
-  }
-  return result
-}
+const { requireText, optionalText } = createRequireText((message) => new D1HostAccessAuthorityError("invalid_input", message))
 
 function randomBase64Url(size: number) {
   return base64Url(crypto.getRandomValues(new Uint8Array(size)))

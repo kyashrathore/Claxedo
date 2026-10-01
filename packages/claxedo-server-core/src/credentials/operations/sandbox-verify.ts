@@ -29,15 +29,15 @@ export async function verifySandboxDriverAuth(
   options: { fetch?: typeof fetch } = {},
 ): Promise<CredentialHealth> {
   const values = probeAuth(id, auth)
-  if (!values) throw new CredentialVerificationError("Sandbox provider credential has an unsupported shape")
+  if (!values) throw new CredentialVerificationError("credential_shape_invalid", "Sandbox provider credential has an unsupported shape")
   const probe = sandboxDriverProbe(id, values)
-  if (!probe) throw new CredentialVerificationError("Sandbox provider does not support verification")
+  if (!probe) throw new CredentialVerificationError("credential_verification_unsupported", "Sandbox provider does not support verification")
 
   const response = await (options.fetch ?? globalThis.fetch)(probe.url, { ...probe.init, redirect: "error" }).catch(() => {
-    throw new CredentialVerificationError("Sandbox provider request failed")
+    throw new CredentialVerificationError("credential_provider_unavailable", "Sandbox provider request failed")
   })
   if (response.redirected || (response.status >= 300 && response.status < 400)) {
-    throw new CredentialVerificationError("Sandbox provider redirects are not allowed")
+    throw new CredentialVerificationError("credential_redirect_denied", "Sandbox provider redirects are not allowed")
   }
   if (response.ok) {
     await response.body?.cancel().catch(() => undefined)
@@ -53,7 +53,7 @@ export async function verifySandboxDriverAuth(
   ) return "no_billing"
   if (response.status === 429) return "rate_capped"
   if (probe.rejected(response.status)) return "auth_failed"
-  throw new CredentialVerificationError("Sandbox provider verification failed")
+  throw new CredentialVerificationError("credential_verification_failed", "Sandbox provider verification failed")
 }
 
 /**
@@ -68,7 +68,7 @@ export async function verifySandboxDriverCredential(
   options: { fetch?: typeof fetch } = {},
 ): Promise<CredentialHealth> {
   if (!isSandboxDriverID(providerId)) {
-    throw new CredentialVerificationError("Sandbox provider does not support verification")
+    throw new CredentialVerificationError("credential_verification_unsupported", "Sandbox provider does not support verification")
   }
   return verifySandboxDriverAuth(providerId, storedAuth(providerId, secret), options)
 }
@@ -137,7 +137,7 @@ function sandboxDriverProbe(id: SandboxDriverID, auth: Record<string, string>): 
   if (id === "cloudflare") {
     let base: string
     try { base = cloudflareWorkerBaseUrl(auth.worker_url) } catch {
-      throw new CredentialVerificationError("Cloudflare Worker URL requires a valid HTTPS endpoint without credentials, query or fragment")
+      throw new CredentialVerificationError("credential_endpoint_invalid", "Cloudflare Worker URL requires a valid HTTPS endpoint without credentials, query or fragment")
     }
     return {
       url: `${base}/sandboxes`,

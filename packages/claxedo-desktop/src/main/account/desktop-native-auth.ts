@@ -92,7 +92,7 @@ function isConnectionLevelFailure(error: unknown): boolean {
   if (error.name === "AbortError" || error.name === "TimeoutError") return false
   const cause = (error as { cause?: unknown }).cause
   const code = cause && typeof cause === "object" && "code" in cause ? String((cause as { code: unknown }).code) : ""
-  return error.message.includes("fetch failed") || /ECONNRESET|ECONNREFUSED|EPIPE|ETIMEDOUT|EAI_AGAIN/.test(code + error.message)
+  return new Set(["ECONNRESET", "ECONNREFUSED", "EPIPE", "ETIMEDOUT", "EAI_AGAIN"]).has(code)
 }
 
 export function createDesktopNativeAuth(input: {
@@ -137,11 +137,7 @@ export function createDesktopNativeAuth(input: {
       try {
         response = await request()
       } catch (first) {
-        // One retry on a fresh connection. The edge in front of the control
-        // plane occasionally resets a warm connection (ECONNRESET, "fetch
-        // failed") and the very next attempt succeeds; without this, that one
-        // reset failed the session renewal and every hosted operation behind
-        // it for the whole refresh cooldown.
+        // The edge can reset a reused connection while a fresh connection succeeds.
         if (!isConnectionLevelFailure(first)) throw first
         response = await request()
       }

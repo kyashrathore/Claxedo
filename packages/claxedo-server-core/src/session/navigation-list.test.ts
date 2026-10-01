@@ -2,6 +2,14 @@ import { describe, expect, test } from "vitest"
 import { buildSessionListResponse, encodeSessionListAfter, parseSessionListQuery } from "./navigation-list"
 
 describe("session list owner mapping", () => {
+  test("invalid cursors expose a typed client refusal", () => {
+    try {
+      parseSessionListQuery(new URL("http://test.local/session-list?scope=workspace&workspaceId=ws_1&after=invalid"))
+      throw new Error("expected validation to fail")
+    } catch (error) {
+      expect(error).toMatchObject({ code: "invalid_session_list_cursor", status: 400, retryable: false })
+    }
+  })
   test("maps owner_* fields onto navigation rows for rail favicons", () => {
     const query = parseSessionListQuery(new URL("http://test.local/session-list?scope=workspace&workspaceId=ws_1&limit=20"))
     const response = buildSessionListResponse({

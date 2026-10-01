@@ -76,10 +76,8 @@ const assignBody = z
   })
   .strict()
 
-// the authority throws typed-message errors; `workspace_backing_conflict` means
-// the caller tried to place a cloud workspace on a machine → 409.
 function isWorkspaceBackingConflict(err: unknown) {
-  return err instanceof Error && err.message.includes("workspace_backing_conflict")
+  return isClaxedoError(err) && err.code === "workspace_backing_conflict"
 }
 
 function workspaceBackingConflictBody() {

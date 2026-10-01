@@ -1,3 +1,6 @@
+import { PublicApiError } from "@claxedo/server-core/platform/errors/public-api-error"
+import { PUBLIC_API_ERRORS, type PublicApiErrorCode } from "@claxedo/helpers/api-error"
+import { createRequireText } from "@claxedo/helpers"
 import type { D1Database, D1PreparedStatement } from "@cloudflare/workers-types"
 import { AGENT_MESSAGE_PAGE_LIMIT, AgentMessagePageError } from "@claxedo/agent-runtime-contract"
 import { ControlPlaneAuthError, type SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
@@ -226,7 +229,7 @@ export class D1SessionAuthorityError extends ClaxedoError {
     super({
       code,
       message,
-      status: code === "invalid_input" ? 400 : code === "resource_conflict" ? 409 : 403,
+      status: PUBLIC_API_ERRORS[code].status,
     })
   }
 }
@@ -2425,8 +2428,8 @@ function shareFanoutTarget(grant: SessionShareRow) {
   return { grantedToOrgId: grant.target_org_id! }
 }
 
-function sessionShareError(code: string) {
-  return new Error(code)
+function sessionShareError(code: PublicApiErrorCode) {
+  return new PublicApiError(code)
 }
 
 function normalizeReservation(input: ReserveSessionInput) {
@@ -2662,21 +2665,7 @@ function optionalTimestamp(value: number | undefined, name: string) {
   return value
 }
 
-function optionalText(value: string | undefined, name: string, max = 512) {
-  if (value === undefined) return undefined
-  return requireText(value, name, max)
-}
-
-function requireText(value: string, name: string, max = 512) {
-  const result = value.trim()
-  if (!result || result.length > max) {
-    throw new D1SessionAuthorityError(
-      "invalid_input",
-      `${name} must be a non-empty string of at most ${max} characters`,
-    )
-  }
-  return result
-}
+const { requireText, optionalText } = createRequireText((message) => new D1SessionAuthorityError("invalid_input", message))
 
 function denied(message = "Session authorization was denied") {
   return new ControlPlaneAuthError(403, "workspace_authorization_denied", message)

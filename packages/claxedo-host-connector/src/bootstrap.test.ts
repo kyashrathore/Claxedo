@@ -233,7 +233,7 @@ describe("decisions", () => {
       .catch((e: unknown) => e)
 
     expect(error).not.toBeInstanceOf(HostConnectDecisionError)
-    expect(String(error)).toContain("HOSTED_HTTP 503")
+    expect(error).toMatchObject({ status: 503 })
     expect(h.stored()?.bootstrap, "the pending marker stays for the retry").toBeDefined()
   })
 

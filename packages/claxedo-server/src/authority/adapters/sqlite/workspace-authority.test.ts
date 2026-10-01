@@ -111,6 +111,15 @@ function fileAuthority() {
 }
 
 describe("sqlite workspace authority", () => {
+  test("a missing organization is a typed public error", async () => {
+    const authority = memoryAuthority()
+    try {
+      await expect(authority.createTeamInOrg!(owner, { orgId: "org_missing", name: "Team" }))
+        .rejects.toMatchObject({ code: "organization_not_found", status: 404, retryable: false })
+    } finally {
+      authority.close()
+    }
+  })
   test("browser and CLI projections keep one immutable actor kind", async () => {
     const authority = memoryAuthority()
     const cli = { ...owner, tokenKind: "cli" as const }

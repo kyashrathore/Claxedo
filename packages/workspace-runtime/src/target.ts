@@ -16,7 +16,9 @@ const targetStorage = new AsyncLocalStorage<WorkspaceTarget>()
 const registered = new Map<string, Map<string, string>>()
 
 export class WorkspaceTargetError extends Error {
-  constructor(message: string) {
+  readonly status = 400
+  readonly retryable = false
+  constructor(message: string, readonly code: "workspace_path_invalid" | "workspace_target_pinned" = "workspace_path_invalid") {
     super(message)
     this.name = "WorkspaceTargetError"
   }
@@ -69,7 +71,7 @@ export function assertTarget(requested: string | undefined, env: NodeJS.ProcessE
   if (requested.trim() === `workspace:${workspaceId(env)}`) return dir
   if (clean(requested) === dir) return dir
   if ([...(registered.get(workspaceId(env))?.values() ?? [])].includes(clean(requested))) return clean(requested)
-  throw new WorkspaceTargetError(`workspace-runtime is pinned to ${dir}`)
+  throw new WorkspaceTargetError(`workspace-runtime is pinned to ${dir}`, "workspace_target_pinned")
 }
 
 export function registerWorkspaceDirectory(input: {

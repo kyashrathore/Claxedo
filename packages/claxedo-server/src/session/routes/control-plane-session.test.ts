@@ -256,6 +256,7 @@ describe("control plane session routes", () => {
       error: {
         code: "missing_bearer_token",
         message: "Authorization: Bearer token is required",
+        retryable: false,
       },
     })
   })

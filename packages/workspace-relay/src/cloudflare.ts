@@ -2,6 +2,7 @@
 // own program from imports alone and never pick up this package's tsconfig
 // file list, so the ambient declaration has to travel with the file.
 /// <reference path="./workerd-globals.d.ts" />
+import { hostTunnelFailure, hostTunnelFailureResponse } from "./host-tunnel-failure"
 import { createRemoteJWKSet, importSPKI } from "jose"
 import { trimToUndefined } from "@claxedo/helpers/string"
 import {
@@ -2030,7 +2031,7 @@ export function createWorkspaceRelayDurableObjectRoom(options: WorkspaceRelayDur
       if (!pending) return
       const chunk = base64ToBytes(message.body_base64)
       if (pending.bytes + chunk.byteLength > (options.tunnelResponseBodyMaxBytes ?? TUNNEL_RESPONSE_BODY_MAX_BYTES_DEFAULT)) {
-        failPendingTunnelResponse(tunnel, message.request_id, pending, new Error("Host tunnel response body exceeds the relay limit"))
+        failPendingTunnelResponse(tunnel, message.request_id, pending, hostTunnelFailure("host_tunnel_response_body_too_large"))
         return
       }
       pending.bytes += chunk.byteLength
@@ -2497,7 +2498,7 @@ export function createWorkspaceRelayDurableObjectRoom(options: WorkspaceRelayDur
           paused: false,
           reason: "closed",
         } satisfies TunnelHttpResponseFlow))
-        reject(new Error("Host tunnel timed out"))
+        reject(hostTunnelFailure("host_tunnel_timeout"))
       }, options.forwardTimeoutMs ?? 30_000)
       tunnel.pending.set(requestId, {
         chunks: [],
@@ -2521,23 +2522,7 @@ export function createWorkspaceRelayDurableObjectRoom(options: WorkspaceRelayDur
     try {
       return await traceSpan(trace, "tunnel-wait", () => pending)
     } catch (err) {
-      const timeout = err instanceof Error && err.message.includes("timed out")
-      const responseTooLarge = err instanceof Error && err.message.includes("response body exceeds")
-      return Response.json(
-        errorBody(
-          timeout
-            ? "host_tunnel_timeout"
-            : responseTooLarge
-              ? "host_tunnel_response_body_too_large"
-              : "host_tunnel_unavailable",
-          timeout
-            ? "Host tunnel timed out"
-            : responseTooLarge
-              ? "Host tunnel response body exceeds the relay limit"
-              : "Host tunnel is unavailable",
-        ),
-        { status: responseTooLarge ? 413 : 503 },
-      )
+      return hostTunnelFailureResponse(err)
     }
   }
 

@@ -1987,7 +1987,9 @@ describe("workspace relay Cloudflare Durable Object room", () => {
 
     const res = await pending
     expect(res.status).toBe(200)
-    await expect(res.text()).rejects.toThrow("Host tunnel response body exceeds the relay limit")
+    const body = res.text()
+    await expect(body).rejects.toThrow("Host tunnel response body exceeds the relay limit")
+    await expect(body).rejects.toMatchObject({ code: "host_tunnel_response_body_too_large", status: 413, retryable: false })
     expect(harness.room.drain.pendingCount()).toBe(0)
   })
 

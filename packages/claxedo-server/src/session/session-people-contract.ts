@@ -1,3 +1,4 @@
+import { encodeApiError, PUBLIC_API_ERRORS, type PublicApiErrorCode } from "@claxedo/helpers/api-error"
 import type { Context } from "hono"
 import type { ContentfulStatusCode } from "hono/utils/http-status"
 import type { SessionShareChangedEvent } from "@claxedo/server-core/platform/runtime/lib/bus"
@@ -23,87 +24,14 @@ export type SessionShareChangedSink = (event: SessionShareChangedEvent) => unkno
 
 export type { SessionShareFanoutTarget } from "@claxedo/server-core/platform/auth/authority"
 
-type PeopleError = {
-  status: ContentfulStatusCode
-  code: string
-  message: string
-}
-
-function hasCode(message: string, code: string) {
-  return message === code || message.includes(code)
-}
-
-function peopleAuthorityError(error: unknown): PeopleError | undefined {
-  const message = error instanceof Error ? error.message : String(error)
-  if (message === "Session not found" || message.includes("Session not found")) {
-    return {
-      status: 404,
-      code: "session_not_found",
-      message: "This session is not on the control plane, so it cannot be shared from People yet.",
-    }
-  }
-  if (hasCode(message, "session_share_admin_required")) {
-    return {
-      status: 403,
-      code: "session_share_admin_required",
-      message: "Only the person who started this session can manage its People.",
-    }
-  }
-  if (hasCode(message, "session_share_target_required")) {
-    return {
-      status: 400,
-      code: "session_share_target_required",
-      message: "Exactly one share target is required",
-    }
-  }
-  if (hasCode(message, "session_share_target_not_found")) {
-    return {
-      status: 404,
-      code: "session_share_target_not_found",
-      message: "Share target was not found",
-    }
-  }
-  if (hasCode(message, "session_share_target_outside_organization")) {
-    return {
-      status: 403,
-      code: "session_share_target_outside_organization",
-      message: "That person is not in this organization, so this session cannot be shared with them.",
-    }
-  }
-  if (hasCode(message, "session_share_level_invalid")) {
-    return {
-      status: 400,
-      code: "session_share_level_invalid",
-      message: "A share level is either follow or send.",
-    }
-  }
-  if (hasCode(message, "session_share_team_org_mismatch")) {
-    return {
-      status: 400,
-      code: "session_share_team_org_mismatch",
-      message: "The team must belong to the session workspace organization.",
-    }
-  }
-  if (hasCode(message, "session_share_org_mismatch")) {
-    return {
-      status: 400,
-      code: "session_share_org_mismatch",
-      message: "The organization must own the session workspace.",
-    }
-  }
-  return undefined
-}
-
-/** Canonical HTTP envelope for People authority failures across all hosts. */
 export function peopleErrorResponse(c: Context, error: unknown): Response {
-  if (error instanceof ControlPlaneAuthError) {
-    return c.json(controlPlaneAuthErrorBody(error), error.status)
-  }
-  const mapped = peopleAuthorityError(error)
-  if (mapped) {
-    return c.json({ error: { code: mapped.code, message: mapped.message } }, mapped.status)
-  }
-  throw error
+  if (error instanceof ControlPlaneAuthError) return c.json(controlPlaneAuthErrorBody(error), error.status)
+  const row = asRecord(error)
+  const code = typeof row?.code === "string" ? row.code as PublicApiErrorCode : undefined
+  if (!code || !Object.hasOwn(PUBLIC_API_ERRORS, code)) throw error
+  const mapped = PUBLIC_API_ERRORS[code]
+  if (!("family" in mapped) || mapped.family !== "session_share") throw error
+  return c.json(encodeApiError({ ...row, code, message: mapped.message }), mapped.status as ContentfulStatusCode)
 }
 
 /**

@@ -1,11 +1,16 @@
-/**
- * "We could not form a verdict" — an unsupported provider, an unreadable
- * secret shape, or a request that never reached the provider. Never a verdict
- * against the credential itself: an offline laptop must not render a red cross
- * against a key that is fine.
- *
- * Its own module so `verify.ts` and `sandbox-verify.ts` can both raise it
- * without importing each other. `verify.ts` re-exports it, which is where
- * every caller still imports it from.
- */
-export class CredentialVerificationError extends Error {}
+import { ClaxedoError } from "../platform/errors/base"
+import { PUBLIC_API_ERRORS } from "@claxedo/helpers/api-error"
+
+export type CredentialVerificationErrorCode =
+  | "credential_verification_unsupported"
+  | "credential_shape_invalid"
+  | "credential_provider_unavailable"
+  | "credential_verification_failed"
+  | "credential_redirect_denied"
+  | "credential_endpoint_invalid"
+
+export class CredentialVerificationError extends ClaxedoError<CredentialVerificationErrorCode> {
+  constructor(code: CredentialVerificationErrorCode, message: string = PUBLIC_API_ERRORS[code].message) {
+    super({ code, message, status: PUBLIC_API_ERRORS[code].status, retryable: code === "credential_provider_unavailable" })
+  }
+}

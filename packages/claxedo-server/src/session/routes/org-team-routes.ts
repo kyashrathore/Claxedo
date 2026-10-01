@@ -1,3 +1,5 @@
+import { encodeApiError, PUBLIC_API_ERRORS, type PublicApiErrorCode } from "@claxedo/helpers/api-error"
+import { contentfulStatus } from "../../platform/http/status"
 import { Hono, type Context } from "hono"
 import { bodyLimit } from "hono/body-limit"
 import type { ControlPlaneServices } from "../../authority/services"
@@ -27,66 +29,14 @@ type Options = {
 
 const bodyLimitBytes = 16 * 1024
 
-type OrgTeamError = {
-  status: 400 | 403 | 404 | 409
-  code: string
-  message: string
-}
-
-function hasErrorCode(error: unknown, code: string) {
-  const value = error && typeof error === "object" && "code" in error
-    ? (error as { code?: unknown }).code
-    : undefined
-  const message = error instanceof Error ? error.message : String(error)
-  return value === code || message === code || message.includes(code)
-}
-
-const ORG_TEAM_ERRORS: Record<string, Omit<OrgTeamError, "code">> = {
-  invalid_input: { status: 400, message: "The request names an invalid value" },
-  organization_policy_denied: { status: 403, message: "Organization creation is disabled for this deployment" },
-  org_admin_required: { status: 403, message: "Organization administrator authority is required" },
-  org_owner_required: { status: 403, message: "Only an organization owner may grant, change or remove the owner role" },
-  org_owner_protected: { status: 409, message: "The organization's founding owner cannot be removed or demoted" },
-  team_member_org_membership_required: { status: 403, message: "The team member must belong to the team organization" },
-  project_member_org_membership_required: { status: 403, message: "The project member must belong to the project organization" },
-  org_membership_required: { status: 403, message: "Organization membership is required" },
-  project_admin_required: { status: 403, message: "Project administrator authority is required" },
-  team_not_allowed_on_personal_org: { status: 400, message: "Personal organizations cannot contain teams" },
-  team_member_target_required: { status: 400, message: "Exactly one team member target is required" },
-  org_member_target_required: { status: 400, message: "Exactly one organization member target is required" },
-  org_member_email_unsupported: { status: 400, message: "This deployment cannot find accounts by email" },
-  organization_not_found: { status: 404, message: "Organization not found" },
-  team_not_found: { status: 404, message: "Team not found" },
-  team_member_not_found: { status: 404, message: "Team member not found" },
-  org_member_not_found: { status: 404, message: "Organization member not found" },
-  project_not_found: { status: 404, message: "Project not found" },
-  project_member_not_found: { status: 404, message: "Project member not found" },
-  project_member_owner_immutable: { status: 409, message: "The project owner's access cannot be changed" },
-  resource_conflict: { status: 409, message: "Organization or team authority changed concurrently" },
-}
-
-const NOT_FOUND_BY_MESSAGE: Record<string, string> = {
-  "Organization not found": "organization_not_found",
-  "Team not found": "team_not_found",
-  "Project not found": "project_not_found",
-}
-
-function orgTeamAuthorityError(error: unknown): OrgTeamError | undefined {
-  for (const [code, mapped] of Object.entries(ORG_TEAM_ERRORS)) {
-    if (hasErrorCode(error, code)) return { code, ...mapped }
-  }
-  for (const [message, code] of Object.entries(NOT_FOUND_BY_MESSAGE)) {
-    if (String(error).includes(message)) return { code, ...ORG_TEAM_ERRORS[code] }
-  }
-  return undefined
-}
-
-/** Canonical HTTP envelope for organization/team authority failures across adapters. */
 export function orgTeamErrorResponse(c: Context, error: unknown): Response {
   if (error instanceof ControlPlaneAuthError) return c.json(controlPlaneAuthErrorBody(error), error.status)
-  const mapped = orgTeamAuthorityError(error)
-  if (mapped) return c.json({ error: apiError(mapped.code, mapped.message) }, mapped.status)
-  throw error
+  const row = error && typeof error === "object" && "code" in error ? error : undefined
+  const code = row && typeof row.code === "string" ? row.code as PublicApiErrorCode : undefined
+  if (!code || !Object.hasOwn(PUBLIC_API_ERRORS, code)) throw error
+  const mapped = PUBLIC_API_ERRORS[code]
+  if (!("family" in mapped) || mapped.family !== "access") throw error
+  return c.json(encodeApiError({ ...row, code, message: mapped.message }), contentfulStatus(mapped.status))
 }
 
 export function OrgTeamControlRoutes(services: ControlPlaneServices, options: Options = {}) {

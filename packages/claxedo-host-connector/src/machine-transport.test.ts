@@ -13,6 +13,7 @@ import {
   HostedHttpError,
   HostedRedirectError,
   HostedRequestTimeoutError,
+  postJson,
 } from "./machine-transport"
 
 /**
@@ -156,7 +157,17 @@ describe("a redirected machine request", () => {
   })
 })
 
-describe("refusals surface as HOSTED_HTTP decisions", () => {
+describe("refusals surface as typed HTTP decisions", () => {
+  test("a non-JSON error page cannot invent a server decision code", async () => {
+    const error = await postJson(async () => new Response("Proxy refused", { status: 502 }), new URL("https://control.example.test/heartbeat"), "{}", {}, 1000).catch((error: unknown) => error)
+    expect(error).toMatchObject({ status: 502, code: undefined, retryable: false, body: "Proxy refused" })
+  })
+  test("decisions and retries survive an unrelated display message", () => {
+    const error = new HostedHttpError(403, { error: { code: "enrollment_paused", message: "Paused", retryable: false } })
+    error.message = "The display text changed"
+    expect(decisionCode(error)).toBe("enrollment_paused")
+    expect(transientHeartbeatFailure(error)).toBe(false)
+  })
   test("a reused nonce", async () => {
     const { transport } = await host(undefined, { nonce: () => "fixedfixedfixedfixed" })
     await transport.acquire()
@@ -164,7 +175,7 @@ describe("refusals surface as HOSTED_HTTP decisions", () => {
     const error = await transport.acquire().catch((e: unknown) => e)
 
     expect(error).toBeInstanceOf(HostedHttpError)
-    expect(String(error)).toMatch(/^HostedHttpError: HOSTED_HTTP 401 /)
+    expect(error).toMatchObject({ status: 401, code: "machine_nonce_replayed" })
     expect(decisionCode(error)).toBe("machine_nonce_replayed")
     expect(transientHeartbeatFailure(error)).toBe(false)
   })
@@ -175,7 +186,7 @@ describe("refusals surface as HOSTED_HTTP decisions", () => {
     const error = await transport.acquire().catch((e: unknown) => e)
 
     expect(decisionCode(error)).toBe("machine_timestamp_skew")
-    expect(String(error)).toContain("HOSTED_HTTP 401")
+    expect(error).toMatchObject({ status: 401 })
   })
 
   test("a signature by a different key, and an enrollment id the control plane does not know, are one and the same 401", async () => {
@@ -187,7 +198,7 @@ describe("refusals surface as HOSTED_HTTP decisions", () => {
 
     expect(decisionCode(wrongKey)).toBe("machine_request_denied")
     expect(decisionCode(unknownRow)).toBe("machine_request_denied")
-    expect(String(wrongKey)).toContain("HOSTED_HTTP 401")
+    expect(wrongKey).toMatchObject({ status: 401 })
     expect(transientHeartbeatFailure(wrongKey)).toBe(false)
   })
 
@@ -198,7 +209,7 @@ describe("refusals surface as HOSTED_HTTP decisions", () => {
     const error = await transport.acquire().catch((e: unknown) => e)
 
     expect(decisionCode(error)).toBe("enrollment_paused")
-    expect(String(error)).toContain("HOSTED_HTTP 403")
+    expect(error).toMatchObject({ status: 403 })
     expect(transientHeartbeatFailure(error)).toBe(false)
   })
 
@@ -208,7 +219,7 @@ describe("refusals surface as HOSTED_HTTP decisions", () => {
     const error = await transport.acquire().catch((e: unknown) => e)
 
     expect(decisionCode(error)).toBe("enrollment_key_version_mismatch")
-    expect(String(error)).toContain("HOSTED_HTTP 403")
+    expect(error).toMatchObject({ status: 403 })
   })
 
   test("a beat from a superseded generation, or one the control plane has not issued", async () => {
@@ -220,10 +231,10 @@ describe("refusals surface as HOSTED_HTTP decisions", () => {
     const ahead = await transport.heartbeat({ generation: generation + 5, acks: [] }).catch((e: unknown) => e)
 
     expect(decisionCode(error)).toBe("enrollment_generation_superseded")
-    expect(String(error)).toContain("HOSTED_HTTP 409")
+    expect(error).toMatchObject({ status: 409 })
     expect(transientHeartbeatFailure(error)).toBe(false)
     expect(decisionCode(ahead)).toBe("invalid_input")
-    expect(String(ahead)).toContain("HOSTED_HTTP 400")
+    expect(ahead).toMatchObject({ status: 400 })
   })
 
   test("a revoked enrollment", async () => {
@@ -269,7 +280,7 @@ describe("refusals surface as HOSTED_HTTP decisions", () => {
 
     const error = await transport.acquire().catch((e: unknown) => e)
 
-    expect(String(error)).toContain("HOSTED_HTTP 503")
+    expect(error).toMatchObject({ status: 503 })
     expect(transientHeartbeatFailure(error)).toBe(true)
   })
 })

@@ -154,7 +154,7 @@ export function PtyRoutes(
           })
         }
       } catch (err) {
-        if (err instanceof WorkspaceTargetError && err.message.includes("pinned")) {
+        if (err instanceof WorkspaceTargetError && err.code === "workspace_target_pinned") {
           return c.json(invalidDirectory(), 400)
         }
         if (err instanceof WorkspaceTargetError) {

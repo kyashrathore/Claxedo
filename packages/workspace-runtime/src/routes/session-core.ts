@@ -567,12 +567,6 @@ function unavailableRegistration(message: string): Exclude<SessionAccessDecision
   return { allowed: false, status: 503, code: "session_registration_unavailable", message }
 }
 
-function unsupportedLiveAgentListError(error: unknown) {
-  if (!(error instanceof Error)) return false
-  return error.message.includes("does not expose live agent options")
-    || error.message.includes("did not return live agent options")
-}
-
 async function unsupportedIfUnavailable(
   c: Ctx,
   runtime: AgentRuntime,
@@ -2067,7 +2061,6 @@ export function createSessionRoutes(opts: Opts) {
         }
         return c.json(agents)
       } catch (err) {
-        if (unsupportedLiveAgentListError(err)) return c.json([])
         return engineRefusalResponse(c, err)
       }
     })

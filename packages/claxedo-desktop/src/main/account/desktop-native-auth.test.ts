@@ -214,6 +214,11 @@ describe("descriptor fetch resilience", () => {
     expect(descriptorCalls).toHaveLength(2)
     expect(signed).toMatchObject({ ok: true })
   })
+  test("fetch failed display text alone cannot authorize a retry", async () => {
+    const fixture = flakyHarness(new TypeError("fetch failed"))
+    await expect(fixture.auth.discover()).rejects.toThrow("descriptor could not be loaded")
+    expect(fixture.descriptorCalls).toHaveLength(1)
+  })
 
   test("two resets in a row still fail, and a non-network failure is not retried", async () => {
     const reset = Object.assign(new TypeError("fetch failed"), { cause: { code: "ECONNRESET" } })

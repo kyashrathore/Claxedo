@@ -1,4 +1,5 @@
-import { errorBody as dispatchErrorBody, statusOf } from "@claxedo/server-core/platform/errors/base"
+import { statusOf } from "@claxedo/server-core/platform/errors/base"
+import { encodeApiError } from "@claxedo/helpers/api-error"
 import { Hono, type Context } from "hono"
 import { AGENT_HARNESS_IDS, parseMessagePageQuery } from "@claxedo/agent-runtime-contract"
 import type { MachineSessionCreate } from "../machine-dispatch"
@@ -208,7 +209,7 @@ export function ControlPlaneSessionRoutes(services: ControlPlaneServices, option
         return c.json({ session }, 201)
       } catch (error) {
         if (error instanceof ControlPlaneAuthError) return c.json(controlPlaneAuthErrorBody(error), error.status)
-        if (statusOf(error) !== 500) return c.json(dispatchErrorBody(error), contentfulStatus(statusOf(error)))
+        if (statusOf(error) !== 500) return c.json(encodeApiError(error), contentfulStatus(statusOf(error)))
         throw error
       }
     })
