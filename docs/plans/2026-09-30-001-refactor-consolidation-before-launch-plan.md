@@ -54,19 +54,16 @@ Later, with their owning plans: the store split and explicit turn identity (plan
 
 ### SC1 Session core extraction (Phase 3 of the LOC plan)
 
-The SC1 worktree extracts `packages/session-core` behind `createSessionCore`.
-Its bus and directory registry belong to each instance. Session placement is a
-required host port; machine HMAC, attachment reads, directory canonicalization
-and optional Pages lifecycle hooks stay with the machine host. The Node-free
-ratchet scans all core production files and the first-party import closure.
-See `packages/session-core/README.md` for the port contract. No stored-state
-migration or compatibility export is introduced. The schema and SQLite port
-work was already present in the SC1 base; the old transaction blocker is not
-reintroduced by this extraction.
-
-Route/lifecycle acceptance, package builds and the Durable Object runtime gate
-are recorded separately in the lane report. This extraction does not implement
-the later turn-row and journal consolidation.
+`packages/session-core` holds the session core behind `createSessionCore`. Each
+instance owns its bus and directory registry. Session placement is a required
+host port; HMAC child identity, attachment reads, directory canonicalization
+and the optional Pages lifecycle hooks stay with the machine host, and
+`storeSessionRoutes` gives every host the route options it answers from its
+store. The Node-free ratchet scans all core production files and the first-party
+import closure; `packages/session-core/README.md` holds the port contract.
+`packages/workspace-runtime/src/session-core-durable-object.node-test.ts` runs
+the core in a Durable Object under workerd without `nodejs_compat`. The
+extraction does not implement the later turn-row and journal consolidation.
 
 ## 4. Order
 
