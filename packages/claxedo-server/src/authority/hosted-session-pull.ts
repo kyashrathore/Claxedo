@@ -13,7 +13,6 @@ import {
   pulledSession,
   relayRole,
   runtimePath,
-  sessionIsIdle,
   workspaceRoleAllowsWrite,
 } from "./pulled-session"
 import { txt } from "@claxedo/server-core/session/meta/shape"
@@ -190,13 +189,6 @@ export async function pullHostedControlSessionMessages(
     throw new HostedSessionPullError(502, "workspace_runtime_snapshot_invalid", "Workspace runtime returned no snapshot event ordinal")
   }
   const { updatedAt } = pulledSession(payload.session, input.sessionId, HostedSessionPullError)
-  const intakeReady = await runtimeJson(services, signed, {
-    ...target,
-    path: "/session/status",
-  }).then(
-    (status) => sessionIsIdle(status, input.sessionId),
-    () => false,
-  )
   const applied = asRecord(await requireAuthority(services).syncSessionMessages(signed, {
     workspaceId: target.workspaceId,
     sessionId: input.sessionId,
@@ -204,7 +196,6 @@ export async function pullHostedControlSessionMessages(
     updatedAt,
     maxEventOrdinal: payload.maxEventOrdinal,
     ...(payload.fencingToken === undefined ? {} : { fencingToken: payload.fencingToken }),
-    intakeReady,
   }))
   await syncHostedSessionMetadata(services, signed, target, input.sessionId, payload.session)
   if (applied?.applied === false) {

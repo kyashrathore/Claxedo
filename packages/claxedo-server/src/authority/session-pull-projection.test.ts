@@ -285,7 +285,6 @@ describe("central projection: pulled session metadata", () => {
             },
           })
         }
-        if (path === "/session/status") return Response.json({})
         return new Response("not found", { status: 404 })
       }
       if (flow === "hosted") stubHostedTransport(svc, runtime)
@@ -643,7 +642,6 @@ describe("central projection: snapshot ordinal skip rules", () => {
       stubHostedTransport(svc, (path) => {
         if (path === "/global/health") return Response.json({ workspaceId: "ws_1" })
         if (path === "/session/session-1/message?snapshot=1") return Response.json(snapshot)
-        if (path === "/session/status") return Response.json({})
         return new Response("not found", { status: 404 })
       })
     }
@@ -655,7 +653,6 @@ describe("central projection: snapshot ordinal skip rules", () => {
             runtimeFetch: async ({ path }) => {
               if (path === "/global/health") return Response.json({ workspaceId: "ws_1" })
               if (path === "/session/session-1/message?snapshot=1") return Response.json(snapshot)
-              if (path === "/session/status") return Response.json({})
               return new Response("not found", { status: 404 })
             },
           },
@@ -922,7 +919,6 @@ describe("central projection: snapshot ordinal skip rules", () => {
       const runtime = async (path: string) => {
         if (path === "/global/health") return Response.json({ workspaceId: "ws_1" })
         if (path === "/session/session-1") return Response.json({ id: "session-1", title: "Settled title", time: { created: 100, updated: 200 } })
-        if (path === "/session/status") return Response.json({})
         if (path === "/session/session-1/message?snapshot=1") {
           snapshotRequest += 1
           if (snapshotRequest === 1) {
@@ -1020,7 +1016,6 @@ describe("central projection: snapshot ordinal skip rules", () => {
             ? Response.json(snapshotWithSession({ messages: older, maxEventOrdinal: 11 }) as never)
             : Response.json(snapshotWithSession({ messages: newer, maxEventOrdinal: 12 }) as never)
         }
-        if (path === "/session/status") return Response.json({})
         return new Response("not found", { status: 404 })
       }
       if (flow === "hosted") stubHostedTransport(svc, runtime)
@@ -1101,7 +1096,6 @@ describe("central projection: snapshot ordinal skip rules", () => {
       const runtime = async (path: string) => {
         if (path === "/global/health") return Response.json({ workspaceId: "ws_1" })
         if (path === "/session/session-1") return Response.json({ id: "session-1", title: "Settled title", time: { created: 100, updated: 200 } })
-        if (path === "/session/status") return Response.json({})
         if (path === "/session/session-1/message?snapshot=1") {
           return Response.json(snapshotWithSession({ messages: older, maxEventOrdinal: 11 }) as never)
         }

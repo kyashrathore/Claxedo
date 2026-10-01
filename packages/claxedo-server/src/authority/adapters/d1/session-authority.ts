@@ -1579,7 +1579,6 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
       sessionId: string
       workspaceId: string
       messages: unknown[]
-      intakeReady?: boolean
       maxEventOrdinal?: number
       fencingToken?: number
       updatedAt: number

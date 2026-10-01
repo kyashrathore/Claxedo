@@ -135,9 +135,6 @@ describe("hosted session pull", () => {
       if (url === "https://relay.eu.test/workspaces/ws_1/session/session-1") {
         return Response.json({ id: "session-1", title: "Settled title", time: { created: 100, updated: 200 } })
       }
-      if (url === "https://relay.eu.test/workspaces/ws_1/session/status") {
-        return Response.json({})
-      }
       return new Response("not found", { status: 404 })
     })
     globalThis.fetch = fetch as unknown as typeof globalThis.fetch
@@ -162,10 +159,9 @@ describe("hosted session pull", () => {
       }),
     )
     expect(getRelayEndpoint).toHaveBeenCalledWith("ws_1", "eu-west")
-    // Health, canonical message snapshot, then status. The snapshot already
-    // carries its canonical session, so checkpointing must not add a second
-    // health probe plus a separate session read.
-    expect(fetch).toHaveBeenCalledTimes(3)
+    // The snapshot carries its canonical session, so checkpointing adds no
+    // second health probe, separate session read or status read.
+    expect(fetch).toHaveBeenCalledTimes(2)
     expect(fetchUrl(fetch.mock.calls[0]?.[0])).toBe("https://relay.eu.test/workspaces/ws_1/global/health")
     expect(syncSessionMessages).toHaveBeenCalledWith(signed, {
       workspaceId: "ws_1",
@@ -173,7 +169,6 @@ describe("hosted session pull", () => {
       messages: [],
       updatedAt: 200,
       maxEventOrdinal: 0,
-      intakeReady: true,
     })
   })
 
@@ -224,9 +219,6 @@ describe("hosted session pull", () => {
       if (url === "https://relay.eu.test/workspaces/ws_1/session/session-1") {
         return Response.json({ id: "session-1", title: "Settled title", time: { created: 100, updated: 200 } })
       }
-      if (url === "https://relay.eu.test/workspaces/ws_1/session/status") {
-        return Response.json({})
-      }
       return new Response("not found", { status: 404 })
     })
     globalThis.fetch = fetch as unknown as typeof globalThis.fetch
@@ -251,7 +243,7 @@ describe("hosted session pull", () => {
       auth: signed,
     }))
     expect(getRelayEndpoint).toHaveBeenCalledWith("ws_1", "eu-west")
-    expect(fetch).toHaveBeenCalledTimes(3)
+    expect(fetch).toHaveBeenCalledTimes(2)
     expect(syncSessionMessages).toHaveBeenCalledWith(signed, {
       workspaceId: "ws_1",
       sessionId: "session-1",
@@ -259,7 +251,6 @@ describe("hosted session pull", () => {
       updatedAt: 200,
       maxEventOrdinal: 7,
       fencingToken: 3,
-      intakeReady: true,
     })
   })
 
@@ -348,7 +339,6 @@ describe("hosted session pull", () => {
       if (url.endsWith("/session/session-1")) {
         return Response.json({ id: "session-1", title: "Settled title", time: { created: 100, updated: 200 } })
       }
-      if (url.endsWith("/session/status")) return Response.json({})
       return new Response("not found", { status: 404 })
     }) as unknown as typeof globalThis.fetch
 

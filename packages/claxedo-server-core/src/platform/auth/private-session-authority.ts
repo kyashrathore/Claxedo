@@ -314,7 +314,6 @@ export type PrivateSessionAuthority = {
       sessionId: string
       workspaceId: string
       messages: unknown[]
-      intakeReady?: boolean
       maxEventOrdinal?: number
       fencingToken?: number
     },

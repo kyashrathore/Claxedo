@@ -5,6 +5,7 @@ import { createIdempotencyCoordinator, d1ProjectionCommandIdempotency } from "..
 import { UNUSED_DURABLE_SESSION_LOG, UNUSED_PROJECTION_STORE } from "../authority/unavailable-session-stores"
 import type { ControlPlaneServices } from "../authority/services"
 import { HostedControlRoutes } from "../routes/hosted/control"
+import { authoritySessionReads, createSessionReadRoutes } from "../session/routes/session-read"
 import { storedD1Session } from "./d1-stored-session"
 
 async function compose(database: D1Database) {
@@ -29,17 +30,18 @@ async function compose(database: D1Database) {
     verifier: async () => auth,
     idempotency: createIdempotencyCoordinator(d1ProjectionCommandIdempotency(database)),
   })
-  return { auth, authority, routes }
+  const reads = createSessionReadRoutes({ authenticate: async () => auth, reads: authoritySessionReads(authority) })
+  return { auth, authority, routes, reads }
 }
 
 let composition: ReturnType<typeof compose> | undefined
 export default {
   async fetch(request: Request, env: { CONTROL_PLANE_DB: D1Database }) {
-    const { routes, auth, authority } = await (composition ??= compose(env.CONTROL_PLANE_DB))
+    const { routes, reads, auth, authority } = await (composition ??= compose(env.CONTROL_PLANE_DB))
     if (new URL(request.url).pathname === "/stored") {
       return Response.json({
         session: await authority.resolveSession(auth, { sessionId: "ses" }),
-        snapshot: await authority.readSessionMessages(auth, { sessionId: "ses", workspaceId: "ws" }),
+        snapshot: await (await reads.request("/sessions/ses/messages?workspaceId=ws")).json(),
       })
     }
     return routes.fetch(request)

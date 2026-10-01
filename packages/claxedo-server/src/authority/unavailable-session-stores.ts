@@ -1,4 +1,12 @@
-/** Hosted sessions live in D1 authority; reaching a local store from this composition is an error. */
+/**
+ * The local session stores a composition whose sessions live only in its
+ * authority still has to supply: the hosted Worker keeps every session in D1,
+ * so a call that reaches one of these fails closed and names the store.
+ *
+ * Written out member by member rather than produced by a `Proxy`: a proxy
+ * answers any property with a thrower, so a member added to `ProjectionStore`
+ * would never be noticed here. These fail the typecheck instead.
+ */
 import type { DurableSessionLog } from "@claxedo/server-core/platform/auth/durable-session-log"
 import type { ProjectionStore } from "./projection-store"
 

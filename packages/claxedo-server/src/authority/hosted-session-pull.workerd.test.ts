@@ -15,7 +15,6 @@ test("register, checkpoint and repair run on workerd with real D1 and no project
   let updated = 200
   let title = "Checkpoint"
   let unavailable = false
-  let idle = true
   let runtimeCalls = 0
   const messages = [{ info: { id: "assistant", role: "assistant", time: { created: 100 } }, parts: [{ id: "text", type: "text", text: "Stored" }] }]
   const worker = new Miniflare({
@@ -30,7 +29,6 @@ test("register, checkpoint and repair run on workerd with real D1 and no project
       if (path.endsWith("/global/health")) return Response.json({ workspaceId: "ws" })
       if (path.endsWith("/session/ses/message")) return Response.json({ session, messages, maxEventOrdinal: ordinal })
       if (path.endsWith("/session/ses")) return Response.json(session)
-      if (path.endsWith("/session/status")) return Response.json(idle ? {} : { ses: { type: "busy" } })
       return new Response("not found", { status: 404 })
     },
   })
@@ -56,7 +54,6 @@ test("register, checkpoint and repair run on workerd with real D1 and no project
     ordinal = 8
     updated = 300
     title = "Repaired"
-    idle = false
     unavailable = true
     expect((await command("checkpoint", "retry")).status).toBe(503)
     expect((await stored()).snapshot.maxEventOrdinal).toBe(7)
