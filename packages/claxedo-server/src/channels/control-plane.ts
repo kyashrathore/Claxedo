@@ -115,7 +115,7 @@ async function authorizeInbound(input: {
   session?: Awaited<ReturnType<SessionResolver["get"]>>
   action: ProjectAction
 }) {
-  const workspace = input.session?.workspaceId
+  const workspace = input.session
     ? await channelWorkspace({ workspaceId: input.session.workspaceId })
     : input.envelope.repo
       ? await channelWorkspace({ workspaceId: `${input.envelope.repo.owner}/${input.envelope.repo.name}` })
