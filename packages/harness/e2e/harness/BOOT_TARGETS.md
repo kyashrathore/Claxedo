@@ -1,15 +1,15 @@
 # E2E boot targets
 
-Local flows boot the local daemon. Signed and cloud flows boot the hosted Cloudflare Worker under Miniflare/workerd with local D1, R2 and Durable Object storage, and reach runtimes through the production Cloudflare relay with a Worker-issued Runtime Access Token. Neither tree boots `claxedo-server`'s self-hosted entry or the Bun relay; `boot-targets.test.ts` refuses either import.
+Local flows boot the local daemon. Signed and cloud flows boot the hosted Cloudflare Worker under Miniflare/workerd with local D1, R2 and Durable Object storage, and reach runtimes through the production Cloudflare relay with a Worker-issued Runtime Access Token. Neither tree boots `claxedo-server`'s self-hosted entry or the Bun relay.
 
 | Entry | Boot target | Owned behavior |
 | --- | --- | --- |
-| App and harness `startStack` → `startDaemon` (incl. H32, H33.local) | `local-daemon-entry.ts` → `claxedo-local-server`'s `startLocalServer` with Agent Plugins and Tasks | Local projects, credentials, Agent Plugins, Tasks, PTY, harness sessions and restart recovery; the app bundle is served by `local-app-bundle.ts` |
+| App and harness `startStack` → `startDaemon` (incl. H32, H33.local) | `local-daemon-entry.ts` → `claxedo-local-server`'s `startLocalServer` with Agent Plugins and Tasks | Local projects, credentials, Agent Plugins, Tasks, PTY, harness sessions and restart recovery; `local-app-bundle.ts` serves the app bundle, which the signed front also serves |
 | App `startSignedStack` (`signed`, `signedCloud`) | `startHostedStack` (`emailPassword`, the front's origin), `startHostedAppFront`, a local daemon, `startHostedMachine` | Email/password sign-up verified through the Worker's `EMAIL` binding, owner bootstrap, host enrollment, consented folders, serving credentials and the daemon tunnel |
 | H19, H19.pi, H33 → `startHostedCloudStack` | `startHostedStack` plus the owner, the scripted ACP connection and Pi as default | Cloud ACP/Pi turns, default-harness delivery to a running sandbox |
 | H30, H19.hosted*, H28, H31 | `startHostedStack` | Hosted credentials, plugins, settings and per-person accounts |
 | `startHostedStack` | Certified `better-auth-d1-worker.agent-plugins.full-hosted.cf.ts`, Wrangler dry bundle, `claxedo-server/scripts/e2e/hosted-miniflare.ts` | Better Auth, D1 ownership/settings/session registration, R2, Cloudflare sandbox control |
-| `startHostedRelay` | `workerd-relay.ts` → Node `relay-workerd.mjs` → `workspace-relay/wrangler.toml`, `WorkspaceRelayRoom` | Runtime HTTP/SSE/WebSockets, capability verification, host signing |
+| `startHostedRelay` | Node `relay-workerd.mjs` → `workspace-relay/wrangler.toml`, `WorkspaceRelayRoom` | Runtime HTTP/SSE/WebSockets, capability verification, host signing |
 | H19.default, H19.opencode | `cloud-product-host.ts` → `host-entry.agent-plugins.ts` | Runtime composition and signed config delivery without a control plane or relay |
 
 The signed browser's origin is `https://claxedo-e2e.localhost:<front port>`: the app runs its local-daemon path for any loopback server URL, so a hosted origin has to be a name. The front listens on 127.0.0.1 and ::1, Node fixture requests and sandboxed runtimes (`localhost-resolver.mjs`) resolve the name to 127.0.0.1, and each signed build reserves the relay port its Content-Security-Policy names.

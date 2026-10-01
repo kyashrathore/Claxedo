@@ -18,7 +18,6 @@ export type Account = {
   name: string
   email: string
   password: string
-  subject: string
   person: HostedPerson
   api: ClaxedoApi
   transport: HttpTransport
@@ -89,7 +88,7 @@ export async function startSignedStack(input: SignedStackInput): Promise<SignedS
       return { ...account, api }
     }
     const owner = await signUp("Ada Owner")
-    const claim = await hosted.provisionOwnerClaim(owner.subject)
+    const claim = await hosted.provisionOwnerClaim(owner.person.id)
     const bootstrap = await hostedFetch(hosted, "/api/claxedo/auth/bootstrap-owner", {
       method: "POST", headers: { "content-type": "application/json", "x-claxedo-bootstrap-owner-claim": claim }, body: "{}",
     }, owner.person)

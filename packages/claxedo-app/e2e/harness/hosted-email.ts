@@ -19,5 +19,5 @@ export async function signUpHostedEmail(stack: HostedStack, name: string) {
   const cookie = /__Secure-claxedo\.session_token=[^;]+/.exec(signin.headers.get("set-cookie") ?? "")?.[0]
   if (!signin.ok || !cookie) throw new Error(`Hosted email sign-in failed: ${signin.status} ${await signin.text()}`)
   const person = { id: user.id, email, cookie }
-  return { name, email, password, subject: user.id, person, transport: hostedControlTransport(stack, person) }
+  return { name, email, password, person, transport: hostedControlTransport(stack, person) }
 }

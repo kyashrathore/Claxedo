@@ -2,16 +2,13 @@ import type { IncomingMessage, ServerResponse } from "node:http"
 import { createServer, request as httpsRequest } from "node:https"
 import { X509Certificate, createHash } from "node:crypto"
 import fs from "node:fs/promises"
-import path from "node:path"
+import { appBundleFile } from "../../../harness/e2e/harness/local-app-bundle"
 import { listenOnLoopback } from "../../../harness/e2e/harness/ports"
 import type { HostedStack } from "../../../harness/e2e/harness/hosted-flow"
 import type { TlsFront } from "./tls-front"
 
-const TYPES: Record<string, string> = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".json": "application/json", ".svg": "image/svg+xml", ".png": "image/png", ".woff2": "font/woff2", ".ico": "image/x-icon" }
-
 export async function startHostedAppFront(input: { port: number; distDir: string; hosted: HostedStack }): Promise<TlsFront & { controlPlaneRequests(): readonly string[] }> {
   const certificate = await fs.readFile(input.hosted.certificate)
-  const root = path.resolve(input.distDir)
   const worker = new URL(input.hosted.workerOrigin)
   const tls = { cert: certificate, key: await fs.readFile(input.hosted.credentials.key) }
   const forwarded: string[] = []
@@ -28,15 +25,9 @@ export async function startHostedAppFront(input: { port: number; distDir: string
       request.pipe(upstream)
       return
     }
-    try {
-      const file = path.resolve(root, `.${decodeURIComponent(pathname)}`)
-      if (file !== root && !file.startsWith(`${root}${path.sep}`)) { response.writeHead(403).end(); return }
-      const asset = path.extname(file) ? file : path.join(root, "index.html")
-      const contents = await fs.readFile(asset)
-      response.writeHead(200, { "content-type": TYPES[path.extname(asset)] ?? "application/octet-stream" }).end(contents)
-    } catch (error) {
-      response.writeHead((error as NodeJS.ErrnoException).code === "ENOENT" ? 404 : 500).end()
-    }
+    const asset = await appBundleFile(input.distDir, pathname, request.headers.accept?.includes("text/html") ?? false)
+    if (!asset) { response.writeHead(404).end(); return }
+    response.writeHead(asset.status, Object.fromEntries(asset.headers)).end(Buffer.from(await asset.arrayBuffer()))
   }
   // The public origin is a *.localhost name, which resolvers answer with ::1
   // before 127.0.0.1; workerd and the sandbox runtimes take the first answer.

@@ -25,13 +25,11 @@ export async function hostedFetch(
   // Under Bun's node:https a request on a reused keep-alive socket to workerd
   // intermittently fails with ECONNRESET, so each request takes its own.
   headers.set("connection", "close")
-  if (options.body !== undefined && options.body !== null && typeof options.body !== "string") throw new Error("Hosted fixture requests require a serialized body")
-  if (options.redirect === "follow") throw new Error("Hosted fixture requests must handle redirects explicitly")
   const url = new URL(route, stack.workerUrl)
   return new Promise<Response>((resolve, reject) => {
     const upstream = request(url, {
       method: options.method ?? "GET", headers: Object.fromEntries(headers), ca, signal: options.signal ?? undefined,
-      ...(url.hostname.endsWith(".localhost") ? { lookup: fixtureLoopback } : {}),
+      lookup: fixtureLoopback,
     }, (received) => {
       const responseHeaders = new Headers()
       for (let index = 0; index < received.rawHeaders.length; index += 2) responseHeaders.append(received.rawHeaders[index], received.rawHeaders[index + 1])
@@ -40,12 +38,11 @@ export async function hostedFetch(
       received.on("error", reject)
       received.on("end", () => {
         const status = received.statusCode ?? 502
-        if (options.redirect === "error" && status >= 300 && status < 400) { reject(new Error("Hosted fixture redirect refused")); return }
-        resolve(new Response(options.method === "HEAD" || [204, 205, 304].includes(status) ? null : Buffer.concat(chunks), { status, headers: responseHeaders }))
+        resolve(new Response([204, 205, 304].includes(status) ? null : Buffer.concat(chunks), { status, headers: responseHeaders }))
       })
     })
     upstream.on("error", reject)
-    upstream.end(options.body)
+    upstream.end(options.body as string | undefined)
   })
 }
 

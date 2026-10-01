@@ -7,12 +7,7 @@ const relayRoot = path.resolve(import.meta.dirname, "../../../workspace-relay")
 const require = createRequire(path.join(relayRoot, "package.json"))
 const { Miniflare } = require("miniflare")
 const { unstable_getMiniflareWorkerOptions } = require("wrangler")
-const raw = process.env.CLAXEDO_E2E_RELAY_WORKER
-if (!raw) throw new Error("Missing e2e relay Worker configuration")
-const input = JSON.parse(raw)
-if (!input.root || !Number.isSafeInteger(input.port) || input.port <= 0 || !input.bindings) {
-  throw new Error("Invalid e2e relay Worker configuration")
-}
+const input = JSON.parse(process.env.CLAXEDO_E2E_RELAY_WORKER)
 const config = path.join(relayRoot, "wrangler.toml")
 const bundleDir = path.join(input.root, "bundle")
 const build = spawnSync(process.execPath, [
@@ -22,7 +17,6 @@ const build = spawnSync(process.execPath, [
 if (build.error) throw build.error
 if (build.status !== 0) throw new Error(`Relay Worker bundling failed: ${build.stdout}\n${build.stderr}`)
 const converted = unstable_getMiniflareWorkerOptions(config)
-if (!converted.main) throw new Error("The relay config declares no Worker entry")
 const bundle = path.join(bundleDir, path.basename(converted.main).replace(/\.ts$/, ".js"))
 const mf = new Miniflare({
   ...converted.workerOptions,
@@ -34,7 +28,7 @@ const mf = new Miniflare({
   outboundService: {
     network: {
       allow: ["127.0.0.1/32", "::1/128"],
-      ...(input.certificate ? { tlsOptions: { trustedCertificates: [readFileSync(input.certificate, "utf8")] } } : {}),
+      tlsOptions: { trustedCertificates: [readFileSync(input.certificate, "utf8")] },
     },
   },
 })
