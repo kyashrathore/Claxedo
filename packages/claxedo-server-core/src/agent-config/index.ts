@@ -85,7 +85,7 @@ export interface RuntimeConfigSnapshot {
   harnessLaunch?: Record<string, Record<string, unknown>>
 }
 
-/** What Agent Plugins contributes to a runtime snapshot: native launch rows and the ACP MCP map. */
+/** What Agent Plugins contributes to a runtime snapshot: a launch row per native harness and one for ACP connections, and the ACP MCP map. */
 export type AgentPluginRuntimeContribution = {
   harnessLaunch: Record<string, Record<string, unknown>>
   mcp: Record<string, AcpRuntimeMcpServer>
