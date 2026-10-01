@@ -1,4 +1,4 @@
-import { NO_BACKGROUND_WORK, sessionStatusWithBackgroundWork, type BackgroundWork, type ServerEvent, type SessionRef, type SessionStatus } from "@/server"
+import { NO_BACKGROUND_WORK, sessionStatusWithBackgroundWork, type BackgroundWork, type ServerEvent, type SessionLocation, type SessionStatus } from "@/server"
 import type { SoundChoice } from "./sounds"
 
 export type AlertKind = "agent" | "permissions" | "errors"
@@ -8,7 +8,7 @@ export type AlertPreferences = {
   readonly sound: Readonly<Record<AlertKind, SoundChoice>>
 }
 
-export type Alert = { readonly kind: AlertKind; readonly ref: SessionRef }
+export type Alert = { readonly kind: AlertKind; readonly ref: SessionLocation }
 
 type Activity = { readonly kind?: SessionStatus["kind"]; readonly backgroundWork: BackgroundWork }
 

@@ -1,10 +1,10 @@
 /// <reference types="bun" />
 import { expect, test } from "bun:test"
-import { placementId, projectId, sessionId, type SessionOutline, type SessionRef, type TranscriptPage } from "@/server"
+import { placementId, projectId, sessionId, type SessionOutline, type SessionLocation, type TranscriptPage } from "@/server"
 import type { RetainedSession, SessionTranscript, TranscriptSeed } from "../transcript"
 import { createOpenSessions } from "./open-sessions"
 
-const ref = (id: string): SessionRef => ({ projectId: projectId("project-1"), placementId: placementId("placement-1"), sessionId: sessionId(id) })
+const ref = (id: string): SessionLocation => ({ projectId: projectId("project-1"), placementId: placementId("placement-1"), sessionId: sessionId(id) })
 const page = (id: string): TranscriptPage => ({ entries: [{ info: { id: `${id}-user`, role: "user", sessionID: id }, parts: [] }] })
 const outline = (id: string): SessionOutline => ({ turns: [{ id: `${id}-user`, createdAt: 1, preview: {} }], complete: true })
 const kept = (latestTurn: TranscriptPage, kept?: SessionOutline): RetainedSession => ({ latestTurn, outline: kept })

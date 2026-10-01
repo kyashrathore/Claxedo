@@ -114,7 +114,7 @@ function runtime(): ChannelRuntime & { sent: string[] } {
   return {
     sent,
     async createSession() {
-      return { sessionId: "ses_1" }
+      return { sessionId: "ses_1", workspaceId: "workspace-1" }
     },
     async *sendMessage(input) {
       sent.push(`${input.externalUserId}:${input.text}`)

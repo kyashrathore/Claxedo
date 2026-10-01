@@ -1,5 +1,5 @@
 import { createSignal, type Accessor } from "solid-js"
-import { toAppError, type GoalAction, type Server, type SessionGoal, type SessionGoalState, type SessionRef } from "@/server"
+import { toAppError, type GoalAction, type Server, type SessionGoal, type SessionGoalState, type SessionLocation } from "@/server"
 
 export type GoalFacts = { readonly goal: SessionGoal | undefined; readonly removedCreatedAt: number }
 
@@ -31,7 +31,7 @@ export function goalChanged(facts: GoalFacts, incoming: SessionGoal | undefined)
   return { goal: undefined, removedCreatedAt: Math.max(facts.removedCreatedAt, current.createdAt) }
 }
 
-export function createSessionGoal(server: Server, ref: SessionRef): SessionGoalStore {
+export function createSessionGoal(server: Server, ref: SessionLocation): SessionGoalStore {
   const [facts, setFacts] = createSignal<GoalFacts>(NO_GOAL)
   const [actions, setActions] = createSignal<readonly GoalAction[]>(NO_ACTIONS)
   const [available, setAvailable] = createSignal<boolean>()

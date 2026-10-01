@@ -1,4 +1,4 @@
-import type { SessionReference, TasksActor } from "../contracts"
+import type { SessionRef, TasksActor } from "../contracts"
 
 /**
  * Project and session authority stay with the host. Presets are personal and
@@ -8,5 +8,5 @@ import type { SessionReference, TasksActor } from "../contracts"
 export type TasksAuthorizationPort = {
   authorizeProject(actor: TasksActor, projectId: string, access: "read" | "write"): Promise<boolean>
   /** Whether this actor may open the linked session, independent of preset ownership. */
-  authorizeSessionOpen(actor: TasksActor, session: SessionReference): Promise<boolean>
+  authorizeSessionOpen(actor: TasksActor, session: SessionRef): Promise<boolean>
 }
