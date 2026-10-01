@@ -1,5 +1,6 @@
 import { createEffect, type Accessor } from "solid-js"
-import type { AccountBinding, ControlPlaneAccess, AccountSession } from "./binding"
+import type { ControlPlaneAccess } from "@/server"
+import type { AccountBinding, AccountSession } from "./binding"
 import type { BrowserAuthMethod, BrowserAuthSignInOptions, BrowserAuthSignUpOptions } from "./browser-auth"
 import type { AuthUser } from "./display-user"
 import { authMachine, type AuthState } from "./model"

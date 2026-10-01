@@ -4,14 +4,14 @@ import type { HostedAccount } from "./account"
 import type { LinkedCatalog } from "./account-link"
 import { createAccountPlacements, withAccountPlacements, type AccountPlacements } from "./account-placements"
 import type { PlacementsApi } from "./api"
-import { ServerError } from "./errors"
+import { ServerError, toAppError } from "./errors"
 import type { PlacementId, ProjectId } from "./ids"
 import { queryKeys } from "./query-keys"
 import type { RuntimeRoute, Transport } from "./transport"
 import type { Project, SessionRef } from "./types"
 import { isStoppedCloud } from "./placement-runtime"
 import { workspaceStopped } from "./wire/connection"
-import { bootstrapCatalog, type BootstrapCatalog, type PlacementRecord } from "./wire/placements"
+import { type BootstrapCatalog, type PlacementRecord } from "./wire/placements"
 import type { Address } from "./wire/session-row"
 
 export type SessionHome = {
@@ -34,7 +34,6 @@ export type Workspaces = Pick<PlacementsApi, "byId" | "list"> & {
   readonly dispose: () => void
 }
 
-const BOOTSTRAP_PATH = "/api/claxedo/bootstrap"
 const WORKSPACE_DIRECTORY_PREFIX = "workspace:"
 
 function trimmedDirectory(directory: string) {
@@ -103,12 +102,14 @@ function placementRoutes(find: (id: PlacementId) => Promise<PlacementRecord | un
 
 function mergedCatalog(queryClient: QueryClient, key: readonly unknown[], accountPlacements: AccountPlacements | undefined) {
   const watched = [observeQuery(queryClient, key), ...(accountPlacements ? [observeQuery(queryClient, accountPlacements.key)] : [])]
+  const noMachinePlacements: readonly PlacementRecord[] = []
   let last: { local: BootstrapCatalog; linked: LinkedCatalog | undefined; merged: BootstrapCatalog } | undefined
   const merge = (local: BootstrapCatalog) => {
-    const linked = accountPlacements?.link(local.placements)
+    const linked = link(local)
     if (last?.local !== local || last.linked !== linked) last = { local, linked, merged: withAccountPlacements(local, linked) }
     return last.merged
   }
+  const link = (catalog: BootstrapCatalog) => accountPlacements?.link(catalog.declaration.serverKind === "daemon" ? catalog.placements : noMachinePlacements)
   const local = () => queryClient.getQueryData<BootstrapCatalog>(key)
   return {
     merge,
@@ -119,9 +120,18 @@ function mergedCatalog(queryClient: QueryClient, key: readonly unknown[], accoun
     },
     linked: () => {
       const current = local()
-      return current && accountPlacements?.link(current.placements)
+      return current && link(current)
     },
     dispose: () => watched.forEach((watch) => watch.dispose()),
+  }
+}
+
+async function readAccountCatalog(transport: Transport, read: (() => Promise<void>) | undefined) {
+  try {
+    await read?.()
+  } catch (error) {
+    if (transport.serverKind() === "hosted") throw error
+    console.error("The account's workspace catalog could not be read; the rail lists this machine's placements alone", { error: toAppError(error) })
   }
 }
 
@@ -136,40 +146,49 @@ function accountReads(linked: () => LinkedCatalog | undefined, signed: boolean, 
   }
 }
 
-export function createWorkspaces(transport: Transport, queryClient: QueryClient, account?: HostedAccount): Workspaces {
-  const key = queryKeys.bootstrap(transport.serverUrl)
-  const accountPlacements = account ? createAccountPlacements(account, transport.serverUrl, queryClient) : undefined
-  const merged = mergedCatalog(queryClient, key, accountPlacements)
+function catalogReads(transport: Transport, queryClient: QueryClient, key: readonly unknown[], accountPlacements: AccountPlacements | undefined, merge: (local: BootstrapCatalog) => BootstrapCatalog): Pick<Workspaces, "load" | "learn" | "refresh"> {
   const relearned = new Set<string>()
-  const read = async () => bootstrapCatalog(await transport.json<unknown>(BOOTSTRAP_PATH))
+  const read = transport.bootstrap
   const reread = () => queryClient.fetchQuery({ queryKey: key, queryFn: read, staleTime: 0 })
   const load = async () => {
-    const [local] = await Promise.all([queryClient.fetchQuery({ queryKey: key, queryFn: read, staleTime: Number.POSITIVE_INFINITY }), accountPlacements?.load()])
-    return merged.merge(local)
+    const local = await queryClient.fetchQuery({ queryKey: key, queryFn: read, staleTime: Number.POSITIVE_INFINITY })
+    await readAccountCatalog(transport, accountPlacements?.load)
+    return merge(local)
   }
-  const { recordOf, byId, list, address } = placementReads(() => merged.catalog()?.placements ?? [])
   return {
-    byId,
-    list,
-    address,
-    ...placementRoutes(async (id) => {
-      await load()
-      return recordOf(id)
-    }),
     learn: async (directory) => {
       if (relearned.has(directory)) return
       await reread()
       relearned.add(directory)
     },
-    catalog: merged.catalog,
     load,
     refresh: async () => {
       relearned.clear()
-      await Promise.all([reread(), accountPlacements?.reread()])
+      await reread()
+      await readAccountCatalog(transport, accountPlacements?.reread)
       await queryClient.invalidateQueries({ queryKey: queryKeys.placements(transport.serverUrl) })
       await queryClient.invalidateQueries({ queryKey: queryKeys.projects(transport.serverUrl) })
     },
-    ...accountReads(merged.linked, accountPlacements !== undefined, load),
+  }
+}
+
+export function createWorkspaces(transport: Transport, queryClient: QueryClient, account?: HostedAccount): Workspaces {
+  const key = queryKeys.bootstrap(transport.serverUrl)
+  const accountPlacements = account ? createAccountPlacements(account, transport.serverUrl, queryClient) : undefined
+  const merged = mergedCatalog(queryClient, key, accountPlacements)
+  const reads = catalogReads(transport, queryClient, key, accountPlacements, merged.merge)
+  const { recordOf, byId, list, address } = placementReads(() => merged.catalog()?.placements ?? [])
+  return {
+    byId,
+    list,
+    address,
+    ...reads,
+    ...placementRoutes(async (id) => {
+      await reads.load()
+      return recordOf(id)
+    }),
+    catalog: merged.catalog,
+    ...accountReads(merged.linked, accountPlacements !== undefined, reads.load),
     dispose: merged.dispose,
   }
 }

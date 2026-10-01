@@ -7,6 +7,21 @@ export type AuthSource =
   | { readonly kind: "basic"; readonly username: string; readonly password: string }
   | { readonly kind: "bearer"; readonly token: (options?: { readonly fresh?: boolean }) => Promise<string | undefined> }
 
+export type ControlPlaneAccess =
+  | { readonly kind: "cookie" }
+  | { readonly kind: "bearer"; readonly token: (options?: { readonly skipCache?: boolean }) => Promise<string | null> }
+  | { readonly kind: "port"; readonly run: RunHostedOperation }
+
+export type ServerAccess = Pick<ServerConfig, "auth" | "account" | "cookies">
+
+export function serverAccess(input: { readonly controlPlane: ControlPlaneAccess }, principal: string | undefined): ServerAccess {
+  if (principal === undefined) return { auth: { kind: "none" } }
+  const access = input.controlPlane
+  if (access.kind === "port") return { auth: { kind: "none" }, account: access.run }
+  if (access.kind === "bearer") return { auth: { kind: "bearer", token: async (options) => (await access.token({ skipCache: options?.fresh })) ?? undefined } }
+  return { auth: { kind: "none" }, cookies: true }
+}
+
 export type ServerConfig = {
   readonly serverUrl?: string
   readonly auth: AuthSource

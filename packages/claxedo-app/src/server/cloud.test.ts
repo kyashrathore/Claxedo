@@ -6,11 +6,12 @@ import { createHostedAccount } from "./account"
 import { createCloudApi } from "./cloud"
 import { placementId, projectId, type ProjectId } from "./ids"
 import type { Transport } from "./transport"
+import { bootstrapCatalog } from "./wire/placements"
 import type { Project } from "./types"
 import type { WorkspaceWakes } from "./workspace-wakes"
 import { createWorkspaces } from "./workspaces"
 
-const bootstrap = { deployment: { issuesSessions: false }, project: [] }
+const bootstrap = { deployment: { serverKind: "daemon", issuesSessions: false }, project: [] }
 const created = { workspace_id: "ws_new", project_id: "prj_widgets", backing: "cloud-vm", repo_url: "https://github.com/acme/widgets", workspace_name: "Widgets", status: "provisioning" }
 const wakes: WorkspaceWakes = {
   runtime: () => ({ kind: "live" }),
@@ -27,7 +28,7 @@ function transport(posted: Posted[]): Transport {
     posted.push({ path, body: typeof init?.body === "string" ? JSON.parse(init.body) : init?.body })
     return { workspaceId: "ws_new", directory: "/workspace/widgets" }
   }
-  return { serverUrl: "http://127.0.0.1:1", loopback: true, json } as Pick<Transport, "serverUrl" | "loopback" | "json"> as Transport
+  return { serverUrl: "http://127.0.0.1:1", loopback: true, serverKind: () => "daemon", bootstrap: async () => bootstrapCatalog(bootstrap), json } as Pick<Transport, "serverUrl" | "loopback" | "json"> as Transport
 }
 
 function world(signed: boolean) {

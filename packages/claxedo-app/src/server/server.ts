@@ -1,6 +1,6 @@
 import { QueryClient } from "@tanstack/solid-query"
 import { createSignal } from "solid-js"
-import { createHostedAccount, type HostedAccount } from "./account"
+import { createBrowserHostedAccount, createHostedAccount, type HostedAccount } from "./account"
 import { createAccountsApi } from "./accounts"
 import { createCapabilities, type CapabilitiesOwner } from "./capabilities"
 import { createCloudApi } from "./cloud"
@@ -94,7 +94,7 @@ function serverApis(transport: Transport, workspaces: Workspaces, status: Status
   const wakes = createWorkspaceWakes(transport, workspaces)
   return {
     sessions: createSessionsApi(transport, workspaces, status, wakes, projection, account),
-    projects: createProjectsApi(transport, queryClient, workspaces.refresh),
+    projects: createProjectsApi(transport, queryClient, workspaces),
     placements: {
       byId: workspaces.byId,
       list: workspaces.list,
@@ -126,7 +126,7 @@ function serverApis(transport: Transport, workspaces: Workspaces, status: Status
 export function createServer(config: ServerConfig): ServerHandle {
   const queryClient = createQueryClient()
   const transport = createTransport(config)
-  const account = config.account ? createHostedAccount(config.account) : undefined
+  const account = config.account ? createHostedAccount(config.account) : config.cookies ? createBrowserHostedAccount(transport) : undefined
   const workspaces = createWorkspaces(transport, queryClient, account)
   const status = createStatusOwner(transport)
   const intake = createEventIntake({ serverUrl: transport.serverUrl, queryClient, workspaces, status })

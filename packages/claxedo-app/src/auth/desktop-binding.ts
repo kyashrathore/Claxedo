@@ -1,5 +1,6 @@
 import { createSignal, onCleanup, type Accessor } from "solid-js"
-import type { AccountBinding, ControlPlaneAccess, AccountSession } from "./binding"
+import type { ControlPlaneAccess } from "@/server"
+import type { AccountBinding, AccountSession } from "./binding"
 import { desktopAccountState, type DesktopAccountBridge, type DesktopAccountState } from "./desktop-bridge"
 
 type Adopt = (answer: () => Promise<unknown>) => Promise<void>

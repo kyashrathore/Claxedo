@@ -12,7 +12,7 @@ function watchColors(server: Server, state: ProjectState, projects: Accessor<rea
   createEffect(() => {
     const list = projects()
     if (list.length === 0) return
-    const plan = planProjectColorAssignment({ projects: list, colors: { ...state.colors() }, requested, pick: pickAvailableColor })
+    const plan = planProjectColorAssignment({ projects: list, colors: { ...state.colors() }, requested, pick: pickAvailableColor, configurationAvailable: server.projects.configurationAvailable() })
     for (const { id, color } of plan.assignments) state.setColor(id, color)
     for (const { id, color } of plan.remoteUpdates) {
       void server.projects.update(id, { icon: { color } }).catch((error: unknown) => {

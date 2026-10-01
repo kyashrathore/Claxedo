@@ -1,5 +1,7 @@
 import { decodeHostedResult, type DecodedHostedResult, type HostedOperationName, type RunHostedOperation } from "@claxedo/account-contract"
 import { hostedOperationError, ServerError } from "./errors"
+import { createOperations } from "./operations"
+import type { Transport } from "./transport"
 
 export type HostedAccount = {
   readonly run: <N extends HostedOperationName>(operation: N, input?: Readonly<Record<string, unknown>>) => Promise<DecodedHostedResult<N>>
@@ -11,6 +13,11 @@ function decodeHostedAnswer<N extends HostedOperationName>(operation: N, raw: un
   } catch (error) {
     throw new ServerError({ class: "internal", message: error instanceof Error ? error.message : String(error), cause: error })
   }
+}
+
+export function createBrowserHostedAccount(transport: Transport): HostedAccount {
+  const operations = createOperations(transport, undefined)
+  return { run: async (operation, input) => decodeHostedAnswer(operation, await operations.run(operation, input)) }
 }
 
 export function createHostedAccount(run: RunHostedOperation): HostedAccount {

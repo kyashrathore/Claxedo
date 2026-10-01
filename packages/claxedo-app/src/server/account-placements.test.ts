@@ -6,10 +6,11 @@ import { createHostedAccount } from "./account"
 import { projectId } from "./ids"
 import { projectQueries } from "./projects"
 import type { Transport } from "./transport"
+import { bootstrapCatalog } from "./wire/placements"
 import { createWorkspaces } from "./workspaces"
 
 const bootstrap = {
-  deployment: { issuesSessions: false },
+  deployment: { serverKind: "daemon", issuesSessions: false },
   project: [{ id: "local_app", worktree: "/Users/ada/app", workspaces: { "/Users/ada/app": { id: "ws_shared", directory: "/Users/ada/app", reachable: true } } }],
 }
 
@@ -20,7 +21,7 @@ const machines = { workspaces: [{ workspace_id: "ws_shared", project_id: "prj_ap
 
 function transport(): Transport {
   const answers: Record<string, unknown> = { "/api/claxedo/bootstrap": bootstrap, "/api/claxedo/projects": projects }
-  return { serverUrl: "http://127.0.0.1:1", loopback: true, json: async (path: string) => answers[path] } as Pick<Transport, "serverUrl" | "loopback" | "json"> as Transport
+  return { serverUrl: "http://127.0.0.1:1", loopback: true, serverKind: () => "daemon", bootstrap: async () => bootstrapCatalog(bootstrap), json: async (path: string) => answers[path] } as Pick<Transport, "serverUrl" | "loopback" | "json"> as Transport
 }
 
 function world(run: (operation: string) => Promise<unknown>, gcTime?: number) {

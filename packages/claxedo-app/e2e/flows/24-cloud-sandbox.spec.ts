@@ -45,6 +45,11 @@ async function openSession(page: Page, signed: SignedStack, workspace: CloudWork
 
 test("24 a gone sandbox: its session reads from the control plane with the asleep card, and nothing wakes it", async ({ signedCloud, page }) => {
   test.setTimeout(120_000)
+  const projectRequests: string[] = []
+  page.on("request", (request) => {
+    const url = new URL(request.url())
+    if (url.pathname.startsWith("/api/claxedo/projects")) projectRequests.push(url.pathname)
+  })
   const { workspace, sessionId } = await asleepWithHistory(signedCloud)
   const wakes = wakeRequests(page, workspace)
 
@@ -57,6 +62,7 @@ test("24 a gone sandbox: its session reads from the control plane with the aslee
   await expect(page.getByText("Stored in the cloud")).toBeVisible()
   await expect(page.getByText(ASLEEP)).toBeVisible()
   expect(wakes).toEqual([])
+  expect(projectRequests, "daemon project requests on hosted").toEqual([])
 })
 
 test("24 sending to a gone sandbox wakes it, shows the dock waking up, then sends and the reply arrives", async ({ signedCloud, page }) => {
