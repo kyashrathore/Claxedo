@@ -19,20 +19,13 @@ import { makeWorkspace, type Workspace } from "./workspaces"
 
 export type { Workspace }
 
-const SERVER_ENTRY = path.join(SERVER_DIR, "src/deployments/self-hosted-node/index.ts")
+const LOCAL_SERVER_DIR = path.join(REPO_ROOT, "packages/claxedo-local-server")
+const LOCAL_SERVER_ENTRY = path.join(import.meta.dirname, "local-daemon-entry.ts")
 const CLOUD_SERVER_ENTRY = path.join(import.meta.dirname, "cloud-server-entry.ts")
-const SERVER_MANIFEST = path.join(SERVER_DIR, "package.json")
+const SERVER_MANIFEST = path.join(LOCAL_SERVER_DIR, "package.json")
 const TEXT_IMPORTS = pathToFileURL(path.join(REPO_ROOT, "packages/workspace-runtime/src/text-imports.mjs")).href
 const RETIREMENT_FAULT = pathToFileURL(path.join(import.meta.dirname, "retirement-fault.mjs")).href
 const PLUGIN_INSTALL_COPY_FAULT = pathToFileURL(path.join(import.meta.dirname, "plugin-install-copy-fault.mjs")).href
-
-export type SignedDaemon = {
-  publicOrigin: string
-  secret: string
-  distDir: string
-  operators: readonly string[]
-  runtimeKeys: { privatePem: string; publicPem: string }
-}
 
 export type Daemon = {
   url: string
@@ -43,7 +36,7 @@ export type Daemon = {
   acpScriptDir: string
   log: () => string
   makeWorkspace: (name: string, projectName?: string) => Promise<Workspace>
-  restart: (options?: { signed?: SignedDaemon }) => Promise<void>
+  restart: () => Promise<void>
   killAndRestart: (options?: { pathPrefix?: string }) => Promise<void>
   close: () => Promise<void>
 }
@@ -87,22 +80,10 @@ async function daemonEnv(input: DaemonInput): Promise<NodeJS.ProcessEnv> {
       CLAXEDO_RUNTIME_ACCESS_TOKEN_PRIVATE_KEY_PEM: runtimeKeys.privateKey.export({ type: "pkcs8", format: "pem" }).toString(),
       CLAXEDO_RUNTIME_ACCESS_TOKEN_PUBLIC_KEY_PEM: runtimeKeys.publicKey.export({ type: "spki", format: "pem" }).toString(),
     } : {}),
-    TSX_TSCONFIG_PATH: path.join(SERVER_DIR, "tsconfig.json"),
+    TSX_TSCONFIG_PATH: path.join(input.cloud ? SERVER_DIR : LOCAL_SERVER_DIR, "tsconfig.json"),
     ...(input.pathPrefix ? { PATH: `${input.pathPrefix}${path.delimiter}${isolated.PATH}` } : {}),
     ...(input.piExecutable ? { PI_EXECUTABLE: input.piExecutable } : {}),
     ...(input.claudeExecutable ? { CLAUDE_CODE_EXECUTABLE: input.claudeExecutable } : {}),
-  }
-}
-
-function signedEnv(signed: SignedDaemon): NodeJS.ProcessEnv {
-  return {
-    CLAXEDO_EMBEDDED_AUTH: "1",
-    BETTER_AUTH_URL: signed.publicOrigin,
-    CLAXEDO_EMBEDDED_AUTH_SECRET: signed.secret,
-    CLAXEDO_APP_DIST_DIR: signed.distDir,
-    CLAXEDO_OPERATOR_SUBJECTS: signed.operators.join(","),
-    CLAXEDO_RUNTIME_ACCESS_TOKEN_PRIVATE_KEY_PEM: signed.runtimeKeys.privatePem,
-    CLAXEDO_RUNTIME_ACCESS_TOKEN_PUBLIC_KEY_PEM: signed.runtimeKeys.publicPem,
   }
 }
 
@@ -125,7 +106,7 @@ function launchDaemon(runtime: DaemonRuntime, env: NodeJS.ProcessEnv, cwd: strin
   const child = spawn(runtime.node, ["--conditions=development", "--import", TEXT_IMPORTS,
     ...(retirementFault ? ["--import", RETIREMENT_FAULT] : []),
     ...(process.env.CLAXEDO_E2E_PLUGIN_FAULT === "install-time-copy" ? ["--import", PLUGIN_INSTALL_COPY_FAULT] : []),
-    "--import", TSX_LOADER, cloud ? CLOUD_SERVER_ENTRY : SERVER_ENTRY], {
+    "--import", TSX_LOADER, cloud ? CLOUD_SERVER_ENTRY : LOCAL_SERVER_ENTRY], {
     cwd,
     env,
     stdio: ["ignore", "pipe", "pipe"],
@@ -141,7 +122,7 @@ export async function startDaemon(input: DaemonInput): Promise<Daemon> {
   let owned = launchDaemon(runtime, input.cloud ? { ...env, CLAXEDO_EMBEDDED_AUTH: "0", CLAXEDO_SIGNED_CLOUD_AUTH: "0" } : env, input.dataDir, input.cloud, input.retirementFault)
   let cloudToken: string | undefined
   let cloudMemberToken: string | undefined
-  const listening = `[claxedo-server] listening on ${url}`
+  const listening = `[${input.cloud ? "claxedo-server" : "claxedo-local-server"}] listening on ${url}`
   const health = (label: string) =>
     waitForHealth(`${url}/api/claxedo/health`, { label, log: owned.log, child: owned.child, ready: () => owned.log().includes(listening) })
   try {
@@ -201,12 +182,11 @@ export async function startDaemon(input: DaemonInput): Promise<Daemon> {
     acpScriptDir: dirs.acpScriptDir,
     log: () => owned.log(),
     makeWorkspace: (name, projectName) => makeWorkspace(directTransport, url, dirs.workspaces, name, projectName),
-    restart: async (options = {}) => {
+    restart: async () => {
       await stopProcess(owned.child)
       env = { ...env, CLAXEDO_DATA_DIR: await restartedDataDir(input.dataDir) }
-      if (options.signed) env = { ...env, ...signedEnv(options.signed) }
       owned = launchDaemon(runtime, env, input.dataDir, input.cloud, input.retirementFault)
-      await health(options.signed ? "signed daemon" : "restarted daemon")
+      await health("restarted daemon")
     },
     killAndRestart: async (options = {}) => {
       owned.child.kill("SIGKILL")

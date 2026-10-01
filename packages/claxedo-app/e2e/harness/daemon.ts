@@ -16,6 +16,8 @@ import { makeWorkspace, type Workspace } from "../../../harness/e2e/harness/work
 export type { Workspace }
 
 const SERVER_ENTRY = path.join(SERVER_DIR, "src/deployments/self-hosted-node/index.ts")
+const LOCAL_SERVER_DIR = path.join(REPO_ROOT, "packages/claxedo-local-server")
+const LOCAL_SERVER_ENTRY = path.join(REPO_ROOT, "packages/harness/e2e/harness/local-daemon-entry.ts")
 const TEXT_IMPORTS = pathToFileURL(path.join(REPO_ROOT, "packages/workspace-runtime/src/text-imports.mjs")).href
 
 export type SignedDaemon = {
@@ -56,7 +58,7 @@ async function daemonEnv(input: DaemonInput): Promise<NodeJS.ProcessEnv> {
     CLAXEDO_DATA_DIR: input.dataDir,
     CLAXEDO_SERVER_PORT: String(input.port),
     CLAXEDO_APP_DIST_DIR: input.distDir,
-    TSX_TSCONFIG_PATH: path.join(SERVER_DIR, "tsconfig.json"),
+    TSX_TSCONFIG_PATH: path.join(LOCAL_SERVER_DIR, "tsconfig.json"),
     ...input.env,
   }
 }
@@ -70,6 +72,7 @@ function signedEnv(signed: SignedDaemon): NodeJS.ProcessEnv {
     CLAXEDO_OPERATOR_SUBJECTS: signed.operators.join(","),
     CLAXEDO_RUNTIME_ACCESS_TOKEN_PRIVATE_KEY_PEM: signed.runtimeKeys.privatePem,
     CLAXEDO_RUNTIME_ACCESS_TOKEN_PUBLIC_KEY_PEM: signed.runtimeKeys.publicPem,
+    TSX_TSCONFIG_PATH: path.join(SERVER_DIR, "tsconfig.json"),
     ...(signed.cloud
       ? {
           CLAXEDO_ENABLE_DOCKER_SANDBOX: "1",
@@ -82,7 +85,8 @@ function signedEnv(signed: SignedDaemon): NodeJS.ProcessEnv {
 }
 
 function launchDaemon(env: NodeJS.ProcessEnv, cwd: string): OwnedProcess {
-  const child = spawn("node", ["--conditions=development", "--import", TEXT_IMPORTS, "--import", TSX_LOADER, SERVER_ENTRY], {
+  const child = spawn(process.env.CLAXEDO_E2E_NODE ?? "node", ["--conditions=development", "--import", TEXT_IMPORTS, "--import", TSX_LOADER,
+    env.CLAXEDO_EMBEDDED_AUTH === "1" ? SERVER_ENTRY : LOCAL_SERVER_ENTRY], {
     cwd,
     env,
     stdio: ["ignore", "pipe", "pipe"],
@@ -95,9 +99,9 @@ export async function startDaemon(input: DaemonInput): Promise<Daemon> {
   let env = await daemonEnv(input)
   const url = `http://127.0.0.1:${input.port}`
   let owned = launchDaemon(env, input.dataDir)
-  const listening = `[claxedo-server] listening on ${url}`
+  const listening = () => `[${env.CLAXEDO_EMBEDDED_AUTH === "1" ? "claxedo-server" : "claxedo-local-server"}] listening on ${url}`
   const health = (label: string) =>
-    waitForHealth(`${url}/api/claxedo/health`, { label, log: owned.log, child: owned.child, ready: () => owned.log().includes(listening) })
+    waitForHealth(`${url}/api/claxedo/health`, { label, log: owned.log, child: owned.child, ready: () => owned.log().includes(listening()) })
   try {
     await health("daemon")
     await prepareScriptedServer(directTransport, url, { scripted: input.scripted, acpScriptDir: dirs.acpScriptDir, red: input.red })

@@ -70,6 +70,7 @@ async function signIn(page: Page, frontUrl: string, account: Account) {
 async function startCloudRelay(stack: Stack, signed: SignedDaemon, relayPort: number | undefined, frontUrl: string): Promise<Relay | undefined> {
   if (relayPort === undefined || !signed.cloud) return undefined
   return startRelay({
+    root: stack.dataDir,
     port: relayPort,
     resolverToken: signed.cloud.resolverToken,
     controlPlaneUrl: stack.url,
@@ -113,14 +114,14 @@ export async function startSignedStack(input: SignedStackInput): Promise<SignedS
       relayLog: () => relay?.log() ?? "",
       close: async () => {
         await opened.close()
-        await stack.close()
         await closeCloud()
+        await stack.close()
       },
     }
   } catch (error) {
     await front?.close()
-    await stack.close()
     await closeCloud()
+    await stack.close()
     throw error
   }
 }

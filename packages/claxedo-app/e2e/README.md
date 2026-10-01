@@ -100,7 +100,7 @@ Rules the checks enforce:
 | `log()` | Everything the daemon wrote to stdout and stderr |
 | `acpScriptDir`, `dataDir`, `url`, `port` | Paths and address |
 
-The daemon runs `packages/claxedo-server`'s self-hosted entry from the spec's data directory, in the environment described under [Isolation](#isolation), with `CLAXEDO_DATA_DIR` there and `CLAXEDO_APP_DIST_DIR` pointing at the built app. It counts as started once its health route answers and its own log says it is listening on the stack's URL. Pi is the default native harness.
+The unsigned daemon runs `packages/harness/e2e/harness/local-daemon-entry.ts`, which composes `packages/claxedo-local-server`'s `startLocalServer`, Agent Plugins and Tasks. It runs from the spec's data directory, in the environment described under [Isolation](#isolation), with `CLAXEDO_DATA_DIR` there. The test bundle handler serves `CLAXEDO_APP_DIST_DIR` after an unmatched GET; API responses retain the local server's headers. It counts as started once its health route answers and its own log says it is listening on the stack's URL. Pi is the default native harness.
 
 ### `stack.gitRemote(name)`
 
@@ -156,7 +156,7 @@ Opens the stream the app reads (`/api/wr/events`) and records every frame. `fram
 
 ### `signed` (the signed self-hosted stack)
 
-The same daemon, signed through the self-hosted server's embedded Better Auth issuer, which the app signs in to with an email and a password. The issuer serves the browser's sign-in descriptor only on an HTTPS public origin, so the stack puts an HTTPS front on a port from the run's range: a self-signed certificate made with `openssl`, forwarding requests and websockets to the daemon. The config sets `ignoreHTTPSErrors`. The app is built for that origin into `dist-e2e-signed/` once per worker.
+The fixture replaces the unsigned local daemon with the self-hosted server's embedded Better Auth issuer, which the app signs in to with an email and a password. This fixture still blocks retirement of the self-hosted server: folder workspace registration requires a hosted enrollment fixture, and the existing hosted Miniflare fixture needs configurable email auth and app origin. The hosted product supports email/password auth. The issuer serves the browser's sign-in descriptor only on an HTTPS public origin, so the stack puts an HTTPS front on a port from the run's range: a self-signed certificate made with `openssl`, forwarding requests and websockets to the daemon. The config sets `ignoreHTTPSErrors`. The app is built for that origin into `dist-e2e-signed/` once per worker.
 
 The stack starts unsigned, so the machine-wide setup (the scripted providers, Pi by default, the scripted ACP connection) runs the way a machine is used before anyone signs in. Then it restarts signed, signs up the owner, and restarts again with the owner as the deployment operator (`CLAXEDO_OPERATOR_SUBJECTS`), the only account that may record a folder project on a signed box. A signed box also signs its session stream leases, so the stack generates an Ed25519 pair for `CLAXEDO_RUNTIME_ACCESS_TOKEN_PRIVATE_KEY_PEM` and `…_PUBLIC_KEY_PEM`; without it `/api/wr/events` answers 503.
 
@@ -175,7 +175,7 @@ An `Account` is `{ name, email, password, subject, api, transport }`. Its `api` 
 
 The `signed` stack plus what a cloud workspace needs, all real apart from the sandbox provider:
 
-- **The relay.** A real `@claxedo/workspace-relay` (`harness/relay.ts`, `bun src/main.ts`) on a port from the run's range, resolving targets through the daemon's `/internal/relay` with a shared resolver token, verifying the daemon's Runtime Access Tokens with its public key, and minting relay host tokens with an ephemeral key. The daemon gets `CLAXEDO_WORKSPACE_RELAY_URL`, `CLAXEDO_RELAY_JWKS_URL` (the relay's JWKS, which the sandbox's session-authority calls are verified against) and the resolver token. The relay runs with its default target cache: a stopped sandbox comes back as a new container under the same host id on a new port, and the tokens the daemon mints after the wake carry the new lease epoch, which the relay's cache is keyed by.
+- **The relay.** The production `@claxedo/workspace-relay` Worker and `WorkspaceRelayRoom` Durable Object under workerd, launched through `harness/relay.ts` and the shared `packages/harness/e2e/harness/relay-workerd.mjs` Node fixture. It uses the relay's production Wrangler config, an isolated home and Durable Object storage, and loopback-only outbound networking. It resolves targets through the daemon's `/internal/relay`, verifies the daemon's Runtime Access Tokens, and mints relay host tokens with an ephemeral key. The daemon gets `CLAXEDO_WORKSPACE_RELAY_URL`, `CLAXEDO_RELAY_JWKS_URL` and the resolver token. Teardown stops workerd before removing its storage directory.
 - **The sandbox provider, faked at the Docker CLI.** `CLAXEDO_ENABLE_DOCKER_SANDBOX=1` selects the daemon's real Docker driver, and `harness/stand-ins/docker` answers the commands it runs: `create` records the container's env and port, `start` runs the repository's `workspace-runtime` on the host with that env on a free port, `port` reports it, `stop`/`rm` end it, and `host.docker.internal` in the env is rewritten to `127.0.0.1`, which is what a container's view of the host resolves to. The container's workspace is mounted at a host path: `makeCloudWorkspace` creates it with a `remoteDirectory` in the spec's data directory. The stack ends every sandbox it started when it closes (`harness/sandboxes.ts`).
 - **Arranging through the API** (`harness/cloud.ts`): `makeCloudWorkspace`, `startCloudWorkspace` (the explicit connect), `cloudTurn` (reserve, create and prompt through `/workspaces/:id/*` as the owner, then the checkpoint pull that stores the transcript in the control plane, as the app does on a turn's end), `stopCloudWorkspace` (the lifecycle stop) and `storedMessages` (the control plane's copy).
 - The scripted ACP agent advertises `loadSession`, so a session continues after its sandbox restarts, as a real agent's does.
@@ -231,7 +231,7 @@ e2e/
     fixtures.ts          test.extend: stack, api, app; fails a spec on unexpected egress
     global-setup.ts      prepareHarness: the launch gate child, the daemon port, the app build
     stack.ts             starts the egress guard, the model server and the daemon, owns ports and the data dir
-    daemon.ts            the real self-hosted daemon with the built app and scripted agents
+    daemon.ts            the local daemon; the signed fixture still selects self-hosted
     agent-env.ts         the agent CLIs this suite's daemon finds: its stand-ins and the pinned Pi
     launch-gate-child.ts builds the runtime's launch gate child
     desktop-build.ts     builds packages/claxedo-desktop when stale
