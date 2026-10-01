@@ -2,7 +2,7 @@ import { afterEach, expect, test, vi } from "vitest"
 import fs from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
-import { ensureEmbeddedWorkspaceRuntime, shutdownEmbeddedWorkspaceRuntimes, syncEmbeddedWorkspaceRuntimes } from "./embedded-workspace-runtime"
+import { configureEmbeddedWorkspaceRuntime, ensureEmbeddedWorkspaceRuntime, shutdownEmbeddedWorkspaceRuntimes, syncEmbeddedWorkspaceRuntimes } from "./embedded-workspace-runtime"
 import { disposeAgentConfig, saveCommand } from "@claxedo/server-core/agent-config/index"
 import { ClaxedoDB } from "@claxedo/server-core/platform/db/index"
 import { closeAuthorityDatabases } from "@claxedo/server-core/authority/adapters/sqlite/workspace-authority-store"
@@ -13,6 +13,7 @@ async function runtime(id: string) {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "embedded-config-publication-"))
   roots.push(root)
   process.env.CLAXEDO_DATA_DIR ??= path.join(root, "data")
+  configureEmbeddedWorkspaceRuntime({ sessionIdWorkspace: () => undefined })
   return ensureEmbeddedWorkspaceRuntime({ id, directory: root, kind: "local", created_at: 1, updated_at: 1 }, { config: "skip" })
 }
 afterEach(async () => {

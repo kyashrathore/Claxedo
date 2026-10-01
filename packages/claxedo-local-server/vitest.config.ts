@@ -4,7 +4,8 @@ import path from "node:path"
 export default defineConfig({
   resolve: {
     alias: [
-      { find: "@claxedo/session-core", replacement: path.resolve(import.meta.dirname, "../session-core/src/index.ts") },
+      { find: /^@claxedo\/session-core\/access-policy$/, replacement: path.resolve(import.meta.dirname, "../session-core/src/session-access-policy.ts") },
+      { find: /^@claxedo\/session-core$/, replacement: path.resolve(import.meta.dirname, "../session-core/src/index.ts") },
       { find: /^@claxedo\/harness\/opencode-sdk\/(.+)$/, replacement: path.resolve(import.meta.dirname, "../harness/src/transports/opencode-sdk/$1.ts") },
       { find: /^@claxedo\/harness\/opencode-sdk$/, replacement: path.resolve(import.meta.dirname, "../harness/src/transports/opencode-sdk/index.ts") },
       // The runtime is reached from several packages; aliasing it to SOURCE
