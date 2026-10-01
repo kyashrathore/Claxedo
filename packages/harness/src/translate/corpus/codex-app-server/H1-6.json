@@ -206,7 +206,17 @@
           "value": "evt_000000"
         }
       ],
-      "output": []
+      "output": {
+        "state": {
+          "assistantTextByItemId": {},
+          "toolOutputByCallId": {},
+          "toolsByItemId": {},
+          "reportedModels": {
+            "01a0d7b5-fd4c-71d3-8bcd-95f5d17c588d": "gpt-6-astra"
+          }
+        },
+        "events": []
+      }
     },
     {
       "state": {

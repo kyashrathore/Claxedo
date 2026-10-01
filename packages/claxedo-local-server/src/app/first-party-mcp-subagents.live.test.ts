@@ -102,12 +102,13 @@ describe("a subagent started over the injected first-party MCP", () => {
 
     const childTurns = await readMessages(binding.sessionId)
     const prompts = childTurns.filter((row) => row.info.role === "user").flatMap((row) => row.parts.map((part) => part.text ?? ""))
-    // The embedded harness has no instruction channel, so the child's
-    // standing block rides at the head of this one prompt instead.
-    expect(prompts).toHaveLength(1)
-    expect(prompts[0].endsWith("\n\nRole: reviewer\n\nread the diff")).toBe(true)
-    expect(prompts[0]).toContain("cannot start subagents of your own")
-    expect(prompts.join("")).not.toContain("a secret the child must never see")
+    // OpenCode takes instructions as a prompt prefix, so the child's standing
+    // block is stored on the session and prefixed when the turn runs; the user
+    // message holds the role line and the task alone.
+    expect(prompts).toEqual(["Role: reviewer\n\nread the diff"])
+    const config = (await (await live.runtimeRequest(`/session/${binding.sessionId}/config`)).json()) as { instructions?: string }
+    expect(config.instructions).toContain("cannot start subagents of your own")
+    expect(`${prompts.join("")}${config.instructions}`).not.toContain("a secret the child must never see")
   })
 
   test("wakes its idle parent exactly once when it finishes, with the child's own outcome", async () => {

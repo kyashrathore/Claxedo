@@ -96,9 +96,9 @@ const CAPABILITIES: HarnessConnectionCapabilities = {
 }
 
 /**
- * An in-process harness: turns in memory, permission modes with rungs, no
- * model of its own. A held turn never settles until released, which is how a
- * child is kept active for the cap rule.
+ * An in-process harness: turns in memory, permission modes with rungs, and the
+ * one model the parent's group names. A held turn never settles until
+ * released, which is how a child is kept active for the cap rule.
  */
 function fakeHarness() {
   const prompts: Array<{ sessionId: string; messageID?: string }> = []
@@ -107,7 +107,11 @@ function fakeHarness() {
   let currentMode = "workspace-write"
   const modes = (): AgentPermissionModeState => ({ modes: [...MODES], currentModeId: currentMode, appliesFrom: "next-turn" })
   const transport = new FakeTransport({
-    capabilities: { configOwner: "runtime", instructionChannel: "turn-system-prompt", subagents: true, requests: { permissions: true, questions: true, elicitation: false } },
+    capabilities: {
+      configOwner: "runtime", instructionChannel: "turn-system-prompt", subagents: true,
+      requests: { permissions: true, questions: true, elicitation: false },
+      modelSelection: { status: "optional", models: [{ providerId: "fake", modelId: "m1", name: "Fake M1" }] },
+    },
     turn: async function* ({ session, turn }) {
       prompts.push({ sessionId: session.binding.sessionId, messageID: turn.userMessageId })
       if (holding) await new Promise<void>((resolve) => held.push(resolve))
