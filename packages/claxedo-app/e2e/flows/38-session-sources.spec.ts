@@ -131,8 +131,7 @@ test("38 terminals are read only for an expanded project's live placements", asy
   expect((await settled()).filter((path) => path === "/api/wr/pty"), "terminal lists after expanding one more").toHaveLength(1)
 })
 
-test("38 a stopped sandbox's session paints its stored surface, and its project reads no terminal list and wakes nothing", async ({ signedCloud, page }) => {
-  test.skip(true, "a browser signed in to the hosted Worker lists no projects until goal/web-hosted-account gives it the account's project source")
+test.skip("38 a stopped sandbox's session paints its stored surface, and its project reads no terminal list and wakes nothing", { annotation: { type: "skip", description: "a browser signed in to the hosted Worker lists no projects until goal/web-hosted-account gives it the account's project source" } }, async ({ signedCloud, page }) => {
   test.setTimeout(120_000)
   const workspace = await makeCloudWorkspace(signedCloud, "main")
   await startCloudWorkspace(signedCloud, workspace)

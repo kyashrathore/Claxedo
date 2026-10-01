@@ -1,7 +1,6 @@
 import { acpScriptToken, assistantText, expect, SCRIPTED_ACP_HARNESS, test, UI } from "../harness"
 
-test("00 signed smoke: a signed-out reader is sent to /login; the owner signs in, opens their turn and logs out", async ({ signed, page, isMobile }) => {
-  test.skip(true, "a browser signed in to the hosted Worker lists no projects until goal/web-hosted-account gives it the account's project source")
+test.skip("00 signed smoke: a signed-out reader is sent to /login; the owner signs in, opens their turn and logs out", { annotation: { type: "skip", description: "a browser signed in to the hosted Worker lists no projects until goal/web-hosted-account gives it the account's project source" } }, async ({ signed, page, isMobile }) => {
   expect((await page.request.get(`${signed.url}/api/workspace?host=provisioner`)).status()).toBe(401)
   const workspace = await signed.makeWorkspace("signed", "Signed")
   await signed.local.acp.write("hello", { steps: [{ kind: "text", text: "Signed hello" }] })
