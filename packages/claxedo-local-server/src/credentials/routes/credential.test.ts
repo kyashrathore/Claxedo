@@ -573,7 +573,7 @@ describe("credential routes", () => {
             "details": {
               "detail": {
                 "message": "Credential provider does not support verification",
-                "name": "Error",
+                "name": "CredentialVerificationError",
               },
             },
             "message": "Credential verification failed",
@@ -604,7 +604,7 @@ describe("credential routes", () => {
       error: {
         code: "credential_verification_failed",
         message: "Credential verification failed",
-        details: { detail: { name: "Error", message: "Credential provider request failed" } },
+        details: { detail: { name: "CredentialVerificationError", message: "Credential provider request failed" } },
       },
     })
     expect(JSON.stringify(body)).not.toContain(secret)
