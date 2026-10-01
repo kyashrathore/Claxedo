@@ -57,6 +57,11 @@ export const hostConnector: Policy = {
   },
 
   isolation: {
+    // The signing, sealing and bootstrap entries build from the machine wire
+    // codecs and the base64url helpers under them, whose published subpath is
+    // dist-only; the connector entry above reaches neither.
+    additionalPackageDirs: ["packages/account-contract"],
+    buildPackages: [{ packageDir: "packages/claxedo-helpers", inputOnly: true }],
     commands: [
       ["bun", "run", "build"],
       ["bun", "run", "smoke:build"],
