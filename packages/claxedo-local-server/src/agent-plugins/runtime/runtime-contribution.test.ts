@@ -1,7 +1,7 @@
 import fs from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
-import { afterEach, describe, expect, test, vi } from "vitest"
+import { afterEach, describe, expect, test } from "vitest"
 import { Hono } from "hono"
 import { inspectPluginTree } from "@claxedo/server-core/agent-plugins/artifacts/acquire"
 import { encodePluginTreeBase64 } from "@claxedo/server-core/agent-plugins/artifacts/codec"
@@ -39,7 +39,6 @@ async function fixture(input: { mcp?: boolean; env?: NodeJS.ProcessEnv } = {}) {
       })),
     }] : []),
   ]))
-  const applyHarnessLaunch = vi.fn(async () => {})
   const app = new Hono()
   mountRouteContributions({
     app,
@@ -51,18 +50,17 @@ async function fixture(input: { mcp?: boolean; env?: NodeJS.ProcessEnv } = {}) {
       workspaceId: "ws_1",
       directory: "/workspace",
       stateDirectory: root,
-      applyHarnessLaunch,
       fetch: (request: Request) => Promise.resolve(app.fetch(request)),
       registerSessionTools: () => async () => {},
       unregisterSessionTools: () => async () => {},
     },
   })
-  return { root, artifact, app, applyHarnessLaunch }
+  return { root, artifact, app }
 }
 
 describe("agentPluginWorkspaceRuntimeContribution", () => {
-  test("verifies delivered bytes, atomically materializes, and reapplies an idempotent revision", async () => {
-    const { artifact, app, applyHarnessLaunch } = await fixture()
+  test("verifies delivered bytes, atomically materializes, and returns an idempotent receipt", async () => {
+    const { artifact, app } = await fixture()
     const body = {
       version: 1,
       identity: { mode: "signed", userId: "user_1", projectId: "project_1" },
@@ -89,47 +87,26 @@ describe("agentPluginWorkspaceRuntimeContribution", () => {
     })
     expect(second.status).toBe(200)
     expect((await second.json() as { generationId: string }).generationId).toBe(applied.generationId)
-    expect(applyHarnessLaunch).toHaveBeenCalledTimes(2)
   })
 
-  test("an apply queued behind a failed apply runs its own request", async () => {
-    const { artifact, app, applyHarnessLaunch } = await fixture()
-    let fail!: (error: Error) => void
-    applyHarnessLaunch.mockImplementationOnce(() => new Promise<void>((_resolve, reject) => { fail = reject }))
-    let bodyRead!: () => void
-    const secondBodyRead = new Promise<void>((resolve) => { bodyRead = resolve })
-    const post = (revision: number, observed?: () => void) => {
-      const bytes = new TextEncoder().encode(JSON.stringify({
-        version: 1,
-        identity: { mode: "signed", userId: "user_1", projectId: "project_1" },
-        revision,
+  test("a materialization queued behind a failed request runs its own request", async () => {
+    const { artifact, app } = await fixture()
+    const post = (tree: string) => app.request(AGENT_PLUGINS_RUNTIME_APPLY_PATH, {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        version: 1, identity: { mode: "signed", userId: "user_1", projectId: "project_1" }, revision: 1,
         selections: [{ pluginInstanceId: "claxedo/review", artifactDigest: artifact.digest, harnessIds: ["claude"] }],
-        artifacts: [{ digest: artifact.digest, tree: encodePluginTreeBase64(artifact.tree) }],
-        mcpServers: [],
-      }))
-      const body = new ReadableStream<Uint8Array>({ pull(controller) {
-        controller.enqueue(bytes)
-        controller.close()
-        observed?.()
-      } })
-      return app.request(AGENT_PLUGINS_RUNTIME_APPLY_PATH, { method: "POST", headers: { "content-type": "application/json" }, body, duplex: "half" } as RequestInit)
-    }
-    const first = post(1)
-    await vi.waitFor(() => expect(applyHarnessLaunch).toHaveBeenCalledTimes(1))
-    const second = post(2, bodyRead)
-    // Once its body is drained, the handler parses and queues the request in
-    // microtasks, all of which run before the next macrotask.
-    await secondBodyRead
-    await new Promise((resolve) => setImmediate(resolve))
-    fail(new Error("runtime refused the first launch"))
+        artifacts: [{ digest: artifact.digest, tree }], mcpServers: [],
+      }),
+    })
+    const first = post("corrupt")
+    const second = post(encodePluginTreeBase64(artifact.tree))
     expect((await first).status).toBe(500)
-    const queued = await second
-    expect(queued.status).toBe(200)
-    expect(await queued.json()).toMatchObject({ ok: true, revision: 2 })
+    expect((await second).status).toBe(200)
   })
 
   test("refuses bytes outside the exact selected digest set", async () => {
-    const { artifact, app, applyHarnessLaunch } = await fixture()
+    const { artifact, app } = await fixture()
     const response = await app.request(AGENT_PLUGINS_RUNTIME_APPLY_PATH, {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -143,7 +120,6 @@ describe("agentPluginWorkspaceRuntimeContribution", () => {
       }),
     })
     expect(response.status).toBe(400)
-    expect(applyHarnessLaunch).not.toHaveBeenCalled()
   })
 
   test("projects only the sandbox-native broker reference, never the gateway credential", async () => {
@@ -180,7 +156,7 @@ describe("agentPluginWorkspaceRuntimeContribution", () => {
   })
 
   test("refuses a gateway row whose transport or secret name is malformed", async () => {
-    const { artifact, app, applyHarnessLaunch } = await fixture({ mcp: true, env: { CLAXEDO_MCP_ABC: "secret_ref_reference" } })
+    const { artifact, app } = await fixture({ mcp: true, env: { CLAXEDO_MCP_ABC: "secret_ref_reference" } })
     const docs = { pluginInstanceId: "claxedo/review", artifactDigest: artifact.digest, harnessId: "claude", serverName: "docs" }
     const target = "https://mcp-abc.gateway.example/api/claxedo/plugins/mcp/id"
     for (const server of [
@@ -204,7 +180,6 @@ describe("agentPluginWorkspaceRuntimeContribution", () => {
       expect(response.status, JSON.stringify(server)).toBe(400)
       expect((await response.json() as { error: { code: string } }).error.code).toBe("agent_plugins_runtime_request_invalid")
     }
-    expect(applyHarnessLaunch).not.toHaveBeenCalled()
   })
 
   test("withholds a server the control plane marked unavailable rather than projecting its upstream", async () => {
@@ -273,7 +248,7 @@ describe("agentPluginWorkspaceRuntimeContribution", () => {
   })
 
   test("refuses a version it does not implement and a selection smuggled into a default request", async () => {
-    const { artifact, app, applyHarnessLaunch } = await fixture()
+    const { artifact, app } = await fixture()
     const post = (body: unknown) => app.request(AGENT_PLUGINS_RUNTIME_APPLY_PATH, {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -316,6 +291,5 @@ describe("agentPluginWorkspaceRuntimeContribution", () => {
       selections: [{ pluginInstanceId: "claxedo/review", artifactDigest: artifact.digest, harnessIds: ["claude"] }],
     })).status).toBe(400)
 
-    expect(applyHarnessLaunch).not.toHaveBeenCalled()
   })
 })

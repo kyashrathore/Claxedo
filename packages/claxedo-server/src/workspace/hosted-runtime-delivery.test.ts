@@ -10,6 +10,9 @@ import { hostedSandboxInput } from "./hosted-sandbox-input"
 import type { ControlPlaneDatabase } from "../test-support/control-plane-migrations"
 import { workspaceBackingDatabase } from "../test-support/workspace-backing-database"
 
+vi.mock("@claxedo/workspace-runtime/client", () => ({ createWorkspaceRuntimeClient: () => ({ applyConfig: async () => {} }) }))
+vi.mock("@claxedo/server-core/platform/auth/runtime-access-token", () => ({ mintSupervisorBackplaneToken: async () => ({ supervisorBackplaneToken: "supervisor-token" }) }))
+
 const CONTROL_PLANE_ORIGIN = "https://cp.claxedo.test"
 const REQUEST_ORIGIN = "https://edge.claxedo.test"
 const RELAY_URL = "https://relay.claxedo.test"
@@ -108,15 +111,15 @@ async function composition() {
     sandboxManager,
     driver,
     sandboxInput: async (workspaceId, prepared) => hostedSandboxInput(rows.get(workspaceId) ?? {}, { egress, ...prepared }),
-    settings: {} as never,
-    credentials: () => ({}) as never,
+    settings: { read: async () => ({ version: 3, connections: {} }), write: async () => {} },
+    credentials: () => ({ listCredentials: async () => [], accountSelections: async () => ({}) }) as never,
     signingEnv: {},
     provisionedRunner: undefined,
   })
   const env = { WORKSPACE_RUNTIME_MCP_TOOL_GROUPS: "sessions,subagents" }
   const secrets = [{ name: "ANTHROPIC_API_KEY", value: "sk-ant", hosts: ["api.anthropic.com"] }]
   const prepareRuntime = async () => ({ secrets, env })
-  delivery.composeRuntime({ prepareRuntime, provisionRuntime: async () => {} })
+  delivery.composeRuntime({ prepareRuntime })
   const app = HostedWorkspaceRoutes(services, {
     authConfig: { enabled: true, issuer: "https://issuer.test", jwksUrl: "https://issuer.test/jwks" },
     verifier,

@@ -528,6 +528,24 @@ describe("hosted connection", () => {
     })
   })
 
+  test("GET withholds tokens until settings are applied without provisioning from a read", async () => {
+    const authority = fakeAuthority({ openWorkspace: async () => ({
+      allowed: true, role: "owner", workspace: { workspace_id: "ws_1", org_id: "org_1", backing: "cloud-vm" },
+    }) })
+    const ensure = vi.fn()
+    const runtimeProvisioned = vi.fn(async () => false)
+    const { app } = buildApp({ authority, sandboxManager: {
+      target: async () => ({ status: "ready", hostId: "host_1", epoch: 1 }), ensure,
+    } as unknown as SandboxManager, options: { runtimeProvisioned } })
+    expect(await (await app.fetch(get("/ws_1/connection"))).json()).toMatchObject({ status: "provisioning" })
+    expect(authority.recordRuntimeAccessToken).not.toHaveBeenCalled()
+    runtimeProvisioned.mockResolvedValue(true)
+    expect(await (await app.fetch(get("/ws_1/connection"))).json()).toMatchObject({ runtimeAccessToken: "rat-token" })
+    runtimeProvisioned.mockRejectedValue(new Error("Settings read failed"))
+    expect((await app.fetch(get("/ws_1/connection"))).status).toBe(409)
+    expect(ensure).not.toHaveBeenCalled()
+  })
+
   test("GET reports a stopped cloud workspace without provisioning it", async () => {
     const authority = fakeAuthority({
       openWorkspace: vi.fn(async () => ({

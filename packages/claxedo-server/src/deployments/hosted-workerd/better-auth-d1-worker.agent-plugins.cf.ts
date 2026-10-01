@@ -14,7 +14,7 @@ import { createTasksRootCapability, createTasksRootGrant } from "../../tasks/roo
 import { createOwnerGrantMinter, createOwnerRootCapability } from "../../session/owner-grant"
 import { createD1SandboxPassRegister } from "../../platform/auth/d1-sandbox-pass-register"
 import { hostedControlPlaneOrigin } from "../../authority/adapters/worker/control-plane-origin"
-import type { WorkspaceRuntimeContext, WorkspaceRuntimePreparation } from "../../workspace/route-support"
+import type { WorkspaceRuntimeContext } from "../../workspace/route-support"
 import { HostedWorkerCompositionError } from "../../authority/composition-error"
 import { pluginBackendRouteContribution } from "../../plugin-backends/routes"
 import { PluginSupervisor, type PluginSupervisorNamespace } from "../../plugin-backends/supervisor.cf"
@@ -75,7 +75,7 @@ export function composeBetterAuthD1AgentPlugins(
     tasksGrant: createTasksRootCapability(tasksRoot),
     ownerGrant: createOwnerRootCapability({ signingEnv, passes, workspaceOwner: authority.resolveWorkspaceOwner.bind(authority) }),
     passes,
-    ...(base.runtimeDelivery ? { pluginsChanged: base.runtimeDelivery.pluginsChanged } : {}),
+    ...(base.runtimeDelivery ? { pluginsChanged: base.runtimeDelivery.pluginsChanged, pushRuntime: base.runtimeDelivery.provisionRuntime } : {}),
   })
   const prepareRuntime = async (context: WorkspaceRuntimeContext) => {
     const [basePreparation, featurePreparation] = await Promise.all([
@@ -88,13 +88,7 @@ export function composeBetterAuthD1AgentPlugins(
       env: { ...basePreparation?.env, ...featurePreparation.env },
     }
   }
-  const provisionRuntime = async (context: WorkspaceRuntimeContext, preparation?: WorkspaceRuntimePreparation) => {
-    await base.options.productWorkspace?.provisionRuntime?.(context, preparation)
-    await feature.provisionRuntime(context, preparation)
-  }
-  // A refresh of a running sandbox, from a settings, credential or plugin
-  // change, runs this composed stack rather than the base half alone.
-  base.runtimeDelivery?.composeRuntime({ prepareRuntime, provisionRuntime, acpMcp: feature.acpMcp })
+  base.runtimeDelivery?.composeRuntime({ prepareRuntime, pluginRuntime: feature.pluginRuntime })
   const tasks = hostedTasksRouteContributions({
     services: base.plane.services,
     database: env.CONTROL_PLANE_DB,
@@ -140,7 +134,6 @@ export function composeBetterAuthD1AgentPlugins(
       productWorkspace: {
         ...base.options.productWorkspace,
         prepareRuntime,
-        provisionRuntime,
         releaseRuntime: feature.releaseRuntime,
       },
     },
