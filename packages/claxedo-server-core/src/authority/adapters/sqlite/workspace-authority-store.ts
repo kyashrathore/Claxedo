@@ -347,6 +347,7 @@ CREATE TABLE IF NOT EXISTS team_memberships (
   role TEXT NOT NULL,
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL,
+  revoked_at INTEGER,
   PRIMARY KEY (team_id, user_token_identifier)
 );
 CREATE INDEX IF NOT EXISTS team_memberships_by_user ON team_memberships (user_token_identifier);
@@ -461,6 +462,7 @@ CREATE TABLE IF NOT EXISTS team_memberships (
   role TEXT NOT NULL,
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL,
+  revoked_at INTEGER,
   PRIMARY KEY (team_id, user_token_identifier)
 );
 CREATE INDEX IF NOT EXISTS team_memberships_by_user ON team_memberships (user_token_identifier);
@@ -495,6 +497,7 @@ CREATE INDEX IF NOT EXISTS session_share_grants_by_team ON session_share_grants 
     // cannot add a CHECK to an existing table without rebuilding it; the
     // authority refuses any other value on the way in.
     addColumn(db, "session_share_grants", "level", "TEXT NOT NULL DEFAULT 'follow'")
+    addColumn(db, "team_memberships", "revoked_at", "INTEGER")
 
     // A workspace folder is not a thing a person is added to: the only
     // cross-person grant is a session share, and a rank comes from the
@@ -976,7 +979,6 @@ export type IdentifiedSessionShareTargetRow = SessionShareTargetRow & Pick<Sessi
 
 export type WorkspaceAction = "read" | "write" | "admin" | "owner"
 export type WorkspaceRole = "viewer" | "editor" | "admin" | "owner"
-type OrgRole = "member" | "admin" | "owner"
 
 const roleRank: Record<WorkspaceRole, number> = {
   viewer: 1,
@@ -994,22 +996,6 @@ export function roleAllows(role: WorkspaceRole, action: WorkspaceAction) {
   if (role === "admin") return action !== "owner"
   if (role === "editor") return action === "read" || action === "write"
   return action === "read"
-}
-
-function maxRole(roles: Array<WorkspaceRole | undefined>): WorkspaceRole | undefined {
-  return roles.filter((role): role is WorkspaceRole => !!role)
-    .sort((a, b) => roleRank[b] - roleRank[a])[0]
-}
-
-function workspaceRoleValue(input: unknown): WorkspaceRole | undefined {
-  return input === "viewer" || input === "editor" || input === "admin" || input === "owner"
-    ? input
-    : undefined
-}
-
-function orgWorkspaceRole(role: OrgRole) {
-  if (role === "owner" || role === "admin") return "admin" as const
-  return "viewer" as const
 }
 
 export function upsertUser(db: SqliteAuthorityDb, user: AuthorityUser & { issuer?: string; kind?: "human" | "agent" }) {
@@ -1146,123 +1132,4 @@ export function workspaceByPublicId(db: SqliteAuthorityDb, workspaceId: string) 
 export function projectByPublicId(db: SqliteAuthorityDb, projectId: string) {
   return db.prepare<unknown[], ProjectRow>(`SELECT project_id, org_id, repo_key, owner_token_identifier, deleted_at FROM projects WHERE project_id = ?`)
     .get(projectId)
-}
-
-function directProjectRole(db: SqliteAuthorityDb, user: AuthorityUser, projectId: string) {
-  const row = db.prepare<unknown[], { role: string }>(`SELECT role FROM project_memberships WHERE project_id = ? AND token_identifier = ?`)
-    .get(projectId, user.token_identifier)
-  return workspaceRoleValue(row?.role)
-}
-
-function directOrgRole(db: SqliteAuthorityDb, user: AuthorityUser, orgId: string): WorkspaceRole | undefined {
-  const org = db.prepare<unknown[], {
-    owner_token_identifier: string | null
-    deleted_at: number | null
-  }>(`SELECT owner_token_identifier, deleted_at FROM orgs WHERE org_id = ?`).get(orgId)
-  if (!org || org.deleted_at) return undefined
-  const row = db.prepare<unknown[], { role: string }>(`SELECT role FROM org_memberships WHERE org_id = ? AND token_identifier = ?`)
-    .get(orgId, user.token_identifier)
-  if (row?.role === "member" || row?.role === "admin" || row?.role === "owner") return orgWorkspaceRole(row.role)
-  if (org.owner_token_identifier === user.token_identifier) return "admin"
-  return undefined
-}
-
-/**
- * Being in the organization is what makes a person offerable as a share
- * recipient. It carries no standing on the session, the workspace or the
- * machine; only the grant they are then given does.
- */
-export function orgMemberForUser(db: SqliteAuthorityDb, user: AuthorityUser, orgId: string | undefined) {
-  if (!orgId) return false
-  const org = db.prepare<unknown[], {
-    owner_token_identifier: string | null
-    deleted_at: number | null
-  }>(`SELECT owner_token_identifier, deleted_at FROM orgs WHERE org_id = ?`).get(orgId)
-  if (!org || org.deleted_at) return false
-  const membership = db.prepare<unknown[], { token_identifier: string }>(`SELECT token_identifier FROM org_memberships WHERE org_id = ? AND token_identifier = ?`)
-    .get(orgId, user.token_identifier)
-  return !!membership || org.owner_token_identifier === user.token_identifier
-}
-
-export function orgAdminForUser(db: SqliteAuthorityDb, user: AuthorityUser, orgId: string | undefined) {
-  if (!orgId) return false
-  const org = db.prepare<unknown[], {
-    owner_token_identifier: string | null
-    deleted_at: number | null
-  }>(`SELECT owner_token_identifier, deleted_at FROM orgs WHERE org_id = ?`).get(orgId)
-  if (!org || org.deleted_at) return false
-  const membership = db.prepare<unknown[], { role: string }>(`SELECT role FROM org_memberships WHERE org_id = ? AND token_identifier = ?`)
-    .get(orgId, user.token_identifier)
-  if (membership) return membership.role === "admin" || membership.role === "owner"
-  return org.owner_token_identifier === user.token_identifier
-}
-
-function teamProjectRole(
-  db: SqliteAuthorityDb,
-  user: AuthorityUser,
-  projectId: string | undefined,
-  orgId: string | undefined,
-): WorkspaceRole | undefined {
-  if (!projectId || !orgId) return undefined
-  const memberships = db.prepare<unknown[], { team_id: string }>(`
-    SELECT m.team_id AS team_id FROM team_memberships m
-    JOIN teams t ON t.team_id = m.team_id
-    WHERE m.user_token_identifier = ? AND t.org_id = ? AND t.deleted_at IS NULL
-  `).all(user.token_identifier, orgId)
-  const roles: Array<WorkspaceRole | undefined> = []
-  for (const membership of memberships) {
-    const grant = db.prepare<unknown[], { role: string }>(`
-      SELECT role FROM team_project_grants
-      WHERE team_id = ? AND project_id = ? AND revoked_at IS NULL
-    `).get(membership.team_id, projectId)
-    if (grant) roles.push(workspaceRoleValue(grant.role))
-  }
-  return maxRole(roles)
-}
-
-/**
- * A workspace is a folder on its owner's machine: its owner, while they stand
- * in its organization, holds every workspace action and nobody else holds any.
- */
-export function workspaceRoleForUser(
-  db: SqliteAuthorityDb,
-  workspace: WorkspaceRow,
-  user: AuthorityUser,
-): WorkspaceRole | undefined {
-  if (workspace.deleted_at || workspace.owner_token_identifier !== user.token_identifier) return undefined
-  return orgMemberForUser(db, user, workspace.org_id ?? undefined) ? "owner" : undefined
-}
-
-export function authorizeWorkspaceForUser(
-  db: SqliteAuthorityDb,
-  workspace: WorkspaceRow,
-  user: AuthorityUser,
-  action: WorkspaceAction,
-) {
-  const role = workspaceRoleForUser(db, workspace, user)
-  return role && roleAllows(role, action) ? role : undefined
-}
-
-export function projectRoleForUser(
-  db: SqliteAuthorityDb,
-  project: ProjectRow,
-  user: AuthorityUser,
-): WorkspaceRole | undefined {
-  if (project.deleted_at) return undefined
-  if (project.owner_token_identifier === user.token_identifier) return "owner"
-  return maxRole([
-    directProjectRole(db, user, project.project_id),
-    project.org_id ? directOrgRole(db, user, project.org_id) : undefined,
-    teamProjectRole(db, user, project.project_id, project.org_id),
-  ])
-}
-
-export function authorizeProjectForUser(
-  db: SqliteAuthorityDb,
-  project: ProjectRow,
-  user: AuthorityUser,
-  action: WorkspaceAction,
-) {
-  const role = projectRoleForUser(db, project, user)
-  return role && roleAllows(role, action) ? role : undefined
 }

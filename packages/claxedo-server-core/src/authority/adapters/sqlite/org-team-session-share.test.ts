@@ -3,6 +3,7 @@ import os from "node:os"
 import path from "node:path"
 import { afterEach, describe, expect, test } from "vitest"
 import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
+import { asProjectId } from "@claxedo/server-core/platform/auth/branded-id"
 import { createSqliteWorkspaceAuthority } from "./workspace-authority"
 import { closeAuthorityDatabases, openAuthorityDb, type SqliteAuthorityDb } from "./workspace-authority-store"
 
@@ -44,6 +45,38 @@ function addOrgMember(db: () => SqliteAuthorityDb, orgId: string, tokenIdentifie
     INSERT INTO org_memberships (org_id, token_identifier, role, created_at, updated_at)
     VALUES (?, ?, 'member', ?, ?)
   `).run(orgId, tokenIdentifier, now, now)
+}
+
+async function registerSession(authority: ReturnType<typeof setup>["authority"], workspaceId: string, sessionId: string) {
+  await authority.reserveSession(alice, { operationId: `op_${sessionId}`, sessionId, workspaceId, kind: "create" })
+  await authority.registerRuntimeSession({
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+    principalKind: "user",
+    actorId: alice.user.tokenIdentifier,
+    actorKind: "human",
+    operationId: `op_${sessionId}`,
+    workspaceId,
+    sessionId,
+  })
+}
+
+function refusal(pending: Promise<unknown>) {
+  return pending.then(
+    () => "admitted",
+    (error: { code?: unknown; status?: unknown; message?: unknown }) => ({ code: error.code, status: error.status, message: error.message }),
+  )
+}
+
+/** Alice's organization with Bob as a plain member, and a workspace of Alice's in it. */
+async function sharedOrganization(workspaceId: string) {
+  const { authority, db } = setup()
+  await authority.usersMe(alice)
+  await authority.usersMe(bob)
+  const org = await authority.createOrg!(alice, { name: "Acme" }) as { org_id: string; default_team_id: string }
+  addOrgMember(db, org.org_id, bob.user.tokenIdentifier)
+  await authority.createCloudWorkspace(alice, { workspaceId, projectId: `prj_${workspaceId}`, displayName: "Repo", orgId: org.org_id })
+  return { authority, db, org }
 }
 
 describe("sqlite Org→Team + session share", () => {
@@ -200,8 +233,8 @@ describe("sqlite Org→Team + session share", () => {
       sessionId: "ses_private",
       workspaceId: "ws_team_share",
     })).rejects.toThrow("session_share_admin_required")
-    // A session this authority does not hold has no shares: an organization
-    // member gets a definite empty answer; anyone outside it is refused.
+    // A session this authority does not hold has no shares: its workspace's
+    // owner gets a definite empty answer and anyone else is refused.
     await expect(authority.listSessionShares!(alice, {
       sessionId: "ses_missing",
       workspaceId: "ws_team_share",
@@ -293,73 +326,102 @@ describe("sqlite Org→Team + session share", () => {
     authority.close()
   })
 
-  test("ensureDefaultTeam retargets org session shares onto the default team", async () => {
-    const { authority, db } = setup()
-    await authority.usersMe(alice)
-    await authority.usersMe(bob)
+  test("default-team setup leaves every session share as its owner made it", async () => {
+    const { authority, org } = await sharedOrganization("ws_untouched")
+    await authority.addTeamMember!(alice, { teamId: org.default_team_id, tokenIdentifier: bob.user.tokenIdentifier, role: "member" })
+    await registerSession(authority, "ws_untouched", "ses_org_share")
+    await authority.grantSessionShare!(alice, { sessionId: "ses_org_share", workspaceId: "ws_untouched", grantedToOrgId: org.org_id })
+    const before = await authority.listSessionShares!(alice, { sessionId: "ses_org_share", workspaceId: "ws_untouched" })
+    expect(before.grants).toEqual([expect.objectContaining({ granted_to_org_id: org.org_id, granted_to_team_id: null })])
 
-    const org = await authority.createOrg!(alice, { name: "Retarget Co" }) as {
-      org_id: string
-      default_team_id: string
+    const result = await authority.ensureDefaultTeam!(alice, { orgId: org.org_id })
+
+    expect(await authority.listSessionShares!(alice, { sessionId: "ses_org_share", workspaceId: "ws_untouched" })).toEqual(before)
+    expect(result).toEqual({ team_id: org.default_team_id, org_id: org.org_id })
+    authority.close()
+  })
+
+  test("a former team member loses everything the team gave them, and re-adding them restores it", async () => {
+    const { authority, org } = await sharedOrganization("ws_former")
+    await authority.ensureDefaultTeam!(alice, { orgId: org.org_id })
+    await registerSession(authority, "ws_former", "ses_former")
+    await authority.grantSessionShare!(alice, { sessionId: "ses_former", workspaceId: "ws_former", grantedToTeamId: org.default_team_id })
+    const reach = async () => ({
+      listed: (await authority.listSessions(bob, { workspaceId: "ws_former" }) as Array<{ session_id: string }>).map((row) => row.session_id),
+      read: (await authority.readSessionMessages(bob, { workspaceId: "ws_former", sessionId: "ses_former" }) as { allowed: boolean }).allowed,
+      runtime: await authority.authorizeRuntimeSession({
+        principalKind: "user",
+        actorId: bob.user.tokenIdentifier,
+        actorKind: "human",
+        sessionId: "ses_former",
+        workspaceId: "ws_former",
+        action: "read",
+      }).then(() => true, () => false),
+      shares: await authority.listSessionShares!(bob, { sessionId: "ses_former", workspaceId: "ws_former" }).then(() => true, () => false),
+      projectRole: await authority.projectRole(bob, { projectId: asProjectId("prj_ws_former") }).then((result) => result.ok && result.role),
+      teamMember: (await authority.listTeamMembers!(alice, { teamId: org.default_team_id }) as Array<{ user_id: string }>)
+        .some((row) => row.user_id === bob.user.tokenIdentifier),
+    })
+    const asMember = { listed: ["ses_former"], read: true, runtime: true, shares: true, projectRole: "editor", teamMember: true }
+    expect(await reach()).toEqual(asMember)
+
+    await authority.removeTeamMember!(alice, { teamId: org.default_team_id, tokenIdentifier: bob.user.tokenIdentifier })
+    expect(await reach()).toEqual({ listed: [], read: false, runtime: false, shares: false, projectRole: "viewer", teamMember: false })
+
+    await authority.addTeamMember!(alice, { teamId: org.default_team_id, tokenIdentifier: bob.user.tokenIdentifier, role: "member" })
+    expect(await reach()).toEqual(asMember)
+    authority.close()
+  })
+
+  test("share listing refuses another person's session, an unregistered one and an unknown workspace alike", async () => {
+    const { authority } = await sharedOrganization("ws_listing")
+    const carol = signedAuth("carol")
+    await authority.usersMe(carol)
+    await registerSession(authority, "ws_listing", "ses_listed")
+    const list = (who: SignedControlPlaneAuth, workspaceId: string, sessionId: string) =>
+      refusal(authority.listSessionShares!(who, { workspaceId, sessionId }))
+
+    const refused = await list(bob, "ws_listing", "ses_listed")
+    expect(refused).toMatchObject({ code: "session_share_admin_required" })
+    for (const who of [bob, carol]) {
+      for (const [workspaceId, sessionId] of [
+        ["ws_listing", "ses_listed"],
+        ["ws_listing", "ses_unregistered"],
+        ["ws_unknown", "ses_unregistered"],
+        ["ws_unknown", "ses_listed"],
+      ]) {
+        expect(await list(who, workspaceId, sessionId)).toEqual(refused)
+      }
     }
-    addOrgMember(db, org.org_id, bob.user.tokenIdentifier)
-    await authority.addTeamMember!(alice, {
-      teamId: org.default_team_id,
-      tokenIdentifier: bob.user.tokenIdentifier,
-      role: "member",
-    })
-    await authority.createCloudWorkspace(alice, {
-      workspaceId: "ws_retarget",
-      displayName: "Repo",
-      orgId: org.org_id,
-    })
+    expect(await list(alice, "ws_unknown", "ses_unregistered")).toEqual(refused)
+    await expect(authority.listSessionShares!(alice, { workspaceId: "ws_listing", sessionId: "ses_unregistered" }))
+      .resolves.toEqual({ can_manage_shares: false, grants: [], participants: [], teams: [] })
+    authority.close()
+  })
 
-    await authority.reserveSession(alice, {
-      operationId: "op_org_share",
-      sessionId: "ses_org_share",
-      workspaceId: "ws_retarget",
-      kind: "create",
-      title: "Shared via org",
-    })
-    await authority.registerRuntimeSession({
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
-      principalKind: "user",
+  test("revoking a team share leaves the workspace owner's runtime token active", async () => {
+    const { authority, org } = await sharedOrganization("ws_tokens")
+    await registerSession(authority, "ws_tokens", "ses_tokens")
+    await authority.recordRuntimeAccessToken(alice, {
+      jti: "rat_owner",
+      workspaceId: "ws_tokens",
+      hostId: "host_tokens",
       actorId: alice.user.tokenIdentifier,
       actorKind: "human",
-      operationId: "op_org_share",
-      workspaceId: "ws_retarget",
-      sessionId: "ses_org_share",
-      title: "Shared via org",
+      role: "owner",
+      expiresAt: Date.now() + 600_000,
     })
-    await authority.grantSessionShare!(alice, {
-      sessionId: "ses_org_share",
-      workspaceId: "ws_retarget",
-      grantedToOrgId: org.org_id,
+    const grant = await authority.grantSessionShare!(alice, {
+      sessionId: "ses_tokens",
+      workspaceId: "ws_tokens",
+      grantedToTeamId: org.default_team_id,
     })
 
-    const result = await authority.ensureDefaultTeam!(alice, { orgId: org.org_id }) as {
-      session_shares_retargeted: number
-      team_id: string
-    }
-    expect(result.team_id).toBe(org.default_team_id)
-    expect(result.session_shares_retargeted).toBeGreaterThanOrEqual(1)
+    const revoked = await authority.revokeSessionShare!(alice, { sessionId: "ses_tokens", workspaceId: "ws_tokens", grantId: grant.grant_id })
 
-    const shares = await authority.listSessionShares!(alice, {
-      sessionId: "ses_org_share",
-      workspaceId: "ws_retarget",
-    })
-    expect(shares.grants).toEqual([
-      expect.objectContaining({
-        granted_to_org_id: null,
-        granted_to_team_id: org.default_team_id,
-      }),
-    ])
-
-    const listed = await authority.listSessions(bob, { workspaceId: "ws_retarget" }) as Array<{
-      session_id: string
-    }>
-    expect(listed.map((row) => row.session_id)).toContain("ses_org_share")
+    await expect(authority.runtimeAccessTokenActive({ jti: "rat_owner", workspaceId: "ws_tokens", hostId: "host_tokens" }))
+      .resolves.toEqual({ active: true })
+    expect(revoked).toEqual({ revoked: true, revokedTargets: [{ grantedToTeamPublicId: org.default_team_id }] })
     authority.close()
   })
 })

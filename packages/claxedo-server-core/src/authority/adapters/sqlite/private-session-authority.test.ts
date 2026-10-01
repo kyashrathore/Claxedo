@@ -659,7 +659,7 @@ describe("SQLite private-session authority", () => {
 })
 
 describe("SQLite private-session authority, shares of a session this store never registered", () => {
-  test("answers the organization it belongs to and refuses everyone else", async () => {
+  test("answers its workspace's owner and refuses an organization member like an outsider", async () => {
     const creator = auth("creator")
     const teammate = auth("teammate")
     const outsider = auth("outsider")
@@ -668,15 +668,13 @@ describe("SQLite private-session authority, shares of a session this store never
     await store.usersMe(outsider)
     await store.createCloudWorkspace(creator, { workspaceId: "workspace_main", displayName: "Main" })
     orgMember(seed, "workspace_main", teammate.user.tokenIdentifier, "member")
+    const target = { sessionId: "session_created_on_the_machine", workspaceId: "workspace_main" }
 
-    await expect(store.listSessionShares!(teammate, {
-      sessionId: "session_created_on_the_machine",
-      workspaceId: "workspace_main",
-    })).resolves.toEqual({ can_manage_shares: false, grants: [], participants: [], teams: [] })
-    await expect(store.listSessionShares!(outsider, {
-      sessionId: "session_created_on_the_machine",
-      workspaceId: "workspace_main",
-    })).rejects.toThrow("session_share_admin_required")
+    await expect(store.listSessionShares!(creator, target))
+      .resolves.toEqual({ can_manage_shares: false, grants: [], participants: [], teams: [] })
+    for (const who of [teammate, outsider]) {
+      await expect(store.listSessionShares!(who, target)).rejects.toMatchObject({ code: "session_share_admin_required", status: 403 })
+    }
   })
 })
 
@@ -896,5 +894,34 @@ describe("SQLite private-session authority, rows written before only a share cro
     await store.grantSessionShare!(owner, { ...target, level: "follow" })
     await ask(historicParticipant, "read")
     await expect(ask(historicParticipant, "write", "agent_turn")).rejects.toMatchObject({ status: 403 })
+  })
+
+  test("an agent participant stands only while the workspace's owner stands in its organization", async () => {
+    const founder = auth("founder")
+    const owner = auth("owner")
+    const { store, seed } = authorityWithSeed()
+    await store.usersMe(owner)
+    upsertUser(seed(), { token_identifier: "actor_agent", kind: "agent" })
+    await store.createCloudWorkspace(founder, { workspaceId: "workspace_agent", displayName: "Agent" })
+    orgMember(seed, "workspace_agent", owner.user.tokenIdentifier, "member")
+    seed().prepare(`UPDATE workspaces SET owner_token_identifier = ? WHERE workspace_id = ?`)
+      .run(owner.user.tokenIdentifier, "workspace_agent")
+    await store.reserveSession(owner, { operationId: "operation_agent", sessionId: "session_agent", workspaceId: "workspace_agent", kind: "create" })
+    await store.registerRuntimeSession({
+      createdAt: Date.now(), updatedAt: Date.now(), principalKind: "user", actorId: owner.user.tokenIdentifier, actorKind: "human",
+      operationId: "operation_agent", sessionId: "session_agent", workspaceId: "workspace_agent",
+    })
+    await store.grantSessionParticipant(owner, { sessionId: "session_agent", workspaceId: "workspace_agent", participantActorId: "actor_agent" })
+    const asAgent = (action: "read" | "write") => store.authorizeRuntimeSession({
+      principalKind: "service", actorId: "actor_agent", actorKind: "agent",
+      sessionId: "session_agent", workspaceId: "workspace_agent", action,
+    })
+    await asAgent("read")
+    await asAgent("write")
+
+    const workspace = seed().prepare(`SELECT org_id FROM workspaces WHERE workspace_id = ?`).get("workspace_agent") as { org_id: string }
+    seed().prepare(`DELETE FROM org_memberships WHERE org_id = ? AND token_identifier = ?`).run(workspace.org_id, owner.user.tokenIdentifier)
+    await expect(asAgent("read")).rejects.toMatchObject({ status: 403 })
+    await expect(asAgent("write")).rejects.toMatchObject({ status: 403 })
   })
 })
