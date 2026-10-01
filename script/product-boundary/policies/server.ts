@@ -44,8 +44,13 @@ export const serverWorkerd: Policy = {
     ],
     requiredPackages: ["better-auth", "hono", "@claxedo/server-core"],
   },
-  // The Cloudflare email binding is Worker-owned; the binding and sender
-  // configuration never cross the public auth descriptor.
+  // The D1 authority composes its organization, team and project-member
+  // modules beside `project-role.ts`, the one rank query they and every other
+  // D1 reader share (`authority/adapters/d1/core-authority.ts`); the host
+  // access authority's error contract is its own module
+  // (`authority/adapters/d1/host-access-errors.ts`); and auth email, invitations
+  // included, leaves through the Worker's Cloudflare `EMAIL` binding
+  // (`platform/auth/auth-email-delivery.ts`).
   ceilings: { modules: 104, packages: 19 },
 
   emitted: {
