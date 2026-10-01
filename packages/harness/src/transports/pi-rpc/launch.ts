@@ -1,8 +1,8 @@
 import fs from "node:fs/promises"
 import path from "node:path"
 import { errorMessage } from "@claxedo/helpers"
-import { deadlineAfter, harnessVersionStanding, type Deadline, type HarnessServices, type HarnessVersionGate, type SessionBroker,
-  type SpawnCommand, type StartInput } from "../../contract"
+import { deadlineAfter, harnessVersionStanding, type Deadline, type DraftProbeCache, type HarnessServices, type HarnessVersionGate,
+  type SessionBroker, type SpawnCommand, type StartInput } from "../../contract"
 import { TransportError } from "../../contract/errors"
 import { piEnvironment, piProjectionArgs, preparePiProfile, type PiProfile, type PiProfileOptions } from "../../profiles/pi"
 import { PiRpc } from "./rpc"
@@ -10,7 +10,7 @@ import { installPiTitleExtension } from "./title"
 import { piMcpHandoff, type PiMcpHandoff } from "./mcp"
 import type { UnsettledPiLaunches } from "./retirements"
 import { PiSessionStream } from "./session-stream"
-import { PI_RANGE, piReportedVersion, type PiVersionReadings } from "./version"
+import { PI_RANGE, piReportedVersion } from "./version"
 
 export type PiRpcOptions = PiProfileOptions & { binary: string; runtime: string; args?: readonly string[]; env: NodeJS.ProcessEnv }
 
@@ -24,7 +24,7 @@ export type PiLaunchHost = {
   readonly signal: AbortSignal
   readonly unsettled: UnsettledPiLaunches
   readonly versions: HarnessVersionGate
-  readonly versionReadings: PiVersionReadings
+  readonly versionReadings: DraftProbeCache<string>
   disposed(): boolean
 }
 
@@ -48,11 +48,13 @@ function piCommand(host: PiLaunchHost, input: StartInput, profile: PiProfile, ar
 
 async function admitPiVersion(host: PiLaunchHost, input: StartInput, profile: PiProfile, broker: SessionBroker | undefined,
   role: PiLaunch["role"]): Promise<void> {
-  const reported = await host.versionReadings.read(host.options.binary, async () => {
+  const read = async () => {
     const owned = await host.services.spawn(piCommand(host, input, profile, ["--version"]),
       { role, label: "Pi version", sessionId: input.sessionId, signal: host.signal })
     return piReportedVersion(owned, piDeadline(host.services.clock))
-  })
+  }
+  const { binary } = host.options
+  const reported = path.isAbsolute(binary) ? await host.versionReadings.read(binary, { files: [binary] }, read) : await read()
   if (broker) await host.versions.admit(reported, "--version", broker)
   else harnessVersionStanding(PI_RANGE, reported)
 }

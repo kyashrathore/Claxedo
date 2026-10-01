@@ -1,6 +1,7 @@
 import { asRecord } from "@claxedo/helpers/guards"
 import { errorMessage } from "@claxedo/helpers"
 import type { Clock, Logger, ProviderTurnInput, RoutedEvent, SessionBroker, TurnBroker } from "../../contract"
+import { piUserText } from "./events"
 import type { PiMessage, PiRpc } from "./rpc"
 import { PiRun } from "./run"
 
@@ -20,10 +21,7 @@ function opening(message: PiMessage): ProviderTurnInput | undefined {
   if (message.type === "agent_start" || message.type === "turn_start") return undefined
   const content = asRecord(message.message)
   if ((message.type === "message_start" || message.type === "message_end") && content?.role === "system") return undefined
-  if (message.type !== "message_start" || content?.role !== "user") return { reason: "provider" }
-  const blocks = Array.isArray(content.content) ? content.content : []
-  const text = typeof content.content === "string" ? content.content
-    : blocks.map((block) => asRecord(block)).flatMap((block) => block?.type === "text" && typeof block.text === "string" ? [block.text] : []).join("\n")
+  const text = piUserText(message)
   return text ? { reason: "provider", detail: text } : { reason: "provider" }
 }
 
