@@ -5,7 +5,7 @@ import type { McpServerConfig, SettingSource } from "@cursor/sdk"
 import { lstatIfExists, readTextIfExists, realPathWithinRoot } from "@claxedo/helpers/fs"
 import { asRecord } from "@claxedo/helpers/guards"
 import type { McpServerSpec, PluginProjection, SkillRoot } from "../../contract"
-import { mirrorConfigEntries, mirrorConfigTree, type ConfigMirrorOptions } from "../config-mirror"
+import { mirrorConfigEntries, mirrorConfigTree, pruneMirrorDirectory, type ConfigMirrorOptions } from "../config-mirror"
 
 const OWNER = "claxedo-agent-plugins"
 const PREFIX = "claxedo--"
@@ -114,24 +114,22 @@ export async function projectCursorPlugins(projection: Pick<PluginProjection, "p
   return desired.size > 0
 }
 
+const notPersonalPlugin = (name: string) => name.startsWith(".") || name.startsWith(PREFIX)
+
 async function mirrorPersonalPlugins(personalFolder: string, folder: string, personalRoot: string, include: boolean): Promise<void> {
   const names = include && (await lstatIfExists(personalFolder))?.isDirectory()
-    ? (await fs.readdir(personalFolder)).filter((name) => !name.startsWith(".") && !name.startsWith(PREFIX)) : []
-  for (const name of await fs.readdir(folder)) {
-    if (name.startsWith(".") || name.startsWith(PREFIX) || names.includes(name)) continue
-    await fs.rm(path.join(folder, name), { recursive: true, force: true })
-  }
+    ? (await fs.readdir(personalFolder)).filter((name) => !notPersonalPlugin(name)) : []
+  const relative = path.join("plugins", "local")
+  await pruneMirrorDirectory(folder, relative, names, { ...mirror, keep: (entry) => notPersonalPlugin(path.basename(entry)) })
   for (const name of names) {
-    await mirrorConfigTree(path.join(personalFolder, name), path.join(folder, name), personalRoot, mirror, path.join("plugins", "local", name))
+    await mirrorConfigTree(path.join(personalFolder, name), path.join(folder, name), personalRoot, mirror, path.join(relative, name))
   }
 }
 
 async function mirrorPersonalConfig(personal: string | undefined, cursorDir: string, includePersonalPlugins: boolean): Promise<void> {
   const source = personal && (await lstatIfExists(personal))?.isDirectory() ? personal : undefined
   const root = await mirrorConfigEntries(source, cursorDir, MIRRORED, mirror)
-  const folder = path.join(cursorDir, "plugins", "local")
-  await fs.mkdir(folder, { recursive: true, mode: 0o700 })
-  if (root) await mirrorPersonalPlugins(path.join(root, "plugins", "local"), folder, root, includePersonalPlugins)
+  if (root) await mirrorPersonalPlugins(path.join(root, "plugins", "local"), path.join(cursorDir, "plugins", "local"), root, includePersonalPlugins)
 }
 
 export async function composeCursorHome(input: { root: string; key: string; personalCursorDir?: string;
