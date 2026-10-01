@@ -85,7 +85,7 @@ The server already has a slot for you. `AUTH_ADAPTERS` in
 [`authentication.ts`](../packages/claxedo-server-core/src/platform/auth/authentication.ts)
 is `["better-auth", "custom"]`, and the control-plane database's `adapter`
 CHECK constraint matches it
-([migration 0017](../packages/claxedo-server/migrations/control-plane/0017_adapter_custom.sql)).
+([control-plane baseline](../packages/claxedo-server/migrations/control-plane/0001_baseline.sql)).
 **A third-party identity provider registers as `"custom"` and needs no schema
 migration.**
 

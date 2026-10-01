@@ -1,15 +1,10 @@
-import { readFile } from "node:fs/promises"
-import { fileURLToPath } from "node:url"
 import { afterEach, describe, expect, test } from "vitest"
 import { Miniflare } from "miniflare"
 import type { D1Database } from "@cloudflare/workers-types"
 
 import { createD1McpOAuthClientRegistry, type McpOAuthClientSecretStore } from "./d1-client-registry"
 
-// 0021 owns the table under test and depends on nothing else — the real
-// migration file runs, so a schema this test invented could not pass while the
-// shipped one fails.
-const MIGRATIONS = ["0021_mcp_oauth_clients.sql"]
+import { applyControlPlaneMigration, controlPlaneMigrations } from "../../test-support/control-plane-migrations"
 
 const active: Miniflare[] = []
 
@@ -26,13 +21,7 @@ async function database(): Promise<D1Database> {
   })
   active.push(instance)
   const target = await instance.getD1Database("CONTROL_PLANE_DB")
-  for (const name of MIGRATIONS) {
-    const path = fileURLToPath(new URL(`../../../migrations/control-plane/${name}`, import.meta.url))
-    const migration = (await readFile(path, "utf8")).replace(/^\s*--.*$/gm, "")
-    for (const statement of migration.split(/;\s*\n\s*\n/).map((part) => part.trim()).filter(Boolean)) {
-      await target.prepare(statement).run()
-    }
-  }
+  await applyControlPlaneMigration(target, controlPlaneMigrations()[0])
   return target
 }
 

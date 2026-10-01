@@ -1,4 +1,3 @@
-import { readFile } from "node:fs/promises"
 import { afterEach, describe, expect, test } from "vitest"
 import { Miniflare } from "miniflare"
 import type { D1Database } from "@cloudflare/workers-types"
@@ -15,7 +14,7 @@ import {
   D1SignedAgentPluginActivationStore,
   type AgentPluginActivationAuthority,
 } from "./d1-store"
-import { controlPlaneMigrationPath, controlPlaneMigrations } from "../../test-support/control-plane-migrations"
+import { applyControlPlaneMigration, controlPlaneMigrations } from "../../test-support/control-plane-migrations"
 
 const MIGRATIONS = controlPlaneMigrations()
 
@@ -39,19 +38,6 @@ function identity(subject: string): AuthIdentity {
   return { adapter: "better-auth", issuer: "https://better-auth.example.test", subject }
 }
 
-async function migrate(database: D1Database) {
-  for (const name of MIGRATIONS) {
-    const path = controlPlaneMigrationPath(name)
-    const migration = (await readFile(path, "utf8")).replace(/^\s*--.*$/gm, "")
-    for (const statement of migration
-      .split(/;\s*\n\s*\n/)
-      .map((part) => part.trim())
-      .filter(Boolean)) {
-      await database.prepare(statement).run()
-    }
-  }
-}
-
 async function setup() {
   const instance = new Miniflare({
     modules: true,
@@ -61,7 +47,7 @@ async function setup() {
   })
   active.push(instance)
   const database = await instance.getD1Database("CONTROL_PLANE_DB")
-  await migrate(database)
+  for (const name of MIGRATIONS) await applyControlPlaneMigration(database, name)
   let sequence = 0
   const authority = new D1WorkspaceAuthority(database, {
     deploymentId: "deployment-a",

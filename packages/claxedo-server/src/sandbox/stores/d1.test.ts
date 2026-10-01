@@ -1,5 +1,3 @@
-import { readFile } from "node:fs/promises"
-import { fileURLToPath } from "node:url"
 import { afterEach, describe, expect, test, vi } from "vitest"
 import { Miniflare } from "miniflare"
 import type { D1Database, D1PreparedStatement } from "@cloudflare/workers-types"
@@ -12,9 +10,7 @@ import type {
 
 import { createD1SandboxLeaseStore } from "./d1"
 
-// Only the lease table: `sandbox_leases` references nothing, so the real
-// migration is the whole schema this store needs.
-const MIGRATIONS = ["0022_sandbox_leases.sql", "0043_sandbox_routing_identity.sql"]
+import { applyControlPlaneMigration, controlPlaneMigrations } from "../../test-support/control-plane-migrations"
 
 const NOW = 1_900_000_000_000
 const STALE_AFTER_MS = 30_000
@@ -35,13 +31,7 @@ async function database(): Promise<D1Database> {
   })
   active.push(instance)
   const target = await instance.getD1Database("CONTROL_PLANE_DB")
-  for (const name of MIGRATIONS) {
-    const path = fileURLToPath(new URL(`../../../migrations/control-plane/${name}`, import.meta.url))
-    const migration = (await readFile(path, "utf8")).replace(/^\s*--.*$/gm, "")
-    for (const statement of migration.split(/;\s*\n\s*\n/).map((part) => part.trim()).filter(Boolean)) {
-      await target.prepare(statement).run()
-    }
-  }
+  await applyControlPlaneMigration(target, controlPlaneMigrations()[0])
   return target
 }
 

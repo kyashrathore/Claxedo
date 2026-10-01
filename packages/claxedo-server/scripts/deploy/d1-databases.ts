@@ -1,4 +1,5 @@
 import { isRecordArray, parseJson, stringField } from "@claxedo/server-core/platform/json/index"
+import { requireControlPlaneBaseline } from "../control-plane-schema"
 
 import {
   BETTER_AUTH_CLI_CLIENT_ID,
@@ -10,7 +11,7 @@ import {
   betterAuthNativeResource,
   verifyBetterAuthDatabaseSchemaInspection,
 } from "../../src/platform/auth/better-auth-native-clients"
-import { d1Row } from "./d1-json"
+import { d1Row, d1Rows } from "./d1-json"
 import { runWrangler } from "./wrangler-cli"
 
 const D1_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
@@ -60,17 +61,16 @@ export function verifyNativeClientProvisioning(output: string) {
   }
 }
 
-/**
- * Forward-only schema for both databases, then the idempotent native OAuth
- * client upserts. Every step converges on a re-run, so an upgrade runs the
- * same sequence a first deploy does.
- */
 export async function prepareD1Databases(input: {
   configArgs: readonly string[]
   apiOrigin: string
   betterAuthSecret: string
   introspectionSecret: string
 }) {
+  await requireControlPlaneBaseline(async (sql) => d1Rows(await runWrangler(
+    ["d1", "execute", "CONTROL_PLANE_DB", "--remote", ...input.configArgs, "--command", sql, "--json"],
+    { capture: true },
+  ), "control-plane schema admission"))
   for (const binding of ["AUTH_DB", "CONTROL_PLANE_DB"]) {
     await runWrangler(["d1", "migrations", "apply", binding, "--remote", ...input.configArgs])
   }

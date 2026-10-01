@@ -157,13 +157,11 @@ describe("the hosted Worker Tasks closure", () => {
 
   test("the staged copy carries every control-plane migration, the Tasks schema included", () => {
     const source = readdirSync(path.join(packageRoot, "migrations/control-plane")).sort()
-    expect(source).toContain("0025_claxedo_tasks.sql")
+    expect(source).toEqual(["0001_baseline.sql"])
 
     const configDirectory = temporary()
     stageWorkerControlPlaneMigrations({ configDirectory })
     expect(readdirSync(path.join(configDirectory, "migrations/control-plane")).sort()).toEqual(source)
-    // The source directory every other reader shares is untouched by a staging
-    // run; `control-plane-migrations.test.ts` pins its full list.
     expect(readdirSync(path.join(packageRoot, "migrations/control-plane")).sort()).toEqual(source)
   })
 })

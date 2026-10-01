@@ -1,5 +1,6 @@
 import fs from "node:fs"
 import path from "node:path"
+import { requireBaselineFiles } from "../control-plane-schema"
 
 const serverRoot = path.resolve(import.meta.dirname, "../..")
 
@@ -22,6 +23,8 @@ export function stageWorkerControlPlaneMigrations(input: {
   stageInto?: string
 }): { migrationsDir: string } {
   const destination = path.join(input.stageInto ?? path.join(input.configDirectory, "migrations"), "control-plane")
+  requireBaselineFiles(fs.readdirSync(path.join(serverRoot, "migrations/control-plane")).filter((name) => name.endsWith(".sql")).sort())
+  fs.rmSync(destination, { recursive: true, force: true })
   fs.cpSync(path.join(serverRoot, "migrations/control-plane"), destination, { recursive: true })
   return { migrationsDir: path.relative(input.configDirectory, destination).split(path.sep).join("/") }
 }

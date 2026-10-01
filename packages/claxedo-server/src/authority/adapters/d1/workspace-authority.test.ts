@@ -1,5 +1,3 @@
-import { readdir, readFile } from "node:fs/promises"
-import { fileURLToPath } from "node:url"
 import { afterEach, describe, expect, test } from "vitest"
 import { Miniflare } from "miniflare"
 import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
@@ -13,18 +11,7 @@ import {
 } from "./workspace-authority"
 import { D1OrgMemberAuthority } from "./org-member-authority"
 
-const MIGRATIONS_DIRECTORY = fileURLToPath(new URL("../../../../migrations/control-plane/", import.meta.url))
-
-/**
- * Every shipped migration, in the order production applies them.
- *
- * Read from the directory rather than listed here: a curated subset drifts
- * silently from what deployments run, and this file's subject — the placement
- * a workspace row carries — is rewritten by migrations a subset would omit.
- */
-async function migrations() {
-  return (await readdir(MIGRATIONS_DIRECTORY)).filter((name) => name.endsWith(".sql")).sort()
-}
+import { applyControlPlaneMigration, controlPlaneMigrations } from "../../../test-support/control-plane-migrations"
 
 const active: Miniflare[] = []
 
@@ -41,15 +28,7 @@ async function setup(product: D1AuthorityProductPolicy) {
   })
   active.push(instance)
   const database = await instance.getD1Database("CONTROL_PLANE_DB")
-  for (const name of await migrations()) {
-    const migration = (await readFile(MIGRATIONS_DIRECTORY + name, "utf8")).replace(/^\s*--.*$/gm, "")
-    for (const statement of migration
-      .split(/;\s*\n\s*\n/)
-      .map((part) => part.trim())
-      .filter(Boolean)) {
-      await database.prepare(statement).run()
-    }
-  }
+  for (const name of controlPlaneMigrations()) await applyControlPlaneMigration(database, name)
   let sequence = 0
   const authority = new D1WorkspaceAuthority(database, {
     deploymentId: "deployment-a",

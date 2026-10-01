@@ -2,15 +2,11 @@ import { afterEach, describe, expect, test } from "vitest"
 import type { D1Database } from "@cloudflare/workers-types"
 
 import {
-  applyControlPlaneMigration,
   controlPlaneMigrations,
   miniflareControlPlaneDatabase,
   type ControlPlaneDatabase,
 } from "../../../test-support/control-plane-migrations"
 
-const MIGRATION = "0045_org_scope_means_org.sql"
-const ALL_MIGRATIONS = controlPlaneMigrations()
-const BEFORE = ALL_MIGRATIONS.slice(0, ALL_MIGRATIONS.indexOf(MIGRATION))
 
 const active: ControlPlaneDatabase[] = []
 
@@ -18,29 +14,28 @@ afterEach(async () => {
   await Promise.all(active.splice(0).map((instance) => instance.dispose()))
 })
 
-async function seededBeforeMigration(): Promise<D1Database> {
-  const instance = await miniflareControlPlaneDatabase(BEFORE)
+async function seededBaseline(): Promise<D1Database> {
+  const instance = await miniflareControlPlaneDatabase(controlPlaneMigrations())
   active.push(instance)
   const database = instance.database
   await database.batch([
     database.prepare(`insert into users (user_id, state, created_at, updated_at) values ('user-owner', 'active', 1, 1)`),
     database.prepare(`insert into users (user_id, state, created_at, updated_at) values ('user-member', 'active', 1, 1)`),
     database.prepare(`insert into orgs (org_id, name, kind, owner_user_id, created_at, updated_at) values ('org-personal', 'Owner', 'personal', 'user-owner', 1, 1)`),
-    database.prepare(`insert into orgs (org_id, name, kind, owner_user_id, created_at, updated_at) values ('org-acme', 'Acme', 'team', 'user-owner', 1, 1)`),
+    database.prepare(`insert into orgs (org_id, name, kind, owner_user_id, created_at, updated_at) values ('org-acme', 'Acme', 'shared', 'user-owner', 1, 1)`),
     database.prepare(`insert into org_memberships (org_id, user_id, role, created_at, updated_at) values ('org-acme', 'user-member', 'member', 1, 1)`),
     database.prepare(`insert into projects (project_id, org_id, repo_key, owner_user_id, created_at, updated_at) values ('project-acme', 'org-acme', 'github.com/acme/app', 'user-owner', 1, 1)`),
     database.prepare(`insert into teams (team_id, org_id, name, is_default, created_by_user_id, created_at, updated_at) values ('team-everyone', 'org-acme', 'Everyone', 1, 'user-owner', 1, 1)`),
     database.prepare(`
       insert into hosted_connection_attempts (state, verifier, integration_id, owner, scope, status, expires_at, created_at, updated_at)
-      values ('state-org', 'verifier-org', 'github', 'org:org-acme', 'team', 'pending', 10, 1, 1),
+      values ('state-org', 'verifier-org', 'github', 'org:org-acme', 'org', 'pending', 10, 1, 1),
              ('state-personal', 'verifier-personal', 'github', 'user:user-member', 'personal', 'pending', 10, 1, 1)
     `),
     database.prepare(`
       insert into hosted_provider_account_sources (org_id, user_id, provider_id, source, updated_at)
-      values ('org-acme', 'user-member', 'anthropic', 'team', 1), ('org-acme', 'user-member', 'openai', 'own', 1)
+      values ('org-acme', 'user-member', 'anthropic', 'org', 1), ('org-acme', 'user-member', 'openai', 'own', 1)
     `),
   ])
-  await applyControlPlaneMigration(database, MIGRATION)
   return database
 }
 
@@ -48,32 +43,9 @@ async function rows(database: D1Database, sql: string) {
   return (await database.prepare(sql).all()).results
 }
 
-describe("0045: org-wide values say org", () => {
-  test("rewrites stored 'team' values and keeps every row that references an org", async () => {
-    const database = await seededBeforeMigration()
-
-    expect(await rows(database, "select org_id, kind from orgs order by org_id")).toEqual([
-      { org_id: "org-acme", kind: "shared" },
-      { org_id: "org-personal", kind: "personal" },
-    ])
-    expect(await rows(database, "select user_id, role from org_memberships where org_id = 'org-acme'"))
-      .toEqual([{ user_id: "user-member", role: "member" }])
-    expect(await rows(database, "select project_id from projects where org_id = 'org-acme'"))
-      .toEqual([{ project_id: "project-acme" }])
-    expect(await rows(database, "select team_id from teams where org_id = 'org-acme'"))
-      .toEqual([{ team_id: "team-everyone" }])
-    expect(await rows(database, "select state, scope from hosted_connection_attempts order by state")).toEqual([
-      { state: "state-org", scope: "org" },
-      { state: "state-personal", scope: "personal" },
-    ])
-    expect(await rows(database, "select provider_id, source from hosted_provider_account_sources order by provider_id")).toEqual([
-      { provider_id: "anthropic", source: "org" },
-      { provider_id: "openai", source: "own" },
-    ])
-  })
-
-  test("the rebuilt tables refuse 'team' and keep their constraints and indexes", async () => {
-    const database = await seededBeforeMigration()
+describe("baseline organization constraints", () => {
+  test("the baseline tables refuse 'team' and keep their constraints and indexes", async () => {
+    const database = await seededBaseline()
 
     await expect(database.prepare(`insert into orgs (org_id, name, kind, owner_user_id, created_at, updated_at) values ('org-old', 'Old', 'team', 'user-owner', 1, 1)`).run())
       .rejects.toThrow(/CHECK/)
