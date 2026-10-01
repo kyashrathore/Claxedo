@@ -13,6 +13,13 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.mjs",
       "default": "./dist/index.mjs"
+    },
+    "./access-policy": {
+      "development": "./src/session-access-policy.ts",
+      "bun": "./src/session-access-policy.ts",
+      "types": "./dist/session-access-policy.d.ts",
+      "import": "./dist/access-policy.mjs",
+      "default": "./dist/access-policy.mjs"
     }
   },
   "files": [
@@ -20,7 +27,7 @@
     "README.md"
   ],
   "scripts": {
-    "build": "bun build src/index.ts --target=browser --format=esm --packages=external --outfile=dist/index.mjs && tsc -p tsconfig.build.json",
+    "build": "bun build src/index.ts --target=browser --format=esm --packages=external --outfile=dist/index.mjs && bun build src/session-access-policy.ts --target=browser --format=esm --packages=external --outfile=dist/access-policy.mjs && tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "bun test src"
   },

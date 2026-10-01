@@ -1,5 +1,5 @@
 import z from "zod/v3"
-import { rec } from "@claxedo/session-core"
+import { asRecord } from "@claxedo/helpers/guards"
 
 export const TERMINAL_SCROLLBACK_ROWS = 5000
 
@@ -55,12 +55,12 @@ export type TerminalCheckpoint = z.infer<typeof terminalCheckpointSchema>
 type BufferState = TerminalCheckpointState["buffers"]["normal"]
 
 function internals(terminal: unknown) {
-  const core = rec(rec(terminal)?._core)
-  const buffers = rec(core?.buffers)
-  const normal = rec(buffers?.normal)
-  const alt = rec(buffers?.alt)
-  const charsetService = rec(core?._charsetService)
-  const decoder = rec(rec(core?._inputHandler)?._stringDecoder)
+  const core = asRecord(asRecord(terminal)?._core)
+  const buffers = asRecord(core?.buffers)
+  const normal = asRecord(buffers?.normal)
+  const alt = asRecord(buffers?.alt)
+  const charsetService = asRecord(core?._charsetService)
+  const decoder = asRecord(asRecord(core?._inputHandler)?._stringDecoder)
   const reset = charsetService?.reset
   const setgCharset = charsetService?.setgCharset
   const setgLevel = charsetService?.setgLevel
@@ -104,8 +104,8 @@ export function applyTerminalCheckpointState(terminal: unknown, input: unknown):
   const checkpoint = terminalCheckpointStateSchema.parse(input)
   captureTerminalCheckpointState(terminal)
   const target = internals(terminal)
-  const cols = coordinate.parse(rec(terminal)?.cols)
-  const rows = coordinate.parse(rec(terminal)?.rows)
+  const cols = coordinate.parse(asRecord(terminal)?.cols)
+  const rows = coordinate.parse(asRecord(terminal)?.rows)
   for (const buffer of Object.values(checkpoint.buffers)) {
     if (cols < 2 || rows < 1 || buffer.x > cols || buffer.y >= rows
       || buffer.scrollTop > buffer.scrollBottom || buffer.scrollBottom >= rows) {
@@ -115,8 +115,8 @@ export function applyTerminalCheckpointState(terminal: unknown, input: unknown):
   const destinations = (["normal", "alt"] as const).map((name) => {
     const buffer = target.buffers[name]
     const current = readBuffer(buffer)
-    const attrs = rec(buffer.savedCurAttrData)
-    const extended = rec(attrs?.extended)
+    const attrs = asRecord(buffer.savedCurAttrData)
+    const extended = asRecord(attrs?.extended)
     if (!attrs || !extended) throw new Error("Pinned xterm saved attributes are unavailable")
     return { buffer, current, attrs, extended, source: checkpoint.buffers[name] }
   })

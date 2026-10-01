@@ -1,7 +1,9 @@
 # Session core
 
 `@claxedo/session-core` owns session storage, harness orchestration, projection,
-session HTTP routes and event delivery. Its only package export is `.`.
+session HTTP routes and event delivery. Its composition entry is `.`;
+`./access-policy` exports only the session route classification and access
+policy, for readers such as the MCP tool inventory that must not load the core.
 `createSessionCore(ports)` creates the bus, placement registry and event hub for
 one owner. `workspace-runtime` supplies machine capabilities and mounts the
 core's routes; a Durable Object host supplies its own ports.
