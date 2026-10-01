@@ -26,7 +26,7 @@ import { requireAuthority } from "@claxedo/server-core/platform/auth/authority"
 import { createFixedWindowConnectionRateLimiter, type ConnectionRateLimiter } from "../../platform/auth/rate-limit"
 import { newWorkspaceId } from "../../platform/auth/workspace-id"
 import { keepAlivePastResponse } from "@claxedo/server-core/platform/http/background-work"
-import { hostedConnectionInfo, hostedConnectionStatus } from "../../connections/hosted-connection-info"
+import { hostedConnectionInfo, hostedConnectionStatus, hostedSessionConnection } from "../../connections/hosted-connection-info"
 import { WORKSPACE_DIR } from "@claxedo/sandbox-manager/defaults"
 import { hostedSandboxInput } from "../../workspace/hosted-sandbox-input"
 import { apiError, captureWorkspaceTelemetry, missingBearerBody, parsedBody, signedOrError, type WorkspaceRouteOptions } from "../../workspace/route-support"
@@ -40,9 +40,9 @@ import { createCloudCreateAdmission, type CloudCreateUsage } from "../../workspa
 import { authenticatedGitHubCloneSource } from "../../workspace/repository-clone"
 import { normalizeClaxedoRegion } from "@claxedo/server-core/platform/runtime/region/index"
 
-// `requireCloudWorkspaceEntitlement` (the paid-capability gate for both
-// create and wake) now lives on the shared WorkspaceRouteOptions so the wake
-// choke point (workspace-hosted-connection-info.ts) reads the same hook.
+// `requireCloudWorkspaceEntitlement` (cloud-workspace admission for both
+// create and wake) lives on the shared WorkspaceRouteOptions so the wake
+// choke point (hosted-connection-info.ts) reads the same hook.
 //
 // The three additions here are hosted-only knobs for `POST /create`, the one
 // route in this file that provisions real infrastructure. They are optional, so
@@ -182,10 +182,14 @@ export function HostedWorkspaceRoutes(services?: ControlPlaneServices, options: 
       // GET is the read: it reports the lease's current state and may mint only
       // off an already-running sandbox. POST is the explicit connect: the only
       // path that runs `sandboxManager.ensure` and so the only one that can
-      // start billable compute (P-118).
-      const result = input.readOnly
-        ? await hostedConnectionStatus(services, options, auth, workspaceId)
-        : await hostedConnectionInfo(services, options, auth, workspaceId, input.previousJti)
+      // start billable compute (P-118). A GET naming a session is a share
+      // holder's, whose token reaches that session alone.
+      const sessionId = input.readOnly ? c.req.query("sessionId")?.trim() : undefined
+      const result = sessionId
+        ? await hostedSessionConnection(services, options, auth, { workspaceId, sessionId })
+        : input.readOnly
+          ? await hostedConnectionStatus(services, options, auth, workspaceId)
+          : await hostedConnectionInfo(services, options, auth, workspaceId, input.previousJti)
       if ("error" in result)
         return c.json({ error: result.error }, result.status)
       // Any status-bearing body (`provisioning`, `stopped`) minted nothing, so
@@ -288,7 +292,7 @@ export function HostedWorkspaceRoutes(services?: ControlPlaneServices, options: 
 
         // Admission for every create, not only one that names a tenant:
         // the authority's own create admission against the organization the
-        // workspace would land in, the paid-capability entitlement, and the
+        // workspace would land in, the deployment's cloud-workspace admission, and the
         // concurrent-lease cap — the same object the Tasks cloud-root
         // allocation is subject to, so no door reaches a billable sandbox
         // around it.
@@ -427,16 +431,15 @@ export function HostedWorkspaceRoutes(services?: ControlPlaneServices, options: 
             // What reaches the driver is the manager's call, resolved by
             // `sandboxEgressDisposition`:
             //
-            //  - a driver that can enforce (daytona, vercel) is handed the
-            //    allowlist and contains the sandbox;
-            //  - a driver declaring `egressControl: "none"` (cloudflare — which
-            //    the hosted auto-selection prefers — plus exe, the fetch bridge,
-            //    docker, modal, box) has it withheld, and the sandbox comes up
-            //    with unrestricted egress. Withholding keeps the drivers that
-            //    throw on a restricted policy from seeing one, and stops the ones
-            //    that silently drop it from pretending. That exposure is loud:
-            //    the manager warns, and the hosted composition emits
-            //    `sandbox.egress_unenforced` per create
+            //  - a driver that can enforce (vercel) is handed the allowlist and
+            //    contains the sandbox;
+            //  - a driver declaring `egressControl: "none"` (cloudflare, the
+            //    fetch bridge, docker, modal, box) has it withheld, and the
+            //    sandbox comes up with unrestricted egress. Withholding keeps
+            //    the drivers that throw on a restricted policy from seeing one,
+            //    and stops the ones that silently drop it from pretending. That
+            //    exposure is loud: the manager warns, and the hosted
+            //    composition emits `sandbox.egress_unenforced` per create
             //    (`sandboxEgressUnenforcedSink`). `public-docs/sandbox-egress.md`
             //    has the operator-facing matrix.
             //

@@ -3,7 +3,6 @@ export { WorkspaceRuntimeRouteManifest, WorkspaceRuntimeRoutes, workspaceRuntime
 export type { WorkspaceRuntimeRouteFamily }
   from "./routes/manifest"
 export { PtyRoutes } from "./routes/pty"
-export { ProcessRoutes } from "./routes/process"
 export { createDiffRoutes } from "./routes/diff"
 export { workspaceEventsHandler } from "./routes/events"
 export type { WorkspaceEventParents } from "./routes/events"

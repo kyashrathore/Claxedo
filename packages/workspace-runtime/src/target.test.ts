@@ -17,6 +17,14 @@ import {
 } from "./target"
 
 describe("workspaceDir", () => {
+  it("pins a directory with a typed refusal", () => {
+    try {
+      assertTarget("/other", { WORKSPACE_RUNTIME_DIRECTORY: "/repo", WORKSPACE_RUNTIME_WORKSPACE_ID: "ws_1" })
+      throw new Error("expected refusal")
+    } catch (error) {
+      expect(error).toMatchObject({ code: "workspace_target_pinned", status: 400, retryable: false })
+    }
+  })
   it("rejects multi-directory configuration", () => {
     expect(() =>
       workspaceDir({ WORKSPACE_RUNTIME_DIRECTORY: "/tmp/a,/tmp/b" } as NodeJS.ProcessEnv)
@@ -105,6 +113,22 @@ describe("resolveWorkspacePath", () => {
 })
 
 describe("resolveWorkspaceCommandPaths", () => {
+  it("checks Windows spellings through lexical and realpath containment", async () => {
+    const root = "C:\\work"
+    const realpath = async (value: string) => value.replace(/^C:\\work\\link(?=\\|$)/i, "D:\\private")
+    const options = { path: path.win32, realpath }
+    for (const reference of ["C:\\outside\\secret", "..\\secret", "\\\\server\\share\\secret", "C:\\work\\link\\secret"]) {
+      for (const input of [{ command: `type>${reference}` }, { command: "type", args: [reference] }]) {
+        await expect(resolveWorkspaceCommandPaths(root, input, options)).rejects.toThrow("workspace path escapes configured directory")
+      }
+    }
+    for (const home of ["%USERPROFILE%\\secret", "$env:USERPROFILE/secret", "~\\secret", "$HOME\\secret", "${HOME}\\secret"]) {
+      await expect(resolveWorkspaceCommandPaths(root, { command: `type<${home}` }, options)).rejects.toThrow("workspace command path must be relative")
+    }
+    await resolveWorkspaceCommandPaths(root, { command: "C:\\bin\\tool.exe .\\file", args: ["c:\\WORK\\file"], allowAbsoluteExecutable: true }, options)
+    await expect(resolveWorkspaceCommandPaths(root, { command: "type C:\\bin\\tool.exe", allowAbsoluteExecutable: true }, options)).rejects.toThrow("workspace path escapes configured directory")
+  })
+
   it("allows workspace-relative paths and an absolute executable only", async () => {
     const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "workspace-runtime-command-"))
     try {

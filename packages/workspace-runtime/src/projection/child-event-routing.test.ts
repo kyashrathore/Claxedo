@@ -4,7 +4,7 @@ import { asRecord } from "@claxedo/helpers/guards"
 import type { RuntimeEventEnvelopeInput } from "./runtime-event-hub"
 import { createChildEventRouter, type ChildProjectionTarget } from "./child-event-routing"
 import type { ChildRoute } from "./child-routes"
-import type { RuntimeAppendSource } from "./turn-projection"
+import type { RuntimeAppendSource } from "./session-event-writer"
 import { testTurnProjector } from "../test-support/turn-projector"
 
 const source: RuntimeAppendSource = { dir: "in", method: "test" }

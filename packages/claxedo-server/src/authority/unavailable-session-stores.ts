@@ -1,22 +1,11 @@
 /**
- * The session stores a composition that serves no sessions still has to supply.
+ * The local session stores a composition whose sessions live only in its
+ * authority still has to supply: the hosted Worker keeps every session in D1,
+ * so a call that reaches one of these fails closed and names the store.
  *
- * `ControlPlaneServices` requires a projection store and a durable session log,
- * because a composition that serves sessions cannot be allowed to forget them.
- * A composition that serves NONE — the hosted Worker control plane, the workerd
- * auth spike — used to satisfy that requirement by asserting an object it never
- * populated, so a stray call surfaced as `undefined is not a function` with
- * nothing to say about which store was reached or why it was empty.
- *
- * These fail closed and say so instead. They live in this leaf module, with no
- * imports beyond the two port types, so a composition can reach them without
- * dragging a composition graph behind them.
- *
- * Written out member by member rather than produced by a `Proxy` behind a
- * `<T extends object>` the caller picks: the proxy answered ANY property with a
- * thrower, so it satisfied the port by assertion and a member added to
- * `ProjectionStore` would never have been noticed here. These fail the
- * typecheck instead.
+ * Written out member by member rather than produced by a `Proxy`: a proxy
+ * answers any property with a thrower, so a member added to `ProjectionStore`
+ * would never be noticed here. These fail the typecheck instead.
  */
 import type { DurableSessionLog } from "@claxedo/server-core/platform/auth/durable-session-log"
 import type { ProjectionStore } from "./projection-store"

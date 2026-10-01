@@ -90,7 +90,6 @@ function rootedAt(routePath: string, roots: readonly string[]) {
 function mountPosture(route: { method: string; path: string }) {
   if (route.method === "ALL") return "mount-middleware"
   if (route.path.startsWith("/api/wr/documents")) return "document-hydration"
-  if (route.path.startsWith("/api/wr/local-documents")) return "local-document-broker"
   if (rootedAt(route.path, [CONTRIBUTION_PROBE_PATH])) return "route-contribution"
   if (workspaceRuntimeRoute(route.path)) return "manifest-prefix"
   if (rootedAt(route.path, SESSION_COMPAT_ROOTS)) return "session-compat"

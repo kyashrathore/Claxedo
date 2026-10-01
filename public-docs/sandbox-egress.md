@@ -1,7 +1,7 @@
 # Sandbox Egress Containment
 
 Status: current
-Last updated: 2026-09-12
+Last updated: 2026-09-30
 
 A Claxedo sandbox runs **agent-authored code** over a checkout of someone's
 private repository. Whether that code can reach the open internet is decided by
@@ -27,53 +27,41 @@ everything else.
 
 | Driver | `egressControl` | Sandbox egress | Mechanism, or why not |
 | --- | --- | --- | --- |
-| `daytona` | `hosts-and-cidrs` | **Enforced** | `domainAllowList` (names) and `networkAllowList` (CIDRs) over a `networkBlockAll` floor. The only driver that filters by name *and* by address. |
 | `vercel` | `hosts` | **Enforced** | The driver sends a hostname allow list, or `deny-all`. SDK subnet rules exist but the driver does not translate `net.cidrs`. |
 | `cloudflare` | `none` | **UNRESTRICTED** | Native outbound handlers inject credentials for registered hosts. They do not restrict unrelated destinations; the driver does not apply a network allowlist. |
-| `exe` | `none` | **UNRESTRICTED** | exe.dev exposes no egress allowlist. The driver throws if handed one. |
 | `modal` | `none` | **UNRESTRICTED** | The driver implements `blockNetwork` only and rejects host policies. Modal's domain allowlist and alpha sidecar are not wired. |
 | `box` | `none` | **UNRESTRICTED** | No egress allowlist. The driver throws if handed one. |
 | `docker` | `none` | **UNRESTRICTED** | Local Docker placement, no per-sandbox network policy wired. The driver throws if handed one. |
 | `fetch` | `none` | **UNRESTRICTED** | The fetch bridge forwards a provisioning request to an external HTTP driver; the wire format carries no egress policy, so whatever contains that sandbox (if anything) is outside Claxedo's knowledge. |
 
 Provider features do not become driver capabilities through an SDK upgrade.
-Cloudflare's native credential handlers are wired; its network allowlist and
-exe.dev's integrations are not. The current secret delivery declarations are:
+Cloudflare's native credential handlers are wired; its network allowlist is
+not. The current secret delivery declarations are:
 
 | Driver | `secretBrokering` |
 | --- | --- |
-| `daytona` | `native` |
 | `vercel` | `native` |
 | `cloudflare` | `native` |
-| `exe` | `none` |
 | `modal` | `none` |
 | `box` | `none` |
 | `docker` | `none` |
 
 These declarations describe implemented delivery paths, not live acceptance
-of each harness and auth mode. Native substitution on Daytona is host-scoped;
-the current Vercel driver installs header transforms without request matchers.
+of each harness and auth mode. The current Vercel driver installs header
+transforms without request matchers.
 
 ## Which production configurations are unrestricted
 
-**The hosted control-plane Worker only composes four of these drivers — `exe`,
-`cloudflare`, `daytona`, and `fetch` — and only `daytona` enforces egress.**
+**The hosted control-plane Worker composes two of these drivers — `cloudflare`
+and `fetch` — and neither enforces egress.**
 
-The Worker selects a driver from `CLAXEDO_SANDBOX_DRIVER`, or auto-selects from
-whichever credentials are present, in this order
-(`control-plane/hosted-services.ts`):
+The Worker composes the driver `CLAXEDO_SANDBOX_DRIVER` names
+(`packages/claxedo-server/src/authority/adapters/worker/hosted-sandbox-driver.ts`):
 
-| Selected when | Driver | Egress |
-| --- | --- | --- |
-| `CLOUDFLARE_SANDBOX_WORKER_URL` + (`CLOUDFLARE_SANDBOX_API_TOKEN` or `CLOUDFLARE_API_TOKEN`) | `cloudflare` | **UNRESTRICTED** |
-| else `EXE_DEV_API_TOKEN` | `exe` | **UNRESTRICTED** |
-| else `DAYTONA_API_KEY` + `CLAXEDO_DAYTONA_SNAPSHOT` | `daytona` | Enforced |
-| `CLAXEDO_SANDBOX_DRIVER=fetch` + `CLAXEDO_SANDBOX_DRIVER_URL` (explicit only) | `fetch` | **UNRESTRICTED** |
-
-Cloudflare is checked **first**, so a deployment that has Cloudflare
-credentials configured — which is the common case, since the same account hosts
-the Worker — runs every hosted sandbox with unrestricted egress unless
-`CLAXEDO_SANDBOX_DRIVER=daytona` is set explicitly.
+| `CLAXEDO_SANDBOX_DRIVER` | Also requires | Driver | Egress |
+| --- | --- | --- | --- |
+| `cloudflare` | `CLOUDFLARE_SANDBOX_WORKER_URL` + `CLOUDFLARE_SANDBOX_API_TOKEN` | `cloudflare` | **UNRESTRICTED** |
+| `fetch` | `CLAXEDO_SANDBOX_DRIVER_URL` | `fetch` | **UNRESTRICTED** |
 
 Local deployments (`workspace-supervisor-sandbox.ts`) can additionally compose
 `vercel`, `modal`, `box`, and `docker`. They pass a policy only when the
@@ -109,13 +97,10 @@ downgrade a secret to readable env. Do not read "egress is unrestricted" as
 
 ## Getting enforcement
 
-**Hosted:** set `CLAXEDO_SANDBOX_DRIVER=daytona` and provide `DAYTONA_API_KEY`
-plus `CLAXEDO_DAYTONA_SNAPSHOT`. That is the only hosted configuration where the
-allowlist below actually binds. Setting the variable is required even if Daytona
-credentials are present, because Cloudflare wins the auto-selection.
+**Hosted:** no hosted driver enforces the allowlist below.
 
-**Local:** compose `daytona` or `vercel`. Vercel enforces names only, so a
-policy expressed purely as CIDRs will be refused (see "Failure modes").
+**Local:** compose `vercel`. Vercel enforces names only, so a policy expressed
+purely as CIDRs will be refused (see "Failure modes").
 
 Verify from the logs: an enforcing deployment prints **no**
 `SANDBOX EGRESS IS UNRESTRICTED` warning at boot. If you see one, the driver you
@@ -173,7 +158,7 @@ egressControl: "none", so workspace ws_abc123 can reach ANY host on the
 internet, including attacker-controlled buckets — agent-authored code inside
 the sandbox has an unmonitored exfiltration path. The requested allowlist
 (17 host(s), 0 cidr(s)) was withheld, not applied. Select a driver that can
-enforce egress (daytona, vercel) to close it. See public-docs/sandbox-egress.md.
+enforce egress (vercel) to close it. See public-docs/sandbox-egress.md.
 ```
 
 It goes to `console.warn` by default. To send it somewhere else, pass

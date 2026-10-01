@@ -1,12 +1,3 @@
-/**
- * Claxedo documents, as an agent uses them: find the ones a project has, and
- * turn a `claxedo://document/...` reference into a real path this session may
- * open.
- *
- * The service is mounted on the self-hosted node and nowhere else today, so
- * every tool here has to answer a deployment that does not serve `/documents`
- * with a sentence rather than a stack trace.
- */
 import path from "node:path"
 import { z } from "zod"
 import { claxedoDocumentReferenceId, InvalidDocumentReferenceError } from "@claxedo/helpers/claxedo-document"
@@ -21,6 +12,7 @@ import { toolJson, WORKSPACE_TARGET_SCHEMA } from "./target"
 /** The index fields a caller can act on; the rest of a row is service bookkeeping. */
 const METADATA_KEYS = [
   "id",
+  "creator_id",
   "project_id",
   "display_name",
   "origin_kind",

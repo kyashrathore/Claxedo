@@ -4,11 +4,10 @@ export type DocumentJobExpected = Readonly<{
   userId: string
   orgId: string
   projectId: string
-  localWorkspaceId: string
-  cloudWorkspaceId: string
+  workspaceId: string
   sessionId: string
   documentId: string
-  operation: "hydrate" | "read" | "write" | "resolve"
+  operation: "hydrate" | "write" | "resolve"
 }>
 
 export async function verifyDocumentJobCapability(token: string, expected: DocumentJobExpected) {
@@ -28,8 +27,7 @@ export async function verifyDocumentJobCapability(token: string, expected: Docum
     user_id: expected.userId,
     org_id: expected.orgId,
     project_id: expected.projectId,
-    local_workspace_id: expected.localWorkspaceId,
-    cloud_workspace_id: expected.cloudWorkspaceId,
+    workspace_id: expected.workspaceId,
     session_id: expected.sessionId,
     document_id: expected.documentId,
   }

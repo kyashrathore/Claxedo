@@ -37,15 +37,6 @@ sync:
 # Linux would not exercise the platform contract GitHub gates.
 jobs:
   # Explicit Hetzner fallback selected by `pr-linux-hetzner`.
-  pr-diagnostics-linux:
-    provider: hetzner
-    target: linux
-    architecture: amd64
-    serverType: cpx42
-    shell: true
-    command: bash script/cbx-ci-remote.sh diagnostics-linux
-    stop: auto
-
   pr-unit-linux:
     provider: hetzner
     target: linux
@@ -73,30 +64,17 @@ jobs:
     command: bash script/cbx-ci-remote.sh packages-dry-run
     stop: auto
 
-  pr-relay-bench-linux:
-    provider: hetzner
-    target: linux
-    architecture: amd64
-    serverType: cpx42
-    shell: true
-    command: bash script/cbx-ci-remote.sh relay-bench
-    stop: auto
-
   # Canonical AWS Linux matrix selected by `script/cbx-ci.ts run pr-linux`.
   # Pass `--id <linux-slug>` to reuse an existing compatible lease.
-  pr-diagnostics-linux-aws: &aws_linux_job
+  pr-release-gates-linux-x64-aws: &aws_linux_job
     provider: aws
     target: linux
     architecture: amd64
     serverType: m7i.2xlarge
     market: on-demand
     shell: true
-    command: bash script/cbx-ci-remote.sh diagnostics-linux
-    stop: auto
-
-  pr-release-gates-linux-x64-aws:
-    <<: *aws_linux_job
     command: bash script/cbx-ci-remote.sh release-gates-linux-x64
+    stop: auto
 
   pr-unit-linux-aws:
     <<: *aws_linux_job
@@ -113,9 +91,6 @@ jobs:
   pr-packages-dry-run-linux-aws:
     <<: *aws_linux_job
     command: bash script/cbx-ci-remote.sh packages-dry-run
-  pr-relay-bench-linux-aws:
-    <<: *aws_linux_job
-    command: bash script/cbx-ci-remote.sh relay-bench
 
   pr-unit-windows:
     provider: aws

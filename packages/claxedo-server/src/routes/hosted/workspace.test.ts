@@ -1,3 +1,4 @@
+import { PublicApiError } from "@claxedo/server-core/platform/errors/public-api-error"
 import { describe, expect, test, vi } from "vitest"
 import { ControlPlaneAuthError, type ControlPlaneTokenVerifier } from "@claxedo/server-core/platform/auth/auth"
 import { ClaxedoError } from "@claxedo/server-core/platform/errors/base"
@@ -39,10 +40,6 @@ const verifier: ControlPlaneTokenVerifier = async (token, config) => ({
     issuer: config.issuer,
   },
 })
-
-function machineRow(hostId: string, enrolledVia: "account" | "invitation") {
-  return { enrollment_id: `enr_${hostId}`, host_id: hostId, enrolled_via: enrolledVia }
-}
 
 type CloudCreateArgs = { workspaceId: string; projectId?: string; repoUrl?: string; gitBranch?: string; remoteDirectory?: string; homeRegion?: string }
 
@@ -92,7 +89,6 @@ function fakeAuthority(overrides: Record<string, unknown> = {}) {
     ]),
     assignWorkspaceHost: vi.fn(async () => ({ assigned: true, workspace_id: "ws_1", host_id: "host_1" })),
     unassignWorkspaceHost: vi.fn(async () => ({ unassigned: true })),
-    hostEnrollmentByHost: vi.fn(async () => machineRow("host_1", "account")),
     auditAllow: vi.fn(async () => ({})),
     auditDeny: vi.fn(async () => ({})),
     ...overrides,
@@ -179,7 +175,7 @@ function del(path: string, token = "user_1") {
 }
 
 describe("host assignment (POST /:id/host-assignment)", () => {
-  test("records the owner assignment and mints a host tunnel token, without starting a tunnel", async () => {
+  test("records the owner assignment without issuing a tunnel credential", async () => {
     const { app, authority, capture } = buildApp({
       options: {
         defaultHomeRegion: "eu-west",
@@ -223,33 +219,8 @@ describe("host assignment (POST /:id/host-assignment)", () => {
       workspaceId: "ws_1",
       hostId: "host_1",
     })
-    // The desktop (account enrollment) opens its relay tunnel from this
-    // credential before its first beat; one enrollment row is read for it,
-    // not the fleet.
-    expect(authority!.hostEnrollmentByHost).toHaveBeenCalledWith(expect.anything(), { hostId: "host_1" })
     expect(json.assignment).toMatchObject({ assigned: true, workspace_id: "ws_1", host_id: "host_1" })
-    expect(json.hostTunnel).toMatchObject({
-      hostTunnelToken: "htt-for-host_1",
-      homeRegion: "eu-west",
-      relayUrl: "https://relay.eu.test",
-    })
-  })
-
-  test("mints no credential for a machine that is not account-enrolled: its heartbeat ack carries the fenced one", async () => {
-    for (const machine of [machineRow("host_1", "invitation"), undefined, "absent"] as const) {
-      const signer = vi.fn(httSigner)
-      const authority = fakeAuthority(
-        machine === "absent" ? { hostEnrollmentByHost: undefined } : { hostEnrollmentByHost: vi.fn(async () => machine) },
-      )
-      const { app } = buildApp({ authority, options: { hostTunnelTokenSigner: signer } })
-      const res = await app.fetch(post("/ws_1/host-assignment", { hostId: "host_1" }))
-      expect(res.status).toBe(200)
-      const json = (await res.json()) as Record<string, unknown>
-      expect(json.assignment).toMatchObject({ assigned: true })
-      expect(json).not.toHaveProperty("hostTunnel")
-      expect(signer).not.toHaveBeenCalled()
-      expect(authority.assignWorkspaceHost).toHaveBeenCalledTimes(1)
-    }
+    expect(json).not.toHaveProperty("hostTunnel")
   })
 
   test("an unknown enrollment or workspace is the authority's 404, not a server fault", async () => {
@@ -295,7 +266,7 @@ describe("host assignment (POST /:id/host-assignment)", () => {
   test("assigning a cloud-backed workspace returns a 409 conflict", async () => {
     const authority = fakeAuthority({
       assignWorkspaceHost: vi.fn(async () => {
-        throw new Error("workspace_backing_conflict: cannot assign a host to a cloud workspace")
+        throw new PublicApiError("workspace_backing_conflict")
       }),
     })
     const { app } = buildApp({ authority: authority })
@@ -772,6 +743,78 @@ describe("hosted connection", () => {
     expect(res.status).toBe(400)
     expect(await res.json()).toMatchObject({ error: { code: "invalid_request_body" } })
     expect(authority!.usersMe).not.toHaveBeenCalled()
+  })
+})
+
+describe("a session share holder's connection", () => {
+  function sessionApp(input: { authority: ReturnType<typeof fakeAuthority>; hostTunnelResolver?: (workspaceId: string) => Promise<unknown> }) {
+    const { services } = fakeServices(input.authority)
+    ;(services as { relay?: unknown }).relay = { hostTunnelResolver: input.hostTunnelResolver }
+    return HostedWorkspaceRoutes(services, {
+      authConfig,
+      verifier,
+      relayUrl: "https://relay.test",
+      runtimeAccessTokenSigner: ratSigner,
+      hostTunnelTokenSigner: httSigner,
+    })
+  }
+
+  test("is scoped to the session it names, off the machine already serving it, without opening the workspace", async () => {
+    const authorizeSessionRead = vi.fn(async () => {})
+    const authority = fakeAuthority({
+      authorizeSessionRead,
+      resolveWorkspaceOwner: vi.fn(async () => ({ userId: "user_owner", actorId: "act_owner", orgId: "org_owner", projectId: "prj_1" })),
+    })
+    const app = sessionApp({ authority, hostTunnelResolver: async () => ({ active: true, hostId: "host_1", backing: "local-worktree" }) })
+
+    const res = await app.fetch(get("/ws_1/connection?sessionId=ses_shared", "user_share"))
+
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({
+      backing: "local-worktree",
+      sessionAuthority: "managed-private",
+      workspaceId: "ws_1",
+      sessionId: "ses_shared",
+      relayUrl: "https://relay.test",
+      runtimeAccessToken: "rat-token",
+      tokenExpiresAt: 1_000_000,
+      role: "viewer",
+      hostId: "host_1",
+    })
+    expect(authorizeSessionRead).toHaveBeenCalledWith(expect.anything(), { workspaceId: "ws_1", sessionId: "ses_shared" })
+    expect(vi.mocked(ratSigner).mock.calls.at(-1)?.[0]).toMatchObject({ orgId: "org_owner", role: "viewer", sessionId: "ses_shared", hostId: "host_1" })
+    expect(authority.recordRuntimeAccessToken).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ role: "viewer", sessionId: "ses_shared" }))
+    expect(authority.openWorkspace).not.toHaveBeenCalled()
+    expect(authority.activeWorkspaceHost).not.toHaveBeenCalled()
+  })
+
+  test("is refused before anything is minted when the caller may not read the session", async () => {
+    const resolveWorkspaceOwner = vi.fn(async () => ({ userId: "user_owner", actorId: "act_owner", orgId: "org_owner", projectId: "prj_1" }))
+    const authority = fakeAuthority({
+      authorizeSessionRead: vi.fn(async () => { throw new ControlPlaneAuthError(403, "workspace_authorization_denied", "Session authorization was denied") }),
+      resolveWorkspaceOwner,
+    })
+    const app = sessionApp({ authority, hostTunnelResolver: async () => ({ active: true, hostId: "host_1", backing: "local-worktree" }) })
+
+    const res = await app.fetch(get("/ws_1/connection?sessionId=ses_private", "user_stranger"))
+
+    expect(res.status).toBe(403)
+    expect(authority.recordRuntimeAccessToken).not.toHaveBeenCalled()
+    expect(resolveWorkspaceOwner).not.toHaveBeenCalled()
+  })
+
+  test("answers offline, starting nothing, when no machine or running sandbox serves the workspace", async () => {
+    const authority = fakeAuthority({
+      authorizeSessionRead: vi.fn(async () => {}),
+      resolveWorkspaceOwner: vi.fn(async () => ({ userId: "user_owner", actorId: "act_owner", orgId: "org_owner", projectId: "prj_1" })),
+    })
+    const app = sessionApp({ authority, hostTunnelResolver: async () => ({ active: false }) })
+
+    const res = await app.fetch(get("/ws_1/connection?sessionId=ses_shared", "user_share"))
+
+    expect(res.status).toBe(409)
+    await expect(res.json()).resolves.toMatchObject({ error: { code: "workspace_host_offline" } })
+    expect(authority.recordRuntimeAccessToken).not.toHaveBeenCalled()
   })
 })
 

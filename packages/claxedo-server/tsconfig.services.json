@@ -5,14 +5,10 @@
     "skipLibCheck": true
   },
   "include": [
-    "src/platform/services/**/*.ts",
     "src/deployments/hosted-shared/hosted-core-app.ts",
     "src/deployments/hosted-shared/hosted-core-app.test.ts",
     "src/deployments/hosted-shared/deployment-profile.ts",
     "src/deployments/hosted-shared/deployment-profile.test.ts",
-    "src/deployments/hosted-shared/user-deployed-product-app.ts",
-    "src/deployments/hosted-shared/claxedo-hosted-product-app.ts",
-    "src/deployments/hosted-shared/product-apps.test.ts",
     "src/routes/hosted/shell.ts",
     "src/routes/hosted/workspace.ts",
     "scripts/deploy/wrangler-config.ts",

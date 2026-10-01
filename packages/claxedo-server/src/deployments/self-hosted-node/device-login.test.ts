@@ -16,8 +16,7 @@ import { DEVICE_GRANT, deviceGrant } from "../../test-support/device-grant"
  * the CLI calls: the RFC 8628 device grant the box's own Better Auth serves
  * for the `claxedo-cli` client its descriptor advertises, the owner's
  * approval, the token exchange, and that access token spent on a signed
- * control-plane route. The hosted D1 plane proves the same flow in
- * better-auth-d1-worker-spike.test.ts; this is the other composition.
+ * control-plane route.
  */
 
 const ORIGIN = "http://localhost:2593"

@@ -13,7 +13,7 @@ type PendingEntry = {
   verifier: string
   integrationId: string
   owner?: string
-  scope: "team" | "personal"
+  scope: "org" | "personal"
   context?: Record<string, string>
   routing?: Record<string, string>
   // Present only for device grants: the provider-issued code the host polls
@@ -26,23 +26,23 @@ type TerminalEntry = {
   status: "complete" | "failed" | "expired"
   integrationId: string
   owner?: string
-  scope: "team" | "personal"
+  scope: "org" | "personal"
   message?: string
   removeAt: number
 }
 type AttemptEntry = PendingEntry | TerminalEntry
 
-export type AttemptPending = { integrationId: string; owner?: string; scope: "team" | "personal"; verifier: string; context?: Record<string, string> }
-export type AttemptDevicePending = { integrationId: string; owner?: string; scope: "team" | "personal"; deviceCode: string }
+export type AttemptPending = { integrationId: string; owner?: string; scope: "org" | "personal"; verifier: string; context?: Record<string, string> }
+export type AttemptDevicePending = { integrationId: string; owner?: string; scope: "org" | "personal"; deviceCode: string }
 export type AttemptRouting = {
   integrationId: string
   owner?: string
-  scope: "team" | "personal"
+  scope: "org" | "personal"
   routing?: Record<string, string>
   /** Public integration metadata frozen into the attempt; never credential material. */
   context?: Record<string, string>
 }
-export type AttemptSummary = { status: AttemptStatus; integrationId: string; scope: "team" | "personal"; message?: string }
+export type AttemptSummary = { status: AttemptStatus; integrationId: string; scope: "org" | "personal"; message?: string }
 
 /**
  * Every method may answer asynchronously.
@@ -61,7 +61,7 @@ export type AttemptSummary = { status: AttemptStatus; integrationId: string; sco
 export type MaybePromise<T> = T | Promise<T>
 
 export type Attempts = {
-  create(input: { integrationId: string; owner?: string; scope: "team" | "personal"; deviceCode?: string; context?: Record<string, string>; routing?: Record<string, string> }): MaybePromise<{ state: string; verifier: string }>
+  create(input: { integrationId: string; owner?: string; scope: "org" | "personal"; deviceCode?: string; context?: Record<string, string>; routing?: Record<string, string> }): MaybePromise<{ state: string; verifier: string }>
   // Atomic consume: returns the pending entry exactly once (flips
   // `completing`); unknown, expired, terminal, or already-consuming states
   // return undefined.
@@ -96,7 +96,7 @@ export type Attempts = {
  * durable store a seat without making every existing caller `await`.
  */
 export type SyncAttempts = {
-  create(input: { integrationId: string; owner?: string; scope: "team" | "personal"; deviceCode?: string; context?: Record<string, string>; routing?: Record<string, string> }): { state: string; verifier: string }
+  create(input: { integrationId: string; owner?: string; scope: "org" | "personal"; deviceCode?: string; context?: Record<string, string>; routing?: Record<string, string> }): { state: string; verifier: string }
   consume(state: string): AttemptPending | undefined
   inspect(state: string): AttemptRouting | undefined
   peek(state: string): AttemptDevicePending | undefined

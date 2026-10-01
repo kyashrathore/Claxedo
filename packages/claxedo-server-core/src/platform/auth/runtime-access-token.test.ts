@@ -273,7 +273,7 @@ describe("document session capabilities", () => {
 })
 
 describe("document relay job capabilities", () => {
-  test("binds both workspaces, session, project, document, operation, and absolute expiry", async () => {
+  test("binds the workspace, session, project, document, operation, and absolute expiry", async () => {
     const { privatePem, publicPem } = await ed25519PrivateKeyPem()
     const env = {
       CLAXEDO_RUNTIME_ACCESS_TOKEN_PRIVATE_KEY_PEM: privatePem,
@@ -281,18 +281,17 @@ describe("document relay job capabilities", () => {
       CLAXEDO_RUNTIME_ACCESS_TOKEN_ALGORITHM: "EdDSA",
     }
     const scope = {
-      userId: "user_1", orgId: "org_1", projectId: "project_1", localWorkspaceId: "local_1",
-      cloudWorkspaceId: "cloud_1", sessionId: "session_1", documentId: "document_1",
-      operations: ["hydrate", "read", "write"] as const,
+      userId: "user_1", orgId: "org_1", projectId: "project_1", workspaceId: "ws_1",
+      sessionId: "session_1", documentId: "document_1",
+      operations: ["hydrate", "write"] as const,
       jobExpiresAt: Math.floor(Date.now() / 1000) + 3600,
     }
     const job = await mintDocumentRelayJobToken(scope, env)
-    const expected = { ...scope, operation: "read" as const }
+    const expected = { ...scope, operation: "write" as const }
     await expect(verifyDocumentRelayJobToken(job.token, expected, env)).resolves.toMatchObject(expected)
     await expect(verifyDocumentRelayJobToken(job.token, { ...expected, documentId: "document_2" }, env)).rejects.toThrow()
     await expect(verifyDocumentRelayJobToken(job.token, { ...expected, projectId: "project_2" }, env)).rejects.toThrow()
-    await expect(verifyDocumentRelayJobToken(job.token, { ...expected, localWorkspaceId: "local_2" }, env)).rejects.toThrow()
-    await expect(verifyDocumentRelayJobToken(job.token, { ...expected, cloudWorkspaceId: "cloud_2" }, env)).rejects.toThrow()
+    await expect(verifyDocumentRelayJobToken(job.token, { ...expected, workspaceId: "ws_2" }, env)).rejects.toThrow()
     await expect(verifyDocumentRelayJobToken(job.token, { ...expected, operation: "resolve" }, env)).rejects.toThrow()
   })
 })
@@ -518,6 +517,8 @@ describe("hostTunnelTokenSigner", () => {
       subject: "host_sub",
       hostId: "host_1",
       workspaceIds: ["ws_1", "ws_2"],
+      enrollmentId: "enr_1",
+      generation: 0,
     })
 
     const header = decodeProtectedHeader(result.hostTunnelToken)
@@ -526,17 +527,14 @@ describe("hostTunnelTokenSigner", () => {
     expect(header.alg).toBe("EdDSA")
   })
 
-  test("omits the fence claims when the caller supplies neither", async () => {
+  test("refuses to sign a host token without its enrollment fence", async () => {
     const { privatePem, publicPem } = await ed25519PrivateKeyPem()
     process.env.CLAXEDO_RUNTIME_ACCESS_TOKEN_PRIVATE_KEY_PEM = privatePem
     process.env.CLAXEDO_RUNTIME_ACCESS_TOKEN_PUBLIC_KEY_PEM = publicPem
     process.env.CLAXEDO_RUNTIME_ACCESS_TOKEN_ALGORITHM = "EdDSA"
 
-    const result = await hostTunnelTokenSigner()({ subject: "host_sub", hostId: "host_1", workspaceIds: ["ws_1"] })
-
-    const claims = decodeJwt(result.hostTunnelToken)
-    expect("enrollment_id" in claims).toBe(false)
-    expect("generation" in claims).toBe(false)
+    await expect(hostTunnelTokenSigner()({ subject: "host_sub", hostId: "host_1", workspaceIds: ["ws_1"] } as Parameters<ReturnType<typeof hostTunnelTokenSigner>>[0]))
+      .rejects.toThrow("enrollmentId and generation together")
   })
 
   test("carries enrollment_id and generation when supplied together", async () => {
@@ -594,9 +592,9 @@ describe("hostTunnelTokenSigner", () => {
     process.env.CLAXEDO_RUNTIME_ACCESS_TOKEN_ALGORITHM = "EdDSA"
     const sign = hostTunnelTokenSigner()
 
-    await expect(sign({ subject: "host_sub", hostId: "host_1", workspaceIds: ["ws_1"], generation: 1 }))
+    await expect(sign({ subject: "host_sub", hostId: "host_1", workspaceIds: ["ws_1"], generation: 1 } as Parameters<typeof sign>[0]))
       .rejects.toThrow("enrollmentId and generation together")
-    await expect(sign({ subject: "host_sub", hostId: "host_1", workspaceIds: ["ws_1"], enrollmentId: "enr_1" }))
+    await expect(sign({ subject: "host_sub", hostId: "host_1", workspaceIds: ["ws_1"], enrollmentId: "enr_1" } as Parameters<typeof sign>[0]))
       .rejects.toThrow("enrollmentId and generation together")
     await expect(sign({ subject: "host_sub", hostId: "host_1", workspaceIds: ["ws_1"], enrollmentId: "enr_1", generation: 1.5 }))
       .rejects.toThrow("non-negative integer")

@@ -242,8 +242,6 @@ function services(): ControlPlaneServices {
       resolveOrgId: vi.fn(async () => "org_1" as never),
       authorizeSessionRead: vi.fn(async () => {}),
       authorizeSessionWrite: vi.fn(async () => {}),
-      grantSessionParticipant: vi.fn(async () => ({ participant_id: "participant_1" })),
-      revokeSessionParticipant: vi.fn(async () => ({ removed: true })),
       authorizeWorkspaceOpen: vi.fn(async () => {}),
       authorizeWorkspaceCreate: vi.fn(async () => {}),
       authorizeWorkspaceHostAssignment: vi.fn(async () => ({ registration: "existing" as const })),
@@ -415,7 +413,7 @@ describe("workspace routes signed control plane authority", () => {
       repo_url: "https://github.com/acme/demo.git",
       repo_name: "demo",
       git_branch: "main",
-      driver: "daytona",
+      driver: "cloudflare",
       status: "acquiring_sandbox",
       created_at: 1,
       updated_at: 1,
@@ -427,7 +425,7 @@ describe("workspace routes signed control plane authority", () => {
       workspace_name: "signed-demo",
       directory: "/workspace",
       kind: "cloud",
-      driver: "daytona",
+      driver: "cloudflare",
       status: "ready",
       created_at: 1,
       updated_at: 1,
@@ -506,7 +504,7 @@ describe("workspace routes signed control plane authority", () => {
     expect(svc.telemetry.capture).toHaveBeenCalledWith("user_1", "workspace.cloud.create", {
       workspaceId: "ws_1",
       projectId: expect.stringMatching(/^ws_/),
-      driver: "daytona",
+      driver: "cloudflare",
       repoName: "demo",
       gitBranch: "main",
     })
@@ -890,7 +888,7 @@ describe("workspace routes signed control plane authority", () => {
       "workspace.cloud.create",
       expect.objectContaining({
         workspaceId: "ws_1",
-        driver: "daytona",
+        driver: "cloudflare",
         repoName: "demo",
         gitBranch: "signed-demo",
       }),
@@ -906,8 +904,8 @@ describe("workspace routes signed control plane authority", () => {
 
     expect(res.status).toBe(200)
     await expect(res.json()).resolves.toMatchObject({
-      default_driver: "daytona",
-      drivers: expect.arrayContaining([expect.objectContaining({ id: "daytona", label: "Daytona" })]),
+      default_driver: "cloudflare",
+      drivers: expect.arrayContaining([expect.objectContaining({ id: "vercel", label: "Vercel" })]),
     })
   })
 
@@ -920,7 +918,7 @@ describe("workspace routes signed control plane authority", () => {
     const oldBody = await app.request("http://127.0.0.1/drivers/default", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ provider: "daytona" }),
+      body: JSON.stringify({ provider: "vercel" }),
     })
     expect(oldBody.status).toBe(400)
     await expect(oldBody.json()).resolves.toEqual({
@@ -938,16 +936,16 @@ describe("workspace routes signed control plane authority", () => {
       {
         method: "PUT",
         path: "/drivers/default",
-        body: { driver: "daytona" },
+        body: { driver: "vercel" },
       },
       {
         method: "PUT",
-        path: "/drivers/daytona/auth",
+        path: "/drivers/vercel/auth",
         body: { auth: { api_key: "secret" }, default: true },
       },
       {
         method: "DELETE",
-        path: "/drivers/daytona/auth",
+        path: "/drivers/vercel/auth",
       },
     ]) {
       const res = await app.request(`https://app.example.test${item.path}`, {
@@ -963,7 +961,7 @@ describe("workspace routes signed control plane authority", () => {
         error: {
           code: "local_only_sandbox_driver",
           message:
-            "Sandbox driver configuration is local-only and is not available through signed/team Control Plane access",
+            "Sandbox driver configuration is local-only and is not available through signed Control Plane access",
         },
       })
     }
@@ -1114,21 +1112,21 @@ describe("workspace routes signed control plane authority", () => {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         repoUrl: "https://github.com/acme/demo.git",
-        driver: "daytona",
+        driver: "vercel",
       }),
     })
     expect(missingCredentials.status).toBe(400)
     await expect(missingCredentials.json()).resolves.toEqual({
       error: {
         code: "sandbox_driver_credentials_missing",
-        message: "Missing daytona credentials",
-        driver: "daytona",
+        message: "Missing vercel credentials",
+        driver: "vercel",
       },
     })
 
     getCredentialByProvider.mockResolvedValueOnce({
       id: "cred_1",
-      provider_id: "daytona",
+      provider_id: "vercel",
       kind: "sandbox_driver",
       source: "managed",
       status: "available",
@@ -1140,7 +1138,7 @@ describe("workspace routes signed control plane authority", () => {
     const missingSource = await app.request("http://localhost/create", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ driver: "daytona" }),
+      body: JSON.stringify({ driver: "vercel" }),
     })
     expect(missingSource.status).toBe(400)
     await expect(missingSource.json()).resolves.toEqual({
@@ -1152,7 +1150,7 @@ describe("workspace routes signed control plane authority", () => {
 
     getCredentialByProvider.mockResolvedValueOnce({
       id: "cred_2",
-      provider_id: "daytona",
+      provider_id: "vercel",
       kind: "sandbox_driver",
       source: "managed",
       status: "available",
@@ -1166,7 +1164,7 @@ describe("workspace routes signed control plane authority", () => {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         repoUrl: "https://github.com/acme/demo.git",
-        driver: "daytona",
+        driver: "vercel",
       }),
     })
     expect(missingManager.status).toBe(503)
@@ -1182,7 +1180,7 @@ describe("workspace routes signed control plane authority", () => {
     // Scoped to the sandbox_driver kind: `vercel` is both a sandbox driver and
     // a model provider, so an unscoped lookup lets a model API key satisfy this
     // gate and creation passes here to fail later at launch.
-    expect(getCredentialByProvider).toHaveBeenCalledWith("daytona", { owner: null, kind: "sandbox_driver" })
+    expect(getCredentialByProvider).toHaveBeenCalledWith("vercel", { owner: null, kind: "sandbox_driver" })
   })
 
   test("docker cloud create can start from a project without a remote URL", async () => {
@@ -1777,7 +1775,7 @@ describe("workspace routes signed control plane authority", () => {
       directory: "/workspace",
       remote_directory: "/workspace",
       kind: "cloud",
-      driver: "daytona",
+      driver: "vercel",
       status: "ready",
       created_at: 1,
       updated_at: 1,
@@ -2238,6 +2236,7 @@ describe("workspace routes signed control plane authority", () => {
       error: {
         code: "missing_bearer_token",
         message: "Authorization: Bearer token is required",
+        retryable: false,
       },
     })
     expect(svc.telemetry.capture).toHaveBeenCalledWith("local", "control_plane.auth.denied", {
@@ -2454,6 +2453,7 @@ describe("workspace routes signed control plane authority", () => {
       error: {
         code: "runtime_access_token_signer_unavailable",
         message: "Runtime Access Token signer is not configured",
+        retryable: false,
       },
     })
     expect(sandbox.target).toHaveBeenCalledWith("ws_1")
@@ -3054,12 +3054,6 @@ describe("workspace routes signed control plane authority", () => {
       hostId: vi.fn(async () => "host_machine"),
       assignWorkspace: vi.fn(async (_auth: unknown, share: { workspaceId: string }) => ({
         assignment: { assigned: true as const, workspace_id: share.workspaceId, host_id: "host_machine" },
-        hostTunnel: {
-          hostTunnelToken: "htt_1",
-          tokenExpiresAt: 456_000,
-          jti: "htt_jti_1",
-          relayUrl: "http://relay.test",
-        },
       })),
       unassignWorkspace: vi.fn(async () => ({ unassigned: true })),
     }
@@ -3088,12 +3082,6 @@ describe("workspace routes signed control plane authority", () => {
         assigned: true,
         workspace_id: "ws_local",
         host_id: "host_machine",
-      },
-      hostTunnel: {
-        hostTunnelToken: "htt_1",
-        tokenExpiresAt: 456_000,
-        jti: "htt_jti_1",
-        relayUrl: "http://relay.test",
       },
     })
     expect(svc.authority?.usersMe).toHaveBeenCalledWith(expect.objectContaining({ token: "user_1" }))
@@ -3170,6 +3158,7 @@ describe("workspace routes signed control plane authority", () => {
       error: {
         code: "missing_bearer_token",
         message: "Authorization: Bearer token is required",
+        retryable: false,
       },
     })
     expect(mocks.resolveWorkspace).not.toHaveBeenCalled()
@@ -3358,6 +3347,7 @@ describe("workspace routes signed control plane authority", () => {
       error: {
         code: "workspace_authority_unavailable",
         message: "The workspace assignment was not acknowledged by the control plane",
+        retryable: false,
       },
     })
     expect(svc.authority?.auditAllow).not.toHaveBeenCalled()
@@ -3613,12 +3603,12 @@ describe("cloud workspace placement", () => {
     const res = await app.request("http://localhost/create", {
       method: "POST",
       headers: { Authorization: "Bearer user_1", "Content-Type": "application/json" },
-      body: JSON.stringify({ repoUrl: "https://github.com/acme/demo.git", driver: "daytona" }),
+      body: JSON.stringify({ repoUrl: "https://github.com/acme/demo.git", driver: "vercel" }),
     })
 
     expect(res.status).toBe(200)
     expect(mocks.ensureWorkspace).toHaveBeenCalledWith(
-      expect.objectContaining({ kind: "cloud", driver: "daytona" }),
+      expect.objectContaining({ kind: "cloud", driver: "vercel" }),
     )
   })
 })
@@ -3641,7 +3631,7 @@ describe("unsigned workspace list", () => {
       directory: "/workspace",
       remote_directory: "/workspace",
       kind: "cloud",
-      driver: "daytona",
+      driver: "vercel",
       created_at: 1,
       updated_at: 1,
     })
@@ -3727,7 +3717,7 @@ describe("workspace lifecycle authorization", () => {
       workspace_name: "Cloud Main",
       directory: "/workspace",
       kind: "cloud",
-      driver: "daytona",
+      driver: "vercel",
       created_at: 1,
       updated_at: 1,
     }
@@ -3754,7 +3744,7 @@ describe("workspace lifecycle authorization", () => {
 
     expect(res.status).toBe(403)
     await expect(res.json()).resolves.toEqual({
-      error: { code: "operator_required", message: "Deployment operator access is required" },
+      error: { code: "operator_required", message: "Deployment operator access is required", retryable: false },
     })
     expect(mocks.deleteWorkspace).not.toHaveBeenCalled()
     expect(mocks.discardSupervisorSandbox).not.toHaveBeenCalled()
@@ -3794,6 +3784,7 @@ describe("workspace lifecycle authorization", () => {
       error: {
         code: "authority_unavailable",
         message: "Deployment operator authorization is not configured",
+        retryable: false,
       },
     })
     expect(mocks.deleteWorkspace).not.toHaveBeenCalled()
@@ -4116,9 +4107,8 @@ describe("workspace route body bound", () => {
   })
 
   test("the enrolled-host assignment handler keeps its bound mounted without a route cap", async () => {
-    // The handler is mounted by two routers; one mount is the hosted workerd
-    // spike, which composes no request guard, so the bound lives in the
-    // handler and not only in the wiring.
+    // The handler is mounted by two routers, so the bound lives in the
+    // handler and not only in either router's wiring.
     const svc = services()
     const app = new Hono().post(
       "/:id/host-assignment",

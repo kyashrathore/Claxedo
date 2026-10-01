@@ -1,7 +1,8 @@
+import { publicApiErrorShape } from "@claxedo/helpers/api-error"
 import type { D1Database, D1PreparedStatement } from "@cloudflare/workers-types"
 import { ControlPlaneAuthError, type SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
+import { AUTH_ADAPTERS } from "@claxedo/account-contract/auth"
 import {
-  AUTH_ADAPTERS,
   type ApplicationIdentityResolution,
   type AuthIdentity,
 } from "@claxedo/server-core/platform/auth/authentication"
@@ -15,8 +16,12 @@ import type { PrivateSessionRuntimePrincipal } from "@claxedo/server-core/platfo
 import { canonicalRepositoryKey } from "@claxedo/server-core/authority/repository-key"
 import { ClaxedoError } from "@claxedo/server-core/platform/errors/base"
 import { normalizeStoredDirectory } from "@claxedo/server-core/platform/auth/host-connect-contract"
-import { HOST_SERVING_WORKSPACE_SQL, organizationRoleRankSql } from "./host-access-authority"
+import { HOST_SERVING_WORKSPACE_SQL } from "./host-access-authority"
+import { batchUnder, may, mayGuard, maySql, readProjectRole, roleRank, type AuthorizationPrincipal, type BoundSql } from "./authorization"
+import { ownerMembershipStatements, requireHuman, requireText, type D1AccessContext } from "./access-context"
+import { prepareInvitationAdmission } from "./org-invitation-authority"
 import { asOrgId, type OrgId } from "@claxedo/server-core/platform/auth/branded-id"
+import { d1BatchAssertionFailed } from "../../../platform/db/d1-constraint"
 
 const KNOWN_HOME_REGIONS = new Set(["apac-south", "apac-east", "eu-west", "us-east", "us-west"])
 
@@ -24,14 +29,6 @@ export const D1_WORKSPACE_AUTHORITY_METHODS = [
   "usersMe",
   "listOrgs",
   "createOrg",
-  "listTeams",
-  "createTeamInOrg",
-  "ensureDefaultTeam",
-  "addTeamMember",
-  "removeTeamMember",
-  "listTeamMembers",
-  "grantTeamProject",
-  "revokeTeamProject",
   "resolveOrgId",
   "projectRole",
   "authorizeProject",
@@ -69,7 +66,7 @@ export type D1WorkspaceAuthorityOptions = {
   deploymentId: string
   product: D1AuthorityProductPolicy
   now?: () => number
-  randomId?: (prefix: "usr" | "act" | "org" | "prj" | "team" | "assert") => string
+  randomId?: (prefix: "usr" | "act" | "org" | "prj" | "team" | "assert" | "audit") => string
 }
 
 export type D1WorkspaceCreateArgs = {
@@ -83,8 +80,6 @@ export type D1WorkspaceCreateArgs = {
   remoteDirectory?: string
   homeRegion?: string
   backing: "local-worktree" | "cloud-vm"
-  /** Whether ordinary org members get the implicit viewer rank; the serving host's scope decides it. */
-  orgMemberVisible?: boolean
 }
 
 export type D1LocalWorkspaceRegistrationArgs = {
@@ -97,7 +92,6 @@ export type D1LocalWorkspaceRegistrationArgs = {
   remoteDirectory?: string
   homeRegion?: string
   orgId?: string
-  orgMemberVisible?: boolean
 }
 
 type Principal = {
@@ -116,13 +110,8 @@ type IdentityRow = {
 type OrgRow = {
   org_id: string
   name: string
-  kind: "personal" | "team" | "deployment"
+  kind: "personal" | "shared" | "deployment"
   role: "member" | "admin" | "owner"
-}
-
-type ProjectAccessRow = {
-  org_id: string
-  role_rank: number
 }
 
 type WorkspaceAccessRow = {
@@ -139,7 +128,6 @@ type WorkspaceAccessRow = {
   remote_directory: string | null
   host_enrollment_id: string | null
   deleted_at: number | null
-  role_rank: number
 }
 
 export type D1WorkspaceAuthorityErrorCode =
@@ -148,13 +136,6 @@ export type D1WorkspaceAuthorityErrorCode =
   | "organization_policy_denied"
   | "resource_conflict"
 
-const D1_WORKSPACE_ERROR_STATUS: Record<D1WorkspaceAuthorityErrorCode, number> = {
-  invalid_input: 400,
-  identity_conflict: 409,
-  organization_policy_denied: 403,
-  resource_conflict: 409,
-}
-
 /**
  * Carries its HTTP status like every other authority refusal
  * (`D1HostAccessAuthorityError`), so a route that hands the caller a
@@ -162,14 +143,14 @@ const D1_WORKSPACE_ERROR_STATUS: Record<D1WorkspaceAuthorityErrorCode, number> =
  */
 export class D1WorkspaceAuthorityError extends ClaxedoError<D1WorkspaceAuthorityErrorCode> {
   constructor(code: D1WorkspaceAuthorityErrorCode, message: string) {
-    super({ code, message, status: D1_WORKSPACE_ERROR_STATUS[code] })
+    super({ code, message, ...publicApiErrorShape(code) })
   }
 }
 
 /**
- * Worker-safe identity, organization, team, project, and workspace authority.
- * Session-scoped state stays in `D1SessionAuthority`; both modules evaluate
- * the same canonical D1 rows at decision time.
+ * Worker-safe identity, organization creation, project and workspace authority.
+ * Membership, teams and grants live in the modules sharing `accessContext()`,
+ * session state in `D1SessionAuthority`; all read the same canonical D1 rows.
  */
 export class D1WorkspaceAuthority implements D1WorkspaceAuthorityCore {
   private readonly now: () => number
@@ -190,6 +171,18 @@ export class D1WorkspaceAuthority implements D1WorkspaceAuthorityCore {
     }
     this.now = options.now ?? Date.now
     this.randomId = options.randomId ?? randomId
+  }
+
+  /** The context the organization, team and project-member modules resolve their callers through. */
+  accessContext(): D1AccessContext {
+    return {
+      database: this.database,
+      deploymentId: this.options.deploymentId,
+      now: this.now,
+      randomId: this.randomId,
+      principal: (auth) => requireHuman(this.database, this.options.deploymentId, auth),
+      assertOrganizationAllowed: (orgId) => this.assertOrganizationAllowed(orgId),
+    }
   }
 
   /** Adapter-neutral resolver wired into the selected auth adapter. */
@@ -224,18 +217,15 @@ export class D1WorkspaceAuthority implements D1WorkspaceAuthorityCore {
         `,
           )
           .bind(candidate.orgId, now, now, identity.adapter, identity.issuer, identity.subject),
-        this.database
-          .prepare(
-            `
-          insert into org_memberships (org_id, user_id, role, created_at, updated_at, revoked_at)
-          select o.org_id, ai.user_id, 'owner', ?, ?, null
-          from auth_identities ai
-          join orgs o on o.owner_user_id = ai.user_id and o.kind = 'personal' and o.deleted_at is null
-          where ai.adapter = ? and ai.issuer = ? and ai.subject = ? and ai.unlinked_at is null
-          on conflict (org_id, user_id) do nothing
-        `,
-          )
-          .bind(now, now, identity.adapter, identity.issuer, identity.subject),
+        ...ownerMembershipStatements(this.accessContext(), {
+          owners: {
+            sql: `select o.org_id, ai.user_id from auth_identities ai
+              join orgs o on o.owner_user_id = ai.user_id and o.kind = 'personal' and o.deleted_at is null
+              where ai.adapter = ? and ai.issuer = ? and ai.subject = ? and ai.unlinked_at is null`,
+            bind: [identity.adapter, identity.issuer, identity.subject],
+          },
+          now,
+        }),
       ])
       return await this.identityResolution(identity)
     }
@@ -273,24 +263,47 @@ export class D1WorkspaceAuthority implements D1WorkspaceAuthorityCore {
           identity.issuer,
           identity.subject,
         ),
-      this.database
-        .prepare(
-          `
-        insert into org_memberships (org_id, user_id, role, created_at, updated_at, revoked_at)
-        select o.org_id, ai.user_id, 'owner', ?, ?, null
-        from auth_identities ai
-        join orgs o on o.org_id = ? and o.kind = 'deployment' and o.deployment_id = ? and o.deleted_at is null
-        where ai.adapter = ? and ai.issuer = ? and ai.subject = ? and ai.unlinked_at is null
-        on conflict (org_id, user_id) do nothing
-      `,
-        )
-        .bind(now, now, org.id, this.options.deploymentId, identity.adapter, identity.issuer, identity.subject),
+      ...ownerMembershipStatements(this.accessContext(), {
+        owners: {
+          sql: `select o.org_id, ai.user_id from auth_identities ai
+            join orgs o on o.org_id = ? and o.kind = 'deployment' and o.deployment_id = ? and o.deleted_at is null
+            where ai.adapter = ? and ai.issuer = ? and ai.subject = ? and ai.unlinked_at is null`,
+          bind: [org.id, this.options.deploymentId, identity.adapter, identity.issuer, identity.subject],
+        },
+        now,
+      }),
     ])
     const resolution = await this.identityResolution(identity)
-    if (resolution.state !== "active" || !(await this.activeOrgMembership(resolution.userId, org.id))) {
+    if (resolution.state !== "active" || !(await may(this.database, resolution, "member", { kind: "org", orgId: org.id }))) {
       return { state: "unavailable" }
     }
     return resolution
+  }
+
+  /**
+   * A user-deployed instance admits anyone but its owner only while an
+   * invitation to their verified email is pending, so a stranger who signs in
+   * stays unavailable. Membership still waits for the accept.
+   */
+  async admitInvitedIdentity(identity: AuthIdentity, verifiedEmail: string): Promise<ApplicationIdentityResolution> {
+    validateIdentity(identity)
+    const existing = await this.identityResolution(identity)
+    if (this.options.product.kind !== "user-deployed" || existing.state !== "unavailable") return existing
+    const now = this.now()
+    const admission = await prepareInvitationAdmission(this.accessContext(), {
+      orgId: this.options.product.organization.id,
+      email: verifiedEmail,
+      now,
+    })
+    if (!admission) return existing
+    const userId = this.randomId("usr")
+    await this.database.batch([
+      this.insertIdentity(identity, userId, now, admission.guard),
+      this.insertMappedUser(identity, userId, now),
+      this.insertHumanActor(identity, this.randomId("act"), now),
+      admission.recordUser(userId),
+    ])
+    return await this.identityResolution(identity)
   }
 
   /**
@@ -373,16 +386,14 @@ export class D1WorkspaceAuthority implements D1WorkspaceAuthorityCore {
             identityHash,
             now,
           ),
-        this.database
-          .prepare(
-            `
-        insert into org_memberships (org_id, user_id, role, created_at, updated_at, revoked_at)
-        select o.org_id, o.owner_user_id, 'owner', ?, ?, null
-        from orgs o where o.org_id = ? and o.deployment_id = ? and o.owner_user_id = ? and o.deleted_at is null
-        on conflict (org_id, user_id) do nothing
-      `,
-          )
-          .bind(now, now, org.id, deploymentId, userId),
+        ...ownerMembershipStatements(this.accessContext(), {
+          owners: {
+            sql: `select o.org_id, o.owner_user_id as user_id from orgs o
+              where o.org_id = ? and o.deployment_id = ? and o.owner_user_id = ? and o.deleted_at is null`,
+            bind: [org.id, deploymentId, userId],
+          },
+          now,
+        }),
         this.database
           .prepare(
             `
@@ -484,117 +495,6 @@ export class D1WorkspaceAuthority implements D1WorkspaceAuthorityCore {
     return { userId: row.user_id, actorId: requireActor(row) }
   }
 
-  /**
-   * Direct-add path for a verified user in the one-organization product.
-   * This is a trusted application lifecycle operation, not a public auth hook.
-   */
-  async admitUserDeployedIdentity(
-    auth: SignedControlPlaneAuth,
-    input: { identity: AuthIdentity; role: "member" | "admin" },
-  ) {
-    if (this.options.product.kind !== "user-deployed") {
-      throw new D1WorkspaceAuthorityError(
-        "organization_policy_denied",
-        "Direct deployment admission is unavailable in the hosted product",
-      )
-    }
-    validateIdentity(input.identity)
-    const administrator = await this.requirePrincipal(auth)
-    const orgId = this.options.product.organization.id
-    if (!(await this.canAdminOrganization(administrator.userId, orgId))) {
-      throw denied("Organization administrator authority was denied")
-    }
-    const now = this.now()
-    const candidateUserId = this.randomId("usr")
-    const candidateActorId = this.randomId("act")
-    const adminGuard = `
-      exists (
-        select 1 from orgs o
-        left join org_memberships m
-          on m.org_id = o.org_id and m.user_id = ? and m.revoked_at is null
-        where o.org_id = ? and o.kind = 'deployment' and o.deployment_id = ? and o.deleted_at is null
-          and (o.owner_user_id = ? or m.role in ('owner', 'admin'))
-      )
-    `
-
-    await this.database.batch([
-      this.database
-        .prepare(
-          `
-        insert into auth_identities (adapter, issuer, subject, user_id, linked_at, unlinked_at)
-        select ?, ?, ?, ?, ?, null where ${adminGuard}
-        on conflict (adapter, issuer, subject) do nothing
-      `,
-        )
-        .bind(
-          input.identity.adapter,
-          input.identity.issuer,
-          input.identity.subject,
-          candidateUserId,
-          now,
-          administrator.userId,
-          orgId,
-          this.options.deploymentId,
-          administrator.userId,
-        ),
-      this.database
-        .prepare(
-          `
-        insert into users (user_id, state, created_at, updated_at, suspended_at, deleted_at)
-        select ?, 'active', ?, ?, null, null
-        where exists (
-          select 1 from auth_identities
-          where adapter = ? and issuer = ? and subject = ? and user_id = ? and unlinked_at is null
-        )
-        on conflict (user_id) do nothing
-      `,
-        )
-        .bind(
-          candidateUserId,
-          now,
-          now,
-          input.identity.adapter,
-          input.identity.issuer,
-          input.identity.subject,
-          candidateUserId,
-        ),
-      this.insertHumanActor(input.identity, candidateActorId, now),
-      this.database
-        .prepare(
-          `
-        insert into org_memberships (org_id, user_id, role, created_at, updated_at, revoked_at)
-        select ?, ai.user_id, ?, ?, ?, null
-        from auth_identities ai join users u on u.user_id = ai.user_id and u.state = 'active'
-        where ai.adapter = ? and ai.issuer = ? and ai.subject = ? and ai.unlinked_at is null
-          and ${adminGuard}
-        on conflict (org_id, user_id) do update set
-          role = excluded.role,
-          updated_at = excluded.updated_at,
-          revoked_at = null
-      `,
-        )
-        .bind(
-          orgId,
-          input.role,
-          now,
-          now,
-          input.identity.adapter,
-          input.identity.issuer,
-          input.identity.subject,
-          administrator.userId,
-          orgId,
-          this.options.deploymentId,
-          administrator.userId,
-        ),
-    ])
-
-    const resolution = await this.identityResolution(input.identity)
-    if (resolution.state !== "active" || !(await this.activeOrgMembership(resolution.userId, orgId))) {
-      throw denied("Organization administrator authority was denied")
-    }
-    return resolution
-  }
-
   async createHostedOrganization(auth: SignedControlPlaneAuth, input: { name: string; orgId?: string }) {
     if (this.options.product.kind !== "claxedo-hosted") {
       throw new D1WorkspaceAuthorityError(
@@ -613,29 +513,27 @@ export class D1WorkspaceAuthority implements D1WorkspaceAuthorityCore {
           .prepare(
             `
         insert into orgs (org_id, name, kind, owner_user_id, deployment_id, created_at, updated_at)
-        select ?, ?, 'team', u.user_id, null, ?, ? from users u
+        select ?, ?, 'shared', u.user_id, null, ?, ? from users u
         where u.user_id = ? and u.state = 'active'
         on conflict (org_id) do nothing
       `,
           )
           .bind(orgId, name, now, now, who.userId),
-        this.database
-          .prepare(
-            `
-        insert into org_memberships (org_id, user_id, role, created_at, updated_at, revoked_at)
-        select o.org_id, o.owner_user_id, 'owner', ?, ?, null from orgs o
-        where o.org_id = ? and o.owner_user_id = ? and o.deleted_at is null
-        on conflict (org_id, user_id) do nothing
-      `,
-          )
-          .bind(now, now, orgId, who.userId),
+        ...ownerMembershipStatements(this.accessContext(), {
+          owners: {
+            sql: `select o.org_id, o.owner_user_id as user_id from orgs o
+              where o.org_id = ? and o.owner_user_id = ? and o.deleted_at is null`,
+            bind: [orgId, who.userId],
+          },
+          now,
+        }),
         this.database
           .prepare(
             `
         insert into authority_batch_assertions (assertion_id, passed)
         values (?, case when exists (
           select 1 from orgs o join org_memberships m on m.org_id = o.org_id and m.user_id = o.owner_user_id
-          where o.org_id = ? and o.owner_user_id = ? and o.name = ? and o.kind = 'team'
+          where o.org_id = ? and o.owner_user_id = ? and o.name = ? and o.kind = 'shared'
             and o.deleted_at is null and m.role = 'owner' and m.revoked_at is null
         ) then 1 else 0 end)
       `,
@@ -645,57 +543,7 @@ export class D1WorkspaceAuthority implements D1WorkspaceAuthorityCore {
       ],
       "Organization creation conflicted with existing authority state",
     )
-    return { org_id: orgId, name, kind: "team" as const, role: "owner" as const }
-  }
-
-  async addOrganizationMember(
-    auth: SignedControlPlaneAuth,
-    input: { orgId: string; userId: string; role: "member" | "admin" },
-  ) {
-    const administrator = await this.requirePrincipal(auth)
-    const orgId = requireText(input.orgId, "orgId")
-    const userId = requireText(input.userId, "userId")
-    this.assertOrganizationAllowed(orgId)
-    if (!(await this.canAdminOrganization(administrator.userId, orgId))) {
-      throw denied("Organization administrator authority was denied")
-    }
-    const assertionId = this.randomId("assert")
-    const now = this.now()
-    await this.guardedBatch(
-      [
-        this.database
-          .prepare(
-            `
-        insert into org_memberships (org_id, user_id, role, created_at, updated_at, revoked_at)
-        select o.org_id, u.user_id, ?, ?, ?, null
-        from orgs o join users u on u.user_id = ? and u.state = 'active'
-        left join org_memberships caller
-          on caller.org_id = o.org_id and caller.user_id = ? and caller.revoked_at is null
-        where o.org_id = ? and o.deleted_at is null
-          and (o.owner_user_id = ? or caller.role in ('owner', 'admin'))
-        on conflict (org_id, user_id) do update set
-          role = excluded.role,
-          updated_at = excluded.updated_at,
-          revoked_at = null
-      `,
-          )
-          .bind(input.role, now, now, userId, administrator.userId, orgId, administrator.userId),
-        this.database
-          .prepare(
-            `
-        insert into authority_batch_assertions (assertion_id, passed)
-        values (?, case when exists (
-          select 1 from org_memberships
-          where org_id = ? and user_id = ? and role = ? and revoked_at is null
-        ) then 1 else 0 end)
-      `,
-          )
-          .bind(assertionId, orgId, userId, input.role),
-        this.database.prepare(`delete from authority_batch_assertions where assertion_id = ?`).bind(assertionId),
-      ],
-      "Organization membership changed concurrently",
-    )
-    return { org_id: orgId, user_id: userId, role: input.role }
+    return { org_id: orgId, name, kind: "shared" as const, role: "owner" as const }
   }
 
   async usersMe(auth: SignedControlPlaneAuth) {
@@ -718,335 +566,6 @@ export class D1WorkspaceAuthority implements D1WorkspaceAuthorityCore {
     return await this.createHostedOrganization(auth, args)
   }
 
-  async listTeams(auth: SignedControlPlaneAuth, args: { orgId: string }) {
-    const who = await this.requirePrincipal(auth)
-    const orgId = requireText(args.orgId, "orgId")
-    if (!(await this.activeOrgMembership(who.userId, orgId))) return []
-    const result = await this.database
-      .prepare(
-        `
-      select team_id, org_id, name, is_default
-      from teams
-      where org_id = ? and deleted_at is null
-      order by name, team_id
-    `,
-      )
-      .bind(orgId)
-      .all<{ team_id: string; org_id: string; name: string; is_default: number }>()
-    return result.results.map((row) => ({ ...row, is_default: row.is_default === 1 }))
-  }
-
-  async createTeamInOrg(auth: SignedControlPlaneAuth, args: { orgId: string; name: string }) {
-    const who = await this.requirePrincipal(auth)
-    const orgId = requireText(args.orgId, "orgId")
-    const name = requireText(args.name, "name")
-    this.assertOrganizationAllowed(orgId)
-    const org = await this.database
-      .prepare(`select kind from orgs where org_id = ? and deleted_at is null`)
-      .bind(orgId)
-      .first<{ kind: OrgRow["kind"] }>()
-    if (!org) throw teamAuthorityError("organization_not_found")
-    if (org.kind === "personal") throw teamAuthorityError("team_not_allowed_on_personal_org")
-    if (!(await this.canAdminOrganization(who.userId, orgId))) throw teamAuthorityError("org_admin_required")
-    const teamId = this.randomId("team")
-    const now = this.now()
-    await this.database.batch([
-      this.database
-        .prepare(
-          `
-        insert into teams (
-          team_id, org_id, name, is_default, created_by_user_id, created_at, updated_at, deleted_at
-        )
-        select ?, o.org_id, ?, 0, ?, ?, ?, null
-        from orgs o
-        left join org_memberships m
-          on m.org_id = o.org_id and m.user_id = ? and m.revoked_at is null
-        where o.org_id = ? and o.deleted_at is null
-          and (o.owner_user_id = ? or m.role in ('owner', 'admin'))
-        on conflict (team_id) do nothing
-      `,
-        )
-        .bind(teamId, name, who.userId, now, now, who.userId, orgId, who.userId),
-      this.database
-        .prepare(
-          `
-        insert into team_memberships (
-          team_id, user_id, role, created_at, updated_at, revoked_at
-        )
-        select t.team_id, ?, 'owner', ?, ?, null
-        from teams t where t.team_id = ? and t.org_id = ? and t.deleted_at is null
-        on conflict (team_id, user_id) do update set
-          role = 'owner', updated_at = excluded.updated_at, revoked_at = null
-      `,
-        )
-        .bind(who.userId, now, now, teamId, orgId),
-    ])
-    const created = await this.database
-      .prepare(`select team_id from teams where team_id = ? and org_id = ? and deleted_at is null`)
-      .bind(teamId, orgId)
-      .first()
-    if (!created) throw new D1WorkspaceAuthorityError("resource_conflict", "Team creation authority changed")
-    return { team_id: teamId, org_id: orgId, name, role: "owner" as const }
-  }
-
-  async ensureDefaultTeam(auth: SignedControlPlaneAuth, args: { orgId: string }) {
-    const who = await this.requirePrincipal(auth)
-    const orgId = requireText(args.orgId, "orgId")
-    this.assertOrganizationAllowed(orgId)
-    const org = await this.database
-      .prepare(
-        `
-      select o.name, o.kind
-      from orgs o
-      left join org_memberships m
-        on m.org_id = o.org_id and m.user_id = ? and m.revoked_at is null
-      where o.org_id = ? and o.deleted_at is null
-        and (o.owner_user_id = ? or m.user_id is not null)
-    `,
-      )
-      .bind(who.userId, orgId, who.userId)
-      .first<{ name: string; kind: OrgRow["kind"] }>()
-    if (!org) throw teamAuthorityError("org_membership_required")
-    if (org.kind === "personal") return { skipped: true as const }
-    const existing = await this.database
-      .prepare(`select team_id from teams where org_id = ? and is_default = 1 and deleted_at is null`)
-      .bind(orgId)
-      .first<{ team_id: string }>()
-    const teamId = existing?.team_id ?? this.randomId("team")
-    const now = this.now()
-    await this.database.batch([
-      this.database
-        .prepare(
-          `
-        insert into teams (
-          team_id, org_id, name, is_default, created_by_user_id, created_at, updated_at, deleted_at
-        )
-        select ?, o.org_id, ?, 1, ?, ?, ?, null
-        from orgs o
-        left join org_memberships m
-          on m.org_id = o.org_id and m.user_id = ? and m.revoked_at is null
-        where o.org_id = ? and o.deleted_at is null
-          and (o.owner_user_id = ? or m.user_id is not null)
-          and not exists (
-            select 1 from teams current
-            where current.org_id = o.org_id and current.is_default = 1 and current.deleted_at is null
-          )
-        on conflict (team_id) do nothing
-      `,
-        )
-        .bind(teamId, org.name || "Everyone", who.userId, now, now, who.userId, orgId, who.userId),
-      this.database
-        .prepare(
-          `
-        insert into team_memberships (
-          team_id, user_id, role, created_at, updated_at, revoked_at
-        )
-        select ?, om.user_id,
-          case when om.role in ('owner', 'admin') then om.role else 'member' end,
-          ?, ?, null
-        from org_memberships om
-        join users u on u.user_id = om.user_id and u.state = 'active'
-        join teams t on t.team_id = ? and t.org_id = om.org_id and t.deleted_at is null
-        where om.org_id = ? and om.revoked_at is null
-        on conflict (team_id, user_id) do update set
-          role = excluded.role, updated_at = excluded.updated_at, revoked_at = null
-      `,
-        )
-        .bind(teamId, now, now, teamId, orgId),
-      this.database
-        .prepare(
-          `
-        insert into team_project_grants (
-          team_id, project_id, role, created_by_user_id, created_at, updated_at, revoked_at
-        )
-        select ?, p.project_id, 'editor', ?, ?, ?, null
-        from projects p
-        join teams t on t.team_id = ? and t.org_id = p.org_id and t.deleted_at is null
-        where p.org_id = ? and p.deleted_at is null
-        on conflict (team_id, project_id) do update set
-          role = excluded.role,
-          created_by_user_id = excluded.created_by_user_id,
-          updated_at = excluded.updated_at,
-          revoked_at = null
-      `,
-        )
-        .bind(teamId, who.userId, now, now, teamId, orgId),
-    ])
-    const selected = await this.database
-      .prepare(`select team_id from teams where org_id = ? and is_default = 1 and deleted_at is null`)
-      .bind(orgId)
-      .first<{ team_id: string }>()
-    if (!selected) throw new D1WorkspaceAuthorityError("resource_conflict", "Default team creation raced")
-    return {
-      team_id: selected.team_id,
-      org_id: orgId,
-      session_shares_retargeted: 0,
-    }
-  }
-
-  async addTeamMember(
-    auth: SignedControlPlaneAuth,
-    args: {
-      teamId: string
-      tokenIdentifier?: string
-      providerSubject?: string
-      userPublicId?: string
-      role?: "member" | "admin" | "owner"
-    },
-  ) {
-    const who = await this.requirePrincipal(auth)
-    const teamId = requireText(args.teamId, "teamId")
-    const team = await this.team(teamId)
-    if (!team) throw teamAuthorityError("team_not_found")
-    if (!(await this.canAdminOrganization(who.userId, team.org_id))) throw teamAuthorityError("org_admin_required")
-    const target = await this.resolveTeamUser(args)
-    if (!target) throw teamAuthorityError("team_member_not_found")
-    if (!(await this.activeOrgMembership(target.user_id, team.org_id))) {
-      throw teamAuthorityError("team_member_org_membership_required")
-    }
-    const role = args.role ?? "member"
-    const now = this.now()
-    await this.database
-      .prepare(
-        `
-      insert into team_memberships (team_id, user_id, role, created_at, updated_at, revoked_at)
-      select t.team_id, ?, ?, ?, ?, null
-      from teams t
-      join org_memberships target on target.org_id = t.org_id and target.user_id = ? and target.revoked_at is null
-      where t.team_id = ? and t.deleted_at is null and ${organizationAdminSql("t.org_id", "?")}
-      on conflict (team_id, user_id) do update set
-        role = excluded.role, updated_at = excluded.updated_at, revoked_at = null
-    `,
-      )
-      .bind(target.user_id, role, now, now, target.user_id, teamId, who.userId, who.userId)
-      .run()
-    const active = await this.database
-      .prepare(`select role from team_memberships where team_id = ? and user_id = ? and revoked_at is null`)
-      .bind(teamId, target.user_id)
-      .first<{ role: string }>()
-    if (!active || active.role !== role) {
-      throw new D1WorkspaceAuthorityError("resource_conflict", "Team membership authority changed")
-    }
-    return { team_id: teamId, user_id: target.user_id, public_id: target.user_id, role }
-  }
-
-  async removeTeamMember(
-    auth: SignedControlPlaneAuth,
-    args: { teamId: string; tokenIdentifier?: string; providerSubject?: string; userPublicId?: string },
-  ) {
-    const who = await this.requirePrincipal(auth)
-    const teamId = requireText(args.teamId, "teamId")
-    const team = await this.team(teamId)
-    if (!team) throw teamAuthorityError("team_not_found")
-    if (!(await this.canAdminOrganization(who.userId, team.org_id))) throw teamAuthorityError("org_admin_required")
-    const target = await this.resolveTeamUser(args)
-    if (!target) return { removed: false }
-    const now = this.now()
-    const result = await this.database
-      .prepare(
-        `
-      update team_memberships set revoked_at = ?, updated_at = ?
-      where team_id = ? and user_id = ? and revoked_at is null
-        and ${organizationAdminSql("(select org_id from teams where team_id = team_memberships.team_id)", "?")}
-    `,
-      )
-      .bind(now, now, teamId, target.user_id, who.userId, who.userId)
-      .run()
-    return { removed: (result.meta.changes ?? 0) > 0 }
-  }
-
-  async listTeamMembers(auth: SignedControlPlaneAuth, args: { teamId: string }) {
-    const who = await this.requirePrincipal(auth)
-    const teamId = requireText(args.teamId, "teamId")
-    const team = await this.team(teamId)
-    if (!team || !(await this.activeOrgMembership(who.userId, team.org_id))) return []
-    const result = await this.database
-      .prepare(
-        `
-      select tm.user_id, tm.user_id as public_id, tm.role,
-        (select ai.issuer || '|' || ai.subject from auth_identities ai
-          where ai.user_id = tm.user_id and ai.unlinked_at is null
-          order by ai.linked_at, ai.adapter, ai.issuer, ai.subject limit 1) as token_identifier,
-        (select ai.subject from auth_identities ai
-          where ai.user_id = tm.user_id and ai.unlinked_at is null
-          order by ai.linked_at, ai.adapter, ai.issuer, ai.subject limit 1) as provider_subject
-      from team_memberships tm
-      join users u on u.user_id = tm.user_id and u.state = 'active'
-      join org_memberships om on om.user_id = tm.user_id and om.org_id = ? and om.revoked_at is null
-      where tm.team_id = ? and tm.revoked_at is null
-      order by case tm.role when 'owner' then 3 when 'admin' then 2 else 1 end desc, tm.user_id
-    `,
-      )
-      .bind(team.org_id, teamId)
-      .all()
-    return result.results
-  }
-
-  async grantTeamProject(
-    auth: SignedControlPlaneAuth,
-    args: { teamId: string; projectId: string; role: "viewer" | "editor" | "admin" },
-  ) {
-    const who = await this.requirePrincipal(auth)
-    const teamId = requireText(args.teamId, "teamId")
-    const projectId = requireText(args.projectId, "projectId")
-    const team = await this.team(teamId)
-    if (!team) throw teamAuthorityError("team_not_found")
-    if (!(await this.canAdminOrganization(who.userId, team.org_id))) throw teamAuthorityError("org_admin_required")
-    const project = await this.database
-      .prepare(`select org_id from projects where project_id = ? and deleted_at is null`)
-      .bind(projectId)
-      .first<{ org_id: string }>()
-    if (!project || project.org_id !== team.org_id) throw teamAuthorityError("project_not_found")
-    const now = this.now()
-    await this.database
-      .prepare(
-        `
-      insert into team_project_grants (
-        team_id, project_id, role, created_by_user_id, created_at, updated_at, revoked_at
-      )
-      select t.team_id, p.project_id, ?, ?, ?, ?, null
-      from teams t join projects p on p.org_id = t.org_id and p.project_id = ? and p.deleted_at is null
-      where t.team_id = ? and t.deleted_at is null and ${organizationAdminSql("t.org_id", "?")}
-      on conflict (team_id, project_id) do update set
-        role = excluded.role,
-        created_by_user_id = excluded.created_by_user_id,
-        updated_at = excluded.updated_at,
-        revoked_at = null
-    `,
-      )
-      .bind(args.role, who.userId, now, now, projectId, teamId, who.userId, who.userId)
-      .run()
-    const active = await this.database
-      .prepare(`select role from team_project_grants where team_id = ? and project_id = ? and revoked_at is null`)
-      .bind(teamId, projectId)
-      .first<{ role: string }>()
-    if (!active || active.role !== args.role) {
-      throw new D1WorkspaceAuthorityError("resource_conflict", "Team project authority changed")
-    }
-    return { team_id: teamId, project_id: projectId, role: args.role }
-  }
-
-  async revokeTeamProject(auth: SignedControlPlaneAuth, args: { teamId: string; projectId: string }) {
-    const who = await this.requirePrincipal(auth)
-    const teamId = requireText(args.teamId, "teamId")
-    const projectId = requireText(args.projectId, "projectId")
-    const team = await this.team(teamId)
-    if (!team) throw teamAuthorityError("team_not_found")
-    if (!(await this.canAdminOrganization(who.userId, team.org_id))) throw teamAuthorityError("org_admin_required")
-    const now = this.now()
-    const result = await this.database
-      .prepare(
-        `
-      update team_project_grants set revoked_at = ?, updated_at = ?
-      where team_id = ? and project_id = ? and revoked_at is null
-        and ${organizationAdminSql("(select org_id from teams where team_id = team_project_grants.team_id)", "?")}
-    `,
-      )
-      .bind(now, now, teamId, projectId, who.userId, who.userId)
-      .run()
-    return { revoked: (result.meta.changes ?? 0) > 0 }
-  }
-
   async resolveOrgId(auth: SignedControlPlaneAuth) {
     const who = await this.requirePrincipal(auth)
     const orgs = await this.organizationRows(who.userId)
@@ -1065,8 +584,7 @@ export class D1WorkspaceAuthority implements D1WorkspaceAuthorityCore {
     args: { orgId?: OrgId; projectId: string },
   ): Promise<ProjectRoleResult> {
     const who = await this.requirePrincipal(auth)
-    const row = await this.projectAccess(who.userId, args.projectId, args.orgId)
-    return projectResult(row)
+    return projectResult(await this.projectAccess(who.userId, args.projectId, args.orgId))
   }
 
   async authorizeProject(
@@ -1074,14 +592,14 @@ export class D1WorkspaceAuthority implements D1WorkspaceAuthorityCore {
     args: { orgId?: OrgId; projectId: string; action: ProjectAction },
   ): Promise<ProjectRoleResult> {
     const who = await this.requirePrincipal(auth)
-    const row = await this.projectAccess(who.userId, args.projectId, args.orgId)
-    if (!row || row.role_rank < actionRank(args.action)) return { ok: false }
-    return projectResult(row)
+    const project = { kind: "project" as const, projectId: args.projectId, ...(args.orgId ? { orgId: args.orgId } : {}) }
+    if (!(await may(this.database, who, args.action, project))) return { ok: false }
+    return projectResult(await this.projectAccess(who.userId, args.projectId, args.orgId))
   }
 
   async authorizeWorkspaceOpen(auth: SignedControlPlaneAuth, args: { workspaceId: string }) {
     const who = await this.requirePrincipal(auth)
-    if (!(await this.workspaceAccess(who.userId, args.workspaceId))) throw denied()
+    if (!(await may(this.database, who, "open", { kind: "workspace", workspaceId: args.workspaceId }))) throw denied()
   }
 
   /**
@@ -1120,7 +638,7 @@ export class D1WorkspaceAuthority implements D1WorkspaceAuthorityCore {
   /** Who may create in an organization: one rule, whatever resolved the organization. */
   private async admitCreationOrganization(who: Principal, orgId: string) {
     this.assertOrganizationAllowed(orgId)
-    if (!(await this.canAdminOrganization(who.userId, orgId))) {
+    if (!(await may(this.database, who, "administer", { kind: "org", orgId }))) {
       throw denied("Workspace creation authority was denied")
     }
   }
@@ -1135,24 +653,20 @@ export class D1WorkspaceAuthority implements D1WorkspaceAuthorityCore {
 
   async openWorkspace(auth: SignedControlPlaneAuth, args: { workspaceId: string }) {
     const who = await this.requirePrincipal(auth)
-    const row = await this.workspaceAccess(who.userId, args.workspaceId)
+    const row = await this.openableWorkspace(who, args.workspaceId)
     if (!row) throw denied()
-    return { allowed: true, role: rankRole(row.role_rank), workspace: workspaceJson(row) }
+    return { allowed: true, role: "owner" as const, workspace: workspaceJson(row) }
   }
 
   async listWorkspaces(auth: SignedControlPlaneAuth) {
     const who = await this.requirePrincipal(auth)
-    const result = await this.database
-      .prepare(workspaceAccessSql("w.deleted_at is null"))
-      .bind(who.userId, who.userId, who.userId, who.userId, who.userId, who.userId)
-      .all<WorkspaceAccessRow>()
-    const rows = result.results.filter((row) => row.role_rank >= 1)
+    const rows = await this.openableWorkspaces(who)
     const online = await this.workspacesWithServingHost(
       rows.filter((row) => row.backing === "local-worktree").map((row) => row.workspace_id),
     )
     return rows.map((row) => ({
       ...workspaceJson(row),
-      role: rankRole(row.role_rank),
+      role: "owner" as const,
       // Reachability, not authorization: a shared workspace whose machine is
       // asleep is still listed, and the rail says "host offline" for it rather
       // than dropping the row or waiting for a pane to discover it.
@@ -1192,8 +706,8 @@ export class D1WorkspaceAuthority implements D1WorkspaceAuthorityCore {
   private async createWorkspaceAs(who: Principal, input: D1WorkspaceCreateArgs) {
     const creation = await this.workspaceCreation(who, input)
     await this.guardedBatch(creation.statements, "Workspace identity conflicts with existing authority state")
-    const workspace = await this.workspaceAccess(who.userId, creation.workspaceId)
-    if (!workspace || workspace.org_id !== creation.orgId || workspace.role_rank < 3) {
+    const workspace = await this.openableWorkspace(who, creation.workspaceId)
+    if (!workspace || workspace.org_id !== creation.orgId) {
       throw denied("Workspace creation authority was denied")
     }
     return {
@@ -1219,7 +733,7 @@ export class D1WorkspaceAuthority implements D1WorkspaceAuthorityCore {
     const orgId = requireText(input.orgId, "orgId")
     const displayName = requireText(input.displayName, "displayName")
     this.assertOrganizationAllowed(orgId)
-    if (!(await this.canAdminOrganization(who.userId, orgId))) {
+    if (!(await may(this.database, who, "administer", { kind: "org", orgId }))) {
       throw denied("Workspace creation authority was denied")
     }
     const homeRegion = validateHomeRegion(input.homeRegion)
@@ -1246,7 +760,7 @@ export class D1WorkspaceAuthority implements D1WorkspaceAuthorityCore {
       : (existingProject?.project_id ?? this.randomId("prj"))
     const assertionId = this.randomId("assert")
     const now = this.now()
-    const adminGuard = organizationAdminSql("?", "?")
+    const administers = mayGuard(who, "administer", { kind: "org", orgId })
 
     return {
       who,
@@ -1257,11 +771,11 @@ export class D1WorkspaceAuthority implements D1WorkspaceAuthorityCore {
           .prepare(
             `
         insert into projects (project_id, org_id, repo_key, owner_user_id, created_at, updated_at, deleted_at)
-        select ?, ?, ?, ?, ?, ?, null where ${adminGuard}
+        select ?, ?, ?, ?, ?, ?, null where ${administers.sql}
         on conflict do nothing
       `,
           )
-          .bind(projectId, orgId, repoKey, who.userId, now, now, who.userId, orgId, who.userId),
+          .bind(projectId, orgId, repoKey, who.userId, now, now, ...administers.bind),
         this.database
           .prepare(
             `
@@ -1277,14 +791,13 @@ export class D1WorkspaceAuthority implements D1WorkspaceAuthorityCore {
             `
         insert into workspaces (
           workspace_id, org_id, project_id, owner_user_id, backing, display_name,
-          home_region, repo_url, repo_name, git_branch, remote_directory, created_at, updated_at, deleted_at,
-          org_member_visible
+          home_region, repo_url, repo_name, git_branch, remote_directory, created_at, updated_at, deleted_at
         )
-        select ?, ?, p.project_id, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, null, ?
+        select ?, ?, p.project_id, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, null
         from projects p
         where p.org_id = ? and p.repo_key = ? and p.deleted_at is null
           and (? is null or p.project_id = ?)
-          and ${adminGuard}
+          and ${administers.sql}
         on conflict (workspace_id) do nothing
       `,
           )
@@ -1301,14 +814,11 @@ export class D1WorkspaceAuthority implements D1WorkspaceAuthorityCore {
             remoteDirectory,
             now,
             now,
-            input.orgMemberVisible === false ? 0 : 1,
             orgId,
             repoKey,
             input.projectId ?? null,
             input.projectId ?? null,
-            who.userId,
-            orgId,
-            who.userId,
+            ...administers.bind,
           ),
         this.database
           .prepare(
@@ -1425,11 +935,12 @@ export class D1WorkspaceAuthority implements D1WorkspaceAuthorityCore {
 
   private async deleteWorkspaceAs(who: Principal, args: { workspaceId: string }) {
     const workspaceId = requireText(args.workspaceId, "workspaceId")
-    const row = await this.workspaceAccess(who.userId, workspaceId)
-    if (!row || row.role_rank < 4) throw denied()
+    if (!(await may(this.database, who, "administer", { kind: "workspace", workspaceId }))) throw denied()
     const assertionId = this.randomId("assert")
     const now = this.now()
-    await this.guardedBatch(
+    await batchUnder(
+      this.database,
+      mayGuard(who, "administer", { kind: "workspace", workspaceId }),
       [
         this.database
           .prepare(
@@ -1451,7 +962,7 @@ export class D1WorkspaceAuthority implements D1WorkspaceAuthorityCore {
           .bind(assertionId, workspaceId, who.userId, now),
         this.database.prepare(`delete from authority_batch_assertions where assertion_id = ?`).bind(assertionId),
       ],
-      "Workspace deletion changed concurrently",
+      (statements) => this.guardedBatch(statements, "Workspace deletion changed concurrently"),
     )
     return { deleted: true }
   }
@@ -1460,23 +971,23 @@ export class D1WorkspaceAuthority implements D1WorkspaceAuthorityCore {
     try {
       return await this.database.batch(statements)
     } catch (error) {
-      if (batchAssertionFailed(error)) {
+      if (d1BatchAssertionFailed(error)) {
         throw new D1WorkspaceAuthorityError("resource_conflict", message)
       }
       throw error
     }
   }
 
-  private insertIdentity(identity: AuthIdentity, userId: string, now: number) {
+  private insertIdentity(identity: AuthIdentity, userId: string, now: number, guard?: BoundSql) {
     return this.database
       .prepare(
         `
       insert into auth_identities (adapter, issuer, subject, user_id, linked_at, unlinked_at)
-      values (?, ?, ?, ?, ?, null)
+      select ?, ?, ?, ?, ?, null${guard ? ` where ${guard.sql}` : ""}
       on conflict (adapter, issuer, subject) do nothing
     `,
       )
-      .bind(identity.adapter, identity.issuer, identity.subject, userId, now)
+      .bind(identity.adapter, identity.issuer, identity.subject, userId, now, ...(guard?.bind ?? []))
   }
 
   private insertMappedUser(identity: AuthIdentity, userId: string, now: number) {
@@ -1532,48 +1043,8 @@ export class D1WorkspaceAuthority implements D1WorkspaceAuthorityCore {
     return { state: "active", userId: row.user_id, actorId: row.actor_id }
   }
 
-  /**
-   * One request = one `SignedControlPlaneAuth` object, and a single request
-   * asks this authority for its principal several times (the route's own
-   * lookup, then every store and port it calls). The identity row cannot
-   * change the answer within that request, so it is read once per auth
-   * object; a refusal is not remembered.
-   */
-  private readonly principals = new WeakMap<SignedControlPlaneAuth, Promise<Principal>>()
-
   private requirePrincipal(auth: SignedControlPlaneAuth): Promise<Principal> {
-    const existing = this.principals.get(auth)
-    if (existing) return existing
-    const pending = this.resolvePrincipal(auth).catch((cause: unknown) => {
-      this.principals.delete(auth)
-      throw cause
-    })
-    this.principals.set(auth, pending)
-    return pending
-  }
-
-  private async resolvePrincipal(auth: SignedControlPlaneAuth): Promise<Principal> {
-    const principal = auth.principal
-    if (!principal) {
-      throw new ControlPlaneAuthError(503, "identity_provisioning", "Canonical application identity is required")
-    }
-    if (principal.deploymentId !== this.options.deploymentId || principal.actorKind !== "human") {
-      throw new ControlPlaneAuthError(
-        401,
-        "invalid_bearer_token",
-        "Application principal belongs to another authority domain",
-      )
-    }
-    const row = await this.identityRow(principal.identity)
-    if (!row || row.unlinked_at !== null || row.user_id !== principal.userId || row.actor_id !== principal.actorId) {
-      throw new ControlPlaneAuthError(401, "invalid_bearer_token", "Application principal is stale or unlinked")
-    }
-    if (row.user_state === "deleted")
-      throw new ControlPlaneAuthError(403, "account_deleted", "Application account is deleted")
-    if (row.user_state !== "active" || row.actor_state !== "active") {
-      throw new ControlPlaneAuthError(403, "account_suspended", "Application account is suspended")
-    }
-    return { userId: principal.userId, actorId: principal.actorId }
+    return requireHuman(this.database, this.options.deploymentId, auth)
   }
 
   /**
@@ -1618,125 +1089,18 @@ export class D1WorkspaceAuthority implements D1WorkspaceAuthorityCore {
     return result.results
   }
 
-  private async activeOrgMembership(userId: string, orgId: string) {
-    return !!(await this.database
-      .prepare(
-        `
-      select 1 from orgs o
-      left join org_memberships m
-        on m.org_id = o.org_id and m.user_id = ? and m.revoked_at is null
-      where o.org_id = ? and o.deleted_at is null and (o.owner_user_id = ? or m.user_id is not null)
-    `,
-      )
-      .bind(userId, orgId, userId)
-      .first())
-  }
-
-  private async canAdminOrganization(userId: string, orgId: string) {
-    return !!(await this.database
-      .prepare(
-        `
-      select 1 from orgs o
-      left join org_memberships m
-        on m.org_id = o.org_id and m.user_id = ? and m.revoked_at is null
-      where o.org_id = ? and o.deleted_at is null
-        and (o.owner_user_id = ? or m.role in ('owner', 'admin'))
-    `,
-      )
-      .bind(userId, orgId, userId)
-      .first())
-  }
-
-  private async team(teamId: string) {
-    return await this.database
-      .prepare(`select team_id, org_id, name, is_default from teams where team_id = ? and deleted_at is null`)
-      .bind(teamId)
-      .first<{ team_id: string; org_id: string; name: string; is_default: number }>()
-  }
-
-  private async resolveTeamUser(args: {
-    tokenIdentifier?: string
-    providerSubject?: string
-    userPublicId?: string
-  }) {
-    const selectors = [args.tokenIdentifier, args.providerSubject, args.userPublicId].filter(
-      (value): value is string => typeof value === "string" && !!value.trim(),
-    )
-    if (selectors.length !== 1) throw teamAuthorityError("team_member_target_required")
-    if (args.userPublicId) {
-      return await this.database
-        .prepare(`select user_id from users where user_id = ? and state = 'active'`)
-        .bind(requireText(args.userPublicId, "userPublicId"))
-        .first<{ user_id: string }>()
-    }
-    const tokenIdentifier = args.tokenIdentifier?.trim()
-    if (tokenIdentifier) {
-      return await this.database
-        .prepare(
-          `
-        select ai.user_id from auth_identities ai join users u on u.user_id = ai.user_id and u.state = 'active'
-        where ai.issuer || '|' || ai.subject = ? and ai.unlinked_at is null
-      `,
-        )
-        .bind(requireText(tokenIdentifier, "tokenIdentifier"))
-        .first<{ user_id: string }>()
-    }
-    return await this.database
-      .prepare(
-        `
-      select ai.user_id from auth_identities ai join users u on u.user_id = ai.user_id and u.state = 'active'
-      where ai.subject = ? and ai.unlinked_at is null
-      order by ai.linked_at, ai.adapter, ai.issuer limit 1
-    `,
-      )
-      .bind(requireText(args.providerSubject!, "providerSubject"))
-      .first<{ user_id: string }>()
-  }
-
   private async projectAccess(userId: string, projectId: string, orgId?: string) {
-    return await this.database
-      .prepare(
-        `
-      select p.org_id,
-        max(
-          case when p.owner_user_id = ? then 4 else 0 end,
-          coalesce(case pm.role when 'viewer' then 1 when 'editor' then 2 when 'admin' then 3 when 'owner' then 4 end, 0),
-          coalesce((
-            select max(case tg.role when 'viewer' then 1 when 'editor' then 2 when 'admin' then 3 end)
-            from team_project_grants tg
-            join team_memberships tm
-              on tm.team_id = tg.team_id and tm.user_id = ? and tm.revoked_at is null
-            join teams t on t.team_id = tg.team_id and t.org_id = p.org_id and t.deleted_at is null
-            where tg.project_id = p.project_id and tg.revoked_at is null
-          ), 0),
-          case when o.owner_user_id = ? then 3
-            when om.role in ('owner', 'admin') then 3
-            when om.role = 'member' then 1 else 0 end
-        ) as role_rank
-      from projects p
-      join orgs o on o.org_id = p.org_id and o.deleted_at is null
-      left join project_memberships pm
-        on pm.project_id = p.project_id and pm.user_id = ? and pm.revoked_at is null
-      left join org_memberships om
-        on om.org_id = p.org_id and om.user_id = ? and om.revoked_at is null
-      where p.project_id = ? and p.deleted_at is null and (? is null or p.org_id = ?)
-        and (o.owner_user_id = ? or om.user_id is not null)
-    `,
-      )
-      .bind(userId, userId, userId, userId, userId, projectId, orgId ?? null, orgId ?? null, userId)
-      .first<ProjectAccessRow>()
+    return await readProjectRole(this.database, userId, { kind: "project", projectId, ...(orgId ? { orgId } : {}) })
   }
 
-  private async workspaceAccess(userId: string, workspaceId: string) {
-    const row = await this.database
-      .prepare(workspaceAccessSql("w.workspace_id = ? and w.deleted_at is null"))
-      .bind(userId, userId, userId, userId, userId, workspaceId, userId)
-      .first<WorkspaceAccessRow>()
-    if (!row) return null
-    if (row.role_rank >= 1) return row
-    const shared = await this.database.prepare(SESSION_SHARE_WORKSPACE_ACCESS_SQL)
-      .bind(userId, workspaceId).first()
-    return shared ? { ...row, role_rank: 1 } : null
+  private async openableWorkspace(who: AuthorizationPrincipal, workspaceId: string) {
+    const query = openableWorkspacesSql(who, "w.workspace_id = ?")
+    return await this.database.prepare(query.sql).bind(...query.bind, workspaceId).first<WorkspaceAccessRow>()
+  }
+
+  private async openableWorkspaces(who: AuthorizationPrincipal) {
+    const query = openableWorkspacesSql(who, "1 = 1")
+    return (await this.database.prepare(query.sql).bind(...query.bind).all<WorkspaceAccessRow>()).results
   }
 
   private assertOrganizationAllowed(orgId: string) {
@@ -1755,100 +1119,28 @@ export class D1WorkspaceAuthority implements D1WorkspaceAuthorityCore {
 
   private async adminProjectOrgId(userId: string, projectId: string) {
     const row = await this.projectAccess(userId, projectId)
-    if (!row || row.role_rank < actionRank("admin")) throw denied("Project creation authority was denied")
-    return row.org_id
+    if (!row || roleRank(row.role) < roleRank("admin")) throw denied("Project creation authority was denied")
+    return row.orgId
   }
 }
 
-/**
- * What a session share is worth on the workspace that holds the session: the
- * grantee has no role there and still has to reach the machine serving it, so
- * an active grant floors them at `viewer` — enough to open the placement and
- * be handed a Runtime Access Token, and nothing else. Read and write on the
- * session stay the session authority's answer, asked per request, so the share
- * LEVEL deliberately does not appear here.
- *
- * Binds the user id, then the workspace id.
- */
-export const SESSION_SHARE_WORKSPACE_ACCESS_SQL = `
-  select 1
-  from session_share_grants share
-  join sessions session
-    on session.session_id = share.session_id
-    and session.workspace_id = share.workspace_id
-    and session.deleted_at is null
-  join users share_user on share_user.user_id = ? and share_user.state = 'active'
-  where share.workspace_id = ? and share.revoked_at is null
-    and (
-      share.target_user_id = share_user.user_id
-      or (
-        share.target_org_id = session.org_id
-        and exists (
-          select 1 from org_memberships share_org_member
-          where share_org_member.org_id = share.target_org_id
-            and share_org_member.user_id = share_user.user_id
-            and share_org_member.revoked_at is null
-        )
-      )
-      or exists (
-        select 1 from team_memberships share_team_member
-        join teams share_team on share_team.team_id = share_team_member.team_id
-          and share_team.org_id = session.org_id and share_team.deleted_at is null
-        where share_team_member.team_id = share.target_team_id
-          and share_team_member.user_id = share_user.user_id
-          and share_team_member.revoked_at is null
-      )
-    )
-  limit 1
-`
-
-function workspaceAccessSql(predicate: string) {
-  return `
-    select w.*, assignment_enrollment.enrollment_id as host_enrollment_id,
-      max(
-        case when w.owner_user_id = ? then 4 else 0 end,
-        coalesce(case pm.role when 'viewer' then 1 when 'editor' then 2 when 'admin' then 3 when 'owner' then 4 end, 0),
-        coalesce((
-          select max(case tg.role when 'viewer' then 1 when 'editor' then 2 when 'admin' then 3 end)
-          from team_project_grants tg
-          join team_memberships tm
-            on tm.team_id = tg.team_id and tm.user_id = ? and tm.revoked_at is null
-          join teams t on t.team_id = tg.team_id and t.org_id = w.org_id and t.deleted_at is null
-          where tg.project_id = w.project_id and tg.revoked_at is null
-        ), 0),
-        ${organizationRoleRankSql({
-          orgOwnerUserId: "o.owner_user_id",
-          userId: "?",
-          orgMemberRole: "om.role",
-          workspaceAlias: "w",
-        })}
-      ) as role_rank
-    from workspaces w
-    join projects p on p.project_id = w.project_id and p.org_id = w.org_id and p.deleted_at is null
-    join orgs o on o.org_id = w.org_id and o.deleted_at is null
-    left join project_memberships pm
-      on pm.project_id = w.project_id and pm.user_id = ? and pm.revoked_at is null
-    left join org_memberships om
-      on om.org_id = w.org_id and om.user_id = ? and om.revoked_at is null
-    left join host_workspace_assignments assignment
-      on assignment.workspace_id = w.workspace_id
-    left join host_enrollments assignment_enrollment
-      on assignment_enrollment.host_id = assignment.host_id
-      and assignment_enrollment.owner_actor_id = assignment.owner_actor_id
-    where ${predicate}
-      and (o.owner_user_id = ? or om.user_id is not null)
-    order by w.created_at, w.workspace_id
-  `
-}
-
-function organizationAdminSql(orgExpression: string, userExpression: string) {
-  return `exists (
-    select 1 from orgs o
-    left join org_memberships m
-      on m.org_id = o.org_id and m.user_id = ${userExpression} and m.revoked_at is null
-    where o.org_id = ${orgExpression} and o.deleted_at is null
-      and (o.owner_user_id = ${userExpression} or m.role in ('owner', 'admin'))
-  )`
+/** The workspaces `who` may open matching `predicate` over `w`, with the machine each is placed on; `predicate`'s own values bind last. */
+function openableWorkspacesSql(who: AuthorizationPrincipal, predicate: string) {
+  const opens = maySql(who, "open", { kind: "workspace", alias: "w" })
+  return {
+    sql: `
+      select w.*, assignment_enrollment.enrollment_id as host_enrollment_id
+      from workspaces w
+      left join host_workspace_assignments assignment
+        on assignment.workspace_id = w.workspace_id
+      left join host_enrollments assignment_enrollment
+        on assignment_enrollment.host_id = assignment.host_id
+        and assignment_enrollment.owner_actor_id = assignment.owner_actor_id
+      where ${opens.sql} and ${predicate}
+      order by w.created_at, w.workspace_id
+    `,
+    bind: opens.bind,
+  }
 }
 
 function workspaceJson(row: WorkspaceAccessRow) {
@@ -1870,17 +1162,8 @@ function workspaceJson(row: WorkspaceAccessRow) {
   }
 }
 
-function projectResult(row: ProjectAccessRow | null): ProjectRoleResult {
-  if (!row || row.role_rank < 1) return { ok: false }
-  return { ok: true, orgId: asOrgId(row.org_id), role: rankRole(row.role_rank) }
-}
-
-function actionRank(action: ProjectAction) {
-  return action === "read" ? 1 : action === "write" ? 2 : action === "admin" ? 3 : 4
-}
-
-function rankRole(rank: number): ProjectRole {
-  return rank >= 4 ? "owner" : rank >= 3 ? "admin" : rank >= 2 ? "editor" : "viewer"
+function projectResult(row: { orgId: string; role: ProjectRole } | undefined): ProjectRoleResult {
+  return row ? { ok: true, orgId: asOrgId(row.orgId), role: row.role } : { ok: false }
 }
 
 function requireActor(row: IdentityRow) {
@@ -1900,14 +1183,6 @@ function validateIdentity(identity: AuthIdentity) {
 
 function sameIdentity(a: AuthIdentity, b: AuthIdentity) {
   return a.adapter === b.adapter && a.issuer === b.issuer && a.subject === b.subject
-}
-
-function requireText(value: string, name: string) {
-  const result = value.trim()
-  if (!result || result.length > 512) {
-    throw new D1WorkspaceAuthorityError("invalid_input", `${name} must be a non-empty string of at most 512 characters`)
-  }
-  return result
 }
 
 function requireBootstrapClaim(value: string) {
@@ -1951,18 +1226,7 @@ function denied(message = "Workspace authority denied access") {
   return new ControlPlaneAuthError(403, "workspace_authorization_denied", message)
 }
 
-/** A guarded batch aborted on its `authority_batch_assertions` row; the cause chain is searched because D1 wraps the SQLite error. */
-export function batchAssertionFailed(error: unknown): boolean {
-  if (!(error instanceof Error)) return false
-  if (error.message.includes("passed = 1")) return true
-  return batchAssertionFailed(error.cause)
-}
-
-function randomId(prefix: "usr" | "act" | "org" | "prj" | "team" | "assert") {
+function randomId(prefix: "usr" | "act" | "org" | "prj" | "team" | "assert" | "audit") {
   const bytes = crypto.getRandomValues(new Uint8Array(16))
   return `${prefix}_${Array.from(bytes, (value) => value.toString(16).padStart(2, "0")).join("")}`
-}
-
-function teamAuthorityError(code: string) {
-  return new Error(code)
 }

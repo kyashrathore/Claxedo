@@ -67,7 +67,7 @@ function inOrg(org?: CredentialOrgScope | null) {
 /**
  * Rows belonging to one owner. `coalesce` matches the active index's own
  * expression, so a predicate and the uniqueness it relies on agree about which
- * rows are the team's.
+ * rows are the org's.
  */
 function ownedBy(owner: string | null) {
   return sql`coalesce(${ClaxedoProviderCredentialTable.owner}, '') = ${owner ?? ""}`
@@ -913,7 +913,7 @@ export async function deleteCredentialsByProvider(
  * subscription_session} AND a bare (non-namespaced) provider id.
  *
  * Everything else stays server-side and reaches its consumer another way:
- *  - `kind: "sandbox_driver"` (Daytona/Vercel/Cloudflare/…): provisioning
+ *  - `kind: "sandbox_driver"` (Vercel/Cloudflare/…): provisioning
  *    credentials the DRIVER injects natively; the driver API token controls
  *    EVERY sandbox and must never sit in a sandbox's own config. Resolved for
  *    provisioning via `config.sandbox_driver`, never through this fanout.

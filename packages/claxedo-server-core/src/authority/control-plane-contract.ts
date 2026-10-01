@@ -165,7 +165,7 @@ export type ControlPlaneCredentials = {
   updateCredentialLabel?: (id: string, label: string, org?: string) => Promise<boolean>
   syncLocalCredentials: (providerIds: string[] | undefined, org: string | undefined, owner: string) => Promise<CredentialSyncResult>
   accountSelections: (org?: string) => Promise<AccountSelections>
-  /** Record, for each provider, whether `person`'s sessions spend their own account or the team's; answers their choices after the write. */
+  /** Record, for each provider, whether `person`'s sessions spend their own account or the org's; answers their choices after the write. */
   setAccountSources: (providerIds: readonly string[], source: AccountSource, org: string | undefined, person: string) => Promise<AccountSources>
 }
 

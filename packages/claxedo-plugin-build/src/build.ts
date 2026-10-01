@@ -2,7 +2,7 @@ import { createHash } from "node:crypto"
 import { build as esbuild, formatMessages, type Message } from "esbuild"
 import type { PluginManifest } from "@claxedo/plugin-api"
 import { PLUGIN_BUNDLE_HASH_LENGTH } from "./bundle-hash"
-import { PluginBuildError } from "./errors"
+import { bundleFailure, PluginBuildError } from "./errors"
 import { readPluginPackage } from "./manifest-file"
 import { runtimeShimPlugin } from "./runtime-shims"
 import { solidJsxPlugin } from "./solid-jsx"
@@ -23,20 +23,8 @@ export function pluginBundleHash(manifest: PluginManifest, code: string): string
   return createHash("sha256").update(JSON.stringify(manifest)).update("\n").update(code).digest("hex").slice(0, PLUGIN_BUNDLE_HASH_LENGTH)
 }
 
-function isBuildFailure(error: unknown): error is { errors: Message[]; warnings: Message[] } {
-  return typeof error === "object" && error !== null && Array.isArray((error as { errors?: unknown }).errors)
-}
-
 async function formatted(messages: Message[], kind: "error" | "warning"): Promise<string[]> {
   return (await formatMessages(messages, { kind, color: false })).map((message) => message.trimEnd())
-}
-
-function bundleDiagnostic(message: Message) {
-  const { location } = message
-  return {
-    ...(location ? { file: location.file, line: location.line, column: location.column + 1 } : {}),
-    message: message.text,
-  }
 }
 
 export async function buildPluginApp(options: PluginBuildOptions): Promise<PluginBuild> {
@@ -62,7 +50,6 @@ export async function buildPluginApp(options: PluginBuildOptions): Promise<Plugi
     return { manifest: pkg.manifest, code, hash: pluginBundleHash(pkg.manifest, code), warnings: await formatted(result.warnings, "warning") }
   } catch (error) {
     if (error instanceof PluginBuildError) throw error
-    if (isBuildFailure(error)) throw new PluginBuildError("bundle", error.errors.map(bundleDiagnostic))
-    throw error
+    throw bundleFailure(error) ?? error
   }
 }

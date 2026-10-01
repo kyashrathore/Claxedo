@@ -192,9 +192,6 @@ describe("@claxedo/local-server closure", () => {
     //  - `credentials/machine-credentials.ts` — asking a CLI what it is signed
     //    in as, and withdrawing the stored mark so a harness runs on that
     //    login, have no referent on a host where no harness is installed.
-    //  - `credentials/operations/drop-copied-harness-logins.ts` — the one-time
-    //    delete of the harness logins an older Claxedo copied off this machine;
-    //    this is the process that ran that scan.
     //  - `usage/adapters/token-tracker-usage-limits.ts` — the plan probe for
     //    every agent installed on this machine, which only a server running on
     //    that machine can ask.
@@ -286,7 +283,7 @@ describe("@claxedo/local-server closure", () => {
     //    session's workspace, its check and its registration with the live
     //    plugins above.
     const { modules, packages } = closure({ runtimeOnly: true })
-    expect(modules.size).toBeLessThanOrEqual(110)
+    expect(modules.size).toBeLessThanOrEqual(109)
     expect(packages.size).toBeLessThanOrEqual(30)
   })
 })

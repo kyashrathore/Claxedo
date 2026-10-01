@@ -60,10 +60,10 @@ export type ProviderProjection = ProviderBinding | ProviderUnavailable
  * What an authority puts on the wire, before the runtime resolves it.
  *
  * An authority that mints the placeholder itself sends it. One whose sandbox
- * provider issues the placeholder — Daytona substitutes the value of an env var
- * it filled, and only the sandbox can read it — names that env var instead, and
- * `providerProjection` reads it off the runtime's own environment. Exactly one
- * of the two is a projection; both or neither is not.
+ * provider issues the placeholder — the provider substitutes the value of an
+ * env var it filled, and only the sandbox can read it — names that env var
+ * instead, and `providerProjection` reads it off the runtime's own environment.
+ * Exactly one of the two is a projection; both or neither is not.
  */
 export type ProviderBindingSource =
   & Omit<ProviderBinding, "placeholder">
@@ -75,7 +75,7 @@ export type CredentialSnapshot<T = ProviderProjectionSource> = {
   machineOwnerUserId: string
   /**
    * The account each person spends, by user id and provider: their own, or the
-   * org's team account for a provider they chose it for. Nothing else is spent.
+   * org's account for a provider they chose it for. Nothing else is spent.
    */
   accounts: Record<string, Record<string, T>>
 }

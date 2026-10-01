@@ -2,7 +2,6 @@ import { LOCAL_USER_ID } from "@claxedo/server-core/platform/auth/local-identity
 import fs from "node:fs"
 import path from "node:path"
 import type { Duplex } from "node:stream"
-import os from "node:os"
 import { Hono } from "hono"
 import type { MiddlewareHandler } from "hono"
 import { cors } from "hono/cors"
@@ -20,7 +19,6 @@ import {
   managedWorkspaceSessionAccessPolicy,
   sessionAccessRequiresWrite,
   sessionAccessWriteClass,
-  type ProcessObserver,
   type SessionAccessStreamDecision,
   type SessionAccessPolicyInput,
   type SessionAuthorityInput,
@@ -78,7 +76,7 @@ import {
 } from "@claxedo/local-server/self-hosted-execution"
 import { getHarnessMode, getSessionWriteMode, getWorkspaceProfile } from "@claxedo/server-core/platform/runtime/profile"
 import { createSqliteCentralStore } from "../../authority/adapters/sqlite/central-store"
-import { dropCopiedHarnessLogins, projectLocalSessionMetaFromEvent } from "@claxedo/local-server/self-hosted-execution"
+import { projectLocalSessionMetaFromEvent } from "@claxedo/local-server/self-hosted-execution"
 import { CredentialRoutes, createUsageQuotaReader, localControlPlaneCredentials, requestOrg, syncEmbeddedWorkspaceRuntimes } from "@claxedo/local-server/self-hosted-execution"
 import { defaultControlPlaneCredentials } from "@claxedo/server-core/authority/default-credentials"
 import { ProviderAuthRoutes } from "@claxedo/local-server/self-hosted-execution"
@@ -108,7 +106,7 @@ import { createSqliteHostTunnelTargetResolver } from "@claxedo/server-core/autho
 import type { HostTunnelTargetResolver } from "@claxedo/server-core/adapters/relay-port"
 import type { TasksSessionGrants } from "@claxedo/server-core/tasks-host/session-grants"
 import { selfHostedTasksClientInput } from "../../tasks/session-grants"
-import { ControlPlaneHttpRoutes } from "../../authority/http"
+import { ControlPlaneHttpRoutes, createIdempotencyCoordinator, memoryIdempotencyStore } from "../../authority/http"
 import { OrgTeamControlRoutes } from "../../session/routes/org-team-routes"
 import { createControlPlaneApp } from "../../control-plane-app"
 import { createMachineSessionDispatch } from "../../session/machine-dispatch"
@@ -136,6 +134,7 @@ import {
   type SessionStreamLeaseClaims,
 } from "../../routes/runtime-session-authority"
 import { PrivateSessionRegistrationRoutes } from "../../routes/private-session-registration"
+import { connectionTurnOwner } from "../../connections/turn-owner"
 import {
   SESSION_TURN_AUTHORITY_METHODS,
   SessionTurnConflictError,
@@ -168,7 +167,6 @@ import {
 import { withDataDirOwnership } from "@claxedo/server-core/platform/runtime/lib/data-dir-owner"
 import { createLocalDocumentsBackend } from "@claxedo/server-core/documents/backends/local/backend"
 import { setDocumentChangedSink } from "@claxedo/server-core/documents/backend"
-import { LocalInstallationDocumentBroker } from "../../documents/backends/local/installation-broker"
 
 import { sessionMeta } from "@claxedo/server-core/session/meta/index"
 import { ClaxedoDB } from "../../platform/db"
@@ -183,13 +181,11 @@ import {
   embeddedWorkspaceRuntimeSessionAuthority,
 } from "@claxedo/local-server/self-hosted-execution"
 import { createSqliteUsageLedger } from "@claxedo/server-core/usage/adapters/sqlite-usage-ledger"
-import { createSqliteUsageSourceCoverageStore, type UsageSourceCoverageStore } from "@claxedo/server-core/usage/adapters/sqlite-usage-provenance"
 import { createSqliteTurnMeterStateStore } from "@claxedo/server-core/usage/adapters/sqlite-turn-meter-state"
 import { createTurnMeter } from "@claxedo/server-core/usage/turn-meter"
 import { LocalUsageRoutes } from "@claxedo/local-server/self-hosted-execution"
 import { tokenTrackerPricing } from "@claxedo/server-core/usage/adapters/token-tracker-pricing"
-import { readMachineAgentUsage, scanTokenTrackerLocalHistory } from "@claxedo/local-server/self-hosted-execution"
-import { localHistoryClassifier } from "@claxedo/server-core/usage/local-history-classifier"
+import { readMachineAgentUsage } from "@claxedo/local-server/self-hosted-execution"
 import { usageLocation } from "@claxedo/server-core/usage/projection"
 import { meteringHarnessId } from "@claxedo/server-core/session/harness/index"
 import { recordRelayRuntimeToken } from "../../authority/relay-token-record"
@@ -408,32 +404,14 @@ export function embeddedManagedPrivateSessionPolicy(
     workspaceId: input.authority.workspaceId,
     turnId: input.turnId,
   })
-  // The turn's connection credential binds the session's personal partition:
-  // the actor's user-scoped id is the same key `createConnectionsHost` writes
-  // into `owner` for signed callers. A service principal has no user row, and
-  // an actor whose workspace access lapsed between admission and this read
-  // mints a session-bound credential without one rather than failing the turn.
-  const mintTurnCredential = async (input: SessionAuthorityInput, lease: SessionTurnLease) => {
-    if (!turnCredentials) return undefined
-    // The owner column a connections row names is the user's `subject`;
-    // `userId` is that column. An authority that cannot resolve it mints the
-    // turn's session-bound credential without a personal partition.
-    let subject: string | undefined
-    if (input.actor.actorKind === "human") {
-      try {
-        subject = (await authority.resolveRuntimeMachineAccess(input.actor.actorId, input.authority.workspaceId, "viewer")).userId
-      } catch {
-        subject = undefined
-      }
-    }
-    return turnCredentials.mint({
+  const mintTurnCredential = (subject: string | undefined, input: SessionAuthorityInput, lease: SessionTurnLease) =>
+    subject === undefined ? undefined : turnCredentials?.mint({
       sessionId: lease.sessionId,
       leaseId: lease.leaseId,
       expiresAt: lease.expiresAt,
-      ...(subject ? { subject } : {}),
+      subject,
       orgId: input.authority.orgId,
     })
-  }
   const policy = managedWorkspaceSessionAccessPolicy({
     authority: {
       authorizeSessionStart: async (input) => {
@@ -463,8 +441,9 @@ export function embeddedManagedPrivateSessionPolicy(
           const grantId = input.grant === undefined
             ? undefined
             : (await verifyDeferredTurnGrant(input.grant, process.env, { sessionId: input.sessionId })).grantId
+          const subject = await connectionTurnOwner(turnCredentials, (id) => authority.resolveWorkspaceOwner?.(id) ?? Promise.resolve(undefined), input.authority.workspaceId)
           const lease = await turnAuthority.acquireSessionTurn({ ...turnInput(input), ...(grantId === undefined ? {} : { grantId }) })
-          const connectionCredential = await mintTurnCredential(input, lease)
+          const connectionCredential = mintTurnCredential(subject, input, lease)
           return { allowed: true as const, ...lease, ...(connectionCredential ? { connectionCredential } : {}) }
         } catch (error) {
           return turnDenied(error)
@@ -501,7 +480,7 @@ export function embeddedManagedPrivateSessionPolicy(
   policy.authorizeHost = async (input) => {
     try {
       const claims = await streamClaims(input, WORKSPACE_STREAM_LEASE_SESSION, "read", input.lease)
-      const current = await authority.resolveRuntimeMachineAccess(claims.actorId, claims.workspaceId, input.minimumRole)
+      const current = await authority.resolveRuntimeMachineAccess(claims.actorId, claims.workspaceId)
       if (current.actorKind !== claims.actorKind || current.orgId !== claims.orgId) {
         throw new ControlPlaneAuthError(403, "workspace_authorization_denied", "Workspace authority no longer matches this actor")
       }
@@ -837,8 +816,6 @@ export function createSelfHostedApp(
      */
     posture?: SelfHostedPosture
     usageRevisionStore?: ReturnType<typeof createSqliteUsageLedger>
-    usageSourceCoverage?: UsageSourceCoverageStore
-    usageSourceCoverageReady?: Promise<void>
     resolveUsageHostIdentity?: () => Promise<{ hostId: string }>
     /** Composition seam for tests/load fixtures; production keeps the default limiter. */
     connectionRateLimiter?: ConnectionRateLimiter
@@ -873,8 +850,6 @@ export function createSelfHostedApp(
       "createSelfHostedApp is the self-host composition; use createHostedApp for hosted services",
     )
   }
-  const localDocumentBrokerToken = process.env.CLAXEDO_LOCAL_DOCUMENT_BROKER_TOKEN?.trim()
-  delete process.env.CLAXEDO_LOCAL_DOCUMENT_BROKER_TOKEN
   // One owner cannot collide with itself (`/api/workspace` is mounted twice on
   // purpose), so this catches a second composition mounting onto this app, not
   // a duplicate inside this function. The `mount*` helpers below run against
@@ -1273,14 +1248,6 @@ export function createSelfHostedApp(
   }
 
   const documentsBackend = localDocumentsBackend(services.authority)
-  // Documents doorbell. The documents backend is
-  // Worker-safe and cannot import the bus, so the local composition root injects
-  // the publish here. Every document mutation — saves AND `fs.watch` external
-  // changes — funnels through `publishDocumentEvent`, so this one line covers
-  // both paths. No hosted Worker composition (`hosted-core-app.ts`) mounts
-  // documents at present; a hosted composition that did would inject a
-  // LiveSyncRoom nudge sink through the DocumentsRoutes option instead of
-  // this process-global one.
   setDocumentChangedSink((event) => controlBus.publish(event))
   app.route(
     "/documents",
@@ -1290,11 +1257,6 @@ export function createSelfHostedApp(
       ...authRouteOptions(services),
     }),
   )
-  app.route("/internal/documents", LocalInstallationDocumentBroker({
-    backend: documentsBackend,
-    ...(localDocumentBrokerToken ? { installationToken: localDocumentBrokerToken } : {}),
-    env: process.env,
-  }))
 
   // Agent config routes (centralized MCP + commands management)
   app.route(
@@ -1395,7 +1357,7 @@ export function createSelfHostedApp(
     // turns meter into, so one usage view answers for both.
     ...(options.usageRevisionStore ? { usageWriter: options.usageRevisionStore.reports } : {}),
   }))
-  app.route("/api/control", ControlPlaneHttpRoutes(services, authRouteOptions(services)))
+  app.route("/api/control", ControlPlaneHttpRoutes(services, { ...authRouteOptions(services), idempotency: createIdempotencyCoordinator(memoryIdempotencyStore()) }))
   app.route("/api/control", OrgTeamControlRoutes(services, authRouteOptions(services)))
   app.route("/api/control/session-registrations", PrivateSessionRegistrationRoutes({
     authority: selfHostedPrivateSessionAuthority(services.authority),
@@ -1477,20 +1439,6 @@ export function createSelfHostedApp(
         }
       },
       quota: async ({ request, refresh }) => await readQuota({ org: await requestOrg(request, {}), refresh }),
-      history: async ({ since, until, refresh }) => {
-        await options.usageSourceCoverageReady
-        return await scanTokenTrackerLocalHistory({
-          sourceHome: os.homedir(),
-          stateDir: path.join(dataDir(), "usage-scanner"),
-          since,
-          until,
-          refresh,
-          classify: localHistoryClassifier(
-            await options.usageRevisionStore!.localTurnSpans(),
-            (await options.usageSourceCoverage?.starts()) ?? {},
-          ),
-        })
-      },
       pricing: tokenTrackerPricing("refreshed"),
       telemetry: services.telemetry,
     }))
@@ -1675,7 +1623,6 @@ export type ControlPlaneStackOptions = {
   sandboxDriver?: InjectedSandboxDriver
   egressBroker?: (request: Request) => Promise<Response>
   port?: number
-  processObserver?: ProcessObserver
   /** Explicit build/composition contributions (Agent Plugins); absent in the disabled product. */
   routeContributions?: readonly ControlPlaneRouteContribution[]
   /** Agent Plugins' contribution to every runtime snapshot this box pushes; absent in the disabled product. */
@@ -1852,8 +1799,6 @@ function startOwnedControlPlaneStack(options: ControlPlaneStackOptions, releaseD
   const port = options.port ?? DEFAULT_CLAXEDO_SERVER_PORT
   const services = options.services
   const usageRevisionStore = createSqliteUsageLedger()
-  const usageSourceCoverage = createSqliteUsageSourceCoverageStore()
-  const usageCoverageReady = usageSourceCoverage.ensure(["claude", "codex", "cursor", "opencode", "pi"])
   const localUsageHost = localHostIdentity()
   const localTurnMeter = createTurnMeter({
     writer: usageRevisionStore,
@@ -1909,7 +1854,6 @@ function startOwnedControlPlaneStack(options: ControlPlaneStackOptions, releaseD
     ...(services.auth.config.enabled && services.authority
       ? { sessionAccessPolicy: embeddedManagedPrivateSessionPolicy(services.authority, connectionTurnCredentials) }
       : {}),
-    ...(options.processObserver ? { processObserver: options.processObserver } : {}),
     // See `projectLocalSessionMetaFromEvent` above: a harness session's
     // async auto-title is published only as a `session.updated` frame on that
     // workspace runtime's own stream, never an HTTP `PATCH /session/:id` the
@@ -1971,10 +1915,6 @@ function startOwnedControlPlaneStack(options: ControlPlaneStackOptions, releaseD
       : {}),
   })
 
-  dropCopiedHarnessLogins().catch((err: unknown) => {
-    console.error("[claxedo-server] WARN  could not forget copied harness logins:", err)
-  })
-
   captureControlPlaneStartupTelemetry(services, { port })
 
   let localSessionProjectionReady: Promise<void> | undefined
@@ -1982,8 +1922,6 @@ function startOwnedControlPlaneStack(options: ControlPlaneStackOptions, releaseD
     ...(options.sandboxDriver?.id === "local-brokering-test" ? { localBrokeringRelay: true } : {}),
     egressBroker: options.egressBroker ?? credentialBroker?.handler,
     usageRevisionStore,
-    usageSourceCoverage,
-    usageSourceCoverageReady: usageCoverageReady,
     resolveUsageHostIdentity: localHostIdentity,
     ...(options.routeContributions ? { routeContributions: options.routeContributions } : {}),
     ...(options.tasksGrants ? { tasksGrants: options.tasksGrants } : {}),
@@ -2063,7 +2001,6 @@ export function startServer(
   port = DEFAULT_CLAXEDO_SERVER_PORT,
   options: {
     egressBroker?: (request: Request) => Promise<Response>
-    processObserver?: ProcessObserver
     routeContributions?: readonly ControlPlaneRouteContribution[]
   } = {},
 ) {
@@ -2071,7 +2008,6 @@ export function startServer(
     egressBroker: options.egressBroker,
     services: createDefaultLocalControlPlaneServices(),
     port,
-    ...(options.processObserver ? { processObserver: options.processObserver } : {}),
     ...(options.routeContributions ? { routeContributions: options.routeContributions } : {}),
   })
 }

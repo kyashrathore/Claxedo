@@ -1,3 +1,4 @@
+import { documentTestAccess } from "../../../test-support/document-access"
 import fs from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
@@ -100,6 +101,7 @@ function indexEntry(projectId = "project_1") {
   return {
     id: "document_1",
     org_id: "org_1",
+    creator_id: "user_1",
     project_id: projectId,
     display_name: "Plan",
     origin_kind: "managed",
@@ -416,6 +418,7 @@ describe("hosted managed documents and session write-back", () => {
     const entry = {
       id: "document_1",
       org_id: "org_1",
+      creator_id: "user_1",
       project_id: "project_1",
       display_name: "Invalid date",
       origin_kind: "managed",
@@ -910,6 +913,7 @@ describe("hosted managed documents and session write-back", () => {
         }),
       },
       {
+        access: documentTestAccess,
         runtime: {
           open: async (input) => {
             registerCapability = input.registerCapability
@@ -924,6 +928,7 @@ describe("hosted managed documents and session write-back", () => {
     const indexed = {
       id: "document_1",
       org_id: "org_1",
+      creator_id: "user_1",
       project_id: "project_1",
       display_name: "Plan",
       origin_kind: "managed" as const,
@@ -1068,12 +1073,13 @@ describe("hosted managed documents and session write-back", () => {
         return { path: "/workspace/document.md" }
       },
     }
-    const options = { runtime, resolveSessionWorkspace: async () => "ws_1", env }
+    const options = { access: documentTestAccess, runtime, resolveSessionWorkspace: async () => "ws_1", env }
     const first = createHostedDocumentsBackend(r2(storage), options)
     const now = new Date().toISOString()
     const entry = {
       id: "document_isolates",
       org_id: "org_1",
+      creator_id: "user_1",
       project_id: "project_1",
       display_name: "Plan",
       origin_kind: "managed" as const,
@@ -1152,7 +1158,7 @@ describe("hosted managed documents and session write-back", () => {
     vi.useFakeTimers()
     vi.setSystemTime(Date.now() + 60 * 60 * 1000 + 1)
     await expect(
-      third.runtimeEntry!(entry.id, {
+      third.runtimeRenew!(entry, {
         token: next.token,
         orgId: "org_1",
         projectId: "project_1",
@@ -1206,7 +1212,7 @@ describe("hosted managed documents and session write-back", () => {
       return await originalPut(key, body, condition)
     }
     await expect(
-      third.runtimeEntry!(entry.id, {
+      third.runtimeRenew!(entry, {
         token: capability!.token,
         orgId: "org_1",
         projectId: "project_1",

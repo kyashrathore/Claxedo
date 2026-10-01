@@ -5,6 +5,7 @@ import {
   RUNTIME_ACCESS_TOKEN_ISSUED_AT_FLOOR_SECONDS,
   WorkspaceRelayAuthError,
   relayHostTokenAudience,
+  relayHostTokenIssuer,
   mintHostTunnelToken,
   mintRelayHostToken,
   mintRuntimeAccessToken,
@@ -56,6 +57,49 @@ describe("workspace relay auth", () => {
     expect(unleased.routing_id).toBeUndefined()
   })
 
+  test("carries the one session a token is scoped to through both tokens, none when the mint named none, and refuses an empty one", async () => {
+    const key = await keys()
+    const target = { workspaceId: "ws_1", hostId: "host_1" }
+    const scoped = await verifyRuntimeAccessToken(await mintRuntimeAccessToken({ ...base, role: "viewer", sessionId: "ses_1" }, key.privateKey, "EdDSA"), key.publicKey, target)
+    const workspaceWide = await verifyRuntimeAccessToken(await mintRuntimeAccessToken(base, key.privateKey, "EdDSA"), key.publicKey, target)
+    const host = await verifyRelayHostToken(await mintRelayHostToken({
+      ...base, sessionId: "ses_1", backing: "local-worktree", parentJti: "jti_1",
+    }, key.privateKey, "EdDSA"), key.publicKey, target)
+    const empty = await new SignJWT({
+      principal_kind: "user", actor_id: "actor_1", actor_kind: "human", org_id: "org_1",
+      workspace_id: "ws_1", host_id: "host_1", role: "viewer", session_id: " ",
+    }).setProtectedHeader({ alg: "EdDSA" }).setIssuer(runtimeAccessTokenIssuer).setAudience(runtimeAccessTokenAudience)
+      .setIssuedAt().setExpirationTime("10m").setJti("jti_empty").sign(key.privateKey)
+
+    expect(scoped.session_id).toBe("ses_1")
+    expect(workspaceWide.session_id).toBeUndefined()
+    expect(host.session_id).toBe("ses_1")
+    await expect(verifyRuntimeAccessToken(empty, key.publicKey, target)).rejects.toMatchObject({ code: "relay_token_claims_invalid" })
+  })
+
+  test("names its reach on every token: the workspace scope or one session, never neither and never both", async () => {
+    const key = await keys()
+    const target = { workspaceId: "ws_1", hostId: "host_1" }
+    const workspaceWide = await verifyRuntimeAccessToken(await mintRuntimeAccessToken(base, key.privateKey, "EdDSA"), key.publicKey, target)
+    const scoped = await verifyRuntimeAccessToken(await mintRuntimeAccessToken({ ...base, role: "viewer", sessionId: "ses_1" }, key.privateKey, "EdDSA"), key.publicKey, target)
+    expect(workspaceWide.scope).toBe("workspace")
+    expect(scoped.scope).toBe("session")
+
+    const signed = (claims: Record<string, unknown>, host = false) => new SignJWT({
+      principal_kind: "user", actor_id: "actor_1", actor_kind: "human", org_id: "org_1",
+      workspace_id: "ws_1", host_id: "host_1", role: "viewer", backing: "local-worktree", parent_jti: "jti_parent", ...claims,
+    }).setProtectedHeader({ alg: "EdDSA" })
+      .setIssuer(host ? relayHostTokenIssuer : runtimeAccessTokenIssuer)
+      .setAudience(host ? relayHostTokenAudience : runtimeAccessTokenAudience)
+      .setIssuedAt().setExpirationTime("10m").setJti("jti_reach").sign(key.privateKey)
+    for (const claims of [{}, { scope: "workspace", session_id: "ses_1" }, { scope: "session" }, { scope: "host" }]) {
+      await expect(verifyRuntimeAccessToken(await signed(claims), key.publicKey, target))
+        .rejects.toMatchObject({ code: "relay_token_claims_invalid" })
+      await expect(verifyRelayHostToken(await signed(claims, true), key.publicKey, target))
+        .rejects.toMatchObject({ code: "relay_token_claims_invalid" })
+    }
+  })
+
   test("verifies Runtime Access Tokens for the expected workspace and host", async () => {
     const key = await keys()
     const token = await mintRuntimeAccessToken(base, key.privateKey, "EdDSA")
@@ -87,6 +131,7 @@ describe("workspace relay auth", () => {
       workspace_id: base.workspaceId,
       host_id: base.hostId,
       role: base.role,
+      scope: "workspace",
     })
       .setProtectedHeader({ alg: "EdDSA" })
       .setIssuer(runtimeAccessTokenIssuer)
@@ -178,6 +223,7 @@ describe("workspace relay auth", () => {
       workspace_id: base.workspaceId,
       host_id: base.hostId,
       role: base.role,
+      scope: "workspace",
     })
       .setProtectedHeader({ alg: "EdDSA" })
       .setIssuer("other-control-plane")
@@ -191,6 +237,7 @@ describe("workspace relay auth", () => {
       workspace_id: base.workspaceId,
       host_id: base.hostId,
       role: base.role,
+      scope: "workspace",
     })
       .setProtectedHeader({ alg: "EdDSA" })
       .setIssuer(runtimeAccessTokenIssuer)
@@ -234,6 +281,7 @@ describe("workspace relay auth", () => {
       workspace_id: base.workspaceId,
       host_id: base.hostId,
       role: base.role,
+      scope: "workspace",
     })
       .setProtectedHeader({ alg: "EdDSA" })
       .setIssuer(runtimeAccessTokenIssuer)
@@ -410,6 +458,7 @@ describe("workspace relay auth", () => {
       workspace_id: base.workspaceId,
       host_id: base.hostId,
       role: base.role,
+      scope: "workspace",
     })
       .setProtectedHeader({ alg: "HS256" })
       .setIssuer(runtimeAccessTokenIssuer)
@@ -563,6 +612,7 @@ describe("workspace relay auth", () => {
       workspace_id: base.workspaceId,
       host_id: base.hostId,
       role: base.role,
+      scope: "workspace",
     })
       .setProtectedHeader({ alg: "EdDSA", kid: "key-b" })
       .setIssuer(runtimeAccessTokenIssuer)
@@ -643,6 +693,8 @@ describe("workspace relay auth", () => {
   test("verifies Host Tunnel Tokens for the expected host and workspaces", async () => {
     const key = await keys()
     const token = await mintHostTunnelToken({
+      enrollmentId: "enr_1",
+      generation: 0,
       subject: "user_1",
       hostId: "host_1",
       workspaceIds: ["ws_1", "ws_2"],
@@ -676,7 +728,7 @@ describe("workspace relay auth", () => {
     } satisfies Partial<WorkspaceRelayAuthError>)
   })
 
-  test("Host Tunnel Tokens carry the serving-generation fence only when minted with one", async () => {
+  test("Host Tunnel Tokens require the serving-generation fence", async () => {
     const key = await keys()
     const fenced = await mintHostTunnelToken({
       subject: "user_1",
@@ -688,14 +740,11 @@ describe("workspace relay auth", () => {
     const claims = await verifyHostTunnelToken(fenced, key.publicKey, { hostId: "host_1", workspaceIds: ["ws_1"] })
     expect(claims).toMatchObject({ enrollment_id: "enr_1", generation: 0 })
 
-    const unfenced = await mintHostTunnelToken({
+    await expect(mintHostTunnelToken({
       subject: "user_1",
       hostId: "host_1",
       workspaceIds: ["ws_1"],
-    }, key.privateKey, "EdDSA")
-    const plain = await verifyHostTunnelToken(unfenced, key.publicKey, { hostId: "host_1", workspaceIds: ["ws_1"] })
-    expect("enrollment_id" in plain).toBe(false)
-    expect("generation" in plain).toBe(false)
+    } as Parameters<typeof mintHostTunnelToken>[0], key.privateKey, "EdDSA")).rejects.toMatchObject({ code: "relay_token_claims_invalid" })
   })
 
   test("refuses to mint a Host Tunnel Token whose fence is malformed", async () => {
@@ -707,7 +756,7 @@ describe("workspace relay auth", () => {
       { enrollmentId: "enr_1", generation: 1.5 },
       { enrollmentId: "enr_1", generation: Number.NaN },
     ]) {
-      await expect(mintHostTunnelToken({ ...input, ...fence }, key.privateKey, "EdDSA")).rejects.toMatchObject({
+      await expect(mintHostTunnelToken({ ...input, ...fence } as Parameters<typeof mintHostTunnelToken>[0], key.privateKey, "EdDSA")).rejects.toMatchObject({
         code: "relay_token_claims_invalid",
       } satisfies Partial<WorkspaceRelayAuthError>)
     }
@@ -731,6 +780,8 @@ describe("workspace relay auth", () => {
       .sign(key.privateKey)
 
     for (const claims of [
+      {},
+      { enrollment_id: "enr_1" },
       { enrollment_id: "enr_1", generation: "3" },
       { enrollment_id: "enr_1", generation: -1 },
       { enrollment_id: "enr_1", generation: 2.5 },

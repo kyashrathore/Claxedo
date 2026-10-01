@@ -98,6 +98,7 @@ This is a build-composed feature, not a runtime switch. Disabled entrypoints do 
 Enabled hosted deployments require:
 
 - the `CLAXEDO_AGENT_PLUGINS` R2 binding;
+- the `PLUGIN_LOADER` Worker Loader and the `PLUGIN_SUPERVISOR` Durable Object of the plugin-backend platform (`src/plugin-backends/README.md`);
 - the isolated Agent Plugins Convex component/profile;
 - `CLAXEDO_AGENT_PLUGINS_MCP_GATEWAY_URL` in production or `CLAXEDO_AGENT_PLUGINS_MCP_GATEWAY_URL_STAGING` in staging;
 - `CLAXEDO_AGENT_PLUGINS_MCP_GATEWAY_ZONE_NAME`;

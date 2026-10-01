@@ -141,14 +141,14 @@ test("12 opening a header row reads its whole part once, draws its body and move
   expect((await row.boundingBox())?.height, "the row closed again is as tall as its header was").toBe(collapsed)
 })
 
-test("12 a Claxedo task row draws its task from a cold open, and a Claxedo log row shows its open arrow and opens to read its body", async ({ stack, api, app }) => {
+test("12 a Claxedo task row draws its task from a cold open, and a Claxedo prose row shows its open arrow and opens to read its body", async ({ stack, api, app }) => {
   const workspace = await stack.daemon.makeWorkspace("claxedo-rows", "Claxedo rows")
   const session = await api.createSession(workspace.directory, { title: "Claxedo rows", harness: SCRIPTED_ACP_HARNESS })
   const task = { task: { id: "t1", key: "T-1", title: "Ship it", status: "doing" } }
   await stack.acp.write("claxedo-rows", {
     steps: [
       { kind: "tool", tool: "other", title: "mcp__claxedo-mcp__task_create Ship it", input: { title: "Ship it" }, text: JSON.stringify(task) },
-      { kind: "tool", tool: "other", title: "mcp__claxedo-mcp__process_logs web", input: { process: "web" }, text: "web log line one" },
+      { kind: "tool", tool: "other", title: "mcp__claxedo-mcp__sessions_board", input: {}, text: "board line one" },
       { kind: "text", text: "Rows done." },
     ],
   })
@@ -160,14 +160,14 @@ test("12 a Claxedo task row draws its task from a cold open, and a Claxedo log r
   const rows = app.locator('[data-component="claxedo-tool"]')
   await expect(rows.first(), "the task row a cold open draws").toContainText("#T-1 Ship it")
   await expect(rows.first().locator('[data-slot="claxedo-tool-status"]')).toHaveAttribute("data-status", "doing")
-  const logs = rows.last()
-  await expect(logs).not.toContainText("web log line one")
-  await expect(logs.locator('[data-slot="collapsible-arrow"]'), "the log row's open arrow before its body is read").toBeVisible()
+  const prose = rows.last()
+  await expect(prose).not.toContainText("board line one")
+  await expect(prose.locator('[data-slot="collapsible-arrow"]'), "the prose row's open arrow before its body is read").toBeVisible()
   const from = await now(app)
-  await logs.getByRole("button").first().click()
-  await expect(logs, "the log row's body once it opens").toContainText("web log line one")
+  await prose.getByRole("button").first().click()
+  await expect(prose, "the prose row's body once it opens").toContainText("board line one")
   const reads = (await stillnessAfter(app, 0)).reads.filter((read) => read.at >= from).map((read) => read.kind)
-  expect(reads, "reads the opened log row made").toEqual(["part"])
+  expect(reads, "reads the opened prose row made").toEqual(["part"])
 })
 
 test("12 opening a folded turn draws its tool headers without their output and moves nothing above the fold", async ({ stack, api, app }) => {

@@ -142,7 +142,6 @@ export function InternalRelayResolverRoutes(options: InternalRelayResolverOption
       hostId,
       baseUrl: target.baseUrl.replace(/\/+$/, ""),
       backing: target.backing,
-      ...(target.upstreamHeaders ? { upstreamHeaders: target.upstreamHeaders } : {}),
     })
   })
 

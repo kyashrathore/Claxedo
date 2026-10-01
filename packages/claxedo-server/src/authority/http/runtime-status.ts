@@ -39,7 +39,7 @@ async function patchLease(
   operation: "register" | "heartbeat",
 ) {
   const now = Date.now()
-  const active = input.activeProcessCount > 0 || input.ptyCount > 0
+  const active = input.ptyCount > 0
   const sandboxManager = services.sandbox.sandboxManager
   if (sandboxManager) {
     const result = await sandboxManager[operation](input.workspaceId, {

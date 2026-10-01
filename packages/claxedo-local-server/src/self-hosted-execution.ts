@@ -49,8 +49,6 @@ export { createWorkspaceRuntimeProxy } from "./workspace/runtime-dispatch/middle
 export { createLocalWorkspaceRelayProxy, localWorkspaceRelayProxy } from "./workspace/runtime-dispatch/shared-workspace-endpoint"
 export { mountWorkspaceRuntimePtyWebSocketProxy } from "./deployments/local/server-workspace-pty-proxy"
 export { createSqliteUsageLedger, type SqliteUsageLedger } from "@claxedo/server-core/usage/adapters/sqlite-usage-ledger"
-export { createSqliteUsageSourceCoverageStore, type UsageSourceCoverageStore } from "@claxedo/server-core/usage/adapters/sqlite-usage-provenance"
-export { scanTokenTrackerLocalHistory, type LocalHistorySnapshot } from "./usage/adapters/token-tracker-local-history"
 export { readMachineAgentUsage } from "./usage/adapters/token-tracker-usage-limits"
 export { LocalUsageRoutes, UsageRoutes } from "@claxedo/server-core/usage/routes"
 export { createUsageQuotaReader } from "@claxedo/server-core/usage/quota"
@@ -79,8 +77,6 @@ export {
 /** Records local session metadata from proxied `/session` responses. */
 export { sessionMetaProjectionTap } from "./session/session-meta-tap"
 
-/** Migrates legacy plaintext provider credentials into the managed backend. */
-export { dropCopiedHarnessLogins } from "./credentials/operations/drop-copied-harness-logins"
 export { projectLocalSessionMetaFromEvent } from "./session/session-meta-tap"
 
 export { appPluginAuthoring } from "./plugins/authoring"

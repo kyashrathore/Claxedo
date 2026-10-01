@@ -10,7 +10,7 @@ const background = (toolCallId: string): SubagentObservation => ({
 })
 
 function journal(f: HostFixture, sessionId: string) {
-  return JSON.stringify(f.store.brokerDatabase().prepare<{ payload_json: string }>(
+  return JSON.stringify(f.store.database().prepare<{ payload_json: string }>(
     "SELECT payload_json FROM runtime_journal WHERE session_id = ? ORDER BY seq").all(sessionId))
 }
 

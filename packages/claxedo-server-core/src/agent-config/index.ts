@@ -85,7 +85,7 @@ export interface RuntimeConfigSnapshot {
   harnessLaunch?: Record<string, Record<string, unknown>>
 }
 
-/** What Agent Plugins contributes to a runtime snapshot: native launch rows and the ACP MCP map. */
+/** What Agent Plugins contributes to a runtime snapshot: a launch row per native harness and one for ACP connections, and the ACP MCP map. */
 export type AgentPluginRuntimeContribution = {
   harnessLaunch: Record<string, Record<string, unknown>>
   mcp: Record<string, AcpRuntimeMcpServer>
@@ -115,7 +115,7 @@ export type AgentConfigOptions = {
     workspaceId?: string
     /** How this workspace's sandbox can carry a credential, when it has one. */
     secretBrokering?: SandboxSecretBrokering
-    /** The person a shared-scope sandbox serves; only their accounts and the team's reach it. */
+    /** The person a shared-scope sandbox serves; only their accounts and the org's reach it. */
     sandboxOwner?: string
   }) => Promise<CredentialSnapshot>
 }

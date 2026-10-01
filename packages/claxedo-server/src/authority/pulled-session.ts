@@ -107,13 +107,6 @@ export function pulledSession(input: unknown, sessionId: string, Refusal: Refusa
   }
 }
 
-export function sessionIsIdle(input: unknown, sessionId: string) {
-  const statuses = asRecord(input)
-  if (!statuses) return false
-  if (!(sessionId in statuses)) return true
-  return asRecord(statuses[sessionId])?.type === "idle"
-}
-
 type PullProjection = Pick<SessionProjectionStore, "read_session_max_event_ordinal" | "read_session_messages" | "sync_session_messages">
 
 export type PullSkip =
@@ -181,4 +174,17 @@ export async function projectPulledMessages(input: {
     currentOrdinal: store.read_session_max_event_ordinal(sessionId),
     ...(snapshotOrdinal === undefined ? {} : { snapshotOrdinal }),
   }
+}
+
+/**
+ * Whether a pulled snapshot is offered to the authority. One the projection
+ * skipped at its own ordinal is: the projection holds it, but a pull that
+ * committed the projection and failed before the authority write left the
+ * authority behind, and the authority refuses a snapshot it already holds by
+ * its own stored ordinal. One older than the projection is not, because the
+ * newer pull that passed it offered the authority its own.
+ */
+export function pullReachesAuthority(skipped: PullSkip | undefined) {
+  if (!skipped) return true
+  return "snapshotOrdinal" in skipped && skipped.snapshotOrdinal !== undefined && skipped.snapshotOrdinal >= skipped.currentOrdinal
 }

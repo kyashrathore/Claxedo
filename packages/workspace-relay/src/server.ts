@@ -2,7 +2,7 @@ import { Hono } from "hono"
 import { cors } from "hono/cors"
 import { exportJWK, type JWK } from "jose"
 import { isRecord } from "@claxedo/helpers/guards"
-import type { RuntimeAccessVerifierClaims, TokenVerifier } from "@claxedo/workspace-relay-protocol"
+import { sessionScopeReaches, type RuntimeAccessVerifierClaims, type TokenVerifier } from "@claxedo/workspace-relay-protocol"
 import {
   WorkspaceRelayAuthError,
   isHostGeneration,
@@ -31,7 +31,6 @@ export type WorkspaceRelayTarget = {
   workspaceId: string
   hostId: string
   baseUrl: string
-  upstreamHeaders?: Record<string, string>
   backing: RelayBacking
 }
 
@@ -55,9 +54,8 @@ export type RuntimeAccessTokenActiveResult =
 export function parseWorkspaceRelayTarget(input: unknown): WorkspaceRelayTarget | undefined {
   if (!isRecord(input)) return undefined
   const row = input
-  const { workspaceId, hostId, baseUrl, upstreamHeaders } = row
+  const { workspaceId, hostId, baseUrl } = row
   if (typeof workspaceId !== "string" || typeof hostId !== "string" || typeof baseUrl !== "string") return undefined
-  if (upstreamHeaders !== undefined && !isStringRecord(upstreamHeaders)) return undefined
   // `access` is the retired spelling of the same fact. A payload carrying it
   // came from a control plane on the other side of the placement change, whose
   // `backing` may disagree with it; drop the target rather than pick one.
@@ -68,7 +66,6 @@ export function parseWorkspaceRelayTarget(input: unknown): WorkspaceRelayTarget 
     workspaceId,
     hostId,
     baseUrl,
-    ...(upstreamHeaders ? { upstreamHeaders } : {}),
     backing: row.backing,
   }
 }
@@ -118,7 +115,7 @@ export type HostGenerationResolverLookupOptions = {
  * the Worker. Only the control plane's own "enrollment not found" 404 resolves
  * `undefined`; a bare 404 is a control plane without the route, and like every
  * other non-ok status, a malformed body, or a hit deadline it throws so the
- * relay refuses fenced tokens with a retryable 503 instead of grading them as
+ * relay refuses host tunnels with a retryable 503 instead of grading them as
  * unknown enrollments.
  */
 export function createHostGenerationResolverLookup(url: string, options: HostGenerationResolverLookupOptions): HostGenerationLookup {
@@ -141,20 +138,8 @@ export function createHostGenerationResolverLookup(url: string, options: HostGen
   }
 }
 
-/**
- * The fence between two host tunnels for one identity. An incumbent that
- * carries a generation is displaced only by a candidate at the same or a
- * higher generation — never by a lower one, and never by a token minted
- * without a generation. An incumbent without a generation is displaced by
- * any candidate, which is the pre-fence "newest wins" order.
- */
-export function hostTunnelIncumbentOutranks(incumbentGeneration: number | undefined, candidateGeneration: number | undefined) {
-  if (incumbentGeneration === undefined) return false
-  return candidateGeneration === undefined || incumbentGeneration > candidateGeneration
-}
-
-function isStringRecord(input: unknown): input is Record<string, string> {
-  return isRecord(input) && Object.values(input).every((value) => typeof value === "string")
+export function hostTunnelIncumbentOutranks(incumbentGeneration: number, candidateGeneration: number) {
+  return incumbentGeneration > candidateGeneration
 }
 
 function parseAbsoluteHttpUrl(baseUrl: string): URL | undefined {
@@ -262,10 +247,8 @@ export type WorkspaceRelayAuditEvent = {
 export type WorkspaceRelayAuthOptions = {
   runtimeAccessKey: RelayKey
   /**
-   * Serving-generation fence for host tunnels. Unset on desktop and
-   * self-hosted relays, where nothing asks the control plane: tokens without
-   * a generation are admitted newest-wins, tokens with one are refused
-   * `host_generation_unverifiable`.
+   * Serving-generation fence for host tunnels. A relay composed without it
+   * refuses every host tunnel `host_generation_unverifiable`.
    */
   resolveHostGeneration?: HostGenerationLookup
   /**
@@ -600,6 +583,11 @@ export function createCachedHostGenerationClient(
   }
 }
 
+/**
+ * `retryable: false` means the control plane refused this generation, so the
+ * host must not simply reconnect with it; `retryable: true` means the control
+ * plane could not be asked, and a reconnect is the recovery.
+ */
 export type HostTunnelGenerationDecision =
   | { ok: true }
   | {
@@ -620,22 +608,10 @@ export type HostTunnelGenerationDecision =
       reason: string
     }
 
-/**
- * The one admission/re-check verdict both relay adapters apply to a host
- * tunnel, on connect and on every registration update. A token without a
- * generation is always `ok` — that is the pre-fence behaviour desktop and
- * self-hosted relays keep. A token WITH a generation asserts a fence, so a
- * relay composed without a resolver refuses it rather than admit what it
- * cannot verify; that refusal is not retryable because the resolver is a
- * property of the composition, not of the moment. `retryable` otherwise
- * separates "the control plane said no" (the host must not simply reconnect)
- * from "the control plane could not be asked" (it should).
- */
 export async function checkHostTunnelGeneration(
   lookup: HostGenerationLookup | undefined,
   claims: Pick<HostTunnelTokenClaims, "enrollment_id" | "generation">,
 ): Promise<HostTunnelGenerationDecision> {
-  if (claims.generation === undefined || !claims.enrollment_id) return { ok: true }
   if (!lookup) {
     return {
       ok: false,
@@ -738,18 +714,6 @@ const DANGEROUS_INBOUND_HEADER_PATTERNS: ReadonlyArray<RegExp> = [
   /^x-supervisor-/i,
 ]
 
-/**
- * Headers a target resolver may add to the forwarded request: provider-
- * specific upstream configuration only, exact names. Anything else the
- * resolver supplies is dropped — it must never inject cookies, hop-by-hop
- * headers, or the relay-owned authentication/identity headers stamped after
- * it. The only producer today is the Daytona sandbox's preview token
- * (`sandbox-relay-target.ts`).
- */
-const UPSTREAM_HEADER_ALLOWLIST: ReadonlySet<string> = new Set([
-  "x-daytona-preview-token",
-])
-
 function isDangerousInboundHeader(name: string) {
   const lower = name.toLowerCase()
   if ((DANGEROUS_INBOUND_HEADERS as ReadonlyArray<string>).includes(lower)) return true
@@ -769,7 +733,6 @@ export type WorkspaceRelayForwardHeadersOptions = {
    * may legitimately be needed, so the default is to not strip cookies.
    */
   hostTunnel?: boolean
-  upstreamHeaders?: Record<string, string>
 }
 
 export type WorkspaceRelayForwardRequestInitOptions = WorkspaceRelayForwardHeadersOptions & {
@@ -795,23 +758,13 @@ function forwardHeaders(
   }
   if (options.hostTunnel) headers.delete("cookie")
   // Bun's fetch auto-decodes gzip/br responses but errors on malformed
-  // upstream content-encoding (Daytona occasionally serves gzip-marked
-  // responses that fail Zlib decompression). Force identity encoding so the
-  // body streams through verbatim and the browser handles decompression.
+  // upstream content-encoding. Force identity encoding so the body streams
+  // through verbatim and the browser handles decompression.
   headers.set("accept-encoding", "identity")
-  // Resolver-supplied headers apply through an exact allowlist and BEFORE the
-  // relay-owned stamps below, so a resolver can set the provider headers it
-  // owns but can never overwrite authentication or identity headers.
-  for (const [name, value] of Object.entries(options.upstreamHeaders ?? {})) {
-    const trimmed = value.trim()
-    if (trimmed && UPSTREAM_HEADER_ALLOWLIST.has(name.toLowerCase())) headers.set(name, trimmed)
-  }
   headers.delete("authorization")
   headers.delete("Authorization")
   headers.set("Authorization", `Bearer ${relayHostToken}`)
   headers.set("x-workspace-id", workspaceId)
-  headers.set("X-Daytona-Skip-Preview-Warning", "true")
-  headers.set("X-Daytona-Skip-Last-Activity-Update", "true")
   // Single relay-controlled marker that lets the host service distinguish
   // traffic coming through the relay from any other inbound source. We do not
   // attempt to preserve a client IP here because the relay is not behind a
@@ -835,9 +788,6 @@ function targetUrl(target: WorkspaceRelayTarget, path: string, search: string) {
   return url
 }
 
-// A PTY WebSocket upgrade is a GET but still grants an interactive shell.
-const RELAY_VIEWER_DENIED_PATH = /^\/api\/wr\/pty(?:\/|$)/
-
 function relayRuntimePath(request: Request) {
   try {
     const decoded = decodeURIComponent(new URL(request.url).pathname.replace(/^\/workspaces\/[^/]+\/?/, "/"))
@@ -846,22 +796,13 @@ function relayRuntimePath(request: Request) {
     // the path through `new URL`, which parses any `?`/`#` a decoded %3F/%23
     // introduced as query/fragment and drops it from the pathname. Resolve it the
     // same way here so a viewer cannot smuggle `/api/wr/pty%3Fx` (authz sees
-    // "/api/wr/pty?x", which the deny regex misses, but forwarding hits the real
+    // "/api/wr/pty?x", which a path rule misses, but forwarding hits the real
     // "/api/wr/pty") past the gate. Query strings ride in `request.url` search,
     // not the pathname, so legitimate requests are unaffected.
     return new URL(decoded.replace(/^\/+/, ""), "http://relay.invalid/").pathname
   } catch {
     return undefined
   }
-}
-
-function roleAllowsRelayRequest(role: RelayRole, method: string, path: string) {
-  if (role === "owner" || role === "admin" || role === "editor") return true
-  if (role === "viewer") {
-    if (RELAY_VIEWER_DENIED_PATH.test(path)) return false
-    return method === "GET" || method === "HEAD" || method === "OPTIONS"
-  }
-  return false
 }
 
 function relayHostTokenCacheTtlMs(options: WorkspaceRelayOptions, claims: RuntimeAccessTokenClaims) {
@@ -1013,6 +954,7 @@ function relayHostMintInput(
       : {}),
     orgId: claims.org_id,
     role: claims.role,
+    ...(claims.session_id ? { sessionId: claims.session_id } : {}),
     ...target,
     ...(options.relayHostMintKid ? { kid: options.relayHostMintKid } : {}),
   }
@@ -1284,7 +1226,6 @@ export const RELAY_ALLOWED_REQUEST_HEADER_LIST = [
   "Traceparent",
   "Tracestate",
   "X-Fetch-Bypass-Throttle",
-  "X-Daytona-Skip-Preview-Warning",
   "X-Workspace-Id",
   "X-OpenCode-Directory",
   "X-Claxedo-Runner",
@@ -1386,13 +1327,13 @@ export async function authorizeWorkspaceRelayRequest(
       }
     }
     const path = relayRuntimePath(request)
-    if (!path || !roleAllowsRelayRequest(claims.role, request.method, path)) {
+    if (!path || !sessionScopeReaches(claims.session_id, path, new URL(request.url).search)) {
       return {
         ok: false,
-        code: "relay_role_denied",
+        code: "relay_scope_denied",
         response: await deny(options, {
-          code: "relay_role_denied",
-          message: "Workspace role does not allow this relay request",
+          code: "relay_scope_denied",
+          message: "Runtime Access Token scope does not reach this relay request",
           status: 403,
           claims,
           request,
@@ -1496,7 +1437,6 @@ export async function forwardWorkspaceRelayRequest(
         // the browser's relay cookies however it is reached.
         hostTunnel: isHostTunnelTarget(target),
         signal: controller.signal,
-        upstreamHeaders: target.upstreamHeaders,
       }),
     ))
     const headers = new Headers(upstream.headers)

@@ -27,23 +27,23 @@ describe("loading the server's env for development", () => {
     // sign-in looked broken rather than unconfigured.
     const env: NodeJS.ProcessEnv = {}
     const repoRoot = repoWith({
-      env: "GITHUB_CLIENT_ID=abc\nGITHUB_CLIENT_SECRET=shh\nDAYTONA_API_KEY=dtn_1\n",
+      env: "GITHUB_CLIENT_ID=abc\nGITHUB_CLIENT_SECRET=shh\nBOX_API_KEY=box_1\n",
     })
 
     expect(loadServerEnvForDevelopment({ repoRoot, env })).toBe(3)
     expect(env.GITHUB_CLIENT_ID).toBe("abc")
-    expect(env.DAYTONA_API_KEY).toBe("dtn_1")
+    expect(env.BOX_API_KEY).toBe("box_1")
   })
 
   test("an explicit export from the caller is never clobbered", () => {
     // `FOO=bar bun dev` is an intention, and the launch script sets the
     // throwaway profile's directories before this runs.
-    const env: NodeJS.ProcessEnv = { DAYTONA_API_KEY: "from-the-shell" }
-    const repoRoot = repoWith({ env: "DAYTONA_API_KEY=from-the-file\n" })
+    const env: NodeJS.ProcessEnv = { BOX_API_KEY: "from-the-shell" }
+    const repoRoot = repoWith({ env: "BOX_API_KEY=from-the-file\n" })
 
     loadServerEnvForDevelopment({ repoRoot, env })
 
-    expect(env.DAYTONA_API_KEY).toBe("from-the-shell")
+    expect(env.BOX_API_KEY).toBe("from-the-shell")
   })
 
   test(".env.local wins over .env, but neither wins over the caller", () => {

@@ -6,7 +6,8 @@ import { createRequestBroker, createSessionBroker, createTurnBroker } from "@cla
 import { MemoryPorts, registerBrokerBehaviorCases, registerBrokerPortCases, registerChildOwnedRequestCases, registerChildRequestCases } from "@claxedo/harness/testing"
 import type { PendingRequest, RoutedEvent } from "@claxedo/harness/contract"
 import type { BrokerEvent, TurnAuthority } from "@claxedo/harness/broker"
-import { RuntimeStore } from "../store"
+import type { RuntimeStore } from "../store"
+import { openRuntimeStore } from "../store-file"
 import { createRequestSurface } from "../host/requests"
 import { createRuntimeEventHub } from "../projection/runtime-event-hub"
 import { createStoreBrokerPorts, type StoreBrokerPortOptions } from "./index"
@@ -27,9 +28,10 @@ const opened: { store: RuntimeStore; root: string }[] = []
 
 function setup(options: Partial<StoreBrokerPortOptions> = {}) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "broker-store-"))
-  const store = new RuntimeStore(root)
+  const store = openRuntimeStore(root)
   opened.push({ store, root })
   store.bindSession({
+    owner: { kind: "machine-owner" },
     sessionId: "s1", workspaceId: "w1", directory: "/work", connectionId: "c1",
     upstreamSessionId: "up1", agentSessionId: "up1", createdAt: 1,
   })
@@ -144,7 +146,7 @@ class StoreBehaviorPorts extends MemoryPorts {
   private syncAuthority(sessionId: string, desired: TurnAuthority): void {
     const active = this.real.currentTurnAuthority(sessionId)
     if (active && active.turnId !== desired.turnId) this.finishActiveTurn(sessionId)
-    this.store.bindSession({ sessionId, workspaceId: desired.workspaceId, directory: desired.directory,
+    this.store.bindSession({ owner: { kind: "machine-owner" }, sessionId, workspaceId: desired.workspaceId, directory: desired.directory,
       connectionId: desired.connectionId, upstreamSessionId: desired.upstreamSessionId,
       agentSessionId: desired.upstreamSessionId })
     this.store.updateSessionConfig(sessionId, { harness: { id: "claude", access: "native" },
@@ -163,7 +165,7 @@ class StoreBehaviorPorts extends MemoryPorts {
       if (!existing) this.store.sessionStarts.begin(this.startBinding)
       if (this.startStatus === "starting" && existing?.status !== "starting") {
         const record = { binding: this.startBinding, status: "starting", createdAt: 1, updatedAt: 1 }
-        this.store.brokerDatabase().prepare("UPDATE session_start SET data_json = ? WHERE session_id = ?")
+        this.store.database().prepare("UPDATE session_start SET data_json = ? WHERE session_id = ?")
           .run(JSON.stringify(record), sessionId)
       } else if (this.startStatus !== "starting" && (!existing || existing.status === "starting")) {
         this.store.sessionStarts.finish(this.startBinding, this.startStatus === "created"
@@ -313,7 +315,7 @@ describe("store broker ports", () => {
     await ports.persistAnswer(pending, { kind: "permission", decision: "allow_always" }, true)
     const replied = { type: "permission.replied", properties: { sessionID: "s1", requestID: "granted", reply: "always" } }
     expect(streamed).toContainEqual(expect.objectContaining(replied))
-    expect(store.brokerDatabase().prepare<{ n: number }>(
+    expect(store.database().prepare<{ n: number }>(
       "SELECT count(*) AS n FROM runtime_journal WHERE session_id = 's1' AND type = 'permission.replied'").get()?.n).toBe(1)
   })
 
@@ -328,7 +330,7 @@ describe("store broker ports", () => {
     await ports.persistAnswer(pending, { kind: "rejected" }, false)
     expect(ports.readAnswer("s1", "first")).toEqual({ kind: "cancelled" })
     store.close()
-    const reopened = new RuntimeStore(root)
+    const reopened = openRuntimeStore(root)
     opened.push({ store: reopened, root })
     expect(createStoreBrokerPorts(reopened, {
       ownerGeneration: "g1", patternEvaluator: async () => {}, publishers: createRuntimeEventHub(),
@@ -339,7 +341,7 @@ describe("store broker ports", () => {
 
   test("pending reads separate directories, duplicate native ids and startup requests", async () => {
     const { store, ports } = setup()
-    store.bindSession({ sessionId: "s2", workspaceId: "w1", directory: "/other", connectionId: "c1",
+    store.bindSession({ owner: { kind: "machine-owner" }, sessionId: "s2", workspaceId: "w1", directory: "/other", connectionId: "c1",
       upstreamSessionId: "up2", agentSessionId: "up2" })
     const first: PendingRequest = { sessionId: "s1", request: question("shared"), askedAt: 1, upstreamSessionId: "up1" }
     const second: PendingRequest = { sessionId: "s2", request: { ...question("shared"),
@@ -365,7 +367,7 @@ describe("store broker ports", () => {
     await ports.persistAnswer(pending, { kind: "cancelled" }, false)
     expect(ports.readPending({ sessionId: "s1" })).toEqual([])
     store.close()
-    const reopened = new RuntimeStore(root)
+    const reopened = openRuntimeStore(root)
     opened.push({ store: reopened, root })
     const reopenedPorts = createStoreBrokerPorts(reopened, { ownerGeneration: "g1",
       patternEvaluator: async () => {}, publishers: createRuntimeEventHub(),
@@ -403,11 +405,11 @@ describe("store broker ports", () => {
     const request = permission("grant")
     const pending: PendingRequest = { sessionId: "s1", request, askedAt: 10, upstreamSessionId: "up1" }
     await ports.publish({ id: "permission.asked:s1:grant", type: "permission.asked", properties: request.permission }, pending)
-    store.brokerDatabase().exec("CREATE TRIGGER deny_broker_grant BEFORE UPDATE OF permission_state_json ON session BEGIN SELECT RAISE(ABORT, 'grant failed'); END")
+    store.database().exec("CREATE TRIGGER deny_broker_grant BEFORE UPDATE OF permission_state_json ON session BEGIN SELECT RAISE(ABORT, 'grant failed'); END")
     await expect(ports.persistAnswer(pending, { kind: "permission", decision: "allow_always" }, false, { sessionId: "s1", key: '["c1","run"]' })).rejects.toThrow("grant failed")
     expect(ports.readAnswer("s1", "grant")).toBeUndefined()
     expect(ports.readPermissionState("s1")?.brokerGrants).toBeUndefined()
-    store.brokerDatabase().exec("DROP TRIGGER deny_broker_grant")
+    store.database().exec("DROP TRIGGER deny_broker_grant")
     await ports.persistAnswer(pending, { kind: "permission", decision: "allow_always" }, false, { sessionId: "s1", key: '["c1","run"]' })
     expect(ports.readAnswer("s1", "grant")).toEqual({ kind: "permission", decision: "allow_always" })
     expect(ports.readPermissionState("s1")?.brokerGrants).toEqual(['["c1","run"]'])
@@ -593,7 +595,7 @@ describe("store broker ports", () => {
       usage: { type: "usage", contextSize: 100, contextUsed: 10,
         observation: { kind: "delta", tokens: { input: 5, output: 2, reasoning: null,
           cache: { read: 0, write: 0 } } } } })
-    const rows = store.brokerDatabase().prepare<{ type: string }>(
+    const rows = store.database().prepare<{ type: string }>(
       "SELECT type FROM runtime_journal WHERE session_id = ? AND kind = 'event' ORDER BY seq",
     ).all("s1")
     expect(rows.map((row) => row.type)).toContain("session.usage")
@@ -632,7 +634,7 @@ describe("store broker ports", () => {
       { type: "session.background-work", properties: { sessionID: "s1", agents: 0, shells: 0, other: 0 } },
     ])
     expect(runtime.filter((type) => type === "background-work")).toHaveLength(3)
-    const journaled = store.brokerDatabase().prepare<{ type: string }>(
+    const journaled = store.database().prepare<{ type: string }>(
       "SELECT type FROM runtime_journal WHERE session_id = ? AND type = 'session.background-work'",
     ).all("s1")
     expect(journaled).toEqual([])
@@ -653,10 +655,10 @@ describe("store broker ports", () => {
     await ports.drainProviderEvent("s1", { turnId: "t1", assistantMessageId: "t1" }, { event: { type: "text-delta", delta: "child output" },
       route: { kind: "child", correlationKey: "route-alias" } })
     expect(seen).toContain(child.sessionId)
-    const parentRows = store.brokerDatabase().prepare<{ type: string }>(
+    const parentRows = store.database().prepare<{ type: string }>(
       "SELECT type FROM runtime_journal WHERE session_id = ? AND kind = 'event'",
     ).all("s1")
-    const childRows = store.brokerDatabase().prepare<{ type: string }>(
+    const childRows = store.database().prepare<{ type: string }>(
       "SELECT type FROM runtime_journal WHERE session_id = ? AND kind = 'event'",
     ).all(child.sessionId)
     expect(childRows.length).toBeGreaterThan(0)
@@ -694,7 +696,7 @@ describe("store broker ports", () => {
     ports.subagentAdmissionStore.markPublished("s1", "o1")
     const child = await ports.admitChildSession("s1", "child", { observationId: "o1" })
     store.close()
-    const reopened = new RuntimeStore(root)
+    const reopened = openRuntimeStore(root)
     opened.push({ store: reopened, root })
     const again = reopened.admit({
       parentSessionId: "s1", observation: { observationId: "o1", providerKind: "claude", providerId: "agent-1", transcript: { kind: "live" } },
@@ -726,7 +728,7 @@ describe("store broker ports", () => {
     await ports.publishSubagent("s1", admitted.event)
     await ports.publishSubagentDiagnostic("s1", { code: "binding-unknown", message: "No child",
       severity: "warn", source: "subagent-admission" })
-    const rows = store.brokerDatabase().prepare<{ type: string }>(
+    const rows = store.database().prepare<{ type: string }>(
       "SELECT type FROM runtime_journal WHERE session_id = ? AND kind = 'event' ORDER BY seq",
     ).all("s1")
     expect(rows.map((row) => row.type)).toEqual(expect.arrayContaining(["subagent.updated", "runtime.diagnostic"]))
@@ -814,7 +816,7 @@ test("question cancellation publishes one rejection and preserves a sibling ques
   const { store, ports, authority, publishers } = setup()
   const owner = createRequestBroker(ports)
   const first = createTurnBroker(owner, { authority, origin, signal: new AbortController().signal })
-  store.bindSession({ sessionId: "s2", directory: "/work", workspaceId: "w1", connectionId: "c1", upstreamSessionId: "up2", agentSessionId: "up2" })
+  store.bindSession({ owner: { kind: "machine-owner" }, sessionId: "s2", directory: "/work", workspaceId: "w1", connectionId: "c1", upstreamSessionId: "up2", agentSessionId: "up2" })
   store.acquireTurnLease("s2")
   store.startTurn({ sessionId: "s2", assistantMessageId: "t2", agent: "general", parts: [] })
   const sibling = createTurnBroker(owner, { authority: ports.currentTurnAuthority("s2")!, origin, signal: new AbortController().signal })
@@ -855,7 +857,7 @@ test("an unchanged Goal snapshot does not write or publish a duplicate state", a
   await session.goal.publish(goal)
   await session.goal.publish({ ...goal })
   expect(order).toEqual([goal])
-  const rows = store.brokerDatabase().prepare<{ count: number }>("SELECT COUNT(*) AS count FROM runtime_journal WHERE session_id = ? AND type = 'goal.updated'").get("s1")
+  const rows = store.database().prepare<{ count: number }>("SELECT COUNT(*) AS count FROM runtime_journal WHERE session_id = ? AND type = 'goal.updated'").get("s1")
   expect(rows?.count).toBe(1)
 })
 
@@ -928,11 +930,11 @@ test("Goal publication retries a failed durable event and deduplicates only comm
   const events: string[] = []
   publishers.subscribeGlobal(({ payload }) => { events.push(payload.type) })
   const snapshot = { sessionId: "s1", objective: "ship", status: "active" as const, createdAt: 1, updatedAt: 1 }
-  store.brokerDatabase().exec("CREATE TRIGGER deny_goal_event BEFORE INSERT ON runtime_journal WHEN NEW.type = 'goal.updated' BEGIN SELECT RAISE(ABORT, 'goal event refused'); END")
+  store.database().exec("CREATE TRIGGER deny_goal_event BEFORE INSERT ON runtime_journal WHEN NEW.type = 'goal.updated' BEGIN SELECT RAISE(ABORT, 'goal event refused'); END")
   await expect(ports.publishGoal("s1", snapshot)).rejects.toThrow("goal event refused")
   expect(events).toEqual([])
   expect(store.getGoal("s1")).toBeNull()
-  store.brokerDatabase().exec("DROP TRIGGER deny_goal_event")
+  store.database().exec("DROP TRIGGER deny_goal_event")
   await ports.publishGoal("s1", snapshot)
   await ports.publishGoal("s1", { ...snapshot })
   expect(events).toEqual(["goal.updated"])
@@ -970,7 +972,7 @@ test("public form cancellation defeats validation and emits one durable rejectio
     expect(await response).toEqual({ kind: "cancelled" })
     expect(events).toEqual(["question.asked", "question.rejected"])
     expect(await surface.questions.list("/work")).toEqual([])
-    expect(store.brokerDatabase().prepare<{ count: number }>("SELECT COUNT(*) AS count FROM runtime_journal WHERE type = 'question.rejected'").get()?.count).toBe(1)
+    expect(store.database().prepare<{ count: number }>("SELECT COUNT(*) AS count FROM runtime_journal WHERE type = 'question.rejected'").get()?.count).toBe(1)
   } finally { release(); await answer }
 })
 
@@ -987,18 +989,18 @@ test("public form reply retains its resolver after a durable failure and publish
   let answered = false
   void response.then(() => { answered = true })
   await tick()
-  store.brokerDatabase().exec("CREATE TRIGGER deny_form_reply BEFORE INSERT ON runtime_journal WHEN NEW.type = 'question.replied' BEGIN SELECT RAISE(ABORT, 'form reply refused'); END")
+  store.database().exec("CREATE TRIGGER deny_form_reply BEFORE INSERT ON runtime_journal WHEN NEW.type = 'question.replied' BEGIN SELECT RAISE(ABORT, 'form reply refused'); END")
   const answers = [[JSON.stringify({ count: 2, approach: "safe" })]]
   await expect(surface.questions.answer("retry-form", answers, "s1")).rejects.toMatchObject({ refusal: "persistence", retryable: true })
   expect(answered).toBe(false)
   expect(await surface.questions.list("/work")).toHaveLength(1)
   expect(events).toEqual(["question.asked"])
   expect(failures).toHaveLength(1)
-  store.brokerDatabase().exec("DROP TRIGGER deny_form_reply")
+  store.database().exec("DROP TRIGGER deny_form_reply")
   await surface.questions.answer("retry-form", answers, "s1")
   expect(await response).toEqual({ kind: "form", values: { count: 2, approach: "safe" } })
   expect(events).toEqual(["question.asked", "question.replied"])
   expect(await surface.questions.list("/work")).toEqual([])
   await expect(surface.questions.answer("retry-form", answers, "s1")).rejects.toMatchObject({ refusal: "duplicate" })
-  expect(store.brokerDatabase().prepare<{ count: number }>("SELECT COUNT(*) AS count FROM runtime_journal WHERE type = 'question.replied'").get()?.count).toBe(1)
+  expect(store.database().prepare<{ count: number }>("SELECT COUNT(*) AS count FROM runtime_journal WHERE type = 'question.replied'").get()?.count).toBe(1)
 })

@@ -2,7 +2,7 @@ import { Show, type JSX } from "solid-js"
 import { ClaxedoIconButton, Button, Tooltip } from "@/ui"
 import type { AccountWords } from "../account-words"
 import { useAccountsText } from "../i18n"
-import type { AccountReach } from "../model"
+import { ORG_ACCOUNT_KEY, type AccountReach } from "../model"
 import { ACCOUNT_REACH_KEYS, AccountReachMarks } from "./account-status"
 
 export function LabelHint(props: { readonly value: string; readonly children: JSX.Element }) {
@@ -39,14 +39,14 @@ function RestingActions(props: AccountActionsProps) {
   const t = useAccountsText()
   return (
     <>
-      <Show when={!props.account.team && props.account.refused && props.account.ids[0]}>
+      <Show when={props.account.key !== ORG_ACCOUNT_KEY && props.account.refused && props.account.ids[0]}>
         {(credentialId) => (
           <Button size="small" variant="neutral" data-action="agent-reconnect" onClick={() => props.onReconnect(credentialId())}>
             {t("settings.providers.agents.reconnectAccount")}
           </Button>
         )}
       </Show>
-      <Show when={!props.account.team}>
+      <Show when={props.account.key !== ORG_ACCOUNT_KEY}>
         <ClaxedoIconButton
           icon="reload"
           size="small"

@@ -20,12 +20,12 @@ export type RouteOwnerResolver = (c: Context) => string | undefined
  *   - `authenticated` — `gate`.
  *   - `turn-credential` — `gate`, then `tokenGate`: the caller proves a turn,
  *     not a management session.
- *   - `team-write` — `gate`, and `teamWriteGate` for a team-scoped target.
+ *   - `org-write` — `gate`, and `orgWriteGate` for an org-scoped target.
  *     Which target that is comes out of the request body or the stored row,
  *     so the handler decides it with the gate this policy hands it; the
  *     declaration is what makes a handler that never calls it visible.
  */
-export const ROUTE_POLICIES = ["public", "authenticated", "turn-credential", "team-write"] as const
+export const ROUTE_POLICIES = ["public", "authenticated", "turn-credential", "org-write"] as const
 export type RoutePolicy = (typeof ROUTE_POLICIES)[number]
 
 export type IntegrationsRouteOptions = {
@@ -38,30 +38,30 @@ export type IntegrationsRouteOptions = {
    */
   gate: RouteGate
   tokenGate?: RouteGate
-  /** Host authorization for organization/team mutations; personal writes do not use it. */
-  teamWriteGate?: RouteGate
+  /** Host authorization for organization mutations; personal writes do not use it. */
+  orgWriteGate?: RouteGate
   /** Host-owned, non-secret callback routing frozen into OAuth attempts. */
   attemptRouting?: (context: Context) => Record<string, string>
   // Hosts resolve an authenticated subject to this opaque owner key. No
-  // resolver means unsigned-local and therefore the team partition only.
+  // resolver means unsigned-local and therefore the org partition only.
   owner?: RouteOwnerResolver
   // Token callers prove their turn separately from management callers. An
-  // omitted resolver safely grants team rows only.
+  // omitted resolver safely grants org rows only.
   tokenOwner?: RouteOwnerResolver
-  // Hosts that partition the team scope by an opaque key (e.g. a hosted
+  // Hosts that partition the org scope by an opaque key (e.g. a hosted
   // deployment's `org:{orgId}`) resolve it here per request. Absent resolver
-  // (or an undefined result) keeps owner-absent as the team partition — the
+  // (or an undefined result) keeps owner-absent as the org partition — the
   // self-host semantics, byte-identical.
-  teamOwner?: RouteOwnerResolver
-  // Team partition key for token/auth-failure callers (resolved from the
+  orgOwner?: RouteOwnerResolver
+  // Org partition key for token/auth-failure callers (resolved from the
   // turn credential's tenant, never from the management principal).
-  tokenTeamOwner?: RouteOwnerResolver
-  // "team" (default): owner-absent rows are the deployment-wide team
+  tokenOrgOwner?: RouteOwnerResolver
+  // "org" (default): owner-absent rows are the deployment-wide org
   // partition, visible to every gated caller. "refuse": owner-absent rows
   // are never readable or writable through these routes — the hosted
-  // invariant: a hosted host must derive its team partition from the
+  // invariant: a hosted host must derive its org partition from the
   // caller's org and refuse the null partition outright.
-  ownerlessRows?: "team" | "refuse"
+  ownerlessRows?: "org" | "refuse"
 }
 
 function isCapability(value: string | undefined): value is IntegrationCapability {
@@ -74,8 +74,8 @@ const CALLBACK_PAGE = (ok: boolean) =>
   }</h2><p>You can close this window and return to the app.</p></body></html>`
 
 function scopeFrom(scope: unknown): ConnectionScope | undefined {
-  if (scope === undefined) return "team"
-  if (scope === "team" || scope === "personal") return scope
+  if (scope === undefined) return "org"
+  if (scope === "org" || scope === "personal") return scope
   return undefined
 }
 
@@ -100,7 +100,7 @@ export function createIntegrationsRoutes(service: ConnectionsService, options: I
   })
   const gate = options.gate
   const tokenGate: RouteGate = options.tokenGate ?? (() => null)
-  const teamWriteGate: RouteGate = options.teamWriteGate ?? (() => null)
+  const orgWriteGate: RouteGate = options.orgWriteGate ?? (() => null)
   const refuseOwnerless = options.ownerlessRows === "refuse"
 
   /**
@@ -117,7 +117,7 @@ export function createIntegrationsRoutes(service: ConnectionsService, options: I
     method: "get" | "post" | "delete",
     path: P,
     policy: RoutePolicy,
-    handler: (c: Context<BlankEnv, P>, teamWrite: RouteGate) => Promise<Response> | Response,
+    handler: (c: Context<BlankEnv, P>, orgWrite: RouteGate) => Promise<Response> | Response,
   ) => {
     if (!(ROUTE_POLICIES as readonly string[]).includes(policy)) {
       throw new Error(`createIntegrationsRoutes: ${method.toUpperCase()} ${path} declares no route policy`)
@@ -132,41 +132,41 @@ export function createIntegrationsRoutes(service: ConnectionsService, options: I
         const denied = await tokenGate(c)
         if (denied) return denied
       }
-      return handler(c, policy === "team-write" ? teamWriteGate : () => null)
+      return handler(c, policy === "org-write" ? orgWriteGate : () => null)
     })
   }
 
-  type PartitionKeys = { personal?: string; team?: string }
+  type PartitionKeys = { personal?: string; org?: string }
   const managementKeys = (c: Context): PartitionKeys => ({
     personal: options.owner?.(c),
-    team: options.teamOwner?.(c),
+    org: options.orgOwner?.(c),
   })
   const tokenKeys = (c: Context): PartitionKeys => ({
     personal: options.tokenOwner?.(c),
-    team: options.tokenTeamOwner?.(c),
+    org: options.tokenOrgOwner?.(c),
   })
 
-  // A row is visible when it belongs to the caller's team partition or the
-  // caller's personal partition. Owner-absent rows are the team partition
-  // ONLY while no team key is defined and the host has not refused the null
+  // A row is visible when it belongs to the caller's org partition or the
+  // caller's personal partition. Owner-absent rows are the org partition
+  // ONLY while no org key is defined and the host has not refused the null
   // partition — a partitioned host must never surface them.
   const visibleConnection = async (id: string, keys: PartitionKeys) => {
     const row = await service.getById(id)
     if (!row) return undefined
     if (row.owner === undefined) {
-      if (refuseOwnerless || keys.team !== undefined) return undefined
+      if (refuseOwnerless || keys.org !== undefined) return undefined
       return row
     }
-    return row.owner === keys.team || row.owner === keys.personal ? row : undefined
+    return row.owner === keys.org || row.owner === keys.personal ? row : undefined
   }
 
   const connectOwner = (c: Context, scope: ConnectionScope) => {
-    if (scope === "team") {
-      const team = options.teamOwner?.(c)
-      if (team !== undefined) return { ok: true as const, owner: team }
-      // A host that refuses ownerless rows cannot accept a team write
-      // without a resolved team partition key.
-      if (refuseOwnerless) return { ok: false as const, code: "team_scope_requires_team_partition" as const }
+    if (scope === "org") {
+      const org = options.orgOwner?.(c)
+      if (org !== undefined) return { ok: true as const, owner: org }
+      // A host that refuses ownerless rows cannot accept an org write
+      // without a resolved org partition key.
+      if (refuseOwnerless) return { ok: false as const, code: "org_scope_requires_org_partition" as const }
       return { ok: true as const }
     }
     const owner = options.owner?.(c)
@@ -176,17 +176,17 @@ export function createIntegrationsRoutes(service: ConnectionsService, options: I
 
   route("get", "/", "authenticated", async (c) => {
     const keys = managementKeys(c)
-    // Refusing hosts without a resolved team key list personal rows only —
+    // Refusing hosts without a resolved org key list personal rows only —
     // never the owner-absent partition.
     try {
       const connections =
-        refuseOwnerless && keys.team === undefined
+        refuseOwnerless && keys.org === undefined
           ? keys.personal !== undefined
             ? await service.list({ owner: keys.personal, scope: "personal" })
             : []
           : await service.list({
               ...(keys.personal !== undefined ? { owner: keys.personal } : {}),
-              ...(keys.team !== undefined ? { teamOwner: keys.team } : {}),
+              ...(keys.org !== undefined ? { orgOwner: keys.org } : {}),
             })
       return c.json({
         integrations: service.listIntegrations(),
@@ -199,25 +199,25 @@ export function createIntegrationsRoutes(service: ConnectionsService, options: I
     }
   })
 
-  route("post", "/:id/connect", "team-write", async (c, teamWrite) => {
+  route("post", "/:id/connect", "org-write", async (c, orgWrite) => {
     const integrationId = c.req.param("id")
     const body = record(await c.req.json().catch(() => ({}))) ?? {}
     const confirmReplace = bool(body.confirmReplace)
     const secret = text(body.secret)
     const scope = scopeFrom(body.scope)
     if (!scope) return c.json({ ok: false, code: "invalid_connection_scope" }, 422)
-    if (scope === "team") {
-      const denied = await teamWrite(c)
+    if (scope === "org") {
+      const denied = await orgWrite(c)
       if (denied) return denied
     }
     const owner = connectOwner(c, scope)
     if (!owner.ok) return c.json({ ok: false, code: owner.code }, 422)
-    const teamKey = options.teamOwner?.(c)
+    const orgKey = options.orgOwner?.(c)
     if (body.method === "oauth") {
       const result = await service.connectOAuth({
         integrationId,
         ...(owner.owner !== undefined ? { owner: owner.owner } : {}),
-        ...(teamKey !== undefined ? { teamOwner: teamKey } : {}),
+        ...(orgKey !== undefined ? { orgOwner: orgKey } : {}),
         ...(options.attemptRouting ? { attemptRouting: options.attemptRouting(c) } : {}),
         ...(confirmReplace !== undefined ? { confirmReplace } : {}),
       })
@@ -258,22 +258,22 @@ export function createIntegrationsRoutes(service: ConnectionsService, options: I
     return c.json(status)
   })
 
-  route("delete", "/connections/:id", "team-write", async (c, teamWrite) => {
+  route("delete", "/connections/:id", "org-write", async (c, orgWrite) => {
     const row = await visibleConnection(c.req.param("id"), managementKeys(c))
     if (!row) return c.json({ code: "connection_not_found" }, 404)
-    if (connectionScopeOf(row.owner, managementKeys(c).team) === "team") {
-      const denied = await teamWrite(c)
+    if (connectionScopeOf(row.owner, managementKeys(c).org) === "org") {
+      const denied = await orgWrite(c)
       if (denied) return denied
     }
     await service.remove(row.id)
     return c.json({ ok: true })
   })
 
-  route("post", "/connections/:id/reverify", "team-write", async (c, teamWrite) => {
+  route("post", "/connections/:id/reverify", "org-write", async (c, orgWrite) => {
     const row = await visibleConnection(c.req.param("id"), managementKeys(c))
     if (!row) return c.json({ code: "connection_not_found" }, 404)
-    if (connectionScopeOf(row.owner, managementKeys(c).team) === "team") {
-      const denied = await teamWrite(c)
+    if (connectionScopeOf(row.owner, managementKeys(c).org) === "org") {
+      const denied = await orgWrite(c)
       if (denied) return denied
     }
     const result = await service.reverify(row.id)

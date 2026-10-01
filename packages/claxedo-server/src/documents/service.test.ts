@@ -1,3 +1,4 @@
+import { documentTestAccess } from "../test-support/document-access"
 import { describe, expect, test, vi } from "vitest"
 import type { DocumentsBackend } from "@claxedo/server-core/documents/backend"
 import { createDocumentsService } from "@claxedo/server-core/documents/service"
@@ -24,7 +25,7 @@ const snapshot = (pins: readonly string[]): SnapshotRef => ({
 function fixture() {
   let entry: DocumentIndexEntry | undefined = {
     id: "document_1",
-    org_id: "org_1",
+    org_id: "org_1", creator_id: "user_1",
     project_id: "project_1",
     display_name: "Plan",
     origin_kind: "managed",
@@ -77,6 +78,7 @@ function fixture() {
   const runtimeRenew = vi.fn(async () => ({ token: "rotated", expiresAt: Date.now() + 300_000 }))
   const runtimeResolve = vi.fn(async () => ({ path: "/workspace/plan.md", version: "v2" }))
   const backend = {
+    access: documentTestAccess({ find: async () => entry }),
     index: {
       list: vi.fn(async () => (entry ? [entry] : [])),
       find: vi.fn(async () => entry),

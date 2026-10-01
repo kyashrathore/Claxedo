@@ -1,7 +1,6 @@
 import { streamSSE } from "hono/streaming"
 import { attachSseFanout, type SseReplayBuffer } from "../projection/sse"
 import { isRetainedPresentationEvent } from "../projection/presentation-events"
-import { presentationEventsFromRuntimeEnvelope } from "../projection/client-presentation/runtime-envelope"
 import { EVENT_STREAM_HEARTBEAT_MS } from "@claxedo/agent-runtime-contract"
 import type { AgentEventEnvelope, AgentSessionStarts, AgentPresentationEvent } from "@claxedo/agent-runtime-contract"
 import type { Context } from "hono"
@@ -104,14 +103,13 @@ function isGapFrame(frame: StreamFrame): frame is WorkspaceEventGapFrame {
 
 function isControlFrame(frame: WorkspaceEventFrame): frame is { directory: string; payload: WorkspaceRuntimeEvent } {
   const type = frame.payload.type
-  return type.startsWith("pty.") || type.startsWith("process.") || type.startsWith("connection.") || type === "agent.lifecycle"
+  return type.startsWith("pty.") || type.startsWith("connection.") || type === "agent.lifecycle"
     || type === "session.lifecycle" || type === "session.queue"
 }
 
 /**
  * Frames whose loss strands UI state in a shape nothing else self-heals: an
- * exit/stop that never arrives leaves a terminal or managed process pinned
- * to "running", a missed agent Idle/Error leaves an agent pinned to "Busy",
+ * exit that never arrives leaves a terminal pinned to "running", a missed agent Idle/Error leaves an agent pinned to "Busy",
  * a missed queue change leaves input shown queued after it ran, and
  * `isRetainedPresentationEvent` names the session-shaped ones. The replay
  * buffer keeps a second, independent ring of these, so a burst of chatty
@@ -125,13 +123,11 @@ export function isRetainedWorkspaceEventFrame(frame: StreamFrame) {
     switch (event.type) {
       case "pty.exited":
       case "pty.deleted":
-      case "process.stopped":
-      case "process.crashed":
       case "session.lifecycle":
       case "session.queue":
         return true
       case "pty.stream":
-        return event.kind === "exit" || event.kind === "command-exit"
+        return event.kind === "exit"
       case "agent.lifecycle":
         return event.eventType === "Idle" || event.eventType === "Error"
       default:
@@ -493,16 +489,12 @@ export function workspaceEventsHandler(options: WorkspaceEventsOptions) {
         fn(frame)
       }
       const unsubscribePresentation = options.eventHub.subscribeGlobal((event) => emit(event))
-      const unsubscribeRuntime = options.eventHub.subscribeRuntime((envelope) => {
-        for (const event of presentationEventsFromRuntimeEnvelope(envelope)) emit(event)
-      })
       const unsubscribeControl = bus.subscribe((event) => {
         if (!owns(event)) return
         emit({ directory: "directory" in event && event.directory ? event.directory : options.directory, payload: unownedLifecyclePayload(event) })
       })
       return () => {
         unsubscribePresentation()
-        unsubscribeRuntime()
         unsubscribeControl()
       }
     },

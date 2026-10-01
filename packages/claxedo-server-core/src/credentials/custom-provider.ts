@@ -76,7 +76,7 @@ export type CustomProviderPolicy = {
  * environment and stored as the provider's credential, which the broker then
  * sends to the provider's base URL, so a free choice of name would hand it
  * any secret the host exports
- * (`CLAXEDO_CREDENTIALS_TOKEN`, `DAYTONA_API_KEY`, a cloud token). The name
+ * (`CLAXEDO_CREDENTIALS_TOKEN`, a cloud token). The name
  * lives in a namespace reserved for this feature and bound to the provider's
  * own id — deliberately NOT `CLAXEDO_PROVIDER_`, which `native-delivery`
  * already owns for brokered credential placeholders, so a custom provider can

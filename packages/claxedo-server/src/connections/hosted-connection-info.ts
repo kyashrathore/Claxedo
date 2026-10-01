@@ -40,7 +40,7 @@ type CloudConnectionIngress =
 
 /**
  * Everything a cloud connection request shares BEFORE it decides whether to
- * spend: open authorization, the backing check, the cloud entitlement gate and
+ * spend: open authorization, the backing check, cloud-workspace admission and
  * relay/host-manager resolution. `sandboxManager.ensure` — the call that can
  * start billable compute — is deliberately NOT here: it is what separates the
  * connect path (`hostedConnectionInfo`, POST) from the read path
@@ -65,28 +65,18 @@ async function cloudConnectionIngress(
       status: 400,
     } as const
   }
-  // The cloud-workspace entitlement is enforced at wake/resume as well as at
-  // create: a canceled subscription would otherwise leave existing cloud
-  // workspaces wake-able forever. Reached ONLY for HOSTED `cloud-vm`
-  // workspaces, asserted above; the hook is composed exclusively in
-  // claxedo-hosted-product-app.ts and wired through hosted-core-app.ts's
-  // HostedWorkspaceRoutes mount, so self-host / local never gate. Denied → the
-  // typed billing_entitlement_required (402) the frontend acts on, BEFORE any
-  // sandbox wake side effect.
+  // Cloud-workspace admission is enforced at wake/resume as well as at
+  // create, so a deployment that stops admitting cloud workspaces cannot leave
+  // existing ones wake-able. Reached ONLY for HOSTED `cloud-vm` workspaces,
+  // asserted above; the hook is wired through hosted-core-app.ts's
+  // HostedWorkspaceRoutes mount, so self-host / local never gate. A denial is
+  // answered BEFORE any sandbox wake side effect.
   //
   // It gates the READ path too: the read still mints a Runtime Access Token
-  // for a workspace whose sandbox is already running, and a canceled
-  // subscription must not keep minting off a warm lease either.
+  // for a workspace whose sandbox is already running.
   if (options.requireCloudWorkspaceEntitlement) {
     const denied = await options.requireCloudWorkspaceEntitlement({ auth })
-    if (denied) {
-      return {
-        error:
-          denied.body.error ??
-          apiError("billing_entitlement_required", "An active Claxedo Cloud subscription is required"),
-        status: denied.status,
-      } as const
-    }
+    if (denied) return { error: denied.body.error, status: denied.status } as const
   }
   const hostManager = services?.sandbox.sandboxManager
   if (!hostManager) {
@@ -393,4 +383,78 @@ export async function hostedConnectionStatus(
     relayUrl,
     target,
   })
+}
+
+/**
+ * A session share holder's connection (GET `/:id/connection?sessionId=`): a
+ * Runtime Access Token scoped to the one session their share names, minted
+ * off whatever already serves the workspace. It opens nothing of the
+ * workspace, reads its organization from the owner's record only once the
+ * caller has proven they may read the session, and never starts compute: a
+ * machine that is offline or a sandbox that is not running answers
+ * `workspace_host_offline`.
+ */
+export async function hostedSessionConnection(
+  services: ControlPlaneServices | undefined,
+  options: WorkspaceRouteOptions,
+  auth: SignedControlPlaneAuth,
+  input: { workspaceId: string; sessionId: string },
+) {
+  const { workspaceId, sessionId } = input
+  const authority = requireAuthority(services)
+  await authority.authorizeSessionRead(auth, { workspaceId, sessionId })
+  const owner = await authority.resolveWorkspaceOwner?.(workspaceId)
+  const machine = await services?.relay.hostTunnelResolver?.(workspaceId)
+  const sandbox = machine?.active ? undefined : await services?.sandbox.sandboxManager?.target(workspaceId).catch(() => undefined)
+  const target = machine?.active
+    ? { backing: "local-worktree" as const, hostId: machine.hostId }
+    : sandbox?.status === "ready"
+      ? { backing: "cloud-vm" as const, hostId: sandbox.hostId, routingId: sandbox.routingId }
+      : undefined
+  if (!owner || !target) {
+    return { error: apiError("workspace_host_offline", "Nothing is serving this session's workspace right now"), status: 409 } as const
+  }
+  const relayUrl = configuredRelayUrl(options)
+  if (!relayUrl) {
+    throw new ControlPlaneAuthError(503, "runtime_access_token_signer_unavailable", "Workspace Relay URL is not configured")
+  }
+  const actor = await resolveRuntimeActor(authority, auth)
+  const token = await configuredRuntimeAccessTokenSigner(options)({
+    principalKind: "user",
+    ...actor,
+    orgId: owner.orgId,
+    workspaceId,
+    hostId: target.hostId,
+    ...(target.backing === "cloud-vm" && target.routingId ? { routingId: target.routingId } : {}),
+    role: "viewer",
+    sessionId,
+  })
+  await authority.recordRuntimeAccessToken(auth, {
+    jti: token.jti,
+    workspaceId,
+    hostId: target.hostId,
+    actorId: actor.actorId,
+    actorKind: actor.actorKind,
+    role: "viewer",
+    sessionId,
+    expiresAt: token.tokenExpiresAt,
+  })
+  await authority.auditAllow(auth, {
+    action: "runtime_access_token.minted",
+    workspaceId,
+    metadata: { jti: token.jti, hostId: target.hostId, expiresAt: token.tokenExpiresAt, sessionId },
+  })
+  return {
+    connection: {
+      backing: target.backing,
+      sessionAuthority: "managed-private" as const,
+      workspaceId,
+      sessionId,
+      relayUrl,
+      runtimeAccessToken: token.runtimeAccessToken,
+      tokenExpiresAt: token.tokenExpiresAt,
+      role: "viewer" as const,
+      hostId: target.hostId,
+    },
+  } as const
 }

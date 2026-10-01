@@ -75,6 +75,7 @@ function authorityStub(overrides: Partial<Record<string, unknown>> = {}) {
     releaseSessionTurn: async () => ({ released: true, sessionId: turnLease.sessionId, turnId: turnLease.turnId, fencingToken: turnLease.fencingToken }),
     grantSessionTurn: async () => { throw new Error("deferred turn grants are not under test") },
     revokeSessionTurnGrants: async () => ({ revoked: 0 }),
+    resolveWorkspaceOwner: async () => ({ userId: "alice", actorId: "actor_alice", orgId: "org_1", projectId: "project_1" }),
     ...overrides,
   } as unknown as WorkspaceAuthority
 }
@@ -119,10 +120,10 @@ describe("embeddedManagedPrivateSessionPolicy", () => {
       .resolves.toMatchObject({ allowed: false, status: 401, code: "session_stream_lease_invalid" })
   })
 
-  test("ends the stream when the private-session authority revokes the participant", async () => {
+  test("ends the stream when the private-session authority revokes session access", async () => {
     const policy = embeddedManagedPrivateSessionPolicy(authorityStub({
       authorizeRuntimeSession: async () => {
-        throw new ControlPlaneAuthError(403, "workspace_authorization_denied", "participant revoked")
+        throw new ControlPlaneAuthError(403, "workspace_authorization_denied", "session access revoked")
       },
     }))
 
@@ -169,26 +170,25 @@ describe("embeddedManagedPrivateSessionPolicy", () => {
     expect(releaseSessionTurn).toHaveBeenCalledTimes(1)
   })
 
-  test("mints a connection credential at admission, bound to the actor's user partition, and ends it with the turn", async () => {
+  test("mints a connection credential at admission, bound to the session owner's partition, and ends it with the turn", async () => {
     const turns = createConnectionTurnCredentials()
-    const resolveRuntimeMachineAccess = vi.fn(async () => ({
-      actorId: "actor_alice",
-      actorKind: "human" as const,
-      orgId: "org_1",
-      role: "owner" as const,
+    const resolveWorkspaceOwner = vi.fn(async () => ({
       userId: "alice",
+      actorId: "actor_alice",
+      orgId: "org_1",
+      projectId: "project_1",
     }))
-    const policy = embeddedManagedPrivateSessionPolicy(authorityStub({ resolveRuntimeMachineAccess }), turns)
+    const policy = embeddedManagedPrivateSessionPolicy(authorityStub({ resolveWorkspaceOwner }), turns)
     const turnInput = { ...input, operation: "prompt" as const, turnId: "msg_1" }
 
     const acquired = await policy.acquireTurn!(turnInput)
     expect(acquired).toMatchObject({ allowed: true, leaseId: "lease_1" })
     if (!acquired.allowed) throw new Error("unreachable")
     expect(acquired.connectionCredential).toBeDefined()
-    // The mint binds the session and the ACTOR'S user-scoped partition — the
+    // The mint binds the session and its owner's user-scoped partition — the
     // subject a connections row names as `owner` — resolved through the
     // authority, never decoded from the request.
-    expect(resolveRuntimeMachineAccess).toHaveBeenCalledWith("actor_alice", "ws_1", "viewer")
+    expect(resolveWorkspaceOwner).toHaveBeenCalledWith("ws_1")
     expect(turns.resolve(acquired.connectionCredential)).toEqual({
       sessionId: "ses_private",
       subject: "alice",
@@ -202,6 +202,40 @@ describe("embeddedManagedPrivateSessionPolicy", () => {
     // Release revokes: the credential outlives the turn by nothing.
     await policy.releaseTurn!({ ...turnInput, leaseId: "lease_1", fencingToken: 7 })
     expect(turns.resolve(acquired.connectionCredential)).toBeUndefined()
+    turns.dispose()
+  })
+
+  test("a send share holder's turn binds the session owner's partition, never the sender's", async () => {
+    const turns = createConnectionTurnCredentials()
+    const policy = embeddedManagedPrivateSessionPolicy(authorityStub({
+      resolveWorkspaceOwner: async () => ({ userId: "alice", actorId: "actor_alice", orgId: "org_1", projectId: "project_1" }),
+    }), turns)
+
+    const acquired = await policy.acquireTurn!({
+      ...input,
+      actor: { actorId: "actor_bob", actorKind: "human" },
+      operation: "prompt",
+      turnId: "msg_1",
+    })
+    if (!acquired.allowed) throw new Error("the turn was refused")
+    expect(turns.resolve(acquired.connectionCredential)).toMatchObject({ sessionId: "ses_private", subject: "alice" })
+    turns.dispose()
+  })
+
+  test("a turn on a workspace whose owner cannot be named is refused before any lease is taken", async () => {
+    const turns = createConnectionTurnCredentials()
+    const acquireSessionTurn = vi.fn(async () => turnLease)
+    const policy = embeddedManagedPrivateSessionPolicy(authorityStub({
+      acquireSessionTurn,
+      resolveWorkspaceOwner: async () => undefined,
+    }), turns)
+
+    expect(await policy.acquireTurn!({ ...input, operation: "prompt", turnId: "msg_1" })).toMatchObject({
+      allowed: false,
+      status: 403,
+      code: "session_owner_unresolved",
+    })
+    expect(acquireSessionTurn).not.toHaveBeenCalled()
     turns.dispose()
   })
 
@@ -220,10 +254,11 @@ describe("embeddedManagedPrivateSessionPolicy", () => {
     turns.dispose()
   })
 
-  test("a service principal's turn mints a session-bound credential with no personal partition", async () => {
+  test("an agent's turn binds the session owner's partition too", async () => {
     const turns = createConnectionTurnCredentials()
-    const resolveRuntimeMachineAccess = vi.fn()
-    const policy = embeddedManagedPrivateSessionPolicy(authorityStub({ resolveRuntimeMachineAccess }), turns)
+    const policy = embeddedManagedPrivateSessionPolicy(authorityStub({
+      resolveWorkspaceOwner: async () => ({ userId: "alice", actorId: "actor_alice", orgId: "org_1", projectId: "project_1" }),
+    }), turns)
     const agentInput = {
       ...input,
       actor: { actorId: "actor_agent", actorKind: "agent" as const },
@@ -233,9 +268,9 @@ describe("embeddedManagedPrivateSessionPolicy", () => {
     const acquired = await policy.acquireTurn!(agentInput)
     expect(acquired).toMatchObject({ allowed: true })
     if (!acquired.allowed) throw new Error("unreachable")
-    expect(resolveRuntimeMachineAccess).not.toHaveBeenCalled()
     expect(turns.resolve(acquired.connectionCredential)).toEqual({
       sessionId: "ses_private",
+      subject: "alice",
       orgId: "org_1",
     })
     turns.dispose()

@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto"
 import {
   capChildBudget,
   finalizeRecoveryOperation,
@@ -199,7 +198,7 @@ export function createRecoveryOperations(input: RecoveryOperationsInput) {
     const deadlineAt = startedAt + operationBudget(request.action)
     const sessionId = sessionIdOf(request.target)
     const operation: RecoveryOperation = {
-      operationId: `rop_${randomUUID()}`,
+      operationId: `rop_${crypto.randomUUID()}`,
       requestId: request.requestId,
       target: normalizeRecoveryTarget(request.target),
       action: request.action,

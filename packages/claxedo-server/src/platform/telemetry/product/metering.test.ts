@@ -36,11 +36,11 @@ describe("sandbox lease events", () => {
     emitSandboxLeaseOpened({
       identity: IDENTITY,
       sink: captured.sink,
-      lease: { workspace_id: "ws_1", driver: "daytona", started_at: 1_000 },
+      lease: { workspace_id: "ws_1", driver: "modal", started_at: 1_000 },
     })
     expect(captured.only(SANDBOX_LEASE_OPENED)[0].properties).toMatchObject({
       workspace_id: "ws_1",
-      driver: "daytona",
+      driver: "modal",
       started_at: 1_000,
       org_id: "org_1",
     })
@@ -49,7 +49,7 @@ describe("sandbox lease events", () => {
   test("a close with a known start reports the subtraction; one without omits it", () => {
     expect(leaseClosedProperties({
       workspace_id: "ws_1",
-      driver: "daytona",
+      driver: "modal",
       started_at: 1_000,
       ended_at: 61_000,
       reason: "explicit_release",
@@ -59,7 +59,7 @@ describe("sandbox lease events", () => {
     // for no time at all, so the field is absent instead.
     expect(leaseClosedProperties({
       workspace_id: "ws_1",
-      driver: "daytona",
+      driver: "modal",
       ended_at: 61_000,
       reason: "gc",
     })).not.toHaveProperty("active_ms")
@@ -68,7 +68,7 @@ describe("sandbox lease events", () => {
   test("the ledger's own subtraction wins over a locally reconstructed one", () => {
     expect(leaseClosedProperties({
       workspace_id: "ws_1",
-      driver: "daytona",
+      driver: "modal",
       started_at: 1_000,
       ended_at: 61_000,
       active_ms: 59_998,
@@ -81,7 +81,7 @@ describe("sandbox lease events", () => {
     emitSandboxLeaseClosed({
       identity: undefined,
       sink: captured.sink,
-      lease: { workspace_id: "ws_1", driver: "daytona", ended_at: 5, reason: "gc" },
+      lease: { workspace_id: "ws_1", driver: "modal", ended_at: 5, reason: "gc" },
       systemReason: "internal_admin_token_has_no_user",
     })
     const event = captured.only(SANDBOX_LEASE_CLOSED)[0]
@@ -95,12 +95,12 @@ describe("sandbox lease events", () => {
     expect(() => emitSandboxLeaseOpened({
       identity: IDENTITY,
       sink: exploding,
-      lease: { workspace_id: "ws_1", driver: "daytona", started_at: 1 },
+      lease: { workspace_id: "ws_1", driver: "modal", started_at: 1 },
     })).not.toThrow()
     expect(() => emitSandboxLeaseClosed({
       identity: undefined,
       sink: exploding,
-      lease: { workspace_id: "ws_1", driver: "daytona", ended_at: 1, reason: "gc" },
+      lease: { workspace_id: "ws_1", driver: "modal", ended_at: 1, reason: "gc" },
     })).not.toThrow()
   })
 })

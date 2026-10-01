@@ -11,7 +11,6 @@ export const BUILT_IN_TOOL_GROUP_ORDER: readonly string[] = [
   "sessions",
   "subagents",
   "attention",
-  "processes",
   "documents",
   "tasks",
   "review",

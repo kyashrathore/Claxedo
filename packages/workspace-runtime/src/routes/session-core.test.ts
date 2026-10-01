@@ -14,7 +14,8 @@ import {
   type SessionAccessPolicy,
 } from "../session-access-policy"
 import { FakeTransport, type FakeTransportOptions, type FakeTurn } from "../test-support/fake-transport"
-import { createHostFixture, sessionCreate, testLaunch, type HostFixture } from "../test-support/host-fixture"
+import { testLaunch } from "../test-support/host-composition"
+import { createHostFixture, sessionCreate, type HostFixture } from "../test-support/host-fixture"
 import { createSessionRoutes } from "./session-core"
 import type { SessionLifecycleEvent } from "./session-route-options"
 import type { ChildSessionHost } from "./session-children"
@@ -1473,13 +1474,12 @@ describe("createSessionRoutes directory-less sessions", () => {
     })])
   })
 
-  test("returns an empty agent list when harness cannot expose live agent options", async () => {
+  test("does not convert an untyped live-agent failure into a successful empty catalog", async () => {
     const res = await directoryless(harness({
       agents: { list: async () => { throw new Error("opencode does not expose live agent options") } },
     })).request("http://localhost/agent")
 
-    expect(res.status).toBe(200)
-    expect(await res.json()).toEqual([])
+    expect(res.status).toBe(500)
   })
 
   test("passes undefined directory through detail routes", async () => {
@@ -1684,38 +1684,6 @@ describe("createSessionRoutes directory-less sessions", () => {
     expect(promptAsync.status).toBe(409)
     expect(await promptAsync.json()).toMatchObject({ error: { code: "session_turn_in_progress" } })
     expect(events.some((event) => event.payload.type === "session.error")).toBe(false)
-  })
-
-  test("the legacy command route answers 501 without resolving a harness", async () => {
-    const response = await post(directoryless(undefined), "/session/session_1/command", { command: "test" })
-    expect(response.status).toBe(501)
-    expect(await response.json()).toMatchObject({ error: { code: "unsupported_operation" } })
-  })
-
-  for (const route of ["shell", "summarize", "revert", "unrevert"] as const) {
-    test(`${route} answers 501 without resolving a harness`, async () => {
-      const response = await sessionRoutes(undefined).request(`http://localhost/session/session_1/${route}`, { method: "POST" })
-
-      expect(response.status).toBe(501)
-      expect(await response.json()).toEqual({
-        ok: false,
-        error: {
-          code: "unsupported_operation",
-          operation: route,
-          reason: "not_implemented",
-          message: `${route} is not implemented`,
-        },
-      })
-    })
-  }
-
-  test("a denied caller is refused before learning an operation is not implemented", async () => {
-    const response = await managedRoutes(undefined, {
-      policy: managedPolicy({ authorize: async () => ({ allowed: false, status: 403, code: "session_access_denied", message: "Private session" }) }),
-    }).request("http://localhost/session/session_1/revert", { method: "POST" })
-
-    expect(response.status).toBe(403)
-    expect(await response.json()).toMatchObject({ error: { code: "session_access_denied" } })
   })
 
   test("prompt_async falls back to 204 when admission does not settle within the bound", async () => {

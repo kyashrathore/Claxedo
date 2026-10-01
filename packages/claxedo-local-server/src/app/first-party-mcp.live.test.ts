@@ -87,7 +87,7 @@ describe("the first-party MCP a local session is launched with", () => {
     expect(client.getServerVersion()).toMatchObject({ name: "claxedo" })
 
     // The runtime audience a machine that has decided nothing serves: a model
-    // inside a session drives sessions, subagents, processes and documents,
+    // inside a session drives sessions, subagents and documents,
     // makes app plugins for this machine's owner, answers only its own
     // children's questions, and never approves a permission, rejects a
     // question, deletes a session or touches workspace compute. No `task_*`:
@@ -101,10 +101,6 @@ describe("the first-party MCP a local session is launched with", () => {
       "create_subagent",
       "documents_list",
       "documents_open",
-      "process_logs",
-      "process_start",
-      "process_stop",
-      "processes",
       "question_reply",
       "session_cancel_turn",
       "session_create",

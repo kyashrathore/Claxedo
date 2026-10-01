@@ -3,7 +3,7 @@ import { useQuery } from "@tanstack/solid-query"
 import { toAppError, useServer, type Account, type AppError, type EffectiveAccounts, type MachineLogin, type Server } from "@/server"
 import { showToast } from "@/ui"
 import { useAccountsText } from "./i18n"
-import { harnesses, harnessRunnable, MACHINE_LOGIN_KEY, TEAM_ACCOUNT_KEY, type AccountsSnapshot, type Harness, type LiveCheck } from "./model"
+import { harnesses, harnessRunnable, MACHINE_LOGIN_KEY, ORG_ACCOUNT_KEY, type AccountsSnapshot, type Harness, type LiveCheck } from "./model"
 
 export type AccountActivity = { readonly kind: "selecting" | "checking" | "removing" | "scoping"; readonly key: string }
 
@@ -66,7 +66,7 @@ function useActivity() {
 }
 
 async function selectAccount(server: Server, harness: Harness, key: string, ids: readonly string[]) {
-  if (key === TEAM_ACCOUNT_KEY) return server.accounts.setSource(harness.providerIds, "team")
+  if (key === ORG_ACCOUNT_KEY) return server.accounts.setSource(harness.providerIds, "org")
   await server.accounts.setSource(harness.providerIds, "own")
   return key === MACHINE_LOGIN_KEY ? server.accounts.selectMachineLogin(harness.providerIds) : server.accounts.select(ids)
 }

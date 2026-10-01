@@ -5,7 +5,6 @@ import { PtyRoutes, type PtyRouteOptions } from "../routes/pty"
 import { Pty } from "../pty/index"
 import { AgentHookRoutes } from "../routes/agent-hook"
 import { workspaceEventsHandler, type WorkspaceEventFramesTap, type WorkspaceEventParents } from "../routes/events"
-import { ProcessRoutes, type ProcessRouteOptions } from "../routes/process"
 import { createDiffRoutes } from "../routes/diff"
 import { FileRoutes } from "../routes/file"
 import { GitSourceRoutes } from "../routes/git-source"
@@ -13,7 +12,6 @@ import { GitWorktreeRoutes } from "../routes/git-worktree"
 import type { RuntimeEventHub } from "../projection/runtime-event-hub"
 import { WorkspaceRuntimeApiPrefix, WorkspaceRuntimeRoutes } from "../routes/manifest"
 import { assertWorkspaceRuntimeExposure, type WorkspaceRuntimeExposure } from "../exposure"
-import type { ProcessObserver } from "../managed-processes/process-observer"
 import { sessionEventDeliveryPolicy } from "../event-delivery"
 import { managedWorkspaceSessionAccessPolicy, type SessionAccessPolicy } from "../session-access-policy"
 
@@ -27,11 +25,10 @@ export type MountedWorkspaceEvents = {
 export function mountWorkspacePty(
   app: Hono,
   upgradeWebSocket: Socket,
-  processObserver?: ProcessObserver,
   sessionAccessPolicy?: SessionAccessPolicy,
   options?: PtyRouteOptions,
 ) {
-  app.route(WorkspaceRuntimeRoutes.pty, PtyRoutes(upgradeWebSocket, processObserver, sessionAccessPolicy, options))
+  app.route(WorkspaceRuntimeRoutes.pty, PtyRoutes(upgradeWebSocket, sessionAccessPolicy, options))
 }
 
 export function mountWorkspaceAgentHooks(app: Hono, sessionAccessPolicy?: SessionAccessPolicy) {
@@ -69,10 +66,6 @@ export function mountWorkspaceEvents(app: Hono, options: {
   return { close: handler.close, frames: handler.frames }
 }
 
-export function mountWorkspaceProcess(app: Hono, sessionAccessPolicy?: SessionAccessPolicy, options?: ProcessRouteOptions) {
-  app.route(WorkspaceRuntimeRoutes.process, ProcessRoutes(sessionAccessPolicy, options))
-}
-
 export function mountWorkspaceFiles(app: Hono, sessionAccessPolicy?: SessionAccessPolicy) {
   // Every family here takes a directory, and a registered per-session worktree
   // is one of the directories this runtime serves: the policy is what decides
@@ -95,7 +88,6 @@ export function mountWorkspaceCore(
     workspaceId?: string
     eventHub: RuntimeEventHub
     exposure: WorkspaceRuntimeExposure
-    processObserver?: ProcessObserver
     sessionParents?: WorkspaceEventParents
     sessionStarts?: Pick<AgentSessionStarts, "get">
     sessionAccessPolicy?: SessionAccessPolicy
@@ -105,10 +97,9 @@ export function mountWorkspaceCore(
 ): MountedWorkspaceEvents {
   assertWorkspaceRuntimeExposure({ exposure: options.exposure, env: process.env })
   const ownership = options.launchOwnership ? { ownership: options.launchOwnership } : {}
-  mountWorkspacePty(app, upgradeWebSocket, options.processObserver, options.sessionAccessPolicy, ownership)
+  mountWorkspacePty(app, upgradeWebSocket, options.sessionAccessPolicy, ownership)
   mountWorkspaceAgentHooks(app, options.sessionAccessPolicy)
   const events = mountWorkspaceEvents(app, options)
-  mountWorkspaceProcess(app, options.sessionAccessPolicy, ownership)
   mountWorkspaceFiles(app, options.sessionAccessPolicy)
   return events
 }

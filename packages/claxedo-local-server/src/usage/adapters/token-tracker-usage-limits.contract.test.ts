@@ -1,7 +1,7 @@
 /**
- * Guards the exact-pinned, deep tokentracker-cli imports the two adapters
- * beside this file make. A bump that moves an export, or that makes importing
- * one of these modules do something, fails here rather than at a user's first
+ * Guards the exact-pinned, deep tokentracker-cli import the usage-limits
+ * adapter beside this file makes. A bump that moves the export, or that makes
+ * importing the module do something, fails here rather than at a user's first
  * refresh.
  */
 import { afterEach, describe, expect, test, vi } from "vitest"
@@ -31,24 +31,5 @@ describe("tokentracker-cli deep-import contract", () => {
     expect(writeSpy).not.toHaveBeenCalled()
     expect(appendSpy).not.toHaveBeenCalled()
     expect(mkdirSpy).not.toHaveBeenCalled()
-  })
-
-  test("embedded history is inert and fails closed unless cloud and telemetry are disabled", async () => {
-    const fetchSpy = vi.spyOn(globalThis, "fetch")
-    const writeSpy = vi.spyOn(fs, "writeFileSync")
-    const specifier = "tokentracker-cli/src/lib/rollout.js"
-    const mod = await import(specifier)
-    expect(typeof mod.scanLocalHistory).toBe("function")
-    expect(fetchSpy).not.toHaveBeenCalled()
-    expect(writeSpy).not.toHaveBeenCalled()
-    await expect(mod.scanLocalHistory({
-      sourceHome: "/fixture",
-      stateDir: "/fixture-state",
-      since: 0,
-      until: 1,
-      upload: true as never,
-      telemetry: false,
-      classify: () => "external",
-    })).rejects.toThrow("upload:false")
   })
 })

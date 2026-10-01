@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto"
 import type {
   CreationIdentity,
   LaunchOwnershipRecord,
@@ -24,44 +23,6 @@ export type SqliteDatabase = {
     get(...params: unknown[]): Row | null | undefined
     all(...params: unknown[]): Row[]
   }
-}
-
-export function migrateLaunchOwnership(db: SqliteDatabase) {
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS launch_ownership (
-      launch_id TEXT PRIMARY KEY,
-      owner_generation TEXT NOT NULL,
-      role TEXT NOT NULL,
-      protocol TEXT NOT NULL,
-      parent_owner_id TEXT,
-      workspace_id TEXT,
-      session_id TEXT,
-      directory TEXT,
-      prepared_at INTEGER NOT NULL,
-      identity_json TEXT,
-      gate_nonce TEXT,
-      identity_received_at INTEGER,
-      activation_authorized_at INTEGER,
-      activation_acknowledged_at INTEGER,
-      retired_at INTEGER,
-      cleanup_json TEXT
-    );
-  `)
-  // Forward-only, and before the index that reads it: a database written when
-  // ownership carried no generation has rows no current runtime can claim, and
-  // reconciliation must be free to retire them. The empty string is a
-  // generation nothing will ever equal.
-  if (!launchOwnershipColumns(db).includes("owner_generation")) {
-    db.exec("ALTER TABLE launch_ownership ADD COLUMN owner_generation TEXT NOT NULL DEFAULT ''")
-  }
-  db.exec(`
-    CREATE INDEX IF NOT EXISTS launch_ownership_unresolved
-      ON launch_ownership (retired_at, workspace_id, owner_generation);
-  `)
-}
-
-function launchOwnershipColumns(db: SqliteDatabase) {
-  return db.prepare<{ name: string }>("PRAGMA table_info(launch_ownership)").all().map((row) => row.name)
 }
 
 type LaunchOwnershipRow = {
@@ -108,7 +69,7 @@ export function sqliteLaunchOwnership(db: SqliteDatabase, owner: LaunchOwnership
 
     async prepare(input: PrepareLaunchInput) {
       const prepared = {
-        launchId: randomUUID(),
+        launchId: crypto.randomUUID(),
         ownerGeneration: owner.ownerGeneration,
         role: input.role,
         protocol: input.protocol,
@@ -233,7 +194,7 @@ function changeCount(result: unknown): number | undefined {
   return typeof result.changes === "number" ? result.changes : undefined
 }
 
-const LAUNCH_ROLES = ["turn", "harness", "managed-process", "terminal"] as const
+const LAUNCH_ROLES = ["turn", "harness", "terminal"] as const
 const LAUNCH_PROTOCOLS = ["gate", "direct"] as const
 
 /**

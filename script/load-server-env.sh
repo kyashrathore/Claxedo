@@ -4,10 +4,9 @@
 #
 # The embedded server reads its configuration from the environment it inherits
 # and nothing else — there is no dotenv anywhere in the tree. So a key that
-# lives only in the server's .env (GITHUB_CLIENT_ID, DAYTONA_API_KEY, the
-# MODAL_* pair) is simply absent at runtime unless the launching shell exported
-# it first, and the feature that needs it fails in a way that looks like a bug
-# in the feature.
+# lives only in the server's .env (GITHUB_CLIENT_ID, the MODAL_* pair) is
+# simply absent at runtime unless the launching shell exported it first, and
+# the feature that needs it fails in a way that looks like a bug in the feature.
 #
 # This is a DEVELOPMENT convenience and deliberately not wired into the packaged
 # app: those files hold real secrets belonging to whoever checked them out, and

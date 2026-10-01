@@ -13,7 +13,6 @@ import {
   type UsageOwnedTurnReader,
   type UsageRevisionReader,
 } from "./contracts"
-import { tokenTrackerSourceForHarness } from "./provenance"
 import { cloudWorkspaceUsageContext } from "./usage-report"
 import {
   centralProjectionSeries,
@@ -26,30 +25,17 @@ import {
   groupUsageFactsBy,
   isUsageFilterDimension,
   latestUsageFacts,
-  mergeUsageSeries,
-  usageSeriesFromExternal,
   usageSeriesFromFacts,
   usageFactFilterOptions,
   usageFactMatches,
   usageFactDimension,
-  usageLocation,
   usageModelKey,
   usageDateFormatter,
   USAGE_FILTER_DIMENSIONS,
-  type ExternalUsageBucket,
   type UsageFilters,
   type UsageSeries,
 } from "./projection"
 import { publicUsageHref } from "./public-href"
-
-type LocalHistorySnapshot = {
-  rows: ExternalUsageBucket[]
-  totalRows: ExternalUsageBucket[]
-  coverage: Array<{ source: string; status: "available" | "degraded" | "unavailable" | "unsupported"; error?: string }>
-  classifiedClaxedo: number
-  unclassifiedRequests: number
-  scannedAt?: number
-}
 
 function withTimeout<T>(promise: Promise<T>, ms: number, timeoutError: () => Error) {
   return new Promise<T>((resolve, reject) => {
@@ -116,7 +102,7 @@ function parseUsageQuery(query: (name: string) => string | undefined) {
     return { error: "invalid_usage_limit" } as const
   }
   const view = query("view") || "claxedo"
-  if (view !== "quota" && view !== "claxedo" && view !== "total") return { error: "invalid_usage_view" } as const
+  if (view !== "quota" && view !== "claxedo") return { error: "invalid_usage_view" } as const
   return { value: { since, until, timeZone, group, metric, requestedLimit, view } } as const
 }
 
@@ -182,59 +168,6 @@ async function priceFacts(
       unpricedTokens: item.unpricedTokens,
     }))
     .toSorted((a, b) => a.date.localeCompare(b.date))
-  return total
-}
-
-async function priceExternal(
-  pricing: UsagePricing,
-  rows: LocalHistorySnapshot["rows"],
-  timeZone = "UTC",
-): Promise<CostWithDaily> {
-  const total = emptyCost()
-  const days = new Map<string, PricedUsage>()
-  const formatDate = usageDateFormatter(timeZone)
-  for (const row of rows) {
-    const item = await pricing({ source: row.app, model: row.model, tokens: row.tokens })
-    total.estimatedUsd += item.estimatedUsd
-    total.pricedTokens += item.pricedTokens
-    total.unpricedTokens += item.unpricedTokens
-    total.catalog = item.catalog
-    const date = formatDate.format(new Date(row.bucketStart))
-    const day = days.get(date) ?? emptyCost()
-    day.estimatedUsd += item.estimatedUsd
-    day.pricedTokens += item.pricedTokens
-    day.unpricedTokens += item.unpricedTokens
-    day.catalog = item.catalog
-    days.set(date, day)
-  }
-  total.daily = [...days]
-    .map(([date, item]) => ({
-      date,
-      estimatedUsd: item.estimatedUsd,
-      pricedTokens: item.pricedTokens,
-      unpricedTokens: item.unpricedTokens,
-    }))
-    .toSorted((a, b) => a.date.localeCompare(b.date))
-  return total
-}
-
-function mergeCost(...costs: CostWithDaily[]) {
-  const total = emptyCost()
-  const days = new Map<string, { estimatedUsd: number; pricedTokens: number; unpricedTokens: number }>()
-  for (const item of costs) {
-    total.estimatedUsd += item.estimatedUsd
-    total.pricedTokens += item.pricedTokens
-    total.unpricedTokens += item.unpricedTokens
-    total.catalog = item.catalog
-    for (const day of item.daily) {
-      const current = days.get(day.date) ?? { estimatedUsd: 0, pricedTokens: 0, unpricedTokens: 0 }
-      current.estimatedUsd += day.estimatedUsd
-      current.pricedTokens += day.pricedTokens
-      current.unpricedTokens += day.unpricedTokens
-      days.set(day.date, current)
-    }
-  }
-  total.daily = [...days].map(([date, value]) => ({ date, ...value })).toSorted((a, b) => a.date.localeCompare(b.date))
   return total
 }
 
@@ -380,30 +313,6 @@ function chartRowsFromFacts(
   }))
 }
 
-function externalUsageDimension(row: ExternalUsageBucket, dimension: string) {
-  if (dimension === "app") return row.app
-  if (dimension === "provider") return row.provider
-  if (dimension === "model") return usageModelKey(row.provider, row.model)
-  return dimension === "location" ? "local" : "unavailable"
-}
-
-function chartRowsFromExternal(
-  rows: LocalHistorySnapshot["rows"],
-  groupOf: (row: ExternalUsageBucket) => string,
-  timeZone: string,
-) {
-  const formatDate = usageDateFormatter(timeZone)
-  return rows.map((row) => ({
-    date: formatDate.format(new Date(row.bucketStart)),
-    value: groupOf(row),
-    input: row.tokens.input ?? 0,
-    output: row.tokens.output ?? 0,
-    reasoning: row.tokens.reasoning ?? 0,
-    cacheRead: row.tokens.cacheRead ?? 0,
-    cacheWrite: row.tokens.cacheWrite ?? 0,
-  }))
-}
-
 function chartRowsFromSeries(value: string, series: UsageSeries) {
   return series.daily.map((row) => ({
     date: row.date,
@@ -483,36 +392,6 @@ function modelRowsFromFacts(facts: readonly TurnUsageRevision[], groupOf: (fact:
   }))
 }
 
-/** One priced model row per history bucket, filed under the breakdown group it counts toward. */
-function modelRowsFromExternal(rows: readonly ExternalUsageBucket[], groupOf: (row: ExternalUsageBucket) => string) {
-  return rows.map((row) => ({
-    group: groupOf(row),
-    value: usageModelKey(row.provider, row.model),
-    input_tokens: row.tokens.input ?? 0,
-    output_tokens: row.tokens.output ?? 0,
-    reasoning_tokens: row.tokens.reasoning ?? 0,
-    cache_read_tokens: row.tokens.cacheRead ?? 0,
-    cache_write_tokens: row.tokens.cacheWrite ?? 0,
-    cache_write_1h_tokens: row.tokens.cacheWrite1h ?? 0,
-  }))
-}
-
-/** History buckets as breakdown totals, grouped the way `groupOf` names them. */
-function breakdownRowsFromExternal(rows: readonly ExternalUsageBucket[], groupOf: (row: ExternalUsageBucket) => string) {
-  return rows.map((row) => ({
-    value: groupOf(row),
-    turnCount: row.turnCount,
-    ...row.tokens,
-    unknownCategories: [
-      row.tokens.input,
-      row.tokens.output,
-      row.tokens.reasoning,
-      row.tokens.cacheRead,
-      row.tokens.cacheWrite,
-    ].filter((value) => value === null).length,
-  }))
-}
-
 function breakdownStatus(row: CanonicalBreakdownTotals, priced: PricedUsage): UsageBreakdownRow["status"] {
   if (row.unavailableTurnCount > 0 && row.unavailableTurnCount === row.turnCount) return "unavailable"
   // Unpriced outranks partial: every harness leaves some category unreported,
@@ -583,68 +462,6 @@ async function canonicalBreakdownPage(input: {
   )
   const rows = candidates.slice(0, limit)
   return { dimension: input.dimension, rows, ...(hasMore ? { next: rows.at(-1)?.value } : {}) }
-}
-
-function externalMatches(row: LocalHistorySnapshot["rows"][number], filters: UsageFilters) {
-  return (
-    (!filters.app || row.app === filters.app) &&
-    (!filters.provider || row.provider === filters.provider) &&
-    (!filters.model || usageModelKey(row.provider, row.model) === filters.model || row.model === filters.model) &&
-    (!filters.location || filters.location === "local")
-  )
-}
-
-function externalFilterOptions(rows: LocalHistorySnapshot["rows"]) {
-  return {
-    app: [...new Set(rows.map((row) => row.app))].toSorted(),
-    provider: [...new Set(rows.map((row) => row.provider))].toSorted(),
-    model: [...new Set(rows.map((row) => usageModelKey(row.provider, row.model)))].toSorted(),
-    location: rows.length > 0 ? ["local"] : [],
-  }
-}
-
-/**
- * The tool a cloud turn counts toward in Total, where this machine's own
- * turns are filed under the CLI whose transcript recorded them.
- */
-function totalFactApp(fact: TurnUsageRevision) {
-  return tokenTrackerSourceForHarness(fact.harness) ?? fact.harness
-}
-
-function totalFactDimension(fact: TurnUsageRevision, dimension: UsageFilterDimension) {
-  return dimension === "app" ? totalFactApp(fact) : usageFactDimension(fact, dimension)
-}
-
-/** The Total filters `externalMatches` applies, asked of a cloud turn. */
-function totalFactMatches(fact: TurnUsageRevision, filters: UsageFilters) {
-  const model = usageModelKey(fact.providerId, fact.modelId)
-  return (
-    (!filters.app || totalFactApp(fact) === filters.app) &&
-    (!filters.provider || fact.providerId === filters.provider) &&
-    (!filters.model || model === filters.model || fact.modelId === filters.model) &&
-    (!filters.location || filters.location === usageLocation(fact.location))
-  )
-}
-
-function totalFactFilterOptions(facts: readonly TurnUsageRevision[]) {
-  const values = (value: (fact: TurnUsageRevision) => string) => [...new Set(facts.map(value))].toSorted()
-  return {
-    app: values(totalFactApp),
-    provider: values((fact) => fact.providerId),
-    model: values((fact) => usageModelKey(fact.providerId, fact.modelId)),
-    location: values((fact) => usageLocation(fact.location)),
-  }
-}
-
-function mergeFilterOptions(...values: Array<Record<string, string[]> | undefined>) {
-  const merged = new Map<string, Set<string>>()
-  for (const value of values)
-    for (const [dimension, rows] of Object.entries(value ?? {})) {
-      const target = merged.get(dimension) ?? new Set<string>()
-      for (const row of rows) target.add(row)
-      merged.set(dimension, target)
-    }
-  return Object.fromEntries([...merged].map(([dimension, rows]) => [dimension, [...rows].toSorted()]))
 }
 
 function locationShare(...sources: Array<readonly CentralUsageRow[] | undefined>) {
@@ -753,7 +570,6 @@ export function UsageRoutes(input: {
           rangeDays: Math.ceil((until - since) / 86_400_000),
           latencyMs: Date.now() - startedAt,
           claxedoStatus: "unavailable",
-          externalStatus: "unavailable",
           quotaStatus: "unavailable",
           pricedTokens: 0,
           unpricedTokens: 0,
@@ -769,16 +585,7 @@ export function UsageRoutes(input: {
             status: "unavailable" as const,
             scope: "cross-machine" as const,
           },
-          externalLocal: {
-            ...series,
-            cost: emptyCost(),
-            status: "unavailable" as const,
-            coverage: [],
-            unclassifiedRequests: 0,
-          },
-          total: series,
-          totalCost: emptyCost(),
-          filterOptions: { claxedo: {}, total: {} },
+          filterOptions: { claxedo: {} },
         })
       }
       if (!input.ledger.usageDashboard) {
@@ -827,19 +634,7 @@ export function UsageRoutes(input: {
           status: "available" as const,
           scope: "cross-machine" as const,
         },
-        externalLocal: {
-          ...usageSeriesFromExternal({ rows: [], since, until, timeZone: "UTC" }),
-          status: "unavailable" as const,
-          coverage: [],
-          unclassifiedRequests: 0,
-          cost: emptyCost(),
-        },
-        total: claxedo,
-        totalCost: claxedoCost,
-        filterOptions: {
-          claxedo: summary.filters ?? {},
-          total: mergeFilterOptions({ app: ["Claxedo"] }, summary.filters),
-        },
+        filterOptions: { claxedo: summary.filters ?? {} },
         ...(chart ? { chart } : {}),
       }
       const captureRequest = () =>
@@ -848,7 +643,6 @@ export function UsageRoutes(input: {
           rangeDays: Math.ceil((until - since) / 86_400_000),
           latencyMs: Date.now() - startedAt,
           claxedoStatus: "available",
-          externalStatus: "unavailable",
           quotaStatus: "unavailable",
           pricedTokens: claxedoCost.pricedTokens,
           unpricedTokens: claxedoCost.unpricedTokens,
@@ -902,55 +696,20 @@ async function localUsageBreakdowns(input: {
   includeClaxedo: boolean
   claxedoFacts: TurnUsageRevision[]
   claxedoSeries: UsageSeries
-  totalRows: ExternalUsageBucket[]
-  totalCloudFacts: TurnUsageRevision[]
   group: UsageFilterDimension
-  view: "claxedo" | "total"
   metric: "tokens" | "cost"
   timeZone: string
   requestedLimit: number | undefined
   after: string | undefined
   modelAfter: string | undefined
 }) {
-  const { pricing, claxedoFacts, claxedoSeries, totalRows, totalCloudFacts, group, view, metric, timeZone } = input
+  const { pricing, claxedoFacts, claxedoSeries, group, metric, timeZone } = input
   const page = {
     pricing,
     metric,
     ...(input.requestedLimit === undefined ? {} : { limit: input.requestedLimit }),
   }
   const model = (fact: TurnUsageRevision) => usageModelKey(fact.providerId, fact.modelId)
-  const externalModel = (row: ExternalUsageBucket) => usageModelKey(row.provider, row.model)
-  if (view === "total") {
-    const groupOfRow = (row: ExternalUsageBucket) => externalUsageDimension(row, group)
-    const groupOfFact = (fact: TurnUsageRevision) => totalFactDimension(fact, group)
-    return {
-      breakdown: await canonicalBreakdownPage({
-        ...page,
-        dimension: group,
-        rows: mergeBreakdownRows(
-          breakdownRowsFromExternal(totalRows, groupOfRow),
-          groupUsageFactsBy(totalCloudFacts, groupOfFact),
-        ),
-        modelRows: [...modelRowsFromExternal(totalRows, groupOfRow), ...modelRowsFromFacts(totalCloudFacts, groupOfFact)],
-        ...(input.after ? { after: input.after } : {}),
-      }),
-      modelBreakdown: await canonicalBreakdownPage({
-        ...page,
-        dimension: "model",
-        rows: mergeBreakdownRows(
-          breakdownRowsFromExternal(totalRows, externalModel),
-          groupUsageFactsBy(totalCloudFacts, model),
-        ),
-        modelRows: [...modelRowsFromExternal(totalRows, externalModel), ...modelRowsFromFacts(totalCloudFacts, model)],
-        ...(input.modelAfter ? { after: input.modelAfter } : {}),
-      }),
-      chart: mergeChartSeries(
-        group,
-        chartRowsFromExternal(totalRows, groupOfRow, timeZone),
-        chartRowsFromFacts(totalCloudFacts, groupOfFact, timeZone),
-      ),
-    }
-  }
   const groupOf = (fact: TurnUsageRevision) => (group === "app" ? "Claxedo" : usageFactDimension(fact, group))
   return {
     breakdown: await canonicalBreakdownPage({
@@ -1040,21 +799,13 @@ function cloudUsageNotice(cloud: CloudUsage | undefined) {
   } not counted.`
 }
 
-const emptyHistory = (): LocalHistorySnapshot => ({
-  rows: [],
-  totalRows: [],
-  coverage: [],
-  classifiedClaxedo: 0,
-  unclassifiedRequests: 0,
-})
-
 export function LocalUsageRoutes(input: {
   local: UsageRevisionReader & UsageOwnedTurnReader
   identity(request: Request): Promise<{ org_id: string; user_id: string } | undefined>
   /**
    * Whether this caller stands for the machine itself. Machine-scoped reads
-   * (external history, quota, turns no producer account owns, the account's
-   * cloud turns merged into them) are operator-only; other signed callers see
+   * (quota, turns no producer account owns, the account's cloud turns merged
+   * into them) are operator-only; other signed callers see
    * only what their identity produced. When absent, a request without a
    * bearer token counts as the operator — the unsigned-local posture where
    * the machine has exactly one user.
@@ -1066,25 +817,14 @@ export function LocalUsageRoutes(input: {
    * mounted the credential routes can resolve the same way they do.
    */
   quota?: (input: { request: Request; refresh: boolean }) => Promise<UnifiedUsageResponse["quota"]>
-  history?: (range: { since: number; until: number; refresh: boolean }) => Promise<LocalHistorySnapshot>
   pricing: UsagePricing
   telemetry?: UsageTelemetry
 }) {
-  // Precommitted above the 35s representative cold-scan budget. Warm and
-  // changed-file refreshes are expected to stay below 5s; the extra margin is
-  // for a first scan competing with desktop startup I/O.
-  const LOCAL_HISTORY_DEADLINE_MS = 40_000
   const app = new Hono()
-  const historyCache = new Map<string, LocalHistorySnapshot>()
   const quotaCache = new Map<string, UnifiedUsageResponse["quota"]>()
   const consumedRefreshNonces = new Set<number>()
   const deadline = <T>(promise: Promise<T>, label: string, timeoutMs = 8_000) =>
     withTimeout(promise, timeoutMs, () => new Error(`${label} timed out`))
-  const rememberHistory = (key: string, value: LocalHistorySnapshot) => {
-    historyCache.delete(key)
-    historyCache.set(key, value)
-    while (historyCache.size > 8) historyCache.delete(historyCache.keys().next().value!)
-  }
   const rememberQuota = (key: string, value: UnifiedUsageResponse["quota"]) => {
     quotaCache.delete(key)
     quotaCache.set(key, value)
@@ -1099,10 +839,10 @@ export function LocalUsageRoutes(input: {
     while (consumedRefreshNonces.size > 64) consumedRefreshNonces.delete(consumedRefreshNonces.values().next().value!)
     return true
   }
-  // Machine scope — external history, stored quota, facts no producer owns —
-  // belongs to the machine's operator. A signed member is not one just for
-  // reaching the route; when the composition names no predicate, only a
-  // bearer-less request counts (unsigned-local has exactly one user).
+  // Machine scope — stored quota, facts no producer owns — belongs to the
+  // machine's operator. A signed member is not one just for reaching the
+  // route; when the composition names no predicate, only a bearer-less request
+  // counts (unsigned-local has exactly one user).
   const machineOperator = (request: Request) =>
     input.machineOperator ? input.machineOperator(request) : !request.headers.get("authorization")
   const operatorRequired = (c: Context) =>
@@ -1128,10 +868,10 @@ export function LocalUsageRoutes(input: {
       // machine's accounts, which is exactly what `operator_required` exists
       // to refuse.
       if (!operator) return operatorRequired(c)
-      // The last good plans stand when a read fails, the same way the history
-      // view holds its snapshot: the figures a user is looking at did not stop
-      // being true because a refresh could not reach a vendor, and blanking
-      // every card is how Refresh came to lose the whole view.
+      // The last good plans stand when a read fails: the figures a user is
+      // looking at did not stop being true because a refresh could not reach
+      // a vendor, and blanking every card is how Refresh came to lose the
+      // whole view.
       //
       // Held per bearer, because the quota reader resolves its own tenant from
       // the request: one principal's plans must never be drawn for another.
@@ -1163,41 +903,19 @@ export function LocalUsageRoutes(input: {
           status: "unavailable",
           scope: "local",
         },
-        externalLocal: {
-          ...series,
-          cost: emptyCost(),
-          status: "unavailable",
-          coverage: [],
-          unclassifiedRequests: 0,
-        },
-        total: series,
-        totalCost: emptyCost(),
-        filterOptions: { claxedo: {}, total: {} },
+        filterOptions: { claxedo: {} },
       }
       captureUsage(input.telemetry, {
         deployment: "local",
         rangeDays: Math.ceil((until - since) / 86_400_000),
         latencyMs: Date.now() - startedAt,
         claxedoStatus: response.claxedo.status,
-        externalStatus: response.externalLocal.status,
         quotaStatus: response.quota.status,
-        scannerDegraded: 0,
-        unclassifiedRequests: 0,
         pricedTokens: 0,
         unpricedTokens: 0,
       })
       return c.json(response)
     }
-    // The Total view scans the machine's own CLI history — every other
-    // account's sessions live in it, so a signed member who is not the
-    // operator is refused before the scan is even started.
-    if (view === "total" && input.history && !operator) return operatorRequired(c)
-    const historyTask =
-      view === "total" && input.history
-        ? deadline(input.history({ since, until, refresh }), "local usage scan", LOCAL_HISTORY_DEADLINE_MS)
-            .then((value) => ({ value }))
-            .catch((error) => ({ error: error instanceof Error ? error.message : String(error) }))
-        : Promise.resolve({ value: emptyHistory() })
     let identity: Awaited<ReturnType<typeof input.identity>>
     try {
       identity = await input.identity(c.req.raw)
@@ -1219,47 +937,14 @@ export function LocalUsageRoutes(input: {
     const claxedoFacts = includeClaxedo ? allClaxedoFacts.filter((fact) => usageFactMatches(fact, filters)) : []
     const claxedoSeries = usageSeriesFromFacts({ facts: claxedoFacts, since, until, timeZone })
     const claxedoCost = await priceFacts(input.pricing, claxedoFacts, timeZone)
-
-    const historyResult = await historyTask
-    // A local-history snapshot is bounded by the exact requested instants.
-    // Reusing a same-length but shifted window can leak rows from outside the
-    // request after a scanner failure.
-    const historyKey = JSON.stringify([since, until, timeZone])
-    if ("value" in historyResult) rememberHistory(historyKey, historyResult.value)
-    const history = "value" in historyResult ? historyResult.value : (historyCache.get(historyKey) ?? emptyHistory())
-    const historyError = "error" in historyResult ? historyResult.error : undefined
-    // Keep the range boundary authoritative even for cached or future scanner
-    // implementations; every downstream total, price, chart and option uses
-    // this same bounded collection.
-    const historyRows = history.rows.filter((row) => row.bucketStart >= since && row.bucketStart <= until)
-    const externalRows = historyRows.filter((row) => externalMatches(row, filters))
-    const totalRows = history.totalRows
-      .filter((row) => row.bucketStart >= since && row.bucketStart <= until)
-      .filter((row) => externalMatches(row, filters))
-    // A cloud turn's transcript lives in its sandbox, never in this machine's
-    // history, so Total takes it from the revisions instead.
     const cloudRevisions = allClaxedoFacts.filter((fact) => fact.location === "cloud-workspace")
-    const totalCloudFacts = view === "total" ? cloudRevisions.filter((fact) => totalFactMatches(fact, filters)) : []
-    const externalSeries = usageSeriesFromExternal({ rows: externalRows, since, until, timeZone })
-    const externalCost = await priceExternal(input.pricing, externalRows, timeZone)
-    const totalSeries = mergeUsageSeries(
-      usageSeriesFromExternal({ rows: totalRows, since, until, timeZone }),
-      usageSeriesFromFacts({ facts: totalCloudFacts, since, until, timeZone }),
-    )
-    const totalCost = mergeCost(
-      await priceExternal(input.pricing, totalRows, timeZone),
-      await priceFacts(input.pricing, totalCloudFacts, timeZone),
-    )
     const breakdowns = group
       ? await localUsageBreakdowns({
           pricing: input.pricing,
           includeClaxedo,
           claxedoFacts,
           claxedoSeries,
-          totalRows,
-          totalCloudFacts,
           group,
-          view,
           metric,
           timeZone,
           requestedLimit,
@@ -1278,24 +963,7 @@ export function LocalUsageRoutes(input: {
         ...(cloudNotice ? { status: "degraded" as const, error: cloudNotice } : { status: "available" as const }),
         scope: (cloud && "facts" in cloud) || cloudRevisions.length > 0 ? "cross-machine" : "local",
       },
-      externalLocal: {
-        ...externalSeries,
-        cost: externalCost,
-        status: historyError ? "degraded" : view === "total" && input.history ? "available" : "unavailable",
-        coverage: history.coverage,
-        unclassifiedRequests: history.unclassifiedRequests,
-        ...(history.scannedAt === undefined ? {} : { scannedAt: history.scannedAt }),
-        ...(historyError ? { error: historyError } : {}),
-      },
-      total: totalSeries,
-      totalCost,
-      filterOptions: {
-        claxedo: usageFactFilterOptions(allClaxedoFacts),
-        total: mergeFilterOptions(
-          externalFilterOptions(history.totalRows),
-          totalFactFilterOptions(view === "total" ? cloudRevisions : []),
-        ),
-      },
+      filterOptions: { claxedo: usageFactFilterOptions(allClaxedoFacts) },
       ...breakdowns,
     }
     captureUsage(input.telemetry, {
@@ -1303,12 +971,9 @@ export function LocalUsageRoutes(input: {
       rangeDays: Math.ceil((until - since) / 86_400_000),
       latencyMs: Date.now() - startedAt,
       claxedoStatus: response.claxedo.status,
-      externalStatus: response.externalLocal.status,
       quotaStatus: response.quota.status,
-      scannerDegraded: response.externalLocal.coverage.filter((source) => source.status !== "available").length,
-      unclassifiedRequests: response.externalLocal.unclassifiedRequests,
-      pricedTokens: response.totalCost.pricedTokens,
-      unpricedTokens: response.totalCost.unpricedTokens,
+      pricedTokens: response.claxedo.cost.pricedTokens,
+      unpricedTokens: response.claxedo.cost.unpricedTokens,
     })
     return c.json(response)
   }

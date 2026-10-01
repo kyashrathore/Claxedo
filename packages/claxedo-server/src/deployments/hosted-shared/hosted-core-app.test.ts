@@ -9,15 +9,16 @@ import { sourceClosure } from "@claxedo/server-core/platform/governance/source-c
 import { coreAppHomeOrigin, createHostedCoreApp } from "./hosted-core-app"
 import { sandboxRelayTargetLookup, type HostedControlPlane } from "../../authority/hosted-services"
 import type { ControlPlaneServices } from "../../authority/services"
-import { createInMemoryCliSessionTokenRegistry } from "@claxedo/server-core/platform/auth/cli-session-registry"
 import { STATIC_PRODUCT_DESCRIPTORS } from "./deployment-profile"
 import { testRequestAuthenticationAdapter } from "../../test-support/request-authentication"
 import { hostedOrgCredentials } from "../../credentials/worker"
-import { HOSTED_CREDENTIAL_MIGRATIONS, controlPlaneMigrations, miniflareControlPlaneDatabase } from "../../test-support/control-plane-migrations"
+import { controlPlaneMigrations, miniflareControlPlaneDatabase } from "../../test-support/control-plane-migrations"
+import { storedD1Session } from "../../test-support/d1-stored-session"
 import { d1UserAgentConfigRepository } from "../../authority/adapters/d1/user-agent-config"
 import { fetchUrl } from "../../test-support/fetch-calls"
 import type { ClaxedoMcpClient } from "@claxedo/mcp/client"
 import type { McpClientInputs } from "@claxedo/mcp"
+import { createIdempotencyCoordinator, memoryIdempotencyStore } from "../../authority/http/idempotency"
 
 const ROOT = path.resolve(import.meta.dirname, "../../..")
 
@@ -72,7 +73,6 @@ function plane(): HostedControlPlane {
       sandboxMaxRetryCount: 5,
     },
     relayTargetLookup: sandboxRelayTargetLookup({ telemetry: services.telemetry }),
-    cliSessionTokenRegistry: createInMemoryCliSessionTokenRegistry(),
     privateSessionAuthority: sessionAuthority,
     runtimeSessionAuthority: sessionAuthority,
     env: { CLAXEDO_DEPLOYMENT_MODE: "hosted" },
@@ -80,6 +80,7 @@ function plane(): HostedControlPlane {
 }
 
 const options = {
+  idempotency: createIdempotencyCoordinator(memoryIdempotencyStore()),
   authentication: testRequestAuthenticationAdapter(),
   liveSyncRoom: {
     idFromName: (name: string) => name,
@@ -92,13 +93,6 @@ const options = {
   }),
   product: STATIC_PRODUCT_DESCRIPTORS["user-deployed"],
   requestGuardExemptions: [],
-  userDeployedIdentityAdmission: {
-    admit: vi.fn(async (_auth, input) => ({
-      state: "active" as const,
-      userId: `user:${input.identity.subject}`,
-      actorId: `actor:${input.identity.subject}`,
-    })),
-  },
 }
 
 describe("cloud-workspace admission", () => {
@@ -186,7 +180,7 @@ describe("hosted production Pi and connection discovery", () => {
     const base = plane()
     base.env = { ...base.env, CLAXEDO_HOSTED_CREDENTIALS_ENABLED: "1", CLAXEDO_CREDENTIALS_KEK: Buffer.alloc(32, 3).toString("base64") }
     base.services.authority!.resolveOrgId = vi.fn(async (auth) => `internal-${auth.user.subject}` as never)
-    const controlPlane = await miniflareControlPlaneDatabase(HOSTED_CREDENTIAL_MIGRATIONS)
+    const controlPlane = await miniflareControlPlaneDatabase(controlPlaneMigrations())
     let broken = false
     base.orgCredentials = (orgId) => {
       if (broken) throw new Error("CONTROL_PLANE_DB unavailable")
@@ -290,6 +284,28 @@ describe("hosted agent connection deletion", () => {
 })
 
 describe("resource-closed hosted core app", () => {
+  test("message reads preserve the stored authority ordinal and hide denied sessions", async () => {
+    const controlPlane = await miniflareControlPlaneDatabase(controlPlaneMigrations())
+    const { database } = controlPlane
+    try {
+      const { auth, sessions } = await storedD1Session(database)
+      await database.prepare("update sessions set max_event_ordinal = 37 where session_id = 'ses'").run()
+      const hosted = plane()
+      hosted.services.authority!.readSessionMessages = sessions.readSessionMessages.bind(sessions)
+      const authentication = { ...options.authentication, authenticate: async () => auth.principal! }
+      const app = createHostedCoreApp(hosted, { ...options, authentication }) as unknown as Hono
+      const headers = { authorization: "Bearer alice" }
+      const response = await app.request("/api/control/sessions/ses/messages?workspaceId=ws&limit=2", { headers })
+      expect(response.status).toBe(200)
+      expect(await response.json()).toMatchObject({ messages: [], maxEventOrdinal: 37 })
+      const denied = await app.request("/api/control/sessions/denied/messages?workspaceId=ws", { headers })
+      expect(denied.status).toBe(404)
+      expect(await denied.json()).toMatchObject({ error: { code: "SESSION_NOT_FOUND" } })
+    } finally {
+      await controlPlane.dispose()
+    }
+  })
+
   test("mounts core multiplayer routes and no optional-service or billing route", () => {
     const app = createHostedCoreApp(plane(), options) as unknown as Hono
     const paths = [...new Set(app.routes.map((route) => route.path))].toSorted()
@@ -305,9 +321,7 @@ describe("resource-closed hosted core app", () => {
       "/api/control/teams/:teamId/members",
       "/api/control/sessions/:sessionId/messages",
       "/api/control/sessions/:sessionId/outline",
-      "/api/control/sessions/:sessionId/participants",
       "/api/control/sessions/:sessionId/shares",
-      "/api/control/user-deployed/identity-admissions",
       "/api/control/session-registrations/reserve",
       "/api/runtime-authority/session-authorize",
       "/api/workspace/:id/connection",
@@ -315,6 +329,7 @@ describe("resource-closed hosted core app", () => {
     ]) {
       expect(paths).toContain(expected)
     }
+    expect(paths).not.toContain("/api/control/sessions/:sessionId/participants")
     expect(paths.filter((route) =>
       route.startsWith("/documents") ||
       route.startsWith("/api/billing")
@@ -528,50 +543,23 @@ describe("resource-closed hosted core app", () => {
     await expect(shares.json()).resolves.toEqual([{ grant_id: "share-1", granted_to_user_id: "user-2" }])
   })
 
-  test("admits a provider-verified subject through the authenticated user-deployed lifecycle", async () => {
+  test("the user-deployed direct identity-admission route is unavailable", async () => {
     const app = createHostedCoreApp(plane(), options)
-    const response = await app.fetch(new Request(
-      "https://core.test/api/control/user-deployed/identity-admissions",
-      {
-        method: "POST",
-        headers: {
-          cookie: "__Secure-claxedo.session_token=browser-session",
-          origin: "https://app.test",
-          "content-type": "application/json",
-        },
-        body: JSON.stringify({ subject: "better-auth-member", role: "member" }),
-      },
-    ))
-    expect(response.status).toBe(200)
-    await expect(response.json()).resolves.toEqual({
-      admitted: true,
-      role: "member",
-      user: { id: "user:better-auth-member" },
-    })
-    expect(options.userDeployedIdentityAdmission.admit).toHaveBeenCalledWith(
-      expect.objectContaining({ principal: expect.objectContaining({ userId: "browser-user" }) }),
-      {
-        identity: { adapter: "better-auth", issuer: "https://auth.test", subject: "better-auth-member" },
-        role: "member",
-      },
-    )
+    const response = await app.fetch(new Request("https://core.test/api/control/user-deployed/identity-admissions", {
+      method: "POST",
+      headers: { cookie: "__Secure-claxedo.session_token=browser-session", origin: "https://app.test", "content-type": "application/json" },
+      body: JSON.stringify({ subject: "better-auth-member", role: "member" }),
+    }))
+    expect(response.status).toBe(404)
   })
 
-  test("has no static Documents, billing, or Polar implementation edge", () => {
+  test("has no static Documents implementation edge", () => {
     const entry = "src/deployments/hosted-shared/hosted-core-app.ts"
     const closure = sourceClosure({ entry: path.join(ROOT, entry), root: ROOT, runtimeOnly: true })
     expect(closure.unresolved).toEqual([])
     expect(closure.opaque).toEqual([])
     const files = closure.modules.map((module) => module.relative.toLowerCase())
-    expect(files.filter((file) => ["documents/", "billing/"].some((part) => file.includes(part)))).toEqual([])
-    expect(
-      closure.packages.filter((name) =>
-        [
-          "@claxedo/documents-service",
-          "@polar-sh/sdk",
-        ].includes(name),
-      ),
-    ).toEqual([])
+    expect(files.filter((file) => file.includes("documents/"))).toEqual([])
   })
 
   test("requires the cross-isolate limiter, LiveSyncRoom, and admission policy", () => {
@@ -582,7 +570,6 @@ describe("resource-closed hosted core app", () => {
       "cloudWorkspaceAdmission",
       "product",
       "requestGuardExemptions",
-      "userDeployedIdentityAdmission",
     ] as const) {
       expect(() => createHostedCoreApp(plane(), { ...options, [missing]: undefined } as never)).toThrow(missing === "liveSyncRoom"
         ? /LIVE_SYNC_ROOM/
@@ -593,8 +580,6 @@ describe("resource-closed hosted core app", () => {
           : new RegExp(
               missing === "cloudWorkspaceAdmission"
                 ? "admission policy"
-                : missing === "userDeployedIdentityAdmission"
-                  ? "identity admission"
                 : missing === "product"
                   ? "product descriptor"
                   : "request-guard inventory",
@@ -625,7 +610,7 @@ describe("resource-closed hosted core app", () => {
     })
     const mode = await app.fetch(new Request("https://core.test/api/claxedo/mode"))
     expect(await mode.json()).toMatchObject({
-      product: { productPosture: "user-deployed", organizationPolicy: "single-org", billing: "absent", multiplayer: true },
+      product: { productPosture: "user-deployed", organizationPolicy: "single-org", multiplayer: true },
     })
   })
 

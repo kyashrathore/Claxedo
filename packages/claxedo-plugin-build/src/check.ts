@@ -1,4 +1,5 @@
 import type { PluginManifest } from "@claxedo/plugin-api"
+import { buildPluginBackend } from "./backend"
 import { buildPluginApp } from "./build"
 import { PluginBuildError, type PluginDiagnostic } from "./errors"
 import { readPluginPackage } from "./manifest-file"
@@ -17,6 +18,7 @@ export async function checkPluginApp(options: { rootDir: string }): Promise<Plug
     const diagnostics = await typecheckPlugin(pkg)
     if (diagnostics.length > 0) return { ok: false, manifest: pkg.manifest, diagnostics }
     const built = await buildPluginApp({ rootDir: options.rootDir })
+    if (pkg.manifest.backend) await buildPluginBackend({ rootDir: options.rootDir })
     return { ok: true, manifest: built.manifest, hash: built.hash, diagnostics: [] }
   } catch (error) {
     if (error instanceof PluginBuildError) return { ok: false, diagnostics: error.diagnostics }

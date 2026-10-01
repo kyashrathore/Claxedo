@@ -63,54 +63,6 @@ export const localBrokeringTestDriverCatalogEntry = {
 }
 
 export const sandboxDriverCatalog: Record<SandboxDriverID, SandboxDriverCatalogEntry> = {
-  exe: {
-    id: "exe",
-    label: sandboxDriverLabels.exe,
-    credentialFields: sandboxDriverCredentialFields.exe,
-    runtimeNetwork: { controlPlane: "direct", relay: "configured" },
-    runtimeEnv: "callback",
-    preparedImage: true,
-    metadata: {
-      driverRunsIn: ["worker", "node"],
-      hostStopBehavior: "not-supported",
-      hostResumeBehavior: "same-host",
-      targetAccess: "relay",
-      secretBrokering: "none",
-      egressControl: "none",
-      persistence: {
-        resume: "same-sandbox",
-        capture: "none",
-        clone: true,
-        captureSource: "not-applicable",
-        retention: "provider-managed",
-        restoreMount: "same-resource",
-      },
-    },
-  },
-  daytona: {
-    id: "daytona",
-    label: sandboxDriverLabels.daytona,
-    credentialFields: sandboxDriverCredentialFields.daytona,
-    runtimeNetwork: { controlPlane: "direct", relay: "configured" },
-    runtimeEnv: "callback",
-    preparedImage: true,
-    metadata: {
-      driverRunsIn: ["worker", "node"],
-      hostStopBehavior: "suspends-host", hostResumeBehavior: "same-host",
-      targetAccess: "relay",
-      secretBrokering: "native",
-      // The driver translates names to domainAllowList, or addresses to networkAllowList.
-      egressControl: "hosts-and-cidrs",
-      persistence: {
-        resume: "same-sandbox",
-        capture: "filesystem",
-        clone: false,
-        captureSource: "preserved",
-        retention: "provider-managed",
-        restoreMount: "new-resource",
-      },
-    },
-  },
   modal: {
     id: "modal",
     label: sandboxDriverLabels.modal,

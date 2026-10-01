@@ -252,11 +252,8 @@ export namespace ClaxedoDB {
 
   // Deliberately schema-less. Drizzle's schema generic types only its
   // relational query builder (`db.query.*`), which nothing in this repository
-  // uses — every call site passes its table explicitly. Naming the schema here
-  // pulled `platform/db/schema.ts`, the barrel of every PRODUCT table
-  // (connections, channels, documents), into the closure of every module that
-  // opens the database. The barrel stays where the product tables are, as the
-  // migration generator's input; this module knows nothing about them.
+  // uses — every call site passes its table explicitly, so this module knows
+  // no product table.
   export type Client = BetterSQLite3Database
 
   const state = {

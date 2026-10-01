@@ -70,7 +70,7 @@ export function sessionListErrorResponse(error: unknown): Response | undefined {
   if (error instanceof SessionListRequestError) {
     return Response.json({ error: { code: error.code, message: error.message } }, { status: 400 })
   }
-  if (error instanceof Error && error.message === "invalid_session_list_cursor") {
+  if (error instanceof ClaxedoError && error.code === "invalid_session_list_cursor") {
     return Response.json(
       { error: { code: "invalid_session_list_cursor", message: "Session list cursor does not match this query" } },
       { status: 400 },

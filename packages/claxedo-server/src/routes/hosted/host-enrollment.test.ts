@@ -1,14 +1,11 @@
 import { describe, expect, test, vi } from "vitest"
 import type { ControlPlaneTokenVerifier } from "@claxedo/server-core/platform/auth/auth"
 import type { MachineEnrollmentRow } from "@claxedo/server-core/platform/auth/authority"
-import {
-  MACHINE_REQUEST_HEADERS,
-  machineRequestPayload,
-} from "@claxedo/server-core/platform/auth/host-connect-contract"
+import { MACHINE_REQUEST_HEADERS, machineRequestPayload } from "@claxedo/account-contract/machine"
 import type { HostTunnelTokenSigner } from "@claxedo/server-core/platform/auth/runtime-access-token"
 import { sha256Hex } from "@claxedo/helpers/crypto"
 import type { ControlPlaneServices } from "../../authority/services"
-import { D1HostAccessAuthorityError } from "../../authority/adapters/d1/host-access-authority"
+import { D1HostAccessAuthorityError } from "../../authority/adapters/d1/host-access-errors"
 import { createFixedWindowConnectionRateLimiter } from "../../platform/auth/rate-limit"
 import { HostEnrollmentRoutes, HostInvitationRoutes } from "./host-enrollment"
 
@@ -39,15 +36,35 @@ function authority(overrides: Record<string, unknown> = {}): Record<string, Retu
     usersMe: vi.fn(async () => ({ subject: "user_1" })),
     auditAllow: vi.fn(async () => {}),
     createHostEnrollmentRequest: vi.fn(async () => ({ request_id: "req_1", nonce: "n", expires_at: 9_999 })),
-    enrollHost: vi.fn(async () => ({ enrollment_id: "enr_1", host_id: "host_1", expires_at: 9_999, last_seen_at: 1, created_at: 1 })),
-    pauseHostEnrollment: vi.fn(async () => ({ paused: true })),
-    activeHostEnrollment: vi.fn(async () => ({ active: true, host_id: "host_1", enrollment_id: "enr_1", expires_at: 9_999, last_seen_at: 1, created_at: 1 })),
-    hostProviderConfigTarget: vi.fn(async () => ({ enrollment_id: "enr_1", host_id: "host_1", sealing_public_key: null, next_revision: 1 })),
-    pushHostProviderConfig: vi.fn(async (_auth: unknown, input: { enrollmentId: string; revision: number; sealed: string | null }) => ({
-      enrollment_id: input.enrollmentId,
-      revision: input.revision,
-      sealed: input.sealed !== null,
+    enrollHost: vi.fn(async () => ({
+      enrollment_id: "enr_1",
+      host_id: "host_1",
+      expires_at: 9_999,
+      last_seen_at: 1,
+      created_at: 1,
     })),
+    pauseHostEnrollment: vi.fn(async () => ({ paused: true })),
+    activeHostEnrollment: vi.fn(async () => ({
+      active: true,
+      host_id: "host_1",
+      enrollment_id: "enr_1",
+      expires_at: 9_999,
+      last_seen_at: 1,
+      created_at: 1,
+    })),
+    hostProviderConfigTarget: vi.fn(async () => ({
+      enrollment_id: "enr_1",
+      host_id: "host_1",
+      sealing_public_key: null,
+      next_revision: 1,
+    })),
+    pushHostProviderConfig: vi.fn(
+      async (_auth: unknown, input: { enrollmentId: string; revision: number; sealed: string | null }) => ({
+        enrollment_id: input.enrollmentId,
+        revision: input.revision,
+        sealed: input.sealed !== null,
+      }),
+    ),
     ...overrides,
   }
 }
@@ -58,7 +75,11 @@ function routes(overrides: Record<string, unknown> = {}, routeOptions: Record<st
   const app = HostEnrollmentRoutes(services, { authConfig, verifier, ...routeOptions } as never)
   const call = (path: string, init: RequestInit = {}) =>
     app.request(`http://control.test${path}`, {
-      headers: { authorization: "Bearer user_1", "content-type": "application/json", ...Object.fromEntries(new Headers(init.headers)) },
+      headers: {
+        authorization: "Bearer user_1",
+        "content-type": "application/json",
+        ...Object.fromEntries(new Headers(init.headers)),
+      },
       ...init,
     })
   const post = (path: string, body: unknown) => call(path, { method: "POST", body: JSON.stringify(body) })
@@ -303,9 +324,9 @@ describe("per-account budget", () => {
     const { post } = routes()
     for (let attempt = 0; attempt < 20; attempt += 1) await post("/requests", { hostId: "host_1" })
 
-    expect(
-      (await post("/", { hostId: "host_1", publicKey: "{}", requestId: "req_1", signature: "sig" })).status,
-    ).toBe(200)
+    expect((await post("/", { hostId: "host_1", publicKey: "{}", requestId: "req_1", signature: "sig" })).status).toBe(
+      200,
+    )
     expect((await post("/pause", { paused: true })).status).toBe(200)
   })
 
@@ -349,13 +370,20 @@ async function machineKey() {
   return {
     publicKeyJson: JSON.stringify(await crypto.subtle.exportKey("jwk", pair.publicKey)),
     async sign(payload: string) {
-      const bytes = await crypto.subtle.sign({ name: "ECDSA", hash: "SHA-256" }, pair.privateKey, new TextEncoder().encode(payload))
+      const bytes = await crypto.subtle.sign(
+        { name: "ECDSA", hash: "SHA-256" },
+        pair.privateKey,
+        new TextEncoder().encode(payload),
+      )
       return Buffer.from(bytes).toString("base64url")
     },
   }
 }
 
-function enrollmentRow(key: Awaited<ReturnType<typeof machineKey>>, overrides: Partial<MachineEnrollmentRow> = {}): MachineEnrollmentRow {
+function enrollmentRow(
+  key: Awaited<ReturnType<typeof machineKey>>,
+  overrides: Partial<MachineEnrollmentRow> = {},
+): MachineEnrollmentRow {
   return {
     enrollment_id: "enr_1",
     host_id: "host_1",
@@ -366,7 +394,7 @@ function enrollmentRow(key: Awaited<ReturnType<typeof machineKey>>, overrides: P
     serving_generation: 2,
     revoked_at: null,
     paused_at: null,
-    scope: { allowed_roots: ["/srv"], visibility: "owner", revision: 1 },
+    scope: { allowed_roots: ["/srv"], revision: 1 },
     ownerEligible: true,
     ...overrides,
   }
@@ -391,7 +419,7 @@ function machineAuthority(row: MachineEnrollmentRow | undefined, overrides: Reco
         { workspace_id: "ws_1", remote_directory: "/srv/one", revision: 3 },
         { workspace_id: "ws_2", remote_directory: "/srv/two", display_name: "Two", revision: 5 },
       ],
-      scope: { allowed_roots: ["/srv"], visibility: "owner", revision: 1 },
+      scope: { allowed_roots: ["/srv"], revision: 1 },
       assigned_workspace_ids: ["ws_1", "ws_2"],
     })),
     acquireHostServingGeneration: vi.fn(async () => ({ generation: 3, generation_acquired_at: NOW })),
@@ -404,7 +432,10 @@ const beat = (overrides: Record<string, unknown> = {}) => ({
   hostId: "host_1",
   keyVersion: 1,
   generation: 2,
-  acks: [{ workspaceId: "ws_1", revision: 3 }, { workspaceId: "ws_2", revision: 4 }],
+  acks: [
+    { workspaceId: "ws_1", revision: 3 },
+    { workspaceId: "ws_2", revision: 4 },
+  ],
   ...overrides,
 })
 
@@ -428,7 +459,7 @@ describe("POST /heartbeat, machine caller (v3)", () => {
 
     expect(response.status, await response.clone().text()).toBe(200)
     expect(api.heartbeatHostEnrollmentByMachine).toHaveBeenCalledWith(
-      { enrollmentId: "enr_1", hostId: "host_1", ownerUserId: "usr_owner", ownerActorId: "act_owner", scope: { allowed_roots: ["/srv"], visibility: "owner", revision: 1 }, keyVersion: 1, generation: 2 },
+      { enrollmentId: "enr_1", hostId: "host_1", ownerUserId: "usr_owner", ownerActorId: "act_owner", scope: { allowed_roots: ["/srv"], revision: 1 }, keyVersion: 1, generation: 2 },
       { enrollmentId: "enr_1", hostId: "host_1", generation: 2, acks: [{ workspaceId: "ws_1", revision: 3 }, { workspaceId: "ws_2", revision: 4 }], ttlMs: 8_000, sessionAuthority: "managed-private" },
     )
     // ws_2 was acked at revision 4 but the description says 5: not ready, no credential for it.
@@ -446,7 +477,7 @@ describe("POST /heartbeat, machine caller (v3)", () => {
         { workspace_id: "ws_1", remote_directory: "/srv/one", revision: 3 },
         { workspace_id: "ws_2", remote_directory: "/srv/two", display_name: "Two", revision: 5 },
       ],
-      scope: { allowed_roots: ["/srv"], visibility: "owner", revision: 1 },
+      scope: { allowed_roots: ["/srv"], revision: 1 },
       assigned_workspace_ids: ["ws_1", "ws_2"],
       relay: { url: "https://relay.test/", jwks_url: "https://relay.test/.well-known/jwks.json" },
       authority: { session_authority_url: "https://cp.test/api/runtime-authority/session-authorize" },
@@ -475,7 +506,9 @@ describe("POST /heartbeat, machine caller (v3)", () => {
       relayUrl: "https://relay.test/",
     })
 
-    const body = await (await signedCall(key, "/heartbeat", beat())).json() as { hostTunnel?: Record<string, unknown> }
+    const body = (await (await signedCall(key, "/heartbeat", beat())).json()) as {
+      hostTunnel?: Record<string, unknown>
+    }
 
     expect(body.hostTunnel?.enrollmentId).toBe("enr_1")
     expect(body.hostTunnel?.ownerActorId).toBe("act_owner")
@@ -496,7 +529,11 @@ describe("POST /heartbeat, machine caller (v3)", () => {
     const { signedCall } = await mountedRoutes(api)
     const sealingPublicKey = '{"kty":"EC","crv":"P-256","x":"x","y":"y"}'
 
-    const response = await signedCall(key, "/heartbeat", beat({ acks: [], sealingPublicKey, providerConfigRevision: 1 }))
+    const response = await signedCall(
+      key,
+      "/heartbeat",
+      beat({ acks: [], sealingPublicKey, providerConfigRevision: 1 }),
+    )
 
     expect(response.status, await response.clone().text()).toBe(200)
     expect(api.heartbeatHostEnrollmentByMachine).toHaveBeenCalledWith(
@@ -522,7 +559,7 @@ describe("POST /heartbeat, machine caller (v3)", () => {
       relayUrl: "https://relay.test",
       relayHostJwksUrl: "https://keys.relay.test/jwks.json",
     })
-    const body = await (await signedCall(key, "/heartbeat", beat({ acks: [] }))).json() as Record<string, unknown>
+    const body = (await (await signedCall(key, "/heartbeat", beat({ acks: [] }))).json()) as Record<string, unknown>
     expect(body.relay).toEqual({ url: "https://relay.test", jwks_url: "https://keys.relay.test/jwks.json" })
     expect(body).not.toHaveProperty("authority")
     expect(body).not.toHaveProperty("hostTunnel")
@@ -535,10 +572,22 @@ describe("POST /heartbeat, machine caller (v3)", () => {
     const forger = await machineKey()
     const refusals: Array<[Promise<Response>, number, string]> = [
       [signedCall(forger, "/heartbeat", beat()), 401, "machine_request_denied"],
-      [signedCall(key, "/heartbeat", beat(), { tamper: (text) => text.replace('"generation":2', '"generation":9') }), 401, "machine_request_denied"],
-      [signedCall(key, "/heartbeat", beat({ enrollmentId: "enr_2" }), { enrollmentId: "enr_2" }), 401, "machine_request_denied"],
+      [
+        signedCall(key, "/heartbeat", beat(), { tamper: (text) => text.replace('"generation":2', '"generation":9') }),
+        401,
+        "machine_request_denied",
+      ],
+      [
+        signedCall(key, "/heartbeat", beat({ enrollmentId: "enr_2" }), { enrollmentId: "enr_2" }),
+        401,
+        "machine_request_denied",
+      ],
       [signedCall(key, "/heartbeat", beat(), { ts: NOW - 60_001 }), 401, "machine_timestamp_skew"],
-      [signedCall(key, "/heartbeat", beat(), { headers: { [MACHINE_REQUEST_HEADERS.nonce]: "short" } }), 400, "machine_headers_invalid"],
+      [
+        signedCall(key, "/heartbeat", beat(), { headers: { [MACHINE_REQUEST_HEADERS.nonce]: "short" } }),
+        400,
+        "machine_headers_invalid",
+      ],
     ]
     for (const [pending, status, code] of refusals) {
       const response = await pending
@@ -568,7 +617,9 @@ describe("POST /heartbeat, machine caller (v3)", () => {
     }
     const superseded = machineAuthority(enrollmentRow(key), {
       heartbeatHostEnrollmentByMachine: vi.fn(async () => {
-        throw new D1HostAccessAuthorityError("enrollment_generation_superseded", "superseded", { serving_generation: 3 })
+        throw new D1HostAccessAuthorityError("enrollment_generation_superseded", "superseded", {
+          serving_generation: 3,
+        })
       }),
     })
     const { signedCall } = await mountedRoutes(superseded)
@@ -597,7 +648,8 @@ describe("POST /heartbeat, machine caller (v3)", () => {
       clientRateLimiter: createFixedWindowConnectionRateLimiter({ limit: 1_000, windowMs: 60_000 }),
     })
     const statuses: number[] = []
-    for (let attempt = 0; attempt < 125; attempt += 1) statuses.push((await signedCall(key, "/heartbeat", beat({ acks: [] }))).status)
+    for (let attempt = 0; attempt < 125; attempt += 1)
+      statuses.push((await signedCall(key, "/heartbeat", beat({ acks: [] }))).status)
     expect(statuses.filter((status) => status === 200)).toHaveLength(120)
     expect(statuses.filter((status) => status === 429)).toHaveLength(5)
     expect(api.heartbeatHostEnrollmentByMachine).toHaveBeenCalledTimes(120)
@@ -628,7 +680,11 @@ describe("POST /heartbeat, machine caller (v3)", () => {
     const { app, api: mixedApi } = await mountedRoutes(machineAuthority(enrollmentRow(key)))
     const mixed = await app.request("http://control.test/api/claxedo/host/enrollments/heartbeat", {
       method: "POST",
-      headers: { authorization: "Bearer user_1", "content-type": "application/json", [MACHINE_REQUEST_HEADERS.enrollmentId]: "enr_1" },
+      headers: {
+        authorization: "Bearer user_1",
+        "content-type": "application/json",
+        [MACHINE_REQUEST_HEADERS.enrollmentId]: "enr_1",
+      },
       body: JSON.stringify({ hostId: "host_1", signature: "sig", workspaceIds: [] }),
     })
     expect(mixed.status).toBe(400)
@@ -645,7 +701,9 @@ describe("POST /acquire", () => {
     const response = await signedCall(key, "/acquire", { enrollmentId: "enr_1", hostId: "host_1", keyVersion: 1 })
     expect(response.status, await response.clone().text()).toBe(200)
     expect(await response.json()).toEqual({ generation: 3, generation_acquired_at: NOW })
-    expect(api.acquireHostServingGeneration).toHaveBeenCalledWith(expect.objectContaining({ enrollmentId: "enr_1", generation: 2 }))
+    expect(api.acquireHostServingGeneration).toHaveBeenCalledWith(
+      expect.objectContaining({ enrollmentId: "enr_1", generation: 2 }),
+    )
   })
 
   test("a body naming another host than the row is refused by the verifier as an invalid body", async () => {
@@ -678,10 +736,13 @@ describe("POST /redeem", () => {
         org_id: "org_1",
         key_version: 1,
         serving_generation: 0,
-        scope: { allowed_roots: ["/srv"], visibility: "owner", revision: 1 },
+        scope: { allowed_roots: ["/srv"], revision: 1 },
       })),
     })
-    const { app } = await mountedRoutes(api, { relayUrl: "https://relay.test", sessionAuthorityUrl: "https://cp.test/sa" })
+    const { app } = await mountedRoutes(api, {
+      relayUrl: "https://relay.test",
+      sessionAuthorityUrl: "https://cp.test/sa",
+    })
     const response = await app.request("http://control.test/api/claxedo/host/enrollments/redeem", {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -694,7 +755,7 @@ describe("POST /redeem", () => {
       enrollment: { enrollment_id: "enr_9", host_id: "vps-1" },
       key_version: 1,
       org_id: "org_1",
-      scope: { allowed_roots: ["/srv"], visibility: "owner", revision: 1 },
+      scope: { allowed_roots: ["/srv"], revision: 1 },
       relay: { url: "https://relay.test", jwks_url: "https://relay.test/.well-known/jwks.json" },
       authority: { session_authority_url: "https://cp.test/sa" },
     })
@@ -709,11 +770,13 @@ describe("POST /redeem", () => {
       ["invitation_host_conflict", 409, undefined],
       ["host_attestation_denied", 403, undefined],
     ] as const) {
-      const { app } = await mountedRoutes(authority({
-        redeemHostInvitation: vi.fn(async () => {
-          throw new D1HostAccessAuthorityError(code, `refused: ${code}`, details)
+      const { app } = await mountedRoutes(
+        authority({
+          redeemHostInvitation: vi.fn(async () => {
+            throw new D1HostAccessAuthorityError(code, `refused: ${code}`, details)
+          }),
         }),
-      }))
+      )
       const response = await app.request("http://control.test/api/claxedo/host/enrollments/redeem", {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -725,7 +788,11 @@ describe("POST /redeem", () => {
   })
 
   test("caps the body at 8 KiB, refuses an unknown field, and budgets 5 attempts a minute per invitation id", async () => {
-    const api = authority({ redeemHostInvitation: vi.fn(async () => { throw new D1HostAccessAuthorityError("invitation_invalid", "no") }) })
+    const api = authority({
+      redeemHostInvitation: vi.fn(async () => {
+        throw new D1HostAccessAuthorityError("invitation_invalid", "no")
+      }),
+    })
     const { app } = await mountedRoutes(api, {
       clientRateLimiter: createFixedWindowConnectionRateLimiter({ limit: 1_000, windowMs: 60_000 }),
     })
@@ -738,7 +805,8 @@ describe("POST /redeem", () => {
     expect((await post(redeemBody({ publicKey: "x".repeat(9 * 1024) }))).status).toBe(413)
     expect((await post(redeemBody({ extra: 1 }))).status).toBe(400)
     const statuses: number[] = []
-    for (let attempt = 0; attempt < 7; attempt += 1) statuses.push((await post(redeemBody({ secret: `guess-${attempt}` }))).status)
+    for (let attempt = 0; attempt < 7; attempt += 1)
+      statuses.push((await post(redeemBody({ secret: `guess-${attempt}` }))).status)
     expect(statuses).toEqual([403, 403, 403, 403, 403, 429, 429])
     expect((await post(redeemBody({ invitationId: "invitation_2" }))).status).toBe(403)
     expect(api.redeemHostInvitation).toHaveBeenCalledTimes(6)
@@ -759,25 +827,29 @@ describe("PATCH /:id/scope and GET / machines", () => {
   test("scope PATCH is an owner account call carrying the roots and visibility", async () => {
     const { api, call } = routes({
       updateHostEnrollmentScope: vi.fn(async () => ({
-        scope: { allowed_roots: ["/srv/web"], visibility: "owner", revision: 2 },
+        scope: { allowed_roots: ["/srv/web"], revision: 2 },
         retired_workspace_ids: ["ws_api"],
       })),
     })
     const response = await call("/enr_1/scope", {
       method: "PATCH",
-      body: JSON.stringify({ allowed_roots: ["/srv/web"], visibility: "owner" }),
+      body: JSON.stringify({ allowed_roots: ["/srv/web"] }),
     })
     expect(response.status, await response.clone().text()).toBe(200)
     expect(api.updateHostEnrollmentScope).toHaveBeenCalledWith(expect.anything(), {
       enrollmentId: "enr_1",
-      scope: { allowed_roots: ["/srv/web"], visibility: "owner" },
+      scope: { allowed_roots: ["/srv/web"] },
     })
     expect(await response.json()).toEqual({
-      scope: { allowed_roots: ["/srv/web"], visibility: "owner", revision: 2 },
+      scope: { allowed_roots: ["/srv/web"], revision: 2 },
       retired_workspace_ids: ["ws_api"],
     })
-    expect((await call("/enr_1/scope", { method: "PATCH", body: JSON.stringify({ visibility: "owner" }) })).status).toBe(400)
-    expect((await call("/enr_1/scope", { method: "PATCH", headers: { authorization: "" }, body: "{}" })).status).toBe(401)
+    expect(
+      (await call("/enr_1/scope", { method: "PATCH", body: JSON.stringify({ visibility: "owner" }) })).status,
+    ).toBe(400)
+    expect((await call("/enr_1/scope", { method: "PATCH", headers: { authorization: "" }, body: "{}" })).status).toBe(
+      401,
+    )
   })
 
   test("display-name PATCH carries the trimmed name, refuses an empty one, and is 503 without a renaming authority", async () => {
@@ -794,15 +866,25 @@ describe("PATCH /:id/scope and GET / machines", () => {
       displayName: "Build box",
     })
     expect(await response.json()).toEqual({ enrollment_id: "enr_1", display_name: "Build box" })
-    expect((await call("/enr_1/display-name", { method: "PATCH", body: JSON.stringify({ displayName: "" }) })).status).toBe(400)
-    expect((await call("/enr_1/display-name", { method: "PATCH", body: JSON.stringify({ name: "Build box" }) })).status).toBe(400)
-    expect((await call("/enr_1/display-name", { method: "PATCH", headers: { authorization: "" }, body: "{}" })).status).toBe(401)
+    expect(
+      (await call("/enr_1/display-name", { method: "PATCH", body: JSON.stringify({ displayName: "" }) })).status,
+    ).toBe(400)
+    expect(
+      (await call("/enr_1/display-name", { method: "PATCH", body: JSON.stringify({ name: "Build box" }) })).status,
+    ).toBe(400)
+    expect(
+      (await call("/enr_1/display-name", { method: "PATCH", headers: { authorization: "" }, body: "{}" })).status,
+    ).toBe(401)
 
     const { call: unsupported } = routes()
-    expect((await unsupported("/enr_1/display-name", {
-      method: "PATCH",
-      body: JSON.stringify({ displayName: "Build box" }),
-    })).status).toBe(503)
+    expect(
+      (
+        await unsupported("/enr_1/display-name", {
+          method: "PATCH",
+          body: JSON.stringify({ displayName: "Build box" }),
+        })
+      ).status,
+    ).toBe(503)
   })
 
   test("an unknown or foreign enrollment is 404 host_enrollment_not_found", async () => {
@@ -811,15 +893,17 @@ describe("PATCH /:id/scope and GET / machines", () => {
         throw new D1HostAccessAuthorityError("host_enrollment_not_found", "Host enrollment not found")
       }),
     })
-    const response = await call("/enr_x/scope", { method: "PATCH", body: JSON.stringify({ allowed_roots: [], visibility: "org" }) })
+    const response = await call("/enr_x/scope", { method: "PATCH", body: JSON.stringify({ allowed_roots: [] }) })
     expect(response.status).toBe(404)
-    expect(await response.json()).toEqual({ error: { code: "host_enrollment_not_found", message: "Host enrollment not found" } })
+    expect(await response.json()).toEqual({
+      error: { code: "host_enrollment_not_found", message: "Host enrollment not found" },
+    })
   })
 
   test("GET / keeps the desktop's single-row shape and adds machines, a paused one saying when", async () => {
     const machines = [
       { enrollment_id: "enr_1", host_id: "host_1", public_key_fingerprint: "fp", key_version: 1, enrolled_via: "account", last_seen_at: 1, expires_at: 9_999, serving_generation: 0, acked: [], scope: undefined },
-      { enrollment_id: "enr_2", host_id: "host_2", public_key_fingerprint: "fp2", key_version: 1, enrolled_via: "invitation", last_seen_at: 1, expires_at: 9_999, serving_generation: 1, paused_at: 7, acked: [], scope: { allowed_roots: ["/srv"], visibility: "owner", revision: 1 } },
+      { enrollment_id: "enr_2", host_id: "host_2", public_key_fingerprint: "fp2", key_version: 1, enrolled_via: "invitation", last_seen_at: 1, expires_at: 9_999, serving_generation: 1, paused_at: 7, acked: [], scope: { allowed_roots: ["/srv"], revision: 1 } },
     ]
     const { call } = routes({ listHostEnrollments: vi.fn(async () => machines) })
     const response = await call("/", { method: "GET" })
@@ -858,7 +942,13 @@ describe("POST /:id/provider-config", () => {
 
   async function pushRoutes(overrides: Record<string, unknown> = {}) {
     const key = await sealingPublicKey()
-    const target = { enrollment_id: "enr_1", host_id: "host_1", display_name: "Laptop", sealing_public_key: key, next_revision: 4 }
+    const target = {
+      enrollment_id: "enr_1",
+      host_id: "host_1",
+      display_name: "Laptop",
+      sealing_public_key: key,
+      next_revision: 4,
+    }
     const built = routes({ hostProviderConfigTarget: vi.fn(async () => target), ...overrides })
     return { ...built, key }
   }
@@ -961,13 +1051,18 @@ describe("POST /:id/provider-config", () => {
     const response = await post("/enr_theirs/provider-config", { providers })
 
     expect(response.status).toBe(404)
-    expect(await response.json()).toEqual({ error: { code: "host_enrollment_not_found", message: "Host enrollment not found" } })
+    expect(await response.json()).toEqual({
+      error: { code: "host_enrollment_not_found", message: "Host enrollment not found" },
+    })
     expect(api.pushHostProviderConfig).not.toHaveBeenCalled()
     expect(api.auditAllow).not.toHaveBeenCalled()
   })
 
   test("the adapter's refusal of a moved revision or a replaced key reaches the caller with its code, unaudited", async () => {
-    const refusals = [["host_provider_config_revision_stale", 409], ["host_sealing_key_undeclared", 409]] as const
+    const refusals = [
+      ["host_provider_config_revision_stale", 409],
+      ["host_sealing_key_undeclared", 409],
+    ] as const
     for (const [code, status] of refusals) {
       const { api, post } = await pushRoutes({
         pushHostProviderConfig: vi.fn(async () => {
@@ -983,9 +1078,13 @@ describe("POST /:id/provider-config", () => {
 
   test("requires a signed owner, caps the body at 32 KiB, and is 503 without a provider-config authority", async () => {
     const { api, call, post } = await pushRoutes()
-    expect((await call("/enr_1/provider-config", { method: "POST", headers: { authorization: "" }, body: "{}" })).status).toBe(401)
+    expect(
+      (await call("/enr_1/provider-config", { method: "POST", headers: { authorization: "" }, body: "{}" })).status,
+    ).toBe(401)
     const huge = await post("/enr_1/provider-config", {
-      providers: { openai: { baseUrl: "https://api.openai.com", placeholder: "x".repeat(33 * 1024), authMode: "bearer" } },
+      providers: {
+        openai: { baseUrl: "https://api.openai.com", placeholder: "x".repeat(33 * 1024), authMode: "bearer" },
+      },
     })
     expect(huge.status).toBe(413)
     expect(api.hostProviderConfigTarget).not.toHaveBeenCalled()
@@ -999,7 +1098,7 @@ describe("host invitations", () => {
   function invitationRoutes(overrides: Record<string, unknown> = {}) {
     const api = authority({
       createHostInvitation: vi.fn(async () => ({ invitationId: "invitation_1", token: "chx_inv_1.invitation_1.secret", expiresAt: 9_999 })),
-      listHostInvitations: vi.fn(async () => [{ invitation_id: "invitation_1", scope: { allowed_roots: ["/srv"], visibility: "owner" }, org_id: "org_1", created_at: 1, expires_at: 9_999 }]),
+      listHostInvitations: vi.fn(async () => [{ invitation_id: "invitation_1", scope: { allowed_roots: ["/srv"] }, org_id: "org_1", created_at: 1, expires_at: 9_999 }]),
       revokeHostInvitation: vi.fn(async () => ({ revoked: true })),
       ...overrides,
     })
@@ -1007,7 +1106,11 @@ describe("host invitations", () => {
     const app = HostInvitationRoutes(services, { authConfig, verifier } as never)
     const call = (path: string, init: RequestInit = {}) =>
       app.request(`http://control.test${path}`, {
-        headers: { authorization: "Bearer user_1", "content-type": "application/json", ...Object.fromEntries(new Headers(init.headers)) },
+        headers: {
+          authorization: "Bearer user_1",
+          "content-type": "application/json",
+          ...Object.fromEntries(new Headers(init.headers)),
+        },
         ...init,
       })
     return { api, call }
@@ -1017,42 +1120,57 @@ describe("host invitations", () => {
     const { api, call } = invitationRoutes()
     const response = await call("/", {
       method: "POST",
-      body: JSON.stringify({ scope: { allowed_roots: ["/srv"], visibility: "owner" }, displayName: "VPS", expiresInMs: 600_000 }),
+      body: JSON.stringify({ scope: { allowed_roots: ["/srv"] }, displayName: "VPS", expiresInMs: 600_000 }),
     })
     expect(response.status, await response.clone().text()).toBe(200)
     expect(api.createHostInvitation).toHaveBeenCalledWith(expect.anything(), {
-      scope: { allowed_roots: ["/srv"], visibility: "owner" },
+      scope: { allowed_roots: ["/srv"] },
       displayName: "VPS",
       expiresInMs: 600_000,
     })
-    expect(await response.json()).toEqual({ invitation_id: "invitation_1", token: "chx_inv_1.invitation_1.secret", expires_at: 9_999 })
+    expect(await response.json()).toEqual({
+      invitation_id: "invitation_1",
+      token: "chx_inv_1.invitation_1.secret",
+      expires_at: 9_999,
+    })
     expect(api.auditAllow).toHaveBeenCalledWith(expect.anything(), {
       action: "host_invitation.created",
       metadata: { invitationId: "invitation_1", expiresAt: 9_999 },
     })
-    expect((await call("/", { method: "POST", body: JSON.stringify({ scope: { allowed_roots: ["/srv"] } }) })).status).toBe(400)
+    expect((await call("/", { method: "POST", body: JSON.stringify({ scope: { allowed_roots: ["/srv"], visibility: "org" } }) })).status).toBe(400)
   })
 
   test("lists and revokes the owner's invitations, auditing a revocation that happened", async () => {
     const { api, call } = invitationRoutes()
     expect(await (await call("/", { method: "GET" })).json()).toEqual({
-      invitations: [{ invitation_id: "invitation_1", scope: { allowed_roots: ["/srv"], visibility: "owner" }, org_id: "org_1", created_at: 1, expires_at: 9_999 }],
+      invitations: [{ invitation_id: "invitation_1", scope: { allowed_roots: ["/srv"] }, org_id: "org_1", created_at: 1, expires_at: 9_999 }],
     })
     const revoked = await call("/invitation_1", { method: "DELETE" })
     expect(await revoked.json()).toEqual({ revoked: true })
     expect(api.revokeHostInvitation).toHaveBeenCalledWith(expect.anything(), { invitationId: "invitation_1" })
-    expect(api.auditAllow).toHaveBeenCalledWith(expect.anything(), { action: "host_invitation.revoked", metadata: { invitationId: "invitation_1" } })
+    expect(api.auditAllow).toHaveBeenCalledWith(expect.anything(), {
+      action: "host_invitation.revoked",
+      metadata: { invitationId: "invitation_1" },
+    })
   })
 
   test("every invitation route requires a signed account, and creation shares the ten-a-minute row budget", async () => {
     const { api, call } = invitationRoutes()
-    for (const [path, method] of [["/", "POST"], ["/", "GET"], ["/invitation_1", "DELETE"]] as const) {
-      const response = await call(path, { method, headers: { authorization: "" }, ...(method === "POST" ? { body: "{}" } : {}) })
+    for (const [path, method] of [
+      ["/", "POST"],
+      ["/", "GET"],
+      ["/invitation_1", "DELETE"],
+    ] as const) {
+      const response = await call(path, {
+        method,
+        headers: { authorization: "" },
+        ...(method === "POST" ? { body: "{}" } : {}),
+      })
       expect(response.status, `${method} ${path}`).toBe(401)
     }
     const statuses: number[] = []
     for (let attempt = 0; attempt < 12; attempt += 1) {
-      statuses.push((await call("/", { method: "POST", body: JSON.stringify({ scope: { allowed_roots: [], visibility: "org" } }) })).status)
+      statuses.push((await call("/", { method: "POST", body: JSON.stringify({ scope: { allowed_roots: [] } }) })).status)
     }
     expect(statuses.filter((status) => status === 200)).toHaveLength(10)
     expect(statuses.filter((status) => status === 429)).toHaveLength(2)
@@ -1065,25 +1183,36 @@ async function mountedRoutes(api: ReturnType<typeof authority>, routeOptions: Re
   const { Hono } = await import("hono")
   const services = { authority: api } as unknown as ControlPlaneServices
   const app = new Hono()
-  app.route("/api/claxedo/host/enrollments", HostEnrollmentRoutes(services, { authConfig, verifier, now: () => NOW, ...routeOptions } as never))
+  app.route(
+    "/api/claxedo/host/enrollments",
+    HostEnrollmentRoutes(services, { authConfig, verifier, now: () => NOW, ...routeOptions } as never),
+  )
   const signedCall = async (
     key: Awaited<ReturnType<typeof machineKey>>,
     path: string,
     body: unknown,
-    options: { enrollmentId?: string; ts?: number; nonce?: string; headers?: Record<string, string>; tamper?: (text: string) => string } = {},
+    options: {
+      enrollmentId?: string
+      ts?: number
+      nonce?: string
+      headers?: Record<string, string>
+      tamper?: (text: string) => string
+    } = {},
   ) => {
     const enrollmentId = options.enrollmentId ?? "enr_1"
     const ts = options.ts ?? NOW
     const nonce = options.nonce ?? `nonce_${Math.random().toString(36).slice(2).padEnd(16, "x")}`
     const bodyText = JSON.stringify(body)
-    const signature = await key.sign(machineRequestPayload({
-      method: "POST",
-      pathname: `/api/claxedo/host/enrollments${path}`,
-      bodySha256Hex: await sha256Hex(bodyText),
-      ts,
-      nonce,
-      enrollmentId,
-    }))
+    const signature = await key.sign(
+      machineRequestPayload({
+        method: "POST",
+        pathname: `/api/claxedo/host/enrollments${path}`,
+        bodySha256Hex: await sha256Hex(bodyText),
+        ts,
+        nonce,
+        enrollmentId,
+      }),
+    )
     return app.request(`http://control.test/api/claxedo/host/enrollments${path}`, {
       method: "POST",
       headers: {

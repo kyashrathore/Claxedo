@@ -194,8 +194,8 @@ describe("two-user signed app transport", () => {
         user.token,
         "/api/control/sessions/ses_signed_private/messages?workspaceId=ws_signed_private",
       )
-      expect(messages.status).toBe(200)
-      await expect(messages.json()).resolves.toMatchObject({ allowed: false, messages: [] })
+      expect(messages.status).toBe(404)
+      await expect(messages.json()).resolves.toMatchObject({ error: { code: "SESSION_NOT_FOUND" } })
     }
 
     const shared = await signedRequest(alice.token, "/api/control/sessions/ses_signed_private/shares", {
@@ -326,15 +326,15 @@ describe("two-user signed app transport", () => {
     expect(JSON.stringify(projected)).not.toContain(aliceProfile.actor_id)
     expect(JSON.stringify(projected)).not.toContain(bobProfile.actor_id)
 
-    await authority.recordRuntimeAccessToken(bobAuth, {
+    await expect(authority.recordRuntimeAccessToken(bobAuth, {
       jti: "jti_signed_bob",
       workspaceId: "ws_signed_private",
       hostId: "host_signed",
       actorId: bobProfile.actor_id,
       actorKind: "human",
-      role: "editor",
+      role: "viewer",
       expiresAt: Date.now() + 60_000,
-    })
+    })).rejects.toMatchObject({ status: 403 })
     const revokedShare = await signedRequest(alice.token, "/api/control/sessions/ses_signed_private/shares", {
       method: "DELETE",
       body: JSON.stringify({
@@ -347,17 +347,12 @@ describe("two-user signed app transport", () => {
       revoked: true,
       runtime_tokens_revoked: expect.any(Number),
     })
-    await expect(authority.runtimeAccessTokenActive({
-      jti: "jti_signed_bob",
-      workspaceId: "ws_signed_private",
-      hostId: "host_signed",
-    })).resolves.toMatchObject({ active: false, code: "runtime_access_token_revoked" })
-
     const afterRemoval = await signedRequest(
       bob.token,
       "/api/control/sessions/ses_signed_private/messages?workspaceId=ws_signed_private",
     )
-    await expect(afterRemoval.json()).resolves.toMatchObject({ allowed: false, messages: [] })
+    expect(afterRemoval.status).toBe(404)
+    await expect(afterRemoval.json()).resolves.toMatchObject({ error: { code: "SESSION_NOT_FOUND" } })
   })
 })
 

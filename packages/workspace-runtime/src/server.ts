@@ -6,7 +6,6 @@ import { serve } from "@hono/node-server"
 import { createNodeWebSocket } from "@hono/node-ws"
 import type { UpgradeWebSocket } from "hono/ws"
 import { Pty } from "./pty/index"
-import * as ProcessManager from "./managed-processes/manager"
 import { withWorkspaceTarget, workspaceDir, workspaceId, type WorkspaceTarget } from "./target"
 import { WorkspaceWorktreeManager } from "./worktree"
 import { createWorkspaceHost, type WorkspaceHostOptions } from "./workspace"
@@ -15,7 +14,6 @@ import { createRelayHostAuthMiddleware, type RelayHostAuthOptions } from "./work
 import { startWorkspaceRelayHostTunnel, type WorkspaceRelayHostTunnelOptions } from "./workspace-relay-host-tunnel"
 import { ConfigRoutes } from "./routes/config"
 import { RuntimeDocumentHydrationRoutes } from "./routes/document-hydration"
-import { LocalDocumentBrokerRoutes } from "./routes/local-document-broker"
 import {
   mountRouteContributions,
   type WorkspaceRuntimeRouteContribution,
@@ -33,8 +31,6 @@ import {
   type WorkspaceRuntimeExposure,
 } from "./exposure"
 import { runtimeEnvText, workspaceRuntimeEpoch, workspaceRuntimeStoreDir } from "./env"
-import { retainedWorkspaceRuntimeInternalSecrets, type WorkspaceRuntimeInternalSecrets } from "./internal-secrets"
-import type { ProcessObserver } from "./managed-processes/process-observer"
 import type { WorkspaceEventParents } from "./routes/events"
 import { managedWorkspaceSessionAccessPolicy, sessionAccessContext, sessionAccessDenied, type SessionAccessPolicy } from "./session-access-policy"
 import { remoteWorkspaceSessionAccessPolicyFromEnv } from "./remote-session-authority"
@@ -57,13 +53,10 @@ export type WorkspaceRuntimeServiceExposure = {
   source: "loopback" | "driver-service-url"
   access: "private" | "public" | "driver-authenticated" | "unknown"
   driver?: string
-  fallbackAccess?: "private" | "public" | "driver-authenticated" | "unknown"
   note?: string
 }
 
 export type WorkspaceRuntimeServerOptions = {
-  /** Optional local owner observer. Remote/relay compositions omit it. */
-  processObserver?: ProcessObserver
   onTurnOutcome?: WorkspaceHostOptions["onTurnOutcome"]
   onPresentationEvent?: WorkspaceHostOptions["onPresentationEvent"]
   onRuntimeEvent?: WorkspaceHostOptions["onRuntimeEvent"]
@@ -116,8 +109,6 @@ export type WorkspaceRuntimeServerOptions = {
    * rather than of a runtime flag.
    */
   routeContributions?: readonly WorkspaceRuntimeRouteContribution[]
-  /** Process-retained authority. It is never projected into a Session or child environment. */
-  internalSecrets?: WorkspaceRuntimeInternalSecrets
   /**
    * The first-party MCP entry injected into every session this runtime
    * launches: the loopback origin of the process serving
@@ -249,7 +240,6 @@ type ServiceExposureEnv = {
   WORKSPACE_RUNTIME_SERVICE_EXPOSURE_SOURCE?: string | undefined
   WORKSPACE_RUNTIME_SERVICE_EXPOSURE_ACCESS?: string | undefined
   WORKSPACE_RUNTIME_SERVICE_EXPOSURE_DRIVER?: string | undefined
-  WORKSPACE_RUNTIME_SERVICE_EXPOSURE_FALLBACK_ACCESS?: string | undefined
   WORKSPACE_RUNTIME_SERVICE_EXPOSURE_NOTE?: string | undefined
 }
 
@@ -262,7 +252,6 @@ function serviceExposureAccess(input: string | undefined) {
 
 export function workspaceRuntimeServiceExposureFromEnv(env: ServiceExposureEnv = process.env): WorkspaceRuntimeServiceExposure {
   const access = serviceExposureAccess(runtimeEnvText(env, "WORKSPACE_RUNTIME_SERVICE_EXPOSURE_ACCESS"))
-  const fallbackAccess = serviceExposureAccess(runtimeEnvText(env, "WORKSPACE_RUNTIME_SERVICE_EXPOSURE_FALLBACK_ACCESS"))
   const driver = runtimeEnvText(env, "WORKSPACE_RUNTIME_SERVICE_EXPOSURE_DRIVER")
   const note = runtimeEnvText(env, "WORKSPACE_RUNTIME_SERVICE_EXPOSURE_NOTE")
   const source = runtimeEnvText(env, "WORKSPACE_RUNTIME_SERVICE_EXPOSURE_SOURCE") === "driver-service-url"
@@ -272,7 +261,6 @@ export function workspaceRuntimeServiceExposureFromEnv(env: ServiceExposureEnv =
     source,
     access: access ?? (source === "loopback" ? "private" : "unknown"),
     ...(driver ? { driver } : {}),
-    ...(fallbackAccess ? { fallbackAccess } : {}),
     ...(note ? { note } : {}),
   }
 }
@@ -300,12 +288,10 @@ export async function waitForWorkspaceRuntimeServerPort(
 type WorkspaceRuntimeDrainOptions = {
   server: { close(): unknown }
   runtime: { host: { dispose(): unknown } }
-  directory: string
   drainTimeoutMs: number
   // Draining only closes the tunnel, so it asks for no more than that —
   // matching `server` above. A full `WorkspaceRelayHostTunnel` satisfies it.
   hostTunnel?: { close(): unknown }
-  processDispose?: (directory: string) => Promise<void>
   ptyDispose?: () => Promise<void>
   hostDrain?: () => Promise<void> | void
 }
@@ -329,7 +315,6 @@ export async function drainWorkspaceRuntime(options: WorkspaceRuntimeDrainOption
     await Promise.race([
       (async () => {
         const errors: unknown[] = []
-        await drainStep(errors, () => (options.processDispose ?? ProcessManager.dispose)(options.directory))
         await drainStep(errors, () => (options.ptyDispose ?? Pty.dispose)())
         await drainStep(errors, () => options.runtime.host.dispose())
         await drainStep(errors, () => options.hostDrain?.())
@@ -400,8 +385,6 @@ function runtimeProbe(host: Host, options: WorkspaceRuntimeServerOptions) {
 }
 
 async function runtimeLiveness(host: Host, options: WorkspaceRuntimeServerOptions, sessionId?: string) {
-  const dir = options.target?.directory ?? workspaceDir()
-  const rows = ProcessManager.list(dir)
   const detail = host.detail()
   const harnessHealth = sessionId
     ? await host.readHarnessHealth({
@@ -420,8 +403,6 @@ async function runtimeLiveness(host: Host, options: WorkspaceRuntimeServerOption
     exposure: options.exposure ? { kind: exposureBoundaryName(options.exposure) } : undefined,
     workspaceId: options.target?.workspaceId ?? workspaceId(),
     ptyCount: Pty.list().length,
-    processCount: rows.length,
-    activeProcessCount: rows.filter((item) => item.status !== "idle" && item.status !== "stopped").length,
   })
 }
 
@@ -431,14 +412,12 @@ function trustedAgentHookCallback(input: { token: string; path: string; method: 
 }
 
 export function createWorkspaceRuntimeApp(options: WorkspaceRuntimeServerOptions): WorkspaceRuntimeApp {
-  const internalSecrets = options.internalSecrets ?? retainedWorkspaceRuntimeInternalSecrets()
   assertWorkspaceRuntimeExposure({
     exposure: options.exposure,
     hostname: workspaceRuntimeListenHostname(),
     isLoopbackHostname,
     env: process.env,
   })
-  if (options.target) ProcessManager.bindProcessObserver(options.target.directory, options.processObserver)
   // One policy for every surface this app mounts. A loopback or embedded
   // runtime is reached only through its own process boundary and carries the
   // unbound local flavour; any other exposure answers a remote caller and
@@ -462,7 +441,6 @@ export function createWorkspaceRuntimeApp(options: WorkspaceRuntimeServerOptions
     ...(options.beforeHarnessAcquire ? { beforeHarnessAcquire: options.beforeHarnessAcquire } : {}),
     ...(options.onActivityChange ? { onActivityChange: options.onActivityChange } : {}),
     ...(options.configApplyReceiptDir ? { configApplyReceiptDir: options.configApplyReceiptDir } : {}),
-    ...(options.processObserver ? { processObserver: options.processObserver } : {}),
     ...(options.onTurnOutcome ? { onTurnOutcome: options.onTurnOutcome } : {}),
     ...(options.onPresentationEvent ? { onPresentationEvent: options.onPresentationEvent } : {}),
     ...(options.onRuntimeEvent ? { onRuntimeEvent: options.onRuntimeEvent } : {}),
@@ -475,9 +453,10 @@ export function createWorkspaceRuntimeApp(options: WorkspaceRuntimeServerOptions
       ? new WorkspaceWorktreeManager({
         workspaceId: options.target.workspaceId,
         sourceDirectory: options.target.directory,
-        ...(options.storeRoot ? { storeRoot: options.storeRoot } : {}),
+        store: host.store,
       })
     : undefined
+  if (worktrees) host.whenStoreOpens(() => worktrees.serveActive())
 
   const app = new Hono()
 
@@ -583,6 +562,8 @@ export function createWorkspaceRuntimeApp(options: WorkspaceRuntimeServerOptions
     ...(options.managementAuth ? { managementAuth: options.managementAuth } : {}),
     ...(options.managementTarget ? { managementTarget: options.managementTarget } : {}),
   }))
+  app.use(`${WorkspaceRuntimeRoutes.checkpoint}/*`, host.storeAdmission)
+  if (worktrees) app.use(`${WorkspaceRuntimeRoutes.worktrees}/*`, host.storeAdmission)
   if (worktrees) {
     app.route(
       WorkspaceRuntimeRoutes.worktrees,
@@ -600,21 +581,10 @@ export function createWorkspaceRuntimeApp(options: WorkspaceRuntimeServerOptions
   // execution itself is only reachable through each Session's nonce-bound
   // loopback callback, which supplies the canonical Session identity.
   app.route("/", RuntimeDocumentHydrationRoutes({
-    trustedTransport: options.exposure?.kind === "relay",
+    ...(options.exposure?.kind === "relay" ? { workspaceId: options.exposure.auth.workspaceId } : {}),
     sessionAccessPolicy,
     ...(process.env.CLAXEDO_CONTROL_PLANE_URL ? { controlPlaneOrigin: process.env.CLAXEDO_CONTROL_PLANE_URL } : {}),
   }))
-  if (options.exposure?.kind === "relay") {
-    app.route("/", LocalDocumentBrokerRoutes({
-      trustedTransport: true,
-      ...(internalSecrets.localDocumentBrokerToken
-        ? { installationToken: internalSecrets.localDocumentBrokerToken }
-        : {}),
-      ...(process.env.CLAXEDO_LOCAL_CONTROL_PLANE_URL
-        ? { localControlPlaneUrl: process.env.CLAXEDO_LOCAL_CONTROL_PLANE_URL }
-        : {}),
-    }))
-  }
   type SessionToolRegistration = Parameters<typeof host.registerSessionTools>[0]
   const sessionToolGroups = new Map<string, Map<string, SessionToolRegistration>>()
   const dispatchSessionTool = async (url: string, call: { sessionID: string; name: string; toolCallID: string; input: unknown }) => {
@@ -693,13 +663,6 @@ export function createWorkspaceRuntimeApp(options: WorkspaceRuntimeServerOptions
   const dispose = () => {
     if (!cleaned) {
       cleaned = true
-      if (options.target && options.processObserver) {
-        options.processObserver.detachWorkspace(options.target.workspaceId)
-        if (options.target.directory !== options.target.workspaceId) {
-          options.processObserver.detachWorkspace(options.target.directory)
-        }
-        ProcessManager.bindProcessObserver(options.target.directory)
-      }
       routeContributions.dispose()
       worktrees?.close()
     }
@@ -733,7 +696,6 @@ export function startServer(
   options: WorkspaceRuntimeServerOptions,
   lifecycle: WorkspaceRuntimeLifecycleOptions = {},
 ) {
-  const internalSecrets = options.internalSecrets ?? retainedWorkspaceRuntimeInternalSecrets()
   const hostname = workspaceRuntimeListenHostname()
   assertWorkspaceRuntimeExposure({
     exposure: options.exposure,
@@ -742,7 +704,7 @@ export function startServer(
     env: process.env,
   })
   assertWorkspaceRuntimeListenPolicy(options, hostname)
-  const runtime = createWorkspaceRuntimeApp({ ...options, internalSecrets })
+  const runtime = createWorkspaceRuntimeApp(options)
 
   const server = serve({
     fetch: runtime.app.fetch,
@@ -762,13 +724,12 @@ export function startServer(
     drainTimeoutMs: () => Number(runtimeEnvText(process.env, "WORKSPACE_RUNTIME_DRAIN_TIMEOUT_MS") ?? 10_000),
     drain: (drainTimeoutMs) =>
       // Stop accepting work, detach external routing, stop heartbeats,
-      // then clean up workspace-owned processes, PTYs, and adapter state.
+      // then clean up workspace-owned PTYs and adapter state.
       // Race with the drain timeout so a hung cleanup cannot strand the
       // process during supervisor shutdown or fatal-error restart.
       drainWorkspaceRuntime({
         server,
         runtime,
-        directory: options.target?.directory ?? workspaceDir(),
         drainTimeoutMs,
         ...(hostTunnel ? { hostTunnel } : {}),
         ...(options.onDrain ? { hostDrain: options.onDrain } : {}),

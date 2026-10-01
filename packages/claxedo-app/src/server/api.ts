@@ -273,4 +273,5 @@ export type Server = {
   readonly attachPlacement: (ref: SessionRef) => () => void
   readonly request: (path: string, init?: RequestInit) => Promise<Response>
   readonly operation: (name: string, input: unknown) => Promise<unknown>
+  readonly acceptOrgInvitation: (token: string) => Promise<unknown>
 }

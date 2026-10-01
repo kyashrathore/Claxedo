@@ -5,7 +5,7 @@ import { toAppError, useServer, type HostedAccountSources } from "@/server"
 import { RadioGroup, RadioItem, showToast } from "@/ui"
 import { useAccountsText } from "../i18n"
 
-const SOURCE_KEY = { own: "settings.providers.accountSource.own", team: "settings.providers.accountSource.team" } as const
+const SOURCE_KEY = { own: "settings.providers.accountSource.own", org: "settings.providers.accountSource.org" } as const
 
 export function createHostedAccountSources(harness: () => string) {
   const server = useServer()
@@ -27,8 +27,8 @@ export function createHostedAccountSources(harness: () => string) {
   return {
     error: () => (enabled() && query.error ? toAppError(query.error).message : undefined),
     source: (providerId: string): AccountSource => sources()?.sources.get(providerId) ?? "own",
-    teamHeld: (providerId: string) => sources()?.team.has(providerId) === true,
-    offered: (providerId: string) => sources() !== undefined && (sources()?.team.has(providerId) === true || sources()?.sources.get(providerId) === "team"),
+    orgHeld: (providerId: string) => sources()?.org.has(providerId) === true,
+    offered: (providerId: string) => sources() !== undefined && (sources()?.org.has(providerId) === true || sources()?.sources.get(providerId) === "org"),
     writing,
     choose: (providerId: string, source: AccountSource) => void choose(providerId, source),
   }
@@ -54,7 +54,7 @@ export function HostedAccountSourceChoice(props: { readonly providerId: string; 
         >
           <For each={ACCOUNT_SOURCES}>{(option) => <RadioItem value={option} label={t(SOURCE_KEY[option])} />}</For>
         </RadioGroup>
-        <Show when={source() === "team" && !props.sources.teamHeld(props.providerId)}>
+        <Show when={source() === "org" && !props.sources.orgHeld(props.providerId)}>
           <p class="text-12-regular text-text-weak" role="alert">
             {t("settings.providers.accountSource.unavailable", { name: props.providerName })}
           </p>

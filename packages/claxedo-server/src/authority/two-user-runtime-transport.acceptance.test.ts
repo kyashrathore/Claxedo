@@ -367,19 +367,16 @@ describe("two-user signed runtime transport acceptance", () => {
     expect(created.status, await created.clone().text()).toBe(201)
     await expect(created.json()).resolves.toMatchObject({ id: "ses_runtime_private", title: "Private signed runtime" })
 
-    const participant = await signedRequest(alice.token, "/api/control/sessions/ses_runtime_private/participants", {
+    const shared = await signedRequest(alice.token, "/api/control/sessions/ses_runtime_private/shares", {
       method: "POST",
       body: JSON.stringify({
         workspaceId: "ws_runtime_private",
-        participantActorId: bobIdentity.actor_id,
+        grantedToTokenIdentifier: bobIdentity.token_identifier,
+        level: "send",
       }),
     })
-    expect(participant.status).toBe(200)
+    expect(shared.status).toBe(200)
 
-    // Bob participates in Alice's session and holds a reservation of his own.
-    // Neither lets a create name her id: the reservation says which session it
-    // may bring into being, and the runtime asks before it configures, renames
-    // or rolls anything back.
     const bobReserved = await signedRequest(bob.token, "/api/control/session-registrations/reserve", {
       method: "POST",
       body: JSON.stringify({
@@ -494,7 +491,7 @@ describe("two-user signed runtime transport acceptance", () => {
     const bobWide = await connect(runtimeApp, bobRht, undefined, "workspace")
     const caseyWide = await connect(runtimeApp, caseyRht, undefined, "workspace")
     await new Promise((resolve) => setTimeout(resolve, 1_500))
-    sessionBus.publish({ type: "process.status", directory: workspaceDirectory, configId: "workspace-process", status: "running" })
+    sessionBus.publish({ type: "pty.created", info: { id: "workspace-terminal", title: "t", command: "sh", args: [], cwd: workspaceDirectory, status: "running", pid: 1 } })
     sessionBus.publish({
       type: "session.lifecycle",
       phase: "created",
@@ -503,12 +500,12 @@ describe("two-user signed runtime transport acceptance", () => {
       info: { id: "ses_runtime_private", title: "wide-private" },
       ts: 1,
     })
-    const widePayload = (frame: { data: Record<string, unknown> }) => frame.data.payload as { type?: string; configId?: string; info?: { title?: string } } | undefined
+    const widePayload = (frame: { data: Record<string, unknown> }) => frame.data.payload as { type?: string; info?: { id?: string; title?: string } } | undefined
     const aliceWideFrames = await aliceWide.until((frames) => frames.some((frame) => widePayload(frame)?.info?.title === "wide-private"))
-    expect(aliceWideFrames.some((frame) => widePayload(frame)?.configId === "workspace-process")).toBe(true)
+    expect(aliceWideFrames.some((frame) => widePayload(frame)?.info?.id === "workspace-terminal")).toBe(true)
     const bobWideFrames = await bobWide.until((frames) => frames.some((frame) => widePayload(frame)?.info?.title === "wide-private"))
-    expect(bobWideFrames.some((frame) => widePayload(frame)?.configId === "workspace-process")).toBe(true)
-    const caseyWideFrames = await caseyWide.until((frames) => frames.some((frame) => widePayload(frame)?.configId === "workspace-process"))
+    expect(bobWideFrames.some((frame) => widePayload(frame)?.info?.id === "workspace-terminal")).toBe(true)
+    const caseyWideFrames = await caseyWide.until((frames) => frames.some((frame) => widePayload(frame)?.info?.id === "workspace-terminal"))
     const caseyLater = await caseyWide.observe(300)
     expect([...caseyWideFrames, ...caseyLater].some((frame) => widePayload(frame)?.info?.title === "wide-private")).toBe(false)
     aliceWide.close()
@@ -533,7 +530,7 @@ describe("two-user signed runtime transport acceptance", () => {
       info: { id: "ses_runtime_private", title: "live-private" },
       ts: 1,
     })
-    sessionBus.publish({ type: "process.status", directory: workspaceDirectory, configId: "public-process", status: "running" })
+    sessionBus.publish({ type: "pty.created", info: { id: "public-terminal", title: "t", command: "sh", args: [], cwd: workspaceDirectory, status: "running", pid: 1 } })
     const control = (frame: { data: Record<string, unknown> }) => frame.data.payload as { info?: { title?: string }; sessionID?: string } | undefined
     const bobLiveFrames = await bobLive.until((frames) => frames.some((frame) => control(frame)?.info?.title === "live-private"))
     const bobCursor = bobLiveFrames.findLast((frame) => frame.id)?.id
@@ -556,15 +553,15 @@ describe("two-user signed runtime transport acceptance", () => {
     const replay = await bobReconnect.until((frames) => frames.some((frame) => control(frame)?.info?.title === "during-reconnect-gap"))
     expect(replay.some((frame) => control(frame)?.sessionID === "ses_runtime_private")).toBe(true)
 
-    const removed = await signedRequest(alice.token, "/api/control/sessions/ses_runtime_private/participants", {
+    const removed = await signedRequest(alice.token, "/api/control/sessions/ses_runtime_private/shares", {
       method: "DELETE",
       body: JSON.stringify({
         workspaceId: "ws_runtime_private",
-        participantActorId: bobIdentity.actor_id,
+        grantedToTokenIdentifier: bobIdentity.token_identifier,
       }),
     })
     expect(removed.status).toBe(200)
-    await expect(removed.json()).resolves.toMatchObject({ removed: true })
+    await expect(removed.json()).resolves.toMatchObject({ revoked: true })
     await expect(authority.runtimeAccessTokenActive({
       jti: "jti_runtime_bob",
       workspaceId: "ws_runtime_private",

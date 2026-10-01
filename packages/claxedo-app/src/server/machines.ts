@@ -1,3 +1,5 @@
+import { isNonBlankString } from "@claxedo/helpers/guards"
+import { readField } from "@claxedo/helpers/readers"
 import { fetchQuery } from "./fetch-query"
 import { machineId } from "./ids"
 import { queryKeys } from "./query-keys"
@@ -11,6 +13,8 @@ const MACHINE_ONLINE_WINDOW_MS = 120_000
 const DEVICES_PATH = "/api/claxedo/remote-access/devices"
 
 type DeviceRow = { readonly host_id: string; readonly display_name: string; readonly last_seen_at: number }
+
+type MachineReport = () => Promise<unknown>
 
 function isDeviceRow(value: unknown): value is DeviceRow {
   const row = value as Partial<DeviceRow> | null
@@ -36,16 +40,29 @@ export function thisMachine(declaration: BootstrapDeclaration, loopback: boolean
   return { id: thisMachineId(declaration), name: "This machine", online: true, isThisMachine: true, enrolled: declaration.enrollmentId !== undefined }
 }
 
-async function loadMachines(transport: Transport, workspaces: Workspaces): Promise<readonly Machine[]> {
+function reportedMachineName(report: unknown): string | undefined {
+  const name = readField(report, "displayName")
+  return isNonBlankString(name) ? name.trim() : undefined
+}
+
+async function namedByReport(machine: Machine, report: MachineReport | undefined): Promise<Machine> {
+  const name = report ? reportedMachineName(await report()) : undefined
+  return name ? { ...machine, name } : machine
+}
+
+async function loadMachines(transport: Transport, workspaces: Workspaces, report: MachineReport | undefined): Promise<readonly Machine[]> {
   const { declaration } = await workspaces.load()
-  if (!declaration.issuesSessions) return [thisMachine(declaration, transport.loopback) ?? []].flat()
+  if (!declaration.issuesSessions) {
+    const machine = thisMachine(declaration, transport.loopback)
+    return machine ? [await namedByReport(machine, report)] : []
+  }
   const body = await transport.json<{ devices?: unknown }>(DEVICES_PATH)
   const now = Date.now()
   return (Array.isArray(body.devices) ? body.devices : []).filter(isDeviceRow).map((row) => machineFromDevice(row, declaration.enrollmentId, now))
 }
 
-export function machineQueries(transport: Transport, workspaces: Workspaces) {
+export function machineQueries(transport: Transport, workspaces: Workspaces, report?: MachineReport) {
   return {
-    list: (): FetchQuery<readonly Machine[]> => fetchQuery(queryKeys.machines(transport.serverUrl), () => loadMachines(transport, workspaces)),
+    list: (): FetchQuery<readonly Machine[]> => fetchQuery(queryKeys.machines(transport.serverUrl), () => loadMachines(transport, workspaces, report)),
   }
 }

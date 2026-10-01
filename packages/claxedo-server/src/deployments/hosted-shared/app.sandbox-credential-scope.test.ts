@@ -4,7 +4,6 @@ import { exportPKCS8, exportSPKI, generateKeyPair } from "jose"
 import type { D1Database } from "@cloudflare/workers-types"
 import { bearerToken } from "@claxedo/server-core/platform/auth/auth"
 import { AuthenticationError, type RequestAuthenticationAdapter } from "@claxedo/server-core/platform/auth/authentication"
-import { createInMemoryCliSessionTokenRegistry } from "@claxedo/server-core/platform/auth/cli-session-registry"
 import { hostTunnelTokenVerifier, runtimeAccessTokenSigner } from "@claxedo/server-core/platform/auth/runtime-access-token"
 import type { ControlPlaneRouteContribution } from "@claxedo/server-core/platform/http/route-contribution"
 import { createRuntimeCredentialIssuer } from "@claxedo/workspace-runtime"
@@ -18,9 +17,6 @@ import type { ControlPlaneServices } from "../../authority/services"
 import { miniflareControlPlaneDatabase, type ControlPlaneDatabase } from "../../test-support/control-plane-migrations"
 import { testRequestAuthenticationAdapter } from "../../test-support/request-authentication"
 import { createHostedTasksComposition } from "../../tasks/hosted-composition"
-import { accountAgentSettingsRouteContribution } from "../../routes/account-agent-settings"
-import { d1AgentSettings } from "../../authority/adapters/d1/agent-settings"
-import { signedOrError } from "../../workspace/route-support"
 import { mintTasksCapability } from "../../tasks/capability"
 import { tasksGrantRenewalContribution } from "../../tasks/grant-renewal"
 import { createTasksRootGrant } from "../../tasks/root-capability"
@@ -64,7 +60,7 @@ afterEach(async () => {
 })
 
 async function database(): Promise<D1Database> {
-  const instance = await miniflareControlPlaneDatabase(["0025_claxedo_tasks.sql", "0026_agent_cross_machine_writes.sql", "0032_task_attachments.sql", "0033_task_child_number.sql"])
+  const instance = await miniflareControlPlaneDatabase(["0025_claxedo_tasks.sql", "0026_task_agent_starts.sql", "0032_task_attachments.sql", "0033_task_child_number.sql"])
   active.push(instance)
   return instance.database
 }
@@ -153,7 +149,6 @@ function plane(signing: SigningEnv): HostedControlPlane {
       sandboxMaxRetryCount: 5,
     },
     relayTargetLookup: sandboxRelayTargetLookup({ telemetry: services.telemetry }),
-    cliSessionTokenRegistry: createInMemoryCliSessionTokenRegistry(),
     privateSessionAuthority: sessionAuthority,
     runtimeSessionAuthority: sessionAuthority,
     // The runtime-authority routes verify a host's signed token against the
@@ -210,13 +205,6 @@ async function hostedApp(
     bridge: reportingBridge,
     signingEnv: env,
   })
-  // The account's agent setting is the one signed family a sandbox has a
-  // reason to want — it is what puts `start` in the next grant — so it is
-  // composed here and held to admitting none of the credentials.
-  const agentSettings = accountAgentSettingsRouteContribution({
-    signed: (request) => signedOrError(request, { authentication, requireSigned: true }, base.services),
-    service: d1AgentSettings(controlPlane),
-  })
   const renewal = tasksGrantRenewalContribution({
     signingEnv: env,
     workspaceOwner: async (workspaceId) => WORKSPACE_OWNERS[workspaceId],
@@ -237,14 +225,7 @@ async function hostedApp(
     }),
     product: STATIC_PRODUCT_DESCRIPTORS["user-deployed"],
     requestGuardExemptions: [],
-    userDeployedIdentityAdmission: {
-      admit: vi.fn(async (_auth: unknown, input: { identity: { subject: string } }) => ({
-        state: "active" as const,
-        userId: `user:${input.identity.subject}`,
-        actorId: `actor:${input.identity.subject}`,
-      })),
-    },
-    routeContributions: [...tasks.routeContributions, agentSettings, renewal, ...extraContributions],
+    routeContributions: [...tasks.routeContributions, renewal, ...extraContributions],
   } as unknown as Parameters<typeof createHostedCoreApp>[1]) as unknown as ProbeApp
 }
 

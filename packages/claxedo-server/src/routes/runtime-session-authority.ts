@@ -41,6 +41,7 @@ import {
   type UsageReportWriter,
 } from "@claxedo/server-core/usage/usage-report"
 import type { ConnectionTurnCredentials } from "../connections/turn-credentials"
+import { connectionTurnOwner } from "../connections/turn-owner"
 import {
   deferredTurnGrantClaims,
   mintDeferredTurnGrant,
@@ -66,14 +67,9 @@ type RuntimeSessionAuthorityPort = Pick<
   | "authorizeRuntimeSessionStart"
   | "authorizeRuntimeSession"
 > & {
-  runtimeAccessTokenActive: (input: {
-    jti: string
-    workspaceId: string
-    hostId: string
-    minimumRole?: "viewer" | "editor" | "admin" | "owner"
-  }) => Promise<unknown>
-  /** Absent on a port that cannot resolve an actor's user-scoped partition; minted turn credentials then bind no personal rows. */
-  resolveRuntimeMachineAccess?: WorkspaceAuthority["resolveRuntimeMachineAccess"]
+  runtimeAccessTokenActive: (input: { jti: string; workspaceId: string; hostId: string }) => Promise<unknown>
+  /** Absent on a port that cannot name a workspace's owner; minted turn credentials then bind no personal rows. */
+  resolveWorkspaceOwner?: ResolveWorkspaceOwner
   /** Absent on a plane that cannot reserve for a runtime actor; the owner grant's `reserve` then answers 503. */
   reserveRuntimeSession?: PrivateSessionAuthority["reserveRuntimeSession"]
   /** Absent on a plane that records no host enrollments; `adopt` then answers 503. */
@@ -171,17 +167,8 @@ export type RuntimeSessionStreamOptions = {
   env?: Record<string, string | undefined>
 }
 
-/**
- * The one owner of "may this principal keep a live stream on this session,
- * and what proof carries it until the next renewal".
- *
- * `RuntimeSessionAuthorityRoutes` serves it over HTTP to isolated runtimes;
- * the self-hosted composition calls it in process for its embedded runtime.
- * Both re-run it on every renewal, so a revoked participant or a revoked
- * parent token ends the stream at the next refresh. A denial from the
- * private-session authority itself surfaces as the `ControlPlaneAuthError`
- * that authority throws.
- */
+// Held stream leases must recheck both session access and their parent token
+// at renewal, even when the request's bearer was verified at establishment.
 export async function authorizeRuntimeSessionStream(
   options: RuntimeSessionStreamOptions,
   claims: SessionStreamLeaseClaims,
@@ -322,7 +309,6 @@ export function RuntimeSessionAuthorityRoutes(options: RuntimeSessionAuthorityOp
         400,
       )
     }
-    const minimumRole = action === "host_admin" ? ("admin" as const) : ("viewer" as const)
     // A workspace lease renews itself: the reader's runtime access token is
     // rechecked, as it is for a relay host token, and a fresh lease minted.
     const lease = trimToUndefined(body?.lease)
@@ -359,11 +345,9 @@ export function RuntimeSessionAuthorityRoutes(options: RuntimeSessionAuthorityOp
           401,
         )
       }
-      if (!verified.role || roleRank(verified.role) < roleRank(minimumRole)) {
+      if (verified.session_id !== undefined) {
         return context.json(
-          {
-            error: { code: "host_authority_denied", message: `Workspace ${minimumRole} authority is required` },
-          },
+          { error: { code: "host_authority_denied", message: "A token scoped to one session reaches no workspace capability" } },
           403,
         )
       }
@@ -374,7 +358,6 @@ export function RuntimeSessionAuthorityRoutes(options: RuntimeSessionAuthorityOp
         jti: proof.parentRuntimeAccessTokenJti,
         workspaceId: proof.workspaceId,
         hostId: proof.hostId,
-        minimumRole,
       }),
     )
     if (active?.active !== true) {
@@ -487,8 +470,8 @@ export function RuntimeSessionAuthorityRoutes(options: RuntimeSessionAuthorityOp
   type SessionProof =
     | {
         claims: SessionStreamLeaseClaims
-        /** The workspace role the relay asserted on THIS request; a lease carries none. */
-        relayRole: RelayHostPrivateSessionClaims["role"] | undefined
+        /** The session the relay's token on THIS request is scoped to, or none for the owner's; a lease carries neither. */
+        relayScope: { sessionId?: string } | undefined
         rechecked: boolean
       }
     | { turn: { claims: SessionProofClaims; ownedTurn: TurnLeaseClaims | undefined; rechecked: boolean } }
@@ -496,7 +479,7 @@ export function RuntimeSessionAuthorityRoutes(options: RuntimeSessionAuthorityOp
   async function verifySessionProof(context: Context, request: SessionAuthorityRequest): Promise<Response | SessionProof> {
     const { sessionId, action, lease, turnId, turnLeaseId, fencingToken } = request
     let claims: SessionStreamLeaseClaims
-    let relayRole: RelayHostPrivateSessionClaims["role"]
+    let relayScope: { sessionId?: string } | undefined
     const bearer = bearerToken(context.req.header("authorization") ?? null)
     if (request.action === "turn_acquire" && request.grant) {
       if (bearer) {
@@ -541,7 +524,7 @@ export function RuntimeSessionAuthorityRoutes(options: RuntimeSessionAuthorityOp
         sessionId,
         action: action === "write" ? "write" : "read",
       }
-      return { claims, relayRole, rechecked: true }
+      return { claims, relayScope, rechecked: true }
     }
     if ((action === "turn_renew" || action === "turn_release") && turnLeaseId) {
       const verified = await (options.verifyTurnLease ?? turnLeaseVerifier(env))(turnLeaseId).catch(() => undefined)
@@ -590,8 +573,11 @@ export function RuntimeSessionAuthorityRoutes(options: RuntimeSessionAuthorityOp
           401,
         )
       }
+      if (verified.session_id !== undefined && verified.session_id !== sessionId) {
+        return context.json({ error: { code: "session_scope_denied", message: "The relay's token reaches another session" } }, 403)
+      }
       try {
-        relayRole = verified.role
+        relayScope = verified.session_id === undefined ? {} : { sessionId: verified.session_id }
         const proof = privateSessionRuntimeProof(verified)
         const principal: PrivateSessionRuntimePrincipal =
           proof.principalKind === "user"
@@ -617,40 +603,9 @@ export function RuntimeSessionAuthorityRoutes(options: RuntimeSessionAuthorityOp
       }
     }
 
-    return { claims, relayRole, rechecked: false }
+    return { claims, relayScope, rechecked: false }
   }
 
-  /**
-   * The admitted turn's connection credential, bound to the authority lease.
-   * `subject` is the actor's user-scoped partition key — resolved through the
-   * authority, not read from the token — so a service principal or an actor
-   * with no user row mints a session-bound credential without one rather than
-   * being refused on the credential's account.
-   */
-  async function mintConnectionTurn(
-    principal: PrivateSessionRuntimePrincipal,
-    claims: Pick<SessionProofClaims, "orgId" | "workspaceId">,
-    sessionId: string,
-    lease: { leaseId: string; expiresAt: number },
-  ) {
-    const turnCredentials = options.turnCredentials
-    if (!turnCredentials) return undefined
-    let subject: string | undefined
-    if (principal.principalKind === "user") {
-      try {
-        subject = (await options.authority.resolveRuntimeMachineAccess?.(principal.actorId, claims.workspaceId, "viewer"))?.userId
-      } catch {
-        subject = undefined
-      }
-    }
-    return turnCredentials.mint({
-      sessionId,
-      leaseId: lease.leaseId,
-      expiresAt: lease.expiresAt,
-      ...(subject ? { subject } : {}),
-      orgId: claims.orgId,
-    })
-  }
 
   async function applyTurnAction(
     context: Context,
@@ -708,6 +663,7 @@ export function RuntimeSessionAuthorityRoutes(options: RuntimeSessionAuthorityOp
       turnId: turnId!,
     }
     if (action === "turn_acquire") {
+      const subject = await connectionTurnOwner(options.turnCredentials, (id) => options.authority.resolveWorkspaceOwner?.(id) ?? Promise.resolve(undefined), claims.workspaceId)
       const acquired = await options.turnAuthority.acquireSessionTurn({
         ...turn,
         ...(claims.transport === "deferred-grant" ? { grantId: claims.grantId } : {}),
@@ -721,9 +677,12 @@ export function RuntimeSessionAuthorityRoutes(options: RuntimeSessionAuthorityOp
         acquiredAt: acquired.acquiredAt,
         expiresAt: acquired.expiresAt,
       })
-      const connectionCredential = await mintConnectionTurn(principal, claims, acquired.sessionId, {
+      const connectionCredential = subject === undefined ? undefined : options.turnCredentials?.mint({
+        sessionId: acquired.sessionId,
         leaseId: acquired.leaseId,
         expiresAt: acquired.expiresAt,
+        subject,
+        orgId: claims.orgId,
       })
       return context.json({
         ...acquired,
@@ -792,7 +751,7 @@ export function RuntimeSessionAuthorityRoutes(options: RuntimeSessionAuthorityOp
       if ("turn" in verified) {
         return await applyTurnAction(context, request, verified.turn.claims, verified.turn.ownedTurn, verified.turn.rechecked)
       }
-      const { claims, relayRole, rechecked } = verified
+      const { claims, relayScope, rechecked } = verified
       const principal = sessionLeasePrincipal(claims)
       if (action === "reserve") {
         // A reservation names the creator, and the only creator a runtime may
@@ -827,9 +786,9 @@ export function RuntimeSessionAuthorityRoutes(options: RuntimeSessionAuthorityOp
       }
       if (action === "adopt") {
         // The machine asks on behalf of the person at its keyboard, over the
-        // relay, holding a token the relay minted for THIS request; a lease
-        // outlives the role it was minted under and cannot carry this.
-        if (claims.transport !== "relay-host" || relayRole !== "owner") {
+        // relay, holding the owner's workspace-wide token for THIS request; a
+        // lease outlives the token it was minted under and cannot carry this.
+        if (claims.transport !== "relay-host" || relayScope?.sessionId !== undefined) {
           return context.json(
             {
               error: {
@@ -1303,6 +1262,7 @@ export function relayProofVerifier(env: Record<string, string | undefined>) {
     const hostId = trimToUndefined(payload.host_id)
     const jti = trimToUndefined(payload.jti)
     const parentJti = trimToUndefined(payload.parent_jti)
+    const sessionScope = trimToUndefined(payload.session_id)
     if (
       (principalKind !== "user" && principalKind !== "service")
       || (actorKind !== "human" && actorKind !== "agent")
@@ -1314,6 +1274,7 @@ export function relayProofVerifier(env: Record<string, string | undefined>) {
       || !parentJti
       || (role !== "viewer" && role !== "editor" && role !== "admin" && role !== "owner")
       || payload.access !== undefined
+      || (payload.session_id !== undefined && !sessionScope)
       || (backing !== "cloud-vm" && backing !== "local-worktree")
     ) throw new Error("Relay proof claims are invalid")
     // Assembled AFTER the checks so the claims object is the narrowed values,
@@ -1328,13 +1289,10 @@ export function relayProofVerifier(env: Record<string, string | undefined>) {
       jti,
       parent_jti: parentJti,
       role,
+      ...(sessionScope ? { session_id: sessionScope } : {}),
     }
     return claims
   }
-}
-
-function roleRank(role: "viewer" | "editor" | "admin" | "owner") {
-  return role === "viewer" ? 0 : role === "editor" ? 1 : role === "admin" ? 2 : 3
 }
 
 function relayProofKey(env: Record<string, string | undefined>): RelayProofKey | Promise<RelayProofKey> {
@@ -1371,4 +1329,3 @@ function finiteTimestamp(value: unknown) {
 function keyPem(value: string | undefined) {
   return trimToUndefined(value)?.replaceAll("\\n", "\n")
 }
-

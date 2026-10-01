@@ -20,8 +20,10 @@ import { D1ChannelRuntimeAuthority } from "./channel-runtime-authority"
 import { controlPlaneMigrationPath, controlPlaneMigrations } from "../../../test-support/control-plane-migrations"
 
 const BOUNDARY_MIGRATION = "0038_channel_identity_version.sql"
+const ORG_KIND_MIGRATION = "0045_org_scope_means_org.sql"
 const ALL_MIGRATIONS = controlPlaneMigrations()
 const BEFORE_BOUNDARY = ALL_MIGRATIONS.slice(0, ALL_MIGRATIONS.indexOf(BOUNDARY_MIGRATION))
+const FROM_BOUNDARY = ALL_MIGRATIONS.slice(ALL_MIGRATIONS.indexOf(BOUNDARY_MIGRATION))
 
 const active: Miniflare[] = []
 
@@ -107,21 +109,35 @@ async function signed(authority: D1WorkspaceAuthority, subject: string): Promise
   }
 }
 
+async function createPreOrgKindOrganization(database: D1Database, owner: SignedControlPlaneAuth) {
+  await database.batch([
+    database.prepare(
+      `insert into orgs (org_id, name, kind, owner_user_id, deployment_id, created_at, updated_at)
+       values ('org_acme', 'Acme', 'team', ?, null, 1, 1)`,
+    ).bind(owner.principal!.userId),
+    database.prepare(
+      `insert into org_memberships (org_id, user_id, role, created_at, updated_at, revoked_at)
+       values ('org_acme', ?, 'owner', 1, 1, null)`,
+    ).bind(owner.principal!.userId),
+  ])
+}
+
 /**
- * Two accounts in one organization, both able to reach the workspace: the
- * collision only means anything when the legacy holder and the stable-id holder
- * would each have been authorized on their own.
+ * Two accounts in one organization, each owning a workspace: the collision
+ * only means anything when the legacy holder and the stable-id holder would
+ * each have been authorized on their own.
  */
 async function deployment(migrations: readonly string[]) {
   const context = await setup(migrations)
   const handleHolder = await signed(context.workspace, "handle-holder")
   const accountHolder = await signed(context.workspace, "account-holder")
-  await context.workspace.createHostedOrganization(handleHolder, { name: "Acme", orgId: "org_acme" })
-  await context.workspace.addOrganizationMember(handleHolder, {
-    orgId: "org_acme",
-    userId: accountHolder.principal!.userId,
-    role: "member",
-  })
+  if (migrations.includes(ORG_KIND_MIGRATION)) {
+    await context.workspace.createHostedOrganization(handleHolder, { name: "Acme", orgId: "org_acme" })
+  } else {
+    await createPreOrgKindOrganization(context.database, handleHolder)
+  }
+  await context.database.prepare(`insert into org_memberships (org_id, user_id, role, created_at, updated_at, revoked_at)
+    values ('org_acme', ?, 'admin', 1, 1, null)`).bind(accountHolder.principal!.userId).run()
   const workspace = await context.workspace.createWorkspace(handleHolder, {
     workspaceId: "ws_main",
     orgId: "org_acme",
@@ -129,10 +145,13 @@ async function deployment(migrations: readonly string[]) {
     repoUrl: "https://github.com/acme/main.git",
     backing: "cloud-vm",
   })
-  await context.database.prepare(
-    `insert into project_memberships (project_id, user_id, role, created_at, updated_at, revoked_at)
-     values (?, ?, 'editor', 1, 1, null)`,
-  ).bind(workspace.project_id, accountHolder.principal!.userId).run()
+  await context.workspace.createWorkspace(accountHolder, {
+    workspaceId: "ws_account",
+    orgId: "org_acme",
+    displayName: "account",
+    repoUrl: "https://github.com/acme/main.git",
+    backing: "cloud-vm",
+  })
   return { ...context, handleHolder, accountHolder, workspace }
 }
 
@@ -176,8 +195,8 @@ async function preBoundaryAdmits(database: D1Database) {
   ).bind(TELEGRAM_KEY.channel, TELEGRAM_KEY.externalUserId).first()
 }
 
-function admission(channels: D1ChannelRuntimeAuthority) {
-  return channels.authorizeChannelWorkspace({ ...TELEGRAM_KEY, workspaceId: "ws_main", action: "write" })
+function admission(channels: D1ChannelRuntimeAuthority, workspaceId: "ws_main" | "ws_account") {
+  return channels.authorizeChannelWorkspace({ ...TELEGRAM_KEY, workspaceId, action: "write" })
 }
 
 async function versions(database: D1Database) {
@@ -200,7 +219,7 @@ describe("channel identity binding version boundary", () => {
     expect(await versions(before.database)).toEqual([
       { user_id: before.handleHolder.principal!.userId, identity_version: 0, revoked_at: null },
     ])
-    await expect(admission(before.channels)).rejects.toMatchObject({ status: 403 })
+    await expect(admission(before.channels, "ws_main")).rejects.toMatchObject({ status: 403 })
   })
 
   test("the account that actually owns the colliding id binds and is admitted", async () => {
@@ -212,7 +231,7 @@ describe("channel identity binding version boundary", () => {
     // index would have refused this insert outright.
     expect(await context.channels.bindChannelIdentity(context.accountHolder, TELEGRAM_KEY))
       .toMatchObject({ created: true, userId: context.accountHolder.principal!.userId })
-    expect(await admission(context.channels)).toEqual({
+    expect(await admission(context.channels, "ws_account")).toEqual({
       actorId: context.accountHolder.principal!.actorId,
       actorKind: "human",
     })
@@ -230,7 +249,7 @@ describe("channel identity binding version boundary", () => {
 
     await expect(context.channels.bindChannelIdentity(context.handleHolder, TELEGRAM_KEY))
       .rejects.toMatchObject({ status: 403 })
-    expect(await admission(context.channels)).toEqual({
+    expect(await admission(context.channels, "ws_account")).toEqual({
       actorId: context.accountHolder.principal!.actorId,
       actorKind: "human",
     })
@@ -251,7 +270,7 @@ describe("channel identity binding version boundary", () => {
     // state it already reached rather than re-authorizing anyone.
     expect(await context.channels.revokeChannelIdentity(context.accountHolder, TELEGRAM_KEY))
       .toEqual({ revoked: true })
-    await expect(admission(context.channels)).rejects.toMatchObject({ status: 403 })
+    await expect(admission(context.channels, "ws_account")).rejects.toMatchObject({ status: 403 })
   })
 
   test("a runtime credential minted for a legacy binding stops renewing and stops admitting", async () => {
@@ -270,7 +289,7 @@ describe("channel identity binding version boundary", () => {
        from workspaces where workspace_id = 'ws_main'`,
     ).bind(context.handleHolder.principal!.actorId, context.handleHolder.principal!.userId).run()
 
-    await apply(context.database, [BOUNDARY_MIGRATION])
+    await apply(context.database, FROM_BOUNDARY)
 
     // The recorded credential outlives the boundary — nothing sweeps the
     // table — so the version check has to hold on every path that reads a
@@ -316,7 +335,7 @@ describe("channel identity binding version boundary", () => {
 
     expect(await versions(context.database)).toEqual(before.rows)
     expect(await schema()).toEqual(before.schema)
-    expect(await admission(context.channels)).toEqual({
+    expect(await admission(context.channels, "ws_account")).toEqual({
       actorId: context.accountHolder.principal!.actorId,
       actorKind: "human",
     })
@@ -347,7 +366,7 @@ describe("channel identity binding version boundary", () => {
     expect(await versions(context.database)).toEqual([
       { user_id: context.accountHolder.principal!.userId, identity_version: 1, revoked_at: null },
     ])
-    expect(await admission(context.channels)).toEqual({
+    expect(await admission(context.channels, "ws_account")).toEqual({
       actorId: context.accountHolder.principal!.actorId,
       actorKind: "human",
     })

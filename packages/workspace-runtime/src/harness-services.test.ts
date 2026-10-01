@@ -2,7 +2,6 @@ import { expect, test } from "bun:test"
 import { volatileLaunchOwnership } from "@claxedo/process-ownership/launch"
 import { createRuntimeCredentialIssuer } from "./first-party-mcp"
 import { createHarnessServices } from "./harness-services"
-import { createProcessObserver, type ProcessObserverEvent } from "./managed-processes/process-observer"
 
 function fixture() {
   const calls: unknown[] = []
@@ -48,16 +47,3 @@ test("host services keep the supplied process-wide pattern evaluator", async () 
   expect(calls).toEqual([["pattern"]])
 })
 
-test("a harness spawn is registered with the workspace process observer", async () => {
-  const { log, clock, patternEvaluator } = fixture()
-  const events: ProcessObserverEvent[] = []
-  const input = { ownership: volatileLaunchOwnership(), log, clock, patternEvaluator, healthChanged: () => {},
-    observation: { observer: createProcessObserver({ sink: (event) => events.push(event) }) } }
-  const services = createHarnessServices(input)
-  const child = await services.spawn({ file: "/bin/sh", args: ["-c", "printf ready"], cwd: "/tmp", env: { PATH: process.env.PATH ?? "/usr/bin:/bin" } },
-    { role: "harness", label: "observed harness", sessionId: "s1", signal: new AbortController().signal })
-  expect((await child.exited).code).toBe(0)
-  expect(await child.retire({ at: Date.now() + 5_000, signal: new AbortController().signal })).toEqual({ stopped: true })
-  expect(events).toContainEqual(expect.objectContaining({ type: "registered",
-    descriptor: expect.objectContaining({ kind: "harness", role: "harness", pid: child.pid, sessionId: "s1" }) }))
-})

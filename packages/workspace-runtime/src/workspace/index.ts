@@ -3,7 +3,6 @@ export {
   mountWorkspaceCore,
   mountWorkspaceEvents,
   mountWorkspaceFiles,
-  mountWorkspaceProcess,
   mountWorkspacePty,
 } from "./core"
 export { createWorkspaceHost, type WorkspaceHostOptions } from "./runtime"

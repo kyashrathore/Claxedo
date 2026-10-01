@@ -38,7 +38,7 @@ describe("sandbox driver managed auth", () => {
   })
 
   test("parses managed credentials for direct sandbox drivers", async () => {
-    secrets.set("daytona", "dtn-key")
+    secrets.set("box", JSON.stringify({ api_key: "box-key" }))
     secrets.set("modal", JSON.stringify({ token_id: "modal-id", token_secret: "modal-secret" }))
     secrets.set("vercel", JSON.stringify({
       access_token: "vercel-token",
@@ -49,9 +49,9 @@ describe("sandbox driver managed auth", () => {
       api_token: "cf-token",
       worker_url: "https://worker.test",
     }))
-    secrets.set("docker", "ghcr.io/example/workspace-runtime:test")
+    secrets.set("docker", JSON.stringify({ image: "ghcr.io/example/workspace-runtime:test" }))
 
-    await expect(sandboxDriverAuthManaged("daytona")).resolves.toEqual({ api_key: "dtn-key" })
+    await expect(sandboxDriverAuthManaged("box")).resolves.toEqual({ api_key: "box-key" })
     await expect(sandboxDriverAuthManaged("modal")).resolves.toEqual({
       token_id: "modal-id",
       token_secret: "modal-secret",
@@ -85,6 +85,15 @@ describe("sandbox driver managed auth", () => {
     })
   })
 
+  test("refuses bare and non-object managed secrets for single-field drivers", async () => {
+    for (const secret of ["box-key", '"box-key"', "[]", "null"]) {
+      secrets.set("box", secret)
+      await expect(sandboxDriverAuthManaged("box")).resolves.toBeUndefined()
+    }
+    secrets.set("docker", "ghcr.io/example/workspace-runtime:test")
+    await expect(sandboxDriverAuthManaged("docker")).resolves.toBeUndefined()
+  })
+
   test("managed credentials are presence metadata only until the secret parses", async () => {
     secrets.set("vercel", JSON.stringify({ access_token: "token" }))
 
@@ -98,20 +107,20 @@ describe("sandbox driver managed auth", () => {
   })
 
   test("a credential stored under another kind is not this driver's auth", async () => {
-    // `daytona` is both a sandbox driver and a provider name; the lookup that
-    // drops the kind hands a model subscription to the sandbox manager.
-    secrets.setUnderKind("daytona", "api_key", "dtn-not-a-driver-credential")
+    // `vercel` is both a sandbox driver and a provider name; the lookup that
+    // drops the kind hands a model key to the sandbox manager.
+    secrets.setUnderKind("vercel", "api_key", "vercel-not-a-driver-credential")
 
-    expect(hasManagedSandboxDriverAuth("daytona")).toBe(false)
-    await expect(sandboxDriverAuthManaged("daytona")).resolves.toBeUndefined()
+    expect(hasManagedSandboxDriverAuth("vercel")).toBe(false)
+    await expect(sandboxDriverAuthManaged("vercel")).resolves.toBeUndefined()
   })
 
   test("a revoked driver credential is still present but yields no auth", async () => {
     // The two answers differ on purpose: the settings row must keep showing a
     // stored credential to revoke or replace, and provisioning must not use it.
-    secrets.set("daytona", "dtn-key", "revoked")
+    secrets.set("box", "box-key", "revoked")
 
-    expect(hasManagedSandboxDriverAuth("daytona")).toBe(true)
-    await expect(sandboxDriverAuthManaged("daytona")).resolves.toBeUndefined()
+    expect(hasManagedSandboxDriverAuth("box")).toBe(true)
+    await expect(sandboxDriverAuthManaged("box")).resolves.toBeUndefined()
   })
 })

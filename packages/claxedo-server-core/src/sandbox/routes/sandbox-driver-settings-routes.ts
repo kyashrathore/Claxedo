@@ -178,16 +178,16 @@ async function verifySandboxDriverKey(
       reason: "The provider rejected that key. Check it was copied whole, then save it again.",
     }
   } catch (error) {
-    if (error instanceof CredentialVerificationError) return { state: "unknown", reason: inconclusiveCopy(error.message) }
+    if (error instanceof CredentialVerificationError) return { state: "unknown", reason: inconclusiveCopy(error.code) }
     throw error
   }
 }
 
-function inconclusiveCopy(message: string) {
-  if (message.includes("does not support verification")) {
+function inconclusiveCopy(code: string) {
+  if (code === "credential_verification_unsupported") {
     return "Claxedo can't check this provider yet — the key was saved as-is."
   }
-  if (message.includes("unsupported shape")) {
+  if (code === "credential_shape_invalid") {
     return "Claxedo couldn't read that key well enough to check it — it was saved as-is."
   }
   return "Couldn't reach the provider to check this key — it was saved as-is."
@@ -216,7 +216,7 @@ function localSandboxDriverBody() {
   return {
     error: {
       code: "local_only_sandbox_driver",
-      message: "Sandbox driver configuration is local-only and is not available through signed/team Control Plane access",
+      message: "Sandbox driver configuration is local-only and is not available through signed Control Plane access",
     },
   }
 }

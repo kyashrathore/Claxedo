@@ -36,6 +36,5 @@ resources/claxedo-server.pending-*/
 resources/claxedo-server-compile-cache/
 resources/opencode-compile-cache/
 resources/acp/
-resources/diagnostics/macos-memory-impact
 resources/mermaid/
 resources/icons

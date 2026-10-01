@@ -4,7 +4,7 @@ import {
   sandboxDriverCredentialFields,
   type SandboxDriverID,
 } from "@claxedo/sandbox-contract"
-import { jsonRecord } from "@claxedo/server-core/platform/runtime/lib/json"
+import { parseJsonRecord } from "@claxedo/server-core/platform/json/index"
 import { CredentialVerificationError } from "../verification-error"
 import type { CredentialHealth } from "@claxedo/server-core/credentials/types"
 
@@ -29,15 +29,15 @@ export async function verifySandboxDriverAuth(
   options: { fetch?: typeof fetch } = {},
 ): Promise<CredentialHealth> {
   const values = probeAuth(id, auth)
-  if (!values) throw new CredentialVerificationError("Sandbox provider credential has an unsupported shape")
+  if (!values) throw new CredentialVerificationError("credential_shape_invalid", "Sandbox provider credential has an unsupported shape")
   const probe = sandboxDriverProbe(id, values)
-  if (!probe) throw new CredentialVerificationError("Sandbox provider does not support verification")
+  if (!probe) throw new CredentialVerificationError("credential_verification_unsupported", "Sandbox provider does not support verification")
 
   const response = await (options.fetch ?? globalThis.fetch)(probe.url, { ...probe.init, redirect: "error" }).catch(() => {
-    throw new CredentialVerificationError("Sandbox provider request failed")
+    throw new CredentialVerificationError("credential_provider_unavailable", "Sandbox provider request failed")
   })
   if (response.redirected || (response.status >= 300 && response.status < 400)) {
-    throw new CredentialVerificationError("Sandbox provider redirects are not allowed")
+    throw new CredentialVerificationError("credential_redirect_denied", "Sandbox provider redirects are not allowed")
   }
   if (response.ok) {
     await response.body?.cancel().catch(() => undefined)
@@ -45,9 +45,6 @@ export async function verifySandboxDriverAuth(
   }
   const failure = (await response.text().catch(() => "")).slice(0, 8_192).toLowerCase()
   if (probe.ok?.(response.status, failure)) return "ok"
-  if (probe.inconclusive?.(response.status)) {
-    throw new CredentialVerificationError("Sandbox provider could not answer for this credential")
-  }
   if (
     response.status === 402 ||
     failure.includes("insufficient_quota") ||
@@ -56,24 +53,20 @@ export async function verifySandboxDriverAuth(
   ) return "no_billing"
   if (response.status === 429) return "rate_capped"
   if (probe.rejected(response.status)) return "auth_failed"
-  throw new CredentialVerificationError("Sandbox provider verification failed")
+  throw new CredentialVerificationError("credential_verification_failed", "Sandbox provider verification failed")
 }
 
-/**
- * Verify a credential as it is STORED — one opaque string per credential,
- * written by the codec in `routes/sandbox-driver-routes.ts`. Kept next to the
- * probes so `verifyCredential` can route the `sandbox_driver` kind without
- * knowing the encoding.
- */
 export async function verifySandboxDriverCredential(
   providerId: string,
   secret: string,
   options: { fetch?: typeof fetch } = {},
 ): Promise<CredentialHealth> {
   if (!isSandboxDriverID(providerId)) {
-    throw new CredentialVerificationError("Sandbox provider does not support verification")
+    throw new CredentialVerificationError("credential_verification_unsupported", "Sandbox provider does not support verification")
   }
-  return verifySandboxDriverAuth(providerId, storedAuth(providerId, secret), options)
+  const auth = parseJsonRecord(secret)
+  if (!auth) throw new CredentialVerificationError("credential_shape_invalid", "Sandbox provider credential has an unsupported shape")
+  return verifySandboxDriverAuth(providerId, auth, options)
 }
 
 /** Whether this provider can be checked at all, without spending a request. */
@@ -81,25 +74,7 @@ export function sandboxDriverVerifiable(id: SandboxDriverID) {
   return VERIFIABLE.has(id)
 }
 
-/**
- * Mirrors `parseManagedAuth`'s tolerance in
- * `sandbox-manager-adapters/driver-auth.ts`: always JSON now, but a bare string
- * is still what the pre-codec encoder wrote for single-field drivers (and what
- * `credentials/migrate.ts` still writes for daytona). A stored credential that
- * predates the codec must verify, not read as an unsupported shape.
- */
-function storedAuth(id: SandboxDriverID, secret: string): Record<string, unknown> {
-  const fields = sandboxDriverCredentialFields[id]
-  try {
-    const parsed = jsonRecord(JSON.parse(secret))
-    if (parsed) return parsed
-  } catch {
-    // Falls through to the legacy bare reading below.
-  }
-  return fields.length === 1 ? { [fields[0].key]: secret } : {}
-}
-
-const VERIFIABLE = new Set<SandboxDriverID>(["daytona", "vercel", "cloudflare", "box", "exe"])
+const VERIFIABLE = new Set<SandboxDriverID>(["vercel", "cloudflare", "box"])
 
 const REJECTED = (status: number) => status === 401 || status === 403
 
@@ -108,29 +83,11 @@ type SandboxDriverProbe = {
   init: RequestInit
   /** Statuses that still prove the credential — checked before any rejection. */
   ok?: (status: number, body: string) => boolean
-  /** Statuses that say nothing about the credential either way. */
-  inconclusive?: (status: number) => boolean
   rejected: (status: number) => boolean
 }
 
 function sandboxDriverProbe(id: SandboxDriverID, auth: Record<string, string>): SandboxDriverProbe | undefined {
   const signal = () => AbortSignal.timeout(10_000)
-
-  // Daytona: "Get current API key's details", the one route documented as
-  // authenticated with the API key itself rather than a JWT
-  // (https://www.daytona.io/docs/en/api-keys/). O(1) — `GET /sandbox` would
-  // also answer but returns every sandbox in the account, unbounded.
-  // `X-Daytona-Organization-ID` is only required for JWT auth, so it is
-  // omitted here. Daytona documents no error-status semantics at all, hence
-  // the deliberately narrow rejection set: anything but 401/403 falls through
-  // to inconclusive rather than being guessed at.
-  if (id === "daytona") {
-    return {
-      url: "https://app.daytona.io/api/api-keys/current",
-      init: { method: "GET", signal: signal(), headers: { Authorization: `Bearer ${auth.api_key}` } },
-      rejected: REJECTED,
-    }
-  }
 
   // Vercel: one documented read that proves all three stored fields
   // (https://vercel.com/docs/rest-api/reference/endpoints/projects/find-a-project-by-id-or-name).
@@ -158,7 +115,7 @@ function sandboxDriverProbe(id: SandboxDriverID, auth: Record<string, string>): 
   if (id === "cloudflare") {
     let base: string
     try { base = cloudflareWorkerBaseUrl(auth.worker_url) } catch {
-      throw new CredentialVerificationError("Cloudflare Worker URL requires a valid HTTPS endpoint without credentials, query or fragment")
+      throw new CredentialVerificationError("credential_endpoint_invalid", "Cloudflare Worker URL requires a valid HTTPS endpoint without credentials, query or fragment")
     }
     return {
       url: `${base}/sandboxes`,
@@ -179,30 +136,6 @@ function sandboxDriverProbe(id: SandboxDriverID, auth: Record<string, string>): 
       url: "https://ascii.dev/api/box/v1/me",
       init: { method: "GET", signal: signal(), headers: { Authorization: `Bearer ${auth.api_key}` } },
       rejected: REJECTED,
-    }
-  }
-
-  // exe.dev: `whoami` is in the default token `cmds` allowlist and is the
-  // docs' own example call (https://exe.dev/docs/https-api.md). The command
-  // language is plain text in the POST body; this is the only read in the
-  // default allowlist that costs nothing to run.
-  if (id === "exe") {
-    return {
-      url: "https://exe.dev/exec",
-      init: {
-        method: "POST",
-        signal: signal(),
-        headers: {
-          Authorization: `Bearer ${auth.api_token}`,
-          "Content-Type": "text/plain; charset=utf-8",
-        },
-        body: "whoami",
-      },
-      // exe.dev tokens carry a signed `cmds` allowlist, and 403 is documented
-      // as "this command is not in the token's list" — the token is VALID and
-      // merely scoped away from the probe. Only 401 means invalid.
-      inconclusive: (status) => status === 403,
-      rejected: (status) => status === 401,
     }
   }
 

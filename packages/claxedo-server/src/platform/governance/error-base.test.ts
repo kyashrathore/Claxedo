@@ -46,7 +46,7 @@ describe("error base", () => {
     // Pinned to the EXACT current count, not a round number above it: a
     // ceiling with slack is headroom a new bespoke class slips into without
     // anyone reviewing it, which is the one thing this ratchet exists to stop.
-    expect(offenders.length).toBeLessThanOrEqual(52)
+    expect(offenders.length).toBeLessThanOrEqual(23)
   })
 
   test("ClaxedoError is the only thing in platform/errors/ that extends raw Error", () => {

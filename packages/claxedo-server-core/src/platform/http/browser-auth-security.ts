@@ -1,6 +1,6 @@
 import type { Context, MiddlewareHandler } from "hono"
 
-import type { BrowserAuthDescriptor } from "../auth/authentication"
+import type { BrowserAuthDescriptor } from "@claxedo/account-contract/auth"
 
 /**
  * Request headers a browser on a different origin may send to this server.
@@ -24,8 +24,7 @@ export const BROWSER_ALLOWED_REQUEST_HEADERS = [
   "last-event-id",
   // W3C Trace Context. Named here before anything sends it: a trace header the
   // preflight omits does not degrade tracing, it kills the request carrying it,
-  // so instrumentation would take the product down. `@claxedo/telemetry`
-  // explains the propagation these two carry.
+  // so instrumentation would take the product down.
   "traceparent",
   "tracestate",
   "x-claxedo-bootstrap-owner-claim",

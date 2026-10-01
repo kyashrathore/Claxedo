@@ -27,7 +27,7 @@ async function fixture() {
       authorizeHost(input) {
         expect(input.authority?.workspaceId).toBe(target.workspaceId)
         expect(input.actor?.actorId).toBe("actor_checkpoint")
-        expect(input.minimumRole).toBe("admin")
+        expect(input.hostAccess).toBe("admin")
         asked.push(input.operation)
         return currentRole === "admin" || currentRole === "owner"
           ? { allowed: true }
@@ -49,7 +49,7 @@ async function fixture() {
     return await new SignJWT({
       principal_kind: "user", actor_id: "actor_checkpoint", actor_kind: "human",
       org_id: "org_checkpoint", workspace_id: target.workspaceId, host_id: target.hostId,
-      role, backing: "cloud-vm", parent_jti: "parent_checkpoint",
+      role, scope: "workspace", backing: "cloud-vm", parent_jti: "parent_checkpoint",
     }).setProtectedHeader({ alg: "EdDSA" }).setIssuer("workspace-relay").setAudience("workspace-host-service")
       .setIssuedAt().setExpirationTime("1m").setJti("relay_checkpoint").sign(pair.privateKey)
   }

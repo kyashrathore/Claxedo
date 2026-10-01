@@ -27,12 +27,21 @@
 import { Pty } from "./index"
 import { errorBody } from "../routes/error-body"
 import { sessionAccessContext, type SessionAccessPolicy, type SessionAccessPolicyInput, type SessionAccessStreamDecision } from "../session-access-policy"
-import { workspaceViewerRefusal } from "../routes/workspace-role"
 import type { RelayHostAuthContext } from "../workspace-host-service-auth"
 import type { WebSocketBackpressureSocket } from "./websocket-backpressure"
 
 /** Both entrypoints refuse a workspace viewer with this, and the router says it once more for the rest of the family. */
-export const PTY_ROLE_DENIED_MESSAGE = "Workspace role does not allow terminal access"
+/**
+ * A token scoped to one session, a share holder's, reaches no terminal, that
+ * session's included. The relayed routes are refused at the token boundary;
+ * this is the same rule for the terminal a daemon attaches in process.
+ */
+const PTY_SCOPE_REFUSAL: PtyAccessRefusal = {
+  allowed: false,
+  status: 403,
+  code: "relay_scope_denied",
+  message: "A token scoped to one session reaches no terminal",
+}
 
 /** How often an open stream re-checks its own deadline. */
 const AUTHORIZATION_POLL_MS = 1_000
@@ -137,8 +146,7 @@ export async function authorizePtyAttach(input: {
   access: PtyStreamAccess
   info: Pty.Info
 }): Promise<PtyStreamAdmission | PtyAccessRefusal> {
-  const role = workspaceViewerRefusal(input.access.authority?.role, PTY_ROLE_DENIED_MESSAGE)
-  if (role) return role
+  if (input.access.authority?.sessionId !== undefined) return PTY_SCOPE_REFUSAL
   if (!input.access.authority) return { allowed: true }
   if (!input.info.sessionId) return PTY_NOT_FOUND_REFUSAL
   const request = { ...input.access, operation: "pty_read" as const, sessionId: input.info.sessionId }

@@ -1,7 +1,8 @@
 import { expect, test } from "bun:test"
 import { Database } from "bun:sqlite"
 import { reconcileLaunch, type CreationIdentity, type LaunchOwnerScope, type RetirementResult } from "@claxedo/process-ownership/launch"
-import { migrateLaunchOwnership, sqliteLaunchOwnership, type SqliteDatabase } from "./launch-ownership-sqlite"
+import { LAUNCH_OWNERSHIP_SCHEMA } from "./launch-ownership-schema"
+import { sqliteLaunchOwnership, type SqliteDatabase } from "./launch-ownership-sqlite"
 
 const generation = "gen-1"
 const mounted: LaunchOwnerScope = { kind: "workspace", workspaceId: "ws" }
@@ -9,7 +10,7 @@ const alone: LaunchOwnerScope = { kind: "standalone" }
 
 function store(scope: LaunchOwnerScope = mounted) {
   const db = new Database(":memory:") as unknown as SqliteDatabase
-  migrateLaunchOwnership(db)
+  for (const statement of LAUNCH_OWNERSHIP_SCHEMA) db.exec(statement)
   return { db, ownership: sqliteLaunchOwnership(db, { ownerGeneration: generation, scope }) }
 }
 
@@ -65,7 +66,7 @@ test("activation authorization is durable before the gate could have been told",
 
 test("a launch whose cleanup is unresolved is retained for a later owner", async () => {
   const { ownership } = store()
-  const prepared = await ownership.prepare({ role: "managed-process", protocol: "gate", scope: { directory: "/tmp/p" } })
+  const prepared = await ownership.prepare({ role: "terminal", protocol: "gate", scope: { directory: "/tmp/p" } })
   await ownership.recordIdentity(prepared.launchId, identity, "nonce-1")
   await ownership.authorizeActivation(prepared.launchId)
   await ownership.acknowledgeActivation(prepared.launchId)
@@ -103,13 +104,6 @@ test("unresolved launches are listed per scope, not globally", async () => {
 
   expect((await ownership.listUnresolved({ ...mounted, sessionId: "s1" })).map((item) => item.launchId)).toEqual([mine.launchId])
   expect((await ownership.listUnresolved(mounted)).length).toBe(2)
-})
-
-test("migration is idempotent and keeps existing rows", async () => {
-  const { db, ownership } = store()
-  const prepared = await ownership.prepare({ role: "harness", protocol: "gate" })
-  migrateLaunchOwnership(db)
-  expect((await ownership.read(prepared.launchId))?.launchId).toBe(prepared.launchId)
 })
 
 test("writing against a launch id nothing prepared is an error, not a silent no-op", async () => {

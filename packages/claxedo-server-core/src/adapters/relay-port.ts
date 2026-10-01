@@ -28,7 +28,7 @@ type RelayTokenBaseInput = {
   ttlMs: number
 }
 
-export type HostTunnelTokenInput = RelayTokenBaseInput
+export type HostTunnelTokenInput = RelayTokenBaseInput & { enrollmentId: string; generation: number }
 
 export type RelayTokenInput = {
   workspaceId: string
@@ -85,7 +85,6 @@ export type RelayTargetResult =
       found: true
       baseUrl: string
       backing: "cloud-vm" | "local-worktree"
-      upstreamHeaders?: Record<string, string>
     }
   | {
       found: false

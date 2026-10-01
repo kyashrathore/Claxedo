@@ -52,6 +52,8 @@ export function toChannelIdentityClaim(input: ChannelIdentityInput): ChannelIden
   }
 }
 
+export type TokenScope = "workspace" | "session"
+
 export type RuntimeAccessTokenClaims = {
   iss: typeof runtimeAccessTokenIssuer
   aud: typeof runtimeAccessTokenAudience
@@ -66,6 +68,13 @@ export type RuntimeAccessTokenClaims = {
   workspace_id: string
   host_id: string
   role: RelayRole
+  /**
+   * What the token reaches: the whole workspace (its owner's token) or the one
+   * session `session_id` names (a share holder's). A token naming neither is
+   * refused, so a token minted before reach was named reaches nothing.
+   */
+  scope: TokenScope
+  session_id?: string
   channel_identity?: ChannelIdentityClaim
   /** Present for cloud workspaces; assigned atomically with the sandbox address. */
   routing_id?: string
@@ -88,6 +97,8 @@ export type RelayHostTokenClaims = {
   workspace_id: string
   host_id: string
   role: RelayRole
+  scope: TokenScope
+  session_id?: string
   channel_identity?: ChannelIdentityClaim
   exp: number
   iat: number
@@ -103,15 +114,8 @@ export type HostTunnelTokenClaims = {
   sub: string
   host_id: string
   workspace_ids: string[]
-  /**
-   * Serving-generation fence. `generation` is only valid together with
-   * `enrollment_id`; a relay with a host-generation resolver refuses a token
-   * whose generation is below the enrollment's current one. A token without a
-   * generation is admitted exactly as before the fence existed, which is what
-   * desktop and self-hosted mints still produce.
-   */
-  enrollment_id?: string
-  generation?: number
+  enrollment_id: string
+  generation: number
   exp: number
   iat: number
   jti: string
@@ -143,6 +147,7 @@ type RuntimeInput = {
   workspaceId: string
   hostId: string
   role: RelayRole
+  sessionId?: string
   channelIdentity?: ChannelIdentityInput
   routingId?: string
   ttlSeconds?: number
@@ -168,8 +173,8 @@ type HostTunnelInput = {
   subject: string
   hostId: string
   workspaceIds: string[]
-  enrollmentId?: string
-  generation?: number
+  enrollmentId: string
+  generation: number
   ttlSeconds?: number
   jti?: string
   now?: number
@@ -213,15 +218,9 @@ export function isHostGeneration(value: unknown): value is number {
   return typeof value === "number" && Number.isInteger(value) && value >= 0
 }
 
-/**
- * The fence pair as it appears in a token payload: `undefined` when absent,
- * `null` when present but unusable (a generation that is not a non-negative
- * integer, or a generation without its enrollment id).
- */
 function hostGenerationClaims(payload: JWTPayload) {
   const enrollment_id = stringClaim(payload, "enrollment_id")
   const generation = payload.generation
-  if (generation === undefined) return enrollment_id ? { enrollment_id } : {}
   if (!isHostGeneration(generation) || !enrollment_id) return null
   return { enrollment_id, generation }
 }
@@ -408,6 +407,7 @@ export async function mintRuntimeAccessToken(input: RuntimeInput, key: RelaySign
     workspace_id: input.workspaceId,
     host_id: input.hostId,
     role: input.role,
+    ...tokenScopePayload(input.sessionId),
     ...(input.routingId !== undefined ? { routing_id: input.routingId } : {}),
   })
     .setProtectedHeader({ alg: requireAlgorithm(alg) })
@@ -478,14 +478,14 @@ export function validateRuntimeAccessTokenClaims(input: Record<string, unknown>,
 
 export async function mintHostTunnelToken(input: HostTunnelInput, key: RelaySigningKey, alg: RelayJwtAlgorithm) {
   const now = seconds(input.now)
-  if (input.generation !== undefined && (!isHostGeneration(input.generation) || !input.enrollmentId)) {
+  if (!isHostGeneration(input.generation) || !input.enrollmentId?.trim()) {
     throw new WorkspaceRelayAuthError("relay_token_claims_invalid", "Host Tunnel Token generation requires a non-negative integer and an enrollment id")
   }
   return await new SignJWT({
     host_id: input.hostId,
     workspace_ids: input.workspaceIds,
-    ...(input.enrollmentId ? { enrollment_id: input.enrollmentId } : {}),
-    ...(input.generation !== undefined ? { generation: input.generation } : {}),
+    enrollment_id: input.enrollmentId,
+    generation: input.generation,
   })
     .setProtectedHeader({ alg: requireAlgorithm(alg) })
     .setIssuer(runtimeAccessTokenIssuer)
@@ -568,6 +568,7 @@ export async function mintRelayHostToken(input: RelayHostInput, key: RelaySignin
     workspace_id: input.workspaceId,
     host_id: input.hostId,
     role: input.role,
+    ...tokenScopePayload(input.sessionId),
     backing: input.backing,
     parent_jti: input.parentJti,
   })
@@ -605,8 +606,9 @@ function runtimeClaims(payload: JWTPayload): RuntimeAccessTokenClaims | undefine
   const workspace_id = stringClaim(payload, "workspace_id")
   const host_id = stringClaim(payload, "host_id")
   const role = roleClaim(payload)
+  const reach = tokenScopeClaims(payload)
   if (
-    !exp || !iat || !jti || !org_id || !workspace_id || !host_id || !role || !actor_id
+    !exp || !iat || !jti || !org_id || !workspace_id || !host_id || !role || !actor_id || !reach
     || (payload.user_id !== undefined && !user_id)
     || (principal_kind !== "user" && principal_kind !== "service")
     || (actor_kind !== "human" && actor_kind !== "agent")
@@ -631,10 +633,23 @@ function runtimeClaims(payload: JWTPayload): RuntimeAccessTokenClaims | undefine
     workspace_id,
     host_id,
     role,
+    ...reach,
     exp,
     iat,
     jti,
   }
+}
+
+export function tokenScopePayload(sessionId: string | undefined) {
+  return sessionId === undefined ? { scope: "workspace" as const } : { scope: "session" as const, session_id: sessionId }
+}
+
+/** The token's reach, or nothing when it names neither the workspace nor exactly one session. */
+export function tokenScopeClaims(payload: Record<string, unknown>): { scope: TokenScope; session_id?: string } | undefined {
+  const sessionId = stringClaim(payload, "session_id")
+  if (payload.scope === "workspace" && payload.session_id === undefined) return { scope: "workspace" }
+  if (payload.scope === "session" && sessionId) return { scope: "session", session_id: sessionId }
+  return undefined
 }
 
 function relayHostClaims(payload: JWTPayload): RelayHostTokenClaims | undefined {

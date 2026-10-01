@@ -1,5 +1,4 @@
-import { randomUUID } from "node:crypto"
-import type { SqliteDatabase } from "../store"
+import type { SqliteDatabase } from "../sqlite/database"
 
 type Waiter = (leaseId: string | undefined) => void
 
@@ -15,7 +14,7 @@ export class TurnLeases {
   constructor(private readonly db: SqliteDatabase) {}
 
   acquire(sessionId: string): string | undefined {
-    const leaseId = `${sessionId}:${randomUUID()}`
+    const leaseId = `${sessionId}:${crypto.randomUUID()}`
     const result = this.db.prepare(`
       INSERT OR IGNORE INTO session_turn_lease (session_id, lease_id, acquired_at)
       VALUES (?, ?, ?)

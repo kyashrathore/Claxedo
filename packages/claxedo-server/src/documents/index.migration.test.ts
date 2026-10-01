@@ -156,7 +156,7 @@ describe("documents reset migration", () => {
     const sqlite = new Database(":memory:")
     sqlite.pragma("foreign_keys = ON")
     const entries = migrations()
-    entries.filter((migration) => migration.name !== resetMigration).forEach((migration) => apply(sqlite, migration.sql))
+    entries.filter((migration) => migration.name < resetMigration).forEach((migration) => apply(sqlite, migration.sql))
     sqlite.prepare(`
       INSERT INTO ${retiredPageTable} (id, org_id, project_id, title, content, created_at, updated_at)
       VALUES (?, ?, ?, ?, ?, ?, ?)
@@ -189,7 +189,7 @@ describe("documents reset migration", () => {
     mkdirSync(root, { recursive: true })
     const sqlite = new Database(path.join(root, "claxedo.db"))
     sqlite.exec("CREATE TABLE __claxedo_migrations (name TEXT PRIMARY KEY, applied_at INTEGER NOT NULL)")
-    migrations().filter((migration) => migration.name !== resetMigration).forEach((migration) => {
+    migrations().filter((migration) => migration.name < resetMigration).forEach((migration) => {
       apply(sqlite, migration.sql)
       sqlite.prepare("INSERT INTO __claxedo_migrations (name, applied_at) VALUES (?, ?)").run(migration.name, 1)
     })

@@ -2,7 +2,8 @@ import { afterEach, expect, test } from "bun:test"
 import { spawn, type ChildProcess } from "node:child_process"
 import { Database } from "bun:sqlite"
 import { readCreationIdentity, type LaunchOwnerScope } from "@claxedo/process-ownership/launch"
-import { migrateLaunchOwnership, sqliteLaunchOwnership, type SqliteDatabase } from "./launch-ownership-sqlite"
+import { LAUNCH_OWNERSHIP_SCHEMA } from "./launch-ownership-schema"
+import { sqliteLaunchOwnership, type SqliteDatabase } from "./launch-ownership-sqlite"
 import { reconcileLaunchOwnership } from "./reconcile-launch-ownership"
 
 const posix = process.platform !== "win32"
@@ -25,7 +26,7 @@ const alone: LaunchOwnerScope = { kind: "standalone" }
 
 function store(ownerGeneration = previous, scope: LaunchOwnerScope = mounted) {
   const db = new Database(":memory:") as unknown as SqliteDatabase
-  migrateLaunchOwnership(db)
+  for (const statement of LAUNCH_OWNERSHIP_SCHEMA) db.exec(statement)
   return { db, ownership: sqliteLaunchOwnership(db, { ownerGeneration, scope }) }
 }
 
@@ -155,24 +156,3 @@ test.skipIf(!posix)("a launch owned by the runtime doing the reconciling is neve
   // The live row is left open, because its owner has not finished with it.
   expect((await mine.listUnresolved(mounted)).map((item) => item.launchId)).toEqual([running.launchId])
 }, 20_000)
-
-test("a database written before ownership carried a generation still reconciles", async () => {
-  const db = new Database(":memory:") as unknown as SqliteDatabase
-  db.exec(`
-    CREATE TABLE launch_ownership (
-      launch_id TEXT PRIMARY KEY, role TEXT NOT NULL, protocol TEXT NOT NULL, parent_owner_id TEXT,
-      workspace_id TEXT, session_id TEXT, directory TEXT, prepared_at INTEGER NOT NULL,
-      identity_json TEXT, gate_nonce TEXT, identity_received_at INTEGER,
-      activation_authorized_at INTEGER, activation_acknowledged_at INTEGER, retired_at INTEGER, cleanup_json TEXT
-    );
-  `)
-  db.prepare("INSERT INTO launch_ownership (launch_id, role, protocol, workspace_id, prepared_at) VALUES (?, ?, ?, ?, ?)")
-    .run("older", "harness", "gate", "ws", Date.now())
-
-  migrateLaunchOwnership(db)
-  const ownership = sqliteLaunchOwnership(db, { ownerGeneration: current, scope: mounted })
-
-  // No current runtime can claim it, so it is reconciled rather than skipped.
-  const outcome = await reconcileLaunchOwnership(ownership, { currentOwnerGeneration: current, scope: mounted, budgets })
-  expect(outcome.results[0]).toMatchObject({ launchId: "older", outcome: "never_executed" })
-})

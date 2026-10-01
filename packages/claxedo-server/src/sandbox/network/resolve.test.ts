@@ -1,42 +1,42 @@
 import { describe, expect, test } from "vitest"
-import { resolveAllowListCidrs, resolveSandboxNetworkPolicy, type PolicyEntry } from "./resolve"
+import { resolveSandboxNetworkPolicy, type PolicyEntry } from "./resolve"
 
 describe("network resolve", () => {
-  test("resolveAllowListCidrs always includes control-plane CIDRs", async () => {
-    const cidrs = await resolveAllowListCidrs([])
+  test("the policy CIDRs always include the control plane", async () => {
+    const cidrs = (await resolveSandboxNetworkPolicy([])).cidrs
     expect(cidrs).toContain("127.0.0.1/32")
   })
 
-  test("resolveAllowListCidrs resolves IP addresses as /32", async () => {
+  test("the policy CIDRs carry an IP address as a /32", async () => {
     const entries: PolicyEntry[] = [{ target: "192.168.1.100", kind: "host" }]
-    const cidrs = await resolveAllowListCidrs(entries)
+    const cidrs = (await resolveSandboxNetworkPolicy(entries)).cidrs
     expect(cidrs).toContain("192.168.1.100/32")
   })
 
-  test("resolveAllowListCidrs passes through CIDR notation", async () => {
+  test("the policy CIDRs pass CIDR notation through", async () => {
     const entries: PolicyEntry[] = [{ target: "10.0.0.0/8", kind: "host" }]
-    const cidrs = await resolveAllowListCidrs(entries)
+    const cidrs = (await resolveSandboxNetworkPolicy(entries)).cidrs
     expect(cidrs).toContain("10.0.0.0/8")
   })
 
-  test("resolveAllowListCidrs resolves server URL host", async () => {
-    const cidrs = await resolveAllowListCidrs([], "http://127.0.0.1:3001")
+  test("the policy CIDRs resolve the server URL host", async () => {
+    const cidrs = (await resolveSandboxNetworkPolicy([], "http://127.0.0.1:3001")).cidrs
     expect(cidrs).toContain("127.0.0.1/32")
   })
 
-  test("resolveAllowListCidrs deduplicates CIDRs", async () => {
+  test("the policy CIDRs are deduplicated", async () => {
     const entries: PolicyEntry[] = [
       { target: "127.0.0.1", kind: "host" },
       { target: "127.0.0.1", kind: "host" },
     ]
-    const cidrs = await resolveAllowListCidrs(entries)
+    const cidrs = (await resolveSandboxNetworkPolicy(entries)).cidrs
     const count = cidrs.filter((c) => c === "127.0.0.1/32").length
     expect(count).toBe(1)
   })
 
-  test("resolveAllowListCidrs handles unresolvable hostnames gracefully", async () => {
+  test("the policy CIDRs skip an unresolvable hostname", async () => {
     const entries: PolicyEntry[] = [{ target: "this-host-does-not-exist.invalid", kind: "host" }]
-    const cidrs = await resolveAllowListCidrs(entries)
+    const cidrs = (await resolveSandboxNetworkPolicy(entries)).cidrs
     // Should not throw, just skip the unresolvable entry
     expect(cidrs).toContain("127.0.0.1/32")
   })

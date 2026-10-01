@@ -1,5 +1,5 @@
 import type { SubagentObservation, AgentEventEnvelope } from "@claxedo/agent-runtime-contract"
-import { createHmac, randomUUID } from "crypto"
+import { createHmac } from "node:crypto"
 import type { AgentMessage, AgentSession } from "@claxedo/agent-runtime-contract"
 import type { RuntimeDirectory } from "../host/contracts"
 import type { SubagentStatus, SubagentUpdatedEvent, SubagentWake } from "@claxedo/agent-runtime-contract"
@@ -159,7 +159,7 @@ export function createChildSessionHost(input: ChildSessionHostInput): ChildSessi
       })
       if (started !== "started") return
       await admit(parentSessionId, directory, {
-        observationId: `host:wake:delivered:${next.childSessionId}:${randomUUID()}`,
+        observationId: `host:wake:delivered:${next.childSessionId}:${crypto.randomUUID()}`,
         subagentKey: next.subagentKey,
         wake: "delivered",
       })
@@ -174,7 +174,7 @@ export function createChildSessionHost(input: ChildSessionHostInput): ChildSessi
     const count = pendingAttention.get(sessionId)?.size ?? 0
     if ((row.attention ?? 0) === count) return
     await admit(row.parentSessionId, directory, {
-      observationId: `host:attention:${sessionId}:${randomUUID()}`,
+      observationId: `host:attention:${sessionId}:${crypto.randomUUID()}`,
       subagentKey: row.subagentKey,
       attention: count,
     })
@@ -221,7 +221,7 @@ export function createChildSessionHost(input: ChildSessionHostInput): ChildSessi
     async admitCreated({ parentSessionId, childSessionId, directory, harness, role, title, origin }) {
       const event = await admit(parentSessionId, requireDirectory(directory), {
         observationId: `host:create:${childSessionId}`,
-        subagentKey: `subagent_${randomUUID()}`,
+        subagentKey: `subagent_${crypto.randomUUID()}`,
         mode: "background",
         status: "pending",
         label: title ?? role ?? `${harness} subagent`,
@@ -240,7 +240,7 @@ export function createChildSessionHost(input: ChildSessionHostInput): ChildSessi
       const row = await childOf(sessionId, directory)
       if (stopped || !row || row.status !== "pending") return
       await admit(row.parentSessionId, requireDirectory(directory), {
-        observationId: `host:running:${sessionId}:${randomUUID()}`,
+        observationId: `host:running:${sessionId}:${crypto.randomUUID()}`,
         subagentKey: row.subagentKey,
         status: "running",
       })
@@ -261,7 +261,7 @@ export function createChildSessionHost(input: ChildSessionHostInput): ChildSessi
       if (stopped) return
       const parentGone = !parent || parent.time?.archived !== undefined
       await admit(row.parentSessionId, directory, {
-        observationId: `host:finished:${sessionId}:${summary.assistantMessageId ?? randomUUID()}`,
+        observationId: `host:finished:${sessionId}:${summary.assistantMessageId ?? crypto.randomUUID()}`,
         subagentKey: row.subagentKey,
         status: parentGone ? "interrupted" : summary.status,
         ...(parentGone ? {} : { wake: "pending" }),

@@ -42,42 +42,19 @@ export async function sandboxDriverAuthAsync<T extends SandboxDriverID>(
   return sandboxDriverAuthSync(cfg, id, env) ?? sandboxDriverAuthManaged(id)
 }
 
-// Decoder half of the sandbox-driver credential codec; `sandboxDriverManagedSecret`
-// in `sandbox-driver-routes.ts` is the encoder.
-//
-// This was seven hand-written per-driver branches, and it had already drifted
-// from the encoder: both named special cases, but not the SAME ones, so exe.dev
-// and Box decoded a JSON blob as though it were a bare token. Driving both
-// halves off `credentialFields` removes the class of bug — a new driver needs
-// no edit here, and there is no per-driver list left to disagree about.
 function parseManagedAuth<T extends SandboxDriverID>(id: T, secret: string): SandboxDriverAuth[T] | undefined {
   const fields = sandboxDriverCredentialFields[id]
   const parsed = parseJsonRecord(secret)
-
-  const values =
-    parsed
-      ? Object.fromEntries(
-          fields.flatMap((field) => {
-            const raw = parsed[field.key]
-            const value = typeof raw === "string" ? trimToUndefined(raw) : undefined
-            return value ? [[field.key, value]] : []
-          }),
-        )
-      : // Legacy bare secret: the pre-codec encoder stored daytona/docker
-        // unwrapped, and `credentials/migrate.ts` still writes daytona that
-        // way. A bare string can only ever be a single-field driver's value.
-        singleFieldLegacyValues(fields, secret)
+  if (!parsed) return undefined
+  const values = Object.fromEntries(
+    fields.flatMap((field) => {
+      const raw = parsed[field.key]
+      const value = typeof raw === "string" ? trimToUndefined(raw) : undefined
+      return value ? [[field.key, value]] : []
+    }),
+  )
 
   if (Object.keys(values).length !== fields.length) return undefined
   if (id === "cloudflare") values.worker_url = cloudflareWorkerBaseUrl(values.worker_url)
   return values as SandboxDriverAuth[T]
-}
-
-function singleFieldLegacyValues(
-  fields: readonly { key: string }[],
-  secret: string,
-): Record<string, string> {
-  if (fields.length !== 1) return {}
-  const value = trimToUndefined(secret)
-  return value ? { [fields[0].key]: value } : {}
 }

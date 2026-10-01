@@ -4,9 +4,9 @@ import { harnessConnectContext, harnessIcon } from "@/lib/harness-catalog"
 import { useI18n } from "@/i18n"
 import { ClaxedoIcon, useDialog, Button, ProviderIcon, RadioGroup, RadioItem, Switch } from "@/ui"
 import { useWindowName } from "@/usage"
-import { machineLoginWords, storedAccountWords, teamAccountWords, type AccountWords, type CloudConsent } from "../account-words"
+import { machineLoginWords, orgAccountWords, storedAccountWords, type AccountWords, type CloudConsent } from "../account-words"
 import { useAccountsText } from "../i18n"
-import { harnessAccounts, machineLoginOf, selectedAccountKey, TEAM_ACCOUNT_KEY, type AccountsSnapshot, type Harness } from "../model"
+import { harnessAccounts, machineLoginOf, ORG_ACCOUNT_KEY, selectedAccountKey, type AccountsSnapshot, type Harness } from "../model"
 import type { Accounts } from "../store"
 import { AccountActions, LabelHint, Reach } from "./account-actions"
 import { CheckedAge } from "./account-status"
@@ -28,8 +28,8 @@ function useAccountRows(props: HarnessRowProps) {
     const words = { t, windowName }
     const stored = harnessAccounts(props.harness, props.snapshot.stored).map((row) => storedAccountWords(words, row, props.accounts.liveChecks()[row.id]))
     const login = machineLoginOf(props.harness, props.snapshot)
-    const team = teamAccountWords(words, props.harness, props.snapshot, selectedAccountKey(props.harness, props.snapshot) === TEAM_ACCOUNT_KEY, access.can("accounts.removeTeam", props.snapshot.sources))
-    return [...stored, ...(login ? [machineLoginWords(words, login, props.harness, props.snapshot)] : []), ...(team ? [team] : [])]
+    const org = orgAccountWords(words, props.harness, props.snapshot, selectedAccountKey(props.harness, props.snapshot) === ORG_ACCOUNT_KEY, access.can("accounts.removeOrg", props.snapshot.sources))
+    return [...stored, ...(login ? [machineLoginWords(words, login, props.harness, props.snapshot)] : []), ...(org ? [org] : [])]
   })
 }
 

@@ -26,7 +26,6 @@ export type RuntimeMcpServerProjection = RuntimeMcpServerProjectionIdentity & (
  * of the credentials the signed pull carried, or the placeholder names a
  * control plane knows its driver installs. Either way the name in the apply
  * request is the key and the value is the complete Authorization header.
- * Daytona substitutes that entire value for its opaque reference.
  */
 export function runtimeMcpServers(
   rows: AgentPluginRuntimeApplyRequest["mcpServers"],

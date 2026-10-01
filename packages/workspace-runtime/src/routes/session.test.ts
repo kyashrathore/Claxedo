@@ -289,8 +289,8 @@ describe("session prompt route", () => {
     await wa.createSession("s1", { title: "First" })
     expect((await wa.json("/session/s1/message", { parts: [{ type: "text", text: "hi" }] })).status).toBe(200)
     const store = wa.store()
-    store.bindSession({ sessionId: "s2", workspaceId: wa.workspaceId, directory: wa.directory, connectionId: "fake", upstreamSessionId: "s2", agentSessionId: "s2", title: "Second", createdAt: 20, updatedAt: 30 })
-    store.bindSession({ sessionId: "s-child", workspaceId: wa.workspaceId, directory: wa.directory, connectionId: "fake", upstreamSessionId: "s-child", agentSessionId: "s-child", title: "Child", parentSessionId: "s2", createdAt: 25, updatedAt: 35 })
+    store.bindSession({ owner: { kind: "machine-owner" }, sessionId: "s2", workspaceId: wa.workspaceId, directory: wa.directory, connectionId: "fake", upstreamSessionId: "s2", agentSessionId: "s2", title: "Second", createdAt: 20, updatedAt: 30 })
+    store.bindSession({ owner: { kind: "machine-owner" }, sessionId: "s-child", workspaceId: wa.workspaceId, directory: wa.directory, connectionId: "fake", upstreamSessionId: "s-child", agentSessionId: "s-child", title: "Child", parentSessionId: "s2", createdAt: 25, updatedAt: 35 })
 
     const res = await wa.app.request(wa.url("/experimental/session", { roots: "true", limit: "5" }))
 
@@ -346,6 +346,7 @@ describe("session prompt route", () => {
     const wa = await workspaceApp()
     await wa.createSession("parent_1")
     wa.store().bindSession({
+      owner: { kind: "machine-owner" },
       sessionId: "s-project", workspaceId: wa.workspaceId, directory: wa.directory, connectionId: "fake", upstreamSessionId: "s-project",
       agentSessionId: "s-project", title: "Project Session", parentSessionId: "parent_1", createdAt: 10, updatedAt: 10,
     })
@@ -824,13 +825,6 @@ describe("session prompt route", () => {
     expect(permissionRes.status).toBe(409)
     await expect(permissionRes.json()).resolves.toEqual(refusal("permission_response", "permissions"))
     expect(answers).toEqual([])
-
-    const command = await wa.json("/session/s1/command", { command: "review" })
-    expect(command.status).toBe(501)
-    await expect(command.json()).resolves.toEqual({
-      ok: false,
-      error: { code: "unsupported_operation", operation: "command", reason: "not_implemented", message: "command is not implemented" },
-    })
   })
 
   async function withControlPlaneEnv<T>(handler: Parameters<typeof fetchDouble>[0], run: () => Promise<T>) {
@@ -1146,10 +1140,10 @@ it("publishes a successful session deletion once, on the hub the workspace strea
   const wa = await workspaceApp()
   await wa.createSession("parent-1")
   wa.store().bindSession({
+    owner: { kind: "machine-owner" },
     sessionId: "s1", workspaceId: wa.workspaceId, directory: wa.directory, connectionId: "fake", upstreamSessionId: "s1",
     agentSessionId: "s1", title: "child", parentSessionId: "parent-1",
   })
-  wa.store().recordSessionOwner("s1", { kind: "machine-owner" })
   wa.store().updateSessionConfig("s1", { harness: { id: "fake", access: "connection" } })
   const events: unknown[] = []
   wa.eventHub.subscribeGlobal((event) => { if ((event.payload as { type?: string }).type === "session.deleted") events.push(event) })

@@ -1,18 +1,7 @@
-type Database = {
-  exec(sql: string): unknown
-  prepare<Row = unknown>(sql: string): {
-    run(...params: unknown[]): unknown
-    get(...params: unknown[]): Row | null | undefined
-  }
-}
+import type { SqliteDatabase } from "../sqlite/database"
 
 export class SessionAuthoringOwnership {
-  constructor(private readonly db: Database) {
-    db.exec(`CREATE TABLE IF NOT EXISTS session_prompt_actor (
-      session_id TEXT NOT NULL, actor_id TEXT NOT NULL,
-      PRIMARY KEY (session_id, actor_id)
-    )`)
-  }
+  constructor(private readonly db: SqliteDatabase) {}
 
   record(sessionId: string, actorId?: string) {
     if (actorId) this.db.prepare("INSERT OR IGNORE INTO session_prompt_actor VALUES (?, ?)").run(sessionId, actorId)

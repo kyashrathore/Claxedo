@@ -69,8 +69,8 @@ function writtenConfig() {
   return fs.existsSync(file) ? fs.readFileSync(file, "utf8") : ""
 }
 
-async function putDaytonaAuth(app: Hono) {
-  return app.request("/api/workspace/drivers/daytona/auth", {
+async function putBoxAuth(app: Hono) {
+  return app.request("/api/workspace/drivers/box/auth", {
     method: "PUT",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ auth: { api_key: SECRET }, default: true }),
@@ -79,7 +79,7 @@ async function putDaytonaAuth(app: Hono) {
 
 describe("sandbox driver credential storage", () => {
   test("a failed credential-store write is surfaced instead of silently downgraded", async () => {
-    const response = await putDaytonaAuth(appWith(credentialsThatFailToStore()))
+    const response = await putBoxAuth(appWith(credentialsThatFailToStore()))
 
     expect(response.status).toBe(500)
     expect(await response.json()).toMatchObject({
@@ -88,7 +88,7 @@ describe("sandbox driver credential storage", () => {
   })
 
   test("a failed credential-store write never persists the secret in plaintext", async () => {
-    await putDaytonaAuth(appWith(credentialsThatFailToStore()))
+    await putBoxAuth(appWith(credentialsThatFailToStore()))
 
     // The whole point: no plaintext copy anywhere on disk, and no partially
     // applied config write (the default_driver flip must not land either).
@@ -107,16 +107,16 @@ describe("sandbox driver credential storage", () => {
       deleteCredentialsByProvider: async () => 0,
     } as unknown as ControlPlaneCredentials
 
-    const response = await putDaytonaAuth(appWith(credentials))
+    const response = await putBoxAuth(appWith(credentials))
 
     expect(response.status).toBe(200)
-    expect(stored).toMatchObject([{ provider_id: "daytona", kind: "sandbox_driver" }])
+    expect(stored).toMatchObject([{ provider_id: "box", kind: "sandbox_driver" }])
     // The codec JSON-wraps every driver uniformly (see the round-trip suite);
     // the secret is the encoded form, not the bare field value.
     expect(stored[0].secret).toBe(JSON.stringify({ api_key: SECRET }))
 
     const body = (await response.json()) as { drivers: { id: string; configured: boolean }[] }
-    expect(body.drivers.find((item) => item.id === "daytona")?.configured).toBe(true)
+    expect(body.drivers.find((item) => item.id === "box")?.configured).toBe(true)
 
     // The secret reached the registry, not the config file.
     expect(writtenConfig()).not.toContain(SECRET)
@@ -124,16 +124,12 @@ describe("sandbox driver credential storage", () => {
 })
 
 // Encoder (`sandboxDriverManagedSecret`) and decoder (`parseManagedAuth`) live
-// in different files and drifted apart unnoticed: both special-cased drivers,
-// but not the same ones, so exe.dev and Box decoded to the literal string
-// `{"api_token":"…"}`. The save succeeded and the tile showed configured — only
-// the sandbox launch ever saw the corrupt token. This drives real writes
-// through the real route into the real registry and reads them back exactly the
-// way the launcher does, so the two halves cannot silently disagree again.
+// in different files, and a disagreement between them is invisible at save
+// time: the tile shows configured and only the sandbox launch sees a corrupt
+// token. This drives real writes through the real route into the real registry
+// and reads them back exactly the way the launcher does.
 describe("sandbox driver credential codec round trip", () => {
   const CASES: { id: string; auth: Record<string, string> }[] = [
-    { id: "exe", auth: { api_token: "tok_exe_123" } },
-    { id: "daytona", auth: { api_key: "dt_key_123" } },
     { id: "box", auth: { api_key: "box_key_123" } },
     { id: "docker", auth: { image: "ghcr.io/example/runtime:test" } },
     { id: "modal", auth: { token_id: "mid_123", token_secret: "msec_123" } },

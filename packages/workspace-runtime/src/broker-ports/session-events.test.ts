@@ -3,8 +3,12 @@ import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"
 import { createRequestBroker, createTurnBroker } from "@claxedo/harness/broker"
-import { RuntimeStore } from "../store"
+import { Hono } from "hono"
+import { createBus, type WorkspaceRuntimeEvent } from "../bus"
+import type { RuntimeStore } from "../store"
+import { openRuntimeStore } from "../store-file"
 import { createRuntimeEventHub } from "../projection/runtime-event-hub"
+import { workspaceEventsHandler } from "../routes/events"
 import { BrokerBackgroundWork } from "./background-work"
 import { BrokerEventDelivery } from "./delivery"
 import { createStoreBrokerPorts } from "./index"
@@ -22,9 +26,9 @@ afterEach(() => {
 
 function setup() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "session-events-"))
-  const store = new RuntimeStore(root)
+  const store = openRuntimeStore(root)
   opened.push({ store, root })
-  store.bindSession({ sessionId: "s1", workspaceId: "w1", directory: "/work", connectionId: "c1",
+  store.bindSession({ owner: { kind: "machine-owner" }, sessionId: "s1", workspaceId: "w1", directory: "/work", connectionId: "c1",
     upstreamSessionId: "up1", agentSessionId: "up1", createdAt: 1 })
   store.updateSessionConfig("s1", { harness: { id: "claude", access: "native" }, agent: "general",
     model: { providerID: "anthropic", modelID: "test" } })
@@ -38,7 +42,7 @@ function setup() {
   const turn = createTurnBroker(createRequestBroker(ports), { authority, origin, signal: new AbortController().signal })
   const delivery = new BrokerEventDelivery(store, publishers)
   const events = new BrokerSessionEvents(store, delivery, new BrokerBackgroundWork(store, delivery))
-  const rows = (sessionId: string) => store.brokerDatabase().prepare<{ type: string; payload_json: string }>(
+  const rows = (sessionId: string) => store.database().prepare<{ type: string; payload_json: string }>(
     "SELECT type, payload_json FROM runtime_journal WHERE session_id = ? AND kind = 'event' ORDER BY seq").all(sessionId)
   return { store, ports, turn, events, rows }
 }
@@ -122,4 +126,59 @@ test("replayed peer reports keep their persisted owner after continuation and br
   const notices = store.getMessages("s1").flatMap((message) => message.parts).filter((part) => part.type === "notice")
   expect(notices).toHaveLength(1)
   expect(notices[0]).toMatchObject({ messageID: "t1", notice: { kind: "agent-message", message: "Report ready" } })
+})
+
+test("one broker subagent update commits once and reaches SSE once", async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "subagent-delivery-"))
+  const store = openRuntimeStore(root)
+  const controller = new AbortController()
+  let handler: ReturnType<typeof workspaceEventsHandler> | undefined
+  try {
+    store.bindSession({
+      owner: { kind: "machine-owner" }, sessionId: "parent", workspaceId: "workspace",
+      directory: "/work", connectionId: "connection", upstreamSessionId: "upstream",
+      agentSessionId: "upstream", createdAt: 1,
+    })
+    const hub = createRuntimeEventHub()
+    const ports = createStoreBrokerPorts(store, {
+      ownerGeneration: "generation", patternEvaluator: async () => {}, publishers: hub,
+      reportOwnerFailure: (_sessionId, error) => { throw error },
+      retainLeasedTurnFailure: (_sessionId, _turn, error) => { throw error },
+    })
+    handler = workspaceEventsHandler({
+      directory: "/work", workspaceId: "workspace", eventHub: hub,
+      bus: createBus<WorkspaceRuntimeEvent>(), sequenceOrigin: () => 0,
+    })
+    const app = new Hono().get("/events", handler)
+    const response = await app.request("http://localhost/events", { signal: controller.signal })
+    expect(response.status).toBe(200)
+    const raw: unknown[] = []
+    const unsubscribe = hub.subscribeRuntime((event) => raw.push(event.payload))
+    const update = { type: "subagent-updated" as const, subagentKey: "child", revision: 1, status: "running" as const }
+    const ordinal = store.getSessionMaxSeq("parent")
+    await ports.publishSubagent("parent", update)
+    hub.publishGlobal({ directory: "/work", payload: { type: "session.commands", properties: { sessionID: "parent", commands: [] } } })
+    const reader = response.body!.getReader()
+    const decoder = new TextDecoder()
+    let wire = ""
+    while (!wire.includes("session.commands")) {
+      const next = await reader.read()
+      if (next.done) break
+      wire += decoder.decode(next.value, { stream: true })
+    }
+    controller.abort()
+    unsubscribe()
+    const frames = wire.split("\n\n").flatMap((block) => {
+      const data = block.split("\n").find((line) => line.startsWith("data:"))
+      return data ? [JSON.parse(data.slice(5))] : []
+    })
+    expect(raw).toEqual([update])
+    expect(store.getSessionMaxSeq("parent")).toBe(ordinal + 1)
+    expect(frames.filter((frame) => frame.payload?.type === "subagent.updated")).toHaveLength(1)
+  } finally {
+    controller.abort()
+    handler?.close()
+    store.close()
+    fs.rmSync(root, { recursive: true, force: true })
+  }
 })

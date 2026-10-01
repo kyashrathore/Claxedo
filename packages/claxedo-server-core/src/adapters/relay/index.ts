@@ -66,6 +66,8 @@ export function createControlPlaneRelayProvider(options: ControlPlaneRelayProvid
       const ttlSeconds = clampedRelayTtlSeconds(input.ttlMs, HOST_TUNNEL_TOKEN_TTL_BOUNDS_SECONDS)
       const token = await options.hostTunnelTokenSigner({
         subject: input.subject,
+        enrollmentId: input.enrollmentId,
+        generation: input.generation,
         hostId: input.hostId,
         workspaceIds: [input.workspaceId],
         ...(ttlSeconds === undefined ? {} : { ttlSeconds }),

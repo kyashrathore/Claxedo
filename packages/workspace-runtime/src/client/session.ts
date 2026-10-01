@@ -1,3 +1,4 @@
+import { decodeApiError } from "@claxedo/helpers/api-error"
 import type { AgentGoalMutationResult, AgentPermissionModeState, GoalCapabilities, SessionConfig, SessionConfigUpdate } from "@claxedo/agent-runtime-contract"
 import type {
   AgentContentPart,
@@ -20,7 +21,7 @@ import type { BackgroundTaskStopResult, ConfigOptionsPreview } from "@claxedo/ha
 import type { AgentRuntimeRecoveryInspection } from "../host/contracts"
 import type { AgentTurnCoveragePage } from "@claxedo/agent-runtime-contract"
 import type { FirstRead, TurnPage } from "@claxedo/agent-runtime-contract"
-import { claxedoErrorEnvelope, namedMembers, without, type WorkspaceRuntimeCaller, type WorkspaceRuntimeRequestOptions, type WorkspaceRuntimeResponse, type WorkspaceScope } from "./request"
+import { namedMembers, without, type WorkspaceRuntimeCaller, type WorkspaceRuntimeRequestOptions, type WorkspaceRuntimeResponse, type WorkspaceScope } from "./request"
 
 type Options = WorkspaceRuntimeRequestOptions
 type Reply<T> = Promise<WorkspaceRuntimeResponse<T>>
@@ -123,14 +124,9 @@ export type WorkspaceSessionClient = {
     submit(input: SessionInput & { request: RecoveryRequest }, options?: Options): Reply<RecoveryOutcome>
     read(input: SessionInput & { operationId: string }, options?: Options): Reply<RecoveryOutcome>
   }
-  summarize(input: SessionInput & { providerID: string; modelID: string; auto?: boolean }, options?: Options): Reply<Ok>
   prompt(input: SessionMessageInput, options?: Options): Reply<AgentPromptResponse | SessionDeliveryAcknowledgement>
   /** Immediate admission has no body; explicit delivery requests return their durable admission state. */
   promptAsync(input: SessionMessageInput, options?: Options): Reply<void | SessionDeliveryAcknowledgement>
-  command(input: SessionMessageInput, options?: Options): Reply<AgentPromptResponse>
-  shell(input: SessionMessageInput, options?: Options): Reply<AgentPromptResponse>
-  revert(input: SessionInput & { messageID: string; partID?: string }, options?: Options): Reply<AgentPresentationSession>
-  unrevert(input: SessionInput, options?: Options): Reply<AgentPresentationSession>
   config: {
     get(input: SessionInput, options?: Options): Reply<SessionConfig>
     update(input: SessionInput & SessionConfigUpdate, options?: Options): Reply<SessionConfig>
@@ -191,7 +187,7 @@ const RECOVERY_ROUTE_ERROR_STATUSES = new Set([400, 404])
  */
 function decodeRecoveryOutcome(body: unknown, status: number): RecoveryOutcome {
   if (isRecoveryOutcome(body)) return parseRecoveryOutcome(body)
-  const envelope = claxedoErrorEnvelope(body)
+  const envelope = decodeApiError(status, body)
   if (!envelope || RECOVERY_ROUTE_ERROR_STATUSES.has(status)) {
     throw new Error("recovery answer is neither an outcome nor a forwarding failure")
   }
@@ -266,7 +262,7 @@ export function sessionClient(caller: WorkspaceRuntimeCaller): WorkspaceSessionC
         options,
         // An inspection the owner answered carries no `kind` and is not an
         // error envelope, so it is the only body that is not an outcome.
-        decode: (body, status) => isRecoveryOutcome(body) || claxedoErrorEnvelope(body)
+        decode: (body, status) => isRecoveryOutcome(body) || decodeApiError(status, body)
           ? decodeRecoveryOutcome(body, status)
           : recoveryInspection(body),
       }),
@@ -287,7 +283,6 @@ export function sessionClient(caller: WorkspaceRuntimeCaller): WorkspaceSessionC
         decode: decodeRecoveryOutcome,
       }),
     },
-    summarize: (input, options) => write("session.summarize", "POST", input, "/summarize", options, without(input, ["sessionID"])),
     prompt: (input, options) => write("session.prompt", "POST", input, "/message", options, without(input, ["sessionID"])),
     promptAsync: (input, options) => {
       const request = {
@@ -298,10 +293,6 @@ export function sessionClient(caller: WorkspaceRuntimeCaller): WorkspaceSessionC
         ? caller.call<SessionDeliveryAcknowledgement>(request)
         : caller.callNoContent(request)
     },
-    command: (input, options) => write("session.command", "POST", input, "/command", options, without(input, ["sessionID"])),
-    shell: (input, options) => write("session.shell", "POST", input, "/shell", options, without(input, ["sessionID"])),
-    revert: (input, options) => write("session.revert", "POST", input, "/revert", options, without(input, ["sessionID"])),
-    unrevert: (input, options) => write("session.unrevert", "POST", input, "/unrevert", options),
     config: {
       get: (input, options) => read("session.config.get", input, "/config", options),
       update: (input, options) => write("session.config.update", "PATCH", input, "/config", options, without(input, ["sessionID"])),

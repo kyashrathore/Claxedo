@@ -84,10 +84,9 @@ jobs:
         run: npx tsx ../build-sandbox-image.ts --agent-plugins --bundle-only --out=.build
 
       # The bundle step also writes scripts/sandbox/.build/build-info.json with
-      # the content build-id / snapshot name. Surface it so operators can wire
-      # CLAXEDO_SANDBOX_BUILD_ID (or CLAXEDO_SNAPSHOT_NAME) onto the control
-      # plane — otherwise a rebuilt bundle at the same version never reaches
-      # sandboxes (ensureSnapshot returns early for an existing name).
+      # the content build-id. Surface it so operators can wire
+      # CLAXEDO_SANDBOX_BUILD_ID onto the control plane — otherwise a rebuilt
+      # bundle at the same version never reaches sandboxes.
       - name: Surface sandbox build identity
         if: always()
         run: |
@@ -97,7 +96,7 @@ jobs:
             echo '```json' >> "$GITHUB_STEP_SUMMARY"
             cat "$INFO" >> "$GITHUB_STEP_SUMMARY"
             echo '```' >> "$GITHUB_STEP_SUMMARY"
-            echo "Pin the control plane: set CLAXEDO_SANDBOX_BUILD_ID (or CLAXEDO_SNAPSHOT_NAME / CLAXEDO_SANDBOX_IMAGE) to the value above." >> "$GITHUB_STEP_SUMMARY"
+            echo "Pin the control plane: set CLAXEDO_SANDBOX_BUILD_ID (or CLAXEDO_SANDBOX_IMAGE) to the value above." >> "$GITHUB_STEP_SUMMARY"
             cat "$INFO"
           else
             echo "no build-info.json emitted"

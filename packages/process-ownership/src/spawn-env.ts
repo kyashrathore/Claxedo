@@ -1,5 +1,3 @@
-export const LOCAL_DOCUMENT_BROKER_TOKEN_ENV = "CLAXEDO_LOCAL_DOCUMENT_BROKER_TOKEN"
-
 /**
  * Harness children get a broad environment — tool configs, SDK variables, and
  * provider wiring differ per harness, so allowlisting every name would break
@@ -34,7 +32,6 @@ const ALLOWED_INTERNAL_ENV = new Set([
   "CLAXEDO_WORKSPACE_RELAY_URL",
   "CLAXEDO_SERVER_HOST",
   "CLAXEDO_SERVER_PORT",
-  "CLAXEDO_LOCAL_CONTROL_PLANE_URL",
   "CLAXEDO_WORKSPACE_ID",
   "CLAXEDO_WR_WORKSPACE_ID",
   "CLAXEDO_SESSION_ID",

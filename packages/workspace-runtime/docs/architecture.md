@@ -35,14 +35,14 @@ for the full auth/env matrix.
 `workspace-runtime` serves one event stream, `GET /api/wr/events`, fed by two
 in-process sources with different jobs:
 
-- **`RuntimeEventHub`** ([`src/runtime-event-hub.ts`](../src/runtime-event-hub.ts))
+- **`RuntimeEventHub`** ([`src/projection/runtime-event-hub.ts`](../src/projection/runtime-event-hub.ts))
   is the hub for session/runtime events. Session routes publish Claxedo
-  presentation events (`AgentEventEnvelope`) to its global channel and
-  runtime-channel events (subagent revisions, goal changes) to its runtime
-  channel. `GET /api/wr/events` (SSE, `mountWorkspaceCore()`) serves the
-  first and projects the second onto the wire as `subagent.updated` /
-  `goal.*` presentation events; raw `AgentRuntimeEvent` payloads never leave
-  the runtime.
+  presentation events (`AgentEventEnvelope`) to its global channel after
+  `createSessionEventWriter` commits them, subagent revisions included; a goal
+  change is committed and published by the store's goal write. Raw runtime events stay
+  on the runtime channel for in-process subscribers. `GET /api/wr/events`
+  (SSE, `mountWorkspaceCore()`) serves only committed presentation events and
+  workspace control frames; it does not project the runtime channel.
 - **`workspaceRuntimeBus`** ([`src/bus.ts`](../src/bus.ts)) is intentionally
   process-global runtime state, used by PTY, process, and agent-hook code
   that already lives inside the workspace-runtime process. The same
@@ -93,18 +93,12 @@ derived projection rebuilt from it:
   journal append, that second transaction rolls back and a later runtime
   start rebuilds the projection from the journal via `replay()` — the
   journal row itself is never lost.
-- `RuntimeStore` also understands on-disk per-session `.jsonl` files: on
-  startup it imports any files under `<store>/sessions/*.jsonl` into
-  `runtime_journal` (idempotently, via `INSERT OR IGNORE`) for stores
-  migrating from the older flat-file journal layout, and
-  `exportJournalJsonl(sessionId?)` serializes journal rows back to that same
-  JSONL text shape for export/debugging.
-- Startup always calls `replay()`: it resets the projection tables and
-  replays every `runtime_journal` row, in `(session_id, seq)` order, back
-  through `apply()`. Replay-time recovery normalization (marking `busy`
-  sessions interrupted, terminalizing stale `pending`/`running` tool parts),
-  multi-row event projections, session deletion, and multi-field session
-  updates all run inside SQLite transactions.
+- `exportJournalJsonl(sessionId?)` serializes journal rows as JSONL for
+  export and debugging.
+- Opening a store calls `replay()`, which applies, per session, the journal
+  rows past its `journal_checkpoint` through `apply()`.
+- The schema and its refusal rule are described under "Runtime store
+  durability" in the package README.
 - The workspace host closes the store it opened when it is disposed, including
   one a `storeFactory` supplied.
 

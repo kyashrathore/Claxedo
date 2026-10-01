@@ -62,11 +62,11 @@ does not isolate.
 ## Owner commands
 
 ```
-claxedo host invite --name N --root DIR... [--expires 1h] [--org-visible]
+claxedo host invite --name N --root DIR... [--expires 1h]
 claxedo host list
 claxedo host assign --machine <name|enrollment_id> <dir> [--name N]
 claxedo host unassign --machine <name|enrollment_id> <dir>
-claxedo host scope --machine <name|enrollment_id> --root DIR... [--org-visible]
+claxedo host scope --machine <name|enrollment_id> --root DIR...
 claxedo host revoke --machine <name|enrollment_id>
 ```
 

@@ -1,7 +1,7 @@
 import { integer, sqliteTable, text } from "drizzle-orm/sqlite-core"
 
 // One row per integration in each opaque owner partition. The row id is the
-// durable credential and route identity; owner absence denotes team scope.
+// durable credential and route identity; owner absence denotes org scope.
 export const ClaxedoConnectionTable = sqliteTable("claxedo_connection", {
   id: text().primaryKey(),
   integration_id: text().notNull(),

@@ -23,10 +23,12 @@ import { stageOpenCodePatches } from "./stage-opencode-patches"
 
 const ROOT = path.resolve(import.meta.dirname, "..")
 const DIST = path.join(ROOT, "dist")
-const PUBLIC_ENTRIES = ["index", "relay", "client", "host", "exposure", "config", "routes", "http", "route-contribution", "testing", "projection"] as const
+const PUBLIC_ENTRIES = ["index", "relay", "client", "host", "exposure", "config", "routes", "http", "route-contribution", "testing", "projection", "file-index"] as const
 
 // Dependencies that stay external (consumers install them)
 const LIBRARY_EXTERNALS = [
+  // Separate public bundles must share the machine index cache.
+  "@claxedo/workspace-runtime/file-index",
   // Contract error classes cross package boundaries. Keep their identity owned
   // by the installed contract package rather than a bundled copy.
   "@claxedo/agent-runtime-contract",

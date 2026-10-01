@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto"
 import type { PromptDelivery } from "@claxedo/agent-runtime-contract"
 import type { SessionPromptBody } from "./service"
 import type { SessionTurnOrigin } from "../session-access-policy"
@@ -81,7 +80,7 @@ export function createSessionDeliveryOwner(input: {
   /** Refuses a message id another session holds before the row is written, as a turn's own admission does. */
   const persist = ({ sessionId, body, actor, author, authority, provenance, grant }: Submission) => {
     if (disposed) throw new Error("Session delivery owner is disposed")
-    const { userMessageId } = admitTurnMessageIds(store(), { sessionId, messageId: body.messageID ?? `msg_${randomUUID()}` })
+    const { userMessageId } = admitTurnMessageIds(store(), { sessionId, messageId: body.messageID ?? `msg_${crypto.randomUUID()}` })
     const record = store().queuePrompt({
       sessionId, ...queuedPromptColumns(body), messageId: userMessageId,
       actor, author, authority, provenance, ...(grant ? { grant } : {}),
@@ -129,7 +128,7 @@ export function createSessionDeliveryOwner(input: {
     }
   }
   function claim(record: QueuedPromptRecord, mode: "start" | "steer") {
-    const operationId = randomUUID()
+    const operationId = crypto.randomUUID()
     if (!announced(record.sessionId, store().claimQueuedPromptDelivery(record.sessionId, record.seq, operationId, mode))) return undefined
     const claimed = row(record.sessionId, record.seq)
     if (!claimed || claimed.steering?.operationId !== operationId) return undefined

@@ -1,5 +1,6 @@
 import { describe, expect, test, vi } from "vitest"
 
+import { type AuthAdapterDescriptor } from "@claxedo/account-contract/auth"
 import {
   AuthenticationError,
   authenticateControlPlaneRequest,
@@ -7,7 +8,6 @@ import {
   type ApplicationIdentityResolution,
   type AuthAccountLifecycle,
   type AuthAccountOperationStatus,
-  type AuthAdapterDescriptor,
   type VerifiedAuthSession,
 } from "./authentication"
 

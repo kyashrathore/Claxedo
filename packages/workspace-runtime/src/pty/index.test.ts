@@ -6,7 +6,6 @@ import os from "node:os"
 import path from "node:path"
 import type { WSContext } from "hono/ws"
 import { historyPath } from "./history-disk"
-import { createProcessObserver, type ProcessObserverEvent } from "../managed-processes/process-observer"
 
 type DataHandler = (data: string) => void
 type ExitHandler = (event: { exitCode: number }) => void | Promise<void>
@@ -16,6 +15,8 @@ const fakeProcesses = new Map<number, {
   exitHandlers: ExitHandler[]
 }>()
 let nextSpawnPid: number | undefined
+let nextSpawnDelay = 0
+let nextSpawnExit = false
 const nativeKills: number[] = []
 const disposableChildren: ChildProcess[] = []
 
@@ -48,9 +49,14 @@ await mock.module("@lydell/node-pty", () => ({
   spawn(command: string, args: string[], options: { cwd?: string; env?: Record<string, string> }) {
     const pid = nextSpawnPid ?? disposablePid()
     nextSpawnPid = undefined
+    let ready = nextSpawnDelay === 0
+    if (!ready) setTimeout(() => { ready = true }, nextSpawnDelay)
+    nextSpawnDelay = 0
     fakeProcesses.set(pid, { dataHandlers: [], exitHandlers: [] })
+    if (nextSpawnExit) setTimeout(() => { fakeProcesses.get(pid)?.exitHandlers.forEach((handler) => handler({ exitCode: 7 })) }, 10)
+    nextSpawnExit = false
     return {
-      pid,
+      get pid() { return ready ? pid : 0 },
       kill() {
         nativeKills.push(pid)
       },
@@ -63,6 +69,7 @@ await mock.module("@lydell/node-pty", () => ({
       },
       onExit(handler: ExitHandler) {
         fakeProcesses.get(pid)?.exitHandlers.push(handler)
+        return { dispose() { const handlers = fakeProcesses.get(pid)?.exitHandlers; if (handlers) handlers.splice(handlers.indexOf(handler), 1) } }
       },
       command,
       args,
@@ -106,6 +113,34 @@ afterEach(async () => {
 })
 
 describe("Pty lifecycle cleanup", () => {
+  test("retains a native exit observed while waiting for a ConPTY PID", async () => {
+    const { Pty } = await import("./index")
+    nextSpawnPid = 0
+    nextSpawnExit = true
+    const start = Date.now()
+    const info = await Pty.create({ cwd: tmpDir }, ownership, undefined, { platform: "win32" })
+    expect(info.status).toBe("exited")
+    expect(Date.now() - start).toBeLessThan(1000)
+    await Pty.remove(info.id)
+    expect(Pty.get(info.id)).toBeUndefined()
+  })
+
+  test("records ownership only after ConPTY exposes its native PID", async () => {
+    const { Pty } = await import("./index")
+    const pid = disposablePid()
+    nextSpawnPid = pid
+    nextSpawnDelay = 30
+    const recorded: number[] = []
+    const info = await Pty.create({ cwd: tmpDir }, {
+      ...ownership,
+      async recordIdentity(id, identity) { recorded.push(identity.pid); await ownership.recordIdentity(id, identity) },
+    }, undefined, { platform: "win32" })
+    expect(info.pid).toBe(pid)
+    expect(recorded).toEqual([pid])
+    expect(Pty.get(info.id)?.pid).toBe(pid)
+    expect((await Pty.remove(info.id))?.leader).toBe("exited")
+  })
+
   test("persists the opaque create request id in the authoritative PTY inventory", async () => {
     const { Pty } = await import("./index")
     const info = await Pty.create({
@@ -119,42 +154,17 @@ describe("Pty lifecycle cleanup", () => {
     expect(Pty.list().find((row) => row.id === info.id)?.createRequestId).toBe("request-client-a")
   })
 
-  test("an unavailable native pid does not block observation or native PTY cleanup", async () => {
+  test("an unavailable native pid does not block native PTY cleanup", async () => {
     const { Pty } = await import("./index")
-    const events: ProcessObserverEvent[] = []
-    const observer = createProcessObserver({ sink: (event) => events.push(event) })
     nextSpawnPid = 0
 
-    const info = await Pty.create(
-      { cwd: tmpDir, title: "unknown-pid" },
-      ownership,
-      {
-        observer,
-        kind: "pty",
-        ownerId: "pty:unknown-pid",
-        workspaceId: "ws_unknown_pid",
-        directory: tmpDir,
-        label: "Unknown PID",
-      },
-    )
+    const info = await Pty.create({ cwd: tmpDir, title: "unknown-pid" }, ownership)
 
     expect(info.pid).toBe(0)
-    expect(events[0]).toMatchObject({
-      type: "registered",
-      descriptor: { ownerId: "pty:unknown-pid" },
-      capabilities: { stopGracefully: true, killOwnedTree: false },
-    })
-    expect(events[0]).not.toHaveProperty("descriptor.pid")
-
-    const registered = events[0] as Extract<ProcessObserverEvent, { type: "registered" }>
     // Without a pid there is no creation identity, so nothing can be signalled
     // and nothing may be claimed: the native handle is closed and the terminal
     // is kept for a later attempt rather than reported stopped.
-    await expect(observer.invoke({
-      ownerId: registered.descriptor.ownerId,
-      ownerGeneration: registered.descriptor.ownerGeneration,
-      operation: "stop",
-    })).resolves.toEqual({ result: "unresolved", retirement: { leader: "unknown", descendants: "unknown" } })
+    expect(await Pty.remove(info.id)).toMatchObject({ leader: "unknown", descendants: "unknown" })
     expect(nativeKills).toContain(0)
     expect(Pty.get(info.id)).toBeDefined()
     expect(Pty.listDetailed().find((session) => session.id === info.id)?.cleanup).toBe("unresolved")
@@ -180,10 +190,10 @@ describe("Pty lifecycle cleanup", () => {
     expect(alive(info.pid)).toBe(false)
   })
 
-  test("orphan timeout removes abandoned unmanaged sessions", async () => {
+  test("orphan timeout removes abandoned provisional sessions", async () => {
     const { Pty } = await import("./index")
     const info = await Pty.create({ cwd: tmpDir, title: "orphan" }, ownership)
-    expect(Pty.activity()).toEqual({ running: 1, committed: 0, provisional: 1, managed: 0, subscribers: 0, unrecorded: 0, unresolved: 0 })
+    expect(Pty.activity()).toEqual({ running: 1, committed: 0, provisional: 1, subscribers: 0, unrecorded: 0, unresolved: 0 })
     expect(Pty.listDetailed().find((session) => session.id === info.id)?.orphanTimerActive).toBe(true)
 
     await waitFor(() => Pty.get(info.id) === undefined)
@@ -206,7 +216,7 @@ describe("Pty lifecycle cleanup", () => {
     await new Promise((resolve) => setTimeout(resolve, 20))
 
     expect(Pty.get(info.id)).toEqual(info)
-    expect(Pty.activity()).toEqual({ running: 1, committed: 1, provisional: 0, managed: 0, subscribers: 0, unrecorded: 0, unresolved: 0 })
+    expect(Pty.activity()).toEqual({ running: 1, committed: 1, provisional: 0, subscribers: 0, unrecorded: 0, unresolved: 0 })
     expect(alive(info.pid)).toBe(true)
   })
 
@@ -325,7 +335,7 @@ describe("Pty agent hook access", () => {
   test("lookup resolves the correct token and rejects incorrect and different-length tokens", async () => {
     const { Pty } = await import("./index")
     const token = "01234567-89ab-cdef-0123-456789abcdef"
-    const info = await Pty.create({ cwd: tmpDir, title: "hook" }, ownership, undefined, hookAccess(token))
+    const info = await Pty.create({ cwd: tmpDir, title: "hook" }, ownership, hookAccess(token))
 
     expect(Pty.agentHookAccessForToken(token)).toMatchObject({ terminalId: info.id, sessionId: "ses_1" })
     expect(Pty.agentHookAccessForToken("01234567-89ab-cdef-0123-456789abcdee")).toBeUndefined()
@@ -336,7 +346,7 @@ describe("Pty agent hook access", () => {
   test("renewal updates the correct token's lease and rejects incorrect and different-length tokens", async () => {
     const { Pty } = await import("./index")
     const token = "01234567-89ab-cdef-0123-456789abcdef"
-    const info = await Pty.create({ cwd: tmpDir, title: "hook-renew" }, ownership, undefined, hookAccess(token))
+    const info = await Pty.create({ cwd: tmpDir, title: "hook-renew" }, ownership, hookAccess(token))
 
     expect(Pty.renewAgentHookAccess(token, { authorityLease: "lease_2", authorityExpiresAt: 42 })).toBe(true)
     expect(Pty.agentHookAccessForToken(token)).toMatchObject({
@@ -477,22 +487,13 @@ describe("Pty unresolved retirement", () => {
 describe("Pty ownership persistence", () => {
   test("a spawn that could not be recorded is kept, pinned and reported as unowned", async () => {
     const { Pty } = await import("./index")
-    const events: ProcessObserverEvent[] = []
-    const observer = createProcessObserver({ sink: (event) => events.push(event) })
     const store = {
       ...volatileLaunchOwnership(),
       recordIdentity: async () => { throw new Error("launch_ownership write failed") },
     }
     nextSpawnPid = disposablePid()
 
-    const info = await Pty.create({ cwd: tmpDir, title: "unowned" }, store, {
-      observer,
-      kind: "pty",
-      ownerId: "pty:unowned",
-      workspaceId: "ws_unowned",
-      directory: tmpDir,
-      label: "Unowned",
-    })
+    const info = await Pty.create({ cwd: tmpDir, title: "unowned" }, store)
 
     // The terminal is running: refusing it would be worse, but nothing can
     // find it again, so it is neither hidden nor allowed to un-pin the runtime.
@@ -501,22 +502,10 @@ describe("Pty ownership persistence", () => {
     expect(detailed?.ownershipError).toContain("launch_ownership write failed")
     // Counted inside `running`, and named, so a drain preview can say why.
     expect(Pty.activity()).toMatchObject({ running: 1, unrecorded: 1, unresolved: 0 })
-    expect(events.filter((event) => event.type === "ownership")).toEqual([
-      {
-        type: "ownership",
-        at: expect.any(Number),
-        ownerId: "pty:unowned",
-        ownerGeneration: expect.any(String),
-        state: "unrecorded",
-        message: expect.stringContaining("launch_ownership write failed"),
-      },
-    ])
   }, 20_000)
 
   test("a retirement that could not be recorded keeps the terminal and retries", async () => {
     const { Pty } = await import("./index")
-    const events: ProcessObserverEvent[] = []
-    const observer = createProcessObserver({ sink: (event) => events.push(event) })
     let writes = 0
     const store = {
       ...volatileLaunchOwnership(),
@@ -526,14 +515,7 @@ describe("Pty ownership persistence", () => {
     }
     nextSpawnPid = disposablePid()
 
-    const info = await Pty.create({ cwd: tmpDir, title: "unrecorded-retirement" }, store, {
-      observer,
-      kind: "pty",
-      ownerId: "pty:unrecorded-retirement",
-      workspaceId: "ws_retirement",
-      directory: tmpDir,
-      label: "Retirement",
-    })
+    const info = await Pty.create({ cwd: tmpDir, title: "unrecorded-retirement" }, store)
 
     const first = await Pty.remove(info.id)
 
@@ -541,8 +523,6 @@ describe("Pty ownership persistence", () => {
     expect(first?.leader).toBe("exited")
     expect(Pty.get(info.id)).toBeDefined()
     expect(Pty.listDetailed().find((session) => session.id === info.id)?.persistence).toBe("unavailable")
-    expect(events.filter((event) => event.type === "ownership").map((event) => event.type === "ownership" && event.state))
-      .toEqual(["persistence-unavailable"])
 
     await Pty.remove(info.id)
 

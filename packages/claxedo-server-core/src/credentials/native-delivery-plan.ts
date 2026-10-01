@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto"
-import { accountHolderOf, holderAccountSources, selectedAccounts, spendsAccount, TEAM_ACCOUNT_UNAVAILABLE, type AccountSelections } from "./account-holder"
+import { accountHolderOf, holderAccountSources, ORG_ACCOUNT_UNAVAILABLE, selectedAccounts, spendsAccount, type AccountSelections } from "./account-holder"
 import type { CredentialSnapshot, ProviderProjectionSource } from "@claxedo/agent-runtime-contract"
 import { destinationAuthMode, builtInProviderDestination, type ProviderDestination } from "./built-in-destinations"
 import type { CredentialKind, CredentialMetadata } from "./types"
@@ -37,7 +37,7 @@ export type NativeProviderSecret = {
 }
 
 export type NativeProviderDelivery = {
-  /** The person whose account this is; null for the org's team account. */
+  /** The person whose account this is; null for the org's account. */
   userId: string | null
   providerId: string
   /**
@@ -72,8 +72,7 @@ const ENV_PREFIX = "CLAXEDO_PROVIDER_"
  * stored account (its row id is random) rather than for any person, so code in
  * the sandbox cannot name another account's placeholder from who owns it.
  *
- * Stable across rotations: Daytona's mounted variables only reach processes
- * spawned after a change in the mounted NAMES, and a rotation keeps the row.
+ * Stable across rotations, because a rotation keeps the row.
  */
 export function accountPlaceholderEnv(credential: Pick<CredentialMetadata, "id" | "provider_id">): string {
   const binding = createHash("sha256").update(credential.id).digest("hex").slice(0, 24).toUpperCase()
@@ -131,7 +130,7 @@ export type NativeCredentialSelection = { credential: CredentialMetadata; unavai
 
 /**
  * What one person's sandbox is delivered: the account they chose for each
- * provider, their own or the team's. Nobody else's account reaches it, because
+ * provider, their own or the org's. Nobody else's account reaches it, because
  * anything delivered can be spent by any code it runs.
  */
 export async function nativeProviderDeliveriesFromRepository(input: {
@@ -223,7 +222,7 @@ export function nativeProviderAuth(
       machineOwnerUserId: input.machineOwnerUserId,
       rows: deliveries.map((row) => ({ owner: row.userId, providerId: row.providerId, projection: row.projection })),
       selections: { [holder]: holderAccountSources(input.selections, holder, input.machineOwnerUserId) },
-      missingTeam: () => ({ unavailable: true, reason: TEAM_ACCOUNT_UNAVAILABLE }),
+      missingOrgAccount: () => ({ unavailable: true, reason: ORG_ACCOUNT_UNAVAILABLE }),
     }),
   }
 }

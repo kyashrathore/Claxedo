@@ -54,7 +54,7 @@ describe("hosted canonical auth profile", () => {
     const listOrgs = vi.fn(async () => [{
       org_id: "org_canonical",
       name: "Canonical organization",
-      kind: "team",
+      kind: "shared",
       role: "owner",
       provider_org_id: "provider-org-secret",
       client_secret: "must-not-leak",
@@ -123,7 +123,7 @@ describe("hosted canonical auth profile", () => {
 
     expect(response.status).toBe(401)
     expect(await response.json()).toEqual({
-      error: { code: "invalid_bearer_token", message: "Authentication credential is invalid" },
+      error: { code: "invalid_bearer_token", message: "Authentication credential is invalid", retryable: false },
     })
     expect(listOrgs).not.toHaveBeenCalled()
   })

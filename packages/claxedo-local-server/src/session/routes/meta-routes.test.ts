@@ -74,7 +74,7 @@ function services(input: { workspaces?: unknown[] } = {}): ControlPlaneServicesC
       usersMe: vi.fn(async () => ({})),
       authorizeSessionRead: vi.fn(async () => {}),
       listWorkspaces: vi.fn(async () => input.workspaces ?? []),
-      // Participant-scoped list in production; for these route tests the local
+      // Caller-authorized list in production; for these route tests the local
       // projection store is the seeded source of truth for which sessions exist.
       // The rows carry what the authority's own rows carry, which names neither
       // the workspace nor the project.
@@ -252,7 +252,7 @@ describe("session metadata routes", () => {
       directory: `workspace:${workspaceId}`,
       remote_directory: "/workspace",
       kind: "cloud",
-      driver: "daytona",
+      driver: "modal",
     })
     if (!resolvedWorkspace) throw new Error("test workspace was not created")
     const refreshSessionProjection = vi.fn(async () => {

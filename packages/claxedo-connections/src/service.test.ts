@@ -147,7 +147,7 @@ describe("connections service", () => {
     // The impl's closed error vocabulary is the only thing that crosses —
     // provider bodies (which can embed the pasted secret) never do.
     const cases = [
-      { thrown: new Error("github_repositories_unauthorized"), code: "repository_provider_unauthorized" },
+      { thrown: Object.assign(new Error("unrelated display text"), { code: "repository_provider_unauthorized", status: 502, retryable: false }), code: "repository_provider_unauthorized" },
       { thrown: new Error("github_repositories_unavailable"), code: "repository_provider_unavailable" },
       { thrown: new Error("github_repositories_invalid_response"), code: "repository_provider_unavailable" },
       // A non-Error throw must still classify, never escape.
@@ -319,9 +319,8 @@ describe("connections service", () => {
     expect(Reflect.get(service, "resolveWebhookSigningSecret")).toBeUndefined()
   })
 
-  test("removeOwner cascades one owner's personal rows and spares team + other owners", async () => {
+  test("removeOwner cascades one owner's personal rows and spares org + other owners", async () => {
     const { service, credentials, connections } = harness()
-    // connection-1: team, connection-2: alice, connection-3: bob.
     await service.connect({ integrationId: "fake", fields: {}, secret: "good" })
     await service.connect({ integrationId: "fake", owner: "alice", fields: {}, secret: "good" })
     await service.connect({ integrationId: "fake", owner: "bob", fields: {}, secret: "good" })
@@ -331,7 +330,6 @@ describe("connections service", () => {
     // Alice's row + credential are gone.
     expect(await connections.get("fake", "alice")).toBeUndefined()
     expect(await credentials.get("integration:connection-2")).toBeUndefined()
-    // Team and bob survive untouched.
     expect(await connections.get("fake", undefined)).toMatchObject({ id: "connection-1" })
     expect(await connections.get("fake", "bob")).toMatchObject({ id: "connection-3" })
     expect(await credentials.get("integration:connection-1")).toMatchObject({ status: "available" })
@@ -339,7 +337,7 @@ describe("connections service", () => {
 
     // Idempotent: a second cascade for the same owner removes nothing.
     expect(await service.removeOwner("alice")).toBe(0)
-    // Empty owner is a no-op (never a wildcard that reaps team rows).
+    // Empty owner is a no-op (never a wildcard that reaps org rows).
     expect(await service.removeOwner("")).toBe(0)
     expect(await connections.get("fake", undefined)).toMatchObject({ id: "connection-1" })
   })
@@ -492,7 +490,7 @@ describe("connections service", () => {
 
     const resolved = await service.resolveForCapability("docs", { owner: "user-a" })
     expect(resolved).toHaveLength(1)
-    expect(resolved[0]).toMatchObject({ scope: "team" })
+    expect(resolved[0]).toMatchObject({ scope: "org" })
 
     await service.connect({ integrationId: "fake", fields: {}, secret: "good", owner: "user-a", confirmReplace: true })
     const personal = await service.resolveForCapability("docs", { owner: "user-a" })
@@ -704,7 +702,7 @@ describe("connections service", () => {
     expect(await service.attemptStatus(state)).toBeUndefined()
   })
 
-  test("teamOwner partitions the team scope by an opaque key (hosted org partition)", async () => {
+  test("orgOwner partitions the org scope by an opaque key (hosted org partition)", async () => {
     const { service, connections } = harness()
     // One deployment, two tenant partitions plus a legacy owner-absent row.
     await connections.upsert({ id: "org-a-row", integrationId: "fake", owner: "org:org-a", grantedCapabilities: ["docs"], fields: {}, createdAt: 1, updatedAt: 1 })
@@ -712,31 +710,31 @@ describe("connections service", () => {
     await connections.upsert({ id: "ownerless-row", integrationId: "fake", grantedCapabilities: ["docs"], fields: {}, createdAt: 1, updatedAt: 1 })
     await connections.upsert({ id: "alice-row", integrationId: "fake", owner: "user:alice", grantedCapabilities: ["docs"], fields: {}, createdAt: 1, updatedAt: 1 })
 
-    // Team partition = the opaque key: org A never sees org B or the
-    // owner-absent partition, and its rows classify as scope "team".
-    const orgATeam = await service.list({ teamOwner: "org:org-a", scope: "team" })
-    expect(orgATeam.map((row) => row.id)).toEqual(["org-a-row"])
-    expect(orgATeam[0]).toMatchObject({ scope: "team" })
+    // Org partition = the opaque key: org A never sees org B or the
+    // owner-absent partition, and its rows classify as scope "org".
+    const orgARows = await service.list({ orgOwner: "org:org-a", scope: "org" })
+    expect(orgARows.map((row) => row.id)).toEqual(["org-a-row"])
+    expect(orgARows[0]).toMatchObject({ scope: "org" })
 
-    const orgAMixed = await service.list({ teamOwner: "org:org-a", owner: "user:alice" })
+    const orgAMixed = await service.list({ orgOwner: "org:org-a", owner: "user:alice" })
     expect(orgAMixed.map((row) => row.id).sort()).toEqual(["alice-row", "org-a-row"])
     expect(orgAMixed.find((row) => row.id === "alice-row")).toMatchObject({ scope: "personal" })
 
-    // Without teamOwner the owner-absent partition remains the team —
+    // Without orgOwner the owner-absent partition remains the org —
     // self-host semantics unchanged.
-    expect((await service.list({ scope: "team" })).map((row) => row.id)).toEqual(["ownerless-row"])
+    expect((await service.list({ scope: "org" })).map((row) => row.id)).toEqual(["ownerless-row"])
 
     // Capability resolution honors the same partition; personal wins over
-    // the org team row for the same integration.
-    const teamOnly = await service.resolveForCapability("docs", { teamOwner: "org:org-a", scope: "team" })
-    expect(teamOnly.map((handle) => handle.id)).toEqual(["org-a-row"])
-    expect(teamOnly[0]).toMatchObject({ scope: "team" })
-    const preferred = await service.resolveForCapability("docs", { teamOwner: "org:org-a", owner: "user:alice" })
+    // the org row for the same integration.
+    const orgOnly = await service.resolveForCapability("docs", { orgOwner: "org:org-a", scope: "org" })
+    expect(orgOnly.map((handle) => handle.id)).toEqual(["org-a-row"])
+    expect(orgOnly[0]).toMatchObject({ scope: "org" })
+    const preferred = await service.resolveForCapability("docs", { orgOwner: "org:org-a", owner: "user:alice" })
     expect(preferred.map((handle) => handle.id)).toEqual(["alice-row"])
     expect(preferred[0]).toMatchObject({ scope: "personal" })
   })
 
-  test("connectOAuth attempt scope derives from teamOwner (org team rows are not 'personal')", async () => {
+  test("connectOAuth attempt scope derives from orgOwner (org rows are not 'personal')", async () => {
     const registry = createIntegrationRegistry()
     registry.register(
       { id: "oauthy", name: "OAuthy", methods: ["oauth"]  },
@@ -756,9 +754,9 @@ describe("connections service", () => {
       attempts: createAttempts({ sweepIntervalMs: 0 }),
       newId: () => "connection-1",
     })
-    const started = await service.connectOAuth({ integrationId: "oauthy", owner: "org:org-a", teamOwner: "org:org-a" })
+    const started = await service.connectOAuth({ integrationId: "oauthy", owner: "org:org-a", orgOwner: "org:org-a" })
     expect(started.ok).toBe(true)
     const state = (started as { attemptId: string }).attemptId
-    expect(await service.attemptStatus(state)).toMatchObject({ scope: "team" })
+    expect(await service.attemptStatus(state)).toMatchObject({ scope: "org" })
   })
 })

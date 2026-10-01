@@ -137,7 +137,7 @@ describe("agent config", () => {
       version: 3 as const,
       connections: { "conn-primary": trustedConnection() },
       defaultConnectionId: "conn-primary",
-      sandbox_driver: { default_driver: "daytona" as const },
+      sandbox_driver: { default_driver: "vercel" as const },
     }
     await mod.saveUserConfig(original)
     const loaded = await mod.loadUserConfig()
@@ -152,14 +152,14 @@ describe("agent config", () => {
     await mod.saveUserConfig({ version: 3, connections: {}, sandbox_driver: {
       default_driver: "modal",
       auth: {
-        daytona: { api_key: " dtn " },
+        cloudflare: { api_token: " cf " },
         modal: { token_id: "id", token_secret: " secret " },
       },
     } })
     const loaded = await mod.loadUserConfig()
     expect(loaded.sandbox_driver).toEqual({
       default_driver: "modal",
-      auth: { daytona: { api_key: "dtn" }, modal: { token_id: "id", token_secret: "secret" } },
+      auth: { cloudflare: { api_token: "cf" }, modal: { token_id: "id", token_secret: "secret" } },
     })
   })
 
@@ -311,10 +311,10 @@ describe("agent config", () => {
         apiPath: "/v1",
       },
     })
-    expect(normalizeRuntimeSnapshot(snap, { CLAXEDO_PROVIDER_CLAUDE_SDK: "dtn-placeholder" })?.auth.accounts.local).toEqual({
+    expect(normalizeRuntimeSnapshot(snap, { CLAXEDO_PROVIDER_CLAUDE_SDK: "secret-ref-placeholder" })?.auth.accounts.local).toEqual({
       "claude-sdk": {
         baseUrl: "https://api.anthropic.com",
-        placeholder: "dtn-placeholder",
+        placeholder: "secret-ref-placeholder",
         authMode: "api-key",
         apiPath: "/v1",
       },

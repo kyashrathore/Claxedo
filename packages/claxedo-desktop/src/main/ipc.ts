@@ -12,15 +12,12 @@ import type {
   WslConfig,
 } from "../preload/types"
 import type { BrowserRegistry } from "./browser/registry"
-import type { LocalDiagnostics } from "../shared/local-diagnostics"
 import { IS_PACKAGED } from "./constants"
 import { isOpenableLinkUrl } from "./navigation-guard"
 import { openIn } from "./open-in"
 import { persistedServerUrlVerdict } from "./server-url"
 import { runRestart } from "../shared/restart-policy"
 import { clampZoomFactor } from "../shared/zoom-factor"
-import { registerProcessDiagnosticsIpc } from "./diagnostics/ipc"
-import type { Profiler } from "./diagnostics/profiler"
 import { getStore } from "./store"
 import { assertStoreKey, assertStoreValue } from "./store-policy"
 
@@ -46,16 +43,6 @@ type Deps = {
   renderMermaid?: (source: string, theme?: Record<string, string>) => Promise<string>
   /** Optional; only provided when the browser-tab feature flag is set. */
   browser?: BrowserRegistry
-  processDiagnostics: {
-    profiler: Profiler
-    scanSessionMemory(request: LocalDiagnostics.SessionMemoryScanRequest): Promise<LocalDiagnostics.SessionMemoryScanResult>
-    isAllowedUrl(url: string): boolean
-    confirmAction(input: {
-      webContents: import("./diagnostics/ipc").DiagnosticsWebContents
-      action: "stop" | "kill"
-      ownerLabel: string
-    }): Promise<boolean>
-  }
 }
 
 export function registerIpcHandlers(deps: Deps) {
@@ -271,7 +258,6 @@ export function registerIpcHandlers(deps: Deps) {
   })
 
   registerBrowserIpcHandlers(deps.browser)
-  return registerProcessDiagnosticsIpc(ipcMain, deps.processDiagnostics)
 }
 
 /**

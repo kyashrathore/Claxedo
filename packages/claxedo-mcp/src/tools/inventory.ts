@@ -92,12 +92,7 @@ export const MCP_OPERATIONS_WITHOUT_TOOLS = {
     "A session's permission mode is set once at creation under the caller's ceiling; reading it back invites the widening security review S4 closed.",
   permission_mode_write: "Widening a live session's permission mode is the escalation security review S4 closed.",
   queue_read: "A prompt still waiting behind a running turn belongs to whoever queued it in a client; a model reads the turn it produces from the transcript.",
-  command: "Slash commands are a harness UI affordance; a model writes the prose session_send carries.",
-  shell: "Every harness already runs shell commands with its own tool; the plan drops the duplicate file, search, diff and git tools for the same reason.",
-  fork: "Forking, reverting and unreverting are transcript surgery keyed by message id, which no MCP host renders.",
-  revert: "Forking, reverting and unreverting are transcript surgery keyed by message id, which no MCP host renders.",
-  unrevert: "Forking, reverting and unreverting are transcript surgery keyed by message id, which no MCP host renders.",
-  summarize: "The plan removes summarize_logs and the throwaway session it created.",
+  fork: "Forking is transcript surgery keyed by message id, which no MCP host renders.",
   goal_read: "Goal internals are the runtime's own autonomous-loop state, not a host-facing surface.",
   goal_capabilities: "Goal internals are the runtime's own autonomous-loop state, not a host-facing surface.",
   goal_start: "Goal internals are the runtime's own autonomous-loop state, not a host-facing surface.",
@@ -148,8 +143,8 @@ export function runtimeToolAccess(tool: McpRuntimeToolName, gating: McpToolGatin
 
 /**
  * Access for a tool over a surface the session-core inventory does not cover —
- * the managed-process routes, the diff routes, the control plane's workspace
- * routes, the documents service, the Tasks routes and app plugin authoring.
+ * the diff routes, the control plane's workspace routes, the documents
+ * service, the Tasks routes and app plugin authoring.
  * Their write class is declared because no machine-checked table classifies
  * them; anything over a session-core route must take `runtimeToolAccess`
  * instead.

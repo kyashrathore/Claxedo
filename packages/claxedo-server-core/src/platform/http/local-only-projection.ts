@@ -20,7 +20,7 @@ function localOnlyBody(label: string) {
   return {
     error: {
       code: "local_only_projection_route",
-      message: `${label} is local-only and is not available through signed/team Control Plane access`,
+      message: `${label} is local-only and is not available through signed Control Plane access`,
     },
   }
 }

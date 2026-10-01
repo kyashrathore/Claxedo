@@ -53,12 +53,14 @@ export type {
   UiApi,
 } from "./host"
 export {
+  PLUGIN_BACKEND_METHODS,
   PLUGIN_CAPABILITIES,
-  PLUGIN_ID_MAX_LENGTH,
-  PLUGIN_ID_PATTERN,
   PLUGIN_NAME_MAX_LENGTH,
   PLUGIN_SERVER_ROUTE_PREFIX,
   PluginManifestError,
+  PluginStatusHooksRefusedError,
+  pluginBackendRouteAllowed,
+  pluginBackendSchema,
   pluginManifestSchema,
   pluginOperationAllowed,
   pluginPackageSchema,
@@ -66,6 +68,10 @@ export {
   pluginServerAccessSchema,
   readPluginManifest,
 } from "./manifest"
-export type { PluginCapability, PluginManifest, PluginServerAccess } from "./manifest"
+export type { PluginBackend, PluginCapability, PluginManifest, PluginServerAccess } from "./manifest"
+export { isPluginId, PLUGIN_ID_MAX_LENGTH, PLUGIN_ID_PATTERN } from "./id"
 export { isPluginRuntimeModule, PLUGIN_RUNTIME_GLOBAL, PLUGIN_RUNTIME_MODULES } from "./runtime"
 export type { PluginRuntime, PluginRuntimeModule } from "./runtime"
+
+export { readStatusHookTemplates } from "./status-hooks"
+export type { StatusHookTemplate, StatusHookEventRule } from "./status-hooks"

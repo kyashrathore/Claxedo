@@ -1,7 +1,8 @@
 import type { AgentRuntimeEvent } from "@claxedo/agent-runtime-contract"
 import type { PromptInput } from "@claxedo/agent-runtime-contract"
 import { childRouteDropped, isMeteredUsage, parentScopedUsage, type BoundChildRoute, type ChildRoute, type MeteredUsage } from "./child-routes"
-import type { RuntimeAppendSource, TurnEventProjector } from "./turn-projection"
+import type { TurnEventProjector } from "./turn-projection"
+import type { RuntimeAppendSource } from "./session-event-writer"
 
 export type ChildProjectionTarget = {
   sessionId: string

@@ -2,7 +2,7 @@
 /**
  * Prepares every artifact the desktop build and dev run consume: channel
  * icons, the local-server bundle and its V8 compile cache, the Host Connector
- * child, the macOS memory-impact helper and the native Mermaid renderer.
+ * child and the native Mermaid renderer.
  *
  * `prebuild` runs this file and rebuilds everything; `predev` calls
  * {@link prepareDesktopArtifacts} with `staleOnly`, which skips the server
@@ -16,7 +16,6 @@ import { buildPublishedPackages, publishedPackageDistDirs } from "./published-pa
 import { bundleClaxedoServer, resolveDeferredServerEntry } from "./bundle-claxedo-server"
 import { buildClaxedoServerCompileCache, resolveElectronBinary } from "./build-compile-cache"
 import { bundleHostConnector } from "./bundle-host-connector"
-import { buildMemoryImpactHelper } from "./build-memory-impact-helper"
 import { prepareMermaidRenderer } from "./build-mermaid-renderer"
 import {
   LOCAL_SERVER_ENTRY,
@@ -50,7 +49,6 @@ export async function prepareDesktopArtifacts(options: { staleOnly: boolean; log
   const [, hostConnector] = await Promise.all([
     prepareServer(staleOnly, log),
     bundleHostConnector(),
-    buildMemoryImpactHelper(),
     prepareMermaidRenderer({ required: process.env.CLAXEDO_REQUIRE_NATIVE_MERMAID === "1" }),
   ])
   log(`Host Connector child bundled (${hostConnector.manifest.sha256})`)
@@ -103,7 +101,6 @@ function serverBundleInputs() {
     path.join(PACKAGE_DIR, "src/server"),
     path.join(PACKAGE_DIR, "src/shared"),
     path.join(PACKAGE_DIR, "src/main/server-daemon-discovery.ts"),
-    path.join(PACKAGE_DIR, "src/main/diagnostics/process-identity.ts"),
     path.join(localServerPackageDir(PACKAGE_DIR), "src"),
     path.join(PACKAGE_DIR, "../claxedo-server-core/src"),
     // Published siblings enter the bundle as their dist, so the dist is what

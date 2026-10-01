@@ -1,8 +1,14 @@
 import { describe, expect, test } from "bun:test"
 import type { AgentRuntimeEvent, AgentPresentationEvent } from "@claxedo/agent-runtime-contract"
 import type { RuntimeEventEnvelopeInput } from "./runtime-event-hub"
-import type { RuntimeAppendSource } from "./turn-projection"
+import type { RuntimeAppendSource } from "./session-event-writer"
 import { testTurnProjector } from "../test-support/turn-projector"
+import { mkdtempSync, rmSync } from "node:fs"
+import { tmpdir } from "node:os"
+import path from "node:path"
+import { openRuntimeStore } from "../store-file"
+import { createTurnEventProjector } from "./turn-projection"
+import { AgentRuntimeStaleTurnError } from "../store"
 
 const source: RuntimeAppendSource = {
   dir: "in",
@@ -30,6 +36,70 @@ function projector(input: {
 }
 
 describe("createTurnEventProjector", () => {
+  test("a subagent revision commits to the real journal before runtime publication", () => {
+    const root = mkdtempSync(path.join(tmpdir(), "turn-event-writer-"))
+    const store = openRuntimeStore(root)
+    try {
+      store.bindSession({ owner: { kind: "machine-owner" }, sessionId: "s", directory: "/work", agentSessionId: "agent", createdAt: 1 })
+      const initialOrdinal = store.getSessionMaxSeq("s")
+      const published: AgentPresentationEvent[] = []
+      const runtimeOrdinals: number[] = []
+      const item = createTurnEventProjector({
+        store, owner: { sessionId: "s", getAgentSessionId: () => "agent" }, directory: "/work",
+        input: { userMessageId: "u", agent: "general" }, assistantMessageId: "u_r", created: 1,
+        onEvent: (event) => published.push(event),
+        onRuntimeEvent: () => runtimeOrdinals.push(store.getSessionMaxSeq("s")),
+      })
+      item.project({ type: "subagent-updated", subagentKey: "child", revision: 1, status: "running" }, source)
+      expect(runtimeOrdinals).toEqual([initialOrdinal + 1])
+      expect(published.map((event) => event.type)).toEqual(["subagent.updated"])
+    } finally {
+      store.close()
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  test("real journal writes retain the fence and publish derived usage only after commit", () => {
+    const root = mkdtempSync(path.join(tmpdir(), "turn-event-fence-"))
+    const store = openRuntimeStore(root)
+    try {
+      store.bindSession({ owner: { kind: "machine-owner" }, sessionId: "s", directory: "/work", agentSessionId: "agent", createdAt: 1 })
+      const start = (id: string, fencingToken: number) => store.startTurn({
+        sessionId: "s", agentSessionId: "agent", userMessageId: id, assistantMessageId: `${id}_r`,
+        agent: "general", model: { providerID: "test", modelID: "model" }, parts: [{ type: "text", text: "work" }], fencingToken,
+      })
+      start("u", 4)
+      const initialOrdinal = store.getSessionMaxSeq("s")
+      const published: AgentPresentationEvent[] = []
+      const runtimeOrdinals: number[] = []
+      const item = createTurnEventProjector({
+        store, owner: { sessionId: "s", getAgentSessionId: () => "agent" }, directory: "/work",
+        input: { userMessageId: "u", agent: "general" }, assistantMessageId: "u_r", created: 1, fencingToken: 4,
+        onEvent: (event) => {
+          expect(store.getSessionMaxSeq("s")).toBe(initialOrdinal + 1)
+          published.push(event)
+        },
+        onRuntimeEvent: () => runtimeOrdinals.push(store.getSessionMaxSeq("s")),
+      })
+      item.project({ type: "usage", contextSize: 100, contextUsed: 10,
+        observation: { kind: "cumulative", tokens: { input: 7, output: 2, reasoning: null, cache: { read: null, write: null } } } }, source)
+      expect(published.map((event) => event.type)).toEqual(["session.usage", "message.updated"])
+      expect(published[1]).toMatchObject({ properties: { info: { id: "u_r", tokens: { input: 7, output: 2 } } } })
+      expect(runtimeOrdinals).toEqual([initialOrdinal + 1])
+      start("new", 5)
+      const takeoverOrdinal = store.getSessionMaxSeq("s")
+      published.length = 0
+      runtimeOrdinals.length = 0
+      expect(() => item.project({ type: "text-delta", delta: "stale" }, source)).toThrow(AgentRuntimeStaleTurnError)
+      expect(store.getSessionMaxSeq("s")).toBe(takeoverOrdinal)
+      expect(published).toEqual([])
+      expect(runtimeOrdinals).toEqual([])
+    } finally {
+      store.close()
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
   test("uses its explicit owner for compat storage, projection, and runtime publication", () => {
     const appended: Array<{ sessionId: string; agentSessionId?: string; payload: AgentPresentationEvent }> = []
     const runtime: RuntimeEventEnvelopeInput[] = []

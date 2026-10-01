@@ -175,8 +175,6 @@ describe("route ownership", () => {
       "/api/wr/find/file",
       "/api/wr/pty",
       "/api/wr/pty/abc123/connect",
-      "/api/wr/process",
-      "/api/wr/process?workspaceId=ws_123",
       "/api/wr/diff",
       "/api/wr/diff/targets",
       "/api/wr/events",

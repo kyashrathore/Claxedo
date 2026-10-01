@@ -43,7 +43,8 @@ import {
 } from "@claxedo/server-core/platform/auth/auth"
 import { requireAuthority, type MachinePrincipal, type WorkspaceAuthority } from "@claxedo/server-core/platform/auth/authority"
 import { verifyMachineRequest } from "@claxedo/server-core/platform/auth/machine-auth"
-import { machineSealAad, sealForMachine } from "@claxedo/server-core/platform/auth/machine-seal"
+import { machineSealAad } from "@claxedo/account-contract/machine"
+import { sealForMachine } from "@claxedo/account-contract/machine-seal"
 import type { HostTunnelTokenSignerInput } from "@claxedo/server-core/platform/auth/runtime-access-token"
 import { serializeHostProviderConfig } from "@claxedo/server-core/credentials/host-provider-config"
 import { ClaxedoError, isClaxedoError } from "@claxedo/server-core/platform/errors/base"
@@ -68,7 +69,6 @@ const absolutePath = z.string().min(1).max(1_024)
 const scopeBody = z
   .object({
     allowed_roots: z.array(absolutePath).max(50),
-    visibility: z.enum(["owner", "org"]),
   })
   .strict()
 
@@ -463,7 +463,7 @@ export function HostEnrollmentRoutes(services: ControlPlaneServices, options: Ho
     const response: Record<string, unknown> = { ...result, ...endpoints, serving_generation: caller.generation }
     const signer = configuredHostTunnelTokenSigner(options)
     if (!signer || ready.length === 0) return response
-    const input: HostTunnelTokenSignerInput & { enrollmentId: string; generation: number } = {
+    const input: HostTunnelTokenSignerInput = {
       subject: caller.ownerUserId,
       hostId: caller.hostId,
       workspaceIds: ready,
@@ -583,7 +583,7 @@ export function HostEnrollmentRoutes(services: ControlPlaneServices, options: Ho
         if (!authority.updateHostEnrollmentScope) throw unsupportedError("Enrollment scope")
         return await authority.updateHostEnrollmentScope(auth, {
           enrollmentId: routeParam(c, "id"),
-          scope: { allowed_roots: body.allowed_roots, visibility: body.visibility },
+          scope: { allowed_roots: body.allowed_roots },
         })
       }, "PATCH", {
         limiter: controlPlaneRateLimiter,
@@ -729,7 +729,7 @@ export function HostInvitationRoutes(services: ControlPlaneServices, options: Ho
         if (!authority.createHostInvitation) throw unsupportedError("Host invitations")
         await authority.usersMe(auth)
         const created = await authority.createHostInvitation(auth, {
-          scope: { allowed_roots: body.scope.allowed_roots, visibility: body.scope.visibility },
+          scope: { allowed_roots: body.scope.allowed_roots },
           ...(body.displayName ? { displayName: body.displayName } : {}),
           ...(body.expiresInMs === undefined ? {} : { expiresInMs: body.expiresInMs }),
         })

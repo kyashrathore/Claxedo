@@ -5,7 +5,7 @@ import { isOrgManager, type AccessAction } from "./model"
 export type Access = {
   readonly principal: Accessor<Principal | undefined>
   readonly orgRole: Accessor<OrgRole | undefined>
-  readonly can: (action: AccessAction, facts?: { readonly canRemoveTeamAccounts: boolean }) => boolean
+  readonly can: (action: AccessAction, facts?: { readonly canRemoveOrgAccounts: boolean }) => boolean
 }
 
 export function useAccess(): Access {
@@ -20,8 +20,8 @@ export function useAccess(): Access {
     orgRole,
     can: (action, facts) => {
       switch (action) {
-        case "accounts.removeTeam":
-          return facts?.canRemoveTeamAccounts === true
+        case "accounts.removeOrg":
+          return facts?.canRemoveOrgAccounts === true
         case "org.manage":
         case "org.accounts":
         case "plugins.manage":

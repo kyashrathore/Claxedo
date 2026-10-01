@@ -106,9 +106,6 @@ export const localServer: Policy = {
   //  - `credentials/machine-credentials.ts`: asking a CLI what it is signed in
   //    as, and withdrawing the stored mark so a harness runs on that login —
   //    operations with no referent on a host where no harness is installed.
-  //  - `credentials/operations/drop-copied-harness-logins.ts`: the one-time
-  //    delete of the harness logins an older Claxedo copied off this machine;
-  //    this is the process that ran that scan.
   //  - `usage/adapters/token-tracker-usage-limits.ts`: the plan probe for
   //    every agent installed on this machine, which only a server running on
   //    that machine can ask; tokentracker-cli is already carried by the
@@ -206,7 +203,11 @@ export const localServer: Policy = {
   //    share): whose account a person spends and where a stored account may
   //    be delivered. The subpath is import-free.
   //    80/29, no headroom.
-  ceilings: { modules: 80, packages: 29 },
+  // -1 module: `usage/adapters/token-tracker-local-history.ts` is gone with the
+  // machine's CLI-history Total view. 79/29, no headroom.
+  // -1 module: `credentials/operations/drop-copied-harness-logins.ts` is gone;
+  // startup leaves stored credentials untouched. 78/29, no headroom.
+  ceilings: { modules: 78, packages: 29 },
 
   emitted: {
     file: "packages/claxedo-local-server/.artifacts/u8-package-split/manifests/local-server.json",

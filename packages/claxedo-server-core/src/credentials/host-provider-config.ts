@@ -10,7 +10,7 @@ import type { CredentialSnapshot, ProviderProjectionSource } from "@claxedo/agen
  *
  * Precedence, and it is the whole policy: a provider the owner pushed replaces
  * whatever this machine would have answered for their own account on that
- * provider, and a provider the owner did not push, or chose the team account
+ * provider, and a provider the owner did not push, or chose the org account
  * for, is untouched. A harness only falls back to the login its own box holds
  * when NO row names its provider, so naming one here is what puts the owner's
  * account ahead of the machine's.
@@ -89,7 +89,7 @@ export function hostProviderConfigProjectAuth<Input>(
     const remote = pushed()
     if (!owner || !remote || remote.machineOwnerUserId !== owner) return local
     const sources = ownerSources(owner, input)
-    const own = Object.fromEntries(Object.entries(remote.accounts[owner] ?? {}).filter(([providerId]) => sources[providerId] !== "team"))
+    const own = Object.fromEntries(Object.entries(remote.accounts[owner] ?? {}).filter(([providerId]) => sources[providerId] !== "org"))
     return { ...local, machineOwnerUserId: owner, accounts: { ...local.accounts, [owner]: { ...local.accounts[owner], ...own } } }
   }
 }

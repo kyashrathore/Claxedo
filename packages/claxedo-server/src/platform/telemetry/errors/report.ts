@@ -8,10 +8,6 @@
  * reports through `platform/auth/worker-telemetry.ts` without this seam. With
  * no sink registered, which is also what no PostHog key means, every report is
  * a no-op.
- *
- * Two page classes: payment-path errors carry `page_class=payment` so one
- * alert rule can page on them; the external-uptime class lives outside this
- * process. Everything else lands in the daily digest.
  */
 
 export type ErrorReportContext = {
@@ -40,15 +36,4 @@ export function reportError(error: unknown, context: ErrorReportContext = {}): v
   } catch {
     // Observability must never take down the request path.
   }
-}
-
-/**
- * Billing code reports through this instead of `reportError` so the event
- * carries `page_class=payment`, the property the paging alert rule matches on.
- */
-export function reportPaymentError(error: unknown, context: ErrorReportContext = {}): void {
-  reportError(error, {
-    ...context,
-    tags: { ...context.tags, page_class: "payment" },
-  })
 }

@@ -304,6 +304,24 @@ describe("SQLite workspace authority tenancy migration", () => {
     database.close()
   })
 
+  test("an org stored with kind 'team' reopens as 'shared', and a personal org keeps its kind", () => {
+    const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "authority-org-kind-")), "authority.db")
+    const first = openAuthorityDb({ path: file })
+    first().exec(`
+      INSERT INTO orgs (org_id, name, kind, owner_token_identifier, created_at, updated_at)
+      VALUES ('org_acme', 'Acme', 'team', 'owner', 1, 1), ('org_owner', 'Owner', 'personal', 'owner', 1, 1);
+    `)
+    first.close()
+
+    const reopened = openAuthorityDb({ path: file })
+    expect(reopened().prepare("SELECT org_id, kind FROM orgs ORDER BY org_id").all()).toEqual([
+      { org_id: "org_acme", kind: "shared" },
+      { org_id: "org_owner", kind: "personal" },
+    ])
+    reopened.close()
+    fs.rmSync(path.dirname(file), { recursive: true, force: true })
+  })
+
   test("ambiguous legacy tenancy aborts without partially rewriting rows", () => {
     const database = new Database(":memory:")
     createLegacyAuthorityTables(database)
@@ -311,7 +329,7 @@ describe("SQLite workspace authority tenancy migration", () => {
       INSERT INTO users (token_identifier, subject, issuer, kind, created_at, updated_at)
       VALUES ('owner', 'owner', 'issuer', 'human', 1, 1);
       INSERT INTO orgs (org_id, name, kind, owner_token_identifier, created_at, updated_at)
-      VALUES ('org_one', 'One', 'team', NULL, 1, 1), ('org_two', 'Two', 'team', NULL, 1, 1);
+      VALUES ('org_one', 'One', 'shared', NULL, 1, 1), ('org_two', 'Two', 'shared', NULL, 1, 1);
       INSERT INTO org_memberships (org_id, token_identifier, role, created_at, updated_at)
       VALUES ('org_one', 'owner', 'owner', 1, 1), ('org_two', 'owner', 'owner', 1, 1);
       INSERT INTO workspaces

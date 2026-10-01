@@ -1,5 +1,5 @@
 import type { SessionConfig } from "@claxedo/agent-runtime-contract"
-import type { Hono } from "hono"
+import type { Hono, MiddlewareHandler } from "hono"
 import type { PtyRoutes } from "../routes/pty"
 import type { RuntimeHarnessSelection, RuntimeSnapshot } from "../routes/config"
 import type { WorkspaceCapabilities } from "../capabilities"
@@ -13,6 +13,7 @@ import type { ConnectionRuntimeStatus, RecoveryTurnTarget } from "@claxedo/agent
 import type { LaunchOwnershipRecord } from "@claxedo/process-ownership/launch"
 import type { LaunchOwnershipReconciliation } from "../ownership/reconcile-launch-ownership"
 import type { RuntimeSessionTime } from "../session/session-time"
+import type { RuntimeStore } from "../store"
 
 export type WorkspaceConnectionState = ConnectionRuntimeStatus & { connectionId: string }
 
@@ -34,7 +35,7 @@ export type WorkspaceHostMountOptions = {
   renewalIntervalMs?: number
   exposure: WorkspaceRuntimeExposure
   /** When provided, also mounts the workspace core routes (file, diff,
-   *  PTY, process, tunnel, agent hooks, events, capabilities) as a
+   *  PTY, tunnel, agent hooks, events, capabilities) as a
    *  single unified host. Without this, only the session/runner
    *  surfaces are mounted and callers must mount the core separately. */
   core?: {
@@ -44,7 +45,6 @@ export type WorkspaceHostMountOptions = {
   pty?: {
     upgradeWebSocket: Parameters<typeof PtyRoutes>[0]
   }
-  process?: boolean
   agentHooks?: boolean
 }
 
@@ -105,6 +105,11 @@ export type WorkspaceHost = {
    * previous one carries to it.
    */
   ownerGeneration: string
+  /** The workspace's store, opened on first use; one this build refuses throws a typed 503. */
+  store: () => RuntimeStore
+  whenStoreOpens: (opener: (store: RuntimeStore) => void) => void
+  /** For routes mounted ahead of `mount`'s gate: admits the store before they run. */
+  storeAdmission: MiddlewareHandler
   /**
    * Settles when the startup reconciliation of this workspace's launches has
    * finished. A caller that must see the settled answer — a drain preview, a

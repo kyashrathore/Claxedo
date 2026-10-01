@@ -13,7 +13,6 @@ import {
   type SandboxRuntimeSnapshotInput,
 } from "@claxedo/sandbox-manager"
 import { WORKSPACE_DIR } from "@claxedo/sandbox-manager/defaults"
-import { defaultSnapshotName } from "@claxedo/sandbox-manager/image-name"
 import type { SandboxLeaseRow } from "@claxedo/sandbox-manager/lease-types"
 import {
   decideSandboxHealthFailure,
@@ -579,31 +578,6 @@ export async function restoreSupervisorSandboxCheckpoint(
 
 async function sandboxDriverForSupervisor(state: WorkspaceRuntimeState, driverId: SandboxDriverID, identity: SupervisorDriverIdentity) {
   const cfg = sandboxDriverConfig(await loadUserConfig())
-  if (driverId === "daytona") {
-    const auth = await sandboxDriverAuthAsync(cfg, "daytona")
-    if (auth?.api_key) {
-      const { createDaytonaSandboxDriver } = await import("@claxedo/sandbox-manager/drivers/daytona")
-      return createDaytonaSandboxDriver({
-        apiKey: auth.api_key,
-        baseSnapshot:
-          trimToUndefined(process.env.CLAXEDO_DAYTONA_SNAPSHOT) ??
-          trimToUndefined(process.env.CLAXEDO_SNAPSHOT_NAME) ??
-          defaultSnapshotName(),
-        ...(trimToUndefined(process.env.DAYTONA_API_URL) ? { apiUrl: trimToUndefined(process.env.DAYTONA_API_URL) } : {}),
-        ...(trimToUndefined(process.env.DAYTONA_ORGANIZATION_ID)
-          ? { organizationId: trimToUndefined(process.env.DAYTONA_ORGANIZATION_ID) }
-          : {}),
-        ...(trimToUndefined(process.env.DAYTONA_TARGET) ? { target: trimToUndefined(process.env.DAYTONA_TARGET) } : {}),
-        ...(trimToUndefined(process.env.CLAXEDO_RUNTIME_COMMAND)
-          ? { runtimeCommand: trimToUndefined(process.env.CLAXEDO_RUNTIME_COMMAND) }
-          : {}),
-        ...provisionedRunnerOption(process.env),
-        env: () => runtimeEnvForHost(state, identity),
-      })
-    }
-    throw missingSandboxDriverAuth(driverId, "api_key")
-  }
-
   if (driverId === "cloudflare") {
     const auth = await sandboxDriverAuthAsync(cfg, "cloudflare")
     if (auth?.api_token && auth.worker_url) {
@@ -706,8 +680,7 @@ async function sandboxDriverForSupervisor(state: WorkspaceRuntimeState, driverId
  * Host identity is not among them and must not be. The driver writes it, from
  * the same hostId it returns on the target, and this env is spread over the
  * driver's — so a key of that name here would override the identity the relay
- * binds. Daytona hands its env callback the provider sandbox, whose id is the
- * provider's resource id rather than the hostId.
+ * binds.
  */
 function runtimeEnvForHost(state: WorkspaceRuntimeState, identity: SupervisorDriverIdentity) {
   const options = needWorkspaceSupervisorOptions()

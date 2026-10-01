@@ -14,6 +14,12 @@ export type CompatContext = ClientPresentationProjectionState & {
   turnAssistantMsgId: string
 }
 
+/**
+ * The part id minted the first time `key` is seen. Part ids are unique across
+ * every session in the store, so a key the harness supplies (a tool-call id)
+ * mints with its message id as `scoped`, while the key stays the lookup that
+ * later events for the same call find the part by.
+ */
 export function seqId(ctx: CompatContext, key: string, scoped = key): string {
   if (!ctx.partIdMap.has(key)) {
     const seq = ctx.partIdMap.size

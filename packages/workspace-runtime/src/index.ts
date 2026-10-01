@@ -142,21 +142,8 @@ export type {
   WorkspaceFirstPartyMcpLaunchOptions,
 } from "./first-party-mcp/index"
 export type { WorkspaceProfile } from "./profile"
-export { createProcessObserver } from "./managed-processes/process-observer"
 export { WorkspaceWorktreeManager, workspaceStorageRoot } from "./worktree"
 export type { WorkspaceWorktreeRecord } from "./store"
-export type {
-  ProcessObserver,
-  ProcessObserverEvent,
-  ProcessObserverSink,
-  ProcessOwnerCapabilities,
-  ProcessOwnerDescriptor,
-  ProcessOwnerExit,
-  ProcessOwnerHandle,
-  ProcessOwnerKind,
-  ProcessOwnerOperations,
-  ProcessOwnerRole,
-} from "./managed-processes/process-observer"
 export { normalizeRuntimeSnapshot }
   from "./routes/config"
 export type {

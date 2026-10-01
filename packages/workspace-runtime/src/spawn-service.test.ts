@@ -4,7 +4,6 @@ import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import path from "node:path"
 import { volatileLaunchOwnership } from "@claxedo/process-ownership/launch"
-import { createProcessObserver, type ProcessObserverEvent } from "./managed-processes/process-observer"
 import { createSpawnService } from "./spawn-service"
 
 function processExists(pid: number) {
@@ -134,49 +133,3 @@ test("spawn scrubs the runtime's internal secrets from every harness environment
   }
 })
 
-test("a spawned harness is registered with the process observer until it exits", async () => {
-  const cwd = await mkdtemp(path.join(tmpdir(), "harness-spawn-observed-"))
-  const events: ProcessObserverEvent[] = []
-  const observer = createProcessObserver({ sink: (event) => { events.push(event) } })
-  try {
-    const owned = await createSpawnService(volatileLaunchOwnership(), { observer, workspaceId: "ws_observed" })({
-      file: "/bin/sh",
-      args: ["-c", "read line; exit 3"],
-      cwd,
-      env: Object.fromEntries(Object.entries(process.env).filter((entry): entry is [string, string] => entry[1] !== undefined)),
-    }, { role: "harness", label: "observed harness", sessionId: "ses_observed", signal: new AbortController().signal })
-    const [registered] = events
-    expect(registered).toMatchObject({ type: "registered", descriptor: {
-      kind: "harness", role: "harness", label: "observed harness", pid: owned.pid, workspaceId: "ws_observed",
-      directory: cwd, sessionId: "ses_observed", access: "local", attributionConfidence: "direct" },
-    capabilities: { stopGracefully: true, killOwnedTree: true } })
-    expect(events[1]).toMatchObject({ type: "updated", lifecycle: "ready", pid: owned.pid })
-    owned.stdin.end("go\n")
-    await owned.exited
-    await new Promise((resolve) => setTimeout(resolve, 0))
-    expect(events.at(-1)).toMatchObject({ type: "exited", reason: "exited", exitCode: 3,
-      ownerId: registered?.type === "registered" ? registered.descriptor.ownerId : "" })
-  } finally {
-    observer.dispose()
-    await rm(cwd, { recursive: true, force: true })
-  }
-})
-
-test("a process the observer refuses to register is retired before the spawn fails", async () => {
-  const cwd = await mkdtemp(path.join(tmpdir(), "harness-spawn-unobserved-"))
-  const ownership = volatileLaunchOwnership()
-  const observer = createProcessObserver()
-  const refusing = { ...observer, register: () => { throw new Error("observer refused the descriptor") } }
-  try {
-    await expect(createSpawnService(ownership, { observer: refusing })({
-      file: "/bin/sh",
-      args: ["-c", "sleep 30"],
-      cwd,
-      env: Object.fromEntries(Object.entries(process.env).filter((entry): entry is [string, string] => entry[1] !== undefined)),
-    }, { role: "harness", label: "refused observation", sessionId: "spawn-refused", signal: new AbortController().signal })).rejects.toThrow("observer refused")
-    expect(await ownership.listUnresolved({ kind: "standalone", sessionId: "spawn-refused" })).toEqual([])
-  } finally {
-    observer.dispose()
-    await rm(cwd, { recursive: true, force: true })
-  }
-})

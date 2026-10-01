@@ -8,10 +8,11 @@ import {
   ACCOUNT_STREAM_OPEN_CHANNEL,
   ACCOUNT_STREAM_START_CHANNEL,
   RENDERER_WITHHELD_OPERATIONS,
+  hostedOperationChannel,
   registerAccountIpc,
   type AccountIpcService,
 } from "./account-ipc"
-import { HOSTED_OPERATIONS, hostedOperationChannel } from "./hosted-operations"
+import { HOSTED_OPERATIONS, isStreamHostedOperation, type HostedOperationName } from "@claxedo/account-contract"
 
 /**
  * The IPC surface, checked in both directions.
@@ -93,7 +94,9 @@ describe("registered channels", () => {
   test("registers no generic channel", () => {
     const h = harness()
 
-    for (const channel of h.channels()) {
+    const pluginRequest = hostedOperationChannel("plugin.request")
+    expect(h.channels()).toContain(pluginRequest)
+    for (const channel of h.channels().filter((channel) => channel !== pluginRequest)) {
       expect(channel).not.toMatch(/fetch|proxy|invoke|request$/i)
     }
   })
@@ -273,8 +276,7 @@ describe("operation channels", () => {
 
 describe("operations whose result is a credential", () => {
   /**
-   * The real body shape of `POST /api/auth/cli/exchange` (`mintCliSessionTokens`
-   * in `@claxedo/server-core/platform/auth/cli-session-token`), so the value
+   * The body shape `POST /api/auth/cli/exchange` answers with, so the value
    * scan below checks the actual field names.
    */
   const CLI_TOKEN_PAIR = {
@@ -356,12 +358,11 @@ describe("operations whose result is a credential", () => {
     // Stream ops refuse unary invoke on purpose (open via stream IPC).
     const h = harness()
     const withheld = new Set<string>(RENDERER_WITHHELD_OPERATIONS)
-    const { isStreamHostedOperation } = await import("./hosted-operations")
     const ran: string[] = []
 
     for (const name of Object.keys(HOSTED_OPERATIONS)) {
       if (withheld.has(name) || isStreamHostedOperation(name)) continue
-      expect(await h.invoke(hostedOperationChannel(name as never))).toEqual({ ran: name })
+      expect(await h.invoke(hostedOperationChannel(name))).toEqual({ ran: name })
       ran.push(name)
     }
 
@@ -493,5 +494,114 @@ describe("account channels", () => {
     const h = harness()
 
     expect(JSON.stringify(h.invoke(ACCOUNT_STATE_CHANNEL))).not.toMatch(/token|Bearer/i)
+  })
+})
+
+test("the renderer-visible operation set stays pinned", async () => {
+  const expected = [
+    "account.compatibility",
+    "account.mode",
+    "agentPlugins.activation",
+    "agentPlugins.catalog",
+    "agentPlugins.catalog.project",
+    "agentPlugins.catalog.project.refresh",
+    "agentPlugins.catalog.refresh",
+    "agentPlugins.organizationDefault",
+    "agentPlugins.skill",
+    "agentPlugins.skill.project",
+    "agentPlugins.sources.add",
+    "agentPlugins.sources.list",
+    "agentPlugins.sources.remove",
+    "agentPlugins.update",
+    "connections.attempt",
+    "connections.connect",
+    "connections.disconnect",
+    "connections.list",
+    "connections.repositories",
+    "connections.reverify",
+    "controlPlane.events",
+    "documents.agentOpen",
+    "documents.content.get",
+    "documents.content.put",
+    "documents.create",
+    "documents.export",
+    "documents.fromRepo",
+    "documents.get",
+    "documents.list",
+    "documents.moveToRepository",
+    "documents.runtimeConflictResolve",
+    "documents.snapshots",
+    "documents.snapshots.restore",
+    "documents.statuses",
+    "documents.update",
+    "documents.workSource",
+    "documents.workSourcePin",
+    "org.create",
+    "org.ensureDefaultTeam",
+    "org.invitations.accept",
+    "org.invitations.create",
+    "org.invitations.list",
+    "org.invitations.revoke",
+    "org.list",
+    "org.members.list",
+    "org.members.remove",
+    "org.members.update",
+    "org.teams.create",
+    "org.teams.list",
+    "plugin.request",
+    "project.access",
+    "project.members.grant",
+    "project.members.revoke",
+    "session.gateway",
+    "session.list",
+    "session.messages",
+    "session.outline",
+    "session.page",
+    "session.part",
+    "session.projection.checkpoint",
+    "session.projection.register",
+    "session.projection.repair",
+    "session.shares.grant",
+    "session.shares.list",
+    "session.shares.revoke",
+    "session.turnPage",
+    "team.members.add",
+    "team.members.list",
+    "team.members.remove",
+    "team.projects.grant",
+    "team.projects.list",
+    "team.projects.revoke",
+    "usage.cloudFacts",
+    "workspace.checkpoints.create",
+    "workspace.checkpoints.list",
+    "workspace.checkpoints.restore",
+    "workspace.connection.mint",
+    "workspace.connection.refresh",
+    "workspace.create",
+    "workspace.lifecycle",
+    "workspace.list.machine",
+    "workspace.list.provisioner",
+    "workspace.resolve",
+  ] as const satisfies readonly HostedOperationName[]
+  expect(Object.entries(HOSTED_OPERATIONS).filter(([, operation]) => operation.exposure?.renderer).map(([name]) => name).toSorted()).toEqual(expected)
+  expect(Object.keys(HOSTED_OPERATIONS).filter((name) => !RENDERER_WITHHELD_OPERATIONS.includes(name as never)).toSorted()).toEqual(expected)
+  const h = harness()
+  for (const name of expected.filter((name) => name !== "controlPlane.events")) {
+    expect(await h.invoke(hostedOperationChannel(name))).toEqual({ ran: name })
+  }
+  for (const name of RENDERER_WITHHELD_OPERATIONS) {
+    await expect(h.invoke(hostedOperationChannel(name))).rejects.toThrow()
+  }
+})
+
+describe("hostedOperationChannel", () => {
+  test("gives each operation its own channel", () => {
+    // One channel per operation, rather than one channel taking an operation
+    // name: a single channel is a place for a future argument to become the
+    // route.
+    const channels = Object.keys(HOSTED_OPERATIONS).map((name) => hostedOperationChannel(name as never))
+
+    expect(new Set(channels).size).toBe(channels.length)
+    expect(hostedOperationChannel("account.mode")).toBe("claxedo.account.operation:account.mode")
   })
 })

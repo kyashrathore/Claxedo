@@ -11,6 +11,7 @@ export type ServerConfig = {
   readonly serverUrl?: string
   readonly auth: AuthSource
   readonly account?: RunHostedOperation
+  readonly thisMachineReport?: () => Promise<unknown>
   readonly cookies?: boolean
   readonly eventSocket?: boolean
 }

@@ -12,6 +12,8 @@ import { Log } from "../log"
 import { bearerToken, boundedJsonBody, boundedJsonRecord, boundedTextBody, isRequestBodyTooLarge, requestBodyTooLargeBody } from "./http"
 import { arr, bool, num, str, parseRecord } from "../json-value"
 import { providerLifecycle } from "../agent-hooks/provider-lifecycle"
+import { defaultStatusHooks } from "../status-hooks"
+import type { StatusHookTemplate } from "@claxedo/plugin-api"
 import {
   setupAgentHooks,
   getTerminalEnvVars,
@@ -387,7 +389,7 @@ workspaceRuntimeBus.subscribe((event) => {
   }
 })
 
-export type AgentHookRoutesOptions = HostCapabilityAccessOptions
+export type AgentHookRoutesOptions = HostCapabilityAccessOptions & { statusHooks?: readonly StatusHookTemplate[] }
 
 type AgentHookContext = ReturnType<typeof sessionAccessContext>
 
@@ -412,12 +414,12 @@ function terminalPrivate() {
     allowed: false,
     status: 403,
     code: "agent_terminal_private",
-    message: "Agent terminal access requires its creator or a workspace administrator",
+    message: "Agent terminal access requires its creator or the workspace owner",
   })
 }
 
 function canAdminister(context: AgentHookContext) {
-  return context.authority?.role === "admin" || context.authority?.role === "owner"
+  return context.authority !== undefined && context.authority.sessionId === undefined
 }
 
 async function authorizeTerminal(
@@ -478,6 +480,7 @@ async function authorizeTerminal(
 }
 
 export function AgentHookRoutes(options: AgentHookRoutesOptions = {}) {
+  const statusHooks = options.statusHooks ?? defaultStatusHooks
   return new Hono<{ Variables: RelayHostAuthContext }>()
     .onError((err, c) => {
       if (isRequestBodyTooLarge(err)) return c.json(requestBodyTooLargeBody(), 413)
@@ -498,7 +501,7 @@ export function AgentHookRoutes(options: AgentHookRoutesOptions = {}) {
       const raw = "providerEvent" in parsed.data ? parsed.data.providerEvent : undefined
       const input = raw === undefined ? undefined : parseRecord(raw)
       if (raw !== undefined && !input) return c.json({ success: false, error: "Invalid provider event JSON" }, 400)
-      const providerEvent = input ? providerLifecycle(input) : undefined
+      const providerEvent = input ? providerLifecycle(input, statusHooks, parsed.data.provider) : undefined
       const payload = raw === undefined ? parsed.data : {
         ...parsed.data,
         ...providerEvent,
@@ -644,12 +647,13 @@ export function AgentHookRoutes(options: AgentHookRoutesOptions = {}) {
       try {
         const body = await boundedJsonRecord(c)
         await setupAgentHooks({
+          templates: statusHooks,
           port: num(body.port),
           force: bool(body.force),
           wrappers: arr(body.wrappers)?.flatMap((item) => str(item) ?? []),
           replaceWrappers: bool(body.replaceWrappers),
         })
-        const wrappers = await listWrapperAgents()
+        const wrappers = await listWrapperAgents(undefined, statusHooks)
         return c.json({
           success: true,
           message: "Agent hooks initialized successfully",
@@ -664,9 +668,9 @@ export function AgentHookRoutes(options: AgentHookRoutesOptions = {}) {
     .get("/setup/status", async (c) => {
       const denied = await authorizeHostCapability(c, options, "agent_setup_read")
       if (denied) return denied
-      const wrappers = await listWrapperAgents()
+      const wrappers = await listWrapperAgents(undefined, statusHooks)
       return c.json({
-        ready: isSetupComplete(),
+        ready: isSetupComplete(statusHooks),
         wrappers: wrappers.all,
         customWrappers: wrappers.custom,
       })

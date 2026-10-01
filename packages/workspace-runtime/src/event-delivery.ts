@@ -1,5 +1,4 @@
 import { createSseReplayBuffer, type SseReplayBuffer } from "./projection/sse"
-import { randomUUID } from "node:crypto"
 import type { Context } from "hono"
 import { SESSION_STREAM_LEASE_TTL_MS } from "@claxedo/workspace-relay-protocol"
 import type { SessionAccessPolicy } from "./session-access-policy"
@@ -105,7 +104,7 @@ export type EventDeliveryOptions<T> = {
 }
 
 export function eventDeliveryPrincipal(context: Context): EventDeliveryPrincipal {
-  const connectionId = randomUUID()
+  const connectionId = crypto.randomUUID()
   const claims = context.get("relayHostAuth")
   if (!claims) return { mode: "unmanaged-local", connectionId }
   const credential = context.req.header("authorization")
@@ -254,7 +253,7 @@ export function sessionEventDeliveryPolicy<T>(policy: SessionAccessPolicy): Even
     if (held.renewing) return held.expiresAt <= Date.now() ? "terminate" : await held.renewing
     held.renewing = (async () => {
       const { sessionId: _session, ...input } = accessInput(principal, "")
-      const decision = await policy.authorizeHost!({ ...input, minimumRole: "viewer", lease: held.lease })
+      const decision = await policy.authorizeHost!({ ...input, hostAccess: "read", lease: held.lease })
       if (!decision.allowed) {
         return isAuthorityAway(decision) && held.expiresAt > Date.now() ? "deliver" : eventDecision(decision)
       }

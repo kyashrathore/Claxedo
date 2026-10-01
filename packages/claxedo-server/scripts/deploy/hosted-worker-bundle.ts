@@ -11,11 +11,15 @@
  * dies on load with `TypeError: Class2 is not a constructor`. The two
  * specifiers are the same zod 4 classic export surface.
  *
+ * `enable_ctx_exports` gives the plugin-backend supervisor `ctx.exports`, from
+ * which it binds a loaded backend's `env.PLATFORM` and outbound gate; at this
+ * compatibility date the runtime leaves `ctx.exports` undefined without it.
+ *
  * The alias is a TOML table, so this block has to close the config's
  * top-level keys: a bare key emitted after it would belong to `[alias]`.
  */
 export const HOSTED_WORKER_BUNDLE_CONTRACT = `compatibility_date = "2025-05-01"
-compatibility_flags = ["nodejs_compat", "global_fetch_strictly_public"]
+compatibility_flags = ["nodejs_compat", "global_fetch_strictly_public", "enable_ctx_exports"]
 workers_dev = false
 preview_urls = false
 

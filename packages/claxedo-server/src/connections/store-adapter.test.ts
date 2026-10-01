@@ -74,18 +74,18 @@ describe("SQLite connection store persistence", () => {
   test("owner-absent rows persist as NULL, not the empty string", async () => {
     const store = createConnectionStoreAdapter()
     await store.upsert({
-      id: "row-team",
+      id: "row-org",
       integrationId: "notion",
       grantedCapabilities: ["docs"],
       fields: {},
       createdAt: 1,
       updatedAt: 1,
     })
-    const raw = ClaxedoDB.use((db) => db.all(`SELECT owner FROM claxedo_connection WHERE id = 'row-team'`)) as Array<{
+    const raw = ClaxedoDB.use((db) => db.all(`SELECT owner FROM claxedo_connection WHERE id = 'row-org'`)) as Array<{
       owner: string | null
     }>
     expect(raw).toEqual([{ owner: null }])
-    // An empty-string owner is a distinct partition from the team partition.
+    // An empty-string owner is a distinct partition from the org partition.
     expect(await store.list({ owner: "" })).toEqual([])
   })
 })

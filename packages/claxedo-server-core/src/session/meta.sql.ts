@@ -23,6 +23,12 @@ export const ClaxedoSessionMetaTable = sqliteTable(
      * on this rather than `updated_at`, which any actor's turn advances.
      */
     last_human_turn_at: integer(),
+    /**
+     * The runtime's `time.updated` on the newest runtime snapshot written here,
+     * null until one is. Runtime snapshots are ordered by it alone: `updated_at`
+     * is also stamped by this server's clock when a tag or attachment changes.
+     */
+    runtime_updated_at: integer(),
   },
   (table) => [
     index("claxedo_session_meta_workspace_idx").on(table.workspace_id),

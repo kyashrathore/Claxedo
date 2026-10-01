@@ -1,10 +1,9 @@
 import { EventEmitter } from "node:events"
-import { fork, spawn } from "node:child_process"
+import { fork } from "node:child_process"
 import { closeSync, existsSync, renameSync, writeFileSync } from "node:fs"
 import { rm } from "node:fs/promises"
-import { tmpdir } from "node:os"
 import { join } from "node:path"
-import type { Event, MessageBoxOptions, OnHeadersReceivedListenerDetails } from "electron"
+import type { Event, OnHeadersReceivedListenerDetails } from "electron"
 import { app, BrowserWindow, dialog, ipcMain, powerMonitor, safeStorage, session, utilityProcess } from "electron"
 import { daemonResponseListener, grantMainRendererDaemonAccess, HTTP_REQUEST_URLS, type DaemonResponseHeaders } from "./renderer-daemon-access"
 import { createDaemonFetch, type DaemonEndpoint } from "./daemon-request"
@@ -56,9 +55,7 @@ import { resolveDevIdentity } from "./dev-identity"
 import { findFreePort, resolveBaseServerPort } from "./server-port"
 import { restartBehavior, runRestart } from "../shared/restart-policy"
 import { CLAXEDO_SERVER_COMPILE_CACHE_DIR_NAME } from "../shared/compile-cache"
-import { createElectronSource } from "./diagnostics/electron-source"
 import { readString } from "@claxedo/helpers/readers"
-import { createProcessMetricsSource } from "./diagnostics/process-metrics-source"
 import { claxedoServerForkOptions } from "./server-child-process"
 import { setupAgentPluginsSignedSync, type AgentPluginsSignedSync } from "./agent-plugins-signed-sync"
 import { CLAXEDO_DAEMON_PROTOCOL } from "@claxedo/helpers/claxedo-daemon"
@@ -81,10 +78,6 @@ import { createDaemonExitLifecycle } from "./daemon-exit-lifecycle"
 import { createDaemonStatus, DAEMON_STATUS_CHANNELS, type DaemonExit } from "./daemon-status"
 import { embeddedServerReadiness } from "./server-readiness"
 import { recordStartupClock } from "../shared/startup-clock-probe"
-import { createProfiler } from "./diagnostics/profiler"
-import { createSessionMemoryScanner } from "./diagnostics/session-memory-worker"
-import { createOwnerOperationBridge } from "./diagnostics/owner-operation-bridge"
-import { createWindowsWslCollector, createWslSource } from "./diagnostics/wsl-source"
 import { registerIpcHandlers, sendDeepLinks, sendMenuCommand, wireFullscreenEvents } from "./ipc"
 import { installIpcCallerGuard, mainIpcCallerGuard } from "./ipc-caller-guard"
 import { setupLazyAccount } from "./account/lazy-account"
@@ -118,10 +111,6 @@ import {
 import { createMainWindow, isRendererDocumentUrl, isTrustedMainRendererUrl, rendererDocumentUrlPatterns, setDockIcon } from "./windows"
 import { rendererContentSecurityListener } from "./renderer-content-security"
 import { createStartAtLogin } from "./start-at-login"
-import {
-  matchesDiagnosticsBinding,
-  parseDiagnosticsTransportMessage,
-} from "../shared/diagnostics-transport"
 import { claxedoServerExitedBeforeListening, parseClaxedoServerReadyMessage } from "../shared/claxedo-server-lifecycle"
 
 type ServerConnection =
@@ -175,34 +164,6 @@ const mermaidRendererPath = resolveMermaidRendererPath({
   override: process.env.CLAXEDO_MERMAID_RENDERER_PATH,
 })
 const startAtLogin = createStartAtLogin(app)
-const electronDiagnosticsSource = createElectronSource({
-  process,
-  isReady: () => app.isReady(),
-  getAppMetrics: () => app.getAppMetrics(),
-  getWindows: () => BrowserWindow.getAllWindows(),
-})
-const diagnosticsSource = createProcessMetricsSource({
-  electron: electronDiagnosticsSource,
-  hostCollection: "on-demand",
-  workerPath: join(import.meta.dirname, "process-metrics-worker.js"),
-  ...(process.platform === "darwin"
-    ? {
-        memoryHelperPath: IS_PACKAGED
-          ? join(process.resourcesPath, "diagnostics/macos-memory-impact")
-          : join(import.meta.dirname, "../../resources/diagnostics/macos-memory-impact"),
-      }
-    : {}),
-  wsl: createWslSource({
-    enabled: process.platform === "win32" && getWslConfig().enabled,
-    ...(process.platform === "win32" ? { collect: createWindowsWslCollector() } : {}),
-  }),
-})
-const diagnosticsProfiler = createProfiler({ source: diagnosticsSource })
-const scanSessionMemory = createSessionMemoryScanner({
-  workerPath: join(import.meta.dirname, "session-memory-worker.js"),
-  paths: { databases: [] },
-})
-const diagnosticsSmokeFixtures = createPackagedDiagnosticsFixtures()
 
 logger.log("app starting", {
   version: app.getVersion(),
@@ -255,7 +216,6 @@ function setupApp() {
   })
 
   void app.whenReady().then(async () => {
-    diagnosticsProfiler.requestSample("lifecycle")
     powerMonitor.on("suspend", () => logger.log("system suspending"))
     powerMonitor.on("resume", () => logger.log("system resumed"))
     app.setAsDefaultProtocolClient("claxedo")
@@ -348,7 +308,6 @@ async function startClaxedoServer(
   }
 
   try {
-    const serverLaunchId = `claxedo-server-${crypto.randomUUID()}`
     const serverGeneration = `server-generation-${crypto.randomUUID()}`
     const daemonToken = crypto.randomUUID()
     const daemonDiscovery = claxedoDaemonDiscoveryPath(serverDataDir)
@@ -370,71 +329,22 @@ async function startClaxedoServer(
         ...(existsSync(claxedoServerCompileCachePath)
           ? { CLAXEDO_CHILD_SERVER_COMPILE_CACHE_DIR: claxedoServerCompileCachePath }
           : {}),
-        CLAXEDO_DIAGNOSTICS_LAUNCH_ID: serverLaunchId,
-        CLAXEDO_DIAGNOSTICS_GENERATION: serverGeneration,
       }, serverLog.fd),
     )
     closeSync(serverLog.fd)
     const listening = defer<void>()
-    let ownerBridge: ReturnType<typeof createOwnerOperationBridge> | undefined
-    const connectOwnerBridge = () => {
-      if (!child.pid || ownerBridge) return
-      ownerBridge = createOwnerOperationBridge({
-          binding: {
-            pid: child.pid,
-            launchId: serverLaunchId,
-            generation: serverGeneration,
-          },
-          send: (message) => {
-            if (!child.connected) return false
-            return child.send(message)
-          },
-        })
-    }
-    child.on("spawn", connectOwnerBridge)
     recordStartupClock("main-server-forked", { pid: child.pid ?? 0 })
     child.on("message", (input) => {
       const ready = parseClaxedoServerReadyMessage(input)
-      if (ready) {
-        recordStartupClock("main-server-ready-message", { port: ready.port })
-        if (ready.port === claxedoPort) listening.resolve()
-        else {
-          logger.warn("claxedo-server reported an unexpected port", {
-            expected: claxedoPort,
-            actual: ready.port,
-          })
-        }
-        return
+      if (!ready) return
+      recordStartupClock("main-server-ready-message", { port: ready.port })
+      if (ready.port === claxedoPort) listening.resolve()
+      else {
+        logger.warn("claxedo-server reported an unexpected port", {
+          expected: claxedoPort,
+          actual: ready.port,
+        })
       }
-      connectOwnerBridge()
-      if (!child.pid || !ownerBridge) return
-      const binding = {
-        pid: child.pid,
-        launchId: serverLaunchId,
-        generation: serverGeneration,
-      }
-      if (ownerBridge.onMessage(input)) return
-      const parsed = parseDiagnosticsTransportMessage(input)
-      if (!parsed.success || !matchesDiagnosticsBinding(parsed.data.binding, binding)) return
-      if (
-        parsed.data.type !== "owner-registered" &&
-        parsed.data.type !== "owner-updated" &&
-        parsed.data.type !== "owner-exited"
-      ) return
-      diagnosticsProfiler.recordOwnerEvent(
-        parsed.data,
-        parsed.data.type === "owner-registered"
-          ? ownerBridge.operationFor(parsed.data.descriptor)
-          : undefined,
-      )
-    })
-    connectOwnerBridge()
-    diagnosticsProfiler.registerUtilityProcess(child, {
-      launchId: serverLaunchId,
-      ownerId: "owner-claxedo-server",
-      ownerKind: "server",
-      role: "server",
-      label: "Claxedo server",
     })
     const exited = defer<DaemonExit>()
     const handle = {
@@ -455,7 +365,6 @@ async function startClaxedoServer(
       logger.error("claxedo-server child process failed", { error: String(error) })
     })
     child.once("exit", (code, signal) => {
-      ownerBridge?.dispose()
       exited.resolve({ code, signal })
       listening.reject(new Error(claxedoServerExitedBeforeListening(code, serverLog.path)))
       const detail = { pid: child.pid, code, signal }
@@ -487,12 +396,6 @@ async function startClaxedoServer(
       }
       recordStartupClock("main-server-health-verified")
       logger.log("claxedo-server healthy", { url: claxedoUrl })
-      diagnosticsProfiler.recordLifecycle({
-        event: "server-ready",
-        ownerId: "owner-claxedo-server",
-      })
-      ownerBridge?.dispose()
-      ownerBridge = undefined
       if (child.connected) child.disconnect()
       child.unref()
       return { url: claxedoUrl, discovery: published, childExit: exited.promise }
@@ -685,7 +588,6 @@ async function initialize(serverConnectionStarted: Promise<ServerConnection>) {
 
   logger.log("loading main window alongside embedded server")
   mainWindow = createMainWindow(globals)
-  registerDiagnosticsWindow(mainWindow)
   wireFullscreenEvents(mainWindow)
   wireMenu()
 
@@ -909,8 +811,7 @@ hostConnector = setupElectronHostConnector({
   safeStorage,
   userDataDir: app.getPath("userData"),
   // Bound, not passed bare: `fork` is a method on Electron's utilityProcess
-  // and needs its receiver. Bound rather than wrapped in an arrow so this stays
-  // ONE textual spawn seam — `diagnostics/spawn-inventory.ts` counts them.
+  // and needs its receiver.
   fork: utilityProcess.fork.bind(utilityProcess),
   packaged: IS_PACKAGED,
   mainDir: MAIN_DIR,
@@ -974,7 +875,7 @@ registerHostConnectorIpc({
 })
 logger.log("host connector", { available: true, state: hostConnector.status().status })
 
-const diagnosticsIpc = registerIpcHandlers({
+registerIpcHandlers({
   awaitInitialization: async (sendStep) => {
     sendStep(initStep)
     const listener = (step: InitStep) => sendStep(step)
@@ -1005,36 +906,6 @@ const diagnosticsIpc = registerIpcHandlers({
   setStartAtLogin: (enabled) => startAtLogin.set(enabled),
   renderMermaid: createNativeMermaidRenderer(mermaidRendererPath),
   browser: browserRegistry,
-  processDiagnostics: {
-    profiler: diagnosticsProfiler,
-    scanSessionMemory,
-    isAllowedUrl: isTrustedMainRendererUrl,
-    async confirmAction(input) {
-      if (process.env.CLAXEDO_DIAGNOSTICS_PACKAGED_SMOKE === "1") return true
-      // Found by id rather than asserted: `confirmAction` receives the
-      // diagnostics port, which is a structural view of the sender and not the
-      // `WebContents` `fromWebContents` requires.
-      const owner =
-        BrowserWindow.getAllWindows().find((window) => window.webContents.id === input.webContents.id) ?? null
-      const destructive = input.action === "kill"
-      const options: MessageBoxOptions = {
-        type: destructive ? "warning" : "question",
-        title: destructive ? "Kill local process?" : "Stop local process?",
-        message: `${destructive ? "Kill" : "Stop"} ${input.ownerLabel}?`,
-        detail: destructive
-          ? "Kill ends the owned process tree immediately. Unsaved work in that process may be lost."
-          : "Stop asks the registered owner to shut down gracefully. It does not escalate to Kill.",
-        buttons: [destructive ? "Kill" : "Stop", "Cancel"],
-        defaultId: 1,
-        cancelId: 1,
-        noLink: true,
-      }
-      const result = owner
-        ? await dialog.showMessageBox(owner, options)
-        : await dialog.showMessageBox(options)
-      return result.response === 0
-    },
-  },
 })
 
 if (browserTabSetup) {
@@ -1046,129 +917,6 @@ async function shutdown() {
   daemonLease = undefined
   await daemonExitLifecycle.release(lease)
   hostConnector?.dispose()
-  diagnosticsSmokeFixtures.dispose()
-  diagnosticsIpc.dispose()
-  diagnosticsProfiler.dispose()
-}
-
-function createPackagedDiagnosticsFixtures() {
-  if (process.env.CLAXEDO_DIAGNOSTICS_PACKAGED_SMOKE !== "1") {
-    return { dispose() {} }
-  }
-  const fixtures = [
-    {
-      ownerId: "diagnostics-packaged-stop",
-      label: "Diagnostics growing CLI fixture",
-      action: "stop" as const,
-      script: "const held=[];setInterval(()=>held.push(Buffer.alloc(262144)),100)",
-    },
-    {
-      ownerId: "diagnostics-packaged-kill",
-      label: "Diagnostics kill CLI fixture",
-      action: "kill" as const,
-      script: "setInterval(()=>{},1000)",
-    },
-  ].map((fixture) => {
-    const child = spawn(process.execPath, ["-e", fixture.script], {
-      cwd: tmpdir(),
-      env: {
-        ELECTRON_RUN_AS_NODE: "1",
-        PATH: process.env.PATH ?? "",
-      },
-      stdio: "ignore",
-      windowsHide: true,
-    })
-    if (!child.pid) throw new Error("Could not start packaged diagnostics fixture")
-    const registeredAt = Date.now()
-    const descriptor = {
-      ownerId: fixture.ownerId,
-      ownerGeneration: crypto.randomUUID(),
-      ownerOperationId: crypto.randomUUID(),
-      launchId: crypto.randomUUID(),
-      kind: "cli" as const,
-      role: "cli" as const,
-      label: fixture.label,
-      pid: child.pid,
-      capabilities: {
-        stopGracefully: fixture.action === "stop",
-        killOwnedTree: fixture.action === "kill",
-      },
-    }
-    diagnosticsProfiler.recordOwnerEvent({
-      type: "owner-registered",
-      at: registeredAt,
-      binding: { pid: process.pid, launchId: "desktop-main", generation: "desktop-main" },
-      descriptor,
-    }, async (request) => {
-      if (request.action !== fixture.action) return { result: "operation-unavailable" }
-      await killProcessTree(child.pid!, request.action === "stop" ? "SIGTERM" : "SIGKILL")
-      return { result: "completed", retirement: { leader: "exited", descendants: "unknown" } }
-    })
-    let active = true
-    child.once("exit", (code) => {
-      if (!active) return
-      active = false
-      diagnosticsProfiler.recordOwnerEvent({
-        type: "owner-exited",
-        at: Date.now(),
-        binding: { pid: process.pid, launchId: "desktop-main", generation: "desktop-main" },
-        ownerId: descriptor.ownerId,
-        ownerGeneration: descriptor.ownerGeneration,
-        reason: "exited",
-        ...(code === null ? {} : { exitCode: code }),
-        observedLifetimeMs: Math.max(0, Date.now() - registeredAt),
-      })
-    })
-    return child
-  })
-  const churn = spawn(process.execPath, ["-e", "setInterval(()=>{},1000)"], {
-    cwd: tmpdir(),
-    env: { ELECTRON_RUN_AS_NODE: "1", PATH: process.env.PATH ?? "" },
-    stdio: "ignore",
-    windowsHide: true,
-  })
-  const churnGeneration = crypto.randomUUID()
-  diagnosticsProfiler.recordOwnerEvent({
-    type: "owner-registered",
-    at: Date.now(),
-    binding: { pid: process.pid, launchId: "desktop-main", generation: "desktop-main" },
-    descriptor: {
-      ownerId: "diagnostics-packaged-churn",
-      ownerGeneration: churnGeneration,
-      ownerOperationId: crypto.randomUUID(),
-      launchId: crypto.randomUUID(),
-      kind: "cli",
-      role: "cli",
-      label: "Diagnostics sub-cadence CLI fixture",
-      capabilities: { stopGracefully: false, killOwnedTree: false },
-    },
-  })
-  diagnosticsProfiler.recordOwnerEvent({
-    type: "owner-exited",
-    at: Date.now(),
-    binding: { pid: process.pid, launchId: "desktop-main", generation: "desktop-main" },
-    ownerId: "diagnostics-packaged-churn",
-    ownerGeneration: churnGeneration,
-    reason: "exited",
-    observedLifetimeMs: 0,
-  })
-  churn.kill()
-  return {
-    dispose() {
-      fixtures.forEach((child) => {
-        if (child.exitCode === null) child.kill()
-      })
-      if (churn.exitCode === null) churn.kill()
-    },
-  }
-}
-
-function registerDiagnosticsWindow(window: BrowserWindow) {
-  diagnosticsIpc.registerWebContents(window.webContents)
-  diagnosticsProfiler.requestSample("lifecycle")
-  window.once("ready-to-show", () => diagnosticsProfiler.markInteractive())
-  window.once("closed", () => diagnosticsProfiler.requestSample("lifecycle"))
-  window.webContents.on("render-process-gone", () => diagnosticsProfiler.requestSample("lifecycle"))
 }
 
 function ensureLoopbackNoProxy() {

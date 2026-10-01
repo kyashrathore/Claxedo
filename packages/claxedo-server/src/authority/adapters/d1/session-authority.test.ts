@@ -1,3 +1,4 @@
+import { inviteOrgMember } from "../../../test-support/invite-org-member"
 import { readFile } from "node:fs/promises"
 import { afterEach, describe, expect, test } from "vitest"
 import { Miniflare } from "miniflare"
@@ -132,19 +133,19 @@ async function sharedWorkspace(input: Awaited<ReturnType<typeof setup>>) {
   const outsider = await signed(input.workspace, "outsider")
   const reader = await signed(input.workspace, "reader")
   await input.workspace.createHostedOrganization(alice, { name: "Acme", orgId: "org_acme" })
-  await input.workspace.addOrganizationMember(alice, {
+  await inviteOrgMember(input.database, alice, {
     orgId: "org_acme",
-    userId: bob.principal!.userId,
+    userPublicId: bob.principal!.userId,
     role: "member",
   })
-  await input.workspace.addOrganizationMember(alice, {
+  await inviteOrgMember(input.database, alice, {
     orgId: "org_acme",
-    userId: admin.principal!.userId,
+    userPublicId: admin.principal!.userId,
     role: "admin",
   })
-  await input.workspace.addOrganizationMember(alice, {
+  await inviteOrgMember(input.database, alice, {
     orgId: "org_acme",
-    userId: reader.principal!.userId,
+    userPublicId: reader.principal!.userId,
     role: "member",
   })
   const workspace = await input.workspace.createWorkspace(alice, {
@@ -203,7 +204,7 @@ async function reserveAndRegister(
 describe("D1 private multiplayer session authority", () => {
   test("satisfies the provider-neutral private-session conformance surface", async () => {
     const input = await setup()
-    const { alice, bob } = await sharedWorkspace(input)
+    const { alice, admin } = await sharedWorkspace(input)
 
     await expect(
       exercisePrivateSessionAuthorityConformance({
@@ -222,11 +223,11 @@ describe("D1 private multiplayer session authority", () => {
             actorKind: "human",
           },
         },
-        participant: {
-          auth: bob,
+        member: {
+          auth: admin,
           runtime: {
             principalKind: "user",
-            actorId: bob.principal!.actorId,
+            actorId: admin.principal!.actorId,
             actorKind: "human",
           },
         },
@@ -239,7 +240,7 @@ describe("D1 private multiplayer session authority", () => {
         "explicit-runtime-principal",
       ],
       lifecycle: { reserved: true, reconciled: true, compensated: true, released: true },
-      access: { deniedBeforeGrant: true, allowedAfterGrant: true, deniedAfterRevoke: true },
+      access: { memberRefusedTheSession: true, memberRefusedCreation: true },
       attribution: { canonicalActorPreserved: true, forgedActorRemoved: true },
     })
   })
@@ -261,7 +262,7 @@ describe("D1 private multiplayer session authority", () => {
           auth: alice,
           runtime: { principalKind: "user", actorId: alice.principal!.actorId, actorKind: "human" },
         },
-        participant: {
+        member: {
           auth: bob,
           runtime: { principalKind: "user", actorId: bob.principal!.actorId, actorKind: "human" },
         },
@@ -270,23 +271,20 @@ describe("D1 private multiplayer session authority", () => {
       forkReservedUnderAWritableParent: true,
       registeredChildIsPrivateToItsCreator: true,
       refusedUnderAnUnreadableParent: true,
-      refusedUnderAFollowOnlyParent: true,
-      revokedParentRefusesStartupAndRegistration: true,
+      refusedToAShareHolderAtEitherLevel: true,
       refusedForAMismatchedIntent: true,
     })
   })
 
-  test("parent permission is rechecked inside reservation and registration batches", async () => {
+  test("the parent is rechecked inside the fork's reservation and registration batches", async () => {
     const input = await setup()
-    const { alice, bob } = await sharedWorkspace(input)
-    await reserveAndRegister(input.sessions, alice, { operationId: "op_race_parent", sessionId: "ses_race_parent" })
-    const principal = { principalKind: "user" as const, actorId: bob.principal!.actorId, actorKind: "human" as const }
+    const { alice } = await sharedWorkspace(input)
+    const principal = { principalKind: "user" as const, actorId: alice.principal!.actorId, actorKind: "human" as const }
     for (const phase of ["reserve", "register"] as const) {
-      await input.sessions.grantSessionShare(alice, {
-        sessionId: "ses_race_parent", workspaceId: "ws_main", grantedToUserId: bob.principal!.userId, level: "send",
-      })
+      const parentSessionId = `ses_race_parent_${phase}`
+      await reserveAndRegister(input.sessions, alice, { operationId: `op_race_parent_${phase}`, sessionId: parentSessionId })
       const intent = { operationId: `op_race_${phase}`, sessionId: `ses_race_${phase}`, workspaceId: "ws_main",
-        kind: "fork" as const, parentSessionId: "ses_race_parent" }
+        kind: "fork" as const, parentSessionId }
       if (phase === "register") await input.sessions.reserveRuntimeSession(principal, intent)
       let batches = 0
       // Miniflare's RPC binding supplies methods dynamically, so intercept the
@@ -295,7 +293,7 @@ describe("D1 private multiplayer session authority", () => {
         get(target, key) {
           if (key === "batch") return async (statements: Parameters<typeof target.batch>[0]) => {
             batches += 1
-            await target.prepare("UPDATE session_share_grants SET level = 'follow' WHERE session_id = 'ses_race_parent'").run()
+            await target.prepare("UPDATE sessions SET deleted_at = 1 WHERE session_id = ?").bind(parentSessionId).run()
             return target.batch(statements)
           }
           const value = Reflect.get(target, key)
@@ -319,22 +317,13 @@ describe("D1 private multiplayer session authority", () => {
     const input = await setup()
     const { alice, admin, outsider } = await sharedWorkspace(input)
     const teammate = await signed(input.workspace, "teammate")
-    await input.workspace.addOrganizationMember(alice, {
+    await inviteOrgMember(input.database, alice, {
       orgId: "org_acme",
-      userId: teammate.principal!.userId,
+      userPublicId: teammate.principal!.userId,
       role: "member",
     })
-    // `org_member_visible = 0` withholds the implicit member rank, which is
-    // what leaves the teammate with no workspace standing at all and the
-    // share as the only thing that can admit them.
-    await input.database
-      .prepare(`update workspaces set org_member_visible = 0 where workspace_id = ?`)
-      .bind("ws_main")
-      .run()
-    await reserveAndRegister(input.sessions, alice, {
-      operationId: "op_shared",
-      sessionId: "ses_shared",
-    })
+    await reserveAndRegister(input.sessions, alice, { operationId: "op_shared", sessionId: "ses_shared" })
+    await reserveAndRegister(input.sessions, alice, { operationId: "op_unshared", sessionId: "ses_unshared" })
     await expect(input.workspace.openWorkspace(teammate, { workspaceId: "ws_main" }))
       .rejects.toMatchObject({ code: "workspace_authorization_denied" })
 
@@ -344,6 +333,7 @@ describe("D1 private multiplayer session authority", () => {
         shares: input.sessions,
         workspaceId: "ws_main",
         sessionId: "ses_shared",
+        otherSessionId: "ses_unshared",
         creator: { auth: alice },
         grantee: {
           auth: teammate,
@@ -362,6 +352,7 @@ describe("D1 private multiplayer session authority", () => {
       sendWritesWithoutWorkspaceRank: true,
       downgradeEndsWriting: true,
       revokeEndsReading: true,
+      shareReachesNoOtherSession: true,
       organizationAdministratorRefusedWithoutAGrant: true,
       offerRefusedOutsideTheOrganization: true,
     })
@@ -371,21 +362,19 @@ describe("D1 private multiplayer session authority", () => {
     const input = await setup()
     const { alice, admin } = await sharedWorkspace(input)
     const teammate = await signed(input.workspace, "teammate")
-    await input.workspace.addOrganizationMember(alice, {
+    await inviteOrgMember(input.database, alice, {
       orgId: "org_acme",
-      userId: teammate.principal!.userId,
+      userPublicId: teammate.principal!.userId,
       role: "member",
     })
-    // `org_member_visible = 0` withholds the implicit member rank, so the
-    // teammate's only standing on this workspace is the share under test. An
-    // org ADMIN keeps their rank either way, which is what lets the departing
-    // member create a session and what revoking the membership takes back.
-    await input.database
-      .prepare(`update workspaces set org_member_visible = 0 where workspace_id = ?`)
-      .bind("ws_main")
-      .run()
-    await reserveAndRegister(input.sessions, alice, { operationId: "op_shared", sessionId: "ses_shared" })
-    await reserveAndRegister(input.sessions, admin, { operationId: "op_departing", sessionId: "ses_departing" })
+    await input.workspace.createWorkspace(admin, {
+      workspaceId: "ws_admin",
+      orgId: "org_acme",
+      displayName: "admin",
+      repoUrl: "https://github.com/acme/main.git",
+      backing: "cloud-vm",
+    })
+    await reserveAndRegister(input.sessions, admin, { operationId: "op_shared", sessionId: "ses_shared", workspaceId: "ws_admin" })
 
     await expect(
       exerciseSessionShareRuntimeTokenConformance({
@@ -396,19 +385,12 @@ describe("D1 private multiplayer session authority", () => {
           runtimeAccessTokenActive: (args) => input.runtimeTokens.runtimeAccessTokenActive(args),
           grantSessionShare: (auth, args) => input.sessions.grantSessionShare(auth, args),
         },
-        workspaceId: "ws_main",
+        workspaceId: "ws_admin",
         hostId: "host_alices_desktop",
         sessionId: "ses_shared",
-        creator: { auth: alice },
-        grantee: {
-          auth: teammate,
-          runtime: { principalKind: "user", actorId: teammate.principal!.actorId, actorKind: "human" },
-          target: { grantedToUserId: teammate.principal!.userId },
-        },
-        offboarded: {
+        owner: {
           auth: admin,
           runtime: { principalKind: "user", actorId: admin.principal!.actorId, actorKind: "human" },
-          sessionId: "ses_departing",
           leaveOrganization: async () => {
             await input.database
               .prepare(`update org_memberships set revoked_at = 99 where org_id = 'org_acme' and user_id = ?`)
@@ -416,14 +398,20 @@ describe("D1 private multiplayer session authority", () => {
               .run()
           },
         },
+        grantee: {
+          auth: teammate,
+          runtime: { principalKind: "user", actorId: teammate.principal!.actorId, actorKind: "human" },
+          target: { grantedToUserId: teammate.principal!.userId },
+        },
         expiresAt: 1_800_000_600_000,
       }),
     ).resolves.toEqual({
-      tokenRefusedBeforeTheShare: true,
-      sendGranteeMintsAViewerTokenAndWrites: true,
-      shareNeverWidensTheTokenRole: true,
-      followGranteeKeepsTheTokenAndLosesTheTurn: true,
-      offboardedCreatorLosesReadWriteAndToken: true,
+      workspaceRefusedToAShareHolder: true,
+      workspaceTokenRefusedToAShareHolder: true,
+      sendShareDrivesTheTurn: true,
+      downgradeEndsTheTurn: true,
+      ownerHoldsTheWorkspaceToken: true,
+      offboardedOwnerLosesSessionWorkspaceAndToken: true,
     })
   })
 
@@ -468,7 +456,7 @@ describe("D1 private multiplayer session authority", () => {
       adoptedForEnrollmentOwner: true,
       idempotent: true,
       refusedForMember: true,
-      refusedWhenHeldByAnotherCreator: true,
+      refusedWhileAReservationHoldsIt: true,
     })
   })
 
@@ -479,10 +467,11 @@ describe("D1 private multiplayer session authority", () => {
       operationId: "op_turn_conformance",
       sessionId: "ses_turn_conformance",
     })
-    await input.sessions.grantSessionParticipant(alice, {
+    await input.sessions.grantSessionShare(alice, {
       sessionId: "ses_turn_conformance",
       workspaceId: "ws_main",
-      participantActorId: bob.principal!.actorId,
+      grantedToUserId: bob.principal!.userId,
+      level: "send",
     })
     const reconstructed = new D1SessionAuthority(input.database, {
       deploymentId: "deployment-a",
@@ -810,7 +799,7 @@ describe("D1 private multiplayer session authority", () => {
     ).rejects.toThrow(/session scope is immutable/)
   })
 
-  test("admits a session only to its creator, a participant or a share grantee", async () => {
+  test("admits a session only to its workspace's owner or a share holder", async () => {
     const input = await setup()
     const { alice, bob, admin, outsider } = await sharedWorkspace(input)
     await reserveAndRegister(input.sessions, alice, { operationId: "op_private", sessionId: "ses_private" })
@@ -830,39 +819,29 @@ describe("D1 private multiplayer session authority", () => {
         workspaceId: "ws_main",
       }),
     ).toEqual({ allowed: false, messages: [] })
-    await input.sessions.grantSessionParticipant(alice, {
-      sessionId: "ses_private",
-      workspaceId: "ws_main",
-      participantActorId: bob.principal!.actorId,
-    })
+    const share = { sessionId: "ses_private", workspaceId: "ws_main", grantedToUserId: bob.principal!.userId }
+    await input.sessions.grantSessionShare(alice, { ...share, level: "send" })
     await expect(
       input.sessions.authorizeSessionWrite(bob, { sessionId: "ses_private", workspaceId: "ws_main" }),
     ).resolves.toBeUndefined()
     expect(await input.sessions.listSessions(bob, { workspaceId: "ws_main" })).toEqual([
       expect.objectContaining({ session_id: "ses_private" }),
     ])
+    expect(await input.sessions.readSessionMessages(bob, { sessionId: "ses_private", workspaceId: "ws_main" }))
+      .toMatchObject({ allowed: true, role: "viewer" })
+    expect(await input.sessions.readSessionMessages(alice, { sessionId: "ses_private", workspaceId: "ws_main" }))
+      .toMatchObject({ allowed: true, role: "owner" })
+    await expect(reserveAndRegister(input.sessions, bob, { operationId: "op_bob", sessionId: "ses_bob" }))
+      .rejects.toMatchObject({ status: 403 })
 
-    expect(
-      await input.sessions.revokeSessionParticipant(alice, {
-        sessionId: "ses_private",
-        workspaceId: "ws_main",
-        participantActorId: bob.principal!.actorId,
-      }),
-    ).toEqual({ removed: true })
+    await input.sessions.revokeSessionShare(alice, share)
     await expect(
       input.sessions.authorizeSessionRead(bob, { sessionId: "ses_private", workspaceId: "ws_main" }),
     ).rejects.toMatchObject({ status: 403 })
-    expect(
-      await input.sessions.revokeSessionParticipant(alice, {
-        sessionId: "ses_private",
-        workspaceId: "ws_main",
-        participantActorId: alice.principal!.actorId,
-      }),
-    ).toEqual({ removed: false })
 
-    await reserveAndRegister(input.sessions, bob, { operationId: "op_bob", sessionId: "ses_bob" })
+    await input.sessions.grantSessionShare(alice, { ...share, level: "follow" })
     await expect(
-      input.sessions.authorizeSessionRead(bob, { sessionId: "ses_bob", workspaceId: "ws_main" }),
+      input.sessions.authorizeSessionRead(bob, { sessionId: "ses_private", workspaceId: "ws_main" }),
     ).resolves.toBeUndefined()
     await input.database
       .prepare(
@@ -873,23 +852,12 @@ describe("D1 private multiplayer session authority", () => {
       )
       .bind(bob.principal!.userId)
       .run()
-    // Offboarding ends every grant in the organization, creator standing
-    // included: the row Bob created stays in the workspace and Bob reaches
-    // none of it.
-    await expect(input.workspace.openWorkspace(bob, { workspaceId: "ws_main" }))
-      .rejects.toMatchObject({ status: 403 })
+    // Leaving the organization ends every grant inside it: the share row
+    // stays and admits Bob to nothing.
     await expect(
-      input.sessions.authorizeSessionRead(bob, { sessionId: "ses_bob", workspaceId: "ws_main" }),
-    ).rejects.toMatchObject({ status: 403 })
-    await expect(
-      input.sessions.authorizeSessionWrite(bob, { sessionId: "ses_bob", workspaceId: "ws_main" }),
+      input.sessions.authorizeSessionRead(bob, { sessionId: "ses_private", workspaceId: "ws_main" }),
     ).rejects.toMatchObject({ status: 403 })
     expect(await input.sessions.listSessions(bob, { workspaceId: "ws_main" })).toEqual([])
-    expect(
-      await input.database
-        .prepare(`select deleted_at from sessions where session_id = 'ses_bob'`)
-        .first<{ deleted_at: number | null }>(),
-    ).toEqual({ deleted_at: null })
 
     // An active account is asked of the actor, not only of the signed caller,
     // so a suspension reaches the runtime's own question too.
@@ -897,7 +865,8 @@ describe("D1 private multiplayer session authority", () => {
       .prepare(`update users set state = 'suspended', suspended_at = 101 where user_id = ?`)
       .bind(alice.principal!.userId)
       .run()
-    await expect(input.sessions.listSessions(alice, { workspaceId: "ws_main" }))
+    const nextRequest = { ...alice }
+    await expect(input.sessions.listSessions(nextRequest, { workspaceId: "ws_main" }))
       .rejects.toMatchObject({ code: "account_suspended" })
     await expect(
       input.sessions.authorizeRuntimeSession({
@@ -915,10 +884,11 @@ describe("D1 private multiplayer session authority", () => {
     const input = await setup()
     const { alice, bob } = await sharedWorkspace(input)
     await reserveAndRegister(input.sessions, alice, { operationId: "op_usage", sessionId: "ses_usage" })
-    await input.sessions.grantSessionParticipant(alice, {
+    await input.sessions.grantSessionShare(alice, {
       sessionId: "ses_usage",
       workspaceId: "ws_main",
-      participantActorId: bob.principal!.actorId,
+      grantedToUserId: bob.principal!.userId,
+      level: "send",
     })
     const alicePrincipal = { principalKind: "user" as const, actorId: alice.principal!.actorId, actorKind: "human" as const }
     const bobPrincipal = { principalKind: "user" as const, actorId: bob.principal!.actorId, actorKind: "human" as const }
@@ -961,10 +931,11 @@ describe("D1 private multiplayer session authority", () => {
       sessionId: "ses_messages",
       title: "messages",
     })
-    await input.sessions.grantSessionParticipant(alice, {
+    await input.sessions.grantSessionShare(alice, {
       sessionId: "ses_messages",
       workspaceId: "ws_main",
-      participantActorId: bob.principal!.actorId,
+      grantedToUserId: bob.principal!.userId,
+      level: "send",
     })
     const messages = [
       {
@@ -1044,6 +1015,7 @@ describe("D1 private multiplayer session authority", () => {
       workspaceId: "ws_main",
       limit: 2,
     })) as { messages: Array<Record<string, any>>; nextCursor?: string }
+    expect(page).toMatchObject({ maxEventOrdinal: 7 })
     expect(page.messages.map((message) => message.info.id)).toEqual(["m2", "m3"])
     expect(page.messages[0].info.claxedo.author).toEqual({
       id: alice.principal!.actorId,
@@ -1125,20 +1097,21 @@ describe("D1 private multiplayer session authority", () => {
     expect(await input.database.prepare("select 1 from sessions where session_id = 'ses_unknown'").first()).toBeNull()
   })
 
-  test("updates only registered visible sessions and replace hides only the caller's omitted sessions", async () => {
+  test("updates only registered visible sessions, for the workspace's owner alone, and replace hides the omitted ones", async () => {
     const input = await setup()
     const { alice, bob } = await sharedWorkspace(input)
     await reserveAndRegister(input.sessions, alice, { operationId: "op_a", sessionId: "ses_a" })
     await reserveAndRegister(input.sessions, alice, { operationId: "op_b", sessionId: "ses_b" })
-    await input.sessions.grantSessionParticipant(alice, {
+    await input.sessions.grantSessionShare(alice, {
       sessionId: "ses_b",
       workspaceId: "ws_main",
-      participantActorId: bob.principal!.actorId,
+      grantedToUserId: bob.principal!.userId,
+      level: "send",
     })
-    await input.sessions.upsertSessionVisibility(bob, {
+    await expect(input.sessions.upsertSessionVisibility(bob, {
       workspaceId: "ws_main",
-      sessions: [{ sessionId: "ses_b", title: "participant update" }],
-    })
+      sessions: [{ sessionId: "ses_b", title: "share holder update" }],
+    })).rejects.toMatchObject({ status: 403 })
     await expect(
       input.sessions.upsertSessionVisibility(alice, {
         workspaceId: "ws_main",
@@ -1168,6 +1141,21 @@ describe("D1 private multiplayer session authority", () => {
 
     await input.sessions.deleteSessionVisibility(alice, { workspaceId: "ws_main", sessionId: "ses_a" })
     expect(await updatedAt("ses_a")).toEqual({ ...registered.a, deleted_at: expect.any(Number) })
+  })
+
+  test("a title from an older runtime snapshot does not replace a newer one", async () => {
+    const input = await setup()
+    const { alice } = await sharedWorkspace(input)
+    await reserveAndRegister(input.sessions, alice, { operationId: "op_a", sessionId: "ses_a" })
+    const write = (title: string, updatedAt: number) =>
+      input.sessions.upsertSessionVisibility(alice, { workspaceId: "ws_main", sessions: [{ sessionId: "ses_a", title, updatedAt }] })
+
+    await write("Renamed", 3_000_000_000_000)
+    await write("Original", 2_000_000_000_000)
+
+    expect(await input.sessions.listSessions(alice, { workspaceId: "ws_main" })).toEqual([
+      expect.objectContaining({ session_id: "ses_a", title: "Renamed", updated_at: 3_000_000_000_000 }),
+    ])
   })
 
   test("stamps the admitted human turn and refuses to move it backwards", async () => {
@@ -1291,11 +1279,18 @@ function sessionListQuery(search: string) {
 describe("D1 session list pages", () => {
   test("satisfies the provider-neutral session-page conformance surface", async () => {
     const input = await setup()
-    const { alice, bob } = await sharedWorkspace(input)
+    const { alice, admin } = await sharedWorkspace(input)
     const second = await input.workspace.createWorkspace(alice, {
       workspaceId: "ws_second",
       orgId: "org_acme",
       displayName: "second",
+      repoUrl: "https://github.com/acme/main.git",
+      backing: "local-worktree",
+    })
+    await input.workspace.createWorkspace(admin, {
+      workspaceId: "ws_colleague",
+      orgId: "org_acme",
+      displayName: "colleague",
       repoUrl: "https://github.com/acme/main.git",
       backing: "local-worktree",
     })
@@ -1319,7 +1314,7 @@ describe("D1 session list pages", () => {
       projectId: second.project_id,
       workspaceIds: ["ws_main", "ws_second"],
       reader: user(alice),
-      colleague: user(bob),
+      colleague: { ...user(admin), workspaceId: "ws_colleague" },
       stranger: { ...user(stranger), projectId: theirs.project_id, workspaceId: "ws_theirs" },
     })
 
@@ -1362,23 +1357,16 @@ describe("D1 session authority, shares of a session this plane never registered"
     const input = await setup()
     const { alice, outsider } = await sharedWorkspace(input)
     const teammate = await signed(input.workspace, "teammate")
-    await input.workspace.addOrganizationMember(alice, {
+    await inviteOrgMember(input.database, alice, {
       orgId: "org_acme",
-      userId: teammate.principal!.userId,
+      userPublicId: teammate.principal!.userId,
       role: "member",
     })
-    // Withholding the implicit member rank leaves the teammate standing in
-    // the organization and nowhere else, which is what the two twins have to
-    // answer the same way.
-    await input.database
-      .prepare(`update workspaces set org_member_visible = 0 where workspace_id = ?`)
-      .bind("ws_main")
-      .run()
 
     await expect(input.sessions.listSessionShares(teammate, {
       sessionId: "ses_created_on_the_machine",
       workspaceId: "ws_main",
-    })).resolves.toEqual({ can_manage_shares: false, grants: [], participants: [], teams: [] })
+    })).resolves.toEqual({ can_manage_shares: false, grants: [], teams: [] })
     await expect(input.sessions.listSessionShares(outsider, {
       sessionId: "ses_created_on_the_machine",
       workspaceId: "ws_main",
@@ -1391,18 +1379,11 @@ describe("D1 session authority, write classes", () => {
     const input = await setup()
     const { alice } = await sharedWorkspace(input)
     const teammate = await signed(input.workspace, "teammate")
-    await input.workspace.addOrganizationMember(alice, {
+    await inviteOrgMember(input.database, alice, {
       orgId: "org_acme",
-      userId: teammate.principal!.userId,
+      userPublicId: teammate.principal!.userId,
       role: "member",
     })
-    // `org_member_visible = 0` withholds the implicit member rank, so the
-    // share is the teammate's only standing and the class alone decides each
-    // write.
-    await input.database
-      .prepare(`update workspaces set org_member_visible = 0 where workspace_id = ?`)
-      .bind("ws_main")
-      .run()
     await reserveAndRegister(input.sessions, alice, { operationId: "op_classes", sessionId: "ses_classes" })
     await expect(input.workspace.openWorkspace(teammate, { workspaceId: "ws_main" }))
       .rejects.toMatchObject({ code: "workspace_authorization_denied" })

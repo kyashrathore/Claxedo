@@ -458,7 +458,7 @@ describe("message replay", () => {
           project_id: "proj_cloud",
           directory: "/workspace",
           title: null,
-          driver: "daytona",
+          driver: "modal",
           repo_name: null,
           git_branch: null,
           git_remote: null,

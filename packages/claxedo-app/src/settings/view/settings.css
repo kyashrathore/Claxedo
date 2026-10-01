@@ -99,6 +99,12 @@
   font-weight: var(--font-weight-medium);
 }
 
+.settings-machine-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .settings-row-control {
   flex-shrink: 0;
   max-width: 60%;

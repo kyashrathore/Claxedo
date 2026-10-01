@@ -34,14 +34,14 @@ export type IntegrationDeclaration = {
 }
 
 export type ConnectionFields = Record<string, string>
-export type ConnectionScope = "team" | "personal"
+export type ConnectionScope = "org" | "personal"
 
-// Scope derivation with an optional host-defined team partition key. The
-// default (no teamOwner) keeps owner-absent as the team partition; a host
-// that partitions its team scope (e.g. hosted `org:{orgId}`) passes the
-// resolved key and rows carrying it classify as team.
-export const connectionScopeOf = (owner: string | undefined, teamOwner?: string): ConnectionScope =>
-  owner === undefined || owner === teamOwner ? "team" : "personal"
+// Scope derivation with an optional host-defined org partition key. The
+// default (no orgOwner) keeps owner-absent as the org partition; a host
+// that partitions its org scope (e.g. hosted `org:{orgId}`) passes the
+// resolved key and rows carrying it classify as org.
+export const connectionScopeOf = (owner: string | undefined, orgOwner?: string): ConnectionScope =>
+  owner === undefined || owner === orgOwner ? "org" : "personal"
 
 export type VerifyResult =
   | {
@@ -173,7 +173,7 @@ export type ConnectionRow = {
   // credentials, so partitions can evolve without rekeying secrets.
   id: string
   integrationId: string
-  // Opaque host-defined partition key. An absent owner is the team partition.
+  // Opaque host-defined partition key. An absent owner is the org partition.
   owner?: string
   accountLabel?: string
   grantedCapabilities: IntegrationCapability[]
@@ -228,7 +228,7 @@ export type ConnectionStorePort = {
   upsert(row: ConnectionRow): Promise<void>
   get(integrationId: string, owner?: string): Promise<ConnectionRow | undefined>
   getById(id: string): Promise<ConnectionRow | undefined>
-  // `undefined` lists every partition, `null` only the team partition, and a
+  // `undefined` lists every partition, `null` only the org partition, and a
   // string only that opaque owner's partition.
   list(filter?: { owner?: string | null }): Promise<ConnectionRow[]>
   delete(id: string): Promise<boolean>
@@ -286,7 +286,7 @@ export class ConnectionExistsError extends Error {
 export type ConnectionSummary = {
   id: string
   integrationId: string
-  scope: "team" | "personal"
+  scope: "org" | "personal"
   accountLabel?: string
   grantedCapabilities: IntegrationCapability[]
   fields: ConnectionFields

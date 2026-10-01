@@ -1,11 +1,12 @@
 import { createMiddleware } from "hono/factory"
 import { createRemoteJWKSet, importSPKI } from "jose"
-import type { RelayHostVerifierClaims, TokenVerifier } from "@claxedo/workspace-relay-protocol"
+import { sessionScopeReaches, type RelayHostVerifierClaims, type TokenVerifier } from "@claxedo/workspace-relay-protocol"
 import {
   WorkspaceRelayAuthError,
   isRelayBacking,
   relayHostTokenAudience,
   relayHostTokenIssuer,
+  tokenScopeClaims,
   verifyRelayHostToken,
   type RelayHostTokenClaims,
   type RelayKey,
@@ -59,6 +60,8 @@ export type EmbeddedRelayHostIdentity = {
   org_id: string
   workspace_id: string
   role: "viewer" | "editor" | "admin" | "owner"
+  /** The one session the stamped caller's token reaches; absent on the workspace owner's. */
+  session_id?: string
   host_id?: string
   backing?: "cloud-vm" | "local-worktree"
 }
@@ -119,6 +122,7 @@ function validateRelayHostVerifierClaims(
   const iat = numberClaim(payload, "iat")
   const jti = stringClaim(payload, "jti")
   const parent_jti = stringClaim(payload, "parent_jti")
+  const reach = tokenScopeClaims(payload)
 
   if (
     !actor_id
@@ -131,6 +135,7 @@ function validateRelayHostVerifierClaims(
     || !workspace_id
     || !host_id
     || !role
+    || !reach
     || payload.access !== undefined
     || !isRelayBacking(backing)
     || !exp
@@ -164,6 +169,7 @@ function validateRelayHostVerifierClaims(
     workspace_id,
     host_id,
     role,
+    ...reach,
     backing,
     exp,
     iat,
@@ -251,11 +257,9 @@ async function audit(options: RelayHostAuthOptions, input: Omit<RelayHostAuthAud
   })
 }
 
-// This middleware verifies the RHT at request establishment. Long-lived
-// session-derived event streams separately re-authorize each event through the
-// session access policy, which also expires stale proofs and observes
-// participant revocation. Other upgraded connections remain trusted until
-// close and require a fresh RHT when they reconnect.
+// Upgraded connections trust the RHT until close and verify a fresh one on
+// reconnect. Session streams also renew their authority and observe expired
+// proofs or revoked shares while the connection remains open.
 export function createRelayHostAuthMiddleware(options: RelayHostAuthOptions) {
   return createMiddleware<{ Variables: RelayHostAuthContext }>(async (c, next) => {
     const token = bearerToken(c.req.header("authorization"))
@@ -342,6 +346,16 @@ export function createRelayHostAuthMiddleware(options: RelayHostAuthOptions) {
             "Relay-forwarded marker is required for relay-issued tokens",
           ), 401)
         }
+      }
+      if (!sessionScopeReaches(claims.session_id, c.req.path, new URL(c.req.url).search)) {
+        await audit(options, {
+          action: "relay_host_token.rejected",
+          result: "deny",
+          reason: "relay_scope_denied",
+          path: c.req.path,
+          method: c.req.method,
+        })
+        return c.json(errorBody("relay_scope_denied", "This token reaches one session and nothing else"), 403)
       }
       c.set("relayHostAuth", claims)
       await audit(options, {

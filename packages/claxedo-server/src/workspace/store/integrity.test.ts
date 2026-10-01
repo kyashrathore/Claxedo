@@ -132,7 +132,7 @@ describe("workspace store integrity", () => {
         workspace_name: "main",
         directory: cloudRuntimeDirectory("ws_cloud_main"),
         kind: "cloud",
-        driver: "daytona",
+        driver: "modal",
         remote_directory: "/workspace",
       })
 
@@ -232,7 +232,7 @@ describe("workspace store integrity", () => {
         workspace_name: "main",
         directory: cloudRuntimeDirectory("ws_cool_cloud"),
         kind: "cloud",
-        driver: "daytona",
+        driver: "modal",
       })
 
       const projects = await mod.listProjects()
@@ -263,7 +263,7 @@ describe("workspace store integrity", () => {
         workspace_name: "main",
         directory: cloudRef,
         kind: "cloud",
-        driver: "daytona",
+        driver: "modal",
       })
 
       const projects = await mod.listProjects()
@@ -298,7 +298,7 @@ describe("workspace store integrity", () => {
         workspace_name: "main",
         directory: cloudRuntimeDirectory("ws_meta_cloud"),
         kind: "cloud",
-        driver: "daytona",
+        driver: "modal",
       })
 
       const projects = await mod.listProjects()
@@ -355,7 +355,7 @@ describe("workspace store integrity", () => {
         workspace_name: "main",
         directory: cloudMain,
         kind: "cloud",
-        driver: "daytona",
+        driver: "modal",
       })
       await mod.ensureWorkspace({
         workspaceId: "ws_oc_feat",
@@ -363,7 +363,7 @@ describe("workspace store integrity", () => {
         workspace_name: "feature",
         directory: cloudFeat,
         kind: "cloud",
-        driver: "daytona",
+        driver: "modal",
       })
 
       const projects = await mod.listProjects()
@@ -479,7 +479,7 @@ describe("workspace store integrity", () => {
         workspace_name: "main",
         directory: cloudRef,
         kind: "cloud",
-        driver: "daytona",
+        driver: "modal",
         remote_directory: "/workspace",
       })
 
@@ -841,7 +841,7 @@ describe("workspace store integrity", () => {
         workspace_name: "main",
         directory: cloudRuntimeDirectory(cloudId),
         kind: "cloud",
-        driver: "daytona",
+        driver: "modal",
         remote_directory: "/workspace",
       }))
 
@@ -868,7 +868,7 @@ describe("workspace store integrity", () => {
         workspace_name: "main",
         directory: cloudRef,
         kind: "cloud",
-        driver: "daytona",
+        driver: "modal",
         remote_directory: "/workspace",
       }))
 
@@ -896,12 +896,12 @@ describe("workspace store integrity", () => {
         workspace_name: "dev",
         directory: cloudRuntimeDirectory(cloudId),
         kind: "cloud",
-        driver: "daytona",
+        driver: "modal",
         remote_directory: "/workspace",
       }))
 
       expect(cloud.kind).toBe("cloud")
-      expect(cloud.driver).toBe("daytona")
+      expect(cloud.driver).toBe("modal")
       expect(cloud.remote_directory).toBe("/workspace")
     })
 
@@ -917,7 +917,7 @@ describe("workspace store integrity", () => {
         workspace_name: "main",
         directory: cloudRef,
         kind: "cloud",
-        driver: "daytona",
+        driver: "modal",
         remote_directory: "/workspace",
       })
 
@@ -945,7 +945,7 @@ describe("workspace store integrity", () => {
         workspace_name: "main",
         directory: cloudRuntimeDirectory(cloudMain),
         kind: "cloud",
-        driver: "daytona",
+        driver: "modal",
       })
       await mod.ensureWorkspace({
         workspaceId: cloudDev,
@@ -953,7 +953,7 @@ describe("workspace store integrity", () => {
         workspace_name: "dev",
         directory: cloudRuntimeDirectory(cloudDev),
         kind: "cloud",
-        driver: "daytona",
+        driver: "modal",
       })
 
       const projects = await mod.listProjects()
@@ -981,7 +981,7 @@ describe("workspace store integrity", () => {
         workspace_name: "main",
         directory: cloudRef,
         kind: "cloud",
-        driver: "daytona",
+        driver: "modal",
         repo_url: "https://github.com/acme/new-app.git",
         remote_directory: "/workspace",
       })
@@ -1038,7 +1038,7 @@ describe("workspace store integrity", () => {
         workspace_name: "main",
         directory: cloudRuntimeDirectory(cloudId),
         kind: "cloud",
-        driver: "daytona",
+        driver: "modal",
       })
 
       // Verify: 3 workspaces, 1 project
@@ -1114,7 +1114,7 @@ describe("workspace store integrity", () => {
         workspace_name: "main",
         directory: cloudRef,
         kind: "cloud",
-        driver: "daytona",
+        driver: "modal",
       })
 
       // Local checkout added later
@@ -1224,7 +1224,7 @@ describe("workspace store integrity", () => {
         project_id: "proj_no_git",
         directory: cloudRuntimeDirectory("ws_no_git_cloud"),
         kind: "cloud",
-        driver: "daytona",
+        driver: "modal",
         repo_url: "https://github.com/acme/app.git",
       })
 

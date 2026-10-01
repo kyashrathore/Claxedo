@@ -9,15 +9,14 @@ import {
 import {
   betterAuthDeploymentConfigurationId,
   resolveBetterAuthMethodSelection,
+  type BetterAuthMethod,
 } from "../../src/platform/auth/better-auth-configuration"
 
-export type SandboxDriver = "cloudflare" | "daytona" | "exe" | "fetch"
+export type SandboxDriver = "cloudflare" | "fetch"
 
 /** The Worker secret each full-hosted driver needs. */
 const SANDBOX_DRIVER_SECRETS: Readonly<Record<SandboxDriver, readonly string[]>> = Object.freeze({
   cloudflare: ["CLOUDFLARE_SANDBOX_API_TOKEN"],
-  daytona: ["DAYTONA_API_KEY"],
-  exe: ["EXE_DEV_API_TOKEN"],
   fetch: [],
 })
 
@@ -30,10 +29,12 @@ export type D1DatabaseBinding = "AUTH_DB" | "CONTROL_PLANE_DB"
 export type UserCloudflareDeployment = UserCloudflareTarget & Readonly<{
   relayUrl: string
   organization: Readonly<{ id: string; name: string }>
-  authMethods: readonly ("github" | "google")[]
+  authMethods: readonly BetterAuthMethod[]
+  emailFrom?: string
   providerClientIds: Readonly<Record<string, string>>
   requestLimiterNamespaceId: string
   artifact: CertifiedHostedWorkerArtifact
+  documentsBucket: string
   agentPluginsBucket?: string
   sandbox?: Readonly<{ driver: SandboxDriver; variables: Readonly<Record<string, string>> }>
   requiredSecrets: readonly string[]
@@ -127,13 +128,16 @@ export function userCloudflareDeployment(
   const artifact = selectHostedWorkerArtifact({ agentPlugins: options.agentPlugins, fullHosted })
   const target = userCloudflareTarget(env)
 
-  const methods = resolveBetterAuthMethodSelection(setting(env, "CLAXEDO_AUTH_METHODS", "github"))
-  const authMethods = methods.filter((method): method is "github" | "google" => method === "github" || method === "google")
-  if (authMethods.length !== methods.length) {
-    throw new Error("a Cloudflare deploy signs in with GitHub or Google; email-password needs an email-sender service")
+  const authMethods = resolveBetterAuthMethodSelection(setting(env, "CLAXEDO_AUTH_METHODS", "github"))
+  const emailFrom = env.CLAXEDO_EMAIL_FROM?.trim()
+  if (emailFrom && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailFrom)) {
+    throw new Error("CLAXEDO_EMAIL_FROM must be an email address")
+  }
+  if (authMethods.includes("email-password") && !emailFrom) {
+    throw new Error("email-password requires CLAXEDO_EMAIL_FROM and the Cloudflare Email Service binding")
   }
   const providerClientIds = Object.fromEntries(
-    authMethods.map((method) => {
+    authMethods.filter((method) => method !== "email-password").map((method) => {
       const name = method === "google" ? "GOOGLE_CLIENT_ID" : "GITHUB_CLIENT_ID"
       return [name, setting(env, name)]
     }),
@@ -151,7 +155,6 @@ export function userCloudflareDeployment(
           ...(driver === "cloudflare"
             ? { CLOUDFLARE_SANDBOX_WORKER_URL: exactHttpsOrigin(env, "CLAXEDO_SANDBOX_WORKER_URL") }
             : {}),
-          ...(driver === "daytona" ? { CLAXEDO_DAYTONA_SNAPSHOT: setting(env, "CLAXEDO_DAYTONA_SNAPSHOT") } : {}),
           ...(driver === "fetch" ? { CLAXEDO_SANDBOX_DRIVER_URL: exactHttpsOrigin(env, "CLAXEDO_SANDBOX_DRIVER_URL") } : {}),
         },
       }
@@ -165,9 +168,11 @@ export function userCloudflareDeployment(
       name: setting(env, "CLAXEDO_USER_DEPLOYED_ORGANIZATION_NAME"),
     },
     authMethods,
+    ...(emailFrom ? { emailFrom } : {}),
     providerClientIds,
     requestLimiterNamespaceId: allocatedRequestLimiterNamespaceId(target.deploymentId, target.workerName),
     artifact,
+    documentsBucket: setting(env, "CLAXEDO_DOCUMENTS_BUCKET", `${target.workerName}-documents`),
     ...(artifact.agentPlugins
       ? { agentPluginsBucket: setting(env, "CLAXEDO_AGENT_PLUGINS_BUCKET", `${target.workerName}-agent-plugins`) }
       : {}),
@@ -178,7 +183,7 @@ export function userCloudflareDeployment(
       "CLAXEDO_RUNTIME_ACCESS_TOKEN_PRIVATE_KEY_PEM",
       "CLAXEDO_RUNTIME_ACCESS_TOKEN_PUBLIC_KEY_PEM",
       "CLAXEDO_RELAY_HOST_VERIFY_PEM",
-      ...authMethods.map((method) => (method === "google" ? "GOOGLE_CLIENT_SECRET" : "GITHUB_CLIENT_SECRET")),
+      ...authMethods.filter((method) => method !== "email-password").map((method) => (method === "google" ? "GOOGLE_CLIENT_SECRET" : "GITHUB_CLIENT_SECRET")),
       ...(artifact.agentPlugins ? ["CLAXEDO_CREDENTIALS_KEK"] : []),
       ...(driver ? SANDBOX_DRIVER_SECRETS[driver] : []),
     ],
@@ -223,6 +228,7 @@ export function workerVariables(deployment: UserCloudflareDeployment, configurat
     CLAXEDO_WORKSPACE_RELAY_URL: deployment.relayUrl,
     CLAXEDO_USER_DEPLOYED_ORGANIZATION_ID: deployment.organization.id,
     CLAXEDO_USER_DEPLOYED_ORGANIZATION_NAME: deployment.organization.name,
+    ...(deployment.emailFrom ? { CLAXEDO_EMAIL_FROM: deployment.emailFrom } : {}),
     ...deployment.providerClientIds,
     ...deployment.sandbox?.variables,
     ...(deployment.artifact.agentPlugins
@@ -232,5 +238,5 @@ export function workerVariables(deployment: UserCloudflareDeployment, configurat
 }
 
 export function oauthCallbackUrls(deployment: UserCloudflareDeployment) {
-  return deployment.authMethods.map((method) => `${deployment.apiOrigin}/api/auth/callback/${method}`)
+  return deployment.authMethods.filter((method) => method !== "email-password").map((method) => `${deployment.apiOrigin}/api/auth/callback/${method}`)
 }

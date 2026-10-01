@@ -11,7 +11,6 @@ import type { RelayHostAuthContext } from "../workspace-host-service-auth"
 import { managedWorkspaceSessionAccessPolicy, type SessionAccessPolicy } from "../session-access-policy"
 import { createDiskHistory } from "../pty/history-disk"
 import { withWorkspaceTarget } from "../target"
-import { createProcessObserver } from "../managed-processes/process-observer"
 
 const upgradeWebSocket = (() => () => new Response(null, { status: 501 })) as unknown as UpgradeWebSocket
 const previousDirectory = process.env.WORKSPACE_RUNTIME_DIRECTORY
@@ -32,6 +31,7 @@ function relayAuth(
     workspace_id: "ws_1",
     host_id: "host_1",
     role,
+    scope: "workspace",
     backing: "cloud-vm",
     exp: now + 60,
     iat: now,
@@ -75,7 +75,7 @@ function appForActor(actorId: string, policy: SessionAccessPolicy) {
     c.set("relayHostAuth", relayAuth("editor", actorId))
     return await next()
   })
-  app.route("/", PtyRoutes(upgradeWebSocket, undefined, policy))
+  app.route("/", PtyRoutes(upgradeWebSocket, policy))
   return app
 }
 
@@ -103,11 +103,10 @@ describe("PtyRoutes", () => {
     } satisfies Pty.Info
     const create = spyOn(Pty, "create").mockResolvedValue(info)
     const commit = spyOn(Pty, "commit").mockReturnValue(info)
-    const observer = createProcessObserver()
     const previousWorkspaceId = process.env.WORKSPACE_RUNTIME_WORKSPACE_ID
     try {
       const response = await withWorkspaceTarget({ workspaceId: "ws_actual", directory }, () =>
-        PtyRoutes(upgradeWebSocket, observer).request("http://localhost/", {
+        PtyRoutes(upgradeWebSocket).request("http://localhost/", {
           method: "POST",
           headers: { "content-type": "application/json", "x-workspace-id": "ws_header_forged" },
           body: JSON.stringify({ env: { CLAXEDO_WORKSPACE_ID: "ws_env_forged", USER_VALUE: "kept" } }),
@@ -115,11 +114,10 @@ describe("PtyRoutes", () => {
       )
       expect(response.status).toBe(200)
       expect(create.mock.calls[0]?.[0]?.env).toMatchObject({ CLAXEDO_WORKSPACE_ID: "ws_actual", USER_VALUE: "kept" })
-      expect(create.mock.calls[0]?.[2]).toMatchObject({ workspaceId: "ws_actual", directory })
 
       delete process.env.WORKSPACE_RUNTIME_WORKSPACE_ID
       process.env.WORKSPACE_RUNTIME_DIRECTORY = directory
-      const withoutIdentity = await PtyRoutes(upgradeWebSocket, observer).request("http://localhost/", {
+      const withoutIdentity = await PtyRoutes(upgradeWebSocket).request("http://localhost/", {
         method: "POST",
         headers: { "content-type": "application/json", "x-workspace-id": "ws_header_forged" },
         body: JSON.stringify({ env: { CLAXEDO_WORKSPACE_ID: "ws_env_forged", USER_VALUE: "kept" } }),
@@ -127,11 +125,9 @@ describe("PtyRoutes", () => {
       expect(withoutIdentity.status).toBe(200)
       expect(create.mock.calls[1]?.[0]?.env?.CLAXEDO_WORKSPACE_ID).toBeUndefined()
       expect(create.mock.calls[1]?.[0]?.env?.USER_VALUE).toBe("kept")
-      expect(create.mock.calls[1]?.[2]).toMatchObject({ workspaceId: directory, directory })
     } finally {
       if (previousWorkspaceId === undefined) delete process.env.WORKSPACE_RUNTIME_WORKSPACE_ID
       else process.env.WORKSPACE_RUNTIME_WORKSPACE_ID = previousWorkspaceId
-      observer.dispose()
       create.mockRestore()
       commit.mockRestore()
     }
@@ -248,27 +244,6 @@ describe("PtyRoutes", () => {
     })
   })
 
-  test("denies every terminal route to authenticated viewers", async () => {
-    const app = appForRole("viewer")
-
-    const list = await app.request("http://localhost/")
-    const connect = await app.request("http://localhost/pty_1/connect", {
-      headers: {
-        connection: "Upgrade",
-        upgrade: "websocket",
-      },
-    })
-
-    expect(list.status).toBe(403)
-    expect(connect.status).toBe(403)
-    await expect(connect.json()).resolves.toEqual({
-      error: {
-        code: "relay_role_denied",
-        message: "Workspace role does not allow terminal access",
-      },
-    })
-  })
-
   test("allows terminal routes for authenticated editors", async () => {
     const res = await appForRole("editor").request("http://localhost/")
 
@@ -371,7 +346,7 @@ describe("PtyRoutes", () => {
       c.set("relayHostAuth", relayAuth("editor", "participant"))
       return await next()
     })
-    app.route("/", PtyRoutes(upgrade, undefined, policy))
+    app.route("/", PtyRoutes(upgrade, policy))
 
     try {
       expect((await app.request("http://localhost/pty_private/connect", {
@@ -445,7 +420,7 @@ describe("PtyRoutes", () => {
       c.set("relayHostAuth", relayAuth("editor", "reader"))
       return await next()
     })
-    app.route("/", PtyRoutes(upgrade, undefined, policy))
+    app.route("/", PtyRoutes(upgrade, policy))
 
     try {
       expect((await app.request("http://localhost/pty_shared/connect", {
@@ -508,7 +483,7 @@ describe("PtyRoutes", () => {
       expect(allowed.status).toBe(200)
       await expect(allowed.json()).resolves.toMatchObject({ sessionId: "session_a" })
       expect(create).toHaveBeenCalledTimes(1)
-      expect(create.mock.calls[0]?.[3]).toMatchObject({
+      expect(create.mock.calls[0]?.[2]).toMatchObject({
         sessionId: "session_a",
         authorityLease: "terminal-capability",
       })
@@ -581,7 +556,7 @@ describe("PtyRoutes", () => {
       })
       expect(created.status).toBe(200)
       expect(streamed).toEqual([{ sessionId: "session_a", operation: "agent_lifecycle_write" }])
-      expect(create.mock.calls[0]?.[3]).toMatchObject({
+      expect(create.mock.calls[0]?.[2]).toMatchObject({
         sessionId: "session_a",
         authorityLease: "authority-lease",
         authorityExpiresAt: 1_700_000_000_000,

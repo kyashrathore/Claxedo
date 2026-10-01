@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto"
 import { Hono } from "hono"
 import { HTTPException } from "hono/http-exception"
 import type { ContentfulStatusCode } from "hono/utils/http-status"
@@ -124,7 +123,6 @@ import {
 import type { ActiveSessionTurnLease } from "./session-turn-lease"
 import { cancelAdmittedTurn, captureTurnTarget, containLostTurn, recoveryCaller } from "./session-turn-containment"
 import { toolImageResponse } from "./tool-image"
-import { providerCatalogRefusal } from "./workspace-role"
 import { messageUpdated, sessionDeleted, sessionUpdated, withDir } from "../projection/presentation-events"
 
 type DraftTarget = Extract<HarnessTarget, { harness: SessionHarness }>
@@ -188,7 +186,7 @@ async function updateSessionMeta(
   const session = await (await opts.runtime(c)).sessions.update(sessionId, body, directory, requestSecretAuthority(c).secretAuthority)
   await after(opts.afterUpdateSession?.(c, directory, session, body))
   const owner = body.time ? opts.resolveRecoveryOwner?.(c, { sessionId }) : undefined
-  if (owner) await cancelAdmittedTurn(owner, sessionId, recoveryCaller(c), `archive:${sessionId}:${randomUUID()}`)
+  if (owner) await cancelAdmittedTurn(owner, sessionId, recoveryCaller(c), `archive:${sessionId}:${crypto.randomUUID()}`)
   opts.publishGlobal(withDir(envelopeDirectory(directory, sessionId), sessionUpdated(session)))
   return session
 }
@@ -434,18 +432,6 @@ function sessionLifecycleInfo(input: {
   }
 }
 
-function notImplemented(c: Ctx, operation: "revert" | "unrevert" | "shell" | "summarize" | "command") {
-  return c.json({
-    ok: false,
-    error: {
-      code: "unsupported_operation",
-      operation,
-      reason: "not_implemented",
-      message: `${operation} is not implemented`,
-    },
-  }, 501)
-}
-
 /** How each fixed-at-create field answers a PATCH that names it. */
 const IMMUTABLE_CONFIG_REFUSALS = {
   instructions: {
@@ -531,12 +517,6 @@ async function compensateRegistration(input: {
 
 function unavailableRegistration(message: string): Exclude<SessionAccessDecision, { allowed: true }> {
   return { allowed: false, status: 503, code: "session_registration_unavailable", message }
-}
-
-function unsupportedLiveAgentListError(error: unknown) {
-  if (!(error instanceof Error)) return false
-  return error.message.includes("does not expose live agent options")
-    || error.message.includes("did not return live agent options")
 }
 
 const RECOVERY_REFUSAL_STATUS: Readonly<Record<RecoveryRefusal["kind"], ContentfulStatusCode>> = {
@@ -983,7 +963,7 @@ export function createSessionRoutes(opts: Opts) {
         const selfReservation = managed && !operationId && body.parentID && children
           ? opts.sessionAccessPolicy?.reserveSession?.bind(opts.sessionAccessPolicy)
           : undefined
-        if (selfReservation && !body.id) body.id = `ses_${randomUUID()}`
+        if (selfReservation && !body.id) body.id = `ses_${crypto.randomUUID()}`
         if (managed && (!body.id || (!operationId && !selfReservation))) {
           return c.json(errorBody(
             "session_reservation_required",
@@ -1100,13 +1080,13 @@ export function createSessionRoutes(opts: Opts) {
           }
           if (!existing && opts.sessionStarts) {
             if (!body.id) {
-              body.id = `ses_${randomUUID()}`
+              body.id = `ses_${crypto.randomUUID()}`
               activeSessionChanges.add(body.id)
               claimed = body.id
             }
             const owner: AgentSessionStartBinding = {
               sessionId: body.id, directory: directory ?? "", workspaceId: workspaceId ?? "",
-              operationId: operationId ?? randomUUID(),
+              operationId: operationId ?? crypto.randomUUID(),
               connectionId: connectionIdForHarness(draft.harness),
             }
             if (opts.sessionStarts.get(body.id)) throw new HTTPException(409, { message: "Session creation already has an owner; inspect its status before retrying" })
@@ -1307,10 +1287,6 @@ export function createSessionRoutes(opts: Opts) {
         const directory = await opts.resolveDirectory(c)
         const runtime = await opts.runtime(c)
         const target = draftTarget(opts, c, directory)
-        if (await runtime.reads.servesProviderCatalog(target)) {
-          const refused = providerCatalogRefusal(c)
-          if (refused) return refused
-        }
         return noStoreJson(c, await runtime.reads.capabilities(target))
       } catch (error) {
         const refusal = harnessUnavailableResponse(c, error)
@@ -1472,7 +1448,7 @@ export function createSessionRoutes(opts: Opts) {
       if (permissionRefusal) return permissionRefusal
       if (body.delivery) {
         if (!opts.queuedPrompts) return c.json({ error: "Queued delivery requires a durable runtime owner" }, 409)
-        body.messageID ??= `msg_${randomUUID()}`
+        body.messageID ??= `msg_${crypto.randomUUID()}`
         const requester = await queuedPromptRequester(opts, c, id, body.messageID)
         if ("refused" in requester) return requester.refused
         const submission = { sessionId: id, body, ...requester }
@@ -1705,18 +1681,6 @@ export function createSessionRoutes(opts: Opts) {
         throw error
       }
     })
-    .post("/session/:id/revert", async (c) => {
-      const sessionId = c.req.param("id")
-      const guarded = await sessionOperationGuard(opts, c, sessionId, "revert")
-      if (guarded) return guarded
-      return notImplemented(c, "revert")
-    })
-    .post("/session/:id/unrevert", async (c) => {
-      const sessionId = c.req.param("id")
-      const guarded = await sessionOperationGuard(opts, c, sessionId, "unrevert")
-      if (guarded) return guarded
-      return notImplemented(c, "unrevert")
-    })
     .post("/session/:id/fork", async (c) => {
       const sessionId = c.req.param("id")
       const guarded = await sessionOperationGuard(opts, c, sessionId, "fork")
@@ -1784,24 +1748,6 @@ export function createSessionRoutes(opts: Opts) {
       }
       return c.json(forked.session, 201)
     })
-    .post("/session/:id/command", async (c) => {
-      const sessionId = c.req.param("id")
-      const guarded = await sessionOperationGuard(opts, c, sessionId, "command")
-      if (guarded) return guarded
-      return notImplemented(c, "command")
-    })
-    .post("/session/:id/shell", async (c) => {
-      const sessionId = c.req.param("id")
-      const guarded = await sessionOperationGuard(opts, c, sessionId, "shell")
-      if (guarded) return guarded
-      return notImplemented(c, "shell")
-    })
-    .post("/session/:id/summarize", async (c) => {
-      const sessionId = c.req.param("id")
-      const guarded = await sessionOperationGuard(opts, c, sessionId, "summarize")
-      if (guarded) return guarded
-      return notImplemented(c, "summarize")
-    })
     .get("/session/:id/queue", async (c) => {
       const id = c.req.param("id")
       const guarded = await sessionOperationGuard(opts, c, id, "queue_read")
@@ -1846,7 +1792,6 @@ export function createSessionRoutes(opts: Opts) {
         }
         return c.json(agents)
       } catch (err) {
-        if (unsupportedLiveAgentListError(err)) return c.json([])
         return engineRefusalResponse(c, err)
       }
     })

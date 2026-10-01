@@ -1,9 +1,8 @@
+import { PublicApiError } from "@claxedo/server-core/platform/errors/public-api-error"
+import type { PublicApiErrorCode } from "@claxedo/helpers/api-error"
 import type { D1Database, D1PreparedStatement } from "@cloudflare/workers-types"
-import { AGENT_MESSAGE_PAGE_LIMIT, AgentMessagePageError } from "@claxedo/agent-runtime-contract"
 import { ControlPlaneAuthError, type SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
-import { ClaxedoError } from "@claxedo/server-core/platform/errors/base"
 import type {
-  ProjectRole,
   SessionShareGrantResult,
   SessionShareLevel,
   WorkspaceAuthority,
@@ -47,10 +46,22 @@ import {
   type SessionTurnLease,
 } from "@claxedo/server-core/platform/auth/session-turn-authority"
 import { SESSION_TURN_LEASE_TTL_MS } from "@claxedo/workspace-relay-protocol"
-import { asRecord, numberField, parseJson } from "@claxedo/server-core/platform/json/index"
-import { organizationRoleRankSql } from "./host-access-authority"
-import { readD1SessionPage } from "./session-page"
-import { latestViewPage, storedTurn, type LatestView } from "@claxedo/server-core/session/latest-view-page"
+import { may, maySql, type AuthorizationPrincipal, type SessionAction, type WorkspaceAction } from "./authorization"
+import { requireHuman } from "./access-context"
+import {
+  D1SessionAuthorityError,
+  MAX_SNAPSHOT_BYTES,
+  byteLength,
+  canonicalMessages,
+  optionalOrdinal,
+  optionalText,
+  positiveFence,
+  requireText,
+  visibilityRows,
+} from "./session-input"
+import { readD1SessionPage, readD1MessagePage, readD1LatestView, validateD1MessageRead, decodeMessagePageCursor } from "./session-read-store"
+import { storedTurn, type LatestView } from "@claxedo/server-core/session/latest-view-page"
+import { d1ConstraintFailure } from "../../../platform/db/d1-constraint"
 import { readStoredTurnOutline } from "@claxedo/server-core/session/turn-outline"
 import { readStoredPart } from "@claxedo/server-core/session/stored-part"
 import type { StoredMessageQuery } from "@claxedo/server-core/session/stored-messages"
@@ -58,8 +69,6 @@ import { readFirstRead, readTurnPage, type TurnPageQuery, type TurnPageRequest, 
 
 export const D1_SESSION_AUTHORITY_METHODS = [
   "authorizeSessionRead",
-  "grantSessionParticipant",
-  "revokeSessionParticipant",
   "grantSessionShare",
   "revokeSessionShare",
   "listSessionShares",
@@ -91,16 +100,9 @@ export type SessionRegistrationState = PrivateSessionRegistrationState
 export type ReserveSessionInput = ReservePrivateSessionInput
 export type RuntimeSessionActor = PrivateSessionRuntimePrincipal
 
-type Principal = PrivateSessionActor & { userId: string }
+type Principal = PrivateSessionActor & AuthorizationPrincipal & { userId: string }
 
-type PrincipalRow = {
-  user_id: string
-  user_state: "active" | "suspended" | "deleted"
-  actor_id: string
-  actor_kind: "human" | "agent"
-  actor_state: "active" | "suspended" | "revoked"
-  unlinked_at: number | null
-}
+type ReadableSession = SessionRow & { role: "owner" | "viewer" }
 
 type ActorRow = {
   actor_id: string
@@ -114,7 +116,6 @@ type WorkspaceAccessRow = {
   workspace_id: string
   org_id: string
   project_id: string
-  role_rank: number
 }
 
 type SessionRow = {
@@ -149,13 +150,6 @@ type RegistrationRow = {
   state_reason: string | null
   created_at: number
   updated_at: number
-}
-
-type MessageRow = {
-  ordinal: number
-  data_json: string
-  author_actor_id: string | null
-  author_kind: "human" | "agent" | null
 }
 
 type SessionShareRow = {
@@ -211,34 +205,6 @@ type TurnGrantRow = {
   revoke_reason: string | null
 }
 
-type CanonicalMessage = {
-  id: string
-  role: string
-  ordinal: number
-  dataJson: string
-  authorActorId: string | null
-}
-
-const MESSAGE_PAGE_CURSOR_PREFIX = "d1sm1:"
-const MAX_SNAPSHOT_MESSAGES = 500
-const MAX_MESSAGE_BYTES = 256 * 1024
-const MAX_SNAPSHOT_BYTES = 8 * 1024 * 1024
-const MAX_VISIBILITY_ROWS = 500
-
-export class D1SessionAuthorityError extends ClaxedoError {
-  constructor(
-    code:
-      "invalid_input" | "resource_conflict" | "registration_transition_denied" | "actor_authorization_denied",
-    message: string,
-  ) {
-    super({
-      code,
-      message,
-      status: code === "invalid_input" ? 400 : code === "resource_conflict" ? 409 : 403,
-    })
-  }
-}
-
 /**
  * D1 private-session capability. Unknown transcripts never create sessions:
  * callers must reserve an immutable create/fork intent and the runtime must
@@ -269,10 +235,12 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
 
   private async reserveForActor(who: Principal, input: ReserveSessionInput) {
     const intent = normalizeReservation(input)
-    const workspace = await this.requireWorkspaceAccess(who, intent.workspaceId, "write")
+    const workspace = await this.requireWorkspace(who, intent.workspaceId, "create_session")
     if (intent.kind === "fork") {
       await this.requireSessionAccess(who, intent.parentSessionId!, intent.workspaceId, "agent_turn")
     }
+    const creates = maySql(who, "create_session", { kind: "workspace", alias: "w" })
+    const parentSends = maySql(who, "send", { kind: "session", alias: "parent" })
 
     const existing = await this.registration(intent.operationId)
     if (existing && existing.state !== "compensated") {
@@ -304,11 +272,11 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
         select ?, ?, w.workspace_id, w.org_id, w.project_id, ?, ?, ?, ?, 'reserved', null, ?, ?
         from workspaces w
         where w.workspace_id = ? and w.org_id = ? and w.project_id = ? and w.deleted_at is null
-          and ${actorWorkspaceAccessSql("?", "w", 2)}
+          and ${creates.sql}
           and (? = 'create' or exists (
             select 1 from sessions parent
             where parent.session_id = ? and parent.workspace_id = w.workspace_id and parent.deleted_at is null
-              and ${actorSessionAccessSql("?", "parent", "agent_turn")}
+              and ${parentSends.sql}
           ))
         on conflict do nothing
       `,
@@ -325,10 +293,10 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
             workspace.workspace_id,
             workspace.org_id,
             workspace.project_id,
-            ...repeat(who.actorId, WORKSPACE_ACCESS_BINDINGS),
+            ...creates.bind,
             intent.kind,
             intent.parentSessionId ?? null,
-            ...repeat(who.actorId, SESSION_ACCESS_BINDINGS.agent_turn),
+            ...parentSends.bind,
           ),
         this.registrationAssertion(assertionId, intent, workspace, who.actorId, "reserved"),
         this.deleteAssertion(assertionId),
@@ -404,7 +372,7 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
     const title = optionalText(input.title, "title", 2_000)
     const times = requireRuntimeSessionTimes(input, (message) => new D1SessionAuthorityError("invalid_input", message))
     const operationId = sessionAdoptionOperationId(sessionId)
-    const workspace = await this.requireWorkspaceAccess(actor, workspaceId, "write")
+    const workspace = await this.requireWorkspace(actor, workspaceId, "create_session")
     const assignment = await this.database
       .prepare(`select owner_actor_id from host_workspace_assignments where workspace_id = ? and host_id = ?`)
       .bind(workspaceId, hostId)
@@ -425,6 +393,8 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
     }
     const now = this.now()
     const assertionId = this.randomId("assert")
+    const creates = maySql(actor, "create_session", { kind: "workspace", alias: "w" })
+    const sends = maySql(actor, "send", { kind: "session", alias: "s" })
     await this.guardedBatch(
       [
         this.database
@@ -440,7 +410,7 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
         select ?, ?, w.workspace_id, w.org_id, w.project_id, ?, 'create', null, ?, 'registered', null, ?, ?
         from workspaces w
         where w.workspace_id = ? and w.org_id = ? and w.project_id = ? and w.deleted_at is null
-          and ${actorWorkspaceAccessSql("?", "w", 2)}
+          and ${creates.sql}
           and exists (
             select 1 from host_workspace_assignments assignment
             where assignment.workspace_id = w.workspace_id and assignment.host_id = ? and assignment.owner_actor_id = ?
@@ -458,7 +428,7 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
             workspace.workspace_id,
             workspace.org_id,
             workspace.project_id,
-            ...repeat(actor.actorId, WORKSPACE_ACCESS_BINDINGS),
+            ...creates.bind,
             hostId,
             actor.actorId,
           ),
@@ -481,32 +451,17 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
         this.database
           .prepare(
             `
-        insert into session_participants (
-          session_id, workspace_id, org_id, project_id, actor_id,
-          granted_by_actor_id, role, granted_at, revoked_at
-        )
-        select s.session_id, s.workspace_id, s.org_id, s.project_id,
-          s.creator_actor_id, s.creator_actor_id, 'participant', ?, null
-        from sessions s where s.operation_id = ? and s.creator_actor_id = ?
-        on conflict (session_id, actor_id) do update set revoked_at = null
-      `,
-          )
-          .bind(now, operationId, actor.actorId),
-        this.database
-          .prepare(
-            `
         insert into authority_batch_assertions (assertion_id, passed)
         values (?, case when exists (
           select 1 from session_registration_operations r
           join sessions s on s.operation_id = r.operation_id and s.session_id = r.session_id
-          join session_participants p on p.session_id = s.session_id and p.actor_id = s.creator_actor_id
           where r.operation_id = ? and r.state = 'registered' and s.creator_actor_id = ?
-            and s.deleted_at is null and p.revoked_at is null
-            and ${actorSessionAccessSql("?", "s", "agent_turn")}
+            and s.deleted_at is null
+            and ${sends.sql}
         ) then 1 else 0 end)
       `,
           )
-          .bind(assertionId, operationId, actor.actorId, ...repeat(actor.actorId, SESSION_ACCESS_BINDINGS.agent_turn)),
+          .bind(assertionId, operationId, actor.actorId, ...sends.bind),
         this.deleteAssertion(assertionId),
       ],
       "Session adoption collided with an existing registration or an authority change",
@@ -549,7 +504,7 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
     const workspaceId = requireText(input.workspaceId, "workspaceId")
     const sessionId = requireText(input.sessionId, "sessionId")
     const operationId = requireText(input.registrationOperationId, "registrationOperationId")
-    await this.requireWorkspaceAccess(actor, workspaceId, "write")
+    await this.requireWorkspace(actor, workspaceId, "create_session")
     const row = await this.registration(operationId)
     if (!row || row.workspace_id !== workspaceId || row.session_id !== sessionId
       || row.creator_actor_id !== actor.actorId
@@ -566,7 +521,7 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
     const workspaceId = requireText(input.workspaceId, "workspaceId")
     const sessionId = requireText(input.sessionId, "sessionId")
     const operationId = requireText(input.registrationOperationId, "registrationOperationId")
-    await this.requireWorkspaceAccess(actor, workspaceId, "read")
+    await this.requireWorkspace(actor, workspaceId, "open")
     const row = await this.registration(operationId)
     if (!row || row.workspace_id !== workspaceId || row.session_id !== sessionId
       || row.creator_actor_id !== actor.actorId) {
@@ -659,6 +614,7 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
     const grantBindings = grant === undefined
       ? []
       : [grant.grantId, input.actor.actorId, input.now, input.turnId, input.turnId, input.turnId, input.turnId, input.now]
+    const sends = maySql(input.actor, "send", { kind: "session", alias: "s" })
     return this.database
       .prepare(
         `
@@ -670,7 +626,7 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
         1, ?, ?, ?, null
       from sessions s
       where s.session_id = ? and s.workspace_id = ? and s.deleted_at is null
-        and ${actorSessionAccessSql("?", "s", "agent_turn")}
+        and ${sends.sql}
         ${grantGuard}
       on conflict (session_id) do update set
         turn_id = excluded.turn_id,
@@ -692,7 +648,7 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
         input.expiresAt,
         input.sessionId,
         input.workspaceId,
-        ...repeat(input.actor.actorId, SESSION_ACCESS_BINDINGS.agent_turn),
+        ...sends.bind,
         ...grantBindings,
         input.now,
       )
@@ -766,6 +722,7 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
     await this.requireSessionAccess(actor, sessionId, workspaceId, "agent_turn")
     const now = this.now()
     const grantId = this.randomId("grant")
+    const sends = maySql(actor, "send", { kind: "session", alias: "s" })
     await this.database
       .prepare(
         `
@@ -776,7 +733,7 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
       select ?, s.session_id, s.workspace_id, s.org_id, s.project_id, ?, ?, ?, ?, ?, ?, ?
       from sessions s
       where s.session_id = ? and s.workspace_id = ? and s.deleted_at is null
-        and ${actorSessionAccessSql("?", "s", "agent_turn")}
+        and ${sends.sql}
         and (? is null or exists (
           select 1 from session_registration_operations r
           where r.operation_id = ? and r.session_id = ? and r.parent_session_id = s.session_id
@@ -796,7 +753,7 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
         now + grant.ttlMs,
         sessionId,
         workspaceId,
-        ...repeat(actor.actorId, SESSION_ACCESS_BINDINGS.agent_turn),
+        ...sends.bind,
         grant.registrationOperationId ?? null,
         grant.registrationOperationId ?? null,
         grant.subjectSessionId ?? null,
@@ -858,6 +815,7 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
     await this.requireSessionAccess(actor, sessionId, workspaceId, "agent_turn")
     const now = this.now()
     const expiresAt = now + this.turnLeaseTtlMs
+    const sends = maySql(actor, "send", { kind: "session", alias: "s" })
     await this.database
       .prepare(
         `
@@ -869,7 +827,7 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
           where s.session_id = session_turn_leases.session_id
             and s.workspace_id = session_turn_leases.workspace_id
             and s.deleted_at is null
-            and ${actorSessionAccessSql("?", "s", "agent_turn")}
+            and ${sends.sql}
         )
     `,
       )
@@ -882,7 +840,7 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
         fencingToken,
         actor.actorId,
         now,
-        ...repeat(actor.actorId, SESSION_ACCESS_BINDINGS.agent_turn),
+        ...sends.bind,
       )
       .run()
     const row = await this.turnLease(sessionId)
@@ -934,141 +892,6 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
     }
   }
 
-  async grantSessionParticipant(
-    auth: SignedControlPlaneAuth,
-    args: { sessionId: string; workspaceId: string; participantActorId: string },
-  ) {
-    const administrator = await this.requirePrincipal(auth)
-    const sessionId = requireText(args.sessionId, "sessionId")
-    const workspaceId = requireText(args.workspaceId, "workspaceId")
-    const participant = await this.requireRuntimeActor({
-      principalKind: "user",
-      actorId: requireText(args.participantActorId, "participantActorId"),
-      actorKind: "human",
-    })
-    const session = await this.requireParticipantAdministrator(administrator, sessionId, workspaceId)
-    await this.requireWorkspaceAccess(participant, workspaceId, "read")
-    const now = this.now()
-    const assertionId = this.randomId("assert")
-    await this.guardedBatch(
-      [
-        this.database
-          .prepare(
-            `
-        insert into session_participants (
-          session_id, workspace_id, org_id, project_id, actor_id,
-          granted_by_actor_id, role, granted_at, revoked_at
-        ) values (?, ?, ?, ?, ?, ?, 'participant', ?, null)
-        on conflict (session_id, actor_id) do update set
-          granted_by_actor_id = excluded.granted_by_actor_id,
-          revoked_at = null
-      `,
-          )
-          .bind(
-            session.session_id,
-            session.workspace_id,
-            session.org_id,
-            session.project_id,
-            participant.actorId,
-            administrator.actorId,
-            now,
-          ),
-        this.database
-          .prepare(
-            `
-        insert into authority_batch_assertions (assertion_id, passed)
-        values (?, case when
-          exists (
-            select 1 from sessions s where s.session_id = ? and s.workspace_id = ? and s.deleted_at is null
-              and ${sessionCreatorSql("?", "s")}
-          )
-          and exists (
-            select 1 from workspaces w where w.workspace_id = ? and w.deleted_at is null
-              and ${actorWorkspaceAccessSql("?", "w", 1)}
-          )
-          and exists (
-            select 1 from session_participants p
-            where p.session_id = ? and p.actor_id = ? and p.revoked_at is null
-          )
-        then 1 else 0 end)
-      `,
-          )
-          .bind(
-            assertionId,
-            sessionId,
-            workspaceId,
-            ...repeat(administrator.actorId, SESSION_CREATOR_BINDINGS),
-            workspaceId,
-            ...repeat(participant.actorId, WORKSPACE_ACCESS_BINDINGS),
-            sessionId,
-            participant.actorId,
-          ),
-        this.deleteAssertion(assertionId),
-      ],
-      "Session participant grant raced with an authority change",
-    )
-    return { participant_id: participant.actorId }
-  }
-
-  async revokeSessionParticipant(
-    auth: SignedControlPlaneAuth,
-    args: { sessionId: string; workspaceId: string; participantActorId: string },
-  ) {
-    const administrator = await this.requirePrincipal(auth)
-    const sessionId = requireText(args.sessionId, "sessionId")
-    const workspaceId = requireText(args.workspaceId, "workspaceId")
-    const participantActorId = requireText(args.participantActorId, "participantActorId")
-    const session = await this.requireParticipantAdministrator(administrator, sessionId, workspaceId)
-    if (participantActorId === session.creator_actor_id) return { removed: false }
-    const existing = await this.database
-      .prepare(
-        `
-      select 1 from session_participants where session_id = ? and actor_id = ? and revoked_at is null
-    `,
-      )
-      .bind(sessionId, participantActorId)
-      .first()
-    if (!existing) return { removed: false }
-    const now = this.now()
-    const assertionId = this.randomId("assert")
-    await this.guardedBatch(
-      [
-        this.database
-          .prepare(
-            `
-        update session_participants set revoked_at = ?
-        where session_id = ? and actor_id = ? and revoked_at is null
-      `,
-          )
-          .bind(now, sessionId, participantActorId),
-        this.database
-          .prepare(
-            `
-        insert into authority_batch_assertions (assertion_id, passed)
-        values (?, case when exists (
-          select 1 from sessions s where s.session_id = ? and s.workspace_id = ? and s.deleted_at is null
-            and ${sessionCreatorSql("?", "s")}
-        ) and exists (
-          select 1 from session_participants where session_id = ? and actor_id = ? and revoked_at = ?
-        ) then 1 else 0 end)
-      `,
-          )
-          .bind(
-            assertionId,
-            sessionId,
-            workspaceId,
-            ...repeat(administrator.actorId, SESSION_CREATOR_BINDINGS),
-            sessionId,
-            participantActorId,
-            now,
-          ),
-        this.deleteAssertion(assertionId),
-      ],
-      "Session participant revocation raced with an authority change",
-    )
-    return { removed: true }
-  }
-
   async grantSessionShare(
     auth: SignedControlPlaneAuth,
     args: {
@@ -1087,23 +910,15 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
     const level = requestedSessionShareLevel(args.level)
     const sessionId = requireText(args.sessionId, "sessionId")
     const workspaceId = requireText(args.workspaceId, "workspaceId")
-    const session = await this.requireParticipantAdministrator(administrator, sessionId, workspaceId)
+    const session = await this.requireSessionShareAdministrator(administrator, sessionId, workspaceId)
     const target = await this.resolveShareTarget(args)
     if (!target) throw sessionShareError("session_share_target_not_found")
     if (target.kind === "user") {
       const actor = await this.activeHumanActorForUser(target.id)
       if (!actor) throw sessionShareError("session_share_target_not_found")
-      const offerable = await this.database
-        .prepare(
-          `
-        select 1 from users target_user
-        where target_user.user_id = ? and target_user.state = 'active'
-          and ${userInOrganizationSql("target_user.user_id", "?")}
-      `,
-        )
-        .bind(target.id, session.org_id)
-        .first()
-      if (!offerable) throw sessionShareError("session_share_target_outside_organization")
+      if (!(await may(this.database, { userId: target.id }, "member", { kind: "org", orgId: session.org_id }))) {
+        throw sessionShareError("session_share_target_outside_organization")
+      }
     }
     if (target.kind === "org" && target.id !== session.org_id) {
       throw sessionShareError("session_share_org_mismatch")
@@ -1126,13 +941,13 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
     const grantId = this.randomId("share")
     const assertionId = this.randomId("assert")
     const now = this.now()
+    const manages = maySql(administrator, "manage_shares", { kind: "session", alias: "s" })
+    const targetMember = maySql({ userId: target.id }, "member", { kind: "org", orgId: "s.org_id" })
     const targetGuard = target.kind === "user"
       ? `exists (
           select 1 from actors target_actor
-          join users target_user on target_user.user_id = target_actor.user_id and target_user.state = 'active'
           where target_actor.user_id = ? and target_actor.kind = 'human' and target_actor.state = 'active'
-            and ${userInOrganizationSql("target_user.user_id", "s.org_id")}
-        )`
+        ) and ${targetMember.sql}`
       : target.kind === "org"
         ? `s.org_id = ? and exists (
             select 1 from orgs target_org where target_org.org_id = ? and target_org.deleted_at is null
@@ -1141,7 +956,9 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
             select 1 from teams target_team
             where target_team.team_id = ? and target_team.org_id = s.org_id and target_team.deleted_at is null
           )`
-    const targetGuardBindings = target.kind === "org" ? [target.id, target.id] : [target.id]
+    const targetGuardBindings = target.kind === "user"
+      ? [target.id, ...targetMember.bind]
+      : target.kind === "org" ? [target.id, target.id] : [target.id]
     try {
       await this.guardedBatch(
         [
@@ -1157,7 +974,7 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
           ?, ?, ?, ?, ?, null, ?
         from sessions s
         where s.session_id = ? and s.workspace_id = ? and s.deleted_at is null
-          and ${sessionCreatorSql("?", "s")}
+          and ${manages.sql}
           and ${targetGuard}
       `,
             )
@@ -1171,7 +988,7 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
               level,
               sessionId,
               workspaceId,
-              ...repeat(administrator.actorId, SESSION_CREATOR_BINDINGS),
+              ...manages.bind,
               ...targetGuardBindings,
             ),
           this.database
@@ -1182,18 +999,18 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
             select 1 from session_share_grants g
             join sessions s on s.session_id = g.session_id and s.workspace_id = g.workspace_id
             where g.grant_id = ? and g.session_id = ? and g.workspace_id = ? and g.revoked_at is null
-              and s.deleted_at is null and ${sessionCreatorSql("?", "s")}
+              and s.deleted_at is null and ${manages.sql}
           ) then 1 else 0 end)
         `,
             )
-            .bind(assertionId, grantId, sessionId, workspaceId, ...repeat(administrator.actorId, SESSION_CREATOR_BINDINGS)),
+            .bind(assertionId, grantId, sessionId, workspaceId, ...manages.bind),
           this.deleteAssertion(assertionId),
         ],
         "Session share grant raced with an authority change",
       )
     } catch (error) {
-      if (String(error).includes("UNIQUE constraint failed")) {
-        await this.requireParticipantAdministrator(administrator, sessionId, workspaceId)
+      if (d1ConstraintFailure(error)?.kind === "unique") {
+        await this.requireSessionShareAdministrator(administrator, sessionId, workspaceId)
         const raced = await this.activeShareForTarget(sessionId, target)
         if (raced && raced.workspace_id === workspaceId) {
           if (storedSessionShareLevel(raced.level) !== level) {
@@ -1222,6 +1039,7 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
     level: SessionShareLevel,
   ) {
     const assertionId = this.randomId("assert")
+    const manages = maySql(administrator, "manage_shares", { kind: "session", alias: "s" })
     await this.guardedBatch(
       [
         this.database
@@ -1234,11 +1052,11 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
             where s.session_id = session_share_grants.session_id
               and s.workspace_id = session_share_grants.workspace_id
               and s.deleted_at is null
-              and ${sessionCreatorSql("?", "s")}
+              and ${manages.sql}
           )
       `,
           )
-          .bind(level, grant.grant_id, sessionId, workspaceId, ...repeat(administrator.actorId, SESSION_CREATOR_BINDINGS)),
+          .bind(level, grant.grant_id, sessionId, workspaceId, ...manages.bind),
         this.database
           .prepare(
             `
@@ -1274,7 +1092,7 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
     const administrator = await this.requirePrincipal(auth)
     const sessionId = requireText(args.sessionId, "sessionId")
     const workspaceId = requireText(args.workspaceId, "workspaceId")
-    await this.requireParticipantAdministrator(administrator, sessionId, workspaceId)
+    await this.requireSessionShareAdministrator(administrator, sessionId, workspaceId)
     const selectorCount = shareSelectorCount(args)
     if ((args.grantId && selectorCount !== 0) || (!args.grantId && selectorCount !== 1)) {
       throw sessionShareError("session_share_target_required")
@@ -1299,52 +1117,31 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
     }
     if (grants.length === 0) return { revoked: false, runtime_tokens_revoked: 0, revokedTargets: [] }
     const now = this.now()
+    const manages = maySql(administrator, "manage_shares", { kind: "session", alias: "s" })
     let runtimeTokensRevoked = 0
     for (const grant of grants) {
       const assertionId = this.randomId("assert")
-      const revokeTokens = grant.target_user_id
-        ? this.database
-            .prepare(
-              `
-            update runtime_access_tokens set revoked_at = ?
-            where workspace_id = ? and minted_for_user_id = ? and revoked_at is null
-              and exists (
-                select 1 from session_share_grants g where g.grant_id = ? and g.revoked_at = ?
-              )
-          `,
-            )
-            .bind(now, workspaceId, grant.target_user_id, grant.grant_id, now)
+      const holders = grant.target_user_id
+        ? { sql: "?", bind: [grant.target_user_id] }
         : grant.target_team_id
-          ? this.database
-              .prepare(
-                `
-              update runtime_access_tokens set revoked_at = ?
-              where workspace_id = ? and revoked_at is null and minted_for_user_id in (
-                select tm.user_id from team_memberships tm
+          ? {
+              sql: `select tm.user_id from team_memberships tm
                 join teams t on t.team_id = tm.team_id and t.deleted_at is null
                 join org_memberships om
                   on om.org_id = t.org_id and om.user_id = tm.user_id and om.revoked_at is null
-                where tm.team_id = ? and tm.revoked_at is null
-              )
-                and exists (
-                  select 1 from session_share_grants g where g.grant_id = ? and g.revoked_at = ?
-                )
-            `,
-              )
-              .bind(now, workspaceId, grant.target_team_id, grant.grant_id, now)
-          : this.database
-              .prepare(
-                `
-              update runtime_access_tokens set revoked_at = ?
-              where workspace_id = ? and revoked_at is null and minted_for_user_id in (
-                select user_id from org_memberships where org_id = ? and revoked_at is null
-              )
-                and exists (
-                  select 1 from session_share_grants g where g.grant_id = ? and g.revoked_at = ?
-                )
-            `,
-              )
-              .bind(now, workspaceId, grant.target_org_id, grant.grant_id, now)
+                where tm.team_id = ? and tm.revoked_at is null`,
+              bind: [grant.target_team_id],
+            }
+          : { sql: "select user_id from org_memberships where org_id = ? and revoked_at is null", bind: [grant.target_org_id] }
+      const revokeTokens = this.database
+        .prepare(
+          `
+        update runtime_access_tokens set revoked_at = ?
+        where workspace_id = ? and session_id = ? and revoked_at is null and minted_for_user_id in (${holders.sql})
+          and exists (select 1 from session_share_grants g where g.grant_id = ? and g.revoked_at = ?)
+      `,
+        )
+        .bind(now, workspaceId, sessionId, ...holders.bind, grant.grant_id, now)
       const results = await this.guardedBatch(
         [
           this.database
@@ -1357,11 +1154,11 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
                 where s.session_id = session_share_grants.session_id
                   and s.workspace_id = session_share_grants.workspace_id
                   and s.deleted_at is null
-                  and ${sessionCreatorSql("?", "s")}
+                  and ${manages.sql}
               )
           `,
             )
-            .bind(now, grant.grant_id, sessionId, workspaceId, ...repeat(administrator.actorId, SESSION_CREATOR_BINDINGS)),
+            .bind(now, grant.grant_id, sessionId, workspaceId, ...manages.bind),
           revokeTokens,
           this.database
             .prepare(
@@ -1371,11 +1168,11 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
               select 1 from session_share_grants g
               join sessions s on s.session_id = g.session_id and s.workspace_id = g.workspace_id
               where g.grant_id = ? and g.session_id = ? and g.workspace_id = ? and g.revoked_at = ?
-                and s.deleted_at is null and ${sessionCreatorSql("?", "s")}
+                and s.deleted_at is null and ${manages.sql}
             ) then 1 else 0 end)
           `,
             )
-            .bind(assertionId, grant.grant_id, sessionId, workspaceId, now, ...repeat(administrator.actorId, SESSION_CREATOR_BINDINGS)),
+            .bind(assertionId, grant.grant_id, sessionId, workspaceId, now, ...manages.bind),
           this.deleteAssertion(assertionId),
         ],
         "Session share revocation raced with an authority change",
@@ -1403,19 +1200,10 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
       await this.requireOrganizationStanding(who, workspaceId)
       return undefined
     })
-    if (!session) return { can_manage_shares: false, grants: [], participants: [], teams: [] }
-    const canManage = !!(await this.database
-      .prepare(
-        `
-      select 1 from sessions s
-      where s.session_id = ? and s.workspace_id = ? and s.deleted_at is null
-        and ${sessionCreatorSql("?", "s")}
-    `,
-      )
-      .bind(sessionId, workspaceId, ...repeat(who.actorId, SESSION_CREATOR_BINDINGS))
-      .first())
-    if (!canManage) return { can_manage_shares: false, grants: [], participants: [], teams: [] }
-    const [grants, participants, teams] = await Promise.all([
+    if (!session) return { can_manage_shares: false, grants: [], teams: [] }
+    const canManage = await may(this.database, who, "manage_shares", { kind: "session", sessionId, workspaceId })
+    if (!canManage) return { can_manage_shares: false, grants: [], teams: [] }
+    const [grants, teams] = await Promise.all([
       this.database
         .prepare(
           `
@@ -1429,17 +1217,6 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
         from session_share_grants
         where session_id = ? and workspace_id = ? and revoked_at is null
         order by granted_at, grant_id
-      `,
-        )
-        .bind(sessionId, workspaceId)
-        .all(),
-      this.database
-        .prepare(
-          `
-        select actor_id as user_id, granted_by_actor_id as added_by_user_id, granted_at as created_at
-        from session_participants
-        where session_id = ? and workspace_id = ? and revoked_at is null
-        order by granted_at, actor_id
       `,
         )
         .bind(sessionId, workspaceId)
@@ -1462,7 +1239,6 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
     return {
       can_manage_shares: true,
       grants: grants.results,
-      participants: participants.results,
       teams: teams.results.map((team) => ({ ...team, is_shared: team.is_shared === 1 })),
     }
   }
@@ -1470,26 +1246,24 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
   async listSessions(auth: SignedControlPlaneAuth, args: { workspaceId: string }) {
     const who = await this.requirePrincipal(auth)
     const workspaceId = requireText(args.workspaceId, "workspaceId")
+    const reads = maySql(who, "read", { kind: "session", alias: "s" })
     const result = await this.database
       .prepare(
         `
       select s.* from sessions s
       where s.workspace_id = ? and s.deleted_at is null
-        and ${actorSessionAccessSql("?", "s", "read")}
+        and ${reads.sql}
       order by s.updated_at desc, s.session_id
     `,
       )
-      .bind(workspaceId, ...repeat(who.actorId, SESSION_ACCESS_BINDINGS.read))
+      .bind(workspaceId, ...reads.bind)
       .all<SessionRow>()
     return result.results.map(sessionJson)
   }
 
   async listSessionPage(auth: SignedControlPlaneAuth, query: SessionPageQuery) {
     const who = await this.requirePrincipal(auth)
-    return await readD1SessionPage(this.database, query, {
-      sql: actorSessionAccessSql("?", "s", "read"),
-      params: repeat(who.actorId, SESSION_ACCESS_BINDINGS.read),
-    })
+    return await readD1SessionPage(this.database, query, maySql(who, "read", { kind: "session", alias: "s" }))
   }
 
   async resolveSession(auth: SignedControlPlaneAuth, args: { sessionId: string }) {
@@ -1528,49 +1302,19 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
     const who = await this.requirePrincipal(auth)
     const sessionId = requireText(args.sessionId, "sessionId")
     const workspaceId = requireText(args.workspaceId, "workspaceId")
-    if (args.view !== undefined) {
-      const end = args.before === undefined ? undefined : decodeMessagePageCursor(sessionId, args.before)
-      return await this.readLatestView(who, sessionId, workspaceId, args.view, end)
-    }
-    if (args.before !== undefined && args.limit === undefined) {
-      throw new AgentMessagePageError(400, "Message page limit is required with a cursor")
-    }
-    if (
-      args.limit !== undefined &&
-      (!Number.isSafeInteger(args.limit) || args.limit < 1 || args.limit > AGENT_MESSAGE_PAGE_LIMIT)
-    ) {
-      throw new AgentMessagePageError(400, `Message page limit must be between 1 and ${AGENT_MESSAGE_PAGE_LIMIT}`)
-    }
-    let access: SessionRow & { role_rank: number }
+    const before = validateD1MessageRead({ ...args, sessionId, workspaceId })
+    let access: ReadableSession
     try {
       access = await this.requireSessionAccess(who, sessionId, workspaceId, "read")
     } catch (error) {
       if (isDenied(error)) return { allowed: false, messages: [] }
       throw error
     }
-    const beforeOrdinal = args.before === undefined ? undefined : decodeMessagePageCursor(sessionId, args.before)
-    const limit = args.limit
-    const query = this.database.prepare(`
-      select m.ordinal, m.data_json, m.author_actor_id, a.kind as author_kind
-      from session_messages m
-      left join actors a on a.actor_id = m.author_actor_id and a.state = 'active'
-      where m.session_id = ? and m.workspace_id = ? and (? is null or m.ordinal < ?)
-      order by m.ordinal ${limit === undefined ? "asc" : "desc"}
-      ${limit === undefined ? "" : "limit ?"}
-    `)
-    const result =
-      limit === undefined
-        ? await query.bind(sessionId, workspaceId, beforeOrdinal ?? null, beforeOrdinal ?? null).all<MessageRow>()
-        : await query
-            .bind(sessionId, workspaceId, beforeOrdinal ?? null, beforeOrdinal ?? null, limit + 1)
-            .all<MessageRow>()
-    const rows = limit === undefined ? result.results : result.results.slice(0, limit).reverse()
-    const hasMore = limit !== undefined && result.results.length > limit
     return {
       allowed: true,
-      role: rankRole(access.role_rank),
-      messages: rows.map(publicMessage),
-      ...(hasMore && rows[0] ? { nextCursor: encodeMessagePageCursor(sessionId, rows[0].ordinal) } : {}),
+      role: access.role,
+      maxEventOrdinal: access.max_event_ordinal,
+      ...await readD1MessagePage(this.database, { ...args, sessionId, workspaceId }, before),
     }
   }
 
@@ -1616,46 +1360,7 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
 
   private turnRead(sessionId: string, workspaceId: string): TurnRead {
     return async (before) =>
-      storedTurn(await this.latestView(sessionId, workspaceId, "latest-turn", before === undefined ? undefined : decodeMessagePageCursor(sessionId, before)))
-  }
-
-  private async readLatestView(who: Principal, sessionId: string, workspaceId: string, view: LatestView, end?: number) {
-    let access: SessionRow & { role_rank: number }
-    try {
-      access = await this.requireSessionAccess(who, sessionId, workspaceId, "read")
-    } catch (error) {
-      if (isDenied(error)) return { allowed: false, messages: [] }
-      throw error
-    }
-    return { allowed: true, role: rankRole(access.role_rank), ...(await this.latestView(sessionId, workspaceId, view, end)) }
-  }
-
-  private async latestView(sessionId: string, workspaceId: string, view: LatestView, end?: number) {
-    const endBound = end === undefined ? [] : [end]
-    const boundary = await this.database
-      .prepare(`select max(ordinal) as ordinal from session_messages where session_id = ? and workspace_id = ? and role = 'user'${end === undefined ? "" : " and ordinal < ?"}`)
-      .bind(sessionId, workspaceId, ...endBound)
-      .first<{ ordinal: number | null }>()
-    if (boundary?.ordinal === null || boundary?.ordinal === undefined) return { messages: [] }
-    const [turn, older] = await Promise.all([
-      this.database.prepare(`
-        select m.ordinal, m.data_json, m.author_actor_id, a.kind as author_kind
-        from session_messages m
-        left join actors a on a.actor_id = m.author_actor_id and a.state = 'active'
-        where m.session_id = ? and m.workspace_id = ? and m.ordinal >= ?${end === undefined ? "" : " and m.ordinal < ?"}
-        order by m.ordinal asc
-      `).bind(sessionId, workspaceId, boundary.ordinal, ...endBound).all<MessageRow>(),
-      this.database
-        .prepare(`select 1 as found from session_messages where session_id = ? and workspace_id = ? and ordinal < ? limit 1`)
-        .bind(sessionId, workspaceId, boundary.ordinal)
-        .first<{ found: number }>(),
-    ])
-    return latestViewPage(
-      view,
-      turn.results.map((row) => ({ ordinal: row.ordinal, message: publicMessage(row) })),
-      !!older,
-      (ordinal) => encodeMessagePageCursor(sessionId, ordinal),
-    )
+      storedTurn(await readD1LatestView(this.database, sessionId, workspaceId, "latest-turn", before === undefined ? undefined : decodeMessagePageCursor(sessionId, before)))
   }
 
   async syncSessionMessages(
@@ -1664,7 +1369,6 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
       sessionId: string
       workspaceId: string
       messages: unknown[]
-      intakeReady?: boolean
       maxEventOrdinal?: number
       fencingToken?: number
       updatedAt: number
@@ -1675,9 +1379,6 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
     const workspaceId = requireText(args.workspaceId, "workspaceId")
     const updatedAt = requireRuntimeSessionTime(args.updatedAt, "updatedAt", (message) => new D1SessionAuthorityError("invalid_input", message))
     await this.requireSessionAccess(who, sessionId, workspaceId, "agent_turn")
-    if (args.intakeReady) {
-      throw new D1SessionAuthorityError("invalid_input", "Session intake is not owned by the D1 session authority")
-    }
     const maxEventOrdinal = optionalOrdinal(args.maxEventOrdinal)
     const messages = canonicalMessages(args.messages)
     const hasUserMessages = messages.some((message) => message.role === "user")
@@ -1727,6 +1428,8 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
       ? "1 = 1"
       : "exists (select 1 from session_turn_leases l where l.session_id = s.session_id and l.workspace_id = s.workspace_id and l.fencing_token = ?)"
     const fenceBindings = fencingToken === undefined ? [] : [fencingToken]
+    const sendsHere = maySql(who, "send", { kind: "session", alias: "sessions" })
+    const sends = maySql(who, "send", { kind: "session", alias: "s" })
     try {
       await this.guardedBatch(
         [
@@ -1742,7 +1445,7 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
           where session_id = ? and workspace_id = ? and deleted_at is null
             and ${eventGuard}
             and ${updateFenceGuard}
-            and ${actorSessionAccessSql("?", "sessions", "agent_turn")}
+            and ${sendsHere.sql}
         `,
             )
             .bind(
@@ -1754,7 +1457,7 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
               workspaceId,
               ...eventBindings,
               ...fenceBindings,
-              ...repeat(who.actorId, SESSION_ACCESS_BINDINGS.agent_turn),
+              ...sendsHere.bind,
             ),
           this.database
             .prepare(
@@ -1808,7 +1511,7 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
             select 1 from sessions s where s.session_id = ? and s.workspace_id = ?
               and s.snapshot_token = ? and s.snapshot_hash = ? and s.deleted_at is null
               and ${assertionFenceGuard}
-              and ${actorSessionAccessSql("?", "s", "agent_turn")}
+              and ${sends.sql}
               and not exists (
                 select 1 from session_messages m
                 where m.session_id = s.session_id
@@ -1825,7 +1528,7 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
               snapshotToken,
               snapshotHash,
               ...fenceBindings,
-              ...repeat(who.actorId, SESSION_ACCESS_BINDINGS.agent_turn),
+              ...sends.bind,
             ),
           this.deleteAssertion(assertionId),
         ],
@@ -1869,6 +1572,7 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
     await this.requireSessionAccess(who, sessionId, workspaceId, "agent_turn")
     const now = this.now()
     const assertionId = this.randomId("assert")
+    const sends = maySql(who, "send", { kind: "session", alias: "sessions" })
     await this.guardedBatch(
       [
         this.database
@@ -1876,10 +1580,10 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
             `
         update sessions set deleted_at = ?
         where session_id = ? and workspace_id = ? and deleted_at is null
-          and ${actorSessionAccessSql("?", "sessions", "agent_turn")}
+          and ${sends.sql}
       `,
           )
-          .bind(now, sessionId, workspaceId, ...repeat(who.actorId, SESSION_ACCESS_BINDINGS.agent_turn)),
+          .bind(now, sessionId, workspaceId, ...sends.bind),
         this.database.prepare(`delete from session_messages where session_id = ?`).bind(sessionId),
         this.database
           .prepare(
@@ -1899,7 +1603,7 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
   }
 
   private async registerReservation(actor: Principal, registration: RegistrationRow, times: { createdAt: number; updatedAt: number }) {
-    await this.requireWorkspaceAccess(actor, registration.workspace_id, "write")
+    await this.requireWorkspace(actor, registration.workspace_id, "create_session")
     if (registration.state === "registered") {
       const existing = await this.session(registration.session_id)
       if (
@@ -1925,6 +1629,9 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
     }
     const now = this.now()
     const assertionId = this.randomId("assert")
+    const creates = maySql(actor, "create_session", { kind: "workspace", alias: "w" })
+    const parentSends = maySql(actor, "send", { kind: "session", alias: "parent" })
+    const sends = maySql(actor, "send", { kind: "session", alias: "s" })
     await this.guardedBatch(
       [
         this.database
@@ -1938,20 +1645,18 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
             where w.workspace_id = session_registration_operations.workspace_id
               and w.org_id = session_registration_operations.org_id
               and w.project_id = session_registration_operations.project_id
-              and w.deleted_at is null and ${actorWorkspaceAccessSql("?", "w", 2)}
+              and w.deleted_at is null and ${creates.sql}
           )
           and (operation_kind = 'create' or exists (
             select 1 from sessions parent
             where parent.session_id = session_registration_operations.parent_session_id
               and parent.workspace_id = session_registration_operations.workspace_id
               and parent.deleted_at is null
-              and ${actorSessionAccessSql("?", "parent", "agent_turn")}
+              and ${parentSends.sql}
           ))
       `,
           )
-          .bind(now, registration.operation_id, actor.actorId,
-            ...repeat(actor.actorId, WORKSPACE_ACCESS_BINDINGS),
-            ...repeat(actor.actorId, SESSION_ACCESS_BINDINGS.agent_turn)),
+          .bind(now, registration.operation_id, actor.actorId, ...creates.bind, ...parentSends.bind),
         this.database
           .prepare(
             `
@@ -1971,32 +1676,17 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
         this.database
           .prepare(
             `
-        insert into session_participants (
-          session_id, workspace_id, org_id, project_id, actor_id,
-          granted_by_actor_id, role, granted_at, revoked_at
-        )
-        select s.session_id, s.workspace_id, s.org_id, s.project_id,
-          s.creator_actor_id, s.creator_actor_id, 'participant', ?, null
-        from sessions s where s.operation_id = ? and s.creator_actor_id = ?
-        on conflict (session_id, actor_id) do update set revoked_at = null
-      `,
-          )
-          .bind(now, registration.operation_id, actor.actorId),
-        this.database
-          .prepare(
-            `
         insert into authority_batch_assertions (assertion_id, passed)
         values (?, case when exists (
           select 1 from session_registration_operations r
           join sessions s on s.operation_id = r.operation_id and s.session_id = r.session_id
-          join session_participants p on p.session_id = s.session_id and p.actor_id = s.creator_actor_id
           where r.operation_id = ? and r.state = 'registered' and s.creator_actor_id = ?
-            and s.deleted_at is null and p.revoked_at is null
-            and ${actorSessionAccessSql("?", "s", "agent_turn")}
+            and s.deleted_at is null
+            and ${sends.sql}
         ) then 1 else 0 end)
       `,
           )
-          .bind(assertionId, registration.operation_id, actor.actorId, ...repeat(actor.actorId, SESSION_ACCESS_BINDINGS.agent_turn)),
+          .bind(assertionId, registration.operation_id, actor.actorId, ...sends.bind),
         this.deleteAssertion(assertionId),
       ],
       "Session registration raced with an authority change",
@@ -2070,7 +1760,7 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
   ) {
     const who = await this.requirePrincipal(auth)
     const workspaceId = requireText(args.workspaceId, "workspaceId")
-    await this.requireWorkspaceAccess(who, workspaceId, "write")
+    await this.requireWorkspace(who, workspaceId, "operate")
     const rows = visibilityRows(args.sessions)
     for (const row of rows) {
       const existing = await this.requireSessionAccess(who, row.sessionId, workspaceId, "agent_turn")
@@ -2080,18 +1770,22 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
     }
     const now = this.now()
     const assertionId = this.randomId("assert")
+    const sendsHere = maySql(who, "send", { kind: "session", alias: "sessions" })
+    const sends = maySql(who, "send", { kind: "session", alias: "s" })
     const statements: D1PreparedStatement[] = rows.map((row) =>
       this.database
         .prepare(
           `
       update sessions set
-        title = coalesce(?, title),
-        updated_at = max(updated_at, coalesce(?, updated_at))
-      where session_id = ? and workspace_id = ? and deleted_at is null
-        and ${actorSessionAccessSql("?", "sessions", "agent_turn")}
+        title = case when ?1 is null or runtime_updated_at is null or ?1 >= runtime_updated_at
+          then coalesce(?2, title) else title end,
+        runtime_updated_at = coalesce(max(runtime_updated_at, ?1), ?1, runtime_updated_at),
+        updated_at = max(updated_at, coalesce(?1, updated_at))
+      where session_id = ?3 and workspace_id = ?4 and deleted_at is null
+        and ${sendsHere.sql}
     `,
         )
-        .bind(row.title ?? null, row.updatedAt ?? null, row.sessionId, workspaceId, ...repeat(who.actorId, SESSION_ACCESS_BINDINGS.agent_turn)),
+        .bind(row.updatedAt ?? null, row.title ?? null, row.sessionId, workspaceId, ...sendsHere.bind),
     )
     if (replace) {
       statements.push(
@@ -2101,7 +1795,7 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
         update sessions set deleted_at = ?
         where workspace_id = ? and creator_actor_id = ? and deleted_at is null
           and not exists (select 1 from json_each(?) incoming where incoming.value = sessions.session_id)
-          and ${actorSessionAccessSql("?", "sessions", "agent_turn")}
+          and ${sendsHere.sql}
       `,
           )
           .bind(
@@ -2109,7 +1803,7 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
             workspaceId,
             who.actorId,
             JSON.stringify(rows.map((row) => row.sessionId)),
-            ...repeat(who.actorId, SESSION_ACCESS_BINDINGS.agent_turn),
+            ...sendsHere.bind,
           ),
       )
       statements.push(
@@ -2133,12 +1827,12 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
         not exists (
           select 1 from json_each(?) requested
           left join sessions s on s.session_id = requested.value and s.workspace_id = ? and s.deleted_at is null
-          where s.session_id is null or not (${actorSessionAccessSql("?", "s", "agent_turn")})
+          where s.session_id is null or not (${sends.sql})
         )
       then 1 else 0 end)
     `,
         )
-        .bind(assertionId, JSON.stringify(rows.map((row) => row.sessionId)), workspaceId, ...repeat(who.actorId, SESSION_ACCESS_BINDINGS.agent_turn)),
+        .bind(assertionId, JSON.stringify(rows.map((row) => row.sessionId)), workspaceId, ...sends.bind),
     )
     statements.push(this.deleteAssertion(assertionId))
     await this.guardedBatch(statements, "Session visibility raced with an authority change")
@@ -2248,113 +1942,62 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
       .first<SessionShareRow>()
   }
 
-  private async requireParticipantAdministrator(actor: Principal, sessionId: string, workspaceId: string) {
+  private async requireSessionShareAdministrator(actor: Principal, sessionId: string, workspaceId: string) {
     const session = await this.requireSessionAccess(actor, sessionId, workspaceId, "read")
-    const allowed = await this.database
-      .prepare(
-        `
-      select 1 from sessions s where s.session_id = ? and s.workspace_id = ? and s.deleted_at is null
-        and ${sessionCreatorSql("?", "s")}
-    `,
-      )
-      .bind(sessionId, workspaceId, ...repeat(actor.actorId, SESSION_CREATOR_BINDINGS))
-      .first()
-    if (!allowed) throw denied("Session participant administration was denied")
+    if (!(await may(this.database, actor, "manage_shares", { kind: "session", sessionId, workspaceId }))) {
+      throw denied("Session share administration was denied")
+    }
     return session
   }
 
+  /**
+   * The session, when `actor` may ask `access` of it, with the reader's role:
+   * `owner` for the owner of its workspace, `viewer` for a share holder.
+   */
   private async requireSessionAccess(
     actor: Principal,
     sessionId: string,
     workspaceId: string,
     access: SessionAccessQuestion,
-  ) {
+  ): Promise<ReadableSession> {
+    const allowed = maySql(actor, SESSION_ACTION[access], { kind: "session", alias: "s" })
     const session = await this.database
       .prepare(
         `
-      select s.*,
-        ${actorWorkspaceRoleRankSql("?", "w")} as role_rank
+      select s.*, w.owner_user_id = ? as owns
       from sessions s
-      join workspaces w on w.workspace_id = s.workspace_id and w.org_id = s.org_id and w.project_id = s.project_id
-      where s.session_id = ? and s.workspace_id = ? and s.deleted_at is null and w.deleted_at is null
-        and ${actorSessionAccessSql("?", "s", access)}
+      join workspaces w on w.workspace_id = s.workspace_id
+      where s.session_id = ? and s.workspace_id = ? and ${allowed.sql}
     `,
       )
-      .bind(...repeat(actor.actorId, WORKSPACE_ROLE_RANK_BINDINGS), sessionId, workspaceId, ...repeat(actor.actorId, SESSION_ACCESS_BINDINGS[access]))
-      .first<SessionRow & { role_rank: number }>()
+      .bind(actor.userId, sessionId, workspaceId, ...allowed.bind)
+      .first<SessionRow & { owns: number }>()
     if (!session) throw denied()
-    return session
+    const { owns, ...row } = session
+    return { ...row, role: owns === 1 ? "owner" : "viewer" }
   }
 
   private async requireOrganizationStanding(actor: Principal, workspaceId: string) {
+    const member = maySql(actor, "member", { kind: "org", orgId: "w.org_id" })
     const row = await this.database
-      .prepare(
-        `
-      select 1 from workspaces w
-      where w.workspace_id = ? and w.deleted_at is null
-        and ${userInOrganizationSql("?", "w.org_id")}
-    `,
-      )
-      .bind(workspaceId, ...repeat(actor.userId, ORGANIZATION_STANDING_BINDINGS))
+      .prepare(`select 1 from workspaces w where w.workspace_id = ? and w.deleted_at is null and ${member.sql}`)
+      .bind(workspaceId, ...member.bind)
       .first()
     if (!row) throw denied()
   }
 
-  private async requireWorkspaceAccess(actor: Principal, workspaceId: string, action: "read" | "write") {
+  private async requireWorkspace(actor: Principal, workspaceId: string, action: WorkspaceAction) {
+    const allowed = maySql(actor, action, { kind: "workspace", alias: "w" })
     const row = await this.database
-      .prepare(
-        `
-      select w.workspace_id, w.org_id, w.project_id,
-        ${actorWorkspaceRoleRankSql("?", "w")} as role_rank
-      from workspaces w
-      where w.workspace_id = ? and w.deleted_at is null
-        and ${actorWorkspaceAccessSql("?", "w", action === "read" ? 1 : 2)}
-    `,
-      )
-      .bind(...repeat(actor.actorId, WORKSPACE_ROLE_RANK_BINDINGS), workspaceId, ...repeat(actor.actorId, WORKSPACE_ACCESS_BINDINGS))
+      .prepare(`select w.workspace_id, w.org_id, w.project_id from workspaces w where w.workspace_id = ? and ${allowed.sql}`)
+      .bind(workspaceId, ...allowed.bind)
       .first<WorkspaceAccessRow>()
     if (!row) throw denied()
     return row
   }
 
-  private async requirePrincipal(auth: SignedControlPlaneAuth): Promise<Principal> {
-    const principal = auth.principal
-    if (!principal)
-      throw new ControlPlaneAuthError(503, "identity_provisioning", "Canonical application identity is required")
-    if (principal.deploymentId !== this.options.deploymentId || principal.actorKind !== "human") {
-      throw new ControlPlaneAuthError(
-        401,
-        "invalid_bearer_token",
-        "Application principal belongs to another authority domain",
-      )
-    }
-    const row = await this.database
-      .prepare(
-        `
-      select ai.user_id, u.state as user_state, a.actor_id, a.kind as actor_kind,
-        a.state as actor_state, ai.unlinked_at
-      from auth_identities ai
-      join users u on u.user_id = ai.user_id
-      join actors a on a.actor_id = ? and a.user_id = u.user_id
-      where ai.adapter = ? and ai.issuer = ? and ai.subject = ?
-    `,
-      )
-      .bind(principal.actorId, principal.identity.adapter, principal.identity.issuer, principal.identity.subject)
-      .first<PrincipalRow>()
-    if (
-      !row ||
-      row.unlinked_at !== null ||
-      row.user_id !== principal.userId ||
-      row.actor_id !== principal.actorId ||
-      row.actor_kind !== "human"
-    )
-      throw new ControlPlaneAuthError(401, "invalid_bearer_token", "Application principal is stale or unlinked")
-    if (row.user_state === "deleted")
-      throw new ControlPlaneAuthError(403, "account_deleted", "Application account is deleted")
-    if (row.user_state !== "active" || row.actor_state !== "active") {
-      throw new ControlPlaneAuthError(403, "account_suspended", "Application account is suspended")
-    }
-    return { userId: row.user_id, actorId: row.actor_id, actorKind: "human" }
+  private requirePrincipal(auth: SignedControlPlaneAuth): Promise<Principal> {
+    return requireHuman(this.database, this.options.deploymentId, auth)
   }
 
   private async requireRuntimeActor(input: RuntimeSessionActor): Promise<Principal> {
@@ -2464,10 +2107,7 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
     try {
       return await this.database.batch(statements)
     } catch (error) {
-      if (
-        String(error).includes("authority_batch_assertions.passed") ||
-        String(error).includes("CHECK constraint failed")
-      ) {
+      if (d1ConstraintFailure(error)?.kind === "check") {
         throw new D1SessionAuthorityError("resource_conflict", message)
       }
       throw error
@@ -2475,183 +2115,11 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
   }
 }
 
-function actorWorkspaceRoleRankSql(actorExpression: string, workspaceAlias: string) {
-  return `max(
-    case when ${workspaceAlias}.owner_user_id = a.user_id then 4 else 0 end,
-    coalesce((select case pm.role when 'viewer' then 1 when 'editor' then 2 when 'admin' then 3 when 'owner' then 4 end
-      from project_memberships pm
-      where pm.project_id = ${workspaceAlias}.project_id and pm.user_id = a.user_id and pm.revoked_at is null), 0),
-    ${organizationRoleRankSql({
-      orgOwnerUserId: "o.owner_user_id",
-      userId: "a.user_id",
-      orgMemberRole: "om.role",
-      workspaceAlias: workspaceAlias,
-    })}
-  )`
-    .replaceAll("a.user_id", `(select user_id from actors where actor_id = ${actorExpression})`)
-    .replaceAll(
-      "o.owner_user_id",
-      `(select owner_user_id from orgs where org_id = ${workspaceAlias}.org_id and deleted_at is null)`,
-    )
-    .replaceAll(
-      "om.role",
-      `(select role from org_memberships where org_id = ${workspaceAlias}.org_id and user_id = (select user_id from actors where actor_id = ${actorExpression}) and revoked_at is null)`,
-    )
+const SESSION_ACTION: Record<SessionAccessQuestion, SessionAction> = {
+  read: "read",
+  agent_turn: "send",
+  session_control: "control",
 }
-
-function actorWorkspaceAccessSql(actorExpression: string, workspaceAlias: string, rank: 1 | 2) {
-  return `exists (
-    select 1 from actors aa join users au on au.user_id = aa.user_id and au.state = 'active'
-    where aa.actor_id = ${actorExpression} and aa.state = 'active'
-      and exists (
-        select 1 from orgs ao
-        left join org_memberships aom
-          on aom.org_id = ao.org_id and aom.user_id = au.user_id and aom.revoked_at is null
-        where ao.org_id = ${workspaceAlias}.org_id and ao.deleted_at is null
-          and (ao.owner_user_id = au.user_id or aom.user_id is not null)
-      )
-      and exists (
-        select 1 from projects ap
-        where ap.project_id = ${workspaceAlias}.project_id
-          and ap.org_id = ${workspaceAlias}.org_id
-          and ap.deleted_at is null
-      )
-      and ${actorWorkspaceRoleRankSql(actorExpression, workspaceAlias)} >= ${rank}
-  )`
-}
-
-/**
- * Creator, participant and share grantee are the whole admission, asked of
- * someone who still stands in the session's organization; the project and the
- * workspace decide nothing, and a rank in the organization decides only who may
- * be OFFERED a share. The question narrows what a SHARE may answer: `follow`
- * reads, `send` also drives the agent's turn, and a `session_control` write
- * drops the share branch entirely, leaving the creator and the participants.
- */
-function actorSessionAccessSql(actorExpression: string, sessionAlias: string, access: SessionAccessQuestion) {
-  const shareLevelSql = access === "agent_turn" ? "and share.level = 'send'" : ""
-  return `${actorOrganizationStandingSql(actorExpression, sessionAlias)} and exists (
-    select 1 from workspaces session_workspace
-    where session_workspace.workspace_id = ${sessionAlias}.workspace_id
-      and session_workspace.org_id = ${sessionAlias}.org_id
-      and session_workspace.project_id = ${sessionAlias}.project_id
-      and session_workspace.deleted_at is null
-  ) and (
-    ${sessionCreatedByActorUserSql(actorExpression, sessionAlias)}
-    or exists (
-      select 1 from session_participants sap
-      where sap.session_id = ${sessionAlias}.session_id and sap.actor_id = ${actorExpression} and sap.revoked_at is null
-    )
-    ${access === "session_control" ? "" : `or exists (
-      select 1 from session_share_grants share
-      join actors share_actor on share_actor.actor_id = ${actorExpression}
-        and share_actor.kind = 'human' and share_actor.state = 'active'
-      join users share_user on share_user.user_id = share_actor.user_id and share_user.state = 'active'
-      where share.session_id = ${sessionAlias}.session_id and share.revoked_at is null
-        ${shareLevelSql}
-        and (
-          share.target_user_id = share_user.user_id
-          or (
-            share.target_org_id = ${sessionAlias}.org_id
-            and exists (
-              select 1 from org_memberships share_org_member
-              where share_org_member.org_id = share.target_org_id
-                and share_org_member.user_id = share_user.user_id
-                and share_org_member.revoked_at is null
-            )
-          )
-          or exists (
-            select 1 from team_memberships share_team_member
-            join teams share_team on share_team.team_id = share_team_member.team_id
-              and share_team.org_id = ${sessionAlias}.org_id and share_team.deleted_at is null
-            join org_memberships share_team_org_member
-              on share_team_org_member.org_id = share_team.org_id
-              and share_team_org_member.user_id = share_team_member.user_id
-              and share_team_org_member.revoked_at is null
-            where share_team_member.team_id = share.target_team_id
-              and share_team_member.user_id = share_user.user_id
-              and share_team_member.revoked_at is null
-          )
-        )
-    )`}
-  )`
-}
-
-/**
- * The standing every session decision needs before any of them: a live account
- * that is still in the organization the session belongs to. Leaving the
- * organization ends every grant inside it, creator standing included, so
- * membership is necessary here and never sufficient — nothing below reads a
- * rank.
- */
-function actorOrganizationStandingSql(actorExpression: string, sessionAlias: string) {
-  return `exists (
-    select 1 from actors admitted_actor
-    join users admitted_user
-      on admitted_user.user_id = admitted_actor.user_id and admitted_user.state = 'active'
-    where admitted_actor.actor_id = ${actorExpression} and admitted_actor.state = 'active'
-      and ${userInOrganizationSql("admitted_actor.user_id", `${sessionAlias}.org_id`)}
-  )`
-}
-
-/**
- * Who a session's people are is the creator's to decide, and nobody else's,
- * for as long as the creator stands in the organization.
- */
-function sessionCreatorSql(actorExpression: string, sessionAlias: string) {
-  return `(${actorOrganizationStandingSql(actorExpression, sessionAlias)}
-    and ${sessionCreatedByActorUserSql(actorExpression, sessionAlias)})`
-}
-
-/**
- * One person acts through several actors — the browser actor they sign in as
- * and the agent actor a runtime mints to drive a session unprompted — so
- * creator standing is a question about the user behind the actor. Comparing
- * actor ids would strand every session an agent opened on its owner's behalf.
- */
-function sessionCreatedByActorUserSql(actorExpression: string, sessionAlias: string) {
-  return `exists (
-    select 1 from actors creator_actor
-    join actors reading_actor
-      on reading_actor.actor_id = ${actorExpression} and reading_actor.state = 'active'
-    where creator_actor.actor_id = ${sessionAlias}.creator_actor_id
-      and creator_actor.user_id = reading_actor.user_id
-  )`
-}
-
-/**
- * Being in the organization is what makes a person offerable as a share
- * recipient. It carries no standing on the session, the workspace or the
- * machine; only the grant they are then given does.
- */
-function userInOrganizationSql(userExpression: string, orgExpression: string) {
-  return `exists (
-    select 1 from orgs offer_org
-    left join org_memberships offer_member
-      on offer_member.org_id = offer_org.org_id and offer_member.user_id = ${userExpression}
-      and offer_member.revoked_at is null
-    where offer_org.org_id = ${orgExpression} and offer_org.deleted_at is null
-      and (offer_org.owner_user_id = ${userExpression} or offer_member.user_id is not null)
-  )`
-}
-
-/**
- * Every `?` a fragment carries is the actor expression, so its own text says
- * how many copies of the actor id the caller must bind ahead of it.
- */
-function actorBindings(fragment: string) {
-  return fragment.match(/\?/g)?.length ?? 0
-}
-
-const SESSION_ACCESS_BINDINGS: Record<SessionAccessQuestion, number> = {
-  read: actorBindings(actorSessionAccessSql("?", "s", "read")),
-  agent_turn: actorBindings(actorSessionAccessSql("?", "s", "agent_turn")),
-  session_control: actorBindings(actorSessionAccessSql("?", "s", "session_control")),
-}
-const SESSION_CREATOR_BINDINGS = actorBindings(sessionCreatorSql("?", "s"))
-const WORKSPACE_ACCESS_BINDINGS = actorBindings(actorWorkspaceAccessSql("?", "w", 1))
-const ORGANIZATION_STANDING_BINDINGS = actorBindings(userInOrganizationSql("?", "w.org_id"))
-const WORKSPACE_ROLE_RANK_BINDINGS = actorBindings(actorWorkspaceRoleRankSql("?", "w"))
 
 function shareSelectorCount(args: {
   grantedToTokenIdentifier?: string
@@ -2677,8 +2145,8 @@ function shareFanoutTarget(grant: SessionShareRow) {
   return { grantedToOrgId: grant.target_org_id! }
 }
 
-function sessionShareError(code: string) {
-  return new Error(code)
+function sessionShareError(code: PublicApiErrorCode) {
+  return new PublicApiError(code)
 }
 
 function normalizeReservation(input: ReserveSessionInput) {
@@ -2739,133 +2207,12 @@ function sessionJson(row: SessionRow) {
   }
 }
 
-function visibilityRows(input: WorkspaceVisibility[]) {
-  if (!Array.isArray(input) || input.length > MAX_VISIBILITY_ROWS) {
-    throw new D1SessionAuthorityError("invalid_input", `Session visibility accepts at most ${MAX_VISIBILITY_ROWS} rows`)
-  }
-  const seen = new Set<string>()
-  return input.map((value) => {
-    const sessionId = requireText(value.sessionId, "sessionId")
-    if (seen.has(sessionId))
-      throw new D1SessionAuthorityError("invalid_input", "Session visibility contains duplicate identifiers")
-    seen.add(sessionId)
-    return {
-      sessionId,
-      title: optionalText(value.title, "title", 2_000),
-      createdAt: optionalTimestamp(value.createdAt, "createdAt"),
-      updatedAt: optionalTimestamp(value.updatedAt, "updatedAt"),
-    }
-  })
-}
-
-function canonicalMessages(input: unknown[]): CanonicalMessage[] {
-  if (!Array.isArray(input) || input.length > MAX_SNAPSHOT_MESSAGES) {
-    throw new D1SessionAuthorityError(
-      "invalid_input",
-      `Session snapshots accept at most ${MAX_SNAPSHOT_MESSAGES} messages`,
-    )
-  }
-  const ids = new Set<string>()
-  return input.map((message, ordinal) => {
-    const row = asRecord(message)
-    const info = asRecord(row?.info)
-    const id = optionalText(
-      typeof row?.id === "string" ? row.id : typeof info?.id === "string" ? info.id : undefined,
-      "message.id",
-    )
-    const role = optionalText(
-      typeof row?.role === "string" ? row.role : typeof info?.role === "string" ? info.role : undefined,
-      "message.role",
-      100,
-    )
-    if (!id || !role)
-      throw new D1SessionAuthorityError("invalid_input", "Every session message requires a canonical id and role")
-    if (ids.has(id))
-      throw new D1SessionAuthorityError("invalid_input", "Session snapshots contain duplicate message identifiers")
-    ids.add(id)
-    let dataJson: string
-    try {
-      dataJson = JSON.stringify(message)
-    } catch {
-      throw new D1SessionAuthorityError("invalid_input", "Session message must be JSON serializable")
-    }
-    if (dataJson === undefined || byteLength(dataJson) > MAX_MESSAGE_BYTES) {
-      throw new D1SessionAuthorityError("invalid_input", `Session message exceeds ${MAX_MESSAGE_BYTES} bytes`)
-    }
-    return {
-      id,
-      role,
-      ordinal,
-      dataJson,
-      authorActorId: null,
-    }
-  })
-}
-
-function publicMessage(row: MessageRow) {
-  const parsed = parseJson(row.data_json)
-  const message = asRecord(parsed)
-  if (!message) return parsed
-  const info = asRecord(message.info) ?? {}
-  const claxedo = asRecord(info.claxedo) ?? {}
-  const { author: _untrustedAuthor, ...safeClaxedo } = claxedo
-  const { claxedo: _untrustedClaxedo, ...safeInfo } = info
-  const canonicalClaxedo =
-    row.author_actor_id && row.author_kind && (message.role === "user" || info.role === "user")
-      ? { ...safeClaxedo, author: { id: row.author_actor_id, kind: row.author_kind } }
-      : safeClaxedo
-  return {
-    ...message,
-    info: {
-      ...safeInfo,
-      ...(Object.keys(canonicalClaxedo).length > 0 ? { claxedo: canonicalClaxedo } : {}),
-    },
-  }
-}
-
-function encodeMessagePageCursor(sessionId: string, ordinal: number) {
-  return `${MESSAGE_PAGE_CURSOR_PREFIX}${encodeURIComponent(JSON.stringify({ sessionId, ordinal }))}`
-}
-
-function decodeMessagePageCursor(sessionId: string, input: string) {
-  try {
-    if (!input.startsWith(MESSAGE_PAGE_CURSOR_PREFIX)) throw new Error("unexpected cursor version")
-    const value = asRecord(parseJson(decodeURIComponent(input.slice(MESSAGE_PAGE_CURSOR_PREFIX.length))))
-    const ordinal = numberField(value, "ordinal")
-    if (value?.sessionId !== sessionId || ordinal === undefined || !Number.isSafeInteger(ordinal) || ordinal < 0) {
-      throw new Error("invalid cursor payload")
-    }
-    return ordinal
-  } catch {
-    throw new AgentMessagePageError(400, "Invalid message page cursor")
-  }
-}
-
-function rankRole(rank: number): ProjectRole {
-  return rank >= 4 ? "owner" : rank >= 3 ? "admin" : rank >= 2 ? "editor" : "viewer"
-}
-
-function optionalOrdinal(value: number | undefined) {
-  if (value === undefined) return undefined
-  if (!Number.isSafeInteger(value) || value < 0) {
-    throw new D1SessionAuthorityError("invalid_input", "maxEventOrdinal must be a non-negative safe integer")
-  }
-  return value
-}
-
 function boundedTurnLeaseTtl(value: number | undefined) {
   const ttl = value ?? SESSION_TURN_LEASE_TTL_MS
   if (!Number.isSafeInteger(ttl) || ttl < 5_000 || ttl > 15 * 60_000) {
     throw new TypeError("turnLeaseTtlMs must be an integer between 5000 and 900000")
   }
   return ttl
-}
-
-function positiveFence(value: number) {
-  if (!Number.isSafeInteger(value) || value < 1) {
-    throw new D1SessionAuthorityError("invalid_input", "fencingToken must be a positive safe integer")
-  }
-  return value
 }
 
 type TurnAdmission = {
@@ -2911,29 +2258,6 @@ function turnLeaseJson(row: TurnLeaseRow): SessionTurnLease {
   }
 }
 
-function optionalTimestamp(value: number | undefined, name: string) {
-  if (value === undefined) return undefined
-  if (!Number.isSafeInteger(value) || value < 0)
-    throw new D1SessionAuthorityError("invalid_input", `${name} is invalid`)
-  return value
-}
-
-function optionalText(value: string | undefined, name: string, max = 512) {
-  if (value === undefined) return undefined
-  return requireText(value, name, max)
-}
-
-function requireText(value: string, name: string, max = 512) {
-  const result = value.trim()
-  if (!result || result.length > max) {
-    throw new D1SessionAuthorityError(
-      "invalid_input",
-      `${name} must be a non-empty string of at most ${max} characters`,
-    )
-  }
-  return result
-}
-
 function denied(message = "Session authorization was denied") {
   return new ControlPlaneAuthError(403, "workspace_authorization_denied", message)
 }
@@ -2942,15 +2266,7 @@ function isDenied(error: unknown) {
   return error instanceof ControlPlaneAuthError && error.status === 403
 }
 
-function byteLength(value: string) {
-  return new TextEncoder().encode(value).byteLength
-}
-
 async function sha256(value: string) {
   const bytes = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value))
   return Array.from(new Uint8Array(bytes), (byte) => byte.toString(16).padStart(2, "0")).join("")
-}
-
-function repeat<T>(value: T, count: number) {
-  return Array.from({ length: count }, () => value)
 }

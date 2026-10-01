@@ -35,6 +35,7 @@ const PLACEHOLDER = {
   authDatabase: { name: "claxedo-auth-boundary-dry-run", id: "00000000-0000-4000-8000-00000000dead" },
   controlPlaneDatabase: { name: "claxedo-core-boundary-dry-run", id: "00000000-0000-4000-8000-00000000beef" },
   requestLimiterNamespaceId: "3999999999",
+  documentsBucket: "claxedo-documents-boundary-dry-run",
   agentPluginsBucket: "claxedo-agent-plugins-boundary-dry-run",
 }
 
@@ -52,6 +53,7 @@ function boundaryWranglerConfig(target: WorkerdBoundaryTarget, controlPlaneMigra
     controlPlaneDatabase: PLACEHOLDER.controlPlaneDatabase,
     controlPlaneMigrationsDir,
     requestLimiterNamespaceId: PLACEHOLDER.requestLimiterNamespaceId,
+    documentsBucket: PLACEHOLDER.documentsBucket,
     ...(artifact.agentPlugins ? { agentPluginsBucket: PLACEHOLDER.agentPluginsBucket } : {}),
     variables: { CLAXEDO_SANDBOX_POSTURE: artifact.sandboxPosture },
   })

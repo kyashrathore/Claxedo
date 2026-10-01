@@ -61,7 +61,7 @@ describe("runtime config v4", () => {
     }
     const body = {
       ...snapshot(),
-      harnessLaunch: { claude: { generation: "generation-1", execution: { mode: "default" }, mcpServers: [], notApplied: [], pluginRoots: [{ pluginInstanceId: "pi_review", root: "/runtime/plugins/review", dataRoot: "/runtime/data/pi_review", skillNames: ["review"] }] } },
+      harnessLaunch: { acp: { generation: "generation-1", execution: { mode: "default" }, mcpServers: [], notApplied: [], pluginRoots: [{ pluginInstanceId: "pi_review", root: "/runtime/plugins/review", dataRoot: "/runtime/data/pi_review", skillNames: ["review"] }] } },
     }
     const accepted = await app.request("http://localhost/api/wr/config", { method: "POST", headers, body: JSON.stringify(body) })
     expect(accepted.status).toBe(200)
@@ -134,12 +134,12 @@ describe("runtime config v4", () => {
     }
     expect(normalizeRuntimeSnapshot(
       { ...snapshot(), auth: { machineOwnerUserId: "local", accounts: { local: { "claude-sdk": projection } } } },
-      { CLAXEDO_PROVIDER_CLAUDE_SDK: "dtn_secret_abc" },
+      { CLAXEDO_PROVIDER_CLAUDE_SDK: "secret_ref_abc" },
     )).toMatchObject({
       auth: { machineOwnerUserId: "local", accounts: { local: {
         "claude-sdk": {
           baseUrl: "https://api.anthropic.com",
-          placeholder: "dtn_secret_abc",
+          placeholder: "secret_ref_abc",
           authMode: "api-key",
           apiPath: "/v1",
         },

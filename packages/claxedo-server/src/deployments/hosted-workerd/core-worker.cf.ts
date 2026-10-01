@@ -3,13 +3,12 @@
  *
  * Certified product/profile entrypoints inject exactly one static composition
  * through `createHostedCoreWorker`. This module owns the Cloudflare-only core
- * resources shared by every profile: the cross-isolate request limiter and
- * `LIVE_SYNC_ROOM`. Optional services are reached only through the typed
- * service catalog consumed by `HostedCoreAppOptions`; their implementations,
- * storage, jobs, and Durable Objects never enter this graph.
- *
+ * resources shared by every profile: the cross-isolate request limiter,
+ * `LIVE_SYNC_ROOM`, the projection-command idempotency store in
+ * `CONTROL_PLANE_DB`, and the hosted Pages backend over `CLAXEDO_DOCUMENTS`.
  */
 
+import type { D1Database } from "@cloudflare/workers-types"
 import type { ExecutionContext, Hono } from "hono"
 import { HTTPException } from "hono/http-exception"
 import {
@@ -17,8 +16,13 @@ import {
   securityHeaderEntries,
   withSecurityHeaders,
 } from "@claxedo/server-core/platform/http/security-headers"
+import { asRecord } from "@claxedo/server-core/platform/json/index"
+import { requireAuthority } from "@claxedo/server-core/platform/auth/authority"
 
+import type { D1AccessContext } from "../../authority/adapters/d1/access-context"
+import { d1DocumentAccess } from "../../authority/adapters/d1/document-authority"
 import type { HostedControlPlane } from "../../authority/hosted-services"
+import { createIdempotencyCoordinator, d1ProjectionCommandIdempotency } from "../../authority/http/idempotency"
 import { HostedWorkerCompositionError } from "../../authority/composition-error"
 import {
   cloudflareRateLimitStore,
@@ -32,10 +36,15 @@ import { CLAXEDO_MCP_TOOL_GROUPS } from "@claxedo/mcp"
 import { createClaxedoMcpClient } from "@claxedo/mcp/client"
 import { LiveSyncRoom } from "./live-sync-room.cf"
 import type { LiveSyncRoomNamespace } from "../../platform/http/live-sync-publish"
+import { createHostedDocumentsBackend } from "../../documents/backends/hosted/backend"
+import type { R2BucketBinding } from "../../documents/backends/hosted/r2-object-store.cf"
+import { createHostedDocumentRuntimeBroker } from "../../documents/backends/hosted/runtime-broker"
 
 export { LiveSyncRoom }
 
 export type HostedCoreWorkerEnv = Record<string, unknown> & {
+  CLAXEDO_DOCUMENTS?: R2BucketBinding
+  CONTROL_PLANE_DB?: D1Database
   CLAXEDO_REQUEST_LIMITER?: CloudflareRateLimitBinding
   LIVE_SYNC_ROOM?: LiveSyncRoomNamespace
 }
@@ -44,7 +53,8 @@ export type HostedCoreWorkerComposition<Env extends HostedCoreWorkerEnv> = (
   env: Env,
 ) => {
   plane: HostedControlPlane
-  options: Omit<HostedCoreAppOptions, "liveSyncRoom" | "sharedRateLimitStore">
+  options: Omit<HostedCoreAppOptions, "liveSyncRoom" | "sharedRateLimitStore" | "idempotency" | "documents">
+  documentAccess: D1AccessContext
 }
 
 function bindingError(name: string): never {
@@ -63,6 +73,16 @@ function requiredLiveSyncRoom(value: LiveSyncRoomNamespace | undefined) {
   if (!value || typeof value.idFromName !== "function" || typeof value.get !== "function") {
     bindingError("LIVE_SYNC_ROOM")
   }
+  return value
+}
+
+function requiredControlPlaneDatabase(value: D1Database | undefined) {
+  if (!value || typeof value.prepare !== "function") bindingError("CONTROL_PLANE_DB")
+  return value
+}
+
+function requiredDocumentsBucket(value: R2BucketBinding | undefined) {
+  if (!value || typeof value.get !== "function" || typeof value.put !== "function") bindingError("CLAXEDO_DOCUMENTS")
   return value
 }
 
@@ -100,13 +120,29 @@ export function createHostedCoreWorker<Env extends HostedCoreWorkerEnv>(
     // Mandatory bindings fail closed BEFORE any composition runs.
     const limiter = requiredRateLimiter(env.CLAXEDO_REQUEST_LIMITER)
     const liveSyncRoom = requiredLiveSyncRoom(env.LIVE_SYNC_ROOM)
+    const controlPlaneDatabase = requiredControlPlaneDatabase(env.CONTROL_PLANE_DB)
+    const documentsBucket = requiredDocumentsBucket(env.CLAXEDO_DOCUMENTS)
     const selected = compose(env)
     const key = selected.plane as object
     const existing = appByPlane.get(key)
     if (existing) return existing
 
+    const documents = createHostedDocumentsBackend(documentsBucket, {
+      env: selected.plane.env,
+      access: (index) => d1DocumentAccess(selected.documentAccess, index),
+      runtime: createHostedDocumentRuntimeBroker(selected.plane.services, selected.plane.env),
+      resolveSessionWorkspace: async (auth, sessionId) => {
+        const authority = requireAuthority(selected.plane.services)
+        if (!authority.resolveSession) throw new Error("Session placement resolution is unavailable")
+        const resolved = asRecord(await authority.resolveSession(auth, { sessionId }))
+        if (typeof resolved?.workspace_id !== "string") throw new Error("Session placement is unavailable")
+        return resolved.workspace_id
+      },
+    })
     const app = createHostedCoreApp(selected.plane, {
       ...selected.options,
+      documents,
+      idempotency: createIdempotencyCoordinator(d1ProjectionCommandIdempotency(controlPlaneDatabase)),
       liveSyncRoom,
       sharedRateLimitStore: cloudflareRateLimitStore(limiter, { periodSeconds: 60 }),
       // Every profile serves the same endpoint: the control plane runs no

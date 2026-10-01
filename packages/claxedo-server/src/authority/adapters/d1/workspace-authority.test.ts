@@ -1,3 +1,4 @@
+import { inviteOrgMember } from "../../../test-support/invite-org-member"
 import { readdir, readFile } from "node:fs/promises"
 import { fileURLToPath } from "node:url"
 import { afterEach, describe, expect, test } from "vitest"
@@ -11,6 +12,9 @@ import {
   userDeployedOwnerIdentityHash,
   type D1AuthorityProductPolicy,
 } from "./workspace-authority"
+import { D1SessionAuthority } from "./session-authority"
+import { inviteIdentity } from "../../../test-support/invite-identity"
+import { D1AuditAuthority } from "./audit-authority"
 
 const MIGRATIONS_DIRECTORY = fileURLToPath(new URL("../../../../migrations/control-plane/", import.meta.url))
 
@@ -101,14 +105,14 @@ async function signed(
 }
 
 describe("D1 hosted workspace authority", () => {
-  test("reads the principal's identity row once per request auth object", async () => {
+  test("reads the principal's identity row once per request auth object, whichever authority class asks", async () => {
     const { authority: seeded, database } = await setup({ kind: "claxedo-hosted" })
     let identityReads = 0
     const counted = new Proxy(database, {
       get(target, key, receiver) {
         if (key === "prepare") {
           return (sql: string) => {
-            if (sql.includes("from auth_identities ai")) identityReads += 1
+            if (sql.includes("from auth_identities identity")) identityReads += 1
             return target.prepare(sql)
           }
         }
@@ -122,10 +126,18 @@ describe("D1 hosted workspace authority", () => {
       now: () => 1_800_000_000_000,
       randomId: (prefix) => `${prefix}_memo`,
     })
+    const sessions = new D1SessionAuthority(counted, { deploymentId: "deployment-a" })
+    const audit = new D1AuditAuthority(counted, { deploymentId: "deployment-a" })
     const auth = await signed(seeded, identity("alice"))
 
     await authority.usersMe(auth)
-    await Promise.all([authority.listOrgs(auth), authority.resolveOrgId(auth), authority.listWorkspaces(auth)])
+    await Promise.all([
+      authority.listOrgs(auth),
+      authority.resolveOrgId(auth),
+      authority.listWorkspaces(auth),
+      sessions.listSessions(auth, { workspaceId: "ws_any" }),
+      audit.auditAllow(auth, { action: "workspace.memo" }),
+    ])
     expect(identityReads).toBe(1)
 
     const next = await signed(seeded, identity("alice"))
@@ -191,9 +203,9 @@ describe("D1 hosted workspace authority", () => {
     const bob = await signed(authority, identity("bob"))
     const outsider = await signed(authority, identity("outsider"))
     const team = await authority.createHostedOrganization(alice, { name: "Acme", orgId: "org_acme" })
-    await authority.addOrganizationMember(alice, {
+    await inviteOrgMember(database, alice, {
       orgId: team.org_id,
-      userId: bob.principal!.userId,
+      userPublicId: bob.principal!.userId,
       role: "member",
     })
 
@@ -238,10 +250,11 @@ describe("D1 hosted workspace authority", () => {
       await database.prepare("select project_id from projects where repo_key = 'github.com/acme/collision'").first(),
     ).toBeNull()
 
-    expect(await authority.openWorkspace(bob, { workspaceId: "ws_acme_main" })).toMatchObject({
-      role: "viewer",
+    expect(await authority.openWorkspace(alice, { workspaceId: "ws_acme_main" })).toMatchObject({
+      role: "owner",
       workspace: { org_id: "org_acme", project_id: created.project_id },
     })
+    await expect(authority.openWorkspace(bob, { workspaceId: "ws_acme_main" })).rejects.toMatchObject({ status: 403 })
     expect(
       await authority.authorizeProject(bob, {
         projectId: created.project_id,
@@ -283,9 +296,9 @@ describe("D1 hosted workspace authority", () => {
       await database.prepare("select project_id from projects where repo_key = 'github.com/acme/denied'").first(),
     ).toBeNull()
 
-    await authority.addOrganizationMember(alice, {
+    await inviteOrgMember(database, alice, {
       orgId: team.org_id,
-      userId: bob.principal!.userId,
+      userPublicId: bob.principal!.userId,
       role: "admin",
     })
     await expect(
@@ -324,7 +337,7 @@ describe("D1 hosted workspace authority", () => {
     const alice = await signed(authority, identity("alice"))
     const bob = await signed(authority, identity("bob"))
     const team = await authority.createHostedOrganization(alice, { name: "Acme", orgId: "org_acme" })
-    await authority.addOrganizationMember(alice, { orgId: team.org_id, userId: bob.principal!.userId, role: "member" })
+    await inviteOrgMember(database, alice, { orgId: team.org_id, userPublicId: bob.principal!.userId, role: "member" })
     const project = await authority.createWorkspace(alice, {
       workspaceId: "ws_acme_main",
       orgId: team.org_id,
@@ -434,11 +447,26 @@ describe("D1 user-deployed workspace authority", () => {
     ).toEqual({ consumed_subject: ownerIdentity.subject })
     expect((await database.prepare("select count(*) as count from users").first<{ count: number }>())?.count).toBe(1)
     expect((await database.prepare("select count(*) as count from orgs").first<{ count: number }>())?.count).toBe(1)
+    const founded = async () => (await database
+      .prepare("select user_id, actor_id, metadata_json from authority_audit_events where action = 'org.member.added'")
+      .all<{ user_id: string; actor_id: string; metadata_json: string }>()).results
+      .map((row) => ({ user: row.user_id, actor: row.actor_id, ...JSON.parse(row.metadata_json) }))
+    if (owner.state !== "active") throw new Error(`owner did not become active: ${owner.state}`)
+    const foundingOwner = {
+      user: owner.userId,
+      actor: owner.actorId,
+      orgId: "org_deployment",
+      targetUserId: owner.userId,
+      before: null,
+      after: "owner",
+    }
+    expect(await founded()).toEqual([foundingOwner])
 
     await expect(authority.claimUserDeployedOwner(identity("attacker"), claim)).rejects.toMatchObject({
       code: "resource_conflict",
     })
     expect((await database.prepare("select count(*) as count from users").first<{ count: number }>())?.count).toBe(1)
+    expect(await founded()).toEqual([foundingOwner])
 
     const expired = await setup({
       kind: "user-deployed",
@@ -519,9 +547,9 @@ describe("D1 user-deployed workspace authority", () => {
     })
 
     const memberIdentity = identity("member")
-    const admission = await authority.admitUserDeployedIdentity(owner, { identity: memberIdentity, role: "member" })
-    expect(admission.state).toBe("active")
+    const accept = await inviteIdentity(authority, owner, { orgId: "org_deployment", identity: memberIdentity, role: "member" })
     const member = await signed(authority, memberIdentity)
+    await accept(member)
     await authority.createWorkspace(owner, {
       workspaceId: "ws_shared",
       orgId: "org_deployment",
@@ -529,7 +557,7 @@ describe("D1 user-deployed workspace authority", () => {
       repoUrl: "https://github.com/acme/shared.git",
       backing: "cloud-vm",
     })
-    expect(await authority.openWorkspace(member, { workspaceId: "ws_shared" })).toMatchObject({ role: "viewer" })
+    await expect(authority.openWorkspace(member, { workspaceId: "ws_shared" })).rejects.toMatchObject({ status: 403 })
     await expect(
       authority.createWorkspace(member, {
         workspaceId: "ws_denied",
@@ -539,9 +567,9 @@ describe("D1 user-deployed workspace authority", () => {
       }),
     ).rejects.toMatchObject({ status: 403, code: "workspace_authorization_denied" })
 
-    await authority.addOrganizationMember(owner, {
+    await inviteOrgMember(database, owner, {
       orgId: "org_deployment",
-      userId: member.principal!.userId,
+      userPublicId: member.principal!.userId,
       role: "admin",
     })
     await expect(
@@ -650,7 +678,7 @@ describe("a workspace's row carries its placement", () => {
   })
 
   test("reachability is reported for machine-placed rows and withheld from provisioner-owned ones", async () => {
-    const { authority } = await setup({ kind: "claxedo-hosted" })
+    const { authority, database } = await setup({ kind: "claxedo-hosted" })
     const alice = await signed(authority, identity("alice"))
     await two(authority, alice)
 
@@ -677,9 +705,9 @@ describe("workspace creation admission", () => {
     })
 
     const team = await authority.createHostedOrganization(alice, { name: "Acme", orgId: "org_acme" })
-    await authority.addOrganizationMember(alice, {
+    await inviteOrgMember(database, alice, {
       orgId: team.org_id,
-      userId: bob.principal!.userId,
+      userPublicId: bob.principal!.userId,
       role: "member",
     })
     const created = await authority.createWorkspace(alice, {
@@ -722,9 +750,9 @@ describe("workspace creation admission", () => {
       }),
     ).rejects.toMatchObject({ status: 403 })
 
-    await authority.addOrganizationMember(alice, {
+    await inviteOrgMember(database, alice, {
       orgId: team.org_id,
-      userId: bob.principal!.userId,
+      userPublicId: bob.principal!.userId,
       role: "admin",
     })
     await expect(authority.authorizeWorkspaceCreate(bob, { projectId: created.project_id }))
@@ -732,7 +760,7 @@ describe("workspace creation admission", () => {
   })
 
   test("a user-deployed product admits creation only in its own organization", async () => {
-    const { authority } = await setup({
+    const { authority, database } = await setup({
       kind: "user-deployed",
       organization: { id: "org_house", name: "House" },
       ownerIdentity: identity("alice"),

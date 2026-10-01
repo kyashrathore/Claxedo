@@ -2,29 +2,9 @@ import type { HarnessServices, OwnedProcess, SpawnCommand, SpawnOptions } from "
 import { launchOwnedProcess, retirementSettled, type LaunchOwnershipStore } from "@claxedo/process-ownership/launch"
 import { harnessSpawnEnv } from "@claxedo/process-ownership/spawn-env"
 import { singleFlightUntil } from "@claxedo/helpers"
-import { DEFAULT_RECOVERY_BUDGETS } from "@claxedo/agent-runtime-contract"
-import type { ProcessObserver } from "./managed-processes/process-observer"
 import { homeHoldingOwnership } from "./host/home-use"
 
-export type SpawnObservation = { observer: ProcessObserver; workspaceId?: string }
-
-type Launched = Awaited<ReturnType<typeof launchOwnedProcess>>
-
-function observeSpawn(observation: SpawnObservation, launch: Launched, command: SpawnCommand, options: SpawnOptions, pid: number) {
-  return observation.observer.register({
-    ownerId: launch.launchId, ownerGeneration: launch.launchId, launchId: launch.launchId,
-    kind: options.role, role: options.role, label: options.label, pid,
-    ...(observation.workspaceId ? { workspaceId: observation.workspaceId } : {}),
-    directory: command.cwd,
-    ...(options.sessionId ? { sessionId: options.sessionId } : {}),
-    access: "local", attributionConfidence: "direct",
-  }, {
-    stopGracefully: () => launch.retire({ termGraceMs: DEFAULT_RECOVERY_BUDGETS.termGraceMs, killVerifyMs: DEFAULT_RECOVERY_BUDGETS.killVerifyMs }),
-    killOwnedTree: () => launch.retire({ termGraceMs: 0, killVerifyMs: DEFAULT_RECOVERY_BUDGETS.killVerifyMs }),
-  })
-}
-
-export function createSpawnService(ownership: LaunchOwnershipStore, observation?: SpawnObservation): HarnessServices["spawn"] {
+export function createSpawnService(ownership: LaunchOwnershipStore): HarnessServices["spawn"] {
   return async (command: SpawnCommand, options: SpawnOptions): Promise<OwnedProcess> => {
     if (options.signal.aborted) throw new Error(`Spawn of ${options.label} was aborted before it started`)
     const launch = await launchOwnedProcess({
@@ -49,15 +29,6 @@ export function createSpawnService(ownership: LaunchOwnershipStore, observation?
       : new Promise((resolve) => {
           child.once("exit", (code, signal) => resolve({ code, signal }))
         })
-    let observed: ReturnType<typeof observeSpawn> | undefined
-    try {
-      observed = observation && observeSpawn(observation, launch, command, options, launch.payloadPid)
-      observed?.update({ pid: launch.payloadPid, lifecycle: "ready" })
-    } catch (error) {
-      await launch.retire({ termGraceMs: 1_000, killVerifyMs: 1_000 })
-      throw error
-    }
-    if (observed) void exited.then((status) => observed.exit({ reason: "exited", ...(status.code === null ? {} : { exitCode: status.code }) }))
     return {
       pid: launch.payloadPid,
       stdin: child.stdin,

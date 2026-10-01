@@ -376,7 +376,7 @@ describe("local project routes", () => {
   })
 
   test("a project that runs only in a cloud workspace stays available while its sandbox is stopped, and its workspace is reachable only while the sandbox is ready", async () => {
-    const cloud = await ensureWorkspace({ kind: "cloud", driver: "daytona", directory: "/workspace", repo_url: "https://github.com/acme/sky.git", status: "stopped" })
+    const cloud = await ensureWorkspace({ kind: "cloud", driver: "modal", directory: "/workspace", repo_url: "https://github.com/acme/sky.git", status: "stopped" })
     const id = cloud?.project_id ?? ""
     const availability = async () => (((await (await app.request(`http://localhost/${id}`)).json()) as { project: { available: boolean } }).project.available)
     const reachable = async () => (await listProjects()).find((project) => project.id === id)?.workspaces[cloud?.id ?? ""]?.reachable
@@ -436,7 +436,7 @@ describe("local project routes", () => {
   test("a project with a cloud workspace is kept until that workspace is deleted", async () => {
     const directory = await gitRepository("cloudy-")
     const { project } = await (await app.request("http://localhost/", json({ name: "Cloudy", source: { kind: "directory", directory } }))).json() as { project: { id: string } }
-    const cloud = await ensureWorkspace({ kind: "cloud", driver: "daytona", project_id: project.id, directory: "/workspace", repo_url: "https://github.com/acme/cloudy.git" })
+    const cloud = await ensureWorkspace({ kind: "cloud", driver: "modal", project_id: project.id, directory: "/workspace", repo_url: "https://github.com/acme/cloudy.git" })
     expect(cloud?.project_id).toBe(project.id)
     const refused = await app.request(`http://localhost/${project.id}`, { method: "DELETE" })
     expect(refused.status).toBe(409)

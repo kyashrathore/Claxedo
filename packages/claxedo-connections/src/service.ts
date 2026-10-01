@@ -1,4 +1,5 @@
 import { createAttempts, type Attempts, type MaybePromise } from "./attempts.js"
+import { asRecord } from "@claxedo/helpers/guards"
 import type { IntegrationRegistry } from "./registry.js"
 import { ConnectionTokenError, createTokenService } from "./tokens.js"
 import {
@@ -62,10 +63,10 @@ function requirePersonalOwner(input: { owner?: string; scope?: ConnectionScope }
   }
 }
 
-// Callers that partition the team scope by an opaque key (e.g. a hosted
-// deployment's `org:{orgId}`) pass it as `teamOwner`; absent means the
-// owner-absent partition is the team — the self-host default, byte-identical.
-type PartitionInput = { owner?: string; scope?: ConnectionScope; teamOwner?: string }
+// Callers that partition the org scope by an opaque key (e.g. a hosted
+// deployment's `org:{orgId}`) pass it as `orgOwner`; absent means the
+// owner-absent partition is the org — the self-host default, byte-identical.
+type PartitionInput = { owner?: string; scope?: ConnectionScope; orgOwner?: string }
 
 export type ConnectResult =
   | { ok: true }
@@ -103,14 +104,14 @@ export function createConnectionsService(deps: {
   const attempts = deps.attempts ?? createAttempts({ now })
   const tokens = createTokenService({ registry: deps.registry, credentials: deps.credentials, now })
 
-  async function summarize(row: ConnectionRow, teamOwner?: string): Promise<ConnectionSummary> {
+  async function summarize(row: ConnectionRow, orgOwner?: string): Promise<ConnectionSummary> {
     const credential = await deps.credentials.get(connectionProviderId(row.id))
     const status: ConnectionSummary["status"] =
       credential === undefined ? "broken" : credential.status === "available" ? "connected" : "degraded"
     return {
       id: row.id,
       integrationId: row.integrationId,
-      scope: connectionScopeOf(row.owner, teamOwner),
+      scope: connectionScopeOf(row.owner, orgOwner),
       ...(row.accountLabel !== undefined ? { accountLabel: row.accountLabel } : {}),
       grantedCapabilities: row.grantedCapabilities,
       fields: row.fields,
@@ -122,15 +123,15 @@ export function createConnectionsService(deps: {
 
   async function rowsFor(input: PartitionInput = {}) {
     requirePersonalOwner(input)
-    // The team partition: the caller-resolved opaque key when present,
+    // The org partition: the caller-resolved opaque key when present,
     // otherwise the owner-absent partition (self-host default).
-    const teamRows = () =>
-      input.teamOwner !== undefined
-        ? deps.connections.list({ owner: input.teamOwner })
+    const orgRows = () =>
+      input.orgOwner !== undefined
+        ? deps.connections.list({ owner: input.orgOwner })
         : deps.connections.list({ owner: null })
-    if (input.scope === "team" || input.owner === undefined) return teamRows()
+    if (input.scope === "org" || input.owner === undefined) return orgRows()
     if (input.scope === "personal") return deps.connections.list({ owner: input.owner })
-    return [...(await teamRows()), ...(await deps.connections.list({ owner: input.owner }))]
+    return [...(await orgRows()), ...(await deps.connections.list({ owner: input.owner }))]
   }
 
   async function storeConnection(input: {
@@ -206,11 +207,11 @@ export function createConnectionsService(deps: {
     })
   }
 
-  function capabilityHandle(row: ConnectionRow, capability: IntegrationCapability, teamOwner?: string): CapabilityHandle {
+  function capabilityHandle(row: ConnectionRow, capability: IntegrationCapability, orgOwner?: string): CapabilityHandle {
     return {
       id: row.id,
       integrationId: row.integrationId,
-      scope: connectionScopeOf(row.owner, teamOwner),
+      scope: connectionScopeOf(row.owner, orgOwner),
       ...(row.accountLabel !== undefined ? { accountLabel: row.accountLabel } : {}),
       fields: row.fields,
       async getToken() {
@@ -261,7 +262,7 @@ export function createConnectionsService(deps: {
   // and an automated turn runs into an existing, owned session, so keying
   // resolution off session->owner alone would let that turn spend the
   // owner's personal token. Callers must
-  // therefore omit `owner` (falling to the team-only path below) whenever
+  // therefore omit `owner` (falling to the org-only path below) whenever
   // they cannot prove the turn was interactively started by that subject.
   // Fail-safe invariant: a propagation bug that drops/loses the owner
   // degrades to "personal connection unused", never to "personal token
@@ -276,13 +277,13 @@ export function createConnectionsService(deps: {
       if (!row.grantedCapabilities.includes(capability)) continue
       if (options.integration && row.integrationId !== options.integration) continue
       const current = selected.get(row.integrationId)
-      const personalOverTeam =
+      const personalOverOrg =
         current !== undefined &&
-        connectionScopeOf(row.owner, options.teamOwner) === "personal" &&
-        connectionScopeOf(current.owner, options.teamOwner) === "team"
-      if (!current || personalOverTeam) selected.set(row.integrationId, row)
+        connectionScopeOf(row.owner, options.orgOwner) === "personal" &&
+        connectionScopeOf(current.owner, options.orgOwner) === "org"
+      if (!current || personalOverOrg) selected.set(row.integrationId, row)
     }
-    return [...selected.values()].map((row) => capabilityHandle(row, capability, options.teamOwner))
+    return [...selected.values()].map((row) => capabilityHandle(row, capability, options.orgOwner))
   }
 
   // In-flight device polls keyed by attempt state. Polling is what advances
@@ -334,7 +335,7 @@ export function createConnectionsService(deps: {
     },
 
     async list(options: PartitionInput = {}): Promise<ConnectionSummary[]> {
-      return Promise.all((await rowsFor(options)).map((row) => summarize(row, options.teamOwner)))
+      return Promise.all((await rowsFor(options)).map((row) => summarize(row, options.orgOwner)))
     },
 
     getById(id: string) {
@@ -371,7 +372,7 @@ export function createConnectionsService(deps: {
     async connectOAuth(input: {
       integrationId: string
       owner?: string
-      teamOwner?: string
+      orgOwner?: string
       attemptRouting?: Record<string, string>
       confirmReplace?: boolean
     }): Promise<
@@ -386,7 +387,7 @@ export function createConnectionsService(deps: {
       }
       const existing = await deps.connections.get(input.integrationId, input.owner)
       if (existing && input.confirmReplace !== true) return { ok: false, code: "connection_exists" }
-      const scope = connectionScopeOf(input.owner, input.teamOwner)
+      const scope = connectionScopeOf(input.owner, input.orgOwner)
 
       // Device grants win where an integration offers both: they need nothing
       // to be able to reach a callback URL, which is the deployment the
@@ -494,7 +495,7 @@ export function createConnectionsService(deps: {
     // Cascade reclaim: delete every personal connection owned by `owner`
     // (and its backing credential). The host calls this when a subject is
     // removed so orphaned personal rows — which owner-mismatch 404s make
-    // otherwise unreachable — do not accumulate. Team rows (owner absent)
+    // otherwise unreachable — do not accumulate. Org rows (owner absent)
     // are never matched by a string owner filter, so this cannot touch
     // shared connections. Returns the number of connections removed.
     // Note (v1 accepted-risk): the third-party token is NOT revoked at the
@@ -505,7 +506,7 @@ export function createConnectionsService(deps: {
       let removed = 0
       for (const row of rows) {
         // Defensive: list({owner}) already filters to this owner; never act
-        // on a team or foreign-owner row even if a store over-returns.
+        // on an org or foreign-owner row even if a store over-returns.
         if (row.owner !== owner) continue
         await deps.credentials.deleteByProvider(connectionProviderId(row.id))
         await deps.credentials.deleteByProvider(orphanedWebhookSigningProviderId(row.id))
@@ -555,7 +556,7 @@ export function createConnectionsService(deps: {
           repositories: await codeHost.listRepositories(token.response.fields ?? row.fields, token.response.token),
         }
       } catch (error) {
-        const code = error instanceof Error && error.message === "github_repositories_unauthorized"
+        const code = asRecord(error)?.code === "repository_provider_unauthorized"
           ? "repository_provider_unauthorized"
           : "repository_provider_unavailable"
         return { ok: false, status: 502, code }

@@ -15,8 +15,6 @@ import {
   runtimeCredentialWorkspaceId,
   type AuthorizedPtyConnection,
   type EmbeddedRelayHostIdentity,
-  type ProcessObserver,
-  type ProcessOwnerHandle,
   type RuntimeCredentialClaims,
   type WorkspaceEventFramesTap,
   type WorkspaceRuntimeServerOptions,
@@ -71,7 +69,6 @@ type EmbeddedRuntime = ReturnType<typeof createWorkspaceRuntimeApp> & {
   /** A configure asked for after the running apply read its snapshot, which that apply therefore cannot answer. */
   applyRequested?: boolean
   reconcilingSessionMetadata?: Promise<void>
-  diagnosticsOwner?: ProcessOwnerHandle
   /** When this runtime's earliest placeholder must be replaced; absent when it holds none. */
   renewAt?: number
   renewFailures?: number
@@ -287,7 +284,6 @@ let configuredConnectionSecretResolver: ConnectionSecretResolver = (request) => 
  * contains no path to one.
  */
 let configuredRouteContributions: readonly WorkspaceRuntimeRouteContribution[] = []
-let configuredProcessObserver: ProcessObserver | undefined
 let configuredSessionAccessPolicy: WorkspaceRuntimeServerOptions["sessionAccessPolicy"] | undefined
 let configuredLoopbackSessionAuthority: HostSessionAuthority | undefined
 let configuredOnSessionMetaEvent: ((event: AgentEventEnvelope) => void) | undefined
@@ -358,7 +354,6 @@ export function configureEmbeddedWorkspaceRuntime(input: {
   connectionProviders?: readonly CustomHarnessProvider<unknown>[]
   resolveConnectionSecrets?: ConnectionSecretResolver
   routeContributions?: readonly WorkspaceRuntimeRouteContribution[]
-  processObserver?: ProcessObserver
   /** The policy every runtime is mounted with; absent, the unbound `managedWorkspaceSessionAccessPolicy()`, whose marker is `local`. */
   sessionAccessPolicy?: WorkspaceRuntimeServerOptions["sessionAccessPolicy"]
   /** Declared where the policy's loopback arm is the local owner's; otherwise the marker answers. */
@@ -375,7 +370,6 @@ export function configureEmbeddedWorkspaceRuntime(input: {
   configuredFirstPartyMcpLaunch = input.firstPartyMcpLaunch
   configuredConnectionSecretResolver = input.resolveConnectionSecrets ?? configuredConnectionSecretResolver
   configuredRouteContributions = input.routeContributions ?? []
-  configuredProcessObserver = input.processObserver
   configuredSessionAccessPolicy = input.sessionAccessPolicy
   configuredLoopbackSessionAuthority = input.loopbackSessionAuthority
   configuredOnSessionMetaEvent = input.onSessionMetaEvent
@@ -407,7 +401,6 @@ function options(
     resolveConnectionSecrets: configuredConnectionSecretResolver,
     onActivityChange: activityChanged,
     ...(configuredRouteContributions.length ? { routeContributions: configuredRouteContributions } : {}),
-    ...(configuredProcessObserver ? { processObserver: configuredProcessObserver } : {}),
     ...(configuredSessionAccessPolicy ? { sessionAccessPolicy: configuredSessionAccessPolicy } : {}),
     ...(configuredOnTurnOutcome ? { onTurnOutcome: configuredOnTurnOutcome } : {}),
     ...(configuredSessionIdWorkspace ? { sessionIdWorkspace: configuredSessionIdWorkspace } : {}),
@@ -507,9 +500,6 @@ async function runEmbeddedRetirement(record: EmbeddedRetirement): Promise<Embedd
     // Config resolution and metadata projection begin outside the host's
     // request scope. Their consumers must finish before shared DB cleanup.
     await Promise.allSettled([runtime.applying, runtime.reconcilingSessionMetadata])
-    // Only now: while the retirement is unresolved this runtime is still a
-    // process owner, and the diagnostics registry should say so.
-    runtime.diagnosticsOwner?.exit({ reason: "disposed" })
     retiring.delete(workspaceId)
     activityChanged()
     return { workspaceId, state: "retired", attempt: record.attempt }
@@ -635,21 +625,6 @@ export async function ensureEmbeddedWorkspaceRuntime(
     workspace: ws,
     generation: created.host.ownerGeneration,
     observed: { workspace: ws, frames: created.host.frames },
-    ...(configuredProcessObserver
-      ? {
-          diagnosticsOwner: configuredProcessObserver.register({
-            ownerId: `runtime:${ws.id}`,
-            ownerGeneration: crypto.randomUUID(),
-            launchId: crypto.randomUUID(),
-            kind: "runtime",
-            role: "runtime",
-            label: ws.workspace_name || "Workspace runtime",
-            parentOwnerId: "owner-claxedo-server",
-            workspaceId: ws.id,
-            directory: ws.directory,
-          }),
-        }
-      : {}),
   }
   activeHost = runtime.host
   hosts.set(ws.id, runtime)
@@ -657,7 +632,6 @@ export async function ensureEmbeddedWorkspaceRuntime(
   announce(runtime, "mounted")
   if (config === "sync") await configure(runtime)
   assertCurrent()
-  runtime.diagnosticsOwner?.update({ lifecycle: "ready" })
   await reconcileSessionMetadata(runtime)
   assertCurrent()
   if (hosts.get(ws.id) !== runtime) return ensureEmbeddedWorkspaceRuntime(ws, input)

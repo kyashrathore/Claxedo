@@ -2,9 +2,17 @@ import { describe, expect, test } from "bun:test"
 import { serializeRecoveryOutcome, type RecoveryOperation, type RecoveryOutcome, type RecoveryRequest } from "@claxedo/agent-runtime-contract"
 import type { AgentTurnCoveragePage } from "@claxedo/agent-runtime-contract"
 import { createWorkspaceRuntimeClient } from "./index"
-import { WorkspaceRuntimeClientError, WorkspaceRuntimeClientPayloadError, WorkspaceRuntimeClientTransportError } from "./request"
+import { workspaceRuntimeClientErrorFrom, WorkspaceRuntimeClientError, WorkspaceRuntimeClientPayloadError, WorkspaceRuntimeClientTransportError } from "./request"
 
 describe("workspace runtime request path", () => {
+  test("preserves server retryability through the canonical envelope", () => {
+    const error = workspaceRuntimeClientErrorFrom("list", 503, JSON.stringify({ error: { code: "busy", message: "Busy", retryable: true } }))
+    expect(error).toMatchObject({ code: "busy", status: 503, retryable: true })
+  })
+  test("does not decode a top-level error as an authority refusal", () => {
+    const error = workspaceRuntimeClientErrorFrom("list", 403, JSON.stringify({ code: "denied", message: "Denied" }))
+    expect(error.code).toBe("http_403")
+  })
   test("keeps a base path, scopes by directory and workspace, and merges headers in caller order", async () => {
     const calls: Request[] = []
     const client = createWorkspaceRuntimeClient({

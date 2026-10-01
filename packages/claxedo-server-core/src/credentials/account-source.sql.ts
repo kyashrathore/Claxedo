@@ -1,7 +1,7 @@
 import { integer, primaryKey, sqliteTable, text } from "drizzle-orm/sqlite-core"
 import { ACCOUNT_SOURCES } from "@claxedo/account-contract/vocabulary"
 
-/** Which account one person's sessions spend for one provider: their own, or the org's team account. */
+/** Which account one person's sessions spend for one provider: their own, or the org's. */
 export const ClaxedoProviderAccountSourceTable = sqliteTable(
   "claxedo_provider_account_source",
   {

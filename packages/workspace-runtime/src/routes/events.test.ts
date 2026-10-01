@@ -140,7 +140,7 @@ describe("wr/events — one stream per workspace runtime", () => {
     const response = await app.request("http://localhost/api/wr/events", { signal: controller.signal })
     hub.publishGlobal(part("ses-1", "prt-1", { status: "running" }))
     bus.publish({ type: "pty.exited", id: "pty-1", sessionId: "ses-1", exitCode: 0 })
-    hub.publishRuntime({ directory: DIRECTORY, sessionId: "ses-1", payload: { type: "subagent-updated", subagentKey: "child", revision: 1, status: "running" } })
+    hub.publishGlobal({ directory: DIRECTORY, payload: { type: "subagent.updated", properties: { sessionID: "ses-1", update: { subagentKey: "child", revision: 1, status: "running" } } } })
     hub.publishRuntime({ directory: DIRECTORY, sessionId: "ses-1", payload: { type: "text-delta", delta: "raw runtime frames stay off the wire" } })
     const text = await readUntil(response, "subagent.updated")
     controller.abort()
@@ -155,7 +155,7 @@ describe("wr/events — one stream per workspace runtime", () => {
     expect(pty.directory).toBe(DIRECTORY)
   })
 
-  test("the frame tap and the runtime's own stream are fed by one subscription: each of the three sources' frames reaches both once, verbatim", async () => {
+  test("the frame tap and the runtime's own stream are fed by one subscription: presentation and control frames reach both once, verbatim", async () => {
     const { app, hub, bus, ptys, frames } = harness({})
     ptys.set("pty-tap", DIRECTORY)
     const tapped: WorkspaceEventStreamFrame[] = []
@@ -163,10 +163,8 @@ describe("wr/events — one stream per workspace runtime", () => {
 
     const controller = new AbortController()
     const response = await app.request("http://localhost/api/wr/events", { signal: controller.signal })
-    // One publish per source the handler subscribes: the compat hub, the
-    // runtime hub whose envelopes it projects, and the process-global bus.
     hub.publishGlobal(part("ses-1", "prt-tap", { status: "completed" }))
-    hub.publishRuntime({ directory: DIRECTORY, sessionId: "ses-1", payload: { type: "subagent-updated", subagentKey: "child", revision: 1, status: "running" } })
+    hub.publishGlobal({ directory: DIRECTORY, payload: { type: "subagent.updated", properties: { sessionID: "ses-1", update: { subagentKey: "child", revision: 1, status: "running" } } } })
     bus.publish({ type: "pty.exited", id: "pty-tap", sessionId: "ses-1", exitCode: 0 })
     const text = await readUntil(response, "pty.exited")
     controller.abort()
@@ -190,7 +188,6 @@ describe("wr/events — one stream per workspace runtime", () => {
     ptys.set("pty-elsewhere", "/elsewhere")
     const controller = new AbortController()
     const response = await app.request("http://localhost/api/wr/events", { signal: controller.signal })
-    bus.publish({ type: "process.started", directory: "/elsewhere", configId: "cfg-elsewhere", ptyId: "pty-elsewhere" })
     bus.publish({ type: "pty.created", info: { id: "pty-new-elsewhere", title: "t", command: "sh", args: [], cwd: "/elsewhere", status: "running", pid: 1 } })
     bus.publish({ type: "pty.exited", id: "pty-elsewhere", exitCode: 0 })
     bus.publish({ type: "session.lifecycle", phase: "created", directory: "/elsewhere", sessionID: "ses-elsewhere", ts: 1 })
@@ -200,7 +197,6 @@ describe("wr/events — one stream per workspace runtime", () => {
     bus.publish({ type: "agent.lifecycle", tabId: "tab", terminalId: "pty-here", eventType: "Idle" })
     ptys.delete("pty-here")
     bus.publish({ type: "pty.deleted", id: "pty-here" })
-    bus.publish({ type: "process.started", directory: DIRECTORY, configId: "cfg-here", ptyId: "pty-new-here" })
     // A per-session worktree lives under the storage root, not the workspace
     // directory; it is this runtime's because the workspace registered it.
     registerWorkspaceDirectory({ workspaceId: WORKSPACE_ID, sessionId: "ses-wt", directory: "/storage/worktrees/ses-wt" })
@@ -215,7 +211,7 @@ describe("wr/events — one stream per workspace runtime", () => {
     const frames = dataFrames(text)
     const payloads = frames.map((f) => f.payload).filter(Boolean)
     expect(payloads.map((p) => p.type)).toEqual([
-      "pty.created", "pty.exited", "agent.lifecycle", "pty.deleted", "process.started",
+      "pty.created", "pty.exited", "agent.lifecycle", "pty.deleted",
       "session.lifecycle", "pty.created", "agent.lifecycle", "message.part.updated",
     ])
     expect(frames.find((f) => f.payload?.type === "session.lifecycle")?.directory).toBe("/storage/worktrees/ses-wt")
@@ -269,7 +265,7 @@ describe("wr/events — one stream per workspace runtime", () => {
       providerSessionId: "provider-private-id", transcriptPath: "/transcripts/private.jsonl",
       prompt: "private-prompt-text", eventType: "Error",
     })
-    bus.publish({ type: "process.started", directory: DIRECTORY, configId: "lifecycle-sentinel", ptyId: "p" })
+    bus.publish({ type: "pty.created", info: { id: "lifecycle-sentinel", title: "t", command: "sh", args: [], cwd: DIRECTORY, status: "running", pid: 9 } })
     const text = await readUntil(response, "lifecycle-sentinel")
     controller.abort()
 
@@ -353,13 +349,13 @@ describe("wr/events — one stream per workspace runtime", () => {
     const response = await app.request("http://localhost/api/wr/events", { signal: controller.signal })
     expect(response.status).toBe(200)
     hub.publishGlobal(part("private", "prt-private", { status: "running" }))
-    hub.publishRuntime({ directory: DIRECTORY, sessionId: "private", payload: { type: "subagent-updated", subagentKey: "private-child", revision: 1, status: "running" } })
-    hub.publishRuntime({ directory: DIRECTORY, sessionId: "private", payload: { type: "goal-updated", sessionId: "private", goal: { id: "g", status: "active", text: "private-goal" } as never } })
+    hub.publishGlobal({ directory: DIRECTORY, payload: { type: "subagent.updated", properties: { sessionID: "private", update: { subagentKey: "private-child", revision: 1, status: "running" } } } })
+    hub.publishGlobal({ directory: DIRECTORY, payload: { type: "goal.updated", properties: { sessionID: "private", goal: { id: "g", status: "active", text: "private-goal" } as never } } })
     ptys.set("pty-private", DIRECTORY)
     ptys.set("pty-workspace", DIRECTORY)
     bus.publish({ type: "pty.exited", id: "pty-private", sessionId: "private", exitCode: 0, tail: "private-terminal-bytes" })
     bus.publish({ type: "pty.exited", id: "pty-workspace", exitCode: 0 })
-    hub.publishRuntime({ directory: DIRECTORY, sessionId: "shared", payload: { type: "subagent-updated", subagentKey: "shared-child", revision: 1, status: "running" } })
+    hub.publishGlobal({ directory: DIRECTORY, payload: { type: "subagent.updated", properties: { sessionID: "shared", update: { subagentKey: "shared-child", revision: 1, status: "running" } } } })
     hub.publishGlobal(part("shared", "prt-shared", { status: "running" }))
     const text = await readUntil(response, "prt-shared")
     controller.abort()
@@ -403,7 +399,7 @@ describe("wr/events — one stream per workspace runtime", () => {
     ptys.set("pty-shared", DIRECTORY)
     bus.publish({ type: "pty.exited", id: "pty-x", exitCode: 0 })
     bus.publish({ type: "pty.exited", id: "pty-shared", sessionId: "shared", exitCode: 0 })
-    hub.publishRuntime({ directory: DIRECTORY, sessionId: "shared", payload: { type: "subagent-updated", subagentKey: "shared-child", revision: 1, status: "running" } })
+    hub.publishGlobal({ directory: DIRECTORY, payload: { type: "subagent.updated", properties: { sessionID: "shared", update: { subagentKey: "shared-child", revision: 1, status: "running" } } } })
     hub.publishGlobal(part("shared", "prt-shared", { status: "running" }))
     const text = await readUntil(response, "prt-shared")
     expect(text).toContain("prt-child")
@@ -438,7 +434,7 @@ describe("wr/events — one stream per workspace runtime", () => {
     const cursor = frameId(await readUntil(response, "prt-1"), "prt-1")
     first.abort()
     // Frames the session arm never carries, numbered by the workspace ring only.
-    bus.publish({ type: "process.status", directory: DIRECTORY, configId: "svc", status: "running" })
+    bus.publish({ type: "pty.created", info: { id: "svc", title: "t", command: "sh", args: [], cwd: DIRECTORY, status: "running", pid: 9 } })
     hub.publishGlobal(part("other", "prt-other", { status: "running" }))
     hub.publishGlobal(part("shared", "prt-2", { status: "completed" }))
     const second = new AbortController()
@@ -739,7 +735,7 @@ test("pending startup frames use creator reservation authority without a session
     hub.publishGlobal(withDir(DIRECTORY, questionAsked({ id: "pending-question", sessionID: binding.sessionId, questions: [] })))
     hub.publishGlobal(part(binding.sessionId, "private-message", { status: "running" }))
     bus.publish({ type: "session.lifecycle", phase: "creating", start: { ...binding, operationId: "forged-operation" }, directory: DIRECTORY, workspaceId: WORKSPACE_ID, actorId: "creator", message: "forged-start", ts: 1 })
-    bus.publish({ type: "process.started", directory: DIRECTORY, configId: "sentinel", ptyId: "p" })
+    bus.publish({ type: "pty.created", info: { id: "sentinel", title: "t", command: "sh", args: [], cwd: DIRECTORY, status: "running", pid: 9 } })
     const text = await readUntil(response, "sentinel")
     expect(text.includes("pending-question")).toBe(actorId === "creator")
     expect(text.includes('"phase":"creating"')).toBe(actorId === "creator")
@@ -748,7 +744,7 @@ test("pending startup frames use creator reservation authority without a session
     if (actorId === "creator") {
       revoked = true
       hub.publishGlobal(withDir(DIRECTORY, questionAsked({ id: "revoked-question", sessionID: binding.sessionId, questions: [] })))
-      bus.publish({ type: "process.started", directory: DIRECTORY, configId: "revoked-sentinel", ptyId: "p" })
+      bus.publish({ type: "pty.created", info: { id: "revoked-sentinel", title: "t", command: "sh", args: [], cwd: DIRECTORY, status: "running", pid: 9 } })
       expect(await readUntil(response, "revoked-sentinel")).not.toContain("revoked-question")
       revoked = false
       start = { ...start, status: "failed", error: "Agent refused startup" }

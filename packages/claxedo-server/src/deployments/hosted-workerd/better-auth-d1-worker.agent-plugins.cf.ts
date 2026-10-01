@@ -14,13 +14,17 @@ import { createTasksRootCapability, createTasksRootGrant } from "../../tasks/roo
 import { createOwnerGrantMinter, createOwnerRootCapability } from "../../session/owner-grant"
 import { createD1SandboxPassRegister } from "../../platform/auth/d1-sandbox-pass-register"
 import { hostedControlPlaneOrigin } from "../../authority/adapters/worker/control-plane-origin"
-import { d1CrossMachineWrites } from "../../authority/adapters/d1/agent-settings"
 import type { WorkspaceRuntimeContext, WorkspaceRuntimePreparation } from "../../workspace/route-support"
+import { HostedWorkerCompositionError } from "../../authority/composition-error"
+import { pluginBackendRouteContribution } from "../../plugin-backends/routes"
+import { PluginSupervisor, type PluginSupervisorNamespace } from "../../plugin-backends/supervisor.cf"
+import { PluginOutbound, PluginPlatform } from "../../plugin-backends/entrypoints.cf"
 
-export { LiveSyncRoom }
+export { LiveSyncRoom, PluginOutbound, PluginPlatform, PluginSupervisor }
 
 export type BetterAuthD1AgentPluginsWorkerEnv = BetterAuthD1WorkerEnv & {
   CLAXEDO_AGENT_PLUGINS?: AgentPluginR2Bucket
+  PLUGIN_SUPERVISOR?: PluginSupervisorNamespace
 }
 
 /** The string-valued half of a Worker env, for the composers that read configuration rather than bindings. */
@@ -47,20 +51,22 @@ export function composeBetterAuthD1AgentPlugins(
     ...betterAuthD1CompositionInput(env),
     ...extra,
   })
-  // One signing key decides both halves: the deployment that mints a root's
-  // Tasks grant is exactly the one whose routes will verify it.
   const signingEnv = stringEnvironment(env)
-  // Every pass a root is launched with is written here, and every verifier
-  // asks here first: the switch and the workspace's deletion revoke by
-  // workspace, and a renewal is refused for a revoked grant like any request.
   const passes = createD1SandboxPassRegister({ database: env.CONTROL_PLANE_DB })
-  // One input for the launch grant and the renewed one, so `start` follows
-  // the account's setting at both.
-  const tasksRoot = { signingEnv, passes, crossMachineWrites: d1CrossMachineWrites(env.CONTROL_PLANE_DB) }
+  const tasksRoot = { signingEnv, passes }
   const authority = requireAuthority(base.plane.services)
   if (!authority.resolveWorkspaceOwner) {
     throw new Error("Enabled Agent Plugins build requires an authority that resolves workspace owners")
   }
+  if (!env.PLUGIN_SUPERVISOR) {
+    throw new HostedWorkerCompositionError("hosted_dependency_missing", "The Agent Plugins Worker requires the PLUGIN_SUPERVISOR binding")
+  }
+  const pluginBackends = pluginBackendRouteContribution({
+    authentication: base.options.authentication,
+    authority,
+    supervisors: env.PLUGIN_SUPERVISOR,
+    services: base.plane.services,
+  })
   const feature = createHostedAgentPluginsComposition({
     env,
     plane: base.plane,
@@ -129,7 +135,7 @@ export function composeBetterAuthD1AgentPlugins(
     options: {
       ...base.options,
       sandboxPasses: passes,
-      routeContributions: [...feature.routeContributions, ...tasks],
+      routeContributions: [...feature.routeContributions, ...tasks, pluginBackends],
       integrationRoutes: feature.integrationRoutes,
       productWorkspace: {
         ...base.options.productWorkspace,

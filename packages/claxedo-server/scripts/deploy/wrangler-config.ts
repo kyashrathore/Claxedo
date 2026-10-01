@@ -15,6 +15,7 @@ export type WorkerWranglerConfigInput = Readonly<{
   /** `migrations_dir` for CONTROL_PLANE_DB relative to `configDirectory`, as `stageWorkerControlPlaneMigrations` answers it. */
   controlPlaneMigrationsDir: string
   requestLimiterNamespaceId: string
+  documentsBucket: string
   agentPluginsBucket?: string
   variables: Readonly<Record<string, string>>
 }>
@@ -49,8 +50,28 @@ export function renderWorkerWranglerConfig(input: WorkerWranglerConfigInput) {
 [[r2_buckets]]
 binding = "CLAXEDO_AGENT_PLUGINS"
 bucket_name = ${quote(input.agentPluginsBucket)}
+
+[[worker_loaders]]
+binding = "PLUGIN_LOADER"
 `
     : ""
+  // Durable Object migrations are append-only per Worker name: once a Worker
+  // has applied v2 it cannot deploy the base artifact, which lacks the class,
+  // without a `deleted_classes` migration written for that purpose.
+  const pluginSupervisor = input.artifact.agentPlugins
+    ? {
+        binding: `
+[[durable_objects.bindings]]
+name = "PLUGIN_SUPERVISOR"
+class_name = "PluginSupervisor"
+`,
+        migration: `
+[[migrations]]
+tag = "v2"
+new_sqlite_classes = ["PluginSupervisor"]
+`,
+      }
+    : { binding: "", migration: "" }
   return `name = ${quote(input.workerName)}
 main = ${quote(fromConfig(input.configDirectory, input.artifact.entrypointFromPackageRoot))}
 ${HOSTED_WORKER_BUNDLE_CONTRACT}
@@ -84,6 +105,13 @@ database_name = ${quote(input.controlPlaneDatabase.name)}
 database_id = ${quote(input.controlPlaneDatabase.id)}
 migrations_dir = ${quote(input.controlPlaneMigrationsDir)}
 
+[[r2_buckets]]
+binding = "CLAXEDO_DOCUMENTS"
+bucket_name = ${quote(input.documentsBucket)}
+
+[[send_email]]
+name = "EMAIL"
+
 [[ratelimits]]
 name = "CLAXEDO_REQUEST_LIMITER"
 namespace_id = ${quote(positiveNamespaceId(input.requestLimiterNamespaceId))}
@@ -94,11 +122,11 @@ period = 60
 [[durable_objects.bindings]]
 name = "LIVE_SYNC_ROOM"
 class_name = "LiveSyncRoom"
-
+${pluginSupervisor.binding}
 [[migrations]]
 tag = "v1"
 new_sqlite_classes = ["LiveSyncRoom"]
-${agentPluginsBucket}`
+${pluginSupervisor.migration}${agentPluginsBucket}`
 }
 
 /** The static-assets Worker that serves the browser app on its own custom domain. */

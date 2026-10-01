@@ -72,12 +72,3 @@ export function codeOf(error: unknown, fallback = "internal_error") {
 export function isRetryable(error: unknown) {
   return jsonRecord(error)?.retryable === true
 }
-
-/**
- * The structured body every API error response uses. Flattening this to a
- * scalar `{ error: "..." }` is what `tests/governance/codebase-shape.test.ts` forbids.
- */
-export function errorBody(error: unknown, fallbackMessage = "Internal error") {
-  const message = error instanceof Error && error.message ? error.message : fallbackMessage
-  return { error: { code: codeOf(error), message } }
-}

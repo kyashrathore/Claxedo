@@ -1,6 +1,6 @@
 /**
  * Hosted provider credentials over D1 (`hosted_provider_credentials` and
- * `hosted_provider_account_sources`, migration 0044).
+ * `hosted_provider_account_sources`).
  *
  * `hostedOrgCredentials(orgId, { database, env })` is the per-org
  * `ControlPlaneCredentials`; it exists only for a request whose org
@@ -29,6 +29,7 @@
  */
 
 import type { ControlPlaneCredentials } from "../../authority/services"
+import { PublicApiError } from "@claxedo/server-core/platform/errors/public-api-error"
 import {
   CREDENTIAL_HEALTHS,
   CREDENTIAL_KINDS,
@@ -198,6 +199,7 @@ export function hostedOrgCredentials(
            secret_envelope = excluded.secret_envelope,
            revision = hosted_provider_credentials.revision + 1,
            updated_at = excluded.updated_at
+         on conflict (org_id, ifnull(owner, ''), provider_id) do nothing
          returning ${METADATA_COLUMNS}`,
       )
       .bind(
@@ -215,8 +217,7 @@ export function hostedOrgCredentials(
         timestamp,
       )
       .first()
-    if (!row) throw new Error(`hosted credential upsert for "${input.provider_id}" returned no row`)
-    return credentialMetadataRow(row)
+    return row ? credentialMetadataRow(row) : undefined
   }
 
   const changed = async (statement: HostedCredentialStatement) => ((await statement.run()).meta.changes ?? 0) > 0
@@ -245,17 +246,13 @@ export function hostedOrgCredentials(
     resolveCredentialSecretById: (id) => openSecret(id, ""),
     putCredential: async (input: CredentialWrite) => {
       const found = await existingId(input.owner, input.provider_id)
-      try {
-        return await upsert(input, found ?? crypto.randomUUID())
-      } catch (error) {
-        // Two first writes for one (owner, provider) race to insert under two
-        // new ids; the loser is refused by the owner-provider index and joins
-        // the winner's row.
-        if (found || !isUniqueViolation(error)) throw error
-        const winner = await existingId(input.owner, input.provider_id)
-        if (!winner) throw error
-        return await upsert(input, winner)
-      }
+      const inserted = await upsert(input, found ?? crypto.randomUUID())
+      if (inserted) return inserted
+      const winner = await existingId(input.owner, input.provider_id)
+      if (!winner) throw new PublicApiError("resource_conflict", "Credential owner changed concurrently")
+      const updated = await upsert(input, winner)
+      if (!updated) throw new PublicApiError("resource_conflict", "Credential owner changed concurrently")
+      return updated
     },
     deleteCredential: (id) =>
       changed(database.prepare("delete from hosted_provider_credentials where org_id = ? and id = ?").bind(org, id)),
@@ -347,10 +344,6 @@ export function hostedOrgCredentials(
       return Object.fromEntries(rows.results.map((row) => [requiredTextColumn(row, "provider_id"), enumColumn(row, "source", ACCOUNT_SOURCES)]))
     },
   }
-}
-
-function isUniqueViolation(error: unknown): boolean {
-  return error instanceof Error && error.message.includes("UNIQUE constraint failed")
 }
 
 /**

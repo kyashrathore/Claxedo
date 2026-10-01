@@ -22,13 +22,10 @@
 import type { AgentEventEnvelope } from "@claxedo/agent-runtime-contract"
 import { serve } from "@hono/node-server"
 import { Hono } from "hono"
-import os from "node:os"
-import path from "node:path"
 import type { Duplex } from "node:stream"
 import { ClaxedoDB } from "@claxedo/server-core/platform/db/index"
 import { controlPlaneAuthContext } from "@claxedo/server-core/platform/auth/auth"
 import { isLoopbackLocalRequest } from "@claxedo/server-core/platform/http/peer-address"
-import { localHistoryClassifier } from "@claxedo/server-core/usage/local-history-classifier"
 import { createTurnMeter } from "@claxedo/server-core/usage/turn-meter"
 import { meteringHarnessId } from "@claxedo/server-core/session/harness/index"
 import { dataDir } from "@claxedo/server-core/platform/runtime/lib/paths"
@@ -53,7 +50,6 @@ import { localBuiltinToolGroupsReader } from "../agent-plugins/builtin-groups"
 import { createClaxedoMcpClient } from "@claxedo/mcp/client"
 import { projectLocalSessionMetaFromEvent, sessionMetaProjectionTap } from "../session/session-meta-tap"
 import { startSessionRowsPublisher } from "../session/publish/start-session-rows-publisher"
-import { dropCopiedHarnessLogins } from "../credentials/operations/drop-copied-harness-logins"
 import { createLocalCredentialBroker } from "../credentials/broker"
 import { hostCredentialProjectAuth, localMachineOwnerUserId } from "../workspace/host-provider-config"
 import { requestOrg } from "../credentials/routes/credential"
@@ -61,9 +57,7 @@ import { createUsageQuotaReader } from "@claxedo/server-core/usage/quota"
 import { tokenTrackerPricing } from "@claxedo/server-core/usage/adapters/token-tracker-pricing"
 import { DEFAULT_CLAXEDO_SERVER_PORT } from "../deployments/local/port"
 import { createSqliteUsageLedger } from "@claxedo/server-core/usage/adapters/sqlite-usage-ledger"
-import { createSqliteUsageSourceCoverageStore } from "@claxedo/server-core/usage/adapters/sqlite-usage-provenance"
 import { createSqliteTurnMeterStateStore } from "@claxedo/server-core/usage/adapters/sqlite-turn-meter-state"
-import { scanTokenTrackerLocalHistory } from "../usage/adapters/token-tracker-local-history"
 import { readMachineAgentUsage } from "../usage/adapters/token-tracker-usage-limits"
 import { localUsageHostId } from "../usage/host-id"
 import { drainUsageEvents } from "../usage/usage-event-drain"
@@ -77,8 +71,6 @@ export type StartLocalServerOptions = Omit<LocalAppOptions, "onError" | "service
   port?: number
   hostname?: string
   onError?: LocalAppOptions["onError"]
-  /** Desktop diagnostics observer for spawned harness processes. */
-  processObserver?: Parameters<typeof configureEmbeddedWorkspaceRuntime>[0]["processObserver"]
   /** The Agent Plugins module's contribution to every runtime snapshot. */
   pluginRuntime?: NonNullable<Parameters<typeof configureAgentConfig>[0]>["pluginRuntime"]
 }
@@ -185,7 +177,6 @@ function startOwned(options: StartLocalServerOptions, release: () => void): Loca
     sessionAccessPolicy: localHostSessionAccessPolicy,
     loopbackSessionAuthority: "local",
     firstPartyMcpLaunch: { baseUrl: firstPartyMcpBaseUrl, enabledToolGroups: builtinToolGroups },
-    ...(options.processObserver ? { processObserver: options.processObserver } : {}),
     // No route contributions: hosted capabilities contribute routes, and their
     // absence from an unsigned desktop is this line rather than a runtime flag.
     routeContributions: [],
@@ -224,13 +215,7 @@ function startOwned(options: StartLocalServerOptions, release: () => void): Loca
   // repair checks and statement preparation.
   ClaxedoDB.raw()
 
-  dropCopiedHarnessLogins().catch((error: unknown) => {
-    log.warn("Failed to forget copied harness logins", { error: String(error) })
-  })
-
   const usageRevisionStore = createSqliteUsageLedger()
-  const usageSourceCoverage = createSqliteUsageSourceCoverageStore()
-  const usageSourceCoverageReady = usageSourceCoverage.ensure(["claude", "codex", "cursor", "opencode", "pi"])
   const turnMeter = createTurnMeter({
     writer: usageRevisionStore,
     reader: usageRevisionStore,
@@ -304,22 +289,11 @@ function startOwned(options: StartLocalServerOptions, release: () => void): Loca
         : undefined
     },
     // This server has exactly one operator: whoever is on the machine's own
-    // loopback. Signed or unsigned, machine history, stored quota and unowned
-    // facts answer to that caller alone.
+    // loopback. Signed or unsigned, stored quota and unowned facts answer to
+    // that caller alone.
     machineOperator: (request: Request) => isLoopbackLocalRequest(request),
     quota: async ({ request, refresh }: { request: Request; refresh: boolean }) =>
       await readQuota({ org: await requestOrg(request, authOptions), refresh }),
-    history: async ({ since, until, refresh }: { since: number; until: number; refresh: boolean }) => {
-      await usageSourceCoverageReady
-      return await scanTokenTrackerLocalHistory({
-        sourceHome: os.homedir(),
-        stateDir: path.join(dataDir(), "usage-scanner"),
-        since,
-        until,
-        refresh,
-        classify: localHistoryClassifier(await usageRevisionStore.localTurnSpans(), await usageSourceCoverage.starts()),
-      })
-    },
     pricing: tokenTrackerPricing("refreshed"),
     telemetry: services.telemetry,
   }

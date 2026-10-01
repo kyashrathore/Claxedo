@@ -3,12 +3,13 @@ import { oauthProviderAuthServerMetadata } from "@better-auth/oauth-provider"
 import type { D1Database } from "@cloudflare/workers-types"
 import { Hono } from "hono"
 import type { ControlPlaneAuthAdapter } from "@claxedo/server-core/platform/auth/auth"
-import type { AuthAdapterDescriptor } from "@claxedo/server-core/platform/auth/authentication"
+import type { AuthAdapterDescriptor } from "@claxedo/account-contract/auth"
 import type { AuthIdentity } from "@claxedo/server-core/platform/auth/authentication"
 import { browserAuthHttpSecurity } from "@claxedo/server-core/platform/http/browser-auth-security"
 
+import type { D1AccessContext } from "../d1/access-context"
 import { createD1CoreAuthority, type D1CoreAuthorityBoundary } from "../d1/core-authority"
-import { USER_DEPLOYED_OWNER_CLAIM_HEADER, type D1AuthorityProductPolicy } from "../d1/workspace-authority"
+import { D1WorkspaceAuthority, USER_DEPLOYED_OWNER_CLAIM_HEADER, type D1AuthorityProductPolicy } from "../d1/workspace-authority"
 import { createD1HostTunnelTargetResolver } from "../d1/host-tunnel-relay-target"
 import { hostedCredentialsEnabled, hostedOrgCredentials } from "../../../credentials/worker/index"
 import { d1UserAgentConfigRepository } from "../d1/user-agent-config"
@@ -21,7 +22,6 @@ import {
   type HostedControlPlane,
   type HostedWorkerEnv,
 } from "../../provider-neutral-hosted-services"
-import { D1ServiceInstallationStore } from "../../../platform/services/adapters/d1-installation-store"
 import { createD1UsageLedger } from "../../../usage/adapters/d1-usage-ledger"
 import {
   BETTER_AUTH_NATIVE_SCOPES,
@@ -41,8 +41,10 @@ import {
   BETTER_AUTH_INTROSPECTION_CLIENT_ID,
   betterAuthNativeResource,
 } from "../../../platform/auth/better-auth-native-clients"
-import { createBetterAuthD1AuthenticationEvidenceResolver } from "../../../platform/auth/better-auth-d1-authentication-evidence"
+import { createBetterAuthD1AuthenticationEvidenceResolver, betterAuthVerifiedEmail } from "../../../platform/auth/better-auth-d1-authentication-evidence"
 import { createBetterAuthD1RequestAuthenticationAdapter } from "../../../platform/auth/better-auth-d1-request-authentication"
+import { orgInvitationEmailDelivery } from "../../../platform/auth/auth-email-delivery"
+import type { OrgInvitationDelivery } from "@claxedo/server-core/platform/auth/org-access-authority"
 import { STATIC_PRODUCT_DESCRIPTORS } from "../../../deployments/hosted-shared/deployment-profile"
 import type { HostedCoreAppOptions } from "../../../deployments/hosted-shared/hosted-core-app"
 import { provisionedRunner } from "@claxedo/server-core/agent-config/connections"
@@ -58,6 +60,7 @@ type BetterAuthD1AuthorityEnv = {
 export function composeBetterAuthD1Authority(input: {
   env: BetterAuthD1AuthorityEnv
   product: D1AuthorityProductPolicy
+  invitations?: OrgInvitationDelivery
 }): D1CoreAuthorityBoundary {
   if (input.env.CLAXEDO_ADAPTER_PROFILE !== "better-auth-d1") {
     throw new HostedWorkerCompositionError(
@@ -84,6 +87,7 @@ export function composeBetterAuthD1Authority(input: {
   return createD1CoreAuthority(requiredDatabase(input.env.CONTROL_PLANE_DB), {
     deploymentId: required(input.env.CLAXEDO_DEPLOYMENT_ID, "CLAXEDO_DEPLOYMENT_ID"),
     product: input.product,
+    ...(input.invitations ? { invitations: input.invitations } : {}),
   })
 }
 
@@ -107,7 +111,9 @@ export type BetterAuthD1UserDeployedComposition = {
   plane: HostedControlPlane
   /** The sandbox delivery stack a feature entry composes onto; absent without a sandbox driver. */
   runtimeDelivery?: ReturnType<typeof createHostedRuntimeDelivery>
-  options: Omit<HostedCoreAppOptions, "liveSyncRoom" | "sharedRateLimitStore">
+  options: Omit<HostedCoreAppOptions, "liveSyncRoom" | "sharedRateLimitStore" | "idempotency" | "documents">
+  /** The membership, team and project rows hosted Pages authorize against. */
+  documentAccess: D1AccessContext
   /** Better Auth owns browser and native protocol routes plus AUTH_DB state. */
   authHandler(request: Request): Promise<Response>
   verifyIdentity(request: Request): Promise<AuthIdentity>
@@ -119,9 +125,7 @@ export type BetterAuthD1UserDeployedComposition = {
    * every later caller awaiting it forever (see settled-composition-cache.ts).
    */
   authReady: Promise<void>
-  serviceInstallations: D1ServiceInstallationStore
   product: (typeof STATIC_PRODUCT_DESCRIPTORS)["user-deployed"]
-  billing: "absent"
 }
 
 /**
@@ -162,6 +166,11 @@ export function composeBetterAuthD1UserDeployedControlPlane(
       CONTROL_PLANE_DB: input.controlPlaneDatabase,
     },
     product: input.product,
+    invitations: orgInvitationEmailDelivery({
+      verifiedEmail: (auth) => betterAuthVerifiedEmail({ database: input.authDatabase, issuer: descriptor.issuer }, auth.principal?.identity),
+      appOrigin: configured.public.appOrigin,
+      ...(configured.private.emailSender ? { sender: configured.private.emailSender } : {}),
+    }),
   })
   const foundation = createBetterAuthD1Foundation({
     database: requiredDatabase(input.authDatabase),
@@ -186,14 +195,17 @@ export function composeBetterAuthD1UserDeployedControlPlane(
     resolveAuthenticationEvidence: createBetterAuthD1AuthenticationEvidenceResolver(input.authDatabase),
     resolveIdentity: async (identity, request) => {
       const existing = await authority.ensureApplicationIdentity(identity)
-      if (existing.state !== "unavailable" || input.product.ownerBootstrap !== "one-use-claim") return existing
-      const claim = request?.headers.get(USER_DEPLOYED_OWNER_CLAIM_HEADER)
-      if (!claim) return existing
-      return await authority.claimUserDeployedOwner(identity, claim)
+      if (existing.state !== "unavailable" && existing.state !== "provisioning") return existing
+      const claim = existing.state === "unavailable" && input.product.ownerBootstrap === "one-use-claim"
+        ? request?.headers.get(USER_DEPLOYED_OWNER_CLAIM_HEADER)
+        : undefined
+      if (claim) return await authority.claimUserDeployedOwner(identity, claim)
+      const email = await betterAuthVerifiedEmail({ database: input.authDatabase, issuer: descriptor.issuer }, identity)
+      const admitted = email ? await authority.admitInvitedIdentity(identity, email) : undefined
+      return admitted?.state === "active" ? admitted : existing
     },
     ...(input.now ? { now: input.now } : {}),
   })
-  const serviceInstallations = new D1ServiceInstallationStore(input.controlPlaneDatabase)
   const legacyAuthBoundary: ControlPlaneAuthAdapter = {
     config: {
       enabled: true,
@@ -238,6 +250,11 @@ export function composeBetterAuthD1UserDeployedControlPlane(
   return {
     plane,
     ...(delivery ? { runtimeDelivery: delivery } : {}),
+    documentAccess: new D1WorkspaceAuthority(input.controlPlaneDatabase, {
+      deploymentId,
+      product: input.product,
+      ...(input.now ? { now: input.now } : {}),
+    }).accessContext(),
     options: {
       authentication,
       agentConfigRepository: settings,
@@ -249,9 +266,8 @@ export function composeBetterAuthD1UserDeployedControlPlane(
           provisionRuntime: delivery.provisionRuntime,
         },
       } : {}),
-      // User-deployed has no billing tier: with a composed sandbox the owner's
-      // organization is entitled to cloud workspaces; without one the answer
-      // names the posture instead of a 404.
+      // With a composed sandbox the owner's organization is admitted to cloud
+      // workspaces; without one the answer names the posture instead of a 404.
       cloudWorkspaceAdmission: input.sandbox
         ? async () => undefined
         : async () => ({
@@ -266,9 +282,6 @@ export function composeBetterAuthD1UserDeployedControlPlane(
       product: STATIC_PRODUCT_DESCRIPTORS["user-deployed"],
       requestGuardExemptions: [],
       usageLedger: createD1UsageLedger({ database: input.controlPlaneDatabase, ...(input.now ? { now: input.now } : {}) }),
-      userDeployedIdentityAdmission: {
-        admit: (auth, admission) => authority.admitUserDeployedIdentity(auth, admission),
-      },
     },
     verifyIdentity: (request) => authentication.verifyIdentity(request),
     authHandler: async (request) => await authProtocol.fetch(request),
@@ -281,9 +294,7 @@ export function composeBetterAuthD1UserDeployedControlPlane(
       await context.adapter.findOne({ model: "session", where: [{ field: "token", value: COMPOSITION_READINESS_TOKEN }] })
       await input.controlPlaneDatabase.prepare("select 1").first()
     }),
-    serviceInstallations,
     product: STATIC_PRODUCT_DESCRIPTORS["user-deployed"],
-    billing: "absent",
   }
 }
 

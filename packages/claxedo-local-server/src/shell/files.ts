@@ -1,43 +1,7 @@
 import fs from "fs"
 import path from "path"
 import { Worker } from "node:worker_threads"
-import { git } from "./git"
-
-const ALL_IGNORE = new Set([".git", ".DS_Store", "node_modules", ".next", "dist", "build", ".turbo", ".vercel", ".cache"])
-const FILE_SEARCH_CACHE_MS = 10_000
-const FILE_SEARCH_CACHE_MAX_ROOTS = 32
-
-const fileSearchCache = new Map<
-  string,
-  {
-    expires: number
-    index: Promise<{ files: string[]; directories: string[]; all: string[] }>
-  }
->()
-
-export function fileSearchCacheSize() {
-  return fileSearchCache.size
-}
-
-function rememberFileSearchIndex(root: string) {
-  const next = buildFileSearchIndex(root)
-  const now = Date.now()
-  // Expired roots are obsolete — drop them before evicting live ones, so a
-  // burst of one-off roots can never grow the map past the bound.
-  for (const [cached, entry] of fileSearchCache) {
-    if (entry.expires <= now) fileSearchCache.delete(cached)
-  }
-  while (fileSearchCache.size >= FILE_SEARCH_CACHE_MAX_ROOTS) {
-    const oldest = fileSearchCache.keys().next()
-    if (oldest.done) break
-    fileSearchCache.delete(oldest.value)
-  }
-  fileSearchCache.set(root, { expires: now + FILE_SEARCH_CACHE_MS, index: next })
-  void next.catch(() => {
-    if (fileSearchCache.get(root)?.index === next) fileSearchCache.delete(root)
-  })
-  return next
-}
+import { machineFileIndex, isFileIndexIgnoredName } from "@claxedo/workspace-runtime/file-index"
 
 export async function globSearch(
   searchDir: string,
@@ -50,16 +14,7 @@ export async function globSearch(
 
   const root = path.resolve(searchDir)
   if (type === "directory") return directorySearch(root, q, limit)
-  const cached = fileSearchCache.get(root)
-  const index = cached && cached.expires > Date.now()
-    ? (() => {
-        // A hit refreshes recency: reinsert so eviction removes the oldest.
-        fileSearchCache.delete(root)
-        fileSearchCache.set(root, cached)
-        return cached.index
-      })()
-    : rememberFileSearchIndex(root)
-  const found = await index
+  const found = await machineFileIndex.get(root, { gitTimeoutMs: 1_500 })
   const paths = type === "file" ? found.files : found.all
   return paths.filter((item) => !q || item.toLowerCase().includes(q)).slice(0, limit)
 }
@@ -67,21 +22,8 @@ export async function globSearch(
 const DIRECTORY_SEARCH_DEPTH = 3
 const DIRECTORY_SEARCH_BUDGET = 400
 
-/**
- * A folder picker's search, answered from the directory tree alone and within
- * a fixed budget of directory reads. The file index this module builds for
- * name search walks every file under the root, and a home directory holds
- * hundreds of thousands under caches and app data — even `find -maxdepth 3`
- * takes minutes there. Folders are read breadth-first, nearest the root first,
- * hidden and dependency directories skipped the way `directoryEntriesBody`
- * already marks them ignored, and the walk stops after 400 directories: what a
- * picker can show is the shallow part of the tree, and the budget is what
- * keeps a name that matches nothing from reading the rest of it. An empty
- * query is the root's own children, no deeper. Matches are on the folder's own
- * name — a picker offers folders called "test", not everything under one —
- * and stay in walk order, so `test/opencode` is listed before the same name
- * three levels down in application caches.
- */
+// Folder pickers include empty directories. A file index cannot supply those,
+// and indexing every file under a home directory exceeds the picker's budget.
 async function directorySearch(root: string, q: string, limit: number) {
   const out: string[] = []
   const queue: Array<{ rel: string; depth: number }> = [{ rel: "", depth: 0 }]
@@ -96,7 +38,7 @@ async function directorySearch(root: string, q: string, limit: number) {
     }
     rows.sort((a, b) => a.name.localeCompare(b.name))
     for (const row of rows) {
-      if (!row.isDirectory() || row.name.startsWith(".") || ALL_IGNORE.has(row.name)) continue
+      if (!row.isDirectory() || row.name.startsWith(".") || isFileIndexIgnoredName(row.name)) continue
       const next = rel ? `${rel}/${row.name}` : row.name
       if (!q || row.name.toLowerCase().includes(q)) {
         out.push(next)
@@ -106,22 +48,6 @@ async function directorySearch(root: string, q: string, limit: number) {
     }
   }
   return out
-}
-
-async function buildFileSearchIndex(root: string) {
-  const files = (await gitListAll(root)) ?? (await walkAll(root))
-  const directories = new Set<string>()
-  files.forEach((file) => {
-    const parts = file.replaceAll("\\", "/").split("/")
-    parts.slice(0, -1).forEach((_, index) => directories.add(parts.slice(0, index + 1).join("/")))
-  })
-  const normalizedFiles = files.map((file) => file.replaceAll("\\", "/")).sort()
-  const normalizedDirectories = Array.from(directories).sort()
-  return {
-    files: normalizedFiles,
-    directories: normalizedDirectories,
-    all: [...normalizedFiles, ...normalizedDirectories].sort(),
-  }
 }
 
 // Text search budget. The engine backs `/find` with ripgrep; the compat layer
@@ -192,7 +118,7 @@ export async function grepSearch(root: string, pattern: string, limit = 10): Pro
   } catch {
     return out
   }
-  const files = (await gitListAll(root)) ?? (await walkAll(root))
+  const files = await machineFileIndex.list(root, { gitTimeoutMs: 1_500 })
   if (activeGrepScans >= GREP_SCAN_MAX_WORKERS) return out
   let worker: Worker
   try {
@@ -257,7 +183,7 @@ export async function grepSearch(root: string, pattern: string, limit = 10): Pro
       ])
       if (!matches || !alive) break
       for (const hit of matches) {
-        out.push({ path: { text: rel.replaceAll("\\", "/") }, ...hit })
+        out.push({ path: { text: rel }, ...hit })
         if (out.length >= limit) break
       }
     }
@@ -268,52 +194,4 @@ export async function grepSearch(root: string, pattern: string, limit = 10): Pro
     await worker.terminate()
   }
   return out
-}
-
-export async function gitListAll(root: string): Promise<string[] | undefined> {
-  try {
-    const tracked = await git(root, ["ls-files"])
-    const untracked = await git(root, ["ls-files", "--others", "--exclude-standard"])
-    const out = new Set<string>()
-    for (const line of tracked.split("\n")) {
-      const v = line.trim()
-      if (v) out.add(v)
-    }
-    for (const line of untracked.split("\n")) {
-      const v = line.trim()
-      if (v) out.add(v)
-    }
-    return Array.from(out).sort()
-  } catch {
-    return undefined
-  }
-}
-
-export async function walkAll(root: string, limit = 200_000): Promise<string[]> {
-  const out: string[] = []
-  const queue = [""]
-  while (queue.length && out.length < limit) {
-    const rel = queue.shift()!
-    const abs = rel ? path.join(root, rel) : root
-    let rows: fs.Dirent[]
-    try {
-      rows = await fs.promises.readdir(abs, { withFileTypes: true })
-    } catch {
-      continue
-    }
-    for (const row of rows) {
-      if (ALL_IGNORE.has(row.name)) continue
-      // Forward slashes, matching gitListAll: both feed the same wire contract,
-      // and path.join would hand Windows clients `src\todo.ts` from this branch
-      // while the git branch serves `src/todo.ts`.
-      const next = rel ? `${rel}/${row.name}` : row.name
-      if (row.isDirectory()) {
-        queue.push(next)
-      } else if (row.isFile()) {
-        out.push(next)
-        if (out.length >= limit) break
-      }
-    }
-  }
-  return out.sort()
 }

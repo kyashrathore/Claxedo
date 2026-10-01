@@ -72,6 +72,8 @@ type RuntimeAccessTokenSignerBaseInput = {
   actorName?: string
   actorAvatarUrl?: string
   role: RelayRole
+  /** The one session a share holder's token reaches; absent on the workspace owner's token. */
+  sessionId?: string
   /** Present only for a token a channel binding authorized; the relay checks its generation. */
   channelIdentity?: ChannelIdentityInput
   /** Present for cloud workspaces; assigned atomically with the sandbox address. */
@@ -96,14 +98,8 @@ export type HostTunnelTokenSignerInput = {
   subject: string
   hostId: string
   workspaceIds: string[]
-  /**
-   * Serving-generation fence for machine-enrolled hosts. Both or neither: a
-   * relay refuses a token whose generation is below the enrollment's current
-   * one, and admits a token without the pair exactly as before the fence
-   * existed, which is what the desktop and self-hosted mints still produce.
-   */
-  enrollmentId?: string
-  generation?: number
+  enrollmentId: string
+  generation: number
   /** Requested TTL; always clamped to `HOST_TUNNEL_TOKEN_TTL_BOUNDS_SECONDS`. */
   ttlSeconds?: number
 }
@@ -244,6 +240,7 @@ export function runtimeAccessTokenSigner(env: NodeJS.ProcessEnv = process.env): 
       host_id: input.hostId,
       ...(input.routingId !== undefined ? { routing_id: input.routingId } : {}),
       role: input.role,
+      ...(input.sessionId === undefined ? { scope: "workspace" } : { scope: "session", session_id: input.sessionId }),
     })
       .setProtectedHeader({ alg, kid })
       .setIssuer(runtimeAccessTokenIssuer)
@@ -269,17 +266,17 @@ export function hostTunnelTokenSigner(env: NodeJS.ProcessEnv = process.env): Hos
     const privateKey = await loadPrivateKey(env, alg, "host_tunnel_token_signer_unavailable")
     const kid = await resolveMintKid(env, privateKey)
     const issuedAt = Math.floor(now / 1000)
-    if ((input.generation === undefined) !== (input.enrollmentId === undefined)) {
+    if (input.generation === undefined || !input.enrollmentId?.trim()) {
       throw new Error("Host Tunnel Token fence requires enrollmentId and generation together")
     }
-    if (input.generation !== undefined && !(Number.isInteger(input.generation) && input.generation >= 0)) {
+    if (!(Number.isInteger(input.generation) && input.generation >= 0)) {
       throw new Error("Host Tunnel Token generation must be a non-negative integer")
     }
     const token = await new SignJWT({
       host_id: input.hostId,
       workspace_ids: input.workspaceIds,
-      ...(input.enrollmentId !== undefined ? { enrollment_id: input.enrollmentId } : {}),
-      ...(input.generation !== undefined ? { generation: input.generation } : {}),
+      enrollment_id: input.enrollmentId,
+      generation: input.generation,
     })
       .setProtectedHeader({ alg, kid })
       .setIssuer(runtimeAccessTokenIssuer)
@@ -569,11 +566,10 @@ export type DocumentRelayJobScope = Readonly<{
   userId: string
   orgId: string
   projectId: string
-  localWorkspaceId: string
-  cloudWorkspaceId: string
+  workspaceId: string
   sessionId: string
   documentId: string
-  operations: readonly ("hydrate" | "read" | "write" | "resolve")[]
+  operations: readonly ("hydrate" | "write" | "resolve")[]
   jobExpiresAt: number
 }>
 
@@ -591,8 +587,7 @@ export async function mintDocumentRelayJobToken(
     user_id: input.userId,
     org_id: input.orgId,
     project_id: input.projectId,
-    local_workspace_id: input.localWorkspaceId,
-    cloud_workspace_id: input.cloudWorkspaceId,
+    workspace_id: input.workspaceId,
     session_id: input.sessionId,
     document_id: input.documentId,
     operations: input.operations,
@@ -627,8 +622,7 @@ export async function verifyDocumentRelayJobToken(
   const jti = stringClaim(payload, "jti")
   if (!jti || !jobExpiresAt || jobExpiresAt <= Math.floor(Date.now() / 1000) || !operations.includes(expected.operation) ||
     stringClaim(payload, "user_id") !== expected.userId || stringClaim(payload, "org_id") !== expected.orgId ||
-    stringClaim(payload, "project_id") !== expected.projectId || stringClaim(payload, "local_workspace_id") !== expected.localWorkspaceId ||
-    stringClaim(payload, "cloud_workspace_id") !== expected.cloudWorkspaceId || stringClaim(payload, "session_id") !== expected.sessionId ||
+    stringClaim(payload, "project_id") !== expected.projectId || stringClaim(payload, "workspace_id") !== expected.workspaceId || stringClaim(payload, "session_id") !== expected.sessionId ||
     stringClaim(payload, "document_id") !== expected.documentId) throw new Error("Document relay job scope is invalid")
   return { ...expected, operations, jobExpiresAt, jti }
 }

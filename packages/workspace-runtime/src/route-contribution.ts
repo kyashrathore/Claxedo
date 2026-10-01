@@ -31,7 +31,7 @@ import type { Hono } from "hono"
  *
  * Narrow on purpose. A contribution gets the workspace identity and the
  * session-tool registration seam — enough to broker tools for a session — and
- * no handle on the store, the harness registry, or the process manager.
+ * no handle on the store or the harness registry.
  */
 export type WorkspaceRuntimeRouteContext = {
   /** Canonical ID of the workspace this runtime instance serves. */

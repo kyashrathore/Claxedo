@@ -4,7 +4,7 @@ Status: implemented with recorded gaps.
 
 Defined on 2026-09-20 against HEAD `e06522f6e6092f90c549815edb33b37264759b20` and implemented on `refactor/runtime-recovery`. Read a rule here as delivered except where it depends on what has not been verified:
 
-- The packaged desktop acceptance flow has never run. Three scenarios are therefore unmet — an emergency stop with a blocked daemon and storage unavailable, a synchronous daemon event-loop stall, and healthy silent/background/approval work — and the packaged halves of a Stop during daemon drain, re-identifying an adopted daemon on macOS, and stale PID discovery after restart are unverified. `packages/claxedo-desktop/scripts/runtime-recovery-smoke.ts` covers the bundled daemon's half of a drain blocked by a terminal and then released, of a handoff that outlives its client lease, and of refusing to signal a mismatched pid; `bun run test:runtime-recovery` runs it on the macOS legs of `release-gates.yml` and `release-claxedo.yml`, against the server bundle `prebuild` produces rather than a packaged app, and fails when that bundle is missing.
+- The packaged desktop acceptance flow has never run. Three scenarios are therefore unmet — an emergency stop with a blocked daemon and storage unavailable, a synchronous daemon event-loop stall, and healthy silent/background/approval work — and the packaged halves of a Stop during daemon drain, re-identifying an adopted daemon on macOS, and stale PID discovery after restart are unverified, as is the bundled daemon's half of a drain blocked by a terminal and then released, of a handoff that outlives its client lease, and of refusing to signal a mismatched pid.
 - Every harness test drives a fake; no real provider's cancellation (Codex, Claude, Pi, ACP, Cursor) was measured.
 - Process ownership was measured on macOS only; Linux and Windows are unqualified. On macOS a descendant that called `setsid` cannot be found again, so retirement reports `descendants: "unknown"` and the owner keeps the obligation.
 
@@ -107,7 +107,7 @@ Inspection must report the individual owners behind aggregate counts. `activeTur
 
 Authorization remains scoped to the existing session/workspace/machine authority. Session access does not confer authority to terminate a shared harness. Shared escalation requires a preview naming the affected sessions/resources and an authorization bound to that generation and scope revision. Revalidate immediately before action; if the impact expands, return a scope-changed result for renewed selection. Gate admission atomically with accepting the reviewed scope.
 
-Ordinary containment of resources exclusively owned by a failed operation is part of the execution owner's existing responsibility; it does not require a fresh permission prompt for every failure. User Stop authorizes cancellation of the named turn and cleanup of its owned resources. Escalation that interrupts additional sessions, retained managed processes, or the containing daemon requires the broader scope to be authorized. A provider or local process must not gain extra tool permissions during recovery.
+Ordinary containment of resources exclusively owned by a failed operation is part of the execution owner's existing responsibility; it does not require a fresh permission prompt for every failure. User Stop authorizes cancellation of the named turn and cleanup of its owned resources. Escalation that interrupts additional sessions or the containing daemon requires the broader scope to be authorized. A provider or local process must not gain extra tool permissions during recovery.
 
 ## 7. Acknowledgements, deadlines, retries, and disconnects
 
@@ -180,7 +180,7 @@ If durable fencing cannot be advanced, in-memory gating protects only the curren
 | In-process runtime | Cooperative cancellation; if wedged, explicit containing-daemon escalation | A settled in-process owner or verified daemon-generation termination |
 | Remote connection/provider | Remote cancellation/reconciliation through that authority | Provider/remote-host terminal evidence; local disconnect is not proof |
 
-Maintain a recoverable record of retired generations with unresolved cleanup. Do not label them active model work, and do not erase them from diagnostics or shutdown impact. Managed processes with explicit handoff remain separate legitimate work.
+Maintain a recoverable record of retired generations with unresolved cleanup. Do not label them active model work, and do not erase them from diagnostics or shutdown impact.
 
 Daemon normal exit keeps today's background-work policy. Drain reports blockers within its deadline. Explicit stop may escalate past broken activity counters after authorized scope selection; counters are accounting, not a veto over the machine owner's recovery authority.
 

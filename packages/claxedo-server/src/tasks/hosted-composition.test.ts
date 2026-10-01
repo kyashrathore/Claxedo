@@ -14,7 +14,6 @@ import type { Hono } from "hono"
 import type { D1Database } from "@cloudflare/workers-types"
 import { createSandboxManager, type SandboxDriver } from "@claxedo/sandbox-manager"
 import { createMemoryLeaseStore } from "@claxedo/sandbox-manager/stores/memory"
-import { createInMemoryCliSessionTokenRegistry } from "@claxedo/server-core/platform/auth/cli-session-registry"
 import { bearerToken } from "@claxedo/server-core/platform/auth/auth"
 import { AuthenticationError, type RequestAuthenticationAdapter } from "@claxedo/server-core/platform/auth/authentication"
 import { deleteWorkspace, ensureWorkspace, listWorkspaces } from "@claxedo/server-core/workspace/store/index"
@@ -59,7 +58,7 @@ afterEach(async () => {
 })
 
 async function database(): Promise<D1Database> {
-  const instance = await miniflareControlPlaneDatabase(["0025_claxedo_tasks.sql", "0026_agent_cross_machine_writes.sql", "0032_task_attachments.sql", "0033_task_child_number.sql"])
+  const instance = await miniflareControlPlaneDatabase(["0025_claxedo_tasks.sql", "0026_task_agent_starts.sql", "0032_task_attachments.sql", "0033_task_child_number.sql"])
   active.push(instance)
   return instance.database
 }
@@ -161,7 +160,6 @@ function plane(sandbox: Record<string, unknown> = {}): HostedControlPlane {
       sandboxMaxRetryCount: 5,
     },
     relayTargetLookup: sandboxRelayTargetLookup({ telemetry: services.telemetry }),
-    cliSessionTokenRegistry: createInMemoryCliSessionTokenRegistry(),
     privateSessionAuthority: sessionAuthority,
     runtimeSessionAuthority: sessionAuthority,
     env: { CLAXEDO_DEPLOYMENT_MODE: "hosted" },
@@ -249,13 +247,6 @@ async function hostedApp(
     }),
     product: STATIC_PRODUCT_DESCRIPTORS["user-deployed"],
     requestGuardExemptions: [],
-    userDeployedIdentityAdmission: {
-      admit: vi.fn(async (_auth: unknown, input: { identity: { subject: string } }) => ({
-        state: "active" as const,
-        userId: `user:${input.identity.subject}`,
-        actorId: `actor:${input.identity.subject}`,
-      })),
-    },
     routeContributions: tasks.routeContributions,
   } as unknown as Parameters<typeof createHostedCoreApp>[1]) as unknown as Hono
   return Object.assign(app, { services: base.services })
@@ -332,7 +323,7 @@ describe("hosted Tasks composition", () => {
   })
 
   test("offers cloud placement once the deployment has a sandbox driver to allocate a root from", async () => {
-    const app = await hostedApp({ sandboxManager: { ensure: vi.fn(), target: vi.fn() }, defaultDriver: "daytona" })
+    const app = await hostedApp({ sandboxManager: { ensure: vi.fn(), target: vi.fn() }, defaultDriver: "modal" })
     const response = await app.request(`https://core.test${TASKS}/capabilities`, { headers: headers("alice") })
     expect(response.status).toBe(200)
     expect(await response.json()).toMatchObject({ placements: ["local", "cloud"] })
@@ -386,10 +377,8 @@ describe("hosted Tasks composition", () => {
   })
 
   test("hands the session bridge the canonical person the caller's actor was minted from", async () => {
-    // The hosted session authority records a creator and grants read access
-    // only to that creator, a participant or a share, so a session reserved as
-    // the control plane's own service actor would be invisible to the person
-    // who started it.
+    // A service actor without the workspace owner's user cannot reserve its
+    // sessions. Tasks ownerId is a user id; the reservation needs an actor id.
     const app = await hostedApp()
     await command(app, "alice", "request-preset-1", PRESET)
     const created = await command(app, "alice", "request-task-1", TASK)
@@ -913,7 +902,7 @@ describe("hosted Tasks cloud start from inside a session", () => {
       workspace_name: "importer",
       directory: "/workspace",
       kind: "cloud",
-      driver: "daytona",
+      driver: "modal",
       repo_url: PROJECT_REPO,
       git_branch: "main",
       remote_directory: "/workspace",
@@ -937,7 +926,7 @@ describe("hosted Tasks cloud start from inside a session", () => {
     const rootEnvironment = vi.fn(async () => ({ WORKSPACE_RUNTIME_TASKS_CAPABILITY: "root-grant" }))
     const controlPlane = await database()
     const app = await hostedApp(
-      { sandboxManager, defaultDriver: "daytona" },
+      { sandboxManager, defaultDriver: "modal" },
       {
         signingEnv,
         database: controlPlane,
@@ -1076,7 +1065,7 @@ describe("hosted Tasks cloud start from inside a session", () => {
       body: { error: { code: "billing_entitlement_required", message: `no cloud-workspace for ${tenant.orgId}` } },
     }))
     const app = await hostedApp(
-      { sandboxManager, defaultDriver: "daytona" },
+      { sandboxManager, defaultDriver: "modal" },
       {
         signingEnv,
         database: await database(),

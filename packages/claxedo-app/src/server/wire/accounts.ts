@@ -118,14 +118,14 @@ function sourcesFromWire(value: unknown): ReadonlyMap<string, AccountSource> | u
 }
 
 export function accountSourcesFromWire(value: unknown): AccountSources | undefined {
-  const canRemoveTeamAccounts = asRecord(value)?.can_remove_team_accounts
+  const canRemoveOrgAccounts = asRecord(value)?.can_remove_org_accounts
   const sources = sourcesFromWire(asRecord(value)?.sources)
-  const team = rowsFromWire(value, "team", accountFromWire)
-  return sources && team && typeof canRemoveTeamAccounts === "boolean" ? { sources, team, canRemoveTeamAccounts } : undefined
+  const org = rowsFromWire(value, "org", accountFromWire)
+  return sources && org && typeof canRemoveOrgAccounts === "boolean" ? { sources, org, canRemoveOrgAccounts } : undefined
 }
 
 export function hostedAccountSourcesFromWire(value: unknown): HostedAccountSources | undefined {
   const sources = sourcesFromWire(asRecord(value)?.sources)
-  const team = texts(asRecord(value)?.team)
-  return sources && team ? { sources, team: new Set(team) } : undefined
+  const org = texts(asRecord(value)?.org)
+  return sources && org ? { sources, org: new Set(org) } : undefined
 }

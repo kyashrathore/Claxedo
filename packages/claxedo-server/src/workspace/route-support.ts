@@ -57,13 +57,13 @@ export type LocalHostAssignments = {
   assignWorkspace(
     auth: SignedControlPlaneAuth,
     share: LocalWorkspaceShare,
-  ): Promise<{ assignment: { assigned: true; workspace_id: string; host_id: string }; hostTunnel?: unknown }>
+  ): Promise<{ assignment: { assigned: true; workspace_id: string; host_id: string } }>
   unassignWorkspace(auth: SignedControlPlaneAuth, workspaceId: string): Promise<{ unassigned: boolean }>
 }
 
 /**
- * The paid-capability question, asked of the tenant a cloud workspace would
- * belong to rather than of a request shape. `auth` is present when the caller
+ * Whether the deployment admits cloud workspaces, asked of the tenant a cloud
+ * workspace would belong to rather than of a request shape. `auth` is present when the caller
  * holds a signed request; `orgId` is the authority-resolved organization when
  * it does not. A gate given neither has no tenant to answer for and must
  * refuse rather than guess one.
@@ -125,18 +125,15 @@ export type WorkspaceRouteOptions = {
   /** Build-composed withdrawal of what `prepareRuntime` issued a cloud root, once its workspace is deleted. */
   releaseRuntime?: (context: WorkspaceRuntimeContext) => Promise<void>
   /**
-   * Entitlement choke point (ADR 014 §5, adversarial review): hosted
-   * cloud-workspace capability is paid at BOTH
-   * create AND wake/resume — a canceled subscription must not keep an existing
-   * cloud workspace wake-able forever. The hosted app composes this from
-   * src/billing/entitlement.ts (`createEntitlementGate` + authority org
-   * resolution); it returns a ready-to-serve denial (402 free tier / 503 mirror
-   * unreadable — both fail-closed) or undefined when entitled. Absent hook = no
-   * billing gate (route tests, self-host / local compositions never supply it);
-   * the hosted app always supplies it. Only ever consulted for HOSTED cloud
-   * workspaces (the wake choke point guards on backing=cloud-vm).
+   * Cloud-workspace admission, asked at BOTH create AND wake/resume, so a
+   * deployment that stops admitting cloud workspaces cannot keep an existing
+   * one wake-able. It returns a ready-to-serve denial or undefined when
+   * admitted. Absent hook = no gate (route tests, self-host / local
+   * compositions never supply it); the hosted app always supplies it. Only
+   * ever consulted for HOSTED cloud workspaces (the wake choke point guards on
+   * backing=cloud-vm).
    *
-   * The tenant is what is entitled: `auth` is the signed request when the
+   * The tenant is what is admitted: `auth` is the signed request when the
    * caller holds one, `orgId` the authority-resolved organization when the
    * create was initiated by a minted credential with no bearer of its own (a
    * Tasks cloud root started by a session's agent). An implementation that
@@ -346,21 +343,4 @@ export function missingBearerBody() {
   return controlPlaneAuthErrorBody(
     new ControlPlaneAuthError(401, "missing_bearer_token", "Authorization: Bearer token is required"),
   )
-}
-
-export async function hostTunnelCredential(
-  options: WorkspaceRouteOptions,
-  auth: SignedControlPlaneAuth,
-  input: {
-    hostId: string
-    workspaceId: string
-  },
-) {
-  const signer = configuredHostTunnelTokenSigner(options)
-  if (!signer) return undefined
-  return await signer({
-    subject: auth.user.subject,
-    hostId: input.hostId,
-    workspaceIds: [input.workspaceId],
-  })
 }

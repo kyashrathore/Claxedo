@@ -109,7 +109,7 @@ workspace. The owner's declaration is `POST /api/workspace/:id/host-assignment`
 (`packages/claxedo-server/src/routes/hosted/workspace.ts`, and the self-hosted
 node's `packages/claxedo-server/src/workspace/routes/index.ts`), which Electron
 main sends as the account operation `workspace.assignHost`
-(`packages/claxedo-desktop/src/main/account/hosted-operations.ts`).
+(`packages/account-contract/src/hosted-operations.ts`).
 On the desktop the port is `claxedo.hostConnector.share`, which carries a
 workspace id and a label and nothing that names a machine; the supervisor's
 `shareWorkspace` describes the workspace (`describeWorkspace`: directory,
@@ -228,7 +228,7 @@ On a signed desktop the catalog has a second source, the account's:
    operations `workspace.list.provisioner` and `workspace.list.machine`
    through `HostedAccount` (`packages/claxedo-app/src/server/account.ts`).
 2. Electron main sends them as `GET /api/workspace?host=provisioner` and
-   `?host=machine` (`packages/claxedo-desktop/src/main/account/hosted-operations.ts`).
+   `?host=machine` (`packages/account-contract/src/hosted-operations.ts`).
    The control plane answers from `authority.listWorkspaces` and filters
    `host=machine` to `backing === "local-worktree"` rows
    (`packages/claxedo-server/src/routes/hosted/workspace.ts`; the self-hosted
@@ -353,8 +353,13 @@ authority and branch on `backing`:
   `GET` as on `POST`. The host must be live (`activeWorkspaceHost`, else 409
   `workspace_host_offline`). The relay URL comes from the workspace's home
   region. A Runtime Access Token is minted for the verified actor, the org,
-  the workspace, the host id and the caller's workspace role; it is recorded
-  and audited, and a previous token the caller names is revoked. The answer
+  the workspace and the host id, and only for the workspace's owner; it is
+  recorded and audited, and a previous token the caller names is revoked.
+  `GET ...?sessionId=` is the share holder's path instead
+  (`hostedSessionConnection` in
+  `packages/claxedo-server/src/connections/hosted-connection-info.ts`): it
+  mints a `viewer` token scoped to that one session for anyone who may read
+  it. The answer
   carries `backing`, `relayUrl`, `runtimeAccessToken`, `tokenExpiresAt`,
   `role`, and `sessionAuthority` exactly as the host declared it on its beat
   (none when the host declared none).
@@ -537,7 +542,7 @@ which the desktop daemon mounts with `verifyRelayIngress: true`
 - a bearer that verifies as a Relay Host Token against the relay's key set
   (`localHostRelayActor` in
   `packages/claxedo-local-server/src/deployments/local/host-session-authority.ts`)
-  stamps `relay-replayed` with the actor, org and role;
+  stamps `relay-replayed` with the actor, org, role and session scope;
 - a request that says it came through the relay
   (`x-forwarded-by: workspace-relay`) but does not verify is refused 403
   `relay_actor_unverified`, never treated as local;
@@ -554,16 +559,17 @@ the owner's own first relayed read of one the embedded runtime actually
 holds. Sessions created before remote access was turned on therefore become
 reachable without registering anything the owner never opened remotely.
 
-Per session, the authority is the same on both stores
-(`hasPrivateAccess` in
-`packages/claxedo-server-core/src/authority/adapters/sqlite/private-session-authority.ts`,
-`actorSessionAccessSql` in
-`packages/claxedo-server/src/authority/adapters/d1/session-authority.ts`).
+Per session, D1 asks `may` on the session
+(`packages/claxedo-server/src/authority/adapters/d1/authorization.ts`).
 Standing in the session's organization is necessary and never sufficient;
-then the creator, a participant, or a share grant admits: `follow` reads and
+then the workspace's owner or a share grant admits: `follow` reads and
 streams, `send` also drives the agent's turn, and a `session_control` write
-drops the share branch. No rank on the organization or the workspace admits
-anyone; the workspace's owner is not special.
+drops the share branch. No rank on the organization or the project admits
+anyone, and a share reaches its session only while the owner still stands.
+The SQLite store (`hasPrivateAccess` in
+`packages/claxedo-server-core/src/authority/adapters/sqlite/private-session-authority.ts`)
+answers the same, and admits an agent by its creator attribution alone; a
+person's creator attribution admits nothing.
 
 **F.3 Frame address** — every frame a runtime publishes names its own
 filesystem directory: this machine's path, another machine's path, or the
@@ -614,10 +620,10 @@ placement this machine serves creates terminals without a session, and
 On the runtime, `PtyRoutes` (`packages/workspace-runtime/src/routes/pty.ts`)
 requires a relayed create on a managed runtime to name the session it
 belongs to (400 `pty_session_id_required`) and authorizes `pty_write` on that
-session; `denyWorkspaceViewers`
-(`packages/workspace-runtime/src/routes/workspace-role.ts`) refuses a
-viewer's PTY, process and Git writes by the role on the relay token (403
-`relay_role_denied`). A terminal's `pty.*` frames ride the workspace bus.
+session. A token scoped to one session never reaches `/api/wr/pty`, process
+or Git routes: the relay refuses them (403 `relay_scope_denied`), and so do
+the runtime's relay-host middleware and its embedded exposure, with the same
+`sessionScopeReaches` rule. A terminal's `pty.*` frames ride the workspace bus.
 That is why the app never asks such a runtime for a terminal without a
 session; flow 24 proves both arms on a live sandbox.
 
@@ -647,33 +653,30 @@ register, and the three turn-lease members — and `sessionAuthority` is
 DECLARATION: the control plane records it and the client reads it to know
 whether to reserve. The decider of registration, turn admission and event
 privacy is the request's provenance, `sessionRequestProvenance`, read at the
-three sites named in E.2 and F.2. A session-less write is the workspace's
-own and the relay role answers for it (`authorizeManaged`: below `editor` is
-403 `workspace_write_forbidden`); a session-scoped write is the session
-authority's question, carried with its class (`sessionAccessWriteClass`:
-`agent_turn` for prompt, permission and question responses, and abort;
-`session_control` for everything else), because a `send` share admits
-someone the workspace ranks below editor or not at all. Stream authorization
+three sites named in E.2 and F.2. The token's scope, not a role, answers
+what it reaches (`authorizeManaged`): a token with no session is the
+workspace owner's and reaches the workspace; a token scoped to one session is
+refused on any other (403 `session_scope_denied`). A session-scoped write is
+the session authority's question, carried with its class
+(`sessionAccessWriteClass`: `agent_turn` for prompt, permission and question
+responses, and abort; `session_control` for everything else). Stream authorization
 and lease minting have one owner, `authorizeRuntimeSessionStream` in
 `packages/claxedo-server/src/routes/runtime-session-authority.ts`.
 
-A person's workspace role is computed, never handed to one person by
-another. `workspaceRoleForUser`
-(`claxedo-server-core/.../sqlite/workspace-authority-store.ts`) answers
-`owner` for the workspace's owner and otherwise the highest of a direct
-`project_memberships` row, `workspaceOrgRole` (the person's org role, with
-an org member's `viewer` withheld when `org_member_visible` is 0) and the
-best `team_project_grants` row of a team they are on in that org;
-`workspaceAccessSql` (D1 `workspace-authority.ts`) takes the same `max` in
-one query and joins the assignment's enrollment in as `host_enrollment_id`.
-That role decides who can SEE the placement and the workspace-scoped
-surfaces (files, terminals, processes, git); it is what lets a teammate be
-offered a session share. An organization is a grouping of people and grants
-nothing on a machine, a runtime or a folder.
+A workspace is its owner's alone. Every D1 access question goes through
+`may` (`claxedo-server/.../d1/authorization.ts`), and on a workspace it
+answers the owner (`workspaces.owner_user_id`, with an active membership of
+the workspace's org) and nobody else: seeing the placement, the
+workspace-scoped surfaces (files, terminals, processes, git), creating or
+forking a session, and a workspace-wide runtime token. The SQLite store's
+`workspaceRoleForUser`
+(`claxedo-server-core/.../sqlite/workspace-authority-store.ts`) answers the
+same. An organization, its teams and a project's grants group people and
+govern the project; they grant nothing on a machine, a runtime or a folder.
 
-The role stops at the session. The only grant one person makes to another is
-a session share (`POST /api/control/sessions/:id/shares`, level `follow` or
-`send`), and it is the whole admission (F.2). Only the session's creator
+The only grant one person makes to another is a session share
+(`POST /api/control/sessions/:id/shares`, level `follow` or `send`), and it
+is the whole admission to that one session (F.2). Only the workspace's owner
 may grant or revoke its shares, and only to a member of the session's
 organization.
 

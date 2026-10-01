@@ -16,8 +16,10 @@ function noticePart(ctx: CompatContext, id: string, notice: TranscriptNotice, no
   return partEvent(ctx.directory, { id, sessionID: ctx.sessionId, messageID: ctx.assistantMsgId, type: "notice", notice, time: { created: now } }, now)
 }
 
+export const eventNoticePartId = (sessionId: string, eventId: string) => `${sessionId}-notice-${eventId}`
+
 export function appendNotice(ctx: CompatContext, notice: TranscriptNotice, now: number, eventId?: string): AgentEventEnvelope {
-  return noticePart(ctx, eventId ? `${ctx.sessionId}-notice-${eventId}` : nextNoticePartId(ctx), notice, now)
+  return noticePart(ctx, eventId ? eventNoticePartId(ctx.sessionId, eventId) : nextNoticePartId(ctx), notice, now)
 }
 
 function noticeDiagnostic(ctx: CompatContext, chunk: HarnessNotice): AgentEventEnvelope {

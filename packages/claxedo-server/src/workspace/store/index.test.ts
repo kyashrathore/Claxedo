@@ -19,7 +19,7 @@ async function provisionLease(workspaceId: string, sandboxId: string, url: strin
   const leaseStore = hostLease.createSupervisorSandboxLeaseStore()
   const acquired = await leaseStore.acquire(workspaceId, {
     homeRegion: "us-east",
-    driver: "daytona",
+    driver: "modal",
     staleAfterMs: 60_000,
   })
   await leaseStore.recordTarget(workspaceId, acquired.lease.epoch, {
@@ -192,12 +192,12 @@ describe("workspace store", () => {
       workspaceId: "ws_up",
       directory: dir,
       kind: "cloud",
-      driver: "daytona",
+      driver: "modal",
     }))
 
     expect(updated.id).toBe("ws_up")
     expect(updated.kind).toBe("cloud")
-    expect(updated.driver).toBe("daytona")
+    expect(updated.driver).toBe("modal")
     expect(updated.sandbox_id).toBeUndefined()
 
     const disk = await saved()
@@ -330,7 +330,7 @@ describe("workspace store", () => {
       workspaceId: "ws_cloud_dir_ref",
       directory: "/workspace",
       kind: "cloud",
-      driver: "daytona",
+      driver: "modal",
     })
     const ws = await mod.resolveWorkspace({ directory: "ws_cloud_dir_ref" })
     expect(ws).toBeUndefined()
@@ -422,7 +422,7 @@ describe("workspace store", () => {
       workspace_name: "cloud",
       directory: cloud,
       kind: "cloud",
-      driver: "daytona",
+      driver: "modal",
     })
 
     await fs.rm(git.sb, { recursive: true, force: true })
@@ -443,7 +443,7 @@ describe("workspace store", () => {
       workspace_name: "main",
       directory: cloud,
       kind: "cloud",
-      driver: "daytona",
+      driver: "modal",
       status: "acquiring_sandbox",
     })
 
@@ -470,7 +470,7 @@ describe("workspace store", () => {
       workspace_name: "cloud",
       directory: cloudRuntimeDirectory("ws_cloud_backoff"),
       kind: "cloud",
-      driver: "daytona",
+      driver: "modal",
       status: "acquiring_sandbox",
     })
     await provisionLease("ws_cloud_backoff", "sb-backoff", "https://sandbox.example.com")

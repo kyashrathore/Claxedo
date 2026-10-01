@@ -26,7 +26,7 @@ test("a child that opens while its parent is idle runs its own turn on the sessi
     session.associateChild("thread-child", child!)
     expect(f.store.turnEvidence(child!.sessionId, child!.assistantMessageId)).toMatchObject({ started: true, finished: false })
     expect(f.store.getSession(child!.sessionId)?.status).toBe("busy")
-    const started = f.store.brokerDatabase().prepare<{ payload_json: string }>(
+    const started = f.store.database().prepare<{ payload_json: string }>(
       "SELECT payload_json FROM runtime_journal WHERE session_id = ? AND kind = 'control' AND type = 'turn.start'").get(child!.sessionId)
     expect(JSON.parse(started!.payload_json).model).toEqual({ providerID: "test", modelID: "session-model" })
 

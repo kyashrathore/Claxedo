@@ -1,6 +1,6 @@
 import fs from "node:fs/promises"
 import path from "node:path"
-import { PluginManifestError, readPluginManifest, type PluginManifest } from "@claxedo/plugin-api"
+import { PluginManifestError, PluginStatusHooksRefusedError, readPluginManifest, type PluginManifest } from "@claxedo/plugin-api"
 import { PluginBuildError } from "./errors"
 
 export const PLUGIN_PACKAGE_FILE = "package.json"
@@ -10,6 +10,7 @@ export type PluginPackage = {
   packageJsonPath: string
   manifest: PluginManifest
   appEntry: string
+  backendEntry?: string
 }
 
 async function readPluginPackageJson(file: string): Promise<unknown> {
@@ -34,19 +35,31 @@ export async function readPluginPackage(rootDir: string): Promise<PluginPackage>
     manifest = readPluginManifest(packageJson)
   } catch (error) {
     if (error instanceof PluginManifestError) {
-      throw new PluginBuildError("manifest", error.issues.map((issue) => ({ file: PLUGIN_PACKAGE_FILE, message: issue })))
+      const refused = error instanceof PluginStatusHooksRefusedError ? error : undefined
+      throw new PluginBuildError("manifest", error.issues.map((issue) => ({
+        file: PLUGIN_PACKAGE_FILE,
+        ...(refused && issue.startsWith("claxedo.statusHooks:") ? { code: refused.code } : {}),
+        message: issue,
+      })))
     }
     throw error
   }
-  const appEntry = path.resolve(rootDir, manifest.app)
-  const inside = path.relative(rootDir, appEntry)
+  const appEntry = await packageEntry(rootDir, "claxedo.app", manifest.app)
+  if (!manifest.backend) return { rootDir, packageJsonPath, manifest, appEntry }
+  const backendEntry = await packageEntry(rootDir, "claxedo.backend.entry", manifest.backend.entry)
+  return { rootDir, packageJsonPath, manifest, appEntry, backendEntry }
+}
+
+async function packageEntry(rootDir: string, field: string, entry: string) {
+  const resolved = path.resolve(rootDir, entry)
+  const inside = path.relative(rootDir, resolved)
   if (inside.startsWith("..") || path.isAbsolute(inside)) {
-    throw new PluginBuildError("entry", [{ file: PLUGIN_PACKAGE_FILE, message: `claxedo.app must stay inside the package, got ${manifest.app}` }])
+    throw new PluginBuildError("entry", [{ file: PLUGIN_PACKAGE_FILE, message: `${field} must stay inside the package, got ${entry}` }])
   }
   try {
-    await fs.access(appEntry)
+    await fs.access(resolved)
   } catch {
-    throw new PluginBuildError("entry", [{ file: PLUGIN_PACKAGE_FILE, message: `claxedo.app names ${manifest.app}, which does not exist` }])
+    throw new PluginBuildError("entry", [{ file: PLUGIN_PACKAGE_FILE, message: `${field} names ${entry}, which does not exist` }])
   }
-  return { rootDir, packageJsonPath, manifest, appEntry }
+  return resolved
 }

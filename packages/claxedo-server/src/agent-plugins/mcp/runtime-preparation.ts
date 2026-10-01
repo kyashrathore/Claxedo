@@ -30,7 +30,7 @@ type ConnectionReadiness = (input: {
   integrationId: string
   capability: "mcp"
 }) => Promise<
-  | { ok: true; connectionId: string; integrationId: string; scope: "personal" | "team"; fields: Record<string, string> }
+  | { ok: true; connectionId: string; integrationId: string; scope: "personal" | "org"; fields: Record<string, string> }
   | { ok: false; status: number; code: string }
 >
 

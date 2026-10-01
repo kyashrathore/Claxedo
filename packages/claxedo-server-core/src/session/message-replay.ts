@@ -8,7 +8,7 @@
  * on GET /session/:id/message, not from the adapter.
  */
 
-import { AGENT_MESSAGE_PAGE_LIMIT, AgentMessagePageError, projectLatestSurfaceMessages, type AgentMessagePageInput } from "@claxedo/agent-runtime-contract"
+import { AGENT_MESSAGE_PAGE_LIMIT, AgentMessagePageError, decodeMessagePageCursor, encodeMessagePageCursor, projectLatestSurfaceMessages, type AgentMessagePageInput } from "@claxedo/agent-runtime-contract"
 import { lt, or, sql } from "drizzle-orm"
 import { ClaxedoDB, and, desc, eq, gt, numberColumn, textColumn } from "../platform/db"
 import { ClaxedoCloudMessageEventTable, ClaxedoCloudMessageTable, ClaxedoCloudSessionTable } from "./cloud.sql"
@@ -30,29 +30,6 @@ export type SessionMessagePage = {
 }
 
 const MESSAGE_PAGE_CURSOR_PREFIX = "cspm1:"
-
-function encodeMessagePageCursor(sessionId: string, ordinal: number) {
-  return `${MESSAGE_PAGE_CURSOR_PREFIX}${Buffer.from(JSON.stringify({ sessionId, ordinal })).toString("base64url")}`
-}
-
-function decodeMessagePageCursor(sessionId: string, input: string) {
-  try {
-    if (!input.startsWith(MESSAGE_PAGE_CURSOR_PREFIX)) throw new Error("unexpected cursor version")
-    const encoded = input.slice(MESSAGE_PAGE_CURSOR_PREFIX.length)
-    if (!encoded) throw new Error("missing cursor payload")
-    const decoded = asRecord(JSON.parse(Buffer.from(encoded, "base64url").toString("utf8")))
-    if (
-      decoded?.sessionId !== sessionId ||
-      typeof decoded.ordinal !== "number" ||
-      !Number.isSafeInteger(decoded.ordinal) ||
-      decoded.ordinal < 0
-    )
-      throw new Error("invalid cursor payload")
-    return decoded.ordinal
-  } catch {
-    throw new AgentMessagePageError(400, "Invalid message page cursor")
-  }
-}
 
 function staleToolError(message?: string) {
   if (message?.includes("ACP process restarted")) return "Tool execution interrupted by ACP restart"
@@ -266,7 +243,7 @@ export function readSessionMessagePage(sessionId: string, input: AgentMessagePag
       AND json_extract(${ClaxedoCloudMessageTable.data}, '$.info.id') = ${ClaxedoCloudMessageTable.message_id}
       AND json_extract(${ClaxedoCloudMessageTable.data}, '$.info.role') = ${ClaxedoCloudMessageTable.role}
     `
-    const beforeEnd = input.before === undefined ? undefined : lt(ClaxedoCloudMessageTable.ordinal, decodeMessagePageCursor(sessionId, input.before))
+    const beforeEnd = input.before === undefined ? undefined : lt(ClaxedoCloudMessageTable.ordinal, decodeMessagePageCursor(MESSAGE_PAGE_CURSOR_PREFIX, sessionId, input.before))
     const boundary = ClaxedoDB.use((db) =>
       db
         .select({
@@ -404,7 +381,7 @@ export function readSessionMessagePage(sessionId: string, input: AgentMessagePag
       )
       return {
         messages,
-        ...(older || omittedIntermediate ? { nextCursor: encodeMessagePageCursor(sessionId, final.ordinal) } : {}),
+        ...(older || omittedIntermediate ? { nextCursor: encodeMessagePageCursor(MESSAGE_PAGE_CURSOR_PREFIX, sessionId, final.ordinal) } : {}),
       }
     }
     const rows = ClaxedoDB.use((db) =>
@@ -443,14 +420,14 @@ export function readSessionMessagePage(sessionId: string, input: AgentMessagePag
     )
     return {
       messages: hydrateReplayMessages(rows),
-      ...(older ? { nextCursor: encodeMessagePageCursor(sessionId, boundary.ordinal) } : {}),
+      ...(older ? { nextCursor: encodeMessagePageCursor(MESSAGE_PAGE_CURSOR_PREFIX, sessionId, boundary.ordinal) } : {}),
     }
   }
   const limit = input.limit
   if (!Number.isSafeInteger(limit) || limit < 1 || limit > AGENT_MESSAGE_PAGE_LIMIT) {
     throw new AgentMessagePageError(400, `Message page limit must be between 1 and ${AGENT_MESSAGE_PAGE_LIMIT}`)
   }
-  const beforeOrdinal = input.before === undefined ? undefined : decodeMessagePageCursor(sessionId, input.before)
+  const beforeOrdinal = input.before === undefined ? undefined : decodeMessagePageCursor(MESSAGE_PAGE_CURSOR_PREFIX, sessionId, input.before)
   const rows = ClaxedoDB.use((db) =>
     db
       .select({
@@ -474,7 +451,7 @@ export function readSessionMessagePage(sessionId: string, input: AgentMessagePag
   const selected = rows.slice(0, limit).reverse()
   return {
     messages: hydrateReplayMessages(selected),
-    ...(hasMore && selected[0] ? { nextCursor: encodeMessagePageCursor(sessionId, selected[0].ordinal) } : {}),
+    ...(hasMore && selected[0] ? { nextCursor: encodeMessagePageCursor(MESSAGE_PAGE_CURSOR_PREFIX, sessionId, selected[0].ordinal) } : {}),
   }
 }
 

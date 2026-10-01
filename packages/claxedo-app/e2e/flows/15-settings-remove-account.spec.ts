@@ -1,16 +1,16 @@
 import { HARNESS_TABLE } from "@claxedo/agent-runtime-contract"
 import { expect, expectNothingAnimating, test } from "../harness"
-import { saveTeamAccount } from "../harness/saved-team-account"
+import { saveOrgAccount } from "../harness/saved-org-account"
 
-test("15 settings: the local operator removes a saved team account, cancellation preserves it, and the machine login stays protected", async ({ stack, app, isMobile }, testInfo) => {
+test("15 settings: the local operator removes a saved organization account, cancellation preserves it, and the machine login stays protected", async ({ stack, app, isMobile }, testInfo) => {
   await stack.daemon.makeWorkspace("remove-account", "Remove account")
-  const id = await saveTeamAccount(stack)
+  const id = await saveOrgAccount(stack)
   const read = async () => {
     const response = await fetch(`${stack.url}/api/claxedo/credentials/account-sources`)
     expect(response.status).toBe(200)
-    return await response.json() as { can_remove_team_accounts: boolean; team: Array<{ id: string }> }
+    return await response.json() as { can_remove_org_accounts: boolean; org: Array<{ id: string }> }
   }
-  expect(await read()).toMatchObject({ can_remove_team_accounts: true, team: [expect.objectContaining({ id })] })
+  expect(await read()).toMatchObject({ can_remove_org_accounts: true, org: [expect.objectContaining({ id })] })
   await app.goto(`${stack.url}/settings/models`)
   const accounts = app.getByRole("radiogroup", { name: "Claude Code", exact: true })
   const saved = accounts.locator('[data-slot="account-row"]').filter({ hasText: "Saved Claude account" })
@@ -30,7 +30,7 @@ test("15 settings: the local operator removes a saved team account, cancellation
   await expect(saved.getByRole("button", { name: "Cancel", exact: true })).toBeVisible()
   expect(await app.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
   await saved.getByRole("button", { name: "Cancel", exact: true }).click()
-  expect((await read()).team.some((account) => account.id === id)).toBe(true)
+  expect((await read()).org.some((account) => account.id === id)).toBe(true)
   if (testInfo.repeatEachIndex === 0) {
     await app.emulateMedia({ colorScheme: "dark" })
     await expect(app.locator("html")).toHaveAttribute("data-color-scheme", "dark")
@@ -40,30 +40,30 @@ test("15 settings: the local operator removes a saved team account, cancellation
   await remove.click()
   await remove.click()
   await expect(saved).toHaveCount(0)
-  await expect(accounts.locator('[data-account="team"]')).toHaveCount(0)
-  expect((await read()).team.some((account) => account.id === id)).toBe(false)
+  await expect(accounts.locator('[data-account="org"]')).toHaveCount(0)
+  expect((await read()).org.some((account) => account.id === id)).toBe(false)
   await expect(machine.getByRole("radio")).toBeChecked()
   await expect(machine.getByRole("button", { name: "Remove", exact: true })).toHaveCount(0)
   await app.reload()
   await expect(machine.getByRole("radio")).toBeChecked()
   await expect(saved).toHaveCount(0)
-  await expect(accounts.locator('[data-account="team"]')).toHaveCount(0)
+  await expect(accounts.locator('[data-account="org"]')).toHaveCount(0)
 })
 
-test("15 settings: an unavailable selected team account explains the failure and disappears after choosing the machine login", async ({ stack, app }) => {
-  await stack.daemon.makeWorkspace("missing-team", "Missing team")
+test("15 settings: an unavailable selected organization account explains the failure and disappears after choosing the machine login", async ({ stack, app }) => {
+  await stack.daemon.makeWorkspace("missing-org", "Missing organization")
   const response = await fetch(`${stack.url}/api/claxedo/credentials/account-sources`, {
     method: "PUT",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ provider_ids: HARNESS_TABLE.cursor.providerIds, source: "team" }),
+    body: JSON.stringify({ provider_ids: HARNESS_TABLE.cursor.providerIds, source: "org" }),
   })
   expect(response.status).toBe(200)
   await app.goto(`${stack.url}/settings/models`)
   const accounts = app.getByRole("radiogroup", { name: "Cursor", exact: true })
-  const missing = accounts.locator('[data-account="team"]')
+  const missing = accounts.locator('[data-account="org"]')
   await expect(missing.getByRole("radio")).toBeChecked()
   await expect(missing.getByRole("radio")).toBeDisabled()
-  await expect(missing.getByText("Cursor can't run for you: your organization has no team account for this provider. Choose your own account to use it.", { exact: true })).toBeVisible()
+  await expect(missing.getByText("Cursor can't run for you: your organization has no account for this provider. Choose your own account to use it.", { exact: true })).toBeVisible()
   await accounts.getByText("This computer's login", { exact: true }).click()
   await expect(missing).toHaveCount(0)
   const read = await fetch(`${stack.url}/api/claxedo/credentials/account-sources`)

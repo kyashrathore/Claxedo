@@ -3,7 +3,8 @@ import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"
 import { assistantMessageIdForTurn, createMessageIds } from "@claxedo/agent-runtime-contract"
-import { RuntimeStore } from "../store"
+import type { RuntimeStore } from "../store"
+import { openRuntimeStore } from "../store-file"
 import { createRuntimeEventHub } from "../projection/runtime-event-hub"
 import { createStoreBrokerPorts } from "./index"
 
@@ -18,9 +19,9 @@ afterEach(() => {
 
 function setup() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "continuation-"))
-  const store = new RuntimeStore(root)
+  const store = openRuntimeStore(root)
   opened.push({ store, root })
-  store.bindSession({ sessionId: "s1", workspaceId: "w1", directory: "/work", connectionId: "c1", upstreamSessionId: "up1", agentSessionId: "up1", createdAt: 1 })
+  store.bindSession({ owner: { kind: "machine-owner" }, sessionId: "s1", workspaceId: "w1", directory: "/work", connectionId: "c1", upstreamSessionId: "up1", agentSessionId: "up1", createdAt: 1 })
   store.updateSessionConfig("s1", { harness: { id: "claude", access: "native" }, agent: "general", model: { providerID: "anthropic", modelID: "test" } })
   const ports = createStoreBrokerPorts(store, { ownerGeneration: "g1", patternEvaluator: async () => {}, publishers: createRuntimeEventHub(),
     reportOwnerFailure: () => {}, retainLeasedTurnFailure: () => false })

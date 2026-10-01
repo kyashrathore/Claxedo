@@ -15,7 +15,8 @@ import { loopbackWorkspaceRuntimeExposure } from "./exposure"
 import type { AgentRuntimeRecoveryInspection } from "./host/contracts"
 import { managedWorkspaceSessionAccessPolicy, type ManagedSessionAuthority } from "./session-access-policy"
 import type { RelayHostAuthContext } from "./workspace-host-service-auth"
-import { RuntimeStore } from "./store"
+import type { RuntimeStore } from "./store"
+import { openRuntimeStore } from "./store-file"
 import { withWorkspaceTarget } from "./target"
 import { FakeTransport, fakeConnectionProvider, loopbackMachineLoginPolicy } from "./testing"
 import { createWorkspaceHost } from "./workspace/runtime"
@@ -114,7 +115,7 @@ function openWorkspace(input: { directory: string; storeRoot: string; workspaceI
     sessionAccessPolicy,
     onTurnOutcome: ({ sessionId, outcome }) => turnOutcomes.push({ sessionId, status: outcome.status }),
     storeFactory: ({ storeRoot }) => {
-      const store = new RuntimeStore(storeRoot)
+      const store = openRuntimeStore(storeRoot)
       stores.push(store)
       const finish = store.finishTurn.bind(store)
       store.finishTurn = (value) => {
@@ -133,7 +134,7 @@ function openWorkspace(input: { directory: string; storeRoot: string; workspaceI
       c.set("relayHostAuth", {
         iss: "workspace-relay", aud: "workspace-host-service", principal_kind: "user",
         actor_id: "actor_1", user_id: "user_1", actor_kind: "human", org_id: "org_1",
-        workspace_id: target.workspaceId, host_id: "host_1", role: "editor", backing: "cloud-vm",
+        workspace_id: target.workspaceId, host_id: "host_1", role: "editor", scope: "workspace", backing: "cloud-vm",
         exp: issued + 600, iat: issued, jti: "jti_1", parent_jti: "rat_1",
       })
       return await next()
@@ -521,7 +522,7 @@ describe("a journal row that cannot be read", () => {
     expect(seq).toBeGreaterThan(0)
     await f.host.dispose()
 
-    const offline = new RuntimeStore(f.storeRoot)
+    const offline = openRuntimeStore(f.storeRoot)
     const db = (offline as unknown as { db: { prepare(sql: string): { run(...p: unknown[]): unknown; get(...p: unknown[]): unknown } } }).db
     const readable = db.prepare("SELECT payload_json FROM runtime_journal WHERE session_id = ? AND seq = ?").get("ses_broken", seq) as { payload_json: string }
     db.prepare("UPDATE runtime_journal SET payload_json = ? WHERE session_id = ? AND seq = ?").run("{not json", "ses_broken", seq)

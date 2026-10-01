@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto"
 import { assistantMessageIdForTurn, type SteerResult } from "@claxedo/agent-runtime-contract"
 import type { PromptDeliveryRequest, PromptInput } from "@claxedo/agent-runtime-contract"
 import {
@@ -189,7 +188,7 @@ export function admitTurnMessageIds(
   store: Pick<AgentRuntimeStore, "messageSessionId">,
   turn: Pick<AgentRuntimeTurnStartInput, "sessionId" | "messageId" | "assistantMessageId">,
 ) {
-  const userMessageId = turn.messageId ?? `msg_${randomUUID()}`
+  const userMessageId = turn.messageId ?? `msg_${crypto.randomUUID()}`
   const assistantMessageId = turn.assistantMessageId ?? assistantMessageIdForTurn(userMessageId)
   for (const messageId of [userMessageId, assistantMessageId]) {
     const holder = store.messageSessionId?.(messageId)

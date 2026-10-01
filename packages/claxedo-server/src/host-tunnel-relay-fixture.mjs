@@ -16,11 +16,12 @@ import { createResolverClient, resolverClientCacheOptionsFromEnv } from "../../w
 // Two modes. `embedded` (the default) is the desktop shape: the owning fixture
 // runs the host in-process, and this relay answers target lookups itself with
 // a permissive resolver and no token-revocation check. `connect` is the
-// production shape for a `claxedo connect` host: target, revocation and
-// host-generation are all asked of the control plane's `/internal/relay/*`
-// routes through `createResolverClient`, exactly as `main.ts` wires them, so
-// admission, the periodic client check and the host-generation fence are the
-// real ones.
+// production shape for a `claxedo connect` host: target and revocation are
+// also asked of the control plane. In both modes the host-generation fence is
+// asked of the control plane's `/internal/relay/*` routes through
+// `createResolverClient`, exactly as `main.ts` wires it. The authority's SQLite
+// driver is a Node addon that crashes Bun, so this process cannot read the
+// enrollment row itself.
 
 function required(name) {
   const value = process.env[name]?.trim()
@@ -92,15 +93,16 @@ function recordAudit(event) {
   if (event.result === "deny") console.error(`[workspace-relay-fixture] ${JSON.stringify(event)}`)
 }
 
+const resolver = createResolverClient(
+  required("CLAXEDO_RELAY_RESOLVER_URL"),
+  process.env.CLAXEDO_RELAY_RESOLVER_TOKEN?.trim(),
+  resolverClientCacheOptionsFromEnv(process.env),
+)
+
 async function connectModeOptions() {
   const { d: _d, ...publicJwk } = relayHostPrivateJwk
   const relayHostPublicKey = await importJWK(publicJwk, "EdDSA")
   const kid = await deriveRelayHostKid(relayHostPublicKey)
-  const resolver = createResolverClient(
-    required("CLAXEDO_RELAY_RESOLVER_URL"),
-    process.env.CLAXEDO_RELAY_RESOLVER_TOKEN?.trim(),
-    resolverClientCacheOptionsFromEnv(process.env),
-  )
   return {
     relayHostPublicKeys: [{ publicKey: relayHostPublicKey, kid }],
     relayHostMintKid: kid,
@@ -116,7 +118,7 @@ const relayHandler = createWorkspaceRelayBun({
   relayHostSigningKey,
   relayHostAlgorithm: "EdDSA",
   directory,
-  ...(mode === "connect" ? await connectModeOptions() : { resolveTarget }),
+  ...(mode === "connect" ? await connectModeOptions() : { resolveTarget, resolveHostGeneration: resolver.hostGeneration }),
   ...(allowedOrigins.length ? { allowedOrigins } : {}),
   audit: recordAudit,
 }, {

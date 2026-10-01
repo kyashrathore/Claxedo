@@ -13,6 +13,22 @@ export const SESSION_TURN_LEASE_TTL_MS = 60_000
  */
 export const CURRENT_CHANNEL_IDENTITY_VERSION = 1
 
+/**
+ * What a Runtime Access Token's scope reaches, asked of the runtime path a
+ * request names. A token with no session is the workspace owner's and reaches
+ * every path; a token scoped to one session, a share holder's, reaches that
+ * session's routes, its own event stream and the answers to its agent's
+ * questions, and the session authority decides which writes the share
+ * carries. The relay asks it before forwarding and the runtime again on
+ * arrival.
+ */
+export function sessionScopeReaches(sessionScope: string | undefined, path: string, search: string) {
+  if (sessionScope === undefined) return true
+  if (path === "/api/wr/events") return new URLSearchParams(search).get("sessionID") === sessionScope
+  if (path === `/session/${sessionScope}` || path.startsWith(`/session/${sessionScope}/`)) return true
+  return /^\/question\/[^/]+\/(reply|reject)$/.test(path)
+}
+
 export {
   type TokenClaims,
   type TokenVerifierBaseClaims,

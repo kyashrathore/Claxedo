@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { AgentMessagePageError, parseMessagePageQuery, projectLatestSurfaceMessage, projectLatestSurfaceMessages } from "./message-page"
+import { AgentMessagePageError, decodeMessagePageCursor, encodeMessagePageCursor, parseMessagePageQuery, projectLatestSurfaceMessage, projectLatestSurfaceMessages } from "./message-page"
 
 describe("latest-surface first-paint projection", () => {
   test("keeps the envelope whole and every text part, and drops every other part", () => {
@@ -68,5 +68,29 @@ describe("message page input", () => {
     expect(() => parseMessagePageQuery(undefined, "", "latest-turn")).toThrow(AgentMessagePageError)
     expect(() => parseMessagePageQuery(undefined, "cursor", "latest-surface")).toThrow(AgentMessagePageError)
     expect(() => parseMessagePageQuery("20", undefined, "latest-surface")).toThrow(AgentMessagePageError)
+  })
+})
+
+describe("message page cursor", () => {
+  test("reads back the ordinal it was minted with, for its own producer and session only", () => {
+    const cursor = encodeMessagePageCursor("wrmp2:", "ses_a", 42)
+    expect(cursor).toMatch(/^wrmp2:[A-Za-z0-9_-]+$/)
+    expect(decodeMessagePageCursor("wrmp2:", "ses_a", cursor)).toBe(42)
+    for (const [prefix, sessionId, input] of [
+      ["wrmp2:", "ses_b", cursor],
+      ["wrmp2:", "ses_a", "wrmp2:"],
+      ["wrmp2:", "ses_a", "wrmp2:not+base64url"],
+      ["wrmp2:", "ses_a", encodeMessagePageCursor("wrmp2:", "ses_a", -1)],
+    ] as const) {
+      expect(() => decodeMessagePageCursor(prefix, sessionId, input)).toThrow(new AgentMessagePageError(400, "Invalid message page cursor"))
+    }
+  })
+
+  test("refuses a cursor of an older version or another producer by version", () => {
+    const previous = `wrmp1:${btoa(JSON.stringify({ sessionId: "ses_a", ord: 42 })).replace(/=+$/, "")}`
+    for (const input of [previous, encodeMessagePageCursor("cspm1:", "ses_a", 42)]) {
+      expect(() => decodeMessagePageCursor("wrmp2:", "ses_a", input))
+        .toThrow(new AgentMessagePageError(400, "Message page cursor is from another version or producer"))
+    }
   })
 })

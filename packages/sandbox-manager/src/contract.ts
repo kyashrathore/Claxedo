@@ -88,8 +88,8 @@ export type SandboxDriverMetadata = {
    * sandbox may USE for outbound requests but must NEVER be able to READ.
    *
    * - `"native"` — the provider brokers it on egress to the allowlisted hosts
-   *   with no extra infrastructure of ours: Daytona secret placeholders,
-   *   Vercel firewall header transforms, Cloudflare outbound handlers reading
+   *   with no extra infrastructure of ours: Vercel firewall header
+   *   transforms, Cloudflare outbound handlers reading
    *   the value from KV. The driver installs it during `ensureHost`.
    * - `"none"` — no way to keep the value out of sandbox processes. The
    *   provider may still have an encrypted secret STORE (e.g. Modal secrets),
@@ -106,12 +106,11 @@ export type SandboxDriverMetadata = {
    * enforces AT LEAST ONE encoding the policy carries and blocks everything
    * else; the encodings are alternatives, not additive requirements.
    *
-   * - `"hosts-and-cidrs"` — the provider filters by name AND by address
-   *   (Daytona: `domainAllowList` + `networkAllowList`).
+   * - `"hosts-and-cidrs"` — the provider filters by name AND by address.
    * - `"hosts"` — the provider filters by hostname only (Vercel firewall).
    * - `"none"` — the driver cannot express an egress allowlist. This covers
-   *   BOTH drivers that throw when handed a restricted policy (exe, docker,
-   *   box, and modal for host policy) AND — more dangerously — drivers that
+   *   BOTH drivers that throw when handed a restricted policy (docker, box,
+   *   and modal for host policy) AND — more dangerously — drivers that
    *   silently ignore `net` and run wide open (cloudflare, the fetch bridge).
    *   Modal is `"none"` even though it can cut the network entirely: a total
    *   blackout is not an allowlist and cannot serve a workspace that has to
@@ -138,7 +137,7 @@ export type SandboxEgressControl = "none" | "hosts" | "hosts-and-cidrs"
  *    (absent / `allow-all`), which is nothing to enforce.
  *  - `"withhold"` — the driver declares `egressControl: "none"`, so there is no
  *    containment to be had. The policy is NOT handed down: half the `"none"`
- *    drivers throw on a restricted policy (exe, docker, modal, box) and the
+ *    drivers throw on a restricted policy (docker, modal, box) and the
  *    other half silently drop it (cloudflare, the fetch bridge). Withholding at
  *    the manager means the throwing drivers never see one — their throws stay
  *    in place as their own last line of defence — and the silently-dropping
@@ -215,17 +214,15 @@ export type SandboxEgressUnenforcedEvent = {
  * manager refuses to provision (fail-closed).
  */
 export type SandboxBrokeredSecret = {
-  /** Env var name the sandbox references (Daytona placeholder key). */
+  /** Env var name the sandbox references. */
   name: string
   /** The secret material. Never enters the sandbox in plaintext. */
   value: string
   /** Egress allowlist: the only hosts for which the value is substituted/injected. */
   hosts: string[]
   /**
-   * When set, the value is injected as this HTTP header on egress to `hosts`
-   * (required for the Vercel firewall-transform model). When omitted, the
-   * driver exposes the credential via its native placeholder mechanism for
-   * the sandbox to attach itself (Daytona).
+   * The HTTP header the value is injected as on egress to `hosts`. Every
+   * native driver needs one and refuses a secret without it.
    */
   header?: string
   /**
@@ -268,12 +265,7 @@ export function brokeredSecretPlaceholder(name: string) {
   return `claxedo-broker:${name}`
 }
 
-/**
- * The environment a header-injecting driver must add so the sandbox can present
- * each secret. Daytona is absent from this: its own mount fills the same
- * variables with the placeholder it substitutes, and an env entry would shadow
- * it with a string Daytona does not know.
- */
+/** The environment a header-injecting driver must add so the sandbox can present each secret. */
 export function brokeredPlaceholderEnv(
   secrets: readonly SandboxBrokeredSecret[] | undefined,
 ): Record<string, string> {

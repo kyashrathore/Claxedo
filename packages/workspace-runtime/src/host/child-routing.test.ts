@@ -13,7 +13,7 @@ const childText = (correlationKey: string, delta: string): RoutedEvent => ({ eve
 const fenced = (token: number) => ({ valid: () => true, fencingToken: () => token, proof: () => "turn-lease" })
 
 function journal(f: HostFixture, sessionId: string) {
-  return f.store.brokerDatabase().prepare<{ kind: string; type: string; payload_json: string }>(
+  return f.store.database().prepare<{ kind: string; type: string; payload_json: string }>(
     "SELECT kind, type, payload_json FROM runtime_journal WHERE session_id = ? ORDER BY seq").all(sessionId)
 }
 

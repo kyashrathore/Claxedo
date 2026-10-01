@@ -144,7 +144,7 @@ describe("claxedo schema", () => {
         updated_at
       ) VALUES (?, ?, ?, ?, ?, ?, ?)
     `)
-    insert.run("cred_1", "daytona", "sandbox_provider", "managed", "available", 1, 1)
+    insert.run("cred_1", "vercel", "sandbox_provider", "managed", "available", 1, 1)
     insert.run("cred_2", "modal", "runtime_host_provider", "managed", "available", 1, 1)
 
     applyMigration(sqlite, "20260702000100_sandbox_driver_credentials")
@@ -771,7 +771,7 @@ describe("claxedo schema", () => {
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     `,
       )
-      .run("ws_1", "lease_1", 1, "ready", "daytona", "sandbox_1", "snapshot_1", 1, 2)
+      .run("ws_1", "lease_1", 1, "ready", "vercel", "sandbox_1", "snapshot_1", 1, 2)
     sqlite
       .prepare(
         `
@@ -809,7 +809,7 @@ describe("claxedo schema", () => {
         )
         .get("ws_1"),
     ).toEqual({
-      driver: "daytona",
+      driver: "vercel",
       driver_resource_id: "sandbox_1",
       driver_snapshot_id: "snapshot_1",
     })
@@ -840,14 +840,14 @@ describe("claxedo schema", () => {
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     `,
       )
-      .run("sess_1", "ws_1", "/workspace", "Cloud", "daytona", "{}", 1, 2, null)
+      .run("sess_1", "ws_1", "/workspace", "Cloud", "vercel", "{}", 1, 2, null)
 
     const fixed = repair(sqlite)
 
     expect(fixed).toContain("claxedo_cloud_session.driver")
     expect(hasColumn(sqlite, "claxedo_cloud_session", "provider")).toBe(false)
     expect(sqlite.prepare("SELECT driver FROM claxedo_cloud_session WHERE session_id = ?").get("sess_1")).toEqual({
-      driver: "daytona",
+      driver: "vercel",
     })
   })
 
@@ -873,14 +873,14 @@ describe("claxedo schema", () => {
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `,
       )
-      .run("term_1", "tab_1", "ws_1", "daytona", "sess_1", null, null, null, null, null, 1)
+      .run("term_1", "tab_1", "ws_1", "vercel", "sess_1", null, null, null, null, null, 1)
 
     const fixed = repair(sqlite)
 
     expect(fixed).toContain("claxedo_terminal_session.driver")
     expect(hasColumn(sqlite, "claxedo_terminal_session", "provider")).toBe(false)
     expect(sqlite.prepare("SELECT driver FROM claxedo_terminal_session WHERE terminal_id = ?").get("term_1")).toEqual({
-      driver: "daytona",
+      driver: "vercel",
     })
   })
 

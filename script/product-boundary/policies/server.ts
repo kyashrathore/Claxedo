@@ -44,7 +44,27 @@ export const serverWorkerd: Policy = {
     ],
     requiredPackages: ["better-auth", "hono", "@claxedo/server-core"],
   },
-  ceilings: { modules: 99, packages: 20 },
+  // The D1 authority composes its organization, team and project-member
+  // modules beside `authorization.ts`, the one owner of every D1 access rule
+  // (`authority/adapters/d1/core-authority.ts`); the host access authority's
+  // error contract is its own module
+  // (`authority/adapters/d1/host-access-errors.ts`); auth email, invitations
+  // included, leaves through the Worker's Cloudflare `EMAIL` binding
+  // (`platform/auth/auth-email-delivery.ts`); the session authority
+  // routes resolve whose connections a turn spends through
+  // `connections/turn-owner.ts`, the one owner the self-hosted node shares; the
+  // D1 session authority's refusal error and input validation
+  // (`authority/adapters/d1/session-input.ts`) are a module of their own; every
+  // D1 adapter reads a constraint failure through `platform/db/d1-constraint.ts`;
+  // the org, team and People routes share one typed refusal envelope
+  // (`platform/http/public-api-error-response.ts`). Hosted
+  // Pages are mounted by the core Worker: the D1 document authority
+  // (`authority/adapters/d1/document-authority.ts`), the R2 documents backend
+  // with its index and managed store (`documents/backends/hosted/`), and the
+  // runtime broker that hydrates a page into a session
+  // (`documents/backends/hosted/runtime-broker.ts` with its relay client
+  // `documents/relay-http.ts`).
+  ceilings: { modules: 116, packages: 19 },
 
   emitted: {
     file: "packages/claxedo-server/.artifacts/u8-package-split/manifests/server-workerd.json",

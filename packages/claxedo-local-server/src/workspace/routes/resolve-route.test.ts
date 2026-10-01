@@ -99,7 +99,7 @@ describe("local workspace resolve route", () => {
       directory: "workspace:ws_provisioned",
       remote_directory: "/workspace",
       kind: "cloud",
-      driver: "daytona",
+      driver: "modal",
     })
 
     const response = await LocalWorkspaceRoutes().request(
@@ -109,7 +109,7 @@ describe("local workspace resolve route", () => {
     // The placement, which is the fact.
     expect(await response.json()).toMatchObject({
       workspaceId: "ws_provisioned",
-      backing: { kind: "cloud-vm", driver: "daytona" },
+      backing: { kind: "cloud-vm", driver: "modal" },
       directory: "/workspace",
     })
 

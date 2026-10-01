@@ -1,4 +1,5 @@
 import { asRecord, type AgentSessionStart, type AgentSessionStartBinding, type AgentSessionStarts } from "@claxedo/agent-runtime-contract"
+import type { SqliteDatabase } from "../sqlite/database"
 
 interface SessionStartPersistence {
   get(sessionId: string): unknown
@@ -85,11 +86,7 @@ function readSessionStart(value: unknown): AgentSessionStart {
 }
 
 /** The runtime store's creation-ownership table, whose transitions `SessionStartStore` owns. */
-export function sqliteSessionStarts(db: {
-  exec(sql: string): unknown
-  prepare(sql: string): { get(...args: unknown[]): unknown; run(...args: unknown[]): unknown }
-}): AgentSessionStarts {
-  db.exec("CREATE TABLE IF NOT EXISTS session_start (session_id TEXT PRIMARY KEY, directory TEXT NOT NULL, data_json TEXT NOT NULL)")
+export function sqliteSessionStarts(db: SqliteDatabase): AgentSessionStarts {
   return new SessionStartStore({
     get(id) {
       const row = asRecord(db.prepare("SELECT data_json FROM session_start WHERE session_id = ?").get(id))
@@ -107,8 +104,7 @@ export function sqliteSessionStarts(db: {
     remove(binding) {
       const result = db.prepare(`DELETE FROM session_start WHERE session_id = ? AND ${fields.map(field => `json_extract(data_json, '$.binding.${field}') = ?`).join(" AND ")}`)
         .run(binding.sessionId, ...fields.map(field => binding[field]))
-      const changes = asRecord(result)?.changes
-      return changes === 1 || changes === 1n
+      return result.changes === 1
     },
   })
 }

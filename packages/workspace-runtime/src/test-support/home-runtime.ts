@@ -1,11 +1,12 @@
 import { createHarnessServices } from "../harness-services"
-import { migrateLaunchOwnership, sqliteLaunchOwnership } from "../ownership/launch-ownership-sqlite"
-import { openDatabase } from "../store"
+import { LAUNCH_OWNERSHIP_SCHEMA } from "../ownership/launch-ownership-schema"
+import { sqliteLaunchOwnership } from "../ownership/launch-ownership-sqlite"
+import { openSqliteDatabase } from "../sqlite/node"
 
 const [home, ledger] = process.argv.slice(2)
 if (!home || !ledger) throw new Error("usage: home-runtime.ts <home> <launch-ledger>")
-const db = openDatabase(ledger)
-migrateLaunchOwnership(db)
+const db = openSqliteDatabase(ledger)
+for (const statement of LAUNCH_OWNERSHIP_SCHEMA) db.exec(statement)
 const services = createHarnessServices({
   ownership: sqliteLaunchOwnership(db, { ownerGeneration: "home-runtime", scope: { kind: "standalone" } }),
   log: { debug() {}, info() {}, warn() {}, error() {} },

@@ -14,7 +14,7 @@ Returns `principal`, `orgRole` (the user principal's role, `undefined` for a mac
 | Action (`AccessAction`, `model.ts`) | Answered from |
 | --- | --- |
 | `org.manage`, `org.accounts`, `plugins.manage` | the principal's org role is `owner` or `admin` (`isOrgManager`) |
-| `accounts.removeTeam` | `canRemoveTeamAccounts` from the credential server's account-source response; missing facts deny access |
+| `accounts.removeOrg` | `canRemoveOrgAccounts` from the credential server's account-source response; missing facts deny access |
 
 A fact the server has not reported answers `false`. Nothing is re-derived from relay, runtime or control-plane rules. `scripts/checks/access-boundary.ts` enforces this outside `src/access`: it fails a comparison, `switch` case or list membership on a role name, an ordering on a rank, and a read of `capabilities.prompt` or of a share-management flag.
 
@@ -29,4 +29,4 @@ There is no member list, team screen or org switcher: `src/server/` has no route
 
 ## Flows
 
-Flow 15 (`e2e/flows/15-settings.spec.ts`) opens the Organization section among the settings sections (`15-settings.navigation.ts`). `15-settings-remove-account.spec.ts` covers local-operator removal of a saved team credential while preserving the machine login. No flow covers a signed-in user's org role.
+Flow 15 (`e2e/flows/15-settings.spec.ts`) opens the Organization section among the settings sections (`15-settings.navigation.ts`). `15-settings-remove-account.spec.ts` covers local-operator removal of a saved organization credential while preserving the machine login. No flow covers a signed-in user's org role.

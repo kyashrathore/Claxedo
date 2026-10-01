@@ -29,7 +29,7 @@ export type Integration = {
   readonly prompts: readonly IntegrationPrompt[]
 }
 
-export type ConnectionScope = "team" | "personal"
+export type ConnectionScope = "org" | "personal"
 
 export type Connection = {
   readonly id: string
@@ -114,7 +114,7 @@ function connectionOf(value: unknown): Connection[] {
   return [{
     id,
     integrationId,
-    scope: readString(value, "scope") === "personal" ? "personal" : "team",
+    scope: readString(value, "scope") === "personal" ? "personal" : "org",
     ...(accountLabel === undefined ? {} : { accountLabel }),
     status: status === "connected" || status === "degraded" ? status : "broken",
   }]

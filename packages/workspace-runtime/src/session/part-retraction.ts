@@ -1,5 +1,5 @@
 import type { AgentPresentationEvent } from "@claxedo/agent-runtime-contract"
-import type { SqliteDatabase } from "../store"
+import type { SqliteDatabase } from "../sqlite/database"
 
 type Retraction = Extract<AgentPresentationEvent, { type: "message.part.retracted" }>["properties"]
 

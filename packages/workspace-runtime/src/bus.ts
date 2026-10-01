@@ -64,7 +64,7 @@ export type WorkspaceRuntimeEvent =
       type: "pty.stream"
       id: string
       sessionId?: string
-      kind: "data" | "exit" | "disconnect" | "error" | "command-exit"
+      kind: "data" | "exit" | "disconnect" | "error"
       exitCode?: number
       message?: string
       tail?: string
@@ -86,17 +86,11 @@ export type WorkspaceRuntimeEvent =
       eventType: "Busy" | "Idle" | "UserActionRequired" | "Error"
       outcome?: "done" | "error" | "cancelled"
     }
-  | { type: "process.started"; directory: string; configId: string; ptyId: string }
-  /** `exitCode` is absent when the process stopped without one being read; a zero would be an invented one. */
-  | { type: "process.stopped"; directory: string; configId: string; exitCode?: number }
-  | { type: "process.crashed"; directory: string; configId: string; exitCode: number; restartCount: number; commandExit?: boolean; ptyId?: string }
-  | { type: "process.status"; directory: string; configId: string; status: string }
-  | { type: "process.config.changed"; directory: string; configs: unknown[] }
   /** A session's whole queue as it stands after a write changed it. */
   | { type: "session.queue"; directory: string; sessionID: string; queue: QueuedPromptView[] }
   | SessionLifecycleEvent
 
-type RuntimeBus = ReturnType<typeof createBus<WorkspaceRuntimeEvent>>
+export type RuntimeBus = ReturnType<typeof createBus<WorkspaceRuntimeEvent>>
 
 // Each public dist entry (index/host/routes/…) is bundled separately, so this
 // module is instantiated once per entry in the same process. Pin the bus on

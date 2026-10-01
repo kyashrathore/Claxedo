@@ -2,6 +2,7 @@
 // own program from imports alone and never pick up this package's tsconfig
 // file list, so the ambient declaration has to travel with the file.
 /// <reference path="./workerd-globals.d.ts" />
+import { hostTunnelFailure, hostTunnelFailureResponse } from "./host-tunnel-failure"
 import { createRemoteJWKSet, importSPKI } from "jose"
 import { trimToUndefined } from "@claxedo/helpers/string"
 import {
@@ -415,9 +416,8 @@ export type WorkspaceRelaySocketAttachment =
       hostId: string
       workspaceIds: string[]
       connectedAt: number
-      /** Fence pair from the admitting Host Tunnel Token; absent on sockets attached before the fence existed. */
-      enrollmentId?: string
-      generation?: number
+      enrollmentId: string
+      generation: number
       /** Consecutive unavailable generation lookups, persisted so hibernation cannot reset the outage grace. */
       generationCheckFailures?: number
     }
@@ -485,8 +485,8 @@ type HostTunnelSocket = {
   hostId: string
   workspaceIds: string[]
   connectedAt: number
-  enrollmentId?: string
-  generation?: number
+  enrollmentId: string
+  generation: number
   generationCheckFailures: number
   generationWatcher?: ReturnType<typeof setInterval>
   socket: WorkspaceRelayDurableObjectSocket
@@ -668,7 +668,7 @@ function websocketRequest(request: Request) {
 // `x-claxedo-relay-ws-trace: 1`, the cloud WS admit path emits a single
 // `relay.trace` frame on the client socket carrying wsUpstreamOpenMs /
 // queuedFrames / maxQueuedDelayMs. This mirrors the Bun relay's trace
-// (bun.ts) so a benchmark harness sees the same vocabulary on both adapters.
+// (bun.ts) so a measuring client sees the same vocabulary on both adapters.
 // Without the header there is zero behavior change.
 function relayWebSocketTraceEnabled(request: Request) {
   return request.headers.get("x-claxedo-relay-ws-trace") === "1"
@@ -1305,8 +1305,8 @@ export function createWorkspaceRelayDurableObjectRoom(options: WorkspaceRelayDur
           hostId: attachment.hostId,
           workspaceIds: attachment.workspaceIds,
           connectedAt: attachment.connectedAt,
-          ...(attachment.enrollmentId ? { enrollmentId: attachment.enrollmentId } : {}),
-          ...(attachment.generation !== undefined ? { generation: attachment.generation } : {}),
+          enrollmentId: attachment.enrollmentId,
+          generation: attachment.generation,
           generationCheckFailures: attachment.generationCheckFailures ?? 0,
           socket,
           pending: new Map(),
@@ -1475,12 +1475,10 @@ export function createWorkspaceRelayDurableObjectRoom(options: WorkspaceRelayDur
     hostId: tunnel.hostId,
     workspaceIds: tunnel.workspaceIds,
     connectedAt: tunnel.connectedAt,
-    ...(tunnel.enrollmentId ? { enrollmentId: tunnel.enrollmentId } : {}),
-    ...(tunnel.generation !== undefined ? { generation: tunnel.generation } : {}),
+    enrollmentId: tunnel.enrollmentId,
+    generation: tunnel.generation,
     ...(tunnel.generationCheckFailures ? { generationCheckFailures: tunnel.generationCheckFailures } : {}),
   })
-
-  const fenced = (tunnel: HostTunnelSocket) => Boolean(options.resolveHostGeneration) && tunnel.generation !== undefined
 
   /**
    * Applies one generation re-check verdict to an established tunnel. A
@@ -1491,7 +1489,7 @@ export function createWorkspaceRelayDurableObjectRoom(options: WorkspaceRelayDur
    * hibernating path the in-memory tunnel is rebuilt from it on every wake.
    */
   const recheckHostGeneration = async (tunnel: HostTunnelSocket) => {
-    if (!fenced(tunnel) || hostTunnels.get(tunnel.hostId) !== tunnel) return
+    if (hostTunnels.get(tunnel.hostId) !== tunnel) return
     const decision = await checkHostTunnelGeneration(options.resolveHostGeneration, {
       enrollment_id: tunnel.enrollmentId,
       generation: tunnel.generation,
@@ -1519,7 +1517,7 @@ export function createWorkspaceRelayDurableObjectRoom(options: WorkspaceRelayDur
 
   const watchHostGeneration = (tunnel: HostTunnelSocket) => {
     const intervalMs = options.hostGenerationCheckIntervalMs ?? HOST_GENERATION_CHECK_INTERVAL_MS_DEFAULT
-    if (tunnel.generationWatcher || hibernation || !fenced(tunnel) || intervalMs <= 0) return
+    if (tunnel.generationWatcher || hibernation || intervalMs <= 0) return
     tunnel.generationWatcher = setInterval(() => {
       void recheckHostGeneration(tunnel).catch(() => {})
     }, intervalMs)
@@ -1819,9 +1817,7 @@ export function createWorkspaceRelayDurableObjectRoom(options: WorkspaceRelayDur
   const scheduleHibernatedRevocationCheck = async () => {
     const intervalMs = hibernatedRevocationIntervalMs()
     if (!hibernation || !options.alarms || intervalMs <= 0) return
-    // Nothing to watch: do not hold the DO awake on a timer. A host-only room
-    // counts when its tunnel carries a generation the relay can re-check.
-    if (clients.size === 0 && ![...hostTunnels.values()].some(fenced)) return
+    if (clients.size === 0 && hostTunnels.size === 0) return
     const now = options.now ?? Date.now
     const at = now() + intervalMs
     try {
@@ -1940,18 +1936,9 @@ export function createWorkspaceRelayDurableObjectRoom(options: WorkspaceRelayDur
     if (!sent) closeSocket(socket, 1011, "Host tunnel unavailable")
   }
 
-  /**
-   * A registration update is re-admitted the way a connect is, with the
-   * socket's own claims as the incumbent: the update's token must not be
-   * outranked by the generation the tunnel already holds and must pass the
-   * control-plane check. The tunnel then carries the update's verified claims
-   * and, if it became fenced, starts the periodic check (or, hibernating,
-   * arms the alarm). A refusal closes the way the periodic check does — 1012
-   * for an unreachable lookup, 1008 otherwise — with the room's presence
-   * cleaned up here because a server-initiated close raises no close event
-   * under hibernation. Between the awaits the tunnel may have been replaced;
-   * the update is then moot and dropped.
-   */
+  // Hibernation emits no close event for a server-initiated close, so a
+  // refusal must remove presence here. A replaced tunnel may settle its
+  // verification later and must not close the replacement.
   const applyRegistrationUpdate = async (tunnel: HostTunnelSocket, workspaceIds: string[], token: string) => {
     const hostId = tunnel.hostId
     const refuse = (code: 1008 | 1012, reason: string) => {
@@ -2030,7 +2017,7 @@ export function createWorkspaceRelayDurableObjectRoom(options: WorkspaceRelayDur
       if (!pending) return
       const chunk = base64ToBytes(message.body_base64)
       if (pending.bytes + chunk.byteLength > (options.tunnelResponseBodyMaxBytes ?? TUNNEL_RESPONSE_BODY_MAX_BYTES_DEFAULT)) {
-        failPendingTunnelResponse(tunnel, message.request_id, pending, new Error("Host tunnel response body exceeds the relay limit"))
+        failPendingTunnelResponse(tunnel, message.request_id, pending, hostTunnelFailure("host_tunnel_response_body_too_large"))
         return
       }
       pending.bytes += chunk.byteLength
@@ -2175,8 +2162,8 @@ export function createWorkspaceRelayDurableObjectRoom(options: WorkspaceRelayDur
 
     const connectedAt = options.now?.() ?? Date.now()
     const fence = {
-      ...(claims.enrollment_id ? { enrollmentId: claims.enrollment_id } : {}),
-      ...(claims.generation !== undefined ? { generation: claims.generation } : {}),
+      enrollmentId: claims.enrollment_id,
+      generation: claims.generation,
     }
     const pair = acceptSocket({ kind: "host-tunnel", hostId, workspaceIds, connectedAt, ...fence })
     const tunnel: HostTunnelSocket = {
@@ -2242,7 +2229,7 @@ export function createWorkspaceRelayDurableObjectRoom(options: WorkspaceRelayDur
             new Headers(),
             authorized.relayHostToken,
             authorized.target.workspaceId,
-            { hostTunnel: false, upstreamHeaders: authorized.target.upstreamHeaders },
+            { hostTunnel: false },
           )),
         },
       )
@@ -2261,7 +2248,7 @@ export function createWorkspaceRelayDurableObjectRoom(options: WorkspaceRelayDur
     const emitTrace = (openedAt: number) => {
       if (!trace || trace.emitted) return
       trace.emitted = true
-      // Unchecked on purpose: this frame exists only when a bench opted in with
+      // Unchecked on purpose: this frame exists only when a client opted in with
       // `x-claxedo-relay-ws-trace`, and losing a diagnostic must never affect the
       // connection it is measuring.
       sendSocket(pair.server, JSON.stringify({
@@ -2437,7 +2424,6 @@ export function createWorkspaceRelayDurableObjectRoom(options: WorkspaceRelayDur
         ),
         workspaceRelayForwardRequestInit(request, authorized.request.relayHostToken, workspaceId, {
           signal: controller.signal,
-          upstreamHeaders: authorized.request.target.upstreamHeaders,
         }),
       ))
       return new Response(upstream.body, {
@@ -2498,7 +2484,7 @@ export function createWorkspaceRelayDurableObjectRoom(options: WorkspaceRelayDur
           paused: false,
           reason: "closed",
         } satisfies TunnelHttpResponseFlow))
-        reject(new Error("Host tunnel timed out"))
+        reject(hostTunnelFailure("host_tunnel_timeout"))
       }, options.forwardTimeoutMs ?? 30_000)
       tunnel.pending.set(requestId, {
         chunks: [],
@@ -2522,23 +2508,7 @@ export function createWorkspaceRelayDurableObjectRoom(options: WorkspaceRelayDur
     try {
       return await traceSpan(trace, "tunnel-wait", () => pending)
     } catch (err) {
-      const timeout = err instanceof Error && err.message.includes("timed out")
-      const responseTooLarge = err instanceof Error && err.message.includes("response body exceeds")
-      return Response.json(
-        errorBody(
-          timeout
-            ? "host_tunnel_timeout"
-            : responseTooLarge
-              ? "host_tunnel_response_body_too_large"
-              : "host_tunnel_unavailable",
-          timeout
-            ? "Host tunnel timed out"
-            : responseTooLarge
-              ? "Host tunnel response body exceeds the relay limit"
-              : "Host tunnel is unavailable",
-        ),
-        { status: responseTooLarge ? 413 : 503 },
-      )
+      return hostTunnelFailureResponse(err)
     }
   }
 

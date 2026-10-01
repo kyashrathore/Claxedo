@@ -40,9 +40,11 @@ import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
 
 const log = Log.create({ service: "credential-routes" })
 
+// Sandbox driver credentials are written only by the sandbox driver settings
+// route, which verifies the fields and stores them as one JSON object.
 const putBody = z.object({
   provider_id: z.string().min(1),
-  kind: z.enum(["api_key", "oauth_token", "subscription_session", "sandbox_driver"]),
+  kind: z.enum(["api_key", "oauth_token", "subscription_session"]),
   source: z.enum(["managed", "local_only", "env", "upstream_sync"]).default("managed"),
   label: z.string().optional(),
   account_id: z.string().optional(),
@@ -226,7 +228,7 @@ export function CredentialRoutes(
   }
   const orgs = new WeakMap<Request, string>()
   const org = (request: Request) => orgs.get(request) ?? SINGLE_TENANT_ORG
-  const canRemoveTeamAccounts = (request: Request) => localOperators.has(request) && org(request) === SINGLE_TENANT_ORG
+  const canRemoveOrgAccounts = (request: Request) => localOperators.has(request) && org(request) === SINGLE_TENANT_ORG
   /**
    * One row, in the caller's org. Scoped before anything else runs: an
    * out-of-org id must 404 before a secret is resolved or a provider is called
@@ -293,11 +295,7 @@ export function CredentialRoutes(
     const expected = `Bearer ${options.token}`
     app.use(async (c, next) => {
       // Constant-time: `!==` on a shared bearer secret short-circuits at the
-      // first differing byte and leaks the matching prefix length. Every other
-      // bearer comparison in the server already uses this helper
-      // (internal-admin-auth, internal-relay, local-installation-broker); this
-      // one guards the credential store — API keys, OAuth tokens, sandbox
-      // driver secrets — so it is the last place to leave short-circuiting.
+      // first differing byte and leaks the matching prefix length.
       if (!timingSafeEqualStrings(c.req.header("authorization") ?? "", expected)) {
         return c.json(errorBody("credential_unauthorized", "Missing or invalid credentials token"), 401)
       }
@@ -353,11 +351,11 @@ export function CredentialRoutes(
     })
     .get("/account-sources", async (c) => {
       const orgId = org(c.req.raw)
-      const team = (await credentials.listCredentials(orgId)).filter((row) => row.owner === null && fanoutEligible(row))
+      const orgRows = (await credentials.listCredentials(orgId)).filter((row) => row.owner === null && fanoutEligible(row))
       return c.json({
         sources: (await credentials.accountSelections(orgId))[actor(c.req.raw)] ?? {},
-        team: team.map(redact),
-        can_remove_team_accounts: canRemoveTeamAccounts(c.req.raw),
+        org: orgRows.map(redact),
+        can_remove_org_accounts: canRemoveOrgAccounts(c.req.raw),
       })
     })
     .put("/account-sources", async (c) => {
@@ -571,7 +569,7 @@ export function CredentialRoutes(
     })
     .delete("/:id", async (c) => {
       const row = await readCredential(c.req.param("id"), org(c.req.raw))
-      const removable = row && (row.owner === actor(c.req.raw) || (row.owner === null && fanoutEligible(row) && canRemoveTeamAccounts(c.req.raw)))
+      const removable = row && (row.owner === actor(c.req.raw) || (row.owner === null && fanoutEligible(row) && canRemoveOrgAccounts(c.req.raw)))
       if (!removable) return c.json({ deleted: false })
       const deleted = await credentials.deleteCredential(c.req.param("id"), org(c.req.raw))
       return c.json({ deleted })

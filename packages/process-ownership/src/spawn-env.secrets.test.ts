@@ -57,7 +57,6 @@ describe("harness spawn env never carries internal secrets", () => {
       "CLAXEDO_RELAY_RESOLVER_TOKEN",
       "CLAXEDO_EMBEDDED_AUTH_SECRET",
       "CLAXEDO_POLAR_WEBHOOK_SECRET",
-      "CLAXEDO_LOCAL_DOCUMENT_BROKER_TOKEN",
       "CLAXEDO_ACCESS_TOKEN",
       "CLAXEDO_DEV_TOKEN",
       "CLAXEDO_CONTROL_PLANE_URL", // child has no need to name the control plane

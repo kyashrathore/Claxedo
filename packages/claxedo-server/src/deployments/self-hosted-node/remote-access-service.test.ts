@@ -12,10 +12,12 @@ import {
 import { openAuthorityDb } from "@claxedo/server-core/authority/adapters/sqlite/workspace-authority-store"
 import {
   invitationRedeemPayload,
-  invitationTokenParts,
+  decodeInvitationToken,
   publicKeyFingerprint,
-} from "@claxedo/server-core/platform/auth/host-connect-contract"
-import { hostEnrollmentPayload, signHostPayload, type LocalHostIdentity } from "../../workspace/local-host"
+  enrollmentPayload,
+} from "@claxedo/account-contract/machine"
+import { signHostPayload, type LocalHostIdentity } from "../../workspace/local-host"
+
 import { createRemoteAccessService } from "./remote-access-service"
 import { selfHostedOperatorAuthorizer } from "./operator"
 
@@ -76,28 +78,37 @@ function observedBeats(authority: Authority) {
   }
 }
 
-async function enrollKeyUnderHostId(authority: Authority, identity: LocalHostIdentity, as: SignedControlPlaneAuth = auth) {
+async function enrollKeyUnderHostId(
+  authority: Authority,
+  identity: LocalHostIdentity,
+  as: SignedControlPlaneAuth = auth,
+) {
   const request = await authority.createHostEnrollmentRequest(as, { hostId: identity.hostId })
   await authority.enrollHost(as, {
     hostId: identity.hostId,
     publicKey: identity.publicKey,
     requestId: request.request_id,
-    signature: signHostPayload(identity, hostEnrollmentPayload({
-      hostId: identity.hostId,
-      requestId: request.request_id,
-      nonce: request.nonce,
-    })),
+    signature: signHostPayload(
+      identity,
+      enrollmentPayload({
+        hostId: identity.hostId,
+        requestId: request.request_id,
+        nonce: request.nonce,
+      }),
+    ),
   })
 }
 
-function setup(input: {
-  localWorkspaces?: Local[]
-  sessionAuthority?: "local" | "managed-private"
-  /** Shared so a second service can contend for one machine's enrollment. */
-  authority?: ReturnType<typeof createSqliteWorkspaceAuthority>
-  identity?: LocalHostIdentity
-  heartbeatIntervalMs?: number
-} = {}) {
+function setup(
+  input: {
+    localWorkspaces?: Local[]
+    sessionAuthority?: "local" | "managed-private"
+    /** Shared so a second service can contend for one machine's enrollment. */
+    authority?: ReturnType<typeof createSqliteWorkspaceAuthority>
+    identity?: LocalHostIdentity
+    heartbeatIntervalMs?: number
+  } = {},
+) {
   const authority = input.authority ?? createSqliteWorkspaceAuthority({ path: ":memory:" })
   const identity = input.identity ?? machineIdentity()
   const localWorkspaces: Local[] = input.localWorkspaces ?? [
@@ -107,13 +118,12 @@ function setup(input: {
   let workspaceChanged: (() => Promise<void>) | undefined
   /** Ordered because what matters after a concurrent revoke is the last word on the tunnel. */
   const tunnel: ("start" | "stop")[] = []
-  const startMachineTunnel = vi.fn(async ({ workspaceIds }: {
-    workspaceIds: string[]
-    hostTunnelTokenProvider: () => Promise<string>
-  }) => {
-    tunnel.push("start")
-    return { connectionCount: 1, workspaceIds }
-  })
+  const startMachineTunnel = vi.fn(
+    async ({ workspaceIds }: { workspaceIds: string[]; hostTunnelTokenProvider: () => Promise<string> }) => {
+      tunnel.push("start")
+      return { connectionCount: 1, workspaceIds }
+    },
+  )
   const stopMachineTunnel = vi.fn(() => {
     tunnel.push("stop")
     return true
@@ -133,7 +143,9 @@ function setup(input: {
     listLocalWorkspaces: async () => localWorkspaces,
     subscribeLocalWorkspaces: (listener) => {
       workspaceChanged = listener
-      return () => { workspaceChanged = undefined }
+      return () => {
+        workspaceChanged = undefined
+      }
     },
     localHostIdentity: async () => identity,
     signHostPayload: signSpy,
@@ -165,6 +177,20 @@ function setup(input: {
 }
 
 describe("remote access service", () => {
+  test("tunnel renewal credentials carry the serving enrollment's fence", async () => {
+    const { authority, service, startMachineTunnel, hostTunnelTokenSigner } = setup()
+    await service.enable(auth, { startAtLogin: false })
+    const enrollmentId = service.servingEnrollmentId()!
+    const enrollment = await authority.machineAuth!.lookupEnrollment(enrollmentId)
+    await startMachineTunnel.mock.calls.at(-1)![0].hostTunnelTokenProvider()
+    expect(hostTunnelTokenSigner).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        enrollmentId,
+        generation: enrollment!.serving_generation,
+      }),
+    )
+  })
+
   test("an unrelated signed account cannot enroll, share through, or take over this machine", async () => {
     const { authority, service, signSpy, startMachineTunnel } = setup()
     const outsider: SignedControlPlaneAuth = {
@@ -173,10 +199,12 @@ describe("remote access service", () => {
     }
     const denied = async () => {
       await expect(service.enable(outsider, { startAtLogin: true })).rejects.toMatchObject({
-        status: 403, code: "operator_required",
+        status: 403,
+        code: "operator_required",
       })
       await expect(service.assignWorkspace(outsider, { workspaceId: "ws_1" })).rejects.toMatchObject({
-        status: 403, code: "operator_required",
+        status: 403,
+        code: "operator_required",
       })
     }
     await denied()
@@ -232,14 +260,21 @@ describe("remote access service", () => {
     })
     // The machine key signs the enrollment and nothing else: the beat is the
     // machine principal this process already holds.
-    expect(signSpy.mock.calls.map(([, payload]) => payload.split("\n")[0])).toEqual(["claxedo.host-enrollment.enroll.v1"])
-    await expect(authority.listHostEnrollments!(auth)).resolves.toMatchObject([{
-      assignments: [
-        { workspace_id: "ws_1", remote_directory: "/repo/one", revision: 1 },
-        { workspace_id: "ws_2", remote_directory: "/repo/two", revision: 1 },
-      ],
-      acked: [{ workspaceId: "ws_1", revision: 1 }, { workspaceId: "ws_2", revision: 1 }],
-    }])
+    expect(signSpy.mock.calls.map(([, payload]) => payload.split("\n")[0])).toEqual([
+      "claxedo.host-enrollment.enroll.v1",
+    ])
+    await expect(authority.listHostEnrollments!(auth)).resolves.toMatchObject([
+      {
+        assignments: [
+          { workspace_id: "ws_1", remote_directory: "/repo/one", revision: 1 },
+          { workspace_id: "ws_2", remote_directory: "/repo/two", revision: 1 },
+        ],
+        acked: [
+          { workspaceId: "ws_1", revision: 1 },
+          { workspaceId: "ws_2", revision: 1 },
+        ],
+      },
+    ])
     // Exactly one machine tunnel fed from the beat's serveable set.
     expect(startMachineTunnel).toHaveBeenCalledTimes(1)
     expect(startMachineTunnel).toHaveBeenCalledWith({
@@ -297,12 +332,7 @@ describe("remote access service", () => {
     const result = await service.assignWorkspace(auth, { workspaceId: "ws_share", displayName: "shared" })
 
     expect(result.assignment).toEqual({ assigned: true, workspace_id: "ws_share", host_id: "host_machine" })
-    expect(result.hostTunnel).toEqual({
-      hostTunnelToken: "htt_1",
-      tokenExpiresAt: 456_000,
-      jti: "jti_1",
-      relayUrl: "https://relay.test",
-    })
+    expect(result).not.toHaveProperty("hostTunnel")
     // Share success = routable, not merely recorded.
     await expect(authority.activeWorkspaceHost(auth, { workspaceId: "ws_share" })).resolves.toMatchObject({
       active: true,
@@ -310,12 +340,14 @@ describe("remote access service", () => {
     })
     // The devices surface names the machine. A share-path enrollment carries
     // no machine display name yet, so it falls back to the host id.
-    await expect(service.devices(auth)).resolves.toEqual([{
-      hostId: "host_machine",
-      displayName: "host_machine",
-      lastSeenAt: expect.any(Number),
-      workspaceIds: ["ws_share"],
-    }])
+    await expect(service.devices(auth)).resolves.toEqual([
+      {
+        hostId: "host_machine",
+        displayName: "host_machine",
+        lastSeenAt: expect.any(Number),
+        workspaceIds: ["ws_share"],
+      },
+    ])
   })
 
   test("unassignWorkspace removes routing and shrinks the machine's signed consent set", async () => {
@@ -371,10 +403,12 @@ describe("remote access service", () => {
 
     // The tunnel this machine holds is still minted for the operator.
     await startMachineTunnel.mock.calls.at(-1)![0].hostTunnelTokenProvider()
-    expect(hostTunnelTokenSigner).toHaveBeenLastCalledWith(expect.objectContaining({
-      subject: auth.user.subject,
-      hostId: "host_machine",
-    }))
+    expect(hostTunnelTokenSigner).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        subject: auth.user.subject,
+        hostId: "host_machine",
+      }),
+    )
 
     // And a project opened afterwards is still shared as the operator, whose
     // enrollment is the only one this host id has.
@@ -384,10 +418,12 @@ describe("remote access service", () => {
       active: true,
       host_id: "host_machine",
     })
-    await expect(authority.listHostEnrollments!(auth)).resolves.toMatchObject([{
-      host_id: "host_machine",
-      assignments: expect.arrayContaining([expect.objectContaining({ workspace_id: "ws_3" })]),
-    }])
+    await expect(authority.listHostEnrollments!(auth)).resolves.toMatchObject([
+      {
+        host_id: "host_machine",
+        assignments: expect.arrayContaining([expect.objectContaining({ workspace_id: "ws_3" })]),
+      },
+    ])
   })
 
   test("status reports enrollment and tunnel liveness from the authority", async () => {
@@ -439,34 +475,47 @@ describe("remote access service", () => {
     // afresh, reviving the retired rows.
     const again = await service.enable(auth, { startAtLogin: false })
     expect(again.workspaceIds).toEqual(["ws_1", "ws_2"])
-    await expect(authority.activeWorkspaceHost(auth, { workspaceId: "ws_1" })).resolves.toMatchObject({ active: true, host_id: "host_machine" })
+    await expect(authority.activeWorkspaceHost(auth, { workspaceId: "ws_1" })).resolves.toMatchObject({
+      active: true,
+      host_id: "host_machine",
+    })
   })
 
   test("revoke reaches a machine enrolled through an invitation the same way, without touching this machine", async () => {
     const { authority, service, stopMachineTunnel } = setup()
     await service.enable(auth, { startAtLogin: false })
     const box = machineIdentity("host_box")
-    const invitation = await authority.createHostInvitation!(auth, { scope: { allowed_roots: ["/srv"], visibility: "owner" } })
-    const parts = invitationTokenParts(invitation.token)!
+    const invitation = await authority.createHostInvitation!(auth, { scope: { allowed_roots: ["/srv"] } })
+    const parts = decodeInvitationToken(invitation.token)!
     await authority.redeemHostInvitation!({
       invitationId: parts.invitationId,
       secret: parts.secret,
       hostId: box.hostId,
       publicKey: box.publicKey,
-      signature: signHostPayload(box, invitationRedeemPayload({
-        invitationId: parts.invitationId,
-        hostId: box.hostId,
-        publicKeySha256: await publicKeyFingerprint(JSON.parse(box.publicKey)),
-      })),
+      signature: signHostPayload(
+        box,
+        invitationRedeemPayload({
+          invitationId: parts.invitationId,
+          hostId: box.hostId,
+          publicKeySha256: await publicKeyFingerprint(JSON.parse(box.publicKey)),
+        }),
+      ),
     })
-    await authority.assignWorkspaceHost(auth, { workspaceId: "ws_box", hostId: box.hostId, remoteDirectory: "/srv/api" })
+    await authority.assignWorkspaceHost(auth, {
+      workspaceId: "ws_box",
+      hostId: box.hostId,
+      remoteDirectory: "/srv/api",
+    })
 
     await expect(service.revoke(auth, box.hostId)).resolves.toEqual({ revoked: true })
     expect(stopMachineTunnel).toHaveBeenCalledWith(box.hostId)
     await expect(authority.listHostEnrollments!(auth)).resolves.toEqual([
       expect.objectContaining({ host_id: "host_machine", enrolled_via: "account" }),
     ])
-    await expect(authority.activeWorkspaceHost(auth, { workspaceId: "ws_1" })).resolves.toMatchObject({ active: true, host_id: "host_machine" })
+    await expect(authority.activeWorkspaceHost(auth, { workspaceId: "ws_1" })).resolves.toMatchObject({
+      active: true,
+      host_id: "host_machine",
+    })
     await expect(service.status(auth)).resolves.toEqual({ enrolled: true, enabled: true })
     await expect(service.hostId()).resolves.toBe("host_machine")
   })
@@ -489,9 +538,14 @@ describe("remote access service", () => {
     await workspaceChanged()
 
     await expect(authority.activeWorkspaceHost(auth, { workspaceId: "ws_1" })).resolves.toMatchObject({ active: true })
-    await expect(authority.listHostEnrollments!(auth)).resolves.toMatchObject([{
-      acked: [{ workspaceId: "ws_1", revision: 2 }, { workspaceId: "ws_2", revision: 1 }],
-    }])
+    await expect(authority.listHostEnrollments!(auth)).resolves.toMatchObject([
+      {
+        acked: [
+          { workspaceId: "ws_1", revision: 2 },
+          { workspaceId: "ws_2", revision: 1 },
+        ],
+      },
+    ])
   })
 
   test("a share the owner recorded without a directory is re-declared with this machine's path", async () => {
@@ -516,11 +570,13 @@ describe("remote access service", () => {
       active: true,
       host_id: "host_machine",
     })
-    await expect(authority.listHostEnrollments!(auth)).resolves.toMatchObject([{
-      assignments: expect.arrayContaining([
-        expect.objectContaining({ workspace_id: "ws_3", remote_directory: "/repo/three" }),
-      ]),
-    }])
+    await expect(authority.listHostEnrollments!(auth)).resolves.toMatchObject([
+      {
+        assignments: expect.arrayContaining([
+          expect.objectContaining({ workspace_id: "ws_3", remote_directory: "/repo/three" }),
+        ]),
+      },
+    ])
   })
 
   test("a second instance of this machine takes over serving, and the first stops beating", async () => {
@@ -539,8 +595,10 @@ describe("remote access service", () => {
     })
     // The takeover cost no routing: the instance holding the generation acked
     // the same workspaces.
-    await expect(first.authority.activeWorkspaceHost(auth, { workspaceId: "ws_1" }))
-      .resolves.toMatchObject({ active: true, host_id: "host_machine" })
+    await expect(first.authority.activeWorkspaceHost(auth, { workspaceId: "ws_1" })).resolves.toMatchObject({
+      active: true,
+      host_id: "host_machine",
+    })
   })
 
   test("a revoked enrollment ends the beat loop and drops the tunnel", async () => {
@@ -617,8 +675,10 @@ describe("remote access service", () => {
     await vi.waitFor(() => {
       expect(startMachineTunnel.mock.calls.length).toBeGreaterThan(served)
     })
-    await expect(base.activeWorkspaceHost(auth, { workspaceId: "ws_1" }))
-      .resolves.toMatchObject({ active: true, host_id: "host_machine" })
+    await expect(base.activeWorkspaceHost(auth, { workspaceId: "ws_1" })).resolves.toMatchObject({
+      active: true,
+      host_id: "host_machine",
+    })
   })
 
   test("revoking while a beat is in flight leaves no tunnel open for the revoked machine", async () => {
@@ -630,9 +690,13 @@ describe("remote access service", () => {
     const base = createSqliteWorkspaceAuthority({ path: ":memory:" })
     let holdNextBeat = false
     let beatAnswered: () => void = () => {}
-    const answered = new Promise<void>((resolve) => { beatAnswered = resolve })
+    const answered = new Promise<void>((resolve) => {
+      beatAnswered = resolve
+    })
     let releaseBeat: () => void = () => {}
-    const held = new Promise<void>((resolve) => { releaseBeat = resolve })
+    const held = new Promise<void>((resolve) => {
+      releaseBeat = resolve
+    })
     const observed = {
       ...base,
       heartbeatHostEnrollmentByMachine: async (
@@ -678,7 +742,9 @@ describe("remote access service", () => {
     const { observed: counted, beats } = observedBeats(base)
     let claims = 0
     let secondClaim: () => void = () => {}
-    const claimed = new Promise<void>((resolve) => { secondClaim = resolve })
+    const claimed = new Promise<void>((resolve) => {
+      secondClaim = resolve
+    })
     const observed = {
       ...counted,
       acquireHostServingGeneration: async (
@@ -702,16 +768,20 @@ describe("remote access service", () => {
       service.enable(auth, { startAtLogin: false }),
       service.enable(auth, { startAtLogin: false }),
     ])
-    expect(enables.map((settled) => settled.status === "rejected" ? settled.reason : "fulfilled"))
-      .toEqual(["fulfilled", "fulfilled"])
+    expect(enables.map((settled) => (settled.status === "rejected" ? settled.reason : "fulfilled"))).toEqual([
+      "fulfilled",
+      "fulfilled",
+    ])
 
     const before = beats.mock.calls.length
     await vi.waitFor(() => {
       expect(beats.mock.calls.length).toBeGreaterThan(before + 2)
     })
     expect(stopMachineTunnel).not.toHaveBeenCalled()
-    await expect(base.activeWorkspaceHost(auth, { workspaceId: "ws_1" }))
-      .resolves.toMatchObject({ active: true, host_id: "host_machine" })
+    await expect(base.activeWorkspaceHost(auth, { workspaceId: "ws_1" })).resolves.toMatchObject({
+      active: true,
+      host_id: "host_machine",
+    })
   })
 
   test("enabling twice leaves one beat loop, not two", async () => {
@@ -761,7 +831,14 @@ describe("a share the authority refuses reaches no machine effect", () => {
       authority,
       localWorkspaces: [{ id: "ws_theirs", kind: "local", directory: "/repo/theirs", displayName: "theirs" }],
     })
-    return { ...harness, database, close: () => { authority.close(); database.close() } }
+    return {
+      ...harness,
+      database,
+      close: () => {
+        authority.close()
+        database.close()
+      },
+    }
   }
 
   const registerUnder = async (
@@ -782,28 +859,24 @@ describe("a share the authority refuses reaches no machine effect", () => {
     expect(harness.startMachineTunnel).not.toHaveBeenCalled()
     expect(harness.service.servingEnrollmentId()).toBeUndefined()
     await expect(harness.authority.activeHostEnrollment(auth)).resolves.toMatchObject({ active: false })
-    expect(harness.database().prepare(`SELECT count(*) AS count FROM host_enrollments`).get())
-      .toEqual({ count: 0 })
-    expect(harness.database().prepare(`SELECT count(*) AS count FROM host_workspace_assignments`).get())
-      .toEqual({ count: 0 })
+    expect(harness.database().prepare(`SELECT count(*) AS count FROM host_enrollments`).get()).toEqual({ count: 0 })
+    expect(harness.database().prepare(`SELECT count(*) AS count FROM host_workspace_assignments`).get()).toEqual({
+      count: 0,
+    })
   }
 
-  test("a membership revoked after it was admitted stops the next share before enrollment", async () => {
+  test("a project admin membership on another account's workspace stops the share before enrollment", async () => {
     const harness = machineWithForeignWorkspace()
     try {
       await registerUnder(harness.authority, stranger)
       const now = Date.now()
-      harness.database().prepare(`
+      harness
+        .database()
+        .prepare(
+          `
         INSERT INTO project_memberships (project_id, token_identifier, role, created_at, updated_at)
         VALUES (?, ?, 'admin', ?, ?)
       `).run("project_theirs", auth.user.tokenIdentifier, now, now)
-      // Admitted while the membership stands: the refusal below is the
-      // revocation, not a workspace the operator could never share.
-      await expect(harness.authority.authorizeWorkspaceHostAssignment!(auth, { workspaceId: "ws_theirs" }))
-        .resolves.toEqual({ registration: "existing" })
-
-      harness.database().prepare(`DELETE FROM project_memberships WHERE project_id = ? AND token_identifier = ?`)
-        .run("project_theirs", auth.user.tokenIdentifier)
 
       await expect(harness.service.assignWorkspace(auth, { workspaceId: "ws_theirs" })).rejects.toMatchObject({
         code: "workspace_not_found",
@@ -821,7 +894,9 @@ describe("a share the authority refuses reaches no machine effect", () => {
       await registerUnder(harness.authority, stranger)
       // The state the retired owner-lookup heuristic read as "unfiled": the
       // row lives, its owner does not resolve.
-      harness.database().prepare(`UPDATE workspaces SET owner_token_identifier = 'user_gone' WHERE workspace_id = ?`)
+      harness
+        .database()
+        .prepare(`UPDATE workspaces SET owner_token_identifier = 'user_gone' WHERE workspace_id = ?`)
         .run("ws_theirs")
       expect(await harness.authority.resolveWorkspaceOwner?.("ws_theirs")).toBeUndefined()
 
@@ -855,10 +930,10 @@ describe("a share the authority refuses reaches no machine effect", () => {
 
       expect(result.assignment).toMatchObject({ assigned: true, workspace_id: "ws_theirs" })
       expect(harness.signSpy).toHaveBeenCalled()
-      expect(harness.database().prepare(`SELECT count(*) AS count FROM host_workspace_assignments`).get())
-        .toEqual({ count: 1 })
-      expect(await harness.authority.openWorkspace(auth, { workspaceId: "ws_theirs" }))
-        .toMatchObject({ role: "owner" })
+      expect(harness.database().prepare(`SELECT count(*) AS count FROM host_workspace_assignments`).get()).toEqual({
+        count: 1,
+      })
+      expect(await harness.authority.openWorkspace(auth, { workspaceId: "ws_theirs" })).toMatchObject({ role: "owner" })
     } finally {
       harness.close()
     }

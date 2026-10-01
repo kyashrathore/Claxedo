@@ -5,8 +5,9 @@ import { dataDir } from "@claxedo/server-core/platform/runtime/lib/paths"
 import { lazy } from "@claxedo/server-core/platform/runtime/lib/lazy"
 import { randomToken } from "@claxedo/server-core/platform/auth/web-crypto"
 import { canonicalRepositoryKey } from "@claxedo/server-core/authority/repository-key"
-import { normalizeStoredDirectory } from "@claxedo/server-core/platform/auth/host-connect-contract"
 import { columnInfo, hasColumn, hasTable } from "@claxedo/server-core/platform/db/schema-introspection"
+import { addColumn, migrateHostConnectSchema, renameSharedOrgKind } from "./authority-schema-upgrades"
+import { migratePrivateSessionSchema } from "./private-session-schema"
 import { ClaxedoError } from "@claxedo/server-core/platform/errors/base"
 import { CURRENT_CHANNEL_IDENTITY_VERSION } from "@claxedo/workspace-relay-protocol"
 
@@ -65,83 +66,6 @@ const CHANNEL_IDENTITIES_ACTIVE_INDEX = `
 CREATE UNIQUE INDEX IF NOT EXISTS channel_identities_active_external
   ON channel_identities (channel, external_user_id)
   WHERE revoked_at IS NULL AND identity_version = ${CURRENT_CHANNEL_IDENTITY_VERSION};`
-
-const CANONICAL_PRIVATE_SESSIONS_SCHEMA = `
-CREATE TABLE session_registration_operations (
-  operation_id TEXT PRIMARY KEY,
-  session_id TEXT NOT NULL UNIQUE,
-  workspace_id TEXT NOT NULL,
-  creator_actor_id TEXT NOT NULL,
-  operation_kind TEXT NOT NULL,
-  parent_session_id TEXT,
-  requested_title TEXT,
-  state TEXT NOT NULL,
-  state_reason TEXT,
-  created_at INTEGER NOT NULL,
-  updated_at INTEGER NOT NULL
-);
-CREATE TABLE session_history (
-  session_id TEXT PRIMARY KEY,
-  workspace_id TEXT NOT NULL,
-  creator_actor_id TEXT NOT NULL,
-  operation_id TEXT NOT NULL UNIQUE,
-  title TEXT,
-  created_at INTEGER NOT NULL,
-  updated_at INTEGER NOT NULL,
-  -- NULL means nobody has ever prompted this session. updated_at moves for an
-  -- agent's turn too, so the session list cannot band on it.
-  last_human_turn_at INTEGER,
-  max_event_ordinal INTEGER NOT NULL DEFAULT 0,
-  deleted_at INTEGER
-);
-CREATE INDEX session_history_by_workspace_updated
-  ON session_history (workspace_id, updated_at DESC);
-CREATE TABLE session_participants (
-  session_id TEXT NOT NULL,
-  workspace_id TEXT NOT NULL,
-  participant_actor_id TEXT NOT NULL,
-  added_by_actor_id TEXT NOT NULL,
-  created_at INTEGER NOT NULL,
-  revoked_at INTEGER,
-  PRIMARY KEY (session_id, participant_actor_id)
-);
-CREATE INDEX session_participants_by_actor
-  ON session_participants (participant_actor_id, revoked_at);
-CREATE TABLE session_messages (
-  session_id TEXT NOT NULL,
-  workspace_id TEXT NOT NULL,
-  message_id TEXT NOT NULL,
-  author_actor_id TEXT,
-  role TEXT,
-  ordinal INTEGER NOT NULL,
-  data TEXT NOT NULL,
-  created_at INTEGER NOT NULL,
-  updated_at INTEGER NOT NULL,
-  PRIMARY KEY (session_id, message_id)
-);
-CREATE TABLE session_turn_leases (
-  session_id TEXT PRIMARY KEY,
-  workspace_id TEXT NOT NULL,
-  turn_id TEXT NOT NULL,
-  lease_id TEXT NOT NULL UNIQUE,
-  fencing_token INTEGER NOT NULL CHECK (fencing_token >= 1),
-  actor_id TEXT NOT NULL,
-  acquired_at INTEGER NOT NULL,
-  expires_at INTEGER NOT NULL CHECK (expires_at > acquired_at),
-  released_at INTEGER
-);
-CREATE INDEX session_turn_leases_by_expiry
-  ON session_turn_leases (released_at, expires_at, session_id);
-CREATE TABLE session_turn_producers (
-  session_id TEXT NOT NULL,
-  workspace_id TEXT NOT NULL,
-  turn_id TEXT NOT NULL,
-  fencing_token INTEGER NOT NULL CHECK (fencing_token >= 1),
-  actor_id TEXT NOT NULL,
-  admitted_at INTEGER NOT NULL,
-  PRIMARY KEY (session_id, turn_id),
-  UNIQUE (session_id, fencing_token)
-);`
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS users (
@@ -202,9 +126,6 @@ CREATE TABLE IF NOT EXISTS workspaces (
   repo_name TEXT,
   git_branch TEXT,
   remote_directory TEXT,
-  -- 0 withholds the implicit org-member role; direct, project, team and
-  -- org-admin access are unaffected. Set from the host's scope at assignment.
-  org_member_visible INTEGER NOT NULL DEFAULT 1,
   -- The highest host_workspace_assignments.revision ever issued for this
   -- workspace. Outlives the assignment row so a re-share after an unassign
   -- continues the sequence instead of restarting at 1.
@@ -253,7 +174,7 @@ CREATE TABLE IF NOT EXISTS host_enrollments (
   scope_json TEXT,
   scope_revision INTEGER NOT NULL DEFAULT 0,
   -- The ECDH P-256 public JWK the machine declared on a beat, stored as
-  -- machineSealingPublicKey normalizes it so a push can re-assert it by
+  -- publicKeyJwk normalizes it so a push can re-assert it by
   -- text equality. NULL until a beat declares one; never cleared.
   sealing_public_key_json TEXT,
   -- The owner's provider configuration sealed for that key, or NULL: at
@@ -397,16 +318,6 @@ CREATE TABLE IF NOT EXISTS session_messages (
   updated_at INTEGER NOT NULL,
   PRIMARY KEY (session_id, message_id)
 );
-CREATE TABLE IF NOT EXISTS session_participants (
-  session_id TEXT NOT NULL,
-  workspace_id TEXT NOT NULL,
-  actor_token_identifier TEXT NOT NULL,
-  added_by_token_identifier TEXT NOT NULL,
-  created_at INTEGER NOT NULL,
-  revoked_at INTEGER,
-  PRIMARY KEY (session_id, actor_token_identifier)
-);
-CREATE INDEX IF NOT EXISTS session_participants_by_actor ON session_participants (actor_token_identifier);
 -- Nested teams under an org (D17) and private-session share grants (D18).
 -- Evaluate-time membership joins mirror the authority; methods land with authority ports.
 CREATE TABLE IF NOT EXISTS teams (
@@ -468,102 +379,6 @@ ${CANONICAL_CHANNEL_IDENTITIES_SCHEMA.replace("CREATE TABLE ", "CREATE TABLE IF 
 `
 
 const SQLITE_TENANCY_SCHEMA_VERSION = 5
-
-function migratePrivateSessionSchema(db: SqliteAuthorityDb) {
-  const canonical = hasColumn(db, "session_history", "creator_actor_id")
-    && hasColumn(db, "session_history", "operation_id")
-  if (canonical) {
-    if (!hasTable(db, "session_registration_operations")) {
-      throw new Error("private_session_registration_schema_missing")
-    }
-    ensureSessionTurnSchema(db)
-    return
-  }
-
-  for (const archive of [
-    "legacy_session_history_pre_private_sessions",
-    "legacy_session_messages_pre_private_sessions",
-    "legacy_session_participants_pre_private_sessions",
-  ]) {
-    if (hasTable(db, archive)) throw new Error(`private_session_archive_collision:${archive}`)
-  }
-
-  // Legacy workspace-visible rows have no canonical registration operation or
-  // actor provenance. Preserve them as an operator-inspectable archive, but do
-  // not project them into the private-session authority by inventing either.
-  db.exec(`
-    DROP INDEX IF EXISTS session_history_by_creator;
-    DROP INDEX IF EXISTS session_history_by_workspace_creator;
-    DROP INDEX IF EXISTS session_participants_by_actor;
-    ALTER TABLE session_history RENAME TO legacy_session_history_pre_private_sessions;
-    ALTER TABLE session_messages RENAME TO legacy_session_messages_pre_private_sessions;
-    ALTER TABLE session_participants RENAME TO legacy_session_participants_pre_private_sessions;
-    ${CANONICAL_PRIVATE_SESSIONS_SCHEMA}
-  `)
-  ensureSessionTurnSchema(db)
-}
-
-function ensureSessionTurnSchema(db: SqliteAuthorityDb) {
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS session_turn_leases (
-      session_id TEXT PRIMARY KEY,
-      workspace_id TEXT NOT NULL,
-      turn_id TEXT NOT NULL,
-      lease_id TEXT NOT NULL UNIQUE,
-      fencing_token INTEGER NOT NULL CHECK (fencing_token >= 1),
-      actor_id TEXT NOT NULL,
-      acquired_at INTEGER NOT NULL,
-      expires_at INTEGER NOT NULL CHECK (expires_at > acquired_at),
-      released_at INTEGER
-    );
-    CREATE INDEX IF NOT EXISTS session_turn_leases_by_expiry
-      ON session_turn_leases (released_at, expires_at, session_id);
-    CREATE TABLE IF NOT EXISTS session_turn_producers (
-      session_id TEXT NOT NULL,
-      workspace_id TEXT NOT NULL,
-      turn_id TEXT NOT NULL,
-      fencing_token INTEGER NOT NULL CHECK (fencing_token >= 1),
-      actor_id TEXT NOT NULL,
-      admitted_at INTEGER NOT NULL,
-      PRIMARY KEY (session_id, turn_id),
-      UNIQUE (session_id, fencing_token)
-    );
-    CREATE TABLE IF NOT EXISTS session_turn_grants (
-      grant_id TEXT PRIMARY KEY,
-      session_id TEXT NOT NULL,
-      workspace_id TEXT NOT NULL,
-      org_id TEXT NOT NULL,
-      actor_id TEXT NOT NULL,
-      intent TEXT NOT NULL CHECK (intent IN ('child_completion', 'queued_prompt')),
-      subject_session_id TEXT,
-      turn_id TEXT,
-      turn_id_prefix TEXT,
-      issued_at INTEGER NOT NULL,
-      expires_at INTEGER NOT NULL CHECK (expires_at > issued_at),
-      redeemed_at INTEGER,
-      redeemed_turn_id TEXT,
-      revoked_at INTEGER,
-      revoke_reason TEXT,
-      CHECK ((turn_id IS NOT NULL) + (turn_id_prefix IS NOT NULL) = 1)
-    );
-    CREATE INDEX IF NOT EXISTS session_turn_grants_by_session
-      ON session_turn_grants (session_id, revoked_at);
-    CREATE INDEX IF NOT EXISTS session_turn_grants_by_subject
-      ON session_turn_grants (subject_session_id, revoked_at);
-  `)
-  addColumn(db, "session_history", "snapshot_hash", "TEXT")
-  // Not backfilled: a session registered before this column reads as never
-  // prompted, which is the only thing the store can honestly say about it.
-  addColumn(db, "session_history", "last_human_turn_at", "INTEGER")
-  addColumn(db, "session_history", "archived_at", "INTEGER")
-  addColumn(db, "session_history", "status", "TEXT")
-  addColumn(db, "session_history", "status_at", "INTEGER")
-  addColumn(db, "session_history", "awaiting_input", "INTEGER NOT NULL DEFAULT 0")
-  db.exec(`
-    CREATE INDEX IF NOT EXISTS session_history_by_workspace_human_turn
-      ON session_history (workspace_id, deleted_at, archived_at, last_human_turn_at, created_at);
-  `)
-}
 
 function migrateRuntimeAccessTokenSchema(db: SqliteAuthorityDb) {
   if (["principal_kind", "actor_id", "actor_kind", "role"].every((name) => hasColumn(db, "runtime_access_tokens", name))) {
@@ -872,95 +687,6 @@ function dropRetiredProviderOrgAlias(db: SqliteAuthorityDb) {
   }
 }
 
-/**
- * Columns the host-connect tables gained after the CREATE above already ran
- * on a database. Every default is what the pre-connect rows meant: one key
- * version, no acquired instance, enrolled through the account, first
- * assignment revision, visible to org members, no sealing key and no pushed
- * provider configuration. Runs after the tenancy
- * migration because that one rebuilds `workspaces` from an explicit column
- * list and would drop `org_member_visible` if it were added first.
- *
- * One transaction, and the two repairs at the end run on every open rather
- * than only when a column was just added: a process that died between the
- * ADD COLUMN and the backfill would otherwise leave a counter at 0 under a
- * live assignment at a higher revision, and the next assignment would reissue
- * a revision the host already acked.
- */
-function migrateHostConnectSchema(db: SqliteAuthorityDb) {
-  db.transaction(() => {
-    addColumn(db, "host_enrollments", "key_version", "INTEGER NOT NULL DEFAULT 1")
-    addColumn(db, "host_enrollments", "serving_generation", "INTEGER NOT NULL DEFAULT 0")
-    addColumn(db, "host_enrollments", "generation_acquired_at", "INTEGER")
-    addColumn(db, "host_enrollments", "enrolled_via", "TEXT NOT NULL DEFAULT 'account'")
-    addColumn(db, "host_enrollments", "scope_json", "TEXT")
-    addColumn(db, "host_enrollments", "scope_revision", "INTEGER NOT NULL DEFAULT 0")
-    addColumn(db, "host_enrollments", "sealing_public_key_json", "TEXT")
-    addColumn(db, "host_enrollments", "provider_config_sealed", "TEXT")
-    addColumn(db, "host_enrollments", "provider_config_revision", "INTEGER NOT NULL DEFAULT 0")
-    addColumn(db, "host_enrollments", "provider_config_acked_revision", "INTEGER NOT NULL DEFAULT 0")
-    addColumn(db, "host_enrollments", "provider_config_updated_at", "INTEGER")
-    addColumn(db, "host_enrollments", "provider_config_sealed_key_json", "TEXT")
-    addColumn(db, "host_enrollments", "provider_config_provider_ids", "TEXT")
-    addColumn(db, "host_workspace_assignments", "revision", "INTEGER NOT NULL DEFAULT 1")
-    addColumn(db, "workspaces", "org_member_visible", "INTEGER NOT NULL DEFAULT 1")
-    addColumn(db, "workspaces", "host_assignment_revision", "INTEGER NOT NULL DEFAULT 0")
-    // The counter only ever rises: a live assignment above it is the higher
-    // truth, and a counter above the assignment (an unassign left it there)
-    // is kept.
-    db.exec(`
-      UPDATE workspaces SET host_assignment_revision = (
-        SELECT assignment.revision FROM host_workspace_assignments assignment
-        WHERE assignment.workspace_id = workspaces.workspace_id
-      ) WHERE workspace_id IN (
-        SELECT assignment.workspace_id FROM host_workspace_assignments assignment
-        JOIN workspaces workspace ON workspace.workspace_id = assignment.workspace_id
-        WHERE assignment.revision > workspace.host_assignment_revision
-      )
-    `)
-    normalizeMachinePlacedDirectories(db)
-    dropWorkspaceAccessMode(db)
-  })()
-}
-
-/**
- * Drops `workspaces.access`, whose every value was decided by `backing`.
- *
- * A failure is fatal rather than tolerated: the column is `NOT NULL` with no
- * default and nothing writes it any more, so a database that kept it would
- * refuse every workspace insert. `rebuildWorkspacesIfNeeded` also removes it,
- * but only for a database whose tenancy columns are still nullable.
- */
-function dropWorkspaceAccessMode(db: SqliteAuthorityDb) {
-  if (!hasColumn(db, "workspaces", "access")) return
-  db.exec("ALTER TABLE workspaces DROP COLUMN access")
-}
-
-/**
- * Rows written before directories were normalized on the way in. The write
- * paths now store `normalizeStoredDirectory`'s form, so this converges in one
- * pass and rewrites nothing on later opens.
- */
-function normalizeMachinePlacedDirectories(db: SqliteAuthorityDb) {
-  const rows = db.prepare<unknown[], { workspace_id: string; remote_directory: string }>(`
-    SELECT workspace_id, remote_directory FROM workspaces
-    WHERE backing = 'local-worktree' AND remote_directory IS NOT NULL
-  `).all()
-  const update = db.prepare(`UPDATE workspaces SET remote_directory = ? WHERE workspace_id = ?`)
-  for (const row of rows) {
-    const normalized = normalizeStoredDirectory(row.remote_directory)
-    if (normalized !== row.remote_directory) update.run(normalized, row.workspace_id)
-  }
-}
-
-/** Whether the column was added by this call; an existing column is left as it is. */
-function addColumn(db: SqliteAuthorityDb, table: string, column: string, definition: string) {
-  if (!hasTable(db, table)) return false
-  if (hasColumn(db, table, column)) return false
-  db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`)
-  return true
-}
-
 function userOrganizationIds(db: SqliteAuthorityDb, tokenIdentifier: string) {
   return (db.prepare<unknown[], { org_id: string }>(`
     SELECT DISTINCT o.org_id FROM orgs o
@@ -1118,6 +844,7 @@ export function openAuthorityDb(options: SqliteWorkspaceAuthorityOptions = {}) {
         migrateAuthorityTenancySchema(db)
         addColumn(db, "session_messages", "author_actor_id", "TEXT")
         migrateHostConnectSchema(db)
+        renameSharedOrgKind(db)
       } catch (error) {
         db.close()
         throw error
@@ -1193,7 +920,6 @@ export type WorkspaceRow = {
   repo_name: string | null
   git_branch: string | null
   remote_directory: string | null
-  org_member_visible: number
   created_at: number
   updated_at: number
   deleted_at: number | null
@@ -1432,18 +1158,6 @@ function directOrgRole(db: SqliteAuthorityDb, user: AuthorityUser, orgId: string
 }
 
 /**
- * The org branch of a WORKSPACE rank: the implicit org-member role is withheld
- * when the workspace's host scope says so; org admins and owners keep theirs.
- * Project ranks (`projectRoleForUser`) have no workspace row and are not gated.
- */
-function workspaceOrgRole(db: SqliteAuthorityDb, user: AuthorityUser, workspace: WorkspaceRow): WorkspaceRole | undefined {
-  if (!workspace.org_id) return undefined
-  const role = directOrgRole(db, user, workspace.org_id)
-  if (role === "viewer" && workspace.org_member_visible === 0) return undefined
-  return role
-}
-
-/**
  * Being in the organization is what makes a person offerable as a share
  * recipient. It carries no standing on the session, the workspace or the
  * machine; only the grant they are then given does.
@@ -1496,20 +1210,17 @@ function teamProjectRole(
   return maxRole(roles)
 }
 
-/** Role precedence mirror of `combineRolePrecedence` in the authority model. */
+/**
+ * A workspace is a folder on its owner's machine: its owner, while they stand
+ * in its organization, holds every workspace action and nobody else holds any.
+ */
 export function workspaceRoleForUser(
   db: SqliteAuthorityDb,
   workspace: WorkspaceRow,
   user: AuthorityUser,
 ): WorkspaceRole | undefined {
-  if (workspace.deleted_at) return undefined
-  if (workspace.owner_token_identifier === user.token_identifier) return "owner"
-  const project = workspace.project_id ? projectByPublicId(db, workspace.project_id) : undefined
-  return maxRole([
-    project ? directProjectRole(db, user, project.project_id) : undefined,
-    workspaceOrgRole(db, user, workspace),
-    teamProjectRole(db, user, project?.project_id ?? workspace.project_id, workspace.org_id),
-  ])
+  if (workspace.deleted_at || workspace.owner_token_identifier !== user.token_identifier) return undefined
+  return orgMemberForUser(db, user, workspace.org_id ?? undefined) ? "owner" : undefined
 }
 
 export function authorizeWorkspaceForUser(

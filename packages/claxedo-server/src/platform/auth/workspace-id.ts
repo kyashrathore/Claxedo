@@ -29,17 +29,10 @@ const ID_ALPHABET = "0123456789abcdefghjkmnpqrstvwxyz"
 /**
  * Symbols of randomness per id: 16 x 5 bits = 80 bits.
  *
- * Sized by a length budget, not by wishful maximalism. Workspace ids are
- * embedded in driver-side resource names that have real ceilings, and the
- * tightest two set the cap at ~28 characters total:
- *
- *  - `drivers/daytona.ts` `daytonaSecretName` builds
- *    `claxedo-<workspaceId>-<secretName>` with no truncation. The longest
- *    secret name in the tree is `CLAXEDO_GITHUB_CLONE_AUTH` (25), so
- *    8 + 28 + 1 + 25 = 62 — just inside a 63-character name limit.
- *  - `drivers/exe.ts` `exeWorkspaceName` slices the sanitized id to 30
- *    characters for its reattach slug. A 28-character id sanitizes to 28 and
- *    is never truncated, so the slug stays a faithful function of the id.
+ * Sized by a length budget, not by wishful maximalism. Drivers put the id in
+ * their resource names (`claxedo-<workspaceId>`, and Docker's
+ * `claxedo-<id>-<time>` cut at 63 characters), and 28 characters keeps every
+ * one of them whole.
  *
  * 80 bits is not a compromise on the security property: an attacker who knows
  * the exact creation millisecond still faces 2^80 (~1.2e24) candidates over an

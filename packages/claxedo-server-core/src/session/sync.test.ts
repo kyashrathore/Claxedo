@@ -42,7 +42,7 @@ describe("cloud session sync", () => {
       project_id: "ws_cloud",
       directory: "/tmp/cloud",
       kind: "cloud" as const,
-      driver: "daytona" as const,
+      driver: "modal" as const,
       repo_name: "opencode",
       git_branch: "main",
       git_remote: "git@github.com:foo/opencode.git",

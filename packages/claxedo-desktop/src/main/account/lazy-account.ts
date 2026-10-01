@@ -1,5 +1,5 @@
 import type { AccountState } from "./account-service"
-import type { HostedOperationName } from "./hosted-operations"
+import type { HostedOperationName } from "@claxedo/account-contract"
 import { registerAccountIpc, type AccountIpcService, type AccountIpcTarget } from "./account-ipc"
 import type { AccountConfigEnv } from "./account-config"
 import type { AccountAssemblyInput, createAccountAssembly } from "./index"

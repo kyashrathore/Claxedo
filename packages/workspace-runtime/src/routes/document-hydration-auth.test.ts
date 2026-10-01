@@ -1,7 +1,8 @@
+import { documentAuthorizedFetch } from "../test-support/document-authorized-fetch"
 import fs from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
-import { afterEach, describe, expect, test } from "bun:test"
+import { afterEach, beforeEach, describe, expect, test } from "bun:test"
 import { exportSPKI, generateKeyPair, SignJWT } from "jose"
 import { createWorkspaceRuntimeApp } from "../server"
 import { relayWorkspaceRuntimeExposure } from "../exposure"
@@ -43,7 +44,7 @@ async function fixture() {
               allowed: false,
               status: 403 as const,
               code: "session_private",
-              message: "Session access requires creator, participant, or session share authority",
+              message: "Session access requires workspace ownership or session share authority",
             }
       },
     },
@@ -52,14 +53,14 @@ async function fixture() {
     return await new SignJWT({
       principal_kind: "user", actor_id: actorId, actor_kind: "human",
       org_id: "org_documents", workspace_id: target.workspaceId, host_id: target.hostId,
-      role, backing: "cloud-vm", parent_jti: "parent_doc",
+      role, scope: "workspace", backing: "cloud-vm", parent_jti: "parent_doc",
     }).setProtectedHeader({ alg: "EdDSA" }).setIssuer("workspace-relay").setAudience("workspace-host-service")
       .setIssuedAt().setExpirationTime("1m").setJti(`relay_${actorId}`).sign(relayKeys.privateKey)
   }
-  async function documentJob(userId: string, operations: string[]) {
+  async function documentJob(userId: string, operations: string[], workspaceId = target.workspaceId) {
     return await new SignJWT({
       user_id: userId, org_id: "org_documents", project_id: "project_docs",
-      local_workspace_id: target.workspaceId, cloud_workspace_id: target.workspaceId,
+      workspace_id: workspaceId,
       session_id: sessionId, document_id: documentId,
       operations, job_exp: Math.floor(Date.now() / 1000) + 3600, jti: `job_${userId}`,
     }).setProtectedHeader({ alg: "EdDSA" }).setIssuer("claxedo-control-plane").setAudience("document-relay-job")
@@ -70,8 +71,6 @@ async function fixture() {
     userId,
     orgId: "org_documents",
     projectId: "project_docs",
-    localWorkspaceId: target.workspaceId,
-    cloudWorkspaceId: target.workspaceId,
   })
   const writeback = {
     url: "https://control.test/write",
@@ -147,8 +146,22 @@ function restoreEnv(key: string, value: string | undefined) {
 
 describe("runtime document session authorization", () => {
   const originalFetch = globalThis.fetch
+  beforeEach(() => { globalThis.fetch = documentAuthorizedFetch(originalFetch) })
   afterEach(() => {
     globalThis.fetch = originalFetch
+  })
+
+  test("a job minted for another workspace is refused before anything is written", async () => {
+    const f = await fixture()
+    try {
+      const elsewhere = await f.documentJob("user_doc_owner", ["hydrate", "write"], "ws_elsewhere")
+      const refused = await f.hydrate(await f.relay(owner), elsewhere)
+      expect(refused.status).toBe(403)
+      await expect(refused.json()).resolves.toEqual({ error: "document_hydration_capability_invalid" })
+      expect(await fs.readdir(f.workspaceDir)).toEqual([])
+    } finally {
+      await f.close()
+    }
   })
 
   test("a caller the session authority refuses cannot activate or observe the hydrated path", async () => {
@@ -162,7 +175,7 @@ describe("runtime document session authorization", () => {
       await expect(denied.json()).resolves.toEqual({
         error: {
           code: "session_private",
-          message: "Session access requires creator, participant, or session share authority",
+          message: "Session access requires workspace ownership or session share authority",
         },
       })
       expect(f.asked).toEqual([{ operation: "document_write", sessionId, actorId: viewer }])
@@ -193,7 +206,7 @@ describe("runtime document session authorization", () => {
       await expect(denied.json()).resolves.toEqual({
         error: {
           code: "session_private",
-          message: "Session access requires creator, participant, or session share authority",
+          message: "Session access requires workspace ownership or session share authority",
         },
       })
 
@@ -217,7 +230,7 @@ describe("runtime document session authorization", () => {
 
   test("the authorized caller still activates and resolves a conflicted document", async () => {
     const f = await fixture()
-    globalThis.fetch = fetchDouble(async () => new Response("conflict", { status: 409 }))
+    globalThis.fetch = documentAuthorizedFetch(async () => new Response("conflict", { status: 409 }))
     try {
       const hydrated = await f.hydrate(await f.relay(owner), await f.documentJob("user_doc_owner", ["hydrate", "write"]))
       expect(hydrated.status).toBe(200)

@@ -160,7 +160,7 @@ async function registeredRepoWorkspace(input: {
     project_id: input.projectId,
     directory: "/workspace",
     kind: "cloud",
-    driver: "daytona",
+    driver: "modal",
     repo_url: `https://github.com/${input.owner}/${input.name}.git`,
   })
   expect(workspace?.id).toBe(input.workspaceId)

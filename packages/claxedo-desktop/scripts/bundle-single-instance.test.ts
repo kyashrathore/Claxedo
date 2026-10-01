@@ -30,8 +30,8 @@ const OUT = path.join(os.tmpdir(), `claxedo-bundle-instance-${process.pid}`)
  * ONE build, shared by both tests. A second `Bun.build` in the same process
  * fails with phantom `EISDIR reading file` / `Unexpected reading file` errors
  * on files that are also LOADED MODULES of the test process (reproduced
- * minimally on bun 1.3.14: import src/server/diagnostics-child-transport.ts —
- * which loads the workspace-runtime graph — then call `bundleClaxedoServer`
+ * minimally on bun 1.3.14: import a module that loads the workspace-runtime
+ * graph, then call `bundleClaxedoServer`
  * twice; the second build reports those errors on hono/jose/agent-* files the
  * first build read fine). Both tests inspect the same artifact anyway, so a
  * shared build is also strictly faster.
@@ -56,10 +56,8 @@ function emitted(dir: string): string[] {
 
 describe("shipped claxedo-server bundle", () => {
   test("carries no hosted capability implementation", async () => {
-    // The point of the split, measured on the artifact rather than the import
-    // graph. Before the desktop entry moved to `@claxedo/local-server` this
-    // bundle was 30MB and contained better-auth, the Polar billing SDK and the
-    // Daytona driver — in a build that never signs in.
+    // Measured on the artifact rather than the import graph: a build that
+    // never signs in must not carry the hosted sign-in stack.
     //
     // Matched on symbols that only appear in the real implementations. Plain
     // product words still occur as DATA — a network-policy hostname allowlist,
@@ -70,8 +68,6 @@ describe("shipped claxedo-server bundle", () => {
     const text = emitted(OUT).map((file) => fs.readFileSync(file, "utf8")).join("\n")
     const forbidden = {
       "better-auth": /betterAuth\(|better-auth\//,
-      "Polar billing": /@polar-sh|PolarCore\b/,
-      "Daytona driver": /@daytona\/sdk|DaytonaClient\b/,
     }
     // Agent Plugins is NOT on this list. The desktop serves
     // `/api/claxedo/plugins` from the local composition and its packaged e2e

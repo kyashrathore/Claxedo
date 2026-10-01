@@ -1,27 +1,28 @@
+import { documentAuthorizedFetch } from "../test-support/document-authorized-fetch"
 import fs from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
 import { fetchBodyJson, fetchDouble, fetchUrl } from "../test-support/fetch-double"
 import { rec, str } from "../json-value"
 import { Hono } from "hono"
-import { afterEach, describe, expect, test, mock, spyOn } from "bun:test"
+import { afterEach, beforeEach, describe, expect, test, mock, spyOn } from "bun:test"
 import {
   disposeRuntimeSessionDocuments,
   flushRuntimeDocument,
   forgetRuntimeDocuments,
   RuntimeDocumentHydrationRoutes,
 } from "./document-hydration"
-import { LocalDocumentBrokerRoutes } from "./local-document-broker"
 
 describe("runtime document hydration", () => {
   const originalFetch = globalThis.fetch
+  beforeEach(() => { globalThis.fetch = documentAuthorizedFetch(originalFetch) })
   afterEach(() => {
     forgetRuntimeDocuments()
     globalThis.fetch = originalFetch
   })
 
   test("rejects declared and chunked oversized hydration bodies before JSON parsing", async () => {
-    const app = new Hono().route("/", RuntimeDocumentHydrationRoutes({ trustedTransport: true }))
+    const app = new Hono().route("/", RuntimeDocumentHydrationRoutes({ workspaceId: "ws_1" }))
     expect(
       (
         await app.request("/api/wr/documents/hydrate", {
@@ -49,83 +50,27 @@ describe("runtime document hydration", () => {
     expect(response.status).toBe(413)
   })
 
-  test("rejects declared and chunked oversized local-broker bodies before verification", async () => {
-    const app = new Hono().route("/", LocalDocumentBrokerRoutes({ trustedTransport: true }))
-    expect(
-      (
-        await app.request("/api/wr/local-documents/broker", {
-          method: "POST",
-          headers: { "content-length": String(2 * 1024 * 1024 + 1) },
-          body: "{}",
-        })
-      ).status,
-    ).toBe(413)
-    const chunk = new Uint8Array(1024 * 1024)
-    const response = await app.fetch(
-      new Request("http://runtime.test/api/wr/local-documents/broker", {
-        method: "POST",
-        body: new ReadableStream({
-          start(controller) {
-            controller.enqueue(chunk)
-            controller.enqueue(chunk)
-            controller.enqueue(new Uint8Array([1]))
-            controller.close()
-          },
-        }),
-        duplex: "half",
-      } as RequestInit & { duplex: "half" }),
-    )
-    expect(response.status).toBe(413)
-  })
-
-  test("returns stable validation errors for malformed hydration, resolution, and broker bodies", async () => {
-    const hydration = new Hono().route("/", RuntimeDocumentHydrationRoutes({ trustedTransport: true }))
-    const broker = new Hono().route("/", LocalDocumentBrokerRoutes({ trustedTransport: true }))
+  test("returns stable validation errors for malformed hydration and resolution bodies", async () => {
+    const hydration = new Hono().route("/", RuntimeDocumentHydrationRoutes({ workspaceId: "ws_1" }))
 
     for (const response of [
       await hydration.request("/api/wr/documents/hydrate", { method: "POST", body: "{" }),
       await hydration.request("/api/wr/documents/hydrate", { method: "POST", body: "{}" }),
       await hydration.request("/api/wr/documents/session_1/document_1/resolve", { method: "POST", body: "{" }),
-      await broker.request("/api/wr/local-documents/broker", { method: "POST", body: "{" }),
-      await broker.request("/api/wr/local-documents/broker", { method: "POST", body: "{}" }),
     ]) {
       expect(response.status).toBe(400)
       await expect(response.json()).resolves.toEqual({ error: "document_request_invalid" })
     }
   })
 
-  test("returns a stable forbidden response for rejected broker capabilities", async () => {
-    const app = new Hono().route("/", LocalDocumentBrokerRoutes({ trustedTransport: true }))
-    const response = await app.request("/api/wr/local-documents/broker", {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        "x-claxedo-document-capability": "not-a-document-job-token",
-      },
-      body: JSON.stringify({
-        userId: "user_1",
-        orgId: "org_1",
-        projectId: "project_1",
-        localWorkspaceId: "local_1",
-        cloudWorkspaceId: "cloud_1",
-        sessionId: "session_1",
-        documentId: "document_1",
-        operation: "read",
-      }),
-    })
-
-    expect(response.status).toBe(403)
-    await expect(response.json()).resolves.toEqual({ error: "document_broker_capability_invalid" })
-  })
-
   test("returns a stable forbidden response when conflict resolution capability verification fails", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "runtime-document-resolve-capability-"))
-    globalThis.fetch = fetchDouble(mock(async () => new Response("conflict", { status: 409 })))
+    globalThis.fetch = documentAuthorizedFetch(mock(async () => new Response("conflict", { status: 409 })))
     const app = new Hono().route(
       "/",
       RuntimeDocumentHydrationRoutes({
         workspaceRoot: root,
-        trustedTransport: true,
+        workspaceId: "ws_1",
         controlPlaneOrigin: "https://control.test",
         verifyJob: async (token) => {
           if (token === "hydrate-job") return {}
@@ -147,8 +92,6 @@ describe("runtime document hydration", () => {
             userId: "user_1",
             orgId: "org_1",
             projectId: "project_1",
-            localWorkspaceId: "local_1",
-            cloudWorkspaceId: "cloud_1",
           },
           writeback: {
             url: "https://control.test/write",
@@ -173,8 +116,6 @@ describe("runtime document hydration", () => {
           userId: "user_1",
           orgId: "org_1",
           projectId: "project_1",
-          localWorkspaceId: "local_1",
-          cloudWorkspaceId: "cloud_1",
         },
         writeback: {
           url: "https://control.test/write",
@@ -193,12 +134,12 @@ describe("runtime document hydration", () => {
   test("materializes one scoped document and retains the capability outside the file", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "runtime-document-"))
     const fetcher = mock(async () => Response.json({ version: "v2" }))
-    globalThis.fetch = fetchDouble(fetcher)
+    globalThis.fetch = documentAuthorizedFetch(fetcher)
     const app = new Hono().route(
       "/",
       RuntimeDocumentHydrationRoutes({
         workspaceRoot: root,
-        trustedTransport: true,
+        workspaceId: "ws_1",
         controlPlaneOrigin: "https://control.test",
         verifyJob: async () => ({}),
       }),
@@ -217,8 +158,6 @@ describe("runtime document hydration", () => {
           userId: "user_1",
           orgId: "org_1",
           projectId: "project_1",
-          localWorkspaceId: "ws_1",
-          cloudWorkspaceId: "ws_1",
         },
         writeback: {
           url: "https://control.test/documents/document_1/runtime-writeback",
@@ -253,12 +192,12 @@ describe("runtime document hydration", () => {
 
   test("parks the session copy when the conditional callback conflicts", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "runtime-document-conflict-"))
-    globalThis.fetch = fetchDouble(mock(async () => new Response("conflict", { status: 409 })))
+    globalThis.fetch = documentAuthorizedFetch(mock(async () => new Response("conflict", { status: 409 })))
     const app = new Hono().route(
       "/",
       RuntimeDocumentHydrationRoutes({
         workspaceRoot: root,
-        trustedTransport: true,
+        workspaceId: "ws_1",
         controlPlaneOrigin: "https://control.test",
         verifyJob: async () => ({}),
       }),
@@ -277,8 +216,6 @@ describe("runtime document hydration", () => {
           userId: "user_1",
           orgId: "org_1",
           projectId: "project_1",
-          localWorkspaceId: "ws_1",
-          cloudWorkspaceId: "ws_1",
         },
         writeback: {
           url: "https://control.test/write",
@@ -305,7 +242,7 @@ describe("runtime document hydration", () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "runtime-document-dispose-conflict-"))
     const timer = renewalTimer(1_000_000)
     const methods: string[] = []
-    globalThis.fetch = fetchDouble(mock(async (_input: string | URL | Request, init?: RequestInit) => {
+    globalThis.fetch = documentAuthorizedFetch(mock(async (_input: string | URL | Request, init?: RequestInit) => {
       methods.push(init?.method ?? "GET")
       return init?.method === "DELETE" ? new Response(null, { status: 204 }) : new Response("conflict", { status: 409 })
     }))
@@ -313,7 +250,7 @@ describe("runtime document hydration", () => {
       "/",
       RuntimeDocumentHydrationRoutes({
         workspaceRoot: root,
-        trustedTransport: true,
+        workspaceId: "ws_1",
         controlPlaneOrigin: "https://control.test",
         verifyJob: async () => ({}),
         renewalTimer: timer,
@@ -333,8 +270,6 @@ describe("runtime document hydration", () => {
             userId: "user_1",
             orgId: "org_1",
             projectId: "project_1",
-            localWorkspaceId: "local_1",
-            cloudWorkspaceId: "cloud_1",
           },
           writeback: {
             url: "https://control.test/write",
@@ -373,7 +308,7 @@ describe("runtime document hydration", () => {
   test("request deadlines leave the sync tail retryable and keep disposal bounded", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "runtime-document-request-timeout-"))
     let request = 0
-    globalThis.fetch = fetchDouble(mock(async () => {
+    globalThis.fetch = documentAuthorizedFetch(mock(async () => {
       request++
       if (request === 2) return Response.json({ version: "v2" })
       return await new Promise<Response>(() => undefined)
@@ -382,7 +317,7 @@ describe("runtime document hydration", () => {
       "/",
       RuntimeDocumentHydrationRoutes({
         workspaceRoot: root,
-        trustedTransport: true,
+        workspaceId: "ws_1",
         controlPlaneOrigin: "https://control.test",
         verifyJob: async () => ({}),
         requestTimeoutMs: 10,
@@ -402,8 +337,6 @@ describe("runtime document hydration", () => {
             userId: "user_1",
             orgId: "org_1",
             projectId: "project_1",
-            localWorkspaceId: "local_1",
-            cloudWorkspaceId: "cloud_1",
           },
           writeback: {
             url: "https://control.test/write",
@@ -435,12 +368,12 @@ describe("runtime document hydration", () => {
         if (fetcher.mock.calls.length === 1) return callbackResponse(failure, { version: "ignored" })
         return Response.json({ version: "v2" })
       })
-      globalThis.fetch = fetchDouble(fetcher)
+      globalThis.fetch = documentAuthorizedFetch(fetcher)
       const app = new Hono().route(
         "/",
         RuntimeDocumentHydrationRoutes({
           workspaceRoot: root,
-          trustedTransport: true,
+          workspaceId: "ws_1",
           controlPlaneOrigin: "https://control.test",
           verifyJob: async () => ({}),
           requestTimeoutMs: 10,
@@ -472,7 +405,7 @@ describe("runtime document hydration", () => {
     const releaseEntered = deferred<void>()
     const releaseCleanup = deferred<void>()
     const timer = renewalTimer(1_000_000)
-    globalThis.fetch = fetchDouble(mock(async (_input: string | URL | Request, init?: RequestInit) => {
+    globalThis.fetch = documentAuthorizedFetch(mock(async (_input: string | URL | Request, init?: RequestInit) => {
       if (init?.method === "DELETE") {
         releaseEntered.resolve()
         await releaseCleanup.promise
@@ -484,7 +417,7 @@ describe("runtime document hydration", () => {
       "/",
       RuntimeDocumentHydrationRoutes({
         workspaceRoot: root,
-        trustedTransport: true,
+        workspaceId: "ws_1",
         controlPlaneOrigin: "https://control.test",
         verifyJob: async () => ({}),
         renewalTimer: timer,
@@ -501,8 +434,6 @@ describe("runtime document hydration", () => {
         userId: "user_1",
         orgId: "org_1",
         projectId: "project_1",
-        localWorkspaceId: "local_1",
-        cloudWorkspaceId: "cloud_1",
       },
       writeback: {
         url: "https://control.test/documents/document_race/runtime-writeback",
@@ -565,12 +496,12 @@ describe("runtime document hydration", () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "runtime-document-admission-race-"))
     const writeEntered = deferred<void>()
     const releaseWrite = deferred<void>()
-    globalThis.fetch = fetchDouble(mock(async () => new Response(null, { status: 204 })))
+    globalThis.fetch = documentAuthorizedFetch(mock(async () => new Response(null, { status: 204 })))
     const app = new Hono().route(
       "/",
       RuntimeDocumentHydrationRoutes({
         workspaceRoot: root,
-        trustedTransport: true,
+        workspaceId: "ws_1",
         controlPlaneOrigin: "https://control.test",
         verifyJob: async () => ({}),
         beforeWriteOpen: async () => {
@@ -609,7 +540,7 @@ describe("runtime document hydration", () => {
     const releaseEntered = deferred<void>()
     const releaseCleanup = deferred<void>()
     const methods: string[] = []
-    globalThis.fetch = fetchDouble(mock(async (_input: string | URL | Request, init?: RequestInit) => {
+    globalThis.fetch = documentAuthorizedFetch(mock(async (_input: string | URL | Request, init?: RequestInit) => {
       methods.push(init?.method ?? "GET")
       if (init?.method === "DELETE") {
         releaseEntered.resolve()
@@ -622,7 +553,7 @@ describe("runtime document hydration", () => {
       "/",
       RuntimeDocumentHydrationRoutes({
         workspaceRoot: root,
-        trustedTransport: true,
+        workspaceId: "ws_1",
         controlPlaneOrigin: "https://control.test",
         verifyJob: async () => ({}),
       }),
@@ -657,7 +588,7 @@ describe("runtime document hydration", () => {
     const releaseCleanup = deferred<void>()
     const methods: string[] = []
     let watcher: import("node:fs").FSWatcher | undefined
-    globalThis.fetch = fetchDouble(mock(async (_input: string | URL | Request, init?: RequestInit) => {
+    globalThis.fetch = documentAuthorizedFetch(mock(async (_input: string | URL | Request, init?: RequestInit) => {
       methods.push(init?.method ?? "GET")
       if (init?.method === "DELETE") {
         releaseEntered.resolve()
@@ -670,7 +601,7 @@ describe("runtime document hydration", () => {
       "/",
       RuntimeDocumentHydrationRoutes({
         workspaceRoot: root,
-        trustedTransport: true,
+        workspaceId: "ws_1",
         controlPlaneOrigin: "https://control.test",
         verifyJob: async () => ({}),
         afterWatcherCreated: (value) => {
@@ -709,12 +640,12 @@ describe("runtime document hydration", () => {
       const status = statuses.shift() ?? 409
       return status === 200 ? Response.json({ version: "v2" }) : new Response("failed", { status })
     })
-    globalThis.fetch = fetchDouble(fetcher)
+    globalThis.fetch = documentAuthorizedFetch(fetcher)
     const app = new Hono().route(
       "/",
       RuntimeDocumentHydrationRoutes({
         workspaceRoot: root,
-        trustedTransport: true,
+        workspaceId: "ws_1",
         controlPlaneOrigin: "https://control.test",
         verifyJob: async () => ({}),
       }),
@@ -733,8 +664,6 @@ describe("runtime document hydration", () => {
             userId: "user_1",
             orgId: "org_1",
             projectId: "project_1",
-            localWorkspaceId: "local_1",
-            cloudWorkspaceId: "cloud_1",
           },
           writeback: {
             url: "https://control.test/write",
@@ -762,7 +691,7 @@ describe("runtime document hydration", () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "runtime-document-renew-"))
     const timer = renewalTimer(1_000_000)
     const authorizations: string[] = []
-    globalThis.fetch = fetchDouble(mock(async (input: string | URL | Request, init?: RequestInit) => {
+    globalThis.fetch = documentAuthorizedFetch(mock(async (input: string | URL | Request, init?: RequestInit) => {
       authorizations.push(new Headers(init?.headers).get("authorization") ?? "")
       if (fetchUrl(input).endsWith("/renew")) {
         return Response.json({ token: "rotated-token", expiresAt: timer.now() + 300_000 })
@@ -773,7 +702,7 @@ describe("runtime document hydration", () => {
       "/",
       RuntimeDocumentHydrationRoutes({
         workspaceRoot: root,
-        trustedTransport: true,
+        workspaceId: "ws_1",
         controlPlaneOrigin: "https://control.test",
         verifyJob: async () => ({}),
         renewalTimer: timer,
@@ -793,8 +722,6 @@ describe("runtime document hydration", () => {
             userId: "user_1",
             orgId: "org_1",
             projectId: "project_1",
-            localWorkspaceId: "local_1",
-            cloudWorkspaceId: "cloud_1",
           },
           writeback: {
             url: "https://control.test/write",
@@ -838,13 +765,13 @@ describe("runtime document hydration", () => {
           return callbackResponse("chunked oversized", { token: "ignored" })
         return await new Promise<Response>(() => undefined)
       })
-      globalThis.fetch = fetchDouble(fetcher)
+      globalThis.fetch = documentAuthorizedFetch(fetcher)
       const error = spyOn(console, "error").mockImplementation(() => {})
       const app = new Hono().route(
         "/",
         RuntimeDocumentHydrationRoutes({
           workspaceRoot: root,
-          trustedTransport: true,
+          workspaceId: "ws_1",
           controlPlaneOrigin: "https://control.test",
           verifyJob: async () => ({}),
           renewalTimer: timer,
@@ -867,8 +794,6 @@ describe("runtime document hydration", () => {
                 userId: "user_1",
                 orgId: "org_1",
                 projectId: "project_1",
-                localWorkspaceId: "local_1",
-                cloudWorkspaceId: "cloud_1",
               },
               writeback: {
                 url: "https://control.test/write",
@@ -902,7 +827,7 @@ describe("runtime document hydration", () => {
     async (strategy) => {
       const root = await fs.mkdtemp(path.join(os.tmpdir(), `runtime-document-refresh-${strategy}-`))
       const authorizations: string[] = []
-      globalThis.fetch = fetchDouble(mock(async (_url: string | URL | Request, init?: RequestInit) => {
+      globalThis.fetch = documentAuthorizedFetch(mock(async (_url: string | URL | Request, init?: RequestInit) => {
         const authorization = new Headers(init?.headers).get("authorization") ?? ""
         authorizations.push(authorization)
         if (authorization === "Bearer expired-token") return new Response("conflict", { status: 409 })
@@ -912,7 +837,7 @@ describe("runtime document hydration", () => {
         "/",
         RuntimeDocumentHydrationRoutes({
           workspaceRoot: root,
-          trustedTransport: true,
+          workspaceId: "ws_1",
           controlPlaneOrigin: "https://control.test",
           verifyJob: async () => ({}),
         }),
@@ -931,8 +856,6 @@ describe("runtime document hydration", () => {
               userId: "user_1",
               orgId: "org_1",
               projectId: "project_1",
-              localWorkspaceId: "local_1",
-              cloudWorkspaceId: "cloud_1",
             },
             writeback: {
               url: "https://control.test/write",
@@ -963,8 +886,6 @@ describe("runtime document hydration", () => {
             userId: "user_1",
             orgId: "org_1",
             projectId: "project_1",
-            localWorkspaceId: "local_1",
-            cloudWorkspaceId: "cloud_1",
           },
         }),
       })
@@ -981,12 +902,12 @@ describe("runtime document hydration", () => {
 
   test("keeps a conflicted runtime safely parked when credential refresh is invalid", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "runtime-document-refresh-invalid-"))
-    globalThis.fetch = fetchDouble(mock(async () => new Response("conflict", { status: 409 })))
+    globalThis.fetch = documentAuthorizedFetch(mock(async () => new Response("conflict", { status: 409 })))
     const app = new Hono().route(
       "/",
       RuntimeDocumentHydrationRoutes({
         workspaceRoot: root,
-        trustedTransport: true,
+        workspaceId: "ws_1",
         controlPlaneOrigin: "https://control.test",
         verifyJob: async () => ({}),
       }),
@@ -1005,8 +926,6 @@ describe("runtime document hydration", () => {
             userId: "user_1",
             orgId: "org_1",
             projectId: "project_1",
-            localWorkspaceId: "local_1",
-            cloudWorkspaceId: "cloud_1",
           },
           writeback: {
             url: "https://control.test/write",
@@ -1038,8 +957,6 @@ describe("runtime document hydration", () => {
               userId: "user_1",
               orgId: "org_1",
               projectId: "project_1",
-              localWorkspaceId: "local_1",
-              cloudWorkspaceId: "cloud_1",
             },
           }),
         })
@@ -1066,8 +983,6 @@ describe("runtime document hydration", () => {
           userId: "user_1",
           orgId: "org_1",
           projectId: "project_1",
-          localWorkspaceId: "ws_1",
-          cloudWorkspaceId: "ws_1",
         },
         writeback: {
           url: "https://attacker.test/write",
@@ -1088,7 +1003,7 @@ describe("runtime document hydration", () => {
       "/",
       RuntimeDocumentHydrationRoutes({
         workspaceRoot: root,
-        trustedTransport: true,
+        workspaceId: "ws_1",
         controlPlaneOrigin: "https://control.test",
         verifyJob: async () => ({}),
       }),
@@ -1107,8 +1022,6 @@ describe("runtime document hydration", () => {
           userId: "user_1",
           orgId: "org_1",
           projectId: "project_1",
-          localWorkspaceId: "ws_1",
-          cloudWorkspaceId: "ws_1",
         },
         writeback: {
           url: "https://attacker.test/write",
@@ -1129,7 +1042,7 @@ describe("runtime document hydration", () => {
       "/",
       RuntimeDocumentHydrationRoutes({
         workspaceRoot: root,
-        trustedTransport: true,
+        workspaceId: "ws_1",
         controlPlaneOrigin: "https://control.test",
         verifyJob: async () => {
           throw new Error("wrong audience")
@@ -1150,8 +1063,6 @@ describe("runtime document hydration", () => {
           userId: "user_1",
           orgId: "org_1",
           projectId: "project_1",
-          localWorkspaceId: "local_1",
-          cloudWorkspaceId: "cloud_1",
         },
         writeback: {
           url: "https://control.test/write",
@@ -1173,12 +1084,12 @@ describe("runtime document hydration", () => {
       canonical = str(rec(fetchBodyJson(init?.body))?.markdown) ?? ""
       return Response.json({ version: "v2" })
     })
-    globalThis.fetch = fetchDouble(fetcher)
+    globalThis.fetch = documentAuthorizedFetch(fetcher)
     const app = new Hono().route(
       "/",
       RuntimeDocumentHydrationRoutes({
         workspaceRoot: root,
-        trustedTransport: true,
+        workspaceId: "ws_1",
         controlPlaneOrigin: "https://control.test",
         verifyJob: async () => ({}),
       }),
@@ -1194,8 +1105,6 @@ describe("runtime document hydration", () => {
         userId: "user_1",
         orgId: "org_1",
         projectId: "project_1",
-        localWorkspaceId: "ws_1",
-        cloudWorkspaceId: "ws_1",
       },
       writeback: {
         url: "https://control.test/write",
@@ -1235,12 +1144,12 @@ describe("runtime document hydration", () => {
     const rejectActivation = deferred<void>()
     const timer = renewalTimer(1_000_000)
     const callback = mock(async () => Response.json({ version: "v2" }))
-    globalThis.fetch = fetchDouble(callback)
+    globalThis.fetch = documentAuthorizedFetch(callback)
     const app = new Hono().route(
       "/",
       RuntimeDocumentHydrationRoutes({
         workspaceRoot: root,
-        trustedTransport: true,
+        workspaceId: "ws_1",
         controlPlaneOrigin: "https://control.test",
         renewalTimer: timer,
         verifyJob: async (_token, expected) => {
@@ -1280,7 +1189,7 @@ describe("runtime document hydration", () => {
   test("uses the persisted dirty base version for the first write-back after restart", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "runtime-document-restart-cas-"))
     const versions: string[] = []
-    globalThis.fetch = fetchDouble(mock(async (_url: string | URL | Request, init?: RequestInit) => {
+    globalThis.fetch = documentAuthorizedFetch(mock(async (_url: string | URL | Request, init?: RequestInit) => {
       versions.push(new Headers(init?.headers).get("if-match") ?? "")
       return new Response("conflict", { status: 409 })
     }))
@@ -1288,7 +1197,7 @@ describe("runtime document hydration", () => {
       "/",
       RuntimeDocumentHydrationRoutes({
         workspaceRoot: root,
-        trustedTransport: true,
+        workspaceId: "ws_1",
         controlPlaneOrigin: "https://control.test",
         verifyJob: async () => ({}),
       }),
@@ -1304,8 +1213,6 @@ describe("runtime document hydration", () => {
         userId: "user_1",
         orgId: "org_1",
         projectId: "project_1",
-        localWorkspaceId: "local_1",
-        cloudWorkspaceId: "cloud_1",
       },
       writeback: {
         url: "https://control.test/write",
@@ -1353,7 +1260,7 @@ describe("runtime document hydration", () => {
       "/",
       RuntimeDocumentHydrationRoutes({
         workspaceRoot: root,
-        trustedTransport: true,
+        workspaceId: "ws_1",
         controlPlaneOrigin: "https://control.test",
         verifyJob: async () => ({}),
       }),
@@ -1372,8 +1279,6 @@ describe("runtime document hydration", () => {
           userId: "user_1",
           orgId: "org_1",
           projectId: "project_1",
-          localWorkspaceId: "ws_1",
-          cloudWorkspaceId: "ws_1",
         },
         writeback: {
           url: "https://control.test/write",
@@ -1397,7 +1302,7 @@ describe("runtime document hydration", () => {
       "/",
       RuntimeDocumentHydrationRoutes({
         workspaceRoot: root,
-        trustedTransport: true,
+        workspaceId: "ws_1",
         controlPlaneOrigin: "https://control.test",
         verifyJob: async () => ({}),
         beforeWriteOpen: async () => {
@@ -1421,8 +1326,6 @@ describe("runtime document hydration", () => {
           userId: "user_1",
           orgId: "org_1",
           projectId: "project_1",
-          localWorkspaceId: "local_1",
-          cloudWorkspaceId: "cloud_1",
         },
         writeback: {
           url: "https://control.test/write",
@@ -1473,8 +1376,6 @@ function hydrationBody(sessionId: string, documentId: string) {
       userId: "user_1",
       orgId: "org_1",
       projectId: "project_1",
-      localWorkspaceId: "local_1",
-      cloudWorkspaceId: "cloud_1",
     },
     writeback: {
       url: `https://control.test/documents/${documentId}/runtime-writeback`,

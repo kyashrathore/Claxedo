@@ -4,13 +4,22 @@ import http from "node:http"
 import os from "node:os"
 import path from "node:path"
 import type { HostStateStore } from "@claxedo/host-connector/host-state"
-import { sealingPublicKeyJwk } from "@claxedo/host-connector/machine-seal"
+import { publicKeyJwk } from "@claxedo/account-contract/machine"
 import { createHostRuntimeListener, type HostRuntimeListener } from "@claxedo/host-serving/runtime"
-import { resetHostEnrolledOwner, setHostServing, stopHostServing, hostServingState } from "@claxedo/host-serving/serving"
+import {
+  resetHostEnrolledOwner,
+  setHostServing,
+  stopHostServing,
+  hostServingState,
+} from "@claxedo/host-serving/serving"
 import { connect, type ConnectDeps } from "../commands/connect"
 import { processAlive, statusLines } from "../commands/status"
 import { desktopDaemonDiscoveryFiles, desktopDaemonState } from "./desktop-daemon"
-import { createFakeConnectControlPlane, decodeFakeTunnelToken, type FakeControlPlane } from "./fake-control-plane.test-support"
+import {
+  createFakeConnectControlPlane,
+  decodeFakeTunnelToken,
+  type FakeControlPlane,
+} from "./fake-control-plane.test-support"
 import { defaultHostDeps } from "./host"
 import { createFakeSystemdUserManager, provision, type FakeServiceManager } from "./machine-simulator.test-support"
 import { connectPaths, connectStateStore } from "./paths"
@@ -48,7 +57,9 @@ async function serveFakeControlPlane(relayUrl: string) {
     const body = Buffer.concat(chunks).toString()
     const answer = await cp!.fetch(new URL(request.url ?? "/", `http://${request.headers.host}`), {
       method: request.method ?? "GET",
-      headers: Object.fromEntries(Object.entries(request.headers).flatMap(([key, value]) => (typeof value === "string" ? [[key, value]] : []))),
+      headers: Object.fromEntries(
+        Object.entries(request.headers).flatMap(([key, value]) => (typeof value === "string" ? [[key, value]] : [])),
+      ),
       ...(body ? { body } : {}),
     })
     response.writeHead(answer.status, Object.fromEntries(answer.headers.entries()))
@@ -104,7 +115,12 @@ async function machine(input: { linger: boolean }): Promise<Machine> {
     linger: input.linger,
     runtimeDir: "/run/user/1000",
     cwd: home,
-    environment: { HOME: home, PATH: process.env.PATH ?? "", XDG_RUNTIME_DIR: "/run/user/1000", CLAXEDO_SIM_BEAT_MS: String(BEAT_MS) },
+    environment: {
+      HOME: home,
+      PATH: process.env.PATH ?? "",
+      XDG_RUNTIME_DIR: "/run/user/1000",
+      CLAXEDO_SIM_BEAT_MS: String(BEAT_MS),
+    },
     setTimeout: (fn, ms) => {
       timerWaitsMs.push(ms)
       const handle = setTimeout(fn, 0)
@@ -115,7 +131,8 @@ async function machine(input: { linger: boolean }): Promise<Machine> {
   const store = connectStateStore(claxedoHome)
   const deps: ConnectDeps = {
     host: { ...defaultHostDeps(), log: (line) => lines.push(line), sleep: async () => undefined },
-    service: () => manager.serviceDeps({ command: [process.execPath, CHILD_ENTRY], claxedoHome, now: () => INSTALLED_AT }),
+    service: () =>
+      manager.serviceDeps({ command: [process.execPath, CHILD_ENTRY], claxedoHome, now: () => INSTALLED_AT }),
     store,
     paths: connectPaths(claxedoHome),
     controlPlaneUrl: served.cp.url,
@@ -160,12 +177,14 @@ const enrollmentIdOf = (m: Machine) => [...m.cp.enrollments.keys()][0]
 
 /** The invitation minted on the owner's laptop, then the box's user-data: token file, repo, `claxedo connect … --install-service`. */
 async function cloudInit(m: Machine) {
-  const invitation = await m.cp.createInvitation({ displayName: "ec2-host", scope: { allowed_roots: [m.root], visibility: "owner" } })
+  const invitation = await m.cp.createInvitation({ displayName: "ec2-host", scope: { allowed_roots: [m.root] } })
   return await provision({
     tokenFile: m.tokenFile,
     token: invitation.token,
     repos: [path.join(m.root, "api")],
-    runcmd: [() => connect(["--token-file", m.tokenFile, "--root", m.root, "--name", "ec2-host", "--install-service"], m.deps)],
+    runcmd: [
+      () => connect(["--token-file", m.tokenFile, "--root", m.root, "--name", "ec2-host", "--install-service"], m.deps),
+    ],
   })
 }
 
@@ -179,10 +198,21 @@ async function beating(m: Machine, since: number) {
 /** Readiness at the control plane, the tunnel at the relay, and the host's own served row, for one workspace. */
 async function servedEverywhere(m: Machine, workspaceId: string, generation: number) {
   await until(() => m.cp.routable(enrollmentIdOf(m)).includes(workspaceId), `readiness for ${workspaceId}`)
-  await until(() => m.relay.open().some((socket) => socket.workspaceIds.includes(workspaceId)), `a tunnel for ${workspaceId}`)
+  await until(
+    () => m.relay.open().some((socket) => socket.workspaceIds.includes(workspaceId)),
+    `a tunnel for ${workspaceId}`,
+  )
   const socket = m.relay.open().find((socket) => socket.workspaceIds.includes(workspaceId))!
-  expect(decodeFakeTunnelToken(socket.token)).toEqual({ workspace_ids: [workspaceId], enrollment_id: enrollmentIdOf(m), generation })
-  await until(async () => (await m.state())?.run?.served?.some((row) => row.workspace_id === workspaceId && row.connected) === true, "the served row to show the tunnel")
+  expect(decodeFakeTunnelToken(socket.token)).toEqual({
+    workspace_ids: [workspaceId],
+    enrollment_id: enrollmentIdOf(m),
+    generation,
+  })
+  await until(
+    async () =>
+      (await m.state())?.run?.served?.some((row) => row.workspace_id === workspaceId && row.connected) === true,
+    "the served row to show the tunnel",
+  )
   return socket
 }
 
@@ -259,7 +289,9 @@ describe("claxedo connect on a simulated machine", () => {
     timing("boot → readiness + tunnel, unattended", { elapsedMs: resumedAt - bootedAt, beatMs: BEAT_MS })
     const afterReboot = m.cp.log.slice(requestsBeforeReboot).map((entry) => entry.path)
     expect(afterReboot[0]).toBe("/api/claxedo/host/enrollments/acquire")
-    expect(afterReboot.filter((entry) => !entry.endsWith("/heartbeat"))).toEqual(["/api/claxedo/host/enrollments/acquire"])
+    expect(afterReboot.filter((entry) => !entry.endsWith("/heartbeat"))).toEqual([
+      "/api/claxedo/host/enrollments/acquire",
+    ])
     const resumedState = await m.state()
     expect(resumedState?.enrollment?.enrollment_id).toBe(enrollmentIdOf(m))
     expect(resumedState?.run).toMatchObject({ pid: rebooted.pid, generation: 2 })
@@ -275,7 +307,12 @@ describe("claxedo connect on a simulated machine", () => {
     await until(() => !m.manager.service().running, "the unit's process to exit")
     const exitedAt = Date.now()
     const ended = m.manager.service()
-    expect(ended).toMatchObject({ running: false, state: "failed/failed", restarts: 0, lastExit: { code: 78, signal: null } })
+    expect(ended).toMatchObject({
+      running: false,
+      state: "failed/failed",
+      restarts: 0,
+      lastExit: { code: 78, signal: null },
+    })
     expect(ended.raw).toContain("ActiveState=failed\n")
     expect(ended.raw).toContain("NRestarts=0\n")
     expect(ended.raw).toContain("ExecMainStatus=78\n")
@@ -292,7 +329,9 @@ describe("claxedo connect on a simulated machine", () => {
     status = await m.status()
     expect(status).toContain("status       offline")
     expect(status).toContain("Served folders: none")
-    expect(m.cp.log.slice(-1)[0]?.path, "nothing acquired after the decision").toBe("/api/claxedo/host/enrollments/heartbeat")
+    expect(m.cp.log.slice(-1)[0]?.path, "nothing acquired after the decision").toBe(
+      "/api/claxedo/host/enrollments/heartbeat",
+    )
   }, 30_000)
 
   test("a process the kernel kills is restarted by the manager after the unit's RestartSec, acquiring the next generation and serving again", async () => {
@@ -305,7 +344,10 @@ describe("claxedo connect on a simulated machine", () => {
     const killed = m.manager.child()!
     const killedAt = Date.now()
     killed.kill("SIGKILL")
-    await until(() => m.manager.service().restarts === 1 && m.manager.service().running, "the manager to restart the unit")
+    await until(
+      () => m.manager.service().restarts === 1 && m.manager.service().running,
+      "the manager to restart the unit",
+    )
     expect(m.manager.restartWaitsMs, "RestartSec=5 from the unit, in ms").toEqual([5_000])
     expect(m.manager.child()!.pid).not.toBe(killed.pid)
     await until(() => socket.closed, "the killed process's tunnel to close")
@@ -329,7 +371,9 @@ describe("claxedo connect on a simulated machine", () => {
     expect(m.manager.service()).toMatchObject({ loaded: false, enabled: false, running: false })
     expect(m.manager.child()).toBeUndefined()
     expect(m.cp.beats()).toEqual([])
-    expect(m.lines.some((line) => line.startsWith(`Wrote ${SYSTEMD_UNIT}`) && line.includes("did not start it"))).toBe(true)
+    expect(m.lines.some((line) => line.startsWith(`Wrote ${SYSTEMD_UNIT}`) && line.includes("did not start it"))).toBe(
+      true,
+    )
     expect(m.lines).toContain("  sudo loginctl enable-linger ec2-user")
     expect(await m.status()).toContain("status       offline")
 
@@ -436,7 +480,7 @@ async function inProcessHost() {
       const since = await lastBeatAt()
       let argv = ["--foreground"]
       if (!(await store.load())?.enrollment) {
-        const invitation = await cp.createInvitation({ displayName: "build-box", scope: { allowed_roots: [root], visibility: "owner" } })
+        const invitation = await cp.createInvitation({ displayName: "build-box", scope: { allowed_roots: [root] } })
         const tokenFile = path.join(home, "invite.txt")
         await fs.writeFile(tokenFile, invitation.token)
         argv = ["--token-file", tokenFile, "--root", root]
@@ -467,10 +511,14 @@ async function inProcessHost() {
 }
 
 const SECRET = "sk-owner-secret-0123456789abcdef"
-const providerConfig = (placeholder: string) => JSON.stringify({ version: 1, credentials: {
-  machineOwnerUserId: "alice",
-  accounts: { alice: { "claude-sdk": { baseUrl: "https://broker.example/b/1", placeholder, authMode: "bearer" } } },
-} })
+const providerConfig = (placeholder: string) =>
+  JSON.stringify({
+    version: 1,
+    credentials: {
+      machineOwnerUserId: "alice",
+      accounts: { alice: { "claude-sdk": { baseUrl: "https://broker.example/b/1", placeholder, authMode: "bearer" } } },
+    },
+  })
 
 describe("provider configuration on a running claxedo connect host", () => {
   let h: Awaited<ReturnType<typeof inProcessHost>>
@@ -491,14 +539,21 @@ describe("provider configuration on a running claxedo connect host", () => {
 
     const enrolled = await h.state()
     expect(enrolled?.sealing_private_key_jwk?.d).toBeDefined()
-    expect(h.cp.sealingPublicKey(id)).toBe(JSON.stringify(sealingPublicKeyJwk(enrolled!.sealing_private_key_jwk!)))
+    expect(h.cp.sealingPublicKey(id)).toBe(JSON.stringify(publicKeyJwk(enrolled!.sealing_private_key_jwk!)))
     expect(h.saves.find((save) => save.sealingKey)?.beatsBefore).toBe(0)
     expect(h.cp.beats()[0]?.body.providerConfigRevision, "nothing stored, nothing declared").toBeUndefined()
 
     // A served folder, so a live runtime exists to re-apply to.
     h.cp.assign({ hostId: enrolled!.host_id, workspaceId: "ws_api", remoteDirectory: path.join(h.root, "api") })
     await h.beat()
-    await until(() => h.listener().owners().some((owner) => owner.workspaceId === "ws_api"), "the runtime for ws_api")
+    await until(
+      () =>
+        h
+          .listener()
+          .owners()
+          .some((owner) => owner.workspaceId === "ws_api"),
+      "the runtime for ws_api",
+    )
     const served = await h.state()
     const runtime = await h.listener().ensure({
       workspaceId: "ws_api",
@@ -531,7 +586,10 @@ describe("provider configuration on a running claxedo connect host", () => {
     h.faults.failSaveOfRevision = second
     await h.beat()
     expect(h.faults.failSaveOfRevision, "the failing write was the provider-config one").toBeUndefined()
-    expect((await h.beat()).providerConfigRevision, "the beat after the failed write still declares the old revision").toBe(first)
+    expect(
+      (await h.beat()).providerConfigRevision,
+      "the beat after the failed write still declares the old revision",
+    ).toBe(first)
     expect(h.cp.providerConfigAckedRevision(id)).toBe(first)
     expect(h.lines.some((line) => line.startsWith("provider-config failed: ") && line.includes("ENOSPC"))).toBe(true)
     expect(h.lines.filter((line) => line === "provider configuration revision 2: claude-sdk")).toHaveLength(1)
@@ -544,7 +602,9 @@ describe("provider configuration on a running claxedo connect host", () => {
     await h.beat()
     await until(async () => (await h.state())?.provider_config?.revision === third, "the withdrawal on disk")
     expect((await h.state())?.provider_config).toEqual({ revision: third, sealed: null })
-    expect(h.lines).toContain(`provider configuration revision ${third}: withdrawn; harnesses run on this machine's own logins`)
+    expect(h.lines).toContain(
+      `provider configuration revision ${third}: withdrawn; harnesses run on this machine's own logins`,
+    )
     expect((await h.beat()).providerConfigRevision).toBe(third)
     expect(h.cp.providerConfigAckedRevision(id)).toBe(third)
     await until(() => runtime.host.detail().configApply.revision === 5, "the withdrawal to reach the runtime")

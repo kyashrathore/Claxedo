@@ -54,9 +54,9 @@ describe("toolPartHeader", () => {
   test("a first-party Claxedo tool whose row reads its result is sent whole, and one whose row reads only its input is its header", () => {
     const created = part("mcp__claxedo-mcp__task_create", completed({ title: "Ship" }, {}, JSON.stringify({ task: { id: "t1", key: "T-1", title: "Ship", status: "doing" } })))
     expect(toolPartHeader(created)).toBe(created)
-    const logs = toolPartHeader(part("mcp__claxedo-mcp__process_logs", completed({ process: "web" })))
-    expect(logs.headerOnly).toBe(true)
-    expect(logs.state).toMatchObject({ input: { process: "web" }, output: "" })
+    const board = toolPartHeader(part("mcp__claxedo-mcp__sessions_board", completed({ workspace: "ws_1" })))
+    expect(board.headerOnly).toBe(true)
+    expect(board.state).toMatchObject({ input: { workspace: "ws_1" }, output: "" })
   })
 
   test("a row with nothing to collapse is sent whole", () => {
