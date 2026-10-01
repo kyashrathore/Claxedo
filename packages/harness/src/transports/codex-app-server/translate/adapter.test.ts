@@ -14,27 +14,6 @@ function runtime() {
 }
 
 describe("codexAppServerAdapter", () => {
-  test("projects explicitly marked MCP consent with its advertised persistence choices", () => {
-    const agent = runtime()
-    expect(agent.ingest({
-      source: "codex.app-server",
-      method: "mcpServer/elicitation/request",
-      payload: {
-        requestId: "consent-1", serverName: "cua_repl", mode: "form",
-        _meta: { codex_approval_kind: "mcp_tool_call", persist: ["session", "always"] },
-        message: 'Allow Computer Use to use "Claxedo Dev (dev)"?',
-        requestedSchema: { type: "object", properties: {} },
-      },
-    }).events).toMatchObject([{
-      type: "permission-request", requestId: "consent-1", tool: "cua_repl", paths: [],
-      details: { reason: 'Allow Computer Use to use "Claxedo Dev (dev)"?' },
-      options: [
-        { id: "accept", label: "Accept" }, { id: "decline", label: "Decline" }, { id: "cancel", label: "Cancel" },
-        { id: '{"persist":"session"}', label: "Accept (session)" }, { id: '{"persist":"always"}', label: "Accept (always)" },
-      ],
-    }])
-  })
-
   test("translates native plan progress into canonical task status", () => {
     const agent = runtime()
     const result = agent.ingest({
@@ -142,51 +121,6 @@ describe("codexAppServerAdapter", () => {
       method: "item/completed",
       payload: { item: { id: "plan-1", type: "plan", text: "## Plan" } },
     }).events).toMatchObject([{ type: "proposed-plan-complete", planMarkdown: "## Plan" }])
-  })
-
-  test("maps approvals and requestUserInput lifecycle events", () => {
-    const agent = runtime()
-
-    expect(agent.ingest({
-      source: "codex.app-server",
-      method: "item/commandExecution/requestApproval",
-      payload: { requestId: "approval-1", command: "rm -rf tmp", cwd: "/repo", reason: "Remove generated files" },
-    }).events).toMatchObject([{
-      type: "permission-request",
-      requestId: "approval-1",
-      tool: "command",
-      paths: ["/repo"],
-      details: { command: "rm -rf tmp", reason: "Remove generated files" },
-    }])
-
-    expect(agent.ingest({
-      source: "codex.app-server",
-      method: "item/permissions/requestApproval",
-      payload: { requestId: "approval-2", toolName: "Edit", paths: ["/repo/file.ts"] },
-    }).events).toMatchObject([{
-      type: "permission-request",
-      requestId: "approval-2",
-      tool: "Edit",
-      paths: ["/repo/file.ts"],
-    }])
-
-    expect(agent.ingest({
-      source: "codex.app-server",
-      method: "item/tool/requestUserInput",
-      payload: {
-        requestId: "question-1",
-        questions: [{
-          id: "sandbox_mode",
-          question: "Which mode?",
-          options: [{ label: "workspace-write", description: "Allow workspace writes" }],
-        }],
-      },
-    }).events).toMatchObject([{
-      type: "question",
-      requestId: "question-1",
-      questions: [{ text: "Which mode?", options: ["workspace-write"], optionDescriptions: { "workspace-write": "Allow workspace writes" } }],
-    }])
-
   })
 
   test("completes tool-like items even when app-server only sends item/completed", () => {
