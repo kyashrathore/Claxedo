@@ -18,13 +18,20 @@ type Input = {
   emailPassword?: boolean
 }
 
+/**
+ * The signed browser's public hostname. The app treats a loopback server URL
+ * (localhost, 127.0.0.1) as the local daemon and calls its routes, so a hosted
+ * origin has to be named; Chromium resolves any *.localhost name to loopback.
+ */
+export const HOSTED_E2E_PUBLIC_HOSTNAME = "claxedo-e2e.localhost"
+
 export async function hostedCertificate(root: string) {
   const key = path.join(root, "hosted-key.pem")
   const certificate = path.join(root, "hosted-cert.pem")
   const generated = spawnSync("openssl", [
     "req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "1",
     "-keyout", key, "-out", certificate, "-subj", "/CN=127.0.0.1",
-    "-addext", "subjectAltName=IP:127.0.0.1",
+    "-addext", `subjectAltName=IP:127.0.0.1,DNS:${HOSTED_E2E_PUBLIC_HOSTNAME}`,
   ], { encoding: "utf8" })
   if (generated.error) throw generated.error
   if (generated.status !== 0) throw new Error(`openssl failed: ${generated.stderr}`)

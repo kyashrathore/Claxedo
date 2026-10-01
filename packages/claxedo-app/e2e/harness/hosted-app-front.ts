@@ -1,3 +1,4 @@
+import type { IncomingMessage, ServerResponse } from "node:http"
 import { createServer, request as httpsRequest } from "node:https"
 import { X509Certificate, createHash } from "node:crypto"
 import fs from "node:fs/promises"
@@ -12,7 +13,8 @@ export async function startHostedAppFront(input: { port: number; distDir: string
   const certificate = await fs.readFile(input.hosted.certificate)
   const root = path.resolve(input.distDir)
   const worker = new URL(input.hosted.workerOrigin)
-  const server = createServer({ cert: certificate, key: await fs.readFile(input.hosted.credentials.key) }, async (request, response) => {
+  const tls = { cert: certificate, key: await fs.readFile(input.hosted.credentials.key) }
+  const serve = async (request: IncomingMessage, response: ServerResponse) => {
     const pathname = new URL(request.url ?? "/", input.hosted.workerUrl).pathname
     if (/^\/(api|auth|internal|\.well-known)(\/|$)/.test(pathname) || pathname === "/health") {
       const upstream = httpsRequest({ hostname: worker.hostname, port: worker.port, method: request.method,
@@ -33,12 +35,21 @@ export async function startHostedAppFront(input: { port: number; distDir: string
     } catch (error) {
       response.writeHead((error as NodeJS.ErrnoException).code === "ENOENT" ? 404 : 500).end()
     }
+  }
+  // The public origin is a *.localhost name, which resolvers answer with ::1
+  // before 127.0.0.1; workerd and the sandbox runtimes take the first answer.
+  const servers = [createServer(tls, serve), createServer(tls, serve)]
+  await listenOnLoopback(servers[0], input.port)
+  await new Promise<void>((resolve, reject) => {
+    servers[1].once("error", reject)
+    servers[1].listen(input.port, "::1", resolve)
   })
-  await listenOnLoopback(server, input.port)
   const spki = new X509Certificate(certificate).publicKey.export({ type: "spki", format: "der" })
   return {
     url: input.hosted.workerUrl,
     trust: { caPath: input.hosted.certificate, spki: createHash("sha256").update(spki).digest("base64") },
-    close: () => new Promise<void>((resolve) => { server.closeAllConnections(); server.close(() => resolve()) }),
+    close: async () => {
+      await Promise.all(servers.map((server) => new Promise<void>((resolve) => { server.closeAllConnections(); server.close(() => resolve()) })))
+    },
   }
 }

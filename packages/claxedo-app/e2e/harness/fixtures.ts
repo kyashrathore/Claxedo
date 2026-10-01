@@ -7,7 +7,7 @@ import { ensureDesktopBuilt, type DesktopBuild } from "./desktop-build"
 import type { DesktopRenderer } from "./desktop-renderer"
 import { unexpectedEgress, type EgressAttempt } from "../../../harness/e2e/harness/egress-guard"
 import { releasePort, reservePort } from "../../../harness/e2e/harness/ports"
-import { startSignedStack, type SignedStack } from "./signed-stack"
+import { signedOrigin, startSignedStack, type SignedStack } from "./signed-stack"
 import { redRun, startStack, type Stack } from "./stack"
 
 export type HarnessFixtures = {
@@ -21,7 +21,7 @@ export type HarnessFixtures = {
   signedCloud: SignedStack
 }
 
-type SignedBuild = AppBuild & { frontPort: number }
+type SignedBuild = AppBuild & { frontPort: number; relayPort: number }
 
 type HarnessWorkerFixtures = { desktopBuild: DesktopBuild; signedBuild: SignedBuild }
 
@@ -38,7 +38,7 @@ async function attachLogOnFailure(testInfo: TestInfo, attempts: EgressAttempt[],
 }
 
 async function useSignedFixture(build: SignedBuild, testInfo: TestInfo, use: (signed: SignedStack) => Promise<void>) {
-  const signed = await startSignedStack({ label: testInfo.titlePath.join(" "), frontPort: build.frontPort, distDir: build.distDir })
+  const signed = await startSignedStack({ label: testInfo.titlePath.join(" "), frontPort: build.frontPort, relayPort: build.relayPort, distDir: build.distDir })
   try {
     await use(signed)
   } finally {
@@ -82,11 +82,13 @@ export const test = base.extend<HarnessFixtures, HarnessWorkerFixtures>({
   signedBuild: [
     async ({}, use) => {
       const frontPort = await reservePort()
+      const relayPort = await reservePort()
       try {
-        const build = await ensureAppBuilt({ serverUrl: `https://127.0.0.1:${frontPort}`, outDir: signedDistDir() })
-        await use({ ...build, frontPort })
+        const build = await ensureAppBuilt({ serverUrl: signedOrigin(frontPort), outDir: signedDistDir(), relayOrigins: [`http://127.0.0.1:${relayPort}`] })
+        await use({ ...build, frontPort, relayPort })
       } finally {
         releasePort(frontPort)
+        releasePort(relayPort)
       }
     },
     { scope: "worker", timeout: 300_000 },

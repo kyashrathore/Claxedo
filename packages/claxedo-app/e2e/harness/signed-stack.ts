@@ -2,6 +2,7 @@ import { expect, type Page } from "@playwright/test"
 import { ClaxedoApi } from "./api"
 import { safeLabel, startStack, type StackInput } from "./stack"
 import { startHostedStack } from "../../../harness/e2e/harness/hosted-stack"
+import { HOSTED_E2E_PUBLIC_HOSTNAME } from "../../../harness/e2e/harness/hosted-control-plane"
 import { hostedFetch, type HostedPerson } from "../../../harness/e2e/harness/hosted-auth"
 import { hostedRuntimeTransport, type HostedStack } from "../../../harness/e2e/harness/hosted-flow"
 import type { HttpTransport } from "../../../harness/e2e/harness/transport"
@@ -36,11 +37,15 @@ export type SignedStack = {
   close(): Promise<void>
 }
 
-export type SignedStackInput = StackInput & { frontPort: number; distDir: string }
+export type SignedStackInput = StackInput & { frontPort: number; relayPort: number; distDir: string }
+
+export function signedOrigin(frontPort: number) {
+  return `https://${HOSTED_E2E_PUBLIC_HOSTNAME}:${frontPort}`
+}
 
 export async function startSignedStack(input: SignedStackInput): Promise<SignedStack> {
-  const origin = `https://127.0.0.1:${input.frontPort}`
-  const hosted = await startHostedStack(safeLabel(input.label), { apiOrigin: origin, appOrigin: origin, emailPassword: true })
+  const origin = signedOrigin(input.frontPort)
+  const hosted = await startHostedStack(safeLabel(input.label), { apiOrigin: origin, appOrigin: origin, emailPassword: true, relayPort: input.relayPort })
   let front: Awaited<ReturnType<typeof startHostedAppFront>> | undefined
   let local: Awaited<ReturnType<typeof startStack>> | undefined
   let machine: Awaited<ReturnType<typeof startHostedMachine>> | undefined

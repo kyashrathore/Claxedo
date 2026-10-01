@@ -1,9 +1,16 @@
 import fs from "node:fs/promises"
 import { request } from "node:https"
+import type { LookupFunction } from "node:net"
 import type { startHostedStack } from "./hosted-stack"
 
 type HostedStack = Awaited<ReturnType<typeof startHostedStack>>
 export type HostedPerson = { id: string; cookie: string }
+
+/** Every fixture listener binds 127.0.0.1, while the OS resolves a *.localhost name to ::1 first. */
+const fixtureLoopback: LookupFunction = (_hostname, options, callback) => {
+  if (options.all) callback(null, [{ address: "127.0.0.1", family: 4 }])
+  else callback(null, "127.0.0.1", 4)
+}
 
 export async function hostedFetch(
   stack: HostedStack,
@@ -17,9 +24,11 @@ export async function hostedFetch(
   if (person) headers.set("cookie", person.cookie)
   if (options.body !== undefined && options.body !== null && typeof options.body !== "string") throw new Error("Hosted fixture requests require a serialized body")
   if (options.redirect === "follow") throw new Error("Hosted fixture requests must handle redirects explicitly")
+  const url = new URL(route, stack.workerUrl)
   return new Promise<Response>((resolve, reject) => {
-    const upstream = request(new URL(route, stack.workerUrl), {
+    const upstream = request(url, {
       method: options.method ?? "GET", headers: Object.fromEntries(headers), ca, signal: options.signal ?? undefined,
+      ...(url.hostname.endsWith(".localhost") ? { lookup: fixtureLoopback } : {}),
     }, (received) => {
       const responseHeaders = new Headers()
       for (let index = 0; index < received.rawHeaders.length; index += 2) responseHeaders.append(received.rawHeaders[index], received.rawHeaders[index + 1])

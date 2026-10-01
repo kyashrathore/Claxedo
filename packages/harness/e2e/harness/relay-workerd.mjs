@@ -33,7 +33,7 @@ const mf = new Miniflare({
   durableObjectsPersist: path.join(input.root, "durable-objects"),
   outboundService: {
     network: {
-      allow: ["127.0.0.1/32"],
+      allow: ["127.0.0.1/32", "::1/128"],
       ...(input.certificate ? { tlsOptions: { trustedCertificates: [readFileSync(input.certificate, "utf8")] } } : {}),
     },
   },
