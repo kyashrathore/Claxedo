@@ -83,10 +83,10 @@ export async function verifyCredential(
   const openai = ["openai", "codex-app-server"].includes(credential.provider_id)
   const cursor = ["cursor", "cursor-sdk"].includes(credential.provider_id)
   if (!anthropic && !openai && !cursor) {
-    throw new CredentialVerificationError("Credential provider does not support verification")
+    throw new CredentialVerificationError("credential_verification_unsupported", "Credential provider does not support verification")
   }
   const auth = credentialSecretMaterial({ kind: credential.kind, secret: material })
-  if (!auth) throw new CredentialVerificationError("Credential secret has an unsupported shape")
+  if (!auth) throw new CredentialVerificationError("credential_shape_invalid", "Credential secret has an unsupported shape")
   const anthropicSubscription = anthropic && auth.form === "subscription"
   const probe = providerProbe(auth, anthropic, cursor, openai && auth.form === "subscription")
   const outcome = (
@@ -100,7 +100,7 @@ export async function verifyCredential(
   })
   const ask = (url: string, init: RequestInit) =>
     (options.fetch ?? globalThis.fetch)(url, init).catch(() => {
-      throw new CredentialVerificationError("Credential provider request failed")
+      throw new CredentialVerificationError("credential_provider_unavailable", "Credential provider request failed")
     })
   const response = await ask(probe.url, probe.init)
   if (response.ok) {
@@ -145,7 +145,7 @@ async function refusalVerdict(response: Response): Promise<CredentialHealth> {
   if (failure.includes("token_expired") || failure.includes("expired_token")) return "expired"
   if (response.status === 429) return "rate_capped"
   if (response.status === 401 || response.status === 403) return "auth_failed"
-  throw new CredentialVerificationError("Credential provider verification failed")
+  throw new CredentialVerificationError("credential_verification_failed", "Credential provider verification failed")
 }
 
 function anthropicInferenceProbe(token: string): RequestInit {

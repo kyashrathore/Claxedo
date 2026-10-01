@@ -2,6 +2,7 @@ import { describe, expect, test } from "vitest"
 import type { ControlPlaneTokenVerifier } from "@claxedo/server-core/platform/auth/auth"
 import { HostedControlRoutes } from "./control"
 import { createIdempotencyCoordinator, memoryIdempotencyStore } from "../../authority/http/idempotency"
+import type { ControlPlaneServices } from "../../authority/services"
 
 const authConfig = {
   enabled: true,
@@ -19,6 +20,15 @@ const verifier: ControlPlaneTokenVerifier = async (token, config) => ({
 })
 
 describe("hosted control-plane idempotency", () => {
+  test("implementation errors containing required stay internal", async () => {
+    const services = { authority: { usersMe: async () => { throw new Error("required database table missing") } } } as unknown as ControlPlaneServices
+    const response = await HostedControlRoutes(services, { authConfig, verifier, idempotency: createIdempotencyCoordinator(memoryIdempotencyStore()) }).request("http://test/runtime/register", {
+      method: "POST", headers: { authorization: "Bearer user_1", "content-type": "application/json" },
+      body: JSON.stringify({ workspaceId: "ws_1" }),
+    })
+    expect(response.status).toBe(500)
+    expect(await response.json()).toMatchObject({ error: { code: "INTERNAL_SERVER_ERROR", retryable: false } })
+  })
   test("rejects idempotency keys longer than 256 characters before pull execution", async () => {
     const app = HostedControlRoutes(undefined, { authConfig, verifier, idempotency: createIdempotencyCoordinator(memoryIdempotencyStore()) })
     const response = await app.request(

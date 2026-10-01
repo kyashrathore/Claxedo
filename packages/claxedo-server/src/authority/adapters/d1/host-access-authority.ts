@@ -1,3 +1,4 @@
+import { createRequireText } from "@claxedo/helpers"
 import type { D1Database, D1PreparedStatement } from "@cloudflare/workers-types"
 import { ControlPlaneAuthError, type SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import {
@@ -43,8 +44,9 @@ import { sha256Hex } from "@claxedo/helpers/crypto"
 import { asRecord, parseJson } from "@claxedo/server-core/platform/json/index"
 import type { D1WorkspaceAuthority } from "./workspace-authority"
 import {
-  activeGuard, batchAssertionFailed, batchUnder, deleteAssertion, mayGuard, maySql, wonAssertion, type WorkspaceAction,
+  activeGuard, batchUnder, deleteAssertion, mayGuard, maySql, wonAssertion, type WorkspaceAction,
 } from "./authorization"
+import { d1BatchAssertionFailed, d1ConstraintFailure, d1UniqueFailureOn } from "../../../platform/db/d1-constraint"
 import { requireHuman } from "./access-context"
 import { D1HostAccessAuthorityError } from "./host-access-errors"
 
@@ -270,7 +272,7 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
           `).bind(input.enrollmentId, input.nonce, input.expiresAt).run()
           return true
         } catch (error) {
-          if (isUniqueFailure(error)) return false
+          if (d1ConstraintFailure(error)?.kind === "unique") return false
           throw error
         }
       },
@@ -692,7 +694,7 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
         deleteAssertion(this.database, assertionId),
       ])
     } catch (error) {
-      if (!batchAssertionFailed(error)) throw error
+      if (!d1BatchAssertionFailed(error)) throw error
       throw await this.machineMutationRefusal(machine, generation, "Host heartbeat raced with an enrollment change")
     }
     const row = await this.enrollmentById(machine.enrollmentId)
@@ -733,7 +735,7 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
         deleteAssertion(this.database, assertionId),
       ])
     } catch (error) {
-      if (!batchAssertionFailed(error)) throw error
+      if (!d1BatchAssertionFailed(error)) throw error
       throw await this.machineMutationRefusal(machine, machine.generation, "Serving generation raced with another instance")
     }
     return { generation, generation_acquired_at: now }
@@ -997,7 +999,7 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
         deleteAssertion(this.database, assertionId),
       ])
     } catch (error) {
-      if (!batchAssertionFailed(error)) throw error
+      if (!d1BatchAssertionFailed(error)) throw error
       const row = await this.database.prepare(`
         select sealing_public_key_json, provider_config_revision, provider_config_acked_revision
         from host_enrollments where enrollment_id = ? and owner_actor_id = ? and revoked_at is null
@@ -1162,13 +1164,13 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
         deleteAssertion(this.database, assertionId),
       ])
     } catch (error) {
-      if (isUniqueFailure(error) && String(error).includes("host_enrollments")) {
+      if (d1UniqueFailureOn(error, "host_enrollments")) {
         throw new D1HostAccessAuthorityError(
           "invitation_host_conflict",
           "This owner already has an enrollment for the host id; enroll with a fresh host id",
         )
       }
-      if (!batchAssertionFailed(error)) throw error
+      if (!d1BatchAssertionFailed(error)) throw error
       const current = await this.invitation(invitationId)
       const resumed = current && await this.settledRedeem(current, { hostId, fingerprint, now })
       if (resumed) return resumed
@@ -1561,10 +1563,10 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
     try {
       return await this.database.batch(statements)
     } catch (error) {
-      if (isUniqueFailure(error) && String(error).includes("host_signature_uses")) {
+      if (d1UniqueFailureOn(error, "host_signature_uses")) {
         throw new D1HostAccessAuthorityError("signature_replayed", "Host signature has already been used")
       }
-      if (batchAssertionFailed(error)) {
+      if (d1BatchAssertionFailed(error)) {
         throw new D1HostAccessAuthorityError("resource_conflict", message)
       }
       throw error
@@ -1772,21 +1774,7 @@ function normalizedTtl(input: number | undefined) {
 }
 
 
-function optionalText(value: string | undefined, name: string, max = 512) {
-  if (value === undefined) return undefined
-  return requireText(value, name, max)
-}
-
-function requireText(value: unknown, name: string, max = 512) {
-  if (typeof value !== "string") {
-    throw new D1HostAccessAuthorityError("invalid_input", `${name} must be a string`)
-  }
-  const result = value.trim()
-  if (!result || result.length > max) {
-    throw new D1HostAccessAuthorityError("invalid_input", `${name} must be a non-empty string of at most ${max} characters`)
-  }
-  return result
-}
+const { requireText, optionalText } = createRequireText((message) => new D1HostAccessAuthorityError("invalid_input", message))
 
 function randomBase64Url(size: number) {
   return base64Url(crypto.getRandomValues(new Uint8Array(size)))
@@ -1851,10 +1839,6 @@ function denied(message = "Workspace authority denied access") {
 }
 
 
-function isUniqueFailure(error: unknown) {
-  const text = String(error)
-  return text.includes("UNIQUE constraint failed") || text.includes("constraint failed") && text.includes("unique")
-}
 
 /** A stored JSON array of ids; a column that is not one contributes no ids. */
 function storedStringList(raw: string): string[] {

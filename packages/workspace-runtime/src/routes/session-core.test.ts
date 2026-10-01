@@ -1467,13 +1467,12 @@ describe("createSessionRoutes directory-less sessions", () => {
     })])
   })
 
-  test("returns an empty agent list when harness cannot expose live agent options", async () => {
+  test("does not convert an untyped live-agent failure into a successful empty catalog", async () => {
     const res = await directoryless(harness({
       agents: { list: async () => { throw new Error("opencode does not expose live agent options") } },
     })).request("http://localhost/agent")
 
-    expect(res.status).toBe(200)
-    expect(await res.json()).toEqual([])
+    expect(res.status).toBe(500)
   })
 
   test("passes undefined directory through detail routes", async () => {

@@ -1,3 +1,4 @@
+import { HostedHttpError } from "./machine-transport"
 import { describe, expect, test, vi } from "vitest"
 import { createHostConnector, type ConnectorErrorStage, type HostSessionAuthority, type MachineTransport } from "./connector"
 import { createFakeControlPlane, enrollFakeHost } from "./fake-control-plane.test-support"
@@ -340,7 +341,7 @@ describe("a beat still in flight when its era ends", () => {
     await vi.waitFor(() => expect(gate.pending).toHaveLength(1))
     h.connector.close()
 
-    gate.pending[0]?.reject(new Error('HOSTED_HTTP 404 {"error":{"code":"host_enrollment_not_found"}}'))
+    gate.pending[0]?.reject(new HostedHttpError(404, { error: { code: "host_enrollment_not_found", message: "Enrollment not found" } }))
     await inFlight
 
     expect(h.connector.state()).toMatchObject({ status: "stopped", reason: "closed" })

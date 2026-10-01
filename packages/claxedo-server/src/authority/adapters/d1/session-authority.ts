@@ -1,3 +1,5 @@
+import { PublicApiError } from "@claxedo/server-core/platform/errors/public-api-error"
+import type { PublicApiErrorCode } from "@claxedo/helpers/api-error"
 import type { D1Database, D1PreparedStatement } from "@cloudflare/workers-types"
 import { ControlPlaneAuthError, type SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import type {
@@ -59,6 +61,7 @@ import {
 } from "./session-input"
 import { readD1SessionPage, readD1MessagePage, readD1LatestView, validateD1MessageRead, decodeMessagePageCursor } from "./session-read-store"
 import { storedTurn, type LatestView } from "@claxedo/server-core/session/latest-view-page"
+import { d1ConstraintFailure } from "../../../platform/db/d1-constraint"
 import { readStoredTurnOutline } from "@claxedo/server-core/session/turn-outline"
 import { readStoredPart } from "@claxedo/server-core/session/stored-part"
 import type { StoredMessageQuery } from "@claxedo/server-core/session/stored-messages"
@@ -1161,7 +1164,7 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
         "Session share grant raced with an authority change",
       )
     } catch (error) {
-      if (String(error).includes("UNIQUE constraint failed")) {
+      if (d1ConstraintFailure(error)?.kind === "unique") {
         await this.requireParticipantAdministrator(administrator, sessionId, workspaceId)
         const raced = await this.activeShareForTarget(sessionId, target)
         if (raced && raced.workspace_id === workspaceId) {
@@ -2290,10 +2293,7 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
     try {
       return await this.database.batch(statements)
     } catch (error) {
-      if (
-        String(error).includes("authority_batch_assertions.passed") ||
-        String(error).includes("CHECK constraint failed")
-      ) {
+      if (d1ConstraintFailure(error)?.kind === "check") {
         throw new D1SessionAuthorityError("resource_conflict", message)
       }
       throw error
@@ -2331,8 +2331,8 @@ function shareFanoutTarget(grant: SessionShareRow) {
   return { grantedToOrgId: grant.target_org_id! }
 }
 
-function sessionShareError(code: string) {
-  return new Error(code)
+function sessionShareError(code: PublicApiErrorCode) {
+  return new PublicApiError(code)
 }
 
 function normalizeReservation(input: ReserveSessionInput) {

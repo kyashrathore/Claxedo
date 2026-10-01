@@ -1,3 +1,4 @@
+import { publicApiErrorShape } from "@claxedo/helpers/api-error"
 import type { D1Database, D1PreparedStatement } from "@cloudflare/workers-types"
 import { ControlPlaneAuthError, type SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import {
@@ -16,11 +17,12 @@ import { canonicalRepositoryKey } from "@claxedo/server-core/authority/repositor
 import { ClaxedoError } from "@claxedo/server-core/platform/errors/base"
 import { normalizeStoredDirectory } from "@claxedo/server-core/platform/auth/host-connect-contract"
 import { HOST_SERVING_WORKSPACE_SQL } from "./host-access-authority"
-import { batchAssertionFailed, batchUnder, may, mayGuard, maySql, readProjectRole, roleRank, type AuthorizationPrincipal } from "./authorization"
+import { batchUnder, may, mayGuard, maySql, readProjectRole, roleRank, type AuthorizationPrincipal } from "./authorization"
 import { ownerMembershipStatements, requireHuman, requireText, type D1AccessContext } from "./access-context"
 import { D1OrgMemberAuthority } from "./org-member-authority"
 import type { FindAccountByEmail } from "@claxedo/server-core/platform/auth/org-access-authority"
 import { asOrgId, type OrgId } from "@claxedo/server-core/platform/auth/branded-id"
+import { d1BatchAssertionFailed } from "../../../platform/db/d1-constraint"
 
 const KNOWN_HOME_REGIONS = new Set(["apac-south", "apac-east", "eu-west", "us-east", "us-west"])
 
@@ -136,13 +138,6 @@ export type D1WorkspaceAuthorityErrorCode =
   | "organization_policy_denied"
   | "resource_conflict"
 
-const D1_WORKSPACE_ERROR_STATUS: Record<D1WorkspaceAuthorityErrorCode, number> = {
-  invalid_input: 400,
-  identity_conflict: 409,
-  organization_policy_denied: 403,
-  resource_conflict: 409,
-}
-
 /**
  * Carries its HTTP status like every other authority refusal
  * (`D1HostAccessAuthorityError`), so a route that hands the caller a
@@ -150,7 +145,7 @@ const D1_WORKSPACE_ERROR_STATUS: Record<D1WorkspaceAuthorityErrorCode, number> =
  */
 export class D1WorkspaceAuthorityError extends ClaxedoError<D1WorkspaceAuthorityErrorCode> {
   constructor(code: D1WorkspaceAuthorityErrorCode, message: string) {
-    super({ code, message, status: D1_WORKSPACE_ERROR_STATUS[code] })
+    super({ code, message, ...publicApiErrorShape(code) })
   }
 }
 
@@ -1031,7 +1026,7 @@ export class D1WorkspaceAuthority implements D1WorkspaceAuthorityCore {
     try {
       return await this.database.batch(statements)
     } catch (error) {
-      if (batchAssertionFailed(error)) {
+      if (d1BatchAssertionFailed(error)) {
         throw new D1WorkspaceAuthorityError("resource_conflict", message)
       }
       throw error

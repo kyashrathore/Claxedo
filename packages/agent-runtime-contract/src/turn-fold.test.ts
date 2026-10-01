@@ -156,10 +156,10 @@ describe("turnFoldShape", () => {
     expect(turnSegments(shape.refs, { ...shape, compaction: true }).map(shapeOf)).toEqual([["part", "part", "part"]])
   })
 
-  test("a Codex abort interrupts like a harness abort; the runtime's cancelled outcome names its own message", () => {
+  test("an error's display text never makes it an interruption; the runtime's cancelled outcome names its own message", () => {
     const codex = [assistant("a1", { error: { name: "UnknownError", data: { message: "Codex turn aborted" } } })]
     expect(turnFoldShape({ assistantMessages: codex, partsOf: () => [], hasText: partHasText, showReasoning: false, compaction: false }))
-      .toMatchObject({ interruptedMessageIndex: 0, harnessInterrupted: true })
+      .toMatchObject({ interruptedMessageIndex: -1, harnessInterrupted: false, errorMessage: codex[0] })
     const cancelled = turnFoldShape({
       assistantMessages: [assistant("a1"), assistant("a2")],
       partsOf: () => [],

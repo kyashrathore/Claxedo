@@ -1,3 +1,4 @@
+import { PublicApiError } from "@claxedo/server-core/platform/errors/public-api-error"
 import { describe, expect, test, vi } from "vitest"
 import { ControlPlaneAuthError, type ControlPlaneTokenVerifier } from "@claxedo/server-core/platform/auth/auth"
 import { ClaxedoError } from "@claxedo/server-core/platform/errors/base"
@@ -265,7 +266,7 @@ describe("host assignment (POST /:id/host-assignment)", () => {
   test("assigning a cloud-backed workspace returns a 409 conflict", async () => {
     const authority = fakeAuthority({
       assignWorkspaceHost: vi.fn(async () => {
-        throw new Error("workspace_backing_conflict: cannot assign a host to a cloud workspace")
+        throw new PublicApiError("workspace_backing_conflict")
       }),
     })
     const { app } = buildApp({ authority: authority })

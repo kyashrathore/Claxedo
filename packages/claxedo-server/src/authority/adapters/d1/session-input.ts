@@ -1,3 +1,5 @@
+import { createRequireText } from "@claxedo/helpers"
+import { publicApiErrorShape } from "@claxedo/helpers/api-error"
 import { ClaxedoError } from "@claxedo/server-core/platform/errors/base"
 import type { WorkspaceVisibility } from "@claxedo/server-core/platform/auth/authority"
 import { asRecord } from "@claxedo/server-core/platform/json/index"
@@ -24,7 +26,7 @@ export class D1SessionAuthorityError extends ClaxedoError {
     super({
       code,
       message,
-      status: code === "invalid_input" ? 400 : code === "resource_conflict" ? 409 : 403,
+      ...publicApiErrorShape(code),
     })
   }
 }
@@ -114,21 +116,7 @@ export function optionalTimestamp(value: number | undefined, name: string) {
   return value
 }
 
-export function optionalText(value: string | undefined, name: string, max = 512) {
-  if (value === undefined) return undefined
-  return requireText(value, name, max)
-}
-
-export function requireText(value: string, name: string, max = 512) {
-  const result = value.trim()
-  if (!result || result.length > max) {
-    throw new D1SessionAuthorityError(
-      "invalid_input",
-      `${name} must be a non-empty string of at most ${max} characters`,
-    )
-  }
-  return result
-}
+export const { requireText, optionalText } = createRequireText((message) => new D1SessionAuthorityError("invalid_input", message))
 
 export function byteLength(value: string) {
   return new TextEncoder().encode(value).byteLength

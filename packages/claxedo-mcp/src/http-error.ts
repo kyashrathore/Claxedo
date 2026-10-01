@@ -1,4 +1,4 @@
-import { bool, record, text } from "./json"
+import { decodeApiError } from "@claxedo/helpers/api-error"
 
 export class McpHttpError extends Error {
   constructor(
@@ -13,12 +13,6 @@ export class McpHttpError extends Error {
 }
 
 export function mcpHttpError(status: number, value: unknown) {
-  const body = record(value)
-  const nested = record(body?.error)
-  const code = text(nested?.code) ?? text(body?.code)
-  const retryable = bool(nested?.retryable) ?? bool(body?.retryable)
-  const message = (text(nested?.message)
-    ?? text(body?.message)
-    ?? text(body?.error)) || `HTTP ${status}`
-  return new McpHttpError(status, code, message, retryable)
+  const error = decodeApiError(status, value)
+  return new McpHttpError(status, error?.code, error?.message || `HTTP ${status}`, error?.retryable ?? false)
 }

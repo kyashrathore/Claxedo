@@ -42,18 +42,22 @@ export class HostedRequestTimeoutError extends Error {
 }
 
 /**
- * An HTTP refusal, in the one message shape every reader of this package
- * already parses: `transientHeartbeatFailure` reads the status, `decisionCode`
- * the control plane's error code.
+ * The control plane's `{ error: { code, message, retryable } }` envelope, read
+ * here rather than through `@claxedo/helpers` because this package imports no
+ * first-party package (`connector-closure.test.ts`).
  */
 export class HostedHttpError extends Error {
-  readonly status: number
-  readonly body: unknown
-  constructor(status: number, body: unknown) {
-    super(`HOSTED_HTTP ${status} ${JSON.stringify(body)}`)
+  readonly code: string | undefined
+  readonly retryable: boolean
+  constructor(readonly status: number, readonly body: unknown) {
+    const envelope = isPlainRecord(body) && isPlainRecord(body.error) ? body.error : undefined
+    const error = typeof envelope?.code === "string" && envelope.code && typeof envelope.message === "string"
+      ? { code: envelope.code, message: envelope.message, retryable: envelope.retryable === true }
+      : undefined
+    super(error?.message || `HTTP ${status}`)
     this.name = "HostedHttpError"
-    this.status = status
-    this.body = body
+    this.code = error?.code
+    this.retryable = error?.retryable ?? false
   }
 }
 
@@ -74,18 +78,8 @@ export class HostedRedirectError extends Error {
   }
 }
 
-/** The `error.code` of a `HOSTED_HTTP <status> <json>` failure, if it carries one. */
 export function decisionCode(error: unknown): string | undefined {
-  const message = error instanceof Error ? error.message : String(error)
-  const match = /^HOSTED_HTTP \d{3} (.*)$/s.exec(message)
-  if (!match) return undefined
-  try {
-    const body: unknown = JSON.parse(match[1] ?? "")
-    if (!isPlainRecord(body) || !isPlainRecord(body.error)) return undefined
-    return typeof body.error.code === "string" ? body.error.code : undefined
-  } catch {
-    return undefined
-  }
+  return isPlainRecord(error) && typeof error.code === "string" ? error.code : undefined
 }
 
 /**
@@ -154,7 +148,7 @@ export async function postJson(
   try {
     parsed = text ? JSON.parse(text) : {}
   } catch {
-    parsed = { error: { code: "invalid_response", message: text.slice(0, 200) } }
+    parsed = text
   }
   if (!response.ok) throw new HostedHttpError(response.status, parsed)
   return parsed

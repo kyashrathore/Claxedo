@@ -54,14 +54,17 @@ export const serverWorkerd: Policy = {
   // routes resolve whose connections a turn spends through
   // `connections/turn-owner.ts`, the one owner the self-hosted node shares; the
   // D1 session authority's refusal error and input validation
-  // (`authority/adapters/d1/session-input.ts`) are a module of their own. Hosted
+  // (`authority/adapters/d1/session-input.ts`) are a module of their own; every
+  // D1 adapter reads a constraint failure through `platform/db/d1-constraint.ts`;
+  // the org, team and People routes share one typed refusal envelope
+  // (`platform/http/public-api-error-response.ts`). Hosted
   // Pages are mounted by the core Worker: the D1 document authority
   // (`authority/adapters/d1/document-authority.ts`), the R2 documents backend
   // with its index and managed store (`documents/backends/hosted/`), and the
   // runtime broker that hydrates a page into a session
   // (`documents/backends/hosted/runtime-broker.ts` with its relay client
   // `documents/relay-http.ts`).
-  ceilings: { modules: 114, packages: 19 },
+  ceilings: { modules: 116, packages: 19 },
 
   emitted: {
     file: "packages/claxedo-server/.artifacts/u8-package-split/manifests/server-workerd.json",

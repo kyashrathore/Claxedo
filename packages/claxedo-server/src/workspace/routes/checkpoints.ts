@@ -1,4 +1,7 @@
 import { Hono } from "hono"
+import { encodeApiError } from "@claxedo/helpers/api-error"
+import { PublicApiError } from "@claxedo/server-core/platform/errors/public-api-error"
+import { statusOf } from "@claxedo/server-core/platform/errors/base"
 import { bodyLimit } from "hono/body-limit"
 import type { ControlPlaneServices } from "../../authority/services"
 import type { ControlPlaneTokenVerifier, SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
@@ -196,7 +199,7 @@ function service(
   options: CheckpointRouteOptions,
 ) {
   const sandboxManager = services.sandbox.sandboxManager
-  if (!sandboxManager) throw new Error("sandbox_manager_unavailable")
+  if (!sandboxManager) throw new PublicApiError("workspace_checkpoint_unavailable", "sandbox_manager_unavailable")
   let principalPromise: Promise<{
     principalKind: "user" | "service"
     actorId: string
@@ -262,6 +265,6 @@ function service(
 
 function lifecycleError(c: { json: (body: unknown, status: 409 | 503) => Response }, error: unknown) {
   const message = error instanceof Error ? error.message : String(error)
-  const unavailable = message.includes("unavailable") || message.includes("provisioning")
-  return c.json({ error: { code: unavailable ? "workspace_checkpoint_unavailable" : "workspace_checkpoint_conflict", message } }, unavailable ? 503 : 409)
+  const unavailable = statusOf(error) === 503
+  return c.json(encodeApiError({ ...asRecord(error), code: unavailable ? "workspace_checkpoint_unavailable" : "workspace_checkpoint_conflict", message }), unavailable ? 503 : 409)
 }

@@ -1,3 +1,4 @@
+import { workspaceRuntimeRequestError } from "@claxedo/server-core/workspace/http/workspace-runtime-client"
 import type {
   SandboxCheckpointCaptureInput,
   SandboxCheckpointRestoreInput,
@@ -21,7 +22,7 @@ export function createWorkspaceCheckpointService(input: {
         body: JSON.stringify(body ?? {}),
       })
       if (response.ok) return
-      throw new Error(await response.text() || `Workspace runtime checkpoint request failed: ${response.status}`)
+      throw await workspaceRuntimeRequestError(path, response)
     }
     return {
       freeze: async (policy) => {

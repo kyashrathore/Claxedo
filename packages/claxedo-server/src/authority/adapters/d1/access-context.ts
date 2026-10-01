@@ -1,3 +1,5 @@
+import { createRequireText } from "@claxedo/helpers"
+import { publicApiErrorShape } from "@claxedo/helpers/api-error"
 import type { D1Database } from "@cloudflare/workers-types"
 import { ControlPlaneAuthError, type SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import { ClaxedoError } from "@claxedo/server-core/platform/errors/base"
@@ -90,44 +92,35 @@ async function resolveHuman(database: D1Database, deploymentId: string, auth: Si
   return { userId: row.user_id, actorId: row.actor_id, actorKind: "human" }
 }
 
-const ACCESS_ERROR_STATUS = {
-  invalid_input: 400,
-  org_admin_required: 403,
-  org_owner_required: 403,
-  org_owner_protected: 409,
-  org_membership_required: 403,
-  org_member_not_found: 404,
-  org_member_target_required: 400,
-  org_member_email_unsupported: 400,
-  organization_not_found: 404,
-  team_not_found: 404,
-  team_not_allowed_on_personal_org: 400,
-  team_member_not_found: 404,
-  team_member_org_membership_required: 403,
-  team_member_target_required: 400,
-  project_not_found: 404,
-  project_admin_required: 403,
-  project_member_not_found: 404,
-  project_member_org_membership_required: 403,
-  project_member_owner_immutable: 409,
-  resource_conflict: 409,
-} as const
-
-export type D1AccessErrorCode = keyof typeof ACCESS_ERROR_STATUS
+export type D1AccessErrorCode =
+  | "invalid_input"
+  | "org_admin_required"
+  | "org_owner_required"
+  | "org_owner_protected"
+  | "org_membership_required"
+  | "org_member_not_found"
+  | "org_member_target_required"
+  | "org_member_email_unsupported"
+  | "organization_not_found"
+  | "team_not_found"
+  | "team_not_allowed_on_personal_org"
+  | "team_member_not_found"
+  | "team_member_org_membership_required"
+  | "team_member_target_required"
+  | "project_not_found"
+  | "project_admin_required"
+  | "project_member_not_found"
+  | "project_member_org_membership_required"
+  | "project_member_owner_immutable"
+  | "resource_conflict"
 
 export class D1AccessAuthorityError extends ClaxedoError<D1AccessErrorCode> {
   constructor(code: D1AccessErrorCode, message: string = code) {
-    super({ code, message, status: ACCESS_ERROR_STATUS[code] })
+    super({ code, message, ...publicApiErrorShape(code) })
   }
 }
 
-export function requireText(value: string, name: string) {
-  const result = value.trim()
-  if (!result || result.length > 512) {
-    throw new D1AccessAuthorityError("invalid_input", `${name} must be a non-empty string of at most 512 characters`)
-  }
-  return result
-}
+export const { requireText, optionalText } = createRequireText((message) => new D1AccessAuthorityError("invalid_input", message))
 
 /**
  * The active user exactly one selector names: their public id (the canonical

@@ -1,3 +1,4 @@
+import { PublicApiError } from "@claxedo/server-core/platform/errors/public-api-error"
 import { describe, expect, test, vi } from "vitest"
 import { localOnlyAuthAdapter } from "@claxedo/server-core/platform/auth/auth"
 import type { WorkspaceAuthority } from "@claxedo/server-core/platform/auth/authority"
@@ -82,7 +83,7 @@ describe("People route contract", () => {
       test(`${name} maps ${error.code} to the canonical envelope`, async () => {
         const response = await postShare(routeFactory, {
           grantSessionShare: vi.fn(async () => {
-            throw new Error(error.thrown)
+            throw new PublicApiError(error.code, "unrelated display text")
           }),
         })
 

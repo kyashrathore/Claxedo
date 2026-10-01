@@ -1,3 +1,5 @@
+import { encodeApiError } from "@claxedo/helpers/api-error"
+import { ClaxedoError, statusOf } from "@claxedo/server-core/platform/errors/base"
 import { Hono } from "hono"
 import type { ControlPlaneTokenVerifier, ControlPlaneAuthConfig, SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import type { RequestAuthenticationAdapter } from "@claxedo/server-core/platform/auth/authentication"
@@ -25,27 +27,14 @@ type Options = {
   idempotency: IdempotencyCoordinator
 }
 
-class HostedControlError extends Error {
-  constructor(message: string, readonly status: number, readonly code = "BAD_REQUEST") {
-    super(message)
+class HostedControlError extends ClaxedoError {
+  constructor(message: string, status: number, code = "BAD_REQUEST") {
+    super({ code, status, message })
   }
 }
 
 function errorResponse(error: unknown) {
-  if (error instanceof HostedControlError) {
-    return Response.json({ error: { code: error.code, message: error.message } }, { status: error.status })
-  }
-  const row = asRecord(error)
-  if (typeof row?.status === "number" && typeof row?.code === "string" && error instanceof Error) {
-    return Response.json({ error: { code: row.code, message: error.message } }, { status: row.status })
-  }
-  const message = error instanceof Error ? error.message : String(error)
-  return Response.json({
-    error: {
-      code: message.includes("required") ? "BAD_REQUEST" : "INTERNAL_SERVER_ERROR",
-      message,
-    },
-  }, { status: message.includes("required") ? 400 : 500 })
+  return Response.json(encodeApiError(error, { code: "INTERNAL_SERVER_ERROR", message: String(error) }), { status: statusOf(error) })
 }
 
 function requireServices(services: ControlPlaneServices | undefined) {
@@ -66,7 +55,7 @@ async function json(req: Request) {
 function workspaceId(input: unknown) {
   const id = txt(asRecord(input)?.workspaceId)
   if (id) return id
-  throw new Error("workspaceId is required")
+  throw new HostedControlError("workspaceId is required", 400)
 }
 
 async function signedAuth(
