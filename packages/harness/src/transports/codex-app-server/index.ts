@@ -5,7 +5,7 @@ import type {
   RoutedEvent, SessionBroker, StartInput, TransportConfigUpdate, TurnBroker, TurnInput, TurnRef,
 } from "../../contract"
 import { ProcessLosses, selectedTurnAccount } from "../../contract"
-import { draftProbeKey, DraftProbeCache } from "../../probes/cache"
+import { draftProbeKey, DraftProbeCache } from "../../contract/probe-cache"
 import { withTurnAccount } from "../../translate/turn-account"
 import { codexProbeInputs } from "../../profiles/codex"
 import { createCodexConfig } from "./config"

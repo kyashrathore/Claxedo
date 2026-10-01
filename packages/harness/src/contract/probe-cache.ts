@@ -1,6 +1,6 @@
 import fs from "node:fs/promises"
-import type { Clock } from "../contract/services"
-import type { DraftLaunch } from "../contract/transport"
+import type { Clock } from "./services"
+import type { DraftLaunch } from "./transport"
 
 export type ProbeInputs = Readonly<{ files: readonly string[]; maxAge?: Readonly<{ ms: number; clock: Pick<Clock, "now"> }> }>
 
