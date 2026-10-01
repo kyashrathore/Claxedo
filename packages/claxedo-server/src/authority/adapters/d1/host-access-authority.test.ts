@@ -1674,6 +1674,28 @@ describe("host-connect: machine heartbeat, readiness, invitations, scope", () =>
     ).bind(enrollmentId).first()
   }
 
+  test("an owner suspended between sealing and the push stores nothing: the write re-asks who is writing", async () => {
+    const input = await setup()
+    const { alice } = await fixture(input)
+    const { enrollmentId } = await enrollAccountMachine(input, alice, "machine-s", { displayName: "Suspended box" })
+    const key = await sealingKey()
+    await machineBeat(input, enrollmentId, [], { sealingPublicKey: key.publicKey })
+    const target = await input.hostAccess.hostProviderConfigTarget(alice, { enrollmentId })
+
+    input.beforeNextBatch(async () => {
+      await input.database.prepare("update users set state = 'suspended', suspended_at = ? where user_id = ?")
+        .bind(input.now(), alice.principal!.userId).run()
+    })
+    await expect(input.hostAccess.pushHostProviderConfig(alice, {
+      enrollmentId,
+      sealed: "mseal1.e.i.c",
+      revision: target.next_revision,
+      sealingPublicKey: key.stored,
+      providerIds: ["openai"],
+    })).rejects.toMatchObject({ status: 403 })
+    expect(await storedProviderConfig(input, enrollmentId)).toMatchObject({ provider_config_sealed: null, provider_config_revision: 0 })
+  })
+
   test("the owner pushes ciphertext sealed to the key the machine declared, the beat carries it until the machine acks, and no other account can read the target or push", async () => {
     const input = await setup()
     const { alice, bob } = await fixture(input)
@@ -2095,5 +2117,30 @@ describe("machine session rows", () => {
       .toEqual({ updated_at: 200, deleted_at: expect.any(Number) })
     await expect(publish({ rows: [row("ses_gone")] }))
       .resolves.toMatchObject({ refused: [{ sessionId: "ses_gone", reason: "session_deleted" }] })
+  })
+})
+
+describe("destructive writes re-ask their authorization inside their own batch", () => {
+  const suspendBeforeTheWrite = (input: Input, who: SignedControlPlaneAuth) => input.beforeNextBatch(async () => {
+    await input.database.prepare("update users set state = 'suspended', suspended_at = ? where user_id = ?")
+      .bind(input.now(), who.principal!.userId).run()
+  })
+
+  test("an owner suspended between the check and the batch neither deletes the workspace nor unassigns its host", async () => {
+    const input = await setup()
+    const { alice } = await fixture(input)
+    await enrollAccountMachine(input, alice, "machine-d")
+    await input.hostAccess.assignWorkspaceHost(alice, { workspaceId: "ws_local", hostId: "machine-d" })
+
+    suspendBeforeTheWrite(input, alice)
+    await expect(input.hostAccess.unassignWorkspaceHost(alice, { workspaceId: "ws_local" })).rejects.toMatchObject({ status: 403 })
+    expect(await input.database.prepare(`select host_id from host_workspace_assignments where workspace_id = 'ws_local'`).first())
+      .toEqual({ host_id: "machine-d" })
+
+    await input.database.prepare("update users set state = 'active', suspended_at = null where user_id = ?").bind(alice.principal!.userId).run()
+    suspendBeforeTheWrite(input, alice)
+    await expect(input.workspace.deleteWorkspace(alice, { workspaceId: "ws_cloud" })).rejects.toMatchObject({ status: 403 })
+    expect(await input.database.prepare(`select deleted_at from workspaces where workspace_id = 'ws_cloud'`).first())
+      .toEqual({ deleted_at: null })
   })
 })

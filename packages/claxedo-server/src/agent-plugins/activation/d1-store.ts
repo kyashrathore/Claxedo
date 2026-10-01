@@ -22,7 +22,7 @@ import type { WorkspaceAuthority } from "@claxedo/server-core/platform/auth/auth
 import { asOrgId, asProjectId } from "@claxedo/server-core/platform/auth/branded-id"
 import { stringField } from "@claxedo/server-core/platform/json/index"
 import type { SignedAgentPluginRuntimeSnapshot } from "../runtime/provision"
-import { may, maySql } from "../../authority/adapters/d1/authorization"
+import { batchUnder, may, mayGuard, maySql, type BoundSql } from "../../authority/adapters/d1/authorization"
 import { isRecord } from "@claxedo/helpers/guards"
 
 /** The project scope a user default addresses; never a real project ID. */
@@ -305,7 +305,7 @@ export class D1SignedAgentPluginActivationStore implements SignedAgentPluginActi
         }))
       }
     }
-    return await this.commit(scope.orgId, started.revision, operation, writes)
+    return await this.commit(this.writer(scope, "user"), scope.orgId, started.revision, operation, writes)
   }
 
   async mutateOrganizationDefault(auth: SignedControlPlaneAuth, input: MutateSignedOrganizationDefault) {
@@ -359,7 +359,7 @@ export class D1SignedAgentPluginActivationStore implements SignedAgentPluginActi
             `)
             .bind(scope.orgId, input.pluginInstanceId, harnessId, now))
     }
-    return await this.commit(scope.orgId, started.revision, operation, writes)
+    return await this.commit(this.writer(scope, "organization"), scope.orgId, started.revision, operation, writes)
   }
 
   async updateUserArtifact(auth: SignedControlPlaneAuth, input: UpdateSignedArtifactPin) {
@@ -474,7 +474,7 @@ export class D1SignedAgentPluginActivationStore implements SignedAgentPluginActi
       ? userScopeKey(scope.orgId, scope.userId)
       : organizationScopeKey(scope.orgId)
     if (!(await this.pinRow(scopeKey, input.pluginInstanceId))) throw artifactUnavailable()
-    return await this.commit(scope.orgId, started.revision, operation, [
+    return await this.commit(this.writer(scope, authority), scope.orgId, started.revision, operation, [
       this.writePin({
         scopeKey,
         authority,
@@ -600,17 +600,23 @@ export class D1SignedAgentPluginActivationStore implements SignedAgentPluginActi
     return { revision }
   }
 
+  /** The rule a write was admitted under, asked again inside its batch. */
+  private writer(scope: Scope, authority: "user" | "organization"): BoundSql {
+    return mayGuard({ userId: scope.userId }, authority === "organization" ? "administer" : "member", { kind: "org", orgId: scope.orgId })
+  }
+
   private async commit(
+    guard: BoundSql,
     orgId: string,
     revision: number,
     operation: string,
     writes: D1PreparedStatement[],
   ) {
     const next = revision + 1
-    const guard = assertionId()
+    const revisionAssertion = assertionId()
     const now = this.now()
     try {
-      await this.database.batch([
+      await batchUnder(this.database, guard, [
         ...writes,
         // The compare-and-set is this `where`: a writer that moved the
         // revision between the read above and this batch leaves the row alone.
@@ -639,8 +645,8 @@ export class D1SignedAgentPluginActivationStore implements SignedAgentPluginActi
               where org_id = ? and revision = ? and last_operation_id = ?
             ) then 1 else 0 end
           `)
-          .bind(guard, orgId, next, operation),
-        this.database.prepare(`delete from authority_batch_assertions where assertion_id = ?`).bind(guard),
+          .bind(revisionAssertion, orgId, next, operation),
+        this.database.prepare(`delete from authority_batch_assertions where assertion_id = ?`).bind(revisionAssertion),
       ])
     } catch (cause) {
       if (!assertionFailed(cause)) throw cause

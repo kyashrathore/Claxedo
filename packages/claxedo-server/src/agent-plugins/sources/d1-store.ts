@@ -11,7 +11,7 @@ import {
 import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import type { WorkspaceAuthority } from "@claxedo/server-core/platform/auth/authority"
 import { isRecord, stringField } from "@claxedo/server-core/platform/json/index"
-import { may } from "../../authority/adapters/d1/authorization"
+import { batchUnder, may, mayGuard } from "../../authority/adapters/d1/authorization"
 
 /**
  * The authority capabilities this store consumes, the same ones
@@ -127,7 +127,7 @@ export class D1AgentPluginSourceStore implements AgentPluginSourceRegistry<Signe
       )
     }
     try {
-      await this.database
+      await batchUnder(this.database, writer(scope, source.authority), [this.database
         .prepare(`
           insert into agent_plugin_sources (
             scope_key, id, org_id, owner_user_id, authority, owner, repository, ref, added_at
@@ -143,8 +143,7 @@ export class D1AgentPluginSourceStore implements AgentPluginSourceRegistry<Signe
           source.repository,
           source.ref,
           source.addedAt,
-        )
-        .run()
+        )])
     } catch (cause) {
       // The unique primary key is the race-safe half of the duplicate rule: the
       // read above answers a nicer message, this answers a concurrent writer.
@@ -160,10 +159,9 @@ export class D1AgentPluginSourceStore implements AgentPluginSourceRegistry<Signe
     const visible = await this.visible(scope, id)
     if (!visible) throw new AgentPluginSourceRegistryError("source-unknown", `Source ${id} is not registered`)
     if (visible.authority === "organization") await this.requireOrganizationAdmin(scope)
-    await this.database
+    await batchUnder(this.database, writer(scope, visible.authority), [this.database
       .prepare("delete from agent_plugin_sources where scope_key = ? and id = ?")
-      .bind(scopeKey(scope.orgId, visible.authority, scope.userId), id)
-      .run()
+      .bind(scopeKey(scope.orgId, visible.authority, scope.userId), id)])
   }
 
   /**
@@ -203,4 +201,9 @@ export class D1AgentPluginSourceStore implements AgentPluginSourceRegistry<Signe
       "Agent Plugins organization sources require the organization admin or owner role",
     )
   }
+}
+
+/** The rule a source write was admitted under, asked again inside its batch. */
+function writer(scope: Scope, authority: "user" | "organization") {
+  return mayGuard({ userId: scope.userId }, authority === "organization" ? "administer" : "member", { kind: "org", orgId: scope.orgId })
 }

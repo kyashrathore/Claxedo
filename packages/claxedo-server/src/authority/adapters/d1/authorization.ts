@@ -1,4 +1,5 @@
-import type { D1Database } from "@cloudflare/workers-types"
+import type { D1Database, D1PreparedStatement, D1Result } from "@cloudflare/workers-types"
+import { ControlPlaneAuthError } from "@claxedo/server-core/platform/auth/auth"
 import type { ProjectAction, ProjectRole } from "@claxedo/server-core/platform/auth/authority"
 
 /**
@@ -98,6 +99,40 @@ export function mayGuard<K extends ResourceKind>(
 ): BoundSql {
   const query = mayQuery(principal, action, resource as Resource)
   return { sql: `exists (${query.sql})`, bind: query.bind }
+}
+
+/** That the principal is still an active person with an active actor, for a write that names no resource. */
+export function activeGuard(principal: AuthorizationPrincipal): BoundSql {
+  return bindPrincipal(activePrincipalSql(principal.actorId !== undefined), principal)
+}
+
+/**
+ * Runs a write whose authorization was read before it: `guard` is asked again
+ * as the batch's first statement, so a suspension, a removal or a lost
+ * resource between that read and this write refuses the whole batch. The
+ * results are the caller's statements' own, in order; `run` is the caller's
+ * own batch runner, which maps every other failure.
+ */
+export async function batchUnder(
+  database: D1Database,
+  guard: BoundSql,
+  statements: D1PreparedStatement[],
+  run: (statements: D1PreparedStatement[]) => Promise<D1Result[]> = (all) => database.batch(all),
+): Promise<D1Result[]> {
+  const assertionId = `assert_${crypto.randomUUID()}`
+  try {
+    return (await run([
+      database
+        .prepare(`insert into authority_batch_assertions (assertion_id, passed) values (?, case when ${guard.sql} then 1 else 0 end)`)
+        .bind(assertionId, ...guard.bind),
+      database.prepare(`delete from authority_batch_assertions where assertion_id = ?`).bind(assertionId),
+      ...statements,
+    ])).slice(2)
+  } catch (error) {
+    const holds = await database.prepare(`select ${guard.sql} as holds`).bind(...guard.bind).first<{ holds: number }>()
+    if (holds?.holds === 1) throw error
+    throw new ControlPlaneAuthError(403, "workspace_authorization_denied", "Authorization changed before the write")
+  }
 }
 
 /** The person's role on a live project in an organization they stand in, or nothing. */

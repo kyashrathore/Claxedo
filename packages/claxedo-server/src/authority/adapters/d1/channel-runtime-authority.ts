@@ -9,7 +9,7 @@ import type {
 } from "@claxedo/server-core/platform/auth/authority"
 import { asOrgId } from "@claxedo/server-core/platform/auth/branded-id"
 import { CURRENT_CHANNEL_IDENTITY_VERSION } from "@claxedo/workspace-relay-protocol"
-import { may, maySql, readProjectRole, type AuthorizationPrincipal } from "./authorization"
+import { activeGuard, may, mayGuard, maySql, readProjectRole, type AuthorizationPrincipal } from "./authorization"
 import { requireHuman } from "./access-context"
 
 const CONTROL_PLANE_SERVICE_ACTOR_ID = "control-plane"
@@ -91,12 +91,13 @@ export class D1ChannelRuntimeAuthority implements D1ChannelRuntimeAuthorityPort 
       return { bindingId: existing.bindingId, created: false, userId: who.userId, actorId: who.actorId, actorKind: who.actorKind }
     }
     const bindingId = requireText(this.randomId(), "bindingId")
+    const active = activeGuard(who)
     try {
-      await this.database.prepare(`
+      const bound = await this.database.prepare(`
         insert into channel_identity_bindings (
           binding_id, deployment_id, channel, external_user_id, user_id,
           actor_id, bound_by_actor_id, created_at, revoked_at, identity_version
-        ) values (?, ?, ?, ?, ?, ?, ?, ?, null, ?)
+        ) select ?, ?, ?, ?, ?, ?, ?, ?, null, ? where ${active.sql}
       `).bind(
         bindingId,
         this.options.deploymentId,
@@ -107,7 +108,9 @@ export class D1ChannelRuntimeAuthority implements D1ChannelRuntimeAuthorityPort 
         who.actorId,
         this.now(),
         CURRENT_CHANNEL_IDENTITY_VERSION,
+        ...active.bind,
       ).run()
+      if (changes(bound) !== 1) throw denied()
       return { bindingId, created: true, userId: who.userId, actorId: who.actorId, actorKind: who.actorKind }
     } catch (error) {
       if (!isUniqueFailure(error)) throw error
@@ -396,6 +399,9 @@ export class D1ChannelRuntimeAuthority implements D1ChannelRuntimeAuthorityPort 
     if (!(await this.holderMayUse(who, values.workspaceId, sessionId))) {
       throw denied(sessionId === null ? "Runtime access to this workspace is its owner's" : "Runtime access to this session is denied")
     }
+    const holder = sessionId === null
+      ? mayGuard(who, "operate", { kind: "workspace", workspaceId: values.workspaceId })
+      : mayGuard(who, "read", { kind: "session", sessionId, workspaceId: values.workspaceId })
     try {
       const result = await this.database.prepare(`
         insert into runtime_access_tokens (
@@ -404,7 +410,7 @@ export class D1ChannelRuntimeAuthority implements D1ChannelRuntimeAuthorityPort 
           expires_at, revoked_at, created_at
         )
         select ?, ?, workspace_id, org_id, project_id, ?, 'user', ?, 'human', ?, ?, ?, ?, null, ?
-        from workspaces where workspace_id = ? and deleted_at is null
+        from workspaces where workspace_id = ? and deleted_at is null and ${holder.sql}
       `).bind(
         values.jti,
         this.options.deploymentId,
@@ -416,10 +422,11 @@ export class D1ChannelRuntimeAuthority implements D1ChannelRuntimeAuthorityPort 
         values.expiresAt,
         this.now(),
         values.workspaceId,
+        ...holder.bind,
       ).run()
-      // The workspace can be deleted after the authorization read but before
-      // the guarded INSERT ... SELECT. A zero-row insert is a denial, never a
-      // successfully recorded credential.
+      // The rule is asked again inside the insert, so a deletion, suspension
+      // or lost share after the read above records nothing: a zero-row insert
+      // is a denial, never a recorded credential.
       if (changes(result) !== 1) throw denied("Runtime token workspace is unavailable")
       return { ok: true }
     } catch (error) {

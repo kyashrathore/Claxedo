@@ -16,7 +16,7 @@ import { canonicalRepositoryKey } from "@claxedo/server-core/authority/repositor
 import { ClaxedoError } from "@claxedo/server-core/platform/errors/base"
 import { normalizeStoredDirectory } from "@claxedo/server-core/platform/auth/host-connect-contract"
 import { HOST_SERVING_WORKSPACE_SQL } from "./host-access-authority"
-import { may, mayGuard, maySql, readProjectRole, roleRank, type AuthorizationPrincipal } from "./authorization"
+import { batchUnder, may, mayGuard, maySql, readProjectRole, roleRank, type AuthorizationPrincipal } from "./authorization"
 import { ownerMembershipStatements, requireHuman, requireText, type D1AccessContext } from "./access-context"
 import { D1OrgMemberAuthority } from "./org-member-authority"
 import type { FindAccountByEmail } from "@claxedo/server-core/platform/auth/org-access-authority"
@@ -998,7 +998,9 @@ export class D1WorkspaceAuthority implements D1WorkspaceAuthorityCore {
     if (!(await may(this.database, who, "administer", { kind: "workspace", workspaceId }))) throw denied()
     const assertionId = this.randomId("assert")
     const now = this.now()
-    await this.guardedBatch(
+    await batchUnder(
+      this.database,
+      mayGuard(who, "administer", { kind: "workspace", workspaceId }),
       [
         this.database
           .prepare(
@@ -1020,7 +1022,7 @@ export class D1WorkspaceAuthority implements D1WorkspaceAuthorityCore {
           .bind(assertionId, workspaceId, who.userId, now),
         this.database.prepare(`delete from authority_batch_assertions where assertion_id = ?`).bind(assertionId),
       ],
-      "Workspace deletion changed concurrently",
+      (statements) => this.guardedBatch(statements, "Workspace deletion changed concurrently"),
     )
     return { deleted: true }
   }
