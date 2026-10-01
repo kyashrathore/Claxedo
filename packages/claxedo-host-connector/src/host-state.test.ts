@@ -172,10 +172,11 @@ describe("parseHostState", () => {
 
   test("recorded endpoints load canonicalized, and a file edited to name an undialable one does not load", () => {
     const endpoints =
-      '"relay":{"url":"https://relay.test/","jwksUrl":"https://relay.test/.well-known/jwks.json"},"authority":{"sessionAuthorityUrl":"https://cp.test/api/runtime-authority/session-authorize"}'
+      '"relay":{"url":"https://relay.test/","jwksUrl":"https://relay.test/.well-known/jwks.json"},"authority":{"sessionAuthorityUrl":"https://cp.test/api/runtime-authority/session-authorize"},"sessionRows":{"url":"https://cp.test/api/claxedo/host/session-rows"}'
     expect(parseHostState(`${SEALING_BASE},${endpoints}}`)).toMatchObject({
       relay: { url: "https://relay.test", jwksUrl: "https://relay.test/.well-known/jwks.json" },
       authority: { sessionAuthorityUrl: "https://cp.test/api/runtime-authority/session-authorize" },
+      sessionRows: { url: "https://cp.test/api/claxedo/host/session-rows" },
     })
 
     const cleartextRelay = `${SEALING_BASE},"relay":{"url":"ws://attacker.test","jwksUrl":"https://relay.test/jwks.json"}}`
@@ -187,6 +188,9 @@ describe("parseHostState", () => {
 
     const scriptedAuthority = `${SEALING_BASE},"authority":{"sessionAuthorityUrl":"javascript:fetch(1)"}}`
     expect(() => parseHostState(scriptedAuthority)).toThrow(/authority\.sessionAuthorityUrl/)
+
+    const fileRows = `${SEALING_BASE},"sessionRows":{"url":"file:///etc/rows"}}`
+    expect(() => parseHostState(fileRows)).toThrow(/sessionRows\.url/)
   })
 })
 
