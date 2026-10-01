@@ -963,10 +963,10 @@ describe("a containment attempt that never became an operation", () => {
     const cancelling = runtime.recovery.submit(cancelTurnRequest(started.target!), RECOVERY_TEST_CALLER)
     await until(() => cancels.length === 1, "the harness to be asked to cancel")
     cancels[0].settle({ execution: "terminal", cleanup: "unknown" })
+    turns[0].finish()
     expect(submittedOperation(await cancelling).facts.persistence.value).toBe("committed")
 
     expect(runtime.recovery.inspect(sessionId).failures).toEqual(reported)
-    turns[0].finish()
     await dispose()
   })
 
