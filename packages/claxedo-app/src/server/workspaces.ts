@@ -126,13 +126,14 @@ function mergedCatalog(queryClient: QueryClient, key: readonly unknown[], accoun
   }
 }
 
-async function readAccountCatalog(transport: Transport, read: (() => Promise<void>) | undefined) {
-  try {
-    await read?.()
-  } catch (error) {
-    if (transport.serverKind() === "hosted") throw error
-    console.error("The account's workspace catalog could not be read; the rail lists this machine's placements alone", { error: toAppError(error) })
+async function readCatalogs<T>(transport: Transport, local: Promise<T>, account: Promise<void> | undefined): Promise<T> {
+  const [read, accountRead] = await Promise.allSettled([local, account])
+  if (read.status === "rejected") throw read.reason
+  if (accountRead.status === "rejected") {
+    if (transport.serverKind() === "hosted") throw accountRead.reason
+    console.error("The account's workspace catalog could not be read; the rail lists this machine's placements alone", { error: toAppError(accountRead.reason) })
   }
+  return read.value
 }
 
 function accountReads(linked: () => LinkedCatalog | undefined, signed: boolean, load: () => Promise<unknown>): Pick<Workspaces, "accountProjects" | "accountProjectIds"> {
@@ -151,9 +152,7 @@ function catalogReads(transport: Transport, queryClient: QueryClient, key: reado
   const read = transport.bootstrap
   const reread = () => queryClient.fetchQuery({ queryKey: key, queryFn: read, staleTime: 0 })
   const load = async () => {
-    const local = await queryClient.fetchQuery({ queryKey: key, queryFn: read, staleTime: Number.POSITIVE_INFINITY })
-    await readAccountCatalog(transport, accountPlacements?.load)
-    return merge(local)
+    return merge(await readCatalogs(transport, queryClient.fetchQuery({ queryKey: key, queryFn: read, staleTime: Number.POSITIVE_INFINITY }), accountPlacements?.load()))
   }
   return {
     learn: async (directory) => {
@@ -164,8 +163,7 @@ function catalogReads(transport: Transport, queryClient: QueryClient, key: reado
     load,
     refresh: async () => {
       relearned.clear()
-      await reread()
-      await readAccountCatalog(transport, accountPlacements?.reread)
+      await readCatalogs(transport, reread(), accountPlacements?.reread())
       await queryClient.invalidateQueries({ queryKey: queryKeys.placements(transport.serverUrl) })
       await queryClient.invalidateQueries({ queryKey: queryKeys.projects(transport.serverUrl) })
     },

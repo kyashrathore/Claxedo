@@ -48,6 +48,25 @@ test("signed desktop catalog: the account's cloud workspace joins the local proj
   })
 })
 
+test("signed desktop catalog: the account's catalog is asked while the bootstrap is still answering", async () => {
+  await createRoot(async (dispose) => {
+    let answer = () => {}
+    const answered = new Promise<void>((resolve) => { answer = resolve })
+    const slow = { ...transport(), bootstrap: async () => { await answered; return bootstrapCatalog(bootstrap) } } as Transport
+    const calls: string[] = []
+    const account = createHostedAccount(async (operation) => (calls.push(operation), operation === "workspace.list.machine" ? machines : provisioned))
+    const workspaces = createWorkspaces(slow, new QueryClient({ defaultOptions: { queries: { retry: false } } }), account)
+    const loaded = workspaces.load()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(calls.toSorted()).toEqual(["workspace.list.machine", "workspace.list.provisioner"])
+    answer()
+    await loaded
+    expect(workspaces.list()).toHaveLength(3)
+    workspaces.dispose()
+    dispose()
+  })
+})
+
 test("signed desktop catalog: the project list gains the control-plane-only project, readable by id", async () => {
   await createRoot(async (dispose) => {
     const { queryClient, projects } = world(async (operation) => (operation === "workspace.list.machine" ? machines : provisioned))
