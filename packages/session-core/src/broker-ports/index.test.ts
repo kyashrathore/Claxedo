@@ -7,7 +7,7 @@ import { MemoryPorts, registerBrokerBehaviorCases, registerBrokerPortCases, regi
 import type { PendingRequest, RoutedEvent } from "@claxedo/harness/contract"
 import type { BrokerEvent, TurnAuthority } from "@claxedo/harness/broker"
 import type { RuntimeStore } from "../store"
-import { openRuntimeStore } from "../../../workspace-runtime/src/store-file"
+import { openTestRuntimeStore } from "../test-support/store"
 import { createRequestSurface } from "../host/requests"
 import { createRuntimeEventHub } from "../projection/runtime-event-hub"
 import { createStoreBrokerPorts, type StoreBrokerPortOptions } from "./index"
@@ -28,7 +28,7 @@ const opened: { store: RuntimeStore; root: string }[] = []
 
 function setup(options: Partial<StoreBrokerPortOptions> = {}) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "broker-store-"))
-  const store = openRuntimeStore(root)
+  const store = openTestRuntimeStore(root)
   opened.push({ store, root })
   store.bindSession({
     owner: { kind: "machine-owner" },
@@ -330,7 +330,7 @@ describe("store broker ports", () => {
     await ports.persistAnswer(pending, { kind: "rejected" }, false)
     expect(ports.readAnswer("s1", "first")).toEqual({ kind: "cancelled" })
     store.close()
-    const reopened = openRuntimeStore(root)
+    const reopened = openTestRuntimeStore(root)
     opened.push({ store: reopened, root })
     expect(createStoreBrokerPorts(reopened, {
       ownerGeneration: "g1", patternEvaluator: async () => {}, publishers: createRuntimeEventHub(),
@@ -367,7 +367,7 @@ describe("store broker ports", () => {
     await ports.persistAnswer(pending, { kind: "cancelled" }, false)
     expect(ports.readPending({ sessionId: "s1" })).toEqual([])
     store.close()
-    const reopened = openRuntimeStore(root)
+    const reopened = openTestRuntimeStore(root)
     opened.push({ store: reopened, root })
     const reopenedPorts = createStoreBrokerPorts(reopened, { ownerGeneration: "g1",
       patternEvaluator: async () => {}, publishers: createRuntimeEventHub(),
@@ -536,7 +536,7 @@ describe("store broker ports", () => {
     store.releaseTurnLease("s1", first)
     const prompted = store.acquireTurnLease("s1")
     if (!prompted) throw new Error("Missing prompted lease")
-    const promptId = createMessageIds()()
+    const promptId = createMessageIds(() => Date.now() - 1)()
     store.startTurn({ sessionId: "s1", userMessageId: promptId, assistantMessageId: assistantMessageIdForTurn(promptId), agent: "general",
       model: { providerID: "anthropic", modelID: "test" }, parts: [{ type: "text", text: "start four agents" }] })
     store.finishTurn({ sessionId: "s1", assistantMessageId: assistantMessageIdForTurn(promptId), leaseId: prompted, outcome: { status: "completed", completedAt: 20 } })
@@ -554,7 +554,7 @@ describe("store broker ports", () => {
     expect(opening?.info).toMatchObject({ role: "user", claxedo: { author: { id: "harness:claude", name: "Claude Code", kind: "agent" } } })
     expect(opening?.parts).toMatchObject([{ type: "text", text: "Agent \"Audit\" finished" }])
     expect(reply?.info).toMatchObject({ id: admitted.turn.assistantMessageId, role: "assistant", parentID: opening?.info.id })
-    const laterPromptId = createMessageIds()()
+    const laterPromptId = createMessageIds(() => Date.now() + 1)()
     expect([laterPromptId, opening!.info.id, promptId].sort()).toEqual([promptId, opening!.info.id, laterPromptId])
     expect(store.getMessagePage("s1", { view: "latest-turn" })?.messages.map((message) => message.info.id))
       .toEqual([opening?.info.id, admitted.turn.assistantMessageId])
@@ -696,7 +696,7 @@ describe("store broker ports", () => {
     ports.subagentAdmissionStore.markPublished("s1", "o1")
     const child = await ports.admitChildSession("s1", "child", { observationId: "o1" })
     store.close()
-    const reopened = openRuntimeStore(root)
+    const reopened = openTestRuntimeStore(root)
     opened.push({ store: reopened, root })
     const again = reopened.admit({
       parentSessionId: "s1", observation: { observationId: "o1", providerKind: "claude", providerId: "agent-1", transcript: { kind: "live" } },
