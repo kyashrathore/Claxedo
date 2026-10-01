@@ -9,9 +9,13 @@ function mcpConfig(server: McpServerSpec): Record<string, JsonValue> {
   return { url: server.url, http_headers: server.headers ?? {} }
 }
 
-export function projectCodexThreadConfig(input: StartInput, services: HarnessServices): Record<string, JsonValue> {
+function codexPluginConfig(plugins: readonly string[]): Record<string, JsonValue> {
+  return { model_reasoning_summary: "auto", plugins: Object.fromEntries(plugins.map((plugin) => [plugin, { enabled: true }])) }
+}
+
+export function projectCodexThreadConfig(input: StartInput, services: HarnessServices, plugins: readonly string[]): Record<string, JsonValue> {
   const servers = sessionMcpServers(input, services, { includeFirstParty: input.locality === "local",
     duplicate: () => new CodexTransportError("configuration", "Duplicate Codex MCP server name") })
   const mcp = Object.fromEntries(servers.map((server) => [server.name, mcpConfig(server)]))
-  return { features: { default_mode_request_user_input: true }, tools: { update_plan: { enabled: true } }, mcp_servers: mcp }
+  return { features: { default_mode_request_user_input: true }, tools: { update_plan: { enabled: true } }, ...codexPluginConfig(plugins), mcp_servers: mcp }
 }

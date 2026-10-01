@@ -1,6 +1,6 @@
-import type { AgentRuntimeStatus } from "@claxedo/agent-runtime-contract"
+import { NO_BACKGROUND_WORK, parseBackgroundWork, type AgentRuntimeStatus, type BackgroundWork } from "@claxedo/agent-runtime-contract"
 import { turnError } from "../errors"
-import type { RetryAction, SessionStatus } from "../types"
+import type { RetryAction, SessionStatus } from "../status-types"
 import { isRecord } from "@claxedo/helpers/guards"
 
 function retryActionFromWire(value: unknown): RetryAction | undefined {
@@ -18,9 +18,9 @@ function runtimeStatusFromWire(value: unknown): AgentRuntimeStatus | undefined {
       return { type: value.type }
     case "retry": {
       const { attempt, message, next } = value
-      if (typeof attempt !== "number" || typeof message !== "string" || typeof next !== "number") return undefined
+      if (typeof message !== "string") return undefined
       const action = retryActionFromWire(value.action)
-      return { type: "retry", attempt, message, next, ...(action ? { action } : {}) }
+      return { type: "retry", message, ...(typeof attempt === "number" ? { attempt } : {}), ...(typeof next === "number" ? { next } : {}), ...(action ? { action } : {}) }
     }
     case "recovering":
       return (value.kind === "process_restart" || value.kind === "uncertain_execution") && typeof value.message === "string"
@@ -38,10 +38,20 @@ function sessionStatusFromRuntime(status: AgentRuntimeStatus): SessionStatus {
     case "busy":
       return { kind: "working" }
     case "retry":
-      return { kind: "retrying", attempt: status.attempt, message: status.message, nextAt: status.next, ...(status.action ? { action: status.action } : {}) }
+      return {
+        kind: "retrying",
+        message: status.message,
+        ...(status.attempt !== undefined ? { attempt: status.attempt } : {}),
+        ...(status.next !== undefined ? { nextAt: status.next } : {}),
+        ...(status.action ? { action: status.action } : {}),
+      }
     case "recovering":
       return { kind: "recovering", reason: status.kind === "process_restart" ? "processRestart" : "uncertainExecution", message: status.message }
   }
+}
+
+export function backgroundWorkFromWire(value: unknown): BackgroundWork {
+  return (isRecord(value) && parseBackgroundWork(value.backgroundWork)) || NO_BACKGROUND_WORK
 }
 
 export function sessionStatusFromWire(value: unknown): SessionStatus | undefined {

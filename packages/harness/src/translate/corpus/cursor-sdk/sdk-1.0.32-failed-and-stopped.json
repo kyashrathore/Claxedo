@@ -1,0 +1,297 @@
+{
+  "adapter": "cursor-sdk",
+  "initialState": {
+    "toolsByCallId": {},
+    "usageByRunId": {},
+    "openShells": [],
+    "shellOutputByCallId": {},
+    "notedKinds": []
+  },
+  "calls": [
+    {
+      "state": {
+        "toolsByCallId": {},
+        "usageByRunId": {},
+        "openShells": [],
+        "shellOutputByCallId": {},
+        "notedKinds": []
+      },
+      "event": {
+        "source": "cursor.sdk.message",
+        "method": "cursor/status",
+        "payload": {
+          "type": "status",
+          "agent_id": "agent-1",
+          "run_id": "run-1",
+          "status": "RUNNING"
+        }
+      },
+      "context": {
+        "harness": "cursor-sdk",
+        "threadId": "thread-1"
+      },
+      "callbacks": [],
+      "output": {
+        "state": {
+          "toolsByCallId": {},
+          "usageByRunId": {},
+          "openShells": [],
+          "shellOutputByCallId": {},
+          "notedKinds": []
+        },
+        "events": [
+          {
+            "type": "session-status",
+            "status": "busy"
+          }
+        ]
+      }
+    },
+    {
+      "state": {
+        "toolsByCallId": {},
+        "usageByRunId": {},
+        "openShells": [],
+        "shellOutputByCallId": {},
+        "notedKinds": []
+      },
+      "event": {
+        "source": "cursor.sdk.message",
+        "method": "cursor/status",
+        "payload": {
+          "type": "status",
+          "agent_id": "agent-1",
+          "run_id": "run-1",
+          "status": "ERROR",
+          "message": "[unavailable] HTTP 429"
+        }
+      },
+      "context": {
+        "harness": "cursor-sdk",
+        "threadId": "thread-1"
+      },
+      "callbacks": [],
+      "output": {
+        "state": {
+          "toolsByCallId": {},
+          "usageByRunId": {},
+          "openShells": [],
+          "shellOutputByCallId": {},
+          "notedKinds": []
+        },
+        "events": []
+      }
+    },
+    {
+      "state": {
+        "toolsByCallId": {},
+        "usageByRunId": {},
+        "openShells": [],
+        "shellOutputByCallId": {},
+        "notedKinds": []
+      },
+      "event": {
+        "source": "cursor.local-run-stream",
+        "method": "result",
+        "payload": {
+          "schemaVersion": 1,
+          "type": "result",
+          "agentId": "agent-1",
+          "runId": "run-1",
+          "status": "error",
+          "error": {
+            "message": "[unavailable] HTTP 429"
+          }
+        }
+      },
+      "context": {
+        "harness": "cursor-sdk",
+        "threadId": "thread-1"
+      },
+      "callbacks": [],
+      "output": {
+        "state": {
+          "toolsByCallId": {},
+          "usageByRunId": {},
+          "openShells": [],
+          "shellOutputByCallId": {},
+          "notedKinds": []
+        },
+        "events": [
+          {
+            "type": "session-status",
+            "status": "error"
+          },
+          {
+            "type": "error",
+            "error": "[unavailable] HTTP 429"
+          }
+        ]
+      }
+    },
+    {
+      "state": {
+        "toolsByCallId": {},
+        "usageByRunId": {},
+        "openShells": [],
+        "shellOutputByCallId": {},
+        "notedKinds": []
+      },
+      "event": {
+        "source": "cursor.sdk.message",
+        "method": "cursor/status",
+        "payload": {
+          "type": "status",
+          "agent_id": "agent-1",
+          "run_id": "run-1",
+          "status": "RUNNING"
+        }
+      },
+      "context": {
+        "harness": "cursor-sdk",
+        "threadId": "thread-1"
+      },
+      "callbacks": [],
+      "output": {
+        "state": {
+          "toolsByCallId": {},
+          "usageByRunId": {},
+          "openShells": [],
+          "shellOutputByCallId": {},
+          "notedKinds": []
+        },
+        "events": [
+          {
+            "type": "session-status",
+            "status": "busy"
+          }
+        ]
+      }
+    },
+    {
+      "state": {
+        "toolsByCallId": {},
+        "usageByRunId": {},
+        "openShells": [],
+        "shellOutputByCallId": {},
+        "notedKinds": []
+      },
+      "event": {
+        "source": "cursor.sdk.message",
+        "method": "cursor/assistant",
+        "payload": {
+          "type": "assistant",
+          "agent_id": "agent-1",
+          "run_id": "run-1",
+          "message": {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "partial"
+              }
+            ]
+          }
+        }
+      },
+      "context": {
+        "harness": "cursor-sdk",
+        "threadId": "thread-1"
+      },
+      "callbacks": [],
+      "output": {
+        "state": {
+          "toolsByCallId": {},
+          "usageByRunId": {},
+          "openShells": [],
+          "shellOutputByCallId": {},
+          "notedKinds": []
+        },
+        "events": [
+          {
+            "type": "text-delta",
+            "delta": "partial"
+          }
+        ]
+      }
+    },
+    {
+      "state": {
+        "toolsByCallId": {},
+        "usageByRunId": {},
+        "openShells": [],
+        "shellOutputByCallId": {},
+        "notedKinds": []
+      },
+      "event": {
+        "source": "cursor.sdk.message",
+        "method": "cursor/status",
+        "payload": {
+          "type": "status",
+          "agent_id": "agent-1",
+          "run_id": "run-1",
+          "status": "CANCELLED"
+        }
+      },
+      "context": {
+        "harness": "cursor-sdk",
+        "threadId": "thread-1"
+      },
+      "callbacks": [],
+      "output": {
+        "state": {
+          "toolsByCallId": {},
+          "usageByRunId": {},
+          "openShells": [],
+          "shellOutputByCallId": {},
+          "notedKinds": []
+        },
+        "events": []
+      }
+    },
+    {
+      "state": {
+        "toolsByCallId": {},
+        "usageByRunId": {},
+        "openShells": [],
+        "shellOutputByCallId": {},
+        "notedKinds": []
+      },
+      "event": {
+        "source": "cursor.local-run-stream",
+        "method": "result",
+        "payload": {
+          "schemaVersion": 1,
+          "type": "result",
+          "agentId": "agent-1",
+          "runId": "run-1",
+          "status": "cancelled"
+        }
+      },
+      "context": {
+        "harness": "cursor-sdk",
+        "threadId": "thread-1"
+      },
+      "callbacks": [],
+      "output": {
+        "state": {
+          "toolsByCallId": {},
+          "usageByRunId": {},
+          "openShells": [],
+          "shellOutputByCallId": {},
+          "notedKinds": []
+        },
+        "events": [
+          {
+            "type": "session-status",
+            "status": "idle"
+          },
+          {
+            "type": "cancelled",
+            "sessionId": "run-1"
+          }
+        ]
+      }
+    }
+  ]
+}

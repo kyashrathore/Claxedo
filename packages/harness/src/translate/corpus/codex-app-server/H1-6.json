@@ -93,50 +93,7 @@
             "01a0d7b5-fd4c-71d3-8bcd-95f5d17c588d": "gpt-6-astra"
           }
         },
-        "events": [
-          {
-            "type": "diagnostic",
-            "diagnostic": {
-              "code": "codex_app_server.unmapped_event",
-              "message": "thread/settings/updated: Codex app-server method has no AgentRuntimeEvent mapping",
-              "severity": "info",
-              "source": "codex.app-server",
-              "method": "thread/settings/updated",
-              "raw": {
-                "threadId": "01a0d7b5-fd4c-71d3-8bcd-95f5d17c588d",
-                "threadSettings": {
-                  "disabledPluginIds": [],
-                  "cwd": "/private/var/folders/t2/23hmqy6j43j7f3fg3m70gzhh0000gn/T/claxedo-e2e-h1-turn-parts-JxE40L/workspaces/h1-codex-Y96EsK",
-                  "approvalPolicy": "on-request",
-                  "approvalsReviewer": "user",
-                  "sandboxPolicy": {
-                    "type": "workspaceWrite",
-                    "writableRoots": [],
-                    "networkAccess": true,
-                    "excludeTmpdirEnvVar": false,
-                    "excludeSlashTmp": false
-                  },
-                  "activePermissionProfile": null,
-                  "model": "gpt-6-astra",
-                  "modelProvider": "broker",
-                  "serviceTier": "default",
-                  "effort": "low",
-                  "summary": null,
-                  "collaborationMode": {
-                    "mode": "default",
-                    "settings": {
-                      "model": "gpt-6-astra",
-                      "reasoning_effort": "low",
-                      "developer_instructions": null
-                    }
-                  },
-                  "multiAgentMode": "explicitRequestOnly",
-                  "personality": null
-                }
-              }
-            }
-          }
-        ]
+        "events": []
       }
     },
     {
@@ -1936,6 +1893,10 @@
                 "reasoningOutputTokens": 0
               }
             }
+          },
+          "streamedItem": {
+            "channel": "text",
+            "itemId": "msg_12"
           }
         },
         "events": [
@@ -1996,6 +1957,10 @@
               "reasoningOutputTokens": 0
             }
           }
+        },
+        "streamedItem": {
+          "channel": "text",
+          "itemId": "msg_12"
         }
       },
       "event": {
@@ -2078,6 +2043,10 @@
               "reasoningOutputTokens": 0
             }
           }
+        },
+        "streamedItem": {
+          "channel": "text",
+          "itemId": "msg_12"
         }
       },
       "event": {
@@ -2157,6 +2126,10 @@
               "reasoningOutputTokens": 0
             }
           }
+        },
+        "streamedItem": {
+          "channel": "text",
+          "itemId": "msg_12"
         }
       },
       "event": {
@@ -2226,6 +2199,10 @@
               }
             }
           },
+          "streamedItem": {
+            "channel": "reasoning",
+            "itemId": "rs_12"
+          },
           "reasoningTextByItemId": {
             "rs_12": "H1 codex reasoning"
           }
@@ -2288,6 +2265,10 @@
               "reasoningOutputTokens": 0
             }
           }
+        },
+        "streamedItem": {
+          "channel": "reasoning",
+          "itemId": "rs_12"
         },
         "reasoningTextByItemId": {
           "rs_12": "H1 codex reasoning"
@@ -2372,6 +2353,10 @@
               "reasoningOutputTokens": 0
             }
           }
+        },
+        "streamedItem": {
+          "channel": "reasoning",
+          "itemId": "rs_12"
         },
         "reasoningTextByItemId": {
           "rs_12": "H1 codex reasoning"
@@ -2460,6 +2445,10 @@
               }
             }
           },
+          "streamedItem": {
+            "channel": "reasoning",
+            "itemId": "rs_12"
+          },
           "reasoningTextByItemId": {
             "rs_12": "H1 codex reasoning"
           }
@@ -2540,6 +2529,10 @@
             }
           }
         },
+        "streamedItem": {
+          "channel": "reasoning",
+          "itemId": "rs_12"
+        },
         "reasoningTextByItemId": {
           "rs_12": "H1 codex reasoning"
         }
@@ -2617,6 +2610,10 @@
                 "reasoningOutputTokens": 0
               }
             }
+          },
+          "streamedItem": {
+            "channel": "reasoning",
+            "itemId": "rs_12"
           },
           "reasoningTextByItemId": {
             "rs_12": "H1 codex reasoning"
@@ -2702,6 +2699,10 @@
             }
           }
         },
+        "streamedItem": {
+          "channel": "reasoning",
+          "itemId": "rs_12"
+        },
         "reasoningTextByItemId": {
           "rs_12": "H1 codex reasoning"
         }
@@ -2778,6 +2779,10 @@
               "reasoningOutputTokens": 0
             }
           }
+        },
+        "streamedItem": {
+          "channel": "reasoning",
+          "itemId": "rs_12"
         },
         "reasoningTextByItemId": {
           "rs_12": "H1 codex reasoning"

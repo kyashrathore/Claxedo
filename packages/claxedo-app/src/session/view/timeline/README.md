@@ -37,7 +37,7 @@ The timeline reaches the app through one prop, `host`, which `createTimelineHost
 | --- | --- |
 | `idle` | turn over; the turn's diff summary shows |
 | `working` | active turn: Thinking row, jump-button dot wave |
-| `retrying` | active turn with a Retry row counting down to `nextAt` (`attempt`, `message`, optional `action`) |
+| `retrying` | active turn with a Retry row: the harness's `message`, a countdown to `nextAt` and the `attempt` when the harness reports them (Codex reports neither), optional `action` |
 | `recovering` | `turnActive` counts it active only with `reason: "uncertainExecution"`; no Thinking or Retry row |
 | `failed` | the newest turn stays the active turn but is not working: no Thinking row, no diff summary; its error row comes from the assistant message's `error` |
 

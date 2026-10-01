@@ -17,10 +17,10 @@ function flowId(entry: string) {
   return entry.slice(0, entry.indexOf("-"))
 }
 
-/** `H14` selects H14 and each of its variants (`H14.codex`); `H14.codex` selects that variant alone. */
+/** `H14` selects H14 and each of its variants (`H14.codex`); `H14.codex` selects that variant alone; `H14-mcp` selects that file alone. */
 function selects(id: string, entry: string) {
   const candidate = flowId(entry)
-  return candidate === id || candidate.startsWith(`${id}.`)
+  return candidate === id || candidate.startsWith(`${id}.`) || entry === `${id}.flow.ts`
 }
 
 function selected(entries: string[], ids: string[]) {

@@ -36,20 +36,6 @@ export interface OwnedProcess {
   retire(deadline: Deadline): Promise<RetireOutcome>
 }
 
-export type TranscriptRegistration =
-  | { state: "ready"; handle: string }
-  | { state: "unavailable"; reason: string }
-
-export type TranscriptOpen =
-  | { state: "ready"; messages: unknown[] }
-  | { state: "empty"; messages: [] }
-  | { state: "unavailable"; reason: string }
-
-export interface TranscriptRegistrar {
-  register(input: { parentSessionId: string; providerKind: string; filePath: string }): Promise<TranscriptRegistration>
-  open?(input: { parentSessionId: string; handle: string }): Promise<TranscriptOpen>
-}
-
 export type LogFields = Readonly<Record<string, unknown>>
 
 export interface Logger {
@@ -70,7 +56,6 @@ export interface HarnessServices {
   spawn(command: SpawnCommand, options: SpawnOptions): Promise<OwnedProcess>
   firstPartyMcp(sessionId: string, locality: Locality): McpServerSpec | undefined
   healthChanged(): void
-  transcripts: TranscriptRegistrar
   patternEvaluator: ElicitationPatternEvaluator
   log: Logger
   clock: Clock

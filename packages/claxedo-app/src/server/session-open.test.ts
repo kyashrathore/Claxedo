@@ -96,3 +96,23 @@ test("session status: settling a held idle reads the row and the open view, and 
   expect(status).toMatchObject({ kind: "failed", error: { message: "The provider refused" } })
   expect([...server.runtimeCalls].sort()).toEqual([sessionEndpoint(ref), openPath].sort())
 })
+
+test("session reads: background work rides beside the turn's status in the open view, and a session without it reads none", async () => {
+  const opened = (status: unknown) => fakeServer({
+    reachable: () => true,
+    machine: true,
+    runtime: (path) => {
+      if (path === firstPath) return firstRead()
+      if (path === openPath) return openView({ status: { value: status } })
+      return Response.json({ error: { message: `unexpected runtime read ${path}` } }, { status: 500 })
+    },
+  })
+  const background = startSessionReads(opened({ type: "idle", backgroundWork: { agents: 2, shells: 1, other: 0 } }).context, ref, shape)
+  expect(await background.status).toEqual({ kind: "idle" })
+  expect(await background.backgroundWork).toEqual({ agents: 2, shells: 1, other: 0 })
+  const turning = startSessionReads(opened({ type: "busy", backgroundWork: { agents: 1, shells: 0, other: 0 } }).context, ref, shape)
+  expect(await turning.status).toEqual({ kind: "working" })
+  expect(await turning.backgroundWork).toEqual({ agents: 1, shells: 0, other: 0 })
+  const quiet = startSessionReads(opened(null).context, ref, shape)
+  expect(await quiet.backgroundWork).toEqual({ agents: 0, shells: 0, other: 0 })
+})

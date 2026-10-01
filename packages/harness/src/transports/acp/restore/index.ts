@@ -4,7 +4,9 @@ import type { AttachInput, SessionBroker } from "../../../contract"
 import type { AcpPeer } from "../connection"
 import { AcpTransportError } from "../errors"
 
-export type MissingSessionContext = (input: AttachInput) => Promise<SessionHandoff>
+export type AcpRestoreInput = Omit<AttachInput, "upstreamHasTurns">
+
+export type MissingSessionContext = (input: AcpRestoreInput) => Promise<SessionHandoff>
 
 export type AcpRestored = {
   upstreamSessionId: string
@@ -12,7 +14,7 @@ export type AcpRestored = {
   configOptions?: SessionConfigOption[] | null
 }
 
-export async function restoreAcp(peer: AcpPeer, input: AttachInput, mcpServers: McpServer[], broker: SessionBroker,
+export async function restoreAcp(peer: AcpPeer, input: AcpRestoreInput, mcpServers: McpServer[], broker: SessionBroker,
   missingContext: MissingSessionContext, meta?: NewSessionRequest["_meta"]): Promise<AcpRestored> {
   const upstream = input.binding.upstreamSessionId
   const capabilities = peer.handshake.agentCapabilities

@@ -3,7 +3,7 @@ import path from "node:path"
 import { sweepHarnessHomeRoot } from "./home-use"
 import { userHomeDir } from "@claxedo/helpers/path"
 import type { HarnessCompositionOptions } from "@claxedo/harness/compose"
-import type { AttachInput, MachineLoginPolicy } from "@claxedo/harness/contract"
+import type { MachineLoginPolicy } from "@claxedo/harness/contract"
 import type { AgentRuntimeStore } from "./contracts"
 import { missingSessionHandoff } from "./handoff"
 import { requireCursorWorker } from "./executables/cursor"
@@ -30,7 +30,7 @@ export function harnessCompositionOptions(input: HarnessCompositionInput): Harne
   const home = userHomeDir(env)
   return {
     acp: () => ({
-      missingContext: async (attach: AttachInput) => missingSessionHandoff(input.store().getMessages(attach.sessionId), attach.config.harness),
+      missingContext: async (attach) => missingSessionHandoff(input.store().getMessages(attach.sessionId), attach.config.harness),
     }),
     pi: (command) => ({
       binary: command ?? requirePiExecutable(env),

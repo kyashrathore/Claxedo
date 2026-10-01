@@ -1400,7 +1400,7 @@ Every slice deletes what it replaces.
   - `src/translate/runtime.ts`: the translation runner's body (size).
   - `src/transports/acp/translate/state.ts`: the file (size), three function bodies (size) and one title condition (no policy in transports).
   - `src/transports/acp/translate/translate-session-update.ts`: the file (size), two function bodies (size) and five title conditions (no policy in transports).
-  - `src/transports/claude-sdk/translate/adapter.ts`: the file (size), four function bodies (size) and two title conditions (no policy in transports).
+  - `src/transports/claude-sdk/translate/transcript-title.ts`: two title conditions (no policy in transports).
   - `src/transports/claude-sdk/translate/partial-json.ts`: one function body (size).
   - `src/transports/codex-app-server/translate/adapter.ts`: the file (size), three function bodies (size) and one title condition (no policy in transports).
   - `src/transports/cursor-sdk/translate/adapter.ts`: the file (size) and four function bodies (size).

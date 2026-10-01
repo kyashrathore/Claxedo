@@ -4,7 +4,9 @@ import type { ConnectionSecretAuthority } from "@claxedo/agent-runtime-contract"
 import { createRequestBroker, type BrokerPorts } from "@claxedo/harness/broker"
 import type { HarnessSession, HarnessTransport } from "@claxedo/harness/contract"
 import { SessionAttachments, type AttachedSession } from "./attachments"
+import { createBackgroundTaskStops } from "./background-tasks"
 import { createChildTurns } from "./child-turns"
+import { providerParentTurn } from "./provider-child-turns"
 import { createHarnessReads } from "./config-ops"
 import { AgentRuntimeTurnAdmissionError } from "./contracts"
 import type {
@@ -71,6 +73,7 @@ export function createAgentRuntime(input: AgentRuntimeCompositionInput) {
   const lifecycle = createRuntimeLifecycle({ onTeardownFailure: (error) => recovery.reportOwnerFailure(error) })
   const { resource, track } = lifecycle
   const admissions = createTurnAdmissions(store, input.onActiveTurnChange)
+  const disposing = new AbortController()
   const workspaceId = input.identity?.workspaceId ?? input.launch.workspaceId
 
   const publish = (event: AgentRuntimeEventEnvelope) => {
@@ -87,13 +90,22 @@ export function createAgentRuntime(input: AgentRuntimeCompositionInput) {
     store,
     publish: (sessionId, payload) => publish({ sessionId, directory: store.getSession(sessionId)?.directory, payload }),
     retainLeasedTurnFailure: (sessionId, turn, error) => recovery.retainLeasedTurnFailure(sessionId, turn, error),
+    idleParent: (parentSessionId) => providerParentTurn(store, parentSessionId, publish),
+    childTurnSettled: (childSessionId, assistantMessageId) => {
+      void broker.endChildTurn(childSessionId, assistantMessageId).catch((error: unknown) => recovery.reportSessionFailure(childSessionId, error))
+    },
   })
   const broker = createRequestBroker(childTurns.ports({
     ...input.ports,
     admitProviderTurn: (sessionId, turn, run) => {
       if (lifecycle.closing) return Promise.resolve({ admitted: false, reason: "closed" })
       return track(async () => {
-        const result = await input.ports.admitProviderTurn(sessionId, turn, run)
+        const result = await input.ports.admitProviderTurn(sessionId, turn, async (ref, signal) => {
+          const endChildTurns = childTurns.beginTurn(sessionId, providerParentTurn(store, sessionId, publish))
+          try { await run(ref, signal) } finally {
+            try { endChildTurns() } catch (error) { recovery.reportSessionFailure(sessionId, error) }
+          }
+        }, disposing.signal)
         if (result.admitted) {
           const current = input.ports.currentTurnAuthority(sessionId)
           const leaseId = current?.turnId === result.turn.turnId ? store.readTurnAuthority(sessionId)?.leaseId : undefined
@@ -176,6 +188,7 @@ export function createAgentRuntime(input: AgentRuntimeCompositionInput) {
     store, admissions, recovery, titles, broker, steers, ownerGeneration: input.ownerGeneration, publish,
     commit: commitAndPublish,
     beginChildTurns: (parentSessionId, context) => childTurns.beginTurn(parentSessionId, context),
+    childTarget: (childSessionId, assistantMessageId) => childTurns.target(childSessionId, assistantMessageId),
   }
 
   const startTurn = async (turn: AgentRuntimeTurnStartInput): Promise<AgentRuntimeTurnStartResult> => {
@@ -321,6 +334,7 @@ export function createAgentRuntime(input: AgentRuntimeCompositionInput) {
       ...resource({ start: startTurn }),
     },
     goals: resource(goals.resource),
+    backgroundTasks: resource(createBackgroundTaskStops(attachments)),
     recovery: wiring.surface() satisfies AgentRuntimeRecovery,
     events: {
       subscribe(subscribe: AgentRuntimeSubscribeInput = {}) {
@@ -352,6 +366,7 @@ export function createAgentRuntime(input: AgentRuntimeCompositionInput) {
       return { transport: attached.handle.transport, session: attached.session }
     },
     dispose() {
+      disposing.abort()
       return lifecycle.dispose(
         async () => {
           recovery.stops.releaseAll()

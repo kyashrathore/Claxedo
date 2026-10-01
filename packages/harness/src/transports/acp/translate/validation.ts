@@ -166,6 +166,9 @@ const SESSION_UPDATE_REQUIRED_FIELDS = new Map<string, readonly RequiredField[]>
   config_option_update: [],
   session_info_update: [],
   usage_update: [["size", "number"], ["used", "number"]],
+  notice: [["severity", "string"], ["title", "string"]],
+  compaction_update: [["compactionId", "string"], ["status", "string"]],
+  compaction_summary_chunk: [["compactionId", "string"]],
 } satisfies Record<SessionUpdate["sessionUpdate"], readonly RequiredField[]>))
 
 export function isSessionUpdate(value: unknown): value is SessionUpdate {

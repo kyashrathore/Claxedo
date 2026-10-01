@@ -3,7 +3,15 @@ import { listenOnLoopback, releasePort, reservePort } from "./ports"
 
 export type ScriptedMcpCall = { name: string; arguments: Record<string, unknown> }
 
-export async function startScriptedMcpServer() {
+export type ScriptedMcpTool = { name: string; description: string; inputSchema: Record<string, unknown>; result(args: Record<string, unknown>): unknown }
+
+const PROOF_TOOL: ScriptedMcpTool = {
+  name: "proof", description: "Return a local proof marker",
+  inputSchema: { type: "object", properties: { marker: { type: "string" } }, required: ["marker"] },
+  result: (args) => ({ content: [{ type: "text", text: `MCP_PROOF:${typeof args.marker === "string" ? args.marker : ""}` }] }),
+}
+
+export async function startScriptedMcpServer(tool: ScriptedMcpTool = PROOF_TOOL) {
   const port = await reservePort()
   const calls: ScriptedMcpCall[] = []
   const methods: string[] = []
@@ -23,17 +31,16 @@ export async function startScriptedMcpServer() {
       response.writeHead(202).end()
       return
     }
-    if (message.method === "tools/call" && message.params?.name === "proof") {
-      calls.push({ name: "proof", arguments: message.params.arguments ?? {} })
-    }
+    const called = message.method === "tools/call" && message.params?.name === tool.name
+    if (called) calls.push({ name: tool.name, arguments: message.params?.arguments ?? {} })
     const result = message.method === "initialize"
       ? { protocolVersion: "2025-03-26", capabilities: { tools: {} }, serverInfo: { name: "scripted-mcp", version: "1.0.0" } }
       : message.method === "tools/list"
-        ? { tools: [{ name: "proof", description: "Return a local proof marker", inputSchema: { type: "object", properties: { marker: { type: "string" } }, required: ["marker"] } }] }
-        : message.method === "tools/call" && message.params?.name === "proof"
+        ? { tools: [{ name: tool.name, description: tool.description, inputSchema: tool.inputSchema }] }
+        : called
           ? failToolCall
-            ? { isError: true, content: [{ type: "text", text: "Scripted MCP refused the proof call" }] }
-            : { content: [{ type: "text", text: `MCP_PROOF:${typeof message.params.arguments?.marker === "string" ? message.params.arguments.marker : ""}` }] }
+            ? { isError: true, content: [{ type: "text", text: `Scripted MCP refused the ${tool.name} call` }] }
+            : tool.result(message.params?.arguments ?? {})
           : undefined
     const body = result === undefined
       ? { jsonrpc: "2.0", id: message.id, error: { code: -32601, message: "Method not found" } }

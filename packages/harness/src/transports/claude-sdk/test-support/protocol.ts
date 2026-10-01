@@ -9,7 +9,7 @@ const controlRequests: Record<string, Shape> = {
     hooks: isRecord, jsonSchema: isRecord, toolAliases: isRecord, agents: isRecord,
     sdkMcpServers: isTextList, systemPrompt: isTextList, skills: isTextList, supportedDialogKinds: isTextList,
     appendSystemPrompt: text, planModeInstructions: text, title: text,
-    excludeDynamicSections: flag, promptSuggestions: flag, agentProgressSummaries: flag, forwardSubagentText: flag,
+    excludeDynamicSections: flag, promptSuggestions: flag, agentProgressSummaries: flag, forwardSubagentText: flag, perTaskStopAffordance: flag,
   } },
   interrupt: { required: [], fields: { cancel_queued: optional(flag) } },
   set_permission_mode: { required: ["mode"], fields: { mode: oneOf("default", "acceptEdits", "bypassPermissions", "plan", "dontAsk", "auto") } },

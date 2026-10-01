@@ -75,6 +75,7 @@ export class SessionCoreObject {
       currentRunner: () => ({ id: "pi", access: "native" }),
       sessionToolPrompt: () => undefined,
       subagentAdmission: (parentSessionId, observation) => host.runtime.subagents.admit(parentSessionId, observation),
+      backgroundWork: (sessionId) => host.backgroundWork.read(sessionId),
     })
     const events = workspaceEventsHandler({
       directory,

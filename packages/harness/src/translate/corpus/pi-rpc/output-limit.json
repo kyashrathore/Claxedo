@@ -1,0 +1,219 @@
+{
+  "adapter": "pi-rpc",
+  "initialState": {
+    "blocks": {},
+    "finished": false,
+    "stopped": false,
+    "noted": []
+  },
+  "calls": [
+    {
+      "state": {
+        "blocks": {},
+        "finished": false,
+        "stopped": false,
+        "noted": []
+      },
+      "event": {
+        "source": "pi.rpc",
+        "method": "agent_start",
+        "payload": {
+          "type": "agent_start"
+        }
+      },
+      "context": {
+        "harness": "pi",
+        "threadId": "native-pi"
+      },
+      "callbacks": [],
+      "output": {
+        "state": {
+          "blocks": {},
+          "finished": false,
+          "stopped": false,
+          "noted": []
+        },
+        "events": []
+      }
+    },
+    {
+      "state": {
+        "blocks": {},
+        "finished": false,
+        "stopped": false,
+        "noted": []
+      },
+      "event": {
+        "source": "pi.rpc",
+        "method": "message_update",
+        "payload": {
+          "type": "message_update",
+          "usage": {
+            "input": 1,
+            "output": 1,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "reasoning": 0,
+            "totalTokens": 2,
+            "cost": {
+              "input": 0.000002,
+              "output": 0.000008,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "total": 0.000009999999999999999
+            }
+          },
+          "assistantMessageEvent": {
+            "type": "text_delta",
+            "contentIndex": 0,
+            "delta": "PLAIN"
+          }
+        }
+      },
+      "context": {
+        "harness": "pi",
+        "threadId": "native-pi"
+      },
+      "callbacks": [],
+      "output": {
+        "state": {
+          "blocks": {
+            "0": "PLAIN"
+          },
+          "finished": false,
+          "stopped": false,
+          "noted": []
+        },
+        "events": [
+          {
+            "type": "text-delta",
+            "delta": "PLAIN"
+          }
+        ]
+      }
+    },
+    {
+      "state": {
+        "blocks": {
+          "0": "PLAIN"
+        },
+        "finished": false,
+        "stopped": false,
+        "noted": []
+      },
+      "event": {
+        "source": "pi.rpc",
+        "method": "message_end",
+        "payload": {
+          "type": "message_end",
+          "message": {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "PLAIN",
+                "textSignature": "{\"v\":1,\"id\":\"msg_1\"}"
+              }
+            ],
+            "api": "openai-responses",
+            "provider": "openai",
+            "model": "gpt-4.1",
+            "usage": {
+              "input": 1,
+              "output": 1,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "reasoning": 0,
+              "totalTokens": 2,
+              "cost": {
+                "input": 0.000002,
+                "output": 0.000008,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0.000009999999999999999
+              }
+            },
+            "stopReason": "length",
+            "timestamp": 1790766445576,
+            "responseId": "resp_1",
+            "rawStopReason": "completed",
+            "thinkingLevel": "off"
+          }
+        }
+      },
+      "context": {
+        "harness": "pi",
+        "threadId": "native-pi"
+      },
+      "callbacks": [],
+      "output": {
+        "state": {
+          "blocks": {},
+          "finished": false,
+          "stopped": false,
+          "noted": []
+        },
+        "events": [
+          {
+            "type": "usage",
+            "contextSize": 0,
+            "contextUsed": 1,
+            "observation": {
+              "kind": "delta",
+              "providerObservationId": "1790766445576",
+              "tokens": {
+                "input": 1,
+                "output": 1,
+                "reasoning": 0,
+                "cache": {
+                  "read": 0,
+                  "write": 0
+                }
+              }
+            }
+          },
+          {
+            "type": "harness-notice",
+            "code": "pi.output_limit",
+            "severity": "warn",
+            "message": "Pi stopped the reply at the model's output token limit"
+          }
+        ]
+      }
+    },
+    {
+      "state": {
+        "blocks": {},
+        "finished": false,
+        "stopped": false,
+        "noted": []
+      },
+      "event": {
+        "source": "pi.rpc",
+        "method": "agent_settled",
+        "payload": {
+          "type": "agent_settled"
+        }
+      },
+      "context": {
+        "harness": "pi",
+        "threadId": "native-pi"
+      },
+      "callbacks": [],
+      "output": {
+        "state": {
+          "blocks": {},
+          "finished": true,
+          "stopped": false,
+          "noted": []
+        },
+        "events": [
+          {
+            "type": "finish",
+            "sessionId": "native-pi"
+          }
+        ]
+      }
+    }
+  ]
+}

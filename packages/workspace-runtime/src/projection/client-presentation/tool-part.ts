@@ -83,7 +83,7 @@ function toolPart(input: {
       ...(input.output !== undefined ? { output: input.output } : {}),
       ...(input.error !== undefined ? { error: input.error } : {}),
     }),
-    ...(input.metadata && Object.keys(input.metadata).length ? { metadata: input.metadata } : {}),
+    ...(input.status === "pending" && input.metadata && Object.keys(input.metadata).length ? { metadata: input.metadata } : {}),
   }
 }
 

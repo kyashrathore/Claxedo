@@ -12,7 +12,7 @@ import { directTransport } from "../harness/transport"
 import { liveParts, waitForIdle, waitForTitle } from "../harness/turn-observations"
 import { frameSessionId, frameType } from "../harness/stream"
 
-const PNG = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/lp8AAAAASUVORK5CYII="
+const PNG = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+ip1sAAAAASUVORK5CYII="
 const TEXT = "H11 text attachment reached the harness\n"
 const TEXT_BASE64 = Buffer.from(TEXT).toString("base64")
 

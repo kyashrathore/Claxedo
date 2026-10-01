@@ -34,7 +34,8 @@ for (const kind of ["codex", "cursor"] as const) {
             const frame = JSON.parse(line) as { id?: number; method?: string; kind?: string }
             if (frame.id === undefined) continue
             const reply = kind === "cursor" ? { id: frame.id, kind: "result", value: { agentId: "agent" } }
-              : { id: frame.id, result: frame.method === "thread/start" ? { thread: { id: "agent" } } : {} }
+              : { id: frame.id, result: frame.method === "thread/start" ? { thread: { id: "agent" } }
+                : frame.method === "initialize" ? { userAgent: "claxedo/0.156.1 (Mac OS 26.6.2; arm64) unknown (claxedo; 0.1.0)" } : {} }
             stdout.write(`${JSON.stringify(reply)}\n`)
           }
         })
