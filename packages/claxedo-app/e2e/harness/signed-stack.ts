@@ -10,7 +10,8 @@ import type { TlsTrust } from "./tls-front"
 import { startHostedAppFront } from "./hosted-app-front"
 import { signUpHostedEmail } from "./hosted-email"
 import { startHostedMachine } from "./hosted-machine"
-import { prepareScriptedServer } from "./scripted-world"
+import { configureHostedScriptedAcp } from "../../../harness/e2e/harness/hosted-cloud"
+import { bunPath } from "./scripted-world"
 
 export type Account = {
   name: string
@@ -86,7 +87,7 @@ export async function startSignedStack(input: SignedStackInput): Promise<SignedS
       method: "POST", headers: { "content-type": "application/json", "x-claxedo-bootstrap-owner-claim": claim }, body: "{}",
     }, owner.person)
     if (!bootstrap.ok) throw new Error(`Hosted owner bootstrap failed: ${bootstrap.status} ${await bootstrap.text()}`)
-    await prepareScriptedServer(owner.transport, hosted.workerUrl, { scripted: hosted.model, acpScriptDir: local.acp.scriptDir, red: input.red ?? false })
+    await configureHostedScriptedAcp(hosted, owner.transport, { bunPath: await bunPath(), scriptDir: local.acp.scriptDir, red: input.red, core: true })
     machine = await startHostedMachine(hosted, local, owner.person)
     const opened = front
     const host = machine
