@@ -17,7 +17,7 @@ import { canonicalRepositoryKey } from "@claxedo/server-core/authority/repositor
 import { ClaxedoError } from "@claxedo/server-core/platform/errors/base"
 import { normalizeStoredDirectory } from "@claxedo/server-core/platform/auth/host-connect-contract"
 import { HOST_SERVING_WORKSPACE_SQL } from "./host-access-authority"
-import { batchUnder, may, mayGuard, maySql, readProjectRole, roleRank, type AuthorizationPrincipal, type BoundSql } from "./authorization"
+import { activeGuard, batchUnder, may, mayGuard, maySql, readProjectRole, roleRank, type AuthorizationPrincipal, type BoundSql } from "./authorization"
 import { ownerMembershipStatements, requireHuman, requireText, type D1AccessContext } from "./access-context"
 import { prepareInvitationAdmission } from "./org-invitation-authority"
 import { asOrgId, type OrgId } from "@claxedo/server-core/platform/auth/branded-id"
@@ -473,18 +473,7 @@ export class D1WorkspaceAuthority implements D1WorkspaceAuthorityCore {
   async linkApplicationIdentity(auth: SignedControlPlaneAuth, input: { identity: AuthIdentity }) {
     validateIdentity(input.identity)
     const who = await this.requirePrincipal(auth)
-    const now = this.now()
-    await this.database
-      .prepare(
-        `
-      insert into auth_identities (adapter, issuer, subject, user_id, linked_at, unlinked_at)
-      select ?, ?, ?, u.user_id, ?, null from users u
-      where u.user_id = ? and u.state = 'active'
-      on conflict (adapter, issuer, subject) do nothing
-    `,
-      )
-      .bind(input.identity.adapter, input.identity.issuer, input.identity.subject, now, who.userId)
-      .run()
+    await batchUnder(this.database, activeGuard(who), [this.insertIdentity(input.identity, who.userId, this.now())])
     const row = await this.identityRow(input.identity)
     if (!row || row.unlinked_at !== null || row.user_id !== who.userId) {
       throw new D1WorkspaceAuthorityError(
@@ -507,18 +496,19 @@ export class D1WorkspaceAuthority implements D1WorkspaceAuthorityCore {
     const orgId = input.orgId ? requireText(input.orgId, "orgId") : this.randomId("org")
     const assertionId = this.randomId("assert")
     const now = this.now()
-    await this.guardedBatch(
+    await batchUnder(
+      this.database,
+      activeGuard(who),
       [
         this.database
           .prepare(
             `
         insert into orgs (org_id, name, kind, owner_user_id, deployment_id, created_at, updated_at)
-        select ?, ?, 'shared', u.user_id, null, ?, ? from users u
-        where u.user_id = ? and u.state = 'active'
+        values (?, ?, 'shared', ?, null, ?, ?)
         on conflict (org_id) do nothing
       `,
           )
-          .bind(orgId, name, now, now, who.userId),
+          .bind(orgId, name, who.userId, now, now),
         ...ownerMembershipStatements(this.accessContext(), {
           owners: {
             sql: `select o.org_id, o.owner_user_id as user_id from orgs o
@@ -541,7 +531,7 @@ export class D1WorkspaceAuthority implements D1WorkspaceAuthorityCore {
           .bind(assertionId, orgId, who.userId, name),
         this.database.prepare(`delete from authority_batch_assertions where assertion_id = ?`).bind(assertionId),
       ],
-      "Organization creation conflicted with existing authority state",
+      (statements) => this.guardedBatch(statements, "Organization creation conflicted with existing authority state"),
     )
     return { org_id: orgId, name, kind: "shared" as const, role: "owner" as const }
   }
