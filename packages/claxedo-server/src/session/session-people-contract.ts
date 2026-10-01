@@ -1,12 +1,7 @@
-import { encodeApiError, PUBLIC_API_ERRORS, type PublicApiErrorCode } from "@claxedo/helpers/api-error"
+import { publicApiFamilyResponse } from "../platform/http/public-api-error-response"
 import type { Context } from "hono"
-import type { ContentfulStatusCode } from "hono/utils/http-status"
 import type { SessionShareChangedEvent } from "@claxedo/server-core/platform/runtime/lib/bus"
-import {
-  ControlPlaneAuthError,
-  controlPlaneAuthErrorBody,
-  type SignedControlPlaneAuth,
-} from "@claxedo/server-core/platform/auth/auth"
+import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import type {
   SessionShareFanoutTarget,
   SessionShareLevel,
@@ -25,13 +20,7 @@ export type SessionShareChangedSink = (event: SessionShareChangedEvent) => unkno
 export type { SessionShareFanoutTarget } from "@claxedo/server-core/platform/auth/authority"
 
 export function peopleErrorResponse(c: Context, error: unknown): Response {
-  if (error instanceof ControlPlaneAuthError) return c.json(controlPlaneAuthErrorBody(error), error.status)
-  const row = asRecord(error)
-  const code = typeof row?.code === "string" ? row.code as PublicApiErrorCode : undefined
-  if (!code || !Object.hasOwn(PUBLIC_API_ERRORS, code)) throw error
-  const mapped = PUBLIC_API_ERRORS[code]
-  if (!("family" in mapped) || mapped.family !== "session_share") throw error
-  return c.json(encodeApiError({ ...row, code, message: mapped.message }), mapped.status as ContentfulStatusCode)
+  return publicApiFamilyResponse(c, error, "session_share")
 }
 
 /**

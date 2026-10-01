@@ -1,12 +1,10 @@
-import { encodeApiError, PUBLIC_API_ERRORS, type PublicApiErrorCode } from "@claxedo/helpers/api-error"
-import { contentfulStatus } from "../../platform/http/status"
+import { publicApiFamilyResponse } from "../../platform/http/public-api-error-response"
 import { Hono, type Context } from "hono"
 import { bodyLimit } from "hono/body-limit"
 import type { ControlPlaneServices } from "../../authority/services"
 import { requireAuthority } from "@claxedo/server-core/platform/auth/authority"
 import {
   ControlPlaneAuthError,
-  controlPlaneAuthErrorBody,
   type ControlPlaneTokenVerifier,
   type ControlPlaneAuthConfig,
   type SignedControlPlaneAuth,
@@ -30,13 +28,7 @@ type Options = {
 const bodyLimitBytes = 16 * 1024
 
 export function orgTeamErrorResponse(c: Context, error: unknown): Response {
-  if (error instanceof ControlPlaneAuthError) return c.json(controlPlaneAuthErrorBody(error), error.status)
-  const row = error && typeof error === "object" && "code" in error ? error : undefined
-  const code = row && typeof row.code === "string" ? row.code as PublicApiErrorCode : undefined
-  if (!code || !Object.hasOwn(PUBLIC_API_ERRORS, code)) throw error
-  const mapped = PUBLIC_API_ERRORS[code]
-  if (!("family" in mapped) || mapped.family !== "access") throw error
-  return c.json(encodeApiError({ ...row, code, message: mapped.message }), contentfulStatus(mapped.status))
+  return publicApiFamilyResponse(c, error, "access")
 }
 
 export function OrgTeamControlRoutes(services: ControlPlaneServices, options: Options = {}) {
