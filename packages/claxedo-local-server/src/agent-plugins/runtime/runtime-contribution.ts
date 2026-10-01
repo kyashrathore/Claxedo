@@ -219,7 +219,6 @@ export function agentPluginWorkspaceRuntimeContribution(input: {
             // active generation is the projection this request describes.
             if (executionKey(active.execution) === executionKey(execution)) {
               const harnessLaunch = agentPluginHarnessLaunch(active)
-              await context.applyHarnessLaunch(harnessLaunch)
               return { ok: true, generationId: active.generationId, revision: active.revision, ...acknowledged, harnessLaunch }
             }
             // The materializer refuses to advance onto an equal revision, and
@@ -250,7 +249,6 @@ export function agentPluginWorkspaceRuntimeContribution(input: {
             ],
           })
           const harnessLaunch = agentPluginHarnessLaunch(generation)
-          await context.applyHarnessLaunch(harnessLaunch)
           return { ok: true, generationId: generation.generationId, revision: generation.revision, ...acknowledged, harnessLaunch }
         }
         apply = apply.then(run, run)
