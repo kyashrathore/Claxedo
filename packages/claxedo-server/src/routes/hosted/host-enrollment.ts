@@ -463,7 +463,7 @@ export function HostEnrollmentRoutes(services: ControlPlaneServices, options: Ho
     const response: Record<string, unknown> = { ...result, ...endpoints, serving_generation: caller.generation }
     const signer = configuredHostTunnelTokenSigner(options)
     if (!signer || ready.length === 0) return response
-    const input: HostTunnelTokenSignerInput & { enrollmentId: string; generation: number } = {
+    const input: HostTunnelTokenSignerInput = {
       subject: caller.ownerUserId,
       hostId: caller.hostId,
       workspaceIds: ready,

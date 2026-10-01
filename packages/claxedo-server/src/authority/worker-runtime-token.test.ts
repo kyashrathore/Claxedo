@@ -75,6 +75,8 @@ describe("Worker-compatible token signing", () => {
     } as unknown as NodeJS.ProcessEnv
 
     const result = await hostTunnelTokenSigner(env)({
+      enrollmentId: "enr_1",
+      generation: 0,
       subject: "user_1",
       hostId: "host_1",
       workspaceIds: ["ws_1"],

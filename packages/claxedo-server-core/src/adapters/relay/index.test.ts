@@ -54,6 +54,8 @@ describe("control-plane relay provider", () => {
     })
 
     await expect(provider.mintHostTunnelToken({
+      enrollmentId: "enr_1",
+      generation: 2,
       workspaceId: "ws_1",
       hostId: "host_1",
       subject: "user_1",
@@ -64,6 +66,8 @@ describe("control-plane relay provider", () => {
       jti: "htt_jti",
     })
     expect(hostTunnelTokenSigner).toHaveBeenCalledWith({
+      enrollmentId: "enr_1",
+      generation: 2,
       subject: "user_1",
       hostId: "host_1",
       workspaceIds: ["ws_1"],
@@ -196,6 +200,8 @@ describe("control-plane relay provider", () => {
       workspaceId: "ws_1",
       hostId: "host_1",
       subject: "user_1",
+      enrollmentId: "enr_1",
+      generation: 0,
     }
 
     // In-bounds requests are honored exactly.

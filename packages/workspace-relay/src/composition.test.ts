@@ -90,6 +90,8 @@ describe("host-tunnel authorization seam", () => {
     return {
       iss: runtimeAccessTokenIssuer,
       aud: hostTunnelTokenAudience,
+      enrollment_id: "enr_1",
+      generation: 0,
       sub: "host-client-test",
       host_id: input.hostId,
       workspace_ids: input.workspaceIds,
@@ -104,6 +106,7 @@ describe("host-tunnel authorization seam", () => {
     const relayHost = await generateKeyPair("EdDSA", { extractable: true })
     const directory = createWorkspaceRelayDirectory()
     const handler = createWorkspaceRelayBun({
+      resolveHostGeneration: async () => ({ enrollmentId: "enr_1", generation: 0, revoked: false }),
       runtimeAccessKey: runtime.publicKey,
       relayHostSigningKey: relayHost.privateKey,
       relayHostAlgorithm: "EdDSA",

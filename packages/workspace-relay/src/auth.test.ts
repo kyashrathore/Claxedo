@@ -643,6 +643,8 @@ describe("workspace relay auth", () => {
   test("verifies Host Tunnel Tokens for the expected host and workspaces", async () => {
     const key = await keys()
     const token = await mintHostTunnelToken({
+      enrollmentId: "enr_1",
+      generation: 0,
       subject: "user_1",
       hostId: "host_1",
       workspaceIds: ["ws_1", "ws_2"],
@@ -676,7 +678,7 @@ describe("workspace relay auth", () => {
     } satisfies Partial<WorkspaceRelayAuthError>)
   })
 
-  test("Host Tunnel Tokens carry the serving-generation fence only when minted with one", async () => {
+  test("Host Tunnel Tokens require the serving-generation fence", async () => {
     const key = await keys()
     const fenced = await mintHostTunnelToken({
       subject: "user_1",
@@ -688,14 +690,11 @@ describe("workspace relay auth", () => {
     const claims = await verifyHostTunnelToken(fenced, key.publicKey, { hostId: "host_1", workspaceIds: ["ws_1"] })
     expect(claims).toMatchObject({ enrollment_id: "enr_1", generation: 0 })
 
-    const unfenced = await mintHostTunnelToken({
+    await expect(mintHostTunnelToken({
       subject: "user_1",
       hostId: "host_1",
       workspaceIds: ["ws_1"],
-    }, key.privateKey, "EdDSA")
-    const plain = await verifyHostTunnelToken(unfenced, key.publicKey, { hostId: "host_1", workspaceIds: ["ws_1"] })
-    expect("enrollment_id" in plain).toBe(false)
-    expect("generation" in plain).toBe(false)
+    } as Parameters<typeof mintHostTunnelToken>[0], key.privateKey, "EdDSA")).rejects.toMatchObject({ code: "relay_token_claims_invalid" })
   })
 
   test("refuses to mint a Host Tunnel Token whose fence is malformed", async () => {
@@ -707,7 +706,7 @@ describe("workspace relay auth", () => {
       { enrollmentId: "enr_1", generation: 1.5 },
       { enrollmentId: "enr_1", generation: Number.NaN },
     ]) {
-      await expect(mintHostTunnelToken({ ...input, ...fence }, key.privateKey, "EdDSA")).rejects.toMatchObject({
+      await expect(mintHostTunnelToken({ ...input, ...fence } as Parameters<typeof mintHostTunnelToken>[0], key.privateKey, "EdDSA")).rejects.toMatchObject({
         code: "relay_token_claims_invalid",
       } satisfies Partial<WorkspaceRelayAuthError>)
     }
@@ -731,6 +730,8 @@ describe("workspace relay auth", () => {
       .sign(key.privateKey)
 
     for (const claims of [
+      {},
+      { enrollment_id: "enr_1" },
       { enrollment_id: "enr_1", generation: "3" },
       { enrollment_id: "enr_1", generation: -1 },
       { enrollment_id: "enr_1", generation: 2.5 },

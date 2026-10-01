@@ -174,6 +174,7 @@ async function harness() {
   const relayHost = await generateKeyPair("EdDSA", { extractable: true })
   const directory = createWorkspaceRelayDirectory()
   const relayHandler = createWorkspaceRelayBun({
+    resolveHostGeneration: async () => ({ enrollmentId: "enr_1", generation: 0, revoked: false }),
     runtimeAccessKey: runtime.publicKey,
     relayHostSigningKey: relayHost.privateKey,
     relayHostAlgorithm: "EdDSA",
@@ -202,6 +203,8 @@ async function harness() {
     role: "editor",
   }, runtime.privateKey, "EdDSA")
   const hostTunnelToken = await mintHostTunnelToken({
+    enrollmentId: "enr_1",
+    generation: 0,
     subject: "user_1",
     hostId: "host_1",
     workspaceIds: ["ws_1"],

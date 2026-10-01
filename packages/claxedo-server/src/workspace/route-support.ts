@@ -57,7 +57,7 @@ export type LocalHostAssignments = {
   assignWorkspace(
     auth: SignedControlPlaneAuth,
     share: LocalWorkspaceShare,
-  ): Promise<{ assignment: { assigned: true; workspace_id: string; host_id: string }; hostTunnel?: unknown }>
+  ): Promise<{ assignment: { assigned: true; workspace_id: string; host_id: string } }>
   unassignWorkspace(auth: SignedControlPlaneAuth, workspaceId: string): Promise<{ unassigned: boolean }>
 }
 
@@ -343,21 +343,4 @@ export function missingBearerBody() {
   return controlPlaneAuthErrorBody(
     new ControlPlaneAuthError(401, "missing_bearer_token", "Authorization: Bearer token is required"),
   )
-}
-
-export async function hostTunnelCredential(
-  options: WorkspaceRouteOptions,
-  auth: SignedControlPlaneAuth,
-  input: {
-    hostId: string
-    workspaceId: string
-  },
-) {
-  const signer = configuredHostTunnelTokenSigner(options)
-  if (!signer) return undefined
-  return await signer({
-    subject: auth.user.subject,
-    hostId: input.hostId,
-    workspaceIds: [input.workspaceId],
-  })
 }

@@ -115,7 +115,7 @@ export type HostGenerationResolverLookupOptions = {
  * the Worker. Only the control plane's own "enrollment not found" 404 resolves
  * `undefined`; a bare 404 is a control plane without the route, and like every
  * other non-ok status, a malformed body, or a hit deadline it throws so the
- * relay refuses fenced tokens with a retryable 503 instead of grading them as
+ * relay refuses host tunnels with a retryable 503 instead of grading them as
  * unknown enrollments.
  */
 export function createHostGenerationResolverLookup(url: string, options: HostGenerationResolverLookupOptions): HostGenerationLookup {
@@ -138,16 +138,8 @@ export function createHostGenerationResolverLookup(url: string, options: HostGen
   }
 }
 
-/**
- * The fence between two host tunnels for one identity. An incumbent that
- * carries a generation is displaced only by a candidate at the same or a
- * higher generation — never by a lower one, and never by a token minted
- * without a generation. An incumbent without a generation is displaced by
- * any candidate, which is the pre-fence "newest wins" order.
- */
-export function hostTunnelIncumbentOutranks(incumbentGeneration: number | undefined, candidateGeneration: number | undefined) {
-  if (incumbentGeneration === undefined) return false
-  return candidateGeneration === undefined || incumbentGeneration > candidateGeneration
+export function hostTunnelIncumbentOutranks(incumbentGeneration: number, candidateGeneration: number) {
+  return incumbentGeneration > candidateGeneration
 }
 
 function parseAbsoluteHttpUrl(baseUrl: string): URL | undefined {
@@ -255,10 +247,8 @@ export type WorkspaceRelayAuditEvent = {
 export type WorkspaceRelayAuthOptions = {
   runtimeAccessKey: RelayKey
   /**
-   * Serving-generation fence for host tunnels. Unset on desktop and
-   * self-hosted relays, where nothing asks the control plane: tokens without
-   * a generation are admitted newest-wins, tokens with one are refused
-   * `host_generation_unverifiable`.
+   * Serving-generation fence for host tunnels. A relay composed without it
+   * refuses every host tunnel `host_generation_unverifiable`.
    */
   resolveHostGeneration?: HostGenerationLookup
   /**
@@ -593,6 +583,11 @@ export function createCachedHostGenerationClient(
   }
 }
 
+/**
+ * `retryable: false` means the control plane refused this generation, so the
+ * host must not simply reconnect with it; `retryable: true` means the control
+ * plane could not be asked, and a reconnect is the recovery.
+ */
 export type HostTunnelGenerationDecision =
   | { ok: true }
   | {
@@ -613,22 +608,10 @@ export type HostTunnelGenerationDecision =
       reason: string
     }
 
-/**
- * The one admission/re-check verdict both relay adapters apply to a host
- * tunnel, on connect and on every registration update. A token without a
- * generation is always `ok` — that is the pre-fence behaviour desktop and
- * self-hosted relays keep. A token WITH a generation asserts a fence, so a
- * relay composed without a resolver refuses it rather than admit what it
- * cannot verify; that refusal is not retryable because the resolver is a
- * property of the composition, not of the moment. `retryable` otherwise
- * separates "the control plane said no" (the host must not simply reconnect)
- * from "the control plane could not be asked" (it should).
- */
 export async function checkHostTunnelGeneration(
   lookup: HostGenerationLookup | undefined,
   claims: Pick<HostTunnelTokenClaims, "enrollment_id" | "generation">,
 ): Promise<HostTunnelGenerationDecision> {
-  if (claims.generation === undefined || !claims.enrollment_id) return { ok: true }
   if (!lookup) {
     return {
       ok: false,
