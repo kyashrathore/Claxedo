@@ -1,3 +1,4 @@
+import { inviteOrgMember } from "../../test-support/invite-org-member"
 import { afterEach, describe, expect, test } from "vitest"
 import { Hono } from "hono"
 import { Miniflare } from "miniflare"
@@ -196,9 +197,8 @@ async function rig(options: RigOptions = {}) {
   })
   const owner = await signed(authority, ownerIdentity)
   const memberIdentity = identity("member")
-  const admission = await authority.admitUserDeployedIdentity(owner, { identity: memberIdentity, role: "member" })
-  if (admission.state !== "active") throw new Error("the deployment member was not admitted")
   const member = await signed(authority, memberIdentity)
+  await inviteOrgMember(target, owner, { orgId: "org_deployment", userPublicId: member.principal!.userId, role: "member" })
 
   const credentials = credentialFake()
   // The setup's clock, movable so an attempt TTL is crossed exactly rather

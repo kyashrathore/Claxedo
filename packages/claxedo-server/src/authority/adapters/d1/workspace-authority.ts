@@ -18,8 +18,6 @@ import { normalizeStoredDirectory } from "@claxedo/server-core/platform/auth/hos
 import { HOST_SERVING_WORKSPACE_SQL } from "./host-access-authority"
 import { may, mayGuard, maySql, readProjectRole, roleRank, type AuthorizationPrincipal } from "./authorization"
 import { ownerMembershipStatements, requireHuman, requireText, type D1AccessContext } from "./access-context"
-import { D1OrgMemberAuthority } from "./org-member-authority"
-import type { FindAccountByEmail } from "@claxedo/server-core/platform/auth/org-access-authority"
 import { asOrgId, type OrgId } from "@claxedo/server-core/platform/auth/branded-id"
 
 const KNOWN_HOME_REGIONS = new Set(["apac-south", "apac-east", "eu-west", "us-east", "us-west"])
@@ -66,7 +64,6 @@ export type D1WorkspaceAuthorityOptions = {
   product: D1AuthorityProductPolicy
   now?: () => number
   randomId?: (prefix: "usr" | "act" | "org" | "prj" | "team" | "assert" | "audit") => string
-  findAccountByEmail?: FindAccountByEmail
 }
 
 export type D1WorkspaceCreateArgs = {
@@ -189,7 +186,6 @@ export class D1WorkspaceAuthority implements D1WorkspaceAuthorityCore {
       randomId: this.randomId,
       principal: (auth) => requireHuman(this.database, this.options.deploymentId, auth),
       assertOrganizationAllowed: (orgId) => this.assertOrganizationAllowed(orgId),
-      ...(this.options.findAccountByEmail ? { findAccountByEmail: this.options.findAccountByEmail } : {}),
     }
   }
 
@@ -239,10 +235,18 @@ export class D1WorkspaceAuthority implements D1WorkspaceAuthorityCore {
     }
 
     const existing = await this.identityResolution(identity)
-    if (!this.options.product.ownerIdentity) return existing
-    if (!sameIdentity(identity, this.options.product.ownerIdentity)) {
+    const isPinnedOwner = this.options.product.ownerIdentity && sameIdentity(identity, this.options.product.ownerIdentity)
+    if (!isPinnedOwner) {
       if (existing.state !== "unavailable") return existing
-      return { state: "provisioning", retryAfterMs: 5_000 }
+      const org = await this.database.prepare("select org_id from orgs where org_id = ? and deployment_id = ? and deleted_at is null")
+        .bind(this.options.product.organization.id, this.options.deploymentId).first()
+      if (!org) return existing
+      await this.database.batch([
+        this.insertIdentity(identity, candidate.userId, now),
+        this.insertMappedUser(identity, candidate.userId, now),
+        this.insertHumanActor(identity, candidate.actorId, now),
+      ])
+      return this.identityResolution(identity)
     }
     if (existing.state === "suspended" || existing.state === "deleted") return existing
 
@@ -475,84 +479,6 @@ export class D1WorkspaceAuthority implements D1WorkspaceAuthorityCore {
       )
     }
     return { userId: row.user_id, actorId: requireActor(row) }
-  }
-
-  /**
-   * Direct-add path for a verified user in the one-organization product.
-   * This is a trusted application lifecycle operation, not a public auth hook.
-   */
-  async admitUserDeployedIdentity(
-    auth: SignedControlPlaneAuth,
-    input: { identity: AuthIdentity; role: "member" | "admin" },
-  ) {
-    if (this.options.product.kind !== "user-deployed") {
-      throw new D1WorkspaceAuthorityError(
-        "organization_policy_denied",
-        "Direct deployment admission is unavailable in the hosted product",
-      )
-    }
-    validateIdentity(input.identity)
-    const administrator = await this.requirePrincipal(auth)
-    const orgId = this.options.product.organization.id
-    if (!(await may(this.database, administrator, "administer", { kind: "org", orgId }))) {
-      throw denied("Organization administrator authority was denied")
-    }
-    const now = this.now()
-    const candidateUserId = this.randomId("usr")
-    const candidateActorId = this.randomId("act")
-    const administers = mayGuard(administrator, "administer", { kind: "org", orgId })
-
-    await this.database.batch([
-      this.database
-        .prepare(
-          `
-        insert into auth_identities (adapter, issuer, subject, user_id, linked_at, unlinked_at)
-        select ?, ?, ?, ?, ?, null
-        where exists (
-          select 1 from orgs o where o.org_id = ? and o.kind = 'deployment' and o.deployment_id = ?
-        ) and ${administers.sql}
-        on conflict (adapter, issuer, subject) do nothing
-      `,
-        )
-        .bind(
-          input.identity.adapter,
-          input.identity.issuer,
-          input.identity.subject,
-          candidateUserId,
-          now,
-          orgId,
-          this.options.deploymentId,
-          ...administers.bind,
-        ),
-      this.database
-        .prepare(
-          `
-        insert into users (user_id, state, created_at, updated_at, suspended_at, deleted_at)
-        select ?, 'active', ?, ?, null, null
-        where exists (
-          select 1 from auth_identities
-          where adapter = ? and issuer = ? and subject = ? and user_id = ? and unlinked_at is null
-        )
-        on conflict (user_id) do nothing
-      `,
-        )
-        .bind(
-          candidateUserId,
-          now,
-          now,
-          input.identity.adapter,
-          input.identity.issuer,
-          input.identity.subject,
-          candidateUserId,
-        ),
-      this.insertHumanActor(input.identity, candidateActorId, now),
-    ])
-
-    const resolution = await this.identityResolution(input.identity)
-    if (resolution.state !== "active") throw denied("Organization administrator authority was denied")
-    await new D1OrgMemberAuthority(this.accessContext())
-      .addOrgMember(auth, { orgId, userPublicId: resolution.userId, role: input.role })
-    return resolution
   }
 
   async createHostedOrganization(auth: SignedControlPlaneAuth, input: { name: string; orgId?: string }) {

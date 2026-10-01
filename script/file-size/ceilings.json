@@ -22,7 +22,7 @@
   "packages/claxedo-server/src/agent-plugins/activation/d1-store.ts": 938,
   "packages/claxedo-server/src/authority/adapters/d1/host-access-authority.ts": 1885,
   "packages/claxedo-server/src/authority/adapters/d1/session-authority.ts": 2696,
-  "packages/claxedo-server/src/authority/adapters/d1/workspace-authority.ts": 1297,
+  "packages/claxedo-server/src/authority/adapters/d1/workspace-authority.ts": 1223,
   "packages/claxedo-server/src/deployments/hosted-workerd/live-sync-room.cf.ts": 976,
   "packages/claxedo-server/src/deployments/self-hosted-node/app.ts": 2049,
   "packages/claxedo-server/src/routes/runtime-session-authority.ts": 1367,

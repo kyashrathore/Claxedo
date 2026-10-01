@@ -235,13 +235,6 @@ async function hostedApp(
     }),
     product: STATIC_PRODUCT_DESCRIPTORS["user-deployed"],
     requestGuardExemptions: [],
-    userDeployedIdentityAdmission: {
-      admit: vi.fn(async (_auth: unknown, input: { identity: { subject: string } }) => ({
-        state: "active" as const,
-        userId: `user:${input.identity.subject}`,
-        actorId: `actor:${input.identity.subject}`,
-      })),
-    },
     routeContributions: [...tasks.routeContributions, agentSettings, renewal, ...extraContributions],
   } as unknown as Parameters<typeof createHostedCoreApp>[1]) as unknown as ProbeApp
 }

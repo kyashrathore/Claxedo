@@ -352,10 +352,22 @@ export const HOSTED_OPERATIONS = {
     method: "GET",
     path: "/api/control/orgs/:orgId/members",
   },
-  "org.members.add": {
+  "org.invitations.create": {
     method: "POST",
-    path: "/api/control/orgs/:orgId/members",
-    body: ["userPublicId", "email", "tokenIdentifier", "providerSubject", "role"],
+    path: "/api/control/orgs/:orgId/invitations",
+    body: ["email", "role"],
+  },
+  "org.invitations.list": {
+    method: "GET",
+    path: "/api/control/orgs/:orgId/invitations",
+  },
+  "org.invitations.revoke": {
+    method: "DELETE",
+    path: "/api/control/orgs/:orgId/invitations/:invitationId",
+  },
+  "org.invitations.accept": {
+    method: "POST",
+    path: "/api/control/invitations/:token/accept",
   },
   "org.members.update": {
     method: "PATCH",

@@ -7,7 +7,7 @@ import { withQuery, type Transport } from "./transport"
 type Input = Readonly<Record<string, unknown>>
 
 type OperationRequest = {
-  readonly method: "GET" | "POST" | "PUT" | "PATCH"
+  readonly method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE"
   readonly path: string
   readonly query?: Readonly<Record<string, string | undefined>>
   readonly body?: Input
@@ -52,6 +52,10 @@ function scopeQuery(input: Input): OperationRequest["query"] {
 type Operation = (name: string, input: Input) => OperationRequest
 
 const OPERATIONS: Readonly<Partial<Record<HostedOperationName, Operation>>> = {
+  "org.invitations.create": (name, input) => ({ method: "POST", path: `/api/control/orgs/${encodeURIComponent(requiredTextField(name, input, "orgId"))}/invitations`, body: { email: requiredTextField(name, input, "email"), role: requiredTextField(name, input, "role") } }),
+  "org.invitations.list": (name, input) => ({ method: "GET", path: `/api/control/orgs/${encodeURIComponent(requiredTextField(name, input, "orgId"))}/invitations` }),
+  "org.invitations.revoke": (name, input) => ({ method: "DELETE", path: `/api/control/orgs/${encodeURIComponent(requiredTextField(name, input, "orgId"))}/invitations/${encodeURIComponent(requiredTextField(name, input, "invitationId"))}` }),
+  "org.invitations.accept": (name, input) => ({ method: "POST", path: `/api/control/invitations/${encodeURIComponent(requiredTextField(name, input, "token"))}/accept` }),
   "documents.list": (_name, input) => ({ method: "GET", path: DOCUMENTS, query: scopeQuery(input) }),
   "documents.statuses": (_name, input) => ({ method: "GET", path: `${DOCUMENTS}/statuses`, query: scopeQuery(input) }),
   "documents.get": (name, input) => ({ method: "GET", path: documentPath(name, input) }),

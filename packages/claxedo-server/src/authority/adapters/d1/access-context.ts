@@ -1,7 +1,7 @@
 import type { D1Database } from "@cloudflare/workers-types"
 import { ControlPlaneAuthError, type SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import { ClaxedoError } from "@claxedo/server-core/platform/errors/base"
-import type { FindAccountByEmail, MemberSelector } from "@claxedo/server-core/platform/auth/org-access-authority"
+import type { TeamMemberSelector } from "@claxedo/server-core/platform/auth/org-access-authority"
 import type { BoundSql } from "./authorization"
 
 export type AccessPrincipal = { userId: string; actorId: string }
@@ -19,7 +19,6 @@ export type D1AccessContext = {
   randomId: (prefix: "team" | "audit") => string
   principal: (auth: SignedControlPlaneAuth) => Promise<AccessPrincipal>
   assertOrganizationAllowed: (orgId: string) => void
-  findAccountByEmail?: FindAccountByEmail
 }
 
 export type HumanPrincipal = { userId: string; actorId: string; actorKind: "human" }
@@ -91,14 +90,15 @@ async function resolveHuman(database: D1Database, deploymentId: string, auth: Si
 }
 
 const ACCESS_ERROR_STATUS = {
+  invitation_invalid: 409,
+  invitation_email_mismatch: 403,
+  invitation_delivery_unavailable: 503,
   invalid_input: 400,
   org_admin_required: 403,
   org_owner_required: 403,
   org_owner_protected: 409,
   org_membership_required: 403,
   org_member_not_found: 404,
-  org_member_target_required: 400,
-  org_member_email_unsupported: 400,
   organization_not_found: 404,
   team_not_found: 404,
   team_not_allowed_on_personal_org: 400,
@@ -137,21 +137,15 @@ export function requireText(value: string, name: string) {
  * after authorizing the change, so an unauthorized caller cannot learn from
  * the answer whether an address has an account.
  */
-export async function resolveMemberUser(
+export async function resolveTeamMemberUser(
   context: D1AccessContext,
-  selectors: MemberSelector,
-  targetRequired: "team_member_target_required" | "org_member_target_required",
+  selectors: TeamMemberSelector,
 ): Promise<{ user_id: string } | null> {
   const database = context.database
-  const named = [selectors.tokenIdentifier, selectors.providerSubject, selectors.userPublicId, selectors.email].filter(
+  const named = [selectors.tokenIdentifier, selectors.providerSubject, selectors.userPublicId].filter(
     (value): value is string => typeof value === "string" && !!value.trim(),
   )
-  if (named.length !== 1) throw new D1AccessAuthorityError(targetRequired)
-  if (selectors.email?.trim()) {
-    if (!context.findAccountByEmail) throw new D1AccessAuthorityError("org_member_email_unsupported")
-    const account = await context.findAccountByEmail(requireText(selectors.email, "email"))
-    return account ? await resolveMemberUser(context, { tokenIdentifier: account.tokenIdentifier }, targetRequired) : null
-  }
+  if (named.length !== 1) throw new D1AccessAuthorityError("team_member_target_required")
   if (selectors.userPublicId?.trim()) {
     return await database
       .prepare(`select user_id from users where user_id = ? and state = 'active'`)

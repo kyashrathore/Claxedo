@@ -49,8 +49,8 @@ export const serverWorkerd: Policy = {
   // D1 reader share (`authority/adapters/d1/core-authority.ts`); the host
   // access authority's error contract is its own module
   // (`authority/adapters/d1/host-access-errors.ts`); and the Better Auth
-  // composition adds the AUTH_DB email lookup an org admin adds a member by
-  // (`platform/auth/better-auth-d1-account-email.ts`).
+  // invitation delivery reads the signed invitee's verified email from AUTH_DB
+  // (`platform/auth/better-auth-org-invitations.ts`).
   ceilings: { modules: 104, packages: 19 },
 
   emitted: {

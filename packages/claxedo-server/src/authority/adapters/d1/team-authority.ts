@@ -4,12 +4,12 @@ import {
   accessAuditStatement,
   D1AccessAuthorityError,
   requireText,
-  resolveMemberUser,
+  resolveTeamMemberUser,
   type AccessPrincipal,
   type D1AccessContext,
 } from "./access-context"
 import type {
-  MemberSelector,
+  TeamMemberSelector,
   OrgMemberRole,
   ProjectGrantRole,
 } from "@claxedo/server-core/platform/auth/org-access-authority"
@@ -218,10 +218,10 @@ export class D1TeamAuthority implements D1TeamAuthorityPort {
     }
   }
 
-  async addTeamMember(auth: SignedControlPlaneAuth, args: MemberSelector & { teamId: string; role?: OrgMemberRole }) {
+  async addTeamMember(auth: SignedControlPlaneAuth, args: TeamMemberSelector & { teamId: string; role?: OrgMemberRole }) {
     const who = await this.context.principal(auth)
     const team = await this.adminTeam(who, args.teamId)
-    const target = await resolveMemberUser(this.context, args, "team_member_target_required")
+    const target = await resolveTeamMemberUser(this.context, args)
     if (!target) throw new D1AccessAuthorityError("team_member_not_found")
     if (!(await may(this.database, { userId: target.user_id }, "member", { kind: "org", orgId: team.org_id }))) {
       throw new D1AccessAuthorityError("team_member_org_membership_required")
@@ -266,10 +266,10 @@ export class D1TeamAuthority implements D1TeamAuthorityPort {
     return { team_id: team.team_id, user_id: target.user_id, public_id: target.user_id, role }
   }
 
-  async removeTeamMember(auth: SignedControlPlaneAuth, args: MemberSelector & { teamId: string }) {
+  async removeTeamMember(auth: SignedControlPlaneAuth, args: TeamMemberSelector & { teamId: string }) {
     const who = await this.context.principal(auth)
     const team = await this.adminTeam(who, args.teamId)
-    const target = await resolveMemberUser(this.context, args, "team_member_target_required")
+    const target = await resolveTeamMemberUser(this.context, args)
     if (!target) return { removed: false }
     const now = this.context.now()
     const guard = this.teamAdminGuard(who, team.team_id, `

@@ -290,9 +290,9 @@ describe("resolveHostedOperation", () => {
       method: "GET",
       path: "/api/control/orgs/org_1/members",
     })
-    expect(resolveHostedOperation("org.members.add", { orgId: "org_1", email: "a@example.com", role: "member" })).toEqual({
+    expect(resolveHostedOperation("org.invitations.create", { orgId: "org_1", email: "a@example.com", role: "member" })).toEqual({
       method: "POST",
-      path: "/api/control/orgs/org_1/members",
+      path: "/api/control/orgs/org_1/invitations",
       body: { email: "a@example.com", role: "member" },
     })
     expect(resolveHostedOperation("org.members.update", { orgId: "org_1", userPublicId: "usr_1", role: "admin" })).toEqual({
@@ -617,4 +617,11 @@ describe("hostedOperationChannel", () => {
     expect(new Set(channels).size).toBe(channels.length)
     expect(hostedOperationChannel("account.mode")).toBe("claxedo.account.operation:account.mode")
   })
+})
+
+ test("org invitations accept, list and revoke through the renderer allowlist", () => {
+  expect(resolveHostedOperation("org.invitations.accept", { token: "invite token" })).toEqual({ method: "POST", path: "/api/control/invitations/invite%20token/accept" })
+  expect(resolveHostedOperation("org.invitations.list", { orgId: "org_1" })).toEqual({ method: "GET", path: "/api/control/orgs/org_1/invitations" })
+  expect(resolveHostedOperation("org.invitations.revoke", { orgId: "org_1", invitationId: "inv_1" })).toEqual({ method: "DELETE", path: "/api/control/orgs/org_1/invitations/inv_1" })
+  expect(() => resolveHostedOperation("org.members.add", {})).toThrow()
 })

@@ -90,13 +90,6 @@ const options = {
   }),
   product: STATIC_PRODUCT_DESCRIPTORS["user-deployed"],
   requestGuardExemptions: [],
-  userDeployedIdentityAdmission: {
-    admit: vi.fn(async (_auth, input) => ({
-      state: "active" as const,
-      userId: `user:${input.identity.subject}`,
-      actorId: `actor:${input.identity.subject}`,
-    })),
-  },
 }
 
 describe("cloud-workspace admission", () => {
@@ -305,7 +298,6 @@ describe("resource-closed hosted core app", () => {
       "/api/control/sessions/:sessionId/outline",
       "/api/control/sessions/:sessionId/participants",
       "/api/control/sessions/:sessionId/shares",
-      "/api/control/user-deployed/identity-admissions",
       "/api/control/session-registrations/reserve",
       "/api/runtime-authority/session-authorize",
       "/api/workspace/:id/connection",
@@ -526,33 +518,14 @@ describe("resource-closed hosted core app", () => {
     await expect(shares.json()).resolves.toEqual([{ grant_id: "share-1", granted_to_user_id: "user-2" }])
   })
 
-  test("admits a provider-verified subject through the authenticated user-deployed lifecycle", async () => {
+  test("the user-deployed direct identity-admission route is unavailable", async () => {
     const app = createHostedCoreApp(plane(), options)
-    const response = await app.fetch(new Request(
-      "https://core.test/api/control/user-deployed/identity-admissions",
-      {
-        method: "POST",
-        headers: {
-          cookie: "__Secure-claxedo.session_token=browser-session",
-          origin: "https://app.test",
-          "content-type": "application/json",
-        },
-        body: JSON.stringify({ subject: "better-auth-member", role: "member" }),
-      },
-    ))
-    expect(response.status).toBe(200)
-    await expect(response.json()).resolves.toEqual({
-      admitted: true,
-      role: "member",
-      user: { id: "user:better-auth-member" },
-    })
-    expect(options.userDeployedIdentityAdmission.admit).toHaveBeenCalledWith(
-      expect.objectContaining({ principal: expect.objectContaining({ userId: "browser-user" }) }),
-      {
-        identity: { adapter: "better-auth", issuer: "https://auth.test", subject: "better-auth-member" },
-        role: "member",
-      },
-    )
+    const response = await app.fetch(new Request("https://core.test/api/control/user-deployed/identity-admissions", {
+      method: "POST",
+      headers: { cookie: "__Secure-claxedo.session_token=browser-session", origin: "https://app.test", "content-type": "application/json" },
+      body: JSON.stringify({ subject: "better-auth-member", role: "member" }),
+    }))
+    expect(response.status).toBe(404)
   })
 
   test("has no static Documents implementation edge", () => {
@@ -572,7 +545,6 @@ describe("resource-closed hosted core app", () => {
       "cloudWorkspaceAdmission",
       "product",
       "requestGuardExemptions",
-      "userDeployedIdentityAdmission",
     ] as const) {
       expect(() => createHostedCoreApp(plane(), { ...options, [missing]: undefined } as never)).toThrow(missing === "liveSyncRoom"
         ? /LIVE_SYNC_ROOM/
@@ -583,8 +555,6 @@ describe("resource-closed hosted core app", () => {
           : new RegExp(
               missing === "cloudWorkspaceAdmission"
                 ? "admission policy"
-                : missing === "userDeployedIdentityAdmission"
-                  ? "identity admission"
                 : missing === "product"
                   ? "product descriptor"
                   : "request-guard inventory",

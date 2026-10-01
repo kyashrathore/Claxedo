@@ -89,6 +89,7 @@ function createStartup(input: {
 }
 
 function serverApis(transport: Transport, workspaces: Workspaces, status: StatusOwner, queryClient: QueryClient, queries: ServerQueries, projection: SessionProjection, account: HostedAccount | undefined) {
+  const operations = createOperations(transport, account)
   const project = (id: ProjectId) => queryClient.fetchQuery(queries.projects.byId(id))
   const wakes = createWorkspaceWakes(transport, workspaces)
   return {
@@ -117,7 +118,8 @@ function serverApis(transport: Transport, workspaces: Workspaces, status: Status
     livePlugins: createLivePluginsApi(transport),
     harnessConfig: createHarnessConfigApi(transport, workspaces),
     request: transport.request,
-    operation: createOperations(transport, account).run,
+    operation: operations.run,
+    acceptOrgInvitation: (token: string) => operations.run("org.invitations.accept", { token }),
   }
 }
 

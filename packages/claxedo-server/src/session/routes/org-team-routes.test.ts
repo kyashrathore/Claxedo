@@ -22,7 +22,6 @@ describe("organization/team route error contract", () => {
     [Object.assign(new Error("owner"), { code: "org_owner_protected" }), 409, "org_owner_protected"],
     [Object.assign(new Error("owner"), { code: "org_owner_required" }), 403, "org_owner_required"],
     [Object.assign(new Error("member"), { code: "org_member_not_found" }), 404, "org_member_not_found"],
-    [Object.assign(new Error("target"), { code: "org_member_target_required" }), 400, "org_member_target_required"],
     [Object.assign(new Error("admin"), { code: "project_admin_required" }), 403, "project_admin_required"],
     [Object.assign(new Error("member"), { code: "project_member_not_found" }), 404, "project_member_not_found"],
     [Object.assign(new Error("org"), { code: "project_member_org_membership_required" }), 403, "project_member_org_membership_required"],

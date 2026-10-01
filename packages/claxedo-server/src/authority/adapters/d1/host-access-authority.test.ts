@@ -1,3 +1,4 @@
+import { inviteOrgMember } from "../../../test-support/invite-org-member"
 import { readFile } from "node:fs/promises"
 import { afterEach, describe, expect, test } from "vitest"
 import { Miniflare } from "miniflare"
@@ -14,7 +15,6 @@ import {
 import { sha256Hex } from "@claxedo/helpers/crypto"
 
 import { D1WorkspaceAuthority } from "./workspace-authority"
-import { D1OrgMemberAuthority } from "./org-member-authority"
 import { createD1HostTunnelTargetResolver } from "./host-tunnel-relay-target"
 import { D1HostAccessAuthority, hostEnrollmentPayload } from "./host-access-authority"
 import { D1ChannelRuntimeAuthority } from "./channel-runtime-authority"
@@ -155,12 +155,12 @@ async function fixture(input: Awaited<ReturnType<typeof setup>>) {
   const admin = await signed(input.workspace, "admin")
   const outsider = await signed(input.workspace, "outsider")
   await input.workspace.createHostedOrganization(alice, { name: "Acme", orgId: "org_acme" })
-  await new D1OrgMemberAuthority(input.workspace.accessContext()).addOrgMember(alice, {
+  await inviteOrgMember(input.database, alice, {
     orgId: "org_acme",
     userPublicId: bob.principal!.userId,
     role: "member",
   })
-  await new D1OrgMemberAuthority(input.workspace.accessContext()).addOrgMember(alice, {
+  await inviteOrgMember(input.database, alice, {
     orgId: "org_acme",
     userPublicId: admin.principal!.userId,
     role: "admin",

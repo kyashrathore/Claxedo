@@ -42,8 +42,8 @@ import {
 } from "../../../platform/auth/better-auth-native-clients"
 import { createBetterAuthD1AuthenticationEvidenceResolver } from "../../../platform/auth/better-auth-d1-authentication-evidence"
 import { createBetterAuthD1RequestAuthenticationAdapter } from "../../../platform/auth/better-auth-d1-request-authentication"
-import { createBetterAuthD1AccountEmailResolver } from "../../../platform/auth/better-auth-d1-account-email"
-import type { FindAccountByEmail } from "@claxedo/server-core/platform/auth/org-access-authority"
+import { betterAuthOrgInvitationDelivery } from "../../../platform/auth/better-auth-org-invitations"
+import type { OrgInvitationDelivery } from "@claxedo/server-core/platform/auth/org-access-authority"
 import { STATIC_PRODUCT_DESCRIPTORS } from "../../../deployments/hosted-shared/deployment-profile"
 import type { HostedCoreAppOptions } from "../../../deployments/hosted-shared/hosted-core-app"
 import { provisionedRunner } from "@claxedo/server-core/agent-config/connections"
@@ -59,7 +59,7 @@ type BetterAuthD1AuthorityEnv = {
 export function composeBetterAuthD1Authority(input: {
   env: BetterAuthD1AuthorityEnv
   product: D1AuthorityProductPolicy
-  findAccountByEmail?: FindAccountByEmail
+  invitations?: OrgInvitationDelivery
 }): D1CoreAuthorityBoundary {
   if (input.env.CLAXEDO_ADAPTER_PROFILE !== "better-auth-d1") {
     throw new HostedWorkerCompositionError(
@@ -86,7 +86,7 @@ export function composeBetterAuthD1Authority(input: {
   return createD1CoreAuthority(requiredDatabase(input.env.CONTROL_PLANE_DB), {
     deploymentId: required(input.env.CLAXEDO_DEPLOYMENT_ID, "CLAXEDO_DEPLOYMENT_ID"),
     product: input.product,
-    ...(input.findAccountByEmail ? { findAccountByEmail: input.findAccountByEmail } : {}),
+    ...(input.invitations ? { invitations: input.invitations } : {}),
   })
 }
 
@@ -163,7 +163,12 @@ export function composeBetterAuthD1UserDeployedControlPlane(
       CONTROL_PLANE_DB: input.controlPlaneDatabase,
     },
     product: input.product,
-    findAccountByEmail: createBetterAuthD1AccountEmailResolver(input.authDatabase, descriptor.issuer),
+    invitations: betterAuthOrgInvitationDelivery({
+      database: input.authDatabase,
+      issuer: descriptor.issuer,
+      appOrigin: configured.public.appOrigin,
+      ...(configured.private.emailSender ? { sender: configured.private.emailSender } : {}),
+    }),
   })
   const foundation = createBetterAuthD1Foundation({
     database: requiredDatabase(input.authDatabase),
@@ -266,9 +271,6 @@ export function composeBetterAuthD1UserDeployedControlPlane(
       product: STATIC_PRODUCT_DESCRIPTORS["user-deployed"],
       requestGuardExemptions: [],
       usageLedger: createD1UsageLedger({ database: input.controlPlaneDatabase, ...(input.now ? { now: input.now } : {}) }),
-      userDeployedIdentityAdmission: {
-        admit: (auth, admission) => authority.admitUserDeployedIdentity(auth, admission),
-      },
     },
     verifyIdentity: (request) => authentication.verifyIdentity(request),
     authHandler: async (request) => await authProtocol.fetch(request),
