@@ -80,6 +80,7 @@ const en = {
   "rail.untitled": "Untitled session",
   "rail.card.status": "Status",
   "rail.card.working": "Working",
+  "rail.card.background": "Running in background",
   "rail.card.waiting": "Waiting for you",
   "rail.card.failed": "Last turn failed",
   "rail.card.project": "Project",

@@ -58,7 +58,9 @@ import { ImageMarkBadge } from "@/lib/image-mark-badge"
 import { TimelineRow, type TimelineRowMap } from "./timeline-row-model"
 import { PreviousMessagesRow, TimelineDiffSummaryRow, TimelineThinkingRow } from "./message-timeline-turn-rows"
 import { nextThinkingVisibilityHold } from "./thinking-visibility-hold"
-import { TimelineFileContextMenu } from "./timeline-file-context-menu"
+import { createTimelineFileContextMenu, TimelineFileContextMenu } from "./timeline-file-context-menu"
+import { TimelineBackgroundWork } from "./timeline-background-work"
+import { backgroundWorkActive } from "@/server"
 import { isOptimisticMessage, isRuntimeMessage } from "../../transcript/merge"
 import {
   timelineInitialRevealShouldScroll,
@@ -90,7 +92,6 @@ import {
   timelineExternalSourceClickTarget,
   timelineFileCandidateIsOpenable,
   timelineFileFocus,
-  timelineFileTarget,
   resolveTimelinePath as resolveTimelineFilePath,
 } from "./timeline-file-paths"
 import { createTimelineLinkOpen } from "./timeline-link-open"
@@ -280,13 +281,7 @@ export function MessageTimeline(props: MessageTimelineProps) {
     })
   }
 
-  const [contextMenu, setContextMenu] = createSignal<{ x: number; y: number; path: string } | undefined>()
-  const handleTimelineContextMenu = (event: MouseEvent) => {
-    const raw = timelineFileTarget(event.target)
-    if (!raw) return
-    event.preventDefault()
-    setContextMenu({ x: event.clientX, y: event.clientY, path: raw })
-  }
+  const fileMenu = createTimelineFileContextMenu()
 
   const [listRoot, setListRoot] = createSignal<HTMLDivElement>()
   const sessionId = createMemo(() => host.sessionId())
@@ -1367,14 +1362,14 @@ export function MessageTimeline(props: MessageTimelineProps) {
       data-session-timeline-nav-gutter={messageNavGutterVisible() ? "" : undefined}
       style={{ visibility: timelineInitialRevealVisibility({ ready: initialRevealReady() }) }}
       onClick={handleTimelinePathClick}
-      onContextMenu={handleTimelineContextMenu}
+      onContextMenu={fileMenu.open}
     >
-      <Show when={contextMenu()}>
+      <Show when={fileMenu.menu()}>
         {(menu) => (
           <TimelineFileContextMenu
             menu={menu()}
             onOpenFile={openFileInPanel}
-            onDismiss={() => setContextMenu(undefined)}
+            onDismiss={fileMenu.dismiss}
             resolvePath={(path) => resolveTimelineFilePath(path, host.placementPath)}
           />
         )}
@@ -1450,9 +1445,10 @@ export function MessageTimeline(props: MessageTimelineProps) {
               />
             </Show>
           </div>
+          <TimelineBackgroundWork work={host.backgroundWork()} t={host.t} tucked={timelineRows().length > 0} />
           <Show when={props.queued}>
             {(queued) => (
-              <div class="relative" classList={{ "-mt-10": timelineRows().length > 0 && (queuedNotYetInTranscript().length > 0 || queued().loadFailed()) }}>
+              <div class="relative" classList={{ "-mt-10": timelineRows().length > 0 && !backgroundWorkActive(host.backgroundWork()) && (queuedNotYetInTranscript().length > 0 || queued().loadFailed()) }}>
                 <TimelineQueuedMessages queued={queued()} items={queuedNotYetInTranscript} centered={props.centered} t={host.t} />
               </div>
             )}

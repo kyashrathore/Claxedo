@@ -1,10 +1,11 @@
-import type { AgentPresentationSession } from "@claxedo/agent-runtime-contract"
+import { NO_BACKGROUND_WORK, type AgentPresentationSession } from "@claxedo/agent-runtime-contract"
 import { readCentralFirst, readCentralRow } from "./central-session"
 import { responseError } from "./errors"
 import { onRuntime, sessionEndpoint, type SessionContext } from "./session-context"
 import { NO_GOAL } from "./session-goal"
 import { withQuery, type RuntimeRoute } from "./transport"
-import type { HeldSessionReads, PageShape, SessionFirstRead, SessionReads, SessionLocation, SessionStatus } from "./types"
+import type { SessionStatus } from "./status-types"
+import type { HeldSessionReads, PageShape, SessionFirstRead, SessionReads, SessionLocation } from "./types"
 import { GOAL_UNAVAILABLE } from "./wire/goal"
 import { firstReadFromWire, NO_FIRST_PAGE } from "./wire/first-read"
 import { OPEN_VIEW, sessionOpenFromWire, TODOS_UNSUPPORTED, type SessionFact, type SessionOpenView } from "./wire/session-open"
@@ -77,6 +78,7 @@ export function startSessionReads(context: SessionContext, ref: SessionLocation,
   return {
     first,
     status: Promise.all([first, opened]).then(([read, view]) => (view ? context.status.read(ref, read.row.lastTurn, view.status) : STOPPED_STATUS)),
+    backgroundWork: fact((view) => factValue(view.backgroundWork), NO_BACKGROUND_WORK),
     requests: fact((view) => factValue(view.requests), []),
     todos: fact(todosOf, []),
     goal: fact(goalOf, NO_GOAL),

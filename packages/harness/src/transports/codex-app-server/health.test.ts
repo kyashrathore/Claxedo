@@ -8,9 +8,9 @@ test("a Codex process lost under a session reads degraded until its replacement 
     expect(peer.transport.health.runtime(peer.root, "s1")).toEqual({ status: "ok" })
     peer.exitLatest()
     await new Promise((resolve) => setTimeout(resolve, 0))
-    expect(peer.transport.health.runtime(peer.root, "s1")).toEqual({ status: "degraded", reason: "harness_process_lost", message: "Codex exit failed" })
+    expect(peer.transport.health.runtime(peer.root, "s1")).toEqual({ status: "degraded", reason: "harness_process_lost", message: "Codex app-server exited with code 1" })
     expect(peer.healthChanges.count).toBe(1)
-    await peer.transport.attach({ ...peer.startInput, binding: session.binding }, peer.liveBroker())
+    await peer.transport.attach({ ...peer.startInput, binding: session.binding, upstreamHasTurns: false }, peer.liveBroker())
     expect(peer.transport.health.runtime(peer.root, "s1")).toEqual({ status: "ok" })
     expect(peer.healthChanges.count).toBe(2)
   } finally { await peer.close() }

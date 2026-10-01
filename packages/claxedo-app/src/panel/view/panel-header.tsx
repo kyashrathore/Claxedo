@@ -4,6 +4,7 @@ import { useTranslator } from "@/i18n"
 import { usePreferences } from "@/settings"
 import {
   ClaxedoIcon as Icon,
+  SidePanelHeader,
   setBrowserToolbarSlot,
   setFileHeaderActionsSlot,
   setReviewControlsSlot,
@@ -13,32 +14,7 @@ import { filePathFromTab } from "../focus"
 import { panelDictionary } from "../i18n"
 import { usePanel } from "../store"
 import { PanelTabStrip } from "./tab-strip"
-import { PanelToggleButton } from "./toggle"
 import { WorkspaceToolButtons } from "./tool-buttons"
-
-function PanelChrome(): JSX.Element {
-  const t = useTranslator(panelDictionary)
-  const panel = usePanel()
-  const label = () => (panel.fullWidth() ? t("panel.restore") : t("panel.maximize"))
-  return (
-    <div class="flex shrink-0 items-center gap-0.5 pl-1">
-      <Show when={!panel.phone()}>
-        <button
-          type="button"
-          data-icon-interaction="binary"
-          class="flex size-6 items-center justify-center rounded-sm text-icon-weak-base transition-colors duration-100 hover:bg-surface-base-hover hover:text-icon-base"
-          aria-label={label()}
-          title={label()}
-          aria-pressed={panel.fullWidth()}
-          onClick={() => panel.toggleFullWidth()}
-        >
-          <Icon name={panel.fullWidth() ? "collapse" : "expand"} size="small" />
-        </button>
-      </Show>
-      <PanelToggleButton />
-    </div>
-  )
-}
 
 function Tools(): JSX.Element {
   const panel = usePanel()
@@ -202,22 +178,21 @@ function ToolbarRow(): JSX.Element {
 
 export function PanelHeader(): JSX.Element {
   const panel = usePanel()
+  const t = useTranslator(panelDictionary)
   return (
-    <div class="shrink-0 bg-background-base">
-      <div
-        data-testid="workspace-panel-l1-header"
-        class="relative flex h-9 shrink-0 items-center overflow-hidden border-b border-border-weaker-base bg-background-base"
-      >
-        <div class="flex h-full min-w-0 flex-1 items-center overflow-hidden">
-          <PanelTabStrip />
-        </div>
-        <div class="flex h-full shrink-0 items-center pr-1">
-          <Show when={panel.open()}>
-            <PanelChrome />
-          </Show>
-        </div>
-      </div>
-      <ToolbarRow />
-    </div>
+    <SidePanelHeader
+      testId="workspace-panel-l1-header"
+      tabs={<PanelTabStrip />}
+      controls={{
+        phone: panel.phone(),
+        fullWidth: panel.fullWidth(),
+        maximizeLabel: t(panel.fullWidth() ? "panel.restore" : "panel.maximize"),
+        closeLabel: t("panel.close"),
+        onMaximize: panel.toggleFullWidth,
+        onClose: panel.toggle,
+        closeTestId: "workspace-panel-toggle",
+      }}
+      toolbar={<ToolbarRow />}
+    />
   )
 }

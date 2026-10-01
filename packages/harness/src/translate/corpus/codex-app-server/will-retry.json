@@ -1,0 +1,46 @@
+{
+  "adapter": "codex-app-server",
+  "initialState": {
+    "assistantTextByItemId": {},
+    "toolOutputByCallId": {},
+    "toolsByItemId": {}
+  },
+  "calls": [
+    {
+      "state": {
+        "assistantTextByItemId": {},
+        "toolOutputByCallId": {},
+        "toolsByItemId": {}
+      },
+      "event": {
+        "source": "codex.app-server",
+        "method": "error",
+        "payload": {
+          "threadId": "thread-1",
+          "turnId": "turn-1",
+          "willRetry": true,
+          "error": {
+            "message": "Reconnecting... 2/5",
+            "codexErrorInfo": {
+              "responseStreamDisconnected": {
+                "httpStatusCode": null
+              }
+            },
+            "additionalDetails": null
+          }
+        }
+      },
+      "context": {
+        "harness": "codex",
+        "threadId": "thread-1"
+      },
+      "callbacks": [],
+      "output": [
+        {
+          "type": "session-retry",
+          "message": "Reconnecting... 2/5"
+        }
+      ]
+    }
+  ]
+}

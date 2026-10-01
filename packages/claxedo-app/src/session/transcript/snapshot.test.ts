@@ -53,6 +53,7 @@ function fakeServer(first: SessionFirstRead = firstRead(latest), pages: readonly
   const reads = {
     first: Promise.resolve(first),
     status: Promise.resolve({ kind: "idle" }),
+    backgroundWork: Promise.resolve({ agents: 0, shells: 0, other: 0 }),
     requests: Promise.resolve([]),
     todos: Promise.resolve([]),
     goal: Promise.resolve({ goal: undefined, actions: [], available: false }),
@@ -69,7 +70,7 @@ function fakeServer(first: SessionFirstRead = firstRead(latest), pages: readonly
     },
   } as unknown as Server
   const deps = {
-    list: { readRow: () => undefined, readStatus: () => undefined },
+    list: { readRow: () => undefined, readStatus: () => undefined, readBackgroundWork: () => undefined },
     requests: { read: () => undefined, readFailed: () => undefined },
     pageShape: () => ({ rows: 40, cols: 100, reasoning: false, shell: false, edit: false }),
   } as unknown as TranscriptDeps

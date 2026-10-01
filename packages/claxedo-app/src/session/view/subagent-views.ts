@@ -29,12 +29,19 @@ type ViewContext = {
   readonly parentSessionId: string
   readonly labels: SubagentLabels
   readonly toolCallId?: string
+  readonly stops?: boolean
+}
+
+function stopCallOf(entry: SessionSubagent, stops: boolean | undefined): string | undefined {
+  if (!stops || entry.mode !== "background" || (entry.status !== "running" && entry.status !== "pending")) return undefined
+  return [...entry.toolCallEdges].find(([, role]) => role === "spawn")?.[0]
 }
 
 function subagentView(entry: SessionSubagent, context: ViewContext): SubagentView {
   const { parentSessionId, labels, toolCallId } = context
   const transcriptKind = transcriptKindOf(entry)
   const role = toolCallId ? entry.toolCallEdges.get(toolCallId) : undefined
+  const stopCall = stopCallOf(entry, context.stops)
   return {
     parentSessionId,
     subagentKey: entry.subagentKey,
@@ -48,6 +55,7 @@ function subagentView(entry: SessionSubagent, context: ViewContext): SubagentVie
     transcriptKind,
     resolution: resolutionOf(entry, transcriptKind),
     ambient: entry.toolCallEdges.size === 0,
+    ...(stopCall ? { stopCall } : {}),
   }
 }
 

@@ -18,3 +18,14 @@ test("a subagent with no tool call edge is in Background", () => {
   const views = subagentViews({ entries: [spawned, unhosted], parentSessionId: "ses_1", labels })
   expect(views.filter((view) => view.ambient).map((view) => view.subagentKey)).toEqual(["unhosted"])
 })
+
+test("a running background subagent can be stopped by its spawning call while the harness offers it, and never once it settles", () => {
+  const background = (status: SessionSubagent["status"]): SessionSubagent => ({ ...spawned, mode: "background", status })
+  const stopCall = (entry: SessionSubagent, stops: boolean) => subagentViews({ entries: [entry], parentSessionId: "ses_1", labels, stops })[0]?.stopCall
+  expect(stopCall(background("running"), true)).toBe("call_1")
+  expect(stopCall(background("pending"), true)).toBe("call_1")
+  expect(stopCall(background("running"), false)).toBeUndefined()
+  expect(stopCall(background("killed"), true)).toBeUndefined()
+  expect(stopCall({ ...spawned, mode: "foreground", status: "running" }, true)).toBeUndefined()
+  expect(stopCall({ ...unhosted, mode: "background", status: "running" }, true)).toBeUndefined()
+})

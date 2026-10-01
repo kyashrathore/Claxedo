@@ -2,12 +2,16 @@ import type { PlacementId, ProjectId, RequestId, TerminalId } from "./ids"
 import type { CloudWorkspaceStatus } from "./cloud-types"
 import type { HarnessConnectionState, HarnessHealth } from "./harness-types"
 import type { Terminal, TerminalAgentStatus } from "./terminal-types"
-import type { AgentRequest, FileDiff, SessionGoal, SessionLocation, SessionRow, SessionStatus, Subagent, Todo, TranscriptMessage, TranscriptPart } from "./types"
+import type { BackgroundWork, SessionStatus } from "./status-types"
+import type { AgentRequest, FileDiff, SessionGoal, SessionLocation, SessionRow, Subagent, Todo, TranscriptMessage, TranscriptPart } from "./types"
+
+export type PartAddress = { readonly messageId: string; readonly partId: string }
 
 export type ServerEvent =
   | { readonly type: "sessionUpserted"; readonly row: SessionRow }
   | { readonly type: "sessionRemoved"; readonly ref: SessionLocation }
   | { readonly type: "statusChanged"; readonly ref: SessionLocation; readonly status: SessionStatus }
+  | { readonly type: "backgroundWorkChanged"; readonly ref: SessionLocation; readonly work: BackgroundWork }
   | { readonly type: "messageUpserted"; readonly ref: SessionLocation; readonly message: TranscriptMessage }
   | { readonly type: "messageRemoved"; readonly ref: SessionLocation; readonly messageId: string }
   | { readonly type: "partUpserted"; readonly ref: SessionLocation; readonly part: TranscriptPart }
@@ -20,6 +24,7 @@ export type ServerEvent =
       readonly delta: string
     }
   | { readonly type: "partRemoved"; readonly ref: SessionLocation; readonly messageId: string; readonly partId: string }
+  | { readonly type: "partsRetracted"; readonly ref: SessionLocation; readonly reason: string; readonly parts: readonly PartAddress[] }
   | { readonly type: "requestOpened"; readonly ref: SessionLocation; readonly request: AgentRequest }
   | { readonly type: "requestClosed"; readonly ref: SessionLocation; readonly requestId: RequestId }
   | { readonly type: "todosChanged"; readonly ref: SessionLocation; readonly todos: readonly Todo[] }

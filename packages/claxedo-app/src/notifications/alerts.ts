@@ -1,4 +1,4 @@
-import type { ServerEvent, SessionLocation, SessionStatus } from "@/server"
+import { NO_BACKGROUND_WORK, sessionStatusWithBackgroundWork, type BackgroundWork, type ServerEvent, type SessionLocation, type SessionStatus } from "@/server"
 import type { SoundChoice } from "./sounds"
 
 export type AlertKind = "agent" | "permissions" | "errors"
@@ -10,26 +10,39 @@ export type AlertPreferences = {
 
 export type Alert = { readonly kind: AlertKind; readonly ref: SessionLocation }
 
-type LastStatus = Map<string, SessionStatus["kind"]>
+type Activity = { readonly status?: SessionStatus; readonly backgroundWork: BackgroundWork }
 
-function working(kind: SessionStatus["kind"] | undefined): boolean {
+const QUIET: Activity = { backgroundWork: NO_BACKGROUND_WORK }
+
+function shown(activity: Activity): SessionStatus["kind"] | undefined {
+  return activity.status && sessionStatusWithBackgroundWork(activity.status, activity.backgroundWork).kind
+}
+
+function turnRunning(kind: SessionStatus["kind"] | undefined): boolean {
   return kind === "working" || kind === "retrying" || kind === "recovering"
 }
 
-function statusAlert(last: LastStatus, ref: SessionLocation, status: SessionStatus): AlertKind | undefined {
-  const previous = last.get(ref.sessionId)
-  last.set(ref.sessionId, status.kind)
-  if (status.kind === "idle" && working(previous)) return "agent"
-  if (status.kind === "failed" && previous !== "failed") return "errors"
-  return undefined
+function activityAlert(previous: Activity, next: Activity): AlertKind | undefined {
+  const [before, after] = [shown(previous), shown(next)]
+  if (after === "failed") return before === "failed" ? undefined : "errors"
+  return turnRunning(before) && after === "idle" ? "agent" : undefined
+}
+
+type ActivityEvent = Extract<ServerEvent, { type: "statusChanged" | "backgroundWorkChanged" }>
+
+function nextActivity(previous: Activity, event: ActivityEvent): Activity {
+  return event.type === "statusChanged" ? { ...previous, status: event.status } : { ...previous, backgroundWork: event.work }
 }
 
 export function createAlertDetector(): (event: ServerEvent) => Alert | undefined {
-  const last: LastStatus = new Map()
+  const last = new Map<string, Activity>()
   return (event) => {
     if (event.type === "requestOpened") return event.request.kind === "permission" ? { kind: "permissions", ref: event.ref } : undefined
-    if (event.type !== "statusChanged") return undefined
-    const kind = statusAlert(last, event.ref, event.status)
+    if (event.type !== "statusChanged" && event.type !== "backgroundWorkChanged") return undefined
+    const previous = last.get(event.ref.sessionId) ?? QUIET
+    const next = nextActivity(previous, event)
+    last.set(event.ref.sessionId, next)
+    const kind = activityAlert(previous, next)
     return kind ? { kind, ref: event.ref } : undefined
   }
 }

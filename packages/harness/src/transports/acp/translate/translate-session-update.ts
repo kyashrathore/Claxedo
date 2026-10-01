@@ -13,6 +13,7 @@ import { createAcpDiagnostics, diagnoseTranslation, shape, type AcpDiagnostics }
 import { checkContentBlock, safeContent, safeLocations, safeMeta, safeRawInput, safeRawOutput } from "./validation"
 import { boundKeyedMap, jsonText } from "../../../translate/value"
 import { contentBlockImages } from "../../../translate/tool-attachments"
+import { noticeEvent } from "./notice"
 
 export type { SessionUpdate }
 
@@ -521,6 +522,15 @@ export function translateSessionUpdate(
         return [{ ...chunk, cost: { amount: update.cost.amount, currency: update.cost.currency } }]
       }
       return [chunk]
+    }
+
+    case "notice":
+      return [noticeEvent(update)]
+
+    case "compaction_update":
+    case "compaction_summary_chunk": {
+      diagnoseTranslation(ctx.diagnostics, "acp.dropped_content", { reason: "unadvertised_session_update", shape: shape(update) })
+      return []
     }
 
     default: {

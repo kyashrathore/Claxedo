@@ -47,7 +47,7 @@ function timelineRows(rows: readonly SessionRow[]): readonly TimelineSessionRow[
 }
 
 function shownStatus(status: SessionStatusView): SessionStatus {
-  return status.kind === "unknown" ? { kind: "idle" } : status
+  return status.kind === "unknown" || status.kind === "runningInBackground" ? { kind: "idle" } : status
 }
 
 function refFor(view: SessionView, id: string): SessionLocation {
@@ -86,6 +86,7 @@ export function createTimelineHost(input: TimelineHostInput): TimelineHost {
     parentConversation: () => input.parent()?.conversation(),
     sessions,
     status: () => shownStatus(view.status()),
+    backgroundWork: view.backgroundWork,
     turnSettlePending: view.turnSettlePending,
     settings,
     transcriptTypography,

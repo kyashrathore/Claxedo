@@ -14,8 +14,8 @@ import {
   type OrderKey,
   type PendingSend,
   type ProjectWindow,
-  type StatusEntry,
 } from "./model"
+import { withoutSessionFacts } from "./statuses"
 
 function withEntries<S extends ListData>(data: S, entries: ReadonlyMap<SessionId, ListEntry>): S {
   return { ...data, entries }
@@ -73,9 +73,7 @@ export function upsertRow<S extends ListData>(data: S, row: SessionRow): S {
 export function tombstoneRow<S extends ListData>(data: S, ref: SessionLocation, at: number): S {
   const entries = new Map(data.entries)
   entries.set(ref.sessionId, { kind: "tombstone", ref, at })
-  const statuses = new Map(data.statuses)
-  statuses.delete(ref.sessionId)
-  return { ...data, entries, statuses }
+  return { ...data, entries, ...withoutSessionFacts(data, [ref.sessionId]) }
 }
 
 function pruneTombstones<S extends ListData>(data: S, before: number): S {
@@ -146,14 +144,14 @@ function dropMissingFromPages<S extends ListData>(data: S, window: FetchedWindow
   const fetched = new Set(window.pages.flatMap((page) => page.rows.map((row) => row.ref.sessionId)))
   const read = new Set(window.pages.map((page) => page.projectId))
   const entries = new Map(data.entries)
-  const statuses = new Map<SessionId, StatusEntry>(data.statuses)
+  const dropped: SessionId[] = []
   for (const [id, entry] of data.entries) {
     if (entry.kind !== "confirmed" || fetched.has(id) || data.open.has(id)) continue
     if (!read.has(entry.row.ref.projectId) || !insideProjectWindow(data, entry.row)) continue
     entries.delete(id)
-    statuses.delete(id)
+    dropped.push(id)
   }
-  return { ...data, entries, statuses }
+  return { ...data, entries, ...withoutSessionFacts(data, dropped) }
 }
 
 export function replaceWindow<S extends ListData>(data: S, window: FetchedWindow): S {
@@ -212,7 +210,5 @@ export function closeSession<S extends ListData>(data: S, sessionId: SessionId):
   if (keep) return { ...data, open }
   const entries = new Map(data.entries)
   entries.delete(sessionId)
-  const statuses = new Map(data.statuses)
-  statuses.delete(sessionId)
-  return { ...data, open, entries, statuses }
+  return { ...data, open, entries, ...withoutSessionFacts(data, [sessionId]) }
 }

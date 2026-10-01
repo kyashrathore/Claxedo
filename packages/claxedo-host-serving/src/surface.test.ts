@@ -71,7 +71,6 @@ describe("workspace — everything else maps to the workspace surface", () => {
     "/api/wr/capabilities",
     "/api/wr/worktrees",
     "/api/wr/checkpoint/list",
-    "/api/wr/subagent-transcripts",
     "/api/wr/file",
     "/api/wr/find/text",
     "/session",

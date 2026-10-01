@@ -1,4 +1,4 @@
-import type { AgentPresentationSession } from "@claxedo/agent-runtime-contract"
+import { createMessageIds, type AgentPresentationSession } from "@claxedo/agent-runtime-contract"
 import type { SessionsApi } from "./api"
 import { ServerError } from "./errors"
 import { sessionId, type RequestId } from "./ids"
@@ -10,7 +10,7 @@ import { onRuntime, sessionEndpoint, type SessionContext } from "./session-conte
 import { startSessionReads } from "./session-reads"
 import { readPart, readTurnPageBefore } from "./transcript-reads"
 import type { HostedAccount } from "./account"
-import { cancelRunningTurn } from "./session-stop"
+import { cancelRunningTurn, stopBackgroundTask } from "./session-stop"
 import type { StatusOwner } from "./status"
 import { jsonInit, withQuery, type Transport } from "./transport"
 import type { AgentRequestReply, PromptDelivery, PromptInput, SessionCreateInput, SessionLocation, SessionRow } from "./types"
@@ -18,7 +18,6 @@ import type { SessionProjection } from "./session-projection"
 import { RESERVATION_HEADER, reserveSession } from "./session-reservation"
 import type { WorkspaceWakes } from "./workspace-wakes"
 import type { Workspaces } from "./workspaces"
-import { createMessageIds } from "./wire/ascending-id"
 import { harnessIdentity, harnessSelectionQuery } from "./wire/harness-selection"
 import { PROMPT_ROUTE, promptBody, promptDeliveryFromWire } from "./wire/prompt"
 import { permissionReplyBody } from "./wire/requests"
@@ -100,6 +99,7 @@ export function createSessionsApi(transport: Transport, workspaces: Workspaces, 
     },
     prompt: (ref, input) => postPrompt(context, wakes, ref, input, input.messageId ?? newMessageId()),
     stop: async (ref) => cancelRunningTurn(transport, await workspaces.route(ref), ref),
+    stopBackgroundTask: async (ref, toolCallId) => stopBackgroundTask(transport, await workspaces.route(ref), ref, toolCallId),
     reply: (ref, id, answer) => replyToRequest(context, ref, id, answer),
     rename: (ref, title) => patchSession(context, ref, { title }),
     archive: (ref, archived) => patchSession(context, ref, { time: { archived: archived ? Date.now() : 0 } }),

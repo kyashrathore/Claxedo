@@ -92,9 +92,11 @@ export function createSessionDeliveryOwner(input: {
     const state = result.ok ? "accepted" : result.status === "unknown" ? "unknown" : "rejected"
     const message = result.ok ? undefined : result.message
     const settled = store().settleQueuedPromptDelivery(record.sessionId, record.seq, { operationId, mode, state, message })
-    // The harness can report where it took the input in, which retires the
-    // row, before the steer call that delivered it returns.
-    if (!settled && result.ok && mode === "steer" && !row(record.sessionId, record.seq)) return { ok: true }
+    // A claimed steer row leaves the queue only with its session or when its
+    // message reaches the transcript, which can happen before the steer call
+    // returns or with no acknowledgement ever arriving. The transcript's
+    // evidence outranks whatever the call reports afterwards.
+    if (!settled && mode === "steer" && !row(record.sessionId, record.seq)) return { ok: true }
     if (!announced(record.sessionId, settled)) {
       return { ok: false, status: "conflict", message: "Delivery ownership changed", operationId }
     }

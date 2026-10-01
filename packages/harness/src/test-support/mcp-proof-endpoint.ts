@@ -1,5 +1,3 @@
-import type { McpServerSpec } from "../contract"
-
 export const MCP_PROOF_TOOL = "mcp__claxedo__app_plugin_guide"
 
 type ProofRequest = {
@@ -13,13 +11,12 @@ export type McpProofEndpoint = {
   baseURL: string
   offered: string[]
   called: (string | null)[]
-  firstPartyMcp(sessionId: string): McpServerSpec
   stop(): void
 }
 
 function mcpAnswer(body: ProofRequest, request: Request, called: (string | null)[]): Response {
   if (!body.id) return new Response(null, { status: 202 })
-  let result: unknown = { protocolVersion: "2025-03-26" }
+  let result: unknown = { protocolVersion: "2025-03-26", capabilities: { tools: {} }, serverInfo: { name: "mcp-proof", version: "1.0.0" } }
   if (body.method === "tools/list") result = { tools: [{ name: "app_plugin_guide", description: "Read the app plugin guide", inputSchema: { type: "object", properties: {} } }] }
   if (body.method === "tools/call") {
     called.push(request.headers.get("authorization"))
@@ -28,11 +25,11 @@ function mcpAnswer(body: ProofRequest, request: Request, called: (string | null)
   return Response.json({ jsonrpc: "2.0", id: body.id, result })
 }
 
-function modelAnswer(body: ProofRequest, offered: string[]): Response {
+function modelAnswer(body: ProofRequest, offered: string[], tool: string): Response {
   offered.push(...(body.tools ?? []).flatMap((tool) => tool.function?.name ?? tool.name ?? []))
   const afterTool = (body.messages ?? []).some((message) => message.role === "tool")
   const delta = afterTool ? { role: "assistant", content: "MCP proof complete" } : {
-    role: "assistant", tool_calls: [{ index: 0, id: "mcp_proof", type: "function", function: { name: MCP_PROOF_TOOL, arguments: "{}" } }],
+    role: "assistant", tool_calls: [{ index: 0, id: "mcp_proof", type: "function", function: { name: tool, arguments: "{}" } }],
   }
   const chunks = [
     { choices: [{ index: 0, delta, finish_reason: null }] },
@@ -41,20 +38,20 @@ function modelAnswer(body: ProofRequest, offered: string[]): Response {
   return new Response(`${chunks}data: [DONE]\n\n`, { headers: { "content-type": "text/event-stream" } })
 }
 
-export function startMcpProofEndpoint(): McpProofEndpoint {
+export function startMcpProofEndpoint(tool = MCP_PROOF_TOOL): McpProofEndpoint {
   const offered: string[] = []
   const called: (string | null)[] = []
   const server = Bun.serve({ port: 0, hostname: "127.0.0.1", async fetch(request) {
     if (request.method === "DELETE") return new Response(null, { status: 204 })
+    if (request.method === "GET") return new Response(null, { status: 405 })
     const body = await request.json() as ProofRequest
-    return new URL(request.url).pathname === "/mcp" ? mcpAnswer(body, request, called) : modelAnswer(body, offered)
+    return new URL(request.url).pathname === "/mcp" ? mcpAnswer(body, request, called) : modelAnswer(body, offered, tool)
   } })
   const baseURL = `http://127.0.0.1:${server.port}`
   return {
     baseURL,
     offered,
     called,
-    firstPartyMcp: (sessionId) => ({ kind: "http", name: "claxedo", url: `${baseURL}/mcp`, headers: { authorization: sessionId } }),
     stop: () => { void server.stop(true) },
   }
 }

@@ -2,7 +2,7 @@ import type { PluginApi, SessionAttachment, SessionRef, SessionStatus } from "@c
 import { encodeAttachmentData } from "@claxedo/tasks"
 import { uuid } from "@/lib/uuid"
 import { sessionId, type Placement, type PromptAttachment } from "@/server"
-import type { SessionRowView } from "@/session"
+import { sessionActivity, type SessionActivity, type SessionRowView } from "@/session"
 import { sessionPath } from "@/shell"
 import { currentProjectId, PluginEntryError, type BindingScope } from "./services"
 
@@ -31,18 +31,16 @@ function sessionRowOf(scope: BindingScope, ref: SessionRef): SessionRowView | un
   return row?.ref.placementId === ref.workspaceId ? row : undefined
 }
 
+const PLUGIN_STATUS: Readonly<Record<SessionActivity, SessionStatus>> = {
+  waiting: "waiting",
+  working: "running",
+  background: "running_in_background",
+  failed: "failed",
+  idle: "idle",
+}
+
 export function sessionStatusOf(row: SessionRowView | undefined): SessionStatus {
-  if (row?.waitingOnUser) return "waiting"
-  switch (row?.status.kind) {
-    case "working":
-    case "retrying":
-    case "recovering":
-      return "running"
-    case "failed":
-      return "failed"
-    default:
-      return "idle"
-  }
+  return row ? PLUGIN_STATUS[sessionActivity(row)] : "idle"
 }
 
 function sessionBindings(scope: BindingScope): PluginApi["sessions"] {

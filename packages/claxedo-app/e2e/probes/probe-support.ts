@@ -52,7 +52,7 @@ export const PROBE_VIEWPORT = { rows: 40, cols: 100, reasoning: false, shell: fa
 
 export async function surfaceOf(server: ServerHandle, ref: SessionLocation) {
   const reads = server.sessions.read(ref, PROBE_VIEWPORT)
-  const [first] = await Promise.all([reads.first, reads.status, reads.requests, reads.todos, reads.goal])
+  const [first] = await Promise.all([reads.first, reads.status, reads.backgroundWork, reads.requests, reads.todos, reads.goal])
   return first
 }
 

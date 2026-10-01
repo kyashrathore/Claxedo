@@ -1,8 +1,26 @@
+import { createSignal } from "solid-js"
 import { copyText } from "@/lib/clipboard"
 import { ClaxedoIcon as Icon } from "@/ui"
+import { timelineFileTarget } from "./timeline-file-paths"
+
+type FileMenu = { x: number; y: number; path: string }
+
+export function createTimelineFileContextMenu() {
+  const [menu, setMenu] = createSignal<FileMenu>()
+  return {
+    menu,
+    dismiss: () => setMenu(undefined),
+    open: (event: MouseEvent) => {
+      const path = timelineFileTarget(event.target)
+      if (!path) return
+      event.preventDefault()
+      setMenu({ x: event.clientX, y: event.clientY, path })
+    },
+  }
+}
 
 export function TimelineFileContextMenu(props: {
-  menu: { x: number; y: number; path: string }
+  menu: FileMenu
   onOpenFile: (path: string) => void
   onDismiss: () => void
   resolvePath: (path: string) => string

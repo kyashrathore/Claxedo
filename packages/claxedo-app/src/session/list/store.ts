@@ -4,8 +4,11 @@ import { machine, type Machine } from "@/lib/machine"
 import { uuid } from "@/lib/uuid"
 import {
   sessionId as asSessionId,
+  NO_BACKGROUND_WORK,
+  sessionStatusWithBackgroundWork,
   toAppError,
   type AppError,
+  type BackgroundWork,
   type PlacementId,
   type ProjectId,
   type Server,
@@ -27,9 +30,11 @@ import { createRowViewCache, rowViews, UNKNOWN_STATUS, visibleOrder } from "./vi
 export type SessionListInternal = SessionList & {
   readonly start: () => void
   readonly statusOf: (sessionId: SessionId) => SessionStatusView
+  readonly backgroundWorkOf: (sessionId: SessionId) => BackgroundWork
   readonly apply: (event: ServerEvent) => void
   readonly readRow: (row: SessionRow) => void
   readonly readStatus: (ref: SessionLocation, status: SessionStatus, sentAt: number) => void
+  readonly readBackgroundWork: (ref: SessionLocation, work: BackgroundWork, sentAt: number) => void
   readonly opened: (sessionId: SessionId) => void
   readonly closed: (sessionId: SessionId) => void
   readonly sendStarted: (sessionId: SessionId, clientRequestId: string, at: number) => void
@@ -98,6 +103,8 @@ function routeServerEvent(list: Machine<ListState, ListEvent>, reads: ListReads,
       return list.send({ type: "sessionRemoved", ref: event.ref, at: Date.now() })
     case "statusChanged":
       return list.send({ type: "statusChanged", ref: event.ref, status: event.status, at: Date.now() })
+    case "backgroundWorkChanged":
+      return list.send({ type: "backgroundWorkChanged", ref: event.ref, work: event.work, at: Date.now() })
     case "streamGap":
       return reads.requestReread("replace")
     case "sessionsChanged":
@@ -111,10 +118,12 @@ function createRowReads(state: Accessor<ListState>, requests: RequestsInternal, 
   const cache = createRowViewCache()
   const entries = createMemo(() => state().entries)
   const statuses = createMemo(() => state().statuses)
+  const backgroundWork = createMemo(() => state().backgroundWork)
   const order = createMemo(() => visibleOrder({ entries: entries(), windows: windows() }))
-  const views = createMemo(() => rowViews({ order: order(), data: { entries: entries(), statuses: statuses() }, openRequests: requests.openBySession(), cache }))
+  const views = createMemo(() => rowViews({ order: order(), data: { entries: entries(), statuses: statuses(), backgroundWork: backgroundWork() }, openRequests: requests.openBySession(), cache }))
   const entryOf = createKeyedReads(entries)
   const statusOf = createKeyedReads(statuses)
+  const backgroundWorkOf = createKeyedReads(backgroundWork)
   return {
     order,
     view: createKeyedReads(views),
@@ -122,7 +131,8 @@ function createRowReads(state: Accessor<ListState>, requests: RequestsInternal, 
       const entry = entryOf(sessionId)
       return entry && entry.kind !== "tombstone" ? entry.row : undefined
     },
-    statusOf: (sessionId: SessionId) => statusOf(sessionId)?.status ?? UNKNOWN_STATUS,
+    statusOf: (sessionId: SessionId) => sessionStatusWithBackgroundWork(statusOf(sessionId)?.status ?? UNKNOWN_STATUS, backgroundWorkOf(sessionId)?.work ?? NO_BACKGROUND_WORK),
+    backgroundWorkOf: (sessionId: SessionId) => backgroundWorkOf(sessionId)?.work ?? NO_BACKGROUND_WORK,
   }
 }
 
@@ -151,6 +161,7 @@ export function createSessionList(server: Server, requests: RequestsInternal): S
     apply: (event) => routeServerEvent(list, reads, event),
     readRow: (row) => send({ type: "rowRead", row }),
     readStatus: (ref, status, sentAt) => send({ type: "statusRead", ref, status, sentAt }),
+    readBackgroundWork: (ref, work, sentAt) => send({ type: "backgroundWorkRead", ref, work, sentAt }),
     opened: (sessionId) => send({ type: "sessionOpened", sessionId }),
     closed: (sessionId) => send({ type: "sessionClosed", sessionId }),
     sendStarted: (sessionId, clientRequestId, at) => send({ type: "sendStarted", sessionId, clientRequestId, at }),
