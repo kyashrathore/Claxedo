@@ -42,8 +42,7 @@
   "dependencies": {
     "@claxedo/process-ownership": "workspace:*",
     "@claxedo/workspace-runtime": "workspace:*",
-    "better-sqlite3": "13.0.1",
-    "@claxedo/account-contract": "workspace:*"
+    "better-sqlite3": "13.0.1"
   },
   "devDependencies": {
     "@claxedo/helpers": "workspace:*",

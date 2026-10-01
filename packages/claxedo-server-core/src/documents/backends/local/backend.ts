@@ -1,6 +1,3 @@
-import { authorizeDocument } from "@claxedo/account-contract/document-access"
-import type { DocumentAccess } from "@claxedo/server-core/documents/access"
-import { localDocumentAccess } from "./access"
 import fs from "node:fs"
 import path from "node:path"
 import { createHash, randomUUID } from "node:crypto"
@@ -44,6 +41,8 @@ import { readRepositoryFile } from "@claxedo/server-core/documents/repository/fi
 import { sessionMatchesDocumentProject } from "@claxedo/server-core/documents/session-grants"
 import { hydrateSessionDocument, reachableLocalSessionWorkspace } from "@claxedo/server-core/documents/session-hydration"
 import { isMissingFile } from "@claxedo/helpers/fs"
+import { authorizeDocument, type DocumentAccess } from "@claxedo/server-core/documents/access"
+import { localDocumentAccess } from "./access"
 
 type Handle = LocalManagedDocumentHandle | RepositoryDocumentHandle
 
@@ -436,7 +435,11 @@ export function createLocalDocumentsBackend(
       return updated
     },
     async agentOpen(entry: DocumentIndexEntry, sessionId: string, context: { auth?: SignedControlPlaneAuth; origin: string }) {
-      await authorizeDocument(await access.principal(context.auth ?? localControlPlaneAuth(), entry.org_id), entry.id, "edit")
+      await authorizeDocument(
+        await access.principal(context.auth ?? localControlPlaneAuth(), entry.org_id),
+        entry.id,
+        "edit",
+      )
       if (entry.placement_kind !== "local") {
         throw new DocumentAgentOpenError(
           409,

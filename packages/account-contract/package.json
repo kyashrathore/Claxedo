@@ -13,10 +13,6 @@
     "./vocabulary": {
       "types": "./src/vocabulary.ts",
       "default": "./src/vocabulary.ts"
-    },
-    "./document-access": {
-      "types": "./src/document-access.ts",
-      "default": "./src/document-access.ts"
     }
   },
   "scripts": {

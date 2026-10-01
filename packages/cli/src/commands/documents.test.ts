@@ -18,7 +18,7 @@ const ROWS = [
 ]
 
 /** The documents service, and the CLI's own credential file kept out of the way. */
-function serve(rows: readonly Record<string, unknown>[] = ROWS) {
+function serve(rows: readonly Record<string, unknown>[] = ROWS, viewOnly: readonly string[] = []) {
   const calls: Call[] = []
   const printed: string[] = []
   process.env.CLAXEDO_CONTROL_PLANE_URL = "https://node.example"
@@ -37,8 +37,10 @@ function serve(rows: readonly Record<string, unknown>[] = ROWS) {
       const archived = target.searchParams.get("archived")
       return Response.json(rows.filter((row) => archived === "all" || !row.archived_at))
     }
-    if (target.pathname.endsWith("/authorization")) return new Response(null, { status: 204 })
     const open = /^\/documents\/([^/]+)\/agent-open$/.exec(target.pathname)
+    if (open && viewOnly.includes(open[1])) {
+      return Response.json({ error: { code: "document_not_found", message: "Document not found" } }, { status: 404 })
+    }
     if (open) return Response.json({ document_id: open[1], display_name: "Plan", path: `/data/documents/${open[1]}/plan.md` })
     return Response.json({ error: { code: "not_found", message: target.pathname } }, { status: 404 })
   }) as typeof globalThis.fetch
@@ -77,7 +79,7 @@ test("documents list scopes to the working directory when no project is named", 
 test("documents open resolves a reference and prints the path the service granted", async () => {
   const service = serve()
   await documents(["open", "claxedo://document/doc_plan", "--project", "proj_1", "--session", "ses_1"])
-  expect(service.calls[2]).toEqual({
+  expect(service.calls[1]).toEqual({
     url: "/documents/doc_plan/agent-open",
     method: "POST",
     body: { session_id: "ses_1" },
@@ -90,7 +92,13 @@ test("documents open takes the session from the environment a Claxedo terminal s
   const service = serve()
   process.env.CLAXEDO_SESSION_ID = "ses_env"
   await documents(["open", "Plan", "--project", "proj_1"])
-  expect(service.calls[2].body).toEqual({ session_id: "ses_env" })
+  expect(service.calls[1].body).toEqual({ session_id: "ses_env" })
+})
+
+test("documents open surfaces the service's refusal for a page this caller may read but not edit", async () => {
+  const service = serve(ROWS, ["doc_plan"])
+  await expect(documents(["open", "doc_plan", "--project", "proj_1", "--session", "ses_1"])).rejects.toThrow("Document not found")
+  expect(service.printed).toEqual([])
 })
 
 test("documents open refuses an archived document, an unknown one, and a call with no session", async () => {

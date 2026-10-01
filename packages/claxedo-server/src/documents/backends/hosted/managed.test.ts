@@ -100,7 +100,8 @@ function fixture() {
 function indexEntry(projectId = "project_1") {
   return {
     id: "document_1",
-    org_id: "org_1", creator_id: "user_1",
+    org_id: "org_1",
+    creator_id: "user_1",
     project_id: projectId,
     display_name: "Plan",
     origin_kind: "managed",
@@ -416,7 +417,8 @@ describe("hosted managed documents and session write-back", () => {
     await index.create(indexEntry())
     const entry = {
       id: "document_1",
-      org_id: "org_1", creator_id: "user_1",
+      org_id: "org_1",
+      creator_id: "user_1",
       project_id: "project_1",
       display_name: "Invalid date",
       origin_kind: "managed",
@@ -925,7 +927,8 @@ describe("hosted managed documents and session write-back", () => {
     const now = new Date().toISOString()
     const indexed = {
       id: "document_1",
-      org_id: "org_1", creator_id: "user_1",
+      org_id: "org_1",
+      creator_id: "user_1",
       project_id: "project_1",
       display_name: "Plan",
       origin_kind: "managed" as const,
@@ -1075,7 +1078,8 @@ describe("hosted managed documents and session write-back", () => {
     const now = new Date().toISOString()
     const entry = {
       id: "document_isolates",
-      org_id: "org_1", creator_id: "user_1",
+      org_id: "org_1",
+      creator_id: "user_1",
       project_id: "project_1",
       display_name: "Plan",
       origin_kind: "managed" as const,

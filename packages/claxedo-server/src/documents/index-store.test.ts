@@ -28,7 +28,8 @@ process.env.CLAXEDO_DATA_DIR = root
 
 const common = {
   id: "document_1",
-  org_id: "__local__", creator_id: "local",
+  org_id: "__local__",
+  creator_id: "local",
   project_id: "project_1",
   display_name: "Release notes",
   placement_kind: "local" as const,

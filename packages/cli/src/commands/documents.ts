@@ -1,4 +1,3 @@
-import { authorizeDocument } from "@claxedo/account-contract/document-access"
 import { claxedoDocumentReferenceId } from "@claxedo/helpers/claxedo-document"
 import { config, url } from "../config"
 import { requestJson } from "../http"
@@ -35,7 +34,6 @@ export async function documents(argv: string[]) {
 
   const wanted = claxedoDocumentReferenceId(reference)
   const documentId = resolveDocumentId(await readDocumentIndex(token, scope, "all"), wanted)
-  await authorizeDocument({ requestAuthorization: (id, action) => fetch(url(config().controlPlaneUrl, `/documents/${encodeURIComponent(id)}/authorization?action=${action}`), { headers: { authorization: `Bearer ${token}` } }) }, documentId, "edit")
   const opened = object(
     await requestJson({
       url: url(config().controlPlaneUrl, `/documents/${encodeURIComponent(documentId)}/agent-open`),

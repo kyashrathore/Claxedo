@@ -1,5 +1,4 @@
-import { documentAuthorizedFetch } from "../../../workspace-runtime/src/test-support/document-authorized-fetch"
-import { documentTestAccess } from "./test-access"
+import { documentAuthorizedFetch, documentTestAccess } from "./test-access"
 import { exportPKCS8, exportSPKI, generateKeyPair } from "jose"
 import fs from "node:fs/promises"
 import os from "node:os"
@@ -17,7 +16,8 @@ import { fetchUrl, fetchBodyText } from "../test-support/fetch-calls"
 
 const entry = {
   id: "document_1",
-  org_id: "org_1", creator_id: "user_1",
+  org_id: "org_1",
+  creator_id: "user_1",
   project_id: "project_1",
   display_name: "Plan",
   origin_kind: "managed",

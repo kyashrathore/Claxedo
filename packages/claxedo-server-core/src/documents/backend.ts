@@ -9,7 +9,6 @@ import type {
   DocumentWorkspace,
   WriteResult,
 } from "@claxedo/server-core/documents/port"
-
 import type { DocumentAccess } from "@claxedo/server-core/documents/access"
 
 type Awaitable<T> = T | Promise<T>
@@ -29,7 +28,7 @@ export type DocumentWorkspaceAdapter<H extends DocumentHandle> = DocumentWorkspa
   }>
 
 export type DocumentsBackend<H extends DocumentHandle = DocumentHandle> = Readonly<{
-  access?: DocumentAccess
+  access: DocumentAccess
   index: Readonly<{
     list(
       scope: DocumentIndexScope,
@@ -183,7 +182,7 @@ export type DocumentsBackend<H extends DocumentHandle = DocumentHandle> = Readon
  * only broker documents supply this instead of a whole `DocumentsBackend`.
  */
 export type DocumentBrokerBackend<H extends DocumentHandle = DocumentHandle> = Readonly<{
-  access?: DocumentAccess
+  access: DocumentAccess
   index: Pick<DocumentsBackend<H>["index"], "list" | "find" | "update">
   workspace: Pick<DocumentsBackend<H>["workspace"], "resolve" | "read" | "write">
 }>

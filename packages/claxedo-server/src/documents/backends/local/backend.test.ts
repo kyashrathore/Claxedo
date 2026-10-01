@@ -119,7 +119,7 @@ describe("local documents backend composition", () => {
     roots.push(root)
     const dataDir = vi.fn(() => root)
     const backend = createLocalDocumentsBackend({
-      documentAccess: documentTestAccess({ find: findDocumentIndexEntry } as never),
+      documentAccess: documentTestAccess({ find: findDocumentIndexEntry }),
       dataDir,
       async resolveWorkspace() {
         return undefined
@@ -176,7 +176,7 @@ describe("local documents backend composition", () => {
     let race = false
     const backend = createLocalDocumentsBackend(
       {
-        documentAccess: documentTestAccess({ find: findDocumentIndexEntry } as never),
+        documentAccess: documentTestAccess({ find: findDocumentIndexEntry }),
         dataDir: () => root,
         async resolveWorkspace(input) {
           if (input.workspaceId !== "workspace_1") return undefined
@@ -224,7 +224,8 @@ describe("local documents backend composition", () => {
     const timestamp = new Date().toISOString()
     const indexed = backend.index.create({
       id: "document_1",
-      org_id: "org_1", creator_id: "local",
+      org_id: "org_1",
+      creator_id: "local",
       project_id: "project_1",
       display_name: "Plan",
       origin_kind: "managed",
@@ -264,7 +265,7 @@ describe("local documents backend composition", () => {
     await git(repository, ["init"])
     await fs.symlink(outside, path.join(repository, "escape"))
     const backend = createLocalDocumentsBackend({
-      documentAccess: documentTestAccess({ find: findDocumentIndexEntry } as never),
+      documentAccess: documentTestAccess({ find: findDocumentIndexEntry }),
       dataDir: () => root,
       async resolveWorkspace(input) {
         if (input.workspaceId !== "workspace_1") return undefined
@@ -298,7 +299,8 @@ describe("local documents backend composition", () => {
     const timestamp = new Date().toISOString()
     const indexed = backend.index.create({
       id: "document_symlink",
-      org_id: "org_1", creator_id: "local",
+      org_id: "org_1",
+      creator_id: "local",
       project_id: "project_1",
       display_name: "Plan",
       origin_kind: "managed",
@@ -397,7 +399,7 @@ async function moveFixture(options?: Parameters<typeof createLocalDocumentsBacke
   await git(repository, ["commit", "-m", "initial"])
   const backend = createLocalDocumentsBackend(
     {
-      documentAccess: documentTestAccess({ find: findDocumentIndexEntry } as never, [orgId]),
+      documentAccess: documentTestAccess({ find: findDocumentIndexEntry }, [orgId]),
       dataDir: () => root,
       async resolveWorkspace(input) {
         if (input.workspaceId !== "workspace_1") return undefined
@@ -437,7 +439,8 @@ async function moveFixture(options?: Parameters<typeof createLocalDocumentsBacke
   const timestamp = new Date().toISOString()
   const indexed = backend.index.create({
     id: "document_fixture",
-    org_id: orgId, creator_id: creatorId,
+    org_id: orgId,
+    creator_id: creatorId,
     project_id: projectId,
     display_name: "Plan",
     origin_kind: "managed",

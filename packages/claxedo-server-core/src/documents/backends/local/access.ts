@@ -1,29 +1,30 @@
-import { DocumentAccessError } from "@claxedo/account-contract/document-access"
-import type { DocumentAccess } from "@claxedo/server-core/documents/access"
-import { createDocumentShareStore } from "@claxedo/server-core/documents/share-store"
+import { DocumentAccessError, type DocumentAccess } from "@claxedo/server-core/documents/access"
 import { findDocumentIndexEntry } from "@claxedo/server-core/documents/index-store"
-import { ClaxedoDB, queryRows } from "@claxedo/server-core/platform/db/index"
 import { localControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 
+const LOCAL_ORG = "__local__"
+
+/**
+ * The machine's own person is the only principal: this store knows no
+ * organizations or teams, so a signed caller cannot be authorized and nothing
+ * can be shared.
+ */
 export function localDocumentAccess(): DocumentAccess {
-  const local = localControlPlaneAuth()
-  const member = async (userId: string, orgId: string) => userId === local.user.subject && orgId === "__local__"
+  const local = localControlPlaneAuth().user
+  const isLocal = async (userId: string, orgId: string) => userId === local.subject && orgId === LOCAL_ORG
   const access: DocumentAccess = {
-    async principal(auth, orgId) {
-      orgId ??= "__local__"
-      if (auth.user.issuer !== local.user.issuer || !await member(auth.user.subject, orgId)) throw new DocumentAccessError()
+    async principal(auth, orgId = LOCAL_ORG) {
+      if (auth.user.issuer !== local.issuer) {
+        throw new DocumentAccessError("document_signed_access_unavailable", 501)
+      }
+      if (!(await isLocal(auth.user.subject, orgId))) throw new DocumentAccessError()
       return { userId: auth.user.subject, orgId, access }
     },
     findDocument: async (orgId, id) => findDocumentIndexEntry(orgId, id),
-    locateDocument: async (userId, id) => await member(userId, "__local__") ? findDocumentIndexEntry("__local__", id) : undefined,
-    shares: createDocumentShareStore({
-      all: async (sql, values) => queryRows(ClaxedoDB.raw(), sql, ...values),
-      run: async (sql, values) => { ClaxedoDB.raw().prepare(sql).run(...values) },
-    }),
-    isOrgMember: member,
-    isTeamMember: async () => false,
-    isTeamInOrg: async () => false,
-    hasProjectAccess: async (userId, orgId) => await member(userId, orgId),
+    locateDocument: async (userId, id) =>
+      (await isLocal(userId, LOCAL_ORG)) ? findDocumentIndexEntry(LOCAL_ORG, id) : undefined,
+    isOrgMember: isLocal,
+    hasProjectAccess: async (userId, orgId) => await isLocal(userId, orgId),
   }
   return access
 }

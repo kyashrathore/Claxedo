@@ -1,5 +1,11 @@
-import { authorizeDocument, DocumentAccessError, hashDocumentLink } from "@claxedo/account-contract/document-access"
-import { filterDocuments, requireDocumentAccess, type DocumentPrincipal } from "@claxedo/server-core/documents/access"
+import {
+  authorizeDocument,
+  authorizeDocumentLink,
+  DocumentAccessError,
+  filterDocuments,
+  type DocumentAction,
+  type DocumentPrincipal,
+} from "@claxedo/server-core/documents/access"
 import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import {
   DocumentAgentOpenError,
@@ -48,8 +54,19 @@ export function createDocumentsService<H extends DocumentHandle>(
   ) => publishDocumentEvent(scope, documentId, reason, version, options.documentChangedSink)
   const findEntry = async (orgId: string, documentId: string) => await backend.index.find(orgId, documentId)
 
-  const requireEntry = async (scope: DocumentsServiceScope, documentId: string, includeArchived = false, action: "view" | "edit" = "edit") => {
-    await authorizeDocument({ userId: scope.actor.id, orgId: scope.orgId, access: requireDocumentAccess(backend.access) }, documentId, action)
+  const principal = (scope: DocumentsServiceScope): DocumentPrincipal => ({
+    userId: scope.actor.id,
+    orgId: scope.orgId,
+    access: backend.access,
+  })
+
+  const requireEntry = async (
+    scope: DocumentsServiceScope,
+    documentId: string,
+    includeArchived = false,
+    action: DocumentAction = "edit",
+  ) => {
+    await authorizeDocument(principal(scope), documentId, action)
     const entry = await findEntry(scope.orgId, documentId)
     if (!entry || entry.project_id !== scope.projectId || (!includeArchived && entry.archived_at)) throw notFound()
     return entry
@@ -71,9 +88,10 @@ export function createDocumentsService<H extends DocumentHandle>(
     reason: Parameters<typeof publishDocumentEvent>[2],
     mutate: (entry: DocumentIndexEntry) => Awaitable<DocumentIndexEntry>,
     includeArchived = false,
+    action: DocumentAction = "edit",
   ) =>
     withDocumentOperation(backend, documentId, async () => {
-      const entry = await requireEntry(scope, documentId, includeArchived)
+      const entry = await requireEntry(scope, documentId, includeArchived, action)
       const updated = await mutate(entry)
       await publish(scope, documentId, reason)
       return updated
@@ -88,14 +106,13 @@ export function createDocumentsService<H extends DocumentHandle>(
     return entry
   }
 
-
   return {
     listStatuses(projectId: string) {
       return backend.index.listStatuses(projectId)
     },
 
     async list(scope: DocumentsServiceScope, archived: "active" | "archived" | "all") {
-      return await filterDocuments({ userId: scope.actor.id, orgId: scope.orgId, access: requireDocumentAccess(backend.access) }, await backend.index.list(scope, { archived }))
+      return await filterDocuments(principal(scope), await backend.index.list(scope, { archived }))
     },
 
     /**
@@ -104,8 +121,10 @@ export function createDocumentsService<H extends DocumentHandle>(
      * enumerates fully, so `truncated` is false.
      */
     async listPage(scope: DocumentsServiceScope, archived: "active" | "archived" | "all") {
-      const page = backend.index.listPage ? await backend.index.listPage(scope, { archived }) : { entries: await backend.index.list(scope, { archived }), truncated: false }
-      return { ...page, entries: await filterDocuments({ userId: scope.actor.id, orgId: scope.orgId, access: requireDocumentAccess(backend.access) }, page.entries) }
+      const page = backend.index.listPage
+        ? await backend.index.listPage(scope, { archived })
+        : { entries: await backend.index.list(scope, { archived }), truncated: false }
+      return { ...page, entries: await filterDocuments(principal(scope), page.entries) }
     },
 
     async remoteList(
@@ -270,11 +289,25 @@ export function createDocumentsService<H extends DocumentHandle>(
     },
 
     archive(scope: DocumentsServiceScope, documentId: string) {
-      return mutateIndex(scope, documentId, "document.archived", () => backend.index.archive(scope, documentId), true)
+      return mutateIndex(
+        scope,
+        documentId,
+        "document.archived",
+        () => backend.index.archive(scope, documentId),
+        true,
+        "manage",
+      )
     },
 
     restoreIndex(scope: DocumentsServiceScope, documentId: string) {
-      return mutateIndex(scope, documentId, "document.restored", () => backend.index.restore(scope, documentId), true)
+      return mutateIndex(
+        scope,
+        documentId,
+        "document.restored",
+        () => backend.index.restore(scope, documentId),
+        true,
+        "manage",
+      )
     },
 
     availability(scope: DocumentsServiceScope, documentId: string) {
@@ -427,8 +460,11 @@ export function createDocumentsService<H extends DocumentHandle>(
       const runtimeResolve = backend.runtimeResolve
       if (!runtimeResolve) throw notFound()
       return await withDocumentOperation(backend, entry.id, async () => {
-        const access = requireDocumentAccess(backend.access)
-        const current = await authorizeDocument(await access.principal(input.auth, entry.org_id), entry.id, "edit")
+        const current = await authorizeDocument(
+          await backend.access.principal(input.auth, entry.org_id),
+          entry.id,
+          "edit",
+        )
         if (current.project_id !== entry.project_id || current.archived_at) throw notFound()
         return await runtimeResolve(current, input).catch((error) => {
           if (error instanceof DocumentAccessError) throw error
@@ -452,9 +488,9 @@ export function createDocumentsService<H extends DocumentHandle>(
       })
     },
 
-    async readPublicContent(principal: DocumentPrincipal, documentId: string) {
-      const entry = await authorizeDocument(principal, documentId, "view")
-      return await backend.workspace.read(await backend.workspace.resolve(portEntry(entry)))
+    async readLinkedContent(token: string) {
+      const entry = await authorizeDocumentLink(backend.access, token)
+      return { entry, read: await backend.workspace.read(await backend.workspace.resolve(portEntry(entry))) }
     },
 
     readContent(scope: DocumentsServiceScope, documentId: string) {

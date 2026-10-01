@@ -3,9 +3,14 @@ import fs from "node:fs/promises"
 import path from "node:path"
 import { inside } from "@claxedo/helpers/path"
 
-const MAX_DOCUMENT_BYTES = 2 * 1024 * 1024
+export const MAX_DOCUMENT_BYTES = 2 * 1024 * 1024
 
-export async function writeContained(root: string, target: string, content: string, beforeOpen?: () => void | Promise<void>) {
+export async function writeContained(
+  root: string,
+  target: string,
+  content: string,
+  beforeOpen?: () => void | Promise<void>,
+) {
   const parent = await fs.realpath(path.dirname(target))
   if (!inside(root, parent)) throw new Error("Runtime document path escapes workspace")
   const authority = await fs.stat(parent)
@@ -99,4 +104,3 @@ export async function secureDirectory(root: string, start: string, segments: rea
   }
   return current
 }
-

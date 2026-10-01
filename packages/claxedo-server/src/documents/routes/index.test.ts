@@ -53,6 +53,7 @@ mkdirSync(root, { recursive: true })
 const workspace = createLocalManagedDocumentWorkspace({ dataRoot: root })
 
 const backend: DocumentsRouteBackend<Awaited<ReturnType<typeof workspace.resolve>>> = {
+  access: documentTestAccess({ find: findDocumentIndexEntry }),
   index: {
     list: listDocumentIndex,
     find: findDocumentIndexEntry,
@@ -94,8 +95,6 @@ const backend: DocumentsRouteBackend<Awaited<ReturnType<typeof workspace.resolve
   },
 }
 
-Object.assign(backend, { access: documentTestAccess(backend.index) })
-
 const authConfig: ControlPlaneAuthConfig = {
   enabled: true,
   issuer: "https://issuer.example.test",
@@ -124,8 +123,9 @@ function authority(allowed: readonly ProjectAction[] = ["read", "write", "admin"
 }
 
 function signedApp(allowed?: readonly ProjectAction[]) {
-  const access = documentTestAccess(backend.index)
-  access.hasProjectAccess = async () => !allowed || allowed.includes("read")
+  const access = documentTestAccess({ find: findDocumentIndexEntry }, undefined, {
+    hasProjectAccess: async () => !allowed || allowed.includes("read"),
+  })
   const services = { auth: { config: authConfig, verifier }, authority: authority(allowed) } as never
   return new Hono().route("/documents", DocumentsRoutes({ backend: { ...backend, access }, services, authConfig, verifier }))
 }
@@ -366,8 +366,9 @@ describe("DocumentsRoutes", () => {
     const resolve = vi.fn(async () => ({ path: "/workspace/conflict.md", version: "canonical-v3" }))
     const routeBackend = { ...backend, runtimeResolve: resolve }
     const app = (allowed: readonly ProjectAction[] = ["read", "write", "admin"]) => {
-      const access = documentTestAccess(backend.index)
-      access.hasProjectAccess = async () => allowed.includes("read")
+      const access = documentTestAccess({ find: findDocumentIndexEntry }, undefined, {
+        hasProjectAccess: async () => allowed.includes("read"),
+      })
       return new Hono().route(
         "/documents",
         DocumentsRoutes({

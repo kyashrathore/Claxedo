@@ -1,6 +1,5 @@
 import type { DocumentsBackend } from "@claxedo/server-core/documents/backend"
-import { authorizeDocument } from "@claxedo/account-contract/document-access"
-import { requireDocumentAccess, type DocumentAccess } from "@claxedo/server-core/documents/access"
+import { authorizeDocument, type DocumentAccess } from "@claxedo/server-core/documents/access"
 import { createHostedDocumentIndex } from "./index"
 import {
   createHostedManagedDocumentWorkspace,
@@ -24,7 +23,7 @@ import {
 export function createHostedDocumentsBackend(
   bucket: R2BucketBinding,
   options: Readonly<{
-    access?: (index: DocumentsBackend["index"]) => DocumentAccess
+    access: (index: DocumentsBackend["index"]) => DocumentAccess
     runtime?: Readonly<{ open(input: {
       entry: DocumentIndexEntry
       sessionId: string
@@ -68,12 +67,12 @@ export function createHostedDocumentsBackend(
       cloudWorkspaceId: string
       localWorkspaceId: string
     }) => Promise<void>
-  }> = {},
+  }>,
 ) {
   const store = createR2ConditionalObjectStore(bucket)
   const workspace = createHostedManagedDocumentWorkspace({ store })
   const index = createHostedDocumentIndex(store)
-  const access = options.access?.(index)
+  const access = options.access(index)
   const env = options.env ?? process.env
 
   async function putJob(sessionId: string, documentId: string, job: HostedDocumentJob) {
@@ -130,8 +129,7 @@ export function createHostedDocumentsBackend(
       throw new Error("Document job capability is inactive")
     }
     const auth = await openJobAuth(job.value.sealedAuth, env)
-    const authority = requireDocumentAccess(access)
-    await authorizeDocument(await authority.principal(auth, input.orgId), documentId, "edit")
+    await authorizeDocument(await access.principal(auth, input.orgId), documentId, "edit")
     return { ...job, claims, auth }
   }
 
@@ -196,8 +194,7 @@ export function createHostedDocumentsBackend(
       agentOpen: async (entry: DocumentIndexEntry, sessionId: string, context: { auth?: SignedControlPlaneAuth; origin: string }) => {
         if (!context.auth) throw new Error("Hosted document hydration requires signed authentication")
         const auth = context.auth
-        const authority = requireDocumentAccess(access)
-        await authorizeDocument(await authority.principal(auth, entry.org_id), entry.id, "edit")
+        await authorizeDocument(await access.principal(auth, entry.org_id), entry.id, "edit")
         const cloudWorkspaceId = options.resolveSessionWorkspace
           ? await options.resolveSessionWorkspace(auth, sessionId)
           : entry.workspace_id ?? ""
@@ -252,8 +249,7 @@ export function createHostedDocumentsBackend(
         if (!options.runtime?.resolve || entry.archived_at) throw new Error("Document conflict resolution is unavailable")
         const job = await loadJob(input.sessionId, entry.id)
         const original = await openJobAuth(job.value.sealedAuth, env)
-        const authority = requireDocumentAccess(access)
-        await authorizeDocument(await authority.principal(input.auth, entry.org_id), entry.id, "edit")
+        await authorizeDocument(await access.principal(input.auth, entry.org_id), entry.id, "edit")
         if (!job.value.activeJti || job.value.jobExpiresAt <= Math.floor(Date.now() / 1000) ||
           original.user.subject !== input.auth.user.subject || job.value.orgId !== entry.org_id ||
           job.value.projectId !== entry.project_id) throw new Error("Document conflict job is inactive")

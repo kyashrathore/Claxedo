@@ -78,6 +78,7 @@ function fixture() {
   const runtimeRenew = vi.fn(async () => ({ token: "rotated", expiresAt: Date.now() + 300_000 }))
   const runtimeResolve = vi.fn(async () => ({ path: "/workspace/plan.md", version: "v2" }))
   const backend = {
+    access: documentTestAccess({ find: async () => entry }),
     index: {
       list: vi.fn(async () => (entry ? [entry] : [])),
       find: vi.fn(async () => entry),
@@ -107,7 +108,6 @@ function fixture() {
     runtimeRenew,
     runtimeResolve,
   } satisfies DocumentsBackend<typeof handle>
-  Object.assign(backend, { access: documentTestAccess(backend.index) })
   return {
     backend,
     workspace,

@@ -1,4 +1,3 @@
-import { authorizeDocument, DocumentAccessError } from "@claxedo/account-contract/document-access"
 import path from "node:path"
 import { z } from "zod"
 import { claxedoDocumentReferenceId, InvalidDocumentReferenceError } from "@claxedo/helpers/claxedo-document"
@@ -89,8 +88,6 @@ export function registerDocumentTools(registry: ToolRegistrar) {
       const match = resolveDocument(documents.rows, reference)
       if ("refusal" in match) return match.refusal
 
-      await authorizeDocument({ requestAuthorization: (id, action) => documentsService(ctx)(`/documents/${encodeURIComponent(id)}/authorization?action=${action}`) }, match.id, "edit")
-
       const opened = record(
         await documentsJson(ctx, `/documents/${encodeURIComponent(match.id)}/agent-open`, {
           method: "POST",
@@ -180,7 +177,7 @@ async function answering(handle: () => Promise<McpToolResult>): Promise<McpToolR
   try {
     return await handle()
   } catch (error) {
-    if (error instanceof DocumentsUnavailable || error instanceof DocumentAccessError) return mcpToolRefusal(error.message)
+    if (error instanceof DocumentsUnavailable) return mcpToolRefusal(error.message)
     throw error
   }
 }

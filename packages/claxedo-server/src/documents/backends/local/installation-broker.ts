@@ -1,5 +1,4 @@
-import { authorizeDocument, DocumentAccessError } from "@claxedo/account-contract/document-access"
-import { filterDocuments, requireDocumentAccess } from "@claxedo/server-core/documents/access"
+import { authorizeDocument, DocumentAccessError, filterDocuments } from "@claxedo/server-core/documents/access"
 import { Hono, type Context } from "hono"
 import { timingSafeEqualStrings } from "@claxedo/server-core/platform/auth/web-crypto"
 import { withDocumentOperation, type DocumentBrokerBackend } from "@claxedo/server-core/documents/backend"
@@ -54,8 +53,12 @@ export function LocalInstallationDocumentBroker(options: {
     if (!job)
       return context.json({ error: "document_capability_denied" }, 403)
     return context.json(
-      await filterDocuments({ userId: job.userId, orgId: job.orgId, access: requireDocumentAccess(options.backend.access) },
-        (await options.backend.index.list({ orgId: job.orgId, projectId: job.projectId })).filter((entry) => entryInJob(entry, job))),
+      await filterDocuments(
+        { userId: job.userId, orgId: job.orgId, access: options.backend.access },
+        (await options.backend.index.list({ orgId: job.orgId, projectId: job.projectId })).filter((entry) =>
+          entryInJob(entry, job),
+        ),
+      ),
     )
   })
   app.get("/:id", async (context) => {
@@ -236,7 +239,11 @@ function entryInJob(entry: DocumentIndexEntry, job: VerifiedDocumentJob) {
 }
 
 async function entryFor(backend: DocumentBrokerBackend, job: VerifiedDocumentJob, action: "view" | "edit") {
-  const entry = await authorizeDocument({ userId: job.userId, orgId: job.orgId, access: requireDocumentAccess(backend.access) }, job.documentId, action)
+  const entry = await authorizeDocument(
+    { userId: job.userId, orgId: job.orgId, access: backend.access },
+    job.documentId,
+    action,
+  )
   return entry && entryInJob(entry, job) ? entry : undefined
 }
 

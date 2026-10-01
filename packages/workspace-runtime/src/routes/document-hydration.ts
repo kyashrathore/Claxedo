@@ -1,5 +1,3 @@
-import { authorizeDocument, DocumentAccessError } from "@claxedo/account-contract/document-access"
-import { readContained, writeContained, secureDirectory } from "./document-hydration-files"
 import { constants, type FSWatcher } from "node:fs"
 import fs from "node:fs/promises"
 import path from "node:path"
@@ -15,6 +13,7 @@ import { authorizeHostCapability } from "./host-capability-access"
 import { sessionAccessContext, type SessionAccessPolicy } from "../session-access-policy"
 import type { RelayHostAuthContext } from "../workspace-host-service-auth"
 import { isMissingFile } from "@claxedo/helpers/fs"
+import { MAX_DOCUMENT_BYTES, readContained, secureDirectory, writeContained } from "./document-hydration-files"
 
 const Job = z
   .object({
@@ -103,7 +102,6 @@ const documents = new Map<string, RuntimeDocument>()
 const manifestTails = new Map<string, Promise<void>>()
 const sessionLifecycles = new Map<string, Promise<void>>()
 const documentLifecycles = new Map<string, Promise<void>>()
-const MAX_DOCUMENT_BYTES = 2 * 1024 * 1024
 const MAX_CALLBACK_RESPONSE_BYTES = 64 * 1024
 const DEFAULT_REQUEST_TIMEOUT_MS = 30_000
 
@@ -127,7 +125,7 @@ export function RuntimeDocumentHydrationRoutes(
   }
   return new Hono<{ Variables: RelayHostAuthContext }>()
     .onError((error, context) => {
-      if (error instanceof DocumentAccessError) return context.json({ error: "document_not_found" }, 404)
+      if (error instanceof RuntimeDocumentDenied) return context.json({ error: "document_not_found" }, 404)
       if (error instanceof RequestBodyTooLargeError) return context.json({ error: "request_body_too_large" }, 413)
       if (error instanceof SyntaxError || error instanceof z.ZodError) {
         return context.json({ error: "document_request_invalid" }, 400)
@@ -161,7 +159,14 @@ export function RuntimeDocumentHydrationRoutes(
         ) {
           return context.json({ error: "document_writeback_origin_invalid" }, 403)
         }
-        await authorizeRuntimeDocument(controlPlaneOrigin, input.job, input.sessionId, input.documentId, "hydrate", requestTimeoutMs)
+        await authorizeRuntimeDocument(
+          controlPlaneOrigin,
+          input.job,
+          input.sessionId,
+          input.documentId,
+          "hydrate",
+          requestTimeoutMs,
+        )
         const key = `${input.sessionId}:${input.documentId}`
         return await withDocumentLifecycle(key, async () => {
           const root = await fs.realpath(
@@ -249,7 +254,14 @@ export function RuntimeDocumentHydrationRoutes(
           () => false,
         )
         if (!authorized) return context.json({ error: "document_activation_capability_invalid" }, 403)
-        await authorizeRuntimeDocument(new URL(document.writeback.url).origin, document.job, sessionId, documentId, "write", requestTimeoutMs)
+        await authorizeRuntimeDocument(
+          new URL(document.writeback.url).origin,
+          document.job,
+          sessionId,
+          documentId,
+          "write",
+          requestTimeoutMs,
+        )
         if (document.state === "conflicted") return context.json({ error: "document_conflicted" }, 409)
         if (document.state === "active") return context.json({ path: document.path })
         installWatcher(document, options.afterWatcherCreated)
@@ -299,7 +311,14 @@ export function RuntimeDocumentHydrationRoutes(
           () => false,
         )
         if (!authorized) return context.json({ error: "document_resolution_capability_invalid" }, 403)
-        await authorizeRuntimeDocument(new URL(document.writeback.url).origin, job, sessionId, documentId, "resolve", requestTimeoutMs)
+        await authorizeRuntimeDocument(
+          new URL(document.writeback.url).origin,
+          job,
+          sessionId,
+          documentId,
+          "resolve",
+          requestTimeoutMs,
+        )
         const writeback = body.writeback
         if (
           !writeback ||
@@ -413,12 +432,36 @@ function scheduleRenewal(document: RuntimeDocument) {
   )
 }
 
-async function authorizeRuntimeDocument(origin: string, job: z.infer<typeof Job>, sessionId: string, documentId: string, operation: "hydrate" | "write" | "resolve", timeoutMs: number) {
-  await authorizeDocument({ requestAuthorization: (id) => fetchWithTimeout(`${origin}/documents/${encodeURIComponent(id)}/runtime-authorization`, {
-    method: "POST",
-    headers: { authorization: `Bearer ${job.token}`, "content-type": "application/json" },
-    body: JSON.stringify({ userId: job.userId, orgId: job.orgId, projectId: job.projectId, localWorkspaceId: job.localWorkspaceId, cloudWorkspaceId: job.cloudWorkspaceId, sessionId, operation }),
-  }, timeoutMs) }, documentId, "edit")
+class RuntimeDocumentDenied extends Error {}
+
+/** The control plane decides whether the job's person may still edit the page; the runtime only asks. */
+async function authorizeRuntimeDocument(
+  origin: string,
+  job: z.infer<typeof Job>,
+  sessionId: string,
+  documentId: string,
+  operation: "hydrate" | "write" | "resolve",
+  timeoutMs: number,
+) {
+  const response = await fetchWithTimeout(
+    `${origin}/documents/${encodeURIComponent(documentId)}/runtime-authorization`,
+    {
+      method: "POST",
+      headers: { authorization: `Bearer ${job.token}`, "content-type": "application/json" },
+      body: JSON.stringify({
+        userId: job.userId,
+        orgId: job.orgId,
+        projectId: job.projectId,
+        localWorkspaceId: job.localWorkspaceId,
+        cloudWorkspaceId: job.cloudWorkspaceId,
+        sessionId,
+        operation,
+      }),
+    },
+    timeoutMs,
+  )
+  await response.body?.cancel()
+  if (!response.ok) throw new RuntimeDocumentDenied()
 }
 
 async function renew(document: RuntimeDocument) {

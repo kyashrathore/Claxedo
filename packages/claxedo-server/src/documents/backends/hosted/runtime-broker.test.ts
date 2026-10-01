@@ -1,4 +1,3 @@
-import { documentAuthorizedFetch } from "../../../../../workspace-runtime/src/test-support/document-authorized-fetch"
 import { exportPKCS8, exportSPKI, generateKeyPair, SignJWT } from "jose"
 import { describe, expect, test, vi } from "vitest"
 import fs from "node:fs/promises"
@@ -18,6 +17,7 @@ import type { DocumentIndexEntry } from "@claxedo/server-core/documents/index-st
 import { verifyDocumentRelayJobToken, verifyDocumentSessionToken } from "@claxedo/server-core/platform/auth/runtime-access-token"
 import { fetchUrl, fetchBodyText } from "../../../test-support/fetch-calls"
 import { loopbackMachineLoginPolicy } from "@claxedo/workspace-runtime/testing"
+import { documentAuthorizedFetch } from "../../test-access"
 
 const auth = { user: { subject: "user_1" } } as SignedControlPlaneAuth
 const entry = {
