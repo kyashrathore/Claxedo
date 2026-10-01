@@ -138,7 +138,7 @@ describe("materializeAgentHooks", () => {
     "SessionStart": [ { "hooks": [ { "type": "command", "command": "/user/start.sh" } ] } ]
 }
 `, `"SessionStart": [ { "hooks": [ { "type": "command", "command": "/user/start.sh" } ] } ]`],
-    ["mastra", ".mastracode/hooks.json", `{
+    ["mastracode", ".mastracode/hooks.json", `{
     "Stop": [ { "type": "command", "command": "/user/stop.sh" } ],
     "Custom": [ { "type": "command", "command": "/user/custom.sh" } ]
 }
@@ -332,7 +332,7 @@ describe("materializeAgentHooks across data roots", () => {
     }
     const files = agentHookConfigPaths(home, defaultStatusHooks)
     expect(await commandsIn(files.gemini)).toEqual(times(3, last.gemini))
-    expect(await commandsIn(files.mastra)).toEqual(times(3, `bash '${last.notify}' --harness=mastracode`))
+    expect(await commandsIn(files.mastracode)).toEqual(times(3, `bash '${last.notify}' --harness=mastracode`))
     expect(await commandsIn(files.droid)).toEqual(times(4, `'${last.notify}' --harness=droid`))
     expect((await commandsIn(files.cursor)).length).toBe(6)
     expect(await commandsIn(files.antigravity)).toEqual([
@@ -359,7 +359,7 @@ describe("materializeAgentHooks across data roots", () => {
       PostToolUse: [{ matcher: "*", hooks: [command(`'${previous.notify}' --harness=droid`)] }],
     })
     await writeJson(droidSettings, { hooks: { Stop: [{ hooks: [command(deleted.notify), command(foreign)] }] } })
-    await writeJson(files.mastra, {
+    await writeJson(files.mastracode, {
       Stop: [command(`bash '${deleted.notify}'`), command(`bash '${foreign}'`)],
       UserPromptSubmit: [command(`bash '${previous.notify}' --harness=mastracode`)],
       Notification: [command(`bash '${deleted.notify}'`)],
@@ -389,7 +389,7 @@ describe("materializeAgentHooks across data roots", () => {
     const sorted = (...commands: string[]) => commands.sort()
     expect(await commandsIn(droidHooks)).toEqual(sorted(foreign, ...times(4, `'${current.notify}' --harness=droid`)))
     expect(await commandsIn(droidSettings)).toEqual([foreign])
-    expect(await commandsIn(files.mastra)).toEqual(sorted(`bash '${foreign}'`, ...times(3, `bash '${current.notify}' --harness=mastracode`)))
+    expect(await commandsIn(files.mastracode)).toEqual(sorted(`bash '${foreign}'`, ...times(3, `bash '${current.notify}' --harness=mastracode`)))
     expect(await commandsIn(files.gemini)).toEqual(sorted(guardedMissing, "/user/gemini-notify.sh", ...times(3, current.gemini)))
     expect(Object.keys((await readJson(files.cursor)).hooks as object)).not.toContain("afterAgentResponse")
     expect((await commandsIn(files.cursor)).filter((value) => !value.startsWith(`${current.cursor} `))).toEqual(["./scripts/format.sh"])
