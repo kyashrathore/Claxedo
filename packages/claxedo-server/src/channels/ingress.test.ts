@@ -564,6 +564,41 @@ describe("channels ingress", () => {
     expect(active.get(threadKey)).toBe("session-after-rejection")
   })
 
+  test("a stored channel session without workspace identity is refused before sending", async () => {
+    const svc = services()
+    svc.projectionStore.channel_thread_session = vi.fn(async () => "session-incomplete")
+    svc.projectionStore.clear_channel_thread_session = vi.fn(async () => {})
+    svc.projectionStore.channel_run_audit = vi.fn(async () => ({
+      sessionId: "session-incomplete",
+      channel: "telegram",
+      externalUserId: "owner",
+      threadKey: "telegram:test:incomplete:thread",
+      workspaceId: null,
+      createdAt: 1,
+      cost: null,
+    }))
+    const prompt = vi.fn(async function* () {})
+    const channels = createControlPlaneChannels({
+      services: svc,
+      runtime: { ...createMachineSessionDispatch(svc, {}), prompt },
+      includeFake: true,
+    })
+    const chunks: unknown[] = []
+    await channels.core.handleInbound({
+      channel: "telegram",
+      externalUserId: "owner",
+      threadKey: "telegram:test:incomplete:thread",
+      idempotencyKey: "incomplete-1",
+      text: "hello",
+      trustedSource: true,
+      raw: {},
+    }, { reply: (chunk) => chunks.push(chunk) })
+    expect(prompt).not.toHaveBeenCalled()
+    expect(svc.projectionStore.put_session_meta).not.toHaveBeenCalled()
+    expect(svc.projectionStore.clear_channel_thread_session).not.toHaveBeenCalled()
+    expect(chunks).toContainEqual({ kind: "text", text: "Stored channel session session-incomplete has no workspace", final: true })
+  })
+
   test("active channel binding storage failures reject instead of creating or resetting sessions", async () => {
     const svc = services()
     const bindingFailure = new Error("binding storage unavailable")

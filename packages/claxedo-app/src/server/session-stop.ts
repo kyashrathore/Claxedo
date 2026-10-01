@@ -3,7 +3,7 @@ import { isRecoveryOutcome, turnStopped } from "@claxedo/agent-runtime-contract"
 import { ServerError } from "./errors"
 import { sessionEndpoint } from "./session-context"
 import { jsonInit, type RuntimeRoute, type Transport } from "./transport"
-import type { SessionRef } from "./types"
+import type { SessionLocation } from "./types"
 
 const REFUSAL_CLASSES: Readonly<Record<string, ServerError["class"]>> = {
   generation_conflict: "conflict",
@@ -24,7 +24,7 @@ function stopRefused(outcome: RecoveryOutcome): ServerError {
   })
 }
 
-export async function cancelRunningTurn(transport: Transport, where: RuntimeRoute, ref: SessionRef): Promise<void> {
+export async function cancelRunningTurn(transport: Transport, where: RuntimeRoute, ref: SessionLocation): Promise<void> {
   const path = sessionEndpoint(ref, "/recovery")
   const inspected = await transport.runtimeJson<{ target?: RecoveryTurnTarget } | RecoveryOutcome>(where, path)
   if (isRecoveryOutcome(inspected)) throw stopRefused(inspected)

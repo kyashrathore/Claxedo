@@ -8,19 +8,19 @@ import type { AgentAgentPartInput, AgentFilePartInput, AgentTextPartInput } from
 import type { FirstTurnErrorClass } from "./turn-error-classes"
 import type { TurnAccount } from "./turn-account"
 
+export type SessionRef = Readonly<{ sessionId: string; workspaceId: string }>
+
 export type AgentWorkspaceIdentity = {
-  workspaceId: string
   directory: string
-}
+} & Pick<SessionRef, "workspaceId">
 
 /**
  * The complete identity required for any provider-owned execution operation.
  * `upstreamSessionId` is opaque: Claxedo stores and forwards it but never
  * parses it or uses it to discover sessions.
  */
-export type AgentWorkspaceExecutionBinding = AgentWorkspaceIdentity & {
+export type AgentWorkspaceExecutionBinding = AgentWorkspaceIdentity & SessionRef & {
   scope?: "workspace"
-  sessionId: string
   connectionId: string
   upstreamSessionId: string
 }
@@ -28,8 +28,7 @@ export type AgentWorkspaceExecutionBinding = AgentWorkspaceIdentity & {
 export type AgentExecutionBinding = AgentWorkspaceExecutionBinding
 
 /** Ownership of creation before the provider has returned any session identity. */
-export type AgentSessionStartBinding = AgentWorkspaceIdentity & {
-  sessionId: string
+export type AgentSessionStartBinding = AgentWorkspaceIdentity & SessionRef & {
   connectionId: string
   operationId: string
 }
@@ -59,10 +58,8 @@ export interface AgentSessionStarts {
 
 export type AgentExecutionBindingField = keyof AgentExecutionBinding
 
-export type AgentExecutionBindingExpectation = Readonly<{
+export type AgentExecutionBindingExpectation = Pick<SessionRef, "sessionId"> & Partial<Pick<SessionRef, "workspaceId">> & Readonly<{
   scope?: "workspace"
-  sessionId: string
-  workspaceId?: string
   directory: string
   connectionId: string
   upstreamSessionId: string
@@ -83,8 +80,8 @@ export type AgentSessionCommand = {
 }
 
 export type AgentSession = {
-  id: string
-  workspaceId?: string
+  id: SessionRef["sessionId"]
+  workspaceId?: SessionRef["workspaceId"]
   title?: string | null
   titleSource?: AgentSessionTitleSource
   slug?: string

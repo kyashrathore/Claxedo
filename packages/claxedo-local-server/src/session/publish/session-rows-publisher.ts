@@ -1,7 +1,7 @@
+import type { SessionRef } from "@claxedo/agent-runtime-contract"
 import {
   MAX_HOST_SESSION_ROWS,
   type HostSessionRow,
-  type HostSessionRowRef,
   type HostSessionRowsResult,
 } from "@claxedo/server-core/platform/auth/host-session-rows"
 import type { HostServingPublisherCredential } from "@claxedo/host-serving/serving"
@@ -37,14 +37,12 @@ export type SessionRowsPublisher = {
   stop: () => void
 }
 
-type DirtySession = { workspaceId: string; sessionId: string }
-
 /** Where a publication item came from, so a failed chunk can put it back. */
 type Origin = { workspaceId: string; sessionId?: string }
 
-type Item = Origin & ({ row: HostSessionRow } | { removed: HostSessionRowRef })
+type Item = Origin & ({ row: HostSessionRow } | { removed: SessionRef })
 
-type Chunk = { rows: HostSessionRow[]; removed: HostSessionRowRef[]; origins: Origin[] }
+type Chunk = { rows: HostSessionRow[]; removed: SessionRef[]; origins: Origin[] }
 
 class SessionRowsUnauthorized extends Error {
   constructor() {
@@ -97,7 +95,7 @@ export function createSessionRowsPublisher(options: SessionRowsPublisherOptions)
   const maxRetryMs = options.maxRetryMs ?? 60_000
   const maxDirtySessions = options.maxDirtySessions ?? 1_000
 
-  const dirtySessions = new Map<string, DirtySession>()
+  const dirtySessions = new Map<string, SessionRef>()
   const dirtyWorkspaces = new Set<string>()
   let resyncPending = false
   /** Session ids the control plane holds for each workspace, as far as this process has told it. */
@@ -152,7 +150,7 @@ export function createSessionRowsPublisher(options: SessionRowsPublisherOptions)
     }
   }
 
-  const collectSession = async (dirty: DirtySession, items: Item[]) => {
+  const collectSession = async (dirty: SessionRef, items: Item[]) => {
     const read = await options.source.readRow(dirty.workspaceId, dirty.sessionId)
     if (read.kind === "row") items.push({ ...dirty, row: read.row })
     if (read.kind === "absent") items.push({ ...dirty, removed: { workspaceId: dirty.workspaceId, sessionId: dirty.sessionId } })

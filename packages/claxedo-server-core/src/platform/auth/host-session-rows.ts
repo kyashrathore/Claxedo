@@ -1,3 +1,4 @@
+import type { SessionRef } from "@claxedo/agent-runtime-contract"
 import type { SessionRowStatus } from "../../session/navigation-list"
 
 export const MAX_HOST_SESSION_ROWS = 100
@@ -16,9 +17,7 @@ export type HostSessionRowsPublisher = {
 }
 
 /** A session's list entry as its machine holds it. Never a transcript. */
-export type HostSessionRow = {
-  workspaceId: string
-  sessionId: string
+export type HostSessionRow = SessionRef & {
   title?: string
   createdAt: number
   updatedAt: number
@@ -27,11 +26,9 @@ export type HostSessionRow = {
   status: SessionRowStatus
 }
 
-export type HostSessionRowRef = { workspaceId: string; sessionId: string }
-
 export type HostSessionRowsPublication = {
   rows: readonly HostSessionRow[]
-  removed: readonly HostSessionRowRef[]
+  removed: readonly SessionRef[]
 }
 
 /**
@@ -40,7 +37,7 @@ export type HostSessionRowsPublication = {
  * registered to another workspace. `session_deleted`: the control plane
  * deleted it, and a machine republishing it does not bring it back.
  */
-export type HostSessionRowRefusal = HostSessionRowRef & {
+export type HostSessionRowRefusal = SessionRef & {
   reason: "workspace_not_served" | "session_elsewhere" | "session_deleted"
 }
 
@@ -59,7 +56,7 @@ export type HostSessionRowsAuthority = {
 export type HostSessionRowsPlan<Workspace> = {
   adopt: Array<{ row: HostSessionRow; workspace: Workspace }>
   update: HostSessionRow[]
-  remove: HostSessionRowRef[]
+  remove: SessionRef[]
   result: HostSessionRowsResult
 }
 
@@ -75,7 +72,7 @@ export function planHostSessionRows<Workspace>(
   existing: ReadonlyMap<string, { workspaceId: string; deleted: boolean }>,
 ): HostSessionRowsPlan<Workspace> {
   const plan: HostSessionRowsPlan<Workspace> = { adopt: [], update: [], remove: [], result: { accepted: 0, refused: [] } }
-  const admit = (ref: HostSessionRowRef) => {
+  const admit = (ref: SessionRef) => {
     const workspace = served.get(ref.workspaceId)
     const session = existing.get(ref.sessionId)
     const reason: HostSessionRowRefusal["reason"] | undefined = workspace === undefined

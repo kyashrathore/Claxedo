@@ -84,7 +84,7 @@ Directives a tool reads are not comments and stay, with no prose added: `// @ts-
     - Promises, counters or UI state in the query cache;
     - module-level mutable state;
     - an effect that copies one store into another (derive with memos instead).
-- **UI state that belongs to one component stays in that component.** Persisted UI preferences go through `persisted()`, keyed by user and `SessionRef`.
+- **UI state that belongs to one component stays in that component.** Persisted UI preferences go through `persisted()`, keyed by user and `SessionLocation`.
 
 ## Errors
 

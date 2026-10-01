@@ -1,6 +1,6 @@
 import { createMemo, type Accessor } from "solid-js"
 import type { Panel } from "@/panel"
-import { sessionId as toSessionId, type Server, type SessionRef, type SessionRow, type SessionStatus } from "@/server"
+import { sessionId as toSessionId, type Server, type SessionLocation, type SessionRow, type SessionStatus } from "@/server"
 import type { SessionStatusView, SessionStores, SessionView } from "@/session"
 import { usePreferences, type Preferences } from "@/settings"
 import { sessionPath, type ShellRouting } from "@/shell"
@@ -50,7 +50,7 @@ function shownStatus(status: SessionStatusView): SessionStatus {
   return status.kind === "unknown" ? { kind: "idle" } : status
 }
 
-function refFor(view: SessionView, id: string): SessionRef {
+function refFor(view: SessionView, id: string): SessionLocation {
   return { ...view.ref, sessionId: toSessionId(id) }
 }
 

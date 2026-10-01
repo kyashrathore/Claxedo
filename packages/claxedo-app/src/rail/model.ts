@@ -1,5 +1,5 @@
 import { formatCompactAge } from "@/lib/relative-time"
-import type { MachineId, Placement, ProjectId, SessionId, SessionRef } from "@/server"
+import type { MachineId, Placement, ProjectId, SessionId, SessionLocation } from "@/server"
 import type { SessionRowView } from "@/session"
 import type { TerminalItem } from "@/terminal"
 
@@ -42,7 +42,7 @@ export function sessionAge(row: SessionRowView, now: number): string {
   return formatCompactAge(sessionAgeSince(row), now) ?? "<1m"
 }
 
-export function sessionIdsByProject(refs: readonly SessionRef[]): ReadonlyMap<ProjectId, readonly SessionId[]> {
+export function sessionIdsByProject(refs: readonly SessionLocation[]): ReadonlyMap<ProjectId, readonly SessionId[]> {
   const grouped = new Map<ProjectId, SessionId[]>()
   for (const ref of refs) {
     const group = grouped.get(ref.projectId)

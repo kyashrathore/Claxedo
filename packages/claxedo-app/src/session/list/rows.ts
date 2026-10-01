@@ -1,5 +1,5 @@
 import { sameHarnessSelection } from "@/lib/harness-selection"
-import { sameModelKey, type ProjectId, type SessionId, type SessionRef, type SessionRow, type SessionSelections } from "@/server"
+import { sameModelKey, type ProjectId, type SessionId, type SessionLocation, type SessionRow, type SessionSelections } from "@/server"
 import {
   WINDOW_ALL,
   compareOrder,
@@ -70,7 +70,7 @@ export function upsertRow<S extends ListData>(data: S, row: SessionRow): S {
   return mergeRow(data, row)
 }
 
-export function tombstoneRow<S extends ListData>(data: S, ref: SessionRef, at: number): S {
+export function tombstoneRow<S extends ListData>(data: S, ref: SessionLocation, at: number): S {
   const entries = new Map(data.entries)
   entries.set(ref.sessionId, { kind: "tombstone", ref, at })
   const statuses = new Map(data.statuses)

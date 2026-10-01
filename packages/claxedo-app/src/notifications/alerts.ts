@@ -1,4 +1,4 @@
-import type { ServerEvent, SessionRef, SessionStatus } from "@/server"
+import type { ServerEvent, SessionLocation, SessionStatus } from "@/server"
 import type { SoundChoice } from "./sounds"
 
 export type AlertKind = "agent" | "permissions" | "errors"
@@ -8,7 +8,7 @@ export type AlertPreferences = {
   readonly sound: Readonly<Record<AlertKind, SoundChoice>>
 }
 
-export type Alert = { readonly kind: AlertKind; readonly ref: SessionRef }
+export type Alert = { readonly kind: AlertKind; readonly ref: SessionLocation }
 
 type LastStatus = Map<string, SessionStatus["kind"]>
 
@@ -16,7 +16,7 @@ function working(kind: SessionStatus["kind"] | undefined): boolean {
   return kind === "working" || kind === "retrying" || kind === "recovering"
 }
 
-function statusAlert(last: LastStatus, ref: SessionRef, status: SessionStatus): AlertKind | undefined {
+function statusAlert(last: LastStatus, ref: SessionLocation, status: SessionStatus): AlertKind | undefined {
   const previous = last.get(ref.sessionId)
   last.set(ref.sessionId, status.kind)
   if (status.kind === "idle" && working(previous)) return "agent"

@@ -74,7 +74,7 @@ import type {
   SessionListInput,
   SessionPage,
   SessionReads,
-  SessionRef,
+  SessionLocation,
   SessionRow,
   Subagent,
   TranscriptPage,
@@ -85,22 +85,22 @@ import type { LivePlugin } from "./live-plugin-types"
 
 export type SessionsApi = {
   readonly list: (input: SessionListInput) => Promise<SessionPage>
-  readonly read: (ref: SessionRef, shape: PageShape, held?: HeldSessionReads) => SessionReads
-  readonly page: (ref: SessionRef, shape: PageShape, before: string) => Promise<TranscriptPage>
-  readonly part: (ref: SessionRef, messageId: string, partId: string) => Promise<TranscriptPart>
-  readonly turn: (ref: SessionRef, turnId: string) => Promise<TranscriptPage>
+  readonly read: (ref: SessionLocation, shape: PageShape, held?: HeldSessionReads) => SessionReads
+  readonly page: (ref: SessionLocation, shape: PageShape, before: string) => Promise<TranscriptPage>
+  readonly part: (ref: SessionLocation, messageId: string, partId: string) => Promise<TranscriptPart>
+  readonly turn: (ref: SessionLocation, turnId: string) => Promise<TranscriptPage>
   readonly create: (input: SessionCreateInput) => Promise<SessionRow>
-  readonly prompt: (ref: SessionRef, input: PromptInput) => Promise<PromptDelivery>
-  readonly stop: (ref: SessionRef) => Promise<void>
-  readonly reply: (ref: SessionRef, requestId: RequestId, reply: AgentRequestReply) => Promise<void>
-  readonly rename: (ref: SessionRef, title: string) => Promise<void>
-  readonly archive: (ref: SessionRef, archived: boolean) => Promise<void>
-  readonly remove: (ref: SessionRef) => Promise<void>
+  readonly prompt: (ref: SessionLocation, input: PromptInput) => Promise<PromptDelivery>
+  readonly stop: (ref: SessionLocation) => Promise<void>
+  readonly reply: (ref: SessionLocation, requestId: RequestId, reply: AgentRequestReply) => Promise<void>
+  readonly rename: (ref: SessionLocation, title: string) => Promise<void>
+  readonly archive: (ref: SessionLocation, archived: boolean) => Promise<void>
+  readonly remove: (ref: SessionLocation) => Promise<void>
   readonly newMessageId: () => string
-  readonly queue: (ref: SessionRef) => Promise<readonly QueuedPrompt[]>
-  readonly controlQueued: (ref: SessionRef, seq: number, action: QueuedPromptAction) => Promise<QueuedPromptControl>
-  readonly replaceQueued: (ref: SessionRef, seq: number, input: PromptInput, messageId: string) => Promise<boolean>
-  readonly controlGoal: (ref: SessionRef, action: GoalAction) => Promise<SessionGoal | undefined>
+  readonly queue: (ref: SessionLocation) => Promise<readonly QueuedPrompt[]>
+  readonly controlQueued: (ref: SessionLocation, seq: number, action: QueuedPromptAction) => Promise<QueuedPromptControl>
+  readonly replaceQueued: (ref: SessionLocation, seq: number, input: PromptInput, messageId: string) => Promise<boolean>
+  readonly controlGoal: (ref: SessionLocation, action: GoalAction) => Promise<SessionGoal | undefined>
 }
 
 export type ProjectsApi = {
@@ -267,7 +267,7 @@ export type Server = {
   readonly livePlugins: LivePluginsApi
   readonly harnessConfig: HarnessConfigApi
   readonly queries: ServerQueries
-  readonly attachPlacement: (ref: SessionRef) => () => void
+  readonly attachPlacement: (ref: SessionLocation) => () => void
   readonly request: (path: string, init?: RequestInit) => Promise<Response>
   readonly operation: (name: string, input: unknown) => Promise<unknown>
 }

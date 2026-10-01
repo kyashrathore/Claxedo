@@ -1,5 +1,5 @@
 import { unreachable } from "@/lib/machine"
-import type { AppError, ListedStatus, ProjectId, SessionId, SessionRef, SessionRow, SessionSelections, SessionStatus } from "@/server"
+import type { AppError, ListedStatus, ProjectId, SessionId, SessionLocation, SessionRow, SessionSelections, SessionStatus } from "@/server"
 
 export type PendingSend = {
   readonly clientRequestId: string
@@ -21,7 +21,7 @@ export type PendingEntry = {
   readonly row: SessionRow
 }
 
-export type TombstoneEntry = { readonly kind: "tombstone"; readonly ref: SessionRef; readonly at: number }
+export type TombstoneEntry = { readonly kind: "tombstone"; readonly ref: SessionLocation; readonly at: number }
 
 export type ListEntry = ConfirmedEntry | PendingEntry | TombstoneEntry
 
@@ -61,8 +61,8 @@ export type ListData = {
 
 export type ServerListEvent =
   | { readonly type: "sessionUpserted"; readonly row: SessionRow }
-  | { readonly type: "sessionRemoved"; readonly ref: SessionRef; readonly at: number }
-  | { readonly type: "statusChanged"; readonly ref: SessionRef; readonly status: SessionStatus; readonly at: number }
+  | { readonly type: "sessionRemoved"; readonly ref: SessionLocation; readonly at: number }
+  | { readonly type: "statusChanged"; readonly ref: SessionLocation; readonly status: SessionStatus; readonly at: number }
 
 export type MorePhase =
   | { readonly kind: "idle" }
@@ -109,7 +109,7 @@ export type ListEvent =
   | { readonly type: "rereadFetched"; readonly window: FetchedWindow; readonly mode: RereadMode }
   | { readonly type: "rereadFailed"; readonly error: AppError }
   | { readonly type: "rowRead"; readonly row: SessionRow }
-  | { readonly type: "statusRead"; readonly ref: SessionRef; readonly status: SessionStatus; readonly sentAt: number }
+  | { readonly type: "statusRead"; readonly ref: SessionLocation; readonly status: SessionStatus; readonly sentAt: number }
   | { readonly type: "sessionOpened"; readonly sessionId: SessionId }
   | { readonly type: "sessionClosed"; readonly sessionId: SessionId }
   | { readonly type: "createStarted"; readonly clientRequestId: string; readonly row: SessionRow }

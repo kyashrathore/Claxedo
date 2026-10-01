@@ -1,4 +1,5 @@
 export type { PluginApi } from "./api"
+export type { SessionRef } from "@claxedo/agent-runtime-contract"
 export type {
   CommandContext,
   CommandDefinition,
@@ -45,7 +46,6 @@ export type {
   ProjectsApi,
   ServerApi,
   SessionAttachment,
-  SessionRef,
   SessionStatus,
   SessionsApi,
   Toast,

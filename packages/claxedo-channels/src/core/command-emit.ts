@@ -451,7 +451,14 @@ export function createChannelCore(input: {
 
       if (await handleSessionlessCommand(envelope, handlers)) return
 
-      const existingRef = await input.sessions.get(envelope.threadKey)
+      const existingRef = await input.sessions.get(envelope.threadKey).catch((error: unknown) => {
+        if (error instanceof ChannelSessionResolutionError) return error
+        throw error
+      })
+      if (existingRef instanceof ChannelSessionResolutionError) {
+        await handlers.reply({ kind: "text", text: existingRef.message, final: true })
+        return
+      }
 
       // A plain message arriving while a prompt is pending in this thread is a
       // candidate approval reply — the judge decides below whether it actually

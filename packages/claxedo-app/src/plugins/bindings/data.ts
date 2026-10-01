@@ -27,7 +27,8 @@ function placementFor(scope: BindingScope, projectId: string): Placement {
 }
 
 function sessionRowOf(scope: BindingScope, ref: SessionRef): SessionRowView | undefined {
-  return scope.services.sessions.list.view(sessionId(ref.sessionId))
+  const row = scope.services.sessions.list.view(sessionId(ref.sessionId))
+  return row?.ref.placementId === ref.workspaceId ? row : undefined
 }
 
 export function sessionStatusOf(row: SessionRowView | undefined): SessionStatus {
@@ -52,7 +53,7 @@ function sessionBindings(scope: BindingScope): PluginApi["sessions"] {
       const attachments = (input.attachments ?? []).map((attachment) => promptAttachment(scope, attachment))
       const ref = await sessions.list.create({ placementId: placement.id, title: input.title })
       await sessions.open(ref).send({ clientRequestId: uuid(), text: input.prompt, attachments })
-      return { sessionId: ref.sessionId, projectId: ref.projectId }
+      return { sessionId: ref.sessionId, workspaceId: ref.placementId }
     },
     status: (ref) => sessionStatusOf(sessionRowOf(scope, ref)),
     open: (ref) => {
@@ -82,8 +83,7 @@ export function dataBindings(scope: BindingScope): Data {
       currentSession: () => {
         const route = services.routing.route()
         if (route.kind !== "session") return undefined
-        const projectId = services.server.placements.byId(route.placementId)?.projectId
-        return projectId ? { sessionId: route.sessionId, projectId } : undefined
+        return { sessionId: route.sessionId, workspaceId: route.placementId }
       },
       signal: scope.signal,
     },

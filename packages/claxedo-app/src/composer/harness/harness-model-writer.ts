@@ -2,7 +2,7 @@ import {
   sessionModelSyncKey,
   type HarnessScopeInput,
 } from "./store-policy"
-import type { ModelChoice, SessionRef } from "@/server"
+import type { ModelChoice, SessionLocation } from "@/server"
 import type { DraftDefaultLabels } from "./draft-defaults"
 
 export type SessionModelSyncState = {
@@ -58,7 +58,7 @@ type ModelWriterInput<ScopeInput extends HarnessScopeInput> = {
   reloadOptions(scope: string, params?: ScopeInput): Promise<void> | void
   rememberDraftModel(scope: string, model: ModelChoice, input?: ScopeInput, labels?: DraftDefaultLabels): void
   runtime: {
-    setSessionModel(ref: SessionRef, model: ModelChoice): Promise<void>
+    setSessionModel(ref: SessionLocation, model: ModelChoice): Promise<void>
   }
   cache: HarnessSessionModelSyncCache
 }

@@ -1,4 +1,4 @@
-import type { AgentRequest, SessionId, SessionRef } from "@/server"
+import type { AgentRequest, SessionId, SessionLocation } from "@/server"
 import type { SessionRowView, SessionStatusView } from "@/session"
 import {
   compareOrder,
@@ -28,7 +28,7 @@ export const createRowViewCache = (): RowViewCache => ({ current: new Map() })
 
 type OrderData = Pick<ListData, "entries" | "windows">
 
-export function visibleOrder(data: OrderData): readonly SessionRef[] {
+export function visibleOrder(data: OrderData): readonly SessionLocation[] {
   const shown: Shown[] = []
   for (const entry of data.entries.values()) {
     if (entry.kind === "tombstone") continue
@@ -52,7 +52,7 @@ function cachedView(
 }
 
 export function rowViews(input: {
-  readonly order: readonly SessionRef[]
+  readonly order: readonly SessionLocation[]
   readonly data: Pick<ListData, "entries" | "statuses">
   readonly openRequests: ReadonlyMap<SessionId, readonly AgentRequest[]>
   readonly cache: RowViewCache

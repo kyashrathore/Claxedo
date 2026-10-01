@@ -1,5 +1,5 @@
 import { Show, type JSX } from "solid-js"
-import type { ConfigurationSlot, SessionReference, TaskSessionLinkView, TaskStatus } from "@claxedo/tasks"
+import type { ConfigurationSlot, SessionRef, TaskSessionLinkView, TaskStatus } from "@claxedo/tasks"
 import { useTranslator } from "@/i18n"
 import { Button, Icon, IconButton } from "@/ui"
 import type { TaskStartOffer } from "../data/start"
@@ -23,7 +23,7 @@ export type TaskDetailProps = {
   readonly onSave: () => void
   readonly onDiscard: () => void
   readonly onStatusChange: (input: { taskId: string; revision: number; status: TaskStatus }) => void
-  readonly onOpenSession: (sessionRef: SessionReference) => void
+  readonly onOpenSession: (sessionRef: SessionRef) => void
   readonly startOffer: (slot: ConfigurationSlot) => TaskStartOffer
   readonly onSendTask: (link: TaskSessionLinkView) => void
   readonly onArchive: () => void

@@ -20,7 +20,7 @@ import {
   type Preset,
   type SessionHandoffCommand,
   type SessionOrigin,
-  type SessionReference,
+  type SessionRef,
   type StartCommand,
   type StartPreviewCommand,
   type Task,
@@ -45,7 +45,7 @@ export type TasksSessionBridgeFixture = {
   /** The instructions the runtime was created with, or undefined for a session it never created. */
   instructionsOf(sessionId: string): Promise<string | undefined>
   /** A session in a reachable workspace whose message history this host's runtime cannot answer for. */
-  unreadableSession(): SessionReference
+  unreadableSession(): SessionRef
   /** The user message ids the runtime has been asked to run. */
   turns(): readonly string[]
   /** The parts of every prompt the runtime was handed, in the order they were sent. */
@@ -131,7 +131,7 @@ async function startCommand(
 
 function handoffCommand(
   fixture: TasksSessionBridgeFixture,
-  session: SessionReference,
+  session: SessionRef,
   attachments: readonly TaskAttachmentRecord[] = [],
 ): SessionHandoffCommand {
   return {
@@ -146,7 +146,7 @@ function handoffCommand(
 }
 
 /** Preview, then start what it described. Every case that needs a live session starts one this way. */
-async function started(fixture: TasksSessionBridgeFixture, task?: Task): Promise<SessionReference> {
+async function started(fixture: TasksSessionBridgeFixture, task?: Task): Promise<SessionRef> {
   const previewed = await fixture.bridge.preview(previewCommand(fixture, task ? { task } : {}))
   assert(previewed.ok, `preview refused: ${previewed.ok ? "" : previewed.error.message}`)
   const outcome = await fixture.bridge.start(
@@ -156,7 +156,7 @@ async function started(fixture: TasksSessionBridgeFixture, task?: Task): Promise
   return outcome.session.sessionRef
 }
 
-function attemptOrigin(fixture: TasksSessionBridgeFixture, sessionRef: SessionReference, attempt = 1): SessionOrigin {
+function attemptOrigin(fixture: TasksSessionBridgeFixture, sessionRef: SessionRef, attempt = 1): SessionOrigin {
   return { scopeId: fixture.actor.scopeId, taskId: fixture.task.id, slot: SLOT, attempt, sessionRef }
 }
 
@@ -313,7 +313,7 @@ export function tasksSessionBridgeConformance(
             "an archived session did not read as archived",
           )
 
-          const absent: SessionReference = { sessionId: "ses_never_created", workspaceId: live.workspaceId }
+          const absent: SessionRef = { sessionId: "ses_never_created", workspaceId: live.workspaceId }
           assertSameJson(
             await fixture.bridge.sessionState([attemptOrigin(fixture, absent)]),
             [{ session: absent, state: "deleted", handoff: "unknown" }],

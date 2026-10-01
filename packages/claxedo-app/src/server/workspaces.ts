@@ -8,7 +8,7 @@ import { ServerError } from "./errors"
 import type { PlacementId, ProjectId } from "./ids"
 import { queryKeys } from "./query-keys"
 import type { RuntimeRoute, Transport } from "./transport"
-import type { Project, SessionRef } from "./types"
+import type { Project, SessionLocation } from "./types"
 import { isStoppedCloud } from "./placement-runtime"
 import { workspaceStopped } from "./wire/connection"
 import { bootstrapCatalog, type BootstrapCatalog, type PlacementRecord } from "./wire/placements"
@@ -22,9 +22,9 @@ export type SessionHome = {
 
 export type Workspaces = Pick<PlacementsApi, "byId" | "list"> & {
   readonly address: Address
-  readonly route: (ref: SessionRef | PlacementId) => Promise<RuntimeRoute>
+  readonly route: (ref: SessionLocation | PlacementId) => Promise<RuntimeRoute>
   readonly locate: (id: PlacementId) => Promise<RuntimeRoute>
-  readonly home: (ref: SessionRef) => Promise<SessionHome>
+  readonly home: (ref: SessionLocation) => Promise<SessionHome>
   readonly learn: (directory: string) => Promise<void>
   readonly catalog: () => BootstrapCatalog | undefined
   readonly load: () => Promise<BootstrapCatalog>

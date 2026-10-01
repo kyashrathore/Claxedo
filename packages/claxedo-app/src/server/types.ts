@@ -11,6 +11,7 @@ import type {
   AgentTurnOutcome,
   PromptDeliveryRequest,
   RuntimeGoalSnapshot,
+  SessionRef,
 } from "@claxedo/agent-runtime-contract"
 import type { SolidQueryOptions } from "@tanstack/solid-query"
 import type { HarnessSelection } from "../lib/harness-selection"
@@ -27,10 +28,10 @@ export type AppError = {
   readonly cause?: unknown
 }
 
-export type SessionRef = {
+export type SessionLocation = {
   readonly projectId: ProjectId
-  readonly placementId: PlacementId
-  readonly sessionId: SessionId
+  readonly placementId: SessionRef["workspaceId"] & PlacementId
+  readonly sessionId: SessionRef["sessionId"] & SessionId
 }
 
 export type Machine = {
@@ -112,7 +113,7 @@ export type SessionSelections = {
 }
 
 export type SessionRow = SessionSelections & {
-  readonly ref: SessionRef
+  readonly ref: SessionLocation
   readonly title: string
   readonly createdAt: number
   readonly updatedAt: number

@@ -265,10 +265,7 @@ describe("a Tasks grant opening a linked session", () => {
     expect(await composed.authorization.authorizeSessionOpen(actor, { sessionId: "ses_9", workspaceId: "ws_sibling" })).toBe(true)
   })
 
-  test("is refused a link naming no workspace, and every link on an authority that cannot answer for an actor", async () => {
-    const answering = identity({ authorizeRuntimeSession: vi.fn(async () => undefined) })
-    expect(await answering.authorization.authorizeSessionOpen(await actorOf(answering), { sessionId: "ses_9", workspaceId: null })).toBe(false)
-
+  test("is refused every link on an authority that cannot answer for an actor", async () => {
     const silent = identity()
     expect(await silent.authorization.authorizeSessionOpen(await actorOf(silent), { sessionId: "ses_9", workspaceId: "ws_root" })).toBe(false)
   })

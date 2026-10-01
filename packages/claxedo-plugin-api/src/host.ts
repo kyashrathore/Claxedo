@@ -1,7 +1,4 @@
-export interface SessionRef {
-  sessionId: string
-  projectId: string
-}
+import type { SessionRef } from "@claxedo/agent-runtime-contract"
 
 export interface SessionAttachment {
   name: string

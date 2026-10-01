@@ -58,7 +58,7 @@ function linkedSession(sessionId: string): TaskSessionLink {
   return linkRow({
     taskId: "task-linked",
     attempt: 1,
-    sessionRef: { sessionId, workspaceId: null },
+    sessionRef: { sessionId, workspaceId: "workspace-local" },
     presetId: "preset-linked",
     presetNameAtStart: "Linked preset",
     configurationDigest: DIGEST,

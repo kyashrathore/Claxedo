@@ -1,13 +1,13 @@
 import { isAgentContentPart, isAgentMessageInfo, type AgentSession } from "@claxedo/agent-runtime-contract"
 import type { ServerEvent } from "../events"
 import { placementId as asPlacementId, projectId, requestId } from "../ids"
-import type { FileDiff, SessionRef, Todo } from "../types"
+import type { FileDiff, SessionLocation, Todo } from "../types"
 import { provisionStatus } from "./cloud"
 import { goalFromWire } from "./goal"
 import { connectionStateFromWire, harnessHealthFromWire } from "./harness-state"
 import { subagentFromWire } from "./subagents"
 import { isPermissionWire, isQuestionWire, requestFromPermission, requestFromQuestion } from "./requests"
-import { sessionRefFor, sessionRowFromSession, type Address } from "./session-row"
+import { sessionLocationFor, sessionRowFromSession, type Address } from "./session-row"
 import { sessionStatusFromTurnError, sessionStatusFromWire } from "./status"
 import { terminalEvent } from "./terminals"
 import { isRecord, nonEmptyString } from "@claxedo/helpers/guards"
@@ -51,10 +51,10 @@ export function placementDirectory(frame: Frame): string | undefined {
   return frame.directory !== undefined && frame.directory !== "global" ? frame.directory : undefined
 }
 
-function refOf(frame: Frame, address: Address): SessionRef | undefined {
+function refOf(frame: Frame, address: Address): SessionLocation | undefined {
   const sessionId = frameSessionId(frame)
   if (!sessionId || !frame.directory) return undefined
-  return sessionRefFor(address, { directory: frame.directory, workspaceId: frame.workspaceId, sessionId })
+  return sessionLocationFor(address, { directory: frame.directory, workspaceId: frame.workspaceId, sessionId })
 }
 
 function framePlacementId(frame: Frame, address: Address) {
@@ -71,7 +71,7 @@ function diffOf(value: unknown): FileDiff[] | undefined {
   return value.filter((item): item is FileDiff => isRecord(item) && typeof item.additions === "number" && typeof item.deletions === "number")
 }
 
-function transcriptEvent(frame: Frame, ref: SessionRef): ServerEvent | undefined {
+function transcriptEvent(frame: Frame, ref: SessionLocation): ServerEvent | undefined {
   const properties = frame.properties ?? {}
   switch (frame.type) {
     case "message.updated":
@@ -99,14 +99,14 @@ function transcriptEvent(frame: Frame, ref: SessionRef): ServerEvent | undefined
   }
 }
 
-function harnessHealthEvent(properties: Record<string, unknown>, ref: SessionRef): ServerEvent | undefined {
+function harnessHealthEvent(properties: Record<string, unknown>, ref: SessionLocation): ServerEvent | undefined {
   const health = harnessHealthFromWire(properties.harnessHealth)
   if (!health) return undefined
   const connectionState = connectionStateFromWire(properties.connectionState)
   return { type: "harnessHealthChanged", ref, health, ...(connectionState ? { connectionState } : {}) }
 }
 
-function lifecycleEvent(frame: Frame, ref: SessionRef): ServerEvent | undefined {
+function lifecycleEvent(frame: Frame, ref: SessionLocation): ServerEvent | undefined {
   const properties = frame.properties ?? {}
   switch (frame.type) {
     case "session.status": {
@@ -146,7 +146,7 @@ function lifecycleEvent(frame: Frame, ref: SessionRef): ServerEvent | undefined 
   }
 }
 
-function requestEvent(frame: Frame, ref: SessionRef): ServerEvent | undefined {
+function requestEvent(frame: Frame, ref: SessionLocation): ServerEvent | undefined {
   const properties = frame.properties ?? {}
   switch (frame.type) {
     case "permission.asked":
