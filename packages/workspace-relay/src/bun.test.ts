@@ -26,6 +26,7 @@ import {
   type HostGenerationResult,
   type WorkspaceRelayAuditEvent,
 } from "./server"
+import { signUnfencedHostTunnelToken } from "./test-support/unfenced-host-token"
 
 type DirectoryObserver = {
   waitForPresence(): Promise<NonNullable<ReturnType<WorkspaceRelayDirectory["activeHost"]>>>
@@ -179,6 +180,8 @@ function hostTunnelSocket(url: string, token: string) {
   })
 }
 
+const currentGenerationZero: HostGenerationLookup = async () => ({ enrollmentId: "enr_1", generation: 0, revoked: false })
+
 /**
  * `authorizeHostTunnel` grants by returning the claims its policy verified;
  * the relay re-validates host/workspace binding on them. This stand-in binds
@@ -190,6 +193,8 @@ const allowHostTunnel: NonNullable<WorkspaceRelayBunOptions["authorizeHostTunnel
   claims: {
     iss: runtimeAccessTokenIssuer,
     aud: hostTunnelTokenAudience,
+    enrollment_id: "enr_1",
+    generation: 0,
     sub: "host-client-test",
     host_id: input.hostId,
     workspace_ids: input.workspaceIds,
@@ -226,6 +231,7 @@ async function preOpenQueueHarness(bounds: {
     }
   }
   const relayHandler = createWorkspaceRelayBun({
+    resolveHostGeneration: currentGenerationZero,
     runtimeAccessKey: runtime.publicKey,
     relayHostSigningKey: relayHost.privateKey,
     relayHostAlgorithm: "EdDSA",
@@ -294,6 +300,7 @@ describe("workspace relay Bun adapter", () => {
       },
     })
     const relayHandler = createWorkspaceRelayBun({
+      resolveHostGeneration: currentGenerationZero,
       runtimeAccessKey: runtime.publicKey,
       relayHostSigningKey: relayHost.privateKey,
       relayHostAlgorithm: "EdDSA",
@@ -367,6 +374,7 @@ describe("workspace relay Bun adapter", () => {
       },
     })
     const relayHandler = createWorkspaceRelayBun({
+      resolveHostGeneration: currentGenerationZero,
       runtimeAccessKey: runtime.publicKey,
       relayHostSigningKey: relayHost.privateKey,
       relayHostAlgorithm: "EdDSA",
@@ -429,6 +437,7 @@ describe("workspace relay Bun adapter", () => {
       }
     }
     const relayHandler = createWorkspaceRelayBun({
+      resolveHostGeneration: currentGenerationZero,
       runtimeAccessKey: runtime.publicKey,
       relayHostSigningKey: relayHost.privateKey,
       relayHostAlgorithm: "EdDSA",
@@ -574,6 +583,7 @@ describe("workspace relay Bun adapter", () => {
       }
     }
     const relayHandler = createWorkspaceRelayBun({
+      resolveHostGeneration: currentGenerationZero,
       runtimeAccessKey: runtime.publicKey,
       relayHostSigningKey: relayHost.privateKey,
       relayHostAlgorithm: "EdDSA",
@@ -672,6 +682,7 @@ describe("workspace relay Bun adapter", () => {
       }
     }
     const relayHandler = createWorkspaceRelayBun({
+      resolveHostGeneration: currentGenerationZero,
       runtimeAccessKey: runtime.publicKey,
       relayHostSigningKey: relayHost.privateKey,
       relayHostAlgorithm: "EdDSA",
@@ -744,6 +755,7 @@ describe("workspace relay Bun adapter", () => {
       }
     }
     const relayHandler = createWorkspaceRelayBun({
+      resolveHostGeneration: currentGenerationZero,
       runtimeAccessKey: runtime.publicKey,
       relayHostSigningKey: relayHost.privateKey,
       relayHostAlgorithm: "EdDSA",
@@ -806,6 +818,7 @@ describe("workspace relay Bun adapter", () => {
       },
     })
     const relayHandler = createWorkspaceRelayBun({
+      resolveHostGeneration: currentGenerationZero,
       runtimeAccessKey: runtime.publicKey,
       relayHostSigningKey: relayHost.privateKey,
       relayHostAlgorithm: "EdDSA",
@@ -880,6 +893,7 @@ describe("workspace relay Bun adapter", () => {
       },
     })
     const relayHandler = createWorkspaceRelayBun({
+      resolveHostGeneration: currentGenerationZero,
       runtimeAccessKey: runtime.publicKey,
       relayHostSigningKey: relayHost.privateKey,
       relayHostAlgorithm: "EdDSA",
@@ -943,6 +957,7 @@ describe("workspace relay Bun adapter", () => {
       },
     })
     const relayHandler = createWorkspaceRelayBun({
+      resolveHostGeneration: currentGenerationZero,
       runtimeAccessKey: runtime.publicKey,
       relayHostSigningKey: relayHost.privateKey,
       relayHostAlgorithm: "EdDSA",
@@ -1007,6 +1022,7 @@ describe("workspace relay Bun adapter", () => {
       },
     })
     const relayHandler = createWorkspaceRelayBun({
+      resolveHostGeneration: currentGenerationZero,
       runtimeAccessKey: runtime.publicKey,
       relayHostSigningKey: relayHost.privateKey,
       relayHostAlgorithm: "EdDSA",
@@ -1081,6 +1097,7 @@ describe("workspace relay Bun adapter", () => {
       },
     })
     const relayHandler = createWorkspaceRelayBun({
+      resolveHostGeneration: currentGenerationZero,
       runtimeAccessKey: runtime.publicKey,
       relayHostSigningKey: relayHost.privateKey,
       relayHostAlgorithm: "EdDSA",
@@ -1151,6 +1168,7 @@ describe("workspace relay Bun adapter", () => {
       },
     })
     const relayHandler = createWorkspaceRelayBun({
+      resolveHostGeneration: currentGenerationZero,
       runtimeAccessKey: runtime.publicKey,
       relayHostSigningKey: relayHost.privateKey,
       relayHostAlgorithm: "EdDSA",
@@ -1215,6 +1233,7 @@ describe("workspace relay Bun adapter", () => {
       },
     })
     const relayHandler = createWorkspaceRelayBun({
+      resolveHostGeneration: currentGenerationZero,
       runtimeAccessKey: runtime.publicKey,
       relayHostSigningKey: relayHost.privateKey,
       relayHostAlgorithm: "EdDSA",
@@ -1281,6 +1300,7 @@ describe("workspace relay Bun adapter", () => {
       },
     })
     const relayHandler = createWorkspaceRelayBun({
+      resolveHostGeneration: currentGenerationZero,
       runtimeAccessKey: runtime.publicKey,
       relayHostSigningKey: relayHost.privateKey,
       relayHostAlgorithm: "EdDSA",
@@ -1345,6 +1365,7 @@ describe("workspace relay Bun adapter", () => {
       },
     })
     const relayHandler = createWorkspaceRelayBun({
+      resolveHostGeneration: currentGenerationZero,
       runtimeAccessKey: runtime.publicKey,
       relayHostSigningKey: relayHost.privateKey,
       relayHostAlgorithm: "EdDSA",
@@ -1407,6 +1428,7 @@ describe("workspace relay Bun adapter", () => {
     const runtime = await generateKeyPair("EdDSA", { extractable: true })
     const relayHost = await generateKeyPair("EdDSA", { extractable: true })
     const relayHandler = createWorkspaceRelayBun({
+      resolveHostGeneration: currentGenerationZero,
       runtimeAccessKey: runtime.publicKey,
       relayHostSigningKey: relayHost.privateKey,
       relayHostAlgorithm: "EdDSA",
@@ -1467,6 +1489,7 @@ describe("workspace relay Bun adapter", () => {
       },
     })
     const relayHandler = createWorkspaceRelayBun({
+      resolveHostGeneration: currentGenerationZero,
       runtimeAccessKey: runtime.publicKey,
       relayHostSigningKey: relayHost.privateKey,
       relayHostAlgorithm: "EdDSA",
@@ -1522,6 +1545,7 @@ describe("workspace relay Bun adapter", () => {
     const observer = observeDirectory(directory)
     const auditEvents: unknown[] = []
     const relayHandler = createWorkspaceRelayBun({
+      resolveHostGeneration: currentGenerationZero,
       runtimeAccessKey: runtime.publicKey,
       relayHostSigningKey: relayHost.privateKey,
       relayHostAlgorithm: "EdDSA",
@@ -1540,6 +1564,8 @@ describe("workspace relay Bun adapter", () => {
       websocket: relayHandler.websocket,
     })
     const token = await mintHostTunnelToken({
+      enrollmentId: "enr_1",
+      generation: 0,
       subject: "user_1",
       hostId: "host_1",
       workspaceIds: ["ws_1"],
@@ -1590,6 +1616,7 @@ describe("workspace relay Bun adapter", () => {
     const relayHost = await generateKeyPair("EdDSA", { extractable: true })
     const directory = createWorkspaceRelayDirectory({ ttlMs: 10_000 })
     const relayHandler = createWorkspaceRelayBun({
+      resolveHostGeneration: currentGenerationZero,
       runtimeAccessKey: runtime.publicKey,
       relayHostSigningKey: relayHost.privateKey,
       relayHostAlgorithm: "EdDSA",
@@ -1598,11 +1625,15 @@ describe("workspace relay Bun adapter", () => {
     })
     const relay = Bun.serve({ port: 0, fetch: relayHandler.fetch, websocket: relayHandler.websocket })
     const initialToken = await mintHostTunnelToken({
+      enrollmentId: "enr_1",
+      generation: 0,
       subject: "user_1",
       hostId: "host_1",
       workspaceIds: ["ws_1"],
     }, runtime.privateKey, "EdDSA")
     const updateToken = await mintHostTunnelToken({
+      enrollmentId: "enr_1",
+      generation: 0,
       subject: "user_1",
       hostId: "host_1",
       workspaceIds: ["ws_1", "ws_2"],
@@ -1641,6 +1672,7 @@ describe("workspace relay Bun adapter", () => {
     const directory = createWorkspaceRelayDirectory({ ttlMs: 10_000 })
     const observer = observeDirectory(directory)
     const relayHandler = createWorkspaceRelayBun({
+      resolveHostGeneration: currentGenerationZero,
       runtimeAccessKey: runtime.publicKey,
       relayHostSigningKey: relayHost.privateKey,
       relayHostAlgorithm: "EdDSA",
@@ -1691,6 +1723,7 @@ describe("workspace relay Bun adapter", () => {
     const directory = createWorkspaceRelayDirectory({ ttlMs: 10_000 })
     const observer = observeDirectory(directory)
     const relayHandler = createWorkspaceRelayBun({
+      resolveHostGeneration: currentGenerationZero,
       runtimeAccessKey: runtime.publicKey,
       relayHostSigningKey: relayHost.privateKey,
       relayHostAlgorithm: "EdDSA",
@@ -1732,6 +1765,7 @@ describe("workspace relay Bun adapter", () => {
     const directory = createWorkspaceRelayDirectory()
     const observer = observeDirectory(directory)
     const relayHandler = createWorkspaceRelayBun({
+      resolveHostGeneration: currentGenerationZero,
       runtimeAccessKey: runtime.publicKey,
       relayHostSigningKey: relayHost.privateKey,
       relayHostAlgorithm: "EdDSA",
@@ -1822,6 +1856,7 @@ describe("workspace relay Bun adapter", () => {
     const directory = createWorkspaceRelayDirectory()
     const observer = observeDirectory(directory)
     const relayHandler = createWorkspaceRelayBun({
+      resolveHostGeneration: currentGenerationZero,
       runtimeAccessKey: runtime.publicKey,
       relayHostSigningKey: relayHost.privateKey,
       relayHostAlgorithm: "EdDSA",
@@ -1910,6 +1945,7 @@ describe("workspace relay Bun adapter", () => {
     const directory = createWorkspaceRelayDirectory()
     const observer = observeDirectory(directory)
     const relayHandler = createWorkspaceRelayBun({
+      resolveHostGeneration: currentGenerationZero,
       runtimeAccessKey: runtime.publicKey,
       relayHostSigningKey: relayHost.privateKey,
       relayHostAlgorithm: "EdDSA",
@@ -1980,6 +2016,7 @@ describe("workspace relay Bun adapter", () => {
     const directory = createWorkspaceRelayDirectory()
     const observer = observeDirectory(directory)
     const relayHandler = createWorkspaceRelayBun({
+      resolveHostGeneration: currentGenerationZero,
       runtimeAccessKey: runtime.publicKey,
       relayHostSigningKey: relayHost.privateKey,
       relayHostAlgorithm: "EdDSA",
@@ -2042,6 +2079,7 @@ describe("workspace relay Bun adapter", () => {
     const directory = createWorkspaceRelayDirectory()
     const observer = observeDirectory(directory)
     const relayHandler = createWorkspaceRelayBun({
+      resolveHostGeneration: currentGenerationZero,
       runtimeAccessKey: runtime.publicKey,
       relayHostSigningKey: relayHost.privateKey,
       relayHostAlgorithm: "EdDSA",
@@ -2146,6 +2184,7 @@ describe("workspace relay Bun adapter", () => {
     const directory = createWorkspaceRelayDirectory()
     const observer = observeDirectory(directory)
     const relayHandler = createWorkspaceRelayBun({
+      resolveHostGeneration: currentGenerationZero,
       runtimeAccessKey: runtime.publicKey,
       relayHostSigningKey: relayHost.privateKey,
       relayHostAlgorithm: "EdDSA",
@@ -2214,6 +2253,7 @@ describe("workspace relay Bun adapter", () => {
     const directory = createWorkspaceRelayDirectory()
     const observer = observeDirectory(directory)
     const relayHandler = createWorkspaceRelayBun({
+      resolveHostGeneration: currentGenerationZero,
       runtimeAccessKey: runtime.publicKey,
       relayHostSigningKey: relayHost.privateKey,
       relayHostAlgorithm: "EdDSA",
@@ -2304,6 +2344,7 @@ describe("workspace relay Bun adapter", () => {
     const directory = createWorkspaceRelayDirectory()
     const observer = observeDirectory(directory)
     const relayHandler = createWorkspaceRelayBun({
+      resolveHostGeneration: currentGenerationZero,
       runtimeAccessKey: runtime.publicKey,
       relayHostSigningKey: relayHost.privateKey,
       relayHostAlgorithm: "EdDSA",
@@ -2419,6 +2460,7 @@ describe("workspace relay Bun adapter", () => {
       },
     })
     const relayHandler = createWorkspaceRelayBun({
+      resolveHostGeneration: currentGenerationZero,
       runtimeAccessKey: runtime.publicKey,
       relayHostSigningKey: relayHost.privateKey,
       relayHostAlgorithm: "EdDSA",
@@ -2472,6 +2514,7 @@ describe("workspace relay Bun adapter", () => {
     const directory = createWorkspaceRelayDirectory()
     const observer = observeDirectory(directory)
     const relayHandler = createWorkspaceRelayBun({
+      resolveHostGeneration: currentGenerationZero,
       runtimeAccessKey: runtime.publicKey,
       relayHostSigningKey: relayHost.privateKey,
       relayHostAlgorithm: "EdDSA",
@@ -2566,6 +2609,7 @@ describe("workspace relay Bun adapter", () => {
     const observer = observeDirectory(directory)
     let active = true
     const relayHandler = createWorkspaceRelayBun({
+      resolveHostGeneration: currentGenerationZero,
       runtimeAccessKey: runtime.publicKey,
       relayHostSigningKey: relayHost.privateKey,
       relayHostAlgorithm: "EdDSA",
@@ -2633,6 +2677,7 @@ describe("workspace relay Bun adapter", () => {
     const directory = createWorkspaceRelayDirectory()
     const observer = observeDirectory(directory)
     const relayHandler = createWorkspaceRelayBun({
+      resolveHostGeneration: currentGenerationZero,
       runtimeAccessKey: runtime.publicKey,
       relayHostSigningKey: relayHost.privateKey,
       relayHostAlgorithm: "EdDSA",
@@ -2719,6 +2764,7 @@ describe("workspace relay Bun adapter", () => {
     const directory = createWorkspaceRelayDirectory()
     const observer = observeDirectory(directory)
     const relayHandler = createWorkspaceRelayBun({
+      resolveHostGeneration: currentGenerationZero,
       runtimeAccessKey: runtime.publicKey,
       relayHostSigningKey: relayHost.privateKey,
       relayHostAlgorithm: "EdDSA",
@@ -2798,6 +2844,7 @@ describe("workspace relay Bun adapter", () => {
     const runtime = await generateKeyPair("EdDSA", { extractable: true })
     const relayHost = await generateKeyPair("EdDSA", { extractable: true })
     const relayHandler = createWorkspaceRelayBun({
+      resolveHostGeneration: currentGenerationZero,
       runtimeAccessKey: runtime.publicKey,
       relayHostSigningKey: relayHost.privateKey,
       relayHostAlgorithm: "EdDSA",
@@ -2830,6 +2877,7 @@ describe("workspace relay Bun adapter", () => {
     const runtime = await generateKeyPair("EdDSA", { extractable: true })
     const relayHost = await generateKeyPair("EdDSA", { extractable: true })
     const relayHandler = createWorkspaceRelayBun({
+      resolveHostGeneration: currentGenerationZero,
       runtimeAccessKey: runtime.publicKey,
       relayHostSigningKey: relayHost.privateKey,
       relayHostAlgorithm: "EdDSA",
@@ -2862,6 +2910,7 @@ describe("workspace relay Bun adapter", () => {
     const directory = createWorkspaceRelayDirectory()
     const observer = observeDirectory(directory)
     const relayHandler = createWorkspaceRelayBun({
+      resolveHostGeneration: currentGenerationZero,
       runtimeAccessKey: runtime.publicKey,
       relayHostSigningKey: relayHost.privateKey,
       relayHostAlgorithm: "EdDSA",
@@ -2986,6 +3035,7 @@ describe("workspace relay Bun adapter", () => {
     const directory = createWorkspaceRelayDirectory()
     const observer = observeDirectory(directory)
     const relayHandler = createWorkspaceRelayBun({
+      resolveHostGeneration: currentGenerationZero,
       runtimeAccessKey: runtime.publicKey,
       relayHostSigningKey: relayHost.privateKey,
       relayHostAlgorithm: "EdDSA",
@@ -3065,6 +3115,7 @@ describe("workspace relay Bun adapter", () => {
     const runtime = await generateKeyPair("EdDSA", { extractable: true })
     const relayHost = await generateKeyPair("EdDSA", { extractable: true })
     const relayHandler = createWorkspaceRelayBun({
+      resolveHostGeneration: currentGenerationZero,
       runtimeAccessKey: runtime.publicKey,
       relayHostSigningKey: relayHost.privateKey,
       relayHostAlgorithm: "EdDSA",
@@ -3080,6 +3131,7 @@ describe("workspace relay Bun adapter", () => {
     const directory = createWorkspaceRelayDirectory()
     const observer = observeDirectory(directory)
     const relayHandler = createWorkspaceRelayBun({
+      resolveHostGeneration: currentGenerationZero,
       runtimeAccessKey: runtime.publicKey,
       relayHostSigningKey: relayHost.privateKey,
       relayHostAlgorithm: "EdDSA",
@@ -3268,6 +3320,7 @@ describe("workspace relay Bun adapter", () => {
     const runtime = await generateKeyPair("EdDSA", { extractable: true })
     const relayHost = await generateKeyPair("EdDSA", { extractable: true })
     const relayHandler = createWorkspaceRelayBun({
+      resolveHostGeneration: currentGenerationZero,
       runtimeAccessKey: runtime.publicKey,
       relayHostSigningKey: relayHost.privateKey,
       relayHostAlgorithm: "EdDSA",
@@ -3324,6 +3377,7 @@ describe("workspace relay Bun adapter", () => {
       websocket: { message() {} },
     })
     const relayHandler = createWorkspaceRelayBun({
+      resolveHostGeneration: currentGenerationZero,
       runtimeAccessKey: runtime.publicKey,
       relayHostSigningKey: relayHost.privateKey,
       relayHostAlgorithm: "EdDSA",
@@ -3382,6 +3436,7 @@ describe("workspace relay Bun adapter", () => {
     const runtime = await generateKeyPair("EdDSA", { extractable: true })
     const relayHost = await generateKeyPair("EdDSA", { extractable: true })
     const relayHandler = createWorkspaceRelayBun({
+      resolveHostGeneration: currentGenerationZero,
       runtimeAccessKey: runtime.publicKey,
       relayHostSigningKey: relayHost.privateKey,
       relayHostAlgorithm: "EdDSA",
@@ -3433,6 +3488,7 @@ describe("workspace relay Bun adapter", () => {
     })
     let active = true
     const relayHandler = createWorkspaceRelayBun({
+      resolveHostGeneration: currentGenerationZero,
       runtimeAccessKey: runtime.publicKey,
       relayHostSigningKey: relayHost.privateKey,
       relayHostAlgorithm: "EdDSA",
@@ -3487,6 +3543,7 @@ describe("workspace relay Bun adapter", () => {
       websocket: { message() {} },
     })
     const relayHandler = createWorkspaceRelayBun({
+      resolveHostGeneration: currentGenerationZero,
       runtimeAccessKey: runtime.publicKey,
       relayHostSigningKey: relayHost.privateKey,
       relayHostAlgorithm: "EdDSA",
@@ -3547,6 +3604,7 @@ describe("workspace relay Bun adapter", () => {
         : { active: false as const, code: "runtime_access_token_revoked", reason: "Runtime Access Token has been revoked" },
     { ttlMs: revocationCacheTtlMs })
     const relayHandler = createWorkspaceRelayBun({
+      resolveHostGeneration: currentGenerationZero,
       runtimeAccessKey: runtime.publicKey,
       relayHostSigningKey: relayHost.privateKey,
       relayHostAlgorithm: "EdDSA",
@@ -3611,6 +3669,7 @@ describe("workspace relay Bun adapter", () => {
     // simulating a resolver outage on an established socket.
     let admitted = false
     const relayHandler = createWorkspaceRelayBun({
+      resolveHostGeneration: currentGenerationZero,
       runtimeAccessKey: runtime.publicKey,
       relayHostSigningKey: relayHost.privateKey,
       relayHostAlgorithm: "EdDSA",
@@ -3702,6 +3761,7 @@ describe("workspace relay Bun adapter", () => {
       websocket: { message(ws, message) { ws.send(message) } },
     })
     const handler = createWorkspaceRelayBun({
+      resolveHostGeneration: currentGenerationZero,
       runtimeAccessKey: runtime.publicKey,
       relayHostSigningKey: relayHost.privateKey,
       relayHostAlgorithm: "EdDSA",
@@ -3747,6 +3807,7 @@ describe("workspace relay Bun adapter", () => {
     const runtime = await generateKeyPair("EdDSA", { extractable: true })
     const relayHost = await generateKeyPair("EdDSA", { extractable: true })
     const relayHandler = createWorkspaceRelayBun({
+      resolveHostGeneration: currentGenerationZero,
       runtimeAccessKey: runtime.publicKey,
       relayHostSigningKey: relayHost.privateKey,
       relayHostAlgorithm: "EdDSA",
@@ -3808,6 +3869,7 @@ describe("workspace relay Bun adapter", () => {
       },
     })
     const relayHandler = createWorkspaceRelayBun({
+      resolveHostGeneration: currentGenerationZero,
       runtimeAccessKey: runtime.publicKey,
       relayHostSigningKey: relayHost.privateKey,
       relayHostAlgorithm: "EdDSA",
@@ -3869,6 +3931,7 @@ describe("workspace relay Bun adapter", () => {
       },
     })
     const relayHandler = createWorkspaceRelayBun({
+      resolveHostGeneration: currentGenerationZero,
       runtimeAccessKey: runtime.publicKey,
       relayHostSigningKey: relayHost.privateKey,
       relayHostAlgorithm: "EdDSA",
@@ -3918,6 +3981,7 @@ describe("workspace relay Bun adapter", () => {
     const directory = createWorkspaceRelayDirectory()
     const observer = observeDirectory(directory)
     const relayHandler = createWorkspaceRelayBun({
+      resolveHostGeneration: currentGenerationZero,
       runtimeAccessKey: runtime.publicKey,
       relayHostSigningKey: relayHost.privateKey,
       relayHostAlgorithm: "EdDSA",
@@ -3978,6 +4042,7 @@ describe("workspace relay Bun adapter", () => {
     const directory = createWorkspaceRelayDirectory()
     const observer = observeDirectory(directory)
     const relayHandler = createWorkspaceRelayBun({
+      resolveHostGeneration: currentGenerationZero,
       runtimeAccessKey: runtime.publicKey,
       relayHostSigningKey: relayHost.privateKey,
       relayHostAlgorithm: "EdDSA",
@@ -4016,6 +4081,7 @@ describe("workspace relay Bun adapter", () => {
     const relayHost = await generateKeyPair("EdDSA", { extractable: true })
     const auditEvents: WorkspaceRelayAuditEvent[] = []
     const relayHandler = createWorkspaceRelayBun({
+      resolveHostGeneration: currentGenerationZero,
       runtimeAccessKey: runtime.publicKey,
       relayHostSigningKey: relayHost.privateKey,
       relayHostAlgorithm: "EdDSA",
@@ -4077,6 +4143,7 @@ describe("workspace relay Bun adapter", () => {
     const directory = createWorkspaceRelayDirectory()
     const observer = observeDirectory(directory)
     const relayHandler = createWorkspaceRelayBun({
+      resolveHostGeneration: currentGenerationZero,
       runtimeAccessKey: runtime.publicKey,
       relayHostSigningKey: relayHost.privateKey,
       relayHostAlgorithm: "EdDSA",
@@ -4153,6 +4220,7 @@ describe("workspace relay Bun adapter", () => {
     const directory = createWorkspaceRelayDirectory()
     const observer = observeDirectory(directory)
     const relayHandler = createWorkspaceRelayBun({
+      resolveHostGeneration: currentGenerationZero,
       runtimeAccessKey: runtime.publicKey,
       relayHostSigningKey: relayHost.privateKey,
       relayHostAlgorithm: "EdDSA",
@@ -4205,6 +4273,7 @@ describe("workspace relay Bun adapter", () => {
     const directory = createWorkspaceRelayDirectory()
     const observer = observeDirectory(directory)
     const relayHandler = createWorkspaceRelayBun({
+      resolveHostGeneration: currentGenerationZero,
       runtimeAccessKey: runtime.publicKey,
       relayHostSigningKey: relayHost.privateKey,
       relayHostAlgorithm: "EdDSA",
@@ -4287,6 +4356,7 @@ describe("workspace relay Bun adapter", () => {
     const directory = createWorkspaceRelayDirectory()
     const observer = observeDirectory(directory)
     const relayHandler = createWorkspaceRelayBun({
+      resolveHostGeneration: currentGenerationZero,
       runtimeAccessKey: runtime.publicKey,
       relayHostSigningKey: relayHost.privateKey,
       relayHostAlgorithm: "EdDSA",
@@ -4369,6 +4439,7 @@ describe("workspace relay Bun adapter", () => {
     const directory = createWorkspaceRelayDirectory()
     const observer = observeDirectory(directory)
     const relayHandler = createWorkspaceRelayBun({
+      resolveHostGeneration: currentGenerationZero,
       runtimeAccessKey: runtime.publicKey,
       relayHostSigningKey: relayHost.privateKey,
       relayHostAlgorithm: "EdDSA",
@@ -4425,6 +4496,7 @@ describe("workspace relay Bun adapter", () => {
     const directory = createWorkspaceRelayDirectory()
     const observer = observeDirectory(directory)
     const relayHandler = createWorkspaceRelayBun({
+      resolveHostGeneration: currentGenerationZero,
       runtimeAccessKey: runtime.publicKey,
       relayHostSigningKey: relayHost.privateKey,
       relayHostAlgorithm: "EdDSA",
@@ -4478,6 +4550,7 @@ describe("workspace relay Bun adapter", () => {
     const directory = createWorkspaceRelayDirectory()
     const observer = observeDirectory(directory)
     const relayHandler = createWorkspaceRelayBun({
+      resolveHostGeneration: currentGenerationZero,
       runtimeAccessKey: runtime.publicKey,
       relayHostSigningKey: relayHost.privateKey,
       relayHostAlgorithm: "EdDSA",
@@ -4566,6 +4639,7 @@ describe("workspace relay Bun adapter", () => {
     const directory = createWorkspaceRelayDirectory()
     const observer = observeDirectory(directory)
     const relayHandler = createWorkspaceRelayBun({
+      resolveHostGeneration: currentGenerationZero,
       runtimeAccessKey: runtime.publicKey,
       relayHostSigningKey: relayHost.privateKey,
       relayHostAlgorithm: "EdDSA",
@@ -4816,6 +4890,7 @@ describe("workspace relay Bun adapter", () => {
     const directory = createWorkspaceRelayDirectory()
     const observer = observeDirectory(directory)
     const relayHandler = createWorkspaceRelayBun({
+      resolveHostGeneration: currentGenerationZero,
       runtimeAccessKey: runtime.publicKey,
       relayHostSigningKey: relayHost.privateKey,
       relayHostAlgorithm: "EdDSA",
@@ -4925,6 +5000,7 @@ describe("workspace relay Bun adapter", () => {
     const runtime = await generateKeyPair("EdDSA", { extractable: true })
     const relayHost = await generateKeyPair("EdDSA", { extractable: true })
     const handler = createWorkspaceRelayBun({
+      resolveHostGeneration: currentGenerationZero,
       runtimeAccessKey: runtime.publicKey,
       relayHostSigningKey: relayHost.privateKey,
       relayHostAlgorithm: "EdDSA",
@@ -5022,6 +5098,7 @@ describe("workspace relay Bun adapter", () => {
       const runtime = await generateKeyPair("EdDSA", { extractable: true })
       const relayHost = await generateKeyPair("EdDSA", { extractable: true })
       const handler = createWorkspaceRelayBun({
+        resolveHostGeneration: currentGenerationZero,
         runtimeAccessKey: runtime.publicKey,
         relayHostSigningKey: relayHost.privateKey,
         relayHostAlgorithm: "EdDSA",
@@ -5043,6 +5120,7 @@ describe("workspace relay Bun adapter", () => {
       const runtime = await generateKeyPair("EdDSA", { extractable: true })
       const relayHost = await generateKeyPair("EdDSA", { extractable: true })
       const handler = createWorkspaceRelayBun({
+        resolveHostGeneration: currentGenerationZero,
         runtimeAccessKey: runtime.publicKey,
         relayHostSigningKey: relayHost.privateKey,
         relayHostAlgorithm: "EdDSA",
@@ -5065,6 +5143,7 @@ describe("workspace relay Bun adapter", () => {
       const runtime = await generateKeyPair("EdDSA", { extractable: true })
       const relayHost = await generateKeyPair("EdDSA", { extractable: true })
       const handler = createWorkspaceRelayBun({
+        resolveHostGeneration: currentGenerationZero,
         runtimeAccessKey: runtime.publicKey,
         relayHostSigningKey: relayHost.privateKey,
         relayHostAlgorithm: "EdDSA",
@@ -5083,6 +5162,8 @@ describe("workspace relay Bun adapter", () => {
       const relayHost = await generateKeyPair("EdDSA", { extractable: true })
       const directory = createWorkspaceRelayDirectory({ sweepIntervalMs: 0 })
       const httpToken = await mintHostTunnelToken({
+        enrollmentId: "enr_1",
+        generation: 0,
         subject: "user_1",
         hostId: "host_1",
         workspaceIds: ["ws_1"],
@@ -5097,6 +5178,7 @@ describe("workspace relay Bun adapter", () => {
         role: "editor",
       }, runtime.privateKey, "EdDSA")
       const handler = createWorkspaceRelayBun({
+        resolveHostGeneration: currentGenerationZero,
         runtimeAccessKey: runtime.publicKey,
         relayHostSigningKey: relayHost.privateKey,
         relayHostAlgorithm: "EdDSA",
@@ -5172,6 +5254,7 @@ describe("workspace relay Bun adapter", () => {
         },
       })
       const handler = createWorkspaceRelayBun({
+        resolveHostGeneration: currentGenerationZero,
         runtimeAccessKey: runtime.publicKey,
         relayHostSigningKey: relayHost.privateKey,
         relayHostAlgorithm: "EdDSA",
@@ -5223,6 +5306,7 @@ describe("workspace relay Bun adapter", () => {
       const runtime = await generateKeyPair("EdDSA", { extractable: true })
       const relayHost = await generateKeyPair("EdDSA", { extractable: true })
       const handler = createWorkspaceRelayBun({
+        resolveHostGeneration: currentGenerationZero,
         runtimeAccessKey: runtime.publicKey,
         relayHostSigningKey: relayHost.privateKey,
         relayHostAlgorithm: "EdDSA",
@@ -5259,6 +5343,7 @@ describe("workspace relay Bun adapter", () => {
       const directory = createWorkspaceRelayDirectory({ sweepIntervalMs: 0 })
       const observer = observeDirectory(directory)
       const handler = createWorkspaceRelayBun({
+        resolveHostGeneration: currentGenerationZero,
         runtimeAccessKey: runtime.publicKey,
         relayHostSigningKey: relayHost.privateKey,
         relayHostAlgorithm: "EdDSA",
@@ -5276,6 +5361,8 @@ describe("workspace relay Bun adapter", () => {
         websocket: handler.websocket,
       })
       const httpToken = await mintHostTunnelToken({
+        enrollmentId: "enr_1",
+        generation: 0,
         subject: "user_1",
         hostId: "host_1",
         workspaceIds: ["ws_1"],
@@ -5331,6 +5418,7 @@ describe("workspace relay Bun adapter", () => {
         }
       }
       const handler = createWorkspaceRelayBun({
+        resolveHostGeneration: currentGenerationZero,
         runtimeAccessKey: runtime.publicKey,
         relayHostSigningKey: relayHost.privateKey,
         relayHostAlgorithm: "EdDSA",
@@ -5388,6 +5476,7 @@ describe("workspace relay Bun adapter", () => {
       const relayHost = await generateKeyPair("EdDSA", { extractable: true })
       const directory = createWorkspaceRelayDirectory({ sweepIntervalMs: 0 })
       const handler = createWorkspaceRelayBun({
+        resolveHostGeneration: currentGenerationZero,
         runtimeAccessKey: runtime.publicKey,
         relayHostSigningKey: relayHost.privateKey,
         relayHostAlgorithm: "EdDSA",
@@ -5405,6 +5494,8 @@ describe("workspace relay Bun adapter", () => {
         websocket: handler.websocket,
       })
       const httpToken = await mintHostTunnelToken({
+        enrollmentId: "enr_1",
+        generation: 0,
         subject: "user_1",
         hostId: "host_2",
         workspaceIds: ["ws_2"],
@@ -5448,6 +5539,7 @@ describe("workspace relay Bun adapter", () => {
     ) {
       const directory = createWorkspaceRelayDirectory({ ttlMs: 10_000 })
       const relayHandler = createWorkspaceRelayBun({
+        resolveHostGeneration: currentGenerationZero,
         runtimeAccessKey: runtime.publicKey,
         relayHostSigningKey: relayHost.privateKey,
         relayHostAlgorithm: "EdDSA",
@@ -5643,38 +5735,29 @@ describe("workspace relay Bun adapter host generation fence", () => {
       for (const workspaceId of workspaceIds) url.searchParams.append("workspaceId", workspaceId)
       return url
     }
+    const token = (generation: number | undefined, workspaceIds = ["ws_1"], hostId = "host_1") => {
+      const input = { subject: "user_1", hostId, workspaceIds }
+      return generation === undefined
+        ? signUnfencedHostTunnelToken(input, runtime.privateKey)
+        : mintHostTunnelToken({ ...input, enrollmentId: "enr_1", generation }, runtime.privateKey, "EdDSA")
+    }
     return {
       relay,
       directory,
       runtime,
       auditEvents,
-      token: (generation: number | undefined, workspaceIds = ["ws_1"], hostId = "host_1") => mintHostTunnelToken({
-        subject: "user_1",
-        hostId,
-        workspaceIds,
-        ...(generation === undefined ? {} : { enrollmentId: "enr_1", generation }),
-      }, runtime.privateKey, "EdDSA"),
+      token,
       admit: async (generation: number | undefined, workspaceIds = ["ws_1"], hostId = "host_1") =>
         await fetch(tunnelUrl(hostId, workspaceIds), {
           headers: {
             upgrade: "websocket",
-            authorization: `Bearer ${await mintHostTunnelToken({
-              subject: "user_1",
-              hostId,
-              workspaceIds,
-              ...(generation === undefined ? {} : { enrollmentId: "enr_1", generation }),
-            }, runtime.privateKey, "EdDSA")}`,
+            authorization: `Bearer ${await token(generation, workspaceIds, hostId)}`,
           },
         }),
       connect: async (generation: number | undefined, workspaceIds = ["ws_1"], hostId = "host_1") => {
         const ws = hostTunnelSocket(
           tunnelUrl(hostId, workspaceIds).toString().replace(/^http/, "ws"),
-          await mintHostTunnelToken({
-            subject: "user_1",
-            hostId,
-            workspaceIds,
-            ...(generation === undefined ? {} : { enrollmentId: "enr_1", generation }),
-          }, runtime.privateKey, "EdDSA"),
+          await token(generation, workspaceIds, hostId),
         )
         const closed = waitForClose(ws)
         await waitForOpen(ws)
@@ -5910,11 +5993,12 @@ describe("workspace relay Bun adapter host generation fence", () => {
     }
   })
 
-  test("without a resolver, a token without a generation is admitted and one with a generation is refused as unverifiable", async () => {
+  test("without a resolver, both unfenced and fenced host tokens are refused", async () => {
     const harness = await fenceHarness()
     try {
-      const { ws } = await harness.connect(undefined)
-      await waitForPresence(harness, "ws_1", true)
+      const unfenced = await harness.admit(undefined)
+      expect(unfenced.status).toBe(403)
+      await expect(unfenced.text()).resolves.toBe("Host tunnel registration denied")
 
       const fenced = await harness.admit(3, ["ws_2"])
       expect(fenced.status).toBe(403)
@@ -5924,10 +6008,11 @@ describe("workspace relay Bun adapter host generation fence", () => {
           message: "Host tunnel generation cannot be verified by a relay without a host-generation resolver",
         },
       })
-      expect(denied(harness)).toEqual([expect.objectContaining({ reason: "host_generation_unverifiable", hostId: "host_1" })])
+      expect(denied(harness)).toEqual([
+        expect.objectContaining({ reason: "host_tunnel_token_invalid", hostId: "host_1" }),
+        expect.objectContaining({ reason: "host_generation_unverifiable", hostId: "host_1" }),
+      ])
       expect(harness.directory.activeHost({ hostId: "host_1", workspaceId: "ws_2" })).toBeUndefined()
-      expect(ws.readyState).toBe(WebSocket.OPEN)
-      ws.close()
     } finally {
       await harness.stop()
     }
@@ -5941,54 +6026,12 @@ describe("workspace relay Bun adapter host generation fence", () => {
 
       const unfenced = await harness.admit(undefined)
       expect(unfenced.status).toBe(403)
-      await expect(unfenced.json()).resolves.toMatchObject({ error: { code: "host_generation_superseded" } })
+      await expect(unfenced.text()).resolves.toBe("Host tunnel registration denied")
       expect(incumbent.ws.readyState).toBe(WebSocket.OPEN)
       expect(denied(harness)).toEqual([
-        expect.objectContaining({ reason: "host_generation_superseded", hostId: "host_1", workspaceId: "ws_1" }),
+        expect.objectContaining({ reason: "host_tunnel_token_invalid", hostId: "host_1" }),
       ])
-
-      // A workspace the fenced incumbent does not hold has no incumbent to outrank the unfenced token.
-      const other = await harness.connect(undefined, ["ws_2"])
-      await waitForPresence(harness, "ws_2", true)
-      expect(incumbent.ws.readyState).toBe(WebSocket.OPEN)
-      other.ws.close()
       incumbent.ws.close()
-    } finally {
-      await harness.stop()
-    }
-  })
-
-  test("an unfenced incumbent is displaced by any later token, fenced or not", async () => {
-    const harness = await fenceHarness({ resolveHostGeneration: async () => current(3) })
-    try {
-      const first = await harness.connect(undefined)
-      await waitForPresence(harness, "ws_1", true)
-      const second = await harness.connect(undefined)
-      await expect(first.closed).resolves.toEqual({ code: 1012, reason: "Host tunnel replaced by a newer connection" })
-      const fenced = await harness.connect(3)
-      await expect(second.closed).resolves.toEqual({ code: 1012, reason: "Host tunnel replaced by a newer connection" })
-      expect(fenced.ws.readyState).toBe(WebSocket.OPEN)
-      fenced.ws.close()
-    } finally {
-      await harness.stop()
-    }
-  })
-
-  test("a registration update cannot claim a workspace a fenced socket holds for an unfenced socket", async () => {
-    const harness = await fenceHarness({ resolveHostGeneration: async () => current(3) })
-    try {
-      const fenced = await harness.connect(3, ["ws_1"])
-      await waitForPresence(harness, "ws_1", true)
-      const unfenced = await harness.connect(undefined, ["ws_2"])
-      await waitForPresence(harness, "ws_2", true)
-      sendUpdate(unfenced.ws, await harness.token(undefined, ["ws_1", "ws_2"]), ["ws_1", "ws_2"])
-      await expect(unfenced.closed).resolves.toEqual({ code: 1008, reason: "Host tunnel generation was superseded" })
-      expect(denied(harness)).toEqual([
-        expect.objectContaining({ reason: "host_generation_superseded", hostId: "host_1", workspaceId: "ws_1" }),
-      ])
-      expect(fenced.ws.readyState).toBe(WebSocket.OPEN)
-      expect(harness.directory.activeHost({ hostId: "host_1", workspaceId: "ws_1" })).toBeDefined()
-      fenced.ws.close()
     } finally {
       await harness.stop()
     }
@@ -6000,8 +6043,8 @@ describe("workspace relay Bun adapter host generation fence", () => {
       const { ws, closed } = await harness.connect(3)
       await waitForPresence(harness, "ws_1", true)
       sendUpdate(ws, await harness.token(undefined, ["ws_1", "ws_2"]), ["ws_1", "ws_2"])
-      await expect(closed).resolves.toEqual({ code: 1008, reason: "Host tunnel registration update superseded" })
-      expect(denied(harness)).toEqual([expect.objectContaining({ reason: "host_generation_superseded", hostId: "host_1" })])
+      await expect(closed).resolves.toEqual({ code: 1008, reason: "Host tunnel registration update denied" })
+      expect(denied(harness)).toEqual([expect.objectContaining({ reason: "host_tunnel_token_invalid", hostId: "host_1" })])
       expect(harness.directory.activeHost({ hostId: "host_1", workspaceId: "ws_2" })).toBeUndefined()
     } finally {
       await harness.stop()
@@ -6068,25 +6111,6 @@ describe("workspace relay Bun adapter host generation fence", () => {
     }
   })
 
-  test("a registration update that fences an unfenced socket starts the periodic check", async () => {
-    const control = { floor: 0 }
-    const harness = await fenceHarness({
-      resolveHostGeneration: acceptingFrom(control),
-      hostGenerationCheckIntervalMs: 20,
-    })
-    try {
-      const { ws, closed } = await harness.connect(undefined)
-      await waitForPresence(harness, "ws_1", true)
-      sendUpdate(ws, await harness.token(3, ["ws_1", "ws_2"]), ["ws_1", "ws_2"])
-      await waitForPresence(harness, "ws_2", true)
-      control.floor = 4
-      await expect(closed).resolves.toEqual({ code: 1008, reason: "Host tunnel generation was superseded" })
-      await waitForPresence(harness, "ws_1", false)
-    } finally {
-      await harness.stop()
-    }
-  })
-
   test("a registration update is refused by the control plane the way a connect is", async () => {
     let answer: HostGenerationResult | undefined = current(3)
     const harness = await fenceHarness({
@@ -6111,23 +6135,6 @@ describe("workspace relay Bun adapter host generation fence", () => {
       sendUpdate(outage.ws, await harness.token(4, ["ws_1", "ws_2"]), ["ws_1", "ws_2"])
       await expect(outage.closed).resolves.toEqual({ code: 1012, reason: "Host generation check unavailable" })
       expect(denied(harness).at(-1)).toMatchObject({ reason: "host_generation_lookup_unavailable", hostId: "host_1" })
-      expect(harness.directory.activeHost({ hostId: "host_1", workspaceId: "ws_2" })).toBeUndefined()
-    } finally {
-      await harness.stop()
-    }
-  })
-
-  test("without a resolver, a registration update that carries a generation is refused as unverifiable", async () => {
-    const harness = await fenceHarness()
-    try {
-      const { ws, closed } = await harness.connect(undefined)
-      await waitForPresence(harness, "ws_1", true)
-      sendUpdate(ws, await harness.token(3, ["ws_1", "ws_2"]), ["ws_1", "ws_2"])
-      await expect(closed).resolves.toEqual({
-        code: 1008,
-        reason: "Host tunnel generation cannot be verified by a relay without a host-generation resolver",
-      })
-      expect(denied(harness)).toEqual([expect.objectContaining({ reason: "host_generation_unverifiable", hostId: "host_1" })])
       expect(harness.directory.activeHost({ hostId: "host_1", workspaceId: "ws_2" })).toBeUndefined()
     } finally {
       await harness.stop()
@@ -6223,16 +6230,16 @@ describe("workspace relay Bun adapter host generation fence", () => {
   })
 
   test("a registration update that takes over another socket's workspace leaves that socket serving the rest", async () => {
-    const harness = await fenceHarness()
+    const harness = await fenceHarness({ resolveHostGeneration: async () => current(3) })
     try {
-      const a = await harness.connect(undefined, ["ws_1", "ws_2"])
-      const b = await harness.connect(undefined, ["ws_3"])
+      const a = await harness.connect(3, ["ws_1", "ws_2"])
+      const b = await harness.connect(3, ["ws_3"])
       await waitForPresence(harness, "ws_2", true)
       b.ws.send(JSON.stringify({
         type: "host.registration.update",
         protocol: TUNNEL_PROTOCOL_VERSION,
         workspace_ids: ["ws_2", "ws_3"],
-        token: await harness.token(undefined, ["ws_2", "ws_3"]),
+        token: await harness.token(3, ["ws_2", "ws_3"]),
       }))
       const seenByB: string[] = []
       answerHttp(b.ws, "from-b", seenByB)
@@ -6381,6 +6388,7 @@ describe("WebSocket send backpressure guard wiring (end-to-end)", () => {
     const directory = createWorkspaceRelayDirectory()
     const observer = observeDirectory(directory)
     const relayHandler = createWorkspaceRelayBun({
+      resolveHostGeneration: currentGenerationZero,
       runtimeAccessKey: runtime.publicKey,
       relayHostSigningKey: relayHost.privateKey,
       relayHostAlgorithm: "EdDSA",
@@ -6544,6 +6552,7 @@ describe("host tunnel stream budgets", () => {
     const directory = createWorkspaceRelayDirectory()
     const observer = observeDirectory(directory)
     const relayHandler = createWorkspaceRelayBun({
+      resolveHostGeneration: currentGenerationZero,
       runtimeAccessKey: runtime.publicKey,
       relayHostSigningKey: relayHost.privateKey,
       relayHostAlgorithm: "EdDSA",
@@ -6839,6 +6848,7 @@ describe("cloud WebSocket send backpressure wiring", () => {
     const runtime = await generateKeyPair("EdDSA", { extractable: true })
     const relayHost = await generateKeyPair("EdDSA", { extractable: true })
     const relayHandler = createWorkspaceRelayBun({
+      resolveHostGeneration: currentGenerationZero,
       runtimeAccessKey: runtime.publicKey,
       relayHostSigningKey: relayHost.privateKey,
       relayHostAlgorithm: "EdDSA",

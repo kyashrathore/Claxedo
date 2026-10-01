@@ -59,9 +59,8 @@ requirement, the control plane must also close the session/runtime channel.
 
 ### Host Tunnel Serving-Generation Fence
 
-A Host Tunnel Token minted by a connect-enrolled host carries `enrollment_id`
-and `generation`. A relay built by `src/main.ts` or `src/worker.ts` — that is,
-any relay with a resolver — asks
+Every Host Tunnel Token carries `enrollment_id` and `generation`. A relay
+requires a host-generation resolver and asks
 `GET <CLAXEDO_RELAY_RESOLVER_URL>/host-generation?enrollmentId=` on every
 admission and re-checks established tunnels every 30 s (both adapters). The
 verdicts, in order:
@@ -75,30 +74,22 @@ verdicts, in order:
 | `404 relay_resolver_enrollment_not_found` | `403 host_enrollment_unknown` | closed `1008` |
 | Any other status, a bare 404 (route missing), malformed body, or the 5 s deadline | `503 host_generation_lookup_unavailable` (retry) | survives two consecutive failures, closed `1012` on the third |
 
-A token without a generation is admitted without asking the control plane. It
-never displaces a socket that carries a generation: for one host+workspace
-identity (Bun) or one room (Cloudflare), an incumbent with a generation yields
-only to an equal or higher generation, and an incumbent without one yields to
-any later socket. Every refusal is audited as `host_tunnel.denied` with the
-code as `reason` (Bun; the Cloudflare room has no audit hook).
+A token missing either fence claim is refused. For one host+workspace identity
+(Bun) or one room (Cloudflare), an incumbent yields only to an equal or higher
+generation. Bun audits each refusal as `host_tunnel.denied` with the code as
+`reason`; the Cloudflare room has no audit hook.
 
-A `host.registration.update` frame is re-admitted the same way, with the
-socket's own claims as the first incumbent: an update whose token carries no
-generation, or a lower one than the socket holds, is refused (closed `1008
-Host tunnel registration update superseded`); one that passes is then checked
-against the control plane exactly as a connect is and closed with the table's
-established-tunnel code on refusal (`1012` for an unavailable lookup, without
-the outage grace). An accepted update replaces the socket's claims and
-identities, and a socket that became fenced starts the 30 s re-check (or arms
-the hibernation alarm).
+A `host.registration.update` frame must carry a complete, verified token. A
+missing fence closes the socket with `1008 Host tunnel registration update
+denied`; a lower generation closes it with `1008 Host tunnel registration
+update superseded`. The relay then checks the control plane and closes with
+the table's established-tunnel code on refusal, without outage grace for an
+update. An accepted update replaces the socket's claims and identities and
+keeps the periodic check or hibernation alarm active.
 
-A relay composed directly from `createWorkspaceRelayBun` /
-`createWorkspaceRelayDurableObjectRoom` without `resolveHostGeneration` admits
-tokens without a generation
-newest-wins and refuses any token that carries one with
-`403 host_generation_unverifiable` (an update: closed `1008`). A generation is
-a fence the relay cannot verify without the resolver, and the refusal is not
-retryable because the resolver is a property of the composition.
+A relay composed without `resolveHostGeneration` refuses host tunnels with
+`403 host_generation_unverifiable`. This refusal is not retryable because the
+resolver belongs to the composition.
 
 ### Forwarding Boundary
 

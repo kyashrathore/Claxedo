@@ -18,10 +18,14 @@ import { startWorkspaceHostTunnel, stopAllWorkspaceHostTunnels } from "./host-tu
 import { createSelfHostedApp } from "./deployments/self-hosted-node/app"
 import { createControlPlaneServices } from "./authority/services"
 import { createSqliteCentralStore } from "./authority/adapters/sqlite/central-store"
+import { createSqliteWorkspaceAuthority } from "@claxedo/server-core/authority/adapters/sqlite/workspace-authority"
+import { localHostIdentity } from "./workspace/local-host"
+import { enrollServingHost } from "./test-support/embedded-relay-host-enrollment"
 import { testManagedSessionAuthority } from "./test-support/managed-session-authority"
 
 const execFileAsync = promisify(execFile)
 
+let enrollmentAuthority: ReturnType<typeof createSqliteWorkspaceAuthority> | undefined
 let root = ""
 let previousDataDir: string | undefined
 let previousRelayHostPublicKey: string | undefined
@@ -124,6 +128,7 @@ async function startRelayFixture(input: {
   hostId: string
   runtimePublicKeyJwk: JsonWebKey
   relayHostPrivateKeyJwk: JsonWebKey
+  controlPlaneUrl: string
 }) {
   const logs: string[] = []
   const child = spawn("bun", ["src/host-tunnel-relay-fixture.mjs"], {
@@ -134,6 +139,7 @@ async function startRelayFixture(input: {
       CLAXEDO_RELAY_FIXTURE_HOST_ID: input.hostId,
       CLAXEDO_RELAY_FIXTURE_RUNTIME_PUBLIC_KEY_JWK: JSON.stringify(input.runtimePublicKeyJwk),
       CLAXEDO_RELAY_FIXTURE_HOST_PRIVATE_KEY_JWK: JSON.stringify(input.relayHostPrivateKeyJwk),
+      CLAXEDO_RELAY_RESOLVER_URL: `${input.controlPlaneUrl}/internal/relay`,
     },
     // The relay fixture treats stdin as its owner-liveness signal. Keep the
     // pipe open for this test's lifetime so the child does not exit on EOF.
@@ -201,6 +207,8 @@ describe("server-owned machine-placed Workspace Relay host tunnel E2E", () => {
 
   afterEach(async () => {
     stopAllWorkspaceHostTunnels()
+    enrollmentAuthority?.close()
+    enrollmentAuthority = undefined
     await shutdownWorkspaceSupervisor()
     if (previousDataDir === undefined) delete process.env.CLAXEDO_DATA_DIR
     else process.env.CLAXEDO_DATA_DIR = previousDataDir
@@ -229,12 +237,17 @@ describe("server-owned machine-placed Workspace Relay host tunnel E2E", () => {
     })
     expect(ws?.id).toBe("ws_host_tunnel_e2e")
 
+    enrollmentAuthority = createSqliteWorkspaceAuthority()
+    const identity = await localHostIdentity()
+    const auth = { mode: "signed" as const, user: { subject: "user_host", issuer: "test", tokenIdentifier: "test|user_host" } }
+    const { enrollmentId, generation } = await enrollServingHost(enrollmentAuthority, auth, identity)
+
     configureEmbeddedWorkspaceRuntime({})
     const centralStore = createSqliteCentralStore({ mode: () => "central_canonical" })
     const built = createSelfHostedApp(createControlPlaneServices({
       projectionStore: centralStore.projectionStore,
       durableSessionLog: centralStore.durableSessionLog,
-    }, { authority: testManagedSessionAuthority() }))
+    }, { authority: testManagedSessionAuthority({ machineAuth: enrollmentAuthority.machineAuth }) }))
     const controlPlane = serve({
       fetch: built.app.fetch,
       port: 0,
@@ -248,21 +261,24 @@ describe("server-owned machine-placed Workspace Relay host tunnel E2E", () => {
 
     const relay = await startRelayFixture({
       workspaceId: ws!.id,
-      hostId: "host_tunnel_e2e",
+      hostId: identity.hostId,
       runtimePublicKeyJwk: await exportJWK(runtime.publicKey),
       relayHostPrivateKeyJwk: await exportJWK(relayHost.privateKey),
+      controlPlaneUrl: `http://127.0.0.1:${address.port}`,
     })
     let socket: WebSocket | undefined
 
     try {
       const hostTunnelToken = await mintHostTunnelToken({
+        enrollmentId,
+        generation,
         subject: "user_host",
-        hostId: "host_tunnel_e2e",
+        hostId: identity.hostId,
         workspaceIds: [ws!.id],
       }, runtime.privateKey, "EdDSA")
       const started = await startWorkspaceHostTunnel({
         workspaceId: ws!.id,
-        hostId: "host_tunnel_e2e",
+        hostId: identity.hostId,
         relayUrl: relay.url,
         hostTunnelToken,
       })
@@ -273,7 +289,7 @@ describe("server-owned machine-placed Workspace Relay host tunnel E2E", () => {
         actorKind: "human",
         orgId: "org_1",
         workspaceId: ws!.id,
-        hostId: "host_tunnel_e2e",
+        hostId: identity.hostId,
         role: "editor",
       }, runtime.privateKey, "EdDSA")
 
@@ -346,6 +362,8 @@ describe("server-owned machine-placed Workspace Relay host tunnel E2E", () => {
     } finally {
       socket?.close()
       stopAllWorkspaceHostTunnels()
+      enrollmentAuthority?.close()
+      enrollmentAuthority = undefined
       await relay.close()
       await closeServer(controlPlane)
     }

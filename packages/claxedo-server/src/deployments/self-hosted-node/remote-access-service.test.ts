@@ -165,6 +165,18 @@ function setup(input: {
 }
 
 describe("remote access service", () => {
+  test("tunnel renewal credentials carry the serving enrollment's fence", async () => {
+    const { authority, service, startMachineTunnel, hostTunnelTokenSigner } = setup()
+    await service.enable(auth, { startAtLogin: false })
+    const enrollmentId = service.servingEnrollmentId()!
+    const enrollment = await authority.machineAuth!.lookupEnrollment(enrollmentId)
+    await startMachineTunnel.mock.calls.at(-1)![0].hostTunnelTokenProvider()
+    expect(hostTunnelTokenSigner).toHaveBeenLastCalledWith(expect.objectContaining({
+      enrollmentId,
+      generation: enrollment!.serving_generation,
+    }))
+  })
+
   test("an unrelated signed account cannot enroll, share through, or take over this machine", async () => {
     const { authority, service, signSpy, startMachineTunnel } = setup()
     const outsider: SignedControlPlaneAuth = {
@@ -297,12 +309,7 @@ describe("remote access service", () => {
     const result = await service.assignWorkspace(auth, { workspaceId: "ws_share", displayName: "shared" })
 
     expect(result.assignment).toEqual({ assigned: true, workspace_id: "ws_share", host_id: "host_machine" })
-    expect(result.hostTunnel).toEqual({
-      hostTunnelToken: "htt_1",
-      tokenExpiresAt: 456_000,
-      jti: "jti_1",
-      relayUrl: "https://relay.test",
-    })
+    expect(result).not.toHaveProperty("hostTunnel")
     // Share success = routable, not merely recorded.
     await expect(authority.activeWorkspaceHost(auth, { workspaceId: "ws_share" })).resolves.toMatchObject({
       active: true,

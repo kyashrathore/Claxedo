@@ -386,6 +386,8 @@ export function createRemoteAccessService(input: {
           relayUrl: input.relayUrl,
           hostTunnelTokenProvider: async () => (await input.hostTunnelTokenSigner({
             subject: current.auth.user.subject,
+            enrollmentId: current.enrollmentId,
+            generation: current.generation,
             hostId: current.identity.hostId,
             workspaceIds: serveable,
           })).hostTunnelToken,
@@ -456,16 +458,6 @@ export function createRemoteAccessService(input: {
     if (!state) return Promise.resolve()
     return run(syncMachine).then(() => undefined)
   })
-
-  async function hostTunnelCredential(auth: SignedControlPlaneAuth, hostId: string, workspaceIds: string[]) {
-    try {
-      const credential = await input.hostTunnelTokenSigner({ subject: auth.user.subject, hostId, workspaceIds })
-      return { ...credential, ...(input.relayUrl ? { relayUrl: input.relayUrl } : {}) }
-    } catch (error) {
-      if (error instanceof ControlPlaneAuthError) return undefined
-      throw error
-    }
-  }
 
   const devices = async (auth: SignedControlPlaneAuth) => {
     const assignments = await requireMethod(authority.listHostAssignments, "host assignments")(auth)
@@ -573,8 +565,7 @@ export function createRemoteAccessService(input: {
           )
         }
         startLoop()
-        const hostTunnel = await hostTunnelCredential(auth, current.identity.hostId, [share.workspaceId])
-        return { assignment, ...(hostTunnel ? { hostTunnel } : {}) }
+        return { assignment }
       })
     },
     async unassignWorkspace(auth, workspaceId) {

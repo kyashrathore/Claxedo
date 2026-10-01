@@ -415,9 +415,8 @@ export type WorkspaceRelaySocketAttachment =
       hostId: string
       workspaceIds: string[]
       connectedAt: number
-      /** Fence pair from the admitting Host Tunnel Token; absent on sockets attached before the fence existed. */
-      enrollmentId?: string
-      generation?: number
+      enrollmentId: string
+      generation: number
       /** Consecutive unavailable generation lookups, persisted so hibernation cannot reset the outage grace. */
       generationCheckFailures?: number
     }
@@ -485,8 +484,8 @@ type HostTunnelSocket = {
   hostId: string
   workspaceIds: string[]
   connectedAt: number
-  enrollmentId?: string
-  generation?: number
+  enrollmentId: string
+  generation: number
   generationCheckFailures: number
   generationWatcher?: ReturnType<typeof setInterval>
   socket: WorkspaceRelayDurableObjectSocket
@@ -1305,8 +1304,8 @@ export function createWorkspaceRelayDurableObjectRoom(options: WorkspaceRelayDur
           hostId: attachment.hostId,
           workspaceIds: attachment.workspaceIds,
           connectedAt: attachment.connectedAt,
-          ...(attachment.enrollmentId ? { enrollmentId: attachment.enrollmentId } : {}),
-          ...(attachment.generation !== undefined ? { generation: attachment.generation } : {}),
+          enrollmentId: attachment.enrollmentId,
+          generation: attachment.generation,
           generationCheckFailures: attachment.generationCheckFailures ?? 0,
           socket,
           pending: new Map(),
@@ -1475,12 +1474,10 @@ export function createWorkspaceRelayDurableObjectRoom(options: WorkspaceRelayDur
     hostId: tunnel.hostId,
     workspaceIds: tunnel.workspaceIds,
     connectedAt: tunnel.connectedAt,
-    ...(tunnel.enrollmentId ? { enrollmentId: tunnel.enrollmentId } : {}),
-    ...(tunnel.generation !== undefined ? { generation: tunnel.generation } : {}),
+    enrollmentId: tunnel.enrollmentId,
+    generation: tunnel.generation,
     ...(tunnel.generationCheckFailures ? { generationCheckFailures: tunnel.generationCheckFailures } : {}),
   })
-
-  const fenced = (tunnel: HostTunnelSocket) => Boolean(options.resolveHostGeneration) && tunnel.generation !== undefined
 
   /**
    * Applies one generation re-check verdict to an established tunnel. A
@@ -1491,7 +1488,7 @@ export function createWorkspaceRelayDurableObjectRoom(options: WorkspaceRelayDur
    * hibernating path the in-memory tunnel is rebuilt from it on every wake.
    */
   const recheckHostGeneration = async (tunnel: HostTunnelSocket) => {
-    if (!fenced(tunnel) || hostTunnels.get(tunnel.hostId) !== tunnel) return
+    if (hostTunnels.get(tunnel.hostId) !== tunnel) return
     const decision = await checkHostTunnelGeneration(options.resolveHostGeneration, {
       enrollment_id: tunnel.enrollmentId,
       generation: tunnel.generation,
@@ -1519,7 +1516,7 @@ export function createWorkspaceRelayDurableObjectRoom(options: WorkspaceRelayDur
 
   const watchHostGeneration = (tunnel: HostTunnelSocket) => {
     const intervalMs = options.hostGenerationCheckIntervalMs ?? HOST_GENERATION_CHECK_INTERVAL_MS_DEFAULT
-    if (tunnel.generationWatcher || hibernation || !fenced(tunnel) || intervalMs <= 0) return
+    if (tunnel.generationWatcher || hibernation || intervalMs <= 0) return
     tunnel.generationWatcher = setInterval(() => {
       void recheckHostGeneration(tunnel).catch(() => {})
     }, intervalMs)
@@ -1819,9 +1816,7 @@ export function createWorkspaceRelayDurableObjectRoom(options: WorkspaceRelayDur
   const scheduleHibernatedRevocationCheck = async () => {
     const intervalMs = hibernatedRevocationIntervalMs()
     if (!hibernation || !options.alarms || intervalMs <= 0) return
-    // Nothing to watch: do not hold the DO awake on a timer. A host-only room
-    // counts when its tunnel carries a generation the relay can re-check.
-    if (clients.size === 0 && ![...hostTunnels.values()].some(fenced)) return
+    if (clients.size === 0 && hostTunnels.size === 0) return
     const now = options.now ?? Date.now
     const at = now() + intervalMs
     try {
@@ -1940,18 +1935,9 @@ export function createWorkspaceRelayDurableObjectRoom(options: WorkspaceRelayDur
     if (!sent) closeSocket(socket, 1011, "Host tunnel unavailable")
   }
 
-  /**
-   * A registration update is re-admitted the way a connect is, with the
-   * socket's own claims as the incumbent: the update's token must not be
-   * outranked by the generation the tunnel already holds and must pass the
-   * control-plane check. The tunnel then carries the update's verified claims
-   * and, if it became fenced, starts the periodic check (or, hibernating,
-   * arms the alarm). A refusal closes the way the periodic check does — 1012
-   * for an unreachable lookup, 1008 otherwise — with the room's presence
-   * cleaned up here because a server-initiated close raises no close event
-   * under hibernation. Between the awaits the tunnel may have been replaced;
-   * the update is then moot and dropped.
-   */
+  // Hibernation emits no close event for a server-initiated close, so a
+  // refusal must remove presence here. A replaced tunnel may settle its
+  // verification later and must not close the replacement.
   const applyRegistrationUpdate = async (tunnel: HostTunnelSocket, workspaceIds: string[], token: string) => {
     const hostId = tunnel.hostId
     const refuse = (code: 1008 | 1012, reason: string) => {
@@ -2175,8 +2161,8 @@ export function createWorkspaceRelayDurableObjectRoom(options: WorkspaceRelayDur
 
     const connectedAt = options.now?.() ?? Date.now()
     const fence = {
-      ...(claims.enrollment_id ? { enrollmentId: claims.enrollment_id } : {}),
-      ...(claims.generation !== undefined ? { generation: claims.generation } : {}),
+      enrollmentId: claims.enrollment_id,
+      generation: claims.generation,
     }
     const pair = acceptSocket({ kind: "host-tunnel", hostId, workspaceIds, connectedAt, ...fence })
     const tunnel: HostTunnelSocket = {

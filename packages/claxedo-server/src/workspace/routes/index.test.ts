@@ -3054,12 +3054,6 @@ describe("workspace routes signed control plane authority", () => {
       hostId: vi.fn(async () => "host_machine"),
       assignWorkspace: vi.fn(async (_auth: unknown, share: { workspaceId: string }) => ({
         assignment: { assigned: true as const, workspace_id: share.workspaceId, host_id: "host_machine" },
-        hostTunnel: {
-          hostTunnelToken: "htt_1",
-          tokenExpiresAt: 456_000,
-          jti: "htt_jti_1",
-          relayUrl: "http://relay.test",
-        },
       })),
       unassignWorkspace: vi.fn(async () => ({ unassigned: true })),
     }
@@ -3088,12 +3082,6 @@ describe("workspace routes signed control plane authority", () => {
         assigned: true,
         workspace_id: "ws_local",
         host_id: "host_machine",
-      },
-      hostTunnel: {
-        hostTunnelToken: "htt_1",
-        tokenExpiresAt: 456_000,
-        jti: "htt_jti_1",
-        relayUrl: "http://relay.test",
       },
     })
     expect(svc.authority?.usersMe).toHaveBeenCalledWith(expect.objectContaining({ token: "user_1" }))
