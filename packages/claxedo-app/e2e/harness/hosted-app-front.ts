@@ -9,14 +9,16 @@ import type { TlsFront } from "./tls-front"
 
 const TYPES: Record<string, string> = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".json": "application/json", ".svg": "image/svg+xml", ".png": "image/png", ".woff2": "font/woff2", ".ico": "image/x-icon" }
 
-export async function startHostedAppFront(input: { port: number; distDir: string; hosted: HostedStack }): Promise<TlsFront> {
+export async function startHostedAppFront(input: { port: number; distDir: string; hosted: HostedStack }): Promise<TlsFront & { controlPlaneRequests(): readonly string[] }> {
   const certificate = await fs.readFile(input.hosted.certificate)
   const root = path.resolve(input.distDir)
   const worker = new URL(input.hosted.workerOrigin)
   const tls = { cert: certificate, key: await fs.readFile(input.hosted.credentials.key) }
+  const forwarded: string[] = []
   const serve = async (request: IncomingMessage, response: ServerResponse) => {
     const pathname = new URL(request.url ?? "/", input.hosted.workerUrl).pathname
     if (/^\/(api|auth|internal|\.well-known)(\/|$)/.test(pathname) || pathname === "/health") {
+      forwarded.push(`${request.method} ${pathname}`)
       const upstream = httpsRequest({ hostname: worker.hostname, port: worker.port, method: request.method,
         path: request.url, headers: request.headers, ca: certificate }, (reply) => {
         response.writeHead(reply.statusCode ?? 502, reply.headers)
@@ -47,6 +49,7 @@ export async function startHostedAppFront(input: { port: number; distDir: string
   const spki = new X509Certificate(certificate).publicKey.export({ type: "spki", format: "der" })
   return {
     url: input.hosted.workerUrl,
+    controlPlaneRequests: () => [...forwarded],
     trust: { caPath: input.hosted.certificate, spki: createHash("sha256").update(spki).digest("base64") },
     close: async () => {
       await Promise.all(servers.map((server) => new Promise<void>((resolve) => { server.closeAllConnections(); server.close(() => resolve()) })))

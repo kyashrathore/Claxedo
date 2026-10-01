@@ -93,12 +93,14 @@ export const test = base.extend<HarnessFixtures, HarnessWorkerFixtures>({
     },
     { scope: "worker", timeout: 300_000 },
   ],
-  signed: async ({ signedBuild }, use, testInfo) => {
+  // Booting and stopping the hosted Worker, relay, sandbox fixture and enrolled
+  // daemon is outside the flow's own budget.
+  signed: [async ({ signedBuild }, use, testInfo) => {
     await useSignedFixture(signedBuild, testInfo, use)
-  },
-  signedCloud: async ({ signedBuild }, use, testInfo) => {
+  }, { timeout: 120_000 }],
+  signedCloud: [async ({ signedBuild }, use, testInfo) => {
     await useSignedFixture(signedBuild, testInfo, use)
-  },
+  }, { timeout: 120_000 }],
   desktopRenderer: ["file", { option: true }],
   desktop: async ({ desktopBuild, desktopRenderer }, use, testInfo) => {
     await useDesktop(testInfo, desktopBuild, desktopRenderer, undefined, use)
