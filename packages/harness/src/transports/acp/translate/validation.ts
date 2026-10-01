@@ -1,6 +1,6 @@
-import { isRecord, asRecord as object } from "@claxedo/agent-runtime-contract"
-import type { ContentBlock, SessionUpdate, ToolCallContent } from "./types"
-import { asRecord } from "@claxedo/helpers/guards"
+import { isRecord, asRecord } from "@claxedo/agent-runtime-contract"
+import type { ContentBlock, ToolCallContent } from "./types"
+import { own } from "../../../translate/value"
 import { diagnoseTranslation, shape, type AcpDiagnostics, type AcpTranslationDiagnostic } from "./diagnostics"
 
 type ValidationContext = { diagnostics: AcpDiagnostics; toolCallId?: string; title?: string; kind?: string }
@@ -40,65 +40,50 @@ export function safeRawOutput(value: unknown, ctx: ValidationContext) {
   return value
 }
 
-export function safeLocations(value: unknown, ctx: ValidationContext) {
+function safeItems<T>(value: unknown, ctx: ValidationContext, event: AcpTranslationDiagnostic,
+  arrayReason: string, itemReason: string, decode: (item: unknown) => T | undefined) {
   if (value === undefined || value === null) return value
   if (!Array.isArray(value)) {
-    malformed(ctx, "acp.malformed_location", "locations_not_array", value)
-    return null
-  }
-  const out = value.flatMap((item) => {
-    const row = asRecord(item)
-    if (typeof row?.path === "string" && (row.line === undefined || row.line === null || typeof row.line === "number")) {
-      return [{ path: row.path, ...(row.line !== undefined ? { line: row.line } : {}) }]
-    }
-    malformed(ctx, "acp.malformed_location", "location_invalid", item)
-    return []
-  })
-  return out
-}
-
-export function safeContent(value: unknown, ctx: ValidationContext) {
-  if (value === undefined || value === null) return value
-  if (!Array.isArray(value)) {
-    malformed(ctx, "acp.dropped_content", "content_not_array", value)
+    malformed(ctx, event, arrayReason, value)
     return null
   }
   return value.flatMap((item) => {
-    if (isToolCallContent(item)) return [item]
-    malformed(ctx, "acp.dropped_content", "content_item_invalid", item)
+    const decoded = decode(item)
+    if (decoded !== undefined) return [decoded]
+    malformed(ctx, event, itemReason, item)
     return []
   })
 }
 
+export function safeLocations(value: unknown, ctx: ValidationContext) {
+  return safeItems(value, ctx, "acp.malformed_location", "locations_not_array", "location_invalid", (item) => {
+    const row = asRecord(item)
+    if (typeof row?.path === "string" && (row.line === undefined || row.line === null || typeof row.line === "number")) {
+      return { path: row.path, ...(row.line !== undefined ? { line: row.line } : {}) }
+    }
+    return undefined
+  })
+}
 
-const CONTENT_BLOCK_TYPES = {
-  text: true,
-  image: true,
-  audio: true,
-  resource_link: true,
-  resource: true,
-} satisfies Record<ContentBlock["type"], true>
+export function safeContent(value: unknown, ctx: ValidationContext) {
+  return safeItems(value, ctx, "acp.dropped_content", "content_not_array", "content_item_invalid",
+    (item) => isToolCallContent(item) ? item : undefined)
+}
+
+
+const contentFields: Record<ContentBlock["type"], readonly string[]> = {
+  text: ["text"], image: ["mimeType", "data"], audio: ["mimeType", "data"],
+  resource_link: ["uri", "name"], resource: ["resource"],
+}
 
 export function isContentBlock(value: unknown): value is ContentBlock {
-  const row = object(value)
-  if (!row) return false
-  switch (row.type) {
-    case "text":
-      return typeof row.text === "string"
-    case "image":
-    case "audio":
-      return typeof row.mimeType === "string" && typeof row.data === "string"
-    case "resource_link":
-      return typeof row.uri === "string" && typeof row.name === "string"
-    case "resource":
-      return isRecord(row.resource)
-    default:
-      return false
-  }
+  const row = asRecord(value)
+  const fields = typeof row?.type === "string" ? own(contentFields, row.type) : undefined
+  return !!fields && fields.every((field) => row!.type === "resource" ? isRecord(row![field]) : typeof row![field] === "string")
 }
 
 export function isToolCallContent(value: unknown): value is ToolCallContent {
-  const row = object(value)
+  const row = asRecord(value)
   if (!row) return false
   switch (row.type) {
     case "content":
@@ -117,38 +102,9 @@ export type ContentBlockCheck =
   | { ok: false; reason: "content_missing_type" | "content_missing_required_fields" | "unknown_content_block" }
 
 export function checkContentBlock(value: unknown): ContentBlockCheck {
-  const row = object(value)
+  const row = asRecord(value)
   if (!row || typeof row.type !== "string") return { ok: false, reason: "content_missing_type" }
-  if (!Object.hasOwn(CONTENT_BLOCK_TYPES, row.type)) return { ok: false, reason: "unknown_content_block" }
+  if (!own(contentFields, row.type)) return { ok: false, reason: "unknown_content_block" }
   if (!isContentBlock(value)) return { ok: false, reason: "content_missing_required_fields" }
   return { ok: true, block: value }
-}
-
-type RequiredField = readonly [field: string, kind: "string" | "number"]
-
-const SESSION_UPDATE_REQUIRED_FIELDS = new Map<string, readonly RequiredField[]>(Object.entries({
-  agent_message_chunk: [],
-  agent_thought_chunk: [],
-  user_message_chunk: [],
-  tool_call: [["toolCallId", "string"]],
-  tool_call_update: [["toolCallId", "string"]],
-  plan: [],
-  plan_update: [],
-  plan_removed: [],
-  available_commands_update: [],
-  current_mode_update: [["currentModeId", "string"]],
-  config_option_update: [],
-  session_info_update: [],
-  usage_update: [["size", "number"], ["used", "number"]],
-  notice: [["severity", "string"], ["title", "string"]],
-  compaction_update: [["compactionId", "string"], ["status", "string"]],
-  compaction_summary_chunk: [["compactionId", "string"]],
-} satisfies Record<SessionUpdate["sessionUpdate"], readonly RequiredField[]>))
-
-export function isSessionUpdate(value: unknown): value is SessionUpdate {
-  const row = object(value)
-  if (!row || typeof row.sessionUpdate !== "string") return false
-  const required = SESSION_UPDATE_REQUIRED_FIELDS.get(row.sessionUpdate)
-  if (!required) return false
-  return required.every(([field, kind]) => typeof row[field] === kind)
 }

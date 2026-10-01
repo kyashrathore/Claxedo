@@ -2,8 +2,7 @@ import { asRecord } from "@claxedo/helpers/guards"
 import { type ToolIntent, asText as str } from "@claxedo/agent-runtime-contract"
 import type { ToolCallContent, ToolKind } from "./types"
 import type { ToolState } from "./state"
-
-type AcpIntent = ToolIntent
+import { own, pathFields } from "../../../translate/value"
 
 function parsed(raw: unknown) {
   const item = asRecord(raw)
@@ -23,30 +22,14 @@ function pathlike(value: string) {
   )
 }
 
-function firstPath(list: Array<{ path: string; line?: number | null }>) {
-  return str(list[0]?.path)
-}
-
-function diffPath(content: ToolCallContent[]): string | undefined {
-  for (const item of content) {
-    if (item.type === "diff" && item.path) return item.path
-  }
-  return undefined
-}
-
 function files(state: ToolState): string[] {
-  const rawPaths = ["filePath", "path", "sourcePath", "fromPath", "oldPath", "targetPath", "toPath", "newPath"].flatMap(
-    (key) => str(state.rawInput?.[key]) ?? [],
-  )
-  return [
-    ...new Set(
-      [
-        ...rawPaths,
-        ...state.locations.map((item) => item.path),
-        ...state.content.flatMap((item) => (item.type === "diff" && item.path ? [item.path] : [])),
-      ].filter(Boolean),
-    ),
-  ]
+  const paths = pathFields(state.rawInput ?? {},
+    ["filePath", "path", "sourcePath", "fromPath", "oldPath", "targetPath", "toPath", "newPath"])
+  return [...new Set([
+    ...paths,
+    ...state.locations.map((item) => item.path),
+    ...state.content.flatMap((item) => item.type === "diff" ? [item.path] : []),
+  ].filter(Boolean))]
 }
 
 function textBody(raw: unknown) {
@@ -112,20 +95,9 @@ function first(value: unknown): string | undefined {
   return value.find((item): item is string => typeof item === "string" && !!item)
 }
 
-function intent(kind: ToolKind | undefined, toolLabel?: string): AcpIntent {
-  if (kind === "execute") return "shell"
-  if (kind === "read") return "read"
-  if (kind === "edit") return "edit"
-  if (kind === "fetch") return "fetch"
-  if (kind === "move") return "move"
-  if (kind === "delete") return "delete"
-  if (kind === "think") return "reasoning"
-  if (kind === "switch_mode") return "switch_mode"
-  if (kind === "search") {
-    if (mode(toolLabel) === "files") return "list"
-    return "search"
-  }
-  return "generic"
+const toolIntents: Partial<Record<ToolKind, ToolIntent>> = {
+  execute: "shell", read: "read", edit: "edit", fetch: "fetch", move: "move", delete: "delete",
+  think: "reasoning", switch_mode: "switch_mode", search: "search",
 }
 
 function resolvedIntent(
@@ -135,7 +107,7 @@ function resolvedIntent(
   list: Record<string, unknown> | undefined,
   search: Record<string, unknown> | undefined,
 ): ToolIntent {
-  const next = intent(kind, toolLabel)
+  const next = kind === "search" && mode(toolLabel) === "files" ? "list" : own(toolIntents, kind ?? "") ?? "generic"
   const raw = state.rawInput
   const call = state.name?.toLowerCase()
   if (
@@ -166,8 +138,8 @@ function toolPaths(
     sourcePath: str(raw?.sourcePath) ?? str(raw?.fromPath) ?? str(raw?.oldPath) ?? file,
     targetPath: str(raw?.targetPath) ?? str(raw?.toPath) ?? str(raw?.newPath) ?? str(raw?.destinationPath),
     pattern: str(raw?.pattern) ?? str(search?.query) ?? str(list?.pattern) ?? str(base.input?.pattern),
-    path: str(raw?.path) ?? str(search?.path) ?? str(list?.path) ?? firstPath(state.locations),
-    filePath: str(raw?.filePath) ?? str(search?.path) ?? file ?? diffPath(state.content) ?? str(base.input?.filePath),
+    path: str(raw?.path) ?? str(search?.path) ?? str(list?.path) ?? str(state.locations[0]?.path),
+    filePath: str(raw?.filePath) ?? str(search?.path) ?? file ?? str(base.input?.filePath),
   }
 }
 
