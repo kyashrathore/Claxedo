@@ -6,12 +6,10 @@ import {
   managedWorkspaceSessionAccessPolicy,
   RuntimeStore,
   sessionEventDeliveryPolicy,
+  storeSessionRoutes,
   type DurableObjectSqlStorage,
 } from "@claxedo/session-core"
 import { WorkspaceRuntimeRoutes } from "../routes/manifest"
-import { withWorkspaceTarget } from "../target"
-import { createWorkspaceCheckpoint } from "../workspace/checkpoint"
-import { mountSessionRoutes } from "../workspace/session-routes"
 import { FakeTransport, type FakeTurn } from "./fake-transport"
 import { composeHost } from "./host-composition"
 
@@ -39,23 +37,31 @@ async function* echoTurn({ session, turn }: FakeTurn): AsyncIterable<AgentRuntim
   yield { type: "finish", sessionId: session.binding.sessionId }
 }
 
+/** The keyed child-session identity the machine derives with HMAC, here through Web Crypto, which a Durable Object has. */
+async function deriveChildSessionId(secret: string, input: { callerIdentity: string; clientRequestId: string }) {
+  const encoder = new TextEncoder()
+  const key = await crypto.subtle.importKey("raw", encoder.encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"])
+  const digest = await crypto.subtle.sign("HMAC", key, encoder.encode(`${input.callerIdentity}\0${input.clientRequestId}`))
+  return `ses_${Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("").slice(0, 32)}`
+}
+
 /**
- * One workspace's session core inside a Durable Object: the store over the
- * object's own SQLite, the host the workspace runtime composes, the session
- * routes `mountSessionRoutes` mounts and the workspace event stream, with a
- * scripted harness that echoes each prompt in place of a real one. It boots
- * the way the machine runtime does after a crash: the previous owner's turns
- * are ended, then the prompts still queued are re-issued.
+ * One workspace's session core inside a Durable Object, composed from
+ * `@claxedo/session-core` alone: the store over the object's own SQLite, the
+ * core's routes over that store and its event stream, with a scripted harness
+ * that echoes each prompt in place of a real one. Placement is a fixed
+ * workspace and one synthetic directory; Pages documents and attachment bytes
+ * are not supplied. It boots the way the machine runtime does after a crash:
+ * the previous owner's turns are ended, then the prompts still queued are
+ * re-issued.
  */
 export class SessionCoreObject {
   private readonly app: Hono
-  private readonly target: { workspaceId: string; directory: string }
 
   constructor(ctx: { id: { name?: string }; storage: DurableObjectSqlStorage; blockConcurrencyWhile<T>(run: () => Promise<T>): Promise<T> }) {
     const workspaceId = ctx.id.name
     if (!workspaceId) throw new Error("A session core object is addressed by its workspace name")
     const directory = SESSION_CORE_DIRECTORY
-    this.target = { workspaceId, directory }
     const store = new RuntimeStore({ db: durableObjectSqliteDatabase(ctx.storage), location: "durable-object", flush: () => {} })
     const host = composeHost({ store, transports: { pi: new FakeTransport({ turn: echoTurn }) }, workspaceId })
     const core = createSessionCore({
@@ -70,22 +76,16 @@ export class SessionCoreObject {
       },
     })
     const sessionAccessPolicy = managedWorkspaceSessionAccessPolicy()
-    const sessions = mountSessionRoutes({
-      core,
-      runtime: async () => host.runtime,
-      recovery: () => host.runtime.recovery,
-      store: () => store,
-      sessionStarts: store.sessionStarts,
-      sessionAccessPolicy,
-      checkpoint: createWorkspaceCheckpoint({
-        recovery: () => host.runtime.recovery,
-        turnStarted: () => {},
-        turnEnded: () => {},
-        onActivityChange: () => {},
+    const sessions = core.sessionRoutes(async () => host.runtime, {
+      ...storeSessionRoutes({
+        store: () => store,
+        subagentAdmission: (parentSessionId, observation) => host.runtime.subagents.admit(parentSessionId, observation),
+        deriveChildSessionId: (identity) => deriveChildSessionId(store.runtimeSecret("child-session"), identity),
       }),
-      currentRunner: () => ({ id: "pi", access: "native" }),
-      sessionToolPrompt: () => undefined,
-      subagentAdmission: (parentSessionId, observation) => host.runtime.subagents.admit(parentSessionId, observation),
+      sessionAccessPolicy,
+      sessionStarts: store.sessionStarts,
+      requestedSessionHarness: (requested) => requested ?? { id: "pi", access: "native" },
+      resolveRecoveryOwner: () => host.runtime.recovery,
     })
     const events = core.events({
       directory,
@@ -95,14 +95,14 @@ export class SessionCoreObject {
       sessionStarts: store.sessionStarts,
     })
     this.app = new Hono().get(WorkspaceRuntimeRoutes.events, events).route("/", sessions.routes)
-    void ctx.blockConcurrencyWhile(() => withWorkspaceTarget(this.target, () => {
+    void ctx.blockConcurrencyWhile(() => {
       store.recoverBusySessions()
       return sessions.recoverQueuedPrompts()
-    }))
+    })
   }
 
   fetch(request: Request) {
-    return withWorkspaceTarget(this.target, () => this.app.fetch(request))
+    return this.app.fetch(request)
   }
 }
 

@@ -1,100 +1,65 @@
 # The session core in a Durable Object
 
-The session core already runs inside a Cloudflare Durable Object under
-workerd. [`src/session-core-durable-object.node-test.ts`](../src/session-core-durable-object.node-test.ts)
-proves it end to end, through the object's `fetch`:
+The session core runs inside a Cloudflare Durable Object under workerd, with
+no Node compatibility layer.
+[`src/session-core-durable-object.node-test.ts`](../src/session-core-durable-object.node-test.ts)
+bundles the object without `nodejs_compat` and fails if any Node builtin enters
+the bundle. Through the object's `fetch` it proves five things:
 
 - it creates a session;
 - it sends a prompt and streams the turn over SSE;
 - it reads the transcript back;
 - it restarts the workerd process on the same storage and finds the same
-  session and transcript;
-- it prompts that session again after the restart;
+  session and transcript, then prompts that session again;
 - it evicts the object while a turn is streaming, and while a prompt is queued
   behind that turn, and reopens it (see [Eviction and boot](#eviction-and-boot)).
 
-It runs only because the worker is built with `nodejs_compat`. This note lists
-every place the core still reaches Node or a process-wide global, as a port the
-host supplies, and says which host supplies each one.
+The ports themselves are defined in the
+[`@claxedo/session-core` README](../../session-core/README.md). This note
+records what a Durable Object supplies for each one, and what is still unproven.
 
 ## What the object composes
 
 [`src/test-support/session-core-durable-object.ts`](../src/test-support/session-core-durable-object.ts)
-builds one workspace's core in the object's constructor. It uses the same
-pieces the machine runtime uses:
+builds one workspace's core in the object's constructor, from
+`@claxedo/session-core` alone. It reuses two Node-free pieces of this package's
+test support: `composeHost` and the scripted `FakeTransport`, which echoes each
+prompt.
 
 1. `RuntimeStore` runs over `durableObjectSqliteDatabase(ctx.storage)`.
 2. `composeHost` ([`src/test-support/host-composition.ts`](../src/test-support/host-composition.ts))
-   builds the store's broker ports, its `RuntimeEventHub` and
-   `createAgentRuntime`. It is the same composition `createHostFixture` wraps
-   for the Node tests.
-3. `mountSessionRoutes` provides the session routes, the way
-   `workspace/runtime.ts` mounts them.
-4. `workspaceEventsHandler` with `sessionEventDeliveryPolicy` serves
-   `GET /api/wr/events`.
-5. A `FakeTransport` stands in for the harness and echoes each prompt.
+   builds the store's broker ports, its `RuntimeEventHub` and the agent runtime.
+   It is the same composition `createHostFixture` wraps for the Node tests.
+3. `createSessionCore` takes that event hub and the object's placement. It owns
+   its own bus and placement registry.
+4. `core.sessionRoutes(...)` gets `storeSessionRoutes(...)`: the listings,
+   transcript reads, queue and child-session records every host answers from
+   its store. The machine's `mountSessionRoutes` composes the same function.
+5. `core.events(...)` serves `GET /api/wr/events`.
 
-Every `fetch` runs inside `withWorkspaceTarget({ workspaceId: ctx.id.name,
-directory: "/workspace" })`. That is how the routes' `workspaceId()` and
-`assertTarget()` learn which workspace this object is.
+The object never enters `AsyncLocalStorage` and never reads a process global.
+Its workspace is the object's name, and placement comes from its own port.
 
-The test also checks the bundle's Node imports against a list. The worker
-bundle must import only the Node builtins on that list. A new import fails the
-test, and so does an import that disappears.
+## What each port is, per host
 
-## Ports
+| Port | Machine (`workspace-runtime`) | Durable Object | DO |
+|---|---|---|---|
+| `SqliteDatabase` | better-sqlite3 through `store-file.ts`, with file root, backups and PRAGMAs | `durableObjectSqliteDatabase(ctx.storage)` | required |
+| Bus | the core's own; PTY and agent hooks publish on the bus of the core that created them | the core's own | required, by construction |
+| Placement: `workspaceId`, `directory` | the runtime's target | the object's name; one synthetic directory | required |
+| Placement: `normalizeDirectory`, `canonicalDirectory`, `containsDirectory` | `path.resolve`, `realpath`, path containment | trim, identity, `/`-prefix containment | required |
+| Placement: `sessionIdWorkspace` | the control plane's session index, or the runtime's own store for a self-placed runtime (`storeBackedSessionPlacement`) | none: the object owns every session in its store | required |
+| `childSessions.deriveSessionId` | HMAC with `node:crypto` (`host/child-identity.ts`) | HMAC with Web Crypto, asynchronously | required |
+| `transports`, `launch` | the composed CLI and SDK transports, machine credentials | scripted here; Pi in process for production | required |
+| `readAttachment` | bounded filesystem reads (`host/attachment-files.ts`) | not supplied: tool images answer unavailable | optional |
+| `flushSessionDocuments`, `disposeSessionDocuments` | Pages hydration (`routes/document-hydration.ts`) | not supplied | optional |
+| Boot | `recoverBusySessions` when the store opens, then `recoverQueuedPrompts` once admitted | both, inside one `blockConcurrencyWhile` | required |
 
-Required means a Durable Object host must supply the port. Optional means the
-object leaves it out and the feature is absent.
-
-| # | Port | Reached from | Machine (Node) supplies | Durable Object supplies | DO |
-|---|---|---|---|---|---|
-| 1 | `SqliteDatabase`: `exec`, `prepare`, `transaction` | `store.ts` | better-sqlite3 through `store-file.ts`, with file root, backups and PRAGMAs | `durableObjectSqliteDatabase(ctx.storage)` | required, exists |
-| 2 | Runtime bus (`publish`, `subscribe`) | `routes/session.ts` publishes `session.queue`, the `agent.lifecycle` bridge and `session.lifecycle`; `routes/events.ts` subscribes | `workspaceRuntimeBus`, pinned on `globalThis`, which PTY and agent hooks also publish to | its own `createBus()`, passed to `mountSessionRoutes` and to `workspaceEventsHandler` | required |
-| 3 | Workspace placement: id, directory, request directory, served directories, canonical directory | `target.ts` through `routes/session.ts` `dir()`, `workspaceId()`, and `routes/events.ts` `ownsControlFrames` | `WORKSPACE_RUNTIME_*` env, `process.cwd()`, `AsyncLocalStorage`, the module-level worktree registry, `realpathSync` | today `withWorkspaceTarget` over `AsyncLocalStorage`; as a port, a fixed id from the object's name, one synthetic directory, no worktrees and identity canonicalization | required |
-| 4 | Session documents: `flush(sessionId)`, `dispose(sessionId)` | `routes/document-hydration.ts` through `session-prompt-admission.ts`, `session.ts` and `session-core.ts` | the Pages hydration routes: files under the workspace, control-plane URL from env, module-level document maps | none | optional |
-| 5 | Attachment bytes: `read(attachment)` returns bytes or missing | `routes/tool-image.ts` | `node:fs` open of a `tool-file` path | none today; R2 if tool images are kept | optional |
-| 6 | Synchronous HMAC for idempotent child ids | `routes/session-children.ts` `createHmac` | `node:crypto` | `node:crypto` under `nodejs_compat`; Web Crypto's HMAC is asynchronous | required |
-| 7 | Subagent key hashing and child ids | `harness/src/broker/subagents` `createHash`, `randomUUID` | `node:crypto` | `node:crypto` under `nodejs_compat` | required |
-| 8 | Harness probe cache | `harness/src/contract/probe-cache.ts`, imported through the contract index | disk | none: imported, never called | optional |
-| 9 | `TransportResolver` and `LaunchComposer` | `createAgentRuntime` input | the composed CLI and SDK transports; machine credentials and MCP projection | Pi in process; hosted credentials; placement `cloud` | required, exists |
-| 10 | Boot: end the previous owner's turns, then re-issue queued prompts | `RuntimeStore.recoverBusySessions()`, then `SessionRoutes().recoverQueuedPrompts()` | `workspace/durable-state.ts` when the store opens, then `workspace/runtime.ts` once it is admitted | the object's constructor, both inside one `blockConcurrencyWhile` | required |
-
-Some reaches need no port, because both hosts already provide them:
-
-- **Ids:** the core calls the global `crypto.randomUUID()`, which Web Crypto
-  provides in workerd. Only `host/home-use.ts` imports `node:crypto`, and it
-  runs on the machine only.
-- **`Buffer`:** no core file uses it. It arrives only through ports 4 and 5,
-  from `@claxedo/helpers/fs`, which also imports `node:child_process`.
-- **Timers:** the event delivery renewal `setInterval` and the SSE heartbeat
-  run unchanged in an object. The heartbeat's clock is already injectable.
-- **Checkpoint:** `createWorkspaceCheckpoint` is Node-free, and the object
-  uses it as is.
-
-Launch-ownership and worktree records, PTY, files and git are never reached
-from the session routes or the event stream.
-
-## The bus: why it is per instance
-
-One isolate hosts many objects of the same class. A module-level value is
-shared by all of them, and the runtime bus is pinned on `globalThis`.
-
-When one workspace's routes publish a frame, every workspace's event stream in
-that isolate is offered the frame. `ownsControlFrames` admits a frame by
-directory, and every object serves the same synthetic directory. So
-workspace A's `session.queue` frame passes the check in workspace B's stream,
-and that frame carries A's queued prompt text.
-
-On workerd the delivery then fails rather than leaks. B's stream reads B's
-storage while deciding the frame, and workerd refuses I/O on behalf of another
-object. The bus logs `workspaceRuntimeBus subscriber failed` once per frame.
-The isolation case in the test asserts that this line never appears.
-
-`SessionRoutes` and `mountSessionRoutes` now take an optional `bus`.
-`workspaceEventsHandler` already took one. The object hands each workspace its
-own bus, and the machine runtime keeps the global one. The machine needs the
-global bus because PTY and agent hooks publish to it from separate bundles.
+Each core owns its bus. Durable Objects of one class share an isolate, so a
+process-wide bus would offer every workspace's stream every other workspace's
+frames, including another workspace's queued prompts. The isolation case in
+the test runs two workspaces in one isolate and asserts that neither sees the
+other's frames.
 
 ## Eviction and boot
 
@@ -140,13 +105,14 @@ learns about that turn from the transcript, not from the stream.
 
 These would block a production Durable Object host:
 
-- **Node imports:** ports 3 to 8 still reach Node. A production object would
-  either keep `nodejs_compat` and accept that closure, or move each reach
-  behind its port so the session core bundles without it.
-- **Placement:** port 3 works today only through `AsyncLocalStorage` and the
-  module-level registry. It is not a real port.
+- **A production entry:** the object above is a test fixture. A production
+  object needs a real harness transport (Pi in process), hosted credentials
+  and its own route surface.
 - **A delivery in flight at eviction:** a queued row that a delivery attempt
   had already claimed is not re-issued. Its outcome is unknown, so it stays
   ineligible until someone reconciles it. The tests don't cover this.
 - **Stream continuity across an eviction:** the replay ring does not survive
   an eviction. A client must re-read the transcript after it reconnects.
+- **Pages documents and tool images:** a Durable Object supplies neither
+  port, so a hosted session has no Pages hydration and its tool images
+  answer unavailable.

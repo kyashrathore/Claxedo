@@ -14,47 +14,6 @@ const PACKAGES = path.resolve(import.meta.dirname, "../..")
 const DIRECTORY = "/workspace"
 const WORKSPACE_HEADER = "x-workspace-id"
 
-/**
- * Every Node builtin the Durable Object's bundle still imports, each one a
- * port the host has yet to supply (docs/session-core-durable-object.md). The
- * worker runs with `nodejs_compat` for these; the list is exact, so an import
- * that joins the closure or leaves it fails here until the note and this list
- * say so.
- */
-const REVIEWED_NODE_IMPORTS = [
-  "async_hooks <- workspace-runtime/src/target.ts",
-  "node:buffer <- claxedo-helpers/src/fs.ts",
-  "node:buffer <- claxedo-helpers/src/windows-private-file.ts",
-  "node:child_process <- claxedo-helpers/src/windows-private-file.ts",
-  "node:crypto <- claxedo-helpers/src/fs.ts",
-  "node:crypto <- harness/src/broker/subagents/admission.ts",
-  "node:crypto <- harness/src/broker/subagents/index.ts",
-  "node:crypto <- workspace-runtime/src/routes/document-hydration.ts",
-  "node:crypto <- workspace-runtime/src/routes/session-children.ts",
-  "node:fs <- claxedo-helpers/src/fs.ts",
-  "node:fs <- claxedo-helpers/src/real-path.ts",
-  "node:fs <- workspace-runtime/src/routes/document-hydration-files.ts",
-  "node:fs <- workspace-runtime/src/routes/document-hydration.ts",
-  "node:fs <- workspace-runtime/src/routes/tool-image.ts",
-  "node:fs/promises <- claxedo-helpers/src/fs.ts",
-  "node:fs/promises <- harness/src/contract/probe-cache.ts",
-  "node:fs/promises <- workspace-runtime/src/routes/document-hydration-files.ts",
-  "node:fs/promises <- workspace-runtime/src/routes/document-hydration.ts",
-  "node:fs/promises <- workspace-runtime/src/routes/tool-image.ts",
-  "node:fs/promises <- workspace-runtime/src/target.ts",
-  "node:os <- claxedo-helpers/src/path.ts",
-  "node:path <- claxedo-helpers/src/fs.ts",
-  "node:path <- claxedo-helpers/src/path.ts",
-  "node:path <- claxedo-helpers/src/real-path.ts",
-  "node:path <- claxedo-helpers/src/windows-private-file.ts",
-  "node:path <- workspace-runtime/src/env.ts",
-  "node:path <- workspace-runtime/src/routes/document-hydration-files.ts",
-  "node:path <- workspace-runtime/src/routes/document-hydration.ts",
-  "node:path <- workspace-runtime/src/routes/events.ts",
-  "node:path <- workspace-runtime/src/routes/tool-image.ts",
-  "path <- workspace-runtime/src/target.ts",
-]
-
 const reached = new Set<string>()
 const nodeImports: Plugin = {
   name: "node-imports",
@@ -86,7 +45,6 @@ function launchWorkerd(script: string, persist: string | false) {
   const stderr: string[] = []
   const miniflare = new Miniflare({
     compatibilityDate: "2026-07-22",
-    compatibilityFlags: ["nodejs_compat"],
     modules: [{ type: "ESModule", path: "index.mjs", contents: script }],
     durableObjects: { SESSION_CORE: { className: "SessionCoreObject", useSQLite: true } },
     durableObjectsPersist: persist,
@@ -252,8 +210,8 @@ void describe("the session core in a Durable Object under workerd", () => {
     for (const root of roots) fs.rmSync(root, { recursive: true, force: true })
   })
 
-  void it("reaches only the reviewed Node builtins", () => {
-    assert.deepEqual([...reached].sort(), REVIEWED_NODE_IMPORTS)
+  void it("bundles no Node builtin, so the worker runs without nodejs_compat", () => {
+    assert.deepEqual([...reached].sort(), [])
   })
 
   void it("creates a session, streams its turn, reads the transcript back, and keeps both across a restart", async () => {

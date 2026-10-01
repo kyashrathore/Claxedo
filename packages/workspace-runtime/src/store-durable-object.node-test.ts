@@ -71,26 +71,12 @@ export default {
 }
 `
 
-/**
- * The Node imports the store's closure still makes, each one reviewed: the
- * harness's subagent admission derives keys with a synchronous SHA-256 and
- * allocates child ids with `randomUUID`, so the worker runs with
- * `nodejs_compat` for these and fails the build on any other.
- */
-const ALLOWED_NODE_IMPORTS = [
-  { importer: "harness/src/broker/subagents/admission.ts", module: "node:crypto" },
-  { importer: "harness/src/broker/subagents/index.ts", module: "node:crypto" },
-]
-
-const onlyReviewedNodeImports: Plugin = {
-  name: "only-reviewed-node-imports",
+const noNodeImports: Plugin = {
+  name: "no-node-imports",
   setup(build) {
-    build.onResolve({ filter: new RegExp(`^(node:|(${builtinModules.join("|")})(/|$))`) }, (args) => {
-      const importer = args.importer.split(path.sep).join("/")
-      const reviewed = ALLOWED_NODE_IMPORTS.some((item) => importer.endsWith(item.importer) && args.path === item.module)
-      if (reviewed) return { path: args.path, external: true }
-      return { errors: [{ text: `${args.path} reached the store's closure from ${importer}` }] }
-    })
+    build.onResolve({ filter: new RegExp(`^(node:|(${builtinModules.join("|")})(/|$))`) }, (args) => ({
+      errors: [{ text: `${args.path} reached the store's closure from ${args.importer.split(path.sep).join("/")}` }],
+    }))
   },
 }
 
@@ -107,11 +93,10 @@ void describe("store core scenarios on Durable Object SQLite under workerd", () 
       conditions: ["development"],
       target: "es2022",
       write: false,
-      plugins: [onlyReviewedNodeImports],
+      plugins: [noNodeImports],
     })
     miniflare = new Miniflare({
       compatibilityDate: "2026-07-22",
-      compatibilityFlags: ["nodejs_compat"],
       modules: [{ type: "ESModule", path: "index.mjs", contents: bundled.outputFiles[0]!.text }],
       durableObjects: { STORE_GATE: { className: "StoreGate", useSQLite: true } },
     })

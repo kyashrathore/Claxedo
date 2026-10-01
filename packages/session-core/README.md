@@ -36,6 +36,15 @@ core that created that PTY.
 | `flushSessionDocuments`, `disposeSessionDocuments` | Optional Pages lifecycle capabilities. There is no machine implementation selected by the core. |
 | `log.warn` | Optional diagnostic sink. |
 
+`storeSessionRoutes({ store, subagentAdmission, deriveChildSessionId })` returns
+the session route options every host answers from its own store: listings,
+transcript reads, turn coverage, configuration, the durable prompt queue and
+child-session records. A host spreads it into `core.sessionRoutes(...)` and adds
+only what it alone supplies. A host boots in two steps once its store is open:
+`store.recoverBusySessions()` ends the turns its previous instance left running,
+then `recoverQueuedPrompts()` on the session routes re-issues the prompts still
+queued.
+
 IDs use Web Crypto. Harness child admission derives its deterministic key with
 Web Crypto before lending the key to its synchronous admission store. The
 harness contract does not export machine probe-cache storage.
