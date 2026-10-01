@@ -51,6 +51,23 @@ Each lane is one agent in its own worktree off the `goal/foundation` tip, with t
 
 Later, with their owning plans: the store split and explicit turn identity (plan 2026-09-29-002 Phase 3), the machine agent composition (D9), authorized fanout and journal streams, the credential domain service (needs a ruling on accounts per provider), and the sandbox driver catalogue (needs the boat.dev launch scope).
 
+
+### SC1 Session core extraction (Phase 3 of the LOC plan)
+
+The SC1 worktree extracts `packages/session-core` behind `createSessionCore`.
+Its bus and directory registry belong to each instance. Session placement is a
+required host port; machine HMAC, attachment reads, directory canonicalization
+and optional Pages lifecycle hooks stay with the machine host. The Node-free
+ratchet scans all core production files and the first-party import closure.
+See `packages/session-core/README.md` for the port contract. No stored-state
+migration or compatibility export is introduced. The schema and SQLite port
+work was already present in the SC1 base; the old transaction blocker is not
+reintroduced by this extraction.
+
+Route/lifecycle acceptance, package builds and the Durable Object runtime gate
+are recorded separately in the lane report. This extraction does not implement
+the later turn-row and journal consolidation.
+
 ## 4. Order
 
 1. Now: C3, C4, C9 (disjoint from L3's files).

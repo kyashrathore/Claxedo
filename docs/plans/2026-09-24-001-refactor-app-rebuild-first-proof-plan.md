@@ -462,7 +462,7 @@ When the server is rebuilt later, only this folder changes.
 - **Today's rail says no.** `rail-sidebar-status-poll.ts` says the server does not push `session.status` for harness (ACP, Claude) sessions, so the rail re-reads status every 5 seconds, the first time after 250 ms.
 - **The runtime code suggests yes:**
   - harness turns publish `session.status` busy when they start and `session.idle` when they end;
-  - `bridgeLifecycleEvent` in `workspace-runtime/src/routes/session.ts` forwards those, plus permission and question requests and errors, as `agent.lifecycle` events;
+  - `bridgeLifecycleEvent` in `session-core/src/routes/session.ts` forwards those, plus permission and question requests and errors, as `agent.lifecycle` events;
   - both existed before the poll was written.
 - **How P0.7 settles it.** It runs scripted Claude and ACP turns on the real stack and records which of those frames arrive on the stream the app reads.
   - **If they all arrive:** `status.ts` keeps no timer.
