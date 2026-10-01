@@ -1,9 +1,9 @@
 import { afterEach, expect, test } from "bun:test"
 import type { RuntimeGoalSnapshot } from "@claxedo/agent-runtime-contract"
 import { createHarnessComposer } from "@claxedo/harness/compose"
-import { acpPeer } from "../../../workspace-runtime/src/test-support/acp-peer"
-import { FakeTransport, type FakeTransportOptions } from "../../../workspace-runtime/src/test-support/fake-transport"
-import { createFakeWorkspaceApp, type FakeConnection, type FakeWorkspaceApp } from "../../../workspace-runtime/src/test-support/fake-workspace-app"
+import { acpPeer } from "../test-support/acp-peer"
+import { FakeTransport, type FakeTransportOptions } from "@claxedo/session-core/testing"
+import { createFakeWorkspaceApp, type FakeConnection, type FakeWorkspaceApp } from "../test-support/fake-workspace-app"
 
 const apps: FakeWorkspaceApp[] = []
 afterEach(async () => {

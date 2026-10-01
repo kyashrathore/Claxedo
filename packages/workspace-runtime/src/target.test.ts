@@ -1,4 +1,4 @@
-import { testSessionCore } from "./test-support/session-core"
+import { testSessionCore } from "@claxedo/session-core/testing"
 import { currentSessionCore, withSessionCore } from "./session-context"
 import { describe, expect, it } from "bun:test"
 import fs from "node:fs/promises"

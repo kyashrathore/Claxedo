@@ -4,9 +4,9 @@ import {
   permissionAsked,
   questionAsked,
   todoUpdated,
-} from "@claxedo/session-core"
-import type { RuntimeStore } from "@claxedo/session-core"
-import { RuntimeStoreSchemaMismatchError } from "@claxedo/session-core"
+} from "../projection/presentation-events"
+import type { RuntimeStore } from "../store"
+import { RuntimeStoreSchemaMismatchError } from "../store-schema"
 
 /**
  * The store's core scenarios, written once against whatever SQLite the caller

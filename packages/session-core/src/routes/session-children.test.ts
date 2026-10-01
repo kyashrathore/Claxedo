@@ -1,4 +1,4 @@
-import { deriveChildSessionId } from "../../../workspace-runtime/src/host/child-identity"
+import { hmacChildSessionId } from "../test-support/child-identity"
 import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -8,7 +8,7 @@ import type { AgentMessage, AgentSession, AgentEventEnvelope } from "@claxedo/ag
 import type { SubagentUpdatedEvent } from "@claxedo/agent-runtime-contract"
 import type { SessionTurnOrigin } from "../session-access-policy"
 import type { RuntimeStore } from "../store"
-import { openRuntimeStore } from "../../../workspace-runtime/src/store-file"
+import { openTestRuntimeStore } from "../test-support/store"
 import { HOST_CHILD_PROVIDER_KIND, childSummary, createChildSessionHost, hostChildRow, wakeMessageId, type ChildSessionHostInput } from "./session-children"
 import { permissionAsked, questionAsked } from "../projection/presentation-events"
 
@@ -25,7 +25,7 @@ afterEach(() => {
 
 function openStore() {
   const root = mkdtempSync(join(tmpdir(), "wr-child-host-"))
-  const store = openRuntimeStore(root)
+  const store = openTestRuntimeStore(root)
   opened.push({ store, root })
   return store
 }
@@ -76,7 +76,7 @@ function harness(input: {
       admitted.push({ parentSessionId, event: row.event })
       return row.event
     },
-    deriveSessionId: (identity) => deriveChildSessionId("test-secret", identity),
+    deriveSessionId: (identity) => hmacChildSessionId("test-secret", identity),
     origins: {
       record: async (parentSessionId, subagentKey, origin) => {
         await input.onRecord?.()
@@ -122,12 +122,12 @@ describe("host-owned child sessions", () => {
     expect(item.admitted).toEqual([])
   })
 
-  test("derives idempotent child ids from the secret, caller identity and request id", () => {
+  test("derives idempotent child ids from the secret, caller identity and request id", async () => {
     const { host } = harness()
-    const first = host.deriveSessionId({ callerIdentity: "parent", clientRequestId: "req-1" })
-    expect(first).toBe(host.deriveSessionId({ callerIdentity: "parent", clientRequestId: "req-1" }))
-    expect(first).not.toBe(host.deriveSessionId({ callerIdentity: "other-caller", clientRequestId: "req-1" }))
-    expect(first).not.toBe(host.deriveSessionId({ callerIdentity: "parent", clientRequestId: "req-2" }))
+    const first = await host.deriveSessionId({ callerIdentity: "parent", clientRequestId: "req-1" })
+    expect(first).toBe(await host.deriveSessionId({ callerIdentity: "parent", clientRequestId: "req-1" }))
+    expect(first).not.toBe(await host.deriveSessionId({ callerIdentity: "other-caller", clientRequestId: "req-1" }))
+    expect(first).not.toBe(await host.deriveSessionId({ callerIdentity: "parent", clientRequestId: "req-2" }))
     expect(first).toMatch(/^ses_[0-9a-f]{32}$/)
   })
 

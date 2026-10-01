@@ -7,7 +7,7 @@ import type { BackgroundTaskOperations, BackgroundTaskRef, HarnessSession, Sessi
 import { withWorkspaceTarget } from "../target"
 import { loopbackWorkspaceRuntimeExposure } from "../exposure"
 import { createRuntimeEventHub } from "@claxedo/session-core"
-import { FakeTransport, fakeConnectionProvider } from "../test-support/fake-transport"
+import { FakeTransport, fakeConnectionProvider } from "@claxedo/session-core/testing"
 import { loopbackMachineLoginPolicy } from "../testing"
 import { createWorkspaceHost } from "./runtime"
 import type { RuntimeSnapshot } from "../routes/config"

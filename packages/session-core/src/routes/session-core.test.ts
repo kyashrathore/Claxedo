@@ -13,9 +13,9 @@ import {
   type SessionAccessDecision,
   type SessionAccessPolicy,
 } from "../session-access-policy"
-import { FakeTransport, type FakeTransportOptions, type FakeTurn } from "../../../workspace-runtime/src/test-support/fake-transport"
-import { createHostFixture, sessionCreate, type HostFixture } from "../../../workspace-runtime/src/test-support/host-fixture"
-import { testLaunch } from "../../../workspace-runtime/src/test-support/host-composition"
+import { FakeTransport, type FakeTransportOptions, type FakeTurn } from "../test-support/fake-transport"
+import { createHostFixture, sessionCreate, type HostFixture } from "../test-support/host-fixture"
+import { testLaunch } from "../test-support/host-composition"
 import { createSessionRoutes } from "./session-core"
 import type { SessionLifecycleEvent } from "./session-route-options"
 import type { ChildSessionHost } from "./session-children"

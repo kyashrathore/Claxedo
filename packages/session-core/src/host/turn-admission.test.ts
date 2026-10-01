@@ -14,11 +14,11 @@ import {
   tempStoreRoot,
   LOOPBACK_ORIGIN,
   tick,
-} from "../../../workspace-runtime/src/test-support/host-fixture"
-import { FakeTransport } from "../../../workspace-runtime/src/test-support/fake-transport"
+} from "../test-support/host-fixture"
+import { FakeTransport } from "../test-support/fake-transport"
 import { createTurnAdmissions } from "./turn-admission"
 import { rmSync } from "node:fs"
-import { openRuntimeStore } from "../../../workspace-runtime/src/store-file"
+import { openTestRuntimeStore } from "../test-support/store"
 
 function open(controls: TurnControl[]) {
   const control = controlledTurn("ses_busy")
@@ -423,7 +423,7 @@ describe("durable turn authority", () => {
 
   test("a persisted unfinished turn is unknown to a replacement host and refuses stale cancellation", async () => {
     const root = tempStoreRoot()
-    let store = openRuntimeStore(root)
+    let store = openTestRuntimeStore(root)
     const transport = new FakeTransport()
     let f = createHostFixture({ store, transports: { pi: transport } })
     try {
@@ -431,7 +431,7 @@ describe("durable turn authority", () => {
       store.startTurn(record)
       await f.runtime.dispose()
       store.close()
-      store = openRuntimeStore(root)
+      store = openTestRuntimeStore(root)
       f = createHostFixture({ store, transports: { pi: transport } })
       const inspection = f.runtime.recovery.inspect("s")
       expect(inspection.target).toBeUndefined()

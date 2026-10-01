@@ -1,15 +1,15 @@
 import { expect, test } from "bun:test"
 import { Hono } from "hono"
-import type { RelayHostAuthContext } from "../../../workspace-runtime/src/workspace-host-service-auth"
-import { createHostFixture, until } from "../../../workspace-runtime/src/test-support/host-fixture"
-import { testLaunch } from "../../../workspace-runtime/src/test-support/host-composition"
-import { FakeTransport } from "../../../workspace-runtime/src/test-support/fake-transport"
+import type { SessionRequestIdentity } from "../session-access-policy"
+import { createHostFixture, until } from "../test-support/host-fixture"
+import { testLaunch } from "../test-support/host-composition"
+import { FakeTransport } from "../test-support/fake-transport"
 import { createSessionRoutes } from "./session-core"
 
 function fixture() {
   const transport = new FakeTransport({ kind: "codex-app-server" })
   const f = createHostFixture({ transports: { codex: transport }, launch: testLaunch("ws", ["user-A", "user-B"]) })
-  const app = new Hono<{ Variables: RelayHostAuthContext }>()
+  const app = new Hono<{ Variables: { relayHostAuth: SessionRequestIdentity & { principal_kind: "user" | "service" } } }>()
   app.use("*", async (c, next) => {
     const agent = c.req.header("x-test-kind") === "agent"
     c.set("relayHostAuth", {

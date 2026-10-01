@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test"
 import type { RoutedEvent } from "@claxedo/harness/contract"
-import { FakeTransport } from "../../../workspace-runtime/src/test-support/fake-transport"
-import { createHostFixture, LOOPBACK_ORIGIN, sessionCreate, until } from "../../../workspace-runtime/src/test-support/host-fixture"
+import { FakeTransport } from "../test-support/fake-transport"
+import { createHostFixture, LOOPBACK_ORIGIN, sessionCreate, until } from "../test-support/host-fixture"
 
 const exhaustions: Record<string, RoutedEvent[]> = {
   "a stream": [{ event: { type: "text-delta", delta: "unfinished" } }],

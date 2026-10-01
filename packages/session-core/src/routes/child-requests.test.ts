@@ -2,8 +2,8 @@ import { afterEach, expect, test } from "bun:test"
 import type { SubagentObservation } from "@claxedo/agent-runtime-contract"
 import { permissionRequest, questionRequest, type RequestAnswer, type SessionBroker, type TurnBroker, type TurnRequest } from "@claxedo/harness/contract"
 import type { SessionAccessPolicy } from "../session-access-policy"
-import { FakeTransport } from "../../../workspace-runtime/src/test-support/fake-transport"
-import { createHostFixture, controlledTurn, sessionCreate, until, LOOPBACK_ORIGIN, type HostFixture } from "../../../workspace-runtime/src/test-support/host-fixture"
+import { FakeTransport } from "../test-support/fake-transport"
+import { createHostFixture, controlledTurn, sessionCreate, until, LOOPBACK_ORIGIN, type HostFixture } from "../test-support/host-fixture"
 import { createSessionRoutes } from "./session-core"
 
 const PI = { id: "pi", access: "native" } as const

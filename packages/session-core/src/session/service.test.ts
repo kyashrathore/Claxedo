@@ -8,8 +8,8 @@ import { createStoreBrokerPorts } from "../broker-ports/index"
 import { createAgentRuntime, type AgentRuntime, type HarnessHandle, type LaunchComposer } from "../host/runtime"
 import { createRuntimeEventHub } from "../projection/runtime-event-hub"
 import type { RuntimeStore } from "../store"
-import { openRuntimeStore } from "../../../workspace-runtime/src/store-file"
-import { FakeTransport, type FakeTransportOptions } from "../../../workspace-runtime/src/test-support/fake-transport"
+import { openTestRuntimeStore } from "../test-support/store"
+import { FakeTransport, type FakeTransportOptions } from "../test-support/fake-transport"
 import {
   parseSessionPromptBody,
   runRuntimePromptTurn,
@@ -33,7 +33,7 @@ const hosts: Array<{ host: Host; root: string }> = []
 /** The real runtime host over a durable store, with the scripted transport behind it. */
 function host(options: FakeTransportOptions = {}): Host {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "claxedo-session-service-"))
-  const store = openRuntimeStore(root)
+  const store = openTestRuntimeStore(root)
   const eventHub = createRuntimeEventHub()
   const transport = new FakeTransport(options)
   const ownerGeneration = "owner-1"

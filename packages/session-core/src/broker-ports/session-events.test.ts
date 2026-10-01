@@ -6,8 +6,8 @@ import { createRequestBroker, createTurnBroker } from "@claxedo/harness/broker"
 import { Hono } from "hono"
 import { createBus, type WorkspaceRuntimeEvent } from "../bus"
 import type { RuntimeStore } from "../store"
-import { openRuntimeStore } from "../../../workspace-runtime/src/store-file"
-import { testSessionCore } from "../../../workspace-runtime/src/test-support/session-core"
+import { openTestRuntimeStore } from "../test-support/store"
+import { testSessionCore } from "../test-support/session-core"
 import { createRuntimeEventHub } from "../projection/runtime-event-hub"
 import { workspaceEventsHandler } from "../routes/events"
 import { BrokerBackgroundWork } from "./background-work"
@@ -27,7 +27,7 @@ afterEach(() => {
 
 function setup() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "session-events-"))
-  const store = openRuntimeStore(root)
+  const store = openTestRuntimeStore(root)
   opened.push({ store, root })
   store.bindSession({ owner: { kind: "machine-owner" }, sessionId: "s1", workspaceId: "w1", directory: "/work", connectionId: "c1",
     upstreamSessionId: "up1", agentSessionId: "up1", createdAt: 1 })
@@ -93,7 +93,7 @@ test("a child-routed event that arrives while the parent has no turn reaches its
 
 test("one broker subagent update commits once and reaches SSE once", async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "subagent-delivery-"))
-  const store = openRuntimeStore(root)
+  const store = openTestRuntimeStore(root)
   const controller = new AbortController()
   let handler: ReturnType<typeof workspaceEventsHandler> | undefined
   try {

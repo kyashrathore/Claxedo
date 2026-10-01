@@ -1,5 +1,5 @@
 import { withSessionCore } from "./session-context"
-import { testSessionCore } from "./test-support/session-core"
+import { testSessionCore } from "@claxedo/session-core/testing"
 import { afterEach, describe, expect, test } from "bun:test"
 import fs from "node:fs/promises"
 import os from "node:os"

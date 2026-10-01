@@ -14,7 +14,7 @@ import { withWorkspaceTarget } from "../target"
 import { loopbackMachineLoginPolicy } from "../testing"
 import { createWorkspaceHost } from "../workspace/runtime"
 import type { WorkspaceHostOptions } from "../workspace/host-options"
-import { FakeTransport, fakeConnectionProvider, type FakeTransportOptions } from "./fake-transport"
+import { FakeTransport, fakeConnectionProvider, type FakeTransportOptions } from "@claxedo/session-core/testing"
 
 export const FAKE_CONNECTION_ID = "fake"
 

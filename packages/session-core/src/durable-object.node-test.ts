@@ -9,7 +9,7 @@ import { fileURLToPath } from "node:url"
 import { build, type Plugin } from "esbuild"
 import { Miniflare } from "miniflare"
 
-const FIXTURE = fileURLToPath(new URL("./test-support/session-core-durable-object.ts", import.meta.url))
+const FIXTURE = fileURLToPath(new URL("./test-support/durable-object-host.ts", import.meta.url))
 const PACKAGES = path.resolve(import.meta.dirname, "../..")
 const DIRECTORY = "/workspace"
 const WORKSPACE_HEADER = "x-workspace-id"

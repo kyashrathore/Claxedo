@@ -1,19 +1,19 @@
-import { testSessionRoutePorts } from "../../../workspace-runtime/src/test-support/session-core"
+import { testSessionRoutePorts } from "../test-support/session-core"
 import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+import { createBus, type WorkspaceRuntimeEvent } from "../bus"
 import { afterEach, expect, test } from "bun:test"
 import { SessionRoutes } from "../routes/session"
 import type { AgentRuntime, AgentRuntimeTurnStartInput } from "../host/runtime"
 import type { SessionHarness } from "@claxedo/agent-runtime-contract"
 import { managedWorkspaceSessionAccessPolicy, type SessionAccessPolicy } from "../session-access-policy"
 import type { RuntimeStore } from "../store"
-import { openRuntimeStore } from "../../../workspace-runtime/src/store-file"
-import {   type WorkspaceRuntimeEvent  } from "../bus"
-import { createBus as createTestBus, type WorkspaceRuntimeEvent as TestBusEvent } from "@claxedo/session-core"
-const testBus = createTestBus<TestBusEvent>()
+import { openTestRuntimeStore } from "../test-support/store"
 import { createSessionDeliveryOwner, type SessionDeliveryStore } from "./delivery-owner"
 import { sessionIdle } from "../projection/presentation-events"
+
+const testBus = createBus<WorkspaceRuntimeEvent>()
 
 const roots: string[] = []
 const stores: RuntimeStore[] = []
@@ -28,7 +28,7 @@ afterEach(async () => {
 })
 
 function store(root: string) {
-  const opened = openRuntimeStore(root)
+  const opened = openTestRuntimeStore(root)
   stores.push(opened)
   return opened
 }

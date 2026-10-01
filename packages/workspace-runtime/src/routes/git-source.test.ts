@@ -6,7 +6,7 @@ import { tmpdir } from "node:os"
 import path from "node:path"
 import { promisify } from "node:util"
 import { withSessionCore } from "../session-context"
-import { testSessionCore } from "../test-support/session-core"
+import { testSessionCore } from "@claxedo/session-core/testing"
 import { GitSourceRoutes } from "./git-source"
 
 const execFileAsync = promisify(execFile)

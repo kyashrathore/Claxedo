@@ -5,8 +5,9 @@ import path from "node:path"
 import type { AgentRuntimeEvent } from "@claxedo/agent-runtime-contract"
 import type { RecoveryOperation, RecoveryOutcome, RecoveryRequest, RecoveryTurnTarget, SessionHarness } from "@claxedo/agent-runtime-contract"
 import type { TurnActor, TurnOrigin } from "@claxedo/harness/contract"
-import type { AgentRuntimeRecovery, RecoveryCaller, RuntimeStore } from "@claxedo/session-core"
-import { openRuntimeStore } from "../store-file"
+import type { AgentRuntimeRecovery, RecoveryCaller } from "../host/contracts"
+import type { RuntimeStore } from "../store"
+import { openTestRuntimeStore } from "./store"
 import type { FakeTurn } from "./fake-transport"
 import { composeHost, type HostComposition, type HostCompositionInput } from "./host-composition"
 
@@ -28,8 +29,12 @@ export type HostFixture = HostComposition & {
 }
 
 export function createHostFixture(input: HostFixtureInput): HostFixture {
-  const root = input.store ? undefined : tempStoreRoot()
-  const store = input.store ?? openRuntimeStore(root)
+  let root: string | undefined
+  let store = input.store
+  if (!store) {
+    root = tempStoreRoot()
+    store = openTestRuntimeStore(root)
+  }
   const host = composeHost({ ...input, store })
   return {
     ...host,

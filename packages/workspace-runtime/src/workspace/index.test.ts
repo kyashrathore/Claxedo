@@ -1,4 +1,4 @@
-import { testSessionCore } from "../test-support/session-core"
+import { testSessionCore } from "@claxedo/session-core/testing"
 import { describe, expect, test } from "bun:test"
 import { Hono } from "hono"
 import { createRuntimeEventHub } from "@claxedo/session-core"

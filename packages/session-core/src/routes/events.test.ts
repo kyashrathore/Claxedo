@@ -1,4 +1,4 @@
-import { testSessionCore } from "../../../workspace-runtime/src/test-support/session-core"
+import { testSessionCore } from "../test-support/session-core"
 const testPlacement = testSessionCore("/workspace", "ws-events-test").placement
 import { describe, expect, test } from "bun:test"
 import { Hono, type Context } from "hono"

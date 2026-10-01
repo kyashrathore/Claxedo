@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test"
-import { FakeTransport } from "../../../workspace-runtime/src/test-support/fake-transport"
-import { createHostFixture, sessionCreate, tick, LOOPBACK_ORIGIN } from "../../../workspace-runtime/src/test-support/host-fixture"
+import { FakeTransport } from "../test-support/fake-transport"
+import { createHostFixture, sessionCreate, tick, LOOPBACK_ORIGIN } from "../test-support/host-fixture"
 
 test.each([false, true])("unbound child usage reaches the hub once, whether or not its consumer closed first=%s", async (early) => {
   let release!: () => void

@@ -6,7 +6,7 @@ import type { HarnessConnectionCapabilities } from "@claxedo/agent-runtime-contr
 import { Hono } from "hono"
 import { loopbackWorkspaceRuntimeExposure } from "../exposure"
 import { installFakePiRpc } from "../test-support/home/fake-pi-rpc.mjs"
-import { FakeTransport, fakeConnectionProvider } from "../test-support/fake-transport"
+import { FakeTransport, fakeConnectionProvider } from "@claxedo/session-core/testing"
 import { withWorkspaceTarget } from "../target"
 import { loopbackMachineLoginPolicy } from "../testing"
 import { createWorkspaceHost } from "./runtime"

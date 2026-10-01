@@ -12,7 +12,7 @@ import { managedWorkspaceSessionAccessPolicy, type SessionAccessPolicy } from "@
 import { createDiskHistory } from "../pty/history-disk"
 import { withWorkspaceTarget } from "../target"
 import { withSessionCore } from "../session-context"
-import { testSessionCore } from "../test-support/session-core"
+import { testSessionCore } from "@claxedo/session-core/testing"
 
 const upgradeWebSocket = (() => () => new Response(null, { status: 501 })) as unknown as UpgradeWebSocket
 const previousDirectory = process.env.WORKSPACE_RUNTIME_DIRECTORY

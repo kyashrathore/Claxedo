@@ -20,16 +20,32 @@
       "types": "./dist/session-access-policy.d.ts",
       "import": "./dist/access-policy.mjs",
       "default": "./dist/access-policy.mjs"
+    },
+    "./testing": {
+      "development": "./src/testing.ts",
+      "bun": "./src/testing.ts",
+      "types": "./dist/testing.d.ts",
+      "import": "./dist/testing.mjs",
+      "default": "./dist/testing.mjs"
+    },
+    "./testing/isolated-home": {
+      "types": "./src/test-support/home/isolated-home.d.mts",
+      "default": "./src/test-support/home/isolated-home.mjs"
     }
   },
   "files": [
     "dist",
+    "src/test-support/home/isolated-home.mjs",
+    "src/test-support/home/isolated-home.d.mts",
+    "src/test-support/home/harness-state-env.mjs",
+    "src/test-support/home/harness-state-env.d.mts",
+    "src/test-support/home/test-temp-dir.ts",
     "README.md"
   ],
   "scripts": {
-    "build": "bun build src/index.ts --target=browser --format=esm --packages=external --outfile=dist/index.mjs && bun build src/session-access-policy.ts --target=browser --format=esm --packages=external --outfile=dist/access-policy.mjs && tsc -p tsconfig.build.json",
+    "build": "bun build src/index.ts --target=browser --format=esm --packages=external --outfile=dist/index.mjs && bun build src/session-access-policy.ts --target=browser --format=esm --packages=external --outfile=dist/access-policy.mjs && bun build src/testing.ts --target=node --format=esm --packages=external --outfile=dist/testing.mjs && tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "test": "bun test src"
+    "test": "bun test src && node --import tsx --import ./src/test-support/home/isolated-home.mjs --test src/store-durable-object.node-test.ts src/durable-object.node-test.ts"
   },
   "dependencies": {
     "@claxedo/agent-runtime-contract": "workspace:*",
@@ -42,6 +58,10 @@
     "@tsconfig/bun": "catalog:",
     "@types/bun": "catalog:",
     "typescript": "catalog:",
-    "@claxedo/process-ownership": "workspace:*"
+    "@claxedo/process-ownership": "workspace:*",
+    "better-sqlite3": "13.0.1",
+    "esbuild": "0.25.12",
+    "miniflare": "4.20260722.0",
+    "tsx": "4.22.3"
   }
 }

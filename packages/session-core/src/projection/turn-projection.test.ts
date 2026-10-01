@@ -2,11 +2,11 @@ import { describe, expect, test } from "bun:test"
 import type { AgentRuntimeEvent, AgentPresentationEvent } from "@claxedo/agent-runtime-contract"
 import type { RuntimeEventEnvelopeInput } from "./runtime-event-hub"
 import type { RuntimeAppendSource } from "./session-event-writer"
-import { testTurnProjector } from "../../../workspace-runtime/src/test-support/turn-projector"
+import { testTurnProjector } from "../test-support/turn-projector"
 import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import path from "node:path"
-import { openRuntimeStore } from "../../../workspace-runtime/src/store-file"
+import { openTestRuntimeStore } from "../test-support/store"
 import { createTurnEventProjector } from "./turn-projection"
 import { AgentRuntimeStaleTurnError } from "../store"
 
@@ -38,7 +38,7 @@ function projector(input: {
 describe("createTurnEventProjector", () => {
   test("a subagent revision commits to the real journal before runtime publication", () => {
     const root = mkdtempSync(path.join(tmpdir(), "turn-event-writer-"))
-    const store = openRuntimeStore(root)
+    const store = openTestRuntimeStore(root)
     try {
       store.bindSession({ owner: { kind: "machine-owner" }, sessionId: "s", directory: "/work", agentSessionId: "agent", createdAt: 1 })
       const initialOrdinal = store.getSessionMaxSeq("s")
@@ -61,7 +61,7 @@ describe("createTurnEventProjector", () => {
 
   test("real journal writes retain the fence and publish derived usage only after commit", () => {
     const root = mkdtempSync(path.join(tmpdir(), "turn-event-fence-"))
-    const store = openRuntimeStore(root)
+    const store = openTestRuntimeStore(root)
     try {
       store.bindSession({ owner: { kind: "machine-owner" }, sessionId: "s", directory: "/work", agentSessionId: "agent", createdAt: 1 })
       const start = (id: string, fencingToken: number) => store.startTurn({

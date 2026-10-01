@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test"
-import { FakeTransport } from "../test-support/fake-transport"
-import { createHostFixture, sessionCreate } from "../test-support/host-fixture"
+import { FakeTransport } from "@claxedo/session-core/testing"
+import { createHostFixture, sessionCreate } from "@claxedo/session-core/testing"
 import { createSessionConfiguration } from "./configure"
 import type { TransportConfigUpdate } from "@claxedo/harness/contract"
 import { CredentialSelectionError } from "@claxedo/harness/registry"

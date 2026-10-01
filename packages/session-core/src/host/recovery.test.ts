@@ -4,7 +4,7 @@ import { RECOVERY_OPERATION_RETENTION_MS, turnStopped } from "@claxedo/agent-run
 import type { AdapterCancelOutcome, AgentExecutionBinding, RecoveryOperation } from "@claxedo/agent-runtime-contract"
 import type { SessionBroker } from "@claxedo/harness/contract"
 import { RuntimeStore, type RuntimeStoreDatabase } from "../store"
-import { openRuntimeStoreDatabase } from "../../../workspace-runtime/src/store-file"
+import { openTestRuntimeStoreDatabase } from "../test-support/store"
 import {
   LOOPBACK_ORIGIN,
   MACHINE_OWNER,
@@ -19,11 +19,9 @@ import {
   until,
   type HostFixture,
   type TurnControl,
-} from "../../../workspace-runtime/src/test-support/host-fixture"
-import { transportHandle } from "../../../workspace-runtime/src/test-support/host-composition"
-import { createWorkspaceTransports, type WorkspaceTransportsInput } from "../../../workspace-runtime/src/workspace/transports"
-import type { RuntimeConnectionDescriptor } from "../../../workspace-runtime/src/routes/config"
-import { FakeTransport } from "../../../workspace-runtime/src/test-support/fake-transport"
+} from "../test-support/host-fixture"
+import { transportHandle } from "../test-support/host-composition"
+import { FakeTransport } from "../test-support/fake-transport"
 import type { AttachedSession } from "./attachments"
 import { createRuntimeGoalController } from "./goal-controller"
 import { createRuntimeLifecycle } from "./lifecycle"
@@ -44,7 +42,7 @@ const opened: Array<{ store: RuntimeStore; root: string }> = []
 /** A store the test owns: opened in its own root, closed and removed after the test. */
 function openStore<T extends RuntimeStore>(Store: new (database: RuntimeStoreDatabase) => T): T {
   const root = tempStoreRoot("host-recovery-")
-  const store = new Store(openRuntimeStoreDatabase(root))
+  const store = new Store(openTestRuntimeStoreDatabase(root))
   opened.push({ store, root })
   return store
 }
@@ -1136,26 +1134,6 @@ describe("cancellation outcomes", () => {
       expect((await f.runtime.turns.start({ sessionId: "s", text: "next", origin: LOOPBACK_ORIGIN })).delivery).toBe("start")
       expect(transport.turns).toHaveLength(2)
     } finally { release(); await f.dispose() }
-  })
-
-  test("a held turn ends as soon as its connection's transport is retired", async () => {
-    const { transport, release } = refusedThenThrows()
-    const transports = createWorkspaceTransports({
-      composer: { connection: () => transport, builtIn: () => transport } as unknown as WorkspaceTransportsInput["composer"],
-      connections: () => new Map([["conn", { providerKey: "test", connectionId: "conn", configRevision: 1, enabled: true, config: {} } as unknown as RuntimeConnectionDescriptor]]),
-      resolveSecrets: () => ({ secrets: {}, secretLeaseGeneration: "none" }),
-    })
-    const f = createHostFixture({ transports, recovery: { budgets } })
-    try {
-      await f.runtime.sessions.create(sessionCreate({ id: "s", harness: { id: "conn", access: "connection" } }))
-      const started = await f.runtime.turns.start({ sessionId: "s", text: "work", origin: LOOPBACK_ORIGIN })
-      await f.runtime.recovery.submit(cancelTurnRequest(started.target!), RECOVERY_TEST_CALLER)
-      expect(f.store.getSession("s")?.status).toBe("busy")
-      transports.retireConnection("conn")
-      expect(f.store.getSession("s")?.status).toBe("error")
-      expect(f.store.getSession("s")?.lastTurn?.status).toBe("failed")
-      expect(f.runtime.recovery.inspect("s").failures.some((failure) => failure.code === "exit_unverified")).toBe(false)
-    } finally { release(); await f.dispose(); await transports.disposeAll() }
   })
 
   test("disposal ends a held turn", async () => {

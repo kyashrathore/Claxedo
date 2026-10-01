@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test"
 import type { SessionHarness } from "@claxedo/agent-runtime-contract"
-import { FakeTransport } from "../../../workspace-runtime/src/test-support/fake-transport"
-import { LOOPBACK_ORIGIN, createHostFixture, sessionCreate, type HostFixture } from "../../../workspace-runtime/src/test-support/host-fixture"
+import { FakeTransport } from "../test-support/fake-transport"
+import { LOOPBACK_ORIGIN, createHostFixture, sessionCreate, type HostFixture } from "../test-support/host-fixture"
 
 const PI: SessionHarness = { id: "pi", access: "native" }
 const CLAUDE: SessionHarness = { id: "claude", access: "native" }

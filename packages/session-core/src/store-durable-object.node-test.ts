@@ -7,9 +7,8 @@ import path from "node:path"
 import { fileURLToPath } from "node:url"
 import { build, type Plugin } from "esbuild"
 import { Miniflare } from "miniflare"
-import { openSqliteDatabase } from "./sqlite/node"
-import { RuntimeStore } from "@claxedo/session-core"
-import { openRuntimeStoreDatabase } from "./store-file"
+import { RuntimeStore } from "./store"
+import { openTestRuntimeStoreDatabase } from "./test-support/store"
 import { storeCoreScenarios } from "./test-support/store-core-scenarios"
 
 const scenarios = Object.keys(storeCoreScenarios)
@@ -19,11 +18,11 @@ void describe("store core scenarios on the Node SQLite driver", () => {
     void it(name, () => {
       const root = fs.mkdtempSync(path.join(os.tmpdir(), "wr-store-core-"))
       const stores: RuntimeStore[] = []
-      const side = openSqliteDatabase(path.join(root, "state.db"))
+      const side = openTestRuntimeStoreDatabase(root).db
       try {
         storeCoreScenarios[name]!({
           open: () => {
-            const store = new RuntimeStore(openRuntimeStoreDatabase(root))
+            const store = new RuntimeStore(openTestRuntimeStoreDatabase(root))
             stores.push(store)
             return store
           },
@@ -39,8 +38,8 @@ void describe("store core scenarios on the Node SQLite driver", () => {
 })
 
 const WORKER = `
-import { RuntimeStore } from ${JSON.stringify(fileURLToPath(new URL("../../session-core/src/store.ts", import.meta.url)))}
-import { durableObjectSqliteDatabase } from ${JSON.stringify(fileURLToPath(new URL("../../session-core/src/sqlite/durable-object.ts", import.meta.url)))}
+import { RuntimeStore } from ${JSON.stringify(fileURLToPath(new URL("./store.ts", import.meta.url)))}
+import { durableObjectSqliteDatabase } from ${JSON.stringify(fileURLToPath(new URL("./sqlite/durable-object.ts", import.meta.url)))}
 import { storeCoreScenarios } from ${JSON.stringify(fileURLToPath(new URL("./test-support/store-core-scenarios.ts", import.meta.url)))}
 
 export class StoreGate {

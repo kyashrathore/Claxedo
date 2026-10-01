@@ -1,8 +1,8 @@
 import { expect, test } from "bun:test"
 import type { SubagentObservation } from "@claxedo/agent-runtime-contract"
 import type { ProviderTurnResult, RoutedEvent, SessionBroker } from "@claxedo/harness/contract"
-import { FakeTransport } from "../../../workspace-runtime/src/test-support/fake-transport"
-import { createHostFixture, sessionCreate, until, LOOPBACK_ORIGIN, type HostFixture } from "../../../workspace-runtime/src/test-support/host-fixture"
+import { FakeTransport } from "../test-support/fake-transport"
+import { createHostFixture, sessionCreate, until, LOOPBACK_ORIGIN, type HostFixture } from "../test-support/host-fixture"
 
 const background = (toolCallId: string): SubagentObservation => ({
   observationId: `${toolCallId}:running`, providerKind: "claude-agent", toolCallId, toolCallRole: "spawn",

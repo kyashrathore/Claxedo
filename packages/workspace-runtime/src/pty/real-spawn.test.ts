@@ -1,4 +1,4 @@
-import { testSessionCore } from "../test-support/session-core"
+import { testSessionCore } from "@claxedo/session-core/testing"
 import { withSessionCore } from "../session-context"
 // `node:test`'s `describe`/`test` return a promise the runner already owns: it
 // settles when the suite finishes and reports failures through the runner

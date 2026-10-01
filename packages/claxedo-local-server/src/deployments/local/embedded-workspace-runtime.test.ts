@@ -31,7 +31,8 @@ import { Pty, type EmbeddedRelayHostIdentity } from "@claxedo/workspace-runtime"
 import { managedWorkspaceSessionAccessPolicy } from "@claxedo/session-core"
 import { volatileLaunchOwnership } from "@claxedo/process-ownership/launch"
 import { EMBEDDED_RELAY_HOST_AUTH_HEADER } from "@claxedo/workspace-runtime/exposure"
-import { FakeTransport, fakeConnectionProvider, testSessionCore, withSessionCore } from "@claxedo/workspace-runtime/testing"
+import { withSessionCore } from "@claxedo/workspace-runtime/testing"
+import { FakeTransport, fakeConnectionProvider, testSessionCore } from "@claxedo/session-core/testing"
 
 /**
  * Delete workspace roots AFTER releasing the module-scoped sqlite handles:

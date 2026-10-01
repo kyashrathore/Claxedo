@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test"
 import type { LaunchComposer } from "./launch"
-import { createHostFixture, sessionCreate, until } from "../../../workspace-runtime/src/test-support/host-fixture"
-import { FakeTransport } from "../../../workspace-runtime/src/test-support/fake-transport"
+import { createHostFixture, sessionCreate, until } from "../test-support/host-fixture"
+import { FakeTransport } from "../test-support/fake-transport"
 
 const binding = (person: string) => ({ baseUrl: `https://${person}.example`, placeholder: person, authMode: "api-key" as const })
 

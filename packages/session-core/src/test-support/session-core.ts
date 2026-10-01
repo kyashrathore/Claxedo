@@ -1,7 +1,10 @@
 import path from "node:path"
 import { realDirectoryPath } from "@claxedo/helpers/real-path"
 import { inside } from "@claxedo/helpers/path"
-import { createSessionCore, type RuntimeBus, type RuntimeEventHub, type SessionCore, type SessionPlacement } from "@claxedo/session-core"
+import type { RuntimeBus } from "../bus"
+import { createSessionCore, type SessionCore } from "../core"
+import type { SessionPlacement } from "../placement"
+import type { RuntimeEventHub } from "../projection/runtime-event-hub"
 
 export function testSessionCore(directory = process.cwd(), workspaceId = "ws_test", eventHub?: RuntimeEventHub): SessionCore {
   return createSessionCore({ eventHub, placement: {

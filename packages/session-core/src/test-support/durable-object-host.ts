@@ -1,21 +1,19 @@
 import { Hono } from "hono"
 import type { AgentRuntimeEvent } from "@claxedo/agent-runtime-contract"
-import {
-  createSessionCore,
-  durableObjectSqliteDatabase,
-  managedWorkspaceSessionAccessPolicy,
-  RuntimeStore,
-  sessionEventDeliveryPolicy,
-  storeSessionRoutes,
-  type DurableObjectSqlStorage,
-} from "@claxedo/session-core"
-import { WorkspaceRuntimeRoutes } from "../routes/manifest"
+import { createSessionCore } from "../core"
+import { sessionEventDeliveryPolicy } from "../event-delivery"
+import { storeSessionRoutes } from "../routes/session-store-reads"
+import { managedWorkspaceSessionAccessPolicy } from "../session-access-policy"
+import { durableObjectSqliteDatabase, type DurableObjectSqlStorage } from "../sqlite/durable-object"
+import { RuntimeStore } from "../store"
+import { hmacChildSessionId } from "./child-identity"
 import { FakeTransport, type FakeTurn } from "./fake-transport"
 import { composeHost } from "./host-composition"
 
 /** Every workspace's object serves the same synthetic directory: a Durable Object has no filesystem to tell them apart by. */
 const SESSION_CORE_DIRECTORY = "/workspace"
 const SESSION_CORE_WORKSPACE_HEADER = "x-workspace-id"
+const EVENTS_ROUTE = "/api/wr/events"
 
 const HELD = "hold: "
 const HOUR_MS = 3_600_000
@@ -35,14 +33,6 @@ async function* echoTurn({ session, turn }: FakeTurn): AsyncIterable<AgentRuntim
   }
   yield { type: "text-delta", delta: `echo: ${text}` }
   yield { type: "finish", sessionId: session.binding.sessionId }
-}
-
-/** The keyed child-session identity the machine derives with HMAC, here through Web Crypto, which a Durable Object has. */
-async function deriveChildSessionId(secret: string, input: { callerIdentity: string; clientRequestId: string }) {
-  const encoder = new TextEncoder()
-  const key = await crypto.subtle.importKey("raw", encoder.encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"])
-  const digest = await crypto.subtle.sign("HMAC", key, encoder.encode(`${input.callerIdentity}\0${input.clientRequestId}`))
-  return `ses_${Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("").slice(0, 32)}`
 }
 
 /**
@@ -80,7 +70,7 @@ export class SessionCoreObject {
       ...storeSessionRoutes({
         store: () => store,
         subagentAdmission: (parentSessionId, observation) => host.runtime.subagents.admit(parentSessionId, observation),
-        deriveChildSessionId: (identity) => deriveChildSessionId(store.runtimeSecret("child-session"), identity),
+        deriveChildSessionId: (identity) => hmacChildSessionId(store.runtimeSecret("child-session"), identity),
         backgroundWork: (sessionId) => host.backgroundWork.read(sessionId),
       }),
       sessionAccessPolicy,
@@ -95,7 +85,7 @@ export class SessionCoreObject {
       sessionAccessPolicy,
       sessionStarts: store.sessionStarts,
     })
-    this.app = new Hono().get(WorkspaceRuntimeRoutes.events, events).route("/", sessions.routes)
+    this.app = new Hono().get(EVENTS_ROUTE, events).route("/", sessions.routes)
     void ctx.blockConcurrencyWhile(() => {
       store.recoverBusySessions()
       return sessions.recoverQueuedPrompts()

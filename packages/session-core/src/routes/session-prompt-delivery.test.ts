@@ -10,11 +10,11 @@ import type { AgentRuntime, AgentRuntimeTurnStartInput } from "../host/runtime"
 import { runRuntimePromptTurn } from "../session/service"
 import type { SessionAccessPolicy, SessionTurnGrantDecision } from "../session-access-policy"
 import type { RuntimeStore } from "../store"
-import { openRuntimeStore } from "../../../workspace-runtime/src/store-file"
+import { openTestRuntimeStore } from "../test-support/store"
 import type { QueuedPromptRecord } from "../session/delivery-queue"
-import { FakeTransport } from "../../../workspace-runtime/src/test-support/fake-transport"
-import { LOOPBACK_ORIGIN, createHostFixture, sessionCreate } from "../../../workspace-runtime/src/test-support/host-fixture"
-import { testLaunch } from "../../../workspace-runtime/src/test-support/host-composition"
+import { FakeTransport } from "../test-support/fake-transport"
+import { LOOPBACK_ORIGIN, createHostFixture, sessionCreate } from "../test-support/host-fixture"
+import { testLaunch } from "../test-support/host-composition"
 import { sessionIdle } from "../projection/presentation-events"
 
 const roots: string[] = []
@@ -155,7 +155,7 @@ function relayedPrompt(body: Record<string, unknown>) {
 
 /** The durable queue the host lends the routes, on a real store. */
 function durableQueue() {
-  const store = openRuntimeStore(storeRoot())
+  const store = openTestRuntimeStore(storeRoot())
   stores.push(store)
   const recoveries: string[] = []
   let runtime!: AgentRuntime

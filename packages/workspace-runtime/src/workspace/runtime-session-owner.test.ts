@@ -5,7 +5,7 @@ import path from "node:path"
 import type { StartInput } from "@claxedo/harness/contract"
 import { createWorkspaceRuntimeApp } from "../server"
 import { loopbackWorkspaceRuntimeExposure } from "../exposure"
-import { FakeTransport, fakeConnectionProvider } from "../test-support/fake-transport"
+import { FakeTransport, fakeConnectionProvider } from "@claxedo/session-core/testing"
 import { withWorkspaceTarget } from "../target"
 
 let directory = ""

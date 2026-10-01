@@ -3,16 +3,21 @@ import { Hono } from "hono"
 import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import path from "node:path"
-import { createWorkspaceRuntimeApp } from "../../../workspace-runtime/src/server"
-import { loopbackWorkspaceRuntimeExposure } from "../../../workspace-runtime/src/exposure"
-import { WorkspaceRuntimeRoutes } from "../../../workspace-runtime/src/routes/manifest"
-import { JSON_BODY_LIMIT_BYTES, boundedJson, boundedTextBody, errorBody, isRequestBodyTooLarge } from "./http"
-import { WorktreeRoutes } from "../../../workspace-runtime/src/routes/worktree"
-import { createSessionRoutes } from "./session-core"
-import type { WorkspaceWorktreeManager } from "../../../workspace-runtime/src/worktree"
-import { FakeTransport } from "../../../workspace-runtime/src/test-support/fake-transport"
-import { createHostFixture, sessionCreate, type HostFixture } from "../../../workspace-runtime/src/test-support/host-fixture"
-import { loopbackMachineLoginPolicy } from "../../../workspace-runtime/src/testing"
+import { createWorkspaceRuntimeApp } from "../server"
+import { loopbackWorkspaceRuntimeExposure } from "../exposure"
+import { WorkspaceRuntimeRoutes } from "./manifest"
+import { WorktreeRoutes } from "./worktree"
+import type { WorkspaceWorktreeManager } from "../worktree"
+import {
+  JSON_BODY_LIMIT_BYTES,
+  boundedJson,
+  boundedTextBody,
+  createSessionRoutes,
+  errorBody,
+  isRequestBodyTooLarge,
+} from "@claxedo/session-core"
+import { FakeTransport, createHostFixture, sessionCreate, type HostFixture } from "@claxedo/session-core/testing"
+import { loopbackMachineLoginPolicy } from "../testing"
 
 const tooLarge = errorBody("request_body_too_large", "Request body is too large")
 

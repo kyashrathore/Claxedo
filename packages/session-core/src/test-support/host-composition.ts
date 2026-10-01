@@ -1,17 +1,12 @@
 import type { SessionHarness } from "@claxedo/agent-runtime-contract"
 import type { HarnessTransport } from "@claxedo/harness/contract"
-import {
-  createAgentRuntime,
-  createRuntimeEventHub,
-  createStoreBrokerPorts,
-  type AgentRuntime,
-  type CreateAgentRuntimeInput,
-  type HarnessHandle,
-  type LaunchComposer,
-  type RuntimeEventHub,
-  type RuntimeStore,
-  type TransportResolver,
-} from "@claxedo/session-core"
+import { createStoreBrokerPorts } from "../broker-ports"
+import type { CreateAgentRuntimeInput } from "../host/contracts"
+import type { LaunchComposer } from "../host/launch"
+import { createAgentRuntime, type AgentRuntime } from "../host/runtime"
+import type { HarnessHandle, TransportResolver } from "../host/transports"
+import { createRuntimeEventHub, type RuntimeEventHub } from "../projection/runtime-event-hub"
+import type { RuntimeStore } from "../store"
 
 function isResolver(input: HostCompositionInput["transports"]): input is TransportResolver {
   return typeof (input as TransportResolver).forHarness === "function" && typeof (input as TransportResolver).composed === "function"

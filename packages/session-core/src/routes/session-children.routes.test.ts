@@ -1,5 +1,5 @@
-import { testSessionRoutePorts } from "../../../workspace-runtime/src/test-support/session-core"
-import { deriveChildSessionId } from "../../../workspace-runtime/src/host/child-identity"
+import { testSessionRoutePorts } from "../test-support/session-core"
+import { hmacChildSessionId } from "../test-support/child-identity"
 import { afterEach, describe, expect, test } from "bun:test"
 import { Hono } from "hono"
 import { assistantMessageIdForTurn } from "@claxedo/agent-runtime-contract"
@@ -16,10 +16,12 @@ import {
   type SessionTurnGrantDecision,
   type SessionTurnOrigin,
 } from "../session-access-policy"
-import { FakeTransport } from "../../../workspace-runtime/src/test-support/fake-transport"
-import { createHostFixture, sessionCreate, type HostFixture } from "../../../workspace-runtime/src/test-support/host-fixture"
-import { testLaunch } from "../../../workspace-runtime/src/test-support/host-composition"
-import type { EmbeddedRelayHostIdentity } from "../../../workspace-runtime/src/workspace-host-service-auth"
+import { FakeTransport } from "../test-support/fake-transport"
+import { createHostFixture, sessionCreate, type HostFixture } from "../test-support/host-fixture"
+import { testLaunch } from "../test-support/host-composition"
+import type { SessionRequestIdentity } from "../session-access-policy"
+
+type RelayIdentity = SessionRequestIdentity & { principal_kind: "user" | "service" }
 import { SessionRoutes } from "./session"
 
 const DIRECTORY = process.cwd()
@@ -75,7 +77,7 @@ function fixture(input: {
   deriveSessionId?: (identity: { callerIdentity: string; clientRequestId: string }) => string | Promise<string>
   parentMode?: string
   policy?: SessionAccessPolicy
-  identity?: EmbeddedRelayHostIdentity
+  identity?: RelayIdentity
   modes?: "none"
   /** What the host's store read answers for a persisted row, given what the fixture has recorded so far. */
   read?: (row: AgentSession, calls: { prompts: readonly unknown[] }) => AgentSession | null
@@ -153,7 +155,7 @@ function fixture(input: {
     afterUpdateSession: ({ sessionId, updates }) => { store.updateSession(sessionId, updates) },
     childSessions: {
       admit: (parentSessionId, observation) => runtime.subagents.admit(parentSessionId, observation),
-      deriveSessionId: (input.deriveSessionId ?? ((identity) => deriveChildSessionId("route-test-secret", identity))),
+      deriveSessionId: (input.deriveSessionId ?? ((identity) => hmacChildSessionId("route-test-secret", identity))),
       pendingWakes: () => store.listPendingSubagentWakes(),
       origins: {
         record: (parent, key, origin) => {
@@ -567,7 +569,7 @@ describe("POST /session with parentID", () => {
   })
 })
 
-const OWNER: EmbeddedRelayHostIdentity = {
+const OWNER: RelayIdentity = {
   principal_kind: "user",
   actor_id: "actor_owner",
   user_id: "actor_owner",
@@ -1075,7 +1077,7 @@ describe("a background turn a managed host refuses", () => {
           : store.getMessages(sessionId),
         childSessions: {
           admit: (parentSessionId, observation) => runtime.subagents.admit(parentSessionId, observation),
-          deriveSessionId: (identity) => deriveChildSessionId("wake-only-secret", identity),
+          deriveSessionId: (identity) => hmacChildSessionId("wake-only-secret", identity),
           pendingWakes: () => [{ parentSessionId: "parent", childSessionId: "child", directory: DIRECTORY }],
           origins: {
             record: () => {},

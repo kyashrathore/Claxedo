@@ -5,6 +5,7 @@ export default defineConfig({
   resolve: {
     alias: [
       { find: /^@claxedo\/session-core\/access-policy$/, replacement: path.resolve(import.meta.dirname, "../session-core/src/session-access-policy.ts") },
+      { find: /^@claxedo\/session-core\/testing$/, replacement: path.resolve(import.meta.dirname, "../session-core/src/testing.ts") },
       { find: /^@claxedo\/session-core$/, replacement: path.resolve(import.meta.dirname, "../session-core/src/index.ts") },
       { find: /^@claxedo\/harness\/opencode-sdk\/(.+)$/, replacement: path.resolve(import.meta.dirname, "../harness/src/transports/opencode-sdk/$1.ts") },
       { find: /^@claxedo\/harness\/opencode-sdk$/, replacement: path.resolve(import.meta.dirname, "../harness/src/transports/opencode-sdk/index.ts") },
@@ -27,7 +28,7 @@ export default defineConfig({
     testTimeout: 60_000,
     hookTimeout: 30_000,
     fileParallelism: false,
-    setupFiles: ["../workspace-runtime/src/test-support/home/isolated-home.mjs"],
+    setupFiles: ["../session-core/src/test-support/home/isolated-home.mjs"],
     exclude: [...configDefaults.exclude],
   },
 })

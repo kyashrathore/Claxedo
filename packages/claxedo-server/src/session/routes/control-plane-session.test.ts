@@ -1,4 +1,4 @@
-import { testSessionRoutePorts } from "../../../../workspace-runtime/src/test-support/session-core"
+import { testSessionRoutePorts } from "@claxedo/session-core/testing"
 import { beforeEach, describe, expect, test, vi } from "vitest"
 import { ControlPlaneAuthError, localOnlyAuthAdapter } from "@claxedo/server-core/platform/auth/auth"
 import { AgentMessagePageError } from "@claxedo/agent-runtime-contract"

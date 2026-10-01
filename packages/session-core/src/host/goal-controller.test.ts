@@ -1,8 +1,8 @@
 import { expect, test } from "bun:test"
 import type { AgentGoalMutationResult, RuntimeGoalSnapshot } from "@claxedo/agent-runtime-contract"
 import type { SessionBroker } from "@claxedo/harness/contract"
-import { FakeTransport } from "../../../workspace-runtime/src/test-support/fake-transport"
-import { createHostFixture, controlledTurn, sessionCreate, tick, LOOPBACK_ORIGIN } from "../../../workspace-runtime/src/test-support/host-fixture"
+import { FakeTransport } from "../test-support/fake-transport"
+import { createHostFixture, controlledTurn, sessionCreate, tick, LOOPBACK_ORIGIN } from "../test-support/host-fixture"
 
 function fixture(gracefulCancelMs = 5_000) {
   const brokers = new Map<string, SessionBroker>()

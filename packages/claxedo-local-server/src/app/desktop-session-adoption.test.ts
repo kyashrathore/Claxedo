@@ -11,7 +11,7 @@ import {
   disposeAgentConfig,
   saveUserConfig,
 } from "@claxedo/server-core/agent-config/index"
-import { FakeTransport, fakeConnectionProvider } from "@claxedo/workspace-runtime/testing"
+import { FakeTransport, fakeConnectionProvider } from "@claxedo/session-core/testing"
 import { startLocalServer, type LocalServer } from "./start-local-server"
 import { testDaemon } from "./test-support/daemon"
 import {

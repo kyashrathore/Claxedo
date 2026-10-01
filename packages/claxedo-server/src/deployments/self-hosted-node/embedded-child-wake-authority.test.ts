@@ -1,4 +1,4 @@
-import { testSessionRoutePorts } from "../../../../workspace-runtime/src/test-support/session-core"
+import { testSessionRoutePorts } from "@claxedo/session-core/testing"
 import { afterAll, afterEach, beforeAll, expect, test } from "vitest"
 import { exportPKCS8, exportSPKI, generateKeyPair } from "jose"
 import type { PrivateSessionRuntimePrincipal } from "@claxedo/server-core/platform/auth/private-session-authority"

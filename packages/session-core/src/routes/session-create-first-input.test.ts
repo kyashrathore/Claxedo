@@ -4,9 +4,9 @@ import type { AgentGoalMutationResult, GoalCapabilities, SessionHarness, AgentEv
 import type { NativeGoalOperations } from "@claxedo/harness/contract"
 import { CredentialSelectionError } from "@claxedo/harness/registry"
 import type { SessionAccessPolicy } from "../session-access-policy"
-import { FakeTransport } from "../../../workspace-runtime/src/test-support/fake-transport"
-import { createHostFixture, type HostFixture } from "../../../workspace-runtime/src/test-support/host-fixture"
-import { testLaunch } from "../../../workspace-runtime/src/test-support/host-composition"
+import { FakeTransport } from "../test-support/fake-transport"
+import { createHostFixture, type HostFixture } from "../test-support/host-fixture"
+import { testLaunch } from "../test-support/host-composition"
 import { createSessionRoutes } from "./session-core"
 import type { SessionLifecycleEvent } from "./session-route-options"
 

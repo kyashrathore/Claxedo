@@ -38,6 +38,7 @@ export { type RuntimeSessionTime, runtimeSessionTime } from "./session/session-t
 export { type TurnOutlineDatabase, readTurnOutline } from "./session/turn-outline"
 export { type ManagedSessionAuthority, type ManagedWorkspaceSessionAccessPolicyOptions, SESSION_CORE_ROUTE_ACCESS, type SessionAccessActor, type SessionAccessAuthor, type SessionAccessDecision, type SessionAccessOperation, type SessionAccessPolicy, type SessionAccessPolicyInput, type SessionAccessStreamDecision, type SessionAuthorityInput, type SessionAuthorityPredicate, type SessionReservationDecision, type SessionTurnGrantDecision, type SessionTurnGrantIntent, type SessionTurnLeaseDecision, type SessionWorkspaceAuthority, type SessionWriteClass, managedWorkspaceSessionAccessPolicy, sessionAccessContext, sessionAccessDenied, sessionAccessRequiresWrite, sessionAccessWriteClass, sessionRequestProvenance } from "./session-access-policy"
 export { type SqliteDatabase, type SqliteRunResult, type SqliteStatement } from "./sqlite/database"
+export { openNativeSqliteDatabase } from "./sqlite/native"
 export { RuntimeStoreSchemaMismatchError } from "./store-schema"
 export { AgentRuntimeStaleTurnError, RuntimeStore, type RuntimeStoreDatabase, type WorkspaceWorktreeRecord } from "./store"
 export type { SessionRoutesOptions } from "./routes/session"

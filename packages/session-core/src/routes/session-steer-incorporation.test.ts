@@ -1,9 +1,9 @@
-import { testSessionRoutePorts } from "../../../workspace-runtime/src/test-support/session-core"
+import { testSessionRoutePorts } from "../test-support/session-core"
 import { afterEach, expect, test } from "bun:test"
 import type { AgentRuntimeEvent } from "@claxedo/agent-runtime-contract"
 import { SessionRoutes } from "./session"
-import { FakeTransport } from "../../../workspace-runtime/src/test-support/fake-transport"
-import { cancelRuntimeTurn, createHostFixture, sessionCreate, until } from "../../../workspace-runtime/src/test-support/host-fixture"
+import { FakeTransport } from "../test-support/fake-transport"
+import { cancelRuntimeTurn, createHostFixture, sessionCreate, until } from "../test-support/host-fixture"
 import { queuedPromptStore } from "./session-store-reads"
 
 const cleanups: Array<() => Promise<unknown>> = []

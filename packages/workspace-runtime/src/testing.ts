@@ -6,8 +6,6 @@ export function loopbackMachineLoginPolicy(machineOwnerUserId = "test-owner"): M
   return { placement: "loopback", machineOwnerUserId, canUseOwnLogin: true }
 }
 export { withSessionCore } from "./session-context"
-export { testSessionCore } from "./test-support/session-core"
-export { FAKE_CONNECTION_CAPABILITIES, FAKE_TRANSPORT_CAPABILITIES, FakeTransport, fakeConnectionProvider, type FakeTransportOptions, type FakeTurn } from "./test-support/fake-transport"
 
 export function allowWorkspaceRuntimeManagementAuth(subject = "test"): WorkspaceRuntimeManagementAuth {
   return {

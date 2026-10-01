@@ -8,6 +8,8 @@ const core = path.resolve(import.meta.dirname, "../packages/session-core/src")
 const NODE_BUILTIN = new Set(builtinModules.flatMap((name) => [name, name.split("/")[0]]))
 const SPECIFIER = /(?:\bfrom\s*|\bimport\s*\(\s*|\bimport\s+|\brequire\s*\(\s*)["']([^"']+)["']/g
 const PROCESS_ENV = /\bprocess\s*(?:\.\s*env\b|\[\s*["']env["']\s*\])/
+/** Prose and wire values that name the machine runtime without importing it. */
+const MACHINE_MENTION = /workspace-runtime is pinned to|source: "workspace-runtime"/g
 const HOST_GLOBAL = /\bglobalThis\s*[.\[]|\bBuffer\s*[.(]|\bprocess\s*\.\s*(?:env|argv|cwd|platform|arch|stderr|stdout|versions|exit|pid)\b/
 
 function violations(file: string): string[] {
@@ -21,9 +23,13 @@ function violations(file: string): string[] {
   return found.map((what) => `${path.relative(core, file)} ${what}`)
 }
 
+/** Test support and the testing entry run on the machine that runs the tests; they ship no production code. */
+const TEST_ONLY = /^(?:test-support\/|testing\.ts$)|\.(?:test|spec|typecheck|node-test)\.tsx?$/
+
 test("every production file in session-core is Node-free", () => {
   const files = readdirSync(core, { recursive: true, encoding: "utf8" })
-    .filter((name) => /\.tsx?$/.test(name) && !/\.(?:test|spec|typecheck)\.tsx?$/.test(name) && !name.endsWith(".d.ts"))
+    .map((name) => name.split(path.sep).join("/"))
+    .filter((name) => /\.tsx?$/.test(name) && !TEST_ONLY.test(name) && !name.endsWith(".d.ts"))
     .map((name) => path.join(core, name))
   expect(files.length).toBeGreaterThan(70)
   expect(files.flatMap(violations)).toEqual([])
@@ -41,6 +47,15 @@ test("the public entry's transitive first-party closure is Node-free", () => {
   expect(closure.outsideRoots).toEqual([])
   expect(closure.opaque).toEqual([])
   expect(closure.modules.flatMap((module) => violations(module.file))).toEqual([])
+})
+
+test("no session-core file, production or test, reaches into workspace-runtime", () => {
+  const packageRoot = path.dirname(core)
+  const files = readdirSync(packageRoot, { recursive: true, encoding: "utf8" })
+    .map((name) => name.split(path.sep).join("/"))
+    .filter((name) => !name.startsWith("node_modules/") && !name.startsWith("dist/") && /\.(?:tsx?|mts|mjs|js|json|toml)$/.test(name))
+  const reaches = files.filter((name) => /workspace-runtime/.test(readFileSync(path.join(packageRoot, name), "utf8").replace(MACHINE_MENTION, "")))
+  expect(reaches).toEqual([])
 })
 
 test("the scan catches every import shape it guards against", () => {

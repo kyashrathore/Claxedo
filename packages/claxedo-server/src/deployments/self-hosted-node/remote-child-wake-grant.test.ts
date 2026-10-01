@@ -1,4 +1,4 @@
-import { testSessionRoutePorts } from "../../../../workspace-runtime/src/test-support/session-core"
+import { testSessionRoutePorts } from "@claxedo/session-core/testing"
 import path from "node:path"
 import { afterEach, expect, test, vi } from "vitest"
 import { Hono } from "hono"

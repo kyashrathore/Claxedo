@@ -22,7 +22,7 @@ import {
 } from "./server"
 import { Pty } from "./pty/index"
 import { withSessionCore } from "./session-context"
-import { testSessionCore } from "./test-support/session-core"
+import { testSessionCore } from "@claxedo/session-core/testing"
 import {
   embeddedWorkspaceRuntimeExposure,
   loopbackWorkspaceRuntimeExposure,

@@ -3,15 +3,12 @@ import type { GoalCapabilities, RuntimeGoalSnapshot, AgentEventEnvelope, AgentPr
 import type { AgentRuntimeEvent } from "@claxedo/agent-runtime-contract"
 import type { HarnessSession, NativeGoalOperations, PermissionRequest, RequestAnswer, TransportCapabilities, TurnRequest } from "@claxedo/harness/contract"
 import type { Hono } from "hono"
-import { createStoreBrokerPorts } from "../broker-ports/index"
-import { createBus as createTestBus, type WorkspaceRuntimeEvent as TestBusEvent } from "@claxedo/session-core"
-const testBus = createTestBus<TestBusEvent>()
-import { managedWorkspaceSessionAccessPolicy, type SessionAccessPolicy, type SessionAccessPolicyInput } from "../session-access-policy"
-import { fetchDouble } from "../../../workspace-runtime/src/test-support/fetch-double"
-import { FakeTransport, type FakeTransportOptions, type FakeTurn } from "../../../workspace-runtime/src/test-support/fake-transport"
-import { createFakeWorkspaceApp, type FakeWorkspaceApp, type FakeWorkspaceAppOptions } from "../../../workspace-runtime/src/test-support/fake-workspace-app"
-import { loopbackMachineLoginPolicy } from "../../../workspace-runtime/src/testing"
-import { createWorkspaceHost } from "../../../workspace-runtime/src/workspace/runtime"
+import { createStoreBrokerPorts, managedWorkspaceSessionAccessPolicy, type SessionAccessPolicy, type SessionAccessPolicyInput } from "@claxedo/session-core"
+import { fetchDouble } from "../test-support/fetch-double"
+import { FakeTransport, type FakeTransportOptions, type FakeTurn } from "@claxedo/session-core/testing"
+import { createFakeWorkspaceApp, type FakeWorkspaceApp, type FakeWorkspaceAppOptions } from "../test-support/fake-workspace-app"
+import { loopbackMachineLoginPolicy } from "../testing"
+import { createWorkspaceHost } from "../workspace/runtime"
 
 const apps: FakeWorkspaceApp[] = []
 afterEach(async () => {

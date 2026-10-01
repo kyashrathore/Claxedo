@@ -1,4 +1,4 @@
-import { testSessionCore } from "../test-support/session-core"
+import { testSessionCore } from "@claxedo/session-core/testing"
 import { withSessionCore } from "../session-context"
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test"
 import { spawn as spawnChild, type ChildProcess } from "node:child_process"

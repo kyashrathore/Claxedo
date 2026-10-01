@@ -1,5 +1,5 @@
 import { withSessionCore, currentSessionCore } from "../session-context"
-import { testSessionCore } from "../test-support/session-core"
+import { testSessionCore } from "@claxedo/session-core/testing"
 import { afterEach, describe, expect, test } from "bun:test"
 import { Hono, type MiddlewareHandler } from "hono"
 import fs from "node:fs/promises"
