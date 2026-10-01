@@ -1,6 +1,6 @@
 import { boundKeyedMap, boundList } from "../../../translate/value"
 import { asRecord } from "@claxedo/helpers/guards"
-import type { ToolCallContent, ToolKind } from "./types"
+import type { ToolCallContent, ToolKind } from "@agentclientprotocol/sdk"
 import { type RuntimeToolStatus, asText as str } from "@claxedo/agent-runtime-contract"
 import { diagnoseTranslation, type AcpDiagnostics } from "./diagnostics"
 

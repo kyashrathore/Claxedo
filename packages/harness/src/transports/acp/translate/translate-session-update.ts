@@ -1,5 +1,5 @@
 import { asRecord, type AgentRuntimeEvent } from "@claxedo/agent-runtime-contract"
-import type { SessionUpdate } from "./types"
+import type { SessionUpdate } from "@agentclientprotocol/sdk"
 import type { TranslatorContext } from "./state"
 import { diagnoseTranslation, shape } from "./diagnostics"
 import { agentMessage } from "./content-chunks"

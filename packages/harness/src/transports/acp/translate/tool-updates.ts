@@ -1,6 +1,6 @@
 import { asRecord } from "@claxedo/helpers/guards"
 import { type AgentRuntimeEvent, type RuntimeToolStatus, asText as text } from "@claxedo/agent-runtime-contract"
-import type { SessionUpdate } from "./types"
+import type { SessionUpdate } from "@agentclientprotocol/sdk"
 import { reduceTool, type ToolState, type TranslatorContext } from "./state"
 import { drainContent, drainSpots } from "./tool-content"
 import { viewTool } from "./tool-presentation"

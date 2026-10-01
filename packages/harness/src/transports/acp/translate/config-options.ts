@@ -1,6 +1,6 @@
 import { asRecord } from "@claxedo/helpers/guards"
 import { type AgentRuntimeEvent, asText as text } from "@claxedo/agent-runtime-contract"
-import type { SessionUpdate } from "./types"
+import type { SessionUpdate } from "@agentclientprotocol/sdk"
 import type { TranslatorContext } from "./state"
 import { diagnoseTranslation, shape, type AcpDiagnostics } from "./diagnostics"
 

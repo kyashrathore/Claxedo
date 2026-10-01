@@ -1,6 +1,6 @@
 import { asRecord } from "@claxedo/helpers/guards"
 import { type ToolIntent, asText as str } from "@claxedo/agent-runtime-contract"
-import type { ToolCallContent, ToolKind } from "./types"
+import type { ToolCallContent, ToolKind } from "@agentclientprotocol/sdk"
 import type { ToolState } from "./state"
 import { own, pathFields } from "../../../translate/value"
 

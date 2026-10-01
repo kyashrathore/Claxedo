@@ -1,5 +1,5 @@
 import type { AgentRuntimeEventOf, RuntimeNoticeSeverity } from "@claxedo/agent-runtime-contract"
-import type { SessionUpdate } from "./types"
+import type { SessionUpdate } from "@agentclientprotocol/sdk"
 
 type Notice = Extract<SessionUpdate, { sessionUpdate: "notice" }>
 

@@ -1,5 +1,5 @@
 import { isRecord, asRecord } from "@claxedo/agent-runtime-contract"
-import type { ContentBlock, ToolCallContent } from "./types"
+import type { ContentBlock, ToolCallContent } from "@agentclientprotocol/sdk"
 import { own } from "../../../translate/value"
 import { diagnoseTranslation, shape, type AcpDiagnostics, type AcpTranslationDiagnostic } from "./diagnostics"
 

@@ -1,5 +1,5 @@
 import type { AgentRuntimeEvent } from "@claxedo/agent-runtime-contract"
-import type { ContentBlock, SessionUpdate } from "./types"
+import type { ContentBlock, SessionUpdate } from "@agentclientprotocol/sdk"
 import { RETAINED_MESSAGE_TEXTS_MAX, type SessionState, type TranslatorContext } from "./state"
 import { checkContentBlock } from "./validation"
 import { diagnoseTranslation, shape } from "./diagnostics"

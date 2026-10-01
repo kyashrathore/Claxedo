@@ -1,6 +1,6 @@
 import type { AgentRuntimeEvent } from "@claxedo/agent-runtime-contract"
 import { boundList } from "../../../translate/value"
-import type { ToolCallContent } from "./types"
+import type { ToolCallContent } from "@agentclientprotocol/sdk"
 import { diffKey, pathKey, RETAINED_TOOL_ITEMS_MAX, type Spot, type ToolState } from "./state"
 import { toolLocation, viewTool } from "./tool-presentation"
 
