@@ -571,13 +571,6 @@ export type WorkspaceAuthority = OrgAccessAuthority & {
       sessions: WorkspaceVisibility[]
     },
   ) => Promise<unknown>
-  deleteSessionVisibility: (
-    auth: SignedControlPlaneAuth,
-    args: {
-      sessionId: string
-      workspaceId: string
-    },
-  ) => Promise<unknown>
   /**
    * The account a machine's own session usage is attributed to: the actor of
    * the session's latest turn, else the creator the session registered under.

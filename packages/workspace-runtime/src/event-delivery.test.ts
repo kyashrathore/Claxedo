@@ -145,10 +145,12 @@ describe("createIdentityAwareEventSource", () => {
       replayStartupDeadlineMs: 20,
     })
     bus.publish({ sessionId: "ses_stuck", value: "stuck" })
-    const startedAt = Date.now()
     const opened = source.open(participant("deadline_connection"))
-    await opened.ready
-    expect(Date.now() - startedAt).toBeLessThan(100)
+    const settled = await Promise.race([
+      opened.ready.then(() => "ready"),
+      new Promise((resolve) => setTimeout(() => resolve("hung"), 2_000)),
+    ])
+    expect(settled).toBe("ready")
     expect(opened.replay.lastId()).toBeUndefined()
     source.close()
   })

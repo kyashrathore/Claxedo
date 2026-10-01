@@ -83,9 +83,8 @@ const provision = (workspaceId: string, step: "cloning" | "ready", orgId?: strin
 describe("signed control-plane visibility", () => {
   const principal: EventScopePrincipal = { mode: "signed", subject: "user_1", orgId: "org_1" }
 
-  test("scopes notices by subject and organization, and always passes the gap notice", async () => {
-    expect(signedControlPlaneEventVisibleTo(provision("ws_1", "ready", "org_1"), principal)).toBe(true)
-    expect(signedControlPlaneEventVisibleTo(provision("ws_2", "ready", "org_2"), principal)).toBe(false)
+  test("passes a signed subscriber its own share notice and the gap notice, and no workspace notice", async () => {
+    expect(signedControlPlaneEventVisibleTo(provision("ws_1", "ready", "org_1"), principal)).toBe(false)
     expect(signedControlPlaneEventVisibleTo(worktree("a"), principal)).toBe(false)
     expect(signedControlPlaneEventVisibleTo(
       { type: "session.share.changed", phase: "granted", level: "follow", ownerUserId: "user_1", sessionId: "s", workspaceId: "w", ts: 1 },

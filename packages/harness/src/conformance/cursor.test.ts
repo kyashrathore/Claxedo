@@ -574,7 +574,7 @@ test("a Cursor goal runs /goal as a provider turn and settles from the run resul
   const goal: { current: RuntimeGoalSnapshot | null } = { current: null }
   Object.assign(context.ports, { readGoal: () => goal.current, publishGoal: async (_sessionId: string, snapshot: RuntimeGoalSnapshot | null) => { goal.current = snapshot } })
   try {
-    expect((await context.transport.capabilities({ directory: state.directory })).goals).toMatchObject({ implemented: true, available: true })
+    expect((await context.transport.capabilities({ directory: state.directory })).goals).toMatchObject({ implemented: true, available: true, actions: ["delete"] })
     const started = await context.transport.goals!.start(context.session, "CURSOR_SCRIPT:goal", context.sessionBroker)
     expect(started).toMatchObject({ ok: true, goal: { status: "active", objective: "CURSOR_SCRIPT:goal" } })
     await pollUntil(() => goal.current?.status === "complete" || undefined, Date.now() + 20_000)

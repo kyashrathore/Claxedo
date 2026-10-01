@@ -708,19 +708,6 @@ export function createSqlitePrivateSessionAuthority(input: {
       writeVisibility(input.database(), actorForAuth(auth), value.workspaceId, value.sessions, true)
       return { ok: true }
     },
-    async deleteSessionVisibility(auth, value) {
-      const db = input.database()
-      const actor = actorForAuth(auth)
-      requireSessionAccess(db, actor, value.sessionId, value.workspaceId, "agent_turn")
-      const at = now()
-      db.transaction(() => {
-        db.prepare(`UPDATE session_history SET deleted_at = ? WHERE session_id = ? AND workspace_id = ?`)
-          .run(at, value.sessionId, value.workspaceId)
-        db.prepare(`DELETE FROM session_messages WHERE session_id = ? AND workspace_id = ?`)
-          .run(value.sessionId, value.workspaceId)
-      })()
-      return { ok: true }
-    },
   }
 
   function writeVisibility(

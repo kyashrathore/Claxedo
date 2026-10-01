@@ -111,11 +111,11 @@ function fileAuthority() {
 }
 
 describe("sqlite workspace authority", () => {
-  test("a missing organization is a typed public error", async () => {
+  test("a missing organization is refused as one the caller does not administer", async () => {
     const authority = memoryAuthority()
     try {
       await expect(authority.createTeamInOrg!(owner, { orgId: "org_missing", name: "Team" }))
-        .rejects.toMatchObject({ code: "organization_not_found", status: 404, retryable: false })
+        .rejects.toMatchObject({ code: "org_admin_required", status: 403, retryable: false })
     } finally {
       authority.close()
     }
@@ -696,15 +696,6 @@ describe("sqlite workspace authority", () => {
     })).rejects.toThrow("forced message-delete failure")
     expect(await authority.listSessions(owner, { workspaceId: "ws_delete_rollback" }))
       .toEqual([expect.objectContaining({ session_id: "ses_delete_rollback" })])
-
-    await expect(authority.deleteSessionVisibility(owner, {
-      workspaceId: "ws_delete_rollback",
-      sessionId: "ses_delete_rollback",
-    })).rejects.toThrow("forced message-delete failure")
-    expect(await authority.readSessionMessages(owner, {
-      workspaceId: "ws_delete_rollback",
-      sessionId: "ses_delete_rollback",
-    })).toMatchObject({ messages: [{ info: { id: "msg_keep", role: "user" }, parts: [] }] })
   })
 
   test("a channel's machine access names the bound person, so the session it starts is theirs", async () => {

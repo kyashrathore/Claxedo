@@ -1983,8 +1983,8 @@ test("question listing filters the authoritative workspace inventory without res
   expect(await unknown.json()).toEqual([])
   for (const operation of ["reply", "reject"]) {
     const response = await post(app, `/question/question_first/${operation}?sessionId=another_workspace_session`, { answers: [["Staging"]] })
-    expect(response.status).toBe(409)
-    expect(await response.json()).toMatchObject({ error: { code: "interaction_session_mismatch" } })
+    expect(response.status).toBe(404)
+    expect(await response.json()).toMatchObject({ error: { code: "interaction_not_found" } })
   }
 })
 
@@ -2590,7 +2590,7 @@ describe("public startup question lifecycle", () => {
     expect((await f.app.request("/session-start/first", { headers: { "x-test-actor": "other" } })).status).toBe(403)
     expect(await (await f.app.request("/question", { headers: { "x-test-actor": "other" } })).json()).toEqual([])
     expect(await (await f.app.request("/question?sessionId=first")).json()).toMatchObject([{ id: "question-first" }])
-    expect((await f.app.request("/question/question-first/reply?sessionId=second", answer())).status).toBe(409)
+    expect((await f.app.request("/question/question-first/reply?sessionId=second", answer())).status).toBe(404)
     expect((await f.app.request("/question/question-first/reply", { ...answer(), headers: { "content-type": "application/json", "x-test-actor": "other" } })).status).toBe(403)
     expect(f.replies).toEqual([])
     expect((await f.app.request("/question/question-first/reply", answer())).status).toBe(200)

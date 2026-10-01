@@ -34,7 +34,7 @@ function cursorCapabilities(models: readonly HostModel[] | undefined): Transport
     instructionChannel: "prompt-prefix",
     requests: { permissions: false, questions: false, elicitation: false },
     subagents: true,
-    goals: { implemented: true, available: true, actions: [], recovery: "blocked", optionalFields: ["lastReason"] },
+    goals: { implemented: true, available: true, actions: ["delete"], recovery: "blocked", optionalFields: ["lastReason"] },
     todos: true, history: "store",
   }
 }
