@@ -1,6 +1,6 @@
 import type { HarnessEventAdapter } from "../../../translate/adapter"
 import { createAcpTranslatorState, toKeyedMap, type SessionState } from "./state"
-import { translateAcpSessionUpdate } from "./translate-session-update"
+import { translateSessionUpdate } from "./translate-session-update"
 import { createAcpDiagnostics, diagnoseTranslation, shape } from "./diagnostics"
 import { isSessionUpdate } from "./validation"
 
@@ -28,7 +28,7 @@ export function createAcpEventTranslator(options: AcpEventTranslatorOptions): Ha
         })
         return { events: [], diagnostics: diagnostics.items }
       }
-      const events = translateAcpSessionUpdate(event.payload, {
+      const events = translateSessionUpdate(event.payload, {
         state,
         diagnostics,
         preserveUserMessageChunks: options.preserveUserMessageChunks,

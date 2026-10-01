@@ -57,7 +57,6 @@ export const requestHandlers: CodexHandlers = {
   "item/permissions/requestApproval": approvalRequest,
   applyPatchApproval: approvalRequest,
   execCommandApproval: approvalRequest,
-  "item/tool/call": approvalRequest,
   "item/tool/requestUserInput": ({ row, requestId, context }) => {
     const list = questions(row)
     if (list.length === 0) return []

@@ -1,5 +1,5 @@
 import { acpPromptUsage, type AcpContextOccupancy } from "./usage"
-import { translateStopReason } from "./translate/translate-session-update"
+import { translateStopReason } from "./translate/stop-reason"
 import type { SessionNotification, SessionConfigOption, SessionMode } from "@agentclientprotocol/sdk"
 import type {
   AttachInput, ConfigApplied, ConfigTarget, Deadline, HarnessServices, HarnessSession, HarnessTransport, McpServerSpec,

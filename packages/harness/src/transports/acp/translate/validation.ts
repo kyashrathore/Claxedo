@@ -1,27 +1,25 @@
 import { isRecord, asRecord as object } from "@claxedo/agent-runtime-contract"
 import type { ContentBlock, SessionUpdate, ToolCallContent } from "./types"
 import { asRecord } from "@claxedo/helpers/guards"
-import { diagnoseTranslation, shape, type AcpDiagnostics } from "./diagnostics"
+import { diagnoseTranslation, shape, type AcpDiagnostics, type AcpTranslationDiagnostic } from "./diagnostics"
 
 type ValidationContext = { diagnostics: AcpDiagnostics; toolCallId?: string; title?: string; kind?: string }
 
-function details(ctx: ValidationContext) {
-  return {
+function malformed(ctx: ValidationContext, event: AcpTranslationDiagnostic, reason: string, value: unknown): void {
+  diagnoseTranslation(ctx.diagnostics, event, {
     toolCallId: ctx.toolCallId,
     title: ctx.title,
     kind: ctx.kind,
-  }
+    reason,
+    shape: shape(value),
+  })
 }
 
 export function safeMeta(value: unknown, ctx: ValidationContext): Record<string, unknown> | undefined {
   if (value === undefined || value === null) return undefined
   const row = asRecord(value)
   if (row) return row
-  diagnoseTranslation(ctx.diagnostics, "acp.malformed_raw_input", {
-    ...details(ctx),
-    reason: "invalid_meta",
-    shape: shape(value),
-  })
+  malformed(ctx, "acp.malformed_raw_input", "invalid_meta", value)
   return undefined
 }
 
@@ -29,22 +27,14 @@ export function safeRawInput(value: unknown, ctx: ValidationContext) {
   if (value === undefined || value === null) return value
   const row = asRecord(value)
   if (row) return row
-  diagnoseTranslation(ctx.diagnostics, "acp.malformed_raw_input", {
-    ...details(ctx),
-    reason: "rawInput_not_object",
-    shape: shape(value),
-  })
+  malformed(ctx, "acp.malformed_raw_input", "rawInput_not_object", value)
   return { raw: value }
 }
 
 export function safeRawOutput(value: unknown, ctx: ValidationContext) {
   if (value === undefined || value === null) return value
   if (typeof value === "symbol" || typeof value === "function") {
-    diagnoseTranslation(ctx.diagnostics, "acp.malformed_raw_output", {
-      ...details(ctx),
-      reason: "rawOutput_unserializable",
-      shape: shape(value),
-    })
+    malformed(ctx, "acp.malformed_raw_output", "rawOutput_unserializable", value)
     return String(value)
   }
   return value
@@ -53,11 +43,7 @@ export function safeRawOutput(value: unknown, ctx: ValidationContext) {
 export function safeLocations(value: unknown, ctx: ValidationContext) {
   if (value === undefined || value === null) return value
   if (!Array.isArray(value)) {
-    diagnoseTranslation(ctx.diagnostics, "acp.malformed_location", {
-      ...details(ctx),
-      reason: "locations_not_array",
-      shape: shape(value),
-    })
+    malformed(ctx, "acp.malformed_location", "locations_not_array", value)
     return null
   }
   const out = value.flatMap((item) => {
@@ -65,11 +51,7 @@ export function safeLocations(value: unknown, ctx: ValidationContext) {
     if (typeof row?.path === "string" && (row.line === undefined || row.line === null || typeof row.line === "number")) {
       return [{ path: row.path, ...(row.line !== undefined ? { line: row.line } : {}) }]
     }
-    diagnoseTranslation(ctx.diagnostics, "acp.malformed_location", {
-      ...details(ctx),
-      reason: "location_invalid",
-      shape: shape(item),
-    })
+    malformed(ctx, "acp.malformed_location", "location_invalid", item)
     return []
   })
   return out
@@ -78,20 +60,12 @@ export function safeLocations(value: unknown, ctx: ValidationContext) {
 export function safeContent(value: unknown, ctx: ValidationContext) {
   if (value === undefined || value === null) return value
   if (!Array.isArray(value)) {
-    diagnoseTranslation(ctx.diagnostics, "acp.dropped_content", {
-      ...details(ctx),
-      reason: "content_not_array",
-      shape: shape(value),
-    })
+    malformed(ctx, "acp.dropped_content", "content_not_array", value)
     return null
   }
   return value.flatMap((item) => {
     if (isToolCallContent(item)) return [item]
-    diagnoseTranslation(ctx.diagnostics, "acp.dropped_content", {
-      ...details(ctx),
-      reason: "content_item_invalid",
-      shape: shape(item),
-    })
+    malformed(ctx, "acp.dropped_content", "content_item_invalid", item)
     return []
   })
 }

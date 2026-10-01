@@ -1,6 +1,6 @@
 import type { AgentRuntimeEvent } from "@claxedo/agent-runtime-contract"
 import type { ToolIntent as AcpIntent } from "@claxedo/agent-runtime-contract"
-import type { ToolView } from "./state"
+import type { ToolView } from "./tool-presentation"
 import type { AcpDiagnostics } from "./diagnostics"
 
 export type AcpToolClassification =

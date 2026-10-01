@@ -17,6 +17,20 @@ function runtime(
 }
 
 describe("createAcpEventTranslator", () => {
+  test.each(["tool_call", "tool_call_update"])("preserves validation diagnostic order for %s", (sessionUpdate) => {
+    const result = runtime().ingest({
+      source: "acp.jsonrpc",
+      method: "session/update",
+      payload: { sessionUpdate, toolCallId: "tool-1", _meta: [], rawInput: "invalid", content: "invalid" },
+    })
+    const diagnostics = result.events.flatMap((event) => event.type === "diagnostic" ? [event.diagnostic.details?.acp] : [])
+    expect(diagnostics).toMatchObject([
+      { reason: "invalid_meta" },
+      { reason: "rawInput_not_object" },
+      { reason: "content_not_array" },
+    ])
+  })
+
   test("keeps shell input, display, and metadata fields consistent without leaking presentation-only fields", () => {
     const events = runtime().ingest({
       source: "acp.jsonrpc",

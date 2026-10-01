@@ -1,5 +1,5 @@
 export { createAcpEventTranslator } from "./event-translator"
-export { translateStopReason } from "./translate-session-update"
+export { translateStopReason } from "./stop-reason"
 export type { AcpEventTranslatorOptions, AcpEventTranslatorState } from "./event-translator"
 export type {
   AudioContent,

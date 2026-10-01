@@ -137,7 +137,6 @@ function deliveredSteer(event: ProjectedEvent, state: OpenCodeTurnState): string
   return inboxID
 }
 
-/** `closed` aborts when the transport is disposed: the engine is closing, so no event can settle the turn. */
 export async function* runOpenCodeTurn(runtime: OpenCodeRuntime, state: OpenCodeTurnState, turn: TurnInput,
   broker: TurnBroker, closed: AbortSignal): AsyncIterable<RoutedEvent> {
   if (state.active) throw new TransportError("opencode", "session", "OpenCode session already has an active turn")
