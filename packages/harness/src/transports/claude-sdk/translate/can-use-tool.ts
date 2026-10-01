@@ -38,10 +38,6 @@ function questionFromToolUse(row: Record<string, unknown>, context: HarnessEvent
   }] satisfies AgentRuntimeEvent[]
 }
 
-function pathsFromToolInput(input: Record<string, unknown>) {
-  return pathFields(input, ["path", "file_path", "filePath", "cwd"])
-}
-
 function permissionFromToolUse(row: Record<string, unknown>, context: HarnessEventAdapterContext) {
   const toolName = text(row.toolName) ?? text(row.name)
   if (!toolName) return []
@@ -50,7 +46,7 @@ function permissionFromToolUse(row: Record<string, unknown>, context: HarnessEve
     type: "permission-request",
     requestId: text(row.requestId) ?? context.createId("permission"),
     tool: toolName,
-    paths: pathsFromToolInput(input),
+    paths: pathFields(input, ["path", "file_path", "filePath", "cwd"]),
     details: { command: text(input.command), reason: text(input.description) },
   }] satisfies AgentRuntimeEvent[]
 }

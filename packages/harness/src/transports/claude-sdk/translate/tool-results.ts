@@ -1,12 +1,13 @@
 import { canonicalToolName, reconstructQuestionAnswers, asText as text } from "@claxedo/agent-runtime-contract"
 import type { AgentRuntimeEvent, RuntimeToolAttachment, ToolDisplay } from "@claxedo/agent-runtime-contract"
-import { asFiniteNumber, asRecord } from "@claxedo/helpers/guards"
+import { asArray, asFiniteNumber, asRecord } from "@claxedo/helpers/guards"
 import { imageAttachment } from "../../../translate/tool-attachments"
 import { optionLabels, own } from "../../../translate/value"
 import type { ClaudeSdkAdapterState, ClaudeTranslation } from "./adapter-state"
+import { messageBlocks } from "./message-content"
 import { isClaudeQuestionDecline } from "./question-decline"
 import { applyClaudeTaskResult } from "./task-tracking"
-import { isTaskTool, toolDisplay, toolKind } from "./tool-blocks"
+import { isTaskTool, toolDisplay, toolKind, toolPresentation } from "./tool-blocks"
 
 const serverToolResults: readonly string[] = ["web_search_tool_result", "web_fetch_tool_result", "advisor_tool_result", "code_execution_tool_result",
   "bash_code_execution_tool_result", "text_editor_code_execution_tool_result", "tool_search_tool_result", "mcp_tool_result"]
@@ -21,14 +22,11 @@ function exitCodeFromResultText(resultText: string) {
 export function toolResultText(block: Record<string, unknown>) {
   const content = block.content
   if (typeof content === "string") return content
-  if (!Array.isArray(content)) return ""
-  return content.flatMap((item) => text(item) ?? text(asRecord(item)?.text) ?? []).join("\n")
+  return asArray(content).flatMap((item) => text(item) ?? text(asRecord(item)?.text) ?? []).join("\n")
 }
 
 function toolResultFiles(block: Record<string, unknown>): Array<{ mime: string; data: string }> {
-  const content = block.content
-  if (!Array.isArray(content)) return []
-  return content.flatMap((item) => {
+  return asArray(block.content).flatMap((item) => {
     const row = asRecord(item)
     if (row?.type !== "image" && row?.type !== "document") return []
     const source = asRecord(row.source)
@@ -44,18 +42,14 @@ function resultAttachments(
   images: Array<{ mime: string; data: string }>,
   display: ToolDisplay,
 ): RuntimeToolAttachment[] {
-  if (images.length !== 1) return images.map((image) => imageAttachment(image))
-  const sourcePath = display.filePath ?? display.path
+  const sourcePath = images.length === 1 ? display.filePath ?? display.path : undefined
   const filename = sourcePath?.split(/[\\/]/).pop()
   return images.map((image) => imageAttachment({ ...image, filename, sourcePath }))
 }
 
 export function toolResultBlocks(message: Record<string, unknown>) {
-  const row = asRecord(message.message) ?? {}
-  const content = Array.isArray(row.content) ? row.content : []
-  return content.flatMap((item) => {
-    const block = asRecord(item)
-    if (!block || block.type !== "tool_result") return []
+  return messageBlocks(message).flatMap((block) => {
+    if (block.type !== "tool_result") return []
     const toolCallId = text(block.tool_use_id)
     if (!toolCallId) return []
     return [{
@@ -80,10 +74,6 @@ function agentResultMetadata(result: Record<string, unknown> | undefined) {
     usage: asRecord(result.usage),
     toolStats: asRecord(result.toolStats),
   }
-}
-
-function isQuestionTool(toolName: string) {
-  return canonicalToolName(toolName) === "question"
 }
 
 function questionAnswerMetadata(input: Record<string, unknown>, result: Record<string, unknown> | undefined) {
@@ -111,39 +101,35 @@ function agentResultText(result: Record<string, unknown> | undefined, fallback: 
   return content.flatMap((item) => text(asRecord(item)?.text) ?? []).join("\n") || fallback
 }
 
-function toolResultMetadata(toolName: string, result: ToolResultBlock) {
+function toolResultEvent(toolName: string, input: Record<string, unknown>, result: ToolResultBlock): AgentRuntimeEvent {
+  const { display, metadata: presentation } = toolPresentation(toolName, input)
+  const question = canonicalToolName(toolName) === "question"
   const exitCode = toolKind(toolName) === "command_execution" ? exitCodeFromResultText(result.text) : undefined
-  return {
+  const metadata = {
     ...(exitCode === undefined ? {} : { exitCode }),
     claude: {
-      itemType: toolKind(toolName),
+      ...presentation.claude,
       ...(isTaskTool(toolName) ? { subagent: agentResultMetadata(result.structured) } : {}),
     },
   }
-}
-
-function toolResultEvent(toolName: string, input: Record<string, unknown>, result: ToolResultBlock): AgentRuntimeEvent {
-  const metadata = toolResultMetadata(toolName, result)
-  const display = toolDisplay(toolName, input)
+  const settled = { toolCallId: result.toolCallId, display }
   if (result.isError) {
-    const declined = isQuestionTool(toolName) && isClaudeQuestionDecline(result.text)
+    const declined = question && isClaudeQuestionDecline(result.text)
     return {
       type: "tool-error",
-      toolCallId: result.toolCallId,
+      ...settled,
       error: result.text,
-      display,
       metadata: { ...metadata, ...(declined ? { question: { declined: true } } : {}) },
     }
   }
   return {
     type: "tool-output",
-    toolCallId: result.toolCallId,
+    ...settled,
     output: isTaskTool(toolName) ? agentResultText(result.structured, result.text) : result.text,
     ...(result.images.length ? { attachments: resultAttachments(result.images, display) } : {}),
-    display,
     metadata: {
       ...metadata,
-      ...(isQuestionTool(toolName) ? questionAnswerMetadata(input, result.structured) : {}),
+      ...(question ? questionAnswerMetadata(input, result.structured) : {}),
     },
   }
 }
@@ -159,20 +145,16 @@ function toolsByCallId(state: ClaudeSdkAdapterState) {
 export function translateToolResults(state: ClaudeSdkAdapterState, message: Record<string, unknown>): ClaudeTranslation {
   const byToolId = toolsByCallId(state)
   let tasks = state.tasks ?? {}
-  let changedTasks = false
+  const initialTasks = tasks
   const events = toolResultBlocks(message).flatMap((result): AgentRuntimeEvent[] => {
     const tool = byToolId[result.toolCallId]
     if (!tool?.toolName) return []
     if (!result.isError) {
-      const nextTasks = applyClaudeTaskResult(tasks, tool.toolName, tool.input ?? {}, result.structured)
-      if (nextTasks) {
-        tasks = nextTasks
-        changedTasks = true
-      }
+      tasks = applyClaudeTaskResult(tasks, tool.toolName, tool.input ?? {}, result.structured) ?? tasks
     }
     return [toolResultEvent(tool.toolName, tool.input ?? {}, result)]
   })
-  if (!changedTasks) return events
+  if (tasks === initialTasks) return events
   return { state: { ...state, tasks }, events: [...events, { type: "todo-update", todos: Object.values(tasks) } satisfies AgentRuntimeEvent] }
 }
 

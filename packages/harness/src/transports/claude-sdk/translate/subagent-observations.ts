@@ -1,7 +1,7 @@
 import { asText as text } from "@claxedo/agent-runtime-contract"
 import { asRecord } from "@claxedo/helpers/guards"
 import { hostSubagentBinding, hostSubagentObservation, isHostSubagentTool } from "../../../translate/host-subagent"
-import { assistantToolBlocks } from "./assistant-content"
+import { assistantToolBlocks } from "./message-content"
 import { taskCall, type ClaudeSubagentObservation } from "./subagent-observation"
 import { claudeChildCorrelationKey } from "./subagent-routing"
 import type { ClaudeTaskLedger } from "./task-ledger"

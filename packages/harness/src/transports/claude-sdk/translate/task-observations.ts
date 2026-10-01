@@ -3,7 +3,7 @@ import { asFiniteNumber, asRecord } from "@claxedo/helpers/guards"
 import { taskCall, type ClaudeSubagentObservation } from "./subagent-observation"
 import type { ClaudeTaskLedger, ClaudeTaskRecord } from "./task-ledger"
 
-type TaskUpdate = Omit<ClaudeSubagentObservation, "observationId" | "harnessExecutionId" | "stableCorrelationId" | "toolCallId" | "toolCallRole" | "providerKind" | "transcript">
+type TaskUpdate = Pick<ClaudeSubagentObservation, "mode" | "status" | "subagentType" | "description" | "label">
 
 export function taskSystemObservations(
   message: Record<string, unknown>,
@@ -82,11 +82,7 @@ function taskObservation(
     ...(text(message.session_id) ? { harnessExecutionId: text(message.session_id) } : {}),
     ...(taskId ? { stableCorrelationId: taskId } : {}),
     ...taskCall(text(message.tool_use_id), ledger),
-    ...(update.mode ? { mode: update.mode } : {}),
-    ...(update.status ? { status: update.status } : {}),
-    ...(update.subagentType ? { subagentType: update.subagentType } : {}),
-    ...(update.description ? { description: update.description } : {}),
-    ...(update.label ? { label: update.label } : {}),
+    ...Object.fromEntries(Object.entries(update).filter(([, value]) => value)),
     providerKind: "claude-agent",
     transcript: { kind: "messages" },
   }

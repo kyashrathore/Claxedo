@@ -1,6 +1,7 @@
 import { asText as text } from "@claxedo/agent-runtime-contract"
 import type { AgentRuntimeEvent } from "@claxedo/agent-runtime-contract"
 import type { SDKMessage } from "@anthropic-ai/claude-agent-sdk"
+import { asRecordOrEmpty } from "@claxedo/helpers/guards"
 import type { HarnessEventAdapter, HarnessEventAdapterContext } from "../../../translate/adapter"
 import type { ClaudeSdkAdapterState, ClaudeTranslation } from "./adapter-state"
 import { translateAssistantMessage } from "./assistant-message"
@@ -8,7 +9,7 @@ import { translateCanUseTool } from "./can-use-tool"
 import { translateRateLimitEvent } from "./rate-limits"
 import { CLAUDE_SUBAGENT_USAGE_METHOD, translateMessageDelta, translateMessageStart, translateMessageStop, translateSubagentUsage } from "./request-stream"
 import { translateResult } from "./result-events"
-import { diagnosticForEvent, ignoredFrame, sdkMessage, type ClaudeFrameEvent, type ClaudeSdkStreamEvent } from "./sdk-message"
+import { diagnosticForEvent, ignoredFrame, type ClaudeFrameEvent, type ClaudeSdkStreamEvent } from "./sdk-message"
 import { translateContentBlockDelta, translateContentBlockStart, translateContentBlockStop } from "./stream-content"
 import { translateSystemMessage } from "./system-message"
 import type { ClaudeTrackedTask } from "./task-tracking"
@@ -26,7 +27,7 @@ export function claudeSdkAdapter(initialTasks: ClaudeTrackedTask[] = [], memory 
     name: "claude-sdk",
     createInitialState: () => ({ blocksByIndex: {}, toolsById: {}, streamedAssistantTextByOwner: {}, streamedThinkingByOwner: {},
       ...(memory.window ? { model: memory.window.model } : {}), tasks: Object.fromEntries(initialTasks.map((task) => [task.id, task])) }),
-    translate: ({ state, event, context }) => translateClaudeFrame({ message: sdkMessage(event), state, event, context, memory }),
+    translate: ({ state, event, context }) => translateClaudeFrame({ message: asRecordOrEmpty(event.payload), state, event, context, memory }),
   }
 }
 
