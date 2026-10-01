@@ -98,7 +98,6 @@ export type D1AccessErrorCode =
   | "org_owner_protected"
   | "org_membership_required"
   | "org_member_not_found"
-  | "organization_not_found"
   | "team_not_found"
   | "team_not_allowed_on_personal_org"
   | "team_member_not_found"

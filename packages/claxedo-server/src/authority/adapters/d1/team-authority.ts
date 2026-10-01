@@ -57,15 +57,15 @@ export class D1TeamAuthority implements D1TeamAuthorityPort {
     const orgId = requireText(args.orgId, "orgId")
     const name = requireText(args.name, "name")
     this.context.assertOrganizationAllowed(orgId)
+    if (!(await may(this.database, who, "administer", { kind: "org", orgId }))) {
+      throw new D1AccessAuthorityError("org_admin_required")
+    }
     const org = await this.database
       .prepare(`select kind from orgs where org_id = ? and deleted_at is null`)
       .bind(orgId)
       .first<{ kind: "personal" | "team" | "deployment" }>()
-    if (!org) throw new D1AccessAuthorityError("organization_not_found")
+    if (!org) throw new D1AccessAuthorityError("org_admin_required")
     if (org.kind === "personal") throw new D1AccessAuthorityError("team_not_allowed_on_personal_org")
-    if (!(await may(this.database, who, "administer", { kind: "org", orgId }))) {
-      throw new D1AccessAuthorityError("org_admin_required")
-    }
     const teamId = this.context.randomId("team")
     const now = this.context.now()
     const guard = mayGuard(who, "administer", { kind: "org", orgId })
@@ -119,7 +119,7 @@ export class D1TeamAuthority implements D1TeamAuthorityPort {
       .prepare(`select name, kind from orgs where org_id = ? and deleted_at is null`)
       .bind(orgId)
       .first<{ name: string; kind: "personal" | "team" | "deployment" }>()
-    if (!org) throw new D1AccessAuthorityError("organization_not_found")
+    if (!org) throw new D1AccessAuthorityError("org_admin_required")
     if (org.kind === "personal") return { skipped: true as const }
     const existing = await this.database
       .prepare(`select team_id from teams where org_id = ? and is_default = 1 and deleted_at is null`)
@@ -211,11 +211,7 @@ export class D1TeamAuthority implements D1TeamAuthorityPort {
       .bind(orgId)
       .first<{ team_id: string }>()
     if (!selected) throw new D1AccessAuthorityError("resource_conflict", "Default team creation raced")
-    return {
-      team_id: selected.team_id,
-      org_id: orgId,
-      session_shares_retargeted: 0,
-    }
+    return { team_id: selected.team_id, org_id: orgId }
   }
 
   async addTeamMember(auth: SignedControlPlaneAuth, args: TeamMemberSelector & { teamId: string; role?: OrgMemberRole }) {
@@ -276,7 +272,7 @@ export class D1TeamAuthority implements D1TeamAuthorityPort {
         select 1 from team_memberships current
         where current.team_id = guard_team.team_id and current.user_id = ? and current.revoked_at is null
       )`, [target.user_id])
-    const [, removed] = await this.database.batch([
+    const [, , removed] = await this.database.batch([
       accessAuditStatement(this.context, {
         who,
         action: "team.member.removed",
@@ -284,6 +280,15 @@ export class D1TeamAuthority implements D1TeamAuthorityPort {
         guard,
         now,
       }),
+      // Before the membership ends, while the guard still finds it.
+      this.database
+        .prepare(`
+          update runtime_access_tokens set revoked_at = ?
+          where minted_for_user_id = ? and revoked_at is null
+            and share_grant_id in (select grant_id from session_share_grants where target_team_id = ?)
+            and ${guard.sql}
+        `)
+        .bind(now, target.user_id, team.team_id, ...guard.bind),
       this.database
         .prepare(`
           update team_memberships set revoked_at = ?, updated_at = ?
@@ -424,11 +429,11 @@ export class D1TeamAuthority implements D1TeamAuthorityPort {
       .first<{ team_id: string; org_id: string }>()
   }
 
+  /** A live team of an organization the caller administers; any other team is answered as absent. */
   private async adminTeam(who: AccessPrincipal, teamId: string) {
     const team = await this.team(requireText(teamId, "teamId"))
-    if (!team) throw new D1AccessAuthorityError("team_not_found")
-    if (!(await may(this.database, who, "administer", { kind: "org", orgId: team.org_id }))) {
-      throw new D1AccessAuthorityError("org_admin_required")
+    if (!team || !(await may(this.database, who, "administer", { kind: "org", orgId: team.org_id }))) {
+      throw new D1AccessAuthorityError("team_not_found")
     }
     return team
   }

@@ -292,7 +292,7 @@ describe("sqlite Org→Team + session share", () => {
     authority.close()
   })
 
-  test("ensureDefaultTeam retargets org session shares onto the default team", async () => {
+  test("default-team setup changes no session share, and revoking a team share leaves the owner's runtime token", async () => {
     const { authority, db } = setup()
     await authority.usersMe(alice)
     await authority.usersMe(bob)
@@ -337,28 +337,34 @@ describe("sqlite Org→Team + session share", () => {
       grantedToOrgId: org.org_id,
     })
 
-    const result = await authority.ensureDefaultTeam!(alice, { orgId: org.org_id }) as {
-      session_shares_retargeted: number
-      team_id: string
-    }
-    expect(result.team_id).toBe(org.default_team_id)
-    expect(result.session_shares_retargeted).toBeGreaterThanOrEqual(1)
-
+    await expect(authority.ensureDefaultTeam!(alice, { orgId: org.org_id })).resolves.toEqual({
+      team_id: org.default_team_id,
+      org_id: org.org_id,
+    })
     const shares = await authority.listSessionShares!(alice, {
       sessionId: "ses_org_share",
       workspaceId: "ws_retarget",
     })
     expect(shares.grants).toEqual([
-      expect.objectContaining({
-        granted_to_org_id: null,
-        granted_to_team_id: org.default_team_id,
-      }),
+      expect.objectContaining({ granted_to_org_id: org.org_id, granted_to_team_id: null }),
     ])
 
-    const listed = await authority.listSessions(bob, { workspaceId: "ws_retarget" }) as Array<{
-      session_id: string
-    }>
-    expect(listed.map((row) => row.session_id)).toContain("ses_org_share")
+    await authority.recordRuntimeAccessToken(alice, {
+      jti: "jti_owner", workspaceId: "ws_retarget", hostId: "host_retarget", actorId: alice.user.tokenIdentifier,
+      actorKind: "human", role: "owner", expiresAt: Date.now() + 60_000,
+    })
+    await authority.grantSessionShare!(alice, {
+      sessionId: "ses_org_share",
+      workspaceId: "ws_retarget",
+      grantedToTeamId: org.default_team_id,
+    })
+    await authority.revokeSessionShare!(alice, {
+      sessionId: "ses_org_share",
+      workspaceId: "ws_retarget",
+      grantedToTeamId: org.default_team_id,
+    })
+    await expect(authority.runtimeAccessTokenActive({ jti: "jti_owner", workspaceId: "ws_retarget", hostId: "host_retarget" }))
+      .resolves.toMatchObject({ active: true })
     authority.close()
   })
 })
