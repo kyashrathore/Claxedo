@@ -8,8 +8,6 @@ import { mintRelayHostToken } from "../../../workspace-relay/src/auth"
 import type { SandboxManager } from "@claxedo/sandbox-manager"
 import { createWorkspaceRuntimeApp } from "../../../workspace-runtime/src/server"
 import { relayWorkspaceRuntimeExposure } from "../../../workspace-runtime/src/exposure"
-import { createBus as createTestBus, type WorkspaceRuntimeEvent as TestBusEvent } from "@claxedo/session-core"
-const testBus = createTestBus<TestBusEvent>()
 import { remoteWorkspaceSessionAccessPolicy } from "../../../workspace-runtime/src/remote-session-authority"
 import { FakeTransport, fakeConnectionProvider, loopbackMachineLoginPolicy } from "../../../workspace-runtime/src/testing"
 import { WorkspaceCheckpointRoutes } from "../workspace/routes/checkpoints"
@@ -318,7 +316,6 @@ describe("two-user signed runtime transport acceptance", () => {
       rht(caseyAuth, "jti_runtime_casey"),
     ])
 
-    const sessionBus = testBus
     const fixture = runtimeHarness()
     const policy = remoteWorkspaceSessionAccessPolicy({
       url: "http://control.test/api/runtime-authority/session-authorize",
@@ -347,6 +344,7 @@ describe("two-user signed runtime transport acceptance", () => {
       defaultHarness: { kind: "connection", connectionId: CONNECTION },
     })
     const runtimeApp = runtime.app
+    const sessionBus = runtime.host.sessionCore.bus
 
     const operationId = "op_runtime_private"
     const reserved = await signedRequest(alice.token, "/api/control/session-registrations/reserve", {

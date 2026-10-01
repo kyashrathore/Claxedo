@@ -19,8 +19,6 @@ import {
   shutdownEmbeddedWorkspaceRuntimes,
   type MountedEmbeddedWorkspaceRuntime,
 } from "./embedded-workspace-runtime"
-import { createBus as createTestBus, type WorkspaceRuntimeEvent as TestBusEvent } from "@claxedo/session-core"
-const testBus = createTestBus<TestBusEvent>()
 import { Hono } from "hono"
 import { createHostAggregateEventsHandler } from "../../shell/host-events"
 import { createLocalDaemonLifecycle } from "../../app/local-daemon-lifecycle"
@@ -34,7 +32,7 @@ import { Pty, type EmbeddedRelayHostIdentity } from "@claxedo/workspace-runtime"
 import { managedWorkspaceSessionAccessPolicy } from "@claxedo/session-core"
 import { volatileLaunchOwnership } from "@claxedo/process-ownership/launch"
 import { EMBEDDED_RELAY_HOST_AUTH_HEADER } from "@claxedo/workspace-runtime/exposure"
-import { FakeTransport, fakeConnectionProvider } from "@claxedo/workspace-runtime/testing"
+import { FakeTransport, fakeConnectionProvider, testSessionCore, withSessionCore } from "@claxedo/workspace-runtime/testing"
 
 /**
  * Delete workspace roots AFTER releasing the module-scoped sqlite handles:
@@ -153,7 +151,7 @@ async function terminal(cwd: string, sessionId: string) {
   // nothing here reads it back. node-pty resolves a bare name through PATH on
   // Windows, where there is no `/bin/sh` to find.
   const command = process.platform === "win32" ? "cmd.exe" : "/bin/sh"
-  const info = await Pty.create({ command, cwd, sessionId }, volatileLaunchOwnership())
+  const info = await withSessionCore(testSessionCore(cwd), () => Pty.create({ command, cwd, sessionId }, volatileLaunchOwnership()))
   Pty.commit(info.id)
   return info
 }
@@ -526,12 +524,12 @@ describe("embedded workspace runtime", () => {
         workspaceId: "ws_observed",
         ts: 1,
       }
-      testBus.publish(lifecycle)
+      first.host.sessionCore.bus.publish(lifecycle)
       expect(framed).toEqual([{ directory: project, payload: lifecycle }])
 
       const second = path.join(root, "project-2")
       await fs.mkdir(second, { recursive: true })
-      await ensureEmbeddedWorkspaceRuntime(workspace("ws_observed_2", second), { config: "skip" })
+      const secondRuntime = await ensureEmbeddedWorkspaceRuntime(workspace("ws_observed_2", second), { config: "skip" })
       expect(announced.slice(1)).toEqual([{ directory: second, phase: "mounted" }])
 
       // One id whose directory moved is replaced, and the replacement is
@@ -559,7 +557,7 @@ describe("embedded workspace runtime", () => {
         eventType: "Idle" as const,
         outcome: "cancelled" as const,
       }
-      testBus.publish(settling)
+      secondRuntime.host.sessionCore.bus.publish(settling)
       await releasing
       expect(announced.at(-1)).toEqual({ directory: second, phase: "disposed" })
       expect(framed).toContainEqual({ directory: second, payload: settling })
@@ -584,8 +582,8 @@ describe("embedded workspace runtime", () => {
       const moved = path.join(root, "project-moved")
       await fs.mkdir(other, { recursive: true })
       await fs.mkdir(moved, { recursive: true })
-      await ensureEmbeddedWorkspaceRuntime(workspace("ws_agg_a", project), { config: "skip" })
-      await ensureEmbeddedWorkspaceRuntime(workspace("ws_agg_b", other), { config: "skip" })
+      const a = await ensureEmbeddedWorkspaceRuntime(workspace("ws_agg_a", project), { config: "skip" })
+      const b = await ensureEmbeddedWorkspaceRuntime(workspace("ws_agg_b", other), { config: "skip" })
 
       const response = await new Hono()
         .get("/api/wr/events", handler)
@@ -617,8 +615,8 @@ describe("embedded workspace runtime", () => {
 
       // Both live workspaces reach one connection — the off-screen one has no
       // connection of its own and is exactly what the aggregate exists for.
-      testBus.publish(lifecycle("ws_agg_a", project, "ses_a"))
-      testBus.publish(lifecycle("ws_agg_b", other, "ses_b"))
+      a.host.sessionCore.bus.publish(lifecycle("ws_agg_a", project, "ses_a"))
+      b.host.sessionCore.bus.publish(lifecycle("ws_agg_b", other, "ses_b"))
       await until("ses_b")
       expect(text).toContain("ses_a")
       expect(text).toContain("ses_b")
@@ -626,17 +624,17 @@ describe("embedded workspace runtime", () => {
       // One id whose directory moved is retired and replaced while the
       // connection stays open. The replacement's frames must reach the same
       // connection: the aggregate follows the registry, not a snapshot of it.
-      await ensureEmbeddedWorkspaceRuntime(workspace("ws_agg_a", moved), { config: "skip" })
-      testBus.publish(lifecycle("ws_agg_a", moved, "ses_a_moved"))
-      testBus.publish(lifecycle("ws_agg_b", other, "ses_b_again"))
+      const aMoved = await ensureEmbeddedWorkspaceRuntime(workspace("ws_agg_a", moved), { config: "skip" })
+      aMoved.host.sessionCore.bus.publish(lifecycle("ws_agg_a", moved, "ses_a_moved"))
+      b.host.sessionCore.bus.publish(lifecycle("ws_agg_b", other, "ses_b_again"))
       await until("ses_b_again")
       expect(text).toContain("ses_a_moved")
 
       // A workspace with no live runtime has nothing live to say: released,
       // its frames reach nobody, while the workspace still mounted carries on.
       await releaseEmbeddedWorkspaceRuntime("ws_agg_b")
-      testBus.publish(lifecycle("ws_agg_b", other, "ses_b_released"))
-      testBus.publish(lifecycle("ws_agg_a", moved, "ses_a_last"))
+      b.host.sessionCore.bus.publish(lifecycle("ws_agg_b", other, "ses_b_released"))
+      aMoved.host.sessionCore.bus.publish(lifecycle("ws_agg_a", moved, "ses_a_last"))
       await until("ses_a_last")
       expect(text).not.toContain("ses_b_released")
     } finally {

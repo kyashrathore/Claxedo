@@ -1,5 +1,6 @@
 import { testSessionCore } from "../test-support/session-core"
 import { withSessionCore } from "../session-context"
+import { testSessionCore } from "../test-support/session-core"
 // `node:test`'s `describe`/`test` return a promise the runner already owns: it
 // settles when the suite finishes and reports failures through the runner
 // rather than rejecting, so every registration below is deliberately `void`ed.
@@ -91,8 +92,8 @@ const child = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { d
 console.log('CHILD_PID=' + child.pid);
 setInterval(() => {}, 1000);
 `)
-    const target = await Pty.create({ command: process.execPath, args: [launcher], cwd: tmpDir }, ownership)
-    const neighbor = await Pty.create({ command: "/bin/sh", cwd: tmpDir }, ownership)
+    const target = await withSessionCore(testSessionCore(tmpDir), () => Pty.create({ command: process.execPath, args: [launcher], cwd: tmpDir }, ownership))
+    const neighbor = await withSessionCore(testSessionCore(tmpDir), () => Pty.create({ command: "/bin/sh", cwd: tmpDir }, ownership))
     const targetClient = socket()
     const neighborClient = socket()
     assert.ok(Pty.connect(target.id, targetClient.ws))
@@ -123,7 +124,7 @@ setInterval(() => {}, 1000);
 
   void test("spawns /bin/sh, echoes a command, resizes, and exits cleanly", { timeout: 30_000 }, async () => {
     const { Pty } = await import("./index")
-    const info = await Pty.create({ command: "/bin/sh", cwd: tmpDir, title: "real" }, ownership)
+    const info = await withSessionCore(testSessionCore(tmpDir), () => Pty.create({ command: "/bin/sh", cwd: tmpDir, title: "real" }, ownership))
     assert.equal(info.status, "running")
     assert.ok(info.pid > 0)
 
