@@ -225,7 +225,7 @@ describe("architecture boundaries", () => {
   })
 
   test("keeps SandboxDriver focused on host lifecycle", () => {
-    const text = fs.readFileSync(path.resolve(import.meta.dirname, "../../../../sandbox-manager/src/index.ts"), "utf8")
+    const text = fs.readFileSync(path.resolve(import.meta.dirname, "../../../../sandbox-manager/src/contract.ts"), "utf8")
     const start = text.indexOf("export type SandboxDriver = {")
     const end = text.indexOf("\n\nexport type SandboxManager =", start)
     expect(start).toBeGreaterThanOrEqual(0)
@@ -248,7 +248,7 @@ describe("architecture boundaries", () => {
   })
 
   test("keeps sandbox-manager public types from becoming sandbox handles", () => {
-    const text = fs.readFileSync(path.resolve(import.meta.dirname, "../../../../sandbox-manager/src/index.ts"), "utf8")
+    const text = fs.readFileSync(path.resolve(import.meta.dirname, "../../../../sandbox-manager/src/contract.ts"), "utf8")
     const forbidden = [
       "executeCommand",
       "uploadFile",
@@ -266,9 +266,9 @@ describe("architecture boundaries", () => {
   })
 
   test("keeps SandboxManager wired to a driver, not a provider object", () => {
-    const text = fs.readFileSync(path.resolve(import.meta.dirname, "../../../../sandbox-manager/src/index.ts"), "utf8")
+    const text = fs.readFileSync(path.resolve(import.meta.dirname, "../../../../sandbox-manager/src/contract.ts"), "utf8")
     const start = text.indexOf("export type SandboxManagerOptions = {")
-    const end = text.indexOf("\n\nfunction sandboxId", start)
+    const end = text.indexOf("\n}\n", start)
     expect(start).toBeGreaterThanOrEqual(0)
     expect(end).toBeGreaterThan(start)
 
@@ -280,7 +280,8 @@ describe("architecture boundaries", () => {
   test("keeps SandboxManager storage/auth pluggable", () => {
     const serverSrc = path.resolve(import.meta.dirname, "../..")
     const genericRuntimeHostFiles = [
-      "../../sandbox-manager/src/index.ts",
+      "../../sandbox-manager/src/contract.ts",
+      "../../sandbox-manager/src/manager.ts",
       "../../sandbox-manager/src/stores/memory.ts",
     ]
     const forbiddenTerms = [
