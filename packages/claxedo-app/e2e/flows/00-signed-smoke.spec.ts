@@ -1,6 +1,7 @@
 import { acpScriptToken, assistantText, expect, SCRIPTED_ACP_HARNESS, test, UI } from "../harness"
 
 test("00 signed smoke: a signed-out reader is sent to /login; the owner signs in, opens their turn and logs out", async ({ signed, page, isMobile }) => {
+  expect((await page.request.get(`${signed.url}/api/workspace`)).status()).toBe(401)
   const workspace = await signed.makeWorkspace("signed", "Signed")
   await signed.local.acp.write("hello", { steps: [{ kind: "text", text: "Signed hello" }] })
   const session = await signed.owner.api.createSession(workspace.directory, { title: "Signed turn", harness: SCRIPTED_ACP_HARNESS })
