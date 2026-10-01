@@ -135,6 +135,7 @@ jobs:
           RUST_TARGET: ${{ matrix.target }}
           VITE_CLAXEDO_HOSTED_ACTIVATION: "true"
           CLAXEDO_CORE_ORIGIN: ${{ vars.CLAXEDO_CONTROL_PLANE_URL }}
+          CLAXEDO_RELAY_ORIGINS: ${{ vars.CLAXEDO_WORKSPACE_RELAY_URL }}
         working-directory: packages/claxedo-desktop
         run: bun run build
 

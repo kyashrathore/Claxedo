@@ -507,6 +507,7 @@ async function initialize(serverConnectionStarted: Promise<ServerConnection>) {
       daemonResponses: () => daemonResponses,
       otherwise: rendererContentSecurityListener({
         serverOrigin: serverOrigin.promise,
+        relayOrigins: accountConfig.configured ? accountConfig.relayOrigins ?? [] : [],
         isRendererDocument: isRendererDocumentUrl,
         devServerUrl: process.env.ELECTRON_RENDERER_URL,
       }),

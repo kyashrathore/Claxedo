@@ -11,6 +11,8 @@ export type AccountConfigEnv = {
    * caller and checks the identity hash behind it.
    */
   CLAXEDO_RELEASE_CANARY_JOURNEY_ID?: string
+  /** The deployment's relay origins, comma-separated: public, and the only account origins the renderer reaches. */
+  CLAXEDO_RELAY_ORIGINS?: string
 }
 
 const releaseValidationOperations = [
@@ -30,16 +32,17 @@ export type AccountConfig =
       coreOrigin: string
       releaseValidationOperation?: ReleaseValidationOperation
       canaryJourneyId?: string
+      relayOrigins?: string[]
     }
   | { configured: false; missing: string[] }
 
-function exactHttpsOrigin(value: string | undefined) {
+function exactOrigin(value: string | undefined, protocols: readonly string[]) {
   const raw = value?.trim()
   if (!raw) return undefined
   try {
     const parsed = new URL(raw)
     if (
-      parsed.protocol !== "https:" ||
+      !protocols.includes(parsed.protocol) ||
       parsed.origin !== raw ||
       parsed.pathname !== "/" ||
       parsed.search ||
@@ -56,7 +59,7 @@ function exactHttpsOrigin(value: string | undefined) {
 }
 
 export function readAccountConfig(env: AccountConfigEnv): AccountConfig {
-  const coreOrigin = exactHttpsOrigin(env.CLAXEDO_CORE_ORIGIN)
+  const coreOrigin = exactOrigin(env.CLAXEDO_CORE_ORIGIN, ["https:"])
   if (!coreOrigin) {
     return { configured: false, missing: ["coreOrigin (CLAXEDO_CORE_ORIGIN must be an exact HTTPS origin)"] }
   }
@@ -69,10 +72,16 @@ export function readAccountConfig(env: AccountConfigEnv): AccountConfig {
     }
   }
   const canaryJourneyId = env.CLAXEDO_RELEASE_CANARY_JOURNEY_ID?.trim()
+  const relayEntries = (env.CLAXEDO_RELAY_ORIGINS ?? "").split(",").map((entry) => entry.trim()).filter(Boolean)
+  const relayOrigins = relayEntries.flatMap((entry) => exactOrigin(entry, ["https:", "http:"]) ?? [])
+  if (relayOrigins.length !== relayEntries.length) {
+    return { configured: false, missing: ["relayOrigins (CLAXEDO_RELAY_ORIGINS must list exact HTTP(S) origins)"] }
+  }
   return {
     configured: true,
     coreOrigin,
     ...(releaseValidationOperation ? { releaseValidationOperation } : {}),
     ...(canaryJourneyId ? { canaryJourneyId } : {}),
+    ...(relayOrigins.length ? { relayOrigins } : {}),
   }
 }

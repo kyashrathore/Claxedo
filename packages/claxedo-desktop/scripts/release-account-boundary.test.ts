@@ -17,6 +17,7 @@ describe("desktop release account boundary", () => {
   test("electron-vite bakes only the selected core origin", () => {
     const config = readFileSync(resolve(root, "packages/claxedo-desktop/electron.vite.config.ts"), "utf8")
     expect(config).toContain('"CLAXEDO_CORE_ORIGIN"')
+    expect(config).toContain('"CLAXEDO_RELAY_ORIGINS"')
     for (const name of [
       "CLAXEDO_ACCOUNT_AUTHORIZE_URL",
       "CLAXEDO_ACCOUNT_TOKEN_URL",
@@ -32,6 +33,7 @@ describe("desktop release account boundary", () => {
     test(`${workflow} bakes only the selected core origin`, () => {
       const step = desktopBuildStep(workflow)
       expect(step).toContain("CLAXEDO_CORE_ORIGIN")
+      expect(step).toContain("CLAXEDO_RELAY_ORIGINS")
       for (const name of [
         "CLAXEDO_ACCOUNT_AUTHORIZE_URL",
         "CLAXEDO_ACCOUNT_TOKEN_URL",
