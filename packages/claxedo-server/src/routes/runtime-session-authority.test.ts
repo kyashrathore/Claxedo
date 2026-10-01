@@ -427,7 +427,7 @@ describe("runtime private-session authority oracle", () => {
       ? { active: true }
       : { active: false, code: "runtime_access_token_revoked", reason: "revoked" })
     const authorizeRuntimeSession = vi.fn(async () => {
-      if (!allowed) throw new ControlPlaneAuthError(403, "workspace_authorization_denied", "participant revoked")
+      if (!allowed) throw new ControlPlaneAuthError(403, "workspace_authorization_denied", "session access revoked")
     })
     const target = app({
       authority: {

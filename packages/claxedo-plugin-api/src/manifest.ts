@@ -2,6 +2,8 @@ import { z } from "zod"
 import { PLUGIN_ID_MAX_LENGTH, PLUGIN_ID_PATTERN } from "./id"
 
 export const PLUGIN_NAME_MAX_LENGTH = 80
+
+const STATUS_HOOKS_REFUSAL = "status hook templates are honored only from Claxedo's bundled status-hooks plugin"
 export const PLUGIN_CAPABILITIES = ["tasks", "documents"] as const
 export const PLUGIN_SERVER_ROUTE_PREFIX = "/api/claxedo/"
 export const PLUGIN_BACKEND_METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE"] as const
@@ -47,6 +49,10 @@ export const pluginManifestSchema = z
     requires: z.array(z.enum(PLUGIN_CAPABILITIES)).default([]),
     server: pluginServerAccessSchema.default({ routes: [], operations: [] }),
     backend: pluginBackendSchema.optional(),
+    // A template defines shell wrappers and rewrites files in the person's home,
+    // so only the status-hooks package bundled with Claxedo may declare one;
+    // the runtime reads that package directly, never through a plugin manifest.
+    statusHooks: z.never({ error: STATUS_HOOKS_REFUSAL }).optional(),
   })
   .strict()
 
@@ -66,12 +72,23 @@ export class PluginManifestError extends Error {
   }
 }
 
+export class PluginStatusHooksRefusedError extends PluginManifestError {
+  readonly code = "status_hooks_first_party_only"
+
+  constructor(issues: readonly string[]) {
+    super(issues)
+    this.name = "PluginStatusHooksRefusedError"
+  }
+}
+
 export function readPluginManifest(packageJson: unknown): PluginManifest {
   const parsed = pluginPackageSchema.safeParse(packageJson)
   if (parsed.success) return parsed.data.claxedo
-  throw new PluginManifestError(
-    parsed.error.issues.map((issue) => `${issue.path.length ? issue.path.join(".") : "package.json"}: ${issue.message}`),
-  )
+  const issues = parsed.error.issues.map((issue) => `${issue.path.length ? issue.path.join(".") : "package.json"}: ${issue.message}`)
+  if (parsed.error.issues.some((issue) => issue.path.join(".") === "claxedo.statusHooks")) {
+    throw new PluginStatusHooksRefusedError(issues)
+  }
+  throw new PluginManifestError(issues)
 }
 
 export function pluginRouteAllowed(manifest: PluginManifest, path: string): boolean {

@@ -4,9 +4,8 @@
 [ -z "$CLAXEDO_TAB_ID" ] && exit 0
 
 # Every hook config Claxedo writes names the harness that owns it. Agents
-# replay each other's configs (cursor-agent runs ~/.claude/settings.json) and
-# run each other as tools (Claude's Bash launching `codex exec`); a config
-# firing under a different agent than this terminal's is not this terminal's
+# replay each other's configs and run each other as tools; a config firing
+# under a different agent than this terminal's is not this terminal's
 # lifecycle.
 HARNESS=""
 case "${1:-}" in
@@ -14,13 +13,11 @@ case "${1:-}" in
 esac
 AGENT="$CLAXEDO_AGENT"
 case "$AGENT" in
-  cursor-agent) AGENT="cursor" ;;
+{{ALIASES}}
 esac
 if [ -n "$HARNESS" ]; then
   if [ -z "$AGENT" ]; then
-    # No wrapper set the agent. Cursor stamps CURSOR_VERSION into every hook it
-    # runs, including Claude's replayed config.
-    if [ "$HARNESS" = "claude" ] && [ -n "$CURSOR_VERSION" ]; then exit 0; fi
+{{REPLAY_GUARDS}}
     CLAXEDO_AGENT="$HARNESS"
   elif [ "$HARNESS" != "$AGENT" ]; then
     exit 0

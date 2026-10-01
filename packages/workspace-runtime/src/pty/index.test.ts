@@ -15,6 +15,8 @@ const fakeProcesses = new Map<number, {
   exitHandlers: ExitHandler[]
 }>()
 let nextSpawnPid: number | undefined
+let nextSpawnDelay = 0
+let nextSpawnExit = false
 const nativeKills: number[] = []
 const disposableChildren: ChildProcess[] = []
 
@@ -47,9 +49,14 @@ await mock.module("@lydell/node-pty", () => ({
   spawn(command: string, args: string[], options: { cwd?: string; env?: Record<string, string> }) {
     const pid = nextSpawnPid ?? disposablePid()
     nextSpawnPid = undefined
+    let ready = nextSpawnDelay === 0
+    if (!ready) setTimeout(() => { ready = true }, nextSpawnDelay)
+    nextSpawnDelay = 0
     fakeProcesses.set(pid, { dataHandlers: [], exitHandlers: [] })
+    if (nextSpawnExit) setTimeout(() => { fakeProcesses.get(pid)?.exitHandlers.forEach((handler) => handler({ exitCode: 7 })) }, 10)
+    nextSpawnExit = false
     return {
-      pid,
+      get pid() { return ready ? pid : 0 },
       kill() {
         nativeKills.push(pid)
       },
@@ -62,6 +69,7 @@ await mock.module("@lydell/node-pty", () => ({
       },
       onExit(handler: ExitHandler) {
         fakeProcesses.get(pid)?.exitHandlers.push(handler)
+        return { dispose() { const handlers = fakeProcesses.get(pid)?.exitHandlers; if (handlers) handlers.splice(handlers.indexOf(handler), 1) } }
       },
       command,
       args,
@@ -105,6 +113,34 @@ afterEach(async () => {
 })
 
 describe("Pty lifecycle cleanup", () => {
+  test("retains a native exit observed while waiting for a ConPTY PID", async () => {
+    const { Pty } = await import("./index")
+    nextSpawnPid = 0
+    nextSpawnExit = true
+    const start = Date.now()
+    const info = await Pty.create({ cwd: tmpDir }, ownership, undefined, { platform: "win32" })
+    expect(info.status).toBe("exited")
+    expect(Date.now() - start).toBeLessThan(1000)
+    await Pty.remove(info.id)
+    expect(Pty.get(info.id)).toBeUndefined()
+  })
+
+  test("records ownership only after ConPTY exposes its native PID", async () => {
+    const { Pty } = await import("./index")
+    const pid = disposablePid()
+    nextSpawnPid = pid
+    nextSpawnDelay = 30
+    const recorded: number[] = []
+    const info = await Pty.create({ cwd: tmpDir }, {
+      ...ownership,
+      async recordIdentity(id, identity) { recorded.push(identity.pid); await ownership.recordIdentity(id, identity) },
+    }, undefined, { platform: "win32" })
+    expect(info.pid).toBe(pid)
+    expect(recorded).toEqual([pid])
+    expect(Pty.get(info.id)?.pid).toBe(pid)
+    expect((await Pty.remove(info.id))?.leader).toBe("exited")
+  })
+
   test("persists the opaque create request id in the authoritative PTY inventory", async () => {
     const { Pty } = await import("./index")
     const info = await Pty.create({

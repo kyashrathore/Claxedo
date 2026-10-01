@@ -160,13 +160,15 @@ export function withWorkspaceTarget<T>(target: WorkspaceTarget, run: () => T): T
   }, run)
 }
 
-async function existingPath(input: string) {
+type PathAccess = { path?: typeof path; realpath?: (file: string) => Promise<string> }
+
+async function existingPath(input: string, paths: typeof path, realpath: (file: string) => Promise<string>) {
   let current = input
   while (true) {
     try {
-      return await fs.realpath(current)
+      return await realpath(current)
     } catch {
-      const next = path.dirname(current)
+      const next = paths.dirname(current)
       if (next === current) throw new WorkspaceTargetError("workspace path does not exist")
       current = next
     }
@@ -185,11 +187,12 @@ async function existingPath(input: string) {
 export function workspacePathCandidate(
   root: string,
   input: string,
-  options: { exactInput?: boolean } = {},
+  options: { exactInput?: boolean; path?: typeof path } = {},
 ): string {
+  const paths = options.path ?? path
   const text = options.exactInput ? input : input.trim()
-  if (!text) return path.resolve(root)
-  return path.isAbsolute(text) ? path.resolve(text) : path.resolve(root, text)
+  if (!text) return paths.resolve(root)
+  return paths.isAbsolute(text) ? paths.resolve(text) : paths.resolve(root, text)
 }
 
 export async function resolveWorkspacePath(
@@ -205,27 +208,29 @@ export async function resolveWorkspacePath(
   // arrive with stray whitespace and are trimmed by default; a path git
   // reported does not, and " lead/file.txt" trimmed resolves to a different
   // entry than the one git named.
-  options: { allowAbsoluteWithinRoot?: boolean; exactInput?: boolean } = {},
+  options: PathAccess & { allowAbsoluteWithinRoot?: boolean; exactInput?: boolean } = {},
 ): Promise<string> {
-  const base = path.resolve(root)
+  const paths = options.path ?? path
+  const realpath = options.realpath ?? fs.realpath
+  const base = paths.resolve(root)
   const txt = options.exactInput ? input : input?.trim()
   if (!txt) return base
   if (txt.includes("\0")) throw new WorkspaceTargetError("workspace path cannot contain null bytes")
-  const absolute = path.isAbsolute(txt)
+  const absolute = paths.isAbsolute(txt)
   if (absolute && !options.allowAbsoluteWithinRoot) throw new WorkspaceTargetError("workspace path must be relative")
 
-  const realRoot = await fs.realpath(base)
-  const candidate = workspacePathCandidate(base, txt, { exactInput: true })
+  const realRoot = await realpath(base)
+  const candidate = workspacePathCandidate(base, txt, { exactInput: true, path: paths })
   // Lexical pre-check. An absolute input may already be realpath-resolved
   // (e.g. /private/var/... on macOS) while `base` is not (/var/...), so accept
   // containment under either the raw or the realpath'd root; the realpath check
   // below is the authoritative, symlink-safe boundary.
-  if (!inside(base, candidate) && !inside(realRoot, candidate)) {
+  if (!inside(base, candidate, paths) && !inside(realRoot, candidate, paths)) {
     throw new WorkspaceTargetError("workspace path escapes configured directory")
   }
 
-  const realExisting = await existingPath(candidate)
-  if (!inside(realRoot, realExisting)) throw new WorkspaceTargetError("workspace path escapes configured directory")
+  const realExisting = await existingPath(candidate, paths, realpath)
+  if (!inside(realRoot, realExisting, paths)) throw new WorkspaceTargetError("workspace path escapes configured directory")
 
   return candidate
 }
@@ -236,9 +241,11 @@ export async function resolveWorkspacePath(
 // paths. The scan enforces the command policy on the spellings it finds; it
 // does not parse shell syntax and is not filesystem confinement.
 const commandPathPattern = /(^|[\s"'`=,;(<>{}!|&)])((?:\/|~\/|\.\.?\/|\$HOME\/|\$\{HOME\}\/)[^\s"'`,;|&()<>{}!]+)/g
+const windowsCommandPathPattern = /(^|[\s"'`=,;(<>{}!|&)])((?:[A-Za-z]:[\\/]|[\\/]|~[\\/]|\.\.?[\\/]|\$HOME[\\/]|\$\{HOME\}[\\/]|%USERPROFILE%[\\/]|\$env:USERPROFILE[\\/])[^\s"'`,;|&()<>{}!]+)/gi
+const homeReference = /^(?:~|\$HOME|\$\{HOME\}|%USERPROFILE%|\$env:USERPROFILE)[\\/]/i
 
-function commandPathReferences(input: string) {
-  return [...input.matchAll(commandPathPattern)].map((match) => ({
+function commandPathReferences(input: string, paths: typeof path) {
+  return [...input.matchAll(paths.sep === "\\" ? windowsCommandPathPattern : commandPathPattern)].map((match) => ({
     value: match[2].replace(/[\]}]+$/, ""),
     offset: match.index + match[1].length,
   }))
@@ -252,24 +259,16 @@ function executableReference(input: string, offset: number) {
 export async function resolveWorkspaceCommandPaths(
   root: string,
   input: { command?: string; args?: string[]; allowAbsoluteExecutable?: boolean },
+  options: PathAccess = {},
 ) {
-  for (const reference of commandPathReferences(input.command ?? "")) {
-    if (input.allowAbsoluteExecutable && path.isAbsolute(reference.value) && executableReference(input.command!, reference.offset)) {
-      continue
-    }
-    if (reference.value.startsWith("~/") || reference.value.startsWith("$HOME/") || reference.value.startsWith("${HOME}/")) {
-      throw new WorkspaceTargetError("workspace command path must be relative")
-    }
-    // Absolute paths are permitted only when they resolve inside the workspace
-    // (e.g. hydrated document paths); escapes are still rejected by containment.
-    await resolveWorkspacePath(root, reference.value, { allowAbsoluteWithinRoot: true })
-  }
-  for (const arg of input.args ?? []) {
-    for (const reference of commandPathReferences(arg)) {
-      if (reference.value.startsWith("~/") || reference.value.startsWith("$HOME/") || reference.value.startsWith("${HOME}/")) {
-        throw new WorkspaceTargetError("workspace command path must be relative")
-      }
-      await resolveWorkspacePath(root, reference.value, { allowAbsoluteWithinRoot: true })
+  const paths = options.path ?? path
+  const entries = [{ text: input.command ?? "", executable: input.allowAbsoluteExecutable },
+    ...(input.args ?? []).map((text) => ({ text, executable: false }))]
+  for (const entry of entries) {
+    for (const reference of commandPathReferences(entry.text, paths)) {
+      if (entry.executable && paths.isAbsolute(reference.value) && executableReference(entry.text, reference.offset)) continue
+      if (homeReference.test(reference.value)) throw new WorkspaceTargetError("workspace command path must be relative")
+      await resolveWorkspacePath(root, reference.value, { ...options, allowAbsoluteWithinRoot: true })
     }
   }
 }

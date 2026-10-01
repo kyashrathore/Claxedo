@@ -2586,11 +2586,11 @@ export function createSqliteWorkspaceAuthority(
       // manage — a definite answer for anyone the session admits, not an error.
       if (!session || session.workspace_id !== args.workspaceId || session.deleted_at) {
         if (!orgMemberForUser(db, who, workspace.org_id)) throw new PublicApiError("session_share_admin_required", "session_share_admin_required")
-        return { can_manage_shares: false, grants: [], participants: [], teams: [] }
+        return { can_manage_shares: false, grants: [], teams: [] }
       }
       if (workspace.owner_token_identifier !== who.token_identifier) {
         if (!sessionAdmitsUser(db, workspace, session, who)) throw new PublicApiError("session_share_admin_required", "session_share_admin_required")
-        return { can_manage_shares: false, grants: [], participants: [], teams: [] }
+        return { can_manage_shares: false, grants: [], teams: [] }
       }
       const grants = db.prepare<unknown[], Record<string, unknown>>(`
         SELECT grant_id, session_id, workspace_id, level,
@@ -2598,12 +2598,6 @@ export function createSqliteWorkspaceAuthority(
           granted_to_org_id, granted_to_team_id, created_by_token_identifier AS created_by_user_id,
           created_at, revoked_at
         FROM session_share_grants
-        WHERE session_id = ? AND revoked_at IS NULL
-        ORDER BY created_at ASC
-      `).all(args.sessionId)
-      const participants = db.prepare<unknown[], Record<string, unknown>>(`
-        SELECT participant_actor_id AS user_id, added_by_actor_id AS added_by_user_id, created_at
-        FROM session_participants
         WHERE session_id = ? AND revoked_at IS NULL
         ORDER BY created_at ASC
       `).all(args.sessionId)
@@ -2618,7 +2612,7 @@ export function createSqliteWorkspaceAuthority(
         name: team.name,
         is_shared: sharedTeamIds.has(team.team_id),
       }))
-      return { can_manage_shares: true, grants, participants, teams }
+      return { can_manage_shares: true, grants, teams }
     },
     async resolveRuntimeMachineAccess(actorId, workspaceId) {
       const db = database()

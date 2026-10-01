@@ -12,6 +12,8 @@ Source code and tests do not read or cite these docs.
   desktop hosted-operation matrix, and the transcript typography matrix.
 - [Staging branch](./deploy/staging-branch.md) — how `staging` deploys.
 - [Pi native harness user guide](./pi-native-user-guide.md)
+- [Harnesses and sessions](./harness/README.md) — execution, conversation stores,
+  requests, native subagents, background work and terminal status.
 - [Security: open findings](./security-open-findings.md)
 - [Making Claxedo lighter](./perf/README.md) — what made the app cheaper to
   download, start and switch, plus [agent learnings](./perf/AGENTS.md) for

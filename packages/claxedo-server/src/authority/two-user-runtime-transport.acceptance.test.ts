@@ -367,19 +367,16 @@ describe("two-user signed runtime transport acceptance", () => {
     expect(created.status, await created.clone().text()).toBe(201)
     await expect(created.json()).resolves.toMatchObject({ id: "ses_runtime_private", title: "Private signed runtime" })
 
-    const participant = await signedRequest(alice.token, "/api/control/sessions/ses_runtime_private/participants", {
+    const shared = await signedRequest(alice.token, "/api/control/sessions/ses_runtime_private/shares", {
       method: "POST",
       body: JSON.stringify({
         workspaceId: "ws_runtime_private",
-        participantActorId: bobIdentity.actor_id,
+        grantedToTokenIdentifier: bobIdentity.token_identifier,
+        level: "send",
       }),
     })
-    expect(participant.status).toBe(200)
+    expect(shared.status).toBe(200)
 
-    // Bob participates in Alice's session and holds a reservation of his own.
-    // Neither lets a create name her id: the reservation says which session it
-    // may bring into being, and the runtime asks before it configures, renames
-    // or rolls anything back.
     const bobReserved = await signedRequest(bob.token, "/api/control/session-registrations/reserve", {
       method: "POST",
       body: JSON.stringify({
@@ -556,15 +553,15 @@ describe("two-user signed runtime transport acceptance", () => {
     const replay = await bobReconnect.until((frames) => frames.some((frame) => control(frame)?.info?.title === "during-reconnect-gap"))
     expect(replay.some((frame) => control(frame)?.sessionID === "ses_runtime_private")).toBe(true)
 
-    const removed = await signedRequest(alice.token, "/api/control/sessions/ses_runtime_private/participants", {
+    const removed = await signedRequest(alice.token, "/api/control/sessions/ses_runtime_private/shares", {
       method: "DELETE",
       body: JSON.stringify({
         workspaceId: "ws_runtime_private",
-        participantActorId: bobIdentity.actor_id,
+        grantedToTokenIdentifier: bobIdentity.token_identifier,
       }),
     })
     expect(removed.status).toBe(200)
-    await expect(removed.json()).resolves.toMatchObject({ removed: true })
+    await expect(removed.json()).resolves.toMatchObject({ revoked: true })
     await expect(authority.runtimeAccessTokenActive({
       jti: "jti_runtime_bob",
       workspaceId: "ws_runtime_private",

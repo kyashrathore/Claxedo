@@ -129,6 +129,25 @@ describe("checkPluginApp", () => {
     ])
   })
 
+  test("a plugin that declares status hooks is refused with a coded manifest diagnostic", async () => {
+    const statusHooks = [{
+      command: "example",
+      provider: "example",
+      install: { type: "wrapper-flags", args: [] },
+      events: { Begin: "running" },
+      subagent: [],
+    }]
+    const dir = await writePlugin("hooks", APP, { statusHooks })
+    const checked = await checkPluginApp({ rootDir: dir })
+    expect(checked.ok).toBe(false)
+    expect(checked.diagnostics).toEqual([expect.objectContaining({
+      stage: "manifest",
+      file: "package.json",
+      code: "status_hooks_first_party_only",
+      message: expect.stringContaining("claxedo.statusHooks"),
+    })])
+  })
+
   test("an invalid backend block is a manifest diagnostic", async () => {
     const dir = await writePlugin("routeless", APP, { backend: { ...COUNTER_BACKEND, routes: ["/count"] } })
     const checked = await checkPluginApp({ rootDir: dir })
