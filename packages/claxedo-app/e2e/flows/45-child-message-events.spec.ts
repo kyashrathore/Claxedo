@@ -41,5 +41,4 @@ test("45 native Claude child handback renders as an expandable event", async ({ 
     if (isMobile) expect((await event.locator("summary").boundingBox())!.height).toBeGreaterThanOrEqual(44)
     await testInfo.attach(`child-message-event-${colorScheme}.png`, { body: await event.screenshot(), contentType: "image/png" })
   }
-  await testInfo.attach("child-message-event.png", { body: await event.screenshot(), contentType: "image/png" })
 })

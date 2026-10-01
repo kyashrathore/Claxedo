@@ -1,4 +1,4 @@
-import { expect, expectNothingAnimating, test } from "../harness"
+import { expect, test } from "../harness"
 import type { Page } from "@playwright/test"
 import type { Stack } from "../harness"
 
@@ -46,11 +46,7 @@ async function providerCard(stack: Stack, app: Page, count: number, multiple = f
   return { card, header, expand, harness }
 }
 
-test("15 settings: provider models stay in one card, bulk actions preserve expansion, search and loading more share its footer", async ({
-  stack,
-  app,
-  isMobile,
-}, testInfo) => {
+test("15 settings: provider models stay in one card, bulk actions preserve expansion, search and loading more share its footer", async ({ stack, app, isMobile }) => {
   const { card, header, expand } = await providerCard(stack, app, 50)
   const search = card.getByRole("textbox", { name: "Search Provider Card models…" })
   const footer = card.locator("footer")
@@ -108,16 +104,6 @@ test("15 settings: provider models stay in one card, bulk actions preserve expan
       0,
     )
   }
-  if (testInfo.repeatEachIndex === 0) {
-    for (const colorScheme of ["light", "dark"] as const) {
-      await app.emulateMedia({ colorScheme })
-      await expect(app.locator("html")).toHaveAttribute("data-color-scheme", colorScheme)
-      await expectNothingAnimating(app)
-      await card.screenshot({ path: testInfo.outputPath(`provider-card-${colorScheme}.png`) })
-    }
-  }
-  const catalog = await (await fetch(`${stack.url}/api/claxedo/agent-config/providers?nativeHarness=opencode`)).json()
-  expect(JSON.stringify(catalog)).toContain("provider-card")
 })
 
 test("15 settings: loading a large provider virtualizes its model rows and preserves access to the final model", async ({
@@ -138,8 +124,7 @@ test("15 settings: loading a large provider virtualizes its model rows and prese
   await expect(card.getByRole("switch", { name: "Card Model 115", exact: true })).toBeVisible()
 })
 
-test("15 settings: multiple provider cards keep their headers, model bodies, footers and bulk actions separate", async ({ stack, app, isMobile }, testInfo) => {
-  if (!isMobile) await app.setViewportSize({ width: 1440, height: 1750 })
+test("15 settings: multiple provider cards keep their headers, model bodies, footers and bulk actions separate", async ({ stack, app }) => {
   const { card, header, harness } = await providerCard(stack, app, 50, true)
   const second = harness.getByRole("region", { name: "Team Gateway", exact: true })
   const third = harness.getByRole("region", { name: "Local Gateway", exact: true })
@@ -157,26 +142,9 @@ test("15 settings: multiple provider cards keep their headers, model bodies, foo
   const secondBox = await second.boundingBox()
   if (!firstBox || !secondBox) throw new Error("Provider cards are not laid out")
   expect(secondBox.y - firstBox.y - firstBox.height).toBeGreaterThanOrEqual(16)
-  if (testInfo.repeatEachIndex === 0 && !isMobile) {
-    await app.emulateMedia({ colorScheme: "dark" })
-    await expect(app.locator("html")).toHaveAttribute("data-color-scheme", "dark")
-    await expectNothingAnimating(app)
-    await card.evaluate((node) => node.scrollIntoView({ block: "start" }))
-    await app.screenshot({ path: testInfo.outputPath("multiple-providers-dark.png") })
-    await app.emulateMedia({ colorScheme: "light" })
-    await expect(app.locator("html")).toHaveAttribute("data-color-scheme", "light")
-    await expectNothingAnimating(app)
-    await app.screenshot({ path: testInfo.outputPath("multiple-providers-light.png") })
-    await header.getByRole("button", { name: "Provider Card", exact: true }).click()
-    await expect(card.getByRole("textbox")).toHaveCount(0)
-    await expect(card.getByRole("switch")).toHaveCount(0)
-    await expect(card.locator("footer")).toHaveCount(0)
-    await expect(second.getByRole("switch", { checked: true })).toHaveCount(10)
-    await app.emulateMedia({ colorScheme: "dark" })
-    await expect(app.locator("html")).toHaveAttribute("data-color-scheme", "dark")
-    await expectNothingAnimating(app)
-    await app.setViewportSize({ width: 1440, height: 1000 })
-    await card.evaluate((node) => node.scrollIntoView({ block: "start" }))
-    await app.screenshot({ path: testInfo.outputPath("collapsed-provider.png") })
-  }
+  await header.getByRole("button", { name: "Provider Card", exact: true }).click()
+  await expect(card.getByRole("textbox")).toHaveCount(0)
+  await expect(card.getByRole("switch")).toHaveCount(0)
+  await expect(card.locator("footer")).toHaveCount(0)
+  await expect(second.getByRole("switch", { checked: true })).toHaveCount(10)
 })

@@ -1,8 +1,8 @@
 import { HARNESS_TABLE } from "@claxedo/agent-runtime-contract"
-import { expect, expectNothingAnimating, test } from "../harness"
+import { expect, test } from "../harness"
 import { saveOrgAccount } from "../harness/saved-org-account"
 
-test("15 settings: the local operator removes a saved organization account, cancellation preserves it, and the machine login stays protected", async ({ stack, app, isMobile }, testInfo) => {
+test("15 settings: the local operator removes a saved organization account, cancellation preserves it, and the machine login stays protected", async ({ stack, app, isMobile }) => {
   await stack.daemon.makeWorkspace("remove-account", "Remove account")
   const id = await saveOrgAccount(stack)
   const read = async () => {
@@ -31,12 +31,6 @@ test("15 settings: the local operator removes a saved organization account, canc
   expect(await app.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
   await saved.getByRole("button", { name: "Cancel", exact: true }).click()
   expect((await read()).org.some((account) => account.id === id)).toBe(true)
-  if (testInfo.repeatEachIndex === 0) {
-    await app.emulateMedia({ colorScheme: "dark" })
-    await expect(app.locator("html")).toHaveAttribute("data-color-scheme", "dark")
-    await expectNothingAnimating(app)
-    await accounts.screenshot({ path: testInfo.outputPath("saved-account-remove.png") })
-  }
   await remove.click()
   await remove.click()
   await expect(saved).toHaveCount(0)
