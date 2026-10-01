@@ -300,7 +300,7 @@ describe("hosted organization, team and project access routes on D1", () => {
     expect((await call(carol.token, "POST", `/api/control/invitations/${sent[0]!.token}/accept`)).body)
       .toMatchObject({ user_id: carol.userId, role: "member" })
     expect(await call("dave", "POST", `/api/control/invitations/${sent[1]!.token}/accept`))
-      .toMatchObject({ status: 403, body: { error: { code: "invitation_email_mismatch" } } })
+      .toMatchObject({ status: 403, body: { error: { code: "org_invitation_email_mismatch" } } })
   })
 
   test("a caller who does not administer the org learns nothing about whether an email has an account", async () => {

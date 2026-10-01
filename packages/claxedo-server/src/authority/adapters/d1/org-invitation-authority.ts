@@ -46,7 +46,7 @@ export class D1OrgInvitationAuthority implements D1OrgInvitationAuthorityPort {
     if (args.role === "owner" && !(await may(this.context.database, who, "own", { kind: "org", orgId }))) {
       throw new D1AccessAuthorityError("org_owner_required")
     }
-    if (!this.delivery?.sendInvitation) throw new D1AccessAuthorityError("invitation_delivery_unavailable")
+    if (!this.delivery?.sendInvitation) throw new D1AccessAuthorityError("org_invitation_delivery_unavailable")
     const token = Array.from(crypto.getRandomValues(new Uint8Array(32)), (byte) =>
       byte.toString(16).padStart(2, "0"),
     ).join("")
@@ -125,12 +125,12 @@ export class D1OrgInvitationAuthority implements D1OrgInvitationAuthorityPort {
       invitation.revoked_at !== null ||
       invitation.expires_at <= this.context.now()
     ) {
-      throw new D1AccessAuthorityError("invitation_invalid")
+      throw new D1AccessAuthorityError("org_invitation_invalid")
     }
     this.context.assertOrganizationAllowed(invitation.org_id)
     const email = await this.delivery?.verifiedEmail(auth)
     if (!email || email.trim().toLowerCase() !== invitation.email)
-      throw new D1AccessAuthorityError("invitation_email_mismatch")
+      throw new D1AccessAuthorityError("org_invitation_email_mismatch")
     return new D1OrgMemberAuthority(this.context).acceptInvitationMembership(who, invitation)
   }
 

@@ -231,7 +231,7 @@ export class D1OrgMemberAuthority implements D1OrgMemberAuthorityPort {
         .bind(now, invitation.id, now),
     ])
     if (membership.meta.changes !== 1 || accepted.meta.changes !== 1)
-      throw new D1AccessAuthorityError("invitation_invalid")
+      throw new D1AccessAuthorityError("org_invitation_invalid")
     return { user_id: who.userId, public_id: who.userId, role: invitation.role, joined_at: now }
   }
 

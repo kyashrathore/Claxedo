@@ -144,7 +144,7 @@ Invitations expire after seven days, are single-use, and may be revoked by an or
 
 The link opens `/invitations/:token` in the app. A person without an account signs up, verifies their email, and returns to that page for the same signed accept call. In a user-deployed product, sign-up after the deployment owner exists provisions an identity with no membership. The founding owner's bootstrap is separate from invitation membership.
 
-The composition reuses `AuthEmailSender`; no email vendor is selected here. With no sender composed, creating an invitation answers `503 invitation_delivery_unavailable`. A delivery failure revokes the undelivered invitation and preserves the generic 202 receipt, so sender failures cannot reveal whether a recipient address has an account. Delivery health must be monitored by the deployment's sender.
+The composition reuses `AuthEmailSender`; no email vendor is selected here. With no sender composed, creating an invitation answers `503 org_invitation_delivery_unavailable`. A delivery failure revokes the undelivered invitation and preserves the generic 202 receipt, so sender failures cannot reveal whether a recipient address has an account. Delivery health must be monitored by the deployment's sender.
 
 ## Routes
 

@@ -112,7 +112,7 @@ describe("D1 organization invitations", () => {
       after: "admin",
     })
     await expect(invitations.acceptOrgInvitation(invitee, { token })).rejects.toMatchObject({
-      code: "invitation_invalid",
+      code: "org_invitation_invalid",
     })
     expect(
       (await database
@@ -131,7 +131,7 @@ describe("D1 organization invitations", () => {
         revoked: true,
       })
     await expect(invitations.acceptOrgInvitation(invitee, { token })).rejects.toMatchObject({
-      code: "invitation_invalid",
+      code: "org_invitation_invalid",
     })
     expect(
       await database
@@ -164,11 +164,11 @@ describe("D1 organization invitations", () => {
     const { invitations, invite, invitee, other, verifiedEmail } = await setup()
     const { token } = await invite()
     await expect(invitations.acceptOrgInvitation(other, { token })).rejects.toMatchObject({
-      code: "invitation_email_mismatch",
+      code: "org_invitation_email_mismatch",
     })
     verifiedEmail.mockResolvedValueOnce(undefined as never)
     await expect(invitations.acceptOrgInvitation(invitee, { token })).rejects.toMatchObject({
-      code: "invitation_email_mismatch",
+      code: "org_invitation_email_mismatch",
     })
     await expect(invitations.acceptOrgInvitation(invitee, { token })).resolves.toMatchObject({ role: "admin" })
   })
