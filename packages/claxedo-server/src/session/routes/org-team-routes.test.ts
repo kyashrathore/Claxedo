@@ -1,8 +1,10 @@
+import { PublicApiError } from "@claxedo/server-core/platform/errors/public-api-error"
 import { Hono } from "hono"
-import { describe, expect, test } from "vitest"
+import { describe, expect, test, vi } from "vitest"
 import { ControlPlaneAuthError } from "@claxedo/server-core/platform/auth/auth"
 
 import { orgTeamErrorResponse } from "./org-team-routes"
+import { peopleErrorResponse } from "../session-people-contract"
 
 function responseFor(error: unknown) {
   return new Hono().get("/", (context) => orgTeamErrorResponse(context, error)).request("http://test/")
@@ -10,19 +12,31 @@ function responseFor(error: unknown) {
 
 describe("organization/team route error contract", () => {
   test.each([
-    [new Error("org_admin_required"), 403, "org_admin_required"],
-    [new Error("org_membership_required"), 403, "org_membership_required"],
-    [new Error("team_member_org_membership_required"), 403, "team_member_org_membership_required"],
-    [new Error("team_not_allowed_on_personal_org"), 400, "team_not_allowed_on_personal_org"],
-    [new Error("team_member_target_required"), 400, "team_member_target_required"],
-    [new Error("Organization not found"), 404, "organization_not_found"],
-    [new Error("Team not found"), 404, "team_not_found"],
-    [new Error("team_member_not_found"), 404, "team_member_not_found"],
-    [new Error("Project not found"), 404, "project_not_found"],
+    [orgTeamErrorResponse, new PublicApiError("session_share_admin_required")],
+    [peopleErrorResponse, new PublicApiError("org_admin_required")],
+  ])("keeps error policy within its domain", (respond, error) => {
+    expect(() => respond({ json: vi.fn(() => new Response()) } as never, error)).toThrow(error)
+  })
+  test("uses a typed code even when the message names a different refusal", async () => {
+    const error = Object.assign(new Error("org_admin_required"), { code: "team_not_found", status: 404, retryable: false })
+    expect((await responseFor(error)).status).toBe(404)
+  })
+  test("does not classify untyped message text", () => {
+    expect(() => orgTeamErrorResponse({} as never, new Error("org_admin_required"))).toThrow("org_admin_required")
+  })
+  test.each([
+    [new PublicApiError("org_admin_required"), 403, "org_admin_required"],
+    [new PublicApiError("org_membership_required"), 403, "org_membership_required"],
+    [new PublicApiError("team_member_org_membership_required"), 403, "team_member_org_membership_required"],
+    [new PublicApiError("team_not_allowed_on_personal_org"), 400, "team_not_allowed_on_personal_org"],
+    [new PublicApiError("team_member_target_required"), 400, "team_member_target_required"],
+    [new PublicApiError("organization_not_found"), 404, "organization_not_found"],
+    [new PublicApiError("team_not_found"), 404, "team_not_found"],
+    [new PublicApiError("team_member_not_found"), 404, "team_member_not_found"],
+    [new PublicApiError("project_not_found"), 404, "project_not_found"],
     [Object.assign(new Error("owner"), { code: "org_owner_protected" }), 409, "org_owner_protected"],
     [Object.assign(new Error("owner"), { code: "org_owner_required" }), 403, "org_owner_required"],
     [Object.assign(new Error("member"), { code: "org_member_not_found" }), 404, "org_member_not_found"],
-    [Object.assign(new Error("target"), { code: "org_member_target_required" }), 400, "org_member_target_required"],
     [Object.assign(new Error("admin"), { code: "project_admin_required" }), 403, "project_admin_required"],
     [Object.assign(new Error("member"), { code: "project_member_not_found" }), 404, "project_member_not_found"],
     [Object.assign(new Error("org"), { code: "project_member_org_membership_required" }), 403, "project_member_org_membership_required"],

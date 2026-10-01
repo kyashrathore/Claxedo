@@ -123,3 +123,16 @@ test("33 phone: what a mouse reveals on hover shows on touch, and icon buttons k
   await expect(app.getByRole("button", { name: "Close Touch", exact: true })).toHaveCSS("opacity", "1")
   expect(pages.requested).toEqual(["/preview.html"])
 })
+
+
+test("33 phone: an invitation link uses the auth screen without horizontal scroll and has touch targets", async ({ stack, app }) => {
+  await app.goto(`${stack.url}/invitations/phone-invitation`)
+  await expect(app.getByRole("heading", { name: "Join your organization" })).toBeVisible()
+  await expect(app.getByText("Use the email address that received this invitation.")).toBeVisible()
+  await expectNoHorizontalScroll(app)
+  const button = app.getByRole("button").first()
+  await expect(button).toBeVisible()
+  const target = await button.boundingBox()
+  expect(target?.width).toBeGreaterThanOrEqual(44)
+  expect(target?.height).toBeGreaterThanOrEqual(44)
+})

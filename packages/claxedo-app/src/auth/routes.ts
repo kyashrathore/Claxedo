@@ -1,7 +1,7 @@
 import type { Component } from "solid-js"
 import { CliLoginPage } from "./view/cli-login"
 import { DeviceApprovalPage } from "./view/device-approval"
-import { LoginPage } from "./view/login"
+import { LoginPage, OrgInvitationPage } from "./view/login"
 import { OAuthConsentPage } from "./view/oauth-consent"
 
 export type AuthRoute = {
@@ -11,6 +11,7 @@ export type AuthRoute = {
 }
 
 export const authRoutes: readonly AuthRoute[] = [
+  { id: "orgInvitation", path: "/invitations", view: OrgInvitationPage },
   { id: "login", path: "/login", view: LoginPage },
   { id: "deviceApproval", path: "/device", view: DeviceApprovalPage },
   { id: "oauthConsent", path: "/oauth/consent", view: OAuthConsentPage },

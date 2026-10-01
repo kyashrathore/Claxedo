@@ -26,6 +26,7 @@
       "version": "0.1.0",
       "dependencies": {
         "@claxedo/helpers": "workspace:*",
+        "@claxedo/plugin-api": "workspace:*",
       },
       "devDependencies": {
         "@tsconfig/node-lts": "22.0.4",
@@ -205,6 +206,9 @@
     "packages/claxedo-host-connector": {
       "name": "@claxedo/host-connector",
       "version": "0.1.0",
+      "dependencies": {
+        "@claxedo/account-contract": "workspace:*",
+      },
       "devDependencies": {
         "@tsconfig/node-lts": "22.0.4",
         "@types/bun": "1.3.13",
@@ -449,6 +453,7 @@
         "claxedo": "dist/index.mjs",
       },
       "dependencies": {
+        "@claxedo/account-contract": "workspace:*",
         "@claxedo/process-ownership": "workspace:*",
         "@claxedo/workspace-runtime": "workspace:*",
         "better-sqlite3": "13.0.1",

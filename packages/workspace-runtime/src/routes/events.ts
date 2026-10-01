@@ -1,7 +1,6 @@
 import { streamSSE } from "hono/streaming"
 import { attachSseFanout, type SseReplayBuffer } from "../projection/sse"
 import { isRetainedPresentationEvent } from "../projection/presentation-events"
-import { presentationEventsFromRuntimeEnvelope } from "../projection/client-presentation/runtime-envelope"
 import { EVENT_STREAM_HEARTBEAT_MS } from "@claxedo/agent-runtime-contract"
 import type { AgentEventEnvelope, AgentSessionStarts, AgentPresentationEvent } from "@claxedo/agent-runtime-contract"
 import type { Context } from "hono"
@@ -490,16 +489,12 @@ export function workspaceEventsHandler(options: WorkspaceEventsOptions) {
         fn(frame)
       }
       const unsubscribePresentation = options.eventHub.subscribeGlobal((event) => emit(event))
-      const unsubscribeRuntime = options.eventHub.subscribeRuntime((envelope) => {
-        for (const event of presentationEventsFromRuntimeEnvelope(envelope)) emit(event)
-      })
       const unsubscribeControl = bus.subscribe((event) => {
         if (!owns(event)) return
         emit({ directory: "directory" in event && event.directory ? event.directory : options.directory, payload: unownedLifecyclePayload(event) })
       })
       return () => {
         unsubscribePresentation()
-        unsubscribeRuntime()
         unsubscribeControl()
       }
     },

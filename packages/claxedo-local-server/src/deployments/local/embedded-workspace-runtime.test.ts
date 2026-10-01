@@ -1094,7 +1094,7 @@ describe("the daemon lifecycle on its real work sources", () => {
 })
 
 describe("attaching to an embedded workspace terminal", () => {
-  const relayed = (role: "viewer" | "editor" = "editor"): EmbeddedRelayHostIdentity => ({
+  const relayed = (sessionId?: string): EmbeddedRelayHostIdentity => ({
     principal_kind: "user",
     actor_id: "actor_member",
     actor_kind: "human",
@@ -1102,7 +1102,8 @@ describe("attaching to an embedded workspace terminal", () => {
     actor_name: "Member",
     org_id: "org_1",
     workspace_id: "ws_terminal",
-    role,
+    role: sessionId ? "viewer" : "owner",
+    ...(sessionId ? { session_id: sessionId } : {}),
   })
 
   function policyDeciding(verdict: (operation: string) => boolean) {
@@ -1170,13 +1171,13 @@ describe("attaching to an embedded workspace terminal", () => {
         path: `/api/wr/pty/${pty.id}/connect`,
       }
 
-      const viewer = await attachEmbeddedWorkspacePty({ ...request, identity: relayed("viewer") })
+      const shareHolder = await attachEmbeddedWorkspacePty({ ...request, identity: relayed("ses_1") })
       const member = await attachEmbeddedWorkspacePty({ ...request, identity: relayed() })
       const owner = await attachEmbeddedWorkspacePty(request)
 
-      expect(viewer.ok ? undefined : viewer.response.status).toBe(403)
+      expect(shareHolder.ok ? undefined : shareHolder.response.status).toBe(403)
       expect(member.ok ? undefined : member.response.status).toBe(403)
-      // A workspace viewer never reaches the session question at all.
+      // A token scoped to one session never reaches the session question at all.
       expect(refusing.asked).toEqual(["pty_read"])
       // The machine's own user carries no identity, so the policy has nobody
       // to refuse and the socket is its own.

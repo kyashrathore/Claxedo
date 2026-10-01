@@ -1,4 +1,5 @@
-import { createHostKeyPair, enrollmentPayload, newHostId } from "../../../claxedo-host-connector/src/host-identity"
+import { enrollmentPayload } from "@claxedo/account-contract/machine"
+import { createHostKeyPair, newHostId } from "../../../claxedo-host-connector/src/host-identity"
 import { createMachineSignedTransport } from "../../../claxedo-host-connector/src/machine-transport"
 import { createHostConnector, type HostEndpoints } from "../../../claxedo-host-connector/src/connector"
 import { hostedFetch, type HostedPerson } from "../../../harness/e2e/harness/hosted-auth"

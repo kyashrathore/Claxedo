@@ -205,7 +205,10 @@ export const desktopMainComposition: Policy = {
   // `shared/` diagnostics transport — and with them `zod`,
   // `@vscode/windows-process-tree`, `node:readline` and `node:util`.
   // 87/24 with the plugin id subpath above, no headroom.
-  ceilings: { modules: 87, packages: 24 },
+  // -1 module: the hosted operation table is `@claxedo/account-contract`'s
+  // own, so `account/hosted-operations.ts` is gone; the plugin id subpath now
+  // arrives through that package. 86/24, no headroom.
+  ceilings: { modules: 86, packages: 24 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-main.json",
     minModules: 35,
@@ -213,11 +216,10 @@ export const desktopMainComposition: Policy = {
     requiredModules: [
       `${DESKTOP}/main/index.ts`,
       `${DESKTOP}/main/account/lazy-account.ts`,
-      // The closed operation table and its IPC registration, eager so that an
+      // The IPC registration over the closed operation table, eager so that an
       // unsigned launch answers every account channel without constructing the
       // credential-bearing adapter.
       `${DESKTOP}/main/account/account-ipc.ts`,
-      `${DESKTOP}/main/account/hosted-operations.ts`,
       `${DESKTOP}/main/host-connector/electron-child.ts`,
       `${DESKTOP}/main/host-connector/child-supervisor.ts`,
     ],
@@ -253,10 +255,9 @@ export const desktopAccountComposition: Policy = {
     minModules: 10,
     requiredModules: [
       `${DESKTOP}/main/account/index.ts`,
-      `${DESKTOP}/main/account/hosted-operations.ts`,
       `${DESKTOP}/main/account/credential-store.ts`,
     ],
-    requiredPackages: ["electron"],
+    requiredPackages: ["electron", "@claxedo/account-contract"],
   },
 
   // 17 modules and 7 packages, no headroom. `account/no-reuse-fetch.ts`, the
@@ -266,11 +267,12 @@ export const desktopAccountComposition: Policy = {
   // composition, and `@claxedo/helpers/claxedo-credentials` is its file shape
   // and path. The `@claxedo/helpers` subpaths (`fs`, `guards`, `readers`,
   // `string`) are leaves over node builtins already in this closure.
-  // `@claxedo/plugin-api/id` is the plugin id rule `hosted-operations.ts`
-  // applies to `plugin.request`, one zod-free module: 17 modules, 8 packages.
-  ceilings: { modules: 17, packages: 8 },
-  // The emitted list names the credential-bearing half only. `hosted-operations.ts`
-  // and `account-ipc.ts` are reached from the base entry through
+  // `@claxedo/plugin-api/id` is the plugin id rule `@claxedo/account-contract`
+  // applies to `plugin.request`, one zod-free module. The operation table is
+  // that package's own: 16 modules, 8 packages.
+  ceilings: { modules: 16, packages: 8 },
+  // The emitted list names the credential-bearing half only. `account-ipc.ts`
+  // and the operation table are reached from the base entry through
   // `lazy-account.ts`, so Rollup places them in `index.js`, and
   // `desktopMainComposition` requires them there: the closed channel set is
   // registered at startup precisely so signing in is what loads the adapter.

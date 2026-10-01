@@ -2,7 +2,7 @@ import assert from "node:assert/strict"
 import fs from "node:fs/promises"
 import path from "node:path"
 import { assistantText } from "../harness/api"
-import { hostedFetch, signInHostedPerson } from "../harness/hosted-auth"
+import { hostedFetch, inviteHostedPerson, signInHostedPerson } from "../harness/hosted-auth"
 import { hostedApi, hostedOwner, hostedWorkspace } from "../harness/hosted-flow"
 import { startHostedStack } from "../harness/hosted-stack"
 import { frameSessionId, frameType, openEventStream } from "../harness/stream"
@@ -14,11 +14,11 @@ export async function run() {
     const owner = await hostedOwner(stack)
     const member = await signInHostedPerson(stack, "hosted-person-b")
     assert.notEqual(owner.id, member.id)
-    const admitted = await hostedFetch(stack, "/api/control/user-deployed/identity-admissions", {
-      method: "POST", headers: { "content-type": "application/json" },
-      body: JSON.stringify({ subject: member.id, role: "member" }),
-    }, owner)
-    assert.equal(admitted.status, 200, `hosted member admission: ${await admitted.text()}`)
+    const invitationToken = await inviteHostedPerson(stack, owner, member, "hosted-e2e-organization")
+    const accepted = await hostedFetch(stack, "/api/control/invitations/accept", {
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ token: invitationToken }),
+    }, member)
+    assert.equal(accepted.status, 200, `hosted invitation acceptance: ${await accepted.text()}`)
     for (const [person, key] of [[owner, "hosted-owner-key"], [member, "hosted-member-key"]] as const) {
       const stored = await hostedFetch(stack, "/auth/openai?harness=pi", {
         method: "PUT", headers: { "content-type": "application/json" },

@@ -1,3 +1,5 @@
+import { ClaxedoError } from "../errors/base"
+import { encodeApiError } from "@claxedo/helpers/api-error"
 import { LOCAL_USER_ID } from "./local-identity"
 
 export type EnabledConfig = {
@@ -52,7 +54,7 @@ export type ControlPlaneAuthContext =
       reason: string
     }
 
-export class ControlPlaneAuthError extends Error {
+export class ControlPlaneAuthError extends ClaxedoError {
   constructor(
     public readonly status: 400 | 401 | 403 | 503,
     public readonly code:
@@ -78,13 +80,14 @@ export class ControlPlaneAuthError extends Error {
       | "session_registration_unavailable"
       | "invalid_session_request"
       | "harness_required"
+      | "session_owner_unresolved"
       | "machine_dispatch_unavailable"
       | "runtime_access_token_signer_unavailable"
       | "host_tunnel_token_signer_unavailable"
       | "supervisor_backplane_token_signer_unavailable",
     message: string,
   ) {
-    super(message)
+    super({ status, code, message })
   }
 }
 
@@ -349,17 +352,12 @@ export async function controlPlaneAuthContext(
 }
 
 export function controlPlaneAuthErrorBody(err: ControlPlaneAuthError) {
-  return {
-    error: {
-      code: err.code,
-      message: err.message,
-    },
-  }
+  return encodeApiError(err)
 }
 import { bearerToken } from "@claxedo/helpers/string"
+import { type AuthAdapterId } from "@claxedo/account-contract/auth"
 import {
   AuthenticationError,
-  type AuthAdapterId,
   type ControlPlanePrincipal,
   type RequestAuthenticationAdapter,
 } from "./authentication"

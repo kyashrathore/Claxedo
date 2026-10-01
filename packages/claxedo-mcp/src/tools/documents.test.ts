@@ -22,11 +22,16 @@ const PLAN: DocumentRow = {
   content: "also secret",
 }
 
-type Service = { rows: readonly DocumentRow[]; mounted: boolean; calls: Array<{ method: string; path: string; body?: unknown }> }
+type Service = {
+  rows: readonly DocumentRow[]
+  mounted: boolean
+  viewOnly: readonly string[]
+  calls: Array<{ method: string; path: string; body?: unknown }>
+}
 
 /** The documents service as `documents/routes/index.ts` answers: a bare array to list, ids and a path to agent-open. */
 function documentsService(input: Partial<Service> = {}): Service & { fetch: ClaxedoFetch } {
-  const state: Service = { rows: [PLAN], mounted: true, calls: [], ...input }
+  const state: Service = { rows: [PLAN], mounted: true, viewOnly: [], calls: [], ...input }
   const fetchLike: ClaxedoFetch = async (requestPath, init) => {
     const body = typeof init?.body === "string" ? JSON.parse(init.body) : undefined
     state.calls.push({ method: init?.method ?? "GET", path: requestPath, ...(body ? { body } : {}) })
@@ -40,6 +45,9 @@ function documentsService(input: Partial<Service> = {}): Service & { fetch: Clax
     if (open) {
       const row = state.rows.find((candidate) => candidate.id === decodeURIComponent(open[1]))
       if (!row) return Response.json({ error: { code: "document_not_found", message: "no such document" } }, { status: 404 })
+      if (state.viewOnly.includes(String(row.id))) {
+        return Response.json({ error: { code: "document_not_found", message: "Document not found" } }, { status: 404 })
+      }
       return Response.json({
         document_id: row.id,
         display_name: row.display_name,
@@ -221,6 +229,16 @@ describe("documents_open", () => {
     expect((await call(client, "documents_open", { project: "proj_1", document: "doc_a" })).text).toBe(
       "Opening a document grants a path to one session; name the session it is for.",
     )
+  })
+
+  test("answers the service's refusal for a page this caller may read but not edit", async () => {
+    const service = documentsService({ viewOnly: ["doc_plan"] })
+    const { url } = await listen(service)
+    const client = await connect(url, "cli-jwt")
+    expect(await call(client, "documents_open", { document: "doc_plan", project: "proj_1", session: "ses_1" })).toEqual({
+      text: "Document not found",
+      isError: true,
+    })
   })
 
   test("refuses a document reference whose percent escapes are malformed", async () => {

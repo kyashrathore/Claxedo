@@ -28,6 +28,8 @@ export type EmbeddedRelayHostAuth = {
   workspace_id: string
   org_id: string
   role: "viewer" | "editor" | "admin" | "owner"
+  /** The one session the relayed token reaches, when it is a share holder's. */
+  session_id?: string
   host_id?: string
   backing?: "cloud-vm" | "local-worktree"
 }
@@ -35,6 +37,7 @@ export type EmbeddedRelayHostAuth = {
 type EmbeddedActor = RuntimeActor & {
   orgId: string
   role: "viewer" | "editor" | "admin" | "owner"
+  sessionId?: string
 }
 
 export function embeddedRelayHostAuthFromActor(
@@ -57,6 +60,7 @@ export function embeddedRelayHostAuthFromActor(
     workspace_id: workspaceId,
     org_id: actor.orgId,
     role: actor.role,
+    ...(actor.sessionId ? { session_id: actor.sessionId } : {}),
   }
 }
 
@@ -75,6 +79,7 @@ export function parseEmbeddedRelayHostAuthHeader(value: string | undefined): Emb
     const workspace_id = stringClaim(row, "workspace_id")
     const org_id = stringClaim(row, "org_id")
     const role = roleClaim(row)
+    const session_id = stringClaim(row, "session_id")
     if (
       !principal_kind
       || (row.user_id !== undefined && !stringClaim(row, "user_id"))
@@ -87,6 +92,7 @@ export function parseEmbeddedRelayHostAuthHeader(value: string | undefined): Emb
       || !workspace_id
       || !org_id
       || !role
+      || (row.session_id !== undefined && !session_id)
     ) return undefined
     return {
       principal_kind,
@@ -99,6 +105,7 @@ export function parseEmbeddedRelayHostAuthHeader(value: string | undefined): Emb
       workspace_id,
       org_id,
       role,
+      ...(session_id ? { session_id } : {}),
       ...(stringClaim(row, "host_id") ? { host_id: stringClaim(row, "host_id") } : {}),
     }
   } catch {

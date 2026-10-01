@@ -64,8 +64,8 @@ export async function startHostedStack(label: string, options: HostedStackOption
     gitUrl: git.url,
     relayUrl,
     outboundAttempts: control.outboundAttempts,
-    sentEmails: control.sentEmails,
     provisionOwnerClaim: control.provisionOwnerClaim,
+    recordedEmailActionUrl: control.recordedEmailActionUrl,
     close: async () => {
       await relay.close()
       await control.close()

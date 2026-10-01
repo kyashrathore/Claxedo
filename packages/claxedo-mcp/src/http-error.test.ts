@@ -2,6 +2,9 @@ import { describe, expect, it } from "vitest"
 import { McpHttpError, mcpHttpError } from "./http-error"
 
 describe("MCP HTTP errors", () => {
+  it("does not accept a second top-level error protocol", () => {
+    expect(mcpHttpError(403, { code: "denied", message: "denied" }).code).toBeUndefined()
+  })
   it("preserves a structured server status and code", () => {
     const error = mcpHttpError(404, {
       error: { code: "not_found", message: "Stream not found", retryable: false },

@@ -1,3 +1,4 @@
+import { ClaxedoError } from "@claxedo/server-core/platform/errors/base"
 import { nonEmptyString } from "@claxedo/helpers/guards"
 import { Hono } from "hono"
 import { HTTPException } from "hono/http-exception"
@@ -237,7 +238,7 @@ export function SessionMetaRoutes(options: Options = {}) {
           readRuntimeStatus: readMountedEmbeddedWorkspaceRuntime,
         }))
       } catch (err) {
-        if (err instanceof Error && err.message === "invalid_session_list_cursor") {
+        if (err instanceof ClaxedoError && err.code === "invalid_session_list_cursor") {
           return c.json({
             error: {
               code: "invalid_session_list_cursor",

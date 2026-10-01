@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "type": "module",
   "private": true,
-  "description": "The account vocabulary the app and the servers share, and the closed set of hosted operations a renderer may ask Electron main to run with their result decoders",
+  "description": "The account vocabulary and hosted operation declarations shared by the app, desktop and server",
   "types": "./src/index.ts",
   "exports": {
     ".": {
@@ -13,6 +13,18 @@
     "./vocabulary": {
       "types": "./src/vocabulary.ts",
       "default": "./src/vocabulary.ts"
+    },
+    "./machine": {
+      "types": "./src/machine.ts",
+      "default": "./src/machine.ts"
+    },
+    "./machine-seal": {
+      "types": "./src/machine-seal.ts",
+      "default": "./src/machine-seal.ts"
+    },
+    "./auth": {
+      "types": "./src/auth.ts",
+      "default": "./src/auth.ts"
     }
   },
   "scripts": {
@@ -25,6 +37,7 @@
     "typescript": "catalog:"
   },
   "dependencies": {
-    "@claxedo/helpers": "workspace:*"
+    "@claxedo/helpers": "workspace:*",
+    "@claxedo/plugin-api": "workspace:*"
   }
 }

@@ -5,6 +5,9 @@ import { allowedOriginPatterns } from "@claxedo/server-core/platform/http/cors-o
 import { securityHeaders } from "@claxedo/server-core/platform/http/security-headers"
 import { browserAuthHttpSecurity } from "@claxedo/server-core/platform/http/browser-auth-security"
 import type { RequestAuthenticationAdapter } from "@claxedo/server-core/platform/auth/authentication"
+import type { DocumentsBackend } from "@claxedo/server-core/documents/backend"
+import { DocumentsRoutes } from "@claxedo/server-core/documents/routes/index"
+import { PublicDocumentRoutes } from "@claxedo/server-core/documents/routes/public"
 import {
   DEPLOYMENT_MODE_ENV,
   DeploymentModeError,
@@ -31,10 +34,6 @@ import { RuntimeSessionAuthorityRoutes } from "../../routes/runtime-session-auth
 import type { SandboxPassRegister } from "../../platform/auth/sandbox-pass-register"
 import { createOwnerGrantProof } from "../../session/owner-grant"
 import { PrivateSessionRegistrationRoutes } from "../../routes/private-session-registration"
-import {
-  UserDeployedIdentityAdmissionRoutes,
-  type UserDeployedIdentityAdmission,
-} from "../../routes/user-deployed-identity-admission"
 import { OrgTeamControlRoutes } from "../../session/routes/org-team-routes"
 import { SessionPeopleControlRoutes } from "../../session/routes/session-people-routes"
 import { createRouteOwnership, mountOwnedRoute, withRouteOwnership } from "../route-ownership"
@@ -91,6 +90,7 @@ export type HostedCoreProductWorkspaceOptions = Pick<
 >
 
 export type HostedCoreAppOptions = {
+  documents?: DocumentsBackend
   idempotency: IdempotencyCoordinator
   authentication: RequestAuthenticationAdapter
   relayTargetLookup?: RelayTargetLookup
@@ -103,7 +103,6 @@ export type HostedCoreAppOptions = {
   agentConfigRepository?: UserAgentConfigRepository
   settingsChanged?: (userId: string) => Promise<void>
   credentialsChanged?: (orgId: string) => Promise<void>
-  userDeployedIdentityAdmission?: UserDeployedIdentityAdmission
   /**
    * Build-composed product route families (Agent Plugins today). An entry
    * passes an explicit array; the base core passes none and imports no
@@ -199,9 +198,6 @@ export function assertHostedCoreBootConfig(plane: HostedControlPlane, options: P
   if (!options.cloudWorkspaceAdmission) failures.push("cloud workspace admission policy is not composed")
   if (!options.product) failures.push("static product descriptor is not composed")
   if (!options.requestGuardExemptions) failures.push("product request-guard inventory is not composed")
-  if (options.product?.productPosture === "user-deployed" && !options.userDeployedIdentityAdmission) {
-    failures.push("user-deployed identity admission is not composed")
-  }
   if (failures.length) {
     throw new HostedWorkerCompositionError(
       "hosted_core_composition_invalid",
@@ -386,6 +382,24 @@ export function createHostedCoreApp(plane: HostedControlPlane, options: HostedCo
     }),
   )
 
+  if (options.documents) {
+    app.route(
+      "/documents",
+      DocumentsRoutes({
+        backend: options.documents,
+        authority: requireAuthority(services),
+        authentication: options.authentication,
+        env: plane.env,
+      }),
+    )
+    app.route(
+      "/p",
+      PublicDocumentRoutes({
+        backend: options.documents,
+        rateLimit: async (key) => (await options.sharedRateLimitStore.check(key)).allowed,
+      }),
+    )
+  }
   mountSessionReadRoutes(app, plane, options.authentication)
 
   app.route(
@@ -405,18 +419,6 @@ export function createHostedCoreApp(plane: HostedControlPlane, options: HostedCo
       services,
     }),
   )
-  // The user-deployed product keeps provider verification and application
-  // membership separate. Only this explicit owner/admin lifecycle route may
-  // turn a provider-verified subject into a canonical app principal.
-  if (options.userDeployedIdentityAdmission) {
-    app.route(
-      "/api/control",
-      UserDeployedIdentityAdmissionRoutes({
-        authentication: options.authentication,
-        admission: options.userDeployedIdentityAdmission,
-      }),
-    )
-  }
   app.route(
     "/api/control",
     OrgTeamControlRoutes(services, {

@@ -33,7 +33,6 @@ import {
   runtimeStoreRoot,
   seedFinishedChildStore,
   seedWakeWorkspace,
-  setShare,
   storeBackedHostOptions,
   until,
   wake,
@@ -46,13 +45,13 @@ import {
  * wake and the same recovered queued prompt, on a host whose only authority
  * is `RuntimeSessionAuthorityRoutes` at the other end of a fetch. Nothing is
  * decided in process. The request that creates the child, or queues the
- * prompt, arrives through the relay ingress with Bob's Relay Host Token and
+ * prompt, arrives through the relay ingress with Alice's Relay Host Token and
  * mints a grant while that token can still prove the parent turn; the host
  * that later delivers the turn has been restarted, holds only the store, and
  * presents that grant in place of a credential it no longer has.
  */
 
-const RAT = "rat_bob"
+const RAT = "rat_alice"
 const AUTHORITY_URL = "https://control.test/api/runtime-authority/session-authorize"
 const CONFIG = { harness: { id: "codex" as const, access: "native" as const }, variant: null, agent: null }
 
@@ -119,16 +118,16 @@ function remotePolicy(plane: Hono) {
   return { policy: recording, calls, attempts }
 }
 
-async function relayProof(relayKey: CryptoKey, bob: SignedControlPlaneAuth, orgId: string, jti: string) {
+async function relayProof(relayKey: CryptoKey, who: SignedControlPlaneAuth, orgId: string, jti: string) {
   return await mintRelayHostToken({
     principalKind: "user",
-    actorId: bob.user.tokenIdentifier,
-    userId: bob.user.subject,
+    actorId: who.user.tokenIdentifier,
+    userId: who.user.subject,
     actorKind: "human",
     orgId,
     workspaceId: WORKSPACE,
     hostId: HOST,
-    role: "editor",
+    role: "owner",
     backing: "local-worktree",
     jti,
     parentJti: RAT,
@@ -170,17 +169,17 @@ function hostOver(store: RuntimeStore, policy: SessionAccessPolicy, runtime: Hos
 }
 
 /**
- * Bob, a `send` grantee on Alice's parent, creates a child under it through
- * the relay: the reservation he took on the plane, then the runtime's create
- * with his live Relay Host Token, every authority decision over the wire.
+ * Alice creates a child under her parent through the relay: the reservation
+ * she took on the plane, then the runtime's create with her live Relay Host
+ * Token, every authority decision over the wire.
  */
-async function childCreatedOverTheRelay(parentShare: "follow" | "send" = "send") {
-  const workspace = await seedWakeWorkspace(parentShare)
-  const { root, authority, bob, bobRuntime, orgId } = workspace
-  await authority.recordRuntimeAccessToken(bob, {
-    jti: RAT, workspaceId: WORKSPACE, hostId: HOST, actorId: bob.user.tokenIdentifier, actorKind: "human", role: "editor", expiresAt: Date.now() + 60 * 60_000,
+async function childCreatedOverTheRelay() {
+  const workspace = await seedWakeWorkspace("send")
+  const { root, authority, alice, aliceRuntime, orgId } = workspace
+  await authority.recordRuntimeAccessToken(alice, {
+    jti: RAT, workspaceId: WORKSPACE, hostId: HOST, actorId: alice.user.tokenIdentifier, actorKind: "human", role: "owner", expiresAt: Date.now() + 60 * 60_000,
   })
-  await reserveChild(authority, bobRuntime)
+  await reserveChild(authority, aliceRuntime)
   const plane = await controlPlane(authority)
   const storeRoot = runtimeStoreRoot(root)
   const store = openRuntimeStore(storeRoot)
@@ -189,7 +188,7 @@ async function childCreatedOverTheRelay(parentShare: "follow" | "send" = "send")
   const { policy, calls } = remotePolicy(plane.app)
   const { runtime, prompts } = hostRuntimeDouble()
   const { host, ingress } = hostOver(store, policy, runtime, plane.relayKey.publicKey)
-  const token = await relayProof(plane.relayKey.privateKey, bob, orgId, "rht_bob_create")
+  const token = await relayProof(plane.relayKey.privateKey, alice, orgId, "rht_alice_create")
 
   const created = await ingress.request(
     `http://localhost/session?directory=${encodeURIComponent(DIRECTORY)}`,
@@ -235,8 +234,8 @@ function resetWake(storeRoot: string, subagentKey: string) {
 
 const bearer = (token: string) => `Bearer ${token}`
 
-test("a child created over a Relay Host Token by a send grantee takes its grant over the wire and records it beside the origin", async () => {
-  const { seeded, authority, store, calls, subagentKey, grant, token, bob, bobRuntime } = await childCreatedOverTheRelay()
+test("a child created over a Relay Host Token takes its grant over the wire and records it beside the origin", async () => {
+  const { seeded, authority, store, calls, subagentKey, grant, token, alice, aliceRuntime } = await childCreatedOverTheRelay()
 
   expect(calls).toEqual([
     { action: "write", authorization: bearer(token), grant: false, status: 200 },
@@ -246,16 +245,16 @@ test("a child created over a Relay Host Token by a send grantee takes its grant 
   ])
   expect(store.subagentOrigin(PARENT, subagentKey)).toEqual({
     provenance: "relay-replayed",
-    actor: { actorId: bob.user.tokenIdentifier, actorKind: "human" },
-    authority: { managed: true, workspaceId: WORKSPACE, orgId: expect.any(String), role: "editor" },
+    actor: { actorId: alice.user.tokenIdentifier, actorKind: "human" },
+    authority: { managed: true, workspaceId: WORKSPACE, orgId: expect.any(String), role: "owner" },
     grant,
   })
   expect(decodeJwt(grant)).toMatchObject({
-    actor_id: bob.user.tokenIdentifier, session_id: PARENT, subject_session_id: CHILD, intent: "child_completion", turn_id_prefix: `msg_wake_${CHILD}_`,
+    actor_id: alice.user.tokenIdentifier, session_id: PARENT, subject_session_id: CHILD, intent: "child_completion", turn_id_prefix: `msg_wake_${CHILD}_`,
   })
   expect(grantRows(seeded)).toEqual([{
     grant_id: decodeJwt(grant).jti,
-    actor_id: bob.user.tokenIdentifier,
+    actor_id: alice.user.tokenIdentifier,
     session_id: PARENT,
     subject_session_id: CHILD,
     turn_id: null,
@@ -265,27 +264,27 @@ test("a child created over a Relay Host Token by a send grantee takes its grant 
   }])
   expect(JSON.stringify(store.listSubagents(PARENT))).not.toContain(grant)
   expect(store.listSubagents(PARENT)).toMatchObject([{ subagentKey, childSessionId: CHILD, status: "pending" }])
-  await expect(authority.authorizeRuntimeSession({ ...bobRuntime, sessionId: CHILD, workspaceId: WORKSPACE, action: "write" })).resolves.toBeUndefined()
+  await expect(authority.authorizeRuntimeSession({ ...aliceRuntime, sessionId: CHILD, workspaceId: WORKSPACE, action: "write" })).resolves.toBeUndefined()
 })
 
 test("a restarted host delivers the wake as the original actor by presenting the grant, with no bearer, over turn_acquire", async () => {
   const item = await childCreatedOverTheRelay()
-  const { seeded, authority, alice, bob } = item
+  const { seeded, authority, alice } = item
   await processEndedBeforeTheOffer(item)
   const { store, host, calls, attempts, prompts } = restarted(item)
-  expect(store.subagentOrigin(PARENT, item.subagentKey)).toMatchObject({ actor: { actorId: bob.user.tokenIdentifier }, grant: item.grant })
+  expect(store.subagentOrigin(PARENT, item.subagentKey)).toMatchObject({ actor: { actorId: alice.user.tokenIdentifier }, grant: item.grant })
 
   await wake(host)
   await until(() => store.listSubagents(PARENT)[0]?.wake === "delivered" && calls.some((call) => call.action === "turn_release"), "the wake to be delivered and its lease released")
 
-  expect(attempts).toEqual([{ actorId: bob.user.tokenIdentifier, turnId: WAKE_TURN, grant: true }])
+  expect(attempts).toEqual([{ actorId: alice.user.tokenIdentifier, turnId: WAKE_TURN, grant: true }])
   expect(calls).toEqual([
     { action: "turn_acquire", authorization: null, grant: true, turnId: WAKE_TURN, status: 200 },
     { action: "turn_release", authorization: null, grant: false, turnId: WAKE_TURN, status: 200 },
   ])
   expect(prompts).toEqual([{ sessionId: PARENT, messageId: WAKE_TURN }])
   const admitted = producers(seeded)
-  expect(admitted).toMatchObject([{ session_id: PARENT, turn_id: WAKE_TURN, actor_id: bob.user.tokenIdentifier }])
+  expect(admitted).toMatchObject([{ session_id: PARENT, turn_id: WAKE_TURN, actor_id: alice.user.tokenIdentifier }])
   expect(grantRows(seeded)).toMatchObject([{ redeemed_turn_id: WAKE_TURN }])
 
   await expect(authority.syncSessionMessages(alice, {
@@ -297,14 +296,14 @@ test("a restarted host delivers the wake as the original actor by presenting the
     messages: [{ id: WAKE_TURN, role: "user", sessionID: PARENT, parts: [{ type: "text", text: "Subagent finished." }] }],
   })).resolves.toMatchObject({ ok: true })
   expect(seeded().prepare(`SELECT author_actor_id FROM session_messages WHERE message_id = ?`).get(WAKE_TURN))
-    .toEqual({ author_actor_id: bob.user.tokenIdentifier })
+    .toEqual({ author_actor_id: alice.user.tokenIdentifier })
 })
 
-test("a parent share revoked before delivery refuses the redemption at the authority: no prompt, no producer, grant unredeemed, wake pending", async () => {
+test("a workspace deleted before delivery refuses the redemption at the authority: no prompt, no producer, grant unredeemed, wake pending", async () => {
   const item = await childCreatedOverTheRelay()
-  const { seeded, authority, alice, bob } = item
+  const { seeded, authority, alice } = item
   await processEndedBeforeTheOffer(item)
-  await setShare(authority, alice, bob, null)
+  await authority.deleteWorkspace(alice, { workspaceId: WORKSPACE })
   const { store, host, calls, prompts } = restarted(item)
 
   await wake(host)
@@ -359,9 +358,9 @@ test("the same wake re-offered after delivery is refused as redeemed, and no sec
 })
 
 test("a legacy row recorded without a grant never reaches the authority, and never runs as the workspace owner", async () => {
-  const { root, authority, seeded, bob, bobRuntime, orgId } = await seedWakeWorkspace("send")
-  await reserveChild(authority, bobRuntime)
-  await registerChild(authority, bobRuntime)
+  const { root, authority, seeded, bob, aliceRuntime, orgId } = await seedWakeWorkspace("send")
+  await reserveChild(authority, aliceRuntime)
+  await registerChild(authority, aliceRuntime)
   const plane = await controlPlane(authority)
   const storeRoot = seedFinishedChildStore(root, { actorId: bob.user.tokenIdentifier, orgId })
   const { store, host, calls, attempts, prompts } = restarted({ storeRoot, plane })
@@ -379,9 +378,9 @@ test("a legacy row recorded without a grant never reaches the authority, and nev
 })
 
 test("a prompt queued over the relay mints a grant for its message id, survives a restart, and is delivered as its requester through that grant", async () => {
-  const { root, authority, seeded, bob, orgId } = await seedWakeWorkspace("send")
-  await authority.recordRuntimeAccessToken(bob, {
-    jti: RAT, workspaceId: WORKSPACE, hostId: HOST, actorId: bob.user.tokenIdentifier, actorKind: "human", role: "editor", expiresAt: Date.now() + 60 * 60_000,
+  const { root, authority, seeded, alice, orgId } = await seedWakeWorkspace("send")
+  await authority.recordRuntimeAccessToken(alice, {
+    jti: RAT, workspaceId: WORKSPACE, hostId: HOST, actorId: alice.user.tokenIdentifier, actorKind: "human", role: "owner", expiresAt: Date.now() + 60 * 60_000,
   })
   const plane = await controlPlane(authority)
   const storeRoot = runtimeStoreRoot(root)
@@ -391,7 +390,7 @@ test("a prompt queued over the relay mints a grant for its message id, survives 
   const busy = remotePolicy(plane.app)
   const busyRuntime = hostRuntimeDouble({ whenIdle: () => new Promise(() => {}) })
   const first = hostOver(store, busy.policy, busyRuntime.runtime, plane.relayKey.publicKey)
-  const token = await relayProof(plane.relayKey.privateKey, bob, orgId, "rht_bob_queue")
+  const token = await relayProof(plane.relayKey.privateKey, alice, orgId, "rht_alice_queue")
 
   const queued = await first.ingress.request(
     `http://localhost/session/${PARENT}/message?directory=${encodeURIComponent(DIRECTORY)}`,
@@ -404,11 +403,11 @@ test("a prompt queued over the relay mints a grant for its message id, survives 
     { action: "turn_grant", authorization: bearer(token), grant: false, turnId: "msg_queued_1", status: 200 },
   ])
   const [row] = store.deliveryQueue.listQueuedPrompts()
-  expect(row).toMatchObject({ sessionId: PARENT, messageId: "msg_queued_1", provenance: "relay-replayed", actor: { actorId: bob.user.tokenIdentifier, actorKind: "human" } })
+  expect(row).toMatchObject({ sessionId: PARENT, messageId: "msg_queued_1", provenance: "relay-replayed", actor: { actorId: alice.user.tokenIdentifier, actorKind: "human" } })
   const grant = row.grant
   if (!grant) throw new Error("The queue recorded no grant beside the row")
-  expect(decodeJwt(grant)).toMatchObject({ actor_id: bob.user.tokenIdentifier, session_id: PARENT, intent: "queued_prompt", turn_id: "msg_queued_1" })
-  expect(grantRows(seeded)).toMatchObject([{ grant_id: decodeJwt(grant).jti, actor_id: bob.user.tokenIdentifier, turn_id: "msg_queued_1", redeemed_turn_id: null }])
+  expect(decodeJwt(grant)).toMatchObject({ actor_id: alice.user.tokenIdentifier, session_id: PARENT, intent: "queued_prompt", turn_id: "msg_queued_1" })
+  expect(grantRows(seeded)).toMatchObject([{ grant_id: decodeJwt(grant).jti, actor_id: alice.user.tokenIdentifier, turn_id: "msg_queued_1", redeemed_turn_id: null }])
   expect(busyRuntime.prompts).toEqual([])
   await first.host.dispose()
   store.close()
@@ -418,12 +417,12 @@ test("a prompt queued over the relay mints a grant for its message id, survives 
   await host.recoverQueuedPrompts()
   await until(() => recovered.deliveryQueue.listQueuedPrompts().length === 0 && calls.some((call) => call.action === "turn_release"), "the recovered prompt to be delivered and its lease released")
 
-  expect(attempts).toEqual([{ actorId: bob.user.tokenIdentifier, turnId: "msg_queued_1", grant: true }])
+  expect(attempts).toEqual([{ actorId: alice.user.tokenIdentifier, turnId: "msg_queued_1", grant: true }])
   expect(calls).toEqual([
     { action: "turn_acquire", authorization: null, grant: true, turnId: "msg_queued_1", status: 200 },
     { action: "turn_release", authorization: null, grant: false, turnId: "msg_queued_1", status: 200 },
   ])
   expect(prompts).toEqual([{ sessionId: PARENT, messageId: "msg_queued_1" }])
-  expect(producers(seeded)).toMatchObject([{ session_id: PARENT, turn_id: "msg_queued_1", actor_id: bob.user.tokenIdentifier }])
+  expect(producers(seeded)).toMatchObject([{ session_id: PARENT, turn_id: "msg_queued_1", actor_id: alice.user.tokenIdentifier }])
   expect(grantRows(seeded)).toMatchObject([{ redeemed_turn_id: "msg_queued_1" }])
 })

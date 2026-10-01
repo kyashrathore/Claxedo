@@ -1,20 +1,12 @@
+import { bindNativeClient, decodeAuthDescriptor, type NativeCredentialBinding } from "@claxedo/account-contract/auth"
 import { isRecord } from "@claxedo/helpers/guards"
 import type { TokenSet } from "./oauth-flow"
 
-/** Structural mirror of the server's provider-neutral native binding. */
-export type DesktopCredentialBinding = {
+export type DesktopCredentialBinding = Omit<NativeCredentialBinding, "kind" | "adapter"> & {
   kind: "desktop"
-  tokenKind: "access-token"
   adapter: "better-auth"
-  deploymentId: string
   configurationVersion: string
-  issuer: string
   flow: "authorization-code-pkce"
-  tokenEndpointOrigin: string
-  controlPlaneOrigin: string
-  id: string
-  resource: string
-  scopes: readonly string[]
 }
 
 export type BoundDesktopCredential = {
@@ -138,95 +130,46 @@ export function parseDesktopAuthDescriptor(
   now = Date.now(),
 ): DesktopAuthDescriptor {
   const configuredOrigin = exactHttpsOrigin(configuredCoreOrigin, "Configured core origin")
-  const root = object(value, "Authentication descriptor")
-  const adapter = root.adapter
-  if (adapter !== "better-auth") {
-    return fail("invalid_descriptor", "Authentication descriptor has an unknown adapter")
+  const descriptor = decodeAuthDescriptor(value, {
+    now,
+    adapters: ["better-auth"],
+    clients: ["desktop"],
+    url: (value, name, kind) => (kind === "origin" ? exactHttpsOrigin(value, name) : exactHttpsUrl(value, name)),
+    error: (code, message) => new DesktopAuthDescriptorError(code, message),
+    client: (desktop, _kind, issuer) => {
+      if (desktop.controlPlaneOrigin !== configuredOrigin)
+        return fail("deployment_mismatch", "Authentication descriptor belongs to a different control-plane origin")
+      if (new URL(issuer).origin !== desktop.tokenEndpointOrigin)
+        return fail("deployment_mismatch", "Authentication issuer and token endpoint origins do not match")
+      if (new URL(desktop.resource).origin !== configuredOrigin)
+        return fail("deployment_mismatch", "Authentication resource belongs to a different control-plane origin")
+      if (new URL(desktop.revocation.endpoint).origin !== desktop.tokenEndpointOrigin)
+        return fail("deployment_mismatch", "Authentication revocation endpoint belongs to another origin")
+      if (desktop.flow !== "authorization-code-pkce")
+        return fail("unsupported_native_flow", "Better Auth desktop requires authorization code with PKCE")
+      if (issuer !== `${configuredOrigin}/api/auth`)
+        return fail("deployment_mismatch", "Better Auth issuer is not bound to the configured core origin")
+      if (desktop.revocation.protocol !== "rfc7009" || desktop.revocation.endpoint !== `${issuer}/oauth2/revoke`)
+        return fail("invalid_descriptor", "Better Auth desktop requires issuer-bound public-client revocation")
+    },
+  })
+  const binding: DesktopCredentialBinding = {
+    ...bindNativeClient(descriptor, "desktop"),
+    adapter: "better-auth",
+    configurationVersion: descriptor.configurationVersion,
+    flow: "authorization-code-pkce",
   }
-  const deploymentId = text(root.deploymentId, "deploymentId")
-  const configurationVersion = text(root.configurationVersion, "configurationVersion")
-  if (typeof root.expiresAt !== "number" || !Number.isFinite(root.expiresAt)) {
-    return fail("invalid_descriptor", "expiresAt must be a finite timestamp")
-  }
-  if (root.expiresAt <= now) {
-    return fail("expired_descriptor", "Authentication descriptor has expired")
-  }
-
-  const issuer = exactHttpsUrl(root.issuer, "issuer")
-  const native = object(root.native, "native")
-  const desktop = object(native.desktop, "native.desktop")
-  const controlPlaneOrigin = exactHttpsOrigin(desktop.controlPlaneOrigin, "native.desktop.controlPlaneOrigin")
-  if (controlPlaneOrigin !== configuredOrigin) {
-    return fail("deployment_mismatch", "Authentication descriptor belongs to a different control-plane origin")
-  }
-  const tokenEndpointOrigin = exactHttpsOrigin(desktop.tokenEndpointOrigin, "native.desktop.tokenEndpointOrigin")
-  if (new URL(issuer).origin !== tokenEndpointOrigin) {
-    return fail("deployment_mismatch", "Authentication issuer and token endpoint origins do not match")
-  }
-  const resource = exactHttpsUrl(desktop.resource, "native.desktop.resource")
-  if (new URL(resource).origin !== configuredOrigin) {
-    return fail("deployment_mismatch", "Authentication resource belongs to a different control-plane origin")
-  }
-  const clientId = text(desktop.clientId, "native.desktop.clientId")
-  const selectedScopes = scopes(desktop.scopes, "native.desktop.scopes")
-  const revocation = object(desktop.revocation, "native.desktop.revocation")
-  const revocationEndpoint = exactHttpsUrl(revocation.endpoint, "native.desktop.revocation.endpoint")
-  if (new URL(revocationEndpoint).origin !== tokenEndpointOrigin) {
-    return fail("deployment_mismatch", "Authentication revocation endpoint belongs to another origin")
-  }
-
-  let flow: DesktopCredentialBinding["flow"]
-  let authorizeUrl: string
-  let tokenUrl: string
-  let parsedRevocation: DesktopAuthDescriptor["revocation"]
-  if (adapter === "better-auth") {
-    if (desktop.flow !== "authorization-code-pkce") {
-      return fail("unsupported_native_flow", "Better Auth desktop requires authorization code with PKCE")
-    }
-    if (issuer !== `${configuredOrigin}/api/auth`) {
-      return fail("deployment_mismatch", "Better Auth issuer is not bound to the configured core origin")
-    }
-    if (
-      revocation.protocol !== "rfc7009" ||
-      revocation.tokenEndpointAuthMethod !== "none" ||
-      revocationEndpoint !== `${issuer}/oauth2/revoke`
-    ) {
-      return fail("invalid_descriptor", "Better Auth desktop requires issuer-bound public-client revocation")
-    }
-    flow = "authorization-code-pkce"
-    authorizeUrl = `${issuer}/oauth2/authorize`
-    tokenUrl = `${issuer}/oauth2/token`
-    parsedRevocation = {
-      protocol: "rfc7009",
-      endpoint: revocationEndpoint,
-      tokenEndpointAuthMethod: "none",
-    }
-  } else {
-    return fail("unsupported_native_flow", "Only the Better Auth desktop flow is supported")
-  }
-
-  const binding = {
-    kind: "desktop",
-    tokenKind: "access-token",
-    adapter,
-    deploymentId,
-    configurationVersion,
-    issuer,
-    flow,
-    tokenEndpointOrigin,
-    controlPlaneOrigin,
-    id: clientId,
-    resource,
-    scopes: selectedScopes,
-  } as const satisfies DesktopCredentialBinding
-
   return {
-    adapter,
-    expiresAt: root.expiresAt,
+    adapter: "better-auth",
+    expiresAt: descriptor.expiresAt,
     binding,
-    authorizeUrl,
-    tokenUrl,
-    revocation: parsedRevocation,
+    authorizeUrl: `${descriptor.issuer}/oauth2/authorize`,
+    tokenUrl: `${descriptor.issuer}/oauth2/token`,
+    revocation: {
+      protocol: "rfc7009",
+      endpoint: `${descriptor.issuer}/oauth2/revoke`,
+      tokenEndpointAuthMethod: "none",
+    },
   }
 }
 

@@ -7,6 +7,7 @@ import { betterAuthDeploymentConfigurationId } from "../../src/platform/auth/bet
 import { provisionBetterAuthNativeClients } from "../../src/platform/auth/better-auth-native-clients"
 import { generateCanonicalOwnerClaim, ownerClaimMutationSql } from "../deploy/claim-owner"
 import { userDeployedOwnerBootstrapClaimHash, userDeployedOwnerIdentityHash } from "../../src/authority/adapters/d1/workspace-authority"
+import { recordedEmailOutbox } from "../../src/test-support/recorded-email"
 
 type Input = {
   config: string
@@ -75,11 +76,12 @@ async function main(input: Input) {
     CLAXEDO_MCP_OAUTH_CLIENTS: JSON.stringify({ "https://auth.hosted-e2e.test": { clientId: "hosted-e2e-mcp-client" } }),
     CLAXEDO_USER_DEPLOYED_ORGANIZATION_ID: "hosted-e2e-organization",
     CLAXEDO_USER_DEPLOYED_ORGANIZATION_NAME: "Hosted E2E",
-    ...(input.emailPassword ? { CLAXEDO_EMAIL_FROM: "auth@hosted-e2e.test" } : {}),
+    CLAXEDO_EMAIL_FROM: "invitations@hosted-e2e.test",
   }
   env.CLAXEDO_AUTH_CONFIGURATION_ID = await betterAuthDeploymentConfigurationId({
     methods: input.emailPassword ? ["github", "email-password"] : ["github"], apiOrigin, appOrigin: input.appOrigin, githubClientId: env.GITHUB_CLIENT_ID,
   })
+  const outbox = recordedEmailOutbox({ stdout: process.stdout, stderr: process.stderr })
   const mf = new Miniflare({
     ...converted.workerOptions,
     versionMetadata: undefined,
@@ -95,6 +97,7 @@ async function main(input: Input) {
     host: "127.0.0.1",
     port: input.port,
     https: true,
+    handleRuntimeStdio: outbox.handleRuntimeStdio,
     httpsKey: readFileSync(input.key, "utf8"),
     httpsCert: readFileSync(input.certificate, "utf8"),
     outboundService: async (request: Request) => {
@@ -115,8 +118,15 @@ async function main(input: Input) {
     await provisionBetterAuthNativeClients(auth, apiOrigin, env.BETTER_AUTH_SECRET, env.CLAXEDO_AUTH_INTROSPECTION_SECRET)
     await mf.ready
     process.on("message", (message: unknown) => {
-      if (!message || typeof message !== "object" || !("subject" in message) || typeof message.subject !== "string" ||
-        !("id" in message) || typeof message.id !== "number") return
+      if (!message || typeof message !== "object" || !("id" in message) || typeof message.id !== "number") return
+      if ("emailTo" in message && typeof message.emailTo === "string" && "emailSubject" in message && typeof message.emailSubject === "string") {
+        const { emailTo, emailSubject } = message
+        void outbox.waitFor((email) => email.to === emailTo && email.subject === emailSubject).then((email) => {
+          process.send?.(email.actionUrl ? { id: message.id, actionUrl: email.actionUrl } : { id: message.id, error: "the recorded email carried no link" })
+        }, (cause: unknown) => process.send?.({ id: message.id, error: String(cause) }))
+        return
+      }
+      if (!("subject" in message) || typeof message.subject !== "string") return
       const subject = message.subject
       void (async () => {
         try {

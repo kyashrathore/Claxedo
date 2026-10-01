@@ -58,7 +58,7 @@ afterEach(async () => {
 })
 
 async function database(): Promise<D1Database> {
-  const instance = await miniflareControlPlaneDatabase(["0025_claxedo_tasks.sql", "0026_agent_cross_machine_writes.sql", "0032_task_attachments.sql", "0033_task_child_number.sql"])
+  const instance = await miniflareControlPlaneDatabase(["0025_claxedo_tasks.sql", "0026_task_agent_starts.sql", "0032_task_attachments.sql", "0033_task_child_number.sql"])
   active.push(instance)
   return instance.database
 }
@@ -247,13 +247,6 @@ async function hostedApp(
     }),
     product: STATIC_PRODUCT_DESCRIPTORS["user-deployed"],
     requestGuardExemptions: [],
-    userDeployedIdentityAdmission: {
-      admit: vi.fn(async (_auth: unknown, input: { identity: { subject: string } }) => ({
-        state: "active" as const,
-        userId: `user:${input.identity.subject}`,
-        actorId: `actor:${input.identity.subject}`,
-      })),
-    },
     routeContributions: tasks.routeContributions,
   } as unknown as Parameters<typeof createHostedCoreApp>[1]) as unknown as Hono
   return Object.assign(app, { services: base.services })

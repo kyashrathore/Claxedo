@@ -26,9 +26,10 @@ async function fixture(store?: ControlPlaneCredentials) {
   }
   const app = RuntimeSessionAuthorityRoutes(options)
   const request = async (workspaceId = "workspace-1", configRevision = 3, role: "owner" | "editor" | "viewer" = "owner",
-    sender = "actor-1", sessionOwner = "user-1") => {
+    sender = "actor-1", sessionOwner = "user-1", sessionId?: string) => {
     const token = await mintRelayHostToken({ principalKind: "user", actorId: sender, actorKind: "human", orgId: "org-1",
-      workspaceId, hostId: "host-1", role, backing: "cloud-vm", jti: "proof-1", parentJti: "parent-1" }, keys.privateKey, "EdDSA")
+      workspaceId, hostId: "host-1", role, backing: "cloud-vm", jti: "proof-1", parentJti: "parent-1",
+      ...(sessionId ? { sessionId } : {}) }, keys.privateKey, "EdDSA")
     return app.request("/connection-secrets/workspace-1", { method: "POST",
       headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
       body: JSON.stringify({ connectionId: "custom-acp", providerKey: "acp", configRevision, ownerUserId: sessionOwner }) })
@@ -45,7 +46,7 @@ describe("sandbox connection secret lease", () => {
     expect(lease.secrets).toEqual({ token: "test-secret" })
     expect(lease.secretLeaseGeneration).toEqual(expect.any(String))
     expect(lease.expiresAt).toBeGreaterThan(Date.now())
-    expect(f.active).toHaveBeenCalledWith({ jti: "parent-1", workspaceId: "workspace-1", hostId: "host-1", minimumRole: "editor" })
+    expect(f.active).toHaveBeenCalledWith({ jti: "parent-1", workspaceId: "workspace-1", hostId: "host-1" })
     f.metadata.revision++
     expect((await (await f.request()).json()).secretLeaseGeneration).not.toBe(lease.secretLeaseGeneration)
   })
@@ -60,7 +61,7 @@ describe("sandbox connection secret lease", () => {
     expect((await f.request()).status).toBe(409)
     expect(f.readSecret).not.toHaveBeenCalled()
   })
-  test("refuses disabled connections, stale revisions, local secrets, and viewer principals", async () => {
+  test("refuses disabled connections, stale revisions, local secrets, and session-scoped proofs", async () => {
     const f = await fixture()
     f.descriptor.enabled = false
     expect((await f.request()).status).toBe(409)
@@ -68,7 +69,7 @@ describe("sandbox connection secret lease", () => {
     expect((await f.request("workspace-1", 2)).status).toBe(409)
     f.metadata.scope = "local"
     expect((await f.request()).status).toBe(409)
-    expect((await f.request("workspace-1", 3, "viewer")).status).toBe(403)
+    expect((await f.request("workspace-1", 3, "viewer", "actor-1", "user-1", "session-1")).status).toBe(403)
     expect(f.readSecret).not.toHaveBeenCalled()
   })
   test("refuses another owner's credential and an expired credential", async () => {

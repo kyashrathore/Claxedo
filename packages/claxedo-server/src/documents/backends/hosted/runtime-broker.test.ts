@@ -17,6 +17,7 @@ import type { DocumentIndexEntry } from "@claxedo/server-core/documents/index-st
 import { verifyDocumentRelayJobToken, verifyDocumentSessionToken } from "@claxedo/server-core/platform/auth/runtime-access-token"
 import { fetchUrl, fetchBodyText } from "../../../test-support/fetch-calls"
 import { loopbackMachineLoginPolicy } from "@claxedo/workspace-runtime/testing"
+import { documentAuthorizedFetch } from "../../../test-support/document-access"
 
 const auth = { user: { subject: "user_1" } } as SignedControlPlaneAuth
 const entry = {
@@ -53,7 +54,7 @@ async function relayedRuntime() {
   const token = await new SignJWT({
     principal_kind: "user", actor_id: "actor_1", actor_kind: "human",
     org_id: "org_1", workspace_id: "ws_1", host_id: "host_1",
-    role: "editor", backing: "cloud-vm", parent_jti: "parent_1",
+    role: "editor", scope: "workspace", backing: "cloud-vm", parent_jti: "parent_1",
   }).setProtectedHeader({ alg: "EdDSA" }).setIssuer("workspace-relay").setAudience("workspace-host-service")
     .setIssuedAt().setExpirationTime("1m").setJti("relay_actor_1").sign(relayKeys.privateKey)
   return { runtime, token, asked }
@@ -248,13 +249,13 @@ describe("hosted document runtime broker", () => {
     let canonical = "before"
     let version = "v1"
     const originalFetch = globalThis.fetch
-    globalThis.fetch = vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
+    globalThis.fetch = documentAuthorizedFetch(vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
       const expected = new Headers(init?.headers).get("if-match")
       if (expected !== version) return new Response("conflict", { status: 409 })
       canonical = (JSON.parse(fetchBodyText(init?.body)) as { markdown: string }).markdown
       version = "v2"
       return Response.json({ version })
-    }) as unknown as typeof fetch
+    }) as unknown as typeof fetch)
     try {
       const services = {
         authority: {
@@ -322,7 +323,7 @@ describe("hosted document runtime broker", () => {
     let version = "v1"
     let activeJti: string | undefined
     const originalFetch = globalThis.fetch
-    globalThis.fetch = vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
+    globalThis.fetch = documentAuthorizedFetch(vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
       order.push("writeback")
       const token = new Headers(init?.headers).get("authorization")?.replace(/^Bearer\s+/i, "")
       if (!token) return new Response("missing", { status: 401 })
@@ -342,7 +343,7 @@ describe("hosted document runtime broker", () => {
       canonical = (JSON.parse(fetchBodyText(init?.body)) as { markdown: string }).markdown
       version = "v2"
       return Response.json({ version })
-    }) as unknown as typeof fetch
+    }) as unknown as typeof fetch)
 
     try {
       const services = {
