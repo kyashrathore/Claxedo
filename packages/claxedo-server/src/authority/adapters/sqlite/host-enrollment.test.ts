@@ -7,7 +7,8 @@ import { afterEach, describe, expect, test, vi } from "vitest"
 import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import type { MachinePrincipal } from "@claxedo/server-core/platform/auth/authority"
 import { createSqliteWorkspaceAuthority } from "@claxedo/server-core/authority/adapters/sqlite/workspace-authority"
-import { machineSealAad, sealForMachine } from "@claxedo/server-core/platform/auth/machine-seal"
+import { machineSealAad } from "@claxedo/account-contract/machine"
+import { sealForMachine } from "@claxedo/account-contract/machine-seal"
 
 /**
  * Machine-wide enrollment, against the real SQLite authority.
@@ -60,7 +61,12 @@ function enrollmentPayload(input: { hostId: string; requestId: string; nonce: st
 /** Runs the whole handshake and returns the enrollment. */
 async function enroll(
   api: ReturnType<typeof authority>,
-  input: { auth?: SignedControlPlaneAuth; hostId?: string; keys?: ReturnType<typeof hostKeyPair>; displayName?: string } = {},
+  input: {
+    auth?: SignedControlPlaneAuth
+    hostId?: string
+    keys?: ReturnType<typeof hostKeyPair>
+    displayName?: string
+  } = {},
 ) {
   const auth = input.auth ?? owner
   const hostId = input.hostId ?? "host_laptop"
@@ -70,13 +76,20 @@ async function enroll(
     hostId,
     publicKey: keys.publicKey,
     requestId: request.request_id,
-    signature: signPayload(keys.privateKey, enrollmentPayload({ hostId, requestId: request.request_id, nonce: request.nonce })),
+    signature: signPayload(
+      keys.privateKey,
+      enrollmentPayload({ hostId, requestId: request.request_id, nonce: request.nonce }),
+    ),
     ...(input.displayName ? { displayName: input.displayName } : {}),
   })
   return { enrollment, keys, hostId, request }
 }
 
-async function machinePrincipal(api: ReturnType<typeof authority>, hostId: string, auth = owner): Promise<MachinePrincipal> {
+async function machinePrincipal(
+  api: ReturnType<typeof authority>,
+  hostId: string,
+  auth = owner,
+): Promise<MachinePrincipal> {
   const listed = (await api.listHostEnrollments!(auth)).find((row) => row.host_id === hostId)
   if (!listed) throw new Error(`no enrollment for ${hostId}`)
   const row = await api.machineAuth!.lookupEnrollment(listed.enrollment_id)
@@ -140,7 +153,10 @@ describe("host enrollment", () => {
         hostId: "host_laptop",
         publicKey: keys.publicKey,
         requestId: request.request_id,
-        signature: signPayload(keys.privateKey, enrollmentPayload({ hostId: "host_laptop", requestId: request.request_id, nonce: "not-the-nonce" })),
+        signature: signPayload(
+          keys.privateKey,
+          enrollmentPayload({ hostId: "host_laptop", requestId: request.request_id, nonce: "not-the-nonce" }),
+        ),
       }),
     ).rejects.toThrow()
   })
@@ -156,7 +172,10 @@ describe("host enrollment", () => {
         hostId: "host_laptop",
         publicKey: presented.publicKey,
         requestId: request.request_id,
-        signature: signPayload(actual.privateKey, enrollmentPayload({ hostId: "host_laptop", requestId: request.request_id, nonce: request.nonce })),
+        signature: signPayload(
+          actual.privateKey,
+          enrollmentPayload({ hostId: "host_laptop", requestId: request.request_id, nonce: request.nonce }),
+        ),
       }),
     ).rejects.toThrow()
   })
@@ -169,7 +188,12 @@ describe("host enrollment", () => {
     const request = await api.createHostEnrollmentRequest(owner, { hostId: "host_laptop" })
 
     await expect(
-      api.enrollHost(owner, { hostId: "host_laptop", publicKey: keys.publicKey, requestId: request.request_id, signature: "bogus" }),
+      api.enrollHost(owner, {
+        hostId: "host_laptop",
+        publicKey: keys.publicKey,
+        requestId: request.request_id,
+        signature: "bogus",
+      }),
     ).rejects.toThrow()
 
     await expect(
@@ -177,7 +201,10 @@ describe("host enrollment", () => {
         hostId: "host_laptop",
         publicKey: keys.publicKey,
         requestId: request.request_id,
-        signature: signPayload(keys.privateKey, enrollmentPayload({ hostId: "host_laptop", requestId: request.request_id, nonce: request.nonce })),
+        signature: signPayload(
+          keys.privateKey,
+          enrollmentPayload({ hostId: "host_laptop", requestId: request.request_id, nonce: request.nonce }),
+        ),
       }),
     ).resolves.toMatchObject({ host_id: "host_laptop" })
   })
@@ -191,7 +218,10 @@ describe("host enrollment", () => {
         hostId,
         publicKey: keys.publicKey,
         requestId: request.request_id,
-        signature: signPayload(keys.privateKey, enrollmentPayload({ hostId, requestId: request.request_id, nonce: request.nonce })),
+        signature: signPayload(
+          keys.privateKey,
+          enrollmentPayload({ hostId, requestId: request.request_id, nonce: request.nonce }),
+        ),
       }),
     ).rejects.toThrow(/Invalid host enrollment request/)
   })
@@ -206,7 +236,10 @@ describe("host enrollment", () => {
         hostId: "host_laptop",
         publicKey: keys.publicKey,
         requestId: request.request_id,
-        signature: signPayload(keys.privateKey, enrollmentPayload({ hostId: "host_laptop", requestId: request.request_id, nonce: request.nonce })),
+        signature: signPayload(
+          keys.privateKey,
+          enrollmentPayload({ hostId: "host_laptop", requestId: request.request_id, nonce: request.nonce }),
+        ),
       }),
     ).rejects.toThrow()
   })
@@ -221,7 +254,10 @@ describe("host enrollment", () => {
         hostId: "host_other_machine",
         publicKey: keys.publicKey,
         requestId: request.request_id,
-        signature: signPayload(keys.privateKey, enrollmentPayload({ hostId: "host_other_machine", requestId: request.request_id, nonce: request.nonce })),
+        signature: signPayload(
+          keys.privateKey,
+          enrollmentPayload({ hostId: "host_other_machine", requestId: request.request_id, nonce: request.nonce }),
+        ),
       }),
     ).rejects.toThrow()
   })
@@ -286,12 +322,14 @@ describe("heartbeat", () => {
     const first = await machinePrincipal(api, hostId)
     await api.acquireHostServingGeneration!(first)
 
-    await expect(api.heartbeatHostEnrollmentByMachine!(first, {
-      enrollmentId: enrollment.enrollment_id,
-      hostId,
-      generation: first.generation,
-      acks: [],
-    })).rejects.toThrow(/newer instance/)
+    await expect(
+      api.heartbeatHostEnrollmentByMachine!(first, {
+        enrollmentId: enrollment.enrollment_id,
+        hostId,
+        generation: first.generation,
+        acks: [],
+      }),
+    ).rejects.toThrow(/newer instance/)
   })
 
   test("refuses a beat for a paused machine", async () => {
@@ -302,12 +340,14 @@ describe("heartbeat", () => {
     const principal = await machinePrincipal(api, hostId)
     await api.pauseHostEnrollment(owner, { hostId, paused: true })
 
-    await expect(api.heartbeatHostEnrollmentByMachine!(principal, {
-      enrollmentId: enrollment.enrollment_id,
-      hostId,
-      generation: principal.generation,
-      acks: [],
-    })).rejects.toThrow(/paused/)
+    await expect(
+      api.heartbeatHostEnrollmentByMachine!(principal, {
+        enrollmentId: enrollment.enrollment_id,
+        hostId,
+        generation: principal.generation,
+        acks: [],
+      }),
+    ).rejects.toThrow(/paused/)
   })
 })
 
@@ -329,8 +369,9 @@ async function ackHeartbeat(
   const auth = input.auth ?? owner
   const principal = await machinePrincipal(api, input.hostId, auth)
   const declared = new Map(
-    ((await api.listHostEnrollments!(auth)).find((row) => row.host_id === input.hostId)?.assignments ?? [])
-      .map((assignment) => [assignment.workspace_id, assignment.revision]),
+    ((await api.listHostEnrollments!(auth)).find((row) => row.host_id === input.hostId)?.assignments ?? []).map(
+      (assignment) => [assignment.workspace_id, assignment.revision],
+    ),
   )
   return api.heartbeatHostEnrollmentByMachine!(principal, {
     enrollmentId: principal.enrollmentId,
@@ -363,7 +404,7 @@ describe("workspace assignments", () => {
       gitBranch: "dev",
       remoteDirectory: "/Users/me/test/opencode",
     })
-    const rows = await api.listWorkspaces(owner) as Array<Record<string, unknown>>
+    const rows = (await api.listWorkspaces(owner)) as Array<Record<string, unknown>>
     expect(rows.find((w) => w.workspace_id === "ws_desc")).toMatchObject({
       display_name: "Claxedo",
       remote_directory: "/Users/me/test/opencode",
@@ -375,15 +416,18 @@ describe("workspace assignments", () => {
     })
     // A later assignment that says nothing leaves the description alone.
     await api.assignWorkspaceHost(owner, { workspaceId: "ws_desc", hostId })
-    const again = await api.listWorkspaces(owner) as Array<Record<string, unknown>>
-    expect(again.find((w) => w.workspace_id === "ws_desc")).toMatchObject({ display_name: "Claxedo", remote_directory: "/Users/me/test/opencode" })
+    const again = (await api.listWorkspaces(owner)) as Array<Record<string, unknown>>
+    expect(again.find((w) => w.workspace_id === "ws_desc")).toMatchObject({
+      display_name: "Claxedo",
+      remote_directory: "/Users/me/test/opencode",
+    })
   })
 
   test("a machine-placed workspace lives exactly as long as its host assignment", async () => {
     const api = authority()
     const { hostId } = await enroll(api, { displayName: "Laptop B" })
-    const listed = async () => (await api.listWorkspaces(owner) as Array<{ workspace_id: string }>)
-      .map((row) => row.workspace_id).sort()
+    const listed = async () =>
+      ((await api.listWorkspaces(owner)) as Array<{ workspace_id: string }>).map((row) => row.workspace_id).sort()
 
     await api.assignWorkspaceHost(owner, { workspaceId: "ws_shared", hostId, displayName: "Shared" })
     await api.assignWorkspaceHost(owner, { workspaceId: "ws_kept", hostId })
@@ -395,7 +439,9 @@ describe("workspace assignments", () => {
 
     await api.assignWorkspaceHost(owner, { workspaceId: "ws_shared", hostId })
     expect(await listed()).toEqual(["ws_kept", "ws_shared"])
-    expect((await api.openWorkspace(owner, { workspaceId: "ws_shared" })).workspace).toMatchObject({ display_name: "Shared" })
+    expect((await api.openWorkspace(owner, { workspaceId: "ws_shared" })).workspace).toMatchObject({
+      display_name: "Shared",
+    })
 
     await api.revokeHostEnrollment(owner, { hostId })
     expect(await listed()).toEqual([])
@@ -409,10 +455,13 @@ describe("workspace assignments", () => {
   test("stamps host reachability on every machine-placed row of the workspace list", async () => {
     const api = authority()
     const { hostId } = await enroll(api, { displayName: "Laptop B" })
-    const listed = async () => Object.fromEntries(
-      (await api.listWorkspaces(owner) as Array<{ workspace_id: string; host_online?: boolean }>)
-        .map((row) => [row.workspace_id, row.host_online]),
-    )
+    const listed = async () =>
+      Object.fromEntries(
+        ((await api.listWorkspaces(owner)) as Array<{ workspace_id: string; host_online?: boolean }>).map((row) => [
+          row.workspace_id,
+          row.host_online,
+        ]),
+      )
 
     // Assigned but never acked: listed, and honestly offline.
     await api.assignWorkspaceHost(owner, { workspaceId: "ws_reach", hostId, remoteDirectory: "/srv/reach" })
@@ -433,10 +482,12 @@ describe("workspace assignments", () => {
 
     // Assigning a never-registered workspace cold-registers it, exactly as
     // the retired per-workspace registration did.
-    await expect(api.assignWorkspaceHost(owner, { workspaceId: "ws_alpha", hostId, remoteDirectory: "/srv/alpha" }))
-      .resolves.toEqual({ assigned: true, workspace_id: "ws_alpha", host_id: hostId })
-    expect((await api.listWorkspaces(owner) as Array<{ workspace_id: string }>).map((w) => w.workspace_id))
-      .toContain("ws_alpha")
+    await expect(
+      api.assignWorkspaceHost(owner, { workspaceId: "ws_alpha", hostId, remoteDirectory: "/srv/alpha" }),
+    ).resolves.toEqual({ assigned: true, workspace_id: "ws_alpha", host_id: hostId })
+    expect(((await api.listWorkspaces(owner)) as Array<{ workspace_id: string }>).map((w) => w.workspace_id)).toContain(
+      "ws_alpha",
+    )
 
     // Owner intent alone is not routable: no ack yet.
     expect(await api.activeWorkspaceHost(owner, { workspaceId: "ws_alpha" })).toEqual({ active: false })
@@ -467,8 +518,10 @@ describe("workspace assignments", () => {
       await api.assignWorkspaceHost(owner, { workspaceId: "ws_alpha", hostId, remoteDirectory: "/srv/alpha" })
       await ackHeartbeat(api, { hostId, workspaceIds: ["ws_alpha"], sessionAuthority: declared })
 
-      expect(await api.activeWorkspaceHost(owner, { workspaceId: "ws_alpha" }))
-        .toMatchObject({ active: true, session_authority: declared })
+      expect(await api.activeWorkspaceHost(owner, { workspaceId: "ws_alpha" })).toMatchObject({
+        active: true,
+        session_authority: declared,
+      })
     }
   })
 
@@ -496,16 +549,17 @@ describe("workspace assignments", () => {
     await api.assignWorkspaceHost(owner, { workspaceId: "ws_alpha", hostId, remoteDirectory: "/srv/alpha" })
 
     await ackHeartbeat(api, { hostId, workspaceIds: ["ws_alpha"], sessionAuthority: "managed-private" })
-    expect(await api.activeWorkspaceHost(owner, { workspaceId: "ws_alpha" }))
-      .toMatchObject({ session_authority: "managed-private" })
+    expect(await api.activeWorkspaceHost(owner, { workspaceId: "ws_alpha" })).toMatchObject({
+      session_authority: "managed-private",
+    })
 
     await ackHeartbeat(api, { hostId, workspaceIds: ["ws_alpha"], sessionAuthority: "local" })
-    expect(await api.activeWorkspaceHost(owner, { workspaceId: "ws_alpha" }))
-      .toMatchObject({ session_authority: "local" })
+    expect(await api.activeWorkspaceHost(owner, { workspaceId: "ws_alpha" })).toMatchObject({
+      session_authority: "local",
+    })
 
     await ackHeartbeat(api, { hostId, workspaceIds: ["ws_alpha"] })
-    expect(await api.activeWorkspaceHost(owner, { workspaceId: "ws_alpha" }))
-      .not.toHaveProperty("session_authority")
+    expect(await api.activeWorkspaceHost(owner, { workspaceId: "ws_alpha" })).not.toHaveProperty("session_authority")
   })
 
   test("assigning requires a live enrollment for that machine", async () => {
@@ -514,8 +568,9 @@ describe("workspace assignments", () => {
 
     // `other` never enrolled this machine; the assignment must not exist as a
     // way to piggyback on someone else's laptop.
-    await expect(api.assignWorkspaceHost(other, { workspaceId: "ws_alpha", hostId: "host_laptop" }))
-      .rejects.toThrow(/Host enrollment not found/)
+    await expect(api.assignWorkspaceHost(other, { workspaceId: "ws_alpha", hostId: "host_laptop" })).rejects.toThrow(
+      /Host enrollment not found/,
+    )
   })
 
   test("a failed assignment strands no cold-registered workspace", async () => {
@@ -538,22 +593,26 @@ describe("workspace assignments", () => {
       BEGIN SELECT RAISE(FAIL, 'forced assignment failure'); END
     `)
 
-    await expect(api.assignWorkspaceHost(owner, { workspaceId: "ws_cold", hostId, remoteDirectory: "/srv/cold" }))
-      .rejects.toThrow(/forced assignment failure/)
+    await expect(
+      api.assignWorkspaceHost(owner, { workspaceId: "ws_cold", hostId, remoteDirectory: "/srv/cold" }),
+    ).rejects.toThrow(/forced assignment failure/)
 
     // The whole operation rolled back: no workspace, no assignment, and
     // nothing in the owner's list to explain.
-    expect(reader.prepare(`SELECT COUNT(*) AS n FROM workspaces WHERE workspace_id = ?`).get("ws_cold"))
-      .toEqual({ n: 0 })
+    expect(reader.prepare(`SELECT COUNT(*) AS n FROM workspaces WHERE workspace_id = ?`).get("ws_cold")).toEqual({
+      n: 0,
+    })
     expect(reader.prepare(`SELECT COUNT(*) AS n FROM host_workspace_assignments`).get()).toEqual({ n: 0 })
-    expect((await api.listWorkspaces(owner) as Array<{ workspace_id: string }>).map((w) => w.workspace_id))
-      .not.toContain("ws_cold")
+    expect(
+      ((await api.listWorkspaces(owner)) as Array<{ workspace_id: string }>).map((w) => w.workspace_id),
+    ).not.toContain("ws_cold")
 
     // And the retry still takes the cold-register path, which is the property
     // a half-committed first attempt would have destroyed.
     reader.exec(`DROP TRIGGER fail_assignment`)
-    await expect(api.assignWorkspaceHost(owner, { workspaceId: "ws_cold", hostId, remoteDirectory: "/srv/cold" }))
-      .resolves.toEqual({ assigned: true, workspace_id: "ws_cold", host_id: hostId })
+    await expect(
+      api.assignWorkspaceHost(owner, { workspaceId: "ws_cold", hostId, remoteDirectory: "/srv/cold" }),
+    ).resolves.toEqual({ assigned: true, workspace_id: "ws_cold", host_id: hostId })
     await ackHeartbeat(api, { hostId, workspaceIds: ["ws_cold"] })
     expect(await api.activeWorkspaceHost(owner, { workspaceId: "ws_cold" })).toMatchObject({
       active: true,
@@ -569,8 +628,7 @@ describe("workspace assignments", () => {
     await ackHeartbeat(api, { hostId, workspaceIds: ["ws_alpha"] })
     expect(await api.activeWorkspaceHost(owner, { workspaceId: "ws_alpha" })).toMatchObject({ active: true })
 
-    await expect(api.unassignWorkspaceHost(owner, { workspaceId: "ws_alpha" }))
-      .resolves.toEqual({ unassigned: true })
+    await expect(api.unassignWorkspaceHost(owner, { workspaceId: "ws_alpha" })).resolves.toEqual({ unassigned: true })
 
     // Unsharing retires the workspace: nothing is routable because nothing is listed.
     await expect(api.activeWorkspaceHost(owner, { workspaceId: "ws_alpha" })).rejects.toThrow("Workspace not found")
@@ -801,7 +859,11 @@ describe("provider configuration", () => {
     return JSON.stringify(await webcrypto.subtle.exportKey("jwk", pair.publicKey))
   }
 
-  async function beat(api: ReturnType<typeof authority>, hostId: string, extra: { sealingPublicKey?: string; providerConfigAckedRevision?: number } = {}) {
+  async function beat(
+    api: ReturnType<typeof authority>,
+    hostId: string,
+    extra: { sealingPublicKey?: string; providerConfigAckedRevision?: number } = {},
+  ) {
     const principal = await machinePrincipal(api, hostId)
     return api.heartbeatHostEnrollmentByMachine!(principal, {
       enrollmentId: principal.enrollmentId,
@@ -829,16 +891,25 @@ describe("provider configuration", () => {
 
     const target = await api.hostProviderConfigTarget!(owner, { enrollmentId })
     expect(target).toMatchObject({ enrollment_id: enrollmentId, host_id: hostId, next_revision: 1 })
-    const sealed = await sealForMachine(target.sealing_public_key!, PLAINTEXT, machineSealAad({ enrollmentId, revision: 1 }))
-    expect(await api.pushHostProviderConfig!(owner, {
-      enrollmentId,
-      sealed,
-      revision: 1,
-      sealingPublicKey: target.sealing_public_key,
-      providerIds: ["openai"],
-    })).toEqual({ enrollment_id: enrollmentId, revision: 1, sealed: true })
+    const sealed = await sealForMachine(
+      target.sealing_public_key!,
+      PLAINTEXT,
+      machineSealAad({ enrollmentId, revision: 1 }),
+    )
+    expect(
+      await api.pushHostProviderConfig!(owner, {
+        enrollmentId,
+        sealed,
+        revision: 1,
+        sealingPublicKey: target.sealing_public_key,
+        providerIds: ["openai"],
+      }),
+    ).toEqual({ enrollment_id: enrollmentId, revision: 1, sealed: true })
 
-    const row = reader.prepare(`SELECT * FROM host_enrollments WHERE enrollment_id = ?`).get(enrollmentId) as Record<string, unknown>
+    const row = reader.prepare(`SELECT * FROM host_enrollments WHERE enrollment_id = ?`).get(enrollmentId) as Record<
+      string,
+      unknown
+    >
     expect(row.provider_config_sealed).toBe(sealed)
     expect(JSON.stringify(row)).not.toContain(SECRET)
     expect(JSON.stringify(reader.prepare(`SELECT * FROM audit_events`).all())).not.toContain(SECRET)
@@ -865,13 +936,29 @@ describe("provider configuration", () => {
     const key = await sealingPublicKey()
     await beat(api, hostId, { sealingPublicKey: key })
 
-    expect(await refusal(api.hostProviderConfigTarget!(other, { enrollmentId })))
-      .toMatchObject({ code: "host_enrollment_not_found", status: 404 })
+    expect(await refusal(api.hostProviderConfigTarget!(other, { enrollmentId }))).toMatchObject({
+      code: "host_enrollment_not_found",
+      status: 404,
+    })
     const sealed = await sealForMachine(key, PLAINTEXT, machineSealAad({ enrollmentId, revision: 1 }))
-    expect(await refusal(api.pushHostProviderConfig!(other, { enrollmentId, sealed, revision: 1, sealingPublicKey: key, providerIds: ["openai"] })))
-      .toMatchObject({ code: "host_enrollment_not_found", status: 404 })
-    expect(reader.prepare(`SELECT provider_config_revision, provider_config_sealed FROM host_enrollments WHERE enrollment_id = ?`).get(enrollmentId))
-      .toEqual({ provider_config_revision: 0, provider_config_sealed: null })
+    expect(
+      await refusal(
+        api.pushHostProviderConfig!(other, {
+          enrollmentId,
+          sealed,
+          revision: 1,
+          sealingPublicKey: key,
+          providerIds: ["openai"],
+        }),
+      ),
+    ).toMatchObject({ code: "host_enrollment_not_found", status: 404 })
+    expect(
+      reader
+        .prepare(
+          `SELECT provider_config_revision, provider_config_sealed FROM host_enrollments WHERE enrollment_id = ?`,
+        )
+        .get(enrollmentId),
+    ).toEqual({ provider_config_revision: 0, provider_config_sealed: null })
     expect((await beat(api, hostId)).provider_config).toBeUndefined()
   })
 
@@ -879,13 +966,29 @@ describe("provider configuration", () => {
     const { api } = fileAuthority()
     const { enrollment, hostId } = await enroll(api)
     const enrollmentId = enrollment.enrollment_id
-    expect(await api.hostProviderConfigTarget!(owner, { enrollmentId })).toMatchObject({ sealing_public_key: null, next_revision: 1 })
-    expect(await refusal(api.pushHostProviderConfig!(owner, { enrollmentId, sealed: null, revision: 1, sealingPublicKey: null, providerIds: [] })))
-      .toMatchObject({ code: "host_sealing_key_undeclared", status: 409 })
+    expect(await api.hostProviderConfigTarget!(owner, { enrollmentId })).toMatchObject({
+      sealing_public_key: null,
+      next_revision: 1,
+    })
+    expect(
+      await refusal(
+        api.pushHostProviderConfig!(owner, {
+          enrollmentId,
+          sealed: null,
+          revision: 1,
+          sealingPublicKey: null,
+          providerIds: [],
+        }),
+      ),
+    ).toMatchObject({ code: "host_sealing_key_undeclared", status: 409 })
 
     await beat(api, hostId, { sealingPublicKey: await sealingPublicKey() })
     const target = await api.hostProviderConfigTarget!(owner, { enrollmentId })
-    const sealed = await sealForMachine(target.sealing_public_key!, PLAINTEXT, machineSealAad({ enrollmentId, revision: 1 }))
+    const sealed = await sealForMachine(
+      target.sealing_public_key!,
+      PLAINTEXT,
+      machineSealAad({ enrollmentId, revision: 1 }),
+    )
     await api.pushHostProviderConfig!(owner, {
       enrollmentId,
       sealed,
@@ -895,14 +998,19 @@ describe("provider configuration", () => {
     })
     await beat(api, hostId, { providerConfigAckedRevision: 1 })
 
-    expect(await api.pushHostProviderConfig!(owner, {
-      enrollmentId,
-      sealed: null,
+    expect(
+      await api.pushHostProviderConfig!(owner, {
+        enrollmentId,
+        sealed: null,
+        revision: 2,
+        sealingPublicKey: target.sealing_public_key,
+        providerIds: [],
+      }),
+    ).toEqual({ enrollment_id: enrollmentId, revision: 2, sealed: false })
+    expect((await beat(api, hostId, { providerConfigAckedRevision: 1 })).provider_config).toEqual({
       revision: 2,
-      sealingPublicKey: target.sealing_public_key,
-      providerIds: [],
-    })).toEqual({ enrollment_id: enrollmentId, revision: 2, sealed: false })
-    expect((await beat(api, hostId, { providerConfigAckedRevision: 1 })).provider_config).toEqual({ revision: 2, sealed: null })
+      sealed: null,
+    })
     expect((await beat(api, hostId, { providerConfigAckedRevision: 2 })).provider_config).toBeUndefined()
   })
 })

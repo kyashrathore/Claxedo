@@ -5,14 +5,22 @@
  * exists on the box, so nothing here can be re-used by an account caller.
  */
 
+import { machineRequestSignature, randomNonce, type HostKeyPair } from "./host-identity"
+import { MACHINE_REQUEST_HEADERS } from "@claxedo/account-contract/machine"
 import {
-  MACHINE_REQUEST_HEADERS,
-  machineRequestSignature,
-  randomNonce,
-  type HostKeyPair,
-} from "./host-identity"
-import { canonicalControlPlaneUrl, canonicalFetchEndpointUrl, canonicalRelayUrl, isPlainRecord, type HostScope } from "./host-state"
-import type { AssignmentDescription, HeartbeatResponse, MachineHeartbeatInput, MachineTransport, ProviderConfigRevision } from "./connector"
+  canonicalControlPlaneUrl,
+  canonicalFetchEndpointUrl,
+  canonicalRelayUrl,
+  isPlainRecord,
+  type HostScope,
+} from "./host-state"
+import type {
+  AssignmentDescription,
+  HeartbeatResponse,
+  MachineHeartbeatInput,
+  MachineTransport,
+  ProviderConfigRevision,
+} from "./connector"
 
 /** What this package needs of `fetch`; the global one satisfies it under Node, Bun and Electron. */
 export type FetchLike = (input: URL, init: RequestInit) => Promise<Response>
@@ -34,7 +42,10 @@ export class HostedRequestTimeoutError extends Error {
   readonly pathname: string
   readonly timeoutMs: number
   constructor(pathname: string, timeoutMs: number, cause?: unknown) {
-    super(`control plane did not answer POST ${pathname} within ${timeoutMs / 1000}s`, cause === undefined ? undefined : { cause })
+    super(
+      `control plane did not answer POST ${pathname} within ${timeoutMs / 1000}s`,
+      cause === undefined ? undefined : { cause },
+    )
     this.name = "HostedRequestTimeoutError"
     this.pathname = pathname
     this.timeoutMs = timeoutMs
@@ -67,7 +78,9 @@ export class HostedRedirectError extends Error {
   readonly pathname: string
   readonly status: number
   constructor(pathname: string, status: number) {
-    super(`control plane answered POST ${pathname} with a redirect (${status || "opaque"}); a machine request is never re-sent elsewhere`)
+    super(
+      `control plane answered POST ${pathname} with a redirect (${status || "opaque"}); a machine request is never re-sent elsewhere`,
+    )
     this.name = "HostedRedirectError"
     this.pathname = pathname
     this.status = status
@@ -123,7 +136,11 @@ export async function postJson(
 ): Promise<unknown> {
   const signal = AbortSignal.timeout(timeoutMs)
   const timedOut = new Promise<never>((_, reject) => {
-    signal.addEventListener("abort", () => reject(new HostedRequestTimeoutError(url.pathname, timeoutMs, signal.reason)), { once: true })
+    signal.addEventListener(
+      "abort",
+      () => reject(new HostedRequestTimeoutError(url.pathname, timeoutMs, signal.reason)),
+      { once: true },
+    )
   })
   let text: string
   let response: Response
@@ -202,7 +219,14 @@ export function decodeEndpoints(value: Record<string, unknown>) {
         }
       : {}),
     ...(authority && typeof authority.session_authority_url === "string"
-      ? { authority: { sessionAuthorityUrl: canonicalFetchEndpointUrl(authority.session_authority_url, "authority.session_authority_url") } }
+      ? {
+          authority: {
+            sessionAuthorityUrl: canonicalFetchEndpointUrl(
+              authority.session_authority_url,
+              "authority.session_authority_url",
+            ),
+          },
+        }
       : {}),
     ...(authority && typeof authority.session_rows_url === "string"
       ? { sessionRows: { url: canonicalFetchEndpointUrl(authority.session_rows_url, "authority.session_rows_url") } }
@@ -304,12 +328,18 @@ export function createMachineSignedTransport(options: MachineSignedTransportOpti
       nonce: requestNonce,
       enrollmentId: options.enrollmentId,
     })
-    return await postJson(options.fetch, url, bodyText, {
-      [MACHINE_REQUEST_HEADERS.enrollmentId]: options.enrollmentId,
-      [MACHINE_REQUEST_HEADERS.ts]: String(ts),
-      [MACHINE_REQUEST_HEADERS.nonce]: requestNonce,
-      [MACHINE_REQUEST_HEADERS.signature]: signature,
-    }, requestTimeoutMs)
+    return await postJson(
+      options.fetch,
+      url,
+      bodyText,
+      {
+        [MACHINE_REQUEST_HEADERS.enrollmentId]: options.enrollmentId,
+        [MACHINE_REQUEST_HEADERS.ts]: String(ts),
+        [MACHINE_REQUEST_HEADERS.nonce]: requestNonce,
+        [MACHINE_REQUEST_HEADERS.signature]: signature,
+      },
+      requestTimeoutMs,
+    )
   }
 
   return {

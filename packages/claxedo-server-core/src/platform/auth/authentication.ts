@@ -1,11 +1,16 @@
-/** Provider-neutral authentication contracts for hosted control planes. */
-
+import {
+  INTERACTIVE_AUTH_METHODS,
+  bindNativeClient,
+  decodeAuthDescriptor,
+  type AuthAdapterId,
+  type InteractiveAuthMethod,
+  type AuthAdapterDescriptor,
+  type NativeCredentialBinding,
+} from "@claxedo/account-contract/auth"
 import { isJsonRecord, isNonEmptyString, isOneOf } from "../runtime/lib/json"
 
-export const AUTH_ADAPTERS = ["better-auth", "custom"] as const
 export const AUTH_CLIENT_KINDS = ["browser", "cli", "desktop"] as const
 export const AUTH_ASSURANCE_LEVELS = ["insufficient", "single-factor", "multi-factor", "phishing-resistant"] as const
-export const INTERACTIVE_AUTH_METHODS = ["google", "github", "email-password"] as const
 export const AUTHENTICATION_EVIDENCE_METHODS = [
   "oauth:google",
   "oauth:github",
@@ -15,9 +20,7 @@ export const AUTHENTICATION_EVIDENCE_METHODS = [
   "recovery",
 ] as const
 
-export type AuthAdapterId = (typeof AUTH_ADAPTERS)[number]
 export type AuthAssurance = (typeof AUTH_ASSURANCE_LEVELS)[number]
-export type InteractiveAuthMethod = (typeof INTERACTIVE_AUTH_METHODS)[number]
 export type AuthenticationEvidenceMethod = (typeof AUTHENTICATION_EVIDENCE_METHODS)[number]
 
 export type AuthIdentity = {
@@ -36,17 +39,6 @@ export type BrowserAuthClientBinding = CommonAuthClientBinding & {
   kind: "browser"
   tokenKind: "browser-session"
   origin: string
-}
-
-/** Immutable tuple persisted with every native credential and registry row. */
-export type NativeCredentialBinding = CommonAuthClientBinding & {
-  kind: "cli" | "desktop"
-  tokenKind: "access-token"
-  deploymentId: string
-  adapter: AuthAdapterId
-  issuer: string
-  tokenEndpointOrigin: string
-  controlPlaneOrigin: string
 }
 
 export type AuthClientBinding = BrowserAuthClientBinding | NativeCredentialBinding
@@ -75,68 +67,6 @@ export type ControlPlanePrincipal = {
   assurance: AuthAssurance
   client: AuthClientBinding
   identity: AuthIdentity
-}
-
-type CommonBrowserAuthDescriptor = {
-  trustedOrigins: readonly string[]
-  clientId: string
-  resource: string
-  scopes: readonly string[]
-}
-
-export type BrowserAuthDescriptor = CommonBrowserAuthDescriptor &
-  (
-    | {
-        transport: "cookie"
-        credentialPolicy: "reject-cookie-and-authorization"
-        cookie: {
-          name: string
-          path: "/"
-          secure: true
-          httpOnly: true
-          hostOnly: true
-          sameSite: "lax" | "strict"
-        }
-      }
-    | {
-        transport: "bearer"
-        credentialPolicy: "authorization-only"
-        cookie?: never
-      }
-  )
-
-export type NativeAuthClientDescriptor = {
-  flow: "device-authorization" | "authorization-code-pkce" | "adapter-native"
-  clientId: string
-  resource: string
-  scopes: readonly string[]
-  tokenEndpointOrigin: string
-  controlPlaneOrigin: string
-  revocation:
-    | {
-        protocol: "rfc7009"
-        endpoint: string
-        /** Public native clients identify themselves but hold no client secret. */
-        tokenEndpointAuthMethod: "none"
-      }
-    | {
-        protocol: "adapter-native"
-        endpoint: string
-      }
-}
-
-export type AuthAdapterDescriptor = {
-  adapter: AuthAdapterId
-  deploymentId: string
-  configurationVersion: string
-  expiresAt: number
-  issuer: string
-  methods: readonly InteractiveAuthMethod[]
-  browser: BrowserAuthDescriptor
-  native: {
-    cli: NativeAuthClientDescriptor
-    desktop: NativeAuthClientDescriptor
-  }
 }
 
 export type ReauthenticationChallenge = {
@@ -300,38 +230,15 @@ function assertUniqueConfiguredStrings(value: readonly string[], message: string
   }
 }
 
-function assertClientDescriptor(
-  name: "browser" | "cli" | "desktop",
-  value: { clientId: string; resource: string; scopes: readonly string[] },
-) {
+function assertBrowserClientDescriptor(value: { clientId: string; resource: string; scopes: readonly string[] }) {
   if (!isNonEmptyString(value.clientId) || !isNonEmptyString(value.resource)) {
     throw new AuthenticationError(
       503,
       "auth_configuration_invalid",
-      `${name === "browser" ? "Browser auth client" : `Native auth client ${name}`} requires clientId, resource, and at least one scope`,
+      "Browser auth client requires clientId, resource, and at least one scope",
     )
   }
-  assertUniqueConfiguredStrings(
-    value.scopes,
-    `${name === "browser" ? "Browser auth client" : `Native auth client ${name}`} requires unique non-empty scopes`,
-  )
-}
-
-function assertNativeRevocationDescriptor(name: "cli" | "desktop", value: unknown, tokenEndpointOrigin: string) {
-  if (
-    !isJsonRecord(value) ||
-    !isOneOf(value.protocol, ["rfc7009", "adapter-native"] as const) ||
-    !isNonEmptyString(value.endpoint) ||
-    !isExactHttpsUrl(value.endpoint) ||
-    new URL(value.endpoint).origin !== tokenEndpointOrigin ||
-    (value.protocol === "rfc7009" && value.tokenEndpointAuthMethod !== "none")
-  ) {
-    throw new AuthenticationError(
-      503,
-      "auth_configuration_invalid",
-      `Native auth client ${name} revocation contract is invalid`,
-    )
-  }
+  assertUniqueConfiguredStrings(value.scopes, "Browser auth client requires unique non-empty scopes")
 }
 
 function isExactHttpsOrigin(value: string) {
@@ -371,15 +278,35 @@ function isExactHttpsUrl(value: string) {
 }
 
 function assertDescriptor(descriptor: AuthAdapterDescriptor, now: number) {
-  if (
-    !isOneOf(descriptor.adapter, AUTH_ADAPTERS) ||
-    !isNonEmptyString(descriptor.deploymentId) ||
-    !isNonEmptyString(descriptor.configurationVersion) ||
-    !isExactHttpsUrl(descriptor.issuer) ||
-    !Number.isFinite(descriptor.expiresAt) ||
-    descriptor.expiresAt <= now ||
-    descriptor.browser.trustedOrigins.length === 0
-  ) {
+  decodeAuthDescriptor(descriptor, {
+    now,
+    clients: ["cli", "desktop"],
+    url: (value, name, kind) => {
+      if (!(kind === "origin" ? isExactHttpsOrigin(value) : isExactHttpsUrl(value))) {
+        throw new AuthenticationError(503, "auth_configuration_invalid", `${name} must be an exact HTTPS ${kind}`)
+      }
+      return value
+    },
+    client: (client, kind) => {
+      if (new URL(client.resource).origin !== client.controlPlaneOrigin) {
+        throw new AuthenticationError(
+          503,
+          "auth_configuration_invalid",
+          `Native auth client ${kind} origins are invalid`,
+        )
+      }
+      if (new URL(client.revocation.endpoint).origin !== client.tokenEndpointOrigin) {
+        throw new AuthenticationError(
+          503,
+          "auth_configuration_invalid",
+          `Native auth client ${kind} revocation contract is invalid`,
+        )
+      }
+    },
+    error: (_code, message) => new AuthenticationError(503, "auth_configuration_invalid", message),
+  })
+
+  if (descriptor.browser.trustedOrigins.length === 0) {
     throw new AuthenticationError(503, "auth_configuration_invalid", "Authentication descriptor is incomplete")
   }
   assertUniqueConfiguredStrings(descriptor.methods, "Authentication methods must be unique and non-empty")
@@ -397,7 +324,7 @@ function assertDescriptor(descriptor: AuthAdapterDescriptor, now: number) {
       "browser.trustedOrigins must contain exact HTTPS origins",
     )
   }
-  assertClientDescriptor("browser", descriptor.browser)
+  assertBrowserClientDescriptor(descriptor.browser)
 
   if (descriptor.browser.transport === "cookie") {
     const cookie = descriptor.browser.cookie
@@ -406,12 +333,9 @@ function assertDescriptor(descriptor: AuthAdapterDescriptor, now: number) {
       !isNonEmptyString(cookie?.name) ||
       !/^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/.test(cookie.name) ||
       cookie.path !== "/" ||
-      !
-      cookie.secure ||
-      !
-      cookie.httpOnly ||
-      !
-      cookie.hostOnly ||
+      !cookie.secure ||
+      !cookie.httpOnly ||
+      !cookie.hostOnly ||
       (cookie.sameSite !== "lax" && cookie.sameSite !== "strict")
     ) {
       throw new AuthenticationError(503, "auth_configuration_invalid", "Cookie authentication posture is insecure")
@@ -421,20 +345,6 @@ function assertDescriptor(descriptor: AuthAdapterDescriptor, now: number) {
     descriptor.browser.credentialPolicy !== "authorization-only"
   ) {
     throw new AuthenticationError(503, "auth_configuration_invalid", "Browser authentication transport is invalid")
-  }
-
-  for (const kind of ["cli", "desktop"] as const) {
-    const native = descriptor.native[kind]
-    assertClientDescriptor(kind, native)
-    if (
-      !isExactHttpsOrigin(native.tokenEndpointOrigin) ||
-      !isExactHttpsOrigin(native.controlPlaneOrigin) ||
-      !isExactHttpsUrl(native.resource) ||
-      new URL(native.resource).origin !== native.controlPlaneOrigin
-    ) {
-      throw new AuthenticationError(503, "auth_configuration_invalid", `Native auth client ${kind} origins are invalid`)
-    }
-    assertNativeRevocationDescriptor(kind, native.revocation, native.tokenEndpointOrigin)
   }
 
   if (descriptor.adapter === "better-auth") {
@@ -516,16 +426,7 @@ function parseVerifiedSession(
       value.client.controlPlaneOrigin !== expected.controlPlaneOrigin
     )
       throw invalidCredentials()
-    client = {
-      ...common,
-      kind: value.client.kind,
-      tokenKind: "access-token",
-      deploymentId: descriptor.deploymentId,
-      adapter: descriptor.adapter,
-      issuer: descriptor.issuer,
-      tokenEndpointOrigin: expected.tokenEndpointOrigin,
-      controlPlaneOrigin: expected.controlPlaneOrigin,
-    }
+    client = { ...bindNativeClient(descriptor, value.client.kind), ...common }
   }
 
   const expected = client.kind === "browser" ? descriptor.browser : descriptor.native[client.kind]

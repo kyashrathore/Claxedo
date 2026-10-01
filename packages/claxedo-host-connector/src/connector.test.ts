@@ -1,7 +1,13 @@
 import { describe, expect, test, vi } from "vitest"
-import { createHostConnector, type ConnectorErrorStage, type HostSessionAuthority, type MachineTransport } from "./connector"
+import {
+  createHostConnector,
+  type ConnectorErrorStage,
+  type HostSessionAuthority,
+  type MachineTransport,
+} from "./connector"
 import { createFakeControlPlane, enrollFakeHost } from "./fake-control-plane.test-support"
-import { createHostKeyPair, enrollmentPayload, hostKeyPairFromJwk } from "./host-identity"
+import { createHostKeyPair, hostKeyPairFromJwk } from "./host-identity"
+import { enrollmentPayload } from "@claxedo/account-contract/machine"
 import { createMachineSignedTransport } from "./machine-transport"
 
 /**
@@ -116,7 +122,11 @@ describe("start", () => {
 
     const state = await h.connector.start()
 
-    expect(state).toMatchObject({ status: "stopped", reason: "error", detail: expect.stringContaining("control plane unreachable") })
+    expect(state).toMatchObject({
+      status: "stopped",
+      reason: "error",
+      detail: expect.stringContaining("control plane unreachable"),
+    })
     expect(h.errors.map((entry) => entry.stage)).toEqual(["acquire"])
     expect(h.ticks).toEqual([])
     expect(h.beats()).toEqual([])
@@ -133,7 +143,10 @@ describe("heartbeat", () => {
     h.tick()
     await vi.waitFor(() => expect(h.beats()).toHaveLength(2))
 
-    expect(h.connector.state()).toMatchObject({ status: "enrolled", enrollment: { expires_at: issued + 10_000 + LEASE_MS } })
+    expect(h.connector.state()).toMatchObject({
+      status: "enrolled",
+      enrollment: { expires_at: issued + 10_000 + LEASE_MS },
+    })
   })
 
   test("tells a listener about the renewed lease on every tick, not just an explicit beat()", async () => {
@@ -179,7 +192,11 @@ describe("heartbeat", () => {
 
     const state = await h.connector.beat()
 
-    expect(state).toMatchObject({ status: "stopped", reason: "revoked", detail: expect.stringContaining("enrollment_revoked") })
+    expect(state).toMatchObject({
+      status: "stopped",
+      reason: "revoked",
+      detail: expect.stringContaining("enrollment_revoked"),
+    })
     expect(h.errors.map((entry) => entry.stage)).toEqual(["heartbeat"])
     expect(h.acquires()).toHaveLength(1)
   })
@@ -189,7 +206,11 @@ describe("heartbeat", () => {
     await h.connector.start()
     h.cp.pause(h.enrollmentId, true)
 
-    expect(await h.connector.beat()).toMatchObject({ status: "stopped", reason: "revoked", detail: expect.stringContaining("enrollment_paused") })
+    expect(await h.connector.beat()).toMatchObject({
+      status: "stopped",
+      reason: "revoked",
+      detail: expect.stringContaining("enrollment_paused"),
+    })
   })
 
   /**
@@ -211,7 +232,10 @@ describe("heartbeat", () => {
 
     h.cp.faults.unavailable = undefined
     h.clock.now += 10_000
-    expect(await h.connector.beat()).toMatchObject({ status: "enrolled", enrollment: { expires_at: h.clock.now + LEASE_MS } })
+    expect(await h.connector.beat()).toMatchObject({
+      status: "enrolled",
+      enrollment: { expires_at: h.clock.now + LEASE_MS },
+    })
     expect(h.acquires(), "recovering must not claim a new generation behind the user").toHaveLength(1)
   })
 
@@ -301,7 +325,11 @@ describe("a beat still in flight when its era ends", () => {
     gate.pending[0]?.release()
     await early
 
-    expect(h.connector.state()).toMatchObject({ status: "stopped", reason: "revoked", detail: expect.stringContaining("enrollment_revoked") })
+    expect(h.connector.state()).toMatchObject({
+      status: "stopped",
+      reason: "revoked",
+      detail: expect.stringContaining("enrollment_revoked"),
+    })
     expect(h.renewals).toHaveLength(1)
   })
 
@@ -372,14 +400,20 @@ describe("a beat still in flight when its era ends", () => {
       gate.pending[0]?.release()
       await stale
 
-      expect(h.connector.state(), "the stale answer wrote nothing").toMatchObject({ status: "enrolled", enrollment: { expires_at: 0 } })
+      expect(h.connector.state(), "the stale answer wrote nothing").toMatchObject({
+        status: "enrolled",
+        enrollment: { expires_at: 0 },
+      })
       expect(h.renewals).toHaveLength(1)
 
       await vi.waitFor(() => expect(gate.pending).toHaveLength(2))
       gate.pending[1]?.release()
       await restarting
 
-      expect(h.connector.state()).toMatchObject({ status: "enrolled", enrollment: { expires_at: h.clock.now + LEASE_MS } })
+      expect(h.connector.state()).toMatchObject({
+        status: "enrolled",
+        enrollment: { expires_at: h.clock.now + LEASE_MS },
+      })
       expect(h.renewals).toHaveLength(2)
     })
   }

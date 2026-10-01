@@ -1,3 +1,10 @@
+import {
+  enrollmentPayload,
+  invitationRedeemPayload,
+  invitationToken,
+  publicKeyFingerprint,
+  publicKeyJwk,
+} from "@claxedo/account-contract/machine"
 import { timingSafeEqual } from "node:crypto"
 import { sha256Hex } from "@claxedo/helpers/crypto"
 import { isRecord } from "@claxedo/helpers/guards"
@@ -35,14 +42,10 @@ import type {
 } from "@claxedo/server-core/platform/auth/authority"
 import {
   directoryWithinRoots,
-  invitationRedeemPayload,
-  invitationToken,
   normalizePosixDirectory,
   normalizeStoredDirectory,
-  publicKeyFingerprint,
 } from "@claxedo/server-core/platform/auth/host-connect-contract"
 import type { MachineAuthRefusal } from "@claxedo/server-core/platform/auth/machine-auth"
-import { machineSealingPublicKey } from "@claxedo/server-core/platform/auth/machine-seal"
 import { ClaxedoError } from "@claxedo/server-core/platform/errors/base"
 import type { PrivateSessionAuthority } from "@claxedo/server-core/platform/auth/private-session-authority"
 import type { SessionTurnAuthority } from "@claxedo/server-core/platform/auth/session-turn-authority"
@@ -179,18 +182,6 @@ function requiredText(value: unknown, name: string) {
 
 function base64url(bytes: Uint8Array) {
   return Buffer.from(bytes).toString("base64url")
-}
-
-function enrollmentPayload(input: { host_id: string; request_id: string; nonce: string }) {
-  // A versioned, domain-prefixed payload. Payload domains must not overlap: a
-  // signature captured from one flow being replayable in another is exactly
-  // what a prefix prevents.
-  return [
-    "claxedo.host-enrollment.enroll.v1",
-    `host_id=${input.host_id}`,
-    `request_id=${input.request_id}`,
-    `nonce=${input.nonce}`,
-  ].join("\n")
 }
 
 type HostEnrollmentRow = {
@@ -465,10 +456,10 @@ function requiredProviderIds(input: string[]): string[] {
   return [...input].sort()
 }
 
-/** `machineSealingPublicKey`'s form as JSON text, the one shape the stored column and a push's re-assertion are compared in. */
+/** Key re-assertion uses normalized JSON equality, independent of optional JWK members. */
 function storedSealingPublicKey(input: string) {
   try {
-    return JSON.stringify(machineSealingPublicKey(input))
+    return JSON.stringify(publicKeyJwk(input))
   } catch (error) {
     throw new SqliteHostConnectError("invalid_input", `sealingPublicKey: ${error instanceof Error ? error.message : String(error)}`)
   }
@@ -1631,8 +1622,8 @@ export function createSqliteWorkspaceAuthority(
       await verifyHostSignature({
         public_key: args.publicKey,
         payload: enrollmentPayload({
-          host_id: args.hostId,
-          request_id: args.requestId,
+          hostId: args.hostId,
+          requestId: args.requestId,
           nonce: request.nonce,
         }),
         signature: args.signature,

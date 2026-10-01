@@ -2,25 +2,20 @@ import { createHash, createPublicKey, verify as nodeVerify } from "node:crypto"
 import { describe, expect, test } from "vitest"
 
 import {
-  MACHINE_REQUEST_HEADERS,
   createHostKeyPair,
   hostKeyPairFromJwk,
-  hostInvitationRedeemPayload,
   hostMachineRequestPayload,
   machineRequestSignature,
   newHostId,
-  parseInvitationToken,
-  hostPublicKeyFingerprint,
   randomNonce,
   hostSha256Hex,
 } from "./host-identity"
+import {
+  MACHINE_REQUEST_HEADERS,
+  invitationRedeemPayload,
+  publicKeyFingerprint,
+} from "@claxedo/account-contract/machine"
 
-/**
- * The literal strings the control plane verifies (`host-connect-contract.ts`
- * in server-core pins the same ones). Asserted as whole strings, not by
- * calling the builder twice: a drift on either side must fail here, not at the
- * first beat of a real host.
- */
 describe("machine request payload", () => {
   test("is the seven-line P1.1 literal", async () => {
     const payload = await hostMachineRequestPayload({
@@ -89,7 +84,7 @@ describe("machine request payload", () => {
 
 describe("invitation redeem payload", () => {
   test("is the four-line P1.3 literal", () => {
-    expect(hostInvitationRedeemPayload({ invitationId: "inv_1", hostId: "host_a", publicKeySha256: "FP" })).toBe(
+    expect(invitationRedeemPayload({ invitationId: "inv_1", hostId: "host_a", publicKeySha256: "FP" })).toBe(
       "claxedo.host-enrollment.redeem.v1\ninvitation_id=inv_1\nhost_id=host_a\npublic_key_sha256=FP",
     )
   })
@@ -102,7 +97,9 @@ describe("public key fingerprint", () => {
       .update(Buffer.concat([Buffer.from(privateKeyJwk.x!, "base64url"), Buffer.from(privateKeyJwk.y!, "base64url")]))
       .digest("base64url")
 
-    expect(await hostPublicKeyFingerprint({ kty: "EC", crv: "P-256", x: privateKeyJwk.x, y: privateKeyJwk.y })).toBe(expected)
+    expect(await publicKeyFingerprint({ kty: "EC", crv: "P-256", x: privateKeyJwk.x, y: privateKeyJwk.y })).toBe(
+      expected,
+    )
   })
 
   test("ignores JWK serialization differences", async () => {
@@ -111,31 +108,14 @@ describe("public key fingerprint", () => {
     const { privateKeyJwk, publicKey } = await createHostKeyPair()
     const reordered = JSON.stringify({ y: privateKeyJwk.y, x: privateKeyJwk.x, crv: "P-256", kty: "EC", ext: true })
 
-    expect(await hostPublicKeyFingerprint(reordered)).toBe(await hostPublicKeyFingerprint(publicKey))
-    expect(await hostPublicKeyFingerprint((await hostKeyPairFromJwk(privateKeyJwk)).publicKey)).toBe(
-      await hostPublicKeyFingerprint(publicKey),
+    expect(await publicKeyFingerprint(reordered)).toBe(await publicKeyFingerprint(publicKey))
+    expect(await publicKeyFingerprint((await hostKeyPairFromJwk(privateKeyJwk)).publicKey)).toBe(
+      await publicKeyFingerprint(publicKey),
     )
   })
 
   test("refuses anything but a P-256 public JWK", async () => {
-    await expect(hostPublicKeyFingerprint({ kty: "RSA", n: "x", e: "AQAB" })).rejects.toThrow(/P-256/)
-  })
-})
-
-describe("invitation token", () => {
-  test("splits chx_inv_1.<id>.<secret>", () => {
-    expect(parseInvitationToken("chx_inv_1.abc123.s3cr3t_-X\n")).toEqual({ invitationId: "abc123", secret: "s3cr3t_-X" })
-  })
-
-  test.each([
-    ["chx_inv_2.abc.def", "wrong version"],
-    ["chx_inv_1.abc", "missing secret"],
-    ["chx_inv_1.abc.def.ghi", "extra field"],
-    ["chx_inv_1..def", "empty id"],
-    ["chx_inv_1.ab c.def", "space in id"],
-    ["chx_inv_1.abc.de+f", "non-base64url secret"],
-  ])("refuses %s (%s)", (token) => {
-    expect(() => parseInvitationToken(token)).toThrow()
+    await expect(publicKeyFingerprint({ kty: "RSA", n: "x", e: "AQAB" })).rejects.toThrow(/P-256/)
   })
 })
 
