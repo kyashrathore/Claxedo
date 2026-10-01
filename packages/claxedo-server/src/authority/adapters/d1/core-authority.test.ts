@@ -250,7 +250,7 @@ describe("composed Better Auth + D1 authority", () => {
         workspaceId: "ws_team_sharing",
         grantedToTeamId: otherTeam.team_id,
       }),
-    ).rejects.toThrow("session_share_team_org_mismatch")
+    ).rejects.toMatchObject({ code: "session_share_team_org_mismatch" })
 
     const firstGrant = await authority.grantSessionShare!(alice, {
       sessionId: "ses_team_sharing",
