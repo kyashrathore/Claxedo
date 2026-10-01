@@ -4,9 +4,10 @@ import { createHostedRuntimeDelivery } from "./hosted-runtime-delivery"
 import { hostedOrgCredentials, HOSTED_CREDENTIALS_FLAG } from "../credentials/worker"
 import { CREDENTIALS_KEK_ENV } from "@claxedo/server-core/credentials/envelope"
 import { controlPlaneMigrations, miniflareControlPlaneDatabase } from "../test-support/control-plane-migrations"
-import { hostedRuntimeConfigApply } from "./hosted-runtime"
 
-vi.mock("./hosted-runtime", () => ({ hostedRuntimeConfigApply: vi.fn(async () => {}) }))
+const configApplied = vi.hoisted(() => vi.fn(async (_snapshot: import("@claxedo/workspace-runtime/config").RuntimeSnapshot) => {}))
+vi.mock("@claxedo/workspace-runtime/client", () => ({ createWorkspaceRuntimeClient: vi.fn(() => ({ applyConfig: configApplied })) }))
+vi.mock("@claxedo/server-core/platform/auth/runtime-access-token", () => ({ mintSupervisorBackplaneToken: vi.fn(async () => ({ supervisorBackplaneToken: "supervisor-token" })) }))
 
 const OWNERS: Record<string, string> = { "ws-a": "A", "ws-b": "B" }
 
@@ -22,7 +23,7 @@ test("a workspace's sandbox is delivered its owner's account alone, and another 
     type Input = Parameters<typeof createHostedRuntimeDelivery>[0]
     const delivery = createHostedRuntimeDelivery({
       authority: { resolveWorkspaceOwner: async (workspaceId: string) => ({ userId: OWNERS[workspaceId], orgId: "org" }) } as unknown as Input["authority"],
-      services: {} as Input["services"], sandboxManager: {} as Input["sandboxManager"],
+      services: { sandbox: { sandboxManager: { target: async () => ({ status: "ready", hostId: "host", url: "https://runtime.test" }) } } } as unknown as Input["services"], sandboxManager: {} as Input["sandboxManager"],
       driver: { metadata: { secretBrokering: "native" } } as Input["driver"],
       sandboxInput: async () => { throw new Error("this test provisions no sandbox") },
       settings: { read: async () => ({ version: 3, connections: {}, sandbox_driver: {} }), write: async () => {} },
@@ -31,7 +32,7 @@ test("a workspace's sandbox is delivered its owner's account alone, and another 
     const deliveredTo = async (workspaceId: string) => {
       const preparation = await delivery.prepareRuntime({ workspaceId })
       await delivery.provisionRuntime({ workspaceId }, preparation)
-      return { secrets: preparation.secrets ?? [], snapshot: vi.mocked(hostedRuntimeConfigApply).mock.calls.at(-1)![2] }
+      return { secrets: preparation.secrets ?? [], snapshot: configApplied.mock.calls.at(-1)![0] }
     }
     const a = await deliveredTo("ws-a")
     const b = await deliveredTo("ws-b")

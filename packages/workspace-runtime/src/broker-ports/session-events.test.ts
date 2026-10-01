@@ -13,6 +13,7 @@ test("one broker subagent update commits once and reaches SSE once", async () =>
   const root = mkdtempSync(path.join(tmpdir(), "subagent-delivery-"))
   const store = openRuntimeStore(root)
   const controller = new AbortController()
+  let handler: ReturnType<typeof workspaceEventsHandler> | undefined
   try {
     store.bindSession({
       owner: { kind: "machine-owner" }, sessionId: "parent", workspaceId: "workspace",
@@ -25,7 +26,7 @@ test("one broker subagent update commits once and reaches SSE once", async () =>
       reportOwnerFailure: (_sessionId, error) => { throw error },
       retainLeasedTurnFailure: (_sessionId, _turn, error) => { throw error },
     })
-    const handler = workspaceEventsHandler({
+    handler = workspaceEventsHandler({
       directory: "/work", workspaceId: "workspace", eventHub: hub,
       bus: createBus<WorkspaceRuntimeEvent>(), sequenceOrigin: () => 0,
     })
@@ -57,6 +58,7 @@ test("one broker subagent update commits once and reaches SSE once", async () =>
     expect(frames.filter((frame) => frame.payload?.type === "subagent.updated")).toHaveLength(1)
   } finally {
     controller.abort()
+    handler?.close()
     store.close()
     rmSync(root, { recursive: true, force: true })
   }

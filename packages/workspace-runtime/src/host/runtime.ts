@@ -123,7 +123,6 @@ export function createAgentRuntime(input: AgentRuntimeCompositionInput) {
     const writer = createSessionEventWriter({
       store,
       publishPresentation: (context, payload) => emit({ sessionId: context.sessionId, directory: context.directory, payload }),
-      publishRuntime: (context, payload) => emit({ sessionId: context.sessionId, directory: context.directory, payload }),
     })
     return writer.writePresentation({
       sessionId, directory, agentSessionId: store.getAgentSessionId(sessionId) ?? undefined,

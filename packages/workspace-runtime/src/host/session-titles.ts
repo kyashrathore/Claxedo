@@ -32,7 +32,6 @@ export function createSessionTitleOwner(input: { store: AgentRuntimeStore; event
   const writer = createSessionEventWriter({
     store,
     publishPresentation: (context, payload) => eventHub.publishGlobal(withDir(context.directory ?? "", payload)),
-    publishRuntime: eventHub.publishRuntime,
   })
   const deadlineMs = input.deadlineMs ?? TITLE_TURN_TIMEOUT_MS
   const attempted = new Set<string>()

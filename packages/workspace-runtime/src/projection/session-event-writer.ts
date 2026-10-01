@@ -28,7 +28,7 @@ export type SessionEventStore = {
 export function createSessionEventWriter(deps: {
   store: SessionEventStore
   publishPresentation: (context: SessionEventContext, payload: AgentPresentationEvent) => void
-  publishRuntime: (context: SessionEventContext, payload: AgentRuntimeEvent) => void
+  publishRuntime?: (context: SessionEventContext, payload: AgentRuntimeEvent) => void
 }) {
   const commit = (context: SessionEventContext, payload: AgentPresentationEvent) => {
     const output = deps.store.appendEvent({
@@ -58,7 +58,7 @@ export function createSessionEventWriter(deps: {
     },
     writeRuntime(context: SessionEventContext, payload: AgentRuntimeEvent, project: () => void) {
       project()
-      deps.publishRuntime(context, payload)
+      deps.publishRuntime?.(context, payload)
     },
   }
 }

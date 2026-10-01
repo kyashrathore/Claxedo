@@ -13,7 +13,7 @@ export async function decodeRelayRuntimeJson(response: Response, error: RelayRun
 export function createRelayRuntimeClient(deps: {
   provider: Pick<RelayProvider, "mintRuntimeAccessToken" | "getRelayEndpoint">
   error: RelayRuntimeErrorFactory
-  request?: typeof globalThis.fetch
+  request?: (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
 }) {
   const request = async (capability: RelayRuntimeCapability, path: string, init?: RequestInit) => {
     const { homeRegion, ...claims } = capability

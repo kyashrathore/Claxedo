@@ -1,16 +1,17 @@
 import { expect, test, vi } from "vitest"
 import type { UserAgentConfig } from "@claxedo/server-core/agent-config/config"
 import { createHostedRuntimeDelivery } from "./hosted-runtime-delivery"
-import { hostedRuntimeConfigApply } from "./hosted-runtime"
 
-vi.mock("./hosted-runtime", () => ({ hostedRuntimeConfigApply: vi.fn(async () => {}) }))
+const configApplied = vi.hoisted(() => vi.fn(async (_snapshot: import("@claxedo/workspace-runtime/config").RuntimeSnapshot) => {}))
+vi.mock("@claxedo/workspace-runtime/client", () => ({ createWorkspaceRuntimeClient: vi.fn(() => ({ applyConfig: configApplied })) }))
+vi.mock("@claxedo/server-core/platform/auth/runtime-access-token", () => ({ mintSupervisorBackplaneToken: vi.fn(async () => ({ supervisorBackplaneToken: "supervisor-token" })) }))
 
 type Input = Parameters<typeof createHostedRuntimeDelivery>[0]
 
 async function firstPush(config: UserAgentConfig) {
   const delivery = createHostedRuntimeDelivery({
     authority: { resolveWorkspaceOwner: async () => ({ userId: "owner", orgId: "org" }) } as unknown as Input["authority"],
-    services: {} as Input["services"],
+    services: { sandbox: { sandboxManager: { target: async () => ({ status: "ready", hostId: "host", url: "https://runtime.test" }) } } } as unknown as Input["services"],
     sandboxManager: {} as Input["sandboxManager"],
     driver: { metadata: { secretBrokering: "native" } } as Input["driver"],
     sandboxInput: async () => { throw new Error("this test provisions no sandbox") },
@@ -20,7 +21,7 @@ async function firstPush(config: UserAgentConfig) {
     provisionedRunner: "pi",
   })
   await delivery.provisionRuntime({ workspaceId: "ws" }, await delivery.prepareRuntime({ workspaceId: "ws" }))
-  return vi.mocked(hostedRuntimeConfigApply).mock.calls.at(-1)![2]
+  return configApplied.mock.calls.at(-1)![0]
 }
 
 test("the first push for an owner who never chose a default keeps the runner the sandbox was provisioned with", async () => {

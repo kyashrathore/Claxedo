@@ -31,7 +31,9 @@ import {
   hostedConnectionsAuthenticate,
 } from "../connections/hosted-d1/setup"
 import type { WorkspaceRuntimeContext, WorkspaceRuntimePreparation } from "../workspace/route-support"
-import { hostedRuntimeFetch } from "../workspace/hosted-runtime"
+import { createRelayRuntimeClient } from "../workspace/relay-runtime-client"
+import { CONTROL_PLANE_RUNTIME_ACTOR } from "@claxedo/server-core/platform/auth/runtime-actor"
+import type { ControlPlaneServices } from "../authority/services"
 import { D1SignedAgentPluginActivationStore } from "./activation/d1-store"
 import { hostedAgentPluginArtifactStore, type AgentPluginR2Bucket } from "./artifacts/r2-artifact-adapter"
 import { hostedAgentPluginsModule } from "./module"
@@ -62,6 +64,27 @@ import { TASKS_CAPABILITY_AUDIENCE } from "../tasks/capability"
 import { createGrantWithdrawal } from "../tasks/grant-withdrawal"
 
 const log = Log.create({ service: "hosted-agent-plugins" })
+
+export function createHostedPluginRuntimeFetch(services: ControlPlaneServices): Parameters<typeof createHostedAgentPluginRuntimeProvisioner>[0]["runtimeFetch"] {
+  return async (workspaceId, identity, requestPath, init) => {
+    const manager = services.sandbox.sandboxManager
+    if (!manager) throw new Error("hosted sandbox manager is unavailable")
+    const target = await manager.target(workspaceId)
+    if (target.status !== "ready") throw new Error(`hosted sandbox ${workspaceId} is unavailable`)
+    const provider = services.relay.provider
+    if (!provider) throw new Error("hosted runtime token issuer is unavailable")
+    return await createRelayRuntimeClient({ provider, error: (_status, _code, message) => new Error(message) }).fetch({
+      workspaceId,
+      hostId: target.hostId,
+      routingId: target.routingId,
+      orgId: identity.organizationId,
+      ...CONTROL_PLANE_RUNTIME_ACTOR,
+      role: "owner",
+      ttlMs: 10 * 60_000,
+      homeRegion: target.homeRegion,
+    }, requestPath, init)
+  }
+}
 
 /**
  * The credential partition a deployment-wide secret belongs to. Not an org id:
@@ -337,13 +360,7 @@ export function createHostedAgentPluginsComposition(input: {
   const provisioner = createHostedAgentPluginRuntimeProvisioner({
     activations,
     artifacts,
-    runtimeFetch: (workspaceId, identity, requestPath, init) => hostedRuntimeFetch(
-      services,
-      workspaceId,
-      { orgId: identity.organizationId, projectId: identity.projectId },
-      requestPath,
-      init,
-    ),
+    runtimeFetch: createHostedPluginRuntimeFetch(services),
   })
 
   // The hosted prepare/provision rail is a CLOUD VM rail: it pushes the
