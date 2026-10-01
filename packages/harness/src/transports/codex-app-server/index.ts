@@ -48,7 +48,7 @@ export class CodexAppServerTransport implements HarnessTransport {
   }
 
   private async models(target: Entry): Promise<CodexModel[]> {
-    const entry = await this.sessions.settled(target.session)
+    const entry = await this.sessions.live(target.session)
     if (entry.models) return entry.models
     const reading = readCodexModels(entry.rpc)
     entry.models = reading
@@ -90,7 +90,7 @@ export class CodexAppServerTransport implements HarnessTransport {
 
   readonly backgroundTasks = { stop: async (session: HarnessSession, task: BackgroundTaskRef) => stopCodexChild(this.sessions.entry(session), task) }
 
-  readonly goals = createCodexGoals((session) => this.sessions.settled(session))
+  readonly goals = createCodexGoals((session) => this.sessions.live(session))
 
   readonly health: HealthOperations = {
     connection: (_directory, sessionId) => sessionConnectionHealth(sessionId, (id) => this.sessions.connected(id), "disconnected"),
@@ -99,15 +99,15 @@ export class CodexAppServerTransport implements HarnessTransport {
 
   readonly naming = {
     generateTitle: async (session: HarnessSession, request: SessionTitleRequest) =>
-      codexSessionTitle(await this.sessions.settled(session), request, this.services),
+      codexSessionTitle(await this.sessions.live(session), request, this.services),
     rename: async (session: HarnessSession, name: string) => {
-      const entry = await this.sessions.settled(session)
+      const entry = await this.sessions.live(session)
       await entry.rpc.request("thread/name/set", { threadId: session.binding.upstreamSessionId, name })
     },
   }
 
   async *send(session: HarnessSession, turn: TurnInput, broker: TurnBroker): AsyncIterable<RoutedEvent> {
-    const entry = await this.sessions.settled(session)
+    const entry = await this.sessions.live(session)
     entry.usage.attach({ sessionId: session.binding.sessionId, directory: session.directory, assistantMessageId: turn.assistantMessageId })
     yield* withTurnAccount(runCodexTurn(entry, session, turn, broker, this.services, () => this.models(entry),
       () => this.cancel(session, { turnId: turn.turnId, assistantMessageId: turn.assistantMessageId }, codexRetirementDeadline(this.services))),

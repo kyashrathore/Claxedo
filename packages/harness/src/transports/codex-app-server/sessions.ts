@@ -37,9 +37,12 @@ export class CodexSessions implements CodexSessionHost {
 
   async settled(session: HarnessSession): Promise<Entry> {
     await Promise.allSettled([this.reopening.get(session.binding.sessionId)])
-    const entry = this.entry(session)
-    if (entry.state === "lost") throw new CodexTransportError("session", "Codex session was lost; cancel the turn and attach the session explicitly")
-    return entry
+    return this.entry(session)
+  }
+
+  async live(session: HarnessSession): Promise<Entry> {
+    const entry = await this.settled(session)
+    return entry.state === "lost" ? this.reopen(entry) : entry
   }
 
   idle(entry: Entry): void {
@@ -58,7 +61,7 @@ export class CodexSessions implements CodexSessionHost {
 
   private async apply(entry: Entry): Promise<void> {
     const next = mergeStartInput(entry.start, entry.pendingUpdate ?? {})
-    if (codexLaunch(next) !== codexLaunch(entry.start)) {
+    if (entry.state !== "lost" && codexLaunch(next) !== codexLaunch(entry.start)) {
       await this.reopen(entry)
       return
     }
@@ -76,8 +79,10 @@ export class CodexSessions implements CodexSessionHost {
   }
 
   private async replace(entry: Entry): Promise<Entry> {
-    entry.state = "retiring"
-    await entry.rpc.retire(codexRetirementDeadline(this.services))
+    if (entry.state !== "lost") {
+      entry.state = "retiring"
+      await entry.rpc.retire(codexRetirementDeadline(this.services))
+    }
     entry.state = "lost"
     entry.start = mergeStartInput(entry.start, entry.pendingUpdate ?? {})
     entry.pendingUpdate = undefined

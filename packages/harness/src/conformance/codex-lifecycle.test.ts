@@ -59,7 +59,7 @@ test("a Codex app-server that exits at startup fails with its exit status and th
   } finally { await fs.rm(root, { recursive: true, force: true }) }
 }, 30_000)
 
-test("a killed Codex app-server refuses use until explicit attach restores its thread and history", async () => {
+test("a killed Codex app-server reads lost, and the next turn resumes the same thread from the same home with its history", async () => {
   const recorder = recordingBackend()
   const context = await setupConformance({ name: "codex-lost-process", backend: recorder.backend, makeTransport: makeCodexTransport })
   try {
@@ -71,13 +71,8 @@ test("a killed Codex app-server refuses use until explicit attach restores its t
     await new Promise((resolve) => setTimeout(resolve, 10))
     expect(context.transport.health!.connection(context.backend.directory, "s1").state).toBe("disconnected")
     expect(context.transport.health!.runtime(context.backend.directory, "s1")).toMatchObject({ status: "degraded", reason: "harness_process_lost" })
-    await expect((async () => {
-      for await (const _event of context.transport.send(context.session, context.turn("REFUSED"), context.turnBroker())) {}
-    })()).rejects.toMatchObject({ transport: "codex", code: "session" })
-    expect(context.services.processes).toHaveLength(1)
-    const attached = await context.transport.attach({ ...context.start, binding: context.session.binding, upstreamHasTurns: true }, context.sessionBroker)
     const text: string[] = []
-    for await (const routed of context.transport.send(attached, context.turn("Reply with exactly this one token: AFTERLOSS"), context.turnBroker())) {
+    for await (const routed of context.transport.send(context.session, context.turn("Reply with exactly this one token: AFTERLOSS"), context.turnBroker())) {
       if (routed.event.type === "text-delta") text.push(routed.event.delta)
     }
     expect(text.join("")).toContain("AFTERLOSS")

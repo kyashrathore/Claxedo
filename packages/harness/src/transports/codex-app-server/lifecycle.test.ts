@@ -9,7 +9,7 @@ const tick = () => new Promise((resolve) => setTimeout(resolve, 0))
 
 async function drain(stream: AsyncIterable<unknown>) { for await (const _event of stream) {} }
 
-test("a lost Codex app-server stays disconnected and refuses use until explicit attach", async () => {
+test("a Codex app-server lost between turns reads disconnected and degraded, and the next turn resumes its thread in the same home", async () => {
   const peer = await scriptedTransport({ completeTurns: true })
   try {
     const session = await peer.transport.start(peer.startInput, peer.liveBroker())
@@ -17,13 +17,12 @@ test("a lost Codex app-server stays disconnected and refuses use until explicit 
     await tick()
     expect(peer.transport.health.connection(peer.root, "s1").state).toBe("disconnected")
     expect(peer.transport.health.runtime(peer.root, "s1")).toMatchObject({ status: "degraded", reason: "harness_process_lost" })
-    await expect(drain(peer.transport.send(session, turnInput, turnBroker()))).rejects.toMatchObject({ transport: "codex", code: "session" })
-    await expect(peer.transport.capabilities({ sessionId: "s1", directory: peer.root })).rejects.toMatchObject({ code: "session" })
-    await expect(peer.transport.goals.read(session)).rejects.toMatchObject({ code: "session" })
-    expect(await peer.transport.goals.pause(session)).toMatchObject({ ok: false, status: "failed" })
-    await expect(peer.transport.configure(session, { credentials: peer.startInput.credentials })).rejects.toMatchObject({ code: "session" })
-    expect(peer.spawned()).toBe(1)
-    expect(peer.frames.some((frame) => frame.method === "thread/resume")).toBe(false)
+    await drain(peer.transport.send(session, turnInput, turnBroker()))
+    expect(peer.spawned()).toBe(2)
+    expect(peer.environments[1]?.CODEX_HOME).toBe(peer.environments[0]?.CODEX_HOME)
+    expect(peer.frames.find((frame) => frame.method === "thread/resume")?.params).toMatchObject({ threadId: "thread-1", excludeTurns: true })
+    expect(peer.transport.health.connection(peer.root, "s1").state).toBe("ready")
+    expect(peer.transport.health.runtime(peer.root, "s1")).toEqual({ status: "ok" })
   } finally { await peer.close() }
 })
 
@@ -72,7 +71,7 @@ function manualClock() {
   return { clock, fire: (ms: number) => { for (const [id, timer] of timers) if (timer.ms === ms) { timers.delete(id); timer.callback() } } }
 }
 
-test("a turn/start timeout retires the app-server and refuses later turns", async () => {
+test("a turn/start that never answers retires the app-server so no orphan turn runs, and the next turn resumes on a new one", async () => {
   const { clock, fire } = manualClock()
   const peer = await scriptedTransport({ holdTurnStart: true, clock })
   try {
@@ -83,9 +82,14 @@ test("a turn/start timeout retires the app-server and refuses later turns", asyn
     await expect(running).rejects.toThrow("Codex turn/start did not answer within 60000ms")
     expect(peer.retired()).toBe(1)
     expect(peer.transport.health.runtime(peer.root, "s1")).toMatchObject({ status: "degraded", message: "Codex turn/start did not answer within 60000ms" })
-    await expect(drain(peer.transport.send(session, turnInput, turnBroker()))).rejects.toMatchObject({ code: "session" })
-    expect(peer.spawned()).toBe(1)
-    expect(peer.frames.filter((frame) => frame.method === "thread/resume")).toHaveLength(0)
+    const second = drain(peer.transport.send(session, turnInput, turnBroker()))
+    for (let attempt = 0; attempt < 50 && peer.frames.filter((frame) => frame.method === "turn/start").length < 2; attempt++) await tick()
+    peer.releaseTurnStart()
+    await tick()
+    peer.emit({ method: "turn/completed", params: { threadId: "thread-1", turn: { id: "turn-current", status: "completed" } } })
+    await second
+    expect(peer.spawned()).toBe(2)
+    expect(peer.frames.filter((frame) => frame.method === "thread/resume")).toHaveLength(1)
   } finally { await peer.close() }
 })
 
