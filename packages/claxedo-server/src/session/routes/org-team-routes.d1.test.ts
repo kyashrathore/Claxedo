@@ -15,7 +15,8 @@ import { readdirSync } from "node:fs"
 import { readFile } from "node:fs/promises"
 import { fileURLToPath } from "node:url"
 import { Miniflare } from "miniflare"
-import { betterAuthOrgInvitationDelivery } from "../../platform/auth/better-auth-org-invitations"
+import { betterAuthVerifiedEmail } from "../../platform/auth/better-auth-d1-authentication-evidence"
+import { orgInvitationEmailDelivery } from "../../platform/auth/auth-email-delivery"
 import { testRequestAuthenticationAdapter } from "../../test-support/request-authentication"
 import {
   controlPlaneMigrations,
@@ -67,7 +68,7 @@ async function hosted() {
       CONTROL_PLANE_DB: controlPlane.database,
     },
     product: { kind: "claxedo-hosted" },
-    invitations: betterAuthOrgInvitationDelivery({ database: accounts, issuer: "https://auth.test", appOrigin: "https://app.test", sender: { send: async (message) => { sent.push(message) } } }),
+    invitations: orgInvitationEmailDelivery({ verifiedEmail: (auth) => betterAuthVerifiedEmail({ database: accounts, issuer: "https://auth.test" }, auth.principal?.identity), appOrigin: "https://app.test", sender: { send: async (message) => { sent.push(message) } } }),
   })
   const principals = new Map<string, ControlPlanePrincipal>()
   const authentication: RequestAuthenticationAdapter = {
@@ -176,7 +177,7 @@ async function hosted() {
   }
   const join = async (adminToken: string, orgId: string, member: { token: string }) => {
     expect(await call(adminToken, "POST", `/api/control/orgs/${orgId}/invitations`, { email: `${member.token}@example.test`, role: "member" })).toEqual({ status: 202, body: { message: "invitation sent" } })
-    return call(member.token, "POST", `/api/control/invitations/${sent.at(-1)!.token}/accept`)
+    return call(member.token, "POST", "/api/control/invitations/accept", { token: sent.at(-1)!.token })
   }
   return { authority, person, account, call, join, sent }
 }
@@ -297,9 +298,9 @@ describe("hosted organization, team and project access routes on D1", () => {
       expect(await call(alice.token, "POST", `/api/control/orgs/${orgId}/invitations`, { email, role: "member" }))
         .toEqual({ status: 202, body: { message: "invitation sent" } })
     }
-    expect((await call(carol.token, "POST", `/api/control/invitations/${sent[0]!.token}/accept`)).body)
+    expect((await call(carol.token, "POST", "/api/control/invitations/accept", { token: sent[0]!.token })).body)
       .toMatchObject({ user_id: carol.userId, role: "member" })
-    expect(await call("dave", "POST", `/api/control/invitations/${sent[1]!.token}/accept`))
+    expect(await call("dave", "POST", "/api/control/invitations/accept", { token: sent[1]!.token }))
       .toMatchObject({ status: 403, body: { error: { code: "org_invitation_email_mismatch" } } })
   })
 

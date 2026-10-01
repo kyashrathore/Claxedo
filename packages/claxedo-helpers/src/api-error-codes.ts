@@ -18,6 +18,8 @@ export const PUBLIC_API_ERRORS = {
   team_not_allowed_on_personal_org: { family: "access", status: 400, message: "Personal organizations cannot contain teams" },
   team_member_target_required: { family: "access", status: 400, message: "Exactly one team member target is required" },
   org_invitation_invalid: { family: "access", status: 409, message: "Invitation is invalid or unavailable" },
+  org_invitation_pending: { family: "access", status: 409, message: "An invitation to this address is already pending" },
+  org_invitation_rate_limited: { family: "access", status: 429, message: "Organization invitation limit exceeded" },
   org_invitation_email_mismatch: { family: "access", status: 403, message: "Sign in with the invited verified email address" },
   org_invitation_delivery_unavailable: { family: "access", status: 503, message: "Invitation delivery is unavailable" },
   organization_not_found: { family: "access", status: 404, message: "Organization not found" },

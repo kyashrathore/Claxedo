@@ -17,8 +17,9 @@ import { canonicalRepositoryKey } from "@claxedo/server-core/authority/repositor
 import { ClaxedoError } from "@claxedo/server-core/platform/errors/base"
 import { normalizeStoredDirectory } from "@claxedo/server-core/platform/auth/host-connect-contract"
 import { HOST_SERVING_WORKSPACE_SQL } from "./host-access-authority"
-import { batchUnder, may, mayGuard, maySql, readProjectRole, roleRank, type AuthorizationPrincipal } from "./authorization"
+import { batchUnder, may, mayGuard, maySql, readProjectRole, roleRank, type AuthorizationPrincipal, type BoundSql } from "./authorization"
 import { ownerMembershipStatements, requireHuman, requireText, type D1AccessContext } from "./access-context"
+import { prepareInvitationAdmission } from "./org-invitation-authority"
 import { asOrgId, type OrgId } from "@claxedo/server-core/platform/auth/branded-id"
 import { d1BatchAssertionFailed } from "../../../platform/db/d1-constraint"
 
@@ -289,19 +290,18 @@ export class D1WorkspaceAuthority implements D1WorkspaceAuthorityCore {
     const existing = await this.identityResolution(identity)
     if (this.options.product.kind !== "user-deployed" || existing.state !== "unavailable") return existing
     const now = this.now()
-    const pending = await this.database
-      .prepare(`
-        select 1 from org_invitations
-        where org_id = ? and email = ? and accepted_at is null and revoked_at is null and expires_at > ?
-      `)
-      .bind(this.options.product.organization.id, verifiedEmail.trim().toLowerCase(), now)
-      .first()
-    if (!pending) return existing
+    const admission = await prepareInvitationAdmission(this.accessContext(), {
+      orgId: this.options.product.organization.id,
+      email: verifiedEmail,
+      now,
+    })
+    if (!admission) return existing
     const userId = this.randomId("usr")
     await this.database.batch([
-      this.insertIdentity(identity, userId, now),
+      this.insertIdentity(identity, userId, now, admission.guard),
       this.insertMappedUser(identity, userId, now),
       this.insertHumanActor(identity, this.randomId("act"), now),
+      admission.recordUser(userId),
     ])
     return await this.identityResolution(identity)
   }
@@ -978,16 +978,16 @@ export class D1WorkspaceAuthority implements D1WorkspaceAuthorityCore {
     }
   }
 
-  private insertIdentity(identity: AuthIdentity, userId: string, now: number) {
+  private insertIdentity(identity: AuthIdentity, userId: string, now: number, guard?: BoundSql) {
     return this.database
       .prepare(
         `
       insert into auth_identities (adapter, issuer, subject, user_id, linked_at, unlinked_at)
-      values (?, ?, ?, ?, ?, null)
+      select ?, ?, ?, ?, ?, null${guard ? ` where ${guard.sql}` : ""}
       on conflict (adapter, issuer, subject) do nothing
     `,
       )
-      .bind(identity.adapter, identity.issuer, identity.subject, userId, now)
+      .bind(identity.adapter, identity.issuer, identity.subject, userId, now, ...(guard?.bind ?? []))
   }
 
   private insertMappedUser(identity: AuthIdentity, userId: string, now: number) {

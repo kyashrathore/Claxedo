@@ -122,10 +122,12 @@ export function OrgTeamControlRoutes(services: ControlPlaneServices, options: Op
       if (!revoke) return unavailable(c, "Organization invitations unavailable")
       return c.json(await revoke(auth, { orgId: c.req.param("orgId")!, invitationId: c.req.param("invitationId")! }))
     }))
-    .post("/invitations/:token/accept", limited, authorized(async (auth, c) => {
+    .post("/invitations/accept", limited, authorized(async (auth, c) => {
       const accept = authority().acceptOrgInvitation
       if (!accept) return unavailable(c, "Organization invitations unavailable")
-      return c.json(await accept(auth, { token: c.req.param("token")! }))
+      const token = txt((await body(c)).token)?.trim()
+      if (!token) return c.json({ error: apiError("invalid_input", "token is required") }, 400)
+      return c.json(await accept(auth, { token }))
     }))
     .patch("/orgs/:orgId/members/:userPublicId", limited, authorized(async (auth, c) => {
       const update = authority().updateOrgMember

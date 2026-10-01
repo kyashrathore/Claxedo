@@ -348,11 +348,11 @@ export const HOSTED_OPERATIONS = {
     exposure: { renderer: true, app: true },
   }),
   "org.invitations.accept": defineOperation({
-    method: "POST", path: operationPath("/api/control/invitations/:token/accept"),
+    method: "POST", path: operationPath("/api/control/invitations/accept"),
     input: operationInput({ token: requiredParameter }),
     output: withStrings("user_id", "role"), retry: "never",
     exposure: { renderer: true, app: true },
-    body: () => ({}),
+    body: selectBody("token"),
   }),
   "org.members.update": defineOperation({
     method: "PATCH", path: operationPath("/api/control/orgs/:orgId/members/:userPublicId"),

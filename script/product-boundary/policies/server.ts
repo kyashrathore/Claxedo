@@ -48,9 +48,9 @@ export const serverWorkerd: Policy = {
   // modules beside `authorization.ts`, the one owner of every D1 access rule
   // (`authority/adapters/d1/core-authority.ts`); the host access authority's
   // error contract is its own module
-  // (`authority/adapters/d1/host-access-errors.ts`); the Better Auth
-  // invitation delivery reads the signed invitee's verified email from AUTH_DB
-  // (`platform/auth/better-auth-org-invitations.ts`); the session authority
+  // (`authority/adapters/d1/host-access-errors.ts`); auth email, invitations
+  // included, leaves through the Worker's Cloudflare `EMAIL` binding
+  // (`platform/auth/auth-email-delivery.ts`); the session authority
   // routes resolve whose connections a turn spends through
   // `connections/turn-owner.ts`, the one owner the self-hosted node shares; the
   // D1 session authority's refusal error and input validation

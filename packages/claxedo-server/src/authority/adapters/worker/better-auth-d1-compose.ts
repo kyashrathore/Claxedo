@@ -41,9 +41,9 @@ import {
   BETTER_AUTH_INTROSPECTION_CLIENT_ID,
   betterAuthNativeResource,
 } from "../../../platform/auth/better-auth-native-clients"
-import { createBetterAuthD1AuthenticationEvidenceResolver } from "../../../platform/auth/better-auth-d1-authentication-evidence"
+import { createBetterAuthD1AuthenticationEvidenceResolver, betterAuthVerifiedEmail } from "../../../platform/auth/better-auth-d1-authentication-evidence"
 import { createBetterAuthD1RequestAuthenticationAdapter } from "../../../platform/auth/better-auth-d1-request-authentication"
-import { betterAuthOrgInvitationDelivery, betterAuthVerifiedEmail } from "../../../platform/auth/better-auth-org-invitations"
+import { orgInvitationEmailDelivery } from "../../../platform/auth/auth-email-delivery"
 import type { OrgInvitationDelivery } from "@claxedo/server-core/platform/auth/org-access-authority"
 import { STATIC_PRODUCT_DESCRIPTORS } from "../../../deployments/hosted-shared/deployment-profile"
 import type { HostedCoreAppOptions } from "../../../deployments/hosted-shared/hosted-core-app"
@@ -166,9 +166,8 @@ export function composeBetterAuthD1UserDeployedControlPlane(
       CONTROL_PLANE_DB: input.controlPlaneDatabase,
     },
     product: input.product,
-    invitations: betterAuthOrgInvitationDelivery({
-      database: input.authDatabase,
-      issuer: descriptor.issuer,
+    invitations: orgInvitationEmailDelivery({
+      verifiedEmail: (auth) => betterAuthVerifiedEmail({ database: input.authDatabase, issuer: descriptor.issuer }, auth.principal?.identity),
       appOrigin: configured.public.appOrigin,
       ...(configured.private.emailSender ? { sender: configured.private.emailSender } : {}),
     }),

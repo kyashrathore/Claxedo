@@ -83,6 +83,6 @@ describe("one routing owner for hosted operations", () => {
 
  test("invitation operations replace direct member addition", () => {
   expect(hostedOperationRequest("org.invitations.create", { orgId: "org 1", email: "a@example.com", role: "member" })).toEqual({ method: "POST", path: "/api/control/orgs/org%201/invitations", body: { email: "a@example.com", role: "member" } })
-  expect(hostedOperationRequest("org.invitations.accept", { token: "t 1" })).toEqual({ method: "POST", path: "/api/control/invitations/t%201/accept", body: {} })
+  expect(hostedOperationRequest("org.invitations.accept", { token: "t 1" })).toEqual({ method: "POST", path: "/api/control/invitations/accept", body: { token: "t 1" } })
   expect(() => hostedOperationRequest("org.members.add", {})).toThrow()
 })

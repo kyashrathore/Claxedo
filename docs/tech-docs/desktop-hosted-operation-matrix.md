@@ -135,7 +135,7 @@ is the authoritative source for this column.
 | `org.invitations.create` | none yet | `POST /api/control/orgs/:orgId/invitations` | unary | unsafe | Sends an invitation to the normalized email with no account lookup; generic 202 receipt. |
 | `org.invitations.list` | none yet | `GET /api/control/orgs/:orgId/invitations` | unary | safe | Admin-only metadata without token or hash. |
 | `org.invitations.revoke` | none yet | `DELETE /api/control/orgs/:orgId/invitations/:invitationId` | unary | unsafe | Revokes a pending invitation. |
-| `org.invitations.accept` | invitation link | `POST /api/control/invitations/:token/accept` | unary | unsafe | Joins using the signed caller's matching verified email; single-use, seven-day expiry. |
+| `org.invitations.accept` | invitation link | `POST /api/control/invitations/accept` | unary | unsafe | Submits `{ token }` in the POST body using the signed caller's matching verified email; single-use, seven-day expiry. |
 | `org.members.update` | none yet | `PATCH /api/control/orgs/:orgId/members/:userPublicId` | unary | unsafe | Changes a member's role; the founding owner cannot be demoted. |
 | `org.members.remove` | none yet | `DELETE /api/control/orgs/:orgId/members/:userPublicId` | unary | unsafe | Also revokes the person's team memberships and project member grants in the org. |
 | `team.members.list` | `features/settings/data/org-team-api.ts` | `GET /api/control/teams/:teamId/members` | unary | safe | |

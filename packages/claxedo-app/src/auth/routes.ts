@@ -11,7 +11,7 @@ export type AuthRoute = {
 }
 
 export const authRoutes: readonly AuthRoute[] = [
-  { id: "orgInvitation", path: "/invitations/:token", view: OrgInvitationPage },
+  { id: "orgInvitation", path: "/invitations", view: OrgInvitationPage },
   { id: "login", path: "/login", view: LoginPage },
   { id: "deviceApproval", path: "/device", view: DeviceApprovalPage },
   { id: "oauthConsent", path: "/oauth/consent", view: OAuthConsentPage },

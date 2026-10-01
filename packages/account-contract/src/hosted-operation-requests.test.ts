@@ -81,7 +81,7 @@ describe("resolveHostedOperation", () => {
     expect(resolveHostedOperation("org.invitations.revoke", { orgId: "org_1", invitationId: "inv_1" }))
       .toEqual({ method: "DELETE", path: "/api/control/orgs/org_1/invitations/inv_1" })
     expect(resolveHostedOperation("org.invitations.accept", { token: "invite token" }))
-      .toEqual({ method: "POST", path: "/api/control/invitations/invite%20token/accept", body: {} })
+      .toEqual({ method: "POST", path: "/api/control/invitations/accept", body: { token: "invite token" } })
     expect(() => resolveHostedOperation("org.members.add" as never, {})).toThrow(UnknownHostedOperation)
   })
   test("content saves require the version token", () => {

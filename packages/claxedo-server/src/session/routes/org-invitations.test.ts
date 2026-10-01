@@ -5,9 +5,10 @@ import { OrgTeamControlRoutes } from "./org-team-routes"
 
 function setup() {
   const createOrgInvitation = vi.fn(async () => undefined)
+  const acceptOrgInvitation = vi.fn(async (_auth: unknown, _args: { token: string }) => ({ user_id: "user", role: "member" }))
   const addOrgMember = vi.fn(async () => ({ user_id: "user", role: "member" }))
   const app = OrgTeamControlRoutes(
-    { authority: { createOrgInvitation, addOrgMember } } as unknown as ControlPlaneServices,
+    { authority: { createOrgInvitation, addOrgMember, acceptOrgInvitation } } as unknown as ControlPlaneServices,
     {
       authentication: testRequestAuthenticationAdapter(),
     },
@@ -18,7 +19,7 @@ function setup() {
       headers: { authorization: "Bearer admin", "content-type": "application/json" },
       body: JSON.stringify(body),
     })
-  return { app, post, createOrgInvitation, addOrgMember }
+  return { app, post, createOrgInvitation, addOrgMember, acceptOrgInvitation }
 }
 
 describe("organization invitation routes", () => {
@@ -40,8 +41,17 @@ describe("organization invitation routes", () => {
     expect(addOrgMember).not.toHaveBeenCalled()
   })
 
+  test("accepts only a POST body token and removes the path-token endpoint", async () => {
+    const { post, acceptOrgInvitation } = setup()
+    expect((await post("/invitations/accept", { token: "secret" })).status).toBe(200)
+    expect(acceptOrgInvitation).toHaveBeenCalledWith(expect.anything(), { token: "secret" })
+    expect((await post("/invitations/accept", {})).status).toBe(400)
+    expect((await post("/invitations/secret/accept", {})).status).toBe(404)
+    expect(acceptOrgInvitation).toHaveBeenCalledTimes(1)
+  })
+
   test("acceptance requires signed authentication", async () => {
     const { app } = setup()
-    expect((await app.request("/invitations/token/accept", { method: "POST" })).status).toBe(401)
+    expect((await app.request("/invitations/accept", { method: "POST" })).status).toBe(401)
   })
 })

@@ -12,3 +12,8 @@ create table org_invitations (
 );
 
 create index org_invitations_org on org_invitations(org_id, created_at);
+
+create table org_invitation_admissions (
+  user_id text primary key references users(user_id) on delete cascade,
+  invitation_id text not null references org_invitations(id)
+);

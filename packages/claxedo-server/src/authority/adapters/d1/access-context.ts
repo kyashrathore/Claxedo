@@ -111,6 +111,8 @@ export type D1AccessErrorCode =
   | "project_member_owner_immutable"
   | "resource_conflict"
   | "org_invitation_invalid"
+  | "org_invitation_pending"
+  | "org_invitation_rate_limited"
   | "org_invitation_email_mismatch"
   | "org_invitation_delivery_unavailable"
 

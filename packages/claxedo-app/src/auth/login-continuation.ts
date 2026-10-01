@@ -70,7 +70,7 @@ export function createOrgInvitationFlow(
     async authenticate(options: BrowserAuthSignInOptions, action: "signIn" | "signUp") {
       acceptance.send({ type: "authenticationStarted" })
       try {
-        await auth[action]({ ...options, redirectUrl: `/invitations/${encodeURIComponent(token)}` })
+        await auth[action]({ ...options, redirectUrl: `/invitations#${encodeURIComponent(token)}` })
         if (auth.state().kind !== "signedIn") acceptance.send({ type: "authenticationPending" })
         return await acceptance.accept()
       } catch (cause) {
