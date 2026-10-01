@@ -2,7 +2,9 @@ import fs from "fs"
 import os from "os"
 import path from "path"
 import { afterEach, describe, expect, test, vi } from "vitest"
-import { fileSearchCacheSize, globSearch, grepSearch } from "./files"
+import { globSearch, grepSearch } from "./files"
+import { mountWorkspaceFiles } from "@claxedo/workspace-runtime/host"
+import { Hono } from "hono"
 
 const scratch: string[] = []
 
@@ -11,6 +13,31 @@ afterEach(async () => {
 })
 
 describe("globSearch", () => {
+  test("shares a listing with the runtime caller while retaining substring and fuzzy matching", async () => {
+    const root = await fs.promises.mkdtemp(path.join(os.tmpdir(), "claxedo-shared-file-index-"))
+    scratch.push(root)
+    await fs.promises.mkdir(path.join(root, "src", "panel"), { recursive: true })
+    await fs.promises.writeFile(path.join(root, "src", "panel", "widget.ts"), "")
+    const readdir = fs.promises.readdir
+    const spy = vi.spyOn(fs.promises, "readdir").mockImplementation((dir, options) => readdir(dir, options as never) as never)
+    const previousDirectory = process.env.WORKSPACE_RUNTIME_DIRECTORY
+    process.env.WORKSPACE_RUNTIME_DIRECTORY = root
+    try {
+      expect(await globSearch(root, "widget", "file", 50)).toEqual(["src/panel/widget.ts"])
+      const reads = spy.mock.calls.length
+      expect(reads).toBeGreaterThan(0)
+      const app = new Hono()
+      mountWorkspaceFiles(app)
+      expect(await (await app.request("/api/wr/find/file?dirs=false&query=spwidget")).json()).toEqual(["src/panel/widget.ts"])
+      expect(spy.mock.calls.length).toBe(reads)
+      expect(await globSearch(root, "spwidget", "file", 50)).toEqual([])
+    } finally {
+      spy.mockRestore()
+      if (previousDirectory === undefined) delete process.env.WORKSPACE_RUNTIME_DIRECTORY
+      else process.env.WORKSPACE_RUNTIME_DIRECTORY = previousDirectory
+    }
+  })
+
   test("indexes searchable files and directories without dependency or build output", async () => {
     const root = await fs.promises.mkdtemp(path.join(os.tmpdir(), "claxedo-file-search-"))
     scratch.push(root)
@@ -45,45 +72,7 @@ describe("globSearch", () => {
     ])).toEqual([["src/alpha.ts"], ["src/beta.ts"]])
   })
 
-  test("caps retained roots by evicting the oldest, and sweeps expired entries", async () => {
-    vi.useFakeTimers()
-    try {
-      const roots: string[] = []
-      for (let i = 0; i < 34; i++) {
-        const root = await fs.promises.mkdtemp(path.join(os.tmpdir(), `claxedo-file-search-${i}-`))
-        scratch.push(root)
-        roots.push(root)
-        await globSearch(root, "", "file", 50)
-      }
-      expect(fileSearchCacheSize()).toBe(32)
 
-      // The two oldest roots were evicted: searching them again reindexes
-      // without pushing the cache past its bound.
-      const readdir = fs.promises.readdir
-      const reads: string[] = []
-      const spy = vi.spyOn(fs.promises, "readdir").mockImplementation(async (dir, options) => {
-        reads.push(String(dir))
-        return readdir(dir, options as never) as never
-      })
-      try {
-        await globSearch(roots[0], "", "file", 50)
-      } finally {
-        spy.mockRestore()
-      }
-      expect(reads.length).toBeGreaterThan(0)
-      expect(fileSearchCacheSize()).toBe(32)
-
-      // Once every entry has expired, a single new search discards them all
-      // instead of accumulating obsolete roots.
-      vi.setSystemTime(Date.now() + 11_000)
-      const fresh = await fs.promises.mkdtemp(path.join(os.tmpdir(), "claxedo-file-search-fresh-"))
-      scratch.push(fresh)
-      await globSearch(fresh, "", "file", 50)
-      expect(fileSearchCacheSize()).toBe(1)
-    } finally {
-      vi.useRealTimers()
-    }
-  })
 })
 
 describe("globSearch for directories", () => {

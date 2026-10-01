@@ -5,6 +5,7 @@
     "./client",
     "./config",
     "./exposure",
+    "./file-index",
     "./host",
     "./http",
     "./projection",

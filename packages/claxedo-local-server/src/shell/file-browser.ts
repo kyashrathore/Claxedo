@@ -2,7 +2,8 @@ import fs from "fs"
 import path from "path"
 import { resolveWorkspace } from "@claxedo/server-core/workspace/store/index"
 import { workspaceInput, workspacePath, workspaceRoot, type ShellRequestContext } from "./request-context"
-import { gitListAll, globSearch, grepSearch, walkAll } from "./files"
+import { globSearch, grepSearch } from "./files"
+import { machineFileIndex } from "@claxedo/workspace-runtime/file-index"
 
 export async function findTextBody(c: ShellRequestContext) {
   const pattern = c.req.query("pattern") ?? ""
@@ -63,6 +64,5 @@ export async function allFilesBody(c: ShellRequestContext) {
     directory: input.directory,
   })
   const root = workspaceRoot(ws, input)
-  const fromGit = await gitListAll(root)
-  return { paths: fromGit ?? (await walkAll(root)) }
+  return { paths: await machineFileIndex.list(root, { gitTimeoutMs: 1_500 }) }
 }

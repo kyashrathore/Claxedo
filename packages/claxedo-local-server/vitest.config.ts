@@ -9,6 +9,7 @@ export default defineConfig({
       // The runtime is reached from several packages; aliasing it to SOURCE
       // keeps one copy in the module graph and exercises the code a change
       // touches rather than a dist that may lag it.
+      { find: "@claxedo/workspace-runtime/file-index", replacement: path.resolve(import.meta.dirname, "../workspace-runtime/src/file-index.ts") },
       { find: "@claxedo/workspace-runtime/config", replacement: path.resolve(import.meta.dirname, "../workspace-runtime/src/config.ts") },
       { find: "@claxedo/workspace-runtime/exposure", replacement: path.resolve(import.meta.dirname, "../workspace-runtime/src/exposure.ts") },
       { find: "@claxedo/workspace-runtime/host", replacement: path.resolve(import.meta.dirname, "../workspace-runtime/src/host.ts") },

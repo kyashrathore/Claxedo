@@ -3,9 +3,25 @@ import os from "os"
 import path from "path"
 import { HTTPException } from "hono/http-exception"
 import { afterEach, describe, expect, test } from "vitest"
-import { directoryEntriesBody } from "./file-browser"
+import { allFilesBody, directoryEntriesBody, findFilesBody } from "./file-browser"
+import { git } from "./git"
 
 const scratch: string[] = []
+
+test("preserves whitespace, unicode and newlines in Git filenames on listing and search handlers", async () => {
+  const directory = await fs.promises.mkdtemp(path.join(os.tmpdir(), "claxedo-git-filenames-"))
+  scratch.push(directory)
+  await git(directory, ["init"])
+  const name = " 雪 furniture\nnotes.txt "
+  await fs.promises.writeFile(path.join(directory, name), "")
+  expect(await allFilesBody(ctx(directory, "."))).toEqual({ paths: [name] })
+  expect(await findFilesBody({
+    req: {
+      query: (key) => key === "directory" ? directory : key === "dirs" ? "false" : "",
+      header: () => undefined,
+    },
+  })).toEqual([name])
+})
 
 afterEach(async () => {
   await Promise.all(scratch.splice(0).map((dir) => fs.promises.rm(dir, { recursive: true, force: true })))

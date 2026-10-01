@@ -91,6 +91,7 @@ lower-level helpers:
 | --- | --- |
 | `@claxedo/workspace-runtime` | Standalone bootstrap, host creation, exposure/management contracts, route manifest, and stable config types. |
 | `@claxedo/workspace-runtime/client` | Manual typed HTTP client for health, capabilities, config apply, events, files, diff/git, and PTY routes. |
+| `@claxedo/workspace-runtime/file-index` | Machine file listing, bounded search index, and explicit cache invalidation. |
 | `@claxedo/workspace-runtime/host` | Low-level host construction and route mounting. |
 | `@claxedo/workspace-runtime/projection` | SSE fanout and replay helpers for runtime presentation frames. |
 | `@claxedo/harness/opencode-sdk` | The embedded OpenCode engine and its transport, which this runtime composes as the `opencode` registry row (Node 24+). |
@@ -101,6 +102,15 @@ lower-level helpers:
 | `@claxedo/workspace-runtime/http` | Shared bearer-token, bounded-body, and error-response primitives for host-supplied routes. |
 | `@claxedo/workspace-runtime/route-contribution` | Host route-contribution contracts and lifecycle-safe route mounting. |
 | `@claxedo/workspace-runtime/testing` | Test support: management-auth helpers, the loopback login policy, and the fake transport and connection provider. |
+
+`@claxedo/workspace-runtime/file-index` exposes `createFileIndex` and the shared
+`machineFileIndex`. `get(root)` caches files and their parent directories for
+10 seconds across at most 32 roots, evicting the least recently used root.
+`list(root)` reads a fresh listing, and `invalidate(root)` or `invalidate()`
+discards one root or all roots. Git lists tracked and non-ignored untracked
+files in one command; non-repositories use a symlink-free walk capped at
+200,000 files. Indexed paths use `/` separators, and matching remains with
+each caller.
 
 Root runtime value exports:
 `FIRST_PARTY_MCP_PATH`, `FIRST_PARTY_MCP_SERVER_NAME`,
