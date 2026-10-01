@@ -25,23 +25,33 @@ async function fixture(setup: (peer: ReturnType<typeof acpPeer>) => void = () =>
     dispose: async () => { await Promise.all([transport.dispose(), host.dispose()]) } }
 }
 
-test("a dead ACP agent fails the next turn with a typed error, and nothing restarts or replaces its session", async () => {
+test("ACP death restarts the agent before the next turn, and an upstream session the new agent lacks refuses that turn without a replacement", async () => {
   const f = await fixture()
   try {
     const old = f.store.getAgentSessionId(f.id)
     f.peers[0].die()
     await new Promise((resolve) => setTimeout(resolve, 10))
-    await f.runtime.turns.start({ sessionId: f.id, text: "continue", origin: LOOPBACK_ORIGIN })
-    await until(() => !!f.store.getSession(f.id)?.lastTurn)
-    expect(f.store.getSession(f.id)?.lastTurn).toMatchObject({
-      status: "failed",
-      error: "ACP agent disconnected; cancel the turn and attach the session explicitly",
-      detail: { acpOutcome: "not_started" },
-    })
+    await expect(f.runtime.turns.start({ sessionId: f.id, text: "continue", origin: LOOPBACK_ORIGIN }))
+      .rejects.toMatchObject({ code: "session", message: `ACP agent no longer has session ${old}; it is not replaced` })
     expect(f.store.getAgentSessionId(f.id)).toBe(old)
-    expect(f.peers).toHaveLength(1)
-    expect(f.requests.filter((row) => row.method === "session/prompt" || row.method === "session/resume")).toEqual([])
+    expect(f.peers).toHaveLength(2)
+    expect(f.requests.filter((row) => row.method === "session/resume")).toHaveLength(1)
+    expect(f.requests.filter((row) => row.method === "session/new")).toHaveLength(1)
+    expect(f.requests.filter((row) => row.method === "session/prompt")).toHaveLength(0)
     expect(f.store.getSessionConfig(f.id)?.handoff).toBeUndefined()
+  } finally { await f.dispose() }
+})
+
+test("concurrent pre-turn restorations share one restart", async () => {
+  const f = await fixture()
+  try {
+    const attached = f.runtime.attachments.peek(f.id)!
+    f.peers[0].die()
+    await new Promise((resolve) => setTimeout(resolve, 10))
+    const outcomes = await Promise.allSettled([f.transport.restore!(attached.session), f.transport.restore!(attached.session)])
+    expect(outcomes.map((outcome) => outcome.status)).toEqual(["rejected", "rejected"])
+    expect(f.requests.filter((row) => row.method === "session/resume")).toHaveLength(1)
+    expect(f.peers).toHaveLength(2)
   } finally { await f.dispose() }
 })
 

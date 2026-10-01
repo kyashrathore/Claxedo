@@ -211,6 +211,9 @@ export function createAgentRuntime(input: AgentRuntimeCompositionInput) {
     const unpin = attached.handle.pin()
     let launched = false
     try {
+      if (!controlTarget && !admissions.active(turn.sessionId) && attached.handle.transport.restore) {
+        attached = { ...attached, session: await attached.handle.transport.restore(attached.session) }
+      }
       const declared = await attached.handle.transport.capabilities({ directory: attached.session.directory, sessionId: turn.sessionId })
       if (lifecycle.closing) throw new Error("AgentRuntime is disposed")
       if (turn.admission && !turn.admission.valid()) throw new Error("Durable session turn admission is no longer valid")

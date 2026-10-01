@@ -141,6 +141,18 @@ export class AcpTransport implements HarnessTransport {
       ...(this.connection.sharedFilesystem ? { sharedDirectory: entry.session.directory } : {}) }
   }
 
+  async restore(session: HarnessSession): Promise<HarnessSession> {
+    const sessionId = session.binding.sessionId
+    await this.lifecycle.settled(sessionId)
+    const entry = this.entries.get(sessionId)
+    if (entry?.phase === "ready" && entry.peer.agent.signal.aborted) {
+      await this.lifecycle.restart(entry)
+      await this.lifecycle.settled(sessionId)
+    }
+    const restored = this.entries.get(sessionId)
+    return this.entry(restored?.session ?? session).session
+  }
+
   async start(input: StartInput, broker: SessionBroker): Promise<HarnessSession> {
     await this.lifecycle.prepare(input.sessionId)
     return startAcpEntry(this.host, input, broker)
@@ -167,7 +179,6 @@ export class AcpTransport implements HarnessTransport {
     broker.signal.addEventListener("abort", aborted, { once: true })
     if (broker.signal.aborted) aborted()
     try {
-      if (entry.peer.agent.signal.aborted) throw new AcpTransportError("connection", "ACP agent disconnected; cancel the turn and attach the session explicitly")
       await acpPrepareTurnConfig(entry, turn, this.services.clock, this.connection.startupTimeoutMs)
       entry.quiet = acpQuiet(entry, queue, this.services.clock, this.connection.promptTimeoutMs ?? 300_000)
       yield* this.prompted(entry, session, turn, queue)
