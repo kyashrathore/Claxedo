@@ -339,7 +339,8 @@ describe("local Agent Plugins composition", () => {
     expect(applied.status).toBe(200)
     expect(changes).toEqual([1])
     const contribution = await composition.runtimeContribution()
-    expect(contribution.harnessLaunch.acp).toBeUndefined()
+    expect(contribution.harnessLaunch.acp).toMatchObject({ generation: expect.any(String), execution: { mode: "default" },
+      pluginRoots: [{ pluginInstanceId: "claxedo:docs", root: expect.any(String), dataRoot: expect.any(String), skillNames: [] }], mcpServers: [] })
     const names = Object.keys(contribution.mcp)
     expect(names.map((name) => name.replace(/^docs-[0-9a-f]{8}-/, ""))).toEqual(["docs", "local"])
     expect(contribution.mcp[names[0]]).toMatchObject({
@@ -360,7 +361,7 @@ describe("local Agent Plugins composition", () => {
     }, { sources: { async listAuthorizedSources() { return [] } } })
     await restarted.ready
     expect(restarted.signedRuntime.state()).toMatchObject({ active: true, revision: 3, userId: "usr_1" })
-    expect(Object.keys((await restarted.runtimeContribution()).mcp)).toEqual(names)
+    expect(await restarted.runtimeContribution()).toEqual(contribution)
 
     const withdrawn = await app.request("http://local.test/api/claxedo/plugins/signed-runtime", {
       method: "PUT",

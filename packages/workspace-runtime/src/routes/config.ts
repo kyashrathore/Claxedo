@@ -127,7 +127,7 @@ function normalizeHarnessLaunch(input: unknown): Record<string, Record<string, u
   if (!record(input)) return undefined
   const rows: Record<string, Record<string, unknown>> = {}
   for (const [harnessId, value] of Object.entries(input)) {
-    if (!isAgentHarnessId(harnessId) || !record(value)) return undefined
+    if ((!isAgentHarnessId(harnessId) && harnessId !== "acp") || !record(value)) return undefined
     rows[harnessId] = value
   }
   return rows

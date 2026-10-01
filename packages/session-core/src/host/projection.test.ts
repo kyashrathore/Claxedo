@@ -100,4 +100,9 @@ describe("pluginProjectionFor", () => {
     expect(projection.mcpServers.map((server) => server.name)).toEqual(["http"])
     expect(projection.notApplied).toEqual([{ item: "local", reason: "unsupported-by-harness" }])
   })
+
+  test("an ACP connection takes the acp launch row's plugin roots", () => {
+    expect(pluginProjectionFor({ id: "custom", access: "connection" }, { generation: "g", mcp: {}, harnessLaunch: { acp: harnessLaunch.claude } }))
+      .toMatchObject({ generation: "g/plugins:generation-7-abc", pluginRoots: [root], pluginSelection: { mode: "default" } })
+  })
 })
