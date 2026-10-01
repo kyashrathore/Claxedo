@@ -54,11 +54,14 @@ export async function startHostedMachine(hosted: HostedStack, local: Stack, owne
       await sendJson(account, "POST", `${hosted.workerUrl}/api/workspace/${workspace.id}/host-assignment`, {
         hostId, displayName: name, repoName: projectName ?? name, remoteDirectory: workspace.directory, orgId: "hosted-e2e-organization",
       }, "Registering the owner's machine folder")
+      const answers: string[] = []
       for (let attempt = 0; attempt < 40; attempt++) {
         await connector.beat()
         await delivery
         const response = await hostedFetch(hosted, `/api/workspace/${workspace.id}/connection`, {}, owner)
-        if (response.ok && (await response.json() as { runtimeAccessToken?: string }).runtimeAccessToken) {
+        const body = await response.text()
+        if (answers.at(-1) !== `${response.status} ${body}`) answers.push(`${response.status} ${body}`)
+        if (response.ok && (JSON.parse(body) as { runtimeAccessToken?: string }).runtimeAccessToken) {
           const catalog = await hostedFetch(hosted, "/api/workspace?host=machine", {}, owner)
           if (!catalog.ok) throw new Error(`Hosted machine catalog failed: ${catalog.status} ${await catalog.text()}`)
           const rows = await catalog.json() as { workspaces: Array<{ workspace_id: string; project_id: string }> }
@@ -68,7 +71,7 @@ export async function startHostedMachine(hosted: HostedStack, local: Stack, owne
         }
         await new Promise((resolve) => setTimeout(resolve, 250))
       }
-      throw new Error(`Machine folder ${workspace.id} did not become routable`)
+      throw new Error(`Machine folder ${workspace.id} did not become routable; connection answers: ${answers.join(" | ")}`)
     },
     close: async () => {
       try { await connector.drain(); await delivery } finally { connector.close() }
