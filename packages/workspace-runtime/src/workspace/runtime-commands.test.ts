@@ -62,9 +62,8 @@ test("transport listing failure does not return a partial successful command lis
   expect(response.status).toBe(500)
 })
 
-test("a plugin launch apply keeps the saved commands", async () => {
+test("a settings snapshot carries plugin rows alongside saved commands", async () => {
   const app = await fixture()
-  await app.host.apply(snapshot([{ name: "triage", content: "Triage" }]))
-  await app.host.applyHarnessLaunch({})
+  await app.host.apply({ ...snapshot([{ name: "triage", content: "Triage" }]), harnessLaunch: { claude: { generation: "plugins" } } })
   expect(await read(app)).toEqual([{ name: "triage", content: "Triage", origin: "saved" }])
 })

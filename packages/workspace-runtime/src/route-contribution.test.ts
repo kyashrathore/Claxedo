@@ -12,7 +12,6 @@ function context(): WorkspaceRuntimeRouteContext {
     workspaceId: "ws_1",
     directory: "/workspace",
     stateDirectory: "/runtime-state",
-    applyHarnessLaunch: async () => {},
     fetch: async () => new Response(null, { status: 204 }),
     registerSessionTools: () => async () => {},
     unregisterSessionTools: () => async () => {},
