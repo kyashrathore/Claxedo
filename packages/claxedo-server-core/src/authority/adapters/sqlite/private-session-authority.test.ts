@@ -855,3 +855,47 @@ describe("SQLite latest views", () => {
     })).resolves.toBe("a1-p0")
   })
 })
+
+describe("SQLite private-session authority, rows written before only a share crossed people", () => {
+  test("a historical creator or participant who does not own the workspace holds nothing of its session; its owner holds all of it", async () => {
+    const owner = auth("owner")
+    const historicCreator = auth("historic-creator")
+    const historicParticipant = auth("historic-participant")
+    const { store, seed } = authorityWithSeed()
+    await store.usersMe(historicCreator)
+    await store.usersMe(historicParticipant)
+    await store.createCloudWorkspace(owner, { workspaceId: "workspace_history", displayName: "History" })
+    orgMember(seed, "workspace_history", historicCreator.user.tokenIdentifier, "member")
+    orgMember(seed, "workspace_history", historicParticipant.user.tokenIdentifier, "member")
+    await store.reserveSession(owner, { operationId: "operation_history", sessionId: "session_history", workspaceId: "workspace_history", kind: "create" })
+    await store.registerRuntimeSession({
+      createdAt: Date.now(), updatedAt: Date.now(), principalKind: "user", actorId: owner.user.tokenIdentifier, actorKind: "human",
+      operationId: "operation_history", sessionId: "session_history", workspaceId: "workspace_history",
+    })
+    seed().prepare(`UPDATE session_history SET creator_actor_id = ? WHERE session_id = 'session_history'`)
+      .run(historicCreator.user.tokenIdentifier)
+    seed().prepare(`
+      INSERT INTO session_participants (session_id, workspace_id, participant_actor_id, added_by_actor_id, created_at)
+      VALUES ('session_history', 'workspace_history', ?, ?, 1)
+    `).run(historicParticipant.user.tokenIdentifier, owner.user.tokenIdentifier)
+    const ask = (who: SignedControlPlaneAuth, action: "read" | "write", writeClass?: "agent_turn" | "session_control") =>
+      store.authorizeRuntimeSession({
+        principalKind: "user", actorId: who.user.tokenIdentifier, actorKind: "human",
+        sessionId: "session_history", workspaceId: "workspace_history", action, ...(writeClass ? { writeClass } : {}),
+      })
+    const target = { sessionId: "session_history", workspaceId: "workspace_history", grantedToTokenIdentifier: historicParticipant.user.tokenIdentifier }
+
+    for (const who of [historicCreator, historicParticipant]) {
+      await expect(ask(who, "read")).rejects.toMatchObject({ status: 403 })
+      await expect(ask(who, "write", "agent_turn")).rejects.toMatchObject({ status: 403 })
+      await expect(ask(who, "write", "session_control")).rejects.toMatchObject({ status: 403 })
+      expect(await store.listSessions(who, { workspaceId: "workspace_history" }).catch(() => [])).toEqual([])
+    }
+    await expect(store.grantSessionShare!(historicCreator, { ...target, level: "follow" })).rejects.toThrow("session_share_admin_required")
+
+    await ask(owner, "write", "session_control")
+    await store.grantSessionShare!(owner, { ...target, level: "follow" })
+    await ask(historicParticipant, "read")
+    await expect(ask(historicParticipant, "write", "agent_turn")).rejects.toMatchObject({ status: 403 })
+  })
+})

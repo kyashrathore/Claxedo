@@ -830,15 +830,9 @@ export function createSqliteWorkspaceAuthority(
     deleted_at: number | null
   }
 
-  /** The session authority's admission, mirrored for the share surface. */
-  const sessionAdmitsUser = (db: SqliteAuthorityDb, session: SessionRow, who: AuthorityUser) => {
-    if (session.creator_actor_id === who.token_identifier) return true
-    const participant = db.prepare<unknown[], { revoked_at: number | null }>(`
-      SELECT revoked_at FROM session_participants WHERE session_id = ? AND participant_actor_id = ?
-    `).get(session.session_id, who.token_identifier)
-    if (participant && !participant.revoked_at) return true
-    return sessionShareAllowsUser(db, who, session.session_id)
-  }
+  /** The session authority's admission, mirrored for the share surface: its workspace's owner or a share. */
+  const sessionAdmitsUser = (db: SqliteAuthorityDb, workspace: WorkspaceRow, session: SessionRow, who: AuthorityUser) =>
+    workspace.owner_token_identifier === who.token_identifier || sessionShareAllowsUser(db, who, session.session_id)
 
   const shareTargetsUser = (db: SqliteAuthorityDb, grant: SessionShareTargetRow, who: AuthorityUser) => {
     if (grant.granted_to_user_token_identifier === who.token_identifier) return true
@@ -2454,7 +2448,7 @@ export function createSqliteWorkspaceAuthority(
       const workspace = workspaceByPublicId(db, args.workspaceId)
       const session = db.prepare<unknown[], SessionRow>(`SELECT * FROM session_history WHERE session_id = ?`).get(args.sessionId)
       if (!workspace || !session || session.workspace_id !== args.workspaceId || session.deleted_at) denied()
-      if (session.creator_actor_id !== who.token_identifier) throw new Error("session_share_admin_required")
+      if (workspace.owner_token_identifier !== who.token_identifier) throw new Error("session_share_admin_required")
       const selectors = [
         args.grantedToTokenIdentifier,
         args.grantedToSubject,
@@ -2533,7 +2527,7 @@ export function createSqliteWorkspaceAuthority(
       const workspace = workspaceByPublicId(db, args.workspaceId)
       const session = db.prepare<unknown[], SessionRow>(`SELECT * FROM session_history WHERE session_id = ?`).get(args.sessionId)
       if (!workspace || !session || session.workspace_id !== args.workspaceId || session.deleted_at) denied()
-      if (session.creator_actor_id !== who.token_identifier) throw new Error("session_share_admin_required")
+      if (workspace.owner_token_identifier !== who.token_identifier) throw new Error("session_share_admin_required")
       const now = Date.now()
       let grants: IdentifiedSessionShareTargetRow[]
       if (args.grantId) {
@@ -2621,8 +2615,8 @@ export function createSqliteWorkspaceAuthority(
         if (!orgMemberForUser(db, who, workspace.org_id)) throw new Error("session_share_admin_required")
         return { can_manage_shares: false, grants: [], participants: [], teams: [] }
       }
-      if (session.creator_actor_id !== who.token_identifier) {
-        if (!sessionAdmitsUser(db, session, who)) throw new Error("session_share_admin_required")
+      if (workspace.owner_token_identifier !== who.token_identifier) {
+        if (!sessionAdmitsUser(db, workspace, session, who)) throw new Error("session_share_admin_required")
         return { can_manage_shares: false, grants: [], participants: [], teams: [] }
       }
       const grants = db.prepare<unknown[], Record<string, unknown>>(`

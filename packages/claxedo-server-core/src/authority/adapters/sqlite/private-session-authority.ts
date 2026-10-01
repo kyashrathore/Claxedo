@@ -169,28 +169,22 @@ export function createSqlitePrivateSessionAuthority(input: {
   }
 
   /**
-   * Creator, participant and share grantee are the whole admission inside the
-   * organization that owns the session. The three questions differ only in
-   * what they let a SHARE answer: a `follow` grant reads and streams, a `send`
-   * grant also drives the agent's turn, and neither carries a
-   * `session_control` write, which stays with the creator and the
-   * participants, who are the workspace owner's.
+   * The workspace's owner holds the session, and an agent holds what its
+   * creator or participant row gives it. Anyone else holds only a live share,
+   * while the owner still stands in the organization: `follow` reads and
+   * streams, `send` also drives the turn, and neither carries `session_control`.
    */
-  const hasPrivateAccess = (
-    db: SqliteAuthorityDb,
-    actorId: string,
-    row: SessionRow,
-    access: SessionAccessQuestion,
-    orgId: string,
-  ) => {
-    if (!organizationStandingHolds(db, actorId, orgId)) return false
-    if (row.creator_actor_id === actorId) return true
-    const participant = db.prepare(`
-      SELECT 1 FROM session_participants
-      WHERE session_id = ? AND workspace_id = ? AND participant_actor_id = ? AND revoked_at IS NULL
-    `).get(row.session_id, row.workspace_id, actorId)
-    if (participant) return true
-    if (access === "session_control") return false
+  const hasPrivateAccess = (db: SqliteAuthorityDb, actorId: string, row: SessionRow, access: SessionAccessQuestion) => {
+    const workspace = workspaceByPublicId(db, row.workspace_id)
+    if (!workspace || !organizationStandingHolds(db, actorId, workspace.org_id)) return false
+    if (workspace.owner_token_identifier === actorId) return true
+    if (db.prepare<unknown[], { kind: string }>(`SELECT kind FROM users WHERE token_identifier = ?`).get(actorId)?.kind === "agent") {
+      return row.creator_actor_id === actorId || !!db.prepare(`
+        SELECT 1 FROM session_participants
+        WHERE session_id = ? AND workspace_id = ? AND participant_actor_id = ? AND revoked_at IS NULL
+      `).get(row.session_id, row.workspace_id, actorId)
+    }
+    if (access === "session_control" || !organizationStandingHolds(db, workspace.owner_token_identifier, workspace.org_id)) return false
     const grants = db.prepare<unknown[], SessionShareTargetRow & { level: string }>(`
       SELECT granted_to_user_token_identifier, granted_to_org_id, granted_to_team_id, level
       FROM session_share_grants WHERE session_id = ? AND workspace_id = ? AND revoked_at IS NULL
@@ -222,7 +216,7 @@ export function createSqlitePrivateSessionAuthority(input: {
       || !row
       || row.workspace_id !== workspaceId
       || row.deleted_at
-      || !hasPrivateAccess(db, actor.token_identifier, row, access, workspace.org_id)
+      || !hasPrivateAccess(db, actor.token_identifier, row, access)
     ) denied()
     return { row, workspace }
   }
@@ -234,7 +228,7 @@ export function createSqlitePrivateSessionAuthority(input: {
     workspaceId: string,
   ) => {
     const current = requireSessionAccess(db, actor, sessionId, workspaceId, "read")
-    if (current.row.creator_actor_id !== actor.token_identifier) {
+    if (current.workspace.owner_token_identifier !== actor.token_identifier) {
       throw new SqlitePrivateSessionAuthorityError("actor_authorization_denied", "Session participant administration was denied")
     }
     return current
@@ -665,14 +659,14 @@ export function createSqlitePrivateSessionAuthority(input: {
         SELECT * FROM session_history WHERE workspace_id = ? AND deleted_at IS NULL ORDER BY updated_at DESC
       `).all(value.workspaceId)
       return rows
-        .filter((row) => hasPrivateAccess(db, actor.token_identifier, row, "read", workspace.org_id))
+        .filter((row) => hasPrivateAccess(db, actor.token_identifier, row, "read"))
         .map((row) => publicSession(db, row, actor.token_identifier))
     },
     async listSessionPage(auth, value) {
       const db = input.database()
       const actor = actorForAuth(auth)
       return readSqliteSessionPage<SessionRow & SessionPageRow>(db, value, (row) =>
-        hasPrivateAccess(db, actor.token_identifier, row, "read", row.org_id))
+        hasPrivateAccess(db, actor.token_identifier, row, "read"))
         .map((row) => ({
           ...publicSession(db, row, actor.token_identifier),
           workspace_id: row.workspace_id,
