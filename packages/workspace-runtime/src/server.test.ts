@@ -21,6 +21,8 @@ import {
   workspaceRuntimeServiceExposureFromEnv,
 } from "./server"
 import { Pty } from "./pty/index"
+import { withSessionCore } from "./session-context"
+import { testSessionCore } from "./test-support/session-core"
 import {
   embeddedWorkspaceRuntimeExposure,
   loopbackWorkspaceRuntimeExposure,
@@ -851,12 +853,12 @@ describe("workspace runtime drain", () => {
 
   test("removes live PTYs through the real drain path", async () => {
     const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "wr-drain-pty-"))
-    const pty = await Pty.create({
+    const pty = await withSessionCore(testSessionCore(dir), () => Pty.create({
       command: process.execPath,
       args: ["-e", "setInterval(() => {}, 1000)"],
       cwd: dir,
       title: "drain-pty",
-    }, ownership)
+    }, ownership))
 
     try {
       expect(Pty.get(pty.id)?.id).toBe(pty.id)

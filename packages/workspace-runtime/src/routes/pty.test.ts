@@ -11,6 +11,8 @@ import type { RelayHostAuthContext } from "../workspace-host-service-auth"
 import { managedWorkspaceSessionAccessPolicy, type SessionAccessPolicy } from "@claxedo/session-core"
 import { createDiskHistory } from "../pty/history-disk"
 import { withWorkspaceTarget } from "../target"
+import { withSessionCore } from "../session-context"
+import { testSessionCore } from "../test-support/session-core"
 
 const upgradeWebSocket = (() => () => new Response(null, { status: 501 })) as unknown as UpgradeWebSocket
 const previousDirectory = process.env.WORKSPACE_RUNTIME_DIRECTORY
@@ -619,7 +621,8 @@ describe("PtyRoutes", () => {
 
   test("rejects create requests outside the pinned workspace before spawning", async () => {
     process.env.WORKSPACE_RUNTIME_DIRECTORY = "/tmp/workspace-runtime-pty"
-    const app = PtyRoutes(upgradeWebSocket)
+    const core = testSessionCore("/tmp/workspace-runtime-pty")
+    const app = new Hono().use("*", (_c, next) => withSessionCore(core, next)).route("/", PtyRoutes(upgradeWebSocket))
 
     const wrongDirectory = await app.request("http://localhost/", {
       method: "POST",
