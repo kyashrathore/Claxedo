@@ -18,16 +18,16 @@ function skillRoot(harnessId: string, value: unknown): SkillRoot {
   return { pluginInstanceId: value.pluginInstanceId, root: value.root, dataRoot: value.dataRoot, skillNames: value.skillNames }
 }
 
-function pluginLaunchFor(harness: SessionHarness, harnessLaunch: ProjectionSource["harnessLaunch"]): { generation?: string; pluginSelection?: PluginProjection["pluginSelection"]; pluginRoots: SkillRoot[]; mcpServers: ProjectedMcpServer[]; notApplied: NotApplied[] } {
-  const launch = harness.access === "native" ? harnessLaunch[harness.id] : undefined
+function pluginLaunchFor(target: string, harnessLaunch: ProjectionSource["harnessLaunch"]): { generation?: string; pluginSelection?: PluginProjection["pluginSelection"]; pluginRoots: SkillRoot[]; mcpServers: ProjectedMcpServer[]; notApplied: NotApplied[] } {
+  const launch = harnessLaunch[target]
   if (launch === undefined) return { pluginRoots: [], mcpServers: [], notApplied: [] }
   if (typeof launch.generation !== "string" || !Array.isArray(launch.pluginRoots)) {
-    throw new Error(`The ${harness.id} plugin launch must name its generation and list its plugin roots`)
+    throw new Error(`The ${target} plugin launch must name its generation and list its plugin roots`)
   }
   const mcpServers = parseProjectedMcpServers(launch.mcpServers)
   if (mcpServers.some((server) => server.origin !== "plugin")) throw new Error("Plugin launch contains a non-plugin MCP origin")
   return { generation: launch.generation, pluginSelection: parsePluginSelection(launch.execution),
-    pluginRoots: launch.pluginRoots.map((value) => skillRoot(harness.id, value)), mcpServers, notApplied: parseNotApplied(launch.notApplied) }
+    pluginRoots: launch.pluginRoots.map((value) => skillRoot(target, value)), mcpServers, notApplied: parseNotApplied(launch.notApplied) }
 }
 
 function projectResolvedMcpServers(mcp: Record<string, unknown>): ProjectedMcpServer[] {
@@ -43,10 +43,10 @@ function projectResolvedMcpServers(mcp: Record<string, unknown>): ProjectedMcpSe
 
 /** The projection a harness launches with, from the accepted runtime snapshot. */
 export function pluginProjectionFor(harness: SessionHarness, source: ProjectionSource): PluginProjection {
-  const plugins = pluginLaunchFor(harness, source.harnessLaunch)
-  const mcpServers = [...projectResolvedMcpServers(source.mcp).filter((server) => harness.access === "connection" || server.origin !== "plugin"), ...plugins.mcpServers]
   const target = harness.access === "connection" ? "acp" : harnessDefinition(harness)?.id
   if (target === undefined) throw new Error(`Unknown native harness ${harness.id}`)
+  const plugins = pluginLaunchFor(target, source.harnessLaunch)
+  const mcpServers = [...projectResolvedMcpServers(source.mcp).filter((server) => harness.access === "connection" || server.origin !== "plugin"), ...plugins.mcpServers]
   const applied = projectMcpForHarness(target, mcpServers)
   return {
     generation: plugins.generation === undefined ? source.generation : `${source.generation}/plugins:${plugins.generation}`,
