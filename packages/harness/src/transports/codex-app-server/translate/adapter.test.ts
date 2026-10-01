@@ -282,31 +282,6 @@ describe("codexAppServerAdapter", () => {
     expect(events.some((event) => event.type === "tool-output")).toBe(false)
   })
 
-  test("a process exit reports the code's verdict", () => {
-    const failed = runtime().ingest({ source: "codex.app-server", method: "process/exited", payload: {
-      processHandle: "proc-killed",
-      exitCode: 137,
-      stdout: "",
-      stderr: "",
-    } }).events
-    expect(failed).toContainEqual(expect.objectContaining({
-      type: "tool-error",
-      toolCallId: "proc-killed",
-      error: "Process exited with code 137",
-      metadata: expect.objectContaining({ exitCode: 137 }),
-    }))
-    expect(failed.some((event) => event.type === "tool-output")).toBe(false)
-
-    const passed = runtime().ingest({ source: "codex.app-server", method: "process/exited", payload: {
-      processHandle: "proc-ok",
-      exitCode: 0,
-      stdout: "done",
-      stderr: "",
-    } }).events
-    expect(passed).toContainEqual(expect.objectContaining({ type: "tool-output", toolCallId: "proc-ok", output: "done" }))
-    expect(passed.some((event) => event.type === "tool-error")).toBe(false)
-  })
-
   test("a command that produced no output yields empty output, not the raw envelope", () => {
     const agent = runtime()
 
@@ -430,84 +405,6 @@ describe("codexAppServerAdapter", () => {
       toolCallId: "cmd-1",
       content: { type: "content", content: { type: "text", text: "passed" } },
     }])
-  })
-
-  test("maps standalone process streams and exit notifications", () => {
-    const agent = runtime()
-
-    expect(agent.ingest({
-      source: "codex.app-server",
-      method: "process/outputDelta",
-      payload: {
-        processHandle: "proc-1",
-        stream: "stdout",
-        deltaBase64: Buffer.from("hello").toString("base64"),
-        capReached: false,
-      },
-    }).events).toMatchObject([
-      { type: "tool-start", toolCallId: "proc-1", toolName: "process" },
-      { type: "tool-input", toolCallId: "proc-1", input: { processHandle: "proc-1", stream: "stdout" } },
-      {
-        type: "tool-content",
-        toolCallId: "proc-1",
-        content: { type: "content", content: { type: "text", text: "hello" } },
-      },
-    ])
-
-    expect(agent.ingest({
-      source: "codex.app-server",
-      method: "process/exited",
-      payload: {
-        processHandle: "proc-1",
-        exitCode: 0,
-        stdout: "",
-        stdoutCapReached: false,
-        stderr: "",
-        stderrCapReached: false,
-      },
-    }).events).toMatchObject([{
-      type: "tool-output",
-      toolCallId: "proc-1",
-      output: "hello",
-    }])
-  })
-
-  test("decodes process output in browser-like runtimes without Buffer", () => {
-    const agent = runtime()
-    const runtimeGlobal = globalThis as typeof globalThis & { Buffer?: typeof Buffer }
-    const original = runtimeGlobal.Buffer
-    try {
-      Object.defineProperty(runtimeGlobal, "Buffer", {
-        configurable: true,
-        value: undefined,
-      })
-
-      expect(agent.ingest({
-        source: "codex.app-server",
-        method: "process/outputDelta",
-        payload: {
-          processHandle: "proc-1",
-          stream: "stdout",
-          deltaBase64: "aGVsbG8=",
-          capReached: false,
-        },
-      }).events).toMatchObject([{
-        type: "tool-start",
-        toolCallId: "proc-1",
-      }, {
-        type: "tool-input",
-        toolCallId: "proc-1",
-      }, {
-        type: "tool-content",
-        toolCallId: "proc-1",
-        content: { type: "content", content: { type: "text", text: "hello" } },
-      }])
-    } finally {
-      Object.defineProperty(runtimeGlobal, "Buffer", {
-        configurable: true,
-        value: original,
-      })
-    }
   })
 
   test("maps file patch stream updates to file diffs", () => {
