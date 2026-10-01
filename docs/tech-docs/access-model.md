@@ -91,7 +91,7 @@ resource's org. Then:
 
 | Change | Who | Refused with |
 |---|---|---|
-| Add a member (including a user-deployed identity admission), change a member's role, remove a member | org owners and admins | `org_admin_required` |
+| Invite a member, change a member's role, remove a member | org owners and admins | `org_admin_required` |
 | Grant, change or remove the `owner` role | org owners | `org_owner_required` |
 | Demote or remove the founding owner | nobody, which is what keeps every org owned | `org_owner_protected` |
 | Create a team, set up the default team, add or remove team members, grant or revoke a team's project role | org owners and admins | `org_admin_required` |
@@ -148,12 +148,13 @@ place, the member already gone), writes no row. The audit table's
 per-deployment row cap evicts deny and MCP rows only; access-change rows
 (`org.*`, `team.*`, `project.member.*`) are never evicted.
 
-An email is resolved only after the caller is found to administer the org the
-request names, so a caller who administers no org learns nothing from the
-answer. That is the whole guarantee. In the user-deployed posture the
-deployment has one org, so only its owners and admins can learn whether an
-address has a verified account. In the hosted posture any signed user can
-create an org and administer it, so any signed user can learn that.
+Organization membership grows through an accepted invitation. An admin submits an email and role; the request never looks up an account and answers `202 {"message":"invitation sent"}` for both known and unknown addresses. Only owners may invite with the owner role. The control plane stores the normalized address and a SHA-256 token hash in `org_invitations`; the raw 256-bit token goes only to the deployment's `AuthEmailSender` and the invitee's link.
+
+Invitations expire after seven days, are single-use, and may be revoked by an org admin; creating and revoking one each write an `org.invitation.*` audit row attributed to the admin. Acceptance requires the signed caller's verified address from Better Auth `AUTH_DB` to match the invited address. The membership, its `org.member.added` audit (attributed to the accepting user), and token consumption run in one D1 batch. An existing active member changes role through the member update route; an invitation cannot change that member's role. A revoked membership may join again through a new invitation without restoring its revoked grants.
+
+The link opens `/invitations/:token` in the app. A person without an account signs up, verifies their email, and returns to that page for the same signed accept call. A user-deployed instance admits a signed-in person other than its owner only while an invitation to their verified address is pending: their first signed request then creates their identity with no membership, and a stranger stays `auth_unavailable`. The founding owner's bootstrap is separate from invitation membership.
+
+The composition reuses `AuthEmailSender`; no email vendor is selected here. With no sender composed, creating an invitation answers `503 org_invitation_delivery_unavailable`. A delivery failure revokes the undelivered invitation and preserves the generic 202 receipt, so sender failures cannot reveal whether a recipient address has an account. Delivery health must be monitored by the deployment's sender.
 
 ## Routes
 
@@ -165,7 +166,10 @@ authority that stores none of this answers `501 not_implemented`.
 |---|---|
 | `GET /orgs`, `POST /orgs` | the caller's orgs; create a collaborative org |
 | `GET /orgs/:orgId/members` | members with `role` and `joined_at` |
-| `POST /orgs/:orgId/members` | add an existing account by `userPublicId`, `email`, `tokenIdentifier` or `providerSubject`, with `role`; an email names the Better Auth account that verified it (`AUTH_DB`), and a deployment without that lookup answers `org_member_email_unsupported` |
+| `POST /orgs/:orgId/invitations` | create an invitation from `email` and `role`; generic 202 receipt |
+| `GET /orgs/:orgId/invitations` | admins list invitation metadata; no token or hash |
+| `DELETE /orgs/:orgId/invitations/:invitationId` | admins revoke a pending invitation |
+| `POST /invitations/:token/accept` | signed invitee accepts with a matching verified address; adds and audits the membership |
 | `PATCH /orgs/:orgId/members/:userPublicId` | change `role` |
 | `DELETE /orgs/:orgId/members/:userPublicId` | remove, with the cascade above |
 | `GET`, `POST /orgs/:orgId/teams`; `POST /orgs/:orgId/ensure-default-team` | teams; create what the default team is missing (org admins) |
@@ -176,7 +180,7 @@ authority that stores none of this answers `501 not_implemented`.
 | `GET /projects/:projectId/access` | every person or team that reaches the project, one entry per source: `owner`, `member`, `team:<teamId>` or `org-role` |
 
 The signed desktop reaches the same routes through the named operations
-`org.members.*`, `team.members.*`, `team.projects.*`, `project.members.*` and
+`org.invitations.*`, `org.members.*`, `team.members.*`, `team.projects.*`, `project.members.*` and
 `project.access` (`docs/tech-docs/desktop-hosted-operation-matrix.md`).
 
 ## Resource hierarchy

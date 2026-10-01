@@ -49,8 +49,8 @@ export const serverWorkerd: Policy = {
   // (`authority/adapters/d1/core-authority.ts`); the host access authority's
   // error contract is its own module
   // (`authority/adapters/d1/host-access-errors.ts`); the Better Auth
-  // composition adds the AUTH_DB email lookup an org admin adds a member by
-  // (`platform/auth/better-auth-d1-account-email.ts`); the session authority
+  // invitation delivery reads the signed invitee's verified email from AUTH_DB
+  // (`platform/auth/better-auth-org-invitations.ts`); the session authority
   // routes resolve whose connections a turn spends through
   // `connections/turn-owner.ts`, the one owner the self-hosted node shares; the
   // D1 session authority's refusal error and input validation

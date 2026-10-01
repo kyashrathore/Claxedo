@@ -1093,11 +1093,10 @@ export function createSqliteWorkspaceAuthority(
           : args.userPublicId
             ? db.prepare<unknown[], AuthorityUser>(`SELECT token_identifier FROM users WHERE public_id = ?`).get(args.userPublicId)
             : undefined
-      if (!target) throw new PublicApiError("team_member_not_found", "team_member_not_found")
-      const orgMembership = db.prepare(`
+      const orgMembership = target && db.prepare(`
         SELECT 1 FROM org_memberships WHERE org_id = ? AND token_identifier = ?
       `).get(team.org_id, target.token_identifier)
-      if (!orgMembership) throw new PublicApiError("team_member_org_membership_required", "team_member_org_membership_required")
+      if (!target || !orgMembership) throw new PublicApiError("team_member_org_membership_required", "team_member_org_membership_required")
       const now = Date.now()
       const role = args.role ?? "member"
       db.prepare(`

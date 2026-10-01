@@ -3,7 +3,7 @@ import { publicApiErrorShape } from "@claxedo/helpers/api-error"
 import type { D1Database } from "@cloudflare/workers-types"
 import { ControlPlaneAuthError, type SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import { ClaxedoError } from "@claxedo/server-core/platform/errors/base"
-import type { FindAccountByEmail, MemberSelector } from "@claxedo/server-core/platform/auth/org-access-authority"
+import type { TeamMemberSelector } from "@claxedo/server-core/platform/auth/org-access-authority"
 import type { BoundSql } from "./authorization"
 
 export type AccessPrincipal = { userId: string; actorId: string }
@@ -21,7 +21,6 @@ export type D1AccessContext = {
   randomId: (prefix: "team" | "audit") => string
   principal: (auth: SignedControlPlaneAuth) => Promise<AccessPrincipal>
   assertOrganizationAllowed: (orgId: string) => void
-  findAccountByEmail?: FindAccountByEmail
 }
 
 export type HumanPrincipal = { userId: string; actorId: string; actorKind: "human" }
@@ -99,8 +98,6 @@ export type D1AccessErrorCode =
   | "org_owner_protected"
   | "org_membership_required"
   | "org_member_not_found"
-  | "org_member_target_required"
-  | "org_member_email_unsupported"
   | "organization_not_found"
   | "team_not_found"
   | "team_not_allowed_on_personal_org"
@@ -113,6 +110,9 @@ export type D1AccessErrorCode =
   | "project_member_org_membership_required"
   | "project_member_owner_immutable"
   | "resource_conflict"
+  | "org_invitation_invalid"
+  | "org_invitation_email_mismatch"
+  | "org_invitation_delivery_unavailable"
 
 export class D1AccessAuthorityError extends ClaxedoError<D1AccessErrorCode> {
   constructor(code: D1AccessErrorCode, message: string = code) {
@@ -130,21 +130,15 @@ export const { requireText, optionalText } = createRequireText((message) => new 
  * after authorizing the change, so an unauthorized caller cannot learn from
  * the answer whether an address has an account.
  */
-export async function resolveMemberUser(
+export async function resolveTeamMemberUser(
   context: D1AccessContext,
-  selectors: MemberSelector,
-  targetRequired: "team_member_target_required" | "org_member_target_required",
+  selectors: TeamMemberSelector,
 ): Promise<{ user_id: string } | null> {
   const database = context.database
-  const named = [selectors.tokenIdentifier, selectors.providerSubject, selectors.userPublicId, selectors.email].filter(
+  const named = [selectors.tokenIdentifier, selectors.providerSubject, selectors.userPublicId].filter(
     (value): value is string => typeof value === "string" && !!value.trim(),
   )
-  if (named.length !== 1) throw new D1AccessAuthorityError(targetRequired)
-  if (selectors.email?.trim()) {
-    if (!context.findAccountByEmail) throw new D1AccessAuthorityError("org_member_email_unsupported")
-    const account = await context.findAccountByEmail(requireText(selectors.email, "email"))
-    return account ? await resolveMemberUser(context, { tokenIdentifier: account.tokenIdentifier }, targetRequired) : null
-  }
+  if (named.length !== 1) throw new D1AccessAuthorityError("team_member_target_required")
   if (selectors.userPublicId?.trim()) {
     return await database
       .prepare(`select user_id from users where user_id = ? and state = 'active'`)

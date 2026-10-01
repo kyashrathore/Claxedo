@@ -26,12 +26,9 @@ test("certified hosted Worker signs in two GitHub people and refuses unbrokered 
       { id: "hosted-e2e-organization", name: "Hosted E2E" },
     ])
 
-    const admitted = await hostedFetch(stack, "/api/control/user-deployed/identity-admissions", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ subject: second.id, role: "member" }),
-    }, owner)
-    expect(admitted.status).toBe(200)
+    const invitationToken = await stack.inviteMember(owner.id, second.id)
+    const accepted = await hostedFetch(stack, `/api/control/invitations/${invitationToken}/accept`, { method: "POST" }, second)
+    expect(accepted.status).toBe(200)
 
     for (const [repoUrl, code] of [
       [undefined, "cloud_workspace_source_required"],

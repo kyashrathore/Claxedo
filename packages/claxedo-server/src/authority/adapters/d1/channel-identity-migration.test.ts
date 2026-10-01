@@ -16,7 +16,6 @@ import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/
 import type { AuthIdentity, ControlPlanePrincipal } from "@claxedo/server-core/platform/auth/authentication"
 
 import { D1WorkspaceAuthority } from "./workspace-authority"
-import { D1OrgMemberAuthority } from "./org-member-authority"
 import { D1ChannelRuntimeAuthority } from "./channel-runtime-authority"
 import { controlPlaneMigrationPath, controlPlaneMigrations } from "../../../test-support/control-plane-migrations"
 
@@ -137,11 +136,8 @@ async function deployment(migrations: readonly string[]) {
   } else {
     await createPreOrgKindOrganization(context.database, handleHolder)
   }
-  await new D1OrgMemberAuthority(context.workspace.accessContext()).addOrgMember(handleHolder, {
-    orgId: "org_acme",
-    userPublicId: accountHolder.principal!.userId,
-    role: "admin",
-  })
+  await context.database.prepare(`insert into org_memberships (org_id, user_id, role, created_at, updated_at, revoked_at)
+    values ('org_acme', ?, 'admin', 1, 1, null)`).bind(accountHolder.principal!.userId).run()
   const workspace = await context.workspace.createWorkspace(handleHolder, {
     workspaceId: "ws_main",
     orgId: "org_acme",

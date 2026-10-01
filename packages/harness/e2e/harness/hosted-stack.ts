@@ -58,6 +58,7 @@ export async function startHostedStack(label: string) {
     relayUrl,
     outboundAttempts: control.outboundAttempts,
     provisionOwnerClaim: control.provisionOwnerClaim,
+    inviteMember: control.inviteMember,
     close: async () => {
       await relay.close()
       await control.close()

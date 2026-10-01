@@ -328,12 +328,31 @@ export const HOSTED_OPERATIONS = {
     output: array, retry: "safe",
     exposure: { renderer: true, app: false },
   }),
-  "org.members.add": defineOperation({
-    method: "POST", path: operationPath("/api/control/orgs/:orgId/members"),
-    input: operationInput({ orgId: requiredParameter, userPublicId: bodyField, email: bodyField, tokenIdentifier: bodyField, providerSubject: bodyField, role: bodyField }),
+  "org.invitations.create": defineOperation({
+    method: "POST", path: operationPath("/api/control/orgs/:orgId/invitations"),
+    input: operationInput({ orgId: requiredParameter, email: bodyField, role: bodyField }),
+    output: withStrings("message"), retry: "never",
+    exposure: { renderer: true, app: true },
+    body: selectBody("email", "role"),
+  }),
+  "org.invitations.list": defineOperation({
+    method: "GET", path: operationPath("/api/control/orgs/:orgId/invitations"),
+    input: operationInput({ orgId: requiredParameter }),
+    output: array, retry: "safe",
+    exposure: { renderer: true, app: true },
+  }),
+  "org.invitations.revoke": defineOperation({
+    method: "DELETE", path: operationPath("/api/control/orgs/:orgId/invitations/:invitationId"),
+    input: operationInput({ orgId: requiredParameter, invitationId: requiredParameter }),
+    output: object, retry: "never",
+    exposure: { renderer: true, app: true },
+  }),
+  "org.invitations.accept": defineOperation({
+    method: "POST", path: operationPath("/api/control/invitations/:token/accept"),
+    input: operationInput({ token: requiredParameter }),
     output: withStrings("user_id", "role"), retry: "never",
-    exposure: { renderer: true, app: false },
-    body: selectBody("userPublicId", "email", "tokenIdentifier", "providerSubject", "role"),
+    exposure: { renderer: true, app: true },
+    body: () => ({}),
   }),
   "org.members.update": defineOperation({
     method: "PATCH", path: operationPath("/api/control/orgs/:orgId/members/:userPublicId"),

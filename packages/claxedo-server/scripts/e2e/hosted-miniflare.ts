@@ -1,3 +1,4 @@
+import { provisionHostedOrgInvitation } from "./hosted-org-invitation"
 import { spawnSync } from "node:child_process"
 import { readFileSync } from "node:fs"
 import path from "node:path"
@@ -111,8 +112,15 @@ async function main(input: Input) {
     await provisionBetterAuthNativeClients(auth, apiOrigin, env.BETTER_AUTH_SECRET, env.CLAXEDO_AUTH_INTROSPECTION_SECRET)
     await mf.ready
     process.on("message", (message: unknown) => {
-      if (!message || typeof message !== "object" || !("subject" in message) || typeof message.subject !== "string" ||
-        !("id" in message) || typeof message.id !== "number") return
+      if (!message || typeof message !== "object" || !("id" in message) || typeof message.id !== "number") return
+      if ("ownerSubject" in message && typeof message.ownerSubject === "string" && "inviteeSubject" in message && typeof message.inviteeSubject === "string") {
+        void provisionHostedOrgInvitation({
+          auth, control, issuer: `${apiOrigin}/api/auth`, deploymentId: env.CLAXEDO_DEPLOYMENT_ID,
+          orgId: env.CLAXEDO_USER_DEPLOYED_ORGANIZATION_ID, ownerSubject: message.ownerSubject, inviteeSubject: message.inviteeSubject,
+        }).then((token) => process.send?.({ id: message.id, token }), (cause: unknown) => process.send?.({ id: message.id, error: String(cause) }))
+        return
+      }
+      if (!("subject" in message) || typeof message.subject !== "string") return
       const subject = message.subject
       void (async () => {
         try {

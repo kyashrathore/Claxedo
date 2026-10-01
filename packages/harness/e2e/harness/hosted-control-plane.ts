@@ -47,6 +47,26 @@ function ready(child: ChildProcess, marker: string) {
   })
 }
 
+function requestProvisioning(child: ChildProcess, input: Record<string, string>, field: "claim" | "token") {
+  return new Promise<string>((resolve, reject) => {
+    const id = Math.floor(Math.random() * Number.MAX_SAFE_INTEGER)
+    const timer = setTimeout(() => {
+      child.off("message", listener)
+      reject(new Error(`Hosted ${field} provisioning timed out`))
+    }, 10_000)
+    const listener = (message: unknown) => {
+      if (!message || typeof message !== "object" || !("id" in message) || message.id !== id) return
+      clearTimeout(timer)
+      child.off("message", listener)
+      const value = Reflect.get(message, field)
+      if (typeof value === "string") resolve(value)
+      else reject(new Error("error" in message ? String(message.error) : `Hosted provisioning returned no ${field}`))
+    }
+    child.on("message", listener)
+    child.send({ id, ...input })
+  })
+}
+
 export async function startHostedControlPlane(input: Input) {
   const credentials = input.credentials
   const config = await writeHostedE2eWranglerConfig()
@@ -89,19 +109,9 @@ export async function startHostedControlPlane(input: Input) {
         throw error
       }
     },
-    provisionOwnerClaim: (subject: string) => new Promise<string>((resolve, reject) => {
-      const id = Math.floor(Math.random() * Number.MAX_SAFE_INTEGER)
-      const timer = setTimeout(() => reject(new Error("hosted owner claim provisioning timed out")), 10_000)
-      const listener = (message: unknown) => {
-        if (!message || typeof message !== "object" || !("id" in message) || message.id !== id) return
-        clearTimeout(timer)
-        child.off("message", listener)
-        if ("claim" in message && typeof message.claim === "string") resolve(message.claim)
-        else reject(new Error("error" in message ? String(message.error) : "owner claim provisioning returned no claim"))
-      }
-      child.on("message", listener)
-      child.send({ id, subject })
-    }),
+    inviteMember: (ownerSubject: string, inviteeSubject: string) =>
+      requestProvisioning(child, { ownerSubject, inviteeSubject }, "token"),
+    provisionOwnerClaim: (subject: string) => requestProvisioning(child, { subject }, "claim"),
     close: async () => {
       if (child.exitCode === null && child.signalCode === null) {
         child.kill("SIGTERM")

@@ -1,3 +1,4 @@
+import { inviteOrgMember } from "../../../test-support/invite-org-member"
 import { readdir, readFile } from "node:fs/promises"
 import { fileURLToPath } from "node:url"
 import { afterEach, describe, expect, test } from "vitest"
@@ -11,8 +12,8 @@ import {
   userDeployedOwnerIdentityHash,
   type D1AuthorityProductPolicy,
 } from "./workspace-authority"
-import { D1OrgMemberAuthority } from "./org-member-authority"
 import { D1SessionAuthority } from "./session-authority"
+import { inviteIdentity } from "../../../test-support/invite-identity"
 import { D1AuditAuthority } from "./audit-authority"
 
 const MIGRATIONS_DIRECTORY = fileURLToPath(new URL("../../../../migrations/control-plane/", import.meta.url))
@@ -202,7 +203,7 @@ describe("D1 hosted workspace authority", () => {
     const bob = await signed(authority, identity("bob"))
     const outsider = await signed(authority, identity("outsider"))
     const team = await authority.createHostedOrganization(alice, { name: "Acme", orgId: "org_acme" })
-    await new D1OrgMemberAuthority(authority.accessContext()).addOrgMember(alice, {
+    await inviteOrgMember(database, alice, {
       orgId: team.org_id,
       userPublicId: bob.principal!.userId,
       role: "member",
@@ -295,7 +296,7 @@ describe("D1 hosted workspace authority", () => {
       await database.prepare("select project_id from projects where repo_key = 'github.com/acme/denied'").first(),
     ).toBeNull()
 
-    await new D1OrgMemberAuthority(authority.accessContext()).addOrgMember(alice, {
+    await inviteOrgMember(database, alice, {
       orgId: team.org_id,
       userPublicId: bob.principal!.userId,
       role: "admin",
@@ -336,7 +337,7 @@ describe("D1 hosted workspace authority", () => {
     const alice = await signed(authority, identity("alice"))
     const bob = await signed(authority, identity("bob"))
     const team = await authority.createHostedOrganization(alice, { name: "Acme", orgId: "org_acme" })
-    await new D1OrgMemberAuthority(authority.accessContext()).addOrgMember(alice, { orgId: team.org_id, userPublicId: bob.principal!.userId, role: "member" })
+    await inviteOrgMember(database, alice, { orgId: team.org_id, userPublicId: bob.principal!.userId, role: "member" })
     const project = await authority.createWorkspace(alice, {
       workspaceId: "ws_acme_main",
       orgId: team.org_id,
@@ -546,9 +547,9 @@ describe("D1 user-deployed workspace authority", () => {
     })
 
     const memberIdentity = identity("member")
-    const admission = await authority.admitUserDeployedIdentity(owner, { identity: memberIdentity, role: "member" })
-    expect(admission.state).toBe("active")
+    const accept = await inviteIdentity(authority, owner, { orgId: "org_deployment", identity: memberIdentity, role: "member" })
     const member = await signed(authority, memberIdentity)
+    await accept(member)
     await authority.createWorkspace(owner, {
       workspaceId: "ws_shared",
       orgId: "org_deployment",
@@ -566,7 +567,7 @@ describe("D1 user-deployed workspace authority", () => {
       }),
     ).rejects.toMatchObject({ status: 403, code: "workspace_authorization_denied" })
 
-    await new D1OrgMemberAuthority(authority.accessContext()).addOrgMember(owner, {
+    await inviteOrgMember(database, owner, {
       orgId: "org_deployment",
       userPublicId: member.principal!.userId,
       role: "admin",
@@ -677,7 +678,7 @@ describe("a workspace's row carries its placement", () => {
   })
 
   test("reachability is reported for machine-placed rows and withheld from provisioner-owned ones", async () => {
-    const { authority } = await setup({ kind: "claxedo-hosted" })
+    const { authority, database } = await setup({ kind: "claxedo-hosted" })
     const alice = await signed(authority, identity("alice"))
     await two(authority, alice)
 
@@ -704,7 +705,7 @@ describe("workspace creation admission", () => {
     })
 
     const team = await authority.createHostedOrganization(alice, { name: "Acme", orgId: "org_acme" })
-    await new D1OrgMemberAuthority(authority.accessContext()).addOrgMember(alice, {
+    await inviteOrgMember(database, alice, {
       orgId: team.org_id,
       userPublicId: bob.principal!.userId,
       role: "member",
@@ -749,7 +750,7 @@ describe("workspace creation admission", () => {
       }),
     ).rejects.toMatchObject({ status: 403 })
 
-    await new D1OrgMemberAuthority(authority.accessContext()).addOrgMember(alice, {
+    await inviteOrgMember(database, alice, {
       orgId: team.org_id,
       userPublicId: bob.principal!.userId,
       role: "admin",
@@ -759,7 +760,7 @@ describe("workspace creation admission", () => {
   })
 
   test("a user-deployed product admits creation only in its own organization", async () => {
-    const { authority } = await setup({
+    const { authority, database } = await setup({
       kind: "user-deployed",
       organization: { id: "org_house", name: "House" },
       ownerIdentity: identity("alice"),

@@ -74,6 +74,16 @@ describe("HOSTED_OPERATIONS", () => {
 })
 
 describe("resolveHostedOperation", () => {
+  test("org invitations create, list, revoke and accept; members are never added directly", () => {
+    expect(resolveHostedOperation("org.invitations.create", { orgId: "org_1", email: "a@example.com", role: "member" }))
+      .toEqual({ method: "POST", path: "/api/control/orgs/org_1/invitations", body: { email: "a@example.com", role: "member" } })
+    expect(resolveHostedOperation("org.invitations.list", { orgId: "org_1" })).toEqual({ method: "GET", path: "/api/control/orgs/org_1/invitations" })
+    expect(resolveHostedOperation("org.invitations.revoke", { orgId: "org_1", invitationId: "inv_1" }))
+      .toEqual({ method: "DELETE", path: "/api/control/orgs/org_1/invitations/inv_1" })
+    expect(resolveHostedOperation("org.invitations.accept", { token: "invite token" }))
+      .toEqual({ method: "POST", path: "/api/control/invitations/invite%20token/accept", body: {} })
+    expect(() => resolveHostedOperation("org.members.add" as never, {})).toThrow(UnknownHostedOperation)
+  })
   test("content saves require the version token", () => {
     expect(() => resolveHostedOperation("documents.content.put", { id: "d", markdown: "# Hi" })).toThrow(MissingOperationParameter)
   })
@@ -286,9 +296,9 @@ describe("resolveHostedOperation", () => {
       method: "GET",
       path: "/api/control/orgs/org_1/members",
     })
-    expect(resolveHostedOperation("org.members.add", { orgId: "org_1", email: "a@example.com", role: "member" })).toEqual({
+    expect(resolveHostedOperation("org.invitations.create", { orgId: "org_1", email: "a@example.com", role: "member" })).toEqual({
       method: "POST",
-      path: "/api/control/orgs/org_1/members",
+      path: "/api/control/orgs/org_1/invitations",
       body: { email: "a@example.com", role: "member" },
     })
     expect(resolveHostedOperation("org.members.update", { orgId: "org_1", userPublicId: "usr_1", role: "admin" })).toEqual({
