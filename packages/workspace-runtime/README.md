@@ -203,9 +203,10 @@ that session is published.
 
 `RuntimeEventHub` is the hub for session/runtime events: session routes
 publish committed client-presentation events to its global channel, which
-`/api/wr/events` serves. `createSessionEventWriter` appends each projected event
-before publication, including subagent revisions and goal changes. Raw runtime
-events stay on its runtime channel for in-process subscribers. The session
+`/api/wr/events` serves. `createSessionEventWriter` appends each projected event,
+subagent revisions included, before publication; a goal change is appended and
+published by the store's goal write. Raw runtime events stay on its runtime
+channel for in-process subscribers. The session
 routes' `publishGlobal` (`bridgeLifecycleEvent` in
 [`routes/session.ts`](src/routes/session.ts)) also forwards a session's
 lifecycle states onto `workspaceRuntimeBus` as `agent.lifecycle` frames:

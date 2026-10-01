@@ -36,7 +36,7 @@ function projector(input: {
 }
 
 describe("createTurnEventProjector", () => {
-  test("subagent and goal events commit to the real journal before runtime publication", () => {
+  test("a subagent revision commits to the real journal before runtime publication", () => {
     const root = mkdtempSync(path.join(tmpdir(), "turn-event-writer-"))
     const store = openRuntimeStore(root)
     try {
@@ -51,10 +51,8 @@ describe("createTurnEventProjector", () => {
         onRuntimeEvent: () => runtimeOrdinals.push(store.getSessionMaxSeq("s")),
       })
       item.project({ type: "subagent-updated", subagentKey: "child", revision: 1, status: "running" }, source)
-      item.project({ type: "goal-updated", sessionId: "s", goal: { sessionId: "s", objective: "ship", status: "active", createdAt: 1, updatedAt: 2 } }, source)
-      item.project({ type: "goal-cleared", sessionId: "s" }, source)
-      expect(runtimeOrdinals).toEqual([initialOrdinal + 1, initialOrdinal + 2, initialOrdinal + 3])
-      expect(published.map((event) => event.type)).toEqual(["subagent.updated", "goal.updated", "goal.cleared"])
+      expect(runtimeOrdinals).toEqual([initialOrdinal + 1])
+      expect(published.map((event) => event.type)).toEqual(["subagent.updated"])
     } finally {
       store.close()
       rmSync(root, { recursive: true, force: true })

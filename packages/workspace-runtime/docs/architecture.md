@@ -38,8 +38,8 @@ in-process sources with different jobs:
 - **`RuntimeEventHub`** ([`src/projection/runtime-event-hub.ts`](../src/projection/runtime-event-hub.ts))
   is the hub for session/runtime events. Session routes publish Claxedo
   presentation events (`AgentEventEnvelope`) to its global channel after
-  `createSessionEventWriter` commits them. Subagent revisions and goal changes
-  are projected by their producer before publication. Raw runtime events stay
+  `createSessionEventWriter` commits them, subagent revisions included; a goal
+  change is committed and published by the store's goal write. Raw runtime events stay
   on the runtime channel for in-process subscribers. `GET /api/wr/events`
   (SSE, `mountWorkspaceCore()`) serves only committed presentation events and
   workspace control frames; it does not project the runtime channel.

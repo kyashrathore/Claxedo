@@ -108,13 +108,11 @@ describe("createClientPresentationProjection", () => {
       }])
   })
 
-  test("projects goal changes for the goal's own session before publication", () => {
+  test("leaves goal presentation to the store's goal write", () => {
     const projection = createClientPresentationProjection({ sessionId: "ses", directory: "/w", assistantMessageId: "" })
     const goal = { sessionId: "ses", objective: "ship", status: "active" as const, createdAt: 1, updatedAt: 2 }
-    expect(projection.ingest({ type: "goal-updated", sessionId: "ses", goal }))
-      .toEqual([{ directory: "/w", payload: { id: "goal.updated:ses:2", type: "goal.updated", properties: { sessionID: "ses", goal } } }])
-    expect(projection.ingest({ type: "goal-cleared", sessionId: "ses" }))
-      .toEqual([{ directory: "/w", payload: { id: "goal.cleared:ses", type: "goal.cleared", properties: { sessionID: "ses" } } }])
+    expect(projection.ingest({ type: "goal-updated", sessionId: "ses", goal })).toEqual([])
+    expect(projection.ingest({ type: "goal-cleared", sessionId: "ses" })).toEqual([])
   })
 
   // A raw `AgentRuntimeEvent` names the turn's assistant message without ever

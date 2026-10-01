@@ -375,16 +375,6 @@ export function translateRuntimeEventToCompat(chunk: AgentRuntimeEvent, ctx: Com
         raw: chunk.raw,
       }))]
 
-    case "goal-updated":
-      return [withDir(ctx.directory, {
-        id: `goal.updated:${chunk.sessionId}:${chunk.goal.updatedAt}`,
-        type: "goal.updated", properties: { sessionID: chunk.sessionId, goal: chunk.goal },
-      })]
-    case "goal-cleared":
-      return [withDir(ctx.directory, {
-        id: `goal.cleared:${chunk.sessionId}`,
-        type: "goal.cleared", properties: { sessionID: chunk.sessionId },
-      })]
     case "subagent-updated": {
       const { type: _type, ...update } = chunk
       return [withDir(ctx.directory, {
@@ -392,6 +382,8 @@ export function translateRuntimeEventToCompat(chunk: AgentRuntimeEvent, ctx: Com
         type: "subagent.updated", properties: { sessionID: ctx.sessionId, update },
       })]
     }
+    case "goal-updated":
+    case "goal-cleared":
     case "input-incorporated":
       return []
 
