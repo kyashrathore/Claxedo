@@ -250,6 +250,41 @@ describe("one authorization owner", () => {
     expect(await active("jti_owner")).toEqual({ active: true })
   })
 
+  test("a share lives on its owner's standing: suspending the owner stops it, and removing them revokes it and its tokens", async () => {
+    const { authority, database, alice, grantees: { orgAdmin: owner }, sender } = await setup()
+    const workspaceId = "ws_admin"
+    await authority.createWorkspace(owner, {
+      workspaceId, orgId: "org_acme", displayName: "admin", backing: "local-worktree", repoUrl: "https://github.com/acme/admin",
+    })
+    await authority.reserveSession(owner, { operationId: "op_ses_admin", sessionId: "ses_admin", workspaceId, kind: "create" })
+    await authority.registerRuntimeSession({
+      ...runtime(owner), operationId: "op_ses_admin", sessionId: "ses_admin", workspaceId, createdAt: 1, updatedAt: 1,
+    })
+    await authority.grantSessionShare!(owner, { sessionId: "ses_admin", workspaceId, grantedToUserId: id(sender), level: "send" })
+    await authority.recordRuntimeAccessToken(sender, {
+      jti: "jti_shared", workspaceId, hostId: "host_admin", ...runtime(sender), role: "viewer", sessionId: "ses_admin", expiresAt: 1_900_000_000_000,
+    })
+    const reads = () => authority.authorizeRuntimeSession({ ...runtime(sender), sessionId: "ses_admin", workspaceId, action: "read" })
+    const active = () => authority.runtimeAccessTokenActive({ jti: "jti_shared", workspaceId, hostId: "host_admin" })
+    const suspended = (state: "active" | "suspended") => database
+      .prepare(`update users set state = ?, suspended_at = ? where user_id = ?`)
+      .bind(state, state === "suspended" ? 1 : null, id(owner)).run()
+
+    await reads()
+    await suspended("suspended")
+    await expect(reads()).rejects.toMatchObject({ status: 403 })
+    expect(await active()).toMatchObject({ active: false })
+    await suspended("active")
+    await reads()
+
+    expect(await authority.removeOrgMember!(alice, { orgId: "org_acme", userPublicId: id(owner) }))
+      .toMatchObject({ removed: true, session_shares_revoked: 1, runtime_tokens_revoked: 1 })
+    await expect(reads()).rejects.toMatchObject({ status: 403 })
+    expect(await active()).toMatchObject({ active: false, code: "runtime_access_token_revoked" })
+    expect(await database.prepare(`select count(*) as live from session_share_grants where session_id = 'ses_admin' and revoked_at is null`)
+      .first()).toEqual({ live: 0 })
+  })
+
   test("organization and project actions follow the organization and project roles", async () => {
     const { database, alice, projectId, grantees } = await setup()
     const principal = (who: SignedControlPlaneAuth) => ({ userId: id(who), actorId: who.principal!.actorId })

@@ -102,7 +102,11 @@ export class D1OrgMemberAuthority implements D1OrgMemberAuthorityPort {
     await this.assertOwnershipChange(who, orgId, current, null)
     const now = this.context.now()
     const guard = this.changeGuard(who, orgId, userId, null)
-    const shares = `session_share_grants where target_user_id = ? and org_id = ? and revoked_at is null`
+    // Their shares go both ways: the ones naming them, and the ones they made
+    // on their own workspaces' sessions, with the tokens those admitted.
+    const ownedWorkspaces = `select workspace_id from workspaces where owner_user_id = ? and org_id = ?`
+    const shares = `session_share_grants where org_id = ? and revoked_at is null
+      and (target_user_id = ? or workspace_id in (${ownedWorkspaces}))`
     const participations = `session_participants where org_id = ? and revoked_at is null
       and actor_id in (select actor_id from actors where user_id = ?)`
     const [, tokens, sessionShares, sessionParticipations, teams, projects, membership] = await this.database.batch([
@@ -115,7 +119,7 @@ export class D1OrgMemberAuthority implements D1OrgMemberAuthorityPort {
             'after', null,
             'sessionSharesRevoked', (select count(*) from ${shares}),
             'sessionParticipationsRevoked', (select count(*) from ${participations}))`,
-          bind: [orgId, userId, orgId, userId, userId, orgId, orgId, userId],
+          bind: [orgId, userId, orgId, userId, orgId, userId, userId, orgId, orgId, userId],
         },
         guard,
         now,
@@ -123,12 +127,14 @@ export class D1OrgMemberAuthority implements D1OrgMemberAuthorityPort {
       this.database
         .prepare(`
           update runtime_access_tokens set revoked_at = ?
-          where revoked_at is null and deployment_id = ? and minted_for_user_id = ? and org_id = ? and ${guard.sql}
+          where revoked_at is null and deployment_id = ? and org_id = ?
+            and (minted_for_user_id = ? or (session_id is not null and workspace_id in (${ownedWorkspaces})))
+            and ${guard.sql}
         `)
-        .bind(now, this.context.deploymentId, userId, orgId, ...guard.bind),
+        .bind(now, this.context.deploymentId, orgId, userId, userId, orgId, ...guard.bind),
       this.database
         .prepare(`update session_share_grants set revoked_at = ? where rowid in (select rowid from ${shares}) and ${guard.sql}`)
-        .bind(now, userId, orgId, ...guard.bind),
+        .bind(now, orgId, userId, userId, orgId, ...guard.bind),
       this.database
         .prepare(`update session_participants set revoked_at = ? where rowid in (select rowid from ${participations}) and ${guard.sql}`)
         .bind(now, orgId, userId, ...guard.bind),

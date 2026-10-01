@@ -194,6 +194,12 @@ function sessionRuleSql(action: SessionAction, s: string, withActor: boolean) {
         and rule_workspace.org_id = ${s}.org_id
         and rule_workspace.project_id = ${s}.project_id
         and rule_workspace.deleted_at is null
+        -- A share reaches its session only while the owner still stands.
+        and exists (
+          select 1 from users rule_owner
+          where rule_owner.user_id = rule_workspace.owner_user_id and rule_owner.state = 'active'
+        )
+        and ${orgMemberSql("rule_workspace.org_id", "rule_workspace.owner_user_id")}
         and (rule_workspace.owner_user_id = ${USER}${share})
     ))`
 }
