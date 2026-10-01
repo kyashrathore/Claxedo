@@ -1,7 +1,7 @@
 import { constants } from "node:fs"
-import fs from "node:fs/promises"
 import path from "node:path"
 import type { AgentMessage } from "@claxedo/agent-runtime-contract"
+import { openWithoutFollowing } from "../workspace-files/open-without-following"
 
 const MAX_IMAGE_BYTES = 20 * 1024 * 1024
 
@@ -31,7 +31,9 @@ export async function toolImageResponse(input: {
     !path.isAbsolute(attachment.location.path)) return missing()
 
   try {
-    const file = await fs.open(attachment.location.path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK)
+    const entry = await openWithoutFollowing(attachment.location.path, constants.O_NONBLOCK)
+    if (!entry || "link" in entry) return missing()
+    const file = entry.handle
     try {
       const stat = await file.stat()
       if (!stat.isFile() || stat.size === 0) return missing()
