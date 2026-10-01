@@ -3397,7 +3397,7 @@ void describe("session ordering timestamps", () => {
 void describe("retracted parts", () => {
   void it("marks the withdrawn text and reasoning, keeps their content, and leaves every other part alone", () => {
     const store = new RuntimeStore(tmp())
-    store.bindSession({ sessionId: "s1", directory: "/w", agentSessionId: "a1" })
+    store.bindSession({ owner: { kind: "machine-owner" }, sessionId: "s1", directory: "/w", agentSessionId: "a1" })
     store.appendEvent({ sessionId: "s1", payload: { type: "message.updated", properties: { info: { id: "m1", sessionID: "s1", role: "assistant" } } } } as never)
     const part = (id: string, fields: Record<string, unknown>) => store.appendEvent({
       sessionId: "s1", payload: messagePartUpdated({ id, sessionID: "s1", messageID: "m1", ...fields } as never, 1),
