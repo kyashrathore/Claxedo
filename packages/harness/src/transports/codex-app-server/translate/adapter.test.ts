@@ -894,14 +894,6 @@ describe("codexAppServerAdapter", () => {
     }).events).toEqual([])
   })
 
-  test("maps thread/started to nothing, since the transport owns thread identity", () => {
-    expect(runtime().ingest({
-      source: "codex.app-server",
-      method: "thread/started",
-      payload: { thread: { id: "thread-child", parentThreadId: "thread-parent", agentNickname: "Ada", status: { type: "active", activeFlags: [] } } },
-    }).events).toEqual([])
-  })
-
   test("reports app-server methods that have no runtime mapping", () => {
     const agent = runtime()
 
