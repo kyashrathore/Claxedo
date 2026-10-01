@@ -1,4 +1,4 @@
-import { clearOpaqueTimer } from "@claxedo/helpers"
+import { clearOpaqueTimer } from "./async"
 export type SseFanoutCleanup = () => void
 export type SseFanoutMeta = { id?: string }
 

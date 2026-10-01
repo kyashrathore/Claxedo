@@ -1,4 +1,4 @@
-import { createSseReplayBuffer, type SseReplayBuffer } from "./projection/sse"
+import { createSseReplayBuffer, type SseReplayBuffer } from "@claxedo/helpers/sse"
 import type { Context } from "hono"
 import { SESSION_STREAM_LEASE_TTL_MS } from "@claxedo/workspace-relay-protocol"
 import type { SessionAccessPolicy } from "./session-access-policy"

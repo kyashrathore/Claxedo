@@ -88,6 +88,13 @@
       "import": "./dist/claxedo-document.mjs",
       "default": "./dist/claxedo-document.mjs"
     },
+    "./sse": {
+      "development": "./src/sse.ts",
+      "bun": "./src/sse.ts",
+      "types": "./dist/sse.d.ts",
+      "import": "./dist/sse.mjs",
+      "default": "./dist/sse.mjs"
+    },
     "./claxedo-credentials": {
       "development": "./src/claxedo-credentials.ts",
       "bun": "./src/claxedo-credentials.ts",
