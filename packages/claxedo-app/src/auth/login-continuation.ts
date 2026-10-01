@@ -16,8 +16,7 @@ export function loginOAuthContinuation(input: {
     !query.get("client_id") ||
     !query.get("redirect_uri") ||
     !query.get("state")
-  )
-    return undefined
+  ) return undefined
 
   const login = new URL(input.pathname, input.appOrigin)
   login.search = input.search

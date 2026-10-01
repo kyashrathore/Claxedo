@@ -19,9 +19,7 @@ export const authTransition: Transition<AuthState, AuthEvent> = (state, event) =
     case "started":
       return { kind: "signingIn" }
     case "settled":
-      return event.user
-        ? { kind: "signedIn", user: event.user }
-        : { kind: "signedOut", ...(event.reason ? { reason: event.reason } : {}) }
+      return event.user ? { kind: "signedIn", user: event.user } : { kind: "signedOut", ...(event.reason ? { reason: event.reason } : {}) }
     case "signedOut":
       return { kind: "signedOut" }
     case "expired":
