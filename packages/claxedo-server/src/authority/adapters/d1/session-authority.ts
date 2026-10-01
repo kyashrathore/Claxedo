@@ -1,5 +1,5 @@
 import { PublicApiError } from "@claxedo/server-core/platform/errors/public-api-error"
-import { PUBLIC_API_ERRORS, type PublicApiErrorCode } from "@claxedo/helpers/api-error"
+import { publicApiErrorShape, type PublicApiErrorCode } from "@claxedo/helpers/api-error"
 import { createRequireText } from "@claxedo/helpers"
 import type { D1Database, D1PreparedStatement } from "@cloudflare/workers-types"
 import { AGENT_MESSAGE_PAGE_LIMIT, AgentMessagePageError } from "@claxedo/agent-runtime-contract"
@@ -230,7 +230,7 @@ export class D1SessionAuthorityError extends ClaxedoError {
     super({
       code,
       message,
-      status: PUBLIC_API_ERRORS[code].status,
+      ...publicApiErrorShape(code),
     })
   }
 }

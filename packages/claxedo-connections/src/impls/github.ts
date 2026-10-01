@@ -13,11 +13,7 @@ import { DefinitiveRefreshError } from "../tokens.js"
 import { timeoutFetch, type IntegrationFetchOptions } from "./fetch-timeout.js"
 import { record, text } from "../json.js"
 import { workSourcePort } from "../ports/index.js"
-import { PUBLIC_API_ERRORS } from "@claxedo/helpers/api-error"
-
-function repositoryFailure(code: "repository_provider_unauthorized" | "repository_provider_unavailable", message: string) {
-  return Object.assign(new Error(message), { code, status: PUBLIC_API_ERRORS[code].status, retryable: false })
-}
+import { publicApiFailure } from "@claxedo/helpers/api-error"
 
 const DEVICE_CODE_URL = "https://github.com/login/device/code"
 const TOKEN_URL = "https://github.com/login/oauth/access_token"
@@ -134,11 +130,11 @@ export function githubIntegration(options: GitHubIntegrationOptions = {}): {
           "User-Agent": "claxedo",
         },
       }).catch(() => undefined)
-      if (!res) throw repositoryFailure("repository_provider_unavailable", "github_repositories_unavailable")
-      if (res.status === 401 || res.status === 403) throw repositoryFailure("repository_provider_unauthorized", "github_repositories_unauthorized")
-      if (!res.ok) throw repositoryFailure("repository_provider_unavailable", "github_repositories_unavailable")
+      if (!res) throw publicApiFailure("repository_provider_unavailable", "github_repositories_unavailable")
+      if (res.status === 401 || res.status === 403) throw publicApiFailure("repository_provider_unauthorized", "github_repositories_unauthorized")
+      if (!res.ok) throw publicApiFailure("repository_provider_unavailable", "github_repositories_unavailable")
       const body = await res.json().catch(() => undefined)
-      if (!Array.isArray(body)) throw repositoryFailure("repository_provider_unavailable", "github_repositories_invalid_response")
+      if (!Array.isArray(body)) throw publicApiFailure("repository_provider_unavailable", "github_repositories_invalid_response")
       const next = [...repositories, ...body.flatMap(repositoryFromGitHub)]
       if (body.length < 100 || page === 10) return next
       return load(page + 1, next)

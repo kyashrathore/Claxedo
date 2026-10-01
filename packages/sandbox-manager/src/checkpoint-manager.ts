@@ -7,15 +7,7 @@ import type {
   SandboxSnapshotManagerResult,
   SandboxTargetResult,
 } from "./contract"
-import { PUBLIC_API_ERRORS } from "@claxedo/helpers/api-error"
-
-function checkpointFailure(code: "workspace_checkpoint_conflict" | "workspace_checkpoint_unavailable", message: string) {
-  return Object.assign(new Error(message), {
-    code,
-    status: PUBLIC_API_ERRORS[code].status,
-    retryable: code === "workspace_checkpoint_unavailable",
-  })
-}
+import { publicApiFailure } from "@claxedo/helpers/api-error"
 
 export type SandboxCheckpointRuntime = {
   freeze: (policy: "drain" | "interrupt") => Promise<void>
@@ -51,11 +43,11 @@ export async function captureSandboxCheckpoint(input: {
   checkpointId?: () => string
 }): Promise<SandboxCheckpointResult> {
   const lease = await requireLease(input.leaseStore, input.workspaceId)
-  if (lease.status !== "ready") throw checkpointFailure("workspace_checkpoint_conflict", "workspace_checkpoint_lease_not_ready")
+  if (lease.status !== "ready") throw publicApiFailure("workspace_checkpoint_conflict", "workspace_checkpoint_lease_not_ready")
   const persistence = lease.persistence
-  if (!persistence || persistence.capture === "none") throw checkpointFailure("workspace_checkpoint_conflict", "workspace_checkpoint_unsupported")
+  if (!persistence || persistence.capture === "none") throw publicApiFailure("workspace_checkpoint_conflict", "workspace_checkpoint_unsupported")
   const target = await input.target(input.workspaceId)
-  if (target.status !== "ready") throw checkpointFailure("workspace_checkpoint_unavailable", target.reason)
+  if (target.status !== "ready") throw publicApiFailure("workspace_checkpoint_unavailable", target.reason)
   await input.request.runtime.freeze(input.request.policy ?? "drain")
   let capturedSource = false
   try {
@@ -64,7 +56,7 @@ export async function captureSandboxCheckpoint(input: {
     const captured = persistence.capture === "same-resource"
       ? { ok: true as const, snapshotId: target.driverResourceId ?? target.sandboxId }
       : await input.snapshot(input.workspaceId)
-    if (!captured.ok) throw checkpointFailure("workspace_checkpoint_conflict", captured.reason)
+    if (!captured.ok) throw publicApiFailure("workspace_checkpoint_conflict", captured.reason)
     capturedSource = true
     const capturedAt = (input.now ?? Date.now)()
     const checkpoint: SandboxCheckpointReference = {
@@ -88,7 +80,7 @@ export async function captureSandboxCheckpoint(input: {
         ? { status: "stopped" as const }
         : {}),
     })
-    if (!updated) throw checkpointFailure("workspace_checkpoint_conflict", "workspace_checkpoint_epoch_fenced")
+    if (!updated) throw publicApiFailure("workspace_checkpoint_conflict", "workspace_checkpoint_epoch_fenced")
     return { status: "ready", lease: updated, checkpoint }
   } finally {
     // A provider can stop/delete the source only after a successful capture.
@@ -109,7 +101,7 @@ export async function restoreSandboxCheckpoint(input: {
   const lease = await requireLease(input.leaseStore, input.workspaceId)
   const checkpoint = lease.checkpoint
   if (!checkpoint || (input.request.checkpointId && checkpoint.id !== input.request.checkpointId)) {
-    throw checkpointFailure("workspace_checkpoint_conflict", "workspace_checkpoint_not_found")
+    throw publicApiFailure("workspace_checkpoint_conflict", "workspace_checkpoint_not_found")
   }
   if (lease.restore?.state === "ready" && lease.restore.checkpointId === checkpoint.id) {
     return { status: "ready", lease, checkpoint }
@@ -130,7 +122,7 @@ export async function restoreSandboxCheckpoint(input: {
   const staged = lease.status === "ready" && lease.epoch === checkpoint.sourceEpoch
     ? await input.leaseStore.update(input.workspaceId, lease.epoch, { status: "stopped", restore: restoring })
     : await input.leaseStore.update(input.workspaceId, lease.epoch, { restore: restoring })
-  if (!staged) throw checkpointFailure("workspace_checkpoint_conflict", "workspace_restore_epoch_fenced")
+  if (!staged) throw publicApiFailure("workspace_checkpoint_conflict", "workspace_restore_epoch_fenced")
 
   const result = await input.ensure(input.workspaceId, {
     homeRegion: staged.homeRegion,
@@ -156,7 +148,7 @@ export async function restoreSandboxCheckpoint(input: {
         error: result.error ?? "workspace_restore_unavailable",
       },
     })
-    throw checkpointFailure("workspace_checkpoint_unavailable", result.error ?? "workspace_restore_unavailable")
+    throw publicApiFailure("workspace_checkpoint_unavailable", result.error ?? "workspace_restore_unavailable")
   }
   await input.request.runtime.reconcile({ epoch: result.epoch, checkpointId: checkpoint.id })
   const ready = await input.leaseStore.update(input.workspaceId, result.epoch, {
@@ -171,22 +163,22 @@ export async function restoreSandboxCheckpoint(input: {
       completedAt: (input.now ?? Date.now)(),
     },
   })
-  if (!ready) throw checkpointFailure("workspace_checkpoint_conflict", "workspace_restore_epoch_fenced")
+  if (!ready) throw publicApiFailure("workspace_checkpoint_conflict", "workspace_restore_epoch_fenced")
   return { status: "ready", lease: ready, checkpoint }
 }
 
 async function requireLease(store: SandboxLeaseStore, workspaceId: string) {
   const lease = await store.get(workspaceId)
-  if (!lease) throw checkpointFailure("workspace_checkpoint_conflict", "workspace_checkpoint_lease_missing")
+  if (!lease) throw publicApiFailure("workspace_checkpoint_conflict", "workspace_checkpoint_lease_missing")
   return lease
 }
 
 function requireCaptureSource(value: string) {
   if (value === "preserved" || value === "stopped" || value === "deleted") return value
-  throw checkpointFailure("workspace_checkpoint_conflict", "workspace_checkpoint_capabilities_invalid")
+  throw publicApiFailure("workspace_checkpoint_conflict", "workspace_checkpoint_capabilities_invalid")
 }
 
 function requireRestoreMount(value: string) {
   if (value === "same-resource" || value === "copy-on-write" || value === "new-resource") return value
-  throw checkpointFailure("workspace_checkpoint_conflict", "workspace_checkpoint_capabilities_invalid")
+  throw publicApiFailure("workspace_checkpoint_conflict", "workspace_checkpoint_capabilities_invalid")
 }

@@ -1,4 +1,4 @@
-import { PUBLIC_API_ERRORS } from "@claxedo/helpers/api-error"
+import { publicApiErrorShape } from "@claxedo/helpers/api-error"
 import type { D1Database, D1PreparedStatement } from "@cloudflare/workers-types"
 import { ControlPlaneAuthError, type SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import {
@@ -145,7 +145,7 @@ export type D1WorkspaceAuthorityErrorCode =
  */
 export class D1WorkspaceAuthorityError extends ClaxedoError<D1WorkspaceAuthorityErrorCode> {
   constructor(code: D1WorkspaceAuthorityErrorCode, message: string) {
-    super({ code, message, status: PUBLIC_API_ERRORS[code].status })
+    super({ code, message, ...publicApiErrorShape(code) })
   }
 }
 

@@ -1,4 +1,4 @@
-import { PUBLIC_API_ERRORS } from "@claxedo/helpers/api-error"
+import { publicApiErrorShape } from "@claxedo/helpers/api-error"
 import type { HostConnectErrorCode } from "@claxedo/server-core/platform/auth/authority"
 import type { MachineAuthRefusal } from "@claxedo/server-core/platform/auth/machine-auth"
 import { ClaxedoError } from "@claxedo/server-core/platform/errors/base"
@@ -23,6 +23,6 @@ export class D1HostAccessAuthorityError extends ClaxedoError<D1HostAccessErrorCo
     /** Extra fields the route places beside `code` and `message` in the error body. */
     public readonly details?: Record<string, unknown>,
   ) {
-    super({ code, message, status: PUBLIC_API_ERRORS[code].status })
+    super({ code, message, ...publicApiErrorShape(code) })
   }
 }

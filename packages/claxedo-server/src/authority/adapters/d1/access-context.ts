@@ -1,5 +1,5 @@
 import { createRequireText } from "@claxedo/helpers"
-import { PUBLIC_API_ERRORS } from "@claxedo/helpers/api-error"
+import { publicApiErrorShape } from "@claxedo/helpers/api-error"
 import type { D1Database } from "@cloudflare/workers-types"
 import { ControlPlaneAuthError, type SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import { ClaxedoError } from "@claxedo/server-core/platform/errors/base"
@@ -116,7 +116,7 @@ export type D1AccessErrorCode =
 
 export class D1AccessAuthorityError extends ClaxedoError<D1AccessErrorCode> {
   constructor(code: D1AccessErrorCode, message: string = code) {
-    super({ code, message, status: PUBLIC_API_ERRORS[code].status })
+    super({ code, message, ...publicApiErrorShape(code) })
   }
 }
 

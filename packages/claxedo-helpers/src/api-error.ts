@@ -1,4 +1,5 @@
 import { asRecord } from "./guards"
+import { PUBLIC_API_ERRORS, type PublicApiErrorCode } from "./api-error-codes"
 export { PUBLIC_API_ERRORS, type PublicApiErrorCode } from "./api-error-codes"
 
 export type ApiError = {
@@ -23,4 +24,17 @@ export function decodeApiError(status: number, value: unknown): (ApiError & { st
   if (typeof row?.code !== "string" || !row.code || typeof row.message !== "string") return undefined
   if (row.retryable !== undefined && typeof row.retryable !== "boolean") return undefined
   return { status, code: row.code, message: row.message, retryable: row.retryable === true }
+}
+
+export function publicApiErrorShape(code: PublicApiErrorCode): { status: number; retryable: boolean } {
+  const entry: { status: number; retryable?: boolean } = PUBLIC_API_ERRORS[code]
+  return { status: entry.status, retryable: entry.retryable === true }
+}
+
+/** A typed failure for packages that cannot depend on the server's `ClaxedoError`. */
+export function publicApiFailure<Code extends PublicApiErrorCode>(
+  code: Code,
+  message: string = PUBLIC_API_ERRORS[code].message,
+): Error & { code: Code; status: number; retryable: boolean } {
+  return Object.assign(new Error(message), { code, ...publicApiErrorShape(code) })
 }
