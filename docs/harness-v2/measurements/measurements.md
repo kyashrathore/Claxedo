@@ -46,7 +46,7 @@ Today measured on `feat/harness-v2` at `e90ea3215d` (worktree `/Users/yashvardha
 - Plan: `client-presentation` 2,041 + `compat-events` 471 + `turn-projection`+`child-event-routing` 467 + `sse` 243.
 - Command: `wc -l` over [lists/dev-projection.txt](lists/dev-projection.txt); `client-presentation` = `agent-event-runtime/src/projections/client-presentation/`.
 - Dev: measured client-presentation **2,000** (prod rule), so total **3,181**, not 3,222 — **mismatch −41 on `dev` itself** (the plan's 2,041 does not reproduce; including tests gives 3,291, so it's not a test-inclusion issue). 2,041 also does not match `wc -l` on the dir with fixtures — plan likely counted a pre-move or slightly different file set.
-- Today: same files, `sse.ts` now at `session-core/src/projection/sse.ts` ([list](lists/today-projection.txt)) — still 3,181.
+- Today: same files, `sse.ts` now at `claxedo-helpers/src/sse.ts` ([list](lists/today-projection.txt)) — still 3,181.
 
 ### M7 — Event contracts "458" (§Scope, §Moved unchanged)
 - Command: `find packages/agent-event-runtime/src/contracts -name '*.ts' ! -name '*.test.ts' | xargs wc -l`

@@ -41,7 +41,7 @@ measure() {
   say "proj.client-presentation" "$(catd $AER/projections/client-presentation)"
   say "proj.compat-events" "$(wl $SDKS/compat-events.ts)"
   say "proj.turn+child" "$(cat $SDKS/harnesses/shared/turn-projection.ts $SDKS/harnesses/shared/child-event-routing.ts 2>/dev/null | wc -l | tr -d ' ')"
-  say "proj.sse" "$(wl $SDKS/sse.ts packages/session-core/src/projection/sse.ts)"
+  say "proj.sse" "$(wl $SDKS/sse.ts packages/claxedo-helpers/src/sse.ts)"
   say "contracts.agent-event-runtime" "$(catd $AER/contracts)"
   say "tr.claude" "$(cl $H/claude/adapter.ts)"
   say "tr.claude.partial-json" "$(cl $H/claude/partial-json.ts)"
