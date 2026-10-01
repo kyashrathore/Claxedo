@@ -4,7 +4,7 @@ Local flows boot the local daemon. Signed and cloud flows boot the hosted Cloudf
 
 | Entry | Boot target | Owned behavior |
 | --- | --- | --- |
-| App and harness `startStack` → `startDaemon` | `local-daemon-entry.ts` → `claxedo-local-server`'s `startLocalServer` with Agent Plugins and Tasks | Local projects, credentials, Agent Plugins, Tasks, PTY, harness sessions and restart recovery; the app bundle is served by `local-app-bundle.ts` |
+| App and harness `startStack` → `startDaemon` (incl. H32, H33.local) | `local-daemon-entry.ts` → `claxedo-local-server`'s `startLocalServer` with Agent Plugins and Tasks | Local projects, credentials, Agent Plugins, Tasks, PTY, harness sessions and restart recovery; the app bundle is served by `local-app-bundle.ts` |
 | App `startSignedStack` (`signed`, `signedCloud`) | `startHostedStack` (`emailPassword`, the front's origin), `startHostedAppFront`, a local daemon, `startHostedMachine` | Email/password sign-up verified through the Worker's `EMAIL` binding, owner bootstrap, host enrollment, consented folders, serving credentials and the daemon tunnel |
 | H19, H19.pi, H33 → `startHostedCloudStack` | `startHostedStack` plus the owner, the scripted ACP connection and Pi as default | Cloud ACP/Pi turns, default-harness delivery to a running sandbox |
 | H30, H19.hosted*, H28, H31 | `startHostedStack` | Hosted credentials, plugins, settings and per-person accounts |
@@ -16,14 +16,15 @@ The signed browser's origin is `https://claxedo-e2e.localhost:<front port>`: the
 
 Ports come from `ports.ts` (`46100-46199` by default; `CLAXEDO_E2E_PORT_RANGE` overrides). A hosted stack leases control-plane, sandbox API, model, Git and relay ports; a signed browser stack also leases its public HTTPS origin, whose front serves the built app and forwards control-plane paths to workerd. The sandbox API fixture launches the real runtime through the local brokering driver, records each runtime's pid, environment, home and secret names in `local-broker-targets`, and answers the driver's backup and restore by copying the sandbox's workspace and runtime data.
 
+## Machine-local contracts
+
+H32 (a custom ACP connection spends a stored secret, and revoking it refuses the next session) and H33.local (a saved command and the signed-runtime plugin snapshot reach and leave a running runtime) are machine-local features the local daemon serves: its `/api/claxedo/credentials`, `/api/claxedo/agent-config/connections` and `/commands`, and `/api/claxedo/plugins/signed-runtime`. H33's hosted half keeps the default-harness delivery to a running sandbox; the config-push fault modes lived in the self-hosted entry and are gone.
+
 ## Assertions with no hosted equivalent
 
 | Flow/assertion | Reason |
 | --- | --- |
 | H29 self-hosted cold start creates its signing keys | The hosted Worker requires provisioned signing bindings; nothing creates keys on first boot. Flow and recording removed. |
-| H32 custom ACP connection spends a stored secret, and revoking it refuses the next session | Hosted connection descriptors accept `secretRefs` and the runtime lease route serves them, but no hosted route stores a credential a descriptor can name (`/api/claxedo/credentials` exists only in the self-hosted server). Flow and recording removed. |
-| H33 saved commands reach and leave the running sandbox | Saved commands are `~/.claxedo/commands` files served by the local server; the hosted Worker has no commands route and delivers none. |
-| H33 an installed plugin's MCP server reaches new cloud sessions and leaves on removal, and the config-push faults | `/api/claxedo/plugins/signed-runtime` is a local-daemon route; hosted plugins activate through sources and the MCP gateway, which H28 covers. |
 | H30 the account's scope moves from shared to local | Hosted accounts have no scope; revoking is deleting the account (`DELETE /auth/openai?harness=pi`), and the readback is the Pi provider catalog. Every sandbox, placeholder and broker assertion is unchanged. |
 | App 35 a machine owner's app plugins never reach another signed-in account | The live app-plugin registry is a local-daemon route; a hosted account never reaches another person's machine. The local case remains. |
 
