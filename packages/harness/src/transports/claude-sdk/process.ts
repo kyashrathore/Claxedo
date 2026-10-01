@@ -5,6 +5,8 @@ import type { Deadline, HarnessServices, OwnedProcess } from "../../contract"
 import { TransportError } from "../../contract/errors"
 import { errorMessage, settleAtRequestDeadline, stringRecord } from "@claxedo/helpers"
 
+const STDERR_TAIL = 4_096
+
 function claudeRetirementDeadline(): Deadline {
   return { at: Date.now() + 5_000, signal: new AbortController().signal }
 }
@@ -23,7 +25,7 @@ export class ClaudeProcess extends EventEmitter implements SpawnedProcess {
   killed = false
   exitCode: number | null = null
   private exited = false
-  private stderrDiagnosed = false
+  private stderrTail = ""
 
   constructor(private readonly services: HarnessServices, options: SpawnOptions, sessionId: string, role: "harness" | "probe" = "harness") {
     super()
@@ -38,11 +40,7 @@ export class ClaudeProcess extends EventEmitter implements SpawnedProcess {
     this.started.then((owned) => {
       this.stdin.pipe(owned.stdin)
       owned.stdout.pipe(this.stdout)
-      owned.stderr.on("data", (chunk: Buffer) => {
-        if (this.stderrDiagnosed) return
-        this.stderrDiagnosed = true
-        services.log.debug("Claude stderr", { redacted: true, bytes: Math.min(chunk.byteLength, 4096) })
-      })
+      owned.stderr.on("data", (chunk: Buffer) => { this.stderrTail = `${this.stderrTail}${chunk.toString("utf8")}`.slice(-STDERR_TAIL) })
       void owned.exited.then((exit) => {
         this.exitCode = exit.code
         this.exited = true
@@ -50,6 +48,8 @@ export class ClaudeProcess extends EventEmitter implements SpawnedProcess {
       }, (error: unknown) => this.fail(error))
     }, (error: unknown) => this.fail(error))
   }
+
+  get stderr(): string { return this.stderrTail }
 
   private fail(error: unknown): void {
     this.services.log.error("Claude process failed", { code: error instanceof TransportError ? error.code : "unknown" })

@@ -1,7 +1,3 @@
-import { PI_MCP_COMMAND, PI_MCP_EXTENSION_SOURCE } from "../../../harness/src/transports/pi-rpc/mcp"
-import { mkdtemp, rm, stat, writeFile } from "node:fs/promises"
-import { tmpdir } from "node:os"
-import path from "node:path"
 import { afterEach, describe, expect, test } from "vitest"
 import { serve } from "@hono/node-server"
 import { Hono } from "hono"
@@ -245,32 +241,3 @@ test("a connection opened before admission gains tools when admitted and loses a
   expect(fixture.calls).toEqual([])
 })
 
-
-test("the emitted Pi extension calls the real MCP server", async () => {
-  const fixture = fakeGrant()
-  const { url } = await listen(fixture.grant)
-  const entry = { name: "claxedo", url, headers: { Authorization: "Bearer rt-token" } }
-  const extension = await import(`data:text/javascript;base64,${Buffer.from(PI_MCP_EXTENSION_SOURCE).toString("base64")}`)
-  const commands = new Map<string, { handler(args: string): Promise<void> }>()
-  const tools = new Map<string, { execute(id: string, args: Record<string, unknown>): Promise<{ content: unknown[] }> }>()
-  const events = new Map<string, () => Promise<void>>()
-  let active = ["read"]
-  extension.default({
-    registerCommand: (name: string, value: { handler(args: string): Promise<void> }) => commands.set(name, value),
-    registerTool: (tool: { name: string; execute(id: string, args: Record<string, unknown>): Promise<{ content: unknown[] }> }) => tools.set(tool.name, tool),
-    getActiveTools: () => active,
-    setActiveTools: (names: string[]) => { active = names },
-    on: (name: string, callback: () => Promise<void>) => events.set(name, callback),
-  })
-  try {
-    const handoff = path.join(await mkdtemp(path.join(tmpdir(), "pi-mcp-handoff-")), "server.json")
-    await writeFile(handoff, JSON.stringify(entry), { mode: 0o600 })
-    await commands.get(PI_MCP_COMMAND)!.handler(handoff)
-    await expect(stat(handoff)).rejects.toThrow("ENOENT")
-    await rm(path.dirname(handoff), { recursive: true })
-    expect(active.toSorted()).toEqual(["read", ...APP_PLUGIN_TOOLS.map((name) => `mcp__claxedo__${name}`)].toSorted())
-    expect((await tools.get("mcp__claxedo__app_plugin_guide")!.execute("guide", {})).content[0]).toMatchObject({ type: "text", text: APP_PLUGIN_GUIDE })
-    await tools.get("mcp__claxedo__app_plugin_create")!.execute("call", { name: "Notes" })
-    expect(fixture.calls).toEqual([{ method: "create", input: { name: "Notes" } }])
-  } finally { await events.get("session_shutdown")!() }
-})

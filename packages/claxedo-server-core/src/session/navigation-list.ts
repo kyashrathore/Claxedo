@@ -1,4 +1,5 @@
 import { PublicApiError } from "../platform/errors/public-api-error"
+import { parseBackgroundWork, type BackgroundWork } from "@claxedo/agent-runtime-contract"
 import { jsonRecord } from "@claxedo/server-core/platform/runtime/lib/json"
 import { trimToUndefined } from "@claxedo/helpers/string"
 import { asRecordOrEmpty } from "@claxedo/helpers/guards"
@@ -59,10 +60,14 @@ export type SessionNavigationRow = {
 /**
  * The last status the session's runtime reported, as the store that lists the
  * row last heard it. `awaitingInput` is an open permission or question.
+ * `backgroundWork` counts the harness work running outside any turn; only a
+ * list read from the runtime in process carries it, since stored rows have no
+ * column for it.
  */
 export type SessionRowStatus = {
   kind: SessionRowStatusKind
   awaitingInput: boolean
+  backgroundWork?: BackgroundWork
   at: number
 }
 
@@ -241,7 +246,9 @@ function statusFromSession(item: Record<string, unknown>): { status?: SessionRow
   const at = numberValue(nested.at) ?? numberValue(item.status_at)
   if (!kind || at === undefined) return {}
   const awaitingInput = nested.awaitingInput ?? item.awaiting_input
-  return { status: { kind, awaitingInput: awaitingInput === true || awaitingInput === 1, at } }
+  const backgroundWork = parseBackgroundWork(nested.backgroundWork)
+  const background = backgroundWork ? { backgroundWork } : {}
+  return { status: { kind, awaitingInput: awaitingInput === true || awaitingInput === 1, ...background, at } }
 }
 
 function statusKind(input: unknown): SessionRowStatusKind | undefined {

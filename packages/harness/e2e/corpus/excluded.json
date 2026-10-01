@@ -1,4 +1,5 @@
 {
+  "H18-pi-owner": "the extension command's sendUserMessage run reaches Claxedo before or after Pi answers /h18-ui as handled, so it lands in the command's own turn or opens a provider turn with its own user message; both shapes recur on the audit branch and no ordering is fixed yet",
   "H2-stop": "H-25; the recorded session.idle/session.status swap has not recurred (14 runs in the corpus lane) and no producer cause is shown yet",
   "H30-cloud-consent": "no wire observations: the flow calls the hosted routes through hostedFetch and reads the sandbox process directly, outside the recording clients"
 }

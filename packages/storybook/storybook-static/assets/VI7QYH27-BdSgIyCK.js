@@ -1,1 +1,0 @@
-import{R as c,v as t}from"./iframe-D288tw9h.js";function o(e={}){const[a,s]=c({value:()=>t(e.isSelected),defaultValue:()=>!!t(e.defaultIsSelected),onChange:l=>e.onSelectedChange?.(l)});return{isSelected:a,setIsSelected:l=>{!t(e.isReadOnly)&&!t(e.isDisabled)&&s(l)},toggle:()=>{!t(e.isReadOnly)&&!t(e.isDisabled)&&s(!a())}}}export{o as c};

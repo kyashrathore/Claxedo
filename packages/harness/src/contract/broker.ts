@@ -20,26 +20,24 @@ export type PermissionOption = {
   name: string
 }
 
-export type PermissionRequest = {
+export type ChildRequestRoute = { correlationKey: string }
+
+type RequestIdentity = { requestId: string; child?: ChildRequestRoute; expiresAt?: number }
+
+export type PermissionRequest = RequestIdentity & {
   kind: "permission"
-  requestId: string
-  expiresAt?: number
   permission: AgentPermission
   options?: readonly PermissionOption[]
   grantKey?: string
 }
 
-export type QuestionRequest = {
+export type QuestionRequest = RequestIdentity & {
   kind: "question"
-  requestId: string
-  expiresAt?: number
   question: AgentQuestion
 }
 
-export type ElicitationRequest = {
+export type ElicitationRequest = RequestIdentity & {
   kind: "elicitation"
-  requestId: string
-  expiresAt?: number
   elicitationId?: string
   mode: "form" | "url"
   message: string
@@ -77,7 +75,7 @@ export type ChildSessionRef = {
 
 export type ProviderTurnInput = {
   reason: "goal" | "provider"
-  userMessage?: { id: string; text: string }
+  detail?: string
 }
 
 export type ProviderTurnResult =
@@ -88,7 +86,7 @@ export type ProviderTurnSettlement = { state: "completed" } | { state: "failed";
 
 export type OutsideTurnEvent = AgentRuntimeEventOf<
   | "rate-limit" | "auth-status" | "mcp-server-status" | "available-commands-update" | "config-update"
-  | "session-info" | "session-title" | "session-agent" | "harness-notice" | "diagnostic"
+  | "session-info" | "session-title" | "session-agent" | "harness-notice" | "diagnostic" | "background-work"
 >
 
 export interface TurnBroker {
@@ -112,6 +110,9 @@ export interface SessionBroker {
   ): Promise<ProviderTurnResult>
   meter(usage: OutsideTurnUsage): void
   publish(event: OutsideTurnEvent): Promise<void>
+  observeSubagent(observation: SubagentObservation): Promise<ChildSessionRef | undefined>
+  associateChild(correlationKey: string, child: ChildSessionRef): void
+  publishChild(event: RoutedEvent): Promise<void>
   readonly goal: {
     read(): RuntimeGoalSnapshot | null
     publish(snapshot: RuntimeGoalSnapshot | null): Promise<void>

@@ -11,7 +11,7 @@ type ClaudeProcess = { wire: ScriptedProcess<Frame>; protocol: ClaudePeer }
 
 const result = { type: "result", subtype: "success", is_error: false, session_id: "up1", uuid: "result-1", num_turns: 1 }
 
-export async function scriptedClaude(options: { models: unknown[]; steering?: boolean; env?: NodeJS.ProcessEnv }) {
+export async function scriptedClaude(options: { models: unknown[]; steering?: boolean; env?: NodeJS.ProcessEnv; crash?: string }) {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "claude-scripted-"))
   const launches: { command: SpawnCommand; role: string }[] = []
   const users: Frame[] = []
@@ -37,6 +37,12 @@ export async function scriptedClaude(options: { models: unknown[]; steering?: bo
       return
     }
     users.push(frame)
+    if (options.crash) {
+      process.wire.stderr.write(options.crash)
+      process.wire.exit({ code: 1, signal: null })
+      return
+    }
+    if (users.length === 1 || !options.steering) process.wire.send({ ...frame, isReplay: true })
     if (!options.steering) finish(process)
   }
   const services = {

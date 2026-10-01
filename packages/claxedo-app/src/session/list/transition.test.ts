@@ -4,7 +4,7 @@ import { placementId, projectId, sessionId, type ListedStatus, type ProjectId, t
 import { nativeHarness } from "@/lib/harness-selection"
 import { initialListState, type FetchedPage, type FetchedWindow, type ListState } from "./model"
 import { listTransition } from "./transition"
-import { visibleOrder } from "./visible-rows"
+import { createRowViewCache, rowViews, visibleOrder } from "./visible-rows"
 
 const ALPHA = projectId("prj_alpha")
 const BRAVO = projectId("prj_bravo")
@@ -155,8 +155,8 @@ test("a listed status is a read at the page's send time: a newer event beats it,
     {
       type: "fetched",
       window: window([page(ALPHA, [row(ALPHA, "a1", 50), row(ALPHA, "a2", 40)], undefined, [
-        ["a1", { status: { kind: "working" }, waitingOnUser: true }],
-        ["a2", { status: { kind: "idle" }, waitingOnUser: false }],
+        ["a1", { status: { kind: "working" }, waitingOnUser: true, backgroundWork: { agents: 0, shells: 0, other: 0 } }],
+        ["a2", { status: { kind: "idle" }, waitingOnUser: false, backgroundWork: { agents: 0, shells: 0, other: 0 } }],
       ])], [], 1_000),
     },
   )
@@ -168,7 +168,7 @@ test("a listed status is a read at the page's send time: a newer event beats it,
   const stale = run(moved, { type: "rereadStarted" }, {
     type: "rereadFetched",
     mode: "refresh",
-    window: window([page(ALPHA, [row(ALPHA, "a1", 50)], undefined, [["a1", { status: { kind: "working" }, waitingOnUser: true }]])], [], 1_200),
+    window: window([page(ALPHA, [row(ALPHA, "a1", 50)], undefined, [["a1", { status: { kind: "working" }, waitingOnUser: true, backgroundWork: { agents: 0, shells: 0, other: 0 } }]])], [], 1_200),
   })
   expect(stale.statuses.get(sessionId("a1"))).toMatchObject({ status: { kind: "idle" }, source: "event" })
 })
@@ -194,4 +194,47 @@ test("a turn's status that lands before its session's row is the row's status on
   })
   expect(shown(watcher)).toEqual(["a2", "a1"])
   expect(watcher.statuses.get(sessionId("a2"))?.status).toEqual({ kind: "working" })
+})
+
+const rowView = (state: ListState, id: string) =>
+  rowViews({ order: visibleOrder(state), data: state, openRequests: new Map(), cache: createRowViewCache() }).get(sessionId(id))
+
+test("a turn that ends while its background work runs leaves the row running in background, and it is idle once the work settles", () => {
+  const a1 = row(ALPHA, "a1", 50).ref
+  const live = run(initialListState, { type: "fetchStarted" }, { type: "fetched", window: window([page(ALPHA, [row(ALPHA, "a1", 50)])]) })
+  const started = run(
+    live,
+    { type: "statusChanged", ref: a1, status: { kind: "working" }, at: 1_100 },
+    { type: "backgroundWorkChanged", ref: a1, work: { agents: 1, shells: 0, other: 0 }, at: 1_200 },
+  )
+  expect(rowView(started, "a1")?.status).toEqual({ kind: "working" })
+  const ended = run(started, { type: "statusChanged", ref: a1, status: { kind: "idle" }, at: 1_300 })
+  expect(rowView(ended, "a1")?.status).toEqual({ kind: "runningInBackground" })
+
+  const reporting = run(ended, { type: "backgroundWorkChanged", ref: a1, work: { agents: 0, shells: 0, other: 0 }, at: 1_400 }, { type: "statusChanged", ref: a1, status: { kind: "working" }, at: 1_410 })
+  expect(rowView(reporting, "a1")?.status).toEqual({ kind: "working" })
+  const settled = run(reporting, { type: "statusChanged", ref: a1, status: { kind: "idle" }, at: 1_500 })
+  expect(rowView(settled, "a1")?.status).toEqual({ kind: "idle" })
+})
+
+test("listed and opened background work is a read at its send time: an event at or after it wins, and one that lands during a read is replayed", () => {
+  const a1 = row(ALPHA, "a1", 50).ref
+  const listed = (active: boolean, sentAt: number) => window([page(ALPHA, [row(ALPHA, "a1", 50)], undefined, [
+    ["a1", { status: { kind: "idle" }, waitingOnUser: false, backgroundWork: active ? { agents: 1, shells: 0, other: 0 } : { agents: 0, shells: 0, other: 0 } }],
+  ])], [], sentAt)
+  const read = run(initialListState, { type: "fetchStarted" }, { type: "fetched", window: listed(true, 1_000) })
+  expect(rowView(read, "a1")?.status.kind).toBe("runningInBackground")
+
+  const settled = run(read, { type: "backgroundWorkChanged", ref: a1, work: { agents: 0, shells: 0, other: 0 }, at: 1_500 })
+  const stalePage = run(settled, { type: "rereadStarted" }, { type: "rereadFetched", mode: "refresh", window: listed(true, 1_200) })
+  expect(rowView(stalePage, "a1")?.status.kind).toBe("idle")
+  const staleOpen = run(stalePage, { type: "backgroundWorkRead", ref: a1, work: { agents: 1, shells: 0, other: 0 }, sentAt: 1_400 })
+  expect(rowView(staleOpen, "a1")?.status.kind).toBe("idle")
+  const freshOpen = run(staleOpen, { type: "backgroundWorkRead", ref: a1, work: { agents: 1, shells: 0, other: 0 }, sentAt: 1_600 })
+  expect(rowView(freshOpen, "a1")?.status.kind).toBe("runningInBackground")
+
+  const held = run(freshOpen, { type: "rereadStarted" }, { type: "backgroundWorkChanged", ref: a1, work: { agents: 0, shells: 0, other: 0 }, at: 1_700 }, {
+    type: "rereadFetched", mode: "refresh", window: listed(true, 1_650),
+  })
+  expect(rowView(held, "a1")?.status.kind).toBe("idle")
 })

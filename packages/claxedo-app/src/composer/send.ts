@@ -4,7 +4,7 @@ import type { SessionView } from "@/session"
 import { formatCommentNote, formatImageMarkNote } from "@/lib/comment-note"
 import { machine } from "@/lib/machine"
 import type { Draft, EditorMode, HistoryComment, SendEvent, SendState, StopEvent, StopState, Submission } from "./model"
-import { promptFilled, promptImages, promptText, randomId, sendTransition, stopTransition } from "./model"
+import { promptFilled, promptImages, promptText, promptWithoutText, randomId, sendTransition, stopTransition } from "./model"
 import { flattenMarkedImages } from "./marks/flatten"
 import { numberImageMarks } from "./marks/marks"
 import type { ComposerKey, ComposerStore } from "./store"
@@ -136,9 +136,7 @@ function createStop(view: Accessor<SessionView | undefined>, goalStopFailed: (er
 
 function createArmGoal(input: SendInput) {
   return () => {
-    const key = input.key()
-    input.store.setPrompt(key, promptImages(input.store.draft(key).prompt), 0)
-    input.store.setGoalArmed(key, true)
+    input.store.setGoalArmed(input.key(), true)
     requestAnimationFrame(input.focusEditor)
   }
 }
@@ -186,7 +184,10 @@ export function createComposerSend(input: SendInput) {
     const draft = input.store.draft(input.key())
     if (sending() || !promptFilled(draft)) return
     const goal = goalIntent(promptText(draft.prompt), draft.goalArmed, input.goalCapable())
-    if (goal.kind === "arm") return armGoal()
+    if (goal.kind === "arm") {
+      input.store.setPrompt(input.key(), promptWithoutText(draft.prompt), 0)
+      return armGoal()
+    }
     const clientRequestId = randomId()
     state.send({ type: "sendStarted", clientRequestId })
     try {

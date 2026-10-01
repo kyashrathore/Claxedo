@@ -60,8 +60,15 @@ export function createRequestSurface(input: { store: AgentRuntimeStore; broker: 
 
   const targetOf = (sessionId: string, start: AgentSessionStartBinding | undefined): RequestTarget => start ? { start } : { sessionId }
 
+  /** A subagent's child session has no harness of its own: the requests filed on it are its parent harness's. */
+  const askingSession = async (sessionId: string): Promise<string> => {
+    if (store.getExecutionBinding(sessionId)) return sessionId
+    return (store.getSession(sessionId) as { parentID?: string } | null)?.parentID ?? sessionId
+  }
+
   return {
     permissions: {
+      askingSession,
       async list(directory: string): Promise<AgentPermission[]> {
         broker.broker.list({ directory })
         return store.listPermissions(directory)
@@ -73,6 +80,7 @@ export function createRequestSurface(input: { store: AgentRuntimeStore; broker: 
       },
     },
     questions: {
+      askingSession,
       async list(directory: string): Promise<AgentQuestion[]> {
         broker.broker.list({ directory })
         return store.listQuestions(directory)

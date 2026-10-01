@@ -11,7 +11,7 @@ const DEPENDENCY_ENTRIES = ["../../bun.lock", "../../patches"]
 const SKIPPED_DIRS = new Set(["node_modules"])
 
 export function appDistDir() {
-  return path.join(APP_ROOT, DIST_DIR)
+  return path.resolve(APP_ROOT, process.env.CLAXEDO_E2E_DIST_DIR ?? DIST_DIR)
 }
 
 export function signedDistDir() {

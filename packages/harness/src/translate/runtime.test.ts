@@ -63,14 +63,13 @@ describe("createAgentEventRuntime", () => {
       type: "diagnostic",
       harness: "test-provider",
       threadId: "thread-1",
-      raw: { source: "test", method: "explode", payload: { ok: false } },
+      raw: { source: "test", method: "explode", payload: { bytes: 12, excerpt: '{"ok":false}' } },
       diagnostic: {
         code: "runtime.adapter_error",
         message: "boom",
         severity: "error",
         source: "test",
         method: "explode",
-        raw: { ok: false },
       },
     }])
   })
@@ -154,4 +153,40 @@ test("keeps the raw provider frame on diagnostic-surface events only", () => {
   expect(JSON.stringify([text, tool])).not.toContain("wire-secret")
   expect(notice).toMatchObject({ raw: { source: "test", method: "frame" } })
   expect(rateLimit).toMatchObject({ raw: { source: "test", method: "frame" } })
+})
+
+test("a diagnostic keeps one bounded excerpt of its provider frame", () => {
+  const payload = { type: "hook/started", body: "x".repeat(20_000) }
+  const result = translateRawHarnessEvent({
+    adapter: {
+      name: "diagnosing",
+      translate: ({ event }) => ({
+        events: [{ type: "diagnostic", diagnostic: { code: "unmapped", message: "no mapping", severity: "info", raw: event.payload } }],
+        diagnostics: [{ code: "extra", message: "adapter note", severity: "warn", raw: event.payload }],
+      }),
+    },
+    state: {},
+    event: { source: "test", method: "frame", payload },
+    context: { harness: "test-provider", threadId: "thread-1", now: () => 0, createId: () => "id" },
+  })
+
+  expect(result.events).toHaveLength(2)
+  for (const event of result.events) {
+    if (event.type !== "diagnostic") throw new Error(`expected a diagnostic, got ${event.type}`)
+    expect(event.diagnostic).not.toHaveProperty("raw")
+    expect(event.raw).toMatchObject({ source: "test", method: "frame", payload: { type: "hook/started", bytes: JSON.stringify(payload).length } })
+    expect(JSON.stringify(event).length).toBeLessThan(5_000)
+  }
+})
+
+test("a notice carries the bounded frame, never the whole payload", () => {
+  const result = translateRawHarnessEvent({
+    adapter: { name: "notice", translate: () => [{ type: "harness-notice", code: "note", message: "heads up" }] },
+    state: {},
+    event: { source: "test", method: "frame", payload: { body: "y".repeat(20_000) } },
+    context: { harness: "test-provider", threadId: "thread-1", now: () => 0, createId: () => "id" },
+  })
+
+  expect(result.events[0]?.raw?.payload).toMatchObject({ bytes: 20_011 })
+  expect(JSON.stringify(result.events[0]).length).toBeLessThan(5_000)
 })

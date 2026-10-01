@@ -152,7 +152,6 @@ describe("relay connection grain", () => {
       "/path",
       "/api/wr/worktrees",
       "/api/wr/checkpoint/list",
-      "/api/wr/subagent-transcripts",
       "/api/wr/file/content",
       "/api/wr/find/text",
     ]) {

@@ -6,12 +6,17 @@ import { isOptimisticMessage } from "./merge"
 
 export type RetainedSession = { readonly latestTurn: TranscriptPage; readonly outline: SessionOutline | undefined }
 
+function turnSettled(context: TranscriptContext): boolean {
+  const kind = context.deps.list.statusOf(context.ref.sessionId).kind
+  return kind === "idle" || kind === "runningInBackground"
+}
+
 function retainedLatestTurn(context: TranscriptContext): TranscriptPage | undefined {
   const read = context.latestTurnRead.current
   const messages = unwrap(context.data.messages)
   const userId = lastUserMessageId(messages)
   if (!read || !userId || read.entries[0]?.info.id !== userId) return undefined
-  if (context.phase.state().kind !== "ready" || context.deltas.pending() || context.deps.list.statusOf(context.ref.sessionId).kind !== "idle") return undefined
+  if (context.phase.state().kind !== "ready" || context.deltas.pending() || !turnSettled(context)) return undefined
   const turn = messages.slice(messages.findIndex((message) => message.id === userId))
   if (turn.some(isOptimisticMessage)) return undefined
   const parts = unwrap(context.data.parts)

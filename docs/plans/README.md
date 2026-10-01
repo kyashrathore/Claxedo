@@ -17,8 +17,16 @@ doc or package README that owns it.
 - [Steering admission and transcript reconciliation](./2026-09-20-harness-steering-admission.md)
   — queue execution and admission safety implemented; provider incorporation,
   transcript placement and the acceptance matrix remain.
-- [Tasks as a hosted plugin, with work runs on Pi](./2026-09-29-001-feat-tasks-plugin-on-pi-plan.md)
+- [Tasks: a hosted plugin whose runs are Pi sessions](./2026-09-29-001-feat-tasks-plugin-on-pi-plan.md)
+  — planned, not started. Principles, PRD and HLD: a request plus what happened since (no stored status or type), plan
+  acceptance before anything repeats, receipts for irreversible actions, one resumed session per task on Pi's
+  `AgentHarness` in the task's Durable Object, machine runs on real harnesses; native Tasks (16.3k lines) removed at the end.
+- [Reducing server, runtime and machine code](./2026-09-29-002-refactor-loc-reduction-plan.md)
+  — planned, not started. 254.8k → ~114k in the server, runtime, machine agent, desktop main process and relay
+  (app, UI kit and harness out of scope). Keeps Pages, Teams, the browser pane and channels; adds plugin backends,
+  status-hook templates, D1 plus R2 transcripts, a runtime-neutral session core, and the access model (org members,
+  per-team and per-member project access, private pages with shares; Phase 1A).
 - [Consolidation before launch](./2026-09-30-001-refactor-consolidation-before-launch-plan.md)
-  — planned, not started. Tasks becomes a hosted-only plugin with a Dynamic Worker backend;
-  a task's own agent is Pi's `AgentHarness` in its Durable Object; the native Tasks feature
-  (~16.5k production lines) is removed at the end.
+  — in progress on `goal/foundation`. Lanes C1–C10 settle machine access, one stored schema per store,
+  relay fences, session reads and idempotency, hosted operation declarations, error codes, shared machine
+  contracts, one event path, one file index and one session identity before launch.

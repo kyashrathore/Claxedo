@@ -72,7 +72,7 @@ export function PanelTabStrip(): JSX.Element {
   return (
     <div
       data-testid="workspace-tab-header"
-      class="flex h-9 w-full max-w-full min-w-0 items-center overflow-hidden bg-background-base"
+      class="flex h-full w-full max-w-full min-w-0 items-center overflow-hidden bg-background-base"
       style={{ width: "100%" }}
     >
       <div

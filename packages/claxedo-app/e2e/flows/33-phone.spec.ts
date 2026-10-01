@@ -1,5 +1,6 @@
 import { fileURLToPath } from "node:url"
 import type { Page } from "@playwright/test"
+import { marketplacePanel } from "../harness/marketplace-panel"
 import {
   acpScriptToken,
   expect,
@@ -64,6 +65,13 @@ async function panel(app: Page): Promise<void> {
 }
 
 test.skip(({ isMobile }) => !isMobile, "flow 33 runs in the phone project")
+
+test("33 phone: Marketplace details use the full-width shared panel with touch close and no workspace controls", async ({
+  stack,
+  app,
+}, testInfo) => {
+  await marketplacePanel(stack, app, true, testInfo)
+})
 
 test("33 phone: the drawer, two sessions and the workspace panel, no horizontal scroll, an axe sweep", async ({ stack, api, app }) => {
   await drawer(stack, api, app, await arrange(stack, api))

@@ -3,6 +3,8 @@ import { HARNESS_IDS, HARNESS_TABLE, type HarnessId } from "@claxedo/agent-runti
 import { jsonNumber, jsonRecord, jsonString, jsonText, parseJsonRecord } from "@claxedo/server-core/platform/runtime/lib/json"
 import { createFreshCache } from "@claxedo/server-core/platform/runtime/lib/fresh-cache"
 import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
+import { stateDir } from "@claxedo/server-core/platform/runtime/lib/paths"
+import { codexAccountReadHome } from "./operations/codex-auth-file"
 import { clampPercent, codexWindowName, usageResetMs } from "./usage-windows"
 import type { CredentialUsageWindow } from "./types"
 
@@ -83,9 +85,9 @@ function argv(command: readonly [string, ...string[]]) {
 
 const TIMEOUT_MS = 10_000
 
-const runCommand = (file: string, args: readonly string[]): Promise<MachineLoginRun> =>
+const runCommand = (file: string, args: readonly string[], env?: NodeJS.ProcessEnv): Promise<MachineLoginRun> =>
   new Promise((resolve) => {
-    execFile(file, [...args], { encoding: "utf8", timeout: TIMEOUT_MS }, (error, stdout, stderr) => {
+    execFile(file, [...args], { encoding: "utf8", timeout: TIMEOUT_MS, ...(env ? { env } : {}) }, (error, stdout, stderr) => {
       const code = error && "code" in error ? error.code : undefined
       resolve({ found: code !== "ENOENT", ok: !error, stdout, stderr })
     })
@@ -121,10 +123,16 @@ export async function readMachineLogins(
   return Promise.all(harnesses.map((harness) => machineLogins.read(harness, { fresh: options.fresh === true })))
 }
 
+function codexEnv(): NodeJS.ProcessEnv {
+  return { ...process.env, CODEX_HOME: codexAccountReadHome(stateDir()) }
+}
+
 function askHarness(harness: HarnessId, probes: MachineLoginProbes): Promise<MachineLogin> {
   const run = probes.run ?? runCommand
   if (harness === "claude") return claudeMachineLogin(run)
-  if (harness === "codex") return codexMachineLogin(run, probes.codexAccount ?? codexAccountRead)
+  if (harness === "codex") {
+    return codexMachineLogin(probes.run ?? ((file, args) => runCommand(file, args, codexEnv())), probes.codexAccount ?? (() => codexAccountRead(codexEnv())))
+  }
   return cursorMachineLogin(run)
 }
 
@@ -245,9 +253,9 @@ function appServerUsageWindows(input: unknown): CredentialUsageWindow[] {
  * handler, none of which a one-shot account read has any use for. The framing
  * is the protocol's own — one JSON object per line on stdin and stdout.
  */
-async function codexAccountRead(): Promise<{ account: unknown; rateLimits: unknown }> {
+async function codexAccountRead(env: NodeJS.ProcessEnv): Promise<{ account: unknown; rateLimits: unknown }> {
   const [file, args] = argv(MACHINE_LOGIN_COMMANDS.codexAppServer)
-  const child = spawn(file, [...args], { stdio: ["pipe", "pipe", "ignore"] })
+  const child = spawn(file, [...args], { stdio: ["pipe", "pipe", "ignore"], env })
   const pending = new Map<number, (message: Record<string, unknown>) => void>()
   let sequence = 0
   let buffer = ""
