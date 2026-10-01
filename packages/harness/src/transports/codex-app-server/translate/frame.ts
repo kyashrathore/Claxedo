@@ -29,14 +29,9 @@ export function eventPayload(event: { payload: unknown }) {
   return asRecord(event.payload) ?? {}
 }
 
-function eventFields(event: { payload: unknown }) {
-  return asRecord(event) ?? {}
-}
-
 export function eventText(event: { payload: unknown }) {
   const row = eventPayload(event)
-  const fields = eventFields(event)
-  return text(fields.textDelta) ?? text(row.delta) ?? text(row.text) ?? text(fields.message)
+  return text(row.delta) ?? text(row.text)
 }
 
 export function item(event: { payload: unknown }) {
@@ -44,7 +39,7 @@ export function item(event: { payload: unknown }) {
 }
 
 export function itemId(event: { payload: unknown }, fallback: string) {
-  return text(eventFields(event).itemId) ?? text(eventPayload(event).itemId) ?? text(item(event)?.id) ?? fallback
+  return text(eventPayload(event).itemId) ?? text(item(event)?.id) ?? fallback
 }
 
 export function threadOf(event: { payload: unknown }, context: HarnessEventAdapterContext) {
@@ -56,7 +51,7 @@ export function codexSessionId(event: { payload: unknown }, context: HarnessEven
 }
 
 export function frameRequestId(event: { payload: unknown }) {
-  return text(eventFields(event).requestId) ?? text(eventPayload(event).requestId)
+  return text(eventPayload(event).requestId)
 }
 
 export function protocolMethod(event: { method?: string }): CodexMethod {

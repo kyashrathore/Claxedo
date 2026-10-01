@@ -1,4 +1,4 @@
-import type { AgentRuntimeEvent } from "@claxedo/agent-runtime-contract"
+import type { AgentRuntimeEvent, AgentRuntimeEventOf } from "@claxedo/agent-runtime-contract"
 import { runtimeDiagnostic, asText as text } from "@claxedo/agent-runtime-contract"
 import type { CodexHandler, CodexHandlers } from "./frame"
 
@@ -10,15 +10,14 @@ export function diagnosticForEvent(input: {
   severity?: Severity
   event: { source: string; method?: string; payload: unknown }
 }) {
+  const { event, ...diagnostic } = input
   return {
     type: "diagnostic",
     diagnostic: runtimeDiagnostic({
-      code: input.code,
-      message: input.message,
-      severity: input.severity,
-      source: input.event.source,
-      method: input.event.method,
-      raw: input.event.payload,
+      ...diagnostic,
+      source: event.source,
+      method: event.method,
+      raw: event.payload,
     }),
   } satisfies AgentRuntimeEvent
 }
@@ -33,19 +32,8 @@ export function unmappedCodexAppServerEvent(event: { source: string; method?: st
   })]
 }
 
-export function harnessNotice(input: {
-  code: string
-  message: string
-  severity?: Severity
-  details?: unknown
-}) {
-  return {
-    type: "harness-notice",
-    code: input.code,
-    message: input.message,
-    severity: input.severity ?? "info",
-    ...(input.details !== undefined ? { details: input.details } : {}),
-  } satisfies AgentRuntimeEvent
+export function harnessNotice(input: Omit<AgentRuntimeEventOf<"harness-notice">, "type" | "severity"> & { severity?: Severity }) {
+  return { type: "harness-notice", ...input, severity: input.severity ?? "info" } satisfies AgentRuntimeEvent
 }
 
 const warning: CodexHandler = ({ method, row }) => [harnessNotice({
@@ -54,6 +42,10 @@ const warning: CodexHandler = ({ method, row }) => [harnessNotice({
   severity: "warn",
   details: row,
 })]
+
+function protocolNotice(code: string, message: string, severity: Severity, field?: string): CodexHandler {
+  return ({ row }) => [harnessNotice({ code: `codex_app_server.${code}`, message: field ? text(row[field]) ?? message : message, severity, details: row })]
+}
 
 export const noticeHandlers: CodexHandlers = {
   "mcpServer/startupStatus/updated": ({ row }) => [{
@@ -72,30 +64,10 @@ export const noticeHandlers: CodexHandlers = {
   })],
   warning,
   guardianWarning: warning,
-  configWarning: ({ row }) => [harnessNotice({
-    code: "codex_app_server.config_warning",
-    message: text(row.summary) ?? "Codex config warning",
-    severity: "warn",
-    details: row,
-  })],
-  deprecationNotice: ({ row }) => [harnessNotice({
-    code: "codex_app_server.deprecation_notice",
-    message: text(row.summary) ?? "Codex deprecation notice",
-    severity: "info",
-    details: row,
-  })],
-  "model/verification": ({ row }) => [harnessNotice({
-    code: "codex_app_server.model_verification",
-    message: "Codex model verification updated",
-    severity: "debug",
-    details: row,
-  })],
-  "windows/worldWritableWarning": ({ row }) => [harnessNotice({
-    code: "codex_app_server.windows_world_writable_warning",
-    message: text(row.message) ?? "Windows world-writable path warning",
-    severity: "warn",
-    details: row,
-  })],
+  configWarning: protocolNotice("config_warning", "Codex config warning", "warn", "summary"),
+  deprecationNotice: protocolNotice("deprecation_notice", "Codex deprecation notice", "info", "summary"),
+  "model/verification": protocolNotice("model_verification", "Codex model verification updated", "debug"),
+  "windows/worldWritableWarning": protocolNotice("windows_world_writable_warning", "Windows world-writable path warning", "warn", "message"),
   "windowsSandbox/setupCompleted": ({ row, event }) => row.success === false
     ? [
       { type: "session-status", status: "error" },

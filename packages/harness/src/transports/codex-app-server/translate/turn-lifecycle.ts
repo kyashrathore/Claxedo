@@ -15,27 +15,18 @@ function completionEvents(
 ) {
   const turn = asRecord(row.turn) ?? row
   const status = text(turn.status)
-  if (status === "failed" || status === "error") {
+  const failed = status === "failed" || status === "error"
+  const cancelled = status === "cancelled" || status === "interrupted"
+  if (failed || (cancelled && asRecord(turn.error))) {
     return [
       { type: "session-status", status: "error" },
-      turnErrorEvent(asRecord(turn.error), text(row.message), lastLimitedRateLimitMessage, "Codex turn failed"),
-    ] satisfies AgentRuntimeEvent[]
-  }
-  if ((status === "cancelled" || status === "interrupted") && asRecord(turn.error)) {
-    return [
-      { type: "session-status", status: "error" },
-      turnErrorEvent(asRecord(turn.error), undefined, lastLimitedRateLimitMessage, "Codex interrupted the turn"),
-    ] satisfies AgentRuntimeEvent[]
-  }
-  if (status === "cancelled" || status === "interrupted") {
-    return [
-      { type: "session-status", status: "idle" },
-      { type: "cancelled", sessionId: codexSessionId(event, context) },
+      turnErrorEvent(asRecord(turn.error), failed ? text(row.message) : undefined, lastLimitedRateLimitMessage,
+        failed ? "Codex turn failed" : "Codex interrupted the turn"),
     ] satisfies AgentRuntimeEvent[]
   }
   return [
     { type: "session-status", status: "idle" },
-    { type: "finish", sessionId: codexSessionId(event, context) },
+    cancelled ? { type: "cancelled", sessionId: codexSessionId(event, context) } : { type: "finish", sessionId: codexSessionId(event, context) },
   ] satisfies AgentRuntimeEvent[]
 }
 

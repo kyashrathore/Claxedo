@@ -37,12 +37,9 @@ export class CodexSessions implements CodexSessionHost {
 
   async settled(session: HarnessSession): Promise<Entry> {
     await Promise.allSettled([this.reopening.get(session.binding.sessionId)])
-    return this.entry(session)
-  }
-
-  async live(session: HarnessSession): Promise<Entry> {
-    const entry = await this.settled(session)
-    return entry.state === "lost" ? this.reopen(entry) : entry
+    const entry = this.entry(session)
+    if (entry.state === "lost") throw new CodexTransportError("session", "Codex session was lost; cancel the turn and attach the session explicitly")
+    return entry
   }
 
   idle(entry: Entry): void {
