@@ -27,7 +27,7 @@ mock.module("node:child_process", () => ({
 }))
 mock.module("./health", () => ({ waitForHealth: async () => {} }))
 const { startHostedRelay } = await import("./hosted-relay")
-const { startRelay } = await import("../../../claxedo-app/e2e/harness/relay")
+const { startWorkerdRelay: startRelay } = await import("./workerd-relay")
 const { HOSTED_SIGNING_PRIVATE_KEY, HOSTED_SIGNING_PUBLIC_KEY } = await import("./hosted-keys")
 beforeEach(() => { launches.length = 0 })
 
@@ -44,7 +44,7 @@ test("hosted relay launches the production Durable Object Worker with the hosted
   await relay.close()
 })
 
-test("app cloud relay uses workerd with an isolated ephemeral relay key and declared origins", async () => {
+test("the workerd launcher supports an isolated ephemeral relay key and declared origins", async () => {
   const relay = await startRelay({ root, port: 41004, resolverToken: "test-resolver", controlPlaneUrl: "http://127.0.0.1:41005", runtimePublicPem: HOSTED_SIGNING_PUBLIC_KEY, allowedOrigins: ["https://127.0.0.1:41006"] })
   expect(launches[0].command).toBe("node")
   expect(launches[0].args.at(-1)).toBe(path.join(import.meta.dirname, "relay-workerd.mjs"))

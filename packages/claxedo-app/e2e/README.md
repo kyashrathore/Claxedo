@@ -27,7 +27,7 @@ Nothing a spec does reaches the internet or this Mac's accounts, and every spec 
 - **Environment.** The daemon gets an allow-list environment: `PATH`, `TMPDIR`, `LANG`, `LC_ALL`, `LC_CTYPE`, `USER`, `LOGNAME`, `SHELL`, `TZ` and `CI` are inherited, nothing else. No provider key, no `ANTHROPIC_*`, `OPENAI_*` or `CLAUDE_*` variable and no agent session variable of the shell running the suite reaches it. `HOME` and every `XDG_*` directory sit in the spec's data directory, which also hides the login keychain from the `security` tool, and the daemon runs from that directory, so no project config in this repository applies. Git reads no system config and has a test identity.
 - **Model traffic.** The stack stores an `anthropic` and an `openai` key and declares a custom provider of each id whose base URL is the scripted model server. The credential broker then sends every brokered turn there: Pi on either provider, Claude Code on `anthropic`, Codex on `openai`. Pi's model key is `{ providerId: "pi", modelId: "openai/gpt-4.1" }`.
 - **Other traffic.** `PI_OFFLINE=1` and `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1` turn off the agents' own update and telemetry calls. The OpenCode model catalog reads a snapshot of the scripted providers (`CLAXEDO_OPENCODE_CATALOG_CACHE`) instead of models.dev. Usage cost reads token-tracker's own bundled price list, seeded fresh into the stack's `~/.tokentracker/cache/pricing.json`, instead of fetching LiteLLM's from GitHub.
-- **Agent CLIs.** Pi is the runtime's pinned version (`PI_EXECUTABLE`), installed by global setup. `packages/harness/e2e/harness/stand-ins/` and this suite's `harness/stand-ins/` sit first on the daemon's `PATH`: the former's `cursor-agent` answers the machine-logins probe with a signed-out status, so no real Cursor CLI runs and every machine reports the same.
+- **Agent CLIs.** Pi is the runtime's pinned version (`PI_EXECUTABLE`), installed by global setup. `packages/harness/e2e/harness/stand-ins/` sits first on the daemon's `PATH`: its `cursor-agent` answers the machine-logins probe with a signed-out status, so no real Cursor CLI runs and every machine reports the same.
 - **The egress guard.** Each stack runs a proxy that refuses every request and records it, and the daemon's `HTTP_PROXY`, `HTTPS_PROXY` and `ALL_PROXY` point at it (`NODE_USE_ENV_PROXY=1`, loopback excluded). `stack.egress.attempts` is the record. The `stack` fixture fails any spec that made an attempt outside `REFUSED_BACKGROUND_TARGETS`, the calls no switch reaches: the embedded OpenCode engine's model refresh and Codex's start-up calls. Those are refused too, just not counted.
 - **Proof.** `00-isolation.spec.ts` sends Pi's default model through the app and chosen `openai` and `anthropic` models, Claude Code and Codex through the API; each must answer from the scripted server with no unexpected attempt, and Pi's connected providers must be exactly the scripted two. Its red run, `CLAXEDO_E2E_RED=1`, stores the keys without the custom providers, so the broker sends them to the vendors' hosts and every case fails on the refused attempts.
 
@@ -88,7 +88,7 @@ Rules the checks enforce:
 | `stack` | `Stack` | The running stack: `url` (the daemon, which also serves the app), `dataDir`, `daemon`, `scripted`, `egress`, `acp`, `events()`, `close()` |
 | `api` | `ClaxedoApi` | An HTTP client for the daemon at `stack.url` |
 | `app` | `Page` | Playwright's page, already at `stack.url/` |
-| `signed` | `SignedStack` | A stack signed through its own issuer, behind HTTPS (below); a signed flow uses it with Playwright's `page` instead of `stack` |
+| `signed` | `SignedStack` | The hosted Worker and an enrolled local machine behind HTTPS (below); a signed flow uses it with Playwright's `page` instead of `stack` |
 | `signedDesktop` | `Desktop` | The Electron app whose account is `signedCloud`: main's `CLAXEDO_CORE_ORIGIN` is the stack's HTTPS front, trusted through `NODE_EXTRA_CA_CERTS` and its certificate's SPKI; the keychain is cut (below). `interceptSystemBrowser(desktop.electron)` replaces main's `shell.openExternal`, so a flow opens the authorization page in Playwright's `page` and the consent redirect reaches main's loopback callback. `signInDesktop(signed, desktop, page)` runs that sign-in as the owner and waits for the account card |
 
 ### `stack.daemon`
@@ -96,7 +96,7 @@ Rules the checks enforce:
 | Member | Meaning |
 | --- | --- |
 | `makeWorkspace(name, projectName?)` | A fresh git repository with one commit, registered with the daemon and recorded as a project named `projectName` (the folder's name when omitted); returns `{ id, directory, projectId }` |
-| `restart({ signed? })` | Stops and relaunches the daemon on the same port and data directory (reload-recovery flows); `signed` relaunches it signed, as the `signed` fixture does |
+| `restart()` | Stops and relaunches the local daemon on the same port and data directory for reload recovery |
 | `log()` | Everything the daemon wrote to stdout and stderr |
 | `acpScriptDir`, `dataDir`, `url`, `port` | Paths and address |
 
@@ -154,44 +154,28 @@ Opens the stream the app reads (`/api/wr/events`) and records every frame. `fram
 
 `expectWithinBaseline(page, surface)` runs axe and expects no rule outside `harness/a11y-baseline.json` for that surface (`home`, `session-page`, `settings-surface`, `command-palette`, `prompt-input-focused`). It first waits (`settled`) until no animation that ends within 5 s is running, so a fade-in is not measured half-drawn.
 
-### `signed` (the signed self-hosted stack)
+### `signed` and `signedCloud`
 
-The fixture replaces the unsigned local daemon with the self-hosted server's embedded Better Auth issuer, which the app signs in to with an email and a password. This fixture still blocks retirement of the self-hosted server: folder workspace registration requires a hosted enrollment fixture, and the existing hosted Miniflare fixture needs configurable email auth and app origin. The hosted product supports email/password auth. The issuer serves the browser's sign-in descriptor only on an HTTPS public origin, so the stack puts an HTTPS front on a port from the run's range: a self-signed certificate made with `openssl`, forwarding requests and websockets to the daemon. The config sets `ignoreHTTPSErrors`. The app is built for that origin into `dist-e2e-signed/` once per worker.
+Both fixtures compose the certified hosted Cloudflare Worker on Miniflare/workerd with local D1/R2, the production Cloudflare relay Durable Object, and a local daemon enrolled as the owner's machine. The HTTPS front serves `dist-e2e-signed/` and forwards control-plane requests to workerd. Runtime traffic uses the relay with the Worker's Runtime Access Token. Node children trust the fixture CA through `NODE_EXTRA_CA_CERTS`.
 
-The stack starts unsigned, so the machine-wide setup (the scripted providers, Pi by default, the scripted ACP connection) runs the way a machine is used before anyone signs in. Then it restarts signed, signs up the owner, and restarts again with the owner as the deployment operator (`CLAXEDO_OPERATOR_SUBJECTS`), the only account that may record a folder project on a signed box. A signed box also signs its session stream leases, so the stack generates an Ed25519 pair for `CLAXEDO_RUNTIME_ACCESS_TOKEN_PRIVATE_KEY_PEM` and `…_PUBLIC_KEY_PEM`; without it `/api/wr/events` answers 503.
+The owner signs up through hosted email/password auth. The fixture captures the original verification email via `AUTH_EMAIL_SERVICE`, follows its URL and bootstraps the owner using the provisioned D1 claim. `startHostedMachine` uses real P256 keys and public enrollment/heartbeat APIs. `makeWorkspace` explicitly consents a local folder, assigns it to this enrolled host, acknowledges that exact assignment and delivers its serving credential/endpoints to the local daemon. The daemon establishes the tunnel. IDs come from the local daemon and D1; no folder resolver or operator restart is involved.
 
 | Member | Meaning |
 | --- | --- |
-| `url` | The HTTPS origin the browser uses |
-| `stack` | The stack underneath: `daemon`, `scripted`, `egress`, `acp`, `dataDir`, … |
-| `owner` | The operator's `Account` |
-| `signUp(name)` | Another account (`<name>@claxedo.test`, a random password) with the scripted provider keys stored for it |
-| `signIn(page, account)` | Signs in through the `/login` form and waits until the page leaves it |
-| `makeWorkspace(name, projectName?)` | As `stack.daemon.makeWorkspace`, recorded by the owner (project first, then the signed resolve) |
+| `url` | Public HTTPS browser/auth origin |
+| `hosted` | Worker, D1/R2, relay, model and repository fixture |
+| `local` | Machine daemon, ACP scripts, egress record and data directory |
+| `owner` | Deployment owner's verified hosted account |
+| `signUp(name)` | Another verified hosted account |
+| `signIn(page, account)` | Public `/login` form |
+| `makeWorkspace(name, projectName?)` | Consent/register an owned folder, then await a routable connection |
+| `runtime(workspaceId)` | Owner's runtime transport using the canonical connection capability |
 
-An `Account` is `{ name, email, password, subject, api, transport }`. Its `api` sends the account's bearer token straight to the daemon, reserves each session before creating it and stamps every prompt with a message id, which a signed server requires.
+Account control-plane requests send the hosted cookie. Session creation reserves its ID in D1 before creating the same session through the relay. A workspace stays with its owner; another person's cookie grants no runtime access.
 
-### `signedCloud` (the signed stack with cloud workspaces)
+`harness/cloud.ts` creates repository-backed Cloudflare workspaces, waits for provisioning/relay health, reserves/creates/prompts through the runtime capability, checkpoints transcripts through the Worker and stops the sandbox via lifecycle APIs. The existing Cloudflare sandbox API fixture runs the real runtime through the local brokering driver. Scripted ACP supports session loading for stop/wake recovery.
 
-The `signed` stack plus what a cloud workspace needs, all real apart from the sandbox provider:
-
-- **The relay.** The production `@claxedo/workspace-relay` Worker and `WorkspaceRelayRoom` Durable Object under workerd, launched through `harness/relay.ts` and the shared `packages/harness/e2e/harness/relay-workerd.mjs` Node fixture. It uses the relay's production Wrangler config, an isolated home and Durable Object storage, and loopback-only outbound networking. It resolves targets through the daemon's `/internal/relay`, verifies the daemon's Runtime Access Tokens, and mints relay host tokens with an ephemeral key. The daemon gets `CLAXEDO_WORKSPACE_RELAY_URL`, `CLAXEDO_RELAY_JWKS_URL` and the resolver token. Teardown stops workerd before removing its storage directory.
-- **The sandbox provider, faked at the Docker CLI.** `CLAXEDO_ENABLE_DOCKER_SANDBOX=1` selects the daemon's real Docker driver, and `harness/stand-ins/docker` answers the commands it runs: `create` records the container's env and port, `start` runs the repository's `workspace-runtime` on the host with that env on a free port, `port` reports it, `stop`/`rm` end it, and `host.docker.internal` in the env is rewritten to `127.0.0.1`, which is what a container's view of the host resolves to. The container's workspace is mounted at a host path: `makeCloudWorkspace` creates it with a `remoteDirectory` in the spec's data directory. The stack ends every sandbox it started when it closes (`harness/sandboxes.ts`).
-- **Arranging through the API** (`harness/cloud.ts`): `makeCloudWorkspace`, `startCloudWorkspace` (the explicit connect), `cloudTurn` (reserve, create and prompt through `/workspaces/:id/*` as the owner, then the checkpoint pull that stores the transcript in the control plane, as the app does on a turn's end), `stopCloudWorkspace` (the lifecycle stop) and `storedMessages` (the control plane's copy).
-- The scripted ACP agent advertises `loadSession`, so a session continues after its sandbox restarts, as a real agent's does.
-
-Flow 24 uses it.
-
-### Signed stack: next steps
-
-Flows 22, 23 and 36 are on hold (owner, 19:08); flow 21 runs through option C below. What the signed stack lacks for them, and the options:
-
-- v1 shows its "Share session" control only for a signed session it reaches as central, through the relay (`session-header.tsx:78-90`). On this stack v1 reaches the owner's folder workspaces as local, so the control never mounts, and a second account's reads are refused with 403 `relay_actor_unverified`.
-- **A: the relay in the harness.** Start `@claxedo/workspace-relay` on a lane port, set `CLAXEDO_WORKSPACE_RELAY_URL`, the resolver token and the keys, and enroll the box as a host, so its workspaces are central. All harness code; the browser still signs in through `/login`. Largest: it re-derives part of `packages/claxedo-server/src/signed-browser-relay-fixture.mjs`.
-- **B: an embedded-issuer mode in that fixture.** It already runs a relay, a host tunnel and a registered host, but signs browsers in only through the test bypass v2 does not have. Less code, but it edits a server test fixture v1's signed-web specs share.
-- **C: flow 21 first. Done (owner-approved, 2026-09-25).** The desktop signs in to this stack through its own sign-in (system browser, loopback callback), which the embedded issuer serves, with no relay. The keychain is cut: the desktop fixture launches Electron with `--use-mock-keychain` on macOS, so Chromium's OSCrypt, which `safeStorage` uses, keeps its key in memory instead of the login keychain, and the fixture refuses to start a signed desktop (`signedDesktop`) unless main's command line carries that switch.
-
-So the recommendation is A.
+Signed consumers are 00, 21, 24, 38 and 39. The signed app-plugin registry case in 35 is removed because hosted does not expose the machine-local registry; its local counterpart remains. Retired assertions and exact acceptance commands are in [BOOT_TARGETS.md](../../harness/e2e/harness/BOOT_TARGETS.md). Live browser, desktop and tunnel acceptance remains required.
 
 ### Keychain
 
@@ -231,7 +215,7 @@ e2e/
     fixtures.ts          test.extend: stack, api, app; fails a spec on unexpected egress
     global-setup.ts      prepareHarness: the launch gate child, the daemon port, the app build
     stack.ts             starts the egress guard, the model server and the daemon, owns ports and the data dir
-    daemon.ts            the local daemon; the signed fixture still selects self-hosted
+    daemon.ts            the local daemon
     agent-env.ts         the agent CLIs this suite's daemon finds: its stand-ins and the pinned Pi
     launch-gate-child.ts builds the runtime's launch gate child
     desktop-build.ts     builds packages/claxedo-desktop when stale
@@ -247,7 +231,7 @@ e2e/
     git-remote.ts        a bare repository served over dumb HTTP
     local-pages.ts       loopback HTML pages for the browser tab
     signed-stack.ts      the signed stack: HTTPS front, the owner and other accounts, sign-in
-    tls-front.ts         an HTTPS origin in front of the daemon (self-signed)
+    tls-front.ts         TLS trust types and local page fixture certificates
     proxy.ts             request and websocket forwarding to a daemon
     api.ts               ClaxedoApi
     app.ts               the dist-e2e build

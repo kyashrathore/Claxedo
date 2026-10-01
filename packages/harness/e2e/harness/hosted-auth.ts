@@ -1,4 +1,5 @@
 import fs from "node:fs/promises"
+import { request } from "node:https"
 import type { startHostedStack } from "./hosted-stack"
 
 type HostedStack = Awaited<ReturnType<typeof startHostedStack>>
@@ -14,12 +15,26 @@ export async function hostedFetch(
   const headers = new Headers(options.headers)
   if (options.method && options.method !== "GET") headers.set("origin", stack.workerUrl)
   if (person) headers.set("cookie", person.cookie)
-  return fetch(new URL(route, stack.workerUrl), {
-    ...options,
-    redirect: options.redirect ?? "manual",
-    headers,
-    tls: { ca },
-  } as RequestInit & { tls: { ca: string } })
+  if (options.body !== undefined && options.body !== null && typeof options.body !== "string") throw new Error("Hosted fixture requests require a serialized body")
+  if (options.redirect === "follow") throw new Error("Hosted fixture requests must handle redirects explicitly")
+  return new Promise<Response>((resolve, reject) => {
+    const upstream = request(new URL(route, stack.workerUrl), {
+      method: options.method ?? "GET", headers: Object.fromEntries(headers), ca, signal: options.signal ?? undefined,
+    }, (received) => {
+      const responseHeaders = new Headers()
+      for (let index = 0; index < received.rawHeaders.length; index += 2) responseHeaders.append(received.rawHeaders[index], received.rawHeaders[index + 1])
+      const chunks: Buffer[] = []
+      received.on("data", (chunk: Buffer) => chunks.push(Buffer.from(chunk)))
+      received.on("error", reject)
+      received.on("end", () => {
+        const status = received.statusCode ?? 502
+        if (options.redirect === "error" && status >= 300 && status < 400) { reject(new Error("Hosted fixture redirect refused")); return }
+        resolve(new Response(options.method === "HEAD" || [204, 205, 304].includes(status) ? null : Buffer.concat(chunks), { status, headers: responseHeaders }))
+      })
+    })
+    upstream.on("error", reject)
+    upstream.end(options.body)
+  })
 }
 
 export async function signInHostedPerson(stack: HostedStack, code: "hosted-person-a" | "hosted-person-b") {

@@ -30,7 +30,7 @@ function wakeRequests(page: Page, workspace: CloudWorkspace) {
 }
 
 async function asleepWithHistory(signed: SignedStack) {
-  const workspace = await makeCloudWorkspace(signed, "Cloudy")
+  const workspace = await makeCloudWorkspace(signed, "main")
   await startCloudWorkspace(signed, workspace)
   const sessionId = await cloudTurn(signed, workspace, { title: "Cloud turn", script: "stored", reply: "Stored in the cloud" })
   await stopCloudWorkspace(signed, workspace)
@@ -65,7 +65,7 @@ test("24 sending to a gone sandbox wakes it, shows the dock waking up, then send
   const wakes = wakeRequests(page, workspace)
   await openSession(page, signedCloud, workspace, sessionId)
   await expect(page.getByText(ASLEEP)).toBeVisible()
-  await signedCloud.stack.acp.write("awake", { steps: [{ kind: "text", text: "Awake again" }] })
+  await signedCloud.local.acp.write("awake", { steps: [{ kind: "text", text: "Awake again" }] })
 
   await sendPrompt(page, `Are you there? ${acpScriptToken("awake")}`, { waitForSend: false })
   await expect(page.getByText(WAKING)).toBeVisible()
@@ -78,14 +78,14 @@ test("24 sending to a gone sandbox wakes it, shows the dock waking up, then send
 
 test("24 a live sandbox streams a turn as it runs", async ({ signedCloud, page }) => {
   test.setTimeout(120_000)
-  const workspace = await makeCloudWorkspace(signedCloud, "Cloudy")
+  const workspace = await makeCloudWorkspace(signedCloud, "main")
   await startCloudWorkspace(signedCloud, workspace)
   const sessionId = await cloudTurn(signedCloud, workspace, { title: "Live turn", script: "first", reply: "First answer" })
   const wakes = wakeRequests(page, workspace)
   await openSession(page, signedCloud, workspace, sessionId)
   await expect(page.getByText("First answer")).toBeVisible()
   await expect(page.getByText(ASLEEP)).toHaveCount(0)
-  await signedCloud.stack.acp.write("streamed", { steps: [{ kind: "text", text: "Streamed while the sandbox runs" }] })
+  await signedCloud.local.acp.write("streamed", { steps: [{ kind: "text", text: "Streamed while the sandbox runs" }] })
 
   await sendPrompt(page, `Go on. ${acpScriptToken("streamed")}`)
   await expect(page.getByText("Streamed while the sandbox runs")).toBeVisible()
@@ -96,7 +96,7 @@ test("24 a live sandbox streams a turn as it runs", async ({ signedCloud, page }
 test("24 a terminal on a live sandbox belongs to the open session, and with no session open the creator refuses before asking the sandbox", async ({ signedCloud, page, isMobile }) => {
   test.skip(isMobile, "the terminal creator runs at desktop width")
   test.setTimeout(150_000)
-  const workspace = await makeCloudWorkspace(signedCloud, "Cloudy")
+  const workspace = await makeCloudWorkspace(signedCloud, "main")
   await startCloudWorkspace(signedCloud, workspace)
   const sessionId = await cloudTurn(signedCloud, workspace, { title: "Terminal turn", script: "terminal", reply: "Ready for a shell" })
   const creates: string[] = []

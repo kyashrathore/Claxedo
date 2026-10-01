@@ -132,7 +132,7 @@ test("38 terminals are read only for an expanded project's live placements", asy
 
 test("38 a stopped sandbox's session paints its stored surface, and its project reads no terminal list and wakes nothing", async ({ signedCloud, page }) => {
   test.setTimeout(120_000)
-  const workspace = await makeCloudWorkspace(signedCloud, "Stored")
+  const workspace = await makeCloudWorkspace(signedCloud, "main")
   await startCloudWorkspace(signedCloud, workspace)
   const sessionId = await cloudTurn(signedCloud, workspace, { title: "Stored turn", script: "stored", reply: "Kept by the control plane" })
   await stopCloudWorkspace(signedCloud, workspace)

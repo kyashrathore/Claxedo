@@ -37,6 +37,19 @@ async function attachLogOnFailure(testInfo: TestInfo, attempts: EgressAttempt[],
   await testInfo.attach(name, { body: log(), contentType: "text/plain" })
 }
 
+async function useSignedFixture(build: SignedBuild, testInfo: TestInfo, use: (signed: SignedStack) => Promise<void>) {
+  const signed = await startSignedStack({ label: testInfo.titlePath.join(" "), frontPort: build.frontPort, distDir: build.distDir })
+  try {
+    await use(signed)
+  } finally {
+    await attachLogOnFailure(testInfo, signed.local.egress.attempts, "daemon.log", signed.local.daemon.log)
+    const outbound = await signed.hosted.outboundAttempts()
+    await signed.close()
+    refuseEgress(signed.local.egress.attempts)
+    expect(outbound).toEqual([])
+  }
+}
+
 export const test = base.extend<HarnessFixtures, HarnessWorkerFixtures>({
   context: async ({ context }, use, testInfo) => {
     const destinations = recordDestinations(context)
@@ -79,25 +92,10 @@ export const test = base.extend<HarnessFixtures, HarnessWorkerFixtures>({
     { scope: "worker", timeout: 300_000 },
   ],
   signed: async ({ signedBuild }, use, testInfo) => {
-    const signed = await startSignedStack({ label: testInfo.titlePath.join(" "), frontPort: signedBuild.frontPort, distDir: signedBuild.distDir })
-    try {
-      await use(signed)
-    } finally {
-      await attachLogOnFailure(testInfo, signed.stack.egress.attempts, "daemon.log", signed.stack.daemon.log)
-      await signed.close()
-    }
-    refuseEgress(signed.stack.egress.attempts)
+    await useSignedFixture(signedBuild, testInfo, use)
   },
   signedCloud: async ({ signedBuild }, use, testInfo) => {
-    const signed = await startSignedStack({ label: testInfo.titlePath.join(" "), frontPort: signedBuild.frontPort, distDir: signedBuild.distDir, cloud: true })
-    try {
-      await use(signed)
-    } finally {
-      await attachLogOnFailure(testInfo, signed.stack.egress.attempts, "daemon.log", signed.stack.daemon.log)
-      await attachLogOnFailure(testInfo, signed.stack.egress.attempts, "relay.log", signed.relayLog)
-      await signed.close()
-    }
-    refuseEgress(signed.stack.egress.attempts)
+    await useSignedFixture(signedBuild, testInfo, use)
   },
   desktopRenderer: ["file", { option: true }],
   desktop: async ({ desktopBuild, desktopRenderer }, use, testInfo) => {

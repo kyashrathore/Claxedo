@@ -12,6 +12,9 @@ type Input = {
   gitUrl: string
   relayUrl: string
   credentials: { key: string; certificate: string }
+  apiOrigin: string
+  appOrigin: string
+  emailPassword?: boolean
 }
 
 export async function hostedCertificate(root: string) {
@@ -58,12 +61,15 @@ export async function startHostedControlPlane(input: Input) {
     stdio: ["ignore", "pipe", "pipe", "ipc"],
     env: {
       ...process.env,
+      HOME: input.root,
+      XDG_CONFIG_HOME: path.join(input.root, ".config"),
       NODE_EXTRA_CA_CERTS: credentials.certificate,
       CLAXEDO_E2E_HOSTED_MINIFLARE: JSON.stringify({
         config, root: input.root, port: input.port, certificate: credentials.certificate,
         key: credentials.key, sandboxOrigin: input.sandboxOrigin, gitUrl: input.gitUrl,
         relayUrl: input.relayUrl, signingPrivateKey: HOSTED_SIGNING_PRIVATE_KEY,
         signingPublicKey: HOSTED_SIGNING_PUBLIC_KEY,
+        apiOrigin: input.apiOrigin, appOrigin: input.appOrigin, emailPassword: input.emailPassword,
       }),
     },
   })

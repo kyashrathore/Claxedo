@@ -3,8 +3,10 @@ import { execFileSync } from "node:child_process"
 import fs from "node:fs/promises"
 import path from "node:path"
 import { request as httpRequest } from "node:http"
-import { activateCloudCredential, cloudRuntimeUrl, cloudTransport, createCloudWorkspace, waitCloudConnection } from "../harness/cloud-workspace"
-import { startStack } from "../harness/stack"
+import { hostedWorkspace } from "../harness/hosted-flow"
+import { hostedFetch } from "../harness/hosted-auth"
+import { hostedRuntimeTarget, startHostedCloudStack } from "../harness/hosted-cloud"
+
 import { sendJson } from "../harness/transport"
 
 async function sandboxFiles(directory: string) {
@@ -40,22 +42,22 @@ async function refusedBrokerUse(pid: number, target: string, name: string) {
 }
 
 export async function run() {
-  const stack = await startStack({ label: "h30-cloud-consent", cloud: true })
+  const stack = await startHostedCloudStack("h30-cloud-consent")
   try {
     const key = `h30-secret-${crypto.randomUUID()}`
-    const stored = await sendJson(cloudTransport(stack), "PUT", `${stack.url}/api/claxedo/credentials`, {
+    const stored = await sendJson(stack.control, "PUT", `${stack.workerUrl}/api/claxedo/credentials`, {
       provider_id: "openai", kind: "api_key", source: "managed", scope: "shared", secret: key,
     }, "Storing a cloud-consented account")
     const credential = (JSON.parse(stored) as { credential: { id: string } }).credential
-    await activateCloudCredential(stack, credential.id)
-    const effective = await fetch(`${stack.url}/api/claxedo/credentials/effective?scope=shared`, { headers: { authorization: `Bearer ${stack.daemon.cloudToken}` } })
+    await sendJson(stack.control, "POST", `${stack.workerUrl}/api/claxedo/credentials/activate`, { ids: [credential.id] }, "Activating cloud credential")
+    const effective = await hostedFetch(stack, "/api/claxedo/credentials/effective?scope=shared", {}, stack.owner)
     const effectiveBody = await effective.json() as { credentials?: Array<{ provider_id?: string; status?: string; scope?: string; is_active?: boolean }> }
     assert.equal(effective.status, 200)
     assert.ok(effectiveBody.credentials?.some((row) => row.provider_id === "openai" && row.scope === "shared" && row.is_active), "shared account was not active in the server readback")
-    const workspace = await createCloudWorkspace(stack, "h30-consent")
-    const connection = await waitCloudConnection(stack, workspace.id)
-    assert.equal(connection.status, 200, `Cloud connection: ${connection.body}`)
-    const first = await cloudRuntimeUrl(stack, workspace.id)
+    const workspace = await hostedWorkspace(stack, stack.owner, "h30-consent")
+    const connection = await hostedFetch(stack, `/api/workspace/${workspace.id}/connection`, {}, stack.owner)
+    assert.equal(connection.status, 200, `Cloud connection: ${await connection.text()}`)
+    const first = await hostedRuntimeTarget(stack, workspace.id)
     const names = first.secretNames.filter((name) => name.startsWith("CLAXEDO_PROVIDER_OPENAI_"))
     assert.equal(names.length, 1, `one person's shared account must reach the sandbox under one name: ${first.secretNames.join(",")}`)
     const name = names[0]
@@ -67,21 +69,21 @@ export async function run() {
       throw new Error(`The signed shared credential did not reach its cloud sandbox as a placeholder; delivered names: ${first.secretNames.join(",")}`)
     }
 
-    await sendJson(cloudTransport(stack), "PATCH", `${stack.url}/api/claxedo/credentials/${credential.id}/scope`, { scope: "local" }, "Revoking cloud consent")
+    await sendJson(stack.control, "PATCH", `${stack.workerUrl}/api/claxedo/credentials/${credential.id}/scope`, { scope: "local" }, "Revoking cloud consent")
     const until = Date.now() + 20_000
     let next = first
     while (Date.now() < until) {
-      try { next = await cloudRuntimeUrl(stack, workspace.id) } catch { /* The driver is replacing the runtime. */ }
+      try { next = await hostedRuntimeTarget(stack, workspace.id) } catch { /* The driver is replacing the runtime. */ }
       if (next.pid !== first.pid) break
       await new Promise((resolve) => setTimeout(resolve, 250))
     }
     assert.notEqual(next.pid, first.pid, "revocation did not replace the sandbox process")
     assert.ok(!sandboxEnvironment(next.pid).includes(placeholder), "revoked placeholder remained in sandbox process")
     assert.ok(!sandboxEnvironment(next.pid).includes(key), "real cloud account key entered renewed sandbox process")
-    assert.equal(await refusedBrokerUse(next.pid, `${stack.scripted.v1Url}/chat/completions`, name), 403, "revoked placeholder was accepted by the sandbox broker")
-    const readback = await fetch(`${stack.url}/api/claxedo/credentials/openai`, { headers: { authorization: `Bearer ${stack.daemon.cloudToken}` } })
+    assert.equal(await refusedBrokerUse(next.pid, `${stack.model.v1Url}/chat/completions`, name), 403, "revoked placeholder was accepted by the sandbox broker")
+    const readback = await hostedFetch(stack, "/api/claxedo/credentials/openai", {}, stack.owner)
     assert.equal((await readback.json() as { credential: { scope: string } }).credential.scope, "local")
-    assert.deepEqual(stack.egress.attempts, [])
+    assert.deepEqual(await stack.outboundAttempts(), [])
   } finally {
     await stack.close()
   }

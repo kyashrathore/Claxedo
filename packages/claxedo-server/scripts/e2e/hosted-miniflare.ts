@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process"
-import { readFileSync } from "node:fs"
+import { readFileSync, appendFileSync } from "node:fs"
 import path from "node:path"
 import { Miniflare } from "miniflare"
 import { unstable_getMiniflareWorkerOptions } from "wrangler"
@@ -19,6 +19,9 @@ type Input = {
   relayUrl: string
   signingPrivateKey: string
   signingPublicKey: string
+  apiOrigin: string
+  appOrigin: string
+  emailPassword: boolean
 }
 
 const serverRoot = path.resolve(import.meta.dirname, "../..")
@@ -42,7 +45,7 @@ async function main(input: Input) {
   const converted = unstable_getMiniflareWorkerOptions(input.config)
   if (!converted.main) throw new Error("certified config has no Worker main")
   const bundle = path.join(bundleDir, path.basename(converted.main).replace(/\.ts$/, ".js"))
-  const apiOrigin = `https://127.0.0.1:${input.port}`
+  const apiOrigin = input.apiOrigin
   const env: Record<string, string> = {
     CLAXEDO_ADAPTER_PROFILE: "better-auth-d1",
     CLAXEDO_PRODUCT_POSTURE: "user-deployed",
@@ -53,9 +56,9 @@ async function main(input: Input) {
     CLAXEDO_PRIVATE_REPO_HOSTS: new URL(input.gitUrl).hostname,
     CLAXEDO_DEPLOYMENT_MODE: "hosted",
     CLAXEDO_DEPLOYMENT_ID: "hosted-e2e-deployment",
-    CLAXEDO_AUTH_METHODS: "github",
+    CLAXEDO_AUTH_METHODS: input.emailPassword ? "github,email-password" : "github",
     BETTER_AUTH_URL: apiOrigin,
-    CLAXEDO_APP_ORIGIN: apiOrigin,
+    CLAXEDO_APP_ORIGIN: input.appOrigin,
     BETTER_AUTH_SECRET: "hosted-e2e-better-auth-secret-at-least-32-characters",
     CLAXEDO_AUTH_INTROSPECTION_SECRET: "hosted-e2e-introspection-secret-at-least-32-characters",
     GITHUB_CLIENT_ID: "hosted-e2e-github-client",
@@ -74,7 +77,7 @@ async function main(input: Input) {
     CLAXEDO_USER_DEPLOYED_ORGANIZATION_NAME: "Hosted E2E",
   }
   env.CLAXEDO_AUTH_CONFIGURATION_ID = await betterAuthDeploymentConfigurationId({
-    methods: ["github"], apiOrigin, appOrigin: apiOrigin, githubClientId: env.GITHUB_CLIENT_ID,
+    methods: input.emailPassword ? ["github", "email-password"] : ["github"], apiOrigin, appOrigin: input.appOrigin, githubClientId: env.GITHUB_CLIENT_ID,
   })
   const mf = new Miniflare({
     ...converted.workerOptions,
@@ -88,6 +91,13 @@ async function main(input: Input) {
     d1Persist: path.join(persistence, "v3", "d1"),
     durableObjectsPersist: path.join(input.root, "hosted-do"),
     r2Persist: path.join(input.root, "hosted-r2"),
+    serviceBindings: {
+      ...(converted.workerOptions.serviceBindings ?? {}),
+      ...(input.emailPassword ? { AUTH_EMAIL_SERVICE: async (request: Request) => {
+        appendFileSync(path.join(input.root, "auth-email.jsonl"), `${await request.text()}\n`)
+        return new Response(null, { status: 204 })
+      } } : {}),
+    },
     host: "127.0.0.1",
     port: input.port,
     https: true,
@@ -165,5 +175,8 @@ if (import.meta.main) {
     relayUrl: required("relayUrl"),
     signingPrivateKey: required("signingPrivateKey"),
     signingPublicKey: required("signingPublicKey"),
+    apiOrigin: required("apiOrigin"),
+    appOrigin: required("appOrigin"),
+    emailPassword: field("emailPassword") === true,
   })
 }

@@ -1,5 +1,4 @@
 {
   "H2-stop": "H-25; the recorded session.idle/session.status swap has not recurred (14 runs in the corpus lane) and no producer cause is shown yet",
-  "H29-self-hosted-cold-start": "no wire observations: the flow calls cloud helpers and fetch directly, outside the recording clients",
   "H30-cloud-consent": "no wire observations: the flow calls cloud helpers, sendJson and fetch directly, outside the recording clients"
 }

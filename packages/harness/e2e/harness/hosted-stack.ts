@@ -8,14 +8,17 @@ import { startHostedRelay } from "./hosted-relay"
 import { reservePort, releasePort } from "./ports"
 import { startScriptedModelServer } from "./scripted-model-server"
 
-export async function startHostedStack(label: string) {
+export type HostedStackOptions = { apiOrigin?: string; appOrigin?: string; emailPassword?: boolean }
+
+export async function startHostedStack(label: string, options: HostedStackOptions = {}) {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), `claxedo-hosted-${label}-`))
   const workerPort = await reservePort()
   const sandboxPort = await reservePort()
   const modelPort = await reservePort()
   const gitPort = await reservePort()
   const relayPort = await reservePort()
-  const workerUrl = `https://127.0.0.1:${workerPort}`
+  const workerOrigin = `https://127.0.0.1:${workerPort}`
+  const workerUrl = options.apiOrigin ?? workerOrigin
   const sandboxOrigin = `https://127.0.0.1:${sandboxPort}`
   const relayUrl = `http://127.0.0.1:${relayPort}`
   const credentials = await hostedCertificate(root)
@@ -36,7 +39,8 @@ export async function startHostedStack(label: string) {
       gitUrl: git.url,
       relayUrl,
     })
-    control = await startHostedControlPlane({ root, port: workerPort, sandboxOrigin, gitUrl: git.url, relayUrl, credentials })
+    control = await startHostedControlPlane({ root, port: workerPort, sandboxOrigin, gitUrl: git.url, relayUrl, credentials,
+      apiOrigin: workerUrl, appOrigin: options.appOrigin ?? workerUrl, emailPassword: options.emailPassword })
     relay = await startHostedRelay({ root, port: relayPort, controlPlaneUrl: workerUrl, certificate: credentials.certificate })
   } catch (error) {
     if (relay) await relay.close()
@@ -51,6 +55,8 @@ export async function startHostedStack(label: string) {
   return {
     root,
     workerUrl,
+    workerOrigin,
+    credentials,
     sandboxOrigin,
     certificate: credentials.certificate,
     model,
