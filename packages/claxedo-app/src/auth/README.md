@@ -14,7 +14,7 @@ Owns: the account, as one port with two bindings: the browser's own sign-in sess
 - The auth routes answer JSON, and a proxy's HTML error page has no fields to read, so `authResponseBody` reads a body only when the response says it is JSON (`better-auth-error.ts`).
 - Origins (`origins.ts`): `apiOrigin()` is `VITE_CLAXEDO_SERVER_URL` or the page origin; `appOrigin()` is the page origin; `serverIssuesSessions()` is `VITE_CLAXEDO_ISSUES_SESSIONS !== "0"`.
 
-- Invitation continuation (`login-continuation.ts`): sign-in or sign-up retains `/invitations/:token`, then calls the server's typed `acceptOrgInvitation` action. The server owns email matching, expiry, revocation, single use and membership; the app owns only the authentication and acceptance screen.
+- Invitation continuation (`login-continuation.ts`): sign-in or sign-up retains `/invitations#<token>`, then calls the server's typed `acceptOrgInvitation` action. The server owns email matching, expiry, revocation, single use and membership; the app owns only the authentication and acceptance screen.
 
 ## Machine
 
@@ -24,7 +24,7 @@ Owns: the account, as one port with two bindings: the browser's own sign-in sess
 
 ## Routes
 
-`authRoutes` (`routes.ts`): `/login`, `/device` (device grant approval), `/oauth/consent` (MCP scope consent), `/cli-login` (CLI token handoff, loopback callback only), `/invitations/:token` (sign-up/sign-in and invitation acceptance). The shell registers them outside the app shell.
+`authRoutes` (`routes.ts`): `/login`, `/device` (device grant approval), `/oauth/consent` (MCP scope consent), `/cli-login` (CLI token handoff, loopback callback only), `/invitations#<token>` (sign-up/sign-in and invitation acceptance). The shell registers them outside the app shell.
 
 ## Invariants
 

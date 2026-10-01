@@ -155,15 +155,16 @@ export class D1OrgMemberAuthority implements D1OrgMemberAuthorityPort {
   }
 
   /**
-   * Joins the invitee with the invited role. The guard re-reads the invitation
-   * and the person inside the batch, so a revoked, expired, consumed or
-   * superseded invitation writes neither the membership nor its audit row.
+   * The batch rechecks the invitation, inviter authority and accepting person
+   * before writing membership and audit, so concurrent revocation, expiry or
+   * loss of authority cannot confer membership.
    */
   async acceptInvitationMembership(
     who: AccessPrincipal,
-    invitation: { id: string; org_id: string; role: OrgMemberRole; token_hash: string; email: string },
+    invitation: { id: string; org_id: string; role: OrgMemberRole; token_hash: string; email: string; invited_by: string },
   ) {
     const now = this.context.now()
+    const inviter = maySql({ userId: invitation.invited_by }, invitation.role === "owner" ? "own" : "administer", { kind: "org", orgId: "invitation.org_id" })
     const guard: BoundSql = {
       sql: `exists (
         select 1 from org_invitations invitation
@@ -172,20 +173,24 @@ export class D1OrgMemberAuthority implements D1OrgMemberAuthorityPort {
         join actors actor on actor.actor_id = ? and actor.user_id = person.user_id and actor.kind = 'human' and actor.state = 'active'
         where invitation.id = ? and invitation.org_id = ? and invitation.role = ? and invitation.token_hash = ? and invitation.email = ?
           and invitation.accepted_at is null and invitation.revoked_at is null and invitation.expires_at > ?
+          and invitation.invited_by = ? and ${inviter.sql}
           and (org.owner_user_id <> person.user_id or invitation.role = 'owner')
           and not exists (
             select 1 from org_memberships member
             where member.org_id = invitation.org_id and member.user_id = person.user_id and member.revoked_at is null
           )
       )`,
-      bind: [who.userId, who.actorId, invitation.id, invitation.org_id, invitation.role, invitation.token_hash, invitation.email, now],
+      bind: [who.userId, who.actorId, invitation.id, invitation.org_id, invitation.role, invitation.token_hash, invitation.email, now, invitation.invited_by, ...inviter.bind],
     }
     // D1 batches share a transaction; the final changes() observes the preceding membership write.
     const [, membership, accepted] = await this.database.batch([
       accessAuditStatement(this.context, {
         who,
         action: "org.member.added",
-        metadata: this.roleChange(invitation.org_id, who.userId, invitation.role),
+        metadata: {
+          sql: `json_object('orgId', ?, 'targetUserId', ?, 'before', null, 'after', ?, 'invitationId', ?, 'inviterUserId', ?)`,
+          bind: [invitation.org_id, who.userId, invitation.role, invitation.id, invitation.invited_by],
+        },
         guard,
         now,
       }),

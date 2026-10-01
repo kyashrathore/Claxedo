@@ -91,6 +91,8 @@ async function resolveHuman(database: D1Database, deploymentId: string, auth: Si
 
 const ACCESS_ERROR_STATUS = {
   org_invitation_invalid: 409,
+  org_invitation_pending: 409,
+  org_invitation_rate_limited: 429,
   org_invitation_email_mismatch: 403,
   org_invitation_delivery_unavailable: 503,
   invalid_input: 400,

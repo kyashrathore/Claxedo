@@ -15,8 +15,8 @@ export async function run() {
     const member = await signInHostedPerson(stack, "hosted-person-b")
     assert.notEqual(owner.id, member.id)
     const invitationToken = await stack.inviteMember(owner.id, member.id)
-    const accepted = await hostedFetch(stack, `/api/control/invitations/${invitationToken}/accept`, {
-      method: "POST", headers: { "content-type": "application/json" }, body: "{}",
+    const accepted = await hostedFetch(stack, "/api/control/invitations/accept", {
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ token: invitationToken }),
     }, member)
     assert.equal(accepted.status, 200, `hosted invitation acceptance: ${await accepted.text()}`)
     for (const [person, key] of [[owner, "hosted-owner-key"], [member, "hosted-member-key"]] as const) {

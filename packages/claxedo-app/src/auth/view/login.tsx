@@ -1,5 +1,5 @@
 import { createEffect, createSignal, For, on, Show, type Accessor } from "solid-js"
-import { useLocation, useNavigate, useParams } from "@solidjs/router"
+import { useLocation, useNavigate } from "@solidjs/router"
 import { toAppError, useServer, type AppError } from "@/server"
 import type { BrowserAuthMethod, BrowserAuthSignInOptions } from "../browser-auth"
 import { createOrgInvitationFlow, loginOAuthContinuation } from "../login-continuation"
@@ -16,9 +16,9 @@ export function LoginPage() {
 }
 
 export function OrgInvitationPage() {
-  const params = useParams<{ token: string }>()
+  const location = useLocation()
   return (
-    <Show when={params.token} keyed>
+    <Show when={location.hash.slice(1)} keyed>
       {(token) => <LoginForm invitationToken={token} />}
     </Show>
   )

@@ -104,6 +104,9 @@ database_name = ${quote(input.controlPlaneDatabase.name)}
 database_id = ${quote(input.controlPlaneDatabase.id)}
 migrations_dir = ${quote(input.controlPlaneMigrationsDir)}
 
+[[send_email]]
+name = "EMAIL"
+
 [[ratelimits]]
 name = "CLAXEDO_REQUEST_LIMITER"
 namespace_id = ${quote(positiveNamespaceId(input.requestLimiterNamespaceId))}

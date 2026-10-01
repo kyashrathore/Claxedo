@@ -367,7 +367,8 @@ export const HOSTED_OPERATIONS = {
   },
   "org.invitations.accept": {
     method: "POST",
-    path: "/api/control/invitations/:token/accept",
+    path: "/api/control/invitations/accept",
+    body: ["token"],
   },
   "org.members.update": {
     method: "PATCH",

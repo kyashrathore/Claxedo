@@ -19,6 +19,22 @@ const env = {
 } satisfies NodeJS.ProcessEnv
 
 describe("user-deployed Cloudflare configuration", () => {
+  test("carries the email sender as a named deploy variable", () => {
+    const deployment = userCloudflareDeployment({ ...env, CLAXEDO_EMAIL_FROM: "auth@example.com" }, { agentPlugins: false })
+    expect(workerVariables(deployment, "sha256:config").CLAXEDO_EMAIL_FROM).toBe("auth@example.com")
+    expect(() => userCloudflareDeployment({ ...env, CLAXEDO_EMAIL_FROM: "invalid" }, { agentPlugins: false })).toThrow(/CLAXEDO_EMAIL_FROM/)
+    expect(workerVariables(userCloudflareDeployment(env, { agentPlugins: false }), "sha256:config").CLAXEDO_EMAIL_FROM).toBeUndefined()
+  })
+
+  test("deploys email-password only with the Cloudflare sender configured", () => {
+    const deployment = userCloudflareDeployment({ ...env, CLAXEDO_AUTH_METHODS: "email-password", CLAXEDO_EMAIL_FROM: "auth@example.com" }, { agentPlugins: false })
+    expect(deployment.authMethods).toEqual(["email-password"])
+    expect(deployment.providerClientIds).toEqual({})
+    expect(oauthCallbackUrls(deployment)).toEqual([])
+    expect(deployment.requiredSecrets).not.toContain("GITHUB_CLIENT_SECRET")
+    expect(workerVariables(deployment, "sha256:config").CLAXEDO_AUTH_METHODS).toBe("email-password")
+  })
+
   test("a minimal environment deploys the plain Worker under plain default names", () => {
     const deployment = userCloudflareDeployment(env, { agentPlugins: false })
     expect(deployment).toMatchObject({
@@ -80,7 +96,7 @@ describe("user-deployed Cloudflare configuration", () => {
     ).toThrow(/different databases/)
     expect(() => userCloudflareTarget({ ...env, CLAXEDO_WORKER_NAME: "claxedo-control-plane" })).toThrow(/reserved/)
     expect(() => userCloudflareDeployment({ ...env, CLAXEDO_AUTH_METHODS: "email-password" }, { agentPlugins: false }))
-      .toThrow(/email-sender/)
+      .toThrow(/CLAXEDO_EMAIL_FROM/)
     expect(() => userCloudflareDeployment({ ...env, CLAXEDO_AUTH_METHODS: "google" }, { agentPlugins: false })).toThrow(
       /GOOGLE_CLIENT_ID is required/,
     )

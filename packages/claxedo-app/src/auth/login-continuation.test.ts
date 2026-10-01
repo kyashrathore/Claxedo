@@ -33,7 +33,7 @@ test("an invitation sign-up preserves its token and ends in the canonical accept
   expect(calls).toEqual([
     [
       "signUp",
-      { method: "email-password", email: "new@example.com", password: "password", redirectUrl: "/invitations/token" },
+      { method: "email-password", email: "new@example.com", password: "password", redirectUrl: "/invitations#token" },
     ],
     ["org.invitations.accept", { token: "token" }],
   ])

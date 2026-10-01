@@ -28,7 +28,7 @@ type Options = {
 const bodyLimitBytes = 16 * 1024
 
 type OrgTeamError = {
-  status: 400 | 403 | 404 | 409 | 503
+  status: 400 | 403 | 404 | 409 | 429 | 503
   code: string
   message: string
 }
@@ -53,6 +53,8 @@ const ORG_TEAM_ERRORS: Record<string, Omit<OrgTeamError, "code">> = {
   project_admin_required: { status: 403, message: "Project administrator authority is required" },
   team_not_allowed_on_personal_org: { status: 400, message: "Personal organizations cannot contain teams" },
   team_member_target_required: { status: 400, message: "Exactly one team member target is required" },
+  org_invitation_pending: { status: 409, message: "An invitation to this address is already pending" },
+  org_invitation_rate_limited: { status: 429, message: "Organization invitation limit exceeded" },
   org_invitation_invalid: { status: 409, message: "Invitation is invalid or unavailable" },
   org_invitation_email_mismatch: { status: 403, message: "Sign in with the invited verified email address" },
   org_invitation_delivery_unavailable: { status: 503, message: "Invitation delivery is unavailable" },
@@ -181,10 +183,12 @@ export function OrgTeamControlRoutes(services: ControlPlaneServices, options: Op
       if (!revoke) return unavailable(c, "Organization invitations unavailable")
       return c.json(await revoke(auth, { orgId: c.req.param("orgId")!, invitationId: c.req.param("invitationId")! }))
     }))
-    .post("/invitations/:token/accept", limited, authorized(async (auth, c) => {
+    .post("/invitations/accept", limited, authorized(async (auth, c) => {
       const accept = authority().acceptOrgInvitation
       if (!accept) return unavailable(c, "Organization invitations unavailable")
-      return c.json(await accept(auth, { token: c.req.param("token")! }))
+      const token = txt((await body(c)).token)?.trim()
+      if (!token) return c.json({ error: apiError("invalid_input", "token is required") }, 400)
+      return c.json(await accept(auth, { token }))
     }))
     .patch("/orgs/:orgId/members/:userPublicId", limited, authorized(async (auth, c) => {
       const update = authority().updateOrgMember

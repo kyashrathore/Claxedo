@@ -27,7 +27,7 @@ test("certified hosted Worker signs in two GitHub people and refuses unbrokered 
     ])
 
     const invitationToken = await stack.inviteMember(owner.id, second.id)
-    const accepted = await hostedFetch(stack, `/api/control/invitations/${invitationToken}/accept`, { method: "POST" }, second)
+    const accepted = await hostedFetch(stack, "/api/control/invitations/accept", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ token: invitationToken }) }, second)
     expect(accepted.status).toBe(200)
 
     for (const [repoUrl, code] of [
