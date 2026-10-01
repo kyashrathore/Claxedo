@@ -90,6 +90,39 @@ describe("hosted session pull", () => {
     expect(svc.authority!.upsertSessionVisibility).not.toHaveBeenCalled()
   })
 
+  function snapshotRuntime(snapshot: unknown) {
+    return vi.fn(async (input: string | URL | Request) => fetchUrl(input).endsWith("/global/health")
+      ? Response.json({ workspaceId: "ws" })
+      : Response.json(snapshot)) as unknown as typeof fetch
+  }
+
+  test("a checkpoint writes the transcript before it refreshes the settled title's visibility", async () => {
+    const svc = authorityServices()
+    const order: string[] = []
+    vi.mocked(svc.authority!.syncSessionMessages).mockImplementation(async () => {
+      order.push("transcript")
+      return { ok: true, applied: true, maxEventOrdinal: 7 }
+    })
+    vi.mocked(svc.authority!.upsertSessionVisibility).mockImplementation(async () => {
+      order.push("visibility")
+      throw new Error("visibility unavailable")
+    })
+    globalThis.fetch = snapshotRuntime({ messages: [], maxEventOrdinal: 7, session: { id: "ses", title: "Runtime auto-title", time: { created: 1, updated: 200 } } })
+    await expect(pullHostedControlSessionMessages(svc, {}, signed, { workspaceId: "ws", sessionId: "ses" })).rejects.toThrow("visibility unavailable")
+    expect(order).toEqual(["transcript", "visibility"])
+    expect(svc.authority!.upsertSessionVisibility).toHaveBeenCalledWith(signed, {
+      workspaceId: "ws", sessions: [{ sessionId: "ses", title: "Runtime auto-title", updatedAt: 200 }],
+    })
+  })
+
+  test("a snapshot the authority refuses as older reports the authority's ordinal", async () => {
+    const svc = authorityServices()
+    vi.mocked(svc.authority!.syncSessionMessages).mockResolvedValue({ ok: true, applied: false, maxEventOrdinal: 12 })
+    globalThis.fetch = snapshotRuntime({ messages: [], maxEventOrdinal: 11, session: { id: "ses", time: { created: 1, updated: 200 } } })
+    await expect(pullHostedControlSessionMessages(svc, {}, signed, { workspaceId: "ws", sessionId: "ses" }))
+      .resolves.toEqual({ ok: true, skipped: true, reason: "older_snapshot_ordinal", currentOrdinal: 12, snapshotOrdinal: 11 })
+  })
+
   test("pulls through the canonical sandbox target without provisioning", async () => {
     const svc = services()
     const target = vi.fn(async () => ({
