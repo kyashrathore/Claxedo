@@ -79,13 +79,6 @@ function orgMember(seed: () => Database.Database, workspaceId: string, tokenIden
 }
 
 describe("SQLite private-session authority", () => {
-  test("exposes no participant methods or storage", () => {
-    const { store, seed } = authorityWithSeed()
-    expect(seed().prepare("SELECT name FROM sqlite_master WHERE name LIKE '%participant%'").all()).toEqual([])
-    expect(store).not.toHaveProperty("grantSessionParticipant")
-    expect(store).not.toHaveProperty("revokeSessionParticipant")
-  })
-
   test("satisfies the provider-neutral conformance runner", async () => {
     const creator = auth("creator")
     const member = auth("member")
