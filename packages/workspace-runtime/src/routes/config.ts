@@ -10,6 +10,7 @@ import { boundedJsonBody, errorBody, isRequestBodyTooLarge, requestBodyTooLargeB
 import { authorizeManagementAccess, type ManagementAccessOptions } from "./management-access"
 import { WorkspaceRuntimeRoutes } from "./manifest"
 import { isRecord as record, str } from "../json-value"
+import type { RuntimeConfigApplyStatus } from "../workspace/host"
 
 const log = Log.create({ service: "config-route" })
 
@@ -228,11 +229,19 @@ export function normalizeRuntimeSnapshot(
   }
 }
 
-export const ConfigRoutes = (apply: (snapshot: AppliedRuntimeSnapshot) => Promise<void>, options: ConfigRouteOptions = {}) =>
+export const ConfigRoutes = (host: {
+  apply: (snapshot: AppliedRuntimeSnapshot) => Promise<void>
+  configApply: () => RuntimeConfigApplyStatus
+}, options: ConfigRouteOptions = {}) =>
   new Hono<{ Variables: RelayHostAuthContext }>()
     .onError((err, c) => {
       if (isRequestBodyTooLarge(err)) return c.json(requestBodyTooLargeBody(), 413)
       throw err
+    })
+    .get(WorkspaceRuntimeRoutes.config, async (c) => {
+      const verdict = await authorizeManagementAccess(c, options, "runtime.config.apply")
+      if (!verdict.ok) return c.json({ error: { code: verdict.code, message: verdict.message } }, verdict.status)
+      return c.json(host.configApply())
     })
     .post(WorkspaceRuntimeRoutes.config, async (c) => {
       const verdict = await authorizeManagementAccess(c, options, "runtime.config.apply")
@@ -250,7 +259,7 @@ export const ConfigRoutes = (apply: (snapshot: AppliedRuntimeSnapshot) => Promis
         return c.json(errorBody("invalid_runtime_snapshot", "Invalid runtime snapshot"), 400)
       }
       try {
-        await apply(body)
+        await host.apply(body)
         log.info("Applied runtime snapshot", {
           connectionCount: body.connections.length,
           selection: body.defaultHarness,

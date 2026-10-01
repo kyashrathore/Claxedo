@@ -325,7 +325,7 @@ describe("agent config", () => {
   test("the snapshot retains its canonical version", async () => {
     await mod.saveUserConfig({ version: 3, connections: {} })
     const config = await mod.getRuntimeConfigSnapshot()
-    expect(config).toEqual({ version: 4, mcp: {}, connections: [], auth: { machineOwnerUserId: "", accounts: {} }, providerDefinitions: [], commands: [] })
+    expect(config).toEqual({ version: 4, mcp: {}, connections: [], auth: { machineOwnerUserId: "", accounts: {} }, providerDefinitions: [], commands: [], harnessLaunch: {} })
   })
 
   test("refuses to publish an empty command set when command storage cannot be read", async () => {
