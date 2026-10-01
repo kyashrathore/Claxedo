@@ -20,7 +20,6 @@ function toolName(facts: ReturnType<typeof toolFacts>) {
   if (intent === "search" && pattern && path) short = "grep"
   if (intent === "list" && list) short = str(list.pattern) ? "glob" : "list"
   if (intent === "read") short = "read"
-  if (intent === "lint") short = "lint"
   if (intent === "edit") short = "edit"
   if (intent === "fetch" && modeValue === "web") short = "webfetch"
 
