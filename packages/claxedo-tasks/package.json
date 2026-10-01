@@ -52,6 +52,7 @@
     "test": "mkdir -p .artifacts/unit && node ../../script/test-deadline.mjs bun test src --reporter=junit --reporter-outfile=.artifacts/unit/junit.xml"
   },
   "dependencies": {
+    "@claxedo/agent-runtime-contract": "workspace:*",
     "@claxedo/helpers": "workspace:*",
     "hono": "4.12.34"
   },

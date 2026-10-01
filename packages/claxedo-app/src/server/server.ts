@@ -1,6 +1,6 @@
 import { QueryClient } from "@tanstack/solid-query"
 import { createSignal } from "solid-js"
-import { createHostedAccount, type HostedAccount } from "./account"
+import { createBrowserHostedAccount, createHostedAccount, type HostedAccount } from "./account"
 import { createAccountsApi } from "./accounts"
 import { createCapabilities, type CapabilitiesOwner } from "./capabilities"
 import { createCloudApi } from "./cloud"
@@ -88,13 +88,13 @@ function createStartup(input: {
   return { ready: start(), retry }
 }
 
-function serverApis(transport: Transport, workspaces: Workspaces, status: StatusOwner, queryClient: QueryClient, queries: ServerQueries, projection: SessionProjection, account: HostedAccount | undefined) {
-  const operations = createOperations(transport, account)
+function serverApis(transport: Transport, workspaces: Workspaces, status: StatusOwner, queryClient: QueryClient, queries: ServerQueries, projection: SessionProjection, account: HostedAccount | undefined, port: HostedAccount | undefined) {
+  const operations = createOperations(transport, port)
   const project = (id: ProjectId) => queryClient.fetchQuery(queries.projects.byId(id))
   const wakes = createWorkspaceWakes(transport, workspaces)
   return {
     sessions: createSessionsApi(transport, workspaces, status, wakes, projection, account),
-    projects: createProjectsApi(transport, queryClient, workspaces.refresh),
+    projects: createProjectsApi(transport, queryClient, workspaces),
     placements: {
       byId: workspaces.byId,
       list: workspaces.list,
@@ -106,7 +106,7 @@ function serverApis(transport: Transport, workspaces: Workspaces, status: Status
     },
     terminals: createTerminalsApi(transport, workspaces),
     git: createGitApi(transport, workspaces, queryClient),
-    cloud: createCloudApi(transport, workspaces, wakes, project, account),
+    cloud: createCloudApi(transport, workspaces, wakes, project, port),
     accounts: createAccountsApi(transport, queryClient),
     marketplace: createMarketplaceApi(transport, queryClient),
     tasks: createTasksApi(transport),
@@ -126,7 +126,8 @@ function serverApis(transport: Transport, workspaces: Workspaces, status: Status
 export function createServer(config: ServerConfig): ServerHandle {
   const queryClient = createQueryClient()
   const transport = createTransport(config)
-  const account = config.account ? createHostedAccount(config.account) : undefined
+  const port = config.account ? createHostedAccount(config.account) : undefined
+  const account = port ?? (config.cookies ? createBrowserHostedAccount(transport) : undefined)
   const workspaces = createWorkspaces(transport, queryClient, account)
   const status = createStatusOwner(transport)
   const intake = createEventIntake({ serverUrl: transport.serverUrl, queryClient, workspaces, status })
@@ -144,7 +145,7 @@ export function createServer(config: ServerConfig): ServerHandle {
     capabilities: capabilities.value,
     queryClient,
     subscribe: intake.subscribe,
-    ...serverApis(transport, workspaces, status, queryClient, queries, projection, account),
+    ...serverApis(transport, workspaces, status, queryClient, queries, projection, account, port),
     attachPlacement: placementStreams.attach,
     queries,
     retryConnection: startup.retry,

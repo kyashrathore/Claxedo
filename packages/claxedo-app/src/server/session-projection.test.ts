@@ -17,7 +17,7 @@ function fixture(input: { issuesSessions: boolean; kind: Placement["kind"] }, ac
   } as Pick<Transport, "json"> as Transport
   const placement = { id: placementId("ws_1"), projectId: projectId("proj"), kind: input.kind, label: "main", reachable: true }
   const workspaces = {
-    catalog: () => ({ declaration: { hostAggregate: false, issuesSessions: input.issuesSessions, documents: false, connections: false }, placements: [] }),
+    catalog: () => ({ declaration: { serverKind: "daemon", hostAggregate: false, issuesSessions: input.issuesSessions, documents: false, connections: false }, placements: [] }),
     byId: () => placement,
     locate: async () => ({ kind: input.kind, directory: "workspace:ws_1", workspaceId: "ws_1", remote: true }),
   } as Pick<Workspaces, "catalog" | "byId" | "locate"> as Workspaces

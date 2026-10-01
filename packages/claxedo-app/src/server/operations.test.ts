@@ -3,53 +3,51 @@ import { createHostedAccount } from "./account"
 import { createOperations, hostedOperationRequest } from "./operations"
 import type { Transport } from "./transport"
 
-describe("hosted operations over the connected server's routes", () => {
-  test("only declared body fields reach the server", async () => {
-    const requests: RequestInit[] = []
-    const transport = { json: async (_path: string, init: RequestInit) => (requests.push(init), {}) } as unknown as Transport
-    await createOperations(transport, undefined).run("documents.create", { display_name: "Notes", markdown: "# Hi", admin: true })
-    expect(JSON.parse(requests[0]!.body as string)).toEqual({ display_name: "Notes", markdown: "# Hi" })
-  })
+test("only declared body fields reach the server", async () => {
+  const requests: RequestInit[] = []
+  const transport = { json: async (_path: string, init: RequestInit) => (requests.push(init), {}) } as unknown as Transport
+  await createOperations(transport, undefined).run("documents.create", { display_name: "Notes", markdown: "# Hi", admin: true })
+  expect(JSON.parse(requests[0]!.body as string)).toEqual({ display_name: "Notes", markdown: "# Hi" })
+})
 
-  test("a document id cannot be normalized into a different route", () => {
-    for (const id of [".", ".."]) {
-      expect(() => hostedOperationRequest("documents.get", { id })).toThrow(expect.objectContaining({ class: "invalid" }))
-    }
+test("a document id cannot be normalized into a different route", () => {
+  for (const id of [".", ".."]) {
+    expect(() => hostedOperationRequest("documents.get", { id }, "app")).toThrow(expect.objectContaining({ class: "invalid" }))
+  }
+})
+test("a list reads the documents route with its scope", () => {
+  expect(hostedOperationRequest("documents.list", { project_id: "p1", archived: "all" }, "app")).toEqual({
+    method: "GET",
+    path: "/documents?project_id=p1&archived=all",
   })
-  test("a list reads the documents route with its scope", () => {
-    expect(hostedOperationRequest("documents.list", { project_id: "p1", archived: "all" })).toEqual({
-      method: "GET",
-      path: "/documents?project_id=p1&archived=all",
-    })
-  })
+})
 
-  test("a content save sends the version it read as If-Match", () => {
-    expect(hostedOperationRequest("documents.content.put", { id: "doc 1", ifMatch: "v3", display_name: "Notes", markdown: "# Hi" })).toEqual({
-      method: "PUT",
-      path: "/documents/doc%201/content",
-      body: { display_name: "Notes", markdown: "# Hi" },
-      headers: { "If-Match": "v3" },
-    })
+test("a content save sends the version it read as If-Match", () => {
+  expect(hostedOperationRequest("documents.content.put", { id: "doc 1", ifMatch: "v3", display_name: "Notes", markdown: "# Hi" }, "app")).toEqual({
+    method: "PUT",
+    path: "/documents/doc%201/content",
+    body: { display_name: "Notes", markdown: "# Hi" },
+    headers: { "If-Match": "v3" },
   })
+})
 
-  test("a restore names the snapshot in the path", () => {
-    expect(hostedOperationRequest("documents.snapshots.restore", { id: "d", snapshotId: "s", ifMatch: "v1" })).toMatchObject({
-      method: "POST",
-      path: "/documents/d/snapshots/s/restore",
-      headers: { "If-Match": "v1" },
-    })
+test("a restore names the snapshot in the path", () => {
+  expect(hostedOperationRequest("documents.snapshots.restore", { id: "d", snapshotId: "s", ifMatch: "v1" }, "app")).toMatchObject({
+    method: "POST",
+    path: "/documents/d/snapshots/s/restore",
+    headers: { "If-Match": "v1" },
   })
+})
 
-  test("an unknown operation, a missing id or a non-object input is refused as invalid", () => {
-    for (const [name, input] of [
-      ["tasks.list", {}],
-      ["documents.get", {}],
-      ["documents.content.put", { id: "d" }],
-      ["documents.list", ["p1"]],
-    ] as const) {
-      expect(() => hostedOperationRequest(name, input)).toThrow(expect.objectContaining({ class: "invalid" }))
-    }
-  })
+test("an unknown operation, a missing id or a non-object input is refused as invalid", () => {
+  for (const [name, input] of [
+    ["tasks.list", {}],
+    ["documents.get", {}],
+    ["documents.content.put", { id: "d" }],
+    ["documents.list", ["p1"]],
+  ] as const) {
+    expect(() => hostedOperationRequest(name, input, "app")).toThrow(expect.objectContaining({ class: "invalid" }))
+  }
 })
 
 describe("one routing owner for hosted operations", () => {
@@ -82,7 +80,7 @@ describe("one routing owner for hosted operations", () => {
 })
 
  test("invitation operations replace direct member addition", () => {
-  expect(hostedOperationRequest("org.invitations.create", { orgId: "org 1", email: "a@example.com", role: "member" })).toEqual({ method: "POST", path: "/api/control/orgs/org%201/invitations", body: { email: "a@example.com", role: "member" } })
-  expect(hostedOperationRequest("org.invitations.accept", { token: "t 1" })).toEqual({ method: "POST", path: "/api/control/invitations/accept", body: { token: "t 1" } })
-  expect(() => hostedOperationRequest("org.members.add", {})).toThrow()
+  expect(hostedOperationRequest("org.invitations.create", { orgId: "org 1", email: "a@example.com", role: "member" }, "app")).toEqual({ method: "POST", path: "/api/control/orgs/org%201/invitations", body: { email: "a@example.com", role: "member" } })
+  expect(hostedOperationRequest("org.invitations.accept", { token: "t 1" }, "app")).toEqual({ method: "POST", path: "/api/control/invitations/accept", body: { token: "t 1" } })
+  expect(() => hostedOperationRequest("org.members.add", {}, "app")).toThrow()
 })

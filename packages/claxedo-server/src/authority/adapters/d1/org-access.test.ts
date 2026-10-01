@@ -181,7 +181,6 @@ describe("D1 organization members", () => {
       team_memberships_revoked: 1,
       project_memberships_revoked: 1,
       session_shares_revoked: 0,
-      session_participations_revoked: 0,
       runtime_tokens_revoked: 0,
     })
 
@@ -198,7 +197,6 @@ describe("D1 organization members", () => {
         before: "member",
         after: null,
         sessionSharesRevoked: 0,
-        sessionParticipationsRevoked: 0,
       },
     ])
     expect(await authority.removeOrgMember!(alice, { orgId: "org_acme", userPublicId: id(bob) })).toMatchObject({ removed: false })
@@ -301,16 +299,45 @@ describe("D1 team project grants", () => {
     await expect(authority.grantTeamProject!(outsider, { teamId: otherTeam.team_id, projectId, role: "editor" }))
       .rejects.toMatchObject({ code: "project_not_found" })
     await expect(authority.grantTeamProject!(alice, { teamId: otherTeam.team_id, projectId, role: "editor" }))
-      .rejects.toMatchObject({ code: "org_admin_required" })
+      .rejects.toMatchObject({ code: "team_not_found" })
     await expect(authority.addTeamMember!(alice, { teamId: acmeTeam.team_id, userPublicId: id(outsider) }))
       .rejects.toMatchObject({ code: "team_member_org_membership_required" })
     await expect(authority.addTeamMember!(alice, { teamId: acmeTeam.team_id, providerSubject: "no-such-account" }))
       .rejects.toMatchObject({ code: "team_member_org_membership_required" })
     await expect(authority.grantTeamProject!(bob, { teamId: acmeTeam.team_id, projectId, role: "editor" }))
-      .rejects.toMatchObject({ code: "org_admin_required" })
+      .rejects.toMatchObject({ code: "team_not_found" })
     await expect(authority.revokeTeamProject!(bob, { teamId: acmeTeam.team_id, projectId }))
-      .rejects.toMatchObject({ code: "org_admin_required" })
+      .rejects.toMatchObject({ code: "team_not_found" })
     expect(await authority.listTeamProjects!(outsider, { teamId: acmeTeam.team_id })).toEqual([])
+  })
+})
+
+describe("D1 organization and team lookups", () => {
+  test("an organization or team the caller cannot administer answers exactly as one that does not exist", async () => {
+    const { authority, alice, bob, outsider, projectId, database } = await setup()
+    await inviteOrgMember(database, alice, { orgId: "org_acme", userPublicId: id(bob), role: "member" })
+    const acmeTeam = (await authority.createTeamInOrg!(alice, { orgId: "org_acme", name: "Eng" })) as { team_id: string }
+    const refusal = async (attempt: Promise<unknown>) => {
+      const error = await attempt.then(() => undefined, (cause: unknown) => cause as { code?: string; status?: number })
+      return { code: error?.code, status: error?.status }
+    }
+
+    expect(await refusal(authority.createTeamInOrg!(bob, { orgId: "org_other", name: "X" })))
+      .toEqual(await refusal(authority.createTeamInOrg!(bob, { orgId: "org_missing", name: "X" })))
+    for (const who of [bob, outsider]) {
+      const missingOrg = await refusal(authority.createTeamInOrg!(who, { orgId: "org_missing", name: "X" }))
+      expect(await refusal(authority.createTeamInOrg!(who, { orgId: "org_acme", name: "X" }))).toEqual(missingOrg)
+      expect(await refusal(authority.ensureDefaultTeam!(who, { orgId: "org_acme" })))
+        .toEqual(await refusal(authority.ensureDefaultTeam!(who, { orgId: "org_missing" })))
+      for (const change of [
+        (teamId: string) => authority.addTeamMember!(who, { teamId, userPublicId: id(bob) }),
+        (teamId: string) => authority.removeTeamMember!(who, { teamId, userPublicId: id(bob) }),
+        (teamId: string) => authority.grantTeamProject!(who, { teamId, projectId, role: "editor" }),
+        (teamId: string) => authority.revokeTeamProject!(who, { teamId, projectId }),
+      ]) {
+        expect(await refusal(change(acmeTeam.team_id))).toEqual(await refusal(change("team_missing")))
+      }
+    }
   })
 })
 
@@ -657,23 +684,18 @@ describe("D1 access changes that must not undo or outlive a decision", () => {
       })
     }
     await register(alice, "ws_cloud", "ses_1")
-    // Bob's own session enrols him as its participant, the one participation
-    // a person can hold.
     await register(bob, "ws_bob", "ses_bob")
     await authority.grantSessionShare!(alice, { sessionId: "ses_1", workspaceId: "ws_cloud", grantedToUserId: id(bob) })
 
     expect(await authority.removeOrgMember!(alice, { orgId: "org_acme", userPublicId: id(bob) }))
-      .toMatchObject({ removed: true, session_shares_revoked: 1, session_participations_revoked: 1 })
+      .toMatchObject({ removed: true, session_shares_revoked: 1 })
     await inviteOrgMember(database, alice, { orgId: "org_acme", userPublicId: id(bob), role: "member" })
 
     expect(await database.prepare("select count(*) as n from session_share_grants where target_user_id = ? and revoked_at is null")
       .bind(id(bob)).first<{ n: number }>()).toEqual({ n: 0 })
-    expect(await database.prepare("select count(*) as n from session_participants where actor_id = ? and revoked_at is null")
-      .bind(bob.principal!.actorId).first<{ n: number }>()).toEqual({ n: 0 })
     expect(await audit("org.member.removed")).toEqual([expect.objectContaining({
       targetUserId: id(bob),
       sessionSharesRevoked: 1,
-      sessionParticipationsRevoked: 1,
     })])
   })
 })

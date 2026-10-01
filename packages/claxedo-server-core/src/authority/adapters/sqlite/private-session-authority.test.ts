@@ -113,7 +113,7 @@ describe("SQLite private-session authority", () => {
       },
     })).resolves.toMatchObject({
       lifecycle: { reserved: true, reconciled: true, compensated: true, released: true },
-      access: { memberRefusedTheSession: true, memberRefusedCreation: true, participantGrantRefused: true },
+      access: { memberRefusedTheSession: true, memberRefusedCreation: true },
       attribution: { canonicalActorPreserved: true, forgedActorRemoved: true },
     })
   })
@@ -324,12 +324,12 @@ describe("SQLite private-session authority", () => {
     temporaryDirectories.push(directory)
     const databasePath = path.join(directory, "authority.db")
     const creator = auth("creator")
-    const participant = auth("participant")
+    const shareHolder = auth("share-holder")
     const first = createSqliteWorkspaceAuthority({ path: databasePath })
     const reconstructed = createSqliteWorkspaceAuthority({ path: databasePath })
     const seed = openAuthorityDb({ path: databasePath })
     openAuthorities.push(first, reconstructed, seed)
-    await first.usersMe(participant)
+    await first.usersMe(shareHolder)
     await first.createCloudWorkspace(creator, { workspaceId: "workspace_main", displayName: "Main" })
     await first.reserveSession(creator, {
       operationId: "operation_turns",
@@ -347,11 +347,11 @@ describe("SQLite private-session authority", () => {
       sessionId: "session_turns",
       workspaceId: "workspace_main",
     })
-    orgMember(seed, "workspace_main", participant.user.tokenIdentifier, "member")
+    orgMember(seed, "workspace_main", shareHolder.user.tokenIdentifier, "member")
     await first.grantSessionShare!(creator, {
       sessionId: "session_turns",
       workspaceId: "workspace_main",
-      grantedToTokenIdentifier: participant.user.tokenIdentifier,
+      grantedToTokenIdentifier: shareHolder.user.tokenIdentifier,
       level: "send",
     })
     let currentTime = Date.now()
@@ -370,7 +370,7 @@ describe("SQLite private-session authority", () => {
         },
         competitor: {
           principalKind: "user",
-          actorId: participant.user.tokenIdentifier,
+          actorId: shareHolder.user.tokenIdentifier,
           actorKind: "human",
         },
         advancePast(expiresAt) {
@@ -555,7 +555,6 @@ describe("SQLite private-session authority", () => {
       })
     }
 
-    await store.deleteSessionVisibility(creator, { workspaceId: "workspace_main", sessionId: "session_deleted" })
     await store.replaceSessionVisibility(creator, { workspaceId: "workspace_main", sessions: [{ sessionId: "session_kept" }] })
 
     const stored = seed().prepare(`SELECT session_id, updated_at, deleted_at FROM session_history ORDER BY session_id`).all()
@@ -595,12 +594,19 @@ describe("SQLite private-session authority", () => {
       sessionId: "session_1",
       workspaceId: "workspace_main",
     })
-    orgMember(seed, "workspace_main", "actor_agent", "member")
-    await store.grantSessionParticipant(creator, {
-      sessionId: "session_1",
-      workspaceId: "workspace_main",
-      participantActorId: "actor_agent",
-    })
+    // No route makes an agent a session's creator on this store; the
+    // attribution is written directly to put the agent's own turn to it.
+    seed().prepare(`UPDATE session_history SET creator_actor_id = 'actor_agent' WHERE session_id = 'session_1'`).run()
+
+    upsertUser(seed(), { token_identifier: "actor_unassigned", kind: "agent" })
+    await expect(store.authorizeRuntimeSession({
+      principalKind: "service", actorId: "actor_unassigned", actorKind: "agent",
+      sessionId: "session_1", workspaceId: "workspace_main", action: "write",
+    })).rejects.toMatchObject({ status: 403 })
+    await expect(store.authorizeRuntimeSession({
+      principalKind: "service", actorId: "actor_agent", actorKind: "agent",
+      sessionId: "session_1", workspaceId: "another_workspace", action: "write",
+    })).rejects.toMatchObject({ status: 403 })
 
     await store.acquireSessionTurn({
       principalKind: "service",
@@ -614,6 +620,13 @@ describe("SQLite private-session authority", () => {
     const rows = await store.listSessions(creator, { workspaceId: "workspace_main" })
     expect(rows).toHaveLength(1)
     expect(rows[0]).not.toHaveProperty("last_human_turn_at")
+    store.close()
+    const reopened = createSqliteWorkspaceAuthority({ path: databasePath })
+    openAuthorities.push(reopened)
+    await expect(reopened.authorizeRuntimeSession({
+      principalKind: "service", actorId: "actor_agent", actorKind: "agent",
+      sessionId: "session_1", workspaceId: "workspace_main", action: "write",
+    })).resolves.toBeUndefined()
   })
 
   test("hard-cuts legacy workspace-visible sessions instead of inventing private attribution", async () => {
@@ -660,7 +673,7 @@ describe("SQLite private-session authority", () => {
 })
 
 describe("SQLite private-session authority, shares of a session this store never registered", () => {
-  test("answers the organization it belongs to and refuses everyone else", async () => {
+  test("answers its workspace's owner and refuses everyone else", async () => {
     const creator = auth("creator")
     const teammate = auth("teammate")
     const outsider = auth("outsider")
@@ -670,14 +683,12 @@ describe("SQLite private-session authority, shares of a session this store never
     await store.createCloudWorkspace(creator, { workspaceId: "workspace_main", displayName: "Main" })
     orgMember(seed, "workspace_main", teammate.user.tokenIdentifier, "member")
 
-    await expect(store.listSessionShares!(teammate, {
-      sessionId: "session_created_on_the_machine",
-      workspaceId: "workspace_main",
-    })).resolves.toEqual({ can_manage_shares: false, grants: [], participants: [], teams: [] })
-    await expect(store.listSessionShares!(outsider, {
-      sessionId: "session_created_on_the_machine",
-      workspaceId: "workspace_main",
-    })).rejects.toThrow("session_share_admin_required")
+    const target = { sessionId: "session_created_on_the_machine", workspaceId: "workspace_main" }
+    await expect(store.listSessionShares!(creator, target)).resolves.toEqual({ can_manage_shares: false, grants: [], teams: [] })
+    for (const who of [teammate, outsider]) {
+      await expect(store.listSessionShares!(who, target)).rejects.toThrow("session_share_admin_required")
+      await expect(store.listSessionShares!(who, { ...target, workspaceId: "workspace_unknown" })).rejects.toThrow("session_share_admin_required")
+    }
   })
 })
 
@@ -856,17 +867,17 @@ describe("SQLite latest views", () => {
   })
 })
 
-describe("SQLite private-session authority, rows written before only a share crossed people", () => {
-  test("a historical creator or participant who does not own the workspace holds nothing of its session; its owner holds all of it", async () => {
+describe("SQLite private-session authority, creator attribution", () => {
+  test("a non-owner creator or member who does not own the workspace holds nothing of its session; its owner holds all of it", async () => {
     const owner = auth("owner")
     const historicCreator = auth("historic-creator")
-    const historicParticipant = auth("historic-participant")
+    const member = auth("member")
     const { store, seed } = authorityWithSeed()
     await store.usersMe(historicCreator)
-    await store.usersMe(historicParticipant)
+    await store.usersMe(member)
     await store.createCloudWorkspace(owner, { workspaceId: "workspace_history", displayName: "History" })
     orgMember(seed, "workspace_history", historicCreator.user.tokenIdentifier, "member")
-    orgMember(seed, "workspace_history", historicParticipant.user.tokenIdentifier, "member")
+    orgMember(seed, "workspace_history", member.user.tokenIdentifier, "member")
     await store.reserveSession(owner, { operationId: "operation_history", sessionId: "session_history", workspaceId: "workspace_history", kind: "create" })
     await store.registerRuntimeSession({
       createdAt: Date.now(), updatedAt: Date.now(), principalKind: "user", actorId: owner.user.tokenIdentifier, actorKind: "human",
@@ -874,18 +885,14 @@ describe("SQLite private-session authority, rows written before only a share cro
     })
     seed().prepare(`UPDATE session_history SET creator_actor_id = ? WHERE session_id = 'session_history'`)
       .run(historicCreator.user.tokenIdentifier)
-    seed().prepare(`
-      INSERT INTO session_participants (session_id, workspace_id, participant_actor_id, added_by_actor_id, created_at)
-      VALUES ('session_history', 'workspace_history', ?, ?, 1)
-    `).run(historicParticipant.user.tokenIdentifier, owner.user.tokenIdentifier)
     const ask = (who: SignedControlPlaneAuth, action: "read" | "write", writeClass?: "agent_turn" | "session_control") =>
       store.authorizeRuntimeSession({
         principalKind: "user", actorId: who.user.tokenIdentifier, actorKind: "human",
         sessionId: "session_history", workspaceId: "workspace_history", action, ...(writeClass ? { writeClass } : {}),
       })
-    const target = { sessionId: "session_history", workspaceId: "workspace_history", grantedToTokenIdentifier: historicParticipant.user.tokenIdentifier }
+    const target = { sessionId: "session_history", workspaceId: "workspace_history", grantedToTokenIdentifier: member.user.tokenIdentifier }
 
-    for (const who of [historicCreator, historicParticipant]) {
+    for (const who of [historicCreator, member]) {
       await expect(ask(who, "read")).rejects.toMatchObject({ status: 403 })
       await expect(ask(who, "write", "agent_turn")).rejects.toMatchObject({ status: 403 })
       await expect(ask(who, "write", "session_control")).rejects.toMatchObject({ status: 403 })
@@ -895,7 +902,7 @@ describe("SQLite private-session authority, rows written before only a share cro
 
     await ask(owner, "write", "session_control")
     await store.grantSessionShare!(owner, { ...target, level: "follow" })
-    await ask(historicParticipant, "read")
-    await expect(ask(historicParticipant, "write", "agent_turn")).rejects.toMatchObject({ status: 403 })
+    await ask(member, "read")
+    await expect(ask(member, "write", "agent_turn")).rejects.toMatchObject({ status: 403 })
   })
 })

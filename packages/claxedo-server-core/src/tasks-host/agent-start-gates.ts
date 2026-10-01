@@ -2,7 +2,7 @@ import {
   sessionOriginOf,
   tasksErrorDetail,
   type Preset,
-  type SessionReference,
+  type SessionRef,
   type StartCommand,
   type StartPreviewCommand,
   type Task,
@@ -95,7 +95,7 @@ async function capRefusal(
  * minted for one, else the calling session the request named, which
  * `provenanceRefusal` has already held to the root's workspace, else none.
  */
-function startedFromOf(grant: TasksCapabilityGrant, command: StartCommand): SessionReference | null {
+function startedFromOf(grant: TasksCapabilityGrant, command: StartCommand): SessionRef | null {
   const { scope } = grant
   if (scope.sessionId) return { sessionId: scope.sessionId, workspaceId: scope.workspaceId }
   return command.startedFrom ?? null

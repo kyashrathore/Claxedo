@@ -1,4 +1,5 @@
 import type { D1Database, D1PreparedStatement, D1Result } from "@cloudflare/workers-types"
+import type { SessionRef } from "@claxedo/agent-runtime-contract"
 import { ControlPlaneAuthError } from "@claxedo/server-core/platform/auth/auth"
 import type { ProjectAction, ProjectRole } from "@claxedo/server-core/platform/auth/authority"
 
@@ -44,7 +45,7 @@ export type OrgAction = "member" | "administer" | "own"
 
 type Rules = {
   workspace: { action: WorkspaceAction; ref: { workspaceId: string }; row: { alias: string } }
-  session: { action: SessionAction; ref: { sessionId: string; workspaceId: string }; row: { alias: string } }
+  session: { action: SessionAction; ref: SessionRef; row: { alias: string } }
   project: { action: ProjectAction; ref: { projectId: string; orgId?: string }; row: { alias: string } }
   org: { action: OrgAction; ref: { orgId: string }; row: { orgId: string } }
 }
@@ -258,9 +259,29 @@ function sessionRuleSql(action: SessionAction, s: string, withActor: boolean) {
  * that is not human never holds one.
  */
 function sessionShareSql(s: string, send: boolean, withActor: boolean) {
-  return `exists (
-    select 1 from session_share_grants share
-    where share.session_id = ${s}.session_id and share.revoked_at is null
+  return `exists (select 1 from session_share_grants share where ${sharePredicateSql(s, send, withActor)})`
+}
+
+/**
+ * The share a runtime token is recorded under, for a principal `session` reads
+ * through a share: the one naming them directly, else through a team, else
+ * through their organization. Null for the workspace's owner, whose access no
+ * share admits.
+ */
+export function admittingShareSql(principal: AuthorizationPrincipal, session: string): BoundSql {
+  return bindPrincipal(`(
+    select case when rule_workspace.owner_user_id = ${USER} then null else (
+      select share.grant_id from session_share_grants share
+      where ${sharePredicateSql(session, false, principal.actorId !== undefined)}
+      order by share.target_user_id is null, share.target_team_id is null, share.grant_id
+      limit 1
+    ) end
+    from workspaces rule_workspace where rule_workspace.workspace_id = ${session}.workspace_id
+  )`, principal)
+}
+
+function sharePredicateSql(s: string, send: boolean, withActor: boolean) {
+  return `share.session_id = ${s}.session_id and share.revoked_at is null
       ${send ? "and share.level = 'send'" : ""}
       ${withActor ? `and exists (select 1 from actors share_actor where share_actor.actor_id = ${ACTOR} and share_actor.kind = 'human')` : ""}
       and (
@@ -285,8 +306,7 @@ function sessionShareSql(s: string, send: boolean, withActor: boolean) {
             and share_team_member.user_id = ${USER}
             and share_team_member.revoked_at is null
         )
-      )
-  )`
+      )`
 }
 
 function projectRuleSql(action: ProjectAction, p: string) {
@@ -370,10 +390,6 @@ export function orgMemberSql(org: string, user: string) {
     where member_org.org_id = ${org} and member_org.deleted_at is null
       and (member_org.owner_user_id = ${user} or member_row.user_id is not null)
   )`
-}
-
-export function roleRank(role: ProjectRole) {
-  return role === "viewer" ? 1 : role === "editor" ? 2 : role === "admin" ? 3 : 4
 }
 
 function actionRank(action: ProjectAction) {

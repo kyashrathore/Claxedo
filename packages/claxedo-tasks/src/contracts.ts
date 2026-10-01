@@ -1,8 +1,11 @@
 /**
  * Every record, request and response the Tasks kit exchanges with a host or a
- * client. Nothing here imports a host type: the package defines its own actor
- * and session/harness references, and hosts map their principals into them.
+ * client. Nothing here imports a host type: session identity is the runtime
+ * contract's, the package defines its own actor and harness references, and
+ * hosts map their principals into them.
  */
+import type { SessionRef } from "@claxedo/agent-runtime-contract"
+export type { SessionRef } from "@claxedo/agent-runtime-contract"
 
 export const TASKS_ROUTE_PATH = "/api/claxedo/tasks"
 
@@ -80,12 +83,7 @@ export type TasksActor = {
    * another session is refused, and a session-granted caller's is recorded
    * whether the request repeats it or not.
    */
-  session?: SessionReference
-}
-
-export type SessionReference = {
-  sessionId: string
-  workspaceId: string | null
+  session?: SessionRef
 }
 
 export type HarnessReference = {
@@ -170,7 +168,7 @@ export type Task = {
   workspaceId: string | null
   parentTaskId: string | null
   /** The session whose agent created the task; null when a person created it in the app. */
-  createdFrom: SessionReference | null
+  createdFrom: SessionRef | null
   title: string
   description: string
   status: TaskStatus
@@ -236,8 +234,8 @@ export type TaskSessionLink = {
   taskId: string
   slot: ConfigurationSlot
   attempt: number
-  sessionRef: SessionReference
-  continuedFrom: SessionReference | null
+  sessionRef: SessionRef
+  continuedFrom: SessionRef | null
   presetId: string
   presetRevision: number
   presetNameAtStart: string
@@ -261,7 +259,7 @@ export type TaskSessionLink = {
    * started it from the app. With `placement`, it is what a per-project cap
    * on agent-started cloud machines counts.
    */
-  startedFrom: SessionReference | null
+  startedFrom: SessionRef | null
   /**
    * Who asked for this attempt: a person from the app, or a session's agent
    * through its grant. Recorded beside `startedFrom` because a grant minted
@@ -301,8 +299,8 @@ export type TaskSessionLinkView = {
   taskId: string
   slot: ConfigurationSlot
   attempt: number
-  sessionRef: SessionReference
-  continuedFrom: SessionReference | null
+  sessionRef: SessionRef
+  continuedFrom: SessionRef | null
   presetId: string
   presetRevision: number
   presetNameAtStart: string
@@ -368,7 +366,7 @@ export type TaskDraft = {
    * caller's credential was authenticated as, and a claim naming any other
    * session is refused.
    */
-  createdFrom?: SessionReference
+  createdFrom?: SessionRef
   /** Images stored with the task and handed to every session started on it. Absent means none. */
   attachments?: readonly TaskAttachmentDraft[]
 }
@@ -524,7 +522,7 @@ export type StartPreviewRequest = {
    * Recorded only when it is the session the caller's credential was
    * authenticated as — anything else is refused rather than believed.
    */
-  startedFrom?: SessionReference
+  startedFrom?: SessionRef
 }
 
 /**
@@ -542,7 +540,7 @@ export type StartPreview = {
   capabilities: PresetExecution["capabilities"]
   available: boolean
   blockers: readonly StartBlocker[]
-  currentSession: { sessionRef: SessionReference; liveness: SessionLiveness } | null
+  currentSession: { sessionRef: SessionRef; liveness: SessionLiveness } | null
   previousTranscriptReadable: boolean
   destinationDescription: string
 }
@@ -566,7 +564,7 @@ export type StartRequest = {
    * Recorded only when it is the session the caller's credential was
    * authenticated as — anything else is refused rather than believed.
    */
-  startedFrom?: SessionReference
+  startedFrom?: SessionRef
 }
 
 export type StartResponse = {

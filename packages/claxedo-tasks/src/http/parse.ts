@@ -6,7 +6,7 @@ import {
   type ChildListQuery,
   type PresetDraft,
   type PresetListQuery,
-  type SessionReference,
+  type SessionRef,
   type StartPreviewRequest,
   type StartRequest,
   type TaskAttachmentDraft,
@@ -15,7 +15,7 @@ import {
   type TasksCommandRequest,
 } from "../contracts"
 import { utf8ByteLength } from "@claxedo/helpers/string"
-import { decodeConfigurations, decodeExecution, decodeSessionReference, decodeSlot } from "../decode"
+import { decodeConfigurations, decodeExecution, readTaskSessionRef, decodeSlot } from "../decode"
 import { clampLimit } from "../paging"
 import { decodeContext, finishDecode, idWithinBound, parsedInvalid, type DecodeContext, type Parsed } from "../validation"
 
@@ -82,7 +82,7 @@ function commandInput(ctx: DecodeContext, name: TasksCommand["type"], value: unk
           workspaceId: ctx.read.nullableId(row?.workspaceId, `${path}workspaceId`) ?? null,
           parentTaskId: ctx.read.nullableId(row?.parentTaskId, `${path}parentTaskId`) ?? null,
           ...(isTaskCreateStatus(created) ? { status: created } : {}),
-          ...(from === undefined ? {} : { createdFrom: decodeSessionReference(ctx, from, `${path}createdFrom`) }),
+          ...(from === undefined ? {} : { createdFrom: readTaskSessionRef(ctx, from, `${path}createdFrom`) }),
           ...(attachments === undefined
             ? {}
             : { attachments: attachmentDrafts(ctx, attachments, `${path}attachments`) }),
@@ -142,8 +142,8 @@ export function parseCommandRequest(body: unknown): Parsed<TasksCommandRequest> 
 }
 
 /** An absent key is the app asking; a present one is a session naming itself and is read whole. */
-function startedFrom(ctx: DecodeContext, value: unknown): { startedFrom: SessionReference } | Record<never, never> {
-  return value === undefined ? {} : { startedFrom: decodeSessionReference(ctx, value, "startedFrom") }
+function startedFrom(ctx: DecodeContext, value: unknown): { startedFrom: SessionRef } | Record<never, never> {
+  return value === undefined ? {} : { startedFrom: readTaskSessionRef(ctx, value, "startedFrom") }
 }
 
 export function parseStartPreviewRequest(body: unknown): Parsed<StartPreviewRequest> {

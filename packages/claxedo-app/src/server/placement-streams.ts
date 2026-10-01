@@ -2,13 +2,13 @@ import { hashKey, type QueryClient } from "@tanstack/solid-query"
 import { queryKeys } from "./query-keys"
 import { openEventStream, type Stream } from "./stream"
 import type { Transport } from "./transport"
-import type { SessionRef } from "./types"
+import type { SessionLocation } from "./types"
 import type { Workspaces } from "./workspaces"
 
 const RUNTIME_EVENTS_PATH = "/api/wr/events"
 
 export type PlacementStreams = {
-  readonly attach: (ref: SessionRef) => () => void
+  readonly attach: (ref: SessionLocation) => () => void
   readonly close: () => void
 }
 

@@ -58,12 +58,8 @@ export function createBus<T>(options: BusOptions<T> = {}) {
 // matching every other event in this union. The two share a `type` discriminant
 // but are NOT interchangeable: convert at the boundary, never pass through.
 //
-// `orgId`/`projectId` are required so a consumer can filter to its own project.
-// `orgId` is the AUTHORITY-INTERNAL org id (`authority.resolveOrgId` at the
-// documents routes — the authority's internal org id (SQLite `org_id`), NEVER the issuer org
-// claim) and is enforced server-side (`platform/http/event-visibility.ts`: signed
-// subscribers resolve the same internal id at connect and only see their own
-// org's events); `projectId` remains a client-side routing hint.
+// It names a Page, which is private to its creator until shared, so
+// `platform/http/event-visibility.ts` delivers it to no signed subscriber.
 export type DocumentChangedEvent = {
   type: "document.changed"
   documentId: string
@@ -151,12 +147,11 @@ export type PluginsChangedEvent = {
  * authority, the session-meta store (`session/meta/index.ts`), the usage quota
  * reader (`usage/quota.ts`).
  *
- * The local daemon and a self-hosted node serve all seven kinds. The hosted
- * plane's room (`hosted-workerd/live-sync-room.cf.ts`) carries `provision`,
- * `document.changed` and `session.share.changed` only: worktrees are a
- * machine's, and the hosted worker has no publisher for
- * `session.inventory.changed`, so a signed web client on it learns of a
- * session created elsewhere by its next inventory read, not by a notice.
+ * The local daemon serves all seven kinds to its unsigned user. A signed
+ * subscriber gets only share and quota notices (`event-visibility.ts`), and
+ * the hosted plane's room (`hosted-workerd/live-sync-room.cf.ts`) carries
+ * `session.share.changed` alone, so a signed client learns of a provision
+ * step, a Page change or another session by its next read, not by a notice.
  */
 export type ControlPlaneEvent =
   | {
@@ -164,10 +159,7 @@ export type ControlPlaneEvent =
       workspaceId: string
       /**
        * Org that owns the workspace (`Workspace.org_id`, the AUTHORITY-INTERNAL
-       * org id namespace), stamped at publish. `routes/event-visibility.ts`
-       * uses it to scope delivery in signed mode (subscribers resolve the same
-       * internal id at connect); absent (local workspaces) means the event is
-       * only visible to unsigned-local/loopback subscribers.
+       * org id namespace), stamped at publish; absent for local workspaces.
        */
       orgId?: string
       step: "acquiring_sandbox" | "cloning" | "starting_runtime" | "waiting_health" | "ready" | "error"

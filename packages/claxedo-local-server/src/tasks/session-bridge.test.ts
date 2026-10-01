@@ -18,7 +18,7 @@ import {
   startConfigurationDigest,
   type Preset,
   type SessionHandoffCommand,
-  type SessionReference,
+  type SessionRef,
   type StartCommand,
   type Task,
   type TaskSessionLink,
@@ -112,7 +112,7 @@ function task(input: { workspaceId: string | null; projectId?: string }): Task {
   }
 }
 
-function link(sessionRef: { sessionId: string; workspaceId: string | null }, configurationDigest: string): TaskSessionLink {
+function link(sessionRef: SessionRef, configurationDigest: string): TaskSessionLink {
   return {
     scopeId: "local",
     taskId: "tsk_1",
@@ -157,7 +157,7 @@ async function startCommand(input: {
 function handoffCommand(input: {
   workspaceId: string | null
   projectId?: string
-  session: SessionReference
+  session: SessionRef
   attempt?: number
 }): SessionHandoffCommand {
   return {

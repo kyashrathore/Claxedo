@@ -4,7 +4,7 @@ import { queryKeys } from "./query-keys"
 import { withQuery, type Transport } from "./transport"
 import { responseError } from "./errors"
 import type { HarnessOptions } from "./harness-types"
-import type { FetchQuery, SessionRef } from "./types"
+import type { FetchQuery, SessionLocation } from "./types"
 import type { Workspaces } from "./workspaces"
 import { harnessCommandQuery } from "./harness-commands"
 import { readStopsBackgroundTasks } from "./session-stop"
@@ -37,7 +37,7 @@ export function harnessQueries(transport: Transport, workspaces: Workspaces) {
     options: (placementId: PlacementId, harness: string): FetchQuery<HarnessOptions> =>
       fetchQuery(queryKeys.harnessOptions(transport.serverUrl, placementId, harness), () => readHarnessOptions(transport, workspaces, { placementId, harness })),
     commands: harnessCommandQuery(transport, workspaces),
-    stopsBackgroundTasks: (ref: SessionRef): FetchQuery<boolean> =>
+    stopsBackgroundTasks: (ref: SessionLocation): FetchQuery<boolean> =>
       fetchQuery(queryKeys.stopsBackgroundTasks(transport.serverUrl, ref.placementId, ref.sessionId), async () => readStopsBackgroundTasks(transport, await workspaces.route(ref), ref)),
   }
 }

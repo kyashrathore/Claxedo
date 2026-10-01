@@ -26,6 +26,9 @@ type Locator = Readonly<{
   objectKey: string
 }>
 
+/** Fixed when a page is indexed: authorization decisions read them once and never re-check them at a write. */
+const IDENTITY = ["id", "org_id", "project_id", "creator_id"] as const
+
 class HostedIndexError extends Error {
   constructor(
     readonly code: string,
@@ -161,7 +164,11 @@ export function createHostedDocumentIndex(store: ConditionalObjectStore) {
     for (const _attempt of [0, 1, 2]) {
       const object = await store.get(objectKey)
       if (!object) throw new HostedIndexError("document_index_not_found", `Document ${documentId} was not found`)
-      const next = mutate(parse(object.body, { orgId: scope.orgId, projectId: scope.projectId, documentId }))
+      const current = parse(object.body, { orgId: scope.orgId, projectId: scope.projectId, documentId })
+      const next = mutate(current)
+      if (IDENTITY.some((field) => next[field] !== current[field])) {
+        throw new HostedIndexError("document_index_identity_immutable", `Document ${documentId} keeps its identity`)
+      }
       const written = await store.put(objectKey, encode(next), { etag: object.etag })
       if (written) return { entry: next, objectKey, etag: written.etag }
     }

@@ -9,19 +9,14 @@ import {
   type AgentPluginSourceRegistry,
 } from "@claxedo/server-core/agent-plugins/sources/routes"
 import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
-import type { WorkspaceAuthority } from "@claxedo/server-core/platform/auth/authority"
-import { isRecord, stringField } from "@claxedo/server-core/platform/json/index"
-import { batchUnder, may, mayGuard } from "../../authority/adapters/d1/authorization"
+import { batchUnder, may } from "../../authority/adapters/d1/authorization"
 import { d1ConstraintFailure } from "../../platform/db/d1-constraint"
-
-/**
- * The authority capabilities this store consumes, the same ones
- * `D1SignedAgentPluginActivationStore` resolves before any statement runs: the
- * caller never supplies a user or organization ID.
- */
-export type AgentPluginSourceAuthorityPort = Pick<WorkspaceAuthority, "usersMe" | "resolveOrgId">
-
-type Scope = { userId: string; orgId: string }
+import {
+  agentPluginWriteGuard,
+  resolveAgentPluginScope,
+  type AgentPluginScope as Scope,
+  type AgentPluginScopeAuthority,
+} from "../signed-scope"
 
 type SourceRow = {
   id: string
@@ -87,9 +82,9 @@ function toRecord(row: SourceRow): AgentPluginSourceRecord {
  */
 export class D1AgentPluginSourceStore implements AgentPluginSourceRegistry<SignedControlPlaneAuth> {
   private readonly database: D1Database
-  private readonly authority: AgentPluginSourceAuthorityPort
+  private readonly authority: AgentPluginScopeAuthority
 
-  constructor(input: { database: D1Database; authority: AgentPluginSourceAuthorityPort }) {
+  constructor(input: { database: D1Database; authority: AgentPluginScopeAuthority }) {
     this.database = input.database
     this.authority = input.authority
   }
@@ -123,7 +118,7 @@ export class D1AgentPluginSourceStore implements AgentPluginSourceRegistry<Signe
       )
     }
     try {
-      await batchUnder(this.database, writer(scope, source.authority), [this.database
+      await batchUnder(this.database, agentPluginWriteGuard(scope, source.authority), [this.database
         .prepare(`
           insert into agent_plugin_sources (
             scope_key, id, org_id, owner_user_id, authority, owner, repository, ref, added_at
@@ -155,7 +150,7 @@ export class D1AgentPluginSourceStore implements AgentPluginSourceRegistry<Signe
     const visible = await this.visible(scope, id)
     if (!visible) throw new AgentPluginSourceRegistryError("source-unknown", `Source ${id} is not registered`)
     if (visible.authority === "organization") await this.requireOrganizationAdmin(scope)
-    await batchUnder(this.database, writer(scope, visible.authority), [this.database
+    await batchUnder(this.database, agentPluginWriteGuard(scope, visible.authority), [this.database
       .prepare("delete from agent_plugin_sources where scope_key = ? and id = ?")
       .bind(scopeKey(scope.orgId, visible.authority, scope.userId), id)])
   }
@@ -179,15 +174,11 @@ export class D1AgentPluginSourceStore implements AgentPluginSourceRegistry<Signe
   }
 
   private async scope(auth: SignedControlPlaneAuth): Promise<Scope> {
-    const me = await this.authority.usersMe(auth)
-    if (!isRecord(me)) invalid("principal")
-    const userId = text(me.user_id, "principal")
-    const orgId = stringField(me, "org_id") || (await this.authority.resolveOrgId(auth))
-    return { userId, orgId }
+    return await resolveAgentPluginScope(this.authority, auth)
   }
 
   private async organizationAdmin(scope: Scope) {
-    return await may(this.database, { userId: scope.userId }, "administer", { kind: "org", orgId: scope.orgId })
+    return await may(this.database, scope, "administer", { kind: "org", orgId: scope.orgId })
   }
 
   private async requireOrganizationAdmin(scope: Scope) {
@@ -197,9 +188,4 @@ export class D1AgentPluginSourceStore implements AgentPluginSourceRegistry<Signe
       "Agent Plugins organization sources require the organization admin or owner role",
     )
   }
-}
-
-/** The rule a source write was admitted under, asked again inside its batch. */
-function writer(scope: Scope, authority: "user" | "organization") {
-  return mayGuard({ userId: scope.userId }, authority === "organization" ? "administer" : "member", { kind: "org", orgId: scope.orgId })
 }

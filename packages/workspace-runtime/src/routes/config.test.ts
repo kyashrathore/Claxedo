@@ -31,9 +31,24 @@ function snapshot() {
 }
 
 describe("runtime config v4", () => {
+  test("only management callers can read the live settings apply status", async () => {
+    let status: import("../workspace/host").RuntimeConfigApplyStatus = { state: "idle", revision: 0 }
+    const app = ConfigRoutes({ apply: async () => {}, configApply: () => status }, {
+      managementAuth,
+      managementTarget: { workspaceId: "ws-1", hostId: "host-1" },
+    })
+    expect((await app.request("/api/wr/config")).status).toBe(401)
+    for (const state of ["idle", "applying", "failed", "applied"] as const) {
+      status = { state, revision: 1 }
+      const response = await app.request("/api/wr/config", { headers: { [WORKSPACE_RUNTIME_MANAGEMENT_TOKEN_HEADER]: managementToken } })
+      expect(response.status).toBe(200)
+      expect(await response.json()).toEqual(status)
+    }
+  })
+
   test("accepts the strict trusted descriptor and explicit selection", async () => {
     let applied: unknown
-    const app = ConfigRoutes(async (value) => { applied = value }, {
+    const app = ConfigRoutes({ apply: async (value) => { applied = value }, configApply: () => ({ state: "idle", revision: 0 }) }, {
       managementAuth,
       managementTarget: { workspaceId: "ws-1", hostId: "host-1" },
     })
@@ -51,7 +66,7 @@ describe("runtime config v4", () => {
 
   test("preserves only known harness-owned opaque launch options", async () => {
     let seen: unknown
-    const app = ConfigRoutes(async (value) => { seen = value }, {
+    const app = ConfigRoutes({ apply: async (value) => { seen = value }, configApply: () => ({ state: "idle", revision: 0 }) }, {
       managementAuth,
       managementTarget: { workspaceId: "ws-1", hostId: "host-1" },
     })
@@ -61,7 +76,7 @@ describe("runtime config v4", () => {
     }
     const body = {
       ...snapshot(),
-      harnessLaunch: { claude: { generation: "generation-1", execution: { mode: "default" }, mcpServers: [], notApplied: [], pluginRoots: [{ pluginInstanceId: "pi_review", root: "/runtime/plugins/review", dataRoot: "/runtime/data/pi_review", skillNames: ["review"] }] } },
+      harnessLaunch: { acp: { generation: "generation-1", execution: { mode: "default" }, mcpServers: [], notApplied: [], pluginRoots: [{ pluginInstanceId: "pi_review", root: "/runtime/plugins/review", dataRoot: "/runtime/data/pi_review", skillNames: ["review"] }] } },
     }
     const accepted = await app.request("http://localhost/api/wr/config", { method: "POST", headers, body: JSON.stringify(body) })
     expect(accepted.status).toBe(200)

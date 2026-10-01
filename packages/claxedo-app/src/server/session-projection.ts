@@ -1,7 +1,7 @@
 import { toAppError } from "./errors"
 import type { ServerEvent } from "./events"
 import type { Transport } from "./transport"
-import type { SessionRef } from "./types"
+import type { SessionLocation } from "./types"
 import type { Workspaces } from "./workspaces"
 import type { HostedAccount } from "./account"
 
@@ -9,21 +9,21 @@ type Action = "register" | "checkpoint"
 type Reason = "session-created" | "message-checkpoint"
 
 export type SessionProjection = {
-  readonly created: (ref: SessionRef) => Promise<void>
+  readonly created: (ref: SessionLocation) => Promise<void>
   readonly observe: (event: ServerEvent) => void
 }
 
-function endpoint(workspaceId: string, ref: SessionRef, action: Action) {
+function endpoint(workspaceId: string, ref: SessionLocation, action: Action) {
   return `/api/control/workspaces/${encodeURIComponent(workspaceId)}/sessions/${encodeURIComponent(ref.sessionId)}/${action}`
 }
 
 export function createSessionProjection(transport: Transport, workspaces: Workspaces, account?: HostedAccount): SessionProjection {
-  const held = (ref: SessionRef) => {
+  const held = (ref: SessionLocation) => {
     const catalog = workspaces.catalog()
     const placement = workspaces.byId(ref.placementId)
     return (account !== undefined || catalog?.declaration.issuesSessions === true) && placement?.kind === "cloud"
   }
-  const pull = async (ref: SessionRef, action: Action, reason: Reason, idempotencyKey: string) => {
+  const pull = async (ref: SessionLocation, action: Action, reason: Reason, idempotencyKey: string) => {
     if (!held(ref)) return
     try {
       const { workspaceId } = await workspaces.locate(ref.placementId)

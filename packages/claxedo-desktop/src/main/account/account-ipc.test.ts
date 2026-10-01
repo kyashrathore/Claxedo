@@ -574,7 +574,6 @@ test("the renderer-visible operation set stays pinned", async () => {
     "session.outline",
     "session.page",
     "session.part",
-    "session.participants.add",
     "session.projection.checkpoint",
     "session.projection.register",
     "session.projection.repair",

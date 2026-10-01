@@ -45,7 +45,7 @@ describe("GET /api/claxedo/bootstrap on a hosted central", () => {
       healthy: true,
       version: "9.9.9-test",
       events: { hostAggregate: false },
-      deployment: { issuesSessions: true, documents: false, connections: false },
+      deployment: { serverKind: "hosted", issuesSessions: true, documents: false, connections: false },
     })
   })
 

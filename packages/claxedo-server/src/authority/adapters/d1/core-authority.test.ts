@@ -285,7 +285,7 @@ describe("composed Better Auth + D1 authority", () => {
     await expect(authority.listSessionShares!(alice, {
       sessionId: "ses_created_on_the_machine",
       workspaceId: "ws_team_sharing",
-    })).resolves.toEqual({ can_manage_shares: false, grants: [], participants: [], teams: [] })
+    })).resolves.toEqual({ can_manage_shares: false, grants: [], teams: [] })
     await expect(authority.listSessionShares!(outsider, {
       sessionId: "ses_created_on_the_machine",
       workspaceId: "ws_team_sharing",

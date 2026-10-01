@@ -212,7 +212,6 @@ are withheld from the renderer (see "Withheld from the renderer" below).
 | `session.shares.list` | `features/session/data/session-share-api.ts` | `GET /api/control/sessions/:sessionId/shares` | unary | safe | `workspaceId` is a declared query parameter (not a free-form `:name` in the path). |
 | `session.shares.grant` | `features/session/data/session-share-api.ts` | `POST /api/control/sessions/:sessionId/shares` | unary | unsafe | Grants a session share to a person, team, or org at a declared `level`: `follow` (read and stream) or `send` (also prompt the agent and answer its permission and question prompts). The share is the only cross-person grant; no workspace or organization rank admits anyone to a session. |
 | `session.shares.revoke` | `features/session/data/session-share-api.ts` | `DELETE /api/control/sessions/:sessionId/shares` | unary | unsafe | |
-| `session.participants.add` | `features/session/data/session-share-api.ts` | `POST /api/control/sessions/:sessionId/participants` | unary | unsafe | |
 
 ### Documents
 
@@ -335,6 +334,10 @@ which blocks Unit 9 until it gets a typed broker contract. One remains flagged:
 `packages/claxedo-desktop/src/main/account/account-ipc.test.ts` pins all 81
 renderer-visible names, verifies the registry exposure agrees with main's
 withheld set, and invokes the registered unary channels.
+
+A browser signed in with Better Auth applies the same `exposure.renderer`
+allowlist to its own account (`claxedo-app/src/server/account.ts`) and sends
+each request to the server it is connected to with its session cookie.
 
 `packages/claxedo-server/src/deployments/hosted-shared/hosted-operation-routes.test.ts`
 compares every declaration's method and path pattern against the route table

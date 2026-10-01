@@ -257,11 +257,9 @@ async function audit(options: RelayHostAuthOptions, input: Omit<RelayHostAuthAud
   })
 }
 
-// This middleware verifies the RHT at request establishment. Long-lived
-// session-derived event streams separately re-authorize each event through the
-// session access policy, which also expires stale proofs and observes
-// participant revocation. Other upgraded connections remain trusted until
-// close and require a fresh RHT when they reconnect.
+// Upgraded connections trust the RHT until close and verify a fresh one on
+// reconnect. Session streams also renew their authority and observe expired
+// proofs or revoked shares while the connection remains open.
 export function createRelayHostAuthMiddleware(options: RelayHostAuthOptions) {
   return createMiddleware<{ Variables: RelayHostAuthContext }>(async (c, next) => {
     const token = bearerToken(c.req.header("authorization"))

@@ -1,5 +1,5 @@
 import { join } from "node:path"
-import { codeExtensions, listFiles, packageRoot, rel } from "./lib/files"
+import { codeExtensions, isTestFile, listFiles, packageRoot, rel } from "./lib/files"
 import { readSource, startLine, ts } from "./lib/parse"
 import { finish, type Violation } from "./lib/report"
 import { calleeName, isFunctionNode, textOf, unwrap, walk, type FunctionNode } from "./lib/tree"
@@ -43,6 +43,7 @@ const steeredRoutes: Readonly<Record<string, string>> = {
 
 function main(): never {
   const files = listFiles(packageRoot, ["e2e"], codeExtensions)
+  const production = listFiles(packageRoot, ["src"], codeExtensions)
   const violations: Violation[] = []
   const steered = new Set<string>()
   for (const file of files) {
@@ -62,7 +63,19 @@ function main(): never {
   for (const path of Object.keys(steeredRoutes)) {
     if (!steered.has(path)) violations.push({ file: join(packageRoot, path), line: 1, message: "an allowlisted route interception is gone; remove its steeredRoutes entry" })
   }
-  finish("e2e-hygiene", packageRoot, violations, files.length)
+  violations.push(...production.flatMap(testHooks))
+  finish("e2e-hygiene", packageRoot, violations, files.length + production.length)
+}
+
+export function testHooks(file: string): Violation[] {
+  if (isTestFile(file)) return []
+  const { sf } = readSource(file)
+  const lines = new Set<number>()
+  walk(sf, (node) => {
+    const text = ts.isIdentifier(node) ? node.text : textOf(node)
+    if (text && (/__claxedo(?!PluginFrame\b|PluginRuntime\b)/.test(text) || /(?:^|_)E2E(?:_|$)/.test(text))) lines.add(startLine(node, sf))
+  })
+  return [...lines].map((line) => ({ file, line, message: "test-only hook in production code; reach the state through the real stack" }))
 }
 
 function sleeps(node: ts.Node, spec: boolean): string | undefined {
@@ -153,4 +166,4 @@ function focused(node: ts.Node, spec: boolean): string | undefined {
   return only ? "test.only leaves the suite behind; remove it" : undefined
 }
 
-main()
+if (import.meta.main) main()

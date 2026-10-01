@@ -31,7 +31,7 @@ test("signed desktop creates a cloud session with the account's canonical reserv
     throw new Error(`Unexpected operation ${operation}`)
   }
   fetcher.mockImplementation(Object.assign(async (url: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {
-    if (String(url).endsWith("/api/claxedo/bootstrap")) return Response.json({ deployment: { issuesSessions: false }, project: [] })
+    if (String(url).endsWith("/api/claxedo/bootstrap")) return Response.json({ deployment: { serverKind: "daemon", issuesSessions: false }, project: [] })
     if (String(url) === "https://relay.test/workspaces/ws_cloud/session") {
       const body = JSON.parse(String(init?.body))
       const reservation = operations.find(({ operation }) => operation === "session.reserve")?.input

@@ -76,9 +76,6 @@ function preConnectDatabase() {
     INSERT INTO session_history
       (session_id, workspace_id, creator_actor_id, operation_id, title, created_at, updated_at)
     VALUES ('ses_1', 'ws_served', '${OWNER}', 'op_1', 'First', 1, 1);
-    INSERT INTO session_participants
-      (session_id, workspace_id, participant_actor_id, added_by_actor_id, created_at)
-    VALUES ('ses_1', 'ws_served', '${OWNER}', '${OWNER}', 1);
   `)
   legacy.close()
   return file
@@ -166,8 +163,6 @@ describe("SQLite host-connect upgrade", () => {
       ])
     expect(db.prepare(`SELECT session_id, creator_actor_id, operation_id FROM session_history`).all())
       .toEqual([{ session_id: "ses_1", creator_actor_id: OWNER, operation_id: "op_1" }])
-    expect(db.prepare(`SELECT session_id, participant_actor_id FROM session_participants`).all())
-      .toEqual([{ session_id: "ses_1", participant_actor_id: OWNER }])
     for (const table of ["host_invitations", "host_request_nonces", "host_assignment_readiness"]) {
       expect(db.prepare(`SELECT COUNT(*) AS count FROM ${table}`).get()).toEqual({ count: 0 })
     }

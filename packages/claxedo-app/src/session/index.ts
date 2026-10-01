@@ -13,7 +13,7 @@ import type {
   SessionGoal,
   SessionId,
   SessionOutline,
-  SessionRef,
+  SessionLocation,
   SessionRow,
   SessionStatus,
   Todo,
@@ -49,7 +49,7 @@ export type LoadMoreState =
 
 export type SessionList = {
   readonly state: Accessor<SessionListState>
-  readonly order: Accessor<readonly SessionRef[]>
+  readonly order: Accessor<readonly SessionLocation[]>
   readonly view: (sessionId: SessionId) => SessionRowView | undefined
   readonly rowOf: (sessionId: SessionId) => SessionRow | undefined
   readonly hasMore: (projectId: ProjectId) => boolean
@@ -58,7 +58,7 @@ export type SessionList = {
   readonly pageDegraded: (projectId: ProjectId) => boolean
   readonly loadMore: (projectId: ProjectId) => Promise<void>
   readonly reload: () => Promise<void>
-  readonly create: (input: SessionCreateInput) => Promise<SessionRef>
+  readonly create: (input: SessionCreateInput) => Promise<SessionLocation>
 }
 
 export type SessionLoadState =
@@ -85,7 +85,7 @@ export type RequestState =
   | { readonly kind: "failed"; readonly error: AppError }
 
 export type SessionView = {
-  readonly ref: SessionRef
+  readonly ref: SessionLocation
   readonly state: Accessor<SessionLoadState>
   readonly row: Accessor<SessionRow | undefined>
   readonly status: Accessor<SessionStatusView>
@@ -124,7 +124,7 @@ export type { SessionSubagent }
 
 export type SessionStores = {
   readonly list: SessionList
-  readonly open: (ref: SessionRef) => SessionView
+  readonly open: (ref: SessionLocation) => SessionView
   readonly recordViewport: (viewport: TranscriptViewport) => void
 }
 

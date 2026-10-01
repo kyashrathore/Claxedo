@@ -9,6 +9,7 @@ export type FixtureVersion = { readonly label: string; readonly routes?: readonl
 export function fixturePluginSource(label: string) {
   return `import { createSignal, For } from "solid-js"
 import { definePlugin, type PluginApi } from "@claxedo/plugin-api"
+import { useTheme } from "@claxedo/app/ui"
 
 export const dictionary = {
   en: { "fixture.greeting": "Hello from the fixture on {{platform}}", "fixture.settingsBody": "Fixture settings body" },
@@ -16,7 +17,7 @@ export const dictionary = {
 
 type Note = { readonly text: string }
 
-function Home(props: { readonly api: PluginApi }) {
+function Home(props: { readonly api: PluginApi; readonly hostTheme?: () => string }) {
   const api = props.api
   const [results, setResults] = createSignal<string[]>([])
   const add = (line: string) => setResults((lines) => [...lines, line])
@@ -47,6 +48,7 @@ function Home(props: { readonly api: PluginApi }) {
     <section aria-label="Fixture home">
       <h2>{${JSON.stringify(label)}}</h2>
       <p>{api.i18n.t("fixture.greeting", { platform: api.context.platform })}</p>
+      {props.hostTheme && <p>Host theme: {props.hostTheme()}</p>}
       <p>Projects: {api.projects.list().map((project) => project.name).join(", ")}</p>
       <p>Open tabs: {api.workbench.tabs().length > 0 ? "some" : "none"}</p>
       <button type="button" onClick={async () => add("fetch " + (await api.server.fetch("/api/claxedo/projects")).status)}>Fetch projects</button>
@@ -63,7 +65,8 @@ function Home(props: { readonly api: PluginApi }) {
 
 export default definePlugin({
   activate(api) {
-    api.pages.register({ id: "home", path: "/fixture", title: "Fixture", render: () => <Home api={api} /> })
+    const theme = api.context.platform === "desktop" ? useTheme() : undefined
+    api.pages.register({ id: "home", path: "/fixture", title: "Fixture", render: () => <Home api={api} hostTheme={theme?.themeId} /> })
     api.sidebar.item({ id: "home", label: "Fixture", pageId: "home" })
     api.settings.section({ id: "prefs", title: "Fixture settings", render: () => <p>{api.i18n.t("fixture.settingsBody")}</p> })
     api.overlays.register({

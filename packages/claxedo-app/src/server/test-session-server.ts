@@ -44,7 +44,7 @@ const MACHINE_ROW = { backing: "local-worktree", placement: { host_enrollment_id
 export function bootstrap(reachable: () => boolean, machine: boolean) {
   return {
     events: { hostAggregate: false },
-    deployment: { issuesSessions: true },
+    deployment: { serverKind: "daemon", issuesSessions: true },
     project: [{
       id: "proj_1",
       worktree: "ws_cloud",

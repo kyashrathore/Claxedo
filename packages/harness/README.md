@@ -1,4 +1,10 @@
-# Harness checks
+# Claxedo harness
+
+The [harness architecture](../../docs/harness/README.md) traces session execution,
+conversation ownership, requests, native children and terminal status across
+packages. Protocol and format contracts live beside their source owners.
+
+## Checks
 
 Run `bun run check` from this package, or `bun run --cwd packages/harness check` from the repository root. `bun run test` runs the checks before the package tests. Run the fixture suite from this package with `bun test scripts`.
 

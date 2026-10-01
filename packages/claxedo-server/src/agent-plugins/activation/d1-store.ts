@@ -20,13 +20,10 @@ import {
 import { ControlPlaneAuthError, type SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import type { WorkspaceAuthority } from "@claxedo/server-core/platform/auth/authority"
 import { asOrgId, asProjectId } from "@claxedo/server-core/platform/auth/branded-id"
-import { stringField } from "@claxedo/server-core/platform/json/index"
 import type { SignedAgentPluginRuntimeSnapshot } from "../runtime/provision"
-import {
-  assertionId, batchUnder, may, mayGuard, maySql, type BoundSql,
-} from "../../authority/adapters/d1/authorization"
-import { isRecord } from "@claxedo/helpers/guards"
+import { assertionId, batchUnder, may, maySql, type BoundSql } from "../../authority/adapters/d1/authorization"
 import { d1BatchAssertionFailed } from "../../platform/db/d1-constraint"
+import { agentPluginWriteGuard, resolveAgentPluginScope, type AgentPluginScope } from "../signed-scope"
 
 /** The project scope a user default addresses; never a real project ID. */
 export const AGENT_PLUGIN_ALL_PROJECTS_SCOPE = "all-projects"
@@ -53,15 +50,13 @@ export type D1SignedAgentPluginActivationStoreInput = {
 }
 
 type RequestResolution = {
-  scope?: Promise<Scope>
+  scope?: Promise<AgentPluginScope>
   /** Keyed `${action}:${projectId}`; a settled entry is an authorization that passed. */
   projects: Map<string, Promise<void>>
 }
 
-type Scope = {
-  userId: string
-  orgId: string
-}
+/** The data a snapshot reads is keyed by user and organization; a runtime read has no actor. */
+type Scope = Pick<AgentPluginScope, "userId" | "orgId">
 
 type RevisionRow = {
   revision: number
@@ -297,13 +292,13 @@ export class D1SignedAgentPluginActivationStore implements SignedAgentPluginActi
         }))
       }
     }
-    return await this.commit(this.writer(scope, "user"), scope.orgId, started.revision, operation, writes)
+    return await this.commit(agentPluginWriteGuard(scope, "user", projectIds), scope.orgId, started.revision, operation, writes)
   }
 
   async mutateOrganizationDefault(auth: SignedControlPlaneAuth, input: MutateSignedOrganizationDefault) {
     const harnessIds = requireHarnesses(input.harnessIds)
     const scope = await this.scope(auth)
-    await this.requireOrganizationAdmin(scope)
+    await this.requireOrganizationAdmin(auth)
     const operation = await operationId("mutateOrganizationDefault", {
       plugin_instance_id: input.pluginInstanceId,
       harness_ids: input.harnessIds,
@@ -351,7 +346,7 @@ export class D1SignedAgentPluginActivationStore implements SignedAgentPluginActi
             `)
             .bind(scope.orgId, input.pluginInstanceId, harnessId, now))
     }
-    return await this.commit(this.writer(scope, "organization"), scope.orgId, started.revision, operation, writes)
+    return await this.commit(agentPluginWriteGuard(scope, "organization"), scope.orgId, started.revision, operation, writes)
   }
 
   async updateUserArtifact(auth: SignedControlPlaneAuth, input: UpdateSignedArtifactPin) {
@@ -453,7 +448,7 @@ export class D1SignedAgentPluginActivationStore implements SignedAgentPluginActi
     input: UpdateSignedArtifactPin,
   ) {
     const scope = await this.scope(auth)
-    if (authority === "organization") await this.requireOrganizationAdmin(scope)
+    if (authority === "organization") await this.requireOrganizationAdmin(auth)
     const operation = await operationId("updatePin", {
       authority,
       plugin_instance_id: input.pluginInstanceId,
@@ -466,7 +461,7 @@ export class D1SignedAgentPluginActivationStore implements SignedAgentPluginActi
       ? userScopeKey(scope.orgId, scope.userId)
       : organizationScopeKey(scope.orgId)
     if (!(await this.pinRow(scopeKey, input.pluginInstanceId))) throw artifactUnavailable()
-    return await this.commit(this.writer(scope, authority), scope.orgId, started.revision, operation, [
+    return await this.commit(agentPluginWriteGuard(scope, authority), scope.orgId, started.revision, operation, [
       this.writePin({
         scopeKey,
         authority,
@@ -487,24 +482,16 @@ export class D1SignedAgentPluginActivationStore implements SignedAgentPluginActi
     return created
   }
 
-  private scope(auth: SignedControlPlaneAuth): Promise<Scope> {
+  private scope(auth: SignedControlPlaneAuth): Promise<AgentPluginScope> {
     const resolution = this.resolution(auth)
     if (!resolution.scope) {
-      resolution.scope = this.resolveScope(auth).catch((cause: unknown) => {
+      resolution.scope = resolveAgentPluginScope(this.authority, auth).catch((cause: unknown) => {
         // A failed lookup is not an answer; the next call asks the authority again.
         resolution.scope = undefined
         throw cause
       })
     }
     return resolution.scope
-  }
-
-  private async resolveScope(auth: SignedControlPlaneAuth): Promise<Scope> {
-    const me = await this.authority.usersMe(auth)
-    if (!isRecord(me)) invalid("principal")
-    const userId = text(me.user_id, "principal")
-    const orgId = stringField(me, "org_id") || (await this.authority.resolveOrgId(auth))
-    return { userId, orgId }
   }
 
   private requireProject(
@@ -542,10 +529,13 @@ export class D1SignedAgentPluginActivationStore implements SignedAgentPluginActi
     if (!result.ok) throw denied("Agent Plugins project access denied")
   }
 
-  private async requireOrganizationAdmin(scope: Scope) {
-    if (!(await may(this.database, { userId: scope.userId }, "administer", { kind: "org", orgId: scope.orgId }))) {
-      throw denied("Agent Plugins organization admin access required")
-    }
+  async administersOrganization(auth: SignedControlPlaneAuth) {
+    const scope = await this.scope(auth)
+    return await may(this.database, scope, "administer", { kind: "org", orgId: scope.orgId })
+  }
+
+  private async requireOrganizationAdmin(auth: SignedControlPlaneAuth) {
+    if (!(await this.administersOrganization(auth))) throw denied("Agent Plugins organization admin access required")
   }
 
   private async requireRuntimeAccess(input: {
@@ -590,11 +580,6 @@ export class D1SignedAgentPluginActivationStore implements SignedAgentPluginActi
     const revision = row ? revisionNumber(row.revision) : 0
     if (revision !== expectedRevision) throw conflict(expectedRevision, revision)
     return { revision }
-  }
-
-  /** The rule a write was admitted under, asked again inside its batch. */
-  private writer(scope: Scope, authority: "user" | "organization"): BoundSql {
-    return mayGuard({ userId: scope.userId }, authority === "organization" ? "administer" : "member", { kind: "org", orgId: scope.orgId })
   }
 
   private async commit(

@@ -6,6 +6,7 @@
  * into the operation it needs, so the hosted composition and the runtime host
  * cannot drift into two different answers about what `task_start` costs.
  */
+import type { SessionRef } from "@claxedo/agent-runtime-contract"
 import { asRecord } from "@claxedo/helpers/guards"
 import { parseJsonRecord, stringField } from "@claxedo/server-core/platform/json/index"
 
@@ -46,7 +47,7 @@ export type TasksCapabilityPort = Readonly<{
    * name is checked before anything records it. A port without it admits no
    * such name at all.
    */
-  ownerMayReadSession?(owner: TasksCapabilityOwner, session: { sessionId: string; workspaceId: string | null }): Promise<boolean>
+  ownerMayReadSession?(owner: TasksCapabilityOwner, session: SessionRef): Promise<boolean>
 }>
 
 /** What one Tasks request costs a capability, and the names it would act under. */

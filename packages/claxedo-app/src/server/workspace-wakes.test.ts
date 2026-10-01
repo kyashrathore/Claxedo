@@ -27,7 +27,7 @@ function fixture(running: { value: boolean }) {
     },
   } as Pick<Transport, "startRuntime"> as Transport
   const workspaces = {
-    load: async () => ({ declaration: { hostAggregate: false, issuesSessions: true, documents: false, connections: false }, placements: [] }),
+    load: async () => ({ declaration: { serverKind: "daemon", hostAggregate: false, issuesSessions: true, documents: false, connections: false }, placements: [] }),
     byId: (id: string) => ({ ...placements[id]!, reachable: id === "ws_cloud" && running.value }),
     locate: async (id: string): Promise<RuntimeRoute> => ({ kind: placements[id]!.kind, directory: `workspace:${id}`, workspaceId: id, remote: true }),
     refresh: async () => undefined,

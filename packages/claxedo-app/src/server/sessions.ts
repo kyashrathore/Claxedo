@@ -13,7 +13,7 @@ import type { HostedAccount } from "./account"
 import { cancelRunningTurn, stopBackgroundTask } from "./session-stop"
 import type { StatusOwner } from "./status"
 import { jsonInit, withQuery, type Transport } from "./transport"
-import type { AgentRequestReply, PromptDelivery, PromptInput, SessionCreateInput, SessionRef, SessionRow } from "./types"
+import type { AgentRequestReply, PromptDelivery, PromptInput, SessionCreateInput, SessionLocation, SessionRow } from "./types"
 import type { SessionProjection } from "./session-projection"
 import { RESERVATION_HEADER, reserveSession } from "./session-reservation"
 import type { WorkspaceWakes } from "./workspace-wakes"
@@ -53,7 +53,7 @@ async function createSession(context: SessionContext, wakes: WorkspaceWakes, inp
   return sessionRowFromSession(created, { projectId: placement.projectId, placementId: input.placementId, sessionId: sessionId(created.id) })
 }
 
-async function replyToRequest(context: SessionContext, ref: SessionRef, id: RequestId, answer: AgentRequestReply) {
+async function replyToRequest(context: SessionContext, ref: SessionLocation, id: RequestId, answer: AgentRequestReply) {
   const { transport } = context
   const where = await context.workspaces.route(ref)
   const questionPath = (action: "reply" | "reject") => withQuery(`/question/${encodeURIComponent(id)}/${action}`, { sessionId: ref.sessionId })
@@ -69,7 +69,7 @@ async function replyToRequest(context: SessionContext, ref: SessionRef, id: Requ
   await transport.runtimeJson<unknown>(where, questionPath("reject"), { method: "POST" })
 }
 
-async function postPrompt(context: SessionContext, wakes: WorkspaceWakes, ref: SessionRef, input: PromptInput, messageId: string): Promise<PromptDelivery> {
+async function postPrompt(context: SessionContext, wakes: WorkspaceWakes, ref: SessionLocation, input: PromptInput, messageId: string): Promise<PromptDelivery> {
   await wakes.wakeIfStopped(ref.placementId)
   const where = await context.workspaces.route(ref)
   if (input.goal) {
@@ -80,7 +80,7 @@ async function postPrompt(context: SessionContext, wakes: WorkspaceWakes, ref: S
   return promptDeliveryFromWire(answer)
 }
 
-async function patchSession(context: SessionContext, ref: SessionRef, patch: Record<string, unknown>) {
+async function patchSession(context: SessionContext, ref: SessionLocation, patch: Record<string, unknown>) {
   await context.transport.runtimeJson<unknown>(await context.workspaces.route(ref), sessionEndpoint(ref), jsonInit("PATCH", patch))
 }
 

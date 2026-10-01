@@ -173,6 +173,7 @@ async function fixture() {
     authentication,
     sources: () => ({ async listAuthorizedSources() { return [] } }),
     activations,
+    administersOrganization: async () => true,
     artifacts: { put: async () => { throw new Error("no artifacts") }, get: async () => undefined },
     reconcile: { reconcile: async () => ({ state: "scheduled" as const }) },
     builtIn,

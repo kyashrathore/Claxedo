@@ -141,7 +141,6 @@ export type SessionShareGrantResult = {
 export type SessionPeopleContext = {
   can_manage_shares: boolean
   grants: Array<Record<string, unknown>>
-  participants: Array<Record<string, unknown>>
   teams: Array<{
     team_id: string
     name: string
@@ -493,14 +492,6 @@ export type WorkspaceAuthority = OrgAccessAuthority & {
   ) => Promise<void>
   authorizeRuntimeSession?: (args: AuthorizeRuntimePrivateSessionInput) => Promise<void>
   registerRuntimeSession?: (args: RegisterRuntimePrivateSessionInput) => Promise<unknown>
-  grantSessionParticipant: (
-    auth: SignedControlPlaneAuth,
-    args: { sessionId: string; workspaceId: string; participantActorId: string },
-  ) => Promise<{ participant_id: string }>
-  revokeSessionParticipant: (
-    auth: SignedControlPlaneAuth,
-    args: { sessionId: string; workspaceId: string; participantActorId: string },
-  ) => Promise<{ removed: boolean }>
   /**
    * Creates the grant, or moves an existing one to `level`. One active grant
    * per (session, target) is the store's unique index, so a second grant at a
@@ -578,13 +569,6 @@ export type WorkspaceAuthority = OrgAccessAuthority & {
     args: {
       workspaceId: string
       sessions: WorkspaceVisibility[]
-    },
-  ) => Promise<unknown>
-  deleteSessionVisibility: (
-    auth: SignedControlPlaneAuth,
-    args: {
-      sessionId: string
-      workspaceId: string
     },
   ) => Promise<unknown>
   /**

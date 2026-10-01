@@ -1,10 +1,11 @@
 import { utf8ByteLength } from "@claxedo/helpers/string"
 import { decodeAttachmentData, decodedByteLength, sniffedAttachmentMime } from "../attachments"
+import { decodeTaskSessionRef } from "../decode"
 import {
   TASKS_BOUNDS,
   isTaskAttachmentMime,
   isTaskCreateStatus,
-  type SessionReference,
+  type SessionRef,
   type StartPreviewRequest,
   type StartRequest,
   type TaskAttachmentDraft,
@@ -79,14 +80,9 @@ function nullableBoundedId(fields: FieldCollector, value: string | null, path: s
   if (value !== null) boundedId(fields, value, path)
 }
 
-function sessionReferenceFields(fields: FieldCollector, reference: SessionReference, path: string): void {
-  if (reference.sessionId.trim().length === 0) fields.add(`${path}.sessionId`, "required")
-  else boundedId(fields, reference.sessionId, `${path}.sessionId`)
-  if (reference.workspaceId !== null && reference.workspaceId.trim().length === 0) {
-    fields.add(`${path}.workspaceId`, "required")
-  } else {
-    nullableBoundedId(fields, reference.workspaceId, `${path}.workspaceId`)
-  }
+function sessionRefFields(fields: FieldCollector, reference: SessionRef, path: string): void {
+  const decoded = decodeTaskSessionRef(reference, path)
+  if (!decoded.ok) for (const field of decoded.fields) fields.add(field.path, field.reason)
 }
 
 export type ValidatedTaskDraft = { draft: TaskDraft; attachments: readonly DecodedAttachmentDraft[] }
@@ -102,7 +98,7 @@ export function validateTaskDraft(draft: TaskDraft): Parsed<ValidatedTaskDraft> 
   if (draft.parentTaskId !== null && draft.parentTaskId.trim().length === 0) fields.add("parentTaskId", "required")
   else nullableBoundedId(fields, draft.parentTaskId, "parentTaskId")
   if (draft.status !== undefined && !isTaskCreateStatus(draft.status)) fields.add("status", "unknown_value")
-  if (draft.createdFrom !== undefined) sessionReferenceFields(fields, draft.createdFrom, "createdFrom")
+  if (draft.createdFrom !== undefined) sessionRefFields(fields, draft.createdFrom, "createdFrom")
   return fields.ok ? parsedOk({ draft, attachments }) : parsedInvalid(fields.fields)
 }
 
@@ -135,7 +131,7 @@ function validateStartFields(
 ): void {
   if (request.presetId.trim().length === 0) fields.add("presetId", "required")
   else boundedId(fields, request.presetId, "presetId")
-  if (request.startedFrom !== undefined) sessionReferenceFields(fields, request.startedFrom, "startedFrom")
+  if (request.startedFrom !== undefined) sessionRefFields(fields, request.startedFrom, "startedFrom")
 }
 
 export function validateStartPreview(request: StartPreviewRequest): Parsed<StartPreviewRequest> {

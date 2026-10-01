@@ -299,6 +299,55 @@ describe("tasks routes", () => {
     }
   })
 
+  test("creation refuses provenance without a workspace before persisting a task", async () => {
+    authenticate = () => ({ actor: { ...ACTOR, session: { sessionId: "ses_author", workspaceId: "ws_author" } } })
+    const response = await post("/commands", {
+      clientRequestId: "missing-origin-workspace",
+      command: {
+        type: "task.create",
+        input: {
+          projectId: PROJECT,
+          title: "From a session",
+          description: "",
+          workspaceId: null,
+          parentTaskId: null,
+          createdFrom: { sessionId: "ses_author", workspaceId: null },
+        },
+      },
+    })
+    expect(response.status).toBe(400)
+    expect(await json(response)).toMatchObject({
+      error: { code: "invalid_input", fields: [{ path: "command.input.createdFrom.workspaceId", reason: "type" }] },
+    })
+    expect(await json(await app.request(`/tasks?projectId=${PROJECT}`))).toMatchObject({ items: [] })
+  })
+
+  test("preview and start refuse a caller without a workspace before reaching the runtime", async () => {
+    const { preset, task } = await seed()
+    authenticate = () => ({ actor: { ...ACTOR, session: { sessionId: "ses_author", workspaceId: "ws_author" } } })
+    const body = {
+      clientRequestId: "missing-caller-workspace",
+      taskRevision: task.revision,
+      presetId: preset.id,
+      presetRevision: preset.revision,
+      slot: "primary",
+      attempt: 1,
+      previewDigest: "digest-1",
+      handoffText: null,
+      continueFromPrevious: false,
+      startedFrom: { sessionId: "ses_author", workspaceId: null },
+    }
+    for (const route of ["start-preview", "sessions"]) {
+      const response = await post(`/tasks/${task.id}/${route}`, body)
+      expect(response.status).toBe(400)
+      expect(await json(response)).toMatchObject({
+        error: { code: "invalid_input", fields: [{ path: "startedFrom.workspaceId", reason: "type" }] },
+      })
+    }
+    expect(bridge.starts).toHaveLength(0)
+    expect(await json(await app.request(`/tasks/${task.id}`))).toMatchObject({ links: [] })
+  })
+
   test("a create whose image is refused names the image and leaves no task", async () => {
     const refused = await post("/commands", {
       clientRequestId: "bad-image",

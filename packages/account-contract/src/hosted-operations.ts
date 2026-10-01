@@ -298,13 +298,6 @@ export const HOSTED_OPERATIONS = {
     exposure: { renderer: true, app: false },
     body: selectBody("workspaceId", "grantId", "grantedToTokenIdentifier", "grantedToTeamPublicId"),
   }),
-  "session.participants.add": defineOperation({
-    method: "POST", path: operationPath("/api/control/sessions/:sessionId/participants"),
-    input: operationInput({ sessionId: requiredParameter, workspaceId: bodyField, participantActorId: bodyField }),
-    output: object, retry: "never",
-    exposure: { renderer: true, app: false },
-    body: selectBody("workspaceId", "participantActorId"),
-  }),
   "org.list": defineOperation({
     method: "GET", path: operationPath("/api/control/orgs"),
     input: operationInput({}),

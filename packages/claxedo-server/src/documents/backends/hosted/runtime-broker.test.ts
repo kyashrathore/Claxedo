@@ -47,7 +47,7 @@ async function relayedRuntime() {
         asked.push({ operation: input.operation, sessionId: input.sessionId, actorId: input.actor?.actorId })
         return input.actor?.actorId === "actor_1"
           ? { allowed: true }
-          : { allowed: false, status: 403 as const, code: "session_private", message: "Session access requires creator, participant, or session share authority" }
+          : { allowed: false, status: 403 as const, code: "session_private", message: "Session access requires workspace ownership or session share authority" }
       },
     },
   })
@@ -165,16 +165,16 @@ describe("hosted document runtime broker", () => {
     })).rejects.toThrow("unreachable")
   })
 
-  test("denies viewer hydration before minting a writable runtime token", async () => {
+  test("a caller the authority refuses to open the workspace for gets no writable runtime token", async () => {
     const mint = vi.fn()
     const services = {
       authority: {
         usersMe: vi.fn(async () => ({ actor_id: "actor_1", actor_kind: "human" as const, actor_public_id: "usr_public_1", actor_name: "Test User" })),
         resolveSession: vi.fn(async () => ({ workspace_id: "ws_1" })),
         authorizeSessionRead: vi.fn(async () => undefined),
-        openWorkspace: vi.fn(async () => ({ role: "viewer", workspace: {
-          workspace_id: "ws_1", org_id: "org_1", project_id: "project_1",
-        } })),
+        openWorkspace: vi.fn(async () => {
+          throw new Error("Workspace not found")
+        }),
       },
       sandbox: { sandboxManager: { target: vi.fn() } },
       relay: { provider: { mintRuntimeAccessToken: mint } },
@@ -182,7 +182,7 @@ describe("hosted document runtime broker", () => {
     await expect(createHostedDocumentRuntimeBroker(services, {}).open({
       entry, sessionId: "session_1", auth, origin: "https://control.test",
       read: { markdown: "selected", version: "v1" as never, modifiedAt: 1 },
-    })).rejects.toThrow("write access")
+    })).rejects.toThrow("Workspace not found")
     expect(mint).not.toHaveBeenCalled()
   })
 
@@ -217,7 +217,7 @@ describe("hosted document runtime broker", () => {
       expect(body).toMatchObject({ strategy: "use-remote", remoteVersion: "canonical-v3", remoteMarkdown: "canonical" })
       await expect(verifyDocumentRelayJobToken(body.job.token, {
         userId: "user_1", orgId: "org_1", projectId: "project_1",
-        localWorkspaceId: "local_ws", cloudWorkspaceId: "cloud_ws",
+        workspaceId: "cloud_ws",
         sessionId: "session_1", documentId: "document_1", operation: "resolve",
       }, env)).resolves.toMatchObject({ operations: ["resolve"] })
       return Response.json({ path: "/workspace/plan.md", preserved: "/workspace/plan.conflict.md" })
@@ -226,8 +226,7 @@ describe("hosted document runtime broker", () => {
       entry,
       sessionId: "session_1",
       auth,
-      localWorkspaceId: "local_ws",
-      cloudWorkspaceId: "cloud_ws",
+      workspaceId: "cloud_ws",
       choice: "durable",
       current: { markdown: "canonical", version: "canonical-v3" as never, modifiedAt: 3 },
       jobExpiresAt: Math.floor(Date.now() / 1000) + 900,

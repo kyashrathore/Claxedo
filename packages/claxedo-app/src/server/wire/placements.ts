@@ -2,6 +2,9 @@ import { machineId, placementId, projectId, type MachineId } from "../ids"
 import type { RuntimeRoute } from "../transport"
 import type { Placement } from "../types"
 import { isRecord, nonEmptyString } from "@claxedo/helpers/guards"
+import { contractMismatch } from "../errors"
+
+export type ServerKind = "daemon" | "hosted"
 
 export type PlacementRecord = {
   readonly placement: Placement
@@ -9,6 +12,7 @@ export type PlacementRecord = {
 }
 
 export type BootstrapDeclaration = {
+  readonly serverKind: ServerKind
   readonly hostAggregate: boolean
   readonly issuesSessions: boolean
   readonly documents: boolean
@@ -93,8 +97,10 @@ export function bootstrapCatalog(body: unknown): BootstrapCatalog {
   const deployment = isRecord(root.deployment) ? root.deployment : {}
   const host = isRecord(root.host) ? root.host : {}
   const enrollmentId = nonEmptyString(host.enrollment)
+  if (deployment.serverKind !== "daemon" && deployment.serverKind !== "hosted") throw contractMismatch("server kind")
   return {
     declaration: {
+      serverKind: deployment.serverKind,
       hostAggregate: events.hostAggregate === true,
       issuesSessions: deployment.issuesSessions === true,
       documents: deployment.documents === true,
