@@ -13,7 +13,7 @@ import { loopbackMachineLoginPolicy } from "./testing"
 
 void test(
   "native Pi machine HTTP routes keep the session across checkpoint scrub and restart, sending only the placeholder",
-  { skip: !process.env.PI_EXECUTABLE, timeout: 60_000 },
+  { timeout: 60_000 },
   async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "pi-machine-http-"))
     const directory = path.join(root, "repo")

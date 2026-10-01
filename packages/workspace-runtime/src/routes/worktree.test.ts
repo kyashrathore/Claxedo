@@ -97,7 +97,8 @@ function managedApp(
       releaseTurn: () => ({ released: true }),
     },
   })
-  app.route("/", WorktreeRoutes(manager, options.withPolicy === false ? {} : { sessionAccessPolicy: policy }))
+  const hosted = { ...policy, authorizeHost: () => ({ allowed: true as const }) }
+  app.route("/", WorktreeRoutes(manager, options.withPolicy === false ? {} : { sessionAccessPolicy: hosted }))
   return app
 }
 

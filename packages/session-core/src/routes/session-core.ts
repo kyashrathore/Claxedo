@@ -82,7 +82,6 @@ import {
   admitQuestionOperation,
   filterRequestRows,
   interactionNotFound,
-  interactionSessionMismatch,
   listPermissionRows,
   listQuestionRows,
   questionAnswers,
@@ -1816,25 +1815,23 @@ export function createSessionRoutes(opts: Opts) {
       return c.json([...await filterRequestRows(opts, c, "question_list", normal, runtime.questions.askingSession), ...pending])
     })
     .post("/session/:sessionId/permissions/:permId", async (c) => {
-      const suppliedSessionId = c.req.param("sessionId")
+      const sessionId = c.req.param("sessionId")
       const permId = c.req.param("permId")
-      const directory = await opts.resolveDirectory(c, { sessionId: suppliedSessionId })
+      const directory = await opts.resolveDirectory(c, { sessionId })
       const runtime = await opts.runtime(c)
-      const permission = (await runtime.permissions.list(directory ?? "")).find((item) => item.id === permId)
-      const sessionId = permission?.sessionID
-      if (!sessionId) return interactionNotFound(c, "permission", permId)
-      if (sessionId !== suppliedSessionId) return interactionSessionMismatch(c, "permission", permId)
       const asking = await runtime.permissions.askingSession(sessionId)
-      const unsupported = await unsupportedIfUnavailable(c, runtime, sessionTarget(c, asking, directory), "permissions", "permission_response")
-      if (unsupported) return unsupported
       const guarded = await sessionOperationGuard(opts, c, asking, "permission_response")
       if (guarded) return guarded
+      const permission = (await runtime.permissions.list(directory ?? "")).find((item) => item.id === permId && item.sessionID === sessionId)
+      if (!permission) return interactionNotFound(c, "permission", permId)
+      const unsupported = await unsupportedIfUnavailable(c, runtime, sessionTarget(c, asking, directory), "permissions", "permission_response")
+      if (unsupported) return unsupported
       const body = await boundedJsonRecord(c)
       if (body.optionId !== undefined && (typeof body.optionId !== "string" || body.response !== undefined)) {
         return c.json({ error: "Provide an optionId or a response, not both" }, 400)
       }
       const optionId = typeof body.optionId === "string" ? body.optionId : undefined
-      if (permission?.options !== undefined) {
+      if (permission.options !== undefined) {
         if (optionId === undefined || !permission.options.some((option) => option.id === optionId)) {
           return c.json({ error: "Choose one of the permission request's offered options" }, 400)
         }

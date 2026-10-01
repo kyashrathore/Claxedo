@@ -14,14 +14,26 @@ export type DocumentShare = Readonly<{
   revoked_at: number | null
 }>
 
+export type NewDocumentShare = Pick<DocumentShare, "id" | "target" | "target_id" | "level">
+
+/**
+ * `page` is the entry the principal was authorized against. A page's
+ * organization, project and creator are fixed when it is indexed, so they
+ * cannot have moved since that read; everything else a share write depends on
+ * is asked again by the write itself.
+ */
 export type DocumentSharing = Readonly<{
   list(documentId: string): Promise<DocumentShare[]>
-  create(share: DocumentShare): Promise<DocumentShare>
-  revoke(documentId: string, shareId: string): Promise<void>
+  /**
+   * Refuses unless, at the write, the principal still manages `page` (404)
+   * and a person or team target still stands in its organization (400).
+   */
+  create(principal: DocumentPrincipal, page: DocumentIndexEntry, share: NewDocumentShare): Promise<DocumentShare>
+  /** Refuses (404) unless, at the write, the principal still manages `page`. */
+  revoke(principal: DocumentPrincipal, page: DocumentIndexEntry, shareId: string): Promise<void>
   findLink(hash: string): Promise<DocumentShare | undefined>
   /** The unrevoked person and team shares in `orgId` that reach `userId`. */
   granted(userId: string, orgId: string): Promise<readonly DocumentShare[]>
-  isTeamInOrg(teamId: string, orgId: string): Promise<boolean>
 }>
 
 export type DocumentAccess = Readonly<{
@@ -34,7 +46,8 @@ export type DocumentAccess = Readonly<{
   sharing?: DocumentSharing
 }>
 
-export type DocumentPrincipal = Readonly<{ userId: string; orgId?: string; access: DocumentAccess }>
+/** `actorId` is the acting actor where the store tracks actors; a share write requires it still active. */
+export type DocumentPrincipal = Readonly<{ userId: string; actorId?: string; orgId?: string; access: DocumentAccess }>
 
 export class DocumentAccessError extends Error {
   constructor(
@@ -130,10 +143,9 @@ export function requireDocumentSharing(access: DocumentAccess) {
 
 export async function createDocumentShare(
   principal: DocumentPrincipal,
-  documentId: string,
+  page: DocumentIndexEntry,
   input: Readonly<{ target: "person" | "team" | "link"; target_id?: string; level: "view" | "edit" }>,
 ) {
-  const entry = await authorizeDocument(principal, documentId, "manage")
   const sharing = requireDocumentSharing(principal.access)
   let token: string | undefined
   let targetId = input.target_id
@@ -141,23 +153,14 @@ export async function createDocumentShare(
     if (input.level !== "view" || targetId) throw new DocumentAccessError("document_link_view_only", 400)
     token = hex(crypto.getRandomValues(new Uint8Array(32)))
     targetId = await hashDocumentLink(token)
-  } else if (
-    !targetId ||
-    !(input.target === "person"
-      ? await principal.access.isOrgMember(targetId, entry.org_id)
-      : await sharing.isTeamInOrg(targetId, entry.org_id))
-  ) {
+  } else if (!targetId) {
     throw new DocumentAccessError("document_share_target_outside_organization", 400)
   }
-  const share = await sharing.create({
+  const share = await sharing.create(principal, page, {
     id: `document_share_${crypto.randomUUID().replaceAll("-", "")}`,
-    document_id: documentId,
-    org_id: entry.org_id,
     target: input.target,
     target_id: targetId,
     level: input.level,
-    created_by: principal.userId,
-    revoked_at: null,
   })
   return { ...share, ...(token ? { token } : {}) }
 }

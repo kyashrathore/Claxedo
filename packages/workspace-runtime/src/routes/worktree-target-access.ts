@@ -1,6 +1,5 @@
 /**
- * The per-session authorization the file, diff and Git route families run
- * under.
+ * The authorization the file, diff and Git route families run under.
  *
  * `assertTarget` answers whether a directory belongs to this runtime, and a
  * registered per-session worktree does — that is how a session's own tools
@@ -15,9 +14,10 @@
  * one level above a private worktree reaches every file in it. `subtree` marks
  * the operations that descend.
  *
- * A directory no session claims is the workspace's own and stays open to
- * whoever the workspace admits: the role gates on the write routes are the
- * rule there, and this one has nothing to say about it.
+ * A request that reaches no session's worktree acts on the machine itself, and
+ * a relayed caller is admitted to that by the current host authority, read or
+ * write alike. This machine's own user carries no relay identity and gets the
+ * policy's local decision.
  */
 
 import path from "node:path"
@@ -88,7 +88,8 @@ function targetOwners(input: WorktreeTargetRequest) {
 /**
  * Refuses the request when the directory it names, a path it reaches through
  * that directory, or a path it is already known to touch belongs to a session
- * this caller holds no grant on.
+ * this caller holds no grant on, or, when it reaches no session at all, when
+ * the caller may not act on the machine.
  */
 export async function authorizeWorktreeTarget(
   c: WorktreeTargetContext,
@@ -96,8 +97,8 @@ export async function authorizeWorktreeTarget(
   input: WorktreeTargetRequest,
 ): Promise<Response | undefined> {
   const owners = targetOwners(input)
-  if (owners.size === 0) return undefined
   const access = sessionAccessContext(c)
+  if (owners.size === 0) return await authorizeHostCapability(c, options, input.operation, access)
   for (const sessionId of owners) {
     const denied = await authorizeHostCapability(c, options, input.operation, access, sessionId)
     if (denied) return denied

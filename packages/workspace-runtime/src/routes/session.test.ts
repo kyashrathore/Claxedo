@@ -2,13 +2,14 @@ import { afterEach, describe, expect, it } from "bun:test"
 import type { GoalCapabilities, RuntimeGoalSnapshot, AgentEventEnvelope, AgentPresentationEvent } from "@claxedo/agent-runtime-contract"
 import type { AgentRuntimeEvent } from "@claxedo/agent-runtime-contract"
 import type { HarnessSession, NativeGoalOperations, PermissionRequest, RequestAnswer, TransportCapabilities, TurnRequest } from "@claxedo/harness/contract"
-import type { Hono } from "hono"
+import type { Hono, MiddlewareHandler } from "hono"
 import { createStoreBrokerPorts, managedWorkspaceSessionAccessPolicy, type SessionAccessPolicy, type SessionAccessPolicyInput } from "@claxedo/session-core"
 import { fetchDouble } from "../test-support/fetch-double"
 import { FakeTransport, type FakeTransportOptions, type FakeTurn } from "@claxedo/session-core/testing"
 import { createFakeWorkspaceApp, type FakeWorkspaceApp, type FakeWorkspaceAppOptions } from "../test-support/fake-workspace-app"
 import { loopbackMachineLoginPolicy } from "../testing"
 import { createWorkspaceHost } from "../workspace/runtime"
+import type { RelayHostAuthContext } from "../workspace-host-service-auth"
 
 const apps: FakeWorkspaceApp[] = []
 afterEach(async () => {
@@ -1069,7 +1070,7 @@ describe("session prompt route", () => {
     expect(answers).toEqual([{ kind: "answers", answers: [["Continue"]] }])
   })
 
-  it("rejects cross-session question replies and rejections before authorization or mutation", async () => {
+  it("admits the supplied session first and finds no question of another session's there", async () => {
     for (const path of ["/question/q1/reply", "/question/q1/reject"]) {
       const answers: RequestAnswer[] = []
       const admissions: Array<{ sessionId: string | undefined; operation: string }> = []
@@ -1084,15 +1085,15 @@ describe("session prompt route", () => {
 
       const response = await wa.json(path, { answers: [["Continue"]] }, { params: { sessionId: "session_attacker" } })
 
-      expect(response.status, path).toBe(409)
-      await expect(response.json()).resolves.toMatchObject({ error: { code: "interaction_session_mismatch" } })
-      expect(admissions, path).toEqual([])
+      expect(response.status, path).toBe(404)
+      await expect(response.json()).resolves.toMatchObject({ error: { code: "interaction_not_found" } })
+      expect(admissions, path).toEqual([{ sessionId: "session_attacker", operation: "question_response" }])
       await settle()
       expect(answers, path).toEqual([])
     }
   })
 
-  it("rejects a permission response when the permission belongs to another session", async () => {
+  it("admits the route's session first and finds no permission of another session's there", async () => {
     const answers: RequestAnswer[] = []
     const admissions: Array<{ sessionId: string | undefined; operation: string }> = []
     const wa = await workspaceApp({
@@ -1106,9 +1107,9 @@ describe("session prompt route", () => {
 
     const response = await wa.json("/session/session_attacker/permissions/permission_1", { response: "once" })
 
-    expect(response.status).toBe(409)
-    await expect(response.json()).resolves.toMatchObject({ error: { code: "interaction_session_mismatch" } })
-    expect(admissions).toEqual([])
+    expect(response.status).toBe(404)
+    await expect(response.json()).resolves.toMatchObject({ error: { code: "interaction_not_found" } })
+    expect(admissions).toEqual([{ sessionId: "session_attacker", operation: "permission_response" }])
     await settle()
     expect(answers).toEqual([])
   })
@@ -1131,6 +1132,89 @@ describe("session prompt route", () => {
     await settle()
     expect(answers).toEqual([])
     expect(await (await wa.app.request(wa.url("/question"))).json()).toMatchObject([{ id: "q1", sessionID: "s9" }])
+  })
+})
+
+describe("a share holder's token, scoped to one session, answering by id", () => {
+  const SCOPE_HEADER = "x-test-session-scope"
+
+  const stampShareHolder: MiddlewareHandler = async (c, next) => {
+    const scope = c.req.header(SCOPE_HEADER)
+    if (scope) {
+      c.set("relayHostAuth", {
+        principal_kind: "user", actor_id: "actor_share", actor_kind: "human",
+        actor_public_id: "usr_share", actor_name: "Share holder",
+        org_id: "org_1", workspace_id: "ws_fake", role: "viewer", session_id: scope,
+      } satisfies RelayHostAuthContext["relayHostAuth"])
+    }
+    await next()
+  }
+
+  /**
+   * The session authority admits whatever the token's scope reaches; the
+   * scope itself is the policy's own first check. A request carrying the test
+   * header arrives as that share holder, every other one as the machine's user.
+   */
+  async function sharedWorkspace(capabilities: TransportCapabilities["requests"], request: (sessionId: string) => TurnRequest) {
+    const answers: RequestAnswer[] = []
+    const wa = await workspaceApp({
+      transport: () => scripted({ ask: asking(request, answers) }, { capabilities: { requests: capabilities } }),
+      sessionAccessPolicy: managedWorkspaceSessionAccessPolicy({
+        authority: {
+          authorizeSessionRead: () => true,
+          authorizeSessionWrite: () => true,
+          authorizeSessionStream: () => ({ allowed: true, lease: "lease", expiresAt: Date.now() + 15_000 }),
+          registerSession: () => true,
+          acquireTurn: (input) => ({ allowed: true, turnId: input.turnId, leaseId: "lease", fencingToken: 1, acquiredAt: Date.now(), expiresAt: Date.now() + 15_000 }),
+          renewTurn: (input) => ({ allowed: true, turnId: input.turnId, leaseId: input.leaseId, fencingToken: input.fencingToken, acquiredAt: Date.now(), expiresAt: Date.now() + 15_000 }),
+          releaseTurn: () => ({ released: true }),
+        },
+      }),
+      before: (app) => app.use("*", stampShareHolder),
+    })
+    for (const sessionId of ["session_shared", "session_private"]) {
+      await wa.createSession(sessionId)
+      expect((await wa.json(`/session/${sessionId}/prompt_async`, { parts: [{ type: "text", text: "ask" }] })).status).toBe(204)
+    }
+    await settle()
+    const asShareHolder = (path: string, body: unknown, params: Record<string, string> = {}) =>
+      wa.json(path, body, { params, headers: { [SCOPE_HEADER]: "session_shared" } })
+    return { wa, answers, asShareHolder }
+  }
+
+  /** What a probe learns: the status and the body, with the id it sent written out of it. */
+  async function denial(response: Response, id: string) {
+    return { status: response.status, body: (await response.text()).replaceAll(id, "<id>") }
+  }
+
+  it("cannot tell another session's pending question from one that does not exist", async () => {
+    const f = await sharedWorkspace({ permissions: false, questions: true, elicitation: false }, (sessionId) => question(`question_${sessionId}`, sessionId))
+    for (const action of ["reply", "reject"]) {
+      for (const params of [{}, { sessionId: "session_shared" }] as Array<Record<string, string>>) {
+        const foreign = await denial(await f.asShareHolder(`/question/question_session_private/${action}`, { answers: [["Continue"]] }, params), "question_session_private")
+        const unknown = await denial(await f.asShareHolder(`/question/question_missing/${action}`, { answers: [["Continue"]] }, params), "question_missing")
+        expect({ action, params, ...foreign }).toEqual({ action, params, ...unknown })
+      }
+    }
+    await settle()
+    expect(f.answers).toEqual([])
+
+    expect((await f.asShareHolder("/question/question_session_shared/reply", { answers: [["Continue"]] })).status).toBe(200)
+    await settle()
+    expect(f.answers).toEqual([{ kind: "answers", answers: [["Continue"]] }])
+  })
+
+  it("cannot tell another session's pending permission from one that does not exist", async () => {
+    const f = await sharedWorkspace({ permissions: true, questions: false, elicitation: false }, (sessionId) => permission(`permission_${sessionId}`, sessionId))
+    const foreign = await denial(await f.asShareHolder("/session/session_shared/permissions/permission_session_private", { response: "once" }), "permission_session_private")
+    const unknown = await denial(await f.asShareHolder("/session/session_shared/permissions/permission_missing", { response: "once" }), "permission_missing")
+    expect(foreign).toEqual(unknown)
+    await settle()
+    expect(f.answers).toEqual([])
+
+    expect((await f.asShareHolder("/session/session_shared/permissions/permission_session_shared", { response: "once" })).status).toBe(200)
+    await settle()
+    expect(f.answers).toEqual([{ kind: "permission", decision: "allow_once" }])
   })
 })
 

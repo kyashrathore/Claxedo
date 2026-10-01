@@ -555,7 +555,6 @@ describe("SQLite private-session authority", () => {
       })
     }
 
-    await store.deleteSessionVisibility(creator, { workspaceId: "workspace_main", sessionId: "session_deleted" })
     await store.replaceSessionVisibility(creator, { workspaceId: "workspace_main", sessions: [{ sessionId: "session_kept" }] })
 
     const stored = seed().prepare(`SELECT session_id, updated_at, deleted_at FROM session_history ORDER BY session_id`).all()
@@ -674,7 +673,7 @@ describe("SQLite private-session authority", () => {
 })
 
 describe("SQLite private-session authority, shares of a session this store never registered", () => {
-  test("answers the organization it belongs to and refuses everyone else", async () => {
+  test("answers its workspace's owner and refuses everyone else", async () => {
     const creator = auth("creator")
     const teammate = auth("teammate")
     const outsider = auth("outsider")
@@ -684,14 +683,12 @@ describe("SQLite private-session authority, shares of a session this store never
     await store.createCloudWorkspace(creator, { workspaceId: "workspace_main", displayName: "Main" })
     orgMember(seed, "workspace_main", teammate.user.tokenIdentifier, "member")
 
-    await expect(store.listSessionShares!(teammate, {
-      sessionId: "session_created_on_the_machine",
-      workspaceId: "workspace_main",
-    })).resolves.toEqual({ can_manage_shares: false, grants: [], teams: [] })
-    await expect(store.listSessionShares!(outsider, {
-      sessionId: "session_created_on_the_machine",
-      workspaceId: "workspace_main",
-    })).rejects.toThrow("session_share_admin_required")
+    const target = { sessionId: "session_created_on_the_machine", workspaceId: "workspace_main" }
+    await expect(store.listSessionShares!(creator, target)).resolves.toEqual({ can_manage_shares: false, grants: [], teams: [] })
+    for (const who of [teammate, outsider]) {
+      await expect(store.listSessionShares!(who, target)).rejects.toThrow("session_share_admin_required")
+      await expect(store.listSessionShares!(who, { ...target, workspaceId: "workspace_unknown" })).rejects.toThrow("session_share_admin_required")
+    }
   })
 })
 
