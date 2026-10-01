@@ -5,7 +5,6 @@ import { asRecordOrEmpty } from "@claxedo/helpers/guards"
 import type { HarnessEventAdapter, HarnessEventAdapterContext } from "../../../translate/adapter"
 import type { ClaudeSdkAdapterState, ClaudeTranslation } from "./adapter-state"
 import { translateAssistantMessage } from "./assistant-message"
-import { translateCanUseTool } from "./can-use-tool"
 import { translateRateLimitEvent } from "./rate-limits"
 import { CLAUDE_SUBAGENT_USAGE_METHOD, translateMessageDelta, translateMessageStart, translateMessageStop, translateSubagentUsage } from "./request-stream"
 import { translateResult } from "./result-events"
@@ -33,7 +32,6 @@ export function claudeSdkAdapter(initialTasks: ClaudeTrackedTask[] = [], memory 
 
 function translateClaudeFrame(frame: Frame): ClaudeTranslation {
   const { message, state, event, context, memory } = frame
-  if (event.method === "claude/can-use-tool") return translateCanUseTool(message, context)
   if (event.method === "claude/session-store") return claudeTranscriptTitle(message)
   if (event.method === CLAUDE_SUBAGENT_USAGE_METHOD) return translateSubagentUsage(state, memory, message)
   const type = text(message.type) ?? "unknown"
