@@ -6,6 +6,7 @@ import { accountCatalogFromWire } from "./wire/account-catalog"
 import { bootstrapCatalog } from "./wire/placements"
 
 const local = bootstrapCatalog({
+  deployment: { serverKind: "daemon" },
   host: { enrollment: "enr_this" },
   project: [
     {

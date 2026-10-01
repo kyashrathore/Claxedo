@@ -1,4 +1,5 @@
 import type { D1Database, D1PreparedStatement, D1Result } from "@cloudflare/workers-types"
+import type { SessionRef } from "@claxedo/agent-runtime-contract"
 import { ControlPlaneAuthError } from "@claxedo/server-core/platform/auth/auth"
 import type { ProjectAction, ProjectRole } from "@claxedo/server-core/platform/auth/authority"
 
@@ -44,7 +45,7 @@ export type OrgAction = "member" | "administer" | "own"
 
 type Rules = {
   workspace: { action: WorkspaceAction; ref: { workspaceId: string }; row: { alias: string } }
-  session: { action: SessionAction; ref: { sessionId: string; workspaceId: string }; row: { alias: string } }
+  session: { action: SessionAction; ref: SessionRef; row: { alias: string } }
   project: { action: ProjectAction; ref: { projectId: string; orgId?: string }; row: { alias: string } }
   org: { action: OrgAction; ref: { orgId: string }; row: { orgId: string } }
 }

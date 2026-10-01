@@ -8,6 +8,7 @@ export type ProjectColorPlan = {
 }
 
 type ColorPlanInput = {
+  readonly configurationAvailable: boolean
   readonly projects: readonly Pick<Project, "id" | "icon">[]
   readonly colors: Readonly<Record<string, string>>
   readonly requested: Map<string, string>
@@ -36,7 +37,7 @@ export function planProjectColorAssignment(input: ColorPlanInput): ProjectColorP
       used.add(color)
       plan.assignments.push({ id: project.id, color })
     }
-    if (input.requested.get(project.id) === color) continue
+    if (!input.configurationAvailable || input.requested.get(project.id) === color) continue
     input.requested.set(project.id, color)
     plan.remoteUpdates.push({ id: project.id, color })
   }

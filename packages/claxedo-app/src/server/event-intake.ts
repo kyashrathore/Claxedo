@@ -5,7 +5,7 @@ import type { ServerEvent } from "./events"
 import { invalidateFor } from "./queries"
 import type { StatusOwner } from "./status"
 import { createTurnWrites, type TurnWrites } from "./turn-writes"
-import type { SessionRef } from "./types"
+import type { SessionLocation } from "./types"
 import type { Workspaces } from "./workspaces"
 import { frameFromWire, placementDirectory, serverEventFromFrame, type Frame } from "./wire/frames"
 
@@ -27,7 +27,7 @@ type Listeners = Set<(event: ServerEvent) => void>
 
 type Publish = (event: ServerEvent) => void
 
-async function settleHeld(input: IntakeInput, ref: SessionRef, publish: Publish) {
+async function settleHeld(input: IntakeInput, ref: SessionLocation, publish: Publish) {
   try {
     const status = await input.status.settle(await input.workspaces.route(ref), ref)
     publish({ type: "statusChanged", ref, status })

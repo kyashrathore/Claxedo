@@ -43,7 +43,7 @@ function runtime(): ChannelRuntime & { created: string[]; sent: string[]; aborte
     async createSession(input) {
       const sessionId = `ses_${created.length + 1}`
       created.push(`${input.channel}:${input.threadKey}`)
-      return { sessionId, appUrl: `/s/${sessionId}` }
+      return { sessionId, workspaceId: "workspace-1", appUrl: `/s/${sessionId}` }
     },
     async *sendMessage(input) {
       sent.push(`${input.sessionId}:${input.text}`)
@@ -440,7 +440,7 @@ describe("channels core", () => {
       repo: { owner: "acme", name: "repo" },
     }), { reply: (chunk) => chunks.push(chunk) })
 
-    expect(chunks).toContainEqual({ kind: "text", text: "Using workspace acme/repo at branch dev.", final: false })
+    expect(chunks).toContainEqual({ kind: "text", text: "Using workspace workspace-1 at branch dev.", final: false })
   })
 
   test("repo targets from chat transports bind non-GitHub sessions to workspaces", async () => {
@@ -479,7 +479,7 @@ describe("channels core", () => {
 
     expect(chunks).toContainEqual({
       kind: "text",
-      text: "Using workspace acme/tools at branch feature.",
+      text: "Using workspace workspace-1 at branch feature.",
       final: false,
     })
   })

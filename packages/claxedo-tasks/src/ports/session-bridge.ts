@@ -3,7 +3,7 @@ import type {
   Preset,
   SessionHandoffState,
   SessionLiveness,
-  SessionReference,
+  SessionRef,
   SessionStarter,
   StartPreview,
   Task,
@@ -23,7 +23,7 @@ export type SessionOrigin = {
   taskId: string
   slot: ConfigurationSlot
   attempt: number
-  sessionRef: SessionReference
+  sessionRef: SessionRef
 }
 
 export function sessionOriginOf(link: TaskSessionLink): SessionOrigin {
@@ -37,7 +37,7 @@ export function sessionOriginOf(link: TaskSessionLink): SessionOrigin {
 }
 
 export type SessionStateReading = {
-  session: SessionReference
+  session: SessionRef
   state: SessionLiveness
   handoff: SessionHandoffState
 }
@@ -63,7 +63,7 @@ export type StartPreviewCommand = {
   currentState: SessionLiveness | null
   authorizeTranscript: TranscriptGrant
   /** The session the caller's credential was authenticated as acting from; absent for a person. */
-  startedFrom?: SessionReference
+  startedFrom?: SessionRef
 }
 
 export type StartCommand = {
@@ -78,10 +78,10 @@ export type StartCommand = {
   /** `startConfigurationDigest` of this preset and slot; the host reserves the origin under it. */
   configurationDigest: string
   /** The slot's previous session, when Continue was chosen; null starts from task text alone. */
-  previousSession: SessionReference | null
+  previousSession: SessionRef | null
   authorizeTranscript: TranscriptGrant
   /** The session the caller's credential was authenticated as acting from; absent for a person. */
-  startedFrom?: SessionReference
+  startedFrom?: SessionRef
 }
 
 export type SessionHandoffCommand = {
@@ -93,7 +93,7 @@ export type SessionHandoffCommand = {
   /** The task's images, bytes included, sent as prompt parts beside the text. */
   attachments: readonly TaskAttachmentRecord[]
   /** The session the committed link names, which is the only one this task is handed to. */
-  session: SessionReference
+  session: SessionRef
 }
 
 /** A session a Start created and the package then refused to link, named by its origin. */
@@ -104,14 +104,14 @@ export type SessionAbandonCommand = {
   attempt: number
   /** The digest the origin was reserved under, so a host with a reservation compensates that one. */
   configurationDigest: string
-  sessionRef: SessionReference
+  sessionRef: SessionRef
 }
 
 export type StartedSession = {
-  sessionRef: SessionReference
-  continuedFrom: SessionReference | null
+  sessionRef: SessionRef
+  continuedFrom: SessionRef | null
   /** The session whose agent asked for this Start, as the host established it; null for a person or a root with none. */
-  startedFrom: SessionReference | null
+  startedFrom: SessionRef | null
   startedBy: SessionStarter
 }
 

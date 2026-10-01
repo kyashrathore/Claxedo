@@ -16,7 +16,7 @@ export const FIXTURE_PLACEMENT = placementId("ws_1")
 
 const bootstrap = {
   events: { hostAggregate: false },
-  deployment: { issuesSessions: false },
+  deployment: { serverKind: "daemon", issuesSessions: false },
   project: [{ id: "proj_1", worktree: "/repo", workspaces: { [FIXTURE_PLACEMENT]: { id: FIXTURE_PLACEMENT, directory: "/repo", reachable: true } } }],
 }
 

@@ -5,19 +5,19 @@ import { sessionEndpoint } from "./session-context"
 import type { PlacementId } from "./ids"
 import { withQuery, type RuntimeRoute, type Transport } from "./transport"
 import type { SessionStatus } from "./status-types"
-import type { SessionRef } from "./types"
+import type { SessionLocation } from "./types"
 import { OPEN_VIEW, sessionOpenFromWire, type SessionFact } from "./wire/session-open"
 
 export type StatusAdmission =
   | { readonly kind: "admitted"; readonly event: ServerEvent }
-  | { readonly kind: "held"; readonly ref: SessionRef }
+  | { readonly kind: "held"; readonly ref: SessionLocation }
 
 export type StatusOwner = {
-  readonly read: (ref: SessionRef, lastTurn: AgentTurnOutcome | undefined, live: SessionFact<SessionStatus | undefined>) => SessionStatus
-  readonly listed: (ref: SessionRef, status: SessionStatus) => SessionStatus
-  readonly settle: (route: RuntimeRoute, ref: SessionRef) => Promise<SessionStatus>
+  readonly read: (ref: SessionLocation, lastTurn: AgentTurnOutcome | undefined, live: SessionFact<SessionStatus | undefined>) => SessionStatus
+  readonly listed: (ref: SessionLocation, status: SessionStatus) => SessionStatus
+  readonly settle: (route: RuntimeRoute, ref: SessionLocation) => Promise<SessionStatus>
   readonly apply: (event: ServerEvent) => StatusAdmission
-  readonly forget: (ref: SessionRef) => void
+  readonly forget: (ref: SessionLocation) => void
 }
 
 type FailedStatus = Extract<SessionStatus, { kind: "failed" }>
@@ -44,19 +44,19 @@ function failureKey(placementId: PlacementId, sessionId: string): string {
 function createFailures() {
   const failures = new Map<string, FailedStatus>()
   return {
-    get: (ref: SessionRef) => failures.get(failureKey(ref.placementId, ref.sessionId)),
-    record: (ref: SessionRef, status: SessionStatus) => {
+    get: (ref: SessionLocation) => failures.get(failureKey(ref.placementId, ref.sessionId)),
+    record: (ref: SessionLocation, status: SessionStatus) => {
       const key = failureKey(ref.placementId, ref.sessionId)
       if (status.kind === "failed") failures.set(key, status)
       else if (status.kind !== "idle") failures.delete(key)
     },
-    forget: (ref: SessionRef) => failures.delete(failureKey(ref.placementId, ref.sessionId)),
+    forget: (ref: SessionLocation) => failures.delete(failureKey(ref.placementId, ref.sessionId)),
   }
 }
 
 export function createStatusOwner(transport: Transport): StatusOwner {
   const failures = createFailures()
-  const read = (ref: SessionRef, lastTurn: AgentTurnOutcome | undefined, live: SessionFact<SessionStatus | undefined>) => {
+  const read = (ref: SessionLocation, lastTurn: AgentTurnOutcome | undefined, live: SessionFact<SessionStatus | undefined>) => {
     if ("error" in live) throw live.error
     const read = liveOrLastTurnStatus(live.value, lastTurn)
     const known = failures.get(ref)

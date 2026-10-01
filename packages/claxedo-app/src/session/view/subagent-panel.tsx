@@ -1,5 +1,5 @@
 import { createEffect, createMemo, on, onCleanup, Show } from "solid-js"
-import { sessionId, useServer, type SessionRef } from "@/server"
+import { sessionId, useServer, type SessionLocation } from "@/server"
 import type { PanelView, PanelViewProps } from "@/shell"
 import { SessionSurface } from "./session-screen"
 
@@ -39,7 +39,7 @@ function focusChildHeading(id: () => string): void {
 
 function SubagentPanel(props: PanelViewProps) {
   const server = useServer()
-  const ref = createMemo((): SessionRef | undefined => {
+  const ref = createMemo((): SessionLocation | undefined => {
     const placement = server.placements.byId(props.placementId)
     return placement
       ? { projectId: placement.projectId, placementId: props.placementId, sessionId: sessionId(props.sessionId) }
