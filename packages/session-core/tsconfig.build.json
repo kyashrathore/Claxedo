@@ -5,11 +5,11 @@
     "declaration": true,
     "emitDeclarationOnly": true,
     "outDir": "dist",
-    "rootDir": "src",
-    "customConditions": []
+    "rootDir": "src"
   },
   "exclude": [
     "src/**/*.test.ts",
+    "src/**/*.node-test.ts",
     "src/**/*.typecheck.ts"
   ]
 }
