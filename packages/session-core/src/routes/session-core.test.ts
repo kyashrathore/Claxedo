@@ -1270,7 +1270,7 @@ describe("createSessionRoutes directory-less sessions", () => {
       },
     }
     const app = stamped(createSessionRoutes({
-    sessionIdWorkspace: () => undefined,
+      sessionIdWorkspace: () => undefined,
       runtime: runtimeDouble(inventory),
       defaultHarness: () => CODEX,
       requestedSessionHarness: () => undefined,

@@ -196,7 +196,7 @@ async function harness(input: { offeredModelId?: string; effortLevels?: HarnessE
     ...(input.effortLevels ? { effortLevels: input.effortLevels } : {}),
   })
   configureEmbeddedWorkspaceRuntime({
-    sessionIdWorkspace: () => undefined, connectionProviders: [fixture.provider] })
+  sessionIdWorkspace: () => undefined, connectionProviders: [fixture.provider] })
   configureAgentConfig({ connectionConfigs: [fixture.provider] })
   // The bridge dispatches through the local runtime port, and a create there
   // resynchronizes the runtime from the user config first: a connection
@@ -271,7 +271,7 @@ afterEach(async () => {
   ClaxedoDB.close()
   closeAuthorityDatabases()
   configureEmbeddedWorkspaceRuntime({
-    sessionIdWorkspace: () => undefined,})
+  sessionIdWorkspace: () => undefined,})
   configureAgentConfig()
   for (const root of roots.splice(0)) await fs.rm(root, { recursive: true, force: true })
   delete process.env.CLAXEDO_DATA_DIR

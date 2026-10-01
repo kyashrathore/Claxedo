@@ -334,7 +334,7 @@ describe("session routes reject oversized bodies before the provider runs", () =
     const directory = "/tmp/workspace-runtime-body-limit-session"
     const app = new Hono()
     app.route("/", createSessionRoutes({
-    sessionIdWorkspace: () => undefined,
+      sessionIdWorkspace: () => undefined,
       runtime: async () => host.runtime,
       defaultHarness: () => ({ id: "codex", access: "native" }),
       requestedSessionHarness: () => undefined,

@@ -44,7 +44,7 @@ async function workspaceRoot(prefix: string) {
 function mountedHost(root: string, workspaceId: string, options: Omit<WorkspaceHostOptions, "placement" | "target" | "storeRoot" | "harnessStateRoot" | "sessionIdWorkspace">) {
   const target = { workspaceId, directory: root }
   const host = createWorkspaceHost({
-    sessionIdWorkspace: () => undefined, placement: loopbackMachineLoginPolicy(), target, storeRoot: join(root, "store"), harnessStateRoot: join(root, "harness"), ...options })
+  sessionIdWorkspace: () => undefined, placement: loopbackMachineLoginPolicy(), target, storeRoot: join(root, "store"), harnessStateRoot: join(root, "harness"), ...options })
   const app = new Hono()
   host.mount(app, { exposure: loopbackWorkspaceRuntimeExposure() })
   const create = (id: string, query = "&connectionId=fixture-primary") => withWorkspaceTarget(target, () => app.request(

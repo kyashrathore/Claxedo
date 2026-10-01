@@ -13,7 +13,7 @@ test("a runtime whose default harness is an ACP connection is healthy before and
   const target = { workspaceId: "acp-health", directory }
   const peerPath = fileURLToPath(new URL("./fixtures/acp-startup-peer.mjs", import.meta.url))
   const runtime = createWorkspaceRuntimeApp({
-    sessionIdWorkspace: () => undefined, placement: loopbackMachineLoginPolicy(), exposure: loopbackWorkspaceRuntimeExposure(), target, storeRoot: join(directory, "store") })
+  sessionIdWorkspace: () => undefined, placement: loopbackMachineLoginPolicy(), exposure: loopbackWorkspaceRuntimeExposure(), target, storeRoot: join(directory, "store") })
   const request = (pathname: string, method = "GET", body?: unknown) => withWorkspaceTarget(target, () => runtime.app.request(
     `http://runtime.test${pathname}${pathname.includes("?") ? "&" : "?"}directory=${encodeURIComponent(directory)}`,
     { method, headers: { "content-type": "application/json" }, ...(body ? { body: JSON.stringify(body) } : {}) },

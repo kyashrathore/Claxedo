@@ -36,7 +36,7 @@ test("public remote ACP disconnect preserves received output and never replays t
     },
   })
   const host = createWorkspaceHost({
-    sessionIdWorkspace: () => undefined, placement: loopbackMachineLoginPolicy(), target, storeRoot: join(directory, "store") })
+  sessionIdWorkspace: () => undefined, placement: loopbackMachineLoginPolicy(), target, storeRoot: join(directory, "store") })
   const app = new Hono()
   host.mount(app, { exposure: loopbackWorkspaceRuntimeExposure() })
   const request = (pathname: string, method = "GET", body?: unknown) => withWorkspaceTarget(target, () => app.request(
@@ -103,7 +103,7 @@ for (const imageSupport of [true, false]) test(`public remote ACP image delivery
     } },
   })
   const host = createWorkspaceHost({
-    sessionIdWorkspace: () => undefined, placement: loopbackMachineLoginPolicy(), target, storeRoot: join(directory, "store") })
+  sessionIdWorkspace: () => undefined, placement: loopbackMachineLoginPolicy(), target, storeRoot: join(directory, "store") })
   const app = new Hono()
   host.mount(app, { exposure: loopbackWorkspaceRuntimeExposure() })
   const request = (pathname: string, method = "GET", body?: unknown) => withWorkspaceTarget(target, () => app.request(

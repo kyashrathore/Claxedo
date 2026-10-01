@@ -184,7 +184,7 @@ async function fixture(options: FixtureOptions = {}) {
   options.seed?.(storeRoot)
   function open() {
     const host = createWorkspaceHost({
-    sessionIdWorkspace: () => undefined, placement: loopbackMachineLoginPolicy(), target, storeRoot, eventHub, ...(options.onActivityChange ? { onActivityChange: options.onActivityChange } : {}), connectionProviders: [provider], resolveConnectionSecrets: () => ({ secrets: { token: secretLease }, secretLeaseGeneration: secretLease }), storeFactory: ({ storeRoot }) => {
+      sessionIdWorkspace: () => undefined, placement: loopbackMachineLoginPolicy(), target, storeRoot, eventHub, ...(options.onActivityChange ? { onActivityChange: options.onActivityChange } : {}), connectionProviders: [provider], resolveConnectionSecrets: () => ({ secrets: { token: secretLease }, secretLeaseGeneration: secretLease }), storeFactory: ({ storeRoot }) => {
       const store = openRuntimeStore(storeRoot)
       storeLifecycle.opened++
       const recover = store.recoverBusySessions.bind(store)
@@ -594,7 +594,7 @@ describe("workspace runtime public lifecycle", () => {
     const outcomes: Array<{ sessionId: string; outcome: AgentTurnOutcome }> = []
     const boot = (onTurnOutcome?: (input: { sessionId: string; outcome: AgentTurnOutcome }) => void) => {
       const host = createWorkspaceHost({
-    sessionIdWorkspace: () => undefined,
+        sessionIdWorkspace: () => undefined,
         placement: loopbackMachineLoginPolicy(), target, storeRoot, harnessStateRoot,
         env: { ...process.env, PI_EXECUTABLE: peer.binary },
         harness: { kind: "native", harnessId: "pi" },

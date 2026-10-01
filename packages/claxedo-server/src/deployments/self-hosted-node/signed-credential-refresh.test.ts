@@ -47,7 +47,7 @@ beforeAll(async () => {
   if (!authority) throw new Error("signed self-hosted services expose a workspace authority")
   const { configureEmbeddedWorkspaceRuntime } = await import("@claxedo/local-server/self-hosted-execution")
   configureEmbeddedWorkspaceRuntime({
-    sessionIdWorkspace: () => undefined, sessionAccessPolicy: embeddedManagedPrivateSessionPolicy(authority) })
+  sessionIdWorkspace: () => undefined, sessionAccessPolicy: embeddedManagedPrivateSessionPolicy(authority) })
   const { configureAgentConfig } = await import("@claxedo/server-core/agent-config/index")
   configureAgentConfig({ projectAuth: projections })
 })
@@ -56,7 +56,7 @@ afterAll(async () => {
   const { configureEmbeddedWorkspaceRuntime, shutdownEmbeddedWorkspaceRuntimes } = await import("@claxedo/local-server/self-hosted-execution")
   await shutdownEmbeddedWorkspaceRuntimes()
   configureEmbeddedWorkspaceRuntime({
-    sessionIdWorkspace: () => undefined,})
+  sessionIdWorkspace: () => undefined,})
   const { disposeAgentConfig } = await import("@claxedo/server-core/agent-config/index")
   disposeAgentConfig()
   await composed.dispose()

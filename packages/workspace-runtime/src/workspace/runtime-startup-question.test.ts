@@ -15,7 +15,7 @@ test("public workspace creation answers an actual ACP startup RPC before provide
   const logPath = join(directory, "peer.jsonl")
   const peerPath = fileURLToPath(new URL("./fixtures/acp-startup-peer.mjs", import.meta.url))
   const host = createWorkspaceHost({
-    sessionIdWorkspace: () => undefined, placement: loopbackMachineLoginPolicy(), target, storeRoot: join(directory, "store") })
+  sessionIdWorkspace: () => undefined, placement: loopbackMachineLoginPolicy(), target, storeRoot: join(directory, "store") })
   const app = new Hono()
   host.mount(app, { exposure: loopbackWorkspaceRuntimeExposure() })
   const request = (pathname: string, method = "GET", body?: unknown) => withWorkspaceTarget(target, () => app.request(
@@ -64,7 +64,7 @@ test("external stdio startup isolates refusal, retires crashed questions, and pe
   const logPath = join(directory, "peer.jsonl")
   const peerPath = fileURLToPath(new URL("./fixtures/acp-startup-peer.mjs", import.meta.url))
   const host = createWorkspaceHost({
-    sessionIdWorkspace: () => undefined, placement: loopbackMachineLoginPolicy(), target, storeRoot: join(directory, "store") })
+  sessionIdWorkspace: () => undefined, placement: loopbackMachineLoginPolicy(), target, storeRoot: join(directory, "store") })
   const app = new Hono()
   host.mount(app, { exposure: loopbackWorkspaceRuntimeExposure() })
   const request = (pathname: string, method = "GET", body?: unknown) => withWorkspaceTarget(target, () => app.request(

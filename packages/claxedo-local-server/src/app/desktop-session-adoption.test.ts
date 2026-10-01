@@ -211,7 +211,7 @@ afterEach(async () => {
   server = undefined
   disposeAgentConfig()
   configureEmbeddedWorkspaceRuntime({
-    sessionIdWorkspace: () => undefined,})
+  sessionIdWorkspace: () => undefined,})
   configureAgentConfig()
   setLocalHostEndpoints(undefined)
   resetLocalHostSessionAdoptions()

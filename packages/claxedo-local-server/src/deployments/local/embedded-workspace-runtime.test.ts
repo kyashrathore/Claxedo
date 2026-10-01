@@ -224,7 +224,7 @@ describe("embedded workspace runtime", () => {
       await prompt
       await shutdownEmbeddedWorkspaceRuntimes()
       configureEmbeddedWorkspaceRuntime({
-    sessionIdWorkspace: () => undefined,})
+      sessionIdWorkspace: () => undefined,})
       await removeWorkspaceRoot(root)
     }
   })
@@ -240,7 +240,7 @@ describe("embedded workspace runtime", () => {
       const ws = workspace("ws_acquisition", project)
       const first = await ensureEmbeddedWorkspaceRuntime(ws, { config: "skip" })
       configureEmbeddedWorkspaceRuntime({
-    sessionIdWorkspace: () => undefined, onSessionMetaSnapshot: () => { started(); return snapshot } })
+      sessionIdWorkspace: () => undefined, onSessionMetaSnapshot: () => { started(); return snapshot } })
       const acquisition = ensureEmbeddedWorkspaceRuntime(ws, { config: "skip" })
       await reading
       const retirement = releaseEmbeddedWorkspaceRuntime(ws.id)
@@ -252,7 +252,7 @@ describe("embedded workspace runtime", () => {
     } finally {
       release()
       configureEmbeddedWorkspaceRuntime({
-    sessionIdWorkspace: () => undefined,})
+      sessionIdWorkspace: () => undefined,})
       await shutdownTestRuntimes()
       await removeWorkspaceRoot(root)
     }
@@ -272,7 +272,7 @@ describe("embedded workspace runtime", () => {
     expect(localWorkspaceRuntimeSessionAuthority()).toBe("local")
 
     configureEmbeddedWorkspaceRuntime({
-    sessionIdWorkspace: () => undefined,
+      sessionIdWorkspace: () => undefined,
       sessionAccessPolicy: managedWorkspaceSessionAccessPolicy({
         authority: {
           authorizeSessionRead: () => true,
@@ -318,7 +318,7 @@ describe("embedded workspace runtime", () => {
     // on this machine's own loopback, which creates sessions with no
     // reservation because the daemon answers its own user directly.
     configureEmbeddedWorkspaceRuntime({
-    sessionIdWorkspace: () => undefined,
+      sessionIdWorkspace: () => undefined,
       sessionAccessPolicy: managedWorkspaceSessionAccessPolicy({
         authority: {
           authorizeSessionRead: () => true,
@@ -405,7 +405,7 @@ describe("embedded workspace runtime", () => {
       },
     })
     configureEmbeddedWorkspaceRuntime({
-    sessionIdWorkspace: () => undefined,
+      sessionIdWorkspace: () => undefined,
       sessionAccessPolicy,
     })
 
@@ -461,7 +461,7 @@ describe("embedded workspace runtime", () => {
       ])
     } finally {
       configureEmbeddedWorkspaceRuntime({
-    sessionIdWorkspace: () => undefined,})
+      sessionIdWorkspace: () => undefined,})
       await shutdownTestRuntimes()
       await removeWorkspaceRoot(root)
     }
@@ -716,7 +716,7 @@ describe("embedded workspace runtime", () => {
       const first = await ensureEmbeddedWorkspaceRuntime(ws, { config: "skip" })
 
       configureEmbeddedWorkspaceRuntime({
-    sessionIdWorkspace: () => undefined, routeContributions: [] })
+      sessionIdWorkspace: () => undefined, routeContributions: [] })
       const afterConfigure = await ensureEmbeddedWorkspaceRuntime(ws, { config: "skip" })
       expect(afterConfigure).toBe(first)
 
@@ -728,7 +728,7 @@ describe("embedded workspace runtime", () => {
       expect(fresh).not.toBe(first)
     } finally {
       configureEmbeddedWorkspaceRuntime({
-    sessionIdWorkspace: () => undefined,})
+      sessionIdWorkspace: () => undefined,})
       await shutdownTestRuntimes()
       await removeWorkspaceRoot(root)
       await fs.rm(project + "-new", { recursive: true, force: true }).catch(() => {})
@@ -976,7 +976,7 @@ describe("embedded workspace runtime", () => {
     } finally {
       unsubscribe()
       configureEmbeddedWorkspaceRuntime({
-    sessionIdWorkspace: () => undefined,})
+      sessionIdWorkspace: () => undefined,})
       await shutdownTestRuntimes()
       await removeWorkspaceRoot(root)
     }
@@ -989,7 +989,7 @@ describe("embedded workspace runtime", () => {
     try {
       const snapshots: unknown[][] = []
       configureEmbeddedWorkspaceRuntime({
-    sessionIdWorkspace: () => undefined,
+        sessionIdWorkspace: () => undefined,
         onSessionMetaSnapshot: (_workspace: Workspace, sessions: unknown[]) => {
           snapshots.push(sessions)
         },
@@ -1017,7 +1017,7 @@ describe("embedded workspace runtime", () => {
       ]])
     } finally {
       configureEmbeddedWorkspaceRuntime({
-    sessionIdWorkspace: () => undefined,})
+      sessionIdWorkspace: () => undefined,})
       await shutdownTestRuntimes()
       await removeWorkspaceRoot(root)
     }
@@ -1105,7 +1105,7 @@ describe("the daemon lifecycle on its real work sources", () => {
       await prompt
       await shutdownEmbeddedWorkspaceRuntimes()
       configureEmbeddedWorkspaceRuntime({
-    sessionIdWorkspace: () => undefined,})
+      sessionIdWorkspace: () => undefined,})
       await removeWorkspaceRoot(root)
     }
   })
@@ -1203,7 +1203,7 @@ describe("attaching to an embedded workspace terminal", () => {
       expect(owner.ok).toBe(true)
     } finally {
       configureEmbeddedWorkspaceRuntime({
-    sessionIdWorkspace: () => undefined,})
+      sessionIdWorkspace: () => undefined,})
       await Pty.remove(pty.id)
       await shutdownTestRuntimes()
       await removeWorkspaceRoot(root)
@@ -1247,7 +1247,7 @@ describe("attaching to an embedded workspace terminal", () => {
       expect(readOnly.asked).toEqual(["pty_read", "pty_write"])
     } finally {
       configureEmbeddedWorkspaceRuntime({
-    sessionIdWorkspace: () => undefined,})
+      sessionIdWorkspace: () => undefined,})
       await Pty.remove(pty.id)
       await shutdownTestRuntimes()
       await removeWorkspaceRoot(root)

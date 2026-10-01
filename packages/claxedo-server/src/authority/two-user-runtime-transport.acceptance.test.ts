@@ -324,7 +324,7 @@ describe("two-user signed runtime transport acceptance", () => {
     const workspaceDirectory = path.join(root, "workspace")
     await fs.mkdir(workspaceDirectory, { recursive: true })
     const runtime = createWorkspaceRuntimeApp({
-    sessionIdWorkspace: () => undefined,
+      sessionIdWorkspace: () => undefined,
       exposure: relayWorkspaceRuntimeExposure({ key: key.publicKey, workspaceId: "ws_runtime_private", hostId: "host_runtime_private" }),
       placement: loopbackMachineLoginPolicy(),
       target: { workspaceId: "ws_runtime_private", directory: workspaceDirectory },

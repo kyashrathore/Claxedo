@@ -41,7 +41,7 @@ describe("embedded first-party MCP credential", () => {
     const b = await workspaceIn("embedded-first-party-b-", "ws_first_party_b")
     process.env.CLAXEDO_DATA_DIR = path.join(path.dirname(a.directory), "data")
     configureEmbeddedWorkspaceRuntime({
-    sessionIdWorkspace: () => undefined,
+      sessionIdWorkspace: () => undefined,
       firstPartyMcpLaunch: { baseUrl: "http://127.0.0.1:2593", userId: "user-1", enabledToolGroups: () => ["sessions"] },
     })
 

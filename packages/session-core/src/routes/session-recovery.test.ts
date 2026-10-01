@@ -311,7 +311,7 @@ describe("session recovery routes", () => {
     const directories: Array<string | undefined> = []
     const owner = recoveryDouble({ target: TARGET })
     const app = createSessionRoutes({
-    sessionIdWorkspace: () => undefined,
+      sessionIdWorkspace: () => undefined,
       ...routeOptions(),
       resolveDirectory: () => "/repo/main",
       resolveRecoveryOwner: () => ({

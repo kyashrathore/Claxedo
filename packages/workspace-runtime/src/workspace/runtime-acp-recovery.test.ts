@@ -18,7 +18,7 @@ for (const recovery of ["resume", "missing", "auth", "unsupported", "approval", 
     const config = { version: 4 as const, commands: [], auth: { machineOwnerUserId: "local", accounts: { local: {} } }, mcp: {}, connections: [{ connectionId: "recovery", providerKey: "acp", configRevision: 1, enabled: true, config: { label: "Recovery peer", connection: { kind: "process", command: "node", args: [peer, logFile, recovery] } } }], defaultHarness: { kind: "connection" as const, connectionId: "recovery" } }
     const open = async () => {
       const host = createWorkspaceHost({
-    sessionIdWorkspace: () => undefined, placement: loopbackMachineLoginPolicy(), target, storeRoot: join(directory, "store") })
+      sessionIdWorkspace: () => undefined, placement: loopbackMachineLoginPolicy(), target, storeRoot: join(directory, "store") })
       await host.apply(config)
       const app = new Hono()
       host.mount(app, { exposure: loopbackWorkspaceRuntimeExposure() })

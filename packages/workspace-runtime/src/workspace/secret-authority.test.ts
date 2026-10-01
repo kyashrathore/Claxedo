@@ -152,7 +152,7 @@ test("registering session tools for a connection session no one has attached lea
   const refused: Array<ConnectionSecretAuthority | undefined> = []
   const boot = (resolveConnectionSecrets: Parameters<typeof createWorkspaceHost>[0]["resolveConnectionSecrets"]) => {
     const host = createWorkspaceHost({
-    sessionIdWorkspace: () => undefined, target, placement: loopbackMachineLoginPolicy(), storeRoot: join(directory, "store"),
+      sessionIdWorkspace: () => undefined, target, placement: loopbackMachineLoginPolicy(), storeRoot: join(directory, "store"),
       harnessStateRoot: join(directory, "harness"), resolveConnectionSecrets,
       connectionProviders: [fakeConnectionProvider({ providerKey: "fixture", transport: () => new FakeTransport() })] })
     cleanups.push(() => host.dispose())
