@@ -114,22 +114,6 @@ export async function deleteSessionMeta(sessionID: string) {
   reportSessionMetaChanges(removed)
 }
 
-/** Answers a workspace owner's auth subject, the one signed reader of its inventory notices. */
-export type InventoryNoticeOwner = (workspaceId: string) => Promise<string | undefined>
-
-let inventoryNoticeOwner: InventoryNoticeOwner | undefined
-
-/**
- * Installed by a composition whose authority knows workspace owners. Without
- * one, a notice names no owner and reaches only the unsigned local operator.
- */
-export function setInventoryNoticeOwner(owner: InventoryNoticeOwner | undefined) {
-  inventoryNoticeOwner = owner
-  return () => {
-    if (inventoryNoticeOwner === owner) inventoryNoticeOwner = undefined
-  }
-}
-
 /**
  * Rings `cp/events` once per workspace whose inventory gained or lost a row.
  * After the write has committed, so the read the notice provokes sees the row.
@@ -138,12 +122,10 @@ async function announceInventoryChange(workspaceIDs: Array<string | null | undef
   const ts = Date.now()
   for (const workspaceId of new Set(workspaceIDs.flatMap((id) => (id ? [id] : [])))) {
     const workspace = ws?.id === workspaceId ? ws : await resolveWorkspace({ workspaceId }).catch(() => undefined)
-    const ownerUserId = await inventoryNoticeOwner?.(workspaceId).catch(() => undefined)
     controlBus.publish({
       type: "session.inventory.changed",
       workspaceId,
       ...(workspace?.org_id ? { orgId: workspace.org_id } : {}),
-      ...(ownerUserId ? { ownerUserId } : {}),
       ts,
     })
   }

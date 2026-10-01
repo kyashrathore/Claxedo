@@ -6,12 +6,11 @@ import type { ControlPlaneEvent } from "@claxedo/server-core/platform/runtime/li
  * reconnecting reader can recover.
  *
  * Every notice on this stream settles something nothing re-states — a
- * provision reaching ready or error, a worktree landing, a Page doorbell (a
- * reader re-reads its Page list only when rung, so a lost one leaves the list
- * stale until the next unrelated mutation), a share grant.
- * `createSseReplayBuffer` keeps these in its second, independent ring; a
- * provision's intermediate steps are the only frames it lets the main ring
- * evict.
+ * provision reaching ready or error, a worktree landing, a document doorbell
+ * (the client only re-reads when nudged, so a lost one stalls live sync until
+ * the next unrelated mutation), a share grant. `createSseReplayBuffer` keeps
+ * these in its second, independent ring; a provision's intermediate steps are
+ * the only frames it lets the main ring evict.
  */
 export function isRetainedControlPlaneEvent(event: ControlPlaneEvent): boolean {
   switch (event.type) {

@@ -244,7 +244,7 @@ export async function startSandbox(
     const message = err instanceof Error ? err.message : String(err)
 
     recordSupervisorSandboxStartFailure(state.ws.id, message)
-    await emitProvision(state.ws, "error", { message })
+    emitProvision(state.ws, "error", { message })
     log.warn("Sandbox start failed", {
       workspaceId: state.ws.id,
       driver: driverId,
@@ -390,7 +390,7 @@ async function attachRecordedSandbox(
     // health probe (up to 20s). If it fails we fall through to a fresh
     // acquire, which re-emits `acquiring_sandbox` — the pipeline handles the
     // step moving backward.
-    await emitProvision(state.ws, "waiting_health")
+    emitProvision(state.ws, "waiting_health")
     await waitForRuntimeHealth(input.hostUrl)
     const sandboxId = input.lease.sandbox_id ?? input.lease.driver_resource_id ?? undefined
     const probed: WorkspaceRuntimeState = {
@@ -420,7 +420,7 @@ async function attachRecordedSandbox(
         epoch: input.lease.epoch,
         reason: settled.reason,
       })
-      await emitProvision(state.ws, "error", { message: settled.reason })
+      emitProvision(state.ws, "error", { message: settled.reason })
       return { outcome: "lease_moved", reason: settled.reason }
     }
     state.url = probed.url
@@ -442,7 +442,7 @@ async function attachRecordedSandbox(
     // Settle the stream this path opened with `waiting_health` above —
     // otherwise an attach leaves every provision subscriber waiting on a
     // pipeline that already finished.
-    await emitProvision(state.ws, "ready")
+    emitProvision(state.ws, "ready")
     log.info("sandbox attached to recorded url", {
       workspaceId: state.ws.id,
       driver: input.driverId,
@@ -526,7 +526,7 @@ async function resolveSupervisorSandboxNetworkPolicy(
 }
 
 async function markSandboxAcquiring(state: WorkspaceRuntimeState) {
-  await emitProvision(state.ws, "acquiring_sandbox")
+  emitProvision(state.ws, "acquiring_sandbox")
   const pending = await updateWorkspace(state.ws.id, {
     status: "acquiring_sandbox",
   })
@@ -722,7 +722,7 @@ async function markSandboxReady(
   // driver's sandbox and are invisible from here, which is why the pipeline
   // has no separate "cloning" step (it would be a row nothing could ever
   // advance).
-  await emitProvision(state.ws, "starting_runtime")
+  emitProvision(state.ws, "starting_runtime")
   state.status = "ready"
   state.remote = true
   state.started_at = now()
@@ -742,7 +742,7 @@ async function markSandboxReady(
 
   callbacks.scheduleStop(state)
   startSandboxHealthMonitor(state)
-  await emitProvision(state.ws, "ready")
+  emitProvision(state.ws, "ready")
 
   log.info("sandbox ready", {
     workspaceId: state.ws.id,

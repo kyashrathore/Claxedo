@@ -76,18 +76,15 @@ function harness() {
 }
 
 const worktree = (name: string): ControlPlaneEvent => ({ type: "worktree.ready", directory: `/tmp/central/${name}`, name, branch: name })
-const provision = (workspaceId: string, step: "cloning" | "ready", orgId?: string, ownerUserId?: string): ControlPlaneEvent => ({
-  type: "provision", workspaceId, step, ts: 1, ...(orgId ? { orgId } : {}), ...(ownerUserId ? { ownerUserId } : {}),
+const provision = (workspaceId: string, step: "cloning" | "ready", orgId?: string): ControlPlaneEvent => ({
+  type: "provision", workspaceId, step, ts: 1, ...(orgId ? { orgId } : {}),
 })
 
 describe("signed control-plane visibility", () => {
   const principal: EventScopePrincipal = { mode: "signed", subject: "user_1", orgId: "org_1" }
 
-  test("scopes notices by subject and organization, and always passes the gap notice", async () => {
-    expect(signedControlPlaneEventVisibleTo(provision("ws_1", "ready", "org_1", "user_1"), principal)).toBe(true)
-    expect(signedControlPlaneEventVisibleTo(provision("ws_2", "ready", "org_1", "user_2"), principal)).toBe(false)
-    expect(signedControlPlaneEventVisibleTo({ type: "document.changed", orgId: "org_1", projectId: "p", ts: 1 }, principal)).toBe(true)
-    expect(signedControlPlaneEventVisibleTo({ type: "document.changed", orgId: "org_2", projectId: "p", ts: 1 }, principal)).toBe(false)
+  test("passes a signed subscriber its own share notice and the gap notice, and no workspace notice", async () => {
+    expect(signedControlPlaneEventVisibleTo(provision("ws_1", "ready", "org_1"), principal)).toBe(false)
     expect(signedControlPlaneEventVisibleTo(worktree("a"), principal)).toBe(false)
     expect(signedControlPlaneEventVisibleTo(
       { type: "session.share.changed", phase: "granted", level: "follow", ownerUserId: "user_1", sessionId: "s", workspaceId: "w", ts: 1 },
@@ -318,47 +315,5 @@ describe("cp/events — the control plane's notice stream", () => {
     expect(aText).not.toContain('"workspaceId":"ws_b"')
     expect(bText).not.toContain('"workspaceId":"ws_a"')
 
-  })
-
-  test("a workspace inventory notice reaches its owner live and on replay, and an org peer neither way", async () => {
-    const bus = createBus<ControlPlaneEvent>()
-    const handler = createControlPlaneEventsHandler(bus, {
-      sequenceOrigin: () => 0,
-      resolveSubscription: (c) => {
-        const actorId = c.req.query("actor")!
-        const principal: EventScopePrincipal = { mode: "signed", subject: actorId, orgId: "org_1" }
-        return {
-          identity: { mode: "verified", connectionId: crypto.randomUUID(), actorId, actorKind: "human", orgId: "org_1", workspaceId: "", role: "viewer" },
-          visible: (frame) => signedControlPlaneEventVisibleTo(frame, principal),
-        }
-      },
-    })
-    const app = mount(handler)
-    const owner = await connect(app, undefined, "user_owner")
-    const peer = await connect(app, undefined, "user_peer")
-    await owner.until(opened, "owner did not open")
-    await peer.until(opened, "peer did not open")
-
-    bus.publish({ type: "session.inventory.changed", workspaceId: "ws_owner", orgId: "org_1", ownerUserId: "user_owner", ts: 1 })
-    bus.publish({ type: "usage.quota.changed", ts: 2 })
-    const ownerText = await owner.until((seen) => seen.includes("usage.quota.changed"), "owner missed the fence")
-    const peerText = await peer.until((seen) => seen.includes("usage.quota.changed"), "peer missed the fence")
-    owner.close()
-    peer.close()
-    expect(ownerText).toContain('"workspaceId":"ws_owner"')
-    expect(peerText).not.toContain("ws_owner")
-
-    await new Promise((resolve) => setTimeout(resolve, 20))
-    const lastId = (text: string) => frames(text).at(-1)?.id
-    bus.publish({ type: "session.inventory.changed", workspaceId: "ws_owner_offline", orgId: "org_1", ownerUserId: "user_owner", ts: 3 })
-    bus.publish({ type: "usage.quota.changed", ts: 4 })
-    const peerReplay = await connect(app, lastId(peerText), "user_peer")
-    const ownerReplay = await connect(app, lastId(ownerText), "user_owner")
-    const peerReplayed = await peerReplay.until((seen) => seen.includes('"ts":4'), "peer replay missed the fence")
-    const ownerReplayed = await ownerReplay.until((seen) => seen.includes('"ts":4'), "owner replay missed the fence")
-    peerReplay.close()
-    ownerReplay.close()
-    expect(peerReplayed).not.toContain("ws_owner_offline")
-    expect(ownerReplayed).toContain('"workspaceId":"ws_owner_offline"')
   })
 })

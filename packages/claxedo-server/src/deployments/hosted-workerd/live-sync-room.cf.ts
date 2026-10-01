@@ -246,13 +246,12 @@ function replayPrincipalKey(principal: EventScopePrincipal) {
 }
 
 /**
- * Derive the DO room name from a resolved subscriber. A Page notice fans to
- * every member of an org, so a subscriber joins the room of their active org —
- * named by the authority-internal org id resolved at connect — and one POST
- * reaches all members; owner-scoped notices (a share, a workspace's provision)
- * are narrowed to their one subject by the per-connection `eventVisibleTo`
- * filter inside the room. Signed callers with no resolved org, and
- * unsigned-local/loopback, key by subject.
+ * Derive the DO room name from a resolved subscriber. A subscriber joins the
+ * room of their active org — named by the authority-internal org id resolved
+ * at connect — where a share publisher with that org nudges; the
+ * per-connection `eventVisibleTo` filter narrows each notice to its
+ * recipient. Signed callers with no resolved org, and unsigned-local/loopback,
+ * key by subject.
  */
 export function liveSyncRoomName(subscriber: LiveSyncSubscriber): string {
   if (subscriber.auth.mode !== "signed") return "owner:local"
@@ -273,7 +272,7 @@ export function liveSyncRoomName(subscriber: LiveSyncSubscriber): string {
  * Room names live in the authority-internal namespace —
  * `orgId` must be the internal org id (SQLite `org_id`, i.e.
  * `authority.resolveOrgId` output, which is also what runtime-token claims and
- * document/provision event stamps carry) and `ownerUserId` the auth subject,
+ * share notices carry) and `ownerUserId` the auth subject,
  * because that is the material `connectLiveSyncRoom` keys the subscriber's room
  * with. Issuer org claims (`org_...`,
  * `ControlPlaneAuthContext.user.orgId`) are a different namespace: passing one
@@ -317,27 +316,16 @@ const SSE_HEADERS = {
   Connection: "keep-alive",
 } as const
 
-const PROVISION_STEPS = [
-  "acquiring_sandbox",
-  "cloning",
-  "starting_runtime",
-  "waiting_health",
-  "ready",
-  "error",
-] as const
-
 /**
- * The three event shapes this room admits onto a client stream, rebuilt field
- * by field. Every row is retained and fanned to a whole org room, so a field
- * the sender adds beyond the shape, such as a Page id on a Page notice, must
- * never reach a subscriber or the ring; constructing the event forwards only
- * the fields checked here.
+ * The one event this room admits onto a client stream, a session share's
+ * doorbell, rebuilt field by field so the room forwards exactly the fields it
+ * verified and nothing else the sender put in the object.
  */
 function liveSyncEvent(input: unknown): ControlPlaneEvent | undefined {
   const row = asRecord(input)
   const ts = row?.ts
   if (!row || typeof ts !== "number" || !Number.isFinite(ts)) return undefined
-  const { ownerUserId, sessionId, workspaceId, phase, orgId, projectId, message, totalMs } = row
+  const { ownerUserId, sessionId, workspaceId, phase } = row
   if (
     row.type === "session.share.changed"
     && typeof ownerUserId === "string" && ownerUserId
@@ -349,30 +337,6 @@ function liveSyncEvent(input: unknown): ControlPlaneEvent | undefined {
     return phase === "granted"
       ? { ...base, phase, level: storedSessionShareLevel(row.level) }
       : { ...base, phase }
-  }
-  if (row.type === "document.changed" && typeof orgId === "string" && typeof projectId === "string") {
-    return { type: "document.changed", ts, orgId, projectId }
-  }
-  const step = PROVISION_STEPS.find((candidate) => candidate === row.step)
-  if (
-    row.type === "provision"
-    && typeof workspaceId === "string"
-    && (orgId === undefined || typeof orgId === "string")
-    && (ownerUserId === undefined || typeof ownerUserId === "string")
-    && step !== undefined
-    && (message === undefined || typeof message === "string")
-    && (totalMs === undefined || typeof totalMs === "number")
-  ) {
-    return {
-      type: "provision",
-      ts,
-      workspaceId,
-      step,
-      ...(orgId === undefined ? {} : { orgId }),
-      ...(ownerUserId === undefined ? {} : { ownerUserId }),
-      ...(message === undefined ? {} : { message }),
-      ...(totalMs === undefined ? {} : { totalMs }),
-    }
   }
   return undefined
 }
@@ -441,13 +405,10 @@ export class LiveSyncRoom {
    * per-process anything to hang it on.
    *
    * Retention is the shared 256 + 64 the sibling streams use. `liveSyncEvent`
-   * admits only `session.share.changed`, `document.changed`, and `provision`, so
-   * this ring holds coalesced doorbells and provision progress and nothing
-   * chatty — 256 is far more than the worst client gap (the app's 40 s
-   * stall timeout plus a reconnect backoff that starts at 250 ms and caps
-   * at 15 s) can span. The terminal ring
-   * still earns its keep: `isRetainedControlPlaneEvent` protects the doorbells and
-   * the `ready`/`error` provision settlements, whose loss is not self-healing.
+   * admits only `session.share.changed`, so this ring holds share doorbells
+   * and nothing chatty — 256 is far more than the worst client gap (the app's
+   * 40 s stall timeout plus a reconnect backoff that starts at 250 ms and caps
+   * at 15 s) can span.
    *
    * ## Why in-memory and not `state.storage`
    *
@@ -456,7 +417,7 @@ export class LiveSyncRoom {
    * eviction. It is deliberately not used:
    *
    *  - Every nudge would become a storage write on the mutation hot path —
-   *    every share change, every document mutation — to durably preserve
+   *    every share change — to durably preserve
    *    frames whose entire payload is "something changed".
    *  - The recovery those frames drive is a refetch. A ring that loses its
    *    contents on eviction degrades to a replay-gap notice, and a gap notice
@@ -488,10 +449,8 @@ export class LiveSyncRoom {
   /**
    * The cursor a connection resumes from. A cursor-less connection resumes at
    * `lastId()` — "everything from now on" — so it is served nothing from the
-   * ring. That matters even on a stream of doorbells: `provision` frames are
-   * progress steps, so re-delivering a retained log to a fresh page would walk
-   * a settled workspace back through `cloning` and leave a spinner that nothing
-   * will ever settle again.
+   * ring: a fresh page reads current state and needs no doorbell from before
+   * it opened.
    */
   private replayFor(principal: EventScopePrincipal) {
     const key = replayPrincipalKey(principal)
@@ -648,8 +607,8 @@ export class LiveSyncRoom {
   }
 
   /**
-   * Fan a nudge (a `ControlPlaneEvent` `liveSyncEvent` admits) to every held
-   * connection the event is visible to. Returns
+   * Fan a nudge (a `ControlPlaneEvent` `liveSyncEvent` admits)
+   * to every held connection the event is visible to. Returns
    * `{ delivered, held }` for the caller's diagnostics.
    */
   private async handleNudge(request: Request): Promise<Response> {

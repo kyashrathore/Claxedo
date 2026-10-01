@@ -248,8 +248,9 @@ describe("local composition — health and telemetry", () => {
       if (!received.includes("local-event-stream-probe")) {
         controlBus.publish({
           type: "document.changed",
+          documentId: "local-event-stream-probe",
           orgId: "local-test-org",
-          projectId: "local-event-stream-probe",
+          projectId: "local-test-project",
           ts: 1,
         })
       }

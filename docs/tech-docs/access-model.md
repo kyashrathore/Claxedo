@@ -426,10 +426,10 @@ Two event streams exist. The control plane's `GET /api/cp/events` carries
 notices only (provision, worktree readiness, Page and session-share
 doorbells, a workspace's inventory change), never a session's content.
 `eventVisibleTo` (`packages/claxedo-server-core/src/platform/http/event-visibility.ts`)
-filters each notice per subscriber, live and on replay: a Page doorbell names
-only its org and project, never the Page or its version, and reaches the
-org; a share doorbell reaches its recipient; a provision or inventory notice
-reaches the workspace's owner alone. A workspace runtime's `GET /api/wr/events` carries
+filters each notice per subscriber, live and on replay: a signed subscriber
+receives a share doorbell naming them and the quota doorbell, and no Page,
+provision, inventory or worktree notice; the hosted room admits share
+doorbells alone. A workspace runtime's `GET /api/wr/events` carries
 that runtime's session frames, and the arm is decided per request
 (`authorizeSessionEventScope`,
 `packages/workspace-runtime/src/routes/session-event-privacy.ts`): a

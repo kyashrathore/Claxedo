@@ -70,26 +70,3 @@ describe("workspace store lease reader", () => {
     expect(store.workspaceSandboxLeaseInstalled()).toBe(true)
   })
 })
-
-describe("workspace notice owner", () => {
-  it("is the owner the supervisor composition delivers accounts for", async () => {
-    vi.resetModules()
-    const installed: Array<((workspaceId: string) => Promise<string | undefined>) | undefined> = []
-    vi.doMock("@claxedo/server-core/session/meta/index", async (actual) => ({
-      ...(await actual<typeof import("@claxedo/server-core/session/meta/index")>()),
-      setInventoryNoticeOwner: (owner: (workspaceId: string) => Promise<string | undefined>) => installed.push(owner),
-    }))
-    try {
-      const supervisor = await import("./supervisor")
-      supervisor.configureWorkspaceSupervisor({
-        sandboxOwner: async (workspaceId) => `owner_of_${workspaceId}`,
-        machineOwnerUserId: "local",
-        server_url: "http://127.0.0.1:3001",
-      })
-      expect(installed).toHaveLength(1)
-      await expect(installed[0]!("ws_1")).resolves.toBe("owner_of_ws_1")
-    } finally {
-      vi.doUnmock("@claxedo/server-core/session/meta/index")
-    }
-  })
-})

@@ -14,20 +14,11 @@ import type { ControlPlaneAuthContext } from "@claxedo/server-core/platform/auth
 /**
  * The subscriber identity the event plane scopes on.
  *
- * NAMESPACE CONTRACT — the event plane's org identity is the
- * AUTHORITY-INTERNAL org id (the authority `orgs._id`, SQLite `org_id`), NEVER
- * the identity provider's `org_...` claim. Page notices are stamped with the
- * internal id at publish (documents routes scope via `authority.resolveOrgId`),
- * so the subscriber side must present the SAME namespace: `orgId` here is
- * resolved via `authority.resolveOrgId(auth)` at subscribe time. Passing the
- * raw identity provider claim compares disjoint namespaces and silently blinds
- * the subscriber to every org-scoped event. `subject` is the issuer subject
- * (`user_...`), the namespace every owner-scoped notice names its recipient in.
- *
- * `orgId` is the caller's ACTIVE org: the org matching their the identity provider org claim
- * when they are a member, else their personal org (`resolveOrgId` is total for
- * signed callers). Absent only when no authority is composed to resolve it —
- * then org-scoped events are invisible, fail-closed.
+ * `orgId` is the caller's active org as the AUTHORITY-INTERNAL org id
+ * (`authority.resolveOrgId(auth)` at subscribe time, never the identity
+ * provider's `org_...` claim); the hosted room is named by it, and a share
+ * publisher nudges the room of the same id. `subject` is the issuer subject
+ * (`user_...`), which a share notice names its recipient by.
  */
 export type EventScopePrincipal =
   | { mode: "unsigned-local" }
@@ -65,23 +56,18 @@ export function eventVisibleTo(principal: EventScopePrincipal, event: ControlPla
 
   switch (event.type) {
     case "session.share.changed":
-      // ownerUserId is the share's recipient, not the granter.
-    case "provision":
-    case "session.inventory.changed":
-      // ownerUserId is the workspace's owner; an org peer of the owner holds
-      // no standing on the workspace.
-      return !!event.ownerUserId && event.ownerUserId === principal.subject
-    case "document.changed":
-      // Org-wide because it names no Page; see `DocumentChangedEvent`.
-      return !!principal.orgId && event.orgId === principal.orgId
+      // ownerUserId is the *recipient* the identity provider subject stamped at grant/revoke
+      // publish (session share fanout), not the granter.
+      return event.ownerUserId === principal.subject
     case "usage.quota.changed":
       // Carries no figures and names no account: the quota read it provokes
       // is what applies `operator_required`.
       return true
     default:
-      // worktree.* carries no owner identity: it is a local daemon's notice
-      // about its own checkout, and a signed subscriber to a shared control
-      // plane is never its legitimate consumer.
+      // A Page notice names a Page its creator may not have shared; a
+      // provision or inventory notice is about one person's workspace; and
+      // worktree.* is a local daemon's notice about its own checkout. None
+      // reaches a signed subscriber, only the unsigned machine's single user.
       return false
   }
 }
