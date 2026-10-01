@@ -111,11 +111,11 @@ function fileAuthority() {
 }
 
 describe("sqlite workspace authority", () => {
-  test("a missing organization is refused as one the caller does not administer", async () => {
+  test("a missing organization is a typed public error", async () => {
     const authority = memoryAuthority()
     try {
       await expect(authority.createTeamInOrg!(owner, { orgId: "org_missing", name: "Team" }))
-        .rejects.toMatchObject({ code: "org_admin_required", status: 403, retryable: false })
+        .rejects.toMatchObject({ code: "organization_not_found", status: 404, retryable: false })
     } finally {
       authority.close()
     }

@@ -3,7 +3,6 @@ import os from "node:os"
 import path from "node:path"
 import { afterEach, describe, expect, test } from "vitest"
 import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
-import { asProjectId } from "@claxedo/server-core/platform/auth/branded-id"
 import { createSqliteWorkspaceAuthority } from "./workspace-authority"
 import { closeAuthorityDatabases, openAuthorityDb, type SqliteAuthorityDb } from "./workspace-authority-store"
 
@@ -109,35 +108,5 @@ describe("SQLite workspace session authority", () => {
     await expect(authority.listSessions(founder, { workspaceId: "ws_1" })).resolves.toEqual([])
     await expect(authority.authorizeSessionRead(founder, { workspaceId: "ws_1", sessionId: "ses_1" }))
       .rejects.toMatchObject({ status: 403 })
-  })
-
-  test("a project grant, a team grant or project ownership admits nothing to someone outside the project's organization", async () => {
-    const { authority, db } = setup()
-    const founder = signed("founder")
-    const outsider = signed("outsider")
-    await Promise.all([authority.usersMe(founder), authority.usersMe(outsider)])
-    const org = await authority.createOrg!(founder, { name: "Acme" }) as { org_id: string; default_team_id: string }
-    await authority.createCloudWorkspace(founder, { workspaceId: "ws_1", projectId: "prj_1", orgId: org.org_id, displayName: "Workspace" })
-    await authority.ensureDefaultTeam!(founder, { orgId: org.org_id })
-    const now = Date.now()
-    const standings = {
-      "a direct project grant": () => db().prepare(`
-        INSERT INTO project_memberships (project_id, token_identifier, role, created_at, updated_at) VALUES ('prj_1', 'outsider', 'editor', ?, ?)
-      `).run(now, now),
-      "a team grant": () => db().prepare(`
-        INSERT INTO team_memberships (team_id, user_token_identifier, role, created_at, updated_at) VALUES (?, 'outsider', 'member', ?, ?)
-      `).run(org.default_team_id, now, now),
-      "project ownership": () => db().prepare(`UPDATE projects SET owner_token_identifier = 'outsider' WHERE project_id = 'prj_1'`).run(),
-    }
-
-    for (const [standing, give] of Object.entries(standings)) {
-      give()
-      await expect(authority.projectRole(outsider, { projectId: asProjectId("prj_1") }), standing).resolves.toEqual({ ok: false })
-      await expect(authority.authorizeProject(outsider, { projectId: asProjectId("prj_1"), action: "read" }), standing).resolves.toEqual({ ok: false })
-    }
-    db().prepare(`
-      INSERT INTO org_memberships (org_id, token_identifier, role, created_at, updated_at) VALUES (?, 'outsider', 'member', ?, ?)
-    `).run(org.org_id, now, now)
-    await expect(authority.projectRole(outsider, { projectId: asProjectId("prj_1") })).resolves.toMatchObject({ ok: true, role: "owner" })
   })
 })

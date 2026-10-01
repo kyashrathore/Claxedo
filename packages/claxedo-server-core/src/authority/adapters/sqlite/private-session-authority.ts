@@ -29,13 +29,13 @@ import {
 import { randomToken } from "@claxedo/server-core/platform/auth/web-crypto"
 import { storedSessionShareLevel } from "@claxedo/server-core/platform/auth/session-share-level"
 import {
+  authorizeWorkspaceForUser,
   workspaceByPublicId,
   type AuthorityUser,
   type SessionShareTargetRow,
   type SqliteAuthorityDb,
   type WorkspaceAction,
 } from "./workspace-authority-store"
-import { authorizeWorkspaceForUser, orgMemberForUser, shareTargetsUser } from "./access-policy"
 import { readSqliteSessionPage, type SessionPageRow } from "./session-page"
 import { readSqliteMessages, sqliteTurnRead, storedQuery } from "./session-read-store"
 import { matchesTurn, ownsTurn, publicTurnGrant, publicTurnLease, turnGrant, turnLease, type OwnedTurn } from "./session-turn-rows"
@@ -126,30 +126,43 @@ export function createSqlitePrivateSessionAuthority(input: {
     SELECT * FROM session_history WHERE session_id = ?
   `).get(sessionId)
 
-  /**
-   * Leaving the organization ends every grant inside it. Nothing in a
-   * workspace is held while its owner no longer stands there; the owner then
-   * holds the session, and an agent holds the session it created. An agent is
-   * a bare `users` row this store mints with no membership of its own, so the
-   * owner's standing is the one it acts under.
-   * Anyone else holds only a live share while they stand in the organization
-   * too: `follow` reads and streams, `send` also drives the turn, and neither
-   * carries `session_control`.
-   */
+  // SQLite agents have no owning human or organization membership; only their
+  // creator attribution authorizes them.
+  const organizationStandingHolds = (db: SqliteAuthorityDb, actorId: string, orgId: string) => {
+    const actor = db.prepare<unknown[], { kind: string }>(`SELECT kind FROM users WHERE token_identifier = ?`)
+      .get(actorId)
+    if (actor?.kind === "agent") return true
+    const org = db.prepare<unknown[], { owner_token_identifier: string | null; deleted_at: number | null }>(`
+      SELECT owner_token_identifier, deleted_at FROM orgs WHERE org_id = ?
+    `).get(orgId)
+    if (!org || org.deleted_at) return false
+    if (org.owner_token_identifier === actorId) return true
+    return !!db.prepare(`SELECT 1 FROM org_memberships WHERE org_id = ? AND token_identifier = ?`)
+      .get(orgId, actorId)
+  }
+
   const hasPrivateAccess = (db: SqliteAuthorityDb, actorId: string, row: SessionRow, access: SessionAccessQuestion) => {
     const workspace = workspaceByPublicId(db, row.workspace_id)
-    if (!workspace || !orgMemberForUser(db, { token_identifier: workspace.owner_token_identifier }, workspace.org_id)) return false
+    if (!workspace || !organizationStandingHolds(db, actorId, workspace.org_id)) return false
     if (workspace.owner_token_identifier === actorId) return true
     if (db.prepare<unknown[], { kind: string }>(`SELECT kind FROM users WHERE token_identifier = ?`).get(actorId)?.kind === "agent") {
       return row.creator_actor_id === actorId
     }
-    if (access === "session_control" || !orgMemberForUser(db, { token_identifier: actorId }, workspace.org_id)) return false
+    if (access === "session_control" || !organizationStandingHolds(db, workspace.owner_token_identifier, workspace.org_id)) return false
     const grants = db.prepare<unknown[], SessionShareTargetRow & { level: string }>(`
       SELECT granted_to_user_token_identifier, granted_to_org_id, granted_to_team_id, level
       FROM session_share_grants WHERE session_id = ? AND workspace_id = ? AND revoked_at IS NULL
     `).all(row.session_id, row.workspace_id)
-    return grants.some((grant) =>
-      (access !== "agent_turn" || storedSessionShareLevel(grant.level) === "send") && shareTargetsUser(db, grant, actorId))
+    return grants.some((grant) => {
+      if (access === "agent_turn" && storedSessionShareLevel(grant.level) !== "send") return false
+      if (grant.granted_to_user_token_identifier === actorId) return true
+      if (grant.granted_to_org_id && db.prepare(`
+        SELECT 1 FROM org_memberships WHERE org_id = ? AND token_identifier = ?
+      `).get(grant.granted_to_org_id, actorId)) return true
+      return !!grant.granted_to_team_id && !!db.prepare(`
+        SELECT 1 FROM team_memberships WHERE team_id = ? AND user_token_identifier = ?
+      `).get(grant.granted_to_team_id, actorId)
+    })
   }
 
   const requireSessionAccess = (

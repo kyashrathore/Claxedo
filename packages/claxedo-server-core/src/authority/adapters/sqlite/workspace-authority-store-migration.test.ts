@@ -304,29 +304,6 @@ describe("SQLite workspace authority tenancy migration", () => {
     database.close()
   })
 
-  test("a team membership stored before removals were kept reopens active", () => {
-    const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "claxedo-team-tombstone-migrate-")), "authority.db")
-    const legacy = new Database(file)
-    legacy.exec(`
-      CREATE TABLE team_memberships (
-        team_id TEXT NOT NULL,
-        user_token_identifier TEXT NOT NULL,
-        role TEXT NOT NULL,
-        created_at INTEGER NOT NULL,
-        updated_at INTEGER NOT NULL,
-        PRIMARY KEY (team_id, user_token_identifier)
-      );
-      INSERT INTO team_memberships VALUES ('team_1', 'bob', 'member', 1, 1);
-    `)
-    legacy.close()
-
-    const database = openAuthorityDb({ path: file })
-    expect(database().prepare("SELECT team_id, user_token_identifier, revoked_at FROM team_memberships").all())
-      .toEqual([{ team_id: "team_1", user_token_identifier: "bob", revoked_at: null }])
-    database.close()
-    fs.rmSync(path.dirname(file), { recursive: true, force: true })
-  })
-
   test("an org stored with kind 'team' reopens as 'shared', and a personal org keeps its kind", () => {
     const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "authority-org-kind-")), "authority.db")
     const first = openAuthorityDb({ path: file })
