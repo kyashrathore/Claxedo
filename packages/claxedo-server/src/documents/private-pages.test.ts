@@ -217,8 +217,7 @@ test("a runtime may write a hydrated page only while the job's person can still 
     userId: "member",
     orgId: "org",
     projectId: "project",
-    localWorkspaceId: "workspace",
-    cloudWorkspaceId: "workspace",
+    workspaceId: "workspace",
     sessionId: "session",
   }
   const job = await mintDocumentRelayJobToken(

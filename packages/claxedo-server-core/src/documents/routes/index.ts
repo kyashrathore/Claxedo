@@ -114,8 +114,7 @@ const RuntimeAuthorizationBody = z
     userId: z.string().min(1),
     orgId: z.string().min(1),
     projectId: z.string().min(1),
-    localWorkspaceId: z.string().min(1),
-    cloudWorkspaceId: z.string().min(1),
+    workspaceId: z.string().min(1),
     sessionId: z.string().min(1),
     operation: z.enum(["hydrate", "write", "resolve"]),
   })

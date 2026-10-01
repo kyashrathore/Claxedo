@@ -1,6 +1,6 @@
 import fs from "node:fs/promises"
 import path from "node:path"
-import { PluginManifestError, readPluginManifest, type PluginManifest } from "@claxedo/plugin-api"
+import { PluginManifestError, PluginStatusHooksRefusedError, readPluginManifest, type PluginManifest } from "@claxedo/plugin-api"
 import { PluginBuildError } from "./errors"
 
 export const PLUGIN_PACKAGE_FILE = "package.json"
@@ -35,7 +35,12 @@ export async function readPluginPackage(rootDir: string): Promise<PluginPackage>
     manifest = readPluginManifest(packageJson)
   } catch (error) {
     if (error instanceof PluginManifestError) {
-      throw new PluginBuildError("manifest", error.issues.map((issue) => ({ file: PLUGIN_PACKAGE_FILE, message: issue })))
+      const refused = error instanceof PluginStatusHooksRefusedError ? error : undefined
+      throw new PluginBuildError("manifest", error.issues.map((issue) => ({
+        file: PLUGIN_PACKAGE_FILE,
+        ...(refused && issue.startsWith("claxedo.statusHooks:") ? { code: refused.code } : {}),
+        message: issue,
+      })))
     }
     throw error
   }

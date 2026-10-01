@@ -8,8 +8,9 @@ to start before Pi can run.
 Claxedo starts Pi in RPC mode and is tested against Pi 0.99.0 through 0.99.1
 (`PI_RANGE` in `packages/harness/src/transports/pi-rpc/version.ts`). For Local,
 install a Pi in that range and make `pi` available on PATH, or set
-`PI_EXECUTABLE` to its executable. Claxedo reads `pi --version` before every
-launch: an older Pi refuses the session and asks you to update it, and a newer
+`PI_EXECUTABLE` to its executable. Claxedo reads `pi --version` at launch and
+caches the result by executable identity, reading it again when the file changes;
+a bare command is read at every launch. An older Pi refuses the session and asks you to update it, and a newer
 one runs with one warning. The sandbox images install Pi 0.99.1. The model picker reads the models available to
 that Pi process; connect a provider before selecting its model.
 

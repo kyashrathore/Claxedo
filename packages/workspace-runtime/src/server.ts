@@ -581,7 +581,7 @@ export function createWorkspaceRuntimeApp(options: WorkspaceRuntimeServerOptions
   // execution itself is only reachable through each Session's nonce-bound
   // loopback callback, which supplies the canonical Session identity.
   app.route("/", RuntimeDocumentHydrationRoutes({
-    trustedTransport: options.exposure?.kind === "relay",
+    ...(options.exposure?.kind === "relay" ? { workspaceId: options.exposure.auth.workspaceId } : {}),
     sessionAccessPolicy,
     ...(process.env.CLAXEDO_CONTROL_PLANE_URL ? { controlPlaneOrigin: process.env.CLAXEDO_CONTROL_PLANE_URL } : {}),
   }))

@@ -120,10 +120,10 @@ describe("embeddedManagedPrivateSessionPolicy", () => {
       .resolves.toMatchObject({ allowed: false, status: 401, code: "session_stream_lease_invalid" })
   })
 
-  test("ends the stream when the private-session authority revokes the participant", async () => {
+  test("ends the stream when the private-session authority revokes session access", async () => {
     const policy = embeddedManagedPrivateSessionPolicy(authorityStub({
       authorizeRuntimeSession: async () => {
-        throw new ControlPlaneAuthError(403, "workspace_authorization_denied", "participant revoked")
+        throw new ControlPlaneAuthError(403, "workspace_authorization_denied", "session access revoked")
       },
     }))
 

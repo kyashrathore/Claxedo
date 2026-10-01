@@ -23,7 +23,7 @@ test("hydration refuses a revoked document before writing its content", async ()
     return new Response(null, { status: 404 })
   }) as typeof fetch
   const routes = RuntimeDocumentHydrationRoutes({
-    trustedTransport: true,
+    workspaceId: "ws_1",
     workspaceRoot: root,
     controlPlaneOrigin: "https://control.test",
     verifyJob: async () => ({}),
@@ -48,8 +48,6 @@ test("hydration refuses a revoked document before writing its content", async ()
         userId: "member",
         orgId: "org",
         projectId: "project",
-        localWorkspaceId: "workspace",
-        cloudWorkspaceId: "workspace",
       },
     }),
   })
