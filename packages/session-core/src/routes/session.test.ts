@@ -1305,7 +1305,7 @@ it("retires a permission a previous owner asked and never settled, so the reopen
 describe("session create ownership", () => {
   it("a host that reads the session index must name its own workspace", () => {
     expect(() => createWorkspaceHost({ placement: loopbackMachineLoginPolicy(), sessionIdWorkspace: () => undefined } as unknown as Parameters<typeof createWorkspaceHost>[0]))
-      .toThrow("sessionIdWorkspace requires a target workspace")
+      .toThrow("createWorkspaceHost requires a target workspace")
   })
 
   it("refuses an id another workspace holds before any harness launches", async () => {

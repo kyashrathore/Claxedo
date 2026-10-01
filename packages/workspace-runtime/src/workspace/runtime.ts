@@ -126,7 +126,7 @@ function scopedToolPrompt(
 }
 
 export function createWorkspaceHost(options: WorkspaceHostOptions): WorkspaceHost {
-  if (!options.target) throw new Error("sessionIdWorkspace requires a target workspace")
+  if (!options.target?.workspaceId) throw new Error("createWorkspaceHost requires a target workspace")
 
   const core = createSessionCore({
     placement: {

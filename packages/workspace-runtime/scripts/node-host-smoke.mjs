@@ -32,6 +32,8 @@ const { createOpenCodeRuntime } = await import("@claxedo/harness/opencode-sdk")
 const { loopbackWorkspaceRuntimeExposure } = await import("../dist/exposure.mjs")
 const runtime = createOpenCodeRuntime({ databasePath: path.join(root, "opencode.db") })
 const host = createWorkspaceHost({
+  target: { workspaceId: "ws_node_host_smoke", directory: root },
+  sessionIdWorkspace: () => undefined,
   opencodeRuntime: runtime,
   harness: { id: "opencode", access: "native" },
   storeRoot: path.join(root, "runtime-store"),
