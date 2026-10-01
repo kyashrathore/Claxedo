@@ -1,24 +1,18 @@
-import { mkdtemp, readdir, readFile, rm } from "node:fs/promises"
+import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import path from "node:path"
-import { Log, LogLevel, Miniflare } from "miniflare"
+import { Miniflare } from "miniflare"
 import { expect, test } from "vitest"
-import { cloudflareAuthEmailSender, type CloudflareEmailBinding } from "./auth-email-delivery"
-import { orgInvitationEmailDelivery } from "./auth-email-delivery"
+import { cloudflareAuthEmailSender, orgInvitationEmailDelivery, type CloudflareEmailBinding } from "./auth-email-delivery"
 import { D1OrgInvitationAuthority } from "../../authority/adapters/d1/org-invitation-authority"
 import { D1WorkspaceAuthority } from "../../authority/adapters/d1/workspace-authority"
 import { applyControlPlaneMigration, controlPlaneMigrations } from "../../test-support/control-plane-migrations"
+import { recordedEmailOutbox } from "../../test-support/recorded-email"
 import { testRequestAuthenticationAdapter } from "../../test-support/request-authentication"
-
-class RecordedEmailLog extends Log {
-  readonly messages: string[] = []
-  constructor() { super(LogLevel.DEBUG) }
-  protected log(message: string) { this.messages.push(message) }
-}
 
 test("an org invitation traverses the simulated Cloudflare send_email binding", async () => {
   const directory = await mkdtemp(path.join(tmpdir(), "claxedo-invitation-email-"))
-  const log = new RecordedEmailLog()
+  const outbox = recordedEmailOutbox()
   const instance = new Miniflare({
     modules: true,
     script: "export default { fetch() { return new Response('ok') } }",
@@ -26,7 +20,7 @@ test("an org invitation traverses the simulated Cloudflare send_email binding", 
     email: { send_email: [{ name: "EMAIL", allowed_sender_addresses: ["auth@example.com"] }] },
     d1Databases: ["CONTROL_PLANE_DB"],
     defaultProjectTmpPath: directory,
-    log,
+    handleRuntimeStdio: outbox.handleRuntimeStdio,
   })
   try {
     const database = await instance.getD1Database("CONTROL_PLANE_DB")
@@ -48,19 +42,11 @@ test("an org invitation traverses the simulated Cloudflare send_email binding", 
       sender: cloudflareAuthEmailSender({ EMAIL: bindings.EMAIL, CLAXEDO_EMAIL_FROM: "auth@example.com" }),
     }))
     await invitations.createOrgInvitation(auth, { orgId: "org_acme", email: "person@example.com", role: "member" })
-    const names = await readdir(directory, { recursive: true })
-    const textFile = names.find((name) => name.endsWith(".txt"))
-    const htmlFile = names.find((name) => name.endsWith(".html"))
-    expect(textFile).toBeDefined()
-    expect(htmlFile).toBeDefined()
-    const text = await readFile(path.join(directory, textFile!), "utf8")
-    expect(text).toMatch(/^Join your Claxedo organization\n\nhttps:\/\/app\.example\.com\/invitations#[a-f0-9]{64}$/)
-    const actionUrl = text.split("\n\n")[1]!
-    expect(await readFile(path.join(directory, htmlFile!), "utf8")).toContain(`href="${actionUrl}"`)
-    const recorded = log.messages.join("\n")
-    expect(recorded).toContain("To: person@example.com")
-    expect(recorded).toContain("From: auth@example.com")
-    expect(recorded).toContain("Subject: Join your Claxedo organization")
+    const email = await outbox.waitFor((message) => message.to === "person@example.com")
+    expect(email).toMatchObject({ from: "auth@example.com", subject: "Join your Claxedo organization" })
+    expect(email.text).toMatch(/^Join your Claxedo organization\n\nhttps:\/\/app\.example\.com\/invitations#[a-f0-9]{64}$/)
+    expect(email.actionUrl).toMatch(/^https:\/\/app\.example\.com\/invitations#[a-f0-9]{64}$/)
+    expect(email.html).toContain(`href="${email.actionUrl}"`)
     expect((await invitations.listOrgInvitations(auth, { orgId: "org_acme" }))[0]!.revoked_at).toBeNull()
   } finally {
     await instance.dispose()

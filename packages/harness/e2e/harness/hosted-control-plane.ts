@@ -109,8 +109,7 @@ export async function startHostedControlPlane(input: Input) {
         throw error
       }
     },
-    inviteMember: (ownerSubject: string, inviteeSubject: string) =>
-      requestProvisioning(child, { ownerSubject, inviteeSubject }, "token"),
+    recordedInvitationToken: (email: string) => requestProvisioning(child, { invitationTo: email }, "token"),
     provisionOwnerClaim: (subject: string) => requestProvisioning(child, { subject }, "claim"),
     close: async () => {
       if (child.exitCode === null && child.signalCode === null) {
