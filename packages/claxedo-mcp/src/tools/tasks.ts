@@ -20,6 +20,7 @@ import {
 import type { ConfigurationSlot, Preset, SessionReference, TaskSessionLinkView, TaskSummary } from "@claxedo/tasks"
 import { CONFIGURATION_SLOTS, TASK_CREATE_STATUSES, TASK_STATUSES, admissibleAttempt, taskNumber } from "@claxedo/tasks"
 import { record, text } from "../json"
+import { decodeApiError } from "@claxedo/helpers/api-error"
 import type { McpToolContext } from "../context"
 import { mcpToolRefusal, type McpToolResult } from "../mcp-tool"
 import type { ToolRegistrar } from "./registry"
@@ -379,11 +380,8 @@ const RUNTIME_GRANT_REFUSALS = new Set(["tasks_grant_lapsed", "tasks_grant_withd
 
 async function runtimeGrantRefusal(response: Response): Promise<string | undefined> {
   if (response.status !== 503) return undefined
-  const body = record(await response.clone().json().catch(() => undefined))
-  const error = record(body?.error)
-  const code = text(error?.code)
-  const message = text(error?.message)
-  return code !== undefined && RUNTIME_GRANT_REFUSALS.has(code) && message ? message : undefined
+  const error = decodeApiError(response.status, await response.clone().json().catch(() => undefined))
+  return error && RUNTIME_GRANT_REFUSALS.has(error.code) && error.message ? error.message : undefined
 }
 
 function tasksClient(ctx: McpToolContext): TasksClient {
