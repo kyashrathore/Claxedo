@@ -23,7 +23,6 @@ export const ACP_DRAFT_PROBE_MAX_AGE_MS = 30_000
 export class AcpDraftProbes {
   private readonly cache: DraftProbeCache<ProbeResult>
   private readonly disposeAbort = new AbortController()
-  private disposed = false
 
   constructor(private readonly services: HarnessServices, private readonly connection: AcpConnectionOptions,
     private readonly filterMcp: AcpMcpFilter, private readonly peers: AcpPeerOwnership) {
@@ -43,7 +42,7 @@ export class AcpDraftProbes {
   }
 
   private result(draft: DraftLaunch, mode: "probe" | "peek", needCommands: boolean, needAgents: boolean): Promise<ProbeResult> {
-    if (this.disposed) throw new AcpTransportError("connection", "ACP transport disposed")
+    if (this.disposeAbort.signal.aborted) throw new AcpTransportError("connection", "ACP transport disposed")
     const key = draftProbeKey(draft, needCommands, needAgents)
     const inputs = { files: [], maxAge: { ms: ACP_DRAFT_PROBE_MAX_AGE_MS, clock: this.services.clock } }
     if (mode === "peek") {
@@ -63,19 +62,19 @@ export class AcpDraftProbes {
         if (notification.update.sessionUpdate === "available_commands_update") resolveCommands(notification.update.availableCommands)
       }, extension: () => {}, unknown: () => {},
     }, { role: "probe", signal: this.disposeAbort.signal, owner: this.peers })
-    if (this.disposed) { await this.peers.retire(peer); throw new AcpTransportError("connection", "ACP transport disposed during probe") }
+    if (this.disposeAbort.signal.aborted) { await this.peers.retire(peer); throw new AcpTransportError("connection", "ACP transport disposed during probe") }
     try {
       const { servers } = acpMcpProjection({ start: input, peer }, this.services, this.connection, this.filterMcp)
       const { meta } = claudeOptionsMeta(peer.handshake, input)
-      const deadline = new AcpStartupDeadline(this.services.clock, this.connection.startupTimeoutMs ?? 10_000, "draft probe")
+      const deadline = new AcpStartupDeadline(this.services.clock, this.connection.startupTimeoutMs, "draft probe")
       const result = await deadline.run(peer.agent.newSession({ cwd: input.directory, mcpServers: servers.map(acpMcp),
         ...(meta ? { _meta: meta } : {}) }))
       const catalog: AcpCatalog = { options: result.configOptions ?? [], ...acpModeState(result.modes) }
       const agents = !needAgents ? [] : acpGroups(peer.handshake).agents
-        ? await new AcpStartupDeadline(this.services.clock, this.connection.startupTimeoutMs ?? 10_000, "draft agents")
+        ? await new AcpStartupDeadline(this.services.clock, this.connection.startupTimeoutMs, "draft agents")
           .run(acpAgentList(peer.agent, result.sessionId)) : acpAgents(catalog)
       if (!needCommands) return { catalog, commands: [], agents }
-      const commandUpdate = new AcpStartupDeadline(this.services.clock, this.connection.startupTimeoutMs ?? 10_000, "draft commands")
+      const commandUpdate = new AcpStartupDeadline(this.services.clock, this.connection.startupTimeoutMs, "draft commands")
       return { catalog, commands: await commandUpdate.run(commands), agents }
     } finally {
       await this.peers.retire(peer)
@@ -83,7 +82,6 @@ export class AcpDraftProbes {
   }
 
   dispose(): void {
-    this.disposed = true
     this.disposeAbort.abort()
   }
 }

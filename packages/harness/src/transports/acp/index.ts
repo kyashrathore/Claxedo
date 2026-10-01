@@ -174,7 +174,7 @@ export class AcpTransport implements HarnessTransport {
     if (broker.signal.aborted) aborted()
     try {
       if (entry.peer.agent.signal.aborted) throw new AcpTransportError("connection", "ACP agent disconnected; cancel the turn and attach the session explicitly")
-      await acpPrepareTurnConfig(entry, turn, this.services.clock, this.connection.startupTimeoutMs ?? 10_000)
+      await acpPrepareTurnConfig(entry, turn, this.services.clock, this.connection.startupTimeoutMs)
       entry.quiet = acpQuiet(entry, queue, this.services.clock, this.connection.promptTimeoutMs ?? 300_000)
       yield* this.prompted(entry, session, turn, queue)
     } catch (error) {

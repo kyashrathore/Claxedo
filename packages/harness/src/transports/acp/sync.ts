@@ -76,7 +76,7 @@ async function applyEffort(entry: AcpEntry, effort: string | undefined): Promise
   if (acpOptionValue(option) !== wanted) await acpSetOption(entry, option!, wanted, "thought_level")
 }
 
-export async function acpPrepareTurnConfig(entry: AcpEntry, turn: TurnInput, clock: Clock, timeoutMs: number): Promise<void> {
+export async function acpPrepareTurnConfig(entry: AcpEntry, turn: TurnInput, clock: Clock, timeoutMs: number | undefined): Promise<void> {
   const deadline = new AcpStartupDeadline(clock, timeoutMs, "turn configuration")
   const abort = new AbortController()
   entry.startup = deadline

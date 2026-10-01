@@ -506,8 +506,8 @@ test("ACP child catalog updates leave the parent commands and options intact", a
     const options = entry.options
     const sessionId = `child-of-${context.session.binding.upstreamSessionId}`
     await acpUpdate(entry, { sessionId, update: { sessionUpdate: "available_commands_update",
-      availableCommands: [{ name: "child-only", description: "Child command" }] } }, async () => {})
-    await acpUpdate(entry, { sessionId, update: { sessionUpdate: "config_option_update", configOptions: [] } }, async () => {})
+      availableCommands: [{ name: "child-only", description: "Child command" }] } })
+    await acpUpdate(entry, { sessionId, update: { sessionUpdate: "config_option_update", configOptions: [] } })
     expect(entry.commands).toEqual(commands)
     expect(entry.options).toEqual(options)
   } finally { await context.close() }
