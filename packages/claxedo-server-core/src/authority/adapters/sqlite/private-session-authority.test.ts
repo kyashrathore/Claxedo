@@ -555,7 +555,6 @@ describe("SQLite private-session authority", () => {
       })
     }
 
-    await store.deleteSessionVisibility(creator, { workspaceId: "workspace_main", sessionId: "session_deleted" })
     await store.replaceSessionVisibility(creator, { workspaceId: "workspace_main", sessions: [{ sessionId: "session_kept" }] })
 
     const stored = seed().prepare(`SELECT session_id, updated_at, deleted_at FROM session_history ORDER BY session_id`).all()

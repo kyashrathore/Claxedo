@@ -1132,7 +1132,7 @@ describe("D1 private multiplayer session authority", () => {
     expect(await input.database.prepare("select 1 from sessions where session_id = 'ses_unknown'").first()).toBeNull()
     const updatedAt = async (sessionId: string) =>
       await input.database.prepare("select updated_at, deleted_at from sessions where session_id = ?").bind(sessionId).first()
-    const registered = { a: await updatedAt("ses_a"), b: await updatedAt("ses_b") }
+    const registered = await updatedAt("ses_b")
 
     await input.sessions.replaceSessionVisibility(alice, {
       workspaceId: "ws_main",
@@ -1142,10 +1142,24 @@ describe("D1 private multiplayer session authority", () => {
       expect.objectContaining({ session_id: "ses_a", title: "kept" }),
     ])
     expect(await input.sessions.listSessions(bob, { workspaceId: "ws_main" })).toEqual([])
-    expect(await updatedAt("ses_b")).toEqual({ ...registered.b, deleted_at: expect.any(Number) })
+    expect(await updatedAt("ses_b")).toEqual({ ...registered, deleted_at: expect.any(Number) })
+  })
 
-    await input.sessions.deleteSessionVisibility(alice, { workspaceId: "ws_main", sessionId: "ses_a" })
-    expect(await updatedAt("ses_a")).toEqual({ ...registered.a, deleted_at: expect.any(Number) })
+  test("a send share deletes nothing of the session it reaches", async () => {
+    const input = await setup()
+    const { alice, bob } = await sharedWorkspace(input)
+    await reserveAndRegister(input.sessions, alice, { operationId: "op_a", sessionId: "ses_a" })
+    await input.sessions.grantSessionShare(alice, {
+      sessionId: "ses_a",
+      workspaceId: "ws_main",
+      grantedToUserId: bob.principal!.userId,
+      level: "send",
+    })
+    await expect(input.sessions.replaceSessionVisibility(bob, { workspaceId: "ws_main", sessions: [] }))
+      .rejects.toMatchObject({ status: 403 })
+    expect(await input.database.prepare("select deleted_at from sessions where session_id = 'ses_a'").first())
+      .toEqual({ deleted_at: null })
+    expect("deleteSessionVisibility" in input.sessions).toBe(false)
   })
 
   test("a title from an older runtime snapshot does not replace a newer one", async () => {

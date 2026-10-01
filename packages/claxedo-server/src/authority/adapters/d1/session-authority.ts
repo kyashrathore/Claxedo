@@ -84,7 +84,6 @@ export const D1_SESSION_AUTHORITY_METHODS = [
   "syncSessionMessages",
   "upsertSessionVisibility",
   "replaceSessionVisibility",
-  "deleteSessionVisibility",
 ] as const satisfies readonly (keyof WorkspaceAuthority)[]
 
 export const D1_SESSION_TURN_AUTHORITY_METHODS = SESSION_TURN_AUTHORITY_METHODS
@@ -1729,43 +1728,6 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
     args: { workspaceId: string; sessions: WorkspaceVisibility[] },
   ) {
     await this.writeVisibility(auth, args, true)
-    return { ok: true }
-  }
-
-  async deleteSessionVisibility(auth: SignedControlPlaneAuth, args: { sessionId: string; workspaceId: string }) {
-    const who = await this.requirePrincipal(auth)
-    const sessionId = requireText(args.sessionId, "sessionId")
-    const workspaceId = requireText(args.workspaceId, "workspaceId")
-    await this.requireSessionAccess(who, sessionId, workspaceId, "agent_turn")
-    const now = this.now()
-    const assertionId = this.randomId("assert")
-    const sends = maySql(who, "send", { kind: "session", alias: "sessions" })
-    await this.guardedBatch(
-      [
-        this.database
-          .prepare(
-            `
-        update sessions set deleted_at = ?
-        where session_id = ? and workspace_id = ? and deleted_at is null
-          and ${sends.sql}
-      `,
-          )
-          .bind(now, sessionId, workspaceId, ...sends.bind),
-        this.database.prepare(`delete from session_messages where session_id = ?`).bind(sessionId),
-        this.database
-          .prepare(
-            `
-        insert into authority_batch_assertions (assertion_id, passed)
-        values (?, case when exists (
-          select 1 from sessions where session_id = ? and workspace_id = ? and deleted_at = ?
-        ) then 1 else 0 end)
-      `,
-          )
-          .bind(assertionId, sessionId, workspaceId, now),
-        this.deleteAssertion(assertionId),
-      ],
-      "Session deletion raced with an authority change",
-    )
     return { ok: true }
   }
 
