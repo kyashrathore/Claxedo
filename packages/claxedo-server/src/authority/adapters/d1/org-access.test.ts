@@ -117,7 +117,7 @@ describe("D1 organization members", () => {
     ])
     expect(members.every((member) => typeof member.joined_at === "number")).toBe(true)
     expect((await audit("org.member.")).filter((row) => row.orgId === "org_acme" && row.targetUserId === id(bob))).toEqual([
-      { action: "org.member.added", actor: id(bob), orgId: "org_acme", targetUserId: id(bob), before: null, after: "member" },
+      { action: "org.member.added", actor: id(bob), orgId: "org_acme", targetUserId: id(bob), before: null, after: "member", invitationId: expect.stringMatching(/^inv_/), inviterUserId: id(alice) },
       { action: "org.member.role_changed", actor: id(alice), orgId: "org_acme", targetUserId: id(bob), before: "member", after: "admin" },
     ])
   })
