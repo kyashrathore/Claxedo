@@ -207,6 +207,7 @@ export async function startHostedSandboxWorker(input: HostedSandboxWorkerInput) 
   const touch = driver.touch
   if (!touch) throw new Error("local brokering driver must support touch")
   const sandboxes = new Map<string, RunningSandbox>()
+  const ensuring = new Set<Promise<unknown>>()
   const server = createServer({ key: await readFile(input.key), cert: await readFile(input.certificate) }, async (request, res) => {
     try {
       const original = new URL(request.url ?? "/", `https://127.0.0.1:${input.port}`)
@@ -278,19 +279,24 @@ export async function startHostedSandboxWorker(input: HostedSandboxWorkerInput) 
       if (registrations.some((row) => Object.values(env).some((value) => value.includes(row.value)))) {
         return response(res, 400, { error: "brokered secret entered runtime env" })
       }
-      const target = await driver.ensureHost({
-        workspaceId,
-        hostId: id,
-        homeRegion: "us-east",
-        epoch: Number(labels.epoch ?? "1"),
-        labels,
-        source: source(env),
-        workspaceRoot: path.join(input.root, "sandbox-workspaces", id),
-        env: runtimeEnv(env, input.root, id),
-        secrets: hostedFaultSecrets(localSecrets(registrations), process.env.CLAXEDO_E2E_HOSTED_FAULT),
-      })
+      const starting = (async () => {
+        const target = await driver.ensureHost({
+          workspaceId,
+          hostId: id,
+          homeRegion: "us-east",
+          epoch: Number(labels.epoch ?? "1"),
+          labels,
+          source: source(env),
+          workspaceRoot: path.join(input.root, "sandbox-workspaces", id),
+          env: runtimeEnv(env, input.root, id),
+          secrets: hostedFaultSecrets(localSecrets(registrations), process.env.CLAXEDO_E2E_HOSTED_FAULT),
+        })
+        if (!("provisioning" in target)) sandboxes.set(id, { target, labels, registrations })
+        return target
+      })()
+      ensuring.add(starting)
+      const target = await starting.finally(() => ensuring.delete(starting))
       if ("provisioning" in target) return response(res, 503, { ready: false, error: "workspace-runtime did not become ready" })
-      sandboxes.set(id, { target, labels, registrations })
       return response(res, 200, { ready: true, url: `https://127.0.0.1:${input.port}/sandbox/${encodeURIComponent(id)}/proxy`, port: payload.port })
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
@@ -304,10 +310,13 @@ export async function startHostedSandboxWorker(input: HostedSandboxWorkerInput) 
   })
   return {
     close: async () => {
-      for (const entry of sandboxes.values()) await destroy(entry.target)
-      sandboxes.clear()
       server.closeAllConnections()
       await new Promise<void>((resolve) => server.close(() => resolve()))
+      // A runtime still starting when the stack stops would otherwise outlive
+      // this process's close and keep it from exiting.
+      await Promise.allSettled(ensuring)
+      for (const entry of sandboxes.values()) await destroy(entry.target)
+      sandboxes.clear()
       await gateway.close()
     },
   }
