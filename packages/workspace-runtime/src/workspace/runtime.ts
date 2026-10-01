@@ -477,6 +477,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions): WorkspaceHos
         directory, workspaceId: id, eventHub, exposure: mount.exposure, sessionAccessPolicy,
         sessionStarts,
         sessionParents: options.sessionParents ?? sessionParents, launchOwnership,
+        ...(mount.renewalIntervalMs !== undefined ? { renewalIntervalMs: mount.renewalIntervalMs } : {}),
       })
     }
     const events = mountWorkspaceEvents(app, {

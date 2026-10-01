@@ -5,15 +5,15 @@ import Database from "better-sqlite3"
 import { decodeJwt, exportPKCS8, exportSPKI, generateKeyPair } from "jose"
 import { mintRelayHostToken } from "@claxedo/workspace-relay"
 import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
-import type { RuntimeStore } from "../../../../workspace-runtime/src/store"
-import { openRuntimeStore } from "../../../../workspace-runtime/src/store-file"
-import { SessionRoutes } from "../../../../workspace-runtime/src/routes/session"
-import { remoteWorkspaceSessionAccessPolicy } from "../../../../workspace-runtime/src/remote-session-authority"
-import { createRelayHostAuthMiddleware } from "../../../../workspace-runtime/src/workspace-host-service-auth"
-import type { SessionAccessPolicy } from "../../../../workspace-runtime/src/session-access-policy"
-import { queuedPromptStore } from "../../../../workspace-runtime/src/workspace/session-routes"
-import { RuntimeSessionAuthorityRoutes } from "../../routes/runtime-session-authority"
-import { fetchJsonBody, fetchUrl } from "../../test-support/fetch-calls"
+import type { RuntimeStore } from "../../../workspace-runtime/src/store"
+import { openRuntimeStore } from "../../../workspace-runtime/src/store-file"
+import { SessionRoutes } from "../../../workspace-runtime/src/routes/session"
+import { remoteWorkspaceSessionAccessPolicy } from "../../../workspace-runtime/src/remote-session-authority"
+import { createRelayHostAuthMiddleware } from "../../../workspace-runtime/src/workspace-host-service-auth"
+import type { SessionAccessPolicy } from "../../../workspace-runtime/src/session-access-policy"
+import { queuedPromptStore } from "../../../workspace-runtime/src/workspace/session-routes"
+import { RuntimeSessionAuthorityRoutes } from "./runtime-session-authority"
+import { fetchJsonBody, fetchUrl } from "../test-support/fetch-calls"
 import {
   CHILD,
   CHILD_OPERATION,
@@ -24,7 +24,7 @@ import {
   WORKSPACE,
   admitFinishedChild,
   grantRows,
-  hostRuntimeDouble,
+  wakeRuntime,
   lifecycle,
   producers,
   registerChild,
@@ -36,24 +36,11 @@ import {
   storeBackedHostOptions,
   until,
   wake,
-  type HostRuntime,
   type WakeAuthority,
-} from "../../test-support/child-wake-fixture"
-
-/**
- * The remote half of the embedded suite next door: the same child-completion
- * wake and the same recovered queued prompt, on a host whose only authority
- * is `RuntimeSessionAuthorityRoutes` at the other end of a fetch. Nothing is
- * decided in process. The request that creates the child, or queues the
- * prompt, arrives through the relay ingress with Alice's Relay Host Token and
- * mints a grant while that token can still prove the parent turn; the host
- * that later delivers the turn has been restarted, holds only the store, and
- * presents that grant in place of a credential it no longer has.
- */
+} from "../test-support/child-wake-fixture"
 
 const RAT = "rat_alice"
 const AUTHORITY_URL = "https://control.test/api/runtime-authority/session-authorize"
-const CONFIG = { harness: { id: "codex" as const, access: "native" as const }, variant: null, agent: null }
 
 type AuthorityCall = { action: string; authorization: string | null; grant: boolean; turnId?: string; status: number; code?: string }
 type TurnAttempt = { actorId?: string; turnId: string; grant: boolean }
@@ -153,14 +140,19 @@ function relayed(token: string, body: Record<string, unknown>, headers: Record<s
  * fresh process: it keeps nothing but the store, so what it delivers after a
  * restart is what the store says.
  */
-function hostOver(store: RuntimeStore, policy: SessionAccessPolicy, runtime: HostRuntime, relayKey: CryptoKey) {
+function hostOver(store: RuntimeStore, policy: SessionAccessPolicy, execution: Awaited<ReturnType<typeof wakeRuntime>>, relayKey: CryptoKey) {
+  const { runtime } = execution
   const host = SessionRoutes(async () => runtime, {
     sessionAccessPolicy: policy,
-    requestedSessionHarness: (requested) => requested ?? { id: "connection_wake", access: "connection" },
-    getSessionConfig: async () => CONFIG,
+    requestedSessionHarness: (requested) => requested ?? { id: "pi", access: "native" },
     queuedPrompts: () => queuedPromptStore(store),
     ...storeBackedHostOptions(store),
   })
+  const disposeRoutes = host.dispose
+  host.dispose = async () => {
+    await disposeRoutes()
+    await execution.dispose()
+  }
   lifecycle.host(() => host.dispose())
   const ingress = new Hono()
     .use("*", createRelayHostAuthMiddleware({ key: relayKey, workspaceId: WORKSPACE, hostId: HOST }))
@@ -184,10 +176,10 @@ async function childCreatedOverTheRelay() {
   const storeRoot = runtimeStoreRoot(root)
   const store = openRuntimeStore(storeRoot)
   lifecycle.closer(() => store.close())
-  store.bindSession({ owner: { kind: "machine-owner" }, sessionId: PARENT, directory: DIRECTORY, agentSessionId: PARENT })
   const { policy, calls } = remotePolicy(plane.app)
-  const { runtime, prompts } = hostRuntimeDouble()
-  const { host, ingress } = hostOver(store, policy, runtime, plane.relayKey.publicKey)
+  const execution = await wakeRuntime(store)
+  const { prompts } = execution
+  const { host, ingress } = hostOver(store, policy, execution, plane.relayKey.publicKey)
   const token = await relayProof(plane.relayKey.privateKey, alice, orgId, "rht_alice_create")
 
   const created = await ingress.request(
@@ -214,11 +206,12 @@ async function processEndedBeforeTheOffer(item: Awaited<ReturnType<typeof childC
 }
 
 /** A new process over the same store, with its own connection to the plane. */
-function restarted(item: { storeRoot: string; plane: Awaited<ReturnType<typeof controlPlane>> }, options: Parameters<typeof hostRuntimeDouble>[0] = {}) {
+async function restarted(item: { storeRoot: string; plane: Awaited<ReturnType<typeof controlPlane>> }, options: Parameters<typeof wakeRuntime>[1] = {}) {
   const store = reopened(item.storeRoot)
   const { policy, calls, attempts } = remotePolicy(item.plane.app)
-  const { runtime, prompts } = hostRuntimeDouble(options)
-  const { host } = hostOver(store, policy, runtime, item.plane.relayKey.publicKey)
+  const execution = await wakeRuntime(store, options)
+  const { prompts } = execution
+  const { host } = hostOver(store, policy, execution, item.plane.relayKey.publicKey)
   return { store, host, calls, attempts, prompts }
 }
 
@@ -245,7 +238,7 @@ test("a child created over a Relay Host Token takes its grant over the wire and 
   ])
   expect(store.subagentOrigin(PARENT, subagentKey)).toEqual({
     provenance: "relay-replayed",
-    actor: { actorId: alice.user.tokenIdentifier, actorKind: "human" },
+    actor: { actorId: alice.user.tokenIdentifier, actorKind: "human", userId: alice.user.subject },
     authority: { managed: true, workspaceId: WORKSPACE, orgId: expect.any(String), role: "owner" },
     grant,
   })
@@ -271,7 +264,7 @@ test("a restarted host delivers the wake as the original actor by presenting the
   const item = await childCreatedOverTheRelay()
   const { seeded, authority, alice } = item
   await processEndedBeforeTheOffer(item)
-  const { store, host, calls, attempts, prompts } = restarted(item)
+  const { store, host, calls, attempts, prompts } = await restarted(item)
   expect(store.subagentOrigin(PARENT, item.subagentKey)).toMatchObject({ actor: { actorId: alice.user.tokenIdentifier }, grant: item.grant })
 
   await wake(host)
@@ -304,7 +297,7 @@ test("a workspace deleted before delivery refuses the redemption at the authorit
   const { seeded, authority, alice } = item
   await processEndedBeforeTheOffer(item)
   await authority.deleteWorkspace(alice, { workspaceId: WORKSPACE })
-  const { store, host, calls, prompts } = restarted(item)
+  const { store, host, calls, prompts } = await restarted(item)
 
   await wake(host)
   await until(() => calls.some((call) => call.action === "turn_acquire"), "the wake to present its grant")
@@ -320,7 +313,7 @@ test("a grant past its expiry is refused over the wire and the wake stays pendin
   const item = await childCreatedOverTheRelay()
   const { seeded } = item
   await processEndedBeforeTheOffer(item)
-  const { store, host, calls, prompts } = restarted(item)
+  const { store, host, calls, prompts } = await restarted(item)
   vi.useFakeTimers({ toFake: ["Date"] })
   vi.setSystemTime(decodeJwt(item.grant).exp! * 1_000 + 1_000)
 
@@ -338,13 +331,13 @@ test("the same wake re-offered after delivery is refused as redeemed, and no sec
   const item = await childCreatedOverTheRelay()
   const { seeded } = item
   await processEndedBeforeTheOffer(item)
-  const delivered = restarted(item)
+  const delivered = await restarted(item)
   await wake(delivered.host)
   await until(() => delivered.store.listSubagents(PARENT)[0]?.wake === "delivered" && delivered.calls.some((call) => call.action === "turn_release"), "the first delivery")
   await delivered.host.dispose()
   delivered.store.close()
   resetWake(item.storeRoot, item.subagentKey)
-  const { store, host, calls, prompts } = restarted(item)
+  const { store, host, calls, prompts } = await restarted(item)
   expect(store.listSubagents(PARENT)).toMatchObject([{ wake: "pending" }])
 
   await wake(host)
@@ -362,8 +355,8 @@ test("a legacy row recorded without a grant never reaches the authority, and nev
   await reserveChild(authority, aliceRuntime)
   await registerChild(authority, aliceRuntime)
   const plane = await controlPlane(authority)
-  const storeRoot = seedFinishedChildStore(root, { actorId: bob.user.tokenIdentifier, orgId })
-  const { store, host, calls, attempts, prompts } = restarted({ storeRoot, plane })
+  const storeRoot = await seedFinishedChildStore(root, { actorId: bob.user.tokenIdentifier, orgId })
+  const { store, host, calls, attempts, prompts } = await restarted({ storeRoot, plane })
   expect(store.subagentOrigin(PARENT, "subagent_wake")).not.toHaveProperty("grant")
 
   await wake(host)
@@ -386,10 +379,9 @@ test("a prompt queued over the relay mints a grant for its message id, survives 
   const storeRoot = runtimeStoreRoot(root)
   const store = openRuntimeStore(storeRoot)
   lifecycle.closer(() => store.close())
-  store.bindSession({ owner: { kind: "machine-owner" }, sessionId: PARENT, directory: DIRECTORY, agentSessionId: PARENT })
   const busy = remotePolicy(plane.app)
-  const busyRuntime = hostRuntimeDouble({ whenIdle: () => new Promise(() => {}) })
-  const first = hostOver(store, busy.policy, busyRuntime.runtime, plane.relayKey.publicKey)
+  const busyRuntime = await wakeRuntime(store, { holdParent: true })
+  const first = hostOver(store, busy.policy, busyRuntime, plane.relayKey.publicKey)
   const token = await relayProof(plane.relayKey.privateKey, alice, orgId, "rht_alice_queue")
 
   const queued = await first.ingress.request(
@@ -412,7 +404,7 @@ test("a prompt queued over the relay mints a grant for its message id, survives 
   await first.host.dispose()
   store.close()
 
-  const { store: recovered, host, calls, attempts, prompts } = restarted({ storeRoot, plane })
+  const { store: recovered, host, calls, attempts, prompts } = await restarted({ storeRoot, plane })
   expect(recovered.deliveryQueue.listQueuedPrompts()).toMatchObject([{ messageId: "msg_queued_1", grant }])
   await host.recoverQueuedPrompts()
   await until(() => recovered.deliveryQueue.listQueuedPrompts().length === 0 && calls.some((call) => call.action === "turn_release"), "the recovered prompt to be delivered and its lease released")
