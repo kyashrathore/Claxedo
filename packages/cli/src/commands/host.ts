@@ -29,11 +29,11 @@ export function defaultHostCommandDeps(): HostDeps {
   }
 }
 
-export const hostUsage = `claxedo host invite --name N --root DIR... [--expires 1h] [--org-visible]
+export const hostUsage = `claxedo host invite --name N --root DIR... [--expires 1h]
 claxedo host list
 claxedo host assign --machine <name|enrollment_id> <dir> [--name N]
 claxedo host unassign --machine <name|enrollment_id> <dir>
-claxedo host scope --machine <name|enrollment_id> --root DIR... [--org-visible]
+claxedo host scope --machine <name|enrollment_id> --root DIR...
 claxedo host push-config --machine <name|enrollment_id> --from-file FILE
 claxedo host push-config --machine <name|enrollment_id> --clear
 claxedo host revoke --machine <name|enrollment_id>`
@@ -52,8 +52,7 @@ Owner commands, run from a signed-in laptop (\`claxedo login\`), never on the ho
             and a pushed provider is used ahead of the machine's own login for it. --clear withdraws them.
             Credentials travel only in the file, never on the command line.
   revoke    revoke a machine for good (assignments, readiness and tokens cascade); its next beat is refused and \`claxedo connect\` exits 78
---machine matches an enrollment id, else a display name exactly (case-sensitive); an ambiguous name is refused.
---org-visible lets ordinary org members open the machine's workspaces; default is owner, direct and project members, and org admins only.`
+--machine matches an enrollment id, else a display name exactly (case-sensitive); an ambiguous name is refused.`
 
 export type Machine = {
   enrollment_id: string
@@ -68,7 +67,7 @@ export type Machine = {
   paused_at: number | undefined
   /** The owner's declarations for this machine, acked or not, as the list row carries them. */
   assignments: Array<{ workspace_id: string; remote_directory: string; display_name: string | undefined }>
-  scope: { allowed_roots: string[]; visibility: string } | undefined
+  scope: { allowed_roots: string[] } | undefined
 }
 
 export function machineRow(input: unknown): Machine | undefined {
@@ -96,7 +95,7 @@ export function machineRow(input: unknown): Machine | undefined {
         ? [{ workspace_id: workspaceId, remote_directory: remoteDirectory, display_name: trimToUndefined(assignment.display_name) }]
         : []
     }),
-    scope: roots ? { allowed_roots: roots, visibility: trimToUndefined(scope.visibility) ?? "owner" } : undefined,
+    scope: roots ? { allowed_roots: roots } : undefined,
   }
 }
 
@@ -123,13 +122,12 @@ type Parsed = {
   name?: string
   roots: string[]
   expires?: string
-  orgVisible: boolean
   fromFile?: string
   clear: boolean
 }
 
 function parseHostArgs(args: string[]): Parsed {
-  const parsed: Parsed = { positional: [], roots: [], orgVisible: false, clear: false }
+  const parsed: Parsed = { positional: [], roots: [], clear: false }
   for (let i = 0; i < args.length; i += 1) {
     const arg = args[i] ?? ""
     if (arg === "--machine" || arg.startsWith("--machine=")) {
@@ -155,10 +153,6 @@ function parseHostArgs(args: string[]): Parsed {
       const taken = takeValue(args, i, "--expires")
       parsed.expires = taken.value
       i = taken.next
-      continue
-    }
-    if (arg === "--org-visible") {
-      parsed.orgVisible = true
       continue
     }
     // A credential is only ever read from a file: an `--api-key` flag would
@@ -240,9 +234,9 @@ function fixedWidth(rows: string[][]) {
   return rows.map((row) => row.map((cell, column) => cell.padEnd(widths[column])).join("  ").trimEnd())
 }
 
-export function inviteOutput(input: { token: string; expiresAt: number; name: string; roots: string[]; visibility: string }) {
+export function inviteOutput(input: { token: string; expiresAt: number; name: string; roots: string[] }) {
   return [
-    `Invitation for ${input.name} (roots: ${input.roots.join(", ")}; visibility: ${input.visibility})`,
+    `Invitation for ${input.name} (roots: ${input.roots.join(", ")})`,
     `Expires: ${new Date(input.expiresAt).toISOString()}`,
     "",
     "Token (shown once; single use):",
@@ -257,13 +251,12 @@ async function inviteMachine(deps: HostDeps, parsed: Parsed) {
   if (!parsed.name) throw new Error(`--name is required: the machine's display name\n${hostUsage}`)
   if (parsed.roots.length === 0) throw new Error(`at least one --root is required: an invitation with no roots can serve nothing\n${hostUsage}`)
   const expiresInMs = parseExpires(parsed.expires)
-  const visibility = parsed.orgVisible ? "org" : "owner"
   const token = await deps.token()
   const response = asRecordOrEmpty(
     await deps.request({
       url: url(deps.controlPlaneUrl, "/api/claxedo/host/invitations"),
       token,
-      body: { displayName: parsed.name, scope: { allowed_roots: parsed.roots, visibility }, expiresInMs },
+      body: { displayName: parsed.name, scope: { allowed_roots: parsed.roots }, expiresInMs },
     }),
   )
   const minted = trimToUndefined(response.token)
@@ -273,7 +266,6 @@ async function inviteMachine(deps: HostDeps, parsed: Parsed) {
     expiresAt: asFiniteNumber(response.expires_at) ?? deps.now() + expiresInMs,
     name: parsed.name,
     roots: parsed.roots,
-    visibility,
   })) {
     deps.log(line)
   }
@@ -342,15 +334,14 @@ async function scopeMachine(deps: HostDeps, parsed: Parsed) {
   if (parsed.roots.length === 0) throw new Error(`at least one --root is required\n${hostUsage}`)
   const token = await deps.token()
   const machine = await selectMachine(deps, token, selector)
-  const visibility = parsed.orgVisible ? "org" : "owner"
   await deps.request({
     url: url(deps.controlPlaneUrl, `/api/claxedo/host/enrollments/${encodeURIComponent(machine.enrollment_id)}/scope`),
     method: "PATCH",
     token,
-    body: { allowed_roots: parsed.roots, visibility },
+    body: { allowed_roots: parsed.roots },
   })
   deps.log(
-    `${machine.display_name || machine.enrollment_id}: roots ${parsed.roots.join(", ")} (visibility ${visibility}); assignments outside them are retired on its next beat`,
+    `${machine.display_name || machine.enrollment_id}: roots ${parsed.roots.join(", ")}; assignments outside them are retired on its next beat`,
   )
 }
 

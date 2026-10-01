@@ -9,8 +9,8 @@ import type {
 } from "@claxedo/server-core/platform/auth/authority"
 import { asOrgId } from "@claxedo/server-core/platform/auth/branded-id"
 import { CURRENT_CHANNEL_IDENTITY_VERSION } from "@claxedo/workspace-relay-protocol"
-import { actionRank, PROJECT_ACCESS_SQL, rankRole, roleRank, workspaceAccessSql } from "./project-role"
-import { SESSION_SHARE_WORKSPACE_ACCESS_SQL } from "./workspace-authority"
+import { activeGuard, may, mayGuard, maySql, readProjectRole, type AuthorizationPrincipal } from "./authorization"
+import { requireHuman } from "./access-context"
 
 const CONTROL_PLANE_SERVICE_ACTOR_ID = "control-plane"
 
@@ -49,7 +49,6 @@ export class D1ChannelRuntimeAuthorityError extends ClaxedoError {
 
 type Principal = { userId: string; actorId: string; actorKind: "human" }
 type Binding = Principal & { bindingId: string }
-type AccessRow = { org_id: string; role_rank: number }
 type RuntimeTokenRow = {
   deployment_id: string
   workspace_id: string
@@ -59,6 +58,7 @@ type RuntimeTokenRow = {
   actor_kind: "human" | "agent"
   role: ProjectRole
   minted_for_user_id: string | null
+  session_id: string | null
   expires_at: number
   revoked_at: number | null
 }
@@ -91,12 +91,13 @@ export class D1ChannelRuntimeAuthority implements D1ChannelRuntimeAuthorityPort 
       return { bindingId: existing.bindingId, created: false, userId: who.userId, actorId: who.actorId, actorKind: who.actorKind }
     }
     const bindingId = requireText(this.randomId(), "bindingId")
+    const active = activeGuard(who)
     try {
-      await this.database.prepare(`
+      const bound = await this.database.prepare(`
         insert into channel_identity_bindings (
           binding_id, deployment_id, channel, external_user_id, user_id,
           actor_id, bound_by_actor_id, created_at, revoked_at, identity_version
-        ) values (?, ?, ?, ?, ?, ?, ?, ?, null, ?)
+        ) select ?, ?, ?, ?, ?, ?, ?, ?, null, ? where ${active.sql}
       `).bind(
         bindingId,
         this.options.deploymentId,
@@ -107,7 +108,9 @@ export class D1ChannelRuntimeAuthority implements D1ChannelRuntimeAuthorityPort 
         who.actorId,
         this.now(),
         CURRENT_CHANNEL_IDENTITY_VERSION,
+        ...active.bind,
       ).run()
+      if (changes(bound) !== 1) throw denied()
       return { bindingId, created: true, userId: who.userId, actorId: who.actorId, actorKind: who.actorKind }
     } catch (error) {
       if (!isUniqueFailure(error)) throw error
@@ -174,13 +177,13 @@ export class D1ChannelRuntimeAuthority implements D1ChannelRuntimeAuthorityPort 
     action: ProjectAction
   }) {
     const binding = await this.requireBinding(args)
-    const projectId = requireText(args.projectId, "projectId")
-    const row = await this.projectAccess(binding.userId, projectId)
-    if (!row || row.role_rank < actionRank(args.action)) return { ok: false as const }
+    const project = { kind: "project" as const, projectId: requireText(args.projectId, "projectId") }
+    const row = await readProjectRole(this.database, binding.userId, project)
+    if (!row || !(await may(this.database, binding, args.action, project))) return { ok: false as const }
     return {
       ok: true as const,
-      orgId: asOrgId(row.org_id),
-      role: rankRole(row.role_rank),
+      orgId: asOrgId(row.orgId),
+      role: row.role,
       actorId: binding.actorId,
       actorKind: binding.actorKind,
     }
@@ -194,9 +197,7 @@ export class D1ChannelRuntimeAuthority implements D1ChannelRuntimeAuthorityPort 
     action: ProjectAction
   }) {
     const binding = await this.requireBinding(args)
-    const workspaceId = requireText(args.workspaceId, "workspaceId")
-    const access = await this.workspaceAccess(binding.userId, workspaceId)
-    if (!access || access.role_rank < actionRank(args.action)) throw denied()
+    if (!(await this.operableWorkspace(binding, requireText(args.workspaceId, "workspaceId")))) throw denied()
     return { actorId: binding.actorId, actorKind: binding.actorKind }
   }
 
@@ -206,11 +207,11 @@ export class D1ChannelRuntimeAuthority implements D1ChannelRuntimeAuthorityPort 
     return { actorId: actor.actor_id, userId: actor.user_id, actorKind: "human" }
   }
 
-  async resolveRuntimeMachineAccess(actorId: string, workspaceId: string, minimumRole: ProjectRole = "editor") {
+  async resolveRuntimeMachineAccess(actorId: string, workspaceId: string) {
     const who = await this.requireActor(actorId)
-    const access = await this.workspaceAccess(who.userId, requireText(workspaceId, "workspaceId"))
-    if (!access || access.role_rank < roleRank(minimumRole)) throw denied()
-    return { actorId: who.actorId, actorKind: who.actorKind, orgId: access.org_id, role: rankRole(access.role_rank), userId: who.userId }
+    const access = await this.operableWorkspace(who, requireText(workspaceId, "workspaceId"))
+    if (!access) throw denied()
+    return { actorId: who.actorId, actorKind: who.actorKind, orgId: access.org_id, role: "owner" as const }
   }
 
   /**
@@ -230,20 +231,20 @@ export class D1ChannelRuntimeAuthority implements D1ChannelRuntimeAuthorityPort 
       where workspace.workspace_id = ? and workspace.deleted_at is null
     `).bind(requireText(workspaceId, "workspaceId")).first<{ owner_user_id: string; project_id: string; actor_id: string }>()
     if (!row?.owner_user_id || !row.project_id || !row.actor_id) return undefined
-    const access = await this.workspaceAccess(row.owner_user_id, workspaceId)
-    if (!access || access.role_rank < actionRank("write")) return undefined
+    const access = await this.operableWorkspace({ userId: row.owner_user_id, actorId: row.actor_id }, workspaceId)
+    if (!access) return undefined
     return { userId: row.owner_user_id, actorId: row.actor_id, orgId: access.org_id, projectId: row.project_id }
   }
 
   async resolveChannelMachineAccess(identity: ChannelMachineIdentity, workspaceId: string) {
     const who = await this.requireBinding(identity)
-    const access = await this.workspaceAccess(who.userId, requireText(workspaceId, "workspaceId"))
-    if (!access || access.role_rank < actionRank("write")) throw denied()
+    const access = await this.operableWorkspace(who, requireText(workspaceId, "workspaceId"))
+    if (!access) throw denied()
     return {
       actorId: who.actorId,
       actorKind: who.actorKind,
       orgId: access.org_id,
-      role: rankRole(access.role_rank),
+      role: "owner" as const,
       identityVersion: CURRENT_CHANNEL_IDENTITY_VERSION,
       userId: who.userId,
     }
@@ -264,6 +265,7 @@ export class D1ChannelRuntimeAuthority implements D1ChannelRuntimeAuthorityPort 
       actorId: string
       actorKind: "human" | "agent"
       role: ProjectRole
+      sessionId?: string
       expiresAt: number
     },
   ) {
@@ -320,12 +322,7 @@ export class D1ChannelRuntimeAuthority implements D1ChannelRuntimeAuthorityPort 
     }
   }
 
-  async runtimeAccessTokenActive(args: {
-    jti: string
-    workspaceId: string
-    hostId: string
-    minimumRole?: "viewer" | "editor" | "admin" | "owner"
-  }) {
+  async runtimeAccessTokenActive(args: { jti: string; workspaceId: string; hostId: string }) {
     const jti = requireText(args.jti, "jti")
     const workspaceId = requireText(args.workspaceId, "workspaceId")
     const hostId = requireText(args.hostId, "hostId")
@@ -347,20 +344,13 @@ export class D1ChannelRuntimeAuthority implements D1ChannelRuntimeAuthorityPort 
         || row.role !== "owner"
         || row.minted_for_user_id !== null
         || !await this.workspaceExists(row.workspace_id)
-        || (args.minimumRole && roleRank(row.role) < roleRank(args.minimumRole))
       ) return inactive("runtime_access_token_revoked", "Runtime Access Token service authority has been revoked")
       return { active: true }
     }
     if (!row.minted_for_user_id || row.actor_kind !== "human") {
       return inactive("runtime_access_token_revoked", "Runtime Access Token actor is invalid")
     }
-    const actor = await this.database.prepare(`
-      select 1 from actors actor join users user on user.user_id = actor.user_id
-      where actor.actor_id = ? and actor.user_id = ? and actor.kind = 'human'
-        and actor.state = 'active' and user.state = 'active'
-    `).bind(row.actor_id, row.minted_for_user_id).first()
-    const access = actor ? await this.workspaceAccess(row.minted_for_user_id, row.workspace_id) : null
-    if (!access || access.role_rank < roleRank(row.role) || (args.minimumRole && access.role_rank < roleRank(args.minimumRole))) {
+    if (!(await this.holderMayUse({ userId: row.minted_for_user_id, actorId: row.actor_id }, row.workspace_id, row.session_id))) {
       return inactive("runtime_access_token_revoked", "Runtime Access Token authority has been revoked")
     }
     return { active: true }
@@ -372,7 +362,7 @@ export class D1ChannelRuntimeAuthority implements D1ChannelRuntimeAuthorityPort 
   ) {
     const who = await this.requirePrincipal(auth)
     const workspaceId = requireText(args.workspaceId, "workspaceId")
-    if (!await this.workspaceAccess(who.userId, workspaceId)) throw denied()
+    if (!(await may(this.database, who, "operate", { kind: "workspace", workspaceId }))) throw denied()
     await this.database.prepare(`
       update runtime_access_tokens set revoked_at = ?
       where deployment_id = ? and jti = ? and workspace_id = ? and revoked_at is null
@@ -386,7 +376,7 @@ export class D1ChannelRuntimeAuthority implements D1ChannelRuntimeAuthorityPort 
   ) {
     const who = await this.requirePrincipal(auth)
     const workspaceId = requireText(args.workspaceId, "workspaceId")
-    if (!await this.workspaceAccess(who.userId, workspaceId)) throw denied()
+    if (!(await may(this.database, who, "operate", { kind: "workspace", workspaceId }))) throw denied()
     const result = await this.database.prepare(`
       update runtime_access_tokens set revoked_at = ?
       where deployment_id = ? and workspace_id = ? and minted_for_user_id = ? and revoked_at is null
@@ -394,22 +384,33 @@ export class D1ChannelRuntimeAuthority implements D1ChannelRuntimeAuthorityPort 
     return { revoked: changes(result) }
   }
 
+  /**
+   * A token with no session reaches the workspace and is its owner's; a token
+   * scoped to one session is a viewer's, for someone who may read that
+   * session, and reaches nothing else.
+   */
   private async recordUserRuntimeToken(
     who: Principal,
-    args: { jti: string; workspaceId: string; hostId: string; role: ProjectRole; expiresAt: number },
+    args: { jti: string; workspaceId: string; hostId: string; role: ProjectRole; sessionId?: string; expiresAt: number },
   ) {
     const values = this.tokenValues(args)
-    const access = await this.workspaceAccess(who.userId, values.workspaceId)
-    if (!access || access.role_rank < roleRank(args.role)) throw denied("Requested runtime role exceeds current authority")
+    const sessionId = args.sessionId === undefined ? null : requireText(args.sessionId, "sessionId")
+    if (sessionId !== null && args.role !== "viewer") throw denied("A session's runtime token is a viewer's")
+    if (!(await this.holderMayUse(who, values.workspaceId, sessionId))) {
+      throw denied(sessionId === null ? "Runtime access to this workspace is its owner's" : "Runtime access to this session is denied")
+    }
+    const holder = sessionId === null
+      ? mayGuard(who, "operate", { kind: "workspace", workspaceId: values.workspaceId })
+      : mayGuard(who, "read", { kind: "session", sessionId, workspaceId: values.workspaceId })
     try {
       const result = await this.database.prepare(`
         insert into runtime_access_tokens (
           jti, deployment_id, workspace_id, org_id, project_id, host_id,
-          principal_kind, actor_id, actor_kind, role, minted_for_user_id,
+          principal_kind, actor_id, actor_kind, role, minted_for_user_id, session_id,
           expires_at, revoked_at, created_at
         )
-        select ?, ?, workspace_id, org_id, project_id, ?, 'user', ?, 'human', ?, ?, ?, null, ?
-        from workspaces where workspace_id = ? and deleted_at is null
+        select ?, ?, workspace_id, org_id, project_id, ?, 'user', ?, 'human', ?, ?, ?, ?, null, ?
+        from workspaces where workspace_id = ? and deleted_at is null and ${holder.sql}
       `).bind(
         values.jti,
         this.options.deploymentId,
@@ -417,13 +418,15 @@ export class D1ChannelRuntimeAuthority implements D1ChannelRuntimeAuthorityPort 
         who.actorId,
         args.role,
         who.userId,
+        sessionId,
         values.expiresAt,
         this.now(),
         values.workspaceId,
+        ...holder.bind,
       ).run()
-      // The workspace can be deleted after the authorization read but before
-      // the guarded INSERT ... SELECT. A zero-row insert is a denial, never a
-      // successfully recorded credential.
+      // The rule is asked again inside the insert, so a deletion, suspension
+      // or lost share after the read above records nothing: a zero-row insert
+      // is a denial, never a recorded credential.
       if (changes(result) !== 1) throw denied("Runtime token workspace is unavailable")
       return { ok: true }
     } catch (error) {
@@ -483,52 +486,23 @@ export class D1ChannelRuntimeAuthority implements D1ChannelRuntimeAuthorityPort 
     } satisfies Binding : null)
   }
 
-  private async requirePrincipal(auth: SignedControlPlaneAuth): Promise<Principal> {
-    const principal = auth.principal
-    if (!principal) throw new ControlPlaneAuthError(503, "identity_provisioning", "Canonical application identity is required")
-    if (
-      principal.deploymentId !== this.options.deploymentId
-      || principal.actorKind !== "human"
-    ) throw new ControlPlaneAuthError(401, "invalid_bearer_token", "Application principal belongs to another authority domain")
-    const row = await this.database.prepare(`
-      select identity.user_id, user.state as user_state, actor.actor_id, actor.kind as actor_kind,
-        actor.state as actor_state, identity.unlinked_at
-      from auth_identities identity
-      join users user on user.user_id = identity.user_id
-      join actors actor on actor.actor_id = ? and actor.user_id = user.user_id
-      where identity.adapter = ? and identity.issuer = ? and identity.subject = ?
-    `).bind(
-      principal.actorId,
-      principal.identity.adapter,
-      principal.identity.issuer,
-      principal.identity.subject,
-    ).first<{
-      user_id: string
-      user_state: string
-      actor_id: string
-      actor_kind: string
-      actor_state: string
-      unlinked_at: number | null
-    }>()
-    if (
-      !row || row.unlinked_at !== null || row.user_id !== principal.userId
-      || row.actor_id !== principal.actorId || row.actor_kind !== "human"
-    ) throw new ControlPlaneAuthError(401, "invalid_bearer_token", "Application principal is stale or unlinked")
-    if (row.user_state !== "active" || row.actor_state !== "active") throw denied("Application actor is inactive")
-    return { userId: row.user_id, actorId: row.actor_id, actorKind: "human" }
+  private requirePrincipal(auth: SignedControlPlaneAuth): Promise<Principal> {
+    return requireHuman(this.database, this.options.deploymentId, auth)
   }
 
-  private async projectAccess(userId: string, projectId: string) {
-    return await this.database.prepare(PROJECT_ACCESS_SQL).bind(userId, projectId, null).first<AccessRow>()
+  /** The workspace's organization, when `who` may act on the machine serving it. */
+  private async operableWorkspace(who: AuthorizationPrincipal, workspaceId: string) {
+    const operates = maySql(who, "operate", { kind: "workspace", alias: "w" })
+    return await this.database
+      .prepare(`select w.org_id from workspaces w where w.workspace_id = ? and ${operates.sql}`)
+      .bind(workspaceId, ...operates.bind)
+      .first<{ org_id: string }>()
   }
 
-  private async workspaceAccess(userId: string, workspaceId: string) {
-    const row = await this.database.prepare(WORKSPACE_ACCESS_SQL).bind(userId, workspaceId).first<AccessRow>()
-    if (!row) return null
-    if (row.role_rank >= 1) return row
-    const shared = await this.database.prepare(SESSION_SHARE_WORKSPACE_ACCESS_SQL)
-      .bind(userId, workspaceId).first()
-    return shared ? { ...row, role_rank: 1 } : null
+  private async holderMayUse(holder: AuthorizationPrincipal, workspaceId: string, sessionId: string | null) {
+    return sessionId === null
+      ? await may(this.database, holder, "operate", { kind: "workspace", workspaceId })
+      : await may(this.database, holder, "read", { kind: "session", sessionId, workspaceId })
   }
 
   private async workspaceExists(workspaceId: string) {
@@ -540,8 +514,6 @@ export class D1ChannelRuntimeAuthority implements D1ChannelRuntimeAuthorityPort 
     `).bind(workspaceId).first()
   }
 }
-
-const WORKSPACE_ACCESS_SQL = workspaceAccessSql("w.workspace_id = ? and w.deleted_at is null")
 
 function requireText(value: unknown, name: string, max = 512) {
   if (typeof value !== "string") throw conflict(`${name} must be a string`)

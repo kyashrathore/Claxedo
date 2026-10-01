@@ -11,16 +11,14 @@ import {
 import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import type { WorkspaceAuthority } from "@claxedo/server-core/platform/auth/authority"
 import { isRecord, stringField } from "@claxedo/server-core/platform/json/index"
+import { batchUnder, may, mayGuard } from "../../authority/adapters/d1/authorization"
 
 /**
- * The authority capabilities this store consumes.
- *
- * Identical to what `D1SignedAgentPluginActivationStore` resolves before any
- * statement runs: the caller never supplies a user or organization ID, and the
- * organization-admin rule is the SAME `listOrgs` role check that gates
- * organization defaults (`activation/d1-store.ts`).
+ * The authority capabilities this store consumes, the same ones
+ * `D1SignedAgentPluginActivationStore` resolves before any statement runs: the
+ * caller never supplies a user or organization ID.
  */
-export type AgentPluginSourceAuthorityPort = Pick<WorkspaceAuthority, "usersMe" | "resolveOrgId" | "listOrgs">
+export type AgentPluginSourceAuthorityPort = Pick<WorkspaceAuthority, "usersMe" | "resolveOrgId">
 
 type Scope = { userId: string; orgId: string }
 
@@ -115,12 +113,12 @@ export class D1AgentPluginSourceStore implements AgentPluginSourceRegistry<Signe
 
   async canRemove(auth: SignedControlPlaneAuth, source: AgentPluginSourceRecord) {
     if (source.authority === "user") return true
-    return await this.organizationAdmin(auth, await this.scope(auth))
+    return await this.organizationAdmin(await this.scope(auth))
   }
 
   async add(auth: SignedControlPlaneAuth, source: AgentPluginSourceRecord) {
     const scope = await this.scope(auth)
-    if (source.authority === "organization") await this.requireOrganizationAdmin(auth, scope)
+    if (source.authority === "organization") await this.requireOrganizationAdmin(scope)
     const visible = await this.visible(scope, source.id)
     if (visible) {
       throw new AgentPluginSourceRegistryError(
@@ -129,7 +127,7 @@ export class D1AgentPluginSourceStore implements AgentPluginSourceRegistry<Signe
       )
     }
     try {
-      await this.database
+      await batchUnder(this.database, writer(scope, source.authority), [this.database
         .prepare(`
           insert into agent_plugin_sources (
             scope_key, id, org_id, owner_user_id, authority, owner, repository, ref, added_at
@@ -145,8 +143,7 @@ export class D1AgentPluginSourceStore implements AgentPluginSourceRegistry<Signe
           source.repository,
           source.ref,
           source.addedAt,
-        )
-        .run()
+        )])
     } catch (cause) {
       // The unique primary key is the race-safe half of the duplicate rule: the
       // read above answers a nicer message, this answers a concurrent writer.
@@ -161,11 +158,10 @@ export class D1AgentPluginSourceStore implements AgentPluginSourceRegistry<Signe
     const scope = await this.scope(auth)
     const visible = await this.visible(scope, id)
     if (!visible) throw new AgentPluginSourceRegistryError("source-unknown", `Source ${id} is not registered`)
-    if (visible.authority === "organization") await this.requireOrganizationAdmin(auth, scope)
-    await this.database
+    if (visible.authority === "organization") await this.requireOrganizationAdmin(scope)
+    await batchUnder(this.database, writer(scope, visible.authority), [this.database
       .prepare("delete from agent_plugin_sources where scope_key = ? and id = ?")
-      .bind(scopeKey(scope.orgId, visible.authority, scope.userId), id)
-      .run()
+      .bind(scopeKey(scope.orgId, visible.authority, scope.userId), id)])
   }
 
   /**
@@ -194,19 +190,20 @@ export class D1AgentPluginSourceStore implements AgentPluginSourceRegistry<Signe
     return { userId, orgId }
   }
 
-  private async organizationAdmin(auth: SignedControlPlaneAuth, scope: Scope) {
-    const orgs = await this.authority.listOrgs(auth)
-    if (!Array.isArray(orgs)) invalid("organization list")
-    return orgs.some((row) => isRecord(row)
-      && row.org_id === scope.orgId
-      && (row.role === "owner" || row.role === "admin"))
+  private async organizationAdmin(scope: Scope) {
+    return await may(this.database, { userId: scope.userId }, "administer", { kind: "org", orgId: scope.orgId })
   }
 
-  private async requireOrganizationAdmin(auth: SignedControlPlaneAuth, scope: Scope) {
-    if (await this.organizationAdmin(auth, scope)) return
+  private async requireOrganizationAdmin(scope: Scope) {
+    if (await this.organizationAdmin(scope)) return
     throw new AgentPluginSourceRegistryError(
       "source-forbidden",
       "Agent Plugins organization sources require the organization admin or owner role",
     )
   }
+}
+
+/** The rule a source write was admitted under, asked again inside its batch. */
+function writer(scope: Scope, authority: "user" | "organization") {
+  return mayGuard({ userId: scope.userId }, authority === "organization" ? "administer" : "member", { kind: "org", orgId: scope.orgId })
 }

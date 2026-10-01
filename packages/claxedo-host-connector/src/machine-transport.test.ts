@@ -146,7 +146,7 @@ describe("a redirected machine request", () => {
     // The attacker's 200, indistinguishable from the control plane's but for
     // having been redirected to. A transport that trusted it would apply the
     // scope, assignments and relay endpoints in this body.
-    const followed = Response.json({ expires_at: 1, scope: { revision: 99, allowed_roots: ["/"], visibility: "owner" } })
+    const followed = Response.json({ expires_at: 1, scope: { revision: 99, allowed_roots: ["/"] } })
     Object.defineProperty(followed, "redirected", { value: true })
     const { transport } = await host(undefined, { fetch: async () => followed })
 
@@ -302,7 +302,7 @@ describe("heartbeat", () => {
     expect(first).toMatchObject({
       expires_at: expect.any(Number),
       assignments: [{ workspaceId: "ws_1", remoteDirectory: "/srv/api", displayName: "API", revision }],
-      scope: { revision: 1, allowed_roots: ["/srv"], visibility: "owner" },
+      scope: { revision: 1, allowed_roots: ["/srv"] },
       relay: { url: cp.relayUrl, jwksUrl: `${cp.relayUrl}/.well-known/jwks.json` },
       authority: { sessionAuthorityUrl: `${cp.url}/api/runtime-authority/session-authorize` },
       assigned_workspace_ids: ["ws_1"],

@@ -32,11 +32,60 @@ control plane (D1) enforces today.
   - **org role**: org owners and admins are `admin`, org members `viewer`.
 
   Nobody outside the project's org has any role on it, whatever rows name
-  them. `projectRoleRankSql` in
-  `packages/claxedo-server/src/authority/adapters/d1/project-role.ts`
-  computes it, and every project decision on D1 reads it. Project access
-  governs the project (its access listing, its grants) and never a
-  workspace; see the resource hierarchy below.
+  them. Project access governs the project (its access listing, its grants)
+  and never a workspace, a session or a machine; see the resource hierarchy
+  below.
+
+## One authorization owner
+
+Every access question the hosted control plane asks is
+`may(database, principal, action, resource)` in
+`packages/claxedo-server/src/authority/adapters/d1/authorization.ts`. The
+principal is a user and, when a request carries one, the actor acting for
+them; the resource names its kind; the action is one of a closed set per
+kind:
+
+| Resource | Actions |
+|---|---|
+| `org` | `member`, `administer`, `own` |
+| `project` | `read`, `write`, `admin`, `owner`, needing a project role of at least `viewer`, `editor`, `admin`, `owner` |
+| `workspace` | `open`, `operate`, `create_session`, `assign_host`, `administer` |
+| `session` | `read`, `send`, `control`, `manage_shares` |
+
+The same rules come in two more shapes, so a statement that writes can carry
+its own guard: `maySql(principal, action, row)` is the rule as a SQL
+predicate over a row already in the query (a table alias), and
+`mayGuard(principal, action, resource)` is `exists (...)` of it. Nothing
+else on D1 decides access: the workspace, session, host access, channel
+runtime, audit, org member, team and project member authorities and the
+Agent Plugins activation and source stores all ask it. Each request resolves
+its signed caller to an active human principal once (`requireHuman` in
+`access-context.ts`); an agent actor never passes it.
+
+That resolution is cached for the request, so it is never the last word on
+a write. Every write asks its rule again inside the statement or batch that
+makes it: a guard in the write's own `where`, or `batchUnder(database, guard,
+statements)`, which puts the guard as the batch's first
+`authority_batch_assertions` row (`activeGuard(principal)` when the write
+names no resource). A suspension, a removal or a lost workspace between the
+check and the write aborts the whole batch with 403.
+
+Every rule first requires an active principal (an active user, and an
+active actor that belongs to them) and an active membership of the
+resource's org. Then:
+
+- a workspace answers every action to its owner (`workspaces.owner_user_id`)
+  alone, while it and its project are live (`assign_host` also reaches a
+  retired local worktree, so its assignment can be taken down);
+- a session answers `read` to its workspace's owner and to the holder of a
+  share on it, `send` to its workspace's owner and the holder of a `send`
+  share, and `control` and `manage_shares` to its workspace's owner alone; a
+  share reaches a human actor only, and only while the workspace's owner is
+  an active user standing in the organization;
+- a project answers the action when the principal's project role is at least
+  that role;
+- an org answers `member` to an active member, `administer` to its owners and
+  admins, `own` to its owners.
 
 ## Who may change what
 
@@ -63,20 +112,23 @@ Admitting a user-deployed identity is the same add, under the same owner
 rules.
 
 Removing an org member revokes, in the same D1 batch, their team memberships
-in that org's teams, their member grants on its projects, their direct
-session shares and session participations in the org, and their runtime
-access tokens in the org. A project or workspace they own stays theirs and
+in that org's teams, their member grants on its projects, the session shares
+naming them and the shares they made on their own workspaces' sessions, their
+session participations in the org, their runtime access tokens in the org,
+and the session tokens their shares admitted. A project or workspace they own stays theirs and
 admits them to nothing without the membership. Re-admitting them restores
 none of it. Every decision reads the rows at request time, so the removed
 person's next request is refused.
 
-A runtime access token is minted only by the workspace's owner, and its
-activity is re-read against their rank at check time. The one change that
-takes that rank away is removing the owner from the org, so it is the one
-change that revokes tokens: re-admission gives the rank back, and without the
-revocation the old token would work again. Lowering or revoking a grant,
-leaving a team and a change of org role touch no workspace rank and revoke
-no token.
+A runtime access token's activity is re-read against `may` at check time:
+a workspace token needs its holder to still `operate` the workspace, a
+session token needs its holder to still `read` the session, which a
+suspended owner's session no longer answers to anyone. Removing the
+owner from the org revokes their tokens outright, because re-admission would
+otherwise bring the old token back to life. Revoking a session share revokes
+the session tokens it admitted. Lowering or revoking a project grant, leaving
+a team and a change of org role reach no workspace or session and revoke no
+token.
 
 Setting up the default team creates only what is missing: the team, a
 membership for each org member who never had one, and an editor grant on each
@@ -131,82 +183,88 @@ The signed desktop reaches the same routes through the named operations
 
 ```text
 People: Org → Teams → members → roles
-Code:   Project → Workspace → Session → participants / session share grants
+Code:   Project → Workspace → Session → session share grants
 ```
 
-A workspace is a folder on a machine, or a cloud sandbox, and it belongs to
-its owner (`workspaces.owner_user_id`), the person who created or placed it.
-A person's role on a workspace, `workspaceRoleRankSql`, is `owner` for its
-owner and nothing for anyone else. Org roles, project roles (a project
-`owner` membership row included), member grants and team grants never reach
-a workspace or the machine it runs on; nobody is added to a machine or a
-folder, and no row names a person on a workspace. `org_member_visible` changes
-no one's workspace role.
+A workspace is a folder on its owner's machine, or a cloud sandbox, and it
+belongs to its owner (`workspaces.owner_user_id`), the person who created or
+placed it. Org roles, project roles (a project `owner` membership row
+included), member grants and team grants never reach a workspace, a session
+on it, or the machine it runs on; nobody is added to a machine or a folder,
+and no row names a person on a workspace.
 
-What the owner's role unlocks: listing and opening the workspace, seeing
-where it is placed and whether its machine is serving it, the
-workspace-scoped surfaces the Relay Host Token gates (files, terminals,
-processes, git), assigning it to a machine or unassigning it, channel access
-to it, Agent Plugins runtime reads for it, and runtime access tokens for it.
-The owner still needs an active membership of the workspace's org; removing
-them from the org takes all of it away.
+What the owner alone may do: list and open the workspace, see where it is
+placed and whether its machine is serving it, reach the workspace-scoped
+surfaces (files, terminals, processes, git), assign it to a machine or
+unassign it, reach it over a channel, read Agent Plugins runtime state for
+it, mint a runtime access token that reaches the whole workspace, and create
+a session on it. Forking is creating a session, so it is the owner's alone
+too. The owner still needs an active membership of the workspace's org;
+removing them from the org takes all of it away.
 
-The only thing that crosses people is a session share, `follow` or `send`,
-on one session. It admits the grantee to that session, and workspace open,
-channel access and runtime access tokens admit a share grantee as a viewer of
-that session's workspace (`SESSION_SHARE_WORKSPACE_ACCESS_SQL` in
-`packages/claxedo-server/src/authority/adapters/d1/workspace-authority.ts`).
-
-One exception is still in the code. The session layer
-(`packages/claxedo-server/src/authority/adapters/d1/session-authority.ts`)
-reads the older rank for reserving, forking, starting, adopting and
-re-visibility of a session and for adding a participant: the workspace
-form of `projectRoleRankSql`, where org owners and admins are `admin` on
-every workspace of the org and, on a workspace whose `org_member_visible` is
-1, a member grant (at most `admin`), a team grant or plain org membership
-counts. So today an org member can still reserve, fork and start a session
-on another member's workspace through the session layer. Lane C1 removes
-that.
-
-The workspace role stops at the session. A session share, at level `follow` or
-`send`, is the only grant one person makes to another, and it is the whole
-admission:
+The only thing that crosses people is a session share on one session, at
+level `follow` or `send`, and it is the whole admission:
 
 ```text
-may read a private session
-  = is the session creator, an active participant,
-    or the holder of a user-, org- or team-targeted session share (evaluate-time)
+may read the session (its transcript, its live and replayed events)
+  = owns its workspace, or holds a user-, org- or team-targeted share on it
 
-may drive its agent (prompt, answer a permission or a question, abort)
-  = is the session creator, an active participant,
-    or the holder of a `send` share
+may send (prompt, answer a permission or a question, abort)
+  = owns its workspace, or holds a `send` share on it
 
 may control the session (shell, permission mode, delete, fork, revert,
   unrevert, command, summarize, title and config edits, goal transitions,
-  worktree writes)
-  = is the session creator or an active participant
+  worktree writes) and manage its shares
+  = owns its workspace
 ```
 
-Org admin standing and workspace role rank admit no one to a session, for read
-or for write; `follow` carries reading and the live stream and stops there, and
-a `send` share carries the agent's turn and never control of the session.
-The runtime names which of the two a write is (`sessionAccessWriteClass` in
-`packages/workspace-runtime/src/session-access-policy.ts`) and the authority
-answers it. The
-creator is enrolled when the session is created, and only the creator may add
-or remove participants and session shares (`session_share_admin_required`
-otherwise); a share may be offered only to a member of the session's
-organization (`session_share_target_outside_organization`). Read and write
-checks live in both the managed route policy and the storage authority so
-alternate clients cannot bypass the rule.
+A share never opens the workspace, lists it or its other sessions, reaches
+its files, terminals or machine, creates or forks a session, or mints a
+token beyond its one session. Session participants are the workspace owner's
+actors (the creator is enrolled when the session is created, and a
+participant must be able to open the workspace), so they admit nobody else.
+Only the owner may add or revoke shares (`session_share_admin_required`
+otherwise), and a share may be offered only to a member of the session's
+organization (`session_share_target_outside_organization`).
+
+The runtime names which class a write is (`sessionAccessWriteClass` in
+`packages/workspace-runtime/src/session-access-policy.ts`: `agent_turn` is
+`send`, `session_control` is `control`) and the session authority answers
+it. Read and write checks live in both the managed route policy and the
+storage authority so alternate clients cannot bypass the rule.
+
+Every Runtime Access Token and Relay Host Token names its reach in a
+`scope` claim: `workspace` on the owner's token, `session` with the
+session's id in `session_id` on a share holder's. The verifier
+(`tokenScopeClaims` in `packages/workspace-relay/src/auth.ts`, the relay's,
+the runtime's and the injected-verifier path alike) refuses a token that
+names neither or both, so a token minted before reach was named reaches
+nothing. A share holder reaches the runtime with a session-scoped token:
+`GET /api/control/workspaces/:id/connection?sessionId=` checks `read` on the
+session and mints a `viewer` token scoped to it, recorded with its
+`session_id`. The relay and the runtime verify that scope instead of
+recomputing anyone's role: `sessionScopeReaches` in
+`packages/workspace-relay-protocol/src/index.ts` admits only that session's
+routes, its events on `/api/wr/events?sessionID=`, and question replies, and
+refuses everything else with 403 `relay_scope_denied`; the runtime's managed
+authority refuses a scoped token on any other session
+(`session_scope_denied`) and the control-plane oracle refuses a scoped proof
+wherever the whole workspace or host is asked for. A workspace-scoped token
+is minted only for the workspace's owner.
+
+A session spends its owner's accounts whoever sends: a turn's connection
+credential binds the workspace owner's partition (`connectionTurnOwner` in
+`packages/claxedo-server/src/connections/turn-owner.ts`), resolved before the
+turn's lease is taken, and a turn whose owner cannot be resolved is refused
+with 403 `session_owner_unresolved`.
 
 Session privacy protects transcript-derived content: metadata, messages,
 prompts, tool activity, questions, permissions, checkpoints, and live or
-replayed session events. Files and working-tree edits remain governed by the
-workspace role; a `send` share on a session whose workspace is placed on a
-machine is the consent that exposes that machine's execution surface to the
-grantee (the agent runs with that machine's files), which is why the People
-control asks the granter to acknowledge it before a `send` grant.
+replayed session events. A `send` share on a session whose workspace is
+placed on a machine is the consent that exposes that machine's execution
+surface to the grantee (the agent runs with that machine's files), which is
+why the People control asks the granter to acknowledge it before a `send`
+grant.
 
 ## Actor identity and attribution
 
@@ -230,23 +288,23 @@ retain their existing representation.
 
 ## Live delivery and revocation
 
-Every live or replay subscription carries its verified actor, org, workspace
-role, and connection identity. The same session-access decision filters live
+Every live or replay subscription carries its verified actor, org, token
+scope, and connection identity. The same session-access decision filters live
 fan-out, replay, reconnect, proxied streams, and transcript-bearing compatibility
 events. Visibility-specific replay sequencing prevents filtered events from
 appearing as data-loss gaps.
 
-Membership removal and role downgrade revoke the affected user's runtime access
-tokens. Open connections are closed by the hosting adapter's revocation check;
+Org membership removal and session share revocation revoke the affected
+user's runtime access tokens. Open connections are closed by the hosting adapter's revocation check;
 the relay polls every 30 seconds and caches a positive revocation result for
 at most 10 seconds, with every lifetime capped by token expiry. Revoked sockets
 close with policy code `1008`. WebSocket origins are evaluated against the
 deployment's configured `allowedOrigins` before upgrade.
 
-An isolated runtime rechecks creator/participant authority through a narrow
-control-plane oracle. The runtime forwards its already-verified RHT as an
+An isolated runtime rechecks session authority through a narrow control-plane
+oracle. The runtime forwards its already-verified RHT as an
 opaque proof; the oracle verifies the current relay signature and expiry, then
-derives actor and workspace only from signed claims. An expired proof terminates
+derives actor, workspace and session scope only from signed claims. An expired proof terminates
 the stream before its next session-derived event. The client reconnects with a
 fresh RAT/RHT and resumes through `Last-Event-ID`.
 

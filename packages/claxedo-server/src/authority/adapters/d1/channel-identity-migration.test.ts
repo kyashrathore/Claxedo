@@ -24,6 +24,7 @@ const BOUNDARY_MIGRATION = "0038_channel_identity_version.sql"
 const ORG_KIND_MIGRATION = "0045_org_scope_means_org.sql"
 const ALL_MIGRATIONS = controlPlaneMigrations()
 const BEFORE_BOUNDARY = ALL_MIGRATIONS.slice(0, ALL_MIGRATIONS.indexOf(BOUNDARY_MIGRATION))
+const FROM_BOUNDARY = ALL_MIGRATIONS.slice(ALL_MIGRATIONS.indexOf(BOUNDARY_MIGRATION))
 
 const active: Miniflare[] = []
 
@@ -292,7 +293,7 @@ describe("channel identity binding version boundary", () => {
        from workspaces where workspace_id = 'ws_main'`,
     ).bind(context.handleHolder.principal!.actorId, context.handleHolder.principal!.userId).run()
 
-    await apply(context.database, [BOUNDARY_MIGRATION])
+    await apply(context.database, FROM_BOUNDARY)
 
     // The recorded credential outlives the boundary — nothing sweeps the
     // table — so the version check has to hold on every path that reads a

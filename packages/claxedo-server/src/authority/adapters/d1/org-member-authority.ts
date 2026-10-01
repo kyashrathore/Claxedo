@@ -7,16 +7,13 @@ import type {
 } from "@claxedo/server-core/platform/auth/org-access-authority"
 import {
   accessAuditStatement,
-  canAdminOrganization,
   D1AccessAuthorityError,
-  isActiveOrgMember,
   requireText,
   resolveMemberUser,
   type AccessPrincipal,
-  type BoundSql,
   type D1AccessContext,
 } from "./access-context"
-import { organizationAdminSql } from "./project-role"
+import { may, maySql, type BoundSql } from "./authorization"
 
 export const D1_ORG_MEMBER_AUTHORITY_METHODS = [
   "listOrgMembers",
@@ -45,7 +42,7 @@ export class D1OrgMemberAuthority implements D1OrgMemberAuthorityPort {
   async listOrgMembers(auth: SignedControlPlaneAuth, args: { orgId: string }): Promise<OrgMember[]> {
     const who = await this.context.principal(auth)
     const orgId = requireText(args.orgId, "orgId")
-    if (!(await isActiveOrgMember(this.database, who.userId, orgId))) return []
+    if (!(await may(this.database, who, "member", { kind: "org", orgId }))) return []
     const result = await this.database
       .prepare(`
         select member.user_id, member.user_id as public_id,
@@ -105,7 +102,11 @@ export class D1OrgMemberAuthority implements D1OrgMemberAuthorityPort {
     await this.assertOwnershipChange(who, orgId, current, null)
     const now = this.context.now()
     const guard = this.changeGuard(who, orgId, userId, null)
-    const shares = `session_share_grants where target_user_id = ? and org_id = ? and revoked_at is null`
+    // Their shares go both ways: the ones naming them, and the ones they made
+    // on their own workspaces' sessions, with the tokens those admitted.
+    const ownedWorkspaces = `select workspace_id from workspaces where owner_user_id = ? and org_id = ?`
+    const shares = `session_share_grants where org_id = ? and revoked_at is null
+      and (target_user_id = ? or workspace_id in (${ownedWorkspaces}))`
     const participations = `session_participants where org_id = ? and revoked_at is null
       and actor_id in (select actor_id from actors where user_id = ?)`
     const [, tokens, sessionShares, sessionParticipations, teams, projects, membership] = await this.database.batch([
@@ -118,7 +119,7 @@ export class D1OrgMemberAuthority implements D1OrgMemberAuthorityPort {
             'after', null,
             'sessionSharesRevoked', (select count(*) from ${shares}),
             'sessionParticipationsRevoked', (select count(*) from ${participations}))`,
-          bind: [orgId, userId, orgId, userId, userId, orgId, orgId, userId],
+          bind: [orgId, userId, orgId, userId, orgId, userId, userId, orgId, orgId, userId],
         },
         guard,
         now,
@@ -126,12 +127,14 @@ export class D1OrgMemberAuthority implements D1OrgMemberAuthorityPort {
       this.database
         .prepare(`
           update runtime_access_tokens set revoked_at = ?
-          where revoked_at is null and deployment_id = ? and minted_for_user_id = ? and org_id = ? and ${guard.sql}
+          where revoked_at is null and deployment_id = ? and org_id = ?
+            and (minted_for_user_id = ? or (session_id is not null and workspace_id in (${ownedWorkspaces})))
+            and ${guard.sql}
         `)
-        .bind(now, this.context.deploymentId, userId, orgId, ...guard.bind),
+        .bind(now, this.context.deploymentId, orgId, userId, userId, orgId, ...guard.bind),
       this.database
         .prepare(`update session_share_grants set revoked_at = ? where rowid in (select rowid from ${shares}) and ${guard.sql}`)
-        .bind(now, userId, orgId, ...guard.bind),
+        .bind(now, orgId, userId, userId, orgId, ...guard.bind),
       this.database
         .prepare(`update session_participants set revoked_at = ? where rowid in (select rowid from ${participations}) and ${guard.sql}`)
         .bind(now, orgId, userId, ...guard.bind),
@@ -224,7 +227,7 @@ export class D1OrgMemberAuthority implements D1OrgMemberAuthorityPort {
   private async adminOrganization(who: AccessPrincipal, value: string) {
     const orgId = requireText(value, "orgId")
     this.context.assertOrganizationAllowed(orgId)
-    if (!(await canAdminOrganization(this.database, who.userId, orgId))) {
+    if (!(await may(this.database, who, "administer", { kind: "org", orgId }))) {
       throw new D1AccessAuthorityError("org_admin_required")
     }
     return orgId
@@ -252,8 +255,7 @@ export class D1OrgMemberAuthority implements D1OrgMemberAuthorityPort {
   ) {
     if (current.founder && next !== "owner") throw new D1AccessAuthorityError("org_owner_protected")
     if (current.role !== "owner" && next !== "owner") return
-    const caller = await this.membership(orgId, who.userId)
-    if (!caller.founder && caller.role !== "owner") throw new D1AccessAuthorityError("org_owner_required")
+    if (!(await may(this.database, who, "own", { kind: "org", orgId }))) throw new D1AccessAuthorityError("org_owner_required")
   }
 
   /**
@@ -273,11 +275,8 @@ export class D1OrgMemberAuthority implements D1OrgMemberAuthorityPort {
     next: OrgMemberRole | null,
     requireActiveMembership = next === null,
   ): BoundSql {
-    const callerIsOwner = `exists (
-      select 1 from org_memberships caller_row
-      where caller_row.org_id = guard_org.org_id and caller_row.user_id = ?
-        and caller_row.role = 'owner' and caller_row.revoked_at is null
-    )`
+    const administers = maySql(who, "administer", { kind: "org", orgId: "guard_org.org_id" })
+    const owns = maySql(who, "own", { kind: "org", orgId: "guard_org.org_id" })
     const targetIsOwner = `exists (
       select 1 from org_memberships target_row
       where target_row.org_id = guard_org.org_id and target_row.user_id = guard_target.user_id
@@ -288,12 +287,9 @@ export class D1OrgMemberAuthority implements D1OrgMemberAuthorityPort {
         select 1 from orgs guard_org
         join users guard_target on guard_target.user_id = ?${next === null ? "" : " and guard_target.state = 'active'"}
         where guard_org.org_id = ? and guard_org.deleted_at is null
-          and ${organizationAdminSql("guard_org.org_id", "?")}
+          and ${administers.sql}
           and (guard_org.owner_user_id <> guard_target.user_id or ? = 'owner')
-          and (
-            guard_org.owner_user_id = ? or ${callerIsOwner}
-            or (coalesce(?, '') <> 'owner' and not ${targetIsOwner})
-          )
+          and (${owns.sql} or (coalesce(?, '') <> 'owner' and not ${targetIsOwner}))
           ${requireActiveMembership ? `and exists (
             select 1 from org_memberships active_row
             where active_row.org_id = guard_org.org_id and active_row.user_id = guard_target.user_id
@@ -305,7 +301,7 @@ export class D1OrgMemberAuthority implements D1OrgMemberAuthorityPort {
               and unchanged_row.revoked_at is null and unchanged_row.role = ?
           )`}
       )`,
-      bind: [userId, orgId, who.userId, who.userId, next, who.userId, who.userId, next, ...(next === null ? [] : [next])],
+      bind: [userId, orgId, ...administers.bind, next, ...owns.bind, next, ...(next === null ? [] : [next])],
     }
   }
 

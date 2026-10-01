@@ -31,7 +31,7 @@ function owner(cp: FakeControlPlane, token = OWNER_TOKEN) {
  */
 async function enrolledMachine(cp: FakeControlPlane, name: string, roots = ["/srv"]) {
   const home = await fs.mkdtemp(path.join(os.tmpdir(), "claxedo-owner-"))
-  const invitation = await cp.createInvitation({ displayName: name, scope: { allowed_roots: roots, visibility: "owner" } })
+  const invitation = await cp.createInvitation({ displayName: name, scope: { allowed_roots: roots } })
   const tokenFile = path.join(home, "invite.txt")
   await fs.writeFile(tokenFile, invitation.token)
   const keys = await createHostKeyPair()
@@ -91,17 +91,17 @@ describe("claxedo host", () => {
 
   test("invite mints a scoped single-use token and prints it once with the connect line", async () => {
     const { deps, lines } = owner(cp)
-    await host(["invite", "--name", "build-box", "--root", "/srv", "--root", "/opt/repos", "--expires", "30m", "--org-visible"], deps)
+    await host(["invite", "--name", "build-box", "--root", "/srv", "--root", "/opt/repos", "--expires", "30m"], deps)
     const sent = cp.log.find((entry) => entry.path === "/api/claxedo/host/invitations")
     expect(sent?.body).toEqual({
       displayName: "build-box",
-      scope: { allowed_roots: ["/srv", "/opt/repos"], visibility: "org" },
+      scope: { allowed_roots: ["/srv", "/opt/repos"] },
       expiresInMs: 30 * 60_000,
     })
     const token = lines.find((line) => line.startsWith("chx_inv_1."))
     expect(token).toBeDefined()
     expect(lines.filter((line) => line.includes(token!))).toHaveLength(1)
-    expect(lines).toContain("Invitation for build-box (roots: /srv, /opt/repos; visibility: org)")
+    expect(lines).toContain("Invitation for build-box (roots: /srv, /opt/repos)")
     expect(lines).toContain("  claxedo connect --token-file <file> --root /srv --root /opt/repos --install-service")
     expect(lines.some((line) => /^Expires: \d{4}-/.test(line))).toBe(true)
   })
@@ -111,6 +111,7 @@ describe("claxedo host", () => {
     await expect(host(["invite", "--root", "/srv"], deps)).rejects.toThrow("--name is required")
     await expect(host(["invite", "--name", "x"], deps)).rejects.toThrow("at least one --root")
     await expect(host(["invite", "--name", "x", "--root", "srv"], deps)).rejects.toThrow("absolute")
+    await expect(host(["invite", "--name", "x", "--root", "/srv", "--org-visible"], deps)).rejects.toThrow("Unknown host option: --org-visible")
     expect(parseExpires(undefined)).toBe(60 * 60_000)
     expect(parseExpires("2h")).toBe(2 * 60 * 60_000)
     expect(parseExpires("1d")).toBe(24 * 60 * 60_000)
@@ -119,8 +120,8 @@ describe("claxedo host", () => {
   })
 
   test("invite output is complete when the control plane omits expiry", () => {
-    expect(inviteOutput({ token: "chx_inv_1.a.b", expiresAt: 0, name: "n", roots: ["/srv"], visibility: "owner" })).toEqual([
-      "Invitation for n (roots: /srv; visibility: owner)",
+    expect(inviteOutput({ token: "chx_inv_1.a.b", expiresAt: 0, name: "n", roots: ["/srv"] })).toEqual([
+      "Invitation for n (roots: /srv)",
       "Expires: 1970-01-01T00:00:00.000Z",
       "",
       "Token (shown once; single use):",
@@ -280,16 +281,16 @@ describe("claxedo host", () => {
     expect([...cp.assignments.values()].filter((entry) => entry.remote_directory === "/srv/web")).toHaveLength(2)
   })
 
-  test("scope patches the roots and visibility; revoke deletes the machine through the devices route", async () => {
+  test("scope patches the roots; revoke deletes the machine through the devices route", async () => {
     const machine = await enrolledMachine(cp, "build-box")
     const { deps, lines } = owner(cp)
     await host(["assign", "--machine", "build-box", "/srv/api"], deps)
-    await host(["scope", "--machine", "build-box", "--root", "/srv/web", "--org-visible"], deps)
+    await host(["scope", "--machine", "build-box", "--root", "/srv/web"], deps)
     const patched = cp.log.find((entry) => entry.method === "PATCH")
     expect(patched?.path).toBe(`/api/claxedo/host/enrollments/${machine.enrollmentId}/scope`)
-    expect(patched?.body).toEqual({ allowed_roots: ["/srv/web"], visibility: "org" })
+    expect(patched?.body).toEqual({ allowed_roots: ["/srv/web"] })
     expect(cp.assignments.size).toBe(0)
-    expect(lines.at(-1)).toContain("roots /srv/web (visibility org)")
+    expect(lines.at(-1)).toContain("roots /srv/web; assignments outside them are retired")
     await expect(host(["scope", "--machine", "build-box"], deps)).rejects.toThrow("at least one --root")
 
     await host(["revoke", "--machine", "build-box"], deps)

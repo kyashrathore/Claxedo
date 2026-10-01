@@ -366,7 +366,7 @@ function enrollmentRow(key: Awaited<ReturnType<typeof machineKey>>, overrides: P
     serving_generation: 2,
     revoked_at: null,
     paused_at: null,
-    scope: { allowed_roots: ["/srv"], visibility: "owner", revision: 1 },
+    scope: { allowed_roots: ["/srv"], revision: 1 },
     ownerEligible: true,
     ...overrides,
   }
@@ -391,7 +391,7 @@ function machineAuthority(row: MachineEnrollmentRow | undefined, overrides: Reco
         { workspace_id: "ws_1", remote_directory: "/srv/one", revision: 3 },
         { workspace_id: "ws_2", remote_directory: "/srv/two", display_name: "Two", revision: 5 },
       ],
-      scope: { allowed_roots: ["/srv"], visibility: "owner", revision: 1 },
+      scope: { allowed_roots: ["/srv"], revision: 1 },
       assigned_workspace_ids: ["ws_1", "ws_2"],
     })),
     acquireHostServingGeneration: vi.fn(async () => ({ generation: 3, generation_acquired_at: NOW })),
@@ -428,7 +428,7 @@ describe("POST /heartbeat, machine caller (v3)", () => {
 
     expect(response.status, await response.clone().text()).toBe(200)
     expect(api.heartbeatHostEnrollmentByMachine).toHaveBeenCalledWith(
-      { enrollmentId: "enr_1", hostId: "host_1", ownerUserId: "usr_owner", ownerActorId: "act_owner", scope: { allowed_roots: ["/srv"], visibility: "owner", revision: 1 }, keyVersion: 1, generation: 2 },
+      { enrollmentId: "enr_1", hostId: "host_1", ownerUserId: "usr_owner", ownerActorId: "act_owner", scope: { allowed_roots: ["/srv"], revision: 1 }, keyVersion: 1, generation: 2 },
       { enrollmentId: "enr_1", hostId: "host_1", generation: 2, acks: [{ workspaceId: "ws_1", revision: 3 }, { workspaceId: "ws_2", revision: 4 }], ttlMs: 8_000, sessionAuthority: "managed-private" },
     )
     // ws_2 was acked at revision 4 but the description says 5: not ready, no credential for it.
@@ -446,7 +446,7 @@ describe("POST /heartbeat, machine caller (v3)", () => {
         { workspace_id: "ws_1", remote_directory: "/srv/one", revision: 3 },
         { workspace_id: "ws_2", remote_directory: "/srv/two", display_name: "Two", revision: 5 },
       ],
-      scope: { allowed_roots: ["/srv"], visibility: "owner", revision: 1 },
+      scope: { allowed_roots: ["/srv"], revision: 1 },
       assigned_workspace_ids: ["ws_1", "ws_2"],
       relay: { url: "https://relay.test/", jwks_url: "https://relay.test/.well-known/jwks.json" },
       authority: { session_authority_url: "https://cp.test/api/runtime-authority/session-authorize" },
@@ -678,7 +678,7 @@ describe("POST /redeem", () => {
         org_id: "org_1",
         key_version: 1,
         serving_generation: 0,
-        scope: { allowed_roots: ["/srv"], visibility: "owner", revision: 1 },
+        scope: { allowed_roots: ["/srv"], revision: 1 },
       })),
     })
     const { app } = await mountedRoutes(api, { relayUrl: "https://relay.test", sessionAuthorityUrl: "https://cp.test/sa" })
@@ -694,7 +694,7 @@ describe("POST /redeem", () => {
       enrollment: { enrollment_id: "enr_9", host_id: "vps-1" },
       key_version: 1,
       org_id: "org_1",
-      scope: { allowed_roots: ["/srv"], visibility: "owner", revision: 1 },
+      scope: { allowed_roots: ["/srv"], revision: 1 },
       relay: { url: "https://relay.test", jwks_url: "https://relay.test/.well-known/jwks.json" },
       authority: { session_authority_url: "https://cp.test/sa" },
     })
@@ -759,21 +759,21 @@ describe("PATCH /:id/scope and GET / machines", () => {
   test("scope PATCH is an owner account call carrying the roots and visibility", async () => {
     const { api, call } = routes({
       updateHostEnrollmentScope: vi.fn(async () => ({
-        scope: { allowed_roots: ["/srv/web"], visibility: "owner", revision: 2 },
+        scope: { allowed_roots: ["/srv/web"], revision: 2 },
         retired_workspace_ids: ["ws_api"],
       })),
     })
     const response = await call("/enr_1/scope", {
       method: "PATCH",
-      body: JSON.stringify({ allowed_roots: ["/srv/web"], visibility: "owner" }),
+      body: JSON.stringify({ allowed_roots: ["/srv/web"] }),
     })
     expect(response.status, await response.clone().text()).toBe(200)
     expect(api.updateHostEnrollmentScope).toHaveBeenCalledWith(expect.anything(), {
       enrollmentId: "enr_1",
-      scope: { allowed_roots: ["/srv/web"], visibility: "owner" },
+      scope: { allowed_roots: ["/srv/web"] },
     })
     expect(await response.json()).toEqual({
-      scope: { allowed_roots: ["/srv/web"], visibility: "owner", revision: 2 },
+      scope: { allowed_roots: ["/srv/web"], revision: 2 },
       retired_workspace_ids: ["ws_api"],
     })
     expect((await call("/enr_1/scope", { method: "PATCH", body: JSON.stringify({ visibility: "owner" }) })).status).toBe(400)
@@ -811,7 +811,7 @@ describe("PATCH /:id/scope and GET / machines", () => {
         throw new D1HostAccessAuthorityError("host_enrollment_not_found", "Host enrollment not found")
       }),
     })
-    const response = await call("/enr_x/scope", { method: "PATCH", body: JSON.stringify({ allowed_roots: [], visibility: "org" }) })
+    const response = await call("/enr_x/scope", { method: "PATCH", body: JSON.stringify({ allowed_roots: [] }) })
     expect(response.status).toBe(404)
     expect(await response.json()).toEqual({ error: { code: "host_enrollment_not_found", message: "Host enrollment not found" } })
   })
@@ -819,7 +819,7 @@ describe("PATCH /:id/scope and GET / machines", () => {
   test("GET / keeps the desktop's single-row shape and adds machines, a paused one saying when", async () => {
     const machines = [
       { enrollment_id: "enr_1", host_id: "host_1", public_key_fingerprint: "fp", key_version: 1, enrolled_via: "account", last_seen_at: 1, expires_at: 9_999, serving_generation: 0, acked: [], scope: undefined },
-      { enrollment_id: "enr_2", host_id: "host_2", public_key_fingerprint: "fp2", key_version: 1, enrolled_via: "invitation", last_seen_at: 1, expires_at: 9_999, serving_generation: 1, paused_at: 7, acked: [], scope: { allowed_roots: ["/srv"], visibility: "owner", revision: 1 } },
+      { enrollment_id: "enr_2", host_id: "host_2", public_key_fingerprint: "fp2", key_version: 1, enrolled_via: "invitation", last_seen_at: 1, expires_at: 9_999, serving_generation: 1, paused_at: 7, acked: [], scope: { allowed_roots: ["/srv"], revision: 1 } },
     ]
     const { call } = routes({ listHostEnrollments: vi.fn(async () => machines) })
     const response = await call("/", { method: "GET" })
@@ -999,7 +999,7 @@ describe("host invitations", () => {
   function invitationRoutes(overrides: Record<string, unknown> = {}) {
     const api = authority({
       createHostInvitation: vi.fn(async () => ({ invitationId: "invitation_1", token: "chx_inv_1.invitation_1.secret", expiresAt: 9_999 })),
-      listHostInvitations: vi.fn(async () => [{ invitation_id: "invitation_1", scope: { allowed_roots: ["/srv"], visibility: "owner" }, org_id: "org_1", created_at: 1, expires_at: 9_999 }]),
+      listHostInvitations: vi.fn(async () => [{ invitation_id: "invitation_1", scope: { allowed_roots: ["/srv"] }, org_id: "org_1", created_at: 1, expires_at: 9_999 }]),
       revokeHostInvitation: vi.fn(async () => ({ revoked: true })),
       ...overrides,
     })
@@ -1017,11 +1017,11 @@ describe("host invitations", () => {
     const { api, call } = invitationRoutes()
     const response = await call("/", {
       method: "POST",
-      body: JSON.stringify({ scope: { allowed_roots: ["/srv"], visibility: "owner" }, displayName: "VPS", expiresInMs: 600_000 }),
+      body: JSON.stringify({ scope: { allowed_roots: ["/srv"] }, displayName: "VPS", expiresInMs: 600_000 }),
     })
     expect(response.status, await response.clone().text()).toBe(200)
     expect(api.createHostInvitation).toHaveBeenCalledWith(expect.anything(), {
-      scope: { allowed_roots: ["/srv"], visibility: "owner" },
+      scope: { allowed_roots: ["/srv"] },
       displayName: "VPS",
       expiresInMs: 600_000,
     })
@@ -1030,13 +1030,13 @@ describe("host invitations", () => {
       action: "host_invitation.created",
       metadata: { invitationId: "invitation_1", expiresAt: 9_999 },
     })
-    expect((await call("/", { method: "POST", body: JSON.stringify({ scope: { allowed_roots: ["/srv"] } }) })).status).toBe(400)
+    expect((await call("/", { method: "POST", body: JSON.stringify({ scope: { allowed_roots: ["/srv"], visibility: "org" } }) })).status).toBe(400)
   })
 
   test("lists and revokes the owner's invitations, auditing a revocation that happened", async () => {
     const { api, call } = invitationRoutes()
     expect(await (await call("/", { method: "GET" })).json()).toEqual({
-      invitations: [{ invitation_id: "invitation_1", scope: { allowed_roots: ["/srv"], visibility: "owner" }, org_id: "org_1", created_at: 1, expires_at: 9_999 }],
+      invitations: [{ invitation_id: "invitation_1", scope: { allowed_roots: ["/srv"] }, org_id: "org_1", created_at: 1, expires_at: 9_999 }],
     })
     const revoked = await call("/invitation_1", { method: "DELETE" })
     expect(await revoked.json()).toEqual({ revoked: true })
@@ -1052,7 +1052,7 @@ describe("host invitations", () => {
     }
     const statuses: number[] = []
     for (let attempt = 0; attempt < 12; attempt += 1) {
-      statuses.push((await call("/", { method: "POST", body: JSON.stringify({ scope: { allowed_roots: [], visibility: "org" } }) })).status)
+      statuses.push((await call("/", { method: "POST", body: JSON.stringify({ scope: { allowed_roots: [] } }) })).status)
     }
     expect(statuses.filter((status) => status === 200)).toHaveLength(10)
     expect(statuses.filter((status) => status === 429)).toHaveLength(2)

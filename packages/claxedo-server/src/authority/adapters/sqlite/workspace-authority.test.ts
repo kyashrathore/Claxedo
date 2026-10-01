@@ -178,16 +178,12 @@ describe("sqlite workspace authority", () => {
     const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "claxedo-authority-channel-")), "authority.db")
     const seeded = createSqliteWorkspaceAuthority({ path: file })
     await seeded.createCloudWorkspace(owner, { workspaceId: "ws_ch", displayName: "Ch" })
-    await seeded.usersMe(other)
+    // Each account owns a workspace of its own: the collision only means
+    // anything when the version is the single thing separating them.
+    await seeded.createCloudWorkspace(other, { workspaceId: "ws_ch_other", displayName: "Ch other" })
     const seededDb = openAuthorityDb({ path: file })
-    // Both accounts can reach the workspace on their own: the collision only
-    // means anything when the version is the single thing separating them.
     const project = seededDb().prepare(`SELECT project_id FROM workspaces WHERE workspace_id = 'ws_ch'`)
       .get() as { project_id: string }
-    seededDb().prepare(`
-      INSERT INTO project_memberships (project_id, token_identifier, role, created_at, updated_at)
-      VALUES (?, ?, 'editor', 1, 1)
-    `).run(project.project_id, other.user.tokenIdentifier)
     seededDb.close()
 
     // The 0006-era channel_identities: binding_id already canonical, no
@@ -218,12 +214,12 @@ describe("sqlite workspace authority", () => {
     // The legacy row is unrevoked, so the pre-boundary index would have made
     // this bind collide instead of admitting the account that owns the id.
     expect(await authority.bindChannelIdentity(other, channelKey)).toMatchObject({ created: true })
-    expect(await authority.authorizeChannelWorkspace({ ...channelKey, workspaceId: "ws_ch", action: "read" }))
+    expect(await authority.authorizeChannelWorkspace({ ...channelKey, workspaceId: "ws_ch_other", action: "read" }))
       .toMatchObject({ actorId: other.user.tokenIdentifier })
     expect(await authority.revokeChannelIdentity(owner, channelKey)).toEqual({ revoked: false })
     await expect(authority.bindChannelIdentity(owner, channelKey)).rejects.toThrow(/already bound/)
     expect(await authority.revokeChannelIdentity(other, channelKey)).toEqual({ revoked: true })
-    await expect(authority.authorizeChannelWorkspace({ ...channelKey, workspaceId: "ws_ch", action: "read" }))
+    await expect(authority.authorizeChannelWorkspace({ ...channelKey, workspaceId: "ws_ch_other", action: "read" }))
       .rejects.toMatchObject({ status: 403 })
     database.close()
 
@@ -262,7 +258,7 @@ describe("sqlite workspace authority", () => {
     })).toEqual({ revoked: false })
   })
 
-  test("creator owns the workspace; others are denied until a direct membership admits them", async () => {
+  test("creator owns the workspace, and a project membership admits nobody else to it", async () => {
     const { authority, database } = fileAuthority()
     await authority.createCloudWorkspace(owner, { workspaceId: "ws_1", displayName: "One" })
     await authority.usersMe(other)
@@ -289,13 +285,8 @@ describe("sqlite workspace authority", () => {
       INSERT INTO project_memberships (project_id, token_identifier, role, created_at, updated_at)
       VALUES (?, ?, 'editor', ?, ?)
     `).run(project.project_id, other.user.tokenIdentifier, now, now)
-    const admitted = await authority.openWorkspace(other, { workspaceId: "ws_1" })
-    expect(admitted.role).toBe("editor")
-    expect((await authority.listWorkspaces(other) as unknown[])).toHaveLength(1)
-
-    database().prepare(`DELETE FROM project_memberships WHERE project_id = ? AND token_identifier = ?`)
-      .run(project.project_id, other.user.tokenIdentifier)
     await expect(authority.openWorkspace(other, { workspaceId: "ws_1" })).rejects.toMatchObject({ status: 403 })
+    expect(await authority.listWorkspaces(other)).toEqual([])
     authority.close()
     database.close()
   })
@@ -404,34 +395,27 @@ describe("sqlite workspace authority", () => {
       .toMatchObject({ active: false, code: "runtime_access_token_revoked" })
   })
 
-  test("live token checks reject a stale elevated role even if revocation stamping is missed", async () => {
+  test("live token checks reread ownership even if revocation stamping is missed", async () => {
     const { authority, database } = fileAuthority()
-    await authority.createCloudWorkspace(owner, { workspaceId: "ws_role_downgrade", displayName: "Role downgrade" })
+    await authority.createCloudWorkspace(owner, { workspaceId: "ws_owner_moved", displayName: "Owner moved" })
     await authority.usersMe(other)
-    const now = Date.now()
-    const project = database().prepare(`SELECT project_id FROM workspaces WHERE workspace_id = 'ws_role_downgrade'`)
-      .get() as { project_id: string }
-    database().prepare(`
-      INSERT INTO project_memberships (project_id, token_identifier, role, created_at, updated_at)
-      VALUES (?, ?, 'editor', ?, ?)
-    `).run(project.project_id, other.user.tokenIdentifier, now, now)
-    await authority.recordRuntimeAccessToken(other, {
-      jti: "jti_stale_editor",
-      workspaceId: "ws_role_downgrade",
-      hostId: "host_role_downgrade",
-      actorId: other.user.tokenIdentifier,
+    await authority.recordRuntimeAccessToken(owner, {
+      jti: "jti_former_owner",
+      workspaceId: "ws_owner_moved",
+      hostId: "host_owner_moved",
+      actorId: owner.user.tokenIdentifier,
       actorKind: "human",
-      role: "editor",
+      role: "owner",
       expiresAt: Date.now() + 60_000,
     })
 
-    database().prepare(`UPDATE project_memberships SET role = 'viewer' WHERE project_id = ? AND token_identifier = ?`)
-      .run(project.project_id, other.user.tokenIdentifier)
+    database().prepare(`UPDATE workspaces SET owner_token_identifier = ? WHERE workspace_id = 'ws_owner_moved'`)
+      .run(other.user.tokenIdentifier)
 
     await expect(authority.runtimeAccessTokenActive({
-      jti: "jti_stale_editor",
-      workspaceId: "ws_role_downgrade",
-      hostId: "host_role_downgrade",
+      jti: "jti_former_owner",
+      workspaceId: "ws_owner_moved",
+      hostId: "host_owner_moved",
     })).resolves.toMatchObject({
       active: false,
       code: "runtime_access_token_revoked",
@@ -440,7 +424,6 @@ describe("sqlite workspace authority", () => {
     authority.close()
     database.close()
   })
-
 
   test("session visibility + message sync stay workspace-scoped", async () => {
     const authority = memoryAuthority()
@@ -992,7 +975,7 @@ describe("machine share admission", () => {
     })
   }
 
-  test("the workspace's administrator may serve it, and a signed stranger may not", async () => {
+  test("the workspace's owner may serve it, and neither a signed stranger nor a project admin may", async () => {
     const { authority, database } = fileAuthority()
     try {
       await registered(authority, "ws_shared")
@@ -1004,17 +987,11 @@ describe("machine share admission", () => {
         status: 404,
       })
 
-      // A project admin is an administrator of its workspaces, and losing that
-      // membership takes the machine share with it.
       const now = Date.now()
       database().prepare(`
         INSERT INTO project_memberships (project_id, token_identifier, role, created_at, updated_at)
         VALUES (?, ?, 'admin', ?, ?)
       `).run("project_ws_shared", other.user.tokenIdentifier, now, now)
-      await expect(admit(authority)(other, { workspaceId: "ws_shared" }))
-        .resolves.toEqual({ registration: "existing" })
-      database().prepare(`DELETE FROM project_memberships WHERE project_id = ? AND token_identifier = ?`)
-        .run("project_ws_shared", other.user.tokenIdentifier)
       await expect(admit(authority)(other, { workspaceId: "ws_shared" })).rejects.toMatchObject({
         code: "workspace_not_found",
       })
@@ -1039,9 +1016,10 @@ describe("machine share admission", () => {
       await expect(admit(authority)(other, { workspaceId: "ws_orphaned" })).rejects.toMatchObject({
         code: "workspace_not_found",
       })
-      // The project's own administrator is unaffected by the missing user row.
-      await expect(admit(authority)(owner, { workspaceId: "ws_orphaned" }))
-        .resolves.toEqual({ registration: "existing" })
+      // Nor is it the project owner's to serve, and it is not a cold share.
+      await expect(admit(authority)(owner, { workspaceId: "ws_orphaned" })).rejects.toMatchObject({
+        code: "workspace_not_found",
+      })
     } finally {
       authority.close()
       database.close()

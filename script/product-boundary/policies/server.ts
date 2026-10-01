@@ -45,21 +45,22 @@ export const serverWorkerd: Policy = {
     requiredPackages: ["better-auth", "hono", "@claxedo/server-core"],
   },
   // The D1 authority composes its organization, team and project-member
-  // modules beside `project-role.ts`, the one rank query they and every other
-  // D1 reader share (`authority/adapters/d1/core-authority.ts`); the host
-  // access authority's error contract is its own module
-  // (`authority/adapters/d1/host-access-errors.ts`); and the Better Auth
+  // modules beside `authorization.ts`, the one owner of every D1 access rule
+  // (`authority/adapters/d1/core-authority.ts`); the host access authority's
+  // error contract is its own module
+  // (`authority/adapters/d1/host-access-errors.ts`); the Better Auth
   // composition adds the AUTH_DB email lookup an org admin adds a member by
-  // (`platform/auth/better-auth-d1-account-email.ts`). The D1 session
-  // authority's refusal error and input validation
-  // (`authority/adapters/d1/session-input.ts`) and its access predicates
-  // (`authority/adapters/d1/session-access-sql.ts`) are modules of their own,
-  // split from the authority. Hosted Pages are mounted by the core Worker:
-  // the D1 document authority (`authority/adapters/d1/document-authority.ts`),
-  // the R2 documents backend with its index and managed store
-  // (`documents/backends/hosted/`), and the runtime broker that
-  // hydrates a page into a session (`documents/backends/hosted/runtime-broker.ts`
-  // with its relay client `documents/relay-http.ts`).
+  // (`platform/auth/better-auth-d1-account-email.ts`); the session authority
+  // routes resolve whose connections a turn spends through
+  // `connections/turn-owner.ts`, the one owner the self-hosted node shares; the
+  // D1 session authority's refusal error and input validation
+  // (`authority/adapters/d1/session-input.ts`) are a module of their own. Hosted
+  // Pages are mounted by the core Worker: the D1 document authority
+  // (`authority/adapters/d1/document-authority.ts`), the R2 documents backend
+  // with its index and managed store (`documents/backends/hosted/`), and the
+  // runtime broker that hydrates a page into a session
+  // (`documents/backends/hosted/runtime-broker.ts` with its relay client
+  // `documents/relay-http.ts`).
   ceilings: { modules: 114, packages: 19 },
 
   emitted: {

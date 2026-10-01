@@ -188,7 +188,6 @@ describe("hosted organization, team and project access routes on D1", () => {
       orgId,
       displayName: "acme",
       backing: "local-worktree",
-      orgMemberVisible: true,
     })
     const opens = async () => (await call(bob.token, "GET", "/api/claxedo/agent-config/harness?workspaceId=ws_acme")).status
     const listed = async () =>
@@ -245,7 +244,6 @@ describe("hosted organization, team and project access routes on D1", () => {
       orgId,
       displayName: "acme",
       backing: "local-worktree",
-      orgMemberVisible: false,
     })
     await call(alice.token, "POST", `/api/control/orgs/${orgId}/members`, { userPublicId: bob.userId, role: "member" })
 

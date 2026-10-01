@@ -176,8 +176,7 @@ export function decodeScope(value: unknown): HostScope | undefined {
   if (!Array.isArray(roots)) return undefined
   const allowed = roots.filter((root): root is string => typeof root === "string")
   if (allowed.length !== roots.length) return undefined
-  const visibility = value.visibility === "org" ? "org" : "owner"
-  return { revision: requireNumber(value.revision, "scope.revision"), allowed_roots: allowed, visibility }
+  return { revision: requireNumber(value.revision, "scope.revision"), allowed_roots: allowed }
 }
 
 /**

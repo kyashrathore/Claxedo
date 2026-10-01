@@ -53,7 +53,6 @@ async function setup() {
     displayName: "private",
     backing: "cloud-vm",
     repoUrl: "https://github.com/acme/app",
-    orgMemberVisible: false,
   })
   const audit = async (prefix: string) =>
     (await database
@@ -325,7 +324,7 @@ describe("D1 team project grants", () => {
 
 describe("D1 grants on another person's workspace", () => {
   test("no org role, project grant or team grant reaches another person's workspace, and the grants still show on the project", async () => {
-    const { authority, database, alice, bob, carol, person, projectId } = await setup()
+    const { authority, alice, bob, carol, person, projectId } = await setup()
     const dave = await person("dave")
     await authority.addOrgMember!(alice, { orgId: "org_acme", userPublicId: id(bob), role: "member" })
     await authority.addOrgMember!(alice, { orgId: "org_acme", userPublicId: id(carol), role: "member" })
@@ -334,14 +333,13 @@ describe("D1 grants on another person's workspace", () => {
     const team = (await authority.createTeamInOrg!(alice, { orgId: "org_acme", name: "Eng" })) as { team_id: string }
     await authority.addTeamMember!(alice, { teamId: team.team_id, userPublicId: id(carol) })
     await authority.grantTeamProject!(alice, { teamId: team.team_id, projectId, role: "admin" })
-    await database.prepare("update workspaces set org_member_visible = 1").run()
     const listed = async (auth: SignedControlPlaneAuth) =>
       (await authority.listWorkspaces(auth) as Array<{ workspace_id: string }>).map((row) => row.workspace_id)
 
     for (const other of [bob, carol, dave]) {
       for (const workspaceId of ["ws_acme", "ws_private"]) {
         await expect(authority.openWorkspace(other, { workspaceId })).rejects.toMatchObject({ status: 403 })
-        await expect(authority.resolveRuntimeMachineAccess(other.principal!.actorId, workspaceId, "viewer"))
+        await expect(authority.resolveRuntimeMachineAccess(other.principal!.actorId, workspaceId))
           .rejects.toMatchObject({ status: 403 })
         await expect(token(authority, other, `jti_${id(other)}_${workspaceId}`, "viewer", workspaceId))
           .rejects.toMatchObject({ status: 403 })
@@ -616,7 +614,7 @@ describe("D1 access changes that must not undo or outlive a decision", () => {
     expect(await authority.removeOrgMember!(alice, { orgId: "org_acme", userPublicId: id(carol) }))
       .toMatchObject({ removed: true, runtime_tokens_revoked: 1 })
     await expect(authority.openWorkspace(carol, { workspaceId: "ws_carol" })).rejects.toMatchObject({ status: 403 })
-    await expect(authority.resolveRuntimeMachineAccess(carol.principal!.actorId, "ws_carol", "viewer"))
+    await expect(authority.resolveRuntimeMachineAccess(carol.principal!.actorId, "ws_carol"))
       .rejects.toMatchObject({ status: 403 })
 
     await authority.addOrgMember!(alice, { orgId: "org_acme", userPublicId: id(carol), role: "member" })
@@ -652,24 +650,27 @@ describe("D1 access changes that must not undo or outlive a decision", () => {
   })
 
   test("removal revokes the person's direct session shares and participations in the organization, audited, so re-admission restores no consent", async () => {
-    const { authority, database, alice, bob, projectId, audit } = await setup()
-    await authority.addOrgMember!(alice, { orgId: "org_acme", userPublicId: id(bob), role: "member" })
-    await authority.grantProjectMember!(alice, { projectId, userPublicId: id(bob), role: "editor" })
-    await authority.createWorkspace(alice, { workspaceId: "ws_cloud", orgId: "org_acme", displayName: "cloud", backing: "cloud-vm" })
-    await authority.reserveSession(alice, { operationId: "op_1", sessionId: "ses_1", workspaceId: "ws_cloud", kind: "create", title: "private" })
-    await authority.registerRuntimeSession({
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
-      principalKind: "user",
-      actorId: alice.principal!.actorId,
-      actorKind: "human",
-      operationId: "op_1",
-      sessionId: "ses_1",
-      workspaceId: "ws_cloud",
-      title: "private",
-    })
+    const { authority, database, alice, bob, audit } = await setup()
+    await authority.addOrgMember!(alice, { orgId: "org_acme", userPublicId: id(bob), role: "admin" })
+    const register = async (who: SignedControlPlaneAuth, workspaceId: string, sessionId: string) => {
+      await authority.createWorkspace(who, { workspaceId, orgId: "org_acme", displayName: workspaceId, backing: "cloud-vm" })
+      await authority.reserveSession(who, { operationId: `op_${sessionId}`, sessionId, workspaceId, kind: "create" })
+      await authority.registerRuntimeSession({
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+        principalKind: "user",
+        actorId: who.principal!.actorId,
+        actorKind: "human",
+        operationId: `op_${sessionId}`,
+        sessionId,
+        workspaceId,
+      })
+    }
+    await register(alice, "ws_cloud", "ses_1")
+    // Bob's own session enrols him as its participant, the one participation
+    // a person can hold.
+    await register(bob, "ws_bob", "ses_bob")
     await authority.grantSessionShare!(alice, { sessionId: "ses_1", workspaceId: "ws_cloud", grantedToUserId: id(bob) })
-    await authority.grantSessionParticipant(alice, { sessionId: "ses_1", workspaceId: "ws_cloud", participantActorId: bob.principal!.actorId })
 
     expect(await authority.removeOrgMember!(alice, { orgId: "org_acme", userPublicId: id(bob) }))
       .toMatchObject({ removed: true, session_shares_revoked: 1, session_participations_revoked: 1 })

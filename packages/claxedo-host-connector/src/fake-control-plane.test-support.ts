@@ -42,7 +42,7 @@ const NONCE_TTL_MS = 120_000
 const LEASE_MS = 60_000
 const TUNNEL_TOKEN_TTL_MS = 5 * 60_000
 
-export type FakeScope = { revision: number; allowed_roots: string[]; visibility: "owner" | "org" }
+export type FakeScope = { revision: number; allowed_roots: string[] }
 
 export type FakeEnrollment = {
   enrollment_id: string
@@ -689,7 +689,7 @@ export async function enrollFakeHost(
   const store = createHostStateStore({ file: "/home/u/.claxedo/connect/state.json", fs: memory.fs, random: () => "t" })
   const tokenFile = input.tokenFile ?? "/etc/claxedo/invite.txt"
   const invitation = await cp.createInvitation({
-    scope: { revision: 1, allowed_roots: input.allowedRoots, visibility: "owner" },
+    scope: { revision: 1, allowed_roots: input.allowedRoots },
   })
   memory.files.set(tokenFile, { text: invitation.token, mode: 0o600 })
   const fresh = newHostState({

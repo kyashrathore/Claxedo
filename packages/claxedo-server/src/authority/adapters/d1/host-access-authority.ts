@@ -41,8 +41,11 @@ import { MACHINE_SEAL_VERSION, machineSealingPublicKey } from "@claxedo/server-c
 import { timingSafeEqualStrings } from "@claxedo/server-core/platform/auth/web-crypto"
 import { sha256Hex } from "@claxedo/helpers/crypto"
 import { asRecord, parseJson } from "@claxedo/server-core/platform/json/index"
-import { batchAssertionFailed, type D1WorkspaceAuthority } from "./workspace-authority"
-import { activeOrgMemberSql, workspaceRoleRankSql } from "./project-role"
+import type { D1WorkspaceAuthority } from "./workspace-authority"
+import {
+  activeGuard, batchAssertionFailed, batchUnder, deleteAssertion, mayGuard, maySql, wonAssertion, type WorkspaceAction,
+} from "./authorization"
+import { requireHuman } from "./access-context"
 import { D1HostAccessAuthorityError } from "./host-access-errors"
 
 export const D1_HOST_ACCESS_AUTHORITY_METHODS = [
@@ -92,15 +95,6 @@ export type D1HostAccessAuthorityOptions = {
 
 type Principal = { userId: string; actorId: string; actorKind: "human" | "agent" }
 
-type PrincipalRow = {
-  user_id: string
-  user_state: "active" | "suspended" | "deleted"
-  actor_id: string
-  actor_kind: "human" | "agent"
-  actor_state: "active" | "suspended" | "revoked"
-  unlinked_at: number | null
-}
-
 type WorkspaceRow = {
   workspace_id: string
   org_id: string
@@ -109,7 +103,6 @@ type WorkspaceRow = {
   home_region: string | null
   remote_directory: string | null
   host_assignment_revision: number
-  role_rank: number
 }
 
 type EnrollmentRequestRow = {
@@ -290,14 +283,14 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
    * heartbeat's readiness row, and routing requires all three. Cold-registers
    * the workspace row exactly as the retired per-workspace registration did.
    *
-   * The owner's rank is decided against the record as it stands — a retired
+   * Ownership is decided against the record as it stands — a retired
    * machine-placed row included, since assigning it is what revives it — so a
    * refused request writes nothing. The cold registration, the revival, the
    * directory and the next assignment revision then land in one batch guarded
    * on the workspace counter and the enrollment's scope revision this call
    * validated, so a scope that moved in between leaves neither an assignment
-   * nor a workspace behind; the enrollment's scope decides both whether the
-   * directory is allowed and whether ordinary org members see the workspace.
+   * nor a workspace behind; the enrollment's scope decides whether the
+   * directory is allowed.
    * A stored directory is written back in its normalized form even when the
    * request omits one, so a row an older writer left un-normalized is
    * repaired by the next assignment.
@@ -333,7 +326,6 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
     if (invitationOrgId && args.orgId && args.orgId !== invitationOrgId) {
       throw new D1HostAccessAuthorityError("host_assignment_outside_scope", "Workspace organization differs from the invitation's")
     }
-    const orgMemberVisible = scope?.visibility !== "owner"
     // The workspace half is the admission `authorizeWorkspaceHostAssignment`
     // already gave this caller; the invitation and scope rules below are the
     // machine half, which only an assignment can know.
@@ -371,7 +363,6 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
         ...(args.gitBranch ? { gitBranch: args.gitBranch } : {}),
         ...(remoteDirectory ? { remoteDirectory } : {}),
         ...(args.homeRegion ? { homeRegion: args.homeRegion } : {}),
-        orgMemberVisible,
       })).statements
     }
     // The assigning owner describes the workspace the machine serves — name,
@@ -382,17 +373,17 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
       ...(args.repoName ? [["repo_name", args.repoName] as [string, string]] : []),
       ...(args.gitBranch ? [["git_branch", args.gitBranch] as [string, string]] : []),
       ...(remoteDirectory ? [["remote_directory", remoteDirectory] as [string, string]] : []),
-      ["org_member_visible", orgMemberVisible ? 1 : 0],
     ]
     const counter = workspace?.host_assignment_revision ?? 0
     const revision = counter + 1
     const now = this.now()
     const assertionId = this.randomId("assert")
-    await this.guardedBatch([
+    const admitted = workspace ? mayGuard(who, "assign_host", { kind: "workspace", workspaceId }) : activeGuard(who)
+    await batchUnder(this.database, admitted, [
       ...registration,
       this.database.prepare(`
         update workspaces set deleted_at = null, host_assignment_revision = ?,
-          ${description.map(([column]) => `${column} = ?`).join(", ")}, updated_at = ?
+          ${description.map(([column]) => `${column} = ?, `).join("")}updated_at = ?
         where workspace_id = ? and host_assignment_revision = ? and backing = 'local-worktree'
           and exists (
             select 1 from host_enrollments
@@ -408,7 +399,7 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
         hostId,
         enrollment.scope_revision,
       ),
-      this.wonAssertion(assertionId),
+      wonAssertion(this.database, assertionId),
       this.database.prepare(`
         insert into host_workspace_assignments (
           workspace_id, host_id, org_id, owner_user_id, owner_actor_id,
@@ -423,17 +414,17 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
           updated_at = excluded.updated_at,
           revision = excluded.revision
       `).bind(hostId, who.userId, who.actorId, now, now, workspaceId),
-      this.deleteAssertion(assertionId),
-    ], "Host assignment raced with a scope, assignment or workspace identity change")
+      deleteAssertion(this.database, assertionId),
+    ], (statements) => this.guardedBatch(statements, "Host assignment raced with a scope, assignment or workspace identity change"))
     return { assigned: true as const, workspace_id: workspaceId, host_id: hostId }
   }
 
   async unassignWorkspaceHost(auth: SignedControlPlaneAuth, args: { workspaceId: string }) {
     const who = await this.requirePrincipal(auth)
     const workspaceId = requireText(args.workspaceId, "workspaceId")
-    await this.requireWorkspaceAccess(who, workspaceId, "admin")
+    await this.requireWorkspaceAccess(who, workspaceId, "administer")
     const now = this.now()
-    const [result] = await this.database.batch([
+    const [result] = await batchUnder(this.database, mayGuard(who, "administer", { kind: "workspace", workspaceId }), [
       this.database.prepare(`
         delete from host_workspace_assignments where workspace_id = ?
       `).bind(workspaceId),
@@ -447,7 +438,7 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
   async activeWorkspaceHost(auth: SignedControlPlaneAuth, args: { workspaceId: string }) {
     const who = await this.requirePrincipal(auth)
     const workspaceId = requireText(args.workspaceId, "workspaceId")
-    await this.requireWorkspaceAccess(who, workspaceId, "read")
+    await this.requireWorkspaceAccess(who, workspaceId, "open")
     const row = await this.database.prepare(`
       select assignment.workspace_id, assignment.host_id,
         enrollment.display_name, enrollment.expires_at, enrollment.last_seen_at,
@@ -530,7 +521,7 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
     const nonce = this.randomNonce()
     const now = this.now()
     const expiresAt = now + CHALLENGE_TTL_MS
-    await this.database.batch([
+    await batchUnder(this.database, activeGuard(who), [
       this.expiredRowSweep("host_enrollment_requests", "request_id", now),
       this.database.prepare(`
         insert into host_enrollment_requests (
@@ -572,7 +563,7 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
     const expiresAt = now + normalizedTtl(args.ttlMs)
     const enrollmentId = this.randomId("enrollment")
     const assertionId = this.randomId("assert")
-    await this.guardedBatch([
+    await batchUnder(this.database, activeGuard(who), [
       this.signatureUse(signatureHash, "host-enroll", who.actorId, hostId, now),
       this.database.prepare(`
         update host_enrollment_requests
@@ -631,8 +622,8 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
             and revoked_at is null and paused_at is null
         ) then 1 else 0 end)
       `).bind(assertionId, who.actorId, hostId, signatureHash),
-      this.deleteAssertion(assertionId),
-    ], "Host enrollment raced with another request")
+      deleteAssertion(this.database, assertionId),
+    ], (statements) => this.guardedBatch(statements, "Host enrollment raced with another request"))
     return enrollmentJson((await this.enrollment(who.actorId, hostId))!)
   }
 
@@ -698,7 +689,7 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
             where ${MACHINE_ELIGIBLE_SQL} and serving_generation = ? and expires_at = ?
           ) then 1 else 0 end)
         `).bind(assertionId, machine.enrollmentId, machine.keyVersion, generation, expiresAt),
-        this.deleteAssertion(assertionId),
+        deleteAssertion(this.database, assertionId),
       ])
     } catch (error) {
       if (!batchAssertionFailed(error)) throw error
@@ -729,7 +720,7 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
             serving_generation = serving_generation + 1, generation_acquired_at = ?, updated_at = ?
           where ${MACHINE_ELIGIBLE_SQL} and serving_generation = ?
         `).bind(now, now, machine.enrollmentId, machine.keyVersion, machine.generation),
-        this.wonAssertion(assertionId),
+        wonAssertion(this.database, assertionId),
         this.database.prepare(`
           delete from host_assignment_readiness where enrollment_id = ? and generation < ?
         `).bind(machine.enrollmentId, generation),
@@ -739,7 +730,7 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
           metadata: { enrollmentId: machine.enrollmentId, hostId: machine.hostId, generation },
           now,
         }),
-        this.deleteAssertion(assertionId),
+        deleteAssertion(this.database, assertionId),
       ])
     } catch (error) {
       if (!batchAssertionFailed(error)) throw error
@@ -755,10 +746,10 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
     const who = await this.requirePrincipal(auth)
     const hostId = optionalText(args.hostId, "hostId")
     const now = this.now()
-    await this.database.prepare(`
+    await batchUnder(this.database, activeGuard(who), [this.database.prepare(`
       update host_enrollments set paused_at = ?, updated_at = ?
       where owner_actor_id = ? and (? is null or host_id = ?) and revoked_at is null
-    `).bind(args.paused ? now : null, now, who.actorId, hostId ?? null, hostId ?? null).run()
+    `).bind(args.paused ? now : null, now, who.actorId, hostId ?? null, hostId ?? null)])
     return { paused: args.paused }
   }
 
@@ -868,12 +859,12 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
             or substr(workspace.remote_directory, 1, length(root.value) + 1) = root.value || '/'
         )`
     const outsideRoots = () => [row.host_id, row.owner_actor_id, rootsJson]
-    await this.guardedBatch([
+    await batchUnder(this.database, activeGuard(who), [
       this.database.prepare(`
         update host_enrollments set scope_json = ?, scope_revision = ?, updated_at = ?
         where enrollment_id = ? and owner_actor_id = ? and scope_revision = ? and revoked_at is null
       `).bind(JSON.stringify(scope), revision, now, enrollmentId, who.actorId, row.scope_revision),
-      this.wonAssertion(assertionId),
+      wonAssertion(this.database, assertionId),
       this.database.prepare(retireMachinePlacedWorkspaceSql(`workspace_id in (${outsideRootsSql})`))
         .bind(now, now, ...outsideRoots()),
       this.database.prepare(`
@@ -893,14 +884,8 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
       this.database.prepare(`
         delete from host_workspace_assignments where workspace_id in (${outsideRootsSql})
       `).bind(...outsideRoots()),
-      this.database.prepare(`
-        update workspaces set org_member_visible = ?, updated_at = ?
-        where workspace_id in (
-          select workspace_id from host_workspace_assignments where host_id = ? and owner_actor_id = ?
-        )
-      `).bind(scope.visibility === "owner" ? 0 : 1, now, row.host_id, row.owner_actor_id),
-      this.deleteAssertion(assertionId),
-    ], "Host enrollment scope changed concurrently")
+      deleteAssertion(this.database, assertionId),
+    ], (statements) => this.guardedBatch(statements, "Host enrollment scope changed concurrently"))
     const audit = await this.database.prepare(`select metadata_json from authority_audit_events where event_id = ?`)
       .bind(auditId).first<{ metadata_json: string }>()
     const retired = stringList(asRecord(parseJson(audit?.metadata_json ?? "{}"))?.retiredWorkspaceIds)
@@ -915,11 +900,12 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
     const enrollmentId = requireText(args.enrollmentId, "enrollmentId")
     const displayName = requireText(args.displayName, "displayName", 200)
     const now = this.now()
-    const updated = await this.database.prepare(`
+    const [renamed] = await batchUnder(this.database, activeGuard(who), [this.database.prepare(`
       update host_enrollments set display_name = ?, updated_at = ?
       where enrollment_id = ? and owner_actor_id = ? and revoked_at is null
       returning enrollment_id
-    `).bind(displayName, now, enrollmentId, who.actorId).first<{ enrollment_id: string }>()
+    `).bind(displayName, now, enrollmentId, who.actorId)])
+    const updated = renamed.results[0]
     if (!updated) {
       throw new D1HostAccessAuthorityError("host_enrollment_not_found", "Host enrollment not found")
     }
@@ -986,7 +972,7 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
     const now = this.now()
     const assertionId = this.randomId("assert")
     try {
-      await this.database.batch([
+      await batchUnder(this.database, activeGuard(who), [
         this.database.prepare(`
           update host_enrollments set
             provider_config_sealed = ?, provider_config_revision = ?, provider_config_acked_revision = 0,
@@ -1007,8 +993,8 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
           revision - 1,
           sealingPublicKey,
         ),
-        this.wonAssertion(assertionId),
-        this.deleteAssertion(assertionId),
+        wonAssertion(this.database, assertionId),
+        deleteAssertion(this.database, assertionId),
       ])
     } catch (error) {
       if (!batchAssertionFailed(error)) throw error
@@ -1041,7 +1027,7 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
     const expiresAt = now + invitationTtl(args.expiresInMs)
     const invitationId = this.randomId("invitation")
     const secret = randomBase64Url(32)
-    await this.database.prepare(`
+    await batchUnder(this.database, activeGuard(who), [this.database.prepare(`
       insert into host_invitations (
         invitation_id, owner_user_id, owner_actor_id, org_id, secret_hash, display_name, scope_json,
         expires_at, redeemed_at, redeemed_enrollment_id, redeemed_host_id, redeemed_public_key_fingerprint,
@@ -1058,7 +1044,7 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
       expiresAt,
       who.actorId,
       now,
-    ).run()
+    )])
     return { invitationId, token: invitationToken({ invitationId, secret }), expiresAt }
   }
 
@@ -1086,10 +1072,10 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
     const who = await this.requirePrincipal(auth)
     const invitationId = requireText(args.invitationId, "invitationId")
     const now = this.now()
-    const result = await this.database.prepare(`
+    const [result] = await batchUnder(this.database, activeGuard(who), [this.database.prepare(`
       update host_invitations set revoked_at = ?
       where invitation_id = ? and owner_actor_id = ? and revoked_at is null and redeemed_at is null
-    `).bind(now, invitationId, who.actorId).run()
+    `).bind(now, invitationId, who.actorId)])
     return { revoked: changes(result) > 0 }
   }
 
@@ -1173,7 +1159,7 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
             select 1 from host_enrollments where enrollment_id = ? and enrolled_via = 'invitation'
           ) then 1 else 0 end)
         `).bind(assertionId, enrollmentId),
-        this.deleteAssertion(assertionId),
+        deleteAssertion(this.database, assertionId),
       ])
     } catch (error) {
       if (isUniqueFailure(error) && String(error).includes("host_enrollments")) {
@@ -1200,7 +1186,7 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
     const who = await this.requirePrincipal(auth)
     const hostId = optionalText(args.hostId, "hostId")
     const now = this.now()
-    const results = await this.database.batch([
+    const results = await batchUnder(this.database, activeGuard(who), [
       this.database.prepare(`
         update host_enrollments set revoked_at = ?, updated_at = ?
         where owner_actor_id = ? and (? is null or host_id = ?) and revoked_at is null
@@ -1246,46 +1232,19 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
     return { revoked: changes(results[0]), runtime_tokens_revoked: changes(results[4]) }
   }
 
-  private async requirePrincipal(auth: SignedControlPlaneAuth): Promise<Principal> {
-    const principal = auth.principal
-    if (!principal) throw new ControlPlaneAuthError(503, "identity_provisioning", "Canonical application identity is required")
-    if (principal.deploymentId !== this.options.deploymentId || principal.actorKind !== "human") {
-      throw new ControlPlaneAuthError(401, "invalid_bearer_token", "Application principal belongs to another authority domain")
-    }
-    const row = await this.database.prepare(`
-      select ai.user_id, u.state as user_state, a.actor_id, a.kind as actor_kind,
-        a.state as actor_state, ai.unlinked_at
-      from auth_identities ai
-      join users u on u.user_id = ai.user_id
-      join actors a on a.actor_id = ? and a.user_id = u.user_id
-      where ai.adapter = ? and ai.issuer = ? and ai.subject = ?
-    `).bind(
-      principal.actorId,
-      principal.identity.adapter,
-      principal.identity.issuer,
-      principal.identity.subject,
-    ).first<PrincipalRow>()
-    if (
-      !row || row.unlinked_at !== null || row.user_id !== principal.userId || row.actor_id !== principal.actorId
-      || row.actor_kind !== "human"
-    ) throw new ControlPlaneAuthError(401, "invalid_bearer_token", "Application principal is stale or unlinked")
-    if (row.user_state === "deleted") throw new ControlPlaneAuthError(403, "account_deleted", "Application account is deleted")
-    if (row.user_state !== "active" || row.actor_state !== "active") {
-      throw new ControlPlaneAuthError(403, "account_suspended", "Application account is suspended")
-    }
-    return { userId: row.user_id, actorId: row.actor_id, actorKind: "human" }
+  private requirePrincipal(auth: SignedControlPlaneAuth): Promise<Principal> {
+    return requireHuman(this.database, this.options.deploymentId, auth)
   }
 
-  private async requireWorkspaceAccess(
-    actor: Principal,
-    workspaceId: string,
-    action: "read" | "admin",
-    revivable = false,
-  ) {
+  private async requireWorkspaceAccess(actor: Principal, workspaceId: string, action: WorkspaceAction) {
+    const allowed = maySql(actor, action, { kind: "workspace", alias: "workspace" })
     const row = await this.database.prepare(`
-      ${workspaceAccessCte(action === "read" ? 1 : 3, revivable)}
-      select * from authorized_workspace
-    `).bind(actor.actorId, workspaceId).first<WorkspaceRow>()
+      select workspace.workspace_id, workspace.org_id, workspace.project_id,
+        workspace.backing, workspace.home_region, workspace.remote_directory,
+        workspace.host_assignment_revision
+      from workspaces workspace
+      where workspace.workspace_id = ? and ${allowed.sql}
+    `).bind(workspaceId, ...allowed.bind).first<WorkspaceRow>()
     if (!row) throw denied()
     return row
   }
@@ -1302,7 +1261,7 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
     args: { workspaceId: string; orgId?: string; projectId?: string },
   ): Promise<{ registration: "existing" | "cold"; workspace?: WorkspaceRow }> {
     if (await this.assignableWorkspaceExists(args.workspaceId)) {
-      const workspace = await this.requireWorkspaceAccess(who, args.workspaceId, "admin", true)
+      const workspace = await this.requireWorkspaceAccess(who, args.workspaceId, "assign_host")
       requireLocalWorkspace(workspace)
       return { registration: "existing", workspace }
     }
@@ -1581,16 +1540,6 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
    * its statements in order on one, so this is the batch's own write being
    * counted, not a state another caller could have produced.
    */
-  private wonAssertion(assertionId: string) {
-    return this.database.prepare(`
-      insert into authority_batch_assertions (assertion_id, passed) values (?, changes())
-    `).bind(assertionId)
-  }
-
-  private deleteAssertion(assertionId: string) {
-    return this.database.prepare(`delete from authority_batch_assertions where assertion_id = ?`).bind(assertionId)
-  }
-
   private expiredRowSweep(table: "host_enrollment_requests", id: string, now: number) {
     return this.database.prepare(`
       delete from ${table} where ${id} in (
@@ -1629,32 +1578,6 @@ class SqlJson {
 }
 
 
-/**
- * `revivable` admits a retired machine-placed row: its assignment is what
- * revives it, so the owner's rank is decided against the record as it is
- * before anything is written. Every other reader sees live rows only.
- */
-function workspaceAccessCte(rank: 1 | 3, revivable = false) {
-  return `with current_actor as (
-    select actor.actor_id, actor.user_id
-    from actors actor join users user on user.user_id = actor.user_id and user.state = 'active'
-    where actor.actor_id = ? and actor.state = 'active'
-  ), authorized_workspace as (
-    select workspace.workspace_id, workspace.org_id, workspace.project_id,
-      workspace.backing, workspace.home_region, workspace.remote_directory,
-      workspace.host_assignment_revision,
-      ${workspaceRoleRankSql({ user: "current_actor.user_id", ownerUserId: "workspace.owner_user_id" })} as role_rank
-    from current_actor
-    join workspaces workspace on workspace.workspace_id = ?
-      and ${revivable ? "(workspace.deleted_at is null or workspace.backing = 'local-worktree')" : "workspace.deleted_at is null"}
-    join projects project
-      on project.project_id = workspace.project_id and project.org_id = workspace.org_id and project.deleted_at is null
-    where ${activeOrgMemberSql("workspace.org_id", "current_actor.user_id")}
-    group by workspace.workspace_id
-    having role_rank >= ${rank}
-  )`
-}
-
 export function hostEnrollmentPayload(input: { hostId: string; requestId: string; nonce: string }) {
   return [
     "claxedo.host-enrollment.enroll.v1",
@@ -1676,16 +1599,13 @@ function requireScope(input: HostScopeDefinition): HostScopeDefinition {
     if (!normalized) throw new D1HostAccessAuthorityError("invalid_input", "scope.allowed_roots must be absolute paths")
     return normalized
   })
-  if (input.visibility !== "owner" && input.visibility !== "org") {
-    throw new D1HostAccessAuthorityError("invalid_input", "scope.visibility must be 'owner' or 'org'")
-  }
-  return { allowed_roots: [...new Set(roots)], visibility: input.visibility }
+  return { allowed_roots: [...new Set(roots)] }
 }
 
 function storedScope(json: string): HostScopeDefinition {
   const scope = hostEnrollmentScope(json, 0)
   if (!scope) throw new D1HostAccessAuthorityError("resource_conflict", "Stored invitation scope is malformed")
-  return { allowed_roots: scope.allowed_roots, visibility: scope.visibility }
+  return { allowed_roots: scope.allowed_roots }
 }
 
 function supersededGeneration(servingGeneration: number) {

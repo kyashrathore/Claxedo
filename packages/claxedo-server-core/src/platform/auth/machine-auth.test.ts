@@ -40,7 +40,7 @@ function row(overrides: Partial<MachineEnrollmentRow> = {}): MachineEnrollmentRo
     serving_generation: 3,
     revoked_at: null,
     paused_at: null,
-    scope: { revision: 2, allowed_roots: ["/srv"], visibility: "owner" },
+    scope: { revision: 2, allowed_roots: ["/srv"] },
     ownerEligible: true,
     ...overrides,
   }
@@ -116,7 +116,7 @@ describe("verifyMachineRequest", () => {
         hostId: "host-a",
         ownerUserId: "user_1",
         ownerActorId: "actor_1",
-        scope: { revision: 2, allowed_roots: ["/srv"], visibility: "owner" },
+        scope: { revision: 2, allowed_roots: ["/srv"] },
         keyVersion: 1,
         generation: 3,
       },

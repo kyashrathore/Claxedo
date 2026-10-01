@@ -171,6 +171,8 @@ export type RelayHostPrivateSessionClaims = {
   jti: string
   parent_jti: string
   role?: "viewer" | "editor" | "admin" | "owner"
+  /** The one session the proof's token reaches; absent on the workspace owner's. */
+  session_id?: string
 }
 
 export type PrivateSessionRuntimeProof = PrivateSessionRuntimePrincipal & {

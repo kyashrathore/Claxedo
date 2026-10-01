@@ -134,7 +134,7 @@ function openWorkspace(input: { directory: string; storeRoot: string; workspaceI
       c.set("relayHostAuth", {
         iss: "workspace-relay", aud: "workspace-host-service", principal_kind: "user",
         actor_id: "actor_1", user_id: "user_1", actor_kind: "human", org_id: "org_1",
-        workspace_id: target.workspaceId, host_id: "host_1", role: "editor", backing: "cloud-vm",
+        workspace_id: target.workspaceId, host_id: "host_1", role: "editor", scope: "workspace", backing: "cloud-vm",
         exp: issued + 600, iat: issued, jti: "jti_1", parent_jti: "rat_1",
       })
       return await next()

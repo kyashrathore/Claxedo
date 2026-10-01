@@ -384,3 +384,77 @@ export async function hostedConnectionStatus(
     target,
   })
 }
+
+/**
+ * A session share holder's connection (GET `/:id/connection?sessionId=`): a
+ * Runtime Access Token scoped to the one session their share names, minted
+ * off whatever already serves the workspace. It opens nothing of the
+ * workspace, reads its organization from the owner's record only once the
+ * caller has proven they may read the session, and never starts compute: a
+ * machine that is offline or a sandbox that is not running answers
+ * `workspace_host_offline`.
+ */
+export async function hostedSessionConnection(
+  services: ControlPlaneServices | undefined,
+  options: WorkspaceRouteOptions,
+  auth: SignedControlPlaneAuth,
+  input: { workspaceId: string; sessionId: string },
+) {
+  const { workspaceId, sessionId } = input
+  const authority = requireAuthority(services)
+  await authority.authorizeSessionRead(auth, { workspaceId, sessionId })
+  const owner = await authority.resolveWorkspaceOwner?.(workspaceId)
+  const machine = await services?.relay.hostTunnelResolver?.(workspaceId)
+  const sandbox = machine?.active ? undefined : await services?.sandbox.sandboxManager?.target(workspaceId).catch(() => undefined)
+  const target = machine?.active
+    ? { backing: "local-worktree" as const, hostId: machine.hostId }
+    : sandbox?.status === "ready"
+      ? { backing: "cloud-vm" as const, hostId: sandbox.hostId, routingId: sandbox.routingId }
+      : undefined
+  if (!owner || !target) {
+    return { error: apiError("workspace_host_offline", "Nothing is serving this session's workspace right now"), status: 409 } as const
+  }
+  const relayUrl = configuredRelayUrl(options)
+  if (!relayUrl) {
+    throw new ControlPlaneAuthError(503, "runtime_access_token_signer_unavailable", "Workspace Relay URL is not configured")
+  }
+  const actor = await resolveRuntimeActor(authority, auth)
+  const token = await configuredRuntimeAccessTokenSigner(options)({
+    principalKind: "user",
+    ...actor,
+    orgId: owner.orgId,
+    workspaceId,
+    hostId: target.hostId,
+    ...(target.backing === "cloud-vm" && target.routingId ? { routingId: target.routingId } : {}),
+    role: "viewer",
+    sessionId,
+  })
+  await authority.recordRuntimeAccessToken(auth, {
+    jti: token.jti,
+    workspaceId,
+    hostId: target.hostId,
+    actorId: actor.actorId,
+    actorKind: actor.actorKind,
+    role: "viewer",
+    sessionId,
+    expiresAt: token.tokenExpiresAt,
+  })
+  await authority.auditAllow(auth, {
+    action: "runtime_access_token.minted",
+    workspaceId,
+    metadata: { jti: token.jti, hostId: target.hostId, expiresAt: token.tokenExpiresAt, sessionId },
+  })
+  return {
+    connection: {
+      backing: target.backing,
+      sessionAuthority: "managed-private" as const,
+      workspaceId,
+      sessionId,
+      relayUrl,
+      runtimeAccessToken: token.runtimeAccessToken,
+      tokenExpiresAt: token.tokenExpiresAt,
+      role: "viewer" as const,
+      hostId: target.hostId,
+    },
+  } as const
+}

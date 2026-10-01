@@ -134,6 +134,7 @@ import {
   type SessionStreamLeaseClaims,
 } from "../../routes/runtime-session-authority"
 import { PrivateSessionRegistrationRoutes } from "../../routes/private-session-registration"
+import { connectionTurnOwner } from "../../connections/turn-owner"
 import {
   SESSION_TURN_AUTHORITY_METHODS,
   SessionTurnConflictError,
@@ -403,32 +404,14 @@ export function embeddedManagedPrivateSessionPolicy(
     workspaceId: input.authority.workspaceId,
     turnId: input.turnId,
   })
-  // The turn's connection credential binds the session's personal partition:
-  // the actor's user-scoped id is the same key `createConnectionsHost` writes
-  // into `owner` for signed callers. A service principal has no user row, and
-  // an actor whose workspace access lapsed between admission and this read
-  // mints a session-bound credential without one rather than failing the turn.
-  const mintTurnCredential = async (input: SessionAuthorityInput, lease: SessionTurnLease) => {
-    if (!turnCredentials) return undefined
-    // The owner column a connections row names is the user's `subject`;
-    // `userId` is that column. An authority that cannot resolve it mints the
-    // turn's session-bound credential without a personal partition.
-    let subject: string | undefined
-    if (input.actor.actorKind === "human") {
-      try {
-        subject = (await authority.resolveRuntimeMachineAccess(input.actor.actorId, input.authority.workspaceId, "viewer")).userId
-      } catch {
-        subject = undefined
-      }
-    }
-    return turnCredentials.mint({
+  const mintTurnCredential = (subject: string | undefined, input: SessionAuthorityInput, lease: SessionTurnLease) =>
+    subject === undefined ? undefined : turnCredentials?.mint({
       sessionId: lease.sessionId,
       leaseId: lease.leaseId,
       expiresAt: lease.expiresAt,
-      ...(subject ? { subject } : {}),
+      subject,
       orgId: input.authority.orgId,
     })
-  }
   const policy = managedWorkspaceSessionAccessPolicy({
     authority: {
       authorizeSessionStart: async (input) => {
@@ -458,8 +441,9 @@ export function embeddedManagedPrivateSessionPolicy(
           const grantId = input.grant === undefined
             ? undefined
             : (await verifyDeferredTurnGrant(input.grant, process.env, { sessionId: input.sessionId })).grantId
+          const subject = await connectionTurnOwner(turnCredentials, (id) => authority.resolveWorkspaceOwner?.(id) ?? Promise.resolve(undefined), input.authority.workspaceId)
           const lease = await turnAuthority.acquireSessionTurn({ ...turnInput(input), ...(grantId === undefined ? {} : { grantId }) })
-          const connectionCredential = await mintTurnCredential(input, lease)
+          const connectionCredential = mintTurnCredential(subject, input, lease)
           return { allowed: true as const, ...lease, ...(connectionCredential ? { connectionCredential } : {}) }
         } catch (error) {
           return turnDenied(error)
@@ -496,7 +480,7 @@ export function embeddedManagedPrivateSessionPolicy(
   policy.authorizeHost = async (input) => {
     try {
       const claims = await streamClaims(input, WORKSPACE_STREAM_LEASE_SESSION, "read", input.lease)
-      const current = await authority.resolveRuntimeMachineAccess(claims.actorId, claims.workspaceId, input.minimumRole)
+      const current = await authority.resolveRuntimeMachineAccess(claims.actorId, claims.workspaceId)
       if (current.actorKind !== claims.actorKind || current.orgId !== claims.orgId) {
         throw new ControlPlaneAuthError(403, "workspace_authorization_denied", "Workspace authority no longer matches this actor")
       }

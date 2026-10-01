@@ -10,7 +10,7 @@ import { createServer, type Server } from "node:http"
 import * as os from "node:os"
 import * as path from "node:path"
 import { afterAll, beforeAll, expect, test } from "vitest"
-import { Hono } from "hono"
+import { EMBEDDED_RELAY_HOST_AUTH_HEADER } from "@claxedo/workspace-runtime/exposure"
 import type { ControlPlaneServicesContract } from "@claxedo/server-core/authority/control-plane-contract"
 
 const dataDir = mkdtempSync(path.join(os.tmpdir(), "claxedo-custom-provider-engine-"))
@@ -145,15 +145,16 @@ async function openCodeEngineModels() {
   return entries.filter((entry) => entry.connected).flatMap((entry) => entry.models)
 }
 
-test("a viewer cannot claim the engine through a draft preview before its owner", async () => {
-  const viewer = new Hono()
-  viewer.use("*", async (c, next) => {
-    c.set("relayHostAuth" as never, { actor_id: "viewer", actor_kind: "human", user_id: "user_viewer", org_id: "org_1",
-      workspace_id: "ws_custom_provider", host_id: "host_1", role: "viewer" } as never)
-    await next()
+test("a share holder cannot claim the engine through a draft preview before its owner", async () => {
+  const shareHolder = JSON.stringify({
+    principal_kind: "user", actor_id: "actor_viewer", user_id: "user_viewer", actor_kind: "human",
+    actor_public_id: "usr_viewer", actor_name: "Viewer", workspace_id: "ws_custom_provider", org_id: "org_1",
+    role: "viewer", session_id: "ses_shared",
   })
-  viewer.route("/", runtime.app)
-  const response = await viewer.request(`/api/wr/harness-config-options?nativeHarness=opencode&directory=${encodeURIComponent(directory)}`)
+  const response = await runtime.app.request(
+    `http://runtime.test/api/wr/harness-config-options?nativeHarness=opencode&directory=${encodeURIComponent(directory)}`,
+    { headers: { [EMBEDDED_RELAY_HOST_AUTH_HEADER]: shareHolder } },
+  )
   expect(response.status, await response.clone().text()).toBe(403)
   expect((await openCodeEngineModels()).some((model) => model.providerID === "acme")).toBe(true)
 }, 60_000)

@@ -253,7 +253,7 @@ export function sessionEventDeliveryPolicy<T>(policy: SessionAccessPolicy): Even
     if (held.renewing) return held.expiresAt <= Date.now() ? "terminate" : await held.renewing
     held.renewing = (async () => {
       const { sessionId: _session, ...input } = accessInput(principal, "")
-      const decision = await policy.authorizeHost!({ ...input, minimumRole: "viewer", lease: held.lease })
+      const decision = await policy.authorizeHost!({ ...input, hostAccess: "read", lease: held.lease })
       if (!decision.allowed) {
         return isAuthorityAway(decision) && held.expiresAt > Date.now() ? "deliver" : eventDecision(decision)
       }

@@ -2,8 +2,8 @@ import { z } from "zod"
 import { ClaxedoError } from "@claxedo/server-core/platform/errors/base"
 import { DocumentAccessError, type DocumentAccess, type DocumentSharing } from "@claxedo/server-core/documents/access"
 import type { DocumentsBackend } from "@claxedo/server-core/documents/backend"
-import { isActiveOrgMember, type D1AccessContext } from "./access-context"
-import { activeOrgMemberSql, projectRoleRankSql } from "./project-role"
+import type { D1AccessContext } from "./access-context"
+import { may, maySql, readProjectRole } from "./authorization"
 
 const DocumentShareRow = z.object({
   id: z.string().min(1),
@@ -89,9 +89,10 @@ export function d1DocumentAccess(context: D1AccessContext, index: DocumentsBacke
     },
     findDocument: async (orgId, documentId) => await index.find(orgId, documentId),
     async locateDocument(userId, documentId) {
+      const member = maySql({ userId }, "member", { kind: "org", orgId: "org.org_id" })
       const organizations = await database
-        .prepare(`select org.org_id from orgs org where ${activeOrgMemberSql("org.org_id", "?")}`)
-        .bind(userId, userId)
+        .prepare(`select org.org_id from orgs org where ${member.sql}`)
+        .bind(...member.bind)
         .all<{ org_id: string }>()
       for (const { org_id: orgId } of organizations.results) {
         if (!organizationAllowed(orgId)) continue
@@ -100,30 +101,9 @@ export function d1DocumentAccess(context: D1AccessContext, index: DocumentsBacke
       }
       return undefined
     },
-    async isOrgMember(userId, orgId) {
-      return (
-        !!(await database
-          .prepare("select user_id from users where user_id = ? and state = 'active'")
-          .bind(userId)
-          .first()) && (await isActiveOrgMember(database, userId, orgId))
-      )
-    },
-    async hasProjectAccess(userId, orgId, projectId) {
-      const rank = projectRoleRankSql({
-        user: "who.user_id",
-        projectId: "project.project_id",
-        orgId: "project.org_id",
-        ownerUserId: "project.owner_user_id",
-      })
-      return !!(await database
-        .prepare(
-          `with who as (select ? as user_id)
-          select project.project_id from projects project, who
-          where project.org_id = ? and project.project_id = ? and project.deleted_at is null and ${rank} > 0`,
-        )
-        .bind(userId, orgId, projectId)
-        .first())
-    },
+    isOrgMember: (userId, orgId) => may(database, { userId }, "member", { kind: "org", orgId }),
+    hasProjectAccess: async (userId, orgId, projectId) =>
+      !!(await readProjectRole(database, userId, { kind: "project", projectId, orgId })),
     sharing,
   }
   return access

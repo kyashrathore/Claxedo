@@ -78,6 +78,7 @@ export class ControlPlaneAuthError extends Error {
       | "session_registration_unavailable"
       | "invalid_session_request"
       | "harness_required"
+      | "session_owner_unresolved"
       | "machine_dispatch_unavailable"
       | "runtime_access_token_signer_unavailable"
       | "host_tunnel_token_signer_unavailable"

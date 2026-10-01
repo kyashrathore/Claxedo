@@ -16,9 +16,11 @@ export type SessionPageConformanceUser = {
 }
 
 /**
- * `reader` and `colleague` stand in one organization and may both create
- * sessions in `workspaceIds`, which all belong to `projectId`. `stranger`
- * belongs to another organization, with its own workspace and project.
+ * `reader` and `colleague` stand in one organization. `workspaceIds` are the
+ * reader's own workspaces and `colleague.workspaceId` the colleague's, all in
+ * `projectId`, so the project page holds sessions the reader may not read.
+ * `stranger` belongs to another organization, with its own workspace and
+ * project.
  * `now` is the clock `authority` stamps turns with, and the runner stamps its
  * runtime sessions from it too. Each read must be later than the last: the
  * runner prompts and creates faster than a millisecond, and two equal keys
@@ -30,7 +32,7 @@ export type SessionPageConformanceHarness = {
   projectId: string
   workspaceIds: [string, string]
   reader: SessionPageConformanceUser
-  colleague: SessionPageConformanceUser
+  colleague: SessionPageConformanceUser & { workspaceId: string }
   stranger: SessionPageConformanceUser & { projectId: string; workspaceId: string }
 }
 
@@ -74,8 +76,8 @@ export async function exerciseSessionPageConformance(
   }
   await prompt(reader, readers[1]!, workspaceIds[1])
   await prompt(reader, readers[4]!, workspaceIds[0])
-  const colleagues = [await create(colleague, workspaceIds[0]), await create(colleague, workspaceIds[1])]
-  await prompt(colleague, colleagues[0]!, workspaceIds[0])
+  const colleagues = [await create(colleague, colleague.workspaceId), await create(colleague, colleague.workspaceId)]
+  await prompt(colleague, colleagues[0]!, colleague.workspaceId)
   const strangers = [await create(stranger, stranger.workspaceId)]
 
   const whole = await readListPage(authority, reader.auth, `scope=project&projectId=${projectId}&limit=100`)
@@ -103,7 +105,7 @@ export async function exerciseSessionPageConformance(
       moved.push(readers[0]!)
       await prompt(reader, readers[0]!, workspaceIds[0])
     }
-    if (pages === 2) inserted.push(await create(colleague, workspaceIds[1]))
+    if (pages === 2) inserted.push(await create(colleague, colleague.workspaceId))
   } while (cursor && pages < 20)
 
   const walkedIds = walked.map((row) => row.sessionId)
