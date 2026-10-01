@@ -143,12 +143,12 @@ const subscriber = (subject: string, internalOrgId?: string): LiveSyncSubscriber
   ...(internalOrgId ? { orgId: internalOrgId } : {}),
 })
 
-const sessionShareChanged = (ownerUserId: string): ControlPlaneEvent => ({
+const sessionShareChanged = (ownerUserId: string, sessionId = "ses_1"): ControlPlaneEvent => ({
   type: "session.share.changed",
   phase: "granted",
   level: "send",
   ownerUserId,
-  sessionId: "ses_1",
+  sessionId,
   workspaceId: "ws_1",
   ts: Date.now(),
 })
@@ -590,8 +590,8 @@ describe("LiveSyncRoom — Last-Event-ID replay", () => {
 
   test("resuming from a mid-log cursor replays only what follows it", async () => {
     const room = new LiveSyncRoom({}, {})
-    await pushEvent(room, { ...sessionShareChanged("alice"), sessionId: "ses_old" })
-    await pushEvent(room, { ...sessionShareChanged("alice"), sessionId: "ses_new" })
+    await pushEvent(room, sessionShareChanged("alice", "ses_old"))
+    await pushEvent(room, sessionShareChanged("alice", "ses_new"))
 
     const opened = await openRoom(room, { lastEventId: "1" })
     expect(opened.frames).toHaveLength(2)
@@ -601,7 +601,7 @@ describe("LiveSyncRoom — Last-Event-ID replay", () => {
   test("emits a replay-gap notice when the cursor has fallen out of the retention window", async () => {
     const room = new LiveSyncRoom({}, {})
     // Retention is 256 frames; 258 pushes the cursor at 1 out of the window.
-    for (let i = 1; i <= 258; i += 1) await pushEvent(room, { ...sessionShareChanged("alice"), sessionId: `ses_${i}` })
+    for (let i = 1; i <= 258; i += 1) await pushEvent(room, sessionShareChanged("alice", `ses_${i}`))
 
     const opened = await openRoom(room, { lastEventId: "1" })
     expect(opened.frames[1]).toMatchObject({
@@ -626,7 +626,7 @@ describe("LiveSyncRoom — Last-Event-ID replay", () => {
     // ring reports the hole.
     const first = await openRoom(room, { lastEventId: "0" })
     expect(first.frames[1]).toMatchObject({ id: "1" })
-    for (let i = 1; i <= 258; i += 1) await pushEvent(room, { ...sessionShareChanged("alice"), sessionId: `ses_${i}` })
+    for (let i = 1; i <= 258; i += 1) await pushEvent(room, sessionShareChanged("alice", `ses_${i}`))
     const back = await openRoom(room, { lastEventId: "1" })
     expect(back.frames[1]).toMatchObject({ data: { type: "stream.replay-gap", lastEventId: "1" } })
     expect(JSON.stringify(back.frames)).not.toContain("ses_258")
