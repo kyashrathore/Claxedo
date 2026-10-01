@@ -76,7 +76,7 @@ import {
 } from "@claxedo/local-server/self-hosted-execution"
 import { getHarnessMode, getSessionWriteMode, getWorkspaceProfile } from "@claxedo/server-core/platform/runtime/profile"
 import { createSqliteCentralStore } from "../../authority/adapters/sqlite/central-store"
-import { dropCopiedHarnessLogins, projectLocalSessionMetaFromEvent } from "@claxedo/local-server/self-hosted-execution"
+import { projectLocalSessionMetaFromEvent } from "@claxedo/local-server/self-hosted-execution"
 import { CredentialRoutes, createUsageQuotaReader, localControlPlaneCredentials, requestOrg, syncEmbeddedWorkspaceRuntimes } from "@claxedo/local-server/self-hosted-execution"
 import { defaultControlPlaneCredentials } from "@claxedo/server-core/authority/default-credentials"
 import { ProviderAuthRoutes } from "@claxedo/local-server/self-hosted-execution"
@@ -1945,10 +1945,6 @@ function startOwnedControlPlaneStack(options: ControlPlaneStackOptions, releaseD
     ...(isSandboxDriverID(services.sandbox.defaultDriver)
       ? { default_sandbox_driver: services.sandbox.defaultDriver }
       : {}),
-  })
-
-  dropCopiedHarnessLogins().catch((err: unknown) => {
-    console.error("[claxedo-server] WARN  could not forget copied harness logins:", err)
   })
 
   captureControlPlaneStartupTelemetry(services, { port })
