@@ -78,9 +78,6 @@
     "test": "node ./node_modules/vitest/vitest.mjs run --reporter=default --reporter=junit --outputFile.junit=.artifacts/unit/junit.xml",
     "verify:closure": "bun ../../script/product-boundary/verify.ts"
   },
-  "dependencies": {
-    "@claxedo/helpers": "workspace:*"
-  },
   "devDependencies": {
     "@tsconfig/node-lts": "22.0.4",
     "@types/bun": "1.3.13",

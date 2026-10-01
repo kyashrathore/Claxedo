@@ -5,7 +5,6 @@
  * exists on the box, so nothing here can be re-used by an account caller.
  */
 
-import { decodeApiError } from "@claxedo/helpers/api-error"
 import {
   MACHINE_REQUEST_HEADERS,
   machineRequestSignature,
@@ -42,11 +41,19 @@ export class HostedRequestTimeoutError extends Error {
   }
 }
 
+/**
+ * The control plane's `{ error: { code, message, retryable } }` envelope, read
+ * here rather than through `@claxedo/helpers` because this package imports no
+ * first-party package (`connector-closure.test.ts`).
+ */
 export class HostedHttpError extends Error {
   readonly code: string | undefined
   readonly retryable: boolean
   constructor(readonly status: number, readonly body: unknown) {
-    const error = decodeApiError(status, body)
+    const envelope = isPlainRecord(body) && isPlainRecord(body.error) ? body.error : undefined
+    const error = typeof envelope?.code === "string" && envelope.code && typeof envelope.message === "string"
+      ? { code: envelope.code, message: envelope.message, retryable: envelope.retryable === true }
+      : undefined
     super(error?.message || `HTTP ${status}`)
     this.name = "HostedHttpError"
     this.code = error?.code
