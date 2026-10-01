@@ -2,7 +2,6 @@ import { TransportError, type HarnessServices, type HarnessTransport } from "./c
 export type { ConnectionTransportInput } from "./registry/providers/connection"
 import { harnessRecord, type NativeHarnessId } from "./registry/table"
 import { createAcpProvider } from "./registry/providers/acp"
-import { createPiRpcProvider } from "./registry/providers/pi-rpc"
 import type { CustomHarnessProvider } from "./registry/providers/types"
 import { connectionTransport, type ConnectionTransportInput } from "./registry/providers/connection"
 import { filterMcpServers } from "./capabilities/mcp-filter"
@@ -16,7 +15,7 @@ export { CURSOR_WORKER_FILE } from "./transports/cursor-sdk"
 import { OpenCodeSdkTransport, type OpenCodeSdkTransportOptions } from "./transports/opencode-sdk/transport"
 
 export type HarnessCompositionOptions = {
-  pi: (command?: string) => PiRpcOptions
+  pi: () => PiRpcOptions
   codex: () => CodexTransportOptions
   claude: () => ClaudeSdkOptions
   cursor: () => CursorSdkTransportOptions
@@ -29,13 +28,6 @@ export function createHarnessComposer(
   custom: readonly CustomHarnessProvider<unknown>[] = [],
 ) {
   const acp = createAcpProvider((config, host) => new AcpTransport(host, config.connection, filterMcpServers))
-  const pi = createPiRpcProvider((config, host) => {
-    const base = options.pi(config.command)
-    return new PiRpcTransport(host, {
-      ...base, binary: config.command, args: config.args, env: { ...base.env, ...config.env },
-      ownerAgentDir: config.profileDir ?? base.ownerAgentDir,
-    })
-  })
   return {
     builtIn(id: NativeHarnessId): HarnessTransport {
       const record = harnessRecord(id)
@@ -48,7 +40,7 @@ export function createHarnessComposer(
       throw new TransportError("provider", "connection_unavailable", `Transport is not native: ${record.transport}`)
     },
     connection(input: ConnectionTransportInput): HarnessTransport {
-      return connectionTransport(services, [acp, pi, ...custom], input)
+      return connectionTransport(services, [acp, ...custom], input)
     },
   }
 }

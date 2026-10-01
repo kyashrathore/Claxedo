@@ -26,8 +26,8 @@ export function harnessCompositionOptions(input: HarnessCompositionInput): Harne
   const { env, placement, harnessStateRoot } = input
   const home = userHomeDir(env)
   return {
-    pi: (command) => ({
-      binary: command ?? requirePiExecutable(env),
+    pi: () => ({
+      binary: requirePiExecutable(env),
       runtime: piRuntime(),
       env,
       ...placement,

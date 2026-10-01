@@ -12,7 +12,7 @@ import type { UnsettledPiLaunches } from "./retirements"
 import { PiSessionStream } from "./session-stream"
 import { PI_RANGE, piReportedVersion } from "./version"
 
-export type PiRpcOptions = PiProfileOptions & { binary: string; runtime: string; args?: readonly string[]; env: NodeJS.ProcessEnv }
+export type PiRpcOptions = PiProfileOptions & { binary: string; runtime: string; env: NodeJS.ProcessEnv }
 
 export type PiResume = { file: string } | { id: string }
 
@@ -68,7 +68,7 @@ async function spawnPi<T>(host: PiLaunchHost, input: StartInput, profile: PiProf
   const mcp = launch.role === "harness" ? await piMcpHandoff(host.options.stateRoot, input, host.services) : undefined
   try {
     const args = ["--mode", "rpc", ...(launch.role === "probe" ? ["--no-session"] : ["--session-dir", profile.sessionDir]),
-      ...piProjectionArgs(input.projection), ...host.options.args ?? [], ...(launch.role === "harness" ? await harnessArgs(host, launch, mcp) : [])]
+      ...piProjectionArgs(input.projection), ...(launch.role === "harness" ? await harnessArgs(host, launch, mcp) : [])]
     const owned = await host.services.spawn(piCommand(host, input, profile, args, mcp?.env),
       { role: launch.role, label: "Pi RPC", sessionId: input.sessionId, signal: host.signal })
     const rpc = new PiRpc(owned, host.services.clock, (event) => {
