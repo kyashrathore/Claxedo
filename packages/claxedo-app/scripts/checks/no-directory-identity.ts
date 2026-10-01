@@ -21,7 +21,7 @@ const routePatterns = [/[?&]directory=/, /:directory\b/, /legacy-directory/, /\/
 const keyedCalls = new Set(["persistedSignal", "persistedStore", "setItem", "getItem", "removeItem", "set", "get", "has", "delete"])
 const memberCollections = new Set(["Set", "ReadonlySet", "WeakSet"])
 const identityProperty = /^(id|key|[a-z]+Id)$/
-const guidance = "key by project id, placement id or SessionRef; only src/server turns a placement into a directory"
+const guidance = "key by project id, placement id or SessionLocation; only src/server turns a placement into a directory"
 
 function main(): never {
   const files = listFiles(packageRoot, ["src"], codeExtensions)

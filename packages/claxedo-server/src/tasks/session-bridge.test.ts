@@ -6,7 +6,7 @@ import {
   type ConfigurationSlot,
   type Preset,
   type SessionHandoffCommand,
-  type SessionReference,
+  type SessionRef,
   type StartCommand,
   type Task,
 } from "@claxedo/tasks"
@@ -225,7 +225,7 @@ async function startCommand(digest: string, chosen: Preset = preset()): Promise<
   }
 }
 
-function handoffCommand(session: SessionReference): SessionHandoffCommand {
+function handoffCommand(session: SessionRef): SessionHandoffCommand {
   return {
     actor,
     task: task(),

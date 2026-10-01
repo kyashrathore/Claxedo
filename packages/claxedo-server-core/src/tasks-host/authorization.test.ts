@@ -8,7 +8,7 @@
  */
 import { describe, expect, test, vi } from "vitest"
 import { createMemoryTasksStore, fakeBridge, presetRow, taskRow } from "@claxedo/tasks/test-support"
-import type { StartPreviewCommand, TasksActor } from "@claxedo/tasks"
+import type { SessionRef, StartPreviewCommand, TasksActor } from "@claxedo/tasks"
 import type { WorkspaceAuthority } from "../platform/auth/authority"
 import type { TasksCapabilityOwner, TasksCapabilityScope } from "./capability"
 import { signedTasksIdentity } from "./contribution"
@@ -48,7 +48,7 @@ function identity(
     ...(options.authorizeRuntimeSession ? { authorizeRuntimeSession: options.authorizeRuntimeSession } : {}),
   } as unknown as WorkspaceAuthority
   const ownerMayReadSession = vi.fn(
-    async (owner: TasksCapabilityOwner, session: { sessionId: string; workspaceId: string | null }) =>
+    async (owner: TasksCapabilityOwner, session: SessionRef) =>
       owner.actorId === ALICE.actorId && SESSION_WORKSPACES[session.sessionId] === session.workspaceId,
   )
   const composed = signedTasksIdentity({
@@ -265,10 +265,7 @@ describe("a Tasks grant opening a linked session", () => {
     expect(await composed.authorization.authorizeSessionOpen(actor, { sessionId: "ses_9", workspaceId: "ws_sibling" })).toBe(true)
   })
 
-  test("is refused a link naming no workspace, and every link on an authority that cannot answer for an actor", async () => {
-    const answering = identity({ authorizeRuntimeSession: vi.fn(async () => undefined) })
-    expect(await answering.authorization.authorizeSessionOpen(await actorOf(answering), { sessionId: "ses_9", workspaceId: null })).toBe(false)
-
+  test("is refused every link on an authority that cannot answer for an actor", async () => {
     const silent = identity()
     expect(await silent.authorization.authorizeSessionOpen(await actorOf(silent), { sessionId: "ses_9", workspaceId: "ws_root" })).toBe(false)
   })

@@ -16,7 +16,7 @@ import {
 } from "@claxedo/tasks/test-support"
 import type {
   Preset,
-  SessionReference,
+  SessionRef,
   StartCommand,
   StartPreviewCommand,
   Task,
@@ -32,7 +32,7 @@ import { signedTasksIdentity } from "./contribution"
 
 const ORG = SCOPES.first
 const PROJECT = "project-a"
-const ROOT: SessionReference = { sessionId: "ses_root", workspaceId: "ws_root" }
+const ROOT: SessionRef = { sessionId: "ses_root", workspaceId: "ws_root" }
 
 const SCOPE: TasksCapabilityScope = {
   userId: "alice",
@@ -67,7 +67,7 @@ function preset(input: { placement: "local" | "cloud"; agentStartable: boolean; 
   })
 }
 
-function task(id: string, input: { createdFrom?: SessionReference; projectId?: string } = {}): Task {
+function task(id: string, input: { createdFrom?: SessionRef; projectId?: string } = {}): Task {
   return taskRow({ id, scopeId: ORG, projectId: input.projectId ?? PROJECT, createdFrom: input.createdFrom ?? null })
 }
 
@@ -90,7 +90,7 @@ function startCommand(
   task: Task,
   chosen: Preset,
   attempt = 1,
-  startedFrom?: SessionReference,
+  startedFrom?: SessionRef,
 ): StartCommand {
   return {
     actor,
@@ -138,12 +138,12 @@ const refusal = (answer: { ok: boolean; error?: { code: string; message: string 
  */
 async function chain(store: TasksStorePort, length: number): Promise<Task[]> {
   const tasks: Task[] = []
-  let createdFrom: SessionReference | undefined
+  let createdFrom: SessionRef | undefined
   for (let index = 0; index < length; index += 1) {
     const current = task(`tsk_chain_${index}`, createdFrom ? { createdFrom } : {})
     await store.tasks.insert(current)
     tasks.push(current)
-    const session: SessionReference = { sessionId: `ses_chain_${index}`, workspaceId: `ws_chain_${index}` }
+    const session: SessionRef = { sessionId: `ses_chain_${index}`, workspaceId: `ws_chain_${index}` }
     await store.links.insert(
       linkRow({
         scopeId: ORG,
@@ -240,7 +240,7 @@ describe("how far a chain of agent-started tasks may run", () => {
   test("a chain that loops, or runs long, is refused after a bounded walk", async () => {
     const { store, gated, agent } = fixture()
     const marked = preset({ placement: "cloud", agentStartable: true })
-    const own: SessionReference = { sessionId: "ses_self", workspaceId: "ws_self" }
+    const own: SessionRef = { sessionId: "ses_self", workspaceId: "ws_self" }
     const looping = task("tsk_loop", { createdFrom: own })
     await store.tasks.insert(looping)
     await store.links.insert(

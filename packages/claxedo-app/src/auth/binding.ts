@@ -4,6 +4,7 @@ import type { BrowserAuthMethod, BrowserAuthSignInOptions, BrowserAuthSignUpOpti
 import type { AuthUser } from "./display-user"
 
 export type ControlPlaneAccess =
+  | { readonly kind: "cookie" }
   | { readonly kind: "bearer"; readonly token: (options?: { readonly skipCache?: boolean }) => Promise<string | null> }
   | { readonly kind: "port"; readonly run: RunHostedOperation }
 

@@ -21,7 +21,7 @@ export type {
 } from "./types"
 export type { FirstPartyEntries } from "./registries"
 export { byOrder, createShellRegistries, ShellRegistriesContext, useShellRegistries } from "./registries"
-export { draftPath, fillPattern, localSessionPath, sessionLinkPath, panePlacementOf, sessionPath, settingsPath } from "./routes"
+export { draftPath, fillPattern, sessionLinkPath, panePlacementOf, sessionPath, settingsPath } from "./routes"
 export type { ShellRouterComponent, ShellRouting } from "./router"
 export { ShellRouter, useShellRoute } from "./router"
 export { createPlacementState } from "./placement-state"

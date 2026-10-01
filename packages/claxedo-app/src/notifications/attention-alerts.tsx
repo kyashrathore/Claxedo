@@ -1,6 +1,6 @@
 import { createEffect, onCleanup, type JSX, type ParentProps } from "solid-js"
 import { useTranslator } from "@/i18n"
-import { useServer, type SessionId, type SessionRef } from "@/server"
+import { useServer, type SessionId, type SessionLocation } from "@/server"
 import { useSessionStores } from "@/session"
 import { sessionPath, useShellRoute } from "@/shell"
 import { createAlertDetector, type AlertKind, type AlertPreferences } from "./alerts"
@@ -27,7 +27,7 @@ export function AttentionAlerts(props: ParentProps<{ readonly preferences: Alert
     const route = routing.route()
     return route.kind === "session" || route.kind === "localSession" ? route.sessionId : undefined
   }
-  const shown = (ref: SessionRef) => shownSession() === ref.sessionId
+  const shown = (ref: SessionLocation) => shownSession() === ref.sessionId
   createEffect(() => {
     const sessionId = shownSession()
     if (sessionId) unseen.seen(sessionId)

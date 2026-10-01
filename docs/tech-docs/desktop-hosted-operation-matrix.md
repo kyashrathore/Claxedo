@@ -335,6 +335,10 @@ which blocks Unit 9 until it gets a typed broker contract. One remains flagged:
 renderer-visible names, verifies the registry exposure agrees with main's
 withheld set, and invokes the registered unary channels.
 
+A browser signed in with Better Auth applies the same `exposure.renderer`
+allowlist to its own account (`claxedo-app/src/server/account.ts`) and sends
+each request to the server it is connected to with its session cookie.
+
 `packages/claxedo-server/src/deployments/hosted-shared/hosted-operation-routes.test.ts`
 compares every declaration's method and path pattern against the route table
 of the full hosted product: the core app with Pages, Agent Plugins and plugin

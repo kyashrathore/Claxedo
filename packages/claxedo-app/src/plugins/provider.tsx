@@ -66,7 +66,7 @@ function useHostServices(): HostServices {
 
 function createActivate(services: HostServices) {
   const buildApi = createApiFactory(services)
-  return (build: PluginBuild, onCrash: (reason: string) => void): Promise<Activation> => activatePlugin({ build, buildApi, onCrash })
+  return (build: PluginBuild, onCrash: (reason: string) => void): Promise<Activation> => activatePlugin({ build, buildApi, onCrash, owner: services.owner })
 }
 
 function useLiveList(host: PluginHost, services: HostServices): Accessor<LiveListState> {

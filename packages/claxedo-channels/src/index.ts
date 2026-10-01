@@ -38,7 +38,7 @@ export {
   createMemorySessionResolver,
   type ChannelAbortResult,
   type ChannelRuntime,
-  type SessionRef,
+  type ChannelSession,
   type SessionResolver,
 } from "./core/resolve-session"
 export { abortReplyText, abortSettled } from "./core/session-stop"

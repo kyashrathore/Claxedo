@@ -24,7 +24,7 @@ export function browserAccountBinding(adapter: BrowserAuthAdapter): AccountBindi
         signUp: browser.signUp,
         signOut: browser.signOut,
         refresh: browser.refreshSession,
-        controlPlane: { kind: "bearer", token: browser.getToken },
+        controlPlane: { kind: "cookie" },
       }
     },
   }
