@@ -151,8 +151,6 @@ export type WorkspaceHost = {
   /** The `claxedo` MCP entry this runtime injects into a session's harness config, absent for the same reason. */
   firstPartyMcpServer: (sessionId: string) => FirstPartyMcpServerEntry | undefined
   apply: (snapshot: RuntimeSnapshot) => Promise<void>
-  /** Replace only host-composed launch metadata while preserving the accepted runtime configuration. */
-  applyHarnessLaunch: (harnessLaunch: Record<string, Record<string, unknown>>) => Promise<void>
   detail: () => {
     state: "ready" | "applying" | "error"
     healthStatus: "ok" | "degraded" | "unavailable"

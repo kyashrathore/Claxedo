@@ -1,4 +1,4 @@
-import type { BackgroundWork, SessionId, SessionRef, SessionStatus } from "@/server"
+import type { BackgroundWork, SessionId, SessionLocation, SessionStatus } from "@/server"
 import type { FetchedWindow, ListData } from "./model"
 
 type Timed = { readonly at: number; readonly source: "event" | "read" }
@@ -8,26 +8,26 @@ function readIsStale(current: Timed | undefined, sentAt: number): boolean {
   return current.source === "event" ? current.at >= sentAt : current.at > sentAt
 }
 
-export function statusChanged<S extends ListData>(data: S, ref: SessionRef, status: SessionStatus, at: number): S {
+export function statusChanged<S extends ListData>(data: S, ref: SessionLocation, status: SessionStatus, at: number): S {
   const statuses = new Map(data.statuses)
   statuses.set(ref.sessionId, { status, at, source: "event", waitingOnUser: false })
   return { ...data, statuses }
 }
 
-export function statusRead<S extends ListData>(data: S, ref: SessionRef, status: SessionStatus, sentAt: number, waitingOnUser = false): S {
+export function statusRead<S extends ListData>(data: S, ref: SessionLocation, status: SessionStatus, sentAt: number, waitingOnUser = false): S {
   if (readIsStale(data.statuses.get(ref.sessionId), sentAt)) return data
   const statuses = new Map(data.statuses)
   statuses.set(ref.sessionId, { status, at: sentAt, source: "read", waitingOnUser })
   return { ...data, statuses }
 }
 
-export function backgroundWorkChanged<S extends ListData>(data: S, ref: SessionRef, work: BackgroundWork, at: number): S {
+export function backgroundWorkChanged<S extends ListData>(data: S, ref: SessionLocation, work: BackgroundWork, at: number): S {
   const backgroundWork = new Map(data.backgroundWork)
   backgroundWork.set(ref.sessionId, { work, at, source: "event" })
   return { ...data, backgroundWork }
 }
 
-export function backgroundWorkRead<S extends ListData>(data: S, ref: SessionRef, work: BackgroundWork, sentAt: number): S {
+export function backgroundWorkRead<S extends ListData>(data: S, ref: SessionLocation, work: BackgroundWork, sentAt: number): S {
   if (readIsStale(data.backgroundWork.get(ref.sessionId), sentAt)) return data
   const backgroundWork = new Map(data.backgroundWork)
   backgroundWork.set(ref.sessionId, { work, at: sentAt, source: "read" })

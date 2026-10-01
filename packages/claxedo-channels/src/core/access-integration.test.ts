@@ -37,7 +37,7 @@ function runtime(): ChannelRuntime & { created: string[]; sent: string[]; aborte
     async createSession(input) {
       const sessionId = `ses_${created.length + 1}`
       created.push(input.threadKey)
-      return { sessionId, appUrl: `/s/${sessionId}` }
+      return { sessionId, workspaceId: "workspace-1", appUrl: `/s/${sessionId}` }
     },
     async *sendMessage(input) {
       sent.push(`${input.sessionId}:${input.text}`)

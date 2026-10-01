@@ -9,6 +9,7 @@ export {
   decodeCommandResponse,
   decodePreset,
   decodePresetPage,
+  decodeTaskSessionRef,
   decodeStartPreviewResponse,
   decodeStartResponse,
   decodeTask,

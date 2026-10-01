@@ -61,6 +61,7 @@ describe("BootstrapRoutes", () => {
       healthy: true,
       version: "9.9.9-test",
       path: { worktree: "", directory: "" },
+      deployment: { serverKind: "daemon" },
       project: [],
     })
     expect(body.provider_auth).toBeDefined()
@@ -201,7 +202,7 @@ describe("BootstrapRoutes", () => {
       healthy: true,
       version: "9.9.9-test",
       events: { hostAggregate: true },
-      deployment: { issuesSessions: true, documents: true, connections: false },
+      deployment: { serverKind: "daemon", issuesSessions: true, documents: true, connections: false },
     })
   })
 
@@ -215,7 +216,7 @@ describe("BootstrapRoutes", () => {
     const body = await response.json()
     expect(body.path).toBeDefined()
     expect(body.project).toEqual([])
-    expect(body.deployment).toEqual({ issuesSessions: false, documents: true, connections: false })
+    expect(body.deployment).toEqual({ serverKind: "daemon", issuesSessions: false, documents: true, connections: false })
   })
 
   test("declares it in the signed body too", async () => {

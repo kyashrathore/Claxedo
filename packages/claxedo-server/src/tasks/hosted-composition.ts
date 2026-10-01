@@ -103,16 +103,14 @@ export function createHostedTasksComposition(input: HostedTasksCompositionInput)
         ...(sessions
           ? {
               ownerMayReadSession: async (owner, session) =>
-                session.workspaceId === null
-                  ? false
-                  : await sessions({
-                      principalKind: "user",
-                      actorId: owner.actorId,
-                      actorKind: "human",
-                      sessionId: session.sessionId,
-                      workspaceId: session.workspaceId,
-                      action: "read",
-                    }).then(() => true, () => false),
+                await sessions({
+                  principalKind: "user",
+                  actorId: owner.actorId,
+                  actorKind: "human",
+                  sessionId: session.sessionId,
+                  workspaceId: session.workspaceId,
+                  action: "read",
+                }).then(() => true, () => false),
             }
           : {}),
       }

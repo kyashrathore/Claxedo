@@ -264,6 +264,7 @@ export function composeBetterAuthD1UserDeployedControlPlane(
         productWorkspace: {
           prepareRuntime: delivery.prepareRuntime,
           provisionRuntime: delivery.provisionRuntime,
+          runtimeProvisioned: delivery.runtimeProvisioned,
         },
       } : {}),
       // With a composed sandbox the owner's organization is admitted to cloud

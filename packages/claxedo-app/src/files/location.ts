@@ -1,8 +1,8 @@
 import type { Accessor } from "solid-js"
-import { useServer, type SessionRef } from "@/server"
+import { useServer, type SessionLocation } from "@/server"
 import { useShellRoute } from "@/shell"
 
-export function useActiveSession(): Accessor<SessionRef | undefined> {
+export function useActiveSession(): Accessor<SessionLocation | undefined> {
   const routing = useShellRoute()
   const server = useServer()
   return () => {

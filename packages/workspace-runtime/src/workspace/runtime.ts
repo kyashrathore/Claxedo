@@ -435,6 +435,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions): WorkspaceHos
         core, directory, workspaceId: id, exposure: mount.exposure, sessionAccessPolicy,
         sessionStarts,
         sessionParents: options.sessionParents ?? sessionParents, launchOwnership,
+        ...(mount.renewalIntervalMs !== undefined ? { renewalIntervalMs: mount.renewalIntervalMs } : {}),
       })
     }
     const events = mountWorkspaceEvents(app, {
@@ -550,19 +551,6 @@ export function createWorkspaceHost(options: WorkspaceHostOptions): WorkspaceHos
       return options.firstPartyMcpLaunch ? firstPartyMcpServerFor(options.firstPartyMcpLaunch, sessionId) : undefined
     },
     apply,
-    applyHarnessLaunch(harnessLaunch: Record<string, Record<string, unknown>>) {
-      return apply({
-        version: 4,
-        mcp: currentMcp,
-        connections: [...appliedConnections.values()],
-        ...(runner ? { defaultHarness: selectionForRunner(runner) } : {}),
-        auth: currentAuthRaw,
-        providerDefinitions: currentProviderDefinitions,
-        workspaceHarnessEnabled: enabled,
-        harnessLaunch,
-        commands: currentCommands,
-      })
-    },
     detail() {
       const health = runnerHealth()
       return {

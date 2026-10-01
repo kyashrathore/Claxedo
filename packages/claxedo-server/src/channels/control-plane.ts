@@ -20,7 +20,7 @@ import {
   type ChannelIdentityBindingStore,
   type ChatSdkBot,
   type ChannelAbortResult,
-  type SessionRef,
+  type ChannelSession,
   type SessionResolver,
   type ChannelTextMinimizationOptions,
   type WhatsAppBaileysSocket,
@@ -115,7 +115,7 @@ async function authorizeInbound(input: {
   session?: Awaited<ReturnType<SessionResolver["get"]>>
   action: ProjectAction
 }) {
-  const workspace = input.session?.workspaceId
+  const workspace = input.session
     ? await channelWorkspace({ workspaceId: input.session.workspaceId })
     : input.envelope.repo
       ? await channelWorkspace({ workspaceId: `${input.envelope.repo.owner}/${input.envelope.repo.name}` })
@@ -242,11 +242,9 @@ export function createControlPlaneChannels(input: {
       await input.services.projectionStore.put_session_meta(session.id, { tags: [...(metadata?.tags ?? []), `source-channel:${request.channel}`, `source-thread:${request.threadKey}`] })
       return {
         sessionId: session.id,
+        workspaceId: workspace.id,
         appUrl: `/s/${encodeURIComponent(session.id)}`,
-        ...(workspace ? {
-          workspaceId: workspace.id,
-          workspaceRef: workspace.git_branch ? `branch ${workspace.git_branch}` : "current registered checkout",
-        } : {}),
+        workspaceRef: workspace.git_branch ? `branch ${workspace.git_branch}` : "current registered checkout",
       }
     },
     async *sendMessage(request: {
@@ -267,10 +265,10 @@ export function createControlPlaneChannels(input: {
       )
     },
   }
-  const sessionsByThread = new Map<string, SessionRef>()
+  const sessionsByThread = new Map<string, ChannelSession>()
   const pendingSessions = new Map<string, {
     generation: number
-    promise: Promise<SessionRef>
+    promise: Promise<ChannelSession>
   }>()
   const sessionCommits = new Map<string, {
     promise: Promise<void>
@@ -298,9 +296,9 @@ export function createControlPlaneChannels(input: {
         })
         const created = {
           sessionId: result.sessionId,
+          workspaceId: result.workspaceId,
           threadKey: envelope.threadKey,
           channel: envelope.channel,
-          ...(result.workspaceId ? { workspaceId: result.workspaceId } : {}),
           ...(result.workspaceRef ? { workspaceRef: result.workspaceRef } : {}),
           ...(result.appUrl ? { appUrl: result.appUrl } : {}),
         }
@@ -313,7 +311,7 @@ export function createControlPlaneChannels(input: {
             channel: envelope.channel,
             externalUserId: envelope.externalUserId,
             threadKey: envelope.threadKey,
-            workspaceId: created.workspaceId ?? null,
+            workspaceId: created.workspaceId,
             cost: null,
           })
           try {
@@ -322,7 +320,7 @@ export function createControlPlaneChannels(input: {
               channel: envelope.channel,
               externalUserId: envelope.externalUserId,
               threadKey: envelope.threadKey,
-              workspaceId: created.workspaceId ?? null,
+              workspaceId: created.workspaceId,
               cost: null,
             })
           } catch {
@@ -363,11 +361,12 @@ export function createControlPlaneChannels(input: {
       // A stored audit row naming a channel this build no longer supports is
       // not a session this resolver can route a reply to.
       if (!hit || !channel) return undefined
+      if (!hit.workspaceId) throw new ChannelSessionResolutionError(`Stored channel session ${hit.sessionId} has no workspace`)
       return {
         sessionId: hit.sessionId,
         threadKey: hit.threadKey,
         channel,
-        ...(hit.workspaceId ? { workspaceId: hit.workspaceId } : {}),
+        workspaceId: hit.workspaceId,
         appUrl: `/s/${encodeURIComponent(hit.sessionId)}`,
       }
     },

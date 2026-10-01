@@ -2,7 +2,6 @@ import type { QueryClient } from "@tanstack/solid-query"
 import type { HostedAccount } from "./account"
 import { linkAccountCatalog, type LinkedCatalog } from "./account-link"
 import { readArray } from "@claxedo/helpers/readers"
-import { toAppError } from "./errors"
 import { queryKeys } from "./query-keys"
 import { accountCatalogFromWire, type AccountCatalog } from "./wire/account-catalog"
 import type { BootstrapCatalog, PlacementRecord } from "./wire/placements"
@@ -20,13 +19,7 @@ export function createAccountPlacements(account: HostedAccount, serverUrl: strin
     const [provisioned, machines] = await Promise.all([account.run("workspace.list.provisioner"), account.run("workspace.list.machine")])
     return accountCatalogFromWire([...(readArray(provisioned, "workspaces") ?? []), ...(readArray(machines, "workspaces") ?? [])])
   }
-  const fetch = async (staleTime: number) => {
-    try {
-      await queryClient.fetchQuery({ queryKey: key, queryFn: read, staleTime })
-    } catch (error) {
-      console.error("The account's workspace catalog could not be read; the rail lists this machine's placements alone", { error: toAppError(error) })
-    }
-  }
+  const fetch = async (staleTime: number) => { await queryClient.fetchQuery({ queryKey: key, queryFn: read, staleTime }) }
   let last: { local: readonly PlacementRecord[]; account: AccountCatalog; linked: LinkedCatalog } | undefined
   return {
     key,
@@ -42,5 +35,6 @@ export function createAccountPlacements(account: HostedAccount, serverUrl: strin
 }
 
 export function withAccountPlacements(local: BootstrapCatalog, linked: LinkedCatalog | undefined): BootstrapCatalog {
+  if (local.declaration.serverKind === "hosted" && linked) return { ...local, placements: linked.placements }
   return linked ? { ...local, placements: [...local.placements, ...linked.placements] } : local
 }

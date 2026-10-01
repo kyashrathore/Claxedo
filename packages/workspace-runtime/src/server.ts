@@ -539,7 +539,7 @@ export function createWorkspaceRuntimeApp(options: WorkspaceRuntimeServerOptions
     app.use("*", async (c, next) => {
       if (inProcessRequests.has(c.req.raw)) return inProcessOwner ? await inProcessOwner(c, next) : await next()
       if (
-        ((c.req.method === "POST" && c.req.path === WorkspaceRuntimeRoutes.config)
+        ((["GET", "POST"].includes(c.req.method) && c.req.path === WorkspaceRuntimeRoutes.config)
           || c.req.path === WorkspaceRuntimeRoutes.checkpoint
           || c.req.path.startsWith(`${WorkspaceRuntimeRoutes.checkpoint}/`))
         && c.req.header(WORKSPACE_RUNTIME_MANAGEMENT_TOKEN_HEADER)?.trim()
@@ -568,7 +568,7 @@ export function createWorkspaceRuntimeApp(options: WorkspaceRuntimeServerOptions
       release()
     }
   })
-  app.route("/", ConfigRoutes((snapshot) => host.apply(snapshot), {
+  app.route("/", ConfigRoutes({ apply: host.apply, configApply: () => host.detail().configApply }, {
     ...(options.managementAuth ? { managementAuth: options.managementAuth } : {}),
     ...(options.managementTarget ? { managementTarget: options.managementTarget } : {}),
   }))
@@ -646,7 +646,6 @@ export function createWorkspaceRuntimeApp(options: WorkspaceRuntimeServerOptions
       workspaceId: options.target?.workspaceId ?? workspaceId(),
       directory: options.target?.directory ?? workspaceDir(),
       stateDirectory: options.storeRoot ?? workspaceRuntimeStoreDir(),
-      applyHarnessLaunch: (harnessLaunch) => host.applyHarnessLaunch(harnessLaunch),
       fetch: contributionFetch,
       registerSessionTools: registerSessionToolGroup,
       unregisterSessionTools: unregisterSessionToolGroup,

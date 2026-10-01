@@ -421,7 +421,7 @@ export function createChannelCore(input: {
       sessionId: ref.sessionId,
       ...(ref.appUrl ? { appUrl: ref.appUrl } : {}),
     })
-    if (ref.workspaceId && ref.workspaceRef) {
+    if (ref.workspaceRef) {
       await handlers.reply({
         kind: "text",
         text: `Using workspace ${ref.workspaceId} at ${ref.workspaceRef}.`,

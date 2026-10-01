@@ -1,5 +1,5 @@
 import { createRoot, type Owner } from "solid-js"
-import type { SessionId, SessionOutline, SessionRef, TranscriptPage } from "@/server"
+import type { SessionId, SessionOutline, SessionLocation, TranscriptPage } from "@/server"
 import type { SessionTranscript, TranscriptSeed } from "../transcript"
 
 export const OPEN_SESSION_LIMIT = 8
@@ -15,7 +15,7 @@ type CachedSession = {
 type OpenEntry = { readonly kind: "open"; readonly view: SessionTranscript; readonly dispose: () => void } | CachedSession
 
 export type OpenSessions = {
-  readonly get: (ref: SessionRef) => SessionTranscript
+  readonly get: (ref: SessionLocation) => SessionTranscript
   readonly byId: (sessionId: SessionId) => SessionTranscript | undefined
   readonly forgetCached: (sessionId?: SessionId) => void
   readonly counts: () => { readonly open: number; readonly cached: number }
@@ -27,7 +27,7 @@ export type OpenSessionsInput = {
   readonly limit: number
   readonly cachedLimit: number
   readonly owner: Owner | null
-  readonly make: (ref: SessionRef, seed?: TranscriptSeed) => SessionTranscript
+  readonly make: (ref: SessionLocation, seed?: TranscriptSeed) => SessionTranscript
   readonly onEvicted: (sessionId: SessionId) => void
   readonly stamp: (sessionId: SessionId) => number | undefined
 }
@@ -71,7 +71,7 @@ function seedOf(open: OpenState, sessionId: SessionId, entry: OpenEntry | undefi
   return { latestTurn: entry.latestTurn, outline: entry.outline }
 }
 
-function touchOrOpen(open: OpenState, ref: SessionRef): SessionTranscript {
+function touchOrOpen(open: OpenState, ref: SessionLocation): SessionTranscript {
   const hit = open.entries.get(ref.sessionId)
   if (hit?.kind === "open") {
     open.entries.delete(ref.sessionId)

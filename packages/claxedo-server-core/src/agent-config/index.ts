@@ -1,12 +1,3 @@
-/**
- * Centralized Agent Configuration
- *
- * Stores trusted operator configuration for agent runtimes:
- *   - Slash commands (markdown files in ~/.claxedo/commands/)
- *
- * Command .md files at:     ~/.claxedo/commands/<name>.md
- */
-
 import type { AccountScope } from "@claxedo/account-contract/vocabulary"
 import type { CredentialSnapshot } from "@claxedo/agent-runtime-contract"
 import * as fs from "fs"
@@ -17,14 +8,15 @@ import type { SandboxDriverConfig } from "@claxedo/sandbox-contract"
 import {
   createHarnessConnectionSchema,
   explicitDefaultHarness,
-  snapshotDefaultHarness,
   type ConnectionConfigHooks,
   type HarnessConnectionDescriptor,
   type HarnessConnectionRef,
 } from "./connections"
 import type { RuntimeHarnessSelection, RuntimeNativeHarnessId } from "@claxedo/workspace-runtime/config"
-import type { AcpRuntimeMcpServer } from "../agent-plugins/runtime/mcp-projection"
-import type { CustomProviderDefinition } from "@claxedo/harness/contract"
+import { composeRuntimeConfigSnapshot, type AgentPluginRuntimeContribution } from "./runtime-snapshot"
+import type { RuntimeSnapshot } from "@claxedo/workspace-runtime/config"
+import type { SavedCommand } from "@claxedo/agent-runtime-contract"
+export type { AgentPluginRuntimeContribution } from "./runtime-snapshot"
 import { listCustomProviders } from "../credentials/custom-provider"
 
 export type {
@@ -66,32 +58,9 @@ function commandDir() {
   return path.join(claxedoDir(), "commands")
 }
 
-// ── Types ──────────────────────────────────────────────────────────────────
 
-export interface RuntimeConfigSnapshot {
-  providerDefinitions?: readonly CustomProviderDefinition[]
-  version: 4
-  /** The MCP servers active plugins deliver to every custom ACP connection. */
-  mcp: Record<string, AcpRuntimeMcpServer>
-  connections: HarnessConnectionDescriptor[]
-  defaultHarness?: RuntimeHarnessSelection
-  /** Broker endpoints and placeholders; the credential values stay with the authority. */
-  auth: CredentialSnapshot
-  commands: CommandItem[]
-  /** Opaque per-harness launch options contributed by the product composition. */
-  harnessLaunch?: Record<string, Record<string, unknown>>
-}
-
-/** What Agent Plugins contributes to a runtime snapshot: a launch row per native harness and one for ACP connections, and the ACP MCP map. */
-export type AgentPluginRuntimeContribution = {
-  harnessLaunch: Record<string, Record<string, unknown>>
-  mcp: Record<string, AcpRuntimeMcpServer>
-}
-
-export interface CommandItem {
-  name: string
-  content: string
-}
+export type RuntimeConfigSnapshot = RuntimeSnapshot
+export type CommandItem = SavedCommand
 
 export type AgentConfigOptions = {
   /** The connection providers whose descriptors this composition accepts; the ACP provider alone when absent. */
@@ -145,14 +114,12 @@ export function configureAgentConfig(options: AgentConfigOptions = {}) {
   harnessConnectionSchema = createHarnessConnectionSchema(options.connectionConfigs)
 }
 
-// ── Helpers ────────────────────────────────────────────────────────────────
 
 function sanitizeName(name: string): string {
   return name.replace(/[^a-zA-Z0-9_-]/g, "-").slice(0, 64)
 }
 
 
-// ── Trusted generic connections ───────────────────────────────────────────
 
 let harnessConnectionSchema = createHarnessConnectionSchema()
 
@@ -179,7 +146,6 @@ export function harnessConnectionRows(
   return publicHarnessConnections(config.connections)
 }
 
-// ── User config (MCP servers) ──────────────────────────────────────────────
 
 const LOCAL_CONFIG_ID = "__local__"
 
@@ -225,18 +191,6 @@ export async function getRuntimeConfigSnapshot(
   } = {},
 ): Promise<RuntimeConfigSnapshot> {
   const config = await loadUserConfig()
-  const selected = snapshotDefaultHarness(config, options.provisionedRunner)
-  if (selected?.kind === "connection") {
-    const connection = config.connections[selected.connectionId]
-    if (!connection || !connection.enabled) {
-      throw invalidSchema("selected connection is not installed and enabled")
-    }
-  }
-  const providerDefinitions = listCustomProviders(options.orgId).map((provider) => ({
-    id: provider.providerID, name: provider.name, npm: "@ai-sdk/openai-compatible" as const,
-    baseURL: provider.baseURL, headers: provider.headers, models: provider.models, credentialProviderId: provider.providerID,
-    credentialSource: provider.env.length ? "machine-env" as const : "account" as const,
-  }))
   const scope = options.secretScope ?? "local"
   const auth = await agentConfigOptions.projectAuth?.({
     scope,
@@ -245,20 +199,19 @@ export async function getRuntimeConfigSnapshot(
     ...(options.secretBrokering ? { secretBrokering: options.secretBrokering } : {}),
     ...(options.sandboxOwner ? { sandboxOwner: options.sandboxOwner } : {}),
   }) ?? { machineOwnerUserId: "", accounts: {} }
-  const plugins = await agentConfigOptions.pluginRuntime?.()
-  return {
-    version: 4,
-    mcp: plugins?.mcp ?? {},
-    connections: Object.values(config.connections),
-    ...(selected ? { defaultHarness: selected } : {}),
-    auth,
-    providerDefinitions,
+  const plugins = agentConfigOptions.pluginRuntime
+    ? await agentConfigOptions.pluginRuntime()
+    : { mcp: {}, harnessLaunch: {} }
+  return composeRuntimeConfigSnapshot({
+    config,
+    provisionedRunner: options.provisionedRunner,
+    providers: listCustomProviders(options.orgId),
     commands: await listCommands(),
-    ...(plugins && Object.keys(plugins.harnessLaunch).length ? { harnessLaunch: plugins.harnessLaunch } : {}),
-  }
+    auth,
+    plugins,
+  })
 }
 
-// ── Commands ───────────────────────────────────────────────────────────────
 
 export async function listCommands(): Promise<CommandItem[]> {
   await fs.promises.mkdir(commandDir(), { recursive: true, mode: 0o755 })

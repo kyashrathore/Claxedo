@@ -5,7 +5,7 @@ import { onRuntime, sessionEndpoint, type SessionContext } from "./session-conte
 import { NO_GOAL } from "./session-goal"
 import { withQuery, type RuntimeRoute } from "./transport"
 import type { SessionStatus } from "./status-types"
-import type { HeldSessionReads, PageShape, SessionFirstRead, SessionReads, SessionRef } from "./types"
+import type { HeldSessionReads, PageShape, SessionFirstRead, SessionReads, SessionLocation } from "./types"
 import { GOAL_UNAVAILABLE } from "./wire/goal"
 import { firstReadFromWire, NO_FIRST_PAGE } from "./wire/first-read"
 import { OPEN_VIEW, sessionOpenFromWire, TODOS_UNSUPPORTED, type SessionFact, type SessionOpenView } from "./wire/session-open"
@@ -14,33 +14,33 @@ import { viewportQuery } from "./wire/turn-page"
 
 const STOPPED_STATUS: SessionStatus = { kind: "idle" }
 
-function runtimeRow(session: AgentPresentationSession, ref: SessionRef): Pick<SessionFirstRead, "row" | "diff"> {
+function runtimeRow(session: AgentPresentationSession, ref: SessionLocation): Pick<SessionFirstRead, "row" | "diff"> {
   return { row: sessionRowFromSession(session, ref), diff: session.summary?.diffs ?? [] }
 }
 
-async function readRuntimeFirst(context: SessionContext, route: RuntimeRoute, ref: SessionRef, shape: PageShape): Promise<SessionFirstRead> {
+async function readRuntimeFirst(context: SessionContext, route: RuntimeRoute, ref: SessionLocation, shape: PageShape): Promise<SessionFirstRead> {
   const response = await context.transport.runtime(route, withQuery(sessionEndpoint(ref, "/outline"), viewportQuery(shape)))
   if (!response.ok) throw await responseError(response, "First read")
   const read = firstReadFromWire(await response.json())
   return { ...runtimeRow(read.session as AgentPresentationSession, ref), outline: read.outline, ...(read.page ?? NO_FIRST_PAGE) }
 }
 
-async function readOfflineFirst(context: SessionContext, workspaceId: string, ref: SessionRef): Promise<SessionFirstRead> {
+async function readOfflineFirst(context: SessionContext, workspaceId: string, ref: SessionLocation): Promise<SessionFirstRead> {
   return { row: await readCentralRow(context, workspaceId, ref), diff: [], outline: undefined, ...NO_FIRST_PAGE }
 }
 
-function readLiveSession(context: SessionContext, ref: SessionRef): Promise<AgentPresentationSession | undefined> {
+function readLiveSession(context: SessionContext, ref: SessionLocation): Promise<AgentPresentationSession | undefined> {
   return onRuntime(context, ref, (route) => context.transport.runtimeJson<AgentPresentationSession>(route, sessionEndpoint(ref)), async () => undefined)
 }
 
-async function readHeldFirst(context: SessionContext, ref: SessionRef, held: HeldSessionReads): Promise<SessionFirstRead> {
+async function readHeldFirst(context: SessionContext, ref: SessionLocation, held: HeldSessionReads): Promise<SessionFirstRead> {
   const home = await context.workspaces.home(ref)
   const live = await readLiveSession(context, ref)
   const row = live ? runtimeRow(live, ref) : { row: await readCentralRow(context, home.route.workspaceId, ref), diff: [] }
   return { ...row, outline: held.outline, transcript: held.latestTurn, latestTurn: held.latestTurn }
 }
 
-async function readFirst(context: SessionContext, ref: SessionRef, shape: PageShape): Promise<SessionFirstRead> {
+async function readFirst(context: SessionContext, ref: SessionLocation, shape: PageShape): Promise<SessionFirstRead> {
   const home = await context.workspaces.home(ref)
   if (!home.central) {
     return onRuntime(context, ref, (route) => readRuntimeFirst(context, route, ref, shape), (workspaceId) => readOfflineFirst(context, workspaceId, ref))
@@ -65,7 +65,7 @@ function todosOf(view: SessionOpenView) {
   return "error" in view.todos && view.todos.error.code === TODOS_UNSUPPORTED ? [] : factValue(view.todos)
 }
 
-export function startSessionReads(context: SessionContext, ref: SessionRef, shape: PageShape, held?: HeldSessionReads): SessionReads {
+export function startSessionReads(context: SessionContext, ref: SessionLocation, shape: PageShape, held?: HeldSessionReads): SessionReads {
   const { transport } = context
   const first = held ? readHeldFirst(context, ref, held) : readFirst(context, ref, shape)
   const opened = onRuntime<SessionOpenView | undefined>(

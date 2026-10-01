@@ -1,12 +1,12 @@
 /// <reference types="bun" />
 import { expect, test } from "bun:test"
 import { createRoot } from "solid-js"
-import { placementId, projectId, sessionId, type Server, type SessionRef, type TranscriptPart } from "@/server"
+import { placementId, projectId, sessionId, type Server, type SessionLocation, type TranscriptPart } from "@/server"
 import { createTranscriptContext, type TranscriptDeps } from "./context"
 import { replaceLatest } from "./conversation"
 import { loadPart } from "./part"
 
-const ref: SessionRef = { projectId: projectId("project-1"), placementId: placementId("placement-1"), sessionId: sessionId("ses_1") }
+const ref: SessionLocation = { projectId: projectId("project-1"), placementId: placementId("placement-1"), sessionId: sessionId("ses_1") }
 
 const completed = (output: string) => ({ status: "completed", input: { command: "ls" }, output, title: "ls", metadata: {}, time: { start: 1, end: 2 } }) as const
 const tool = (output: string, headerOnly?: true): TranscriptPart => ({ id: "p1", sessionID: "ses_1", messageID: "msg_1_r", type: "tool", callID: "c1", tool: "bash", state: completed(output), ...(headerOnly ? { headerOnly } : {}) })
@@ -21,7 +21,7 @@ function setup() {
   const reads: string[] = []
   const server = {
     sessions: {
-      part: async (_ref: SessionRef, messageId: string, partId: string) => {
+      part: async (_ref: SessionLocation, messageId: string, partId: string) => {
         reads.push(`${messageId}/${partId}`)
         return tool("a\nb")
       },
@@ -44,4 +44,3 @@ test("part: a row sent as its header reads its whole part once when it opens, an
     dispose()
   })
 })
-

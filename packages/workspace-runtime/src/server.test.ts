@@ -1,4 +1,5 @@
 import { installFakePiRpc } from "./test-support/home/fake-pi-rpc.mjs"
+import { createWorkspaceRuntimeClient } from "./client"
 import { afterEach, describe, expect, spyOn, test } from "bun:test"
 import fs from "fs"
 import os from "os"
@@ -1142,7 +1143,7 @@ describe("relay-host auth middleware (characterization)", () => {
     }
   })
 
-  test("management token bypasses relay auth for POST /api/wr/config", async () => {
+  test("management token reads and applies settings through the relay auth boundary", async () => {
     await pinTempWorkspaceDirectory()
     const runtime = createWorkspaceRuntimeApp({ sessionIdWorkspace: () => undefined,
     placement,
@@ -1152,8 +1153,11 @@ describe("relay-host auth middleware (characterization)", () => {
       managementTarget: { workspaceId: "ws_1", hostId: "host_1" },
     })
     try {
-      // No relay token, but a valid management token — the config-push bypass
-      // in the relay middleware lets it through to the management-auth check.
+      const client = createWorkspaceRuntimeClient({ baseUrl: "http://localhost", fetch: (url, init) => Promise.resolve(runtime.app.fetch(new Request(url, init))) })
+      const idle = await client.configStatus({ token: managementToken })
+      expect(idle).toEqual(runtime.host.detail().configApply)
+      expect(idle.state).toBe("idle")
+      await expect(client.configStatus({ token: "wrong-token" })).rejects.toMatchObject({ status: 401 })
       const config = await runtime.app.request("http://localhost/api/wr/config", {
         method: "POST",
         headers: {
@@ -1171,6 +1175,9 @@ describe("relay-host auth middleware (characterization)", () => {
       })
       expect(config.status).toBe(200)
       expect(await config.json()).toEqual({ ok: true })
+      const applied = await client.configStatus({ token: managementToken })
+      expect(applied).toEqual(runtime.host.detail().configApply)
+      expect(applied.state).toBe("applied")
 
       // The bypass only applies to the config route with a management-token
       // header present; other routes still require relay auth.
