@@ -788,7 +788,7 @@ describe("a share the authority refuses reaches no machine effect", () => {
       .toEqual({ count: 0 })
   }
 
-  test("a membership revoked after it was admitted stops the next share before enrollment", async () => {
+  test("a project admin membership on another account's workspace stops the share before enrollment", async () => {
     const harness = machineWithForeignWorkspace()
     try {
       await registerUnder(harness.authority, stranger)
@@ -797,13 +797,6 @@ describe("a share the authority refuses reaches no machine effect", () => {
         INSERT INTO project_memberships (project_id, token_identifier, role, created_at, updated_at)
         VALUES (?, ?, 'admin', ?, ?)
       `).run("project_theirs", auth.user.tokenIdentifier, now, now)
-      // Admitted while the membership stands: the refusal below is the
-      // revocation, not a workspace the operator could never share.
-      await expect(harness.authority.authorizeWorkspaceHostAssignment!(auth, { workspaceId: "ws_theirs" }))
-        .resolves.toEqual({ registration: "existing" })
-
-      harness.database().prepare(`DELETE FROM project_memberships WHERE project_id = ? AND token_identifier = ?`)
-        .run("project_theirs", auth.user.tokenIdentifier)
 
       await expect(harness.service.assignWorkspace(auth, { workspaceId: "ws_theirs" })).rejects.toMatchObject({
         code: "workspace_not_found",

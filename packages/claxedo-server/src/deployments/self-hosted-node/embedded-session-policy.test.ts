@@ -188,7 +188,7 @@ describe("embeddedManagedPrivateSessionPolicy", () => {
     // The mint binds the session and the ACTOR'S user-scoped partition — the
     // subject a connections row names as `owner` — resolved through the
     // authority, never decoded from the request.
-    expect(resolveRuntimeMachineAccess).toHaveBeenCalledWith("actor_alice", "ws_1", "viewer")
+    expect(resolveRuntimeMachineAccess).toHaveBeenCalledWith("actor_alice", "ws_1")
     expect(turns.resolve(acquired.connectionCredential)).toEqual({
       sessionId: "ses_private",
       subject: "alice",

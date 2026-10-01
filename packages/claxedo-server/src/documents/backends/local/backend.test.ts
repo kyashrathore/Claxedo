@@ -37,7 +37,7 @@ afterAll(async () => {
 })
 
 describe("local documents backend composition", () => {
-  test("private-session authority gates hydration and revocation stops writeback", async () => {
+  test("private-session authority gates hydration and a revoked share stops writeback", async () => {
     const file = path.join(databaseRoot, "private-session-authority.db")
     const authority = createSqliteWorkspaceAuthority({ path: file })
     const database = openAuthorityDb({ path: file })
@@ -54,11 +54,9 @@ describe("local documents backend composition", () => {
       .run(opened.workspace!.org_id, bob.user.tokenIdentifier, Date.now(), Date.now())
     database().prepare("INSERT INTO project_memberships (project_id, token_identifier, role, created_at, updated_at) VALUES (?, ?, 'editor', ?, ?)")
       .run(opened.workspace!.project_id, bob.user.tokenIdentifier, Date.now(), Date.now())
-    for (const [sessionId, caller] of [["ses_alice", alice], ["ses_bob", bob]] as const) {
-      await authority.reserveSession(caller, { operationId: `op_${sessionId}`, sessionId, workspaceId: "workspace_1", kind: "create" })
-      await authority.registerRuntimeSession({ createdAt: Date.now(), updatedAt: Date.now(), principalKind: "user", actorKind: "human", actorId: caller.user.tokenIdentifier,
-        operationId: `op_${sessionId}`, sessionId, workspaceId: "workspace_1" })
-    }
+    await authority.reserveSession(alice, { operationId: "op_ses_alice", sessionId: "ses_alice", workspaceId: "workspace_1", kind: "create" })
+    await authority.registerRuntimeSession({ createdAt: Date.now(), updatedAt: Date.now(), principalKind: "user", actorKind: "human", actorId: alice.user.tokenIdentifier,
+      operationId: "op_ses_alice", sessionId: "ses_alice", workspaceId: "workspace_1" })
     const fixture = await moveFixture(undefined, {
       sessionAuthority: authority,
       sessionMeta: async (sessionID) => ({ sessionID, workspaceID: "workspace_1", projectID: projectId, host: "workspace",
@@ -74,29 +72,28 @@ describe("local documents backend composition", () => {
       body: JSON.stringify({ session_id: sessionId }),
     })
     const context = { auth: bob, origin: "https://local.example" }
-    const target = { sessionId: "ses_alice", workspaceId: "workspace_1", participantActorId: bob.user.tokenIdentifier }
+    const target = { sessionId: "ses_alice", workspaceId: "workspace_1", grantedToTokenIdentifier: bob.user.tokenIdentifier }
     try {
       await expect(fixture.backend.agentOpen(fixture.indexed, "ses_alice", context)).rejects.toMatchObject({ status: 403 })
       expect((await request("ses_alice")).status).toBe(403)
       expect(hydratedSessionDocumentPaths("ses_alice")).toEqual([])
       await expect(fs.stat(path.join(fixture.repository, ".claxedo", "sessions", "ses_alice"))).rejects.toMatchObject({ code: "ENOENT" })
-      const ownSession = await request("ses_bob")
-      expect(ownSession.status).toBe(200)
-      expect(await ownSession.json()).toMatchObject({ path: expect.stringContaining("ses_bob") })
-      await authority.grantSessionParticipant(alice, target)
+      await authority.grantSessionShare!(alice, { ...target, level: "send" })
+      const shared = await request("ses_alice")
+      expect(shared.status).toBe(200)
+      expect(await shared.json()).toMatchObject({ path: expect.stringContaining("ses_alice") })
       const hydrated = await fixture.backend.agentOpen(fixture.indexed, "ses_alice", context)
       await fs.writeFile(hydrated.path, "authorized writeback")
       await syncHydratedSessionDocuments("ses_alice")
       const handle = await fixture.backend.workspace.resolve({ origin: "managed", placement: "local", projectId,
         documentId: fixture.indexed.id, relativePath: fixture.indexed.managed_relative_path! })
       expect((await fixture.backend.workspace.read(handle)).markdown).toBe("authorized writeback")
-      await authority.revokeSessionParticipant(alice, target)
+      await authority.revokeSessionShare!(alice, target)
       await fs.writeFile(hydrated.path, "revoked writeback")
       await expect(syncHydratedSessionDocuments("ses_alice")).rejects.toThrow()
       expect((await fixture.backend.workspace.read(handle)).markdown).toBe("authorized writeback")
     } finally {
       await disposeHydratedSessionDocuments("ses_alice")
-      await disposeHydratedSessionDocuments("ses_bob")
       authority.close(); database.close()
     }
   })

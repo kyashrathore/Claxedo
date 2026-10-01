@@ -1030,7 +1030,7 @@ describe("host invitations", () => {
       action: "host_invitation.created",
       metadata: { invitationId: "invitation_1", expiresAt: 9_999 },
     })
-    expect((await call("/", { method: "POST", body: JSON.stringify({ scope: { allowed_roots: ["/srv"] } }) })).status).toBe(400)
+    expect((await call("/", { method: "POST", body: JSON.stringify({ scope: { allowed_roots: ["/srv"], visibility: "org" } }) })).status).toBe(400)
   })
 
   test("lists and revokes the owner's invitations, auditing a revocation that happened", async () => {
