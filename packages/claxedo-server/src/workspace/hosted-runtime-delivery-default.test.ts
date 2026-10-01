@@ -13,8 +13,8 @@ type Input = Parameters<typeof createHostedRuntimeDelivery>[0]
 const active: ControlPlaneDatabase[] = []
 afterEach(async () => { await Promise.all(active.splice(0).map((instance) => instance.dispose())) })
 
-async function firstPush(config: UserAgentConfig) {
-  const instance = await workspaceBackingDatabase([{ id: "ws", backing: "cloud-vm" }])
+async function firstPush(config: UserAgentConfig, backing: "cloud-vm" | "local-worktree" = "cloud-vm") {
+  const instance = await workspaceBackingDatabase([{ id: "ws", backing }])
   active.push(instance)
   const delivery = createHostedRuntimeDelivery({
     authority: { resolveWorkspaceOwner: async () => ({ userId: "owner", orgId: "org" }) } as unknown as Input["authority"],
@@ -28,15 +28,20 @@ async function firstPush(config: UserAgentConfig) {
     signingEnv: {},
     provisionedRunner: "pi",
   })
+  configApplied.mockClear()
   await delivery.provisionRuntime({ workspaceId: "ws" }, await delivery.prepareRuntime({ workspaceId: "ws" }))
-  return configApplied.mock.calls.at(-1)![0]
+  return configApplied.mock.calls.at(-1)?.[0]
 }
 
 test("the first push for an owner who never chose a default keeps the runner the sandbox was provisioned with", async () => {
-  expect((await firstPush({ version: 3, connections: {}, sandbox_driver: {} })).defaultHarness).toEqual({ kind: "native", harnessId: "pi" })
+  expect((await firstPush({ version: 3, connections: {}, sandbox_driver: {} }))?.defaultHarness).toEqual({ kind: "native", harnessId: "pi" })
 })
 
 test("an owner's own default replaces the provisioned runner", async () => {
-  expect((await firstPush({ version: 3, connections: {}, sandbox_driver: {}, defaultHarness: { kind: "native", harnessId: "claude" } })).defaultHarness)
+  expect((await firstPush({ version: 3, connections: {}, sandbox_driver: {}, defaultHarness: { kind: "native", harnessId: "claude" } }))?.defaultHarness)
     .toEqual({ kind: "native", harnessId: "claude" })
+})
+
+test("a machine-placed workspace takes its config from its machine, never a hosted sandbox push", async () => {
+  expect(await firstPush({ version: 3, connections: {}, sandbox_driver: {} }, "local-worktree")).toBeUndefined()
 })
