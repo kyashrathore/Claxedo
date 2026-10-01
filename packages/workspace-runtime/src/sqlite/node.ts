@@ -1,6 +1,6 @@
 import { createRequire } from "node:module"
 import { isRecord } from "@claxedo/helpers/guards"
-import type { SqliteDatabase, SqliteRunResult } from "./database"
+import type { SqliteDatabase, SqliteRunResult } from "@claxedo/session-core"
 
 type NativeStatement<Row> = {
   run(...params: unknown[]): SqliteRunResult

@@ -25,8 +25,13 @@
  */
 
 import { Pty } from "./index"
-import { errorBody } from "../routes/error-body"
-import { sessionAccessContext, type SessionAccessPolicy, type SessionAccessPolicyInput, type SessionAccessStreamDecision } from "../session-access-policy"
+import { errorBody } from "@claxedo/session-core"
+import {
+  sessionAccessContext,
+  type SessionAccessPolicy,
+  type SessionAccessPolicyInput,
+  type SessionAccessStreamDecision,
+} from "@claxedo/session-core"
 import type { RelayHostAuthContext } from "../workspace-host-service-auth"
 import type { WebSocketBackpressureSocket } from "./websocket-backpressure"
 

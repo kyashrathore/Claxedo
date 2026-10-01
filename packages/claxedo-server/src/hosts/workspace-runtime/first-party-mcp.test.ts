@@ -19,6 +19,7 @@ function runtime(options: {
   const issuer = createRuntimeCredentialIssuer({ runtimeId: "rt_1", workspaceId: "ws_1" })
   const enabledToolGroups = options.groups ?? CLAXEDO_MCP_TOOL_GROUP_IDS
   const app = createWorkspaceRuntimeApp({
+    sessionIdWorkspace: () => undefined,
     exposure: relayWorkspaceRuntimeExposure(relayAuth),
     placement: loopbackMachineLoginPolicy(),
     target: { workspaceId: "ws_1", directory: process.cwd() },

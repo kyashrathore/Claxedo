@@ -1,5 +1,5 @@
 import z from "zod/v3"
-import { rec } from "../json-value"
+import { rec } from "@claxedo/session-core"
 
 export const TERMINAL_SCROLLBACK_ROWS = 5000
 

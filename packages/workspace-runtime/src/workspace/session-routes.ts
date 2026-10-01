@@ -1,31 +1,32 @@
+import type { SessionCore } from "@claxedo/session-core"
+import { deriveChildSessionId } from "../host/child-identity"
+import { readSessionAttachment } from "../host/attachment-files"
+import { flushRuntimeSessionDocuments, disposeRuntimeSessionDocuments } from "../routes/document-hydration"
 import { DEFAULT_RECOVERY_BUDGETS, type SubagentObservation } from "@claxedo/agent-runtime-contract"
 import type { AgentSessionStarts, SubagentUpdatedEvent } from "@claxedo/agent-runtime-contract"
 import { HTTPException } from "hono/http-exception"
-import type { AgentRuntime, AgentRuntimeRecovery } from "../host/runtime"
-import type { RuntimeEventHub } from "../projection/runtime-event-hub"
-import { SessionRoutes } from "../routes/session"
-import { sessionStatusSnapshot } from "../routes/session-status-snapshot"
-import type { SessionAccessPolicy } from "../session-access-policy"
-import type { SessionDeliveryStore } from "../session/delivery-owner"
-import type { RuntimeStore } from "../store"
+import type { AgentRuntime, AgentRuntimeRecovery } from "@claxedo/session-core"
+import { sessionStatusSnapshot } from "@claxedo/session-core"
+import type { SessionAccessPolicy } from "@claxedo/session-core"
+import type { SessionDeliveryStore } from "@claxedo/session-core"
+import type { RuntimeStore } from "@claxedo/session-core"
 import { workspaceId } from "../target"
 import type { WorkspaceCheckpoint } from "./checkpoint"
 import type { WorkspaceTranscriptRoutesOptions } from "./core"
 import type { RuntimeRunner } from "./snapshot"
 
 export type SessionRoutesMountInput = {
+  core: SessionCore
   runtime: () => Promise<AgentRuntime>
   /** The recovery owner already built, without building one: recovery answers while the host is closing. */
   recovery: () => AgentRuntimeRecovery | undefined
   store: () => RuntimeStore
   sessionStarts: AgentSessionStarts
-  eventHub: RuntimeEventHub
   sessionAccessPolicy: SessionAccessPolicy
   checkpoint: WorkspaceCheckpoint
   currentRunner: () => RuntimeRunner
   transcripts?: WorkspaceTranscriptRoutesOptions
   afterCreateSession?: (input: { directory: string; session: unknown }) => Promise<void> | void
-  sessionIdWorkspace?: (sessionId: string) => Promise<string | undefined> | string | undefined
   sessionToolPrompt: (sessionId: string) => string | undefined
   subagentAdmission: (parentSessionId: string, observation: SubagentObservation) => Promise<SubagentUpdatedEvent>
 }
@@ -50,8 +51,10 @@ export function queuedPromptStore(store: RuntimeStore): SessionDeliveryStore {
 /** The session routes of one workspace host, reading the store and driving the runtime host. */
 export function mountSessionRoutes(input: SessionRoutesMountInput) {
   const { store, checkpoint } = input
-  return SessionRoutes(input.runtime, {
-    eventHub: input.eventHub,
+  return input.core.sessionRoutes(input.runtime, {
+    flushSessionDocuments: flushRuntimeSessionDocuments,
+    disposeSessionDocuments: disposeRuntimeSessionDocuments,
+    readAttachment: readSessionAttachment,
     sessionAccessPolicy: input.sessionAccessPolicy,
     sessionStarts: input.sessionStarts,
     requestedSessionHarness: (requested) => requested ?? input.currentRunner(),
@@ -61,7 +64,7 @@ export function mountSessionRoutes(input: SessionRoutesMountInput) {
     listSubagents: ({ parentSessionId }) => store().listSubagents(parentSessionId),
     childSessions: {
       admit: input.subagentAdmission,
-      secret: () => store().runtimeSecret("child-session"),
+      deriveSessionId: (identity) => deriveChildSessionId(store().runtimeSecret("child-session"), identity),
       pendingWakes: () => store().listPendingSubagentWakes(),
       origins: {
         record: (parentSessionId, subagentKey, origin) => store().recordSubagentOrigin(parentSessionId, subagentKey, origin),
@@ -116,7 +119,6 @@ export function mountSessionRoutes(input: SessionRoutesMountInput) {
       return config
     },
     afterCreateSession: input.afterCreateSession,
-    sessionIdWorkspace: input.sessionIdWorkspace,
     afterUpdateSession: ({ sessionId, updates }) => {
       store().updateSession(sessionId, updates)
     },

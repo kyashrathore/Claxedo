@@ -23,7 +23,7 @@ import {
   type OpenCodeInteractionPort,
   type OpenCodeSessionPort,
 } from "@claxedo/harness/opencode-sdk"
-import { wakeMessageId } from "../routes/session-children"
+import { wakeMessageId } from "@claxedo/session-core"
 
 let root: string
 let host: OpenCodeHost

@@ -1,8 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import fs from "node:fs"
-import {
-  SESSION_CORE_ROUTE_ACCESS,
-} from "./session-access-policy"
+import { SESSION_CORE_ROUTE_ACCESS } from "@claxedo/session-core"
 
 function source(relative: string) {
   return fs.readFileSync(new URL(relative, import.meta.url), "utf8")

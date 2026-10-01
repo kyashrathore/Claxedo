@@ -1,0 +1,40 @@
+{
+  "name": "@claxedo/session-core",
+  "version": "0.10.0",
+  "type": "module",
+  "description": "Runtime-neutral session storage, orchestration, projection and routes behind host ports",
+  "license": "MIT",
+  "main": "./dist/index.mjs",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "development": "./src/index.ts",
+      "bun": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.mjs",
+      "default": "./dist/index.mjs"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "bun build src/index.ts --target=browser --format=esm --packages=external --outfile=dist/index.mjs && tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "bun test src"
+  },
+  "dependencies": {
+    "@claxedo/agent-runtime-contract": "workspace:*",
+    "@claxedo/harness": "workspace:*",
+    "@claxedo/helpers": "workspace:*",
+    "@claxedo/workspace-relay-protocol": "workspace:*",
+    "hono": "catalog:"
+  },
+  "devDependencies": {
+    "@tsconfig/bun": "catalog:",
+    "@types/bun": "catalog:",
+    "typescript": "catalog:",
+    "@claxedo/process-ownership": "workspace:*"
+  }
+}

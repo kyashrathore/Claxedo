@@ -1,3 +1,5 @@
+import { openRuntimeStore } from "../../../../workspace-runtime/src/store-file"
+import type { RuntimeStore } from "@claxedo/session-core"
 import { randomUUID } from "node:crypto"
 import path from "node:path"
 import {
@@ -168,7 +170,10 @@ export async function claxedoWorkspaceRuntimeBootFromEnv(
         policy: remoteWorkspaceSessionAccessPolicyFromEnv(env),
       })
     : undefined
+  let sessionStore: RuntimeStore | undefined
   const options: WorkspaceRuntimeServerOptions = {
+    storeFactory: ({ storeRoot }) => sessionStore = openRuntimeStore(storeRoot),
+    sessionIdWorkspace: (sessionId) => sessionStore?.getExecutionBinding(sessionId)?.workspaceId,
     ...(authorityUrl
       ? { resolveConnectionSecrets: sandboxConnectionSecrets({ workspaceId: workspaceId(env), directory: targetDirectory, authorityUrl }) }
       : {}),

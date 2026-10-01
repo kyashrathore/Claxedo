@@ -8,7 +8,7 @@ import { fileURLToPath } from "node:url"
 import { build, type Plugin } from "esbuild"
 import { Miniflare } from "miniflare"
 import { openSqliteDatabase } from "./sqlite/node"
-import { RuntimeStore } from "./store"
+import { RuntimeStore } from "@claxedo/session-core"
 import { openRuntimeStoreDatabase } from "./store-file"
 import { storeCoreScenarios } from "./test-support/store-core-scenarios"
 
@@ -39,8 +39,8 @@ void describe("store core scenarios on the Node SQLite driver", () => {
 })
 
 const WORKER = `
-import { RuntimeStore } from ${JSON.stringify(fileURLToPath(new URL("./store.ts", import.meta.url)))}
-import { durableObjectSqliteDatabase } from ${JSON.stringify(fileURLToPath(new URL("./sqlite/durable-object.ts", import.meta.url)))}
+import { RuntimeStore } from ${JSON.stringify(fileURLToPath(new URL("../../session-core/src/store.ts", import.meta.url)))}
+import { durableObjectSqliteDatabase } from ${JSON.stringify(fileURLToPath(new URL("../../session-core/src/sqlite/durable-object.ts", import.meta.url)))}
 import { storeCoreScenarios } from ${JSON.stringify(fileURLToPath(new URL("./test-support/store-core-scenarios.ts", import.meta.url)))}
 
 export class StoreGate {

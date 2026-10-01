@@ -1,6 +1,12 @@
-import { messagePartUpdated, messageUpdated, permissionAsked, questionAsked, todoUpdated } from "../projection/presentation-events"
-import type { RuntimeStore } from "../store"
-import { RuntimeStoreSchemaMismatchError } from "../store-schema"
+import {
+  messagePartUpdated,
+  messageUpdated,
+  permissionAsked,
+  questionAsked,
+  todoUpdated,
+} from "@claxedo/session-core"
+import type { RuntimeStore } from "@claxedo/session-core"
+import { RuntimeStoreSchemaMismatchError } from "@claxedo/session-core"
 
 /**
  * The store's core scenarios, written once against whatever SQLite the caller

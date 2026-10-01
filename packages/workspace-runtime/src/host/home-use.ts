@@ -9,7 +9,7 @@ import {
   type LaunchOwnershipStore,
 } from "@claxedo/process-ownership/launch"
 import { isRecord } from "@claxedo/helpers/guards"
-import type { SqliteDatabase } from "../sqlite/database"
+import type { SqliteDatabase } from "@claxedo/session-core"
 import { openSqliteDatabase } from "../sqlite/node"
 
 export const HARNESS_HOME_MAX_IDLE_MS = 30 * 24 * 60 * 60 * 1000

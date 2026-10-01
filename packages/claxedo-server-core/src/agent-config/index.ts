@@ -33,10 +33,7 @@ export type {
   HarnessConnectionRef,
 } from "@claxedo/agent-runtime-contract"
 export type { ConnectionConfigHooks, HarnessConnectionDescriptor } from "./connections"
-export type {
-  RuntimeHarnessSelection,
-  RuntimeNativeHarnessId,
-} from "@claxedo/workspace-runtime/config"
+export type { RuntimeHarnessSelection, RuntimeNativeHarnessId } from "@claxedo/workspace-runtime/config"
 export {
   explicitDefaultHarness,
   isConnectionId,

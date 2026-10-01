@@ -2,7 +2,7 @@ import fs from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
 import { afterAll, describe, expect, test } from "vitest"
-import { withClaxedoMessageAuthor } from "../../../workspace-runtime/src/projection/client-presentation/author"
+import { withClaxedoMessageAuthor } from "@claxedo/session-core"
 import type { AgentMessageInfo } from "@claxedo/agent-runtime-contract"
 
 const root = await fs.mkdtemp(path.join(os.tmpdir(), "claxedo-two-user-signed-"))

@@ -7,7 +7,8 @@ import { serve } from "@hono/node-server"
 import { Hono } from "hono"
 import { Client } from "@modelcontextprotocol/sdk/client/index.js"
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js"
-import { createDiffRoutes, createSessionRoutes } from "@claxedo/workspace-runtime/routes"
+import { createDiffRoutes } from "@claxedo/workspace-runtime/routes"
+import { createSessionRoutes } from "@claxedo/session-core"
 import { createClaxedoMcpClient } from "../client/index"
 import { CLAXEDO_MCP_PATH, createClaxedoMcpRoutes, fullUserCredential, inProcessFetch } from "../server"
 import { registerReviewTools } from "./review"
@@ -44,6 +45,7 @@ afterAll(() => {
 /** The runtime's own session and diff routes over the real repository above. */
 function runtimeApp() {
   const routes = createSessionRoutes({
+    sessionIdWorkspace: () => undefined,
     runtime: async () => { throw new Error("A review reads sessions and diffs; it never reaches the runtime") },
     defaultHarness: () => ({ id: "claude", access: "native" }),
     requestedSessionHarness: () => undefined,

@@ -1,3 +1,4 @@
+import { testSessionRoutePorts } from "../../../../workspace-runtime/src/test-support/session-core"
 import { beforeEach, describe, expect, test, vi } from "vitest"
 import { ControlPlaneAuthError, localOnlyAuthAdapter } from "@claxedo/server-core/platform/auth/auth"
 import { AgentMessagePageError } from "@claxedo/agent-runtime-contract"
@@ -331,7 +332,7 @@ describe("control plane session routes", () => {
       throw new Error("signed inventory must not read the unfiltered local projection")
     })
     svc.projectionStore.read_session_max_event_ordinal = vi.fn(() => 3)
-    const app = ControlPlaneSessionRoutes(svc, {
+    const app = ControlPlaneSessionRoutes(svc, { ...testSessionRoutePorts(),
       authConfig: {
         enabled: true,
         issuer: "https://auth.example.test",
@@ -586,7 +587,7 @@ describe("control plane session routes", () => {
       return [{ ...sessionMeta({ id: "ses_titled", updatedAt: 2 }), title: "Generated after first turn" }]
     })
 
-    const res = await ControlPlaneSessionRoutes(svc, {
+    const res = await ControlPlaneSessionRoutes(svc, { ...testSessionRoutePorts(),
       ...signedOptions,
       beforeLocalList: async () => {
         reconciled = true
@@ -916,7 +917,7 @@ describe("control plane session routes", () => {
       },
     ])
     svc.projectionStore.read_session_max_event_ordinal = vi.fn(() => 2)
-    const app = ControlPlaneSessionRoutes(svc, {
+    const app = ControlPlaneSessionRoutes(svc, { ...testSessionRoutePorts(),
       authConfig: {
         enabled: true,
         issuer: "https://auth.example.test",
@@ -954,7 +955,7 @@ describe("machine session admission", () => {
   const request = (body: unknown, signed = false) => new Request(signed ? "https://control.example.test/sessions" : "http://127.0.0.1/sessions", { method: "POST", headers: { "content-type": "application/json", ...(signed ? { Authorization: "Bearer account" } : {}) }, body: JSON.stringify(body) })
   test("passes the selected machine, native harness and model to the admission owner", async () => {
     const createMachineSession = vi.fn(async () => ({ id: "native-session" }))
-    const app = ControlPlaneSessionRoutes(services(), { createMachineSession })
+    const app = ControlPlaneSessionRoutes(services(), { ...testSessionRoutePorts(), createMachineSession })
     const response = await app.request(request({ workspaceId: "ws_1", harness: "pi", title: "Coding", model: { providerID: "anthropic", modelID: "selected" } }))
     expect(response.status).toBe(201)
     expect(await response.json()).toEqual({ session: { id: "native-session" } })
@@ -969,14 +970,14 @@ describe("machine session admission", () => {
     { workspaceId: "ws_1", harness: "pi", title: 42 }, [], null,
   ])("rejects invalid or removed contracts before native admission: %j", async body => {
     const createMachineSession = vi.fn(async () => ({ id: "unwanted" }))
-    const response = await ControlPlaneSessionRoutes(services(), { createMachineSession }).request(request(body))
+    const response = await ControlPlaneSessionRoutes(services(), { ...testSessionRoutePorts(), createMachineSession }).request(request(body))
     expect(response.status).toBe(400)
     expect(createMachineSession).not.toHaveBeenCalled()
   })
   test("authorizes the signed workspace and forwards the verified identity", async () => {
     const authorizeWorkspaceOpen = vi.fn(async () => {})
     const createMachineSession = vi.fn(async () => ({ id: "authorized" }))
-    const response = await ControlPlaneSessionRoutes(servicesWithWorkspaceOpenAuthorization(authorizeWorkspaceOpen), { ...signedOptions, createMachineSession }).request(request({ workspaceId: "ws_1", harness: "pi" }, true))
+    const response = await ControlPlaneSessionRoutes(servicesWithWorkspaceOpenAuthorization(authorizeWorkspaceOpen), { ...testSessionRoutePorts(), ...signedOptions, createMachineSession }).request(request({ workspaceId: "ws_1", harness: "pi" }, true))
     expect(response.status).toBe(201)
     expect(authorizeWorkspaceOpen).toHaveBeenCalledWith(expect.objectContaining({ token: "account" }), { workspaceId: "ws_1" })
     expect(createMachineSession).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ mode: "signed", token: "account" }))
@@ -984,7 +985,7 @@ describe("machine session admission", () => {
   test("denied workspace authority never reaches native admission", async () => {
     const authorizeWorkspaceOpen = vi.fn(async () => { throw new ControlPlaneAuthError(403, "workspace_authorization_denied", "Denied") })
     const createMachineSession = vi.fn(async () => ({ id: "unwanted" }))
-    const response = await ControlPlaneSessionRoutes(servicesWithWorkspaceOpenAuthorization(authorizeWorkspaceOpen), { ...signedOptions, createMachineSession }).request(request({ workspaceId: "ws_1", harness: "pi" }, true))
+    const response = await ControlPlaneSessionRoutes(servicesWithWorkspaceOpenAuthorization(authorizeWorkspaceOpen), { ...testSessionRoutePorts(), ...signedOptions, createMachineSession }).request(request({ workspaceId: "ws_1", harness: "pi" }, true))
     expect(response.status).toBe(403)
     expect(createMachineSession).not.toHaveBeenCalled()
   })

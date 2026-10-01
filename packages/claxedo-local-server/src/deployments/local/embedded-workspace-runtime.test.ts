@@ -19,17 +19,19 @@ import {
   shutdownEmbeddedWorkspaceRuntimes,
   type MountedEmbeddedWorkspaceRuntime,
 } from "./embedded-workspace-runtime"
-import { workspaceRuntimeBus } from "@claxedo/workspace-runtime/host"
+import { createBus as createTestBus, type WorkspaceRuntimeEvent as TestBusEvent } from "@claxedo/session-core"
+const testBus = createTestBus<TestBusEvent>()
 import { Hono } from "hono"
 import { createHostAggregateEventsHandler } from "../../shell/host-events"
 import { createLocalDaemonLifecycle } from "../../app/local-daemon-lifecycle"
-import type { WorkspaceEventStreamFrame } from "@claxedo/workspace-runtime"
+import type { WorkspaceEventStreamFrame } from "@claxedo/session-core"
 import { disposeAgentConfig, loadUserConfig, saveUserConfig } from "@claxedo/server-core/agent-config/index"
 import type { Workspace } from "@claxedo/server-core/workspace/store/index"
 import { localWorkspaceRuntimeSessionAuthority } from "@claxedo/server-core/workspace/local-runtime-port"
 import { ClaxedoDB } from "@claxedo/server-core/platform/db/index"
 import { closeAuthorityDatabases } from "@claxedo/server-core/authority/adapters/sqlite/workspace-authority-store"
-import { managedWorkspaceSessionAccessPolicy, Pty, type EmbeddedRelayHostIdentity } from "@claxedo/workspace-runtime"
+import { Pty, type EmbeddedRelayHostIdentity } from "@claxedo/workspace-runtime"
+import { managedWorkspaceSessionAccessPolicy } from "@claxedo/session-core"
 import { volatileLaunchOwnership } from "@claxedo/process-ownership/launch"
 import { EMBEDDED_RELAY_HOST_AUTH_HEADER } from "@claxedo/workspace-runtime/exposure"
 import { FakeTransport, fakeConnectionProvider } from "@claxedo/workspace-runtime/testing"
@@ -164,7 +166,8 @@ describe("embedded workspace runtime", () => {
     const moved = path.join(root, "moved")
     await fs.mkdir(moved)
     const { provider, started, stopped, tail } = heldProducer()
-    configureEmbeddedWorkspaceRuntime({ connectionProviders: [provider] })
+    configureEmbeddedWorkspaceRuntime({
+    sessionIdWorkspace: () => undefined, connectionProviders: [provider] })
     let prompt: Promise<Response> | undefined
     try {
       const first = await ensureEmbeddedWorkspaceRuntime(ws, { config: "skip" })
@@ -222,7 +225,8 @@ describe("embedded workspace runtime", () => {
       tail.resolve()
       await prompt
       await shutdownEmbeddedWorkspaceRuntimes()
-      configureEmbeddedWorkspaceRuntime({})
+      configureEmbeddedWorkspaceRuntime({
+    sessionIdWorkspace: () => undefined,})
       await removeWorkspaceRoot(root)
     }
   })
@@ -237,7 +241,8 @@ describe("embedded workspace runtime", () => {
     try {
       const ws = workspace("ws_acquisition", project)
       const first = await ensureEmbeddedWorkspaceRuntime(ws, { config: "skip" })
-      configureEmbeddedWorkspaceRuntime({ onSessionMetaSnapshot: () => { started(); return snapshot } })
+      configureEmbeddedWorkspaceRuntime({
+    sessionIdWorkspace: () => undefined, onSessionMetaSnapshot: () => { started(); return snapshot } })
       const acquisition = ensureEmbeddedWorkspaceRuntime(ws, { config: "skip" })
       await reading
       const retirement = releaseEmbeddedWorkspaceRuntime(ws.id)
@@ -248,7 +253,8 @@ describe("embedded workspace runtime", () => {
       expect(await ensureEmbeddedWorkspaceRuntime(ws, { config: "skip" })).toBe(replacement)
     } finally {
       release()
-      configureEmbeddedWorkspaceRuntime({})
+      configureEmbeddedWorkspaceRuntime({
+    sessionIdWorkspace: () => undefined,})
       await shutdownTestRuntimes()
       await removeWorkspaceRoot(root)
     }
@@ -268,6 +274,7 @@ describe("embedded workspace runtime", () => {
     expect(localWorkspaceRuntimeSessionAuthority()).toBe("local")
 
     configureEmbeddedWorkspaceRuntime({
+    sessionIdWorkspace: () => undefined,
       sessionAccessPolicy: managedWorkspaceSessionAccessPolicy({
         authority: {
           authorizeSessionRead: () => true,
@@ -298,7 +305,8 @@ describe("embedded workspace runtime", () => {
       expect(embeddedWorkspaceRuntimeSessionAuthority()).toBe("managed-private")
       expect(localWorkspaceRuntimeSessionAuthority()).toBe("managed-private")
     } finally {
-      configureEmbeddedWorkspaceRuntime({})
+      configureEmbeddedWorkspaceRuntime({
+    sessionIdWorkspace: () => undefined,})
     }
     expect(embeddedWorkspaceRuntimeSessionAuthority()).toBe("local")
     expect(localWorkspaceRuntimeSessionAuthority()).toBe("local")
@@ -312,6 +320,7 @@ describe("embedded workspace runtime", () => {
     // on this machine's own loopback, which creates sessions with no
     // reservation because the daemon answers its own user directly.
     configureEmbeddedWorkspaceRuntime({
+    sessionIdWorkspace: () => undefined,
       sessionAccessPolicy: managedWorkspaceSessionAccessPolicy({
         authority: {
           authorizeSessionRead: () => true,
@@ -343,7 +352,8 @@ describe("embedded workspace runtime", () => {
       expect(embeddedWorkspaceRuntimeSessionAuthority()).toBe("managed-private")
       expect(localWorkspaceRuntimeSessionAuthority()).toBe("local")
     } finally {
-      configureEmbeddedWorkspaceRuntime({})
+      configureEmbeddedWorkspaceRuntime({
+    sessionIdWorkspace: () => undefined,})
     }
   })
 
@@ -397,6 +407,7 @@ describe("embedded workspace runtime", () => {
       },
     })
     configureEmbeddedWorkspaceRuntime({
+    sessionIdWorkspace: () => undefined,
       sessionAccessPolicy,
     })
 
@@ -451,7 +462,8 @@ describe("embedded workspace runtime", () => {
         `actor_alice:read:${session.id}:Bearer alice-proof`,
       ])
     } finally {
-      configureEmbeddedWorkspaceRuntime({})
+      configureEmbeddedWorkspaceRuntime({
+    sessionIdWorkspace: () => undefined,})
       await shutdownTestRuntimes()
       await removeWorkspaceRoot(root)
     }
@@ -514,7 +526,7 @@ describe("embedded workspace runtime", () => {
         workspaceId: "ws_observed",
         ts: 1,
       }
-      workspaceRuntimeBus.publish(lifecycle)
+      testBus.publish(lifecycle)
       expect(framed).toEqual([{ directory: project, payload: lifecycle }])
 
       const second = path.join(root, "project-2")
@@ -547,7 +559,7 @@ describe("embedded workspace runtime", () => {
         eventType: "Idle" as const,
         outcome: "cancelled" as const,
       }
-      workspaceRuntimeBus.publish(settling)
+      testBus.publish(settling)
       await releasing
       expect(announced.at(-1)).toEqual({ directory: second, phase: "disposed" })
       expect(framed).toContainEqual({ directory: second, payload: settling })
@@ -605,8 +617,8 @@ describe("embedded workspace runtime", () => {
 
       // Both live workspaces reach one connection — the off-screen one has no
       // connection of its own and is exactly what the aggregate exists for.
-      workspaceRuntimeBus.publish(lifecycle("ws_agg_a", project, "ses_a"))
-      workspaceRuntimeBus.publish(lifecycle("ws_agg_b", other, "ses_b"))
+      testBus.publish(lifecycle("ws_agg_a", project, "ses_a"))
+      testBus.publish(lifecycle("ws_agg_b", other, "ses_b"))
       await until("ses_b")
       expect(text).toContain("ses_a")
       expect(text).toContain("ses_b")
@@ -615,16 +627,16 @@ describe("embedded workspace runtime", () => {
       // connection stays open. The replacement's frames must reach the same
       // connection: the aggregate follows the registry, not a snapshot of it.
       await ensureEmbeddedWorkspaceRuntime(workspace("ws_agg_a", moved), { config: "skip" })
-      workspaceRuntimeBus.publish(lifecycle("ws_agg_a", moved, "ses_a_moved"))
-      workspaceRuntimeBus.publish(lifecycle("ws_agg_b", other, "ses_b_again"))
+      testBus.publish(lifecycle("ws_agg_a", moved, "ses_a_moved"))
+      testBus.publish(lifecycle("ws_agg_b", other, "ses_b_again"))
       await until("ses_b_again")
       expect(text).toContain("ses_a_moved")
 
       // A workspace with no live runtime has nothing live to say: released,
       // its frames reach nobody, while the workspace still mounted carries on.
       await releaseEmbeddedWorkspaceRuntime("ws_agg_b")
-      workspaceRuntimeBus.publish(lifecycle("ws_agg_b", other, "ses_b_released"))
-      workspaceRuntimeBus.publish(lifecycle("ws_agg_a", moved, "ses_a_last"))
+      testBus.publish(lifecycle("ws_agg_b", other, "ses_b_released"))
+      testBus.publish(lifecycle("ws_agg_a", moved, "ses_a_last"))
       await until("ses_a_last")
       expect(text).not.toContain("ses_b_released")
     } finally {
@@ -705,7 +717,8 @@ describe("embedded workspace runtime", () => {
       const ws = workspace("ws_configure", project)
       const first = await ensureEmbeddedWorkspaceRuntime(ws, { config: "skip" })
 
-      configureEmbeddedWorkspaceRuntime({ routeContributions: [] })
+      configureEmbeddedWorkspaceRuntime({
+    sessionIdWorkspace: () => undefined, routeContributions: [] })
       const afterConfigure = await ensureEmbeddedWorkspaceRuntime(ws, { config: "skip" })
       expect(afterConfigure).toBe(first)
 
@@ -716,7 +729,8 @@ describe("embedded workspace runtime", () => {
       })
       expect(fresh).not.toBe(first)
     } finally {
-      configureEmbeddedWorkspaceRuntime({})
+      configureEmbeddedWorkspaceRuntime({
+    sessionIdWorkspace: () => undefined,})
       await shutdownTestRuntimes()
       await removeWorkspaceRoot(root)
       await fs.rm(project + "-new", { recursive: true, force: true }).catch(() => {})
@@ -938,7 +952,8 @@ describe("embedded workspace runtime", () => {
     const events: import("@claxedo/agent-runtime-contract").AgentEventEnvelope[] = []
     const controlPlaneEvents: unknown[] = []
     const unsubscribe = controlBus.subscribe((event) => controlPlaneEvents.push(event))
-    configureEmbeddedWorkspaceRuntime({ onSessionMetaEvent: (event) => events.push(event) })
+    configureEmbeddedWorkspaceRuntime({
+    sessionIdWorkspace: () => undefined, onSessionMetaEvent: (event) => events.push(event) })
     try {
       const runtime = await ensureEmbeddedWorkspaceRuntime(workspace("ws_title", project), { config: "skip" })
       const created = await runtime.app.request(`http://runtime.test/session?directory=${encodeURIComponent(project)}&nativeHarness=pi`, {
@@ -962,7 +977,8 @@ describe("embedded workspace runtime", () => {
       expect(controlPlaneEvents).toEqual([])
     } finally {
       unsubscribe()
-      configureEmbeddedWorkspaceRuntime({})
+      configureEmbeddedWorkspaceRuntime({
+    sessionIdWorkspace: () => undefined,})
       await shutdownTestRuntimes()
       await removeWorkspaceRoot(root)
     }
@@ -975,6 +991,7 @@ describe("embedded workspace runtime", () => {
     try {
       const snapshots: unknown[][] = []
       configureEmbeddedWorkspaceRuntime({
+    sessionIdWorkspace: () => undefined,
         onSessionMetaSnapshot: (_workspace: Workspace, sessions: unknown[]) => {
           snapshots.push(sessions)
         },
@@ -1001,7 +1018,8 @@ describe("embedded workspace runtime", () => {
         }),
       ]])
     } finally {
-      configureEmbeddedWorkspaceRuntime({})
+      configureEmbeddedWorkspaceRuntime({
+    sessionIdWorkspace: () => undefined,})
       await shutdownTestRuntimes()
       await removeWorkspaceRoot(root)
     }
@@ -1052,7 +1070,8 @@ describe("the daemon lifecycle on its real work sources", () => {
     const { root, project } = await makeWorkspaceRoot("claxedo-lifecycle-turn-")
     process.env.CLAXEDO_DATA_DIR = path.join(root, "data")
     const held = heldProducer()
-    configureEmbeddedWorkspaceRuntime({ connectionProviders: [held.provider] })
+    configureEmbeddedWorkspaceRuntime({
+    sessionIdWorkspace: () => undefined, connectionProviders: [held.provider] })
     const onStop = vi.fn()
     const lifecycle = createLocalDaemonLifecycle({ onStop, machine: { machineId: "local", generation: "gen-turn" }, idleGraceMs: graceMs })
     let prompt: Promise<Response> | undefined
@@ -1087,7 +1106,8 @@ describe("the daemon lifecycle on its real work sources", () => {
       held.tail.resolve()
       await prompt
       await shutdownEmbeddedWorkspaceRuntimes()
-      configureEmbeddedWorkspaceRuntime({})
+      configureEmbeddedWorkspaceRuntime({
+    sessionIdWorkspace: () => undefined,})
       await removeWorkspaceRoot(root)
     }
   })
@@ -1159,7 +1179,8 @@ describe("attaching to an embedded workspace terminal", () => {
     const { root, project } = await makeWorkspaceRoot("embedded-terminal-identity-")
     process.env.CLAXEDO_DATA_DIR = path.join(root, "data")
     const refusing = policyDeciding(() => false)
-    configureEmbeddedWorkspaceRuntime({ sessionAccessPolicy: refusing.policy })
+    configureEmbeddedWorkspaceRuntime({
+    sessionIdWorkspace: () => undefined, sessionAccessPolicy: refusing.policy })
     const pty = await terminal(project, "ses_1")
     try {
       const ws = workspace("ws_terminal", project)
@@ -1183,7 +1204,8 @@ describe("attaching to an embedded workspace terminal", () => {
       // to refuse and the socket is its own.
       expect(owner.ok).toBe(true)
     } finally {
-      configureEmbeddedWorkspaceRuntime({})
+      configureEmbeddedWorkspaceRuntime({
+    sessionIdWorkspace: () => undefined,})
       await Pty.remove(pty.id)
       await shutdownTestRuntimes()
       await removeWorkspaceRoot(root)
@@ -1194,7 +1216,8 @@ describe("attaching to an embedded workspace terminal", () => {
     const { root, project } = await makeWorkspaceRoot("embedded-terminal-readonly-")
     process.env.CLAXEDO_DATA_DIR = path.join(root, "data")
     const readOnly = policyDeciding((operation) => operation === "pty_read")
-    configureEmbeddedWorkspaceRuntime({ sessionAccessPolicy: readOnly.policy })
+    configureEmbeddedWorkspaceRuntime({
+    sessionIdWorkspace: () => undefined, sessionAccessPolicy: readOnly.policy })
     const pty = await terminal(project, "ses_1")
     const received: string[] = []
     try {
@@ -1225,7 +1248,8 @@ describe("attaching to an embedded workspace terminal", () => {
       expect(received.join("")).not.toContain("pwned")
       expect(readOnly.asked).toEqual(["pty_read", "pty_write"])
     } finally {
-      configureEmbeddedWorkspaceRuntime({})
+      configureEmbeddedWorkspaceRuntime({
+    sessionIdWorkspace: () => undefined,})
       await Pty.remove(pty.id)
       await shutdownTestRuntimes()
       await removeWorkspaceRoot(root)

@@ -22,7 +22,7 @@ import {
   type SessionAccessStreamDecision,
   type SessionAccessPolicyInput,
   type SessionAuthorityInput,
-} from "@claxedo/workspace-runtime"
+} from "@claxedo/session-core"
 import { capture, initPostHog, shutdownPostHog } from "../../platform/telemetry/errors/posthog"
 import { initNodeObservability } from "../../platform/telemetry/errors/node"
 import { reportError } from "../../platform/telemetry/errors/report"
@@ -192,7 +192,7 @@ import { recordRelayRuntimeToken } from "../../authority/relay-token-record"
 import type { InjectedSandboxDriver } from "../../workspace/supervisor/options"
 import { isComposedAuthorityPort } from "../../authority/composed-authority"
 import { TelemetryTrackRoutes } from "@claxedo/server-core/platform/telemetry/track-route"
-import { toPresentationEvent } from "@claxedo/workspace-runtime/projection"
+import { toPresentationEvent } from "@claxedo/session-core"
 
 // Exported (not just used internally) so the embedded per-workspace
 // `onSessionMetaEvent` tap wired through `configureEmbeddedWorkspaceRuntime`

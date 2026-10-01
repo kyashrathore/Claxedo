@@ -1,3 +1,5 @@
+import { createBus as createTestBus, type WorkspaceRuntimeEvent as TestBusEvent } from "@claxedo/session-core"
+const testBus = createTestBus<TestBusEvent>()
 /**
  * Agent Hooks Integration Test (Real-world execution)
  *
@@ -55,7 +57,7 @@ describe("agent-hooks real-world execution", () => {
     await fs.mkdir(binDir, { recursive: true })
 
     // 2. Execute the real lifecycle route behind the shell's HTTP entrypoint.
-    const app = AgentHookRoutes()
+    const app = AgentHookRoutes({ bus: testBus })
     mockServer = createServer((req, res) => {
       const url = new URL(req.url || "", `http://127.0.0.1`)
       if (url.pathname === "/api/wr/hook/agent-lifecycle") {

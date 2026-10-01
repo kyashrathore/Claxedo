@@ -41,6 +41,7 @@ describe("machine dispatch against the workspace runtime it reads", () => {
     directory = path.join(root, "workspace")
     await fs.mkdir(directory)
     const runtime = createWorkspaceRuntimeApp({
+    sessionIdWorkspace: () => undefined,
       exposure: loopbackWorkspaceRuntimeExposure(),
       placement: loopbackMachineLoginPolicy(),
       target: { workspaceId: "ws_machine", directory },

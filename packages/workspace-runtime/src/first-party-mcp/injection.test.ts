@@ -40,6 +40,7 @@ function fixture(input: { firstParty: boolean; groups?: readonly string[] }) {
     },
   })
   const host = createWorkspaceHost({
+    sessionIdWorkspace: () => undefined,
     placement: loopbackMachineLoginPolicy(),
     target,
     storeRoot: path.join(directory, "store"),

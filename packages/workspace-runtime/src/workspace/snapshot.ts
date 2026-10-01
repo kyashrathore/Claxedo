@@ -3,7 +3,7 @@ import path from "path"
 import type { CredentialSnapshot, ProviderProjection } from "@claxedo/agent-runtime-contract"
 import { errorMessage } from "@claxedo/helpers"
 import { acpConnectionConfig, piRpcConnectionConfig, type ConnectionConfigHooks } from "@claxedo/harness/providers"
-import { rec } from "../json-value"
+import { rec } from "@claxedo/session-core"
 import { RuntimeConfigApplyError, type AppliedRuntimeSnapshot, type RuntimeConnectionDescriptor, type RuntimeHarnessSelection } from "../routes/config"
 import type { RuntimeConfigApplyStatus } from "./host"
 

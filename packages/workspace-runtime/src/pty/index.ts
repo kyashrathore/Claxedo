@@ -1,3 +1,4 @@
+import { selectPtyCommand } from "./shell-selection"
 /**
  * PTY Module
  *
@@ -45,31 +46,14 @@ import { TERMINAL_TERM_PROGRAM, TERMINAL_TERM_PROGRAM_VERSION } from "./identity
 import { SESSION_RESTORED_NOTICE, shouldMarkRestored } from "./restored-notice"
 import { createModeTracker, type ModeTracker } from "./mode-tracker"
 import { sanitizeReplay } from "./replay-sanitize"
-import { workspaceRuntimeBus } from "../bus"
+import { currentSessionCore } from "../session-context"
 import { ensureSpawnHelper } from "./spawn-helper-fix"
 import { prependWorkspaceRuntimeBin } from "../runtime-bin"
-import type { SessionAccessActor, SessionWorkspaceAuthority } from "../session-access-policy"
+import type { SessionAccessActor, SessionWorkspaceAuthority } from "@claxedo/session-core"
 
 async function getSpawn() {
   await ensureSpawnHelper()
   return (await import("@lydell/node-pty")).spawn
-}
-
-export function selectPtyCommand(input: {
-  command?: string
-  env?: NodeJS.ProcessEnv
-  platform?: NodeJS.Platform
-  userShell?: () => string | null | undefined
-}) {
-  if (input.command) return input.command
-  const env = input.env ?? process.env
-  if (env.SHELL) return env.SHELL
-  if ((input.platform ?? process.platform) === "win32") return env.COMSPEC || "cmd.exe"
-  try {
-    return (input.userShell ?? (() => os.userInfo().shell))() || "/bin/sh"
-  } catch {
-    return "/bin/sh"
-  }
 }
 
 // Lazy agent hooks setup
@@ -344,6 +328,7 @@ export namespace Pty {
   }
 
   interface ActiveSession {
+    bus: import("@claxedo/session-core").RuntimeBus
     info: Info
     process: IPty
     buffer: string
@@ -701,6 +686,7 @@ export namespace Pty {
     ownership: LaunchOwnershipStore,
     agentHookAccess?: AgentHookAccessBinding,
   ) {
+    const bus = currentSessionCore().bus
     const createStart = performance.now()
     const id = "pty_" + crypto.randomUUID().replace(/-/g, "")
     const command = selectPtyCommand({ command: input.command })
@@ -924,6 +910,7 @@ export namespace Pty {
     }
 
     const session: ActiveSession = {
+      bus,
       info,
       process: ptyProcess,
       buffer: restoredBuffer,
@@ -993,7 +980,7 @@ export namespace Pty {
       session.osc7 = parsed.buf
       if (parsed.cwd && parsed.cwd !== session.info.cwd) {
         session.info.cwd = parsed.cwd
-        workspaceRuntimeBus.publish({ type: "pty.updated", info: session.info })
+        session.bus.publish({ type: "pty.updated", info: session.info })
       }
 
       // Mirror into the headless emulator BEFORE broadcasting, so a client that
@@ -1041,14 +1028,14 @@ export namespace Pty {
       session.info.status = "exited"
       activityChanged()
       const tail = snapshot(id, 16_384)
-      workspaceRuntimeBus.publish({
+      session.bus.publish({
         type: "pty.exited",
         id,
         ...(session.info.sessionId ? { sessionId: session.info.sessionId } : {}),
         exitCode,
         tail,
       })
-      workspaceRuntimeBus.publish({
+      session.bus.publish({
         type: "pty.stream",
         id,
         ...(session.info.sessionId ? { sessionId: session.info.sessionId } : {}),
@@ -1058,7 +1045,7 @@ export namespace Pty {
       })
       await cleanupSession(id, session, "exit")
     })
-    workspaceRuntimeBus.publish({ type: "pty.created", info })
+    session.bus.publish({ type: "pty.created", info })
     return info
   }
 
@@ -1071,7 +1058,7 @@ export namespace Pty {
     if (input.size) {
       resize(id, input.size.cols, input.size.rows)
     }
-    workspaceRuntimeBus.publish({ type: "pty.updated", info: session.info })
+    session.bus.publish({ type: "pty.updated", info: session.info })
     return session.info
   }
 
@@ -1096,7 +1083,7 @@ export namespace Pty {
         sessions.delete(id)
         activityChanged()
       }
-      workspaceRuntimeBus.publish({
+      session.bus.publish({
         type: "pty.deleted",
         id,
         ...(session.info.sessionId ? { sessionId: session.info.sessionId } : {}),
@@ -1231,7 +1218,7 @@ export namespace Pty {
     }
     if (!replaySent) {
       session.subscribers.delete(ws)
-      workspaceRuntimeBus.publish({
+      session.bus.publish({
         type: "pty.stream",
         id,
         ...(session.info.sessionId ? { sessionId: session.info.sessionId } : {}),
@@ -1259,7 +1246,7 @@ export namespace Pty {
       onClose: () => {
         log.info("client disconnected from session", { id })
         session.subscribers.delete(ws)
-        workspaceRuntimeBus.publish({
+        session.bus.publish({
           type: "pty.stream",
           id,
           ...(session.info.sessionId ? { sessionId: session.info.sessionId } : {}),

@@ -9,8 +9,9 @@ import { installFakePiRpc } from "../test-support/home/fake-pi-rpc.mjs"
 import { FakeTransport, fakeConnectionProvider } from "../test-support/fake-transport"
 import { withWorkspaceTarget } from "../target"
 import { loopbackMachineLoginPolicy } from "../testing"
-import { createWorkspaceHost, type WorkspaceHostOptions } from "./runtime"
-import { WorkspaceHarnessUnavailableError } from "../harness-unavailable-error"
+import { createWorkspaceHost } from "./runtime"
+import type { WorkspaceHostOptions } from "./host-options"
+import { WorkspaceHarnessUnavailableError } from "@claxedo/session-core"
 
 const roots: string[] = []
 const cleanups: Array<() => Promise<void>> = []
@@ -40,9 +41,10 @@ async function workspaceRoot(prefix: string) {
   return root
 }
 
-function mountedHost(root: string, workspaceId: string, options: Omit<WorkspaceHostOptions, "placement" | "target" | "storeRoot" | "harnessStateRoot">) {
+function mountedHost(root: string, workspaceId: string, options: Omit<WorkspaceHostOptions, "placement" | "target" | "storeRoot" | "harnessStateRoot" | "sessionIdWorkspace">) {
   const target = { workspaceId, directory: root }
-  const host = createWorkspaceHost({ placement: loopbackMachineLoginPolicy(), target, storeRoot: join(root, "store"), harnessStateRoot: join(root, "harness"), ...options })
+  const host = createWorkspaceHost({
+    sessionIdWorkspace: () => undefined, placement: loopbackMachineLoginPolicy(), target, storeRoot: join(root, "store"), harnessStateRoot: join(root, "harness"), ...options })
   const app = new Hono()
   host.mount(app, { exposure: loopbackWorkspaceRuntimeExposure() })
   const create = (id: string, query = "&connectionId=fixture-primary") => withWorkspaceTarget(target, () => app.request(

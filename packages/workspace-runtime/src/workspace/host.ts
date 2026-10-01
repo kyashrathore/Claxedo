@@ -6,14 +6,14 @@ import type { WorkspaceCapabilities } from "../capabilities"
 import type { WorkspaceProfile } from "../profile"
 import type { AgentRuntimeHealth } from "@claxedo/agent-runtime-contract"
 import type { WorkspaceRuntimeExposure } from "../exposure"
-import type { WorkspaceEventFramesTap } from "../routes/events"
+import type { WorkspaceEventFramesTap } from "@claxedo/session-core"
 import type { RuntimeCredentialIssuer } from "../first-party-mcp/credential"
 import type { FirstPartyMcpServerEntry } from "../first-party-mcp/index"
 import type { ConnectionRuntimeStatus, RecoveryTurnTarget } from "@claxedo/agent-runtime-contract"
 import type { LaunchOwnershipRecord } from "@claxedo/process-ownership/launch"
 import type { LaunchOwnershipReconciliation } from "../ownership/reconcile-launch-ownership"
-import type { RuntimeSessionTime } from "../session/session-time"
-import type { RuntimeStore } from "../store"
+import type { RuntimeSessionTime } from "@claxedo/session-core"
+import type { RuntimeStore } from "@claxedo/session-core"
 
 export type WorkspaceConnectionState = ConnectionRuntimeStatus & { connectionId: string }
 
@@ -92,6 +92,7 @@ export type WorkspaceCheckpointControl = {
 }
 
 export type WorkspaceHost = {
+  sessionCore: import("@claxedo/session-core").SessionCore
   mount: (app: Hono, options: WorkspaceHostMountOptions) => void
   /**
    * Every turn this runtime has admitted, by the identity its owner minted.

@@ -2,7 +2,8 @@ import { Hono } from "hono"
 import { isBoolean, isNonEmptyString, isRecord, isString } from "@claxedo/helpers/guards"
 import { parsePositiveInteger } from "@claxedo/helpers"
 import { gitTopLevel, GitTimeoutError, withGitWriteLock } from "../git"
-import { assertTarget, hasRegisteredWorkspaceDirectories, WorkspaceTargetError } from "../target"
+import { WorkspaceTargetError } from "@claxedo/session-core"
+import { assertTarget, hasRegisteredWorkspaceDirectories} from "../target"
 import type { RelayHostAuthContext } from "../workspace-host-service-auth"
 import {
   GIT_LOG_DEFAULT_LIMIT,
@@ -14,7 +15,12 @@ import {
   gitWorktreeStatus,
   prepareStagedCommit,
 } from "../workspace-files/git-worktree"
-import { boundedJsonBody, errorBody, isRequestBodyTooLarge, requestBodyTooLargeBody } from "./http"
+import {
+  boundedJsonBody,
+  errorBody,
+  isRequestBodyTooLarge,
+  requestBodyTooLargeBody,
+} from "@claxedo/session-core"
 import {
   authorizeWorktreeTarget,
   deniedWorktreeFilter,

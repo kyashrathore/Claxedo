@@ -10,9 +10,14 @@ import {
   type SessionWriteClass,
   sessionAccessRequiresWrite,
   sessionAccessWriteClass,
-} from "./session-access-policy"
-import { bool, num, rec, str } from "./json-value"
-import type { RuntimeSessionTime } from "./session/session-time"
+} from "@claxedo/session-core"
+import {
+  bool,
+  num,
+  rec,
+  str,
+} from "@claxedo/session-core"
+import type { RuntimeSessionTime } from "@claxedo/session-core"
 
 export const WORKSPACE_RUNTIME_SESSION_AUTHORITY_URL = "WORKSPACE_RUNTIME_SESSION_AUTHORITY_URL"
 

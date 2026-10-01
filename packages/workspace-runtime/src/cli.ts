@@ -1,5 +1,7 @@
 #!/usr/bin/env node
 
+import { openRuntimeStore } from "./store-file"
+
 import { readFileSync } from "node:fs"
 import {
   isLoopbackHostname,
@@ -15,8 +17,8 @@ import {
   relayWorkspaceRuntimeExposure,
 } from "./exposure"
 import { runtimeEnvText, workspaceRuntimeEpoch, workspaceRuntimePlacementFromEnv } from "./env"
-import { RUNTIME_NATIVE_HARNESS_IDS } from "./routes/config"
-import { rec, str } from "./json-value"
+import { RUNTIME_NATIVE_HARNESS_IDS } from "@claxedo/session-core"
+import { rec, str } from "@claxedo/session-core"
 
 const pkg = rec(JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")))
 
@@ -43,7 +45,10 @@ if (nativeHarnessInput && !nativeHarness) {
   throw new Error(`Unsupported WORKSPACE_RUNTIME_NATIVE_HARNESS: ${nativeHarnessInput}`)
 }
 const directory = workspaceDir(process.env)
+const placementStore = openRuntimeStore()
 const server = startServer(port, {
+  storeFactory: () => placementStore,
+  sessionIdWorkspace: (sessionId) => placementStore.getExecutionBinding(sessionId)?.workspaceId,
   target: { workspaceId: workspaceId(process.env), directory },
   placement: workspaceRuntimePlacementFromEnv(process.env, { relay: Boolean(relay.relayHostAuth) }),
   env: process.env,

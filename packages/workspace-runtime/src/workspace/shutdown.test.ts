@@ -14,7 +14,8 @@ import { createWorkspaceRuntimeApp } from "../server"
 async function fixture(transport: FakeTransport) {
   const directory = await mkdtemp(join(tmpdir(), "attachment-shutdown-"))
   const target = { directory, workspaceId: "ws" }
-  const host = createWorkspaceHost({ target, placement: loopbackMachineLoginPolicy(), storeRoot: join(directory, "store"),
+  const host = createWorkspaceHost({
+    sessionIdWorkspace: () => undefined, target, placement: loopbackMachineLoginPolicy(), storeRoot: join(directory, "store"),
     harnessStateRoot: join(directory, "harness"), connectionProviders: [fakeConnectionProvider({ providerKey: "fixture", transport: () => transport })] })
   const app = new Hono()
   host.mount(app, { exposure: loopbackWorkspaceRuntimeExposure() })
@@ -47,7 +48,8 @@ test("public app disposal retries the host and cleans contributions once", async
     if (++attempts === 1) throw new Error("cleanup failed")
   } })
   const target = { directory, workspaceId: "ws" }
-  const runtime = createWorkspaceRuntimeApp({ target, exposure: loopbackWorkspaceRuntimeExposure(),
+  const runtime = createWorkspaceRuntimeApp({
+    sessionIdWorkspace: () => undefined, target, exposure: loopbackWorkspaceRuntimeExposure(),
     placement: loopbackMachineLoginPolicy(), storeRoot: join(directory, "store"), harnessStateRoot: join(directory, "harness"),
     connectionProviders: [fakeConnectionProvider({ providerKey: "fixture", transport: () => transport })],
     routeContributions: [{ id: "cleanup", mount: () => ({ path: "/", routes: new Hono(), dispose: () => { cleanups++ } }) }],
@@ -95,7 +97,8 @@ test("a scrub whose transport would not stop detaches the engine, the next turn 
   const target = { directory, workspaceId: "ws" }
   const transports: FakeTransport[] = []
   let firstAttempts = 0
-  const host = createWorkspaceHost({ target, placement: loopbackMachineLoginPolicy(), storeRoot: join(directory, "store"),
+  const host = createWorkspaceHost({
+    sessionIdWorkspace: () => undefined, target, placement: loopbackMachineLoginPolicy(), storeRoot: join(directory, "store"),
     harnessStateRoot: join(directory, "harness"), connectionProviders: [fakeConnectionProvider({ providerKey: "fixture", transport: () => {
       const transport = new FakeTransport({ onDispose: () => {
         if (transport === transports[0] && ++firstAttempts === 1) throw new Error("would not stop")

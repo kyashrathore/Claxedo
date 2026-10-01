@@ -6,7 +6,8 @@ export {
   mountWorkspacePty,
   mountWorkspaceTranscripts,
 } from "./core"
-export { createWorkspaceHost, type WorkspaceHostOptions } from "./runtime"
+export { createWorkspaceHost } from "./runtime"
+export type { WorkspaceHostOptions } from "./host-options"
 export { type WorkspaceHost } from "./host"
 export {
   embeddedWorkspaceRuntimeExposure,

@@ -53,13 +53,15 @@ beforeAll(async () => {
   const authority = services.authority
   if (!authority) throw new Error("signed self-hosted services expose a workspace authority")
   configureEmbeddedWorkspaceRuntime({
+    sessionIdWorkspace: () => undefined,
     sessionAccessPolicy: embeddedManagedPrivateSessionPolicy(authority),
   })
 })
 
 afterAll(async () => {
   const { configureEmbeddedWorkspaceRuntime } = await import("@claxedo/local-server/self-hosted-execution")
-  configureEmbeddedWorkspaceRuntime({})
+  configureEmbeddedWorkspaceRuntime({
+    sessionIdWorkspace: () => undefined,})
   await composed.dispose()
   services.close()
   const { closeAuthorityDatabases } = await import(

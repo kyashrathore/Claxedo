@@ -1,4 +1,4 @@
-import { arr, rec, str } from "../json-value"
+import { arr, rec, str } from "@claxedo/session-core"
 
 const eventTypes: Record<string, "Busy" | "Idle" | "UserActionRequired" | "Error"> = {
   Busy: "Busy", Start: "Busy", SessionStart: "Busy", UserPromptSubmit: "Busy", PostToolUse: "Busy",

@@ -242,7 +242,8 @@ describe("server-owned machine-placed Workspace Relay host tunnel E2E", () => {
     const auth = { mode: "signed" as const, user: { subject: "user_host", issuer: "test", tokenIdentifier: "test|user_host" } }
     const { enrollmentId, generation } = await enrollServingHost(enrollmentAuthority, auth, identity)
 
-    configureEmbeddedWorkspaceRuntime({})
+    configureEmbeddedWorkspaceRuntime({
+    sessionIdWorkspace: () => undefined,})
     const centralStore = createSqliteCentralStore({ mode: () => "central_canonical" })
     const built = createSelfHostedApp(createControlPlaneServices({
       projectionStore: centralStore.projectionStore,

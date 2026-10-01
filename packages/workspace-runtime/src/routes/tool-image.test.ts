@@ -1,10 +1,11 @@
+import { readSessionAttachment } from "../host/attachment-files"
 import { afterEach, expect, test } from "bun:test"
 import fs from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
 import type { AgentMessage } from "@claxedo/agent-runtime-contract"
-import { toolImageResponse } from "./tool-image"
-import { createSessionRoutes } from "./session-core"
+import { toolImageResponse } from "@claxedo/session-core"
+import { createSessionRoutes } from "@claxedo/session-core"
 
 const dirs: string[] = []
 afterEach(async () => { await Promise.all(dirs.splice(0).map((dir) => fs.rm(dir, { recursive: true, force: true }))) })
@@ -19,7 +20,7 @@ async function fixture() {
       status: "completed", attachments: [{ id: "image", sessionID: "session", messageID: "message", type: "file", mime: "image/*", url: "", location: { kind: "tool-file", path: source } }],
     },
   }] }] as AgentMessage[]
-  return { source, messages, input: { messages, sessionId: "session", messageId: "message", attachmentId: "image" } }
+  return { source, messages, input: { readAttachment: readSessionAttachment, messages, sessionId: "session", messageId: "message", attachmentId: "image" } }
 }
 
 test("route reads do not start a harness, publish events or change messages, including failure and recovery", async () => {
@@ -27,6 +28,8 @@ test("route reads do not start a harness, publish events or change messages, inc
   const before = JSON.stringify(messages)
   let events = 0
   const app = createSessionRoutes({
+    readAttachment: readSessionAttachment,
+    sessionIdWorkspace: () => undefined,
     runtime: async () => { throw new Error("Image reads must not start a harness") },
     defaultHarness: () => ({ id: "codex", access: "native" }),
     requestedSessionHarness: () => undefined,
@@ -84,6 +87,8 @@ test("authorizes image reads before looking up any stored message", async () => 
   let reads = 0
   const operations: string[] = []
   const app = createSessionRoutes({
+    readAttachment: readSessionAttachment,
+    sessionIdWorkspace: () => undefined,
     runtime: async () => { throw new Error("Image reads must not start a harness") },
     defaultHarness: () => ({ id: "codex", access: "native" }),
     requestedSessionHarness: () => undefined,

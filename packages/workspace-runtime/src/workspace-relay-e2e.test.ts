@@ -243,7 +243,7 @@ async function relayHarness() {
         relayHostAudits.push(event)
       },
     }
-  const runtimeServer = startServer(0, {
+  const runtimeServer = startServer(0, { sessionIdWorkspace: () => undefined,
     placement: loopbackMachineLoginPolicy(),
     exposure: relayWorkspaceRuntimeExposure(relayHostAuth),
     relayHostAuth,

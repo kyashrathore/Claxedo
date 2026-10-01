@@ -7,10 +7,22 @@
 
 import { Hono, type Context } from "hono"
 import z from "zod/v3"
-import { workspaceRuntimeBus } from "../bus"
 import { Log } from "../log"
-import { bearerToken, boundedJsonBody, boundedJsonRecord, boundedTextBody, isRequestBodyTooLarge, requestBodyTooLargeBody } from "./http"
-import { arr, bool, num, str, parseRecord } from "../json-value"
+import {
+  bearerToken,
+  boundedJsonBody,
+  boundedJsonRecord,
+  boundedTextBody,
+  isRequestBodyTooLarge,
+  requestBodyTooLargeBody,
+} from "@claxedo/session-core"
+import {
+  arr,
+  bool,
+  num,
+  str,
+  parseRecord,
+} from "@claxedo/session-core"
 import { providerLifecycle } from "../agent-hooks/provider-lifecycle"
 import {
   setupAgentHooks,
@@ -21,10 +33,7 @@ import {
 import { Pty } from "../pty/index"
 import { authoritativeWorkspaceId } from "../target"
 import type { RelayHostAuthContext } from "../workspace-host-service-auth"
-import {
-  sessionAccessContext,
-  sessionAccessDenied,
-} from "../session-access-policy"
+import { sessionAccessContext, sessionAccessDenied } from "@claxedo/session-core"
 import { authorizeHostCapability, type HostCapabilityAccessOptions } from "./host-capability-access"
 
 const log = Log.create({ service: "agent-hook" })
@@ -332,7 +341,7 @@ function settlePendingUserActions(input: {
   return { pending, held: pending.length > 0 }
 }
 
-const clearTerminalSession = (terminalId: string) => {
+const clearTerminalSession = (terminalId: string, bus: import("@claxedo/session-core").RuntimeBus) => {
   pruneTerminalSessions()
   const id = clean(terminalId)
   if (!id) return undefined
@@ -356,7 +365,7 @@ const clearTerminalSession = (terminalId: string) => {
 
   // Emit Idle event to frontend so the status indicator clears
   if (previous && previous.eventType && previous.eventType !== "Idle") {
-    workspaceRuntimeBus.publish({
+    bus.publish({
       type: "agent.lifecycle",
       tabId: next.tabId || id,
       terminalId: id,
@@ -378,16 +387,7 @@ const readTerminalSession = (input: { terminalId?: string; tabId?: string }) => 
   return { source: "memory" as const, terminalId, session }
 }
 
-// Subscribe to PTY exit/delete events to clear terminal sessions
-workspaceRuntimeBus.subscribe((event) => {
-  if (event.type === "pty.exited") {
-    clearTerminalSession(event.id)
-  } else if (event.type === "pty.deleted") {
-    clearTerminalSession(event.id)
-  }
-})
-
-export type AgentHookRoutesOptions = HostCapabilityAccessOptions
+export type AgentHookRoutesOptions = HostCapabilityAccessOptions & { bus: import("@claxedo/session-core").RuntimeBus }
 
 type AgentHookContext = ReturnType<typeof sessionAccessContext>
 
@@ -477,7 +477,10 @@ async function authorizeTerminal(
   return { context }
 }
 
-export function AgentHookRoutes(options: AgentHookRoutesOptions = {}) {
+export function AgentHookRoutes(options: AgentHookRoutesOptions) {
+  options.bus.subscribe((event) => {
+    if (event.type === "pty.exited" || event.type === "pty.deleted") clearTerminalSession(event.id, options.bus)
+  })
   return new Hono<{ Variables: RelayHostAuthContext }>()
     .onError((err, c) => {
       if (isRequestBodyTooLarge(err)) return c.json(requestBodyTooLargeBody(), 413)
@@ -589,7 +592,7 @@ export function AgentHookRoutes(options: AgentHookRoutesOptions = {}) {
       const published = { ...AgentLifecyclePayload.parse(normalized), providerSessionId: normalized.providerSessionId }
 
       log.info("agent lifecycle (POST)", lifecycleLogMetadata(published))
-      workspaceRuntimeBus.publish({ type: "agent.lifecycle", ...published })
+      options.bus.publish({ type: "agent.lifecycle", ...published })
 
       return c.json({
         success: true,

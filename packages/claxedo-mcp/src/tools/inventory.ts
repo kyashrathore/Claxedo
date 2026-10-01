@@ -7,11 +7,7 @@
  * `inventory.test.ts` here rather than going silently unreachable, and no tool
  * spells a `write` flag of its own for read-only mode to trust.
  */
-import {
-  SESSION_CORE_ROUTE_ACCESS,
-  sessionAccessRequiresWrite,
-  type SessionAccessOperation,
-} from "@claxedo/workspace-runtime/client"
+import { SESSION_CORE_ROUTE_ACCESS, sessionAccessRequiresWrite, type SessionAccessOperation } from "@claxedo/session-core"
 import type { TasksOperation } from "../client/contract"
 import type { McpAudience, McpScope, McpToolAccess } from "../context"
 

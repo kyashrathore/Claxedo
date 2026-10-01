@@ -33,7 +33,8 @@ async function fixture(fork: ForkOperations["fork"]) {
   cleanups.push(() => rm(directory, { recursive: true, force: true }))
   const target = { workspaceId: "ws_fork", directory }
   const provider = fakeConnectionProvider({ providerKey: "engine", transport: () => new FakeTransport({ fork }) })
-  const host = createWorkspaceHost({ placement: loopbackMachineLoginPolicy(), target, storeRoot: join(directory, "state"), connectionProviders: [provider] })
+  const host = createWorkspaceHost({
+    sessionIdWorkspace: () => undefined, placement: loopbackMachineLoginPolicy(), target, storeRoot: join(directory, "state"), connectionProviders: [provider] })
   cleanups.push(() => host.dispose())
   await host.apply(snapshot)
   const app = new Hono()

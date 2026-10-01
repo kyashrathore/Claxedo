@@ -85,6 +85,7 @@ async function fixture() {
     },
   })
   const host = createWorkspaceHost({
+    sessionIdWorkspace: () => undefined,
     placement: loopbackMachineLoginPolicy(),
     target,
     storeRoot: join(directory, "state"),

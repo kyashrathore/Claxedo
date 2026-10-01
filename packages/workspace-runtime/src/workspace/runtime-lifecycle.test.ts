@@ -8,13 +8,13 @@ import { applySessionConfigUpdate, type HarnessServices, type StartInput } from 
 import { openSqliteDatabase } from "../sqlite/node"
 import { openRuntimeStore } from "../store-file"
 import { sqliteLaunchOwnership } from "../ownership/launch-ownership-sqlite"
-import { registerWorkspaceDirectory, unregisterWorkspaceDirectory, withWorkspaceTarget } from "../target"
+import { withWorkspaceTarget } from "../target"
 import { loopbackWorkspaceRuntimeExposure } from "../exposure"
 import { installFakePiRpc } from "../test-support/home/fake-pi-rpc.mjs"
 import { FakeTransport, fakeConnectionProvider } from "../test-support/fake-transport"
 import { loopbackMachineLoginPolicy } from "../testing"
 import { createWorkspaceHost } from "./runtime"
-import { createRuntimeEventHub } from "../projection/runtime-event-hub"
+import { createRuntimeEventHub } from "@claxedo/session-core"
 import type { RuntimeSnapshot } from "../routes/config"
 
 import { controlledTurn, createHostFixture, sessionCreate, tick, until as hostUntil, LOOPBACK_ORIGIN, MACHINE_OWNER } from "../test-support/host-fixture"
@@ -183,7 +183,8 @@ async function fixture(options: FixtureOptions = {}) {
   const rotateSecretLease = (next: string) => { secretLease = next }
   options.seed?.(storeRoot)
   function open() {
-    const host = createWorkspaceHost({ placement: loopbackMachineLoginPolicy(), target, storeRoot, eventHub, ...(options.onActivityChange ? { onActivityChange: options.onActivityChange } : {}), connectionProviders: [provider], resolveConnectionSecrets: () => ({ secrets: { token: secretLease }, secretLeaseGeneration: secretLease }), storeFactory: ({ storeRoot }) => {
+    const host = createWorkspaceHost({
+    sessionIdWorkspace: () => undefined, placement: loopbackMachineLoginPolicy(), target, storeRoot, eventHub, ...(options.onActivityChange ? { onActivityChange: options.onActivityChange } : {}), connectionProviders: [provider], resolveConnectionSecrets: () => ({ secrets: { token: secretLease }, secretLeaseGeneration: secretLease }), storeFactory: ({ storeRoot }) => {
       const store = openRuntimeStore(storeRoot)
       storeLifecycle.opened++
       const recover = store.recoverBusySessions.bind(store)
@@ -426,8 +427,8 @@ describe("workspace runtime public lifecycle", () => {
   test("connection resolution follows a registered session worktree without retiring the root transport", async () => {
     const f = await fixture({ scoped: true })
     const worktree = join(f.target.directory, "worktree")
-    registerWorkspaceDirectory({ workspaceId: f.target.workspaceId, sessionId: "worktree", directory: worktree })
-    cleanups.push(() => unregisterWorkspaceDirectory({ workspaceId: f.target.workspaceId, sessionId: "worktree" }))
+    f.host.sessionCore.placement.register({ sessionId: "worktree", directory: worktree })
+    cleanups.push(() => f.host.sessionCore.placement.unregister("worktree"))
     await f.host.apply(f.snapshot())
     await f.request("/session", "POST", { id: "root" })
     expect((await f.request("/session", "POST", { id: "worktree" }, "", worktree)).status).toBe(201)
@@ -593,6 +594,7 @@ describe("workspace runtime public lifecycle", () => {
     const outcomes: Array<{ sessionId: string; outcome: AgentTurnOutcome }> = []
     const boot = (onTurnOutcome?: (input: { sessionId: string; outcome: AgentTurnOutcome }) => void) => {
       const host = createWorkspaceHost({
+    sessionIdWorkspace: () => undefined,
         placement: loopbackMachineLoginPolicy(), target, storeRoot, harnessStateRoot,
         env: { ...process.env, PI_EXECUTABLE: peer.binary },
         harness: { kind: "native", harnessId: "pi" },

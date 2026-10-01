@@ -78,7 +78,8 @@ describe("runtime config secret scoping", () => {
 
     // A descriptor that still names secret references has no source in a v4
     // snapshot, so selecting it fails closed rather than starting unauthenticated.
-    const host = createWorkspaceHost({ target: { workspaceId: "ws-denied", directory: root }, storeRoot: path.join(root, "denied"), placement: loopbackMachineLoginPolicy() })
+    const host = createWorkspaceHost({
+    sessionIdWorkspace: () => undefined, target: { workspaceId: "ws-denied", directory: root }, storeRoot: path.join(root, "denied"), placement: loopbackMachineLoginPolicy() })
     try {
       await expect(host.apply({
         ...localSnapshot,

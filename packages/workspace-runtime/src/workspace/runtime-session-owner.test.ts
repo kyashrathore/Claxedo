@@ -23,6 +23,7 @@ test("a connected host's snapshot names its machine owner over the placement's, 
   const transport = new FakeTransport({ onStart: (start) => { starts.push(start) } })
   const target = { workspaceId: "ws_1", directory }
   const runtime = createWorkspaceRuntimeApp({
+    sessionIdWorkspace: () => undefined,
     placement: { placement: "desktop", machineOwnerUserId: "", canUseOwnLogin: true },
     target,
     storeRoot: directory,

@@ -1,5 +1,5 @@
 import type { AgentPresentationEvent } from "@claxedo/agent-runtime-contract"
-import { createTurnEventProjector } from "../projection/turn-projection"
+import { createTurnEventProjector } from "@claxedo/session-core"
 
 type ProjectorInput = Parameters<typeof createTurnEventProjector>[0]
 

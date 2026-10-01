@@ -17,7 +17,8 @@ async function until<T>(read: () => Promise<T>, accepts: (value: T) => boolean):
 
 test.each(["accept", "decline"] as const)("draft initialization uses ordinary durable question routes (%s)", async (action) => {
   const directory = await mkdtemp(join(tmpdir(), "draft-connection-wire-"))
-  const host = createWorkspaceHost({ placement: loopbackMachineLoginPolicy(), target: { workspaceId: "ws", directory }, storeRoot: join(directory, "state") })
+  const host = createWorkspaceHost({
+    sessionIdWorkspace: () => undefined, placement: loopbackMachineLoginPolicy(), target: { workspaceId: "ws", directory }, storeRoot: join(directory, "state") })
   const app = new Hono()
   host.mount(app, { exposure: loopbackWorkspaceRuntimeExposure() })
   const request = (path: string, init?: RequestInit) => withWorkspaceTarget({ workspaceId: "ws", directory }, () => app.request(path, init))

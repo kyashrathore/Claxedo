@@ -1,4 +1,4 @@
-import { rec } from "../json-value"
+import { rec } from "@claxedo/session-core"
 
 // Keep a pending control string bounded independently of retained screen rows.
 // Oversize state is unavailable for checkpoints until the parser returns to

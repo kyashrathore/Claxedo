@@ -14,7 +14,7 @@ import type { AgentPluginSelectedContribution } from "@claxedo/server-core/agent
 import { isArtifactDigest } from "@claxedo/server-core/agent-plugins/activation/types"
 import { isAgentPluginHarnessId } from "@claxedo/server-core/agent-plugins/runtime/harness-registry"
 import type { WorkspaceRuntimeRouteContribution } from "@claxedo/workspace-runtime/route-contribution"
-import { boundedJsonBody, isRequestBodyTooLarge, requestBodyTooLargeBody } from "@claxedo/workspace-runtime/http"
+import { boundedJsonBody, isRequestBodyTooLarge, requestBodyTooLargeBody } from "@claxedo/session-core"
 import { acpAgentPluginAdapter } from "./adapters/acp"
 import { claudeAgentPluginAdapter } from "./adapters/claude"
 import { codexAgentPluginAdapter } from "./adapters/codex"

@@ -35,7 +35,7 @@ for the full auth/env matrix.
 `workspace-runtime` serves one event stream, `GET /api/wr/events`, fed by two
 in-process sources with different jobs:
 
-- **`RuntimeEventHub`** ([`src/projection/runtime-event-hub.ts`](../src/projection/runtime-event-hub.ts))
+- **`RuntimeEventHub`** ([`runtime-event-hub.ts`](../../session-core/src/projection/runtime-event-hub.ts))
   is the hub for session/runtime events. Session routes publish Claxedo
   presentation events (`AgentEventEnvelope`) to its global channel after
   `createSessionEventWriter` commits them, subagent revisions included; a goal
@@ -43,9 +43,9 @@ in-process sources with different jobs:
   on the runtime channel for in-process subscribers. `GET /api/wr/events`
   (SSE, `mountWorkspaceCore()`) serves only committed presentation events and
   workspace control frames; it does not project the runtime channel.
-- **`workspaceRuntimeBus`** ([`src/bus.ts`](../src/bus.ts)) is intentionally
-  process-global runtime state, used by PTY, process, and agent-hook code
-  that already lives inside the workspace-runtime process. The same
+- **`sessionCore.bus`** ([`bus.ts`](../../session-core/src/bus.ts)) belongs
+  to one core instance. PTY callbacks retain their creating host's bus,
+  and agent hooks receive their host's bus. The same
   `GET /api/wr/events` serves its `WorkspaceRuntimeEvent` values, wrapped
   `{ directory, payload }`: PTY lifecycle, PTY stream summaries, process
   status/config events, agent lifecycle and session lifecycle. Bus
@@ -53,8 +53,8 @@ in-process sources with different jobs:
   block later subscribers from receiving the same event.
 
 The session routes' `publishGlobal` (`bridgeLifecycleEvent` in
-[`src/routes/session.ts`](../src/routes/session.ts)) forwards a session's
-lifecycle states onto `workspaceRuntimeBus` as `agent.lifecycle` frames
+[`session routes`](../../session-core/src/routes/session.ts)) forwards a session's
+lifecycle states onto `sessionCore.bus` as `agent.lifecycle` frames
 (busy `session.status` → `Busy`, permission/question asks →
 `UserActionRequired`, `session.idle` → `Idle`, `session.error` → `Error`) —
 one-directional and narrow, not a merge of the two sources. Who may read
@@ -81,7 +81,7 @@ lifecycle, failure and configuration rules.
 
 ## The store: journal plus SQLite projection
 
-`RuntimeStore` ([`src/store.ts`](../src/store.ts)) treats the append-only
+`RuntimeStore` ([`store.ts`](../../session-core/src/store.ts)) treats the append-only
 journal as the source of truth and the rest of its SQLite schema (`session`,
 `message`, `part`, `todo`, `pending_permission`, `pending_question`, …) as a
 derived projection rebuilt from it:

@@ -48,6 +48,7 @@ async function composedRuntime() {
   const key = await generateKeyPair("EdDSA", { extractable: true })
   const relayHostAuth: RelayHostAuthOptions = { key: key.publicKey, workspaceId: "ws_1", hostId: "host_1" }
   const runtime = createWorkspaceRuntimeApp({
+    sessionIdWorkspace: () => undefined,
     placement: loopbackMachineLoginPolicy(),
     exposure: relayWorkspaceRuntimeExposure(relayHostAuth),
     target: { workspaceId: "ws_1", directory: dir },

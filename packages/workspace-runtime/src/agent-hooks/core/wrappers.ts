@@ -18,7 +18,7 @@ import {
   SHIMMED_BINARIES,
 } from "./constants"
 import { loadTemplate, shellQuote, writeIfChanged } from "./utils"
-import { arr, rec } from "../../json-value"
+import { arr, rec } from "@claxedo/session-core"
 import { generateCopilotProjectHooks } from "./hooks"
 
 // ── Wrapper composition ────────────────────────────────────────────────────

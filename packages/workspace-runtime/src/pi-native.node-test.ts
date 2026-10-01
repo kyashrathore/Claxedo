@@ -41,6 +41,7 @@ void test(
       }),
     )
     const runtime = createWorkspaceRuntimeApp({
+    sessionIdWorkspace: () => undefined,
       placement: loopbackMachineLoginPolicy(),
       target: { workspaceId: "cold-auth", directory },
       storeRoot,
@@ -139,6 +140,7 @@ void test(
     )
     const create = () =>
       createWorkspaceRuntimeApp({
+    sessionIdWorkspace: () => undefined,
         placement: loopbackMachineLoginPolicy(),
         target: { workspaceId: "workspace-proof", directory },
         storeRoot,

@@ -92,6 +92,7 @@ async function applyRuntimeConfig(runtime: WorkspaceRuntimeApp, target: { worksp
 }
 
 export type HostWorkspaceRuntimeOptions = {
+  sessionIdWorkspace: WorkspaceRuntimeServerOptions["sessionIdWorkspace"]
   workspaceId: string
   directory: string
   /** The enrollment's host id — the `host_id` every Relay Host Token for this machine carries. */
@@ -121,6 +122,7 @@ export async function createHostWorkspaceRuntime(options: HostWorkspaceRuntimeOp
   const target = { workspaceId: options.workspaceId, directory: options.directory }
   const runtime = createWorkspaceRuntimeApp({
     target,
+    sessionIdWorkspace: options.sessionIdWorkspace,
     exposure: relayWorkspaceRuntimeExposure(relayHostAuth),
     sessionAccessPolicy: remoteWorkspaceSessionAccessPolicy({ url: options.sessionAuthorityUrl }),
     storeRoot: options.storeRoot,
@@ -198,7 +200,7 @@ export type HostRuntimeListener = {
   /** The origin the serving loop's `localBaseUrl` points at. */
   url: string
   /** The runtime for this workspace, created on first call; a changed directory replaces it. */
-  ensure: (workspace: HostWorkspaceRuntimeOptions) => Promise<WorkspaceRuntimeApp>
+  ensure: (workspace: Omit<HostWorkspaceRuntimeOptions, "sessionIdWorkspace">) => Promise<WorkspaceRuntimeApp>
   /**
    * Tear one runtime down, letting in-flight turns finish first. Joins a
    * retirement already under way; `retry` starts a fresh attempt for one that
@@ -407,7 +409,16 @@ export async function createHostRuntimeListener(options: HostRuntimeListenerOpti
       await retireEntry(hit)
       return ensure(workspace)
     }
-    const runtime = await createHostWorkspaceRuntime(workspace)
+    const runtime = await createHostWorkspaceRuntime({
+      ...workspace,
+      sessionIdWorkspace: (sessionId) => {
+        for (const entry of entries.values()) {
+          const binding = entry.runtime.host.store().getExecutionBinding(sessionId)
+          if (binding) return binding.workspaceId
+        }
+        return undefined
+      },
+    })
     // Creation yielded; one workspace id owns exactly one runtime.
     const raced = entries.get(workspace.workspaceId)
     if (raced) {

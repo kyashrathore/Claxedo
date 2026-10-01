@@ -241,6 +241,7 @@ export const localServer: Policy = {
       { packageDir: "packages/egress-broker" },
       { packageDir: "packages/workspace-relay-protocol" },
       { packageDir: "packages/workspace-relay" },
+      { packageDir: "packages/session-core" },
       { packageDir: "packages/workspace-runtime" },
     ],
     commands: [["bun", "run", "build"], ["bun", "run", "smoke:build"]],

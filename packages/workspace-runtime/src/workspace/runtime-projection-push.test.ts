@@ -71,6 +71,7 @@ function runtimeApp(options: { failDefinitionsOnce?: boolean } = {}) {
   })
   const target = { workspaceId: "ws_1", directory }
   const runtime = createWorkspaceRuntimeApp({
+    sessionIdWorkspace: () => undefined,
     placement: loopbackMachineLoginPolicy(),
     target,
     storeRoot: directory,

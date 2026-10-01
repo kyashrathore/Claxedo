@@ -4,7 +4,7 @@ import {
   sessionAccessDenied,
   type SessionAccessOperation,
   type SessionAccessPolicy,
-} from "../session-access-policy"
+} from "@claxedo/session-core"
 import type { RelayHostAuthContext } from "../workspace-host-service-auth"
 
 export type HostCapabilityAccessOptions = {

@@ -2,7 +2,7 @@ import fs from "node:fs"
 import path from "node:path"
 import { workspaceRuntimeStoreDir } from "./env"
 import { openSqliteDatabase } from "./sqlite/node"
-import { RuntimeStore, type RuntimeStoreDatabase } from "./store"
+import { RuntimeStore, type RuntimeStoreDatabase } from "@claxedo/session-core"
 
 export function openRuntimeStoreDatabase(root: string): RuntimeStoreDatabase {
   fs.mkdirSync(root, { recursive: true, mode: 0o755 })

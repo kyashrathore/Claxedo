@@ -2,7 +2,7 @@ import { execFile } from "node:child_process"
 import { realpath } from "node:fs/promises"
 import { runtimeEnvText } from "./env"
 import { buildSafeEnv } from "./pty/env"
-import { rec } from "./json-value"
+import { rec } from "@claxedo/session-core"
 
 export const GIT_TIMEOUT_MS = 10_000
 export const GIT_MAX_BUFFER = 50 * 1024 * 1024

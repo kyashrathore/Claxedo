@@ -6,8 +6,9 @@
 
 import { Hono } from "hono"
 import { errorMessage } from "@claxedo/helpers"
-import { errorBody } from "./http"
-import { assertTarget, hasWorkspaceTarget, WorkspaceTargetError } from "../target"
+import { errorBody } from "@claxedo/session-core"
+import { WorkspaceTargetError } from "@claxedo/session-core"
+import { assertTarget, hasWorkspaceTarget} from "../target"
 import type { RelayHostAuthContext } from "../workspace-host-service-auth"
 import {
   authorizeWorktreeTarget,

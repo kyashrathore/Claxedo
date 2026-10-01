@@ -44,7 +44,7 @@
  */
 
 import { EVENT_STREAM_HEARTBEAT_MS } from "@claxedo/agent-runtime-contract"
-import { createSseReplayBuffer } from "@claxedo/workspace-runtime/projection"
+import { createSseReplayBuffer } from "@claxedo/session-core"
 import { eventVisibleTo, type EventScopePrincipal } from "@claxedo/server-core/platform/http/event-visibility"
 import { isRetainedControlPlaneEvent } from "@claxedo/server-core/platform/http/event-retention"
 import type { ControlPlaneEvent } from "@claxedo/server-core/platform/runtime/lib/bus"

@@ -4,7 +4,7 @@ import { createHostFixture, sessionCreate } from "../test-support/host-fixture"
 import { createSessionConfiguration } from "./configure"
 import type { TransportConfigUpdate } from "@claxedo/harness/contract"
 import { CredentialSelectionError } from "@claxedo/harness/registry"
-import type { AttachedSession } from "../host/attachments"
+import type { AttachedSession } from "@claxedo/session-core"
 
 test("retry pushes only to attachments that have not acknowledged the configuration", async () => {
   let refused = true

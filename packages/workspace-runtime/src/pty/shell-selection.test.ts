@@ -8,7 +8,7 @@
  *   if (/^(ba|da|k|c|z|tc|fi)?sh$/.test(shellName)) { args.push("-l") }
  */
 import { describe, expect, test } from "bun:test"
-import { selectPtyCommand } from "./index"
+import { selectPtyCommand } from "./shell-selection"
 
 // Extract the login-shell detection logic from Pty.create() for isolated testing
 function shouldAddLoginFlag(command: string): boolean {

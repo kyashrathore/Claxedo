@@ -45,6 +45,7 @@ async function catalogHost() {
   })
   const target = { workspaceId: "ws_1", directory }
   const host = createWorkspaceHost({
+    sessionIdWorkspace: () => undefined,
     placement: loopbackMachineLoginPolicy(),
     target,
     storeRoot: directory,

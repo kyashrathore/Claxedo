@@ -29,6 +29,7 @@ test("transcript endpoint returns typed resolution without exposing bindings", a
 
 test("workspace runtime mounts a host-supplied transcript resolver", async () => {
   const runtime = createWorkspaceRuntimeApp({
+    sessionIdWorkspace: () => undefined,
     placement: loopbackMachineLoginPolicy(),
     exposure: loopbackWorkspaceRuntimeExposure(),
     transcripts: {

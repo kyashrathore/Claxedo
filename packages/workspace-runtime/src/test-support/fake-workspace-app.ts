@@ -5,14 +5,15 @@ import type { HarnessConnectionCapabilities, AgentEventEnvelope } from "@claxedo
 import type { HarnessTransport } from "@claxedo/harness/contract"
 import { Hono } from "hono"
 import { loopbackWorkspaceRuntimeExposure } from "../exposure"
-import { createRuntimeEventHub, type RuntimeEventHub } from "../projection/runtime-event-hub"
-import type { SessionAccessPolicy } from "../session-access-policy"
-import type { RuntimeStore } from "../store"
+import { createRuntimeEventHub, type RuntimeEventHub } from "@claxedo/session-core"
+import type { SessionAccessPolicy } from "@claxedo/session-core"
+import type { RuntimeStore } from "@claxedo/session-core"
 import { openRuntimeStore } from "../store-file"
 import type { RuntimeSnapshot } from "../routes/config"
 import { withWorkspaceTarget } from "../target"
 import { loopbackMachineLoginPolicy } from "../testing"
-import { createWorkspaceHost, type WorkspaceHostOptions } from "../workspace/runtime"
+import { createWorkspaceHost } from "../workspace/runtime"
+import type { WorkspaceHostOptions } from "../workspace/host-options"
 import { FakeTransport, fakeConnectionProvider, type FakeTransportOptions } from "./fake-transport"
 
 export const FAKE_CONNECTION_ID = "fake"
@@ -75,7 +76,7 @@ export async function createFakeWorkspaceApp(options: FakeWorkspaceAppOptions = 
     ...(options.sessionAccessPolicy ? { sessionAccessPolicy: options.sessionAccessPolicy } : {}),
     ...(options.onPresentationEvent ? { onPresentationEvent: options.onPresentationEvent } : {}),
     ...(options.afterCreateSession ? { afterCreateSession: options.afterCreateSession } : {}),
-    ...(options.sessionIdWorkspace ? { sessionIdWorkspace: options.sessionIdWorkspace } : {}),
+    sessionIdWorkspace: options.sessionIdWorkspace ?? (() => undefined),
     storeFactory: ({ storeRoot }) => {
       store = openRuntimeStore(storeRoot)
       return store

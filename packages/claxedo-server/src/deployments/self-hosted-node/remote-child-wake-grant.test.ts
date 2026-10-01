@@ -1,3 +1,4 @@
+import { testSessionRoutePorts } from "../../../../workspace-runtime/src/test-support/session-core"
 import path from "node:path"
 import { afterEach, expect, test, vi } from "vitest"
 import { Hono } from "hono"
@@ -5,12 +6,12 @@ import Database from "better-sqlite3"
 import { decodeJwt, exportPKCS8, exportSPKI, generateKeyPair } from "jose"
 import { mintRelayHostToken } from "@claxedo/workspace-relay"
 import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
-import type { RuntimeStore } from "../../../../workspace-runtime/src/store"
+import type { RuntimeStore } from "@claxedo/session-core"
 import { openRuntimeStore } from "../../../../workspace-runtime/src/store-file"
-import { SessionRoutes } from "../../../../workspace-runtime/src/routes/session"
+import { SessionRoutes } from "@claxedo/session-core"
 import { remoteWorkspaceSessionAccessPolicy } from "../../../../workspace-runtime/src/remote-session-authority"
 import { createRelayHostAuthMiddleware } from "../../../../workspace-runtime/src/workspace-host-service-auth"
-import type { SessionAccessPolicy } from "../../../../workspace-runtime/src/session-access-policy"
+import type { SessionAccessPolicy } from "@claxedo/session-core"
 import { queuedPromptStore } from "../../../../workspace-runtime/src/workspace/session-routes"
 import { RuntimeSessionAuthorityRoutes } from "../../routes/runtime-session-authority"
 import { fetchJsonBody, fetchUrl } from "../../test-support/fetch-calls"
@@ -154,7 +155,7 @@ function relayed(token: string, body: Record<string, unknown>, headers: Record<s
  * restart is what the store says.
  */
 function hostOver(store: RuntimeStore, policy: SessionAccessPolicy, runtime: HostRuntime, relayKey: CryptoKey) {
-  const host = SessionRoutes(async () => runtime, {
+  const host = SessionRoutes(async () => runtime, { ...testSessionRoutePorts(),
     sessionAccessPolicy: policy,
     requestedSessionHarness: (requested) => requested ?? { id: "connection_wake", access: "connection" },
     getSessionConfig: async () => CONFIG,

@@ -1,12 +1,13 @@
+import { testSessionRoutePorts } from "../test-support/session-core"
 import { afterEach, expect, test } from "bun:test"
 import { Hono } from "hono"
 import type { ConnectionSecretAuthority } from "@claxedo/agent-runtime-contract"
 import type { RuntimeConnectionDescriptor } from "../routes/config"
-import { SessionRoutes } from "../routes/session"
-import { managedWorkspaceSessionAccessPolicy } from "../session-access-policy"
+import { SessionRoutes } from "@claxedo/session-core"
+import { managedWorkspaceSessionAccessPolicy } from "@claxedo/session-core"
 import { FakeTransport } from "../test-support/fake-transport"
 import { createHostFixture, sessionCreate, tempStoreRoot, until, type HostFixture } from "../test-support/host-fixture"
-import type { RuntimeStore } from "../store"
+import type { RuntimeStore } from "@claxedo/session-core"
 import { openRuntimeStore } from "../store-file"
 import { rm } from "node:fs/promises"
 import { join } from "node:path"
@@ -69,7 +70,7 @@ function fixture(input: { holdFirstTurn?: Promise<void>; store?: RuntimeStore } 
     },
   })
   policy.grantTurn = async (request) => ({ allowed: true, grant: `deferred-grant-${request.turnId}`, expiresAt: Date.now() + 60_000 })
-  const routes = SessionRoutes(async () => host.runtime, {
+  const routes = SessionRoutes(async () => host.runtime, { ...testSessionRoutePorts(),
     eventHub: host.eventHub,
     sessionAccessPolicy: policy,
     queuedPrompts: () => queuedPromptStore(host.store),
@@ -150,7 +151,8 @@ test("registering session tools for a connection session no one has attached lea
   const target = { workspaceId: "ws", directory }
   const refused: Array<ConnectionSecretAuthority | undefined> = []
   const boot = (resolveConnectionSecrets: Parameters<typeof createWorkspaceHost>[0]["resolveConnectionSecrets"]) => {
-    const host = createWorkspaceHost({ target, placement: loopbackMachineLoginPolicy(), storeRoot: join(directory, "store"),
+    const host = createWorkspaceHost({
+    sessionIdWorkspace: () => undefined, target, placement: loopbackMachineLoginPolicy(), storeRoot: join(directory, "store"),
       harnessStateRoot: join(directory, "harness"), resolveConnectionSecrets,
       connectionProviders: [fakeConnectionProvider({ providerKey: "fixture", transport: () => new FakeTransport() })] })
     cleanups.push(() => host.dispose())

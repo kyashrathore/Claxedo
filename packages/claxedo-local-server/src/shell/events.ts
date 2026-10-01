@@ -1,7 +1,7 @@
 import type { Context } from "hono"
 import { EVENT_STREAM_HEARTBEAT_MS } from "@claxedo/agent-runtime-contract"
 import { eventStreamResponse, type UpgradeWebSocket } from "./event-stream-response"
-import { attachSseFanout, createSseReplayBuffer, type SseReplayBuffer } from "@claxedo/workspace-runtime/projection"
+import { attachSseFanout, createSseReplayBuffer, type SseReplayBuffer } from "@claxedo/session-core"
 import { controlBus, createBus, type ControlPlaneEvent } from "@claxedo/server-core/platform/runtime/lib/bus"
 import { isRetainedControlPlaneEvent } from "@claxedo/server-core/platform/http/event-retention"
 import {

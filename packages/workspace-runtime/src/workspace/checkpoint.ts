@@ -1,6 +1,6 @@
 import { DEFAULT_RECOVERY_BUDGETS, type RecoveryOutcome, type RecoveryTurnTarget } from "@claxedo/agent-runtime-contract"
 import { settleAtRequestDeadline } from "@claxedo/helpers"
-import type { AgentRuntimeRecovery } from "../host/runtime"
+import type { AgentRuntimeRecovery } from "@claxedo/session-core"
 import type { WorkspaceCheckpointBlocker, WorkspaceCheckpointDetail, WorkspaceCheckpointFreezeResult } from "./host"
 
 /** One turn a drain tried to stop, and whether its scope actually closed. */

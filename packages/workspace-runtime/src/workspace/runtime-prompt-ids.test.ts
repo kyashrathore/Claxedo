@@ -40,7 +40,8 @@ async function fixture(turn = answer) {
       turn: async function* ({ session }) { yield* turn(session.binding.sessionId) },
     }),
   })
-  const host = createWorkspaceHost({ placement: loopbackMachineLoginPolicy(), target, storeRoot: join(directory, "state"), connectionProviders: [provider] })
+  const host = createWorkspaceHost({
+    sessionIdWorkspace: () => undefined, placement: loopbackMachineLoginPolicy(), target, storeRoot: join(directory, "state"), connectionProviders: [provider] })
   cleanups.push(() => host.dispose())
   await host.apply(snapshot)
   const app = new Hono()

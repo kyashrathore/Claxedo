@@ -3,7 +3,7 @@ import { createRequire } from "node:module"
 import fsSync from "node:fs"
 import fs from "node:fs/promises"
 import path from "node:path"
-import { rec, str } from "./json-value"
+import { rec, str } from "@claxedo/session-core"
 
 export type TranscriptProvider = {
   root: string

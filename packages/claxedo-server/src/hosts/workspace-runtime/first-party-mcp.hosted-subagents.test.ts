@@ -200,6 +200,7 @@ beforeAll(async () => {
   harness = fakeHarness()
   const enabledToolGroups = ["sessions", "subagents"]
   runtime = createWorkspaceRuntimeApp({
+    sessionIdWorkspace: () => undefined,
     exposure: relayWorkspaceRuntimeExposure({ key: relayKey.publicKey, workspaceId: WORKSPACE, hostId: HOST }),
     target: { workspaceId: WORKSPACE, directory },
     storeRoot: path.join(directory, "state"),

@@ -1,8 +1,9 @@
+import { testSessionRoutePorts } from "../../../../workspace-runtime/src/test-support/session-core"
 import { afterAll, afterEach, beforeAll, expect, test } from "vitest"
 import { exportPKCS8, exportSPKI, generateKeyPair } from "jose"
 import type { PrivateSessionRuntimePrincipal } from "@claxedo/server-core/platform/auth/private-session-authority"
-import type { RuntimeStore } from "../../../../workspace-runtime/src/store"
-import { SessionRoutes } from "../../../../workspace-runtime/src/routes/session"
+import type { RuntimeStore } from "@claxedo/session-core"
+import { SessionRoutes } from "@claxedo/session-core"
 import { deferredTurnGrantClaims, mintDeferredTurnGrant } from "../../session/deferred-turn-grant"
 import {
   CHILD,
@@ -95,7 +96,7 @@ async function childWakeGrant(authority: WakeAuthority, creator: PrivateSessionR
  */
 function restartedHost(store: RuntimeStore, authority: unknown) {
   const { runtime, prompts } = hostRuntimeDouble()
-  const host = SessionRoutes(async () => runtime, {
+  const host = SessionRoutes(async () => runtime, { ...testSessionRoutePorts(),
     sessionAccessPolicy: embeddedManagedPrivateSessionPolicy(authority as never),
     requestedSessionHarness: (requested) => requested ?? { id: "connection_wake", access: "connection" },
     ...storeBackedHostOptions(store),

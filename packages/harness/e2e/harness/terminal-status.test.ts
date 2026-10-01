@@ -1,3 +1,5 @@
+import { createBus as createTestBus, type WorkspaceRuntimeEvent as TestBusEvent } from "@claxedo/session-core"
+const testBus = createTestBus<TestBusEvent>()
 import { afterAll, beforeAll, expect, spyOn, test } from "bun:test"
 import { spawn } from "node:child_process"
 import { createHash } from "node:crypto"
@@ -21,7 +23,7 @@ const terminals = new Set<string>()
 const pty = spyOn(Pty, "get").mockImplementation((id) => id && terminals.has(id)
   ? { id, title: id, command: "/bin/sh", args: [], cwd: "/tmp", status: "running" as const, pid: 4_194_305 }
   : undefined)
-const routes = AgentHookRoutes()
+const routes = AgentHookRoutes({ bus: testBus })
 const observations: Observation[] = []
 let root: string
 let lifecycle: http.Server
