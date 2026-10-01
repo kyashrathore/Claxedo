@@ -100,7 +100,7 @@ describe("D1 organization invitations", () => {
     })
     await expect(authority.acceptOrgInvitation(s.invitee, { token })).rejects.toMatchObject({ code: "org_invitation_invalid" })
     expect(await s.database.prepare("select 1 from org_memberships where org_id = 'org_acme' and user_id = ?").bind(s.invitee.principal!.userId).first()).toBeNull()
-    expect(await s.database.prepare("select 1 from authority_audit_events where action = 'org.member.added' and user_id = ?").bind(s.invitee.principal!.userId).first()).toBeNull()
+    expect(await s.database.prepare("select 1 from authority_audit_events where action = 'org.member.added' and user_id = ? and json_extract(metadata_json, '$.orgId') = 'org_acme'").bind(s.invitee.principal!.userId).first()).toBeNull()
   })
 
   test("refuses a second pending address without replacing its token or sending again", async () => {
@@ -165,16 +165,39 @@ describe("D1 organization invitations", () => {
       second = (await s.invitations.listOrgInvitations(s.owner, { orgId: "org_second" }))[0]
     }
     await s.invitations.revokeOrgInvitation(s.owner, { orgId: "org_acme", invitationId: first.id })
-    const counts = async () => Promise.all(["users", "actors", "auth_identities"].map(async (table) => (await s.database.prepare(`select count(*) as n from ${table} where user_id = ?`).bind(mapped.userId).first<{ n: number }>())!.n))
-    expect(await counts()).toEqual(state.startsWith("orphan") ? [0, 0, 0] : [1, 1, 1])
+    const standing = async () => ({
+      identity: !!(await s.database.prepare("select 1 from auth_identities where user_id = ?").bind(mapped.userId).first()),
+      user: (await s.database.prepare("select state from users where user_id = ?").bind(mapped.userId).first<{ state: string }>())?.state,
+      actor: (await s.database.prepare("select state from actors where user_id = ?").bind(mapped.userId).first<{ state: string }>())?.state,
+    })
+    const retired = { identity: false, user: "deleted", actor: "revoked" }
+    expect(await standing()).toEqual(state.startsWith("orphan") ? retired : { identity: true, user: "active", actor: "active" })
+    if (state.startsWith("orphan")) expect(await workspace.admitInvitedIdentity(identity, "new@example.com")).toEqual({ state: "unavailable" })
     if (state === "orphan-with-audit-and-config") {
-      expect(await s.database.prepare("select 1 from authority_audit_events where user_id = ?").bind(mapped.userId).first()).toBeNull()
-      expect(await s.database.prepare("select 1 from user_agent_config where user_id = ?").bind(mapped.userId).first()).toBeNull()
+      expect(await s.database.prepare("select 1 from authority_audit_events where user_id = ?").bind(mapped.userId).first()).not.toBeNull()
+      expect(await s.database.prepare("select 1 from user_agent_config where user_id = ?").bind(mapped.userId).first()).not.toBeNull()
     }
     if (second) {
       await s.invitations.revokeOrgInvitation(s.owner, { orgId: "org_second", invitationId: second.id })
-      expect(await counts()).toEqual([0, 0, 0])
+      expect(await standing()).toEqual(retired)
     }
+  })
+
+  test("a retired admission is admitted afresh by a later invitation", async () => {
+    const s = await setup()
+    const workspace = new D1WorkspaceAuthority(s.database, {
+      deploymentId: "deployment-test",
+      product: { kind: "user-deployed", organization: { id: "org_acme", name: "Acme" }, ownerIdentity: s.owner.principal!.identity },
+      now: s.workspace.accessContext().now,
+    })
+    const identity = { ...s.owner.principal!.identity, subject: "new" }
+    const first = await s.invite("new@example.com", "member")
+    const before = await workspace.admitInvitedIdentity(identity, "new@example.com")
+    await s.invitations.revokeOrgInvitation(s.owner, { orgId: "org_acme", invitationId: first.id })
+    await s.invite("new@example.com", "member")
+    const after = await workspace.admitInvitedIdentity(identity, "new@example.com")
+    expect(after).toMatchObject({ state: "active" })
+    expect(before.state === "active" && after.state === "active" && after.userId !== before.userId).toBe(true)
   })
 
   test("admission cannot race past revocation", async () => {

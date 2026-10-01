@@ -143,7 +143,7 @@ export class D1OrgInvitationAuthority implements D1OrgInvitationAuthorityPort {
       this.context.database
         .prepare(`update org_invitations set revoked_at = ? where id = ? and ${pending.sql}`)
         .bind(now, invitationId, ...pending.bind),
-      ...removeOrphanedInvitationUsers(this.context, { invitationId, orgId, now, permission }),
+      ...retireOrphanedInvitationUsers(this.context, { invitationId, orgId, now, permission }),
     ])
     return { revoked: result!.meta.changes === 1 }
   }
@@ -210,7 +210,14 @@ export async function prepareInvitationAdmission(context: D1AccessContext, input
   }
 }
 
-function removeOrphanedInvitationUsers(context: D1AccessContext, input: {
+/**
+ * Retires the people this invitation's address admitted who joined nothing and
+ * have no other pending invitation: their identity goes, so their next sign-in
+ * is refused again (and a later invitation admits them afresh), and their user
+ * and actor are marked deleted and revoked rather than removed, so audit rows
+ * and any row that references them stay intact.
+ */
+function retireOrphanedInvitationUsers(context: D1AccessContext, input: {
   invitationId: string
   orgId: string
   now: number
@@ -228,8 +235,12 @@ function removeOrphanedInvitationUsers(context: D1AccessContext, input: {
         and other.accepted_at is null and other.revoked_at is null and other.expires_at > ?)
   )`
   const bind = [input.invitationId, input.orgId, input.now, ...input.permission.bind, input.now]
-  // The admission row survives until the user deletion, so every delete sees the same candidate set.
-  return ["authority_audit_events", "user_agent_config", "auth_identities", "actors", "users"].map((table) => context.database
-    .prepare(`delete from ${table} where ${orphan}`)
-    .bind(...bind))
+  const now = input.now
+  // The admission row is the candidate marker, so it goes last and every earlier statement sees the same set.
+  return [
+    context.database.prepare(`delete from auth_identities where ${orphan}`).bind(...bind),
+    context.database.prepare(`update actors set state = 'revoked', revoked_at = ?, updated_at = ? where kind = 'human' and state = 'active' and ${orphan}`).bind(now, now, ...bind),
+    context.database.prepare(`update users set state = 'deleted', deleted_at = ?, updated_at = ? where state = 'active' and ${orphan}`).bind(now, now, ...bind),
+    context.database.prepare(`delete from org_invitation_admissions where ${orphan}`).bind(...bind),
+  ]
 }
