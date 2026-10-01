@@ -57,6 +57,36 @@ runtime `harnesses` descriptor. An `npm publish` of
 versioning keys off the bundle build plus `SNAPSHOT_SCHEMA_VERSION`
 (`packages/sandbox-manager/src/image.ts`).
 
+## Control-plane D1 schema
+
+`migrations/control-plane/0001_baseline.sql` is the whole control-plane
+schema, generated rather than written. To change the schema, add a numbered
+migration beside it (for example `0002_task_labels.sql`), then fold it in:
+
+```sh
+bun run d1:baseline:generate
+git diff migrations/control-plane/
+```
+
+The generator applies the baseline and every numbered migration to an empty
+SQLite database, rewrites the baseline from `sqlite_master` (tables in
+foreign-key order, then views, indexes and triggers, each sorted by name), checks
+that the rewrite rebuilds the identical `sqlite_master`, and deletes the folded
+migrations. Identical input gives identical bytes, so the diff shows only the
+new columns, tables, indexes and triggers. No rows survive generation:
+`insert` and `update` statements in a migration have nothing to convert.
+
+`bun run d1:baseline:check`, also run by `scripts/control-plane-baseline.test.ts`,
+fails while a numbered migration sits beside the baseline or the baseline is
+not byte-for-byte the generator's output. When a merge deletes a migration
+another branch edited, keep the deletion and restate the edit as a new numbered
+migration before generating.
+
+A deploy admits an empty control-plane D1 or one holding exactly the current
+baseline. A database recording older migrations, holding an earlier baseline,
+or carrying tables without a `d1_migrations` record is refused with the reset
+command (`docs/deploy/staging-branch.md`).
+
 ## Local Env Files
 
 Local `.env` and `.env.local` files are ignored in this package. Keep real

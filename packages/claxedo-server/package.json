@@ -45,6 +45,7 @@
     "deploy:user-cloudflare:claim-owner": "bun run scripts/deploy/claim-owner.ts",
     "auth:migration:generate": "node --import tsx scripts/deploy/generate-better-auth-d1-migration.ts",
     "d1:baseline:generate": "bun run scripts/control-plane-baseline.ts",
+    "d1:baseline:check": "bun run scripts/control-plane-baseline.ts --check",
     "d1:reset:staging": "bun run scripts/deploy/reset-staging-d1.ts",
     "typecheck:auth-d1": "tsc --noEmit -p tsconfig.auth-d1.json",
     "typecheck:services": "tsc --noEmit -p tsconfig.services.json",

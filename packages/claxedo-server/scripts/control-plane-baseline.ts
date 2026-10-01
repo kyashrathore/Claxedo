@@ -1,18 +1,28 @@
 import { Database } from "bun:sqlite"
-import { readFileSync, readdirSync, renameSync, unlinkSync, writeFileSync } from "node:fs"
+import { existsSync, readFileSync, readdirSync, renameSync, unlinkSync, writeFileSync } from "node:fs"
 import path from "node:path"
-import { CONTROL_PLANE_BASELINE } from "./control-plane-schema"
+import { CONTROL_PLANE_BASELINE, baselineStatements } from "./control-plane-schema"
 
 type SchemaObject = { type: string; name: string; tbl_name: string; sql: string }
 
-function normalizedSql(sql: string) {
-  return sql.replace(/\r\n?/g, "\n").split("\n").map((line) => line.trimEnd()).join("\n").trim().replace(/;$/, "") + ";"
+const OBJECT_TYPES = ["table", "view", "index", "trigger"]
+const GENERATE_COMMAND = "bun run d1:baseline:generate"
+
+function schemaObjects(database: Database) {
+  return database.query<SchemaObject, []>(`select type, name, tbl_name, sql from sqlite_master
+    where sql is not null and substr(name, 1, 7) <> 'sqlite_' order by type, name`).all()
 }
 
 function dumpSchema(database: Database) {
-  const objects = database.query<SchemaObject, []>(`select type, name, tbl_name, sql from sqlite_master
-    where sql is not null and substr(name, 1, 7) <> 'sqlite_'
-      and type in ('table', 'index', 'trigger') order by type, name`).all()
+  const objects = schemaObjects(database)
+  for (const object of objects) {
+    if (!OBJECT_TYPES.includes(object.type) || /^CREATE\s+VIRTUAL\s+TABLE/i.test(object.sql)) {
+      throw new Error(`${object.name}: the control-plane baseline cannot carry ${object.type} objects of this kind`)
+    }
+    // wrangler strips SQL comments before D1 runs a migration, so D1 would store different text than the baseline holds.
+    if (/--|\/\*/.test(object.sql)) throw new Error(`${object.name}: remove the SQL comment from its CREATE statement`)
+    if (object.sql.includes(";\n\n")) throw new Error(`${object.name}: a blank line after a semicolon would split the statement`)
+  }
   const tables = new Map(objects.filter((object) => object.type === "table").map((object) => [object.name, object]))
   const ordered: SchemaObject[] = []
   const visiting = new Set<string>()
@@ -29,45 +39,70 @@ function dumpSchema(database: Database) {
     ordered.push(tables.get(name)!)
   }
   for (const name of [...tables.keys()].sort()) visit(name)
-  ordered.push(...objects.filter((object) => object.type === "index"), ...objects.filter((object) => object.type === "trigger"))
-  return ordered.map((object) => normalizedSql(object.sql)).join("\n\n") + "\n"
+  for (const type of OBJECT_TYPES.slice(1)) ordered.push(...objects.filter((object) => object.type === type))
+  return ordered.map((object) => `${object.sql};`).join("\n\n") + "\n"
+}
+
+function openDatabase() {
+  const database = new Database(":memory:")
+  database.exec("PRAGMA foreign_keys = ON")
+  return database
+}
+
+/** The baseline the migrations in `directory` produce, verified to rebuild exactly the schema they built. */
+export function renderControlPlaneBaseline(directory: string) {
+  const names = readdirSync(directory).filter((name) => /^\d+_.+\.sql$/.test(name)).sort()
+  if (!names.length) throw new Error(`No control-plane migrations in ${directory}`)
+  const chain = openDatabase()
+  const replay = openDatabase()
+  try {
+    for (const name of names) chain.transaction(() => chain.exec(readFileSync(path.join(directory, name), "utf8")))()
+    const schema = dumpSchema(chain)
+    replay.transaction(() => { for (const statement of baselineStatements(schema)) replay.exec(statement) })()
+    if (JSON.stringify(schemaObjects(replay)) !== JSON.stringify(schemaObjects(chain))) {
+      throw new Error("Control-plane baseline does not rebuild the schema its migrations built")
+    }
+    if (replay.query("PRAGMA foreign_key_check").all().length) throw new Error("Control-plane baseline has invalid foreign keys")
+    return { schema, folded: names.filter((name) => name !== CONTROL_PLANE_BASELINE) }
+  } finally {
+    chain.close()
+    replay.close()
+  }
 }
 
 export function generateControlPlaneBaseline(directory: string) {
-  const names = readdirSync(directory).filter((name) => /^\d+_.+\.sql$/.test(name)).sort()
-  if (!names.length) throw new Error(`No control-plane migrations in ${directory}`)
-  const database = new Database(":memory:")
-  let schema: string
-  try {
-    database.exec("PRAGMA foreign_keys = ON")
-    for (const name of names) database.transaction(() => database.exec(readFileSync(path.join(directory, name), "utf8")))()
-    schema = dumpSchema(database)
-  } finally {
-    database.close()
-  }
-  const verification = new Database(":memory:")
-  try {
-    verification.exec("PRAGMA foreign_keys = ON")
-    verification.transaction(() => verification.exec(schema))()
-    if (dumpSchema(verification) !== schema) throw new Error("Control-plane baseline does not reproduce its schema")
-    if (verification.query("PRAGMA foreign_key_check").all().length) throw new Error("Control-plane baseline has invalid foreign keys")
-  } finally {
-    verification.close()
-  }
+  const { schema, folded } = renderControlPlaneBaseline(directory)
   const destination = path.join(directory, CONTROL_PLANE_BASELINE)
   const temporary = `${destination}.tmp`
   writeFileSync(temporary, schema)
   renameSync(temporary, destination)
-  for (const name of names) if (name !== CONTROL_PLANE_BASELINE) unlinkSync(path.join(directory, name))
-  return { replaced: names.filter((name) => name !== CONTROL_PLANE_BASELINE).length, bytes: Buffer.byteLength(schema) }
+  for (const name of folded) unlinkSync(path.join(directory, name))
+  return { folded, bytes: Buffer.byteLength(schema) }
+}
+
+/** Fails unless `directory` holds only the baseline and the baseline is byte-for-byte the generator's output. */
+export function checkControlPlaneBaseline(directory: string) {
+  const { schema, folded } = renderControlPlaneBaseline(directory)
+  if (folded.length) throw new Error(`Migrations not folded into ${CONTROL_PLANE_BASELINE}: ${folded.join(", ")}. Run ${GENERATE_COMMAND}.`)
+  const destination = path.join(directory, CONTROL_PLANE_BASELINE)
+  if (!existsSync(destination) || readFileSync(destination, "utf8") !== schema) {
+    throw new Error(`${CONTROL_PLANE_BASELINE} is not the generator's output. Run ${GENERATE_COMMAND}.`)
+  }
 }
 
 if (import.meta.main) {
   const args = process.argv.slice(2)
-  if (args.length && (args.length !== 2 || args[0] !== "--directory" || !args[1])) {
-    throw new Error("Usage: bun run scripts/control-plane-baseline.ts [--directory <migrations directory>]")
+  const check = args[0] === "--check"
+  const rest = check ? args.slice(1) : args
+  if (rest.length && (rest.length !== 2 || rest[0] !== "--directory" || !rest[1])) {
+    throw new Error("Usage: bun run scripts/control-plane-baseline.ts [--check] [--directory <migrations directory>]")
   }
-  const directory = path.resolve(args[1] ?? path.join(import.meta.dirname, "../migrations/control-plane"))
-  const result = generateControlPlaneBaseline(directory)
-  console.log(`${CONTROL_PLANE_BASELINE}: ${result.bytes} bytes; replaced ${result.replaced} migrations`)
+  const directory = path.resolve(rest[1] ?? path.join(import.meta.dirname, "../migrations/control-plane"))
+  if (check) {
+    checkControlPlaneBaseline(directory)
+    console.log(`${CONTROL_PLANE_BASELINE} is current`)
+  } else {
+    const result = generateControlPlaneBaseline(directory)
+    console.log(`${CONTROL_PLANE_BASELINE}: ${result.bytes} bytes; folded ${result.folded.length} migrations${result.folded.length ? `: ${result.folded.join(", ")}` : ""}`)
+  }
 }
