@@ -21,9 +21,12 @@ test("the contract's Claude table offers exactly the SDK's modes, and its defaul
 })
 
 test("bypass mode still carries the native deny floor and exact accepted rules", () => {
-  const options = permissionOptions({ ...config, permissionMode: "bypassPermissions", permissionState: {
-    allow: ["Bash(echo (hello))"], deny: ["Write"], ask: [], additionalDirectories: ["/tmp/approved"],
-  } })
+  const grant = JSON.stringify({ tool: "Bash", updates: [
+    { type: "addRules", behavior: "allow", destination: "session", rules: [{ toolName: "Bash", ruleContent: "echo (hello)" }] },
+    { type: "addRules", behavior: "deny", destination: "session", rules: [{ toolName: "Write" }] },
+    { type: "addDirectories", directories: ["/tmp/approved"], destination: "session" },
+  ] })
+  const options = permissionOptions({ ...config, permissionMode: "bypassPermissions" }, [grant])
   expect(options.permissionMode).toBe("bypassPermissions")
   expect(options.allowDangerouslySkipPermissions).toBe(true)
   expect(options.settings.permissions.allow).toEqual(["Bash(echo (hello))"])
@@ -32,15 +35,14 @@ test("bypass mode still carries the native deny floor and exact accepted rules",
   expect(options.additionalDirectories).toEqual(["/tmp/approved"])
 })
 
-test("invalid persisted permission state and unknown mode fail before launch", () => {
-  expect(() => permissionOptions({ ...config, permissionState: { allow: "Bash(*)" } })).toThrow("Invalid Claude allow")
+test("an unknown mode fails before launch", () => {
   expect(() => permissionOptions({ ...config, permissionMode: "unknown" })).toThrow("Unknown Claude permission mode")
 })
 
 test("saved grants replay their rules and directories at launch while the runtime keeps the mode", () => {
   const key = (updates: unknown) => JSON.stringify(["claude-sdk", JSON.stringify({ tool: "Bash", directory: "/work", updates })])
   const foreign = JSON.stringify(["codex-app-server", JSON.stringify({ tool: "Bash", directory: "/work", updates: [{ type: "addRules", behavior: "allow", destination: "session", rules: [{ toolName: "Bash", ruleContent: "codex" }] }] })])
-  const state = { allow: ["Read"], brokerGrants: [
+  const state = { brokerGrants: [
     key([{ type: "addRules", behavior: "allow", destination: "session", rules: [{ toolName: "Bash", ruleContent: "npm test" }] }]),
     key([{ type: "setMode", mode: "acceptEdits", destination: "session" }, { type: "addDirectories", directories: ["/tmp/extra"], destination: "session" }]),
     key([{ type: "removeRules", behavior: "allow", destination: "session", rules: [{ toolName: "Read" }] }]),
