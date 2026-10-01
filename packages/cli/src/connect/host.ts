@@ -3,8 +3,17 @@ import path from "node:path"
 import { createHostConnector, type AssignmentDescription, type HostEndpoints } from "@claxedo/host-connector/connector"
 import { DECISION_EXIT_CODE, HostConnectDecisionError } from "@claxedo/host-connector/bootstrap"
 import { hostKeyPairFromJwk } from "@claxedo/host-connector/host-identity"
-import { canonicalRelayUrl, pathWithinRoots, resolveRoots, type HostScope, type HostState, type HostStateStore } from "@claxedo/host-connector/host-state"
-import { createMachineSealingKeyPair, hostMachineSealAad, openMachineSeal, sealingPublicKeyJwk } from "@claxedo/host-connector/machine-seal"
+import {
+  canonicalRelayUrl,
+  pathWithinRoots,
+  resolveRoots,
+  type HostScope,
+  type HostState,
+  type HostStateStore,
+} from "@claxedo/host-connector/host-state"
+import { createMachineSealingKeyPair, openMachineSeal } from "@claxedo/host-connector/machine-seal"
+import { machineSealAad, publicKeyJwk } from "@claxedo/account-contract/machine"
+
 import {
   createMachineSignedTransport,
   decisionCode,
@@ -55,7 +64,8 @@ export type HostDeps = {
 export function defaultHostDeps(): HostDeps {
   return {
     fetch: (input, init) => fetch(input, init),
-    createListener: () => createHostRuntimeListener({ hostname: "127.0.0.1", port: 0, drainTimeoutMs: RUNTIME_CLOSE_TIMEOUT_MS }),
+    createListener: () =>
+      createHostRuntimeListener({ hostname: "127.0.0.1", port: 0, drainTimeoutMs: RUNTIME_CLOSE_TIMEOUT_MS }),
     setServing: setHostServing,
     servingState: hostServingState,
     stopServing: stopHostServing,
@@ -117,7 +127,9 @@ export async function withBootstrapRetry<T>(
   const started = deps.monotonicNow()
   const deadline = started + BOOTSTRAP_RETRY_BUDGET_MS
   const giveUp = (error: unknown) =>
-    new Error(`${label} failed for ${Math.round((deps.monotonicNow() - started) / 1000)}s: ${errorMessage(error)}`, { cause: error })
+    new Error(`${label} failed for ${Math.round((deps.monotonicNow() - started) / 1000)}s: ${errorMessage(error)}`, {
+      cause: error,
+    })
   let delay = 1_000
   let lastError: unknown
   for (;;) {
@@ -171,7 +183,14 @@ export function servingCredential(tunnel: unknown, fallbackRelayUrl: string | un
   // The ack's relayUrl overrides the persisted endpoint, and neither is
   // proof: refuse the credential rather than dial an address this machine
   // may not carry the Host Tunnel Token to.
-  return { hostId, enrollmentId, relayUrl: canonicalRelayUrl(relayUrl, "hostTunnel.relayUrl"), token, workspaceIds, expiresAt }
+  return {
+    hostId,
+    enrollmentId,
+    relayUrl: canonicalRelayUrl(relayUrl, "hostTunnel.relayUrl"),
+    token,
+    workspaceIds,
+    expiresAt,
+  }
 }
 
 function credentialWithout(credential: HostServingCredential | null, workspaceId: string) {
@@ -231,12 +250,17 @@ export async function runHost(input: HostRunInput): Promise<number> {
   if (sealingPrivateKeyJwk !== state.sealing_private_key_jwk) {
     await persistOrThrow({ ...state, sealing_private_key_jwk: sealingPrivateKeyJwk })
   }
-  const sealingPublicKey = JSON.stringify(sealingPublicKeyJwk(sealingPrivateKeyJwk))
+  const sealingPublicKey = JSON.stringify(publicKeyJwk(sealingPrivateKeyJwk))
 
   const installProviderConfig = async (config: { revision: number; sealed: string | null }) => {
-    const plaintext = config.sealed === null
-      ? null
-      : await openMachineSeal(sealingPrivateKeyJwk, config.sealed, hostMachineSealAad({ enrollmentId: enrollment.enrollment_id, revision: config.revision }))
+    const plaintext =
+      config.sealed === null
+        ? null
+        : await openMachineSeal(
+            sealingPrivateKeyJwk,
+            config.sealed,
+            machineSealAad({ enrollmentId: enrollment.enrollment_id, revision: config.revision }),
+          )
     const { providerIds } = setHostProviderConfig(plaintext)
     deps.log(
       config.sealed === null
@@ -253,7 +277,9 @@ export async function runHost(input: HostRunInput): Promise<number> {
       await installProviderConfig(state.provider_config)
       declaredProviderConfigRevision = state.provider_config.revision
     } catch (error) {
-      deps.log(`stored provider configuration revision ${state.provider_config.revision} could not be applied: ${errorMessage(error)}`)
+      deps.log(
+        `stored provider configuration revision ${state.provider_config.revision} could not be applied: ${errorMessage(error)}`,
+      )
     }
   }
 
@@ -277,7 +303,8 @@ export async function runHost(input: HostRunInput): Promise<number> {
       deps.log(`relay serving update failed: ${errorMessage(error)}`)
     }
   }
-  const stopServing = (workspaceId: string) => servingUpdates.run("serving", () => serve(credentialWithout(credential, workspaceId)))
+  const stopServing = (workspaceId: string) =>
+    servingUpdates.run("serving", () => serve(credentialWithout(credential, workspaceId)))
 
   const retire = async (workspaceId: string) => {
     await stopServing(workspaceId)
@@ -371,18 +398,21 @@ export async function runHost(input: HostRunInput): Promise<number> {
     // Stored, then opened, then applied. The connector acks a revision only
     // when this resolves, so a write that fails throws here and the control
     // plane delivers the same revision on the next beat.
-    onProviderConfig: (config) => servingUpdates.run("serving", async () => {
-      await persistOrThrow({ ...state, provider_config: config })
-      await installProviderConfig(config)
-      await listener.applyRuntimeConfig()
-    }),
+    onProviderConfig: (config) =>
+      servingUpdates.run("serving", async () => {
+        await persistOrThrow({ ...state, provider_config: config })
+        await installProviderConfig(config)
+        await listener.applyRuntimeConfig()
+      }),
     onAssignments: async (descriptions) => {
       const wanted = new Set(descriptions.map((description) => description.workspaceId))
       for (const owner of listener.owners()) {
         if (owner.state !== "serving") {
           // An unresolved retirement is still this host's; it is neither
           // assignable nor something a withdrawal may start over.
-          deps.log(`workspace ${owner.workspaceId}: retirement ${owner.state} after attempt ${owner.attempt}${owner.error ? `: ${owner.error}` : ""}`)
+          deps.log(
+            `workspace ${owner.workspaceId}: retirement ${owner.state} after attempt ${owner.attempt}${owner.error ? `: ${owner.error}` : ""}`,
+          )
           continue
         }
         if (wanted.has(owner.workspaceId)) continue
@@ -395,7 +425,9 @@ export async function runHost(input: HostRunInput): Promise<number> {
         try {
           await prepare(description)
           await connector.ack({ workspaceId: description.workspaceId, revision: description.revision })
-          deps.log(`workspace ${description.workspaceId}: serving ${description.remoteDirectory} (revision ${description.revision})`)
+          deps.log(
+            `workspace ${description.workspaceId}: serving ${description.remoteDirectory} (revision ${description.revision})`,
+          )
         } catch (error) {
           deps.log(`workspace ${description.workspaceId}: refused: ${errorMessage(error)}`)
           await retire(description.workspaceId)
@@ -414,7 +446,9 @@ export async function runHost(input: HostRunInput): Promise<number> {
           try {
             await adoptConnectedHostOwner(owner, listener)
           } catch (error) {
-            deps.log(`re-applying the runtimes under the enrolled owner failed; the next ack retries: ${errorMessage(error)}`)
+            deps.log(
+              `re-applying the runtimes under the enrolled owner failed; the next ack retries: ${errorMessage(error)}`,
+            )
           }
         }
         await serve(next)

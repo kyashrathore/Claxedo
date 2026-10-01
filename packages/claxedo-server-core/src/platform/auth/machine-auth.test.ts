@@ -1,6 +1,7 @@
 import { beforeAll, describe, expect, test } from "vitest"
 import { base64UrlEncode, sha256Hex } from "@claxedo/helpers/crypto"
-import { MACHINE_NONCE_TTL_MS, MACHINE_REQUEST_HEADERS, MACHINE_REQUEST_SKEW_MS, machineRequestPayload } from "./host-connect-contract"
+import { MACHINE_NONCE_TTL_MS, MACHINE_REQUEST_SKEW_MS } from "./host-connect-contract"
+import { MACHINE_REQUEST_HEADERS, machineRequestPayload } from "@claxedo/account-contract/machine"
 import type { MachineEnrollmentRow } from "./authority"
 import { type MachineAuthDeps, type MachineRequest, verifyMachineRequest } from "./machine-auth"
 
@@ -16,7 +17,11 @@ async function signer(): Promise<Signer> {
     publicKeyJson: JSON.stringify({ kty: jwk.kty, crv: jwk.crv, x: jwk.x, y: jwk.y }),
     sign: async (payload) =>
       base64UrlEncode(
-        await crypto.subtle.sign({ name: "ECDSA", hash: "SHA-256" }, pair.privateKey, new TextEncoder().encode(payload)),
+        await crypto.subtle.sign(
+          { name: "ECDSA", hash: "SHA-256" },
+          pair.privateKey,
+          new TextEncoder().encode(payload),
+        ),
       ),
   }
 }
@@ -84,14 +89,16 @@ async function signedRequest(input: {
   const ts = input.ts ?? NOW
   const nonce = input.nonce ?? "nonce-0123456789abcdef"
   const enrollmentId = input.enrollmentId ?? "enr_1"
-  const signature = await by.sign(machineRequestPayload({
-    method,
-    pathname,
-    bodySha256Hex: await sha256Hex(body),
-    ts,
-    nonce,
-    enrollmentId,
-  }))
+  const signature = await by.sign(
+    machineRequestPayload({
+      method,
+      pathname,
+      bodySha256Hex: await sha256Hex(body),
+      ts,
+      nonce,
+      enrollmentId,
+    }),
+  )
   const headers = new Map<string, string>([
     [MACHINE_REQUEST_HEADERS.enrollmentId, enrollmentId],
     [MACHINE_REQUEST_HEADERS.ts, String(ts)],
@@ -122,7 +129,9 @@ describe("verifyMachineRequest", () => {
       },
     })
     expect(d.lookups).toEqual(["enr_1"])
-    expect(d.consumed).toEqual([{ enrollmentId: "enr_1", nonce: "nonce-0123456789abcdef", expiresAt: NOW + MACHINE_NONCE_TTL_MS }])
+    expect(d.consumed).toEqual([
+      { enrollmentId: "enr_1", nonce: "nonce-0123456789abcdef", expiresAt: NOW + MACHINE_NONCE_TTL_MS },
+    ])
   })
 
   test("accepts an empty body and a lowercase method", async () => {
@@ -134,7 +143,11 @@ describe("verifyMachineRequest", () => {
     const d = deps()
     const request = await signedRequest({})
     expect((await verifyMachineRequest(request, d.deps)).ok).toBe(true)
-    expect(await verifyMachineRequest(request, d.deps)).toEqual({ ok: false, status: 401, code: "machine_nonce_replayed" })
+    expect(await verifyMachineRequest(request, d.deps)).toEqual({
+      ok: false,
+      status: 401,
+      code: "machine_nonce_replayed",
+    })
     expect(d.consumed).toHaveLength(2)
   })
 
@@ -180,8 +193,12 @@ describe("verifyMachineRequest", () => {
 
   describe("timestamp skew", () => {
     test("exactly 60 s early and late are accepted", async () => {
-      expect((await verifyMachineRequest(await signedRequest({ ts: NOW - MACHINE_REQUEST_SKEW_MS }), deps().deps)).ok).toBe(true)
-      expect((await verifyMachineRequest(await signedRequest({ ts: NOW + MACHINE_REQUEST_SKEW_MS }), deps().deps)).ok).toBe(true)
+      expect(
+        (await verifyMachineRequest(await signedRequest({ ts: NOW - MACHINE_REQUEST_SKEW_MS }), deps().deps)).ok,
+      ).toBe(true)
+      expect(
+        (await verifyMachineRequest(await signedRequest({ ts: NOW + MACHINE_REQUEST_SKEW_MS }), deps().deps)).ok,
+      ).toBe(true)
     })
 
     test("one millisecond beyond 60 s either way is refused before lookup", async () => {
@@ -273,7 +290,7 @@ describe("verifyMachineRequest", () => {
 
     test("revoked wins over paused", async () => {
       const d = deps({ row: row({ revoked_at: NOW - 1, paused_at: NOW - 1 }) })
-      expect((await verifyMachineRequest(await signedRequest({}), d.deps))).toMatchObject({ code: "enrollment_revoked" })
+      expect(await verifyMachineRequest(await signedRequest({}), d.deps)).toMatchObject({ code: "enrollment_revoked" })
     })
   })
 
@@ -312,7 +329,10 @@ describe("verifyMachineRequest", () => {
 
     test("body tampering after signing", async () => {
       const request = await signedRequest({})
-      const tampered = { ...request, bodyText: JSON.stringify({ enrollmentId: "enr_1", hostId: "host-a", generation: 99, acks: [] }) }
+      const tampered = {
+        ...request,
+        bodyText: JSON.stringify({ enrollmentId: "enr_1", hostId: "host-a", generation: 99, acks: [] }),
+      }
       expect(await verifyMachineRequest(tampered, deps().deps)).toEqual(DENIED)
     })
 
@@ -324,20 +344,33 @@ describe("verifyMachineRequest", () => {
     test("the signature binds method and pathname", async () => {
       const request = await signedRequest({})
       expect(await verifyMachineRequest({ ...request, method: "PUT" }, deps().deps)).toEqual(DENIED)
-      expect(await verifyMachineRequest({ ...request, pathname: "/api/claxedo/host/enrollments/acquire" }, deps().deps)).toEqual(DENIED)
+      expect(
+        await verifyMachineRequest({ ...request, pathname: "/api/claxedo/host/enrollments/acquire" }, deps().deps),
+      ).toEqual(DENIED)
     })
 
     test("the signature binds ts and nonce headers", async () => {
       const request = await signedRequest({})
       const retimed = await signedRequest({ headerOverrides: { [MACHINE_REQUEST_HEADERS.ts]: String(NOW + 1) } })
       expect(await verifyMachineRequest(retimed, deps().deps)).toEqual(DENIED)
-      const renonced = { ...request, headers: { get: (name: string) => name === MACHINE_REQUEST_HEADERS.nonce ? "other-nonce-0123456789" : request.headers.get(name) } }
+      const renonced = {
+        ...request,
+        headers: {
+          get: (name: string) =>
+            name === MACHINE_REQUEST_HEADERS.nonce ? "other-nonce-0123456789" : request.headers.get(name),
+        },
+      }
       expect(await verifyMachineRequest(renonced, deps().deps)).toEqual(DENIED)
     })
 
     test("a valid signature presented under another enrollment's headers", async () => {
       const request = await signedRequest({ body: "{}" })
-      const other = { ...request, headers: { get: (name: string) => name === MACHINE_REQUEST_HEADERS.enrollmentId ? "enr_2" : request.headers.get(name) } }
+      const other = {
+        ...request,
+        headers: {
+          get: (name: string) => (name === MACHINE_REQUEST_HEADERS.enrollmentId ? "enr_2" : request.headers.get(name)),
+        },
+      }
       const d = deps({ row: row({ enrollment_id: "enr_2" }) })
       expect(await verifyMachineRequest(other, d.deps)).toEqual(DENIED)
     })
@@ -371,7 +404,14 @@ describe("verifyMachineRequest", () => {
     })
 
     test("non-JSON, array and wrongly typed identity bodies → 400", async () => {
-      for (const body of ["not json", "[1]", "null", JSON.stringify({ enrollmentId: 5 }), JSON.stringify({ hostId: {} }), JSON.stringify({ keyVersion: "1" })]) {
+      for (const body of [
+        "not json",
+        "[1]",
+        "null",
+        JSON.stringify({ enrollmentId: 5 }),
+        JSON.stringify({ hostId: {} }),
+        JSON.stringify({ keyVersion: "1" }),
+      ]) {
         expect(await verifyMachineRequest(await signedRequest({ body }), deps().deps)).toEqual({
           ok: false,
           status: 400,

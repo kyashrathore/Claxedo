@@ -1,3 +1,9 @@
+import {
+  enrollmentPayload,
+  invitationRedeemPayload,
+  publicKeyFingerprint,
+  decodeInvitationToken,
+} from "@claxedo/account-contract/machine"
 const [connector, identity, hostState, hostStateNode, machineTransport, bootstrap] = await Promise.all([
   import("../dist/connector.mjs"),
   import("../dist/host-identity.mjs"),
@@ -10,12 +16,12 @@ const [connector, identity, hostState, hostStateNode, machineTransport, bootstra
 for (const [name, value] of Object.entries({
   createHostConnector: connector.createHostConnector,
   createHostKeyPair: identity.createHostKeyPair,
-  enrollmentPayload: identity.enrollmentPayload,
+  enrollmentPayload,
   hostKeyPairFromJwk: identity.hostKeyPairFromJwk,
   machineRequestSignature: identity.machineRequestSignature,
-  hostInvitationRedeemPayload: identity.hostInvitationRedeemPayload,
-  hostPublicKeyFingerprint: identity.hostPublicKeyFingerprint,
-  parseInvitationToken: identity.parseInvitationToken,
+  invitationRedeemPayload,
+  publicKeyFingerprint,
+  decodeInvitationToken,
   createHostStateStore: hostState.createHostStateStore,
   effectiveRoots: hostState.effectiveRoots,
   resolveRoots: hostState.resolveRoots,

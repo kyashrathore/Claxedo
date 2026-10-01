@@ -41,9 +41,14 @@ import {
   controlPlaneAuthErrorBody,
   type SignedControlPlaneAuth,
 } from "@claxedo/server-core/platform/auth/auth"
-import { requireAuthority, type MachinePrincipal, type WorkspaceAuthority } from "@claxedo/server-core/platform/auth/authority"
+import {
+  requireAuthority,
+  type MachinePrincipal,
+  type WorkspaceAuthority,
+} from "@claxedo/server-core/platform/auth/authority"
 import { verifyMachineRequest } from "@claxedo/server-core/platform/auth/machine-auth"
-import { machineSealAad, sealForMachine } from "@claxedo/server-core/platform/auth/machine-seal"
+import { machineSealAad } from "@claxedo/account-contract/machine"
+import { sealForMachine } from "@claxedo/account-contract/machine-seal"
 import type { HostTunnelTokenSignerInput } from "@claxedo/server-core/platform/auth/runtime-access-token"
 import { serializeHostProviderConfig } from "@claxedo/server-core/credentials/host-provider-config"
 import { ClaxedoError, isClaxedoError } from "@claxedo/server-core/platform/errors/base"
@@ -98,7 +103,9 @@ const machineHeartbeatBody = z
     hostId,
     keyVersion: z.number().int().min(1).optional(),
     generation: z.number().int().min(0),
-    acks: z.array(z.object({ workspaceId: z.string().min(1).max(200), revision: z.number().int().min(1) }).strict()).max(200),
+    acks: z
+      .array(z.object({ workspaceId: z.string().min(1).max(200), revision: z.number().int().min(1) }).strict())
+      .max(200),
     ttlMs: z.number().int().positive().optional(),
     sessionAuthority: z.enum(["local", "managed-private"]).optional(),
     sealingPublicKey: z.string().min(1).max(4_000).optional(),
@@ -253,7 +260,10 @@ function tooLarge(limit: number) {
   return bodyLimit({
     maxSize: limit,
     onError: (c) =>
-      c.json({ error: { code: "request_body_too_large", message: `Request body exceeds the ${limit}-byte limit` } }, 413),
+      c.json(
+        { error: { code: "request_body_too_large", message: `Request body exceeds the ${limit}-byte limit` } },
+        413,
+      ),
   })
 }
 
@@ -287,7 +297,10 @@ function parseJsonText(text: string): unknown {
 }
 
 function unsupported(c: Context, what: string) {
-  return c.json({ error: { code: "machine_caller_unsupported", message: `${what} is not supported by this authority` } }, 501)
+  return c.json(
+    { error: { code: "machine_caller_unsupported", message: `${what} is not supported by this authority` } },
+    501,
+  )
 }
 
 function unsupportedError(what: string) {
@@ -334,17 +347,18 @@ export function HostEnrollmentRoutes(services: ControlPlaneServices, options: Ho
   // Generic over the SCHEMA rather than over a caller-supplied body type: the
   // body a route sees is `z.infer` of the schema it was given, so the two
   // cannot disagree.
-  const handle = <Schema extends z.ZodTypeAny>(
-    schema: Schema,
-    run: (input: {
-      body: z.infer<Schema>
-      auth: SignedControlPlaneAuth
-      authority: WorkspaceAuthority
-      c: Context
-    }) => Promise<Record<string, unknown>>,
-    method: "GET" | "POST" | "PATCH" | "DELETE",
-    budget: Budget,
-  ) =>
+  const handle =
+    <Schema extends z.ZodTypeAny>(
+      schema: Schema,
+      run: (input: {
+        body: z.infer<Schema>
+        auth: SignedControlPlaneAuth
+        authority: WorkspaceAuthority
+        c: Context
+      }) => Promise<Record<string, unknown>>,
+      method: "GET" | "POST" | "PATCH" | "DELETE",
+      budget: Budget,
+    ) =>
     async (c: Context) => {
       const authResult = await signedOrError(
         c.req.raw,
@@ -370,9 +384,10 @@ export function HostEnrollmentRoutes(services: ControlPlaneServices, options: Ho
       })
       if (limited) return c.json(limited.body, limited.status)
 
-      const parsed = method === "GET" || method === "DELETE"
-        ? parsedBody(schema, {})
-        : parsedBody(schema, await requestJsonThroughLimit(c))
+      const parsed =
+        method === "GET" || method === "DELETE"
+          ? parsedBody(schema, {})
+          : parsedBody(schema, await requestJsonThroughLimit(c))
       if (!parsed.ok) return c.json({ error: parsed.error }, parsed.status)
 
       try {
@@ -387,16 +402,17 @@ export function HostEnrollmentRoutes(services: ControlPlaneServices, options: Ho
    * applied before this runs) → client-address budget → the verifier over the
    * exact body text → per-enrollment budget → schema → authority.
    */
-  const machine = <Schema extends z.ZodTypeAny>(
-    schema: Schema,
-    run: (input: {
-      body: z.infer<Schema>
-      machine: MachinePrincipal
-      authority: WorkspaceAuthority
-      c: Context
-    }) => Promise<Record<string, unknown>>,
-    key: string,
-  ) =>
+  const machine =
+    <Schema extends z.ZodTypeAny>(
+      schema: Schema,
+      run: (input: {
+        body: z.infer<Schema>
+        machine: MachinePrincipal
+        authority: WorkspaceAuthority
+        c: Context
+      }) => Promise<Record<string, unknown>>,
+      key: string,
+    ) =>
     async (c: Context) => {
       const limited = clientBudget(c, clientRateLimiter, `client:${key}`)
       if (limited) return limited
@@ -439,99 +455,123 @@ export function HostEnrollmentRoutes(services: ControlPlaneServices, options: Ho
     }
   }
 
-  const machineHeartbeat = machine(machineHeartbeatBody, async ({ body, machine: caller, authority }) => {
-    if (!authority.heartbeatHostEnrollmentByMachine) throw unsupportedError("Machine heartbeat")
-    const result = await authority.heartbeatHostEnrollmentByMachine(caller, {
-      enrollmentId: body.enrollmentId,
-      hostId: body.hostId,
-      generation: body.generation,
-      acks: body.acks,
-      ...(body.ttlMs === undefined ? {} : { ttlMs: body.ttlMs }),
-      ...(body.sessionAuthority ? { sessionAuthority: body.sessionAuthority } : {}),
-      ...(body.sealingPublicKey ? { sealingPublicKey: body.sealingPublicKey } : {}),
-      ...(body.providerConfigRevision === undefined ? {} : { providerConfigAckedRevision: body.providerConfigRevision }),
-    })
-    // Exactly the set the batch just made ready: an ack at the assignment's
-    // current revision. A stale ack renews the lease but earns no credential
-    // for that workspace, the same answer every other routability reader gives.
-    const current = new Map(result.assignments.map((assignment) => [assignment.workspace_id, assignment.revision]))
-    const ready = body.acks
-      .filter((ack) => current.get(ack.workspaceId) === ack.revision)
-      .map((ack) => ack.workspaceId)
-      .sort()
-    const endpoints = hostEndpoints()
-    const response: Record<string, unknown> = { ...result, ...endpoints, serving_generation: caller.generation }
-    const signer = configuredHostTunnelTokenSigner(options)
-    if (!signer || ready.length === 0) return response
-    const input: HostTunnelTokenSignerInput = {
-      subject: caller.ownerUserId,
-      hostId: caller.hostId,
-      workspaceIds: ready,
-      enrollmentId: caller.enrollmentId,
-      generation: caller.generation,
-    }
-    const credential = await signer(input)
-    return {
-      ...response,
-      hostTunnel: {
-        ...credential,
+  const machineHeartbeat = machine(
+    machineHeartbeatBody,
+    async ({ body, machine: caller, authority }) => {
+      if (!authority.heartbeatHostEnrollmentByMachine) throw unsupportedError("Machine heartbeat")
+      const result = await authority.heartbeatHostEnrollmentByMachine(caller, {
+        enrollmentId: body.enrollmentId,
+        hostId: body.hostId,
+        generation: body.generation,
+        acks: body.acks,
+        ...(body.ttlMs === undefined ? {} : { ttlMs: body.ttlMs }),
+        ...(body.sessionAuthority ? { sessionAuthority: body.sessionAuthority } : {}),
+        ...(body.sealingPublicKey ? { sealingPublicKey: body.sealingPublicKey } : {}),
+        ...(body.providerConfigRevision === undefined
+          ? {}
+          : { providerConfigAckedRevision: body.providerConfigRevision }),
+      })
+      // Exactly the set the batch just made ready: an ack at the assignment's
+      // current revision. A stale ack renews the lease but earns no credential
+      // for that workspace, the same answer every other routability reader gives.
+      const current = new Map(result.assignments.map((assignment) => [assignment.workspace_id, assignment.revision]))
+      const ready = body.acks
+        .filter((ack) => current.get(ack.workspaceId) === ack.revision)
+        .map((ack) => ack.workspaceId)
+        .sort()
+      const endpoints = hostEndpoints()
+      const response: Record<string, unknown> = { ...result, ...endpoints, serving_generation: caller.generation }
+      const signer = configuredHostTunnelTokenSigner(options)
+      if (!signer || ready.length === 0) return response
+      const input: HostTunnelTokenSignerInput = {
+        subject: caller.ownerUserId,
         hostId: caller.hostId,
-        // Restates the token's own `enrollment_id` claim. The process that
-        // declares this machine's identity to its local clients is the daemon
-        // holding the credential, and the credential is all of the enrollment
-        // it ever receives.
-        enrollmentId: caller.enrollmentId,
-        ownerActorId: caller.ownerActorId,
-        // The person the enrollment belongs to, whom the relay authenticates
-        // as this machine's own owner.
-        ownerUserId: caller.ownerUserId,
         workspaceIds: ready,
-        ...(endpoints.relay ? { relayUrl: endpoints.relay.url } : {}),
-      },
-    }
-  }, "host.enrollments.heartbeat")
+        enrollmentId: caller.enrollmentId,
+        generation: caller.generation,
+      }
+      const credential = await signer(input)
+      return {
+        ...response,
+        hostTunnel: {
+          ...credential,
+          hostId: caller.hostId,
+          // Restates the token's own `enrollment_id` claim. The process that
+          // declares this machine's identity to its local clients is the daemon
+          // holding the credential, and the credential is all of the enrollment
+          // it ever receives.
+          enrollmentId: caller.enrollmentId,
+          ownerActorId: caller.ownerActorId,
+          // The person the enrollment belongs to, whom the relay authenticates
+          // as this machine's own owner.
+          ownerUserId: caller.ownerUserId,
+          workspaceIds: ready,
+          ...(endpoints.relay ? { relayUrl: endpoints.relay.url } : {}),
+        },
+      }
+    },
+    "host.enrollments.heartbeat",
+  )
 
   return app
     .post(
       "/requests",
-      handle(requestBody, async ({ body, auth, authority }) => {
-        await authority.usersMe(auth)
-        return authority.createHostEnrollmentRequest(auth, { hostId: body.hostId })
-      }, "POST", {
-        limiter: enrollmentRequestRateLimiter,
-        key: "host.enrollments.requests",
-        action: "host_enrollment.request.denied",
-      }),
+      handle(
+        requestBody,
+        async ({ body, auth, authority }) => {
+          await authority.usersMe(auth)
+          return authority.createHostEnrollmentRequest(auth, { hostId: body.hostId })
+        },
+        "POST",
+        {
+          limiter: enrollmentRequestRateLimiter,
+          key: "host.enrollments.requests",
+          action: "host_enrollment.request.denied",
+        },
+      ),
     )
     .post(
       "/",
-      handle(enrollBody, async ({ body, auth, authority }) => {
-        await authority.usersMe(auth)
-        // The connector signed the nonce with its own private key. This server
-        // only records the enrollment — it never holds the host key, and
-        // nothing is written until the authority verifies the signature.
-        const enrollment = await authority.enrollHost(auth, {
-          hostId: body.hostId,
-          publicKey: body.publicKey,
-          requestId: body.requestId,
-          signature: body.signature,
-          ...(body.displayName ? { displayName: body.displayName } : {}),
-          ...(body.ttlMs === undefined ? {} : { ttlMs: body.ttlMs }),
-        })
-        await authority.auditAllow(auth, { action: "host_enrollment.enabled", metadata: { hostId: body.hostId } })
-        return { enrollment }
-      }, "POST", {
-        limiter: controlPlaneRateLimiter,
-        key: "host.enrollments.enroll",
-        action: "host_enrollment.enroll.denied",
-      }),
+      handle(
+        enrollBody,
+        async ({ body, auth, authority }) => {
+          await authority.usersMe(auth)
+          // The connector signed the nonce with its own private key. This server
+          // only records the enrollment — it never holds the host key, and
+          // nothing is written until the authority verifies the signature.
+          const enrollment = await authority.enrollHost(auth, {
+            hostId: body.hostId,
+            publicKey: body.publicKey,
+            requestId: body.requestId,
+            signature: body.signature,
+            ...(body.displayName ? { displayName: body.displayName } : {}),
+            ...(body.ttlMs === undefined ? {} : { ttlMs: body.ttlMs }),
+          })
+          await authority.auditAllow(auth, { action: "host_enrollment.enabled", metadata: { hostId: body.hostId } })
+          return { enrollment }
+        },
+        "POST",
+        {
+          limiter: controlPlaneRateLimiter,
+          key: "host.enrollments.enroll",
+          action: "host_enrollment.enroll.denied",
+        },
+      ),
     )
     .post("/heartbeat", tooLarge(MACHINE_BODY_LIMIT_BYTES), machineHeartbeat)
-    .post("/acquire", tooLarge(MACHINE_BODY_LIMIT_BYTES), machine(acquireBody, async ({ machine: caller, authority }) => {
-      if (!authority.acquireHostServingGeneration) throw unsupportedError("Serving generation acquisition")
-      const result = await authority.acquireHostServingGeneration(caller)
-      return { generation: result.generation, generation_acquired_at: result.generation_acquired_at }
-    }, "host.enrollments.acquire"))
+    .post(
+      "/acquire",
+      tooLarge(MACHINE_BODY_LIMIT_BYTES),
+      machine(
+        acquireBody,
+        async ({ machine: caller, authority }) => {
+          if (!authority.acquireHostServingGeneration) throw unsupportedError("Serving generation acquisition")
+          const result = await authority.acquireHostServingGeneration(caller)
+          return { generation: result.generation, generation_acquired_at: result.generation_acquired_at }
+        },
+        "host.enrollments.acquire",
+      ),
+    )
     .post("/redeem", tooLarge(REDEEM_BODY_LIMIT_BYTES), async (c) => {
       const limited = clientBudget(c, clientRateLimiter, "client:host.enrollments.redeem")
       if (limited) return limited
@@ -561,114 +601,140 @@ export function HostEnrollmentRoutes(services: ControlPlaneServices, options: Ho
     })
     .post(
       "/pause",
-      handle(pauseBody, async ({ body, auth, authority }) => {
-        const result = await authority.pauseHostEnrollment(auth, {
-          ...(body.hostId ? { hostId: body.hostId } : {}),
-          paused: body.paused,
-        })
-        await authority.auditAllow(auth, {
-          action: body.paused ? "host_enrollment.paused" : "host_enrollment.resumed",
-          metadata: (body.hostId ? { hostId: body.hostId } : {}),
-        })
-        return result
-      }, "POST", {
-        limiter: controlPlaneRateLimiter,
-        key: "host.enrollments.pause",
-        action: "host_enrollment.pause.denied",
-      }),
+      handle(
+        pauseBody,
+        async ({ body, auth, authority }) => {
+          const result = await authority.pauseHostEnrollment(auth, {
+            ...(body.hostId ? { hostId: body.hostId } : {}),
+            paused: body.paused,
+          })
+          await authority.auditAllow(auth, {
+            action: body.paused ? "host_enrollment.paused" : "host_enrollment.resumed",
+            metadata: body.hostId ? { hostId: body.hostId } : {},
+          })
+          return result
+        },
+        "POST",
+        {
+          limiter: controlPlaneRateLimiter,
+          key: "host.enrollments.pause",
+          action: "host_enrollment.pause.denied",
+        },
+      ),
     )
     .patch(
       "/:id/scope",
-      handle(scopeBody, async ({ body, auth, authority, c }) => {
-        if (!authority.updateHostEnrollmentScope) throw unsupportedError("Enrollment scope")
-        return await authority.updateHostEnrollmentScope(auth, {
-          enrollmentId: routeParam(c, "id"),
-          scope: { allowed_roots: body.allowed_roots, visibility: body.visibility },
-        })
-      }, "PATCH", {
-        limiter: controlPlaneRateLimiter,
-        key: "host.enrollments.scope",
-        action: "host_enrollment.scope.denied",
-      }),
+      handle(
+        scopeBody,
+        async ({ body, auth, authority, c }) => {
+          if (!authority.updateHostEnrollmentScope) throw unsupportedError("Enrollment scope")
+          return await authority.updateHostEnrollmentScope(auth, {
+            enrollmentId: routeParam(c, "id"),
+            scope: { allowed_roots: body.allowed_roots, visibility: body.visibility },
+          })
+        },
+        "PATCH",
+        {
+          limiter: controlPlaneRateLimiter,
+          key: "host.enrollments.scope",
+          action: "host_enrollment.scope.denied",
+        },
+      ),
     )
     .patch(
       "/:id/display-name",
-      handle(renameBody, async ({ body, auth, authority, c }) => {
-        if (!authority.renameHostEnrollment) throw unsupportedError("Enrollment rename")
-        return await authority.renameHostEnrollment(auth, {
-          enrollmentId: routeParam(c, "id"),
-          displayName: body.displayName,
-        })
-      }, "PATCH", {
-        limiter: controlPlaneRateLimiter,
-        key: "host.enrollments.rename",
-        action: "host_enrollment.rename.denied",
-      }),
+      handle(
+        renameBody,
+        async ({ body, auth, authority, c }) => {
+          if (!authority.renameHostEnrollment) throw unsupportedError("Enrollment rename")
+          return await authority.renameHostEnrollment(auth, {
+            enrollmentId: routeParam(c, "id"),
+            displayName: body.displayName,
+          })
+        },
+        "PATCH",
+        {
+          limiter: controlPlaneRateLimiter,
+          key: "host.enrollments.rename",
+          action: "host_enrollment.rename.denied",
+        },
+      ),
     )
     .post(
       "/:id/provider-config",
       tooLarge(PROVIDER_CONFIG_BODY_LIMIT_BYTES),
-      handle(providerConfigBody, async ({ body, auth, authority, c }) => {
-        if (!authority.hostProviderConfigTarget || !authority.pushHostProviderConfig) {
-          throw unsupportedError("Host provider configuration")
-        }
-        if (!hostReadableProviders(body.providers)) {
-          throw new HostProviderConfigError({
-            code: "invalid_provider_configuration",
-            status: 400,
-            message: "providers names a row the host could not read",
+      handle(
+        providerConfigBody,
+        async ({ body, auth, authority, c }) => {
+          if (!authority.hostProviderConfigTarget || !authority.pushHostProviderConfig) {
+            throw unsupportedError("Host provider configuration")
+          }
+          if (!hostReadableProviders(body.providers)) {
+            throw new HostProviderConfigError({
+              code: "invalid_provider_configuration",
+              status: 400,
+              message: "providers names a row the host could not read",
+            })
+          }
+          const providers = body.providers
+          const providerIds = Object.keys(providers).sort()
+          const target = await authority.hostProviderConfigTarget(auth, { enrollmentId: routeParam(c, "id") })
+          if (target.sealing_public_key === null) {
+            throw new HostProviderConfigError({
+              code: "host_sealing_key_undeclared",
+              status: 409,
+              message: "The machine has not declared a sealing key; it declares one on its next heartbeat",
+            })
+          }
+          const enrollmentId = target.enrollment_id
+          const revision = target.next_revision
+          // The plaintext exists only as this argument. The store receives the
+          // ciphertext and the audit the provider ids; nothing below reads
+          // `providers` again.
+          const sealed =
+            providerIds.length === 0
+              ? null
+              : await sealForMachine(
+                  target.sealing_public_key,
+                  serializeHostProviderConfig(providers, auth.user.subject),
+                  machineSealAad({ enrollmentId, revision }),
+                )
+          const result = await authority.pushHostProviderConfig(auth, {
+            enrollmentId,
+            sealed,
+            revision,
+            sealingPublicKey: target.sealing_public_key,
+            providerIds,
           })
-        }
-        const providers = body.providers
-        const providerIds = Object.keys(providers).sort()
-        const target = await authority.hostProviderConfigTarget(auth, { enrollmentId: routeParam(c, "id") })
-        if (target.sealing_public_key === null) {
-          throw new HostProviderConfigError({
-            code: "host_sealing_key_undeclared",
-            status: 409,
-            message: "The machine has not declared a sealing key; it declares one on its next heartbeat",
+          await authority.auditAllow(auth, {
+            action: "host_provider_config.pushed",
+            metadata: { enrollmentId, revision: result.revision, providerIds },
           })
-        }
-        const enrollmentId = target.enrollment_id
-        const revision = target.next_revision
-        // The plaintext exists only as this argument. The store receives the
-        // ciphertext and the audit the provider ids; nothing below reads
-        // `providers` again.
-        const sealed = providerIds.length === 0
-          ? null
-          : await sealForMachine(
-            target.sealing_public_key,
-            serializeHostProviderConfig(providers, auth.user.subject),
-            machineSealAad({ enrollmentId, revision }),
-          )
-        const result = await authority.pushHostProviderConfig(auth, {
-          enrollmentId,
-          sealed,
-          revision,
-          sealingPublicKey: target.sealing_public_key,
-          providerIds,
-        })
-        await authority.auditAllow(auth, {
-          action: "host_provider_config.pushed",
-          metadata: { enrollmentId, revision: result.revision, providerIds },
-        })
-        return { enrollment_id: result.enrollment_id, revision: result.revision, sealed: result.sealed }
-      }, "POST", {
-        limiter: controlPlaneRateLimiter,
-        key: "host.enrollments.provider-config",
-        action: "host_provider_config.push.denied",
-      }),
+          return { enrollment_id: result.enrollment_id, revision: result.revision, sealed: result.sealed }
+        },
+        "POST",
+        {
+          limiter: controlPlaneRateLimiter,
+          key: "host.enrollments.provider-config",
+          action: "host_provider_config.push.denied",
+        },
+      ),
     )
     .get(
       "/",
-      handle(noBody, async ({ auth, authority }) => ({
-        ...(await authority.activeHostEnrollment(auth)),
-        ...(authority.listHostEnrollments ? { machines: await authority.listHostEnrollments(auth) } : {}),
-      }), "GET", {
-        limiter: controlPlaneRateLimiter,
-        key: "host.enrollments.active",
-        action: "host_enrollment.active.denied",
-      }),
+      handle(
+        noBody,
+        async ({ auth, authority }) => ({
+          ...(await authority.activeHostEnrollment(auth)),
+          ...(authority.listHostEnrollments ? { machines: await authority.listHostEnrollments(auth) } : {}),
+        }),
+        "GET",
+        {
+          limiter: controlPlaneRateLimiter,
+          key: "host.enrollments.active",
+          action: "host_enrollment.active.denied",
+        },
+      ),
     )
 }
 
@@ -692,17 +758,18 @@ export function HostInvitationRoutes(services: ControlPlaneServices, options: Ho
       windowMs: DEFAULT_ENROLLMENT_CONTROL_PLANE_WINDOW_MS,
     })
 
-  const handle = <Schema extends z.ZodTypeAny>(
-    schema: Schema,
-    run: (input: {
-      body: z.infer<Schema>
-      auth: SignedControlPlaneAuth
-      authority: WorkspaceAuthority
-      c: Context
-    }) => Promise<Record<string, unknown>>,
-    method: "GET" | "POST" | "DELETE",
-    budget: Budget,
-  ) =>
+  const handle =
+    <Schema extends z.ZodTypeAny>(
+      schema: Schema,
+      run: (input: {
+        body: z.infer<Schema>
+        auth: SignedControlPlaneAuth
+        authority: WorkspaceAuthority
+        c: Context
+      }) => Promise<Record<string, unknown>>,
+      method: "GET" | "POST" | "DELETE",
+      budget: Budget,
+    ) =>
     async (c: Context) => {
       const authResult = await signedOrError(c.req.raw, { ...options, requireSigned: true as const }, services)
       if ("error" in authResult) return c.json(authResult.error, authResult.status)
@@ -725,50 +792,65 @@ export function HostInvitationRoutes(services: ControlPlaneServices, options: Ho
   return app
     .post(
       "/",
-      handle(invitationBody, async ({ body, auth, authority }) => {
-        if (!authority.createHostInvitation) throw unsupportedError("Host invitations")
-        await authority.usersMe(auth)
-        const created = await authority.createHostInvitation(auth, {
-          scope: { allowed_roots: body.scope.allowed_roots, visibility: body.scope.visibility },
-          ...(body.displayName ? { displayName: body.displayName } : {}),
-          ...(body.expiresInMs === undefined ? {} : { expiresInMs: body.expiresInMs }),
-        })
-        await authority.auditAllow(auth, {
-          action: "host_invitation.created",
-          metadata: { invitationId: created.invitationId, expiresAt: created.expiresAt },
-        })
-        return { invitation_id: created.invitationId, token: created.token, expires_at: created.expiresAt }
-      }, "POST", {
-        limiter: createRateLimiter,
-        key: "host.invitations.create",
-        action: "host_invitation.create.denied",
-      }),
+      handle(
+        invitationBody,
+        async ({ body, auth, authority }) => {
+          if (!authority.createHostInvitation) throw unsupportedError("Host invitations")
+          await authority.usersMe(auth)
+          const created = await authority.createHostInvitation(auth, {
+            scope: { allowed_roots: body.scope.allowed_roots, visibility: body.scope.visibility },
+            ...(body.displayName ? { displayName: body.displayName } : {}),
+            ...(body.expiresInMs === undefined ? {} : { expiresInMs: body.expiresInMs }),
+          })
+          await authority.auditAllow(auth, {
+            action: "host_invitation.created",
+            metadata: { invitationId: created.invitationId, expiresAt: created.expiresAt },
+          })
+          return { invitation_id: created.invitationId, token: created.token, expires_at: created.expiresAt }
+        },
+        "POST",
+        {
+          limiter: createRateLimiter,
+          key: "host.invitations.create",
+          action: "host_invitation.create.denied",
+        },
+      ),
     )
     .get(
       "/",
-      handle(noBody, async ({ auth, authority }) => {
-        if (!authority.listHostInvitations) throw unsupportedError("Host invitations")
-        return { invitations: await authority.listHostInvitations(auth) }
-      }, "GET", {
-        limiter: controlPlaneRateLimiter,
-        key: "host.invitations.list",
-        action: "host_invitation.list.denied",
-      }),
+      handle(
+        noBody,
+        async ({ auth, authority }) => {
+          if (!authority.listHostInvitations) throw unsupportedError("Host invitations")
+          return { invitations: await authority.listHostInvitations(auth) }
+        },
+        "GET",
+        {
+          limiter: controlPlaneRateLimiter,
+          key: "host.invitations.list",
+          action: "host_invitation.list.denied",
+        },
+      ),
     )
     .delete(
       "/:id",
-      handle(noBody, async ({ auth, authority, c }) => {
-        if (!authority.revokeHostInvitation) throw unsupportedError("Host invitations")
-        const invitationId = routeParam(c, "id")
-        const result = await authority.revokeHostInvitation(auth, { invitationId })
-        if (result.revoked) {
-          await authority.auditAllow(auth, { action: "host_invitation.revoked", metadata: { invitationId } })
-        }
-        return result
-      }, "DELETE", {
-        limiter: controlPlaneRateLimiter,
-        key: "host.invitations.revoke",
-        action: "host_invitation.revoke.denied",
-      }),
+      handle(
+        noBody,
+        async ({ auth, authority, c }) => {
+          if (!authority.revokeHostInvitation) throw unsupportedError("Host invitations")
+          const invitationId = routeParam(c, "id")
+          const result = await authority.revokeHostInvitation(auth, { invitationId })
+          if (result.revoked) {
+            await authority.auditAllow(auth, { action: "host_invitation.revoked", metadata: { invitationId } })
+          }
+          return result
+        },
+        "DELETE",
+        {
+          limiter: controlPlaneRateLimiter,
+          key: "host.invitations.revoke",
+          action: "host_invitation.revoke.denied",
+        },
+      ),
     )
 }

@@ -1,3 +1,11 @@
+import {
+  enrollmentPayload,
+  invitationRedeemPayload,
+  invitationToken,
+  publicKeyFingerprint,
+  MACHINE_SEAL_VERSION,
+  publicKeyJwk,
+} from "@claxedo/account-contract/machine"
 import type { D1Database, D1PreparedStatement } from "@cloudflare/workers-types"
 import { ControlPlaneAuthError, type SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import {
@@ -31,13 +39,10 @@ import type {
 } from "@claxedo/server-core/platform/auth/authority"
 import {
   directoryWithinRoots,
-  invitationRedeemPayload,
-  invitationToken,
   normalizePosixDirectory,
   normalizeStoredDirectory,
-  publicKeyFingerprint,
 } from "@claxedo/server-core/platform/auth/host-connect-contract"
-import { MACHINE_SEAL_VERSION, machineSealingPublicKey } from "@claxedo/server-core/platform/auth/machine-seal"
+
 import { timingSafeEqualStrings } from "@claxedo/server-core/platform/auth/web-crypto"
 import { sha256Hex } from "@claxedo/helpers/crypto"
 import { asRecord, parseJson } from "@claxedo/server-core/platform/json/index"
@@ -245,7 +250,9 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
     this.randomNonce = options.randomNonce ?? (() => randomBase64Url(32))
     this.machineAuth = {
       lookupEnrollment: async (enrollmentId) => {
-        const row = await this.database.prepare(`
+        const row = await this.database
+          .prepare(
+            `
           select enrollment.*, exists (
             select 1 from users owner
             join actors owner_actor on owner_actor.actor_id = enrollment.owner_actor_id
@@ -254,7 +261,10 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
               and owner.state = 'active' and owner_actor.state = 'active'
           ) as owner_eligible
           from host_enrollments enrollment where enrollment.enrollment_id = ?
-        `).bind(enrollmentId).first<EnrollmentRow & { owner_eligible: number }>()
+        `,
+          )
+          .bind(enrollmentId)
+          .first<EnrollmentRow & { owner_eligible: number }>()
         if (!row) return undefined
         return {
           enrollment_id: row.enrollment_id,
@@ -272,9 +282,14 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
       },
       consumeNonce: async (input) => {
         try {
-          await this.database.prepare(`
+          await this.database
+            .prepare(
+              `
             insert into host_request_nonces (enrollment_id, nonce, expires_at) values (?, ?, ?)
-          `).bind(input.enrollmentId, input.nonce, input.expiresAt).run()
+          `,
+            )
+            .bind(input.enrollmentId, input.nonce, input.expiresAt)
+            .run()
           return true
         } catch (error) {
           if (isUniqueFailure(error)) return false
@@ -327,11 +342,13 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
       throw new D1HostAccessAuthorityError("host_attestation_denied", "Host enrollment is unavailable")
     }
     const scope = hostEnrollmentScope(enrollment.scope_json, enrollment.scope_revision)
-    const invitationOrgId = enrollment.enrolled_via === "invitation"
-      ? await this.invitationOrgId(enrollment.enrollment_id)
-      : undefined
+    const invitationOrgId =
+      enrollment.enrolled_via === "invitation" ? await this.invitationOrgId(enrollment.enrollment_id) : undefined
     if (invitationOrgId && args.orgId && args.orgId !== invitationOrgId) {
-      throw new D1HostAccessAuthorityError("host_assignment_outside_scope", "Workspace organization differs from the invitation's")
+      throw new D1HostAccessAuthorityError(
+        "host_assignment_outside_scope",
+        "Workspace organization differs from the invitation's",
+      )
     }
     const orgMemberVisible = scope?.visibility !== "owner"
     // The workspace half is the admission `authorizeWorkspaceHostAssignment`
@@ -341,11 +358,14 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
       workspaceId,
       // The organization a cold register files into: the caller's, else the
       // one this machine was invited to serve.
-      ...(args.orgId ?? invitationOrgId ? { orgId: args.orgId ?? invitationOrgId } : {}),
+      ...((args.orgId ?? invitationOrgId) ? { orgId: args.orgId ?? invitationOrgId } : {}),
       ...(args.projectId ? { projectId: args.projectId } : {}),
     })
     if (workspace && invitationOrgId && workspace.org_id !== invitationOrgId) {
-      throw new D1HostAccessAuthorityError("host_assignment_outside_scope", "Workspace organization differs from the invitation's")
+      throw new D1HostAccessAuthorityError(
+        "host_assignment_outside_scope",
+        "Workspace organization differs from the invitation's",
+      )
     }
     const directory = requestedDirectory ?? workspace?.remote_directory ?? undefined
     const remoteDirectory = directory === undefined ? undefined : normalizeStoredDirectory(directory)
@@ -358,21 +378,26 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
     let registration: D1PreparedStatement[] = []
     if (!workspace) {
       if (!this.options.localWorkspaceRegistration) {
-        throw new D1HostAccessAuthorityError("host_attestation_denied", "Cold local workspace registration is unavailable")
+        throw new D1HostAccessAuthorityError(
+          "host_attestation_denied",
+          "Cold local workspace registration is unavailable",
+        )
       }
       const orgId = args.orgId ?? invitationOrgId
-      registration = (await this.options.localWorkspaceRegistration(auth, {
-        workspaceId,
-        displayName: displayName ?? workspaceId,
-        ...(orgId ? { orgId } : {}),
-        ...(args.projectId ? { projectId: args.projectId } : {}),
-        ...(args.repoUrl ? { repoUrl: args.repoUrl } : {}),
-        ...(args.repoName ? { repoName: args.repoName } : {}),
-        ...(args.gitBranch ? { gitBranch: args.gitBranch } : {}),
-        ...(remoteDirectory ? { remoteDirectory } : {}),
-        ...(args.homeRegion ? { homeRegion: args.homeRegion } : {}),
-        orgMemberVisible,
-      })).statements
+      registration = (
+        await this.options.localWorkspaceRegistration(auth, {
+          workspaceId,
+          displayName: displayName ?? workspaceId,
+          ...(orgId ? { orgId } : {}),
+          ...(args.projectId ? { projectId: args.projectId } : {}),
+          ...(args.repoUrl ? { repoUrl: args.repoUrl } : {}),
+          ...(args.repoName ? { repoName: args.repoName } : {}),
+          ...(args.gitBranch ? { gitBranch: args.gitBranch } : {}),
+          ...(remoteDirectory ? { remoteDirectory } : {}),
+          ...(args.homeRegion ? { homeRegion: args.homeRegion } : {}),
+          orgMemberVisible,
+        })
+      ).statements
     }
     // The assigning owner describes the workspace the machine serves — name,
     // repository, branch, directory — and that description is the record.
@@ -388,9 +413,12 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
     const revision = counter + 1
     const now = this.now()
     const assertionId = this.randomId("assert")
-    await this.guardedBatch([
-      ...registration,
-      this.database.prepare(`
+    await this.guardedBatch(
+      [
+        ...registration,
+        this.database
+          .prepare(
+            `
         update workspaces set deleted_at = null, host_assignment_revision = ?,
           ${description.map(([column]) => `${column} = ?`).join(", ")}, updated_at = ?
         where workspace_id = ? and host_assignment_revision = ? and backing = 'local-worktree'
@@ -398,18 +426,22 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
             select 1 from host_enrollments
             where owner_actor_id = ? and host_id = ? and revoked_at is null and scope_revision = ?
           )
-      `).bind(
-        revision,
-        ...description.map(([, value]) => value),
-        now,
-        workspaceId,
-        counter,
-        who.actorId,
-        hostId,
-        enrollment.scope_revision,
-      ),
-      this.wonAssertion(assertionId),
-      this.database.prepare(`
+      `,
+          )
+          .bind(
+            revision,
+            ...description.map(([, value]) => value),
+            now,
+            workspaceId,
+            counter,
+            who.actorId,
+            hostId,
+            enrollment.scope_revision,
+          ),
+        this.wonAssertion(assertionId),
+        this.database
+          .prepare(
+            `
         insert into host_workspace_assignments (
           workspace_id, host_id, org_id, owner_user_id, owner_actor_id,
           assigned_at, updated_at, revision
@@ -422,9 +454,13 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
           owner_actor_id = excluded.owner_actor_id,
           updated_at = excluded.updated_at,
           revision = excluded.revision
-      `).bind(hostId, who.userId, who.actorId, now, now, workspaceId),
-      this.deleteAssertion(assertionId),
-    ], "Host assignment raced with a scope, assignment or workspace identity change")
+      `,
+          )
+          .bind(hostId, who.userId, who.actorId, now, now, workspaceId),
+        this.deleteAssertion(assertionId),
+      ],
+      "Host assignment raced with a scope, assignment or workspace identity change",
+    )
     return { assigned: true as const, workspace_id: workspaceId, host_id: hostId }
   }
 
@@ -434,9 +470,13 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
     await this.requireWorkspaceAccess(who, workspaceId, "admin")
     const now = this.now()
     const [result] = await this.database.batch([
-      this.database.prepare(`
+      this.database
+        .prepare(
+          `
         delete from host_workspace_assignments where workspace_id = ?
-      `).bind(workspaceId),
+      `,
+        )
+        .bind(workspaceId),
       this.database.prepare(`delete from host_assignment_readiness where workspace_id = ?`).bind(workspaceId),
       this.database.prepare(retireMachinePlacedWorkspaceSql("workspace_id = ?")).bind(now, now, workspaceId),
     ])
@@ -448,7 +488,9 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
     const who = await this.requirePrincipal(auth)
     const workspaceId = requireText(args.workspaceId, "workspaceId")
     await this.requireWorkspaceAccess(who, workspaceId, "read")
-    const row = await this.database.prepare(`
+    const row = await this.database
+      .prepare(
+        `
       select assignment.workspace_id, assignment.host_id,
         enrollment.display_name, enrollment.expires_at, enrollment.last_seen_at,
         enrollment.session_authority
@@ -457,14 +499,17 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
         and enrollment.owner_actor_id = assignment.owner_actor_id
       where assignment.workspace_id = ? and ${HOST_SERVING_WORKSPACE_SQL}
       limit 1
-    `).bind(workspaceId, this.now()).first<{
-      workspace_id: string
-      host_id: string
-      display_name: string | null
-      expires_at: number
-      last_seen_at: number
-      session_authority: string | null
-    }>()
+    `,
+      )
+      .bind(workspaceId, this.now())
+      .first<{
+        workspace_id: string
+        host_id: string
+        display_name: string | null
+        expires_at: number
+        last_seen_at: number
+        session_authority: string | null
+      }>()
     if (!row) return { active: false as const }
     const sessionAuthority = hostSessionAuthority(row.session_authority)
     return {
@@ -481,7 +526,9 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
   /** Every live assignment on the account, grouped for the devices surface. */
   async listHostAssignments(auth: SignedControlPlaneAuth) {
     const who = await this.requirePrincipal(auth)
-    const rows = await this.database.prepare(`
+    const rows = await this.database
+      .prepare(
+        `
       select assignment.workspace_id, assignment.host_id,
         enrollment.display_name, enrollment.last_seen_at, enrollment.expires_at,
         coalesce(enrollment.acked_workspace_ids, '[]') as acked_workspace_ids
@@ -492,22 +539,28 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
         and enrollment.revoked_at is null and enrollment.paused_at is null
         and enrollment.expires_at > ?
       order by assignment.host_id, assignment.workspace_id
-    `).bind(who.actorId, this.now()).all<{
-      workspace_id: string
-      host_id: string
-      display_name: string | null
-      last_seen_at: number
-      expires_at: number
-      acked_workspace_ids: string
-    }>()
-    const groups = new Map<string, {
-      host_id: string
-      display_name: string
-      last_seen_at: number
-      expires_at: number
-      workspace_ids: string[]
-      acked_workspace_ids: string[]
-    }>()
+    `,
+      )
+      .bind(who.actorId, this.now())
+      .all<{
+        workspace_id: string
+        host_id: string
+        display_name: string | null
+        last_seen_at: number
+        expires_at: number
+        acked_workspace_ids: string
+      }>()
+    const groups = new Map<
+      string,
+      {
+        host_id: string
+        display_name: string
+        last_seen_at: number
+        expires_at: number
+        workspace_ids: string[]
+        acked_workspace_ids: string[]
+      }
+    >()
     for (const row of rows.results ?? []) {
       const group = groups.get(row.host_id) ?? {
         host_id: row.host_id,
@@ -532,12 +585,16 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
     const expiresAt = now + CHALLENGE_TTL_MS
     await this.database.batch([
       this.expiredRowSweep("host_enrollment_requests", "request_id", now),
-      this.database.prepare(`
+      this.database
+        .prepare(
+          `
         insert into host_enrollment_requests (
           request_id, owner_user_id, owner_actor_id, host_id, nonce,
           expires_at, used_at, used_signature_hash, created_at
         ) values (?, ?, ?, ?, ?, ?, null, null, ?)
-      `).bind(requestId, who.userId, who.actorId, hostId, nonce, expiresAt, now),
+      `,
+        )
+        .bind(requestId, who.userId, who.actorId, hostId, nonce, expiresAt, now),
     ])
     return { request_id: requestId, nonce, expires_at: expiresAt }
   }
@@ -560,37 +617,41 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
     const request = await this.enrollmentRequest(requestId)
     const now = this.now()
     if (
-      !request || request.owner_user_id !== who.userId || request.owner_actor_id !== who.actorId
-      || request.host_id !== hostId || request.used_at !== null || request.expires_at <= now
-    ) throw new D1HostAccessAuthorityError("host_attestation_denied", "Invalid host enrollment request")
+      !request ||
+      request.owner_user_id !== who.userId ||
+      request.owner_actor_id !== who.actorId ||
+      request.host_id !== hostId ||
+      request.used_at !== null ||
+      request.expires_at <= now
+    )
+      throw new D1HostAccessAuthorityError("host_attestation_denied", "Invalid host enrollment request")
     const publicKey = await verifiedPublicKey(args.publicKey)
     const signatureHash = await verifyHostSignature({
       publicKey,
       signature: args.signature,
-      payload: hostEnrollmentPayload({ hostId, requestId, nonce: request.nonce }),
+      payload: enrollmentPayload({ hostId, requestId, nonce: request.nonce }),
     })
     const expiresAt = now + normalizedTtl(args.ttlMs)
     const enrollmentId = this.randomId("enrollment")
     const assertionId = this.randomId("assert")
-    await this.guardedBatch([
-      this.signatureUse(signatureHash, "host-enroll", who.actorId, hostId, now),
-      this.database.prepare(`
+    await this.guardedBatch(
+      [
+        this.signatureUse(signatureHash, "host-enroll", who.actorId, hostId, now),
+        this.database
+          .prepare(
+            `
         update host_enrollment_requests
         set used_at = ?, used_signature_hash = ?, expires_at = ?
         where request_id = ? and owner_actor_id = ? and host_id = ?
           and used_at is null and expires_at > ?
-      `).bind(
-        now,
-        signatureHash,
-        now + CONSUMED_REQUEST_RETENTION_MS,
-        requestId,
-        who.actorId,
-        hostId,
-        now,
-      ),
-      // A re-enrollment that presents a different key bumps `key_version`, so a
-      // machine request verified against the old key writes nothing.
-      this.database.prepare(`
+      `,
+          )
+          .bind(now, signatureHash, now + CONSUMED_REQUEST_RETENTION_MS, requestId, who.actorId, hostId, now),
+        // A re-enrollment that presents a different key bumps `key_version`, so a
+        // machine request verified against the old key writes nothing.
+        this.database
+          .prepare(
+            `
         insert into host_enrollments (
           enrollment_id, owner_user_id, owner_actor_id, host_id, public_key_json,
           display_name, last_seen_at, expires_at, paused_at, revoked_at,
@@ -611,28 +672,36 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
           revoked_at = null,
           last_signature_hash = excluded.last_signature_hash,
           updated_at = excluded.updated_at
-      `).bind(
-        enrollmentId,
-        publicKey,
-        displayName ?? null,
-        now,
-        expiresAt,
-        signatureHash,
-        now,
-        now,
-        requestId,
-        signatureHash,
-      ),
-      this.database.prepare(`
+      `,
+          )
+          .bind(
+            enrollmentId,
+            publicKey,
+            displayName ?? null,
+            now,
+            expiresAt,
+            signatureHash,
+            now,
+            now,
+            requestId,
+            signatureHash,
+          ),
+        this.database
+          .prepare(
+            `
         insert into authority_batch_assertions (assertion_id, passed)
         values (?, case when exists (
           select 1 from host_enrollments
           where owner_actor_id = ? and host_id = ? and last_signature_hash = ?
             and revoked_at is null and paused_at is null
         ) then 1 else 0 end)
-      `).bind(assertionId, who.actorId, hostId, signatureHash),
-      this.deleteAssertion(assertionId),
-    ], "Host enrollment raced with another request")
+      `,
+          )
+          .bind(assertionId, who.actorId, hostId, signatureHash),
+        this.deleteAssertion(assertionId),
+      ],
+      "Host enrollment raced with another request",
+    )
     return enrollmentJson((await this.enrollment(who.actorId, hostId))!)
   }
 
@@ -652,10 +721,12 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
       throw new D1HostAccessAuthorityError("invalid_input", "generation was never issued to this enrollment")
     }
     const acks = requireAcks(args.acks)
-    const sealingPublicKey = args.sealingPublicKey === undefined ? null : declaredSealingPublicKey(args.sealingPublicKey)
-    const ackedRevision = args.providerConfigAckedRevision === undefined
-      ? null
-      : requireRevision(args.providerConfigAckedRevision, "providerConfigAckedRevision", 0)
+    const sealingPublicKey =
+      args.sealingPublicKey === undefined ? null : declaredSealingPublicKey(args.sealingPublicKey)
+    const ackedRevision =
+      args.providerConfigAckedRevision === undefined
+        ? null
+        : requireRevision(args.providerConfigAckedRevision, "providerConfigAckedRevision", 0)
     const now = this.now()
     const expiresAt = now + normalizedTtl(args.ttlMs)
     const assertionId = this.randomId("assert")
@@ -663,7 +734,9 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
     try {
       await this.database.batch([
         this.nonceSweep(now),
-        this.database.prepare(`
+        this.database
+          .prepare(
+            `
           update host_enrollments set
             last_seen_at = ?, expires_at = ?, updated_at = ?,
             acked_workspace_ids = ?, acked_at = ?, session_authority = ?,
@@ -673,31 +746,37 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
             -- backup, and that is the number the next mint must outrun.
             provider_config_acked_revision = coalesce(?, provider_config_acked_revision)
           where ${MACHINE_ELIGIBLE_SQL} and serving_generation = ?
-        `).bind(
-          now,
-          expiresAt,
-          now,
-          JSON.stringify(withdrawn.slice().sort()),
-          now,
-          hostSessionAuthority(args.sessionAuthority) ?? null,
-          sealingPublicKey,
-          ackedRevision,
-          machine.enrollmentId,
-          machine.keyVersion,
-          generation,
-        ),
+        `,
+          )
+          .bind(
+            now,
+            expiresAt,
+            now,
+            JSON.stringify(withdrawn.slice().sort()),
+            now,
+            hostSessionAuthority(args.sessionAuthority) ?? null,
+            sealingPublicKey,
+            ackedRevision,
+            machine.enrollmentId,
+            machine.keyVersion,
+            generation,
+          ),
         this.readinessWithdrawal(machine.enrollmentId, withdrawn),
         // Only an ack of the CURRENT revision makes a workspace ready: a host
         // still serving a re-pointed directory keeps saying so with the old
         // revision and stays unroutable until it re-acks.
         this.readinessUpsert(machine.enrollmentId, acks, now),
-        this.database.prepare(`
+        this.database
+          .prepare(
+            `
           insert into authority_batch_assertions (assertion_id, passed)
           values (?, case when exists (
             select 1 from host_enrollments
             where ${MACHINE_ELIGIBLE_SQL} and serving_generation = ? and expires_at = ?
           ) then 1 else 0 end)
-        `).bind(assertionId, machine.enrollmentId, machine.keyVersion, generation, expiresAt),
+        `,
+          )
+          .bind(assertionId, machine.enrollmentId, machine.keyVersion, generation, expiresAt),
         this.deleteAssertion(assertionId),
       ])
     } catch (error) {
@@ -711,7 +790,7 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
     return {
       expires_at: expiresAt,
       last_seen_at: now,
-      assignments: assigned.flatMap((entry) => entry.description ? [entry.description] : []),
+      assignments: assigned.flatMap((entry) => (entry.description ? [entry.description] : [])),
       scope: hostEnrollmentScope(row.scope_json, row.scope_revision),
       assigned_workspace_ids: assigned.map((entry) => entry.workspace_id),
       ...(providerConfigPending ? { provider_config: providerConfigPending } : {}),
@@ -724,15 +803,23 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
     const assertionId = this.randomId("assert")
     try {
       await this.database.batch([
-        this.database.prepare(`
+        this.database
+          .prepare(
+            `
           update host_enrollments set
             serving_generation = serving_generation + 1, generation_acquired_at = ?, updated_at = ?
           where ${MACHINE_ELIGIBLE_SQL} and serving_generation = ?
-        `).bind(now, now, machine.enrollmentId, machine.keyVersion, machine.generation),
+        `,
+          )
+          .bind(now, now, machine.enrollmentId, machine.keyVersion, machine.generation),
         this.wonAssertion(assertionId),
-        this.database.prepare(`
+        this.database
+          .prepare(
+            `
           delete from host_assignment_readiness where enrollment_id = ? and generation < ?
-        `).bind(machine.enrollmentId, generation),
+        `,
+          )
+          .bind(machine.enrollmentId, generation),
         this.auditRow({
           enrollmentId: machine.enrollmentId,
           action: "host_enrollment.generation_acquired",
@@ -743,31 +830,42 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
       ])
     } catch (error) {
       if (!batchAssertionFailed(error)) throw error
-      throw await this.machineMutationRefusal(machine, machine.generation, "Serving generation raced with another instance")
+      throw await this.machineMutationRefusal(
+        machine,
+        machine.generation,
+        "Serving generation raced with another instance",
+      )
     }
     return { generation, generation_acquired_at: now }
   }
 
-  async pauseHostEnrollment(
-    auth: SignedControlPlaneAuth,
-    args: { hostId?: string; paused: boolean },
-  ) {
+  async pauseHostEnrollment(auth: SignedControlPlaneAuth, args: { hostId?: string; paused: boolean }) {
     const who = await this.requirePrincipal(auth)
     const hostId = optionalText(args.hostId, "hostId")
     const now = this.now()
-    await this.database.prepare(`
+    await this.database
+      .prepare(
+        `
       update host_enrollments set paused_at = ?, updated_at = ?
       where owner_actor_id = ? and (? is null or host_id = ?) and revoked_at is null
-    `).bind(args.paused ? now : null, now, who.actorId, hostId ?? null, hostId ?? null).run()
+    `,
+      )
+      .bind(args.paused ? now : null, now, who.actorId, hostId ?? null, hostId ?? null)
+      .run()
     return { paused: args.paused }
   }
 
   async activeHostEnrollment(auth: SignedControlPlaneAuth): Promise<HostEnrollmentState> {
     const who = await this.requirePrincipal(auth)
-    const row = await this.database.prepare(`
+    const row = await this.database
+      .prepare(
+        `
       select * from host_enrollments where owner_actor_id = ?
       order by last_seen_at desc, enrollment_id limit 1
-    `).bind(who.actorId).first<EnrollmentRow>()
+    `,
+      )
+      .bind(who.actorId)
+      .first<EnrollmentRow>()
     if (!row) return { active: false, reason: "not-enrolled" }
     if (row.revoked_at !== null) return { active: false, reason: "revoked" }
     if (row.paused_at !== null) return { active: false, reason: "paused" }
@@ -777,18 +875,28 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
 
   async listHostEnrollments(auth: SignedControlPlaneAuth): Promise<HostEnrollmentListRow[]> {
     const who = await this.requirePrincipal(auth)
-    const rows = await this.database.prepare(`
+    const rows = await this.database
+      .prepare(
+        `
       select * from host_enrollments where owner_actor_id = ? and revoked_at is null
       order by last_seen_at desc, enrollment_id
-    `).bind(who.actorId).all<EnrollmentRow>()
-    const ready = await this.database.prepare(`
+    `,
+      )
+      .bind(who.actorId)
+      .all<EnrollmentRow>()
+    const ready = await this.database
+      .prepare(
+        `
       select readiness.enrollment_id, readiness.workspace_id, readiness.revision
       from host_assignment_readiness readiness
       join host_enrollments enrollment on enrollment.enrollment_id = readiness.enrollment_id
         and enrollment.serving_generation = readiness.generation
       where enrollment.owner_actor_id = ? and enrollment.revoked_at is null
       order by readiness.workspace_id
-    `).bind(who.actorId).all<{ enrollment_id: string; workspace_id: string; revision: number }>()
+    `,
+      )
+      .bind(who.actorId)
+      .all<{ enrollment_id: string; workspace_id: string; revision: number }>()
     const acked = new Map<string, HostAssignmentAck[]>()
     for (const row of ready.results ?? []) {
       const list = acked.get(row.enrollment_id) ?? []
@@ -802,35 +910,42 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
       list.push(entry.description)
       descriptions.set(entry.host_id, list)
     }
-    return await Promise.all((rows.results ?? []).map(async (row) => ({
-      enrollment_id: row.enrollment_id,
-      ...(row.display_name ? { display_name: row.display_name } : {}),
-      host_id: row.host_id,
-      public_key_fingerprint: await storedKeyFingerprint(row.public_key_json),
-      key_version: row.key_version,
-      enrolled_via: row.enrolled_via,
-      last_seen_at: row.last_seen_at,
-      expires_at: row.expires_at,
-      serving_generation: row.serving_generation,
-      ...(row.generation_acquired_at !== null ? { generation_acquired_at: row.generation_acquired_at } : {}),
-      ...(row.paused_at !== null ? { paused_at: row.paused_at } : {}),
-      assignments: descriptions.get(row.host_id) ?? [],
-      acked: acked.get(row.enrollment_id) ?? [],
-      scope: hostEnrollmentScope(row.scope_json, row.scope_revision),
-      provider_config_revision: row.provider_config_revision,
-      provider_config_acked_revision: row.provider_config_acked_revision,
-      sealing_key_declared: row.sealing_public_key_json !== null,
-      provider_config_providers: storedHostProviderIds(row.provider_config_provider_ids),
-      provider_config_rekeyed: hostProviderConfigRekeyed(row),
-    })))
+    return await Promise.all(
+      (rows.results ?? []).map(async (row) => ({
+        enrollment_id: row.enrollment_id,
+        ...(row.display_name ? { display_name: row.display_name } : {}),
+        host_id: row.host_id,
+        public_key_fingerprint: await storedKeyFingerprint(row.public_key_json),
+        key_version: row.key_version,
+        enrolled_via: row.enrolled_via,
+        last_seen_at: row.last_seen_at,
+        expires_at: row.expires_at,
+        serving_generation: row.serving_generation,
+        ...(row.generation_acquired_at !== null ? { generation_acquired_at: row.generation_acquired_at } : {}),
+        ...(row.paused_at !== null ? { paused_at: row.paused_at } : {}),
+        assignments: descriptions.get(row.host_id) ?? [],
+        acked: acked.get(row.enrollment_id) ?? [],
+        scope: hostEnrollmentScope(row.scope_json, row.scope_revision),
+        provider_config_revision: row.provider_config_revision,
+        provider_config_acked_revision: row.provider_config_acked_revision,
+        sealing_key_declared: row.sealing_public_key_json !== null,
+        provider_config_providers: storedHostProviderIds(row.provider_config_provider_ids),
+        provider_config_rekeyed: hostProviderConfigRekeyed(row),
+      })),
+    )
   }
 
   async hostEnrollmentByHost(auth: SignedControlPlaneAuth, args: { hostId: string }) {
     const who = await this.requirePrincipal(auth)
-    const row = await this.database.prepare(`
+    const row = await this.database
+      .prepare(
+        `
       select enrollment_id, host_id, enrolled_via from host_enrollments
       where owner_actor_id = ? and host_id = ? and revoked_at is null
-    `).bind(who.actorId, requireText(args.hostId, "hostId")).first<Pick<EnrollmentRow, "enrollment_id" | "host_id" | "enrolled_via">>()
+    `,
+      )
+      .bind(who.actorId, requireText(args.hostId, "hostId"))
+      .first<Pick<EnrollmentRow, "enrollment_id" | "host_id" | "enrolled_via">>()
     return row ?? undefined
   }
 
@@ -868,41 +983,63 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
             or substr(workspace.remote_directory, 1, length(root.value) + 1) = root.value || '/'
         )`
     const outsideRoots = () => [row.host_id, row.owner_actor_id, rootsJson]
-    await this.guardedBatch([
-      this.database.prepare(`
+    await this.guardedBatch(
+      [
+        this.database
+          .prepare(
+            `
         update host_enrollments set scope_json = ?, scope_revision = ?, updated_at = ?
         where enrollment_id = ? and owner_actor_id = ? and scope_revision = ? and revoked_at is null
-      `).bind(JSON.stringify(scope), revision, now, enrollmentId, who.actorId, row.scope_revision),
-      this.wonAssertion(assertionId),
-      this.database.prepare(retireMachinePlacedWorkspaceSql(`workspace_id in (${outsideRootsSql})`))
-        .bind(now, now, ...outsideRoots()),
-      this.database.prepare(`
+      `,
+          )
+          .bind(JSON.stringify(scope), revision, now, enrollmentId, who.actorId, row.scope_revision),
+        this.wonAssertion(assertionId),
+        this.database
+          .prepare(retireMachinePlacedWorkspaceSql(`workspace_id in (${outsideRootsSql})`))
+          .bind(now, now, ...outsideRoots()),
+        this.database
+          .prepare(
+            `
         delete from host_assignment_readiness where workspace_id in (${outsideRootsSql})
-      `).bind(...outsideRoots()),
-      this.auditRow({
-        eventId: auditId,
-        enrollmentId,
-        action: "host_enrollment.scope_updated",
-        metadata: new SqlJson(
-          `json_object('enrollmentId', ?, 'hostId', ?, 'scopeRevision', ?, 'retiredWorkspaceIds',
+      `,
+          )
+          .bind(...outsideRoots()),
+        this.auditRow({
+          eventId: auditId,
+          enrollmentId,
+          action: "host_enrollment.scope_updated",
+          metadata: new SqlJson(
+            `json_object('enrollmentId', ?, 'hostId', ?, 'scopeRevision', ?, 'retiredWorkspaceIds',
             json((select json_group_array(workspace_id) from (${outsideRootsSql} order by assignment.workspace_id))))`,
-          [enrollmentId, row.host_id, revision, ...outsideRoots()],
-        ),
-        now,
-      }),
-      this.database.prepare(`
+            [enrollmentId, row.host_id, revision, ...outsideRoots()],
+          ),
+          now,
+        }),
+        this.database
+          .prepare(
+            `
         delete from host_workspace_assignments where workspace_id in (${outsideRootsSql})
-      `).bind(...outsideRoots()),
-      this.database.prepare(`
+      `,
+          )
+          .bind(...outsideRoots()),
+        this.database
+          .prepare(
+            `
         update workspaces set org_member_visible = ?, updated_at = ?
         where workspace_id in (
           select workspace_id from host_workspace_assignments where host_id = ? and owner_actor_id = ?
         )
-      `).bind(scope.visibility === "owner" ? 0 : 1, now, row.host_id, row.owner_actor_id),
-      this.deleteAssertion(assertionId),
-    ], "Host enrollment scope changed concurrently")
-    const audit = await this.database.prepare(`select metadata_json from authority_audit_events where event_id = ?`)
-      .bind(auditId).first<{ metadata_json: string }>()
+      `,
+          )
+          .bind(scope.visibility === "owner" ? 0 : 1, now, row.host_id, row.owner_actor_id),
+        this.deleteAssertion(assertionId),
+      ],
+      "Host enrollment scope changed concurrently",
+    )
+    const audit = await this.database
+      .prepare(`select metadata_json from authority_audit_events where event_id = ?`)
+      .bind(auditId)
+      .first<{ metadata_json: string }>()
     const retired = stringList(asRecord(parseJson(audit?.metadata_json ?? "{}"))?.retiredWorkspaceIds)
     return { scope: { ...scope, revision }, retired_workspace_ids: retired }
   }
@@ -915,11 +1052,16 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
     const enrollmentId = requireText(args.enrollmentId, "enrollmentId")
     const displayName = requireText(args.displayName, "displayName", 200)
     const now = this.now()
-    const updated = await this.database.prepare(`
+    const updated = await this.database
+      .prepare(
+        `
       update host_enrollments set display_name = ?, updated_at = ?
       where enrollment_id = ? and owner_actor_id = ? and revoked_at is null
       returning enrollment_id
-    `).bind(displayName, now, enrollmentId, who.actorId).first<{ enrollment_id: string }>()
+    `,
+      )
+      .bind(displayName, now, enrollmentId, who.actorId)
+      .first<{ enrollment_id: string }>()
     if (!updated) {
       throw new D1HostAccessAuthorityError("host_enrollment_not_found", "Host enrollment not found")
     }
@@ -943,18 +1085,27 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
   ): Promise<HostProviderConfigTarget> {
     const who = await this.requirePrincipal(auth)
     const enrollmentId = requireText(args.enrollmentId, "enrollmentId")
-    const row = await this.database.prepare(`
+    const row = await this.database
+      .prepare(
+        `
       select enrollment_id, host_id, display_name, sealing_public_key_json,
         provider_config_revision, provider_config_acked_revision
       from host_enrollments
       where enrollment_id = ? and owner_actor_id = ? and revoked_at is null
-    `).bind(enrollmentId, who.actorId).first<
-      Pick<
-        EnrollmentRow,
-        | "enrollment_id" | "host_id" | "display_name" | "sealing_public_key_json"
-        | "provider_config_revision" | "provider_config_acked_revision"
-      >
-    >()
+    `,
+      )
+      .bind(enrollmentId, who.actorId)
+      .first<
+        Pick<
+          EnrollmentRow,
+          | "enrollment_id"
+          | "host_id"
+          | "display_name"
+          | "sealing_public_key_json"
+          | "provider_config_revision"
+          | "provider_config_acked_revision"
+        >
+      >()
     if (!row) throw new D1HostAccessAuthorityError("host_enrollment_not_found", "Host enrollment not found")
     return {
       enrollment_id: row.enrollment_id,
@@ -987,7 +1138,9 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
     const assertionId = this.randomId("assert")
     try {
       await this.database.batch([
-        this.database.prepare(`
+        this.database
+          .prepare(
+            `
           update host_enrollments set
             provider_config_sealed = ?, provider_config_revision = ?, provider_config_acked_revision = 0,
             provider_config_sealed_key_json = ?, provider_config_provider_ids = ?,
@@ -995,29 +1148,36 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
           where enrollment_id = ? and owner_actor_id = ? and revoked_at is null
             and max(provider_config_revision, provider_config_acked_revision) = ?
             and sealing_public_key_json = ?
-        `).bind(
-          sealed,
-          revision,
-          sealed === null ? null : sealingPublicKey,
-          providerIds.length === 0 ? null : JSON.stringify(providerIds),
-          now,
-          now,
-          enrollmentId,
-          who.actorId,
-          revision - 1,
-          sealingPublicKey,
-        ),
+        `,
+          )
+          .bind(
+            sealed,
+            revision,
+            sealed === null ? null : sealingPublicKey,
+            providerIds.length === 0 ? null : JSON.stringify(providerIds),
+            now,
+            now,
+            enrollmentId,
+            who.actorId,
+            revision - 1,
+            sealingPublicKey,
+          ),
         this.wonAssertion(assertionId),
         this.deleteAssertion(assertionId),
       ])
     } catch (error) {
       if (!batchAssertionFailed(error)) throw error
-      const row = await this.database.prepare(`
+      const row = await this.database
+        .prepare(
+          `
         select sealing_public_key_json, provider_config_revision, provider_config_acked_revision
         from host_enrollments where enrollment_id = ? and owner_actor_id = ? and revoked_at is null
-      `).bind(enrollmentId, who.actorId).first<
-        Pick<EnrollmentRow, "sealing_public_key_json" | "provider_config_revision" | "provider_config_acked_revision">
-      >()
+      `,
+        )
+        .bind(enrollmentId, who.actorId)
+        .first<
+          Pick<EnrollmentRow, "sealing_public_key_json" | "provider_config_revision" | "provider_config_acked_revision">
+        >()
       if (!row) throw new D1HostAccessAuthorityError("host_enrollment_not_found", "Host enrollment not found")
       if (row.sealing_public_key_json !== sealingPublicKey) throw sealingKeyUndeclared()
       throw new D1HostAccessAuthorityError(
@@ -1041,33 +1201,43 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
     const expiresAt = now + invitationTtl(args.expiresInMs)
     const invitationId = this.randomId("invitation")
     const secret = randomBase64Url(32)
-    await this.database.prepare(`
+    await this.database
+      .prepare(
+        `
       insert into host_invitations (
         invitation_id, owner_user_id, owner_actor_id, org_id, secret_hash, display_name, scope_json,
         expires_at, redeemed_at, redeemed_enrollment_id, redeemed_host_id, redeemed_public_key_fingerprint,
         created_by_actor_id, created_at, revoked_at
       ) values (?, ?, ?, ?, ?, ?, ?, ?, null, null, null, null, ?, ?, null)
-    `).bind(
-      invitationId,
-      who.userId,
-      who.actorId,
-      orgId,
-      await sha256Hex(secret),
-      displayName ?? null,
-      JSON.stringify(scope),
-      expiresAt,
-      who.actorId,
-      now,
-    ).run()
+    `,
+      )
+      .bind(
+        invitationId,
+        who.userId,
+        who.actorId,
+        orgId,
+        await sha256Hex(secret),
+        displayName ?? null,
+        JSON.stringify(scope),
+        expiresAt,
+        who.actorId,
+        now,
+      )
+      .run()
     return { invitationId, token: invitationToken({ invitationId, secret }), expiresAt }
   }
 
   async listHostInvitations(auth: SignedControlPlaneAuth): Promise<HostInvitationRow[]> {
     const who = await this.requirePrincipal(auth)
-    const rows = await this.database.prepare(`
+    const rows = await this.database
+      .prepare(
+        `
       select * from host_invitations where owner_actor_id = ?
       order by created_at desc, invitation_id
-    `).bind(who.actorId).all<InvitationRow>()
+    `,
+      )
+      .bind(who.actorId)
+      .all<InvitationRow>()
     return (rows.results ?? []).map((row) => ({
       invitation_id: row.invitation_id,
       ...(row.display_name ? { display_name: row.display_name } : {}),
@@ -1086,10 +1256,15 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
     const who = await this.requirePrincipal(auth)
     const invitationId = requireText(args.invitationId, "invitationId")
     const now = this.now()
-    const result = await this.database.prepare(`
+    const result = await this.database
+      .prepare(
+        `
       update host_invitations set revoked_at = ?
       where invitation_id = ? and owner_actor_id = ? and revoked_at is null and redeemed_at is null
-    `).bind(now, invitationId, who.actorId).run()
+    `,
+      )
+      .bind(now, invitationId, who.actorId)
+      .run()
     return { revoked: changes(result) > 0 }
   }
 
@@ -1138,13 +1313,19 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
     const expiresAt = now + DEFAULT_TTL_MS
     try {
       await this.database.batch([
-        this.database.prepare(`
+        this.database
+          .prepare(
+            `
           update host_invitations set
             redeemed_at = ?, redeemed_host_id = ?, redeemed_public_key_fingerprint = ?, redeemed_enrollment_id = ?
           where invitation_id = ? and secret_hash = ? and redeemed_at is null and revoked_at is null
             and expires_at > ?
-        `).bind(now, hostId, fingerprint, enrollmentId, invitationId, secretHash, now),
-        this.database.prepare(`
+        `,
+          )
+          .bind(now, hostId, fingerprint, enrollmentId, invitationId, secretHash, now),
+        this.database
+          .prepare(
+            `
           insert into host_enrollments (
             enrollment_id, owner_user_id, owner_actor_id, host_id, public_key_json,
             display_name, last_seen_at, expires_at, paused_at, revoked_at,
@@ -1155,24 +1336,30 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
             null, ?, ?, 1, 0, 'invitation', invitation.scope_json, 1
           from host_invitations invitation
           where invitation.invitation_id = ? and invitation.redeemed_enrollment_id = ?
-        `).bind(
-          enrollmentId,
-          hostId,
-          publicKey,
-          displayName ?? invitation.display_name,
-          now,
-          expiresAt,
-          now,
-          now,
-          invitationId,
-          enrollmentId,
-        ),
-        this.database.prepare(`
+        `,
+          )
+          .bind(
+            enrollmentId,
+            hostId,
+            publicKey,
+            displayName ?? invitation.display_name,
+            now,
+            expiresAt,
+            now,
+            now,
+            invitationId,
+            enrollmentId,
+          ),
+        this.database
+          .prepare(
+            `
           insert into authority_batch_assertions (assertion_id, passed)
           values (?, case when exists (
             select 1 from host_enrollments where enrollment_id = ? and enrolled_via = 'invitation'
           ) then 1 else 0 end)
-        `).bind(assertionId, enrollmentId),
+        `,
+          )
+          .bind(assertionId, enrollmentId),
         this.deleteAssertion(assertionId),
       ])
     } catch (error) {
@@ -1184,7 +1371,7 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
       }
       if (!batchAssertionFailed(error)) throw error
       const current = await this.invitation(invitationId)
-      const resumed = current && await this.settledRedeem(current, { hostId, fingerprint, now })
+      const resumed = current && (await this.settledRedeem(current, { hostId, fingerprint, now }))
       if (resumed) return resumed
       if (current?.revoked_at !== null) {
         throw new D1HostAccessAuthorityError("invitation_revoked", "Invitation has been revoked")
@@ -1201,29 +1388,47 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
     const hostId = optionalText(args.hostId, "hostId")
     const now = this.now()
     const results = await this.database.batch([
-      this.database.prepare(`
+      this.database
+        .prepare(
+          `
         update host_enrollments set revoked_at = ?, updated_at = ?
         where owner_actor_id = ? and (? is null or host_id = ?) and revoked_at is null
-      `).bind(now, now, who.actorId, hostId ?? null, hostId ?? null),
+      `,
+        )
+        .bind(now, now, who.actorId, hostId ?? null, hostId ?? null),
       // A revoked key's host id never returns (a later enable enrolls a NEW
       // id), so its assignments could never become routable again — leaving
       // them would only accumulate dangling rows that a later re-share must
       // displace. The cascade keeps "revoke = nothing routable" exactly true.
-      this.database.prepare(retireMachinePlacedWorkspaceSql(`workspace_id in (
+      this.database
+        .prepare(
+          retireMachinePlacedWorkspaceSql(`workspace_id in (
         select workspace_id from host_workspace_assignments
         where owner_actor_id = ? and (? is null or host_id = ?)
-      )`)).bind(now, now, who.actorId, hostId ?? null, hostId ?? null),
-      this.database.prepare(`
+      )`),
+        )
+        .bind(now, now, who.actorId, hostId ?? null, hostId ?? null),
+      this.database
+        .prepare(
+          `
         delete from host_assignment_readiness where workspace_id in (
           select workspace_id from host_workspace_assignments
           where owner_actor_id = ? and (? is null or host_id = ?)
         )
-      `).bind(who.actorId, hostId ?? null, hostId ?? null),
-      this.database.prepare(`
+      `,
+        )
+        .bind(who.actorId, hostId ?? null, hostId ?? null),
+      this.database
+        .prepare(
+          `
         delete from host_workspace_assignments
         where owner_actor_id = ? and (? is null or host_id = ?)
-      `).bind(who.actorId, hostId ?? null, hostId ?? null),
-      this.database.prepare(`
+      `,
+        )
+        .bind(who.actorId, hostId ?? null, hostId ?? null),
+      this.database
+        .prepare(
+          `
         update runtime_access_tokens set revoked_at = ?
         where deployment_id = ? and actor_id = ? and (? is null or host_id = ?) and revoked_at is null
           and exists (
@@ -1231,45 +1436,57 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
             where enrollment.owner_actor_id = ? and (? is null or enrollment.host_id = ?)
               and enrollment.revoked_at = ?
           )
-      `).bind(
-        now,
-        this.options.deploymentId,
-        who.actorId,
-        hostId ?? null,
-        hostId ?? null,
-        who.actorId,
-        hostId ?? null,
-        hostId ?? null,
-        now,
-      ),
+      `,
+        )
+        .bind(
+          now,
+          this.options.deploymentId,
+          who.actorId,
+          hostId ?? null,
+          hostId ?? null,
+          who.actorId,
+          hostId ?? null,
+          hostId ?? null,
+          now,
+        ),
     ])
     return { revoked: changes(results[0]), runtime_tokens_revoked: changes(results[4]) }
   }
 
   private async requirePrincipal(auth: SignedControlPlaneAuth): Promise<Principal> {
     const principal = auth.principal
-    if (!principal) throw new ControlPlaneAuthError(503, "identity_provisioning", "Canonical application identity is required")
+    if (!principal)
+      throw new ControlPlaneAuthError(503, "identity_provisioning", "Canonical application identity is required")
     if (principal.deploymentId !== this.options.deploymentId || principal.actorKind !== "human") {
-      throw new ControlPlaneAuthError(401, "invalid_bearer_token", "Application principal belongs to another authority domain")
+      throw new ControlPlaneAuthError(
+        401,
+        "invalid_bearer_token",
+        "Application principal belongs to another authority domain",
+      )
     }
-    const row = await this.database.prepare(`
+    const row = await this.database
+      .prepare(
+        `
       select ai.user_id, u.state as user_state, a.actor_id, a.kind as actor_kind,
         a.state as actor_state, ai.unlinked_at
       from auth_identities ai
       join users u on u.user_id = ai.user_id
       join actors a on a.actor_id = ? and a.user_id = u.user_id
       where ai.adapter = ? and ai.issuer = ? and ai.subject = ?
-    `).bind(
-      principal.actorId,
-      principal.identity.adapter,
-      principal.identity.issuer,
-      principal.identity.subject,
-    ).first<PrincipalRow>()
+    `,
+      )
+      .bind(principal.actorId, principal.identity.adapter, principal.identity.issuer, principal.identity.subject)
+      .first<PrincipalRow>()
     if (
-      !row || row.unlinked_at !== null || row.user_id !== principal.userId || row.actor_id !== principal.actorId
-      || row.actor_kind !== "human"
-    ) throw new ControlPlaneAuthError(401, "invalid_bearer_token", "Application principal is stale or unlinked")
-    if (row.user_state === "deleted") throw new ControlPlaneAuthError(403, "account_deleted", "Application account is deleted")
+      !row ||
+      row.unlinked_at !== null ||
+      row.user_id !== principal.userId ||
+      row.actor_id !== principal.actorId ||
+      row.actor_kind !== "human"
+    )
+      throw new ControlPlaneAuthError(401, "invalid_bearer_token", "Application principal is stale or unlinked")
+    if (row.user_state === "deleted")
+      throw new ControlPlaneAuthError(403, "account_deleted", "Application account is deleted")
     if (row.user_state !== "active" || row.actor_state !== "active") {
       throw new ControlPlaneAuthError(403, "account_suspended", "Application account is suspended")
     }
@@ -1282,10 +1499,15 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
     action: "read" | "admin",
     revivable = false,
   ) {
-    const row = await this.database.prepare(`
+    const row = await this.database
+      .prepare(
+        `
       ${workspaceAccessCte(action === "read" ? 1 : 3, revivable)}
       select * from authorized_workspace
-    `).bind(actor.actorId, workspaceId).first<WorkspaceRow>()
+    `,
+      )
+      .bind(actor.actorId, workspaceId)
+      .first<WorkspaceRow>()
     if (!row) throw denied()
     return row
   }
@@ -1307,7 +1529,10 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
       return { registration: "existing", workspace }
     }
     if (!this.options.authorizeLocalWorkspaceRegistration) {
-      throw new D1HostAccessAuthorityError("host_attestation_denied", "Cold local workspace registration is unavailable")
+      throw new D1HostAccessAuthorityError(
+        "host_attestation_denied",
+        "Cold local workspace registration is unavailable",
+      )
     }
     await this.options.authorizeLocalWorkspaceRegistration(auth, {
       ...(args.orgId ? { orgId: args.orgId } : {}),
@@ -1330,29 +1555,42 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
 
   /** Whether an assignment would write to an existing record: a live row, or a retired machine-placed one it revives. */
   private async assignableWorkspaceExists(workspaceId: string) {
-    return !!await this.database.prepare(`
+    return !!(await this.database
+      .prepare(
+        `
       select 1 from workspaces where workspace_id = ? and (deleted_at is null or backing = 'local-worktree')
-    `).bind(workspaceId).first()
+    `,
+      )
+      .bind(workspaceId)
+      .first())
   }
 
   private async enrollmentRequest(requestId: string) {
-    return await this.database.prepare(`select * from host_enrollment_requests where request_id = ?`)
-      .bind(requestId).first<EnrollmentRequestRow>()
+    return await this.database
+      .prepare(`select * from host_enrollment_requests where request_id = ?`)
+      .bind(requestId)
+      .first<EnrollmentRequestRow>()
   }
 
   private async enrollment(actorId: string, hostId: string) {
-    return await this.database.prepare(`select * from host_enrollments where owner_actor_id = ? and host_id = ?`)
-      .bind(actorId, hostId).first<EnrollmentRow>()
+    return await this.database
+      .prepare(`select * from host_enrollments where owner_actor_id = ? and host_id = ?`)
+      .bind(actorId, hostId)
+      .first<EnrollmentRow>()
   }
 
   private async enrollmentById(enrollmentId: string) {
-    return await this.database.prepare(`select * from host_enrollments where enrollment_id = ?`)
-      .bind(enrollmentId).first<EnrollmentRow>()
+    return await this.database
+      .prepare(`select * from host_enrollments where enrollment_id = ?`)
+      .bind(enrollmentId)
+      .first<EnrollmentRow>()
   }
 
   private async invitation(invitationId: string) {
-    return await this.database.prepare(`select * from host_invitations where invitation_id = ?`)
-      .bind(invitationId).first<InvitationRow>()
+    return await this.database
+      .prepare(`select * from host_invitations where invitation_id = ?`)
+      .bind(invitationId)
+      .first<InvitationRow>()
   }
 
   /**
@@ -1364,13 +1602,18 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
   private async currentOrgId(who: Principal, auth: SignedControlPlaneAuth) {
     const claimed = auth.user.orgId?.trim()
     if (claimed) {
-      const member = await this.database.prepare(`
+      const member = await this.database
+        .prepare(
+          `
         select 1 from orgs organization
         left join org_memberships membership
           on membership.org_id = organization.org_id and membership.user_id = ? and membership.revoked_at is null
         where organization.org_id = ? and organization.deleted_at is null
           and (organization.owner_user_id = ? or membership.user_id is not null)
-      `).bind(who.userId, claimed, who.userId).first()
+      `,
+        )
+        .bind(who.userId, claimed, who.userId)
+        .first()
       if (!member) throw denied("Invitation organization is not one the caller belongs to")
       return claimed
     }
@@ -1382,9 +1625,14 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
 
   /** The organization an invitation-enrolled machine is confined to. */
   private async invitationOrgId(enrollmentId: string) {
-    const row = await this.database.prepare(`
+    const row = await this.database
+      .prepare(
+        `
       select org_id from host_invitations where redeemed_enrollment_id = ? limit 1
-    `).bind(enrollmentId).first<{ org_id: string }>()
+    `,
+      )
+      .bind(enrollmentId)
+      .first<{ org_id: string }>()
     return row?.org_id
   }
 
@@ -1396,32 +1644,38 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
    * `assigned_workspace_ids` still lists it for the desktop's reconciliation.
    */
   private async assignmentDescriptions(ownerActorId: string, hostId?: string) {
-    const rows = await this.database.prepare(`
+    const rows = await this.database
+      .prepare(
+        `
       select assignment.workspace_id, assignment.host_id, assignment.revision,
         workspace.remote_directory, workspace.display_name
       from host_workspace_assignments assignment
       join workspaces workspace on workspace.workspace_id = assignment.workspace_id and workspace.deleted_at is null
       where assignment.owner_actor_id = ? and (? is null or assignment.host_id = ?)
       order by assignment.host_id, assignment.workspace_id
-    `).bind(ownerActorId, hostId ?? null, hostId ?? null).all<{
-      workspace_id: string
-      host_id: string
-      revision: number
-      remote_directory: string | null
-      display_name: string | null
-    }>()
+    `,
+      )
+      .bind(ownerActorId, hostId ?? null, hostId ?? null)
+      .all<{
+        workspace_id: string
+        host_id: string
+        revision: number
+        remote_directory: string | null
+        display_name: string | null
+      }>()
     return (rows.results ?? []).map((row) => ({
       workspace_id: row.workspace_id,
       host_id: row.host_id,
       remote_directory: row.remote_directory,
-      description: row.remote_directory === null
-        ? undefined
-        : {
-          workspace_id: row.workspace_id,
-          remote_directory: row.remote_directory,
-          ...(row.display_name ? { display_name: row.display_name } : {}),
-          revision: row.revision,
-        } satisfies HostAssignmentDescription,
+      description:
+        row.remote_directory === null
+          ? undefined
+          : ({
+              workspace_id: row.workspace_id,
+              remote_directory: row.remote_directory,
+              ...(row.display_name ? { display_name: row.display_name } : {}),
+              revision: row.revision,
+            } satisfies HostAssignmentDescription),
     }))
   }
 
@@ -1431,9 +1685,9 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
   ): Promise<HostInvitationRedeemResult | undefined> {
     if (invitation.redeemed_at === null || invitation.redeemed_enrollment_id === null) return undefined
     if (
-      invitation.redeemed_host_id === presented.hostId
-      && invitation.redeemed_public_key_fingerprint !== null
-      && timingSafeEqualStrings(invitation.redeemed_public_key_fingerprint, presented.fingerprint)
+      invitation.redeemed_host_id === presented.hostId &&
+      invitation.redeemed_public_key_fingerprint !== null &&
+      timingSafeEqualStrings(invitation.redeemed_public_key_fingerprint, presented.fingerprint)
     ) {
       const resumed = await this.redeemResult(invitation, invitation.redeemed_enrollment_id, true)
       if (resumed) return resumed
@@ -1474,7 +1728,8 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
   private async machineMutationRefusal(machine: MachinePrincipal, generation: number, raced: string) {
     const row = await this.machineAuth.lookupEnrollment(machine.enrollmentId)
     if (!row) return new D1HostAccessAuthorityError("host_attestation_denied", "Host enrollment is unavailable")
-    if (row.revoked_at !== null) return new D1HostAccessAuthorityError("enrollment_revoked", "Host enrollment is revoked")
+    if (row.revoked_at !== null)
+      return new D1HostAccessAuthorityError("enrollment_revoked", "Host enrollment is revoked")
     if (row.paused_at !== null) return new D1HostAccessAuthorityError("enrollment_paused", "Host enrollment is paused")
     if (!row.ownerEligible) {
       return new D1HostAccessAuthorityError("enrollment_owner_ineligible", "Host enrollment owner is not active")
@@ -1500,19 +1755,27 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
     hostId: string,
     now: number,
   ) {
-    return this.database.prepare(`
+    return this.database
+      .prepare(
+        `
       insert into host_signature_uses (
         signature_hash, signature_domain, actor_id, workspace_id, host_id, used_at
       ) values (?, ?, ?, null, ?, ?)
-    `).bind(signatureHash, domain, actorId, hostId, now)
+    `,
+      )
+      .bind(signatureHash, domain, actorId, hostId, now)
   }
 
   /** Readiness rows of this enrollment for every workspace the beat did not ack. */
   private readinessWithdrawal(enrollmentId: string, ackedWorkspaceIds: readonly string[]) {
-    return this.database.prepare(`
+    return this.database
+      .prepare(
+        `
       delete from host_assignment_readiness
       where enrollment_id = ? and workspace_id not in (select value from json_each(?))
-    `).bind(enrollmentId, JSON.stringify(ackedWorkspaceIds))
+    `,
+      )
+      .bind(enrollmentId, JSON.stringify(ackedWorkspaceIds))
   }
 
   /**
@@ -1525,7 +1788,9 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
     acks: ReadonlyArray<{ workspaceId: string; revision: number }>,
     now: number,
   ) {
-    return this.database.prepare(`
+    return this.database
+      .prepare(
+        `
       insert into host_assignment_readiness (workspace_id, enrollment_id, generation, revision, ready_at)
       select assignment.workspace_id, enrollment.enrollment_id, enrollment.serving_generation, assignment.revision, ?
       from json_each(?) ack
@@ -1540,7 +1805,9 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
         generation = excluded.generation,
         revision = excluded.revision,
         ready_at = excluded.ready_at
-    `).bind(now, JSON.stringify(acks), enrollmentId)
+    `,
+      )
+      .bind(now, JSON.stringify(acks), enrollmentId)
   }
 
   /**
@@ -1555,24 +1822,27 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
     metadata: Record<string, unknown> | SqlJson
     now: number
   }) {
-    const metadata = input.metadata instanceof SqlJson
-      ? input.metadata
-      : new SqlJson("?", [JSON.stringify(input.metadata)])
-    return this.database.prepare(`
+    const metadata =
+      input.metadata instanceof SqlJson ? input.metadata : new SqlJson("?", [JSON.stringify(input.metadata)])
+    return this.database
+      .prepare(
+        `
       insert into authority_audit_events (
         event_id, deployment_id, user_id, actor_id, org_id, project_id, workspace_id,
         unverified_attempted_workspace_id, action, result, reason, metadata_json, created_at
       )
       select ?, ?, owner_user_id, owner_actor_id, null, null, null, null, ?, 'allow', null, ${metadata.sql}, ?
       from host_enrollments where enrollment_id = ?
-    `).bind(
-      input.eventId ?? this.randomId("audit"),
-      this.options.deploymentId,
-      input.action,
-      ...metadata.bind,
-      input.now,
-      input.enrollmentId,
-    )
+    `,
+      )
+      .bind(
+        input.eventId ?? this.randomId("audit"),
+        this.options.deploymentId,
+        input.action,
+        ...metadata.bind,
+        input.now,
+        input.enrollmentId,
+      )
   }
 
   /**
@@ -1582,9 +1852,13 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
    * counted, not a state another caller could have produced.
    */
   private wonAssertion(assertionId: string) {
-    return this.database.prepare(`
+    return this.database
+      .prepare(
+        `
       insert into authority_batch_assertions (assertion_id, passed) values (?, changes())
-    `).bind(assertionId)
+    `,
+      )
+      .bind(assertionId)
   }
 
   private deleteAssertion(assertionId: string) {
@@ -1592,20 +1866,28 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
   }
 
   private expiredRowSweep(table: "host_enrollment_requests", id: string, now: number) {
-    return this.database.prepare(`
+    return this.database
+      .prepare(
+        `
       delete from ${table} where ${id} in (
         select ${id} from ${table} where expires_at <= ? order by expires_at limit ?
       )
-    `).bind(now, REQUEST_SWEEP_LIMIT)
+    `,
+      )
+      .bind(now, REQUEST_SWEEP_LIMIT)
   }
 
   /** Exact rows by expiry: the nonce table's key is the pair, never the enrollment alone. */
   private nonceSweep(now: number) {
-    return this.database.prepare(`
+    return this.database
+      .prepare(
+        `
       delete from host_request_nonces where (enrollment_id, nonce) in (
         select enrollment_id, nonce from host_request_nonces where expires_at <= ? order by expires_at limit ?
       )
-    `).bind(now, REQUEST_SWEEP_LIMIT)
+    `,
+      )
+      .bind(now, REQUEST_SWEEP_LIMIT)
   }
 
   private async guardedBatch(statements: D1PreparedStatement[], message: string) {
@@ -1625,9 +1907,11 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
 
 /** A JSON value expressed in SQL, with the bindings its placeholders take in order. */
 class SqlJson {
-  constructor(readonly sql: string, readonly bind: unknown[]) {}
+  constructor(
+    readonly sql: string,
+    readonly bind: unknown[],
+  ) {}
 }
-
 
 /**
  * `revivable` admits a retired machine-placed row: its assignment is what
@@ -1655,21 +1939,15 @@ function workspaceAccessCte(rank: 1 | 3, revivable = false) {
   )`
 }
 
-export function hostEnrollmentPayload(input: { hostId: string; requestId: string; nonce: string }) {
-  return [
-    "claxedo.host-enrollment.enroll.v1",
-    `host_id=${input.hostId}`,
-    `request_id=${input.requestId}`,
-    `nonce=${input.nonce}`,
-  ].join("\n")
-}
-
 function requireScope(input: HostScopeDefinition): HostScopeDefinition {
   if (!input || typeof input !== "object" || !Array.isArray(input.allowed_roots)) {
     throw new D1HostAccessAuthorityError("invalid_input", "scope.allowed_roots must be a list of absolute paths")
   }
   if (input.allowed_roots.length > MAX_SCOPE_ROOTS) {
-    throw new D1HostAccessAuthorityError("invalid_input", `scope.allowed_roots may name at most ${MAX_SCOPE_ROOTS} roots`)
+    throw new D1HostAccessAuthorityError(
+      "invalid_input",
+      `scope.allowed_roots may name at most ${MAX_SCOPE_ROOTS} roots`,
+    )
   }
   const roots = input.allowed_roots.map((root) => {
     const normalized = normalizePosixDirectory(requireText(root, "scope.allowed_roots", MAX_SCOPE_ROOT_LENGTH))
@@ -1711,7 +1989,7 @@ function requireRevision(value: number, name: string, minimum: 0 | 1) {
 }
 
 /**
- * Stored as the four members `machineSealingPublicKey` keeps, so one key
+ * Stored as the four members `publicKeyJwk` keeps, so one key
  * always serializes to one text and the push's key assertion is a string
  * comparison. A key the sealer could not use is refused at the beat, where
  * the machine can fix it, rather than at the owner's push.
@@ -1719,7 +1997,7 @@ function requireRevision(value: number, name: string, minimum: 0 | 1) {
 function declaredSealingPublicKey(input: string) {
   const text = requireText(input, "sealingPublicKey", MAX_SEALING_PUBLIC_KEY_LENGTH)
   try {
-    return JSON.stringify(machineSealingPublicKey(text))
+    return JSON.stringify(publicKeyJwk(text))
   } catch {
     throw new D1HostAccessAuthorityError("invalid_input", "sealingPublicKey must be an ECDH P-256 public JWK")
   }
@@ -1802,12 +2080,15 @@ async function verifyHostSignature(input: { publicKey: string; payload: string; 
   if (!jwk) throw new D1HostAccessAuthorityError("host_attestation_denied", "Invalid stored host public key")
   const signatureBytes = base64UrlBytes(requireText(input.signature, "signature", 2_000))
   const key = await crypto.subtle.importKey("jwk", jwk, { name: "ECDSA", namedCurve: "P-256" }, false, ["verify"])
-  if (!await crypto.subtle.verify(
-    { name: "ECDSA", hash: "SHA-256" },
-    key,
-    signatureBytes,
-    new TextEncoder().encode(input.payload),
-  )) throw new D1HostAccessAuthorityError("host_attestation_denied", "Invalid host attestation")
+  if (
+    !(await crypto.subtle.verify(
+      { name: "ECDSA", hash: "SHA-256" },
+      key,
+      signatureBytes,
+      new TextEncoder().encode(input.payload),
+    ))
+  )
+    throw new D1HostAccessAuthorityError("host_attestation_denied", "Invalid host attestation")
   return await sha256(canonicalP256Signature(signatureBytes))
 }
 
@@ -1844,13 +2125,11 @@ function enrollmentJson(row: EnrollmentRow): HostEnrollment {
   }
 }
 
-
 function normalizedTtl(input: number | undefined) {
   if (input === undefined) return DEFAULT_TTL_MS
   if (!Number.isFinite(input)) throw new D1HostAccessAuthorityError("invalid_input", "ttlMs must be finite")
   return Math.max(5_000, Math.min(input, MAX_TTL_MS))
 }
-
 
 function optionalText(value: string | undefined, name: string, max = 512) {
   if (value === undefined) return undefined
@@ -1863,7 +2142,10 @@ function requireText(value: unknown, name: string, max = 512) {
   }
   const result = value.trim()
   if (!result || result.length > max) {
-    throw new D1HostAccessAuthorityError("invalid_input", `${name} must be a non-empty string of at most ${max} characters`)
+    throw new D1HostAccessAuthorityError(
+      "invalid_input",
+      `${name} must be a non-empty string of at most ${max} characters`,
+    )
   }
   return result
 }
@@ -1930,10 +2212,9 @@ function denied(message = "Workspace authority denied access") {
   return new ControlPlaneAuthError(403, "workspace_authorization_denied", message)
 }
 
-
 function isUniqueFailure(error: unknown) {
   const text = String(error)
-  return text.includes("UNIQUE constraint failed") || text.includes("constraint failed") && text.includes("unique")
+  return text.includes("UNIQUE constraint failed") || (text.includes("constraint failed") && text.includes("unique"))
 }
 
 /** A stored JSON array of ids; a column that is not one contributes no ids. */

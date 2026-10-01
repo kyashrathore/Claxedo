@@ -24,17 +24,28 @@ import {
   base64url,
   base64urlDecode,
   createHostKeyPair,
-  hostInvitationRedeemPayload,
   hostKeyPairFromJwk,
   hostMachineRequestPayload,
-  hostPublicKeyFingerprint,
   hostSha256Hex,
-  MACHINE_REQUEST_HEADERS,
   newHostId,
-  publicKeyJwk,
 } from "./host-identity"
-import { createHostStateStore, isPlainRecord, newHostState, normalizeAbsolutePath, pathWithinRoots, type HostStateFs } from "./host-state"
-import { hostMachineSealAad, sealForHostMachine } from "./machine-seal"
+import {
+  invitationRedeemPayload,
+  publicKeyFingerprint,
+  MACHINE_REQUEST_HEADERS,
+  publicKeyJwk,
+  machineSealAad,
+} from "@claxedo/account-contract/machine"
+import {
+  createHostStateStore,
+  isPlainRecord,
+  newHostState,
+  normalizeAbsolutePath,
+  pathWithinRoots,
+  type HostStateFs,
+} from "./host-state"
+
+import { sealForMachine } from "@claxedo/account-contract/machine-seal"
 import type { FetchLike } from "./machine-transport"
 
 const SKEW_MS = 60_000
@@ -130,13 +141,19 @@ async function verify(publicKey: JsonWebKey, payload: string, signature: string)
 }
 
 /** The relay stub reads the workspace claim back out of the token the host presents. */
-export function decodeFakeTunnelToken(token: string): { workspace_ids: string[]; enrollment_id: string; generation: number } {
+export function decodeFakeTunnelToken(token: string): {
+  workspace_ids: string[]
+  enrollment_id: string
+  generation: number
+} {
   const [prefix, body] = token.split(".")
   if (prefix !== "htt" || !body) throw new Error(`not a fake host tunnel token: ${token}`)
   const parsed: unknown = JSON.parse(new TextDecoder().decode(base64urlDecode(body)))
   const claim = isPlainRecord(parsed) ? parsed : {}
   return {
-    workspace_ids: Array.isArray(claim.workspace_ids) ? claim.workspace_ids.filter((id): id is string => typeof id === "string") : [],
+    workspace_ids: Array.isArray(claim.workspace_ids)
+      ? claim.workspace_ids.filter((id): id is string => typeof id === "string")
+      : [],
     enrollment_id: typeof claim.enrollment_id === "string" ? claim.enrollment_id : "",
     generation: typeof claim.generation === "number" ? claim.generation : -1,
   }
@@ -159,7 +176,8 @@ export function createFakeControlPlane(
   const assignments = new Map<string, FakeAssignment>()
   const readiness = new Map<string, FakeReadiness>()
   const nonces = new Map<string, number>()
-  const log: Array<{ method: string; path: string; body: Record<string, unknown>; headers: Record<string, string> }> = []
+  const log: Array<{ method: string; path: string; body: Record<string, unknown>; headers: Record<string, string> }> =
+    []
   const faults = {
     /** Commit the redeem, then fail the response as a dropped connection. */
     dropRedeemResponse: false,
@@ -187,7 +205,11 @@ export function createFakeControlPlane(
   const hostTunnel = (enrollment: FakeEnrollment) => {
     const workspaceIds = routable(enrollment)
     if (workspaceIds.length === 0) return undefined
-    const claim = { workspace_ids: workspaceIds, enrollment_id: enrollment.enrollment_id, generation: enrollment.serving_generation }
+    const claim = {
+      workspace_ids: workspaceIds,
+      enrollment_id: enrollment.enrollment_id,
+      generation: enrollment.serving_generation,
+    }
     return {
       hostTunnelToken: `htt.${base64url(new TextEncoder().encode(JSON.stringify(claim)))}`,
       tokenExpiresAt: now() + TUNNEL_TOKEN_TTL_MS,
@@ -214,7 +236,12 @@ export function createFakeControlPlane(
    * unsigned caller learns nothing about the row; the 403 eligibility
    * decisions come after.
    */
-  const verifyMachine = async (request: { pathname: string; headers: Headers; bodyText: string; body: Record<string, unknown> }) => {
+  const verifyMachine = async (request: {
+    pathname: string
+    headers: Headers
+    bodyText: string
+    body: Record<string, unknown>
+  }) => {
     const enrollmentId = request.headers.get(MACHINE_REQUEST_HEADERS.enrollmentId)
     const tsHeader = request.headers.get(MACHINE_REQUEST_HEADERS.ts)
     const nonce = request.headers.get(MACHINE_REQUEST_HEADERS.nonce)
@@ -271,12 +298,10 @@ export function createFakeControlPlane(
       throw new FakeRefusal(400, "invalid_input")
     }
     if (body.generation < enrollment.serving_generation) throw new FakeRefusal(409, "enrollment_generation_superseded")
-    const acks = (Array.isArray(body.acks) ? body.acks : [])
-      .filter(isPlainRecord)
-      .map((ack) => ({
-        workspaceId: typeof ack.workspaceId === "string" ? ack.workspaceId : "",
-        revision: typeof ack.revision === "number" ? ack.revision : -1,
-      }))
+    const acks = (Array.isArray(body.acks) ? body.acks : []).filter(isPlainRecord).map((ack) => ({
+      workspaceId: typeof ack.workspaceId === "string" ? ack.workspaceId : "",
+      revision: typeof ack.revision === "number" ? ack.revision : -1,
+    }))
     const mine = [...assignments.values()].filter((assignment) => assignment.enrollment_id === enrollment.enrollment_id)
     for (const ack of acks) {
       const assignment = mine.find((entry) => entry.workspace_id === ack.workspaceId)
@@ -304,19 +329,26 @@ export function createFakeControlPlane(
     const pushed = enrollment.provider_config
     // Restated only while the machine's stored revision differs, exactly as
     // the route decides it: a machine that has acked is told nothing.
-    const providerConfig = pushed && pushed.revision !== enrollment.provider_config_acked_revision
-      ? { revision: pushed.revision, sealed: pushed.sealed }
-      : undefined
+    const providerConfig =
+      pushed && pushed.revision !== enrollment.provider_config_acked_revision
+        ? { revision: pushed.revision, sealed: pushed.sealed }
+        : undefined
     const credential = hostTunnel(enrollment)
     return {
       expires_at: enrollment.expires_at,
       last_seen_at: enrollment.last_seen_at,
-      assignments: mine.flatMap((assignment) => assignment.remote_directory === undefined ? [] : [{
-        workspace_id: assignment.workspace_id,
-        remote_directory: assignment.remote_directory,
-        ...(assignment.display_name ? { display_name: assignment.display_name } : {}),
-        revision: assignment.revision,
-      }]),
+      assignments: mine.flatMap((assignment) =>
+        assignment.remote_directory === undefined
+          ? []
+          : [
+              {
+                workspace_id: assignment.workspace_id,
+                remote_directory: assignment.remote_directory,
+                ...(assignment.display_name ? { display_name: assignment.display_name } : {}),
+                revision: assignment.revision,
+              },
+            ],
+      ),
       ...(enrollment.scope ? { scope: enrollment.scope } : {}),
       assigned_workspace_ids: mine.map((assignment) => assignment.workspace_id).sort(),
       ...(credential ? { hostTunnel: credential } : {}),
@@ -363,13 +395,14 @@ export function createFakeControlPlane(
       throw new FakeRefusal(400, "invitation_invalid")
     }
     const publicKey = publicKeyJwk(body.publicKey)
-    const fingerprint = await hostPublicKeyFingerprint(publicKey)
-    const payload = hostInvitationRedeemPayload({ invitationId, hostId, publicKeySha256: fingerprint })
+    const fingerprint = await publicKeyFingerprint(publicKey)
+    const payload = invitationRedeemPayload({ invitationId, hostId, publicKeySha256: fingerprint })
     if (!(await verify(publicKey, payload, body.signature))) throw new FakeRefusal(401, "invitation_signature_invalid")
     if (invitation.redeemed_at !== undefined) {
-      const same =
-        invitation.redeemed_public_key_fingerprint === fingerprint && invitation.redeemed_host_id === hostId
-      const existing = invitation.redeemed_enrollment_id ? enrollments.get(invitation.redeemed_enrollment_id) : undefined
+      const same = invitation.redeemed_public_key_fingerprint === fingerprint && invitation.redeemed_host_id === hostId
+      const existing = invitation.redeemed_enrollment_id
+        ? enrollments.get(invitation.redeemed_enrollment_id)
+        : undefined
       if (same && existing) return redeemResponse(existing, true)
       throw new FakeRefusal(409, "invitation_redeemed")
     }
@@ -381,7 +414,8 @@ export function createFakeControlPlane(
     const enrollment: FakeEnrollment = {
       enrollment_id: nextId("enr"),
       host_id: hostId,
-      display_name: typeof body.displayName === "string" && body.displayName ? body.displayName : invitation.display_name,
+      display_name:
+        typeof body.displayName === "string" && body.displayName ? body.displayName : invitation.display_name,
       owner: invitation.owner,
       public_key: publicKey,
       fingerprint,
@@ -480,9 +514,11 @@ export function createFakeControlPlane(
      */
     enrollAccountHost: async (input: { hostId: string; publicKey: string; owner?: string; displayName?: string }) => {
       const publicKey = publicKeyJwk(input.publicKey)
-      const fingerprint = await hostPublicKeyFingerprint(publicKey)
+      const fingerprint = await publicKeyFingerprint(publicKey)
       const owner = input.owner ?? "alice"
-      const existing = [...enrollments.values()].find((entry) => entry.owner === owner && entry.host_id === input.hostId)
+      const existing = [...enrollments.values()].find(
+        (entry) => entry.owner === owner && entry.host_id === input.hostId,
+      )
       if (existing) {
         // Proving possession of the key again is a stronger statement than a
         // pause or a revoke, so it clears both. A DIFFERENT key is a new
@@ -532,7 +568,13 @@ export function createFakeControlPlane(
         expires_at: now() + Math.min(Math.max(input.expiresInMs ?? 3_600_000, 5 * 60_000), 24 * 60 * 60_000),
       }
       invitations.set(invitationId, invitation)
-      return { invitationId, secret, token: `chx_inv_1.${invitationId}.${secret}`, expiresAt: invitation.expires_at, invitation }
+      return {
+        invitationId,
+        secret,
+        token: `chx_inv_1.${invitationId}.${secret}`,
+        expiresAt: invitation.expires_at,
+        invitation,
+      }
     },
     /**
      * The owner's assignment, by enrollment or host id. The lexical scope
@@ -542,12 +584,18 @@ export function createFakeControlPlane(
      * control plane), so `/srv/app/` and `/srv/app` are one row.
      */
     assign: (
-      input: ({ enrollmentId: string } | { hostId: string }) & { workspaceId: string; remoteDirectory?: string; displayName?: string },
+      input: ({ enrollmentId: string } | { hostId: string }) & {
+        workspaceId: string
+        remoteDirectory?: string
+        displayName?: string
+      },
     ) => {
       const enrollment = "hostId" in input ? enrollmentByHostId(input.hostId) : enrollments.get(input.enrollmentId)
       if (!enrollment || enrollment.revoked_at !== undefined) throw new FakeRefusal(404, "host_enrollment_not_found")
-      const remoteDirectory = input.remoteDirectory === undefined ? undefined : normalizeAbsolutePath(input.remoteDirectory)
-      if (input.remoteDirectory !== undefined && remoteDirectory === undefined) throw new FakeRefusal(400, "invalid_input")
+      const remoteDirectory =
+        input.remoteDirectory === undefined ? undefined : normalizeAbsolutePath(input.remoteDirectory)
+      if (input.remoteDirectory !== undefined && remoteDirectory === undefined)
+        throw new FakeRefusal(400, "invalid_input")
       if (enrollment.scope && !pathWithinRoots(remoteDirectory ?? "", enrollment.scope.allowed_roots)) {
         throw new FakeRefusal(400, "host_assignment_outside_scope")
       }
@@ -584,7 +632,7 @@ export function createFakeControlPlane(
       if (!key) throw new FakeRefusal(409, "host_sealing_key_undeclared")
       enrollment.provider_config = {
         revision,
-        sealed: await sealForHostMachine(key, plaintext, hostMachineSealAad({ enrollmentId, revision })),
+        sealed: await sealForMachine(key, plaintext, machineSealAad({ enrollmentId, revision })),
       }
       return revision
     },
@@ -601,7 +649,8 @@ export function createFakeControlPlane(
       enrollment.provider_config = { ...pushed }
     },
     providerConfig: (enrollmentId: string) => enrollments.get(enrollmentId)?.provider_config,
-    providerConfigAckedRevision: (enrollmentId: string) => enrollments.get(enrollmentId)?.provider_config_acked_revision,
+    providerConfigAckedRevision: (enrollmentId: string) =>
+      enrollments.get(enrollmentId)?.provider_config_acked_revision,
     sealingPublicKey: (enrollmentId: string) => enrollments.get(enrollmentId)?.sealing_public_key,
     /** Replace the roots; assignments outside them are retired, as the control plane's scope update does. */
     setScope: (enrollmentId: string, scope: Omit<FakeScope, "revision">) => {

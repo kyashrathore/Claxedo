@@ -1,17 +1,13 @@
 import { createHostConnector, type AssignmentDescription } from "@claxedo/host-connector/connector"
 import {
   createHostKeyPair,
-  enrollmentPayload,
   hostKeyPairFromJwk,
   newHostId,
   type HostKeyPair,
 } from "@claxedo/host-connector/host-identity"
-import {
-  createMachineSealingKeyPair,
-  hostMachineSealAad,
-  openMachineSeal,
-  sealingPublicKeyJwk,
-} from "@claxedo/host-connector/machine-seal"
+import { enrollmentPayload, machineSealAad, publicKeyJwk } from "@claxedo/account-contract/machine"
+import { createMachineSealingKeyPair, openMachineSeal } from "@claxedo/host-connector/machine-seal"
+
 import { createMachineSignedTransport, type FetchLike } from "@claxedo/host-connector/machine-transport"
 
 import { readField, readRecord } from "@claxedo/helpers/readers"
@@ -58,7 +54,10 @@ const EMPTY_PROVIDER_CONFIG = JSON.stringify({ version: 1, providers: {} })
  * Electron process. The executable path below adapts Electron's parentPort to
  * this same interface; there is no second runtime implementation.
  */
-export function runHostConnectorChild(port: ChildPort, deps: ChildDeps = { fetch: (input, init) => fetch(input, init) }) {
+export function runHostConnectorChild(
+  port: ChildPort,
+  deps: ChildDeps = { fetch: (input, init) => fetch(input, init) },
+) {
   const account = new Map<string, Pending<unknown>>()
   const identityStored = new Map<string, Pending<void>>()
   const sealingKeyStored = new Map<string, Pending<void>>()
@@ -212,7 +211,7 @@ export function runHostConnectorChild(port: ChildPort, deps: ChildDeps = { fetch
     return await openMachineSeal(
       machine.sealingPrivateKeyJwk,
       config.sealed,
-      hostMachineSealAad({ enrollmentId, revision: config.revision }),
+      machineSealAad({ enrollmentId, revision: config.revision }),
     )
   }
 
@@ -267,7 +266,7 @@ export function runHostConnectorChild(port: ChildPort, deps: ChildDeps = { fetch
         fetch: deps.fetch,
       }),
       heartbeatIntervalMs: message.heartbeatIntervalMs,
-      sealingPublicKey: JSON.stringify(sealingPublicKeyJwk(identity.sealingPrivateKeyJwk)),
+      sealingPublicKey: JSON.stringify(publicKeyJwk(identity.sealingPrivateKeyJwk)),
       ...(held ? { providerConfigRevision: held.revision } : {}),
       setInterval: (fn, ms) => {
         const handle = setInterval(fn, ms)

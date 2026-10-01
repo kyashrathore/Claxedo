@@ -1,37 +1,39 @@
 import { base64UrlDecode, base64UrlEncode, sha256Hex } from "@claxedo/helpers/crypto"
 import { describe, expect, test } from "vitest"
 import {
-  INVITATION_REDEEM_DOMAIN,
-  INVITATION_TOKEN_PREFIX,
   MACHINE_NONCE_MAX_LENGTH,
   MACHINE_NONCE_MIN_LENGTH,
   MACHINE_NONCE_TTL_MS,
-  MACHINE_REQUEST_DOMAIN,
-  MACHINE_REQUEST_HEADERS,
   MACHINE_REQUEST_SKEW_MS,
   directoryWithinRoots,
-  invitationRedeemPayload,
-  invitationToken,
-  invitationTokenParts,
   isMachineNonce,
-  machineRequestPayload,
   normalizePosixDirectory,
   normalizeStoredDirectory,
-  publicKeyFingerprint,
 } from "./host-connect-contract"
+import {
+  INVITATION_REDEEM_DOMAIN,
+  INVITATION_TOKEN_PREFIX,
+  MACHINE_REQUEST_DOMAIN,
+  MACHINE_REQUEST_HEADERS,
+  invitationRedeemPayload,
+  invitationToken,
+  decodeInvitationToken,
+  machineRequestPayload,
+  publicKeyFingerprint,
+} from "@claxedo/account-contract/machine"
 
-// The host side (@claxedo/host-connector) pins these same literals in its own
-// test; a change here without the matching change there fails enrollment.
 describe("host connect contract literals", () => {
   test("machine request payload", () => {
-    expect(machineRequestPayload({
-      method: "post",
-      pathname: "/api/claxedo/host/enrollments/heartbeat",
-      bodySha256Hex: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-      ts: 1_726_000_000_000,
-      nonce: "AAAAAAAAAAAAAAAAAAAAAA",
-      enrollmentId: "enr_abc",
-    })).toBe(
+    expect(
+      machineRequestPayload({
+        method: "post",
+        pathname: "/api/claxedo/host/enrollments/heartbeat",
+        bodySha256Hex: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        ts: 1_726_000_000_000,
+        nonce: "AAAAAAAAAAAAAAAAAAAAAA",
+        enrollmentId: "enr_abc",
+      }),
+    ).toBe(
       "claxedo.machine-request.v1\nPOST\n/api/claxedo/host/enrollments/heartbeat\ne3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\n1726000000000\nAAAAAAAAAAAAAAAAAAAAAA\nenr_abc",
     )
     expect(MACHINE_REQUEST_DOMAIN).toBe("claxedo.machine-request.v1")
@@ -77,18 +79,18 @@ describe("invitation token", () => {
     expect(INVITATION_TOKEN_PREFIX).toBe("chx_inv_1")
     const token = invitationToken({ invitationId: "inv_AbC-_1", secret: "s3cr3t-_x" })
     expect(token).toBe("chx_inv_1.inv_AbC-_1.s3cr3t-_x")
-    expect(invitationTokenParts(token)).toEqual({ invitationId: "inv_AbC-_1", secret: "s3cr3t-_x" })
+    expect(decodeInvitationToken(token)).toEqual({ invitationId: "inv_AbC-_1", secret: "s3cr3t-_x" })
   })
 
   test("refuses anything but three base64url parts under the prefix", () => {
-    expect(invitationTokenParts("chx_inv_2.inv_1.secret")).toBeUndefined()
-    expect(invitationTokenParts("chx_inv_1.inv_1")).toBeUndefined()
-    expect(invitationTokenParts("chx_inv_1.inv_1.secret.extra")).toBeUndefined()
-    expect(invitationTokenParts("chx_inv_1..secret")).toBeUndefined()
-    expect(invitationTokenParts("chx_inv_1.inv_1.")).toBeUndefined()
-    expect(invitationTokenParts("chx_inv_1.inv 1.secret")).toBeUndefined()
-    expect(invitationTokenParts("chx_inv_1.inv_1.sec=ret")).toBeUndefined()
-    expect(invitationTokenParts("")).toBeUndefined()
+    expect(decodeInvitationToken("chx_inv_2.inv_1.secret")).toBeUndefined()
+    expect(decodeInvitationToken("chx_inv_1.inv_1")).toBeUndefined()
+    expect(decodeInvitationToken("chx_inv_1.inv_1.secret.extra")).toBeUndefined()
+    expect(decodeInvitationToken("chx_inv_1..secret")).toBeUndefined()
+    expect(decodeInvitationToken("chx_inv_1.inv_1.")).toBeUndefined()
+    expect(decodeInvitationToken("chx_inv_1.inv 1.secret")).toBeUndefined()
+    expect(decodeInvitationToken("chx_inv_1.inv_1.sec=ret")).toBeUndefined()
+    expect(decodeInvitationToken("")).toBeUndefined()
   })
 })
 
