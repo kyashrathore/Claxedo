@@ -296,6 +296,7 @@
       "name": "@claxedo/plugin-api",
       "version": "0.1.0",
       "dependencies": {
+        "@claxedo/agent-runtime-contract": "workspace:*",
         "zod": "4.4.3",
       },
       "devDependencies": {
@@ -433,6 +434,7 @@
       "name": "@claxedo/tasks",
       "version": "0.1.0",
       "dependencies": {
+        "@claxedo/agent-runtime-contract": "workspace:*",
         "@claxedo/helpers": "workspace:*",
         "hono": "4.12.34",
       },

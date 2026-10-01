@@ -21,12 +21,13 @@ function principalOf(state: AuthState): string | undefined {
   return state.kind === "signedIn" ? state.user.id : undefined
 }
 
-type ServerAccess = { readonly auth: AuthSource; readonly account?: RunHostedOperation }
+type ServerAccess = { readonly auth: AuthSource; readonly account?: RunHostedOperation; readonly cookies?: true }
 
 function serverAccess(auth: Auth, principal: string | undefined): ServerAccess {
   if (principal === undefined) return { auth: { kind: "none" } }
   const access = auth.controlPlane
   if (access.kind === "port") return { auth: { kind: "none" }, account: access.run }
+  if (access.kind === "cookie") return { auth: { kind: "none" }, cookies: true }
   return { auth: { kind: "bearer", token: async (options) => (await access.token({ skipCache: options?.fresh })) ?? undefined } }
 }
 

@@ -100,6 +100,7 @@ test("34 a live plugin on the desktop: every primitive works in the app, panes a
   await expect(window.getByText("Fixture settings body")).toBeVisible()
   await leaveSettings(window)
   await expect(window.locator("[data-icon-skin]").first()).toBeVisible()
+  await expect((await openFixture(window)).getByText("Host theme: fixture", { exact: true })).toBeVisible()
 
   await window.getByRole("button", { name: UI.newSession }).first().click()
   await window.getByRole("textbox", { name: UI.composer }).click()

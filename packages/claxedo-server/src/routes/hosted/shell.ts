@@ -636,7 +636,7 @@ export function HostedShellRoutes(options: HostedShellRouteOptions) {
         healthy: true,
         version: version(options),
         events: { hostAggregate: false },
-        deployment: { issuesSessions: issuesSessions(options.authConfig), documents: false, connections: options.connections === true },
+        deployment: { serverKind: "hosted", issuesSessions: issuesSessions(options.authConfig), documents: false, connections: options.connections === true },
       }
       if (!hasCredential(c, options)) return c.json(declaration)
       try {

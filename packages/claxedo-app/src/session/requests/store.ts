@@ -1,5 +1,5 @@
 import { createMemo, createSignal, type Accessor } from "solid-js"
-import { toAppError, type AgentRequest, type AgentRequestReply, type AppError, type RequestId, type Server, type ServerEvent, type SessionId, type SessionRef } from "@/server"
+import { toAppError, type AgentRequest, type AgentRequestReply, type AppError, type RequestId, type Server, type ServerEvent, type SessionId, type SessionLocation } from "@/server"
 import type { RequestState } from "@/session"
 import { EXPIRED, applyRequestsEvent, initialRequestsData, isOpenRequest, readErrorOf, type RequestsData, type RequestsEvent } from "./model"
 
@@ -8,10 +8,10 @@ export type RequestsInternal = {
   readonly openFor: (sessionId: SessionId) => readonly AgentRequest[]
   readonly stateOf: (requestId: RequestId) => RequestState
   readonly apply: (event: ServerEvent) => void
-  readonly read: (ref: SessionRef, requests: readonly AgentRequest[], sentAt: number) => void
-  readonly readFailed: (ref: SessionRef, error: AppError, sentAt: number) => void
+  readonly read: (ref: SessionLocation, requests: readonly AgentRequest[], sentAt: number) => void
+  readonly readFailed: (ref: SessionLocation, error: AppError, sentAt: number) => void
   readonly readErrorFor: (sessionId: SessionId) => AppError | undefined
-  readonly reply: (ref: SessionRef, requestId: RequestId, reply: AgentRequestReply) => Promise<void>
+  readonly reply: (ref: SessionLocation, requestId: RequestId, reply: AgentRequestReply) => Promise<void>
 }
 
 const NO_REQUESTS: readonly AgentRequest[] = Object.freeze([])
@@ -36,7 +36,7 @@ function requestsEventOf(event: ServerEvent): RequestsEvent | undefined {
 async function sendReply(
   server: Server,
   send: (event: RequestsEvent) => void,
-  ref: SessionRef,
+  ref: SessionLocation,
   requestId: RequestId,
   answer: AgentRequestReply,
 ): Promise<void> {
@@ -53,7 +53,7 @@ export function createRequests(server: Server): RequestsInternal {
   const [data, setData] = createSignal(initialRequestsData)
   const send = (event: RequestsEvent) => setData((current) => applyRequestsEvent(current, event))
   const openBySession = createMemo(() => openRequestsBySession(data()))
-  const read = (ref: SessionRef, requests: readonly AgentRequest[], sentAt: number) => send({ type: "read", ref, requests, sentAt })
+  const read = (ref: SessionLocation, requests: readonly AgentRequest[], sentAt: number) => send({ type: "read", ref, requests, sentAt })
   return {
     openBySession,
     openFor: (sessionId) => openBySession().get(sessionId) ?? NO_REQUESTS,

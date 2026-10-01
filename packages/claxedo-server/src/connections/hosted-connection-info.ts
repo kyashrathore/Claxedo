@@ -319,21 +319,7 @@ export async function hostedConnectionInfo(
   })
 }
 
-/**
- * The read path (GET `/:id/connection`): reports the connection's CURRENT
- * state without ever provisioning. `sandboxManager.target` resolves from the
- * lease row alone — no driver call, no acquire, no boot — so a read can never
- * start billable compute:
- *
- *  - lease ready → the running workspace's connection, with a freshly minted
- *    Runtime Access Token (a viewer may legitimately need the running runtime
- *    to read a session — P-118; what a read may not do is START one),
- *  - lease acquiring → `status: "provisioning"`: an explicit connect is
- *    already booting it, and the read says so without joining the spend,
- *  - anything else (missing, stopped, unavailable, destroyed) →
- *    `status: "stopped"`, the not-running indicator an explicit POST turns
- *    into a start.
- */
+/** A read may inspect settings and mint for a running runtime, but never acquire a lease or provision it. */
 export async function hostedConnectionStatus(
   services: ControlPlaneServices | undefined,
   options: WorkspaceRouteOptions,
@@ -374,6 +360,13 @@ export async function hostedConnectionStatus(
         ...(target.retryAfterMs !== undefined ? { retryAfterMs: target.retryAfterMs } : {}),
       },
     } as const
+  }
+  try {
+    if (options.runtimeProvisioned && !(await options.runtimeProvisioned({ workspaceId }))) {
+      return { connection: { status: "provisioning" as const, workspaceId, homeRegion } }
+    }
+  } catch (cause) {
+    return { error: apiError("runtime_provision_failed", cause instanceof Error ? cause.message : "Runtime settings status unavailable"), status: 409 } as const
   }
   return mintCloudConnection(services, options, auth, {
     authority,

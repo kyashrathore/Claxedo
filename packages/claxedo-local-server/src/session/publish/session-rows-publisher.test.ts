@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
+import type { SessionRef } from "@claxedo/agent-runtime-contract"
 import type { HostSessionRow } from "@claxedo/server-core/platform/auth/host-session-rows"
 import { createSessionRowsPublisher, type SessionRowsPublisher } from "./session-rows-publisher"
 import type { SessionRowSource } from "./local-session-rows"
@@ -7,7 +8,7 @@ const URL = "https://control-plane.test/api/claxedo/host/session-rows"
 const WS_A = "ws_a"
 const WS_B = "ws_b"
 
-type Sent = { url: string; token: string | null; body: { hostId: string; rows: HostSessionRow[]; removed: Array<{ workspaceId: string; sessionId: string }> } }
+type Sent = { url: string; token: string | null; body: { hostId: string; rows: HostSessionRow[]; removed: SessionRef[] } }
 
 function row(workspaceId: string, sessionId: string, overrides: Partial<HostSessionRow> = {}): HostSessionRow {
   return {

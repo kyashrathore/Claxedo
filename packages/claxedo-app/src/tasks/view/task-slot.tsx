@@ -1,5 +1,5 @@
 import { For, Show, type JSX } from "solid-js"
-import type { ConfigurationSlot, SessionReference, Task, TaskSessionLinkView } from "@claxedo/tasks"
+import type { ConfigurationSlot, SessionRef, Task, TaskSessionLinkView } from "@claxedo/tasks"
 import { useTranslator } from "@/i18n"
 import { Button, Tag } from "@/ui"
 import type { TaskStartOffer } from "../data/start"
@@ -13,14 +13,14 @@ export type SlotRowProps = {
   readonly group: TaskLinkGroup | undefined
   readonly offer: TaskStartOffer
   readonly busy?: boolean
-  readonly onOpenSession: (sessionRef: SessionReference) => void
+  readonly onOpenSession: (sessionRef: SessionRef) => void
   readonly onSendTask: (link: TaskSessionLinkView) => void
 }
 
 function Attempts(props: {
   readonly slot: ConfigurationSlot
   readonly history: readonly TaskSessionLinkView[]
-  readonly onOpenSession: (ref: SessionReference) => void
+  readonly onOpenSession: (ref: SessionRef) => void
 }): JSX.Element {
   const t = useTranslator(tasksDictionary)
   return (

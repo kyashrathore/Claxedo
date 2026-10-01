@@ -2,7 +2,7 @@ import { createEffect, createMemo, createSignal, Match, on, Show, Switch } from 
 import { Composer, promptText, sessionComposerKey, useComposerStore } from "@/composer"
 import { usePhone } from "@/lib/viewport"
 import { FailureBoundary, FailureNotice } from "@/lib/failure"
-import { sessionId, useServer, type SessionRef } from "@/server"
+import { sessionId, useServer, type SessionLocation } from "@/server"
 import { usePanel } from "@/panel"
 import { useSessionStores, type SessionView } from "@/session"
 import { sessionPath, useCommands, useShellRoute, type PaneProps } from "@/shell"
@@ -46,7 +46,7 @@ function ChildNotice(props: { readonly t: SessionScreenText; readonly readOnly: 
 }
 
 type SessionSurfaceProps = {
-  readonly sessionRef: SessionRef
+  readonly sessionRef: SessionLocation
   readonly active: boolean
   readonly readOnly?: boolean
 }
@@ -221,6 +221,6 @@ export function SessionSurface(props: SessionSurfaceProps) {
   )
 }
 
-export function SessionScreen(props: PaneProps<SessionRef>) {
+export function SessionScreen(props: PaneProps<SessionLocation>) {
   return <SessionSurface sessionRef={props.state} active={props.active} />
 }
