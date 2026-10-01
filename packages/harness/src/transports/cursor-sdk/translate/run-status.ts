@@ -1,5 +1,5 @@
 import { asRecord } from "@claxedo/helpers/guards"
-import type { LocalRunStreamEvent, LocalRunStreamResultEvent, SDKMessage } from "@cursor/sdk"
+import type { LocalRunStreamResultEvent, SDKMessage } from "@cursor/sdk"
 import type { AgentRuntimeEvent } from "@claxedo/agent-runtime-contract"
 import { asText as text } from "@claxedo/agent-runtime-contract"
 import { unknownKind } from "./frames"
@@ -34,9 +34,9 @@ function failedRun(row: CursorRunResult): AgentRuntimeEvent[] {
   ]
 }
 
-export function localRunTerminalEvents(state: CursorSdkAdapterState, row: Exclude<LocalRunStreamEvent, { type: "sdk_message" }>): CursorTranslation {
-  if (row.type === "done" || row.status === "finished" || row.status === "cancelled") {
-    const type = row.type === "result" && row.status === "cancelled" ? "cancelled" : "finish"
+export function localRunTerminalEvents(state: CursorSdkAdapterState, row: CursorRunResult): CursorTranslation {
+  if (row.status === "finished" || row.status === "cancelled") {
+    const type = row.status === "cancelled" ? "cancelled" : "finish"
     return { state: endedRunState(state), events: [{ type: "session-status", status: "idle" }, { type, sessionId: row.runId }] }
   }
   return row.status === "error" ? { state: endedRunState(state), events: failedRun(row) } : unknownKind(state, `result:${String(row.status)}`)
