@@ -61,7 +61,7 @@ and the optional Pages lifecycle hooks stay with the machine host, and
 `storeSessionRoutes` gives every host the route options it answers from its
 store. The Node-free ratchet scans all core production files and the first-party
 import closure; `packages/session-core/README.md` holds the port contract.
-`packages/workspace-runtime/src/session-core-durable-object.node-test.ts` runs
+`packages/session-core/src/durable-object.node-test.ts` runs
 the core in a Durable Object under workerd without `nodejs_compat`. The
 extraction does not implement the later turn-row and journal consolidation.
 
