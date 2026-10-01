@@ -22,6 +22,9 @@ export async function hostedFetch(
   const headers = new Headers(options.headers)
   if (options.method && options.method !== "GET") headers.set("origin", stack.workerUrl)
   if (person) headers.set("cookie", person.cookie)
+  // Under Bun's node:https a request on a reused keep-alive socket to workerd
+  // intermittently fails with ECONNRESET, so each request takes its own.
+  headers.set("connection", "close")
   if (options.body !== undefined && options.body !== null && typeof options.body !== "string") throw new Error("Hosted fixture requests require a serialized body")
   if (options.redirect === "follow") throw new Error("Hosted fixture requests must handle redirects explicitly")
   const url = new URL(route, stack.workerUrl)
