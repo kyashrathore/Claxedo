@@ -36,7 +36,7 @@ describe("machine seal interoperability", () => {
     expect(publicKeyJwk(publicHalf)).toEqual(publicKeyJwk(RECIPIENT_PUBLIC))
   })
 
-  test("the literals the control plane's copy pins to the same values", () => {
+  test("seal constants and AAD match the frozen format", () => {
     expect(MACHINE_SEAL_VERSION).toBe("mseal1")
     expect(MACHINE_SEAL_DOMAIN).toBe("claxedo.machine-seal.v1")
     expect(VECTOR_AAD).toBe("claxedo.machine-seal.v1\nenr_vector\n7")

@@ -170,15 +170,8 @@ export type WorkspaceAuthority = OrgAccessAuthority & {
    * for a verified actor can bind that actor's personal partitions without
    * the caller synthesizing provider subjects.
    */
-  resolveRuntimeMachineAccess: (
-    actorId: string,
-    workspaceId: string,
-    minimumRole?: ProjectRole,
-  ) => Promise<RuntimeActorIdentity & { orgId: string; role: ProjectRole; userId?: string }>
-  resolveChannelMachineAccess: (
-    identity: ChannelMachineIdentity,
-    workspaceId: string,
-  ) => Promise<RuntimeActorIdentity & { orgId: string; role: ProjectRole; identityVersion: number }>
+  resolveRuntimeMachineAccess: (actorId: string, workspaceId: string, minimumRole?: ProjectRole) => Promise<RuntimeActorIdentity & { orgId: string; role: ProjectRole; userId?: string }>
+  resolveChannelMachineAccess: (identity: ChannelMachineIdentity, workspaceId: string) => Promise<RuntimeActorIdentity & { orgId: string; role: ProjectRole; identityVersion: number }>
   /**
    * The workspace's canonical owner, for a credential this control plane
    * minted that carries no signed bearer of its own.
@@ -190,10 +183,7 @@ export type WorkspaceAuthority = OrgAccessAuthority & {
    * longer write to it.
    */
   resolveWorkspaceOwner?: (workspaceId: string) => Promise<WorkspaceOwnerIdentity | undefined>
-  recordChannelRuntimeAccessToken: (
-    identity: ChannelMachineIdentity,
-    args: Parameters<WorkspaceAuthority["recordRuntimeAccessToken"]>[1],
-  ) => Promise<unknown>
+  recordChannelRuntimeAccessToken: (identity: ChannelMachineIdentity, args: Parameters<WorkspaceAuthority["recordRuntimeAccessToken"]>[1]) => Promise<unknown>
   // identity
   usersMe: (auth: SignedControlPlaneAuth) => Promise<unknown>
   listOrgs: (auth: SignedControlPlaneAuth) => Promise<unknown>
@@ -293,7 +283,10 @@ export type WorkspaceAuthority = OrgAccessAuthority & {
     auth: SignedControlPlaneAuth,
     args: { hostId?: string; paused: boolean },
   ) => Promise<{ paused: boolean }>
-  activeHostEnrollment: (auth: SignedControlPlaneAuth, args?: Record<string, never>) => Promise<HostEnrollmentState>
+  activeHostEnrollment: (
+    auth: SignedControlPlaneAuth,
+    args?: Record<string, never>,
+  ) => Promise<HostEnrollmentState>
   /**
    * May this caller have a machine serve this workspace, and would doing so
    * file a new row? The workspace half of `assignWorkspaceHost`, answered on
@@ -349,32 +342,32 @@ export type WorkspaceAuthority = OrgAccessAuthority & {
     args: { workspaceId: string },
   ) => Promise<
     | {
-        active: true
-        host_id: string
-        workspace_id: string
-        display_name?: string
-        expires_at: number
-        last_seen_at: number
-        /**
-         * The composition the routable machine declared on its last heartbeat.
-         * Absent when it declared none — the caller reports the absence rather
-         * than substituting a guess.
-         */
-        session_authority?: HostSessionAuthority
-      }
+      active: true
+      host_id: string
+      workspace_id: string
+      display_name?: string
+      expires_at: number
+      last_seen_at: number
+      /**
+       * The composition the routable machine declared on its last heartbeat.
+       * Absent when it declared none — the caller reports the absence rather
+       * than substituting a guess.
+       */
+      session_authority?: HostSessionAuthority
+    }
     | { active: false }
   >
   /** Every live assignment on the account, grouped for the devices surface. */
-  listHostAssignments: (auth: SignedControlPlaneAuth) => Promise<
-    Array<{
-      host_id: string
-      display_name: string
-      last_seen_at: number
-      expires_at: number
-      workspace_ids: string[]
-      acked_workspace_ids: string[]
-    }>
-  >
+  listHostAssignments: (
+    auth: SignedControlPlaneAuth,
+  ) => Promise<Array<{
+    host_id: string
+    display_name: string
+    last_seen_at: number
+    expires_at: number
+    workspace_ids: string[]
+    acked_workspace_ids: string[]
+  }>>
   /**
    * The machine's own heartbeat: the caller is the verified machine principal
    * (`verifyMachineRequest`), not an account bearer, and `who` is the row's
@@ -398,7 +391,10 @@ export type WorkspaceAuthority = OrgAccessAuthority & {
     args: HostInvitationCreateInput,
   ) => Promise<HostInvitationCreateResult>
   listHostInvitations?: (auth: SignedControlPlaneAuth) => Promise<HostInvitationRow[]>
-  revokeHostInvitation?: (auth: SignedControlPlaneAuth, args: { invitationId: string }) => Promise<{ revoked: boolean }>
+  revokeHostInvitation?: (
+    auth: SignedControlPlaneAuth,
+    args: { invitationId: string },
+  ) => Promise<{ revoked: boolean }>
   /** No caller auth: the single-use invitation secret is the credential. */
   redeemHostInvitation?: (args: HostInvitationRedeemInput) => Promise<HostInvitationRedeemResult>
   /**
@@ -492,10 +488,7 @@ export type WorkspaceAuthority = OrgAccessAuthority & {
     },
   ) => Promise<unknown>
   /** The undo of `createRuntimeCloudWorkspace`, as the same principal. */
-  deleteRuntimeWorkspace?: (
-    principal: PrivateSessionRuntimePrincipal,
-    args: { workspaceId: string },
-  ) => Promise<unknown>
+  deleteRuntimeWorkspace?: (principal: PrivateSessionRuntimePrincipal, args: { workspaceId: string }) => Promise<unknown>
 
   // sessions
   authorizeSessionRead: (
@@ -554,7 +547,10 @@ export type WorkspaceAuthority = OrgAccessAuthority & {
     args: { sessionId: string; workspaceId: string },
   ) => Promise<SessionPeopleContext>
   createOrg?: (auth: SignedControlPlaneAuth, args: { name: string }) => Promise<unknown>
-  listSessions: (auth: SignedControlPlaneAuth, args: { workspaceId: string }) => Promise<AuthoritySessionInventoryRow[]>
+  listSessions: (
+    auth: SignedControlPlaneAuth,
+    args: { workspaceId: string },
+  ) => Promise<AuthoritySessionInventoryRow[]>
   listSessionPage: (auth: SignedControlPlaneAuth, args: SessionPageQuery) => Promise<AuthoritySessionInventoryRow[]>
   publishHostSessionRows?: HostSessionRowsAuthority["publishHostSessionRows"]
   resolveSession?: (auth: SignedControlPlaneAuth, args: { sessionId: string }) => Promise<unknown>
@@ -610,7 +606,9 @@ export type WorkspaceAuthority = OrgAccessAuthority & {
    * producers can answer it; a composition without one writes the fact
    * unowned rather than attributing it to whoever asks next.
    */
-  resolveSessionUsageOwner?: (args: { sessionId: string }) => Promise<{ org_id: string; user_id: string } | undefined>
+  resolveSessionUsageOwner?: (
+    args: { sessionId: string },
+  ) => Promise<{ org_id: string; user_id: string } | undefined>
   /**
    * The account a reported cloud turn's usage is attributed to: the actor the
    * runtime admitted for `turnId` on `sessionId`. No owner when the session
@@ -618,10 +616,9 @@ export type WorkspaceAuthority = OrgAccessAuthority & {
    * workspace is not a live cloud workspace — only a cloud VM reports usage to
    * the plane, and a machine keeps its own.
    */
-  resolveCloudTurnUsageOwner?: (args: {
-    sessionId: string
-    turnId: string
-  }) => Promise<{ org_id: string; user_id: string } | undefined>
+  resolveCloudTurnUsageOwner?: (
+    args: { sessionId: string; turnId: string },
+  ) => Promise<{ org_id: string; user_id: string } | undefined>
 
   // runtime tokens
   recordRuntimeAccessToken: (
@@ -825,7 +822,7 @@ export type HostMachineHeartbeatInput = {
   sessionAuthority?: HostSessionAuthority
   /**
    * The ECDH P-256 public JWK JSON this machine can be sealed to
-   * (`./machine-seal`), recorded on every beat that carries one.
+   * recorded on every beat that carries one.
    *
    * The enrollment's own key signs and cannot derive bits, so this is a second
    * key and its declaration rides the one channel the machine already proves
@@ -979,7 +976,7 @@ export type HostInvitationRedeemInput = {
   hostId: string
   /** Public P-256 JWK JSON. */
   publicKey: string
-  /** Over `invitationRedeemPayload` (host-connect-contract). */
+  /** Over `invitationRedeemPayload` from account-contract/machine. */
   signature: string
   displayName?: string
 }

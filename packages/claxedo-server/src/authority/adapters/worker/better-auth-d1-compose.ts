@@ -3,7 +3,8 @@ import { oauthProviderAuthServerMetadata } from "@better-auth/oauth-provider"
 import type { D1Database } from "@cloudflare/workers-types"
 import { Hono } from "hono"
 import type { ControlPlaneAuthAdapter } from "@claxedo/server-core/platform/auth/auth"
-import type { AuthAdapterDescriptor } from "@claxedo/server-core/platform/auth/authentication"
+import type { AuthAdapterDescriptor } from "@claxedo/account-contract/auth"
+
 import type { AuthIdentity } from "@claxedo/server-core/platform/auth/authentication"
 import { browserAuthHttpSecurity } from "@claxedo/server-core/platform/http/browser-auth-security"
 

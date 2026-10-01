@@ -80,14 +80,7 @@ export function enrollmentPayload(input: { hostId: string; requestId: string; no
   ].join("\n")
 }
 
-/**
- * What a sealed blob is bound to: one enrollment, at one revision. A
- * ciphertext lifted onto another machine's row, or re-labelled as a different
- * revision, fails the tag rather than decrypting. It does NOT refuse a replay
- * of the original pair — that blob really was sealed at that revision, so its
- * tag verifies; the machine's monotonic revision check in `connector.ts` is
- * what refuses a rollback to a rotated or withdrawn credential.
- */
+/** AAD rejects relabelling, not replay; the caller must enforce monotonic revisions. */
 export function machineSealAad(input: { enrollmentId: string; revision: number }) {
   return [MACHINE_SEAL_DOMAIN, input.enrollmentId, String(input.revision)].join("\n")
 }

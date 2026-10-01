@@ -1,9 +1,9 @@
 import { describe, expect, test, vi } from "vitest"
 
+import { type AuthAdapterDescriptor } from "@claxedo/account-contract/auth"
 import {
   AuthenticationError,
   type ApplicationIdentityResolution,
-  type AuthAdapterDescriptor,
 } from "@claxedo/server-core/platform/auth/authentication"
 
 import { createBetterAuthD1RequestAuthenticationAdapter } from "./better-auth-d1-request-authentication"

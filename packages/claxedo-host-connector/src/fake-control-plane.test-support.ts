@@ -31,6 +31,7 @@ import {
 } from "./host-identity"
 import {
   invitationRedeemPayload,
+  invitationToken,
   publicKeyFingerprint,
   MACHINE_REQUEST_HEADERS,
   publicKeyJwk,
@@ -571,7 +572,7 @@ export function createFakeControlPlane(
       return {
         invitationId,
         secret,
-        token: `chx_inv_1.${invitationId}.${secret}`,
+        token: invitationToken({ invitationId, secret }),
         expiresAt: invitation.expires_at,
         invitation,
       }

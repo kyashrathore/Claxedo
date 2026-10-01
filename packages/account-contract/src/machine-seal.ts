@@ -4,7 +4,6 @@ const SEALING_ALGORITHM = { name: "ECDH", namedCurve: "P-256" } as const
 const IV_BYTES = 12
 const SHARED_SECRET_BITS = 256
 
-/** Whether a declared key is one this module can seal for, without throwing on the caller's behalf. */
 export function isMachineSealingPublicKey(input: unknown): boolean {
   try {
     publicKeyJwk(input)

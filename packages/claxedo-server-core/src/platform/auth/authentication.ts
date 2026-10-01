@@ -1,5 +1,4 @@
 import {
-  AUTH_ADAPTERS,
   INTERACTIVE_AUTH_METHODS,
   bindNativeClient,
   decodeAuthDescriptor,
@@ -8,19 +7,6 @@ import {
   type AuthAdapterDescriptor,
   type NativeCredentialBinding,
 } from "@claxedo/account-contract/auth"
-export {
-  AUTH_ADAPTERS,
-  INTERACTIVE_AUTH_METHODS,
-  type AuthAdapterId,
-  type InteractiveAuthMethod,
-  type AuthAdapterDescriptor,
-  type BrowserAuthDescriptor,
-  type NativeAuthClientDescriptor,
-  type NativeCredentialBinding,
-} from "@claxedo/account-contract/auth"
-
-/** Provider-neutral authentication contracts for hosted control planes. */
-
 import { isJsonRecord, isNonEmptyString, isOneOf } from "../runtime/lib/json"
 
 export const AUTH_CLIENT_KINDS = ["browser", "cli", "desktop"] as const
