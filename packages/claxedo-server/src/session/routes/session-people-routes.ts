@@ -58,7 +58,8 @@ function shareTargetFromBody(body: Record<string, unknown>): SessionShareFanoutT
 }
 
 /**
- * Hosted workerd must not import the Node supervisor or workspace runtime.
+ * Kept apart from `ControlPlaneSessionRoutes` so hosted workerd does not import
+ * the Node supervisor or workspace runtime through session-list/hybrid create.
  */
 export function SessionPeopleControlRoutes(services: ControlPlaneServices, options: Options = {}) {
   const app = new Hono()
