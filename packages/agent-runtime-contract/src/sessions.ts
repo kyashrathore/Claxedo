@@ -11,8 +11,9 @@ import type { TurnAccount } from "./turn-account"
 export type SessionRef = Readonly<{ sessionId: string; workspaceId: string }>
 
 export type AgentWorkspaceIdentity = {
+  workspaceId: string
   directory: string
-} & Pick<SessionRef, "workspaceId">
+}
 
 /**
  * The complete identity required for any provider-owned execution operation.
@@ -58,8 +59,10 @@ export interface AgentSessionStarts {
 
 export type AgentExecutionBindingField = keyof AgentExecutionBinding
 
-export type AgentExecutionBindingExpectation = Pick<SessionRef, "sessionId"> & Partial<Pick<SessionRef, "workspaceId">> & Readonly<{
+export type AgentExecutionBindingExpectation = Readonly<{
   scope?: "workspace"
+  sessionId: string
+  workspaceId?: string
   directory: string
   connectionId: string
   upstreamSessionId: string
@@ -80,8 +83,8 @@ export type AgentSessionCommand = {
 }
 
 export type AgentSession = {
-  id: SessionRef["sessionId"]
-  workspaceId?: SessionRef["workspaceId"]
+  id: string
+  workspaceId?: string
   title?: string | null
   titleSource?: AgentSessionTitleSource
   slug?: string

@@ -11,7 +11,6 @@ import type {
   AgentTurnOutcome,
   PromptDeliveryRequest,
   RuntimeGoalSnapshot,
-  SessionRef,
 } from "@claxedo/agent-runtime-contract"
 import type { SolidQueryOptions } from "@tanstack/solid-query"
 import type { HarnessSelection } from "../lib/harness-selection"
@@ -30,8 +29,8 @@ export type AppError = {
 
 export type SessionLocation = {
   readonly projectId: ProjectId
-  readonly placementId: SessionRef["workspaceId"] & PlacementId
-  readonly sessionId: SessionRef["sessionId"] & SessionId
+  readonly placementId: PlacementId
+  readonly sessionId: SessionId
 }
 
 export type Machine = {
