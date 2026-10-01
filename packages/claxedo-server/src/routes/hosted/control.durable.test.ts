@@ -3,7 +3,7 @@ import { createIdempotencyCoordinator, d1ProjectionCommandIdempotency, IDEMPOTEN
 import { controlPlaneMigrations, miniflareControlPlaneDatabase, type ControlPlaneDatabase } from "../../test-support/control-plane-migrations"
 
 const pulls = vi.hoisted(() => ({ session: vi.fn(), messages: vi.fn() }))
-vi.mock("../../authority/hosted-session-sync", () => ({
+vi.mock("../../authority/hosted-session-pull", () => ({
   pullHostedControlSession: pulls.session,
   pullHostedControlSessionMessages: pulls.messages,
 }))

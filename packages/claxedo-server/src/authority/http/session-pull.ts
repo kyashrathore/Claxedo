@@ -1,15 +1,13 @@
-import type { Workspace } from "@claxedo/server-core/workspace/store/index"
-import type { WorkspaceRecord } from "@claxedo/server-core/platform/auth/authority"
-import type { RelayRole } from "@claxedo/workspace-relay"
-import { resolveWorkspaceRuntimeTarget } from "../runtime-target"
+import { resolveWorkspace, type SessionProjectionWorkspace, type Workspace } from "@claxedo/server-core/workspace/store/index"
+import type { ControlPlaneAuthContext, SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
+import { requireAuthority, type WorkspaceRecord } from "@claxedo/server-core/platform/auth/authority"
 import { CONTROL_PLANE_RUNTIME_ACTOR, resolveRuntimeActor } from "@claxedo/server-core/platform/auth/runtime-actor"
 import { WORKSPACE_RUNTIME_IDENTITY_PATH } from "@claxedo/server-core/platform/governance/route-ownership"
+import type { RelayRole } from "@claxedo/workspace-relay"
 import { asRecord } from "@claxedo/helpers/guards"
-import { createRelayRuntimeClient, decodeRelayRuntimeJson, type RelayRuntimeCapability } from "../../workspace/relay-runtime-client"
-import { resolveWorkspace, type SessionProjectionWorkspace } from "@claxedo/server-core/workspace/store/index"
-import type { ControlPlaneAuthContext, SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
-import { requireAuthority } from "@claxedo/server-core/platform/auth/authority"
 import type { ControlPlaneServices } from "../services"
+import { resolveWorkspaceRuntimeTarget } from "../runtime-target"
+import { createRelayRuntimeClient, decodeRelayRuntimeJson, type RelayRuntimeCapability } from "../../workspace/relay-runtime-client"
 import { ControlPlaneProtocolError, type ControlPlaneHttpOptions } from "./protocol"
 import { txt } from "@claxedo/server-core/session/meta/shape"
 import {
@@ -203,7 +201,6 @@ async function workspaceForPull(
   return { ws, authorityWorkspace: opened?.workspace, authorityRole: relayRole(opened?.role) }
 }
 
-
 type SessionRuntimeInput = {
   workspaceId: string
   ws: Pick<Workspace, "org_id">
@@ -248,14 +245,6 @@ async function sessionRuntimeCapability(services: ControlPlaneServices, input: S
     workspaceId: input.workspaceId,
     ...(input.authorityWorkspace ? { workspace: input.authorityWorkspace } : {}),
   })
-  const provider = services.relay.provider
-  if (!provider) {
-    throw new ControlPlaneProtocolError(
-      503,
-      "workspace_runtime_unavailable",
-      "Workspace runtime pull transport is not configured",
-    )
-  }
   const orgId = input.ws.org_id
   if (!orgId) {
     throw new ControlPlaneProtocolError(

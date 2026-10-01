@@ -3,7 +3,7 @@ import { localOnlyAuthAdapter } from "@claxedo/server-core/platform/auth/auth"
 import type { ControlPlaneServices } from "./services"
 
 // Both session-pull flows (`http/session-pull.ts` local-cloud and
-// `hosted-session-sync.ts` Worker) write pulled runtime state through the
+// `hosted-session-pull.ts` Worker) write pulled runtime state through the
 // `ProjectionStore` port. These tests pin the "only update when newer"
 // ordinal/snapshot skip rules at that port, so they hold for the SQLite and
 // Worker stores alike.
@@ -22,7 +22,7 @@ vi.mock("@claxedo/server-core/workspace/store/index", () => ({
 }))
 
 import { pullControlSession, pullControlSessionMessages } from "./http/session-pull"
-import { pullHostedControlSession, pullHostedControlSessionMessages } from "./hosted-session-sync"
+import { pullHostedControlSession, pullHostedControlSessionMessages } from "./hosted-session-pull"
 import { fetchUrl } from "../test-support/fetch-calls"
 
 const originalFetch = globalThis.fetch

@@ -78,7 +78,7 @@ bun test src/main.test.ts --test-name-pattern 'routing fence'
 From `packages/claxedo-server`:
 
 ```sh
-npx vitest run src/authority/sandbox-relay-target.test.ts src/sandbox/stores/sqlite-routing.test.ts src/sandbox/stores/d1.test.ts src/deployments/shared-routes/internal-relay.test.ts src/workspace/supervisor/cloud.test.ts src/workspace/routes/index.test.ts src/routes/hosted/workspace.test.ts src/authority/http/index.test.ts src/authority/hosted-session-sync.test.ts
+npx vitest run src/authority/sandbox-relay-target.test.ts src/sandbox/stores/sqlite-routing.test.ts src/sandbox/stores/d1.test.ts src/deployments/shared-routes/internal-relay.test.ts src/workspace/supervisor/cloud.test.ts src/workspace/routes/index.test.ts src/routes/hosted/workspace.test.ts src/authority/http/index.test.ts src/authority/hosted-session-pull.test.ts
 ```
 
 337 passed. Additional final fixture checks:

@@ -305,7 +305,6 @@ async function harnessRelayFetch(
     ttlMs: 10 * 60_000,
     homeRegion: target.homeRegion,
   }, input.path, { headers: { accept: "application/json" } })
-
 }
 
 async function harnessRuntimeJson(

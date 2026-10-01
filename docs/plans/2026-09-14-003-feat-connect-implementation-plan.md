@@ -696,7 +696,7 @@ principal for them is defined.
   machine-signed `POST /api/claxedo/host/sessions/checkpoint { workspaceId, sessionId, expectedEventOrdinal }`.
 - Control plane: route machine-caller only; refuses unless the workspace is
   assigned to this enrollment and the session row exists for it. The existing
-  pull (`hosted-session-sync.ts`) requires a signed account, opens the
+  pull (`hosted-session-pull.ts`) requires a signed account, opens the
   workspace as that user and mints a **user** RAT; the user-hosted target
   lookup also requires signed auth. A machine result cannot be threaded
   through it and synthesizing owner auth is the impersonation P1 removed. So
@@ -829,7 +829,7 @@ slice plan 002 defers.
 | H — fixture + e2e | `signed-browser-relay-fixture.mjs`, `user-hosted-relay-fixture.mjs`, `real-connect-host.spec.ts`: every P3.5 fixture capability is a named deliverable here | G, D |
 | I — app panel | remote-access + account port paths, desktop `hosted-operations.ts` | B contracts |
 | J — app composer | `session-new-*`, `composer/**`, `workspace-catalog.ts` | B contracts |
-| K — checkpointing | `routes/hosted/control.ts`, `hosted-session-sync.ts`, `d1/session-authority.ts`, SQLite session store, app `session-projection.ts`, `session-source.ts` | G |
+| K — checkpointing | `routes/hosted/control.ts`, `hosted-session-pull.ts`, `d1/session-authority.ts`, SQLite session store, app `session-projection.ts`, `session-source.ts` | G |
 
 Rules from the repo's record: partition by file ownership, commit with
 `git commit -- <paths>`, never stash on the shared worktree, review each
