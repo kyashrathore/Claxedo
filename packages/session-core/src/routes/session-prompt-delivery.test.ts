@@ -13,7 +13,8 @@ import type { RuntimeStore } from "../store"
 import { openRuntimeStore } from "../../../workspace-runtime/src/store-file"
 import type { QueuedPromptRecord } from "../session/delivery-queue"
 import { FakeTransport } from "../../../workspace-runtime/src/test-support/fake-transport"
-import { LOOPBACK_ORIGIN, createHostFixture, sessionCreate, testLaunch } from "../../../workspace-runtime/src/test-support/host-fixture"
+import { LOOPBACK_ORIGIN, createHostFixture, sessionCreate } from "../../../workspace-runtime/src/test-support/host-fixture"
+import { testLaunch } from "../../../workspace-runtime/src/test-support/host-composition"
 import { sessionIdle } from "../projection/presentation-events"
 
 const roots: string[] = []

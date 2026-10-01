@@ -1,7 +1,8 @@
 import { expect, test } from "bun:test"
 import { Hono } from "hono"
 import type { RelayHostAuthContext } from "../../../workspace-runtime/src/workspace-host-service-auth"
-import { createHostFixture, testLaunch, until } from "../../../workspace-runtime/src/test-support/host-fixture"
+import { createHostFixture, until } from "../../../workspace-runtime/src/test-support/host-fixture"
+import { testLaunch } from "../../../workspace-runtime/src/test-support/host-composition"
 import { FakeTransport } from "../../../workspace-runtime/src/test-support/fake-transport"
 import { createSessionRoutes } from "./session-core"
 
