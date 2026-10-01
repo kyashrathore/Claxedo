@@ -29,6 +29,6 @@ export function ignoredFrame(memory: ClaudeTranslatorMemory, kind: string): Agen
     message: `Claude frame ${kind} is not known to this transport and is ignored`, details: { kind } }) }]
 }
 
-export function claudeNotice(code: string, message: string, severity: RuntimeNoticeSeverity = "info", details?: Record<string, unknown>): AgentRuntimeEvent {
-  return { type: "harness-notice", code: `claude_sdk.${code}`, message, severity, ...(details ? { details } : {}) }
+export function claudeNotice(code: string, message: string, severity: RuntimeNoticeSeverity): AgentRuntimeEvent {
+  return { type: "harness-notice", code: `claude_sdk.${code}`, message, severity }
 }
