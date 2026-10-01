@@ -13,7 +13,6 @@ import { translateContentBlockDelta, translateContentBlockStart, translateConten
 import { translateSystemMessage } from "./system-message"
 import type { ClaudeTrackedTask } from "./task-tracking"
 import { translateToolResults } from "./tool-results"
-import { claudeTranscriptTitle } from "./transcript-title"
 import { createClaudeTranslatorMemory, type ClaudeTranslatorMemory } from "./translator-memory"
 
 type Frame = { message: Record<string, unknown>; state: ClaudeSdkAdapterState; event: ClaudeFrameEvent; context: HarnessEventAdapterContext;
@@ -32,7 +31,6 @@ export function claudeSdkAdapter(initialTasks: ClaudeTrackedTask[] = [], memory 
 
 function translateClaudeFrame(frame: Frame): ClaudeTranslation {
   const { message, state, event, context, memory } = frame
-  if (event.method === "claude/session-store") return claudeTranscriptTitle(message)
   if (event.method === CLAUDE_SUBAGENT_USAGE_METHOD) return translateSubagentUsage(state, memory, message)
   const type = text(message.type) ?? "unknown"
   if (ignoredTypes.includes(type)) return []

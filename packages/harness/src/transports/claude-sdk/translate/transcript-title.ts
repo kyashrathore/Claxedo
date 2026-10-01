@@ -1,7 +1,8 @@
 import { asText as text } from "@claxedo/agent-runtime-contract"
 import type { AgentRuntimeEvent } from "@claxedo/agent-runtime-contract"
+import type { SessionStoreEntry } from "@anthropic-ai/claude-agent-sdk"
 
-export function claudeTranscriptTitle(entry: Record<string, unknown>): AgentRuntimeEvent[] {
+export function claudeTranscriptTitle(entry: SessionStoreEntry): Extract<AgentRuntimeEvent, { type: "session-title" }>[] {
   if (entry.type === "ai-title") {
     const providerTitle = text(entry.aiTitle)?.trim()
     return providerTitle ? [{ type: "session-title", title: providerTitle }] : []

@@ -3,7 +3,7 @@ import type { RuntimeGoalSnapshot } from "@claxedo/agent-runtime-contract"
 import { asRecord } from "@claxedo/agent-runtime-contract"
 import { goalSnapshotFromRecord, type SessionBroker } from "../../contract"
 import { TransportError } from "../../contract/errors"
-import { claudeTranslator } from "./events"
+import { claudeTranscriptTitle } from "./translate/transcript-title"
 import type { ClaudeMirroredUsage } from "./mirrored-usage"
 
 export function activeGoal(sessionId: string, message: SDKActiveGoalMessage): RuntimeGoalSnapshot | null {
@@ -31,7 +31,6 @@ export function transcriptGoal(sessionId: string, entry: SessionStoreEntry, prev
 }
 
 export function goalSessionStore(broker: SessionBroker, signal: AbortSignal, usage?: Pick<ClaudeMirroredUsage, "observe">): SessionStore {
-  let titles: ReturnType<typeof claudeTranslator>["runtime"] | undefined
   return {
     async append(key, entries) {
       for (const entry of entries) {
@@ -46,11 +45,7 @@ export function goalSessionStore(broker: SessionBroker, signal: AbortSignal, usa
         if (signal.aborted) continue
         const goal = transcriptGoal(broker.sessionId, entry, broker.goal.read())
         if (goal !== undefined) await broker.goal.publish(goal)
-        if (entry.type === "ai-title" || entry.type === "custom-title") {
-          titles ??= claudeTranslator(broker.sessionId).runtime
-          const events = titles.ingest({ source: "claude.sdk", method: "claude/session-store", payload: entry }).events
-          for (const event of events) if (event.type === "session-title") await broker.publish(event)
-        }
+        for (const event of claudeTranscriptTitle(entry)) await broker.publish({ harness: "claude", threadId: broker.sessionId, ...event })
       }
     },
     async load() { return null },
