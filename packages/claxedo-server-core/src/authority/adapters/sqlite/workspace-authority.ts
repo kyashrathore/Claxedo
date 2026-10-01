@@ -963,9 +963,8 @@ export function createSqliteWorkspaceAuthority(
       if (!name) throw new Error("team_name_required")
       const org = db.prepare<unknown[], { org_id: string; kind: string }>(`SELECT org_id, kind FROM orgs WHERE org_id = ? AND deleted_at IS NULL`)
         .get(args.orgId)
-      if (!org) throw new PublicApiError("organization_not_found", "Organization not found")
+      if (!org || !orgAdminForUser(db, who, args.orgId)) throw new PublicApiError("org_admin_required", "org_admin_required")
       if (org.kind === "personal") throw new PublicApiError("team_not_allowed_on_personal_org", "team_not_allowed_on_personal_org")
-      if (!orgAdminForUser(db, who, args.orgId)) throw new PublicApiError("org_admin_required", "org_admin_required")
       const now = Date.now()
       const teamId = `team_${randomToken()}`
       db.transaction(() => {
@@ -993,9 +992,8 @@ export function createSqliteWorkspaceAuthority(
       return db.transaction(() => {
         const org = db.prepare<unknown[], { kind: string; name: string }>(`SELECT kind, name FROM orgs WHERE org_id = ? AND deleted_at IS NULL`)
           .get(args.orgId)
-        if (!org) throw new PublicApiError("organization_not_found", "Organization not found")
+        if (!org || !orgAdminForUser(db, who, args.orgId)) throw new PublicApiError("org_admin_required", "org_admin_required")
         if (org.kind === "personal") return { skipped: true as const }
-        if (!orgAdminForUser(db, who, args.orgId)) throw new PublicApiError("org_admin_required", "org_admin_required")
         let defaultTeam = db.prepare<unknown[], { team_id: string }>(`
           SELECT team_id FROM teams WHERE org_id = ? AND is_default = 1 AND deleted_at IS NULL
         `).get(args.orgId)
