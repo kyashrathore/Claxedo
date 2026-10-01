@@ -18,13 +18,15 @@ require('node:readline').createInterface({ input: process.stdin }).on('line', li
 });
 `
 
+const NODE = process.env.CLAXEDO_E2E_NODE ?? Bun.which("node") ?? process.execPath
+
 for (const kind of ["pi", "codex"] as const) {
   test.skipIf(process.platform === "win32")(`${kind} RPC retirement stops a TERM-resistant descendant after its parent exits`, async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), `${kind}-retirement-`))
     const services = createTestServices()
     const script = path.join(root, "peer.cjs")
     await fs.writeFile(script, source)
-    const owned = await services.spawn({ file: process.env.CLAXEDO_E2E_NODE!, args: [script], cwd: root, env: { PATH: process.env.PATH ?? "/usr/bin:/bin" } },
+    const owned = await services.spawn({ file: NODE, args: [script], cwd: root, env: { PATH: process.env.PATH ?? "/usr/bin:/bin" } },
       { role: "harness", label: `${kind} retirement peer`, signal: new AbortController().signal })
     const rpc = kind === "pi" ? new PiRpc(owned, services.clock, () => {}) : new CodexRpc(owned, services.clock)
     let descendant: number | undefined
@@ -50,7 +52,7 @@ for (const kind of ["pi", "codex"] as const) {
 
 test.skipIf(process.platform === "win32")("a signalled Codex process still answers until the OS reports exit", async () => {
   const services = createTestServices()
-  const owned = await services.spawn({ file: process.env.CLAXEDO_E2E_NODE!, args: ["-e", `
+  const owned = await services.spawn({ file: NODE, args: ["-e", `
 const send = value => process.stdout.write(JSON.stringify(value) + '\\n');
 process.on('SIGTERM', () => send({ method: 'term-observed' }));
 require('node:readline').createInterface({ input: process.stdin }).on('line', line => {

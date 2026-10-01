@@ -50,6 +50,7 @@ export type HostState = {
   }
   relay?: { url: string; jwksUrl: string }
   authority?: { sessionAuthorityUrl: string }
+  sessionRows?: { url: string }
   /** The control plane's scope as last delivered; applied before any assignment is validated. */
   scope?: HostScope
   /** `--root` values, kept apart from the control plane's scope. */
@@ -359,6 +360,10 @@ export function parseHostState(text: string): HostState {
         "authority.sessionAuthorityUrl",
       ),
     }
+  }
+  if (value.sessionRows !== undefined) {
+    const record = stateRecord(value.sessionRows, "sessionRows")
+    state.sessionRows = { url: canonicalFetchEndpointUrl(stateString(record.url, "sessionRows.url"), "sessionRows.url") }
   }
   if (value.sealing_private_key_jwk !== undefined) {
     state.sealing_private_key_jwk = privateKeyJwk(value.sealing_private_key_jwk, "sealing_private_key_jwk")
