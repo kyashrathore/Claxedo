@@ -422,7 +422,10 @@ export const desktopRenderer: Policy = {
   // message's label, reason and send action, including a steer the harness
   // declined, are `session/view/timeline/queued-message-status.ts`, which its
   // unit test reaches directly.
-  ceilings: { modules: 1238, packages: 36 },
+  // SidePanel owns shared frame, header, tab, resize and motion; the panel and
+  // Marketplace wrappers reach it through ui, with workspace data kept outside.
+  // side-panel-slot lets the active page use that full-height shell host.
+  ceilings: { modules: 1245, packages: 36 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,
