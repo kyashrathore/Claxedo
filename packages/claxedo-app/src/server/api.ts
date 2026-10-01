@@ -106,6 +106,7 @@ export type SessionsApi = {
 }
 
 export type ProjectsApi = {
+  readonly configurationAvailable: () => boolean
   readonly create: (input: { readonly name?: string; readonly source: ProjectSource }) => Promise<Project>
   readonly update: (id: ProjectId, input: ProjectUpdate) => Promise<Project>
   readonly remove: (id: ProjectId) => Promise<void>

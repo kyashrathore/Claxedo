@@ -7,7 +7,7 @@ import type { Transport } from "./transport"
 import { createWorkspaces } from "./workspaces"
 
 const bootstrap = {
-  deployment: { issuesSessions: false },
+  deployment: { serverKind: "daemon", issuesSessions: false },
   project: [{ id: "local_app", worktree: "/Users/ada/app", workspaces: { "/Users/ada/app": { id: "ws_app", directory: "/Users/ada/app", reachable: true } } }],
 }
 

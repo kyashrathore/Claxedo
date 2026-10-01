@@ -10,7 +10,7 @@ import type { Project } from "./types"
 import type { WorkspaceWakes } from "./workspace-wakes"
 import { createWorkspaces } from "./workspaces"
 
-const bootstrap = { deployment: { issuesSessions: false }, project: [] }
+const bootstrap = { deployment: { serverKind: "daemon", issuesSessions: false }, project: [] }
 const created = { workspace_id: "ws_new", project_id: "prj_widgets", backing: "cloud-vm", repo_url: "https://github.com/acme/widgets", workspace_name: "Widgets", status: "provisioning" }
 const wakes: WorkspaceWakes = {
   runtime: () => ({ kind: "live" }),

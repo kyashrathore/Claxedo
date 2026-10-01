@@ -4,7 +4,7 @@ import type { HostedAccount } from "./account"
 import type { LinkedCatalog } from "./account-link"
 import { createAccountPlacements, withAccountPlacements, type AccountPlacements } from "./account-placements"
 import type { PlacementsApi } from "./api"
-import { ServerError } from "./errors"
+import { ServerError, toAppError } from "./errors"
 import type { PlacementId, ProjectId } from "./ids"
 import { queryKeys } from "./query-keys"
 import type { RuntimeRoute, Transport } from "./transport"
@@ -36,6 +36,7 @@ export type Workspaces = Pick<PlacementsApi, "byId" | "list"> & {
 
 const BOOTSTRAP_PATH = "/api/claxedo/bootstrap"
 const WORKSPACE_DIRECTORY_PREFIX = "workspace:"
+const NO_PLACEMENTS: readonly PlacementRecord[] = []
 
 function trimmedDirectory(directory: string) {
   return directory.replace(/\/+$/, "") || "/"
@@ -104,8 +105,9 @@ function placementRoutes(find: (id: PlacementId) => Promise<PlacementRecord | un
 function mergedCatalog(queryClient: QueryClient, key: readonly unknown[], accountPlacements: AccountPlacements | undefined) {
   const watched = [observeQuery(queryClient, key), ...(accountPlacements ? [observeQuery(queryClient, accountPlacements.key)] : [])]
   let last: { local: BootstrapCatalog; linked: LinkedCatalog | undefined; merged: BootstrapCatalog } | undefined
+  const link = (catalog: BootstrapCatalog) => accountPlacements?.link(catalog.declaration.serverKind === "hosted" ? NO_PLACEMENTS : catalog.placements)
   const merge = (local: BootstrapCatalog) => {
-    const linked = accountPlacements?.link(local.placements)
+    const linked = link(local)
     if (last?.local !== local || last.linked !== linked) last = { local, linked, merged: withAccountPlacements(local, linked) }
     return last.merged
   }
@@ -119,10 +121,20 @@ function mergedCatalog(queryClient: QueryClient, key: readonly unknown[], accoun
     },
     linked: () => {
       const current = local()
-      return current && accountPlacements?.link(current.placements)
+      return current && link(current)
     },
     dispose: () => watched.forEach((watch) => watch.dispose()),
   }
+}
+
+async function readCatalogs(local: Promise<BootstrapCatalog>, account: Promise<void> | undefined): Promise<BootstrapCatalog> {
+  const [read, accountRead] = await Promise.allSettled([local, account])
+  if (read.status === "rejected") throw read.reason
+  if (accountRead.status === "rejected") {
+    if (read.value.declaration.serverKind === "hosted") throw accountRead.reason
+    console.error("The account's workspace catalog could not be read; the rail lists this machine's placements alone", { error: toAppError(accountRead.reason) })
+  }
+  return read.value
 }
 
 function accountReads(linked: () => LinkedCatalog | undefined, signed: boolean, load: () => Promise<unknown>): Pick<Workspaces, "accountProjects" | "accountProjectIds"> {
@@ -144,8 +156,7 @@ export function createWorkspaces(transport: Transport, queryClient: QueryClient,
   const read = async () => bootstrapCatalog(await transport.json<unknown>(BOOTSTRAP_PATH))
   const reread = () => queryClient.fetchQuery({ queryKey: key, queryFn: read, staleTime: 0 })
   const load = async () => {
-    const [local] = await Promise.all([queryClient.fetchQuery({ queryKey: key, queryFn: read, staleTime: Number.POSITIVE_INFINITY }), accountPlacements?.load()])
-    return merged.merge(local)
+    return merged.merge(await readCatalogs(queryClient.fetchQuery({ queryKey: key, queryFn: read, staleTime: Number.POSITIVE_INFINITY }), accountPlacements?.load()))
   }
   const { recordOf, byId, list, address } = placementReads(() => merged.catalog()?.placements ?? [])
   return {
@@ -165,7 +176,7 @@ export function createWorkspaces(transport: Transport, queryClient: QueryClient,
     load,
     refresh: async () => {
       relearned.clear()
-      await Promise.all([reread(), accountPlacements?.reread()])
+      await readCatalogs(reread(), accountPlacements?.reread())
       await queryClient.invalidateQueries({ queryKey: queryKeys.placements(transport.serverUrl) })
       await queryClient.invalidateQueries({ queryKey: queryKeys.projects(transport.serverUrl) })
     },
