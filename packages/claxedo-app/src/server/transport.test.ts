@@ -24,19 +24,8 @@ function signed(...answers: unknown[]) {
   return { transport, calls }
 }
 
-test("signed desktop cloud wake uses the account and adopts the workspace link", async () => {
-  const { transport, calls } = signed({ status: "provisioning", retryAfterMs: 500, bootMode: "resume" }, link)
-  const progress: unknown[] = []
-  fetcher.mockResolvedValue(Response.json({ ok: true }))
-  await transport.startRuntime(cloud, { wait: async () => undefined, onProgress: (step) => progress.push(step) })
-  await transport.runtime(cloud, "/api/wr/health")
-  expect(calls).toEqual(Array(2).fill({ operation: "workspace.connection.mint", input: { id: "ws_cloud" } }))
-  expect(progress).toEqual([{ kind: "provisioning", bootMode: "resume" }])
-  expect(fetcher.mock.calls.map(([url]) => String(url))).toEqual(["https://relay.test/workspaces/ws_cloud/api/wr/health"])
-})
-
-test("the public workspace wake owner sends a signed desktop cloud wake to the account instead of the daemon", async () => {
-  const { transport, calls } = signed(link)
+test("the public workspace wake owner sends a signed desktop cloud wake to the account until it is ready, then adopts its link", async () => {
+  const { transport, calls } = signed({ status: "provisioning", retryAfterMs: 500 }, link)
   fetcher.mockResolvedValue(Response.json(link))
   let running = false
   const workspaces = {
@@ -48,7 +37,7 @@ test("the public workspace wake owner sends a signed desktop cloud wake to the a
   const id = placementId("ws_cloud")
   await wakes.start(id)
   await transport.runtime(cloud, "/api/wr/health")
-  expect(calls).toEqual([{ operation: "workspace.connection.mint", input: { id: "ws_cloud" } }])
+  expect(calls).toEqual(Array(2).fill({ operation: "workspace.connection.mint", input: { id: "ws_cloud" } }))
   expect(fetcher.mock.calls.map(([url]) => String(url))).toEqual(["https://relay.test/workspaces/ws_cloud/api/wr/health"])
   expect(wakes.runtime(id)).toEqual({ kind: "live" })
 })
