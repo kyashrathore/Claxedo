@@ -2,7 +2,7 @@
 
 The session core runs inside a Cloudflare Durable Object under workerd, with
 no Node compatibility layer.
-[`src/session-core-durable-object.node-test.ts`](../src/session-core-durable-object.node-test.ts)
+[`src/durable-object.node-test.ts`](../src/durable-object.node-test.ts)
 bundles the object without `nodejs_compat` and fails if any Node builtin enters
 the bundle. Through the object's `fetch` it proves five things:
 
@@ -15,16 +15,16 @@ the bundle. Through the object's `fetch` it proves five things:
   behind that turn, and reopens it (see [Eviction and boot](#eviction-and-boot)).
 
 The ports themselves are defined in the
-[`@claxedo/session-core` README](../../session-core/README.md). This note
+[`@claxedo/session-core` README](../README.md). This note
 records what a Durable Object supplies for each one, and what is still unproven.
 
 ## What the object composes
 
-[`src/test-support/session-core-durable-object.ts`](../src/test-support/session-core-durable-object.ts)
-builds one workspace's core in the object's constructor, from
-`@claxedo/session-core` alone. It reuses two Node-free pieces of this package's
-test support: `composeHost` and the scripted `FakeTransport`, which echoes each
-prompt.
+[`src/test-support/durable-object-host.ts`](../src/test-support/durable-object-host.ts)
+builds one workspace's core in the object's constructor from this package
+alone. It reuses three Node-free pieces of the core's test support:
+`composeHost`, the scripted `FakeTransport`, which echoes each prompt, and the
+Web Crypto child identity `hmacChildSessionId`.
 
 1. `RuntimeStore` runs over `durableObjectSqliteDatabase(ctx.storage)`.
 2. `composeHost` ([`src/test-support/host-composition.ts`](../src/test-support/host-composition.ts))
@@ -44,7 +44,7 @@ Its workspace is the object's name, and placement comes from its own port.
 
 | Port | Machine (`workspace-runtime`) | Durable Object | DO |
 |---|---|---|---|
-| `SqliteDatabase` | better-sqlite3 through `store-file.ts`, with file root, backups and PRAGMAs | `durableObjectSqliteDatabase(ctx.storage)` | required |
+| `SqliteDatabase` | `openNativeSqliteDatabase` (better-sqlite3 under Node) through `workspace-runtime/src/store-file.ts`, with file root, backups and PRAGMAs | `durableObjectSqliteDatabase(ctx.storage)` | required |
 | Bus | the core's own; PTY and agent hooks publish on the bus of the core that created them | the core's own | required, by construction |
 | Placement: `workspaceId`, `directory` | the runtime's target | the object's name; one synthetic directory | required |
 | Placement: `normalizeDirectory`, `canonicalDirectory`, `containsDirectory` | `path.resolve`, `realpath`, path containment | trim, identity, `/`-prefix containment | required |
