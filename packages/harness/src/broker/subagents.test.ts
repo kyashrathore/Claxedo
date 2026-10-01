@@ -367,3 +367,21 @@ describe("subagent replay", () => {
     expect(f.store.records()).toHaveLength(1)
   })
 })
+
+test("child admission preserves observation order while deriving a Web Crypto identity", async () => {
+  const item = subagentFixture()
+  const parent = "parent-ordered"
+  const providerId = "provider-child"
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(`${parent}\0provider:claude:${providerId}`))
+  const key = `subagent_${Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("").slice(0, 24)}`
+  const first = item.boundary.admit(parent, {
+    observationId: "started", providerKind: "claude", providerId, status: "running",
+  })
+  const second = item.boundary.admit(parent, {
+    observationId: "finished", subagentKey: key, status: "completed",
+  })
+  const outcomes = await Promise.allSettled([first, second])
+  expect(outcomes.map((outcome) => outcome.status)).toEqual(["fulfilled", "fulfilled"])
+  expect(item.published.map(({ event }) => event.status)).toEqual(["running", "completed"])
+  expect(item.published.map(({ event }) => event.subagentKey)).toEqual([key, key])
+})

@@ -5,7 +5,13 @@ import type {
   AttachInput, ConfigApplied, Deadline, DraftLaunch, HarnessServices, HarnessSession, HarnessTransport,
   RoutedEvent, SessionBroker, StartInput, TransportConfigUpdate, TurnBroker, TurnInput, TurnRef,
 } from "../../contract"
-import { attachedSessionEntry, draftProbeKey, DraftProbeCache, mergeStartInput, ProcessLosses, selectedTurnAccount } from "../../contract"
+import {
+  attachedSessionEntry,
+  mergeStartInput,
+  ProcessLosses,
+  selectedTurnAccount,
+} from "../../contract"
+import { draftProbeKey, DraftProbeCache } from "../../probes/cache"
 import { withTurnAccount } from "../../translate/turn-account"
 import { spawnCodexProfile } from "./launch"
 import { codexProbeInputs } from "../../profiles/codex"

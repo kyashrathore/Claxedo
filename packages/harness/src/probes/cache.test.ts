@@ -2,8 +2,8 @@ import { afterEach, beforeEach, expect, test } from "bun:test"
 import fs from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
-import { draftProbeKey, DraftProbeCache } from "./probe-cache"
-import type { DraftLaunch } from "./transport"
+import { draftProbeKey, DraftProbeCache } from "./cache"
+import type { DraftLaunch } from "../contract/transport"
 
 const draft = (placeholder: string, leaseGeneration = "lease-1"): DraftLaunch => ({
   workspaceId: "w1", directory: "/work", locality: "local", owner: { kind: "person", userId: "member" },

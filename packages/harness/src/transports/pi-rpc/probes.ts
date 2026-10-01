@@ -1,6 +1,7 @@
 import { prefixedRandomId } from "@claxedo/helpers"
 import type { PromptModel } from "@claxedo/agent-runtime-contract"
-import { draftProbeKey, DraftProbeCache, type DraftLaunch, type StartInput } from "../../contract"
+import { type DraftLaunch, type StartInput } from "../../contract"
+import { draftProbeKey, DraftProbeCache } from "../../probes/cache"
 import { piProbeInputs, selectPiProfile } from "../../profiles/pi"
 import { piCommands } from "./commands"
 import { piCatalog, type PiCatalog } from "./config"
