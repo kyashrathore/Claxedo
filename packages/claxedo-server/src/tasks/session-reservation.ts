@@ -19,14 +19,9 @@ import type { ControlPlaneServices } from "../authority/services"
 export type TasksSessionReserveInput = {
   services: ControlPlaneServices
   /**
-   * The canonical actor a Start reserves its session for.
-   *
-   * Session access is granted to the creator actor, a participant row or a
-   * share grant, so a session reserved for the control plane's own service
-   * actor cannot be opened by the person who started it: Start would report
-   * success and the task's link would then read as gone. A Tasks actor cannot
-   * answer this — its `ownerId` is a user id, and the reservation records an
-   * actor id — so the composition resolves it from the signed caller.
+   * An unowned service actor cannot reserve a session on a human's workspace.
+   * Tasks ownerId names a user, while reservations require their canonical
+   * actor; the composition resolves that actor from the signed caller.
    */
   principal?: (actor: TasksActor) => Promise<PrivateSessionRuntimePrincipal | undefined>
 }

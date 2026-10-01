@@ -62,14 +62,8 @@ export class D1OrgMemberAuthority implements D1OrgMemberAuthorityPort {
     return await this.setRole(who, orgId, userId, args.role)
   }
 
-  /**
-   * Revokes the membership together with everything the person holds in this
-   * organization through it: team memberships, project member grants, direct
-   * session shares, session participations and runtime access tokens, in one
-   * batch, so re-admitting them later restores none of it. A project or
-   * workspace they own stays theirs; without the membership it admits them to
-   * nothing.
-   */
+  // Re-admission must restore none of the grants or tokens revoked by this
+  // batch. Workspace and project ownership survive leaving the organization.
   async removeOrgMember(auth: SignedControlPlaneAuth, args: { orgId: string; userPublicId: string }) {
     const who = await this.context.principal(auth)
     const orgId = await this.adminOrganization(who, args.orgId)
@@ -81,7 +75,6 @@ export class D1OrgMemberAuthority implements D1OrgMemberAuthorityPort {
         team_memberships_revoked: 0,
         project_memberships_revoked: 0,
         session_shares_revoked: 0,
-        session_participations_revoked: 0,
         runtime_tokens_revoked: 0,
       }
     }
@@ -93,9 +86,7 @@ export class D1OrgMemberAuthority implements D1OrgMemberAuthorityPort {
     const ownedWorkspaces = `select workspace_id from workspaces where owner_user_id = ? and org_id = ?`
     const shares = `session_share_grants where org_id = ? and revoked_at is null
       and (target_user_id = ? or workspace_id in (${ownedWorkspaces}))`
-    const participations = `session_participants where org_id = ? and revoked_at is null
-      and actor_id in (select actor_id from actors where user_id = ?)`
-    const [, tokens, sessionShares, sessionParticipations, teams, projects, membership] = await this.database.batch([
+    const [, tokens, sessionShares, teams, projects, membership] = await this.database.batch([
       accessAuditStatement(this.context, {
         who,
         action: "org.member.removed",
@@ -103,9 +94,8 @@ export class D1OrgMemberAuthority implements D1OrgMemberAuthorityPort {
           sql: `json_object('orgId', ?, 'targetUserId', ?,
             'before', (select role from org_memberships where org_id = ? and user_id = ? and revoked_at is null),
             'after', null,
-            'sessionSharesRevoked', (select count(*) from ${shares}),
-            'sessionParticipationsRevoked', (select count(*) from ${participations}))`,
-          bind: [orgId, userId, orgId, userId, orgId, userId, userId, orgId, orgId, userId],
+            'sessionSharesRevoked', (select count(*) from ${shares}))`,
+          bind: [orgId, userId, orgId, userId, orgId, userId, userId, orgId],
         },
         guard,
         now,
@@ -121,9 +111,6 @@ export class D1OrgMemberAuthority implements D1OrgMemberAuthorityPort {
       this.database
         .prepare(`update session_share_grants set revoked_at = ? where rowid in (select rowid from ${shares}) and ${guard.sql}`)
         .bind(now, orgId, userId, userId, orgId, ...guard.bind),
-      this.database
-        .prepare(`update session_participants set revoked_at = ? where rowid in (select rowid from ${participations}) and ${guard.sql}`)
-        .bind(now, orgId, userId, ...guard.bind),
       this.database
         .prepare(`
           update team_memberships set revoked_at = ?, updated_at = ?
@@ -155,7 +142,6 @@ export class D1OrgMemberAuthority implements D1OrgMemberAuthorityPort {
       team_memberships_revoked: teams.meta.changes ?? 0,
       project_memberships_revoked: projects.meta.changes ?? 0,
       session_shares_revoked: sessionShares.meta.changes ?? 0,
-      session_participations_revoked: sessionParticipations.meta.changes ?? 0,
       runtime_tokens_revoked: tokens.meta.changes ?? 0,
     }
   }

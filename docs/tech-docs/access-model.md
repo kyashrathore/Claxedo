@@ -233,10 +233,9 @@ may control the session (shell, permission mode, delete, fork, revert,
 
 A share never opens the workspace, lists it or its other sessions, reaches
 its files, terminals or machine, creates or forks a session, or mints a
-token beyond its one session. Session participants are the workspace owner's
-actors (the creator is enrolled when the session is created, and a
-participant must be able to open the workspace), so they admit nobody else.
-Only the owner may add or revoke shares (`session_share_admin_required`
+token beyond its one session. The owner's active actors, their agents
+included, act through workspace ownership, and a share is the only way
+anyone else reaches a session. Only the owner may add or revoke shares (`session_share_admin_required`
 otherwise), and a share may be offered only to a member of the session's
 organization (`session_share_target_outside_organization`). Listing a
 session's shares answers a session the control plane never registered only
@@ -467,7 +466,7 @@ one who has not signed in; a signed node answers an anonymous caller the
 declaration and nothing of the machine behind it.
 
 Invite and accept UI, org and team switching, personal-to-org workspace transfer,
-participant and session-share management UI, and presence UI are tracked product
+session-share management UI, and presence UI are tracked product
 surfaces. Presence derives from identity-attached subscriptions. External
 artifacts such as pull requests and Slack messages remain governed by their
 destination systems.

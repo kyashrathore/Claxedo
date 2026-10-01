@@ -1,3 +1,4 @@
+import { defaultStatusHooks } from "../status-hooks"
 import { afterEach, beforeEach, expect, test } from "bun:test"
 import fs from "fs/promises"
 import os from "os"
@@ -7,10 +8,8 @@ import { materializeAgentHooks } from "./materialize-status-hooks"
 
 let root: string
 const input = () => ({
-  homeDir: root,
+  templates: defaultStatusHooks, homeDir: root,
   notifyPath: path.join(root, ".claxedo", "hooks", "notify.sh"),
-  geminiHookPath: path.join(root, ".claxedo", "hooks", "gemini-hook.sh"),
-  cursorHookPath: path.join(root, ".claxedo", "hooks", "cursor-hook.sh"),
 })
 const cursorResult = async () => (await materializeAgentHooks(input())).find((result) => result.runner === "cursor")!
 

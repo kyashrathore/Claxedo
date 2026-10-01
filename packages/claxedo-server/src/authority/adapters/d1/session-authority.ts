@@ -69,8 +69,6 @@ import { readFirstRead, readTurnPage, type TurnPageQuery, type TurnPageRequest, 
 
 export const D1_SESSION_AUTHORITY_METHODS = [
   "authorizeSessionRead",
-  "grantSessionParticipant",
-  "revokeSessionParticipant",
   "grantSessionShare",
   "revokeSessionShare",
   "listSessionShares",
@@ -452,27 +450,12 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
         this.database
           .prepare(
             `
-        insert into session_participants (
-          session_id, workspace_id, org_id, project_id, actor_id,
-          granted_by_actor_id, role, granted_at, revoked_at
-        )
-        select s.session_id, s.workspace_id, s.org_id, s.project_id,
-          s.creator_actor_id, s.creator_actor_id, 'participant', ?, null
-        from sessions s where s.operation_id = ? and s.creator_actor_id = ?
-        on conflict (session_id, actor_id) do update set revoked_at = null
-      `,
-          )
-          .bind(now, operationId, actor.actorId),
-        this.database
-          .prepare(
-            `
         insert into authority_batch_assertions (assertion_id, passed)
         values (?, case when exists (
           select 1 from session_registration_operations r
           join sessions s on s.operation_id = r.operation_id and s.session_id = r.session_id
-          join session_participants p on p.session_id = s.session_id and p.actor_id = s.creator_actor_id
           where r.operation_id = ? and r.state = 'registered' and s.creator_actor_id = ?
-            and s.deleted_at is null and p.revoked_at is null
+            and s.deleted_at is null
             and ${sends.sql}
         ) then 1 else 0 end)
       `,
@@ -908,144 +891,6 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
     }
   }
 
-  async grantSessionParticipant(
-    auth: SignedControlPlaneAuth,
-    args: { sessionId: string; workspaceId: string; participantActorId: string },
-  ) {
-    const administrator = await this.requirePrincipal(auth)
-    const sessionId = requireText(args.sessionId, "sessionId")
-    const workspaceId = requireText(args.workspaceId, "workspaceId")
-    const participant = await this.requireRuntimeActor({
-      principalKind: "user",
-      actorId: requireText(args.participantActorId, "participantActorId"),
-      actorKind: "human",
-    })
-    const session = await this.requireParticipantAdministrator(administrator, sessionId, workspaceId)
-    await this.requireWorkspace(participant, workspaceId, "open")
-    const now = this.now()
-    const assertionId = this.randomId("assert")
-    const manages = maySql(administrator, "manage_shares", { kind: "session", alias: "s" })
-    const participantOpens = maySql(participant, "open", { kind: "workspace", alias: "w" })
-    await this.guardedBatch(
-      [
-        this.database
-          .prepare(
-            `
-        insert into session_participants (
-          session_id, workspace_id, org_id, project_id, actor_id,
-          granted_by_actor_id, role, granted_at, revoked_at
-        ) values (?, ?, ?, ?, ?, ?, 'participant', ?, null)
-        on conflict (session_id, actor_id) do update set
-          granted_by_actor_id = excluded.granted_by_actor_id,
-          revoked_at = null
-      `,
-          )
-          .bind(
-            session.session_id,
-            session.workspace_id,
-            session.org_id,
-            session.project_id,
-            participant.actorId,
-            administrator.actorId,
-            now,
-          ),
-        this.database
-          .prepare(
-            `
-        insert into authority_batch_assertions (assertion_id, passed)
-        values (?, case when
-          exists (
-            select 1 from sessions s where s.session_id = ? and s.workspace_id = ? and s.deleted_at is null
-              and ${manages.sql}
-          )
-          and exists (
-            select 1 from workspaces w where w.workspace_id = ? and w.deleted_at is null
-              and ${participantOpens.sql}
-          )
-          and exists (
-            select 1 from session_participants p
-            where p.session_id = ? and p.actor_id = ? and p.revoked_at is null
-          )
-        then 1 else 0 end)
-      `,
-          )
-          .bind(
-            assertionId,
-            sessionId,
-            workspaceId,
-            ...manages.bind,
-            workspaceId,
-            ...participantOpens.bind,
-            sessionId,
-            participant.actorId,
-          ),
-        this.deleteAssertion(assertionId),
-      ],
-      "Session participant grant raced with an authority change",
-    )
-    return { participant_id: participant.actorId }
-  }
-
-  async revokeSessionParticipant(
-    auth: SignedControlPlaneAuth,
-    args: { sessionId: string; workspaceId: string; participantActorId: string },
-  ) {
-    const administrator = await this.requirePrincipal(auth)
-    const sessionId = requireText(args.sessionId, "sessionId")
-    const workspaceId = requireText(args.workspaceId, "workspaceId")
-    const participantActorId = requireText(args.participantActorId, "participantActorId")
-    const session = await this.requireParticipantAdministrator(administrator, sessionId, workspaceId)
-    if (participantActorId === session.creator_actor_id) return { removed: false }
-    const existing = await this.database
-      .prepare(
-        `
-      select 1 from session_participants where session_id = ? and actor_id = ? and revoked_at is null
-    `,
-      )
-      .bind(sessionId, participantActorId)
-      .first()
-    if (!existing) return { removed: false }
-    const now = this.now()
-    const assertionId = this.randomId("assert")
-    const manages = maySql(administrator, "manage_shares", { kind: "session", alias: "s" })
-    await this.guardedBatch(
-      [
-        this.database
-          .prepare(
-            `
-        update session_participants set revoked_at = ?
-        where session_id = ? and actor_id = ? and revoked_at is null
-      `,
-          )
-          .bind(now, sessionId, participantActorId),
-        this.database
-          .prepare(
-            `
-        insert into authority_batch_assertions (assertion_id, passed)
-        values (?, case when exists (
-          select 1 from sessions s where s.session_id = ? and s.workspace_id = ? and s.deleted_at is null
-            and ${manages.sql}
-        ) and exists (
-          select 1 from session_participants where session_id = ? and actor_id = ? and revoked_at = ?
-        ) then 1 else 0 end)
-      `,
-          )
-          .bind(
-            assertionId,
-            sessionId,
-            workspaceId,
-            ...manages.bind,
-            sessionId,
-            participantActorId,
-            now,
-          ),
-        this.deleteAssertion(assertionId),
-      ],
-      "Session participant revocation raced with an authority change",
-    )
-    return { removed: true }
-  }
-
   async grantSessionShare(
     auth: SignedControlPlaneAuth,
     args: {
@@ -1064,7 +909,7 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
     const level = requestedSessionShareLevel(args.level)
     const sessionId = requireText(args.sessionId, "sessionId")
     const workspaceId = requireText(args.workspaceId, "workspaceId")
-    const session = await this.requireParticipantAdministrator(administrator, sessionId, workspaceId)
+    const session = await this.requireSessionShareAdministrator(administrator, sessionId, workspaceId)
     const target = await this.resolveShareTarget(args)
     if (!target) throw sessionShareError("session_share_target_not_found")
     if (target.kind === "user") {
@@ -1164,7 +1009,7 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
       )
     } catch (error) {
       if (d1ConstraintFailure(error)?.kind === "unique") {
-        await this.requireParticipantAdministrator(administrator, sessionId, workspaceId)
+        await this.requireSessionShareAdministrator(administrator, sessionId, workspaceId)
         const raced = await this.activeShareForTarget(sessionId, target)
         if (raced && raced.workspace_id === workspaceId) {
           if (storedSessionShareLevel(raced.level) !== level) {
@@ -1246,7 +1091,7 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
     const administrator = await this.requirePrincipal(auth)
     const sessionId = requireText(args.sessionId, "sessionId")
     const workspaceId = requireText(args.workspaceId, "workspaceId")
-    await this.requireParticipantAdministrator(administrator, sessionId, workspaceId)
+    await this.requireSessionShareAdministrator(administrator, sessionId, workspaceId)
     const selectorCount = shareSelectorCount(args)
     if ((args.grantId && selectorCount !== 0) || (!args.grantId && selectorCount !== 1)) {
       throw sessionShareError("session_share_target_required")
@@ -1340,10 +1185,10 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
       if (!(await may(this.database, who, "open", { kind: "workspace", workspaceId }))) throw err
       return undefined
     })
-    if (!session) return { can_manage_shares: false, grants: [], participants: [], teams: [] }
+    if (!session) return { can_manage_shares: false, grants: [], teams: [] }
     const canManage = await may(this.database, who, "manage_shares", { kind: "session", sessionId, workspaceId })
-    if (!canManage) return { can_manage_shares: false, grants: [], participants: [], teams: [] }
-    const [grants, participants, teams] = await Promise.all([
+    if (!canManage) return { can_manage_shares: false, grants: [], teams: [] }
+    const [grants, teams] = await Promise.all([
       this.database
         .prepare(
           `
@@ -1357,17 +1202,6 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
         from session_share_grants
         where session_id = ? and workspace_id = ? and revoked_at is null
         order by granted_at, grant_id
-      `,
-        )
-        .bind(sessionId, workspaceId)
-        .all(),
-      this.database
-        .prepare(
-          `
-        select actor_id as user_id, granted_by_actor_id as added_by_user_id, granted_at as created_at
-        from session_participants
-        where session_id = ? and workspace_id = ? and revoked_at is null
-        order by granted_at, actor_id
       `,
         )
         .bind(sessionId, workspaceId)
@@ -1390,7 +1224,6 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
     return {
       can_manage_shares: true,
       grants: grants.results,
-      participants: participants.results,
       teams: teams.results.map((team) => ({ ...team, is_shared: team.is_shared === 1 })),
     }
   }
@@ -1791,27 +1624,12 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
         this.database
           .prepare(
             `
-        insert into session_participants (
-          session_id, workspace_id, org_id, project_id, actor_id,
-          granted_by_actor_id, role, granted_at, revoked_at
-        )
-        select s.session_id, s.workspace_id, s.org_id, s.project_id,
-          s.creator_actor_id, s.creator_actor_id, 'participant', ?, null
-        from sessions s where s.operation_id = ? and s.creator_actor_id = ?
-        on conflict (session_id, actor_id) do update set revoked_at = null
-      `,
-          )
-          .bind(now, registration.operation_id, actor.actorId),
-        this.database
-          .prepare(
-            `
         insert into authority_batch_assertions (assertion_id, passed)
         values (?, case when exists (
           select 1 from session_registration_operations r
           join sessions s on s.operation_id = r.operation_id and s.session_id = r.session_id
-          join session_participants p on p.session_id = s.session_id and p.actor_id = s.creator_actor_id
           where r.operation_id = ? and r.state = 'registered' and s.creator_actor_id = ?
-            and s.deleted_at is null and p.revoked_at is null
+            and s.deleted_at is null
             and ${sends.sql}
         ) then 1 else 0 end)
       `,
@@ -2072,10 +1890,10 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
       .first<SessionShareRow>()
   }
 
-  private async requireParticipantAdministrator(actor: Principal, sessionId: string, workspaceId: string) {
+  private async requireSessionShareAdministrator(actor: Principal, sessionId: string, workspaceId: string) {
     const session = await this.requireSessionAccess(actor, sessionId, workspaceId, "read")
     if (!(await may(this.database, actor, "manage_shares", { kind: "session", sessionId, workspaceId }))) {
-      throw denied("Session participant administration was denied")
+      throw denied("Session share administration was denied")
     }
     return session
   }

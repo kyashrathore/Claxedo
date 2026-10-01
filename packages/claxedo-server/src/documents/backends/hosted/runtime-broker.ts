@@ -75,8 +75,7 @@ export function createHostedDocumentRuntimeBroker(
           userId: input.auth.user.subject,
           orgId,
           projectId: input.entry.project_id,
-          localWorkspaceId: workspaceId,
-          cloudWorkspaceId: workspaceId,
+          workspaceId,
           sessionId: input.sessionId,
           documentId: input.entry.id,
           operations: ["hydrate", "write", "resolve"],
@@ -90,8 +89,6 @@ export function createHostedDocumentRuntimeBroker(
         userId: input.auth.user.subject,
         orgId,
         projectId: input.entry.project_id,
-        localWorkspaceId: workspaceId,
-        cloudWorkspaceId: workspaceId,
       }
       const response = await fetchRelayResponse(fetcher,
         `${relay.replace(/\/+$/, "")}/workspaces/${encodeURIComponent(workspaceId)}/api/wr/documents/hydrate`,
@@ -157,8 +154,7 @@ export function createHostedDocumentRuntimeBroker(
       entry: DocumentIndexEntry
       sessionId: string
       auth: SignedControlPlaneAuth
-      localWorkspaceId: string
-      cloudWorkspaceId: string
+      workspaceId: string
       choice: "durable" | "draft"
       current: DocumentRead
       jobExpiresAt: number
@@ -169,7 +165,7 @@ export function createHostedDocumentRuntimeBroker(
       const provider = services.relay.provider
       if (!authority?.resolveSession || !provider) throw new Error("Session runtime transport is unavailable")
       const workspaceId = workspaceIdFrom(await authority.resolveSession(input.auth, { sessionId: input.sessionId }))
-      if (!workspaceId || workspaceId !== input.cloudWorkspaceId) throw new Error("Session placement changed")
+      if (!workspaceId || workspaceId !== input.workspaceId) throw new Error("Session placement changed")
       await authority.authorizeSessionRead(input.auth, { sessionId: input.sessionId, workspaceId })
       const opened = await authority.openWorkspace(input.auth, { workspaceId })
       if (opened.workspace?.org_id !== input.entry.org_id || opened.workspace.project_id !== input.entry.project_id) {
@@ -192,8 +188,7 @@ export function createHostedDocumentRuntimeBroker(
           userId: input.auth.user.subject,
           orgId: input.entry.org_id,
           projectId: input.entry.project_id,
-          localWorkspaceId: input.localWorkspaceId,
-          cloudWorkspaceId: input.cloudWorkspaceId,
+          workspaceId,
           sessionId: input.sessionId,
           documentId: input.entry.id,
           operations: ["resolve"],
@@ -229,8 +224,6 @@ export function createHostedDocumentRuntimeBroker(
               userId: input.auth.user.subject,
               orgId: input.entry.org_id,
               projectId: input.entry.project_id,
-              localWorkspaceId: input.localWorkspaceId,
-              cloudWorkspaceId: input.cloudWorkspaceId,
             },
           }),
           signal: input.signal,

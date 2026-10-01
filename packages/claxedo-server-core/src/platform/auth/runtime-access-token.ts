@@ -566,8 +566,7 @@ export type DocumentRelayJobScope = Readonly<{
   userId: string
   orgId: string
   projectId: string
-  localWorkspaceId: string
-  cloudWorkspaceId: string
+  workspaceId: string
   sessionId: string
   documentId: string
   operations: readonly ("hydrate" | "write" | "resolve")[]
@@ -588,8 +587,7 @@ export async function mintDocumentRelayJobToken(
     user_id: input.userId,
     org_id: input.orgId,
     project_id: input.projectId,
-    local_workspace_id: input.localWorkspaceId,
-    cloud_workspace_id: input.cloudWorkspaceId,
+    workspace_id: input.workspaceId,
     session_id: input.sessionId,
     document_id: input.documentId,
     operations: input.operations,
@@ -624,8 +622,7 @@ export async function verifyDocumentRelayJobToken(
   const jti = stringClaim(payload, "jti")
   if (!jti || !jobExpiresAt || jobExpiresAt <= Math.floor(Date.now() / 1000) || !operations.includes(expected.operation) ||
     stringClaim(payload, "user_id") !== expected.userId || stringClaim(payload, "org_id") !== expected.orgId ||
-    stringClaim(payload, "project_id") !== expected.projectId || stringClaim(payload, "local_workspace_id") !== expected.localWorkspaceId ||
-    stringClaim(payload, "cloud_workspace_id") !== expected.cloudWorkspaceId || stringClaim(payload, "session_id") !== expected.sessionId ||
+    stringClaim(payload, "project_id") !== expected.projectId || stringClaim(payload, "workspace_id") !== expected.workspaceId || stringClaim(payload, "session_id") !== expected.sessionId ||
     stringClaim(payload, "document_id") !== expected.documentId) throw new Error("Document relay job scope is invalid")
   return { ...expected, operations, jobExpiresAt, jti }
 }
