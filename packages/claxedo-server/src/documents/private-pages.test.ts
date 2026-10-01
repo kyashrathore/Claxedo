@@ -2,7 +2,7 @@ import { DocumentAccessError } from "@claxedo/server-core/documents/access"
 import { describe, expect, test } from "vitest"
 import { exportPKCS8, exportSPKI, generateKeyPair } from "jose"
 import { mintDocumentRelayJobToken } from "@claxedo/server-core/platform/auth/runtime-access-token"
-import { privatePagesFixture } from "./private-pages-fixture"
+import { privatePagesFixture } from "../test-support/private-pages"
 
 describe("private page HTTP entrypoints", () => {
   test("records the creator and lets them read", async () => {

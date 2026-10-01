@@ -1,4 +1,4 @@
-import { documentTestAccess } from "./test-access"
+import { documentTestAccess } from "../test-support/document-access"
 import { describe, expect, test, vi } from "vitest"
 import type { DocumentsBackend } from "@claxedo/server-core/documents/backend"
 import { createDocumentsService } from "@claxedo/server-core/documents/service"

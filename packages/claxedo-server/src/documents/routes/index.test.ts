@@ -1,4 +1,4 @@
-import { documentTestAccess } from "../test-access"
+import { documentTestAccess } from "../../test-support/document-access"
 import { afterAll, beforeAll, describe, expect, test, vi } from "vitest"
 import { mkdirSync, realpathSync } from "node:fs"
 import fs from "node:fs/promises"

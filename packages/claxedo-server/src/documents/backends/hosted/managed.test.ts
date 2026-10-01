@@ -1,4 +1,4 @@
-import { documentTestAccess } from "../../test-access"
+import { documentTestAccess } from "../../../test-support/document-access"
 import fs from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"

@@ -2,7 +2,7 @@ import { expect, test } from "vitest"
 import { exportPKCS8, exportSPKI, generateKeyPair } from "jose"
 import { LocalInstallationDocumentBroker } from "./backends/local/installation-broker"
 import { mintDocumentRelayJobToken } from "@claxedo/server-core/platform/auth/runtime-access-token"
-import { privatePagesFixture } from "./private-pages-fixture"
+import { privatePagesFixture } from "../test-support/private-pages"
 
 test("relay-served reads and lists enforce the document share after job verification", async () => {
   const f = privatePagesFixture()

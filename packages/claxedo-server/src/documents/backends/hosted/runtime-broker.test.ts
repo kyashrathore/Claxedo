@@ -17,7 +17,7 @@ import type { DocumentIndexEntry } from "@claxedo/server-core/documents/index-st
 import { verifyDocumentRelayJobToken, verifyDocumentSessionToken } from "@claxedo/server-core/platform/auth/runtime-access-token"
 import { fetchUrl, fetchBodyText } from "../../../test-support/fetch-calls"
 import { loopbackMachineLoginPolicy } from "@claxedo/workspace-runtime/testing"
-import { documentAuthorizedFetch } from "../../test-access"
+import { documentAuthorizedFetch } from "../../../test-support/document-access"
 
 const auth = { user: { subject: "user_1" } } as SignedControlPlaneAuth
 const entry = {

@@ -16,7 +16,7 @@ import { documentRelayJobTokenAudience, mintDocumentRelayJobToken } from "@claxe
 import { runtimeAccessTokenIssuer } from "@claxedo/workspace-relay"
 import { captureWorkspaceRuntimeInternalSecrets } from "../../../../../workspace-runtime/src/internal-secrets"
 import { loopbackMachineLoginPolicy } from "@claxedo/workspace-runtime/testing"
-import { documentTestAccess } from "../../test-access"
+import { documentTestAccess } from "../../../test-support/document-access"
 
 describe("hosted local document relay", () => {
   const originalFetch = globalThis.fetch

@@ -1,4 +1,4 @@
-import { documentAuthorizedFetch, documentTestAccess } from "./test-access"
+import { documentAuthorizedFetch, documentTestAccess } from "../test-support/document-access"
 import { exportPKCS8, exportSPKI, generateKeyPair } from "jose"
 import fs from "node:fs/promises"
 import os from "node:os"

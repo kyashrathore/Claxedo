@@ -1,4 +1,4 @@
-import { documentTestAccess } from "../../test-access"
+import { documentTestAccess } from "../../../test-support/document-access"
 import { describe, expect, test } from "vitest"
 import { createHostedDocumentIndex } from "./index"
 import {

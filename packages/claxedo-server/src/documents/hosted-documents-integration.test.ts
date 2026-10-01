@@ -32,7 +32,7 @@ import {
   createLocalRepositoryGitAuthority,
   createRepositoryDocumentWorkspace,
 } from "@claxedo/server-core/documents/repository/index"
-import { documentTestAccess } from "./test-access"
+import { documentTestAccess } from "../test-support/document-access"
 import type { DocumentEntry } from "@claxedo/server-core/documents/port"
 import { loopbackMachineLoginPolicy } from "@claxedo/workspace-runtime/testing"
 

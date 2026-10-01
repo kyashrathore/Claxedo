@@ -1,4 +1,4 @@
-import { documentTestAccess } from "../../test-access"
+import { documentTestAccess } from "../../../test-support/document-access"
 import { findDocumentIndexEntry } from "@claxedo/server-core/documents/index-store"
 import { execFile } from "node:child_process"
 import fs from "node:fs/promises"

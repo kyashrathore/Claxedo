@@ -1,6 +1,6 @@
 import type { DocumentAccess } from "@claxedo/server-core/documents/access"
 import type { DocumentsBackend } from "@claxedo/server-core/documents/backend"
-import { fetchUrl } from "../test-support/fetch-calls"
+import { fetchUrl } from "./fetch-calls"
 
 /**
  * Every caller is a member with project access in each of `organizations` and
