@@ -308,10 +308,9 @@ restores the page.
 `authorizeDocument` in `packages/claxedo-server-core/src/documents/access.ts`
 owns this policy, and `filterDocuments` applies it to listings with one
 membership, project and share read per organization and project. Hosted routes,
-the local document service, installation broker reads, runtime writeback and
-the runtime's hydration callback (`POST /documents/:id/runtime-authorization`)
-use it. MCP and the CLI open a page through `/documents/:id/agent-open`, which
-authorizes on the server. Document access denials return 404, including denials
+the local document service, runtime writeback and the runtime's hydration
+callback (`POST /documents/:id/runtime-authorization`) use it. MCP and the CLI
+open a page through `/documents/:id/agent-open`, which authorizes on the server. Document access denials return 404, including denials
 after share revocation.
 
 The share API is `GET/POST/DELETE /documents/:id/shares`; DELETE accepts
@@ -328,14 +327,9 @@ request gets `document_sharing_unavailable` (both 501). Creation requires a
 creator; existing rows without one remain unreadable. No stored row is
 backfilled or assigned a guessed creator.
 
-Hosted Pages read and write R2 and hydrate into the selected session runtime.
-The Worker supplies no machine document relay or remote discovery endpoint.
-The self-hosted app mounts `LocalInstallationDocumentBroker` at
-`/internal/documents`, and relay-exposed workspace runtimes mount
-`LocalDocumentBrokerRoutes` at `/api/wr/local-documents/broker`. Both remain
-subject to their installation credentials and document capability checks; the
-local backend refuses signed document access. Desktop and local-server runtimes
-use embedded exposure and do not mount the runtime broker route.
+Hosted Pages live in R2 and hydrate only into the selected session's runtime.
+A page on a machine is served by that machine's local backend alone; no route
+carries a machine's pages to the hosted control plane or to another runtime.
 
 ## Installation order
 

@@ -165,18 +165,6 @@ export type DocumentsBackend<H extends DocumentHandle = DocumentHandle> = Readon
   ): Promise<DocumentIndexEntry>
 }>
 
-/**
- * The slice of a backend the local installation broker reaches for: three index
- * operations and the three workspace file operations. Nothing it serves needs
- * the placement, the repository port, or the rest of the index, so callers that
- * only broker documents supply this instead of a whole `DocumentsBackend`.
- */
-export type DocumentBrokerBackend<H extends DocumentHandle = DocumentHandle> = Readonly<{
-  access: DocumentAccess
-  index: Pick<DocumentsBackend<H>["index"], "list" | "find" | "update">
-  workspace: Pick<DocumentsBackend<H>["workspace"], "resolve" | "read" | "write">
-}>
-
 export class DocumentAgentOpenError extends Error {
   constructor(
     readonly status: number,

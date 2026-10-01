@@ -45,10 +45,6 @@ import {
 
 const execFileAsync = promisify(execFile)
 
-test("document routes expose no machine document discovery endpoint", () => {
-  expect(DocumentsRoutes().routes.map(({ path }) => path)).not.toContain("/remote")
-})
-
 const root = path.join(realpathSync(os.tmpdir()), `document-routes-${randomUUID().slice(0, 8)}`)
 const previousDataDir = process.env.CLAXEDO_DATA_DIR
 process.env.CLAXEDO_DATA_DIR = root

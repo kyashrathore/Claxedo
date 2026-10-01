@@ -60,7 +60,6 @@ describe("server deployment entry closures", () => {
 
     expect(files).toContain("src/documents/backends/hosted/backend.ts")
     expect(files.filter((file) => file.includes("src/documents/backends/local/"))).toEqual([])
-    expect(files.filter((file) => file.includes("src/documents/backends/hosted/local-relay"))).toEqual([])
   })
 
   it("keeps the Better Auth D1 Worker free of optional provider implementations", () => {

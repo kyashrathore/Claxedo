@@ -12,7 +12,6 @@ import {
   forgetRuntimeDocuments,
   RuntimeDocumentHydrationRoutes,
 } from "./document-hydration"
-import { LocalDocumentBrokerRoutes } from "./local-document-broker"
 
 describe("runtime document hydration", () => {
   const originalFetch = globalThis.fetch
@@ -51,73 +50,17 @@ describe("runtime document hydration", () => {
     expect(response.status).toBe(413)
   })
 
-  test("rejects declared and chunked oversized local-broker bodies before verification", async () => {
-    const app = new Hono().route("/", LocalDocumentBrokerRoutes({ trustedTransport: true }))
-    expect(
-      (
-        await app.request("/api/wr/local-documents/broker", {
-          method: "POST",
-          headers: { "content-length": String(2 * 1024 * 1024 + 1) },
-          body: "{}",
-        })
-      ).status,
-    ).toBe(413)
-    const chunk = new Uint8Array(1024 * 1024)
-    const response = await app.fetch(
-      new Request("http://runtime.test/api/wr/local-documents/broker", {
-        method: "POST",
-        body: new ReadableStream({
-          start(controller) {
-            controller.enqueue(chunk)
-            controller.enqueue(chunk)
-            controller.enqueue(new Uint8Array([1]))
-            controller.close()
-          },
-        }),
-        duplex: "half",
-      } as RequestInit & { duplex: "half" }),
-    )
-    expect(response.status).toBe(413)
-  })
-
-  test("returns stable validation errors for malformed hydration, resolution, and broker bodies", async () => {
+  test("returns stable validation errors for malformed hydration and resolution bodies", async () => {
     const hydration = new Hono().route("/", RuntimeDocumentHydrationRoutes({ trustedTransport: true }))
-    const broker = new Hono().route("/", LocalDocumentBrokerRoutes({ trustedTransport: true }))
 
     for (const response of [
       await hydration.request("/api/wr/documents/hydrate", { method: "POST", body: "{" }),
       await hydration.request("/api/wr/documents/hydrate", { method: "POST", body: "{}" }),
       await hydration.request("/api/wr/documents/session_1/document_1/resolve", { method: "POST", body: "{" }),
-      await broker.request("/api/wr/local-documents/broker", { method: "POST", body: "{" }),
-      await broker.request("/api/wr/local-documents/broker", { method: "POST", body: "{}" }),
     ]) {
       expect(response.status).toBe(400)
       await expect(response.json()).resolves.toEqual({ error: "document_request_invalid" })
     }
-  })
-
-  test("returns a stable forbidden response for rejected broker capabilities", async () => {
-    const app = new Hono().route("/", LocalDocumentBrokerRoutes({ trustedTransport: true }))
-    const response = await app.request("/api/wr/local-documents/broker", {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        "x-claxedo-document-capability": "not-a-document-job-token",
-      },
-      body: JSON.stringify({
-        userId: "user_1",
-        orgId: "org_1",
-        projectId: "project_1",
-        localWorkspaceId: "local_1",
-        cloudWorkspaceId: "cloud_1",
-        sessionId: "session_1",
-        documentId: "document_1",
-        operation: "read",
-      }),
-    })
-
-    expect(response.status).toBe(403)
-    await expect(response.json()).resolves.toEqual({ error: "document_broker_capability_invalid" })
   })
 
   test("returns a stable forbidden response when conflict resolution capability verification fails", async () => {

@@ -8,7 +8,7 @@ export type DocumentJobExpected = Readonly<{
   cloudWorkspaceId: string
   sessionId: string
   documentId: string
-  operation: "hydrate" | "read" | "write" | "resolve"
+  operation: "hydrate" | "write" | "resolve"
 }>
 
 export async function verifyDocumentJobCapability(token: string, expected: DocumentJobExpected) {

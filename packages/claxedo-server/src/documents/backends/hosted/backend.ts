@@ -252,6 +252,12 @@ export function createHostedDocumentsBackend(
   }
 }
 
+/**
+ * The job authority record, stored as one R2 object per session/document. It is
+ * written and read only here, so the schema is both the write shape and the read
+ * validation: a corrupt or drifted object is rejected as a job-authority error
+ * instead of flowing on as a half-typed record.
+ */
 const HostedDocumentJobSchema = z.object({
   orgId: z.string().min(1),
   projectId: z.string().min(1),
