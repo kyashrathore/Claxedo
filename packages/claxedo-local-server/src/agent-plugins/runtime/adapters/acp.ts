@@ -3,31 +3,35 @@ import path from "node:path"
 import { isRecord } from "@claxedo/helpers/guards"
 import { acpSessionMcpServers, type AcpRuntimeMcpServer } from "@claxedo/server-core/agent-plugins/runtime/mcp-projection"
 import type { AgentPluginHarnessProjectionAdapter } from "./types"
+import { writeClaudePluginRoot } from "./claude"
 
 /**
  * Custom ACP agents take a plugin's MCP servers in every session request and,
- * over claude-agent-acp, the plugin roots through `_meta`. The resolved server
- * map lives in the generation because a restart re-reads a projection from
- * its files, never from the artifacts.
+ * over claude-agent-acp, the plugin roots through `_meta`. Those roots are
+ * Claude plugin views without `.mcp.json`, because claude-agent-acp would also
+ * start a root's own servers. The resolved server map lives in the generation
+ * because a restart re-reads a projection from its files, never from the
+ * artifacts.
  */
 export function acpAgentPluginAdapter(): AgentPluginHarnessProjectionAdapter {
   return {
     harnessId: "acp",
     async project({ generationRoot, plugins, mcpServers = [] }) {
       const root = path.join(generationRoot, "harnesses", "acp")
-      await fs.mkdir(root, { recursive: true })
+      const viewRoot = path.join(root, "plugins")
+      await fs.mkdir(viewRoot, { recursive: true })
       const configFile = path.join(root, "mcp.json")
       const { servers, notApplied } = await acpSessionMcpServers(plugins, mcpServers)
       await fs.writeFile(configFile, `${JSON.stringify({ servers }, null, 2)}\n`)
       return {
         harnessId: "acp",
         configFile,
-        pluginRoots: plugins.map((plugin) => ({
+        pluginRoots: await Promise.all(plugins.map(async (plugin) => ({
           pluginInstanceId: plugin.pluginInstanceId,
-          root: plugin.root,
+          root: await writeClaudePluginRoot(viewRoot, plugin),
           dataRoot: plugin.dataRoot,
           skillNames: plugin.plugin.skills.map((skill) => skill.name),
-        })),
+        }))),
         mcpServers: [], notApplied,
       }
     },
