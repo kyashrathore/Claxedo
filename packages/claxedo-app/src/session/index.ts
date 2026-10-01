@@ -124,6 +124,11 @@ export type { SessionSubagent }
 
 export type SessionStores = {
   readonly list: SessionList
+  readonly unseenFailures: {
+    readonly has: (sessionId: SessionId) => boolean
+    readonly raised: (sessionId: SessionId) => void
+    readonly seen: (sessionId: SessionId) => void
+  }
   readonly open: (ref: SessionRef) => SessionView
   readonly recordViewport: (viewport: TranscriptViewport) => void
 }

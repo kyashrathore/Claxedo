@@ -1,6 +1,6 @@
 # notifications
 
-Owns: the alert sound and the system notification a session raises when it needs the reader, and the reader's unseen failures (`unseen-failures.ts`). Settings owns the choices (`preferences.tsx` `alerts`: per kind, a system notification on or off and a sound or None); the app root mounts `AttentionAlerts` with them.
+Owns: the alert sound and the system notification a session raises when it needs the reader. Settings owns the choices (`preferences.tsx` `alerts`: per kind, a system notification on or off and a sound or None); the app root mounts `AttentionAlerts` with them.
 
 ## When an alert fires
 
@@ -14,7 +14,7 @@ A subagent's session never alerts, and neither does a session the list store doe
 
 ## Unseen failures
 
-An `errors` alert for a session that is not on screen marks its failure unseen, and the rail draws the failed session's dot only while it is. Opening the session (the route names it) marks it seen. A read that finds the last turn failed, on open, reload or reconnect, marks nothing: the reader is looking at it, or the failure happened while the app was not running. The marks live for the app's run; `AttentionAlerts` provides them to the shell it wraps (`useUnseenFailures()`).
+An `errors` alert for a session that is not on screen marks its failure unseen, and the rail draws the failed session's dot only while it is. Opening the session (the route names it) marks it seen. A read that finds the last turn failed, on open, reload or reconnect, marks nothing: the reader is looking at it, or the failure happened while the app was not running. The marks live in `SessionStores.unseenFailures` for the principal's server scope; both rail readers use the existing session context. `AttentionAlerts` raises and acknowledges them.
 
 ## Flows
 
