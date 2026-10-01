@@ -247,8 +247,8 @@ describe("D1 Tasks store units", () => {
       expect((await tx.links.insert(linkedSession("session-mine"))).status).toBe("inserted")
       await target
         .prepare(
-          `insert into task_session_links (scope_id, task_id, slot, attempt, session_id, preset_id, preset_revision, preset_name_at_start, configuration_digest, created_at)` +
-            ` values (?, 'task-linked', 'primary', 1, 'session-theirs', 'preset-linked', 1, 'Linked preset', ?, 2000)`,
+          `insert into task_session_links (scope_id, task_id, slot, attempt, session_id, session_workspace_id, preset_id, preset_revision, preset_name_at_start, configuration_digest, created_at)` +
+            ` values (?, 'task-linked', 'primary', 1, 'session-theirs', 'workspace-theirs', 'preset-linked', 1, 'Linked preset', ?, 2000)`,
         )
         .bind(SCOPES.first, DIGEST)
         .run()
