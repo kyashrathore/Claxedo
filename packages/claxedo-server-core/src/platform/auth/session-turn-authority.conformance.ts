@@ -120,13 +120,10 @@ export type SessionTurnGrantConformanceHarness = {
   reconstructed: SessionTurnAuthority
   registrations: Pick<PrivateSessionAuthority, "reserveRuntimeSession" | "registerRuntimeSession">
   workspaceId: string
-  /** The parent session `creator` registered; every grant targets it. */
+  /** The parent session `creator`, the workspace's owner, registered; every grant targets it. */
   sessionId: string
   creator: Extract<PrivateSessionRuntimePrincipal, { principalKind: "user" }>
-  /**
-   * Holds no standing on the session beyond the share `setGranteeShare`
-   * writes, and enough workspace rank to fork a child under the parent.
-   */
+  /** Holds no standing on the session beyond the share `setGranteeShare` writes. */
   grantee: Extract<PrivateSessionRuntimePrincipal, { principalKind: "user" }>
   setGranteeShare(level: "follow" | "send" | null): Promise<void>
   turnProducer(turnId: string): Promise<{ actorId: string } | undefined>
@@ -141,7 +138,7 @@ export async function exerciseSessionTurnGrantConformance(harness: SessionTurnGr
   const childOperationId = "op_grant_child"
 
   await harness.setGranteeShare("send")
-  await harness.registrations.reserveRuntimeSession(harness.grantee, {
+  await harness.registrations.reserveRuntimeSession(harness.creator, {
     operationId: childOperationId,
     sessionId: childSessionId,
     workspaceId,
@@ -151,19 +148,19 @@ export async function exerciseSessionTurnGrantConformance(harness: SessionTurnGr
   await harness.registrations.registerRuntimeSession({
     createdAt: Date.now(),
     updatedAt: Date.now(),
-    ...harness.grantee,
+    ...harness.creator,
     operationId: childOperationId,
     sessionId: childSessionId,
     workspaceId,
   })
 
   await rejectsGrant(
-    () => harness.authority.grantSessionTurn({ ...creator, intent: "child_completion", subjectSessionId: childSessionId, registrationOperationId: childOperationId }),
+    () => harness.authority.grantSessionTurn({ ...grantee, intent: "child_completion", subjectSessionId: childSessionId, registrationOperationId: childOperationId }),
     "session_turn_grant_mismatch",
     "a child-completion grant was minted for someone other than the child's creator",
   )
   await rejectsGrant(
-    () => harness.authority.grantSessionTurn({ ...grantee, intent: "child_completion", subjectSessionId: childSessionId, registrationOperationId: "op_grant_unknown" }),
+    () => harness.authority.grantSessionTurn({ ...creator, intent: "child_completion", subjectSessionId: childSessionId, registrationOperationId: "op_grant_unknown" }),
     "session_turn_grant_mismatch",
     "a child-completion grant was minted without its registration row",
   )
@@ -181,65 +178,65 @@ export async function exerciseSessionTurnGrantConformance(harness: SessionTurnGr
   await harness.setGranteeShare("send")
 
   const wake = await harness.authority.grantSessionTurn({
-    ...grantee,
+    ...creator,
     intent: "child_completion",
     subjectSessionId: childSessionId,
     registrationOperationId: childOperationId,
   })
   invariant(wake.turnIdPrefix === childCompletionTurnIdPrefix(childSessionId), "a child-completion grant does not carry the wake turn-id prefix")
   invariant(wake.turnId === undefined, "a child-completion grant fixed an exact turn id")
-  invariant(wake.actorId === harness.grantee.actorId && wake.sessionId === sessionId, "the grant names another actor or session")
+  invariant(wake.actorId === harness.creator.actorId && wake.sessionId === sessionId, "the grant names another actor or session")
   invariant(wake.expiresAt > wake.issuedAt, "the grant has no bounded lifetime")
   invariant(wake.redeemedAt === undefined && wake.revokedAt === undefined, "a fresh grant is already consumed")
 
   const wakeTurnId = `${wake.turnIdPrefix}1`
-  const admitted = await harness.reconstructed.acquireSessionTurn({ ...grantee, turnId: wakeTurnId, grantId: wake.grantId })
+  const admitted = await harness.reconstructed.acquireSessionTurn({ ...creator, turnId: wakeTurnId, grantId: wake.grantId })
   invariant(admitted.turnId === wakeTurnId && admitted.fencingToken >= 1, "redeeming the grant did not admit the turn")
-  invariant((await harness.turnProducer(wakeTurnId))?.actorId === harness.grantee.actorId, "the redeemed turn has no producer row for the grant's actor")
+  invariant((await harness.turnProducer(wakeTurnId))?.actorId === harness.creator.actorId, "the redeemed turn has no producer row for the grant's actor")
 
-  const retried = await harness.authority.acquireSessionTurn({ ...grantee, turnId: wakeTurnId, grantId: wake.grantId })
+  const retried = await harness.authority.acquireSessionTurn({ ...creator, turnId: wakeTurnId, grantId: wake.grantId })
   invariant(retried.leaseId === admitted.leaseId && retried.fencingToken === admitted.fencingToken, "a same-turn retry with the grant did not return the live lease")
 
-  const released = await harness.authority.releaseSessionTurn({ ...grantee, ...admitted })
+  const released = await harness.authority.releaseSessionTurn({ ...creator, ...admitted })
   invariant(released.released, "the grant's actor could not release the admitted lease")
   await rejectsGrant(
-    () => harness.authority.acquireSessionTurn({ ...grantee, turnId: wakeTurnId, grantId: wake.grantId }),
+    () => harness.authority.acquireSessionTurn({ ...creator, turnId: wakeTurnId, grantId: wake.grantId }),
     "session_turn_grant_redeemed",
     "a redeemed grant admitted its turn again after release",
   )
   await rejectsGrant(
-    () => harness.reconstructed.acquireSessionTurn({ ...grantee, turnId: `${wake.turnIdPrefix}2`, grantId: wake.grantId }),
+    () => harness.reconstructed.acquireSessionTurn({ ...creator, turnId: `${wake.turnIdPrefix}2`, grantId: wake.grantId }),
     "session_turn_grant_redeemed",
     "a redeemed grant admitted another turn under its prefix",
   )
   invariant(await harness.turnProducer(`${wake.turnIdPrefix}2`) === undefined, "a refused redemption wrote a producer row")
 
   const second = await harness.authority.grantSessionTurn({
-    ...grantee,
+    ...creator,
     intent: "child_completion",
     subjectSessionId: childSessionId,
     registrationOperationId: childOperationId,
   })
   const secondTurnId = `${second.turnIdPrefix}3`
   await rejectsGrant(
-    () => harness.authority.acquireSessionTurn({ ...grantee, turnId: "msg_outside_prefix", grantId: second.grantId }),
+    () => harness.authority.acquireSessionTurn({ ...creator, turnId: "msg_outside_prefix", grantId: second.grantId }),
     "session_turn_grant_mismatch",
     "a prefix grant admitted a turn outside its prefix",
   )
   await rejectsGrant(
-    () => harness.authority.acquireSessionTurn({ ...creator, turnId: secondTurnId, grantId: second.grantId }),
+    () => harness.authority.acquireSessionTurn({ ...grantee, turnId: secondTurnId, grantId: second.grantId }),
     "session_turn_grant_mismatch",
-    "another actor with a turn of their own redeemed the grantee's grant",
+    "another actor with a turn of their own redeemed the creator's grant",
   )
   await rejectsGrant(
-    () => harness.authority.acquireSessionTurn({ ...grantee, turnId: secondTurnId, grantId: "grant_unknown" }),
+    () => harness.authority.acquireSessionTurn({ ...creator, turnId: secondTurnId, grantId: "grant_unknown" }),
     "session_turn_grant_invalid",
     "an unknown grant id admitted a turn",
   )
   invariant(await harness.turnProducer(secondTurnId) === undefined, "a refused redemption wrote a producer row")
   harness.advancePast(second.expiresAt)
   await rejectsGrant(
-    () => harness.reconstructed.acquireSessionTurn({ ...grantee, turnId: secondTurnId, grantId: second.grantId }),
+    () => harness.reconstructed.acquireSessionTurn({ ...creator, turnId: secondTurnId, grantId: second.grantId }),
     "session_turn_grant_expired",
     "an expired grant admitted a turn",
   )
@@ -268,7 +265,7 @@ export async function exerciseSessionTurnGrantConformance(harness: SessionTurnGr
 
   const revokedBySession = await harness.authority.grantSessionTurn({ ...grantee, intent: "queued_prompt", turnId: "msg_queued_revoked" })
   const revokedByChild = await harness.authority.grantSessionTurn({
-    ...grantee,
+    ...creator,
     intent: "child_completion",
     subjectSessionId: childSessionId,
     registrationOperationId: childOperationId,
@@ -283,7 +280,7 @@ export async function exerciseSessionTurnGrantConformance(harness: SessionTurnGr
     "a grant revoked by session admitted a turn",
   )
   await rejectsGrant(
-    () => harness.reconstructed.acquireSessionTurn({ ...grantee, turnId: `${revokedByChild.turnIdPrefix}1`, grantId: revokedByChild.grantId }),
+    () => harness.reconstructed.acquireSessionTurn({ ...creator, turnId: `${revokedByChild.turnIdPrefix}1`, grantId: revokedByChild.grantId }),
     "session_turn_grant_revoked",
     "a grant revoked by subject session admitted a turn",
   )

@@ -1,3 +1,4 @@
+import { PublicApiError } from "../errors/public-api-error"
 /**
  * What a session share grants its recipient.
  *
@@ -27,7 +28,7 @@ export function isSessionShareLevel(value: unknown): value is SessionShareLevel 
  */
 export function requestedSessionShareLevel(value: unknown): SessionShareLevel {
   if (value === undefined || value === null) return DEFAULT_SESSION_SHARE_LEVEL
-  if (!isSessionShareLevel(value)) throw new Error("session_share_level_invalid")
+  if (!isSessionShareLevel(value)) throw new PublicApiError("session_share_level_invalid", "session_share_level_invalid")
   return value
 }
 

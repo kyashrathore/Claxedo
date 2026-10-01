@@ -1,14 +1,8 @@
 import { base64UrlDecode, sha256Hex } from "@claxedo/helpers/crypto"
 import { isRecord } from "@claxedo/helpers/guards"
 import type { MachineAuthAdapter, MachinePrincipal } from "./authority"
-import {
-  MACHINE_NONCE_TTL_MS,
-  MACHINE_REQUEST_HEADERS,
-  MACHINE_REQUEST_SKEW_MS,
-  isBase64Url,
-  isMachineNonce,
-  machineRequestPayload,
-} from "./host-connect-contract"
+import { MACHINE_NONCE_TTL_MS, MACHINE_REQUEST_SKEW_MS, isMachineNonce } from "./host-connect-contract"
+import { MACHINE_REQUEST_HEADERS, isBase64Url, machineRequestPayload } from "@claxedo/account-contract/machine"
 
 /**
  * Verifies a machine-signed request and returns the machine principal.
@@ -146,9 +140,7 @@ function machineHeaders(headers: MachineRequest["headers"]) {
   return { enrollmentId, ts: Number(tsText), nonce, signature }
 }
 
-type BodyIdentity =
-  | { ok: true; enrollmentId?: string; hostId?: string; keyVersion?: number }
-  | { ok: false }
+type BodyIdentity = { ok: true; enrollmentId?: string; hostId?: string; keyVersion?: number } | { ok: false }
 
 /**
  * The fields of the body that name the caller. They are optional at this
@@ -187,7 +179,9 @@ async function importVerifyKey(publicKeyJson: string) {
     return undefined
   }
   try {
-    return await crypto.subtle.importKey("jwk", { kty, crv, x, y }, { name: "ECDSA", namedCurve: "P-256" }, false, ["verify"])
+    return await crypto.subtle.importKey("jwk", { kty, crv, x, y }, { name: "ECDSA", namedCurve: "P-256" }, false, [
+      "verify",
+    ])
   } catch {
     return undefined
   }

@@ -1,5 +1,4 @@
-import { object } from "./json"
-import { trimToUndefined } from "@claxedo/helpers/string"
+import { decodeApiError } from "@claxedo/helpers/api-error"
 
 export class ApiError extends Error {
   constructor(
@@ -8,15 +7,6 @@ export class ApiError extends Error {
     message: string,
   ) {
     super(message)
-  }
-}
-
-function errorDetail(input: unknown, fallback: string) {
-  const body = object(input)
-  const error = object(body.error)
-  return {
-    code: trimToUndefined(error.code),
-    message: trimToUndefined(error.message) ?? fallback,
   }
 }
 
@@ -58,6 +48,6 @@ export async function requestJson(input: RequestInput) {
   const contentType = res.headers.get("content-type") ?? ""
   const body = contentType.includes("application/json") ? await res.json().catch(() => undefined) : undefined
   if (res.ok) return body
-  const detail = errorDetail(body, `${method} ${input.url} failed with ${res.status}`)
-  throw new ApiError(res.status, detail.code, detail.message)
+  const error = decodeApiError(res.status, body)
+  throw new ApiError(res.status, error?.code, error?.message || `${method} ${input.url} failed with ${res.status}`)
 }

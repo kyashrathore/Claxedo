@@ -502,8 +502,8 @@ host passes the same inputs it does today.
   `claxedo-desktop/src/main/account/hosted-operations.test.ts`, which refuses
   any account operation that reaches `/host/invitations`. Owner: the desktop
   hosted-operation set. Follow-up: an owner ruling to add
-  `host.invitations.create/list` to the port's `HostedOperationName`, the app
-  registry and `claxedo-desktop/src/main/account/hosted-operations.ts` in one
+  `host.invitations.create/list` to
+  `account-contract/src/hosted-operations.ts` and their server routes in one
   commit, dropping `/host/invitations` from that test's refusals.
   Until then the wizard shows the CLI pair.
 - **Hosted AI verification.** The plane has no `/credentials/:id/verify`;

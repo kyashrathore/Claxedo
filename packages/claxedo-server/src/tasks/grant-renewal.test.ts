@@ -26,7 +26,6 @@ async function fixture(options: {
   owner?: TasksCapabilityOwner | undefined
   tasksEnabled?: boolean
   subagentsEnabled?: boolean
-  crossMachineWrites?: boolean
   now?: () => number
 } = {}) {
   const env = await signingEnv()
@@ -46,7 +45,6 @@ async function fixture(options: {
     grant: createTasksRootGrant({
       signingEnv: env,
       passes,
-      crossMachineWrites: async () => options.crossMachineWrites ?? false,
       ...(options.now ? { now: options.now } : {}),
     }),
     audit,
@@ -135,15 +133,14 @@ describe("the Tasks grant renewal route", () => {
     expect((await renew(old.token)).status).toBe(401)
   })
 
-  test("follows the cross-machine reader: start appears when it says yes and disappears when it says no", async () => {
-    const granted = await fixture({ crossMachineWrites: true })
-    const withStart = (await (await granted.renew((await granted.capability()).token)).json()) as { operations: string[] }
-    expect(withStart.operations).toEqual(["read", "create", "start"])
-
-    const withheld = await fixture({ crossMachineWrites: false })
-    const started = await mintTasksCapability({ ...root, operations: ["read", "create", "start"] }, withheld.env)
-    const withoutStart = (await (await withheld.renew(started.token)).json()) as { operations: string[] }
+  test("renewal grants only read and create even when the incoming grant carries start", async () => {
+    const granted = await fixture()
+    const started = await mintTasksCapability({ ...root, operations: ["read", "create", "start"] }, granted.env)
+    const response = await granted.renew(started.token)
+    expect(response.status).toBe(200)
+    const withoutStart = (await response.json()) as { token: string; operations: string[] }
     expect(withoutStart.operations).toEqual(["read", "create"])
+    expect((await verifyTasksCapability(withoutStart.token, granted.env)).operations).toEqual(["read", "create"])
   })
 
   test("refuses a missing, expired, foreign or tampered bearer as an invalid grant, never as a signed-route error", async () => {

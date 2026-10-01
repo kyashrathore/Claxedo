@@ -6,6 +6,7 @@ export const ClaxedoDocumentIndexTable = sqliteTable(
   {
     id: text().primaryKey(),
     org_id: text().notNull(),
+    creator_id: text(),
     project_id: text().notNull(),
     display_name: text().notNull(),
     origin_kind: text({ enum: ["managed", "repository"] }).notNull(),

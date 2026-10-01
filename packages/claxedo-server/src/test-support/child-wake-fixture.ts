@@ -69,10 +69,10 @@ export function runtimePrincipal(who: SignedControlPlaneAuth): PrivateSessionRun
 }
 
 /**
- * Alice's workspace, Bob a member of it, and Alice's private parent session
- * shared with Bob at `parentShare`. The child is not yet reserved: the create
- * path under test reserves it before the runtime is asked, so each suite
- * takes it as far as the flow it exercises expects.
+ * Alice's workspace, Bob a member of its organization, and Alice's private
+ * parent session shared with Bob at `parentShare`. The child is not yet
+ * reserved: the create path under test reserves it before the runtime is
+ * asked, so each suite takes it as far as the flow it exercises expects.
  */
 export async function seedWakeWorkspace(parentShare: "follow" | "send") {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "claxedo-child-wake-"))
@@ -88,12 +88,13 @@ export async function seedWakeWorkspace(parentShare: "follow" | "send") {
   await authority.createCloudWorkspace(alice, { workspaceId: WORKSPACE, displayName: "Wake" })
   const opened = await authority.openWorkspace(alice, { workspaceId: WORKSPACE })
   const orgId = opened.workspace!.org_id!
-  member(seeded, orgId, opened.workspace!.project_id!, bob.user.tokenIdentifier)
+  member(seeded, orgId, bob.user.tokenIdentifier)
+  const aliceRuntime = runtimePrincipal(alice)
   const bobRuntime = runtimePrincipal(bob)
   await authority.reserveSession(alice, { operationId: "op_parent", sessionId: PARENT, workspaceId: WORKSPACE, kind: "create" })
-  await authority.registerRuntimeSession({ ...runtimePrincipal(alice), operationId: "op_parent", sessionId: PARENT, workspaceId: WORKSPACE, createdAt: Date.now(), updatedAt: Date.now() })
+  await authority.registerRuntimeSession({ ...aliceRuntime, operationId: "op_parent", sessionId: PARENT, workspaceId: WORKSPACE, createdAt: Date.now(), updatedAt: Date.now() })
   await setShare(authority, alice, bob, parentShare)
-  return { root, authority, seeded, alice, bob, bobRuntime, orgId }
+  return { root, authority, seeded, alice, bob, aliceRuntime, bobRuntime, orgId }
 }
 
 /** The reservation a client takes on the control plane before it asks the runtime to create the child. */
@@ -108,12 +109,9 @@ export async function registerChild(authority: WakeAuthority, creator: PrivateSe
   await authority.registerRuntimeSession({ ...creator, operationId: CHILD_OPERATION, sessionId: CHILD, workspaceId: WORKSPACE, createdAt: Date.now(), updatedAt: Date.now() })
 }
 
-function member(seeded: () => Database.Database, orgId: string, projectId: string, tokenIdentifier: string) {
-  const db = seeded()
-  db.prepare(`INSERT INTO org_memberships (org_id, token_identifier, role, created_at, updated_at) VALUES (?, ?, 'member', 1, 1)`)
+function member(seeded: () => Database.Database, orgId: string, tokenIdentifier: string) {
+  seeded().prepare(`INSERT INTO org_memberships (org_id, token_identifier, role, created_at, updated_at) VALUES (?, ?, 'member', 1, 1)`)
     .run(orgId, tokenIdentifier)
-  db.prepare(`INSERT INTO project_memberships (project_id, token_identifier, role, created_at, updated_at) VALUES (?, ?, 'editor', 1, 1)`)
-    .run(projectId, tokenIdentifier)
 }
 
 export async function setShare(
@@ -143,7 +141,7 @@ export function admitFinishedChild(store: RuntimeStore, subagentKey: string) {
 
 /**
  * The runtime store as the create route leaves it: both sessions bound, the
- * child admitted under the parent, finished, its wake pending, and Bob
+ * child admitted under the parent, finished, its wake pending, and `origin`
  * recorded as the identity the wake is to run as, with the grant it presents.
  */
 export function seedFinishedChildStore(root: string, origin?: { actorId: string; orgId: string; grant?: string }) {

@@ -318,7 +318,7 @@ describe("roots", () => {
   /** Lexical identity: every path resolves to itself. */
   const lexical = async (path: string) => path
 
-  const scope = (allowed_roots: string[]) => ({ revision: 1, allowed_roots, visibility: "owner" as const })
+  const scope = (allowed_roots: string[]) => ({ revision: 1, allowed_roots })
 
   test("no scope yet, or an empty allowed_roots, is deny-all", async () => {
     expect(await effectiveRoots({ cli_roots: ["/srv"] }, lexical)).toEqual([])
@@ -374,7 +374,7 @@ describe("roots", () => {
 })
 
 describe("root pinning", () => {
-  const scope = (allowed_roots: string[]) => ({ revision: 1, allowed_roots, visibility: "owner" as const })
+  const scope = (allowed_roots: string[]) => ({ revision: 1, allowed_roots })
   /** A filesystem where `/srv/projects` does not exist yet and can later be made a symlink. */
   const filesystem = (links: Record<string, string>) => async (path: string) => {
     if (path in links) return links[path]

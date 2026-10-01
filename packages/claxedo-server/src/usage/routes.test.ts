@@ -95,7 +95,7 @@ describe("usage routes", () => {
       const response = await request
       expect(response.status).toBe(401)
       await expect(response.json()).resolves.toEqual({
-        error: { code: "invalid_bearer_token", message: "Bearer token is invalid" },
+        error: { code: "invalid_bearer_token", message: "Bearer token is invalid", retryable: false },
       })
     }
     expect(usageDashboard).not.toHaveBeenCalled()
@@ -728,7 +728,7 @@ describe("local unified usage route", () => {
       const response = await request
       expect(response.status).toBe(401)
       await expect(response.json()).resolves.toEqual({
-        error: { code: "invalid_bearer_token", message: "Bearer token is invalid" },
+        error: { code: "invalid_bearer_token", message: "Bearer token is invalid", retryable: false },
       })
     }
   })

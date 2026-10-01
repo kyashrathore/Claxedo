@@ -6,10 +6,9 @@ import type { SqliteAuthorityDb } from "./workspace-authority-store"
  * Columns the host-connect tables gained after the store's CREATE already ran
  * on a database. Every default is what the pre-connect rows meant: one key
  * version, no acquired instance, enrolled through the account, first
- * assignment revision, visible to org members, no sealing key and no pushed
- * provider configuration. Runs after the tenancy
- * migration because that one rebuilds `workspaces` from an explicit column
- * list and would drop `org_member_visible` if it were added first.
+ * assignment revision, no sealing key and no pushed provider configuration.
+ * Runs after the tenancy migration because that one rebuilds `workspaces` from
+ * an explicit column list and would drop a column added before it.
  *
  * One transaction, and the two repairs at the end run on every open rather
  * than only when a column was just added: a process that died between the
@@ -33,7 +32,6 @@ export function migrateHostConnectSchema(db: SqliteAuthorityDb) {
     addColumn(db, "host_enrollments", "provider_config_sealed_key_json", "TEXT")
     addColumn(db, "host_enrollments", "provider_config_provider_ids", "TEXT")
     addColumn(db, "host_workspace_assignments", "revision", "INTEGER NOT NULL DEFAULT 1")
-    addColumn(db, "workspaces", "org_member_visible", "INTEGER NOT NULL DEFAULT 1")
     addColumn(db, "workspaces", "host_assignment_revision", "INTEGER NOT NULL DEFAULT 0")
     // The counter only ever rises: a live assignment above it is the higher
     // truth, and a counter above the assignment (an unassign left it there)

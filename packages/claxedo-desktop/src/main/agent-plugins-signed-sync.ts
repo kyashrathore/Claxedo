@@ -18,7 +18,7 @@
 const REFRESH_INTERVAL_MS = 10 * 60_000
 const REFRESH_LEAD_MS = 5 * 60_000
 import { readField, readFiniteNumber, readString } from "@claxedo/helpers/readers"
-import type { HostedOperationName } from "./account/hosted-operations"
+import type { HostedOperationName } from "@claxedo/account-contract"
 import type { DaemonFetch } from "./daemon-request"
 
 const RETRY_INTERVAL_MS = 60_000

@@ -414,12 +414,12 @@ function terminalPrivate() {
     allowed: false,
     status: 403,
     code: "agent_terminal_private",
-    message: "Agent terminal access requires its creator or a workspace administrator",
+    message: "Agent terminal access requires its creator or the workspace owner",
   })
 }
 
 function canAdminister(context: AgentHookContext) {
-  return context.authority?.role === "admin" || context.authority?.role === "owner"
+  return context.authority !== undefined && context.authority.sessionId === undefined
 }
 
 async function authorizeTerminal(

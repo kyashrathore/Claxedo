@@ -6,7 +6,6 @@ import { tmpdir } from "node:os"
 import path from "node:path"
 import { promisify } from "node:util"
 import { createWorkspaceRuntimeClient, WorkspaceRuntimeClientError } from "../client"
-import type { RelayHostAuthContext } from "../workspace-host-service-auth"
 import type { GitCommitSummary, GitWorktreeStatus } from "../workspace-files/git-worktree"
 import { registerWorkspaceDirectory, unregisterWorkspaceDirectory, workspaceId } from "../target"
 import { GitWorktreeRoutes, type GitWorktreeRoutesOptions } from "./git-worktree"
@@ -64,31 +63,6 @@ function app(options: GitWorktreeRoutesOptions = {}) {
 async function installHook(directory: string, name: string, script: string) {
   await mkdir(path.join(directory, ".git", "hooks"), { recursive: true })
   await writeFile(path.join(directory, ".git", "hooks", name), `#!/bin/sh\n${script}\n`, { mode: 0o755 })
-}
-
-function viewerApp() {
-  const server = new Hono<{ Variables: RelayHostAuthContext }>()
-  server.use("*", async (c, next) => {
-    const now = Math.floor(Date.now() / 1000)
-    c.set("relayHostAuth", {
-      iss: "workspace-relay",
-      aud: "workspace-host-service",
-      principal_kind: "user",
-      actor_id: "user_1",
-      actor_kind: "human",
-      org_id: "org_1",
-      workspace_id: "ws_1",
-      host_id: "host_1",
-      role: "viewer",
-      backing: "cloud-vm",
-      exp: now + 60,
-      iat: now,
-      jti: "jti_1",
-      parent_jti: "rat_jti_1",
-    })
-    return await next()
-  })
-  return server.route("/api/wr/git", GitWorktreeRoutes())
 }
 
 type Server = { request(input: string, init?: RequestInit): Response | Promise<Response> }
@@ -466,32 +440,6 @@ describe("GitWorktreeRoutes log", () => {
     await withWorkspace(async () => {
       expect(await log()).toEqual([])
     }, { commit: false })
-  })
-})
-
-describe("GitWorktreeRoutes viewer role", () => {
-  test("denies every write while serving reads", async () => {
-    await withWorkspace(async (directory) => {
-      await writeFile(path.join(directory, "mod.md"), "one\nchanged\n")
-      expect((await status(viewerApp())).unstaged.map((entry) => entry.path)).toEqual(["mod.md"])
-      expect((await viewerApp().request("http://localhost/api/wr/git/log")).status).toBe(200)
-
-      const writes: Array<[string, unknown]> = [
-        ["stage", { paths: ["mod.md"] }],
-        ["unstage", { paths: ["mod.md"] }],
-        ["commit-staged", { message: "blocked" }],
-        ["push", {}],
-      ]
-      for (const [route, body] of writes) {
-        const response = await post(viewerApp(), route, body)
-        expect(response.status).toBe(403)
-        await expect(response.json()).resolves.toEqual({
-          error: { code: "relay_role_denied", message: "Workspace role does not allow Git writes" },
-        })
-      }
-      expect(await git(directory, ["diff", "--cached", "--name-only"])).toBe("")
-      expect(await git(directory, ["log", "-1", "--pretty=%s"])).toBe("initial")
-    })
   })
 })
 

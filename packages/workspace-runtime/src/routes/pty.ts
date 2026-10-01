@@ -7,14 +7,12 @@ import { boundedJsonBody, errorBody, isRequestBodyTooLarge, requestBodyTooLargeB
 import { routeParam } from "@claxedo/helpers/route-param"
 import { assertTarget, authoritativeWorkspaceId, resolveWorkspaceCommandPaths, resolveWorkspacePath, WorkspaceTargetError } from "../target"
 import type { RelayHostAuthContext } from "../workspace-host-service-auth"
-import { denyWorkspaceViewers } from "./workspace-role"
 import { readHistorySessionId } from "../pty/history-disk"
 import {
   authorizePtyAttach,
   createAuthorizedPtyConnection,
   isPtyStreamSocket,
   ptyAccessRefusalResponse,
-  PTY_ROLE_DENIED_MESSAGE,
   type PtyStreamAdmission,
 } from "../pty/authorized-connection"
 import {
@@ -105,7 +103,6 @@ export function PtyRoutes(
       throw err
     })
     // Terminal access is sensitive even when the transport method is GET.
-    .use("*", denyWorkspaceViewers(PTY_ROLE_DENIED_MESSAGE))
     .get("/", async (c) => {
       const rows = Pty.list()
       const access = sessionAccessContext(c)
@@ -157,7 +154,7 @@ export function PtyRoutes(
           })
         }
       } catch (err) {
-        if (err instanceof WorkspaceTargetError && err.message.includes("pinned")) {
+        if (err instanceof WorkspaceTargetError && err.code === "workspace_target_pinned") {
           return c.json(invalidDirectory(), 400)
         }
         if (err instanceof WorkspaceTargetError) {

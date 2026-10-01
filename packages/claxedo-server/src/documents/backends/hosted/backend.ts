@@ -1,3 +1,5 @@
+import type { DocumentsBackend } from "@claxedo/server-core/documents/backend"
+import { authorizeDocument, type DocumentAccess } from "@claxedo/server-core/documents/access"
 import { createHostedDocumentIndex } from "./index"
 import {
   createHostedManagedDocumentWorkspace,
@@ -11,16 +13,11 @@ import { z } from "zod"
 import { asRecord, isRecord, parseJson } from "@claxedo/server-core/platform/json/index"
 import type { DocumentIndexEntry } from "@claxedo/server-core/documents/index-store"
 import { toDocumentVersion } from "@claxedo/server-core/documents/port"
-import {
-  LocalDocumentIndexResponseSchema,
-  LocalDocumentReadResponseSchema,
-  LocalDocumentWriteResponseSchema,
-  parseLocalDocumentResponse,
-} from "./local-relay-contract"
 
 export function createHostedDocumentsBackend(
   bucket: R2BucketBinding,
   options: Readonly<{
+    access: (index: DocumentsBackend["index"]) => DocumentAccess
     runtime?: Readonly<{ open(input: {
       entry: DocumentIndexEntry
       sessionId: string
@@ -42,34 +39,13 @@ export function createHostedDocumentsBackend(
       writeback: { token: string; expiresAt: number }
     }): Promise<Readonly<{ path: string; preserved?: string; version: string }>> }>
     env?: NodeJS.ProcessEnv
-    localRelay?: Readonly<{ request(input: {
-      auth: SignedControlPlaneAuth
-      orgId: string
-      projectId: string
-      localWorkspaceId: string
-      cloudWorkspaceId: string
-      sessionId: string
-      documentId: string
-      operation: "list" | "read" | "write"
-      markdown?: string
-      expectedVersion?: string
-      jobExpiresAt: number
-    }): Promise<unknown> }>
     resolveSessionWorkspace?: (auth: SignedControlPlaneAuth, sessionId: string) => Promise<string>
-    resolveLocalWorkspace?: (auth: SignedControlPlaneAuth, projectId: string) => Promise<string>
-    reauthorizeJob?: (input: {
-      auth: SignedControlPlaneAuth
-      entry: DocumentIndexEntry
-      sessionId: string
-      cloudWorkspaceId: string
-      localWorkspaceId: string
-    }) => Promise<void>
-    listLocalWorkspaces?: (auth: SignedControlPlaneAuth) => Promise<readonly { workspaceId: string; projectId: string }[]>
-  }> = {},
+  }>,
 ) {
   const store = createR2ConditionalObjectStore(bucket)
   const workspace = createHostedManagedDocumentWorkspace({ store })
   const index = createHostedDocumentIndex(store)
+  const access = options.access(index)
   const env = options.env ?? process.env
 
   async function putJob(sessionId: string, documentId: string, job: HostedDocumentJob) {
@@ -125,114 +101,35 @@ export function createHostedDocumentsBackend(
       job.value.projectId !== input.projectId || job.value.cloudWorkspaceId !== input.workspaceId) {
       throw new Error("Document job capability is inactive")
     }
-    return { ...job, claims, auth: await openJobAuth(job.value.sealedAuth, env) }
+    const auth = await openJobAuth(job.value.sealedAuth, env)
+    await authorizeDocument(await access.principal(auth, input.orgId), documentId, "edit")
+    return { ...job, claims, auth }
   }
 
   async function liveEntry(documentId: string, input: {
     token: string; orgId: string; projectId: string; workspaceId: string; sessionId: string
   }) {
     const job = await activeJob(documentId, input)
-    if (job.value.placement === "hosted") {
-      const entry = await index.find(input.orgId, documentId)
-      if (!entry) throw new Error("Hosted document is unavailable")
-      return { entry, job }
-    }
-    if (!options.localRelay) throw new Error("Local document relay is unavailable")
-    const current = await options.localRelay.request({
-      auth: job.auth,
-      orgId: input.orgId,
-      projectId: input.projectId,
-      localWorkspaceId: job.value.localWorkspaceId,
-      cloudWorkspaceId: job.value.cloudWorkspaceId,
-      sessionId: input.sessionId,
-      documentId,
-      operation: "read",
-      jobExpiresAt: job.value.jobExpiresAt,
-    })
-    const { entry } = parseLocalDocumentResponse(
-      LocalDocumentReadResponseSchema,
-      current,
-      "Local document is unavailable",
-    )
+    const entry = await index.find(input.orgId, documentId)
+    if (!entry) throw new Error("Hosted document is unavailable")
     return { entry, job }
   }
   return {
     index,
+    access,
     workspace,
     managedRelativePath: (input: Readonly<{ documentId: string; slug: string }>) => hostedManagedRelativePath(input),
-    placement: "hosted",
+    placement: "hosted" as const,
     placementId: "r2",
     ...(options.runtime ? {
-      ...(options.localRelay ? { remoteList: async (input: {
-        auth: SignedControlPlaneAuth
-        orgId: string
-        projectId: string
-        localWorkspaceId: string
-        cloudWorkspaceId: string
-        sessionId: string
-      }) => {
-        const selected = await options.resolveLocalWorkspace?.(input.auth, input.projectId)
-        if (!selected || selected !== input.localWorkspaceId) throw new Error("Local document installation is unavailable")
-        const result = await options.localRelay!.request({
-          ...input,
-          documentId: "*",
-          operation: "list",
-          jobExpiresAt: Math.floor(Date.now() / 1000) + 15 * 60,
-        })
-        return parseLocalDocumentResponse(
-          LocalDocumentIndexResponseSchema,
-          result,
-          "Local document index response is invalid",
-        )
-      }, remoteFind: async (input: { auth: SignedControlPlaneAuth; orgId: string; documentId: string }) => {
-        if (!options.listLocalWorkspaces) return undefined
-        const workspaces = await options.listLocalWorkspaces(input.auth)
-        if (workspaces.length > 100) throw new Error("Remote document installation discovery exceeds its bound")
-        const matches = (await Promise.all(workspaces.map(async (workspace) => {
-          const result = await options.localRelay!.request({
-            auth: input.auth,
-            orgId: input.orgId,
-            projectId: workspace.projectId,
-            localWorkspaceId: workspace.workspaceId,
-            cloudWorkspaceId: workspace.workspaceId,
-            sessionId: `discovery_${input.documentId}`,
-            documentId: "*",
-            operation: "list",
-            jobExpiresAt: Math.floor(Date.now() / 1000) + 5 * 60,
-          }).catch(() => undefined)
-          return LocalDocumentIndexResponseSchema.safeParse(result)
-            .data?.find((entry) => entry.id === input.documentId)
-        }))).filter((entry): entry is DocumentIndexEntry => Boolean(entry))
-        if (matches.length > 1) throw new Error("Remote document identity is ambiguous")
-        return matches[0]
-      } } : {}),
       agentOpen: async (entry: DocumentIndexEntry, sessionId: string, context: { auth?: SignedControlPlaneAuth; origin: string }) => {
         if (!context.auth) throw new Error("Hosted document hydration requires signed authentication")
         const auth = context.auth
+        await authorizeDocument(await access.principal(auth, entry.org_id), entry.id, "edit")
         const cloudWorkspaceId = options.resolveSessionWorkspace
           ? await options.resolveSessionWorkspace(auth, sessionId)
           : entry.workspace_id ?? ""
-        const localWorkspaceId = entry.placement_kind === "local"
-          ? entry.workspace_id ?? await options.resolveLocalWorkspace?.(auth, entry.project_id) ?? ""
-          : cloudWorkspaceId
-        const read = await (async () => {
-          if (entry.placement_kind === "hosted") return await workspace.read(await workspace.resolve(portEntry(entry)))
-          if (!options.localRelay || !options.resolveSessionWorkspace || !localWorkspaceId) {
-            throw new Error("Local document relay is unavailable")
-          }
-          const value = await options.localRelay.request({
-            auth,
-            orgId: entry.org_id,
-            projectId: entry.project_id,
-            localWorkspaceId,
-            cloudWorkspaceId,
-            sessionId,
-            documentId: entry.id,
-            operation: "read",
-            jobExpiresAt: Math.floor(Date.now() / 1000) + 60 * 60,
-          })
-          return parseLocalDocumentResponse(LocalDocumentReadResponseSchema, value, "Local document read is invalid").read
-        })()
+        const read = await workspace.read(await workspace.resolve(portEntry(entry)))
         const jobExpiresAt = Math.floor(Date.now() / 1000) + 60 * 60
         const sealedAuth = await sealJobAuth(auth, env)
         await expireJob(sessionId, entry.id)
@@ -243,9 +140,7 @@ export function createHostedDocumentsBackend(
             await putJob(sessionId, entry.id, {
               orgId: entry.org_id,
               projectId: entry.project_id,
-              localWorkspaceId,
               cloudWorkspaceId,
-              placement: entry.placement_kind,
               jobExpiresAt: capability.jobExpiresAt,
               activeJti: capability.jti,
               sealedAuth,
@@ -257,15 +152,13 @@ export function createHostedDocumentsBackend(
           throw error
         })
       },
-      runtimeEntry: async (documentId: string, input: {
-        token: string; orgId: string; projectId: string; workspaceId: string; sessionId: string
-      }) => (await liveEntry(documentId, input)).entry,
       runtimeResolve: async (entry: DocumentIndexEntry, input: {
         auth: SignedControlPlaneAuth; sessionId: string; choice: "durable" | "draft"
       }) => {
         if (!options.runtime?.resolve || entry.archived_at) throw new Error("Document conflict resolution is unavailable")
         const job = await loadJob(input.sessionId, entry.id)
         const original = await openJobAuth(job.value.sealedAuth, env)
+        await authorizeDocument(await access.principal(input.auth, entry.org_id), entry.id, "edit")
         if (!job.value.activeJti || job.value.jobExpiresAt <= Math.floor(Date.now() / 1000) ||
           original.user.subject !== input.auth.user.subject || job.value.orgId !== entry.org_id ||
           job.value.projectId !== entry.project_id) throw new Error("Document conflict job is inactive")
@@ -273,34 +166,7 @@ export function createHostedDocumentsBackend(
           await options.resolveSessionWorkspace(input.auth, input.sessionId) !== job.value.cloudWorkspaceId) {
           throw new Error("Session placement changed")
         }
-        await options.reauthorizeJob?.({
-          auth: input.auth,
-          entry,
-          sessionId: input.sessionId,
-          cloudWorkspaceId: job.value.cloudWorkspaceId,
-          localWorkspaceId: job.value.localWorkspaceId,
-        })
-        const current = entry.placement_kind === "hosted"
-          ? await workspace.read(await workspace.resolve(portEntry(entry)))
-          : await (async () => {
-              if (!options.localRelay) throw new Error("Local document relay is unavailable")
-              const value = await options.localRelay.request({
-                auth: input.auth,
-                orgId: entry.org_id,
-                projectId: entry.project_id,
-                localWorkspaceId: job.value.localWorkspaceId,
-                cloudWorkspaceId: job.value.cloudWorkspaceId,
-                sessionId: input.sessionId,
-                documentId: entry.id,
-                operation: "read",
-                jobExpiresAt: job.value.jobExpiresAt,
-              })
-              return parseLocalDocumentResponse(
-                LocalDocumentReadResponseSchema,
-                value,
-                "Local document is unavailable",
-              ).read
-            })()
+        const current = await workspace.read(await workspace.resolve(portEntry(entry)))
         const scope = {
           orgId: entry.org_id,
           projectId: entry.project_id,
@@ -317,7 +183,7 @@ export function createHostedDocumentsBackend(
           entry,
           sessionId: input.sessionId,
           auth: input.auth,
-          localWorkspaceId: job.value.localWorkspaceId,
+          localWorkspaceId: job.value.cloudWorkspaceId,
           cloudWorkspaceId: job.value.cloudWorkspaceId,
           choice: input.choice,
           current,
@@ -344,30 +210,9 @@ export function createHostedDocumentsBackend(
         markdown: string
         expectedVersion: string
       }) => {
-        const job = await activeJob(entry.id, input)
+        await activeJob(entry.id, input)
         if (entry.org_id !== input.orgId || entry.project_id !== input.projectId) throw new Error("Document write-back scope is invalid")
         if (entry.archived_at) throw new Error("Archived documents cannot be written back")
-        if (entry.placement_kind === "local") {
-          if (!options.localRelay) throw new Error("Local document relay is unavailable")
-          const result = await options.localRelay.request({
-            auth: job.auth,
-            orgId: input.orgId,
-            projectId: input.projectId,
-            localWorkspaceId: job.value.localWorkspaceId,
-            cloudWorkspaceId: job.value.cloudWorkspaceId,
-            sessionId: input.sessionId,
-            documentId: entry.id,
-            operation: "write",
-            markdown: input.markdown,
-            expectedVersion: input.expectedVersion,
-            jobExpiresAt: job.value.jobExpiresAt,
-          })
-          return parseLocalDocumentResponse(
-            LocalDocumentWriteResponseSchema,
-            result,
-            "Local document write-back response is invalid",
-          )
-        }
         const written = await workspace.write(await workspace.resolve(portEntry(entry)), {
           markdown: input.markdown,
           expectedVersion: toDocumentVersion(input.expectedVersion),
@@ -391,27 +236,6 @@ export function createHostedDocumentsBackend(
         if (currentEntry.archived_at || job.value.jobExpiresAt <= Math.floor(Date.now() / 1000)) throw new Error("Document renewal job is inactive")
         if (options.resolveSessionWorkspace &&
           await options.resolveSessionWorkspace(job.auth, input.sessionId) !== job.value.cloudWorkspaceId) throw new Error("Session placement changed")
-        await options.reauthorizeJob?.({
-          auth: job.auth, entry: currentEntry, sessionId: input.sessionId,
-          cloudWorkspaceId: job.value.cloudWorkspaceId, localWorkspaceId: job.value.localWorkspaceId,
-        })
-        if (currentEntry.placement_kind === "local" && options.localRelay) {
-          const current = await options.localRelay.request({
-            auth: job.auth,
-            orgId: input.orgId,
-            projectId: input.projectId,
-            localWorkspaceId: job.value.localWorkspaceId,
-            cloudWorkspaceId: job.value.cloudWorkspaceId,
-            sessionId: input.sessionId,
-            documentId: currentEntry.id,
-            operation: "read",
-            jobExpiresAt: job.value.jobExpiresAt,
-          })
-          const remote = LocalDocumentReadResponseSchema.safeParse(current).data
-          if (!remote || remote.entry.archived_at) {
-            throw new Error("Local document is archived or unavailable")
-          }
-        }
         const scope = {
           orgId: input.orgId, projectId: input.projectId, workspaceId: input.workspaceId,
           sessionId: input.sessionId, documentId: entry.id,
@@ -437,9 +261,7 @@ export function createHostedDocumentsBackend(
 const HostedDocumentJobSchema = z.object({
   orgId: z.string().min(1),
   projectId: z.string().min(1),
-  localWorkspaceId: z.string(),
   cloudWorkspaceId: z.string(),
-  placement: z.enum(["local", "hosted"]),
   jobExpiresAt: z.number(),
   activeJti: z.string(),
   sealedAuth: z.string(),

@@ -159,7 +159,6 @@ describe("control plane HTTP protocol", () => {
         parts: [{ type: "text", text: "summary" }],
       },
     ]
-    const statuses = [{ "session-1": { type: "busy" } }, {}]
     const payloads = [
       { messages, session: { id: "session-1", title: "Settled title", time: { created: 100, updated: 200 } } },
       { messages: messages.slice(0, 1), maxEventOrdinal: 7, session: { id: "session-1", title: "Settled title", time: { created: 100, updated: 200 } } },
@@ -177,7 +176,6 @@ describe("control plane HTTP protocol", () => {
                 session: { id: "session-1", title: "Settled title", time: { created: 100, updated: 200 } },
               })
             }
-            if (input.path === "/session/status") return Response.json(statuses.shift() ?? {})
             return new Response("not found", { status: 404 })
           },
         },
@@ -201,7 +199,6 @@ describe("control plane HTTP protocol", () => {
       messages,
       updatedAt: 200,
       maxEventOrdinal: 0,
-      intakeReady: false,
     })
 
     vi.mocked(svc.projectionStore.read_session_messages).mockReturnValue(messages)
@@ -213,7 +210,6 @@ describe("control plane HTTP protocol", () => {
     expect(syncSessionMessages).toHaveBeenNthCalledWith(2, expect.objectContaining({ mode: "signed" }), expect.objectContaining({
       messages: messages.slice(0, 1),
       maxEventOrdinal: 7,
-      intakeReady: true,
     }))
   })
 

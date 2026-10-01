@@ -14,7 +14,8 @@ import { asRecord } from "@claxedo/server-core/platform/json/index"
 import type { RemoteAccessService } from "../../routes/remote-access"
 import { hostedRemoteAccessService } from "../hosted-shared/hosted-remote-access-service"
 import type { LocalHostAssignments, LocalWorkspaceShare } from "../../workspace/route-support"
-import { hostEnrollmentPayload, type LocalHostIdentity } from "../../workspace/local-host"
+import { type LocalHostIdentity } from "../../workspace/local-host"
+import { enrollmentPayload } from "@claxedo/account-contract/machine"
 
 const log = Log.create({ service: "remote-access" })
 
@@ -81,14 +82,15 @@ function errorMessage(error: unknown) {
  * This node's own machine: the owner-facing service, the local share seam, and
  * the enrollment the serving loop currently holds.
  */
-export type LocalRemoteAccessService = RemoteAccessService & LocalHostAssignments & {
-  /**
-   * The enrollment this process serves under, or nothing while it serves
-   * under none. The bootstrap declares it, which is how a client tells a
-   * workspace row placed on THIS node from one it must relay to.
-   */
-  servingEnrollmentId(): string | undefined
-}
+export type LocalRemoteAccessService = RemoteAccessService &
+  LocalHostAssignments & {
+    /**
+     * The enrollment this process serves under, or nothing while it serves
+     * under none. The bootstrap declares it, which is how a client tells a
+     * workspace row placed on THIS node from one it must relay to.
+     */
+    servingEnrollmentId(): string | undefined
+  }
 
 /**
  * Machine-wide remote access for the box the self-hosted Node control plane
@@ -190,13 +192,20 @@ export function createRemoteAccessService(input: {
 
   const run = <T>(work: () => Promise<T>): Promise<T> => {
     const next = sync.then(work, work)
-    sync = next.then(() => undefined, () => undefined)
+    sync = next.then(
+      () => undefined,
+      () => undefined,
+    )
     return next
   }
 
   function requireMethod<T>(method: T | undefined, what: string): NonNullable<T> {
     if (!method) {
-      throw new ControlPlaneAuthError(503, "workspace_authority_unavailable", `This control plane does not support ${what}`)
+      throw new ControlPlaneAuthError(
+        503,
+        "workspace_authority_unavailable",
+        `This control plane does not support ${what}`,
+      )
     }
     return method
   }
@@ -243,11 +252,14 @@ export function createRemoteAccessService(input: {
       hostId: identity.hostId,
       publicKey: identity.publicKey,
       requestId: request.request_id,
-      signature: input.signHostPayload(identity, hostEnrollmentPayload({
-        hostId: identity.hostId,
-        requestId: request.request_id,
-        nonce: request.nonce,
-      })),
+      signature: input.signHostPayload(
+        identity,
+        enrollmentPayload({
+          hostId: identity.hostId,
+          requestId: request.request_id,
+          nonce: request.nonce,
+        }),
+      ),
       ...(displayName ? { displayName } : {}),
     })
     return { identity, enrollment }
@@ -303,7 +315,8 @@ export function createRemoteAccessService(input: {
       current.auth = auth
       return current
     }
-    const enrollmentId = live?.enrollment_id ?? (await enrollMachine(auth, current?.displayName)).enrollment.enrollment_id
+    const enrollmentId =
+      live?.enrollment_id ?? (await enrollMachine(auth, current?.displayName)).enrollment.enrollment_id
     return await startServing({
       auth,
       identity,
@@ -315,8 +328,9 @@ export function createRemoteAccessService(input: {
   }
 
   async function assignOne(auth: SignedControlPlaneAuth, hostId: string, share: LocalWorkspaceShare) {
-    const remoteDirectory = share.remoteDirectory
-      ?? (await localWorkspaces()).find((workspace) => workspace.id === share.workspaceId)?.directory
+    const remoteDirectory =
+      share.remoteDirectory ??
+      (await localWorkspaces()).find((workspace) => workspace.id === share.workspaceId)?.directory
     if (!remoteDirectory) {
       throw new Error(`no directory on this machine for workspace ${share.workspaceId}`)
     }
@@ -343,8 +357,10 @@ export function createRemoteAccessService(input: {
   }
 
   const sameAcks = (before: HostAssignmentAck[], after: HostAssignmentAck[]) =>
-    before.length === after.length
-    && before.every((ack, index) => after[index]?.workspaceId === ack.workspaceId && after[index]?.revision === ack.revision)
+    before.length === after.length &&
+    before.every(
+      (ack, index) => after[index]?.workspaceId === ack.workspaceId && after[index]?.revision === ack.revision,
+    )
 
   /**
    * One beat, then reconciliation: consent becomes the owner's assignments
@@ -384,13 +400,16 @@ export function createRemoteAccessService(input: {
           workspaceIds: serveable,
           hostId: current.identity.hostId,
           relayUrl: input.relayUrl,
-          hostTunnelTokenProvider: async () => (await input.hostTunnelTokenSigner({
-            subject: current.auth.user.subject,
-            enrollmentId: current.enrollmentId,
-            generation: current.generation,
-            hostId: current.identity.hostId,
-            workspaceIds: serveable,
-          })).hostTunnelToken,
+          hostTunnelTokenProvider: async () =>
+            (
+              await input.hostTunnelTokenSigner({
+                subject: current.auth.user.subject,
+                enrollmentId: current.enrollmentId,
+                generation: current.generation,
+                hostId: current.identity.hostId,
+                workspaceIds: serveable,
+              })
+            ).hostTunnelToken,
         })
       : (input.stopMachineTunnel(current.identity.hostId), undefined)
     return { result: result!, serveable, tunnel }

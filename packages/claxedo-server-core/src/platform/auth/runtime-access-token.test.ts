@@ -283,11 +283,11 @@ describe("document relay job capabilities", () => {
     const scope = {
       userId: "user_1", orgId: "org_1", projectId: "project_1", localWorkspaceId: "local_1",
       cloudWorkspaceId: "cloud_1", sessionId: "session_1", documentId: "document_1",
-      operations: ["hydrate", "read", "write"] as const,
+      operations: ["hydrate", "write"] as const,
       jobExpiresAt: Math.floor(Date.now() / 1000) + 3600,
     }
     const job = await mintDocumentRelayJobToken(scope, env)
-    const expected = { ...scope, operation: "read" as const }
+    const expected = { ...scope, operation: "write" as const }
     await expect(verifyDocumentRelayJobToken(job.token, expected, env)).resolves.toMatchObject(expected)
     await expect(verifyDocumentRelayJobToken(job.token, { ...expected, documentId: "document_2" }, env)).rejects.toThrow()
     await expect(verifyDocumentRelayJobToken(job.token, { ...expected, projectId: "project_2" }, env)).rejects.toThrow()

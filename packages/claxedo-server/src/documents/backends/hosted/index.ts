@@ -94,6 +94,7 @@ export function createHostedDocumentIndex(store: ConditionalObjectStore) {
     },
     async create(input: DocumentIndexEntry) {
       const entry = DocumentIndexEntrySchema.parse(input)
+      if (!entry.creator_id) throw new Error("Document creator is required")
       const created = await createDocument(entry)
       const scope = { orgId: entry.org_id, projectId: entry.project_id }
       if (entry.origin_kind === "repository") await registerRepository(scope, entry.repository_id, entry.id)

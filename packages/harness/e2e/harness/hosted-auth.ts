@@ -2,7 +2,7 @@ import fs from "node:fs/promises"
 import type { startHostedStack } from "./hosted-stack"
 
 type HostedStack = Awaited<ReturnType<typeof startHostedStack>>
-export type HostedPerson = { id: string; cookie: string }
+export type HostedPerson = { id: string; email: string; cookie: string }
 
 export async function hostedFetch(
   stack: HostedStack,
@@ -48,7 +48,16 @@ export async function signInHostedPerson(stack: HostedStack, code: "hosted-perso
     throw new Error(`hosted GitHub callback failed: ${completed.status} ${await completed.text()}`)
   }
   const session = await hostedFetch(stack, "/api/auth/get-session", { headers: { cookie: sessionCookie } })
-  const sessionBody = await session.json() as { user?: { id?: string } }
-  if (!session.ok || !sessionBody.user?.id) throw new Error(`hosted GitHub session missing: ${JSON.stringify(sessionBody)}`)
-  return { id: sessionBody.user.id, cookie: sessionCookie } satisfies HostedPerson
+  const sessionBody = await session.json() as { user?: { id?: string; email?: string } }
+  if (!session.ok || !sessionBody.user?.id || !sessionBody.user.email) throw new Error(`hosted GitHub session missing: ${JSON.stringify(sessionBody)}`)
+  return { id: sessionBody.user.id, email: sessionBody.user.email, cookie: sessionCookie } satisfies HostedPerson
+}
+
+/** The owner invites `invitee` over the public route; the token is the one the Worker's `EMAIL` binding sent. */
+export async function inviteHostedPerson(stack: HostedStack, owner: HostedPerson, invitee: HostedPerson, orgId: string) {
+  const created = await hostedFetch(stack, `/api/control/orgs/${encodeURIComponent(orgId)}/invitations`, {
+    method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ email: invitee.email, role: "member" }),
+  }, owner)
+  if (created.status !== 202) throw new Error(`hosted invitation creation failed: ${created.status} ${await created.text()}`)
+  return new URL(await stack.recordedEmailActionUrl(invitee.email, "Join your Claxedo organization")).hash.slice(1)
 }

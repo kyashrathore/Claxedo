@@ -29,7 +29,7 @@ async function freshHost(cp = createFakeControlPlane(), input: { hostId?: string
     storageRoot: "/var/lib/claxedo",
     now: () => 1_000,
   })
-  const invitation = await cp.createInvitation({ scope: { revision: 1, allowed_roots: ["/srv"], visibility: "owner" } })
+  const invitation = await cp.createInvitation({ scope: { revision: 1, allowed_roots: ["/srv"] } })
   memory.files.set(TOKEN_FILE, { text: invitation.token + "\n", mode: 0o600 })
   const redeem = (overrides: Partial<Parameters<typeof redeemInvitation>[0]> = {}) =>
     redeemInvitation({ tokenFile: TOKEN_FILE, store, state, keys, fetch: cp.fetch, displayName: "build box", ...overrides })
@@ -70,7 +70,7 @@ describe("a fresh redeem", () => {
       },
       relay: { url: h.cp.relayUrl, jwksUrl: `${h.cp.relayUrl}/.well-known/jwks.json` },
       authority: { sessionAuthorityUrl: `${h.cp.url}/api/runtime-authority/session-authorize` },
-      scope: { revision: 1, allowed_roots: ["/srv"], visibility: "owner" },
+      scope: { revision: 1, allowed_roots: ["/srv"] },
     })
     expect(outcome.state.bootstrap).toBeUndefined()
     expect(h.stored()).toEqual(outcome.state)
@@ -214,7 +214,7 @@ describe("decisions", () => {
     h.cp.faults.dropRedeemResponse = true
     await h.redeem().catch(() => undefined)
     const pending = h.stored()!
-    const another = await h.cp.createInvitation({ scope: { revision: 1, allowed_roots: ["/srv"], visibility: "owner" } })
+    const another = await h.cp.createInvitation({ scope: { revision: 1, allowed_roots: ["/srv"] } })
     h.memory.files.set(TOKEN_FILE, { text: another.token, mode: 0o600 })
     const requests = h.cp.log.length
 
@@ -233,7 +233,7 @@ describe("decisions", () => {
       .catch((e: unknown) => e)
 
     expect(error).not.toBeInstanceOf(HostConnectDecisionError)
-    expect(String(error)).toContain("HOSTED_HTTP 503")
+    expect(error).toMatchObject({ status: 503 })
     expect(h.stored()?.bootstrap, "the pending marker stays for the retry").toBeDefined()
   })
 

@@ -209,7 +209,6 @@ describe("D1 signed Agent Plugins activation store", () => {
         calls.authorizeProject += 1
         return authority.authorizeProject(auth, input)
       },
-      listOrgs: (auth) => authority.listOrgs(auth),
     }
     const store = new D1SignedAgentPluginActivationStore({ database, authority: counting })
     const auth = await signed(authority, identity("alice"))
@@ -514,7 +513,7 @@ describe("D1 signed Agent Plugins activation store", () => {
     expect(foreignWorkspace.code).toBe("workspace_authorization_denied")
   })
 
-  test("an org member's runtime read on another person's workspace is refused whatever their project grant or its visibility", async () => {
+  test("an org member's runtime read on another person's workspace is refused whatever their project grant", async () => {
     const { database, authority, store } = await setup()
     const auth = await signed(authority, identity("alice"))
     const { orgId } = await principalOf(authority, auth)
@@ -533,10 +532,7 @@ describe("D1 signed Agent Plugins activation store", () => {
       .bind(created.project_id, member.userId)
       .run()
 
-    for (const visible of [0, 1]) {
-      await database.prepare("update workspaces set org_member_visible = ? where workspace_id = ?").bind(visible, created.workspace_id).run()
-      expect((await denial(store.readRuntime(runtime))).code).toBe("workspace_authorization_denied")
-    }
+    expect((await denial(store.readRuntime(runtime))).code).toBe("workspace_authorization_denied")
     await expect(store.readRuntime({ ...runtime, ownerUserId: (await principalOf(authority, auth)).userId }))
       .resolves.toMatchObject({ pluginInstanceId: PLUGIN, harnessId: "codex" })
   })

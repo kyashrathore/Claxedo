@@ -15,7 +15,8 @@ import { readdirSync } from "node:fs"
 import { readFile } from "node:fs/promises"
 import { fileURLToPath } from "node:url"
 import { Miniflare } from "miniflare"
-import { createBetterAuthD1AccountEmailResolver } from "../../platform/auth/better-auth-d1-account-email"
+import { betterAuthVerifiedEmail } from "../../platform/auth/better-auth-d1-authentication-evidence"
+import { orgInvitationEmailDelivery } from "../../platform/auth/auth-email-delivery"
 import { testRequestAuthenticationAdapter } from "../../test-support/request-authentication"
 import {
   controlPlaneMigrations,
@@ -58,6 +59,7 @@ async function hosted() {
   const controlPlane = await miniflareControlPlaneDatabase(controlPlaneMigrations())
   disposers.push(() => controlPlane.dispose())
   const accounts = await authDatabase()
+  const sent: Array<{ recipient: string; token: string }> = []
   const authority = composeBetterAuthD1Authority({
     env: {
       CLAXEDO_ADAPTER_PROFILE: "better-auth-d1",
@@ -66,7 +68,7 @@ async function hosted() {
       CONTROL_PLANE_DB: controlPlane.database,
     },
     product: { kind: "claxedo-hosted" },
-    findAccountByEmail: createBetterAuthD1AccountEmailResolver(accounts, "https://auth.test"),
+    invitations: orgInvitationEmailDelivery({ verifiedEmail: (auth) => betterAuthVerifiedEmail({ database: accounts, issuer: "https://auth.test" }, auth.principal?.identity), appOrigin: "https://app.test", sender: { send: async (message) => { sent.push(message) } } }),
   })
   const principals = new Map<string, ControlPlanePrincipal>()
   const authentication: RequestAuthenticationAdapter = {
@@ -117,6 +119,8 @@ async function hosted() {
   } as unknown as Parameters<typeof createHostedCoreApp>[1]) as unknown as Hono
 
   const person = async (subject: string) => {
+    await accounts.prepare(`insert into "user" (id, name, email, "emailVerified", "createdAt", "updatedAt") values (?, ?, ?, 1, 1, 1) on conflict (id) do nothing`)
+      .bind(subject, subject, `${subject}@example.test`).run()
     const identity: AuthIdentity = { adapter: "better-auth", issuer: "https://auth.test", subject }
     const mapped = await authority.ensureApplicationIdentity(identity)
     if (mapped.state !== "active") throw new Error(`identity did not become active: ${mapped.state}`)
@@ -171,12 +175,16 @@ async function hosted() {
       .run()
     return await person(subject)
   }
-  return { authority, person, account, call }
+  const join = async (adminToken: string, orgId: string, member: { token: string }) => {
+    expect(await call(adminToken, "POST", `/api/control/orgs/${orgId}/invitations`, { email: `${member.token}@example.test`, role: "member" })).toEqual({ status: 202, body: { message: "invitation sent" } })
+    return call(member.token, "POST", "/api/control/invitations/accept", { token: sent.at(-1)!.token })
+  }
+  return { authority, person, account, call, join, sent }
 }
 
 describe("hosted organization, team and project access routes on D1", () => {
   test("a team grant and a member grant show on the project's access listing and never open the owner's workspace", async () => {
-    const { authority, person, call } = await hosted()
+    const { authority, person, call, join } = await hosted()
     const alice = await person("alice")
     const bob = await person("bob")
 
@@ -188,7 +196,6 @@ describe("hosted organization, team and project access routes on D1", () => {
       orgId,
       displayName: "acme",
       backing: "local-worktree",
-      orgMemberVisible: true,
     })
     const opens = async () => (await call(bob.token, "GET", "/api/claxedo/agent-config/harness?workspaceId=ws_acme")).status
     const listed = async () =>
@@ -197,7 +204,7 @@ describe("hosted organization, team and project access routes on D1", () => {
     const access = async () =>
       ((await call(alice.token, "GET", `/api/control/projects/${projectId}/access`)).body as { entries: unknown[] }).entries
 
-    expect((await call(alice.token, "POST", `/api/control/orgs/${orgId}/members`, { userPublicId: bob.userId, role: "member" })).body)
+    expect((await join(alice.token, orgId, bob)).body)
       .toMatchObject({ user_id: bob.userId, role: "member" })
     expect((await call(alice.token, "GET", `/api/control/orgs/${orgId}/members`)).body)
       .toEqual([
@@ -236,7 +243,7 @@ describe("hosted organization, team and project access routes on D1", () => {
   })
 
   test("membership routes change roles, protect the founding owner, and a removed member is refused on the next request", async () => {
-    const { authority, person, call } = await hosted()
+    const { authority, person, call, join } = await hosted()
     const alice = await person("alice")
     const bob = await person("bob")
     const orgId = ((await call(alice.token, "POST", "/api/control/orgs", { name: "Acme" })).body as { org_id: string }).org_id
@@ -245,9 +252,8 @@ describe("hosted organization, team and project access routes on D1", () => {
       orgId,
       displayName: "acme",
       backing: "local-worktree",
-      orgMemberVisible: false,
     })
-    await call(alice.token, "POST", `/api/control/orgs/${orgId}/members`, { userPublicId: bob.userId, role: "member" })
+    await join(alice.token, orgId, bob)
 
     expect((await call(alice.token, "PATCH", `/api/control/orgs/${orgId}/members/${bob.userId}`, { role: "admin" })).body)
       .toMatchObject({ user_id: bob.userId, role: "admin" })
@@ -255,8 +261,8 @@ describe("hosted organization, team and project access routes on D1", () => {
       .toMatchObject({ status: 409, body: { error: { code: "org_owner_protected" } } })
     expect(await call(bob.token, "DELETE", `/api/control/orgs/${orgId}/members/${alice.userId}`))
       .toMatchObject({ status: 409, body: { error: { code: "org_owner_protected" } } })
-    expect(await call(alice.token, "POST", `/api/control/orgs/${orgId}/members`, { userPublicId: bob.userId, role: "boss" }))
-      .toMatchObject({ status: 400, body: { error: { code: "org_member_role_required" } } })
+    expect(await call(alice.token, "POST", `/api/control/orgs/${orgId}/invitations`, { email: "bob@example.test", role: "boss" }))
+      .toMatchObject({ status: 400, body: { error: { code: "invalid_input" } } })
     expect(await call(bob.token, "GET", `/api/control/projects/${projectId}/access`)).toMatchObject({ status: 200 })
 
     expect((await call(alice.token, "DELETE", `/api/control/orgs/${orgId}/members/${bob.userId}`)).body)
@@ -267,11 +273,11 @@ describe("hosted organization, team and project access routes on D1", () => {
   })
 
   test("a team member role that does not exist is refused and adds nobody", async () => {
-    const { person, call } = await hosted()
+    const { person, call, join } = await hosted()
     const alice = await person("alice")
     const bob = await person("bob")
     const orgId = ((await call(alice.token, "POST", "/api/control/orgs", { name: "Acme" })).body as { org_id: string }).org_id
-    await call(alice.token, "POST", `/api/control/orgs/${orgId}/members`, { userPublicId: bob.userId, role: "member" })
+    await join(alice.token, orgId, bob)
     const team = (await call(alice.token, "POST", `/api/control/orgs/${orgId}/teams`, { name: "Eng" })).body as { team_id: string }
 
     expect(await call(alice.token, "POST", `/api/control/teams/${team.team_id}/members`, { userPublicId: bob.userId, role: "boss" }))
@@ -282,36 +288,32 @@ describe("hosted organization, team and project access routes on D1", () => {
       .toMatchObject({ user_id: bob.userId, role: "admin" })
   })
 
-  test("an admin adds an existing account by its verified email, and an unverified or unknown address names nobody", async () => {
-    const { person, account, call } = await hosted()
+  test("known, unverified and unknown addresses receive the same invitation receipt", async () => {
+    const { person, account, call, sent } = await hosted()
     const alice = await person("alice")
     const carol = await account("carol", "carol@example.com", true)
     await account("dave", "dave@example.com", false)
     const orgId = ((await call(alice.token, "POST", "/api/control/orgs", { name: "Acme" })).body as { org_id: string }).org_id
-
-    expect((await call(alice.token, "POST", `/api/control/orgs/${orgId}/members`, { email: " Carol@Example.COM ", role: "member" })).body)
+    for (const email of [" Carol@Example.COM ", "dave@example.com", "nobody@example.com"]) {
+      expect(await call(alice.token, "POST", `/api/control/orgs/${orgId}/invitations`, { email, role: "member" }))
+        .toEqual({ status: 202, body: { message: "invitation sent" } })
+    }
+    expect((await call(carol.token, "POST", "/api/control/invitations/accept", { token: sent[0]!.token })).body)
       .toMatchObject({ user_id: carol.userId, role: "member" })
-    expect(await call(alice.token, "POST", `/api/control/orgs/${orgId}/members`, { email: "dave@example.com", role: "member" }))
-      .toMatchObject({ status: 404, body: { error: { code: "org_member_not_found" } } })
-    expect(await call(alice.token, "POST", `/api/control/orgs/${orgId}/members`, { email: "nobody@example.com", role: "member" }))
-      .toMatchObject({ status: 404, body: { error: { code: "org_member_not_found" } } })
-    expect(await call(alice.token, "POST", `/api/control/orgs/${orgId}/members`, {
-      email: "carol@example.com",
-      userPublicId: carol.userId,
-      role: "member",
-    })).toMatchObject({ status: 400, body: { error: { code: "org_member_target_required" } } })
+    expect(await call("dave", "POST", "/api/control/invitations/accept", { token: sent[1]!.token }))
+      .toMatchObject({ status: 403, body: { error: { code: "org_invitation_email_mismatch" } } })
   })
 
   test("a caller who does not administer the org learns nothing about whether an email has an account", async () => {
-    const { person, account, call } = await hosted()
+    const { person, account, call, join, sent } = await hosted()
     const alice = await person("alice")
     const bob = await person("bob")
     await account("carol", "carol@example.com", true)
     const orgId = ((await call(alice.token, "POST", "/api/control/orgs", { name: "Acme" })).body as { org_id: string }).org_id
-    await call(alice.token, "POST", `/api/control/orgs/${orgId}/members`, { userPublicId: bob.userId, role: "member" })
+    await join(alice.token, orgId, bob)
 
-    const known = await call(bob.token, "POST", `/api/control/orgs/${orgId}/members`, { email: "carol@example.com", role: "member" })
-    const unknown = await call(bob.token, "POST", `/api/control/orgs/${orgId}/members`, { email: "nobody@example.com", role: "member" })
+    const known = await call(bob.token, "POST", `/api/control/orgs/${orgId}/invitations`, { email: "carol@example.com", role: "member" })
+    const unknown = await call(bob.token, "POST", `/api/control/orgs/${orgId}/invitations`, { email: "nobody@example.com", role: "member" })
     expect(known).toMatchObject({ status: 403, body: { error: { code: "org_admin_required" } } })
     expect(unknown).toEqual(known)
   })
