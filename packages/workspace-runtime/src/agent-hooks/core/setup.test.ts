@@ -1,3 +1,4 @@
+import { defaultStatusHooks, defaultGenericWrappers } from "../../status-hooks"
 import { afterEach, describe, expect, it } from "bun:test"
 import { existsSync, mkdtempSync, readFileSync, rmSync } from "fs"
 import { tmpdir } from "os"
@@ -24,18 +25,20 @@ describe("writeStatusHooksArtifacts", () => {
     const manifest = createStatusHooksManifest(root)
 
     const result = await writeStatusHooksArtifacts(manifest, {
+      templates: defaultStatusHooks,
+      genericWrappers: defaultGenericWrappers,
       port: 4312,
       force: true,
     })
 
     expect(result).toEqual(manifest)
     expect(existsSync(manifest.files.notify)).toBe(true)
-    expect(existsSync(manifest.files.geminiHook)).toBe(true)
-    expect(existsSync(manifest.files.cursorHook)).toBe(true)
-    expect(JSON.parse(readFileSync(manifest.files.claudeSettings, "utf-8")).hooks.UserPromptSubmit).toEqual([
+    expect(existsSync(path.join(manifest.dirs.hooks, "gemini-hook.sh"))).toBe(true)
+    expect(existsSync(path.join(manifest.dirs.hooks, "cursor-hook.sh"))).toBe(true)
+    expect(JSON.parse(readFileSync(path.join(manifest.dirs.hooks, "claude-settings.json"), "utf-8")).hooks.UserPromptSubmit).toEqual([
       { hooks: [{ type: "command", command: `'${manifest.files.notify}' --harness=claude` }] },
     ])
-    expect(existsSync(manifest.files.copilotHook)).toBe(true)
+    expect(existsSync(path.join(manifest.dirs.hooks, "copilot-hook.sh"))).toBe(true)
     expect(existsSync(path.join(manifest.dirs.bin, "claude"))).toBe(true)
     expect(existsSync(path.join(manifest.dirs.bin, "codex"))).toBe(true)
     expect(existsSync(path.join(manifest.dirs.bin, "amp"))).toBe(true)
@@ -51,6 +54,8 @@ describe("writeStatusHooksArtifacts", () => {
     const manifest = createStatusHooksManifest(root)
 
     await writeStatusHooksArtifacts(manifest, {
+      templates: defaultStatusHooks,
+      genericWrappers: defaultGenericWrappers,
       port: 4312,
       force: true,
     })
