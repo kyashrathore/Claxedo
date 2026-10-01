@@ -391,10 +391,6 @@ export function orgMemberSql(org: string, user: string) {
   )`
 }
 
-export function roleRank(role: ProjectRole) {
-  return role === "viewer" ? 1 : role === "editor" ? 2 : role === "admin" ? 3 : 4
-}
-
 function actionRank(action: ProjectAction) {
   return action === "read" ? 1 : action === "write" ? 2 : action === "admin" ? 3 : 4
 }

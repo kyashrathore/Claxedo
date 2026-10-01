@@ -17,7 +17,7 @@ import { canonicalRepositoryKey } from "@claxedo/server-core/authority/repositor
 import { ClaxedoError } from "@claxedo/server-core/platform/errors/base"
 import { normalizeStoredDirectory } from "@claxedo/server-core/platform/auth/host-connect-contract"
 import { HOST_SERVING_WORKSPACE_SQL } from "./host-access-authority"
-import { activeGuard, batchUnder, may, mayGuard, maySql, readProjectRole, roleRank, type AuthorizationPrincipal, type BoundSql } from "./authorization"
+import { activeGuard, batchUnder, may, mayGuard, maySql, orgMemberSql, readProjectRole, type AuthorizationPrincipal, type BoundSql } from "./authorization"
 import { ownerMembershipStatements, requireHuman, requireText, type D1AccessContext } from "./access-context"
 import { prepareInvitationAdmission } from "./org-invitation-authority"
 import { asOrgId, type OrgId } from "@claxedo/server-core/platform/auth/branded-id"
@@ -899,7 +899,7 @@ export class D1WorkspaceAuthority implements D1WorkspaceAuthorityCore {
   ) {
     const who = await this.requireRuntimeActor(principal)
     const projectId = requireText(args.projectId, "projectId")
-    const orgId = await this.adminProjectOrgId(who.userId, projectId)
+    const orgId = await this.adminProjectOrgId(who, projectId)
     if (orgId !== requireText(args.orgId, "orgId")) throw denied("Project creation authority was denied")
     return await this.createWorkspaceAs(who, { ...args, orgId, projectId, backing: "cloud-vm" })
   }
@@ -1070,11 +1070,11 @@ export class D1WorkspaceAuthority implements D1WorkspaceAuthorityCore {
       from orgs o
       left join org_memberships m
         on m.org_id = o.org_id and m.user_id = ? and m.revoked_at is null
-      where o.deleted_at is null and (o.owner_user_id = ? or m.user_id is not null)
+      where ${orgMemberSql("o.org_id", "?")}
       order by o.created_at, o.org_id
     `,
       )
-      .bind(userId, userId, userId)
+      .bind(userId, userId, userId, userId)
       .all<OrgRow>()
     return result.results
   }
@@ -1103,13 +1103,13 @@ export class D1WorkspaceAuthority implements D1WorkspaceAuthorityCore {
   }
 
   private async creationOrgId(auth: SignedControlPlaneAuth, projectId?: string) {
-    if (projectId) return await this.adminProjectOrgId((await this.requirePrincipal(auth)).userId, projectId)
+    if (projectId) return await this.adminProjectOrgId(await this.requirePrincipal(auth), projectId)
     return await this.resolveOrgId(auth)
   }
 
-  private async adminProjectOrgId(userId: string, projectId: string) {
-    const row = await this.projectAccess(userId, projectId)
-    if (!row || roleRank(row.role) < roleRank("admin")) throw denied("Project creation authority was denied")
+  private async adminProjectOrgId(who: Principal, projectId: string) {
+    const row = await this.projectAccess(who.userId, projectId)
+    if (!row || !(await may(this.database, who, "admin", { kind: "project", projectId }))) throw denied("Project creation authority was denied")
     return row.orgId
   }
 }

@@ -12,7 +12,7 @@ import {
 import type { DocumentsBackend } from "@claxedo/server-core/documents/backend"
 import type { DocumentIndexEntry } from "@claxedo/server-core/documents/index-contract"
 import type { D1AccessContext } from "./access-context"
-import { batchUnder, may, mayGuard, maySql, readProjectRole, type BoundSql } from "./authorization"
+import { batchUnder, may, mayGuard, maySql, type BoundSql } from "./authorization"
 
 const DocumentShareRow = z.object({
   id: z.string().min(1),
@@ -135,8 +135,7 @@ export function d1DocumentAccess(context: D1AccessContext, index: DocumentsBacke
       return undefined
     },
     isOrgMember: (userId, orgId) => may(database, { userId }, "member", { kind: "org", orgId }),
-    hasProjectAccess: async (userId, orgId, projectId) =>
-      !!(await readProjectRole(database, userId, { kind: "project", projectId, orgId })),
+    hasProjectAccess: (userId, orgId, projectId) => may(database, { userId }, "read", { kind: "project", projectId, orgId }),
     sharing,
   }
   return access
