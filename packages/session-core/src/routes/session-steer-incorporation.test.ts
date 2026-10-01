@@ -4,7 +4,7 @@ import type { AgentRuntimeEvent } from "@claxedo/agent-runtime-contract"
 import { SessionRoutes } from "./session"
 import { FakeTransport } from "../../../workspace-runtime/src/test-support/fake-transport"
 import { cancelRuntimeTurn, createHostFixture, sessionCreate, until } from "../../../workspace-runtime/src/test-support/host-fixture"
-import { queuedPromptStore } from "../../../workspace-runtime/src/workspace/session-routes"
+import { queuedPromptStore } from "./session-store-reads"
 
 const cleanups: Array<() => Promise<unknown>> = []
 

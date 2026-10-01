@@ -12,7 +12,7 @@ import { SessionRoutes } from "@claxedo/session-core"
 import { remoteWorkspaceSessionAccessPolicy } from "../../../../workspace-runtime/src/remote-session-authority"
 import { createRelayHostAuthMiddleware } from "../../../../workspace-runtime/src/workspace-host-service-auth"
 import type { SessionAccessPolicy } from "@claxedo/session-core"
-import { queuedPromptStore } from "../../../../workspace-runtime/src/workspace/session-routes"
+import { queuedPromptStore } from "@claxedo/session-core"
 import { RuntimeSessionAuthorityRoutes } from "../../routes/runtime-session-authority"
 import { fetchJsonBody, fetchUrl } from "../../test-support/fetch-calls"
 import {

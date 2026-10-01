@@ -16,7 +16,7 @@ import { fakeConnectionProvider } from "../test-support/fake-transport"
 import { loopbackMachineLoginPolicy } from "../testing"
 import { loopbackWorkspaceRuntimeExposure } from "../exposure"
 import { withWorkspaceTarget } from "../target"
-import { queuedPromptStore } from "./session-routes"
+import { queuedPromptStore } from "@claxedo/session-core"
 import { createWorkspaceTransports } from "./transports"
 
 const runner = { id: "connection", access: "connection" as const }
