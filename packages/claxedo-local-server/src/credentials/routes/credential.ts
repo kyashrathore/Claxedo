@@ -40,9 +40,11 @@ import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
 
 const log = Log.create({ service: "credential-routes" })
 
+// Sandbox driver credentials are written only by the sandbox driver settings
+// route, which verifies the fields and stores them as one JSON object.
 const putBody = z.object({
   provider_id: z.string().min(1),
-  kind: z.enum(["api_key", "oauth_token", "subscription_session", "sandbox_driver"]),
+  kind: z.enum(["api_key", "oauth_token", "subscription_session"]),
   source: z.enum(["managed", "local_only", "env", "upstream_sync"]).default("managed"),
   label: z.string().optional(),
   account_id: z.string().optional(),

@@ -4,7 +4,7 @@ import {
   sandboxDriverCredentialFields,
   type SandboxDriverID,
 } from "@claxedo/sandbox-contract"
-import { jsonRecord } from "@claxedo/server-core/platform/runtime/lib/json"
+import { parseJsonRecord } from "@claxedo/server-core/platform/json/index"
 import { CredentialVerificationError } from "../verification-error"
 import type { CredentialHealth } from "@claxedo/server-core/credentials/types"
 
@@ -56,12 +56,6 @@ export async function verifySandboxDriverAuth(
   throw new CredentialVerificationError("Sandbox provider verification failed")
 }
 
-/**
- * Verify a credential as it is STORED — one opaque string per credential,
- * written by the codec in `routes/sandbox-driver-routes.ts`. Kept next to the
- * probes so `verifyCredential` can route the `sandbox_driver` kind without
- * knowing the encoding.
- */
 export async function verifySandboxDriverCredential(
   providerId: string,
   secret: string,
@@ -70,30 +64,14 @@ export async function verifySandboxDriverCredential(
   if (!isSandboxDriverID(providerId)) {
     throw new CredentialVerificationError("Sandbox provider does not support verification")
   }
-  return verifySandboxDriverAuth(providerId, storedAuth(providerId, secret), options)
+  const auth = parseJsonRecord(secret)
+  if (!auth) throw new CredentialVerificationError("Sandbox provider credential has an unsupported shape")
+  return verifySandboxDriverAuth(providerId, auth, options)
 }
 
 /** Whether this provider can be checked at all, without spending a request. */
 export function sandboxDriverVerifiable(id: SandboxDriverID) {
   return VERIFIABLE.has(id)
-}
-
-/**
- * Mirrors `parseManagedAuth`'s tolerance in
- * `sandbox-manager-adapters/driver-auth.ts`: always JSON now, but a bare string
- * is still what the pre-codec encoder wrote for single-field drivers. A stored
- * credential that predates the codec must verify, not read as an unsupported
- * shape.
- */
-function storedAuth(id: SandboxDriverID, secret: string): Record<string, unknown> {
-  const fields = sandboxDriverCredentialFields[id]
-  try {
-    const parsed = jsonRecord(JSON.parse(secret))
-    if (parsed) return parsed
-  } catch {
-    // Falls through to the legacy bare reading below.
-  }
-  return fields.length === 1 ? { [fields[0].key]: secret } : {}
 }
 
 const VERIFIABLE = new Set<SandboxDriverID>(["vercel", "cloudflare", "box"])

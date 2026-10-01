@@ -814,6 +814,19 @@ describe("credential routes", () => {
     expect(registry.deleteCredential).toHaveBeenCalledWith("cred_1", SINGLE_TENANT_ORG)
   })
 
+  test("refuses a sandbox driver credential, which only the sandbox driver settings route writes", async () => {
+    const registry = credentials()
+    const app = CredentialRoutes(registry)
+
+    const put = await app.request("http://localhost/", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ provider_id: "box", kind: "sandbox_driver", source: "managed", secret: "box-key" }),
+    })
+    expect(put.status).toBe(400)
+    expect(registry.putCredential).not.toHaveBeenCalled()
+  })
+
   test("returns structured validation errors", async () => {
     const app = CredentialRoutes(credentials())
 
@@ -1306,7 +1319,7 @@ describe("choosing which account a provider runs on", () => {
       provider_id: "modal",
       kind: "sandbox_driver",
       source: "managed",
-      secret: "modal-master-key",
+      secret: JSON.stringify({ token_id: "modal-id", token_secret: "modal-secret" }),
     })
     const waiting = await account("route-atomic", "acc_waiting")
 

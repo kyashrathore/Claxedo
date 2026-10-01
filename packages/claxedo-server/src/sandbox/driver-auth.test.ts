@@ -38,7 +38,7 @@ describe("sandbox driver managed auth", () => {
   })
 
   test("parses managed credentials for direct sandbox drivers", async () => {
-    secrets.set("box", "box-key")
+    secrets.set("box", JSON.stringify({ api_key: "box-key" }))
     secrets.set("modal", JSON.stringify({ token_id: "modal-id", token_secret: "modal-secret" }))
     secrets.set("vercel", JSON.stringify({
       access_token: "vercel-token",
@@ -49,7 +49,7 @@ describe("sandbox driver managed auth", () => {
       api_token: "cf-token",
       worker_url: "https://worker.test",
     }))
-    secrets.set("docker", "ghcr.io/example/workspace-runtime:test")
+    secrets.set("docker", JSON.stringify({ image: "ghcr.io/example/workspace-runtime:test" }))
 
     await expect(sandboxDriverAuthManaged("box")).resolves.toEqual({ api_key: "box-key" })
     await expect(sandboxDriverAuthManaged("modal")).resolves.toEqual({
@@ -83,6 +83,15 @@ describe("sandbox driver managed auth", () => {
       api_token: "env-cf",
       worker_url: "https://env-worker.test",
     })
+  })
+
+  test("refuses bare and non-object managed secrets for single-field drivers", async () => {
+    for (const secret of ["box-key", '"box-key"', "[]", "null"]) {
+      secrets.set("box", secret)
+      await expect(sandboxDriverAuthManaged("box")).resolves.toBeUndefined()
+    }
+    secrets.set("docker", "ghcr.io/example/workspace-runtime:test")
+    await expect(sandboxDriverAuthManaged("docker")).resolves.toBeUndefined()
   })
 
   test("managed credentials are presence metadata only until the secret parses", async () => {

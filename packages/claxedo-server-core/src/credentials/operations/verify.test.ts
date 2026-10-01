@@ -690,21 +690,16 @@ describe("verifyCredential — sandbox providers", () => {
     expect(outcome).toEqual({ health: "auth_failed" })
   })
 
-  /**
-   * A credential stored before the JSON codec holds a single-field driver's
-   * secret bare; it must still verify rather than read as an unsupported shape.
-   */
-  test("a legacy bare secret still verifies", async () => {
+  test("a bare or non-object sandbox secret is refused without a provider request", async () => {
     const transports = transport({})
-
-    const outcome = await verifyCredential(
-      credential({ provider_id: "box", kind: "sandbox_driver" }),
-      "box_legacy_key",
-      { fetch: transports.stub, now: () => NOW },
-    )
-
-    expect(outcome).toEqual({ health: "ok" })
-    expect(transports.probeCalls()[0].headers.Authorization).toBe("Bearer box_legacy_key")
+    for (const secret of ["box_key", '"box_key"', "[]", "null"]) {
+      await expect(verifyCredential(
+        credential({ provider_id: "box", kind: "sandbox_driver" }),
+        secret,
+        { fetch: transports.stub, now: () => NOW },
+      )).rejects.toThrow("Sandbox provider credential has an unsupported shape")
+    }
+    expect(transports.probeCalls()).toEqual([])
   })
 
   test("a sandbox provider with no documented probe is an error, not a verdict", async () => {
