@@ -20,7 +20,6 @@ export type AcpHost = {
   readonly connection: AcpConnectionOptions
   readonly filterMcp: AcpMcpFilter
   readonly entries: Map<string, AcpEntry>
-  readonly starting: Set<AcpEntry>
   readonly startingAborts: Set<AbortController>
   readonly peers: AcpPeerOwnership
   idle(entry: AcpEntry): void
@@ -86,7 +85,6 @@ async function openAcpEntry(host: AcpHost, input: StartInput, broker: SessionBro
     opened.providerTurn?.queue.fail(new AcpTransportError("connection", "ACP peer disconnected"))
   }, { once: true })
   if (peer.agent.signal.aborted) observation.disconnected()
-  host.starting.add(entry)
   return entry
 }
 
@@ -118,7 +116,6 @@ async function adopt(host: AcpHost, entry: AcpEntry, upstreamSessionId: string, 
   await acpFlushUpdates(entry, (update) => acpObserveSubagent(entry, update))
   if (host.disposed() || entry.startupAbort.signal.aborted) throw new AcpTransportError("connection", `ACP transport closed during ${what}`)
   if (entry.peer.agent.signal.aborted) throw new AcpTransportError("connection", `ACP peer disconnected during ${what}`)
-  host.starting.delete(entry)
   host.startingAborts.delete(entry.startupAbort)
   entry.observation.ready()
   host.entries.set(entry.session.binding.sessionId, entry)
@@ -128,7 +125,6 @@ async function adopt(host: AcpHost, entry: AcpEntry, upstreamSessionId: string, 
 async function abandon(host: AcpHost, entry: AcpEntry, error: unknown): Promise<never> {
   entry.observation.failed(error)
   entry.startupAbort.abort()
-  host.starting.delete(entry)
   host.startingAborts.delete(entry.startupAbort)
   await host.peers.retire(entry.peer)
   throw error
