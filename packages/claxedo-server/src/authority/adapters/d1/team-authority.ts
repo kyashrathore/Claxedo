@@ -222,8 +222,7 @@ export class D1TeamAuthority implements D1TeamAuthorityPort {
     const who = await this.context.principal(auth)
     const team = await this.adminTeam(who, args.teamId)
     const target = await resolveTeamMemberUser(this.context, args)
-    if (!target) throw new D1AccessAuthorityError("team_member_not_found")
-    if (!(await may(this.database, { userId: target.user_id }, "member", { kind: "org", orgId: team.org_id }))) {
+    if (!target || !(await may(this.database, { userId: target.user_id }, "member", { kind: "org", orgId: team.org_id }))) {
       throw new D1AccessAuthorityError("team_member_org_membership_required")
     }
     const role = args.role ?? "member"

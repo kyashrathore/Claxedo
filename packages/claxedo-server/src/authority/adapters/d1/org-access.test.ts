@@ -304,6 +304,8 @@ describe("D1 team project grants", () => {
       .rejects.toMatchObject({ code: "org_admin_required" })
     await expect(authority.addTeamMember!(alice, { teamId: acmeTeam.team_id, userPublicId: id(outsider) }))
       .rejects.toMatchObject({ code: "team_member_org_membership_required" })
+    await expect(authority.addTeamMember!(alice, { teamId: acmeTeam.team_id, providerSubject: "no-such-account" }))
+      .rejects.toMatchObject({ code: "team_member_org_membership_required" })
     await expect(authority.grantTeamProject!(bob, { teamId: acmeTeam.team_id, projectId, role: "editor" }))
       .rejects.toMatchObject({ code: "org_admin_required" })
     await expect(authority.revokeTeamProject!(bob, { teamId: acmeTeam.team_id, projectId }))
