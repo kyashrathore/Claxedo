@@ -35,8 +35,7 @@ export class ClaudeGoals {
   async start(entry: ClaudeEntry, objective: string): Promise<AgentGoalMutationResult> {
     const { sessionId } = entry.input
     if (this.running.has(sessionId)) return { ok: false, status: "conflict", message: "Claude Goal is running" }
-    let accept!: (result: AgentGoalMutationResult) => void
-    const accepted = new Promise<AgentGoalMutationResult>((resolve) => { accept = resolve })
+    const { promise: accepted, resolve: accept } = Promise.withResolvers<AgentGoalMutationResult>()
     this.reported.set(sessionId, (goal) => accept({ ok: true, goal }))
     const admitted = await entry.broker.admitProviderTurn({ reason: "goal", detail: objective }, (broker, turn) =>
       this.turns.run(entry, goalTurn(entry, broker, turn, nativeGoalPrompt(objective)), broker))

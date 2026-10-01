@@ -7,7 +7,7 @@ const message = (text: string) => ({ type: "user" as const, session_id: "", mess
 
 function opened(first: ReturnType<typeof message>) {
   const input = new ClaudeQueryInput()
-  input.open(first)
+  input.write(first)
   return input
 }
 
@@ -70,7 +70,7 @@ test("a turn ended on an open query refuses steers but keeps stdin open for the 
   await iterator.next()
   input.endTurn()
   expect(await input.steer(message("late"), "msg_late")).toMatchObject({ ok: false, status: "no_active_turn" })
-  input.open(message("next turn"))
+  input.write(message("next turn"))
   expect((await iterator.next()).value.message.content).toEqual([{ type: "text", text: "next turn" }])
   const steered = input.steer(message("steer the next turn"), "msg_steer")
   expect((await iterator.next()).value.message.content).toEqual([{ type: "text", text: "steer the next turn" }])

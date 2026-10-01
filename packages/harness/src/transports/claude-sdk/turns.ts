@@ -47,11 +47,6 @@ export function configuredChoice(entry: Pick<ClaudeEntry, "broker">): ClaudeChoi
   return { ...(model ? { model } : {}), ...(variant ? { effort: variant } : {}), ...(instructions ? { system: instructions } : {}), ...(agent ? { agent } : {}) }
 }
 
-function settlement(): { done: Promise<void>; finish: () => void } {
-  let finish!: () => void
-  return { done: new Promise<void>((resolve) => { finish = resolve }), finish }
-}
-
 export class ClaudeTurns {
   constructor(private readonly launcher: () => ClaudeQueryLauncher, private readonly models: ClaudeModelCatalog,
     private readonly log: HarnessServices["log"], private readonly versions: HarnessVersionGate) {}
@@ -92,7 +87,7 @@ export class ClaudeTurns {
 
   async *run(entry: ClaudeEntry, turn: TurnInput, broker: TurnBroker): AsyncIterable<RoutedEvent> {
     if (entry.active || entry.provider) throw new TransportError("claude", "session", "Claude turn already active")
-    const { done, finish } = settlement()
+    const { promise: done, resolve: finish } = Promise.withResolvers<void>()
     const active: ClaudeActive = { id: turn.turnId, abort: new AbortController(), launched: false, done }
     entry.active = active
     active.abort.signal.addEventListener("abort", () => { if (active.live) this.interrupt(active.live) }, { once: true })
@@ -130,7 +125,7 @@ export class ClaudeTurns {
 
   async command(entry: ClaudeEntry, text: string, limitMs: number): Promise<SDKMessage | undefined> {
     if (entry.active || entry.provider) throw new TransportError("claude", "session", "Claude turn already active")
-    const { done, finish } = settlement()
+    const { promise: done, resolve: finish } = Promise.withResolvers<void>()
     const active: ClaudeActive = { id: `command:${randomUUID()}`, abort: new AbortController(), launched: true, done }
     entry.active = active
     try {
@@ -180,13 +175,13 @@ export class ClaudeTurns {
     reuse = (live: ClaudeLiveQuery) => live.key === launch.key): Promise<{ live: ClaudeLiveQuery; claim: ClaudeClaim }> {
     const current = entry.live
     if (current?.reusable && reuse(current)) {
-      current.input.open(opening)
+      current.input.write(opening)
       return { live: current, claim: current.claim("prompt")! }
     }
     const live: ClaudeLiveQuery = new ClaudeLiveQuery(launch.key, { unclaimed: (notice) => this.admitOwnTurn(entry, live, notice),
       child: claudeChildDelivery(entry, () => live), background: claudeBackgroundWork(entry) })
     entry.live = live
-    live.input.open(opening)
+    live.input.write(opening)
     const claim = live.claim("prompt")!
     try {
       live.run(await this.launcher().launch({ session: entry.session, input: entry.input, broker: entry.broker, turn: () => entry.turn,
@@ -221,7 +216,7 @@ export class ClaudeTurns {
   private async *ownTurn(entry: ClaudeEntry, live: ClaudeLiveQuery, broker: TurnBroker, turn: TurnRef): AsyncIterable<RoutedEvent> {
     const claim = live.claim("result")
     if (!claim) return
-    const { done, finish } = settlement()
+    const { promise: done, resolve: finish } = Promise.withResolvers<void>()
     entry.provider = { turnId: turn.turnId, live, done }
     entry.turn = { broker, turnId: turn.turnId }
     const onAbort = () => this.interrupt(live)

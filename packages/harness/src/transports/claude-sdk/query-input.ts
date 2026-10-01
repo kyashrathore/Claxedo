@@ -24,16 +24,11 @@ export class ClaudeQueryInput {
 
   get replayed(): boolean { return this.unreplayed.size === 0 }
 
-  open(message: SDKUserMessage): void {
-    this.write(message)
-  }
-
   steer(input: SDKUserMessage, messageId: string): Promise<SteerResult> {
     if (!this.steerable) return Promise.resolve({ ok: false, status: "no_active_turn", message: "Claude turn ended" })
-    let resolve!: (result: SteerResult) => void
-    const result = new Promise<SteerResult>((settle) => { resolve = settle })
+    const { promise, resolve } = Promise.withResolvers<SteerResult>()
     this.pending.add({ uuid: this.write(input), messageId, resolve })
-    return result
+    return promise
   }
 
   acknowledge(message: SDKMessage | SDKActiveGoalMessage): void {
@@ -51,7 +46,7 @@ export class ClaudeQueryInput {
     }
   }
 
-  private write(input: SDKUserMessage): string {
+  write(input: SDKUserMessage): string {
     const uuid = randomUUID()
     this.steerable = true
     this.unreplayed.add(uuid)
