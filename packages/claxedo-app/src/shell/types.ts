@@ -44,17 +44,9 @@ export type PaneKind<State = Json> = {
   readonly toRoute?: (state: State) => PaneRoute | undefined
 }
 
-export type AnyPaneKind = {
-  readonly kind: string
-  readonly singleton?: boolean
-  readonly keepMounted?: boolean
-  readonly title: (state: never) => string
-  readonly icon?: string
-  readonly view: Component<PaneProps<never>>
-  readonly encode: (state: never) => Json
+export type AnyPaneKind = Omit<PaneKind<never>, "decode" | "fromRoute"> & {
   readonly decode: (value: Json) => unknown
   readonly fromRoute?: (route: PaneRoute) => unknown
-  readonly toRoute?: (state: never) => PaneRoute | undefined
 }
 
 export type PanelViewProps = {
