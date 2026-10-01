@@ -1,5 +1,3 @@
-import { openRuntimeStore } from "../../../../workspace-runtime/src/store-file"
-import type { RuntimeStore } from "@claxedo/session-core"
 import { randomUUID } from "node:crypto"
 import path from "node:path"
 import {
@@ -12,7 +10,7 @@ import {
 } from "@claxedo/workspace-runtime"
 import { isNativeHarnessId } from "@claxedo/server-core/agent-config/connections"
 import type { WorkspaceRuntimeRouteContribution } from "@claxedo/workspace-runtime/route-contribution"
-import { workspaceDir, workspaceId, workspaceRuntimeStoreDir } from "@claxedo/workspace-runtime/host"
+import { storeBackedSessionPlacement, workspaceDir, workspaceId, workspaceRuntimeStoreDir } from "@claxedo/workspace-runtime/host"
 import {
   loopbackWorkspaceRuntimeExposure,
   privateNetworkDevUnsafeWorkspaceRuntimeExposure,
@@ -170,10 +168,8 @@ export async function claxedoWorkspaceRuntimeBootFromEnv(
         policy: remoteWorkspaceSessionAccessPolicyFromEnv(env),
       })
     : undefined
-  let sessionStore: RuntimeStore | undefined
   const options: WorkspaceRuntimeServerOptions = {
-    storeFactory: ({ storeRoot }) => sessionStore = openRuntimeStore(storeRoot),
-    sessionIdWorkspace: (sessionId) => sessionStore?.getExecutionBinding(sessionId)?.workspaceId,
+    ...storeBackedSessionPlacement(),
     ...(authorityUrl
       ? { resolveConnectionSecrets: sandboxConnectionSecrets({ workspaceId: workspaceId(env), directory: targetDirectory, authorityUrl }) }
       : {}),

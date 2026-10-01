@@ -21,6 +21,7 @@ export {
   registeredWorkspaceDirectory,
 } from "./target"
 export { workspaceRuntimeStoreDir } from "./env"
+export { storeBackedSessionPlacement } from "./store-file"
 export { WorkspaceWorktreeManager, workspaceStorageRoot } from "./worktree"
 export { createBoundedGit, optionalGit, runGit, GitCredentialError, GitEnvironmentError, GitTimeoutError } from "./git"
 export { buildSafeEnv } from "./pty/env"

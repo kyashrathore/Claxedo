@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { openRuntimeStore } from "./store-file"
+import { storeBackedSessionPlacement } from "./store-file"
 
 import { readFileSync } from "node:fs"
 import {
@@ -45,10 +45,8 @@ if (nativeHarnessInput && !nativeHarness) {
   throw new Error(`Unsupported WORKSPACE_RUNTIME_NATIVE_HARNESS: ${nativeHarnessInput}`)
 }
 const directory = workspaceDir(process.env)
-const placementStore = openRuntimeStore()
 const server = startServer(port, {
-  storeFactory: () => placementStore,
-  sessionIdWorkspace: (sessionId) => placementStore.getExecutionBinding(sessionId)?.workspaceId,
+  ...storeBackedSessionPlacement(),
   target: { workspaceId: workspaceId(process.env), directory },
   placement: workspaceRuntimePlacementFromEnv(process.env, { relay: Boolean(relay.relayHostAuth) }),
   env: process.env,
