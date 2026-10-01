@@ -8,6 +8,4 @@
 - `reconnect`, `revert` and `unrevert` are `false` for every transport, in one place, because the contract has no reconnect and no history-mutation operation.
 - `permissions`, `questions`, `todos` and `subagents` are copied from the declared capabilities.
 
-The old SDK adapter declared `configOptions: true` and `commands: false` for every native harness as constants; the projection reports what each transport implements instead, so Pi and Cursor read `configOptions: false` until their parity lanes add a `config` group.
-
 `mcp-filter.ts` is the one remote-harness MCP filter.

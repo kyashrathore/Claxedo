@@ -422,6 +422,13 @@
         "vitest": "2.1.9",
       },
     },
+    "packages/claxedo-status-hooks": {
+      "name": "@claxedo/status-hooks",
+      "version": "0.1.0",
+      "dependencies": {
+        "@claxedo/plugin-api": "workspace:*",
+      },
+    },
     "packages/claxedo-tasks": {
       "name": "@claxedo/tasks",
       "version": "0.1.0",
@@ -654,7 +661,9 @@
         "@claxedo/agent-runtime-contract": "workspace:*",
         "@claxedo/harness": "workspace:*",
         "@claxedo/helpers": "workspace:*",
+        "@claxedo/plugin-api": "workspace:*",
         "@claxedo/process-ownership": "workspace:*",
+        "@claxedo/status-hooks": "workspace:*",
         "@claxedo/workspace-relay": "workspace:*",
         "@claxedo/workspace-relay-protocol": "workspace:*",
         "@hono/node-server": "1.19.11",
@@ -1087,6 +1096,8 @@
     "@claxedo/server": ["@claxedo/server@workspace:packages/claxedo-server"],
 
     "@claxedo/server-core": ["@claxedo/server-core@workspace:packages/claxedo-server-core"],
+
+    "@claxedo/status-hooks": ["@claxedo/status-hooks@workspace:packages/claxedo-status-hooks"],
 
     "@claxedo/tasks": ["@claxedo/tasks@workspace:packages/claxedo-tasks"],
 

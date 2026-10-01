@@ -1,4 +1,4 @@
-import { isAbsolute, join, relative, sep } from "node:path"
+import path, { isAbsolute, join } from "node:path"
 import { homedir } from "node:os"
 import { envText } from "./env"
 
@@ -12,9 +12,9 @@ import { envText } from "./env"
  * is no realpath and no case folding — so where the check is a security
  * boundary the caller still passes `fs.realpath`'d values.
  */
-export function inside(root: string, candidate: string): boolean {
-  const descent = relative(root, candidate)
-  return descent === "" || (descent !== ".." && !descent.startsWith(`..${sep}`) && !isAbsolute(descent))
+export function inside(root: string, candidate: string, paths: typeof path = path): boolean {
+  const descent = paths.relative(root, candidate)
+  return descent === "" || (descent !== ".." && !descent.startsWith(`..${paths.sep}`) && !paths.isAbsolute(descent))
 }
 
 /**

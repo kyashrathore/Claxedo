@@ -31,8 +31,7 @@ export function createHostedDocumentsBackend(
       entry: DocumentIndexEntry
       sessionId: string
       auth: SignedControlPlaneAuth
-      localWorkspaceId: string
-      cloudWorkspaceId: string
+      workspaceId: string
       choice: "durable" | "draft"
       current: Readonly<{ markdown: string; version: string; modifiedAt: number }>
       jobExpiresAt: number
@@ -98,7 +97,7 @@ export function createHostedDocumentsBackend(
     const claims = await verifyDocumentSessionToken(input.token, { ...input, documentId }, env)
     if (job.value.activeJti !== claims.jti || job.value.jobExpiresAt !== claims.jobExpiresAt ||
       claims.jobExpiresAt <= Math.floor(Date.now() / 1000) || job.value.orgId !== input.orgId ||
-      job.value.projectId !== input.projectId || job.value.cloudWorkspaceId !== input.workspaceId) {
+      job.value.projectId !== input.projectId || job.value.workspaceId !== input.workspaceId) {
       throw new Error("Document job capability is inactive")
     }
     const auth = await openJobAuth(job.value.sealedAuth, env)
@@ -126,7 +125,7 @@ export function createHostedDocumentsBackend(
         if (!context.auth) throw new Error("Hosted document hydration requires signed authentication")
         const auth = context.auth
         await authorizeDocument(await access.principal(auth, entry.org_id), entry.id, "edit")
-        const cloudWorkspaceId = options.resolveSessionWorkspace
+        const workspaceId = options.resolveSessionWorkspace
           ? await options.resolveSessionWorkspace(auth, sessionId)
           : entry.workspace_id ?? ""
         const read = await workspace.read(await workspace.resolve(portEntry(entry)))
@@ -140,7 +139,7 @@ export function createHostedDocumentsBackend(
             await putJob(sessionId, entry.id, {
               orgId: entry.org_id,
               projectId: entry.project_id,
-              cloudWorkspaceId,
+              workspaceId,
               jobExpiresAt: capability.jobExpiresAt,
               activeJti: capability.jti,
               sealedAuth,
@@ -163,14 +162,14 @@ export function createHostedDocumentsBackend(
           original.user.subject !== input.auth.user.subject || job.value.orgId !== entry.org_id ||
           job.value.projectId !== entry.project_id) throw new Error("Document conflict job is inactive")
         if (options.resolveSessionWorkspace &&
-          await options.resolveSessionWorkspace(input.auth, input.sessionId) !== job.value.cloudWorkspaceId) {
+          await options.resolveSessionWorkspace(input.auth, input.sessionId) !== job.value.workspaceId) {
           throw new Error("Session placement changed")
         }
         const current = await workspace.read(await workspace.resolve(portEntry(entry)))
         const scope = {
           orgId: entry.org_id,
           projectId: entry.project_id,
-          workspaceId: job.value.cloudWorkspaceId,
+          workspaceId: job.value.workspaceId,
           sessionId: input.sessionId,
           documentId: entry.id,
         }
@@ -183,8 +182,7 @@ export function createHostedDocumentsBackend(
           entry,
           sessionId: input.sessionId,
           auth: input.auth,
-          localWorkspaceId: job.value.cloudWorkspaceId,
-          cloudWorkspaceId: job.value.cloudWorkspaceId,
+          workspaceId: job.value.workspaceId,
           choice: input.choice,
           current,
           jobExpiresAt: job.value.jobExpiresAt,
@@ -235,7 +233,7 @@ export function createHostedDocumentsBackend(
         const currentEntry = live.entry
         if (currentEntry.archived_at || job.value.jobExpiresAt <= Math.floor(Date.now() / 1000)) throw new Error("Document renewal job is inactive")
         if (options.resolveSessionWorkspace &&
-          await options.resolveSessionWorkspace(job.auth, input.sessionId) !== job.value.cloudWorkspaceId) throw new Error("Session placement changed")
+          await options.resolveSessionWorkspace(job.auth, input.sessionId) !== job.value.workspaceId) throw new Error("Session placement changed")
         const scope = {
           orgId: input.orgId, projectId: input.projectId, workspaceId: input.workspaceId,
           sessionId: input.sessionId, documentId: entry.id,
@@ -261,7 +259,7 @@ export function createHostedDocumentsBackend(
 const HostedDocumentJobSchema = z.object({
   orgId: z.string().min(1),
   projectId: z.string().min(1),
-  cloudWorkspaceId: z.string(),
+  workspaceId: z.string(),
   jobExpiresAt: z.number(),
   activeJti: z.string(),
   sealedAuth: z.string(),

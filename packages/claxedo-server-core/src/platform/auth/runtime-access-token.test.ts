@@ -273,7 +273,7 @@ describe("document session capabilities", () => {
 })
 
 describe("document relay job capabilities", () => {
-  test("binds both workspaces, session, project, document, operation, and absolute expiry", async () => {
+  test("binds the workspace, session, project, document, operation, and absolute expiry", async () => {
     const { privatePem, publicPem } = await ed25519PrivateKeyPem()
     const env = {
       CLAXEDO_RUNTIME_ACCESS_TOKEN_PRIVATE_KEY_PEM: privatePem,
@@ -281,8 +281,8 @@ describe("document relay job capabilities", () => {
       CLAXEDO_RUNTIME_ACCESS_TOKEN_ALGORITHM: "EdDSA",
     }
     const scope = {
-      userId: "user_1", orgId: "org_1", projectId: "project_1", localWorkspaceId: "local_1",
-      cloudWorkspaceId: "cloud_1", sessionId: "session_1", documentId: "document_1",
+      userId: "user_1", orgId: "org_1", projectId: "project_1", workspaceId: "ws_1",
+      sessionId: "session_1", documentId: "document_1",
       operations: ["hydrate", "write"] as const,
       jobExpiresAt: Math.floor(Date.now() / 1000) + 3600,
     }
@@ -291,8 +291,7 @@ describe("document relay job capabilities", () => {
     await expect(verifyDocumentRelayJobToken(job.token, expected, env)).resolves.toMatchObject(expected)
     await expect(verifyDocumentRelayJobToken(job.token, { ...expected, documentId: "document_2" }, env)).rejects.toThrow()
     await expect(verifyDocumentRelayJobToken(job.token, { ...expected, projectId: "project_2" }, env)).rejects.toThrow()
-    await expect(verifyDocumentRelayJobToken(job.token, { ...expected, localWorkspaceId: "local_2" }, env)).rejects.toThrow()
-    await expect(verifyDocumentRelayJobToken(job.token, { ...expected, cloudWorkspaceId: "cloud_2" }, env)).rejects.toThrow()
+    await expect(verifyDocumentRelayJobToken(job.token, { ...expected, workspaceId: "ws_2" }, env)).rejects.toThrow()
     await expect(verifyDocumentRelayJobToken(job.token, { ...expected, operation: "resolve" }, env)).rejects.toThrow()
   })
 })

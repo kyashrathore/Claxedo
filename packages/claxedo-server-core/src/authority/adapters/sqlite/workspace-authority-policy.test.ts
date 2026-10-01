@@ -68,7 +68,7 @@ async function createSessionAs(
 }
 
 describe("SQLite workspace session authority", () => {
-  test("a participant is never another person: only the owner administers, and only a share crosses people", async () => {
+  test("only the owner creates sessions, and only a share crosses people", async () => {
     const { authority, db } = setup()
     const owner = signed("owner")
     const member = signed("member")
@@ -82,21 +82,11 @@ describe("SQLite workspace session authority", () => {
     await createSessionAs(authority, owner, "ses_1")
     await expect(createSessionAs(authority, member, "ses_member")).rejects.toMatchObject({ status: 403 })
 
-    await expect(authority.grantSessionParticipant(owner, {
-      workspaceId: "ws_1",
-      sessionId: "ses_1",
-      participantActorId: "member",
-    })).rejects.toMatchObject({ status: 403 })
     await expect(authority.authorizeSessionRead(member, { workspaceId: "ws_1", sessionId: "ses_1" }))
       .rejects.toMatchObject({ status: 403 })
 
     await authority.grantSessionShare!(owner, { workspaceId: "ws_1", sessionId: "ses_1", grantedToTokenIdentifier: "member" })
     await expect(authority.authorizeSessionRead(member, { workspaceId: "ws_1", sessionId: "ses_1" })).resolves.toBeUndefined()
-    await expect(authority.grantSessionParticipant(member, {
-      workspaceId: "ws_1",
-      sessionId: "ses_1",
-      participantActorId: "owner",
-    })).rejects.toMatchObject({ code: "actor_authorization_denied" })
   })
 
   test("a workspace handed to a member is theirs, and the organization's founder ranks nothing on it", async () => {
@@ -118,10 +108,5 @@ describe("SQLite workspace session authority", () => {
     await expect(authority.listSessions(founder, { workspaceId: "ws_1" })).resolves.toEqual([])
     await expect(authority.authorizeSessionRead(founder, { workspaceId: "ws_1", sessionId: "ses_1" }))
       .rejects.toMatchObject({ status: 403 })
-    await expect(authority.grantSessionParticipant(founder, {
-      workspaceId: "ws_1",
-      sessionId: "ses_1",
-      participantActorId: "member",
-    })).rejects.toMatchObject({ status: 403 })
   })
 })

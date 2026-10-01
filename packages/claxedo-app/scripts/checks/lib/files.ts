@@ -50,6 +50,10 @@ export function isTranslationFile(root: string, file: string): boolean {
   return inside.at(-1) === "i18n.ts" || inside.slice(0, -1).some((part) => part === "locales" || part === "i18n")
 }
 
+export function isTestFile(file: string): boolean {
+  return /\.(test|vitest|spec|node-test|test-support)\.[cm]?[jt]sx?$/.test(file) || /\/(test-support|fixtures|__tests__)\//.test(file)
+}
+
 export function topFolder(root: string, file: string, scope: Scope): string | undefined {
   const path = rel(root, file)
   if (!path.startsWith(`${scope}/`)) return undefined
