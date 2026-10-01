@@ -1,6 +1,7 @@
 import fs from "node:fs/promises"
 import path from "node:path"
 import { readTextIfExists, writePrivateFileAtomic } from "@claxedo/helpers/fs"
+import { asRecordOrEmpty } from "@claxedo/helpers/guards"
 import { readRecord, readString } from "@claxedo/helpers/readers"
 import { TransportError } from "../../contract/errors"
 import type { Deadline } from "../../contract"
@@ -20,11 +21,9 @@ export async function installPiExtension(stateRoot: string, file: string, source
 }
 
 export async function piRegisteredCommands(rpc: PiRpc, limit?: Deadline): Promise<PiRegisteredCommand[]> {
-  const result = await rpc.request("get_commands", {}, limit)
-  if (!result || typeof result !== "object" || !("commands" in result) || !Array.isArray(result.commands)) {
-    throw new TransportError("pi", "protocol", "Pi returned an invalid command list")
-  }
-  return result.commands.map((value: unknown) => {
+  const commands = asRecordOrEmpty(await rpc.request("get_commands", {}, limit)).commands
+  if (!Array.isArray(commands)) throw new TransportError("pi", "protocol", "Pi returned an invalid command list")
+  return commands.map((value: unknown) => {
     const name = readString(value, "name")
     if (name === undefined) throw new TransportError("pi", "protocol", "Pi command has no name")
     return { name, description: readString(value, "description"), source: readString(value, "source"),
