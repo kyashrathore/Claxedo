@@ -1,3 +1,5 @@
+import type { SubagentObservation } from "@claxedo/agent-runtime-contract"
+
 export type ClaudeTaskRecord = {
   taskId: string
   toolUseId?: string
@@ -41,4 +43,9 @@ export function createClaudeTaskLedger() {
     },
     firstLevelSubagent,
   }
+}
+
+export function taskCall(toolCallId: string | undefined, ledger: ClaudeTaskLedger): Pick<SubagentObservation, "toolCallId" | "toolCallRole"> {
+  if (!toolCallId) return {}
+  return ledger.isSpawnCall(toolCallId) ? { toolCallId, toolCallRole: "spawn" } : { toolCallId }
 }

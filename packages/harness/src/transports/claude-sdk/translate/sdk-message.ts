@@ -4,7 +4,6 @@ import { runtimeDiagnostic } from "@claxedo/agent-runtime-contract"
 import type { ClaudeTranslatorMemory } from "./translator-memory"
 
 export type ClaudeFrameEvent = { source: string; method?: string; payload: unknown }
-export type ClaudeSdkSystemMessage = Extract<SDKMessage, { type: "system" }>
 export type ClaudeSdkAssistantMessage = Extract<SDKMessage, { type: "assistant" }>
 export type ClaudeSdkStreamEvent = Extract<SDKMessage, { type: "stream_event" }>["event"]
 
