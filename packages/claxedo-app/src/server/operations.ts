@@ -29,7 +29,7 @@ export function hostedOperationRequest(name: string, input: unknown): ResolvedRe
 }
 
 function onServer(transport: Transport): Operations["run"] {
-  return (name, input) => {
+  return async (name, input) => {
     const request = hostedOperationRequest(name, input)
     return transport.json<unknown>(request.path, {
       method: request.method,

@@ -37,6 +37,7 @@ test("transcript reads: a cloud session reads a part from the control plane, or 
 
   const calls: { operation: string; input?: Readonly<Record<string, unknown>> }[] = []
   const account = {
+    channel: "port",
     run: async (operation: string, input?: Readonly<Record<string, unknown>>) => {
       calls.push({ operation, ...(input ? { input } : {}) })
       return { part: storedTool }

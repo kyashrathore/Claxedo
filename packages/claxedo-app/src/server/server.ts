@@ -89,7 +89,8 @@ function createStartup(input: {
 }
 
 function serverApis(transport: Transport, workspaces: Workspaces, status: StatusOwner, queryClient: QueryClient, queries: ServerQueries, projection: SessionProjection, account: HostedAccount | undefined) {
-  const operations = createOperations(transport, account)
+  const port = account?.channel === "port" ? account : undefined
+  const operations = createOperations(transport, port)
   const project = (id: ProjectId) => queryClient.fetchQuery(queries.projects.byId(id))
   const wakes = createWorkspaceWakes(transport, workspaces)
   return {
@@ -106,7 +107,7 @@ function serverApis(transport: Transport, workspaces: Workspaces, status: Status
     },
     terminals: createTerminalsApi(transport, workspaces),
     git: createGitApi(transport, workspaces, queryClient),
-    cloud: createCloudApi(transport, workspaces, wakes, project, account),
+    cloud: createCloudApi(transport, workspaces, wakes, project, port),
     accounts: createAccountsApi(transport, queryClient),
     marketplace: createMarketplaceApi(transport, queryClient),
     tasks: createTasksApi(transport),

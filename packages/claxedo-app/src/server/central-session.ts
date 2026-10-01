@@ -11,12 +11,12 @@ import { partFromWire, turnPageFromWire, viewportQuery } from "./wire/turn-page"
 const SESSIONS = "/api/control/sessions"
 
 async function storedRead(context: SessionContext, ref: SessionRef, operation: HostedOperationName, path: string, query: Readonly<Record<string, string>>): Promise<unknown> {
-  if (context.account && context.transport.serverKind() === "daemon") return context.account.run(operation, { sessionId: ref.sessionId, ...query })
+  if (context.account?.channel === "port") return context.account.run(operation, { sessionId: ref.sessionId, ...query })
   return context.transport.json(withQuery(`${SESSIONS}/${encodeURIComponent(ref.sessionId)}/${path}`, query))
 }
 
 async function storedInventory(context: SessionContext, workspaceId: string): Promise<unknown> {
-  if (context.account && context.transport.serverKind() === "daemon") return context.account.run("session.list", { workspaceId })
+  if (context.account?.channel === "port") return context.account.run("session.list", { workspaceId })
   return context.transport.json(withQuery(SESSIONS, { workspaceId }))
 }
 
