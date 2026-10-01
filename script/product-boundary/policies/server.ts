@@ -56,11 +56,11 @@ export const serverWorkerd: Policy = {
   // (`authority/adapters/d1/session-access-sql.ts`) are modules of their own,
   // split from the authority. Hosted Pages are mounted by the core Worker:
   // the D1 document authority (`authority/adapters/d1/document-authority.ts`),
-  // the R2 documents backend with its index, managed store and local-relay
-  // schemas (`documents/backends/hosted/`), and the runtime broker that
+  // the R2 documents backend with its index and managed store
+  // (`documents/backends/hosted/`), and the runtime broker that
   // hydrates a page into a session (`documents/backends/hosted/runtime-broker.ts`
   // with its relay client `documents/relay-http.ts`).
-  ceilings: { modules: 115, packages: 19 },
+  ceilings: { modules: 114, packages: 19 },
 
   emitted: {
     file: "packages/claxedo-server/.artifacts/u8-package-split/manifests/server-workerd.json",

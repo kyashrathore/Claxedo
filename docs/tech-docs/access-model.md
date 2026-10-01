@@ -328,6 +328,15 @@ request gets `document_sharing_unavailable` (both 501). Creation requires a
 creator; existing rows without one remain unreadable. No stored row is
 backfilled or assigned a guessed creator.
 
+Hosted Pages read and write R2 and hydrate into the selected session runtime.
+The Worker supplies no machine document relay or remote discovery endpoint.
+The self-hosted app mounts `LocalInstallationDocumentBroker` at
+`/internal/documents`, and relay-exposed workspace runtimes mount
+`LocalDocumentBrokerRoutes` at `/api/wr/local-documents/broker`. Both remain
+subject to their installation credentials and document capability checks; the
+local backend refuses signed document access. Desktop and local-server runtimes
+use embedded exposure and do not mount the runtime broker route.
+
 ## Installation order
 
 The control plane installs the target model through expand–migrate–contract

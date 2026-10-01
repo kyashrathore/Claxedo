@@ -166,20 +166,6 @@ export function DocumentsRoutes<H extends DocumentHandle>(options: DocumentsRout
       })
       return context.json(await documents().listStatuses(scope.projectId))
     })
-    .get("/remote", async (context) => {
-      const scope = await routeScope(context.req.raw, options, "read", { project_id: context.req.query("project_id") })
-      if (!scope.auth) throw notFound()
-      return context.json(
-        await documents().remoteList({
-          auth: scope.auth,
-          orgId: scope.orgId,
-          projectId: scope.projectId,
-          localWorkspaceId: requiredQuery(context.req.query("local_workspace_id")),
-          cloudWorkspaceId: requiredQuery(context.req.query("cloud_workspace_id")),
-          sessionId: requiredQuery(context.req.query("session_id")),
-        }),
-      )
-    })
     .get("/", async (context) => {
       const scope = await routeScope(context.req.raw, options, "read", {
         projectId: context.req.query("project_id"),

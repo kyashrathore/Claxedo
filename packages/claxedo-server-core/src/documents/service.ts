@@ -127,20 +127,6 @@ export function createDocumentsService<H extends DocumentHandle>(
       return { ...page, entries: await filterDocuments(principal(scope), page.entries) }
     },
 
-    async remoteList(
-      input: Readonly<{
-        auth: SignedControlPlaneAuth
-        orgId: string
-        projectId: string
-        localWorkspaceId: string
-        cloudWorkspaceId: string
-        sessionId: string
-      }>,
-    ) {
-      if (!backend.remoteList) throw notFound()
-      return await backend.remoteList(input)
-    },
-
     async create(
       scope: DocumentsServiceScope,
       input: Readonly<{

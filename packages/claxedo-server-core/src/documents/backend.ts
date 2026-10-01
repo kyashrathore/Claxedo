@@ -159,16 +159,6 @@ export type DocumentsBackend<H extends DocumentHandle = DocumentHandle> = Readon
       sessionId: string
     }>,
   ): Promise<Readonly<{ token: string; expiresAt: number }>>
-  remoteList?(
-    input: Readonly<{
-      auth: SignedControlPlaneAuth
-      orgId: string
-      projectId: string
-      localWorkspaceId: string
-      cloudWorkspaceId: string
-      sessionId: string
-    }>,
-  ): Promise<DocumentIndexEntry[]>
   moveToRepository?(
     entry: DocumentIndexEntry,
     destination: Readonly<{ workspaceId: string; relativePath: string }>,
