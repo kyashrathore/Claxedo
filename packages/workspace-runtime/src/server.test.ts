@@ -130,24 +130,24 @@ describe("workspace runtime listen policy", () => {
   })
 
   test("allows unauthenticated loopback listeners", () => {
-    expect(() => assertWorkspaceRuntimeListenPolicy({ sessionIdWorkspace: () => undefined,  placement }, "127.0.0.1", { })).not.toThrow()
-    expect(() => assertWorkspaceRuntimeListenPolicy({ sessionIdWorkspace: () => undefined,  placement, configToken: "cfg-secret" }, "localhost", { })).not.toThrow()
+    expect(() => assertWorkspaceRuntimeListenPolicy({ sessionIdWorkspace: () => undefined, placement }, "127.0.0.1", { })).not.toThrow()
+    expect(() => assertWorkspaceRuntimeListenPolicy({ sessionIdWorkspace: () => undefined, placement, configToken: "cfg-secret" }, "localhost", { })).not.toThrow()
   })
 
   test("rejects unauthenticated non-loopback listeners", () => {
-    expect(() => assertWorkspaceRuntimeListenPolicy({ sessionIdWorkspace: () => undefined,  placement }, "0.0.0.0", { })).toThrow(
+    expect(() => assertWorkspaceRuntimeListenPolicy({ sessionIdWorkspace: () => undefined, placement }, "0.0.0.0", { })).toThrow(
       "Refusing to listen on non-loopback host 0.0.0.0 without relay-host auth",
     )
   })
 
   test("does not treat config tokens as whole-server auth", () => {
-    expect(() => assertWorkspaceRuntimeListenPolicy({ sessionIdWorkspace: () => undefined,  placement, configToken: "cfg-secret" }, "0.0.0.0", { })).toThrow(
+    expect(() => assertWorkspaceRuntimeListenPolicy({ sessionIdWorkspace: () => undefined, placement, configToken: "cfg-secret" }, "0.0.0.0", { })).toThrow(
       "Refusing to listen on non-loopback host 0.0.0.0 without relay-host auth",
     )
   })
 
   test("allows relay-authenticated non-loopback listeners", () => {
-    expect(() => assertWorkspaceRuntimeListenPolicy({ sessionIdWorkspace: () => undefined,  placement, relayHostAuth }, "0.0.0.0", { })).not.toThrow()
+    expect(() => assertWorkspaceRuntimeListenPolicy({ sessionIdWorkspace: () => undefined, placement, relayHostAuth }, "0.0.0.0", { })).not.toThrow()
   })
 
   test("allows guarded private-network non-loopback listeners", () => {
@@ -157,7 +157,7 @@ describe("workspace runtime listen policy", () => {
       runtimeAuth: () => true,
     })
     expect(() =>
-      assertWorkspaceRuntimeListenPolicy({ sessionIdWorkspace: () => undefined,  placement,
+      assertWorkspaceRuntimeListenPolicy({ sessionIdWorkspace: () => undefined, placement,
         exposure,
       }, "0.0.0.0", {})
     ).not.toThrow()
@@ -167,7 +167,7 @@ describe("workspace runtime listen policy", () => {
   test("allows explicitly exempted private-network listeners", () => {
     const warn = spyOn(console, "warn").mockImplementation(() => {})
     try {
-      expect(() => assertWorkspaceRuntimeListenPolicy({ sessionIdWorkspace: () => undefined,  placement }, "0.0.0.0", { WORKSPACE_RUNTIME_ALLOW_UNAUTHENTICATED_NON_LOOPBACK: "1",
+      expect(() => assertWorkspaceRuntimeListenPolicy({ sessionIdWorkspace: () => undefined, placement }, "0.0.0.0", { WORKSPACE_RUNTIME_ALLOW_UNAUTHENTICATED_NON_LOOPBACK: "1",
       })).not.toThrow()
       expect(warn).toHaveBeenCalledWith(
         "[workspace-runtime] WARN  allowing unauthenticated non-loopback listen because WORKSPACE_RUNTIME_ALLOW_UNAUTHENTICATED_NON_LOOPBACK=1",
@@ -1226,7 +1226,7 @@ describe("startServer ephemeral bind (characterization)", () => {
     const listenersOf = (sig: (typeof signals)[number]) => process.listeners(sig as NodeJS.Signals).slice()
     const before = new Map(signals.map((sig) => [sig, listenersOf(sig)]))
 
-    const server = startServer(0, { sessionIdWorkspace: () => undefined,  placement, exposure: loopbackWorkspaceRuntimeExposure() })
+    const server = startServer(0, { sessionIdWorkspace: () => undefined, placement, exposure: loopbackWorkspaceRuntimeExposure() })
     try {
       const port = await waitForWorkspaceRuntimeServerPort(server, 0)
       expect(port).toBeGreaterThan(0)
@@ -1307,7 +1307,7 @@ describe("cors + signal registration (characterization)", () => {
     const preRej = process.listeners("unhandledRejection")
     const preExc = process.listeners("uncaughtException")
     // Default: no lifecycle argument → the library must not claim the process.
-    const server = startServer(0, { sessionIdWorkspace: () => undefined,  placement,
+    const server = startServer(0, { sessionIdWorkspace: () => undefined, placement,
       target: { workspaceId: "ws-signals-default", directory: process.cwd() },
       exposure: loopbackWorkspaceRuntimeExposure(),
     })
@@ -1337,7 +1337,7 @@ describe("cors + signal registration (characterization)", () => {
     const preInt = process.listeners("SIGINT")
     const preRej = process.listeners("unhandledRejection")
     const preExc = process.listeners("uncaughtException")
-    const server = startServer(0, { sessionIdWorkspace: () => undefined,  placement,
+    const server = startServer(0, { sessionIdWorkspace: () => undefined, placement,
       target: { workspaceId: "ws-signals", directory: process.cwd() },
       exposure: loopbackWorkspaceRuntimeExposure(),
     }, { signals: true })
