@@ -82,7 +82,6 @@ export const D1_SESSION_AUTHORITY_METHODS = [
   "syncSessionMessages",
   "upsertSessionVisibility",
   "replaceSessionVisibility",
-  "deleteSessionVisibility",
 ] as const satisfies readonly (keyof WorkspaceAuthority)[]
 
 export const D1_SESSION_TURN_AUTHORITY_METHODS = SESSION_TURN_AUTHORITY_METHODS
@@ -1121,27 +1120,15 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
     let runtimeTokensRevoked = 0
     for (const grant of grants) {
       const assertionId = this.randomId("assert")
-      const holders = grant.target_user_id
-        ? { sql: "?", bind: [grant.target_user_id] }
-        : grant.target_team_id
-          ? {
-              sql: `select tm.user_id from team_memberships tm
-                join teams t on t.team_id = tm.team_id and t.deleted_at is null
-                join org_memberships om
-                  on om.org_id = t.org_id and om.user_id = tm.user_id and om.revoked_at is null
-                where tm.team_id = ? and tm.revoked_at is null`,
-              bind: [grant.target_team_id],
-            }
-          : { sql: "select user_id from org_memberships where org_id = ? and revoked_at is null", bind: [grant.target_org_id] }
       const revokeTokens = this.database
         .prepare(
           `
         update runtime_access_tokens set revoked_at = ?
-        where workspace_id = ? and session_id = ? and revoked_at is null and minted_for_user_id in (${holders.sql})
+        where share_grant_id = ? and revoked_at is null
           and exists (select 1 from session_share_grants g where g.grant_id = ? and g.revoked_at = ?)
       `,
         )
-        .bind(now, workspaceId, sessionId, ...holders.bind, grant.grant_id, now)
+        .bind(now, grant.grant_id, grant.grant_id, now)
       const results = await this.guardedBatch(
         [
           this.database
@@ -1191,13 +1178,11 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
     const sessionId = requireText(args.sessionId, "sessionId")
     const workspaceId = requireText(args.workspaceId, "workspaceId")
     const session = await this.requireSessionAccess(who, sessionId, workspaceId, "read").catch(async (err) => {
-      // A session the control plane does not hold — one a machine created in
-      // a workspace it serves and never registered — has no shares here and
-      // none to manage. There is no standing on it to ask about, so the
-      // definite empty answer goes to the organization that owns the
-      // workspace, which is also who a share could have been offered to.
+      // A session a machine created and never registered is its workspace
+      // owner's, with no shares to manage. To anyone else it, an unknown
+      // workspace and another person's session are the same refusal.
       if (!(err instanceof ControlPlaneAuthError)) throw err
-      await this.requireOrganizationStanding(who, workspaceId)
+      if (!(await may(this.database, who, "open", { kind: "workspace", workspaceId }))) throw err
       return undefined
     })
     if (!session) return { can_manage_shares: false, grants: [], teams: [] }
@@ -1562,43 +1547,6 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
     args: { workspaceId: string; sessions: WorkspaceVisibility[] },
   ) {
     await this.writeVisibility(auth, args, true)
-    return { ok: true }
-  }
-
-  async deleteSessionVisibility(auth: SignedControlPlaneAuth, args: { sessionId: string; workspaceId: string }) {
-    const who = await this.requirePrincipal(auth)
-    const sessionId = requireText(args.sessionId, "sessionId")
-    const workspaceId = requireText(args.workspaceId, "workspaceId")
-    await this.requireSessionAccess(who, sessionId, workspaceId, "agent_turn")
-    const now = this.now()
-    const assertionId = this.randomId("assert")
-    const sends = maySql(who, "send", { kind: "session", alias: "sessions" })
-    await this.guardedBatch(
-      [
-        this.database
-          .prepare(
-            `
-        update sessions set deleted_at = ?
-        where session_id = ? and workspace_id = ? and deleted_at is null
-          and ${sends.sql}
-      `,
-          )
-          .bind(now, sessionId, workspaceId, ...sends.bind),
-        this.database.prepare(`delete from session_messages where session_id = ?`).bind(sessionId),
-        this.database
-          .prepare(
-            `
-        insert into authority_batch_assertions (assertion_id, passed)
-        values (?, case when exists (
-          select 1 from sessions where session_id = ? and workspace_id = ? and deleted_at = ?
-        ) then 1 else 0 end)
-      `,
-          )
-          .bind(assertionId, sessionId, workspaceId, now),
-        this.deleteAssertion(assertionId),
-      ],
-      "Session deletion raced with an authority change",
-    )
     return { ok: true }
   }
 
@@ -1975,15 +1923,6 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
     if (!session) throw denied()
     const { owns, ...row } = session
     return { ...row, role: owns === 1 ? "owner" : "viewer" }
-  }
-
-  private async requireOrganizationStanding(actor: Principal, workspaceId: string) {
-    const member = maySql(actor, "member", { kind: "org", orgId: "w.org_id" })
-    const row = await this.database
-      .prepare(`select 1 from workspaces w where w.workspace_id = ? and w.deleted_at is null and ${member.sql}`)
-      .bind(workspaceId, ...member.bind)
-      .first()
-    if (!row) throw denied()
   }
 
   private async requireWorkspace(actor: Principal, workspaceId: string, action: WorkspaceAction) {

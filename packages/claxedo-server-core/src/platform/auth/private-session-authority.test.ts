@@ -41,7 +41,6 @@ describe("provider-neutral private-session authority contract", () => {
       "syncSessionMessages",
       "upsertSessionVisibility",
       "replaceSessionVisibility",
-      "deleteSessionVisibility",
     ])
   })
 

@@ -118,7 +118,6 @@ describe("host primitives package surface", () => {
       readSessionMessages: vi.fn(async () => ({ messages: [] })),
       upsertSessionVisibility: vi.fn(async () => ({})),
       replaceSessionVisibility: vi.fn(async () => ({})),
-      deleteSessionVisibility: vi.fn(async () => ({})),
       auditAllow: vi.fn(async () => {}),
       auditDeny: vi.fn(async () => {}),
       // `satisfies Partial<...>` keeps compile-time drift checking on the mocked

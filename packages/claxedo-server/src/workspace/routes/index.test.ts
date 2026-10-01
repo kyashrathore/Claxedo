@@ -304,7 +304,6 @@ function services(): ControlPlaneServices {
       syncSessionMessages: vi.fn(async () => ({})),
       upsertSessionVisibility: vi.fn(async () => ({})),
       replaceSessionVisibility: vi.fn(async () => ({})),
-      deleteSessionVisibility: vi.fn(async () => ({})),
       recordRuntimeAccessToken: vi.fn(async () => ({})),
       recordRuntimeAccessTokenForService: vi.fn(async () => ({})),
       runtimeAccessTokenActive: vi.fn(async () => ({ active: true })),

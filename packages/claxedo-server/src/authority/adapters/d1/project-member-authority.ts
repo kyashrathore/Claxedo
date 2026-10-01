@@ -13,7 +13,7 @@ import {
   type AccessPrincipal,
   type D1AccessContext,
 } from "./access-context"
-import { may, maySql, orgMemberSql, orgRoleRankSql, rankRole, readProjectRole, roleRank, type BoundSql } from "./authorization"
+import { may, maySql, orgMemberSql, orgRoleRankSql, rankRole, type BoundSql } from "./authorization"
 
 export const D1_PROJECT_MEMBER_AUTHORITY_METHODS = [
   "grantProjectMember",
@@ -171,19 +171,23 @@ export class D1ProjectMemberAuthority implements D1ProjectMemberAuthorityPort {
     return { project_id: project.project_id, org_id: project.org_id, entries: result.results.map(accessEntry) }
   }
 
-  /** The live project, when the caller holds admin rank on it: organization owners and admins, and project admins. */
+  /**
+   * The live project, when the caller may administer it: organization owners
+   * and admins, and project admins. A project the caller cannot read answers
+   * as absent.
+   */
   private async adminProject(who: AccessPrincipal, value: string): Promise<Project> {
-    const projectId = requireText(value, "projectId")
-    const access = await readProjectRole(this.database, who.userId, { kind: "project", projectId })
-    if (!access) throw new D1AccessAuthorityError("project_not_found")
-    this.context.assertOrganizationAllowed(access.orgId)
-    if (roleRank(access.role) < roleRank("admin")) throw new D1AccessAuthorityError("project_admin_required")
-    const project = await this.database
+    const project = { kind: "project" as const, projectId: requireText(value, "projectId") }
+    if (!(await may(this.database, who, "admin", project))) {
+      throw new D1AccessAuthorityError(await may(this.database, who, "read", project) ? "project_admin_required" : "project_not_found")
+    }
+    const row = await this.database
       .prepare(`select project_id, org_id, owner_user_id from projects where project_id = ? and deleted_at is null`)
-      .bind(projectId)
+      .bind(project.projectId)
       .first<Project>()
-    if (!project) throw new D1AccessAuthorityError("project_not_found")
-    return project
+    if (!row) throw new D1AccessAuthorityError("project_not_found")
+    this.context.assertOrganizationAllowed(row.org_id)
+    return row
   }
 
   /**

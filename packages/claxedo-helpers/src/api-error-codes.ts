@@ -22,7 +22,6 @@ export const PUBLIC_API_ERRORS = {
   org_invitation_rate_limited: { family: "access", status: 429, message: "Organization invitation limit exceeded" },
   org_invitation_email_mismatch: { family: "access", status: 403, message: "Sign in with the invited verified email address" },
   org_invitation_delivery_unavailable: { family: "access", status: 503, message: "Invitation delivery is unavailable" },
-  organization_not_found: { family: "access", status: 404, message: "Organization not found" },
   team_not_found: { family: "access", status: 404, message: "Team not found" },
   team_member_not_found: { family: "access", status: 404, message: "Team member not found" },
   org_member_not_found: { family: "access", status: 404, message: "Organization member not found" },

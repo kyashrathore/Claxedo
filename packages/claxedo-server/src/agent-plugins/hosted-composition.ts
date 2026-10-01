@@ -472,6 +472,7 @@ export function createHostedAgentPluginsComposition(input: {
       list: () => sourceRegistry.list(auth),
     }),
     activations,
+    administersOrganization: (auth) => activations.administersOrganization(auth),
     artifacts,
     // Activation is durable immediately. The caller's running sandboxes are
     // refreshed before the route answers; every other runtime is brought to

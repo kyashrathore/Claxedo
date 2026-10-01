@@ -176,9 +176,13 @@ class MemorySignedActivations implements SignedAgentPluginActivationStore {
     return ++this.currentRevision
   }
 
+  async administersOrganization(auth: SignedControlPlaneAuth) {
+    return this.subject(auth) === "admin"
+  }
+
   async mutateOrganizationDefault(auth: SignedControlPlaneAuth, input: MutateSignedOrganizationDefault) {
     this.checkRevision(input.expectedRevision)
-    if (this.subject(auth) !== "admin") {
+    if (!(await this.administersOrganization(auth))) {
       throw new ControlPlaneAuthError(403, "workspace_authorization_denied", "Organization admin access required")
     }
     const harnesses = this.supported(input.harnessIds)
@@ -267,10 +271,6 @@ async function fixture(options: {
     authority: {
       usersMe,
       listWorkspaces: vi.fn(async () => []),
-      listOrgs: vi.fn(async (auth: SignedControlPlaneAuth) => [{
-        org_id: "org-main",
-        role: auth.user.subject === "admin" ? "admin" : "member",
-      }]),
     },
     telemetry: { capture: vi.fn() },
   } as unknown as ControlPlaneServices
@@ -283,6 +283,7 @@ async function fixture(options: {
     ...(options.authentication ? { authentication: options.authentication } : {}),
     sources: () => sources,
     activations,
+    administersOrganization: (auth) => activations.administersOrganization(auth),
     artifacts,
     reconcile,
     builtIn: { groups: claxedoMcpToolGroupInventory(), deployment: { inProcessServices: [] } },

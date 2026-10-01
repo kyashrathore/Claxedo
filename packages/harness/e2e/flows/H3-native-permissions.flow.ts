@@ -65,7 +65,7 @@ export async function run() {
       const foreign = await pending(api, stream, directory, other.id)
       const repliesBefore = stream.frames.filter((frame) => frameType(frame) === "permission.replied").length
       const foreignMessages = await api.messages(directory, other.id)
-      await refused(() => api.replyPermission(directory, session.id, foreign.id, "once"), 409)
+      await refused(() => api.replyPermission(directory, session.id, foreign.id, "once"), 404)
       assert.equal(stream.frames.filter((frame) => frameType(frame) === "permission.replied").length, repliesBefore)
       assert.deepEqual(await api.messages(directory, other.id), foreignMessages, `${harness.id} delivered the foreign reply`)
       await assert.rejects(() => fs.access(foreignOutput), (error: unknown) => (error as NodeJS.ErrnoException).code === "ENOENT",

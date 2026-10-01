@@ -2,9 +2,9 @@ import type { AgentPermission, AgentQuestion, AgentSessionStartBinding } from "@
 import { asRecord } from "@claxedo/helpers/guards"
 import { routeParam } from "@claxedo/helpers/route-param"
 import type { RuntimeDirectory } from "../host/contracts"
-import { isAgentRuntimeRequestRefusedError } from "../host/runtime"
+import { isAgentRuntimeRequestRefusedError, type AgentRuntime } from "../host/runtime"
 import { arr, str } from "../json-value"
-import type { SessionAccessOperation } from "../session-access-policy"
+import { sessionAccessContext, type SessionAccessOperation } from "../session-access-policy"
 import { errorBody } from "./error-body"
 import { collectionSessionIds, explicitSessionId, sessionStartGuard } from "./session-access-guards"
 import { sessionOperationGuard } from "./session-operation-guard"
@@ -36,16 +36,6 @@ export function interactionNotFound(c: Ctx, kind: "permission" | "question", id:
       message: `Pending ${kind} ${id} was not found`,
     },
   }, 404)
-}
-
-export function interactionSessionMismatch(c: Ctx, kind: "permission" | "question", id: string) {
-  return c.json({
-    ok: false,
-    error: {
-      code: "interaction_session_mismatch",
-      message: `Pending ${kind} ${id} does not belong to the supplied session`,
-    },
-  }, 409)
 }
 
 /** A request filed on a subagent's child session is listed and answered under the session whose harness asked it. */
@@ -80,17 +70,33 @@ export function requestRefusedResponse(c: Ctx, error: unknown) {
   return c.json(errorBody(`request_${error.refusal}`, error.message, { retryable: error.retryable }), status)
 }
 
+type QuestionAdmission =
+  | { rejected: Response; start?: undefined }
+  | { rejected?: undefined; start?: AgentSessionStartBinding }
+
+/** Admits the caller on one session's questions: by its start binding while it is starting, otherwise on the session whose harness asks. */
+async function admitQuestionSession(opts: Opts, c: Ctx, runtime: AgentRuntime, sessionId: string, id: string): Promise<QuestionAdmission> {
+  const pending = opts.sessionStarts?.get(sessionId)
+  if (pending && pending.status !== "created") {
+    const denied = await sessionStartGuard(opts, c, pending.binding, "question_response")
+    if (denied) return { rejected: denied }
+    if (pending.status !== "starting") return { rejected: interactionNotFound(c, "question", id) }
+    return { start: pending.binding }
+  }
+  const guarded = await sessionOperationGuard(opts, c, await runtime.questions.askingSession(sessionId), "question_response")
+  return guarded ? { rejected: guarded } : {}
+}
+
 /**
  * Resolves the session a `/question/:id` request acts on, then admits it.
  *
- * Unlike every other session operation, the question routes take their session
- * from an OPTIONAL `?sessionId=` query param — a pending question already knows
- * which session asked it. Admission still has to cover the omitted-param case:
- * gating the guard on the param let any caller skip admission entirely by
- * leaving it off, reaching `replyQuestion`/`rejectQuestion` unchecked.
- *
- * The pending-question listing is authoritative. A supplied session is only a
- * consistency assertion and never selects the authorization target.
+ * The question routes take their session from an OPTIONAL `?sessionId=`, and a
+ * token scoped to one session names that session whether or not the param
+ * does. A named session is admitted before the id is resolved, and the id is
+ * then found only among that session's questions, so a question the caller may
+ * not answer is refused exactly as one that does not exist. Only a caller who
+ * names no session and holds no scope, the workspace's own, is admitted on the
+ * session the pending-question listing says asked it.
  */
 export async function admitQuestionOperation(
   opts: Opts,
@@ -100,22 +106,22 @@ export async function admitQuestionOperation(
   | { rejected?: undefined; id: string; directory: RuntimeDirectory; sessionId: string; start?: AgentSessionStartBinding }
 > {
   const id = routeParam(c, "id")
-  const requested = c.req.query("sessionId") ?? ""
+  const requested = c.req.query("sessionId") || undefined
+  const scope = sessionAccessContext(c).authority?.sessionId
   const directory = await opts.resolveDirectory(c)
   const runtime = await opts.runtime(c)
+  const named = requested ?? scope
+  const early = named === undefined ? undefined : await admitQuestionSession(opts, c, runtime, named, id)
+  if (early?.rejected) return early
   const known = interactionSessionId(await runtime.questions.list(directory ?? ""), id)
-  if (!known) return { rejected: interactionNotFound(c, "question", id) }
-  if (requested && requested !== known) return { rejected: interactionSessionMismatch(c, "question", id) }
-  const pending = opts.sessionStarts?.get(known)
-  if (pending && pending.status !== "created") {
-    const denied = await sessionStartGuard(opts, c, pending.binding, "question_response")
-    if (denied) return { rejected: denied }
-    if (pending.status !== "starting") return { rejected: interactionNotFound(c, "question", id) }
-    return { id, directory, sessionId: known, start: pending.binding }
-  }
+  const outside = !known
+    || (requested !== undefined && known !== requested)
+    || (requested === undefined && scope !== undefined && await runtime.questions.askingSession(known) !== scope)
+  if (outside) return { rejected: interactionNotFound(c, "question", id) }
+  const admitted = early ?? await admitQuestionSession(opts, c, runtime, known, id)
+  if (admitted.rejected) return admitted
+  if (admitted.start) return { id, directory, sessionId: known, start: admitted.start }
   const asking = await runtime.questions.askingSession(known)
-  const guarded = await sessionOperationGuard(opts, c, asking, "question_response")
-  if (guarded) return { rejected: guarded }
   const unsupported = await unsupportedIfUnavailable(c, runtime, { sessionId: asking, ...(directory ? { directory } : {}) }, "questions", "question_response")
   if (unsupported) return { rejected: unsupported }
   return { id, directory, sessionId: known }
