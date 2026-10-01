@@ -223,11 +223,8 @@ export class PiRpcTransport implements HarnessTransport {
   readonly config = createPiConfig({ entry: (session) => this.entry(session), catalog: (draft, model, mode) => this.probes.catalog(draft, model, mode) })
 
   readonly naming = {
-    generateTitle: async (session: HarnessSession, request: SessionTitleRequest) => {
-      const entry = this.entry(session)
-      if (entry.stream.busy) return null
-      return piSessionTitle(entry.rpc, this.options.stateRoot, request)
-    },
+    generateTitle: async (session: HarnessSession, request: SessionTitleRequest) =>
+      piSessionTitle(this.entry(session).rpc, this.options.stateRoot, request),
     rename: async (session: HarnessSession, title: string) => {
       const entry = this.entry(session)
       await entry.stream.rename(title, () => entry.rpc.request("set_session_name", { name: title }))
