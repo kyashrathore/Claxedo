@@ -1,6 +1,6 @@
 import type { HarnessEventAdapter } from "../../../translate/adapter"
 import { accountHandlers } from "./account"
-import { eventPayload, protocolMethod, type CodexHandlers, type CodexThreadModel } from "./frame"
+import { eventPayload, protocolMethod, type CodexHandlers } from "./frame"
 import { hookHandlers } from "./hooks"
 import { itemHandlers } from "./item-lifecycle"
 import { messageHandlers } from "./message-items"
@@ -21,7 +21,7 @@ const handlers: CodexHandlers = {
   ...hookHandlers,
 }
 
-export function codexAppServerAdapter(options: { threadModel?: CodexThreadModel } = {}): HarnessEventAdapter<CodexAppServerAdapterState> {
+export function codexAppServerAdapter(): HarnessEventAdapter<CodexAppServerAdapterState> {
   return {
     name: "codex-app-server",
     createInitialState: createCodexAppServerAdapterState,
@@ -29,7 +29,7 @@ export function codexAppServerAdapter(options: { threadModel?: CodexThreadModel 
       const method = protocolMethod(event)
       const handler = Object.hasOwn(handlers, method) ? handlers[method] : undefined
       if (!handler) return unmappedCodexAppServerEvent(event)
-      return handler({ state, event, context, method, row: eventPayload(event), threadModel: options.threadModel })
+      return handler({ state, event, context, method, row: eventPayload(event) })
     },
   }
 }

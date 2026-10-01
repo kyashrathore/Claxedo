@@ -7,15 +7,12 @@ import type { CodexAppServerAdapterState } from "./state"
 
 export type CodexMethod = ServerNotification["method"]
 
-export type CodexThreadModel = (threadId: string) => string | undefined
-
 export type CodexFrame = {
   state: CodexAppServerAdapterState
   event: RawHarnessEvent
   context: HarnessEventAdapterContext
   method: CodexMethod
   row: Record<string, unknown>
-  threadModel?: CodexThreadModel
 }
 
 export type CodexHandler = (frame: CodexFrame) => HarnessEventAdapterResult<CodexAppServerAdapterState> | AgentRuntimeEvent[]
