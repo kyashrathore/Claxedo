@@ -1,12 +1,9 @@
-import type { McpServer, NewSessionRequest, SessionConfigOption, SessionModeState } from "@agentclientprotocol/sdk"
-import type { SessionHandoff } from "@claxedo/agent-runtime-contract"
-import type { AttachInput, SessionBroker } from "../../../contract"
+import type { McpServer, SessionConfigOption, SessionModeState } from "@agentclientprotocol/sdk"
+import type { AttachInput } from "../../../contract"
 import type { AcpPeer } from "../connection"
 import { AcpTransportError } from "../errors"
 
 export type AcpRestoreInput = Omit<AttachInput, "upstreamHasTurns">
-
-export type MissingSessionContext = (input: AcpRestoreInput) => Promise<SessionHandoff>
 
 export type AcpRestored = {
   upstreamSessionId: string
@@ -14,8 +11,7 @@ export type AcpRestored = {
   configOptions?: SessionConfigOption[] | null
 }
 
-export async function restoreAcp(peer: AcpPeer, input: AcpRestoreInput, mcpServers: McpServer[], broker: SessionBroker,
-  missingContext: MissingSessionContext, meta?: NewSessionRequest["_meta"]): Promise<AcpRestored> {
+export async function restoreAcp(peer: AcpPeer, input: AcpRestoreInput, mcpServers: McpServer[]): Promise<AcpRestored> {
   const upstream = input.binding.upstreamSessionId
   const capabilities = peer.handshake.agentCapabilities
   try {
@@ -30,10 +26,7 @@ export async function restoreAcp(peer: AcpPeer, input: AcpRestoreInput, mcpServe
     throw new AcpTransportError("protocol", "ACP agent declares neither load nor resume")
   } catch (error) {
     if (!lostAttachedSession(error, upstream)) throw error
-    const context = await missingContext(input)
-    await broker.persistHandoff(context)
-    const result = await peer.agent.newSession({ cwd: input.directory, mcpServers, ...(meta ? { _meta: meta } : {}) })
-    return { upstreamSessionId: result.sessionId, modes: result.modes, configOptions: result.configOptions }
+    throw new AcpTransportError("session", `ACP agent no longer has session ${upstream}; it is not replaced`, error)
   }
 }
 

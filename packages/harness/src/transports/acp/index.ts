@@ -11,7 +11,6 @@ import { AcpTransportError } from "./errors"
 import { acpTurnFailure } from "./outcome"
 import { AsyncPushQueue, errorMessage, type HoldableCountdown } from "@claxedo/helpers"
 import { acpMcp, acpPrompt, type AcpPromptDelivery } from "./protocol"
-import type { MissingSessionContext } from "./restore"
 import { claudeOptionsMeta } from "./extensions/claude-options"
 import type { AcpStartupDeadline } from "./deadline"
 import type { AcpProviderTurn } from "./provider-turn"
@@ -109,10 +108,10 @@ export class AcpTransport implements HarnessTransport {
   get fork() { return [...this.entries.values()].some((entry) => entry.peer.handshake.agentCapabilities?.sessionCapabilities?.fork) ? this.forkOperations : undefined }
 
   constructor(private readonly services: HarnessServices, private readonly connection: AcpConnectionOptions,
-    private readonly filterMcp: AcpMcpFilter, private readonly missingContext: MissingSessionContext) {
+    private readonly filterMcp: AcpMcpFilter) {
     this.health = new AcpConnectionHealth(services.clock, () => services.healthChanged())
     this.probes = new AcpDraftProbes(services, connection, filterMcp, this.peers)
-    this.host = { services, health: this.health, connection, filterMcp, missingContext, entries: this.entries, starting: this.starting,
+    this.host = { services, health: this.health, connection, filterMcp, entries: this.entries, starting: this.starting,
       startingAborts: this.startingAborts, peers: this.peers, idle: (entry) => { if (entry.pendingRestart) this.lifecycle.defer(entry) },
       disposed: () => this.disposed, mcp: (entry) => this.mcp(entry) }
     this.lifecycle = new AcpSessionLifecycle(this.host)
@@ -151,18 +150,6 @@ export class AcpTransport implements HarnessTransport {
       ...(this.connection.sharedFilesystem ? { sharedDirectory: entry.session.directory } : {}) }
   }
 
-  async restore(session: HarnessSession): Promise<HarnessSession> {
-    const sessionId = session.binding.sessionId
-    await this.lifecycle.settled(sessionId)
-    const entry = this.entries.get(sessionId)
-    if (entry?.phase === "ready" && entry.peer.agent.signal.aborted) {
-      await this.lifecycle.restart(entry)
-      await this.lifecycle.settled(sessionId)
-    }
-    const restored = this.entries.get(sessionId)
-    return this.entry(restored?.session ?? session).session
-  }
-
   async start(input: StartInput, broker: SessionBroker): Promise<HarnessSession> {
     await this.lifecycle.prepare(input.sessionId)
     return startAcpEntry(this.host, input, broker)
@@ -190,6 +177,7 @@ export class AcpTransport implements HarnessTransport {
     if (broker.signal.aborted) aborted()
     const submission = { submitted: false }
     try {
+      if (entry.peer.agent.signal.aborted) throw new AcpTransportError("connection", "ACP agent disconnected; cancel the turn and attach the session explicitly")
       await acpPrepareTurnConfig(entry, turn, this.services.clock, this.connection.startupTimeoutMs ?? 10_000)
       entry.quiet = acpQuiet(entry, queue, this.services.clock, this.connection.promptTimeoutMs ?? 300_000)
       yield* this.prompted(entry, session, turn, queue, submission)

@@ -12,14 +12,13 @@ import { acpModeState } from "./options"
 import type { AcpPeerOwnership } from "./ownership"
 import { acpElicitation, acpMcp, acpPermission } from "./protocol"
 import { acpMcpProjection } from "./projection"
-import { restoreAcp, type AcpRestored, type AcpRestoreInput, type MissingSessionContext } from "./restore"
+import { restoreAcp, type AcpRestored, type AcpRestoreInput } from "./restore"
 
 export type AcpHost = {
   readonly health: AcpConnectionHealth
   readonly services: HarnessServices
   readonly connection: AcpConnectionOptions
   readonly filterMcp: AcpMcpFilter
-  readonly missingContext: MissingSessionContext
   readonly entries: Map<string, AcpEntry>
   readonly starting: Set<AcpEntry>
   readonly startingAborts: Set<AbortController>
@@ -146,8 +145,7 @@ export async function attachAcpEntry(host: AcpHost, input: AcpRestoreInput, brok
   }
   try {
     entry.startup = acpStartupDeadline(host, "session restore")
-    const restored = await entry.startup.run(restoreAcp(entry.peer, input, host.mcp(entry).map(acpMcp), broker, host.missingContext,
-      claudeOptionsMeta(entry.peer.handshake, input).meta), entry.startupAbort.signal)
+    const restored = await entry.startup.run(restoreAcp(entry.peer, input, host.mcp(entry).map(acpMcp)), entry.startupAbort.signal)
     return await adopt(host, entry, restored, "attach")
   } catch (error) { return abandon(host, entry, error) }
 }

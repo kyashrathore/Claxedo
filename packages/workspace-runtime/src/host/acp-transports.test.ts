@@ -8,7 +8,6 @@ import { createHostFixture, LOOPBACK_ORIGIN, sessionCreate, until } from "../tes
 function acpTransport(peer: ReturnType<typeof acpPeer>) {
   const unused = () => { throw new Error("Unused transport") }
   const composer = createHarnessComposer(peer.services, {
-    acp: () => ({ missingContext: async () => ({ from: { id: "acp-test", access: "connection" }, reason: "missing-session", pending: true, transcript: "Saved recovery context" }) }),
     pi: unused, codex: unused, claude: unused, cursor: unused, opencode: unused,
   })
   return composer.connection({ descriptor: { connectionId: "acp-test", providerKey: "acp", configRevision: 1, enabled: true,
@@ -26,7 +25,7 @@ async function fixture(setup: (peer: ReturnType<typeof acpPeer>) => void = () =>
     dispose: async () => { await Promise.all([transport.dispose(), host.dispose()]) } }
 }
 
-test("ACP death then missing upstream restores before preparing the next prompt", async () => {
+test("a dead ACP agent fails the next turn with a typed error, and nothing restarts or replaces its session", async () => {
   const f = await fixture()
   try {
     const old = f.store.getAgentSessionId(f.id)
@@ -34,17 +33,21 @@ test("ACP death then missing upstream restores before preparing the next prompt"
     await new Promise((resolve) => setTimeout(resolve, 10))
     await f.runtime.turns.start({ sessionId: f.id, text: "continue", origin: LOOPBACK_ORIGIN })
     await until(() => !!f.store.getSession(f.id)?.lastTurn)
-    expect(f.store.getSession(f.id)?.lastTurn?.status).toBe("completed")
-    expect(f.store.getAgentSessionId(f.id)).not.toBe(old)
-    const prompt = f.requests.find((row) => row.method === "session/prompt")
-    expect(JSON.stringify(prompt)).toContain("Saved recovery context")
+    expect(f.store.getSession(f.id)?.lastTurn).toMatchObject({
+      status: "failed",
+      error: "ACP agent disconnected; cancel the turn and attach the session explicitly",
+      detail: { acpOutcome: "not_started" },
+    })
+    expect(f.store.getAgentSessionId(f.id)).toBe(old)
+    expect(f.peers).toHaveLength(1)
+    expect(f.requests.filter((row) => row.method === "session/prompt" || row.method === "session/resume")).toEqual([])
     expect(f.store.getSessionConfig(f.id)?.handoff).toBeUndefined()
   } finally { await f.dispose() }
 })
 
 const AGENT_MODES = [{ id: "ask", name: "Ask every time" }, { id: "code", name: "Write code" }]
 
-test("the mode an ACP agent opens, moves or resumes a session in, and a turn's own mode, are stored under the agent's names and published once each", async () => {
+test("the mode an ACP agent opens or moves a session in, and a turn's own mode, are stored under the agent's names and published once each", async () => {
   const f = await fixture((peer) => peer.setModes({ currentModeId: "ask", availableModes: AGENT_MODES }))
   try {
     const modes: unknown[] = []
@@ -67,15 +70,6 @@ test("the mode an ACP agent opens, moves or resumes a session in, and a turn's o
     await until(() => !!f.store.getSession(f.id)?.lastTurn)
     expect(stored()).toMatchObject({ permissionMode: "ask", permissionModeLabel: "Ask every time" })
     expect(modes).toEqual(["Write code", "Ask every time"])
-
-    f.setModes({ currentModeId: "code", availableModes: AGENT_MODES })
-    f.peers[0].die()
-    await new Promise((resolve) => setTimeout(resolve, 10))
-    const previous = JSON.stringify(f.store.getSession(f.id)?.lastTurn)
-    await f.runtime.turns.start({ sessionId: f.id, text: "continue", origin: LOOPBACK_ORIGIN })
-    await until(() => JSON.stringify(f.store.getSession(f.id)?.lastTurn) !== previous)
-    expect(stored()).toMatchObject({ permissionMode: "code", permissionModeLabel: "Write code" })
-    expect(modes).toEqual(["Write code", "Ask every time", "Write code"])
   } finally { await f.dispose() }
 })
 
@@ -208,19 +202,6 @@ test("ACP autonomous peer death fails its admitted provider turn", async () => {
     f.peers[0].die()
     await until(() => !!f.store.getSession(f.id)?.lastTurn)
     expect(f.store.getSession(f.id)?.lastTurn?.status).toBe("failed")
-  } finally { await f.dispose() }
-})
-
-test("concurrent pre-turn restorations share one replacement binding", async () => {
-  const f = await fixture()
-  try {
-    const attached = f.runtime.attachments.peek(f.id)!
-    f.peers[0].die()
-    await new Promise((resolve) => setTimeout(resolve, 10))
-    const [first, second] = await Promise.all([f.transport.restore!(attached.session), f.transport.restore!(attached.session)])
-    expect(first.binding).toEqual(second.binding)
-    expect(f.requests.filter((row) => row.method === "session/resume")).toHaveLength(1)
-    expect(f.peers).toHaveLength(2)
   } finally { await f.dispose() }
 })
 

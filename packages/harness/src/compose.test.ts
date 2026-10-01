@@ -8,7 +8,6 @@ const unused = (): never => { throw new Error("only the ACP transport is compose
 
 test("an ACP connection's descriptor states what its composed transport offers before any agent handshake", async () => {
   const options: HarnessCompositionOptions = {
-    acp: () => ({ missingContext: async () => { throw new Error("no session is restored") } }),
     pi: unused, codex: unused, claude: unused, cursor: unused, opencode: unused,
   }
   const hooks = acpConnectionConfig()

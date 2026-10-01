@@ -59,8 +59,7 @@ export function wireFixture(handle: (peer: WirePeer, message: Wire) => boolean |
     config: { harness: { id: "c1", access: "connection" }, model: { providerID: "c1", modelID: "one" } },
     model: { providerID: "c1", modelID: "one" }, credentials: { machineLoginAllowed: true, accountOwner: "fixture-owner", providers: {}, leaseGeneration: "g1", secrets: {} },
     projection: { generation: "g1", mcpServers: [], pluginRoots: [], notApplied: [] } }
-  const transport = new AcpTransport(services, { kind: "process", command: "wire-peer", ...options }, filterMcpServers,
-    async () => { throw new Error("No missing-session handoff expected") })
+  const transport = new AcpTransport(services, { kind: "process", command: "wire-peer", ...options }, filterMcpServers)
   const turn: TurnInput = { turnId: "t1", userMessageId: "u1", assistantMessageId: "a1", origin, model: input.model,
     prompt: { agent: "build", assistantMessageId: "a1", parts: [{ type: "text", text: "hello" }] }, todos: [] }
   const turnBroker = (signal = new AbortController().signal) => createTurnBroker(owner,

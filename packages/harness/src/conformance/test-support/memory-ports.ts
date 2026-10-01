@@ -186,7 +186,6 @@ export class MemoryPorts implements BrokerPorts {
     this.bindings.set(sessionId, binding)
     return binding
   }
-  async persistHandoff(_sessionId: string, _context: unknown) {}
   config(_sessionId: string): SessionConfig { throw new Error("unused") }
   reportOwnerFailure(_sessionId: string, error: unknown) { this.failures.push(error) }
 }

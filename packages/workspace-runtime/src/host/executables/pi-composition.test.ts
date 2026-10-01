@@ -8,7 +8,6 @@ test("custom Pi composition uses its command without discovering a built-in exec
     env: { PATH: "/no-pi-here", HOME: "/tmp/isolated-pi" },
     placement: { placement: "loopback", machineOwnerUserId: "owner", canUseOwnLogin: false },
     harnessStateRoot: "/tmp/isolated-pi/state", opencodeRoot: "/tmp/isolated-pi/opencode",
-    store: () => { throw new Error("No store needed") },
   })
   const composer = createHarnessComposer({} as HarnessServices, options)
   const transport = composer.connection({
