@@ -28,10 +28,10 @@ export async function run() {
     }, "H33 changed default")
     const health = JSON.parse(await sendJson(runtime, "GET", `${stack.workerUrl}/api/wr/health`, undefined, "H33 runtime health")) as { harness?: unknown }
     assert.deepEqual(health.harness, { kind: "connection", connectionId: SCRIPTED_ACP_HARNESS.id }, "C-7: changed default never reached the running sandbox")
+    await stack.acp.write("h33-turn", { steps: [{ kind: "text", text: "H33_TURN" }] })
     const commandsUrl = `${stack.workerUrl}/command?directory=${encodeURIComponent(workspace.directory)}`
     const commands = JSON.parse(await sendJson(runtime, "GET", commandsUrl, undefined, "H33 cloud command list")) as Command[]
     assert.ok(commands.some((command) => command.origin === "transport"), "the running sandbox lists no transport-declared commands")
-    await stack.acp.write("h33-turn", { steps: [{ kind: "text", text: "H33_TURN" }] })
     const api = hostedApi(stack, workspace, stack.owner)
     const stream = await openEventStream(stack.relayUrl, workspace.directory, {
       relayWorkspaceId: workspace.id, authorization: `Bearer ${workspace.runtimeAccessToken}`,
