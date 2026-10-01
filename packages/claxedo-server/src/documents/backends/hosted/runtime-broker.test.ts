@@ -47,7 +47,7 @@ async function relayedRuntime() {
         asked.push({ operation: input.operation, sessionId: input.sessionId, actorId: input.actor?.actorId })
         return input.actor?.actorId === "actor_1"
           ? { allowed: true }
-          : { allowed: false, status: 403 as const, code: "session_private", message: "Session access requires creator, participant, or session share authority" }
+          : { allowed: false, status: 403 as const, code: "session_private", message: "Session access requires workspace ownership or session share authority" }
       },
     },
   })

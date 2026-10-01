@@ -181,7 +181,6 @@ describe("D1 organization members", () => {
       team_memberships_revoked: 1,
       project_memberships_revoked: 1,
       session_shares_revoked: 0,
-      session_participations_revoked: 0,
       runtime_tokens_revoked: 0,
     })
 
@@ -198,7 +197,6 @@ describe("D1 organization members", () => {
         before: "member",
         after: null,
         sessionSharesRevoked: 0,
-        sessionParticipationsRevoked: 0,
       },
     ])
     expect(await authority.removeOrgMember!(alice, { orgId: "org_acme", userPublicId: id(bob) })).toMatchObject({ removed: false })
@@ -657,23 +655,18 @@ describe("D1 access changes that must not undo or outlive a decision", () => {
       })
     }
     await register(alice, "ws_cloud", "ses_1")
-    // Bob's own session enrols him as its participant, the one participation
-    // a person can hold.
     await register(bob, "ws_bob", "ses_bob")
     await authority.grantSessionShare!(alice, { sessionId: "ses_1", workspaceId: "ws_cloud", grantedToUserId: id(bob) })
 
     expect(await authority.removeOrgMember!(alice, { orgId: "org_acme", userPublicId: id(bob) }))
-      .toMatchObject({ removed: true, session_shares_revoked: 1, session_participations_revoked: 1 })
+      .toMatchObject({ removed: true, session_shares_revoked: 1 })
     await inviteOrgMember(database, alice, { orgId: "org_acme", userPublicId: id(bob), role: "member" })
 
     expect(await database.prepare("select count(*) as n from session_share_grants where target_user_id = ? and revoked_at is null")
       .bind(id(bob)).first<{ n: number }>()).toEqual({ n: 0 })
-    expect(await database.prepare("select count(*) as n from session_participants where actor_id = ? and revoked_at is null")
-      .bind(bob.principal!.actorId).first<{ n: number }>()).toEqual({ n: 0 })
     expect(await audit("org.member.removed")).toEqual([expect.objectContaining({
       targetUserId: id(bob),
       sessionSharesRevoked: 1,
-      sessionParticipationsRevoked: 1,
     })])
   })
 })

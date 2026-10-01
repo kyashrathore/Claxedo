@@ -59,7 +59,6 @@ export type PrivateSessionAuthorityConformanceReport = {
   access: {
     memberRefusedTheSession: true
     memberRefusedCreation: true
-    participantGrantRefused: true
   }
   attribution: {
     canonicalActorPreserved: true
@@ -187,17 +186,6 @@ export async function exercisePrivateSessionAuthorityConformance(
     })),
     "someone who does not own the workspace reserved a session in it",
   )
-  invariant(
-    await rejects(() => authority.grantSessionParticipant(creator.auth, {
-      sessionId, workspaceId, participantActorId: member.runtime.actorId,
-    })),
-    "a participant grant admitted someone who does not own the workspace",
-  )
-  invariant(
-    await rejects(() => authority.authorizeSessionRead(member.auth, { sessionId, workspaceId })),
-    "a refused participant grant admitted its target",
-  )
-
   let fencingToken: number | undefined
   if (harness.turnAuthority) {
     for (const turnId of ["message_canonical_actor", "message_forged_actor"]) {
@@ -387,7 +375,7 @@ export async function exercisePrivateSessionAuthorityConformance(
   return {
     scenarios: PRIVATE_SESSION_AUTHORITY_CONFORMANCE_SCENARIOS,
     lifecycle: { reserved: true, reconciled: true, compensated: true, released: true },
-    access: { memberRefusedTheSession: true, memberRefusedCreation: true, participantGrantRefused: true },
+    access: { memberRefusedTheSession: true, memberRefusedCreation: true },
     attribution: { canonicalActorPreserved: true, forgedActorRemoved: true },
   }
 }

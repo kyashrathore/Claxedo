@@ -155,9 +155,6 @@ describe("one authorization owner", () => {
       await expectShutOut(authority, who, label)
       await expect(authority.authorizeRuntimeSession({ ...runtime(who), sessionId: "ses_alice", workspaceId: "ws_alice", action: "read" }),
         `${label} read the owner's session`).rejects.toMatchObject({ status: 403 })
-      await expect(authority.grantSessionParticipant(alice, {
-        sessionId: "ses_alice", workspaceId: "ws_alice", participantActorId: who.principal!.actorId,
-      }), `${label} was added as a participant`).rejects.toMatchObject({ status: 403 })
     }
 
     const listing = (await authority.listProjectAccess!(alice, { projectId })).entries
@@ -193,6 +190,29 @@ describe("one authorization owner", () => {
     }
     expect((await authority.listSessions(alice, { workspaceId })).map((row) => row.session_id).sort())
       .toEqual(["ses_alice", "ses_alice_other"])
+  })
+
+  test("the owner's agents act through ownership and another person's agents gain nothing from a human share", async () => {
+    const { authority, database, alice, sender } = await setup()
+    for (const [actorId, who] of [["agent_owner", alice], ["agent_sender", sender]] as const) {
+      await database.prepare(`
+        insert into actors (actor_id, user_id, kind, state, created_at, updated_at, revoked_at)
+        values (?, ?, 'agent', 'active', 1, 1, null)
+      `).bind(actorId, id(who)).run()
+    }
+    await authority.grantSessionShare!(alice, {
+      sessionId: "ses_alice", workspaceId: "ws_alice", grantedToUserId: id(sender), level: "send",
+    })
+    for (const writeClass of ["agent_turn", "session_control"] as const) {
+      await expect(authority.authorizeRuntimeSession({
+        principalKind: "service", actorId: "agent_owner", actorKind: "agent",
+        sessionId: "ses_alice", workspaceId: "ws_alice", action: "write", writeClass,
+      })).resolves.toBeUndefined()
+      await expect(authority.authorizeRuntimeSession({
+        principalKind: "service", actorId: "agent_sender", actorKind: "agent",
+        sessionId: "ses_alice", workspaceId: "ws_alice", action: "write", writeClass,
+      })).rejects.toMatchObject({ status: 403 })
+    }
   })
 
   test("a share holds exactly its level's actions on exactly its session, and nothing of the workspace", async () => {

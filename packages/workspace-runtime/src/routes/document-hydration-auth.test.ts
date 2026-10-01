@@ -44,7 +44,7 @@ async function fixture() {
               allowed: false,
               status: 403 as const,
               code: "session_private",
-              message: "Session access requires creator, participant, or session share authority",
+              message: "Session access requires workspace ownership or session share authority",
             }
       },
     },
@@ -175,7 +175,7 @@ describe("runtime document session authorization", () => {
       await expect(denied.json()).resolves.toEqual({
         error: {
           code: "session_private",
-          message: "Session access requires creator, participant, or session share authority",
+          message: "Session access requires workspace ownership or session share authority",
         },
       })
       expect(f.asked).toEqual([{ operation: "document_write", sessionId, actorId: viewer }])
@@ -206,7 +206,7 @@ describe("runtime document session authorization", () => {
       await expect(denied.json()).resolves.toEqual({
         error: {
           code: "session_private",
-          message: "Session access requires creator, participant, or session share authority",
+          message: "Session access requires workspace ownership or session share authority",
         },
       })
 

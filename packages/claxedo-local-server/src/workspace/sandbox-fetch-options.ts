@@ -20,7 +20,7 @@ type AuthorizedSandboxFetchOptions = {
  * Bind every control-plane-to-runtime request to one explicit principal. A
  * request that carries a verified signed identity acts as that caller, with
  * its current workspace role, on loopback too: a private session reads only
- * for its participants, and a user-principal token is recorded only under
+ * for its workspace owner or session share holders, and a user-principal token is recorded only under
  * the caller's own auth. An unsigned loopback request acts as the
  * control-plane service.
  */
