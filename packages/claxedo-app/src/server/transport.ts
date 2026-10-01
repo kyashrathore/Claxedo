@@ -26,7 +26,7 @@ function socketUrl(serverUrl: string, path: string) {
   return url
 }
 
-function requestInit(config: ServerConfig, init: RequestInit | undefined): RequestInit {
+function withRequestDefaults(config: ServerConfig, init: RequestInit | undefined): RequestInit {
   const headers = new Headers(init?.headers)
   if (typeof init?.body === "string" && !headers.has("Content-Type")) headers.set("Content-Type", "application/json")
   if (!headers.has("Accept")) headers.set("Accept", "application/json")
@@ -53,9 +53,9 @@ function withoutRouteQuery(path: string) {
   return `${url.pathname}${url.search}`
 }
 
-async function send(config: ServerConfig, url: string, init?: RequestInit): Promise<Response> {
+async function fetchFromServer(config: ServerConfig, url: string, init?: RequestInit): Promise<Response> {
   try {
-    return await fetch(url, requestInit(config, init))
+    return await fetch(url, withRequestDefaults(config, init))
   } catch (error) {
     throw toAppError(error)
   }
@@ -74,7 +74,7 @@ function workspaceProxyPath(route: RuntimeRoute, path: string) {
 export function createTransport(config: ServerConfig): Transport {
   const serverUrl = resolveServerUrl(config)
   const loopback = isLoopbackUrl(serverUrl)
-  const request = (path: string, init?: RequestInit) => send(config, `${serverUrl}${path}`, init)
+  const request = (path: string, init?: RequestInit) => fetchFromServer(config, `${serverUrl}${path}`, init)
   const relay = createRelay(request)
   const runtime = (route: RuntimeRoute, path: string, init?: RequestInit) => {
     if (!route.remote) return request(withQuery(path, { directory: route.directory }), init)
