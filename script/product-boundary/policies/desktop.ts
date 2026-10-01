@@ -212,7 +212,10 @@ export const desktopMainComposition: Policy = {
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-main.json",
     minModules: 35,
-    minChunks: 3,
+    // Main has one Rollup entry, so every module the base shares with the lazy
+    // account adapter stays in index.js and the adapter imports it from there;
+    // the base's static closure is that single chunk.
+    minChunks: 1,
     requiredModules: [
       `${DESKTOP}/main/index.ts`,
       `${DESKTOP}/main/account/lazy-account.ts`,

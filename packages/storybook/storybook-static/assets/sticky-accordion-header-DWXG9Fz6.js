@@ -1,1 +1,0 @@
-import{A as c}from"./accordion-V7tDW2yd.js";import{b as r}from"./iframe-D288tw9h.js";function i(e){return r(c.Header,{"data-component":"sticky-accordion-header",get classList(){return{"ui-sticky-accordion-header":!0,...e.classList,[e.class??""]:!!e.class}},get children(){return e.children}})}export{i as S};

@@ -74,12 +74,16 @@ describe("machine dispatch against the workspace runtime it reads", () => {
     const session = await dispatch.create({ workspaceId: "ws_machine" })
     expect(session.id).toMatch(/^ses_/)
 
-    const seen: Array<{ type: string; properties?: { part?: { text?: string } } }> = []
+    const seen: Array<{ type: string; properties?: { field?: string; delta?: string } }> = []
     for await (const event of dispatch.prompt(session.id, { messageID: "msg_machine", parts: [{ type: "text", text: "hi" }] })) {
       seen.push(event as (typeof seen)[number])
     }
     expect(seen.map((event) => event.type)).toContain("message.updated")
-    expect(seen.some((event) => event.type === "message.part.updated" && event.properties?.part?.text === "machine reply")).toBe(true)
+    const reply = seen
+      .filter((event) => event.type === "message.part.delta" && event.properties?.field === "text")
+      .map((event) => event.properties?.delta)
+      .join("")
+    expect(reply).toBe("machine reply")
     expect(seen.at(-1)?.type).toBe("session.idle")
   })
 })
