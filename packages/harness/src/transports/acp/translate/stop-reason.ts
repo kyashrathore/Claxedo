@@ -1,5 +1,6 @@
 import type { AgentRuntimeEvent } from "@claxedo/agent-runtime-contract"
 import type { StopReason } from "./types"
+
 export function translateStopReason(stopReason: StopReason, sessionId: string): AgentRuntimeEvent[] {
   if (stopReason === "refusal") {
     return [
