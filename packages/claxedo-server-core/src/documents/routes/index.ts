@@ -231,12 +231,12 @@ export function DocumentsRoutes<H extends DocumentHandle>(options: DocumentsRout
     .post("/:id/shares", async (context) => {
       const scope = await directScope(context.req.raw, options, "manage", context.req.param("id"), true)
       const body = await bodyAs(context.req.raw, CreateShareBody)
-      return context.json(await createDocumentShare(scope.principal, scope.entry.id, body), 201)
+      return context.json(await createDocumentShare(scope.principal, scope.entry, body), 201)
     })
     .delete("/:id/shares", async (context) => {
       const scope = await directScope(context.req.raw, options, "manage", context.req.param("id"), true)
       const body = await bodyAs(context.req.raw, RevokeShareBody)
-      await requireDocumentSharing(scope.principal.access).revoke(scope.entry.id, body.share_id)
+      await requireDocumentSharing(scope.principal.access).revoke(scope.principal, scope.entry, body.share_id)
       return context.body(null, 204)
     })
     .get("/:id", async (context) => {
