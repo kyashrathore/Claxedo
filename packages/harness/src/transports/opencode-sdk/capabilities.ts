@@ -22,9 +22,6 @@ export function openCodeCapabilities(models: readonly ModelEntry[]): TransportCa
     requests: { permissions: true, questions: true, elicitation: false },
     subagents: false,
     goals: { implemented: false, available: false, actions: [], recovery: "blocked", optionalFields: [] },
-    todos: false, history: "store", titles: "harness",
-    pluginIntake: { mcp: "config", skills: "skill-dirs" },
-    mcpTransports: { stdio: true, http: true, sse: true },
-    timing: { model: "next-turn", effort: "next-turn", permissionMode: "next-turn", credentials: "immediate" },
+    todos: false, history: "store",
   }
 }

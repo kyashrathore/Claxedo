@@ -45,10 +45,6 @@ export const FAKE_TRANSPORT_CAPABILITIES: TransportCapabilities = {
   goals: { implemented: false, available: false, unavailableReason: "fake transport", actions: [], optionalFields: [], recovery: "blocked" },
   todos: false,
   history: "store",
-  titles: "none",
-  pluginIntake: { mcp: "none", skills: "none" },
-  mcpTransports: { stdio: false, http: false, sse: false },
-  timing: { model: "next-turn", effort: "next-turn", permissionMode: "next-turn", credentials: "next-turn" },
 }
 
 export type FakeTurn = {

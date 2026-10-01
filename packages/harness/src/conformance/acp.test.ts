@@ -105,7 +105,7 @@ async function backend(kind: "process" | "websocket" | "streamable-http", restor
         }
       },
     } : {}),
-    expectedMcp: supportsMcpServers ? "session" : "none", textCommand: acpScriptToken("text"), permissionCommand: acpScriptToken("permission"),
+    credentialsAfterActiveTurns: true, textCommand: acpScriptToken("text"), permissionCommand: acpScriptToken("permission"),
     scriptThinking: async ({ text, reasoning }) => {
       await writeAcpScript(directory, "thinking", { steps: [{ kind: "reasoning", text: reasoning }, { kind: "text", text }] })
       return acpScriptToken("thinking")
@@ -1521,7 +1521,6 @@ test("ACP names a session through a throwaway session on the same agent", async 
     expect(prompts).toHaveLength(2)
     expect(prompts[1]?.params.sessionId).not.toBe(context.session.binding.upstreamSessionId)
     expect(JSON.stringify(prompts[0]?.params)).not.toContain("Generate a concise")
-    expect((await context.transport.capabilities({ directory: context.backend.directory, sessionId: "s1" })).titles).toBe("side-request")
     const events = []
     for await (const event of context.transport.send(context.session, context.turn("Reply with exactly this one token: PARITY_OK"), context.turnBroker())) events.push(event)
     expect(events.some((item) => item.event.type === "finish")).toBe(true)

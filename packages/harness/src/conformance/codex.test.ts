@@ -156,7 +156,6 @@ test("Codex names a session through an ephemeral read-only side thread and write
     expect(recorder.frames.find((frame) => frame.method === "thread/archive")?.params).toEqual({ threadId: titleTurn?.params?.threadId })
     await context.transport.naming!.rename!(context.session, "Renamed by test")
     expect(recorder.frames.find((frame) => frame.method === "thread/name/set")?.params).toEqual({ threadId: context.session.binding.upstreamSessionId, name: "Renamed by test" })
-    expect((await context.transport.capabilities({ directory: context.backend.directory })).titles).toBe("side-request")
   } finally { await context.close() }
 }, 90_000)
 

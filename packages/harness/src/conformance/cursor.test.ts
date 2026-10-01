@@ -39,7 +39,7 @@ async function backend(): Promise<CursorBackend> {
     harness: { id: "cursor", access: "native" }, model: { providerID: "cursor", modelID: "scripted" },
     credentials: { machineLoginAllowed: true, accountOwner: "fixture-owner", providers: { cursor: { baseUrl: server.url, placeholder: "cursor-conformance-placeholder", authMode: "bearer" } },
       secrets: {}, leaseGeneration: "conformance" },
-    owner: { kind: "machine-owner" }, expectedMcp: "session", textCommand: "CURSOR_SCRIPT:conformance",
+    owner: { kind: "machine-owner" }, credentialsAfterActiveTurns: true, textCommand: "CURSOR_SCRIPT:conformance",
     scriptThinking: ({ marker, text, reasoning }) => {
       server.script(marker, { steps: [{ kind: "thinking", text: reasoning, durationMs: 1200 }, { kind: "text", text }] })
       server.defaultScript(marker)
@@ -510,7 +510,6 @@ test("generateTitle runs one side request on a throwaway agent in the session's 
   state.server.script("title", { steps: [{ kind: "text", text: "Add leap-year tests" }] })
   const context = await setupConformance({ name: "title", backend: async () => state, makeTransport: transportFor(state) })
   try {
-    expect((await context.transport.capabilities({ directory: state.directory })).titles).toBe("side-request")
     state.server.defaultScript("title")
     const request = { directory: state.directory, system: "Name it", user: "User: add leap-year tests", signal: new AbortController().signal }
     expect(await context.transport.naming?.generateTitle?.(context.session, request)).toBe("Add leap-year tests")
@@ -726,7 +725,6 @@ test("a projected plugin reaches Cursor through a Claxedo home that mirrors the 
     const closeUnchanged = async () => { expect(await hashTree(personal)).toEqual(before); await state.close() }
     const context = await setupConformance({ name: "plugin", backend: async () => ({ ...state, projection, close: closeUnchanged }), makeTransport: transportFor(state) })
     try {
-      expect((await context.transport.capabilities({ directory: state.directory })).pluginIntake).toEqual({ mcp: "session", skills: "plugin-dir" })
       const [home] = await claxedoHomes(state)
       expect(home).toBeDefined()
       const installed = await managedPlugins(home!)

@@ -164,7 +164,7 @@ async function backend(): Promise<ClaudeBackend> {
     config: { harness, model, permissionMode: "default" }, alternateModel: { providerID: "anthropic", modelID: "sonnet" },
     owner: { kind: "person", userId: "owner" },
     sharedSender: { actor: { kind: "person", userId: "member" }, via: "relay", reissued: false },
-    harness: { id: "claude", access: "native" }, expectedMcp: "session",
+    harness: { id: "claude", access: "native" },
     model: { providerID: "anthropic", modelID: "default" },
     credentials: { machineLoginAllowed: true, accountOwner: "fixture-owner", providers: { anthropic: { baseUrl: server.url, placeholder: "claude-conformance-placeholder", authMode: "api-key" } },
       secrets: {}, leaseGeneration: "conformance" },

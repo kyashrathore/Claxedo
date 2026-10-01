@@ -11,9 +11,6 @@ export function codexCapabilities(models: readonly CodexModel[]): TransportCapab
     requests: { permissions: true, questions: true, elicitation: true },
     subagents: true,
     goals: { implemented: true, available: true, actions: ["pause", "resume", "delete"], recovery: "reconcile", optionalFields: ["tokenBudget", "tokensUsed", "timeUsedSeconds"] },
-    todos: true, history: "store", titles: "side-request",
-    pluginIntake: { mcp: "config", skills: "plugin-dir" },
-    mcpTransports: { stdio: true, http: true, sse: false },
-    timing: { model: "next-turn", effort: "next-turn", permissionMode: "next-turn", credentials: "after-active-turns" },
+    todos: true, history: "store",
   }
 }

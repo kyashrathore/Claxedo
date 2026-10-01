@@ -10,9 +10,7 @@ function capabilities(input: { permissions: boolean; questions: boolean; elicita
     modelSelection: { status: "optional" }, effortLevels: { status: "unsupported", models: [] }, instructionChannel: "prompt-prefix", configOwner: input.configOwner ?? "harness",
     requests: { permissions: input.permissions, questions: input.questions, elicitation: input.elicitation ?? false },
     subagents: input.subagents, goals: { implemented: false, available: false, unavailableReason: "none", actions: [], recovery: "blocked", optionalFields: [] },
-    todos: input.todos, history: input.history ?? "store", titles: "none",
-    pluginIntake: { mcp: "none", skills: "none" }, mcpTransports: { stdio: false, http: false, sse: false },
-    timing: { model: "next-turn", effort: "next-turn", permissionMode: "next-turn", credentials: "next-session" },
+    todos: input.todos, history: input.history ?? "store",
   }
 }
 

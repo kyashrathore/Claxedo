@@ -116,8 +116,6 @@ export class AcpTransport implements HarnessTransport {
 
   async capabilities(context: { sessionId?: string; directory: string }): Promise<TransportCapabilities> {
     const entry = context.sessionId ? this.entries.get(context.sessionId) : [...this.entries.values()].find((item) => item.session.directory === context.directory)
-    const declared = entry?.peer.handshake.agentCapabilities
-    const mcp = declared?.mcpCapabilities
     const groups = entry ? acpGroups(entry.peer.handshake) : undefined
     return {
       modelSelection: acpModelSelection(entry), effortLevels: acpEffortCatalog(entry),
@@ -125,11 +123,6 @@ export class AcpTransport implements HarnessTransport {
       ...acpDeclaredCapabilities,
       subagents: Boolean(entry && supportsAcpSubagents(entry.peer.handshake)),
       goals: groups?.goals ?? { implemented: false, available: false, actions: [], recovery: "blocked", optionalFields: [] },
-      titles: "side-request", pluginIntake: { mcp: this.connection.supportsMcpServers === false ? "none" : "session", skills: "none" },
-      mcpTransports: { stdio: this.connection.kind === "process" && this.connection.supportsMcpServers !== false,
-        http: this.connection.supportsMcpServers !== false && mcp?.http === true,
-        sse: this.connection.supportsMcpServers !== false && mcp?.sse === true },
-      timing: { model: "immediate", effort: "immediate", permissionMode: "immediate", credentials: "after-active-turns" },
     }
   }
 

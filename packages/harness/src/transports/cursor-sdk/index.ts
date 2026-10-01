@@ -35,9 +35,7 @@ function cursorCapabilities(models: readonly HostModel[] | undefined): Transport
     requests: { permissions: false, questions: false, elicitation: false },
     subagents: true,
     goals: { implemented: true, available: true, actions: [], recovery: "blocked", optionalFields: ["lastReason"] },
-    todos: true, history: "store", titles: "side-request",
-    pluginIntake: { mcp: "session", skills: "plugin-dir" }, mcpTransports: { stdio: true, http: true, sse: true },
-    timing: { model: "next-turn", effort: "next-turn", permissionMode: "next-turn", credentials: "after-active-turns" },
+    todos: true, history: "store",
   }
 }
 

@@ -66,10 +66,6 @@ export class PiRpcTransport implements HarnessTransport {
       requests: { permissions: false, questions: true, elicitation: false },
       subagents: false, goals: { implemented: false, available: false, actions: [], recovery: "blocked", optionalFields: [] },
       todos: false, history: "store" as const,
-      titles: "side-request" as const,
-      pluginIntake: { mcp: "session" as const, skills: "skill-dirs" as const },
-      mcpTransports: { stdio: true, http: true, sse: false },
-      timing: { model: "immediate" as const, effort: "immediate" as const, permissionMode: "immediate" as const, credentials: "after-active-turns" as const },
     }
   }
 

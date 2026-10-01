@@ -26,9 +26,7 @@ function capability(models?: readonly ModelInfo[]): TransportCapabilities {
     instructionChannel: "turn-system-prompt", configOwner: "runtime",
     requests: { permissions: true, questions: true, elicitation: true }, subagents: true,
     goals: { implemented: true, available: true, actions: [], recovery: "blocked", optionalFields: ["iteration", "lastReason"] },
-    todos: true, history: "store", titles: "harness",
-    pluginIntake: { mcp: "session", skills: "plugin-dir" }, mcpTransports: { stdio: true, http: true, sse: true },
-    timing: { model: "next-turn", effort: "next-turn", permissionMode: "next-turn", credentials: "next-turn" },
+    todos: true, history: "store",
   }
 }
 
@@ -133,7 +131,6 @@ export class ClaudeSdkTransport implements HarnessTransport {
     return rows.map((row) => ({ name: row.name, description: row.description, harnessPayload: row }))
   } }
 
-  readonly naming = {}
 
   async cancel(session: HarnessSession, turn: TurnRef, deadline: Deadline) {
     return this.turns.cancel(this.entry(session), turn, deadline)

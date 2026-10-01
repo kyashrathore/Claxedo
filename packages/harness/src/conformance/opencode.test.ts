@@ -34,7 +34,7 @@ async function backend(): Promise<OpenCodeBackend> {
   const rotated: Array<{ port: number; server: ScriptedServer }> = []
   let permissionPrimed = false
   return {
-    execution: "in-process", root, directory, server, expectedMcp: "config", get rotated() { return rotated.map((item) => item.server) },
+    execution: "in-process", root, directory, server, get rotated() { return rotated.map((item) => item.server) },
     harness: { id: "opencode", access: "native" }, model: { providerID: "proof", modelID: "proof" },
     credentials: { machineLoginAllowed: false, accountOwner: "fixture-owner", providers: { proof: { baseUrl: server.v1Url, placeholder: "opencode-placeholder-one", authMode: "api-key" } },
       secrets: {}, leaseGeneration: "one" },
