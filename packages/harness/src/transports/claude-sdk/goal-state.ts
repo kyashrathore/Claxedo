@@ -39,7 +39,8 @@ export function goalSessionStore(broker: SessionBroker, signal: AbortSignal, usa
           const id = message?.id
           const counts = asRecord(message?.usage)
           if (typeof id === "string" && counts) {
-            usage.observe({ upstreamSessionId: key.sessionId, subpath: key.subpath, id, usage: counts, ...(typeof message?.model === "string" ? { model: message.model } : {}) })
+            usage.observe({ parent_tool_use_id: null, subpath: key.subpath, session_id: key.sessionId,
+              message: { id, usage: counts, ...(typeof message?.model === "string" ? { model: message.model } : {}) } })
           }
         }
         if (signal.aborted) continue
