@@ -28,7 +28,7 @@ import {
   isStreamHostedOperation,
   resolveHostedOperation,
   type HostedOperationName,
-} from "./hosted-operations"
+} from "@claxedo/account-contract"
 import { fetchHosted } from "./hosted-transport"
 import type { CliCredentialFilePort } from "./cli-credential-file"
 import { readFiniteNumber, readRecord, readString } from "@claxedo/helpers/readers"

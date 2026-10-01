@@ -48,6 +48,13 @@
       "import": "./dist/client.mjs",
       "default": "./dist/client.mjs"
     },
+    "./file-index": {
+      "development": "./src/file-index.ts",
+      "bun": "./src/file-index.ts",
+      "types": "./dist/file-index.d.ts",
+      "import": "./dist/file-index.mjs",
+      "default": "./dist/file-index.mjs"
+    },
     "./host": {
       "development": "./src/host.ts",
       "bun": "./src/host.ts",

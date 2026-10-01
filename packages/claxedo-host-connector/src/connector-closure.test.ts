@@ -2,39 +2,21 @@ import { describe, expect, test } from "vitest"
 import { readFileSync, readdirSync, statSync } from "node:fs"
 import path from "node:path"
 
-/**
- * What Host Connector is allowed to reach.
- *
- * This package runs on the user's machine, sometimes headless on a box the
- * owner does not watch. Its whole security story is that it holds one signing
- * key and speaks one small protocol — so what it depends on IS the security
- * story, not an implementation detail.
- *
- * The rule is stricter than any other package's: no server code, no control
- * plane, no database, no HTTP framework. A connector that imported
- * `@claxedo/server` would put the hosted control plane's dependency tree on
- * every enrolled laptop, and a connector that imported a server framework
- * would be one refactor away from listening.
- *
- * Enforced by reading imports rather than by review. This package is small
- * enough today that the rule looks obvious; it is enforced now precisely
- * because that is when the enforcement is cheap.
- */
-
 const SRC = path.join(import.meta.dirname)
 
 function sourceFiles(dir = SRC): string[] {
   return readdirSync(dir).flatMap((entry) => {
     const file = path.join(dir, entry)
     if (statSync(file).isDirectory()) return sourceFiles(file)
-    if (!file.endsWith('.ts') || file.endsWith('.test.ts')) return []
+    if (!file.endsWith(".ts") || file.endsWith(".test.ts")) return []
     return [file]
   })
 }
 
 /** Every import specifier in the package's production sources. */
 function importSpecifiers() {
-  const pattern = /(?:^|[\s;])(?:import|export)\b[^'"`;()]*?from\s*["']([^"']+)["']|(?:^|[\s;])import\s*["']([^"']+)["']|import\s*\(\s*["']([^"']+)["']\s*\)/g
+  const pattern =
+    /(?:^|[\s;])(?:import|export)\b[^'"`;()]*?from\s*["']([^"']+)["']|(?:^|[\s;])import\s*["']([^"']+)["']|import\s*\(\s*["']([^"']+)["']\s*\)/g
   return sourceFiles().flatMap((file) => {
     const text = readFileSync(file, "utf8")
     return [...text.matchAll(pattern)]
@@ -50,11 +32,11 @@ function externalImports() {
 }
 
 describe("Host Connector's dependency closure", () => {
-  test("imports no first-party package at all", () => {
-    // Not "no server package" — none. Every Claxedo package it could import
-    // pulls a tree the connector has no use for, and the protocol it speaks is
-    // three signed strings.
-    const offenders = externalImports().filter((entry) => entry.specifier.startsWith("@claxedo/"))
+  test("imports only the machine wire contract from first-party packages", () => {
+    const allowed = new Set(["@claxedo/account-contract/machine", "@claxedo/account-contract/machine-seal"])
+    const offenders = externalImports().filter(
+      (entry) => entry.specifier.startsWith("@claxedo/") && !allowed.has(entry.specifier),
+    )
 
     expect(offenders).toEqual([])
   })
@@ -89,20 +71,19 @@ describe("Host Connector's dependency closure", () => {
     )
 
     expect(offenders).toEqual([])
-    expect(externalImports().filter((entry) => entry.file === "host-state-node.ts").map((entry) => entry.specifier)).toEqual([
-      "node:fs/promises",
-    ])
+    expect(
+      externalImports()
+        .filter((entry) => entry.file === "host-state-node.ts")
+        .map((entry) => entry.specifier),
+    ).toEqual(["node:fs/promises"])
   })
 
-  test("has no runtime dependencies declared", () => {
-    // The closure above is about what the source imports. This is about what
-    // installing the package would pull, and they can disagree — a dependency
-    // added "for later" is one an audit has to explain.
+  test("declares only the shared wire contract as a runtime dependency", () => {
     const pkg = JSON.parse(readFileSync(path.join(SRC, "..", "package.json"), "utf8")) as {
       dependencies?: Record<string, string>
     }
 
-    expect(Object.keys(pkg.dependencies ?? {})).toEqual([])
+    expect(pkg.dependencies).toEqual({ "@claxedo/account-contract": "workspace:*" })
   })
 
   test("the scanner actually reads this package's imports", () => {

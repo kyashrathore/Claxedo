@@ -38,9 +38,9 @@ function identity(
   }
 }
 
-function relayed(role: NonNullable<RelayHostAuthContext["relayHostAuth"]>["role"] = "editor"): PtyStreamAccess {
+function relayed(role: NonNullable<RelayHostAuthContext["relayHostAuth"]>["role"] = "editor", sessionScope?: string): PtyStreamAccess {
   return ptyStreamAccess({
-    identity: identity(role),
+    identity: { ...identity(role), ...(sessionScope ? { session_id: sessionScope } : {}) },
     authorization: "Bearer relay-token",
     method: "GET",
     path: "/pty_1/connect",
@@ -476,11 +476,11 @@ describe("a grant taken away while the socket is open", () => {
 })
 
 describe("admission before the upgrade", () => {
-  test("a workspace viewer is refused a terminal whatever the session says", async () => {
+  test("a token scoped to one session is refused a terminal, even that session's", async () => {
     const { policy, state } = authority()
-    const admission = await authorizePtyAttach({ policy, access: relayed("viewer"), info })
+    const admission = await authorizePtyAttach({ policy, access: relayed("viewer", info.sessionId), info })
 
-    expect(refusalOf(admission)).toMatchObject({ status: 403, code: "relay_role_denied" })
+    expect(refusalOf(admission)).toMatchObject({ status: 403, code: "relay_scope_denied" })
     expect(state.calls).toEqual([])
     expect(state.authorizeCalls).toEqual([])
   })

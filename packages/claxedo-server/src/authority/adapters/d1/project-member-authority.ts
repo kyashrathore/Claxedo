@@ -9,13 +9,11 @@ import {
 import {
   accessAuditStatement,
   D1AccessAuthorityError,
-  isActiveOrgMember,
   requireText,
   type AccessPrincipal,
-  type BoundSql,
   type D1AccessContext,
 } from "./access-context"
-import { activeOrgMemberSql, orgRoleRankSql, PROJECT_ACCESS_SQL, projectRoleRankSql, rankRole } from "./project-role"
+import { may, maySql, orgMemberSql, orgRoleRankSql, rankRole, readProjectRole, roleRank, type BoundSql } from "./authorization"
 
 export const D1_PROJECT_MEMBER_AUTHORITY_METHODS = [
   "grantProjectMember",
@@ -62,7 +60,7 @@ export class D1ProjectMemberAuthority implements D1ProjectMemberAuthorityPort {
       .bind(userId)
       .first<{ user_id: string }>()
     if (!target) throw new D1AccessAuthorityError("project_member_not_found")
-    if (!(await isActiveOrgMember(this.database, userId, project.org_id))) {
+    if (!(await may(this.database, { userId }, "member", { kind: "org", orgId: project.org_id }))) {
       throw new D1AccessAuthorityError("project_member_org_membership_required")
     }
     const now = this.context.now()
@@ -148,13 +146,13 @@ export class D1ProjectMemberAuthority implements D1ProjectMemberAuthorityPort {
           'owner' as role, 'owner' as source
         from projects project
         join users person on person.user_id = project.owner_user_id and person.state = 'active'
-        where project.project_id = ?1 and ${activeOrgMemberSql("project.org_id", "project.owner_user_id")}
+        where project.project_id = ?1 and ${orgMemberSql("project.org_id", "project.owner_user_id")}
         union all
         select 'user', member.user_id, null, null, member.role, 'member'
         from project_memberships member
         join users person on person.user_id = member.user_id and person.state = 'active'
         where member.project_id = ?1 and member.revoked_at is null and member.role <> 'owner'
-          and ${activeOrgMemberSql("?2", "member.user_id")}
+          and ${orgMemberSql("?2", "member.user_id")}
         union all
         select 'team', null, team.team_id, team.name, team_grant.role, 'team:' || team.team_id
         from team_project_grants team_grant
@@ -176,13 +174,10 @@ export class D1ProjectMemberAuthority implements D1ProjectMemberAuthorityPort {
   /** The live project, when the caller holds admin rank on it: organization owners and admins, and project admins. */
   private async adminProject(who: AccessPrincipal, value: string): Promise<Project> {
     const projectId = requireText(value, "projectId")
-    const access = await this.database
-      .prepare(PROJECT_ACCESS_SQL)
-      .bind(who.userId, projectId, null)
-      .first<{ org_id: string; role_rank: number }>()
-    if (!access || access.role_rank < 1) throw new D1AccessAuthorityError("project_not_found")
-    this.context.assertOrganizationAllowed(access.org_id)
-    if (access.role_rank < 3) throw new D1AccessAuthorityError("project_admin_required")
+    const access = await readProjectRole(this.database, who.userId, { kind: "project", projectId })
+    if (!access) throw new D1AccessAuthorityError("project_not_found")
+    this.context.assertOrganizationAllowed(access.orgId)
+    if (roleRank(access.role) < roleRank("admin")) throw new D1AccessAuthorityError("project_admin_required")
     const project = await this.database
       .prepare(`select project_id, org_id, owner_user_id from projects where project_id = ? and deleted_at is null`)
       .bind(projectId)
@@ -199,24 +194,18 @@ export class D1ProjectMemberAuthority implements D1ProjectMemberAuthorityPort {
    * writes nothing, its audit row included.
    */
   private changeGuard(who: AccessPrincipal, projectId: string, userId: string, condition: BoundSql): BoundSql {
+    const administers = maySql(who, "admin", { kind: "project", alias: "guard_project" })
     return {
       sql: `exists (
         select 1 from projects guard_project
-        join (select ? as user_id) guard_caller
         join users guard_target on guard_target.user_id = ? and guard_target.state = 'active'
         where guard_project.project_id = ? and guard_project.deleted_at is null
           and guard_project.owner_user_id <> guard_target.user_id
-          and ${activeOrgMemberSql("guard_project.org_id", "guard_caller.user_id")}
-          and ${activeOrgMemberSql("guard_project.org_id", "guard_target.user_id")}
-          and ${projectRoleRankSql({
-            user: "guard_caller.user_id",
-            projectId: "guard_project.project_id",
-            orgId: "guard_project.org_id",
-            ownerUserId: "guard_project.owner_user_id",
-          })} >= 3
+          and ${administers.sql}
+          and ${orgMemberSql("guard_project.org_id", "guard_target.user_id")}
           ${condition.sql}
       )`,
-      bind: [who.userId, userId, projectId, ...condition.bind],
+      bind: [userId, projectId, ...administers.bind, ...condition.bind],
     }
   }
 

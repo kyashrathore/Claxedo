@@ -59,21 +59,6 @@ export function localHostIdentity(): Promise<LocalHostIdentity> {
   return identityPromise
 }
 
-/**
- * Machine-wide enrollment payload (v1). The literal mirrors the authority
- * adapters' `hostEnrollmentPayload` byte for byte — deliberately copied rather
- * than imported so the local host machinery never depends on an authority
- * adapter module.
- */
-export function hostEnrollmentPayload(input: { hostId: string; requestId: string; nonce: string }) {
-  return [
-    "claxedo.host-enrollment.enroll.v1",
-    `host_id=${input.hostId}`,
-    `request_id=${input.requestId}`,
-    `nonce=${input.nonce}`,
-  ].join("\n")
-}
-
 export function signHostPayload(identity: LocalHostIdentity, payload: string) {
   return signData("sha256", Buffer.from(payload), {
     key: createPrivateKey({ key: identity.privateKey, format: "jwk" }),

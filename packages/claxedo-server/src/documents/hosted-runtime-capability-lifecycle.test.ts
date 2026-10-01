@@ -1,3 +1,4 @@
+import { documentAuthorizedFetch, documentTestAccess } from "../test-support/document-access"
 import { exportPKCS8, exportSPKI, generateKeyPair } from "jose"
 import fs from "node:fs/promises"
 import os from "node:os"
@@ -16,6 +17,7 @@ import { fetchUrl, fetchBodyText } from "../test-support/fetch-calls"
 const entry = {
   id: "document_1",
   org_id: "org_1",
+  creator_id: "user_1",
   project_id: "project_1",
   display_name: "Plan",
   origin_kind: "managed",
@@ -46,6 +48,7 @@ describe("hosted runtime capability lifecycle", () => {
     let capability: Awaited<ReturnType<typeof mintDocumentSessionToken>> | undefined
     const backend = createHostedDocumentsBackend(memoryBucket(), {
       env,
+      access: documentTestAccess,
       resolveSessionWorkspace: async () => "ws_1",
       runtime: {
         open: async (input) => {
@@ -111,7 +114,7 @@ describe("hosted runtime capability lifecycle", () => {
     const rejectActivation = Promise.withResolvers<void>()
     const callback = vi.fn(async () => Response.json({ version: "v2" }))
     const originalFetch = globalThis.fetch
-    globalThis.fetch = callback as unknown as typeof fetch
+    globalThis.fetch = documentAuthorizedFetch(callback)
     let hydratedPath = ""
     let capabilityToken = ""
     const runtime = RuntimeDocumentHydrationRoutes({
@@ -139,6 +142,7 @@ describe("hosted runtime capability lifecycle", () => {
     }
     const backend = createHostedDocumentsBackend(memoryBucket(), {
       env,
+      access: documentTestAccess,
       resolveSessionWorkspace: async () => "ws_1",
       runtime: createHostedDocumentRuntimeBroker(runtimeServices(), env, relay),
     })

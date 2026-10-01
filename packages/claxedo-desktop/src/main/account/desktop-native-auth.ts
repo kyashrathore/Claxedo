@@ -86,13 +86,22 @@ export async function revocationRejectedTheToken(response: Response) {
   )
 }
 
+/**
+ * Node's fetch rejects every network failure as `TypeError("fetch failed")`
+ * and names the socket's failure only on `cause.code`: a system errno, or
+ * undici's own code when the peer closed the socket or the connect timed out.
+ */
+const CONNECTION_FAILURE_CODES = new Set([
+  "ECONNRESET", "ECONNREFUSED", "EPIPE", "ETIMEDOUT", "EAI_AGAIN", "UND_ERR_SOCKET", "UND_ERR_CONNECT_TIMEOUT",
+])
+
 /** A failure before any HTTP response: the socket, not the server, said no. */
 function isConnectionLevelFailure(error: unknown): boolean {
   if (!(error instanceof Error)) return false
   if (error.name === "AbortError" || error.name === "TimeoutError") return false
   const cause = (error as { cause?: unknown }).cause
   const code = cause && typeof cause === "object" && "code" in cause ? String((cause as { code: unknown }).code) : ""
-  return error.message.includes("fetch failed") || /ECONNRESET|ECONNREFUSED|EPIPE|ETIMEDOUT|EAI_AGAIN/.test(code + error.message)
+  return CONNECTION_FAILURE_CODES.has(code)
 }
 
 export function createDesktopNativeAuth(input: {
@@ -137,11 +146,7 @@ export function createDesktopNativeAuth(input: {
       try {
         response = await request()
       } catch (first) {
-        // One retry on a fresh connection. The edge in front of the control
-        // plane occasionally resets a warm connection (ECONNRESET, "fetch
-        // failed") and the very next attempt succeeds; without this, that one
-        // reset failed the session renewal and every hosted operation behind
-        // it for the whole refresh cooldown.
+        // The edge can reset a reused connection while a fresh connection succeeds.
         if (!isConnectionLevelFailure(first)) throw first
         response = await request()
       }

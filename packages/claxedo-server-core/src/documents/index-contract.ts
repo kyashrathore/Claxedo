@@ -6,6 +6,7 @@ const DocumentIndexCommonSchema = z.object({
   id: NonBlankStringSchema,
   org_id: NonBlankStringSchema,
   project_id: NonBlankStringSchema,
+  creator_id: NonBlankStringSchema.nullish(),
   display_name: NonBlankStringSchema,
   placement_kind: z.enum(["local", "hosted"]),
   placement_id: NonBlankStringSchema,

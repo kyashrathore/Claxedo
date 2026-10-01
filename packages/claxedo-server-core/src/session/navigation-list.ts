@@ -1,3 +1,4 @@
+import { PublicApiError } from "../platform/errors/public-api-error"
 import { jsonRecord } from "@claxedo/server-core/platform/runtime/lib/json"
 import { trimToUndefined } from "@claxedo/helpers/string"
 import { asRecordOrEmpty } from "@claxedo/helpers/guards"
@@ -392,7 +393,7 @@ function cursorOfQuery(query: SessionListQuery): SessionOrderKey | undefined {
   if (query.after) return query.after
   if (!query.cursor) return undefined
   const cursor = decodeCursor(query.cursor)
-  if (cursor.query !== querySignature(query)) throw new Error("invalid_session_list_cursor")
+  if (cursor.query !== querySignature(query)) throw new PublicApiError("invalid_session_list_cursor", "invalid_session_list_cursor")
   return cursor
 }
 
@@ -414,7 +415,7 @@ function decodeCursor(value: string): CursorShape {
     typeof parsed.sessionRef !== "string" ||
     ("lastHumanTurnAt" in parsed && typeof parsed.lastHumanTurnAt !== "number")
   ) {
-    throw new Error("invalid_session_list_cursor")
+    throw new PublicApiError("invalid_session_list_cursor", "invalid_session_list_cursor")
   }
   return parsed
 }
@@ -426,7 +427,7 @@ export function encodeSessionListAfter(key: SessionOrderKey) {
 function afterParam(value: string | null, withCursor: boolean): { after?: SessionOrderKey } {
   const raw = trimToUndefined(value)
   if (!raw) return {}
-  if (withCursor) throw new Error("invalid_session_list_cursor")
+  if (withCursor) throw new PublicApiError("invalid_session_list_cursor", "invalid_session_list_cursor")
   const parsed = parseCursorJson(raw)
   if (
     !parsed ||
@@ -436,7 +437,7 @@ function afterParam(value: string | null, withCursor: boolean): { after?: Sessio
     typeof parsed.sessionRef !== "string" ||
     ("lastHumanTurnAt" in parsed && typeof parsed.lastHumanTurnAt !== "number")
   ) {
-    throw new Error("invalid_session_list_cursor")
+    throw new PublicApiError("invalid_session_list_cursor", "invalid_session_list_cursor")
   }
   return { after: sessionOrderKey(parsed) }
 }
@@ -445,7 +446,7 @@ function parseCursorJson(value: string) {
   try {
     return JSON.parse(Buffer.from(value, "base64url").toString("utf8"))
   } catch {
-    throw new Error("invalid_session_list_cursor")
+    throw new PublicApiError("invalid_session_list_cursor", "invalid_session_list_cursor")
   }
 }
 

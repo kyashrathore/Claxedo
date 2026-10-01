@@ -1,3 +1,4 @@
+import { documentTestAccess } from "../../../test-support/document-access"
 import { describe, expect, test } from "vitest"
 import { createHostedDocumentIndex } from "./index"
 import {
@@ -64,6 +65,7 @@ function entry(position: number, overrides: Partial<DocumentIndexEntry> = {}) {
   return {
     id: `document_${position}`,
     org_id: "org_1",
+    creator_id: "creator",
     project_id: "project_1",
     display_name: `Doc ${position}`,
     origin_kind: "managed",
@@ -463,11 +465,13 @@ describe("Listing bound", () => {
 
     const service = createDocumentsService({
       index: truncating,
+      access: documentTestAccess(truncating),
       workspace: {} as never,
       managedRelativePath: () => "document_1/doc.md",
       placement: "hosted",
     } as never)
-    await expect(service.listPage(scope, "active")).resolves.toMatchObject({ truncated: true })
+    const creator = { ...scope, actor: { type: "user", id: "creator" } } as const
+    await expect(service.listPage(creator, "active")).resolves.toMatchObject({ truncated: true })
 
     // A backend that always enumerates fully has no listPage; the service must not claim truncation.
     const complete = createHostedDocumentIndex(countingStore().store)
@@ -475,11 +479,12 @@ describe("Listing bound", () => {
     const withoutListPage = { ...complete, listPage: undefined }
     const plain = createDocumentsService({
       index: withoutListPage,
+      access: documentTestAccess(withoutListPage),
       workspace: {} as never,
       managedRelativePath: () => "document_1/doc.md",
       placement: "hosted",
     } as never)
-    await expect(plain.listPage(scope, "active")).resolves.toMatchObject({ truncated: false })
+    await expect(plain.listPage(creator, "active")).resolves.toMatchObject({ truncated: false })
   })
 
   test("a listing that fits the bound is not marked truncated", async () => {

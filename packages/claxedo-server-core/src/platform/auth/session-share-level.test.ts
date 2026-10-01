@@ -8,6 +8,10 @@ import {
 } from "./session-share-level"
 
 describe("the level a share carries", () => {
+  test("an invalid requested level carries a typed refusal", () => {
+    expect(() => requestedSessionShareLevel("broadcast"))
+      .toThrowError(expect.objectContaining({ code: "session_share_level_invalid", status: 400, retryable: false }))
+  })
   test("a request that names no level asks for the narrower one", () => {
     expect(requestedSessionShareLevel(undefined)).toBe("follow")
     expect(requestedSessionShareLevel(null)).toBe("follow")

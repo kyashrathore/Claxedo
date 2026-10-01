@@ -1,4 +1,5 @@
 import { createAttempts, type Attempts, type MaybePromise } from "./attempts.js"
+import { asRecord } from "@claxedo/helpers/guards"
 import type { IntegrationRegistry } from "./registry.js"
 import { ConnectionTokenError, createTokenService } from "./tokens.js"
 import {
@@ -555,7 +556,7 @@ export function createConnectionsService(deps: {
           repositories: await codeHost.listRepositories(token.response.fields ?? row.fields, token.response.token),
         }
       } catch (error) {
-        const code = error instanceof Error && error.message === "github_repositories_unauthorized"
+        const code = asRecord(error)?.code === "repository_provider_unauthorized"
           ? "repository_provider_unauthorized"
           : "repository_provider_unavailable"
         return { ok: false, status: 502, code }

@@ -41,4 +41,19 @@ describe("embedded relay host auth stamp", () => {
     expect(parseEmbeddedRelayHostAuthHeader(JSON.stringify(auth))).toEqual(auth)
     expect(EMBEDDED_RELAY_HOST_AUTH_HEADER).toBe("x-claxedo-embedded-relay-host-auth")
   })
+
+  test("carries the one session a share holder's token reaches, and refuses an empty scope", () => {
+    const auth = embeddedRelayHostAuthFromActor({
+      actorId: "issuer|user_share",
+      actorKind: "human",
+      actorPublicId: "usr_share",
+      actorName: "Share",
+      orgId: "org_1",
+      role: "viewer",
+      sessionId: "ses_shared",
+    }, "ws_1")
+    expect(auth.session_id).toBe("ses_shared")
+    expect(parseEmbeddedRelayHostAuthHeader(JSON.stringify(auth))).toEqual(auth)
+    expect(parseEmbeddedRelayHostAuthHeader(JSON.stringify({ ...auth, session_id: " " }))).toBeUndefined()
+  })
 })

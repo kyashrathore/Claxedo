@@ -1,6 +1,7 @@
 import type { RelayTokenInput } from "../../adapters/relay/index"
 import { CONTROL_PLANE_RUNTIME_ACTOR } from "../../platform/auth/runtime-actor"
-import { jsonRecord } from "../../platform/runtime/lib/json"
+import { decodeApiError } from "@claxedo/helpers/api-error"
+import { ClaxedoError } from "../../platform/errors/base"
 import { normalizeClaxedoRegion, type ClaxedoRegion } from "../../platform/runtime/region/index"
 import type { SandboxReadyTarget } from "../../sandbox/manager-port"
 import type { Workspace } from "../store/index"
@@ -42,26 +43,19 @@ export type WorkspaceRuntimeClient = {
   requestGeneration(generation: RuntimeGeneration, path: string, init?: RequestInit): Promise<Response>
 }
 
-export class WorkspaceRuntimeRequestError extends Error {
-  readonly status: number | undefined
-  readonly code: string | undefined
+export class WorkspaceRuntimeRequestError extends ClaxedoError {
   readonly operation: string
-  readonly retriable: boolean
 
   constructor(input: {
     operation: string
     message: string
     status?: number
     code?: string
-    retriable?: boolean
+    retryable?: boolean
     cause?: unknown
   }) {
-    super(input.message, input.cause === undefined ? undefined : { cause: input.cause })
-    this.name = "WorkspaceRuntimeRequestError"
+    super({ ...input, code: input.code ?? "workspace_runtime_request_failed" })
     this.operation = input.operation
-    this.status = input.status
-    this.code = input.code
-    this.retriable = input.retriable ?? false
   }
 }
 
@@ -70,14 +64,14 @@ export async function workspaceRuntimeRequestError(
   response: Response,
 ): Promise<WorkspaceRuntimeRequestError> {
   const body: unknown = await response.json().catch(() => undefined)
-  const error = jsonRecord(jsonRecord(body)?.error)
-  const code = typeof error?.code === "string" ? error.code : undefined
-  const detail = typeof error?.message === "string" ? error.message : undefined
+  const error = decodeApiError(response.status, body)
+  const code = error?.code
+  const detail = error?.message
   return new WorkspaceRuntimeRequestError({
     operation,
     status: response.status,
     ...(code ? { code } : {}),
-    retriable: response.status >= 500,
+    retryable: error?.retryable ?? false,
     message: detail
       ? `workspace-runtime ${operation} failed: ${detail}`
       : `workspace-runtime ${operation} failed with status ${response.status}`,
@@ -129,7 +123,7 @@ export function createWorkspaceRuntimeClient(input: {
         operation: "resolve",
         status: 503,
         code: "sandbox_provisioning",
-        retriable: true,
+        retryable: true,
         message: `sandbox provisioning; retry after ${result.retryAfterMs}ms`,
       })
     }
@@ -138,7 +132,7 @@ export function createWorkspaceRuntimeClient(input: {
       operation: "resolve",
       status: 503,
       code: "sandbox_unavailable",
-      retriable: true,
+      retryable: true,
       message: reason ?? `sandbox unavailable: ${ws.id}`,
     })
   }

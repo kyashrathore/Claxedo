@@ -16,7 +16,6 @@ import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/
 import type { AuthIdentity, ControlPlanePrincipal } from "@claxedo/server-core/platform/auth/authentication"
 
 import { D1WorkspaceAuthority } from "./workspace-authority"
-import { D1OrgMemberAuthority } from "./org-member-authority"
 import { D1ChannelRuntimeAuthority } from "./channel-runtime-authority"
 import { controlPlaneMigrationPath, controlPlaneMigrations } from "../../../test-support/control-plane-migrations"
 
@@ -24,6 +23,7 @@ const BOUNDARY_MIGRATION = "0038_channel_identity_version.sql"
 const ORG_KIND_MIGRATION = "0045_org_scope_means_org.sql"
 const ALL_MIGRATIONS = controlPlaneMigrations()
 const BEFORE_BOUNDARY = ALL_MIGRATIONS.slice(0, ALL_MIGRATIONS.indexOf(BOUNDARY_MIGRATION))
+const FROM_BOUNDARY = ALL_MIGRATIONS.slice(ALL_MIGRATIONS.indexOf(BOUNDARY_MIGRATION))
 
 const active: Miniflare[] = []
 
@@ -136,11 +136,8 @@ async function deployment(migrations: readonly string[]) {
   } else {
     await createPreOrgKindOrganization(context.database, handleHolder)
   }
-  await new D1OrgMemberAuthority(context.workspace.accessContext()).addOrgMember(handleHolder, {
-    orgId: "org_acme",
-    userPublicId: accountHolder.principal!.userId,
-    role: "admin",
-  })
+  await context.database.prepare(`insert into org_memberships (org_id, user_id, role, created_at, updated_at, revoked_at)
+    values ('org_acme', ?, 'admin', 1, 1, null)`).bind(accountHolder.principal!.userId).run()
   const workspace = await context.workspace.createWorkspace(handleHolder, {
     workspaceId: "ws_main",
     orgId: "org_acme",
@@ -292,7 +289,7 @@ describe("channel identity binding version boundary", () => {
        from workspaces where workspace_id = 'ws_main'`,
     ).bind(context.handleHolder.principal!.actorId, context.handleHolder.principal!.userId).run()
 
-    await apply(context.database, [BOUNDARY_MIGRATION])
+    await apply(context.database, FROM_BOUNDARY)
 
     // The recorded credential outlives the boundary — nothing sweeps the
     // table — so the version check has to hold on every path that reads a

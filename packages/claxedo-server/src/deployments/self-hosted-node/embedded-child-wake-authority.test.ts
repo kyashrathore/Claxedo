@@ -18,7 +18,6 @@ import {
   reserveChild,
   seedFinishedChildStore,
   seedWakeWorkspace,
-  setShare,
   storeBackedHostOptions,
   wake,
   type WakeAuthority,
@@ -32,10 +31,10 @@ import { embeddedManagedPrivateSessionPolicy } from "./app"
  * request that created the child returned, and after a restart with nothing
  * left in memory. What it runs as comes back out of the runtime store — the
  * actor and the deferred grant the create minted while that request could
- * still prove the parent turn — and the authority re-decides it then: a share
- * revoked in between is what stops the child's text from reaching the parent,
- * and the turn the authority does admit is the producer row the parent's
- * transcript is resolved against.
+ * still prove the parent turn — and the authority re-decides it then: a
+ * workspace deleted in between is what stops the child's text from reaching
+ * the parent, and the turn the authority does admit is the
+ * producer row the parent's transcript is resolved against.
  */
 
 const previousKeys = {
@@ -62,31 +61,32 @@ afterAll(() => {
 afterEach(() => lifecycle.cleanup())
 
 /**
- * The state the create route leaves behind once P-92's parent-turn admission
- * has passed: Bob's child reserved and registered under Alice's parent.
+ * The state the create route leaves behind once the parent-turn admission has
+ * passed: Alice's child reserved and registered under her parent, which Bob
+ * holds a share on.
  */
 async function seed(parentShare: "follow" | "send") {
   const workspace = await seedWakeWorkspace(parentShare)
-  await reserveChild(workspace.authority, workspace.bobRuntime)
-  await registerChild(workspace.authority, workspace.bobRuntime)
+  await reserveChild(workspace.authority, workspace.aliceRuntime)
+  await registerChild(workspace.authority, workspace.aliceRuntime)
   return workspace
 }
 
 /**
- * The grant the create route minted for Bob's child while his request could
+ * The grant the create route minted for Alice's child while her request could
  * still prove `agent_turn` on the parent — the same row and token the embedded
  * policy's `grantTurn` produces.
  */
-async function childWakeGrant(authority: WakeAuthority, bobRuntime: PrivateSessionRuntimePrincipal, orgId: string) {
+async function childWakeGrant(authority: WakeAuthority, creator: PrivateSessionRuntimePrincipal, orgId: string) {
   const granted = await authority.grantSessionTurn({
-    ...bobRuntime,
+    ...creator,
     sessionId: PARENT,
     workspaceId: WORKSPACE,
     intent: "child_completion",
     subjectSessionId: CHILD,
     registrationOperationId: CHILD_OPERATION,
   })
-  return (await mintDeferredTurnGrant(deferredTurnGrantClaims(bobRuntime, orgId, granted), process.env)).grant
+  return (await mintDeferredTurnGrant(deferredTurnGrantClaims(creator, orgId, granted), process.env)).grant
 }
 
 /**
@@ -104,25 +104,29 @@ function restartedHost(store: RuntimeStore, authority: unknown) {
   return { host, prompts }
 }
 
+test("a send grantee may not create a child under the parent it can prompt", async () => {
+  const { authority, bobRuntime } = await seedWakeWorkspace("send")
+  await expect(reserveChild(authority, bobRuntime)).rejects.toMatchObject({ status: 403 })
+})
+
 test("a wake recovered after restart redeems the grant its create minted, runs as that actor, and its transcript resolves to that actor", async () => {
-  const { root, authority, seeded, alice, bob, bobRuntime, orgId } = await seed("send")
-  const grant = await childWakeGrant(authority, bobRuntime, orgId)
-  const storeRoot = seedFinishedChildStore(root, { actorId: bob.user.tokenIdentifier, orgId, grant })
+  const { root, authority, seeded, alice, aliceRuntime, orgId } = await seed("send")
+  const grant = await childWakeGrant(authority, aliceRuntime, orgId)
+  const storeRoot = seedFinishedChildStore(root, { actorId: alice.user.tokenIdentifier, orgId, grant })
   const store = reopened(storeRoot)
-  expect(store.subagentOrigin(PARENT, "subagent_wake")).toMatchObject({ actor: { actorId: bob.user.tokenIdentifier }, grant })
+  expect(store.subagentOrigin(PARENT, "subagent_wake")).toMatchObject({ actor: { actorId: alice.user.tokenIdentifier }, grant })
   const { host, prompts } = restartedHost(store, authority)
 
   await wake(host)
 
   expect(prompts).toEqual([{ sessionId: PARENT, messageId: WAKE_TURN }])
   const admitted = producers(seeded)
-  expect(admitted).toMatchObject([{ session_id: PARENT, turn_id: WAKE_TURN, actor_id: bob.user.tokenIdentifier }])
+  expect(admitted).toMatchObject([{ session_id: PARENT, turn_id: WAKE_TURN, actor_id: alice.user.tokenIdentifier }])
   expect(seeded().prepare(`SELECT redeemed_turn_id FROM session_turn_grants`).all()).toEqual([{ redeemed_turn_id: WAKE_TURN }])
   expect(store.listSubagents(PARENT)).toMatchObject([{ wake: "delivered" }])
 
   // The durable transcript only accepts a user message the authority admitted
-  // a producer for, and attributes it to that producer rather than to whoever
-  // is syncing.
+  // a producer for, and attributes it to that producer.
   await expect(authority.syncSessionMessages(alice, {
     updatedAt: Date.now(),
     sessionId: PARENT,
@@ -132,14 +136,14 @@ test("a wake recovered after restart redeems the grant its create minted, runs a
     messages: [{ id: WAKE_TURN, role: "user", sessionID: PARENT, parts: [{ type: "text", text: "Subagent finished." }] }],
   })).resolves.toMatchObject({ ok: true })
   expect(seeded().prepare(`SELECT author_actor_id FROM session_messages WHERE message_id = ?`).get(WAKE_TURN))
-    .toEqual({ author_actor_id: bob.user.tokenIdentifier })
+    .toEqual({ author_actor_id: alice.user.tokenIdentifier })
 })
 
-test("a wake whose actor lost the parent share after the grant was minted is refused, leaving no prompt and no producer", async () => {
-  const { root, authority, seeded, alice, bob, bobRuntime, orgId } = await seed("send")
-  const grant = await childWakeGrant(authority, bobRuntime, orgId)
-  const storeRoot = seedFinishedChildStore(root, { actorId: bob.user.tokenIdentifier, orgId, grant })
-  await setShare(authority, alice, bob, null)
+test("a wake whose workspace was deleted after the grant was minted is refused, leaving no prompt and no producer", async () => {
+  const { root, authority, seeded, alice, aliceRuntime, orgId } = await seed("send")
+  const grant = await childWakeGrant(authority, aliceRuntime, orgId)
+  const storeRoot = seedFinishedChildStore(root, { actorId: alice.user.tokenIdentifier, orgId, grant })
+  await authority.deleteWorkspace(alice, { workspaceId: WORKSPACE })
   const store = reopened(storeRoot)
   const { host, prompts } = restartedHost(store, authority)
 

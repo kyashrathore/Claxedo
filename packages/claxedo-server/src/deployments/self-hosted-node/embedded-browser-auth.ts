@@ -1,5 +1,5 @@
 import type { MiddlewareHandler } from "hono"
-import type { AuthAdapterDescriptor } from "@claxedo/server-core/platform/auth/authentication"
+import type { AuthAdapterDescriptor } from "@claxedo/account-contract/auth"
 import { browserAuthHttpSecurity } from "@claxedo/server-core/platform/http/browser-auth-security"
 import { BETTER_AUTH_NATIVE_SCOPES, betterAuthIssuer, betterAuthNativeRevocation } from "../../platform/auth/better-auth-d1-foundation"
 import { BETTER_AUTH_CLI_CLIENT_ID, BETTER_AUTH_DESKTOP_CLIENT_ID } from "../../platform/auth/better-auth-native-clients"

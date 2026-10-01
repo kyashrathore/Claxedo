@@ -147,7 +147,7 @@ describe("connections service", () => {
     // The impl's closed error vocabulary is the only thing that crosses —
     // provider bodies (which can embed the pasted secret) never do.
     const cases = [
-      { thrown: new Error("github_repositories_unauthorized"), code: "repository_provider_unauthorized" },
+      { thrown: Object.assign(new Error("unrelated display text"), { code: "repository_provider_unauthorized", status: 502, retryable: false }), code: "repository_provider_unauthorized" },
       { thrown: new Error("github_repositories_unavailable"), code: "repository_provider_unavailable" },
       { thrown: new Error("github_repositories_invalid_response"), code: "repository_provider_unavailable" },
       // A non-Error throw must still classify, never escape.

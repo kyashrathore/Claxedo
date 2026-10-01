@@ -26,6 +26,15 @@ function app() {
 }
 
 describe("workspace checkpoint routes", () => {
+  test("maps typed unavailability independently of display text", async () => {
+    const fixture = app()
+    vi.mocked(fixture.sandboxManager.restore).mockRejectedValue(Object.assign(new Error("Busy"), { code: "sandbox_unavailable", status: 503, retryable: true }))
+    const response = await fixture.app.request("http://test/api/workspace/ws_1/checkpoints/cp_1/restore", {
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ approved: true }),
+    })
+    expect(response.status).toBe(503)
+    expect(await response.json()).toMatchObject({ error: { code: "workspace_checkpoint_unavailable", retryable: true } })
+  })
   test("uses the composed auth verifier for signed checkpoint requests", async () => {
     const verifier = vi.fn(async () => ({
       mode: "signed" as const,

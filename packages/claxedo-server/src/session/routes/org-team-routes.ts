@@ -1,10 +1,10 @@
+import { publicApiFamilyResponse } from "../../platform/http/public-api-error-response"
 import { Hono, type Context } from "hono"
 import { bodyLimit } from "hono/body-limit"
 import type { ControlPlaneServices } from "../../authority/services"
 import { requireAuthority } from "@claxedo/server-core/platform/auth/authority"
 import {
   ControlPlaneAuthError,
-  controlPlaneAuthErrorBody,
   type ControlPlaneTokenVerifier,
   type ControlPlaneAuthConfig,
   type SignedControlPlaneAuth,
@@ -12,7 +12,7 @@ import {
 import {
   isOrgMemberRole,
   isProjectGrantRole,
-  type MemberSelector,
+  type TeamMemberSelector,
 } from "@claxedo/server-core/platform/auth/org-access-authority"
 import type { RequestAuthenticationAdapter } from "@claxedo/server-core/platform/auth/authentication"
 import { apiError, signedOrError, txt } from "../../workspace/route-support"
@@ -27,66 +27,8 @@ type Options = {
 
 const bodyLimitBytes = 16 * 1024
 
-type OrgTeamError = {
-  status: 400 | 403 | 404 | 409
-  code: string
-  message: string
-}
-
-function hasErrorCode(error: unknown, code: string) {
-  const value = error && typeof error === "object" && "code" in error
-    ? (error as { code?: unknown }).code
-    : undefined
-  const message = error instanceof Error ? error.message : String(error)
-  return value === code || message === code || message.includes(code)
-}
-
-const ORG_TEAM_ERRORS: Record<string, Omit<OrgTeamError, "code">> = {
-  invalid_input: { status: 400, message: "The request names an invalid value" },
-  organization_policy_denied: { status: 403, message: "Organization creation is disabled for this deployment" },
-  org_admin_required: { status: 403, message: "Organization administrator authority is required" },
-  org_owner_required: { status: 403, message: "Only an organization owner may grant, change or remove the owner role" },
-  org_owner_protected: { status: 409, message: "The organization's founding owner cannot be removed or demoted" },
-  team_member_org_membership_required: { status: 403, message: "The team member must belong to the team organization" },
-  project_member_org_membership_required: { status: 403, message: "The project member must belong to the project organization" },
-  org_membership_required: { status: 403, message: "Organization membership is required" },
-  project_admin_required: { status: 403, message: "Project administrator authority is required" },
-  team_not_allowed_on_personal_org: { status: 400, message: "Personal organizations cannot contain teams" },
-  team_member_target_required: { status: 400, message: "Exactly one team member target is required" },
-  org_member_target_required: { status: 400, message: "Exactly one organization member target is required" },
-  org_member_email_unsupported: { status: 400, message: "This deployment cannot find accounts by email" },
-  organization_not_found: { status: 404, message: "Organization not found" },
-  team_not_found: { status: 404, message: "Team not found" },
-  team_member_not_found: { status: 404, message: "Team member not found" },
-  org_member_not_found: { status: 404, message: "Organization member not found" },
-  project_not_found: { status: 404, message: "Project not found" },
-  project_member_not_found: { status: 404, message: "Project member not found" },
-  project_member_owner_immutable: { status: 409, message: "The project owner's access cannot be changed" },
-  resource_conflict: { status: 409, message: "Organization or team authority changed concurrently" },
-}
-
-const NOT_FOUND_BY_MESSAGE: Record<string, string> = {
-  "Organization not found": "organization_not_found",
-  "Team not found": "team_not_found",
-  "Project not found": "project_not_found",
-}
-
-function orgTeamAuthorityError(error: unknown): OrgTeamError | undefined {
-  for (const [code, mapped] of Object.entries(ORG_TEAM_ERRORS)) {
-    if (hasErrorCode(error, code)) return { code, ...mapped }
-  }
-  for (const [message, code] of Object.entries(NOT_FOUND_BY_MESSAGE)) {
-    if (String(error).includes(message)) return { code, ...ORG_TEAM_ERRORS[code] }
-  }
-  return undefined
-}
-
-/** Canonical HTTP envelope for organization/team authority failures across adapters. */
 export function orgTeamErrorResponse(c: Context, error: unknown): Response {
-  if (error instanceof ControlPlaneAuthError) return c.json(controlPlaneAuthErrorBody(error), error.status)
-  const mapped = orgTeamAuthorityError(error)
-  if (mapped) return c.json({ error: apiError(mapped.code, mapped.message) }, mapped.status)
-  throw error
+  return publicApiFamilyResponse(c, error, "access")
 }
 
 export function OrgTeamControlRoutes(services: ControlPlaneServices, options: Options = {}) {
@@ -159,12 +101,33 @@ export function OrgTeamControlRoutes(services: ControlPlaneServices, options: Op
       if (!list) return unavailable(c, "Organization members unavailable")
       return c.json(await list(auth, { orgId: c.req.param("orgId")! }))
     }))
-    .post("/orgs/:orgId/members", limited, authorized(async (auth, c) => {
-      const add = authority().addOrgMember
-      if (!add) return unavailable(c, "Organization members unavailable")
+    .post("/orgs/:orgId/invitations", limited, authorized(async (auth, c) => {
+      const create = authority().createOrgInvitation
+      if (!create) return unavailable(c, "Organization invitations unavailable")
       const input = await body(c)
-      if (!isOrgMemberRole(input.role)) return c.json({ error: apiError("org_member_role_required", "role is required") }, 400)
-      return c.json(await add(auth, { orgId: c.req.param("orgId")!, ...memberSelector(input), role: input.role }))
+      const email = txt(input.email)?.trim().toLowerCase()
+      if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || !isOrgMemberRole(input.role)) {
+        return c.json({ error: apiError("invalid_input", "email and role are required") }, 400)
+      }
+      await create(auth, { orgId: c.req.param("orgId")!, email, role: input.role })
+      return c.json({ message: "invitation sent" }, 202)
+    }))
+    .get("/orgs/:orgId/invitations", authorized(async (auth, c) => {
+      const list = authority().listOrgInvitations
+      if (!list) return unavailable(c, "Organization invitations unavailable")
+      return c.json(await list(auth, { orgId: c.req.param("orgId")! }))
+    }))
+    .delete("/orgs/:orgId/invitations/:invitationId", authorized(async (auth, c) => {
+      const revoke = authority().revokeOrgInvitation
+      if (!revoke) return unavailable(c, "Organization invitations unavailable")
+      return c.json(await revoke(auth, { orgId: c.req.param("orgId")!, invitationId: c.req.param("invitationId")! }))
+    }))
+    .post("/invitations/accept", limited, authorized(async (auth, c) => {
+      const accept = authority().acceptOrgInvitation
+      if (!accept) return unavailable(c, "Organization invitations unavailable")
+      const token = txt((await body(c)).token)?.trim()
+      if (!token) return c.json({ error: apiError("invalid_input", "token is required") }, 400)
+      return c.json(await accept(auth, { token }))
     }))
     .patch("/orgs/:orgId/members/:userPublicId", limited, authorized(async (auth, c) => {
       const update = authority().updateOrgMember
@@ -197,14 +160,14 @@ export function OrgTeamControlRoutes(services: ControlPlaneServices, options: Op
       }
       return c.json(await add(auth, {
         teamId: c.req.param("teamId")!,
-        ...memberSelector(input),
+        ...teamMemberSelector(input),
         ...(role === undefined ? {} : { role }),
       }))
     }))
     .delete("/teams/:teamId/members", limited, authorized(async (auth, c) => {
       const remove = authority().removeTeamMember
       if (!remove) return unavailable(c)
-      return c.json(await remove(auth, { teamId: c.req.param("teamId")!, ...memberSelector(await body(c)) }))
+      return c.json(await remove(auth, { teamId: c.req.param("teamId")!, ...teamMemberSelector(await body(c)) }))
     }))
     .get("/teams/:teamId/projects", authorized(async (auth, c) => {
       const list = authority().listTeamProjects
@@ -253,11 +216,10 @@ export function OrgTeamControlRoutes(services: ControlPlaneServices, options: Op
     }))
 }
 
-function memberSelector(input: Record<string, unknown>): MemberSelector {
+function teamMemberSelector(input: Record<string, unknown>): TeamMemberSelector {
   return {
     ...(typeof input.tokenIdentifier === "string" ? { tokenIdentifier: input.tokenIdentifier } : {}),
     ...(typeof input.providerSubject === "string" ? { providerSubject: input.providerSubject } : {}),
     ...(typeof input.userPublicId === "string" ? { userPublicId: input.userPublicId } : {}),
-    ...(typeof input.email === "string" ? { email: input.email } : {}),
   }
 }

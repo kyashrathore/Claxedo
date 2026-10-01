@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test"
 import fs from "node:fs/promises"
 import path from "node:path"
-import { hostedFetch, signInHostedPerson } from "./hosted-auth"
+import { hostedFetch, inviteHostedPerson, signInHostedPerson } from "./hosted-auth"
 import { startHostedStack } from "./hosted-stack"
 
 test("certified hosted Worker signs in two GitHub people and refuses unbrokered repository egress", async () => {
@@ -26,12 +26,9 @@ test("certified hosted Worker signs in two GitHub people and refuses unbrokered 
       { id: "hosted-e2e-organization", name: "Hosted E2E" },
     ])
 
-    const admitted = await hostedFetch(stack, "/api/control/user-deployed/identity-admissions", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ subject: second.id, role: "member" }),
-    }, owner)
-    expect(admitted.status).toBe(200)
+    const invitationToken = await inviteHostedPerson(stack, owner, second, "hosted-e2e-organization")
+    const accepted = await hostedFetch(stack, "/api/control/invitations/accept", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ token: invitationToken }) }, second)
+    expect(accepted.status).toBe(200)
 
     for (const [repoUrl, code] of [
       [undefined, "cloud_workspace_source_required"],

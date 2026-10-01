@@ -2,6 +2,7 @@ import type { MiddlewareHandler } from "hono"
 import { rec } from "./json-value"
 import type { RelayHostAuthContext, RelayHostAuthOptions } from "./workspace-host-service-auth"
 import { trimToUndefined } from "@claxedo/helpers/string"
+import { sessionScopeReaches } from "@claxedo/workspace-relay-protocol"
 
 /** Hop-only header stamped by `@claxedo/local-server` `embedded()` after actor verification. */
 export const EMBEDDED_RELAY_HOST_AUTH_HEADER = "x-claxedo-embedded-relay-host-auth"
@@ -149,6 +150,9 @@ export function createWorkspaceRuntimeExposureMiddleware(exposure: WorkspaceRunt
     }
     if (exposure.kind === "embedded") {
       const stamped = parseEmbeddedRelayHostAuth(c.req.header(EMBEDDED_RELAY_HOST_AUTH_HEADER))
+      if (stamped && !sessionScopeReaches(stamped.session_id, c.req.path, new URL(c.req.url).search)) {
+        return c.json({ error: { code: "relay_scope_denied", message: "This token reaches one session and nothing else" } }, 403)
+      }
       if (stamped) {
         c.set("relayHostAuth", stamped)
       }
@@ -186,6 +190,7 @@ function parseEmbeddedRelayHostAuth(value: string | undefined): RelayHostAuthCon
     const actor_name = trimToUndefined(row.actor_name)
     const workspace_id = trimToUndefined(row.workspace_id)
     const org_id = trimToUndefined(row.org_id)
+    const session_id = trimToUndefined(row.session_id)
     const role = row.role === "viewer" || row.role === "editor" || row.role === "admin" || row.role === "owner"
       ? row.role
       : undefined
@@ -201,6 +206,7 @@ function parseEmbeddedRelayHostAuth(value: string | undefined): RelayHostAuthCon
       || !workspace_id
       || !org_id
       || !role
+      || (row.session_id !== undefined && !session_id)
     ) return undefined
     return {
       principal_kind,
@@ -213,6 +219,7 @@ function parseEmbeddedRelayHostAuth(value: string | undefined): RelayHostAuthCon
       workspace_id,
       org_id,
       role,
+      ...(session_id ? { session_id } : {}),
       ...(trimToUndefined(row.host_id) ? { host_id: trimToUndefined(row.host_id) } : {}),
       ...(row.backing === "cloud-vm" || row.backing === "local-worktree" ? { backing: row.backing } : {}),
     }

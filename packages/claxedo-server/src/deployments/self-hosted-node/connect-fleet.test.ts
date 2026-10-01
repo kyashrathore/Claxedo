@@ -7,10 +7,10 @@ import { sha256Hex } from "@claxedo/helpers/crypto"
 import {
   MACHINE_REQUEST_HEADERS,
   invitationRedeemPayload,
-  invitationTokenParts,
+  decodeInvitationToken,
   machineRequestPayload,
   publicKeyFingerprint,
-} from "@claxedo/server-core/platform/auth/host-connect-contract"
+} from "@claxedo/account-contract/machine"
 
 /**
  * A `claxedo connect` fleet on the signed self-hosted node, driven through the
@@ -44,9 +44,8 @@ beforeAll(async () => {
 afterAll(async () => {
   await composed.dispose()
   services.close()
-  const { closeAuthorityDatabases } = await import(
-    "@claxedo/server-core/authority/adapters/sqlite/workspace-authority-store"
-  )
+  const { closeAuthorityDatabases } =
+    await import("@claxedo/server-core/authority/adapters/sqlite/workspace-authority-store")
   closeAuthorityDatabases()
   const { resetEmbeddedAuthForTests } = await import("./embedded-auth")
   resetEmbeddedAuthForTests()
@@ -78,14 +77,17 @@ async function machinePost(pathname: string, privateKey: KeyObject, enrollmentId
   const bodyText = JSON.stringify(body)
   const ts = Date.now()
   const requestNonce = `nonce${String(++nonce).padStart(12, "0")}`
-  const signature = sign(privateKey, machineRequestPayload({
-    method: "POST",
-    pathname,
-    bodySha256Hex: await sha256Hex(bodyText),
-    ts,
-    nonce: requestNonce,
-    enrollmentId,
-  }))
+  const signature = sign(
+    privateKey,
+    machineRequestPayload({
+      method: "POST",
+      pathname,
+      bodySha256Hex: await sha256Hex(bodyText),
+      ts,
+      nonce: requestNonce,
+      enrollmentId,
+    }),
+  )
   return composed.app.request(pathname, {
     method: "POST",
     headers: {
@@ -115,9 +117,9 @@ describe("a connect fleet on the signed self-hosted node", () => {
     const invitation = await json<{ token: string }>(await composed.app.request("/api/claxedo/host/invitations", {
       method: "POST",
       headers: owner,
-      body: JSON.stringify({ displayName: "box", scope: { allowed_roots: ["/srv"], visibility: "owner" }, expiresInMs: 60_000 }),
+      body: JSON.stringify({ displayName: "box", scope: { allowed_roots: ["/srv"] }, expiresInMs: 60_000 }),
     }))
-    const parts = invitationTokenParts(invitation.token)!
+    const parts = decodeInvitationToken(invitation.token)!
     const redeemed = await json<{ enrollment: { enrollment_id: string }; resumed: boolean }>(
       await composed.app.request("/api/claxedo/host/enrollments/redeem", {
         method: "POST",
@@ -127,11 +129,14 @@ describe("a connect fleet on the signed self-hosted node", () => {
           secret: parts.secret,
           hostId,
           publicKey,
-          signature: sign(pair.privateKey, invitationRedeemPayload({
-            invitationId: parts.invitationId,
-            hostId,
-            publicKeySha256: await publicKeyFingerprint(JSON.parse(publicKey)),
-          })),
+          signature: sign(
+            pair.privateKey,
+            invitationRedeemPayload({
+              invitationId: parts.invitationId,
+              hostId,
+              publicKeySha256: await publicKeyFingerprint(JSON.parse(publicKey)),
+            }),
+          ),
         }),
       }),
     )
@@ -142,7 +147,9 @@ describe("a connect fleet on the signed self-hosted node", () => {
     const listed = await json<{ machines: Array<{ enrollment_id: string; host_id: string; enrolled_via: string }> }>(
       await composed.app.request("/api/claxedo/host/enrollments", { headers: owner }),
     )
-    expect(listed.machines).toEqual([expect.objectContaining({ enrollment_id: enrollmentId, host_id: hostId, enrolled_via: "invitation" })])
+    expect(listed.machines).toEqual([
+      expect.objectContaining({ enrollment_id: enrollmentId, host_id: hostId, enrolled_via: "invitation" }),
+    ])
 
     const assigned = await json<{ assignment: { assigned: true; workspace_id: string; host_id: string } }>(
       await composed.app.request("/api/workspace/ws_box_api/host-assignment", {
@@ -162,7 +169,10 @@ describe("a connect fleet on the signed self-hosted node", () => {
     await expect(outsideRoots.json()).resolves.toMatchObject({ error: { code: "host_assignment_outside_scope" } })
 
     const acquired = await json<{ generation: number }>(
-      await machinePost("/api/claxedo/host/enrollments/acquire", pair.privateKey, enrollmentId, { enrollmentId, hostId }),
+      await machinePost("/api/claxedo/host/enrollments/acquire", pair.privateKey, enrollmentId, {
+        enrollmentId,
+        hostId,
+      }),
     )
     const target = () => composed.app.request(`/internal/relay/target?workspaceId=ws_box_api&hostId=${hostId}`)
     expect((await target()).status).toBe(409)
@@ -184,7 +194,9 @@ describe("a connect fleet on the signed self-hosted node", () => {
       baseUrl: "",
       backing: "local-worktree",
     })
-    await expect(json(await composed.app.request(`/internal/relay/host-generation?enrollmentId=${enrollmentId}`))).resolves.toEqual({
+    await expect(
+      json(await composed.app.request(`/internal/relay/host-generation?enrollmentId=${enrollmentId}`)),
+    ).resolves.toEqual({
       enrollmentId,
       generation: acquired.generation,
       revoked: false,
@@ -199,7 +211,9 @@ describe("a connect fleet on the signed self-hosted node", () => {
     )
     expect(revoked).toEqual({ revoked: true })
     expect((await target()).status).toBe(409)
-    await expect(json(await composed.app.request(`/internal/relay/host-generation?enrollmentId=${enrollmentId}`))).resolves.toMatchObject({
+    await expect(
+      json(await composed.app.request(`/internal/relay/host-generation?enrollmentId=${enrollmentId}`)),
+    ).resolves.toMatchObject({
       revoked: true,
     })
     const afterRevoke = await machinePost("/api/claxedo/host/enrollments/heartbeat", pair.privateKey, enrollmentId, {

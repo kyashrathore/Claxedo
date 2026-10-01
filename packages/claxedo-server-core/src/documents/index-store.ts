@@ -31,6 +31,7 @@ export class DocumentIndexNotFoundError extends Error {
 const documentIndexProjection = {
   id: ClaxedoDocumentIndexTable.id,
   org_id: ClaxedoDocumentIndexTable.org_id,
+  creator_id: ClaxedoDocumentIndexTable.creator_id,
   project_id: ClaxedoDocumentIndexTable.project_id,
   display_name: ClaxedoDocumentIndexTable.display_name,
   origin_kind: ClaxedoDocumentIndexTable.origin_kind,
@@ -52,6 +53,7 @@ const documentIndexProjection = {
 
 export function createDocumentIndexEntry(input: DocumentIndexEntry) {
   const entry = DocumentIndexEntrySchema.parse(input)
+  if (!entry.creator_id) throw new Error("Document creator is required")
   ClaxedoDB.use((db) => db.insert(ClaxedoDocumentIndexTable).values(entry).run())
   return entry
 }

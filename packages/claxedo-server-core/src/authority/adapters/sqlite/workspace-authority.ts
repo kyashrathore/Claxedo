@@ -1,3 +1,12 @@
+import { refuseCloudWorkspace, retireMachinePlacedWorkspaceSql } from "./workspace-placement"
+import { PublicApiError } from "../../../platform/errors/public-api-error"
+import {
+  enrollmentPayload,
+  invitationRedeemPayload,
+  invitationToken,
+  publicKeyFingerprint,
+  publicKeyJwk,
+} from "@claxedo/account-contract/machine"
 import { timingSafeEqual } from "node:crypto"
 import { sha256Hex } from "@claxedo/helpers/crypto"
 import { isRecord } from "@claxedo/helpers/guards"
@@ -35,14 +44,10 @@ import type {
 } from "@claxedo/server-core/platform/auth/authority"
 import {
   directoryWithinRoots,
-  invitationRedeemPayload,
-  invitationToken,
   normalizePosixDirectory,
   normalizeStoredDirectory,
-  publicKeyFingerprint,
 } from "@claxedo/server-core/platform/auth/host-connect-contract"
 import type { MachineAuthRefusal } from "@claxedo/server-core/platform/auth/machine-auth"
-import { machineSealingPublicKey } from "@claxedo/server-core/platform/auth/machine-seal"
 import { ClaxedoError } from "@claxedo/server-core/platform/errors/base"
 import type { PrivateSessionAuthority } from "@claxedo/server-core/platform/auth/private-session-authority"
 import type { SessionTurnAuthority } from "@claxedo/server-core/platform/auth/session-turn-authority"
@@ -181,18 +186,6 @@ function base64url(bytes: Uint8Array) {
   return Buffer.from(bytes).toString("base64url")
 }
 
-function enrollmentPayload(input: { host_id: string; request_id: string; nonce: string }) {
-  // A versioned, domain-prefixed payload. Payload domains must not overlap: a
-  // signature captured from one flow being replayable in another is exactly
-  // what a prefix prevents.
-  return [
-    "claxedo.host-enrollment.enroll.v1",
-    `host_id=${input.host_id}`,
-    `request_id=${input.request_id}`,
-    `nonce=${input.nonce}`,
-  ].join("\n")
-}
-
 type HostEnrollmentRow = {
   enrollment_id: string
   owner_token_identifier: string
@@ -241,14 +234,9 @@ function enrollmentScope(row: Pick<HostEnrollmentRow, "scope_json" | "scope_revi
   return hostEnrollmentScope(row.scope_json, row.scope_revision)
 }
 
-/** 0 withholds the implicit org-member role; an account enrollment has no scope and hides nothing. */
-function orgMemberVisible(scope: HostScopeDefinition | undefined) {
-  return scope?.visibility === "owner" ? 0 : 1
-}
-
 function validatedScope(input: HostScopeDefinition): HostScopeDefinition {
-  if (!Array.isArray(input.allowed_roots) || (input.visibility !== "owner" && input.visibility !== "org")) {
-    throw new SqliteHostConnectError("invalid_input", "scope requires allowed_roots and a visibility")
+  if (!Array.isArray(input.allowed_roots)) {
+    throw new SqliteHostConnectError("invalid_input", "scope requires allowed_roots")
   }
   const roots = input.allowed_roots.map((root) => {
     const normalized = typeof root === "string" ? normalizePosixDirectory(root) : undefined
@@ -257,13 +245,13 @@ function validatedScope(input: HostScopeDefinition): HostScopeDefinition {
     }
     return normalized
   })
-  return { allowed_roots: [...new Set(roots)], visibility: input.visibility }
+  return { allowed_roots: [...new Set(roots)] }
 }
 
 function scopeDefinitionJson(json: string): HostScopeDefinition {
   const scope = hostEnrollmentScope(json, 0)
   if (!scope) throw new Error("host_invitation_scope_malformed")
-  return { allowed_roots: scope.allowed_roots, visibility: scope.visibility }
+  return { allowed_roots: scope.allowed_roots }
 }
 
 /**
@@ -465,10 +453,10 @@ function requiredProviderIds(input: string[]): string[] {
   return [...input].sort()
 }
 
-/** `machineSealingPublicKey`'s form as JSON text, the one shape the stored column and a push's re-assertion are compared in. */
+/** Key re-assertion uses normalized JSON equality, independent of optional JWK members. */
 function storedSealingPublicKey(input: string) {
   try {
-    return JSON.stringify(machineSealingPublicKey(input))
+    return JSON.stringify(publicKeyJwk(input))
   } catch (error) {
     throw new SqliteHostConnectError("invalid_input", `sealingPublicKey: ${error instanceof Error ? error.message : String(error)}`)
   }
@@ -623,25 +611,6 @@ function workspacesWithServingHost(db: SqliteAuthorityDb, workspaceIds: string[]
       AND ${HOST_SERVING_WORKSPACE_SQL}
   `).all(...workspaceIds, Date.now())
   return new Set(rows.map((row) => row.workspace_id))
-}
-
-/**
- * A machine-placed workspace exists in the inventory exactly as long as a
- * machine is assigned to serve it: unsharing it or revoking its machine retires
- * the row, and sharing it again revives the same record. Cloud rows are never
- * touched here — their lifetime is the sandbox's.
- */
-function retireMachinePlacedWorkspaceSql(where: string) {
-  return `
-    UPDATE workspaces SET deleted_at = ?, updated_at = ?
-    WHERE backing = 'local-worktree' AND deleted_at IS NULL AND ${where}
-  `
-}
-
-function refuseCloudWorkspace(workspace: { backing?: unknown }) {
-  if (workspace.backing === "cloud-vm") {
-    throw new Error("workspace_backing_conflict: cannot assign a machine to a cloud workspace")
-  }
 }
 
 /**
@@ -835,15 +804,9 @@ export function createSqliteWorkspaceAuthority(
     deleted_at: number | null
   }
 
-  /** The session authority's admission, mirrored for the share surface. */
-  const sessionAdmitsUser = (db: SqliteAuthorityDb, session: SessionRow, who: AuthorityUser) => {
-    if (session.creator_actor_id === who.token_identifier) return true
-    const participant = db.prepare<unknown[], { revoked_at: number | null }>(`
-      SELECT revoked_at FROM session_participants WHERE session_id = ? AND participant_actor_id = ?
-    `).get(session.session_id, who.token_identifier)
-    if (participant && !participant.revoked_at) return true
-    return sessionShareAllowsUser(db, who, session.session_id)
-  }
+  /** The session authority's admission, mirrored for the share surface: its workspace's owner or a share. */
+  const sessionAdmitsUser = (db: SqliteAuthorityDb, workspace: WorkspaceRow, session: SessionRow, who: AuthorityUser) =>
+    workspace.owner_token_identifier === who.token_identifier || sessionShareAllowsUser(db, who, session.session_id)
 
   const shareTargetsUser = (db: SqliteAuthorityDb, grant: SessionShareTargetRow, who: AuthorityUser) => {
     if (grant.granted_to_user_token_identifier === who.token_identifier) return true
@@ -864,30 +827,10 @@ export function createSqliteWorkspaceAuthority(
     return grants.some((grant) => shareTargetsUser(db, grant, who))
   }
 
-  /**
-   * What a session share is worth on the workspace that holds the session: a
-   * grantee has no role there and still has to reach the machine serving it,
-   * so the grant floors them at `viewer` — enough to open the placement and be
-   * handed a Runtime Access Token, and nothing more. Read and write on the
-   * session itself stay the session authority's answer, asked per request, so
-   * the level never rides on this role.
-   */
-  const workspaceRoleWithSessionShares = (db: SqliteAuthorityDb, workspace: WorkspaceRow, who: AuthorityUser) => {
-    const direct = workspaceRoleForUser(db, workspace, who)
-    if (direct || workspace.deleted_at) return direct
-    const grants = db.prepare<unknown[], SessionShareTargetRow>(`
-      SELECT grant_row.granted_to_user_token_identifier, grant_row.granted_to_org_id, grant_row.granted_to_team_id
-      FROM session_share_grants grant_row
-      JOIN session_history session ON session.session_id = grant_row.session_id AND session.deleted_at IS NULL
-      WHERE grant_row.workspace_id = ? AND grant_row.revoked_at IS NULL
-    `).all(workspace.workspace_id)
-    return grants.some((grant) => shareTargetsUser(db, grant, who)) ? "viewer" as const : undefined
-  }
-
-  /** The workspace lookup every Runtime Access Token path shares, share included. */
+  /** The workspace lookup every Runtime Access Token path shares. */
   const requireRuntimeTokenWorkspace = (db: SqliteAuthorityDb, who: AuthorityUser, workspaceId: string) => {
     const workspace = workspaceByPublicId(db, workspaceId)
-    if (!workspace || !workspaceRoleWithSessionShares(db, workspace, who)) throw new Error("Workspace not found")
+    if (!workspace || !workspaceRoleForUser(db, workspace, who)) throw new Error("Workspace not found")
     return workspace
   }
 
@@ -911,8 +854,10 @@ export function createSqliteWorkspaceAuthority(
   const recordUserRuntimeToken = (who: AuthorityUser, args: Parameters<WorkspaceAuthority["recordRuntimeAccessToken"]>[1]) => {
       const db = database()
       const workspace = workspaceByPublicId(db, args.workspaceId)
-      if (!workspace) denied()
-      const currentRole = workspaceRoleWithSessionShares(db, workspace, who)
+      // This store mints workspace tokens only, which are the owner's: a share
+      // holder's session-scoped token is the hosted authority's.
+      if (!workspace || args.sessionId !== undefined) denied()
+      const currentRole = workspaceRoleForUser(db, workspace, who)
       if (!currentRole || !roleAtLeast(currentRole, args.role)) denied()
       const existing = db.prepare(`SELECT jti FROM runtime_access_tokens WHERE jti = ?`).get(args.jti)
       if (existing) throw new Error("Runtime Access Token already recorded")
@@ -1018,9 +963,9 @@ export function createSqliteWorkspaceAuthority(
       if (!name) throw new Error("team_name_required")
       const org = db.prepare<unknown[], { org_id: string; kind: string }>(`SELECT org_id, kind FROM orgs WHERE org_id = ? AND deleted_at IS NULL`)
         .get(args.orgId)
-      if (!org) throw new Error("Organization not found")
-      if (org.kind === "personal") throw new Error("team_not_allowed_on_personal_org")
-      if (!orgAdminForUser(db, who, args.orgId)) throw new Error("org_admin_required")
+      if (!org) throw new PublicApiError("organization_not_found", "Organization not found")
+      if (org.kind === "personal") throw new PublicApiError("team_not_allowed_on_personal_org", "team_not_allowed_on_personal_org")
+      if (!orgAdminForUser(db, who, args.orgId)) throw new PublicApiError("org_admin_required", "org_admin_required")
       const now = Date.now()
       const teamId = `team_${randomToken()}`
       db.transaction(() => {
@@ -1040,12 +985,12 @@ export function createSqliteWorkspaceAuthority(
       const who = user(auth)
       const org = db.prepare<unknown[], { org_id: string; kind: string; name: string; owner_token_identifier: string }>(`SELECT org_id, kind, name, owner_token_identifier FROM orgs WHERE org_id = ? AND deleted_at IS NULL`)
         .get(args.orgId)
-      if (!org) throw new Error("Organization not found")
+      if (!org) throw new PublicApiError("organization_not_found", "Organization not found")
       if (org.kind === "personal") return { skipped: true as const }
       const membership = db.prepare(`
         SELECT 1 FROM org_memberships WHERE org_id = ? AND token_identifier = ?
       `).get(args.orgId, who.token_identifier)
-      if (!membership && org.owner_token_identifier !== who.token_identifier) throw new Error("org_membership_required")
+      if (!membership && org.owner_token_identifier !== who.token_identifier) throw new PublicApiError("org_membership_required", "org_membership_required")
       const now = Date.now()
       return db.transaction(() => {
         let defaultTeam = db.prepare<unknown[], { team_id: string }>(`
@@ -1130,8 +1075,8 @@ export function createSqliteWorkspaceAuthority(
       const who = user(auth)
       const team = db.prepare<unknown[], { team_id: string; org_id: string }>(`SELECT team_id, org_id FROM teams WHERE team_id = ? AND deleted_at IS NULL`)
         .get(args.teamId)
-      if (!team) throw new Error("Team not found")
-      if (!orgAdminForUser(db, who, team.org_id)) throw new Error("org_admin_required")
+      if (!team) throw new PublicApiError("team_not_found", "Team not found")
+      if (!orgAdminForUser(db, who, team.org_id)) throw new PublicApiError("org_admin_required", "org_admin_required")
       const target = args.tokenIdentifier
         ? db.prepare<unknown[], AuthorityUser>(`SELECT token_identifier FROM users WHERE token_identifier = ?`).get(args.tokenIdentifier)
         : args.providerSubject
@@ -1139,11 +1084,10 @@ export function createSqliteWorkspaceAuthority(
           : args.userPublicId
             ? db.prepare<unknown[], AuthorityUser>(`SELECT token_identifier FROM users WHERE public_id = ?`).get(args.userPublicId)
             : undefined
-      if (!target) throw new Error("team_member_not_found")
-      const orgMembership = db.prepare(`
+      const orgMembership = target && db.prepare(`
         SELECT 1 FROM org_memberships WHERE org_id = ? AND token_identifier = ?
       `).get(team.org_id, target.token_identifier)
-      if (!orgMembership) throw new Error("team_member_org_membership_required")
+      if (!target || !orgMembership) throw new PublicApiError("team_member_org_membership_required", "team_member_org_membership_required")
       const now = Date.now()
       const role = args.role ?? "member"
       db.prepare(`
@@ -1163,8 +1107,8 @@ export function createSqliteWorkspaceAuthority(
       const who = user(auth)
       const team = db.prepare<unknown[], { team_id: string; org_id: string }>(`SELECT team_id, org_id FROM teams WHERE team_id = ? AND deleted_at IS NULL`)
         .get(args.teamId)
-      if (!team) throw new Error("Team not found")
-      if (!orgAdminForUser(db, who, team.org_id)) throw new Error("org_admin_required")
+      if (!team) throw new PublicApiError("team_not_found", "Team not found")
+      if (!orgAdminForUser(db, who, team.org_id)) throw new PublicApiError("org_admin_required", "org_admin_required")
       const target = args.tokenIdentifier
         ? db.prepare<unknown[], AuthorityUser>(`SELECT token_identifier FROM users WHERE token_identifier = ?`).get(args.tokenIdentifier)
         : args.providerSubject
@@ -1206,10 +1150,10 @@ export function createSqliteWorkspaceAuthority(
       const who = user(auth)
       const team = db.prepare<unknown[], { team_id: string; org_id: string }>(`SELECT team_id, org_id FROM teams WHERE team_id = ? AND deleted_at IS NULL`)
         .get(args.teamId)
-      if (!team) throw new Error("Team not found")
-      if (!orgAdminForUser(db, who, team.org_id)) throw new Error("org_admin_required")
+      if (!team) throw new PublicApiError("team_not_found", "Team not found")
+      if (!orgAdminForUser(db, who, team.org_id)) throw new PublicApiError("org_admin_required", "org_admin_required")
       const project = projectByPublicId(db, args.projectId)
-      if (!project || project.org_id !== team.org_id) throw new Error("Project not found")
+      if (!project || project.org_id !== team.org_id) throw new PublicApiError("project_not_found", "Project not found")
       const now = Date.now()
       const existing = db.prepare<unknown[], { revoked_at: number | null }>(`
         SELECT revoked_at FROM team_project_grants WHERE team_id = ? AND project_id = ?
@@ -1233,8 +1177,8 @@ export function createSqliteWorkspaceAuthority(
       const who = user(auth)
       const team = db.prepare<unknown[], { team_id: string; org_id: string }>(`SELECT team_id, org_id FROM teams WHERE team_id = ? AND deleted_at IS NULL`)
         .get(args.teamId)
-      if (!team) throw new Error("Team not found")
-      if (!orgAdminForUser(db, who, team.org_id)) throw new Error("org_admin_required")
+      if (!team) throw new PublicApiError("team_not_found", "Team not found")
+      if (!orgAdminForUser(db, who, team.org_id)) throw new PublicApiError("org_admin_required", "org_admin_required")
       const result = db.prepare(`
         UPDATE team_project_grants SET revoked_at = ?
         WHERE team_id = ? AND project_id = ? AND revoked_at IS NULL
@@ -1397,7 +1341,7 @@ export function createSqliteWorkspaceAuthority(
       const who = user(auth)
       const workspace = workspaceByPublicId(db, args.workspaceId)
       if (!workspace || workspace.deleted_at) denied()
-      const role = workspaceRoleWithSessionShares(db, workspace, who)
+      const role = workspaceRoleForUser(db, workspace, who)
       if (!role) denied()
       return {
         allowed: true,
@@ -1447,7 +1391,7 @@ export function createSqliteWorkspaceAuthority(
       if (existing) {
         if (!authorizeWorkspaceForUser(db, existing, who, "admin")) throw new Error("Workspace not found")
         if (existing.backing === "cloud-vm") {
-          throw new Error("workspace_backing_conflict: cannot place a cloud workspace on a machine")
+          throw new PublicApiError("workspace_backing_conflict", "workspace_backing_conflict: cannot place a cloud workspace on a machine")
         }
         if (!existing.org_id || !existing.project_id) throw new Error("workspace_tenant_missing")
         const projectId = ensureProject(db, {
@@ -1552,7 +1496,7 @@ export function createSqliteWorkspaceAuthority(
       const who = user(auth)
       const project = projectByPublicId(db, args.projectId)
       if (!project) return { deleted: false }
-      if (!authorizeProjectForUser(db, project, who, "owner")) throw new Error("Project not found")
+      if (!authorizeProjectForUser(db, project, who, "owner")) throw new PublicApiError("project_not_found", "Project not found")
       // The row itself goes, not a `deleted_at` mark: `ensureProject` matches a
       // registration to a project by (org, repo_key) with no deleted filter, so
       // a retired row would hand its old id to the next project made for the
@@ -1631,8 +1575,8 @@ export function createSqliteWorkspaceAuthority(
       await verifyHostSignature({
         public_key: args.publicKey,
         payload: enrollmentPayload({
-          host_id: args.hostId,
-          request_id: args.requestId,
+          hostId: args.hostId,
+          requestId: args.requestId,
           nonce: request.nonce,
         }),
         signature: args.signature,
@@ -1927,7 +1871,6 @@ export function createSqliteWorkspaceAuthority(
               repo_name = COALESCE(?, repo_name),
               git_branch = COALESCE(?, git_branch),
               remote_directory = COALESCE(?, remote_directory),
-              org_member_visible = ?,
               updated_at = ?
             WHERE workspace_id = ?
           `).run(
@@ -1936,7 +1879,6 @@ export function createSqliteWorkspaceAuthority(
             args.repoName ?? null,
             args.gitBranch ?? null,
             remoteDirectory ?? null,
-            orgMemberVisible(scope),
             now,
             args.workspaceId,
           )
@@ -1946,8 +1888,8 @@ export function createSqliteWorkspaceAuthority(
             INSERT INTO workspaces (
               workspace_id, org_id, project_id, owner_token_identifier, backing,
               display_name, home_region, repo_url, repo_name, git_branch, remote_directory,
-              org_member_visible, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, 'local-worktree', ?, ?, ?, ?, ?, ?, ?, ?, ?)
+              created_at, updated_at
+            ) VALUES (?, ?, ?, ?, 'local-worktree', ?, ?, ?, ?, ?, ?, ?, ?)
           `).run(
             args.workspaceId,
             orgId,
@@ -1959,7 +1901,6 @@ export function createSqliteWorkspaceAuthority(
             args.repoName ?? null,
             args.gitBranch ?? null,
             remoteDirectory ?? null,
-            orgMemberVisible(scope),
             now,
             now,
           )
@@ -2269,11 +2210,7 @@ export function createSqliteWorkspaceAuthority(
         `).all(enrollment.host_id, enrollment.owner_token_identifier)
         const retired: string[] = []
         for (const assignment of assigned) {
-          if (assignment.remote_directory !== null && directoryWithinRoots(assignment.remote_directory, scope.allowed_roots)) {
-            db.prepare(`UPDATE workspaces SET org_member_visible = ?, updated_at = ? WHERE workspace_id = ?`)
-              .run(orgMemberVisible(scope), now, assignment.workspace_id)
-            continue
-          }
+          if (assignment.remote_directory !== null && directoryWithinRoots(assignment.remote_directory, scope.allowed_roots)) continue
           db.prepare(`DELETE FROM host_workspace_assignments WHERE workspace_id = ?`).run(assignment.workspace_id)
           db.prepare(`DELETE FROM host_assignment_readiness WHERE workspace_id = ?`).run(assignment.workspace_id)
           db.prepare(retireMachinePlacedWorkspaceSql("workspace_id = ?")).run(now, now, assignment.workspace_id)
@@ -2484,7 +2421,7 @@ export function createSqliteWorkspaceAuthority(
       const workspace = workspaceByPublicId(db, args.workspaceId)
       const session = db.prepare<unknown[], SessionRow>(`SELECT * FROM session_history WHERE session_id = ?`).get(args.sessionId)
       if (!workspace || !session || session.workspace_id !== args.workspaceId || session.deleted_at) denied()
-      if (session.creator_actor_id !== who.token_identifier) throw new Error("session_share_admin_required")
+      if (workspace.owner_token_identifier !== who.token_identifier) throw new PublicApiError("session_share_admin_required", "session_share_admin_required")
       const selectors = [
         args.grantedToTokenIdentifier,
         args.grantedToSubject,
@@ -2493,7 +2430,7 @@ export function createSqliteWorkspaceAuthority(
         args.grantedToTeamId,
         args.grantedToTeamPublicId,
       ].filter(Boolean)
-      if (selectors.length !== 1) throw new Error("session_share_target_required")
+      if (selectors.length !== 1) throw new PublicApiError("session_share_target_required", "session_share_target_required")
       const userTarget = args.grantedToTokenIdentifier
         ? db.prepare<unknown[], AuthorityUser>(`SELECT token_identifier FROM users WHERE token_identifier = ?`).get(args.grantedToTokenIdentifier)
         : args.grantedToSubject
@@ -2509,12 +2446,12 @@ export function createSqliteWorkspaceAuthority(
         ? db.prepare<unknown[], { team_id: string; org_id: string }>(`SELECT team_id, org_id FROM teams WHERE team_id = ? AND deleted_at IS NULL`)
           .get(teamSelector)
         : undefined
-      if (!userTarget && !org && !team) throw new Error("session_share_target_not_found")
+      if (!userTarget && !org && !team) throw new PublicApiError("session_share_target_not_found", "session_share_target_not_found")
       if (userTarget && !orgMemberForUser(db, userTarget, workspace.org_id)) {
-        throw new Error("session_share_target_outside_organization")
+        throw new PublicApiError("session_share_target_outside_organization", "session_share_target_outside_organization")
       }
-      if (team && team.org_id !== workspace.org_id) throw new Error("session_share_team_org_mismatch")
-      if (org && workspace.org_id && org.org_id !== workspace.org_id) throw new Error("session_share_org_mismatch")
+      if (team && team.org_id !== workspace.org_id) throw new PublicApiError("session_share_team_org_mismatch", "session_share_team_org_mismatch")
+      if (org && workspace.org_id && org.org_id !== workspace.org_id) throw new PublicApiError("session_share_org_mismatch", "session_share_org_mismatch")
       const now = Date.now()
       const existing = db.prepare<unknown[], IdentifiedSessionShareTargetRow & { level: string }>(`
         SELECT grant_id, granted_to_user_token_identifier, granted_to_org_id, granted_to_team_id, level
@@ -2563,7 +2500,7 @@ export function createSqliteWorkspaceAuthority(
       const workspace = workspaceByPublicId(db, args.workspaceId)
       const session = db.prepare<unknown[], SessionRow>(`SELECT * FROM session_history WHERE session_id = ?`).get(args.sessionId)
       if (!workspace || !session || session.workspace_id !== args.workspaceId || session.deleted_at) denied()
-      if (session.creator_actor_id !== who.token_identifier) throw new Error("session_share_admin_required")
+      if (workspace.owner_token_identifier !== who.token_identifier) throw new PublicApiError("session_share_admin_required", "session_share_admin_required")
       const now = Date.now()
       let grants: IdentifiedSessionShareTargetRow[]
       if (args.grantId) {
@@ -2581,7 +2518,7 @@ export function createSqliteWorkspaceAuthority(
           args.grantedToTeamId,
           args.grantedToTeamPublicId,
         ].filter(Boolean)
-        if (selectors.length !== 1) throw new Error("session_share_target_required")
+        if (selectors.length !== 1) throw new PublicApiError("session_share_target_required", "session_share_target_required")
         const userTarget = args.grantedToTokenIdentifier
           ? args.grantedToTokenIdentifier
           : args.grantedToSubject
@@ -2643,16 +2580,16 @@ export function createSqliteWorkspaceAuthority(
       const db = database()
       const who = user(auth)
       const workspace = workspaceByPublicId(db, args.workspaceId)
-      if (!workspace || workspace.deleted_at) throw new Error("Session not found")
+      if (!workspace || workspace.deleted_at) throw new PublicApiError("session_not_found", "Session not found")
       const session = db.prepare<unknown[], SessionRow>(`SELECT * FROM session_history WHERE session_id = ?`).get(args.sessionId)
       // A session this authority does not hold has no shares here and none to
       // manage — a definite answer for anyone the session admits, not an error.
       if (!session || session.workspace_id !== args.workspaceId || session.deleted_at) {
-        if (!orgMemberForUser(db, who, workspace.org_id)) throw new Error("session_share_admin_required")
+        if (!orgMemberForUser(db, who, workspace.org_id)) throw new PublicApiError("session_share_admin_required", "session_share_admin_required")
         return { can_manage_shares: false, grants: [], participants: [], teams: [] }
       }
-      if (session.creator_actor_id !== who.token_identifier) {
-        if (!sessionAdmitsUser(db, session, who)) throw new Error("session_share_admin_required")
+      if (workspace.owner_token_identifier !== who.token_identifier) {
+        if (!sessionAdmitsUser(db, workspace, session, who)) throw new PublicApiError("session_share_admin_required", "session_share_admin_required")
         return { can_manage_shares: false, grants: [], participants: [], teams: [] }
       }
       const grants = db.prepare<unknown[], Record<string, unknown>>(`
@@ -2683,15 +2620,15 @@ export function createSqliteWorkspaceAuthority(
       }))
       return { can_manage_shares: true, grants, participants, teams }
     },
-    async resolveRuntimeMachineAccess(actorId, workspaceId, minimumRole = "editor") {
+    async resolveRuntimeMachineAccess(actorId, workspaceId) {
       const db = database()
       const who = db.prepare<unknown[], AuthorityUser>(`SELECT token_identifier, subject, kind, public_id, name, image_url FROM users WHERE token_identifier = ?`).get(actorId)
       if (!who || who.kind !== "human") denied()
       const workspace = workspaceByPublicId(db, workspaceId)
       if (!workspace) denied()
       const role = workspaceRoleForUser(db, workspace, who)
-      if (!role || !roleAtLeast(role, minimumRole)) denied()
-      return { actorId: who.token_identifier, actorKind: "human" as const, orgId: workspace.org_id, role, ...(who.subject ? { userId: who.subject } : {}), ...(who.public_id && who.name ? { actorPublicId: who.public_id, actorName: who.name, ...(who.image_url ? { actorAvatarUrl: who.image_url } : {}) } : {}) }
+      if (!role) denied()
+      return { actorId: who.token_identifier, actorKind: "human" as const, orgId: workspace.org_id, role, ...(who.public_id && who.name ? { actorPublicId: who.public_id, actorName: who.name, ...(who.image_url ? { actorAvatarUrl: who.image_url } : {}) } : {}) }
     },
     async resolveChannelMachineAccess(identity, workspaceId) {
       const db = database()
@@ -2720,7 +2657,7 @@ export function createSqliteWorkspaceAuthority(
         ? db.prepare<unknown[], AuthorityUser>(`SELECT token_identifier, subject, kind FROM users WHERE token_identifier = ?`)
             .get(args.actorId)
         : undefined
-      const currentRole = workspace && who ? workspaceRoleWithSessionShares(db, workspace, who) : undefined
+      const currentRole = workspace && who ? workspaceRoleForUser(db, workspace, who) : undefined
       const userAllowed = args.principalKind === "user"
         && who
         && who.kind === args.actorKind
@@ -2781,7 +2718,7 @@ export function createSqliteWorkspaceAuthority(
         ? db.prepare<unknown[], AuthorityUser>(`SELECT token_identifier, subject, kind FROM users WHERE token_identifier = ?`)
             .get(token.actor_id)
         : undefined
-      const currentRole = workspace && who ? workspaceRoleWithSessionShares(db, workspace, who) : undefined
+      const currentRole = workspace && who ? workspaceRoleForUser(db, workspace, who) : undefined
       const authorizationChanged = !workspace
         || !!workspace.deleted_at
         || (token.principal_kind === "user" && (
@@ -2795,9 +2732,6 @@ export function createSqliteWorkspaceAuthority(
           || token.actor_kind !== "agent"
           || !token.actor_id.trim()
         ))
-        || (args.minimumRole && (token.principal_kind === "user"
-          ? !currentRole || !roleAtLeast(currentRole, args.minimumRole)
-          : !roleAtLeast(token.role, args.minimumRole)))
       if (authorizationChanged) {
         return {
           active: false,

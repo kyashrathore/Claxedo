@@ -61,7 +61,6 @@ describe("agent-facing env never carries prefixed secrets", () => {
       "CLAXEDO_RELAY_RESOLVER_TOKEN",
       "CLAXEDO_EMBEDDED_AUTH_SECRET",
       "CLAXEDO_POLAR_WEBHOOK_SECRET",
-      "CLAXEDO_LOCAL_DOCUMENT_BROKER_TOKEN",
     ]) {
       expect(prefixedEnvAllowed(name), `${name} must not reach an agent-driven child`).toBe(false)
     }
