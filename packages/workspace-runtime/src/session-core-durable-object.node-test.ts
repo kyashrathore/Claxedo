@@ -102,7 +102,12 @@ type Workerd = ReturnType<typeof launchWorkerd>
 
 type Frame = { directory?: string; payload?: { type: string; properties?: Record<string, any> } }
 
-type StoredMessage = { info: { id: string; role: string }; parts: Array<{ type: string; text?: string }> }
+type StoredMessage = {
+  info: { id: string; role: string }
+  parts: Array<{ type: string; text?: string; callID?: string; state?: { status: string; error?: string } }>
+}
+
+const RESTART_MESSAGE = "ACP process restarted; pending interactive state must be rerun"
 
 /** One workspace's Durable Object, reached the way a client reaches a runtime: over its HTTP routes. */
 function workspace(miniflare: Miniflare, workspaceId: string) {
@@ -145,10 +150,30 @@ function workspace(miniflare: Miniflare, workspaceId: string) {
       }
       return true
     }
+    let reading: Promise<boolean> | undefined
+    /** The next chunk, or `undefined` once `at` passes; a read cut short stays pending for the next call. */
+    const readBefore = async (at: number) => {
+      reading ??= read()
+      let timer: ReturnType<typeof setTimeout> | undefined
+      const expired = new Promise<undefined>((resolve) => { timer = setTimeout(() => resolve(undefined), Math.max(0, at - Date.now())) })
+      const next = await Promise.race([reading, expired]).finally(() => clearTimeout(timer))
+      if (next !== undefined) reading = undefined
+      return next
+    }
     return {
       frames,
-      async until(done: (frames: Frame[]) => boolean) {
-        while (!done(frames)) if (!await read()) throw new Error(`${workspaceId}'s stream ended first`)
+      async until(done: (frames: Frame[]) => boolean, what: string, withinMs = 5_000) {
+        const at = Date.now() + withinMs
+        while (!done(frames)) {
+          const next = await readBefore(at)
+          if (next === undefined) throw new Error(`${workspaceId}: ${what} did not happen within ${withinMs} ms; frames: ${frames.map((frame) => frame.payload?.type ?? "heartbeat").join(", ")}`)
+          if (!next) throw new Error(`${workspaceId}'s stream ended before ${what}`)
+        }
+      },
+      /** Collects whatever arrives for `ms`. */
+      async drain(ms: number) {
+        const at = Date.now() + ms
+        while (await readBefore(at) !== undefined);
       },
       async close() {
         controller.abort()
@@ -164,8 +189,27 @@ function workspace(miniflare: Miniflare, workspaceId: string) {
     prompt: (sessionId: string, text: string, delivery?: "queue") =>
       json(`/session/${sessionId}/prompt_async`, { method: "POST", body: { parts: [{ type: "text", text }], ...(delivery ? { delivery } : {}) } }),
     messages: (sessionId: string) => json<StoredMessage[]>(`/session/${sessionId}/message`),
+    queue: (sessionId: string) => json<Array<{ seq: number }>>(`/session/${sessionId}/queue`),
+    status: () => json<Record<string, { type: string; message?: string }>>(`/session/status?directory=${encodeURIComponent(DIRECTORY)}`),
   }
 }
+
+/**
+ * Polls the routes until `check` holds. A re-issued turn starts as the object
+ * boots, before the request that woke it can subscribe to the stream, so the
+ * store is the only place that turn can be observed.
+ */
+async function eventually(check: () => Promise<boolean>, what: string, withinMs = 5_000) {
+  const at = Date.now() + withinMs
+  while (!await check()) {
+    if (Date.now() > at) throw new Error(`${what} did not happen within ${withinMs} ms`)
+    await new Promise((resolve) => setTimeout(resolve, 20))
+  }
+}
+
+const heldToolRunning = (sessionId: string) => (frames: Frame[]) =>
+  frames.some((frame) => frame.payload?.type === "message.part.updated" && frame.payload.properties?.sessionID === sessionId
+    && frame.payload.properties.part?.callID === "call_held")
 
 const idleFor = (sessionId: string) => (frames: Frame[]) =>
   frames.some((frame) => frame.payload?.type === "session.idle" && frame.payload.properties?.sessionID === sessionId)
@@ -222,7 +266,7 @@ void describe("the session core in a Durable Object under workerd", () => {
 
     const events = await client.stream()
     await client.prompt(session.id, "hello")
-    await events.until(idleFor(session.id))
+    await events.until(idleFor(session.id), "the turn to go idle")
     await events.close()
     assert.deepEqual(streamedText(events.frames, session.id), ["hello", "echo: hello"])
 
@@ -237,7 +281,7 @@ void describe("the session core in a Durable Object under workerd", () => {
 
     const resumed = await restarted.stream()
     await restarted.prompt(session.id, "again")
-    await resumed.until(idleFor(session.id))
+    await resumed.until(idleFor(session.id), "the resumed turn to go idle")
     await resumed.close()
     assert.deepEqual(transcript(await restarted.messages(session.id)), [
       { role: "user", text: "hello" },
@@ -257,16 +301,79 @@ void describe("the session core in a Durable Object under workerd", () => {
     const leftEvents = await left.stream()
 
     await left.prompt(leftSession.id, "left secret", "queue")
-    await leftEvents.until(idleFor(leftSession.id))
+    await leftEvents.until(idleFor(leftSession.id), "the left turn to go idle")
     await leftEvents.close()
     assert.ok(leftEvents.frames.some((frame) => frame.payload?.type === "session.queue"))
 
     await right.prompt(rightSession.id, "right")
-    await watching.until(idleFor(rightSession.id))
+    await watching.until(idleFor(rightSession.id), "the right turn to go idle")
     await watching.close()
 
     assert.doesNotMatch(miniflare.stderr(), /workspaceRuntimeBus subscriber failed/)
     const leaked = watching.frames.filter((frame) => JSON.stringify(frame).includes(leftSession.id) || JSON.stringify(frame).includes("left secret"))
     assert.deepEqual(leaked, [])
+  })
+  void it("ends a turn interrupted by eviction as the store's restart recovery records it, and takes the next prompt", async () => {
+    const persist = fs.mkdtempSync(path.join(os.tmpdir(), "wr-session-core-do-"))
+    roots.push(persist)
+    const first = start(persist)
+    const client = workspace(first, "ws_evicted_turn")
+    const session = await client.create()
+    const live = await client.stream()
+    await client.prompt(session.id, "hold: the build")
+    await live.until(heldToolRunning(session.id), "the held turn's tool call to start")
+    assert.ok(streamedText(live.frames, session.id).includes("working on the build"))
+
+    await first.dispose()
+    const reopened = workspace(start(persist), "ws_evicted_turn")
+
+    assert.deepEqual((await reopened.status())[session.id], { type: "recovering", kind: "process_restart", message: RESTART_MESSAGE })
+    const interrupted = await reopened.messages(session.id)
+    assert.deepEqual(transcript(interrupted), [{ role: "user", text: "hold: the build" }, { role: "assistant", text: "working on the build" }])
+    const tool = interrupted[1]!.parts.find((part) => part.callID === "call_held")
+    assert.deepEqual([tool?.state?.status, tool?.state?.error], ["error", "Tool execution interrupted by ACP restart"])
+
+    const after = await reopened.stream()
+    await reopened.prompt(session.id, "after")
+    await after.until(idleFor(session.id), "the next prompt's turn to go idle")
+    await after.close()
+    assert.deepEqual(transcript(await reopened.messages(session.id)).slice(2), [
+      { role: "user", text: "after" },
+      { role: "assistant", text: "echo: after" },
+    ])
+  })
+
+  void it("re-issues a prompt queued behind a turn the eviction interrupted, exactly once", async () => {
+    const persist = fs.mkdtempSync(path.join(os.tmpdir(), "wr-session-core-do-"))
+    roots.push(persist)
+    const first = start(persist)
+    const client = workspace(first, "ws_evicted_queue")
+    const session = await client.create()
+    const live = await client.stream()
+    await client.prompt(session.id, "hold: the build")
+    await live.until(heldToolRunning(session.id), "the held turn's tool call to start")
+    await client.prompt(session.id, "then the tests", "queue")
+    assert.equal((await client.queue(session.id)).length, 1)
+
+    await first.dispose()
+    const second = start(persist)
+    const reopened = workspace(second, "ws_evicted_queue")
+    await eventually(async () => (await reopened.messages(session.id)).length === 4, "the queued prompt's turn to be recorded")
+    const expected = [
+      { role: "user", text: "hold: the build" },
+      { role: "assistant", text: "working on the build" },
+      { role: "user", text: "then the tests" },
+      { role: "assistant", text: "echo: then the tests" },
+    ]
+    assert.deepEqual(transcript(await reopened.messages(session.id)), expected)
+    assert.deepEqual(await reopened.queue(session.id), [])
+
+    await second.dispose()
+    const third = workspace(start(persist), "ws_evicted_queue")
+    const quiet = await third.stream()
+    await quiet.drain(300)
+    await quiet.close()
+    assert.deepEqual(quiet.frames.filter((frame) => frame.payload?.properties?.sessionID === session.id), [])
+    assert.deepEqual(transcript(await third.messages(session.id)), expected)
   })
 })
