@@ -219,6 +219,10 @@ function recoveryOwner(state: Workspace, _sessionId: string) {
  */
 function runtimeApp(state: Workspace) {
   const find = (id: string) => state.sessions.find((row) => row.id === id) ?? null
+  const read = (id: string) => {
+    const row = find(id)
+    return row ? { ...row, time: { created: 1, updated: 1 } } : null
+  }
   const subscribers = new Set<{ sessionId?: string; push: (event: { sessionId: string; directory: string; payload: unknown }) => void }>()
   const settle = (sessionId: string) => {
     state.running.delete(sessionId)
@@ -252,11 +256,11 @@ function runtimeApp(state: Workspace) {
         state.sessions.push(created)
         return { ...created, time: { created: 1, updated: 1 } }
       },
-      get: async (sessionId: string) => find(sessionId),
+      get: async (sessionId: string) => read(sessionId),
       update: async (sessionId: string, updates: { title?: string }) => {
         const row = find(sessionId)
         if (row && typeof updates.title === "string") row.title = updates.title
-        return row
+        return read(sessionId)
       },
       updateConfig: async (sessionId: string, update: { harness?: { id: string } }) => {
         const row = find(sessionId)
@@ -344,8 +348,8 @@ function runtimeApp(state: Workspace) {
     },
     resolveDirectory: () => state.directory,
     resolveWorkspaceId: () => state.id,
-    listSessions: async () => state.sessions.map((row) => ({ ...row })),
-    getSession: (_c, _directory, sessionId) => find(sessionId),
+    listSessions: async () => state.sessions.map((row) => read(row.id)!),
+    getSession: (_c, _directory, sessionId) => read(sessionId),
     getStatus: () => state.status,
     getMessagePage: () => ({ messages: state.messages, nextCursor: "cursor_1" }),
     publishGlobal: () => {},
