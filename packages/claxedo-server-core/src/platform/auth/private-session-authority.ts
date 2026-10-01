@@ -313,10 +313,6 @@ export type PrivateSessionAuthority = {
     auth: SignedControlPlaneAuth,
     input: { workspaceId: string; sessions: PrivateSessionVisibility[] },
   ) => Promise<unknown>
-  deleteSessionVisibility: (
-    auth: SignedControlPlaneAuth,
-    input: { sessionId: string; workspaceId: string },
-  ) => Promise<unknown>
 }
 
 export const PRIVATE_SESSION_AUTHORITY_METHODS = [
@@ -342,7 +338,6 @@ export const PRIVATE_SESSION_AUTHORITY_METHODS = [
   "syncSessionMessages",
   "upsertSessionVisibility",
   "replaceSessionVisibility",
-  "deleteSessionVisibility",
 ] as const satisfies readonly (keyof PrivateSessionAuthority)[]
 
 type MissingPrivateSessionMethod = Exclude<

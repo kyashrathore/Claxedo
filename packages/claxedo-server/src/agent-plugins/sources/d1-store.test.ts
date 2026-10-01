@@ -1,12 +1,12 @@
 import { afterEach, describe, expect, test } from "vitest"
 import { Miniflare } from "miniflare"
-import type { D1Database } from "@cloudflare/workers-types"
+import type { D1Database, D1PreparedStatement } from "@cloudflare/workers-types"
 import {
   agentPluginSourceRecord,
   type AgentPluginSourceRegistration,
 } from "@claxedo/server-core/agent-plugins/sources/registry"
 import { AgentPluginSourceRegistryError } from "@claxedo/server-core/agent-plugins/sources/routes"
-import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
+import { ControlPlaneAuthError, type SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import type { AuthIdentity, ControlPlanePrincipal } from "@claxedo/server-core/platform/auth/authentication"
 import { D1WorkspaceAuthority } from "../../authority/adapters/d1/workspace-authority"
 import { applyControlPlaneMigration, controlPlaneMigrations } from "../../test-support/control-plane-migrations"
@@ -36,8 +36,26 @@ async function setup() {
     d1Databases: ["CONTROL_PLANE_DB"],
   })
   active.push(instance)
-  const database = await instance.getD1Database("CONTROL_PLANE_DB")
-  await migrate(database)
+  const raw = await instance.getD1Database("CONTROL_PLANE_DB")
+  await migrate(raw)
+  // A step run between a method's reads and its batch, which is where a
+  // concurrent writer lands in production. Miniflare's D1 handle is a Proxy
+  // that drops property sets, so the interception lives in a wrapper.
+  let beforeBatch: (() => Promise<void>) | undefined
+  const database = new Proxy(raw, {
+    get(target, property, receiver) {
+      if (property === "batch") {
+        return async (statements: D1PreparedStatement[]) => {
+          const step = beforeBatch
+          beforeBatch = undefined
+          if (step) await step()
+          return await target.batch(statements)
+        }
+      }
+      const value: unknown = Reflect.get(target, property, receiver)
+      return typeof value === "function" ? value.bind(target) : value
+    },
+  })
   let sequence = 0
   const authority = new D1WorkspaceAuthority(database, {
     deploymentId: "deployment-a",
@@ -45,7 +63,15 @@ async function setup() {
     now: () => 1_800_000_000_000 + sequence,
     randomId: (prefix) => `${prefix}_${String(++sequence).padStart(4, "0")}`,
   })
-  return { database, authority, store: new D1AgentPluginSourceStore({ database, authority }) }
+  const beforeNextBatch = (step: () => Promise<void>) => {
+    beforeBatch = step
+  }
+  return { database, authority, store: new D1AgentPluginSourceStore({ database, authority }), beforeNextBatch }
+}
+
+async function suspendActor(database: D1Database, auth: SignedControlPlaneAuth) {
+  if (!auth.principal) throw new Error("fixture auth has no principal")
+  await database.prepare("update actors set state = 'suspended' where actor_id = ?").bind(auth.principal.actorId).run()
 }
 
 async function signed(
@@ -197,6 +223,26 @@ describe("D1 Agent Plugin source store", () => {
 
     await store.remove(owner, "github:acme/team@main")
     expect(await store.list(owner)).toEqual([])
+  })
+
+  test("an actor suspended after the caller resolved, while the user stays active, adds and removes no source", async () => {
+    const { database, authority, store, beforeNextBatch } = await setup()
+    const owner = await signed(authority, identity("alice"))
+    await store.add(owner, agentPluginSourceRecord(registration("acme", "kept"), 1))
+    const sources = async () => (await database.prepare("select id from agent_plugin_sources order by id").all<{ id: string }>())
+      .results.map((row) => row.id)
+
+    beforeNextBatch(() => suspendActor(database, owner))
+    const added = await store.add(owner, agentPluginSourceRecord(registration("acme", "plugins"), 2)).catch((cause: unknown) => cause)
+    expect(added).toBeInstanceOf(ControlPlaneAuthError)
+    expect(added).toMatchObject({ status: 403 })
+    expect(await database.prepare("select state from users where user_id = ?").bind(owner.principal?.userId).first())
+      .toEqual({ state: "active" })
+    expect(await sources()).toEqual(["github:acme/kept@main"])
+
+    const removed = await store.remove(owner, "github:acme/kept@main").catch((cause: unknown) => cause)
+    expect(removed).toBeInstanceOf(ControlPlaneAuthError)
+    expect(await sources()).toEqual(["github:acme/kept@main"])
   })
 
   test("stores the registration fields a catalog read needs", async () => {

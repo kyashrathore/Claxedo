@@ -30,7 +30,7 @@ describe("organization/team route error contract", () => {
     [new PublicApiError("team_member_org_membership_required"), 403, "team_member_org_membership_required"],
     [new PublicApiError("team_not_allowed_on_personal_org"), 400, "team_not_allowed_on_personal_org"],
     [new PublicApiError("team_member_target_required"), 400, "team_member_target_required"],
-    [new PublicApiError("organization_not_found"), 404, "organization_not_found"],
+    [new PublicApiError("org_invitation_pending"), 409, "org_invitation_pending"],
     [new PublicApiError("team_not_found"), 404, "team_not_found"],
     [new PublicApiError("team_member_not_found"), 404, "team_member_not_found"],
     [new PublicApiError("project_not_found"), 404, "project_not_found"],

@@ -9,7 +9,7 @@ import type {
 } from "@claxedo/server-core/platform/auth/authority"
 import { asOrgId } from "@claxedo/server-core/platform/auth/branded-id"
 import { CURRENT_CHANNEL_IDENTITY_VERSION } from "@claxedo/workspace-relay-protocol"
-import { activeGuard, may, mayGuard, maySql, readProjectRole, type AuthorizationPrincipal } from "./authorization"
+import { activeGuard, admittingShareSql, batchUnder, may, mayGuard, maySql, readProjectRole, type AuthorizationPrincipal } from "./authorization"
 import { requireHuman } from "./access-context"
 import { d1ConstraintFailure } from "../../../platform/db/d1-constraint"
 
@@ -130,7 +130,7 @@ export class D1ChannelRuntimeAuthority implements D1ChannelRuntimeAuthorityPort 
     const who = await this.requirePrincipal(auth)
     const channel = requireText(args.channel, "channel", 64)
     const externalUserId = requireText(args.externalUserId, "externalUserId", 512)
-    const result = await this.database.prepare(`
+    const [result] = await batchUnder(this.database, activeGuard(who), [this.database.prepare(`
       update channel_identity_bindings set revoked_at = ?
       where deployment_id = ? and channel = ? and external_user_id = ?
         and user_id = ? and actor_id = ? and revoked_at is null
@@ -143,7 +143,7 @@ export class D1ChannelRuntimeAuthority implements D1ChannelRuntimeAuthorityPort 
       who.userId,
       who.actorId,
       CURRENT_CHANNEL_IDENTITY_VERSION,
-    ).run()
+    )])
     if (changes(result) === 1) return { revoked: true }
 
     // The route writes canonical state before deleting its local allow/binding
@@ -363,11 +363,12 @@ export class D1ChannelRuntimeAuthority implements D1ChannelRuntimeAuthorityPort 
   ) {
     const who = await this.requirePrincipal(auth)
     const workspaceId = requireText(args.workspaceId, "workspaceId")
-    if (!(await may(this.database, who, "operate", { kind: "workspace", workspaceId }))) throw denied()
-    await this.database.prepare(`
+    const operates = { kind: "workspace" as const, workspaceId }
+    if (!(await may(this.database, who, "operate", operates))) throw denied()
+    await batchUnder(this.database, mayGuard(who, "operate", operates), [this.database.prepare(`
       update runtime_access_tokens set revoked_at = ?
       where deployment_id = ? and jti = ? and workspace_id = ? and revoked_at is null
-    `).bind(this.now(), this.options.deploymentId, requireText(args.jti, "jti"), workspaceId).run()
+    `).bind(this.now(), this.options.deploymentId, requireText(args.jti, "jti"), workspaceId)])
     return { ok: true }
   }
 
@@ -377,18 +378,20 @@ export class D1ChannelRuntimeAuthority implements D1ChannelRuntimeAuthorityPort 
   ) {
     const who = await this.requirePrincipal(auth)
     const workspaceId = requireText(args.workspaceId, "workspaceId")
-    if (!(await may(this.database, who, "operate", { kind: "workspace", workspaceId }))) throw denied()
-    const result = await this.database.prepare(`
+    const operates = { kind: "workspace" as const, workspaceId }
+    if (!(await may(this.database, who, "operate", operates))) throw denied()
+    const [result] = await batchUnder(this.database, mayGuard(who, "operate", operates), [this.database.prepare(`
       update runtime_access_tokens set revoked_at = ?
       where deployment_id = ? and workspace_id = ? and minted_for_user_id = ? and revoked_at is null
-    `).bind(this.now(), this.options.deploymentId, workspaceId, who.userId).run()
+    `).bind(this.now(), this.options.deploymentId, workspaceId, who.userId)])
     return { revoked: changes(result) }
   }
 
   /**
    * A token with no session reaches the workspace and is its owner's; a token
    * scoped to one session is a viewer's, for someone who may read that
-   * session, and reaches nothing else.
+   * session, and reaches nothing else. A share holder's is recorded under the
+   * share that admitted it, which is what revokes it for good.
    */
   private async recordUserRuntimeToken(
     who: Principal,
@@ -403,14 +406,18 @@ export class D1ChannelRuntimeAuthority implements D1ChannelRuntimeAuthorityPort 
     const holder = sessionId === null
       ? mayGuard(who, "operate", { kind: "workspace", workspaceId: values.workspaceId })
       : mayGuard(who, "read", { kind: "session", sessionId, workspaceId: values.workspaceId })
+    const admitting = admittingShareSql(who, "token_session")
     try {
       const result = await this.database.prepare(`
         insert into runtime_access_tokens (
           jti, deployment_id, workspace_id, org_id, project_id, host_id,
-          principal_kind, actor_id, actor_kind, role, minted_for_user_id, session_id,
+          principal_kind, actor_id, actor_kind, role, minted_for_user_id, session_id, share_grant_id,
           expires_at, revoked_at, created_at
         )
-        select ?, ?, workspace_id, org_id, project_id, ?, 'user', ?, 'human', ?, ?, ?, ?, null, ?
+        select ?, ?, workspace_id, org_id, project_id, ?, 'user', ?, 'human', ?, ?, ?, (
+          select ${admitting.sql} from sessions token_session
+          where token_session.session_id = ? and token_session.workspace_id = workspaces.workspace_id
+        ), ?, null, ?
         from workspaces where workspace_id = ? and deleted_at is null and ${holder.sql}
       `).bind(
         values.jti,
@@ -419,6 +426,8 @@ export class D1ChannelRuntimeAuthority implements D1ChannelRuntimeAuthorityPort 
         who.actorId,
         args.role,
         who.userId,
+        sessionId,
+        ...admitting.bind,
         sessionId,
         values.expiresAt,
         this.now(),

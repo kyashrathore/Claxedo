@@ -49,7 +49,7 @@ export async function run() {
       const row = (await api.permissions(directory)).find((item) => item.sessionID === child.id)
       assert.ok(row, `${harness.id} listed no permission on the child`)
       await assert.rejects(() => api.replyPermission(directory, parent.id, row.id, "once"),
-        (error: unknown) => error instanceof ApiError && error.status === 409, `${harness.id} answered the child's request on the parent`)
+        (error: unknown) => error instanceof ApiError && error.status === 404, `${harness.id} answered the child's request on the parent`)
       await assert.rejects(() => fs.access(output), (error: unknown) => (error as NodeJS.ErrnoException).code === "ENOENT")
       await api.replyPermission(directory, child.id, row.id, "once")
       await stream.waitFor((frame) => stream.frames.indexOf(frame) >= since && frameType(frame) === "session.idle" && frameSessionId(frame) === parent.id,
@@ -95,7 +95,7 @@ async function idleParentChild(stack: Stack, api: ClaxedoApi, stream: EventStrea
     const row = (await api.permissions(directory)).find((item) => item.sessionID === child.id)
     assert.ok(row, "claude listed no permission on the background child")
     await assert.rejects(() => api.replyPermission(directory, parent.id, row.id, "once"),
-      (error: unknown) => error instanceof ApiError && error.status === 409, "claude answered the background child's request on the parent")
+      (error: unknown) => error instanceof ApiError && error.status === 404, "claude answered the background child's request on the parent")
     await api.replyPermission(directory, child.id, row.id, "once")
     await stream.waitFor((frame) => stream.frames.indexOf(frame) >= since && frameType(frame) === "session.idle" && frameSessionId(frame) === child.id,
       { label: "claude background child idle", timeoutMs: 90_000 })

@@ -173,29 +173,6 @@ async function mcpServerViews(input: {
   }))
 }
 
-/**
- * Organization defaults and organization Connections are admin surfaces. The
- * authority reports the caller's role per organization; a single-org product
- * (user-deployed) has exactly one row, a multi-org product resolves the one
- * the caller is acting in the same way the activation store does.
- */
-async function canManageOrganization(input: {
-  services: ControlPlaneServices
-  auth: SignedControlPlaneAuth
-  me: unknown
-}) {
-  if (!input.services.authority) return false
-  const orgId = stringField(asRecord(input.me), "org_id")
-    ?? await input.services.authority.resolveOrgId(input.auth).catch(() => undefined)
-  if (!orgId) return false
-  const result = await input.services.authority.listOrgs(input.auth)
-  if (!Array.isArray(result)) return false
-  return result.some((value) => {
-    if (!isRecord(value)) return false
-    return value.org_id === orgId && (value.role === "admin" || value.role === "owner")
-  })
-}
-
 async function candidateView(input: {
   candidate: AgentPluginCatalogCandidate
   /** The caller's retained plugins, read once per request by the catalog. */
@@ -344,6 +321,8 @@ export function HostedAgentPluginRoutes(input: {
   sources: SignedSources
   artifacts: AgentPluginArtifactStore
   activations: SignedAgentPluginActivationStore
+  /** Whether the caller administers the organization they act in, which owns its defaults and Connections. */
+  administersOrganization: (auth: SignedControlPlaneAuth) => Promise<boolean>
   reconcile: AgentPluginReconcilePort
   /** The first-party server's tool groups; required so no composition can serve a catalog without it. */
   builtIn: { groups: readonly BuiltinToolGroup[]; deployment: BuiltinDeployment }
@@ -457,7 +436,7 @@ export function HostedAgentPluginRoutes(input: {
       input.activations.revision(auth),
       input.activations.listKnown(auth),
       input.services.authority?.listWorkspaces(auth),
-      canManageOrganization({ services: input.services, auth, me: authResult.me }),
+      input.administersOrganization(auth),
     ])
     if (before !== after) throw new Error("Catalog reads must not mutate Agent Plugins activation state")
     timing.mark("state")
