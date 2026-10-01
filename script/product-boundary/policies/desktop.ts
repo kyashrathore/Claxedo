@@ -415,7 +415,10 @@ export const desktopRenderer: Policy = {
   // +1 model-rows owns shared SettingsRow rendering and large-provider
   // virtualization, reached through accounts/view/models-tab. Its imports
   // already belong to the renderer closure; no package edge is added.
-  ceilings: { modules: 1246, packages: 36 },
+  // +2 folded-user-message-body and its stylesheet own the rendered-height
+  // preview for user prompts, through message-part and transcript/styles.
+  // Existing Solid and transcript i18n owners add no package edge.
+  ceilings: { modules: 1248, packages: 36 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,

@@ -36,7 +36,7 @@ function MessageAuthorAvatar(props: { author: AgentMessageAuthor }) {
 
   return (
     <div
-      class="mt-1 flex size-7 shrink-0 items-center justify-center overflow-hidden rounded-full border border-border-weak-base bg-background-stronger text-11-medium text-text-strong"
+      class="mt-1 flex size-7 shrink-0 items-center justify-center overflow-hidden rounded-full border border-border-weak-base bg-background-stronger text-[9px] font-medium leading-none text-text-strong"
       aria-label={props.author.name || "Message author"}
       title={props.author.name || undefined}
     >
@@ -83,17 +83,7 @@ export function MessageAuthorLane(props: { message: MessageWithAuthor; children:
       {(author) => (
         <div class="flex w-full items-start justify-end gap-2">
           <div class="min-w-0 flex-1">{content()}</div>
-          <div class="flex shrink-0 flex-col items-center gap-1">
-            <MessageAuthorAvatar author={author()} />
-            <Show when={author().name.trim()}>
-              <span
-                class="max-w-[4.75rem] truncate text-center text-11-regular text-text-weak"
-                title={author().name}
-              >
-                {author().name}
-              </span>
-            </Show>
-          </div>
+          <MessageAuthorAvatar author={author()} />
         </div>
       )}
     </Show>

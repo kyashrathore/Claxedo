@@ -189,6 +189,9 @@ async function interact(live: { stack: Stack; api: ClaxedoApi; target: Target; a
     case "toggleFold":
       await app.getByRole("button", { name: /^Worked/ }).nth(interaction.turn).click()
       return
+    case "toggleUserMessage":
+      await app.locator('[data-component="user-message"]').filter({ hasText: interaction.message }).getByRole("button", { name: /^Show (all|less)$/ }).click()
+      return
     case "reload":
       await app.reload()
       return

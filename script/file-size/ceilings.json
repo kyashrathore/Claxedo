@@ -3,7 +3,7 @@
   "packages/claxedo-app/src/transcript/file.tsx": 1192,
   "packages/claxedo-app/src/transcript/markdown-inline-code-kind.ts": 1924,
   "packages/claxedo-app/src/transcript/markdown.tsx": 821,
-  "packages/claxedo-app/src/transcript/message-part.tsx": 2523,
+  "packages/claxedo-app/src/transcript/message-part.tsx": 2516,
   "packages/claxedo-desktop/src/browser-preload/index.ts": 949,
   "packages/claxedo-desktop/src/main/account/account-service.ts": 815,
   "packages/claxedo-desktop/src/main/diagnostics/profiler.ts": 1095,

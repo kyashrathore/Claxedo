@@ -46,6 +46,7 @@ The corpus holds the transcript's behavior still: every case renders the same as
 - A turn marked `"live": true` streams with the session open: it is sent once the transcript is on screen, and its steps pace their text with `delayMs` and stop at `hold` steps. The case compares what is on screen at each hold, so it proves the streaming renderer, not only the settled one. A live case's durations (the text part's agent and time, the Worked header's label) are hidden from its screenshots and replaced in its trees, since they depend on how long the holds lasted.
 - `interactions` run in order after the transcript is on screen, and the comparison is taken after each one:
   - `scroll` to `top` or `bottom`, `toggleFold` of the n-th Worked header, `reload`;
+  - `toggleUserMessage` expands or collapses the user bubble containing the stable visible text in `message`;
   - `release` a live turn's `hold`, wait for its `ready` text and a DOM that has stopped changing, and, with `settles`, for the session to go idle;
   - `markRows` remembers the turn rows on screen, and `rowsKept` asserts they are still the same elements;
   - `markDetached` counts, after a forced collection, the DOM nodes that live outside the document, and `detachedGrowth` asserts that count grew by at most `max` since.
