@@ -36,7 +36,7 @@ async function runtimeCall(signed: SignedStack, workspace: CloudWorkspace, metho
 export async function makeCloudWorkspace(signed: SignedStack, name: string): Promise<CloudWorkspace> {
   const call = asOwner(signed)
   const created = JSON.parse((await call("POST", "/api/workspace/create", { workspaceName: name, repoName: name, repoUrl: signed.hosted.gitUrl })).body) as { workspaceId: string }
-  const catalog = JSON.parse((await call("GET", "/api/workspace?host=cloud")).body) as { workspaces: Array<{ workspace_id: string; project_id: string }> }
+  const catalog = JSON.parse((await call("GET", "/api/workspace?host=provisioner")).body) as { workspaces: Array<{ workspace_id: string; project_id: string }> }
   const workspace = catalog.workspaces.find((row) => row.workspace_id === created.workspaceId)
   if (!workspace) throw new Error(`Created cloud workspace ${created.workspaceId} is absent from D1`)
   return { id: workspace.workspace_id, projectId: workspace.project_id }
