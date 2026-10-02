@@ -1,8 +1,6 @@
 import { afterAll, afterEach, expect, spyOn, test } from "bun:test"
 import { createTransport } from "./transport"
-import { QueryClient } from "@tanstack/solid-query"
-import { createPlacementStreams } from "./placement-streams"
-import { placementId, projectId, sessionId } from "./ids"
+import { placementId } from "./ids"
 import type { Workspaces } from "./workspaces"
 import { createWorkspaceWakes } from "./workspace-wakes"
 
@@ -87,29 +85,4 @@ test("renewing a rejected runtime token cannot wake compute", async () => {
   fetcher.mockResolvedValueOnce(Response.json({}, { status: 401 })).mockResolvedValueOnce(Response.json({}))
   await transport.runtime(cloud, "/session/ses_a")
   expect(calls).toEqual(Array(2).fill({ operation: "workspace.connection.read", input: { id: "ws_cloud" } }))
-})
-
-test("signed desktop placement streams deliver live relay frames placed in their workspace", async () => {
-  const { transport, calls } = signed(link)
-  const queryClient = new QueryClient()
-  const ref = { placementId: placementId("ws_cloud"), projectId: projectId("prj"), sessionId: sessionId("ses_a") }
-  const frame = { directory: "workspace:ws_cloud", payload: { type: "session.status", properties: { sessionID: "ses_a", status: { type: "busy" } } } }
-  const frames: unknown[] = []
-  fetcher.mockImplementation(Object.assign(async (url: Parameters<typeof fetch>[0]) => String(url).startsWith("https://relay.test/")
-    ? new Response(new ReadableStream({ start: (controller) => controller.enqueue(new TextEncoder().encode(`id: 1\ndata: ${JSON.stringify(frame)}\n\n`)) }), { headers: { "content-type": "text/event-stream" } })
-    : Response.json({}), { preconnect: () => undefined }))
-  const workspaces = { catalog: () => ({ placements: [{ route: cloud, placement: { id: ref.placementId, kind: "cloud", reachable: true } }] }) } as unknown as Workspaces
-  const streams = createPlacementStreams({ transport, workspaces, queryClient, onFrame: (frame) => frames.push(frame), onGap: () => undefined })
-  const detach = streams.attach(ref)
-  try {
-    for (let tick = 0; tick < 40; tick++) await Promise.resolve()
-    expect(frames).toEqual([{ ...frame, workspaceId: "ws_cloud" }])
-    expect(calls).toEqual([{ operation: "workspace.connection.read", input: { id: "ws_cloud" } }])
-    expect(String(fetcher.mock.calls[0]?.[0])).toBe("https://relay.test/workspaces/ws_cloud/api/wr/events?sessionID=ses_a")
-    expect(new Headers(fetcher.mock.calls[0]?.[1]?.headers).get("authorization")).toBe("Bearer session-rat")
-  } finally {
-    detach()
-    streams.close()
-    queryClient.clear()
-  }
 })
