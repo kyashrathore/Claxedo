@@ -251,7 +251,7 @@ describe("claxedo workspace-runtime boot policy", () => {
 
       await options.onDrain!()
 
-      expect((await plane.ledger.ownedBy({ org_id: plane.orgId, user_id: "member" })).map((fact) => [
+      expect((await plane.ledger.ownedBy({ org_id: plane.orgId, user_id: plane.member.principal!.userId })).map((fact) => [
         fact.messageId, fact.location, fact.hostId, fact.settlement, fact.tokens,
       ])).toEqual([
         ["msg_reply", "cloud-workspace", "workspace:ws_real", "final", tokens],

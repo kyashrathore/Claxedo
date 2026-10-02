@@ -47,7 +47,7 @@ function reported(input: Partial<UsageReportFact> = {}): UsageReportFact {
 }
 
 async function filedFor(target: UsageReportPlane, userId: "owner" | "member") {
-  const filed = await target.ledger.ownedBy({ org_id: target.orgId, user_id: userId })
+  const filed = await target.ledger.ownedBy({ org_id: target.orgId, user_id: target[userId].principal!.userId })
   return filed.map((fact) => fact.messageId)
 }
 
@@ -311,8 +311,8 @@ describe("usage reports over the runtime session authority", () => {
       { messageId: "msg_over_cap", revision: 2, status: "refused", code: "usage_turn_full" },
     ] })
     expect(filings).toEqual([
-      { messageId: "msg_by_owner", turnId: "msg_user_owner", user: "owner" },
-      { messageId: "msg_over_cap", turnId: "msg_user_member", user: "member" },
+      { messageId: "msg_by_owner", turnId: "msg_user_owner", user: target.owner.principal!.userId },
+      { messageId: "msg_over_cap", turnId: "msg_user_member", user: target.member.principal!.userId },
     ])
   })
 
@@ -341,12 +341,12 @@ describe("the self-hosted usage view over reported cloud turns", () => {
       sessionRef: "local:/work:session:ses_local",
       hostId: "host_this_machine",
       location: "local",
-    }, { owner: { org_id: target.orgId, user_id: "owner" } })
+    }, { owner: { org_id: target.orgId, user_id: target.owner.principal!.userId } })
 
     const identities: Record<string, { org_id: string; user_id: string }> = {
-      owner: { org_id: target.orgId, user_id: "owner" },
-      member: { org_id: target.orgId, user_id: "member" },
-      outsider: { org_id: target.outsiderOrgId, user_id: "outsider" },
+      owner: { org_id: target.orgId, user_id: target.owner.principal!.userId },
+      member: { org_id: target.orgId, user_id: target.member.principal!.userId },
+      outsider: { org_id: target.outsiderOrgId, user_id: target.outsider.principal!.userId },
     }
     const routes = LocalUsageRoutes({
       local: target.ledger,

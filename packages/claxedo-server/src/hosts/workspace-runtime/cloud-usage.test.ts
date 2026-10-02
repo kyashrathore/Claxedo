@@ -141,7 +141,7 @@ function refusingReports(plane: UsageReportPlane, refuse: () => boolean): Fetch 
 }
 
 async function filedFor(plane: UsageReportPlane, userId: "owner" | "member") {
-  const filed = await plane.ledger.ownedBy({ org_id: plane.orgId, user_id: userId })
+  const filed = await plane.ledger.ownedBy({ org_id: plane.orgId, user_id: plane[userId].principal!.userId })
   return filed.map((fact) => fact.messageId)
 }
 
@@ -183,7 +183,7 @@ describe("cloud workspace usage metering", () => {
 
     expect(released).toEqual({ released: true })
     expect(ledger.pending("ses_reported")).toEqual([])
-    const filed = await plane.ledger.ownedBy({ org_id: plane.orgId, user_id: "owner" })
+    const filed = await plane.ledger.ownedBy({ org_id: plane.orgId, user_id: plane.owner.principal!.userId })
     expect(filed).toEqual([expect.objectContaining({
       sessionId: "ses_reported",
       messageId: "msg_assistant_1",

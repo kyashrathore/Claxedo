@@ -42,7 +42,6 @@ export async function d1Authority() {
         },
       },
     }
-    await authority.createHostedOrganization(auth, { name: subject })
     return auth
   }
 
