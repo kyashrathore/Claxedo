@@ -52,6 +52,13 @@ function permissionDeniedEvents(toolCallId: string | undefined, error: string | 
   return toolCallId ? [{ type: "tool-error", toolCallId, error: error ?? "Permission denied" }] : []
 }
 
+function trackForegroundTask(message: Record<string, unknown>, memory: ClaudeTranslatorMemory) {
+  const taskId = text(message.task_id)
+  if (!taskId) return
+  if (message.subtype === "task_started" && message.is_backgrounded === false) memory.foregroundTasks.add(taskId)
+  if (message.subtype === "task_updated" && asRecord(message.patch)?.is_backgrounded === true) memory.foregroundTasks.delete(taskId)
+}
+
 export function translateSystemMessage(message: Record<string, unknown>, state: ClaudeSdkAdapterState, event: ClaudeFrameEvent,
   memory: ClaudeTranslatorMemory): ClaudeTranslation {
   const subtype = text(message.subtype) ?? ""
@@ -73,8 +80,10 @@ export function translateSystemMessage(message: Record<string, unknown>, state: 
     case "permission_denied":
       return permissionDeniedEvents(text(message.tool_use_id), text(message.message))
     case "task_started":
-    case "background_tasks_changed":
     case "task_updated":
+      trackForegroundTask(message, memory)
+      return []
+    case "background_tasks_changed":
       return []
     default:
       return ignoredSubtypes.includes(subtype) ? [] : ignoredFrame(memory, `system/${subtype}`)

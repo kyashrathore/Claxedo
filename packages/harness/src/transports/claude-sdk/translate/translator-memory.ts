@@ -8,9 +8,10 @@ export type ClaudeTranslatorMemory = {
   readonly requests: Map<string, Record<string, ClaudeRequestUsage>>
   readonly responseByFrame: Map<string, string>
   readonly refusedResponses: Set<string>
+  readonly foregroundTasks: Set<string>
   window?: ClaudeContextWindow
 }
 
 export function createClaudeTranslatorMemory(): ClaudeTranslatorMemory {
-  return { noted: new Set(), owners: new Map(), requests: new Map(), responseByFrame: new Map(), refusedResponses: new Set() }
+  return { noted: new Set(), owners: new Map(), requests: new Map(), responseByFrame: new Map(), refusedResponses: new Set(), foregroundTasks: new Set() }
 }
