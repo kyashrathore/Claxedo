@@ -81,3 +81,18 @@ test("an account catalog wake opens the attached stream and stopping closes it w
   streams.close()
   queryClient.clear()
 })
+
+test("a placement stream's frames name that placement's workspace, whatever directory the runtime reports", async () => {
+  const frame = { directory: "/sandbox/workspaces/claxedo-ws_shared", payload: { type: "session.status", properties: { sessionID: "ses_shared", status: { type: "busy" } } } }
+  const transport = {
+    serverUrl: "http://127.0.0.1:1",
+    runtime: async () => new Response(new ReadableStream<Uint8Array>({ start: (controller) => controller.enqueue(new TextEncoder().encode(`id: 1\ndata: ${JSON.stringify(frame)}\n\n`)) }), { headers: { "content-type": "text/event-stream" } }),
+  } as unknown as Transport
+  const frames: unknown[] = []
+  const streams = createPlacementStreams({ transport, workspaces, queryClient: new QueryClient(), onFrame: (received) => frames.push(received), onGap: () => undefined })
+  const detach = streams.attach(ref("ses_shared"))
+  await settle()
+  expect(frames).toEqual([{ ...frame, workspaceId: "ws_shared" }])
+  detach()
+  streams.close()
+})

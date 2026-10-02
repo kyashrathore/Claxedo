@@ -58,7 +58,9 @@ function reconcileStreams(state: StreamsState) {
     const path = `${RUNTIME_EVENTS_PATH}?sessionID=${encodeURIComponent(session)}`
     sessions.set(key, openEventStream({
       open: ({ headers, signal }) => input.transport.runtime(route, path, { headers, signal }),
-      onFrame: input.onFrame,
+      // A runtime reports its own directory, which a remote route never names;
+      // the stream is this placement's, so its frames carry its workspace.
+      onFrame: (frame) => input.onFrame(frame && typeof frame === "object" ? { ...frame, workspaceId: route.workspaceId } : frame),
       onGap: input.onGap,
     }))
   }
