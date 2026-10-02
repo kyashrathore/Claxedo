@@ -12,3 +12,8 @@ export function stripShellWrapper(command: string): string {
   if (!match?.[1]) return trimmed
   return unquoteScript(match[1].trim()).trim()
 }
+
+export function shellDescription(input: Record<string, unknown>): string | undefined {
+  const value = input.description
+  return typeof value === "string" && value.trim() ? value.trim() : undefined
+}

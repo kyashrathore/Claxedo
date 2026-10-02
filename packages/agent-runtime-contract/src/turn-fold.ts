@@ -123,12 +123,17 @@ function workGroupTool(slice: GroupablePart[]): WorkGroupTool {
   return "bash"
 }
 
+function partGroup(item: GroupablePart): PartGroup {
+  return { key: `part:${item.messageId}:${item.part.id}`, type: "part", ref: partRef(item) }
+}
+
 export function groupParts(input: GroupablePart[]) {
   const parts = input.filter((item) => !isPendingQuestion(item.part))
   const result: PartGroup[] = []
   let contextStart = -1
   let workStart = -1
   let taskStart = -1
+  let thoughtStart = -1
 
   const flushContext = (end: number) => {
     if (contextStart < 0) return
@@ -153,7 +158,7 @@ export function groupParts(input: GroupablePart[]) {
       workStart = -1
       return
     }
-    if (slice.length >= 2) {
+    if (slice.filter((item) => item.part.type === "tool").length >= 2) {
       result.push({
         key: `work:${first.part.id}`,
         type: "work",
@@ -161,7 +166,7 @@ export function groupParts(input: GroupablePart[]) {
         refs: slice.map(partRef),
       })
     } else {
-      result.push({ key: `part:${first.messageId}:${first.part.id}`, type: "part", ref: partRef(first) })
+      result.push(...slice.map(partGroup))
     }
     workStart = -1
   }
@@ -178,41 +183,54 @@ export function groupParts(input: GroupablePart[]) {
     taskStart = -1
   }
 
+  const flushThoughts = (end: number) => {
+    if (thoughtStart < 0) return
+    result.push(...parts.slice(thoughtStart, end + 1).map(partGroup))
+    thoughtStart = -1
+  }
+
   parts.forEach((item, index) => {
+    if (item.part.type === "reasoning") {
+      if (thoughtStart < 0) thoughtStart = index
+      return
+    }
+    const runStart = thoughtStart < 0 ? index : thoughtStart
     const isContext = isContextGroupTool(item.part)
     const isWork = isWorkGroupTool(item.part)
     const isTask = !isClaxedoToolPart(item.part) && isSubagentToolPart(item.part) && !spawnFailed(item.part)
 
     if (isContext) {
-      flushWork(index - 1)
-      flushTask(index - 1)
-      if (contextStart < 0) contextStart = index
+      flushWork(runStart - 1)
+      flushTask(runStart - 1)
+      if (contextStart < 0) contextStart = runStart
+      thoughtStart = -1
       return
     }
 
     if (isWork) {
-      flushContext(index - 1)
-      flushTask(index - 1)
-      if (workStart < 0) workStart = index
+      flushContext(runStart - 1)
+      flushTask(runStart - 1)
+      if (workStart < 0) workStart = runStart
+      thoughtStart = -1
       return
     }
 
+    flushContext(runStart - 1)
+    flushWork(runStart - 1)
+    if (!isTask || thoughtStart >= 0) flushTask(runStart - 1)
+    flushThoughts(index - 1)
     if (isTask) {
-      flushContext(index - 1)
-      flushWork(index - 1)
       if (taskStart < 0) taskStart = index
       return
     }
-
-    flushContext(index - 1)
-    flushWork(index - 1)
-    flushTask(index - 1)
-    result.push({ key: `part:${item.messageId}:${item.part.id}`, type: "part", ref: partRef(item) })
+    result.push(partGroup(item))
   })
 
-  flushContext(parts.length - 1)
-  flushWork(parts.length - 1)
-  flushTask(parts.length - 1)
+  const runEnd = (thoughtStart < 0 ? parts.length : thoughtStart) - 1
+  flushContext(runEnd)
+  flushWork(runEnd)
+  flushTask(runEnd)
+  flushThoughts(parts.length - 1)
   return result
 }
 

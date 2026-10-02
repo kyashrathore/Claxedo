@@ -87,6 +87,34 @@ describe("groupParts", () => {
     expect(shapeOf(groups)).toEqual(["agents", "part", "part", "part"])
   })
 
+  const refs = (group: PartGroup | undefined) => group && group.type !== "part" ? group.refs.map((ref) => ref.partId) : []
+
+  test("a thought joins the tool group of the tool it comes before", () => {
+    const groups = groupsOf([
+      reasoning("th1", "look first"),
+      tool("r1", "read"),
+      reasoning("th2", "then search"),
+      tool("r2", "grep"),
+      reasoning("th3", "now run it"),
+      tool("b1", "bash"),
+      reasoning("th4", "and again"),
+      tool("b2", "bash"),
+      text("t1", "answer"),
+    ])
+    expect(shapeOf(groups)).toEqual(["context", "work:bash", "part"])
+    expect(refs(groups[0])).toEqual(["th1", "r1", "th2", "r2"])
+    expect(refs(groups[1])).toEqual(["th3", "b1", "th4", "b2"])
+    expect(groups[1]?.key).toBe("work:th3")
+  })
+
+  test("a thought before text, a lone work tool, a subagent spawn, or nothing yet stays a part of its own", () => {
+    expect(shapeOf(groupsOf([tool("b1", "bash"), tool("b2", "bash"), reasoning("th1", "so"), text("t1", "answer")])))
+      .toEqual(["work:bash", "part", "part"])
+    expect(shapeOf(groupsOf([reasoning("th1", "one command"), tool("b1", "bash"), text("t1", "answer")]))).toEqual(["part", "part", "part"])
+    expect(shapeOf(groupsOf([reasoning("th1", "delegate"), tool("s1", "Agent")]))).toEqual(["part", "agents"])
+    expect(shapeOf(groupsOf([tool("b1", "bash"), tool("b2", "bash"), reasoning("th1", "still thinking")]))).toEqual(["work:bash", "part"])
+  })
+
   test("leaves an open question out of the groups", () => {
     expect(shapeOf(groupsOf([tool("q1", "question", "running"), text("t1", "waiting")]))).toEqual(["part"])
   })
@@ -116,19 +144,19 @@ describe("turnFoldDecision", () => {
 })
 
 describe("foldedGroupKeys", () => {
-  const parts = [reasoning("p1", "thinking"), tool("r1", "read"), tool("b1", "bash"), tool("b2", "bash"), text("t1", "the answer")]
+  const parts = [tool("r1", "read"), tool("b1", "bash"), tool("b2", "bash"), reasoning("p1", "thinking"), text("t1", "the answer")]
   const groups = groupsOf(parts)
 
   test("folds every foldable group but the answer, the last text part", () => {
     expect(countFoldableGroups(groups, lookup(parts))).toBe(3)
     const keys = foldedGroupKeys(turnFoldDecision({ foldableCount: 3, settled: true }), groups, lookup(parts))
-    expect([...keys]).toEqual(["part:a1:p1", "context:r1", "work:b1"])
+    expect([...keys]).toEqual(["context:r1", "work:b1", "part:a1:p1"])
   })
 
   test("keeps a group the reader opened, unless the fold was their explicit choice", () => {
     const opened = lookup(parts, new Set(["b2"]))
-    expect([...foldedGroupKeys(turnFoldDecision({ foldableCount: 3, settled: true }), groups, opened)]).toEqual(["part:a1:p1", "context:r1"])
-    expect([...foldedGroupKeys(turnFoldDecision({ foldableCount: 3, settled: true, userChoice: true }), groups, opened)]).toEqual(["part:a1:p1", "context:r1", "work:b1"])
+    expect([...foldedGroupKeys(turnFoldDecision({ foldableCount: 3, settled: true }), groups, opened)]).toEqual(["context:r1", "part:a1:p1"])
+    expect([...foldedGroupKeys(turnFoldDecision({ foldableCount: 3, settled: true, userChoice: true }), groups, opened)]).toEqual(["context:r1", "work:b1", "part:a1:p1"])
   })
 })
 

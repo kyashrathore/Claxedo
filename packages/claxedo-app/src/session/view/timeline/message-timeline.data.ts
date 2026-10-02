@@ -10,7 +10,10 @@ import {
 import type {
   AgentAssistantMessage as AssistantMessage,
   AgentContentPart as Part,
+  AgentPresentationMessage as PresentationMessage,
+  AgentReasoningPart as ReasoningPart,
   AgentSnapshotFileDiff as SnapshotFileDiff,
+  AgentToolPart as ToolPart,
 } from "@claxedo/agent-runtime-contract"
 import type { SessionStatus } from "@/server"
 import type { TranscriptUserMessage as UserMessage } from "@/transcript"
@@ -399,6 +402,25 @@ export namespace Timeline {
     lastTurn?: TurnOutcome,
   ) {
     return turnInterruption(assistantMessages, cancelledAssistantMessageId(lastTurn)).index !== -1
+  }
+
+  export type GroupMember = { message: PresentationMessage; part: ToolPart | ReasoningPart }
+
+  export function groupMembers(
+    refs: readonly PartRef[],
+    message: (messageId: string) => PresentationMessage | undefined,
+    part: (ref: PartRef) => Part | undefined,
+  ): GroupMember[] {
+    return refs.flatMap((ref) => {
+      const owner = message(ref.messageId)
+      const item = part(ref)
+      if (!owner || !item || (item.type !== "tool" && item.type !== "reasoning")) return []
+      return [{ message: owner, part: item }]
+    })
+  }
+
+  export function memberTools(members: readonly GroupMember[]): ToolPart[] {
+    return members.flatMap((member) => (member.part.type === "tool" ? [member.part] : []))
   }
 }
 

@@ -5,7 +5,7 @@ import type { TranscriptI18n } from "./i18n"
 import { genericToolIcon, toolActionPhrase } from "./basic-tool"
 import { clampLabel } from "./message-part-text"
 import { EDIT_TOOL_NAMES, WEB_TOOL_NAMES } from "@claxedo/agent-runtime-contract/turn-fold"
-import { stripShellWrapper } from "./shell-wrapper"
+import { shellDescription, stripShellWrapper } from "./shell-label"
 
 export type WorkGroupCounts = {
   edited: number
@@ -100,6 +100,8 @@ export function workGroupActiveLabel(parts: AgentToolPart[], i18n: TranscriptI18
 
   switch (canonicalToolName(active.tool)) {
     case "bash": {
+      const description = shellDescription(input)
+      if (description) return clampLabel(description)
       const command = text("command")
       return command ? clampLabel(`Running ${stripShellWrapper(command)}`) : "Running command"
     }

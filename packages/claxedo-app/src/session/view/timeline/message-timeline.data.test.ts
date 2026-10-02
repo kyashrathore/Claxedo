@@ -53,3 +53,22 @@ test("a notice stays on screen when a settled turn folds its work", () => {
   expect(shown).toContain("p2")
   expect(rows.some((row) => row._tag === "TurnFold" && row.folded)).toBe(true)
 })
+
+test("a thought between commands is drawn inside their work group, and the group's header counts only the commands", () => {
+  const assistant = { id: "a1", sessionID: "s1", role: "assistant", parentID: "u1", time: { created: 2, completed: 3 } } as unknown as AgentAssistantMessage
+  const base = { sessionID: "s1", messageID: "a1" }
+  const command = (id: string) => ({ ...base, id, type: "tool", tool: "bash", state: { status: "completed", input: { command: id }, output: "", title: "", metadata: {}, time: { start: 1, end: 2 } } })
+  const parts = [
+    command("b1"),
+    { ...base, id: "th", type: "reasoning", text: "check the other job", time: { start: 2, end: 3 } },
+    command("b2"),
+    { ...base, id: "t1", type: "text", text: "Both jobs failed." },
+  ] as never[]
+  const hasText = (part: { type: string }) => "text" in part && !!part.text
+  const rows = Timeline.constructMessageRows(user, (id) => (id === "a1" ? parts : []), hasText, [assistant], true, "idle", true)
+  const work = rows.flatMap((row) => (row._tag === "AssistantPart" && row.group.type === "work" ? [row.group] : []))
+  expect(work).toHaveLength(1)
+  const members = Timeline.groupMembers(work[0]!.refs, () => assistant, (ref) => parts.find((part: { id: string }) => part.id === ref.partId))
+  expect(members.map((member) => member.part.id)).toEqual(["b1", "th", "b2"])
+  expect(Timeline.memberTools(members).map((part) => part.id)).toEqual(["b1", "b2"])
+})

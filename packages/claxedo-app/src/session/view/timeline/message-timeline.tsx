@@ -22,7 +22,7 @@ import {
 import { createStore, unwrap } from "solid-js/store"
 import { createVirtualizer, elementScroll, type Range } from "@tanstack/solid-virtual"
 import { observeElementOffsetReconnectAware, observeElementRectDeduped } from "./message-timeline-observe-offset"
-import { assistantMessageSettled, isSubagentToolPart } from "@claxedo/agent-runtime-contract/turn-fold"
+import { assistantMessageSettled, isSubagentToolPart, type PartRef } from "@claxedo/agent-runtime-contract/turn-fold"
 import {
   ContextToolGroup,
   MessageNav,
@@ -44,7 +44,6 @@ import { TimelineQueuedMessages } from "./timeline-queued-messages"
 import type {
   AgentAssistantMessage as AssistantMessage,
   AgentContentPart as PartType,
-  AgentPresentationMessage as MessageType,
   AgentToolPart as ToolPart,
 } from "@claxedo/agent-runtime-contract"
 import { createTimelineListGestures } from "./message-timeline-list-gestures"
@@ -852,26 +851,22 @@ export function MessageTimeline(props: MessageTimelineProps) {
   }
 
   const getMsgPart = (messageId: string, partId: string) => getMsgParts(messageId).find((part) => part.id === partId)
+  const partOfRef = (ref: PartRef) => getMsgPart(ref.messageId, ref.partId)
+  const runtimeMessage = (messageId: string) => {
+    const message = messageById().get(messageId)
+    return message && isRuntimeMessage(message) ? message : undefined
+  }
 
   const renderAssistantPartGroup = (row: Accessor<TimelineRowMap["AssistantPart"]>, onSizeChange?: () => void) => {
     if (row().group.type === "context") {
       const members = createMemo(() => {
         const group = row().group
-        if (group.type !== "context") return []
-        return group.refs
-          .map((ref) => {
-            const message = messageById().get(ref.messageId)
-            const part = getMsgPart(ref.messageId, ref.partId)
-            if (!message || !isRuntimeMessage(message)) return undefined
-            if (!part || part.type !== "tool") return undefined
-            return { message, part }
-          })
-          .filter((member): member is { message: MessageType; part: ToolPart } => !!member)
+        return group.type === "context" ? Timeline.groupMembers(group.refs, runtimeMessage, partOfRef) : []
       })
 
       return (
         <ContextToolGroup
-          parts={members().map((member) => member.part)}
+          parts={Timeline.memberTools(members())}
           open={groupOpen[row().group.key] ?? false}
           onOpenChange={(open) => {
             props.onReaderToggle()
@@ -917,19 +912,10 @@ export function MessageTimeline(props: MessageTimelineProps) {
     if (row().group.type === "work") {
       const members = createMemo(() => {
         const group = row().group
-        if (group.type !== "work") return []
-        return group.refs
-          .map((ref) => {
-            const message = messageById().get(ref.messageId)
-            const part = getMsgPart(ref.messageId, ref.partId)
-            if (!message || !isRuntimeMessage(message)) return undefined
-            if (!part || part.type !== "tool") return undefined
-            return { message, part }
-          })
-          .filter((member): member is { message: MessageType; part: ToolPart } => !!member)
+        return group.type === "work" ? Timeline.groupMembers(group.refs, runtimeMessage, partOfRef) : []
       })
 
-      const memberDefaultOpen = (part: ToolPart) =>
+      const memberDefaultOpen = (part: PartType) =>
         partDefaultOpen(part, host.settings.shellToolPartsExpanded(), host.settings.editToolPartsExpanded())
       const memberOpen = createMemo(() =>
         members().some(
@@ -939,7 +925,7 @@ export function MessageTimeline(props: MessageTimelineProps) {
 
       return (
         <WorkGroup
-          parts={members().map((member) => member.part)}
+          parts={Timeline.memberTools(members())}
           open={groupOpen[row().group.key] ?? false}
           onOpenChange={(open) => {
             props.onReaderToggle()
@@ -978,9 +964,7 @@ export function MessageTimeline(props: MessageTimelineProps) {
 
     const message = createMemo(() => {
       const group = row().group
-      if (group.type !== "part") return undefined
-      const value = messageById().get(group.ref.messageId)
-      return value && isRuntimeMessage(value) ? value : undefined
+      return group.type === "part" ? runtimeMessage(group.ref.messageId) : undefined
     })
     const part = createMemo(() => {
       const group = row().group

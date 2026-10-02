@@ -10,17 +10,14 @@ import {
   Show,
   Switch,
   onCleanup,
-  Index,
   type JSX,
   type ComponentProps,
 } from "solid-js"
 import { createStore } from "solid-js/store"
-import stripAnsi from "strip-ansi"
 import { Dynamic } from "solid-js/web"
 import type {
   AgentFileLocation,
   AgentAgentPart,
-  AgentAssistantMessage,
   AgentContentPart,
   AgentFilePart,
   AgentPresentationMessage,
@@ -36,10 +33,9 @@ import { useFileComponent, useDialog, Accordion, StickyAccordionHeader, Collapsi
 import { getDirectory as _getDirectory, getFilename, checksum } from "@/ui/utils"
 import { copyText } from "@/lib/clipboard"
 import { type TranscriptI18n, useTranscriptI18n } from "./i18n"
-import { BasicTool, GenericTool, shellExitCode, ToolExitCode } from "./basic-tool"
+import { BasicTool, GenericTool, shellExitCode } from "./basic-tool"
 import { ScrollableOutput } from "./scrollable-output"
-import { groupParts, isHiddenTool, isPendingQuestion, isSubagentToolPart, type PartGroup, type PartRef } from "@claxedo/agent-runtime-contract/turn-fold"
-import { sameGroups } from "./same-groups"
+import { isHiddenTool, isPendingQuestion, isSubagentToolPart } from "@claxedo/agent-runtime-contract/turn-fold"
 import { workGroupActiveLabel, workGroupIcon, workGroupSummary, workGroupTitle } from "./work-group-summary"
 import { SubagentChipRow } from "./subagent-chip"
 import { dispatchPlanOpen, readPlanToolInput } from "./plan-tool"
@@ -50,12 +46,10 @@ import { QuestionCard } from "./question-card"
 import { isQuestionDeclined } from "./question-result"
 import { Markdown } from "./markdown"
 import { formatDuration } from "./format-duration"
-import { localPreviewUrl } from "./local-preview"
-import { stripShellWrapper } from "./shell-wrapper"
+import { ShellTool } from "./shell-tool"
 import { AnimatedCountList } from "./tool-count-summary"
 import { ToolStatusTitle } from "./tool-status-title"
 import { patchFiles } from "./apply-patch-file"
-import { animate } from "motion"
 import { useLocation } from "@solidjs/router"
 import { attached, inline, kind } from "./message-file"
 import { MessageDivider } from "./message-divider"
@@ -67,45 +61,10 @@ import { shouldRenderUserMarkdown } from "./user-message-markdown"
 import { FoldedUserMessageBody } from "./folded-user-message-body"
 import { handleTranscriptLinkClick, transcriptLinkHref, transcriptLinks } from "./transcript-link"
 
-function ShellSubmessage(props: { text: string; animate?: boolean }) {
-  let widthRef: HTMLSpanElement | undefined
-  let valueRef: HTMLSpanElement | undefined
-
-  onMount(() => {
-    if (!props.animate) return
-    requestAnimationFrame(() => {
-      if (widthRef) {
-        animate(widthRef, { width: "auto" }, { type: "spring", visualDuration: 0.25, bounce: 0 })
-      }
-      if (valueRef) {
-        animate(valueRef, { opacity: 1, filter: "blur(0px)" }, { duration: 0.32, ease: [0.16, 1, 0.3, 1] })
-      }
-    })
-  })
-
-  return (
-    <span data-component="shell-submessage">
-      <span ref={widthRef} data-slot="shell-submessage-width" style={{ width: props.animate ? "0px" : undefined }}>
-        <span data-slot="basic-tool-tool-subtitle">
-          <span
-            ref={valueRef}
-            data-slot="shell-submessage-value"
-            style={props.animate ? { opacity: 0, filter: "blur(2px)" } : undefined}
-          >
-            {props.text}
-          </span>
-        </span>
-      </span>
-    </span>
-  )
-}
-
 export interface MessageProps {
   message: AgentPresentationMessage
   parts: AgentContentPart[]
   actions?: UserActions
-  showAssistantCopyPartId?: string | null
-  showReasoningSummaries?: boolean
 }
 
 export type SessionAction = (input: { sessionId: string; messageId: string }) => Promise<void> | void
@@ -430,17 +389,6 @@ function sessionLink(
   return `${path.slice(0, idx)}/session/${id}`
 }
 
-function same<T>(a: readonly T[] | undefined, b: readonly T[] | undefined) {
-  if (a === b) return true
-  if (!a || !b) return false
-  if (a.length !== b.length) return false
-  return a.every((x, i) => x === b[i])
-}
-
-function index<T extends { id: string }>(items: readonly T[]) {
-  return new Map(items.map((item) => [item.id, item] as const))
-}
-
 export function renderable(part: AgentContentPart, showReasoningSummaries = true) {
   if (part.type === "tool") {
     if (isHiddenTool(part)) return false
@@ -454,140 +402,6 @@ export function renderable(part: AgentContentPart, showReasoningSummaries = true
 export function partDefaultOpen(part: AgentContentPart, shell = false, edit = false): boolean | undefined {
   if (part.type !== "tool") return undefined
   return toolOpensByDefault(part.tool, { shell, edit })
-}
-
-type GroupMember = { message: AgentAssistantMessage; part: AgentToolPart }
-
-type PartGroupSlots = {
-  showAssistantCopyPartId?: string | null
-  turnDurationMs?: number
-  shellToolDefaultOpen?: boolean
-  editToolDefaultOpen?: boolean
-}
-
-function PartGroups(
-  props: PartGroupSlots & {
-    groups: PartGroup[]
-    message: (messageId: string) => AgentAssistantMessage | undefined
-    part: (ref: PartRef) => AgentContentPart | undefined
-    busyGroupKey?: string
-  },
-) {
-  const emptyTools: AgentToolPart[] = []
-  const emptyMembers: GroupMember[] = []
-
-  const tools = (group: PartGroup) => {
-    if (group.type === "part") return emptyTools
-    return group.refs
-      .map((ref) => props.part(ref))
-      .filter((part): part is AgentToolPart => part?.type === "tool")
-  }
-
-  const members = (group: PartGroup) => {
-    if (group.type === "part") return emptyMembers
-    return group.refs
-      .map((ref) => {
-        const message = props.message(ref.messageId)
-        const part = props.part(ref)
-        if (!message || part?.type !== "tool") return undefined
-        return { message, part }
-      })
-      .filter((member): member is GroupMember => !!member)
-  }
-
-  return (
-    <Index each={props.groups}>
-      {(entryAccessor) => {
-        const entryType = createMemo(() => entryAccessor().type)
-        const busy = createMemo(() => props.busyGroupKey === entryAccessor().key)
-
-        return (
-          <Switch>
-            <Match when={entryType() === "context"}>
-              {(() => {
-                const group = createMemo(() => members(entryAccessor()))
-                return (
-                  <Show when={group().length > 0}>
-                    <ContextToolGroup parts={group().map((member) => member.part)} busy={busy()}>
-                      <For each={group()}>
-                        {(member) => <Part part={member.part} message={member.message} />}
-                      </For>
-                    </ContextToolGroup>
-                  </Show>
-                )
-              })()}
-            </Match>
-            <Match when={entryType() === "agents"}>
-              {(() => {
-                const parts = createMemo(() => tools(entryAccessor()), emptyTools, { equals: same })
-                return <SubagentChipRow parts={parts()} />
-              })()}
-            </Match>
-            <Match when={entryType() === "work"}>
-              {(() => {
-                const group = createMemo(() => members(entryAccessor()))
-
-                return (
-                  <WorkGroup parts={group().map((member) => member.part)} busy={busy()}>
-                    <For each={group()}>
-                      {(member) => (
-                        <Part
-                          part={member.part}
-                          message={member.message}
-                          turnDurationMs={props.turnDurationMs}
-                          defaultOpen={partDefaultOpen(
-                            member.part,
-                            props.shellToolDefaultOpen,
-                            props.editToolDefaultOpen,
-                          )}
-                        />
-                      )}
-                    </For>
-                  </WorkGroup>
-                )
-              })()}
-            </Match>
-            <Match when={entryType() === "part"}>
-              {(() => {
-                const message = createMemo(() => {
-                  const entry = entryAccessor()
-                  if (entry.type !== "part") return undefined
-                  return props.message(entry.ref.messageId)
-                })
-                const item = createMemo(() => {
-                  const entry = entryAccessor()
-                  if (entry.type !== "part") return undefined
-                  return props.part(entry.ref)
-                })
-
-                return (
-                  <Show when={message()}>
-                    {(message) => (
-                      <Show when={item()}>
-                        {(item) => (
-                          <Part
-                            part={item()}
-                            message={message()}
-                            showAssistantCopyPartId={props.showAssistantCopyPartId}
-                            turnDurationMs={props.turnDurationMs}
-                            defaultOpen={partDefaultOpen(
-                              item(),
-                              props.shellToolDefaultOpen,
-                              props.editToolDefaultOpen,
-                            )}
-                          />
-                        )}
-                      </Show>
-                    )}
-                  </Show>
-                )
-              })()}
-            </Match>
-          </Switch>
-        )
-      }}
-    </Index>
-  )
 }
 
 function contextToolSummary(parts: AgentToolPart[]) {
@@ -631,61 +445,11 @@ function userMessage(message: AgentPresentationMessage): AgentUserMessage | unde
   return undefined
 }
 
-function assistantMessage(message: AgentPresentationMessage): AgentAssistantMessage | undefined {
-  if (message.role === "assistant") return message
-  return undefined
-}
-
 export function Message(props: MessageProps) {
   return (
-    <Switch>
-      <Match when={userMessage(props.message)}>
-        {(message) => (
-          <UserMessageDisplay message={message()} parts={props.parts} actions={props.actions} />
-        )}
-      </Match>
-      <Match when={assistantMessage(props.message)}>
-        {(message) => (
-          <AssistantMessageDisplay
-            message={message()}
-            parts={props.parts}
-            showAssistantCopyPartId={props.showAssistantCopyPartId}
-            showReasoningSummaries={props.showReasoningSummaries}
-          />
-        )}
-      </Match>
-    </Switch>
-  )
-}
-
-export function AssistantMessageDisplay(props: {
-  message: AgentAssistantMessage
-  parts: AgentContentPart[]
-  showAssistantCopyPartId?: string | null
-  showReasoningSummaries?: boolean
-}) {
-  const part = createMemo(() => index(props.parts))
-  const grouped = createMemo(
-    () =>
-      groupParts(
-        props.parts
-          .filter((part) => renderable(part, props.showReasoningSummaries ?? true))
-          .map((part) => ({
-            messageId: props.message.id,
-            part,
-          })),
-      ),
-    [] as PartGroup[],
-    { equals: sameGroups },
-  )
-
-  return (
-    <PartGroups
-      groups={grouped()}
-      message={() => props.message}
-      part={(ref) => part().get(ref.partId)}
-      showAssistantCopyPartId={props.showAssistantCopyPartId}
-    />
+    <Show when={userMessage(props.message)}>
+      {(message) => <UserMessageDisplay message={message()} parts={props.parts} actions={props.actions} />}
+    </Show>
   )
 }
 
@@ -1870,95 +1634,7 @@ ToolRegistry.register({
   },
 })
 
-ToolRegistry.register({
-  name: "bash",
-  render(props) {
-    const i18n = useTranscriptI18n()
-    const pending = () => props.status === "pending" || props.status === "running"
-    const sawPending = pending()
-    const displayCommand = createMemo(() =>
-      stripShellWrapper(String(props.input.command ?? props.metadata.command ?? "")),
-    )
-    const text = createMemo(() => {
-      const cmd = displayCommand()
-      const out = stripAnsi(props.output || props.metadata.output || "").replace(/\r\n?/g, "\n")
-      return `$ ${cmd}${out ? "\n\n" + out : ""}`
-    })
-    const [copied, setCopied] = createSignal(false)
-
-    const localUrl = createMemo(() => {
-      if (pending()) return undefined
-      return localPreviewUrl(stripAnsi(props.output || props.metadata.output || ""))
-    })
-    const localLabel = () => localUrl()?.replace(/^https?:\/\//, "").replace(/\/$/, "")
-
-    const handleCopy = async () => {
-      const content = text()
-      if (!content) return
-      if ((await copyText(content)).copied) {
-        setCopied(true)
-        setTimeout(() => setCopied(false), 2000)
-      }
-    }
-
-    return (
-      <>
-      <BasicTool
-        {...props}
-        icon="terminal"
-        trigger={(open) => (
-          <div data-slot="basic-tool-tool-info-structured">
-            <div data-slot="basic-tool-tool-info-main">
-              <span data-slot="basic-tool-tool-title">
-                <TextShimmer text={pending() ? "Running" : "Ran"} active={pending()} />
-              </span>
-              <Show when={displayCommand()}>
-                <ShellSubmessage text={displayCommand()} animate={sawPending && !open()} />
-              </Show>
-              <ToolExitCode code={pending() ? undefined : shellExitCode(props.metadata)} />
-            </div>
-          </div>
-        )}
-      >
-        <div class="ui-bash-output">
-          <div class="ui-bash-copy">
-            <Tooltip value={copied() ? i18n.t("transcript.message.copied") : i18n.t("transcript.message.copy")} placement="top">
-              <IconButton
-                icon={<Icon name={copied() ? "check" : "copy"} size="small" />}
-                size="normal"
-                variant="ghost-muted"
-                onMouseDown={(e) => e.preventDefault()}
-                onClick={handleCopy}
-                aria-label={copied() ? i18n.t("transcript.message.copied") : i18n.t("transcript.message.copy")}
-              />
-            </Tooltip>
-          </div>
-          <ScrollableOutput class="ui-bash-scroll" revealed={props.revealed} onRevealedChange={props.onRevealedChange}>
-            <pre data-slot="bash-pre">
-              <code>{text()}</code>
-            </pre>
-          </ScrollableOutput>
-        </div>
-      </BasicTool>
-      <Show when={localUrl()}>
-        <a
-          data-component="local-preview-row"
-          href={localUrl()}
-          target="_blank"
-          rel="noopener noreferrer"
-          onClick={handleTranscriptLinkClick}
-        >
-          <span data-slot="local-preview-icon">
-            <Icon name="window-cursor" size="small" />
-          </span>
-          <span class="ui-local-preview-verb">Local preview</span>
-          <span class="ui-local-preview-url">{localLabel()}</span>
-        </a>
-      </Show>
-      </>
-    )
-  },
-})
+ToolRegistry.register({ name: "bash", render: ShellTool })
 
 ToolRegistry.register({
   name: "edit",
