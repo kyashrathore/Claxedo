@@ -40,8 +40,6 @@ export function DraftSessionScreen(props: PaneProps<DraftSessionState>) {
   })
   const startSession = async (submission: Submission, input: PromptInput): Promise<SessionView> => {
     const prompt = { ...input, messageId: server.sessions.newMessageId(), sentAt: Date.now() }
-    // Asked before the sent message hides the context row: the row's chips
-    // are what the resolver reads, and they leave with it.
     const placementId = draft.resolve(props.state)
     setSent(prompt)
     try {
