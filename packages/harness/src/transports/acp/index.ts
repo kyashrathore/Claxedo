@@ -210,7 +210,7 @@ export class AcpTransport implements HarnessTransport {
       for (const event of acpPromptUsage(result, session.binding.upstreamSessionId, entry.context)) queue.push(event)
       for (const event of translateStopReason(result.stopReason, session.binding.sessionId)) queue.push({ event })
       queue.end()
-    }, (error: unknown) => entry.updatesDelivered().then(() => queue.fail(error), () => queue.fail(error)))
+    }, (error: unknown) => queue.fail(error))
     yield* queue
   }
 
