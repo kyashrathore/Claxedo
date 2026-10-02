@@ -2,7 +2,7 @@ import fs from "node:fs/promises"
 import path from "node:path"
 import { workspaceRuntimePtyHistoryDir } from "../env"
 import { safeTrimStart } from "./safe-slice"
-import { rec, str } from "../json-value"
+import { rec, str } from "@claxedo/session-core"
 
 export function historyPath(directory: string, id: string, root = workspaceRuntimePtyHistoryDir()) {
   const key = Buffer.from(directory).toString("base64url")

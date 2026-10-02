@@ -2,7 +2,7 @@ import { afterEach, expect, test } from "bun:test"
 import { spawn, type ChildProcess } from "node:child_process"
 import { Database } from "bun:sqlite"
 import { readCreationIdentity, type LaunchOwnerScope } from "@claxedo/process-ownership/launch"
-import { LAUNCH_OWNERSHIP_SCHEMA } from "./launch-ownership-schema"
+import { LAUNCH_OWNERSHIP_SCHEMA } from "@claxedo/session-core"
 import { sqliteLaunchOwnership, type SqliteDatabase } from "./launch-ownership-sqlite"
 import { reconcileLaunchOwnership } from "./reconcile-launch-ownership"
 

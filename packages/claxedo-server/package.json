@@ -71,7 +71,8 @@
     "jose": "6.2.4",
     "kysely": "0.29.3",
     "tokentracker-cli": "0.91.0",
-    "zod": "4.4.3"
+    "zod": "4.4.3",
+    "@claxedo/session-core": "workspace:*"
   },
   "devDependencies": {
     "@claxedo/plugin-build": "workspace:*",

@@ -8,7 +8,7 @@ import { putCredential, setActiveCredentials } from "@claxedo/server-core/creden
 import type { Workspace } from "@claxedo/server-core/workspace/store/index"
 import { ClaxedoDB } from "@claxedo/server-core/platform/db/index"
 import { createLocalCredentialBroker } from "../../credentials/broker"
-import { ensureEmbeddedWorkspaceRuntime, shutdownEmbeddedWorkspaceRuntimes } from "./embedded-workspace-runtime"
+import { configureEmbeddedWorkspaceRuntime, ensureEmbeddedWorkspaceRuntime, shutdownEmbeddedWorkspaceRuntimes } from "./embedded-workspace-runtime"
 
 const previousDataDir = process.env.CLAXEDO_DATA_DIR
 let roots: string[] = []
@@ -29,6 +29,7 @@ afterEach(async () => {
  * clock this test moves. Every proxied POST syncs config through this path.
  */
 async function workspaceOnRealBroker(clock: () => number) {
+  configureEmbeddedWorkspaceRuntime({ sessionIdWorkspace: () => undefined })
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "embedded-projection-stability-"))
   roots.push(root)
   const project = path.join(root, "project")

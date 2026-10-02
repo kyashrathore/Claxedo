@@ -1,3 +1,4 @@
+import { withSessionCore } from "./session-context"
 import { isLoopbackHostname } from "@claxedo/helpers"
 import { FIRST_PARTY_MCP_PATH, type WorkspaceFirstPartyMcpLaunchOptions } from "./first-party-mcp/index"
 import { Hono, type MiddlewareHandler } from "hono"
@@ -31,8 +32,13 @@ import {
   type WorkspaceRuntimeExposure,
 } from "./exposure"
 import { runtimeEnvText, workspaceRuntimeEpoch, workspaceRuntimeStoreDir } from "./env"
-import type { WorkspaceEventParents } from "./routes/events"
-import { managedWorkspaceSessionAccessPolicy, sessionAccessContext, sessionAccessDenied, type SessionAccessPolicy } from "./session-access-policy"
+import {
+  type WorkspaceEventParents,
+  managedWorkspaceSessionAccessPolicy,
+  sessionAccessContext,
+  sessionAccessDenied,
+  type SessionAccessPolicy,
+} from "@claxedo/session-core"
 import { remoteWorkspaceSessionAccessPolicyFromEnv } from "./remote-session-authority"
 
 type Host = ReturnType<typeof createWorkspaceHost>
@@ -80,10 +86,11 @@ export type WorkspaceRuntimeServerOptions = {
   resolveConnectionSecrets?: WorkspaceHostOptions["resolveConnectionSecrets"]
   /** Persist host-owned session metadata before the created lifecycle event is published. */
   afterCreateSession?: (input: { directory: string; session: unknown }) => Promise<void> | void
-  sessionIdWorkspace?: WorkspaceHostOptions["sessionIdWorkspace"]
+  sessionIdWorkspace: WorkspaceHostOptions["sessionIdWorkspace"]
   /** Explicit private-session authority. Relay-hosted runtimes default to the remote oracle. */
   sessionAccessPolicy?: SessionAccessPolicy
   target?: WorkspaceTarget
+  storeFactory?: WorkspaceHostOptions["storeFactory"]
   storeRoot?: string
   /** Host-owned directory for opt-in config apply receipts. See {@link WorkspaceHostOptions.configApplyReceiptDir}. */
   configApplyReceiptDir?: string
@@ -434,10 +441,11 @@ export function createWorkspaceRuntimeApp(options: WorkspaceRuntimeServerOptions
     ...(options.resolveConnectionSecrets ? { resolveConnectionSecrets: options.resolveConnectionSecrets } : {}),
     ...(options.harness ? { harness: options.harness } : {}),
     ...(options.afterCreateSession ? { afterCreateSession: options.afterCreateSession } : {}),
-    ...(options.sessionIdWorkspace ? { sessionIdWorkspace: options.sessionIdWorkspace } : {}),
+    sessionIdWorkspace: options.sessionIdWorkspace,
     sessionAccessPolicy,
-    ...(options.target ? { target: options.target } : {}),
+    target: options.target ?? { workspaceId: workspaceId(), directory: workspaceDir() },
     ...(options.storeRoot ? { storeRoot: options.storeRoot } : {}),
+    ...(options.storeFactory ? { storeFactory: options.storeFactory } : {}),
     ...(options.beforeHarnessAcquire ? { beforeHarnessAcquire: options.beforeHarnessAcquire } : {}),
     ...(options.onActivityChange ? { onActivityChange: options.onActivityChange } : {}),
     ...(options.configApplyReceiptDir ? { configApplyReceiptDir: options.configApplyReceiptDir } : {}),
@@ -452,6 +460,7 @@ export function createWorkspaceRuntimeApp(options: WorkspaceRuntimeServerOptions
   const worktrees = options.target
       ? new WorkspaceWorktreeManager({
         workspaceId: options.target.workspaceId,
+        placement: host.sessionCore.placement,
         sourceDirectory: options.target.directory,
         store: host.store,
       })
@@ -459,6 +468,7 @@ export function createWorkspaceRuntimeApp(options: WorkspaceRuntimeServerOptions
   if (worktrees) host.whenStoreOpens(() => worktrees.serveActive())
 
   const app = new Hono()
+  app.use("*", (_c, next) => withSessionCore(host.sessionCore, next))
 
   // Kept on the object rather than destructured: both are closures over the
   // app that `createNodeWebSocket` just built, and calling them through it

@@ -387,6 +387,29 @@ test.skipIf(process.platform === "win32")("ACP retirement waits for a resistant 
   } finally { await context.close() }
 })
 
+test("text an ACP agent streams before its prompt fails reaches the turn before the failure", async () => {
+  const context = await setupConformance({
+    name: "acp text before failure", backend: () => backend("process"),
+    makeTransport(services, state) {
+      return new AcpTransport(services, (state as AcpBackend).connection, filterMcpServers)
+    },
+  })
+  try {
+    await writeAcpScript(context.backend.directory, "partial", { steps: [
+      { kind: "text", text: "Starting again.", chunks: 15 },
+      { kind: "error", message: "You've reached your usage limit." },
+    ] })
+    const text: string[] = []
+    const running = async () => {
+      for await (const routed of context.transport.send(context.session, context.turn(acpScriptToken("partial")), context.turnBroker())) {
+        if (routed.event.type === "text-delta") text.push(routed.event.delta)
+      }
+    }
+    await expect(running()).rejects.toThrow("usage limit")
+    expect(text.join("")).toBe("Starting again.")
+  } finally { await context.close() }
+})
+
 test("the targeted red ACP agent fails at session/prompt", async () => {
   const context = await setupConformance({
     name: "acp red",

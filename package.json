@@ -17,7 +17,7 @@
     "prepare": "husky",
     "test": "echo 'do not run tests from root' && exit 1",
     "docs:check-links": "bun ./script/check-doc-links.ts",
-    "build:packages": "bun turbo build --filter=@claxedo/agent-runtime-contract --filter=@claxedo/process-ownership --filter=@claxedo/channels --filter=@claxedo/connections --filter=@claxedo/egress-broker --filter=@claxedo/helpers --filter=@claxedo/host-connector --filter=@claxedo/sandbox-contract --filter=@claxedo/sandbox-manager --filter=@claxedo/workspace-relay-protocol --filter=@claxedo/workspace-relay --filter=@claxedo/workspace-runtime"
+    "build:packages": "bun turbo build --filter=@claxedo/agent-runtime-contract --filter=@claxedo/process-ownership --filter=@claxedo/channels --filter=@claxedo/connections --filter=@claxedo/egress-broker --filter=@claxedo/helpers --filter=@claxedo/host-connector --filter=@claxedo/sandbox-contract --filter=@claxedo/sandbox-manager --filter=@claxedo/workspace-relay-protocol --filter=@claxedo/workspace-relay --filter=@claxedo/session-core --filter=@claxedo/workspace-runtime"
   },
   "workspaces": {
     "packages": [

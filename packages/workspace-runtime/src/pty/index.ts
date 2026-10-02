@@ -19,7 +19,6 @@ import { sendWebSocketWithBackpressure, type WebSocketBackpressureSocket } from 
 import { safeChunkEnd } from "./safe-slice"
 import { type ModeTracker } from "./mode-tracker"
 import { sanitizeReplay } from "./replay-sanitize"
-import { workspaceRuntimeBus } from "../bus"
 
 import * as contracts from "./session-types"
 import type { ActiveSession } from "./session-types"
@@ -467,8 +466,8 @@ export namespace Pty {
         log.info("session exited", { id, exitCode })
         const tail = snapshot(id, 16_384)
         const event = { id, ...(session.info.sessionId ? { sessionId: session.info.sessionId } : {}), exitCode, tail }
-        workspaceRuntimeBus.publish({ type: "pty.exited", ...event })
-        workspaceRuntimeBus.publish({ type: "pty.stream", kind: "exit", ...event })
+        session.bus.publish({ type: "pty.exited", ...event })
+        session.bus.publish({ type: "pty.stream", kind: "exit", ...event })
         await cleanupSession(session.info.id, session, "exit")
       },
     })
@@ -483,7 +482,7 @@ export namespace Pty {
     if (input.size) {
       resize(id, input.size.cols, input.size.rows)
     }
-    workspaceRuntimeBus.publish({ type: "pty.updated", info: session.info })
+    session.bus.publish({ type: "pty.updated", info: session.info })
     return session.info
   }
 
@@ -508,7 +507,7 @@ export namespace Pty {
         sessions.delete(id)
         activityChanged()
       }
-      workspaceRuntimeBus.publish({
+      session.bus.publish({
         type: "pty.deleted",
         id,
         ...(session.info.sessionId ? { sessionId: session.info.sessionId } : {}),
@@ -643,7 +642,7 @@ export namespace Pty {
     }
     if (!replaySent) {
       session.subscribers.delete(ws)
-      workspaceRuntimeBus.publish({
+      session.bus.publish({
         type: "pty.stream",
         id,
         ...(session.info.sessionId ? { sessionId: session.info.sessionId } : {}),
@@ -671,7 +670,7 @@ export namespace Pty {
       onClose: () => {
         log.info("client disconnected from session", { id })
         session.subscribers.delete(ws)
-        workspaceRuntimeBus.publish({
+        session.bus.publish({
           type: "pty.stream",
           id,
           ...(session.info.sessionId ? { sessionId: session.info.sessionId } : {}),

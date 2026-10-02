@@ -1,5 +1,5 @@
 import type { MiddlewareHandler } from "hono"
-import { rec } from "./json-value"
+import { rec } from "@claxedo/session-core"
 import type { RelayHostAuthContext, RelayHostAuthOptions } from "./workspace-host-service-auth"
 import { trimToUndefined } from "@claxedo/helpers/string"
 import { sessionScopeReaches } from "@claxedo/workspace-relay-protocol"

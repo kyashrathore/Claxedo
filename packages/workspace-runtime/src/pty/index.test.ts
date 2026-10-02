@@ -1,3 +1,5 @@
+import { testSessionCore } from "@claxedo/session-core/testing"
+import { withSessionCore } from "../session-context"
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test"
 import { spawn as spawnChild, type ChildProcess } from "node:child_process"
 import { volatileLaunchOwnership } from "@claxedo/process-ownership/launch"
@@ -114,7 +116,7 @@ afterEach(async () => {
 })
 
 describe("Pty lifecycle cleanup", () => {
-  test("retains a native exit observed while waiting for a ConPTY PID", async () => {
+  test("retains a native exit observed while waiting for a ConPTY PID", () => withSessionCore(testSessionCore(tmpDir, "ws_test"), async () => {
     const { Pty } = await import("./index")
     nextSpawnPid = 0
     nextSpawnExit = true
@@ -124,9 +126,9 @@ describe("Pty lifecycle cleanup", () => {
     expect(Date.now() - start).toBeLessThan(1000)
     await Pty.remove(info.id)
     expect(Pty.get(info.id)).toBeUndefined()
-  })
+  }))
 
-  test("records ownership only after ConPTY exposes its native PID", async () => {
+  test("records ownership only after ConPTY exposes its native PID", () => withSessionCore(testSessionCore(tmpDir, "ws_test"), async () => {
     const { Pty } = await import("./index")
     const pid = disposablePid()
     nextSpawnPid = pid
@@ -140,9 +142,9 @@ describe("Pty lifecycle cleanup", () => {
     expect(recorded).toEqual([pid])
     expect(Pty.get(info.id)?.pid).toBe(pid)
     expect((await Pty.remove(info.id))?.leader).toBe("exited")
-  })
+  }))
 
-  test("persists the opaque create request id in the authoritative PTY inventory", async () => {
+  test("persists the opaque create request id in the authoritative PTY inventory", () => withSessionCore(testSessionCore(tmpDir, "ws_test"), async () => {
     const { Pty } = await import("./index")
     const info = await Pty.create({
       cwd: tmpDir,
@@ -153,9 +155,9 @@ describe("Pty lifecycle cleanup", () => {
     expect(info.createRequestId).toBe("request-client-a")
     expect(Pty.get(info.id)?.createRequestId).toBe("request-client-a")
     expect(Pty.list().find((row) => row.id === info.id)?.createRequestId).toBe("request-client-a")
-  })
+  }))
 
-  test("an unavailable native pid does not block native PTY cleanup", async () => {
+  test("an unavailable native pid does not block native PTY cleanup", () => withSessionCore(testSessionCore(tmpDir, "ws_test"), async () => {
     const { Pty } = await import("./index")
     nextSpawnPid = 0
 
@@ -173,9 +175,9 @@ describe("Pty lifecycle cleanup", () => {
 
     expect((await Pty.abandon(info.id, { actorId: "test", reason: "fixture teardown" }))?.error?.code).toBe("ownership_unverified")
     expect(Pty.get(info.id)).toBeUndefined()
-  })
+  }))
 
-  test("remove closes subscribers, flushes history, kills the process group, and deletes the session", async () => {
+  test("remove closes subscribers, flushes history, kills the process group, and deletes the session", () => withSessionCore(testSessionCore(tmpDir, "ws_test"), async () => {
     const { Pty } = await import("./index")
     const info = await Pty.create({ cwd: tmpDir, title: "cleanup" }, ownership)
     const ws = socket()
@@ -189,9 +191,9 @@ describe("Pty lifecycle cleanup", () => {
     expect(await fs.readFile(historyPath(info.cwd, info.id), "utf8")).toContain("hello")
     expect(Pty.get(info.id)).toBeUndefined()
     expect(alive(info.pid)).toBe(false)
-  })
+  }))
 
-  test("orphan timeout removes abandoned provisional sessions", async () => {
+  test("orphan timeout removes abandoned provisional sessions", () => withSessionCore(testSessionCore(tmpDir, "ws_test"), async () => {
     const { Pty } = await import("./index")
     const info = await Pty.create({ cwd: tmpDir, title: "orphan" }, ownership)
     expect(Pty.activity()).toEqual({ running: 1, committed: 0, provisional: 1, subscribers: 0, unrecorded: 0, unresolved: 0 })
@@ -201,9 +203,9 @@ describe("Pty lifecycle cleanup", () => {
 
     expect(Pty.get(info.id)).toBeUndefined()
     expect(alive(info.pid)).toBe(false)
-  })
+  }))
 
-  test("committed sessions survive subscriber disconnects", async () => {
+  test("committed sessions survive subscriber disconnects", () => withSessionCore(testSessionCore(tmpDir, "ws_test"), async () => {
     const { Pty } = await import("./index")
     const info = await Pty.create({ cwd: tmpDir, title: "committed" }, ownership)
 
@@ -219,9 +221,9 @@ describe("Pty lifecycle cleanup", () => {
     expect(Pty.get(info.id)).toEqual(info)
     expect(Pty.activity()).toEqual({ running: 1, committed: 1, provisional: 0, subscribers: 0, unrecorded: 0, unresolved: 0 })
     expect(alive(info.pid)).toBe(true)
-  })
+  }))
 
-  test("reconnect cancels the orphan timer", async () => {
+  test("reconnect cancels the orphan timer", () => withSessionCore(testSessionCore(tmpDir, "ws_test"), async () => {
     const { Pty } = await import("./index")
     const info = await Pty.create({ cwd: tmpDir, title: "reconnect" }, ownership)
     const first = Pty.connect(info.id, socket())
@@ -235,9 +237,9 @@ describe("Pty lifecycle cleanup", () => {
     expect(Pty.get(info.id)).toBeDefined()
     expect(Pty.listDetailed().find((session) => session.id === info.id)?.orphanTimerActive).toBe(false)
     expect(alive(info.pid)).toBe(true)
-  })
+  }))
 
-  test("remove clears a pending orphan timer", async () => {
+  test("remove clears a pending orphan timer", () => withSessionCore(testSessionCore(tmpDir, "ws_test"), async () => {
     const { Pty } = await import("./index")
     const info = await Pty.create({ cwd: tmpDir, title: "remove-orphan" }, ownership)
     const connection = Pty.connect(info.id, socket())
@@ -250,9 +252,9 @@ describe("Pty lifecycle cleanup", () => {
 
     expect(Pty.get(info.id)).toBeUndefined()
     expect(alive(info.pid)).toBe(false)
-  })
+  }))
 
-  test("explicit remove wins a race with native exit retention", async () => {
+  test("explicit remove wins a race with native exit retention", () => withSessionCore(testSessionCore(tmpDir, "ws_test"), async () => {
     const { Pty } = await import("./index")
     const info = await Pty.create({ cwd: tmpDir, title: "exit-remove-race" }, ownership)
     const handlers = fakeProcesses.get(info.pid)?.exitHandlers ?? []
@@ -262,9 +264,9 @@ describe("Pty lifecycle cleanup", () => {
     await exiting
 
     expect(Pty.get(info.id)).toBeUndefined()
-  })
+  }))
 
-  test("dispose removes every active session", async () => {
+  test("dispose removes every active session", () => withSessionCore(testSessionCore(tmpDir, "ws_test"), async () => {
     const { Pty } = await import("./index")
     const first = await Pty.create({ cwd: tmpDir, title: "first" }, ownership)
     const second = await Pty.create({ cwd: tmpDir, title: "second" }, ownership)
@@ -274,11 +276,11 @@ describe("Pty lifecycle cleanup", () => {
     expect(Pty.list()).toEqual([])
     expect(alive(first.pid)).toBe(false)
     expect(alive(second.pid)).toBe(false)
-  })
+  }))
 })
 
 describe("Pty activity changes", () => {
-  test("create, native exit and removal each notify with the new activity already readable", async () => {
+  test("create, native exit and removal each notify with the new activity already readable", () => withSessionCore(testSessionCore(tmpDir, "ws_test"), async () => {
     const { Pty } = await import("./index")
     const running: number[] = []
     const stop = Pty.onActivityChange(() => running.push(Pty.activity().running))
@@ -298,9 +300,9 @@ describe("Pty activity changes", () => {
     } finally {
       stop()
     }
-  })
+  }))
 
-  test("a retirement left unresolved notifies that the terminal pins again, and abandoning it notifies the release", async () => {
+  test("a retirement left unresolved notifies that the terminal pins again, and abandoning it notifies the release", () => withSessionCore(testSessionCore(tmpDir, "ws_test"), async () => {
     const { Pty } = await import("./index")
     nextSpawnPid = 0
     const info = await Pty.create({ cwd: tmpDir, title: "unverifiable" }, ownership)
@@ -318,7 +320,7 @@ describe("Pty activity changes", () => {
     } finally {
       stop()
     }
-  })
+  }))
 })
 
 describe("Pty agent hook access", () => {
@@ -333,7 +335,7 @@ describe("Pty agent hook access", () => {
     authorityExpiresAt: Date.now() + 60_000,
   })
 
-  test("lookup resolves the correct token and rejects incorrect and different-length tokens", async () => {
+  test("lookup resolves the correct token and rejects incorrect and different-length tokens", () => withSessionCore(testSessionCore(tmpDir, "ws_test"), async () => {
     const { Pty } = await import("./index")
     const token = "01234567-89ab-cdef-0123-456789abcdef"
     const info = await Pty.create({ cwd: tmpDir, title: "hook" }, ownership, hookAccess(token))
@@ -342,9 +344,9 @@ describe("Pty agent hook access", () => {
     expect(Pty.agentHookAccessForToken("01234567-89ab-cdef-0123-456789abcdee")).toBeUndefined()
     expect(Pty.agentHookAccessForToken("01234567-89ab-cdef-0123-456789abcdeff")).toBeUndefined()
     expect(Pty.agentHookAccessForToken("short")).toBeUndefined()
-  })
+  }))
 
-  test("renewal updates the correct token's lease and rejects incorrect and different-length tokens", async () => {
+  test("renewal updates the correct token's lease and rejects incorrect and different-length tokens", () => withSessionCore(testSessionCore(tmpDir, "ws_test"), async () => {
     const { Pty } = await import("./index")
     const token = "01234567-89ab-cdef-0123-456789abcdef"
     const info = await Pty.create({ cwd: tmpDir, title: "hook-renew" }, ownership, hookAccess(token))
@@ -358,7 +360,7 @@ describe("Pty agent hook access", () => {
     expect(Pty.renewAgentHookAccess("01234567-89ab-cdef-0123-456789abcdee", { authorityLease: "lease_3", authorityExpiresAt: 43 })).toBe(false)
     expect(Pty.renewAgentHookAccess("shorter", { authorityLease: "lease_3", authorityExpiresAt: 43 })).toBe(false)
     expect(Pty.agentHookAccessForToken(token)).toMatchObject({ authorityLease: "lease_2", authorityExpiresAt: 42 })
-  })
+  }))
 })
 
 /**
@@ -391,7 +393,7 @@ async function waitFor(predicate: () => boolean) {
 }
 
 describe("Pty unresolved retirement", () => {
-  test("a terminal that ignores TERM is escalated to KILL and only then reported stopped", async () => {
+  test("a terminal that ignores TERM is escalated to KILL and only then reported stopped", () => withSessionCore(testSessionCore(tmpDir, "ws_test"), async () => {
     const { Pty } = await import("./index")
     const stubborn = spawnChild("/bin/sh", ["-c", "trap '' TERM; while true; do sleep 0.05; done"], {
       detached: true,
@@ -411,9 +413,9 @@ describe("Pty unresolved retirement", () => {
     expect(result?.signals.map((item) => item.signal)).toEqual(["SIGTERM", "SIGKILL"])
     expect(alive(stubborn.pid!)).toBe(false)
     expect(Pty.get(info.id)).toBeUndefined()
-  }, 20_000)
+  }), 20_000)
 
-  test("a payload that exited before its identity was read is reported exited, not unverifiable", async () => {
+  test("a payload that exited before its identity was read is reported exited, not unverifiable", () => withSessionCore(testSessionCore(tmpDir, "ws_test"), async () => {
     const { Pty } = await import("./index")
     const brief = spawnChild("/bin/sh", ["-c", "exit 0"], { detached: true, stdio: "ignore" })
     await new Promise<void>((resolve) => brief.once("exit", () => resolve()))
@@ -424,9 +426,9 @@ describe("Pty unresolved retirement", () => {
 
     expect(result).toEqual({ leader: "exited", descendants: "unknown", signals: [] })
     expect(Pty.get(info.id)).toBeUndefined()
-  }, 20_000)
+  }), 20_000)
 
-  test("a pid the runtime did not spawn records no identity and never becomes a signal target", async () => {
+  test("a pid the runtime did not spawn records no identity and never becomes a signal target", () => withSessionCore(testSessionCore(tmpDir, "ws_test"), async () => {
     const { Pty } = await import("./index")
     // init: alive, readable, and emphatically not ours. Recording its identity
     // would make the next removal signal the whole machine's process group 1.
@@ -442,9 +444,9 @@ describe("Pty unresolved retirement", () => {
     // A second remove retries rather than reporting a terminal already claimed stopped.
     expect((await Pty.remove(info.id))?.error?.code).toBe("ownership_unverified")
     await Pty.abandon(info.id, { actorId: "test", reason: "fixture teardown" })
-  }, 20_000)
+  }), 20_000)
 
-  test("a store that cannot record ownership refuses the launch before anything is spawned", async () => {
+  test("a store that cannot record ownership refuses the launch before anything is spawned", () => withSessionCore(testSessionCore(tmpDir, "ws_test"), async () => {
     const { Pty } = await import("./index")
     const { LaunchRefusedError } = await import("@claxedo/process-ownership/launch")
     const before = Pty.list().length
@@ -458,9 +460,9 @@ describe("Pty unresolved retirement", () => {
     expect(failure).toBeInstanceOf(LaunchRefusedError)
     expect((failure as { code: string }).code).toBe("launch_refused_ownership_unavailable")
     expect(Pty.list().length).toBe(before)
-  })
+  }))
 
-  test("a terminal whose group still holds a process stays addressable and keeps pinning the runtime", async () => {
+  test("a terminal whose group still holds a process stays addressable and keeps pinning the runtime", () => withSessionCore(testSessionCore(tmpDir, "ws_test"), async () => {
     const { Pty } = await import("./index")
     // A leader with a member of its own. Killing only the leader leaves the
     // group populated, which is the one outcome that is honestly reportable
@@ -482,11 +484,11 @@ describe("Pty unresolved retirement", () => {
     expect(Pty.activity().running).toBe(1)
 
     await Pty.abandon(info.id, { actorId: "test", reason: "fixture teardown" })
-  }, 20_000)
+  }), 20_000)
 })
 
 describe("Pty ownership persistence", () => {
-  test("a spawn that could not be recorded is kept, pinned and reported as unowned", async () => {
+  test("a spawn that could not be recorded is kept, pinned and reported as unowned", () => withSessionCore(testSessionCore(tmpDir, "ws_test"), async () => {
     const { Pty } = await import("./index")
     const store = {
       ...volatileLaunchOwnership(),
@@ -503,9 +505,9 @@ describe("Pty ownership persistence", () => {
     expect(detailed?.ownershipError).toContain("launch_ownership write failed")
     // Counted inside `running`, and named, so a drain preview can say why.
     expect(Pty.activity()).toMatchObject({ running: 1, unrecorded: 1, unresolved: 0 })
-  }, 20_000)
+  }), 20_000)
 
-  test("a retirement that could not be recorded keeps the terminal and retries", async () => {
+  test("a retirement that could not be recorded keeps the terminal and retries", () => withSessionCore(testSessionCore(tmpDir, "ws_test"), async () => {
     const { Pty } = await import("./index")
     let writes = 0
     const store = {
@@ -529,5 +531,5 @@ describe("Pty ownership persistence", () => {
 
     expect(writes).toBe(2)
     expect(Pty.get(info.id)).toBeUndefined()
-  }, 20_000)
+  }), 20_000)
 })

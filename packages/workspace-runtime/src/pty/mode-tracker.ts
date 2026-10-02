@@ -38,7 +38,7 @@
 import xtermHeadless from "@xterm/headless"
 import { SerializeAddon } from "@xterm/addon-serialize"
 import { Unicode11Addon } from "@xterm/addon-unicode11"
-import { rec } from "../json-value"
+import { rec } from "@claxedo/session-core"
 import { captureTerminalCheckpointState, terminalCheckpointSchema, TERMINAL_SCROLLBACK_ROWS, type TerminalCheckpoint } from "./terminal-checkpoint-state"
 import { createTerminalParserContinuation } from "./terminal-parser-continuation"
 

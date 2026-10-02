@@ -41,7 +41,7 @@ Verification for this sub-slice:
 
 ### Runtime-owned workspace delivery migration
 
-Implemented `packages/workspace-runtime/src/session/delivery-owner.ts` as the single queue executor for the workspace runtime. The workspace layer owns requester authority, host activity, and shutdown; the owner uses `AgentRuntime.turns` for actual turn admission and provider execution. This keeps host policy out of the standalone SDK. Standalone SDK memory/SQLite stores have not acquired a queue API in this slice.
+Implemented `packages/session-core/src/session/delivery-owner.ts` as the single queue executor for the workspace runtime. The workspace layer owns requester authority, host activity, and shutdown; the owner uses `AgentRuntime.turns` for actual turn admission and provider execution. This keeps host policy out of the standalone SDK. Standalone SDK memory/SQLite stores have not acquired a queue API in this slice.
 
 - Removed `routes/session-queued-prompts.ts`, its action-resolver map, and the idle/control race loop from `runRuntimePromptTurn()`. HTTP handlers enqueue or observe operations; they no longer execute queued work.
 - Every explicit Queue submission is persisted before any execution attempt, including when the session is already idle. `prompt_async` returns `{delivery:"queue"}` for that durable admission; synchronous `/message` with explicit Queue returns 202 with delivery and message identity. Immediate prompts without a delivery request retain their existing reply behavior. Client types and decoding cover empty immediate replies, durable admissions, and pending steering receipts.
@@ -124,8 +124,8 @@ These are statements about integrations in this checkout, not claims that Cursor
 ### Source map
 
 - Registry: `packages/agent-runtime-contract/src/harnesses.ts`.
-- Queue persistence/control: `packages/workspace-runtime/src/store.ts`, `session/delivery-owner.ts`, `routes/session-core.ts`. The baseline resolver host `routes/session-queued-prompts.ts` has been removed.
-- Runtime admission/forwarding: `packages/agent-sdk-runtime/src/runtime/turn-admission.ts`, `packages/workspace-runtime/src/session/service.ts`.
+- Queue persistence/control: `packages/session-core/src/store.ts`, `session/delivery-owner.ts`, `routes/session-core.ts`. The baseline resolver host `routes/session-queued-prompts.ts` has been removed.
+- Runtime admission/forwarding: `packages/agent-sdk-runtime/src/runtime/turn-admission.ts`, `packages/session-core/src/session/service.ts`.
 - Codex: `packages/agent-sdk-runtime/src/harnesses/codex/protocol.ts`; `packages/agent-event-runtime/src/harnesses/codex/adapter.ts`; checked-in `protocol/v2/TurnSteerParams.ts`, `TurnSteerResponse.ts`, `ThreadItem.ts`.
 - Claude: `packages/agent-sdk-runtime/src/harnesses/claude/turn-input.ts`, `driver.ts`; `packages/agent-event-runtime/src/harnesses/claude/adapter.ts`; installed `@anthropic-ai/claude-agent-sdk/sdk.d.ts`.
 - Pi: `packages/agent-sdk-runtime/src/harnesses/pi/driver.ts`, `executable.ts`; `packages/agent-event-runtime/src/harnesses/pi/adapter.ts`; installed Pi 0.85.1 `dist/modes/rpc/rpc-mode.js`, `dist/core/agent-session.js`.

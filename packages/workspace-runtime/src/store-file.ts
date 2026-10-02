@@ -2,7 +2,7 @@ import fs from "node:fs"
 import path from "node:path"
 import { workspaceRuntimeStoreDir } from "./env"
 import { openSqliteDatabase } from "./sqlite/node"
-import { RuntimeStore, type RuntimeStoreDatabase } from "./store"
+import { RuntimeStore, type RuntimeStoreDatabase } from "@claxedo/session-core"
 
 export function openRuntimeStoreDatabase(root: string): RuntimeStoreDatabase {
   fs.mkdirSync(root, { recursive: true, mode: 0o755 })
@@ -25,5 +25,19 @@ export function openRuntimeStore(root = workspaceRuntimeStoreDir()): RuntimeStor
   } catch (error) {
     database.db.close()
     throw error
+  }
+}
+
+/**
+ * A runtime that is its own placement authority: an explicit-id create is
+ * checked against the execution bindings of the store the host opens. The
+ * store opens on the host's first request, so its schema refusal reaches that
+ * request rather than the process.
+ */
+export function storeBackedSessionPlacement() {
+  let store: RuntimeStore | undefined
+  return {
+    storeFactory: ({ storeRoot }: { storeRoot?: string }) => (store = openRuntimeStore(storeRoot)),
+    sessionIdWorkspace: (sessionId: string) => store?.getExecutionBinding(sessionId)?.workspaceId,
   }
 }

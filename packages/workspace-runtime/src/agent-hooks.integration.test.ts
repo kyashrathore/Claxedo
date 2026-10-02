@@ -1,4 +1,5 @@
 import { wrapper, artifact, notifyScript } from "./test-support/status-hooks"
+import { createBus as createTestBus, type WorkspaceRuntimeEvent as TestBusEvent } from "@claxedo/session-core"
 // Root constants capture paths at import time; execution tests need explicit temporary roots.
 
 import { afterAll, beforeAll, describe, expect, it, spyOn } from "bun:test"
@@ -11,6 +12,8 @@ import { createServer, Server } from "http"
 import { fileURLToPath } from "url"
 import { AgentHookRoutes } from "./routes/agent-hook"
 import { Pty } from "./pty/index"
+
+const testBus = createTestBus<TestBusEvent>()
 
 function runShell(command: string, args: string[], options: { input?: string; env: NodeJS.ProcessEnv; timeout?: number }) {
   return new Promise<{ status: string | number; stdout: Buffer; stderr: Buffer }>((resolve) => {
@@ -41,7 +44,7 @@ describe("agent-hooks real-world execution", () => {
     await fs.mkdir(hooksDir, { recursive: true })
     await fs.mkdir(binDir, { recursive: true })
 
-    const app = AgentHookRoutes()
+    const app = AgentHookRoutes({ bus: testBus })
     mockServer = createServer((req, res) => {
       const url = new URL(req.url || "", `http://127.0.0.1`)
       if (url.pathname === "/api/wr/hook/agent-lifecycle") {

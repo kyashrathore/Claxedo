@@ -1,7 +1,7 @@
 import z from "zod/v3"
 import type { IPty } from "@lydell/node-pty"
 import type { CreationIdentity, DescendantSweep, LaunchOwnershipStore, RetirementResult } from "@claxedo/process-ownership/launch"
-import type { SessionAccessActor, SessionWorkspaceAuthority } from "../session-access-policy"
+import type { RuntimeBus, SessionAccessActor, SessionWorkspaceAuthority } from "@claxedo/session-core"
 import type { QueuedOperation } from "./write-queue"
 import type { ModeTracker } from "./mode-tracker"
 import type { createDiskHistory } from "./history-disk"
@@ -66,6 +66,8 @@ export const Event = {
 }
 
 export interface ActiveSession {
+  /** The bus of the session core that created this terminal; every frame it publishes goes there. */
+  bus: RuntimeBus
   info: Info
   process: IPty
   buffer: string

@@ -5,7 +5,7 @@ import path from "path"
 import { promisify } from "node:util"
 import { execFile } from "node:child_process"
 import type { HarnessEffortLevels } from "@claxedo/agent-runtime-contract"
-import { FakeTransport, fakeConnectionProvider } from "@claxedo/workspace-runtime/testing"
+import { FakeTransport, fakeConnectionProvider } from "@claxedo/session-core/testing"
 import { configureAgentConfig, disposeAgentConfig, saveUserConfig } from "@claxedo/server-core/agent-config/index"
 import { ClaxedoDB } from "@claxedo/server-core/platform/db/index"
 import { putSessionMeta, sessionMeta } from "@claxedo/server-core/session/meta/index"
@@ -194,7 +194,8 @@ async function harness(input: { offeredModelId?: string; effortLevels?: HarnessE
     offeredModelId: input.offeredModelId ?? MODEL.modelID,
     ...(input.effortLevels ? { effortLevels: input.effortLevels } : {}),
   })
-  configureEmbeddedWorkspaceRuntime({ connectionProviders: [fixture.provider] })
+  configureEmbeddedWorkspaceRuntime({
+  sessionIdWorkspace: () => undefined, connectionProviders: [fixture.provider] })
   configureAgentConfig({ connectionConfigs: [fixture.provider] })
   // The bridge dispatches through the local runtime port, and a create there
   // resynchronizes the runtime from the user config first: a connection
@@ -267,7 +268,7 @@ afterEach(async () => {
   await shutdownEmbeddedWorkspaceRuntimes()
   disposeAgentConfig()
   ClaxedoDB.close()
-  configureEmbeddedWorkspaceRuntime({})
+  configureEmbeddedWorkspaceRuntime({ sessionIdWorkspace: () => undefined })
   configureAgentConfig()
   for (const root of roots.splice(0)) await fs.rm(root, { recursive: true, force: true })
   delete process.env.CLAXEDO_DATA_DIR

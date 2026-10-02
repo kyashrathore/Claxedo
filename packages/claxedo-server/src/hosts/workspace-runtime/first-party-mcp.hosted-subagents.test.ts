@@ -7,7 +7,8 @@ import { Hono } from "hono"
 import { exportPKCS8, exportSPKI, generateKeyPair } from "jose"
 import { mintRelayHostToken } from "@claxedo/workspace-relay"
 import type { HarnessConnectionCapabilities } from "@claxedo/agent-runtime-contract"
-import { FakeTransport, fakeConnectionProvider, loopbackMachineLoginPolicy } from "@claxedo/workspace-runtime/testing"
+import { loopbackMachineLoginPolicy } from "@claxedo/workspace-runtime/testing"
+import { FakeTransport, fakeConnectionProvider } from "@claxedo/session-core/testing"
 import { ControlPlaneAuthError } from "@claxedo/server-core/platform/auth/auth"
 import type { WorkspaceOwnerIdentity } from "@claxedo/server-core/platform/auth/authority"
 import type { PrivateSessionRuntimePrincipal } from "@claxedo/server-core/platform/auth/private-session-authority"
@@ -202,6 +203,7 @@ beforeAll(async () => {
   harness = fakeHarness()
   const enabledToolGroups = ["sessions", "subagents"]
   runtime = createWorkspaceRuntimeApp({
+    sessionIdWorkspace: () => undefined,
     exposure: relayWorkspaceRuntimeExposure({ key: relayKey.publicKey, workspaceId: WORKSPACE, hostId: HOST }),
     target: { workspaceId: WORKSPACE, directory },
     storeRoot: path.join(directory, "state"),

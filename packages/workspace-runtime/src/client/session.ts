@@ -15,10 +15,9 @@ import type {
   RecoveryRequest,
 } from "@claxedo/agent-runtime-contract"
 import { isRecoveryOutcome, parseRecoveryOutcome } from "@claxedo/agent-runtime-contract"
-import type { HarnessCapabilities } from "../host/capabilities"
+import type { HarnessCapabilities, AgentRuntimeRecoveryInspection } from "@claxedo/session-core"
 import type { RuntimeGoalSnapshot } from "@claxedo/agent-runtime-contract"
 import type { BackgroundTaskStopResult, ConfigOptionsPreview } from "@claxedo/harness/contract"
-import type { AgentRuntimeRecoveryInspection } from "../host/contracts"
 import type { AgentTurnCoveragePage } from "@claxedo/agent-runtime-contract"
 import type { FirstRead, TurnPage } from "@claxedo/agent-runtime-contract"
 import { namedMembers, without, type WorkspaceRuntimeCaller, type WorkspaceRuntimeRequestOptions, type WorkspaceRuntimeResponse, type WorkspaceScope } from "./request"

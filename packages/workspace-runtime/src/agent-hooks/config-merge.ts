@@ -4,7 +4,7 @@ import path from "path"
 import { isDeepStrictEqual } from "util"
 import { applyEdits, findNodeAtLocation, getNodeValue, modify, parseTree, type JSONPath, type Node, type ParseError } from "jsonc-parser"
 import { writeIfChanged as writeFileAtomically } from "./core/utils"
-import { rec, str } from "../json-value"
+import { rec, str } from "@claxedo/session-core"
 
 export type IsManagedCommand = (command: string | undefined) => boolean
 

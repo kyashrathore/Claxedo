@@ -8,10 +8,16 @@ import { DEFAULT_RECOVERY_BUDGETS } from "@claxedo/agent-runtime-contract"
  * deadline nobody will outlive.
  */
 const MAX_FREEZE_DEADLINE_MS = DEFAULT_RECOVERY_BUDGETS.drainMs * 4
-import { num, str } from "../json-value"
+import {
+  num,
+  str,
+  boundedJsonRecord,
+  errorBody,
+  isRequestBodyTooLarge,
+  requestBodyTooLargeBody,
+} from "@claxedo/session-core"
 import type { WorkspaceCheckpointControl, WorkspaceCheckpointDrainPolicy } from "../workspace/host"
 import type { WorkspaceWorktreeManager } from "../worktree"
-import { boundedJsonRecord, errorBody, isRequestBodyTooLarge, requestBodyTooLargeBody } from "./http"
 import type { RelayHostAuthContext } from "../workspace-host-service-auth"
 import { authorizeHostCapability, type HostCapabilityAccessOptions } from "./host-capability-access"
 import { WORKSPACE_RUNTIME_MANAGEMENT_TOKEN_HEADER } from "../management-auth"

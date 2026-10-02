@@ -10,7 +10,7 @@ import {
   disposeAgentConfig,
   saveUserConfig,
 } from "@claxedo/server-core/agent-config/index"
-import { FakeTransport, fakeConnectionProvider } from "@claxedo/workspace-runtime/testing"
+import { FakeTransport, fakeConnectionProvider } from "@claxedo/session-core/testing"
 import { startLocalServer, type LocalServer } from "./start-local-server"
 import { testDaemon } from "./test-support/daemon"
 import {
@@ -184,6 +184,7 @@ beforeEach(async () => {
   // run here; the policy and the loopback declaration are re-supplied because
   // this call replaces the whole composition it made.
   configureEmbeddedWorkspaceRuntime({
+    sessionIdWorkspace: () => undefined,
     connectionProviders: [provider],
     sessionAccessPolicy: localHostSessionAccessPolicy,
     loopbackSessionAuthority: "local",
@@ -208,7 +209,7 @@ afterEach(async () => {
   await server?.stop()
   server = undefined
   disposeAgentConfig()
-  configureEmbeddedWorkspaceRuntime({})
+  configureEmbeddedWorkspaceRuntime({ sessionIdWorkspace: () => undefined })
   configureAgentConfig()
   setLocalHostEndpoints(undefined)
   resetLocalHostSessionAdoptions()

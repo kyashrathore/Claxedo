@@ -1,6 +1,6 @@
 import { createMiddleware } from "hono/factory"
 import { jwtVerify, type JWTPayload } from "jose"
-import { bearerToken } from "./routes/http"
+import { bearerToken } from "@claxedo/session-core"
 import {
   loadWorkspaceRuntimeManagementVerificationKey,
   stringClaim,

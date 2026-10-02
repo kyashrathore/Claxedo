@@ -5,9 +5,7 @@ import { HTTPException } from "hono/http-exception"
 import { Log } from "../log"
 import { sqliteLaunchOwnership } from "../ownership/launch-ownership-sqlite"
 import { reconcileLaunchOwnership, type LaunchOwnershipReconciliation } from "../ownership/reconcile-launch-ownership"
-import { errorBody } from "../routes/error-body"
-import type { RuntimeStore } from "../store"
-import { RuntimeStoreSchemaMismatchError } from "../store-schema"
+import { errorBody, type RuntimeStore, RuntimeStoreSchemaMismatchError } from "@claxedo/session-core"
 
 const log = Log.create({ service: "workspace-runtime" })
 

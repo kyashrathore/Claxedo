@@ -8,7 +8,12 @@ import { remoteWorkspaceSessionAccessPolicy } from "@claxedo/workspace-runtime"
 import { USAGE_REPORT_MAX_FACTS } from "@claxedo/server-core/usage/usage-report"
 import { cloudWorkspaceUsage, createSandboxUsageLedger, type SandboxUsageLedger } from "./cloud-usage"
 import { usageReportPlane, USAGE_REPORT_URL, type UsageReportPlane } from "../../test-support/usage-report-plane"
-import { buildAssistantMessage, messageCompleted, messageUpdated, sessionUsage } from "@claxedo/workspace-runtime/projection"
+import {
+  buildAssistantMessage,
+  messageCompleted,
+  messageUpdated,
+  sessionUsage,
+} from "@claxedo/session-core"
 
 const cleanups: Array<() => void | Promise<void>> = []
 

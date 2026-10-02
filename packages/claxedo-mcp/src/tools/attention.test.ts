@@ -6,7 +6,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js"
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js"
 import { ElicitRequestSchema } from "@modelcontextprotocol/sdk/types.js"
 import type { AgentPermission, AgentQuestion, AgentRuntimeStatus } from "@claxedo/agent-runtime-contract"
-import { createSessionRoutes } from "@claxedo/workspace-runtime/routes"
+import { createSessionRoutes } from "@claxedo/session-core"
 import { createClaxedoMcpClient } from "../client/index"
 import {
   controlPlaneWorkspaceListFetch,
@@ -152,6 +152,7 @@ function runtimeApp(state: Harness) {
     },
   }
   const routes = createSessionRoutes({
+    sessionIdWorkspace: () => undefined,
     runtime: async () => runtime as unknown as SessionRuntime,
     defaultHarness: () => ({ id: "codex", access: "native" }),
     requestedSessionHarness: () => undefined,

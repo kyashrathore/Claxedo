@@ -41,7 +41,7 @@ import {
   type WorkspaceRelayHostTunnel,
   type WorkspaceRelayHostTunnelEvent,
 } from "@claxedo/workspace-runtime/relay"
-import type { SessionAccessPolicy } from "@claxedo/workspace-runtime"
+import type { SessionAccessPolicy } from "@claxedo/session-core"
 import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
 import { hostServingSurface } from "./surface"
 import { loopbackReplayHeaders } from "@claxedo/server-core/platform/http/peer-address"

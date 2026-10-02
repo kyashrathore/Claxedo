@@ -3,7 +3,7 @@ import { RequestError } from "@agentclientprotocol/sdk"
 import type { SessionBroker, StartInput } from "@claxedo/harness/contract"
 import { createHarnessComposer } from "@claxedo/harness/compose"
 import { acpPeer } from "../test-support/acp-peer"
-import { createHostFixture, LOOPBACK_ORIGIN, sessionCreate, until } from "../test-support/host-fixture"
+import { createHostFixture, LOOPBACK_ORIGIN, sessionCreate, until } from "@claxedo/session-core/testing"
 
 function acpTransport(peer: ReturnType<typeof acpPeer>) {
   const unused = () => { throw new Error("Unused transport") }

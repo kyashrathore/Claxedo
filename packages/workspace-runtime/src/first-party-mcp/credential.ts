@@ -1,6 +1,6 @@
 import { createHmac, randomBytes, randomUUID } from "node:crypto"
 import { base64UrlDecode, base64UrlEncode, timingSafeEqualStrings } from "@claxedo/helpers"
-import { rec } from "../json-value"
+import { rec } from "@claxedo/session-core"
 
 export type RuntimeCredentialClaims = {
   runtimeId: string

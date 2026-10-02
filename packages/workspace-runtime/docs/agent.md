@@ -7,7 +7,7 @@
 - Runtime HTTP paths use `/api/wr/*`; do not add runtime-owned product-prefixed routes.
 - Management mutation goes through `WorkspaceRuntimeManagementAuth` and currently uses `POST /api/wr/config`.
 - Public mounting must choose an explicit exposure from `exposure.ts`.
-- Runtime core may consume neutral `WORKSPACE_RUNTIME_*` environment variables. Translate Claxedo deployment env in `claxedo-server` before launching the runtime.
+- The machine host may consume neutral `WORKSPACE_RUNTIME_*` environment variables. Session core consumes explicit ports and no environment globals. Translate Claxedo deployment env in `claxedo-server` before launching the runtime.
 - Neutral defaults should write under `~/.workspace-runtime`, not legacy Claxedo home directories.
 - Config apply status files under `.workspace-runtime/runtime-config/` are observability records. Keep them redacted: auth key names are okay, auth values and raw credential payloads are not.
 

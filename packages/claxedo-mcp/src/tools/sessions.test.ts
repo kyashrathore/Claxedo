@@ -19,7 +19,7 @@ import type {
   RecoveryRequest,
   RecoveryTarget,
 } from "@claxedo/agent-runtime-contract"
-import { createSessionRoutes } from "@claxedo/workspace-runtime/routes"
+import { createSessionRoutes } from "@claxedo/session-core"
 import { createClaxedoMcpClient } from "../client/index"
 import type { ClaxedoFetch } from "../client/contract"
 import type { McpAuditEvent } from "../context"
@@ -340,6 +340,7 @@ function runtimeApp(state: Workspace) {
     },
   }
   const routes = createSessionRoutes({
+    sessionIdWorkspace: () => undefined,
     runtime: async () => runtime as unknown as SessionRuntime,
     defaultHarness: () => ({ id: "claude", access: "native" }),
     requestedSessionHarness: (c) => {

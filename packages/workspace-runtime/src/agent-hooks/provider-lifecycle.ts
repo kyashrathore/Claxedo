@@ -1,5 +1,5 @@
 import type { StatusHookTemplate, StatusHookEventRule } from "@claxedo/plugin-api"
-import { arr, rec, str } from "../json-value"
+import { arr, rec, str } from "@claxedo/session-core"
 
 function toolKey(input: Record<string, unknown>): string | null {
   if (input.tool_input !== undefined) {

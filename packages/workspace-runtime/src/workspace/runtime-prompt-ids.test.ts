@@ -6,7 +6,7 @@ import { Hono } from "hono"
 import type { AgentRuntimeEvent } from "@claxedo/agent-runtime-contract"
 import { withWorkspaceTarget } from "../target"
 import { loopbackWorkspaceRuntimeExposure } from "../exposure"
-import { FakeTransport, fakeConnectionProvider } from "../test-support/fake-transport"
+import { FakeTransport, fakeConnectionProvider } from "@claxedo/session-core/testing"
 import { loopbackMachineLoginPolicy } from "../testing"
 import { createWorkspaceHost } from "./runtime"
 import type { RuntimeSnapshot } from "../routes/config"
@@ -40,7 +40,8 @@ async function fixture(turn = answer) {
       turn: async function* ({ session }) { yield* turn(session.binding.sessionId) },
     }),
   })
-  const host = createWorkspaceHost({ placement: loopbackMachineLoginPolicy(), target, storeRoot: join(directory, "state"), connectionProviders: [provider] })
+  const host = createWorkspaceHost({
+  sessionIdWorkspace: () => undefined, placement: loopbackMachineLoginPolicy(), target, storeRoot: join(directory, "state"), connectionProviders: [provider] })
   cleanups.push(() => host.dispose())
   await host.apply(snapshot)
   const app = new Hono()

@@ -54,6 +54,20 @@ Each lane is one agent in its own worktree off the `goal/foundation` tip, with t
 
 Later, with their owning plans: the store split and explicit turn identity (plan 2026-09-29-002 Phase 3), the machine agent composition (D9), authorized fanout and journal streams, the credential domain service (needs a ruling on accounts per provider), and the sandbox driver catalogue (needs the boat.dev launch scope).
 
+
+### SC1 Session core extraction (Phase 3 of the LOC plan)
+
+`packages/session-core` holds the session core behind `createSessionCore`. Each
+instance owns its bus and directory registry. Session placement is a required
+host port; HMAC child identity, attachment reads, directory canonicalization
+and the optional Pages lifecycle hooks stay with the machine host, and
+`storeSessionRoutes` gives every host the route options it answers from its
+store. The Node-free ratchet scans all core production files and the first-party
+import closure; `packages/session-core/README.md` holds the port contract.
+`packages/session-core/src/durable-object.node-test.ts` runs
+the core in a Durable Object under workerd without `nodejs_compat`. The
+extraction does not implement the later turn-row and journal consolidation.
+
 ## 4. Order
 
 1. Now: C3, C4, C9 (disjoint from L3's files).

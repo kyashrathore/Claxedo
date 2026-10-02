@@ -11,7 +11,7 @@ import {
   type RelayHostTokenClaims,
   type RelayKey,
 } from "@claxedo/workspace-relay"
-import { bearerToken, errorBody } from "./routes/http"
+import { bearerToken, errorBody } from "@claxedo/session-core"
 import { trimToUndefined } from "@claxedo/helpers/string"
 import { numberClaim } from "@claxedo/helpers/guards"
 

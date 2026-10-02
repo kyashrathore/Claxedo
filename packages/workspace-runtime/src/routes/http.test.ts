@@ -6,12 +6,17 @@ import path from "node:path"
 import { createWorkspaceRuntimeApp } from "../server"
 import { loopbackWorkspaceRuntimeExposure } from "../exposure"
 import { WorkspaceRuntimeRoutes } from "./manifest"
-import { JSON_BODY_LIMIT_BYTES, boundedJson, boundedTextBody, errorBody, isRequestBodyTooLarge } from "./http"
 import { WorktreeRoutes } from "./worktree"
-import { createSessionRoutes } from "./session-core"
 import type { WorkspaceWorktreeManager } from "../worktree"
-import { FakeTransport } from "../test-support/fake-transport"
-import { createHostFixture, sessionCreate, type HostFixture } from "../test-support/host-fixture"
+import {
+  JSON_BODY_LIMIT_BYTES,
+  boundedJson,
+  boundedTextBody,
+  createSessionRoutes,
+  errorBody,
+  isRequestBodyTooLarge,
+} from "@claxedo/session-core"
+import { FakeTransport, createHostFixture, sessionCreate, type HostFixture } from "@claxedo/session-core/testing"
 import { loopbackMachineLoginPolicy } from "../testing"
 
 const tooLarge = errorBody("request_body_too_large", "Request body is too large")
@@ -63,6 +68,7 @@ async function withRuntimeApp(
   const previous = process.env.WORKSPACE_RUNTIME_DIRECTORY
   process.env.WORKSPACE_RUNTIME_DIRECTORY = directory
   const runtime = createWorkspaceRuntimeApp({
+    sessionIdWorkspace: () => undefined,
     placement: loopbackMachineLoginPolicy(),
     exposure: loopbackWorkspaceRuntimeExposure(),
     target: { workspaceId: "ws_body_limit", directory },
@@ -333,6 +339,7 @@ describe("session routes reject oversized bodies before the provider runs", () =
     const directory = "/tmp/workspace-runtime-body-limit-session"
     const app = new Hono()
     app.route("/", createSessionRoutes({
+      sessionIdWorkspace: () => undefined,
       runtime: async () => host.runtime,
       defaultHarness: () => ({ id: "codex", access: "native" }),
       requestedSessionHarness: () => undefined,

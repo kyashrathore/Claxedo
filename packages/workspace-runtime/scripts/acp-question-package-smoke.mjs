@@ -13,6 +13,8 @@ process.env.WORKSPACE_RUNTIME_WORKSPACE_ID = "acp-package-test"
 const { createWorkspaceHost } = await import("../dist/host.mjs")
 const { loopbackWorkspaceRuntimeExposure } = await import("../dist/exposure.mjs")
 const host = createWorkspaceHost({
+  target: { workspaceId: "acp-package-test", directory },
+  sessionIdWorkspace: () => undefined,
   storeRoot: join(directory, "state"),
   placement: { placement: "loopback", machineOwnerUserId: "local", canUseOwnLogin: true },
 })

@@ -17,7 +17,12 @@ import {
   claxedoWorkspaceRuntimeBootFromEnv,
   claxedoWorkspaceRuntimeLaunch,
 } from "./runtime-boot"
-import { buildAssistantMessage, messageCompleted, messageUpdated, sessionUsage } from "@claxedo/workspace-runtime/projection"
+import {
+  buildAssistantMessage,
+  messageCompleted,
+  messageUpdated,
+  sessionUsage,
+} from "@claxedo/session-core"
 
 describe("claxedo workspace-runtime boot policy", () => {
   test("installs the clone placeholder as a GitHub-only authorization header before boot returns", async () => {

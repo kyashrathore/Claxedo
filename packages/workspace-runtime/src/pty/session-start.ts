@@ -18,7 +18,7 @@ import { SHELL_READY_MARKER } from "./shell-ready"
 import { TERMINAL_TERM_PROGRAM, TERMINAL_TERM_PROGRAM_VERSION } from "./identity"
 import { SESSION_RESTORED_NOTICE, shouldMarkRestored } from "./restored-notice"
 import { createModeTracker } from "./mode-tracker"
-import { workspaceRuntimeBus } from "../bus"
+import { currentSessionCore } from "../session-context"
 import { ensureSpawnHelper } from "./spawn-helper-fix"
 import { prependWorkspaceRuntimeBin } from "../runtime-bin"
 import type { ActiveSession, CreateInput, AgentHookAccessBinding } from "./session-types"
@@ -125,6 +125,7 @@ export async function startTerminal(
   context: StartContext,
 ) {
   const { bufferLimit: BUFFER_LIMIT, highWatermark: QUEUE_HIGH_WATERMARK, lowWatermark: QUEUE_LOW_WATERMARK } = context
+  const bus = currentSessionCore().bus
   const createStart = performance.now()
   const id = "pty_" + crypto.randomUUID().replace(/-/g, "")
   const command = selectPtyCommand({ command: input.command, platform })
@@ -360,6 +361,7 @@ export async function startTerminal(
   }
 
   const session: ActiveSession = {
+    bus,
     info,
     process: ptyProcess,
     buffer: restoredBuffer,
@@ -425,7 +427,7 @@ export async function startTerminal(
     session.osc7 = parsed.buf
     if (parsed.cwd && parsed.cwd !== session.info.cwd) {
       session.info.cwd = parsed.cwd
-      workspaceRuntimeBus.publish({ type: "pty.updated", info: session.info })
+      session.bus.publish({ type: "pty.updated", info: session.info })
     }
 
     // Mirror into the headless emulator BEFORE broadcasting, so a client that
@@ -474,7 +476,7 @@ export async function startTerminal(
     }
     await context.exited(session, exitCode)
   }
-  workspaceRuntimeBus.publish({ type: "pty.created", info })
+  session.bus.publish({ type: "pty.created", info })
   if (nativeExit) await handleExit(nativeExit)
   return info
 }

@@ -7,7 +7,7 @@ import type { ConfigOperations, ConfigPreviewTarget, DraftLaunch } from "@claxed
 import { loopbackWorkspaceRuntimeExposure } from "../exposure"
 import type { RuntimeSnapshot } from "../routes/config"
 import { withWorkspaceTarget } from "../target"
-import { FakeTransport, fakeConnectionProvider } from "../test-support/fake-transport"
+import { FakeTransport, fakeConnectionProvider } from "@claxedo/session-core/testing"
 import { loopbackMachineLoginPolicy } from "../testing"
 import { createWorkspaceHost } from "./runtime"
 
@@ -45,6 +45,7 @@ async function catalogHost() {
   })
   const target = { workspaceId: "ws_1", directory }
   const host = createWorkspaceHost({
+    sessionIdWorkspace: () => undefined,
     placement: loopbackMachineLoginPolicy(),
     target,
     storeRoot: directory,

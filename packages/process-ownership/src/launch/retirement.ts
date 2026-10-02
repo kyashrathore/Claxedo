@@ -87,7 +87,11 @@ async function retireOwned(target: RetirementTarget, budgets: RetirementBudgets)
     signals: [{ signal: "SIGTERM", scope: signalScope(), delivered: false, refusal: "identity_unverifiable" }],
     error: { code: "ownership_unverified", message: `could not establish whether pid ${identity.pid} is still the recorded launch: ${verdict.reason}` },
   }
-  if (verdict.state === "exited") return { leader: "exited", descendants: await descendantsAfterExit(identity), signals: [] }
+  if (verdict.state === "exited") {
+    // Nothing verified this group while its leader lived, so it is not signalled; the members a leader leaves behind usually exit on their own.
+    await awaitGroupEmpty(identity, budgets.termGraceMs + budgets.killVerifyMs)
+    return { leader: "exited", descendants: await descendantsAfterExit(identity), signals: [] }
+  }
   if (verdict.state === "identity_mismatch") return {
     leader: "unknown",
     descendants: "unknown",

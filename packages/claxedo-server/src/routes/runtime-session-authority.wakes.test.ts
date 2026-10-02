@@ -1,3 +1,4 @@
+import { testSessionRoutePorts } from "@claxedo/session-core/testing"
 import path from "node:path"
 import { afterEach, expect, test, vi } from "vitest"
 import { Hono } from "hono"
@@ -5,13 +6,10 @@ import Database from "better-sqlite3"
 import { decodeJwt, exportPKCS8, exportSPKI, generateKeyPair } from "jose"
 import { mintRelayHostToken } from "@claxedo/workspace-relay"
 import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
-import type { RuntimeStore } from "../../../workspace-runtime/src/store"
+import { type RuntimeStore, type SessionAccessPolicy, SessionRoutes, queuedPromptStore } from "@claxedo/session-core"
 import { openRuntimeStore } from "../../../workspace-runtime/src/store-file"
-import { SessionRoutes } from "../../../workspace-runtime/src/routes/session"
 import { remoteWorkspaceSessionAccessPolicy } from "../../../workspace-runtime/src/remote-session-authority"
 import { createRelayHostAuthMiddleware } from "../../../workspace-runtime/src/workspace-host-service-auth"
-import type { SessionAccessPolicy } from "../../../workspace-runtime/src/session-access-policy"
-import { queuedPromptStore } from "../../../workspace-runtime/src/workspace/session-routes"
 import { RuntimeSessionAuthorityRoutes } from "./runtime-session-authority"
 import { fetchJsonBody, fetchUrl } from "../test-support/fetch-calls"
 import {
@@ -141,7 +139,7 @@ function relayed(token: string, body: Record<string, unknown>, headers: Record<s
  */
 function hostOver(store: RuntimeStore, policy: SessionAccessPolicy, execution: Awaited<ReturnType<typeof wakeRuntime>>, relayKey: CryptoKey) {
   const { runtime } = execution
-  const host = SessionRoutes(async () => runtime, {
+  const host = SessionRoutes(async () => runtime, { ...testSessionRoutePorts(),
     sessionAccessPolicy: policy,
     requestedSessionHarness: (requested) => requested ?? { id: "pi", access: "native" },
     queuedPrompts: () => queuedPromptStore(store),

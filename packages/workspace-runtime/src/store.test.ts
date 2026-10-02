@@ -8,15 +8,27 @@ import { createRequire } from "module"
 import os from "os"
 import path from "path"
 import { AgentMessagePageError } from "@claxedo/agent-runtime-contract"
-import { AgentRuntimeStaleTurnError } from "./store"
+import {
+  AgentRuntimeStaleTurnError,
+  createStoreBrokerPorts,
+  type RuntimeEventPublishers,
+  RuntimeStore as RuntimeStoreImpl,
+  RuntimeStoreSchemaMismatchError,
+  readTurnOutline,
+  type TurnOutlineDatabase,
+  messageCompleted,
+  messagePartDelta,
+  messagePartUpdated,
+  messageUpdated,
+  permissionAsked,
+  questionAsked,
+  sessionIdle,
+  sessionUpdated,
+  sessionUsage,
+  todoUpdated,
+} from "@claxedo/session-core"
 import { createRequestBroker } from "@claxedo/harness/broker"
-import { createStoreBrokerPorts } from "./broker-ports/index"
-import type { RuntimeEventPublishers } from "./projection/runtime-event-hub"
-import { RuntimeStore as RuntimeStoreImpl } from "./store"
 import { openRuntimeStore, openRuntimeStoreDatabase } from "./store-file"
-import { RuntimeStoreSchemaMismatchError } from "./store-schema"
-import { readTurnOutline, type TurnOutlineDatabase } from "./session/turn-outline"
-import { messageCompleted, messagePartDelta, messagePartUpdated, messageUpdated, permissionAsked, questionAsked, sessionIdle, sessionUpdated, sessionUsage, todoUpdated } from "./projection/presentation-events"
 
 const roots: string[] = []
 const stores: RuntimeStoreImpl[] = []

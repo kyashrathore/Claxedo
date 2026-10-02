@@ -1,7 +1,7 @@
 import fs from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
-import { removeTestTempDir } from "./test-temp-dir"
+import { removeTestTempDir } from "@claxedo/session-core/testing"
 
 /** Scripted wire peer for lifecycle failures; real Pi is exercised separately. */
 export async function installFakePiRpc() {

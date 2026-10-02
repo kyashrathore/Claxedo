@@ -1,9 +1,8 @@
 import { describe, expect, mock, test } from "bun:test"
 import { Hono } from "hono"
-import type { WorkspaceWorktreeRecord } from "../store"
+import { type WorkspaceWorktreeRecord, managedWorkspaceSessionAccessPolicy } from "@claxedo/session-core"
 import type { WorkspaceWorktreeManager } from "../worktree"
 import type { RelayHostAuthContext } from "../workspace-host-service-auth"
-import { managedWorkspaceSessionAccessPolicy } from "../session-access-policy"
 import { WorktreeRoutes } from "./worktree"
 
 function record(sessionId: string): WorkspaceWorktreeRecord {

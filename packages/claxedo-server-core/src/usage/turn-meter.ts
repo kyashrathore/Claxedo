@@ -17,7 +17,7 @@ import {
   type UsageRevisionWriter,
 } from "./contracts"
 import type { TurnMeterState, TurnMeterStateStore } from "./turn-meter-state"
-import { eventSessionId } from "@claxedo/workspace-runtime/projection"
+import { eventSessionId } from "@claxedo/session-core"
 
 type TurnContext = {
   sessionRef: string
