@@ -84,6 +84,10 @@ jobs:
     <<: *aws_linux_job
     command: bash script/cbx-ci-remote.sh workspace-files-linux
 
+  focus-codex-linux-aws:
+    <<: *aws_linux_job
+    command: bash script/cbx-ci-remote.sh codex-conformance
+
   pr-typecheck-linux-aws:
     <<: *aws_linux_job
     command: bash script/cbx-ci-remote.sh typecheck-linux

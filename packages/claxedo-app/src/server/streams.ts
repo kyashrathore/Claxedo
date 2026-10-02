@@ -13,7 +13,7 @@ export type EventStreams = {
   readonly close: () => void
 }
 
-function forwardFrame(data: unknown, body: ReadableStreamDefaultController<Uint8Array> | undefined, finish: (error: Error) => void) {
+function enqueueEventSocketFrame(data: unknown, body: ReadableStreamDefaultController<Uint8Array> | undefined, finish: (error: Error) => void) {
   if (typeof data === "string") body?.enqueue(new TextEncoder().encode(data))
   else if (data instanceof ArrayBuffer) body?.enqueue(new Uint8Array(data))
   else finish(new Error("The event socket sent a frame that is neither text nor an ArrayBuffer"))
@@ -52,7 +52,7 @@ function eventSocketResponse(url: URL, headers: Headers, signal: AbortSignal): P
       })
       resolve(new Response(stream, { headers: { "content-type": "text/event-stream" } }))
     }
-    socket.onmessage = (event: MessageEvent<unknown>) => forwardFrame(event.data, body, finish)
+    socket.onmessage = (event: MessageEvent<unknown>) => enqueueEventSocketFrame(event.data, body, finish)
     socket.onerror = () => finish(new Error("The event socket failed"))
     socket.onclose = (event) => finish(event.code === 1000 ? undefined : new Error(`The event socket closed (${event.code})`))
   })

@@ -18,6 +18,10 @@ describe("file-size ratchet", () => {
     expect(counted("packages/ui/src/components/message-part.tsx")).toBe(false)
     expect(counted("packages/harness/src/protocol.d.ts")).toBe(false)
     expect(counted("packages/claxedo-app/src/styles.css")).toBe(false)
+    expect(counted("packages/workspace-relay/bench/reports/dialin-agent.bundle.cjs")).toBe(false)
+    expect(counted("packages/workspace-relay/bench/dialin-agent.ts")).toBe(true)
+    expect(counted("packages/workspace-relay/bench/reports/analyze.ts")).toBe(true)
+    expect(counted("packages/workspace-relay/src/agent.bundle.cjs")).toBe(true)
   })
 
   test("counts lines the way the app budget does", () => {

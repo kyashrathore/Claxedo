@@ -82,6 +82,8 @@ export function operationInput<const S extends Record<string, Decoder<unknown>>>
       if (!decoded.ok) return { ok: false, reason: `${key}: ${decoded.reason}` }
       result[key] = decoded.value
     }
+    // Every key above is produced by its declared decoder; TypeScript cannot track a mapped type through Object.entries.
+    // oxlint-disable-next-line typescript/no-unsafe-type-assertion
     return { ok: true, value: result as DecodedFields<S> }
   }
 }

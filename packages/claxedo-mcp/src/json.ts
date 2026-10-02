@@ -13,6 +13,7 @@ import { asRecord, isRecord } from "@claxedo/helpers/guards"
 
 export { isRecord }
 export { asRecord as record }
+export { stringMembers as strings } from "@claxedo/helpers/guards"
 
 /** A non-blank string, trimmed of nothing — callers that need trimming do it. */
 export function text(value: unknown): string | undefined {
@@ -30,14 +31,6 @@ export function bool(value: unknown): boolean | undefined {
 /** The record members of an array value; anything else is dropped. */
 export function records(value: unknown): Record<string, unknown>[] {
   return Array.isArray(value) ? value.filter(isRecord) : []
-}
-
-/** The string members of an array value; anything else is dropped. */
-export function strings(value: unknown): string[] {
-  if (!Array.isArray(value)) return []
-  const out: string[] = []
-  for (const item of value) if (typeof item === "string") out.push(item)
-  return out
 }
 
 /** The string-valued members of a record; anything else is dropped. */

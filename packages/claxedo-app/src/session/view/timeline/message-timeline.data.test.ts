@@ -70,7 +70,7 @@ test("a thought between commands is drawn inside their work group, and the group
   const rows = Timeline.constructMessageRows(user, (id) => (id === "a1" ? parts : []), hasText, [assistant], true, "idle", true)
   const work = rows.flatMap((row) => (row._tag === "AssistantPart" && row.group.type === "work" ? [row.group] : []))
   expect(work).toHaveLength(1)
-  const members = Timeline.groupMembers(work[0]!.refs, () => assistant, (ref) => parts.find((part: { id: string }) => part.id === ref.partId))
+  const members = Timeline.groupMembers(work[0].refs, () => assistant, (ref) => parts.find((part: { id: string }) => part.id === ref.partId))
   expect(members.map((member) => member.part.id)).toEqual(["b1", "th", "b2"])
   expect(Timeline.memberTools(members).map((part) => part.id)).toEqual(["b1", "b2"])
 })

@@ -59,6 +59,7 @@ declare module "@cloudflare/workers-types" {
  * same classes.
  */
 function fetchThrough(fetcher: Fetcher, request: Request): Promise<Response> {
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion
   return fetcher.fetch(request as unknown as Parameters<Fetcher["fetch"]>[0]) as unknown as Promise<Response>
 }
 

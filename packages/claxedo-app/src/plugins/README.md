@@ -65,3 +65,5 @@ A failed build is not retried until a new build arrives or the plugin is switche
 ## Flows
 
 34 live plugin on desktop, 35 live plugin on the web, 37 the network lock, 40 the app plugin tools.
+
+Pane registration erases each plugin-owned state type behind a string kind. The single assertion in `bindings/panes.ts` restores that type when dispatching to its registered opener. `panes.open(kind, state)` requires the plugin to supply the live state for that kind; `restore.parse` validates serialized state and cannot validate an arbitrary live value. This is a trusted plugin API, not an isolation boundary.

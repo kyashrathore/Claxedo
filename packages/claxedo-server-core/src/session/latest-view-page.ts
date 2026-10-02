@@ -1,4 +1,4 @@
-import { projectLatestSurfaceMessages, type LatestSurfaceMessage } from "@claxedo/agent-runtime-contract"
+import { isAgentMessage, projectLatestSurfaceMessages, type LatestSurfaceMessage } from "@claxedo/agent-runtime-contract"
 import type { AgentMessage } from "@claxedo/agent-runtime-contract"
 
 export type LatestView = "latest-turn" | "latest-surface"
@@ -40,5 +40,16 @@ export function latestViewPage(
 
 /** A stored `latest-turn` page as a first page reads it; the stored rows are the runtime's synced message snapshots. */
 export function storedTurn(page: { messages: readonly unknown[]; nextCursor?: string }): { messages: AgentMessage[]; nextCursor?: string } {
-  return page as { messages: AgentMessage[]; nextCursor?: string }
+  const messages = page.messages.map((message, index) => {
+    if (!isAgentMessage(message)) throw new InvalidStoredMessage(index)
+    return message
+  })
+  return { ...page, messages }
+}
+
+export class InvalidStoredMessage extends Error {
+  constructor(readonly index: number) {
+    super(`Stored transcript message ${index} does not satisfy the agent message contract`)
+    this.name = "InvalidStoredMessage"
+  }
 }

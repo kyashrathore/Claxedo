@@ -21,8 +21,14 @@ import {
   nonEmptyString,
   numberClaim,
   stringClaim,
+  stringMembers,
   typeOf,
 } from "./guards"
+
+test("stringMembers preserves string order and empty strings while excluding other values", () => {
+  expect(stringMembers(["a", 1, "", null, "b", "a"])).toEqual(["a", "", "b", "a"])
+  expect(stringMembers({ value: "a" })).toEqual([])
+})
 
 describe("typeOf", () => {
   test("separates null and array from object", () => {

@@ -26,6 +26,9 @@ const NOT_COUNTED = [
   /[.-](test|spec)\.[a-z]+$/,
   /(^|\/)(test|tests|__tests__|e2e|test-support|test-utils|fixtures?|locales)\//,
   /^packages\/ui\//,
+  // Archived esbuild outputs contain vendor code; the maintained benchmark
+  // sources outside reports remain counted.
+  /^packages\/workspace-relay\/bench\/reports\/[^/]+\.bundle\.cjs$/,
 ]
 
 export type Ceilings = Record<string, number>

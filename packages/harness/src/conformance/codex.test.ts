@@ -3,7 +3,7 @@ import fs from "node:fs/promises"
 import path from "node:path"
 import { describe, expect, test } from "bun:test"
 import { runConformance, setupConformance } from "./test-support/run"
-import { codexBackend as backend, codexEntry, entryHome, hashes, makeCodexTransport as makeTransport, OWNER_KEY, ownLoginContext, recordingBackend, type CodexBackend } from "../../e2e/harness/codex-conformance"
+import { codexBackend as backend, codexEntry, commandResult, entryHome, hashes, makeCodexTransport as makeTransport, OWNER_KEY, ownLoginContext, recordingBackend, type CodexBackend } from "../../e2e/harness/codex-conformance"
 import { SESSION_TITLE_SYSTEM_PROMPT } from "../../e2e/harness/config"
 import { PINNED_CODEX } from "../../e2e/harness/pinned-codex"
 import { startScriptedMcpServer } from "../../e2e/harness/scripted-mcp-server"
@@ -24,12 +24,12 @@ test("Codex Stop on a turn that ran a command terminates its background terminal
   try {
     const state = context.backend as CodexBackend
     state.server.scriptTool({ name: "exec_command", input: { cmd: "sleep 120", yield_time_ms: 1000 } })
-    const release = context.backend.hold!("Process running with session ID")
+    const release = context.backend.hold!("CODEXSTOPCOMMAND")
     const events: unknown[] = []
     const running = (async () => {
       for await (const event of context.transport.send(context.session, context.turn("Run the scripted command CODEXSTOPCOMMAND"), context.turnBroker())) events.push(event.event)
     })()
-    await context.backend.held!("Process running with session ID")
+    expect(await commandResult(state, "CODEXSTOPCOMMAND")).toContain("Process running with session ID")
     const outcome = await context.transport.cancel(context.session, { turnId: "t1", assistantMessageId: "a1" },
       { at: Date.now() + 15_000, signal: new AbortController().signal })
     release()
@@ -47,9 +47,9 @@ test("Codex goal pause and stop proceed after a goal turn ran a command, once it
   try {
     const state = context.backend as CodexBackend
     state.server.scriptTool({ name: "exec_command", input: { cmd: "sleep 120", yield_time_ms: 1000 } })
-    const release = context.backend.hold!("Process running with session ID")
+    const release = context.backend.hold!("CODEXGOALCOMMAND")
     expect((await context.transport.goals!.start(context.session, "Run the scripted command CODEXGOALCOMMAND", context.sessionBroker)).ok).toBe(true)
-    await context.backend.held!("Process running with session ID")
+    expect(await commandResult(state, "CODEXGOALCOMMAND")).toContain("Process running with session ID")
     expect((await context.transport.goals!.pause(context.session)).ok).toBe(true)
     expect(context.ports.sessionEvents.some((row) => (row.event as { type?: string; code?: string }).code === "codex.background_commands_unverified")).toBe(false)
     expect((await context.transport.goals!.read(context.session))?.status).toBe("paused")
@@ -57,6 +57,26 @@ test("Codex goal pause and stop proceed after a goal turn ran a command, once it
     expect(await context.transport.goals!.read(context.session)).toBeNull()
     release()
   } finally { await context.close() }
+}, 60_000)
+
+test("Codex command-result gate exposes a failed goal command before another goal iteration", async () => {
+  const context = await setupConformance({ name: "codex-goal-command-failure", backend, makeTransport })
+  const state = context.backend as CodexBackend
+  const marker = "CODEXFAILEDCOMMAND"
+  const release = context.backend.hold!(marker)
+  try {
+    state.server.scriptTool({ name: "exec_command", input: { cmd: "exit 23", yield_time_ms: 1000 } })
+    expect((await context.transport.goals!.start(context.session, `Run the scripted command ${marker}`, context.sessionBroker)).ok).toBe(true)
+    const result = await commandResult(state, marker)
+    expect(result).toContain("Process exited with code 23")
+    expect(result).not.toContain("Process running with session ID")
+    expect(state.server.requests.filter((request) => request.reply.kind === "tool")).toHaveLength(1)
+    expect((await context.transport.goals!.pause(context.session)).ok).toBe(true)
+    expect((await context.transport.goals!.stop(context.session)).ok).toBe(true)
+  } finally {
+    release()
+    await context.close()
+  }
 }, 60_000)
 
 const codexModeParameters = {

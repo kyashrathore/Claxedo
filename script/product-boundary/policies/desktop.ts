@@ -457,8 +457,13 @@ export const desktopRenderer: Policy = {
   // context chips share their remove control through `view/context-chip.tsx`;
   // mark and quote positioning share the bounded coordinate in `coordinate.ts`.
   // These renderer interactions add no package edge.
-  // 1264/36, no headroom.
-  ceilings: { modules: 1264, packages: 36 },
+  // The server's Git and usage decoders (server/wire/git.ts and usage.ts)
+  // validate responses at the adapter boundary. shell/json.ts owns persisted
+  // JSON validation; shell/pane-kind-entry.tsx retains each registered pane's
+  // state type while exposing the heterogeneous shell registry. These four
+  // owners are reached through the existing server and shell entrypoints.
+  // 1268/36, no headroom.
+  ceilings: { modules: 1268, packages: 36 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,

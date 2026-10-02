@@ -19,7 +19,7 @@ test("ACP child output crosses parent completion and the next turn before its ow
     const send = (update: unknown) => peer.send({ jsonrpc: "2.0", method: "session/update", params: { sessionId: parent, update } })
     send({ sessionUpdate: "subagent_spawned", subagentSessionId: "child", name: "review", task: "review code" })
     await until(() => host.store.listSubagents("parent").length === 1)
-    const child = host.store.listSubagents("parent")[0]!.childSessionId!
+    const child = host.store.listSubagents("parent")[0].childSessionId!
     const lease = host.store.readTurnAuthority(child)?.leaseId
     expect(lease).toBeString()
     peer.reply(prompt, { stopReason: "end_turn" })

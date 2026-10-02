@@ -40,6 +40,7 @@ export function paneBindings(scope: BindingScope): Panes {
       register: <State>(pane: PaneDefinition<State>) => {
         const kind = paneKind(scope, pane)
         const dispose = scope.sink.add(scope.services.registries.paneKinds, paneKindEntry(kind))
+        // oxlint-disable-next-line typescript/no-unsafe-type-assertion
         openers.set(pane.kind, (state) => scope.services.workbench.openPane(kind, state as State))
         return () => {
           openers.delete(pane.kind)

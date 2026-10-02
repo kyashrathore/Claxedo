@@ -32,7 +32,9 @@ export class PluginOutbound extends WorkerEntrypoint<PluginBackendEnv, PluginRun
         ? pluginRefusal(403, "plugin_outbound_refused", `The plugin's manifest does not allow ${url.protocol}//${url.host}`)
         : !(await pluginSupervisor(this.env.PLUGIN_SUPERVISOR, scope.orgId).active(scope))
           ? pluginRefusal(403, "plugin_backend_replaced", `Plugin ${scope.pluginId} is no longer running this activation`)
+          // oxlint-disable-next-line typescript/no-unsafe-type-assertion
           : await fetch(request as unknown as Request)
+    // oxlint-disable-next-line typescript/no-unsafe-type-assertion
     return answer as unknown as WorkerResponse
   }
 }

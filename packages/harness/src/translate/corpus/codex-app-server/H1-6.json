@@ -337,7 +337,6 @@
               "kind": "command_execution",
               "intent": "shell",
               "command": "/bin/zsh -lc \"printf 'H1 Codex file change' > h1-created.txt; printf 'H1 Codex wrote file'\"",
-              "description": "/bin/zsh -lc \"printf 'H1 Codex file change' > h1-created.txt; printf 'H1 Codex wrote file'\"",
               "input": {
                 "command": "/bin/zsh -lc \"printf 'H1 Codex file change' > h1-created.txt; printf 'H1 Codex wrote file'\"",
                 "cwd": "/private/var/folders/t2/23hmqy6j43j7f3fg3m70gzhh0000gn/T/claxedo-e2e-h1-turn-parts-JxE40L/workspaces/h1-codex-Y96EsK",
@@ -362,7 +361,6 @@
               "kind": "command_execution",
               "intent": "shell",
               "command": "/bin/zsh -lc \"printf 'H1 Codex file change' > h1-created.txt; printf 'H1 Codex wrote file'\"",
-              "description": "/bin/zsh -lc \"printf 'H1 Codex file change' > h1-created.txt; printf 'H1 Codex wrote file'\"",
               "input": {
                 "command": "/bin/zsh -lc \"printf 'H1 Codex file change' > h1-created.txt; printf 'H1 Codex wrote file'\"",
                 "cwd": "/private/var/folders/t2/23hmqy6j43j7f3fg3m70gzhh0000gn/T/claxedo-e2e-h1-turn-parts-JxE40L/workspaces/h1-codex-Y96EsK",
@@ -445,7 +443,6 @@
             "kind": "command_execution",
             "intent": "shell",
             "command": "/bin/zsh -lc \"printf 'H1 Codex file change' > h1-created.txt; printf 'H1 Codex wrote file'\"",
-            "description": "/bin/zsh -lc \"printf 'H1 Codex file change' > h1-created.txt; printf 'H1 Codex wrote file'\"",
             "input": {
               "command": "/bin/zsh -lc \"printf 'H1 Codex file change' > h1-created.txt; printf 'H1 Codex wrote file'\"",
               "cwd": "/private/var/folders/t2/23hmqy6j43j7f3fg3m70gzhh0000gn/T/claxedo-e2e-h1-turn-parts-JxE40L/workspaces/h1-codex-Y96EsK",
@@ -852,7 +849,6 @@
               "kind": "command_execution",
               "intent": "shell",
               "command": "/bin/zsh -lc false",
-              "description": "/bin/zsh -lc false",
               "input": {
                 "command": "/bin/zsh -lc false",
                 "cwd": "/private/var/folders/t2/23hmqy6j43j7f3fg3m70gzhh0000gn/T/claxedo-e2e-h1-turn-parts-JxE40L/workspaces/h1-codex-Y96EsK",
@@ -877,7 +873,6 @@
               "kind": "command_execution",
               "intent": "shell",
               "command": "/bin/zsh -lc false",
-              "description": "/bin/zsh -lc false",
               "input": {
                 "command": "/bin/zsh -lc false",
                 "cwd": "/private/var/folders/t2/23hmqy6j43j7f3fg3m70gzhh0000gn/T/claxedo-e2e-h1-turn-parts-JxE40L/workspaces/h1-codex-Y96EsK",
@@ -991,7 +986,6 @@
             "kind": "command_execution",
             "intent": "shell",
             "command": "/bin/zsh -lc false",
-            "description": "/bin/zsh -lc false",
             "input": {
               "command": "/bin/zsh -lc false",
               "cwd": "/private/var/folders/t2/23hmqy6j43j7f3fg3m70gzhh0000gn/T/claxedo-e2e-h1-turn-parts-JxE40L/workspaces/h1-codex-Y96EsK",

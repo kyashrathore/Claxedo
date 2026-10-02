@@ -28,9 +28,9 @@ export function serverBinding(scope: BindingScope): PluginApi["server"] {
       if (!url || !pluginRouteAllowed(manifest, url.pathname)) throw new PluginAccessError(manifest.id, path)
       return services.calls.fetch(`${url.pathname}${url.search}`, withPluginSignal(init, scope.signal))
     },
-    operation: async <Result>(name: string, input?: unknown) => {
+    operation: async (name, input) => {
       if (!pluginOperationAllowed(manifest, name)) throw new PluginAccessError(manifest.id, name)
-      return (await services.calls.operation(name, input)) as Result
+      return services.calls.operation(name, input)
     },
   }
 }

@@ -4,19 +4,13 @@ import type { SubagentView } from "@/transcript"
 export type SubagentLabels = { readonly subagent: string; readonly task: string }
 
 const STATUSES: ReadonlySet<string> = new Set(["pending", "running", "paused", "interrupted", "completed", "failed", "killed"])
-const TRANSCRIPTS: ReadonlySet<string> = new Set(["live", "file", "messages", "none"])
 
 function subagentViewStatus(entry: SessionSubagent): SubagentView["status"] {
   return entry.status && STATUSES.has(entry.status) ? entry.status : "unknown"
 }
 
-function isTranscriptKind(kind: string | undefined): kind is Exclude<SubagentView["transcriptKind"], "unknown"> {
-  return kind !== undefined && TRANSCRIPTS.has(kind)
-}
-
 function transcriptKindOf(entry: SessionSubagent): SubagentView["transcriptKind"] {
-  const kind = entry.transcript?.kind
-  return isTranscriptKind(kind) ? kind : "unknown"
+  return entry.transcript?.kind ?? "unknown"
 }
 
 function resolutionOf(entry: SessionSubagent, kind: SubagentView["transcriptKind"]): SubagentView["resolution"] {

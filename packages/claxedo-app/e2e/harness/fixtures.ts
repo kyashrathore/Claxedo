@@ -56,6 +56,7 @@ export const test = base.extend<HarnessFixtures, HarnessWorkerFixtures>({
     await use(context)
     await reportDestinations(testInfo, destinations)
   },
+  // oxlint-disable-next-line no-empty-pattern
   stack: async ({}, use, testInfo) => {
     const stack = await startStack({ label: testInfo.titlePath.join(" ") })
     try {
@@ -74,12 +75,14 @@ export const test = base.extend<HarnessFixtures, HarnessWorkerFixtures>({
     await use(page)
   },
   desktopBuild: [
+    // oxlint-disable-next-line no-empty-pattern
     async ({}, use) => {
       await use(await ensureDesktopBuilt())
     },
     { scope: "worker", timeout: 300_000 },
   ],
   signedBuild: [
+    // oxlint-disable-next-line no-empty-pattern
     async ({}, use) => {
       const frontPort = await reservePort()
       const relayPort = await reservePort()

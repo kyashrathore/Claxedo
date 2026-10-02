@@ -45,7 +45,7 @@ test("06 effort picker: a new Claude session retains its draft effort after crea
   await expect(app.getByText("DRAFTEFFORT", { exact: true }).last()).toBeVisible()
   const sessions = await api.sessions(workspace.directory)
   expect(sessions).toHaveLength(1)
-  const session = sessions[0]!
+  const session = sessions[0]
   await app.reload()
   await sendPrompt(app, "Reply with exactly this one token: FOLLOWUPEFFORT")
   await expect(app.getByText("FOLLOWUPEFFORT", { exact: true }).last()).toBeVisible()

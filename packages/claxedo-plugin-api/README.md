@@ -32,7 +32,7 @@ A plugin is a package whose `package.json` carries a `claxedo` block:
 | `app` | The app entry, relative to the package root, whose default export is `definePlugin(...)`. |
 | `requires` | Capabilities the connected server must have before the plugin activates: `tasks`, `documents`. |
 | `server.routes` | Claxedo server route prefixes `api.server.fetch` may call. |
-| `server.operations` | Control-plane operations `api.server.operation` may run; `documents.*` allows a namespace. |
+| `server.operations` | Control-plane operations `api.server.operation` may run; `documents.*` allows a namespace. Results are `unknown`; the plugin validates the response before using it. |
 | `backend` | Optional. A backend the hosted Worker loads per organization: `entry` (the module, relative to the package root), `objects` (the Durable Object classes it exports), `outbound` (the hosts it may fetch over https) and `routes` (`METHOD /path` patterns, where `:name` matches one segment and a trailing `*` one or more). `packages/claxedo-server/src/plugin-backends/README.md` describes the platform. |
 
 `readPluginManifest(packageJson)` validates the block and throws `PluginManifestError` with one issue per problem. `pluginBackendRouteAllowed(backend, method, path)` answers whether a request matches a declared backend route.

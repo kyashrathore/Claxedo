@@ -29,6 +29,7 @@ const releaseJobSet = new Set<string>(releaseJobs)
 
 const focusedJobs = [
   "focus-workspace-files-linux-aws",
+  "focus-codex-linux-aws",
   "focus-opencode-node-windows",
   "focus-harness-windows",
   "focus-server-core-windows",

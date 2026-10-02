@@ -82,11 +82,11 @@
       // — there is no runtime shape a predicate could check, and a predicate
       // that returned `true` would only hide the same claim from this rule.
       //
-      // Scoped to the exact file whose entire job is minting, so nothing else
-      // can shelter behind it: it declares the brands and the two `as` lines
-      // that produce them. Every other module reaches for a mint instead of
+      // Scoped to the dedicated brand-mint files, so nothing else can shelter
+      // behind them. Each declares its brands and the assertions that produce
+      // them. Every other module reaches for a mint instead of
       // asserting, and stays fully enforced.
-      "files": ["packages/claxedo-server-core/src/platform/auth/branded-id.ts"],
+      "files": ["packages/claxedo-server-core/src/platform/auth/branded-id.ts", "packages/claxedo-app/src/server/ids.ts"],
       "rules": {
         "typescript/no-unsafe-type-assertion": "off"
       }
@@ -182,5 +182,5 @@
       }
     }
   ],
-  "ignorePatterns": ["**/node_modules", "**/dist", "**/.build", "**/*.astro", "**/*.d.ts", "**/sdk.gen.ts"]
+  "ignorePatterns": ["**/node_modules", "**/dist", "**/.build", "**/*.astro", "**/*.d.ts", "**/sdk.gen.ts", "packages/workspace-relay/bench/reports/*.bundle.cjs"]
 }

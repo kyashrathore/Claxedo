@@ -21,6 +21,7 @@ const CONTROL_STREAM_PATH = "/api/cp/events"
 
 export const test = harnessTest.extend<{}, { sharedStack: Stack }>({
   sharedStack: [
+    // oxlint-disable-next-line no-empty-pattern
     async ({}, use) => {
       const stack = await startStack({ label: "31 session list races" })
       try {
