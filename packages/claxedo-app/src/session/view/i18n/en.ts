@@ -176,7 +176,7 @@ export const sessionScreenEnglish: Record<SessionScreenTextKey, string> = {
   "sessionScreen.timeline.session.timeline.backgroundWork.shellsRunning.other": "{{count}} background shells running",
   "sessionScreen.timeline.session.timeline.backgroundWork.tasksRunning.one": "{{count}} background task running",
   "sessionScreen.timeline.session.timeline.backgroundWork.tasksRunning.other": "{{count}} background tasks running",
-  "sessionScreen.timeline.session.timeline.backgroundWork.hint": "Ask Claude about this work, or ask it to stop one.",
+  "sessionScreen.timeline.session.timeline.backgroundWork.hint": "Ask about this work, or ask to stop one.",
   "sessionScreen.timeline.session.timeline.collapseTranscript": "Collapse transcript",
   "sessionScreen.timeline.session.timeline.previousMessages.one": "{{count}} previous message",
   "sessionScreen.timeline.session.timeline.previousMessages.other": "{{count}} previous messages",

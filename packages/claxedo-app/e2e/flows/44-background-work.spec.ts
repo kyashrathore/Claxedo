@@ -23,7 +23,7 @@ test("44 a background agent keeps the session running in background, is counted 
   const line = app.locator('[data-slot="session-background-work"]')
   await expect(line).toHaveText("1 background agent running")
   await line.getByText("1 background agent running").hover()
-  await expect(app.getByText("Ask Claude about this work, or ask it to stop one.")).toBeVisible()
+  await expect(app.getByText("Ask about this work, or ask to stop one.")).toBeVisible()
   await expect(app.getByRole("button", { name: UI.stop, exact: true })).toHaveCount(0)
   await app.getByRole("textbox", { name: UI.composer }).click()
   await app.keyboard.type("x")
