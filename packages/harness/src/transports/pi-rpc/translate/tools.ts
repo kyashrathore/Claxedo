@@ -1,6 +1,7 @@
 import type { AgentRuntimeEvent } from "@claxedo/agent-runtime-contract"
 import { asArray, asRecordOrEmpty as row } from "@claxedo/helpers/guards"
 import { contentBlockImages } from "../../../translate/tool-attachments"
+import { piContentText } from "./content"
 import { piStep, type PiStep, type PiTranslatorState } from "./state"
 
 type Frame = Record<string, unknown>
@@ -29,9 +30,7 @@ export function piToolUpdate(state: PiTranslatorState, frame: Frame): PiStep {
 
 function toolErrorText(result: unknown): string {
   if (typeof result === "string") return result
-  const content = row(result).content
-  const lines = asArray(content).flatMap((item) => row(item).type === "text" && typeof row(item).text === "string" ? [String(row(item).text)] : [])
-  return lines.length ? lines.join("\n") : JSON.stringify(result)
+  return piContentText(row(result).content) || JSON.stringify(result)
 }
 
 export function piToolEnd(state: PiTranslatorState, frame: Frame): PiStep {

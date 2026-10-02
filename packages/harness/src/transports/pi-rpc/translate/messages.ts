@@ -1,5 +1,6 @@
 import type { AgentRuntimeEvent } from "@claxedo/agent-runtime-contract"
 import { asArray, asRecordOrEmpty as row, asString } from "@claxedo/helpers/guards"
+import { piContentText } from "./content"
 import { ignoredKind, piStep, type PiStep, type PiTranslatorState } from "./state"
 import { piUsageEvents } from "./usage"
 
@@ -58,13 +59,8 @@ function assistantEnd(state: PiTranslatorState, assistant: Frame): PiStep {
   return piStep(noted.state, [...next.events, ...noted.events])
 }
 
-function customText(content: unknown): string {
-  if (typeof content === "string") return content
-  return asArray(content).flatMap((item) => row(item).type === "text" ? [asString(row(item).text) ?? ""] : []).join("\n")
-}
-
 function customNotice(state: PiTranslatorState, message: Frame): PiStep {
-  const shown = message.display === true ? customText(message.content) : ""
+  const shown = message.display === true ? piContentText(message.content) : ""
   return piStep(state, shown ? [{ type: "harness-notice", code: "pi.custom_message", message: shown, severity: "info",
     details: { customType: message.customType } }] : [])
 }
