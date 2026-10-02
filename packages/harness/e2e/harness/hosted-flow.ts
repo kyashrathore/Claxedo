@@ -1,13 +1,12 @@
 import fs from "node:fs/promises"
 import path from "node:path"
-import { randomUUID } from "node:crypto"
 import { ClaxedoApi } from "./api"
 import { hostedFetch, signInHostedPerson, type HostedPerson } from "./hosted-auth"
 import { startHostedStack } from "./hosted-stack"
 import type { HttpTransport } from "./transport"
 import { openEventStream } from "./stream"
 
-type HostedStack = Awaited<ReturnType<typeof startHostedStack>>
+export type HostedStack = Awaited<ReturnType<typeof startHostedStack>>
 
 export async function hostedOwner(stack: HostedStack) {
   const owner = await signInHostedPerson(stack, "hosted-person-a")
@@ -28,6 +27,11 @@ export async function hostedWorkspace(stack: HostedStack, owner: HostedPerson, n
   }, owner)
   if (!created.ok) throw new Error(`hosted workspace create failed: ${created.status} ${await created.text()}`)
   const { workspaceId } = await created.json() as { workspaceId: string }
+  const connection = await connectHostedWorkspace(stack, owner, workspaceId)
+  return { id: workspaceId, directory: `workspace:${workspaceId}`, ...connection }
+}
+
+export async function connectHostedWorkspace(stack: HostedStack, owner: HostedPerson, workspaceId: string) {
   let connected = false
   for (let attempt = 0; attempt < 30; attempt++) {
     const started = await hostedFetch(stack, `/api/workspace/${encodeURIComponent(workspaceId)}/connection`, {
@@ -71,11 +75,11 @@ export async function hostedWorkspace(stack: HostedStack, owner: HostedPerson, n
     await new Promise((resolve) => setTimeout(resolve, 500))
   }
   if (healthStatus !== 200) throw new Error(`hosted workspace ${workspaceId} relay health failed: ${healthStatus}`)
-  return { id: workspaceId, directory: `workspace:${workspaceId}`, runtimeAccessToken }
+  return { runtimeAccessToken }
 }
 
-export function hostedApi(stack: HostedStack, workspace: Awaited<ReturnType<typeof hostedWorkspace>>) {
-  const transport: HttpTransport = async (request) => {
+export function hostedRuntimeTransport(stack: HostedStack, workspace: { id: string; runtimeAccessToken: string }): HttpTransport {
+  return async (request) => {
     const url = new URL(request.url)
     const response = await fetch(new URL(`/workspaces/${encodeURIComponent(workspace.id)}${url.pathname}${url.search}`, stack.relayUrl), {
       method: request.method,
@@ -84,32 +88,31 @@ export function hostedApi(stack: HostedStack, workspace: Awaited<ReturnType<type
     })
     return { status: response.status, body: await response.text() }
   }
-  return new ClaxedoApi(stack.workerUrl, transport, {
+}
+
+export function hostedControlTransport(stack: HostedStack, owner: HostedPerson): HttpTransport {
+  return async (request) => {
+    const response = await hostedFetch(stack, request.url, { method: request.method, headers: request.headers, body: request.body }, owner)
+    return { status: response.status, body: await response.text() }
+  }
+}
+
+export function hostedApi(stack: HostedStack, workspace: Awaited<ReturnType<typeof hostedWorkspace>>, owner: HostedPerson) {
+  const runtime = hostedRuntimeTransport(stack, workspace)
+  const control = hostedControlTransport(stack, owner)
+  return new ClaxedoApi(stack.workerUrl, (request) => {
+    if (new URL(request.url).pathname.startsWith("/api/control/session-registrations/")) {
+      return control(request)
+    }
+    return runtime(request)
+  }, {
+    reserveSessions: true,
+    workspaceId: async (directory) => {
+      if (directory !== workspace.directory) throw new Error(`Directory ${directory} does not belong to ${workspace.id}`)
+      return workspace.id
+    },
     events: (directory) => openEventStream(stack.relayUrl, directory, {
       relayWorkspaceId: workspace.id, authorization: `Bearer ${workspace.runtimeAccessToken}`,
     }),
   })
-}
-
-export async function hostedSession(stack: HostedStack, owner: HostedPerson, workspace: Awaited<ReturnType<typeof hostedWorkspace>>,
-  harness: { id: string; access: "native" | "connection" }, model?: { providerId: string; modelId: string }) {
-  const sessionId = `ses_${randomUUID()}`
-  const operationId = `session_registration_${randomUUID()}`
-  const reserved = await hostedFetch(stack, "/api/control/session-registrations/reserve", {
-    method: "POST", headers: { "content-type": "application/json" },
-    body: JSON.stringify({ operationId, sessionId, workspaceId: workspace.id, kind: "create" }),
-  }, owner)
-  if (reserved.status !== 201) throw new Error(`hosted session reserve failed: ${reserved.status} ${await reserved.text()}`)
-  const target = new URL(`/workspaces/${encodeURIComponent(workspace.id)}/session`, stack.relayUrl)
-  target.searchParams.set("directory", workspace.directory)
-  target.searchParams.set(harness.access === "native" ? "nativeHarness" : "connectionId", harness.id)
-  const created = await fetch(target, {
-    method: "POST",
-    headers: { "content-type": "application/json", authorization: `Bearer ${workspace.runtimeAccessToken}`,
-      "x-claxedo-session-registration-operation": operationId },
-    body: JSON.stringify({ id: sessionId, harness,
-      ...(model ? { model: { providerID: model.providerId, id: model.modelId } } : {}) }),
-  })
-  if (created.status !== 201) throw new Error(`hosted session create failed: ${created.status} ${await created.text()}`)
-  return await created.json() as { id: string }
 }

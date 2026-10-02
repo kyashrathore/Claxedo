@@ -3,7 +3,7 @@ import fs from "node:fs/promises"
 import path from "node:path"
 import { assistantText } from "../harness/api"
 import { hostedFetch } from "../harness/hosted-auth"
-import { hostedApi, hostedOwner, hostedSession, hostedWorkspace } from "../harness/hosted-flow"
+import { hostedApi, hostedOwner, hostedWorkspace } from "../harness/hosted-flow"
 import { startHostedStack } from "../harness/hosted-stack"
 import { frameSessionId, frameType, openEventStream } from "../harness/stream"
 import { waitForTitle } from "../harness/turn-observations"
@@ -34,14 +34,14 @@ export async function run() {
       return { file, providers: Object.keys(models.providers ?? {}), brokeredOpenAI: models.providers?.openai?.apiKey === `claxedo-broker:${openaiName}` }
     }))
     assert.ok(offeredModel?.connected, `C-1: hosted Pi model is unavailable after config push: ${JSON.stringify({ offeredModel, modelOverlays })}`)
-    const api = hostedApi(stack, workspace)
+    const api = hostedApi(stack, workspace, owner)
     const stream = await openEventStream(stack.relayUrl, workspace.directory, {
       relayWorkspaceId: workspace.id,
       authorization: `Bearer ${workspace.runtimeAccessToken}`,
     })
     try {
       const model = { providerId: "pi", modelId: "openai/gpt-4.1" }
-      const session = await hostedSession(stack, owner, workspace, { id: "pi", access: "native" }, model)
+      const session = await api.createSession(workspace.directory, { harness: { id: "pi", access: "native" }, model })
       await api.prompt(workspace.directory, session.id, "Reply with exactly this one token: HOSTEDPITURN", { model, title: true })
       const settled = await stream.waitFor((frame) => frameSessionId(frame) === session.id &&
         (frameType(frame) === "session.idle" || frameType(frame) === "session.error"), { label: "hosted Pi settlement", timeoutMs: 60_000 })

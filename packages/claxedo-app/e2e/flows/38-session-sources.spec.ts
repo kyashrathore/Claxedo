@@ -6,6 +6,7 @@ import {
   makeCloudWorkspace,
   SCRIPTED_ACP_HARNESS,
   sessionRoute,
+  signInDesktop,
   startCloudWorkspace,
   stopCloudWorkspace,
   test,
@@ -132,7 +133,7 @@ test("38 terminals are read only for an expanded project's live placements", asy
 
 test("38 a stopped sandbox's session paints its stored surface, and its project reads no terminal list and wakes nothing", async ({ signedCloud, page }) => {
   test.setTimeout(120_000)
-  const workspace = await makeCloudWorkspace(signedCloud, "Stored")
+  const workspace = await makeCloudWorkspace(signedCloud, "main")
   await startCloudWorkspace(signedCloud, workspace)
   const sessionId = await cloudTurn(signedCloud, workspace, { title: "Stored turn", script: "stored", reply: "Kept by the control plane" })
   await stopCloudWorkspace(signedCloud, workspace)
@@ -151,4 +152,22 @@ test("38 a stopped sandbox's session paints its stored surface, and its project 
   expect(reads.filter((read) => read.includes(`/workspaces/${workspace.id}/`)), "runtime reads of the stopped sandbox").toEqual([])
   expect(reads.filter((read) => read.startsWith(`POST /api/workspace/${workspace.id}/connection`)), "wakes").toEqual([])
   expect(reads.filter((read) => read.includes("/api/wr/pty")), "terminal lists").toEqual([])
+})
+
+test("38 desktop: a stopped sandbox's session paints its stored surface and wakes nothing", { tag: "@desktop" }, async ({ signedCloud, signedDesktop, page }) => {
+  test.setTimeout(150_000)
+  const workspace = await makeCloudWorkspace(signedCloud, "main")
+  await startCloudWorkspace(signedCloud, workspace)
+  await cloudTurn(signedCloud, workspace, { title: "Stored turn", script: "stored", reply: "Kept by the control plane" })
+  await stopCloudWorkspace(signedCloud, workspace)
+  const mark = signedCloud.controlPlaneRequests().length
+  await signedDesktop.makeWorkspace("local", "Local")
+  await signedDesktop.window.reload()
+  await signInDesktop(signedCloud, signedDesktop, page)
+  const window = signedDesktop.window
+  const row = window.getByRole("navigation", { name: UI.rail }).getByRole("button", { name: "Stored turn" })
+  await expect(row).toBeVisible()
+  await row.click()
+  await expect(window.getByText("Kept by the control plane")).toBeVisible()
+  expect(signedCloud.controlPlaneRequests().slice(mark).filter((request) => request === `POST /api/workspace/${workspace.id}/connection`), "wakes").toEqual([])
 })

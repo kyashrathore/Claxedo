@@ -58,7 +58,6 @@ async function createFolderProject(app: Page, typed: string, folder: string) {
 async function cloneProject(app: Page, url: string, name: string) {
   await openCreatePanel(app)
   await app.getByRole("button", { name: "Clone a repository instead" }).click()
-  await app.getByRole("button", { name: "Paste a URL instead" }).click()
   await app.getByRole("textbox", { name: "Repository URL" }).fill(url)
   await app.getByRole("button", { name: "Create project", exact: true }).click()
   await expect(projectChip(app)).toContainText(name)

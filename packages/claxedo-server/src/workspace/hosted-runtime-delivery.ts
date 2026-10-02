@@ -1,3 +1,4 @@
+import type { D1Database } from "@cloudflare/workers-types"
 import type { SandboxBrokeredSecret, SandboxDriver, SandboxManager, SandboxManagerInput } from "@claxedo/sandbox-manager"
 import type { WorkspaceAuthority } from "@claxedo/server-core/platform/auth/authority"
 import type { UserAgentConfigRepository } from "@claxedo/server-core/agent-config/repository"
@@ -14,6 +15,7 @@ import type { ControlPlaneCredentials, ControlPlaneServices } from "../authority
 import type { WorkspaceRuntimeContext, WorkspaceRuntimePreparation } from "./route-support"
 import { mintSupervisorBackplaneToken } from "@claxedo/server-core/platform/auth/runtime-access-token"
 import { createWorkspaceRuntimeClient } from "@claxedo/workspace-runtime/client"
+import { cloudRootBacking } from "./cloud-root-backing"
 
 async function supervisorClient(
   services: ControlPlaneServices,
@@ -40,6 +42,8 @@ export type HostedRuntimeHooks = {
 
 export function createHostedRuntimeDelivery(input: {
   authority: WorkspaceAuthority
+  /** The control-plane database whose workspace row says whether a hosted sandbox serves the workspace. */
+  database: D1Database
   services: ControlPlaneServices
   sandboxManager: SandboxManager
   driver: SandboxDriver
@@ -74,11 +78,15 @@ export function createHostedRuntimeDelivery(input: {
     })
     return { delivered, selections }
   }
+  // A machine-placed workspace gets its provider config from its own machine
+  // through the host connector; no hosted sandbox serves it.
   const prepare = async ({ workspaceId }: WorkspaceRuntimeContext): Promise<WorkspaceRuntimePreparation> => {
+    if (await cloudRootBacking(input.database, workspaceId) !== "cloud") return {}
     const person = await owner(workspaceId)
     return { secrets: nativeProviderSecrets((await deliveries(person)).delivered) }
   }
   const push = async (workspaceId: string, preparation: WorkspaceRuntimePreparation | undefined) => {
+    if (await cloudRootBacking(input.database, workspaceId) !== "cloud") return
     const person = await owner(workspaceId)
     const config = await userAgentConfigStore(input.settings, person.userId).read()
     const { delivered, selections } = await deliveries(person)
