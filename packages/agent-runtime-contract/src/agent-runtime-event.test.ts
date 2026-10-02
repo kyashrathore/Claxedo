@@ -11,7 +11,6 @@ describe("AgentRuntimeEvent contract", () => {
   test("exposes an explicit contract version and event kind registry", () => {
     expect(AGENT_RUNTIME_EVENT_CONTRACT_VERSION).toBe(8)
     expect(AGENT_RUNTIME_EVENT_TYPES).toContain("text-delta")
-    expect(AGENT_RUNTIME_EVENT_TYPES).toContain("user-message-delta")
     expect(AGENT_RUNTIME_EVENT_TYPES).toContain("tool-status")
     expect(AGENT_RUNTIME_EVENT_TYPES).toContain("tool-content")
     expect(AGENT_RUNTIME_EVENT_TYPES).toContain("tool-output")
@@ -124,14 +123,6 @@ describe("AgentRuntimeEvent contract", () => {
   })
 
   test("constructs ACP-rich events through typed factories", () => {
-    expect(agentRuntimeEvent.userMessageDelta({
-      messageId: "message-1",
-      content: { type: "text", text: "hello" },
-    })).toEqual({
-      type: "user-message-delta",
-      messageId: "message-1",
-      content: { type: "text", text: "hello" },
-    })
     expect(agentRuntimeEvent.availableCommandsUpdate({
       commands: [{ name: "create_plan", description: "Create a plan" }],
     })).toEqual({

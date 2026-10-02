@@ -2,7 +2,7 @@ import type { BackgroundWork } from "./background-work"
 import type { AgentSubagentUpdate, RuntimeGoalSnapshot } from "./subagents"
 import type { RuntimeQuestion, RuntimeUsageObservation } from "./events"
 import type { AgentSessionCommand } from "./sessions"
-import type { RuntimeContentBlock, RuntimeToolCallContent } from "./runtime-content"
+import type { RuntimeToolCallContent } from "./runtime-content"
 import type { FirstTurnErrorClass } from "./turn-error-classes"
 import type { TurnAccount } from "./turn-account"
 import type { RuntimeDiagnostic } from "./diagnostics"
@@ -81,7 +81,6 @@ export type ToolDisplay = {
 export type AgentRuntimeEvent = RuntimeEventMeta & (
   | { type: "text-delta"; delta: string }
   | { type: "thinking-delta"; delta: string }
-  | { type: "user-message-delta"; messageId?: string; content: RuntimeContentBlock }
   | { type: "tool-start"; toolCallId: string; toolName: string; kind?: string; display?: ToolDisplay; metadata?: Record<string, unknown> }
   | { type: "tool-input"; toolCallId: string; input: unknown; display?: ToolDisplay; metadata?: Record<string, unknown> }
   | { type: "tool-status"; toolCallId: string; status: RuntimeToolStatus; display?: ToolDisplay; metadata?: Record<string, unknown> }
@@ -167,7 +166,6 @@ export type AgentRuntimeEventInput<T extends AgentRuntimeEventType> = Omit<Agent
 export const AGENT_RUNTIME_EVENT_TYPE_REGISTRY = {
   "text-delta": true,
   "thinking-delta": true,
-  "user-message-delta": true,
   "tool-start": true,
   "tool-input": true,
   "tool-status": true,
@@ -229,7 +227,6 @@ export const AGENT_RUNTIME_EVENT_TYPES: AgentRuntimeEventType[] =
 export const AGENT_RUNTIME_EVENT_FACTORY_TYPES = {
   textDelta: "text-delta",
   thinkingDelta: "thinking-delta",
-  userMessageDelta: "user-message-delta",
   toolStart: "tool-start",
   toolInput: "tool-input",
   toolStatus: "tool-status",
@@ -298,7 +295,6 @@ type _AgentRuntimeEventFactoryCoverage = AssertEveryRuntimeEventHasFactory<Missi
 export const agentRuntimeEvent = {
   textDelta: (input) => ({ type: "text-delta", ...input }),
   thinkingDelta: (input) => ({ type: "thinking-delta", ...input }),
-  userMessageDelta: (input) => ({ type: "user-message-delta", ...input }),
   toolStart: (input) => ({ type: "tool-start", ...input }),
   toolInput: (input) => ({ type: "tool-input", ...input }),
   toolStatus: (input) => ({ type: "tool-status", ...input }),
