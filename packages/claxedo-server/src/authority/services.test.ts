@@ -365,15 +365,4 @@ describe("control-plane services", () => {
       if (previous) process.env.CLAXEDO_WORKSPACE_AUTHORITY_URL = previous
     }
   })
-
-  test("workspace supervisor accepts an explicit default sandbox driver override", async () => {
-    const supervisor = await import("../workspace/supervisor")
-    const supervisorOptions = await import("../workspace/supervisor/options")
-    supervisor.configureWorkspaceSupervisor({ sandboxOwner: async () => "local", machineOwnerUserId: "local",
-      server_url: "http://127.0.0.1:0",
-      default_sandbox_driver: "modal",
-    })
-    expect(supervisorOptions.needWorkspaceSupervisorOptions().default_sandbox_driver).toBe("modal")
-  })
-
 })

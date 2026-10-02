@@ -1,21 +1,12 @@
-import { afterEach, describe, expect, test, vi } from "vitest"
-import {
-  deploymentModeTag,
-  observabilityOptions,
-  resolveRelease,
-  resolveTelemetryHost,
-  resolveTelemetryKey,
-  telemetryEnabled,
-} from "./config"
-import { initPostHog, shutdownPostHog } from "./posthog"
-import { deploymentMode } from "@claxedo/server-core/authority/deployment-mode"
+import { describe, expect, test } from "vitest"
+import { resolveTelemetryHost, resolveTelemetryKey, telemetryEnabled } from "./config"
 
 /**
  * Observability gates.
  *
  * The load-bearing contract: sending takes two opt-ins — CLAXEDO_TELEMETRY_MODE=on
- * AND a PostHog key. Miss either and every entrypoint's observability is a clean
- * disabled no-op: no client construction, no network, no throw. The published
+ * AND a PostHog key. Miss either and no key resolves, so the Worker's sink
+ * sends nothing and throws nothing. The published
  * promises ("a build running in `on` mode is the only build that sends anything",
  * "no keys configured ⇒ nothing is sent") are exactly these assertions.
  */
@@ -26,68 +17,6 @@ const ON = { CLAXEDO_TELEMETRY_MODE: "on" } as const
 /** Shaped like a genuine PostHog project key, so the mode gate is provably
  *  what silences these envs rather than an obviously-invalid key. */
 const REAL_KEY = "phc_0123456789abcdefghijklmnopqrstuvwxyzABCD"
-
-const postHogMock = vi.hoisted(() => {
-  const captureException = vi.fn()
-  const capture = vi.fn()
-  const shutdown = vi.fn(async () => {})
-  const flush = vi.fn(async () => {})
-  const construct = vi.fn()
-  class PostHog {
-    captureException = captureException
-    capture = capture
-    shutdown = shutdown
-    flush = flush
-    constructor(key: string, options: unknown) {
-      construct(key, options)
-    }
-  }
-  return { PostHog, captureException, capture, shutdown, flush, construct }
-})
-
-vi.mock("posthog-node", () => ({ PostHog: postHogMock.PostHog }))
-
-afterEach(async () => {
-  // The client is module-cached in posthog.ts; drop it so each test's env wins.
-  await shutdownPostHog()
-  postHogMock.construct.mockClear()
-  postHogMock.captureException.mockClear()
-  postHogMock.capture.mockClear()
-})
-
-describe("observabilityOptions", () => {
-  test("opted in but key absent → disabled no-op options (enabled false, no key)", () => {
-    const options = observabilityOptions({ ...ON }, "worker")
-    expect(options.enabled).toBe(false)
-    expect(options.key).toBeUndefined()
-  })
-
-  test("whitespace-only key counts as absent", () => {
-    expect(observabilityOptions({ ...ON, CLAXEDO_POSTHOG_KEY: "   " }, "server").enabled).toBe(false)
-  })
-
-  test("both opt-ins → enabled, tagged with unit and deployment mode", () => {
-    const options = observabilityOptions(
-      {
-        ...ON,
-        CLAXEDO_POSTHOG_KEY: "phc_abc",
-        CLAXEDO_RELEASE: "abc123",
-        CLAXEDO_DEPLOYMENT_MODE: "hosted",
-      },
-      "worker",
-    )
-    expect(options.enabled).toBe(true)
-    expect(options.key).toBe("phc_abc")
-    expect(options.release).toBe("abc123")
-    expect(options.host).toBe("https://us.i.posthog.com")
-    expect(options.tags).toEqual({
-      unit: "worker",
-      deployment_mode: "hosted",
-      deployment_runtime: "workerd",
-      release: "abc123",
-    })
-  })
-})
 
 describe("resolveTelemetryKey / resolveTelemetryHost", () => {
   test("CLAXEDO_POSTHOG_KEY wins over the unprefixed alias", () => {
@@ -103,13 +32,6 @@ describe("resolveTelemetryKey / resolveTelemetryHost", () => {
   })
 })
 
-/**
- * CLAXEDO_TELEMETRY_MODE at the chokepoint every server-side sink resolves
- * through. resolveTelemetryKey folds both opt-ins into one answer, so proving
- * the gate here proves it for posthog.ts, observability/node.ts,
- * authority/worker-telemetry.ts, and worker.ts's sink registration; each of
- * those still gets its own end-to-end assertion below or in its own file.
- */
 describe("CLAXEDO_TELEMETRY_MODE", () => {
   test("only `on` opts in; off, unset and unrecognized values all mean off", () => {
     expect(telemetryEnabled({ ...ON })).toBe(true)
@@ -133,91 +55,17 @@ describe("CLAXEDO_TELEMETRY_MODE", () => {
     ).toBeUndefined()
     // The unprefixed alias is silenced by the same branch.
     expect(resolveTelemetryKey({ CLAXEDO_TELEMETRY_MODE: "off", POSTHOG_KEY: REAL_KEY })).toBeUndefined()
-    expect(
-      observabilityOptions({ CLAXEDO_TELEMETRY_MODE: "off", CLAXEDO_POSTHOG_KEY: REAL_KEY }, "worker").enabled,
-    ).toBe(false)
   })
 
   test("mode unset + a real-looking key → still off (opting in is deliberate)", () => {
     expect(resolveTelemetryKey({ CLAXEDO_POSTHOG_KEY: REAL_KEY })).toBeUndefined()
-    expect(observabilityOptions({ CLAXEDO_POSTHOG_KEY: REAL_KEY }, "server").enabled).toBe(false)
   })
 
   test("mode on + no key → clean no-op; saying `on` cannot start sending by itself", () => {
     expect(resolveTelemetryKey({ ...ON })).toBeUndefined()
-    expect(observabilityOptions({ ...ON }, "server").enabled).toBe(false)
   })
 
   test("mode on + key → the one combination that resolves", () => {
     expect(resolveTelemetryKey({ ...ON, CLAXEDO_POSTHOG_KEY: REAL_KEY })).toBe(REAL_KEY)
-    expect(observabilityOptions({ ...ON, CLAXEDO_POSTHOG_KEY: REAL_KEY }, "server").enabled).toBe(true)
-  })
-})
-
-describe("resolveRelease", () => {
-  test("CLAXEDO_RELEASE wins over GIT_SHA", () => {
-    expect(resolveRelease({ CLAXEDO_RELEASE: "a", GIT_SHA: "b" })).toBe("a")
-  })
-
-  test("falls back GIT_SHA → undefined; vendor-named release vars are not read", () => {
-    expect(resolveRelease({ GIT_SHA: "b" })).toBe("b")
-    expect(resolveRelease({ SENTRY_RELEASE: "c" })).toBeUndefined()
-    expect(resolveRelease({})).toBeUndefined()
-  })
-})
-
-describe("deploymentModeTag", () => {
-  test("absent mode = local (default); hosted passes through lowercased", () => {
-    expect(deploymentModeTag({})).toBe("local")
-    expect(deploymentModeTag({ CLAXEDO_DEPLOYMENT_MODE: "HOSTED" })).toBe("hosted")
-  })
-
-  test("never throws on unrecognized values (reports posture, does not enforce it)", () => {
-    expect(deploymentModeTag({ CLAXEDO_DEPLOYMENT_MODE: "banana" })).toBe("banana")
-  })
-
-  test("its default agrees with the Trust enum, so a rename cannot silently skew telemetry", () => {
-    // This tag pass-through is deliberate (it must never throw), which is
-    // exactly what makes it dangerous during a rename: left behind, it would
-    // keep emitting a retired value forever while the boot path failed loudly.
-    // Pin the default to a value deploymentMode() actually accepts.
-    const tagDefault = deploymentModeTag({})
-    expect(deploymentMode({ CLAXEDO_DEPLOYMENT_MODE: tagDefault })).toBe(tagDefault)
-
-    // And every Trust value must survive the round trip.
-    for (const trust of ["local", "hosted"] as const) {
-      expect(deploymentModeTag({ CLAXEDO_DEPLOYMENT_MODE: trust })).toBe(trust)
-      expect(deploymentMode({ CLAXEDO_DEPLOYMENT_MODE: trust })).toBe(trust)
-    }
-  })
-})
-
-/**
- * posthog.ts owns the client both planes share, so it carries the same gate
- * independently of the error-sink wrapper above — server.ts calls initPostHog()
- * directly for product events.
- */
-describe("initPostHog", () => {
-  test("mode off + a real-looking key → null, and no client is constructed", () => {
-    expect(initPostHog({ CLAXEDO_TELEMETRY_MODE: "off", CLAXEDO_POSTHOG_KEY: REAL_KEY })).toBeNull()
-    expect(postHogMock.construct).not.toHaveBeenCalled()
-  })
-
-  test("mode unset + a real-looking key → null, and no client is constructed", () => {
-    expect(initPostHog({ CLAXEDO_POSTHOG_KEY: REAL_KEY })).toBeNull()
-    expect(postHogMock.construct).not.toHaveBeenCalled()
-  })
-
-  test("mode on + no key → null, and no client is constructed", () => {
-    expect(initPostHog({ ...ON })).toBeNull()
-    expect(postHogMock.construct).not.toHaveBeenCalled()
-  })
-
-  test("mode on + key → exactly one client, built against the resolved host", () => {
-    expect(initPostHog({ ...ON, CLAXEDO_POSTHOG_KEY: REAL_KEY })).not.toBeNull()
-    expect(postHogMock.construct).toHaveBeenCalledTimes(1)
-    const [key, options] = postHogMock.construct.mock.calls[0] as [string, { host: string }]
-    expect(key).toBe(REAL_KEY)
-    expect(options.host).toBe("https://us.i.posthog.com")
   })
 })

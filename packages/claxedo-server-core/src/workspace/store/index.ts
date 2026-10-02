@@ -16,38 +16,6 @@ const execFileAsync = promisify(execFile)
 
 const log = Log.create({ service: "workspace-store" })
 
-/**
- * Reads the provisioning lease for a cloud workspace.
- *
- * Only cloud workspaces have one, and a desktop-local build has no cloud
- * workspaces at all — yet importing the supervisor lease store directly put the
- * whole cloud sandbox graph inside the closure of every module that reads local
- * workspace inventory. A composition that provisions sandboxes supplies this;
- * one that does not leaves it unset, and an unfinished cloud workspace stays
- * hidden exactly as it does today when the lease lookup fails.
- */
-export type WorkspaceSandboxLeaseReader = (workspaceId: string) =>
-  | { status?: string; last_error?: string | null }
-  | undefined
-
-let sandboxLeaseReader: WorkspaceSandboxLeaseReader | undefined
-
-export function configureWorkspaceStore(options: { sandboxLease?: WorkspaceSandboxLeaseReader } = {}) {
-  sandboxLeaseReader = options.sandboxLease
-}
-
-/**
- * Whether a composition installed a lease reader.
- *
- * Exposed so the install is checkable. Without a reader, a cloud workspace in
- * `acquiring_sandbox` never becomes visible — nothing else moves that status —
- * so a dropped install hides every provisioned cloud workspace and its whole
- * project, silently.
- */
-export function workspaceSandboxLeaseInstalled() {
-  return sandboxLeaseReader !== undefined
-}
-
 export type Workspace = {
   id: string
   org_id?: string
@@ -353,43 +321,13 @@ function upsert(ws: Workspace) {
 }
 
 function isListable(ws: Workspace) {
-  if (ws.kind !== "cloud") return true
-  if (!cloudAvailable(ws)) return false
-  if (ws.status === "failed") return false
-  if (ws.status !== "acquiring_sandbox") return true
-  const lease = (() => {
-    try {
-      return sandboxLeaseReader?.(ws.id)
-    } catch {
-      return undefined
-    }
-  })()
-  return lease?.status === "ready"
+  return ws.kind !== "cloud" || (cloudAvailable(ws) && ws.status !== "acquiring_sandbox")
 }
 
 function cloudAvailable(ws: Workspace) {
   if (ws.kind !== "cloud") return true
   if (ws.status === "failed") return false
-  if (ws.driver === "docker" && !dockerSandboxDriverEnabled()) return false
-  const lease = (() => {
-    try {
-      return sandboxLeaseReader?.(ws.id)
-    } catch {
-      return undefined
-    }
-  })()
-  if (!lease) return true
-  if (lease.status === "failed") return false
-  if (lease.status === "backoff" && lease.last_error) return false
-  return true
-}
-
-export function cloudWorkspaceReady(workspaceId: string): boolean {
-  try {
-    return sandboxLeaseReader?.(workspaceId)?.status === "ready"
-  } catch {
-    return false
-  }
+  return ws.driver !== "docker" || dockerSandboxDriverEnabled()
 }
 
 export async function listWorkspaces() {
@@ -762,7 +700,7 @@ export async function listProjects() {
         workspaces[workspaceKey(row)] = {
           ...row,
           available,
-          reachable: available && (row.kind !== "cloud" || cloudWorkspaceReady(row.id)),
+          reachable: available && row.kind !== "cloud",
           // Declared only for the workspaces this process actually serves. A
           // `cloud` row names a runtime on another machine, whose composition
           // this server has no standing to state; its client learns that one

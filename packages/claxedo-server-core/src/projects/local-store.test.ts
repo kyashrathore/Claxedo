@@ -5,7 +5,7 @@ import os from "node:os"
 import path from "node:path"
 import { ControlPlaneAuthError, type SignedControlPlaneAuth } from "../platform/auth/auth"
 import type { WorkspaceAuthority } from "../platform/auth/authority"
-import { configureWorkspaceStore, ensureWorkspace, listProjects, listWorkspaces, updateProjectMetadata } from "../workspace/store/index"
+import { ensureWorkspace, listProjects, listWorkspaces, updateProjectMetadata } from "../workspace/store/index"
 import { localProjectStore, projectsDirectory, type LocalProjectStoreDeps } from "./local-store"
 import { githubCloneAuthorization, type RepositoryAccessResult, type RepositorySourceDeps } from "./repository-source"
 import { ProjectRoutes, type ProjectRouteOptions } from "./routes"
@@ -375,20 +375,13 @@ describe("local project routes", () => {
     expect((await (await app.request(`http://localhost/${project.id}`)).json() as { project: object }).project).toMatchObject({ missingCheckout: { directory } })
   })
 
-  test("a project that runs only in a cloud workspace stays available while its sandbox is stopped, and its workspace is reachable only while the sandbox is ready", async () => {
+  test("a project that runs only in a cloud workspace stays available, and its workspace is not reachable through this machine", async () => {
     const cloud = await ensureWorkspace({ kind: "cloud", driver: "modal", directory: "/workspace", repo_url: "https://github.com/acme/sky.git", status: "stopped" })
     const id = cloud?.project_id ?? ""
     const availability = async () => (((await (await app.request(`http://localhost/${id}`)).json()) as { project: { available: boolean } }).project.available)
     const reachable = async () => (await listProjects()).find((project) => project.id === id)?.workspaces[cloud?.id ?? ""]?.reachable
     expect(await availability()).toBe(true)
     expect(await reachable()).toBe(false)
-    configureWorkspaceStore({ sandboxLease: (workspaceId) => (workspaceId === cloud?.id ? { status: "ready" } : undefined) })
-    try {
-      expect(await availability()).toBe(true)
-      expect(await reachable()).toBe(true)
-    } finally {
-      configureWorkspaceStore()
-    }
   })
 
   test("the name is the catalog's: a rename there reads back here, one here reaches it, and an empty one restores the default", async () => {

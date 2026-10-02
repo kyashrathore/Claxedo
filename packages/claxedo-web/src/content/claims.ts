@@ -113,7 +113,7 @@ export const claims = [
     evidence: [
       "packages/claxedo-host-connector/src/connector.ts",
       "packages/claxedo-server/src/routes/remote-access.test.ts",
-      "packages/claxedo-server/src/workspace/supervisor/sandbox.ts",
+      "packages/claxedo-server/src/workspace/hosted-runtime-delivery.ts",
       "packages/claxedo-app/src/server/machines.ts",
       "packages/claxedo-app/src/projects/draft-workspaces.ts",
       "packages/claxedo-app/src/server/placement-streams.ts",

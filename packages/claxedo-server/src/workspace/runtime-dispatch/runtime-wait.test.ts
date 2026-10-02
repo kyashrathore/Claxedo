@@ -1,44 +1,11 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
 
 const mocks = {
-  ensureSupervisorSandbox: vi.fn(),
-  holdSupervisorSandbox: vi.fn(),
-  markSupervisorSandboxUse: vi.fn(),
-  touchSupervisorSandbox: vi.fn(),
-  releaseSupervisorSandbox: vi.fn(),
-  getSupervisorSandboxTarget: vi.fn(() => undefined),
-  getSandbox: vi.fn(),
-  broadcastRuntimeConfig: vi.fn(async () => {}),
-  discardSupervisorSandbox: vi.fn(async () => {}),
-  getSupervisorSandboxStatus: vi.fn(() => undefined),
-  verifyWorkspaceRuntimeControlToken: vi.fn(() => false),
-  configureWorkspaceSupervisor: vi.fn(),
-  shutdownWorkspaceSupervisor: vi.fn(async () => {}),
-  workspaceSupervisorServerUrl: vi.fn(() => "http://127.0.0.1:3001"),
-  listSupervisorSandboxs: vi.fn(() => []),
   workspaceRows: new Map<string, Record<string, unknown>>(),
   resolveWorkspace: vi.fn(async (input: { workspaceId?: string; directory?: string }) =>
     mocks.workspaceRows.get(input.workspaceId ?? "") ?? mocks.workspaceRows.get(input.directory ?? "")),
   opencodeHeaders: vi.fn((headers?: HeadersInit) => new Headers(headers)),
 }
-
-vi.mock("../../workspace/supervisor", () => ({
-  ensureSupervisorSandbox: mocks.ensureSupervisorSandbox,
-  holdSupervisorSandbox: mocks.holdSupervisorSandbox,
-  markSupervisorSandboxUse: mocks.markSupervisorSandboxUse,
-  touchSupervisorSandbox: mocks.touchSupervisorSandbox,
-  releaseSupervisorSandbox: mocks.releaseSupervisorSandbox,
-  getSupervisorSandboxTarget: mocks.getSupervisorSandboxTarget,
-  getSandbox: mocks.getSandbox,
-  broadcastRuntimeConfig: mocks.broadcastRuntimeConfig,
-  discardSupervisorSandbox: mocks.discardSupervisorSandbox,
-  getSupervisorSandboxStatus: mocks.getSupervisorSandboxStatus,
-  verifyWorkspaceRuntimeControlToken: mocks.verifyWorkspaceRuntimeControlToken,
-  configureWorkspaceSupervisor: mocks.configureWorkspaceSupervisor,
-  shutdownWorkspaceSupervisor: mocks.shutdownWorkspaceSupervisor,
-  workspaceSupervisorServerUrl: mocks.workspaceSupervisorServerUrl,
-  listSupervisorSandboxs: mocks.listSupervisorSandboxs,
-}))
 
 vi.mock("@claxedo/server-core/workspace/store/index", () => ({
   resolveWorkspace: mocks.resolveWorkspace,
@@ -81,13 +48,8 @@ vi.mock("@claxedo/server-core/opencode/auth", () => ({
 
 const { createWorkspaceRuntimeProxy } = await import("@claxedo/local-server/workspace/runtime-dispatch/middleware")
 const { embeddedConfigModeForPath } = await import("@claxedo/local-server/workspace/runtime-dispatch/internals")
-const { configureWorkspaceSupervisorPort } = await import("@claxedo/server-core/workspace/supervisor-port")
 
-const {
-  markSupervisorSandboxUse,
-  getSandbox,
-  resolveWorkspace,
-} = mocks
+const { resolveWorkspace } = mocks
 
 function resetWorkspaceStoreMock() {
   mocks.workspaceRows.clear()
@@ -125,27 +87,15 @@ describe("workspaceRuntimeProxy startup wait", () => {
   beforeEach(() => {
     vi.useFakeTimers()
     vi.clearAllMocks()
-    // Dispatch reaches the supervisor through the composed port, which is what
-    // keeps the cloud provisioning graph out of the dispatch closure.
-    configureWorkspaceSupervisorPort({
-      hold: mocks.holdSupervisorSandbox,
-      release: mocks.releaseSupervisorSandbox,
-      markUse: mocks.markSupervisorSandboxUse,
-      touch: mocks.touchSupervisorSandbox,
-      broadcastRuntimeConfig: mocks.broadcastRuntimeConfig,
-      reconcileCredentialDelivery: vi.fn(async () => {}),
-    })
     resolveWorkspace.mockResolvedValue({
       id: "ws_1",
       kind: "cloud",
       directory: "/tmp/demo",
       remote_directory: "/workspace",
     })
-    getSandbox.mockReturnValue(undefined)
   })
 
   afterEach(() => {
-    configureWorkspaceSupervisorPort(undefined)
     vi.useRealTimers()
     globalThis.fetch = originalFetch
     resetWorkspaceStoreMock()
@@ -190,7 +140,6 @@ describe("workspaceRuntimeProxy startup wait", () => {
 
     const res = await resPromise
     expect(res.status).toBe(200)
-    expect(markSupervisorSandboxUse).toHaveBeenCalledWith("ws_1")
     expect(globalThis.fetch).toHaveBeenCalledTimes(1)
   })
 

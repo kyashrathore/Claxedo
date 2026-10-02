@@ -97,19 +97,6 @@ export function workspaceRuntimeSourceEnv(input: {
   }
 }
 
-export function workspaceRuntimeRelayVerificationEnv(input:
-  | { kind: "jwks"; jwksUrl: string }
-  | { kind: "pem"; verifyPem: string }
-  | { kind: "dev-unsafe-private-network" }
-): Record<string, string> {
-  if (input.kind === "jwks") return { WORKSPACE_RUNTIME_RELAY_JWKS_URL: input.jwksUrl }
-  if (input.kind === "pem") return { WORKSPACE_RUNTIME_RELAY_HOST_VERIFY_PEM: input.verifyPem }
-  return {
-    WORKSPACE_RUNTIME_HOST: "0.0.0.0",
-    WORKSPACE_RUNTIME_ALLOW_UNAUTHENTICATED_NON_LOOPBACK: "1",
-  }
-}
-
 export function workspaceRuntimeConfigTokenEnv(input: { token: string }): Record<string, string> {
   return { WORKSPACE_RUNTIME_CONFIG_TOKEN: input.token }
 }

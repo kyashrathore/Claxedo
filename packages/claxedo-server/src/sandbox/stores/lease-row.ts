@@ -1,14 +1,7 @@
 /**
- * The ONE boundary between a stored sandbox-lease row and its typed shape.
- *
- * Both lease stores read the same logical row out of a database that can only
- * promise `string | number | null` per column, and both used to narrow it by
- * hand: `stores/d1.ts` with validating readers, `stores/lease.sql.ts` with bare
- * `as` casts, and `stores/sqlite.ts` with a second hand-copied status union
- * bridged back to the canonical one by `as`. Three answers to one question.
- *
- * Everything a column's raw value has to survive to become a `SandboxLeaseRow`
- * field lives here, and nowhere else.
+ * The boundary between a stored sandbox-lease row and its typed shape. D1 can
+ * only promise `string | number | null` per column; everything a column's raw
+ * value has to survive to become a `SandboxLeaseRow` field lives here.
  */
 
 import type {
@@ -18,7 +11,6 @@ import type {
 } from "@claxedo/sandbox-manager"
 import type {
   SandboxComputeClass,
-  SandboxHoldRow,
   SandboxLeaseRow,
   SandboxLeaseRowStatus,
 } from "@claxedo/sandbox-manager/lease-types"
@@ -38,14 +30,6 @@ const LEASE_STATUSES: readonly SandboxLeaseRowStatus[] = [
 ]
 
 const COMPUTE_CLASSES: readonly SandboxComputeClass[] = ["small", "medium", "large", "gpu"]
-
-const HOLD_OWNER_TYPES: readonly SandboxHoldRow["owner_type"][] = [
-  "session",
-  "stream",
-  "pty",
-  "process",
-  "system",
-]
 
 export function leaseText(input: unknown): string | null {
   return typeof input === "string" ? input : null
@@ -69,10 +53,6 @@ export function leaseComputeClass(input: unknown): SandboxComputeClass | null {
   return COMPUTE_CLASSES.find((computeClass) => computeClass === input) ?? null
 }
 
-export function holdOwnerType(input: unknown): SandboxHoldRow["owner_type"] {
-  return HOLD_OWNER_TYPES.find((ownerType) => ownerType === input) ?? "system"
-}
-
 /**
  * The driver id a row was written with, or `""` when the column holds anything
  * but a string.
@@ -81,9 +61,6 @@ export function holdOwnerType(input: unknown): SandboxHoldRow["owner_type"] {
  * (`stores/d1.test.ts` provisions one called `"test-provider"`), so there is no
  * closed set to narrow to here and none is claimed: `SandboxLeaseRow["driver"]`
  * is `string`, like every other type this value flows between.
- * `stores/lease.sql.ts`, `stores/d1.ts` and `stores/sqlite.ts` each carried
- * their own cast into the closed `SandboxDriverID` (the last as `as never`);
- * they now share this reader and none of them asserts.
  */
 export function leaseDriver(input: unknown): string {
   return leaseText(input) ?? ""

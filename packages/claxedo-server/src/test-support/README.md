@@ -14,5 +14,5 @@ the authority's public lifecycle methods. Runtime fixtures use `composeHost`.
 imports no Miniflare, so workerd test bundles (`hosted-session-pull-worker.ts`)
 can use it.
 
-Per-module fixtures colocate with their suite (`workspace/supervisor/test-helper.ts`,
-`hosts/workspace-runtime/` fixtures).
+Per-module fixtures colocate with their suite (`hosts/workspace-runtime/`
+fixtures).

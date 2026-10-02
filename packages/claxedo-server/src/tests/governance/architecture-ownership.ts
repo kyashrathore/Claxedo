@@ -13,7 +13,7 @@ export const OwnershipStatus = {
 export type OwnershipStatus = (typeof OwnershipStatus)[keyof typeof OwnershipStatus]
 
 export type ArchitectureOwnershipEntry = {
-  area: "authority" | "lease" | "mirror" | "registry" | "host" | "route" | "projection"
+  area: "authority" | "lease" | "registry" | "host" | "route" | "projection"
   module: string
   status: OwnershipStatus
   owner: string
@@ -62,50 +62,11 @@ export const ARCHITECTURE_OWNERSHIP = [
     owner: "SandboxLeaseStore test/local driver",
     tests: ["../../sandbox-manager/src/manager.test.ts"],
   },
-  {
-    area: "lease",
-    module: "sandbox/stores/sqlite.ts",
-    status: OwnershipStatus.Canonical,
-    owner: "SandboxLeaseStore local durable driver",
-    tests: ["workspace/supervisor/cloud.test.ts"],
-  },
-  {
-    area: "lease",
-    module: "sandbox/stores/sqlite-supervisor-state.ts",
-    status: OwnershipStatus.Compatibility,
-    owner: "local supervisor SQLite row-state adapter",
-    canonicalReplacement: "../../sandbox-manager/src/index.ts plus sandbox-manager/stores/sqlite.ts",
-    reason: "Keeps local workspace-supervisor row and hold compatibility under the SandboxManager storage boundary instead of a second top-level lease authority.",
-    removalCondition: "Delete when the local supervisor consumes only SandboxManager and SandboxLeaseStore operations.",
-    tests: ["workspace/supervisor/cloud.test.ts", "workspace/store/index.test.ts"],
-  },
-  {
-    area: "host",
-    module: "sandbox/provision-events.ts",
-    status: OwnershipStatus.Canonical,
-    owner: "sandbox provision event publisher",
-    reason: "Production host lifecycle code emits provision events without depending on manual live sandbox probes.",
-    tests: ["sandbox/provision-events.test.ts"],
-  },
-  {
-    area: "host",
-    module: "workspace/supervisor/sandbox.ts",
-    status: OwnershipStatus.Canonical,
-    owner: "local supervisor SandboxManager composer",
-    reason: "The local Claxedo product path dogfoods SandboxManager and SandboxDriver directly for cloud workspaces.",
-    tests: [
-      "workspace/supervisor/cloud.test.ts",
-      "authority/services.test.ts",
-    ],
-  },
-  {
-    area: "mirror",
-    module: "adapters/central-store/mirror.ts",
-    status: OwnershipStatus.Canonical,
-    owner: "MirrorController",
-    reason: "createMirrorController owns each mirror adapter, subscription, pending lease set, and flush timer.",
-    tests: ["tests/integration/host-primitives.test.ts"],
-  },
+
+
+
+
+
   {
     area: "projection",
     // Moved to @claxedo/server-core in the local/cloud package split: BOTH
@@ -182,7 +143,7 @@ export const ARCHITECTURE_OWNERSHIP = [
     module: "../../claxedo-local-server/src/agent-config/fanout.ts",
     status: OwnershipStatus.Canonical,
     owner: "Sandbox runtime config fan-out",
-    reason: "Agent config changes broadcast already-resolved runtime snapshots to active sandboxs.",
+    reason: "Agent config changes push already-resolved runtime snapshots to the embedded workspace runtimes.",
     tests: [
       "../../claxedo-server-core/src/agent-config/index.test.ts",
       "tests/governance/codebase-shape.test.ts",

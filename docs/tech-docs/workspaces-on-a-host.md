@@ -137,9 +137,9 @@ in machine mode. Its `roots` and `resolvePath` refuse assignments outside the
 served roots before acknowledgment. Heartbeats and enrollment reach the hosted
 Cloudflare authority through the machine transport.
 
-**A.7 The tunnel replays onto loopback** — both tunnel owners
-(`host-serving/src/serving.ts`, `claxedo-server/src/host-tunnel.ts`)
-replay a relayed request as a fetch to the machine's own listener with
+**A.7 The tunnel replays onto loopback** — the tunnel owner
+(`host-serving/src/serving.ts`) replays a relayed request as a fetch to the
+machine's own listener with
 `loopbackReplayHeaders`
 (`claxedo-server-core/src/platform/http/peer-address.ts`): the remote
 browser's `Origin` and `Host` never reach the daemon's loopback gate. What

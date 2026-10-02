@@ -9,7 +9,7 @@ describe("architecture boundaries", () => {
   test("classifies host primitive architecture modules with owners and removal conditions", () => {
     const entries = architectureOwnershipEntries()
     const areas = new Set(entries.map((entry) => entry.area))
-    expect([...areas].sort()).toEqual(["authority", "host", "lease", "mirror", "projection", "registry", "route"])
+    expect([...areas].sort()).toEqual(["authority", "host", "lease", "projection", "registry", "route"])
 
     const keys = entries.map((entry) => `${entry.area}:${entry.module}`)
     expect(keys.filter((key, index) => keys.indexOf(key) !== index)).toEqual([])

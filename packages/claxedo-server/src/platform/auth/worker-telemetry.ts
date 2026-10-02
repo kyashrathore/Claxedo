@@ -1,7 +1,6 @@
 /**
- * Worker-safe telemetry. The local server uses `posthog-node` (a Node library);
- * the hosted Worker posts capture events to the PostHog HTTP API over `fetch`
- * (or no-ops when unconfigured). Never imports `posthog-node` — it is on the
+ * Worker-safe telemetry: capture events go to the PostHog HTTP API over `fetch`
+ * (or nowhere when unconfigured). Never imports `posthog-node` — it is on the
  * Worker's forbidden-import list, which is why error tracking here is a hand-
  * rolled `$exception` payload rather than an SDK call.
  *

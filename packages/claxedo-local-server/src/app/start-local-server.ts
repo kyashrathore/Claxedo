@@ -31,7 +31,6 @@ import { meteringHarnessId } from "@claxedo/server-core/session/harness/index"
 import { dataDir } from "@claxedo/server-core/platform/runtime/lib/paths"
 import { withDataDirOwnership } from "@claxedo/server-core/platform/runtime/lib/data-dir-owner"
 import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
-import { workspaceSupervisorInstalled } from "@claxedo/server-core/workspace/supervisor-port"
 import { configureAgentConfig, disposeAgentConfig } from "@claxedo/server-core/agent-config/index"
 import { defaultConnectionConfigs } from "@claxedo/server-core/agent-config/connections"
 import { createLocalApp, type LocalAppOptions } from "./local-app"
@@ -424,9 +423,6 @@ function startOwned(options: StartLocalServerOptions, release: () => void): Loca
     hostname,
     pid: process.pid,
     opencode: "embedded-sdk",
-    // Stated at boot: a supervisor here would mean cloud provisioning, which
-    // this product does not do.
-    supervisor: workspaceSupervisorInstalled(),
   })
 
   return { port, hostname, app, ready, stop }

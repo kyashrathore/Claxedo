@@ -4,7 +4,6 @@ import { createServer } from "node:http"
 import { tmpdir } from "node:os"
 import path from "node:path"
 import { customVerifierAuthAdapter, localOnlyAuthAdapter } from "@claxedo/server-core/platform/auth/auth"
-import { workspaceSupervisorInstalled } from "@claxedo/server-core/workspace/supervisor-port"
 import { ClaxedoDB } from "@claxedo/server-core/platform/db/index"
 import { startLocalServer, type LocalServer } from "./start-local-server"
 import type { LocalAppOptions } from "./local-app"
@@ -269,14 +268,6 @@ describe("startLocalServer", () => {
     expect((await fetch(`http://127.0.0.1:${local.port}/api/claxedo/health`)).status).toBe(200)
   }, 30_000)
 
-  test("starts NO workspace supervisor, because this product provisions no cloud", async () => {
-    // The omission is the product boundary, so it is asserted rather than
-    // assumed. Runtime dispatch reaches the supervisor through a port that
-    // correctly no-ops when none is installed.
-    await boot()
-    expect(workspaceSupervisorInstalled()).toBe(false)
-  }, 30_000)
-
   test("stopping releases the port", async () => {
     const local = await boot()
     const port = local.port
@@ -352,7 +343,6 @@ describe("createLocalControlPlaneServices", () => {
     expect((await fetch(`http://127.0.0.1:${port}/api/claxedo/health`)).status).toBe(200)
     // Unsigned by construction: no account, nothing to verify a bearer against.
     expect((await identity.call(`http://127.0.0.1:${port}/api/claxedo/credentials`)).status).toBe(200)
-    expect(workspaceSupervisorInstalled()).toBe(false)
   }, 30_000)
 
   test("records a session into the real projection store", async () => {

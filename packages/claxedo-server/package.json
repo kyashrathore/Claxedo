@@ -10,8 +10,6 @@
   "homepage": "https://claxedo.com",
   "private": true,
   "type": "module",
-  "main": "./src/index.ts",
-  "types": "./src/index.ts",
   "files": [
     ".env.example",
     "README.md",
@@ -27,15 +25,6 @@
     "tsconfig.json",
     "vitest.config.ts"
   ],
-  "exports": {
-    ".": {
-      "types": "./src/index.ts",
-      "bun": "./src/index.ts",
-      "development": "./src/index.ts",
-      "import": "./src/index.ts",
-      "default": "./src/index.ts"
-    }
-  },
   "engines": {
     "node": ">=22 <25"
   },
@@ -62,7 +51,6 @@
     "@claxedo/process-ownership": "workspace:*",
     "@claxedo/channels": "workspace:*",
     "@claxedo/connections": "workspace:*",
-    "@claxedo/egress-broker": "workspace:*",
     "@claxedo/helpers": "workspace:*",
     "@claxedo/local-server": "workspace:*",
     "@claxedo/mcp": "workspace:*",
@@ -82,7 +70,6 @@
     "hono": "4.12.34",
     "jose": "6.2.4",
     "kysely": "0.29.3",
-    "posthog-node": "4.18.0",
     "tokentracker-cli": "0.91.0",
     "zod": "4.4.3"
   },
