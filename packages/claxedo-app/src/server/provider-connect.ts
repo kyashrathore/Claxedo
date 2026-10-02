@@ -69,7 +69,7 @@ function authorizationOf(body: unknown): ProviderAuthorization | undefined {
 export function providerConnectQueries(transport: Transport): ProviderConnectQueries {
   return {
     authMethods: (harness) =>
-      fetchQuery(queryKeys.providerAuth(transport.serverUrl, harness), async () => authMethodsOf(await transport.json<unknown>(withQuery(AUTH_PATH, { nativeHarness: harness })))),
+      fetchQuery(queryKeys.providerAuth(transport.serverUrl, harness), async () => authMethodsOf(await transport.json(withQuery(AUTH_PATH, { nativeHarness: harness })))),
   }
 }
 
@@ -81,33 +81,33 @@ export function createProviderConnectApi(transport: Transport, queryClient: Quer
   }
   const oauthPath = (providerId: string, step: "authorize" | "callback") => `/provider/${encodeURIComponent(providerId)}/oauth/${step}`
   return {
-    authorize: async (providerId, method) => authorizationOf(await transport.json<unknown>(oauthPath(providerId, "authorize"), jsonInit("POST", { method }))),
+    authorize: async (providerId, method) => authorizationOf(await transport.json(oauthPath(providerId, "authorize"), jsonInit("POST", { method }))),
     callback: async (providerId, method, code) => {
-      await transport.json<unknown>(oauthPath(providerId, "callback"), jsonInit("POST", { method, ...(code ? { code } : {}) }))
+      await transport.json(oauthPath(providerId, "callback"), jsonInit("POST", { method, ...(code ? { code } : {}) }))
       await changed()
     },
     saveKey: async (input) => {
-      await transport.json<unknown>(CREDENTIALS_PATH, jsonInit("PUT", { provider_id: input.providerId, kind: "api_key", source: "managed", label: input.label, secret: input.secret }))
+      await transport.json(CREDENTIALS_PATH, jsonInit("PUT", { provider_id: input.providerId, kind: "api_key", source: "managed", label: input.label, secret: input.secret }))
       await changed()
     },
     reconnect: async (credentialId, secret) => {
-      await transport.json<unknown>(`${CREDENTIALS_PATH}/${encodeURIComponent(credentialId)}/reconnect`, jsonInit("POST", { secret }))
+      await transport.json(`${CREDENTIALS_PATH}/${encodeURIComponent(credentialId)}/reconnect`, jsonInit("POST", { secret }))
       await changed()
     },
     saveHostedKey: async (input) => {
-      await transport.json<unknown>(withQuery(`/auth/${encodeURIComponent(input.providerId)}`, { harness: input.harness }), jsonInit("PUT", { auth: { key: input.key } }))
+      await transport.json(withQuery(`/auth/${encodeURIComponent(input.providerId)}`, { harness: input.harness }), jsonInit("PUT", { auth: { key: input.key } }))
       await changed()
     },
     saveCustomProvider: async (draft) => {
       const config = draft.config
-      if (draft.key) await transport.json<unknown>(CREDENTIALS_PATH, jsonInit("PUT", { provider_id: config.providerId, kind: "api_key", source: "managed", label: config.name, secret: draft.key }))
-      await transport.json<unknown>(withQuery(CUSTOM_PATH, { nativeHarness: "opencode" }), jsonInit("PUT", customProviderBody(config)))
+      if (draft.key) await transport.json(CREDENTIALS_PATH, jsonInit("PUT", { provider_id: config.providerId, kind: "api_key", source: "managed", label: config.name, secret: draft.key }))
+      await transport.json(withQuery(CUSTOM_PATH, { nativeHarness: "opencode" }), jsonInit("PUT", customProviderBody(config)))
       await changed()
     },
     disconnect: async (harness, provider) => {
       await ask(transport, `${CREDENTIALS_PATH}/provider/${encodeURIComponent(provider.id)}`, { method: "DELETE" })
-      if (provider.source === "custom") await transport.json<unknown>(withQuery(`${CUSTOM_PATH}/${encodeURIComponent(provider.id)}`, { nativeHarness: harness }), { method: "DELETE" })
-      else await transport.json<unknown>(withQuery(`/auth/${encodeURIComponent(provider.id)}`, { harness }), { method: "DELETE" })
+      if (provider.source === "custom") await transport.json(withQuery(`${CUSTOM_PATH}/${encodeURIComponent(provider.id)}`, { nativeHarness: harness }), { method: "DELETE" })
+      else await transport.json(withQuery(`/auth/${encodeURIComponent(provider.id)}`, { harness }), { method: "DELETE" })
       await changed()
     },
   }

@@ -1,5 +1,5 @@
 import { createSignal, type Accessor } from "solid-js"
-import { asRecord } from "@claxedo/helpers/guards"
+import { asRecord, isRecord } from "@claxedo/helpers/guards"
 import { readField, readString } from "@claxedo/helpers/readers"
 
 export type DaemonExit = { readonly code: number | null; readonly signal: string | null }
@@ -16,11 +16,14 @@ export type DaemonStatusBridge = {
   }
 }
 
+function isDaemonStatusBridge(api: unknown): api is DaemonStatusBridge {
+  if (!isRecord(api) || typeof api.relaunch !== "function" || !isRecord(api.daemonStatus)) return false
+  return typeof api.daemonStatus.read === "function" && typeof api.daemonStatus.onChange === "function"
+}
+
 export function daemonStatusBridge(scope: unknown): DaemonStatusBridge | undefined {
-  const api = asRecord(readField(scope, "api"))
-  const status = asRecord(api?.daemonStatus)
-  if (typeof api?.relaunch !== "function" || typeof status?.read !== "function" || typeof status.onChange !== "function") return undefined
-  return api as unknown as DaemonStatusBridge
+  const api = readField(scope, "api")
+  return isDaemonStatusBridge(api) ? api : undefined
 }
 
 export function readDaemonStatus(raw: unknown): DaemonStatus {

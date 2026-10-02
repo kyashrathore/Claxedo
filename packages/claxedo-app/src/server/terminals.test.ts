@@ -13,7 +13,8 @@ function world() {
   const transport = {
     serverUrl: "http://127.0.0.1:4096",
     runtimeJson: async (_route: unknown, _path: string, init?: RequestInit) => {
-      const body = JSON.parse(String(init?.body)) as Record<string, unknown>
+      if (typeof init?.body !== "string") throw new Error("The terminal write carried no JSON body")
+      const body = JSON.parse(init.body) as Record<string, unknown>
       bodies.push(body)
       return { id: "pty_1", title: body.title, status: "running", ...(typeof body.sessionId === "string" ? { sessionId: body.sessionId } : {}) }
     },

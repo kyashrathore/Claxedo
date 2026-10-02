@@ -1,3 +1,4 @@
+import { isRecord } from "@claxedo/helpers/guards"
 import { readField } from "@claxedo/helpers/readers"
 
 export type DesktopBridge = {
@@ -5,9 +6,13 @@ export type DesktopBridge = {
   readonly renderMermaid: (source: string, theme?: Record<string, string>) => Promise<string>
 }
 
+function isDesktopBridge(api: unknown): api is DesktopBridge {
+  return isRecord(api) && typeof api.openLink === "function" && typeof api.renderMermaid === "function"
+}
+
 export function desktopBridge(): DesktopBridge | undefined {
-  const api: unknown = (globalThis as { api?: unknown }).api
-  return typeof api === "object" && api !== null ? (api as DesktopBridge) : undefined
+  const api = readField(globalThis, "api")
+  return isDesktopBridge(api) ? api : undefined
 }
 
 export function desktopMachineReport(): (() => Promise<unknown>) | undefined {

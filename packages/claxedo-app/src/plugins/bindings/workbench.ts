@@ -23,7 +23,7 @@ function openTabs(scope: BindingScope): readonly WorkbenchTab[] {
     if (!opened) return []
     const route = workbench.routeOf(contentId)
     const row = route?.kind === "session" ? sessions.list.view(route.sessionId) : undefined
-    const title = runWithOwner(scope.services.owner, () => opened.kind.title(opened.state as never)) ?? ""
+    const title = runWithOwner(scope.services.owner, () => opened.content?.title()) ?? ""
     return [{ id: contentId, title, kind: opened.kind.kind, status: tabStatusOf(row), active: focused === contentId }]
   })
   return tabs.map((tab, index) => ({ ...tab, index }))

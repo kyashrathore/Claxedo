@@ -119,6 +119,8 @@ function sessionRead(state: ListState, event: Extract<ListEvent, { type: "rowRea
       return statusRead(state, event.ref, event.status, event.sentAt)
     case "backgroundWorkRead":
       return backgroundWorkRead(state, event.ref, event.work, event.sentAt)
+    default:
+      return unreachable(event)
   }
 }
 

@@ -33,7 +33,7 @@ function createDockResizeHandler(input: {
       }
       if (scroller) input.scheduleScrollState(scroller)
     },
-    dispose() {
+    dispose: () => {
       active = false
       if (frame === undefined) return
       cancelAnimationFrame(frame)

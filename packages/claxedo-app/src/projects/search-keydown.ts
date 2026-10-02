@@ -1,3 +1,4 @@
+import { unreachable } from "@/lib/machine"
 const editableSelector = "input, textarea, select, [contenteditable=''], [contenteditable='true']"
 
 type Setter = (value: string) => void
@@ -46,6 +47,8 @@ function applySearchKey(input: HTMLInputElement, action: SearchKeyAction, inputV
       return deleteForward(input, inputValue, start, end, setInputValue)
     case "insert":
       return updateValue(input, inputValue.slice(0, start) + action.value + inputValue.slice(end), start + action.value.length, setInputValue)
+    default:
+      return unreachable(action)
   }
 }
 

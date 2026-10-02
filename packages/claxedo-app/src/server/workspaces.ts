@@ -176,7 +176,7 @@ export function createWorkspaces(transport: Transport, queryClient: QueryClient,
   const accountPlacements = account ? createAccountPlacements(account, transport.serverUrl, queryClient) : undefined
   const merged = mergedCatalog(queryClient, key, accountPlacements)
   const relearned = new Set<string>()
-  const read = async () => bootstrapCatalog(await transport.json<unknown>(BOOTSTRAP_PATH))
+  const read = async () => bootstrapCatalog(await transport.json(BOOTSTRAP_PATH))
   const reread = () => queryClient.fetchQuery({ queryKey: key, queryFn: read, staleTime: 0 })
   const load = async () => {
     return merged.merge(await readCatalogs(queryClient.fetchQuery({ queryKey: key, queryFn: read, staleTime: Number.POSITIVE_INFINITY }), accountPlacements?.load()))

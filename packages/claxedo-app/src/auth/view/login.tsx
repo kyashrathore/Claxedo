@@ -63,7 +63,7 @@ function loginAction(input: {
   const [failure, setFailure] = createSignal<AppError>()
   return {
     failure,
-    async continueWith(method?: BrowserAuthMethod) {
+    continueWith: async (method?: BrowserAuthMethod) => {
       setFailure()
       const options: BrowserAuthSignInOptions =
         method === "email-password"

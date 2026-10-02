@@ -2,6 +2,7 @@ import { NO_BACKGROUND_WORK, parseBackgroundWork, type AgentRuntimeStatus, type 
 import { turnError } from "../errors"
 import type { RetryAction, SessionStatus } from "../status-types"
 import { isRecord } from "@claxedo/helpers/guards"
+import { unreachable } from "../../lib/machine"
 
 function retryActionFromWire(value: unknown): RetryAction | undefined {
   if (!isRecord(value)) return undefined
@@ -47,6 +48,8 @@ function sessionStatusFromRuntime(status: AgentRuntimeStatus): SessionStatus {
       }
     case "recovering":
       return { kind: "recovering", reason: status.kind === "process_restart" ? "processRestart" : "uncertainExecution", message: status.message }
+    default:
+      return unreachable(status)
   }
 }
 

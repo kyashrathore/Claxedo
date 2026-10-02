@@ -8,11 +8,17 @@ import { settingsSections } from "@/settings"
 import { presetsSettingsSection } from "@/tasks"
 import { draftSessionPaneKind, sessionPaneKind, subagentPanelView } from "@/session"
 import { terminalCreatorPaneKind, terminalPaneKind } from "@/terminal"
-import { pageTabPaneKind, settingsPage, type FirstPartyEntries } from "@/shell"
+import { pageTabPaneKind, paneKindEntry, settingsPage, type FirstPartyEntries } from "@/shell"
 
 export const firstParty: FirstPartyEntries = {
   pages: [settingsPage, tasksPage, marketplacePage],
-  paneKinds: [sessionPaneKind, draftSessionPaneKind, terminalPaneKind, terminalCreatorPaneKind, pageTabPaneKind],
+  paneKinds: [
+    paneKindEntry(sessionPaneKind),
+    paneKindEntry(draftSessionPaneKind),
+    paneKindEntry(terminalPaneKind),
+    paneKindEntry(terminalCreatorPaneKind),
+    paneKindEntry(pageTabPaneKind),
+  ],
   panelViews: [subagentPanelView],
   settingsSections: [...settingsSections, modelsSettingsSection, projectsSettingsSection, pluginsSettingsSection, presetsSettingsSection],
   sidebarItems: [],

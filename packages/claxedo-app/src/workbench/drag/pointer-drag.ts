@@ -62,7 +62,7 @@ function createDragGhost() {
 function createDropZones() {
   const zones: DropZone[] = []
   return {
-    register(zone: DropZone) {
+    register: (zone: DropZone) => {
       zones.push(zone)
       return () => {
         const index = zones.indexOf(zone)

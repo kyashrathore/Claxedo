@@ -1,3 +1,4 @@
+import { isRecord } from "@claxedo/helpers/guards"
 import { batch, createSignal, For } from "solid-js"
 import { createStore, produce, type SetStoreFunction } from "solid-js/store"
 import { toAppError, useServer } from "@/server"
@@ -26,7 +27,7 @@ function PairRows(props: { readonly list: RowList; readonly form: FormState; rea
     batch(() => {
       props.setForm(props.list, index, produce((entry: Record<string, unknown>) => {
         entry[field] = value
-        entry.err = { ...(entry.err as object), [field]: undefined }
+        entry.err = { ...(isRecord(entry.err) ? entry.err : {}), [field]: undefined }
       }))
     })
   }

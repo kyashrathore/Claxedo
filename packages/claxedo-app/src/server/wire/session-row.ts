@@ -1,6 +1,8 @@
-import { asFiniteNumber, nonEmptyString } from "@claxedo/helpers/guards"
+import { asFiniteNumber, isRecord, nonEmptyString } from "@claxedo/helpers/guards"
+import { readField, readFiniteNumber } from "@claxedo/helpers/readers"
 import type { AgentSession } from "@claxedo/agent-runtime-contract"
-import { sessionId, type PlacementId, type ProjectId, type SessionId } from "../ids"
+import { contractMismatch } from "../errors"
+import { sessionId, type PlacementId, type ProjectId } from "../ids"
 import type { ListedStatus } from "../status-types"
 import type { ModelChoice, SessionLocation, SessionRow, SessionSelections } from "../types"
 import { sessionConfigFromWire } from "./harness-state"
@@ -10,15 +12,23 @@ export type Address = {
   readonly placementFor: (directory: string, workspaceId?: string, sessionId?: string) => { readonly placementId: PlacementId; readonly projectId: ProjectId } | undefined
 }
 
+export function isSessionWire(value: unknown): value is AgentSession {
+  return isRecord(value) && typeof value.id === "string"
+}
+
+export function sessionFromWire(value: unknown): AgentSession {
+  if (!isSessionWire(value)) throw contractMismatch("session")
+  return value
+}
+
 export function sessionLocationFor(address: Address, input: { directory: string; workspaceId?: string; sessionId: string }): SessionLocation | undefined {
   const placed = address.placementFor(input.directory, input.workspaceId, input.sessionId)
   if (!placed) return undefined
   return { projectId: placed.projectId, placementId: placed.placementId, sessionId: sessionId(input.sessionId) }
 }
 
-export function sessionRowFromListItem(item: unknown, address: Address): SessionRow | undefined {
-  if (!item || typeof item !== "object") return undefined
-  const row = item as Record<string, unknown>
+export function sessionRowFromListItem(row: unknown, address: Address): SessionRow | undefined {
+  if (!isRecord(row)) return undefined
   const id = nonEmptyString(row.sessionId)
   const directory = nonEmptyString(row.directory)
   const createdAt = asFiniteNumber(row.createdAt)
@@ -54,7 +64,7 @@ export function sessionRowFromSession(info: AgentSession, ref: SessionLocation):
   const created = info.time?.created ?? 0
   const updated = info.time?.updated ?? created
   const archived = info.time?.archived
-  const lastHumanTurnAt = asFiniteNumber((info.time as { lastHumanTurn?: unknown } | undefined)?.lastHumanTurn)
+  const lastHumanTurnAt = readFiniteNumber(info.time, "lastHumanTurn")
   const parent = nonEmptyString(info.parentID)
   return {
     ref,
@@ -69,9 +79,8 @@ export function sessionRowFromSession(info: AgentSession, ref: SessionLocation):
   }
 }
 
-export function sessionRowFromCentral(item: unknown, ref: SessionLocation): SessionRow | undefined {
-  if (!item || typeof item !== "object") return undefined
-  const row = item as Record<string, unknown>
+export function sessionRowFromCentral(row: unknown, ref: SessionLocation): SessionRow | undefined {
+  if (!isRecord(row)) return undefined
   if (nonEmptyString(row.session_id) !== ref.sessionId) return undefined
   const createdAt = asFiniteNumber(row.created_at)
   if (createdAt === undefined) return undefined
@@ -89,9 +98,9 @@ const WORKING: ListedStatus["status"] = { kind: "working" }
 const IDLE: ListedStatus["status"] = { kind: "idle" }
 
 export function listedStatusFromListItem(item: unknown): ListedStatus | undefined {
-  const status = (item as { status?: unknown } | null)?.status
-  if (!status || typeof status !== "object") return undefined
-  const { kind, awaitingInput } = status as { kind?: unknown; awaitingInput?: unknown }
+  const status = readField(item, "status")
+  if (!isRecord(status)) return undefined
+  const { kind, awaitingInput } = status
   if (kind !== "idle" && kind !== "busy" && kind !== "retry" && kind !== "recovering") return undefined
   return { status: kind === "idle" ? IDLE : WORKING, waitingOnUser: awaitingInput === true, backgroundWork: backgroundWorkFromWire(status) }
 }

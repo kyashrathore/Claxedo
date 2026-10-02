@@ -1,3 +1,4 @@
+import { unreachable } from "@/lib/machine"
 import type { SessionRowView } from "@/session"
 
 export type SessionActivity = "waiting" | "working" | "failed" | "background" | "idle"
@@ -16,5 +17,7 @@ export function sessionActivity(row: SessionRowView): SessionActivity {
     case "idle":
     case "unknown":
       return "idle"
+    default:
+      return unreachable(row.status)
   }
 }

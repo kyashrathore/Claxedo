@@ -1,3 +1,4 @@
+import { unreachable } from "@/lib/machine"
 import type { DiffScope, GitCommit } from "@/server"
 
 export type ReviewMode = "uncommitted" | "staged" | "unstaged" | "branch" | "branch-worktree" | "to-from"
@@ -28,6 +29,8 @@ export function selectionOf(scope: DiffScope): ReviewSelection {
       return { mode: "branch-worktree", fromRef: scope.base, toRef: "" }
     case "range":
       return { mode: "to-from", fromRef: scope.from, toRef: scope.to }
+    default:
+      return unreachable(scope)
   }
 }
 
@@ -43,6 +46,8 @@ export function scopeOf(mode: ReviewMode, fromRef: string, toRef: string): DiffS
       return { kind: "branchWorktree", base: fromRef }
     case "to-from":
       return { kind: "range", from: fromRef, to: toRef || "HEAD" }
+    default:
+      return unreachable(mode)
   }
 }
 

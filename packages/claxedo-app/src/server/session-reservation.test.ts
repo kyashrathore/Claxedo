@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test"
-import { resolveHostedOperation, type HostedOperationName } from "@claxedo/account-contract"
+import { resolveHostedOperation } from "@claxedo/account-contract"
 import { createHostedAccount } from "./account"
 import { reserveSession } from "./session-reservation"
 

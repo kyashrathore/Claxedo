@@ -1,7 +1,7 @@
 import { batch, type Accessor } from "solid-js"
 import { persistedSignal } from "@/lib/persisted"
 import { isRecord } from "@claxedo/helpers/guards"
-import type { AnyPaneKind, Json, PaneKind, PaneRoute } from "@/shell"
+import { isJson, type AnyPaneKind, type Json, type OpenedContent, type PaneKind, type PaneRoute } from "@/shell"
 import { constructWorkbenchState } from "./construct"
 import { createDragController, type DragController } from "./drag/pointer-drag"
 import { createHandover, type Handing } from "./handover"
@@ -22,7 +22,7 @@ export type WorkbenchRecord = {
   readonly contents: Readonly<Record<string, PaneContent>>
 }
 
-export type OpenedPane = { readonly contentId: string; readonly kind: AnyPaneKind; readonly state: unknown }
+export type OpenedPane = { readonly contentId: string; readonly kind: AnyPaneKind; readonly content: OpenedContent | undefined }
 
 export type WorkbenchStore = WorkbenchApi &
   PaneApi & {
@@ -46,7 +46,7 @@ function closeContentReducer(state: WorkbenchState, contentId: string): Workbenc
   return closed.panes.length === 0 && next ? reducers.navigation.show(closed, next) : closed
 }
 
-function contentKey(kind: { readonly kind: string; readonly singleton?: boolean }, state: Json): string {
+function contentKey(kind: ContentIdentity, state: Json): string {
   return kind.singleton ? kind.kind : `${kind.kind}:${JSON.stringify(state)}`
 }
 
@@ -54,8 +54,8 @@ function readContents(value: unknown): Record<string, PaneContent> {
   const contents: Record<string, PaneContent> = {}
   if (!isRecord(value)) return contents
   for (const [id, entry] of Object.entries(value)) {
-    if (!isRecord(entry) || typeof entry.kind !== "string" || entry.state === undefined) continue
-    contents[id] = { kind: entry.kind, state: entry.state as Json }
+    if (!isRecord(entry) || typeof entry.kind !== "string" || !isJson(entry.state)) continue
+    contents[id] = { kind: entry.kind, state: entry.state }
   }
   return contents
 }
@@ -122,35 +122,36 @@ function createClosedListeners() {
 }
 
 function createContentReader(record: Accessor<WorkbenchRecord>, kinds: Accessor<readonly AnyPaneKind[]>) {
-  const decoded = new Map<string, { json: Json; state: unknown }>()
+  const decoded = new Map<string, { json: Json; content: OpenedContent | undefined }>()
   const content = (contentId: string): OpenedPane | undefined => {
     const entry = record().contents[contentId]
     if (!entry) return undefined
     const kind = kinds().find((candidate) => candidate.kind === entry.kind)
     if (!kind) return undefined
     const cached = decoded.get(contentId)
-    if (cached && cached.json === entry.state) return { contentId, kind, state: cached.state }
-    const state = kind.decode(entry.state)
-    decoded.set(contentId, { json: entry.state, state })
-    return { contentId, kind, state }
+    if (cached && cached.json === entry.state) return { contentId, kind, content: cached.content }
+    const opened = kind.decode(entry.state)
+    decoded.set(contentId, { json: entry.state, content: opened })
+    return { contentId, kind, content: opened }
   }
   const keyOf = (contentId: string): string | undefined => {
     const opened = content(contentId)
-    return opened?.state === undefined ? undefined : contentKey(opened.kind, opened.kind.encode(opened.state as never))
+    return opened?.content ? contentKey(opened.kind, opened.content.encode()) : undefined
   }
   return { content, keyOf }
 }
 
-type Open = <State>(kind: PaneKind<State>, state: State, focus?: boolean) => string
+type ContentIdentity = { readonly kind: string; readonly singleton?: boolean }
 
-function createOpen(input: {
+type OpenEncoded = (kind: ContentIdentity, encoded: Json, focus: boolean) => string
+
+function createOpenEncoded(input: {
   readonly record: Accessor<WorkbenchRecord>
   readonly setRecord: (update: (current: WorkbenchRecord) => WorkbenchRecord) => void
   readonly apply: (mutation: (layout: WorkbenchState) => WorkbenchState) => void
   readonly keyOf: (contentId: string) => string | undefined
-}): Open {
-  return <State,>(kind: PaneKind<State>, state: State, focus = true): string => {
-    const encoded = kind.encode(state)
+}): OpenEncoded {
+  return (kind, encoded, focus) => {
     const key = contentKey(kind, encoded)
     const existing = input.record().contents[key] ? key : input.record().layout.contentIds.find((contentId) => input.keyOf(contentId) === key)
     const id = existing ?? key
@@ -162,10 +163,10 @@ function createOpen(input: {
   }
 }
 
-function openRoute(kinds: readonly AnyPaneKind[], open: Open, route: PaneRoute, focus: boolean): string | undefined {
+function openRoute(kinds: readonly AnyPaneKind[], openEncoded: OpenEncoded, route: PaneRoute, focus: boolean): string | undefined {
   for (const kind of kinds) {
-    const state = kind.fromRoute?.(route)
-    if (state !== undefined) return open(kind as PaneKind<unknown>, state, focus)
+    const opened = kind.fromRoute(route)
+    if (opened) return openEncoded(kind, opened.encode(), focus)
   }
   return undefined
 }
@@ -181,7 +182,8 @@ export function createWorkbenchStore(key: string, kinds: Accessor<readonly AnyPa
   const apply = createApply(record, setRecord, closed.notify)
   const { content, keyOf } = createContentReader(record, kinds)
 
-  const open = createOpen({ record, setRecord, apply, keyOf })
+  const openEncoded = createOpenEncoded({ record, setRecord, apply, keyOf })
+  const open = <State,>(kind: PaneKind<State>, state: State, focus = true) => openEncoded(kind, kind.encode(state), focus)
 
   const closeContent = (contentId: string) => apply((s) => closeContentReducer(s, contentId))
   const holds = createRevealHolds()
@@ -192,11 +194,8 @@ export function createWorkbenchStore(key: string, kinds: Accessor<readonly AnyPa
     layout,
     content,
     open,
-    openRoute: (route, focus = true) => openRoute(kinds(), open, route, focus),
-    routeOf: (contentId) => {
-      const opened = content(contentId)
-      return opened?.kind.toRoute?.(opened.state as never)
-    },
+    openRoute: (route, focus = true) => openRoute(kinds(), openEncoded, route, focus),
+    routeOf: (contentId) => content(contentId)?.content?.route(),
     closeContent,
     move: (tabId, index) => apply((s) => reducers.contents.reorder(s, tabId, index)),
     onClosed: closed.add,

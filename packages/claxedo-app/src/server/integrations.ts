@@ -124,7 +124,7 @@ export function integrationQueries(transport: Transport): IntegrationQueries {
   return {
     catalog: () =>
       fetchQuery(queryKeys.integrations(transport.serverUrl), async () => {
-        const body = await transport.json<unknown>(INTEGRATIONS_PATH)
+        const body = await transport.json(INTEGRATIONS_PATH)
         return {
           integrations: (readArray(body, "integrations") ?? []).flatMap(integrationOf),
           connections: (readArray(body, "connections") ?? []).flatMap(connectionOf),

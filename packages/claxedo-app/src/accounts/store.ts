@@ -1,6 +1,6 @@
 import { createMemo, createSignal, type Accessor } from "solid-js"
 import { useQuery } from "@tanstack/solid-query"
-import { toAppError, useServer, type Account, type AppError, type EffectiveAccounts, type MachineLogin, type Server } from "@/server"
+import { toAppError, useServer, type Account, type AppError, type EffectiveAccounts, type Server } from "@/server"
 import { showToast } from "@/ui"
 import { useAccountsText } from "./i18n"
 import { harnesses, harnessRunnable, MACHINE_LOGIN_KEY, ORG_ACCOUNT_KEY, type AccountsSnapshot, type Harness, type LiveCheck } from "./model"

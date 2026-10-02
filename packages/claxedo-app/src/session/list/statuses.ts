@@ -47,7 +47,7 @@ export function pageStatusesRead<S extends ListData>(data: S, window: FetchedWin
   return next
 }
 
-export function withoutSessionFacts<S extends ListData>(data: S, sessionIds: Iterable<SessionId>): Pick<ListData, "statuses" | "backgroundWork"> {
+export function withoutSessionFacts(data: ListData, sessionIds: Iterable<SessionId>): Pick<ListData, "statuses" | "backgroundWork"> {
   const statuses = new Map(data.statuses)
   const backgroundWork = new Map(data.backgroundWork)
   for (const sessionId of sessionIds) {

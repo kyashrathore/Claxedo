@@ -1,4 +1,5 @@
 import { promptPartId, type AgentContentPart, type AgentUserMessage, type PromptInput as RuntimePromptInput } from "@claxedo/agent-runtime-contract"
+import { unreachable } from "../../lib/machine"
 import type { PromptAttachment, PromptDelivery, PromptInput } from "../types"
 
 export const PROMPT_ROUTE = "/prompt_async"
@@ -26,6 +27,8 @@ function wireAttachmentPart(attachment: PromptAttachment): WirePart {
       }
     case "text":
       return { type: "text", text: attachment.label ? `${attachment.label}\n${attachment.text}` : attachment.text, synthetic: true }
+    default:
+      return unreachable(attachment)
   }
 }
 

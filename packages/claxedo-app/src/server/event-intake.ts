@@ -39,7 +39,10 @@ async function settleHeld(input: IntakeInput, ref: SessionLocation, publish: Pub
 function publisher(input: IntakeInput, listeners: Listeners, writes: TurnWrites): Publish {
   const publish: Publish = (event) => {
     const admission = input.status.apply(event)
-    if (admission.kind === "held") return void settleHeld(input, admission.ref, publish)
+    if (admission.kind === "held") {
+      void settleHeld(input, admission.ref, publish)
+      return
+    }
     batch(() => {
       invalidateFor(input.queryClient, input.serverUrl, admission.event, writes.endsWritingTurn(admission.event))
       for (const listener of listeners) listener(admission.event)

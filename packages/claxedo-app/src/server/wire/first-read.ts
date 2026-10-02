@@ -3,16 +3,8 @@ import { ServerError } from "../errors"
 import type { OutlineTurn, SessionOutline, TranscriptPage } from "../types"
 import { cursorPage, pageTurnsFromWire, turnPageRead } from "./turn-page"
 
-type WireTurn = {
-  id?: unknown
-  createdAt?: unknown
-  title?: unknown
-  user?: unknown
-}
-
-function turnFromWire(value: unknown): OutlineTurn | undefined {
-  const row = value as WireTurn | null
-  if (!row || typeof row.id !== "string") return undefined
+function turnFromWire(row: unknown): OutlineTurn | undefined {
+  if (!isRecord(row) || typeof row.id !== "string") return undefined
   return {
     id: row.id,
     createdAt: typeof row.createdAt === "number" ? row.createdAt : 0,
@@ -21,9 +13,8 @@ function turnFromWire(value: unknown): OutlineTurn | undefined {
   }
 }
 
-function outlineFromWire(body: unknown): SessionOutline {
-  const record = body as { turns?: unknown; complete?: unknown } | null
-  if (!record || !Array.isArray(record.turns)) throw new ServerError({ class: "internal", message: "The turn outline is not a list of turns" })
+function outlineFromWire(record: unknown): SessionOutline {
+  if (!isRecord(record) || !Array.isArray(record.turns)) throw new ServerError({ class: "internal", message: "The turn outline is not a list of turns" })
   return { turns: record.turns.flatMap((turn) => turnFromWire(turn) ?? []), complete: record.complete === true }
 }
 

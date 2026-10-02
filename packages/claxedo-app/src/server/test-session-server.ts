@@ -81,7 +81,7 @@ export function fakeServer(options: FakeServerOptions) {
     runtimeCalls.push(path)
     return options.runtime ? options.runtime(path) : Response.json({ error: { message: "unexpected runtime read" } }, { status: 500 })
   }
-  const readJson = async <T>(response: Response) => (await response.json()) as T
+  const readJson = async (response: Response): Promise<unknown> => response.json()
   const transport = {
     serverUrl: "https://cp.test",
     loopback: false,
@@ -90,11 +90,11 @@ export function fakeServer(options: FakeServerOptions) {
     runtimeSocket: async () => {
       throw new Error("no sockets")
     },
-    json: async <T>(path: string) => readJson<T>(await request(path)),
-    runtimeJson: async <T>(route: RuntimeRoute, path: string) => {
+    json: async (path: string) => readJson(await request(path)),
+    runtimeJson: async (route: RuntimeRoute, path: string) => {
       const response = await runtime(route, path)
       if (response.status === 409) throw workspaceStopped("ws_cloud")
-      return readJson<T>(response)
+      return readJson(response)
     },
     startRuntime: async () => undefined,
   } satisfies Transport

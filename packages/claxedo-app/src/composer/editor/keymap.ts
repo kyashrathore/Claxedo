@@ -50,7 +50,7 @@ export type EditorKeymapDeps<TEvent extends EditorKeyEvent> = {
   handleSubmit: (event: TEvent) => unknown
 }
 
-function handleEscape<TEvent extends EditorKeyEvent>(deps: EditorKeymapDeps<TEvent>, event: TEvent) {
+function handleEscape<TEvent extends EditorKeyEvent>(deps: EditorKeymapDeps<TEvent>) {
   if (deps.popover()) {
     deps.closePopover()
     return true
@@ -111,7 +111,7 @@ const enterShell: KeyHandler = (deps, event) => {
 }
 
 const escapeKey: KeyHandler = (deps, event) => {
-  if (event.key !== "Escape" || !handleEscape(deps, event)) return false
+  if (event.key !== "Escape" || !handleEscape(deps)) return false
   event.preventDefault()
   event.stopPropagation()
   return true

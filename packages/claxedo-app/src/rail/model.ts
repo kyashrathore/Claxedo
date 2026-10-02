@@ -1,3 +1,4 @@
+import { unreachable } from "@/lib/machine"
 import { formatCompactAge } from "@/lib/relative-time"
 import type { MachineId, Placement, ProjectId, SessionId, SessionLocation } from "@/server"
 import { sessionActivity, type SessionRowView } from "@/session"
@@ -20,6 +21,8 @@ export function navigationStatus(row: SessionRowView, failureUnseen: boolean): N
       return "background"
     case "idle":
       return "idle"
+    default:
+      return unreachable(activity)
   }
 }
 

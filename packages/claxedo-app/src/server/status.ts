@@ -1,4 +1,4 @@
-import { backgroundWorkActive, type AgentSession, type AgentTurnOutcome, type BackgroundWork } from "@claxedo/agent-runtime-contract"
+import { backgroundWorkActive, type AgentTurnOutcome, type BackgroundWork } from "@claxedo/agent-runtime-contract"
 import { ServerError } from "./errors"
 import type { ServerEvent } from "./events"
 import { sessionEndpoint } from "./session-context"
@@ -7,6 +7,7 @@ import { withQuery, type RuntimeRoute, type Transport } from "./transport"
 import type { SessionStatus } from "./status-types"
 import type { SessionLocation } from "./types"
 import { OPEN_VIEW, sessionOpenFromWire, type SessionFact } from "./wire/session-open"
+import { sessionFromWire } from "./wire/session-row"
 
 export type StatusAdmission =
   | { readonly kind: "admitted"; readonly event: ServerEvent }
@@ -70,8 +71,8 @@ export function createStatusOwner(transport: Transport): StatusOwner {
     listed: (ref, status) => (status.kind === "idle" ? (failures.get(ref) ?? status) : status),
     settle: async (route, ref) => {
       const [row, view] = await Promise.all([
-        transport.runtimeJson<AgentSession>(route, sessionEndpoint(ref)),
-        transport.runtimeJson<unknown>(route, withQuery(sessionEndpoint(ref), OPEN_VIEW)).then(sessionOpenFromWire),
+        transport.runtimeJson(route, sessionEndpoint(ref)).then(sessionFromWire),
+        transport.runtimeJson(route, withQuery(sessionEndpoint(ref), OPEN_VIEW)).then(sessionOpenFromWire),
       ])
       return read(ref, row.lastTurn, view.status)
     },

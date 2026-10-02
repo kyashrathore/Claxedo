@@ -85,7 +85,10 @@ function useCatalogModels(harness: string, placement: Accessor<SettingsPlacement
   createEffect(() => {
     const ids = providers().map((provider) => provider.id)
     const key = ids.join(",")
-    if (!key) return void (catalog.loading() || setHydrating(false))
+    if (!key) {
+      if (!catalog.loading()) setHydrating(false)
+      return
+    }
     if (key === hydrated) return
     hydrated = key
     setHydrating(true)

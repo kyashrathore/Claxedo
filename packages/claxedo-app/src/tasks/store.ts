@@ -72,7 +72,10 @@ function createEditActions(state: TasksState, setState: ReturnType<typeof create
       setState(
         produce((draft) => {
           const current = refusal.stale?.task
-          if (!current) return void (draft.taskErrors[taskId] = refusal.message)
+          if (!current) {
+            draft.taskErrors[taskId] = refusal.message
+            return
+          }
           const existing = draft.taskEdits[taskId]
           draft.taskEdits[taskId] = {
             title: existing?.title ?? current.title,
