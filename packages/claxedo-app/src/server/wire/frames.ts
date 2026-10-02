@@ -1,4 +1,4 @@
-import { isAgentContentPart, isAgentMessageInfo, parseBackgroundWork } from "@claxedo/agent-runtime-contract"
+import { isAgentContentPart, isAgentMessageInfo, isAgentSnapshotFileDiff, isAgentTodo, parseBackgroundWork } from "@claxedo/agent-runtime-contract"
 import type { ServerEvent } from "../events"
 import { placementId as asPlacementId, projectId, requestId } from "../ids"
 import type { SessionLocation } from "../types"
@@ -6,9 +6,7 @@ import { provisionStatus } from "./cloud"
 import { goalFromWire } from "./goal"
 import { connectionStateFromWire, harnessHealthFromWire } from "./harness-state"
 import { subagentFromWire } from "./subagents"
-import { todosFromWire } from "./todos"
 import { isPermissionWire, isQuestionWire, requestFromPermission, requestFromQuestion } from "./requests"
-import { fileDiffsFromWire } from "./file-diffs"
 import { isSessionWire, sessionLocationFor, sessionRowFromSession, type Address } from "./session-row"
 import { sessionStatusFromTurnError, sessionStatusFromWire } from "./status"
 import { terminalEvent } from "./terminals"
@@ -136,8 +134,8 @@ function lifecycleEvent(frame: Frame, ref: SessionLocation): ServerEvent | undef
     case "session.deleted":
       return { type: "sessionRemoved", ref }
     case "session.diff": {
-      const diff = fileDiffsFromWire(properties.diff)
-      return diff ? { type: "diffChanged", ref, diff } : undefined
+      const diff = properties.diff
+      return Array.isArray(diff) ? { type: "diffChanged", ref, diff: diff.filter(isAgentSnapshotFileDiff) } : undefined
     }
     case "goal.updated": {
       const goal = goalFromWire(properties.goal)
@@ -150,8 +148,8 @@ function lifecycleEvent(frame: Frame, ref: SessionLocation): ServerEvent | undef
       return subagent ? { type: "subagentUpdated", ref, subagent } : undefined
     }
     case "todo.updated": {
-      const todos = todosFromWire(properties.todos)
-      return todos ? { type: "todosChanged", ref, todos } : undefined
+      const todos = properties.todos
+      return Array.isArray(todos) ? { type: "todosChanged", ref, todos: todos.filter(isAgentTodo) } : undefined
     }
     default:
       return undefined

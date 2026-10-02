@@ -556,3 +556,22 @@ export function isAgentMessage(value: unknown): value is AgentMessage {
 export function parseAgentMessage(value: unknown): AgentMessage | undefined {
   return isAgentMessage(value) ? value : undefined
 }
+
+/** Is `value` a todo as the runtime reports it? */
+export function isAgentTodo(value: unknown): value is AgentTodo {
+  return isRecord(value)
+    && isStringField(value, "content")
+    && isStringField(value, "status")
+    && isStringField(value, "priority")
+    && optionalIs(value, "id", (id) => typeof id === "string")
+}
+
+/** Is `value` one file's entry in a session's diff summary? */
+export function isAgentSnapshotFileDiff(value: unknown): value is AgentSnapshotFileDiff {
+  return isRecord(value)
+    && typeof value.additions === "number"
+    && typeof value.deletions === "number"
+    && optionalIs(value, "file", (file) => typeof file === "string")
+    && optionalIs(value, "patch", (patch) => typeof patch === "string")
+    && optionalIs(value, "status", (status) => status === "added" || status === "deleted" || status === "modified")
+}

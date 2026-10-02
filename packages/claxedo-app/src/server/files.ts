@@ -1,3 +1,4 @@
+import { parseAgentFileContent } from "@claxedo/agent-runtime-contract"
 import { isRecord } from "@claxedo/helpers/guards"
 import { contractMismatch } from "./errors"
 import { fetchQuery } from "./fetch-query"
@@ -7,7 +8,6 @@ import { withQuery, type Transport } from "./transport"
 import type { FileContent, FileNode, FileSearchEntries } from "./git-types"
 import type { FetchQuery } from "./types"
 import type { Workspaces } from "./workspaces"
-import { fileContentFromWire } from "./wire/file-content"
 
 const FILE_PATH = "/api/wr/file"
 const SEARCH_PATH = "/api/wr/find/file"
@@ -29,7 +29,11 @@ export function fileQueries(transport: Transport, workspaces: Workspaces) {
         return node ? [node] : []
       })
     })
-  const content = (placementId: PlacementId, path: string): FetchQuery<FileContent> => fetchQuery(queryKeys.fileContent(server, placementId, path), async () => fileContentFromWire(await transport.runtimeJson(await workspaces.route(placementId), withQuery(`${FILE_PATH}/content`, { path }))))
+  const content = (placementId: PlacementId, path: string): FetchQuery<FileContent> => fetchQuery(queryKeys.fileContent(server, placementId, path), async () => {
+      const parsed = parseAgentFileContent(await transport.runtimeJson(await workspaces.route(placementId), withQuery(`${FILE_PATH}/content`, { path })))
+      if (!parsed) throw contractMismatch("file content")
+      return parsed
+    })
   const search = (placementId: PlacementId, query: string, entries: FileSearchEntries): FetchQuery<readonly string[]> => fetchQuery(queryKeys.fileSearch(server, placementId, query, entries), async () => {
       const rows = await transport.runtimeJson(await workspaces.route(placementId), withQuery(SEARCH_PATH, { query, limit: SEARCH_LIMIT, dirs: entries === "all" }))
       if (!Array.isArray(rows)) throw contractMismatch("file search")

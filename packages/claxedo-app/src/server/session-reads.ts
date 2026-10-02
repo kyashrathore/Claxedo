@@ -1,4 +1,4 @@
-import { NO_BACKGROUND_WORK, type AgentSession } from "@claxedo/agent-runtime-contract"
+import { isAgentSnapshotFileDiff, NO_BACKGROUND_WORK, type AgentSession } from "@claxedo/agent-runtime-contract"
 import { readField } from "@claxedo/helpers/readers"
 import { readCentralFirst, readCentralRow } from "./central-session"
 import { responseError } from "./errors"
@@ -10,14 +10,14 @@ import type { HeldSessionReads, PageShape, SessionFirstRead, SessionReads, Sessi
 import { GOAL_UNAVAILABLE } from "./wire/goal"
 import { firstReadFromWire, NO_FIRST_PAGE } from "./wire/first-read"
 import { OPEN_VIEW, sessionOpenFromWire, TODOS_UNSUPPORTED, type SessionFact, type SessionOpenView } from "./wire/session-open"
-import { fileDiffsFromWire } from "./wire/file-diffs"
 import { sessionFromWire, sessionRowFromSession } from "./wire/session-row"
 import { viewportQuery } from "./wire/turn-page"
 
 const STOPPED_STATUS: SessionStatus = { kind: "idle" }
 
 function runtimeRow(session: AgentSession, ref: SessionLocation): Pick<SessionFirstRead, "row" | "diff"> {
-  return { row: sessionRowFromSession(session, ref), diff: fileDiffsFromWire(readField(readField(session, "summary"), "diffs")) ?? [] }
+  const diffs = readField(readField(session, "summary"), "diffs")
+  return { row: sessionRowFromSession(session, ref), diff: Array.isArray(diffs) ? diffs.filter(isAgentSnapshotFileDiff) : [] }
 }
 
 async function readRuntimeFirst(context: SessionContext, route: RuntimeRoute, ref: SessionLocation, shape: PageShape): Promise<SessionFirstRead> {
