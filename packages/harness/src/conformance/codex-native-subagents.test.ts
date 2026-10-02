@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test"
 import type { OutsideTurnUsage, RoutedEvent } from "../contract"
 import { setupConformance } from "./test-support/run"
+import { pollUntil } from "./test-support/poll"
 import { makeCodexTransport, recordingBackend, type CodexBackend } from "../../e2e/harness/codex-conformance"
 
 const PROTOCOLS = {
@@ -33,7 +34,13 @@ async function nativeContext(protocol: keyof typeof PROTOCOLS) {
   return { context, recorder, metered, parent, release, child: childThread(recorder.received as Received[])! }
 }
 
-const idle = () => new Promise((resolve) => setTimeout(resolve, 3_000))
+async function childUpdate(context: Awaited<ReturnType<typeof setupConformance>>, child: string,
+  status: "running" | "completed" | "interrupted", after = 0) {
+  const update = await pollUntil(() => context.ports.subagents.slice(after).find((row) => row.providerId === child && row.status === status),
+    Date.now() + 15_000)
+  expect(update, `Codex child ${child} did not publish ${status}`).toBeDefined()
+  return update!
+}
 
 const FOLLOWUPS = {
   v2: (_child: string) => ({ name: "followup_task", input: { target: "child_probe", message: "Second child task CODEXNATIVESECOND" } }),
@@ -45,13 +52,13 @@ for (const protocol of ["v2", "v1"] as const) {
     const { context, recorder, metered, parent, release, child } = await nativeContext(protocol)
     try {
       expect(parent.filter((routed) => routed.route?.kind !== "child" && routed.event.type === "finish")).toHaveLength(1)
-      expect(context.ports.subagents[0]).toMatchObject({ status: "running", toolCallId: "call_1", toolCallRole: "spawn", mode: "background",
+      expect(await childUpdate(context, child, "running")).toMatchObject({ status: "running", toolCallId: "call_1", toolCallRole: "spawn", mode: "background",
         providerId: child, providerKind: "codex", childSessionId: expect.any(String) })
       const projection = { ...context.start.projection, generation: "changed-plugins" }
       await expect(context.transport.configure(context.session, { projection })).rejects.toThrow("background tasks are running")
       expect(recorder.frames.filter((frame) => frame.method === "initialize")).toHaveLength(1)
       release()
-      await idle()
+      await childUpdate(context, child, "completed")
       const published = context.ports.childEvents.map((row) => row.event)
       const text = published.filter((routed) => routed.event.type === "text-delta").map((routed) => (routed.event as { delta: string }).delta).join("")
       expect(text).toContain("CODEXNATIVECHILD-DONE")
@@ -67,8 +74,9 @@ for (const protocol of ["v2", "v1"] as const) {
   test(`per-task stop interrupts Codex's own ${protocol} subagent and nothing else`, async () => {
     const { context, recorder, release, child } = await nativeContext(protocol)
     try {
+      await childUpdate(context, child, "running")
       expect(await context.transport.backgroundTasks!.stop(context.session, { toolCallId: "call_1" })).toEqual({ ok: true })
-      await idle()
+      await childUpdate(context, child, "interrupted")
       expect(recorder.frames.filter((frame) => frame.method === "turn/interrupt").map((frame) => frame.params?.threadId)).toEqual([child])
       expect(context.ports.subagents.at(-1)).toMatchObject({ status: "interrupted", providerId: child })
       expect(await context.transport.backgroundTasks!.stop(context.session, { toolCallId: "call_1" })).toMatchObject({ ok: false, status: "not_found" })
@@ -82,13 +90,14 @@ for (const protocol of ["v2", "v1"] as const) {
     const { context, release, child } = await nativeContext(protocol)
     try {
       release()
-      await idle()
+      await childUpdate(context, child, "completed")
+      const observed = context.ports.subagents.length
       const state = context.backend as CodexBackend
       const followup = FOLLOWUPS[protocol](child)
       state.server.scriptTool({ ...followup, namespace: PROTOCOLS[protocol].namespace, whenPromptIncludes: "CODEXNATIVEFOLLOWUP" })
       for await (const _routed of context.transport.send(context.session, { ...context.turn("Follow up once, then reply with exactly this one token: CODEXNATIVEFOLLOWUP", "u2"),
         turnId: "t2", assistantMessageId: "a2" }, context.turnBroker())) { void _routed }
-      await idle()
+      await childUpdate(context, child, "completed", observed)
       const updates = context.ports.subagents.filter((row) => row.providerId === child)
       const reopened = updates.findIndex((row) => row.status === "running" && row.toolCallRole === "interaction")
       expect(reopened).toBeGreaterThan(0)
