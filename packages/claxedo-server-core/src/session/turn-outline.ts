@@ -1,41 +1,6 @@
 import { foldTurnOutline, TURN_OUTLINE_LIMIT, TURN_OUTLINE_SNIPPET_LENGTH, type OutlineTextRow, type OutlineUserRow, type TurnOutline } from "@claxedo/agent-runtime-contract"
 
-import { asRecord, numberField, stringField } from "../platform/json/index"
 import type { StoredMessageColumn, StoredMessageQuery } from "./stored-messages"
-
-function flag(record: Record<string, unknown> | undefined, key: string): number | null {
-  const value = record?.[key]
-  return value === true ? 1 : value === false ? 0 : (numberField(record, key) ?? null)
-}
-
-function textRows(messageId: string, parts: readonly unknown[], snippetLength: number): OutlineTextRow[] {
-  return parts.flatMap((part) => {
-    const record = asRecord(part)
-    if (stringField(record, "type") !== "text") return []
-    const text = stringField(record, "text")
-    return [{ message_id: messageId, text: text === undefined ? null : text.slice(0, snippetLength), synthetic: flag(record, "synthetic"), ignored: flag(record, "ignored") }]
-  })
-}
-
-/** The outline of messages already held whole in memory, folded the way the stored read folds its rows. */
-export function turnOutlineOfMessages(messages: readonly unknown[], bounds: TurnOutlineBounds = TURN_OUTLINE_BOUNDS): TurnOutline {
-  const users = messages.flatMap((message) => {
-    const record = asRecord(message)
-    const info = asRecord(record?.info)
-    const id = stringField(info, "id")
-    if (!info || id === undefined || info.role !== "user") return []
-    return [{ id, info, parts: Array.isArray(record?.parts) ? record.parts : [] }]
-  })
-  const window = users.slice(-bounds.limit)
-  return foldTurnOutline(
-    {
-      users: window.map((user) => ({ id: user.id, created_at: numberField(asRecord(user.info.time), "created") ?? null, title: stringField(asRecord(user.info.summary), "title") ?? null })),
-      texts: window.flatMap((user) => textRows(user.id, user.parts, bounds.snippetLength)),
-      complete: users.length <= bounds.limit,
-    },
-    bounds.snippetLength,
-  )
-}
 
 type UserRow = OutlineUserRow & { ordinal: number }
 

@@ -107,25 +107,11 @@ type State = {
 const byId = new Map<string, Workspace>()
 const byDir = new Map<string, string>()
 const projectsById = new Map<string, Project>()
-const listeners = new Set<() => void | Promise<void>>()
 const localFirstTouch = new Map<string, Promise<Workspace | undefined>>()
 
 let ready: Promise<void> | undefined
 let loaded: string | undefined
 let saving = Promise.resolve()
-
-export function subscribeLocalWorkspaceChanges(listener: () => void | Promise<void>) {
-  listeners.add(listener)
-  return () => listeners.delete(listener)
-}
-
-function notifyWorkspaceChanges() {
-  for (const listener of listeners) {
-    Promise.resolve(listener()).catch((error) => {
-      log.warn("Workspace change listener failed", { error: error instanceof Error ? error.message : String(error) })
-    })
-  }
-}
 
 function file() {
   return path.join(dataDir(), "workspaces.json")
@@ -596,7 +582,6 @@ async function ensureWorkspaceUncoalesced(input: EnsureWorkspaceInput) {
   })
   await save()
   log.info("Workspace stored", { workspaceId: id, directory })
-  notifyWorkspaceChanges()
   return ws
 }
 
@@ -674,7 +659,6 @@ export async function updateProjectMetadata(projectId: string, patch: ProjectMet
     updated_at: Date.now(),
   })
   await save()
-  notifyWorkspaceChanges()
   return (await listProjects()).find((project) => project.id === projectId)
 }
 
@@ -686,7 +670,6 @@ export async function deleteWorkspace(id: string) {
   byId.delete(id)
   await save()
   log.info("Workspace deleted", { workspaceId: id, directory: ws.directory })
-  notifyWorkspaceChanges()
   return true
 }
 
@@ -700,7 +683,6 @@ export async function deleteWorkspaceByDirectory(dir: string) {
   byId.delete(key)
   await save()
   log.info("Workspace deleted", { workspaceId: key, directory: ws.directory })
-  notifyWorkspaceChanges()
   return true
 }
 
@@ -849,7 +831,6 @@ export async function upsertProjectRecord(input: { id: string; name: string; env
   }
   projectsById.set(id, next)
   await save()
-  notifyWorkspaceChanges()
   return next
 }
 
@@ -859,7 +840,6 @@ export async function deleteProjectRecord(id: string) {
   const key = trimToUndefined(id)
   if (!key || !projectsById.delete(key)) return false
   await save()
-  notifyWorkspaceChanges()
   return true
 }
 

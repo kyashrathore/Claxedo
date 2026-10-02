@@ -143,14 +143,6 @@ export function buildSessionListResponse(input: {
   }
 }
 
-export function sessionListStoreFilter(query: SessionListQuery) {
-  return {
-    ...(query.scope === "workspace" && query.workspaceId ? { workspaceID: query.workspaceId } : {}),
-    ...(query.scope === "workspace" && query.directory ? { directory: query.directory } : {}),
-    includeArchived: query.archived !== "active",
-  }
-}
-
 export function sessionListKeysetPage(query: SessionListQuery): SessionListKeysetPage {
   const cursor = cursorOfQuery(query)
   return {
