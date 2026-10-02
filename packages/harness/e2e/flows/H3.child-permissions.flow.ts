@@ -97,8 +97,10 @@ async function idleParentChild(stack: Stack, api: ClaxedoApi, stream: EventStrea
     await assert.rejects(() => api.replyPermission(directory, parent.id, row.id, "once"),
       (error: unknown) => error instanceof ApiError && error.status === 404, "claude answered the background child's request on the parent")
     await api.replyPermission(directory, child.id, row.id, "once")
-    await stream.waitFor((frame) => stream.frames.indexOf(frame) >= since && frameType(frame) === "session.idle" && frameSessionId(frame) === child.id,
+    const childIdle = await stream.waitFor((frame) => stream.frames.indexOf(frame) >= since && frameType(frame) === "session.idle" && frameSessionId(frame) === child.id,
       { label: "claude background child idle", timeoutMs: 90_000 })
+    await stream.waitFor((frame) => stream.frames.indexOf(frame) > stream.frames.indexOf(childIdle) && frameType(frame) === "session.idle" && frameSessionId(frame) === parent.id,
+      { label: "claude parent idle after reporting its background child", timeoutMs: 90_000 })
     assert.equal(await fs.readFile(output, "utf8"), "approved")
     assert.ok(childTranscriptNames(await api.messages(directory, child.id), childMarker), "claude background child transcript lost its task")
     console.log("H3 claude background child: a request asked while its parent was idle was filed and answered on the child")
