@@ -4,10 +4,9 @@ import { closeSync, existsSync, renameSync, writeFileSync } from "node:fs"
 import { rm } from "node:fs/promises"
 import { join } from "node:path"
 import type { Event, OnHeadersReceivedListenerDetails } from "electron"
-import { app, BrowserWindow, dialog, ipcMain, powerMonitor, safeStorage, session, utilityProcess } from "electron"
+import { app, BrowserWindow, ipcMain, powerMonitor, safeStorage, session, utilityProcess } from "electron"
 import { daemonResponseListener, grantMainRendererDaemonAccess, HTTP_REQUEST_URLS, type DaemonResponseHeaders } from "./renderer-daemon-access"
 import { createDaemonFetch, type DaemonEndpoint } from "./daemon-request"
-import pkg from "electron-updater"
 import treeKill from "tree-kill"
 import { installDesktopTelemetry } from "./telemetry"
 import { reportInstall } from "./install-telemetry"
@@ -40,8 +39,6 @@ void reportInstall(telemetryClient, {
   channel: CHANNEL,
 })
 
-const { autoUpdater } = pkg
-
 import type { InitStep, ServerReadyData, WslConfig } from "../preload/types"
 import { ensureAgentPath } from "./agent-path"
 import { checkAppExists, resolveAppPath, wslPath } from "./apps"
@@ -49,7 +46,8 @@ import { resolveSystemClaude } from "./claude-executable"
 import { loadServerEnvForDevelopment, resolveDesktopServerDataDir } from "./server-env"
 import type { BrowserRegistry } from "./browser/registry"
 import { setupBrowserTab } from "./browser/setup"
-import { CHANNEL, IS_PACKAGED, UPDATE_CHANNEL, UPDATER_ENABLED } from "./constants"
+import { CHANNEL, IS_PACKAGED, UPDATER_ENABLED } from "./constants"
+import { createAutoUpdate } from "./auto-update"
 import { desktopProduct } from "../shared/desktop-product"
 import { resolveDevIdentity } from "./dev-identity"
 import { findFreePort, resolveBaseServerPort } from "./server-port"
@@ -157,6 +155,7 @@ const daemonEndpoint = defer<DaemonEndpoint>()
 const serverOrigin = defer<string>()
 const daemon = createDaemonFetch({ endpoint: () => daemonEndpoint.promise })
 const logger = initLogging()
+const autoUpdate = createAutoUpdate({ logger, beforeInstall: () => daemonExitLifecycle.handoff() })
 const mermaidRendererPath = resolveMermaidRendererPath({
   packaged: IS_PACKAGED,
   resourcesPath: process.resourcesPath,
@@ -220,7 +219,7 @@ function setupApp() {
     powerMonitor.on("resume", () => logger.log("system resumed"))
     app.setAsDefaultProtocolClient("claxedo")
     setDockIcon()
-    setupAutoUpdater()
+    autoUpdate.setup()
     // Account restoration is an optional hosted capability. In particular, a
     // persisted revocation intent may need a slow or unavailable network before
     // it can settle. That work must never sit in front of the local daemon or
@@ -607,7 +606,7 @@ function wireMenu() {
   createMenu({
     trigger: (id) => mainWindow && sendMenuCommand(mainWindow, id),
     checkForUpdates: () => {
-      void checkForUpdates(true)
+      void autoUpdate.run(true)
     },
     reload: () => mainWindow?.reload(),
     restart: () =>
@@ -900,9 +899,9 @@ registerIpcHandlers({
   wslPath: async (path, mode) => wslPath(path, mode),
   resolveAppPath: async (appName) => resolveAppPath(appName),
   loadingWindowComplete: () => loadingComplete.resolve(),
-  runUpdater: async (alertOnFail) => checkForUpdates(alertOnFail),
-  checkUpdate: async () => checkUpdate(),
-  installUpdate: async () => installUpdate(),
+  runUpdater: autoUpdate.run,
+  checkUpdate: autoUpdate.check,
+  installUpdate: autoUpdate.install,
   getStartAtLogin: () => startAtLogin.get(),
   setStartAtLogin: (enabled) => startAtLogin.set(enabled),
   renderMermaid: createNativeMermaidRenderer(mermaidRendererPath),
@@ -965,111 +964,6 @@ function cleanupLegacyDevCaches() {
     writeFileSync(marker, "")
   } catch (error) {
     logger.warn("failed to record legacy development cache cleanup", { marker, error: String(error) })
-  }
-}
-
-function setupAutoUpdater() {
-  if (!UPDATER_ENABLED) return
-  autoUpdater.logger = logger
-  autoUpdater.channel = UPDATE_CHANNEL
-  autoUpdater.allowPrerelease = false
-  // Downgrades re-install older builds whose fixes shipped later; the updater
-  // must only ever move forward.
-  autoUpdater.allowDowngrade = false
-  autoUpdater.autoDownload = false
-  autoUpdater.autoInstallOnAppQuit = true
-  logger.log("auto updater configured", {
-    channel: autoUpdater.channel,
-    allowPrerelease: autoUpdater.allowPrerelease,
-    allowDowngrade: autoUpdater.allowDowngrade,
-    currentVersion: app.getVersion(),
-  })
-}
-
-let updateReady = false
-
-async function checkUpdate() {
-  if (!UPDATER_ENABLED) return { updateAvailable: false }
-  updateReady = false
-  logger.log("checking for updates", {
-    currentVersion: app.getVersion(),
-    channel: autoUpdater.channel,
-    allowPrerelease: autoUpdater.allowPrerelease,
-    allowDowngrade: autoUpdater.allowDowngrade,
-  })
-  try {
-    const result = await autoUpdater.checkForUpdates()
-    const updateInfo = result?.updateInfo
-    logger.log("update metadata fetched", {
-      releaseVersion: updateInfo?.version ?? null,
-      releaseDate: updateInfo?.releaseDate ?? null,
-      releaseName: updateInfo?.releaseName ?? null,
-      files: updateInfo?.files?.map((file) => file.url) ?? [],
-    })
-    const version = result?.updateInfo?.version
-    if (result?.isUpdateAvailable === false || !version) {
-      logger.log("no update available", {
-        reason: "provider returned no newer version",
-      })
-      return { updateAvailable: false }
-    }
-    logger.log("update available", { version })
-    await autoUpdater.downloadUpdate()
-    logger.log("update download completed", { version })
-    updateReady = true
-    return { updateAvailable: true, version }
-  } catch (error) {
-    logger.error("update check failed", error)
-    return { updateAvailable: false, failed: true }
-  }
-}
-
-async function installUpdate() {
-  if (!updateReady) return
-  daemonExitLifecycle.handoff()
-  autoUpdater.quitAndInstall()
-}
-
-async function checkForUpdates(alertOnFail: boolean) {
-  if (!UPDATER_ENABLED) return
-  logger.log("checkForUpdates invoked", { alertOnFail })
-  const result = await checkUpdate()
-  if (!result.updateAvailable) {
-    if (result.failed) {
-      logger.log("no update decision", { reason: "update check failed" })
-      if (!alertOnFail) return
-      await dialog.showMessageBox({
-        type: "error",
-        message: "Update check failed.",
-        title: "Update Error",
-      })
-      return
-    }
-
-    logger.log("no update decision", { reason: "already up to date" })
-    if (!alertOnFail) return
-    await dialog.showMessageBox({
-      type: "info",
-      message: "You're up to date.",
-      title: "No Updates",
-    })
-    return
-  }
-
-  const response = await dialog.showMessageBox({
-    type: "info",
-    message: `Update ${result.version ?? ""} downloaded. Restart now?`,
-    title: "Update Ready",
-    buttons: ["Restart", "Later"],
-    defaultId: 0,
-    cancelId: 1,
-  })
-  logger.log("update prompt response", {
-    version: result.version ?? null,
-    restartNow: response.response === 0,
-  })
-  if (response.response === 0) {
-    await installUpdate()
   }
 }
 

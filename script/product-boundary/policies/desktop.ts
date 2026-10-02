@@ -208,7 +208,11 @@ export const desktopMainComposition: Policy = {
   // -1 module: the hosted operation table is `@claxedo/account-contract`'s
   // own, so `account/hosted-operations.ts` is gone; the plugin id subpath now
   // arrives through that package. 86/24, no headroom.
-  ceilings: { modules: 86, packages: 24 },
+  // +1 module: `main/auto-update.ts`, the packaged app's update check, prompt
+  // and install, split out of `index.ts` along its own responsibility.
+  // Reviewed owner: Electron main, the only process that drives
+  // `electron-updater`, already a package edge. 87/24, no headroom.
+  ceilings: { modules: 87, packages: 24 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-main.json",
     minModules: 35,
