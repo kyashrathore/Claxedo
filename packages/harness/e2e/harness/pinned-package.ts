@@ -36,8 +36,9 @@ export async function ensurePinned(pinned: PinnedPackage): Promise<{ installed: 
   const root = prefix(pinned)
   await fs.mkdir(root, { recursive: true })
   const node = process.env.CLAXEDO_E2E_NODE ?? "node"
-  const command = process.platform === "win32" ? node : "npm"
-  const args = process.platform === "win32" ? [path.join(path.dirname(node), "node_modules/npm/bin/npm-cli.js")] : []
+  const executable = process.platform === "win32" ? (await execFileAsync(node, ["-p", "process.execPath"])).stdout.trim() : node
+  const command = process.platform === "win32" ? executable : "npm"
+  const args = process.platform === "win32" ? [path.join(path.dirname(executable), "node_modules/npm/bin/npm-cli.js")] : []
   await execFileAsync(command, [...args, "install", "--prefix", root, "--no-save", "--no-package-lock", "--no-audit", "--no-fund", `${pinned.npmPackage}@${pinned.version}`], {
     env: { ...process.env, NPM_CONFIG_CACHE: path.join(ARTIFACTS, pinned.label, "npm-cache") },
     maxBuffer: 16 * 1024 * 1024,

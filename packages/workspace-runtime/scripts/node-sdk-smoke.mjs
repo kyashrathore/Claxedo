@@ -4,6 +4,7 @@ import os from "node:os"
 import path from "node:path"
 import { createRequire } from "node:module"
 import { spawnSync } from "node:child_process"
+import { pathToFileURL } from "node:url"
 
 assert.equal(typeof globalThis.Bun, "undefined", "Run this probe with Node or Electron, not Bun")
 const harnessRequire = createRequire(import.meta.resolve("@claxedo/harness/opencode-sdk"))
@@ -34,14 +35,14 @@ process.chdir(directory)
 let sdk
 try {
   if (process.platform === "darwin" || process.platform === "linux") {
-    const lock = (await import(lockPath))[process.platform === "darwin" ? "lockDarwin" : "lockLinux"]
+    const lock = (await import(pathToFileURL(lockPath).href))[process.platform === "darwin" ? "lockDarwin" : "lockLinux"]
     const file = path.join(root, "probe.lock")
     const fd = fs.openSync(file, "a+")
     try {
       assert.deepEqual(lock(fd), { acquired: true })
       const child = spawnSync(process.execPath, ["--input-type=module", "-e", `
         import fs from "node:fs";
-        const binding = await import(${JSON.stringify(lockPath)});
+        const binding = await import(${JSON.stringify(pathToFileURL(lockPath).href)});
         const fd = fs.openSync(${JSON.stringify(file)}, "a+");
         console.log(JSON.stringify(binding.${process.platform === "darwin" ? "lockDarwin" : "lockLinux"}(fd)));
         fs.closeSync(fd);
@@ -56,7 +57,7 @@ try {
     assert.equal(invalid.held, false)
     assert.equal(typeof invalid.code, "number")
   }
-  const { OpenCode } = await import(sdkPath)
+  const { OpenCode } = await import(pathToFileURL(sdkPath).href)
   const database = { path: path.join(root, "opencode.db") }
   sdk = await OpenCode.create({ database, config: { content: "{}" } })
   assert.equal((await sdk.health.get()).healthy, true)
