@@ -603,7 +603,7 @@ describe("D1 access changes that must not undo or outlive a decision", () => {
   })
 
   test("a removal that finds the member already gone writes no allow row", async () => {
-    const { authority, database, alice, bob, audit } = await setup()
+    const { database, alice, bob, audit } = await setup()
     await inviteOrgMember(database, alice, { orgId: "org_acme", userPublicId: id(bob), role: "member" })
     const context = new D1WorkspaceAuthority(
       racing(database, (target) => target.prepare("update org_memberships set revoked_at = 1 where user_id = ?").bind(id(bob)).run()),

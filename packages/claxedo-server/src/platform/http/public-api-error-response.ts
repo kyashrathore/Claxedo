@@ -6,6 +6,8 @@ import { contentfulStatus } from "./status"
 
 export type PublicApiErrorFamily = "access" | "session_share"
 
+const PUBLIC_API_ERROR_BY_CODE = new Map<string, { family?: string; status: number; message: string }>(Object.entries(PUBLIC_API_ERRORS))
+
 /**
  * The canonical envelope for a typed refusal of one route family, with the
  * table's public message in place of the producer's. A code from another family,
@@ -15,8 +17,8 @@ export function publicApiFamilyResponse(c: Context, error: unknown, family: Publ
   if (error instanceof ControlPlaneAuthError) return c.json(controlPlaneAuthErrorBody(error), error.status)
   const row = asRecord(error)
   const code = row?.code
-  if (typeof code !== "string" || !Object.hasOwn(PUBLIC_API_ERRORS, code)) throw error
-  const mapped: { family?: string; status: number; message: string } = PUBLIC_API_ERRORS[code as keyof typeof PUBLIC_API_ERRORS]
-  if (mapped.family !== family) throw error
+  if (typeof code !== "string") throw error
+  const mapped = PUBLIC_API_ERROR_BY_CODE.get(code)
+  if (mapped?.family !== family) throw error
   return c.json(encodeApiError({ ...row, code, message: mapped.message }), contentfulStatus(mapped.status))
 }

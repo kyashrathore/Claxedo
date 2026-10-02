@@ -1,4 +1,4 @@
-import type { AgentContentPart } from "@claxedo/agent-runtime-contract"
+import { parseAgentContentPart, type AgentContentPart } from "@claxedo/agent-runtime-contract"
 import type { StoredMessageColumn, StoredMessageQuery } from "./stored-messages"
 
 /** The one message row is found by its primary key and `json_each` picks the part inside it, so no other part or message crosses into JavaScript. */
@@ -17,6 +17,9 @@ export async function readStoredPart(
   column: StoredMessageColumn,
   at: { sessionId: string; workspaceId: string; messageId: string; partId: string },
 ): Promise<AgentContentPart | undefined> {
-  const [row] = (await query(storedPartSql(column), [at.sessionId, at.workspaceId, at.messageId, at.partId])) as Array<{ part: string }>
-  return row ? (JSON.parse(row.part) as AgentContentPart) : undefined
+  const [row] = await query<{ part: string }>(storedPartSql(column), [at.sessionId, at.workspaceId, at.messageId, at.partId])
+  if (!row) return undefined
+  const part = parseAgentContentPart(JSON.parse(row.part))
+  if (!part) throw new Error(`stored part ${at.partId} of message ${at.messageId} is not a content part`)
+  return part
 }

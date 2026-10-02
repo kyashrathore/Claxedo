@@ -17,13 +17,7 @@ export type LivePluginEvent =
   | { type: "buildFailed"; error: string }
 
 export function servedBundle(state: LivePluginState): LivePluginBundle | undefined {
-  switch (state.kind) {
-    case "ready":
-      return state.bundle
-    case "building":
-    case "failed":
-      return state.last
-  }
+  return state.kind === "ready" ? state.bundle : state.last
 }
 
 export function initialLivePluginState(last: LivePluginBundle | undefined): LivePluginState {
@@ -37,7 +31,6 @@ export function transitionLivePlugin(state: LivePluginState, event: LivePluginEv
       return { kind: "building", ...(last ? { last } : {}) }
     case "buildSucceeded":
       return { kind: "ready", bundle: event.bundle }
-    case "buildFailed":
-      return { kind: "failed", error: event.error, ...(last ? { last } : {}) }
   }
+  return { kind: "failed", error: event.error, ...(last ? { last } : {}) }
 }

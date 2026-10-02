@@ -106,9 +106,10 @@ function isTextContent(item: unknown): boolean {
 }
 
 export function withoutOutputText(metadata: Record<string, unknown>): Record<string, unknown> {
-  const acp = metadata.acp
-  if (!acp || typeof acp !== "object" || !Array.isArray((acp as { content?: unknown }).content)) return metadata
-  const { content, ...rest } = acp as { content: unknown[] } & Record<string, unknown>
+  const acp = asRecord(metadata.acp)
+  if (!acp) return metadata
+  const { content, ...rest } = acp
+  if (!Array.isArray(content)) return metadata
   const kept = content.filter((item) => !isTextContent(item))
   return { ...metadata, acp: kept.length ? { ...rest, content: kept } : rest }
 }

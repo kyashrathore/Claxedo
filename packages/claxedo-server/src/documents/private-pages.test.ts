@@ -199,7 +199,7 @@ test("a listing reads membership, project access and shares once, however many p
   expect(listed.map((row) => row.id).sort()).toEqual(
     pages
       .slice(0, 10)
-      .map((page) => page.id)
+      .map((page): string => page.id)
       .sort(),
   )
   expect(calls).toEqual({ member: 1, project: 1, granted: 1 })

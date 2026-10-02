@@ -43,10 +43,14 @@ const PLUGIN_COMPATIBILITY_DATE = "2025-05-01"
 const PLUGIN_MODULE = "backend.js"
 const OBJECT_NAME_MAX_LENGTH = 256
 
-/** `ctx.exports` is typed from a main module this package does not declare to workers-types. */
-type LoaderExports = {
-  PluginPlatform(options: { props: PluginRunScope }): Fetcher
-  PluginOutbound(options: { props: PluginRunScope & { hosts: readonly string[] } }): Fetcher
+// Every Worker main module that hosts the supervisor also exports its
+// entrypoints, which is what types `ctx.exports`.
+declare module "@cloudflare/workers-types" {
+  namespace Cloudflare {
+    interface GlobalProps {
+      mainModule: typeof import("./entrypoints.cf")
+    }
+  }
 }
 
 /**
@@ -140,7 +144,7 @@ export class PluginSupervisor extends DurableObject<PluginBackendEnv> {
   async #load(activation: PluginBackendActivation): Promise<WorkerStub | undefined> {
     const code = await readPluginBackendBundle(this.env.CLAXEDO_AGENT_PLUGINS, activation.bundleHash)
     if (code === undefined) return undefined
-    const exports = this.ctx.exports as unknown as LoaderExports
+    const exports = this.ctx.exports
     const scope: PluginRunScope = { orgId: activation.orgId, pluginId: activation.pluginId, epoch: activation.epoch }
     // The epoch is part of the id because it is part of the loaded Worker's
     // environment: an identical reactivation must not inherit bindings

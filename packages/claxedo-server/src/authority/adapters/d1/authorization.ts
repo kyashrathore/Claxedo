@@ -67,7 +67,7 @@ export async function may<K extends ResourceKind>(
   action: ActionOn<K>,
   resource: Resource<K>,
 ): Promise<boolean> {
-  const query = mayQuery(principal, action, resource as Resource)
+  const query = mayQuery(principal, action, resource)
   return !!(await database.prepare(query.sql).bind(...query.bind).first())
 }
 
@@ -81,14 +81,8 @@ export function maySql<K extends ResourceKind>(
   row: ResourceRow<K>,
 ): BoundSql {
   const withActor = principal.actorId !== undefined
-  const resource = row as ResourceRow
-  const rule = resource.kind === "workspace"
-    ? workspaceRuleSql(action as WorkspaceAction, resource.alias)
-    : resource.kind === "session"
-      ? sessionRuleSql(action as SessionAction, resource.alias, withActor)
-      : resource.kind === "project"
-        ? projectRuleSql(action as ProjectAction, resource.alias)
-        : orgRuleSql(action as OrgAction, resource.orgId)
+  const kind: K = row.kind
+  const rule = RULE_SQL[kind](action, row, withActor)
   return bindPrincipal(`(${activePrincipalSql(withActor)} and ${rule})`, principal)
 }
 
@@ -98,7 +92,7 @@ export function mayGuard<K extends ResourceKind>(
   action: ActionOn<K>,
   resource: Resource<K>,
 ): BoundSql {
-  const query = mayQuery(principal, action, resource as Resource)
+  const query = mayQuery(principal, action, resource)
   return { sql: `exists (${query.sql})`, bind: query.bind }
 }
 
@@ -167,32 +161,41 @@ export async function readProjectRole(
   return row && row.role_rank >= 1 ? { orgId: row.org_id, role: rankRole(row.role_rank) } : undefined
 }
 
-function mayQuery(principal: AuthorizationPrincipal, action: string, resource: Resource): BoundSql {
-  const where = (row: ResourceRow) => maySql(principal, action as never, row as never)
-  switch (resource.kind) {
-    case "workspace": {
-      const rule = where({ kind: "workspace", alias: "w" })
-      return { sql: `select 1 from workspaces w where w.workspace_id = ? and ${rule.sql}`, bind: [resource.workspaceId, ...rule.bind] }
+function mayQuery<K extends ResourceKind>(principal: AuthorizationPrincipal, action: ActionOn<K>, resource: Resource<K>): BoundSql {
+  const kind: K = resource.kind
+  return RESOURCE_QUERY[kind](resource, (row) => maySql(principal, action, row))
+}
+
+const RULE_SQL: { [K in ResourceKind]: (action: ActionOn<K>, row: ResourceRow<K>, withActor: boolean) => string } = {
+  workspace: (action, row) => workspaceRuleSql(action, row.alias),
+  session: (action, row, withActor) => sessionRuleSql(action, row.alias, withActor),
+  project: (action, row) => projectRuleSql(action, row.alias),
+  org: (action, row) => orgRuleSql(action, row.orgId),
+}
+
+const RESOURCE_QUERY: { [K in ResourceKind]: (resource: Resource<K>, where: (row: ResourceRow<K>) => BoundSql) => BoundSql } = {
+  workspace: (resource, where) => {
+    const rule = where({ kind: "workspace", alias: "w" })
+    return { sql: `select 1 from workspaces w where w.workspace_id = ? and ${rule.sql}`, bind: [resource.workspaceId, ...rule.bind] }
+  },
+  session: (resource, where) => {
+    const rule = where({ kind: "session", alias: "s" })
+    return {
+      sql: `select 1 from sessions s where s.session_id = ? and s.workspace_id = ? and ${rule.sql}`,
+      bind: [resource.sessionId, resource.workspaceId, ...rule.bind],
     }
-    case "session": {
-      const rule = where({ kind: "session", alias: "s" })
-      return {
-        sql: `select 1 from sessions s where s.session_id = ? and s.workspace_id = ? and ${rule.sql}`,
-        bind: [resource.sessionId, resource.workspaceId, ...rule.bind],
-      }
+  },
+  project: (resource, where) => {
+    const rule = where({ kind: "project", alias: "p" })
+    return {
+      sql: `select 1 from projects p where p.project_id = ? and p.org_id = coalesce(?, p.org_id) and ${rule.sql}`,
+      bind: [resource.projectId, resource.orgId ?? null, ...rule.bind],
     }
-    case "project": {
-      const rule = where({ kind: "project", alias: "p" })
-      return {
-        sql: `select 1 from projects p where p.project_id = ? and p.org_id = coalesce(?, p.org_id) and ${rule.sql}`,
-        bind: [resource.projectId, resource.orgId ?? null, ...rule.bind],
-      }
-    }
-    case "org": {
-      const rule = where({ kind: "org", orgId: "o.org_id" })
-      return { sql: `select 1 from orgs o where o.org_id = ? and ${rule.sql}`, bind: [resource.orgId, ...rule.bind] }
-    }
-  }
+  },
+  org: (resource, where) => {
+    const rule = where({ kind: "org", orgId: "o.org_id" })
+    return { sql: `select 1 from orgs o where o.org_id = ? and ${rule.sql}`, bind: [resource.orgId, ...rule.bind] }
+  },
 }
 
 const USER = "\u0000user\u0000"

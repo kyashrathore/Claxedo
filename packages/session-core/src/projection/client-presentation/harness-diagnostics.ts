@@ -57,16 +57,15 @@ export function projectHarnessDiagnostic(ctx: CompatContext, chunk: HarnessDiagn
         },
         raw: chunk.raw,
       }))
-    case "diagnostic":
-      return withDir(ctx.directory, runtimeDiagnostic({
-        sessionID: ctx.sessionId,
-        harness: chunk.harness,
-        threadId: chunk.threadId,
-        code: chunk.diagnostic.code,
-        message: chunk.diagnostic.message,
-        severity: chunk.diagnostic.severity,
-        diagnostic: chunk.diagnostic,
-        raw: chunk.raw,
-      }))
   }
+  return withDir(ctx.directory, runtimeDiagnostic({
+    sessionID: ctx.sessionId,
+    harness: chunk.harness,
+    threadId: chunk.threadId,
+    code: chunk.diagnostic.code,
+    message: chunk.diagnostic.message,
+    severity: chunk.diagnostic.severity,
+    diagnostic: chunk.diagnostic,
+    raw: chunk.raw,
+  }))
 }

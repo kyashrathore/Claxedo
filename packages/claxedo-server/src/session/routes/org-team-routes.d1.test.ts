@@ -304,7 +304,7 @@ describe("hosted organization, team and project access routes on D1", () => {
   })
 
   test("a caller who does not administer the org learns nothing about whether an email has an account", async () => {
-    const { person, account, call, join, sent } = await hosted()
+    const { person, account, call, join } = await hosted()
     const alice = await person("alice")
     const bob = await person("bob")
     await account("carol", "carol@example.com", true)

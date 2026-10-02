@@ -247,9 +247,9 @@ export async function startTerminal(
   // ConPTY exposes pid 0 until its output pipe connects; node-pty allows 5 s.
   // Subscribe before waiting so a shell that exits during admission stays exited.
   const deadline = Date.now() + 6_000
-  const knownPid = () => Number.isInteger(ptyProcess.pid) && ptyProcess.pid > 0
+  const awaitingPid = () => !(Number.isInteger(ptyProcess.pid) && ptyProcess.pid > 0) && !nativeExit && Date.now() < deadline
   if (platform === "win32") {
-    while (!knownPid() && !nativeExit && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 10))
+    while (awaitingPid()) await new Promise((resolve) => setTimeout(resolve, 10))
   }
   const pid = ptyProcess.pid
   const observed = Number.isInteger(pid) && pid > 0

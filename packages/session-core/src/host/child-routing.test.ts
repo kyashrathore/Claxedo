@@ -24,7 +24,7 @@ function diagnosticCodes(f: HostFixture, sessionId: string) {
 test("a background child bound in one prompted turn keeps receiving its frames in the parent's next turn", async () => {
   const controls = [controlledTurn("parent"), controlledTurn("parent")]
   const second: RoutedEvent[] = []
-  const transport = new FakeTransport({ turn: (input) => {
+  const transport = new FakeTransport({ turn: () => {
     const index = transport.turns.length - 1
     if (index === 0) return controls[0].events
     return (async function* () {
