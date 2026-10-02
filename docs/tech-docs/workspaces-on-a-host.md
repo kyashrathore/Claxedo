@@ -471,7 +471,7 @@ created cloud session (`POST /api/control/workspaces/:id/sessions/:sid/register`
 and asks for a checkpoint at every turn end.
 
 On the runtime, `managedSessionLifecycle` in
-`packages/workspace-runtime/src/routes/session-route-options.ts` decides per
+`packages/session-core/src/routes/session-route-options.ts` decides per
 request. The private lifecycle (a reservation before the create, a registered
 creator, a durable turn lease through `acquireManagedPromptLease`) applies when
 the policy is `managed-private` AND `sessionRequestProvenance(c)` is
@@ -486,10 +486,10 @@ window keeps the local lifecycle.
 ## F. Live streams: the server's streams and one stream per open remote placement
 
 The workspace runtime serves one stream, `GET /api/wr/events`
-(`packages/workspace-runtime/src/routes/events.ts`). Every data frame is
+(`packages/session-core/src/routes/events.ts`). Every data frame is
 `{ directory, payload }`: the projected client-presentation events, the
 `subagent.updated` and `goal.*` runtime-channel events, and the workspace's
-control frames from `workspaceRuntimeBus` (`pty.*`, `process.*`,
+control frames from `sessionCore.bus` (`pty.*`, `process.*`,
 `agent.lifecycle`, `session.lifecycle`).
 
 **F.1 What the client opens** — two owners open streams, and every stream is
@@ -520,7 +520,7 @@ becomes `streamGap`, on which every store re-reads.
 
 **F.2 The runtime decides the arm** — the runtime decides from the REQUEST,
 not from the composition. `authorizeSessionEventScope`
-(`packages/workspace-runtime/src/routes/session-event-privacy.ts`):
+(`packages/session-core/src/routes/session-event-privacy.ts`):
 - a policy that is not `managed-private` reads the whole stream;
 - a request whose provenance is `loopback-direct` reads the whole stream too,
   because that is the machine's own user;
@@ -584,11 +584,11 @@ the intake holds that frame and every later one behind a catalog re-read
 
 **F.4 Projection** — the host projects a turn's raw harness frames through
 `createClientPresentationProjection`
-(`packages/workspace-runtime/src/projection/client-presentation`) before
+(`packages/session-core/src/projection/client-presentation`) before
 they reach the wire; the client projects nothing. The reply id is minted
 from the prompt by `assistantMessageIdForTurn`
 (`packages/agent-runtime-contract/src/turn-message-ids.ts`,
-`${userMessageId}_r`), and `packages/workspace-runtime/src/session/service.ts`
+`${userMessageId}_r`), and `packages/session-core/src/session/service.ts`
 announces the assistant row under it for a turn nobody on the client
 started.
 

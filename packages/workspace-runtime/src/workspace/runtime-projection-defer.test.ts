@@ -6,7 +6,7 @@ import type { ResolvedCredentials, TransportConfigUpdate } from "@claxedo/harnes
 import { Hono } from "hono"
 import { withWorkspaceTarget } from "../target"
 import { loopbackWorkspaceRuntimeExposure } from "../exposure"
-import { FakeTransport, fakeConnectionProvider } from "../test-support/fake-transport"
+import { FakeTransport, fakeConnectionProvider } from "@claxedo/session-core/testing"
 import { loopbackMachineLoginPolicy } from "../testing"
 import { createWorkspaceHost } from "./runtime"
 import type { RuntimeSnapshot } from "../routes/config"
@@ -85,6 +85,7 @@ async function fixture() {
     },
   })
   const host = createWorkspaceHost({
+    sessionIdWorkspace: () => undefined,
     placement: loopbackMachineLoginPolicy(),
     target,
     storeRoot: join(directory, "state"),

@@ -12,7 +12,7 @@ import {
   sessionRequestProvenance,
   type ManagedSessionAuthority,
   type SessionAccessPolicyInput,
-} from "./session-access-policy"
+} from "@claxedo/session-core"
 import { createRelayHostAuthMiddleware } from "./workspace-host-service-auth"
 
 function allowAll(): ManagedSessionAuthority {

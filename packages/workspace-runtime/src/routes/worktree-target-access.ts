@@ -30,7 +30,7 @@ import {
   registeredWorkspaceDirectoryOwners,
   workspacePathCandidate,
 } from "../target"
-import { sessionAccessContext, type SessionAccessPolicy } from "../session-access-policy"
+import { sessionAccessContext, type SessionAccessPolicy } from "@claxedo/session-core"
 import { authorizeHostCapability } from "./host-capability-access"
 import type { RelayHostAuthContext } from "../workspace-host-service-auth"
 

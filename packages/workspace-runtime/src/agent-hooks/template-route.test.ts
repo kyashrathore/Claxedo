@@ -3,6 +3,7 @@ import type { StatusHookTemplate } from "@claxedo/plugin-api"
 import { AgentHookRoutes } from "../routes/agent-hook"
 import { Pty } from "../pty/index"
 import { defaultStatusHooks } from "../status-hooks"
+import { createBus, type WorkspaceRuntimeEvent } from "@claxedo/session-core"
 
 async function lifecycle(statusHooks: StatusHookTemplate[], provider: string, events: Record<string, unknown>[]) {
   const terminalId = `route-${provider}`
@@ -10,7 +11,7 @@ async function lifecycle(statusHooks: StatusHookTemplate[], provider: string, ev
     id === terminalId ? { id, title: id, command: "/bin/sh", args: [], cwd: "/tmp", status: "running", pid: 1 } : undefined,
   )
   try {
-    const app = AgentHookRoutes({ statusHooks })
+    const app = AgentHookRoutes({ bus: createBus<WorkspaceRuntimeEvent>(), statusHooks })
     const sessions = []
     for (const event of events) {
       const posted = await app.request("http://localhost/agent-lifecycle", {

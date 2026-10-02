@@ -1,3 +1,4 @@
+import { deriveChildSessionId } from "../../../workspace-runtime/src/host/child-identity"
 import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"
@@ -7,11 +8,9 @@ import { openAuthorityDb } from "@claxedo/server-core/authority/adapters/sqlite/
 import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import type { PrivateSessionRuntimePrincipal } from "@claxedo/server-core/platform/auth/private-session-authority"
 import { randomUUID } from "node:crypto"
-import type { RuntimeStore } from "../../../workspace-runtime/src/store"
+import type { RuntimeStore, SessionRoutes } from "@claxedo/session-core"
 import { openRuntimeStore } from "../../../workspace-runtime/src/store-file"
-import type { SessionRoutes } from "../../../workspace-runtime/src/routes/session"
-import { composeHost } from "../../../workspace-runtime/src/test-support/host-composition"
-import { FakeTransport } from "../../../workspace-runtime/src/test-support/fake-transport"
+import { FakeTransport, composeHost } from "@claxedo/session-core/testing"
 import { removeTestDataDir } from "./test-data-dir"
 
 export const DIRECTORY = process.cwd()
@@ -238,7 +237,7 @@ export function storeBackedHostOptions(store: RuntimeStore): Pick<HostOptions, "
         store.markPublished(parentSessionId, admitted.observationId)
         return admitted.event
       },
-      secret: () => store.runtimeSecret("child-session"),
+      deriveSessionId: (input) => deriveChildSessionId(store.runtimeSecret("child-session"), input),
       pendingWakes: () => store.listPendingSubagentWakes(),
       origins: {
         record: (parent, key, origin) => store.recordSubagentOrigin(parent, key, origin),

@@ -22,6 +22,7 @@ const hostname = workspaceRuntimeListenHostname()
 const relayOptions = await workspaceRelayRuntimeOptionsFromEnv(process.env, port)
 
 const server = startServer(port, {
+  sessionIdWorkspace: () => undefined,
   target: { workspaceId: workspaceId(), directory: workspaceDir() },
   placement: workspaceRuntimePlacementFromEnv(process.env, { relay: Boolean(relayOptions.relayHostAuth) }),
   ...relayOptions,

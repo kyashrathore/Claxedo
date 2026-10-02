@@ -12,6 +12,7 @@ import { generateTemplateWrapper } from "../../../workspace-runtime/src/agent-ho
 import { materializeAgentHooks } from "../../../workspace-runtime/src/agent-hooks/materialize-status-hooks"
 import { AgentHookRoutes } from "../../../workspace-runtime/src/routes/agent-hook"
 import { Pty } from "../../../workspace-runtime/src/pty/index"
+import { createBus, type WorkspaceRuntimeEvent } from "../../../session-core/src/bus"
 import { startScriptedCursorBackend } from "./cursor/backend"
 import { PINNED_CODEX } from "./pinned-codex"
 import { releasePort, reservePort } from "./ports"
@@ -23,7 +24,7 @@ const terminals = new Set<string>()
 const pty = spyOn(Pty, "get").mockImplementation((id) => id && terminals.has(id)
   ? { id, title: id, command: "/bin/sh", args: [], cwd: "/tmp", status: "running" as const, pid: 4_194_305 }
   : undefined)
-const routes = AgentHookRoutes()
+const routes = AgentHookRoutes({ bus: createBus<WorkspaceRuntimeEvent>() })
 const observations: Observation[] = []
 let root: string
 let lifecycle: http.Server

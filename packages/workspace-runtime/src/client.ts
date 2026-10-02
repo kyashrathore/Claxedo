@@ -59,5 +59,3 @@ export type {
  * must stay free of node builtins; that is why the envelope it pulls in comes
  * from `routes/error-body` rather than `routes/http`.
  */
-export { SESSION_CORE_ROUTE_ACCESS, sessionAccessRequiresWrite } from "./session-access-policy"
-export type { SessionAccessOperation } from "./session-access-policy"

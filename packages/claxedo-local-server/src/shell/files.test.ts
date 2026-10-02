@@ -3,7 +3,9 @@ import os from "os"
 import path from "path"
 import { afterEach, describe, expect, test, vi } from "vitest"
 import { globSearch, grepSearch } from "./files"
+import { testSessionCore } from "@claxedo/session-core/testing"
 import { mountWorkspaceFiles } from "@claxedo/workspace-runtime/host"
+import { withSessionCore } from "@claxedo/workspace-runtime/testing"
 import { Hono } from "hono"
 
 const scratch: string[] = []
@@ -26,7 +28,8 @@ describe("globSearch", () => {
       expect(await globSearch(root, "widget", "file", 50)).toEqual(["src/panel/widget.ts"])
       const reads = spy.mock.calls.length
       expect(reads).toBeGreaterThan(0)
-      const app = new Hono()
+      const core = testSessionCore(root)
+      const app = new Hono().use("*", (_c, next) => withSessionCore(core, next))
       mountWorkspaceFiles(app)
       expect(await (await app.request("/api/wr/find/file?dirs=false&query=spwidget")).json()).toEqual(["src/panel/widget.ts"])
       expect(spy.mock.calls.length).toBe(reads)

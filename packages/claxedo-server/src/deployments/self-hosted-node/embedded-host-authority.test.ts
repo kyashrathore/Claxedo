@@ -1,3 +1,4 @@
+import { testSessionCore } from "@claxedo/session-core/testing"
 import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"
@@ -8,10 +9,13 @@ import { createSqliteWorkspaceAuthority } from "@claxedo/server-core/authority/a
 import { openAuthorityDb } from "@claxedo/server-core/authority/adapters/sqlite/workspace-authority-store"
 import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import { createWorkspaceRuntimeApp, relayWorkspaceRuntimeExposure } from "@claxedo/workspace-runtime"
-import { createRuntimeEventHub } from "@claxedo/workspace-runtime/host"
-import { createBus, type WorkspaceRuntimeEvent } from "../../../../workspace-runtime/src/bus"
-import { sessionEventDeliveryPolicy } from "../../../../workspace-runtime/src/event-delivery"
-import { workspaceEventsHandler } from "../../../../workspace-runtime/src/routes/events"
+import {
+  createRuntimeEventHub,
+  createBus,
+  type WorkspaceRuntimeEvent,
+  sessionEventDeliveryPolicy,
+  workspaceEventsHandler,
+} from "@claxedo/session-core"
 import { sessionStreamLeaseVerifier } from "../../routes/runtime-session-authority"
 import { embeddedManagedPrivateSessionPolicy } from "./app"
 import { loopbackMachineLoginPolicy } from "@claxedo/workspace-runtime/testing"
@@ -94,7 +98,7 @@ test("an already-open SSE stream stops sessionless frames once its reader no lon
   f.owns(true)
   const bus = createBus<WorkspaceRuntimeEvent>()
   const events = workspaceEventsHandler({
-    directory: f.directory, workspaceId: "ws_current", eventHub: createRuntimeEventHub(), bus,
+    placement: testSessionCore(f.directory, "ws_current").placement, directory: f.directory, workspaceId: "ws_current", eventHub: createRuntimeEventHub(), bus,
     sessionAccessPolicy: f.policy, policy: sessionEventDeliveryPolicy(f.policy),
     renewalIntervalMs: 60_000,
   })
@@ -138,6 +142,7 @@ test("checkpoint HTTP mutations reject a stale owner token once its holder no lo
   const f = await fixture()
   const key = await generateKeyPair("EdDSA")
   const runtime = createWorkspaceRuntimeApp({
+    sessionIdWorkspace: () => undefined,
     exposure: relayWorkspaceRuntimeExposure({ workspaceId: "ws_current", hostId: "host_local", key: key.publicKey }),
     placement: loopbackMachineLoginPolicy(),
     sessionAccessPolicy: f.policy,

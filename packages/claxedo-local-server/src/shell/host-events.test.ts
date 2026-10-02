@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest"
 import { Hono } from "hono"
-import type { WorkspaceEventStreamFrame } from "@claxedo/workspace-runtime"
+import type { WorkspaceEventStreamFrame } from "@claxedo/session-core"
 import {
   createHostAggregateEventsHandler,
   type HostAggregateRuntime,

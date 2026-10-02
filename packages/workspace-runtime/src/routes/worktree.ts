@@ -1,14 +1,18 @@
 import { Hono, type Context } from "hono"
-import { WorkspaceTargetError } from "../target"
-import { rec } from "../json-value"
-import type { WorkspaceWorktreeManager } from "../worktree"
-import type { WorkspaceWorktreeRecord } from "../store"
-import { boundedJsonBody, errorBody, isRequestBodyTooLarge, requestBodyTooLargeBody } from "./http"
-import type { RelayHostAuthContext } from "../workspace-host-service-auth"
 import {
+  WorkspaceTargetError,
+  rec,
+  type WorkspaceWorktreeRecord,
+  boundedJsonBody,
+  errorBody,
+  isRequestBodyTooLarge,
+  requestBodyTooLargeBody,
   sessionAccessContext,
   sessionAccessDenied,
-} from "../session-access-policy"
+} from "@claxedo/session-core"
+
+import type { WorkspaceWorktreeManager } from "../worktree"
+import type { RelayHostAuthContext } from "../workspace-host-service-auth"
 import { authorizeHostCapability, type HostCapabilityAccessOptions } from "./host-capability-access"
 
 export const WORKTREE_CREATE_SUCCESS_STATUS = 201 as const

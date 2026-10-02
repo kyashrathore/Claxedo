@@ -9,7 +9,13 @@ import { CLAXEDO_MIGRATION_JOURNAL } from "@claxedo/server-core/platform/db/jour
 import { createSqliteUsageLedger } from "@claxedo/server-core/usage/adapters/sqlite-usage-ledger"
 import { createSqliteTurnMeterStateStore } from "@claxedo/server-core/usage/adapters/sqlite-turn-meter-state"
 import { createTurnMeter } from "@claxedo/server-core/usage/turn-meter"
-import { buildAssistantMessage, messageCompleted, messageUpdated, sessionError, sessionUsage } from "@claxedo/workspace-runtime/projection"
+import {
+  buildAssistantMessage,
+  messageCompleted,
+  messageUpdated,
+  sessionError,
+  sessionUsage,
+} from "@claxedo/session-core"
 
 function harness() {
   const facts: TurnUsageRevision[] = []

@@ -80,6 +80,7 @@ describe("runtime config secret scoping", () => {
     // snapshot. The runtime accepts the selection and resolves secrets when a
     // session launches it, so the session is refused before any harness starts.
     const runtime = createWorkspaceRuntimeApp({
+      sessionIdWorkspace: () => undefined,
       exposure: loopbackWorkspaceRuntimeExposure(),
       target: { workspaceId: "ws-denied", directory: root },
       storeRoot: path.join(root, "denied"),

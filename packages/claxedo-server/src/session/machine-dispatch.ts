@@ -19,7 +19,7 @@ import { resolveWorkspace } from "@claxedo/server-core/workspace/store/index"
 import type { ControlPlaneServices } from "../authority/services"
 import { asRecord, numberField, readJsonRecord, stringField } from "@claxedo/server-core/platform/json/index"
 import { isComposedAuthorityPort } from "../authority/composed-authority"
-import { eventSessionId } from "@claxedo/workspace-runtime/projection"
+import { eventSessionId } from "@claxedo/session-core"
 
 export type MachineSessionCaller =
   SignedControlPlaneAuth | { kind: "channel"; identity: ChannelMachineIdentity }

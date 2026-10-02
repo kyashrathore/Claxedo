@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { remoteWorkspaceSessionAccessPolicy } from "./remote-session-authority"
 import { fetchBodyJson, fetchUrl } from "./test-support/fetch-double"
-import { rec } from "./json-value"
+import { rec } from "@claxedo/session-core"
 
 const input = {
   actor: { actorId: "actor_b", actorKind: "human" as const },

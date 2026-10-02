@@ -4,6 +4,9 @@ import path from "node:path"
 export default defineConfig({
   resolve: {
     alias: [
+      { find: /^@claxedo\/session-core\/access-policy$/, replacement: path.resolve(import.meta.dirname, "../session-core/src/session-access-policy.ts") },
+      { find: /^@claxedo\/session-core\/testing$/, replacement: path.resolve(import.meta.dirname, "../session-core/src/testing.ts") },
+      { find: /^@claxedo\/session-core$/, replacement: path.resolve(import.meta.dirname, "../session-core/src/index.ts") },
       { find: /^@claxedo\/harness\/opencode-sdk\/(.+)$/, replacement: path.resolve(import.meta.dirname, "../harness/src/transports/opencode-sdk/$1.ts") },
       { find: /^@claxedo\/harness\/opencode-sdk$/, replacement: path.resolve(import.meta.dirname, "../harness/src/transports/opencode-sdk/index.ts") },
       // The runtime is reached from several packages; aliasing it to SOURCE
@@ -13,10 +16,8 @@ export default defineConfig({
       { find: "@claxedo/workspace-runtime/config", replacement: path.resolve(import.meta.dirname, "../workspace-runtime/src/config.ts") },
       { find: "@claxedo/workspace-runtime/exposure", replacement: path.resolve(import.meta.dirname, "../workspace-runtime/src/exposure.ts") },
       { find: "@claxedo/workspace-runtime/host", replacement: path.resolve(import.meta.dirname, "../workspace-runtime/src/host.ts") },
-      { find: "@claxedo/workspace-runtime/projection", replacement: path.resolve(import.meta.dirname, "../workspace-runtime/src/projection.ts") },
       { find: "@claxedo/workspace-runtime/relay", replacement: path.resolve(import.meta.dirname, "../workspace-runtime/src/relay.ts") },
       { find: "@claxedo/workspace-runtime/routes", replacement: path.resolve(import.meta.dirname, "../workspace-runtime/src/routes.ts") },
-      { find: "@claxedo/workspace-runtime/http", replacement: path.resolve(import.meta.dirname, "../workspace-runtime/src/http.ts") },
       { find: "@claxedo/workspace-runtime/client", replacement: path.resolve(import.meta.dirname, "../workspace-runtime/src/client.ts") },
       { find: "@claxedo/workspace-runtime/testing", replacement: path.resolve(import.meta.dirname, "../workspace-runtime/src/testing.ts") },
       { find: "@claxedo/workspace-runtime/route-contribution", replacement: path.resolve(import.meta.dirname, "../workspace-runtime/src/route-contribution.ts") },
@@ -27,7 +28,7 @@ export default defineConfig({
     testTimeout: 60_000,
     hookTimeout: 30_000,
     fileParallelism: false,
-    setupFiles: ["../workspace-runtime/src/test-support/home/isolated-home.mjs"],
+    setupFiles: ["../session-core/src/test-support/home/isolated-home.mjs"],
     exclude: [...configDefaults.exclude],
   },
 })

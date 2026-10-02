@@ -74,7 +74,7 @@ to title + description + action. That is why **T1 alone fixes the screenshot**.
 **The two sites that do NOT stamp the class** (both hardcode `name:"UnknownError"` but emit a raw
 `data: { message }`): the ACP driver's prompt-error path
 (`agent-sdk-runtime/src/harnesses/acp/index.ts:1095-1098`) and
-`workspace-runtime/src/session/service.ts:356-359`. Errors from these paths reach the client
+`session-core/src/session/service.ts:356-359`. Errors from these paths reach the client
 class-less and fall back to the client's local regexes — which have drifted from the server's
 (T3 step 4). Stamping `firstTurnErrorData` at both sites is added to T3's scope; until it lands,
 ACP-path errors get a card whose class comes from the weaker client fallback.
@@ -363,7 +363,7 @@ gets routed to the recovery path that can actually handle it (T6).
 - `packages/agent-sdk-runtime/src/first-turn-error.ts`
 - `packages/claxedo-app/src/features/session/onboarding/first-turn-recovery.ts`
 - `packages/agent-sdk-runtime/src/harnesses/acp/index.ts:1095-1098`
-- `packages/workspace-runtime/src/session/service.ts:356-359`
+- `packages/session-core/src/session/service.ts:356-359`
 
 **Steps**:
 1. **Stamp the two unstamped producers** (§0.2): `acp/index.ts:1095-1098` and
@@ -523,7 +523,7 @@ E§7).
 
 **Files**:
 - `packages/agent-sdk-runtime/src/harnesses/codex/driver.ts:44-69`
-- `packages/workspace-runtime/src/routes/session-core.ts:735-773`
+- `packages/session-core/src/routes/session-core.ts:735-773`
 - `packages/claxedo-app/src/features/session/ui/session-screen.tsx`
 
 **Steps**:

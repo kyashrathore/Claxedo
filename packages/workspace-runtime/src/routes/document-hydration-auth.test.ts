@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test"
 import { exportSPKI, generateKeyPair, SignJWT } from "jose"
 import { createWorkspaceRuntimeApp } from "../server"
 import { relayWorkspaceRuntimeExposure } from "../exposure"
-import { managedWorkspaceSessionAccessPolicy } from "../session-access-policy"
+import { managedWorkspaceSessionAccessPolicy } from "@claxedo/session-core"
 import { fetchDouble } from "../test-support/fetch-double"
 import { flushRuntimeDocument, forgetRuntimeDocuments } from "./document-hydration"
 import { loopbackMachineLoginPolicy } from "../testing"
@@ -31,6 +31,7 @@ async function fixture() {
   process.env.CLAXEDO_RUNTIME_ACCESS_TOKEN_PUBLIC_KEY_PEM = await exportSPKI(documentKeys.publicKey)
   const asked: Array<{ operation: string | undefined; sessionId: string | undefined; actorId: string | undefined }> = []
   const runtime = createWorkspaceRuntimeApp({
+    sessionIdWorkspace: () => undefined,
     placement: loopbackMachineLoginPolicy(),
     exposure: relayWorkspaceRuntimeExposure({ key: relayKeys.publicKey, ...target }),
     sessionAccessPolicy: {

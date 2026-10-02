@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { SESSION_CORE_ROUTE_ACCESS } from "../session-access-policy"
+import { SESSION_CORE_ROUTE_ACCESS } from "@claxedo/session-core"
 import { createWorkspaceRuntimeClient } from "./index"
 
 type Leaf = (input: Record<string, unknown>) => Promise<unknown>

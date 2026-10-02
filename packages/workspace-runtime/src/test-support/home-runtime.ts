@@ -1,5 +1,5 @@
 import { createHarnessServices } from "../harness-services"
-import { LAUNCH_OWNERSHIP_SCHEMA } from "../ownership/launch-ownership-schema"
+import { LAUNCH_OWNERSHIP_SCHEMA } from "@claxedo/session-core"
 import { sqliteLaunchOwnership } from "../ownership/launch-ownership-sqlite"
 import { openSqliteDatabase } from "../sqlite/node"
 

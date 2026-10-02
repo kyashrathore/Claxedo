@@ -23,7 +23,7 @@ import { stageOpenCodePatches } from "./stage-opencode-patches"
 
 const ROOT = path.resolve(import.meta.dirname, "..")
 const DIST = path.join(ROOT, "dist")
-const PUBLIC_ENTRIES = ["index", "relay", "client", "host", "exposure", "config", "routes", "http", "route-contribution", "testing", "projection", "file-index"] as const
+const PUBLIC_ENTRIES = ["index", "relay", "client", "host", "exposure", "config", "routes", "route-contribution", "testing", "file-index"] as const
 
 // Dependencies that stay external (consumers install them)
 const LIBRARY_EXTERNALS = [
@@ -35,6 +35,7 @@ const LIBRARY_EXTERNALS = [
   "@claxedo/agent-runtime-contract/*",
   "@claxedo/process-ownership",
   "@claxedo/process-ownership/*",
+  "@claxedo/session-core",
   "@claxedo/harness",
   "@claxedo/harness/*",
 ]
@@ -104,12 +105,12 @@ function bundleJS() {
       esbuild,
       [
         `src/${entry}.ts`,
-        ...(entry === "client" || entry === "projection"
+        ...(entry === "client"
           ? ["--bundle", "--platform=browser", "--format=esm", "--target=es2022"]
           : nodeShared),
         `--outfile=${path.join(DIST, `${entry}.mjs`)}`,
         ...libraryExternals,
-        ...(entry === "client" || entry === "projection"
+        ...(entry === "client"
           ? []
           : ["--banner:js=import {createRequire as __cr} from 'module';var require=__cr(import.meta.url);"]),
       ],

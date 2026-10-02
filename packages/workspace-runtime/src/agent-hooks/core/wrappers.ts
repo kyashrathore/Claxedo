@@ -2,7 +2,7 @@ import * as fs from "fs"
 import * as path from "path"
 import { CLAXEDO_DIR, FIND_REAL_BINARY, WRAPPER_MARKER, WRAPPER_NAME, WRAPPERS_JSON } from "./constants"
 import { loadTemplate, shellQuote, writeIfChanged } from "./utils"
-import { arr, rec } from "../../json-value"
+import { arr, rec } from "@claxedo/session-core"
 import type { StatusHookTemplate } from "@claxedo/plugin-api"
 import { hookArguments, hookVariables, projectHookContent, renderHookText } from "./render"
 

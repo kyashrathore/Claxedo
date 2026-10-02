@@ -432,7 +432,7 @@ provision, inventory or worktree notice; the hosted room admits share
 doorbells alone. A workspace runtime's `GET /api/wr/events` carries
 that runtime's session frames, and the arm is decided per request
 (`authorizeSessionEventScope`,
-`packages/workspace-runtime/src/routes/session-event-privacy.ts`): a
+`packages/session-core/src/routes/session-event-privacy.ts`): a
 `loopback-direct` request reads the whole stream, because it is the
 machine's own user; a `relay-replayed` principal the workspace authority
 admits reads it unscoped and the session authority decides per session what

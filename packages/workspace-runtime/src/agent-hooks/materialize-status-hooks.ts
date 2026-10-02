@@ -10,7 +10,7 @@ import {
   writeMergedConfig,
   type IsManagedCommand,
 } from "./config-merge"
-import { arr, rec, str } from "../json-value"
+import { arr, rec, str } from "@claxedo/session-core"
 import type { StatusHookTemplate } from "@claxedo/plugin-api"
 import { hookVariables, renderHookText, renderHookValue } from "./core/render"
 import { NOTIFY_MARKER } from "./core/constants"

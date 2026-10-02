@@ -5,8 +5,7 @@ import {
   gitSourceSnapshot,
 } from "../workspace-files/git-source"
 import type { RelayHostAuthContext } from "../workspace-host-service-auth"
-import { rec, str } from "../json-value"
-import { boundedJsonRecord, isRequestBodyTooLarge, requestBodyTooLargeBody } from "./http"
+import { rec, str, boundedJsonRecord, isRequestBodyTooLarge, requestBodyTooLargeBody } from "@claxedo/session-core"
 import { workspaceDir } from "../target"
 import { authorizeWorktreeTarget, type WorktreeTargetAccessOptions } from "./worktree-target-access"
 import { trimToUndefined } from "@claxedo/helpers/string"

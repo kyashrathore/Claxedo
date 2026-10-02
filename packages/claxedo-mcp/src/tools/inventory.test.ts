@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs"
 import { describe, expect, test } from "vitest"
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js"
-import type { SessionAccessOperation } from "@claxedo/workspace-runtime/client"
+import type { SessionAccessOperation } from "@claxedo/session-core"
 import type { ClaxedoMcpClient } from "../client/contract"
 import type { McpAudience, McpCredential, McpToolAccess, McpToolContext } from "../context"
 import { createToolRegistry } from "./registry"
