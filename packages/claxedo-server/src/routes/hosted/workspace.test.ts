@@ -5,7 +5,7 @@ import { ClaxedoError } from "@claxedo/server-core/platform/errors/base"
 import type { ControlPlaneServices } from "../../authority/services"
 import type { HostTunnelTokenSigner, RuntimeAccessTokenSigner } from "@claxedo/server-core/platform/auth/runtime-access-token"
 import { HostedWorkspaceRoutes, type HostedWorkspaceRouteOptions } from "./workspace"
-import { D1WorkspaceAuthorityError } from "../../authority/adapters/d1/workspace-authority"
+import { D1WorkspaceAuthorityError } from "../../authority/adapters/d1/workspace-authority-error"
 import { createFixedWindowConnectionRateLimiter } from "../../platform/auth/rate-limit"
 import type { SandboxManager } from "@claxedo/sandbox-manager"
 

@@ -220,11 +220,17 @@ export function createBetterAuthD1AuthenticationEvidenceResolver(
   }
 }
 
-export async function betterAuthVerifiedEmail(input: { database: D1Database; issuer: string }, identity: AuthIdentity | undefined) {
+/** The Better Auth account behind an identity: its email when verified, and its profile name and image. */
+export async function betterAuthAccount(input: { database: D1Database; issuer: string }, identity: AuthIdentity | undefined) {
   if (!identity || identity.adapter !== "better-auth" || identity.issuer !== input.issuer) return undefined
   const account = await input.database
-    .prepare('select email from "user" where id = ? and "emailVerified" = 1')
+    .prepare('select email, "emailVerified" as verified, name, image from "user" where id = ?')
     .bind(identity.subject)
-    .first<{ email: string }>()
-  return account?.email
+    .first<{ email: string; verified: number; name: string | null; image: string | null }>()
+  if (!account) return undefined
+  return {
+    ...(account.verified === 1 ? { verifiedEmail: account.email } : {}),
+    ...(account.name ? { name: account.name } : {}),
+    ...(account.image ? { image: account.image } : {}),
+  }
 }

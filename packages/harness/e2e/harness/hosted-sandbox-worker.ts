@@ -1,4 +1,5 @@
-import { appendFile, readFile } from "node:fs/promises"
+import { randomUUID } from "node:crypto"
+import { appendFile, cp, readFile, rm, stat } from "node:fs/promises"
 import { createServer, request as httpsRequest } from "node:https"
 import http, { type IncomingMessage, type ServerResponse } from "node:http"
 import path from "node:path"
@@ -98,6 +99,36 @@ function source(env: Record<string, string>) {
   }
 }
 
+/** The two trees the Cloudflare driver asks a backup to capture: the workspace and the runtime's data directory. */
+const BACKED_UP = ["sandbox-workspaces", "runtime-data"] as const
+
+async function exists(file: string) {
+  return stat(file).then(() => true, (error: NodeJS.ErrnoException) => {
+    if (error.code === "ENOENT") return false
+    throw error
+  })
+}
+
+async function backUpSandbox(root: string, sandboxId: string) {
+  const backupId = `backup-${randomUUID()}`
+  for (const tree of BACKED_UP) {
+    const live = path.join(root, tree, sandboxId)
+    if (await exists(live)) await cp(live, path.join(root, "sandbox-backups", backupId, tree), { recursive: true })
+  }
+  return backupId
+}
+
+async function restoreSandbox(root: string, sandboxId: string, backupId: string) {
+  const backup = path.join(root, "sandbox-backups", backupId)
+  if (!(await exists(backup))) return false
+  for (const tree of BACKED_UP) {
+    const live = path.join(root, tree, sandboxId)
+    await rm(live, { recursive: true, force: true })
+    if (await exists(path.join(backup, tree))) await cp(path.join(backup, tree), live, { recursive: true })
+  }
+  return true
+}
+
 function proxy(request: IncomingMessage, responseStream: ServerResponse, target: SandboxTarget, rest: string, search: string) {
   const destination = new URL(target.url)
   destination.pathname = `/${rest}`
@@ -150,6 +181,8 @@ async function startGatewayForwarder(controlPlaneUrl: string) {
   return { url: `http://127.0.0.1:${address.port}`, close: () => new Promise<void>((resolve) => { server.closeAllConnections(); server.close(() => resolve()) }) }
 }
 
+const LOCALHOST_RESOLVER = pathToFileURL(path.join(import.meta.dirname, "localhost-resolver.mjs")).href
+
 export async function startHostedSandboxWorker(input: HostedSandboxWorkerInput) {
   const textImports = pathToFileURL(path.join(REPO_ROOT, "packages/workspace-runtime/src/text-imports.mjs")).href
   const gateway = await startGatewayForwarder(input.controlPlaneUrl)
@@ -157,7 +190,7 @@ export async function startHostedSandboxWorker(input: HostedSandboxWorkerInput) 
     root: input.root,
     executable: process.env.CLAXEDO_E2E_NODE ?? process.execPath,
     // The VM image's own entry: the Claxedo runtime composition with the Agent Plugins apply route mounted.
-    args: ["--conditions=development", "--import", textImports, "--import", TSX_LOADER, claxedoAgentPluginsWorkspaceRuntimeEntry()],
+    args: ["--conditions=development", "--import", textImports, "--import", LOCALHOST_RESOLVER, "--import", TSX_LOADER, claxedoAgentPluginsWorkspaceRuntimeEntry()],
     allowedOrigins: [input.controlPlaneUrl, input.relayUrl, new URL(input.gitUrl).origin],
     directOrigins: [input.controlPlaneUrl, input.relayUrl, new URL(input.gitUrl).origin],
     upstreams: { "https://api.openai.com": input.modelUrl, "https://api.anthropic.com": input.modelUrl, [HOSTED_MCP_GATEWAY_ORIGIN]: gateway.url },
@@ -174,6 +207,7 @@ export async function startHostedSandboxWorker(input: HostedSandboxWorkerInput) 
   const touch = driver.touch
   if (!touch) throw new Error("local brokering driver must support touch")
   const sandboxes = new Map<string, RunningSandbox>()
+  const ensuring = new Set<Promise<unknown>>()
   const server = createServer({ key: await readFile(input.key), cert: await readFile(input.certificate) }, async (request, res) => {
     try {
       const original = new URL(request.url ?? "/", `https://127.0.0.1:${input.port}`)
@@ -218,6 +252,10 @@ export async function startHostedSandboxWorker(input: HostedSandboxWorkerInput) 
         await touch(running.target)
         return response(res, 200, { ok: true, ready: true })
       }
+      if (parts[2] === "backup") {
+        if (!sandboxes.has(id)) return response(res, 404, { error: "sandbox not found" })
+        return response(res, 200, { backupId: await backUpSandbox(input.root, id) })
+      }
       if (parts[2] !== "ensure-runtime") return response(res, 404, { error: "unknown action" })
       const payload = await body(request)
       const env = stringMap(payload.env)
@@ -232,25 +270,33 @@ export async function startHostedSandboxWorker(input: HostedSandboxWorkerInput) 
       if (payload.command !== "/usr/local/bin/workspace-runtime" || payload.port !== Number(env.WORKSPACE_RUNTIME_PORT)) {
         return response(res, 400, { error: "unknown runtime command or port" })
       }
-      if (payload.restore !== undefined) return response(res, 501, { error: "local sandbox backup restore unavailable" })
+      if (payload.restore !== undefined) {
+        const backupId = record(payload.restore).backupId
+        if (typeof backupId !== "string" || !(await restoreSandbox(input.root, id, backupId))) return response(res, 404, { error: "backup not found" })
+      }
       const previous = sandboxes.get(id)
       const registrations = payload.egress === undefined ? previous?.registrations ?? [] : parseRegistrations(payload.egress)
       if (registrations.some((row) => Object.values(env).some((value) => value.includes(row.value)))) {
         return response(res, 400, { error: "brokered secret entered runtime env" })
       }
-      const target = await driver.ensureHost({
-        workspaceId,
-        hostId: id,
-        homeRegion: "us-east",
-        epoch: Number(labels.epoch ?? "1"),
-        labels,
-        source: source(env),
-        workspaceRoot: path.join(input.root, "sandbox-workspaces", id),
-        env: runtimeEnv(env, input.root, id),
-        secrets: hostedFaultSecrets(localSecrets(registrations), process.env.CLAXEDO_E2E_HOSTED_FAULT),
-      })
+      const starting = (async () => {
+        const target = await driver.ensureHost({
+          workspaceId,
+          hostId: id,
+          homeRegion: "us-east",
+          epoch: Number(labels.epoch ?? "1"),
+          labels,
+          source: source(env),
+          workspaceRoot: path.join(input.root, "sandbox-workspaces", id),
+          env: runtimeEnv(env, input.root, id),
+          secrets: hostedFaultSecrets(localSecrets(registrations), process.env.CLAXEDO_E2E_HOSTED_FAULT),
+        })
+        if (!("provisioning" in target)) sandboxes.set(id, { target, labels, registrations })
+        return target
+      })()
+      ensuring.add(starting)
+      const target = await starting.finally(() => ensuring.delete(starting))
       if ("provisioning" in target) return response(res, 503, { ready: false, error: "workspace-runtime did not become ready" })
-      sandboxes.set(id, { target, labels, registrations })
       return response(res, 200, { ready: true, url: `https://127.0.0.1:${input.port}/sandbox/${encodeURIComponent(id)}/proxy`, port: payload.port })
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
@@ -264,10 +310,13 @@ export async function startHostedSandboxWorker(input: HostedSandboxWorkerInput) 
   })
   return {
     close: async () => {
-      for (const entry of sandboxes.values()) await destroy(entry.target)
-      sandboxes.clear()
       server.closeAllConnections()
       await new Promise<void>((resolve) => server.close(() => resolve()))
+      // A runtime still starting when the stack stops would otherwise outlive
+      // this process's close and keep it from exiting.
+      await Promise.allSettled(ensuring)
+      for (const entry of sandboxes.values()) await destroy(entry.target)
+      sandboxes.clear()
       await gateway.close()
     },
   }

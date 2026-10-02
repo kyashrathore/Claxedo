@@ -10,7 +10,6 @@ import { serveGitRemote, type GitRemote } from "./git-remote"
 import { serveLocalPages, type LocalPages, type LocalPagesOptions } from "./local-pages"
 import { serveConnectionSink, type ConnectionSink } from "./connection-sink"
 import { claimPort, fixedDaemonPort, portFreed, portIsLeased, releasePort, reservePort } from "../../../harness/e2e/harness/ports"
-import { stopSandboxes } from "./sandboxes"
 import { startScriptedModelServer, type ScriptedModelServer } from "../../../harness/e2e/harness/scripted-model-server"
 import { installUnsetAcp } from "./scripted-world"
 import { directTransport } from "../../../harness/e2e/harness/transport"
@@ -122,7 +121,6 @@ export async function startStack(input: StackInput): Promise<Stack> {
         releasePort(port)
       }
       await daemon.close()
-      await stopSandboxes(dataDir)
       await scripted.close()
       await egress.close()
       await cleanup()
