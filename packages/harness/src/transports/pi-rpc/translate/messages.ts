@@ -1,12 +1,9 @@
 import type { AgentRuntimeEvent } from "@claxedo/agent-runtime-contract"
-import { asRecord, asText } from "@claxedo/agent-runtime-contract"
+import { asArray, asRecordOrEmpty as row, asString } from "@claxedo/helpers/guards"
 import { ignoredKind, piStep, type PiStep, type PiTranslatorState } from "./state"
 import { piUsageEvents } from "./usage"
 
 type Frame = Record<string, unknown>
-
-const row = (value: unknown): Frame => asRecord(value) ?? {}
-const text = (value: unknown) => asText(value) ?? ""
 
 const QUIET_ROLES = ["user", "toolResult", "system", "bashExecution", "branchSummary", "compactionSummary", "custom"]
 const QUIET_UPDATES = ["start", "text_start", "text_end", "thinking_start", "thinking_end", "toolcall_start", "toolcall_delta", "toolcall_end",
@@ -34,10 +31,10 @@ export function piMessageUpdate(state: PiTranslatorState, frame: Frame): PiStep 
 }
 
 function reconciled(state: PiTranslatorState, content: unknown): AgentRuntimeEvent[] {
-  return (Array.isArray(content) ? content : []).flatMap((item, index): AgentRuntimeEvent[] => {
+  return asArray(content).flatMap((item, index): AgentRuntimeEvent[] => {
     const block = row(item)
     if (block.type !== "text" && block.type !== "thinking") return []
-    const value = text(block.type === "text" ? block.text : block.thinking)
+    const value = asString(block.type === "text" ? block.text : block.thinking) ?? ""
     const prior = state.blocks[index] ?? ""
     if (!value.startsWith(prior)) throw new Error("Pi final content disagrees with streamed deltas")
     if (value.length === prior.length) return []
@@ -55,7 +52,7 @@ function assistantEnd(state: PiTranslatorState, assistant: Frame): PiStep {
   const events = [...reconciled(state, assistant.content),
     ...piUsageEvents(assistant.usage, typeof assistant.timestamp === "number" ? String(assistant.timestamp) : undefined), ...stopNotice(stopReason)]
   const next = piStep({ ...state, blocks: {}, stopped: stopReason === "aborted",
-    ...(stopReason === "error" ? { failure: text(assistant.errorMessage) || "Pi model request failed" } : { failure: undefined }) }, events)
+    ...(stopReason === "error" ? { failure: asString(assistant.errorMessage) || "Pi model request failed" } : { failure: undefined }) }, events)
   if (STOP_REASONS.includes(stopReason)) return next
   const noted = ignoredKind(next.state, `stop_reason.${stopReason}`)
   return piStep(noted.state, [...next.events, ...noted.events])
@@ -63,7 +60,7 @@ function assistantEnd(state: PiTranslatorState, assistant: Frame): PiStep {
 
 function customText(content: unknown): string {
   if (typeof content === "string") return content
-  return (Array.isArray(content) ? content : []).flatMap((item) => row(item).type === "text" ? [text(row(item).text)] : []).join("\n")
+  return asArray(content).flatMap((item) => row(item).type === "text" ? [asString(row(item).text) ?? ""] : []).join("\n")
 }
 
 function customNotice(state: PiTranslatorState, message: Frame): PiStep {

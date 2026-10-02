@@ -55,8 +55,3 @@ export function browserPreviewPolicy(): string {
   const loopback = LOOPBACK_HOSTS.flatMap((host) => [`http://${host}:*`, `https://${host}:*`])
   return ["default-src 'none'", "style-src 'unsafe-inline'", `frame-src ${sources(loopback, ["https:"])}`, "base-uri 'none'", "form-action 'none'"].join("; ")
 }
-
-export function cliCallbackPolicy(): string {
-  const loopback = LOOPBACK_HOSTS.map((host) => `http://${host}:*`)
-  return ["default-src 'none'", "script-src 'self'", `form-action ${sources(loopback)}`, "base-uri 'none'"].join("; ")
-}

@@ -3,7 +3,6 @@ import type { ExitStatus } from "../../contract"
 import { ScriptedProcess } from "../../test-support/scripted-process"
 import { CodexRpc, type RpcMessage } from "./rpc"
 import { CodexRequestRefusal } from "./errors"
-import { startCodexTurn } from "./recovery"
 
 function peer(answer?: (frame: RpcMessage, wire: ScriptedProcess<RpcMessage>) => void) {
   const wire = new ScriptedProcess<RpcMessage>((frame, process) => answer?.(frame, process))
@@ -68,51 +67,4 @@ test("Codex retirement surfaces an owned process that did not stop and sends not
   expect(retireCalls()).toBe(1)
   await expect(rpc.request("thread/start", {}, 60_000)).rejects.toMatchObject({ code: "process" })
   expect(frames).toEqual([])
-})
-
-function recoveringPeer(errors: string[], resumeError?: string) {
-  const calls: (string | undefined)[] = []
-  const { rpc } = peer((frame, wire) => {
-    calls.push(frame.method)
-    const error = frame.method === "turn/start" ? errors.shift() : resumeError
-    wire.send({ id: frame.id, ...(error ? { error: { code: -32000, message: error } } : { result: { turn: { id: "recovered" } } }) })
-  })
-  return { calls, start: () => startCodexTurn(rpc, { threadId: "thread-1", input: [] }, { threadId: "thread-1" }, { at: Date.now() + 1_000, signal: new AbortController().signal }) }
-}
-
-test.each(["thread not found: thread-1", "Thread not found: thread-1"])("recovers the native missing-thread error %s", async (message) => {
-  const value = recoveringPeer([message])
-  expect(await value.start()).toEqual({ turn: { id: "recovered" } })
-  expect(value.calls).toEqual(["turn/start", "thread/resume", "turn/start"])
-})
-
-test("a clean turn starts once and never resumes", async () => {
-  const value = recoveringPeer([])
-  expect(await value.start()).toEqual({ turn: { id: "recovered" } })
-  expect(value.calls).toEqual(["turn/start"])
-})
-
-test.each(["401 Unauthorized", "turn interrupted"])("an unrelated native error never resumes or retries: %s", async (message) => {
-  const value = recoveringPeer([message])
-  await expect(value.start()).rejects.toMatchObject({ code: "protocol", message })
-  expect(value.calls).toEqual(["turn/start"])
-})
-
-test("a failed resume surfaces its error without another turn start", async () => {
-  const value = recoveringPeer(["thread not found: thread-1"], "thread is not resumable")
-  await expect(value.start()).rejects.toMatchObject({ code: "protocol", message: "thread is not resumable" })
-  expect(value.calls).toEqual(["turn/start", "thread/resume"])
-})
-
-test("the second resume cycle recovers in exact start-resume order", async () => {
-  const value = recoveringPeer(["thread not found: thread-1", "thread not found: thread-1"])
-  expect(await value.start()).toEqual({ turn: { id: "recovered" } })
-  expect(value.calls).toEqual(["turn/start", "thread/resume", "turn/start", "thread/resume", "turn/start"])
-})
-
-test("exhaustion classifies the session error after exactly three starts and two resumes", async () => {
-  const value = recoveringPeer(Array.from({ length: 3 }, () => "thread not found: thread-1"))
-  await expect(value.start()).rejects.toMatchObject({ transport: "codex", code: "session",
-    message: "Codex session is gone: thread not found: thread-1", cause: { code: "protocol" } })
-  expect(value.calls).toEqual(["turn/start", "thread/resume", "turn/start", "thread/resume", "turn/start"])
 })

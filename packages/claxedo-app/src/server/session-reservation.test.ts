@@ -44,7 +44,7 @@ test("signed desktop creates a cloud session with the account's canonical reserv
     }
     throw new Error(`Unexpected fetch ${url}`)
   }, { preconnect: () => undefined }))
-  const transport = createTransport({ serverUrl: "http://127.0.0.1:4444", auth: { kind: "none" }, account: run })
+  const transport = createTransport({ serverUrl: "http://127.0.0.1:4444", account: run })
   const account = createHostedAccount(run)
   const queryClient = new QueryClient()
   const workspaces = createWorkspaces(transport, queryClient, account)

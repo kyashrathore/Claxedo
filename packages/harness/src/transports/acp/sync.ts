@@ -49,10 +49,6 @@ async function applyAgent(entry: AcpEntry, agent: string): Promise<void> {
   if (mode && entry.currentModeId !== mode.id) await setMode(entry, mode.id)
 }
 
-function resolvedModelId(entry: AcpEntry): string | undefined {
-  return acpOptionValue(acpPickOption(entry.options, "model"))
-}
-
 async function applyModel(entry: AcpEntry, model: PromptModel | undefined, effort: string | undefined): Promise<boolean> {
   if (!model) return false
   const option = acpPickOption(entry.options, "model")
@@ -61,7 +57,7 @@ async function applyModel(entry: AcpEntry, model: PromptModel | undefined, effor
     if (acpOptionValue(option) !== wanted) await acpSetOption(entry, option!, wanted, "model")
     return !!effort && wanted.endsWith(`/${effort}`)
   }
-  if (model.modelID === "default" || model.modelID === resolvedModelId(entry)) return false
+  if (model.modelID === "default" || model.modelID === acpOptionValue(option)) return false
   throw new AcpTransportError("configuration", option
     ? `ACP agent does not offer model ${model.modelID}`
     : "ACP agent owns model selection and does not advertise a model selector")
@@ -80,7 +76,7 @@ async function applyEffort(entry: AcpEntry, effort: string | undefined): Promise
   if (acpOptionValue(option) !== wanted) await acpSetOption(entry, option!, wanted, "thought_level")
 }
 
-export async function acpPrepareTurnConfig(entry: AcpEntry, turn: TurnInput, clock: Clock, timeoutMs: number): Promise<void> {
+export async function acpPrepareTurnConfig(entry: AcpEntry, turn: TurnInput, clock: Clock, timeoutMs: number | undefined): Promise<void> {
   const deadline = new AcpStartupDeadline(clock, timeoutMs, "turn configuration")
   const abort = new AbortController()
   entry.startup = deadline

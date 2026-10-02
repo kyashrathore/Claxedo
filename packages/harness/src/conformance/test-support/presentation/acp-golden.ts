@@ -10,7 +10,7 @@ export function registerAcpGoldenCases(createClientPresentationProjection: Creat
       const runtime = createAgentEventRuntime({
         harness: "acp:example",
         threadId: "thread-1",
-        adapter: createAcpEventTranslator({ client: "acp:example", preserveUserMessageChunks: true }),
+        adapter: createAcpEventTranslator({ client: "acp:example" }),
         clock: () => 0,
         createId: () => "id",
       })
@@ -22,15 +22,6 @@ export function registerAcpGoldenCases(createClientPresentationProjection: Creat
       })
 
       const runtimeEvents = replayRuntimeEvents(runtime, [
-        {
-          source: "acp.jsonrpc",
-          method: "session/update",
-          payload: {
-            sessionUpdate: "user_message_chunk",
-            messageId: "user-message-1",
-            content: { type: "text", text: "user says hi" },
-          },
-        },
         {
           source: "acp.jsonrpc",
           method: "session/update",
@@ -85,7 +76,6 @@ export function registerAcpGoldenCases(createClientPresentationProjection: Creat
       const payloads = compat.map((event) => event.payload)
 
       expect(runtimeEvents.map((event) => event.type)).toEqual([
-        "user-message-delta",
         "available-commands-update",
         "session-info",
         "tool-status",
@@ -95,12 +85,6 @@ export function registerAcpGoldenCases(createClientPresentationProjection: Creat
         "tool-content",
         "tool-content",
         "thinking-audio-delta",
-      ])
-      expect(payloads.filter((payload) => payload.type === "message.updated")).toMatchObject([
-        { properties: { info: { id: "user-message-1", role: "user" } } },
-      ])
-      expect(payloads.filter((payload) => payload.type === "message.part.delta")).toMatchObject([
-        { properties: { messageID: "user-message-1", field: "text", delta: "user says hi" } },
       ])
       expect(payloads.filter((payload) => payload.type === "runtime.diagnostic")).toMatchObject([
         {

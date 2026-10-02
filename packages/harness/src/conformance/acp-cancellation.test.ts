@@ -25,8 +25,7 @@ test("ACP acknowledged cancellation with a still-open prompt reaches its deadlin
       unrunnableTurn: (turn) => turn,
       close: async () => { await server.close(); await rm(root, { recursive: true, force: true }) },
     }),
-    makeTransport: (services) => new AcpTransport(services, { kind: "websocket", url: server.url }, filterMcpServers,
-      async () => { throw new Error("No handoff in cancellation test") }),
+    makeTransport: (services) => new AcpTransport(services, { kind: "websocket", url: server.url }, filterMcpServers),
   })
   const stream = context.transport.send(context.session, context.turn(acpScriptToken("held")), context.turnBroker())
   const running = (async () => { for await (const _event of stream) {} })()
@@ -70,8 +69,7 @@ test("ACP never submits a prompt whose turn was stopped while its configuration 
       unrunnableTurn: (turn) => turn,
       close: async () => { await server.close(); await rm(root, { recursive: true, force: true }) },
     }),
-    makeTransport: (services) => new AcpTransport(services, { kind: "websocket", url: server.url }, filterMcpServers,
-      async () => { throw new Error("No handoff in cancellation test") }),
+    makeTransport: (services) => new AcpTransport(services, { kind: "websocket", url: server.url }, filterMcpServers),
   })
   const stop = new AbortController()
   const turn = context.turn(acpScriptToken("startup"))

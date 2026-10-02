@@ -72,6 +72,7 @@ export async function scriptedPi(input: { firstPartyMcp?: HarnessServices["first
     }
     const launch: Launch = { command, options, handoffs: [], wire: new ScriptedProcess<Frame>((frame) => {
       if (frame.type === "set_session_name") launch.wire.send({ type: "session_info_changed", name: frame.name?.trim() })
+      if (frame.type === "prompt" && frame.message?.startsWith("/claxedo-title ")) launch.wire.send({ type: "session_info_changed", name: "Scripted title" })
       if (frame.id) launch.wire.send({ type: "response", id: frame.id, command: frame.type, success: true, data: answer(frame, launch) })
     }) }
     launches.push(launch)

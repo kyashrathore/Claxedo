@@ -11,9 +11,8 @@ export function createBetterAuthBrowserAdapter(
 ): BrowserAuthAdapter {
   const session = createBetterAuthSession({ request: input.request, createClient: input.createClient ?? productionClientFactory })
   const { descriptor, user, loading, unavailable } = session.state
-  const adapter: BrowserAuthAdapter = {
+  return {
     adapter: "better-auth",
-    transport: "cookie",
     initialize: (deployment) => initializeSession(session, deployment),
     useAuth: () => ({
       descriptor,
@@ -24,14 +23,11 @@ export function createBetterAuthBrowserAdapter(
       signIn: (options) => signIn(session, options),
       signOut: () => signOut(session),
       signUp: (options) => signUp(session, options),
-      getToken: (options) => adapter.getToken(options),
       refreshSession: async () => {
         if (unavailable()) return
         await reloadDescriptor(session)
         await hydrateSession(session)
       },
     }),
-    getToken: async () => null,
   }
-  return adapter
 }

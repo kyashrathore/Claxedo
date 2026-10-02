@@ -260,7 +260,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions): WorkspaceHos
     })
     void sweepIdleHarnessHomes(harnessStateRoot).catch((error: unknown) => log.warn("Idle harness home sweep failed", { error: String(error) }))
     const composer = createHarnessComposer(services, harnessCompositionOptions({
-      env, placement: options.placement, harnessStateRoot, opencodeRoot: `${storeRoot}/opencode`, store,
+      env, placement: options.placement, harnessStateRoot, opencodeRoot: `${storeRoot}/opencode`,
     }), options.connectionProviders ?? [])
     const transports = createWorkspaceTransports({
       composer,

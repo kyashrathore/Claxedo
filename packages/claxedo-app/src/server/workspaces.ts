@@ -36,7 +36,6 @@ export type Workspaces = Pick<PlacementsApi, "byId" | "list"> & {
 
 const BOOTSTRAP_PATH = "/api/claxedo/bootstrap"
 const WORKSPACE_DIRECTORY_PREFIX = "workspace:"
-const NO_PLACEMENTS: readonly PlacementRecord[] = []
 
 function trimmedDirectory(directory: string) {
   return directory.replace(/\/+$/, "") || "/"
@@ -105,9 +104,8 @@ function placementRoutes(find: (id: PlacementId) => Promise<PlacementRecord | un
 function mergedCatalog(queryClient: QueryClient, key: readonly unknown[], accountPlacements: AccountPlacements | undefined) {
   const watched = [observeQuery(queryClient, key), ...(accountPlacements ? [observeQuery(queryClient, accountPlacements.key)] : [])]
   let last: { local: BootstrapCatalog; linked: LinkedCatalog | undefined; merged: BootstrapCatalog } | undefined
-  const link = (catalog: BootstrapCatalog) => accountPlacements?.link(catalog.declaration.serverKind === "hosted" ? NO_PLACEMENTS : catalog.placements)
   const merge = (local: BootstrapCatalog) => {
-    const linked = link(local)
+    const linked = accountPlacements?.link(local.placements)
     if (last?.local !== local || last.linked !== linked) last = { local, linked, merged: withAccountPlacements(local, linked) }
     return last.merged
   }
@@ -121,7 +119,7 @@ function mergedCatalog(queryClient: QueryClient, key: readonly unknown[], accoun
     },
     linked: () => {
       const current = local()
-      return current && link(current)
+      return current && accountPlacements?.link(current.placements)
     },
     dispose: () => watched.forEach((watch) => watch.dispose()),
   }

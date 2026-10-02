@@ -1,25 +1,10 @@
 import { asFiniteNumber, asRecord } from "@claxedo/helpers/guards"
-import type { SubagentMode, SubagentStatus, SubagentToolCallRole } from "@claxedo/agent-runtime-contract"
+import type { SubagentObservation, SubagentStatus } from "@claxedo/agent-runtime-contract"
 import { asText as text } from "@claxedo/agent-runtime-contract"
 import { hostSubagentBinding, hostSubagentObservation, isHostSubagentTool } from "../../../translate/host-subagent"
 import { cursorToolName, isTaskTool, mcpContentTexts, successfulOutput, toolInput } from "./tools"
 
-export type CursorSubagentObservation = {
-  observationId: string
-  harnessExecutionId?: string
-  toolCallId: string
-  toolCallRole: SubagentToolCallRole
-  mode?: SubagentMode
-  status?: SubagentStatus
-  label?: string
-  subagentType?: string
-  description?: string
-  providerId?: string
-  providerKind?: string
-  subagentKey?: string
-  childSessionId?: string
-  transcript: { kind: "live" }
-}
+export type CursorSubagentObservation = SubagentObservation & { toolCallId: string; transcript: { kind: "live" } }
 
 function taskErrorMessage(value: unknown) {
   const row = asRecord(value)
@@ -36,18 +21,18 @@ export function taskOutput(value: unknown) {
 
 function safeTaskSuccess(success: Record<string, unknown>) {
   return {
-    ...(text(success.agentId) ? { agentId: text(success.agentId) } : {}),
-    ...(typeof success.isBackground === "boolean" ? { isBackground: success.isBackground } : {}),
-    ...(asFiniteNumber(success.durationMs) !== undefined ? { durationMs: asFiniteNumber(success.durationMs) } : {}),
+    ...safeTaskMetadata(success),
     ...(text(success.resultSuffix) ? { resultSuffix: text(success.resultSuffix) } : {}),
-    ...(text(success.backgroundReason) ? { backgroundReason: text(success.backgroundReason) } : {}),
   }
 }
 
 export function taskMetadata(value: unknown) {
   const result = asRecord(value)
   const success = result?.status === "success" ? asRecord(result.value) : undefined
-  if (!success) return {}
+  return success ? safeTaskMetadata(success) : {}
+}
+
+function safeTaskMetadata(success: Record<string, unknown>) {
   return {
     ...(text(success.agentId) ? { agentId: text(success.agentId) } : {}),
     ...(typeof success.isBackground === "boolean" ? { isBackground: success.isBackground } : {}),

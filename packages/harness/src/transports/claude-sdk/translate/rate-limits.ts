@@ -1,5 +1,4 @@
-import { USAGE_WINDOW_NAMES, asText as text } from "@claxedo/agent-runtime-contract"
-import type { AgentRuntimeEvent, FirstTurnErrorClass } from "@claxedo/agent-runtime-contract"
+import { USAGE_WINDOW_NAMES, asText as text, type AgentRuntimeEvent, type FirstTurnErrorClass } from "@claxedo/agent-runtime-contract"
 import { asFiniteNumber, asRecord } from "@claxedo/helpers/guards"
 import { formatRateLimitReset } from "../../../translate/rate-limit-reset"
 import type { ClaudeSdkAdapterState, ClaudeTranslation } from "./adapter-state"

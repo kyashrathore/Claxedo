@@ -2,6 +2,9 @@ import { expect, test } from "bun:test"
 import type { ServerRequest } from "./translate"
 import type { TurnBroker, TurnRequest, RequestAnswer } from "../../contract"
 import { answerCodexRequest } from "./requests"
+import { CodexRequestRefusal } from "./errors"
+import { codexAppServerAdapter } from "./translate/adapter"
+import { translatorRuntime } from "../../test-support/translator-runtime"
 
 const command = { method: "item/commandExecution/requestApproval", id: 0,
   params: { threadId: "thread", turnId: "turn", itemId: "item", startedAtMs: 1, command: "echo hello", cwd: "/work" } } as ServerRequest
@@ -10,6 +13,18 @@ function broker(ask: (request: TurnRequest) => Promise<RequestAnswer>): TurnBrok
   return { signal: new AbortController().signal, origin: { actor: { kind: "machine-owner" }, via: "loopback", reissued: false },
     ask, completeElicitation: async () => {}, observeSubagent: async () => undefined, associateChild: () => {} }
 }
+
+test("an unregistered dynamic tool request is refused and never projects an approval", async () => {
+  const request = { method: "item/tool/call", id: 7, params: { threadId: "thread", tool: "unregistered" } }
+  const failure = await answerCodexRequest(request, broker(async () => { throw new Error("unsupported request reached broker") }), "s1")
+    .then(() => undefined, (error: unknown) => error)
+  expect(failure).toBeInstanceOf(CodexRequestRefusal)
+  expect((failure as CodexRequestRefusal).rpcCode).toBe(-32601)
+  const runtime = translatorRuntime({ harness: "codex-app-server", threadId: "thread", adapter: codexAppServerAdapter(), clock: () => 0, createId: () => "id" })
+  const events = runtime.ingest({ source: "codex.app-server", method: request.method, payload: request.params }).events
+  expect(events.some((event) => event.type === "permission-request")).toBe(false)
+  expect(events).toMatchObject([{ type: "diagnostic", diagnostic: { code: "codex_app_server.unmapped_event" } }])
+})
 
 test("Codex approval waits for durable broker answer before replying", async () => {
   let release!: (answer: RequestAnswer) => void

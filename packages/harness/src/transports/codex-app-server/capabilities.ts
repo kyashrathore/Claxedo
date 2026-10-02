@@ -7,13 +7,10 @@ export function codexCapabilities(models: readonly CodexModel[]): TransportCapab
       name: model.name, ...(model.description ? { description: model.description } : {}) })) },
     effortLevels: models.length ? { status: "resolved", models: models.map((model) => ({ modelID: model.id, levels: model.efforts,
       ...(model.defaultEffort ? { default: model.defaultEffort } : {}) })) } : { status: "unresolved", models: [] },
-    instructionChannel: "thread-start", configOwner: "runtime",
+    instructionChannel: "thread-start",
     requests: { permissions: true, questions: true, elicitation: true },
     subagents: true,
     goals: { implemented: true, available: true, actions: ["pause", "resume", "delete"], recovery: "reconcile", optionalFields: ["tokenBudget", "tokensUsed", "timeUsedSeconds"] },
-    todos: true, history: "store", titles: "side-request",
-    pluginIntake: { mcp: "config", skills: "plugin-dir" },
-    mcpTransports: { stdio: true, http: true, sse: false },
-    timing: { model: "next-turn", effort: "next-turn", permissionMode: "next-turn", credentials: "after-active-turns" },
+    todos: true, history: "store",
   }
 }

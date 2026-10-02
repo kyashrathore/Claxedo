@@ -75,7 +75,7 @@ test("configuration queued behind refresh cannot apply once close begins", async
   const f = fixture()
   const probing = f.transport.config.options({ session: f.session }, "probe").then(() => "loaded", (error: Error) => error.message)
   await f.entered.promise
-  const configuring = f.transport.config.update(f.session, { instructions: "changed" }).then(() => "configured", (error: Error) => error.message)
+  const configuring = f.transport.config.setPermissionMode(f.session, "review").then(() => "configured", (error: Error) => error.message)
   const closing = f.transport.close(f.session)
   f.resume.resolve()
   const [probe, config] = await Promise.all([probing, configuring, closing])

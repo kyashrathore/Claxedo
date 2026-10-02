@@ -6,10 +6,10 @@ export class AcpStartupDeadline {
   private readonly countdown: HoldableCountdown
   private readonly timeout: Promise<never>
 
-  constructor(clock: HarnessServices["clock"], ms: number, operation: string) {
+  constructor(clock: HarnessServices["clock"], ms: number | undefined, operation: string) {
     let rejectTimeout!: (error: Error) => void
     this.timeout = new Promise((_, reject) => { rejectTimeout = reject })
-    this.countdown = new HoldableCountdown(clock, ms, () => rejectTimeout(new AcpTransportError("timeout", `ACP ${operation} timed out`)))
+    this.countdown = new HoldableCountdown(clock, ms ?? 10_000, () => rejectTimeout(new AcpTransportError("timeout", `ACP ${operation} timed out`)))
   }
 
   async run<T>(work: Promise<T>, signal?: AbortSignal): Promise<T> {

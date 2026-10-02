@@ -15,7 +15,7 @@ afterAll(() => fetcher.mockRestore())
 
 function signed(...answers: unknown[]) {
   const calls: { operation: string; input: unknown }[] = []
-  const transport = createTransport({ serverUrl: "http://127.0.0.1:4444", auth: { kind: "none" }, account: async (operation, input) => {
+  const transport = createTransport({ serverUrl: "http://127.0.0.1:4444", account: async (operation, input) => {
     calls.push({ operation, input })
     const answer = answers.shift()
     if (answer instanceof Error) throw answer
@@ -93,7 +93,7 @@ test("signed desktop local placements keep using the daemon with no account call
 })
 
 test("web runtime routing uses the same read-only workspace connection", async () => {
-  const transport = createTransport({ serverUrl: "https://account.test", auth: { kind: "bearer", token: async () => "account-bearer" } })
+  const transport = createTransport({ serverUrl: "https://account.test", cookies: true })
   fetcher.mockResolvedValueOnce(Response.json(link)).mockResolvedValueOnce(Response.json({}))
   await transport.runtime(cloud, "/session/ses_a")
   expect(String(fetcher.mock.calls[0]?.[0])).toBe("https://account.test/api/workspace/ws_cloud/connection")

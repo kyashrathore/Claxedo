@@ -1,51 +1,25 @@
-import type { AgentRuntimeEvent } from "@claxedo/agent-runtime-contract"
+import type { AgentRuntimeEvent, AgentRuntimeEventOf } from "@claxedo/agent-runtime-contract"
 import { runtimeDiagnostic, asText as text } from "@claxedo/agent-runtime-contract"
 import type { CodexHandler, CodexHandlers } from "./frame"
 
 type Severity = "debug" | "info" | "warn" | "error"
 
-export function diagnosticForEvent(input: {
-  code: string
-  message: string
-  severity?: Severity
-  event: { source: string; method?: string; payload: unknown }
-}) {
-  return {
+export function unmappedCodexAppServerEvent(event: { source: string; method?: string; payload: unknown }) {
+  return [{
     type: "diagnostic",
     diagnostic: runtimeDiagnostic({
-      code: input.code,
-      message: input.message,
-      severity: input.severity,
-      source: input.event.source,
-      method: input.event.method,
-      raw: input.event.payload,
+      code: "codex_app_server.unmapped_event",
+      message: `${event.method ?? "unknown"}: Codex app-server method has no AgentRuntimeEvent mapping`,
+      severity: "info",
+      source: event.source,
+      method: event.method,
+      raw: event.payload,
     }),
-  } satisfies AgentRuntimeEvent
+  } satisfies AgentRuntimeEvent]
 }
 
-export function unmappedCodexAppServerEvent(event: { source: string; method?: string; payload: unknown }) {
-  const method = event.method ?? "unknown"
-  return [diagnosticForEvent({
-    code: "codex_app_server.unmapped_event",
-    message: `${method}: Codex app-server method has no AgentRuntimeEvent mapping`,
-    severity: "info",
-    event,
-  })]
-}
-
-export function harnessNotice(input: {
-  code: string
-  message: string
-  severity?: Severity
-  details?: unknown
-}) {
-  return {
-    type: "harness-notice",
-    code: input.code,
-    message: input.message,
-    severity: input.severity ?? "info",
-    ...(input.details !== undefined ? { details: input.details } : {}),
-  } satisfies AgentRuntimeEvent
+export function harnessNotice(input: Omit<AgentRuntimeEventOf<"harness-notice">, "type" | "severity"> & { severity?: Severity }) {
+  return { type: "harness-notice", ...input, severity: input.severity ?? "info" } satisfies AgentRuntimeEvent
 }
 
 const warning: CodexHandler = ({ method, row }) => [harnessNotice({
@@ -72,34 +46,10 @@ export const noticeHandlers: CodexHandlers = {
   })],
   warning,
   guardianWarning: warning,
-  configWarning: ({ row }) => [harnessNotice({
-    code: "codex_app_server.config_warning",
-    message: text(row.summary) ?? "Codex config warning",
-    severity: "warn",
-    details: row,
-  })],
-  deprecationNotice: ({ row }) => [harnessNotice({
-    code: "codex_app_server.deprecation_notice",
-    message: text(row.summary) ?? "Codex deprecation notice",
-    severity: "info",
-    details: row,
-  })],
   "model/verification": ({ row }) => [harnessNotice({
     code: "codex_app_server.model_verification",
     message: "Codex model verification updated",
     severity: "debug",
     details: row,
   })],
-  "windows/worldWritableWarning": ({ row }) => [harnessNotice({
-    code: "codex_app_server.windows_world_writable_warning",
-    message: text(row.message) ?? "Windows world-writable path warning",
-    severity: "warn",
-    details: row,
-  })],
-  "windowsSandbox/setupCompleted": ({ row, event }) => row.success === false
-    ? [
-      { type: "session-status", status: "error" },
-      diagnosticForEvent({ code: "codex_app_server.sandbox_setup_failed", message: text(row.error) ?? "Sandbox setup failed", severity: "warn", event }),
-    ]
-    : [],
 }

@@ -24,11 +24,10 @@ Owns: the account, as one port with two bindings: the browser's own sign-in sess
 
 ## Routes
 
-`authRoutes` (`routes.ts`): `/login`, `/device` (device grant approval), `/oauth/consent` (MCP scope consent), `/cli-login` (CLI token handoff, loopback callback only), `/invitations#<token>` (sign-up/sign-in and invitation acceptance). The shell registers them outside the app shell.
+`authRoutes` (`routes.ts`): `/login`, `/device` (device grant approval, where the CLI's sign-in is approved), `/oauth/consent` (MCP scope consent), `/invitations#<token>` (sign-up/sign-in and invitation acceptance). The shell registers them outside the app shell.
 
 ## Invariants
 
-- The CLI token is posted only to an `http:` loopback callback (`localCallback`), and never from the app's document: the app's Content-Security-Policy allows no form target. `cli-callback.ts` hands the callback and fields to `/cli-callback.html` through tab storage, and that document, whose own policy allows only loopback form targets and which runs no app code, posts them once and forgets them.
 - The consent page only narrows scopes; `claxedo:admin` is offered only to clients this deployment registered.
 - Signing out clears every `claxedo:` preference except the last user id; a different user signing in clears them too.
 - No test bypass exists in this domain; flows sign in against the real Worker with the scripted OAuth provider.

@@ -1,5 +1,7 @@
 import type { SessionTitleRequest } from "@claxedo/agent-runtime-contract"
-import { installPiExtension, piExtensionPath, runPiExtensionCommand } from "./extension"
+import { settleAtRequestDeadline } from "@claxedo/helpers"
+import { TransportError } from "../../contract/errors"
+import { installPiExtension, piExtensionPath, piRegisteredCommands } from "./extension"
 import type { PiRpc } from "./rpc"
 
 export const PI_TITLE_COMMAND = "claxedo-title"
@@ -38,11 +40,28 @@ export function installPiTitleExtension(stateRoot: string): Promise<string> {
 }
 
 export async function piSessionTitle(rpc: PiRpc, stateRoot: string, request: SessionTitleRequest): Promise<string | null> {
+  const deadline = { at: Date.now() + TITLE_REQUEST_TIMEOUT_MS, signal: request.signal }
+  const extension = piExtensionPath(stateRoot, EXTENSION_FILE)
+  const registered = await piRegisteredCommands(rpc, deadline)
+  if (!registered.some((entry) => entry.name === PI_TITLE_COMMAND && entry.source === "extension" && entry.path === extension)) {
+    throw new TransportError("pi", "protocol", `Pi title refused: Pi has not registered /${PI_TITLE_COMMAND} from ${extension}`)
+  }
   let name: string | null = null
-  await runPiExtensionCommand(rpc, { what: "Pi title", command: PI_TITLE_COMMAND, extension: piExtensionPath(stateRoot, EXTENSION_FILE),
-    argument: JSON.stringify({ system: request.system, user: request.user }),
-    deadline: { at: Date.now() + TITLE_REQUEST_TIMEOUT_MS, signal: request.signal } }, (event) => {
+  let failure: string | undefined
+  const stop = rpc.onEvent((event) => {
     if (event.type === "session_info_changed" && typeof event.name === "string") name = event.name
+    if (event.type === "extension_error" && event.extensionPath === `command:${PI_TITLE_COMMAND}`) failure = String(event.error)
   })
-  return name
+  try {
+    const argument = JSON.stringify({ system: request.system, user: request.user })
+    await settleAtRequestDeadline("Pi title", { signal: deadline.signal, deadlineAt: deadline.at },
+      rpc.request("prompt", { message: `/${PI_TITLE_COMMAND} ${argument}` }, Math.max(1, deadline.at - Date.now())),
+      () => {}, (label, aborted) => new TransportError("pi", "timeout", `${label} ${aborted ? "was abandoned" : "timed out"}`))
+    if (failure) throw new TransportError("pi", "protocol", failure)
+    return name
+  } finally { stop() }
+}
+
+export async function piCommands(rpc: PiRpc) {
+  return (await piRegisteredCommands(rpc)).flatMap(({ name, description }) => name === PI_TITLE_COMMAND ? [] : [{ name, description }])
 }

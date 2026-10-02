@@ -1,6 +1,6 @@
-import { isLoopbackUrl, resolveServerUrl, type AuthSource, type ServerConfig } from "./config"
+import { isLoopbackUrl, resolveServerUrl, type ServerConfig } from "./config"
 import { createHostedAccount, type HostedAccount } from "./account"
-import { responseError, responseErrorCode, toAppError } from "./errors"
+import { responseError, toAppError } from "./errors"
 import { createRelay } from "./relay"
 import { startWorkspace, type StartOptions } from "./workspace-start"
 import type { Placement } from "./types"
@@ -30,17 +30,8 @@ function socketUrl(serverUrl: string, path: string) {
   return url
 }
 
-async function authorization(auth: AuthSource, fresh: boolean): Promise<string | undefined> {
-  if (auth.kind === "none") return undefined
-  if (auth.kind === "basic") return `Basic ${btoa(`${auth.username}:${auth.password}`)}`
-  const token = await auth.token({ fresh })
-  return token ? `Bearer ${token}` : undefined
-}
-
-async function authorizedInit(config: ServerConfig, init: RequestInit | undefined, fresh: boolean): Promise<RequestInit> {
+function withRequestDefaults(config: ServerConfig, init: RequestInit | undefined): RequestInit {
   const headers = new Headers(init?.headers)
-  const header = await authorization(config.auth, fresh)
-  if (header) headers.set("Authorization", header)
   if (typeof init?.body === "string" && !headers.has("Content-Type")) headers.set("Content-Type", "application/json")
   if (!headers.has("Accept")) headers.set("Accept", "application/json")
   return {
@@ -49,10 +40,6 @@ async function authorizedInit(config: ServerConfig, init: RequestInit | undefine
     cache: "no-store",
     credentials: config.cookies ? "include" : "same-origin",
   }
-}
-
-async function rejectedBearer(response: Response) {
-  return response.status === 401 && (await responseErrorCode(response)) === "invalid_bearer_token"
 }
 
 export function withQuery(path: string, query: Readonly<Record<string, string | number | boolean | undefined>>) {
@@ -70,18 +57,12 @@ function withoutRouteQuery(path: string) {
   return `${url.pathname}${url.search}`
 }
 
-async function fetchAuthorized(config: ServerConfig, url: string, init: RequestInit | undefined, fresh: boolean) {
+async function fetchFromServer(config: ServerConfig, url: string, init?: RequestInit): Promise<Response> {
   try {
-    return await fetch(url, await authorizedInit(config, init, fresh))
+    return await fetch(url, withRequestDefaults(config, init))
   } catch (error) {
     throw toAppError(error)
   }
-}
-
-async function sendAuthorized(config: ServerConfig, url: string, init?: RequestInit): Promise<Response> {
-  const response = await fetchAuthorized(config, url, init, false)
-  if (config.auth.kind !== "bearer" || !(await rejectedBearer(response))) return response
-  return fetchAuthorized(config, url, init, true)
 }
 
 async function readJsonResponse<T>(response: Response, label: string): Promise<T> {
@@ -121,7 +102,7 @@ export function createWorkspaceConnections(request: Request, account?: HostedAcc
 export function createTransport(config: ServerConfig): Transport {
   const serverUrl = resolveServerUrl(config)
   const loopback = isLoopbackUrl(serverUrl)
-  const request = (path: string, init?: RequestInit) => sendAuthorized(config, `${serverUrl}${path}`, init)
+  const request = (path: string, init?: RequestInit) => fetchFromServer(config, `${serverUrl}${path}`, init)
   const connections = createWorkspaceConnections(request, config.account ? createHostedAccount(config.account) : undefined)
   const relay = createRelay(connections.read)
   const usesRelay = (route: RuntimeRoute) => (route.kind === "cloud" || route.remote) && (!loopback || config.account !== undefined)

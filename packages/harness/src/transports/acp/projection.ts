@@ -1,7 +1,6 @@
-import type { HarnessServices, McpServerSpec } from "../../contract"
+import { sessionMcpServers, type HarnessServices, type McpServerSpec } from "../../contract"
 import type { AcpConnectionOptions } from "./connection"
 import type { AcpEntry, AcpMcpFilter } from "./index"
-import { sessionMcpServers } from "../../contract"
 import { AcpTransportError } from "./errors"
 
 export function acpMcpProjection(entry: Pick<AcpEntry, "start" | "peer">, services: HarnessServices,
