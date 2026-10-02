@@ -23,7 +23,7 @@ too; the operator is not a code value. See
 ``@claxedo/server-core/authority/deployment-mode``.
 
 **`.cf.ts` means workerd-only.** A file that cannot run outside the Cloudflare
-runtime (Durable Object classes, `cloudflare:workers`, KV/R2 bindings). `hosted-shared/` contains the portable Hono composition that the Worker calls.
+runtime (Durable Object classes, `cloudflare:workers`, KV/R2 bindings). `deployments/hosted-shared/` contains the portable Hono composition that the Worker calls.
 
 **`authority/` is the identity/authorization/tenancy layer**, not "the control
 plane" (that is the whole package). `authority/routes/` holds the JWKS router; `platform/http/` is
