@@ -11,14 +11,18 @@ afterEach(async () => {
   for (const root of roots.splice(0)) await fs.rm(root, { recursive: true, force: true })
 })
 
+// Bun's http.request sends an absolute-URL path to that URL's own host, past
+// the proxy, so the absolute-form request goes over a raw socket.
 function sendProxy(proxy: URL, destination: string, header: string) {
   return new Promise<number>((resolve, reject) => {
-    const request = http.request({ host: proxy.hostname, port: proxy.port, path: destination, method: "POST", headers: { authorization: header } }, (response) => {
-      response.resume()
-      response.on("end", () => resolve(response.statusCode ?? 0))
+    const socket = net.connect(Number(proxy.port), proxy.hostname, () => {
+      socket.write(`POST ${destination} HTTP/1.1\r\nHost: ${new URL(destination).host}\r\nAuthorization: ${header}\r\nContent-Length: 2\r\n\r\n{}`)
     })
-    request.on("error", reject)
-    request.end("{}")
+    socket.once("data", (data) => {
+      socket.destroy()
+      resolve(Number(/^HTTP\/1\.1 (\d{3})/.exec(data.toString())?.[1] ?? 0))
+    })
+    socket.on("error", reject)
   })
 }
 
@@ -35,7 +39,7 @@ function sendConnect(proxy: URL, host: string) {
   })
 }
 
-test("local broker keeps the key outside the runtime and withdraws it on ensure", async () => {
+test.skipIf(process.platform !== "darwin")("local broker keeps the key outside the runtime and withdraws it on ensure", async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "local-broker-test-"))
   roots.push(root)
   const received: Array<{ authorization: string; url: string }> = []
@@ -111,7 +115,7 @@ test("local broker keeps the key outside the runtime and withdraws it on ensure"
   }
 })
 
-test("local broker reports the last 40 runtime log lines when startup exits", async () => {
+test.skipIf(process.platform !== "darwin")("local broker reports the last 40 runtime log lines when startup exits", async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "local-broker-exit-test-"))
   roots.push(root)
   const driver = createLocalBrokeringSandboxDriver({

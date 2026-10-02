@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process"
-import { mkdtempSync, rmSync } from "node:fs"
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { createServer } from "node:http"
 import { tmpdir } from "node:os"
 import path from "node:path"
@@ -49,6 +49,14 @@ export async function startLiveFirstPartyMcp(options: Pick<Parameters<typeof sta
   const workspaceRoot = mkdtempSync(path.join(tmpdir(), "claxedo-first-party-mcp-ws-"))
   const previousDataDir = process.env.CLAXEDO_DATA_DIR
   process.env.CLAXEDO_DATA_DIR = dataDir
+  // The runtime offers the claude harness only where it resolves Claude Code,
+  // and nothing these suites drive launches it, so the fixture names an
+  // executable that refuses to run instead of depending on this machine's install.
+  const claudeDir = mkdtempSync(path.join(tmpdir(), "claxedo-first-party-mcp-claude-"))
+  const claude = path.join(claudeDir, "claude")
+  writeFileSync(claude, "#!/bin/sh\necho 'the live MCP fixture launched its Claude Code placeholder' >&2\nexit 1\n", { mode: 0o755 })
+  const previousClaude = process.env.CLAUDE_CODE_EXECUTABLE
+  process.env.CLAUDE_CODE_EXECUTABLE = claude
   const git = (args: readonly string[]) => execFileSync("git", [...args], { cwd: workspaceRoot, stdio: "pipe" })
   // The workspace store refuses a local directory that is not a git repository,
   // and the runtime proxy dispatches only to a workspace the store resolved.
@@ -156,6 +164,9 @@ export async function startLiveFirstPartyMcp(options: Pick<Parameters<typeof sta
       closeTasksStore()
       if (previousDataDir === undefined) delete process.env.CLAXEDO_DATA_DIR
       else process.env.CLAXEDO_DATA_DIR = previousDataDir
+      if (previousClaude === undefined) delete process.env.CLAUDE_CODE_EXECUTABLE
+      else process.env.CLAUDE_CODE_EXECUTABLE = previousClaude
+      rmSync(claudeDir, { recursive: true, force: true })
       rmSync(dataDir, { recursive: true, force: true })
       rmSync(workspaceRoot, { recursive: true, force: true })
     },

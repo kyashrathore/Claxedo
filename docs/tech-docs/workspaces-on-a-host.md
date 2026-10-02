@@ -382,8 +382,7 @@ the sources:
   `packages/claxedo-local-server/src/session/routes/meta-routes.ts`), and
   `GET /api/control/session-list` otherwise (`signedSessionList` in
   `packages/claxedo-server/src/session/list.ts`, served by
-  `packages/claxedo-server/src/deployments/hosted-shared/hosted-core-app.ts`
-  and `packages/claxedo-server/src/session/routes/control-plane-session.ts`).
+  `packages/claxedo-server/src/deployments/hosted-shared/hosted-core-app.ts`).
   It always asks `scope=project` with the project id, `sort=human_turn_desc`,
   `limit` and `after`. This source is required.
 - On a signed desktop, `accountSource` reads each control-plane project that
@@ -631,7 +630,7 @@ relay beside its harness health route
 ## H. Authority on the runtime side
 
 `managedWorkspaceSessionAccessPolicy`
-(`packages/workspace-runtime/src/session-access-policy.ts`) is built from one
+(`packages/session-core/src/session-access-policy.ts`) is built from one
 all-or-nothing `ManagedSessionAuthority` bundle — read, write, stream,
 register, and the three turn-lease members — and `sessionAuthority` is
 `managed-private` exactly when the bundle exists. That marker is a
@@ -675,5 +674,5 @@ names the file and what it claims to cover.
   relay's marks and once without, with the session authority and the relay
   bearer verification faked, and asserts which of them the daemon consults.
 - **App e2e** (`packages/claxedo-app/e2e/`): no flow drives a machine-placed
-  workspace. Its relay harness (`packages/claxedo-app/e2e/harness/relay.ts`)
+  workspace. The hosted relay (`packages/harness/e2e/harness/hosted-relay.ts`)
   backs the signed stack (`packages/claxedo-app/e2e/harness/signed-stack.ts`).

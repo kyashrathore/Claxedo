@@ -192,7 +192,7 @@ Today measured on `feat/harness-v2` at `e90ea3215d` (worktree `/Users/yashvardha
 - `acp/pattern-validation.ts:8-22`: `active >= 2` gate, `maxOldGenerationSizeMb: 32` — **verified** dev and today.
 
 ### M42 — Lint gate / T-3 "complexity limit (47)"
-- Gate: `packages/agent-sdk-runtime/scripts/oxlint.json` has `"complexity": ["error", 35]`; plan's "(47)" is `switchHarness`'s measured complexity on dev, not the limit. Fix commit 5d6aa44139 is on the branch; `handoff-transaction.ts` is 327 lines today vs 286 on dev.
+- Gate: `scripts/oxlint.json` of `agent-sdk-runtime` (deleted with that package in d20c20b6a1) had `"complexity": ["error", 35]`; plan's "(47)" is `switchHarness`'s measured complexity on dev, not the limit. Fix commit 5d6aa44139 is on the branch; `handoff-transaction.ts` is 327 lines today vs 286 on dev.
 
 ### M43 — `engines.node` / T-9
 - `claxedo-server/package.json`: `"node": ">=22 <25"` — the crashing `/usr/local/bin/node` v22.13.1 was inside that range; the fix pins `CLAXEDO_E2E_NODE`. Verified.
@@ -210,7 +210,7 @@ Today measured on `feat/harness-v2` at `e90ea3215d` (worktree `/Users/yashvardha
 - 38 rows (H1–H37 plus H3b). "~90–100 flow-by-harness variants" is an estimate, not file-measurable.
 
 ### M47 — `harness-traces/` "11 files"
-- `packages/claxedo-app/e2e/fixtures/harness-traces/` = 11 files, dev and today — **exact**.
+- The old app's `e2e/fixtures/harness-traces/` (deleted with that app in 0ff4ff0d96) = 11 files, dev and today — **exact**.
 
 ### M48 — "32 of the old app's 58 e2e specs ran against a hand-written fake of 70 server routes"
 - `find packages/claxedo-app -name '*.spec.ts'` = 58 — **exact**.
