@@ -44,7 +44,7 @@ export function TimelineFileContextMenu(props: {
       >
         <button
           type="button"
-          class="flex w-full items-center gap-2 rounded-md px-2 min-h-11 text-13-regular text-text-base hover:bg-surface-base-active"
+          class="flex w-full items-center gap-2 rounded-md px-2 py-1 pointer-coarse:min-h-11 text-13-regular text-text-base hover:bg-surface-base-active"
           onClick={() => {
             props.onOpenFile(props.menu.path)
             props.onDismiss()
@@ -54,7 +54,7 @@ export function TimelineFileContextMenu(props: {
         </button>
         <button
           type="button"
-          class="flex w-full items-center gap-2 rounded-md px-2 min-h-11 text-13-regular text-text-base hover:bg-surface-base-active"
+          class="flex w-full items-center gap-2 rounded-md px-2 py-1 pointer-coarse:min-h-11 text-13-regular text-text-base hover:bg-surface-base-active"
           onClick={() => {
             void copyText(props.resolvePath(props.menu.path))
             props.onDismiss()
@@ -66,7 +66,7 @@ export function TimelineFileContextMenu(props: {
           {(open) => (
             <button
               type="button"
-              class="flex w-full items-center gap-2 rounded-md px-2 min-h-11 text-13-regular text-text-base hover:bg-surface-base-active"
+              class="flex w-full items-center gap-2 rounded-md px-2 py-1 pointer-coarse:min-h-11 text-13-regular text-text-base hover:bg-surface-base-active"
               onClick={() => {
                 open()(props.menu.path)
                 props.onDismiss()
