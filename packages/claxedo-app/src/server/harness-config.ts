@@ -1,5 +1,5 @@
 import { responseError } from "./errors"
-import { sessionId as asSessionId, type PlacementId } from "./ids"
+import type { PlacementId } from "./ids"
 import { readPermissionModes, writePermissionMode, type PermissionModesRequest } from "./permission-modes"
 import { withQuery, type Transport } from "./transport"
 import type { SessionLocation } from "./types"
@@ -7,7 +7,7 @@ import type { Workspaces } from "./workspaces"
 import { readHarnessOptions, type HarnessOptionsRequest } from "./harness-options"
 import type { HarnessOptions, HarnessState } from "./harness-types"
 import { writeSessionConfig, type SessionConfigPatch } from "./session-config"
-import { harnessStateFromWire, sessionConfigFromWire } from "./wire/harness-state"
+import { harnessStateFromWire } from "./wire/harness-state"
 import type { PermissionModeState } from "./wire/permission-modes"
 
 const HARNESS_PATH = "/api/claxedo/agent-config/harness"
@@ -26,13 +26,6 @@ export function createHarnessConfigApi(transport: Transport, workspaces: Workspa
   return {
     serverUrl: transport.serverUrl,
     folderHarness: async (placementId, sessionId) => {
-      if (sessionId) {
-        const route = await workspaces.route({ placementId, sessionId: asSessionId(sessionId) })
-        if (route.sharedSession) {
-          const config = sessionConfigFromWire(await transport.runtimeJson(route, `/session/${encodeURIComponent(sessionId)}/config`))
-          return config && { ...config.harness, model: config.model?.modelId, modelProviderId: config.model?.providerId, thoughtLevel: config.variant }
-        }
-      }
       const response = await transport.request(withQuery(HARNESS_PATH, { workspaceId: await workspaceId(placementId), sessionId }))
       if (!response.ok) throw await responseError(response, "Harness status")
       return harnessStateFromWire(await response.json())

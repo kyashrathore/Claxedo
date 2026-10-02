@@ -58,7 +58,7 @@ function createSendFor(props: ComposerProps, store: ComposerStore, key: Accessor
     working: () => sessionWorking(props.view),
     mode: () => late.controller?.state.mode ?? "normal",
     normalMode: () => late.controller?.setMode("normal"),
-    submission: selection.submission,
+    submission: props.manageSession === false ? async () => ({}) : selection.submission,
     goalCapable: () => goalCapable(props, selection),
     view: () => props.view,
     startSession: props.startSession,
@@ -161,7 +161,7 @@ export function createComposer(props: ComposerProps) {
   const shared = { t, key, store, refs, send, reader, suggestions, controller, dragging, draft, working, goalAvailable }
   return {
     ...shared,
-    ...submitState({ key, selection, send, controller, working, asleep: () => isStoppedCloud(props.placementId ? server.placements.byId(props.placementId) : undefined), readOnly: () => props.readOnly === true }),
+    ...submitState({ key, selection, send, controller, working, asleep: () => isStoppedCloud(props.placementId ? server.placements.byId(props.placementId) : undefined), readOnly: () => props.readOnly === true, manage: () => props.manageSession !== false }),
     harness: selection.harness,
     harnessController: selection.controller,
     harnessScopeInput: selection.scopeInput,
@@ -179,11 +179,12 @@ function submitState(input: {
   working: Accessor<boolean>
   asleep: Accessor<boolean>
   readOnly: Accessor<boolean>
+  manage: Accessor<boolean>
 }) {
   const { selection, send } = input
   const submitBlock = createMemo(() => {
     const state = selection.selection()
-    const harnessMode = !!state.harness
+    const harnessMode = input.manage() && !!state.harness
     return submitBlockReason({
       authorityBlock: input.readOnly() ? "session-share" : undefined,
       harnessMode,
@@ -192,7 +193,7 @@ function submitState(input: {
       harnessConfigError: !!state.configError,
       harnessOptionsLoading: state.optionsLoading,
       harnessReadyForSubmit: selection.submit.readyForSubmit(input.key()),
-      modelBlocked: !harnessMode,
+      modelBlocked: input.manage() && !harnessMode,
       booting: send.booting(),
       stoppable: input.working(),
       blank: input.controller.blank(),

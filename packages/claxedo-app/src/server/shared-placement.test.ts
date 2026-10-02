@@ -6,8 +6,6 @@ import { placementId, projectId, sessionId } from "./ids"
 import { createTransport } from "./transport"
 import { createWorkspaces } from "./workspaces"
 import { frameFromWire, serverEventFromFrame } from "./wire/frames"
-import { readHarnessOptions } from "./harness-options"
-import { createHarnessConfigApi } from "./harness-config"
 import { queryKeys } from "./query-keys"
 
 const shared = { session_id: "ses_shared", workspace_id: "ws_owner", project_id: "prj_owner", title: "Design", owner_name: "Ada", level: "follow" }
@@ -30,16 +28,6 @@ test("a shared session routes without admitting its owner's workspace and disapp
       const frame = frameFromWire({ directory: "workspace:ws_owner", workspaceId: "ws_owner", type: "message.part.delta", properties: { sessionID: "ses_shared", messageID: "msg_1", partID: "prt_1", field: "text", delta: "live" } })!
       expect(serverEventFromFrame(frame, workspaces.address)).toMatchObject({ type: "partDelta", ref, delta: "live" })
       expect(serverEventFromFrame({ ...frame, properties: { ...frame.properties, sessionID: "ses_private" } }, workspaces.address)).toBeUndefined()
-      const reads: unknown[] = []
-      await readHarnessOptions({ runtimeJson: async (route: unknown, path: string) => { reads.push([route, path]); return [] } } as never,
-        workspaces, { placementId: ref.placementId, sessionId: ref.sessionId, harness: "pi" })
-      expect(reads).toEqual([[await workspaces.route(ref), "/session/ses_shared/config-options?nativeHarness=pi"]])
-      const configPaths: string[] = []
-      const harness = createHarnessConfigApi({ runtimeJson: async (_route: unknown, path: string) => {
-        configPaths.push(path); return { harness: { kind: "native", harnessId: "pi" }, model: { providerID: "anthropic", modelID: "sonnet" } }
-      } } as never, workspaces)
-      expect(await harness.folderHarness(ref.placementId, ref.sessionId)).toMatchObject({ type: { kind: "native", harnessId: "pi" }, model: "sonnet" })
-      expect(configPaths).toEqual(["/session/ses_shared/config"])
       await expect(workspaces.route(ref.placementId)).rejects.toMatchObject({ class: "not_found" })
       await expect(workspaces.route({ ...ref, sessionId: sessionId("ses_other") })).rejects.toMatchObject({ class: "not_found" })
       rows = [{ ...shared, level: "send" }]

@@ -1,5 +1,5 @@
 import { fetchQuery } from "./fetch-query"
-import { sessionId, type PlacementId } from "./ids"
+import type { PlacementId } from "./ids"
 import { queryKeys } from "./query-keys"
 import { withQuery, type Transport } from "./transport"
 import { responseError } from "./errors"
@@ -21,7 +21,7 @@ export type HarnessOptionsRequest = {
 }
 
 export async function readHarnessOptions(transport: Transport, workspaces: Workspaces, request: HarnessOptionsRequest): Promise<HarnessOptions> {
-  const route = await workspaces.route(request.sessionId ? { placementId: request.placementId, sessionId: sessionId(request.sessionId) } : request.placementId)
+  const route = await workspaces.route(request.placementId)
   const selection = harnessSelectionQuery(request.harness)
   if (route.remote) {
     const path = request.sessionId ? `/session/${encodeURIComponent(request.sessionId)}/config-options` : "/api/wr/harness-config-options"
