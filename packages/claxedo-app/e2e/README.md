@@ -158,6 +158,8 @@ Opens the stream the app reads (`/api/wr/events`) and records every frame. `fram
 
 Both fixtures compose the certified hosted Cloudflare Worker on Miniflare/workerd with local D1/R2, the production Cloudflare relay Durable Object, and a local daemon enrolled as the owner's machine. The HTTPS front serves `dist-e2e-signed/` at `https://claxedo-e2e.localhost:<port>` and forwards control-plane requests to workerd; the name matters, because the app treats a loopback server URL as the local daemon. Runtime traffic uses the relay with the Worker's Runtime Access Token. Node children trust the fixture CA through `NODE_EXTRA_CA_CERTS`.
 
+The front (`harness/hosted-app-front.ts`) listens on both 127.0.0.1 and ::1, because resolvers answer a `*.localhost` name with ::1 first and workerd and the sandbox runtimes take the first answer. It opens a fresh connection to workerd for every forwarded request, because a kept-alive socket workerd has already closed answers the next request with ECONNRESET. Booting and stopping the Worker, relay, sandbox fixture and enrolled daemon happen outside each flow's own timeout.
+
 The owner signs up through hosted email/password auth. The Worker sends its verification email through its `EMAIL` send_email binding; the fixture reads the link from what Miniflare's simulated binding recorded (`hosted.recordedEmailActionUrl(email, subject)`), follows it and bootstraps the owner using the provisioned D1 claim. `startHostedMachine` uses real P256 keys and public enrollment/heartbeat APIs. `makeWorkspace` explicitly consents a local folder, assigns it to this enrolled host, acknowledges that exact assignment and delivers its serving credential/endpoints to the local daemon. The daemon establishes the tunnel. IDs come from the local daemon and D1; no folder resolver or operator restart is involved.
 
 | Member | Meaning |
@@ -170,6 +172,7 @@ The owner signs up through hosted email/password auth. The Worker sends its veri
 | `signIn(page, account)` | Public `/login` form |
 | `makeWorkspace(name, projectName?)` | Consent/register an owned folder, then await a routable connection |
 | `runtime(workspaceId)` | Owner's runtime transport using the canonical connection capability |
+| `controlPlaneRequests()` | Every control-plane request the front forwarded, as `METHOD /path`, the desktop's included |
 
 Account control-plane requests send the hosted cookie. Session creation reserves its ID in D1 before creating the same session through the relay. A workspace stays with its owner; another person's cookie grants no runtime access.
 

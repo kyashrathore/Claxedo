@@ -1,4 +1,5 @@
 import assert from "node:assert/strict"
+import { eventually } from "../harness/eventually"
 import { ClaxedoApi, assistantText } from "../harness/api"
 import { unexpectedEgress } from "../harness/egress-guard"
 import { startStack } from "../harness/stack"
@@ -44,9 +45,10 @@ export async function run() {
       assert.ok(stream.frames.some((frame) => frameType(frame) === "message.part.updated" && frameSessionId(frame) === child.id),
         `codex ${protocol.id} child transcript was absent from the live stream`)
       assert.doesNotMatch(assistantText(await api.messages(directory, parent.id)), /H5CODEXNATIVECHILD-DONE/)
-      const usage = await api.usageBySession(Date.now() - 300_000, Date.now() + 60_000)
-      assert.ok(usage.breakdown.rows.some((row) => row.value.endsWith(`:session:${child.id}`) && row.input > 0),
-        `codex ${protocol.id} child usage was not metered on the child: ${JSON.stringify(usage.breakdown.rows)}`)
+      await eventually(`codex ${protocol.id} child usage metered on the child`, async () => {
+        const usage = await api.usageBySession(Date.now() - 300_000, Date.now() + 60_000)
+        return usage.breakdown.rows.some((row) => row.value.endsWith(`:session:${child.id}`) && row.input > 0) ? usage : undefined
+      }, 20_000)
       console.log(`H5 codex ${protocol.id}: native child session, background transcript after the parent idled, completion and child usage passed`)
     }
     assert.deepEqual(unexpectedEgress(stack.egress.attempts), [])
