@@ -1,25 +1,25 @@
 import assert from "node:assert/strict"
 import { assistantText } from "../harness/api"
-import { activateCloudCredential, cloudApi, cloudTransport, createCloudWorkspace, waitCloudConnection } from "../harness/cloud-workspace"
-import { startStack } from "../harness/stack"
+import { hostedApi, hostedWorkspace } from "../harness/hosted-flow"
+import { hostedFetch } from "../harness/hosted-auth"
+import { startHostedCloudStack } from "../harness/hosted-cloud"
 import { frameSessionId, frameType, openEventStream } from "../harness/stream"
 import { waitForTitle } from "../harness/turn-observations"
-import { sendJson } from "../harness/transport"
 
 export async function run() {
-  const stack = await startStack({ label: "h19-cloud-pi", cloud: true })
+  const stack = await startHostedCloudStack("h19-cloud-pi")
   try {
-    const stored = await sendJson(cloudTransport(stack), "PUT", `${stack.url}/api/claxedo/credentials`, {
-      provider_id: "openai", kind: "api_key", source: "managed", scope: "shared", secret: "test-key",
-    }, "Storing the signed Pi account")
-    await activateCloudCredential(stack, (JSON.parse(stored) as { credential: { id: string } }).credential.id)
-    const workspace = await createCloudWorkspace(stack, "h19-pi")
-    const connection = await waitCloudConnection(stack, workspace.id)
-    assert.equal(connection.status, 200, `Cloud connection: ${connection.body}`)
-    const api = cloudApi(stack, workspace.id)
-    const stream = await openEventStream(stack.url, workspace.directory, {
+    const stored = await hostedFetch(stack, "/auth/openai?harness=pi", {
+      method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ auth: { key: "test-key" } }),
+    }, stack.owner)
+    assert.equal(stored.status, 200, `Storing the signed Pi account: ${await stored.text()}`)
+    const workspace = await hostedWorkspace(stack, stack.owner, "h19-pi")
+    const connection = await hostedFetch(stack, `/api/workspace/${workspace.id}/connection`, {}, stack.owner)
+    assert.equal(connection.status, 200, `Cloud connection: ${await connection.text()}`)
+    const api = hostedApi(stack, workspace, stack.owner)
+    const stream = await openEventStream(stack.relayUrl, workspace.directory, {
       relayWorkspaceId: workspace.id,
-      authorization: `Bearer ${stack.daemon.cloudToken}`,
+      authorization: `Bearer ${workspace.runtimeAccessToken}`,
     })
     try {
       const model = { providerId: "pi", modelId: "openai/gpt-4.1" }
@@ -27,7 +27,7 @@ export async function run() {
       await api.prompt(workspace.directory, session.id, "Reply with exactly this one token: CLOUDPITURN", { model, title: true })
       const settled = await stream.waitFor((frame) => frameSessionId(frame) === session.id
         && (frameType(frame) === "session.idle" || frameType(frame) === "session.error"), { label: "cloud Pi settlement", timeoutMs: 60_000 })
-      assert.equal(frameType(settled), "session.idle", `Cloud Pi turn failed before idle: ${JSON.stringify(settled)}; model requests: ${stack.scripted.requests.length}`)
+      assert.equal(frameType(settled), "session.idle", `Cloud Pi turn failed before idle: ${JSON.stringify(settled)}; model requests: ${stack.model.requests.length}`)
       await waitForTitle(stream, session.id)
       const messages = await api.messages(workspace.directory, session.id)
       if (!assistantText(messages).includes("CLOUDPITURN")) {
@@ -35,8 +35,8 @@ export async function run() {
       }
       assert.ok(stream.frames.some((frame) => frameType(frame) === "message.part.updated"), "cloud Pi emitted no live text frame")
       assert.equal((await api.session(workspace.directory, session.id)).id, session.id)
-      assert.ok(stack.scripted.requests.some((request) => request.prompt.includes("CLOUDPITURN")), "cloud Pi never reached scripted model")
-      assert.deepEqual(stack.egress.attempts, [])
+      assert.ok(stack.model.requests.some((request) => request.prompt.includes("CLOUDPITURN")), "cloud Pi never reached scripted model")
+      assert.deepEqual(await stack.outboundAttempts(), [])
     } finally {
       stream.close()
     }

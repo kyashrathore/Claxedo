@@ -9,7 +9,7 @@ import { afterEach, describe, expect, test } from "vitest"
 import {
   userDeployedOwnerBootstrapClaimHash,
   userDeployedOwnerIdentityHash,
-} from "../../src/authority/adapters/d1/workspace-authority"
+} from "../../src/authority/adapters/d1/owner-identity"
 import {
   canonicalOwnerClaim,
   generateCanonicalOwnerClaim,

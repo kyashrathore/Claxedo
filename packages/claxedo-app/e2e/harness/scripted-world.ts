@@ -11,7 +11,7 @@ export const APP_SCRIPTED_PROVIDER_IDS = ["anthropic", "openai"] as const satisf
 
 export type ScriptedWorld = { scripted: ScriptedModelServer; acpScriptDir: string; red: boolean }
 
-async function bunPath() {
+export async function bunPath() {
   const found = (await execFileAsync("which", ["bun"])).stdout.trim()
   if (!found) throw new Error("bun is not on PATH; the scripted ACP agent runs under bun")
   return found
