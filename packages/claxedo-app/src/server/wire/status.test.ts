@@ -14,3 +14,8 @@ test("a retry without an attempt or a countdown still reads as retrying", () => 
 test("a retry without its message is not a status", () => {
   expect(sessionStatusFromWire({ type: "retry", attempt: 1, next: 6_000 })).toBeUndefined()
 })
+
+test("an interrupted session retains its reason and never reads as active recovery", () => {
+  expect(sessionStatusFromWire({ type: "interrupted", message: "Runtime restarted" })).toEqual({ kind: "interrupted", message: "Runtime restarted" })
+  expect(sessionStatusFromWire({ type: "interrupted" })).toBeUndefined()
+})

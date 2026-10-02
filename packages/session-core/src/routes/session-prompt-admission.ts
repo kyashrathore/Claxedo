@@ -272,7 +272,6 @@ export function createPromptAdmission(opts: Opts, requestErrorResponse: (err: un
         if (
           projected
           || session?.status === "busy"
-          || session?.status === "recovering"
           || session?.status === "retry"
         ) {
           admittedForExecution = true

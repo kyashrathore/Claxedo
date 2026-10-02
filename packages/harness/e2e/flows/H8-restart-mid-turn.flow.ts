@@ -36,8 +36,8 @@ export async function run() {
     before.close()
     const fault = await blockProcessIdentity(stack.dataDir)
     await stack.daemon.killAndRestart({ pathPrefix: fault.bin })
-    const recovering = await api.session(workspace.directory, session.id)
-    assert.equal(recovering.status, "recovering")
+    const interrupted = await api.session(workspace.directory, session.id)
+    assert.equal(interrupted.status, "interrupted")
     const refused = await fetch(new URL(`/session/${encodeURIComponent(session.id)}/prompt_async?directory=${encodeURIComponent(workspace.directory)}`, stack.url), {
       method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ parts: [{ type: "text", text: "H8 refused during reconciliation" }] }),
     })
@@ -60,7 +60,7 @@ export async function run() {
     const stored = await api.messages(workspace.directory, session.id)
     assert.match(assistantText(stored), /H8 second turn completed/)
     assert.equal((await api.session(workspace.directory, session.id)).lastTurn?.status, "completed")
-    console.log("H8: killed daemon mid-turn, read recovering and 503 launch fence, then completed next turn with live and stored evidence")
+    console.log("H8: killed daemon mid-turn, read interrupted and 503 launch fence, then completed next turn with live and stored evidence")
   } finally {
     await stack.acp.release("h8-held")
     await stack.close()

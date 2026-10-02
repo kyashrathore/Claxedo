@@ -6,6 +6,7 @@ import type { SessionView } from "@/session"
 import { PermissionDock } from "./docks/permission-dock"
 import { QuestionDock } from "./docks/question-dock"
 import { GoalDock } from "./docks/goal-dock"
+import { InterruptedDock } from "./docks/interrupted-dock"
 import { SessionTodoDock } from "./docks/todo-dock"
 import { goalActions, todoDockOpen } from "./docks/model"
 import { turnActive } from "./timeline"
@@ -57,6 +58,7 @@ export function SessionDocks(props: { readonly view: SessionView; readonly contr
   const request = createMemo(() => props.view.requests()[0])
   return (
     <div data-slot="session-docks" hidden={!props.controls.send}>
+      <InterruptedDock view={props.view} />
       <Show when={props.view.requestsError()}>{(error) => <RequestReadError view={props.view} error={error()} />}</Show>
       <Show when={request()} keyed>
         {(current) => <RequestDock view={props.view} request={current} />}

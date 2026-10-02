@@ -54,7 +54,7 @@ export type CorpusCase = {
   readonly partKinds: readonly string[]
   readonly transcript?: CaseTranscript
   readonly seed?: CaseSeedSlice
-  readonly status?: "idle" | "working" | "retrying" | "recovering"
+  readonly status?: "idle" | "working" | "retrying" | "interrupted"
   readonly replay: CaseReplay
   readonly ready: string
   readonly interactions: readonly CaseInteraction[]

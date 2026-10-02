@@ -71,7 +71,7 @@ export type SessionRowStatus = {
   at: number
 }
 
-export type SessionRowStatusKind = "idle" | "busy" | "retry" | "recovering"
+export type SessionRowStatusKind = "idle" | "busy" | "retry" | "interrupted"
 
 export type SessionListResponse = {
   view: {
@@ -244,7 +244,7 @@ function statusFromSession(item: Record<string, unknown>): { status?: SessionRow
 }
 
 function statusKind(input: unknown): SessionRowStatusKind | undefined {
-  return input === "idle" || input === "busy" || input === "retry" || input === "recovering" ? input : undefined
+  return input === "idle" || input === "busy" || input === "retry" || input === "interrupted" ? input : undefined
 }
 
 /**

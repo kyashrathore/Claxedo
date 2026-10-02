@@ -21,6 +21,7 @@ test("session activity: running in background is its own activity, apart from a 
   expect(sessionActivity(row({ kind: "working" }))).toBe("working")
   expect(sessionActivity(row({ kind: "retrying", attempt: 1, message: "later", nextAt: 2 }))).toBe("working")
   expect(sessionActivity(row({ kind: "idle" }))).toBe("idle")
+  expect(sessionActivity(row({ kind: "interrupted" }))).toBe("interrupted")
   expect(sessionActivity(row({ kind: "unknown" }))).toBe("idle")
 })
 

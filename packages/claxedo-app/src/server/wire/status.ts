@@ -22,9 +22,9 @@ function runtimeStatusFromWire(value: unknown): AgentRuntimeStatus | undefined {
       const action = retryActionFromWire(value.action)
       return { type: "retry", message, ...(typeof attempt === "number" ? { attempt } : {}), ...(typeof next === "number" ? { next } : {}), ...(action ? { action } : {}) }
     }
-    case "recovering":
-      return (value.kind === "process_restart" || value.kind === "uncertain_execution") && typeof value.message === "string"
-        ? { type: "recovering", kind: value.kind, message: value.message }
+    case "interrupted":
+      return typeof value.message === "string"
+        ? { type: "interrupted", message: value.message }
         : undefined
     default:
       return undefined
@@ -45,8 +45,8 @@ function sessionStatusFromRuntime(status: AgentRuntimeStatus): SessionStatus {
         ...(status.next !== undefined ? { nextAt: status.next } : {}),
         ...(status.action ? { action: status.action } : {}),
       }
-    case "recovering":
-      return { kind: "recovering", reason: status.kind === "process_restart" ? "processRestart" : "uncertainExecution", message: status.message }
+    case "interrupted":
+      return { kind: "interrupted", message: status.message }
   }
 }
 

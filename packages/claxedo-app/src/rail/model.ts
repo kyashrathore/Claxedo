@@ -3,7 +3,7 @@ import type { MachineId, Placement, ProjectId, SessionId, SessionLocation } from
 import { sessionActivity, type SessionRowView, type UnseenOutcome } from "@/session"
 import type { TerminalItem } from "@/terminal"
 
-export type NavigationStatus = "idle" | "working" | "background" | "permission" | "error" | "done"
+export type NavigationStatus = "idle" | "working" | "background" | "permission" | "error" | "interrupted" | "done"
 
 export const SESSION_GROUP_PAGE_SIZE = 5
 
@@ -12,6 +12,8 @@ export function navigationStatus(row: SessionRowView, unseen: UnseenOutcome | un
   if (activity === "waiting") return "permission"
   if (row.pending) return "working"
   switch (activity) {
+    case "interrupted":
+      return "interrupted"
     case "working":
       return "working"
     case "failed":
@@ -23,7 +25,7 @@ export function navigationStatus(row: SessionRowView, unseen: UnseenOutcome | un
   }
 }
 
-export type TerminalNavigationStatus = Exclude<NavigationStatus, "background">
+export type TerminalNavigationStatus = Exclude<NavigationStatus, "background" | "interrupted">
 
 const TERMINAL_STATUS: Readonly<Record<NonNullable<TerminalItem["agentStatus"]>, TerminalNavigationStatus>> = {
   working: "working",

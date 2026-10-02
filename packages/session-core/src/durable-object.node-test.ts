@@ -65,7 +65,7 @@ type StoredMessage = {
   parts: Array<{ type: string; text?: string; callID?: string; state?: { status: string; error?: string } }>
 }
 
-const RESTART_MESSAGE = "ACP process restarted; pending interactive state must be rerun"
+const RESTART_MESSAGE = "The agent runtime restarted. Send a message to continue the interrupted work."
 
 /** One workspace's Durable Object, reached the way a client reaches a runtime: over its HTTP routes. */
 function workspace(miniflare: Miniflare, workspaceId: string) {
@@ -285,11 +285,11 @@ void describe("the session core in a Durable Object under workerd", () => {
     await first.dispose()
     const reopened = workspace(start(persist), "ws_evicted_turn")
 
-    assert.deepEqual((await reopened.status())[session.id], { type: "recovering", kind: "process_restart", message: RESTART_MESSAGE })
+    assert.deepEqual((await reopened.status())[session.id], { type: "interrupted", message: RESTART_MESSAGE })
     const interrupted = await reopened.messages(session.id)
     assert.deepEqual(transcript(interrupted), [{ role: "user", text: "hold: the build" }, { role: "assistant", text: "working on the build" }])
     const tool = interrupted[1]!.parts.find((part) => part.callID === "call_held")
-    assert.deepEqual([tool?.state?.status, tool?.state?.error], ["error", "Tool execution interrupted by ACP restart"])
+    assert.deepEqual([tool?.state?.status, tool?.state?.error], ["error", "Tool execution interrupted"])
 
     const after = await reopened.stream()
     await reopened.prompt(session.id, "after")

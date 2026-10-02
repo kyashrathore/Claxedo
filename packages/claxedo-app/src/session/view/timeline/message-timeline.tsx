@@ -32,12 +32,12 @@ import {
   SubagentChipRow,
   TurnFoldRow,
   WorkGroup,
+  SessionRetry,
 } from "@/transcript"
 import { isPhoneWidth } from "@/lib/viewport"
 import { holdPaneReveal } from "@/workbench"
 import { ScrollView, showToast } from "@/ui"
 import { Binary, resolveTranscriptTypography, transcriptTypographyStyle } from "@/ui/utils"
-import { ClaxedoSessionRetry } from "./claxedo-session-retry"
 import { TimelineErrorPresentation } from "./first-turn-recovery-card"
 import { TimelineJumpButton } from "./timeline-jump-button"
 import { TimelineQueuedMessages } from "./timeline-queued-messages"
@@ -1131,7 +1131,7 @@ export function MessageTimeline(props: MessageTimelineProps) {
         return (
           <TimelineRowFrame row={retryRow}>
             <div data-slot="session-turn-message-container" class="w-full px-4 md:px-5">
-              <ClaxedoSessionRetry status={sessionStatus()} show={activeMessageId() === retryRow().userMessageId} />
+              <SessionRetry status={sessionStatus()} show={activeMessageId() === retryRow().userMessageId} />
             </div>
           </TimelineRowFrame>
         )

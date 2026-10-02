@@ -1752,8 +1752,8 @@ void describe("RuntimeStore", () => {
 
     store.stalePermission("p1")
     store.staleQuestion("q1")
-    store.markRecovering("s1", "recovering")
-    assert.equal(store.consumeRecoveryError("s1"), "recovering")
+    store.markSessionInterrupted("s1", "interrupted")
+    assert.equal(store.consumeRecoveryError("s1"), "interrupted")
     store.createNotice("s1", { notice: "recovery_error", message: "created notice" })
     assert.equal(store.rebuildProjection("s1", "operator requested rebuild").rebuilt, true)
     store.updateSession("s1", { title: "Updated", time: { archived: 123 } })
@@ -1773,7 +1773,7 @@ void describe("RuntimeStore", () => {
         "question.asked",
         "permission.staled",
         "question.staled",
-        "session.recovering",
+        "session.interrupted",
         "notice.acknowledged",
         "notice.created",
         "projection.reset_requested",
@@ -2203,7 +2203,7 @@ void describe("RuntimeStore", () => {
 
     const next = new RuntimeStore(root)
     assert.deepEqual(next.listPermissions("/work"), [])
-    assert.equal((next.getSession("s1") as any)?.status, "recovering")
+    assert.equal((next.getSession("s1") as any)?.status, "interrupted")
     assert.equal(next.consumeRecoveryError("s1"), "ACP process restarted")
     assert.equal(next.consumeRecoveryError("s1"), null)
 
@@ -2299,7 +2299,7 @@ void describe("RuntimeStore", () => {
       next.listPermissions("/work").map((row) => row.id),
       ["p2"],
     )
-    assert.equal((next.getSession("s1") as { status?: string } | null)?.status, "recovering")
+    assert.equal((next.getSession("s1") as { status?: string } | null)?.status, "interrupted")
     assert.equal((next.getSession("s2") as { status?: string } | null)?.status, undefined)
   })
 
@@ -2340,7 +2340,7 @@ void describe("RuntimeStore", () => {
       }),
     })
 
-    first.markDirectorySessionsInterrupted("/work", "ACP process restarted; pending interactive state must be rerun")
+    first.markDirectorySessionsInterrupted("/work", "The agent runtime restarted. Send a message to continue the interrupted work.")
 
     const current = first.getMessages("s1") as Array<{
       parts: Array<{ id: string; type: string; state?: { status?: string; error?: string } }>
@@ -2349,7 +2349,7 @@ void describe("RuntimeStore", () => {
     assert.equal(toolPart?.id, "tool-1")
     assert.equal(toolPart?.type, "tool")
     assert.equal(toolPart?.state?.status, "error")
-    assert.equal(toolPart?.state?.error, "Tool execution interrupted by ACP restart")
+    assert.equal(toolPart?.state?.error, "Tool execution interrupted")
 
     const next = new RuntimeStore(root)
     const replayed = next.getMessages("s1") as Array<{
@@ -2359,8 +2359,8 @@ void describe("RuntimeStore", () => {
     assert.equal(replayedPart?.id, "tool-1")
     assert.equal(replayedPart?.type, "tool")
     assert.equal(replayedPart?.state?.status, "error")
-    assert.equal(replayedPart?.state?.error, "Tool execution interrupted by ACP restart")
-    assert.equal((next.getSession("s1") as any)?.status, "recovering")
+    assert.equal(replayedPart?.state?.error, "Tool execution interrupted")
+    assert.equal((next.getSession("s1") as any)?.status, "interrupted")
   })
 
   void it("renders stale running tools in completed error messages as interrupted", () => {
@@ -2423,7 +2423,7 @@ void describe("RuntimeStore", () => {
     assert.equal(toolPart?.state?.error, "Tool execution interrupted")
   })
 
-  void it("marks busy sessions recovering through explicit runtime recovery", () => {
+  void it("marks busy sessions interrupted through explicit runtime recovery", () => {
     const root = tmp()
     const first = new RuntimeStore(root)
     first.bindSession({
@@ -2463,17 +2463,17 @@ void describe("RuntimeStore", () => {
     const next = new RuntimeStore(root)
     assert.equal((next.getSession("s1") as any)?.status, "busy")
     next.recoverBusySessions()
-    assert.equal((next.getSession("s1") as any)?.status, "recovering")
+    assert.equal((next.getSession("s1") as any)?.status, "interrupted")
     assert.equal(
       (next.getSession("s1") as any)?.recovery_error,
-      "ACP process restarted; pending interactive state must be rerun",
+      "The agent runtime restarted. Send a message to continue the interrupted work.",
     )
     const current = next.getMessages("s1") as Array<{
       parts: Array<{ id: string; type: string; state?: { status?: string; error?: string } }>
     }>
     const toolPart = current[1]?.parts.find((part) => part.id === "tool-1")
     assert.equal(toolPart?.state?.status, "error")
-    assert.equal(toolPart?.state?.error, "Tool execution interrupted by ACP restart")
+    assert.equal(toolPart?.state?.error, "Tool execution interrupted")
   })
 
   void it("recoverBusySessions is a no-op when no sessions are busy", () => {
@@ -2493,11 +2493,43 @@ void describe("RuntimeStore", () => {
     const before = (next.getSession("s1") as { status?: string } | null)?.status ?? null
     next.recoverBusySessions()
     const after = next.getSession("s1") as { status?: string; recovery_error?: string | null } | null
-    // Idle sessions are left untouched: not flipped to "recovering", no marker.
+    // Idle sessions are left untouched: not flipped to "interrupted", no marker.
     assert.equal(after?.status ?? null, before)
-    assert.notEqual(after?.status, "recovering")
+    assert.notEqual(after?.status, "interrupted")
     assert.equal(after?.recovery_error ?? null, null)
   })
+
+  void it("replays a historical recovery control as an interruption", () => {
+    const store = new RuntimeStore(tmp())
+    store.bindSession({ owner: { kind: "machine-owner" }, sessionId: "s1", directory: "/work", agentSessionId: "a1", createdAt: 1 })
+    store.markSessionInterrupted("s1", "Historical restart")
+    db(store).prepare("UPDATE runtime_journal SET type = 'session.recovering', payload_json = json_set(payload_json, '$.type', 'session.recovering') WHERE type = 'session.interrupted'").run()
+    assert.equal(store.rebuildProjection("s1").rebuilt, true)
+    assert.equal((store.getSession("s1") as { status: string }).status, "interrupted")
+  })
+
+  for (const previousStatus of ["recovering", "retry"]) {
+    void it(`interrupts persisted ${previousStatus} sessions once without starting work`, () => {
+      const root = tmp()
+      const first = new RuntimeStore(root)
+      first.bindSession({ owner: { kind: "machine-owner" }, sessionId: "s1", directory: "/work", agentSessionId: "a1", createdAt: 1 })
+      db(first).prepare("UPDATE session SET status = ? WHERE id = 's1'").run(previousStatus)
+      first.close()
+
+      const next = new RuntimeStore(root)
+      next.recoverBusySessions()
+      assert.equal((next.getSession("s1") as { status: string }).status, "interrupted")
+      assert.deepEqual(next.getMessages("s1"), [])
+      const count = () => db(next).prepare("SELECT COUNT(*) AS count FROM runtime_journal WHERE type = 'session.interrupted'").get()
+      assert.deepEqual(count(), { count: 1 })
+      next.recoverBusySessions()
+      assert.deepEqual(count(), { count: 1 })
+      next.close()
+
+      const reopened = new RuntimeStore(root)
+      assert.equal((reopened.getSession("s1") as { status: string }).status, "interrupted")
+    })
+  }
 
   void it("finishTurn clears a busy turn through replayable terminal events", () => {
     const root = tmp()
@@ -2795,7 +2827,7 @@ void describe("RuntimeStore", () => {
     assert.equal(replayedAssistant.error?.data?.firstTurnErrorClass, "unknown")
   })
 
-  void it("recoverBusySessions is idempotent once a session is recovering", () => {
+  void it("recoverBusySessions is idempotent once a session is interrupted", () => {
     const root = tmp()
     const first = new RuntimeStore(root)
     first.bindSession({
@@ -2820,13 +2852,13 @@ void describe("RuntimeStore", () => {
     assert.equal(session()?.status, "busy")
     next.recoverBusySessions()
     const firstError = session()?.recovery_error
-    assert.equal(session()?.status, "recovering")
-    assert.equal(firstError, "ACP process restarted; pending interactive state must be rerun")
+    assert.equal(session()?.status, "interrupted")
+    assert.equal(firstError, "The agent runtime restarted. Send a message to continue the interrupted work.")
 
     // A second recovery pass finds no busy sessions (the first pass flipped it to
-    // "recovering"), so the marker is unchanged.
+    // "interrupted"), so the marker is unchanged.
     next.recoverBusySessions()
-    assert.equal(session()?.status, "recovering")
+    assert.equal(session()?.status, "interrupted")
     assert.equal(session()?.recovery_error, firstError)
   })
 
@@ -3307,14 +3339,14 @@ void describe("session ordering timestamps", () => {
 
     // The three recovery paths: the runtime's own bookkeeping, never the reader
     // speaking to the session, so the sidebar must not reorder behind them.
-    store.markRecovering("s1", "recovering")
+    store.markSessionInterrupted("s1", "interrupted")
     store.createNotice("s1", { notice: "recovery_error", message: "created notice" })
     store.markDirectorySessionsInterrupted("/work", "ACP process restarted")
 
     const after = store.getSession("s1") as
       | { status?: string; time?: { created?: number; updated?: number } }
       | null
-    assert.equal(after?.status, "recovering")
+    assert.equal(after?.status, "interrupted")
     assert.equal(after?.time?.updated, 111)
     assert.equal(after?.time?.created, 1_000)
   })

@@ -35,7 +35,7 @@ import { actorKind, nullable } from "./stored-columns"
 import { observationStartsNewRun, subagentStatusAdvances } from "./subagent-status"
 import { buildAssistantMessage, buildUserMessage, buildUserPromptParts, messageCompleted, messagePartUpdated, messageUpdated, sessionError, sessionIdle, sessionStatus } from "./projection/presentation-events"
 
-export const ACP_RECOVER = "ACP process restarted; pending interactive state must be rerun"
+export const SESSION_INTERRUPTED = "The agent runtime restarted. Send a message to continue the interrupted work."
 
 export class AgentRuntimeStaleTurnError extends Error {
   readonly code = "session_turn_fence_stale"
@@ -132,7 +132,7 @@ type QuestionStaled = {
   questionId: string
 }
 
-type SessionRecovering = {
+type LegacySessionRecovering = {
   type: "session.recovering"
   message: string
 }
@@ -168,7 +168,7 @@ type Control =
   | SessionDelete
   | PermissionStaled
   | QuestionStaled
-  | SessionRecovering
+  | LegacySessionRecovering
   | NoticeAcknowledged
   | NoticeCreated
   | ProjectionResetRequested
@@ -321,7 +321,6 @@ type MessageProjectionRow = {
 
 type MessageClose = {
   ts: number
-  message?: string
 }
 
 type SurfaceTurnRow = {
@@ -1267,13 +1266,8 @@ export class RuntimeStore {
     this.failedProjections.delete(sessionId)
   }
 
-  private staleToolError(message?: string) {
-    if (message?.includes("ACP process restarted")) return "Tool execution interrupted by ACP restart"
-    return "Tool execution interrupted"
-  }
-
-  private finishTools(sessionId: string, ts: number, message?: string) {
-    const error = this.staleToolError(message)
+  private finishTools(sessionId: string, ts: number) {
+    const error = "Tool execution interrupted"
     const rows = this.db
       .prepare<{ data_json: string }>("SELECT data_json FROM part WHERE session_id = ? ORDER BY updated_at ASC")
       .all(sessionId)
@@ -1311,7 +1305,7 @@ export class RuntimeStore {
       state: {
         ...state,
         status: "error" as const,
-        error: this.staleToolError(close.message),
+        error: "Tool execution interrupted",
         time: {
           start: state.status === "running" ? state.time.start : close.ts,
           end: close.ts,
@@ -1324,21 +1318,18 @@ export class RuntimeStore {
     const infoRecord = info as Record<string, unknown>
     const time = asRecord(info.time)
     if (info.role !== "assistant" || (typeof time?.completed !== "number" && !infoRecord.error)) return undefined
-    const err = asRecord(infoRecord.error)
-    const data = asRecord(err?.data)
     return {
       ts: asNumber(time?.completed) ?? asNumber(time?.created) ?? Date.now(),
-      message: asString(data?.message) ?? asString(err?.message),
     }
   }
 
-  private normalizeRecoveringTools() {
+  private interruptPreviousSessions() {
     const rows = this.db.prepare<{
       id: string
       agent_session_id: string | null
-    }>("SELECT id, agent_session_id FROM session WHERE status = 'busy'").all()
+    }>("SELECT id, agent_session_id FROM session WHERE status IN ('busy', 'retry', 'recovering')").all()
     for (const row of rows) {
-      this.markSessionInterrupted(row.id, ACP_RECOVER, row.agent_session_id)
+      this.markSessionInterrupted(row.id, SESSION_INTERRUPTED, row.agent_session_id)
     }
   }
 
@@ -1348,7 +1339,7 @@ export class RuntimeStore {
     // those stale ownership rows at the same boundary that interrupts busy
     // sessions and their pending tools.
     this.turnLeases.clear()
-    this.normalizeRecoveringTools()
+    this.interruptPreviousSessions()
   }
 
   putWorktree(record: WorkspaceWorktreeRecord) {
@@ -2169,19 +2160,6 @@ export class RuntimeStore {
         .run(row.ts, control.questionId)
       return
     }
-    if (control.type === "session.recovering") {
-      const session = this.sessionTimes(row.sessionId)
-      this.finishTools(row.sessionId, row.ts, control.message)
-      this.upsertSession({
-        id: row.sessionId,
-        directory: session.directory,
-        createdAt: session.created ?? row.ts,
-        updatedAt: session.updated ?? row.ts,
-        status: "recovering",
-        recoveryError: control.message,
-      })
-      return
-    }
     if (control.type === "notice.acknowledged") {
       if (control.notice === "recovery_error") {
         this.db
@@ -2206,7 +2184,7 @@ export class RuntimeStore {
     if (control.type === "projection.reset_requested") {
       return
     }
-    if (control.type === "session.interrupted" || control.type === "process.lost") {
+    if (control.type === "session.interrupted" || control.type === "process.lost" || control.type === "session.recovering") {
       this.db
         .prepare(
           "UPDATE pending_permission SET status = 'stale', updated_at = ? WHERE session_id = ? AND status = 'pending'",
@@ -2218,13 +2196,13 @@ export class RuntimeStore {
         )
         .run(row.ts, row.sessionId)
       const session = this.sessionTimes(row.sessionId)
-      this.finishTools(row.sessionId, row.ts, control.message)
+      this.finishTools(row.sessionId, row.ts)
       this.upsertSession({
         id: row.sessionId,
         directory: session.directory,
         createdAt: session.created ?? row.ts,
         updatedAt: session.updated ?? row.ts,
-        status: "recovering",
+        status: "interrupted",
         recoveryError: control.message,
       })
     }
@@ -2612,7 +2590,7 @@ export class RuntimeStore {
     } satisfies RuntimeStoreTurnStartOutput
   }
 
-  markDirectorySessionsInterrupted(directory: string, message = ACP_RECOVER) {
+  markDirectorySessionsInterrupted(directory: string, message = SESSION_INTERRUPTED) {
     const rows = this.db
       .prepare<{ id: string; agent_session_id: string | null }>(
         `
@@ -2638,7 +2616,7 @@ export class RuntimeStore {
     }
   }
 
-  markSessionsInterruptedByOwner(ownerKey: string, message = ACP_RECOVER) {
+  markSessionsInterruptedByOwner(ownerKey: string, message = SESSION_INTERRUPTED) {
     const rows = this.db
       .prepare<{ id: string; agent_session_id: string | null }>(
         `
@@ -2664,7 +2642,7 @@ export class RuntimeStore {
     }
   }
 
-  markSessionInterrupted(sessionId: string, message = ACP_RECOVER, agentSessionId?: string | null) {
+  markSessionInterrupted(sessionId: string, message = SESSION_INTERRUPTED, agentSessionId?: string | null) {
     const agent =
       agentSessionId !== undefined
         ? agentSessionId
@@ -3094,19 +3072,6 @@ export class RuntimeStore {
       control: {
         type: "question.staled",
         questionId: id,
-      },
-    })
-  }
-
-  markRecovering(sessionId: string, message = ACP_RECOVER) {
-    this.commit({
-      seq: this.next(sessionId),
-      ts: Date.now(),
-      sessionId,
-      kind: "control",
-      control: {
-        type: "session.recovering",
-        message,
       },
     })
   }

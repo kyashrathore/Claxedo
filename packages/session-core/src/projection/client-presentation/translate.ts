@@ -1,5 +1,5 @@
 import type { AgentEventEnvelope, AgentRuntimeEvent } from "@claxedo/agent-runtime-contract"
-import { messageCompleted, permissionAsked, questionAsked, questionReplied, todoUpdated, sessionStatus, sessionDiff, sessionIdle, sessionError, sessionUpdated, sessionAgent, sessionConfig, sessionUsage, buildSession, recovering, withDir } from "../presentation-events"
+import { messageCompleted, permissionAsked, questionAsked, questionReplied, todoUpdated, sessionStatus, sessionDiff, sessionIdle, sessionError, sessionUpdated, sessionAgent, sessionConfig, sessionUsage, buildSession, withDir } from "../presentation-events"
 import { partEvent, seqId, type CompatContext } from "./context"
 import { lossyCompatDiagnostic } from "./diagnostics"
 import { snapshotFileDiff } from "./file-diff"
@@ -83,9 +83,6 @@ export function translateRuntimeEventToCompat(chunk: AgentRuntimeEvent, ctx: Com
       // event. Projecting a placeholder `session.error` here is itself terminal,
       // so the real message never reaches the transcript.
       if (chunk.status === "error") return []
-      if (chunk.status === "recovering") {
-        return [withDir(ctx.directory, sessionStatus(ctx.sessionId, recovering()))]
-      }
       return [withDir(ctx.directory, sessionStatus(ctx.sessionId, { type: chunk.status }))]
 
     case "session-compaction":

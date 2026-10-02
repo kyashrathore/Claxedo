@@ -83,6 +83,7 @@ const en = {
   "rail.card.background": "Running in background",
   "rail.card.waiting": "Waiting for you",
   "rail.card.failed": "Last turn failed",
+  "rail.card.interrupted": "Session interrupted",
   "rail.card.project": "Project",
   "rail.card.workspace": "Workspace",
   "rail.shared": "Shared with me",

@@ -25,7 +25,7 @@ export function createAlertDetector(): (event: ServerEvent) => Alert | undefined
     last.set(event.ref.sessionId, { ...previous, kind: event.status.kind })
     const after = sessionStatusWithBackgroundWork(event.status, previous.backgroundWork).kind
     if (after === "failed" && previous.kind !== "failed") return { kind: "errors", ref: event.ref }
-    if (after === "idle" && (previous.kind === "working" || previous.kind === "retrying" || previous.kind === "recovering")) return { kind: "agent", ref: event.ref }
+    if (after === "idle" && (previous.kind === "working" || previous.kind === "retrying")) return { kind: "agent", ref: event.ref }
     return undefined
   }
 }

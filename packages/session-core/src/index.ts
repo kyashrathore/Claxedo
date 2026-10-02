@@ -15,7 +15,7 @@ export { type HarnessHandle, type TransportAccess, type TransportResolver } from
 export { LAUNCH_OWNERSHIP_SCHEMA } from "./ownership/launch-ownership-schema"
 export { type SessionPlacement, type SessionPlacementPort, WorkspaceTargetError } from "./placement"
 export { withClaxedoMessageAuthor } from "./projection/client-presentation/author"
-export { buildAssistantMessage, eventSessionId, harnessHealthChanged, messageCompleted, messagePartDelta, messagePartUpdated, messageUpdated, permissionAsked, questionAsked, recovering, runtimeDiagnostic, sessionAgent, sessionConfig, sessionError, sessionIdle, sessionStatus, sessionUpdated, sessionUsage, toPresentationEvent, todoUpdated, withDir } from "./projection/presentation-events"
+export { buildAssistantMessage, eventSessionId, harnessHealthChanged, messageCompleted, messagePartDelta, messagePartUpdated, messageUpdated, permissionAsked, questionAsked, runtimeDiagnostic, sessionAgent, sessionConfig, sessionError, sessionIdle, sessionStatus, sessionUpdated, sessionUsage, toPresentationEvent, todoUpdated, withDir } from "./projection/presentation-events"
 export { type RuntimeEventEnvelope, type RuntimeEventHub, type RuntimeEventPublishers, createRuntimeEventHub } from "./projection/runtime-event-hub"
 export { type WorkspaceEventFramesTap, type WorkspaceEventParents, type WorkspaceEventStreamFrame, createWorkspaceEventFramesTap, isRetainedWorkspaceEventFrame, malformedEventStreamCursor, streamWorkspaceEventFrames, workspaceEventsHandler } from "./routes/events"
 export { JSON_BODY_LIMIT_BYTES, RequestBodyTooLargeError, bearerToken, boundedJson, boundedJsonBody, boundedJsonRecord, boundedTextBody, errorBody, isRequestBodyTooLarge, requestBodyTooLargeBody } from "./routes/http"

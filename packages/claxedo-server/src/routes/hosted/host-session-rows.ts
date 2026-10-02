@@ -19,7 +19,7 @@ const row = rowRef.extend({
   lastHumanTurnAt: time.optional(),
   archivedAt: time.optional(),
   status: z.object({
-    kind: z.enum(["idle", "busy", "retry", "recovering"]),
+    kind: z.enum(["idle", "busy", "retry", "interrupted"]),
     awaitingInput: z.boolean(),
     at: time,
   }).strict(),

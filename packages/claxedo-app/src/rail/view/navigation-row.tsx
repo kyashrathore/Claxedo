@@ -107,7 +107,7 @@ export function NavigationStatusMark(props: { readonly status: NavigationStatus;
           {...data()}
           class="size-1.5 shrink-0 rounded-full"
           classList={{
-            "bg-icon-interactive-base": props.status === "permission" || props.status === "error",
+            "bg-icon-interactive-base": props.status === "permission" || props.status === "error" || props.status === "interrupted",
             "bg-text-weak": props.status === "done",
           }}
         />

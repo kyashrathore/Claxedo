@@ -70,7 +70,7 @@ describe("runtime session status", () => {
     expect(h.status.current(WS, "s1").kind).toBe("retry")
     h.emit("session.idle", { sessionID: "s1" })
     expect(h.status.current(WS, "s1")).toEqual({ kind: "idle", awaitingInput: false, at: 1_010 })
-    h.emit("session.status", { sessionID: "s2", status: { type: "recovering" } })
+    h.emit("session.status", { sessionID: "s2", status: { type: "interrupted" } })
     h.emit("session.error", { sessionID: "s2", error: { message: "gone" } })
 
     expect(h.changes).toEqual([[WS, "s1"], [WS, "s1"], [WS, "s1"], [WS, "s2"], [WS, "s2"]])

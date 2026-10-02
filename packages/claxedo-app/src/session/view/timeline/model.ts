@@ -152,6 +152,5 @@ export function queuedMessageText(record: QueuedMessage): string {
 }
 
 export function turnActive(status: SessionStatus): boolean {
-  if (status.kind === "working" || status.kind === "retrying") return true
-  return status.kind === "recovering" && "reason" in status && status.reason === "uncertainExecution"
+  return status.kind === "working" || status.kind === "retrying"
 }

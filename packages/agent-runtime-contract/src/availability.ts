@@ -10,4 +10,4 @@ export type AgentRuntimeStatus =
   | { type: "idle" }
   | { type: "busy" }
   | { type: "retry"; message: string; attempt?: number; next?: number; action?: { reason: string; provider: string; title: string; message: string; label: string; link?: string } }
-  | { type: "recovering"; kind: "process_restart" | "uncertain_execution"; message: string }
+  | { type: "interrupted"; message: string }

@@ -47,7 +47,7 @@ function goalCapable(props: ComposerProps, selection: HarnessSelection): boolean
 
 function sessionWorking(view: SessionView | undefined): boolean {
   const kind = view?.status().kind
-  return kind === "working" || kind === "retrying" || kind === "recovering"
+  return kind === "working" || kind === "retrying"
 }
 
 

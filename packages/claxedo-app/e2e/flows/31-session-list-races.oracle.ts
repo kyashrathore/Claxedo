@@ -16,8 +16,8 @@ export type Checked = {
 
 export const PAGE_SIZE = 5
 const SERVER_PAGE = 100
-const RAIL_STATUS: Readonly<Record<string, string>> = { permission: "Waiting on you", working: "Working" }
-const SERVER_RAIL_STATUS: Readonly<Record<string, string>> = { "Waiting on you": "Waiting on you", Working: "Working", Retrying: "Working" }
+const RAIL_STATUS: Readonly<Record<string, string>> = { permission: "Waiting on you", working: "Working", interrupted: "Interrupted" }
+const SERVER_RAIL_STATUS: Readonly<Record<string, string>> = { "Waiting on you": "Waiting on you", Working: "Working", Retrying: "Working", Interrupted: "Interrupted" }
 
 export function railRow(app: Page, title: string) {
   return app.getByTestId("rail-sidebar-session-row").filter({ has: app.getByRole("button", { name: title, exact: true }) })
@@ -76,7 +76,7 @@ function statusLabel(wire: string | undefined, waiting: boolean, lastTurnFailed:
   if (waiting) return "Waiting on you"
   if (wire === "busy") return "Working"
   if (wire === "retry") return "Retrying"
-  if (wire === "recovering") return "Recovering"
+  if (wire === "interrupted") return "Interrupted"
   return lastTurnFailed ? "Failed" : "Idle"
 }
 

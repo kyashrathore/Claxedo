@@ -92,6 +92,6 @@ export function listedStatusFromListItem(item: unknown): ListedStatus | undefine
   const status = (item as { status?: unknown } | null)?.status
   if (!status || typeof status !== "object") return undefined
   const { kind, awaitingInput } = status as { kind?: unknown; awaitingInput?: unknown }
-  if (kind !== "idle" && kind !== "busy" && kind !== "retry" && kind !== "recovering") return undefined
-  return { status: kind === "idle" ? IDLE : WORKING, waitingOnUser: awaitingInput === true, backgroundWork: backgroundWorkFromWire(status) }
+  if (kind !== "idle" && kind !== "busy" && kind !== "retry" && kind !== "interrupted") return undefined
+  return { status: kind === "interrupted" ? { kind: "interrupted" } : kind === "idle" ? IDLE : WORKING, waitingOnUser: awaitingInput === true, backgroundWork: backgroundWorkFromWire(status) }
 }

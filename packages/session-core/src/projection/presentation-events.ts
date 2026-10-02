@@ -396,11 +396,3 @@ export function buildSession(input: {
     time: { created: input.created, updated: input.updated },
   }
 }
-
-export function recovering(message = "Recovering ACP client..."): Extract<AgentRuntimeStatus, { type: "recovering" }> {
-  return {
-    type: "recovering",
-    kind: "process_restart",
-    message,
-  }
-}

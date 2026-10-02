@@ -1,19 +1,18 @@
 import { createMemo, Show } from "solid-js"
 import { useSecondClock } from "@/lib/clock"
-import type { AgentRuntimeStatus } from "@claxedo/agent-runtime-contract"
-import { isGeminiQuotaRetry } from "@/server"
+import { isGeminiQuotaRetry, type SessionStatus } from "@/server"
 import { useTranscriptI18n } from "./i18n"
 import { Card, Tooltip, Spinner } from "@/ui"
 
-export function SessionRetry(props: { status: AgentRuntimeStatus; show?: boolean }) {
+export function SessionRetry(props: { status: SessionStatus; show?: boolean }) {
   const i18n = useTranscriptI18n()
   const retry = createMemo(() => {
-    if (props.status.type !== "retry") return undefined
+    if (props.status.kind !== "retrying") return undefined
     return props.status
   })
-  const now = useSecondClock(() => retry()?.next !== undefined)
+  const now = useSecondClock(() => retry()?.nextAt !== undefined)
   const seconds = () => {
-    const next = retry()?.next
+    const next = retry()?.nextAt
     return next ? Math.round((next - now()) / 1000) : 0
   }
   const message = createMemo(() => {

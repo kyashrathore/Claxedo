@@ -20,12 +20,11 @@ describe("sessionStatusSnapshot", () => {
 
   it("surfaces persisted recovery markers so reload can show stale ACP turns", () => {
     expect(sessionStatusSnapshot([
-      { id: "rec-1", status: "recovering", recovery_error: "ACP process restarted" },
+      { id: "rec-1", status: "interrupted", recovery_error: "ACP process restarted" },
       { id: "err-1", status: "error", recovery_error: "ACP process restarted" },
     ])).toEqual({
       "rec-1": {
-        type: "recovering",
-        kind: "process_restart",
+        type: "interrupted",
         message: "ACP process restarted",
       },
     })

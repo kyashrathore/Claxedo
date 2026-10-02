@@ -1,6 +1,7 @@
 import type { TimelineTextKey } from "../timeline"
 
 export type SessionScreenTextKey =
+  | `sessionScreen.interrupted.${"title" | "description" | "resume" | "prompt"}`
   | `sessionScreen.timeline.${TimelineTextKey}`
   | "sessionScreen.loading"
   | "sessionScreen.untitled"
@@ -79,6 +80,10 @@ export type SessionScreenTextKey =
   | "command.message.next.description"
 
 export const sessionScreenEnglish: Record<SessionScreenTextKey, string> = {
+  "sessionScreen.interrupted.title": "Session interrupted",
+  "sessionScreen.interrupted.description": "The previous run stopped. Resume it or send a message to continue.",
+  "sessionScreen.interrupted.resume": "Resume",
+  "sessionScreen.interrupted.prompt": "Continue the interrupted work. Check what completed before the interruption before repeating any actions.",
   "sessionScreen.loading": "Loading messages...",
   "sessionScreen.untitled": "Session",
   "sessionScreen.subagent.label": "Subagent",

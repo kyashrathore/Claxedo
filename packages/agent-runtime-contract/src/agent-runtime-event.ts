@@ -10,7 +10,7 @@ import type { RawHarnessEvent } from "./raw-harness-event"
 
 export const AGENT_RUNTIME_EVENT_CONTRACT_VERSION = 8
 
-export type RuntimeStatus = "busy" | "idle" | "error" | "recovering"
+export type RuntimeStatus = "busy" | "idle" | "error"
 export type RuntimeToolStatus = "pending" | "running" | "completed" | "failed"
 export type RuntimeNoticeSeverity = "debug" | "info" | "warn" | "error"
 

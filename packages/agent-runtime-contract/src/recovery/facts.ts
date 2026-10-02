@@ -36,7 +36,7 @@ export type RecoveryFactEvidence<V extends string> = {
  * can still fail to finalize in SQLite. A single boolean outcome can let a
  * timed-out stop read as success and admit conflicting work.
  *
- * Session availability is deliberately absent. `AgentRuntimeStatus.recovering`
+ * Session availability is deliberately absent. `AgentRuntimeStatus`
  * and `ExecutionAvailability` remain the only session-status authority; a
  * recovery operation's state describes the command, not the transcript.
  */

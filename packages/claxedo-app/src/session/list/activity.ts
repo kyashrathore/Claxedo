@@ -1,14 +1,15 @@
 import type { SessionRowView } from "@/session"
 
-export type SessionActivity = "waiting" | "working" | "failed" | "background" | "idle"
+export type SessionActivity = "waiting" | "working" | "interrupted" | "failed" | "background" | "idle"
 
 export function sessionActivity(row: SessionRowView): SessionActivity {
   if (row.waitingOnUser) return "waiting"
   switch (row.status.kind) {
     case "working":
     case "retrying":
-    case "recovering":
       return "working"
+    case "interrupted":
+      return "interrupted"
     case "failed":
       return "failed"
     case "runningInBackground":

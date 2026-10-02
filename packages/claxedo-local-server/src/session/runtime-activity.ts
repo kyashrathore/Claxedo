@@ -12,7 +12,7 @@ export type RuntimeSessionActivity = { kind: SessionRowStatusKind; pending: Set<
 
 export function runtimeStatusKind(status: unknown): SessionRowStatusKind {
   const type = raw(record(status)?.type)
-  return type === "busy" || type === "retry" || type === "recovering" ? type : "idle"
+  return type === "busy" || type === "retry" || type === "interrupted" ? type : "idle"
 }
 
 async function readRuntimeStatus(read: RuntimeStatusRead, workspaceId: string, path: RuntimeStatusPath) {

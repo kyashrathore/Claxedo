@@ -59,7 +59,7 @@ function MetadataRow(props: { readonly icon: ClaxedoIconProps["name"]; readonly 
   )
 }
 
-const STATUS_TEXT = { working: "rail.card.working", background: "rail.card.background", permission: "rail.card.waiting", error: "rail.card.failed" } as const
+const STATUS_TEXT = { working: "rail.card.working", background: "rail.card.background", permission: "rail.card.waiting", interrupted: "rail.card.interrupted", error: "rail.card.failed" } as const
 
 function statusKey(status: NavigationStatus) {
   return status === "idle" || status === "done" ? undefined : STATUS_TEXT[status]

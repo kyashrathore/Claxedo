@@ -33,6 +33,7 @@ function sessionRowOf(scope: BindingScope, ref: SessionRef): SessionRowView | un
 
 const PLUGIN_STATUS: Readonly<Record<SessionActivity, SessionStatus>> = {
   waiting: "waiting",
+  interrupted: "waiting",
   working: "running",
   background: "running_in_background",
   failed: "failed",

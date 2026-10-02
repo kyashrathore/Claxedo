@@ -71,10 +71,10 @@ object makes them in its constructor, inside `blockConcurrencyWhile`, so no
 request reaches it before they finish:
 
 1. `store.recoverBusySessions()` deletes every turn lease and commits a
-   `session.interrupted` row for each busy session. That row moves the session
-   to `recovering` with the message "ACP process restarted; pending
-   interactive state must be rerun". It ends the session's running tool calls
-   with "Tool execution interrupted by ACP restart" and marks its pending
+   `session.interrupted` row for each busy or retrying session and each persisted legacy recovering session. That row moves the session
+   to `interrupted` with a message explaining that the runtime restarted and
+   a new message can continue the work. It ends the session's running tool calls
+   with "Tool execution interrupted" and marks its pending
    permissions and questions stale. The text the turn had already streamed
    stays in the transcript.
 2. `sessions.recoverQueuedPrompts()` wakes every session that has an eligible
@@ -87,7 +87,7 @@ most one instance of an object at a time.
 
 The tests check the outcome at each boundary:
 
-- A turn evicted mid-stream reads back as `recovering`, with its partial text
+- A turn evicted mid-stream reads back as `interrupted`, with its partial text
   and its tool call ended as above, and the next prompt runs normally.
 - A prompt queued behind that turn runs exactly once after the reopen, and its
   row is deleted. A third boot runs nothing and leaves the transcript as it
