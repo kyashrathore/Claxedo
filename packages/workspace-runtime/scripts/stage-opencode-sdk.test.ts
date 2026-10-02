@@ -25,7 +25,6 @@ test("staged SDK packages preserve aliases, version isolation, and assets withou
     pkg("a/node_modules/shared", "shared", "1", {}, 'export default "v1"')
     pkg("shared", "shared", "2", {}, 'export default "v2"')
     pkg("renamed", "original", "1", {}, 'export default "alias"')
-    pkg("koffi", "koffi", "1", {}, "export default {}")
     const output = path.join(root, "output")
     stageOpenCodeSdk(path.join(output, "node_modules"), undefined, owner)
     fs.rmSync(owner, { recursive: true })
@@ -43,15 +42,12 @@ test("staged SDK packages preserve aliases, version isolation, and assets withou
 test("cross-target staging fails when the required native package is missing", () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "claxedo-sdk-native-stage-"))
   try {
-    for (const name of ["@opencode-ai/sdk", "koffi"]) {
-      const directory = path.join(root, "node_modules", name)
-      fs.mkdirSync(directory, { recursive: true })
-      fs.writeFileSync(path.join(directory, "package.json"), JSON.stringify({
-        name, version: "1",
-        ...(name === "koffi" ? { optionalDependencies: { "@koromix/koffi-linux-x64": "1" } } : {}),
-      }))
-    }
-    expect(() => stageOpenCodeSdk(path.join(root, "output/node_modules"), { platform: "linux", arch: "x64" }, root))
-      .toThrow("Missing SDK runtime dependency @koromix/koffi-linux-x64")
+    const sdk = path.join(root, "node_modules/@opencode-ai/sdk")
+    fs.mkdirSync(sdk, { recursive: true })
+    fs.writeFileSync(path.join(sdk, "package.json"), JSON.stringify({ name: "@opencode-ai/sdk", version: "1" }))
+    // koffi stages from this package's own install, where bun put only the
+    // host's native package, so the target is one no development or CI host is.
+    expect(() => stageOpenCodeSdk(path.join(root, "output/node_modules"), { platform: "linux", arch: "riscv64" }, root))
+      .toThrow("Missing SDK runtime dependency @koromix/koffi-linux-riscv64 required by koffi")
   } finally { fs.rmSync(root, { recursive: true, force: true }) }
 })
