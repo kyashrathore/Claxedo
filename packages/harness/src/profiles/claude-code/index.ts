@@ -1,7 +1,7 @@
 import fs from "node:fs/promises"
 import path from "node:path"
 import type { SdkPluginConfig } from "@anthropic-ai/claude-agent-sdk"
-import { readTextIfExists } from "@claxedo/helpers/fs"
+import { readTextIfExists, writePrivateFileAtomic } from "@claxedo/helpers/fs"
 import type { PluginProjection } from "../../contract"
 import { mirrorConfigEntries } from "../config-mirror"
 
@@ -38,12 +38,10 @@ export async function composeClaudeConfigHome(root: string, source: string): Pro
     secretFile: SECRET_FILE, externalSkills: true, initialize: CLAUDE_WRITTEN, allowDisappeared: true, allowMissingRoot: true,
   })
   for (const name of CLAUDE_SETTINGS_FILES) {
-    const from = path.join(source, name)
     const to = path.join(root, name)
-    await fs.rm(to, { force: true })
-    const content = await readTextIfExists(from)
-    if (content === undefined) continue
-    await fs.writeFile(to, JSON.stringify(scrubClaudeSettings(content)), { mode: 0o600 })
+    const content = await readTextIfExists(path.join(source, name))
+    if (content === undefined) await fs.rm(to, { force: true })
+    else await writePrivateFileAtomic(to, JSON.stringify(scrubClaudeSettings(content)))
   }
   return root
 }

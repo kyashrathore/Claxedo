@@ -5,7 +5,7 @@ import type { McpServerConfig, SettingSource } from "@cursor/sdk"
 import { lstatIfExists, readTextIfExists, realPathWithinRoot } from "@claxedo/helpers/fs"
 import { asRecord } from "@claxedo/helpers/guards"
 import type { McpServerSpec, PluginProjection, SkillRoot } from "../../contract"
-import { mirrorConfigEntries, mirrorConfigTree, type ConfigMirrorOptions } from "../config-mirror"
+import { mirrorConfigEntries, mirrorConfigTree, pruneMirrorDirectory, type ConfigMirrorOptions } from "../config-mirror"
 
 const OWNER = "claxedo-agent-plugins"
 const PREFIX = "claxedo--"
@@ -98,7 +98,7 @@ async function replaceManaged(folder: string, desired: Map<string, SkillRoot>, e
   for (const backup of backups.values()) await fs.rm(backup, { recursive: true, force: true })
 }
 
-export async function projectCursorPlugins(projection: Pick<PluginProjection, "pluginRoots">, folder: string): Promise<boolean> {
+async function projectCursorPlugins(projection: Pick<PluginProjection, "pluginRoots">, folder: string): Promise<boolean> {
   await fs.mkdir(folder, { recursive: true, mode: 0o700 })
   const existing = await managedEntries(folder)
   const desired = new Map<string, SkillRoot>()
@@ -114,15 +114,17 @@ export async function projectCursorPlugins(projection: Pick<PluginProjection, "p
   return desired.size > 0
 }
 
+function unmirroredPluginEntry(name: string): boolean {
+  return name.startsWith(".") || name.startsWith(PREFIX)
+}
+
 async function mirrorPersonalPlugins(personalFolder: string, folder: string, personalRoot: string, include: boolean): Promise<void> {
+  const relative = path.join("plugins", "local")
   const names = include && (await lstatIfExists(personalFolder))?.isDirectory()
-    ? (await fs.readdir(personalFolder)).filter((name) => !name.startsWith(".") && !name.startsWith(PREFIX)) : []
-  for (const name of await fs.readdir(folder)) {
-    if (name.startsWith(".") || name.startsWith(PREFIX) || names.includes(name)) continue
-    await fs.rm(path.join(folder, name), { recursive: true, force: true })
-  }
+    ? (await fs.readdir(personalFolder)).filter((name) => !unmirroredPluginEntry(name)) : []
+  await pruneMirrorDirectory(folder, relative, names, { ...mirror, keep: (entry) => unmirroredPluginEntry(path.basename(entry)) })
   for (const name of names) {
-    await mirrorConfigTree(path.join(personalFolder, name), path.join(folder, name), personalRoot, mirror, path.join("plugins", "local", name))
+    await mirrorConfigTree(path.join(personalFolder, name), path.join(folder, name), personalRoot, mirror, path.join(relative, name))
   }
 }
 
