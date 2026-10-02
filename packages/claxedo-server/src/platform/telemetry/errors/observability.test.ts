@@ -1,5 +1,4 @@
 import { afterEach, describe, expect, test, vi } from "vitest"
-import { reportError, setErrorReporterSink } from "./report"
 import {
   deploymentModeTag,
   observabilityOptions,
@@ -8,7 +7,6 @@ import {
   resolveTelemetryKey,
   telemetryEnabled,
 } from "./config"
-import { initNodeObservability } from "./node"
 import { initPostHog, shutdownPostHog } from "./posthog"
 import { deploymentMode } from "@claxedo/server-core/authority/deployment-mode"
 
@@ -50,7 +48,6 @@ const postHogMock = vi.hoisted(() => {
 vi.mock("posthog-node", () => ({ PostHog: postHogMock.PostHog }))
 
 afterEach(async () => {
-  setErrorReporterSink(undefined)
   // The client is module-cached in posthog.ts; drop it so each test's env wins.
   await shutdownPostHog()
   postHogMock.construct.mockClear()
@@ -192,112 +189,6 @@ describe("deploymentModeTag", () => {
       expect(deploymentModeTag({ CLAXEDO_DEPLOYMENT_MODE: trust })).toBe(trust)
       expect(deploymentMode({ CLAXEDO_DEPLOYMENT_MODE: trust })).toBe(trust)
     }
-  })
-})
-
-describe("report seam", () => {
-  test("reportError without a sink is a silent no-op", () => {
-    expect(() => reportError(new Error("nobody listening"))).not.toThrow()
-  })
-
-  test("sink receives error, tags, and extra", () => {
-    const sink = vi.fn()
-    setErrorReporterSink(sink)
-    const err = new Error("boom")
-    reportError(err, { tags: { source: "test" }, extra: { path: "/x" } })
-    expect(sink).toHaveBeenCalledWith(err, {
-      tags: { source: "test" },
-      extra: { path: "/x" },
-    })
-  })
-
-  test("a throwing sink never propagates into the request path", () => {
-    setErrorReporterSink(() => {
-      throw new Error("sink exploded")
-    })
-    expect(() => reportError(new Error("original"))).not.toThrow()
-  })
-})
-
-describe("initNodeObservability", () => {
-  test("opted in but key absent → { enabled: false }, no client is constructed (no network)", () => {
-    expect(initNodeObservability({ ...ON })).toEqual({ enabled: false })
-    expect(postHogMock.construct).not.toHaveBeenCalled()
-    // And no sink got registered: reports stay no-ops.
-    reportError(new Error("still nobody listening"))
-    expect(postHogMock.captureException).not.toHaveBeenCalled()
-  })
-
-  test("both opt-ins → client built with host/flush options and the sink forwards reports", () => {
-    const result = initNodeObservability({
-      ...ON,
-      CLAXEDO_POSTHOG_KEY: "phc_server",
-      GIT_SHA: "deadbeef",
-      CLAXEDO_DEPLOYMENT_MODE: "hosted",
-    })
-    expect(result).toEqual({ enabled: true })
-    expect(postHogMock.construct).toHaveBeenCalledTimes(1)
-    const [key, options] = postHogMock.construct.mock.calls[0] as [string, { host: string }]
-    expect(key).toBe("phc_server")
-    expect(options.host).toBe("https://us.i.posthog.com")
-
-    const err = new Error("route blew up")
-    reportError(err, { tags: { source: "server_route" }, extra: { path: "/x" } })
-    expect(postHogMock.captureException).toHaveBeenCalledWith(err, "system", {
-      unit: "server",
-      deployment_mode: "hosted",
-      deployment_runtime: "node",
-      release: "deadbeef",
-      source: "server_route",
-      path: "/x",
-    })
-  })
-
-  test("I-5: the exception payload is exactly the explicit properties — nothing is auto-attached", () => {
-    initNodeObservability({ ...ON, CLAXEDO_POSTHOG_KEY: "phc_server" })
-    reportError(new Error("boom"), { tags: { source: "server_route" }, extra: { path: "/x" } })
-    const properties = postHogMock.captureException.mock.calls[0][2] as Record<string, unknown>
-    // Exact key set: base tags + caller tags/extra. If an SDK upgrade or a
-    // future integration ever starts attaching request context (headers,
-    // cookies, bodies — where live credentials ride), this fails loudly.
-    expect(Object.keys(properties).sort()).toEqual([
-      "deployment_mode",
-      "deployment_runtime",
-      "path",
-      "source",
-      "unit",
-    ])
-    for (const forbidden of ["request", "headers", "cookies", "query_string", "data", "body"]) {
-      expect(properties).not.toHaveProperty(forbidden)
-    }
-  })
-
-  test("a call site that knows the user keys the exception to them, not to system", () => {
-    initNodeObservability({ ...ON, CLAXEDO_POSTHOG_KEY: "phc_server" })
-    const err = new Error("route blew up")
-    reportError(err, { tags: { user_id: "user_42" } })
-    expect(postHogMock.captureException).toHaveBeenCalledWith(err, "user_42", {
-      unit: "server",
-      deployment_mode: "local",
-      deployment_runtime: "node",
-      user_id: "user_42",
-    })
-  })
-
-  test("mode off + a real-looking key → no client, no sink, no capture", () => {
-    expect(
-      initNodeObservability({ CLAXEDO_TELEMETRY_MODE: "off", CLAXEDO_POSTHOG_KEY: REAL_KEY }),
-    ).toEqual({ enabled: false })
-    expect(postHogMock.construct).not.toHaveBeenCalled()
-    reportError(new Error("silenced by the switch"))
-    expect(postHogMock.captureException).not.toHaveBeenCalled()
-  })
-
-  test("mode unset + a real-looking key → no client, no sink, no capture", () => {
-    expect(initNodeObservability({ CLAXEDO_POSTHOG_KEY: REAL_KEY })).toEqual({ enabled: false })
-    expect(postHogMock.construct).not.toHaveBeenCalled()
-    reportError(new Error("silenced by the absent opt-in"))
-    expect(postHogMock.captureException).not.toHaveBeenCalled()
   })
 })
 

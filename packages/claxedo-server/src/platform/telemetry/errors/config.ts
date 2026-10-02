@@ -123,16 +123,6 @@ export type ObservabilityOptions = {
   tags: Record<string, string>
 }
 
-/**
- * Execution runtime for this unit. DERIVED from the unit, never read from the
- * environment — the Worker is the only workerd unit, everything else is Node.
- * Adds no operator surface.
- *
- * Paired with `deployment_mode` (trust) this makes `node-hosted` and
- * `workerd-hosted` distinguishable in telemetry. "hosted" alone says nothing
- * about where code runs: both hosted-core-app.ts (workerd) and
- * self-hosted-node/app.ts (node) can serve it.
- */
 export function deploymentRuntimeTag(unit: ObservabilityUnit): "node" | "workerd" {
   return unit === "worker" ? "workerd" : "node"
 }

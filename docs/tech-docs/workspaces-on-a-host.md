@@ -131,17 +131,11 @@ credential (stops) from an unreachable control plane (carries on:
 `transientHeartbeatFailure` in `connector.ts`). The user's pause and a revoke
 clear the suspension so a later sign-in cannot undo a decision.
 
-**A.6 `claxedo connect` and the self-hosted node** — a connect box is
-enrolled by redeeming an invitation
-(`packages/claxedo-host-connector/src/bootstrap.ts`) and then runs the same
-`createHostConnector` in machine mode, supplying `roots`/`resolvePath` so an
-assignment outside its roots is refused at `ack`. The self-hosted node
-(`packages/claxedo-server/src/deployments/self-hosted-node/remote-access-service.ts`)
-holds the authority in-process, so its beat calls
-`heartbeatHostEnrollmentByMachine` with a principal read from its own
-enrollment row; `sessionAuthority` is read per beat from
-`embeddedWorkspaceRuntimeSessionAuthority`, the same expression the runtime
-app is composed from, so the declaration cannot drift from what is mounted.
+**A.6 `claxedo connect`** — a connect box redeems an invitation through
+`packages/claxedo-host-connector/src/bootstrap.ts` and runs `createHostConnector`
+in machine mode. Its `roots` and `resolvePath` refuse assignments outside the
+served roots before acknowledgment. Heartbeats and enrollment reach the hosted
+Cloudflare authority through the machine transport.
 
 **A.7 The tunnel replays onto loopback** — both tunnel owners
 (`host-serving/src/serving.ts`, `claxedo-server/src/host-tunnel.ts`)
@@ -373,7 +367,7 @@ to reserve comes from the attached server's declaration (E.2).
 Relay-side, `packages/workspace-relay/src/cors-origins.ts` compiles one
 origin matcher (`createOriginMatcher`, `DEFAULT_RELAY_APP_ORIGINS`) that both
 `packages/workspace-relay/src/cloudflare.ts` and
-`packages/workspace-relay/src/bun.ts` stamp on browser-facing responses.
+`packages/workspace-relay/src/cloudflare.ts` stamp on browser-facing responses.
 
 ## D. Listing sessions: the attached server's list, plus the account's
 
@@ -566,11 +560,6 @@ then the workspace's owner or a share grant admits: `follow` reads and
 streams, `send` also drives the agent's turn, and a `session_control` write
 drops the share branch. No rank on the organization or the project admits
 anyone, and a share reaches its session only while the owner still stands.
-The SQLite store (`hasPrivateAccess` in
-`packages/claxedo-server-core/src/authority/adapters/sqlite/private-session-authority.ts`)
-answers the same, and admits an agent by its creator attribution alone; a
-person's creator attribution admits nothing.
-
 **F.3 Frame address** — every frame a runtime publishes names its own
 filesystem directory: this machine's path, another machine's path, or the
 sandbox's. `createEventIntake`
@@ -685,10 +674,6 @@ organization.
 Nothing in this list was run while this document was written; each entry
 names the file and what it claims to cover.
 
-- **Host tunnel e2e** (`packages/claxedo-server/src/host-tunnel.e2e.test.ts`)
-  spawns a real relay (`packages/claxedo-server/src/host-tunnel-relay-fixture.mjs`),
-  connects a host tunnel to the embedded workspace runtime, and serves
-  machine-placed relay traffic through it.
 - **Daemon probe** (`packages/claxedo-local-server/src/app/desktop-session-authority.test.ts`)
   runs the same request twice against a real `startLocalServer`, once with the
   relay's marks and once without, with the session authority and the relay
@@ -696,6 +681,3 @@ names the file and what it claims to cover.
 - **App e2e** (`packages/claxedo-app/e2e/`): no flow drives a machine-placed
   workspace. Its relay harness (`packages/claxedo-app/e2e/harness/relay.ts`)
   backs the signed stack (`packages/claxedo-app/e2e/harness/signed-stack.ts`).
-  `packages/claxedo-server/src/signed-browser-relay-fixture.mjs` and
-  `packages/claxedo-server/src/connect-host-fixture.mjs` are in the tree, and
-  no spec launches them.

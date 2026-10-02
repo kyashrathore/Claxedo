@@ -6,7 +6,6 @@ import { mkdirSync, mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import path from "node:path"
 import { ClaxedoDB } from "@claxedo/server-core/platform/db/index"
-import { closeAuthorityDatabases } from "@claxedo/server-core/authority/adapters/sqlite/workspace-authority-store"
 import { hostServingState, stopHostServing } from "@claxedo/host-serving/serving"
 import { setLocalHostEndpoints } from "../deployments/local/host-session-authority"
 import { startLocalServer, type LocalServer } from "./start-local-server"
@@ -104,7 +103,6 @@ afterEach(async () => {
   await server?.stop()
   server = undefined
   ClaxedoDB.close()
-  closeAuthorityDatabases()
   if (previousDataDir === undefined) delete process.env.CLAXEDO_DATA_DIR
   else process.env.CLAXEDO_DATA_DIR = previousDataDir
   rmSync(dataDir, { recursive: true, force: true })

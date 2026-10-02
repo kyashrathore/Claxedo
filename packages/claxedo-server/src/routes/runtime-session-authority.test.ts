@@ -6,8 +6,7 @@ import { Hono } from "hono"
 import { decodeJwt, exportPKCS8, exportSPKI, generateKeyPair, importPKCS8, SignJWT } from "jose"
 import { mintRelayHostToken } from "@claxedo/workspace-relay"
 import { ControlPlaneAuthError, type SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
-import { createSqliteWorkspaceAuthority } from "@claxedo/server-core/authority/adapters/sqlite/workspace-authority"
-import { openAuthorityDb } from "@claxedo/server-core/authority/adapters/sqlite/workspace-authority-store"
+import { d1Authority } from "../test-support/d1-authority"
 import {
   childCompletionTurnIdPrefix,
   SessionTurnConflictError,
@@ -899,25 +898,13 @@ describe("adopting a session the host already held", () => {
  * `exerciseRuntimeForkReservationConformance`, which both adapter suites run.
  */
 describe("reservation and adoption against a real private-session authority", () => {
-  const authorities: Array<{ close(): void }> = []
+  const authorities: Array<{ dispose(): Promise<void> }> = []
   const directories: string[] = []
 
-  afterEach(() => {
-    for (const store of authorities.splice(0)) store.close()
+  afterEach(async () => {
+    for (const store of authorities.splice(0)) await store.dispose()
     for (const directory of directories.splice(0)) fs.rmSync(directory, { recursive: true, force: true })
   })
-
-  function auth(subject: string): SignedControlPlaneAuth {
-    return {
-      mode: "signed",
-      token: `token_${subject}`,
-      user: {
-        subject,
-        tokenIdentifier: `https://identity.example.test|${subject}`,
-        issuer: "https://identity.example.test",
-      },
-    }
-  }
 
   async function fixture() {
     const key = await generateKeyPair("EdDSA", { extractable: true })
@@ -928,34 +915,20 @@ describe("reservation and adoption against a real private-session authority", ()
     const passes = memorySandboxPassRegister()
     const directory = fs.mkdtempSync(path.join(os.tmpdir(), "claxedo-runtime-session-authority-"))
     directories.push(directory)
-    const databasePath = path.join(directory, "authority.db")
-    const store = createSqliteWorkspaceAuthority({ path: databasePath })
-    // The host assignment adoption reads is written by an enrollment flow this
-    // route has no part in, so it is seeded through a second handle on the
-    // same file rather than stood up here.
-    const seed = openAuthorityDb({ path: databasePath })
-    authorities.push(store, seed)
-    const owner = auth("owner")
-    const member = auth("member")
+    const backing = await d1Authority()
+    authorities.push(backing)
+    const { authority: store, database: seed } = backing
+    const owner = await backing.signIn("owner")
+    const member = await backing.signIn("member")
     const me = await store.usersMe(owner) as { org_id: string }
-    await store.usersMe(member)
     await store.createCloudWorkspace(owner, { workspaceId: "ws_real", displayName: "Main" })
-    const project = seed().prepare(`SELECT project_id FROM workspaces WHERE workspace_id = 'ws_real'`)
-      .get() as { project_id: string }
-    seed().prepare(`
-      INSERT INTO project_memberships (project_id, token_identifier, role, created_at, updated_at)
-      VALUES (?, ?, 'editor', 1, 1)
-    `).run(project.project_id, member.user.tokenIdentifier)
-    seed().prepare(`
-      INSERT INTO org_memberships (org_id, token_identifier, role, created_at, updated_at)
-      VALUES (?, ?, 'member', 1, 1)
-      ON CONFLICT (org_id, token_identifier) DO NOTHING
-    `).run(me.org_id, member.user.tokenIdentifier)
+    const opened = await store.openWorkspace(owner, { workspaceId: "ws_real" })
+    await backing.addMember(owner, member, me.org_id)
     const identityOf = (who: SignedControlPlaneAuth) => ({
-      userId: who.user.tokenIdentifier,
-      actorId: who.user.tokenIdentifier,
+      userId: who.principal!.userId,
+      actorId: who.principal!.actorId,
       orgId: me.org_id,
-      projectId: "project_real",
+      projectId: opened.workspace!.project_id!,
     })
     const target = app({
       authority: {
@@ -975,7 +948,7 @@ describe("reservation and adoption against a real private-session authority", ()
     })
     const relayToken = (who: SignedControlPlaneAuth, role: "owner" | "editor") => mintRelayHostToken({
       principalKind: "user",
-      actorId: who.user.tokenIdentifier,
+      actorId: who.principal!.actorId,
       actorKind: "human",
       orgId: me.org_id,
       workspaceId: "ws_real",
@@ -985,24 +958,24 @@ describe("reservation and adoption against a real private-session authority", ()
       jti: `rht_${role}_${who.user.subject}`,
       parentJti: "rat_real",
     }, key.privateKey, "EdDSA")
-    const assignHost = (who: SignedControlPlaneAuth) => {
-      seed().prepare(`
+    const assignHost = async (who: SignedControlPlaneAuth) => {
+      await seed.prepare(`
         INSERT INTO host_workspace_assignments (
-          workspace_id, host_id, owner_token_identifier, revision, assigned_at, updated_at
-        ) VALUES (?, ?, ?, 1, 1, 1)
-        ON CONFLICT (workspace_id) DO UPDATE SET owner_token_identifier = excluded.owner_token_identifier
-      `).run("ws_real", "host_real", who.user.tokenIdentifier)
+          workspace_id, host_id, org_id, owner_user_id, owner_actor_id, revision, assigned_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, 1, 1, 1)
+        ON CONFLICT (workspace_id) DO UPDATE SET owner_user_id = excluded.owner_user_id, owner_actor_id = excluded.owner_actor_id
+      `).bind("ws_real", "host_real", me.org_id, who.principal!.userId, who.principal!.actorId).run()
     }
     const grant = async (who: SignedControlPlaneAuth) =>
       (await mintOwnerGrant({ ...identityOf(who), workspaceId: "ws_real" }, env, { register: passes })).token
     const runtime = (who: SignedControlPlaneAuth) => ({
       principalKind: "user" as const,
-      actorId: who.user.tokenIdentifier,
+      actorId: who.principal!.actorId,
       actorKind: "human" as const,
     })
-    const turnProducer = (turnId: string) => seed().prepare<unknown[], { actor_id: string }>(
+    const turnProducer = async (turnId: string) => (await seed.prepare(
       `SELECT actor_id FROM session_turn_producers WHERE session_id = 'ses_parent' AND turn_id = ?`,
-    ).get(turnId)?.actor_id
+    ).bind(turnId).first<{ actor_id: string }>())?.actor_id
     return { target, store, owner, member, grant, runtime, relayToken, assignHost, turnProducer }
   }
 
@@ -1046,7 +1019,7 @@ describe("reservation and adoption against a real private-session authority", ()
 
   test("the machine's owner adopts a session the plane has no row for, and nobody else can", async () => {
     const { target, store, owner, member, runtime, relayToken, assignHost } = await fixture()
-    assignHost(owner)
+    await assignHost(owner)
 
     const refusedBefore = await request(target, await relayToken(owner, "owner"), { action: "read", sessionId: "ses_held_locally" })
     expect(refusedBefore.status).toBe(403)
@@ -1068,7 +1041,7 @@ describe("reservation and adoption against a real private-session authority", ()
 
     // A second person who holds the workspace outright still does not own the
     // machine, and the authority is the one that says so.
-    assignHost(owner)
+    await assignHost(owner)
     const impostor = await request(target, await relayToken(member, "owner"), { action: "adopt", sessionId: "ses_also_held_locally", ...RUNTIME_TIMES })
     expect(impostor.status).toBe(403)
     expect(await impostor.json()).toMatchObject({ error: { code: "workspace_authorization_denied" } })
@@ -1107,20 +1080,20 @@ describe("reservation and adoption against a real private-session authority", ()
     expect(minted.status).toBe(200)
     const wake = await minted.json() as { allowed: true; grant: string; expiresAt: number }
     expect(decodeJwt(wake.grant)).toMatchObject({
-      actor_id: owner.user.tokenIdentifier, session_id: "ses_parent", workspace_id: "ws_real", turn_id_prefix: "msg_wake_ses_child_",
+      actor_id: owner.principal!.actorId, session_id: "ses_parent", workspace_id: "ws_real", turn_id_prefix: "msg_wake_ses_child_",
     })
     expect(wake.expiresAt).toBeGreaterThan(Date.now())
 
     const outside = await request(target, undefined, { action: "turn_acquire", sessionId: "ses_parent", turnId: "msg_outside_prefix", grant: wake.grant })
     expect(outside.status).toBe(401)
     expect(await outside.json()).toMatchObject({ error: { code: "session_turn_grant_mismatch" } })
-    expect(turnProducer("msg_outside_prefix")).toBeUndefined()
+    expect(await turnProducer("msg_outside_prefix")).toBeUndefined()
 
     const acquired = await request(target, undefined, { action: "turn_acquire", sessionId: "ses_parent", turnId: "msg_wake_ses_child_1", grant: wake.grant })
     expect(acquired.status).toBe(200)
     const lease = await acquired.json() as { leaseId: string; fencingToken: number }
-    expect(decodeJwt(lease.leaseId)).toMatchObject({ transport: "deferred-grant", actor_id: owner.user.tokenIdentifier, turn_id: "msg_wake_ses_child_1" })
-    expect(turnProducer("msg_wake_ses_child_1")).toBe(owner.user.tokenIdentifier)
+    expect(decodeJwt(lease.leaseId)).toMatchObject({ transport: "deferred-grant", actor_id: owner.principal!.actorId, turn_id: "msg_wake_ses_child_1" })
+    expect(await turnProducer("msg_wake_ses_child_1")).toBe(owner.principal!.actorId)
     const retried = await request(target, undefined, { action: "turn_acquire", sessionId: "ses_parent", turnId: "msg_wake_ses_child_1", grant: wake.grant })
     expect(retried.status).toBe(200)
     expect((await retried.json() as { fencingToken: number }).fencingToken).toBe(lease.fencingToken)
@@ -1137,7 +1110,7 @@ describe("reservation and adoption against a real private-session authority", ()
       expect(replayed.status).toBe(401)
       expect(await replayed.json()).toMatchObject({ error: { code: "session_turn_grant_redeemed" } })
     }
-    expect(turnProducer("msg_wake_ses_child_2")).toBeUndefined()
+    expect(await turnProducer("msg_wake_ses_child_2")).toBeUndefined()
 
     const queued = await request(target, await relayToken(owner, "editor"), { action: "turn_grant", sessionId: "ses_parent", intent: "queued_prompt", turnId: "msg_q1" })
     expect(queued.status).toBe(200)
@@ -1148,7 +1121,7 @@ describe("reservation and adoption against a real private-session authority", ()
     expect(await otherTurn.json()).toMatchObject({ error: { code: "session_turn_grant_mismatch" } })
     const prompted = await request(target, undefined, { action: "turn_acquire", sessionId: "ses_parent", turnId: "msg_q1", grant: prompt.grant })
     expect(prompted.status).toBe(200)
-    expect(turnProducer("msg_q1")).toBe(owner.user.tokenIdentifier)
+    expect(await turnProducer("msg_q1")).toBe(owner.principal!.actorId)
 
     const stranger = await request(target, await relayToken(member, "editor"), { action: "turn_grant", sessionId: "ses_parent", intent: "queued_prompt", turnId: "msg_m1" })
     expect(stranger.status).toBe(403)

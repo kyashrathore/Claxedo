@@ -6,7 +6,6 @@ import { promisify } from "node:util"
 import { execFile } from "node:child_process"
 import type { HarnessEffortLevels } from "@claxedo/agent-runtime-contract"
 import { FakeTransport, fakeConnectionProvider } from "@claxedo/workspace-runtime/testing"
-import { closeAuthorityDatabases } from "@claxedo/server-core/authority/adapters/sqlite/workspace-authority-store"
 import { configureAgentConfig, disposeAgentConfig, saveUserConfig } from "@claxedo/server-core/agent-config/index"
 import { ClaxedoDB } from "@claxedo/server-core/platform/db/index"
 import { putSessionMeta, sessionMeta } from "@claxedo/server-core/session/meta/index"
@@ -268,7 +267,6 @@ afterEach(async () => {
   await shutdownEmbeddedWorkspaceRuntimes()
   disposeAgentConfig()
   ClaxedoDB.close()
-  closeAuthorityDatabases()
   configureEmbeddedWorkspaceRuntime({})
   configureAgentConfig()
   for (const root of roots.splice(0)) await fs.rm(root, { recursive: true, force: true })
@@ -948,7 +946,6 @@ describe("local tasks session bridge", () => {
       await shutdownEmbeddedWorkspaceRuntimes()
       disposeAgentConfig()
       ClaxedoDB.close()
-      closeAuthorityDatabases()
     }
   })
 })

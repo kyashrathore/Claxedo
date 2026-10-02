@@ -6,7 +6,6 @@ import path from "node:path"
 import { customVerifierAuthAdapter, localOnlyAuthAdapter } from "@claxedo/server-core/platform/auth/auth"
 import { workspaceSupervisorInstalled } from "@claxedo/server-core/workspace/supervisor-port"
 import { ClaxedoDB } from "@claxedo/server-core/platform/db/index"
-import { closeAuthorityDatabases } from "@claxedo/server-core/authority/adapters/sqlite/workspace-authority-store"
 import { startLocalServer, type LocalServer } from "./start-local-server"
 import type { LocalAppOptions } from "./local-app"
 import { createLocalControlPlaneServices } from "./local-services"
@@ -65,7 +64,6 @@ afterEach(async () => {
   // handles hold files inside it (EPERM/EBUSY); both closes are registry
   // resets, so any later use lazily reopens.
   ClaxedoDB.close()
-  closeAuthorityDatabases()
   rmSync(dataDir, { recursive: true, force: true })
 })
 

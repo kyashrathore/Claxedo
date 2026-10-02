@@ -30,15 +30,6 @@ type ActiveTunnel = {
 }
 
 const tunnels = new Map<string, ActiveTunnel>()
-const machineTunnels = new Map<string, {
-  tunnel: WorkspaceRelayHostTunnel
-  hostId: string
-  relayUrl: string
-  token: { current: () => Promise<string> }
-  workspaceIds: string[]
-  registration: { current: Set<string> }
-}>()
-
 function normalized(input: string) {
   return input.trim().replace(/\/+$/, "")
 }
@@ -79,114 +70,19 @@ async function tunnelTarget(input: { workspaceId: string; hostId: string }) {
     }
   }
   const target = await sandboxManager.ensure(workspace.id, {
-    // Was hardcoded "us-east". See the note in
-    // workspace-supervisor-sandbox.ts: the relay derives its Durable Object
-    // location hint from this region, and that placement is permanent.
+    // A Durable Object room keeps its placement after its creation.
     homeRegion: defaultHomeRegion(),
     hostId: input.hostId,
   })
   if (target.status !== "ready") throw new Error(`sandbox unavailable: ${workspace.id}`)
   holdSupervisorSandbox(workspace.id)
   return {
-    // `localBaseUrl` is the Node-side bridge ingress used by the Relay host
-    // tunnel. Product traffic still enters through Relay; this direct URL is
-    // not exposed as a client/control-plane target.
+    // Only the tunnel connects to this address; clients use the relay.
     url: target.url,
-    // The LEASE's region, not the config default: for a workspace that already
-    // exists, its recorded region is authoritative and may predate the current
-    // CLAXEDO_HOME_REGION setting.
+    // An existing lease keeps its region when the deployment default changes.
     region: target.homeRegion,
     release: () => releaseSupervisorSandbox(workspace.id),
   }
-}
-
-export async function startMachineHostTunnel(input: {
-  workspaceIds: string[]
-  hostId: string
-  relayUrl: string
-} & (
-  | { hostTunnelTokenProvider: () => Promise<string>; hostTunnelToken?: never }
-  | { hostTunnelToken: string; hostTunnelTokenProvider?: never }
-)) {
-  const workspaceIds = [...new Set(input.workspaceIds)].sort()
-  if (!workspaceIds.length) throw new Error("At least one local workspace is required")
-  const workspaces = await Promise.all(workspaceIds.map((workspaceId) => getWorkspace(workspaceId)))
-  const invalid = workspaces.find((workspace) => !workspace || workspace.kind !== "local")
-  if (invalid !== undefined || workspaces.some((workspace) => !workspace)) {
-    throw new Error("Machine-wide remote access supports local workspaces only")
-  }
-
-  const relayUrl = normalized(input.relayUrl)
-  const hostTunnelTokenProvider = input.hostTunnelTokenProvider ?? (async () => input.hostTunnelToken)
-  const existing = machineTunnels.get(input.hostId)
-  if (existing?.relayUrl === relayUrl) {
-    existing.token.current = hostTunnelTokenProvider
-    if (existing.workspaceIds.join("\n") !== workspaceIds.join("\n")) {
-      await existing.tunnel.updateRegistration({
-        workspaceIds,
-        token: await hostTunnelTokenProvider(),
-      })
-      existing.workspaceIds = workspaceIds
-      existing.registration.current = new Set(workspaceIds)
-    }
-    return { reused: true, connectionCount: 1, workspaceIds }
-  }
-
-  existing?.tunnel.close()
-  const token = { current: hostTunnelTokenProvider }
-  const registration = { current: new Set(workspaceIds) }
-  const localBaseUrl = workspaceSupervisorServerUrl()
-  const tunnel = startWorkspaceRelayHostTunnel({
-    relayUrl,
-    hostId: input.hostId,
-    workspaceIds,
-    localBaseUrl,
-    // Lets the relay place this workspace's Durable Object near its users
-    // instead of on the deployment-wide default. Permanent once the DO exists.
-    region: defaultHomeRegion(),
-    resolveLocalUrl: ({ workspaceId, path }) => {
-      // The relay carries only workspace-runtime traffic. CentralServer-owned
-      // routes remain loopback-only even when a malicious relay asks for one.
-      if (!registration.current.has(workspaceId)) return undefined
-      // Resolved once: the ownership verdict and the prefixed URL below are
-      // the same path, so a route that passes the check cannot be a different
-      // one by the time it is bound to this workspace.
-      const requested = new URL(path, "http://workspace.local")
-      if (routeOwnership(requested.pathname).handler !== RouteHandler.SandboxRuntime) return undefined
-      const target = new URL(
-        `/workspaces/${encodeURIComponent(workspaceId)}${requested.pathname}`,
-        `${normalized(localBaseUrl)}/`,
-      )
-      target.search = requested.search
-      return target
-    },
-    tokenProvider: () => token.current(),
-    // This machine replays a relay-delivered request onto its OWN loopback
-    // server, whose relay-shaped surface is gated by `isLoopbackLocalRequest`.
-    // The remote caller's `Origin`/`Host` and the edge's forwarded-client
-    // headers describe someone else and make that local fetch look proxied,
-    // so the one owner of that policy strips them here exactly as the daemon's
-    // own serving path does.
-    localReplayHeaders: loopbackReplayHeaders,
-    onEvent: (event) => logTunnelEvent({ workspaceId: workspaceIds.join(","), hostId: input.hostId, relayUrl }, event),
-    pingIntervalMs: 15_000,
-    reconnectIntervalMs: 1_000,
-    ...hostTunnelPreOpenQueueFromEnv(),
-  })
-  machineTunnels.set(input.hostId, {
-    tunnel,
-    hostId: input.hostId,
-    relayUrl,
-    token,
-    workspaceIds,
-    registration,
-  })
-  log.info("machine host tunnel started", {
-    hostId: input.hostId,
-    relayUrl,
-    workspaceIds,
-  })
-  return { reused: false, connectionCount: 1, workspaceIds }
 }
 
 export async function startWorkspaceHostTunnel(input: {
@@ -261,26 +157,12 @@ export function stopWorkspaceHostTunnel(input: {
   return true
 }
 
-export function stopMachineHostTunnel(hostId: string) {
-  const existing = machineTunnels.get(hostId)
-  if (!existing) return false
-  existing.tunnel.close()
-  machineTunnels.delete(hostId)
-  return true
-}
-
-export function hasMachineHostTunnel(hostId: string) {
-  return machineTunnels.has(hostId)
-}
-
 export function stopAllWorkspaceHostTunnels() {
-  const count = tunnels.size + machineTunnels.size
+  const count = tunnels.size
   for (const existing of tunnels.values()) {
     existing.tunnel.close()
     existing.release()
   }
   tunnels.clear()
-  for (const existing of machineTunnels.values()) existing.tunnel.close()
-  machineTunnels.clear()
   return count
 }

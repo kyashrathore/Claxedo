@@ -10,10 +10,10 @@ import { cloudWorkspaceUsage, createSandboxUsageLedger, type SandboxUsageLedger 
 import { usageReportPlane, USAGE_REPORT_URL, type UsageReportPlane } from "../../test-support/usage-report-plane"
 import { buildAssistantMessage, messageCompleted, messageUpdated, sessionUsage } from "@claxedo/workspace-runtime/projection"
 
-const cleanups: Array<() => void> = []
+const cleanups: Array<() => void | Promise<void>> = []
 
-afterEach(() => {
-  for (const cleanup of cleanups.splice(0).reverse()) cleanup()
+afterEach(async () => {
+  for (const cleanup of cleanups.splice(0).reverse()) await cleanup()
 })
 
 function ledgerPath() {
@@ -92,7 +92,7 @@ type Account = UsageReportPlane["owner"]
 
 async function turnAccess(plane: UsageReportPlane, sessionId: string, by: Account) {
   return {
-    actor: { actorId: by.user.tokenIdentifier, actorKind: "human" as const },
+    actor: { actorId: by.principal!.actorId, actorKind: "human" as const },
     authority: { managed: true as const, workspaceId: "ws_real", orgId: plane.orgId, role: "editor" as const },
     credential: `Bearer ${await plane.relayToken(by)}`,
     operation: "prompt" as const,
@@ -587,7 +587,7 @@ describe("cloud workspace usage delivery", () => {
     })
 
     const inspect = new Database(file, { readonly: true })
-    cleanups.push(() => inspect.close())
+    cleanups.push(() => { inspect.close() })
     const rows = inspect.prepare("select revision, delivery from usage_revisions where message_id = 'msg_assistant_1'").all()
     const [filed] = await plane.ledger.current({ sessionId: "ses_pruned" })
     expect(rows).toEqual([{ revision: filed?.revision, delivery: "delivered" }])
@@ -620,7 +620,7 @@ describe("cloud workspace usage delivery", () => {
     spy.mockRestore()
 
     const inspect = new Database(file, { readonly: true })
-    cleanups.push(() => inspect.close())
+    cleanups.push(() => { inspect.close() })
     const planned = [...statements].filter((source) => /^\s*(select|insert|update|delete)/i.test(source))
     for (const read of [/turn_session_id = \?/, /turn_id is null/, /select max\(revision\)/]) {
       expect(planned.some((source) => read.test(source)), String(read)).toBe(true)

@@ -16,8 +16,8 @@ import { usageReportPlane, type UsageReportPlane } from "../test-support/usage-r
 
 const planes: UsageReportPlane[] = []
 
-afterEach(() => {
-  for (const plane of planes.splice(0)) plane.close()
+afterEach(async () => {
+  for (const plane of planes.splice(0)) await plane.close()
 })
 
 async function plane(input: Parameters<typeof usageReportPlane>[0] = {}) {

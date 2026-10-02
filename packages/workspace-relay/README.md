@@ -8,10 +8,6 @@ routes each workspace to its own Durable Object room (`src/cloudflare.ts`), so
 the room that owns a workspace's host tunnel also serves every request for that
 workspace. `scripts/deploy-cloudflare.ts` deploys it.
 
-`src/bun.ts` and `src/main.ts` run the same server core as a Bun process. It is
-not deployed; the app and harness e2e suites and the server's host-tunnel tests
-start it as their local relay.
-
 ## Deployment Security
 
 The relay is a public edge service for workspace traffic, but it is not the
@@ -62,7 +58,7 @@ requirement, the control plane must also close the session/runtime channel.
 Every Host Tunnel Token carries `enrollment_id` and `generation`. A relay
 requires a host-generation resolver and asks
 `GET <CLAXEDO_RELAY_RESOLVER_URL>/host-generation?enrollmentId=` on every
-admission and re-checks established tunnels every 30 s (both adapters). The
+admission and re-checks established tunnels every 30 s. The
 verdicts, in order:
 
 | Control plane answer | Admission | Established tunnel |
@@ -74,10 +70,8 @@ verdicts, in order:
 | `404 relay_resolver_enrollment_not_found` | `403 host_enrollment_unknown` | closed `1008` |
 | Any other status, a bare 404 (route missing), malformed body, or the 5 s deadline | `503 host_generation_lookup_unavailable` (retry) | survives two consecutive failures, closed `1012` on the third |
 
-A token missing either fence claim is refused. For one host+workspace identity
-(Bun) or one room (Cloudflare), an incumbent yields only to an equal or higher
-generation. Bun audits each refusal as `host_tunnel.denied` with the code as
-`reason`; the Cloudflare room has no audit hook.
+A token missing either fence claim is refused. An incumbent in a workspace
+room yields only to an equal or higher generation.
 
 A `host.registration.update` frame must carry a complete, verified token. A
 missing fence closes the socket with `1008 Host tunnel registration update
@@ -121,21 +115,7 @@ closed.
 ### Host-Tunnel Topology
 
 A Durable Object room is scoped to one workspace, so a host tunnel registering
-through the Worker presents exactly one `workspaceId` per connection. The Bun
-process keeps every host tunnel in process-local maps and admits one tunnel
-registering several workspaces.
-
-## Why one package, no parallel impl
-
-In the fa9cabf9 design pass the working assumption was clarified:
-
-> "I think this creates a parallel implementation problem — why is there
-> no devmode in the prod relay?"
-
-So this package is the relay. Local-dev configuration is selected by
-environment variables, not by a sibling `dev-relay.ts` module. If a
-future cycle re-introduces a separate `dev-relay.*` file in
-`packages/claxedo-server/`, that should be flagged as a regression.
+through the Worker presents exactly one `workspaceId` per connection.
 
 ## Public surface
 
@@ -148,9 +128,6 @@ Re-exported from [`src/index.ts`](src/index.ts):
 | Active-host directory | [`src/directory.ts`](src/directory.ts) | `createWorkspaceRelayDirectory`, `disposeWorkspaceRelayDirectory`, types `WorkspaceRelayDirectory`, `HostTunnelPresence` |
 | Cloudflare Worker gateway and room | [`src/cloudflare.ts`](src/cloudflare.ts) | `createWorkspaceRelayDurableObjectGateway`, `createWorkspaceRelayDurableObjectRoom` |
 
-The Bun adapter is not in the root barrel: import `createWorkspaceRelayBun` from
-`@claxedo/workspace-relay/bun`.
-
 Wire types live in the sibling package
 [`@claxedo/workspace-relay-protocol`](../workspace-relay-protocol/)
 (`TUNNEL_PROTOCOL_VERSION`, `TunnelMessage`, `isTunnelMessage`,
@@ -160,13 +137,11 @@ implement the tunnel protocol without pulling Hono and Jose.
 ## Configuration
 
 All knobs are environment variables: Worker vars and secrets in
-`wrangler.toml` and `scripts/deploy-cloudflare.ts`, `process.env` for the Bun
-process.
+`wrangler.toml` and `scripts/deploy-cloudflare.ts`.
 
 | Env var | Purpose |
 | --- | --- |
-| `CLAXEDO_WORKSPACE_RELAY_HOST`, `CLAXEDO_WORKSPACE_RELAY_PORT` | Bun process only: listening socket, `127.0.0.1:7777` by default. |
-| `CLAXEDO_RELAY_RESOLVER_URL` | Control-plane resolver base (`https://<control-plane>/internal/relay`). The relay derives `/target`, `/revocation`, and `/host-generation` from it. Required by the Bun process; the Worker also accepts `CLAXEDO_CENTRAL_URL` and appends `/internal/relay`. |
+| `CLAXEDO_RELAY_RESOLVER_URL` | Control-plane resolver base (`https://<control-plane>/internal/relay`). The relay derives `/target`, `/revocation`, and `/host-generation` from it. The Worker also accepts `CLAXEDO_CENTRAL_URL` and appends `/internal/relay`. |
 | `CLAXEDO_RELAY_RESOLVER_TOKEN` | Bearer token the relay sends to the resolver. The Worker refuses to start without it. |
 | `CLAXEDO_RELAY_HOST_GENERATION_URL` | Optional absolute URL of the host-generation lookup. Unset (the normal case) derives `<CLAXEDO_RELAY_RESOLVER_URL>/host-generation`; set it only when the lookup lives at a different origin than the rest of the resolver. There is no way to turn the fence off on a resolver-backed relay. |
 | `CLAXEDO_RELAY_HOST_GENERATION_CACHE_TTL_MS` | Cache TTL for host-generation answers. Defaults to 10000. A superseded tunnel closes within the re-check interval (30 s) plus this TTL. |
@@ -176,8 +151,7 @@ process.
 | `CLAXEDO_RELAY_HOST_VERIFY_PEM` | Public PEM the relay uses to verify host-tunnel tokens. |
 | `CLAXEDO_RELAY_HOST_SIGNING_KEY_PEM` | Private PEM the relay uses to mint relay-host tokens. |
 | `CLAXEDO_RELAY_METRICS_TOKEN` | Optional bearer token for `/metrics`. Without it, `/metrics` requires a trusted loopback remote-address resolver. |
-| `CLAXEDO_RELAY_DRAIN_TIMEOUT_MS` | Bun process only: SIGTERM drain wait before force-closing sockets. Defaults to 30000. |
-| `CLAXEDO_RELAY_ALLOWED_ORIGINS` | Comma-separated browser-origin allowlist for CORS. **Replaces** the built-in default list (Claxedo/OpenCode app origins plus `http://localhost:*` dev hosts). Grammar: exact origin, `https://*.example.com`, `http://localhost:*`. Works on both the Bun process and the Cloudflare Worker. |
+| `CLAXEDO_RELAY_ALLOWED_ORIGINS` | Comma-separated browser-origin allowlist for CORS. **Replaces** the built-in default list (Claxedo/OpenCode app origins plus `http://localhost:*` dev hosts). Grammar: exact origin, `https://*.example.com`, `http://localhost:*`.  |
 
 Cloudflare Worker tracing knobs (Durable Object deployment):
 
@@ -224,7 +198,7 @@ operator configuration, not as tenant/user input.
 Long-lived relayed sockets are authorized at establishment. Revocation is
 checked for new HTTP requests and WebSocket upgrades; already-established
 WebSocket/SSE/PTY streams may live until their normal close, reconnect, relay
-drain, or process restart.
+drain, or room restart.
 
 ## Tunnel Lifecycle
 
@@ -233,12 +207,6 @@ cleans the old socket's pending HTTP responses, child WebSocket channels,
 heartbeat timer, and buffered work before installing the new socket. Stale close
 events identity-check the current owner before deleting presence, so an old
 socket cannot mark a replacement offline.
-
-On SIGTERM the Bun process drains: `/health` turns unhealthy, new workspace
-requests and tunnel registrations get `503 relay_draining`, active host tunnels
-close so runtimes reconnect promptly, and pending work gets up to the drain
-timeout before the server stops. An uncaught exception or unhandled rejection
-drains the same way and exits 1.
 
 ## External Directory Design
 
@@ -257,38 +225,15 @@ type WorkspaceRelayDirectory = {
 }
 ```
 
-A Redis, Durable Object, or equivalent implementation should keep the same
-semantics:
-
-- one active owner for a `hostId`;
-- TTL extension on heartbeat pong;
-- immediate removal on disconnect;
-- workspace membership checks before tunnelled forwarding;
-- split-brain prevention when a replacement tunnel connects;
-- observability for active host count and stale owner cleanup.
-
-The missing piece for a true multi-instance host-tunnel relay is not just durable
-presence storage. HTTP/WebSocket/SSE/PTY traffic must also route to the process
-or durable object that owns the live tunnel socket for that `hostId`.
+The Durable Object room keeps presence with its live socket. Hibernation
+restores presence from socket attachments. Cloudflare routes every request for
+one workspace to that room, which owns its tunnel.
 
 ## Routing
 
-The relay has **no** `/w/{workspaceId}/*` URL prefix of its own. The
-gateway pattern lives in `claxedo-server`:
-
-- The user's browser calls `/api/claxedo/...`.
-- `claxedo-server` mounts `workspaceRuntimeProxy` middleware
-  (`packages/claxedo-server/src/workspace/runtime-dispatch/internals.ts:205`) on its top-level Hono
-  app at `packages/claxedo-server/src/deployments/local/server.ts:93`.
-- The proxy resolves the active workspace target via
-  `internal-relay.ts` (control-plane auth — see "Seam: internal-relay
-  vs workspace-relay" below), strips its own prefix, and forwards
-  to the relay's tunnel endpoint.
-
-If you are adding a new HTTP-level workspace surface, attach it to
-`claxedo-server`'s gateway, not to `workspace-relay`. The relay is
-intentionally narrow — it only handles tunnel traffic and the auth
-checks that gate it.
+Browsers call `/workspaces/:workspaceId/*` on the relay with a Runtime Access
+Token. `src/worker.ts` selects the workspace room; `src/cloudflare.ts` authorizes
+the request and forwards it to the resolved cloud target or machine tunnel.
 
 ## Seam: `internal-relay` vs `workspace-relay`
 
@@ -298,7 +243,7 @@ checks that gate it.
 | Trust | Authenticates the relay process itself (loopback or bearer) | Authenticates the user's runtime-access token |
 | Routes | `GET /internal/relay/target`, `GET /internal/relay/revocation` | WS upgrade + tunnel framing |
 | Owners | `claxedo-server` (depends on the workspace authority, the identity provider, audit log) | `workspace-relay` (no authority or identity-provider dependency) |
-| Lives in | `packages/claxedo-server/` (server-side only) | `packages/workspace-relay/` (own process) |
+| Lives in | `packages/claxedo-server/` (server-side only) | `packages/workspace-relay/` (Worker and Durable Object) |
 
 This split is deliberate: the relay never reads the workspace authority or the
 identity provider directly. It calls back to `claxedo-server` over HTTP for resolver

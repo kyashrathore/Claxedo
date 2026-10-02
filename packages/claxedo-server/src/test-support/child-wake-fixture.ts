@@ -1,9 +1,8 @@
 import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"
-import type Database from "better-sqlite3"
-import { createSqliteWorkspaceAuthority } from "@claxedo/server-core/authority/adapters/sqlite/workspace-authority"
-import { openAuthorityDb } from "@claxedo/server-core/authority/adapters/sqlite/workspace-authority-store"
+import type { D1Database } from "@cloudflare/workers-types"
+import { d1Authority } from "./d1-authority"
 import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import type { PrivateSessionRuntimePrincipal } from "@claxedo/server-core/platform/auth/private-session-authority"
 import { randomUUID } from "node:crypto"
@@ -23,11 +22,11 @@ export const CHILD_OPERATION = "op_child"
 export const REPLY = "msg_child_reply"
 export const WAKE_TURN = `msg_wake_${CHILD}_${REPLY}`
 
-export type WakeAuthority = ReturnType<typeof createSqliteWorkspaceAuthority>
+export type WakeAuthority = Awaited<ReturnType<typeof d1Authority>>["authority"]
 type HostOptions = Parameters<typeof SessionRoutes>[1]
 
 const hosts: Array<() => Promise<void>> = []
-const closers: Array<() => void> = []
+const closers: Array<() => void | Promise<void>> = []
 const directories: string[] = []
 
 /**
@@ -40,26 +39,18 @@ export const lifecycle = {
   host(dispose: () => Promise<void>) {
     hosts.push(dispose)
   },
-  closer(close: () => void) {
+  closer(close: () => void | Promise<void>) {
     closers.push(close)
   },
   async cleanup() {
     for (const dispose of hosts.splice(0)) await dispose()
-    for (const close of closers.splice(0)) close()
+    for (const close of closers.splice(0)) await close()
     for (const directory of directories.splice(0)) removeTestDataDir(directory)
   },
 }
 
-export function signed(subject: string): SignedControlPlaneAuth {
-  return {
-    mode: "signed",
-    token: `token_${subject}`,
-    user: { subject, tokenIdentifier: `https://idp.example|${subject}`, issuer: "https://idp.example" },
-  }
-}
-
 export function runtimePrincipal(who: SignedControlPlaneAuth): PrivateSessionRuntimePrincipal {
-  return { principalKind: "user", actorId: who.user.tokenIdentifier, actorKind: "human" }
+  return { principalKind: "user", actorId: who.principal!.actorId, actorKind: "human" }
 }
 
 /**
@@ -71,18 +62,15 @@ export function runtimePrincipal(who: SignedControlPlaneAuth): PrivateSessionRun
 export async function seedWakeWorkspace(parentShare: "follow" | "send") {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "claxedo-child-wake-"))
   directories.push(root)
-  const databasePath = path.join(root, "authority.db")
-  const authority = createSqliteWorkspaceAuthority({ path: databasePath })
-  const seeded = openAuthorityDb({ path: databasePath })
-  lifecycle.closer(() => authority.close())
-  lifecycle.closer(() => seeded.close())
-  const alice = signed("alice")
-  const bob = signed("bob")
-  await authority.usersMe(bob)
+  const fixture = await d1Authority()
+  const { authority, database: seeded } = fixture
+  lifecycle.closer(fixture.dispose)
+  const alice = await fixture.signIn("alice")
+  const bob = await fixture.signIn("bob")
   await authority.createCloudWorkspace(alice, { workspaceId: WORKSPACE, displayName: "Wake" })
   const opened = await authority.openWorkspace(alice, { workspaceId: WORKSPACE })
   const orgId = opened.workspace!.org_id!
-  member(seeded, orgId, bob.user.tokenIdentifier)
+  await fixture.addMember(alice, bob, orgId)
   const aliceRuntime = runtimePrincipal(alice)
   const bobRuntime = runtimePrincipal(bob)
   await authority.reserveSession(alice, { operationId: "op_parent", sessionId: PARENT, workspaceId: WORKSPACE, kind: "create" })
@@ -103,18 +91,13 @@ export async function registerChild(authority: WakeAuthority, creator: PrivateSe
   await authority.registerRuntimeSession({ ...creator, operationId: CHILD_OPERATION, sessionId: CHILD, workspaceId: WORKSPACE, createdAt: Date.now(), updatedAt: Date.now() })
 }
 
-function member(seeded: () => Database.Database, orgId: string, tokenIdentifier: string) {
-  seeded().prepare(`INSERT INTO org_memberships (org_id, token_identifier, role, created_at, updated_at) VALUES (?, ?, 'member', 1, 1)`)
-    .run(orgId, tokenIdentifier)
-}
-
 export async function setShare(
   authority: WakeAuthority,
   alice: SignedControlPlaneAuth,
   bob: SignedControlPlaneAuth,
   level: "follow" | "send" | null,
 ) {
-  const target = { sessionId: PARENT, workspaceId: WORKSPACE, grantedToTokenIdentifier: bob.user.tokenIdentifier }
+  const target = { sessionId: PARENT, workspaceId: WORKSPACE, grantedToUserId: bob.principal!.userId }
   if (level) await authority.grantSessionShare!(alice, { ...target, level })
   else await authority.revokeSessionShare!(alice, target)
 }
@@ -263,16 +246,16 @@ export async function until(condition: () => boolean, what: string, timeoutMs = 
   throw new Error(`Timed out waiting for ${what}`)
 }
 
-export function producers(seeded: () => Database.Database) {
-  return seeded()
+export async function producers(seeded: D1Database) {
+  return (await seeded
     .prepare(`SELECT session_id, turn_id, actor_id, fencing_token FROM session_turn_producers ORDER BY admitted_at`)
-    .all() as Array<{ session_id: string; turn_id: string; actor_id: string; fencing_token: number }>
+    .all()).results as Array<{ session_id: string; turn_id: string; actor_id: string; fencing_token: number }>
 }
 
-export function grantRows(seeded: () => Database.Database) {
-  return seeded()
+export async function grantRows(seeded: D1Database) {
+  return (await seeded
     .prepare(`SELECT grant_id, actor_id, session_id, subject_session_id, turn_id, turn_id_prefix, redeemed_turn_id, revoked_at FROM session_turn_grants ORDER BY issued_at`)
-    .all() as Array<{
+    .all()).results as Array<{
       grant_id: string
       actor_id: string
       session_id: string

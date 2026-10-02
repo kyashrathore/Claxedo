@@ -99,15 +99,6 @@ export const ARCHITECTURE_OWNERSHIP = [
     ],
   },
   {
-    area: "lease",
-    module: "authority/http/index.ts",
-    status: OwnershipStatus.Canonical,
-    owner: "control-plane runtime register and heartbeat routes",
-    canonicalReplacement: "../../sandbox-manager/src/index.ts plus SandboxLeaseStore heartbeat/touch methods",
-    reason: "Runtime register and heartbeat routes update the canonical SandboxManager lease; legacy cloud authority rows are no longer written.",
-    tests: ["authority/http/index.test.ts"],
-  },
-  {
     area: "mirror",
     module: "adapters/central-store/mirror.ts",
     status: OwnershipStatus.Canonical,
@@ -257,7 +248,7 @@ export const ARCHITECTURE_OWNERSHIP = [
     status: OwnershipStatus.Canonical,
     owner: "runtime session authority oracle",
     reason:
-      "Isolated workspace runtimes cannot read session participation themselves. They present their already-verified Relay Host Token as an opaque proof; this route re-verifies the relay signature and expiry, then derives actor and workspace ONLY from signed claims — a request body can never assert an actor. Mounted at /api/runtime-authority by self-hosted-node/app.ts and hosted-core-app.ts alike.",
+      "Isolated workspace runtimes cannot read session participation themselves. They present their already-verified Relay Host Token as an opaque proof; this route re-verifies the relay signature and expiry, then derives actor and workspace ONLY from signed claims — a request body can never assert an actor. Mounted at /api/runtime-authority by hosted-core-app.ts.",
     tests: [
       "routes/runtime-session-authority.test.ts",
       "authority/two-user-runtime-transport.acceptance.test.ts",
@@ -289,20 +280,14 @@ export const ARCHITECTURE_OWNERSHIP = [
     module: "authority/projection-store.ts",
     status: OwnershipStatus.Canonical,
     owner: "ControlPlane ProjectionStore",
-    tests: [
-      "authority/projection-store.test.ts",
-      "authority/durable-state.test.ts",
-    ],
+    tests: ["authority/projection-store.test.ts"],
   },
   {
     area: "projection",
     module: "../../claxedo-server-core/src/platform/auth/durable-session-log.ts",
     status: OwnershipStatus.Canonical,
     owner: "ControlPlane DurableSessionLog",
-    tests: [
-      "../../claxedo-server-core/src/platform/auth/durable-session-log.test.ts",
-      "authority/durable-state.test.ts",
-    ],
+    tests: ["../../claxedo-server-core/src/platform/auth/durable-session-log.test.ts"],
   },
   {
     area: "projection",
@@ -313,17 +298,6 @@ export const ARCHITECTURE_OWNERSHIP = [
     reason: "Local server still exposes loopback-only projections for local surfaces.",
     removalCondition: "Local-only route surfaces are either removed or compose the same route factories with explicit auth policies.",
     tests: ["../../claxedo-server-core/src/platform/http/local-only-projection.test.ts"],
-  },
-  // Worker-safe route modules: shared control plane.
-  {
-    area: "route",
-    module: "session/routes/control-plane-session.ts",
-    status: OwnershipStatus.Canonical,
-    owner: "control-plane session routes",
-    reason:
-      "No workspace store, SQLite, or fs in its import graph, so it is Worker-safe shared control plane.",
-    tests: ["session/routes/control-plane-session.test.ts"],
-    routeSamples: ["/api/control/sessions/s1/gateway"],
   },
   {
     area: "route",
@@ -374,16 +348,6 @@ export const ARCHITECTURE_OWNERSHIP = [
       "Imports the workspace store and the runtime data paths (fs), so it stays local.",
     tests: ["../../claxedo-local-server/src/deployments/shared-routes/bootstrap.test.ts"],
     routeSamples: ["/api/claxedo/bootstrap"],
-  },
-  {
-    area: "route",
-    module: "workspace/routes/index.ts",
-    status: OwnershipStatus.Canonical,
-    owner: "local workspace routes (Claxedo local adapter)",
-    reason:
-      "Imports the workspace store and supervisor (fs/child_process/SQLite), so it stays local.",
-    tests: ["workspace/routes/index.test.ts"],
-    routeSamples: ["/api/workspace"],
   },
   {
     area: "registry",

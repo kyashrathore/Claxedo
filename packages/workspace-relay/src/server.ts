@@ -44,13 +44,7 @@ export type RuntimeAccessTokenActiveResult =
       reason: string
     }
 
-/**
- * Both resolver clients — Bun (`main.ts`) and Worker (`worker.ts`) — read the
- * control plane's JSON with these two parsers rather than asserting a type onto
- * `Response.json()`. A half-built target used to travel all the way into
- * routing and fail there as a confusing upstream error; it is now rejected at
- * the one boundary that knows what the payload was supposed to be.
- */
+
 export function parseWorkspaceRelayTarget(input: unknown): WorkspaceRelayTarget | undefined {
   if (!isRecord(input)) return undefined
   const row = input
@@ -110,14 +104,7 @@ export type HostGenerationResolverLookupOptions = {
   timeoutMs?: number
 }
 
-/**
- * The HTTP lookup behind `resolveHostGeneration`, shared by the Bun process and
- * the Worker. Only the control plane's own "enrollment not found" 404 resolves
- * `undefined`; a bare 404 is a control plane without the route, and like every
- * other non-ok status, a malformed body, or a hit deadline it throws so the
- * relay refuses host tunnels with a retryable 503 instead of grading them as
- * unknown enrollments.
- */
+
 export function createHostGenerationResolverLookup(url: string, options: HostGenerationResolverLookupOptions): HostGenerationLookup {
   const fetcher = options.fetch ?? ((target, init) => fetch(target, init))
   const timeoutMs = options.timeoutMs ?? HOST_GENERATION_LOOKUP_TIMEOUT_MS_DEFAULT
@@ -313,18 +300,13 @@ export type WorkspaceRelayRoutingOptions = {
   directory?: WorkspaceRelayDirectory
   // Browser-origin allowlist for CORS. Replaces the built-in default list
   // (Claxedo/OpenCode app origins plus localhost dev hosts) when provided —
-  // self-hosted deployments are not forced to keep the product domains.
+  // user-deployed Workers are not forced to keep the product domains.
   // Pattern grammar: exact origin, `https://*.example.com`, `http://localhost:*`.
   allowedOrigins?: string[]
 }
 
 export type WorkspaceRelayDrainOptions = {
-  /**
-   * When this returns true the relay reports unhealthy via `/health` and
-   * fast-paths every workspace request to a 503 (`relay_draining`) before
-   * doing any auth or upstream work. Wired by `createWorkspaceRelayBun` to
-   * the drain controller it exposes.
-   */
+
   isDraining?: () => boolean
 }
 
@@ -353,29 +335,11 @@ export type WorkspaceRelayTelemetryOptions = {
 }
 
 export type WorkspaceRelayMetricsOptions = {
-  /**
-   * Bearer token required to access `GET /metrics` from non-loopback
-   * remotes. When unset, the endpoint allows loopback callers only (using
-   * `metricsRemoteAddress` to identify the caller). When set, every request
-   * must present `Authorization: Bearer <metricsToken>` regardless of origin.
-   * Wired from `CLAXEDO_RELAY_METRICS_TOKEN` in main.ts.
-   */
+
   metricsToken?: string
-  /**
-   * Returns the remote IP of the inbound `/metrics` request (used to
-   * gate access to the loopback when `metricsToken` is unset). When this is
-   * also unset, `/metrics` fails closed. The Bun adapter wires this resolver
-   * through `Bun.Server.requestIP`; other callers should set either this or
-   * `metricsToken`.
-   */
+
   metricsRemoteAddress?: (request: Request) => string | undefined
-  /**
-   * Optional providers used to assemble the `/metrics` response body. The
-   * fragmentation/slow-consumer counters live in the bun adapter's per-handler
-   * telemetry, and the in-flight pending count lives on the drain controller.
-   * `createWorkspaceRelayBun` wires these to make ops counters visible on
-   * `/metrics` without giving `server.ts` a hard dependency on bun-only state.
-   */
+
   metricsSources?: WorkspaceRelayMetricsSources
 }
 
@@ -436,11 +400,7 @@ const RUNTIME_ACCESS_TOKEN_CACHE_MAX_ENTRIES = 8192
 const RESOLVER_CACHE_MAX_ENTRIES = 8192
 const RUNTIME_ACCESS_TOKEN_CACHE_TTL_MS_DEFAULT = 10_000
 export const REVOCATION_CACHE_TTL_MS_DEFAULT = 10_000
-/**
- * Default for the adapters' `runtimeAccessTokenActiveCheckIntervalMs`: how
- * often an established WebSocket re-runs the revocation check. Shared so the
- * Bun and Durable Object adapters cannot drift apart on the same bound.
- */
+
 export const RUNTIME_ACCESS_TOKEN_ACTIVE_CHECK_INTERVAL_MS_DEFAULT = 30_000
 const relayHostTokenCaches = new WeakMap<WorkspaceRelayOptions, Map<string, RelayHostTokenCacheEntry>>()
 const runtimeAccessTokenCaches = new WeakMap<WorkspaceRelayOptions, Map<string, {
@@ -1204,20 +1164,7 @@ function originMatcherFor(options: WorkspaceRelayOptions) {
   return matcher
 }
 
-/**
- * Request headers a browser may send to the relay, for every adapter.
- *
- * ONE list, because there were three identical copies — `server.ts`,
- * `cloudflare.ts` and `bun.ts` — and three copies of a list means the next
- * header is added to two of them. A header missing from the copy that serves a
- * given deployment does not degrade anything gracefully: the browser refuses to
- * send the request at all, and the failure surfaces somewhere else entirely.
- * The control plane's equivalent list is `BROWSER_ALLOWED_REQUEST_HEADERS` in
- * `claxedo-server-core`; a header the app sends to BOTH must be in both.
- *
- * `Traceparent`/`Tracestate` are W3C Trace Context, carried from the browser
- * through this relay to the laptop.
- */
+
 export const RELAY_ALLOWED_REQUEST_HEADER_LIST = [
   "Accept",
   "Authorization",
@@ -1525,7 +1472,6 @@ function checkMetricsAuth(options: WorkspaceRelayOptions, request: Request): Met
   }
   // No token configured: gate on loopback. If no resolver is wired, fail
   // closed; production should set either `metricsToken` or
-  // `metricsRemoteAddress`, and the Bun adapter wires the latter by default.
   if (!options.metricsRemoteAddress) {
     return {
       ok: false,
@@ -1597,8 +1543,6 @@ export function createWorkspaceRelay(options: WorkspaceRelayOptions): WorkspaceR
   }))
 
   app.get("/health", (c) => {
-    // Report unhealthy as soon as draining starts so Fly removes this
-    // instance from routing.
     if (options.isDraining?.()) {
       return c.json(
         { ok: false, service: "workspace-relay", draining: true },
@@ -1685,7 +1629,6 @@ export function createWorkspaceRelay(options: WorkspaceRelayOptions): WorkspaceR
     const trace = createWorkspaceRelayTrace()
     // Cheap fast-path before auth so a draining instance never even
     // verifies a token for a request it can't serve. Mirrors the same
-    // short-circuit in the Bun adapter for the cloud-vm direct path.
     if (options.isDraining?.()) {
       return Response.json(
         errorBody("relay_draining", "Workspace relay is shutting down; try another instance"),

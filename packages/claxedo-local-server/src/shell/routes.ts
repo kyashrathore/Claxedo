@@ -11,7 +11,7 @@ import {
 import { resolveRuntimeActor } from "@claxedo/server-core/platform/auth/runtime-actor"
 import { eventScopePrincipal } from "@claxedo/server-core/platform/http/event-visibility"
 import { controlPlaneRouteAuth, signedRouteAuth } from "../platform/http/control-plane-route-auth"
-import { roleAtLeast, type WorkspaceRole } from "@claxedo/server-core/authority/adapters/sqlite/workspace-authority-store"
+import { roleAtLeast, type WorkspaceRole } from "@claxedo/server-core/platform/auth/workspace-role"
 import type { MiddlewareHandler } from "hono"
 import { createControlPlaneEventsHandler, signedControlPlaneEventVisibleTo } from "./events"
 import { allFilesBody, directoryEntriesBody, findFilesBody, findTextBody } from "./file-browser"

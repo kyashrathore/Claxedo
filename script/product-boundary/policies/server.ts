@@ -30,8 +30,6 @@ export const serverWorkerd: Policy = {
     "@hono/node-ws",
   ],
   forbiddenModules: [
-    `${SRC}/deployments/self-hosted-node`,
-    `${SRC}/authority/adapters/sqlite`,
     "packages/claxedo-local-server",
   ],
 
@@ -52,7 +50,7 @@ export const serverWorkerd: Policy = {
   // included, leaves through the Worker's Cloudflare `EMAIL` binding
   // (`platform/auth/auth-email-delivery.ts`); the session authority
   // routes resolve whose connections a turn spends through
-  // `connections/turn-owner.ts`, the one owner the self-hosted node shares; the
+  // `connections/turn-owner.ts`, the owner of turn credential attribution; the
   // D1 session authority's refusal error and input validation
   // (`authority/adapters/d1/session-input.ts`) are a module of their own; every
   // D1 adapter reads a constraint failure through `platform/db/d1-constraint.ts`;

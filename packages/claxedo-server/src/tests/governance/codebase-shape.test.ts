@@ -310,7 +310,6 @@ describe("architecture boundaries", () => {
 
   test("keeps API error response bodies structured", () => {
     const files = [
-      path.resolve(import.meta.dirname, "../../deployments/self-hosted-node/app.ts"),
       // Whole directory, not one file: the entrypoints hold the `errorBody`
       // responses this guard pins, and they moved out of proxy.ts in W11.2b.
       ...walk(path.resolve(import.meta.dirname, "../../workspace/runtime-dispatch")).filter((file) =>

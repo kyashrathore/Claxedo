@@ -9,8 +9,7 @@ import { afterAll, afterEach, beforeEach, describe, expect, test, vi } from "vit
 import { Hono } from "hono"
 import { DocumentsRoutes } from "@claxedo/server-core/documents/routes/index"
 import { ClaxedoDB } from "../../../platform/db"
-import { createSqliteWorkspaceAuthority } from "@claxedo/server-core/authority/adapters/sqlite/workspace-authority"
-import { openAuthorityDb } from "@claxedo/server-core/authority/adapters/sqlite/workspace-authority-store"
+import { d1Authority } from "../../../test-support/d1-authority"
 import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import { disposeHydratedSessionDocuments, hydratedSessionDocumentPaths, syncHydratedSessionDocuments } from "@claxedo/server-core/documents/session-hydration"
 import { createLocalDocumentsBackend, type LocalDocumentsBackendDependencies } from "@claxedo/server-core/documents/backends/local/backend"
@@ -40,24 +39,18 @@ afterAll(async () => {
 
 describe("local documents backend composition", () => {
   test("private-session authority gates hydration and a revoked share stops writeback", async () => {
-    const file = path.join(databaseRoot, "private-session-authority.db")
-    const authority = createSqliteWorkspaceAuthority({ path: file })
-    const database = openAuthorityDb({ path: file })
-    const auth = (subject: string): SignedControlPlaneAuth => ({ mode: "signed", token: subject,
-      user: { subject, tokenIdentifier: `https://idp.example|${subject}`, issuer: "https://idp.example" } })
-    const alice = auth("alice"), bob = auth("bob")
+    const backing = await d1Authority()
+    const { authority } = backing
+    const alice = await backing.signIn("alice"), bob = await backing.signIn("bob")
     await authority.createCloudWorkspace(alice, { workspaceId: "workspace_1", displayName: "Shared project" })
     await authority.usersMe(bob)
     const opened = await authority.openWorkspace(alice, { workspaceId: "workspace_1" })
     const projectId = opened.workspace!.project_id!
     const orgId = opened.workspace!.org_id!
     bob.user.orgId = orgId
-    database().prepare("INSERT INTO org_memberships (org_id, token_identifier, role, created_at, updated_at) VALUES (?, ?, 'member', ?, ?)")
-      .run(opened.workspace!.org_id, bob.user.tokenIdentifier, Date.now(), Date.now())
-    database().prepare("INSERT INTO project_memberships (project_id, token_identifier, role, created_at, updated_at) VALUES (?, ?, 'editor', ?, ?)")
-      .run(opened.workspace!.project_id, bob.user.tokenIdentifier, Date.now(), Date.now())
+    await backing.addMember(alice, bob, orgId)
     await authority.reserveSession(alice, { operationId: "op_ses_alice", sessionId: "ses_alice", workspaceId: "workspace_1", kind: "create" })
-    await authority.registerRuntimeSession({ createdAt: Date.now(), updatedAt: Date.now(), principalKind: "user", actorKind: "human", actorId: alice.user.tokenIdentifier,
+    await authority.registerRuntimeSession({ createdAt: Date.now(), updatedAt: Date.now(), principalKind: "user", actorKind: "human", actorId: alice.principal!.actorId,
       operationId: "op_ses_alice", sessionId: "ses_alice", workspaceId: "workspace_1" })
     const fixture = await moveFixture(undefined, {
       sessionAuthority: authority,
@@ -74,7 +67,7 @@ describe("local documents backend composition", () => {
       body: JSON.stringify({ session_id: sessionId }),
     })
     const context = { auth: bob, origin: "https://local.example" }
-    const target = { sessionId: "ses_alice", workspaceId: "workspace_1", grantedToTokenIdentifier: bob.user.tokenIdentifier }
+    const target = { sessionId: "ses_alice", workspaceId: "workspace_1", grantedToUserId: bob.principal!.userId }
     try {
       await expect(fixture.backend.agentOpen(fixture.indexed, "ses_alice", context)).rejects.toMatchObject({ status: 403 })
       expect((await request("ses_alice")).status).toBe(403)
@@ -96,7 +89,7 @@ describe("local documents backend composition", () => {
       expect((await fixture.backend.workspace.read(handle)).markdown).toBe("authorized writeback")
     } finally {
       await disposeHydratedSessionDocuments("ses_alice")
-      authority.close(); database.close()
+      await backing.dispose()
     }
   })
 

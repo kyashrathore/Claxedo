@@ -81,7 +81,6 @@ vi.mock("@claxedo/server-core/platform/runtime/lib/log", () => ({
 }))
 
 const {
-  startMachineHostTunnel,
   startWorkspaceHostTunnel,
   stopAllWorkspaceHostTunnels,
 } = await import("./host-tunnel")
@@ -91,77 +90,7 @@ afterEach(() => {
   vi.clearAllMocks()
 })
 
-describe("machine-placed Workspace Relay host tunnel manager", () => {
-  test("keeps one machine tunnel while registrations add local workspaces", async () => {
-    await expect(startMachineHostTunnel({
-      workspaceIds: ["ws_b", "ws_a"],
-      hostId: "host_machine",
-      relayUrl: "http://relay.test/",
-      hostTunnelToken: "htt_1",
-    })).resolves.toEqual({ reused: false, connectionCount: 1, workspaceIds: ["ws_a", "ws_b"] })
-
-    const options = mocks.startWorkspaceRelayHostTunnel.mock.calls[0][0] as {
-      workspaceIds: string[]
-      localBaseUrl: string
-      resolveLocalUrl: (input: { workspaceId: string; path: string }) => URL | undefined
-      tokenProvider: () => Promise<string>
-    }
-    expect(options.workspaceIds).toEqual(["ws_a", "ws_b"])
-    expect(options.localBaseUrl).toBe("http://127.0.0.1:3001")
-    expect(options.resolveLocalUrl({ workspaceId: "ws_b", path: "/api/wr/health?probe=1" })?.toString())
-      .toBe("http://127.0.0.1:3001/workspaces/ws_b/api/wr/health?probe=1")
-    expect(options.resolveLocalUrl({ workspaceId: "ws_b", path: "/api/claxedo/credentials" })).toBeUndefined()
-    expect(options.resolveLocalUrl({ workspaceId: "ws_unknown", path: "/api/wr/health" })).toBeUndefined()
-    await expect(options.tokenProvider()).resolves.toBe("htt_1")
-
-    await expect(startMachineHostTunnel({
-      workspaceIds: ["ws_a", "ws_b", "ws_c"],
-      hostId: "host_machine",
-      relayUrl: "http://relay.test",
-      hostTunnelToken: "htt_2",
-    })).resolves.toEqual({ reused: true, connectionCount: 1, workspaceIds: ["ws_a", "ws_b", "ws_c"] })
-
-    expect(mocks.startWorkspaceRelayHostTunnel).toHaveBeenCalledTimes(1)
-    expect(mocks.updateRegistration).toHaveBeenCalledWith({
-      workspaceIds: ["ws_a", "ws_b", "ws_c"],
-      token: "htt_2",
-    })
-    await expect(options.tokenProvider()).resolves.toBe("htt_2")
-    expect(mocks.close).not.toHaveBeenCalled()
-  })
-
-  /**
-   * The registration check admits the frame's workspace and the prefix binds
-   * the URL to it. Both are undone by a `..` that survives into the target:
-   * the request lands on the server's own root, where the workspace is
-   * whatever `?workspaceId=` says — a selector this caller controls and the
-   * relay never signed.
-   */
-  test("keeps a relayed path inside the workspace it was admitted for", async () => {
-    await startMachineHostTunnel({
-      workspaceIds: ["ws_a", "ws_b"],
-      hostId: "host_machine",
-      relayUrl: "http://relay.test",
-      hostTunnelToken: "htt_1",
-    })
-    const { resolveLocalUrl } = mocks.startWorkspaceRelayHostTunnel.mock.calls[0][0] as {
-      resolveLocalUrl: (input: { workspaceId: string; path: string }) => URL | undefined
-    }
-
-    for (const path of [
-      "/../../api/wr/health?workspaceId=ws_other",
-      "/%2e%2e/%2e%2e/api/wr/health?workspaceId=ws_other",
-      "/a/..\\..\\api/wr/health?workspaceId=ws_other",
-    ]) {
-      expect(resolveLocalUrl({ workspaceId: "ws_b", path })?.toString(), path)
-        .toBe("http://127.0.0.1:3001/workspaces/ws_b/api/wr/health?workspaceId=ws_other")
-    }
-
-    // Route ownership is decided on the same resolved path the URL is built
-    // from, so a central family cannot be reached by dressing it as a runtime
-    // one either.
-    expect(resolveLocalUrl({ workspaceId: "ws_b", path: "/api/wr/../claxedo/credentials" })).toBeUndefined()
-  })
+describe("Workspace Relay host tunnel manager", () => {
 
   test("starts a local embedded workspace tunnel through the control-plane relay path", async () => {
     await expect(startWorkspaceHostTunnel({

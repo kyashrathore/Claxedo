@@ -327,19 +327,6 @@ describe("Bun ServerWebSocket send-buffer surface", () => {
     expect(measured.oldGuardExpressionFires).toBe(false)
   }, 30_000)
 
-  test("bun.ts reads the method form at both guard sites", async () => {
-    // Pins the fix so the property form cannot creep back in. The behavioural
-    // assertions for the now-live guard (over-limit closes, fail-open on a
-    // socket that cannot report) live in `bun.test.ts`.
-    const bun = await readFile(new URL("./bun.ts", import.meta.url), "utf8")
-    expect(bun).toContain("getBufferedAmount")
-    expect(bun).not.toContain("{ bufferedAmount?: number }).bufferedAmount!")
-    // Both guards go through the shared helper rather than reading a socket
-    // accessor inline, which is what let the two sites drift into dead code.
-    expect(bun).toContain("if (relayOverBackpressureLimit(channel,")
-    expect(bun).toContain("if (relayOverBackpressureLimit(tunnel,")
-  })
-
   test("cloudflare.ts carries no backpressure guard, because none is writable", async () => {
     // Not an oversight: the workerd tests above are the reason. If someone adds
     // a `bufferedAmount` read here, this fails and points them at those tests

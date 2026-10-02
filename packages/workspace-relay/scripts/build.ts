@@ -18,15 +18,6 @@ if (fs.existsSync(DIST)) fs.rmSync(DIST, { recursive: true })
 fs.mkdirSync(DIST, { recursive: true })
 
 execFileSync(path.join(ROOT, "node_modules/.bin/esbuild"), [
-  "src/index.ts",
-  "--bundle",
-  "--platform=node",
-  "--format=esm",
-  `--outfile=${DIST}/index.mjs`,
-  ...EXTERNALS.map((item) => `--external:${item}`),
-  "--target=node22",
-], { stdio: "inherit", cwd: ROOT })
-execFileSync(path.join(ROOT, "node_modules/.bin/esbuild"), [
   "src/bun.ts",
   "--bundle",
   "--platform=node",

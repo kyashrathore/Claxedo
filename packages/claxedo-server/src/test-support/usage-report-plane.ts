@@ -1,18 +1,8 @@
-/**
- * A control plane a cloud workspace runtime can report usage to, over the real
- * session-authority route: a SQLite workspace authority that records turn
- * producers, and the process's own SQLite usage store as the report's writer.
- * `ws_real` is a cloud workspace; `ws_machine` is one a machine serves.
- */
-import fs from "node:fs"
-import os from "node:os"
-import path from "node:path"
 import { Hono } from "hono"
 import { exportPKCS8, exportSPKI, generateKeyPair } from "jose"
 import { mintRelayHostToken } from "@claxedo/workspace-relay"
 import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
-import { createSqliteWorkspaceAuthority } from "@claxedo/server-core/authority/adapters/sqlite/workspace-authority"
-import { openAuthorityDb } from "@claxedo/server-core/authority/adapters/sqlite/workspace-authority-store"
+import { d1Authority } from "./d1-authority"
 import { createSqliteUsageLedger } from "@claxedo/server-core/usage/adapters/sqlite-usage-ledger"
 import type { UsageReportWriter } from "@claxedo/server-core/usage/usage-report"
 import { RuntimeSessionAuthorityRoutes } from "../routes/runtime-session-authority"
@@ -21,14 +11,6 @@ export const USAGE_REPORT_URL = "https://plane.test/api/runtime-authority/sessio
 
 type Workspace = "ws_real" | "ws_machine"
 
-function signed(subject: string): SignedControlPlaneAuth {
-  return {
-    mode: "signed",
-    token: `token_${subject}`,
-    user: { subject, tokenIdentifier: `https://identity.example.test|${subject}`, issuer: "https://identity.example.test" },
-  }
-}
-
 export async function usageReportPlane(input: { usageWriter?: boolean | UsageReportWriter } = {}) {
   const key = await generateKeyPair("EdDSA", { extractable: true })
   const env = {
@@ -36,29 +18,17 @@ export async function usageReportPlane(input: { usageWriter?: boolean | UsageRep
     CLAXEDO_RUNTIME_ACCESS_TOKEN_PUBLIC_KEY_PEM: await exportSPKI(key.publicKey),
     CLAXEDO_RELAY_HOST_VERIFY_PEM: await exportSPKI(key.publicKey),
   }
-  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "claxedo-usage-report-plane-"))
-  const databasePath = path.join(directory, "authority.db")
-  const store = createSqliteWorkspaceAuthority({ path: databasePath })
-  const seed = openAuthorityDb({ path: databasePath })
-  const owner = signed("owner")
-  const member = signed("member")
-  const outsider = signed("outsider")
+  const fixture = await d1Authority()
+  const store = fixture.authority
+  const owner = await fixture.signIn("owner")
+  const member = await fixture.signIn("member")
+  const outsider = await fixture.signIn("outsider")
   const { org_id: orgId } = await store.usersMe(owner) as { org_id: string }
   await store.usersMe(member)
   const { org_id: outsiderOrgId } = await store.usersMe(outsider) as { org_id: string }
   await store.createCloudWorkspace(owner, { workspaceId: "ws_real", displayName: "Main" })
   await store.registerLocalForSharing(owner, { workspaceId: "ws_machine", displayName: "Laptop", remoteDirectory: "/work/laptop" })
-  for (const workspaceId of ["ws_real", "ws_machine"]) {
-    const project = seed().prepare(`SELECT project_id FROM workspaces WHERE workspace_id = ?`).get(workspaceId) as { project_id: string }
-    seed().prepare(`
-      INSERT INTO project_memberships (project_id, token_identifier, role, created_at, updated_at) VALUES (?, ?, 'editor', 1, 1)
-      ON CONFLICT DO NOTHING
-    `).run(project.project_id, member.user.tokenIdentifier)
-  }
-  seed().prepare(`
-    INSERT INTO org_memberships (org_id, token_identifier, role, created_at, updated_at) VALUES (?, ?, 'member', 1, 1)
-    ON CONFLICT (org_id, token_identifier) DO NOTHING
-  `).run(orgId, member.user.tokenIdentifier)
+  await fixture.addMember(owner, member, orgId)
 
   const ledger = createSqliteUsageLedger()
   let runtimeAccessTokenActive = true
@@ -76,7 +46,7 @@ export async function usageReportPlane(input: { usageWriter?: boolean | UsageRep
 
   const relayToken = (who: SignedControlPlaneAuth, workspaceId: Workspace = "ws_real") => mintRelayHostToken({
     principalKind: "user",
-    actorId: who.user.tokenIdentifier,
+    actorId: who.principal!.actorId,
     actorKind: "human",
     orgId,
     workspaceId,
@@ -100,11 +70,10 @@ export async function usageReportPlane(input: { usageWriter?: boolean | UsageRep
     await store.registerRuntimeSession({
       createdAt: Date.now(),
       updatedAt: Date.now(),
-      principalKind: "user", actorId: owner.user.tokenIdentifier, actorKind: "human", operationId, sessionId, workspaceId,
+      principalKind: "user", actorId: owner.principal!.actorId, actorKind: "human", operationId, sessionId, workspaceId,
     })
-    if (!store.grantSessionShare) throw new Error("the SQLite authority grants session shares")
-    await store.grantSessionShare(owner, {
-      sessionId, workspaceId, grantedToTokenIdentifier: member.user.tokenIdentifier, level: "send",
+    await store.grantSessionShare!(owner, {
+      sessionId, workspaceId, grantedToUserId: member.principal!.userId, level: "send",
     })
   }
 
@@ -133,11 +102,7 @@ export async function usageReportPlane(input: { usageWriter?: boolean | UsageRep
     revokeRuntimeAccessToken() {
       runtimeAccessTokenActive = false
     },
-    close() {
-      store.close()
-      seed.close()
-      fs.rmSync(directory, { recursive: true, force: true })
-    },
+    close: fixture.dispose,
   }
 }
 

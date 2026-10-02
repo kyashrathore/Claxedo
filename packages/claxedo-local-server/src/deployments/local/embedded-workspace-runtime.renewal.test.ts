@@ -6,7 +6,6 @@ import path from "path"
 import { configureAgentConfig, disposeAgentConfig } from "@claxedo/server-core/agent-config/index"
 import type { Workspace } from "@claxedo/server-core/workspace/store/index"
 import { ClaxedoDB } from "@claxedo/server-core/platform/db/index"
-import { closeAuthorityDatabases } from "@claxedo/server-core/authority/adapters/sqlite/workspace-authority-store"
 import {
   ensureEmbeddedWorkspaceRuntime,
   renewEmbeddedWorkspaceRuntimeConfigs,
@@ -30,7 +29,6 @@ afterEach(async () => {
   await shutdownEmbeddedWorkspaceRuntimes()
   disposeAgentConfig()
   ClaxedoDB.close()
-  closeAuthorityDatabases()
   vi.useRealTimers()
   for (const root of roots) await fs.rm(root, { recursive: true, force: true })
   roots = []

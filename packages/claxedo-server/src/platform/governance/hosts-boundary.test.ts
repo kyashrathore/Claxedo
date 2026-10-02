@@ -66,8 +66,8 @@ describe("hosts boundary", () => {
     // while an edge walked in.
     expect(deploymentImports(
       path.join(HOSTS, "workspace-runtime/session-env.ts"),
-      'import { createSelfHostedApp } from "../../deployments/self-hosted-node/app"',
-    )).toEqual(["hosts/workspace-runtime/session-env.ts -> deployments/self-hosted-node/app"])
+      'import { createSignedControlPlaneApp } from "../../deployments/hosted-shared/hosted-core-app"',
+    )).toEqual(["hosts/workspace-runtime/session-env.ts -> deployments/hosted-shared/hosted-core-app"])
     expect(deploymentImports(
       path.join(HOSTS, "workspace-runtime/session-env.ts"),
       'import { peer } from "../../platform/http/peer-address"',

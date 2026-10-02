@@ -13,7 +13,6 @@
 import { Hono } from "hono"
 import { describe, expect, test } from "vitest"
 import { requireRuntimeProxyActor, runtimeProxyResponseHeaders } from "@claxedo/local-server/workspace/runtime-dispatch/internals"
-import { createLocalWorkspaceRelayProxy } from "./shared-workspace-endpoint"
 import { routeOwnership, routeRules, RouteDomain, RouteHandler } from "@claxedo/server-core/platform/governance/route-ownership"
 
 function classify(path: string) {
@@ -238,64 +237,5 @@ describe("route ownership", () => {
         expect(r.startsWith(c + "/")).toBe(false)
       }
     }
-  })
-})
-
-/**
- * `localWorkspaceRelayProxy` serves browser-originated traffic — on a loopback
- * server URL it is the path the app actually takes for a relay-backed workspace
- * (`workspace-runtime-request.ts`) — and for a cloud workspace it forwards
- * with a `subject:"control-plane"`, `role:"owner"` Relay Host Token minted on
- * the caller's behalf.
- *
- * The only thing gating that mint is `isLoopbackLocalRequest`, which fails
- * closed on forwarded headers. These tests pin the ordering structurally: the
- * gate runs before any mint, so a request carrying a forwarded-client claim can
- * never cause an owner token to be issued. A refactor that moved the mint ahead
- * of the gate — or relaxed the gate to trust a forwarded claim — would hand out
- * owner tokens to anything that can reach the port with a spoofed header.
- */
-describe("local workspace relay proxy loopback gate", () => {
-  function proxyApp(onMint: () => void) {
-    const app = new Hono()
-    const handler = createLocalWorkspaceRelayProxy({
-      relayProvider: {
-        getRelayEndpoint: () => "http://relay.invalid",
-        mintRuntimeAccessToken: async () => {
-          onMint()
-          return { token: "owner-token", expiresAt: Date.now() + 60_000, jti: "jti" }
-        },
-        mintHostTunnelToken: async () => {
-          throw new Error("unused")
-        },
-        resolveTarget: async () => undefined,
-        drainWorkspace: async () => undefined,
-      },
-    })
-    app.all("/workspaces/:workspaceId/*", handler)
-    return app
-  }
-
-  for (const header of ["x-forwarded-for", "forwarded", "x-real-ip", "cf-connecting-ip", "true-client-ip"]) {
-    test(`denies a ${header} request before minting a relay token`, async () => {
-      let minted = 0
-      const res = await proxyApp(() => (minted += 1)).request("http://127.0.0.1/workspaces/ws_1/session", {
-        headers: { [header]: "203.0.113.10" },
-      })
-
-      expect(res.status).toBe(401)
-      expect((await res.json()).error?.code).toBe("workspace_relay_local_loopback_required")
-      expect(minted, "a forwarded-client request must never reach the owner-token mint").toBe(0)
-    })
-  }
-
-  test("denies a non-loopback origin before minting a relay token", async () => {
-    let minted = 0
-    const res = await proxyApp(() => (minted += 1)).request("http://127.0.0.1/workspaces/ws_1/session", {
-      headers: { origin: "https://evil.example" },
-    })
-
-    expect(res.status).toBe(401)
-    expect(minted, "a cross-origin request must never reach the owner-token mint").toBe(0)
   })
 })

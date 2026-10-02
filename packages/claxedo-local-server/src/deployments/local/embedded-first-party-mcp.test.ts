@@ -11,7 +11,6 @@ import {
 import { disposeAgentConfig } from "@claxedo/server-core/agent-config/index"
 import type { Workspace } from "@claxedo/server-core/workspace/store/index"
 import { ClaxedoDB } from "@claxedo/server-core/platform/db/index"
-import { closeAuthorityDatabases } from "@claxedo/server-core/authority/adapters/sqlite/workspace-authority-store"
 import { createRuntimeCredentialIssuer } from "@claxedo/workspace-runtime"
 
 const previousDataDir = process.env.CLAXEDO_DATA_DIR
@@ -29,7 +28,6 @@ afterEach(async () => {
   await shutdownEmbeddedWorkspaceRuntimes()
   disposeAgentConfig()
   ClaxedoDB.close()
-  closeAuthorityDatabases()
   for (const root of roots.splice(0)) await fs.rm(root, { recursive: true, force: true })
   if (previousDataDir === undefined) delete process.env.CLAXEDO_DATA_DIR
   else process.env.CLAXEDO_DATA_DIR = previousDataDir
