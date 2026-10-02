@@ -65,13 +65,20 @@ function privateSessionPolicy(owners: Record<string, string>): SessionAccessPoli
   return policy
 }
 
+/** The PTY routes inside a session core rooted where the test pins the runtime, as a host serves them. */
+function ptyRoutes(policy?: SessionAccessPolicy, root?: string) {
+  return new Hono<{ Variables: RelayHostAuthContext }>()
+    .use("*", (_c, next) => withSessionCore(testSessionCore(root ?? process.env.WORKSPACE_RUNTIME_DIRECTORY ?? process.cwd()), next))
+    .route("/", PtyRoutes(upgradeWebSocket, policy))
+}
+
 function appForRole(role: NonNullable<RelayHostAuthContext["relayHostAuth"]>["role"]) {
   const app = new Hono<{ Variables: RelayHostAuthContext }>()
   app.use("*", async (c, next) => {
     c.set("relayHostAuth", relayAuth(role))
     return await next()
   })
-  app.route("/", PtyRoutes(upgradeWebSocket))
+  app.route("/", ptyRoutes())
   return app
 }
 
@@ -81,7 +88,7 @@ function appForActor(actorId: string, policy: SessionAccessPolicy) {
     c.set("relayHostAuth", relayAuth("editor", actorId))
     return await next()
   })
-  app.route("/", PtyRoutes(upgradeWebSocket, policy))
+  app.route("/", ptyRoutes(policy))
   return app
 }
 
@@ -112,7 +119,7 @@ describe("PtyRoutes", () => {
     const previousWorkspaceId = process.env.WORKSPACE_RUNTIME_WORKSPACE_ID
     try {
       const response = await withWorkspaceTarget({ workspaceId: "ws_actual", directory }, () =>
-        PtyRoutes(upgradeWebSocket).request("http://localhost/", {
+        ptyRoutes(undefined, directory).request("http://localhost/", {
           method: "POST",
           headers: { "content-type": "application/json", "x-workspace-id": "ws_header_forged" },
           body: JSON.stringify({ env: { CLAXEDO_WORKSPACE_ID: "ws_env_forged", USER_VALUE: "kept" } }),
@@ -123,7 +130,7 @@ describe("PtyRoutes", () => {
 
       delete process.env.WORKSPACE_RUNTIME_WORKSPACE_ID
       process.env.WORKSPACE_RUNTIME_DIRECTORY = directory
-      const withoutIdentity = await PtyRoutes(upgradeWebSocket).request("http://localhost/", {
+      const withoutIdentity = await ptyRoutes().request("http://localhost/", {
         method: "POST",
         headers: { "content-type": "application/json", "x-workspace-id": "ws_header_forged" },
         body: JSON.stringify({ env: { CLAXEDO_WORKSPACE_ID: "ws_env_forged", USER_VALUE: "kept" } }),
@@ -163,7 +170,7 @@ describe("PtyRoutes", () => {
     const list = spyOn(Pty, "list").mockReturnValue([info])
     process.env.WORKSPACE_RUNTIME_DIRECTORY = "/tmp"
     try {
-      const created = await PtyRoutes(upgradeWebSocket).request("http://localhost/", {
+      const created = await ptyRoutes().request("http://localhost/", {
         method: "POST",
         headers: { "content-type": "application/json", "x-claxedo-directory": "/tmp" },
         body: JSON.stringify({
@@ -176,7 +183,7 @@ describe("PtyRoutes", () => {
       expect(created.status).toBe(200)
       await expect(created.json()).resolves.toMatchObject({ createRequestId: "request-client-a" })
       expect(create.mock.calls[0]?.[0]).toMatchObject({ createRequestId: "request-client-a" })
-      await expect((await PtyRoutes(upgradeWebSocket).request("http://localhost/")).json()).resolves.toEqual([info])
+      await expect((await ptyRoutes().request("http://localhost/")).json()).resolves.toEqual([info])
     } finally {
       create.mockRestore()
       commit.mockRestore()
@@ -198,7 +205,7 @@ describe("PtyRoutes", () => {
     const commit = spyOn(Pty, "commit").mockReturnValue(info)
     process.env.WORKSPACE_RUNTIME_DIRECTORY = "/tmp"
     try {
-      const response = await PtyRoutes(upgradeWebSocket).request("http://localhost/", {
+      const response = await ptyRoutes().request("http://localhost/", {
         method: "POST",
         headers: { "content-type": "application/json", "x-claxedo-directory": "/tmp" },
         body: JSON.stringify({ title: "Terminal" }),
@@ -625,8 +632,7 @@ describe("PtyRoutes", () => {
 
   test("rejects create requests outside the pinned workspace before spawning", async () => {
     process.env.WORKSPACE_RUNTIME_DIRECTORY = "/tmp/workspace-runtime-pty"
-    const core = testSessionCore("/tmp/workspace-runtime-pty")
-    const app = new Hono().use("*", (_c, next) => withSessionCore(core, next)).route("/", PtyRoutes(upgradeWebSocket))
+    const app = ptyRoutes()
 
     const wrongDirectory = await app.request("http://localhost/", {
       method: "POST",
