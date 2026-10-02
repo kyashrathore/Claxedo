@@ -1,6 +1,5 @@
-import type { SessionConfig, SessionConfigUpdate } from "@claxedo/agent-runtime-contract"
 import type { ConfigOperations, ConfigOptionsPreview, ConfigPreviewTarget, ConfigTarget, HarnessSession } from "../../contract"
-import { applySessionConfigUpdate, configOptionsPreview, modelAndEffortOptions } from "../../contract"
+import { configOptionsPreview, modelAndEffortOptions } from "../../contract"
 import { TransportError } from "../../contract/errors.js"
 import type { Entry } from "./entry.js"
 import type { ModelEntry } from "./catalog-port.js"
@@ -14,13 +13,6 @@ export type OpenCodeConfigHost = {
 
 export function openCodeConfigOperations(host: OpenCodeConfigHost): ConfigOperations {
   return {
-    read: async (session: HarnessSession): Promise<SessionConfig> => host.entry(session).start.config,
-    update: async (session: HarnessSession, update: SessionConfigUpdate): Promise<SessionConfig> => {
-      const entry = host.entry(session)
-      const next = applySessionConfigUpdate(entry.start.config, update)
-      entry.start = { ...entry.start, config: next }
-      return next
-    },
     options: async (target: ConfigPreviewTarget): Promise<ConfigOptionsPreview> => {
       const models = await host.models(host.targetScope(target), target)
       const current = "session" in target ? target.model : target.draft.model

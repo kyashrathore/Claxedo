@@ -31,7 +31,6 @@ export async function askClaudePermission(input: StartInput, broker: Pick<TurnBr
     const answers = requestQuestionAnswers(await broker.ask(fromSubagent(questionRequest({ sessionId: input.sessionId, questions,
       harnessPayload: { toolName, toolInput } }), options.agentID, subagentCall), { signal: options.signal }))
     if (!answers) return { behavior: protocolPermissionMap.deny, message: "Question dismissed" }
-    if (answers.length !== questions.length) throw new TransportError("claude", "protocol", "Claude question reply must answer each question")
     return { behavior: protocolPermissionMap.allow, updatedInput: { ...toolInput,
       answers: Object.fromEntries(answers.map((value, index) => [questions[index]?.question, value.join(", ")])) } }
   }

@@ -4,7 +4,9 @@ import { asText as text } from "@claxedo/agent-runtime-contract"
 import { RETAINED_WIRE_KEYS_MAX, boundKeyedRecord, own } from "../../../translate/value"
 import { item, itemId, type CodexFrame, type CodexHandlers } from "./frame"
 import { itemInput, itemMetadata } from "./item-input"
-import { canonicalItemType, toolDisplay, toolNameForItem } from "./item-kind"
+import { canonicalItemType, toolNameForItem } from "./item-kind"
+import { toolDisplayFromInput } from "../../../translate/tool-display"
+import { openTool } from "./tool-state"
 import { itemOutcome } from "./item-outcome"
 import { completedAssistantMessage, completedReasoning } from "./message-items"
 import { withoutStreamedItem, type CodexAppServerAdapterState } from "./state"
@@ -16,25 +18,10 @@ function rememberTool(state: CodexAppServerAdapterState, id: string, tool: { too
   return { ...state, toolsByItemId: boundKeyedRecord({ ...state.toolsByItemId, [id]: tool }, RETAINED_WIRE_KEYS_MAX) }
 }
 
-function openTool(state: CodexAppServerAdapterState, id: string, itemType: string, row: Row) {
-  const toolName = toolNameForItem(itemType, row)
-  const input = itemInput(row)
-  const display = toolDisplay(itemType, input, toolName)
-  const metadata = itemMetadata(itemType, row)
-  return {
-    state: rememberTool(withoutStreamedItem(state), id, { toolName, input, itemType }),
-    display,
-    events: [
-      { type: "tool-start", toolCallId: id, toolName, kind: itemType, display, metadata },
-      ...(input ? [{ type: "tool-input", toolCallId: id, input, display, metadata } satisfies AgentRuntimeEvent] : []),
-    ] satisfies AgentRuntimeEvent[],
-  }
-}
-
 function settledInput(state: CodexAppServerAdapterState, id: string, itemType: string, completed: Row) {
   const existing = own(state.toolsByItemId, id)!
   const input = itemInput(completed)
-  const display = toolDisplay(itemType, input ?? existing.input, existing.toolName)
+  const display = toolDisplayFromInput({ kind: itemType, input: input ?? existing.input, toolName: existing.toolName })
   if (!input || JSON.stringify(input) === JSON.stringify(existing.input)) return { state, display, events: [] satisfies AgentRuntimeEvent[] }
   return {
     state: rememberTool(state, id, { ...existing, input, itemType }),
@@ -47,7 +34,9 @@ function completedToolItem(state: CodexAppServerAdapterState, id: string, itemTy
   const outcome = itemOutcome(state, id, itemType, completed)
   const exitCode = asFiniteNumber(completed.exitCode)
   const metadata = { ...(exitCode === undefined ? {} : { exitCode }), ...itemMetadata(itemType, completed) }
-  const opened = own(state.toolsByItemId, id) ? settledInput(state, id, itemType, completed) : openTool(state, id, itemType, completed)
+  const opened = own(state.toolsByItemId, id) ? settledInput(state, id, itemType, completed) : openTool({
+    state, toolCallId: id, itemType, toolName: toolNameForItem(itemType, completed), rawInput: itemInput(completed), metadata: itemMetadata(itemType, completed),
+  })
   const completion = "error" in outcome
     ? { type: "tool-error" as const, toolCallId: id, error: outcome.error }
     : { type: "tool-output" as const, toolCallId: id, output: outcome.output, ...(outcome.attachments.length ? { attachments: outcome.attachments } : {}) }
@@ -80,7 +69,7 @@ function itemStarted({ state, event, context, row }: CodexFrame) {
   const itemType = canonicalItemType(started.type)
   if (itemType === "user_message") return { state: withoutStreamedItem(state), events: [] }
   if (itemType === "assistant_message" || itemType === "reasoning" || itemType === "plan") return []
-  const opened = openTool(state, id, itemType, started)
+  const opened = openTool({ state, toolCallId: id, itemType, toolName: toolNameForItem(itemType, started), rawInput: itemInput(started), metadata: itemMetadata(itemType, started) })
   return { state: opened.state, events: opened.events }
 }
 

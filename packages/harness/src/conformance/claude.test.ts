@@ -164,7 +164,7 @@ async function backend(): Promise<ClaudeBackend> {
     config: { harness, model, permissionMode: "default" }, alternateModel: { providerID: "anthropic", modelID: "sonnet" },
     owner: { kind: "person", userId: "owner" },
     sharedSender: { actor: { kind: "person", userId: "member" }, via: "relay", reissued: false },
-    harness: { id: "claude", access: "native" }, expectedMcp: "session",
+    harness: { id: "claude", access: "native" },
     model: { providerID: "anthropic", modelID: "default" },
     credentials: { machineLoginAllowed: true, accountOwner: "fixture-owner", providers: { anthropic: { baseUrl: server.url, placeholder: "claude-conformance-placeholder", authMode: "api-key" } },
       secrets: {}, leaseGeneration: "conformance" },
@@ -445,7 +445,6 @@ test("a permission mode set in the runtime's config reaches the next Claude laun
   try {
     state.config.permissionMode = "bypassPermissions"
     expect((await context.transport.config.permissionModes({ session: context.session() })).currentModeId).toBe("bypassPermissions")
-    expect(await context.transport.config.read(context.session())).toMatchObject({ permissionMode: "bypassPermissions" })
     state.server.scriptTool({ name: "Bash", input: { command: `printf hi > ${out}` } })
     await context.collectWithoutAsk("t1", "Run the scripted Bash tool")
     expect(await fs.readFile(out, "utf8")).toBe("hi")

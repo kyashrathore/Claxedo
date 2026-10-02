@@ -5,7 +5,6 @@ import type {
   AgentSessionStart,
   RuntimeGoalSnapshot,
   SessionConfig,
-  SessionHandoff,
   SubagentObservation,
 } from "@claxedo/agent-runtime-contract"
 import type { AgentRuntimeEvent, RuntimeDiagnostic, SubagentUpdatedEvent } from "@claxedo/agent-runtime-contract"
@@ -90,7 +89,6 @@ export interface BrokerPorts {
   publishSubagent(parentSessionId: string, event: SubagentUpdatedEvent): Promise<void>
   publishSubagentDiagnostic(parentSessionId: string, diagnostic: RuntimeDiagnostic): Promise<void>
   rebind(sessionId: string, upstreamSessionId: string): Promise<HarnessBinding>
-  persistHandoff(sessionId: string, context: SessionHandoff): Promise<void>
   config(sessionId: string): SessionConfig
   reportOwnerFailure(sessionId: string, error: unknown): void
 }

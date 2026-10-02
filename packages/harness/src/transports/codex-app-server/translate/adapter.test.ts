@@ -14,27 +14,6 @@ function runtime() {
 }
 
 describe("codexAppServerAdapter", () => {
-  test("projects explicitly marked MCP consent with its advertised persistence choices", () => {
-    const agent = runtime()
-    expect(agent.ingest({
-      source: "codex.app-server",
-      method: "mcpServer/elicitation/request",
-      payload: {
-        requestId: "consent-1", serverName: "cua_repl", mode: "form",
-        _meta: { codex_approval_kind: "mcp_tool_call", persist: ["session", "always"] },
-        message: 'Allow Computer Use to use "Claxedo Dev (dev)"?',
-        requestedSchema: { type: "object", properties: {} },
-      },
-    }).events).toMatchObject([{
-      type: "permission-request", requestId: "consent-1", tool: "cua_repl", paths: [],
-      details: { reason: 'Allow Computer Use to use "Claxedo Dev (dev)"?' },
-      options: [
-        { id: "accept", label: "Accept" }, { id: "decline", label: "Decline" }, { id: "cancel", label: "Cancel" },
-        { id: '{"persist":"session"}', label: "Accept (session)" }, { id: '{"persist":"always"}', label: "Accept (always)" },
-      ],
-    }])
-  })
-
   test("translates native plan progress into canonical task status", () => {
     const agent = runtime()
     const result = agent.ingest({
@@ -144,51 +123,6 @@ describe("codexAppServerAdapter", () => {
     }).events).toMatchObject([{ type: "proposed-plan-complete", planMarkdown: "## Plan" }])
   })
 
-  test("maps approvals and requestUserInput lifecycle events", () => {
-    const agent = runtime()
-
-    expect(agent.ingest({
-      source: "codex.app-server",
-      method: "item/commandExecution/requestApproval",
-      payload: { requestId: "approval-1", command: "rm -rf tmp", cwd: "/repo", reason: "Remove generated files" },
-    }).events).toMatchObject([{
-      type: "permission-request",
-      requestId: "approval-1",
-      tool: "command",
-      paths: ["/repo"],
-      details: { command: "rm -rf tmp", reason: "Remove generated files" },
-    }])
-
-    expect(agent.ingest({
-      source: "codex.app-server",
-      method: "item/permissions/requestApproval",
-      payload: { requestId: "approval-2", toolName: "Edit", paths: ["/repo/file.ts"] },
-    }).events).toMatchObject([{
-      type: "permission-request",
-      requestId: "approval-2",
-      tool: "Edit",
-      paths: ["/repo/file.ts"],
-    }])
-
-    expect(agent.ingest({
-      source: "codex.app-server",
-      method: "item/tool/requestUserInput",
-      payload: {
-        requestId: "question-1",
-        questions: [{
-          id: "sandbox_mode",
-          question: "Which mode?",
-          options: [{ label: "workspace-write", description: "Allow workspace writes" }],
-        }],
-      },
-    }).events).toMatchObject([{
-      type: "question",
-      requestId: "question-1",
-      questions: [{ text: "Which mode?", options: ["workspace-write"], optionDescriptions: { "workspace-write": "Allow workspace writes" } }],
-    }])
-
-  })
-
   test("completes tool-like items even when app-server only sends item/completed", () => {
     const agent = runtime()
 
@@ -280,31 +214,6 @@ describe("codexAppServerAdapter", () => {
       error: "User declined the command",
     }))
     expect(events.some((event) => event.type === "tool-output")).toBe(false)
-  })
-
-  test("a process exit reports the code's verdict", () => {
-    const failed = runtime().ingest({ source: "codex.app-server", method: "process/exited", payload: {
-      processHandle: "proc-killed",
-      exitCode: 137,
-      stdout: "",
-      stderr: "",
-    } }).events
-    expect(failed).toContainEqual(expect.objectContaining({
-      type: "tool-error",
-      toolCallId: "proc-killed",
-      error: "Process exited with code 137",
-      metadata: expect.objectContaining({ exitCode: 137 }),
-    }))
-    expect(failed.some((event) => event.type === "tool-output")).toBe(false)
-
-    const passed = runtime().ingest({ source: "codex.app-server", method: "process/exited", payload: {
-      processHandle: "proc-ok",
-      exitCode: 0,
-      stdout: "done",
-      stderr: "",
-    } }).events
-    expect(passed).toContainEqual(expect.objectContaining({ type: "tool-output", toolCallId: "proc-ok", output: "done" }))
-    expect(passed.some((event) => event.type === "tool-error")).toBe(false)
   })
 
   test("a command that produced no output yields empty output, not the raw envelope", () => {
@@ -430,84 +339,6 @@ describe("codexAppServerAdapter", () => {
       toolCallId: "cmd-1",
       content: { type: "content", content: { type: "text", text: "passed" } },
     }])
-  })
-
-  test("maps standalone process streams and exit notifications", () => {
-    const agent = runtime()
-
-    expect(agent.ingest({
-      source: "codex.app-server",
-      method: "process/outputDelta",
-      payload: {
-        processHandle: "proc-1",
-        stream: "stdout",
-        deltaBase64: Buffer.from("hello").toString("base64"),
-        capReached: false,
-      },
-    }).events).toMatchObject([
-      { type: "tool-start", toolCallId: "proc-1", toolName: "process" },
-      { type: "tool-input", toolCallId: "proc-1", input: { processHandle: "proc-1", stream: "stdout" } },
-      {
-        type: "tool-content",
-        toolCallId: "proc-1",
-        content: { type: "content", content: { type: "text", text: "hello" } },
-      },
-    ])
-
-    expect(agent.ingest({
-      source: "codex.app-server",
-      method: "process/exited",
-      payload: {
-        processHandle: "proc-1",
-        exitCode: 0,
-        stdout: "",
-        stdoutCapReached: false,
-        stderr: "",
-        stderrCapReached: false,
-      },
-    }).events).toMatchObject([{
-      type: "tool-output",
-      toolCallId: "proc-1",
-      output: "hello",
-    }])
-  })
-
-  test("decodes process output in browser-like runtimes without Buffer", () => {
-    const agent = runtime()
-    const runtimeGlobal = globalThis as typeof globalThis & { Buffer?: typeof Buffer }
-    const original = runtimeGlobal.Buffer
-    try {
-      Object.defineProperty(runtimeGlobal, "Buffer", {
-        configurable: true,
-        value: undefined,
-      })
-
-      expect(agent.ingest({
-        source: "codex.app-server",
-        method: "process/outputDelta",
-        payload: {
-          processHandle: "proc-1",
-          stream: "stdout",
-          deltaBase64: "aGVsbG8=",
-          capReached: false,
-        },
-      }).events).toMatchObject([{
-        type: "tool-start",
-        toolCallId: "proc-1",
-      }, {
-        type: "tool-input",
-        toolCallId: "proc-1",
-      }, {
-        type: "tool-content",
-        toolCallId: "proc-1",
-        content: { type: "content", content: { type: "text", text: "hello" } },
-      }])
-    } finally {
-      Object.defineProperty(runtimeGlobal, "Buffer", {
-        configurable: true,
-        value: original,
-      })
-    }
   })
 
   test("maps file patch stream updates to file diffs", () => {
@@ -1060,14 +891,6 @@ describe("codexAppServerAdapter", () => {
       source: "codex.app-server",
       method: "thread/name/updated",
       payload: { threadId: "thread-1" },
-    }).events).toEqual([])
-  })
-
-  test("maps thread/started to nothing, since the transport owns thread identity", () => {
-    expect(runtime().ingest({
-      source: "codex.app-server",
-      method: "thread/started",
-      payload: { thread: { id: "thread-child", parentThreadId: "thread-parent", agentNickname: "Ada", status: { type: "active", activeFlags: [] } } },
     }).events).toEqual([])
   })
 

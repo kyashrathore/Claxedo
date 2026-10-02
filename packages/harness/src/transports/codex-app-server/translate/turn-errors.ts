@@ -1,36 +1,26 @@
 import { asRecord } from "@claxedo/helpers/guards"
 import type { AgentRuntimeEventOf, FirstTurnErrorClass } from "@claxedo/agent-runtime-contract"
 import { asText as text } from "@claxedo/agent-runtime-contract"
+import { own } from "../../../translate/value"
 import type { v2 } from "./protocol"
 
-const INFO_MESSAGES: Readonly<Record<string, string>> = {
-  usageLimitExceeded: "You've reached your Codex usage limit.",
-  rateLimitExceeded: "Codex is rate limited. Try again shortly.",
-  serverOverloaded: "Codex is overloaded. Try again in a moment.",
-  unauthorized: "Codex rejected the credential. Run `codex login` or sync a valid Codex credential, then retry.",
-  contextWindowExceeded: "This turn exceeded the Codex context window.",
-  cyberPolicy: "Codex refused this request due to a safety policy.",
-  flexUnavailable: "Flex capacity is unavailable. Try another model or service tier.",
-  tooManyDenials: "Codex stopped the turn after too many denied approvals.",
-}
-
-const INFO_CLASSES: Readonly<Record<string, FirstTurnErrorClass>> = {
-  usageLimitExceeded: "usage_limit",
-  rateLimitExceeded: "rate_limit",
-  flexUnavailable: "model",
-  serverOverloaded: "model",
-  unauthorized: "credential",
-  sandboxError: "workspace",
-  threadRollbackFailed: "session",
-  contextWindowExceeded: "unknown",
-  sessionBudgetExceeded: "unknown",
-  cyberPolicy: "unknown",
-  misalignmentPolicyViolation: "unknown",
-  tooManyDenials: "unknown",
-  internalServerError: "unknown",
-  badRequest: "unknown",
-  other: "unknown",
-} satisfies Record<Extract<v2.CodexErrorInfo, string>, FirstTurnErrorClass>
+const ERROR_INFO: Readonly<Record<string, readonly [classification: FirstTurnErrorClass, message?: string]>> = {
+  usageLimitExceeded: ["usage_limit", "You've reached your Codex usage limit."],
+  rateLimitExceeded: ["rate_limit", "Codex is rate limited. Try again shortly."],
+  flexUnavailable: ["model", "Flex capacity is unavailable. Try another model or service tier."],
+  serverOverloaded: ["model", "Codex is overloaded. Try again in a moment."],
+  unauthorized: ["credential", "Codex rejected the credential. Run `codex login` or sync a valid Codex credential, then retry."],
+  sandboxError: ["workspace"],
+  threadRollbackFailed: ["session"],
+  contextWindowExceeded: ["unknown", "This turn exceeded the Codex context window."],
+  sessionBudgetExceeded: ["unknown"],
+  cyberPolicy: ["unknown", "Codex refused this request due to a safety policy."],
+  misalignmentPolicyViolation: ["unknown"],
+  tooManyDenials: ["unknown", "Codex stopped the turn after too many denied approvals."],
+  internalServerError: ["unknown"],
+  badRequest: ["unknown"],
+  other: ["unknown"],
+} satisfies Record<Extract<v2.CodexErrorInfo, string>, readonly [FirstTurnErrorClass, string?]>
 
 function httpStatusClass(status: unknown): FirstTurnErrorClass {
   if (status === 429) return "rate_limit"
@@ -39,7 +29,7 @@ function httpStatusClass(status: unknown): FirstTurnErrorClass {
 
 function codexErrorInfoClass(info: unknown): FirstTurnErrorClass | undefined {
   const name = text(info)
-  if (name) return Object.hasOwn(INFO_CLASSES, name) ? INFO_CLASSES[name] : "unknown"
+  if (name) return own(ERROR_INFO, name)?.[0] ?? "unknown"
   const variant = Object.values(asRecord(info) ?? {})[0]
   if (!variant) return undefined
   return httpStatusClass(asRecord(variant)?.httpStatusCode)
@@ -71,7 +61,7 @@ export function turnErrorMessage(error: Record<string, unknown> | undefined, las
   const message = text(error?.message) ?? text(asRecord(error?.message)?.message)
   const details = text(error?.additionalDetails)
   const info = text(error?.codexErrorInfo)
-  const fromInfo = info && Object.hasOwn(INFO_MESSAGES, info) ? INFO_MESSAGES[info] : undefined
+  const fromInfo = info ? own(ERROR_INFO, info)?.[1] : undefined
   const generic = !message || message.trim().toLowerCase() === "session error"
   const head = generic ? fromInfo ?? lastLimitedRateLimitMessage : message
   if (!head) return details

@@ -3,20 +3,31 @@ import { translatorRuntime } from "../../../test-support/translator-runtime"
 import { createAcpEventTranslator } from "./event-translator"
 import { RETAINED_MESSAGE_TEXTS_MAX, RETAINED_TOOLS_MAX } from "./state"
 
-function runtime(
-  client = "acp:example",
-  options?: { preserveUserMessageChunks?: boolean },
-) {
+function runtime(client = "acp:example") {
   return translatorRuntime({
     harness: client,
     threadId: "thread-1",
-    adapter: createAcpEventTranslator({ client, ...options }),
+    adapter: createAcpEventTranslator({ client }),
     clock: () => 0,
     createId: () => "id",
   })
 }
 
 describe("createAcpEventTranslator", () => {
+  test.each(["tool_call", "tool_call_update"])("preserves validation diagnostic order for %s", (sessionUpdate) => {
+    const result = runtime().ingest({
+      source: "acp.jsonrpc",
+      method: "session/update",
+      payload: { sessionUpdate, toolCallId: "tool-1", _meta: [], rawInput: "invalid", content: "invalid" },
+    })
+    const diagnostics = result.events.flatMap((event) => event.type === "diagnostic" ? [event.diagnostic.details?.acp] : [])
+    expect(diagnostics).toMatchObject([
+      { reason: "invalid_meta" },
+      { reason: "rawInput_not_object" },
+      { reason: "content_not_array" },
+    ])
+  })
+
   test("keeps shell input, display, and metadata fields consistent without leaking presentation-only fields", () => {
     const events = runtime().ingest({
       source: "acp.jsonrpc",
@@ -558,24 +569,6 @@ describe("createAcpEventTranslator", () => {
         content: { type: "text", text: "from the user" },
       },
     }).events).toEqual([])
-  })
-
-  test("can preserve user message chunks as runtime events when explicitly requested", () => {
-    const agent = runtime("acp:example", { preserveUserMessageChunks: true })
-
-    expect(agent.ingest({
-      source: "acp.jsonrpc",
-      method: "session/update",
-      payload: {
-        sessionUpdate: "user_message_chunk",
-        messageId: "user-message-1",
-        content: { type: "text", text: "from the user" },
-      },
-    }).events).toMatchObject([{
-      type: "user-message-delta",
-      messageId: "user-message-1",
-      content: { type: "text", text: "from the user" },
-    }])
   })
 
   test("preserves available commands and session info updates", () => {

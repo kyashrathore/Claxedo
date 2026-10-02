@@ -66,6 +66,6 @@ export class CursorModelCatalog {
     let reply
     try { reply = await (await host()).call({ kind: "models", apiKey: credential.apiKey }) }
     catch (error) { throw catalogReadError(error, credential.bound) }
-    return reply.kind === "result" ? reply.value?.models ?? [] : []
+    return reply.value?.models ?? []
   }
 }

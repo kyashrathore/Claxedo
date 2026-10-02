@@ -49,7 +49,7 @@ async function retirementFixture(retirePeer: RetirePolicy) {
     }),
     makeTransport: (services) => new AcpTransport(services, { kind: "process", command: process.execPath,
       args: [join(import.meta.dirname, "../../e2e/harness/acp/agent.ts")], env: { SCRIPTED_ACP_DIR: directory } },
-      filterMcpServers, async () => { throw new Error("Unexpected restore") }),
+      filterMcpServers),
   })
   const live = () => children.filter((child) => child.exitCode === null && child.signalCode === null)
   const release = async () => {

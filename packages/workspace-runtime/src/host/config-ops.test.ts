@@ -14,7 +14,6 @@ test("runtime-owned previews read the current saved model on every request", asy
   let model: PromptModel | undefined = { providerID: "proof", modelID: "first" }
   const calls: ConfigPreviewTarget[] = []
   const handle = { transport: {
-    capabilities: async () => ({ configOwner: "runtime" }),
     config: { options: async (target: ConfigPreviewTarget) => { calls.push(target); return { options: [] } } },
   } as unknown as HarnessTransport } as HarnessHandle
   const session: HarnessSession = { directory: "/tmp", locality: "local", binding: {

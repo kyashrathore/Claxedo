@@ -20,10 +20,5 @@ export function nestedTaskMessage(update: NestedTaskUpdate, taskCallId: string):
     case "partial-tool-call":
     case "tool-call-completed":
       return nestedToolMessage(update, ids)
-    case "thinking-completed":
-    case "step-started":
-    case "step-completed":
-    case "tool-requests-listed":
-      return undefined
   }
 }

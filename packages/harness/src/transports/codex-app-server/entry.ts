@@ -20,7 +20,6 @@ export type Entry = {
   rpc: CodexRpc
   home: string
   modelProvider: string
-  plugins: string[]
   terminals: CodexTerminals
   children: CodexChildren
   sideThreads: Set<string>

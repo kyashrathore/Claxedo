@@ -1,15 +1,14 @@
-import { asText as text } from "@claxedo/agent-runtime-contract"
+import { asText as text, type SubagentObservation } from "@claxedo/agent-runtime-contract"
 import { asRecord } from "@claxedo/helpers/guards"
 import { hostSubagentBinding, hostSubagentObservation, isHostSubagentTool } from "../../../translate/host-subagent"
-import { assistantToolBlocks } from "./assistant-content"
-import { taskCall, type ClaudeSubagentObservation } from "./subagent-observation"
+import { assistantToolBlocks } from "./message-content"
 import { claudeChildCorrelationKey } from "./subagent-routing"
-import type { ClaudeTaskLedger } from "./task-ledger"
+import { taskCall, type ClaudeTaskLedger } from "./task-ledger"
 import { taskSystemObservations } from "./task-observations"
 import { isTaskTool } from "./tool-blocks"
 import { toolResultBlocks } from "./tool-results"
 
-export function claudeSubagentObservations(value: unknown, ledger: ClaudeTaskLedger): ClaudeSubagentObservation[] {
+export function claudeSubagentObservations(value: unknown, ledger: ClaudeTaskLedger): SubagentObservation[] {
   const message = asRecord(value)
   if (!message) return []
   const harnessExecutionId = text(message.session_id)
@@ -37,7 +36,7 @@ function spawnObservations(
   wrapperId: string,
   harnessExecutionId: string | undefined,
   ledger: ClaudeTaskLedger,
-): ClaudeSubagentObservation[] {
+): SubagentObservation[] {
   return assistantToolBlocks(message).flatMap(({ tool }) => {
     if (!isTaskTool(tool.toolName) || isHostSubagentTool(tool.toolName) || !tool.toolCallId) return []
     ledger.startSpawnCall(tool.toolCallId)
@@ -64,7 +63,7 @@ function agentResultObservations(
   wrapperId: string,
   harnessExecutionId: string | undefined,
   ledger: ClaudeTaskLedger,
-): ClaudeSubagentObservation[] {
+): SubagentObservation[] {
   const result = asRecord(message.tool_use_result)
   const agentId = text(result?.agentId)
   if (!agentId) return claudeHostSubagentObservations(message, wrapperId, harnessExecutionId, ledger)
@@ -93,7 +92,7 @@ function claudeHostSubagentObservations(
   wrapperId: string,
   harnessExecutionId: string | undefined,
   ledger: ClaudeTaskLedger,
-): ClaudeSubagentObservation[] {
+): SubagentObservation[] {
   const blocks = toolResultBlocks(message)
   return blocks.flatMap((tool) => {
     if (!ledger.isHostSubagentCall(tool.toolCallId)) return []

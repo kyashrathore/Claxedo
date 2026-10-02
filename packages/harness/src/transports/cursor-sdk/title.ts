@@ -21,7 +21,7 @@ export async function cursorSessionTitle(input: { host: CursorHost; session: Hos
   request.signal.addEventListener("abort", onAbort, { once: true })
   try {
     const reply = await input.host.call({ kind: "title", session, prompt: `${request.system}\n\n${request.user}` })
-    if (request.signal.aborted || reply.kind !== "result") return null
+    if (request.signal.aborted) return null
     return reply.value?.result ?? null
   } finally { request.signal.removeEventListener("abort", onAbort) }
 }

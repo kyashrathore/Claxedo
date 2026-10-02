@@ -269,7 +269,6 @@ class StoreBehaviorPorts extends MemoryPorts {
     this.bindings.set(sessionId, binding)
     return binding
   }
-  override persistHandoff(...args: Parameters<typeof this.real.persistHandoff>) { return this.real.persistHandoff(...args) }
   override config(sessionId: string) { return this.real.config(sessionId) }
   override reportOwnerFailure(sessionId: string, error: unknown) { this.real.reportOwnerFailure(sessionId, error) }
 }
@@ -783,7 +782,7 @@ describe("store broker ports", () => {
     expect(ports.readAnswer("s1", "deadline")).toEqual({ kind: "expired" })
   })
 
-  test("start, goal, handoff and config use their existing session rows", async () => {
+  test("start and goal use their existing session rows", async () => {
     const { store, ports } = setup()
     const binding = { sessionId: "s1", workspaceId: "w1", connectionId: "c1", directory: "/work", operationId: "op" }
     store.sessionStarts.begin(binding)
@@ -791,8 +790,6 @@ describe("store broker ports", () => {
     const goal = { sessionId: "s1", objective: "Finish", status: "active" as const, createdAt: 1, updatedAt: 1 }
     await ports.publishGoal("s1", goal)
     expect(ports.readGoal("s1")).toEqual(goal)
-    await ports.persistHandoff("s1", { from: { id: "pi", access: "native" }, pending: true, transcript: "context" })
-    expect(ports.config("s1").handoff?.transcript).toBe("context")
   })
 })
 

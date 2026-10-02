@@ -6,7 +6,7 @@ import type {
   RoutedEvent, SessionBroker, StartInput, TransportCapabilities, TransportConfigUpdate,
   TurnBroker, TurnInput, TurnRef,
 } from "../../contract"
-import { applySessionConfigUpdate, attachedSessionEntry, HarnessVersionGate, configOptionsPreview, mergeStartInput, selectedTurnAccount } from "../../contract"
+import { attachedSessionEntry, HarnessVersionGate, configOptionsPreview, mergeStartInput, selectedTurnAccount } from "../../contract"
 import { withTurnAccount } from "../../translate/turn-account"
 import { CLAUDE_CODE_RANGE } from "./cli-version"
 import { claudeBinding } from "./credentials"
@@ -23,12 +23,10 @@ function capability(models?: readonly ModelInfo[]): TransportCapabilities {
     modelSelection: { status: "optional" }, effortLevels: models ? { status: "resolved", models: models.map((model) => ({
       modelID: model.value, levels: model.supportsEffort ? model.supportedEffortLevels ?? [] : [],
     })) } : { status: "unresolved", models: [] },
-    instructionChannel: "turn-system-prompt", configOwner: "runtime",
+    instructionChannel: "turn-system-prompt",
     requests: { permissions: true, questions: true, elicitation: true }, subagents: true,
     goals: { implemented: true, available: true, actions: [], recovery: "blocked", optionalFields: ["iteration", "lastReason"] },
-    todos: true, history: "store", titles: "harness",
-    pluginIntake: { mcp: "session", skills: "plugin-dir" }, mcpTransports: { stdio: true, http: true, sse: true },
-    timing: { model: "next-turn", effort: "next-turn", permissionMode: "next-turn", credentials: "next-turn" },
+    todos: true, history: "store",
   }
 }
 
@@ -54,21 +52,19 @@ export class ClaudeSdkTransport implements HarnessTransport {
   }
 
   async start(input: StartInput, broker: SessionBroker): Promise<HarnessSession> {
-    if (this.disposed) throw new TransportError("claude", "session", "Claude transport disposed")
-    if (this.entries.has(input.sessionId)) throw new TransportError("claude", "session", "Claude session already attached")
-    claudeBinding(input.credentials)
-    const session: HarnessSession = { directory: input.directory, locality: input.locality,
-      binding: await broker.rebind(`claude-sdk:${randomUUID()}`) }
-    this.entries.set(input.sessionId, { input, revision: 0, session, broker: this.goalRuntime.watch(input.sessionId, broker) })
-    return session
+    return this.bind(input, broker, `claude-sdk:${randomUUID()}`)
   }
 
   async attach(input: AttachInput, broker: SessionBroker): Promise<HarnessSession> {
+    return this.bind(input, broker, input.binding.upstreamSessionId)
+  }
+
+  private async bind(input: StartInput, broker: SessionBroker, upstreamSessionId: string): Promise<HarnessSession> {
     if (this.disposed) throw new TransportError("claude", "session", "Claude transport disposed")
     if (this.entries.has(input.sessionId)) throw new TransportError("claude", "session", "Claude session already attached")
     claudeBinding(input.credentials)
     const session: HarnessSession = { directory: input.directory, locality: input.locality,
-      binding: await broker.rebind(input.binding.upstreamSessionId) }
+      binding: await broker.rebind(upstreamSessionId) }
     this.entries.set(input.sessionId, { input, revision: 0, session, broker: this.goalRuntime.watch(input.sessionId, broker) })
     return session
   }
@@ -98,12 +94,6 @@ export class ClaudeSdkTransport implements HarnessTransport {
   }
 
   readonly config = {
-    read: async (session: HarnessSession) => this.entry(session).broker.config(),
-    update: async (session: HarnessSession, update: import("@claxedo/agent-runtime-contract").SessionConfigUpdate) => {
-      const entry = this.entry(session)
-      if (update.permissionMode) requireClaudeMode(update.permissionMode)
-      return applySessionConfigUpdate(entry.broker.config(), update)
-    },
     options: async (target: import("../../contract").ConfigPreviewTarget, mode: "probe" | "peek") => {
       const input = "session" in target ? this.entry(target.session).input : target.draft
       const current = "session" in target ? target.model?.modelID ?? this.entry(target.session).broker.config().model?.modelID
@@ -135,7 +125,6 @@ export class ClaudeSdkTransport implements HarnessTransport {
     return rows.map((row) => ({ name: row.name, description: row.description, harnessPayload: row }))
   } }
 
-  readonly naming = {}
 
   async cancel(session: HarnessSession, turn: TurnRef, deadline: Deadline) {
     return this.turns.cancel(this.entry(session), turn, deadline)

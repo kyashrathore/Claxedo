@@ -3,11 +3,12 @@ import os from "node:os"
 import path from "node:path"
 import { parse, stringify } from "smol-toml"
 import { asRecordOrEmpty, asString } from "@claxedo/helpers/guards"
-import { lstatIfExists, writePrivateFileAtomic } from "@claxedo/helpers/fs"
+import { lstatIfExists, readTextIfExists, writePrivateFileAtomic } from "@claxedo/helpers/fs"
 import { HARNESS_TABLE, type ProviderProjection } from "@claxedo/agent-runtime-contract"
 import { selectedProviderProjection, type PluginProjection, type ResolvedCredentials } from "../../contract"
 import { CredentialSelectionError } from "../../registry/credentials"
-import { CLAXEDO_MARKETPLACE, codexHomeKey, codexStoreKey, codexStoreOverrides, copyTreeAtomically, linkConversationStore, mirrorOwnerCodexHome } from "./home"
+import { CLAXEDO_MARKETPLACE, codexHomeKey, codexStoreKey, codexMirror, linkConversationStore, mirrorOwnerCodexHome } from "./home"
+import { mirrorConfigTree } from "../config-mirror"
 
 const START = "# BEGIN CLAXEDO CODEX PROFILE"
 const END = "# END CLAXEDO CODEX PROFILE"
@@ -29,13 +30,6 @@ function validatedCodexPluginSegment(name: string): string {
   return name
 }
 
-async function readOptional(file: string): Promise<string> {
-  return fs.readFile(file, "utf8").catch((error: NodeJS.ErrnoException) => {
-    if (error.code === "ENOENT") return ""
-    throw error
-  })
-}
-
 async function installedPlugins(folder: string): Promise<string[]> {
   return (await fs.readdir(folder).catch((error: NodeJS.ErrnoException) => {
     if (error.code === "ENOENT") return []
@@ -48,9 +42,9 @@ async function installCodexPlugin(item: PluginProjection["pluginRoots"][number],
   const name = validatedCodexPluginSegment(asString(fields.name) ?? "")
   const version = validatedCodexPluginSegment(asString(fields.version) ?? "1.0.0")
   const pluginRoot = await fs.realpath(item.root)
-  await copyTreeAtomically(item.root, path.join(source, "plugins", name), pluginRoot)
+  await mirrorConfigTree(item.root, path.join(source, "plugins", name), pluginRoot, codexMirror)
   await fs.mkdir(path.join(cache, name), { recursive: true, mode: 0o700 })
-  await copyTreeAtomically(item.root, path.join(cache, name, version), pluginRoot)
+  await mirrorConfigTree(item.root, path.join(cache, name, version), pluginRoot, codexMirror)
   for (const stale of await fs.readdir(path.join(cache, name))) if (stale !== version) await fs.rm(path.join(cache, name, stale), { recursive: true, force: true })
   return name
 }
@@ -146,9 +140,9 @@ export async function prepareCodexProfile(input: CodexProfileInput): Promise<Cod
   const plugins = await marketplace(home, input.projection)
   const fragments = [plugins.block]
   if (selected) fragments.unshift(brokerFragment(selected))
-  const retained = brokered ? "" : personalConfig(await readOptional(path.join(ownerHome, "config.toml")), input.projection)
+  const retained = brokered ? "" : personalConfig(await readTextIfExists(path.join(ownerHome, "config.toml")) ?? "", input.projection)
   const block = fragments.filter(Boolean).join("\n\n")
   const next = [retained, block ? `${START}\n${block}\n${END}` : ""].filter(Boolean).join("\n\n")
   await writePrivateFileAtomic(path.join(home, "config.toml"), `${next}\n`)
-  return { home, store, configOverrides: codexStoreOverrides(store), brokered, plugins: plugins.plugins }
+  return { home, store, configOverrides: [`sqlite_home=${JSON.stringify(store)}`], brokered, plugins: plugins.plugins }
 }

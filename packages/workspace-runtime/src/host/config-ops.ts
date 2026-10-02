@@ -68,8 +68,7 @@ export function createHarnessReads(input: {
 
   const sessionConfigOf = async (handle: HarnessHandle, session: HarnessSession): Promise<SessionConfig> => {
     const sessionId = session.binding.sessionId
-    const declared = await handle.transport.capabilities({ directory: session.directory, sessionId })
-    if (declared.configOwner === "harness" && handle.transport.config) return await handle.transport.config.read(session)
+    if (handle.transport.harnessConfig) return await handle.transport.harnessConfig.read(session)
     const config = store.getSessionConfig(sessionId)
     if (!config) throw new Error(`Session ${sessionId} has no runtime config`)
     return config
@@ -141,8 +140,8 @@ export function createHarnessReads(input: {
       if (!config) return undefined
       const model = requested === undefined ? undefined : await previewModel(resolved, requested)
       if ("session" in resolved.target) {
-        const current = model ?? ((await declaredFor(resolved)).configOwner === "runtime"
-          ? store.getSessionConfig(resolved.target.session.binding.sessionId)?.model : undefined)
+        const current = model ?? (resolved.handle.transport.harnessConfig
+          ? undefined : store.getSessionConfig(resolved.target.session.binding.sessionId)?.model)
         return await config.options({ session: resolved.target.session, ...(current ? { model: current } : {}) }, "probe")
       }
       return await config.options({ draft: { ...resolved.target.draft, ...(model ? { model } : {}) } }, "probe")

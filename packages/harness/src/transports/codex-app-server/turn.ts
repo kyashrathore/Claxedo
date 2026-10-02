@@ -3,12 +3,10 @@ import { asRecordOrEmpty, asString } from "@claxedo/helpers/guards"
 import type { HarnessServices, HarnessSession, RoutedEvent, TurnBroker, TurnInput } from "../../contract"
 import type { Entry } from "./entry"
 import { CodexEvents } from "./events"
-import { CodexTransportError } from "./errors"
-import { codexThreadResumeParams, codexTurnParams } from "./input"
+import { CodexRequestTimeout, CodexTransportError } from "./errors"
+import { codexTurnParams } from "./input"
 import { codexTurnSettings, type CodexModel } from "./models"
 import { codexPermissionSettings } from "./modes"
-import { startCodexTurn } from "./recovery"
-import { projectCodexThreadConfig } from "./configuration"
 import { codexRetirementDeadline, type RpcMessage } from "./rpc"
 import { codexHostSubagentObservation } from "./host-subagents"
 
@@ -57,10 +55,6 @@ function listenTurn(entry: Entry, session: HarnessSession, queue: AsyncPushQueue
   return { remove: () => { removeMessage(); removeFailure() }, accept: () => { for (const message of early) ingest(message) } }
 }
 
-export async function activeTurnBroker(entry: Entry): Promise<TurnBroker | undefined> {
-  return entry.turn?.broker ?? await entry.providerTurn?.broker
-}
-
 export function incorporatedSteer(message: RpcMessage, steers: Set<string>): RoutedEvent | undefined {
   if (message.method !== "item/started") return undefined
   const item = asRecordOrEmpty(asRecordOrEmpty(message.params).item)
@@ -77,8 +71,10 @@ async function startTurn(entry: Entry, session: HarnessSession, turn: TurnInput,
   const mode = codexPermissionSettings(entry.start.config.permissionMode)
   const threadId = session.binding.upstreamSessionId
   const params = await codexTurnParams(turn, threadId, session.directory, settings, mode)
-  const resume = codexThreadResumeParams(threadId, entry.start, projectCodexThreadConfig(entry.start, services, entry.plugins), mode, entry.modelProvider)
-  const result = asRecordOrEmpty(await startCodexTurn(entry.rpc, params, resume, codexRetirementDeadline(services)))
+  const result = asRecordOrEmpty(await entry.rpc.request("turn/start", params, 60_000).catch(async (error: unknown) => {
+    if (error instanceof CodexRequestTimeout) await entry.rpc.abandon(error, codexRetirementDeadline(services))
+    throw error
+  }))
   const id = asString(asRecordOrEmpty(result.turn).id)
   if (!id) throw new CodexTransportError("protocol", "Codex turn/start returned no turn id")
   if (entry.turn) entry.turn.id = id

@@ -36,13 +36,13 @@ function recordReportedModel(state: CodexAppServerAdapterState, method: string, 
 }
 
 export const usageHandlers: CodexHandlers = {
-  "thread/tokenUsage/updated": ({ state, event, context, row, threadModel }) => {
+  "thread/tokenUsage/updated": ({ state, event, context, row }) => {
     const threadId = threadOf(event, context)
     const byThread = state.turnUsageByThread ?? {}
     const { [threadId]: _previous, ...otherThreads } = byThread
     const reported = state.reportedModels ?? {}
     const result = turnUsage(row, own(byThread, threadId), threadId, (turnId) =>
-      (turnId ? own(reported, reportedModelKey(threadId, turnId)) : undefined) ?? own(reported, threadId) ?? threadModel?.(threadId))
+      (turnId ? own(reported, reportedModelKey(threadId, turnId)) : undefined) ?? own(reported, threadId))
     if (!result) return []
     return {
       state: {

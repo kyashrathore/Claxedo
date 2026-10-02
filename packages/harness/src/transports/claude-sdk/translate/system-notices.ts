@@ -1,12 +1,11 @@
-import { asText as text } from "@claxedo/agent-runtime-contract"
-import type { AgentRuntimeEvent, RuntimeNoticeSeverity } from "@claxedo/agent-runtime-contract"
+import { asText as text, type AgentRuntimeEvent, type RuntimeNoticeSeverity } from "@claxedo/agent-runtime-contract"
 import { asFiniteNumber, asRecord } from "@claxedo/helpers/guards"
 import { refusalRetraction } from "./responses"
 import { claudeNotice, type ClaudeFrameEvent } from "./sdk-message"
 import type { ClaudeTranslatorMemory } from "./translator-memory"
 
-function notice(code: string, message: string | undefined, severity: RuntimeNoticeSeverity = "info", details?: Record<string, unknown>) {
-  return message ? [claudeNotice(code, message, severity, details)] : []
+function notice(code: string, message: string | undefined, severity: RuntimeNoticeSeverity = "info") {
+  return message ? [claudeNotice(code, message, severity)] : []
 }
 
 function retryCause(frame: Record<string, unknown>) {

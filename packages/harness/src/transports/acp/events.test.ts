@@ -10,7 +10,7 @@ for (const owner of ["prompt", "provider"] as const) {
     const session = { binding: { upstreamSessionId: "parent" } } as AcpEntry["session"]
     const receive = acpReceiver("acp", session, queue)
     const entry = { session, sideSessions: new Map(), ...(owner === "prompt" ? { receive } : { providerTurn: { receive } }) } as AcpEntry
-    await acpUpdate(entry, { sessionId: "child", update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "child evidence" } } }, async () => {})
+    await acpUpdate(entry, { sessionId: "child", update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "child evidence" } } })
     queue.end()
     const events = await Array.fromAsync(queue)
     expect(events).toContainEqual(expect.objectContaining({ event: expect.objectContaining({ type: "text-delta", delta: "child evidence" }), route: { kind: "child", correlationKey: "child" } }))
@@ -27,7 +27,7 @@ test("a subagent's end reaches the broker only after the turn took the child out
   } as unknown as AcpEntry
   const observe = (update: unknown) => acpObserveSubagent(entry, update)
   await observe({ sessionUpdate: "subagent_spawned", subagentSessionId: "child", name: "researcher", task: "find it" })
-  await acpUpdate(entry, { sessionId: "child", update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "child evidence" } } }, observe)
+  await acpUpdate(entry, { sessionId: "child", update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "child evidence" } } })
   const ended = observe({ sessionUpdate: "subagent_state_update", subagentSessionId: "child", state: "completed" })
   await new Promise((resolve) => setTimeout(resolve, 20))
   expect(observed).toEqual(["running"])
