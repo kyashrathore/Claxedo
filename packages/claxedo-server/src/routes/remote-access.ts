@@ -6,18 +6,11 @@ import {
   type SignedControlPlaneAuth,
 } from "@claxedo/server-core/platform/auth/auth"
 
-const enableBody = z.object({
-  start_at_login: z.boolean().default(false),
-}).strict()
-
 const renameBody = z.object({ display_name: z.string().trim().min(1).max(120) }).strict()
 
-export type RemoteAccessService = {
+/** The owner's view of their machines: what every signed control plane serves. */
+export type RemoteAccessOwnerService = {
   status(auth?: SignedControlPlaneAuth): Promise<{ enrolled: boolean; enabled: boolean }>
-  enable(
-    auth: SignedControlPlaneAuth,
-    input: { startAtLogin: boolean },
-  ): Promise<{ hostId: string; workspaceIds: string[]; connectionCount: number }>
   devices(auth: SignedControlPlaneAuth): Promise<Array<{
     hostId: string
     displayName: string
@@ -35,18 +28,15 @@ export type RemoteAccessService = {
   ): Promise<{ displayName: string } | undefined>
 }
 
-/** The owner's view of their machines: what every signed control plane serves. */
-export type RemoteAccessOwnerService = Pick<RemoteAccessService, "status" | "devices" | "revoke" | "rename">
-
-export type RemoteAccessRouteOptions<Service extends RemoteAccessOwnerService> = {
+export type RemoteAccessRouteOptions = {
   deviceLoginConfigured: boolean
   relayConfigured: boolean
   /** The signed caller, or the response that refuses the request. */
   authenticate(request: Request): Promise<SignedControlPlaneAuth | Response>
-  service: Service
+  service: RemoteAccessOwnerService
 }
 
-async function authenticateRemoteAccess(options: RemoteAccessRouteOptions<RemoteAccessOwnerService>, request: Request) {
+async function authenticateRemoteAccess(options: RemoteAccessRouteOptions, request: Request) {
   try {
     return await options.authenticate(request)
   } catch (error) {
@@ -58,22 +48,19 @@ async function authenticateRemoteAccess(options: RemoteAccessRouteOptions<Remote
 }
 
 /**
- * Remote access has two sides. The OWNER's side — which machines are enrolled,
- * what they serve, when they were last seen, rename or revoke one — is
- * control-plane data and is served by every signed deployment. The
- * MACHINE's side — enrolling this process as a machine and opening its tunnel
- * — exists only where the server IS a machine (the self-hosted single binary);
- * on the desktop it belongs to the Host Connector, and the hosted control plane
- * has no machine at all.
+ * The owner's side of remote access: which machines are enrolled, what they
+ * serve, when they were last seen, rename or revoke one. The machine's side —
+ * enrolling a process and opening its tunnel — belongs to the Host Connector on
+ * the machine itself.
  */
-export function RemoteAccessOwnerRoutes(options: RemoteAccessRouteOptions<RemoteAccessOwnerService>) {
+export function RemoteAccessOwnerRoutes(options: RemoteAccessRouteOptions) {
   const app = new Hono()
   const available = options.deviceLoginConfigured && options.relayConfigured
 
   app.get("/", async (c) => {
     // Per-caller enrollment/enabled state — refuse the anonymous remote
     // caller the same way `/devices` and `/devices/:hostId` below do.
-    // `RemoteAccessService.status` still accepts an absent auth for its own
+    // `RemoteAccessOwnerService.status` still accepts an absent auth for its own
     // direct callers/tests; this route simply never reaches it without one.
     const auth = await authenticateRemoteAccess(options, c.req.raw)
     // Node's HTTP adapter replaces Response, while Response.json can return the
@@ -125,38 +112,5 @@ export function RemoteAccessOwnerRoutes(options: RemoteAccessRouteOptions<Remote
     return c.json(await options.service.revoke(auth, c.req.param("hostId")))
   })
 
-  return app
-}
-
-function blockerMessage(deviceLoginConfigured: boolean, relayConfigured: boolean) {
-  if (!deviceLoginConfigured && !relayConfigured) return "Device sign-in and the hosted relay are not configured"
-  if (!deviceLoginConfigured) return "Device sign-in is not configured"
-  return "The hosted relay is not configured"
-}
-
-/** The machine's own composition: the owner's routes plus enrolling this process. */
-export function RemoteAccessRoutes(options: RemoteAccessRouteOptions<RemoteAccessService>) {
-  const app = RemoteAccessOwnerRoutes(options)
-  const available = options.deviceLoginConfigured && options.relayConfigured
-  app.post("/enable", async (c) => {
-    if (!available) {
-      return c.json({
-        error: {
-          code: "remote_access_unavailable",
-          message: blockerMessage(options.deviceLoginConfigured, options.relayConfigured),
-        },
-      }, 501)
-    }
-    const body = enableBody.safeParse(await c.req.json().catch(() => ({})))
-    if (!body.success) return c.json({ error: { code: "remote_access_invalid_body", message: "Invalid remote access settings" } }, 400)
-    const auth = await authenticateRemoteAccess(options, c.req.raw)
-    if (!("user" in auth)) return auth
-    const result = await options.service.enable(auth, { startAtLogin: body.data.start_at_login })
-    return c.json({
-      host_id: result.hostId,
-      workspace_ids: result.workspaceIds,
-      connection_count: result.connectionCount,
-    })
-  })
   return app
 }
