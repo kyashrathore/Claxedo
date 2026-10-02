@@ -9,9 +9,12 @@ type BoundaryKey = Extract<TranscriptTextKey,
 export type NoticeView =
   | { readonly shape: "boundary"; readonly key: BoundaryKey; readonly icon: "archive" | "new-session" }
   | { readonly shape: "row"; readonly tone: TranscriptNoticeSeverity; readonly message: NoticeMessage }
+  | { readonly shape: "agent-message"; readonly sender: string; readonly message: string }
 
 export function noticeView(notice: TranscriptNotice): NoticeView {
   switch (notice.kind) {
+    case "agent-message":
+      return { shape: "agent-message", sender: notice.senderName ?? notice.sender, message: notice.message }
     case "harness":
       return { shape: "row", tone: notice.severity, message: { text: notice.message } }
     case "compaction":

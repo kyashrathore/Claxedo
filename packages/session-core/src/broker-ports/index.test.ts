@@ -535,6 +535,7 @@ describe("store broker ports", () => {
     store.releaseTurnLease("s1", first)
     const prompted = store.acquireTurnLease("s1")
     if (!prompted) throw new Error("Missing prompted lease")
+    // Separate generators minting in one millisecond order only by their random suffix.
     const promptId = createMessageIds(() => Date.now() - 1)()
     store.startTurn({ sessionId: "s1", userMessageId: promptId, assistantMessageId: assistantMessageIdForTurn(promptId), agent: "general",
       model: { providerID: "anthropic", modelID: "test" }, parts: [{ type: "text", text: "start four agents" }] })

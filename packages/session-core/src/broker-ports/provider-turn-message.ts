@@ -3,7 +3,7 @@ import type { ProviderTurnInput } from "@claxedo/harness/contract"
 
 export type ProviderTurnAuthor = { id: string; name: string; kind: "agent" }
 
-export function providerTurnNotice(input: ProviderTurnInput): string {
+export function providerTurnNotice(input: Exclude<ProviderTurnInput, { reason: "continuation" }>): string {
   if (input.reason === "goal") return input.detail ? `Goal: ${input.detail}` : "Goal"
   return input.detail ?? "Continued on its own"
 }

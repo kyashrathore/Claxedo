@@ -3,6 +3,7 @@ import { AsyncPushQueue } from "@claxedo/helpers"
 import { NO_BACKGROUND_WORK, sameBackgroundWork, type BackgroundWork } from "@claxedo/agent-runtime-contract"
 import type { RoutedEvent } from "../../contract"
 import { countBackgroundTasks, type ClaudeBackgroundTask } from "./between-turns"
+import { isClaudeOutsideTurnNotice } from "./translate/child-messages"
 import { claudeChildFrameKey } from "./events"
 import { createClaudeTaskLedger, createClaudeTranslatorMemory } from "./translate"
 import { ClaudeHeldFrames } from "./held-frames"
@@ -24,7 +25,7 @@ type Process = { kind: "launching" } | { kind: "open"; stream: Query } | { kind:
 
 type MirroredRequest = Parameters<ClaudeMirroredUsage["observe"]>[0]
 
-export type ClaudeBetweenTurns = { unclaimed: (notice: string | undefined) => void; child: (frame: SDKMessage) => Promise<void>; background: (work: BackgroundWork) => void }
+export type ClaudeBetweenTurns = { unclaimed: (current: () => boolean) => void; stage: (frame: SDKMessage) => () => Promise<void>; background: (work: BackgroundWork) => void }
 
 export class ClaudeUsageRelay {
   private current: ClaudeMirroredUsage | undefined
@@ -48,6 +49,7 @@ export class ClaudeLiveQuery {
   readonly memory = createClaudeTranslatorMemory()
   readonly usage = new ClaudeUsageRelay()
   readonly processes = new Set<ClaudeProcess>()
+  transcriptOwner: string | undefined
   private background = new Set<string>()
   private work = NO_BACKGROUND_WORK
   private readonly held = new ClaudeHeldFrames()
@@ -78,8 +80,9 @@ export class ClaudeLiveQuery {
     this.finish(error)
   }
 
-  claim(end: ClaudeClaimEnd): ClaudeClaim | undefined {
+  claim(end: ClaudeClaimEnd, assistantMessageId?: string): ClaudeClaim | undefined {
     if (this.frames.kind === "claimed") return undefined
+    if (assistantMessageId) this.transcriptOwner = assistantMessageId
     const claim: Claim = { sink: new AsyncPushQueue<ClaudeFrame>(), end, interrupted: false }
     this.frames = { kind: "claimed", claim }
     const { frames, dropped } = this.held.take()
@@ -148,7 +151,10 @@ export class ClaudeLiveQuery {
     this.process = { kind: "ended", ...(failure === undefined ? {} : { failure }) }
     this.replaceBackground([])
     if (this.frames.kind === "claimed") this.settle(this.frames.claim)
-    this.resolveEnded()
+    void this.delivered.then(() => this.resolveEnded(), (error: unknown) => {
+      this.process = { kind: "ended", failure: error }
+      this.resolveEnded()
+    })
   }
 
   private settle(claim: Claim): void {
@@ -178,15 +184,16 @@ export class ClaudeLiveQuery {
   }
 
   private hold(frame: ClaudeFrame): void {
-    if (frame.type !== "active_goal" && claudeChildFrameKey(frame, this.tasks) !== undefined) {
-      if (frame.type !== "stream_event") this.delivered = this.delivered.then(() => this.between.child(frame))
+    if (frame.type !== "active_goal" && (claudeChildFrameKey(frame, this.tasks) !== undefined || isClaudeOutsideTurnNotice(frame))) {
+      if (frame.type !== "stream_event") this.delivered = this.delivered.then(this.between.stage(frame))
       return
     }
     if (frame.type === "tool_progress" || (frame.type === "stream_event" && this.frames.kind === "idle")) return
     this.held.hold(frame)
     if (this.frames.kind !== "idle" || frame.type !== "system" || frame.subtype !== "init") return
-    this.frames = { kind: "announced" }
-    this.between.unclaimed(this.held.notice())
+    const announced = { kind: "announced" as const }
+    this.frames = announced
+    this.between.unclaimed(() => this.frames === announced)
   }
 
   private route(frame: ClaudeFrame): void {

@@ -91,6 +91,44 @@ test("a child-routed event that arrives while the parent has no turn reaches its
   expect(codes).toEqual(["child_event_route_unbound"])
 })
 
+test("outside reports retain their explicit execution owner and stable identity", async () => {
+  const { store, events } = setup()
+  const report = { type: "agent-message" as const, eventId: "handback-1", sender: "reviewer", message: "Report ready", senderTaskId: "task-1" }
+  await events.publishSessionEvent("s1", report, "t1")
+  await events.publishSessionEvent("s1", { ...report, eventId: "handback-2", message: "Second report" }, "t1")
+  await events.publishSessionEvent("s1", report, "t1")
+  const notices = store.getMessages("s1").flatMap((message) => message.parts).filter((part) => part.type === "notice")
+  expect(notices).toHaveLength(2)
+  expect(notices).toMatchObject([
+    { messageID: "t1", notice: { kind: "agent-message", sender: "reviewer", message: "Report ready", senderTaskId: "task-1" } },
+    { messageID: "t1", notice: { kind: "agent-message", message: "Second report" } },
+  ])
+  await expect(events.publishSessionEvent("s1", report, "foreign-message")).rejects.toThrow("does not belong")
+})
+
+test("outside completion notices have distinct stable part ids", async () => {
+  const { store, events } = setup()
+  for (const eventId of ["done-1", "done-2", "done-1"]) {
+    await events.publishSessionEvent("s1", { type: "harness-notice", eventId, code: "claude_sdk.task_notification", message: eventId }, "t1")
+  }
+  expect(store.getMessages("s1").flatMap((message) => message.parts).filter((part) => part.type === "notice"))
+    .toHaveLength(2)
+})
+
+test("replayed peer reports keep their persisted owner after continuation and broker recreation", async () => {
+  const { store, events, ports } = setup()
+  const report = { type: "agent-message" as const, eventId: "peer-uuid", sender: "reviewer", message: "Report ready" }
+  await events.publishSessionEvent("s1", report, "t1")
+  store.startTurn({ sessionId: "s1", assistantMessageId: "t2", agent: "general", parts: [] })
+  const delivery = new BrokerEventDelivery(store, createRuntimeEventHub())
+  const recreated = new BrokerSessionEvents(store, delivery, new BrokerBackgroundWork(store, delivery))
+  await recreated.publishSessionEvent("s1", report, "t2")
+  await ports.drainProviderEvent("s1", { turnId: "t2", assistantMessageId: "t2" }, { event: report })
+  const notices = store.getMessages("s1").flatMap((message) => message.parts).filter((part) => part.type === "notice")
+  expect(notices).toHaveLength(1)
+  expect(notices[0]).toMatchObject({ messageID: "t1", notice: { kind: "agent-message", message: "Report ready" } })
+})
+
 test("one broker subagent update commits once and reaches SSE once", async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "subagent-delivery-"))
   const store = openTestRuntimeStore(root)

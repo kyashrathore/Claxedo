@@ -12,6 +12,7 @@ import { translateContentBlockDelta, translateContentBlockStart, translateConten
 import { translateSystemMessage } from "./system-message"
 import type { ClaudeTrackedTask } from "./task-tracking"
 import { translateToolResults } from "./tool-results"
+import { claudeAgentMessage } from "./child-messages"
 import { createClaudeTranslatorMemory, type ClaudeTranslatorMemory } from "./translator-memory"
 
 type Frame = { message: Record<string, unknown>; state: ClaudeSdkAdapterState; event: ClaudeFrameEvent; context: HarnessEventAdapterContext;
@@ -36,8 +37,9 @@ function translateClaudeFrame(frame: Frame): ClaudeTranslation {
   switch (type) {
     case "stream_event":
       return translateStreamEvent(message.event as ClaudeSdkStreamEvent, frame)
-    case "user":
-      return translateToolResults(state, message)
+    case "user": {
+      return claudeAgentMessage(message, event) ?? translateToolResults(state, message)
+    }
     case "assistant":
       return translateAssistantMessage(message as Extract<SDKMessage, { type: "assistant" }>, message, state, event, memory)
     case "result":

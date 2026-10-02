@@ -8,7 +8,7 @@ import type { TurnAccount } from "./turn-account"
 import type { RuntimeDiagnostic } from "./diagnostics"
 import type { RawHarnessEvent } from "./raw-harness-event"
 
-export const AGENT_RUNTIME_EVENT_CONTRACT_VERSION = 7
+export const AGENT_RUNTIME_EVENT_CONTRACT_VERSION = 8
 
 export type RuntimeStatus = "busy" | "idle" | "error" | "recovering"
 export type RuntimeToolStatus = "pending" | "running" | "completed" | "failed"
@@ -100,7 +100,8 @@ export type AgentRuntimeEvent = RuntimeEventMeta & (
   | { type: "todo-update"; todos: Array<{ id: string; description: string; status: string; priority?: string }> }
   | { type: "session-status"; status: RuntimeStatus }
   | { type: "session-compaction"; phase: "started" | "completed"; reason?: string; summary?: string; metadata?: Record<string, unknown> }
-  | { type: "harness-notice"; code: string; message: string; severity?: RuntimeNoticeSeverity; details?: unknown }
+  | { type: "harness-notice"; code: string; message: string; severity?: RuntimeNoticeSeverity; details?: unknown; eventId?: string }
+  | { type: "agent-message"; eventId: string; sender: string; senderName?: string; message: string; senderTaskId?: string; sourceSessionId?: string }
   /** The harness is retrying a failed model request itself; `attempt` and `delayMs` only when it reports them. */
   | { type: "session-retry"; message: string; attempt?: number; delayMs?: number }
   /** The model began a response; the content after it, until the next start, is that response's. */
@@ -185,6 +186,7 @@ export const AGENT_RUNTIME_EVENT_TYPE_REGISTRY = {
   "session-status": true,
   "session-compaction": true,
   "harness-notice": true,
+  "agent-message": true,
   "session-retry": true,
   "response-start": true,
   "response-retracted": true,
@@ -246,6 +248,7 @@ export const AGENT_RUNTIME_EVENT_FACTORY_TYPES = {
   sessionStatus: "session-status",
   sessionCompaction: "session-compaction",
   harnessNotice: "harness-notice",
+  agentMessage: "agent-message",
   sessionRetry: "session-retry",
   responseStart: "response-start",
   responseRetracted: "response-retracted",
@@ -314,6 +317,7 @@ export const agentRuntimeEvent = {
   sessionStatus: (input) => ({ type: "session-status", ...input }),
   sessionCompaction: (input) => ({ type: "session-compaction", ...input }),
   harnessNotice: (input) => ({ type: "harness-notice", ...input }),
+  agentMessage: (input) => ({ type: "agent-message", ...input }),
   sessionRetry: (input) => ({ type: "session-retry", ...input }),
   responseStart: (input) => ({ type: "response-start", ...input }),
   responseRetracted: (input) => ({ type: "response-retracted", ...input }),

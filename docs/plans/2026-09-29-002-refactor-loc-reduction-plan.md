@@ -2,6 +2,8 @@
 
 Status: planned, not started. Baseline: `dev` at `79beb849fc`. Evidence reports: `~/test/claxedo-docs-recovered/loc-v2/`.
 
+Task scope updated October 1, 2026: [Task: durable wakes and session memory](2026-09-29-001-feat-tasks-plugin-on-pi-plan.md) retains existing Tasks, adds a shared task-scoped memory tool and one-time wakes, and runs sessions on existing local/cloud runtimes. Task replacement by a hosted plugin is superseded. Numeric targets below retain the original baseline and must be remeasured before use as ceilings: they no longer receive the former 5.6k server deletion or local/MCP Task deletion credit. Neither hosted Pi core, D16 nor a plugin backend platform is a prerequisite for this Task version.
+
 **Scope:** the hosted control plane, the session runtime, the machine agent, desktop main process, the relay, and the MCP, helpers, plugin API and script packages. **Out of scope:** the app and UI kit, the harness package, the marketing site, and native Tasks' app side. Each has its own owner and plan.
 
 ## 1. Target
@@ -34,10 +36,10 @@ The machine agent grows because it receives Pages' backend (6.9k) and the machin
 | | Pages' local backend moves to the machine agent (unchanged size) | −6.9k |
 | | One domain module over D1, with transcript bodies in R2 | ~−9.1k |
 | | Plugins as manifests plus the platform, with no plugin-specific D1 code | ~−6.0k |
-| | Native Tasks' server side (through the Tasks plan) | −5.6k |
+| | Existing Tasks' server side retained; durable wakes extend its current owners | Former −5.6k credit withdrawn |
 | | Delete the documents service deployment (its package, installation ledger and service contract) | −1.9k |
 | | Other rewrites, net of +5.3k new code (including org and team access and page sharing, §7.1.2) | ~−26.0k |
-| Runtime, machine, desktop, relay (−50.4k) | Delete managed processes, runtime `perf/`, relay bench, desktop diagnostics, the Bun relay, local Tasks, self-hosted execution | −14.9k |
+| Runtime, machine, desktop, relay (original −50.4k estimate) | Delete managed processes, runtime `perf/`, relay bench, desktop diagnostics, the Bun relay, self-hosted execution; retain local Tasks | Original −14.9k estimate needs remeasurement |
 | | Pages' backend arrives from the control plane | +6.9k |
 | | Turn row, one projection, one journal sequence (D3) | ~−9.5k |
 | | Machine agent in-process (D9) | ~−6.6k |
@@ -45,7 +47,7 @@ The machine agent grows because it receives Pages' backend (6.9k) and the machin
 | | Session routes from a contract table, plus a generated client | ~−3.2k |
 | | Other rewrites (PTY, status hooks, desktop packaging, CLI), net of ~+6.6k arriving or new (including local page shares) | ~−19.9k |
 | MCP, helpers, plugin API, script (−1.1k) | `claxedo-telemetry` deleted | −0.8k |
-| | MCP: the Tasks tool out; plugin-declared tools and page-share tools in | −0.1k |
+| | MCP: retain Tasks tools; plugin-declared tools and page-share tools remain separate additions | Original −0.1k estimate needs remeasurement |
 | | Helpers and script trimmed; the plugin API gains `claxedo.backend` | −0.2k |
 
 ## 2. What this design adds
@@ -54,16 +56,16 @@ New concepts and code, about +9.7k in total:
 
 | Addition | Where | Lines |
 |---|---|---:|
-| **Plugin backends.** A plugin can ship a Workers module the hosted Worker loads as a Dynamic Worker, one per organization. It comes with a supervisor Durable Object (auth, manifest check), Durable Object storage keyed by organization, a platform API (`sessions.start`/`status`, `placements.list`, `credentials.access`, `notify`), a `plugin.request` hosted operation for the desktop, and plugin-declared MCP tools. Tasks is the first user. | Control plane, plugin API, MCP, desktop | ~2.4k |
+| **Plugin backends, separate proposal.** Dynamic Worker loading, supervisor/storage, scoped platform APIs, desktop forwarding and plugin MCP tools require an independently scoped consumer and plan. Existing Tasks is not that consumer; durable wakes do not require this platform. | Control plane, plugin API, MCP, desktop | Original ~2.4k estimate; scope needs independent justification |
 | **Status-hook templates in plugin manifests** (§7.2.1). Terminal status for a CLI becomes data a plugin declares; Claxedo ships today's nine CLIs as first-party templates. | Plugin API, runtime, machine agent | ~0.3k |
 | **Storage rule (D15).** Global D1 holds only small shared facts plus a turn index and a bounded first page per session. Transcript bodies live in R2 as immutable page-sized objects (§7.1.1). Usage facts and audit go to append-only R2 files with a D1 daily rollup and retention. Short-lived tables get sweeps. | Control plane | ~0.9k |
 | **One scheduler on the hosted Worker,** shared by the sweeps and the cloud-workspace lifecycle | Control plane | in the above |
 | **Cloud-workspace lifecycle owner:** idle stop, reconcile, cleanup, delete, typed failure | Control plane | ~0.5k |
 | **boat.dev driver on the hosted path,** on boat.dev's v1 API | Control plane | ~0.5k |
-| **Runtime-neutral session core (D16).** One `session-core` package with no `node:*` import runs in `workspace-runtime` and in a task's Durable Object. The host supplies ports: SQLite with `transaction(fn)`, file root, attachments, placement, environment, and an instance-owned event hub. | `session-core` | ~0.2k of ports |
+| **Runtime-neutral session core (D16).** One `session-core` package with no `node:*` import runs in `workspace-runtime` and the shared hosted agent runtime's session objects. The host supplies ports: SQLite with `transaction(fn)`, file root, attachments, placement, environment, and an instance-owned event hub. | `session-core` | ~0.2k of ports |
 | **Store schema declared once.** The owner is a column on the session, and a store written by another schema is refused at open with a typed error. | `session-core` | net negative |
 | **`Principal` and `may()`:** one identity type and one authorization function with a route→action table | Control plane, runtime, relay | ~0.35k |
-| **`SessionRef`:** the server issues `{sessionId, workspaceId}` | Control plane | ~0.05k |
+| **`SessionRef`:** the server issues a session ID plus an explicit hosted-session or native-workspace placement reference; only native placement requires a workspace ID. Coordinate with hosted agent core; never invent a workspace for general chat. | Control plane | original ~0.05k estimate; remeasure for hosted placement |
 | **Organization invitations** | Control plane | ~0.25k |
 | **Org and team access, end to end** (§7.1.2). Org members can be listed, added, removed and given a role; a project is granted to a team or to one member; a team's grants and a project's access (with the source of each) can be listed; one canonical project-role query. Settings → Organization in the app is the app's lane. | Control plane, account contract, desktop allowlist | ~0.6k (+~0.4k if the SQLite twin gets it too, §8.6) |
 | **Private pages with sharing** (§7.1.2). A page records its creator and is private to them; shares go to a person or a team in the page's org, at view or edit; outside the org only a view-only link. One `authorizeDocument` check serves routes, MCP, the CLI, the relay and hydration. Hosted Pages is composed into the Worker for the first time. | Control plane, machine agent, MCP, CLI | ~1.4k |
@@ -80,7 +82,6 @@ New concepts and code, about +9.7k in total:
 | Claxedo MCP `processes` tools: agents run servers in a terminal instead | Agents that used managed processes |
 | The local "Total" usage figure from the token-tracker history scan (per-turn usage stays) | Local users |
 | Automatic recovery operations: a lost Codex thread or ACP session becomes a visible typed error, and recovery means cancelling the turn | Anyone whose harness session breaks mid-turn |
-| Native Tasks: Tasks becomes hosted-only, so an unsigned desktop and local-only projects have no Tasks | Unsigned and local-only users |
 | The `claxedo host` owner commands, directory-scoped headless hosts, and desktop→CLI single sign-on | CLI users of remote hosting |
 | The machine key moves from `safeStorage` to a 0600 file | Desktop users (invisible) |
 | Reading every page in a project as an org member: a page becomes private to its creator until shared, and project and org admins don't see private pages either (§8.8) | Org members and admins |
@@ -99,7 +100,7 @@ These go with nothing visible lost: the self-hosted Node server and Bun relay (t
 - **Machines:** local, other enrolled machines, cloud workspaces on Cloudflare and boat.dev, remote access through the Cloudflare relay.
 - **Workbench server side:** terminals, files, git and review, the Marketplace, usage, accounts and credentials, and credential-key rotation as a tooling script.
 - **Hosting:** the hosted Cloudflare Worker, which anyone can deploy to their own Cloudflare account with the first-owner claim.
-- **Tasks,** as a hosted plugin (`2026-09-29-001-feat-tasks-plugin-on-pi-plan.md`).
+- **Existing Tasks,** extended with a shared memory tool and durable wakes (`2026-09-29-001-feat-tasks-plugin-on-pi-plan.md`). Sessions continue on existing local/cloud runtimes; hosted services persist notes and wakes. Ordinary local-only Tasks remains available.
 
 ## 5. Design rules
 
@@ -132,7 +133,7 @@ Every change cites one of these:
 6. **`CONTROL_PLANE_DB` grows without pruning** in `session_messages`, `usage_turn_facts`, `authority_audit_events`, the turn lease, grant and producer tables, `runtime_access_tokens` and `host_signature_uses`. Audit is capped by count per deployment, so one organization's events evict another's.
 7. **The runtime store's schema upgrade is incomplete.** It relies on 29 `ALTER TABLE` statements (22 inside swallowing `try/catch`), `hasColumn` probes and a backfill. Columns added only in `CREATE TABLE` leave older files broken, and a missing `session_owner` row fails the session.
 8. **Two things block Durable Object hosting.**
-   - `bus.ts` pins the event bus on `globalThis`, and `target.ts` keeps a process-wide directory registry. Both would leak events across task objects that share an isolate.
+   - `bus.ts` pins the event bus on `globalThis`, and `target.ts` keeps a process-wide directory registry. Both would leak events across hosted session objects that share an isolate.
    - The store opens transactions as `BEGIN`/`COMMIT` SQL text, which Durable Object SQLite refuses.
 9. **Hosted Pages has never been deployed.**
    - The hosted Worker mounts no `/documents` routes and binds no documents bucket (`scripts/deploy/wrangler-config.ts`).
@@ -166,7 +167,7 @@ Every change cites one of these:
 | Pages, control-plane side (kept) | 465 | 465 | `documents/relay-http` and the local backend adapter |
 | Channels, control-plane side (kept as is) | 2,139 | 2,139 | `channels/*` and `d1/channel-runtime-authority.ts`, untouched |
 | Self-hosted Node, supervisor, fixtures | 9,483 | 0 | After e2e boots the hosted Worker |
-| Native Tasks | 5,576 | 0 | Tasks plan Phase 5 |
+| Existing Tasks | 5,576 | Retained; remeasure with wakes | No Task deletion phase; extend current domain/store/session bridge |
 | Hosted Pages backend | 2,941 | 3,800 | Composed into the Worker with a documents R2 bucket; creator, share store, `authorizeDocument`, share routes, public link route (§7.1.2) |
 | Documents service deployment, installation ledger, service contract | 1,914 | 0 | A separate deployment the plane never calls; delete with `.github/workflows/deploy-documents-service.yml` and the `service_*` tables |
 | Billing | 1,365 | 0 | Never composed |
@@ -276,6 +277,8 @@ Node reaches these files in 13 places. Each becomes a port that the host supplie
 
 **In a Durable Object host:** Pi's session owns the model conversation, and the session core's journal owns what clients read.
 
+The [hosted agent core proposal](2026-10-01-001-feat-hosted-agent-core-plan.md) owns a possible later Worker runtime and storage/event adapters. Current Task scope runs on existing local/cloud sessions and exposes durable notes through a memory tool. A future Pi runtime consumes that same memory service. D16 remains the owner of the runtime-neutral extraction, but does not block current Task memory/wakes.
+
 #### 7.2.1 Terminal status through plugin templates
 
 **Today:** `workspace-runtime/src/agent-hooks` (2.2k) reports running, waiting and done for agent CLIs started inside a Claxedo terminal tab. It knows nine CLIs, and each is hard-coded:
@@ -311,7 +314,6 @@ Every hook script calls `notify.template.sh`, which posts the event to `/api/wr/
   - New responsibilities add ~2.2k, including the plugin runtime that installs status-hook templates.
   - `process-ownership` stays at ~2.2k and takes launch ownership from the runtime. The CLI shrinks to ~1.5k.
   - Deleted:
-    - local Tasks;
     - self-hosted execution;
     - the Total scan;
     - the CLI's second host loop and `claxedo host` commands.
@@ -327,7 +329,7 @@ Every hook script calls `notify.template.sh`, which posts the event to `/api/wr/
 
 ### 7.4 MCP, helpers, plugin API, script: 14.1k → ~13.0k
 
-- **MCP:** loses `tools/tasks.ts`; gains plugin-declared tool forwarding and the page-share tools (`documents_share`, `documents_unshare`, `documents_list_shares`, link create and revoke).
+- **MCP:** retains existing Tasks tools, with wake commands added by that feature; plugin-declared tool forwarding and page-share tools (`documents_share`, `documents_unshare`, `documents_list_shares`, link create and revoke) remain separately scoped.
 - **Helpers:** test support moves out.
 - **Plugin API:** gains the `claxedo.backend` and `claxedo.statusHooks` manifest fields.
 - **`claxedo-telemetry`:** deleted.
@@ -453,8 +455,7 @@ Each phase ends when its criteria pass through real entrypoints: the hosted Work
 
 ### Phase 4: Plugins
 
-- [ ] Plugin backends and Tasks are carried out by `2026-09-29-001-feat-tasks-plugin-on-pi-plan.md`. Its Phase 1 runs in parallel with this plan's Phase 3 and agrees a table namespace with the session core's adapter up front. Its Phase 3 work runs wait for this plan's Phase 3 turn row. Progress:
-- [ ] Native Tasks' server side is removed, including its D1 migrations and SQLite store. Progress:
+Plugin backends no longer have their implementation scope in the Task plan; they require an independent plan before adoption. Existing Tasks and its stores/tools remain. Durable wake scheduling can reuse the shared scheduler work without waiting for plugin hosting. Shared Pi execution remains owned by `2026-10-01-001-feat-hosted-agent-core-plan.md` and coordinates its journal adapter with Phase 3.
 - [ ] **Status-hook templates (§7.2.1):**
   - `claxedo.statusHooks` has a schema and validation;
   - the engine installs a template through each of its three install kinds;
@@ -482,7 +483,7 @@ Each against its ceiling in §1:
 ## 10. Definition of done
 
 - [ ] Every in-scope component is at or under its §1 ceiling, enforced by the ratchet.
-- [ ] Nothing in `packages/` remains of: `self-hosted-node`, the Bun relay, native Tasks' server side, managed processes, desktop diagnostics, telemetry, the documents service or billing.
+- [ ] Nothing in `packages/` remains of: `self-hosted-node`, the Bun relay, managed processes, desktop diagnostics, telemetry, the documents service or billing. Existing Tasks is retained.
 - [ ] Pages, teams, the browser pane and channels work through their entrypoints:
   - org members, teams, and project access per team and per member are manageable end to end;
   - pages are private to their creator and shared per §7.1.2 through one `authorizeDocument`;
@@ -492,7 +493,7 @@ Each against its ceiling in §1:
 - [ ] No "team" string means anything org-wide (grep shown).
 - [ ] All nine CLIs report terminal status through first-party templates.
 - [ ] Global D1 holds no transcript, usage-fact or audit body (only turn index rows and bounded first pages), and every short-lived table has a sweep.
-- [ ] `session-core` has no `node:*` import and runs in `workspace-runtime` and in a task's Durable Object.
+- [ ] `session-core` has no `node:*` import and runs in `workspace-runtime` and shared hosted agent core session objects, serving general chat and Task through the same client contract.
 - [ ] A store from another schema is refused at open with a typed error.
 - [ ] Ratchets, typecheck, the affected packages' tests, and the app and harness e2e pass on the merge tip.
 - [ ] The architecture docs describe the result, and this plan is deleted.
@@ -512,10 +513,10 @@ Lanes run in parallel. Each lane is an Opus agent in its own worktree, with disj
 | Storage rule | `claxedo-server/src/**` transcript, usage, audit, sweeps, scheduler; `wrangler-config.ts` | After the staging measurement |
 | Session core | `workspace-runtime/src/{store.ts,session,projection,broker-ports,host,routes/session*,routes/events.ts,event-delivery.ts,bus.ts}` → `packages/session-core` | Schema reset immediately; ports after it |
 | Status-hook templates | `workspace-runtime/src/agent-hooks/**`, `claxedo-plugin-api` manifest | After Phase 1 |
-| Tasks | as `2026-09-29-001` §8 | Its own gates |
+| Task memory and durable wakes | Existing Tasks domain/store, MCP tools, hosted clock and native session admission; see `2026-09-29-001` | Independent of hosted Pi, D16 and plugin hosting |
 | Foundation | `claxedo-server-core/src/platform/auth/**`, `sandbox-manager/**` | After the scheduler and the Access model land |
 
-Two results can change this plan, and each is scheduled first in its lane: whether the store suite passes on Durable Object SQLite (Phase 3), and the Tasks plan's facet gate (Phase 4).
+The Durable Object SQLite store gate (Phase 3) can change this plan. The previous Task facet gate is superseded; durable wakes do not introduce Task facets or per-task runtime objects.
 
 ## 12. Risks
 

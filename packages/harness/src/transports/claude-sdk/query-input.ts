@@ -56,6 +56,7 @@ export class ClaudeQueryInput {
 
   observe(message: SDKMessage): string[] | undefined {
     if (message.type !== "user" || !("isReplay" in message) || !message.isReplay) return undefined
+    if (message.origin?.kind === "peer") return undefined
     const incorporated: string[] = []
     for (const item of this.pending) {
       if (item.uuid !== message.uuid) continue

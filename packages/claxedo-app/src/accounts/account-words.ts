@@ -98,17 +98,18 @@ export function storedAccountWords(words: Words, row: HarnessAccount, live: Live
   }
 }
 
-export function orgAccountWords(words: Words, harness: Harness, snapshot: AccountsSnapshot, chosen: boolean): AccountWords {
+export function orgAccountWords(words: Words, harness: Harness, snapshot: AccountsSnapshot, chosen: boolean, removable: boolean): AccountWords | undefined {
   const { t } = words
   const row = orgAccountOf(harness, snapshot)
   if (row === undefined) {
+    if (!chosen) return undefined
     const unavailable = t("settings.providers.accountSource.unavailable", { name: harness.label })
     return {
       key: ORG_ACCOUNT_KEY,
       ids: [],
       label: t("settings.providers.accountSource.org"),
-      detail: chosen ? unavailable : t("settings.providers.accountSource.missing"),
-      ...(chosen ? { alert: unavailable } : {}),
+      detail: unavailable,
+      alert: unavailable,
       refused: false,
       machine: false,
       disabled: true,
@@ -119,7 +120,7 @@ export function orgAccountWords(words: Words, harness: Harness, snapshot: Accoun
   const reach = accountReach(row.delivery)
   return {
     key: ORG_ACCOUNT_KEY,
-    ids: [],
+    ids: removable ? row.ids : [],
     label: accountLabel(row),
     detail: [t("settings.providers.accountSource.org"), ...verdictWords(t, check), ...windowWords(words, check?.usage)].join(" · "),
     ...(alert === undefined ? {} : { alert }),
