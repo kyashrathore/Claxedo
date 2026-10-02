@@ -1,5 +1,4 @@
 import type { SessionTitleRequest } from "@claxedo/agent-runtime-contract"
-import { settleAtRequestDeadline } from "@claxedo/helpers"
 import { TransportError } from "../../contract/errors"
 import { installPiExtension, piExtensionPath, piRegisteredCommands } from "./extension"
 import type { PiRpc } from "./rpc"
@@ -54,9 +53,7 @@ export async function piSessionTitle(rpc: PiRpc, stateRoot: string, request: Ses
   })
   try {
     const argument = JSON.stringify({ system: request.system, user: request.user })
-    await settleAtRequestDeadline("Pi title", { signal: deadline.signal, deadlineAt: deadline.at },
-      rpc.request("prompt", { message: `/${PI_TITLE_COMMAND} ${argument}` }, Math.max(1, deadline.at - Date.now())),
-      () => {}, (label, aborted) => new TransportError("pi", "timeout", `${label} ${aborted ? "was abandoned" : "timed out"}`))
+    await rpc.request("prompt", { message: `/${PI_TITLE_COMMAND} ${argument}` }, deadline)
     if (failure) throw new TransportError("pi", "protocol", failure)
     return name
   } finally { stop() }
