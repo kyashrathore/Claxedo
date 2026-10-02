@@ -61,3 +61,37 @@ test("a finished child that a later message wakes while its parent is idle opens
     expect(f.store.readTurnAuthority(woken!.sessionId)).toBeUndefined()
   } finally { await f.dispose() }
 })
+
+test("a background child that finishes while its parent is idle publishes its own idle", async () => {
+  const { f, session } = await idleParent()
+  try {
+    const child = await session.observeSubagent(observation("thread-child"))
+    session.associateChild("thread-child", child!)
+    const idled: string[] = []
+    const unsubscribe = f.eventHub.subscribeGlobal(({ payload }) => {
+      if (payload.type === "session.idle") idled.push(payload.properties.sessionID)
+    })
+    try {
+      await session.observeSubagent(observation("thread-child", "completed"))
+      expect(idled).toEqual([child!.sessionId])
+    } finally { unsubscribe() }
+  } finally { await f.dispose() }
+})
+
+test("a child whose own stream finished its reply while its parent is idle settles without a second idle", async () => {
+  const { f, session } = await idleParent()
+  try {
+    const child = await session.observeSubagent(observation("thread-child"))
+    session.associateChild("thread-child", child!)
+    const idled: string[] = []
+    const unsubscribe = f.eventHub.subscribeGlobal(({ payload }) => {
+      if (payload.type === "session.idle") idled.push(payload.properties.sessionID)
+    })
+    try {
+      await session.publishChild({ event: { type: "finish", sessionId: child!.sessionId }, route: { kind: "child", correlationKey: "thread-child" } })
+      await session.observeSubagent(observation("thread-child", "completed"))
+      expect(idled).toEqual([child!.sessionId])
+      expect(f.store.getSession(child!.sessionId)?.lastTurn?.status).toBe("completed")
+    } finally { unsubscribe() }
+  } finally { await f.dispose() }
+})
