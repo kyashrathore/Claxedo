@@ -13,7 +13,7 @@ export async function d1Authority() {
   return {
     authority,
     database: backing.database,
-    dispose: backing.dispose,
+    dispose: () => backing.dispose(),
     signIn: (subject: string) => signedD1Identity(authority, subject),
     addMember: (owner: SignedControlPlaneAuth, member: SignedControlPlaneAuth, orgId: string) =>
       inviteOrgMember(backing.database, owner, { userPublicId: member.principal!.userId, orgId, role: "member" }),

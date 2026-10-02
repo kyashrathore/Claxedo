@@ -58,7 +58,7 @@ beforeAll(async () => {
   for (const sql of betterAuthNativeClientProvisioningStatements(API, ciphertext)) await authDatabase.prepare(sql).run()
   const controlPlane = await miniflareControlPlaneDatabase(controlPlaneMigrations())
   const keys = await generateKeyPair("EdDSA", { extractable: true })
-  disposeControlPlane = controlPlane.dispose
+  disposeControlPlane = () => controlPlane.dispose()
   controlPlaneDatabase = controlPlane.database
   const composed = composeBetterAuthD1UserDeployedControlPlane({
     env: {

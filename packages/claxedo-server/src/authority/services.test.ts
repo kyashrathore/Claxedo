@@ -1,5 +1,3 @@
-import fs from "node:fs"
-import path from "node:path"
 import { describe, expect, test, vi } from "vitest"
 import type { SessionMeta } from "@claxedo/server-core/session/meta/index"
 import type { SessionWriteMode } from "@claxedo/server-core/platform/runtime/profile"

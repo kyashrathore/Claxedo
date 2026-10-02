@@ -197,15 +197,6 @@ describe("hosted pull: snapshot validation", () => {
     return { ...snapshot, session: { id: "session-1", title: "Settled title", time: { created: 100, updated: 200 } } }
   }
 
-  function httpRuntime(snapshot: unknown) {
-    return async (input: { path: string }) => {
-      if (input.path === "/global/health") return Response.json({ workspaceId: "ws_1" })
-      if (input.path === "/session/session-1") return Response.json({ id: "session-1", title: "Settled title", time: { created: 100, updated: 200 } })
-      if (input.path === "/session/session-1/message?snapshot=1") return Response.json(snapshotWithSession(snapshot) as never)
-      return new Response("not found", { status: 404 })
-    }
-  }
-
   function hostedRuntime(svc: ControlPlaneServices, snapshot: unknown) {
     return stubHostedTransport(svc, (path) => {
       if (path === "/global/health") return Response.json({ workspaceId: "ws_1" })
@@ -240,7 +231,7 @@ describe("hosted pull: snapshot validation", () => {
     expect(authority.upsertSessionVisibility).not.toHaveBeenCalled()
   })
 
-  test.each(["hosted"] as const)("%s rejects a checkpoint for a different embedded session", async (flow) => {
+  test("hosted rejects a checkpoint for a different embedded session", async () => {
     const svc = services()
     svc.authority = presentAuthority() as never
     const snapshot = {
@@ -269,7 +260,7 @@ describe("hosted pull: snapshot validation", () => {
     expect(svc.projectionStore.sync_session_meta).not.toHaveBeenCalled()
   })
 
-  test.each(["hosted"] as const)("%s rejects a checkpoint without embedded session metadata", async (flow) => {
+  test("hosted rejects a checkpoint without embedded session metadata", async () => {
     const svc = services()
     svc.authority = presentAuthority() as never
     const snapshot = { messages, maxEventOrdinal: 12 }
@@ -332,9 +323,9 @@ describe("hosted pull: snapshot validation", () => {
     },
   )
 
-  test.each(["hosted"] as const)(
-    "%s authority sync never synthesizes a newer producer from projection state",
-    async (flow) => {
+  test(
+    "hosted authority sync never synthesizes a newer producer from projection state",
+    async () => {
       const svc = services()
       const authority = presentAuthority()
       const older = [{ info: { id: "msg-old", role: "assistant" }, parts: [] }]

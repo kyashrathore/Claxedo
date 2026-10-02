@@ -10,7 +10,6 @@
  * Registry does not have to rediscover the proxy contract.
  */
 
-import { Hono } from "hono"
 import { describe, expect, test } from "vitest"
 import { requireRuntimeProxyActor, runtimeProxyResponseHeaders } from "@claxedo/local-server/workspace/runtime-dispatch/internals"
 import { routeOwnership, routeRules, RouteDomain, RouteHandler } from "@claxedo/server-core/platform/governance/route-ownership"

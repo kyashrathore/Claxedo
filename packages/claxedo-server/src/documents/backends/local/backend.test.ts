@@ -10,7 +10,6 @@ import { Hono } from "hono"
 import { DocumentsRoutes } from "@claxedo/server-core/documents/routes/index"
 import { ClaxedoDB } from "../../../platform/db"
 import { d1Authority } from "../../../test-support/d1-authority"
-import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import { disposeHydratedSessionDocuments, hydratedSessionDocumentPaths, syncHydratedSessionDocuments } from "@claxedo/server-core/documents/session-hydration"
 import { createLocalDocumentsBackend, type LocalDocumentsBackendDependencies } from "@claxedo/server-core/documents/backends/local/backend"
 
