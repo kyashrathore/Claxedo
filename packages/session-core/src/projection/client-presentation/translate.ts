@@ -8,7 +8,7 @@ import { projectHarnessDiagnostic } from "./harness-diagnostics"
 import { projectNotice } from "./notices"
 import { enterResponse, retractResponses, WITHDRAWN_TOOL } from "./responses"
 import { projectRetry } from "./retry"
-import { deltaText, userMessageText } from "./text-parts"
+import { deltaText } from "./text-parts"
 import {
   translateToolContent,
   translateToolError,
@@ -114,14 +114,6 @@ export function translateRuntimeEventToCompat(chunk: AgentRuntimeEvent, ctx: Com
 
     case "thinking-delta":
       return deltaText(ctx, "reasoning", chunk.delta, now)
-
-    case "user-message-delta": {
-      const content = chunk.content
-      if (!chunk.messageId || content.type !== "text") {
-        return [lossyCompatDiagnostic(ctx, chunk.type, "OpenCode compatibility projection cannot represent streamed user message chunks", chunk)]
-      }
-      return userMessageText(ctx, chunk.messageId, content.text, now)
-    }
 
     case "proposed-plan-delta": {
       ctx.proposedPlanText += chunk.delta

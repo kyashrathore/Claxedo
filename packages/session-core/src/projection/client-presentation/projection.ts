@@ -63,7 +63,6 @@ function boundRetainedState(state: ClientPresentationProjectionState) {
 function syncState(ctx: CompatContext, state: ClientPresentationProjectionState) {
   state.assistantMsgId = ctx.assistantMsgId
   state.announcedAssistantMsgId = ctx.announcedAssistantMsgId
-  state.announcedUserMsgId = ctx.announcedUserMsgId
   state.agentId = ctx.agentId
   state.accumulatedText = ctx.accumulatedText
   state.accumulatedThinkingText = ctx.accumulatedThinkingText
