@@ -81,8 +81,8 @@ export function workspaceDurableState(input: {
     if (["GET", "HEAD", "OPTIONS"].includes(method) || !reconciliation) return undefined
     const settled = await reconciliation
     if (settled.unresolved.length === 0) return undefined
-    const unresolved = settled.unresolved.map((row) => `${row.launchId} (${row.outcome}: ${row.reason})`).join("; ")
-    return Response.json({ error: `workspace_launch_unreconciled: ${unresolved}` }, { status: 503 })
+    const launches = settled.unresolved.map(({ launchId, role, outcome, reason }) => ({ launchId, role, outcome, reason }))
+    return Response.json(errorBody("workspace_launch_unreconciled", "Launches a previous owner of this workspace left are unresolved", { launches }), { status: 503 })
   }
 
   return {
