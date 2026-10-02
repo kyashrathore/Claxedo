@@ -1,21 +1,9 @@
 import { createEffect, type Accessor } from "solid-js"
-import type { AccountBinding, ControlPlaneAccess, AccountSession } from "./binding"
-import type { BrowserAuthMethod, BrowserAuthSignInOptions, BrowserAuthSignUpOptions } from "./browser-auth"
-import type { AuthUser } from "./display-user"
+import type { AccountBinding, AccountSession } from "./binding"
 import { authMachine, type AuthState } from "./model"
 
-export type Auth = {
+export type Auth = Omit<AccountSession, "loading"> & {
   readonly state: Accessor<AuthState>
-  readonly user: Accessor<AuthUser | null>
-  readonly methods: Accessor<readonly BrowserAuthMethod[]>
-  readonly unavailable: Accessor<string | null>
-  readonly identityResolving: Accessor<boolean>
-  readonly offered: (serverIssuesSessions: boolean) => boolean
-  readonly signIn: (options?: BrowserAuthSignInOptions) => Promise<void>
-  readonly signUp: (options?: BrowserAuthSignUpOptions) => Promise<void>
-  readonly signOut: () => Promise<void>
-  readonly refresh: () => Promise<void>
-  readonly controlPlane: ControlPlaneAccess
 }
 
 function followSession(session: AccountSession, auth: ReturnType<typeof authMachine>) {
