@@ -536,7 +536,8 @@ describe("store broker ports", () => {
     store.releaseTurnLease("s1", first)
     const prompted = store.acquireTurnLease("s1")
     if (!prompted) throw new Error("Missing prompted lease")
-    const promptId = createMessageIds()()
+    // Separate generators minting in one millisecond order only by their random suffix.
+    const promptId = createMessageIds(() => Date.now() - 1)()
     store.startTurn({ sessionId: "s1", userMessageId: promptId, assistantMessageId: assistantMessageIdForTurn(promptId), agent: "general",
       model: { providerID: "anthropic", modelID: "test" }, parts: [{ type: "text", text: "start four agents" }] })
     store.finishTurn({ sessionId: "s1", assistantMessageId: assistantMessageIdForTurn(promptId), leaseId: prompted, outcome: { status: "completed", completedAt: 20 } })
@@ -554,7 +555,7 @@ describe("store broker ports", () => {
     expect(opening?.info).toMatchObject({ role: "user", claxedo: { author: { id: "harness:claude", name: "Claude Code", kind: "agent" } } })
     expect(opening?.parts).toMatchObject([{ type: "text", text: "Agent \"Audit\" finished" }])
     expect(reply?.info).toMatchObject({ id: admitted.turn.assistantMessageId, role: "assistant", parentID: opening?.info.id })
-    const laterPromptId = createMessageIds()()
+    const laterPromptId = createMessageIds(() => Date.now() + 1)()
     expect([laterPromptId, opening!.info.id, promptId].sort()).toEqual([promptId, opening!.info.id, laterPromptId])
     expect(store.getMessagePage("s1", { view: "latest-turn" })?.messages.map((message) => message.info.id))
       .toEqual([opening?.info.id, admitted.turn.assistantMessageId])
