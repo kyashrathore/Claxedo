@@ -42,7 +42,7 @@ test.each([
     writeFileSync(path.join(leases, String(live)), liveHolder)
     if (reclaiming) mkdirSync(path.join(leases, `${live}.reclaim`))
     writeFileSync(path.join(leases, String(dead)), String(UNASSIGNABLE_PID))
-    const env: Record<string, string | undefined> = { ...process.env, TMPDIR: tmp, CLAXEDO_E2E_PORT_RANGE: `${live}-${dead}` }
+    const env: Record<string, string | undefined> = { ...process.env, TMPDIR: tmp, TMP: tmp, TEMP: tmp, CLAXEDO_E2E_PORT_RANGE: `${live}-${dead}` }
     delete env.CLAXEDO_E2E_DAEMON_PORT
     const child = Bun.spawn([process.execPath, "-e", `
       import { existsSync, readFileSync } from "node:fs"
