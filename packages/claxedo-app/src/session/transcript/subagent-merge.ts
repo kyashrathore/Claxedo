@@ -42,6 +42,12 @@ function mergeFields(entry: SessionSubagent, update: Subagent): SessionSubagent 
 function mergeStatus(entry: SessionSubagent, update: Subagent): SessionSubagent {
   const status = update.status
   if (status === undefined) return entry
+  if (update.runRevision !== undefined && update.runRevision < (entry.revisions.run ?? 0)) return entry
+  if (update.revision < (entry.revisions.run ?? 0)) return entry
+  if (update.runRevision !== undefined && update.runRevision > (entry.revisions.run ?? 0) && update.revision > (entry.revisions.status ?? 0)) {
+    const next = withField(entry, "status", status, update.revision)
+    return { ...next, revisions: { ...next.revisions, run: update.runRevision } }
+  }
   const settled = entry.status !== undefined && TERMINAL.has(entry.status)
   if (settled && !TERMINAL.has(status)) return entry
   if (TERMINAL.has(status) && !settled) return withField(entry, "status", status, update.revision)

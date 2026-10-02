@@ -59,9 +59,10 @@ export function publishTurnFailure(
   publishGlobal(withDir(envelopeDirectory(directory, sessionId), sessionError(streamTurnErrorMessage(error), sessionId)))
 }
 
-export async function settleChildTurn(opts: Opts, sessionId: string, directory: RuntimeDirectory) {
+export async function settleChildTurn(opts: Opts, sessionId: string, directory: RuntimeDirectory, turnId: string | undefined) {
+  if (!turnId) return
   try {
-    await opts.childSessions?.onTurnSettled(sessionId, directory)
+    await opts.childSessions?.onTurnSettled(sessionId, directory, turnId)
   } catch (error) {
     console.error(`child session bookkeeping for ${sessionId} failed`, error)
   }
@@ -304,7 +305,7 @@ export function createPromptAdmission(opts: Opts, requestErrorResponse: (err: un
         if (result.ok) return c.json({ delivery: "steer" })
         return c.json({ ...result, error: result.message }, result.status === "pending" || result.status === "unknown" ? 202 : 409)
       }
-      const lostTurn = captureTurnTarget()
+      const lostTurn = captureTurnTarget((target) => opts.childSessions?.onTurnStarted(id, directory, target.turnId))
       const turnAdmission = await acquireManagedPromptLease({
         opts,
         c,
@@ -334,7 +335,6 @@ export function createPromptAdmission(opts: Opts, requestErrorResponse: (err: un
         actor: access.actor,
         author: access.author,
       })
-      await opts.childSessions?.onTurnStarted(id, directory)
       // The turn runs detached: the response must not wait for the model.
       admittedForExecution = true
       const admissionAck = awaitAdmissionAck(admission)
@@ -358,7 +358,7 @@ export function createPromptAdmission(opts: Opts, requestErrorResponse: (err: un
             }
           }
           await turnAdmission.lease?.release().catch(() => undefined)
-          await settleChildTurn(opts, id, directory)
+          await settleChildTurn(opts, id, directory, lostTurn.get()?.turnId)
         }
       })()
       const admissionError = await admissionAck

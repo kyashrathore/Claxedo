@@ -41,6 +41,7 @@ The corpus holds the transcript's behavior still: every case renders the same as
 - `partKinds` lists what the transcript contains, so the corpus can be checked for every part kind the agents produce.
 - `replay.turns` are played in order through the scripted ACP agent; each turn's `steps` are an `AcpStep[]` (see `e2e/README.md`), and `{{workspace}}` becomes the case's workspace folder. A turn with an `error` step is sent without waiting and settles when its assistant message completes or fails.
 - `replay: { "agent": "claude", "scenario": "child-message-event" }` runs the native Claude CLI against the scripted model boundary, creates a background Agent, and receives its SendMessage delivery.
+- `replay: { "agent": "claude", "scenario": "host-child-followup" }` sends two turns through a Claxedo-created child and verifies both attributed parent wakes and their persisted results after reload.
 - `ready` is text the last turn shows; the case waits for it before comparing.
 - Turns are sent with ascending message ids, as the app sends them: the app orders a transcript by message id, and the runtime gives a prompt without one a random id.
 - A session opens on its first page: every turn arrives with every part, each tool as its row header unless the reader's settings open it, and a turn the fold folds is drawn under its "Worked for …" header. Nothing is read after it until the case acts.

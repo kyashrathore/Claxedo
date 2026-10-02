@@ -1425,7 +1425,7 @@ export function createSessionRoutes(opts: Opts) {
         if (result.ok) return c.json({ delivery: "steer", messageID: body.messageID })
         return c.json({ ...result, error: result.message }, result.status === "pending" || result.status === "unknown" ? 202 : 409)
       }
-      const lostTurn = captureTurnTarget()
+      const lostTurn = captureTurnTarget((target) => opts.childSessions?.onTurnStarted(id, directory, target.turnId))
       const turnAdmission = await acquireManagedPromptLease({
         opts,
         c,
@@ -1437,7 +1437,6 @@ export function createSessionRoutes(opts: Opts) {
       const activeTurn = opts.createActiveTurnScope
         ? turnScope(opts.createActiveTurnScope({ c, directory, sessionId: id }), turnAdmission.lease)
         : undefined
-      await opts.childSessions?.onTurnStarted(id, directory)
       try {
         const turn = await (async () => {
         try {
@@ -1456,7 +1455,7 @@ export function createSessionRoutes(opts: Opts) {
               })
         } finally {
           if (!turnAdmission.lease?.lost()) await flushDocumentsAfterTurn(opts, id)
-          await settleChildTurn(opts, id, directory)
+          await settleChildTurn(opts, id, directory, lostTurn.get()?.turnId)
         }
         })()
         if (turnAdmission.lease?.lost() || (turnAdmission.lease && !turnAdmission.lease.valid())) {

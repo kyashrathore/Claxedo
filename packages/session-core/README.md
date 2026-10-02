@@ -1,5 +1,7 @@
 # Session core
 
+Host-created child follow-ups use the admitted runtime turn ID as their durable run correlation. `subagent-status.ts` assigns and reads the run's revision; the stored row, emitted events and snapshots carry it so late results cannot settle a newer run. `session-children.ts` reads the finishing turn's messages by `parentID` and records an immutable `wakeResult` with its completion observation. `subagent-wakes.ts` reads undelivered results and matches each to its `wakeReceipt`, preserving multiple results while the parent is busy and across store reopen. Admission computes the projected wake state inside the same transaction as the receipt. Existing pending records retain their established read contract; new completions always record their result before another run can replace the displayed child status. Nested host children remain disallowed.
+
 `@claxedo/session-core` owns session storage, harness orchestration, projection,
 session HTTP routes and event delivery. Its composition entry is `.`;
 `./access-policy` exports only the session route classification and access

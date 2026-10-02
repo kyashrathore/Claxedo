@@ -220,7 +220,9 @@ export function SessionRoutes(runtimeFor: () => Promise<AgentRuntime>, options: 
     }
     let runtime: AgentRuntime | undefined
     let lease: ActiveSessionTurnLease | undefined
-    const lostTurn = captureTurnTarget()
+    const lostTurn = captureTurnTarget((target) => input.body.delivery !== "steer"
+      ? childSessions?.onTurnStarted(input.sessionId, input.directory, target.turnId)
+      : undefined)
     const access = {
       ...(relayed ? { actor: relayed.actor, authority: relayed.authority } : {}),
       operation: "prompt" as const,
@@ -255,7 +257,6 @@ export function SessionRoutes(runtimeFor: () => Promise<AgentRuntime>, options: 
     }
     try {
       runtime = await runtimeFor()
-      if (input.body.delivery !== "steer") await childSessions?.onTurnStarted(input.sessionId, input.directory)
     } catch (error) {
       await lease?.release()
       throw error
@@ -298,7 +299,7 @@ export function SessionRoutes(runtimeFor: () => Promise<AgentRuntime>, options: 
         .then(async () => {
           if (actualDelivery !== "start" || lease?.lost()) return
           await options.flushSessionDocuments?.(input.sessionId).catch((error) => console.error("queued turn document flush failed", error))
-          if (!input.onSettled) await childSessions?.onTurnSettled(input.sessionId, input.directory)
+          if (!input.onSettled) await childSessions?.onTurnSettled(input.sessionId, input.directory, lostTurn.get()?.turnId)
         })
         .finally(() => lease?.release())
         .then(() => input.onSettled?.(), (error: unknown) => {

@@ -6,6 +6,7 @@ import { expectDetachedGrowthAtMost, expectHeapGrowthAtMost, expectRowsKept, mar
 import { switchSessions } from "../corpus/switch"
 import { playChildMessageEvent } from "../harness/child-message-event"
 import { playAgentAuthoredMessage } from "../harness/agent-authored-message"
+import { playHostChildFollowup } from "../harness/host-child-followup"
 import { expectWritesAtMost, watchWrites } from "../corpus/writes"
 import { acpScriptToken, expect, SCRIPTED_ACP_HARNESS, sessionRoute, test, type AcpStep, type ClaxedoApi, type MessageRow, type Stack } from "../harness"
 
@@ -14,7 +15,7 @@ const LIVE_DURATIONS_STYLE = path.join(import.meta.dirname, "..", "corpus", "liv
 const TURN_TIMEOUT = 30_000
 const TALL_VIEWPORT = 1600
 const CLOCK_TIME = /\b\d{1,2}:\d{2}\s?(?:AM|PM)\b/g
-const UUID = /\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/g
+const UUID = /(?<![0-9a-f])[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}(?![0-9a-f])/g
 const LIVE_DURATION = /(· |Worked for )\d+(?:h \d+m|m \d+s|ms|s|m|h)\b/g
 const HELD_IMAGE = "/held-image.png"
 
@@ -70,6 +71,7 @@ async function playTurn(stack: Stack, api: ClaxedoApi, target: Target, turn: Cas
 
 async function arrange(stack: Stack, api: ClaxedoApi, corpusCase: CorpusCase) {
   if (corpusCase.replay.agent === "claude") {
+    if (corpusCase.replay.scenario === "host-child-followup") return playHostChildFollowup(stack, api)
     return corpusCase.replay.scenario === "agent-authored-message"
       ? playAgentAuthoredMessage(stack, api)
       : playChildMessageEvent(stack, api)

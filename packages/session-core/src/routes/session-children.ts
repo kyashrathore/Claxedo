@@ -26,7 +26,12 @@ export type HostChildRow = {
 
 export type ChildWakeAuthor = { id: string; name: string; kind: "agent" }
 
-export type PendingChildWake = { parentSessionId: string; childSessionId: string; directory: string }
+export type PendingChildWake = {
+  parentSessionId: string
+  childSessionId: string
+  directory: string
+  result?: { observationId: string; summary: NonNullable<SubagentObservation["wakeResult"]> }
+}
 
 /**
  * Where the identity behind a child outlives the request that created it.
@@ -85,8 +90,8 @@ export type ChildSessionHost = {
     /** The creating request's verified identity, which the completion wake later runs as. */
     origin?: SessionTurnOrigin
   }): Promise<{ subagentKey: string }>
-  onTurnStarted(sessionId: string, directory: RuntimeDirectory): Promise<void>
-  onTurnSettled(sessionId: string, directory: RuntimeDirectory): Promise<void>
+  onTurnStarted(sessionId: string, directory: RuntimeDirectory, turnId: string): Promise<void>
+  onTurnSettled(sessionId: string, directory: RuntimeDirectory, turnId?: string): Promise<void>
   /** Re-offers every wake still pending, once, after a restart. */
   recover(): Promise<void>
   /** Refuses new background work and waits for what is already running. */
@@ -97,6 +102,7 @@ export function createChildSessionHost(input: ChildSessionHostInput): ChildSessi
   const admit = (parentSessionId: string, _directory: string, observation: SubagentObservation) =>
     input.admit(parentSessionId, observation)
   const offering = new Set<string>()
+  const settledWhileOffering = new Set<string>()
   const creations = new Map<string, Promise<void>>()
   const pendingAttention = new Map<string, Set<string>>()
   let recovered: Promise<void> | undefined
@@ -132,9 +138,12 @@ export function createChildSessionHost(input: ChildSessionHostInput): ChildSessi
     try {
       const parent = await input.getSession(parentSessionId, directory)
       if (!parent || parent.time?.archived !== undefined || parent.status === "busy") return
-      const next = (await children(parentSessionId, directory)).find((row) => row.wake === "pending")
-      if (!next) return
-      const summary = childSummary(await input.getMessages(next.childSessionId, directory) ?? [])
+      const pending = (await input.pendingWakes()).filter((wake) => wake.parentSessionId === parentSessionId && wake.directory === directory)
+      const wake = pending[0]
+      if (!wake) return
+      const next = (await children(parentSessionId, directory)).find((row) => row.childSessionId === wake.childSessionId)
+      if (!next || (!wake.result && next.wake !== "pending")) return
+      const summary = wake.result?.summary ?? childSummary(await input.getMessages(next.childSessionId, directory) ?? [])
       const origin = await input.origins?.read(parentSessionId, next.subagentKey)
       // Disposal may have begun while this offer was reading. Starting a turn
       // now would ask a closing workspace for an adapter it refuses to build.
@@ -149,6 +158,10 @@ export function createChildSessionHost(input: ChildSessionHostInput): ChildSessi
         author: { id: next.childSessionId, name: next.label ?? "Subagent", kind: "agent" },
         ...(origin ? { origin } : {}),
         onSettled: () => {
+          if (offering.has(parentSessionId)) {
+            settledWhileOffering.add(parentSessionId)
+            return
+          }
           void track(offerWakes(parentSessionId, directory)).catch((error) => {
             console.error(`child session wake for ${parentSessionId} failed after turn`, error)
           })
@@ -156,12 +169,14 @@ export function createChildSessionHost(input: ChildSessionHostInput): ChildSessi
       })
       if (started !== "started") return
       await admit(parentSessionId, directory, {
-        observationId: `host:wake:delivered:${next.childSessionId}:${crypto.randomUUID()}`,
+        observationId: `host:wake:delivered:${wake.result?.observationId ?? crypto.randomUUID()}`,
         subagentKey: next.subagentKey,
         wake: "delivered",
+        ...(wake.result ? { wakeReceipt: wake.result.observationId } : {}),
       })
     } finally {
       offering.delete(parentSessionId)
+      if (settledWhileOffering.delete(parentSessionId)) await offerWakes(parentSessionId, directory)
     }
   }
 
@@ -227,17 +242,20 @@ export function createChildSessionHost(input: ChildSessionHostInput): ChildSessi
       if (origin) await input.origins?.record(parentSessionId, event.subagentKey, origin)
       return { subagentKey: event.subagentKey }
     },
-    async onTurnStarted(sessionId, directory) {
+    async onTurnStarted(sessionId, directory, turnId) {
       if (stopped) return
       const row = await childOf(sessionId, directory)
-      if (stopped || !row || row.status !== "pending") return
+      if (stopped || !row) return
       await admit(row.parentSessionId, requireDirectory(directory), {
-        observationId: `host:running:${sessionId}:${crypto.randomUUID()}`,
+        observationId: `host:running:${sessionId}:${turnId}`,
         subagentKey: row.subagentKey,
+        providerKind: HOST_CHILD_PROVIDER_KIND,
+        stableCorrelationId: turnId,
+        harnessExecutionId: sessionId,
         status: "running",
       })
     },
-    async onTurnSettled(sessionId, requested) {
+    async onTurnSettled(sessionId, requested, turnId) {
       if (stopped) return
       const directory = requireDirectory(requested)
       const row = await childOf(sessionId, directory)
@@ -246,8 +264,9 @@ export function createChildSessionHost(input: ChildSessionHostInput): ChildSessi
         await offerWakes(sessionId, directory)
         return
       }
-      if (TERMINAL_CHILD_STATUSES.has(row.status ?? "")) return
-      const summary = childSummary(await input.getMessages(sessionId, directory) ?? [])
+      if (turnId === undefined && TERMINAL_CHILD_STATUSES.has(row.status ?? "")) return
+      const messages = await input.getMessages(sessionId, directory) ?? []
+      const summary = childSummary(turnId === undefined ? messages : messages.filter((message) => message.info.parentID === turnId))
       if (stopped) return
       const parent = await input.getSession(row.parentSessionId, directory)
       if (stopped) return
@@ -255,15 +274,20 @@ export function createChildSessionHost(input: ChildSessionHostInput): ChildSessi
       await admit(row.parentSessionId, directory, {
         observationId: `host:finished:${sessionId}:${summary.assistantMessageId ?? crypto.randomUUID()}`,
         subagentKey: row.subagentKey,
+        ...(turnId === undefined ? {} : { providerKind: HOST_CHILD_PROVIDER_KIND, harnessExecutionId: sessionId, stableCorrelationId: turnId }),
         status: parentGone ? "interrupted" : summary.status,
-        ...(parentGone ? {} : { wake: "pending" }),
+        ...(parentGone ? {} : { wake: "pending", wakeResult: summary }),
       })
       if (!parentGone) await offerWakes(row.parentSessionId, directory)
     },
     recover() {
       if (stopped) return Promise.resolve()
       recovered ??= track((async () => {
+        const offered = new Set<string>()
         for (const wake of await input.pendingWakes()) {
+          const key = JSON.stringify([wake.parentSessionId, wake.directory])
+          if (offered.has(key)) continue
+          offered.add(key)
           await offerWakes(wake.parentSessionId, wake.directory)
         }
       })().catch((error) => {

@@ -23,7 +23,7 @@ export type CaseTurn = { readonly prompt: string; readonly steps: readonly AcpSt
 
 export type CaseReplay =
   | { readonly agent: "acp"; readonly turns: readonly CaseTurn[] }
-  | { readonly agent: "claude"; readonly scenario: "child-message-event" | "agent-authored-message" }
+  | { readonly agent: "claude"; readonly scenario: "child-message-event" | "agent-authored-message" | "host-child-followup" }
   | { readonly agent: "codex" }
   | { readonly agent: "unsupported"; readonly reason: string }
 

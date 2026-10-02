@@ -30,9 +30,9 @@ function openStore() {
   return store
 }
 
-function assistant(id: string, text: string, error?: { name: string; data: { message?: string } }): AgentMessage {
+function assistant(id: string, text: string, error?: { name: string; data: { message?: string } }, parentID?: string): AgentMessage {
   return {
-    info: { id, role: "assistant", sessionID: "child", ...(error ? { error } : {}) },
+    info: { id, role: "assistant", sessionID: "child", ...(error ? { error } : {}), ...(parentID ? { parentID } : {}) },
     parts: [{ id: `${id}-text`, sessionID: "child", messageID: id, type: "text", text }],
   }
 }
@@ -85,9 +85,7 @@ function harness(input: {
       read: (parentSessionId, subagentKey) => origins.get(originKey(parentSessionId, subagentKey)),
     },
     listSubagents: (parentSessionId) => store.listSubagents(parentSessionId),
-    pendingWakes: () => store.listSubagents("parent")
-      .filter((row) => row.wake === "pending" && row.childSessionId)
-      .map((row) => ({ parentSessionId: "parent", childSessionId: row.childSessionId!, directory: DIRECTORY })),
+    pendingWakes: () => store.listPendingSubagentWakes(),
     getSession: input.getSession ?? ((sessionId) => sessions.get(sessionId) ?? null),
     getMessages: (sessionId) => input.messages?.[sessionId] ?? [],
     ...(input.subscribe ? { subscribeGlobal: input.subscribe } : {}),
@@ -113,10 +111,59 @@ const ORIGIN: SessionTurnOrigin = {
 }
 
 describe("host-owned child sessions", () => {
+  test("a late first settlement records its own result without settling the second run", async () => {
+    const messages = { child: [assistant("reply-first", "First only", undefined, "first"), assistant("reply-second", "Second only", undefined, "second")] }
+    const item = harness({ sessions: { parent: { status: "busy" }, child: { parentID: "parent" } }, messages })
+    await item.host.admitCreated({ parentSessionId: "parent", childSessionId: "child", directory: DIRECTORY, harness: "codex" })
+    await item.host.onTurnStarted("child", DIRECTORY, "first")
+    await item.host.onTurnStarted("child", DIRECTORY, "second")
+    await item.host.onTurnSettled("child", DIRECTORY, "first")
+    expect(item.store.listSubagents("parent")[0]?.status).toBe("running")
+    expect(item.store.listPendingSubagentWakes().map((wake) => wake.result?.summary.text)).toEqual(["First only"])
+    await item.host.onTurnSettled("child", DIRECTORY, "second")
+    expect(item.store.listSubagents("parent")[0]?.status).toBe("completed")
+    expect(item.store.listPendingSubagentWakes().map((wake) => wake.result?.summary.text)).toEqual(["First only", "Second only"])
+    await item.host.dispose()
+  })
+
+  test("every result survives a busy parent, a later child run and a store restart", async () => {
+    const messages = { child: [assistant("reply-z", "First result", undefined, "first")] }
+    const item = harness({ sessions: { parent: { status: "busy" }, child: { parentID: "parent" } }, messages })
+    await item.host.admitCreated({ parentSessionId: "parent", childSessionId: "child", directory: DIRECTORY, harness: "codex" })
+    await item.host.onTurnStarted("child", DIRECTORY, "first")
+    await item.host.onTurnSettled("child", DIRECTORY, "first")
+    await item.host.onTurnStarted("child", DIRECTORY, "second")
+    expect(await item.host.activeChildren("parent", DIRECTORY)).toHaveLength(1)
+    await item.host.onTurnSettled("child", DIRECTORY, "first")
+    expect(item.store.listSubagents("parent")[0]?.status).toBe("running")
+    messages.child.push(assistant("reply-a", "Partial second", { name: "MessageAbortedError", data: {} }, "second"))
+    await item.host.onTurnSettled("child", DIRECTORY, "second")
+    expect(item.store.listPendingSubagentWakes().map((wake) => wake.result?.summary.assistantMessageId)).toEqual(["reply-z", "reply-a"])
+    expect(item.turns).toEqual([])
+    await item.host.dispose()
+    const openedStore = opened.find((entry) => entry.store === item.store)!
+    item.store.close()
+    openedStore.store = openTestRuntimeStore(openedStore.root)
+    const restarted = harness({ store: openedStore.store, sessions: { parent: { status: "idle" }, child: { parentID: "parent" } } })
+    await restarted.host.recover()
+    expect(restarted.turns).toHaveLength(1)
+    expect(restarted.turns[0]?.messageID).toBe(wakeMessageId("child", "reply-z"))
+    expect(restarted.turns[0]?.text).toContain("First result")
+    await restarted.host.onTurnSettled("parent", DIRECTORY)
+    expect(restarted.turns).toHaveLength(2)
+    expect(restarted.turns[1]?.messageID).toBe(wakeMessageId("child", "reply-a"))
+    expect(restarted.turns[1]?.text).toContain("Partial second")
+    expect(restarted.turns[1]?.text).toContain("killed")
+    expect(restarted.store.listPendingSubagentWakes()).toEqual([])
+    await restarted.host.onTurnStarted("child", DIRECTORY, "second")
+    expect(restarted.store.listSubagents("parent")[0]?.status).toBe("killed")
+    await restarted.host.dispose()
+  })
+
   test("late turn callbacks do not read a disposed runtime", async () => {
     const item = harness({ getSession: () => { throw new Error("Workspace runtime is disposed") } })
     await item.host.dispose()
-    await item.host.onTurnStarted("child", DIRECTORY)
+    await item.host.onTurnStarted("child", DIRECTORY, "turn")
     await item.host.onTurnSettled("child", DIRECTORY)
     expect(item.turns).toEqual([])
     expect(item.admitted).toEqual([])
@@ -166,7 +213,7 @@ describe("host-owned child sessions", () => {
       messages: { child: [assistant("m1", "The plan is sound; ship it.")] },
     })
     const { subagentKey } = await item.host.admitCreated({ parentSessionId: "parent", childSessionId: "child", directory: DIRECTORY, harness: "codex", title: "Consult" })
-    await item.host.onTurnStarted("child", DIRECTORY)
+    await item.host.onTurnStarted("child", DIRECTORY, "turn")
     expect(item.store.listSubagents("parent")).toMatchObject([{ status: "running" }])
 
     await item.host.onTurnSettled("child", DIRECTORY)

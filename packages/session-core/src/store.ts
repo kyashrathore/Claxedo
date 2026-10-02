@@ -32,7 +32,8 @@ import type { SqliteDatabase } from "./sqlite/database"
 import { openRuntimeStoreSchema } from "./store-schema"
 import type { SessionTurnOrigin } from "./session-access-policy"
 import { actorKind, nullable } from "./stored-columns"
-import { observationStartsNewRun, subagentStatusAdvances } from "./subagent-status"
+import { observationStartsNewRun, subagentRunRevision, subagentStatusAdvances } from "./subagent-status"
+import { pendingSubagentWakes, subagentWakeAfterReceipt } from "./subagent-wakes"
 import { buildAssistantMessage, buildUserMessage, buildUserPromptParts, messageCompleted, messagePartUpdated, messageUpdated, sessionError, sessionIdle, sessionStatus } from "./projection/presentation-events"
 
 export const SESSION_INTERRUPTED = "The agent runtime restarted. Send a message to continue the interrupted work."
@@ -742,11 +743,15 @@ export class RuntimeStore {
         `,
           )
           .get(input.parentSessionId, input.observation.observationId)
-        if (existing) return { ...admitted, published: !!existing.published }
+        if (existing) return { ...admitted, event: JSON.parse(existing.event_json) as SubagentUpdatedEvent, published: !!existing.published }
         const freshKeys = subagentCorrelationKeys(input.observation).filter((correlationKey) => this.db.prepare(`INSERT OR IGNORE
           INTO session_subagent_correlation (parent_session_id, correlation_key, subagent_key) VALUES (?, ?, ?)`)
           .run(input.parentSessionId, correlationKey, admitted.event.subagentKey).changes === 1)
-        this.persistSubagentEvent(input.parentSessionId, admitted.event, observationStartsNewRun(input.observation, freshKeys))
+        const startsNewRun = observationStartsNewRun(input.observation, freshKeys)
+        const runRevision = startsNewRun ? admitted.event.revision : subagentRunRevision(this.db, input.parentSessionId, admitted.event.subagentKey, input.observation)
+        if (runRevision !== undefined) admitted.event.runRevision = runRevision
+        if (input.observation.wakeReceipt) admitted.event.wake = subagentWakeAfterReceipt(this.db, input.parentSessionId, admitted.event.subagentKey, input.observation.wakeReceipt)
+        this.persistSubagentEvent(input.parentSessionId, admitted.event, startsNewRun)
         this.db
           .prepare(
             `
@@ -825,6 +830,7 @@ export class RuntimeStore {
       parentSessionId,
       subagentKey: String(row.subagent_key),
       revision: Number(row.revision),
+      runRevision: subagentRunRevision(this.db, parentSessionId, String(row.subagent_key)),
       ...(row.mode ? { mode: String(row.mode) } : {}),
       ...(row.status ? { status: String(row.status) } : {}),
       ...(row.label ? { label: String(row.label) } : {}),
@@ -846,23 +852,7 @@ export class RuntimeStore {
   }
 
   listPendingSubagentWakes() {
-    return this.db
-      .prepare<{ parent_session_id: string; subagent_key: string; child_session_id: string; directory: string }>(
-        `
-      SELECT subagent.parent_session_id, subagent.subagent_key, subagent.child_session_id, parent.directory
-      FROM session_subagent subagent
-      JOIN session parent ON parent.id = subagent.parent_session_id
-      WHERE subagent.wake = 'pending' AND subagent.child_session_id IS NOT NULL
-      ORDER BY subagent.updated_at, subagent.subagent_key
-    `,
-      )
-      .all()
-      .map((row) => ({
-        parentSessionId: row.parent_session_id,
-        subagentKey: row.subagent_key,
-        childSessionId: row.child_session_id,
-        directory: row.directory,
-      }))
+    return pendingSubagentWakes(this.db)
   }
 
   /**
@@ -1014,7 +1004,7 @@ export class RuntimeStore {
         )
         .run(value, event.revision, parentSessionId, event.subagentKey, event.revision)
     }
-    if (event.status !== undefined) {
+    if (event.status !== undefined && (event.runRevision === undefined || event.runRevision >= (subagentRunRevision(this.db, parentSessionId, event.subagentKey) ?? 0))) {
       const current = requireRow(
         this.db
           .prepare<{ status: string; status_revision: number }>(

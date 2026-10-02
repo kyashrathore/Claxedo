@@ -9,10 +9,13 @@ import type { SessionRouteContext as Ctx } from "./session-route-options"
  * it. The lease is taken before any turn exists, so its loss callback has
  * nothing to name until this is set.
  */
-export function captureTurnTarget() {
+export function captureTurnTarget(onCaptured?: (target: RecoveryTurnTarget) => void | Promise<void>) {
   let target: RecoveryTurnTarget | undefined
   return {
-    set: (next: RecoveryTurnTarget) => { target = next },
+    set: async (next: RecoveryTurnTarget) => {
+      target = next
+      await onCaptured?.(next)
+    },
     get: () => target,
   }
 }

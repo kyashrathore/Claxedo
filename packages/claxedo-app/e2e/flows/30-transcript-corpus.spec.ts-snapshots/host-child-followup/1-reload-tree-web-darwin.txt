@@ -1,0 +1,19 @@
+scrollTop: 0
+background subagents:
+- region "Background subagents":
+  - heading "Background subagents" [level=2]
+  - link "claude, done":
+    - /url: /s/ses_<id>
+    - text: claude Reviewer · Background · continues independently done
+row 0:
+- group: Message from Reviewer
+row 1:
+- paragraph: ok
+- button "Copy response"
+- text: Build · default · <duration>
+row 2:
+- group: Message from Reviewer
+row 3:
+- paragraph: ok
+- button "Copy response"
+- text: Build · default · <duration>

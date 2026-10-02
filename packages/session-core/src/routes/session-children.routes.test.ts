@@ -191,7 +191,8 @@ function fixture(input: {
       body: JSON.stringify(body),
     })
   const hold = (sessionId: string) => { holding.add(sessionId) }
-  return { app, store, runtime, origins, calls, runtimeEvents, globalEvents, seedParent, create, prompt, replies, surface, hold }
+  const release = (sessionId: string) => { holding.delete(sessionId); held.get(sessionId)?.() }
+  return { app, store, runtime, origins, calls, runtimeEvents, globalEvents, seedParent, create, prompt, replies, surface, hold, release }
 }
 
 /** The id the parent's completion wake carries: the child's turn's assistant message names it. */
@@ -547,6 +548,33 @@ describe("POST /session with parentID", () => {
     expect(item.store.listSubagents("parent")).toMatchObject([{ subagentKey: child.subagentKey, status: "completed", wake: "delivered" }])
     expect(item.runtimeEvents.map((event) => event.payload).flatMap((payload) => payload.type === "subagent-updated" ? [payload.status ?? payload.wake] : []))
       .toEqual(["pending", "running", "completed", "delivered"])
+  })
+
+  test("a completed child's follow-up becomes active and delivers its own result without losing the first", async () => {
+    const item = fixture()
+    await item.seedParent("parent")
+    const child = await (await item.create({ parentID: "parent", title: "Consult" })).json() as { id: string }
+    item.replies.set(child.id, "First result")
+    expect((await item.prompt(child.id, { messageID: "first", parts: [{ type: "text", text: "First request" }] })).status).toBe(200)
+    await settle()
+    item.hold(child.id)
+    const followup = item.prompt(child.id, { messageID: "second", parts: [{ type: "text", text: "Follow up" }] })
+    try {
+      await settle()
+      expect(item.store.listSubagents("parent")[0]?.status).toBe("running")
+      for (let index = 0; index < 3; index++) expect((await item.create({ parentID: "parent" })).status).toBe(201)
+      expect((await item.create({ parentID: "parent" })).status).toBe(409)
+    } finally {
+      item.replies.set(child.id, "Second result")
+      item.release(child.id)
+      expect((await followup).status).toBe(200)
+    }
+    await settle()
+    const wakes = item.calls.prompts.filter((turn) => turn.sessionId === "parent")
+    expect(wakes.map((turn) => turn.messageID)).toEqual([wakeTurnFor(child.id, "first"), wakeTurnFor(child.id, "second")])
+    expect(wakes[0]?.text).toContain("First result")
+    expect(wakes[1]?.text).toContain("Second result")
+    expect(item.store.listSubagents("parent")[0]).toMatchObject({ status: "completed", wake: "delivered" })
   })
 
   test("a parent that does not exist is a 404 and a missing host is a 501", async () => {

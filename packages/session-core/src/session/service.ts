@@ -158,7 +158,7 @@ export type RuntimePromptTurnInput = {
    * The lease owner needs it before it can contain a turn whose authority was
    * revoked, and it is the only place this host learns it.
    */
-  onTurnTarget?: (target: RecoveryTurnTarget) => void
+  onTurnTarget?: (target: RecoveryTurnTarget) => void | Promise<void>
   /** Current durable lease generation, checked before every producer publish. */
   turnAdmission?: { valid(): boolean; fencingToken(): number; proof(): string }
   actor?: { actorId: string; actorKind: "human" | "agent" }
@@ -306,7 +306,7 @@ export async function runRuntimePromptTurn(input: RuntimePromptTurnInput): Promi
       ? input.runtime.turns.start({ ...turnInput, parts, delivery, actorId: input.actor.actorId, actorKind: input.actor.actorKind })
       : input.runtime.turns.start({ ...turnInput, parts, delivery })
     turn = await start()
-    if (turn.target) input.onTurnTarget?.(turn.target)
+    if (turn.target) await input.onTurnTarget?.(turn.target)
     if (turn.steering) input.onSteeringResult?.(turn.steering)
     input.onDelivery?.(turn.delivery)
     settleAdmission()

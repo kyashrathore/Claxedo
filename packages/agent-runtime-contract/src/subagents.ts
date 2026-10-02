@@ -44,6 +44,8 @@ export type AgentSubagentUpdate = {
   toolCallRole?: SubagentToolCallRole
   mode?: SubagentMode
   status?: SubagentStatus
+  /** Revision at which the admission store verified the current run identity. */
+  runRevision?: number
   label?: string
   subagentType?: string
   description?: string
@@ -74,6 +76,8 @@ export type SubagentObservation = {
   transcript?: SubagentTranscript
   attention?: number
   wake?: SubagentWake
+  wakeResult?: { status: SubagentStatus; text: string; assistantMessageId?: string }
+  wakeReceipt?: string
 }
 
 export class UnknownHostSubagentKeyError extends Error {
