@@ -136,7 +136,7 @@ export function createServer(config: ServerConfig): ServerHandle {
   const capabilities = createCapabilities(transport, workspaces)
   const queries = createQueries(transport, workspaces, config.thisMachineReport)
   const startup = createStartup({ workspaces, streams, capabilities, setConnection })
-  const projection = createSessionProjection(transport, workspaces)
+  const projection = createSessionProjection(workspaces, account)
   const stopProjecting = intake.subscribe(projection.observe)
   const placementStreams = createPlacementStreams({ transport, workspaces, queryClient, onFrame: intake.frame, onGap: intake.gap })
   return {

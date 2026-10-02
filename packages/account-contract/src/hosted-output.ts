@@ -86,7 +86,7 @@ export function nullable<T>(decode: (raw: unknown) => DecodeResult<T>) {
 export function connection(raw: unknown): DecodeResult<Record<string, unknown>> {
   const shape = object(raw)
   if (!shape.ok) return shape
-  if (shape.value["status"] === "provisioning") return shape
+  if (shape.value["status"] === "provisioning" || shape.value["status"] === "stopped") return shape
   return withStrings("relayUrl")(raw)
 }
 

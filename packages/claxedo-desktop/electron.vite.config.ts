@@ -31,9 +31,10 @@ const telemetryDefines = Object.fromEntries(
 
 // The selected deployment origin is the desktop's only baked auth trust
 // anchor. Adapter endpoints/client/scopes come from that deployment's short-
-// lived descriptor; no provider credential is accepted or baked.
+// lived descriptor; no provider credential is accepted or baked. The relay
+// origins are public and only name what the renderer's policy may reach.
 const accountDefines = Object.fromEntries(
-  (["CLAXEDO_CORE_ORIGIN", "CLAXEDO_RELEASE_VALIDATION_OPERATION"] as const).map((name) => [
+  (["CLAXEDO_CORE_ORIGIN", "CLAXEDO_RELAY_ORIGINS", "CLAXEDO_RELEASE_VALIDATION_OPERATION"] as const).map((name) => [
     `import.meta.env.${name}`,
     JSON.stringify(process.env[name]?.trim() || undefined),
   ]),

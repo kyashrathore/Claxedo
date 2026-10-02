@@ -21,10 +21,15 @@ export type HarnessOptionsRequest = {
 }
 
 export async function readHarnessOptions(transport: Transport, workspaces: Workspaces, request: HarnessOptionsRequest): Promise<HarnessOptions> {
-  const { workspaceId } = await workspaces.route(request.placementId)
+  const route = await workspaces.route(request.placementId)
+  const selection = harnessSelectionQuery(request.harness)
+  if (route.remote) {
+    const path = request.sessionId ? `/session/${encodeURIComponent(request.sessionId)}/config-options` : "/api/wr/harness-config-options"
+    return harnessOptionsFromWire(await transport.runtimeJson(route, withQuery(path, { ...selection, model: request.model })))
+  }
   const response = await transport.request(withQuery(HARNESS_OPTIONS_PATH, {
-    workspaceId,
-    ...harnessSelectionQuery(request.harness),
+    workspaceId: route.workspaceId,
+    ...selection,
     sessionId: request.sessionId,
     model: request.model,
   }))
