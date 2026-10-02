@@ -37,6 +37,7 @@ const host = createWorkspaceHost({
   opencodeRuntime: runtime,
   harness: { id: "opencode", access: "native" },
   storeRoot: path.join(root, "runtime-store"),
+  placement: { placement: "loopback", machineOwnerUserId: "local", canUseOwnLogin: true },
 })
 const app = new Hono()
 host.mount(app, { exposure: loopbackWorkspaceRuntimeExposure() })
