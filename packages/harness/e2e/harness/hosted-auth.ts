@@ -26,6 +26,8 @@ export async function hostedFetch(
   // Under Bun's node:https a request on a reused keep-alive socket to workerd
   // intermittently fails with ECONNRESET, so each request takes its own.
   headers.set("connection", "close")
+  // node:https frames a body only for methods it chunks by default, which DELETE is not.
+  if (typeof options.body === "string") headers.set("content-length", String(Buffer.byteLength(options.body)))
   const url = new URL(route, stack.workerUrl)
   const reply = await new Promise<Response>((resolve, reject) => {
     const upstream = request(url, {
