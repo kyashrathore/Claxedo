@@ -6,7 +6,7 @@ import { captureOutput, exited } from "../../../harness/e2e/harness/process"
 const APP_ROOT = path.resolve(import.meta.dirname, "../..")
 const BUILD_STAMP = "claxedo-e2e-build.json"
 const DIST_DIR = "dist-e2e"
-const SOURCE_ENTRIES = ["src", "public", "index.html", "vite.cloud.config.ts", "vite.account-binding.ts", "vite.content-security-policy.ts", "content-security-policy.ts", "browser-preview.html", "cli-callback.html", "package.json", "../../plugins"]
+const SOURCE_ENTRIES = ["src", "public", "index.html", "vite.cloud.config.ts", "vite.account-binding.ts", "vite.content-security-policy.ts", "content-security-policy.ts", "browser-preview.html", "package.json", "../../plugins"]
 const DEPENDENCY_ENTRIES = ["../../bun.lock", "../../patches"]
 const SKIPPED_DIRS = new Set(["node_modules"])
 

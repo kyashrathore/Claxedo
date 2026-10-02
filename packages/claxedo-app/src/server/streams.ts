@@ -90,7 +90,7 @@ export function createEventStreams(input: StreamsInput): EventStreams {
   const { config, transport } = input
   const streams: Stream[] = []
   const report = () => input.onState(aggregate(streams.map((stream) => stream.state())))
-  const socket = config.eventSocket === true && transport.loopback && config.auth.kind === "none"
+  const socket = config.eventSocket === true && transport.loopback
   return {
     open: (declaration) => {
       streams.push(openEventsAt(input, CONTROL_PLANE_EVENTS_PATH, socket, report))
