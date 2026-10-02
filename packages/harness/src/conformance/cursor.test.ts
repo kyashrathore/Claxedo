@@ -772,19 +772,31 @@ test("a session without projected plugins mirrors the person's config without lo
 }, 60_000)
 
 test("a plugin root whose link escapes it is refused before Cursor starts", async () => {
-  const state = await backend()
-  const root = path.join(state.root, "escaping")
-  await fs.mkdir(path.join(root, ".cursor-plugin"), { recursive: true })
-  await fs.writeFile(path.join(root, ".cursor-plugin", "plugin.json"), JSON.stringify({ name: "escaping", version: "1.0.0" }))
-  await fs.symlink(state.directory, path.join(root, "outside"))
-  const projection = { generation: "g2", mcpServers: [], notApplied: [], pluginRoots: [{ pluginInstanceId: "escaping/plugin", root, skillNames: [], dataRoot: root }] }
-  const escaping = { ...state, projection, close: async () => {} }
-  await expect(setupConformance({ name: "escaping", backend: async () => escaping, makeTransport: transportFor(state) }))
-    .rejects.toThrow("Cursor plugin link escapes its root")
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "cursor-escaping-"))
+  const directory = path.join(root, "work")
+  const plugin = path.join(root, "escaping")
+  await fs.mkdir(path.join(plugin, ".cursor-plugin"), { recursive: true })
+  await fs.mkdir(directory)
+  await fs.writeFile(path.join(plugin, ".cursor-plugin", "plugin.json"), JSON.stringify({ name: "escaping", version: "1.0.0" }))
+  await fs.symlink(directory, path.join(plugin, "outside"))
+  const services = createTestServices()
+  const homeRoot = path.join(root, "cursor-homes")
+  const transport = new CursorSdkTransport(services, { homeRoot, worker: CURSOR_WORKER, env: { HOME: path.join(root, "person") }, ...LOGIN })
   try {
-    for (const home of await claxedoHomes(state)) {
-      expect(await managedPlugins(home)).toEqual([])
-      expect((await fs.readdir(path.join(home, ".cursor", "plugins", "local"))).filter((name) => name.startsWith(".claxedo"))).toEqual([])
+    await expect(transport.start({
+      sessionId: "s1", workspaceId: "w1", directory, locality: "local", owner: { kind: "machine-owner" },
+      config: { harness: { id: "cursor", access: "native" } }, model: { providerID: "cursor", modelID: "scripted" },
+      projection: { generation: "g2", mcpServers: [], notApplied: [], pluginRoots: [{ pluginInstanceId: "escaping/plugin", root: plugin, skillNames: [], dataRoot: plugin }] },
+      credentials: { machineLoginAllowed: true, accountOwner: "fixture-owner", secrets: {}, leaseGeneration: "escaping",
+        providers: { cursor: { baseUrl: "http://127.0.0.1:9", placeholder: "cursor-placeholder", authMode: "bearer" } } },
+    }, {} as SessionBroker)).rejects.toThrow("Cursor plugin link escapes its root")
+    expect(services.processes).toHaveLength(0)
+    for (const entry of await fs.readdir(homeRoot)) {
+      const local = path.join(homeRoot, entry, ".cursor", "plugins", "local")
+      expect((await fs.readdir(local)).filter((name) => name.startsWith("claxedo--") || name.startsWith(".claxedo"))).toEqual([])
     }
-  } finally { await state.close() }
+  } finally {
+    await transport.dispose()
+    await fs.rm(root, { recursive: true, force: true })
+  }
 })
