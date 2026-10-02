@@ -50,17 +50,34 @@ export async function stopCloudWorkspace(signed: SignedStack, workspace: CloudWo
   await asOwner(signed)("POST", `/api/workspace/${workspace.id}/lifecycle/stop`, {})
 }
 
-export async function cloudTurn(signed: SignedStack, workspace: CloudWorkspace, input: { title: string; script: string; reply: string }) {
-  const call = asOwner(signed)
+type CloudSessionInput = {
+  title: string
+  harness: { id: string; access: "native" | "connection" }
+  model?: { providerId: string; modelId: string }
+}
+
+export async function createCloudSession(signed: SignedStack, workspace: CloudWorkspace, input: CloudSessionInput) {
   const sessionId = `ses_${randomUUID().replaceAll("-", "")}`
   const operationId = `session_registration_${randomUUID().replaceAll("-", "")}`
-  await call("POST", "/api/control/session-registrations/reserve", { operationId, sessionId, workspaceId: workspace.id, kind: "create", title: input.title })
+  await asOwner(signed)("POST", "/api/control/session-registrations/reserve", { operationId, sessionId, workspaceId: workspace.id, kind: "create", title: input.title })
+  const query = input.harness.access === "native" ? `nativeHarness=${input.harness.id}` : `connectionId=${input.harness.id}`
   await runtimeCall(signed, workspace,
     "POST",
-    `/session?connectionId=${SCRIPTED_ACP_HARNESS.id}`,
-    { id: sessionId, title: input.title, harness: SCRIPTED_ACP_HARNESS },
+    `/session?${query}`,
+    {
+      id: sessionId,
+      title: input.title,
+      harness: input.harness,
+      ...(input.model ? { model: { providerID: input.model.providerId, id: input.model.modelId } } : {}),
+    },
     { "x-claxedo-session-registration-operation": operationId },
   )
+  return sessionId
+}
+
+export async function cloudTurn(signed: SignedStack, workspace: CloudWorkspace, input: { title: string; script: string; reply: string }) {
+  const call = asOwner(signed)
+  const sessionId = await createCloudSession(signed, workspace, { title: input.title, harness: SCRIPTED_ACP_HARNESS })
   await signed.local.acp.write(input.script, { steps: [{ kind: "text", text: input.reply }] })
   await runtimeCall(signed, workspace, "POST", `/session/${sessionId}/prompt_async`, { parts: [{ type: "text", text: `Answer. ${acpScriptToken(input.script)}` }] })
   await expect

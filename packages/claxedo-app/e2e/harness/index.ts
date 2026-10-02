@@ -28,7 +28,7 @@ export { listLivePlugins, registerLivePlugin, writeLivePlugin, type LivePluginFo
 export { APP_PLUGIN_WARNING, appPluginDialog, appPluginRow, approveAppPlugin } from "./app-plugins"
 export { breakFixturePlugin, FIXTURE_ROUTES, fixtureFolder, writeFixturePlugin, type FixtureVersion } from "./fixture-plugin"
 export { type Account, type SignedStack } from "./signed-stack"
-export { cloudTurn, makeCloudWorkspace, startCloudWorkspace, stopCloudWorkspace, storedMessages, type CloudWorkspace } from "./cloud"
+export { cloudTurn, createCloudSession, makeCloudWorkspace, startCloudWorkspace, stopCloudWorkspace, storedMessages, type CloudWorkspace } from "./cloud"
 export { SCRIPTED_ACP_CONNECTION_ID, SCRIPTED_ACP_HARNESS, UNSET_ACP_HARNESS } from "../../../harness/e2e/harness/acp/connection"
 export { scriptedAgentPids } from "./acp/agent-process"
 export { acpScriptToken, type AcpScript, type AcpStep, type AcpToolStep } from "../../../harness/e2e/harness/acp/script"

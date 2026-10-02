@@ -1,6 +1,6 @@
 import { expect, type ElectronApplication, type Page } from "@playwright/test"
 import type { Desktop } from "./desktop"
-import type { SignedStack } from "./signed-stack"
+import type { Account, SignedStack } from "./signed-stack"
 
 export type SystemBrowser = { opened(): Promise<string[]> }
 
@@ -15,16 +15,16 @@ export async function interceptSystemBrowser(electron: ElectronApplication): Pro
   }
 }
 
-export async function signInDesktop(signed: SignedStack, desktop: Desktop, page: Page): Promise<string> {
+export async function signInDesktop(signed: SignedStack, desktop: Desktop, page: Page, account: Account = signed.owner): Promise<string> {
   const browser = await interceptSystemBrowser(desktop.electron)
   await desktop.window.getByRole("button", { name: "Sign in", exact: true }).click()
   await desktop.window.getByRole("menuitem", { name: "Sign in" }).click()
   await expect.poll(async () => (await browser.opened()).length).toBe(1)
   const [authorize] = await browser.opened()
   if (!authorize) throw new Error("main opened no authorization page")
-  await signed.signIn(page, signed.owner)
+  await signed.signIn(page, account)
   await page.goto(authorize)
   await page.getByRole("button", { name: "Allow" }).click()
-  await expect(desktop.window.getByRole("button", { name: signed.owner.name, exact: true })).toBeVisible()
+  await expect(desktop.window.getByRole("button", { name: account.name, exact: true })).toBeVisible()
   return authorize
 }
