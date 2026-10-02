@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import type { AgentContentPart, AgentMessage, AgentMessageError } from "./content"
-import { renderSessionHandoff } from "./session-handoff"
+import { renderSessionHandoff, renderSessionTranscript } from "./session-handoff"
 
 const SESSION = "ses_handoff"
 
@@ -22,6 +22,51 @@ function assistant(
 }
 
 describe("session handoff", () => {
+  test("exports only public text and settled tool evidence, never reasoning, live state or attachments", () => {
+    const tool = (status: "pending" | "running" | "completed" | "error"): AgentContentPart => ({
+      id: status, sessionID: SESSION, messageID: "a1", type: "tool", callID: status, tool: status,
+      state: status === "pending" ? { status, input: { secret: "PRIVATE_INPUT" }, raw: "LIVE_RAW" }
+        : status === "running" ? { status, input: {}, time: { start: 1 }, title: "LIVE_TITLE" }
+        : status === "error" ? { status, input: {}, error: "write refused", time: { start: 1, end: 2 } }
+        : { status, input: {}, output: "file changed", title: "write", metadata: {}, time: { start: 1, end: 2 } },
+    })
+    const transcript = renderSessionTranscript([user("u1", "work"), assistant("a1", "u1", [
+      { id: "reasoning", sessionID: SESSION, messageID: "a1", type: "reasoning", text: "PRIVATE_REASONING", time: { start: 1 } },
+      { id: "file", sessionID: SESSION, messageID: "a1", type: "file", mime: "image/png", url: "PRIVATE_ATTACHMENT" },
+      tool("pending"), tool("running"), tool("completed"), tool("error"), textPart("a1", "public reply"),
+    ])])
+    for (const privateValue of ["PRIVATE_REASONING", "PRIVATE_ATTACHMENT", "PRIVATE_INPUT", "LIVE_RAW", "LIVE_TITLE", "[pending", "[running"]) {
+      expect(transcript).not.toContain(privateValue)
+    }
+    expect(transcript).toContain("[completed (completed)]\nfile changed")
+    expect(transcript).toContain("[error (error)]\nwrite refused")
+    expect(transcript).toContain("public reply")
+  })
+
+  test.each(["MessageAbortedError", "UnknownError", "RateLimitError"])("retains partial assistant work with its %s outcome", (name) => {
+    const transcript = renderSessionTranscript([user("u1", "work"), assistant("a1", "u1", [textPart("a1", "already changed the file")], { name, data: {} })])
+    expect(transcript).toContain("already changed the file")
+    expect(transcript).toContain(name)
+  })
+
+  test("preserves every message in order and labels canonical agent authors", () => {
+    const wake = user("wake", "child result")
+    wake.info.claxedo = { author: { id: "ses_child", name: "Worker <one>", kind: "agent" } }
+    const transcript = renderSessionTranscript([
+      user("u1", "start"), assistant("a1", "u1", [textPart("a1", "first step")]),
+      wake, assistant("a2", "u1", [textPart("a2", "second step")]), user("u2", "unanswered"),
+    ])
+    const pieces = ["start", "first step", "Agent", "Worker &lt;one&gt;", "ses_child", "child result", "second step", "unanswered"]
+    expect(pieces.map((piece) => transcript.indexOf(piece))).toEqual(pieces.map((piece) => transcript.indexOf(piece)).toSorted((a, b) => a - b))
+    for (const piece of pieces) expect(transcript).toContain(piece)
+  })
+
+  test("bounds long ordered histories while retaining the newest messages", () => {
+    const transcript = renderSessionTranscript(Array.from({ length: 20 }, (_, index) => user(`u${index}`, `turn-${index}: ${"x".repeat(20_000)}`)))
+    expect(transcript.length).toBeLessThanOrEqual(60_000)
+    expect(transcript).toContain("turn-19:")
+    expect(transcript).not.toContain("turn-0:")
+  })
   test("renders completed replies and preserves unanswered user context", () => {
     const transcript = renderSessionHandoff([
       user("u1", "inspect"),

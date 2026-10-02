@@ -23,6 +23,34 @@ function harnesses() {
 const closedUpstreams = (transport: FakeTransport) => transport.closed.map((session) => session.binding.upstreamSessionId)
 
 describe("harness switches before a message is sent on the new harness", () => {
+  test("the next harness receives public partial work and attributed messages without private reasoning", async () => {
+    const source = new FakeTransport({ turn: async function* ({ turn, session }) {
+      yield { type: "thinking-delta", delta: "PRIVATE_HANDOFF_THOUGHT" }
+      yield { type: "text-delta", delta: `Public work for ${turn.userMessageId}` }
+      if (turn.userMessageId === "msg_first") yield { type: "error", error: "provider failed after partial work" }
+      else yield { type: "finish", sessionId: session.binding.sessionId }
+    } })
+    const target = new FakeTransport()
+    const f = createHostFixture({ transports: { pi: source, codex: target } })
+    fixtures.push(f)
+    const { id } = await f.runtime.sessions.create(sessionCreate({ id: "ses_public_handoff", harness: PI }))
+    await f.runtime.turns.start({ sessionId: id, messageId: "msg_first", text: "Human request", origin: LOOPBACK_ORIGIN })
+    await f.runtime.turns.whenIdle(id)
+    await f.runtime.turns.start({ sessionId: id, messageId: "msg_child", text: "Child result", author: { id: "child", name: "Reviewer", kind: "agent" }, origin: LOOPBACK_ORIGIN })
+    await f.runtime.turns.whenIdle(id)
+    await f.runtime.sessions.updateConfig(id, { harness: CODEX })
+    await f.runtime.turns.start({ sessionId: id, messageId: "msg_continue", text: "Continue", origin: LOOPBACK_ORIGIN })
+    await f.runtime.turns.whenIdle(id)
+    const system = target.turns[0]?.turn.system ?? ""
+    expect(system).not.toContain("PRIVATE_HANDOFF_THOUGHT")
+    expect(system).toContain("Public work for msg_first")
+    expect(system).toContain("[Turn ended:")
+    expect(system).toContain('Agent "Reviewer" (child)')
+    expect(system.indexOf("Human request")).toBeLessThan(system.indexOf("Public work for msg_first"))
+    expect(system.indexOf("Public work for msg_first")).toBeLessThan(system.indexOf("Child result"))
+    expect(system.indexOf("Child result")).toBeLessThan(system.indexOf("Public work for msg_child"))
+  })
+
   test("a harness picked in between is released and the conversation's source stays kept until delete", async () => {
     const f = harnesses()
     const { id } = await f.runtime.sessions.create(sessionCreate({ id: "ses_chain", harness: PI }))
