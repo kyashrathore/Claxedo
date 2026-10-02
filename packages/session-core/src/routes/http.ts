@@ -1,7 +1,7 @@
 import type { Context } from "hono"
 import type { ContentfulStatusCode } from "hono/utils/http-status"
 import { bearerToken } from "@claxedo/helpers/string"
-import { rec } from "../json-value"
+import { asRecord } from "@claxedo/helpers/guards"
 import { errorBody } from "./error-body"
 
 export { bearerToken }
@@ -37,7 +37,7 @@ type JsonBodyContext = {
  * `undefined` covers the three cases callers previously collapsed into a
  * `fallback`: no body, an empty body, and one that is not valid JSON. It
  * returns `unknown` rather than a caller-named type parameter, because the
- * parse never checked that type — callers narrow through `json-value`.
+ * parse never checked that type — callers narrow through `@claxedo/helpers/guards`.
  */
 export async function boundedJsonBody(
   c: JsonBodyContext,
@@ -57,7 +57,7 @@ export async function boundedJsonRecord(
   c: JsonBodyContext,
   options: { limit?: number } = {},
 ): Promise<Record<string, unknown>> {
-  return rec(await boundedJsonBody(c, options)) ?? {}
+  return asRecord(await boundedJsonBody(c, options)) ?? {}
 }
 
 export function isRequestBodyTooLarge(cause: unknown): cause is RequestBodyTooLargeError {

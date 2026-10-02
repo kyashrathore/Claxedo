@@ -1,7 +1,7 @@
 import type { AutoLevel, SessionConfig, SessionConfigUpdate } from "@claxedo/agent-runtime-contract"
 import { isAutoLevel } from "./session/permission-ceiling"
 import { normalizeHarnessIdentity, parseSessionModelGroup, type PromptModel, type SessionHarness, type SessionModelGroup, type SessionModelGroupParse } from "@claxedo/agent-runtime-contract"
-import { rec as record, str } from "./json-value"
+import { asRecord, asString } from "@claxedo/helpers/guards"
 
 /**
  * Fixed at create, so a later edit cannot rewrite what an already-running
@@ -46,17 +46,17 @@ export type SessionCreateBody = {
 }
 
 export function normalizeSessionCreateBody(input: unknown): SessionCreateBody {
-  const row = record(input) ?? {}
+  const row = asRecord(input) ?? {}
   const ceiling = row.permissionCeiling
   return {
-    ...(str(row.id) ? { id: str(row.id) } : {}),
-    ...(str(row.title) !== undefined ? { title: str(row.title) } : {}),
-    ...(str(row.parentID) ? { parentID: str(row.parentID) } : {}),
-    ...(str(row.role) ? { role: str(row.role) } : {}),
-    ...(str(row.clientRequestId) ? { clientRequestId: str(row.clientRequestId) } : {}),
+    ...(asString(row.id) ? { id: asString(row.id) } : {}),
+    ...(asString(row.title) !== undefined ? { title: asString(row.title) } : {}),
+    ...(asString(row.parentID) ? { parentID: asString(row.parentID) } : {}),
+    ...(asString(row.role) ? { role: asString(row.role) } : {}),
+    ...(asString(row.clientRequestId) ? { clientRequestId: asString(row.clientRequestId) } : {}),
     ...(isAutoLevel(ceiling) ? { permissionCeiling: ceiling } : {}),
-    ...(str(row.permissionMode) ? { permissionMode: str(row.permissionMode) } : {}),
-    ...(str(row.instructions) ? { instructions: str(row.instructions) } : {}),
+    ...(asString(row.permissionMode) ? { permissionMode: asString(row.permissionMode) } : {}),
+    ...(asString(row.instructions) ? { instructions: asString(row.instructions) } : {}),
   }
 }
 
@@ -66,13 +66,13 @@ export function normalizeSessionCreateBody(input: unknown): SessionCreateBody {
  * session whose group silently lost a slot delegates to the wrong model later.
  */
 export function sessionCreateGroup(input: unknown): SessionModelGroupParse | undefined {
-  const row = record(input) ?? {}
+  const row = asRecord(input) ?? {}
   if (!("group" in row)) return undefined
   return parseSessionModelGroup(row.group)
 }
 
 export function normalizeSessionHarness(input: unknown): SessionHarness | undefined {
-  const row = record(input)
+  const row = asRecord(input)
   if (!row) return undefined
   const identity = normalizeHarnessIdentity(row)
   if (!identity) return undefined
@@ -84,16 +84,16 @@ export function normalizeSessionHarness(input: unknown): SessionHarness | undefi
 
 function promptModel(input: unknown): PromptModel | null | undefined {
   if (input === null) return null
-  const row = record(input)
+  const row = asRecord(input)
   if (!row) return undefined
-  const providerID = str(row.providerID)
-  const modelID = str(row.modelID)
+  const providerID = asString(row.providerID)
+  const modelID = asString(row.modelID)
   if (providerID === undefined || modelID === undefined) return undefined
   return { providerID, modelID }
 }
 
 export function normalizeSessionConfigUpdate(input: unknown): SessionConfigRequestUpdate {
-  const row = record(input) ?? {}
+  const row = asRecord(input) ?? {}
   const harness = normalizeSessionHarness(row.harness)
   const model = "model" in row ? promptModel(row.model) : undefined
   return {
@@ -105,8 +105,8 @@ export function normalizeSessionConfigUpdate(input: unknown): SessionConfigReque
 }
 
 export function normalizeSessionCreateConfig(input: unknown): SessionConfigRequestUpdate {
-  const row = record(input) ?? {}
-  const model = record(row.model)
+  const row = asRecord(input) ?? {}
+  const model = asRecord(row.model)
   return normalizeSessionConfigUpdate({
     ...row,
     ...(typeof model?.providerID === "string" && typeof model.id === "string"
@@ -117,7 +117,7 @@ export function normalizeSessionCreateConfig(input: unknown): SessionConfigReque
 }
 
 export function normalizeSessionConfig(input: unknown): SessionConfig | undefined {
-  const row = record(input) ?? {}
+  const row = asRecord(input) ?? {}
   const update = normalizeSessionConfigUpdate(input)
   if (!update.harness) return undefined
   return {

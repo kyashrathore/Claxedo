@@ -1,4 +1,4 @@
-import { withSessionCore, currentSessionCore } from "../session-context"
+import { withSessionCore } from "../session-context"
 import { testSessionCore } from "@claxedo/session-core/testing"
 import { afterEach, describe, expect, test } from "bun:test"
 import { Hono, type MiddlewareHandler } from "hono"
@@ -146,7 +146,7 @@ async function fixture(options: { worktreeRoot?: (source: string) => string } = 
   await git(["commit", "-m", "base"], source)
 
   const store = openRuntimeStore(path.join(root, "state"))
-  const core = currentSessionCore()
+  const core = testSessionCore(source, WORKSPACE_ID)
   cores.set(source, core)
   const manager = new WorkspaceWorktreeManager({
     placement: core.placement,
@@ -215,7 +215,7 @@ function scoped(pathname: string, directory: string) {
 }
 
 describe("mounted file, diff and Git routes against a private session worktree", () => {
-  test("refuses every read a caller without the session's grant aims at it", () => withSessionCore(testSessionCore(process.cwd(), WORKSPACE_ID), async () => {
+  test("refuses every read a caller without the session's grant aims at it", async () => {
     const f = await fixture()
     const server = mounted({
       directory: f.source,
@@ -230,9 +230,9 @@ describe("mounted file, diff and Git routes against a private session worktree",
       expect(text).toContain("session_private")
       expect(text).not.toContain(SECRET)
     }
-  }))
+  })
 
-  test("refuses every Git write and leaves the worktree untouched", () => withSessionCore(testSessionCore(process.cwd(), WORKSPACE_ID), async () => {
+  test("refuses every Git write and leaves the worktree untouched", async () => {
     const f = await fixture()
     const server = mounted({
       directory: f.source,
@@ -250,9 +250,9 @@ describe("mounted file, diff and Git routes against a private session worktree",
     expect(await git(["diff", "--cached", "--name-only"], f.private)).toBe("")
     expect(await git(["status", "--porcelain"], f.private)).toBe("?? secret.txt")
     expect(await git(["rev-parse", "HEAD"], f.private)).toBe(head)
-  }))
+  })
 
-  test("serves the session the actor does hold a grant on", () => withSessionCore(testSessionCore(process.cwd(), WORKSPACE_ID), async () => {
+  test("serves the session the actor does hold a grant on", async () => {
     const f = await fixture()
     const server = mounted({
       directory: f.source,
@@ -270,9 +270,9 @@ describe("mounted file, diff and Git routes against a private session worktree",
     const staged = await post(server, scoped("/api/wr/git/stage", f.shared), { paths: ["shared.txt"] })
     expect(staged.status).toBe(204)
     expect(await git(["diff", "--cached", "--name-only"], f.shared)).toBe("shared.txt")
-  }))
+  })
 
-  test("takes ownership from the registration, not from a session the caller names", () => withSessionCore(testSessionCore(process.cwd(), WORKSPACE_ID), async () => {
+  test("takes ownership from the registration, not from a session the caller names", async () => {
     const f = await fixture()
     const server = mounted({
       directory: f.source,
@@ -297,9 +297,9 @@ describe("mounted file, diff and Git routes against a private session worktree",
     })
     expect(header.status).toBe(403)
     expect(await header.text()).not.toContain(SECRET)
-  }))
+  })
 
-  test("refuses an alias of the same worktree: a relative spelling and a symlink to it", () => withSessionCore(testSessionCore(process.cwd(), WORKSPACE_ID), async () => {
+  test("refuses an alias of the same worktree: a relative spelling and a symlink to it", async () => {
     const f = await fixture()
     const server = mounted({
       directory: f.source,
@@ -321,18 +321,18 @@ describe("mounted file, diff and Git routes against a private session worktree",
     const linked = await server.request("/api/wr/file/content?path=shortcut/secret.txt")
     expect(linked.status).toBe(403)
     expect(await linked.text()).not.toContain(SECRET)
-  }))
+  })
 
-  test("fails closed for a verified remote caller when the composition has no policy", () => withSessionCore(testSessionCore(process.cwd(), WORKSPACE_ID), async () => {
+  test("fails closed for a verified remote caller when the composition has no policy", async () => {
     const f = await fixture()
     const server = mounted({ directory: f.source, identity: relayAuth() })
 
     const response = await server.request(scoped("/api/wr/file/content?path=secret.txt", f.private))
     expect(response.status).toBe(503)
     await expect(response.json()).resolves.toMatchObject({ error: { code: "session_authority_required" } })
-  }))
+  })
 
-  test("keeps this machine's own user reading every worktree the runtime serves", () => withSessionCore(testSessionCore(process.cwd(), WORKSPACE_ID), async () => {
+  test("keeps this machine's own user reading every worktree the runtime serves", async () => {
     const f = await fixture()
     // No policy at all, and the daemon's flavour: a host with a local owner,
     // where an unattributed request is that owner's.
@@ -348,11 +348,11 @@ describe("mounted file, diff and Git routes against a private session worktree",
     const unattributed = await hosted.request(scoped("/api/wr/file/content?path=secret.txt", f.private))
     expect(unattributed.status).toBe(403)
     await expect(unattributed.json()).resolves.toMatchObject({ error: { code: "session_actor_required" } })
-  }))
+  })
 })
 
 describe("a private worktree nested under the workspace root", () => {
-  test("staging an ancestor cannot recursively include a private session directory", () => withSessionCore(testSessionCore(process.cwd(), WORKSPACE_ID), async () => {
+  test("staging an ancestor cannot recursively include a private session directory", async () => {
     const f = await fixture()
     const nested = path.join(f.source, "container", "private")
     await fs.mkdir(nested, { recursive: true })
@@ -363,7 +363,7 @@ describe("a private worktree nested under the workspace root", () => {
     const response = await post(server, "/api/wr/git/stage", { paths: ["container"] })
     expect({ status: response.status, staged: await git(["diff", "--cached", "--name-only"], f.source) })
       .toEqual({ status: 403, staged: "" })
-  }))
+  })
 
   /**
    * The nested-worktree shape the recursive cases share: a private session
@@ -388,23 +388,23 @@ describe("a private worktree nested under the workspace root", () => {
     }
   }
 
-  test("authorization and execution agree on whitespace in requested paths", () => withSessionCore(testSessionCore(process.cwd(), WORKSPACE_ID), async () => {
+  test("authorization and execution agree on whitespace in requested paths", async () => {
     const f = await containerFixture()
     const response = await f.server.request(`/api/wr/file/content?path=${encodeURIComponent(" container/private/secret.txt ")}`)
     expect({ status: response.status, leaked: (await response.text()).includes(SECRET) })
       .toEqual({ status: 403, leaked: false })
     const stage = await post(f.server, "/api/wr/git/stage", { paths: [" container/private/secret.txt "] })
     expect({ status: stage.status, staged: await f.staged() }).toEqual({ status: 403, staged: "" })
-  }))
+  })
 
-  test("single-file diff cannot expand a wildcard into a private path", () => withSessionCore(testSessionCore(process.cwd(), WORKSPACE_ID), async () => {
+  test("single-file diff cannot expand a wildcard into a private path", async () => {
     const f = await containerFixture()
     await git(["add", "--", "container"], f.source)
     const response = await f.server.request(`/api/wr/diff/vcs/file?mode=staged&file=${encodeURIComponent("container/*")}`)
     expect((await response.text()).includes(SECRET)).toBe(false)
-  }))
+  })
 
-  test("single-file diff authorizes the exact filename including leading spaces", () => withSessionCore(testSessionCore(process.cwd(), WORKSPACE_ID), async () => {
+  test("single-file diff authorizes the exact filename including leading spaces", async () => {
     const f = await containerFixture()
     const nested = path.join(f.source, " private")
     await fs.mkdir(nested)
@@ -420,18 +420,18 @@ describe("a private worktree nested under the workspace root", () => {
     const allowed = await owner.request(route)
     expect(allowed.status).toBe(200)
     expect((await allowed.text()).includes(SECRET)).toBe(true)
-  }))
+  })
 
-  test("a shared registration cannot hide another owner's denial on the same directory", () => withSessionCore(testSessionCore(process.cwd(), WORKSPACE_ID), async () => {
+  test("a shared registration cannot hide another owner's denial on the same directory", async () => {
     const f = await containerFixture()
     f.core.placement.unregister("ses_shared")
     f.core.placement.register({ sessionId: "ses_shared", directory: f.nested })
     const response = await f.server.request("/api/wr/git/status")
     expect(response.status).toBe(200)
     expect((await response.text()).includes("container/private/secret.txt")).toBe(false)
-  }))
+  })
 
-  test("reads a pathspec as the filename it resolved, so a wildcard cannot widen it", () => withSessionCore(testSessionCore(process.cwd(), WORKSPACE_ID), async () => {
+  test("reads a pathspec as the filename it resolved, so a wildcard cannot widen it", async () => {
     const f = await containerFixture()
 
     const refusals: Record<string, unknown> = {}
@@ -453,9 +453,9 @@ describe("a private worktree nested under the workspace root", () => {
     // The same route still stages the literal file it was given.
     expect((await post(f.server, "/api/wr/git/stage", { paths: ["workspace.txt"] })).status).toBe(204)
     expect(await f.staged()).toBe("workspace.txt")
-  }))
+  })
 
-  test("refuses an ancestor of a private directory whose files were deleted, and unstaging it too", () => withSessionCore(testSessionCore(process.cwd(), WORKSPACE_ID), async () => {
+  test("refuses an ancestor of a private directory whose files were deleted, and unstaging it too", async () => {
     const f = await containerFixture()
     await git(["-c", "core.excludesfile=/dev/null", "add", "-A", "--", "container"], f.source)
     await git(["commit", "-m", "container"], f.source)
@@ -468,9 +468,9 @@ describe("a private worktree nested under the workspace root", () => {
     }
     // The deletion is still only in the working tree; nothing was recorded.
     expect(await git(["log", "-1", "--pretty=%s"], f.source)).toBe("container")
-  }))
+  })
 
-  test("commits what the index holds, not what the request names", () => withSessionCore(testSessionCore(process.cwd(), WORKSPACE_ID), async () => {
+  test("commits what the index holds, not what the request names", async () => {
     const f = await containerFixture()
     // What the private session's own tooling would have staged for itself.
     await git(["add", "--", "container/private/secret.txt"], f.source)
@@ -486,9 +486,9 @@ describe("a private worktree nested under the workspace root", () => {
     expect((await post(f.server, "/api/wr/git/stage", { paths: ["workspace.txt"] })).status).toBe(204)
     expect((await post(f.server, "/api/wr/git/commit-staged", { message: "mine" })).status).toBe(200)
     expect(await f.head()).toBe("mine")
-  }))
+  })
 
-  test("refuses an amend that would republish a private path, and a rename away from one", () => withSessionCore(testSessionCore(process.cwd(), WORKSPACE_ID), async () => {
+  test("refuses an amend that would republish a private path, and a rename away from one", async () => {
     const f = await containerFixture()
     await git(["add", "--", "container/private/secret.txt"], f.source)
     await git(["commit", "-m", "private landed"], f.source)
@@ -505,9 +505,9 @@ describe("a private worktree nested under the workspace root", () => {
     expect(renamed.status).toBe(403)
     expect(await f.head()).toBe("private landed")
     expect(await fs.readFile(path.join(f.source, "stolen.txt"), "utf8")).toBe(`${SECRET}\n`)
-  }))
+  })
 
-  test("refuses a push that would send a repository carrying a private worktree", () => withSessionCore(testSessionCore(process.cwd(), WORKSPACE_ID), async () => {
+  test("refuses a push that would send a repository carrying a private worktree", async () => {
     const f = await containerFixture()
     const response = await post(f.server, "/api/wr/git/push", {})
     expect(response.status).toBe(403)
@@ -524,9 +524,9 @@ describe("a private worktree nested under the workspace root", () => {
     const reached = await post(ordinary, "/api/wr/git/push", {})
     expect(reached.status).toBe(502)
     await expect(reached.json()).resolves.toMatchObject({ error: { code: "git_push_rejected" } })
-  }))
+  })
 
-  test("preserves each entrypoint's path spelling when authorizing whitespace", () => withSessionCore(testSessionCore(process.cwd(), WORKSPACE_ID), async () => {
+  test("preserves each entrypoint's path spelling when authorizing whitespace", async () => {
     const f = await containerFixture()
     const padded = " container/private/secret.txt "
 
@@ -542,7 +542,7 @@ describe("a private worktree nested under the workspace root", () => {
     const unstage = await post(f.server, "/api/wr/git/unstage", { paths: [padded] })
     expect(unstage.status).toBe(403)
     expect(await f.staged()).toBe("")
-  }))
+  })
 
   /**
    * The window the commit has to be bound across: the authority is a network
@@ -550,7 +550,7 @@ describe("a private worktree nested under the workspace root", () => {
    * session's own agent stages with its own git, outside the in-process lock.
    * The write lands after the authority has answered and before the commit.
    */
-  test("commits the tree the authority answered about, not a private path staged after it", () => withSessionCore(testSessionCore(process.cwd(), WORKSPACE_ID), async () => {
+  test("commits the tree the authority answered about, not a private path staged after it", async () => {
     const f = await containerFixture()
     const open = path.join(f.source, "container", "shared")
     await fs.mkdir(open, { recursive: true })
@@ -582,9 +582,9 @@ describe("a private worktree nested under the workspace root", () => {
       .not.toContain("container/private/secret.txt")
     // Still staged and uncommitted: the commit read its snapshot, never the index.
     expect(await f.staged()).toBe("container/private/secret.txt")
-  }))
+  })
 
-  test("refuses a diff pathspec that names a directory holding a private worktree", () => withSessionCore(testSessionCore(process.cwd(), WORKSPACE_ID), async () => {
+  test("refuses a diff pathspec that names a directory holding a private worktree", async () => {
     const f = await containerFixture()
     const response = await f.server.request("/api/wr/diff/vcs/file?file=container")
     expect(response.status).toBe(403)
@@ -592,9 +592,9 @@ describe("a private worktree nested under the workspace root", () => {
 
     const open = await f.server.request("/api/wr/diff/vcs/file?file=workspace.txt")
     expect(open.status).toBe(200)
-  }))
+  })
 
-  test("keeps a renamed-from private path out of status and diff", () => withSessionCore(testSessionCore(process.cwd(), WORKSPACE_ID), async () => {
+  test("keeps a renamed-from private path out of status and diff", async () => {
     const f = await containerFixture()
     await git(["-c", "core.excludesfile=/dev/null", "add", "-A", "--", "container", "workspace.txt"], f.source)
     await git(["commit", "-m", "container"], f.source)
@@ -617,9 +617,9 @@ describe("a private worktree nested under the workspace root", () => {
     const diffed = await diff.json() as Array<{ file: string; from?: string }>
     expect(diffed.map((entry) => entry.file)).toEqual(["workspace.txt"])
     expect(JSON.stringify(diffed)).not.toContain("container/private")
-  }))
+  })
 
-  test("stays out of reach through the root, and out of the listings that walk it", () => withSessionCore(testSessionCore(process.cwd(), WORKSPACE_ID), async () => {
+  test("stays out of reach through the root, and out of the listings that walk it", async () => {
     const f = await fixture({ worktreeRoot: (source) => path.join(source, "sessions") })
     const nested = path.join(f.source, "loose")
     await fs.mkdir(nested)
@@ -684,9 +684,9 @@ describe("a private worktree nested under the workspace root", () => {
     const staged = await post(server, "/api/wr/git/stage", { paths: ["loose/loose-secret.txt"] })
     expect(staged.status).toBe(403)
     expect(await git(["diff", "--cached", "--name-only"], f.source)).toBe("")
-  }))
+  })
 
-  test("refuses the Git source routes that resolve a path under the workspace root", () => withSessionCore(testSessionCore(process.cwd(), WORKSPACE_ID), async () => {
+  test("refuses the Git source routes that resolve a path under the workspace root", async () => {
     const f = await fixture()
     const nested = path.join(f.source, "loose")
     await fs.mkdir(nested)
@@ -715,7 +715,7 @@ describe("a private worktree nested under the workspace root", () => {
     expect(commit.status).toBe(403)
     expect(await fs.readFile(path.join(nested, "loose-secret.txt"), "utf8")).toBe(`${SECRET}\n`)
     expect(await git(["log", "-1", "--pretty=%s"], f.source)).toBe("loose")
-  }))
+  })
 })
 
 describe("the base a reported path is named against", () => {
@@ -742,7 +742,7 @@ describe("the base a reported path is named against", () => {
     return { ...f, served, sibling }
   }
 
-  test("filters a sibling worktree that Git reported from the repository root", () => withSessionCore(testSessionCore(process.cwd(), WORKSPACE_ID), async () => {
+  test("filters a sibling worktree that Git reported from the repository root", async () => {
     const f = await siblingFixture()
     const server = mounted({
       directory: f.source,
@@ -759,9 +759,9 @@ describe("the base a reported path is named against", () => {
     // at an empty list.
     expect(reported).toContain("served/mine.txt")
     expect(reported.some((entry) => entry.startsWith("sibling"))).toBe(false)
-  }))
+  })
 
-  test("a directory-based listing keeps working outside a Git repository", () => withSessionCore(testSessionCore(process.cwd(), WORKSPACE_ID), async () => {
+  test("a directory-based listing keeps working outside a Git repository", async () => {
     const f = await fixture()
     const plain = await fs.mkdtemp(path.join(os.tmpdir(), "workspace-runtime-p64-plain-"))
     cleanups.push(() => fs.rm(plain, { recursive: true, force: true }))
@@ -791,9 +791,9 @@ describe("the base a reported path is named against", () => {
     expect(listing.status).toBe(200)
     const names = (await listing.json() as Array<{ name: string }>).map((entry) => entry.name)
     expect(names).toEqual(["note.txt"])
-  }))
+  })
 
-  test("answers a Git failure rather than an unfiltered diff when the repository cannot be named", () => withSessionCore(testSessionCore(process.cwd(), WORKSPACE_ID), async () => {
+  test("answers a Git failure rather than an unfiltered diff when the repository cannot be named", async () => {
     const f = await siblingFixture()
     // Tracked, so the diff below is the repository-relative arm: it reports the
     // sibling from the repository root even though it runs inside `served`.
@@ -813,10 +813,10 @@ describe("the base a reported path is named against", () => {
         git ? { git } : {},
         { sessionAccessPolicy: sharedSessionPolicy("ses_served") },
       ))
-      return withWorkspaceTarget(
+      return withSessionCore(f.core, () => withWorkspaceTarget(
         { workspaceId: WORKSPACE_ID, directory: f.source },
         () => app.request(`http://localhost/api/wr/diff/vcs?mode=uncommitted&directory=${encodeURIComponent(f.served)}`),
-      )
+      ))
     }
 
     // With the repository resolvable the answer is served and filtered: the
@@ -840,5 +840,5 @@ describe("the base a reported path is named against", () => {
     expect(text).toContain("diff_vcs_failed")
     expect(text).not.toContain(SECRET)
     expect(text).not.toContain("sibling")
-  }))
+  })
 })

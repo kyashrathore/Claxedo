@@ -1,9 +1,9 @@
 import type { Hono } from "hono"
 import { runGit } from "../git"
-import { assertTarget, workspaceDir } from "../target"
+import { currentSessionCore } from "../session-context"
 
 function requestDirectory(c: { req: { query(name: string): string | undefined } }) {
-  return assertTarget(c.req.query("directory") || workspaceDir())
+  return currentSessionCore().placement.resolveDirectory(c.req.query("directory"))
 }
 
 export function mountWorkspaceVcs(app: Hono) {

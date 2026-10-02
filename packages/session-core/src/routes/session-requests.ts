@@ -1,9 +1,8 @@
 import type { AgentPermission, AgentQuestion, AgentSessionStartBinding } from "@claxedo/agent-runtime-contract"
-import { asRecord } from "@claxedo/helpers/guards"
+import { asRecord, asArrayOrUndefined, asString } from "@claxedo/helpers/guards"
 import { routeParam } from "@claxedo/helpers/route-param"
 import type { RuntimeDirectory } from "../host/contracts"
 import { isAgentRuntimeRequestRefusedError, type AgentRuntime } from "../host/runtime"
-import { arr, str } from "../json-value"
 import { sessionAccessContext, type SessionAccessOperation } from "../session-access-policy"
 import { errorBody } from "./error-body"
 import { collectionSessionIds, explicitSessionId, sessionStartGuard } from "./session-access-guards"
@@ -13,13 +12,13 @@ import type { SessionRouteContext as Ctx, SessionRouteOptions as Opts } from "./
 
 /** The `string[][]` a question reply must carry, or `undefined` when it does not. */
 export function questionAnswers(input: unknown): string[][] | undefined {
-  const rows = arr(input)
+  const rows = asArrayOrUndefined(input)
   if (!rows) return undefined
   const answers: string[][] = []
   for (const row of rows) {
-    const values = arr(row)
-    if (!values?.every((value) => str(value) !== undefined)) return undefined
-    answers.push(values.filter((value): value is string => str(value) !== undefined))
+    const values = asArrayOrUndefined(row)
+    if (!values?.every((value) => asString(value) !== undefined)) return undefined
+    answers.push(values.filter((value): value is string => asString(value) !== undefined))
   }
   return answers
 }

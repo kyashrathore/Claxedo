@@ -4,15 +4,13 @@ import {
   errorBody,
   isRequestBodyTooLarge,
   requestBodyTooLargeBody,
-  isRecord as record,
-  str,
 } from "@claxedo/session-core"
 import { readProviderDefinitions, type CustomProviderDefinition } from "@claxedo/harness/contract"
 import type { CredentialSnapshot, PlaceholderEnvironment, ProviderProjection, ProviderProjectionSource, SavedCommand } from "@claxedo/agent-runtime-contract"
 import { Hono } from "hono"
 import { Log } from "../log"
 import { isAgentHarnessId, credentialSnapshot, type HarnessConnectionDescriptor } from "@claxedo/agent-runtime-contract"
-import { isRecord } from "@claxedo/helpers/guards"
+import { isRecord, asString } from "@claxedo/helpers/guards"
 import type { RelayHostAuthContext } from "../workspace-host-service-auth"
 import { authorizeManagementAccess, type ManagementAccessOptions } from "./management-access"
 import { WorkspaceRuntimeRoutes } from "./manifest"
@@ -89,7 +87,7 @@ function stringRecord(input: unknown): input is Record<string, string> {
 }
 
 function normalizeSelection(input: unknown): RuntimeHarnessSelection | undefined {
-  if (!record(input)) return undefined
+  if (!isRecord(input)) return undefined
   if (input.kind === "native" && Object.keys(input).every((key) => key === "kind" || key === "harnessId")) {
     // `find` over the canonical list yields the literal type; a membership test
     // would leave a bare `string` and force an assertion.
@@ -106,11 +104,11 @@ function normalizeSelection(input: unknown): RuntimeHarnessSelection | undefined
 }
 
 function normalizeDescriptor(input: unknown): RuntimeConnectionDescriptor | undefined {
-  if (!record(input)) return undefined
+  if (!isRecord(input)) return undefined
   if (typeof input.connectionId !== "string" || !input.connectionId.trim()) return undefined
   if (typeof input.providerKey !== "string" || !input.providerKey.trim()) return undefined
   if (typeof input.configRevision !== "number" || !Number.isSafeInteger(input.configRevision) || input.configRevision < 1) return undefined
-  if (typeof input.enabled !== "boolean" || !record(input.config)) return undefined
+  if (typeof input.enabled !== "boolean" || !isRecord(input.config)) return undefined
   if (input.secretRefs !== undefined && !stringRecord(input.secretRefs)) return undefined
   const allowed = new Set(["connectionId", "providerKey", "configRevision", "enabled", "config", "secretRefs"])
   if (Object.keys(input).some((key) => !allowed.has(key))) return undefined
@@ -126,10 +124,10 @@ function normalizeDescriptor(input: unknown): RuntimeConnectionDescriptor | unde
 
 function normalizeHarnessLaunch(input: unknown): Record<string, Record<string, unknown>> | undefined {
   if (input === undefined) return {}
-  if (!record(input)) return undefined
+  if (!isRecord(input)) return undefined
   const rows: Record<string, Record<string, unknown>> = {}
   for (const [harnessId, value] of Object.entries(input)) {
-    if ((!isAgentHarnessId(harnessId) && harnessId !== "acp") || !record(value)) return undefined
+    if ((!isAgentHarnessId(harnessId) && harnessId !== "acp") || !isRecord(value)) return undefined
     rows[harnessId] = value
   }
   return rows
@@ -137,9 +135,9 @@ function normalizeHarnessLaunch(input: unknown): Record<string, Record<string, u
 
 /** One command entry as the wire may carry it, or `undefined` when malformed. */
 function normalizeCommand(input: unknown): SavedCommand | undefined {
-  if (!record(input)) return undefined
-  const name = str(input.name)
-  const content = str(input.content)
+  if (!isRecord(input)) return undefined
+  const name = asString(input.name)
+  const content = asString(input.content)
   return name !== undefined && content !== undefined ? { name, content } : undefined
 }
 

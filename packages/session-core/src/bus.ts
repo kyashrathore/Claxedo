@@ -1,6 +1,6 @@
 import type { SessionLifecycleEvent } from "./routes/session-route-options"
 import type { QueuedPromptView } from "./session/delivery-owner"
-import { rec } from "./json-value"
+import { asRecord } from "@claxedo/helpers/guards"
 
 type Subscriber<T> = (event: T) => unknown
 
@@ -9,7 +9,7 @@ type BusOptions<T> = {
 }
 
 function catches(value: unknown): value is Promise<unknown> {
-  return typeof rec(value)?.catch === "function"
+  return typeof asRecord(value)?.catch === "function"
 }
 
 export function createBus<T>(options: BusOptions<T> = {}) {

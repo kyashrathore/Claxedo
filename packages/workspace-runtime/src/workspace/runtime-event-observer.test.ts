@@ -1,3 +1,5 @@
+import os from "node:os"
+import path from "node:path"
 import { expect, test } from "bun:test"
 import { createRuntimeEventHub, type RuntimeEventEnvelope } from "@claxedo/session-core"
 import { loopbackMachineLoginPolicy } from "../testing"
@@ -12,7 +14,7 @@ import { createWorkspaceHost } from "./runtime"
 test("a host observer is handed every runtime event the hub publishes, and stops when the host is disposed", async () => {
   const eventHub = createRuntimeEventHub()
   const seen: RuntimeEventEnvelope[] = []
-  const host = createWorkspaceHost({ target: { workspaceId: "ws_test", directory: process.cwd() },
+  const host = createWorkspaceHost({ target: { workspaceId: "ws_test", directory: path.join(os.tmpdir(), "runtime-event-observer-root") },
     sessionIdWorkspace: () => undefined, placement: loopbackMachineLoginPolicy(), eventHub, onRuntimeEvent: (event) => seen.push(event) })
 
   eventHub.publishRuntime({

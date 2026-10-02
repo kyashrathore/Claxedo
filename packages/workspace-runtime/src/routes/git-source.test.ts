@@ -36,7 +36,9 @@ async function withGitRepo(fn: (directory: string) => Promise<void>, input: { ob
 }
 
 function app() {
-  const core = testSessionCore(process.env.WORKSPACE_RUNTIME_DIRECTORY)
+  const directory = process.env.WORKSPACE_RUNTIME_DIRECTORY
+  if (!directory) throw new Error("the Git source routes are served inside withGitRepo")
+  const core = testSessionCore(directory)
   return new Hono().use("*", (_c, next) => withSessionCore(core, next)).route("/api/wr/git", GitSourceRoutes())
 }
 

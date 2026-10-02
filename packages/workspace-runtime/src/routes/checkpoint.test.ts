@@ -1,3 +1,5 @@
+import os from "node:os"
+import path from "node:path"
 import { describe, expect, test } from "bun:test"
 import { createWorkspaceHost } from "../workspace"
 import { createWorkspaceRuntimeApp } from "../server"
@@ -10,7 +12,7 @@ import { loopbackMachineLoginPolicy } from "../testing"
 
 describe("workspace checkpoint routes", () => {
   test("rejects checkpoint mutation from a verified viewer before changing state", async () => {
-    const host = createWorkspaceHost({ target: { workspaceId: "ws_test", directory: process.cwd() },
+    const host = createWorkspaceHost({ target: { workspaceId: "ws_test", directory: path.join(os.tmpdir(), "checkpoint-routes-root") },
     sessionIdWorkspace: () => undefined, placement: loopbackMachineLoginPolicy() })
     const now = Math.floor(Date.now() / 1000)
     const app = new Hono<{ Variables: RelayHostAuthContext }>()
@@ -73,7 +75,7 @@ describe("workspace checkpoint routes", () => {
   })
 
   test("freeze waits for admitted writes and then reaches a stable frozen state", async () => {
-    const host = createWorkspaceHost({ target: { workspaceId: "ws_test", directory: process.cwd() },
+    const host = createWorkspaceHost({ target: { workspaceId: "ws_test", directory: path.join(os.tmpdir(), "checkpoint-routes-root") },
     sessionIdWorkspace: () => undefined, placement: loopbackMachineLoginPolicy() })
     const release = host.checkpoint.beginWrite()
     if (!release) throw new Error("write unexpectedly fenced")
@@ -107,7 +109,7 @@ describe("workspace checkpoint routes", () => {
   })
 
   test("a write that never settles leaves the freeze blocked, gated, and naming it", async () => {
-    const host = createWorkspaceHost({ target: { workspaceId: "ws_test", directory: process.cwd() },
+    const host = createWorkspaceHost({ target: { workspaceId: "ws_test", directory: path.join(os.tmpdir(), "checkpoint-routes-root") },
     sessionIdWorkspace: () => undefined, placement: loopbackMachineLoginPolicy() })
     const release = host.checkpoint.beginWrite()
     if (!release) throw new Error("write unexpectedly fenced")

@@ -53,11 +53,7 @@ import {
 } from "../routes/config"
 import { openRuntimeStore } from "../store-file"
 import { workspaceDurableState } from "./durable-state"
-import {
-  assertTarget,
-  withWorkspaceTarget,
-  workspaceDir,
-} from "../target"
+import { withWorkspaceTarget } from "../target"
 import { createWorkspaceCheckpoint } from "./checkpoint"
 import { createSessionConfiguration } from "./configure"
 import { createHarnessHealthFeed } from "./harness-health-feed"
@@ -473,7 +469,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions): WorkspaceHos
       app.get("/api/wr/harness-providers", async (c) => {
         const harness = requestedSessionHarness(c.req)
         if (!harness) return c.json(errorBody("harness_required", "Name the harness whose provider catalog to read"), 400)
-        const directory = assertTarget(c.req.query("directory") || workspaceDir())
+        const directory = core.placement.resolveDirectory(c.req.query("directory"))
         const runtime = await runtimeForSession()
         const target = { harness, directory, owner: sessionOwner(c) }
         try {
@@ -493,7 +489,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions): WorkspaceHos
           if (cause instanceof WorkspaceHarnessUnavailableError) return c.json({ ok: false, error: { code: cause.code, message: cause.message } }, 409)
           throw cause
         }
-        const directory = assertTarget(c.req.query("directory") || workspaceDir())
+        const directory = core.placement.resolveDirectory(c.req.query("directory"))
         try {
           const runtime = await runtimeForSession()
           const target = { harness: targetRunner, directory, owner: sessionOwner(c) }

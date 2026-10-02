@@ -1,6 +1,6 @@
 import { createHmac, randomBytes, randomUUID } from "node:crypto"
 import { base64UrlDecode, base64UrlEncode, timingSafeEqualStrings } from "@claxedo/helpers"
-import { rec } from "@claxedo/session-core"
+import { asRecord } from "@claxedo/helpers/guards"
 
 export type RuntimeCredentialClaims = {
   runtimeId: string
@@ -39,7 +39,7 @@ function payloadClaims(token: string): Record<string, unknown> | undefined {
   const payload = token.split(".")[1]
   if (!payload) return undefined
   try {
-    return rec(JSON.parse(new TextDecoder().decode(base64UrlDecode(payload))))
+    return asRecord(JSON.parse(new TextDecoder().decode(base64UrlDecode(payload))))
   } catch {
     return undefined
   }

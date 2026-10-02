@@ -1,4 +1,6 @@
 import { testSessionCore } from "@claxedo/session-core/testing"
+import os from "node:os"
+import path from "node:path"
 import { describe, expect, test } from "bun:test"
 import { Hono } from "hono"
 import { createRuntimeEventHub, type SessionAccessPolicy, sessionIdle, withDir } from "@claxedo/session-core"
@@ -11,7 +13,8 @@ import {
 } from "./index"
 import { loopbackMachineLoginPolicy } from "../testing"
 
-const testCore = testSessionCore()
+const WORKSPACE = path.join(os.tmpdir(), "workspace-index-test")
+const testCore = testSessionCore(WORKSPACE)
 const testBus = testCore.bus
 
 function paths(app: Hono) {
@@ -76,7 +79,7 @@ describe("workspace module wiring", () => {
         ? { allowed: true, lease: "lease_initial", expiresAt: Date.now() + 40 }
         : { allowed: false, status: 403, code: "session_revoked", message: "revoked" }
     }
-    const host = createWorkspaceHost({ target: { workspaceId: "ws_test", directory: process.cwd() },
+    const host = createWorkspaceHost({ target: { workspaceId: "ws_test", directory: WORKSPACE },
     sessionIdWorkspace: () => undefined, placement: loopbackMachineLoginPolicy(), eventHub, sessionAccessPolicy: accessPolicy })
     const app = new Hono()
     verifiedRelay(app)
@@ -101,7 +104,7 @@ describe("workspace module wiring", () => {
 
   test("a managed runtime without workspace authority requires a session, and scopes replay by it", async () => {
     const eventHub = createRuntimeEventHub()
-    const host = createWorkspaceHost({ target: { workspaceId: "ws_test", directory: process.cwd() },
+    const host = createWorkspaceHost({ target: { workspaceId: "ws_test", directory: WORKSPACE },
     sessionIdWorkspace: () => undefined, placement: loopbackMachineLoginPolicy(), eventHub, sessionAccessPolicy: managedPolicy() })
     const app = new Hono()
     verifiedRelay(app)
@@ -110,8 +113,8 @@ describe("workspace module wiring", () => {
     expect((await app.request("http://localhost/api/wr/events")).status).toBe(400)
     expect((await app.request("http://localhost/api/wr/events?sessionID=session-b")).status).toBe(403)
 
-    eventHub.publishGlobal(withDir("/workspace", sessionIdle("session-b")))
-    eventHub.publishGlobal(withDir("/workspace", sessionIdle("session-a")))
+    eventHub.publishGlobal(withDir(WORKSPACE, sessionIdle("session-b")))
+    eventHub.publishGlobal(withDir(WORKSPACE, sessionIdle("session-a")))
     host.sessionCore.bus.publish({
       type: "agent.lifecycle",
       tabId: "private-b",
@@ -144,7 +147,7 @@ describe("workspace module wiring", () => {
 
   test("mountWorkspaceCore registers the workspace routes", async () => {
     const app = new Hono()
-    mountWorkspaceCore(app, (() => () => ({})) as never, { core: testCore, directory: "/workspace", exposure: loopbackExposure })
+    mountWorkspaceCore(app, (() => () => ({})) as never, { core: testCore, directory: WORKSPACE, exposure: loopbackExposure })
 
     const seen = paths(app)
     expect(has(seen, "/api/wr/pty")).toBe(true)
@@ -169,7 +172,7 @@ describe("workspace module wiring", () => {
   })
 
   test("workspace host mounts runtime routes", async () => {
-    const host = createWorkspaceHost({ target: { workspaceId: "ws_test", directory: process.cwd() },
+    const host = createWorkspaceHost({ target: { workspaceId: "ws_test", directory: WORKSPACE },
     sessionIdWorkspace: () => undefined, placement: loopbackMachineLoginPolicy() })
     const app = new Hono()
     host.mount(app, { exposure: loopbackExposure })
@@ -189,7 +192,7 @@ describe("workspace module wiring", () => {
   })
 
   test("workspace host mounts core routes when core option is supplied", () => {
-    const host = createWorkspaceHost({ target: { workspaceId: "ws_test", directory: process.cwd() },
+    const host = createWorkspaceHost({ target: { workspaceId: "ws_test", directory: WORKSPACE },
     sessionIdWorkspace: () => undefined, placement: loopbackMachineLoginPolicy() })
     const app = new Hono()
     host.mount(app, { exposure: loopbackExposure, core: { upgradeWebSocket: (() => () => ({})) as never } })
@@ -207,7 +210,7 @@ describe("workspace module wiring", () => {
   })
 
   test("workspace host can mount PTY without the core routes", () => {
-    const host = createWorkspaceHost({ target: { workspaceId: "ws_test", directory: process.cwd() },
+    const host = createWorkspaceHost({ target: { workspaceId: "ws_test", directory: WORKSPACE },
     sessionIdWorkspace: () => undefined, placement: loopbackMachineLoginPolicy() })
     const app = new Hono()
     host.mount(app, {
@@ -223,7 +226,7 @@ describe("workspace module wiring", () => {
   })
 
   test("workspace host omits core routes when core option is absent", () => {
-    const host = createWorkspaceHost({ target: { workspaceId: "ws_test", directory: process.cwd() },
+    const host = createWorkspaceHost({ target: { workspaceId: "ws_test", directory: WORKSPACE },
     sessionIdWorkspace: () => undefined, placement: loopbackMachineLoginPolicy() })
     const app = new Hono()
     host.mount(app, { exposure: loopbackExposure })
@@ -235,7 +238,7 @@ describe("workspace module wiring", () => {
 
   test("workspace core streams claxedo bus events", async () => {
     const app = new Hono()
-    mountWorkspaceCore(app, (() => () => ({})) as never, { core: testCore, directory: "/workspace", exposure: loopbackExposure })
+    mountWorkspaceCore(app, (() => () => ({})) as never, { core: testCore, directory: WORKSPACE, exposure: loopbackExposure })
 
     const ac = new AbortController()
     const res = await app.request("http://localhost/api/wr/events", { signal: ac.signal })
@@ -267,7 +270,7 @@ describe("workspace module wiring", () => {
   test("workspace core replays wr/events frames after Last-Event-ID", async () => {
     const app = new Hono()
     const eventHub = createRuntimeEventHub()
-    mountWorkspaceCore(app, (() => () => ({})) as never, { core: testSessionCore("/workspace", "ws_test", eventHub), directory: "/workspace", exposure: loopbackExposure })
+    mountWorkspaceCore(app, (() => () => ({})) as never, { core: testSessionCore(WORKSPACE, "ws_test", eventHub), directory: WORKSPACE, exposure: loopbackExposure })
 
     const first = new AbortController()
     const opened = await app.request("http://localhost/api/wr/events", { signal: first.signal })
@@ -294,7 +297,7 @@ describe("workspace module wiring", () => {
   test("workspace core emits a replay gap when Last-Event-ID is stale", async () => {
     const app = new Hono()
     const eventHub = createRuntimeEventHub()
-    mountWorkspaceCore(app, (() => () => ({})) as never, { core: testSessionCore("/workspace", "ws_test", eventHub), directory: "/workspace", exposure: loopbackExposure })
+    mountWorkspaceCore(app, (() => () => ({})) as never, { core: testSessionCore(WORKSPACE, "ws_test", eventHub), directory: WORKSPACE, exposure: loopbackExposure })
 
     for (let i = 1; i <= 258; i += 1) {
       eventHub.publishGlobal(withDir("/repo/main", sessionIdle(`session-${i}`)))

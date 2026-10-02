@@ -8,14 +8,8 @@ import { DEFAULT_RECOVERY_BUDGETS } from "@claxedo/agent-runtime-contract"
  * deadline nobody will outlive.
  */
 const MAX_FREEZE_DEADLINE_MS = DEFAULT_RECOVERY_BUDGETS.drainMs * 4
-import {
-  num,
-  str,
-  boundedJsonRecord,
-  errorBody,
-  isRequestBodyTooLarge,
-  requestBodyTooLargeBody,
-} from "@claxedo/session-core"
+import { asNumber, asString } from "@claxedo/helpers/guards"
+import { boundedJsonRecord, errorBody, isRequestBodyTooLarge, requestBodyTooLargeBody } from "@claxedo/session-core"
 import type { WorkspaceCheckpointControl, WorkspaceCheckpointDrainPolicy } from "../workspace/host"
 import type { WorkspaceWorktreeManager } from "../worktree"
 import type { RelayHostAuthContext } from "../workspace-host-service-auth"
@@ -45,7 +39,7 @@ export function CheckpointRoutes(input: {
     .post("/freeze", async (c) => {
       const body = await boundedJsonRecord(c)
       const policy: WorkspaceCheckpointDrainPolicy = body.policy === "interrupt" ? "interrupt" : "drain"
-      const requested = num(body.deadlineMs)
+      const requested = asNumber(body.deadlineMs)
       if (requested !== undefined && (!Number.isFinite(requested) || requested < 0 || requested > MAX_FREEZE_DEADLINE_MS)) {
         return c.json(
           errorBody(
@@ -83,8 +77,8 @@ export function CheckpointRoutes(input: {
     .post("/resume", async (c) => c.json(await input.checkpoint.resume()))
     .post("/restore-reconcile", async (c) => {
       const body = await boundedJsonRecord(c)
-      const epoch = num(body.epoch)
-      const checkpointId = str(body.checkpointId)
+      const epoch = asNumber(body.epoch)
+      const checkpointId = asString(body.checkpointId)
       if (epoch === undefined || !Number.isSafeInteger(epoch) || epoch < 1 || !checkpointId?.trim()) {
         return c.json(errorBody("workspace_checkpoint_reconcile_invalid", "epoch and checkpointId are required"), 400)
       }

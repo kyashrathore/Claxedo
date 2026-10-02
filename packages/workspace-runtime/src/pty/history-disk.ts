@@ -2,7 +2,7 @@ import fs from "node:fs/promises"
 import path from "node:path"
 import { workspaceRuntimePtyHistoryDir } from "../env"
 import { safeTrimStart } from "./safe-slice"
-import { rec, str } from "@claxedo/session-core"
+import { asRecord, asString } from "@claxedo/helpers/guards"
 
 export function historyPath(directory: string, id: string, root = workspaceRuntimePtyHistoryDir()) {
   const key = Buffer.from(directory).toString("base64url")
@@ -19,8 +19,8 @@ export async function readHistorySessionId(
   root = workspaceRuntimePtyHistoryDir(),
 ) {
   try {
-    const parsed = rec(JSON.parse(await fs.readFile(historySessionPath(directory, id, root), "utf8")))
-    return str(parsed?.sessionId) || undefined
+    const parsed = asRecord(JSON.parse(await fs.readFile(historySessionPath(directory, id, root), "utf8")))
+    return asString(parsed?.sessionId) || undefined
   } catch {
     return undefined
   }

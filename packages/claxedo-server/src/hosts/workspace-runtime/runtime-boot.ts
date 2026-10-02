@@ -171,7 +171,7 @@ export async function claxedoWorkspaceRuntimeBootFromEnv(
   const options: WorkspaceRuntimeServerOptions = {
     ...storeBackedSessionPlacement(),
     ...(authorityUrl
-      ? { resolveConnectionSecrets: sandboxConnectionSecrets({ workspaceId: workspaceId(env), directory: targetDirectory, authorityUrl }) }
+      ? { resolveConnectionSecrets: sandboxConnectionSecrets({ workspaceId: workspaceId(env), authorityUrl }) }
       : {}),
     target: { workspaceId: workspaceId(env), directory: targetDirectory },
     firstPartyMcpLaunch: { baseUrl: `http://127.0.0.1:${port}`, issuer: firstPartyMcp, enabledToolGroups: () => enabledToolGroups },

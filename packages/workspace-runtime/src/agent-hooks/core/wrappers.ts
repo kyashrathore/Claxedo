@@ -2,7 +2,7 @@ import * as fs from "fs"
 import * as path from "path"
 import { CLAXEDO_DIR, FIND_REAL_BINARY, WRAPPER_MARKER, WRAPPER_NAME, WRAPPERS_JSON } from "./constants"
 import { loadTemplate, shellQuote, writeIfChanged } from "./utils"
-import { arr, rec } from "@claxedo/session-core"
+import { asArrayOrUndefined, asRecord } from "@claxedo/helpers/guards"
 import type { StatusHookTemplate } from "@claxedo/plugin-api"
 import { hookArguments, hookVariables, projectHookContent, renderHookText } from "./render"
 
@@ -56,7 +56,7 @@ const wrappersPath = (root = CLAXEDO_DIR) => path.join(root, WRAPPERS_JSON)
 export const loadCustomWrappers = async (root = CLAXEDO_DIR) => {
   try {
     const raw = await fs.promises.readFile(wrappersPath(root), "utf-8")
-    const custom = arr(rec(JSON.parse(raw))?.custom) ?? []
+    const custom = asArrayOrUndefined(asRecord(JSON.parse(raw))?.custom) ?? []
     return normalizeWrappers(custom.filter((item): item is string => typeof item === "string"))
   } catch {
     return []

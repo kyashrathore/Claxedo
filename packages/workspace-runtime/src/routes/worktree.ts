@@ -1,7 +1,7 @@
 import { Hono, type Context } from "hono"
+import { asRecord } from "@claxedo/helpers/guards"
 import {
   WorkspaceTargetError,
-  rec,
   type WorkspaceWorktreeRecord,
   boundedJsonBody,
   errorBody,
@@ -28,7 +28,7 @@ export function worktreeResponse(worktree: WorkspaceWorktreeRecord) {
 export function parseWorktreeCreateBody(body: unknown):
   | { ok: true; value: { sessionId: string; baseCommit?: string } }
   | { ok: false; status: 400; body: ReturnType<typeof errorBody> } {
-  const value = rec(body)
+  const value = asRecord(body)
   if (typeof value?.sessionId !== "string") {
     return {
       ok: false,

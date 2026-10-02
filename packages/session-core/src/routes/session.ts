@@ -18,7 +18,7 @@ import type { AgentMessagePage, AgentMessagePageInput, AgentTurnCoveragePage } f
 import type { RuntimeBus } from "../bus"
 import type { SessionPlacement } from "../placement"
 import { errorMessage } from "@claxedo/helpers"
-import { rec, str } from "../json-value"
+import { asRecord, asString } from "@claxedo/helpers/guards"
 import { createRuntimeEventHub, type RuntimeEventHub } from "../projection/runtime-event-hub"
 import { requestedSessionHarness } from "./session-harness-query"
 import type { SessionPromptBody } from "../session/service"
@@ -27,8 +27,8 @@ import type { AgentSessionStarts } from "@claxedo/agent-runtime-contract"
 
 function publishLifecycleEvent(bus: RuntimeBus, workspaceId: string, event: Parameters<RuntimeEventHub["publishGlobal"]>[0]) {
   const payload = event.payload as { type?: unknown; properties?: Record<string, unknown> }
-  const sessionID = str(payload.properties?.sessionID) ?? str(payload.properties?.sessionId)
-  const status = rec(payload.properties?.status)
+  const sessionID = asString(payload.properties?.sessionID) ?? asString(payload.properties?.sessionId)
+  const status = asRecord(payload.properties?.status)
   const eventType = payload.type === "session.status" && status?.type === "busy"
     ? "Busy"
     : payload.type === "permission.asked" || payload.type === "question.asked"

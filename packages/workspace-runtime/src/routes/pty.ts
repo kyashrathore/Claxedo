@@ -17,11 +17,11 @@ import {
 } from "@claxedo/session-core"
 import { routeParam } from "@claxedo/helpers/route-param"
 import {
-  assertTarget,
   authoritativeWorkspaceId,
   resolveWorkspaceCommandPaths,
   resolveWorkspacePath,
 } from "../target"
+import { currentSessionCore } from "../session-context"
 import type { RelayHostAuthContext } from "../workspace-host-service-auth"
 import { readHistorySessionId } from "../pty/history-disk"
 import {
@@ -149,7 +149,7 @@ export function PtyRoutes(
       const { CLAXEDO_WORKSPACE_ID: _untrustedWorkspaceId, ...environment } = input.env ?? {}
       let cwd: string | undefined
       try {
-        const directory = assertTarget(c.req.header("x-claxedo-directory"))
+        const directory = currentSessionCore().placement.resolveDirectory(c.req.header("x-claxedo-directory"))
         cwd = input.cwd ? await resolveWorkspacePath(directory, input.cwd) : directory
         await resolveWorkspaceCommandPaths(directory, {
           command: input.command,

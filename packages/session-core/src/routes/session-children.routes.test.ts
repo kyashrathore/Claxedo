@@ -1,4 +1,4 @@
-import { testSessionRoutePorts } from "../test-support/session-core"
+import { TEST_SESSION_ROUTES_DIRECTORY, testSessionRoutePorts } from "../test-support/session-core"
 import { hmacChildSessionId } from "../test-support/child-identity"
 import { afterEach, describe, expect, test } from "bun:test"
 import { Hono } from "hono"
@@ -24,7 +24,7 @@ import type { SessionRequestIdentity } from "../session-access-policy"
 type RelayIdentity = SessionRequestIdentity & { principal_kind: "user" | "service" }
 import { SessionRoutes } from "./session"
 
-const DIRECTORY = process.cwd()
+const DIRECTORY = TEST_SESSION_ROUTES_DIRECTORY
 const CODEX: SessionHarness = { id: "codex", access: "native" }
 const MODES: readonly AgentPermissionMode[] = [
   { id: "read-only", name: "Read only", level: "ask" },

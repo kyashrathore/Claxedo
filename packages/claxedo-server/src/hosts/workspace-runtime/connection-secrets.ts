@@ -1,4 +1,4 @@
-import { assertTarget } from "@claxedo/workspace-runtime/host"
+import { currentSessionCore } from "@claxedo/workspace-runtime/host"
 import { createVmConnectionSecretResolver } from "@claxedo/server-core/agent-config/connection-secrets"
 import type { ConnectionSecretAuthority } from "@claxedo/agent-runtime-contract"
 
@@ -8,11 +8,11 @@ import type { ConnectionSecretAuthority } from "@claxedo/agent-runtime-contract"
  * request or the signed lease of the turn, so a background turn is proven by
  * its own admission and never by whichever request is running at the time.
  */
-export function sandboxConnectionSecrets(input: { workspaceId: string; directory: string; authorityUrl: string }) {
+export function sandboxConnectionSecrets(input: { workspaceId: string; authorityUrl: string }) {
   const endpoint = new URL(`/api/runtime-authority/connection-secrets/${encodeURIComponent(input.workspaceId)}`, input.authorityUrl).href
   return createVmConnectionSecretResolver({
     workspaceForDirectory: (directory) => {
-      assertTarget(directory, { WORKSPACE_RUNTIME_WORKSPACE_ID: input.workspaceId, WORKSPACE_RUNTIME_DIRECTORY: input.directory })
+      currentSessionCore().placement.resolveDirectory(directory)
       return { workspaceId: input.workspaceId }
     },
     resolveLease: async ({ connectionId, providerKey, configRevision, authority, owner }) => {

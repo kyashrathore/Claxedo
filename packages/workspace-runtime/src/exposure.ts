@@ -1,5 +1,5 @@
 import type { MiddlewareHandler } from "hono"
-import { rec } from "@claxedo/session-core"
+import { asRecord } from "@claxedo/helpers/guards"
 import type { RelayHostAuthContext, RelayHostAuthOptions } from "./workspace-host-service-auth"
 import { trimToUndefined } from "@claxedo/helpers/string"
 import { sessionScopeReaches } from "@claxedo/workspace-relay-protocol"
@@ -178,7 +178,7 @@ export function createWorkspaceRuntimeExposureMiddleware(exposure: WorkspaceRunt
 function parseEmbeddedRelayHostAuth(value: string | undefined): RelayHostAuthContext["relayHostAuth"] {
   if (!value?.trim()) return undefined
   try {
-    const row = rec(JSON.parse(value))
+    const row = asRecord(JSON.parse(value))
     if (!row) return undefined
     const principal_kind = row.principal_kind === "user" || row.principal_kind === "service"
       ? row.principal_kind

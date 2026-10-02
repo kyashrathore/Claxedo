@@ -1,3 +1,4 @@
+import { asBoolean, asNumber, asRecord, asString } from "@claxedo/helpers/guards"
 import {
   managedWorkspaceSessionAccessPolicy,
   type SessionAccessDecision,
@@ -10,10 +11,6 @@ import {
   type SessionWriteClass,
   sessionAccessRequiresWrite,
   sessionAccessWriteClass,
-  bool,
-  num,
-  rec,
-  str,
   type RuntimeSessionTime,
 } from "@claxedo/session-core"
 
@@ -186,18 +183,18 @@ export function remoteWorkspaceSessionAccessPolicy(
       })
       if (response.ok) {
         const body = await jsonBody(response)
-        const lease = str(body?.lease)
+        const lease = asString(body?.lease)
         const expiresAt = typeof body?.expiresAt === "number" ? body.expiresAt : undefined
         return lease && expiresAt !== undefined ? { allowed: true, lease, expiresAt } : { allowed: true }
       }
-      const error = rec((await jsonBody(response))?.error)
+      const error = asRecord((await jsonBody(response))?.error)
       // Only the authority's own refusal is a refusal; anything else it
       // answered — a fault, a missing route, a throttle — is the authority
       // being unavailable, and is not what sends a reader to the session arm.
       if (response.status === 401 || response.status === 403) {
-        return denied(response.status, str(error?.code) ?? "host_authority_denied", str(error?.message))
+        return denied(response.status, asString(error?.code) ?? "host_authority_denied", asString(error?.message))
       }
-      return denied(503, str(error?.code) ?? "session_authority_unavailable", str(error?.message))
+      return denied(503, asString(error?.code) ?? "session_authority_unavailable", asString(error?.message))
     } catch {
       return denied(503, "session_authority_unavailable")
     }
@@ -251,7 +248,7 @@ type AuthorityDenial = Exclude<SessionAccessDecision, { allowed: true }>
 
 /** The authority's JSON body, or `undefined` when there is not a readable one. */
 async function jsonBody(response: Response): Promise<Record<string, unknown> | undefined> {
-  return rec(await response.json().catch(() => undefined))
+  return asRecord(await response.json().catch(() => undefined))
 }
 
 /** A plain grant: the action succeeded and carries no payload. */
@@ -260,15 +257,15 @@ function decodeAllowed(): { allowed: true } {
 }
 
 function decodeReservation(body: Record<string, unknown> | undefined): SessionReservationDecision {
-  const operationId = str(body?.operationId)
+  const operationId = asString(body?.operationId)
   return operationId === undefined ? denied(503, "session_authority_invalid_response") : { allowed: true, operationId }
 }
 
 function decodeStreamLease(
   body: Record<string, unknown> | undefined,
 ): { allowed: true; lease: string; expiresAt: number } | AuthorityDenial {
-  const lease = str(body?.lease)
-  const expiresAt = num(body?.expiresAt)
+  const lease = asString(body?.lease)
+  const expiresAt = asNumber(body?.expiresAt)
   if (lease === undefined || expiresAt === undefined) return denied(503, "session_authority_invalid_response")
   return { allowed: true, lease, expiresAt }
 }
@@ -276,30 +273,30 @@ function decodeStreamLease(
 function decodeTurnLease(
   body: Record<string, unknown> | undefined,
 ): Exclude<SessionTurnLeaseDecision, AuthorityDenial> | AuthorityDenial {
-  const turnId = str(body?.turnId)
-  const leaseId = str(body?.leaseId)
+  const turnId = asString(body?.turnId)
+  const leaseId = asString(body?.leaseId)
   const fencingToken = body?.fencingToken
-  const acquiredAt = num(body?.acquiredAt)
-  const expiresAt = num(body?.expiresAt)
+  const acquiredAt = asNumber(body?.acquiredAt)
+  const expiresAt = asNumber(body?.expiresAt)
   if (
     turnId === undefined || leaseId === undefined || !positiveInteger(fencingToken)
     || acquiredAt === undefined || expiresAt === undefined || expiresAt <= acquiredAt
   ) return denied(503, "session_authority_invalid_response")
-  const connectionCredential = str(body?.connectionCredential)
+  const connectionCredential = asString(body?.connectionCredential)
   return { allowed: true, turnId, leaseId, fencingToken, acquiredAt, expiresAt, ...(connectionCredential ? { connectionCredential } : {}) }
 }
 
 function decodeTurnGrant(
   body: Record<string, unknown> | undefined,
 ): Exclude<SessionTurnGrantDecision, AuthorityDenial> | AuthorityDenial {
-  const grant = str(body?.grant)
-  const expiresAt = num(body?.expiresAt)
+  const grant = asString(body?.grant)
+  const expiresAt = asNumber(body?.expiresAt)
   if (grant === undefined || expiresAt === undefined) return denied(503, "session_authority_invalid_response")
   return { allowed: true, grant, expiresAt }
 }
 
 function decodeTurnRelease(body: Record<string, unknown> | undefined): { released: boolean } | AuthorityDenial {
-  const released = bool(body?.released)
+  const released = asBoolean(body?.released)
   return released === undefined ? denied(503, "session_authority_invalid_response") : { released }
 }
 
@@ -310,11 +307,11 @@ function decodeTurnRelease(body: Record<string, unknown> | undefined): { release
  * which a lease outlives and a reader retries, never a refusal it acts on.
  */
 function deniedFromResponse(response: Response, body: Record<string, unknown> | undefined): AuthorityDenial {
-  const error = rec(body?.error)
+  const error = asRecord(body?.error)
   const status = response.status === 401 ? 401 : response.status === 403 ? 403 : response.status === 409 ? 409 : 503
   return denied(
     status,
-    str(error?.code)
+    asString(error?.code)
       ?? (status === 401
         ? "session_authority_proof_invalid"
         : status === 409
@@ -322,7 +319,7 @@ function deniedFromResponse(response: Response, body: Record<string, unknown> | 
           : status === 503
             ? "session_authority_unavailable"
             : "session_private"),
-    str(error?.message),
+    asString(error?.message),
   )
 }
 

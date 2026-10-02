@@ -58,15 +58,6 @@ export function hasWorkspaceTarget(env: NodeJS.ProcessEnv = process.env): boolea
   return !!targetStorage.getStore() || !!runtimeEnvText(env, "WORKSPACE_RUNTIME_DIRECTORY")
 }
 
-export function assertTarget(requested: string | undefined, env: NodeJS.ProcessEnv = process.env): string {
-  const dir = workspaceDir(env)
-  if (!requested) return dir
-  if (requested.trim() === `workspace:${workspaceId(env)}`) return dir
-  if (clean(requested) === dir) return dir
-  if (currentSessionCore().placement.registeredDirectories().includes(clean(requested))) return clean(requested)
-  throw new WorkspaceTargetError(`workspace-runtime is pinned to ${dir}`, "workspace_target_pinned")
-}
-
 export type RegisteredWorkspaceDirectory = { sessionId: string; directory: string }
 
 function registeredEntries(): RegisteredWorkspaceDirectory[] {

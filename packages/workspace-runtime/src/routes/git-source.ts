@@ -5,7 +5,8 @@ import {
   gitSourceSnapshot,
 } from "../workspace-files/git-source"
 import type { RelayHostAuthContext } from "../workspace-host-service-auth"
-import { rec, str, boundedJsonRecord, isRequestBodyTooLarge, requestBodyTooLargeBody } from "@claxedo/session-core"
+import { asRecord, asString } from "@claxedo/helpers/guards"
+import { boundedJsonRecord, isRequestBodyTooLarge, requestBodyTooLargeBody } from "@claxedo/session-core"
 import { workspaceDir } from "../target"
 import { authorizeWorktreeTarget, type WorktreeTargetAccessOptions } from "./worktree-target-access"
 import { trimToUndefined } from "@claxedo/helpers/string"
@@ -49,12 +50,12 @@ export function GitSourceRoutes(options: WorktreeTargetAccessOptions = {}) {
     })
     .post("/commit", async (c) => {
       const body = await boundedJsonRecord(c)
-      const sourcePath = trimToUndefined(str(body.path))
-      const message = trimToUndefined(str(body.message))
-      const content = str(body.content)
-      const expected = rec(body.expected)
-      const baseCommit = str(expected?.baseCommit)
-      const baseBlobSha = str(expected?.baseBlobSha)
+      const sourcePath = trimToUndefined(asString(body.path))
+      const message = trimToUndefined(asString(body.message))
+      const content = asString(body.content)
+      const expected = asRecord(body.expected)
+      const baseCommit = asString(expected?.baseCommit)
+      const baseBlobSha = asString(expected?.baseBlobSha)
       if (!sourcePath) return error("git_source_path_required", "path is required")
       if (!message) return error("git_source_message_required", "message is required")
       if (content === undefined) return error("git_source_content_required", "content is required")
