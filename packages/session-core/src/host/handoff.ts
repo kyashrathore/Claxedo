@@ -9,7 +9,7 @@ import {
 import { renderSessionHandoff } from "@claxedo/agent-runtime-contract"
 import { applySessionConfigUpdate } from "@claxedo/harness/contract"
 import type { AttachedSession } from "./attachments"
-import type { AgentRuntimeStore } from "./contracts"
+import { AgentRuntimeTurnAdmissionError, type AgentRuntimeStore } from "./contracts"
 import type { TurnAdmissions } from "./turn-admission"
 import { messagePartUpdated } from "../projection/presentation-events"
 
@@ -144,7 +144,7 @@ async function rollbackHandoff(
  */
 export async function executeHandoffTransaction(input: HandoffTransactionInput): Promise<SessionConfig> {
   const hold = input.session.status === "busy" ? undefined : input.admissions.gate(input.sessionId)
-  if (!hold) throw new Error("Wait for the current turn to finish before switching harness")
+  if (!hold) throw new AgentRuntimeTurnAdmissionError(input.sessionId, "Wait for the current turn to finish before switching harness")
   try {
     return await switchHarness(input)
   } finally {

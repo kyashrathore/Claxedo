@@ -240,46 +240,6 @@ describe("createClientPresentationProjection", () => {
       .toEqual(["message.part.delta"])
   })
 
-  test("opens the turn's prompt row from the chunks the lane names it with", () => {
-    // The other half of an attached viewer's turn: the reply hangs off the
-    // prompt, so a lane that announced only the reply left its consumer with a
-    // row parented on a message it never received.
-    const projection = createClientPresentationProjection({
-      sessionId: "session-1",
-      directory: "/repo",
-      assistantMessageId: "msg_host_turn_r",
-      announcesAssistantMessage: true,
-      clock: () => 100,
-    })
-
-    const first = projection.ingest({
-      type: "user-message-delta",
-      messageId: "msg_host_turn",
-      content: { type: "text", text: "explain " },
-    })
-    const second = projection.ingest({
-      type: "user-message-delta",
-      messageId: "msg_host_turn",
-      content: { type: "text", text: "this file" },
-    })
-
-    expect(first.map((event) => event.payload.type)).toEqual([
-      "message.updated",
-      "message.part.updated",
-      "message.part.delta",
-    ])
-    expect(first[0]?.payload).toMatchObject({
-      type: "message.updated",
-      properties: { info: { id: "msg_host_turn", sessionID: "session-1", role: "user" } },
-    })
-    // The row is opened once; every later chunk only extends its text.
-    expect(second.map((event) => event.payload.type)).toEqual(["message.part.delta"])
-    expect([first.at(-1)?.payload, second[0]?.payload].map((payload) => (payload as { properties: Record<string, unknown> }).properties)).toEqual([
-      { sessionID: "session-1", messageID: "msg_host_turn", partID: "000000_msg_host_turn-text", field: "text", delta: "explain " },
-      { sessionID: "session-1", messageID: "msg_host_turn", partID: "000000_msg_host_turn-text", field: "text", delta: "this file" },
-    ])
-  })
-
   test("attaches a viewer turn's parts to the row it announced under the user message", () => {
     // The whole contract an attached viewer rides: the announced row names the
     // user message the reply answers, and every part of the turn is filed

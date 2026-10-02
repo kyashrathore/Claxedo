@@ -768,15 +768,16 @@ export function createSessionRoutes(opts: Opts) {
   // The other routers in this package re-throw whatever is not an oversized
   // body and let the app they are mounted into answer it. This router is also
   // driven directly, where a re-throw rejects the request instead of becoming
-  // a response — so the two answers every handler here already relies on,
-  // `HTTPException` and a bare failure, are named rather than delegated.
+  // a response — so the answers its handlers rely on, `HTTPException`, the
+  // typed busy refusal and a bare failure, are named rather than delegated.
   const requestErrorResponse = (err: unknown, c: Ctx): Response => {
     if (isRequestBodyTooLarge(err)) return c.json(requestBodyTooLargeBody(), 413)
     if (err instanceof HTTPException) return err.getResponse()
+    if (isAgentRuntimeTurnConflictError(err)) return turnAdmissionConflict(c)
     return c.text("Internal Server Error", 500)
   }
   app.onError((err, c) => {
-    if (!isRequestBodyTooLarge(err) && !(err instanceof HTTPException)) console.error(err)
+    if (!isRequestBodyTooLarge(err) && !(err instanceof HTTPException) && !isAgentRuntimeTurnConflictError(err)) console.error(err)
     return requestErrorResponse(err, c)
   })
   // Creation and deletion share the identity until every provider/projection
@@ -1503,7 +1504,6 @@ export function createSessionRoutes(opts: Opts) {
         return c.json(output.body)
       } catch (error) {
         if (turnAdmission.lease?.lost()) return lostTurnResponse(id, turnAdmission.lease)
-        if (isAgentRuntimeTurnConflictError(error)) return turnAdmissionConflict(c)
         if (isAgentRuntimeMessageIdConflictError(error)) return messageIdConflict(c)
         throw error
       } finally {
