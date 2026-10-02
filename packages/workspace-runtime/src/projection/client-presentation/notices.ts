@@ -16,8 +16,10 @@ function noticePart(ctx: CompatContext, id: string, notice: TranscriptNotice, no
   return partEvent(ctx.directory, { id, sessionID: ctx.sessionId, messageID: ctx.assistantMsgId, type: "notice", notice, time: { created: now } }, now)
 }
 
-export function appendNotice(ctx: CompatContext, notice: TranscriptNotice, now: number): AgentEventEnvelope {
-  return noticePart(ctx, nextNoticePartId(ctx), notice, now)
+export const eventNoticePartId = (sessionId: string, eventId: string) => `${sessionId}-notice-${eventId}`
+
+export function appendNotice(ctx: CompatContext, notice: TranscriptNotice, now: number, eventId?: string): AgentEventEnvelope {
+  return noticePart(ctx, eventId ? eventNoticePartId(ctx.sessionId, eventId) : nextNoticePartId(ctx), notice, now)
 }
 
 function noticeDiagnostic(ctx: CompatContext, chunk: HarnessNotice): AgentEventEnvelope {
@@ -40,7 +42,7 @@ function projectConversationReset(ctx: CompatContext, chunk: AgentRuntimeEventOf
 function projectHarnessNotice(ctx: CompatContext, chunk: HarnessNotice, now: () => number): AgentEventEnvelope[] {
   const severity = chunk.severity ?? "info"
   if (severity === "debug" || !ctx.assistantMsgId) return [noticeDiagnostic(ctx, chunk)]
-  return [appendNotice(ctx, { kind: "harness", code: chunk.code, message: chunk.message, severity }, now())]
+  return [appendNotice(ctx, { kind: "harness", code: chunk.code, message: chunk.message, severity }, now(), chunk.eventId)]
 }
 
 function compactionOutcome(chunk: Compaction): TranscriptNotice {
@@ -64,12 +66,17 @@ function projectCompaction(ctx: CompatContext, chunk: Compaction, now: () => num
   return outcome.kind === "compaction" && outcome.status === "completed" ? [part, withDir(ctx.directory, sessionCompacted(ctx.sessionId))] : [part]
 }
 
-export function projectNotice(ctx: CompatContext, chunk: AgentRuntimeEventOf<"session-compaction" | "harness-notice" | "conversation-reset">, now: () => number) {
+export function projectNotice(ctx: CompatContext, chunk: AgentRuntimeEventOf<"session-compaction" | "harness-notice" | "agent-message" | "conversation-reset">, now: () => number) {
   switch (chunk.type) {
     case "session-compaction":
       return projectCompaction(ctx, chunk, now)
     case "harness-notice":
       return projectHarnessNotice(ctx, chunk, now)
+    case "agent-message":
+      return ctx.assistantMsgId ? [appendNotice(ctx, { kind: "agent-message", sender: chunk.sender, message: chunk.message,
+        ...(chunk.senderName ? { senderName: chunk.senderName } : {}),
+        ...(chunk.senderTaskId ? { senderTaskId: chunk.senderTaskId } : {}),
+        ...(chunk.sourceSessionId ? { sourceSessionId: chunk.sourceSessionId } : {}) }, now(), chunk.eventId)] : []
     case "conversation-reset":
       return projectConversationReset(ctx, chunk, now)
   }

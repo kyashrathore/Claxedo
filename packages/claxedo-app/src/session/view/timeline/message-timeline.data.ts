@@ -63,7 +63,7 @@ export namespace Timeline {
     if (!finalAssistant) return undefined
     const visible = new Set([finalAssistant.id])
     for (const message of assistantMessages) {
-      if (getMessageParts(message.id).some((part) => isSubagentToolPart(part))) {
+      if (getMessageParts(message.id).some((part) => isSubagentToolPart(part) || part.type === "notice")) {
         visible.add(message.id)
       }
     }

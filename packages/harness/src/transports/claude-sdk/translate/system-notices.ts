@@ -39,6 +39,8 @@ export function systemNotice(subtype: string, frame: Record<string, unknown>, me
       return retryEvents(frame)
     case "notification":
       return notice(subtype, text(frame.text))
+    case "task_notification":
+      return notice(subtype, text(frame.summary), frame.status === "failed" ? "error" : "info").map((notice) => ({ ...notice, eventId: text(frame.uuid) }))
     case "memory_recall":
       return notice(subtype, recalledPaths(frame))
     case "informational":

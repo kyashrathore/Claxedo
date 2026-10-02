@@ -20,7 +20,7 @@ function snapshot(fields: { stored?: readonly Account[]; effective?: readonly Ac
     stored: fields.stored ?? [],
     effective: fields.effective ? new Map(fields.effective.map((row) => [row.providerId, row])) : undefined,
     machineLogins: [{ harness: "claude", providerIds: claude.providerIds, state: "signed_in" }],
-    sources: { sources: new Map(Object.entries(fields.sources ?? {})), org: fields.org ?? [] },
+    sources: { sources: new Map(Object.entries(fields.sources ?? {})), org: fields.org ?? [], canRemoveOrgAccounts: false },
     scannedAt: 1,
   }
 }
@@ -33,7 +33,9 @@ test("accounts: a harness whose every provider spends the org account selects th
   const chosen = snapshot({ stored: [own], org: [org], sources: allOrg, effective: [org] })
   expect(selectedAccountKey(claude, chosen)).toBe(ORG_ACCOUNT_KEY)
   expect(harnessRunnable(claude, chosen, {})).toBe(true)
-  expect(orgAccountWords(words, claude, chosen, true)).toMatchObject({ key: ORG_ACCOUNT_KEY, ids: [], label: "Acme", disabled: false, refused: false })
+  expect(orgAccountWords(words, claude, chosen, true, false)).toMatchObject({ key: ORG_ACCOUNT_KEY, ids: [], label: "Acme", disabled: false, refused: false })
+  expect(orgAccountWords(words, claude, chosen, true, true)?.ids).toEqual([org.id])
+  expect(orgAccountWords(words, claude, chosen, false, false)).toMatchObject({ label: "Acme", disabled: false })
   expect(harnessRunnable(claude, snapshot({ stored: [own], org: [account("org-1", "claude-sdk", { health: "auth_failed", lastValidatedAt: 5 })], sources: allOrg }), {})).toBe(false)
 })
 
@@ -42,9 +44,9 @@ test("accounts: a person who chose the org account where the organization holds 
   expect(selectedAccountKey(claude, chosen)).toBe(ORG_ACCOUNT_KEY)
   expect(harnessRunnable(claude, chosen, {})).toBe(false)
   const unavailable = t("settings.providers.accountSource.unavailable", { name: "Claude Code" })
-  expect(orgAccountWords(words, claude, chosen, true)).toMatchObject({ label: "Organization account", detail: unavailable, alert: unavailable, disabled: true })
-  expect(orgAccountWords(words, claude, snapshot(), false)).toMatchObject({ detail: "No organization account for this provider", disabled: true })
-  expect(orgAccountWords(words, claude, snapshot(), false).alert).toBeUndefined()
+  expect(orgAccountWords(words, claude, chosen, true, true)).toMatchObject({ label: "Organization account", detail: unavailable, alert: unavailable, disabled: true, ids: [] })
+  expect(orgAccountWords(words, claude, snapshot(), false, false)).toBeUndefined()
+  expect(orgAccountWords(words, claude, snapshot(), false, true)).toBeUndefined()
 })
 
 test("accounts: on the person's own side an org row the effective read names is not theirs, so their own mark or login decides", () => {

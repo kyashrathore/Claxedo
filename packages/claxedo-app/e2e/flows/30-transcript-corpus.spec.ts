@@ -4,6 +4,8 @@ import type { Locator, Page } from "@playwright/test"
 import type { CaseInteraction, CaseTurn, CorpusCase } from "../corpus/case"
 import { expectDetachedGrowthAtMost, expectHeapGrowthAtMost, expectRowsKept, markDetachedNodes, markRows, quietDom, releaseHold, startLiveTurn } from "../corpus/live"
 import { switchSessions } from "../corpus/switch"
+import { playChildMessageEvent } from "../harness/child-message-event"
+import { playAgentAuthoredMessage } from "../harness/agent-authored-message"
 import { expectWritesAtMost, watchWrites } from "../corpus/writes"
 import { acpScriptToken, expect, SCRIPTED_ACP_HARNESS, sessionRoute, test, type AcpStep, type ClaxedoApi, type MessageRow, type Stack } from "../harness"
 
@@ -67,6 +69,11 @@ async function playTurn(stack: Stack, api: ClaxedoApi, target: Target, turn: Cas
 }
 
 async function arrange(stack: Stack, api: ClaxedoApi, corpusCase: CorpusCase) {
+  if (corpusCase.replay.agent === "claude") {
+    return corpusCase.replay.scenario === "agent-authored-message"
+      ? playAgentAuthoredMessage(stack, api)
+      : playChildMessageEvent(stack, api)
+  }
   if (corpusCase.replay.agent !== "acp") throw new Error(`${corpusCase.id} has no scripted replay`)
   const workspace = await stack.daemon.makeWorkspace("corpus")
   const session = await api.createSession(workspace.directory, { title: corpusCase.title, harness: SCRIPTED_ACP_HARNESS })
@@ -122,8 +129,9 @@ async function withBackground(app: Page, rows: RowsBox | undefined): Promise<Row
   return { x: rows.x, y: top, width: rows.width, height: bottom - top }
 }
 
-function isLive(corpusCase: CorpusCase): boolean {
-  return corpusCase.replay.agent === "acp" && corpusCase.replay.turns.some((turn) => turn.live)
+function hasVariableDurations(corpusCase: CorpusCase): boolean {
+  return corpusCase.replay.agent === "claude"
+    || (corpusCase.replay.agent === "acp" && corpusCase.replay.turns.some((turn) => turn.live))
 }
 
 async function compareStage(app: Page, corpusCase: CorpusCase, baseline: string, stage: string) {
@@ -137,7 +145,7 @@ async function compareStage(app: Page, corpusCase: CorpusCase, baseline: string,
     animations: "disabled",
     caret: "hide",
     mask: [app.locator('[data-component="agent-glyph"]')],
-    ...(isLive(corpusCase) ? { stylePath: LIVE_DURATIONS_STYLE } : {}),
+    ...(hasVariableDurations(corpusCase) ? { stylePath: LIVE_DURATIONS_STYLE } : {}),
   })
   const shown = await shownRows(app)
   const trees: string[] = []
@@ -148,7 +156,7 @@ async function compareStage(app: Page, corpusCase: CorpusCase, baseline: string,
   const background = (await backgroundSubagents(app).count()) > 0 ? await backgroundSubagents(app).ariaSnapshot() : "(none)"
   const stable = `scrollTop: ${top}\nbackground subagents:\n${background}\n${trees.join("\n")}\n`.replace(CLOCK_TIME, "<time>")
     .replace(UUID, "<id>")
-  const tree = isLive(corpusCase) ? stable.replace(LIVE_DURATION, "$1<duration>") : stable
+  const tree = hasVariableDurations(corpusCase) ? stable.replace(LIVE_DURATION, "$1<duration>") : stable
   expect.soft(tree).toMatchSnapshot([baseline, `${stage}-tree.txt`])
 }
 
@@ -188,6 +196,12 @@ async function interact(live: { stack: Stack; api: ClaxedoApi; target: Target; a
       return
     case "toggleFold":
       await app.getByRole("button", { name: /^Worked/ }).nth(interaction.turn).click()
+      return
+    case "toggleUserMessage":
+      await app.locator('[data-component="user-message"]').filter({ hasText: interaction.message }).getByRole("button", { name: /^Show (all|less)$/ }).click()
+      return
+    case "toggleAgentMessage":
+      await app.locator('[data-component="agent-message-notice"] summary').click()
       return
     case "reload":
       await app.reload()
