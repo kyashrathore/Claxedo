@@ -1,4 +1,4 @@
-import { toAppError } from "./errors"
+import { ServerError, toAppError } from "./errors"
 import { workspaceStopped, type RelayConnection, type WorkspaceConnections } from "./wire/connection"
 
 export type Relay = {
@@ -10,6 +10,7 @@ export type Relay = {
 const RUNTIME_ACCESS_TOKEN_PROTOCOL = "claxedo-rat."
 const MAX_CONNECTIONS = 128
 const REFRESH_WINDOW_MS = 60_000
+const WORKSPACE_ACCESS_DENIED = "workspace_access_denied"
 
 function workspaceUrl(link: RelayConnection, path: string) {
   return `${link.relayUrl}/workspaces/${encodeURIComponent(link.workspaceId)}${path}`
@@ -60,11 +61,25 @@ function createRelayConnections(read: WorkspaceConnections["read"]) {
     const cached = !force && connections.get(key)
     return cached ? put(key, cached) : hold(key, readConnection(read, workspaceId, sessionId))
   }
+  // The Worker mints a workspace connection to whoever may open the workspace;
+  // a session share holder is refused it and reads each shared session's own.
+  const sessionOnly = new Set<string>()
+  const scoped = async (workspaceId: string, sessionId: string | undefined, force = false) => {
+    if (sessionId === undefined || !sessionOnly.has(workspaceId)) {
+      try {
+        return await connection(workspaceId, undefined, force)
+      } catch (error) {
+        if (sessionId === undefined || !(error instanceof ServerError && error.code === WORKSPACE_ACCESS_DENIED)) throw error
+        sessionOnly.add(workspaceId)
+      }
+    }
+    return connection(workspaceId, sessionId, force)
+  }
   return {
-    renew: (workspaceId: string, sessionId?: string) => connection(workspaceId, sessionId, true),
+    renew: (workspaceId: string, sessionId?: string) => scoped(workspaceId, sessionId, true),
     fresh: async (workspaceId: string, sessionId?: string) => {
-      const current = await connection(workspaceId, sessionId)
-      return current.tokenExpiresAt - Date.now() > REFRESH_WINDOW_MS ? current : connection(workspaceId, sessionId, true)
+      const current = await scoped(workspaceId, sessionId)
+      return current.tokenExpiresAt - Date.now() > REFRESH_WINDOW_MS ? current : scoped(workspaceId, sessionId, true)
     },
     adopt: (link: RelayConnection) => { put(JSON.stringify([link.workspaceId, undefined]), Promise.resolve(link)) },
   }

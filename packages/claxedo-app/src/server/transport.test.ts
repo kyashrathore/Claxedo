@@ -42,13 +42,16 @@ test("the public workspace wake owner sends a signed desktop cloud wake to the a
   expect(wakes.runtime(id)).toEqual({ kind: "live" })
 })
 
-test("signed desktop cloud and remote machine session reads use a session connection and only its relay token", async () => {
+const denied = () => new Error('HOSTED_HTTP 403 {"body":{"error":{"code":"workspace_access_denied","message":"Workspace access denied"}}}')
+
+test("signed desktop cloud and remote machine runtime reads use the account's workspace connection and only its relay token", async () => {
   const machine = { kind: "worktree" as const, directory: "workspace:ws_machine", workspaceId: "ws_machine", remote: true }
   for (const route of [machine, cloud]) {
     fetcher.mockReset().mockResolvedValue(Response.json({ id: "ses_a" }))
     const { transport, calls } = signed(link)
     await transport.runtime(route, "/session/ses_a?view=open")
-    expect(calls).toEqual([{ operation: "workspace.connection.read", input: { id: route.workspaceId, sessionId: "ses_a" } }])
+    await transport.runtime(route, "/api/wr/events?sessionID=ses_b")
+    expect(calls).toEqual([{ operation: "workspace.connection.read", input: { id: route.workspaceId } }])
     expect(String(fetcher.mock.calls[0]?.[0])).toBe(`https://relay.test/workspaces/${route.workspaceId}/session/ses_a?view=open`)
     const init = fetcher.mock.calls[0]?.[1]
     expect(new Headers(init?.headers).get("authorization")).toBe("Bearer session-rat")
@@ -56,14 +59,14 @@ test("signed desktop cloud and remote machine session reads use a session connec
   }
 })
 
-test("signed desktop never spends one session's connection on another session or workspace stream", async () => {
-  const { transport, calls } = signed(link, { ...link, runtimeAccessToken: "other-rat" }, { ...link, runtimeAccessToken: "workspace-rat" })
+test("a share holder refused the workspace connection spends each session's own connection on that session alone", async () => {
+  const { transport, calls } = signed(denied(), link, { ...link, runtimeAccessToken: "other-rat" }, denied())
   fetcher.mockResolvedValue(Response.json({}))
   await transport.runtime(cloud, "/api/wr/events?sessionID=ses_a")
-  await transport.runtime(cloud, "/session/ses_b")
-  await transport.runtime(cloud, "/api/wr/health")
-  expect(calls.map((call) => call.input)).toEqual([{ id: "ws_cloud", sessionId: "ses_a" }, { id: "ws_cloud", sessionId: "ses_b" }, { id: "ws_cloud" }])
-  expect(fetcher.mock.calls.map(([, init]) => new Headers(init?.headers).get("authorization"))).toEqual(["Bearer session-rat", "Bearer other-rat", "Bearer workspace-rat"])
+  await transport.runtime(cloud, "/question/que_1/reply?sessionId=ses_b", { method: "POST", body: "{}" })
+  await expect(transport.runtime(cloud, "/api/wr/health")).rejects.toMatchObject({ code: "workspace_access_denied" })
+  expect(calls.map((call) => call.input)).toEqual([{ id: "ws_cloud" }, { id: "ws_cloud", sessionId: "ses_a" }, { id: "ws_cloud", sessionId: "ses_b" }, { id: "ws_cloud" }])
+  expect(fetcher.mock.calls.map(([, init]) => new Headers(init?.headers).get("authorization"))).toEqual(["Bearer session-rat", "Bearer other-rat"])
 })
 
 test("signed desktop stopped connection fails without daemon reads, relay reads or wake", async () => {
@@ -74,9 +77,9 @@ test("signed desktop stopped connection fails without daemon reads, relay reads 
 })
 
 test("signed desktop a revoked session connection fails closed", async () => {
-  const { transport, calls } = signed(new Error('HOSTED_HTTP 403 {"body":{"error":{"code":"session_access_denied","message":"No share"}}}'))
+  const { transport, calls } = signed(denied(), new Error('HOSTED_HTTP 403 {"body":{"error":{"code":"session_access_denied","message":"No share"}}}'))
   await expect(transport.runtime(cloud, "/session/ses_revoked")).rejects.toMatchObject({ class: "auth", code: "session_access_denied" })
-  expect(calls).toHaveLength(1)
+  expect(calls).toHaveLength(2)
   expect(fetcher).not.toHaveBeenCalled()
 })
 
@@ -89,11 +92,11 @@ test("signed desktop local placements keep using the daemon with no account call
   expect(calls).toEqual([])
 })
 
-test("web session routing uses the same read-only session connection", async () => {
+test("web runtime routing uses the same read-only workspace connection", async () => {
   const transport = createTransport({ serverUrl: "https://account.test", auth: { kind: "bearer", token: async () => "account-bearer" } })
   fetcher.mockResolvedValueOnce(Response.json(link)).mockResolvedValueOnce(Response.json({}))
   await transport.runtime(cloud, "/session/ses_a")
-  expect(String(fetcher.mock.calls[0]?.[0])).toBe("https://account.test/api/workspace/ws_cloud/connection?sessionId=ses_a")
+  expect(String(fetcher.mock.calls[0]?.[0])).toBe("https://account.test/api/workspace/ws_cloud/connection")
   expect(fetcher.mock.calls[0]?.[1]?.method).toBeUndefined()
   expect(new Headers(fetcher.mock.calls[1]?.[1]?.headers).get("authorization")).toBe("Bearer session-rat")
 })
@@ -102,25 +105,18 @@ test("renewing a rejected runtime token cannot wake compute", async () => {
   const { transport, calls } = signed(link, { ...link, runtimeAccessToken: "fresh-rat" })
   fetcher.mockResolvedValueOnce(Response.json({}, { status: 401 })).mockResolvedValueOnce(Response.json({}))
   await transport.runtime(cloud, "/session/ses_a")
-  expect(calls).toEqual(Array(2).fill({ operation: "workspace.connection.read", input: { id: "ws_cloud", sessionId: "ses_a" } }))
-})
-
-test("session question replies take the scope named by their sessionId query", async () => {
-  const { transport, calls } = signed(link)
-  fetcher.mockResolvedValue(Response.json({}))
-  await transport.runtime(cloud, "/question/que_1/reply?sessionId=ses_a", { method: "POST", body: "{}" })
-  expect(calls).toEqual([{ operation: "workspace.connection.read", input: { id: "ws_cloud", sessionId: "ses_a" } }])
+  expect(calls).toEqual(Array(2).fill({ operation: "workspace.connection.read", input: { id: "ws_cloud" } }))
 })
 
 test("relay connections evict the oldest session scope after 128 entries", async () => {
-  const { transport, calls } = signed(...Array(130).fill(link))
+  const { transport, calls } = signed(denied(), ...Array(130).fill(link))
   fetcher.mockImplementation(Object.assign(async () => Response.json({}), { preconnect: () => undefined }))
   for (let index = 0; index < 129; index++) await transport.runtime(cloud, `/session/ses_${index}`)
   await transport.runtime(cloud, "/session/ses_0")
-  expect(calls).toHaveLength(130)
+  expect(calls).toHaveLength(131)
 })
 
-test("signed desktop placement streams deliver live relay frames with the attached session's token", async () => {
+test("signed desktop placement streams deliver live relay frames placed in their workspace", async () => {
   const { transport, calls } = signed(link)
   const queryClient = new QueryClient()
   const ref = { placementId: placementId("ws_cloud"), projectId: projectId("prj"), sessionId: sessionId("ses_a") }
@@ -134,8 +130,8 @@ test("signed desktop placement streams deliver live relay frames with the attach
   const detach = streams.attach(ref)
   try {
     for (let tick = 0; tick < 40; tick++) await Promise.resolve()
-    expect(frames).toEqual([frame])
-    expect(calls).toEqual([{ operation: "workspace.connection.read", input: { id: "ws_cloud", sessionId: "ses_a" } }])
+    expect(frames).toEqual([{ ...frame, workspaceId: "ws_cloud" }])
+    expect(calls).toEqual([{ operation: "workspace.connection.read", input: { id: "ws_cloud" } }])
     expect(String(fetcher.mock.calls[0]?.[0])).toBe("https://relay.test/workspaces/ws_cloud/api/wr/events?sessionID=ses_a")
     expect(new Headers(fetcher.mock.calls[0]?.[1]?.headers).get("authorization")).toBe("Bearer session-rat")
   } finally {
