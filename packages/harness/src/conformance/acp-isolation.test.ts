@@ -49,8 +49,7 @@ const capabilityCases: McpCapabilities[] = [{}, { http: true }, { sse: true }, {
 
 function setup(kind: "websocket" | "streamable-http" = "websocket", restoreMode: "load" | "resume" = "resume", mcpCapabilities?: McpCapabilities) {
   return setupConformance({ name: "ACP isolation", backend: () => backend(kind, restoreMode, mcpCapabilities),
-    makeTransport: (services, state) => new AcpTransport(services, (state as Backend).connection, filterMcpServers,
-      async () => { throw new Error("Unexpected missing session") }),
+    makeTransport: (services, state) => new AcpTransport(services, (state as Backend).connection, filterMcpServers),
   })
 }
 
@@ -92,8 +91,7 @@ function wireServer(server: ProjectedMcpServer) {
 
 async function collect(context: Context, text: string) {
   const events = []
-  const session = await context.transport.restore!(context.session)
-  for await (const event of context.transport.send(session, context.turn(text), context.turnBroker())) events.push(event)
+  for await (const event of context.transport.send(context.session, context.turn(text), context.turnBroker())) events.push(event)
   return events
 }
 

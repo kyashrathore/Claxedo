@@ -1,19 +1,5 @@
 import { createContext, createSignal, useContext } from "solid-js"
-import type {
-  AnyPaneKind,
-  CommandEntry,
-  IconSkin,
-  MentionSource,
-  OverlayEntry,
-  PageEntry,
-  PanelView,
-  Registry,
-  RouteEntry,
-  SettingsSection,
-  ShellRegistries,
-  SidebarItem,
-  ThemeEntry,
-} from "./types"
+import type { Registry, ShellRegistries } from "./types"
 
 export function createRegistry<Entry>(initial: readonly Entry[]): Registry<Entry> {
   const [entries, setEntries] = createSignal<readonly Entry[]>(initial)
@@ -27,17 +13,7 @@ export function createRegistry<Entry>(initial: readonly Entry[]): Registry<Entry
 }
 
 export type FirstPartyEntries = {
-  readonly pages: readonly PageEntry[]
-  readonly paneKinds: readonly AnyPaneKind[]
-  readonly panelViews: readonly PanelView[]
-  readonly settingsSections: readonly SettingsSection[]
-  readonly sidebarItems: readonly SidebarItem[]
-  readonly overlays: readonly OverlayEntry[]
-  readonly commands: readonly CommandEntry[]
-  readonly mentions: readonly MentionSource[]
-  readonly themes: readonly ThemeEntry[]
-  readonly iconSkins: readonly IconSkin[]
-  readonly routes: readonly RouteEntry[]
+  readonly [Key in keyof ShellRegistries]: ReturnType<ShellRegistries[Key]["list"]>
 }
 
 export function createShellRegistries(firstParty: FirstPartyEntries): ShellRegistries {

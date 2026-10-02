@@ -1,6 +1,6 @@
 import { piCredentialProviderIDs, type PromptModel, type TurnAccount } from "@claxedo/agent-runtime-contract"
 import type { ConfigOperations, DraftLaunch, HarnessSession, StartInput } from "../../contract"
-import { applySessionConfigUpdate, configOptionsPreview, modelAndEffortOptions, selectedTurnAccount } from "../../contract"
+import { configOptionsPreview, modelAndEffortOptions, selectedTurnAccount } from "../../contract"
 import { TransportError } from "../../contract/errors"
 import type { PiRpc } from "./rpc"
 import { asRecordOrEmpty, asString } from "@claxedo/helpers/guards"
@@ -13,11 +13,6 @@ export type PiCatalog = {
 
 type ConfigEntry = { start: StartInput }
 
-function draftOf(start: StartInput): DraftLaunch {
-  const { sessionId: _sessionId, title: _title, instructions: _instructions, ...draft } = start
-  return draft
-}
-
 export function piModelSelection(model: PromptModel): { provider: string; modelId: string } {
   const slash = model.modelID.indexOf("/")
   if (model.providerID !== "pi" || slash < 1 || slash === model.modelID.length - 1) {
@@ -28,10 +23,6 @@ export function piModelSelection(model: PromptModel): { provider: string; modelI
 
 export function piTurnAccount(start: StartInput, model: PromptModel | undefined): TurnAccount | undefined {
   return model ? selectedTurnAccount("pi", start.credentials, piCredentialProviderIDs(piModelSelection(model).provider)) : undefined
-}
-
-export async function piThinkingLevel(rpc: PiRpc): Promise<string | undefined> {
-  return asString(asRecordOrEmpty(await rpc.request("get_state")).thinkingLevel) || undefined
 }
 
 export async function piCatalog(rpc: PiRpc, model: PromptModel | undefined): Promise<PiCatalog> {
@@ -59,15 +50,8 @@ export function createPiConfig(input: {
   catalog(draft: DraftLaunch, model: PromptModel | undefined, mode: "probe" | "peek"): Promise<PiCatalog>
 }): ConfigOperations {
   return {
-    read: async (session) => input.entry(session).start.config,
-    update: async (session, update) => {
-      const entry = input.entry(session)
-      const config = applySessionConfigUpdate(entry.start.config, update)
-      entry.start = { ...entry.start, config }
-      return entry.start.config
-    },
     options: async (target, mode) => {
-      const draft = "session" in target ? draftOf(input.entry(target.session).start) : target.draft
+      const draft = "session" in target ? input.entry(target.session).start : target.draft
       const model = ("session" in target ? target.model : undefined) ?? draft.config.model ?? draft.model
       const catalog = await input.catalog(draft, model, mode)
       const selected = model && catalog.models.some((item) => item.id === model.modelID) ? model.modelID : catalog.current?.model

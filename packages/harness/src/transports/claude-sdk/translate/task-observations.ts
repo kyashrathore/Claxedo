@@ -1,15 +1,14 @@
-import { asText as text } from "@claxedo/agent-runtime-contract"
+import { asText as text, type SubagentObservation } from "@claxedo/agent-runtime-contract"
 import { asFiniteNumber, asRecord } from "@claxedo/helpers/guards"
-import { taskCall, type ClaudeSubagentObservation } from "./subagent-observation"
-import type { ClaudeTaskLedger, ClaudeTaskRecord } from "./task-ledger"
+import { taskCall, type ClaudeTaskLedger, type ClaudeTaskRecord } from "./task-ledger"
 
-type TaskUpdate = Omit<ClaudeSubagentObservation, "observationId" | "harnessExecutionId" | "stableCorrelationId" | "toolCallId" | "toolCallRole" | "providerKind" | "transcript">
+type TaskUpdate = Pick<SubagentObservation, "mode" | "status" | "subagentType" | "description" | "label">
 
 export function taskSystemObservations(
   message: Record<string, unknown>,
   wrapperId: string,
   ledger: ClaudeTaskLedger,
-): ClaudeSubagentObservation[] {
+): SubagentObservation[] {
   switch (message.subtype) {
     case "task_started":
       return taskStartedObservations(message, wrapperId, ledger)
@@ -25,7 +24,7 @@ export function taskSystemObservations(
   }
 }
 
-function taskStartedObservations(message: Record<string, unknown>, wrapperId: string, ledger: ClaudeTaskLedger): ClaudeSubagentObservation[] {
+function taskStartedObservations(message: Record<string, unknown>, wrapperId: string, ledger: ClaudeTaskLedger): SubagentObservation[] {
   const taskId = text(message.task_id)
   if (!taskId) return []
   const toolUseId = text(message.tool_use_id)
@@ -48,7 +47,7 @@ function taskStartedObservations(message: Record<string, unknown>, wrapperId: st
   })]
 }
 
-function taskUpdatedObservations(message: Record<string, unknown>, wrapperId: string, ledger: ClaudeTaskLedger): ClaudeSubagentObservation[] {
+function taskUpdatedObservations(message: Record<string, unknown>, wrapperId: string, ledger: ClaudeTaskLedger): SubagentObservation[] {
   if (!admittedTask(ledger.get(text(message.task_id)))) return []
   const patch = asRecord(message.patch) ?? {}
   const status = taskStatus(patch.status)
@@ -65,7 +64,7 @@ function admittedTask(record: ClaudeTaskRecord | undefined) {
   return record?.isAgentTask && !record.skipTranscript && !record.nested ? record : undefined
 }
 
-function taskStatus(value: unknown): ClaudeSubagentObservation["status"] {
+function taskStatus(value: unknown): SubagentObservation["status"] {
   if (value === "pending" || value === "running" || value === "completed" || value === "failed" || value === "killed" || value === "paused") return value
   return undefined
 }
@@ -75,18 +74,14 @@ function taskObservation(
   observationId: string,
   ledger: ClaudeTaskLedger,
   update: TaskUpdate,
-): ClaudeSubagentObservation {
+): SubagentObservation {
   const taskId = text(message.task_id)
   return {
     observationId: `claude:${text(message.subtype)}:${observationId}`,
     ...(text(message.session_id) ? { harnessExecutionId: text(message.session_id) } : {}),
     ...(taskId ? { stableCorrelationId: taskId } : {}),
     ...taskCall(text(message.tool_use_id), ledger),
-    ...(update.mode ? { mode: update.mode } : {}),
-    ...(update.status ? { status: update.status } : {}),
-    ...(update.subagentType ? { subagentType: update.subagentType } : {}),
-    ...(update.description ? { description: update.description } : {}),
-    ...(update.label ? { label: update.label } : {}),
+    ...Object.fromEntries(Object.entries(update).filter(([, value]) => value)),
     providerKind: "claude-agent",
     transcript: { kind: "messages" },
   }

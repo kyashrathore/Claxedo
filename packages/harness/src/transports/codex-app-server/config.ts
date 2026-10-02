@@ -10,13 +10,7 @@ export function createCodexConfig<T extends ConfigEntry>(input: {
   models(entry: T): Promise<CodexModel[]>
   probe(draft: DraftLaunch, mode: "probe" | "peek"): Promise<CodexModel[]>
 }): ConfigOperations {
-  const operations: ConfigOperations = {
-    read: async (session) => input.entry(session).start.config,
-    update: async (session, update) => {
-      const entry = input.entry(session)
-      entry.start = { ...entry.start, config: applySessionConfigUpdate(entry.start.config, update) }
-      return entry.start.config
-    },
+  return {
     options: async (target, mode) => {
       if ("session" in target) {
         const entry = input.entry(target.session)
@@ -26,7 +20,10 @@ export function createCodexConfig<T extends ConfigEntry>(input: {
     },
     permissionModes: async (target) => codexModeState("session" in target
       ? input.entry(target.session).start.config.permissionMode : target.draft.config.permissionMode),
-    setPermissionMode: async (session, modeId) => codexModeState((await operations.update(session, { permissionMode: requireCodexMode(modeId) })).permissionMode),
+    setPermissionMode: async (session, modeId) => {
+      const entry = input.entry(session)
+      entry.start = { ...entry.start, config: applySessionConfigUpdate(entry.start.config, { permissionMode: requireCodexMode(modeId) }) }
+      return codexModeState(entry.start.config.permissionMode)
+    },
   }
-  return operations
 }

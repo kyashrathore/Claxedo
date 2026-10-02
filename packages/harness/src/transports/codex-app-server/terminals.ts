@@ -18,7 +18,7 @@ export function codexStopDeadline(): Deadline {
 export class CodexTerminals {
   private readonly byTurn = new Map<string, Set<string>>()
   private readonly completed = new Set<string>()
-  private readonly completionWaiters = new Map<string, Set<() => void>>()
+  private readonly completions = new Map<string, PromiseWithResolvers<void>>()
   private readonly stopping = new Map<string, Promise<AdapterCancelOutcome>>()
 
   constructor(private readonly rpc: CodexRpc, private readonly threadId: string) {}
@@ -30,8 +30,8 @@ export class CodexTerminals {
       const turnId = asString(asRecordOrEmpty(params.turn).id)
       if (turnId) {
         this.completed.add(turnId)
-        for (const waiter of this.completionWaiters.get(turnId) ?? []) waiter()
-        this.completionWaiters.delete(turnId)
+        this.completions.get(turnId)?.resolve()
+        this.completions.delete(turnId)
       }
     }
     const item = asRecordOrEmpty(params.item)
@@ -74,28 +74,15 @@ export class CodexTerminals {
 
   private async completion(turnId: string, deadline: Deadline): Promise<boolean> {
     if (this.completed.has(turnId)) return true
+    const completion = this.completions.get(turnId) ?? Promise.withResolvers<void>()
+    this.completions.set(turnId, completion)
     try {
-      await this.waitForCompletion(turnId, deadline)
+      await settleAtRequestDeadline("Codex turn completion", { signal: deadline.signal, deadlineAt: deadline.at }, completion.promise,
+        () => {}, () => new CodexDeadlineError("Codex turn completion was not observed before the stop deadline"))
       return true
     } catch (error) {
       if (error instanceof CodexDeadlineError) return false
       throw error
-    }
-  }
-
-  private async waitForCompletion(turnId: string, deadline: Deadline): Promise<void> {
-    const waiters = this.completionWaiters.get(turnId) ?? new Set<() => void>()
-    let complete!: () => void
-    const pending = new Promise<void>((resolve) => { complete = resolve })
-    waiters.add(complete)
-    this.completionWaiters.set(turnId, waiters)
-    if (this.completed.has(turnId)) complete()
-    try {
-      await settleAtRequestDeadline("Codex turn completion", { signal: deadline.signal, deadlineAt: deadline.at }, pending,
-        () => waiters.delete(complete), () => new CodexDeadlineError("Codex turn completion was not observed before the stop deadline"))
-    } finally {
-      waiters.delete(complete)
-      if (!waiters.size) this.completionWaiters.delete(turnId)
     }
   }
 

@@ -68,7 +68,7 @@ async function backend(): Promise<PiBackend> {
   return {
     root, agentDir, directory, authFile, server, uiCommand: "conformance-ui", owner: { kind: "machine-owner" },
     sharedSender: { actor: { kind: "person", userId: "member" }, via: "relay", reissued: false },
-    harness: { id: "pi", access: "native" }, expectedMcp: "session",
+    harness: { id: "pi", access: "native" }, credentialsAfterActiveTurns: true,
     model: { providerID: "pi", modelID: "openai/gpt-4.1" },
     credentials: { machineLoginAllowed: true, accountOwner: "fixture-owner", providers: {}, secrets: {}, leaseGeneration: "conformance" },
     hold: (marker) => server.holdTextReplies(marker),
@@ -337,7 +337,6 @@ test("Pi names a session through the Claxedo title extension and hides its comma
     expect(title).toBe("Session PITITLE")
     const entry = (context.transport as unknown as { entries: Map<string, { rpc: { request(type: string): Promise<unknown> } }> }).entries.get("s1")!
     expect((await entry.rpc.request("get_state") as { sessionName?: string }).sessionName).toBe("Session PITITLE")
-    expect((await context.transport.capabilities({ directory: context.backend.directory })).titles).toBe("side-request")
     await fs.access(path.join(pi.agentDir, "extensions", "conformance.ts"))
     expect((await fs.readdir(pi.agentDir)).filter((name) => name.endsWith(".ts"))).toEqual([])
   } finally { await context.close() }

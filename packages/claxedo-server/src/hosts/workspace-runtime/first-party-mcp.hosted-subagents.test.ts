@@ -108,7 +108,7 @@ function fakeHarness() {
   const modes = (): AgentPermissionModeState => ({ modes: [...MODES], currentModeId: currentMode, appliesFrom: "next-turn" })
   const transport = new FakeTransport({
     capabilities: {
-      configOwner: "runtime", instructionChannel: "turn-system-prompt", subagents: true,
+      instructionChannel: "turn-system-prompt", subagents: true,
       requests: { permissions: true, questions: true, elicitation: false },
       modelSelection: { status: "optional", models: [{ providerId: "fake", modelId: "m1", name: "Fake M1" }] },
     },
@@ -117,8 +117,6 @@ function fakeHarness() {
       if (holding) await new Promise<void>((resolve) => held.push(resolve))
     },
     config: {
-      read: async () => { throw new Error("runtime-owned config") },
-      update: async () => { throw new Error("runtime-owned config") },
       options: async () => ({ options: [] }),
       permissionModes: async () => modes(),
       setPermissionMode: async (_session, modeId) => {

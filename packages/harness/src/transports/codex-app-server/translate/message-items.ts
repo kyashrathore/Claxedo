@@ -14,18 +14,21 @@ function separated(state: CodexAppServerAdapterState, channel: Channel, itemId: 
   return { state: { ...state, streamedItem: { channel, itemId } }, delta: `${paragraph}${delta}` }
 }
 
-function streamedReasoning(state: CodexAppServerAdapterState, id: string, delta: string) {
-  const reasoningTextByItemId = boundKeyedRecord({
-    ...state.reasoningTextByItemId,
-    [id]: `${own(state.reasoningTextByItemId ?? {}, id) ?? ""}${delta}`,
+function streamedMessage(state: CodexAppServerAdapterState, channel: Channel, id: string, delta: string) {
+  const key = channel === "text" ? "assistantTextByItemId" : "reasoningTextByItemId"
+  const accumulated = boundKeyedRecord({
+    ...state[key],
+    [id]: `${own(state[key] ?? {}, id) ?? ""}${delta}`,
   }, RETAINED_WIRE_KEYS_MAX)
-  const shown = separated({ ...state, reasoningTextByItemId }, "reasoning", id, delta)
-  return { state: shown.state, events: [{ type: "thinking-delta" as const, delta: shown.delta }] }
+  const shown = separated({ ...state, [key]: accumulated }, channel, id, delta)
+  return { state: shown.state, events: [{ type: channel === "text" ? "text-delta" as const : "thinking-delta" as const, delta: shown.delta }] }
 }
 
-const reasoningDelta: CodexHandler = ({ state, event }) => {
-  const delta = eventText(event)
-  return delta ? streamedReasoning(state, itemId(event, "reasoning"), delta) : []
+function messageDelta(channel: Channel, prefix: string): CodexHandler {
+  return ({ state, event }) => {
+    const delta = eventText(event)
+    return delta ? streamedMessage(state, channel, itemId(event, prefix), delta) : []
+  }
 }
 
 export function completedAssistantMessage(state: CodexAppServerAdapterState, id: string, completed: Record<string, unknown>): Result {
@@ -54,24 +57,12 @@ export function completedReasoning(state: CodexAppServerAdapterState, id: string
 }
 
 export const messageHandlers: CodexHandlers = {
-  "item/agentMessage/delta": ({ state, event }) => {
-    const delta = eventText(event)
-    if (!delta) return []
-    const id = itemId(event, "assistant")
-    const shown = separated({
-      ...state,
-      assistantTextByItemId: boundKeyedRecord({
-        ...state.assistantTextByItemId,
-        [id]: `${own(state.assistantTextByItemId, id) ?? ""}${delta}`,
-      }, RETAINED_WIRE_KEYS_MAX),
-    }, "text", id, delta)
-    return { state: shown.state, events: [{ type: "text-delta", delta: shown.delta }] }
-  },
-  "item/reasoning/textDelta": reasoningDelta,
-  "item/reasoning/summaryTextDelta": reasoningDelta,
+  "item/agentMessage/delta": messageDelta("text", "assistant"),
+  "item/reasoning/textDelta": messageDelta("reasoning", "reasoning"),
+  "item/reasoning/summaryTextDelta": messageDelta("reasoning", "reasoning"),
   "item/reasoning/summaryPartAdded": ({ state, event }) => {
     const streamed = own(state.reasoningTextByItemId ?? {}, itemId(event, "reasoning")) ?? ""
-    return streamed && !streamed.endsWith("\n\n") ? streamedReasoning(state, itemId(event, "reasoning"), "\n\n") : []
+    return streamed && !streamed.endsWith("\n\n") ? streamedMessage(state, "reasoning", itemId(event, "reasoning"), "\n\n") : []
   },
   "item/plan/delta": ({ event }) => {
     const delta = eventText(event)

@@ -12,8 +12,6 @@ import type { ClaudeProcess } from "./process"
 
 export type ClaudeFrame = SDKMessage | SDKActiveGoalMessage
 
-export type ClaudeLaunchKey = string
-
 export type ClaudeClaimEnd = "result" | "prompt" | "exit"
 
 export type ClaudeClaim = { frames: AsyncIterable<ClaudeFrame>; dropped?: RoutedEvent }
@@ -60,7 +58,7 @@ export class ClaudeLiveQuery {
 
   private delivered = Promise.resolve()
 
-  constructor(readonly key: ClaudeLaunchKey, private readonly between: ClaudeBetweenTurns) {}
+  constructor(readonly key: string, private readonly between: ClaudeBetweenTurns) {}
 
   get childrenDelivered(): Promise<void> { return this.delivered }
 
