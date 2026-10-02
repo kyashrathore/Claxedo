@@ -1,6 +1,7 @@
 import { Button, Dialog, DialogBody, DialogHeader, DialogTitle, Icon } from "@/ui"
 import type { useDialog } from "@/ui"
 import type { ModelChoice } from "@/server"
+import type { CommandOption } from "@/shell"
 import { ModelList, type PickerItem } from "./model-list"
 
 export type ModelDialogChoice = {
@@ -31,7 +32,7 @@ export function showModelDialog(dialog: ReturnType<typeof useDialog>, labels: { 
 }
 
 export function registerModelCommand(input: {
-  readonly register: (scope: string, options: () => ModelCommandOption[]) => void
+  readonly register: (scope: string, options: () => CommandOption[]) => void
   readonly available: () => boolean
   readonly open: () => void
   readonly labels: { readonly title: string; readonly description: string; readonly category: string }
@@ -48,15 +49,4 @@ export function registerModelCommand(input: {
       onSelect: input.open,
     },
   ])
-}
-
-type ModelCommandOption = {
-  readonly id: string
-  readonly title: string
-  readonly description: string
-  readonly category: string
-  readonly keybind: string
-  readonly slash: string
-  readonly disabled: boolean
-  readonly onSelect: () => void
 }
