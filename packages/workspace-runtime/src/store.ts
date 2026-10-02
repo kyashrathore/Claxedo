@@ -2957,7 +2957,7 @@ export class RuntimeStore {
       const assistantMessageId = str(properties?.messageID)
       if (!assistantMessageId) return undefined
       return {
-        status: "completed",
+        status: properties?.cancelled === true ? "cancelled" : "completed",
         assistantMessageId,
         completedAt: row.created_at,
       }
