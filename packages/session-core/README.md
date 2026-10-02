@@ -10,9 +10,10 @@ core's routes; a Durable Object host supplies its own ports.
 
 A host creates a `RuntimeStore` with an injected `SqliteDatabase`, then calls
 `core.createRuntime({ store, transports, launch, ... })`. The SQLite adapter owns
-transaction mechanics: Node supplies its driver, and Cloudflare supplies
-`durableObjectSqliteDatabase(storage)`. The core neither opens a database file
-nor migrates stored state. Worktree and launch-ownership rows remain plain
+transaction mechanics: `openNativeSqliteDatabase(require, file)` adapts the
+driver the host's own `require` loads (`bun:sqlite` under Bun, better-sqlite3
+under Node), and Cloudflare supplies `durableObjectSqliteDatabase(storage)`. The
+core never resolves a driver itself and never migrates stored state. Worktree and launch-ownership rows remain plain
 records in the declared schema; machine code owns checkout creation, process
 identity and retirement.
 
