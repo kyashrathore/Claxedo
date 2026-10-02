@@ -115,3 +115,24 @@ Local logs are `/private/tmp/staging-integration-*.log`.
 The full clean Linux unit umbrella and the Cloudflare-specific Dockerfile
 build are still running. Native Windows and packaged desktop acceptance have
 not been run for this integration. Live staging flows have not been exercised.
+
+## Fresh Linux follow-up
+
+The first clean Linux umbrella found seven harness failures: the five corpus
+expectations already repaired locally, an unordered `readdir` assertion, and
+an `EADDRINUSE` in Cursor's fixture startup. Its desktop boundary test also
+found that the minimal runner lacked Xvfb. The latter now installs `xvfb` and
+`xauth` through the canonical runner setup.
+
+The port allocator's unpublished PID record was independently reproduced:
+the added case fails against the prior implementation and passes after atomic
+publication. Three port cases now cover live ownership, incomplete publication,
+and concurrent stale reclamation. Linux's actual ephemeral range was
+32768–60999 with no reserved ports, overlapping our 46100–46199 fixture range.
+The shared Linux setup reserves that range, preserving existing reservations.
+These two hazards explain possible collisions; the observed failed bind alone
+does not identify which one won that particular race.
+
+The corrected Linux umbrella is running on another fresh lease. The original
+run continues to collect failures from the other packages. The Cloudflare
+Dockerfile build and its in-image smoke have now passed as well.

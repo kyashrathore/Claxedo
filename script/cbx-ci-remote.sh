@@ -175,7 +175,9 @@ install_linux_gui_dependencies() {
     libnss3-dev \
     libgdk-pixbuf2.0-dev \
     libgtk-3-dev \
-    libxss-dev
+    libxss-dev \
+    xvfb \
+    xauth
 }
 
 install_linux_native_build_dependencies() {
@@ -211,7 +213,7 @@ run_release_gates_linux_x64() {
 }
 
 run_unit() {
-  bash script/ci-linux-userns.sh
+  bash script/ci-linux-test-host.sh
   install_linux_gui_dependencies
   install_root
   install_app_server_native_dependencies
@@ -236,7 +238,7 @@ run_workspace_files() {
 }
 
 run_codex_conformance() {
-  bash script/ci-linux-userns.sh
+  bash script/ci-linux-test-host.sh
   install_root
   build_dist_packages
   (
