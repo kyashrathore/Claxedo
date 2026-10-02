@@ -65,7 +65,7 @@ function CenterRegion(props: { readonly center: CenterContent; readonly tabs: JS
 export function ShellFrame(props: ShellFrameProps): JSX.Element {
   const layout = useShellLayout()
   return (
-    <div class="shell" data-claxedo data-layout={layout.state().kind} data-testid="app-shell">
+    <div class="shell" data-claxedo data-layout={layout.state().kind} data-mac-window-controls={layout.macWindowControls() ? "" : undefined} data-testid="app-shell">
       <div class="shell-body">
         <Sidebar {...props.sidebar} />
         <main

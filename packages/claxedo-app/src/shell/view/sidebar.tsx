@@ -19,7 +19,7 @@ function SidebarHeader(): JSX.Element {
   const layout = useShellLayout()
   const label = () => (layout.sidebarPinned() ? t("shell.hideSidebar") : t("shell.pinSidebar"))
   return (
-    <div data-sidebar-header class="flex h-9 shrink-0 items-center gap-1 border-b border-border-weaker-base bg-background-base px-1">
+    <div data-sidebar-header data-window-drag-region data-clear-window-controls class="flex h-9 shrink-0 items-center gap-1 border-b border-border-weaker-base bg-background-base px-1">
       <Tooltip placement="bottom" value={label()}>
         <div class="max-md:hidden shrink-0">
           <IconButton

@@ -3,6 +3,8 @@ import { readField } from "@claxedo/helpers/readers"
 export type DesktopBridge = {
   readonly openLink: (url: string) => void
   readonly renderMermaid: (source: string, theme?: Record<string, string>) => Promise<string>
+  readonly getWindowFullscreen: () => Promise<boolean>
+  readonly onFullscreenChange: (listener: (fullscreen: boolean) => void) => () => void
 }
 
 export function desktopBridge(): DesktopBridge | undefined {

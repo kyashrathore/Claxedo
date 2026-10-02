@@ -439,9 +439,11 @@ export const desktopRenderer: Policy = {
   // of `transcript/agent-message-event.tsx`, styled by
   // `transcript/agent-message-notice.css`. Sessions other people shared with
   // the account are read and routed by `server/shared-sessions.ts` and listed
-  // by `rail/view/shared-sessions.tsx`. None adds a package edge.
-  // 1247/36, no headroom.
-  ceilings: { modules: 1247, packages: 36 },
+  // by `rail/view/shared-sessions.tsx`. Whether the macOS window buttons cover
+  // the shell's top-left corner is `shell/window-controls.ts`, read through the
+  // desktop bridge. None adds a package edge.
+  // 1248/36, no headroom.
+  ceilings: { modules: 1248, packages: 36 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,

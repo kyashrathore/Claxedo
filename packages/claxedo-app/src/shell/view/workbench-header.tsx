@@ -48,7 +48,7 @@ export function WorkbenchHeader(props: { readonly global: boolean; readonly tabs
         "pr-1": !toggleShown() || layout.panelShown(),
       }}
     >
-      <div class="flex min-w-0 flex-1 items-center gap-1 px-1">
+      <div class="flex min-w-0 flex-1 items-center gap-1 px-1" data-clear-window-controls={layout.sidebarPinned() ? undefined : ""}>
         <Show when={!layout.sidebarPinned()}>
           <ShowSidebarButton peek />
           <TitlebarDragRegion class="w-4 shrink-0" />
@@ -72,8 +72,8 @@ export function SettingsHeader(): JSX.Element {
   const t = useTranslator(shellDictionary)
   const layout = useShellLayout()
   return (
-    <div class="flex h-9 shrink-0 items-center gap-1 border-b border-border-weaker-base pr-1">
-      <div class="flex min-w-0 flex-1 items-center gap-1 px-1">
+    <div data-window-drag-region class="flex h-9 shrink-0 items-center gap-1 border-b border-border-weaker-base pr-1">
+      <div class="flex min-w-0 flex-1 items-center gap-1 px-1" data-clear-window-controls={layout.sidebarPinned() ? undefined : ""}>
         <Show when={!layout.sidebarPinned()}>
           <ShowSidebarButton peek={false} />
           <span class="flex min-w-0 items-center gap-1.5 rounded-md bg-surface-base px-2.5 py-1 text-compact text-text-strong">

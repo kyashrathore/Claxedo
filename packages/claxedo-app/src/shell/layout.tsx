@@ -1,8 +1,11 @@
 import { createContext, createEffect, createSignal, on, useContext, type Accessor, type JSX } from "solid-js"
+import { desktopBridge } from "@/lib/desktop-bridge"
 import { usePhone } from "@/lib/viewport"
 import { createShellLayout, panelOpen, persistedSidebar, sidebarPinned, sidebarShown, type ShellLayoutEvent, type ShellLayoutState } from "./model"
 import { clampWidth, createShellPreferences, SIDEBAR_MAX_WIDTH, SIDEBAR_MIN_WIDTH } from "./store"
+import { isMac } from "./palette/keybinding"
 import { usePageTabFocused } from "./view/page-tab"
+import { trackMacWindowControls } from "./window-controls"
 
 export type ShellLayout = {
   readonly state: Accessor<ShellLayoutState>
@@ -17,6 +20,7 @@ export type ShellLayout = {
   readonly panelShown: Accessor<boolean>
   readonly sidebarWidth: Accessor<number>
   readonly setSidebarWidth: (width: number) => void
+  readonly macWindowControls: Accessor<boolean>
 }
 
 const ShellLayoutContext = createContext<ShellLayout>()
@@ -55,6 +59,7 @@ export function ShellLayoutProvider(props: { readonly scope: string; readonly ch
     panelShown: () => panelAllowed() && panelOpen(machine.state()),
     sidebarWidth: () => prefs.sidebarWidth,
     setSidebarWidth: (width) => setPrefs("sidebarWidth", clampWidth(width, SIDEBAR_MIN_WIDTH, SIDEBAR_MAX_WIDTH)),
+    macWindowControls: trackMacWindowControls(desktopBridge(), isMac),
   }
   return <ShellLayoutContext.Provider value={layout}>{props.children}</ShellLayoutContext.Provider>
 }
