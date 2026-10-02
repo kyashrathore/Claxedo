@@ -1,7 +1,7 @@
 import { createEffect, onCleanup, type JSX, type ParentProps } from "solid-js"
 import { useTranslator } from "@/i18n"
 import { useServer } from "@/server"
-import { useSessionStores } from "@/session"
+import { useSessionStores, type UnseenOutcome } from "@/session"
 import { sessionPath, useShellRoute } from "@/shell"
 import { createAlertDetector, type AlertKind, type AlertPreferences } from "./alerts"
 import { notificationsDictionary, type NotificationKey } from "./i18n"
@@ -14,6 +14,8 @@ const TITLE: Readonly<Record<AlertKind, NotificationKey>> = {
   errors: "notifications.sessionError",
 }
 
+const OUTCOME: Readonly<Partial<Record<AlertKind, UnseenOutcome>>> = { agent: "finished", errors: "failed" }
+
 export function AttentionAlerts(props: ParentProps<{ readonly preferences: AlertPreferences }>): JSX.Element {
   const t = useTranslator(notificationsDictionary)
   const server = useServer()
@@ -21,7 +23,7 @@ export function AttentionAlerts(props: ParentProps<{ readonly preferences: Alert
   const routing = useShellRoute()
   const detect = createAlertDetector()
   const sound = createSoundPlayer()
-  const unseen = stores.unseenFailures
+  const unseen = stores.unseenOutcomes
   const shownSession = () => {
     const route = routing.route()
     return route.kind === "session" || route.kind === "localSession" ? route.sessionId : undefined
@@ -38,7 +40,8 @@ export function AttentionAlerts(props: ParentProps<{ readonly preferences: Alert
       if (!row || row.parentSessionId) return
       if (shownSession() !== alert.ref.sessionId) {
         sound.play(props.preferences.sound[alert.kind])
-        if (alert.kind === "errors") unseen.raised(alert.ref.sessionId)
+        const outcome = OUTCOME[alert.kind]
+        if (outcome) unseen.raised(alert.ref.sessionId, outcome)
       }
       if (!props.preferences.notify[alert.kind]) return
       showSystemNotification({

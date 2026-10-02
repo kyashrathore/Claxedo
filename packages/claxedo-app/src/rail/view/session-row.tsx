@@ -67,8 +67,8 @@ function ArchiveButton(props: { readonly row: SessionRowView; readonly engaged: 
 export function RailSessionRow(props: SessionRowProps): JSX.Element {
   const [menu, setMenu] = createSignal<{ x: number; y: number }>()
   const engagement = createHoverEngagement()
-  const unseenFailures = useSessionStores().unseenFailures
-  const status = () => navigationStatus(props.row, unseenFailures.has(props.row.ref.sessionId))
+  const unseen = useSessionStores().unseenOutcomes
+  const status = () => navigationStatus(props.row, unseen.of(props.row.ref.sessionId))
   const now = useAgeClock(() => sessionAgeSince(props.row))
   const openMenu = (event: MouseEvent) => {
     event.preventDefault()

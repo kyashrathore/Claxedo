@@ -122,11 +122,13 @@ export type SessionView = {
 
 export type { SessionSubagent }
 
+export type UnseenOutcome = "finished" | "failed"
+
 export type SessionStores = {
   readonly list: SessionList
-  readonly unseenFailures: {
-    readonly has: (sessionId: SessionId) => boolean
-    readonly raised: (sessionId: SessionId) => void
+  readonly unseenOutcomes: {
+    readonly of: (sessionId: SessionId) => UnseenOutcome | undefined
+    readonly raised: (sessionId: SessionId, outcome: UnseenOutcome) => void
     readonly seen: (sessionId: SessionId) => void
   }
   readonly open: (ref: SessionLocation) => SessionView

@@ -98,7 +98,7 @@ test("10 session list: the project's rows, live status, rename, archive and dele
   await expect.poll(() => rowTitles(app)).toEqual(["Charlie renamed"])
 })
 
-test("10 a background turn, in a session visited before, changes only its own rail row and wakes no animation frame", async ({ stack, api, app }) => {
+test("10 a background turn, in a session visited before, changes only its own rail row, wakes no animation frame, and leaves a finished dot until the reader opens it", async ({ stack, api, app }) => {
   const workspace = await stack.daemon.makeWorkspace("isolation", "Isolation")
   const create = (title: string) => api.createSession(workspace.directory, { title, harness: SCRIPTED_ACP_HARNESS })
   const open = await create("Open")
@@ -118,11 +118,15 @@ test("10 a background turn, in a session visited before, changes only its own ra
   const work = await watchPageWork(app, { regions: { ownRow: `[data-testid="rail-sidebar-session-row"][data-session-id="${background.id}"]` } })
   await stack.acp.release("background")
   await expect.poll(async () => assistantText(await api.messages(workspace.directory, background.id))).toContain("The background reply ends here.")
-  await expect(mark).toHaveCount(0)
+  await expect(mark).toHaveAttribute("data-sidebar-status", "done")
 
   const seen = await work()
   expect(seen.animationFrames, "animation frames asked for during the background turn").toBe(0)
   expect(Object.keys(seen.mutations), "regions the background turn changed").toEqual(["ownRow"])
+
+  await app.getByRole("navigation", { name: UI.rail }).getByRole("button", { name: "Background", exact: true }).click()
+  await expect(app.getByText("The background reply ends here.")).toBeVisible()
+  await expect(mark).toHaveCount(0)
 })
 
 

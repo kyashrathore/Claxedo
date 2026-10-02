@@ -1,13 +1,13 @@
 import { formatCompactAge } from "@/lib/relative-time"
 import type { MachineId, Placement, ProjectId, SessionId, SessionLocation } from "@/server"
-import { sessionActivity, type SessionRowView } from "@/session"
+import { sessionActivity, type SessionRowView, type UnseenOutcome } from "@/session"
 import type { TerminalItem } from "@/terminal"
 
 export type NavigationStatus = "idle" | "working" | "background" | "permission" | "error" | "done"
 
 export const SESSION_GROUP_PAGE_SIZE = 5
 
-export function navigationStatus(row: SessionRowView, failureUnseen: boolean): NavigationStatus {
+export function navigationStatus(row: SessionRowView, unseen: UnseenOutcome | undefined): NavigationStatus {
   const activity = sessionActivity(row)
   if (activity === "waiting") return "permission"
   if (row.pending) return "working"
@@ -15,11 +15,11 @@ export function navigationStatus(row: SessionRowView, failureUnseen: boolean): N
     case "working":
       return "working"
     case "failed":
-      return failureUnseen ? "error" : "idle"
+      return unseen === "failed" ? "error" : "idle"
     case "background":
       return "background"
     case "idle":
-      return "idle"
+      return unseen === "finished" ? "done" : "idle"
   }
 }
 

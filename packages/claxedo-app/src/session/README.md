@@ -1,6 +1,6 @@
 # Session data
 
-`SessionStores.unseenFailures` owns the principal-scoped acknowledgement marks consumed by the rail. Notifications raises a mark only for an off-screen live failure and clears it when its route opens; list reads and transcript snapshots never raise marks.
+`SessionStores.unseenOutcomes` owns the principal-scoped acknowledgement marks consumed by the rail: the last turn's outcome, `finished` or `failed`, that the reader has not seen. Notifications raises a mark only for an off-screen live turn end and clears it when its route opens; list reads and transcript snapshots never raise marks.
 
 ## Reconcile rules of the session list
 
