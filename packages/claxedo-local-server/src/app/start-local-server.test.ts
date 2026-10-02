@@ -4,9 +4,7 @@ import { createServer } from "node:http"
 import { tmpdir } from "node:os"
 import path from "node:path"
 import { customVerifierAuthAdapter, localOnlyAuthAdapter } from "@claxedo/server-core/platform/auth/auth"
-import { workspaceSupervisorInstalled } from "@claxedo/server-core/workspace/supervisor-port"
 import { ClaxedoDB } from "@claxedo/server-core/platform/db/index"
-import { closeAuthorityDatabases } from "@claxedo/server-core/authority/adapters/sqlite/workspace-authority-store"
 import { startLocalServer, type LocalServer } from "./start-local-server"
 import type { LocalAppOptions } from "./local-app"
 import { createLocalControlPlaneServices } from "./local-services"
@@ -65,7 +63,6 @@ afterEach(async () => {
   // handles hold files inside it (EPERM/EBUSY); both closes are registry
   // resets, so any later use lazily reopens.
   ClaxedoDB.close()
-  closeAuthorityDatabases()
   rmSync(dataDir, { recursive: true, force: true })
 })
 
@@ -271,14 +268,6 @@ describe("startLocalServer", () => {
     expect((await fetch(`http://127.0.0.1:${local.port}/api/claxedo/health`)).status).toBe(200)
   }, 30_000)
 
-  test("starts NO workspace supervisor, because this product provisions no cloud", async () => {
-    // The omission is the product boundary, so it is asserted rather than
-    // assumed. Runtime dispatch reaches the supervisor through a port that
-    // correctly no-ops when none is installed.
-    await boot()
-    expect(workspaceSupervisorInstalled()).toBe(false)
-  }, 30_000)
-
   test("stopping releases the port", async () => {
     const local = await boot()
     const port = local.port
@@ -354,7 +343,6 @@ describe("createLocalControlPlaneServices", () => {
     expect((await fetch(`http://127.0.0.1:${port}/api/claxedo/health`)).status).toBe(200)
     // Unsigned by construction: no account, nothing to verify a bearer against.
     expect((await identity.call(`http://127.0.0.1:${port}/api/claxedo/credentials`)).status).toBe(200)
-    expect(workspaceSupervisorInstalled()).toBe(false)
   }, 30_000)
 
   test("records a session into the real projection store", async () => {

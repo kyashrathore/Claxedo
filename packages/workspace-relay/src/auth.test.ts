@@ -803,9 +803,9 @@ describe("workspace relay auth", () => {
  * The value below is a PUBLISHED IDENTIFIER, not a test detail. `kid` is how a
  * relay host advertises its signing key and how the other side looks that key
  * up, so `deriveRelayHostKid` must return the same string for the same key in
- * every runtime that signs: the Bun relay (`main.ts`) and the Cloudflare
- * relay/worker (`worker.ts`) both call this one implementation precisely so a
- * token minted by one verifies at the other.
+ * every build that signs: the Cloudflare relay worker (`worker.ts`) derives it
+ * whenever `CLAXEDO_RELAY_HOST_KID` is unset, so a token minted by one build
+ * verifies at the next.
  *
  * Therefore: if a change to `deriveRelayHostKid` (or to
  * `deriveRelayHostPublicKey` feeding it) makes this test fail, the fix is NOT

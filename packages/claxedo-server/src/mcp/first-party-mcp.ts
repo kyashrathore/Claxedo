@@ -1,8 +1,3 @@
-/**
- * The `/api/claxedo/mcp` contribution the hosted worker and the self-hosted
- * node both mount. The two differ in who they admit and what they serve
- * in-process; everything else is this one module.
- */
 import type { ControlPlaneRouteContribution } from "@claxedo/server-core/platform/http/route-contribution"
 import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import type { WorkspaceAuthority } from "@claxedo/server-core/platform/auth/authority"
@@ -13,33 +8,20 @@ import {
   inProcessFetch,
   mcpAuditRecord,
   type FirstPartyMcpOptions,
-  type McpClientInputs,
 } from "@claxedo/mcp"
 import type { McpAuditEvent, McpCredential } from "@claxedo/mcp/context"
 
 export const FIRST_PARTY_MCP_CONTRIBUTION_ID = "claxedo-mcp"
 
 export type FirstPartyMcpContributionInput = Readonly<{
-  mount: "hosted" | "node"
   /** The composed app the tools re-enter in-process. Read at request time, so it may still be under composition. */
   app: { request: (input: Request) => Response | Promise<Response> }
   authority: Pick<WorkspaceAuthority, "auditAllow"> | undefined
   options: FirstPartyMcpOptions
   /** The signed identity behind a request, or undefined when it carries none this deployment accepts. */
   signedAuth: (request: Request) => Promise<SignedControlPlaneAuth | undefined>
-  /** A caller this deployment admits with no identity at all: the node's unsigned loopback. */
-  anonymousCredential?: (request: Request) => McpCredential | undefined
   /** A consented OAuth access token, resolved by `resolveOAuthMcpCredential`. */
   oauthCredential?: (request: Request) => Promise<McpCredential | undefined>
-  /** The runtimes this process serves, for a credential that may reach them; absent on the hosted worker. */
-  local?: (credential: McpCredential, request: Request) => Promise<McpClientInputs["local"]> | McpClientInputs["local"]
-  /**
-   * This deployment's Tasks routes, as this credential may reach them. Absent
-   * on a deployment that serves no Tasks, and then the tools are not listed.
-   */
-  tasks?: (credential: McpCredential) => Promise<McpClientInputs["tasks"]> | McpClientInputs["tasks"]
-  /** App plugin authoring for a session of the machine's owner; absent on a deployment with no daemon of its own. */
-  appPlugins?: (credential: McpCredential) => Promise<McpClientInputs["appPlugins"]> | McpClientInputs["appPlugins"]
   /** Where a write is recorded when no authority can attribute it. */
   auditFallback: (record: ReturnType<typeof mcpAuditRecord>) => void
 }>
@@ -52,21 +34,19 @@ export function signedActorId(auth: SignedControlPlaneAuth): string {
 export function firstPartyMcpContribution(input: FirstPartyMcpContributionInput): ControlPlaneRouteContribution {
   const auths = new WeakMap<McpCredential, SignedControlPlaneAuth>()
   const mount = createClaxedoMcpRoutes({
-    mount: input.mount,
+    mount: "hosted",
     ...(input.options.verifyRuntimeCredential ? { verifyRuntimeCredential: input.options.verifyRuntimeCredential } : {}),
     resolveUserCredential: async (request) => {
       const auth = await input.signedAuth(request)
-      if (!auth) return await input.oauthCredential?.(request) ?? input.anonymousCredential?.(request)
+      if (!auth) return await input.oauthCredential?.(request)
       const credential = fullUserCredential({ actorId: signedActorId(auth), clientId: "cli" })
       auths.set(credential, auth)
       return credential
     },
     createClient: async (credential, request) => {
       const authorization = request.headers.get("authorization")
-      const tasks = await input.tasks?.(credential)
-      const appPlugins = await input.appPlugins?.(credential)
       return input.options.createClient({
-        deployment: input.mount,
+        deployment: "hosted",
         credential,
         request,
         ...(credential.kind === "user"
@@ -75,9 +55,6 @@ export function firstPartyMcpContribution(input: FirstPartyMcpContributionInput)
               documents: { fetch: inProcessFetch((call) => input.app.request(call), authorization ? { authorization } : {}) },
             }
           : {}),
-        ...(input.local ? { local: await input.local(credential, request) } : {}),
-        ...(tasks ? { tasks } : {}),
-        ...(appPlugins ? { appPlugins } : {}),
       })
     },
     registerTools: input.options.registerTools ?? [],

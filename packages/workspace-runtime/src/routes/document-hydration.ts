@@ -7,10 +7,14 @@ import { createHash } from "node:crypto"
 import { verifyDocumentJobCapability } from "../document-job-capability"
 import { Hono } from "hono"
 import { z } from "zod"
-import { boundedJson, RequestBodyTooLargeError } from "./http"
-import { num, rec, str } from "../json-value"
+import { asNumber, asRecord, asString } from "@claxedo/helpers/guards"
+import {
+  boundedJson,
+  RequestBodyTooLargeError,
+  sessionAccessContext,
+  type SessionAccessPolicy,
+} from "@claxedo/session-core"
 import { authorizeHostCapability } from "./host-capability-access"
-import { sessionAccessContext, type SessionAccessPolicy } from "../session-access-policy"
 import type { RelayHostAuthContext } from "../workspace-host-service-auth"
 import { isMissingFile } from "@claxedo/helpers/fs"
 import { MAX_DOCUMENT_BYTES, readContained, secureDirectory, writeContained } from "./document-hydration-files"
@@ -476,9 +480,9 @@ async function renew(document: RuntimeDocument) {
   )
   if (!result.response.ok)
     throw new Error(`Runtime document capability renewal failed: ${result.response.status}`)
-  const value = rec(result.value)
-  const token = str(value?.token)
-  const expiresAt = num(value?.expiresAt)
+  const value = asRecord(result.value)
+  const token = asString(value?.token)
+  const expiresAt = asNumber(value?.expiresAt)
   if (token === undefined || expiresAt === undefined) {
     throw new Error("Runtime document capability renewal response is invalid")
   }
@@ -540,7 +544,7 @@ async function syncAuthorized(document: RuntimeDocument) {
     throw new Error("Runtime document write-back conflicted")
   }
   if (!result.response.ok) throw new Error(`Runtime document write-back failed: ${result.response.status}`)
-  const version = str(rec(result.value)?.version)
+  const version = asString(asRecord(result.value)?.version)
   if (version === undefined) throw new Error("Runtime document write-back response is invalid")
   document.baseVersion = version
   document.lastMarkdown = markdown

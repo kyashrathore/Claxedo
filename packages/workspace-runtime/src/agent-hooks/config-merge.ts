@@ -4,7 +4,7 @@ import path from "path"
 import { isDeepStrictEqual } from "util"
 import { applyEdits, findNodeAtLocation, getNodeValue, modify, parseTree, type JSONPath, type Node, type ParseError } from "jsonc-parser"
 import { writeIfChanged as writeFileAtomically } from "./core/utils"
-import { rec, str } from "../json-value"
+import { asRecord, asString } from "@claxedo/helpers/guards"
 
 export type IsManagedCommand = (command: string | undefined) => boolean
 
@@ -54,7 +54,7 @@ export class ConfigEdits {
 }
 
 function commandOf(entry: unknown) {
-  return str(rec(entry)?.command)
+  return asString(asRecord(entry)?.command)
 }
 
 /**
@@ -105,7 +105,7 @@ export function reconcileNestedEntries(edits: ConfigEdits, base: JSONPath, conta
       continue
     }
     const plan = current.map((definition) => {
-      const hooks = rec(definition)?.hooks
+      const hooks = asRecord(definition)?.hooks
       const inner = Array.isArray(hooks) ? hooks : []
       const owned = inner.flatMap((hook, index) => isManaged(commandOf(hook)) ? [index] : [])
       return { definition, owned, whole: owned.length > 0 && owned.length === inner.length }
@@ -174,7 +174,7 @@ export async function readConfig(file: string): Promise<{ original: string | und
   const duplicate = duplicateKey(tree)
   if (duplicate !== undefined) throw new Error(`Hook target config ${file} repeats the key ${JSON.stringify(duplicate)}; refusing to rewrite it`)
   const value: unknown = getNodeValue(tree)
-  const object = rec(value)
+  const object = asRecord(value)
   if (!object || Array.isArray(value)) throw new Error(`Hook target config ${file} is not a JSON object; refusing to rewrite it`)
   return { original, value: object }
 }

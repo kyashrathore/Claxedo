@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test"
 import { validateDescriptors } from "./snapshot"
-import { fakeConnectionProvider, FakeTransport } from "../test-support/fake-transport"
+import { fakeConnectionProvider, FakeTransport } from "@claxedo/session-core/testing"
 
 test("invalid connection diagnostics retain nested protocol error details", () => {
   const error = Object.assign(new Error("Invalid config"), { data: { message: "command is missing" } })

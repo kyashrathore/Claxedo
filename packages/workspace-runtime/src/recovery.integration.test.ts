@@ -12,13 +12,17 @@ import {
 } from "@claxedo/agent-runtime-contract"
 import { createWorkspaceRuntimeClient } from "./client"
 import { loopbackWorkspaceRuntimeExposure } from "./exposure"
-import type { AgentRuntimeRecoveryInspection } from "./host/contracts"
-import { managedWorkspaceSessionAccessPolicy, type ManagedSessionAuthority } from "./session-access-policy"
+import {
+  type AgentRuntimeRecoveryInspection,
+  managedWorkspaceSessionAccessPolicy,
+  type ManagedSessionAuthority,
+  type RuntimeStore,
+} from "@claxedo/session-core"
 import type { RelayHostAuthContext } from "./workspace-host-service-auth"
-import type { RuntimeStore } from "./store"
 import { openRuntimeStore } from "./store-file"
 import { withWorkspaceTarget } from "./target"
-import { FakeTransport, fakeConnectionProvider, loopbackMachineLoginPolicy } from "./testing"
+import { loopbackMachineLoginPolicy } from "./testing"
+import { FakeTransport, fakeConnectionProvider } from "@claxedo/session-core/testing"
 import { createWorkspaceHost } from "./workspace/runtime"
 import { CheckpointRoutes } from "./routes/checkpoint"
 import { WorkspaceRuntimeRoutes } from "./routes/manifest"
@@ -108,6 +112,7 @@ function openWorkspace(input: { directory: string; storeRoot: string; workspaceI
   const sessionAccessPolicy = managedWorkspaceSessionAccessPolicy(input.authority ? { authority: input.authority } : {})
 
   const host = createWorkspaceHost({
+    sessionIdWorkspace: () => undefined,
     placement: loopbackMachineLoginPolicy(),
     target,
     storeRoot: input.storeRoot,

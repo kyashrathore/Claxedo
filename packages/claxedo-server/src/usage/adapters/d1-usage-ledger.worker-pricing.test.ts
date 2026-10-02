@@ -3,7 +3,7 @@ import { afterAll, beforeAll, expect, test } from "vitest"
 import { Miniflare } from "miniflare"
 import type { TurnUsageRevision } from "@claxedo/server-core/usage/contracts"
 import { hostedWorkerCompatibility, wranglerBundle } from "../../test-support/hosted-worker-bundle"
-import { applyControlPlaneMigration, controlPlaneMigrations } from "../../test-support/control-plane-migrations"
+import { applyControlPlaneBaseline } from "../../test-support/control-plane-migrations"
 
 const ENTRY = fileURLToPath(new URL("./d1-usage-ledger.worker-pricing.cf.ts", import.meta.url))
 
@@ -16,7 +16,7 @@ beforeAll(async () => {
     d1Databases: ["CONTROL_PLANE_DB"],
   })
   const database = await miniflare.getD1Database("CONTROL_PLANE_DB")
-  for (const name of controlPlaneMigrations()) await applyControlPlaneMigration(database, name)
+  await applyControlPlaneBaseline(database)
 }, 120_000)
 
 afterAll(async () => {

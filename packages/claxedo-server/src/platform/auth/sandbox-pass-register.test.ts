@@ -26,7 +26,7 @@ type Clock = { now: number }
 const registers: Record<string, (clock: Clock) => Promise<SandboxPassRegister>> = {
   memory: async (clock) => memorySandboxPassRegister({ now: () => clock.now }),
   d1: async (clock) => {
-    const instance = await miniflareControlPlaneDatabase(["0027_sandbox_pass_revocations.sql"])
+    const instance = await miniflareControlPlaneDatabase()
     active.push(instance)
     return createD1SandboxPassRegister({ database: instance.database, now: () => clock.now })
   },

@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test"
 import { generateKeyPair, SignJWT } from "jose"
 import { createWorkspaceRuntimeApp } from "../server"
 import { relayWorkspaceRuntimeExposure } from "../exposure"
-import { managedWorkspaceSessionAccessPolicy } from "../session-access-policy"
+import { managedWorkspaceSessionAccessPolicy } from "@claxedo/session-core"
 import { createWorkspaceRuntimeJwtManagementAuth, WORKSPACE_RUNTIME_MANAGEMENT_TOKEN_HEADER } from "../management-auth"
 import { loopbackMachineLoginPolicy } from "../testing"
 
@@ -17,6 +17,7 @@ async function fixture() {
   let currentRole: "viewer" | "editor" | "admin" | "owner" | undefined = "admin"
   const asked: string[] = []
   const runtime = createWorkspaceRuntimeApp({
+    sessionIdWorkspace: () => undefined,
     placement: loopbackMachineLoginPolicy(),
     exposure: relayWorkspaceRuntimeExposure(relayHostAuth),
     managementTarget: target,

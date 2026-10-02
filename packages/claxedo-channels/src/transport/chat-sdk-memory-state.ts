@@ -10,8 +10,8 @@ import type { Lock, QueueEntry, StateAdapter } from "chat"
  * channel webhook throws `Cannot read properties of undefined (reading
  * 'connect')`.
  *
- * This backs the single-box self-host deployment: caches, per-thread lists,
- * queues, locks and subscriptions all live in this process. A multi-instance
+ * Caches, per-thread lists, queues, locks and subscriptions all live in this
+ * process. A multi-instance
  * deployment must swap in a shared (Redis/SQLite) adapter — the whole point of
  * this interface — but for one long-lived process this is correct and cheap.
  */

@@ -5,13 +5,12 @@ import { mkdirSync, mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import path from "node:path"
 import { ClaxedoDB } from "@claxedo/server-core/platform/db/index"
-import { closeAuthorityDatabases } from "@claxedo/server-core/authority/adapters/sqlite/workspace-authority-store"
 import {
   configureAgentConfig,
   disposeAgentConfig,
   saveUserConfig,
 } from "@claxedo/server-core/agent-config/index"
-import { FakeTransport, fakeConnectionProvider } from "@claxedo/workspace-runtime/testing"
+import { FakeTransport, fakeConnectionProvider } from "@claxedo/session-core/testing"
 import { startLocalServer, type LocalServer } from "./start-local-server"
 import { testDaemon } from "./test-support/daemon"
 import {
@@ -185,6 +184,7 @@ beforeEach(async () => {
   // run here; the policy and the loopback declaration are re-supplied because
   // this call replaces the whole composition it made.
   configureEmbeddedWorkspaceRuntime({
+    sessionIdWorkspace: () => undefined,
     connectionProviders: [provider],
     sessionAccessPolicy: localHostSessionAccessPolicy,
     loopbackSessionAuthority: "local",
@@ -209,7 +209,7 @@ afterEach(async () => {
   await server?.stop()
   server = undefined
   disposeAgentConfig()
-  configureEmbeddedWorkspaceRuntime({})
+  configureEmbeddedWorkspaceRuntime({ sessionIdWorkspace: () => undefined })
   configureAgentConfig()
   setLocalHostEndpoints(undefined)
   resetLocalHostSessionAdoptions()
@@ -219,7 +219,6 @@ afterEach(async () => {
   })
   authority = undefined
   ClaxedoDB.close()
-  closeAuthorityDatabases()
   if (previousDataDir === undefined) delete process.env.CLAXEDO_DATA_DIR
   else process.env.CLAXEDO_DATA_DIR = previousDataDir
   rmSync(dataDir, { recursive: true, force: true })

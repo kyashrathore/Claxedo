@@ -55,7 +55,7 @@ The user's objection, which is the core of this brief:
 ### 2.2 Verified architecture — there is no preflight anywhere
 
 - `POST /session/:id/prompt_async`
-  (`packages/workspace-runtime/src/routes/session-core.ts:700`) **admits the message and
+  (`packages/session-core/src/routes/session-core.ts:700`) **admits the message and
   returns immediately**, then runs the turn inside a fire-and-forget `(async () => {…})()`.
   The user message is admitted (`promptAdmissions`) *before* the agent turn is attempted.
 - Consequently **every** failure — credential, harness process dead, model unavailable,

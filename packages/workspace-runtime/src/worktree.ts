@@ -3,8 +3,7 @@ import path from "node:path"
 import { inside } from "@claxedo/helpers/path"
 import { runGit } from "./git"
 import { workspaceRuntimeWorkspacesDir } from "./env"
-import type { RuntimeStore, WorkspaceWorktreeRecord } from "./store"
-import { registerWorkspaceDirectory, unregisterWorkspaceDirectory, WorkspaceTargetError } from "./target"
+import { type RuntimeStore, type WorkspaceWorktreeRecord, WorkspaceTargetError, type SessionPlacement } from "@claxedo/session-core"
 
 const SEGMENT = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/
 
@@ -30,6 +29,7 @@ export class WorkspaceWorktreeManager {
   /** `store` is read on each use, so a store the host has not opened yet is opened by the first worktree request. */
   constructor(private readonly options: {
     workspaceId: string
+    placement: SessionPlacement
     sourceDirectory: string
     root?: string
     store: () => WorktreeStore
@@ -49,7 +49,7 @@ export class WorkspaceWorktreeManager {
   }
 
   close() {
-    for (const record of this.served.values()) unregisterWorkspaceDirectory(record)
+    for (const record of this.served.values()) this.options.placement.unregister(record.sessionId)
     this.served.clear()
   }
 
@@ -62,7 +62,7 @@ export class WorkspaceWorktreeManager {
   }
 
   private serve(record: WorkspaceWorktreeRecord) {
-    registerWorkspaceDirectory({ workspaceId: record.workspaceId, sessionId: record.sessionId, directory: record.path })
+    this.options.placement.register({ sessionId: record.sessionId, directory: record.path })
     this.served.set(record.sessionId, record)
   }
 
@@ -170,7 +170,7 @@ export class WorkspaceWorktreeManager {
     }
     const repairing = { ...record, state: "repairing" as const, updatedAt: Date.now() }
     this.store.putWorktree(repairing)
-    unregisterWorkspaceDirectory(repairing)
+    this.options.placement.unregister(repairing.sessionId)
     this.served.delete(repairing.sessionId)
     await runGit(["worktree", "prune"], this.repo)
     await fs.rm(record.path, { recursive: true, force: true })

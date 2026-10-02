@@ -1,4 +1,3 @@
-import { readFile } from "node:fs/promises"
 import { afterEach, describe, expect, test } from "vitest"
 import { Miniflare } from "miniflare"
 import type { D1Database, D1PreparedStatement } from "@cloudflare/workers-types"
@@ -15,9 +14,8 @@ import {
   D1SignedAgentPluginActivationStore,
   type AgentPluginActivationAuthority,
 } from "./d1-store"
-import { controlPlaneMigrationPath, controlPlaneMigrations } from "../../test-support/control-plane-migrations"
+import { applyControlPlaneBaseline } from "../../test-support/control-plane-migrations"
 
-const MIGRATIONS = controlPlaneMigrations()
 
 const PLUGIN = "claxedo/review"
 const OTHER_PLUGIN = "claxedo/triage"
@@ -39,19 +37,6 @@ function identity(subject: string): AuthIdentity {
   return { adapter: "better-auth", issuer: "https://better-auth.example.test", subject }
 }
 
-async function migrate(database: D1Database) {
-  for (const name of MIGRATIONS) {
-    const path = controlPlaneMigrationPath(name)
-    const migration = (await readFile(path, "utf8")).replace(/^\s*--.*$/gm, "")
-    for (const statement of migration
-      .split(/;\s*\n\s*\n/)
-      .map((part) => part.trim())
-      .filter(Boolean)) {
-      await database.prepare(statement).run()
-    }
-  }
-}
-
 async function setup() {
   const instance = new Miniflare({
     modules: true,
@@ -61,7 +46,7 @@ async function setup() {
   })
   active.push(instance)
   const raw = await instance.getD1Database("CONTROL_PLANE_DB")
-  await migrate(raw)
+  await applyControlPlaneBaseline(raw)
   // A step run between a method's reads and its batch, which is where a
   // concurrent writer lands in production. Miniflare's D1 handle is a Proxy
   // that drops property sets, so the interception lives in a wrapper.

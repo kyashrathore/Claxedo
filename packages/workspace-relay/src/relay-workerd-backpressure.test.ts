@@ -7,28 +7,14 @@ import { bootWorkerd, reapWorkerd } from "./workerd-fixture/boot"
  * What the Cloudflare runtime does and does NOT tell a Durable Object about its
  * own WebSocket send buffer.
  *
- * This test exists because a plan (`W7.1a`) proposed fixing a measured cloud
- * failure — the DO's outbound buffer growing until workerd destroys the socket
- * beneath the isolate, surfacing as 1006/1011 with zero logs and 13 ms of CPU —
- * by reading `bufferedAmount` before `send()`, mirroring a guard the Bun adapter
- * appears to have. Neither half of that premise survives contact with the
- * runtimes:
- *
- *   - workerd's WebSocket has no `bufferedAmount` and no `getBufferedAmount()`.
- *     A guard reading it would be `undefined > 8388608` — always false — so it
- *     would be a no-op that reads as a fix. Asserted here against real workerd.
- *   - `Bun.ServerWebSocket` exposes `getBufferedAmount()`, a METHOD, not a
- *     `bufferedAmount` property. `src/bun.ts` reads the property behind a
- *     non-null assertion, so its two "backpressure limit exceeded" closes have
- *     never fired either. Asserted below by driving a real Bun socket.
- *
- * Together those kill the "the asymmetry is the proof" argument: Bun does not
- * survive this load shape because it guards. Its guard has never executed.
- *
- * The value of pinning it: if Cloudflare ever ships the getter, the workerd test
- * below FAILS, and whoever sees it learns that the port has become possible.
- * Until then, no pre-send guard can be written in `cloudflare.ts` at all, and
- * bounding this mechanism needs a protocol-level credit/ack window instead.
+ * workerd's WebSocket has no `bufferedAmount` and no `getBufferedAmount()`, so
+ * a pre-send guard reading either would be `undefined > 8388608`: always false,
+ * a no-op that reads as a fix for the measured cloud failure (the DO's outbound
+ * buffer growing until workerd destroys the socket beneath the isolate,
+ * surfacing as 1006/1011 with zero logs and 13 ms of CPU). If Cloudflare ever
+ * ships the getter, the workerd test below FAILS, and whoever sees it learns the
+ * guard has become possible. Until then bounding this needs a protocol-level
+ * credit/ack window.
  *
  * Runtime globals are structurally typed rather than pulled from
  * `@cloudflare/workers-types`, matching the rest of this package.
@@ -225,7 +211,7 @@ describe("real workerd WebSocket send-buffer surface", () => {
       // The whole W7.1a fix shape rests on this being present. It is not.
       expect(report.surface.hasBufferedAmountProperty).toBe(false)
       expect(report.surface.typeofBufferedAmount).toBe("undefined")
-      // Nor is there a method form, as Bun has.
+      // Nor is there a method form.
       expect(report.surface.typeofGetBufferedAmount).toBe("undefined")
       expect(report.surface.prototypeProperties).not.toContain("bufferedAmount")
       expect(report.surface.prototypeProperties).not.toContain("getBufferedAmount")
@@ -271,81 +257,5 @@ describe("real workerd WebSocket send-buffer surface", () => {
     // matters is that the interface never DECLARES it as a member.
     expect(iface).not.toMatch(/^\s*(readonly\s+)?(get\s+)?bufferedAmount\b/m)
     expect(iface).not.toMatch(/getBufferedAmount\s*\(/)
-  })
-})
-
-describe("Bun ServerWebSocket send-buffer surface", () => {
-  test("reports depth via getBufferedAmount(), not a bufferedAmount property", async () => {
-    // The runtime fact that made the prior art dead code. `src/bun.ts` used to
-    // read `(socket as { bufferedAmount?: number }).bufferedAmount!` at both
-    // guard sites; the non-null assertion hid that the property does not exist,
-    // so `undefined > 8388608` was false and neither "backpressure limit
-    // exceeded" close had ever fired. Measured here on a real socket over the
-    // limit — the old expression is evaluated verbatim to show it stays false.
-    const measured = await new Promise<{
-      realBufferedBytes: number
-      whatTheOldGuardRead: unknown
-      oldGuardExpressionFires: boolean
-      prototypeProperties: string[]
-    }>((resolve, reject) => {
-      const timer = setTimeout(() => reject(new Error("Bun socket never opened")), 10_000)
-      const server = Bun.serve({
-        port: 0,
-        fetch(request, self) {
-          if (self.upgrade(request)) return undefined
-          return new Response("expected an upgrade", { status: 400 })
-        },
-        websocket: {
-          open(socket) {
-            const frame = "x".repeat(OVERSHOOT_FRAME_BYTES)
-            for (let index = 0; index < OVERSHOOT_FRAMES; index++) socket.send(frame)
-            const whatTheOldGuardRead = (socket as unknown as { bufferedAmount?: number }).bufferedAmount
-            clearTimeout(timer)
-            resolve({
-              realBufferedBytes: socket.getBufferedAmount(),
-              whatTheOldGuardRead,
-              oldGuardExpressionFires: whatTheOldGuardRead! > GUARD_LIMIT_BYTES,
-              prototypeProperties: Object.getOwnPropertyNames(Object.getPrototypeOf(socket)),
-            })
-          },
-          message() {},
-        },
-      })
-      const client = new WebSocket(`ws://localhost:${server.port}`)
-      client.addEventListener("error", () => {
-        clearTimeout(timer)
-        reject(new Error("Bun client socket errored"))
-      })
-    })
-
-    // The method exists and reports a real, over-limit depth...
-    expect(measured.prototypeProperties).toContain("getBufferedAmount")
-    expect(measured.realBufferedBytes).toBeGreaterThan(GUARD_LIMIT_BYTES)
-    // ...while the property the old guard read does not exist at all.
-    expect(measured.prototypeProperties).not.toContain("bufferedAmount")
-    expect(measured.whatTheOldGuardRead).toBeUndefined()
-    expect(measured.oldGuardExpressionFires).toBe(false)
-  }, 30_000)
-
-  test("bun.ts reads the method form at both guard sites", async () => {
-    // Pins the fix so the property form cannot creep back in. The behavioural
-    // assertions for the now-live guard (over-limit closes, fail-open on a
-    // socket that cannot report) live in `bun.test.ts`.
-    const bun = await readFile(new URL("./bun.ts", import.meta.url), "utf8")
-    expect(bun).toContain("getBufferedAmount")
-    expect(bun).not.toContain("{ bufferedAmount?: number }).bufferedAmount!")
-    // Both guards go through the shared helper rather than reading a socket
-    // accessor inline, which is what let the two sites drift into dead code.
-    expect(bun).toContain("if (relayOverBackpressureLimit(channel,")
-    expect(bun).toContain("if (relayOverBackpressureLimit(tunnel,")
-  })
-
-  test("cloudflare.ts carries no backpressure guard, because none is writable", async () => {
-    // Not an oversight: the workerd tests above are the reason. If someone adds
-    // a `bufferedAmount` read here, this fails and points them at those tests
-    // rather than letting a permanent no-op ship as the cliff fix.
-    const cloudflare = await readFile(new URL("./cloudflare.ts", import.meta.url), "utf8")
-    expect(cloudflare).not.toContain("bufferedAmount")
-    expect(cloudflare).not.toContain("getBufferedAmount")
   })
 })

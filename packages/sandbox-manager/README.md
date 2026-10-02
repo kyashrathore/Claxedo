@@ -11,7 +11,8 @@ The package owns the generic pieces:
 - `SandboxDriver`
 - provider drivers for Cloudflare, Docker, fetch bridge, Modal, and Vercel
 
-`drivers/local-brokering` is a macOS test driver. The e2e self-hosted stack
+`drivers/local-brokering` is a macOS test driver. The e2e hosted stack's
+sandbox fixture (`packages/harness/e2e/harness/hosted-sandbox-worker.ts`)
 injects its instance programmatically; it has no product driver ID or product
 configuration path. It runs the workspace runtime in a private directory under
 `sandbox-exec`, permitting outbound TCP to its HTTP proxy and the specified

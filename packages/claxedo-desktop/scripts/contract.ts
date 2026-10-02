@@ -173,8 +173,7 @@ export function spec(root = ROOT): Spec {
     "../claxedo-app/public",
     "../claxedo-app/src",
     // What the desktop actually bundles: the local product and the shared core
-    // beneath it. `claxedo-server` is the hosted/self-hosted product and no
-    // longer feeds this artifact.
+    // beneath it. `claxedo-server` is the hosted product and does not feed this artifact.
     "../claxedo-local-server/package.json",
     "../claxedo-local-server/src",
     "../claxedo-server-core/package.json",

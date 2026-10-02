@@ -1,11 +1,13 @@
+import { withSessionCore } from "../session-context"
+import { testSessionCore } from "@claxedo/session-core/testing"
 import { afterEach, describe, expect, test } from "bun:test"
 import { Hono, type MiddlewareHandler } from "hono"
 import fs from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
-import { managedWorkspaceSessionAccessPolicy, type SessionAccessPolicy } from "../session-access-policy"
+import { managedWorkspaceSessionAccessPolicy, type SessionAccessPolicy } from "@claxedo/session-core"
 import { openRuntimeStore } from "../store-file"
-import { registerWorkspaceDirectory, unregisterWorkspaceDirectory, withWorkspaceTarget } from "../target"
+import { withWorkspaceTarget } from "../target"
 import type { RelayHostAuthContext } from "../workspace-host-service-auth"
 import { WorkspaceWorktreeManager } from "../worktree"
 import { createDiffRoutes } from "../routes/diff"
@@ -16,6 +18,8 @@ import { mountWorkspaceFiles } from "./core"
 
 const WORKSPACE_ID = "ws_1"
 const SECRET = "private-secret-contents"
+
+const cores = new Map<string, ReturnType<typeof testSessionCore>>()
 
 const cleanups: Array<() => void | Promise<void>> = []
 
@@ -121,10 +125,10 @@ function mounted(input: {
     mountWorkspaceFiles(app, input.policy)
   }
   return {
-    request: (pathname: string, init?: RequestInit) => withWorkspaceTarget(
+    request: (pathname: string, init?: RequestInit) => withSessionCore(cores.get(input.directory)!, () => withWorkspaceTarget(
       { workspaceId: WORKSPACE_ID, directory: input.directory },
       () => app.request(`http://localhost${pathname}`, init),
-    ),
+    )),
   }
 }
 
@@ -142,7 +146,10 @@ async function fixture(options: { worktreeRoot?: (source: string) => string } = 
   await git(["commit", "-m", "base"], source)
 
   const store = openRuntimeStore(path.join(root, "state"))
+  const core = testSessionCore(source, WORKSPACE_ID)
+  cores.set(source, core)
   const manager = new WorkspaceWorktreeManager({
+    placement: core.placement,
     workspaceId: WORKSPACE_ID,
     sourceDirectory: source,
     root: options.worktreeRoot?.(source) ?? path.join(root, "hidden"),
@@ -160,7 +167,7 @@ async function fixture(options: { worktreeRoot?: (source: string) => string } = 
   await fs.writeFile(path.join(private_.path, "secret.txt"), `${SECRET}\n`)
   await fs.writeFile(path.join(shared.path, "shared.txt"), "shared\n")
 
-  return { root, source, shared: shared.path, private: private_.path }
+  return { root, source, core, shared: shared.path, private: private_.path }
 }
 
 const READ_ROUTES = [
@@ -350,8 +357,8 @@ describe("a private worktree nested under the workspace root", () => {
     const nested = path.join(f.source, "container", "private")
     await fs.mkdir(nested, { recursive: true })
     await fs.writeFile(path.join(nested, "secret.txt"), SECRET)
-    registerWorkspaceDirectory({ workspaceId: WORKSPACE_ID, sessionId: "ses_nested_private", directory: nested })
-    cleanups.push(() => unregisterWorkspaceDirectory({ workspaceId: WORKSPACE_ID, sessionId: "ses_nested_private" }))
+    f.core.placement.register({ sessionId: "ses_nested_private", directory: nested })
+    cleanups.push(() => f.core.placement.unregister("ses_nested_private"))
     const server = mounted({ directory: f.source, policy: sharedSessionPolicy("ses_shared"), identity: relayAuth() })
     const response = await post(server, "/api/wr/git/stage", { paths: ["container"] })
     expect({ status: response.status, staged: await git(["diff", "--cached", "--name-only"], f.source) })
@@ -370,8 +377,8 @@ describe("a private worktree nested under the workspace root", () => {
     await fs.writeFile(path.join(nested, "secret.txt"), `${SECRET}\n`)
     await fs.writeFile(path.join(f.source, "container", "open.txt"), "open\n")
     await fs.writeFile(path.join(f.source, "workspace.txt"), "the workspace's own\n")
-    registerWorkspaceDirectory({ workspaceId: WORKSPACE_ID, sessionId: "ses_nested_private", directory: nested })
-    cleanups.push(() => unregisterWorkspaceDirectory({ workspaceId: WORKSPACE_ID, sessionId: "ses_nested_private" }))
+    f.core.placement.register({ sessionId: "ses_nested_private", directory: nested })
+    cleanups.push(() => f.core.placement.unregister("ses_nested_private"))
     return {
       ...f,
       nested,
@@ -402,8 +409,8 @@ describe("a private worktree nested under the workspace root", () => {
     const nested = path.join(f.source, " private")
     await fs.mkdir(nested)
     await fs.writeFile(path.join(nested, "secret.txt"), SECRET)
-    registerWorkspaceDirectory({ workspaceId: WORKSPACE_ID, sessionId: "ses_spaced_private", directory: nested })
-    cleanups.push(() => unregisterWorkspaceDirectory({ workspaceId: WORKSPACE_ID, sessionId: "ses_spaced_private" }))
+    f.core.placement.register({ sessionId: "ses_spaced_private", directory: nested })
+    cleanups.push(() => f.core.placement.unregister("ses_spaced_private"))
     await git(["add", "--", " private/secret.txt"], f.source)
     const route = `/api/wr/diff/vcs/file?mode=staged&file=${encodeURIComponent(" private/secret.txt")}`
     const response = await f.server.request(route)
@@ -417,8 +424,8 @@ describe("a private worktree nested under the workspace root", () => {
 
   test("a shared registration cannot hide another owner's denial on the same directory", async () => {
     const f = await containerFixture()
-    unregisterWorkspaceDirectory({ workspaceId: WORKSPACE_ID, sessionId: "ses_shared" })
-    registerWorkspaceDirectory({ workspaceId: WORKSPACE_ID, sessionId: "ses_shared", directory: f.nested })
+    f.core.placement.unregister("ses_shared")
+    f.core.placement.register({ sessionId: "ses_shared", directory: f.nested })
     const response = await f.server.request("/api/wr/git/status")
     expect(response.status).toBe(200)
     expect((await response.text()).includes("container/private/secret.txt")).toBe(false)
@@ -548,7 +555,7 @@ describe("a private worktree nested under the workspace root", () => {
     const open = path.join(f.source, "container", "shared")
     await fs.mkdir(open, { recursive: true })
     await fs.writeFile(path.join(open, "note.txt"), "shared work\n")
-    registerWorkspaceDirectory({ workspaceId: WORKSPACE_ID, sessionId: "ses_shared", directory: open })
+    f.core.placement.register({ sessionId: "ses_shared", directory: open })
 
     let landed = false
     const server = mounted({
@@ -618,8 +625,8 @@ describe("a private worktree nested under the workspace root", () => {
     await fs.mkdir(nested)
     await fs.writeFile(path.join(nested, "loose-secret.txt"), `${SECRET}\n`)
     await fs.writeFile(path.join(f.source, "workspace-secret.txt"), "the workspace's own\n")
-    registerWorkspaceDirectory({ workspaceId: WORKSPACE_ID, sessionId: "ses_loose", directory: nested })
-    cleanups.push(() => unregisterWorkspaceDirectory({ workspaceId: WORKSPACE_ID, sessionId: "ses_loose" }))
+    f.core.placement.register({ sessionId: "ses_loose", directory: nested })
+    cleanups.push(() => f.core.placement.unregister("ses_loose"))
     await fs.symlink(f.private, path.join(f.source, "shortcut"))
 
     const server = mounted({
@@ -686,8 +693,8 @@ describe("a private worktree nested under the workspace root", () => {
     await fs.writeFile(path.join(nested, "loose-secret.txt"), `${SECRET}\n`)
     await git(["add", "loose/loose-secret.txt"], f.source)
     await git(["commit", "-m", "loose"], f.source)
-    registerWorkspaceDirectory({ workspaceId: WORKSPACE_ID, sessionId: "ses_loose", directory: nested })
-    cleanups.push(() => unregisterWorkspaceDirectory({ workspaceId: WORKSPACE_ID, sessionId: "ses_loose" }))
+    f.core.placement.register({ sessionId: "ses_loose", directory: nested })
+    cleanups.push(() => f.core.placement.unregister("ses_loose"))
 
     const server = mounted({
       directory: f.source,
@@ -726,11 +733,11 @@ describe("the base a reported path is named against", () => {
     await fs.mkdir(sibling)
     await fs.writeFile(path.join(served, "mine.txt"), "mine\n")
     await fs.writeFile(path.join(sibling, "secret.txt"), `${SECRET}\n`)
-    registerWorkspaceDirectory({ workspaceId: WORKSPACE_ID, sessionId: "ses_sibling", directory: sibling })
-    registerWorkspaceDirectory({ workspaceId: WORKSPACE_ID, sessionId: "ses_served", directory: served })
+    f.core.placement.register({ sessionId: "ses_sibling", directory: sibling })
+    f.core.placement.register({ sessionId: "ses_served", directory: served })
     cleanups.push(() => {
-      unregisterWorkspaceDirectory({ workspaceId: WORKSPACE_ID, sessionId: "ses_sibling" })
-      unregisterWorkspaceDirectory({ workspaceId: WORKSPACE_ID, sessionId: "ses_served" })
+      f.core.placement.unregister("ses_sibling")
+      f.core.placement.unregister("ses_served")
     })
     return { ...f, served, sibling }
   }
@@ -762,11 +769,11 @@ describe("the base a reported path is named against", () => {
     const hidden = path.join(plain, "hidden")
     await fs.mkdir(hidden)
     await fs.writeFile(path.join(hidden, "secret.txt"), `${SECRET}\n`)
-    registerWorkspaceDirectory({ workspaceId: WORKSPACE_ID, sessionId: "ses_plain_private", directory: hidden })
-    registerWorkspaceDirectory({ workspaceId: WORKSPACE_ID, sessionId: "ses_plain", directory: plain })
+    f.core.placement.register({ sessionId: "ses_plain_private", directory: hidden })
+    f.core.placement.register({ sessionId: "ses_plain", directory: plain })
     cleanups.push(() => {
-      unregisterWorkspaceDirectory({ workspaceId: WORKSPACE_ID, sessionId: "ses_plain_private" })
-      unregisterWorkspaceDirectory({ workspaceId: WORKSPACE_ID, sessionId: "ses_plain" })
+      f.core.placement.unregister("ses_plain_private")
+      f.core.placement.unregister("ses_plain")
     })
     const server = mounted({
       directory: f.source,
@@ -806,10 +813,10 @@ describe("the base a reported path is named against", () => {
         git ? { git } : {},
         { sessionAccessPolicy: sharedSessionPolicy("ses_served") },
       ))
-      return withWorkspaceTarget(
+      return withSessionCore(f.core, () => withWorkspaceTarget(
         { workspaceId: WORKSPACE_ID, directory: f.source },
         () => app.request(`http://localhost/api/wr/diff/vcs?mode=uncommitted&directory=${encodeURIComponent(f.served)}`),
-      )
+      ))
     }
 
     // With the repository resolvable the answer is served and filtered: the

@@ -6,8 +6,8 @@ import path from "path"
 import { configureAgentConfig, disposeAgentConfig } from "@claxedo/server-core/agent-config/index"
 import type { Workspace } from "@claxedo/server-core/workspace/store/index"
 import { ClaxedoDB } from "@claxedo/server-core/platform/db/index"
-import { closeAuthorityDatabases } from "@claxedo/server-core/authority/adapters/sqlite/workspace-authority-store"
 import {
+  configureEmbeddedWorkspaceRuntime,
   ensureEmbeddedWorkspaceRuntime,
   renewEmbeddedWorkspaceRuntimeConfigs,
   shutdownEmbeddedWorkspaceRuntimes,
@@ -30,7 +30,6 @@ afterEach(async () => {
   await shutdownEmbeddedWorkspaceRuntimes()
   disposeAgentConfig()
   ClaxedoDB.close()
-  closeAuthorityDatabases()
   vi.useRealTimers()
   for (const root of roots) await fs.rm(root, { recursive: true, force: true })
   roots = []
@@ -64,6 +63,7 @@ async function runtimeProjecting(input: { lifetimeMs: number; fail?: () => boole
     },
   })
   const workspace: Workspace = { id: "ws_renewal", directory: project, kind: "local", created_at: 1, updated_at: 1 }
+  configureEmbeddedWorkspaceRuntime({ sessionIdWorkspace: () => undefined })
   await ensureEmbeddedWorkspaceRuntime(workspace, { config: "sync" })
   return { projections }
 }

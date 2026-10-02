@@ -72,7 +72,7 @@ async function relayed(directory: string) {
   const pair = await generateKeyPair("EdDSA")
   const authority = hostAuthority()
   const runtime = started(createWorkspaceRuntimeApp({
-    placement: loopbackMachineLoginPolicy(),
+    sessionIdWorkspace: () => undefined, placement: loopbackMachineLoginPolicy(),
     exposure: relayWorkspaceRuntimeExposure({ ...target, key: pair.publicKey }),
     target: { workspaceId: target.workspaceId, directory },
     sessionAccessPolicy: remoteWorkspaceSessionAccessPolicy({ url: "https://control.example.test/authority", fetch: authority.fetch }),
@@ -145,7 +145,7 @@ describe("an unsigned desktop's root", () => {
   function unsignedDesktop(directory: string) {
     const fetched: string[] = []
     const runtime = started(createWorkspaceRuntimeApp({
-      placement: loopbackMachineLoginPolicy(),
+      sessionIdWorkspace: () => undefined, placement: loopbackMachineLoginPolicy(),
       exposure: embeddedWorkspaceRuntimeExposure({ owner: "test", guard: () => true }),
       target: { workspaceId: target.workspaceId, directory },
       sessionAccessPolicy: remoteWorkspaceSessionAccessPolicy({

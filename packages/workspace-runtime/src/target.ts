@@ -5,6 +5,9 @@ import { AsyncLocalStorage } from "async_hooks"
 import { runtimeEnvText } from "./env"
 import { realDirectoryPath, realPathAllowingMissing } from "@claxedo/helpers/real-path"
 
+import { currentSessionCore } from "./session-context"
+import { WorkspaceTargetError } from "@claxedo/session-core"
+
 let id: string | undefined
 
 export type WorkspaceTarget = {
@@ -13,16 +16,6 @@ export type WorkspaceTarget = {
 }
 
 const targetStorage = new AsyncLocalStorage<WorkspaceTarget>()
-const registered = new Map<string, Map<string, string>>()
-
-export class WorkspaceTargetError extends Error {
-  readonly status = 400
-  readonly retryable = false
-  constructor(message: string, readonly code: "workspace_path_invalid" | "workspace_target_pinned" = "workspace_path_invalid") {
-    super(message)
-    this.name = "WorkspaceTargetError"
-  }
-}
 
 function clean(dir: string): string {
   return path.resolve(dir.trim())
@@ -65,47 +58,10 @@ export function hasWorkspaceTarget(env: NodeJS.ProcessEnv = process.env): boolea
   return !!targetStorage.getStore() || !!runtimeEnvText(env, "WORKSPACE_RUNTIME_DIRECTORY")
 }
 
-export function assertTarget(requested: string | undefined, env: NodeJS.ProcessEnv = process.env): string {
-  const dir = workspaceDir(env)
-  if (!requested) return dir
-  if (requested.trim() === `workspace:${workspaceId(env)}`) return dir
-  if (clean(requested) === dir) return dir
-  if ([...(registered.get(workspaceId(env))?.values() ?? [])].includes(clean(requested))) return clean(requested)
-  throw new WorkspaceTargetError(`workspace-runtime is pinned to ${dir}`, "workspace_target_pinned")
-}
-
-export function registerWorkspaceDirectory(input: {
-  workspaceId: string
-  sessionId: string
-  directory: string
-}) {
-  const directories = registered.get(input.workspaceId) ?? new Map<string, string>()
-  directories.set(input.sessionId, clean(input.directory))
-  registered.set(input.workspaceId, directories)
-}
-
-export function unregisterWorkspaceDirectory(input: { workspaceId: string; sessionId: string }) {
-  const directories = registered.get(input.workspaceId)
-  directories?.delete(input.sessionId)
-  if (directories?.size === 0) registered.delete(input.workspaceId)
-}
-
-export function registeredWorkspaceDirectory(sessionId: string, env: NodeJS.ProcessEnv = process.env) {
-  return registered.get(workspaceId(env))?.get(sessionId)
-}
-
-/** The per-session worktrees a workspace's runtime serves besides its own directory. */
-export function registeredWorkspaceDirectories(workspaceId: string): string[] {
-  return [...(registered.get(workspaceId)?.values() ?? [])]
-}
-
 export type RegisteredWorkspaceDirectory = { sessionId: string; directory: string }
 
-function registeredEntries(env: NodeJS.ProcessEnv): RegisteredWorkspaceDirectory[] {
-  return [...(registered.get(workspaceId(env)) ?? [])].map(([sessionId, directory]) => ({
-    sessionId,
-    directory: realDirectoryPath(directory),
-  }))
+function registeredEntries(): RegisteredWorkspaceDirectory[] {
+  return currentSessionCore().placement.entries().map((entry) => ({ ...entry, directory: realDirectoryPath(entry.directory) }))
 }
 
 /**
@@ -123,10 +79,9 @@ function registeredEntries(env: NodeJS.ProcessEnv): RegisteredWorkspaceDirectory
  */
 export function registeredWorkspaceDirectoryOwners(
   candidate: string,
-  env: NodeJS.ProcessEnv = process.env,
 ): string[] {
   const real = realPathAllowingMissing(candidate)
-  return registeredEntries(env)
+  return registeredEntries()
     .filter((entry) => real === entry.directory || real.startsWith(entry.directory + path.sep))
     .map((entry) => entry.sessionId)
 }
@@ -142,15 +97,14 @@ export function registeredWorkspaceDirectoryOwners(
  */
 export function registeredWorkspaceDirectoriesUnder(
   root: string,
-  env: NodeJS.ProcessEnv = process.env,
 ): RegisteredWorkspaceDirectory[] {
   const real = realPathAllowingMissing(root)
-  return registeredEntries(env).filter((entry) => entry.directory.startsWith(real + path.sep))
+  return registeredEntries().filter((entry) => entry.directory.startsWith(real + path.sep))
 }
 
 /** Whether this workspace has any per-session worktree at all; the cheap guard before a filter does real work. */
-export function hasRegisteredWorkspaceDirectories(env: NodeJS.ProcessEnv = process.env): boolean {
-  return (registered.get(workspaceId(env))?.size ?? 0) > 0
+export function hasRegisteredWorkspaceDirectories(): boolean {
+  return currentSessionCore().placement.entries().length > 0
 }
 
 export function withWorkspaceTarget<T>(target: WorkspaceTarget, run: () => T): T {

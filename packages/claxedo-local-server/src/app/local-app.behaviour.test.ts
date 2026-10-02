@@ -50,17 +50,9 @@ vi.mock("../workspace/runtime-dispatch/middleware", async (importOriginal) => {
 })
 
 /**
- * Request-level, because the route-inventory contract cannot see any of this.
- *
- * A first version of this composition passed a path-level contract test with
- * six divergences from the self-hosted composition it copies — a CORS widening,
- * a dropped credential-auth fallback, a missing fail-fast, an absent
- * session-meta tap, and two weakened endpoints. Not one of them changes the
- * registered route table, so the inventory test would have passed unchanged if
- * every one were introduced or reversed.
- *
- * Each test below sends a request and asserts on the response or on a recorded
- * side effect. One per finding.
+ * Request-level, because the route-inventory contract cannot see any of this:
+ * CORS policy, the credential-auth hook, fail-fast, the session-meta tap and
+ * endpoint behaviour all leave the registered route table unchanged.
  */
 
 let dataDir: string
@@ -121,9 +113,6 @@ function app(overrides: Partial<LocalAppOptions> = {}) {
 
 describe("local composition — CORS", () => {
   test("never grants credentialed cross-origin reads", async () => {
-    // The self-hosted composition never sets `credentials: true`, so even an
-    // origin its policy approves cannot complete a `credentials: 'include'`
-    // fetch. Setting it here would widen that structurally.
     const response = await app().request("http://localhost/api/claxedo/health", {
       headers: { Origin: "http://localhost:4444" },
     })
@@ -156,10 +145,6 @@ describe("local composition — CORS", () => {
 
 describe("local composition — credential routes", () => {
   test("require a bearer token on a signed box, without the caller asking", async () => {
-    // Derived from the environment, exactly as the self-hosted composition
-    // derives it. The first version made this a caller-supplied hook with no
-    // fallback, so a caller that omitted it left credential mutation behind
-    // only the loopback guard.
     process.env.CLAXEDO_SIGNED_CLOUD_AUTH = "1"
 
     const response = await app().request("http://localhost/api/claxedo/credentials", { method: "GET" })
@@ -754,9 +739,9 @@ describe("local composition — health and telemetry", () => {
 
 describe("local composition — bootstrap behind the daemon capability", () => {
   test("a composition minting no daemon capability keeps the unsigned local posture", async () => {
-    // The self-hosted mount and a daemon-less dev server have no token to
-    // check against, so the machine's own body still answers a loopback
-    // caller — the loopback guard is their whole boundary.
+    // A composition started without `daemon` (the e2e daemon, a dev server)
+    // has no token to check against, so the machine's own body still answers
+    // a loopback caller — the loopback guard is its whole boundary.
     const response = await app().request("http://localhost/api/claxedo/bootstrap")
 
     expect(response.status).toBe(200)
@@ -1083,8 +1068,8 @@ describe("local egress broker hosting", () => {
 
   test("names its own refusal in a code the harness can read", async () => {
     // Signed, so the composition's unsigned-local guard passes the request
-    // through and the broker mount is the one that answers. On an unsigned box
-    // that guard refuses first, under `unsigned_local_loopback_required`.
+    // through and the broker mount is the one that answers. Unsigned, that
+    // guard refuses first, under `unsigned_local_loopback_required`.
     const instance = app({
       egressBroker: async () => new Response(null, { status: 401 }),
       services: services({

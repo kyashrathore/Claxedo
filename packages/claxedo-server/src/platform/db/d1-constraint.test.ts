@@ -7,7 +7,7 @@ let instance: ControlPlaneDatabase
 let database: D1Database
 
 beforeAll(async () => {
-  instance = await miniflareControlPlaneDatabase(["0001_service_installations.sql", "0002_workspace_authority.sql"])
+  instance = await miniflareControlPlaneDatabase()
   database = instance.database
   await database.prepare("create table pairs (a text not null, b text not null, unique (a, b))").run()
   await database.prepare("insert into pairs values ('x', 'y')").run()

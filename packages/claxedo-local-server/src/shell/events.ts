@@ -1,7 +1,7 @@
 import type { Context } from "hono"
 import { EVENT_STREAM_HEARTBEAT_MS } from "@claxedo/agent-runtime-contract"
 import { eventStreamResponse, type UpgradeWebSocket } from "./event-stream-response"
-import { attachSseFanout, createSseReplayBuffer, type SseReplayBuffer } from "@claxedo/workspace-runtime/projection"
+import { attachSseFanout, createSseReplayBuffer, type SseReplayBuffer } from "@claxedo/helpers/sse"
 import { controlBus, createBus, type ControlPlaneEvent } from "@claxedo/server-core/platform/runtime/lib/bus"
 import { isRetainedControlPlaneEvent } from "@claxedo/server-core/platform/http/event-retention"
 import {
@@ -66,7 +66,7 @@ export function signedControlPlaneEventVisibleTo(frame: ControlPlaneFrame, princ
 
 /**
  * `/api/cp/events` — the control plane's stream, served by the local daemon
- * to its own surface and by a self-hosted node to its signed subscribers.
+ * to its own surface.
  * The hosted plane serves the same route from its room
  * (`claxedo-server/src/routes/hosted/shell.ts`), with the narrower notice
  * set `ControlPlaneEvent`'s docblock names.

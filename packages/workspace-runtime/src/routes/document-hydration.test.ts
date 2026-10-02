@@ -3,7 +3,7 @@ import fs from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
 import { fetchBodyJson, fetchDouble, fetchUrl } from "../test-support/fetch-double"
-import { rec, str } from "../json-value"
+import { asRecord, asString } from "@claxedo/helpers/guards"
 import { Hono } from "hono"
 import { afterEach, beforeEach, describe, expect, test, mock, spyOn } from "bun:test"
 import {
@@ -1081,7 +1081,7 @@ describe("runtime document hydration", () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "runtime-document-restart-"))
     let canonical = "before"
     const fetcher = mock(async (_url: string | URL | Request, init?: RequestInit) => {
-      canonical = str(rec(fetchBodyJson(init?.body))?.markdown) ?? ""
+      canonical = asString(asRecord(fetchBodyJson(init?.body))?.markdown) ?? ""
       return Response.json({ version: "v2" })
     })
     globalThis.fetch = documentAuthorizedFetch(fetcher)

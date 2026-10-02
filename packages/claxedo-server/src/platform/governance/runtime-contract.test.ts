@@ -59,6 +59,5 @@ describe("runtime contract", () => {
 
   test("package type entries point at generated or source exports, not manual shadows", () => {
     expect(JSON.parse(fs.readFileSync(path.join(root, "packages/workspace-runtime/package.json"), "utf8")).types).toBe("./dist/index.d.ts")
-    expect(JSON.parse(fs.readFileSync(path.join(root, "packages/claxedo-server/package.json"), "utf8")).types).toBe("./src/index.ts")
   })
 })

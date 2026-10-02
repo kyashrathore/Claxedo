@@ -2,7 +2,7 @@ import { spawn } from "node:child_process"
 import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"
-import { HARNESS_STATE_ENV } from "./harness-state-env.mjs"
+import { HARNESS_STATE_ENV } from "@claxedo/session-core/testing"
 
 function run(file, args, options) {
   return new Promise((resolve, reject) => {

@@ -15,7 +15,7 @@ import {
   HOSTED_ATTEMPT_TTL_MS,
 } from "./attempts"
 import type { ControlPlaneCredentials, ControlPlaneServices } from "../../authority/services"
-import { applyControlPlaneMigration, controlPlaneMigrations } from "../../test-support/control-plane-migrations"
+import { applyControlPlaneBaseline } from "../../test-support/control-plane-migrations"
 import {
   createHostedCapabilityAuthFailureReporter,
   createHostedCapabilityConnectionResolver,
@@ -25,7 +25,6 @@ import {
   type HostedD1ConnectionsSetupInput,
 } from "./setup"
 
-const MIGRATIONS = controlPlaneMigrations()
 
 const NOW = 1_900_000_000_000
 const active: Miniflare[] = []
@@ -43,7 +42,7 @@ async function database(): Promise<D1Database> {
   })
   active.push(instance)
   const target = await instance.getD1Database("CONTROL_PLANE_DB")
-  for (const name of MIGRATIONS) await applyControlPlaneMigration(target, name)
+  await applyControlPlaneBaseline(target)
   return target
 }
 

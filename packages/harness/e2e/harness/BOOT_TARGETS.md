@@ -1,6 +1,6 @@
 # E2E boot targets
 
-Local flows boot the local daemon. Signed and cloud flows boot the hosted Cloudflare Worker under Miniflare/workerd with local D1, R2 and Durable Object storage, and reach runtimes through the production Cloudflare relay with a Worker-issued Runtime Access Token. Neither tree boots `claxedo-server`'s self-hosted entry or the Bun relay.
+Local flows boot the local daemon. Signed and cloud flows boot the hosted Cloudflare Worker under Miniflare/workerd with local D1, R2 and Durable Object storage, and reach runtimes through the production Cloudflare relay with a Worker-issued Runtime Access Token.
 
 | Entry | Boot target | Owned behavior |
 | --- | --- | --- |
@@ -18,16 +18,15 @@ Ports come from `ports.ts` (`46100-46199` by default; `CLAXEDO_E2E_PORT_RANGE` o
 
 ## Machine-local contracts
 
-H32 (a custom ACP connection spends a stored secret, and revoking it refuses the next session) and H33.local (a saved command and the signed-runtime plugin snapshot reach and leave a running runtime) are machine-local features the local daemon serves: its `/api/claxedo/credentials`, `/api/claxedo/agent-config/connections` and `/commands`, and `/api/claxedo/plugins/signed-runtime`. H33's hosted half keeps the default-harness delivery to a running sandbox; the config-push fault modes lived in the self-hosted entry and are gone.
+H32 (a custom ACP connection spends a stored secret, and revoking it refuses the next session) and H33.local (a saved command and the signed-runtime plugin snapshot reach and leave a running runtime) are machine-local features the local daemon serves: its `/api/claxedo/credentials`, `/api/claxedo/agent-config/connections` and `/commands`, and `/api/claxedo/plugins/signed-runtime`. H33's hosted half keeps the default-harness delivery to a running sandbox.
 
 ## Assertions with no hosted equivalent
 
 | Flow/assertion | Reason |
 | --- | --- |
-| H29 self-hosted cold start creates its signing keys | The hosted Worker requires provisioned signing bindings; nothing creates keys on first boot. Flow and recording removed. |
 | H30 the account's scope moves from shared to local | Hosted accounts have no scope; revoking is deleting the account (`DELETE /auth/openai?harness=pi`), and the readback is the Pi provider catalog. Every sandbox, placeholder and broker assertion is unchanged. |
 | App 35 a machine owner's app plugins never reach another signed-in account | The live app-plugin registry is a local-daemon route; a hosted account never reaches another person's machine. The local case remains. |
 
-Changed shapes that keep the assertion: H19's ungranted member is refused a connection by the Worker and refused by the relay with their own cookie, instead of carrying a self-hosted member bearer; app 00's signed-out API refusal reads `/api/workspace` on the Worker; flows 21, 24 and 38 create repository-backed cloud workspaces; flow 39 selects by the D1 project id.
+Changed shapes that keep the assertion: H19's ungranted member is refused a connection by the Worker and refused by the relay with their own cookie; app 00's signed-out API refusal reads `/api/workspace` on the Worker; flows 21, 24 and 38 create repository-backed cloud workspaces; flow 39 selects by the D1 project id.
 
 Flows 24 and 38 run in a signed browser and on the signed desktop (`signedCloud` + `signedDesktop`); the desktop is launched with the stack's relay as `CLAXEDO_RELAY_ORIGINS`, the origin its renderer policy admits.

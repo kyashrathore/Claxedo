@@ -38,7 +38,7 @@
 import xtermHeadless from "@xterm/headless"
 import { SerializeAddon } from "@xterm/addon-serialize"
 import { Unicode11Addon } from "@xterm/addon-unicode11"
-import { rec } from "../json-value"
+import { asRecord } from "@claxedo/helpers/guards"
 import { captureTerminalCheckpointState, terminalCheckpointSchema, TERMINAL_SCROLLBACK_ROWS, type TerminalCheckpoint } from "./terminal-checkpoint-state"
 import { createTerminalParserContinuation } from "./terminal-parser-continuation"
 
@@ -74,9 +74,9 @@ type HeadlessInternals = {
 }
 
 function hasHeadlessInternals(term: object): term is HeadlessInternals {
-  const core = rec(rec(term)?._core)
-  return typeof rec(core?._writeBuffer)?.writeSync === "function"
-    && rec(rec(core?.optionsService)?.rawOptions) !== undefined
+  const core = asRecord(asRecord(term)?._core)
+  return typeof asRecord(core?._writeBuffer)?.writeSync === "function"
+    && asRecord(asRecord(core?.optionsService)?.rawOptions) !== undefined
 }
 
 export function createModeTracker(cols: number, rows: number): ModeTracker {

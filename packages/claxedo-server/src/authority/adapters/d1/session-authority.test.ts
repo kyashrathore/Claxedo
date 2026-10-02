@@ -1,5 +1,4 @@
 import { inviteOrgMember } from "../../../test-support/invite-org-member"
-import { readFile } from "node:fs/promises"
 import { afterEach, describe, expect, test } from "vitest"
 import { Miniflare } from "miniflare"
 import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
@@ -26,9 +25,8 @@ import { buildSessionListResponse, parseSessionListQuery } from "../../../sessio
 import { D1WorkspaceAuthority } from "./workspace-authority"
 import { D1ChannelRuntimeAuthority } from "./channel-runtime-authority"
 import { D1SessionAuthority } from "./session-authority"
-import { controlPlaneMigrationPath, controlPlaneMigrations } from "../../../test-support/control-plane-migrations"
+import { applyControlPlaneBaseline } from "../../../test-support/control-plane-migrations"
 
-const MIGRATIONS = controlPlaneMigrations().map(controlPlaneMigrationPath)
 
 const active: Miniflare[] = []
 
@@ -45,15 +43,7 @@ async function setup() {
   })
   active.push(instance)
   const database = await instance.getD1Database("CONTROL_PLANE_DB")
-  for (const path of MIGRATIONS) {
-    const migration = (await readFile(path, "utf8")).replace(/^\s*--.*$/gm, "")
-    for (const statement of migration
-      .split(/;\s*\n\s*\n/)
-      .map((part) => part.trim())
-      .filter(Boolean)) {
-      await database.prepare(statement).run()
-    }
-  }
+  await applyControlPlaneBaseline(database)
   let sequence = 0
   let currentTime = 1_800_000_000_000
   const now = () => ++currentTime

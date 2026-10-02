@@ -11,15 +11,12 @@ import {
 import { resolveRuntimeActor } from "@claxedo/server-core/platform/auth/runtime-actor"
 import { eventScopePrincipal } from "@claxedo/server-core/platform/http/event-visibility"
 import { controlPlaneRouteAuth, signedRouteAuth } from "../platform/http/control-plane-route-auth"
-import { roleAtLeast, type WorkspaceRole } from "@claxedo/server-core/authority/adapters/sqlite/workspace-authority-store"
 import type { MiddlewareHandler } from "hono"
 import { createControlPlaneEventsHandler, signedControlPlaneEventVisibleTo } from "./events"
 import { allFilesBody, directoryEntriesBody, findFilesBody, findTextBody } from "./file-browser"
 import { bootPath, workspaceInput } from "./request-context"
 import { createWorktree, deleteWorktree, listWorktreeDirectories, resetWorktree } from "./worktree-routes"
 import { projectRoutes } from "./project-routes"
-
-const WORKSPACE_ROLES: readonly WorkspaceRole[] = ["viewer", "editor", "admin", "owner"]
 
 export type ShellRouteOptions = {
   upgradeWebSocket?: UpgradeWebSocket
@@ -84,11 +81,8 @@ function shellWorkspaceGate(options: ShellRouteOptions): MiddlewareHandler {
       return c.json({ error: { code: "workspace_forbidden", message: "Workspace access denied" } }, 403)
     }
     const method = c.req.method.toUpperCase()
-    // A role outside the four this deployment ranks is refused rather than
-    // ranked: `roleAtLeast` indexes a table, and a name it has no row for
-    // compares as less than everything, which reads like a deliberate viewer.
-    const role = WORKSPACE_ROLES.find((candidate) => candidate === opened.role)
-    if (method !== "GET" && method !== "HEAD" && method !== "OPTIONS" && !(role && roleAtLeast(role, "admin"))) {
+    const admin = opened.role === "admin" || opened.role === "owner"
+    if (method !== "GET" && method !== "HEAD" && method !== "OPTIONS" && !admin) {
       return c.json({ error: { code: "workspace_forbidden", message: "Workspace mutations require an admin role" } }, 403)
     }
     await next()

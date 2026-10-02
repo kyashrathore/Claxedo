@@ -5,6 +5,8 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import path from "node:path"
 import { promisify } from "node:util"
+import { withSessionCore } from "../session-context"
+import { testSessionCore } from "@claxedo/session-core/testing"
 import { GitSourceRoutes } from "./git-source"
 
 const execFileAsync = promisify(execFile)
@@ -34,7 +36,10 @@ async function withGitRepo(fn: (directory: string) => Promise<void>, input: { ob
 }
 
 function app() {
-  return new Hono().route("/api/wr/git", GitSourceRoutes())
+  const directory = process.env.WORKSPACE_RUNTIME_DIRECTORY
+  if (!directory) throw new Error("the Git source routes are served inside withGitRepo")
+  const core = testSessionCore(directory)
+  return new Hono().use("*", (_c, next) => withSessionCore(core, next)).route("/api/wr/git", GitSourceRoutes())
 }
 
 describe("GitSourceRoutes", () => {

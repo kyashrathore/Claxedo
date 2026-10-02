@@ -12,23 +12,7 @@ const prev = process.env.CLAXEDO_DATA_DIR
 process.env.CLAXEDO_DATA_DIR = root
 
 const mod = await import("@claxedo/server-core/workspace/store/index")
-const hostLease = await import("../../sandbox/stores/sqlite-supervisor-state")
 
-/** A ready lease the way the supervisor makes one: acquire, then record the driver's answer. */
-async function provisionLease(workspaceId: string, sandboxId: string, url: string) {
-  const leaseStore = hostLease.createSupervisorSandboxLeaseStore()
-  const acquired = await leaseStore.acquire(workspaceId, {
-    homeRegion: "us-east",
-    driver: "modal",
-    staleAfterMs: 60_000,
-  })
-  await leaseStore.recordTarget(workspaceId, acquired.lease.epoch, {
-    sandboxId,
-    url,
-    hostId: sandboxId,
-    labels: { app: "claxedo", workspaceId, epoch: String(acquired.lease.epoch) },
-  })
-}
 const { ClaxedoDB } = await import("../../platform/db")
 
 function restoreEnv(key: string, value: string | undefined) {
@@ -100,10 +84,6 @@ describe("workspace store", () => {
   beforeEach(async () => {
     ClaxedoDB.close()
     await fs.rm(root, { recursive: true, force: true })
-    // Cloud-workspace visibility depends on the sandbox lease, which the
-    // supervisor owns. These cases exercise that visibility rule, so they wire
-    // the same reader the supervisor composition installs.
-    mod.configureWorkspaceStore({ sandboxLease: (id) => hostLease.getSupervisorSandboxLease(id) })
   })
 
   afterAll(async () => {
@@ -435,7 +415,7 @@ describe("workspace store", () => {
     expect(project!.workspaces.ws_cloud?.available).toBe(true)
   })
 
-  test("hides acquiring cloud leases until the sandbox is ready", async () => {
+  test("hides a cloud workspace still acquiring its sandbox", async () => {
     const cloud = cloudRuntimeDirectory("ws_cloud_pending")
     await mod.ensureWorkspace({
       workspaceId: "ws_cloud_pending",
@@ -447,40 +427,8 @@ describe("workspace store", () => {
       status: "acquiring_sandbox",
     })
 
-    let projects = await mod.listProjects()
-    expect(projects.find((item) => item.id === "proj_cloud_pending")).toBeUndefined()
-
-    await provisionLease("ws_cloud_pending", "sb-pending", "https://pending.example.com")
-
-    projects = await mod.listProjects()
-    expect(projects.find((item) => item.id === "proj_cloud_pending")).toBeDefined()
-  })
-
-  test("hides cloud workspaces whose durable lease is in backoff", async () => {
-    const git = await repo("cloud-backoff")
-    const main = defined(await mod.ensureWorkspace({
-      workspaceId: "ws_backoff_main",
-      project_id: "proj_cloud_backoff",
-      directory: git.dir,
-      kind: "local",
-    }))
-    await mod.ensureWorkspace({
-      workspaceId: "ws_cloud_backoff",
-      project_id: main.project_id,
-      workspace_name: "cloud",
-      directory: cloudRuntimeDirectory("ws_cloud_backoff"),
-      kind: "cloud",
-      driver: "modal",
-      status: "acquiring_sandbox",
-    })
-    await provisionLease("ws_cloud_backoff", "sb-backoff", "https://sandbox.example.com")
-    hostLease.recordSupervisorSandboxLeaseFailure("ws_cloud_backoff", "provider disabled", Date.now() + 1_000)
-
     const projects = await mod.listProjects()
-    const project = projects.find((item) => item.id === "proj_cloud_backoff")
-    expect(project).toBeDefined()
-    expect(project!.sandboxes).not.toContain("ws_cloud_backoff")
-    expect(project!.workspaces.ws_cloud_backoff).toBeUndefined()
+    expect(projects.find((item) => item.id === "proj_cloud_pending")).toBeUndefined()
   })
 
   test("hides docker cloud workspaces when the docker sandbox driver is disabled", async () => {

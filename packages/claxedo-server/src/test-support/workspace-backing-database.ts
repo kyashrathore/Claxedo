@@ -1,10 +1,10 @@
-import { controlPlaneMigrations, miniflareControlPlaneDatabase, type ControlPlaneDatabase } from "./control-plane-migrations"
+import { miniflareControlPlaneDatabase, type ControlPlaneDatabase } from "./control-plane-migrations"
 
 export type WorkspaceBackingRow = { id: string; backing: "cloud-vm" | "local-worktree"; deletedAt?: number }
 
 /** A control-plane database whose org `org` holds one workspace row per entry, each owned by `owner`. */
 export async function workspaceBackingDatabase(rows: readonly WorkspaceBackingRow[]): Promise<ControlPlaneDatabase> {
-  const instance = await miniflareControlPlaneDatabase(controlPlaneMigrations())
+  const instance = await miniflareControlPlaneDatabase()
   const db = instance.database
   await db.batch([
     db.prepare("insert into users values ('owner', 'active', 1, 1, null, null)"),

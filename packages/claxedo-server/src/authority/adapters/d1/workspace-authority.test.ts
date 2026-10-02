@@ -1,6 +1,4 @@
 import { inviteOrgMember } from "../../../test-support/invite-org-member"
-import { readdir, readFile } from "node:fs/promises"
-import { fileURLToPath } from "node:url"
 import { afterEach, describe, expect, test } from "vitest"
 import { Miniflare } from "miniflare"
 import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
@@ -12,18 +10,7 @@ import { D1SessionAuthority } from "./session-authority"
 import { inviteIdentity } from "../../../test-support/invite-identity"
 import { D1AuditAuthority } from "./audit-authority"
 
-const MIGRATIONS_DIRECTORY = fileURLToPath(new URL("../../../../migrations/control-plane/", import.meta.url))
-
-/**
- * Every shipped migration, in the order production applies them.
- *
- * Read from the directory rather than listed here: a curated subset drifts
- * silently from what deployments run, and this file's subject — the placement
- * a workspace row carries — is rewritten by migrations a subset would omit.
- */
-async function migrations() {
-  return (await readdir(MIGRATIONS_DIRECTORY)).filter((name) => name.endsWith(".sql")).sort()
-}
+import { applyControlPlaneBaseline } from "../../../test-support/control-plane-migrations"
 
 const active: Miniflare[] = []
 
@@ -40,15 +27,7 @@ async function setup(product: D1AuthorityProductPolicy) {
   })
   active.push(instance)
   const database = await instance.getD1Database("CONTROL_PLANE_DB")
-  for (const name of await migrations()) {
-    const migration = (await readFile(MIGRATIONS_DIRECTORY + name, "utf8")).replace(/^\s*--.*$/gm, "")
-    for (const statement of migration
-      .split(/;\s*\n\s*\n/)
-      .map((part) => part.trim())
-      .filter(Boolean)) {
-      await database.prepare(statement).run()
-    }
-  }
+  await applyControlPlaneBaseline(database)
   let sequence = 0
   const authority = new D1WorkspaceAuthority(database, {
     deploymentId: "deployment-a",
@@ -533,9 +512,11 @@ describe("D1 user-deployed workspace authority", () => {
       status: 403,
     })
 
-    await authority.registerLocalForSharing(owner, {
+    await authority.createWorkspace(owner, {
       workspaceId: "ws_contract_local",
+      orgId: "org_deployment",
       displayName: "contract local",
+      backing: "local-worktree",
       remoteDirectory: "/srv/repos/widgets",
     })
     await expect(authority.openWorkspace(owner, { workspaceId: "ws_contract_local" })).resolves.toMatchObject({

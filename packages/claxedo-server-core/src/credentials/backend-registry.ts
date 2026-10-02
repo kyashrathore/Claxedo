@@ -13,9 +13,9 @@ let override: SecretBackend | undefined
 
 export function getBackend(): SecretBackend {
   if (override) return override
-  // One key per machine: a self-hosted node serves every org from one
-  // operator's disk, so per-org key separation would not separate anything
-  // that operator does not already hold.
+  // One key per machine: every row this backend holds sits on one machine
+  // owner's disk, so per-org key separation would not separate anything that
+  // owner does not already hold.
   backend ??= createLocalBackend()
   return backend
 }

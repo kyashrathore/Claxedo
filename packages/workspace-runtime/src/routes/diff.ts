@@ -6,8 +6,9 @@
 
 import { Hono } from "hono"
 import { errorMessage } from "@claxedo/helpers"
-import { errorBody } from "./http"
-import { assertTarget, hasWorkspaceTarget, WorkspaceTargetError } from "../target"
+import { errorBody, WorkspaceTargetError } from "@claxedo/session-core"
+import { hasWorkspaceTarget } from "../target"
+import { currentSessionCore } from "../session-context"
 import type { RelayHostAuthContext } from "../workspace-host-service-auth"
 import {
   authorizeWorktreeTarget,
@@ -42,8 +43,8 @@ type DiffRouteContext = {
 
 function diffTargetDirectory(c: DiffRouteContext): string | undefined {
   const requested = c.req.query("directory") || c.req.header("x-claxedo-directory")
-  if (requested) return assertTarget(requested)
-  return hasWorkspaceTarget() ? assertTarget(undefined) : undefined
+  if (!requested && !hasWorkspaceTarget()) return undefined
+  return currentSessionCore().placement.resolveDirectory(requested)
 }
 
 function diffDirectory(c: DiffRouteContext) {

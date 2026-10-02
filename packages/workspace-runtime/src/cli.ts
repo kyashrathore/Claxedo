@@ -1,5 +1,7 @@
 #!/usr/bin/env node
 
+import { storeBackedSessionPlacement } from "./store-file"
+
 import { readFileSync } from "node:fs"
 import {
   isLoopbackHostname,
@@ -15,13 +17,13 @@ import {
   relayWorkspaceRuntimeExposure,
 } from "./exposure"
 import { runtimeEnvText, workspaceRuntimeEpoch, workspaceRuntimePlacementFromEnv } from "./env"
-import { RUNTIME_NATIVE_HARNESS_IDS } from "./routes/config"
-import { rec, str } from "./json-value"
+import { asRecord, asString } from "@claxedo/helpers/guards"
+import { RUNTIME_NATIVE_HARNESS_IDS } from "@claxedo/session-core"
 
-const pkg = rec(JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")))
+const pkg = asRecord(JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")))
 
 if (process.argv.includes("--version") || process.argv.includes("-v")) {
-  console.log(str(pkg?.version) ?? "unknown")
+  console.log(asString(pkg?.version) ?? "unknown")
   process.exit(0)
 }
 if (process.argv.includes("--help") || process.argv.includes("-h")) {
@@ -44,6 +46,7 @@ if (nativeHarnessInput && !nativeHarness) {
 }
 const directory = workspaceDir(process.env)
 const server = startServer(port, {
+  ...storeBackedSessionPlacement(),
   target: { workspaceId: workspaceId(process.env), directory },
   placement: workspaceRuntimePlacementFromEnv(process.env, { relay: Boolean(relay.relayHostAuth) }),
   env: process.env,

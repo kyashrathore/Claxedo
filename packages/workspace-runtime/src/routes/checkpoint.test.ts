@@ -1,16 +1,19 @@
+import os from "node:os"
+import path from "node:path"
 import { describe, expect, test } from "bun:test"
 import { createWorkspaceHost } from "../workspace"
 import { createWorkspaceRuntimeApp } from "../server"
 import { loopbackWorkspaceRuntimeExposure } from "../exposure"
 import { Hono } from "hono"
 import type { RelayHostAuthContext } from "../workspace-host-service-auth"
-import { managedWorkspaceSessionAccessPolicy } from "../session-access-policy"
+import { managedWorkspaceSessionAccessPolicy } from "@claxedo/session-core"
 import { CheckpointRoutes } from "./checkpoint"
 import { loopbackMachineLoginPolicy } from "../testing"
 
 describe("workspace checkpoint routes", () => {
   test("rejects checkpoint mutation from a verified viewer before changing state", async () => {
-    const host = createWorkspaceHost({ placement: loopbackMachineLoginPolicy() })
+    const host = createWorkspaceHost({ target: { workspaceId: "ws_test", directory: path.join(os.tmpdir(), "checkpoint-routes-root") },
+    sessionIdWorkspace: () => undefined, placement: loopbackMachineLoginPolicy() })
     const now = Math.floor(Date.now() / 1000)
     const app = new Hono<{ Variables: RelayHostAuthContext }>()
     app.use("*", async (c, next) => {
@@ -48,7 +51,8 @@ describe("workspace checkpoint routes", () => {
   })
 
   test("freeze fences writes until resume", async () => {
-    const runtime = createWorkspaceRuntimeApp({ placement: loopbackMachineLoginPolicy(), exposure: loopbackWorkspaceRuntimeExposure() })
+    const runtime = createWorkspaceRuntimeApp({
+    sessionIdWorkspace: () => undefined, placement: loopbackMachineLoginPolicy(), exposure: loopbackWorkspaceRuntimeExposure() })
 
     expect((await runtime.app.request("/api/wr/checkpoint/freeze", {
       method: "POST",
@@ -71,7 +75,8 @@ describe("workspace checkpoint routes", () => {
   })
 
   test("freeze waits for admitted writes and then reaches a stable frozen state", async () => {
-    const host = createWorkspaceHost({ placement: loopbackMachineLoginPolicy() })
+    const host = createWorkspaceHost({ target: { workspaceId: "ws_test", directory: path.join(os.tmpdir(), "checkpoint-routes-root") },
+    sessionIdWorkspace: () => undefined, placement: loopbackMachineLoginPolicy() })
     const release = host.checkpoint.beginWrite()
     if (!release) throw new Error("write unexpectedly fenced")
     let resolved = false
@@ -90,7 +95,8 @@ describe("workspace checkpoint routes", () => {
   })
 
   test("flush and restore reconciliation require the checkpoint protocol", async () => {
-    const runtime = createWorkspaceRuntimeApp({ placement: loopbackMachineLoginPolicy(), exposure: loopbackWorkspaceRuntimeExposure() })
+    const runtime = createWorkspaceRuntimeApp({
+    sessionIdWorkspace: () => undefined, placement: loopbackMachineLoginPolicy(), exposure: loopbackWorkspaceRuntimeExposure() })
 
     expect((await runtime.app.request("/api/wr/checkpoint/flush", { method: "POST" })).status).toBe(409)
     expect((await runtime.app.request("/api/wr/checkpoint/restore-reconcile", {
@@ -103,7 +109,8 @@ describe("workspace checkpoint routes", () => {
   })
 
   test("a write that never settles leaves the freeze blocked, gated, and naming it", async () => {
-    const host = createWorkspaceHost({ placement: loopbackMachineLoginPolicy() })
+    const host = createWorkspaceHost({ target: { workspaceId: "ws_test", directory: path.join(os.tmpdir(), "checkpoint-routes-root") },
+    sessionIdWorkspace: () => undefined, placement: loopbackMachineLoginPolicy() })
     const release = host.checkpoint.beginWrite()
     if (!release) throw new Error("write unexpectedly fenced")
 
@@ -124,7 +131,8 @@ describe("workspace checkpoint routes", () => {
   })
 
   test("POST /freeze answers 409 with the blockers it could not fence", async () => {
-    const runtime = createWorkspaceRuntimeApp({ placement: loopbackMachineLoginPolicy(), exposure: loopbackWorkspaceRuntimeExposure() })
+    const runtime = createWorkspaceRuntimeApp({
+    sessionIdWorkspace: () => undefined, placement: loopbackMachineLoginPolicy(), exposure: loopbackWorkspaceRuntimeExposure() })
     const release = runtime.host.checkpoint.beginWrite()
     if (!release) throw new Error("write unexpectedly fenced")
 
@@ -161,7 +169,8 @@ describe("workspace checkpoint routes", () => {
   })
 
   test("a freeze deadline beyond the bound is refused rather than becoming an open-ended wait", async () => {
-    const runtime = createWorkspaceRuntimeApp({ placement: loopbackMachineLoginPolicy(), exposure: loopbackWorkspaceRuntimeExposure() })
+    const runtime = createWorkspaceRuntimeApp({
+    sessionIdWorkspace: () => undefined, placement: loopbackMachineLoginPolicy(), exposure: loopbackWorkspaceRuntimeExposure() })
     const freeze = (deadlineMs: number) => runtime.app.request("/api/wr/checkpoint/freeze", {
       method: "POST",
       headers: { "content-type": "application/json" },

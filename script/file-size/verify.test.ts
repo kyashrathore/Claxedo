@@ -5,10 +5,10 @@ const over = BUDGET + 200
 
 describe("file-size ratchet", () => {
   test("counts maintained source and skips tests, fixtures, translations and the vendored kit", () => {
-    expect(counted("packages/workspace-runtime/src/store.ts")).toBe(true)
+    expect(counted("packages/session-core/src/store.ts")).toBe(true)
     expect(counted("packages/claxedo-server/scripts/deploy/user-cloudflare.ts")).toBe(true)
     expect(counted("script/product-boundary/verify.ts")).toBe(true)
-    expect(counted("packages/workspace-relay/src/bun.test.ts")).toBe(false)
+    expect(counted("packages/workspace-relay/src/worker.test.ts")).toBe(false)
     expect(counted("packages/workspace-runtime/src/pi-native.node-test.ts")).toBe(false)
     expect(counted("packages/claxedo-server/src/live-sync-room.cf.test.ts")).toBe(false)
     expect(counted("packages/claxedo-app/e2e/harness/stack.ts")).toBe(false)

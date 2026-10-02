@@ -10,7 +10,6 @@ import { importPattern } from "../test-support/guards"
 
 // Files that make up the control-plane central-storage seam.
 const centralStoreFiles = [
-  "http/session-pull.ts",
   "hosted-session-pull.ts",
   "pulled-session.ts",
   "projection-store.ts",
@@ -18,7 +17,7 @@ const centralStoreFiles = [
 ]
 
 // Runtime execution-store symbols the central seam must not touch: the store in
-// `workspace-runtime/src/store.ts` (`RuntimeStore`) and the runtime host's name
+// `session-core/src/store.ts` (`RuntimeStore`) and the runtime host's name
 // for it (`AgentRuntimeStore`).
 const forbiddenSymbols = [
   "RuntimeStore",

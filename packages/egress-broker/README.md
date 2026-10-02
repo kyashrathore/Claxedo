@@ -20,8 +20,7 @@ const egressBroker = createEgressBroker({
 This package owns request policy, header injection and runtime-token
 verification, and nothing else.
 
-Pass `egressBroker` to `createLocalApp` / `startLocalServer` or
-`createSelfHostedApp` / `startControlPlaneStack` / `startServer`. These
+Pass `egressBroker` to `createLocalApp` / `startLocalServer`. These
 compositions accept a Request-to-Response handler, so they do not own credential
 resolution; `loopbackBrokerRoutes` is the one gate they mount it behind, and
 `isBrokerPath` is the matching CORS carve-out. Alternatively,

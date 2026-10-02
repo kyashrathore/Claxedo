@@ -10,7 +10,7 @@ import {
   writeMergedConfig,
   type IsManagedCommand,
 } from "./config-merge"
-import { arr, rec, str } from "../json-value"
+import { asArrayOrUndefined, asRecord, asString } from "@claxedo/helpers/guards"
 import type { StatusHookTemplate } from "@claxedo/plugin-api"
 import { hookVariables, renderHookText, renderHookValue } from "./core/render"
 import { NOTIFY_MARKER } from "./core/constants"
@@ -54,14 +54,14 @@ async function isGeneratedScript(file: string) {
   try {
     return (await fs.readFile(file, "utf8")).includes(NOTIFY_MARKER)
   } catch (error) {
-    const code = str(rec(error)?.code)
+    const code = asString(asRecord(error)?.code)
     return code === "ENOENT" || code === "ENOTDIR"
   }
 }
 
 function hookCommands(value: unknown): string[] {
   if (Array.isArray(value)) return value.flatMap(hookCommands)
-  const record = rec(value)
+  const record = asRecord(value)
   if (!record) return []
   return [
     ...(typeof record.command === "string" ? [record.command] : []),
@@ -107,10 +107,10 @@ export function agentHookConfigPaths(homeDir: string, templates: readonly Status
 
 function valueAt(value: Record<string, unknown>, keys: string[]): Record<string, unknown> | undefined {
   let current: unknown = value
-  for (const key of keys) current = rec(current)?.[key]
-  if (current !== undefined && !rec(current))
+  for (const key of keys) current = asRecord(current)?.[key]
+  if (current !== undefined && !asRecord(current))
     throw new Error("Hook config has a non-object container; refusing to rewrite it")
-  return rec(current)
+  return asRecord(current)
 }
 
 async function mergeTemplate(template: StatusHookTemplate, input: MaterializeAgentHooksOptions) {
@@ -154,7 +154,7 @@ async function mergeTemplate(template: StatusHookTemplate, input: MaterializeAge
     if (
       container &&
       !Object.values(container).every((handlers) =>
-        arr(handlers)?.every((handler) => isManaged(str(rec(handler)?.command))),
+        asArrayOrUndefined(handlers)?.every((handler) => isManaged(asString(asRecord(handler)?.command))),
       )
     ) {
       throw new Error(`Refusing to overwrite an unrecognized hook named ${targetBase.join(".")}`)

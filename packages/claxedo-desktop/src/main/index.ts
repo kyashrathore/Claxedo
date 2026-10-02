@@ -796,8 +796,8 @@ const accountConfig = readAccountConfig(accountConfigEnvironment(process.env, ba
  * The machine's label is chosen HERE, not sent from the renderer. It is main
  * that signs the enrollment, so main names the thing it is signing for, and a
  * renderer asked to name the machine can only describe the browser it is. The
- * derivation is `@claxedo/helpers/machine-name`, shared with the self-hosted
- * node so one machine gets one name however it publishes itself. An owner's
+ * derivation is `@claxedo/helpers/machine-name`, shared with `claxedo connect`
+ * so one machine gets one name however it publishes itself. An owner's
  * rename outranks it and is what `electron-child.ts` stores. Neither is the
  * machine's identity, which is the key in `identity-store.ts`.
  */

@@ -3,7 +3,7 @@ import type {
   AttachInput, ConfigApplied, ConfigTarget, Deadline, HarnessServices, HarnessSession, HarnessTransport,
   RoutedEvent, SessionBroker, StartInput, TransportCapabilities, TransportConfigUpdate, TurnBroker, TurnInput, TurnRef,
 } from "../../contract"
-import { attachedSessionEntry, DraftProbeCache, HarnessVersionGate, mergeStartInput, ProcessLosses, sessionConnectionHealth } from "../../contract"
+import { attachedSessionEntry, DraftProbeCache, HarnessVersionGate, mergeStartInput, ProcessLosses, sessionConnectionHealth } from "../../contract/node"
 import { selectPiProfile, type PiProfile } from "../../profiles/pi"
 import { TransportError } from "../../contract/errors"
 import { asRecordOrEmpty, asString } from "@claxedo/helpers/guards"

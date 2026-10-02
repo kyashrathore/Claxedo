@@ -1,31 +1,19 @@
 import { trimToUndefined } from "@claxedo/helpers/string"
 /**
- * Env → observability init options. PostHog carries product analytics AND
- * error tracking for every runtime, so one key resolves both planes and there
- * is no second class of observability secret to provision.
- *
- * Worker-safe by construction: imports no SDK and no Node builtins. The Worker
- * import-graph guard walks this module, and `posthog-node` is on the Worker's
- * forbidden-import list — the Worker feeds these options into a fetch-based
- * sink, the Node server feeds them into the shared `posthog-node` client.
+ * The PostHog key and ingest host the Worker's telemetry sink
+ * (`platform/auth/worker-telemetry.ts`) reads. Worker-safe by construction:
+ * imports no SDK and no Node builtins.
  *
  * Sending requires TWO independent opt-ins: `CLAXEDO_TELEMETRY_MODE=on` AND a
- * PostHog key. Anything else — mode off, mode unset, key absent — yields
- * options carrying `enabled: false` and no key, and every caller treats that as
- * "never initialize, register no sink". Both halves of the deployer-facing
- * promise (a deployment sends only when it says `on`; no keys configured ⇒
- * nothing is sent, no network calls) are properties of that one branch.
- *
- * `resolveTelemetryKey` is the single place both opt-ins are applied, which is
- * what makes them total: posthog.ts, observability/node.ts,
- * authority/worker-telemetry.ts and worker.ts's sink registration all
- * resolve their key through this module and inherit the gate.
+ * PostHog key. Anything else — mode off, mode unset, key absent — resolves no
+ * key, and the sink treats that as "register nothing". Both halves of the
+ * deployer-facing promise (a deployment sends only when it says `on`; no keys
+ * configured ⇒ nothing is sent, no network calls) are properties of
+ * `resolveTelemetryKey`.
  */
 
-export type ObservabilityUnit = "worker" | "server" | "relay"
-
 export type ObservabilityEnv = {
-  /** Project key for this unit. Absent → observability is a disabled no-op,
+  /** Project key. Absent → telemetry is a disabled no-op,
    *  and a key alone never enables it; see telemetryEnabled below. */
   CLAXEDO_POSTHOG_KEY?: string | undefined
   /** Unprefixed alias, honored second (predates the CLAXEDO_ prefix). */
@@ -34,45 +22,14 @@ export type ObservabilityEnv = {
   CLAXEDO_POSTHOG_HOST?: string | undefined
   /** Unprefixed alias, honored second. */
   POSTHOG_HOST?: string | undefined
-  /** Release = git SHA, passed by the D11 deploy workflows. */
-  CLAXEDO_RELEASE?: string | undefined
-  /** Accepted alias for CLAXEDO_RELEASE (deploy tooling convenience). */
-  GIT_SHA?: string | undefined
-  /** D9 deployment mode; absent = self-host (mirrors deployment-mode.ts). */
-  CLAXEDO_DEPLOYMENT_MODE?: string | undefined
   /** The named switch. Only `on` permits sending; see telemetryEnabled below. */
   CLAXEDO_TELEMETRY_MODE?: string | undefined
-  /** Accept process.env / HostedWorkerEnv verbatim (extra keys are ignored). */
+  /** Accept HostedWorkerEnv verbatim (extra keys are ignored). */
   [key: string]: string | undefined
 }
 
 /** Canonical PostHog Cloud ingest host. `app.posthog.com` is the legacy alias. */
 export const DEFAULT_POSTHOG_HOST = "https://us.i.posthog.com"
-
-
-/**
- * Release = git SHA from the deploy pipeline ("this issue first appeared
- * in SHA X" is the rollback trigger). CLAXEDO_RELEASE wins; GIT_SHA is the one
- * accepted alias — vendor-named release variables are deliberately not read.
- */
-export function resolveRelease(env: ObservabilityEnv): string | undefined {
-  return trimToUndefined(env.CLAXEDO_RELEASE) ?? trimToUndefined(env.GIT_SHA)
-}
-
-/**
- * Deployment trust tag. Absent env = "local", mirroring
- * authority/deployment-mode.ts's default — the tag must never throw, so
- * unlike deploymentMode() an unrecognized value is passed through verbatim
- * rather than rejected (observability reports posture, it does not enforce it).
- *
- * That pass-through is precisely why this function had to be renamed in the
- * SAME commit as the enum: left behind, it would have kept emitting the retired
- * "self-host" tag forever — corrupting telemetry silently instead of failing
- * loudly like the boot path does.
- */
-export function deploymentModeTag(env: ObservabilityEnv): string {
-  return trimToUndefined(env.CLAXEDO_DEPLOYMENT_MODE)?.toLowerCase() ?? "local"
-}
 
 /**
  * `CLAXEDO_TELEMETRY_MODE=on` — the named switch, matched case-insensitively
@@ -91,15 +48,15 @@ export function telemetryEnabled(env: ObservabilityEnv): boolean {
 }
 
 /**
- * The single key both telemetry planes read, and the single place both opt-ins
- * are enforced. `CLAXEDO_POSTHOG_KEY` wins; the unprefixed `POSTHOG_KEY` is
- * accepted as an alias so one project key can be shared across runtimes.
+ * The single place both opt-ins are enforced. `CLAXEDO_POSTHOG_KEY` wins; the
+ * unprefixed `POSTHOG_KEY` is accepted as an alias so one project key can be
+ * shared across runtimes.
  *
  * The switch is checked BEFORE either key name, so any mode other than `on`
- * resolves to the same `undefined` an unconfigured deployment produces and
- * every downstream sink takes its existing key-absent branch — no client, no
- * network. Ordering is the contract, not a detail: reading the key first would
- * let a configured key outrank the deployment's own stated posture.
+ * resolves to the same `undefined` an unconfigured deployment produces and the
+ * sink takes its key-absent branch — no network. Ordering is the contract, not
+ * a detail: reading the key first would let a configured key outrank the
+ * deployment's own stated posture.
  */
 export function resolveTelemetryKey(env: ObservabilityEnv): string | undefined {
   if (!telemetryEnabled(env)) return undefined
@@ -110,46 +67,4 @@ export function resolveTelemetryKey(env: ObservabilityEnv): string | undefined {
 export function resolveTelemetryHost(env: ObservabilityEnv): string {
   const host = trimToUndefined(env.CLAXEDO_POSTHOG_HOST) ?? trimToUndefined(env.POSTHOG_HOST) ?? DEFAULT_POSTHOG_HOST
   return host.replace(/\/+$/, "")
-}
-
-export type ObservabilityOptions = {
-  /** true ⇔ mode is `on` AND a key is configured. false ⇒ never initialize,
-   *  register no sink. */
-  enabled: boolean
-  key?: string
-  host: string
-  release?: string
-  /** Base properties stamped on every event this unit reports. */
-  tags: Record<string, string>
-}
-
-/**
- * Execution runtime for this unit. DERIVED from the unit, never read from the
- * environment — the Worker is the only workerd unit, everything else is Node.
- * Adds no operator surface.
- *
- * Paired with `deployment_mode` (trust) this makes `node-hosted` and
- * `workerd-hosted` distinguishable in telemetry. "hosted" alone says nothing
- * about where code runs: both hosted-core-app.ts (workerd) and
- * self-hosted-node/app.ts (node) can serve it.
- */
-export function deploymentRuntimeTag(unit: ObservabilityUnit): "node" | "workerd" {
-  return unit === "worker" ? "workerd" : "node"
-}
-
-export function observabilityOptions(env: ObservabilityEnv, unit: ObservabilityUnit): ObservabilityOptions {
-  const key = resolveTelemetryKey(env)
-  const release = resolveRelease(env)
-  return {
-    enabled: !!key,
-    ...(key ? { key } : {}),
-    host: resolveTelemetryHost(env),
-    ...(release ? { release } : {}),
-    tags: {
-      unit,
-      deployment_mode: deploymentModeTag(env),
-      deployment_runtime: deploymentRuntimeTag(unit),
-      ...(release ? { release } : {}),
-    },
-  }
 }

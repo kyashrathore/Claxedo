@@ -1,3 +1,4 @@
+import { managedWorkspaceSessionAccessPolicy } from "@claxedo/session-core"
 import { exportPKCS8, exportSPKI, generateKeyPair, SignJWT } from "jose"
 import { describe, expect, test, vi } from "vitest"
 import fs from "node:fs/promises"
@@ -7,7 +8,6 @@ import {
   createWorkspaceRuntimeApp,
   flushRuntimeDocument,
   forgetRuntimeDocuments,
-  managedWorkspaceSessionAccessPolicy,
   relayWorkspaceRuntimeExposure,
 } from "../../../../../workspace-runtime/src/index"
 import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
@@ -38,6 +38,7 @@ async function relayedRuntime() {
   const relayKeys = await generateKeyPair("EdDSA")
   const asked: Array<{ operation: string | undefined; sessionId: string | undefined; actorId: string | undefined }> = []
   const runtime = createWorkspaceRuntimeApp({
+    sessionIdWorkspace: () => undefined,
     exposure: relayWorkspaceRuntimeExposure({ key: relayKeys.publicKey, workspaceId: "ws_1", hostId: "host_1" }),
     placement: loopbackMachineLoginPolicy(),
     sessionAccessPolicy: {

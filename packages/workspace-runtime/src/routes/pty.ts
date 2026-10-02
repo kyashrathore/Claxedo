@@ -3,9 +3,25 @@ import type { WSContext } from "hono/ws"
 import type { UpgradeWebSocket } from "hono/ws"
 import { Pty } from "../pty/index"
 import { Log } from "../log"
-import { boundedJsonBody, errorBody, isRequestBodyTooLarge, requestBodyTooLargeBody } from "./http"
+import {
+  boundedJsonBody,
+  errorBody,
+  isRequestBodyTooLarge,
+  requestBodyTooLargeBody,
+  WorkspaceTargetError,
+  managedWorkspaceSessionAccessPolicy,
+  sessionAccessContext,
+  sessionAccessDenied,
+  type SessionAccessOperation,
+  type SessionAccessPolicy,
+} from "@claxedo/session-core"
 import { routeParam } from "@claxedo/helpers/route-param"
-import { assertTarget, authoritativeWorkspaceId, resolveWorkspaceCommandPaths, resolveWorkspacePath, WorkspaceTargetError } from "../target"
+import {
+  authoritativeWorkspaceId,
+  resolveWorkspaceCommandPaths,
+  resolveWorkspacePath,
+} from "../target"
+import { currentSessionCore } from "../session-context"
 import type { RelayHostAuthContext } from "../workspace-host-service-auth"
 import { readHistorySessionId } from "../pty/history-disk"
 import {
@@ -15,13 +31,6 @@ import {
   ptyAccessRefusalResponse,
   type PtyStreamAdmission,
 } from "../pty/authorized-connection"
-import {
-  managedWorkspaceSessionAccessPolicy,
-  sessionAccessContext,
-  sessionAccessDenied,
-  type SessionAccessOperation,
-  type SessionAccessPolicy,
-} from "../session-access-policy"
 import { volatileLaunchOwnership, type LaunchOwnershipStore } from "@claxedo/process-ownership/launch"
 
 function invalidInput(details: Record<string, unknown>) {
@@ -140,7 +149,7 @@ export function PtyRoutes(
       const { CLAXEDO_WORKSPACE_ID: _untrustedWorkspaceId, ...environment } = input.env ?? {}
       let cwd: string | undefined
       try {
-        const directory = assertTarget(c.req.header("x-claxedo-directory"))
+        const directory = currentSessionCore().placement.resolveDirectory(c.req.header("x-claxedo-directory"))
         cwd = input.cwd ? await resolveWorkspacePath(directory, input.cwd) : directory
         await resolveWorkspaceCommandPaths(directory, {
           command: input.command,

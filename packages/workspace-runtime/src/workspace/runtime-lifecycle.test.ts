@@ -8,16 +8,25 @@ import { applySessionConfigUpdate, type HarnessServices, type StartInput } from 
 import { openSqliteDatabase } from "../sqlite/node"
 import { openRuntimeStore } from "../store-file"
 import { sqliteLaunchOwnership } from "../ownership/launch-ownership-sqlite"
-import { registerWorkspaceDirectory, unregisterWorkspaceDirectory, withWorkspaceTarget } from "../target"
+import { withWorkspaceTarget } from "../target"
 import { loopbackWorkspaceRuntimeExposure } from "../exposure"
 import { installFakePiRpc } from "../test-support/home/fake-pi-rpc.mjs"
-import { FakeTransport, fakeConnectionProvider } from "../test-support/fake-transport"
+import {
+  FakeTransport,
+  fakeConnectionProvider,
+  controlledTurn,
+  createHostFixture,
+  sessionCreate,
+  tick,
+  until as hostUntil,
+  LOOPBACK_ORIGIN,
+  MACHINE_OWNER,
+} from "@claxedo/session-core/testing"
 import { loopbackMachineLoginPolicy } from "../testing"
 import { createWorkspaceHost } from "./runtime"
-import { createRuntimeEventHub } from "../projection/runtime-event-hub"
+import { createRuntimeEventHub } from "@claxedo/session-core"
 import type { RuntimeSnapshot } from "../routes/config"
 
-import { controlledTurn, createHostFixture, sessionCreate, tick, until as hostUntil, LOOPBACK_ORIGIN, MACHINE_OWNER } from "../test-support/host-fixture"
 
 const cleanups: Array<() => void | Promise<void>> = []
 const roots: string[] = []
@@ -184,7 +193,8 @@ async function fixture(options: FixtureOptions = {}) {
   const rotateSecretLease = (next: string) => { secretLease = next }
   options.seed?.(storeRoot)
   function open() {
-    const host = createWorkspaceHost({ placement: loopbackMachineLoginPolicy(), target, storeRoot, eventHub, ...(options.onActivityChange ? { onActivityChange: options.onActivityChange } : {}), connectionProviders: [provider], resolveConnectionSecrets: () => ({ secrets: { token: secretLease }, secretLeaseGeneration: secretLease }), storeFactory: ({ storeRoot }) => {
+    const host = createWorkspaceHost({
+      sessionIdWorkspace: () => undefined, placement: loopbackMachineLoginPolicy(), target, storeRoot, eventHub, ...(options.onActivityChange ? { onActivityChange: options.onActivityChange } : {}), connectionProviders: [provider], resolveConnectionSecrets: () => ({ secrets: { token: secretLease }, secretLeaseGeneration: secretLease }), storeFactory: ({ storeRoot }) => {
       const store = openRuntimeStore(storeRoot)
       storeLifecycle.opened++
       const recover = store.recoverBusySessions.bind(store)
@@ -274,6 +284,19 @@ describe("workspace runtime public lifecycle", () => {
     expect((await create).status).toBe(201)
     expect(f.storeLifecycle).toEqual({ opened: 1, recovered: 1, closed: 1 })
     expect((await f.request("/session")).status).toBe(503)
+  })
+
+  test("a harness switch while a turn runs answers the typed 409 busy refusal", async () => {
+    const f = await fixture({ hold: true })
+    await f.host.apply(f.snapshot())
+    await f.request("/session", "POST", { id: "busy" })
+    const prompt = f.request("/session/busy/message", "POST", { parts: [{ type: "text", text: "work" }] })
+    try {
+      await f.startedTurn
+      const refused = await f.request("/session/busy/config", "PATCH", { harness: { id: "secondary", access: "connection" } })
+      expect(refused.status).toBe(409)
+      expect(await refused.json()).toMatchObject({ error: { code: "session_turn_in_progress" } })
+    } finally { f.release(); await prompt }
   })
 
   test("source retirement after handoff leaves the target's active turn and transport alive", async () => {
@@ -427,8 +450,8 @@ describe("workspace runtime public lifecycle", () => {
   test("connection resolution follows a registered session worktree without retiring the root transport", async () => {
     const f = await fixture({ scoped: true })
     const worktree = join(f.target.directory, "worktree")
-    registerWorkspaceDirectory({ workspaceId: f.target.workspaceId, sessionId: "worktree", directory: worktree })
-    cleanups.push(() => unregisterWorkspaceDirectory({ workspaceId: f.target.workspaceId, sessionId: "worktree" }))
+    f.host.sessionCore.placement.register({ sessionId: "worktree", directory: worktree })
+    cleanups.push(() => f.host.sessionCore.placement.unregister("worktree"))
     await f.host.apply(f.snapshot())
     await f.request("/session", "POST", { id: "root" })
     expect((await f.request("/session", "POST", { id: "worktree" }, "", worktree)).status).toBe(201)
@@ -594,6 +617,7 @@ describe("workspace runtime public lifecycle", () => {
     const outcomes: Array<{ sessionId: string; outcome: AgentTurnOutcome }> = []
     const boot = (onTurnOutcome?: (input: { sessionId: string; outcome: AgentTurnOutcome }) => void) => {
       const host = createWorkspaceHost({
+        sessionIdWorkspace: () => undefined,
         placement: loopbackMachineLoginPolicy(), target, storeRoot, harnessStateRoot,
         env: { ...process.env, PI_EXECUTABLE: peer.binary },
         harness: { kind: "native", harnessId: "pi" },
@@ -827,9 +851,7 @@ describe("workspace runtime public lifecycle", () => {
     const replacement = f.open()
     const refused = await replacement.request("/session", "POST", { id: "after-crash" })
     expect(refused.status, await refused.clone().text()).toBe(503)
-    const body = await refused.json() as { error?: string }
-    expect(body.error).toContain("workspace_launch_unreconciled")
-    expect(body.error).toContain(prepared.launchId)
+    expect(await refused.json()).toMatchObject({ error: { code: "workspace_launch_unreconciled", details: { launches: [{ launchId: prepared.launchId }] } } })
     // A read is not a write: inspecting the workspace is how an operator finds
     // out what is holding it.
     expect((await replacement.request("/session")).status).toBe(200)
@@ -1063,7 +1085,7 @@ describe("host lifecycle", () => {
     const f = createHostFixture({ transports: { pi: new FakeTransport({ turn: () => control.events }), target } })
     await f.runtime.sessions.create(sessionCreate({ id: "s" }))
     await f.runtime.turns.start({ sessionId: "s", text: "work", origin })
-    await expect(f.runtime.sessions.updateConfig("s", { harness: { id: "target", access: "native" } })).rejects.toThrow()
+    await expect(f.runtime.sessions.updateConfig("s", { harness: { id: "target", access: "native" } })).rejects.toMatchObject({ code: "session_turn_in_progress" })
     expect(target.starts).toEqual([])
     expect(f.store.getSessionConfig("s")?.harness.id).toBe("pi")
     control.finish()

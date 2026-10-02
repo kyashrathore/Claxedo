@@ -29,7 +29,7 @@
  * The room also holds this deployment's SSE retention ring, so the hosted
  * `cp/events` is resumable on the same terms as the local daemon's
  * (`claxedo-local-server/src/shell/events.ts`) and a workspace runtime's
- * `wr/events` (`workspace-runtime/src/routes/events.ts`). One client bundle
+ * `wr/events` (`session-core/src/routes/events.ts`). One client bundle
  * reads all three, and its resume machinery is only as good as the `id:`
  * lines it is fed: a bridge that writes none leaves the client's cursor null,
  * so it never sends `Last-Event-ID` and every reconnect gap loses whatever
@@ -44,7 +44,7 @@
  */
 
 import { EVENT_STREAM_HEARTBEAT_MS } from "@claxedo/agent-runtime-contract"
-import { createSseReplayBuffer } from "@claxedo/workspace-runtime/projection"
+import { createSseReplayBuffer } from "@claxedo/helpers/sse"
 import { eventVisibleTo, type EventScopePrincipal } from "@claxedo/server-core/platform/http/event-visibility"
 import { isRetainedControlPlaneEvent } from "@claxedo/server-core/platform/http/event-retention"
 import type { ControlPlaneEvent } from "@claxedo/server-core/platform/runtime/lib/bus"

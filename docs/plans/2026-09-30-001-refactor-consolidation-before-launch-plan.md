@@ -57,6 +57,19 @@ Later, with their owning plans: the store split and explicit turn identity (plan
 
 - [x] **SS Shared sessions appear and open** (owner ruling 2026-10-02). The signed account lists every session `maySql(read)` admits that it does not own, at the level `maySql(send)` admits, so direct, team and organization shares list exactly as they open. Shared rows stay out of the owned catalog; the one placement router resolves an owned placement first and otherwise routes the session through its row with the existing session-scoped connection (`GET /api/workspace/:id/connection?sessionId=`), the relay cache and placement streams. Follow gets the read-only composer; send drives turns on the session's own configuration and the owner's accounts; neither gets owner controls or forks. The signed desktop uses the closed HostedAccount operations `session.shared.list` and `session.connection.read`. Revocation drops the row on the next read, closes its stream and makes an open screen unavailable; an old token lives at most its 30-minute TTL (15–60 minutes when configured). Proven by the D1 authorization tests and flow 47 (browser follow/send/revoke, owner-key spending on a cloud sandbox, signed desktop send).
 
+### SC1 Session core extraction (Phase 3 of the LOC plan)
+
+`packages/session-core` holds the session core behind `createSessionCore`. Each
+instance owns its bus and directory registry. Session placement is a required
+host port; HMAC child identity, attachment reads, directory canonicalization
+and the optional Pages lifecycle hooks stay with the machine host, and
+`storeSessionRoutes` gives every host the route options it answers from its
+store. The Node-free ratchet scans all core production files and the first-party
+import closure; `packages/session-core/README.md` holds the port contract.
+`packages/session-core/src/durable-object.node-test.ts` runs
+the core in a Durable Object under workerd without `nodejs_compat`. The
+extraction does not implement the later turn-row and journal consolidation.
+
 ## 4. Order
 
 1. Now: C3, C4, C9 (disjoint from L3's files).

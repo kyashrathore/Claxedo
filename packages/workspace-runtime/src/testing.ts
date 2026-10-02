@@ -5,7 +5,7 @@ import type { WorkspaceRuntimeManagementAuth } from "./management-auth"
 export function loopbackMachineLoginPolicy(machineOwnerUserId = "test-owner"): MachineLoginPolicy {
   return { placement: "loopback", machineOwnerUserId, canUseOwnLogin: true }
 }
-export { FAKE_CONNECTION_CAPABILITIES, FAKE_TRANSPORT_CAPABILITIES, FakeTransport, fakeConnectionProvider, type FakeTransportOptions, type FakeTurn } from "./test-support/fake-transport"
+export { withSessionCore } from "./session-context"
 
 export function allowWorkspaceRuntimeManagementAuth(subject = "test"): WorkspaceRuntimeManagementAuth {
   return {

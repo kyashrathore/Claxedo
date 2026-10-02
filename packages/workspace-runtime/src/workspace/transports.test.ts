@@ -1,9 +1,18 @@
 import { expect, test } from "bun:test"
 import type { ConnectionSecretLease } from "@claxedo/agent-runtime-contract"
+import {
+  FakeTransport,
+  LOOPBACK_ORIGIN,
+  MACHINE_OWNER,
+  RECOVERY_TEST_CALLER,
+  cancelTurnRequest,
+  controlledTurn,
+  createHostFixture,
+  sessionCreate,
+  tick,
+} from "@claxedo/session-core/testing"
 import type { RuntimeConnectionDescriptor } from "../routes/config"
-import { FakeTransport } from "../test-support/fake-transport"
-import { MACHINE_OWNER, controlledTurn, createHostFixture, sessionCreate, tick } from "../test-support/host-fixture"
-import { createWorkspaceTransports } from "./transports"
+import { createWorkspaceTransports, type WorkspaceTransportsInput } from "./transports"
 
 const runner = { id: "connection", access: "connection" as const }
 function deferred<T>() {
@@ -201,4 +210,41 @@ test("each session owner's connection spends that owner's lease, and one owner's
     expect(created).toHaveLength(2)
     expect(created.map((transport) => transport.disposed)).toEqual([false, false])
   } finally { await transports.disposeAll(); await host.dispose() }
+})
+
+/** A turn that throws once its stop is refused, leaving the turn held with its outcome unconfirmed. */
+function refusedThenThrows() {
+  let release!: () => void
+  const gate = new Promise<void>((resolve) => { release = resolve })
+  const transport = new FakeTransport({
+    turn: async function* () { await gate; throw new Error("ACP cancel failed; prompt outcome is uncertain") },
+    cancel: async () => {
+      release()
+      await tick()
+      throw new Error("provider refused the abort")
+    },
+  })
+  return { transport, release: () => release() }
+}
+
+const budgets = { ackMs: 5_000, providerQueryMs: 5_000, gracefulCancelMs: 200, reconcileMs: 5_000 }
+
+test("a held turn ends as soon as its connection's transport is retired", async () => {
+  const { transport, release } = refusedThenThrows()
+  const transports = createWorkspaceTransports({
+    composer: { connection: () => transport, builtIn: () => transport } as unknown as WorkspaceTransportsInput["composer"],
+    connections: () => new Map([["conn", { providerKey: "test", connectionId: "conn", configRevision: 1, enabled: true, config: {} } as unknown as RuntimeConnectionDescriptor]]),
+    resolveSecrets: () => ({ secrets: {}, secretLeaseGeneration: "none" }),
+  })
+  const f = createHostFixture({ transports, recovery: { budgets } })
+  try {
+    await f.runtime.sessions.create(sessionCreate({ id: "s", harness: { id: "conn", access: "connection" } }))
+    const started = await f.runtime.turns.start({ sessionId: "s", text: "work", origin: LOOPBACK_ORIGIN })
+    await f.runtime.recovery.submit(cancelTurnRequest(started.target!), RECOVERY_TEST_CALLER)
+    expect(f.store.getSession("s")?.status).toBe("busy")
+    transports.retireConnection("conn")
+    expect(f.store.getSession("s")?.status).toBe("error")
+    expect(f.store.getSession("s")?.lastTurn?.status).toBe("failed")
+    expect(f.runtime.recovery.inspect("s").failures.some((failure) => failure.code === "exit_unverified")).toBe(false)
+  } finally { release(); await f.dispose(); await transports.disposeAll() }
 })

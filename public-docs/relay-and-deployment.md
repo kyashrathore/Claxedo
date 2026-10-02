@@ -113,7 +113,7 @@ offline.
 Private cloud-VM targets are forwarded directly by the room without a host
 tunnel.
 
-## Auth And Metrics
+## Auth
 
 Runtime access tokens are validated on every new HTTP request and WebSocket
 upgrade. Custom `TokenVerifier` implementations are allowed, but their output is
@@ -126,14 +126,10 @@ Revocation applies to new requests and new connections; existing
 WebSocket/SSE/PTY sessions may continue until they close, reconnect, drain, or
 hit a future max-lifetime/recheck feature.
 
-`/metrics` is ops-only. Configure `CLAXEDO_RELAY_METRICS_TOKEN` and scrape with
-`Authorization: Bearer <token>`. Without a token the endpoint admits only callers
-the adapter identifies as loopback, and fails closed when it cannot tell.
-
 ## Protocol Package
 
 `@claxedo/workspace-relay-protocol` contains the tunnel message types and token
-verifier helpers. It does not depend on Hono or the relay server package.
+verifier helpers. It does not depend on the relay server package.
 
 It exists as a separate package because both sides of the tunnel need the same
 wire contract:

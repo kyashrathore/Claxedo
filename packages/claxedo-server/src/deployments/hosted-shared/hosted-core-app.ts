@@ -502,7 +502,6 @@ export function createHostedCoreApp(plane: HostedControlPlane, options: HostedCo
   const introspectAccessToken = options.authentication.introspectAccessToken?.bind(options.authentication)
   const firstPartyMcp = options.firstPartyMcp
     ? firstPartyMcpContribution({
-        mount: "hosted",
         app,
         authority: services.authority,
         options: options.firstPartyMcp,

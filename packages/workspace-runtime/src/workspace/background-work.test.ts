@@ -6,8 +6,8 @@ import { Hono } from "hono"
 import type { BackgroundTaskOperations, BackgroundTaskRef, HarnessSession, SessionBroker } from "@claxedo/harness/contract"
 import { withWorkspaceTarget } from "../target"
 import { loopbackWorkspaceRuntimeExposure } from "../exposure"
-import { createRuntimeEventHub } from "../projection/runtime-event-hub"
-import { FakeTransport, fakeConnectionProvider } from "../test-support/fake-transport"
+import { createRuntimeEventHub } from "@claxedo/session-core"
+import { FakeTransport, fakeConnectionProvider } from "@claxedo/session-core/testing"
 import { loopbackMachineLoginPolicy } from "../testing"
 import { createWorkspaceHost } from "./runtime"
 import type { RuntimeSnapshot } from "../routes/config"
@@ -44,7 +44,7 @@ async function fixture(backgroundTasks?: BackgroundTaskOperations) {
     if (payload.type === "session.background-work" || payload.type === "session.status") frames.push({ type: payload.type, properties: payload.properties })
   })
   const provider = fakeConnectionProvider({ providerKey: "scripted", transport: () => transport })
-  const host = createWorkspaceHost({ placement: loopbackMachineLoginPolicy(), target, eventHub, storeRoot: join(directory, "state"), connectionProviders: [provider] })
+  const host = createWorkspaceHost({ placement: loopbackMachineLoginPolicy(), target, sessionIdWorkspace: () => undefined, eventHub, storeRoot: join(directory, "state"), connectionProviders: [provider] })
   cleanups.push(() => host.dispose())
   await host.apply(snapshot)
   const app = new Hono()

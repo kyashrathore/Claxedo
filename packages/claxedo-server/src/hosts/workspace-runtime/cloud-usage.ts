@@ -1,7 +1,8 @@
 import { mkdirSync } from "node:fs"
 import path from "node:path"
 import Database from "better-sqlite3"
-import type { SessionAccessPolicy, WorkspaceRuntimeServerOptions } from "@claxedo/workspace-runtime"
+import type { WorkspaceRuntimeServerOptions } from "@claxedo/workspace-runtime"
+import type { SessionAccessPolicy } from "@claxedo/session-core"
 import {
   assertTurnUsageRevision,
   usageRevisionHash,

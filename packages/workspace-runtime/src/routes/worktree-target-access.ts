@@ -1,7 +1,7 @@
 /**
  * The authorization the file, diff and Git route families run under.
  *
- * `assertTarget` answers whether a directory belongs to this runtime, and a
+ * `placement.resolveDirectory` answers whether a directory belongs to this runtime, and a
  * registered per-session worktree does — that is how a session's own tools
  * reach it. It does not answer whose it is, so a caller who names another
  * session's worktree in `?directory=` was reading and writing it with nothing
@@ -30,7 +30,7 @@ import {
   registeredWorkspaceDirectoryOwners,
   workspacePathCandidate,
 } from "../target"
-import { sessionAccessContext, type SessionAccessPolicy } from "../session-access-policy"
+import { sessionAccessContext, type SessionAccessPolicy } from "@claxedo/session-core"
 import { authorizeHostCapability } from "./host-capability-access"
 import type { RelayHostAuthContext } from "../workspace-host-service-auth"
 

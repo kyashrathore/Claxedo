@@ -4,13 +4,12 @@ import { createServer } from "node:http"
 import { tmpdir } from "node:os"
 import path from "node:path"
 import { ClaxedoDB } from "@claxedo/server-core/platform/db/index"
-import { closeAuthorityDatabases } from "@claxedo/server-core/authority/adapters/sqlite/workspace-authority-store"
 import { createSqliteUsageLedger } from "@claxedo/server-core/usage/adapters/sqlite-usage-ledger"
 import type * as EmbeddedRuntime from "../deployments/local/embedded-workspace-runtime"
 import { startLocalServer, type LocalServer } from "./start-local-server"
 import type { LocalAppOptions } from "./local-app"
 import { testDaemon } from "./test-support/daemon"
-import { buildAssistantMessage, messageUpdated, sessionUsage } from "@claxedo/workspace-runtime/projection"
+import { buildAssistantMessage, messageUpdated, sessionUsage } from "@claxedo/session-core"
 
 type RuntimeHooks = Parameters<typeof EmbeddedRuntime.configureEmbeddedWorkspaceRuntime>[0]
 
@@ -47,7 +46,6 @@ afterEach(async () => {
   ClaxedoDB.close()
   if (previous === undefined) delete process.env.CLAXEDO_DATA_DIR
   else process.env.CLAXEDO_DATA_DIR = previous
-  closeAuthorityDatabases()
   rmSync(dataDir, { recursive: true, force: true })
 })
 

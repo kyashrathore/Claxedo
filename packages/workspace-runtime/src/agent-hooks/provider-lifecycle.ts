@@ -1,13 +1,13 @@
 import type { StatusHookTemplate, StatusHookEventRule } from "@claxedo/plugin-api"
-import { arr, rec, str } from "../json-value"
+import { asArrayOrUndefined, asRecord, asString } from "@claxedo/helpers/guards"
 
 function toolKey(input: Record<string, unknown>): string | null {
   if (input.tool_input !== undefined) {
-    const tool = rec(input.tool_input)
+    const tool = asRecord(input.tool_input)
     if (!tool) return null
-    return str(tool.command) ?? JSON.stringify(tool)
+    return asString(tool.command) ?? JSON.stringify(tool)
   }
-  return str(input.command) ?? null
+  return asString(input.command) ?? null
 }
 
 export type ProviderLifecycle = {
@@ -29,7 +29,7 @@ function isEngineStatus(value: string): value is "Busy" | "Idle" | "Error" {
 }
 
 function at(input: unknown, field: string): unknown {
-  return field.split(".").reduce((value, key) => rec(value)?.[key], input)
+  return field.split(".").reduce((value, key) => asRecord(value)?.[key], input)
 }
 
 export function providerLifecycle(
@@ -37,7 +37,7 @@ export function providerLifecycle(
   templates: readonly StatusHookTemplate[],
   envelopeProvider?: string,
 ): ProviderLifecycle | undefined {
-  const first = (...keys: string[]) => keys.map((key) => str(input[key])).find((value) => !!value)
+  const first = (...keys: string[]) => keys.map((key) => asString(input[key])).find((value) => !!value)
   const hook = first("hook_event_name")
   const type = hook ?? first("type")
   if (!type) return undefined
@@ -70,25 +70,25 @@ export function providerLifecycle(
           : "Idle"
   const payload = rule.payload ?? template.payload
   if (payload) {
-    const event = rec(at(input, payload.path))
-    const sessionId = str(at(event, payload.sessionId))
+    const event = asRecord(at(input, payload.path))
+    const sessionId = asString(at(event, payload.sessionId))
     if (!event || (payload.requireSession && !sessionId)) return undefined
     return {
       provider: template.provider,
       sessionId,
       eventType,
-      ...(payload.transcriptPath ? { transcriptPath: str(at(event, payload.transcriptPath)) } : {}),
-      ...(payload.prompt ? { prompt: str(at(event, payload.prompt))?.slice(0, 800) } : {}),
+      ...(payload.transcriptPath ? { transcriptPath: asString(at(event, payload.transcriptPath)) } : {}),
+      ...(payload.prompt ? { prompt: asString(at(event, payload.prompt))?.slice(0, 800) } : {}),
       ...(rule.outcome ? { outcome: rule.outcome } : {}),
     }
   }
   // Subagent completion can settle its own ask, but cannot end the parent's turn.
-  const subagent = !!template.subagent.map((field) => str(at(input, field))).find(Boolean)
+  const subagent = !!template.subagent.map((field) => asString(at(input, field))).find(Boolean)
   if (subagent && eventType !== "UserActionRequired" && !(rule.toolCompletion && toolKey(input) !== null))
     return undefined
-  if (hook === "Stop" && arr(input.background_tasks)?.some((task) => rec(task)?.status === "running")) return undefined
+  if (hook === "Stop" && asArrayOrUndefined(input.background_tasks)?.some((task) => asRecord(task)?.status === "running")) return undefined
   const prompts = ["input-messages", "input_messages", "inputMessages", "prompts"]
-    .map((key) => arr(input[key]))
+    .map((key) => asArrayOrUndefined(input[key]))
     .find((value) => value?.length)
   return {
     eventType,
@@ -101,7 +101,7 @@ export function providerLifecycle(
       (!hook ? templates.find((item) => item.typeProvider && Object.hasOwn(item.events, type))?.provider : undefined),
     sessionId: first("session_id", "sessionId", "conversation_id", "conversationId", "thread-id", "thread_id"),
     transcriptPath: first("transcript_path", "transcriptPath"),
-    prompt: (first("prompt", "user_prompt", "userPrompt") ?? str(prompts?.at(-1)))?.slice(0, 800),
+    prompt: (first("prompt", "user_prompt", "userPrompt") ?? asString(prompts?.at(-1)))?.slice(0, 800),
     lastAssistantMessage: first(
       "last_assistant_message",
       "last-assistant-message",

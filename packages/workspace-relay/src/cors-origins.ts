@@ -1,8 +1,7 @@
-// Browser-origin allowlist policy shared by the Bun adapter and the
-// Cloudflare adapter. The relay ships with Claxedo's own app origins as the
-// DEFAULT list, but a self-hosted deployment can fully REPLACE that list with
-// `allowedOrigins` (Bun options) / `CLAXEDO_RELAY_ALLOWED_ORIGINS` (env) —
-// the built-in product domains are a default, not a hardwired grant.
+// Browser-origin allowlist policy. The relay ships with Claxedo's own app
+// origins as the DEFAULT list, but a deployment can fully REPLACE that list
+// with `CLAXEDO_RELAY_ALLOWED_ORIGINS` — the built-in product domains are a
+// default, not a hardwired grant.
 //
 // Pattern grammar (comma-separated in env form):
 //   https://app.example.com     exact origin match
@@ -16,6 +15,23 @@ export const DEFAULT_RELAY_APP_ORIGINS = [
   "https://claxedo.com",
   "https://*.claxedo.com",
 ]
+
+/** Request headers a browser may send on relayed workspace requests, as the `access-control-allow-headers` value. */
+export const RELAY_ALLOWED_REQUEST_HEADERS = [
+  "Accept",
+  "Authorization",
+  "Content-Type",
+  "Last-Event-ID",
+  "Traceparent",
+  "Tracestate",
+  "X-Fetch-Bypass-Throttle",
+  "X-Workspace-Id",
+  "X-OpenCode-Directory",
+  "X-Claxedo-Runner",
+  "X-Claxedo-Model",
+  "X-Claxedo-Draft-Id",
+  "X-Claxedo-Binary",
+].join(", ")
 
 export function parseAllowedOrigins(raw: string | undefined): string[] | undefined {
   const entries = (raw ?? "").split(",").map((item) => item.trim()).filter(Boolean)

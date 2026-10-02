@@ -2,7 +2,7 @@ import fs from "node:fs/promises"
 import path from "node:path"
 import { errorMessage } from "@claxedo/helpers"
 import { deadlineAfter, harnessVersionStanding, type Deadline, type DraftProbeCache, type HarnessServices, type HarnessVersionGate,
-  type SessionBroker, type SpawnCommand, type StartInput } from "../../contract"
+  type SessionBroker, type SpawnCommand, type StartInput } from "../../contract/node"
 import { TransportError } from "../../contract/errors"
 import { piEnvironment, piProjectionArgs, preparePiProfile, type PiProfile, type PiProfileOptions } from "../../profiles/pi"
 import { PiRpc } from "./rpc"

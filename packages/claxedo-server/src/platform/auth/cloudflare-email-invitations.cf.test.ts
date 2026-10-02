@@ -6,7 +6,7 @@ import { expect, test } from "vitest"
 import { cloudflareAuthEmailSender, orgInvitationEmailDelivery, type CloudflareEmailBinding } from "./auth-email-delivery"
 import { D1OrgInvitationAuthority } from "../../authority/adapters/d1/org-invitation-authority"
 import { D1WorkspaceAuthority } from "../../authority/adapters/d1/workspace-authority"
-import { applyControlPlaneMigration, controlPlaneMigrations } from "../../test-support/control-plane-migrations"
+import { applyControlPlaneBaseline } from "../../test-support/control-plane-migrations"
 import { recordedEmailOutbox } from "../../test-support/recorded-email"
 import { testRequestAuthenticationAdapter } from "../../test-support/request-authentication"
 
@@ -24,7 +24,7 @@ test("an org invitation traverses the simulated Cloudflare send_email binding", 
   })
   try {
     const database = await instance.getD1Database("CONTROL_PLANE_DB")
-    for (const migration of controlPlaneMigrations()) await applyControlPlaneMigration(database, migration)
+    await applyControlPlaneBaseline(database)
     const bindings = await instance.getBindings<{ EMAIL: CloudflareEmailBinding }>()
     const workspace = new D1WorkspaceAuthority(database, { deploymentId: "deployment-test", product: { kind: "claxedo-hosted" } })
     const principal = await testRequestAuthenticationAdapter().authenticate(new Request("https://core.test", { headers: { authorization: "Bearer owner" } }))

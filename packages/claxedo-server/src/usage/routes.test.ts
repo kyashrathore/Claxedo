@@ -1,7 +1,7 @@
 import { describe, expect, test, vi } from "vitest"
 import { ControlPlaneAuthError, controlPlaneAuthContext, type ControlPlaneTokenVerifier } from "@claxedo/server-core/platform/auth/auth"
 import { UsageRoutes } from "@claxedo/server-core/usage/routes"
-import { LocalUsageRoutes } from "@claxedo/local-server/self-hosted-execution"
+import { LocalUsageRoutes } from "@claxedo/server-core/usage/routes"
 import { tokenTrackerPricing } from "@claxedo/server-core/usage/adapters/token-tracker-pricing"
 import type { TurnUsageRevision } from "@claxedo/server-core/usage/contracts"
 

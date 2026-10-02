@@ -6,7 +6,7 @@ import {
   streamWorkspaceEventFrames,
   type WorkspaceEventFramesTap,
   type WorkspaceEventStreamFrame,
-} from "@claxedo/workspace-runtime"
+} from "@claxedo/session-core"
 
 /** The registry view the aggregate reads: one stable object per mounted runtime. */
 export type HostAggregateRuntime = {

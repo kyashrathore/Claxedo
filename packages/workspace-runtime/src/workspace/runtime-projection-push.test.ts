@@ -6,7 +6,7 @@ import type { HarnessSession, SessionBroker, StartInput, TransportConfigUpdate }
 import { createWorkspaceRuntimeApp } from "../server"
 import { loopbackWorkspaceRuntimeExposure } from "../exposure"
 import type { RuntimeSnapshot } from "../routes/config"
-import { FakeTransport, fakeConnectionProvider } from "../test-support/fake-transport"
+import { FakeTransport, fakeConnectionProvider } from "@claxedo/session-core/testing"
 import { withWorkspaceTarget } from "../target"
 import { loopbackMachineLoginPolicy } from "../testing"
 
@@ -71,6 +71,7 @@ function runtimeApp(options: { failDefinitionsOnce?: boolean } = {}) {
   })
   const target = { workspaceId: "ws_1", directory }
   const runtime = createWorkspaceRuntimeApp({
+    sessionIdWorkspace: () => undefined,
     placement: loopbackMachineLoginPolicy(),
     target,
     storeRoot: directory,

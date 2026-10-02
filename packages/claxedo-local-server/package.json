@@ -35,13 +35,6 @@
       "import": "./src/tasks/local-composition.ts",
       "default": "./src/tasks/local-composition.ts"
     },
-    "./tasks/session-bridge": {
-      "types": "./src/tasks/session-bridge.ts",
-      "bun": "./src/tasks/session-bridge.ts",
-      "development": "./src/tasks/session-bridge.ts",
-      "import": "./src/tasks/session-bridge.ts",
-      "default": "./src/tasks/session-bridge.ts"
-    },
     "./self-hosted-execution": {
       "types": "./src/self-hosted-execution.ts",
       "bun": "./src/self-hosted-execution.ts",
@@ -84,7 +77,8 @@
     "better-sqlite3": "13.0.1",
     "hono": "4.12.34",
     "tokentracker-cli": "0.91.0",
-    "zod": "4.4.3"
+    "zod": "4.4.3",
+    "@claxedo/session-core": "workspace:*"
   },
   "devDependencies": {
     "@hono/node-server": "1.19.11",

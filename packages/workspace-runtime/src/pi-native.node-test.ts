@@ -66,6 +66,7 @@ void test(
       createWorkspaceRuntimeApp({
         placement: loopbackMachineLoginPolicy(),
         target: { workspaceId: "workspace-proof", directory },
+        sessionIdWorkspace: () => undefined,
         storeRoot,
         harnessStateRoot,
         harness: { kind: "native", harnessId: "pi" },

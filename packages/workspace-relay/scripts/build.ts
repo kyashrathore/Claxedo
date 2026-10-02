@@ -9,8 +9,6 @@ const DIST = path.join(ROOT, "dist")
 const EXTERNALS = [
   "@claxedo/helpers/string",
   "@claxedo/workspace-relay-protocol",
-  "hono",
-  "hono/cors",
   "jose",
 ]
 
@@ -23,15 +21,6 @@ execFileSync(path.join(ROOT, "node_modules/.bin/esbuild"), [
   "--platform=node",
   "--format=esm",
   `--outfile=${DIST}/index.mjs`,
-  ...EXTERNALS.map((item) => `--external:${item}`),
-  "--target=node22",
-], { stdio: "inherit", cwd: ROOT })
-execFileSync(path.join(ROOT, "node_modules/.bin/esbuild"), [
-  "src/bun.ts",
-  "--bundle",
-  "--platform=node",
-  "--format=esm",
-  `--outfile=${DIST}/bun.mjs`,
   ...EXTERNALS.map((item) => `--external:${item}`),
   "--target=node22",
 ], { stdio: "inherit", cwd: ROOT })

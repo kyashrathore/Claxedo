@@ -3,11 +3,9 @@ import type { GoalCapabilities, RuntimeGoalSnapshot, AgentEventEnvelope, AgentPr
 import type { AgentRuntimeEvent } from "@claxedo/agent-runtime-contract"
 import type { HarnessSession, NativeGoalOperations, PermissionRequest, RequestAnswer, TransportCapabilities, TurnRequest } from "@claxedo/harness/contract"
 import type { Hono, MiddlewareHandler } from "hono"
-import { createStoreBrokerPorts } from "../broker-ports"
-import { workspaceRuntimeBus } from "../bus"
-import { managedWorkspaceSessionAccessPolicy, type SessionAccessPolicy, type SessionAccessPolicyInput } from "../session-access-policy"
+import { createStoreBrokerPorts, managedWorkspaceSessionAccessPolicy, type SessionAccessPolicy, type SessionAccessPolicyInput } from "@claxedo/session-core"
 import { fetchDouble } from "../test-support/fetch-double"
-import { FakeTransport, type FakeTransportOptions, type FakeTurn } from "../test-support/fake-transport"
+import { FakeTransport, type FakeTransportOptions, type FakeTurn } from "@claxedo/session-core/testing"
 import { createFakeWorkspaceApp, type FakeWorkspaceApp, type FakeWorkspaceAppOptions } from "../test-support/fake-workspace-app"
 import { loopbackMachineLoginPolicy } from "../testing"
 import { createWorkspaceHost } from "../workspace/runtime"
@@ -902,7 +900,7 @@ describe("session prompt route", () => {
       } },
     })
     await wa.createSession("s1")
-    const unsubscribe = workspaceRuntimeBus.subscribe((event) => { bus.push(event.type) })
+    const unsubscribe = wa.host.sessionCore.bus.subscribe((event) => { bus.push(event.type) })
     try {
       const res = await wa.json("/session/s1/message", { parts: [] })
 
@@ -1232,7 +1230,7 @@ it("publishes a successful session deletion once, on the hub the workspace strea
   const events: unknown[] = []
   wa.eventHub.subscribeGlobal((event) => { if ((event.payload as { type?: string }).type === "session.deleted") events.push(event) })
   const bus: string[] = []
-  const unsubscribe = workspaceRuntimeBus.subscribe((event) => { bus.push(event.type) })
+  const unsubscribe = wa.host.sessionCore.bus.subscribe((event) => { bus.push(event.type) })
   try {
     const response = await wa.app.request(wa.url("/session/s1"), { method: "DELETE" })
     expect(response.status).toBe(200)
@@ -1387,8 +1385,8 @@ it("retires a permission a previous owner asked and never settled, so the reopen
 
 describe("session create ownership", () => {
   it("a host that reads the session index must name its own workspace", () => {
-    expect(() => createWorkspaceHost({ placement: loopbackMachineLoginPolicy(), sessionIdWorkspace: () => undefined }))
-      .toThrow("sessionIdWorkspace requires a target workspace")
+    expect(() => createWorkspaceHost({ placement: loopbackMachineLoginPolicy(), sessionIdWorkspace: () => undefined } as unknown as Parameters<typeof createWorkspaceHost>[0]))
+      .toThrow("createWorkspaceHost requires a target workspace")
   })
 
   it("refuses an id another workspace holds before any harness launches", async () => {

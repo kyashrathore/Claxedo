@@ -52,9 +52,8 @@ export function isBuiltinFamilyName(pluginInstanceId: string): boolean {
 /**
  * The group whose consent the Tasks capability is.
  *
- * Named here rather than beside the minter because both the minter and the
- * self-hosted grant have to agree with the default below, and the two of them
- * sit in different deployments.
+ * Named here rather than beside a minter because the hosted composition and
+ * the local daemon both grant on it, and the two sit in different deployments.
  */
 export const BUILTIN_TASKS_TOOL_GROUP = "tasks"
 

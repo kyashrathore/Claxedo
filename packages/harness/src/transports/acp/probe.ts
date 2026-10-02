@@ -1,6 +1,6 @@
 import { prefixedRandomId } from "@claxedo/helpers"
 import type { SessionNotification } from "@agentclientprotocol/sdk"
-import { draftProbeKey, DraftProbeCache, type DraftLaunch, type HarnessServices, type StartInput } from "../../contract"
+import { draftProbeKey, DraftProbeCache, type DraftLaunch, type HarnessServices, type StartInput } from "../../contract/node"
 import { connectAcp, type AcpConnectionOptions } from "./connection"
 import type { AcpMcpFilter } from "./index"
 import type { AcpPeerOwnership } from "./ownership"

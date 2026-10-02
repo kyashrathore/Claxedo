@@ -117,8 +117,8 @@ describe("withRouteOwnership", () => {
     core.route("/api/claxedo/documents", new Hono() as never)
 
     expect(() =>
-      withRouteOwnership(app, ownership, "self-hosted-node").route("/api/claxedo/documents", new Hono() as never),
-    ).toThrow(/signed-control-plane.*self-hosted-node/)
+      withRouteOwnership(app, ownership, "conflicting-owner").route("/api/claxedo/documents", new Hono() as never),
+    ).toThrow(/signed-control-plane.*conflicting-owner/)
   })
 })
 

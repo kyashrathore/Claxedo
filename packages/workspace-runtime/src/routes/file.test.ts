@@ -1,3 +1,6 @@
+import { workspaceId } from "../target"
+import { testSessionCore } from "@claxedo/session-core/testing"
+import { withSessionCore } from "../session-context"
 import { afterEach, beforeEach, describe, expect, test } from "bun:test"
 import { Hono } from "hono"
 import fs from "node:fs/promises"
@@ -26,16 +29,16 @@ afterEach(async () => {
 })
 
 describe("FileRoutes file reads", () => {
-  test("preserves whitespace, unicode and newlines in Git filenames on listing and search routes", async () => {
+  test("preserves whitespace, unicode and newlines in Git filenames on listing and search routes", () => withSessionCore(testSessionCore(tmp, workspaceId()), async () => {
     await runGit(["init"], tmp)
     const name = " 雪 furniture\nnotes.txt "
     await fs.writeFile(path.join(tmp, name), "")
     const app = new Hono().route("/", FileRoutes())
     expect(await (await app.request("http://localhost/file/all")).json()).toEqual({ paths: [name] })
     expect(await (await app.request("http://localhost/find/file?dirs=false&query=雪")).json()).toEqual([name])
-  })
+  }))
 
-  test("lists all tracked or walked files", async () => {
+  test("lists all tracked or walked files", () => withSessionCore(testSessionCore(tmp, workspaceId()), async () => {
     const app = new Hono().route("/", FileRoutes())
     await fs.mkdir(path.join(tmp, "src"), { recursive: true })
     await fs.writeFile(path.join(tmp, "README.md"), "hello")
@@ -46,9 +49,9 @@ describe("FileRoutes file reads", () => {
     await expect(res.json()).resolves.toEqual({
       paths: ["README.md", path.join("src", "index.ts")],
     })
-  })
+  }))
 
-  test("answers a file of control bytes without a NUL as text on the content route", async () => {
+  test("answers a file of control bytes without a NUL as text on the content route", () => withSessionCore(testSessionCore(tmp, workspaceId()), async () => {
     const app = new Hono().route("/", FileRoutes())
     await fs.writeFile(path.join(tmp, "large.bin"), new Uint8Array([1, 2, 3, 4, 5]))
 
@@ -58,9 +61,9 @@ describe("FileRoutes file reads", () => {
       type: "text",
       content: "\u0001\u0002\u0003\u0004\u0005",
     })
-  })
+  }))
 
-  test("rejects absolute and escaping content paths", async () => {
+  test("rejects absolute and escaping content paths", () => withSessionCore(testSessionCore(tmp, workspaceId()), async () => {
     const app = new Hono().route("/", FileRoutes())
 
     const absolute = await app.request(`http://localhost/file/content?path=${encodeURIComponent(path.join(tmp, "x"))}`)
@@ -80,9 +83,9 @@ describe("FileRoutes file reads", () => {
         message: "Invalid relative file path",
       },
     })
-  })
+  }))
 
-  test("rejects escaping paths across JSON file routes", async () => {
+  test("rejects escaping paths across JSON file routes", () => withSessionCore(testSessionCore(tmp, workspaceId()), async () => {
     const app = new Hono().route("/", FileRoutes())
     const outside = await fs.mkdtemp(path.join(os.tmpdir(), "workspace-runtime-file-outside-"))
 
@@ -114,9 +117,9 @@ describe("FileRoutes file reads", () => {
     } finally {
       await fs.rm(outside, { recursive: true, force: true })
     }
-  })
+  }))
 
-  test("rejects caller-selected directories across file routes", async () => {
+  test("rejects caller-selected directories across file routes", () => withSessionCore(testSessionCore(tmp, workspaceId()), async () => {
     const app = new Hono().route("/", FileRoutes())
     const outside = await fs.mkdtemp(path.join(os.tmpdir(), "workspace-runtime-file-outside-"))
 
@@ -142,7 +145,7 @@ describe("FileRoutes file reads", () => {
     } finally {
       await fs.rm(outside, { recursive: true, force: true })
     }
-  })
+  }))
 
 })
 
@@ -165,33 +168,32 @@ describe("FileRoutes file search", () => {
     await fs.writeFile(path.join(tmp, "dist/bundle/widget.ts"), "")
   })
 
-  test("does not descend into ignored directories", async () => {
+  test("does not descend into ignored directories", () => withSessionCore(testSessionCore(tmp, workspaceId()), async () => {
     expect(await search("widget", "&dirs=false")).toEqual(["src/panel/widget.ts"])
-  })
+  }))
 
   test("evicts the oldest runtime root after the shared cache reaches its bound", async () => {
     const roots = Array.from({ length: 34 }, (_, index) => path.join(tmp, `root-${index}`))
     const app = new Hono().route("/", FileRoutes())
+    const find = (root: string) => withSessionCore(testSessionCore(root, workspaceId()), async () => await (await app.request("/find/file?dirs=false")).json())
     for (const root of roots) {
       await fs.mkdir(root)
       await fs.writeFile(path.join(root, "a.txt"), "")
-      process.env.WORKSPACE_RUNTIME_DIRECTORY = root
-      expect(await (await app.request("/find/file?dirs=false")).json()).toEqual(["a.txt"])
+      expect(await find(root)).toEqual(["a.txt"])
     }
-    await fs.writeFile(path.join(roots[0]!, "b.txt"), "")
-    process.env.WORKSPACE_RUNTIME_DIRECTORY = roots[0]
-    expect(await (await app.request("/find/file?dirs=false")).json()).toEqual(["a.txt", "b.txt"])
+    await fs.writeFile(path.join(roots[0], "b.txt"), "")
+    expect(await find(roots[0])).toEqual(["a.txt", "b.txt"])
   })
 
-  test("matches a subsequence the way the picker does, not just a literal substring", async () => {
+  test("matches a subsequence the way the picker does, not just a literal substring", () => withSessionCore(testSessionCore(tmp, workspaceId()), async () => {
     expect(await search("spwidget", "&dirs=false")).toEqual(["src/panel/widget.ts"])
-  })
+  }))
 
-  test("returns directories derived from the indexed files", async () => {
+  test("returns directories derived from the indexed files", () => withSessionCore(testSessionCore(tmp, workspaceId()), async () => {
     expect(await search("panel", "&type=directory")).toEqual(["src/panel"])
-  })
+  }))
 
-  test("reuses one listing across queries instead of walking per keystroke", async () => {
+  test("reuses one listing across queries instead of walking per keystroke", () => withSessionCore(testSessionCore(tmp, workspaceId()), async () => {
     const readdir = fsNode.promises.readdir
     let walks = 0
     // @ts-expect-error -- counting the real calls the route makes
@@ -212,9 +214,9 @@ describe("FileRoutes file search", () => {
     } finally {
       fsNode.promises.readdir = readdir
     }
-  })
+  }))
 
-  test("honours the result limit", async () => {
+  test("honours the result limit", () => withSessionCore(testSessionCore(tmp, workspaceId()), async () => {
     expect((await search("", "&dirs=false&limit=2")).length).toBe(2)
-  })
+  }))
 })

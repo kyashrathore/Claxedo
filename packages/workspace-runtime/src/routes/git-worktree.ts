@@ -2,7 +2,15 @@ import { Hono } from "hono"
 import { isBoolean, isNonEmptyString, isRecord, isString } from "@claxedo/helpers/guards"
 import { parsePositiveInteger } from "@claxedo/helpers"
 import { gitTopLevel, GitTimeoutError, withGitWriteLock } from "../git"
-import { assertTarget, hasRegisteredWorkspaceDirectories, WorkspaceTargetError } from "../target"
+import {
+  WorkspaceTargetError,
+  boundedJsonBody,
+  errorBody,
+  isRequestBodyTooLarge,
+  requestBodyTooLargeBody,
+} from "@claxedo/session-core"
+import { hasRegisteredWorkspaceDirectories } from "../target"
+import { currentSessionCore } from "../session-context"
 import type { RelayHostAuthContext } from "../workspace-host-service-auth"
 import {
   GIT_LOG_DEFAULT_LIMIT,
@@ -14,7 +22,6 @@ import {
   gitWorktreeStatus,
   prepareStagedCommit,
 } from "../workspace-files/git-worktree"
-import { boundedJsonBody, errorBody, isRequestBodyTooLarge, requestBodyTooLargeBody } from "./http"
 import {
   authorizeWorktreeTarget,
   deniedWorktreeFilter,
@@ -39,7 +46,7 @@ const ERROR_STATUS = {
 } as const
 
 function directory(c: GitRouteContext) {
-  return assertTarget(c.req.query("directory") || c.req.header("x-claxedo-directory"))
+  return currentSessionCore().placement.resolveDirectory(c.req.query("directory") || c.req.header("x-claxedo-directory"))
 }
 
 function gitRouteFailure(err: unknown) {

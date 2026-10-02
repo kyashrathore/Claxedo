@@ -10,7 +10,6 @@ import type { D1CoreAuthorityBoundary } from "./core-authority"
 import { composeBetterAuthD1Authority } from "../worker/better-auth-d1-compose"
 import { may } from "./authorization"
 import {
-  controlPlaneMigrations,
   miniflareControlPlaneDatabase,
   type ControlPlaneDatabase,
 } from "../../../test-support/control-plane-migrations"
@@ -61,7 +60,7 @@ const runtime = (auth: SignedControlPlaneAuth) =>
  * none of it is a share.
  */
 async function setup() {
-  const controlPlane = await miniflareControlPlaneDatabase(controlPlaneMigrations())
+  const controlPlane = await miniflareControlPlaneDatabase()
   active.push(controlPlane)
   const { database } = controlPlane
   const authority = composeBetterAuthD1Authority({

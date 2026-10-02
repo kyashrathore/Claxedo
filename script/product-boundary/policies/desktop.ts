@@ -110,8 +110,8 @@ export const desktopMainComposition: Policy = {
   // daemon's loopback surface. It imports a type from `child-protocol.ts`
   // (already in this closure) and uses `fetch`, so no package edge. 91/24.
   // The name this machine is known by is derived in
-  // `@claxedo/helpers/machine-name`, outside `roots`, because the self-hosted
-  // node names itself the same way and one machine may not have two names.
+  // `@claxedo/helpers/machine-name`, outside `roots`, because `claxedo connect`
+  // names its machine the same way and one machine may not have two names.
   // The subpath is node-only (`node:os`, `node:fs`, `node:child_process`, all
   // already in this closure) and `@claxedo/helpers` is already a package edge
   // through `/string`, so it costs neither a module nor a package. Reviewed

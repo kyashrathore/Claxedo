@@ -1,7 +1,8 @@
 import path from "node:path"
 import fs from "node:fs/promises"
 import { gitTopLevel, LITERAL_PATHSPECS, runGit, withGitWriteLock } from "../git"
-import { resolveWorkspacePath, workspaceDir, WorkspaceTargetError } from "../target"
+import { WorkspaceTargetError } from "@claxedo/session-core"
+import { resolveWorkspacePath, workspaceDir} from "../target"
 
 export type GitSourceSnapshot = {
   repoRoot: string

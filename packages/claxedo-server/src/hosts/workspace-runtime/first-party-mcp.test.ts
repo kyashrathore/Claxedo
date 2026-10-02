@@ -1,3 +1,5 @@
+import os from "node:os"
+import path from "node:path"
 import { describe, expect, test } from "vitest"
 import { CLAXEDO_MCP_SERVER_INFO, CLAXEDO_MCP_TOOL_GROUP_IDS } from "@claxedo/mcp"
 import { createRuntimeCredentialIssuer, createWorkspaceRuntimeApp } from "@claxedo/workspace-runtime"
@@ -19,9 +21,10 @@ function runtime(options: {
   const issuer = createRuntimeCredentialIssuer({ runtimeId: "rt_1", workspaceId: "ws_1" })
   const enabledToolGroups = options.groups ?? CLAXEDO_MCP_TOOL_GROUP_IDS
   const app = createWorkspaceRuntimeApp({
+    sessionIdWorkspace: () => undefined,
     exposure: relayWorkspaceRuntimeExposure(relayAuth),
     placement: loopbackMachineLoginPolicy(),
-    target: { workspaceId: "ws_1", directory: process.cwd() },
+    target: { workspaceId: "ws_1", directory: path.join(os.tmpdir(), "first-party-mcp-root") },
     firstPartyMcpLaunch: { baseUrl: "http://127.0.0.1:3002", issuer, enabledToolGroups: () => enabledToolGroups },
     ...(options.ownerGrantIdentity ? { ownerGrantIdentity: options.ownerGrantIdentity } : {}),
     routeContributions: options.contribute === false

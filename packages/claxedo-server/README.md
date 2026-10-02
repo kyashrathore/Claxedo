@@ -1,24 +1,7 @@
 # @claxedo/server
 
 Claxedo's control plane. It deploys to Cloudflare as the Workers in
-`src/deployments/hosted-workerd/`. `src/deployments/self-hosted-node/` is a
-Node composition that is not deployed: the app and harness e2e suites and this
-package's integration tests boot it.
-
-## Machine operators in the Node composition
-
-When the Node composition runs signed, machine-wide plugin configuration, machine enrollment and deleting a
-workspace placed on this machine require an authenticated subject listed in
-`CLAXEDO_OPERATOR_SUBJECTS` (comma-separated).
-Use the stable user ID returned by the embedded issuer's signup/signin response,
-not an email address or organization role. Configure this on the server and
-restart it after adding or removing an operator. An empty list denies plugin
-reads, activation, source management, signed-runtime handoff, enrollment and machine-placed
-workspace deletion to all signed users. Ordinary workspace membership grants no machine
-configuration authority. A provisioned cloud workspace is different: its deletion is the
-control plane's decision about that stored workspace, and operating this machine does not
-grant it.
-The unsigned single-user deployment continues to require a loopback peer.
+`src/deployments/hosted-workerd/`. The app and harness e2e suites boot the Worker.
 
 Workspace runtime control tokens are generated separately for each workspace.
 Setting `WORKSPACE_RUNTIME_CONFIG_TOKEN` in the control-plane environment no
@@ -57,6 +40,21 @@ runtime `harnesses` descriptor. An `npm publish` of
 versioning keys off the bundle build plus `SNAPSHOT_SCHEMA_VERSION`
 (`packages/sandbox-manager/src/image.ts`).
 
+## Control-plane D1 schema
+
+`migrations/control-plane/0001_baseline.sql` is the whole control-plane schema,
+generated, never hand-edited. To change it, add a numbered migration beside it,
+run `bun run d1:baseline:generate`, and review `git diff migrations/control-plane/`:
+the generator applies everything to an empty SQLite database, rewrites the
+baseline from `sqlite_master` (sorted, so the diff shows only the new schema),
+and deletes the folded files. No rows survive. `bun run d1:baseline:check`, run
+by the package suite, fails while a migration sits unfolded or the baseline is
+not the generator's output.
+
+A deploy installs the baseline into an empty database and refuses any other
+(older history, an earlier baseline, untracked tables), since rows are never
+converted: delete that database with `wrangler d1 delete <name>` and deploy again.
+
 ## Local Env Files
 
 Local `.env` and `.env.local` files are ignored in this package. Keep real
@@ -91,9 +89,6 @@ combination for the following reasons:
   existing tests would each need to grow into kitchen-sink mock
   declarations to be safe under `bun test`, which is an outsized cost
   to switch runners.
-- **`tsx` already handles TypeScript loading** where the e2e suites boot the
-  Node composition, and Vitest's built-in TS support matches that toolchain without an
-  extra preload step.
 
 ## Why a different runner from `claxedo-app`
 

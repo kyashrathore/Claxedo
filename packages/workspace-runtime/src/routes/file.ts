@@ -1,7 +1,7 @@
 import { Hono } from "hono"
-import { assertTarget, WorkspaceTargetError } from "../target"
+import { WorkspaceTargetError, errorBody } from "@claxedo/session-core"
+import { currentSessionCore } from "../session-context"
 import type { RelayHostAuthContext } from "../workspace-host-service-auth"
-import { errorBody } from "./http"
 import {
   authorizeWorktreeTarget,
   deniedWorktreeFilter,
@@ -27,7 +27,7 @@ type FileRouteContext = {
 
 function root(c: FileRouteContext) {
   try {
-    return assertTarget(c.req.query("directory") || c.req.header("x-claxedo-directory"))
+    return currentSessionCore().placement.resolveDirectory(c.req.query("directory") || c.req.header("x-claxedo-directory"))
   } catch (err) {
     if (err instanceof WorkspaceTargetError) return undefined
     throw err

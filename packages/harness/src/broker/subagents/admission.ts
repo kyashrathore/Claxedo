@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto"
 import { UnknownHostSubagentKeyError, type SubagentObservation } from "@claxedo/agent-runtime-contract"
 import type { SubagentUpdatedEvent } from "@claxedo/agent-runtime-contract"
 import type { AdmittedSubagentObservation, SubagentAdmissionStore } from "../ports"
@@ -82,7 +81,7 @@ class AdmissionMachine implements SubagentAdmissionStore {
     const resolved = observation.subagentKey ?? childOwner
       ?? (provider ? sole(this.associations.get(scoped(parentSessionId, provider))) ?? unbound : undefined)
       ?? this.strongest(parentSessionId, observation, keys)
-    return resolved ?? deterministicKey(parentSessionId, observation) ?? input.allocateKey()
+    return resolved ?? input.allocateKey()
   }
 
   private strongest(parentSessionId: string, observation: SubagentObservation, keys: string[]): string | undefined {
@@ -186,7 +185,7 @@ function providerKey(observation: SubagentObservation) {
   return `provider:${observation.providerKind}:${observation.providerId}`
 }
 
-function deterministicKey(parentSessionId: string, observation: SubagentObservation) {
+export function subagentIdentitySeed(parentSessionId: string, observation: SubagentObservation) {
   const provider = providerKey(observation)
   const seed = provider
     ?? (observation.stableCorrelationId
@@ -195,7 +194,7 @@ function deterministicKey(parentSessionId: string, observation: SubagentObservat
         ? `tool:${observation.harnessExecutionId ?? ""}:${observation.toolCallId}`
         : undefined)
   if (!seed) return undefined
-  return `subagent_${createHash("sha256").update(`${parentSessionId}\0${seed}`).digest("hex").slice(0, 24)}`
+  return `${parentSessionId}\0${seed}`
 }
 
 function scoped(parentSessionId: string, key: string) {

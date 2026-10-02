@@ -2,11 +2,11 @@ import fs from "node:fs/promises"
 import { harnessEffortVerdict } from "@claxedo/agent-runtime-contract"
 import os from "node:os"
 import path from "node:path"
-import { expect, test } from "bun:test"
+import { afterAll, expect, test } from "bun:test"
 import { reservePort, releasePort } from "../../e2e/harness/ports"
 import { startScriptedModelServer } from "../../e2e/harness/scripted-model-server"
 import { startScriptedMcpServer } from "../../e2e/harness/scripted-mcp-server"
-import { egressProxyEnv, startEgressGuard, unexpectedEgress } from "../../e2e/harness/egress-guard"
+import { egressProxyEnv, startEgressGuard, unexpectedEgress, type EgressGuard } from "../../e2e/harness/egress-guard"
 import { OpenCodeSdkTransport } from "../transports/opencode-sdk"
 import { OpenCodeOwnerMismatchError } from "../transports/opencode-sdk/errors"
 import type { OpenCodeRuntime } from "../transports/opencode-sdk/runtime"
@@ -19,18 +19,27 @@ import { createTestServices } from "./test-support/services"
 type ScriptedServer = Awaited<ReturnType<typeof startScriptedModelServer>>
 type OpenCodeBackend = SuiteBackend & { root: string; server: ScriptedServer; rotated: ScriptedServer[] }
 
+let engineEgress: Promise<EgressGuard> | undefined
+
+function engineEgressGuard(): Promise<EgressGuard> {
+  engineEgress ??= reservePort().then(startEgressGuard).then((guard) => {
+    Object.assign(process.env, egressProxyEnv(guard.url))
+    return guard
+  })
+  return engineEgress
+}
+
+afterAll(async () => { await (await engineEgress)?.close() })
+
 async function backend(): Promise<OpenCodeBackend> {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "opencode-conformance-"))
   const directory = path.join(root, "work")
   await fs.mkdir(directory)
   await fs.writeFile(path.join(directory, "conformance.txt"), "conformance tool result\n")
   const modelPort = await reservePort()
-  const guardPort = await reservePort()
   const server = await startScriptedModelServer({ port: modelPort, red: false })
-  const guard = await startEgressGuard(guardPort)
-  const proxy = egressProxyEnv(guard.url)
-  const previous = Object.fromEntries(Object.keys(proxy).map((key) => [key, process.env[key]]))
-  Object.assign(process.env, proxy)
+  const guard = await engineEgressGuard()
+  const attemptsBefore = guard.attempts.length
   const rotated: Array<{ port: number; server: ScriptedServer }> = []
   let permissionPrimed = false
   return {
@@ -64,17 +73,12 @@ async function backend(): Promise<OpenCodeBackend> {
         observed: () => next.requests.some((request) => request.authorization === "Bearer opencode-placeholder-two") }
     },
     close: async () => {
-      console.log(`OpenCode outbound attempts: ${JSON.stringify(guard.attempts)}`)
-      const unexpected = unexpectedEgress(guard.attempts)
+      const attempts = guard.attempts.slice(attemptsBefore)
+      console.log(`OpenCode outbound attempts: ${JSON.stringify(attempts)}`)
+      const unexpected = unexpectedEgress(attempts)
       await Promise.all(rotated.map(async (item) => { await item.server.close(); releasePort(item.port) }))
       await server.close()
-      await guard.close()
       releasePort(modelPort)
-      releasePort(guardPort)
-      for (const [key, value] of Object.entries(previous)) {
-        if (value === undefined) delete process.env[key]
-        else process.env[key] = value
-      }
       await fs.rm(root, { recursive: true, force: true })
       expect(unexpected).toEqual([])
     },

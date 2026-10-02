@@ -35,7 +35,6 @@ export const D1_WORKSPACE_AUTHORITY_METHODS = [
   "authorizeWorkspaceCreate",
   "openWorkspace",
   "listWorkspaces",
-  "registerLocalForSharing",
   "createCloudWorkspace",
   "createRuntimeCloudWorkspace",
   "deleteWorkspace",
@@ -599,7 +598,7 @@ export class D1WorkspaceAuthority implements D1WorkspaceAuthorityCore {
 
   /**
    * The admission a machine-placed registration will apply — the cold half of
-   * a host assignment, and `registerLocalForSharing`.
+   * a host assignment.
    *
    * It differs from the cloud create above in ONE thing, and it is the thing
    * the two writes differ in: `localWorkspaceArgs` files into the
@@ -849,11 +848,7 @@ export class D1WorkspaceAuthority implements D1WorkspaceAuthorityCore {
     })
   }
 
-  async registerLocalForSharing(auth: SignedControlPlaneAuth, args: D1LocalWorkspaceRegistrationArgs) {
-    return await this.createWorkspace(auth, await this.localWorkspaceArgs(auth, args))
-  }
-
-  /** `registerLocalForSharing` as statements for the host assignment's batch. */
+  /** A machine-placed workspace's creation, as statements for the host assignment's batch. */
   async localWorkspaceRegistration(auth: SignedControlPlaneAuth, args: D1LocalWorkspaceRegistrationArgs) {
     const who = await this.requirePrincipal(auth)
     return await this.workspaceCreation(who, await this.localWorkspaceArgs(auth, args))

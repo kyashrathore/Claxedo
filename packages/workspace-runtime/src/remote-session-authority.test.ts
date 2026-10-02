@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { remoteWorkspaceSessionAccessPolicy } from "./remote-session-authority"
 import { fetchBodyJson, fetchUrl } from "./test-support/fetch-double"
-import { rec } from "./json-value"
+import { asRecord } from "@claxedo/helpers/guards"
 
 const input = {
   actor: { actorId: "actor_b", actorKind: "human" as const },
@@ -195,7 +195,7 @@ test("turn lease responses are validated and renewals send only the bound lease 
   const policy = remoteWorkspaceSessionAccessPolicy({
     url: "https://control.test/authorize",
     fetch: async (_url, init) => {
-      const body = rec(fetchBodyJson(init?.body)) ?? {}
+      const body = asRecord(fetchBodyJson(init?.body)) ?? {}
       requests.push({ headers: new Headers(init?.headers), body })
       return Response.json(body.action === "turn_release" ? { released: true } : lease)
     },
@@ -229,7 +229,7 @@ describe("a share level narrows the authority's answer, not the runtime's questi
     const policy = remoteWorkspaceSessionAccessPolicy({
       url: "https://control.test/api/runtime-authority/session-authorize",
       fetch: async (_url, init) => {
-        const action = rec(fetchBodyJson(init?.body))?.action
+        const action = asRecord(fetchBodyJson(init?.body))?.action
         actions.push(String(action))
         if (action === "write" || String(action).startsWith("turn_")) {
           return Response.json(
@@ -267,7 +267,7 @@ describe("a share level narrows the authority's answer, not the runtime's questi
     const policy = remoteWorkspaceSessionAccessPolicy({
       url: "https://control.test/api/runtime-authority/session-authorize",
       fetch: async (_url, init) => {
-        bodies.push(rec(fetchBodyJson(init?.body)))
+        bodies.push(asRecord(fetchBodyJson(init?.body)))
         return Response.json({ allowed: true })
       },
     })
@@ -309,7 +309,7 @@ describe("a share level narrows the authority's answer, not the runtime's questi
     const policy = remoteWorkspaceSessionAccessPolicy({
       url: "https://control.test/api/runtime-authority/session-authorize",
       fetch: async (_url, init) => {
-        actions.push(String(rec(fetchBodyJson(init?.body))?.action))
+        actions.push(String(asRecord(fetchBodyJson(init?.body))?.action))
         return Response.json({
           allowed: true,
           turnId: "turn_1",
@@ -338,7 +338,7 @@ describe("deferred turn grant", () => {
     const policy = remoteWorkspaceSessionAccessPolicy({
       url: "https://control.test/authorize",
       fetch: async (_url, init) => {
-        const body = rec(fetchBodyJson(init?.body)) ?? {}
+        const body = asRecord(fetchBodyJson(init?.body)) ?? {}
         requests.push({ authorization: new Headers(init?.headers).get("authorization"), body })
         return answer(body)
       },

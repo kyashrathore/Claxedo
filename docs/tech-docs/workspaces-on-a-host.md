@@ -106,8 +106,7 @@ clients (B.1); it goes away with every way serving ends.
 
 **A.4 Publishing one workspace** — the app has no caller that publishes a
 workspace. The owner's declaration is `POST /api/workspace/:id/host-assignment`
-(`packages/claxedo-server/src/routes/hosted/workspace.ts`, and the self-hosted
-node's `packages/claxedo-server/src/workspace/routes/index.ts`), which Electron
+(`packages/claxedo-server/src/routes/hosted/workspace.ts`), which Electron
 main sends as the account operation `workspace.assignHost`
 (`packages/account-contract/src/hosted-operations.ts`).
 On the desktop the port is `claxedo.hostConnector.share`, which carries a
@@ -131,21 +130,15 @@ credential (stops) from an unreachable control plane (carries on:
 `transientHeartbeatFailure` in `connector.ts`). The user's pause and a revoke
 clear the suspension so a later sign-in cannot undo a decision.
 
-**A.6 `claxedo connect` and the self-hosted node** — a connect box is
-enrolled by redeeming an invitation
-(`packages/claxedo-host-connector/src/bootstrap.ts`) and then runs the same
-`createHostConnector` in machine mode, supplying `roots`/`resolvePath` so an
-assignment outside its roots is refused at `ack`. The self-hosted node
-(`packages/claxedo-server/src/deployments/self-hosted-node/remote-access-service.ts`)
-holds the authority in-process, so its beat calls
-`heartbeatHostEnrollmentByMachine` with a principal read from its own
-enrollment row; `sessionAuthority` is read per beat from
-`embeddedWorkspaceRuntimeSessionAuthority`, the same expression the runtime
-app is composed from, so the declaration cannot drift from what is mounted.
+**A.6 `claxedo connect`** — a connect box redeems an invitation through
+`packages/claxedo-host-connector/src/bootstrap.ts` and runs `createHostConnector`
+in machine mode. Its `roots` and `resolvePath` refuse assignments outside the
+served roots before acknowledgment. Heartbeats and enrollment reach the hosted
+Cloudflare authority through the machine transport.
 
-**A.7 The tunnel replays onto loopback** — both tunnel owners
-(`host-serving/src/serving.ts`, `claxedo-server/src/host-tunnel.ts`)
-replay a relayed request as a fetch to the machine's own listener with
+**A.7 The tunnel replays onto loopback** — the tunnel owner
+(`host-serving/src/serving.ts`) replays a relayed request as a fetch to the
+machine's own listener with
 `loopbackReplayHeaders`
 (`claxedo-server-core/src/platform/http/peer-address.ts`): the remote
 browser's `Origin` and `Host` never reach the daemon's loopback gate. What
@@ -190,10 +183,9 @@ Two servers answer the route, and they declare different facts:
 - The daemon's `BootstrapRoutes`
   (`packages/claxedo-local-server/src/deployments/shared-routes/bootstrap.ts`,
   mounted in `packages/claxedo-local-server/src/app/local-app.ts` with
-  `hostEnrollmentId: hostServingEnrollmentId`; the self-hosted node mounts the
-  same routes with its own auth config). The desktop daemon's auth config is
-  local-only (`packages/claxedo-local-server/src/app/local-services.ts`), so
-  it declares `deployment.issuesSessions: false`. Its body carries
+  `hostEnrollmentId: hostServingEnrollmentId`). The desktop daemon's auth
+  config is local-only
+  (`packages/claxedo-local-server/src/app/local-services.ts`), so it declares `deployment.issuesSessions: false`. Its body carries
   `host.enrollment` (this machine's enrollment id while it serves, A.3, else
   `null`), `events.hostAggregate` (whether it mounts the host aggregate
   `wr/events`), and `project`: its own workspace store's projects, each
@@ -231,9 +223,7 @@ On a signed desktop the catalog has a second source, the account's:
    `?host=machine` (`packages/account-contract/src/hosted-operations.ts`).
    The control plane answers from `authority.listWorkspaces` and filters
    `host=machine` to `backing === "local-worktree"` rows
-   (`packages/claxedo-server/src/routes/hosted/workspace.ts`; the self-hosted
-   node's `packages/claxedo-server/src/workspace/routes/index.ts` answers the
-   same query).
+   (`packages/claxedo-server/src/routes/hosted/workspace.ts`).
 3. `accountCatalogFromWire`
    (`packages/claxedo-app/src/server/wire/account-catalog.ts`) groups the rows
    into projects by `project_id` and makes every row a remote
@@ -373,7 +363,7 @@ to reserve comes from the attached server's declaration (E.2).
 Relay-side, `packages/workspace-relay/src/cors-origins.ts` compiles one
 origin matcher (`createOriginMatcher`, `DEFAULT_RELAY_APP_ORIGINS`) that both
 `packages/workspace-relay/src/cloudflare.ts` and
-`packages/workspace-relay/src/bun.ts` stamp on browser-facing responses.
+`packages/workspace-relay/src/cloudflare.ts` stamp on browser-facing responses.
 
 ## D. Listing sessions: the attached server's list, plus the account's
 
@@ -459,7 +449,7 @@ answers the stopped facts.
    `/api/control/session-registrations/reserve` with a client-minted session
    id and operation id (`PrivateSessionRegistrationRoutes` in
    `packages/claxedo-server/src/routes/private-session-registration.ts`,
-   mounted by the hosted core and the self-hosted node).
+   mounted by the hosted core).
 3. It creates the session on the runtime over the placement's wire, under the
    reserved id and with the `x-claxedo-session-registration-operation`
    header when it reserved.
@@ -471,7 +461,7 @@ created cloud session (`POST /api/control/workspaces/:id/sessions/:sid/register`
 and asks for a checkpoint at every turn end.
 
 On the runtime, `managedSessionLifecycle` in
-`packages/workspace-runtime/src/routes/session-route-options.ts` decides per
+`packages/session-core/src/routes/session-route-options.ts` decides per
 request. The private lifecycle (a reservation before the create, a registered
 creator, a durable turn lease through `acquireManagedPromptLease`) applies when
 the policy is `managed-private` AND `sessionRequestProvenance(c)` is
@@ -486,10 +476,10 @@ window keeps the local lifecycle.
 ## F. Live streams: the server's streams and one stream per open remote placement
 
 The workspace runtime serves one stream, `GET /api/wr/events`
-(`packages/workspace-runtime/src/routes/events.ts`). Every data frame is
+(`packages/session-core/src/routes/events.ts`). Every data frame is
 `{ directory, payload }`: the projected client-presentation events, the
 `subagent.updated` and `goal.*` runtime-channel events, and the workspace's
-control frames from `workspaceRuntimeBus` (`pty.*`, `process.*`,
+control frames from `sessionCore.bus` (`pty.*`, `process.*`,
 `agent.lifecycle`, `session.lifecycle`).
 
 **F.1 What the client opens** — two owners open streams, and every stream is
@@ -520,7 +510,7 @@ becomes `streamGap`, on which every store re-reads.
 
 **F.2 The runtime decides the arm** — the runtime decides from the REQUEST,
 not from the composition. `authorizeSessionEventScope`
-(`packages/workspace-runtime/src/routes/session-event-privacy.ts`):
+(`packages/session-core/src/routes/session-event-privacy.ts`):
 - a policy that is not `managed-private` reads the whole stream;
 - a request whose provenance is `loopback-direct` reads the whole stream too,
   because that is the machine's own user;
@@ -566,11 +556,6 @@ then the workspace's owner or a share grant admits: `follow` reads and
 streams, `send` also drives the agent's turn, and a `session_control` write
 drops the share branch. No rank on the organization or the project admits
 anyone, and a share reaches its session only while the owner still stands.
-The SQLite store (`hasPrivateAccess` in
-`packages/claxedo-server-core/src/authority/adapters/sqlite/private-session-authority.ts`)
-answers the same, and admits an agent by its creator attribution alone; a
-person's creator attribution admits nothing.
-
 **F.3 Frame address** — every frame a runtime publishes names its own
 filesystem directory: this machine's path, another machine's path, or the
 sandbox's. `createEventIntake`
@@ -584,11 +569,11 @@ the intake holds that frame and every later one behind a catalog re-read
 
 **F.4 Projection** — the host projects a turn's raw harness frames through
 `createClientPresentationProjection`
-(`packages/workspace-runtime/src/projection/client-presentation`) before
+(`packages/session-core/src/projection/client-presentation`) before
 they reach the wire; the client projects nothing. The reply id is minted
 from the prompt by `assistantMessageIdForTurn`
 (`packages/agent-runtime-contract/src/turn-message-ids.ts`,
-`${userMessageId}_r`), and `packages/workspace-runtime/src/session/service.ts`
+`${userMessageId}_r`), and `packages/session-core/src/session/service.ts`
 announces the assistant row under it for a turn nobody on the client
 started.
 
@@ -685,10 +670,6 @@ organization.
 Nothing in this list was run while this document was written; each entry
 names the file and what it claims to cover.
 
-- **Host tunnel e2e** (`packages/claxedo-server/src/host-tunnel.e2e.test.ts`)
-  spawns a real relay (`packages/claxedo-server/src/host-tunnel-relay-fixture.mjs`),
-  connects a host tunnel to the embedded workspace runtime, and serves
-  machine-placed relay traffic through it.
 - **Daemon probe** (`packages/claxedo-local-server/src/app/desktop-session-authority.test.ts`)
   runs the same request twice against a real `startLocalServer`, once with the
   relay's marks and once without, with the session authority and the relay
@@ -696,6 +677,3 @@ names the file and what it claims to cover.
 - **App e2e** (`packages/claxedo-app/e2e/`): no flow drives a machine-placed
   workspace. Its relay harness (`packages/claxedo-app/e2e/harness/relay.ts`)
   backs the signed stack (`packages/claxedo-app/e2e/harness/signed-stack.ts`).
-  `packages/claxedo-server/src/signed-browser-relay-fixture.mjs` and
-  `packages/claxedo-server/src/connect-host-fixture.mjs` are in the tree, and
-  no spec launches them.

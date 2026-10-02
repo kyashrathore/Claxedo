@@ -12,7 +12,7 @@ const RUNTIME_PLACEMENTS: readonly RuntimePlacement[] = ["desktop", "loopback", 
 /**
  * Where a standalone runtime process runs, for every transport's own-login
  * decision. `WORKSPACE_RUNTIME_PLACEMENT` names it; absent, a relay-exposed
- * process is a self-hosted node and any other is the machine's own loopback.
+ * process is `self-hosted` and any other is the machine's own loopback.
  * `WORKSPACE_RUNTIME_MACHINE_OWNER_USER_ID` names the person whose machine
  * logins the process may spend; absent, only a machine-owner actor may.
  */

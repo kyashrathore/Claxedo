@@ -1,4 +1,5 @@
 import { artifact, projectContent, textInstall, notifyScript } from "../test-support/status-hooks"
+import { createBus as createTestBus, type WorkspaceRuntimeEvent as TestBusEvent } from "@claxedo/session-core"
 import { describe, expect, it, spyOn } from "bun:test"
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises"
 import http from "node:http"
@@ -7,8 +8,9 @@ import path from "node:path"
 
 import { AgentHookRoutes } from "../routes/agent-hook"
 import { NOTIFY_MARKER } from "./core/constants"
-import { workspaceRuntimeBus } from "../bus"
 import { Pty } from "../pty/index"
+
+const testBus = createTestBus<TestBusEvent>()
 
 const liveTerminal = (terminalId: string) =>
   spyOn(Pty, "get").mockImplementation((id) => id === terminalId
@@ -55,10 +57,10 @@ it("Antigravity forwards native stop metadata through shell, HTTP and lifecycle 
   const terminalId = path.basename(root)
   const get = liveTerminal(terminalId)
   const events: unknown[] = []
-  const unsubscribe = workspaceRuntimeBus.subscribe((event) => {
+  const unsubscribe = testBus.subscribe((event) => {
     if (event.type === "agent.lifecycle" && event.terminalId === terminalId) events.push(event)
   })
-  const app = AgentHookRoutes()
+  const app = AgentHookRoutes({ bus: testBus })
   const server = await serveHookFake((request) => {
     const url = new URL(request.url)
     url.pathname = "/agent-lifecycle"
@@ -99,10 +101,10 @@ it("Amp plugin delivers awaited native events through the real notification tran
   const terminalId = path.basename(root)
   const get = liveTerminal(terminalId)
   const events: unknown[] = []
-  const unsubscribe = workspaceRuntimeBus.subscribe((event) => {
+  const unsubscribe = testBus.subscribe((event) => {
     if (event.type === "agent.lifecycle" && event.terminalId === terminalId) events.push(event)
   })
-  const app = AgentHookRoutes()
+  const app = AgentHookRoutes({ bus: testBus })
   const server = await serveHookFake((request) => {
     const url = new URL(request.url)
     url.pathname = "/agent-lifecycle"
@@ -181,7 +183,7 @@ describe("template NotifyScript", () => {
   it("keeps the parent busy while a subagent's hooks fire", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "claxedo-child-hook-"))
     const get = liveTerminal("parent")
-    const app = AgentHookRoutes()
+    const app = AgentHookRoutes({ bus: testBus })
     const server = await serveHookFake((request) => {
       const url = new URL(request.url)
       url.pathname = "/agent-lifecycle"
@@ -314,7 +316,7 @@ describe("template CursorHook", () => {
   it("forwards each Cursor event under the cursor harness and answers the permission hooks", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "claxedo-cursor-hook-"))
     const get = liveTerminal(path.basename(root))
-    const app = AgentHookRoutes()
+    const app = AgentHookRoutes({ bus: testBus })
     const server = await serveHookFake((request) => {
       const url = new URL(request.url)
       url.pathname = "/agent-lifecycle"

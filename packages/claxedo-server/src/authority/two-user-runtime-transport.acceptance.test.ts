@@ -8,17 +8,13 @@ import { mintRelayHostToken } from "../../../workspace-relay/src/auth"
 import type { SandboxManager } from "@claxedo/sandbox-manager"
 import { createWorkspaceRuntimeApp } from "../../../workspace-runtime/src/server"
 import { relayWorkspaceRuntimeExposure } from "../../../workspace-runtime/src/exposure"
-import { workspaceRuntimeBus } from "../../../workspace-runtime/src/bus"
 import { remoteWorkspaceSessionAccessPolicy } from "../../../workspace-runtime/src/remote-session-authority"
-import {
-  FakeTransport,
-  fakeConnectionProvider,
-  loopbackMachineLoginPolicy,
-} from "../../../workspace-runtime/src/testing"
+import { loopbackMachineLoginPolicy } from "../../../workspace-runtime/src/testing"
+import { FakeTransport, fakeConnectionProvider } from "@claxedo/session-core/testing"
 import { WorkspaceCheckpointRoutes } from "../workspace/routes/checkpoints"
 import { RuntimeSessionAuthorityRoutes } from "../routes/runtime-session-authority"
 import { fetchUrl } from "../test-support/fetch-calls"
-import { controlPlaneMigrations, miniflareControlPlaneDatabase } from "../test-support/control-plane-migrations"
+import { miniflareControlPlaneDatabase } from "../test-support/control-plane-migrations"
 import { createD1CoreAuthority } from "./adapters/d1/core-authority"
 import { PrivateSessionRegistrationRoutes } from "../routes/private-session-registration"
 import { SessionPeopleControlRoutes } from "../session/routes/session-people-routes"
@@ -30,7 +26,7 @@ import { removeTestDataDir } from "../test-support/test-data-dir"
 import { inviteOrgMember } from "../test-support/invite-org-member"
 
 const root = await fs.mkdtemp(path.join(os.tmpdir(), "claxedo-two-user-runtime-"))
-const database = await miniflareControlPlaneDatabase(controlPlaneMigrations())
+const database = await miniflareControlPlaneDatabase()
 const authority = createD1CoreAuthority(database.database, {
   deploymentId: "deployment-test",
   product: { kind: "claxedo-hosted" },
@@ -292,6 +288,7 @@ describe("two-user signed runtime transport acceptance", () => {
     const workspaceDirectory = path.join(root, "workspace")
     await fs.mkdir(workspaceDirectory, { recursive: true })
     const runtime = createWorkspaceRuntimeApp({
+      sessionIdWorkspace: () => undefined,
       exposure: relayWorkspaceRuntimeExposure({
         key: key.publicKey,
         workspaceId: "ws_runtime_private",
@@ -321,6 +318,7 @@ describe("two-user signed runtime transport acceptance", () => {
       defaultHarness: { kind: "connection", connectionId: CONNECTION },
     })
     const runtimeApp = runtime.app
+    const sessionBus = runtime.host.sessionCore.bus
 
     const operationId = "op_runtime_private"
     const reserved = await signedRequest(alice.token, "/api/control/session-registrations/reserve", {
@@ -518,7 +516,7 @@ describe("two-user signed runtime transport acceptance", () => {
       expect((await runtimeRequest(runtimeApp, token, "/api/wr/events")).status).toBe(403)
     }
     await new Promise((resolve) => setTimeout(resolve, 1_500))
-    workspaceRuntimeBus.publish({
+    sessionBus.publish({
       type: "pty.created",
       info: {
         id: "workspace-terminal",
@@ -530,7 +528,7 @@ describe("two-user signed runtime transport acceptance", () => {
         pid: 1,
       },
     })
-    workspaceRuntimeBus.publish({
+    sessionBus.publish({
       type: "session.lifecycle",
       phase: "created",
       directory: workspaceDirectory,
@@ -556,7 +554,7 @@ describe("two-user signed runtime transport acceptance", () => {
       },
     })
     expect(caseyLive.status).toBe(403)
-    workspaceRuntimeBus.publish({
+    sessionBus.publish({
       type: "session.lifecycle",
       phase: "created",
       directory: workspaceDirectory,
@@ -564,7 +562,7 @@ describe("two-user signed runtime transport acceptance", () => {
       info: { id: "ses_runtime_private", title: "live-private" },
       ts: 1,
     })
-    workspaceRuntimeBus.publish({
+    sessionBus.publish({
       type: "pty.created",
       info: {
         id: "public-terminal",
@@ -585,7 +583,7 @@ describe("two-user signed runtime transport acceptance", () => {
     expect(bobCursor).toBeTruthy()
     bobLive.close()
 
-    workspaceRuntimeBus.publish({
+    sessionBus.publish({
       type: "session.lifecycle",
       phase: "creating",
       directory: workspaceDirectory,

@@ -153,9 +153,9 @@ export type CredentialRoutesOptions = {
   /**
    * Signed-auth configuration used to resolve the caller's org. When absent,
    * `requestOrg` passes no config and `controlPlaneAuthContext` applies its own
-   * unsigned-local default — no environment is consulted here. That is what the
-   * self-host composition relies on: signed auth off → the single-tenant
-   * partition; signed auth on → the verified `org_id` claim from this config.
+   * unsigned-local default — no environment is consulted here. Signed auth off
+   * → the single-tenant partition; signed auth on → the verified `org_id`
+   * claim from this config.
    */
   authConfig?: ControlPlaneAuthConfig
   verifier?: ControlPlaneTokenVerifier
@@ -167,7 +167,7 @@ export type CredentialRoutesOptions = {
  * The tenant every credential statement in this router runs as.
  *
  * Fail-closed by construction:
- *  - unsigned/local self-host → the NAMED single-tenant partition. Not a
+ *  - unsigned local → the NAMED single-tenant partition. Not a
  *    wildcard: it selects exactly the rows an install without organizations
  *    wrote, and nothing else.
  *  - signed with an `org_id` claim → that org.

@@ -3,7 +3,8 @@ import fs from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
 import { createWorkspaceRuntimeApp, loopbackWorkspaceRuntimeExposure } from "@claxedo/workspace-runtime"
-import { FakeTransport, fakeConnectionProvider, loopbackMachineLoginPolicy } from "@claxedo/workspace-runtime/testing"
+import { loopbackMachineLoginPolicy } from "@claxedo/workspace-runtime/testing"
+import { FakeTransport, fakeConnectionProvider } from "@claxedo/session-core/testing"
 import { configureLocalWorkspaceRuntime } from "@claxedo/server-core/workspace/local-runtime-port"
 import { createMachineSessionDispatch } from "./machine-dispatch"
 import type { ControlPlaneServices } from "../authority/services"
@@ -41,6 +42,7 @@ describe("machine dispatch against the workspace runtime it reads", () => {
     directory = path.join(root, "workspace")
     await fs.mkdir(directory)
     const runtime = createWorkspaceRuntimeApp({
+      sessionIdWorkspace: () => undefined,
       exposure: loopbackWorkspaceRuntimeExposure(),
       placement: loopbackMachineLoginPolicy(),
       target: { workspaceId: "ws_machine", directory },

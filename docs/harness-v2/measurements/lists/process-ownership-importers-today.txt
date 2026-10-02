@@ -39,7 +39,7 @@ packages/workspace-runtime/src/pty/index.ts
 packages/workspace-runtime/src/routes/process.ts
 packages/workspace-runtime/src/routes/pty.ts
 packages/workspace-runtime/src/spawn-service.ts
-packages/workspace-runtime/src/store.ts
+packages/session-core/src/store.ts
 packages/workspace-runtime/src/workspace/core.ts
 packages/workspace-runtime/src/workspace/host.ts
 packages/workspace-runtime/src/workspace/runtime.ts

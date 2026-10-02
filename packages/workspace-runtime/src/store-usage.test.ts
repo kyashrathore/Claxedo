@@ -3,9 +3,8 @@ import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"
 import type { RuntimeUsageObservation } from "@claxedo/agent-runtime-contract"
-import type { RuntimeStore } from "./store"
+import { type RuntimeStore, sessionUsage } from "@claxedo/session-core"
 import { openRuntimeStore } from "./store-file"
-import { sessionUsage } from "./projection/presentation-events"
 
 const opened: Array<{ root: string; store: RuntimeStore }> = []
 

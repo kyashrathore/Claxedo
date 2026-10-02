@@ -1,6 +1,6 @@
 import path from "node:path"
 import fs from "node:fs/promises"
-import { deleteWorkspaceByDirectory, ensureWorkspace } from "@claxedo/server-core/workspace/store/index"
+import { ensureWorkspace } from "@claxedo/server-core/workspace/store/index"
 import { gitRun } from "../shell/git"
 
 export type RegisteredWorktreeProvision = Readonly<{
@@ -52,11 +52,6 @@ export async function provisionRegisteredWorktree(input: RegisteredWorktreeProvi
   if (workspace) return workspace
   if (!present) await removeGitWorktree(input.directory).catch(() => undefined)
   throw new WorktreeProvisionError("Failed to register git worktree", input.directory)
-}
-
-export async function releaseRegisteredWorktree(directory: string) {
-  await removeGitWorktree(directory)
-  await deleteWorkspaceByDirectory(directory)
 }
 
 async function removeGitWorktree(directory: string) {

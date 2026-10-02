@@ -10,7 +10,7 @@ import {
 } from "@claxedo/workspace-runtime"
 import { isNativeHarnessId } from "@claxedo/server-core/agent-config/connections"
 import type { WorkspaceRuntimeRouteContribution } from "@claxedo/workspace-runtime/route-contribution"
-import { workspaceDir, workspaceId, workspaceRuntimeStoreDir } from "@claxedo/workspace-runtime/host"
+import { storeBackedSessionPlacement, workspaceDir, workspaceId, workspaceRuntimeStoreDir } from "@claxedo/workspace-runtime/host"
 import {
   loopbackWorkspaceRuntimeExposure,
   privateNetworkDevUnsafeWorkspaceRuntimeExposure,
@@ -169,8 +169,9 @@ export async function claxedoWorkspaceRuntimeBootFromEnv(
       })
     : undefined
   const options: WorkspaceRuntimeServerOptions = {
+    ...storeBackedSessionPlacement(),
     ...(authorityUrl
-      ? { resolveConnectionSecrets: sandboxConnectionSecrets({ workspaceId: workspaceId(env), directory: targetDirectory, authorityUrl }) }
+      ? { resolveConnectionSecrets: sandboxConnectionSecrets({ workspaceId: workspaceId(env), authorityUrl }) }
       : {}),
     target: { workspaceId: workspaceId(env), directory: targetDirectory },
     firstPartyMcpLaunch: { baseUrl: `http://127.0.0.1:${port}`, issuer: firstPartyMcp, enabledToolGroups: () => enabledToolGroups },
