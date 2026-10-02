@@ -35,9 +35,9 @@ async function tabState(terminalId: string): Promise<string | undefined> {
   return response.ok ? (await response.json() as { session?: { eventType?: string } }).session?.eventType : undefined
 }
 
-async function snapshot(folder: string): Promise<Record<string, string>> {
+async function snapshot(folder: string, files?: readonly string[]): Promise<Record<string, string>> {
   const rows: Record<string, string> = {}
-  for (const name of (await fs.readdir(folder, { recursive: true })).sort()) {
+  for (const name of files ?? (await fs.readdir(folder, { recursive: true })).sort()) {
     const file = path.join(folder, name)
     if ((await fs.stat(file)).isFile()) rows[name] = createHash("sha256").update(await fs.readFile(file)).digest("hex")
   }
@@ -102,7 +102,7 @@ afterAll(async () => {
   await fs.rm(root, { recursive: true, force: true })
 })
 
-test("a real Codex run in a tab reports busy, waiting and done through session-flag hooks, a subagent never settles it, and ~/.codex is untouched", async () => {
+test("a real Codex run in a tab reports busy, waiting and done through session-flag hooks, a subagent never settles it, and personal config is unchanged", async () => {
   const modelPort = await reservePort()
   const model = await startScriptedModelServer({ port: modelPort, red: false })
   const home = path.join(root, "codex-person")
@@ -150,7 +150,7 @@ test("a real Codex run in a tab reports busy, waiting and done through session-f
     const parentStop = tab().findIndex((row) => row.event === "Stop" && !row.agentId)
     expect(tab().slice(0, parentStop).some((row) => row.state === "Idle")).toBe(false)
     expect(tab()[parentStop].state).toBe("Idle")
-    expect(await snapshot(personal)).toMatchObject(before)
+    expect(await snapshot(personal, Object.keys(before))).toEqual(before)
     await expect(fs.stat(path.join(personal, "hooks.json"))).rejects.toMatchObject({ code: "ENOENT" })
     expect(await fs.readFile(path.join(personal, "config.toml"), "utf8")).not.toContain("hooks")
   } finally {
