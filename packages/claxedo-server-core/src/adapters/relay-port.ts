@@ -6,9 +6,8 @@ import type { RelayRole } from "@claxedo/workspace-relay"
  * The Relay port, without its implementation.
  *
  * A local route producer forwards a relay provider when the composition has
- * one; it never constructs one. Naming the type from the adapter module made
- * that forwarding reach the hosted internal-relay route and, through it, the
- * the hosted authority — at compile time, for a field it only passes along.
+ * one; it never constructs one. Declared apart from the implementation so that
+ * forwarding takes no compile-time edge to the hosted wiring.
  *
  * The factory and its options stay in `@claxedo/server`, which is where the
  * hosted wiring lives.

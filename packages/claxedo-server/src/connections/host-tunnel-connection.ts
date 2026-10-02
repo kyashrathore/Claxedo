@@ -158,16 +158,12 @@ export async function hostTunnelConnectionInfo(
       // runtime's `SessionAccessPolicy.sessionAuthority` on every heartbeat,
       // and `activeWorkspaceHost` hands back what it declared.
       //
-      // The control plane does not decide this and cannot derive it. A
-      // machine-placed workspace runs on the owner's machine, and that machine
-      // composes either flavour: an unsigned desktop daemon leaves its
-      // embedded runtime on `managedWorkspaceSessionAccessPolicy()` with no
-      // injected authority (`"local"`, serving the workspace-wide streams),
-      // while a signed self-hosted host injects one
-      // (`embeddedManagedPrivateSessionPolicy`, `"managed-private"`, whose
+      // The control plane does not decide this and cannot derive it: it is how
+      // the owner's machine composed its runtime. A `"local"` runtime serves
+      // the workspace-wide streams; a `"managed-private"` one's
       // `/api/wr/events` admits a principal the workspace authority admits
       // unscoped and refuses the rest with 403 `workspace_event_stream_denied`,
-      // the cue to reopen `?sessionID=`).
+      // the cue to reopen `?sessionID=`.
       //
       // A host that declared nothing yields no scope at all. The client then
       // opens no workspace stream and says why, which is the honest outcome:

@@ -23,8 +23,7 @@ export type SessionOrderSql = {
  * The ORDER BY and the matching keyset predicate, built from one description of
  * the sort so a page boundary cannot disagree with the order it pages through.
  * Every store that pages the session list (the local projection, the hosted
- * registry, the self-hosted registry) builds its SQL here, so a merge of their
- * pages sees one order.
+ * registry) builds its SQL here, so a merge of their pages sees one order.
  *
  * A session nobody has ever prompted has no human turn and sorts below every
  * session that has one, which SQLite's DESC already does. The keyset has to say

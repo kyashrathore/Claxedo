@@ -15,7 +15,6 @@ import type { ControlPlaneCredentials, ControlPlaneServices } from "../authority
 import type { HostTunnelTokenSigner, RuntimeAccessTokenSigner } from "@claxedo/server-core/platform/auth/runtime-access-token"
 import type { ConnectionRateLimiter } from "../platform/auth/rate-limit"
 import { regionValue, type ClaxedoRegion, type ClaxedoRegionMap } from "@claxedo/server-core/platform/runtime/region/index"
-import { isLoopbackLocalRequest } from "@claxedo/server-core/platform/http/peer-address"
 import type { SandboxBrokeredSecret } from "@claxedo/sandbox-manager"
 
 export type WorkspaceRuntimeContext = {
@@ -29,36 +28,6 @@ export type WorkspaceRuntimePreparation = {
   env?: Record<string, string>
   /** Feature-private immutable plan, passed back only to the matching provision hook. */
   state?: unknown
-}
-
-/** The owner-side facts one local workspace share carries to `assignWorkspaceHost`. */
-export type LocalWorkspaceShare = {
-  workspaceId: string
-  displayName?: string
-  orgId?: string
-  projectId?: string
-  repoUrl?: string
-  repoName?: string
-  gitBranch?: string
-  remoteDirectory?: string
-  homeRegion?: string
-}
-
-/**
- * The local composition's machine-share seam. Implemented by the self-hosted
- * remote-access service, which owns this machine's enrollment, served set, and
- * heartbeat loop; the workspace routes only guard and delegate. `assignWorkspace`
- * resolves only after a signed heartbeat acked the workspace — share success
- * means routable.
- */
-export type LocalHostAssignments = {
-  /** This machine's persisted host identity: the one host id a caller may not address by body. */
-  hostId(): Promise<string>
-  assignWorkspace(
-    auth: SignedControlPlaneAuth,
-    share: LocalWorkspaceShare,
-  ): Promise<{ assignment: { assigned: true; workspace_id: string; host_id: string } }>
-  unassignWorkspace(auth: SignedControlPlaneAuth, workspaceId: string): Promise<{ unassigned: boolean }>
 }
 
 /**
@@ -76,22 +45,11 @@ export type CloudWorkspaceEntitlementGate = (tenant: {
 >
 
 export type WorkspaceRouteOptions = {
-  hostAssignments?: LocalHostAssignments
-  /**
-   * Machine-wide operator authorization, throwing `ControlPlaneAuthError` for
-   * a signed caller who does not hold it. The deployment's own authorizer,
-   * shared with the plugin, enrollment and folder-import gates — a workspace
-   * row placed on this machine is a directory here, and no workspace role
-   * decides what this process serves or forgets.
-   */
-  authorizeOperator?: (auth: SignedControlPlaneAuth) => void
   authentication?: RequestAuthenticationAdapter
   authConfig?: ControlPlaneAuthConfig
   verifier?: ControlPlaneTokenVerifier
   cliTokenEnv?: Record<string, string | undefined>
   credentials?: ControlPlaneCredentials
-  /** Transport for provider-facing probes (sandbox key verification). Tests stub it. */
-  fetch?: typeof fetch
   connections?: {
     repositoryForAuth(
       auth: SignedControlPlaneAuth | undefined,
@@ -129,8 +87,8 @@ export type WorkspaceRouteOptions = {
    * Cloud-workspace admission, asked at BOTH create AND wake/resume, so a
    * deployment that stops admitting cloud workspaces cannot keep an existing
    * one wake-able. It returns a ready-to-serve denial or undefined when
-   * admitted. Absent hook = no gate (route tests, self-host / local
-   * compositions never supply it); the hosted app always supplies it. Only
+   * admitted. Absent hook = no gate (route tests); the hosted app always
+   * supplies it. Only
    * ever consulted for HOSTED cloud workspaces (the wake choke point guards on
    * backing=cloud-vm).
    *
@@ -146,24 +104,6 @@ export type WorkspaceRouteOptions = {
 export function relayRole(input?: string): RelayRole {
   if (input === "owner" || input === "admin" || input === "editor" || input === "viewer") return input
   return "viewer"
-}
-
-// Signed deployments have NO global request guard: the unsigned-local gate
-// passes signed traffic straight through and per-route bearer verification is
-// supposed to be the gate. Verbs that mutate state or disclose local
-// inventory must therefore demand a verified bearer from NON-loopback callers,
-// while tokenless loopback clients (the local app managing its own machine)
-// keep working bit-for-bit. The loopback test fails closed through forwarding
-// headers, so a reverse proxy cannot launder a remote caller into loopback —
-// but a same-host proxy that connects over 127.0.0.1 without forwarding
-// headers still appears loopback (known limitation, audit finding M4).
-export function signedAccessOptions(request: Request, options: WorkspaceRouteOptions) {
-  return {
-    ...options,
-    ...((options.authentication || options.authConfig?.enabled) && !isLoopbackLocalRequest(request)
-      ? { requireSigned: true as const }
-      : {}),
-  }
 }
 
 export function txt(input: unknown) {
@@ -325,18 +265,6 @@ export function configuredRuntimeAccessTokenSigner(options: WorkspaceRouteOption
     "runtime_access_token_signer_unavailable",
     "Runtime Access Token signer is not configured",
   )
-}
-
-/**
- * Refuses a signed caller who is not this deployment's operator, and refuses
- * every signed caller where the composition supplied no authorizer: an
- * unconfigurable machine gate is an open one.
- */
-export function requireDeploymentOperator(options: WorkspaceRouteOptions, auth: SignedControlPlaneAuth) {
-  if (!options.authorizeOperator) {
-    throw new ControlPlaneAuthError(503, "authority_unavailable", "Deployment operator authorization is not configured")
-  }
-  options.authorizeOperator(auth)
 }
 
 /** The 401 body a signed-only route answers when `signedOrError` admitted no bearer. */

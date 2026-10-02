@@ -1834,11 +1834,11 @@ describe("host-connect: machine heartbeat, readiness, invitations, scope", () =>
       remoteDirectory: "/srv/./api/../api/",
     })
     expect(await directory("ws_cold")).toBe("/srv/api")
-    // Generic registration, which the desktop and the self-hosted node use.
-    await input.workspace.registerLocalForSharing(alice, {
+    await input.workspace.createWorkspace(alice, {
       workspaceId: "ws_reg",
       displayName: "reg",
       orgId: "org_acme",
+      backing: "local-worktree",
       remoteDirectory: "/srv/reg//",
     })
     expect(await directory("ws_reg")).toBe("/srv/reg")

@@ -1,5 +1,4 @@
 import type { Context } from "hono"
-import { workspaceSupervisor } from "@claxedo/server-core/workspace/supervisor-port"
 import type { SandboxEnsureResult, SandboxManagerPort } from "@claxedo/server-core/sandbox/manager-port"
 import { resolveWorkspace } from "@claxedo/server-core/workspace/store/index"
 import { ensureEmbeddedWorkspaceRuntime, type EmbeddedWorkspaceRuntimeConfigMode } from "../../deployments/local/embedded-workspace-runtime"
@@ -358,13 +357,11 @@ async function forwardRuntimeRequest(
   })
 
   const res = await fetch(req)
-  workspaceSupervisor().markUse(hit.workspaceId)
   if (options?.sandboxManager?.touch) {
     void options.sandboxManager.touch(hit.workspaceId).catch((error: unknown) => {
       log.warn("Sandbox keepalive failed", { workspaceId: hit.workspaceId, error: String(error) })
     })
   }
-  if (!options?.sandboxManager) workspaceSupervisor().touch(hit.workspaceId)
   const responseHeaders = runtimeProxyResponseHeaders(res.headers)
   const contentType = res.headers.get("content-type") ?? ""
   const streamResponse =
@@ -379,40 +376,10 @@ async function forwardRuntimeRequest(
     })
   }
 
-  workspaceSupervisor().hold(hit.workspaceId)
-  const reader = res.body.getReader()
-  let released = false
-  const release = () => {
-    if (released) return
-    released = true
-    workspaceSupervisor().release(hit.workspaceId)
-  }
-  const body = new ReadableStream<Uint8Array>({
-    async pull(ctrl) {
-      try {
-        const next = await reader.read()
-        if (next.done) {
-          release()
-          ctrl.close()
-          return
-        }
-        ctrl.enqueue(next.value)
-      } catch (err) {
-        release()
-        await reader.cancel(err).catch(() => undefined)
-        ctrl.error(err)
-      }
-    },
-    async cancel(reason) {
-      release()
-      await reader.cancel(reason)
-    },
-  })
-
-  return new Response(body, {
+  return new Response(res.body, {
     status: res.status,
     statusText: res.statusText,
-    headers: runtimeProxyResponseHeaders(res.headers),
+    headers: responseHeaders,
   })
 }
 

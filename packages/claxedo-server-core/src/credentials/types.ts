@@ -44,7 +44,7 @@ export type CredentialConsent = {
 /** Metadata stored in claxedo.db — never contains raw secret material. */
 export interface CredentialMetadata {
   id: string
-  /** Owning tenant; `__local__` for the single-tenant self-host partition. */
+  /** Owning tenant; `__local__` for the single-tenant local partition. */
   org_id?: string
   owner?: string | null
   is_active?: boolean

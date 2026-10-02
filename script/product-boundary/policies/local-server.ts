@@ -182,8 +182,8 @@ export const localServer: Policy = {
   //    mounted runtime's statuses, permissions and questions, read by the list
   //    page and the machine publisher alike. It reaches `platform/json.ts`.
   //  - `plugins/{authoring,scaffold}.ts` (owner: app plugin authoring, the
-  //    grant the self-hosted node hands a session of its operator behind the
-  //    Claxedo MCP `app_plugin_*` tools): scaffolds a plugin folder inside the
+  //    grant the daemon hands an owner-driven session behind the Claxedo MCP
+  //    `app_plugin_*` tools): scaffolds a plugin folder inside the
   //    session's workspace, checks it with `@claxedo/plugin-build` and
   //    registers it through the live-plugin service. It reaches the plugin
   //    packages and the service, all already here.

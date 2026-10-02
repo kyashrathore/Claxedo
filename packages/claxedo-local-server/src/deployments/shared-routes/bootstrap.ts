@@ -28,20 +28,12 @@ type Options = {
   /**
    * Whether this composition serves the host aggregate `/api/wr/events` — the
    * stream naming no workspace that carries every runtime this process hosts.
-   * The client cannot derive it: a self-hosted node runs its issuer on
-   * localhost too, so the server URL does not say it, and the build-time auth
-   * flag belongs to the bundle rather than to the server it happens to reach.
+   * The client cannot derive it: the build-time auth flag belongs to the
+   * bundle rather than to the server it happens to reach.
    * The composition passes one value to both this route and the runtime
    * proxy's mount, so the declaration cannot disagree with what is served.
    */
   hostAggregateEvents: boolean
-  /**
-   * Whether this composition mounts the Connections family
-   * (`/api/claxedo/integrations`). The desktop-local composition does not, a
-   * node does, and both answer this route, so a client told nothing would ask
-   * a server that 404s. The composition passes the same fact it mounts by.
-   */
-  connections: boolean
   /**
    * This machine's enrollment id at the control plane, when it has one.
    *
@@ -84,7 +76,7 @@ function declaresSessions(options: Options) {
 }
 
 function deployment(options: Options) {
-  return { serverKind: "daemon", issuesSessions: declaresSessions(options), documents: true, connections: options.connections }
+  return { serverKind: "daemon", issuesSessions: declaresSessions(options), documents: true, connections: false }
 }
 
 function bootstrapHostIdentity(options: Options) {

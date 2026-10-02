@@ -9,17 +9,6 @@ import { D1HostAccessAuthorityError } from "../../authority/adapters/d1/host-acc
 import { createFixedWindowConnectionRateLimiter } from "../../platform/auth/rate-limit"
 import { HostEnrollmentRoutes, HostInvitationRoutes } from "./host-enrollment"
 
-/**
- * The HTTP surface of machine-wide enrollment.
- *
- * The authority's own behaviour is pinned in
- * `authority/adapters/sqlite/host-enrollment.test.ts` and the authority policy
- * suite. What is only visible here: that these routes require a signed caller,
- * that they pass the client's signature through untouched rather than signing
- * anything themselves, that no path takes a workspace id, and that an authority
- * without enrollment answers 501 instead of throwing a TypeError into a 500.
- */
-
 const authConfig = {
   enabled: true,
   issuer: "https://issuer.example.test",

@@ -4,7 +4,6 @@ import { localOnlyAuthAdapter } from "@claxedo/server-core/platform/auth/auth"
 import type { WorkspaceAuthority } from "@claxedo/server-core/platform/auth/authority"
 import type { OrgId } from "@claxedo/server-core/platform/auth/branded-id"
 import type { ControlPlaneServices } from "../../authority/services"
-import { ControlPlaneSessionRoutes } from "./control-plane-session"
 import { SessionPeopleControlRoutes } from "./session-people-routes"
 import type { SessionShareChangedSink, SessionShareFanoutTarget } from "../session-people-contract"
 
@@ -45,7 +44,6 @@ type RouteFactory = (
 ) => { request: (url: string, init: RequestInit) => Response | Promise<Response> }
 
 const routeFactories: ReadonlyArray<readonly [string, RouteFactory]> = [
-  ["central", ControlPlaneSessionRoutes as RouteFactory],
   ["worker-safe", SessionPeopleControlRoutes as RouteFactory],
 ]
 

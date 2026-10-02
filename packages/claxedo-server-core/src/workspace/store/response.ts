@@ -63,4 +63,3 @@ export function workspaceResponse(ws: Workspace | undefined, statusOverride?: st
   }
 }
 
-export type WorkspaceResponse = NonNullable<ReturnType<typeof workspaceResponse>>

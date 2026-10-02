@@ -1,13 +1,14 @@
 import { describe, expect, test } from "bun:test"
-import { createHash } from "node:crypto"
-import { decodeJwt, decodeProtectedHeader, exportJWK, generateKeyPair } from "jose"
-import { WorkspaceRelayAuthError, mintRelayHostToken, mintRuntimeAccessToken, verifyRelayHostToken } from "./auth"
+import { decodeJwt, generateKeyPair } from "jose"
+import { WorkspaceRelayAuthError, mintRuntimeAccessToken, verifyRelayHostToken } from "./auth"
 import { CURRENT_CHANNEL_IDENTITY_VERSION } from "@claxedo/workspace-relay-protocol"
+import { createWorkspaceRelayDurableObjectRoom, type WorkspaceRelayDurableObjectRoomOptions } from "./cloudflare"
 import { createWorkspaceRelayDirectory } from "./directory"
 import type { RuntimeAccessVerifierClaims } from "@claxedo/workspace-relay-protocol"
 import {
+  authorizeWorkspaceRelayRequest,
   createCachedRevocationClient,
-  createWorkspaceRelay,
+  disposeAuditSampler,
   parseWorkspaceRelayTarget,
   runtimeAccessTokenRevocationDelayMs,
   workspaceRelayForwardHeaders,
@@ -28,12 +29,21 @@ function fetchUrl(input: string | URL | Request) {
   return input instanceof URL ? input.href : input.url
 }
 
+/**
+ * The Durable Object room is the relay's only request path, so the shared
+ * authorization and forwarding rules are exercised through it.
+ */
+function relayRoom(options: WorkspaceRelayDurableObjectRoomOptions) {
+  const room = createWorkspaceRelayDurableObjectRoom(options)
+  return { request: (url: string, init?: RequestInit) => room.fetch(new Request(url, init)) }
+}
+
 function relayBacking(input: { backing?: "cloud-vm" | "local-worktree" }) {
   return { backing: input.backing ?? "cloud-vm" } as const
 }
 
 async function harness(
-  input: Partial<Pick<WorkspaceRelayOptions,
+  input: Partial<Pick<WorkspaceRelayDurableObjectRoomOptions,
     | "isRuntimeAccessTokenActive"
     | "audit"
     | "fetch"
@@ -42,7 +52,7 @@ async function harness(
     | "relayHostTokenCacheTtlMs"
     | "runtimeAccessTokenCacheTtlMs"
     | "tokenVerifier"
-    | "allowedOrigins"
+    | "traceSampleRate"
   >> & {
     backing?: "cloud-vm" | "local-worktree"
   } = {},
@@ -51,7 +61,7 @@ async function harness(
   const relayHost = await generateKeyPair("EdDSA", { extractable: true })
   const forwarded: Array<{ url: string; request: Request }> = []
   const auditEvents: WorkspaceRelayAuditEvent[] = []
-  const app = createWorkspaceRelay({
+  const room = relayRoom({
     runtimeAccessKey: runtime.publicKey,
     relayHostSigningKey: relayHost.privateKey,
     relayHostAlgorithm: "EdDSA",
@@ -72,10 +82,10 @@ async function harness(
     ...(input.relayHostTokenCacheTtlMs !== undefined ? { relayHostTokenCacheTtlMs: input.relayHostTokenCacheTtlMs } : {}),
     ...(input.runtimeAccessTokenCacheTtlMs !== undefined ? { runtimeAccessTokenCacheTtlMs: input.runtimeAccessTokenCacheTtlMs } : {}),
     ...(input.tokenVerifier ? { tokenVerifier: input.tokenVerifier } : {}),
-    ...(input.allowedOrigins ? { allowedOrigins: input.allowedOrigins } : {}),
+    ...(input.traceSampleRate !== undefined ? { traceSampleRate: input.traceSampleRate, traceLog: () => {} } : {}),
   })
   return {
-    app,
+    room,
     runtime,
     relayHost,
     forwarded,
@@ -113,7 +123,7 @@ describe("workspace relay server", () => {
         role: "editor",
         channelIdentity: { channel: "telegram", externalUserId: "123456789", identityVersion: CURRENT_CHANNEL_IDENTITY_VERSION },
       }, relay.runtime.privateKey, "EdDSA")
-      const res = await relay.app.request("http://relay.test/workspaces/ws_1/api/wr/health", {
+      const res = await relay.room.request("http://relay.test/workspaces/ws_1/api/wr/health", {
         headers: { authorization: `Bearer ${runtimeAccessToken}` },
       })
 
@@ -147,7 +157,7 @@ describe("workspace relay server", () => {
 
     try {
       const runtimeAccessToken = await relay.token()
-      const res = await relay.app.request("http://relay.test/workspaces/ws_1/api/wr/health?verbose=1", {
+      const res = await relay.room.request("http://relay.test/workspaces/ws_1/api/wr/health?verbose=1", {
         headers: {
           authorization: `Bearer ${runtimeAccessToken}`,
         },
@@ -183,12 +193,13 @@ describe("workspace relay server", () => {
     }
   })
 
-  test("adds server-timing entries for real relay phases", async () => {
+  test("reports the authorization phases in server-timing for a sampled request", async () => {
     const relay = await harness({
+      traceSampleRate: 1,
       fetch: (() => Promise.resolve(new Response("ok"))) as unknown as typeof fetch,
     })
 
-    const res = await relay.app.request("http://relay.test/workspaces/ws_1/api/wr/health", {
+    const res = await relay.room.request("http://relay.test/workspaces/ws_1/api/wr/health", {
       headers: {
         authorization: `Bearer ${await relay.token()}`,
       },
@@ -196,35 +207,9 @@ describe("workspace relay server", () => {
 
     expect(res.status).toBe(200)
     const timing = res.headers.get("server-timing") ?? ""
-    for (const phase of ["rat-verify", "rat-active", "target-resolve", "rht-mint", "upstream-fetch", "relay-total"]) {
+    for (const phase of ["rat-verify", "rat-active", "target-resolve", "audit", "rht-mint", "upstream-fetch", "relay-room-total"]) {
       expect(timing).toContain(`${phase};dur=`)
     }
-  })
-
-  test("custom allowedOrigins replaces the built-in default CORS list", async () => {
-    const relay = await harness({
-      allowedOrigins: ["https://selfhost.example.com"],
-      fetch: (() => Promise.resolve(new Response("ok"))) as unknown as typeof fetch,
-    })
-
-    const productOrigin = await relay.app.request("http://relay.test/workspaces/ws_1/api/wr/health", {
-      headers: {
-        authorization: `Bearer ${await relay.token()}`,
-        origin: "https://app.claxedo.com",
-      },
-    })
-    expect(productOrigin.headers.get("access-control-allow-origin")).toBeNull()
-
-    const selfHostOrigin = await relay.app.request("http://relay.test/workspaces/ws_1/api/wr/health", {
-      headers: {
-        authorization: `Bearer ${await relay.token()}`,
-        origin: "https://selfhost.example.com",
-      },
-    })
-    expect(selfHostOrigin.headers.get("access-control-allow-origin")).toBe("https://selfhost.example.com")
-    // An admitted origin may read the timing breakdown of relay responses.
-    expect(selfHostOrigin.headers.get("timing-allow-origin")).toBe("https://selfhost.example.com")
-    expect(productOrigin.headers.get("timing-allow-origin")).toBeNull()
   })
 
   test("default CORS policy still allows product and localhost origins", async () => {
@@ -233,7 +218,7 @@ describe("workspace relay server", () => {
     })
 
     for (const origin of ["https://app.claxedo.com", "https://claxedo.com", "http://localhost:4444"]) {
-      const res = await relay.app.request("http://relay.test/workspaces/ws_1/api/wr/health", {
+      const res = await relay.room.request("http://relay.test/workspaces/ws_1/api/wr/health", {
         headers: {
           authorization: `Bearer ${await relay.token()}`,
           origin,
@@ -247,6 +232,7 @@ describe("workspace relay server", () => {
     const forwardedAuth: string[] = []
     let revocationCalls = 0
     const relay = await harness({
+      traceSampleRate: 1,
       relayHostTokenCacheTtlMs: 30_000,
       isRuntimeAccessTokenActive: () => {
         revocationCalls++
@@ -259,10 +245,10 @@ describe("workspace relay server", () => {
     })
     const token = await relay.token()
 
-    const first = await relay.app.request("http://relay.test/workspaces/ws_1/api/wr/health", {
+    const first = await relay.room.request("http://relay.test/workspaces/ws_1/api/wr/health", {
       headers: { authorization: `Bearer ${token}` },
     })
-    const second = await relay.app.request("http://relay.test/workspaces/ws_1/api/wr/health", {
+    const second = await relay.room.request("http://relay.test/workspaces/ws_1/api/wr/health", {
       headers: { authorization: `Bearer ${token}` },
     })
 
@@ -310,7 +296,7 @@ describe("workspace relay server", () => {
     })
 
     for (const token of ["actor-a-token", "actor-b-token"]) {
-      const response = await relay.app.request("http://relay.test/workspaces/ws_1/api/wr/health", {
+      const response = await relay.room.request("http://relay.test/workspaces/ws_1/api/wr/health", {
         headers: { authorization: `Bearer ${token}` },
       })
       expect(response.status).toBe(200)
@@ -330,6 +316,7 @@ describe("workspace relay server", () => {
     const forwardedAuth: string[] = []
     let revocationCalls = 0
     const relay = await harness({
+      traceSampleRate: 1,
       relayHostTokenCacheTtlMs: 30_000,
       isRuntimeAccessTokenActive: () => {
         revocationCalls++
@@ -342,7 +329,7 @@ describe("workspace relay server", () => {
     })
     const token = await relay.token()
     const responses = await Promise.all(Array.from({ length: 16 }, () =>
-      relay.app.request("http://relay.test/workspaces/ws_1/api/wr/health", {
+      relay.room.request("http://relay.test/workspaces/ws_1/api/wr/health", {
         headers: { authorization: `Bearer ${token}` },
       })
     ))
@@ -394,10 +381,10 @@ describe("workspace relay server", () => {
       fetch: (() => Promise.resolve(new Response("ok"))) as unknown as typeof fetch,
     })
 
-    const first = await relay.app.request("http://relay.test/workspaces/ws_1/api/wr/health", {
+    const first = await relay.room.request("http://relay.test/workspaces/ws_1/api/wr/health", {
       headers: { authorization: "Bearer rat-hot" },
     })
-    const second = await relay.app.request("http://relay.test/workspaces/ws_1/api/wr/health", {
+    const second = await relay.room.request("http://relay.test/workspaces/ws_1/api/wr/health", {
       headers: { authorization: "Bearer rat-hot" },
     })
 
@@ -435,7 +422,7 @@ describe("workspace relay server", () => {
       fetch: (() => Promise.resolve(new Response("ok"))) as unknown as typeof fetch,
     })
     const token = await relay.token()
-    const request = () => relay.app.request("http://relay.test/workspaces/ws_1/api/wr/health", {
+    const request = () => relay.room.request("http://relay.test/workspaces/ws_1/api/wr/health", {
       headers: { authorization: `Bearer ${token}` },
     })
 
@@ -470,7 +457,7 @@ describe("workspace relay server", () => {
     })
     const token = await relay.token()
 
-    const res = await relay.app.request("http://relay.test/workspaces/ws_1/api/wr/health", {
+    const res = await relay.room.request("http://relay.test/workspaces/ws_1/api/wr/health", {
       headers: { authorization: `Bearer ${token}` },
     })
 
@@ -516,10 +503,10 @@ describe("workspace relay server", () => {
       fetch: (() => Promise.resolve(new Response("ok"))) as unknown as typeof fetch,
     })
 
-    const first = await relay.app.request("http://relay.test/workspaces/ws_1/api/wr/health", {
+    const first = await relay.room.request("http://relay.test/workspaces/ws_1/api/wr/health", {
       headers: { authorization: "Bearer rat-replayed" },
     })
-    const second = await relay.app.request("http://relay.test/workspaces/ws_2/api/wr/health", {
+    const second = await relay.room.request("http://relay.test/workspaces/ws_2/api/wr/health", {
       headers: { authorization: "Bearer rat-replayed" },
     })
 
@@ -567,10 +554,10 @@ describe("workspace relay server", () => {
       fetch: (() => Promise.resolve(new Response("ok"))) as unknown as typeof fetch,
     })
 
-    const first = await relay.app.request("http://relay.test/workspaces/ws_1/api/wr/health", {
+    const first = await relay.room.request("http://relay.test/workspaces/ws_1/api/wr/health", {
       headers: { authorization: "Bearer rat-uncached" },
     })
-    const second = await relay.app.request("http://relay.test/workspaces/ws_1/api/wr/health", {
+    const second = await relay.room.request("http://relay.test/workspaces/ws_1/api/wr/health", {
       headers: { authorization: "Bearer rat-uncached" },
     })
 
@@ -590,7 +577,7 @@ describe("workspace relay server", () => {
       }))) as unknown as typeof fetch,
     })
 
-    const res = await relay.app.request("http://relay.test/workspaces/ws_1/api/wr/health", {
+    const res = await relay.room.request("http://relay.test/workspaces/ws_1/api/wr/health", {
       headers: {
         authorization: `Bearer ${await relay.token()}`,
         origin: "http://localhost:4482",
@@ -607,37 +594,9 @@ describe("workspace relay server", () => {
     await expect(res.text()).resolves.toBe("ok")
   })
 
-  test("strips an upstream Set-Cookie while emitting only relay-owned CORS", async () => {
-    const relay = await harness({
-      fetch: (() => Promise.resolve(new Response("ok", {
-        headers: {
-          // Every workspace shares this relay's origin: an upstream cookie
-          // would be replayed to other workspaces' requests through it.
-          "set-cookie": "session=upstream; Path=/",
-          "access-control-allow-origin": "*",
-          "access-control-allow-credentials": "true",
-          "content-type": "text/plain",
-        },
-      }))) as unknown as typeof fetch,
-    })
-
-    const res = await relay.app.request("http://relay.test/workspaces/ws_1/api/wr/health", {
-      headers: {
-        authorization: `Bearer ${await relay.token()}`,
-        origin: "http://localhost:4482",
-      },
-    })
-
-    expect(res.status).toBe(200)
-    expect(res.headers.get("set-cookie")).toBeNull()
-    expect(res.headers.get("access-control-allow-origin")).toBe("http://localhost:4482")
-    expect(res.headers.get("access-control-allow-credentials")).toBeNull()
-    await expect(res.text()).resolves.toBe("ok")
-  })
-
   test("rejects missing or mismatched Runtime Access Tokens before forwarding", async () => {
     const relay = await harness()
-    const missing = await relay.app.request("http://relay.test/workspaces/ws_1/api/wr/health")
+    const missing = await relay.room.request("http://relay.test/workspaces/ws_1/api/wr/health")
     expect(missing.status).toBe(401)
     await expect(missing.json()).resolves.toEqual({
       error: {
@@ -655,7 +614,7 @@ describe("workspace relay server", () => {
       hostId: "host_1",
       role: "editor",
     }, relay.runtime.privateKey, "EdDSA")
-    const mismatch = await relay.app.request("http://relay.test/workspaces/ws_1/api/wr/health", {
+    const mismatch = await relay.room.request("http://relay.test/workspaces/ws_1/api/wr/health", {
       headers: {
         authorization: `Bearer ${token}`,
       },
@@ -683,7 +642,7 @@ describe("workspace relay server", () => {
     })
     const token = await relay.token("viewer", "ses_1")
     const call = (path: string, method = "GET") =>
-      relay.app.request(`http://relay.test/workspaces/ws_1${path}`, { method, headers: { authorization: `Bearer ${token}` } })
+      relay.room.request(`http://relay.test/workspaces/ws_1${path}`, { method, headers: { authorization: `Bearer ${token}` } })
 
     for (const [path, method] of [
       ["/session/ses_1", "GET"],
@@ -735,11 +694,11 @@ describe("workspace relay server", () => {
     const paths = ["//api/wr/pty", "/%2Fapi/wr/pty", "/api/wr/pty%3Fx", "/api/wr/pty%23x"]
 
     for (const path of paths) {
-      const scoped = await relay.app.request(`http://relay.test/workspaces/ws_1${path}`, {
+      const scoped = await relay.room.request(`http://relay.test/workspaces/ws_1${path}`, {
         headers: { authorization: `Bearer ${await relay.token("viewer", "ses_1")}` },
       })
       expect(scoped.status).toBe(403)
-      const owner = await relay.app.request(`http://relay.test/workspaces/ws_1${path}`, {
+      const owner = await relay.room.request(`http://relay.test/workspaces/ws_1${path}`, {
         headers: { authorization: `Bearer ${await relay.token("owner")}` },
       })
       expect(owner.status).toBe(200)
@@ -757,10 +716,10 @@ describe("workspace relay server", () => {
         return Promise.resolve(new Response("ok"))
       }) as typeof fetch,
     })
-    await relay.app.request("http://relay.test/workspaces/ws_1/session/ses_1", {
+    await relay.room.request("http://relay.test/workspaces/ws_1/session/ses_1", {
       headers: { authorization: `Bearer ${await relay.token("viewer", "ses_1")}` },
     })
-    const forwarded = relay.forwarded[0]!.request.headers.get("authorization")?.replace(/^Bearer /, "")
+    const forwarded = relay.forwarded[0].request.headers.get("authorization")?.replace(/^Bearer /, "")
     expect(decodeJwt(forwarded!)).toMatchObject({ session_id: "ses_1", role: "viewer" })
   })
 
@@ -775,7 +734,7 @@ describe("workspace relay server", () => {
     const roles = ["editor", "admin", "owner"] as const
     const methods = ["POST", "PATCH", "DELETE"] as const
     for (const role of roles) {
-      const res = await relay.app.request(`http://relay.test/workspaces/ws_1/api/session/${role}`, {
+      const res = await relay.room.request(`http://relay.test/workspaces/ws_1/api/session/${role}`, {
         method: methods[roles.indexOf(role)],
         headers: {
           authorization: `Bearer ${await relay.token(role)}`,
@@ -819,7 +778,7 @@ describe("workspace relay server", () => {
       }) as typeof fetch,
     })
 
-    const res = await relay.app.request("http://relay.test/workspaces/ws_1/api/wr/health", {
+    const res = await relay.room.request("http://relay.test/workspaces/ws_1/api/wr/health", {
       headers: {
         authorization: `Bearer ${await relay.token()}`,
       },
@@ -860,7 +819,7 @@ describe("workspace relay server", () => {
     })))) as unknown as typeof fetch
 
     try {
-      const res = await relay.app.request("http://relay.test/workspaces/ws_1/api/wr/events", {
+      const res = await relay.room.request("http://relay.test/workspaces/ws_1/api/wr/events", {
         headers: {
           authorization: `Bearer ${await relay.token()}`,
         },
@@ -887,7 +846,7 @@ describe("workspace relay server", () => {
     }
   })
 
-  test("maps Hono forwarder upstream timeout to 504", async () => {
+  test("maps an upstream timeout to 504", async () => {
     const relay = await harness({
       forwardTimeoutMs: 10,
       fetch: ((_url, init) =>
@@ -899,7 +858,7 @@ describe("workspace relay server", () => {
           })
         })) as typeof fetch,
     })
-    const res = await relay.app.request("http://relay.test/workspaces/ws_1/api/slow", {
+    const res = await relay.room.request("http://relay.test/workspaces/ws_1/api/slow", {
       headers: {
         authorization: `Bearer ${await relay.token()}`,
         origin: "http://localhost:4482",
@@ -933,7 +892,7 @@ describe("workspace relay server", () => {
     }))) as unknown as typeof fetch
 
     try {
-      const res = await relay.app.request("http://relay.test/workspaces/ws_1/api/wr/events", {
+      const res = await relay.room.request("http://relay.test/workspaces/ws_1/api/wr/events", {
         headers: {
           authorization: `Bearer ${await relay.token()}`,
         },
@@ -967,7 +926,7 @@ describe("workspace relay server", () => {
       directory: createWorkspaceRelayDirectory(),
     })
 
-    const res = await relay.app.request("http://relay.test/workspaces/ws_1/api/wr/health", {
+    const res = await relay.room.request("http://relay.test/workspaces/ws_1/api/wr/health", {
       headers: {
         authorization: `Bearer ${await relay.token()}`,
       },
@@ -995,44 +954,13 @@ describe("workspace relay server", () => {
     })
   })
 
-  test("strips the request Cookie for a local-worktree target at the shared forwarder", async () => {
-    const directory = createWorkspaceRelayDirectory({ sweepIntervalMs: 0 })
-    directory.registerHostTunnel({ hostId: "host_1", workspaceIds: ["ws_1"] })
-    let forwardedCookie: string | null = "unset"
-    const relay = await harness({
-      backing: "local-worktree",
-      directory,
-      fetch: ((_url: string | URL | Request, init?: RequestInit) => {
-        forwardedCookie = new Request("http://relay.test/", init).headers.get("cookie")
-        return Promise.resolve(new Response("ok"))
-      }) as unknown as typeof fetch,
-    })
-
-    try {
-      const res = await relay.app.request("http://relay.test/workspaces/ws_1/api/wr/health", {
-        headers: {
-          authorization: `Bearer ${await relay.token()}`,
-          cookie: "session=relay",
-        },
-      })
-
-      expect(res.status).toBe(200)
-      // The tunnel contract is keyed on the target's backing, not on which
-      // adapter reached the forwarder: the host machine's cookie jar may be
-      // shared with the browser, so the relay never replays cookies to it.
-      expect(forwardedCookie).toBeNull()
-    } finally {
-      directory.dispose()
-    }
-  })
-
   test("denies a resolved target outside the allowed destinations without fetching it", async () => {
     const runtime = await generateKeyPair("EdDSA", { extractable: true })
     const relayHost = await generateKeyPair("EdDSA", { extractable: true })
     let fetched = false
     // A programmatic resolveTarget never passed through the resolver wire
     // parse, so the destination rule is re-applied at authorize time.
-    const app = createWorkspaceRelay({
+    const relay = relayRoom({
       runtimeAccessKey: runtime.publicKey,
       relayHostSigningKey: relayHost.privateKey,
       relayHostAlgorithm: "EdDSA",
@@ -1048,7 +976,7 @@ describe("workspace relay server", () => {
       }) as unknown as typeof fetch,
     })
 
-    const res = await app.request("http://relay.test/workspaces/ws_1/api/wr/health", {
+    const res = await relay.request("http://relay.test/workspaces/ws_1/api/wr/health", {
       headers: {
         authorization: `Bearer ${await mintRuntimeAccessToken({
           principalKind: "user",
@@ -1070,136 +998,6 @@ describe("workspace relay server", () => {
       },
     })
     expect(fetched).toBe(false)
-  })
-
-  describe("/.well-known/jwks.json", () => {
-    test("returns 503 when no public keys are configured", async () => {
-      const relay = await harness()
-      const res = await relay.app.request("http://relay.test/.well-known/jwks.json")
-      expect(res.status).toBe(503)
-    })
-
-    test("returns a valid JWKS shape with the current RHT public key", async () => {
-      const runtime = await generateKeyPair("EdDSA", { extractable: true })
-      const relayHost = await generateKeyPair("EdDSA", { extractable: true })
-      const jwk = await exportJWK(relayHost.publicKey)
-      const kid = createHash("sha256").update(jwk.x ?? "").digest("hex").slice(0, 16)
-
-      const app = createWorkspaceRelay({
-        runtimeAccessKey: runtime.publicKey,
-        relayHostSigningKey: relayHost.privateKey,
-        relayHostAlgorithm: "EdDSA",
-        relayHostPublicKeys: [{ publicKey: relayHost.publicKey, kid }],
-        resolveTarget: async () => undefined,
-      })
-
-      const res = await app.request("http://relay.test/.well-known/jwks.json")
-      expect(res.status).toBe(200)
-      expect(res.headers.get("cache-control")).toBe("public, max-age=300")
-      expect(res.headers.get("content-type")).toMatch(/application\/json/)
-
-      const body = (await res.json()) as { keys: Array<Record<string, unknown>> }
-      expect(Array.isArray(body.keys)).toBe(true)
-      expect(body.keys.length).toBe(1)
-      const key = body.keys[0]
-      expect(key.kty).toBe("OKP")
-      expect(key.crv).toBe("Ed25519")
-      expect(key.alg).toBe("EdDSA")
-      expect(key.use).toBe("sig")
-      expect(key.kid).toBe(kid)
-      expect(typeof key.x).toBe("string")
-    })
-
-    test("includes both current and next keys when next is configured", async () => {
-      const runtime = await generateKeyPair("EdDSA", { extractable: true })
-      const current = await generateKeyPair("EdDSA", { extractable: true })
-      const next = await generateKeyPair("EdDSA", { extractable: true })
-      const currentJwk = await exportJWK(current.publicKey)
-      const nextJwk = await exportJWK(next.publicKey)
-      const currentKid = createHash("sha256").update(currentJwk.x ?? "").digest("hex").slice(0, 16)
-      const nextKid = createHash("sha256").update(nextJwk.x ?? "").digest("hex").slice(0, 16)
-
-      const app = createWorkspaceRelay({
-        runtimeAccessKey: runtime.publicKey,
-        relayHostSigningKey: current.privateKey,
-        relayHostAlgorithm: "EdDSA",
-        relayHostPublicKeys: [
-          { publicKey: current.publicKey, kid: currentKid },
-          { publicKey: next.publicKey, kid: nextKid },
-        ],
-        resolveTarget: async () => undefined,
-      })
-
-      const res = await app.request("http://relay.test/.well-known/jwks.json")
-      expect(res.status).toBe(200)
-      const body = (await res.json()) as { keys: Array<Record<string, unknown>> }
-      expect(body.keys).toHaveLength(2)
-      expect(body.keys.map((k) => k.kid)).toEqual([currentKid, nextKid])
-    })
-
-    test("the kid published in JWKS matches the kid embedded in a freshly minted RHT", async () => {
-      const runtime = await generateKeyPair("EdDSA", { extractable: true })
-      const relayHost = await generateKeyPair("EdDSA", { extractable: true })
-      const jwk = await exportJWK(relayHost.publicKey)
-      const kid = createHash("sha256").update(jwk.x ?? "").digest("hex").slice(0, 16)
-
-      const app = createWorkspaceRelay({
-        runtimeAccessKey: runtime.publicKey,
-        relayHostSigningKey: relayHost.privateKey,
-        relayHostAlgorithm: "EdDSA",
-        relayHostPublicKeys: [{ publicKey: relayHost.publicKey, kid }],
-        relayHostMintKid: kid,
-        resolveTarget: (claims) => ({
-          workspaceId: claims.workspace_id,
-          hostId: claims.host_id,
-          baseUrl: "https://host.example.test",
-          backing: "cloud-vm",
-        }),
-        fetch: ((url, init) => {
-          const request = new Request(url, init)
-          mintedRequests.push(request)
-          return Promise.resolve(new Response("ok"))
-        }) as typeof fetch,
-      })
-      const mintedRequests: Request[] = []
-
-      const ratToken = await mintRuntimeAccessToken({
-        principalKind: "user",
-      actorId: "user_1",
-      actorKind: "human",
-        orgId: "org_1",
-        workspaceId: "ws_1",
-        hostId: "host_1",
-        role: "editor",
-      }, runtime.privateKey, "EdDSA")
-
-      const res = await app.request("http://relay.test/workspaces/ws_1/api/wr/health", {
-        headers: { authorization: `Bearer ${ratToken}` },
-      })
-      expect(res.status).toBe(200)
-
-      const upstreamAuth = mintedRequests[0]?.headers.get("authorization")?.replace(/^Bearer\s+/i, "")
-      expect(upstreamAuth).toBeTruthy()
-      const header = decodeProtectedHeader(upstreamAuth!)
-      expect(header.kid).toBe(kid)
-
-      // And the same kid is published in JWKS.
-      const jwksRes = await app.request("http://relay.test/.well-known/jwks.json")
-      const body = (await jwksRes.json()) as { keys: Array<Record<string, unknown>> }
-      expect(body.keys.some((k) => k.kid === kid)).toBe(true)
-
-      // And the RHT verifies against the published key.
-      await expect(verifyRelayHostToken(upstreamAuth!, relayHost.publicKey, {
-        workspaceId: "ws_1",
-        hostId: "host_1",
-      })).resolves.toMatchObject({
-        workspace_id: "ws_1",
-        host_id: "host_1",
-      })
-
-      // Reference mintRelayHostToken so the import isn't stripped.
-      void mintRelayHostToken
-    })
   })
 
   describe("workspaceRelayForwardHeaders", () => {
@@ -1414,7 +1212,7 @@ describe("workspace relay server", () => {
         }) as typeof fetch,
       })
 
-      const res = await relay.app.request("http://relay.test/workspaces/ws_1/api/wr/health", {
+      const res = await relay.room.request("http://relay.test/workspaces/ws_1/api/wr/health", {
         headers: {
           authorization: `Bearer ${await relay.token()}`,
           "x-forwarded-for": "1.2.3.4",
@@ -1445,7 +1243,7 @@ describe("workspace relay server", () => {
       const runtime = await generateKeyPair("EdDSA", { extractable: true })
       const relayHost = await generateKeyPair("EdDSA", { extractable: true })
       const calls: string[] = []
-      const app = createWorkspaceRelay({
+      const relay = relayRoom({
         runtimeAccessKey: runtime.publicKey,
         relayHostSigningKey: relayHost.privateKey,
         relayHostAlgorithm: "EdDSA",
@@ -1488,7 +1286,7 @@ describe("workspace relay server", () => {
         return Promise.resolve(new Response("ok", { status: 200 }))
       }) as typeof fetch
       try {
-        const res = await app.request("http://relay.test/workspaces/ws_1/api/wr/health", {
+        const res = await relay.request("http://relay.test/workspaces/ws_1/api/wr/health", {
           headers: { authorization: "Bearer arbitrary-string-not-a-jwt" },
         })
         expect(res.status).toBe(200)
@@ -1502,7 +1300,7 @@ describe("workspace relay server", () => {
       const runtime = await generateKeyPair("EdDSA", { extractable: true })
       const relayHost = await generateKeyPair("EdDSA", { extractable: true })
       let resolved = false
-      const app = createWorkspaceRelay({
+      const relay = relayRoom({
         runtimeAccessKey: runtime.publicKey,
         relayHostSigningKey: relayHost.privateKey,
         relayHostAlgorithm: "EdDSA",
@@ -1542,7 +1340,7 @@ describe("workspace relay server", () => {
         },
       })
 
-      const res = await app.request("http://relay.test/workspaces/ws_1/api/wr/health", {
+      const res = await relay.request("http://relay.test/workspaces/ws_1/api/wr/health", {
         headers: { authorization: "Bearer custom" },
       })
 
@@ -1572,7 +1370,7 @@ describe("workspace relay server", () => {
         iat: Math.floor(Date.now() / 1000),
         jti: "jti_custom",
       }
-      const app = createWorkspaceRelay({
+      const relay = relayRoom({
         runtimeAccessKey: runtime.publicKey,
         relayHostSigningKey: relayHost.privateKey,
         relayHostAlgorithm: "EdDSA",
@@ -1598,7 +1396,7 @@ describe("workspace relay server", () => {
         },
       })
 
-      const res = await app.request("http://relay.test/workspaces/ws_1/api/wr/health", {
+      const res = await relay.request("http://relay.test/workspaces/ws_1/api/wr/health", {
         headers: { authorization: "Bearer custom" },
       })
 
@@ -1614,7 +1412,7 @@ describe("workspace relay server", () => {
     test("denies custom verifier claims with incomplete claim fields", async () => {
       const runtime = await generateKeyPair("EdDSA", { extractable: true })
       const relayHost = await generateKeyPair("EdDSA", { extractable: true })
-      const app = createWorkspaceRelay({
+      const relay = relayRoom({
         runtimeAccessKey: runtime.publicKey,
         relayHostSigningKey: relayHost.privateKey,
         relayHostAlgorithm: "EdDSA",
@@ -1646,7 +1444,7 @@ describe("workspace relay server", () => {
         },
       })
 
-      const res = await app.request("http://relay.test/workspaces/ws_1/api/wr/health", {
+      const res = await relay.request("http://relay.test/workspaces/ws_1/api/wr/health", {
         headers: { authorization: "Bearer custom" },
       })
 
@@ -1664,10 +1462,10 @@ describe("workspace relay server", () => {
      * verifier succeeds and returns the claims it is given, so only the
      * relay's own time validation can refuse the request.
      */
-    async function verifierAppForClaims(claims: Record<string, unknown>) {
+    async function verifierRelayForClaims(claims: Record<string, unknown>) {
       const runtime = await generateKeyPair("EdDSA", { extractable: true })
       const relayHost = await generateKeyPair("EdDSA", { extractable: true })
-      return createWorkspaceRelay({
+      return relayRoom({
         runtimeAccessKey: runtime.publicKey,
         relayHostSigningKey: relayHost.privateKey,
         relayHostAlgorithm: "EdDSA",
@@ -1710,9 +1508,9 @@ describe("workspace relay server", () => {
 
     test("rejects expired claims returned by an otherwise-successful verifier", async () => {
       const now = Math.floor(Date.now() / 1000)
-      const app = await verifierAppForClaims(verifierClaims({ iat: now - 600, exp: now - 300 }))
+      const relay = await verifierRelayForClaims(verifierClaims({ iat: now - 600, exp: now - 300 }))
 
-      const res = await app.request("http://relay.test/workspaces/ws_1/api/wr/health", {
+      const res = await relay.request("http://relay.test/workspaces/ws_1/api/wr/health", {
         headers: { authorization: "Bearer custom" },
       })
 
@@ -1727,11 +1525,11 @@ describe("workspace relay server", () => {
 
     test("admits verifier claims expired inside the clock-skew tolerance", async () => {
       const now = Math.floor(Date.now() / 1000)
-      const app = await verifierAppForClaims(verifierClaims({ iat: now - 300, exp: now - 30 }))
+      const relay = await verifierRelayForClaims(verifierClaims({ iat: now - 300, exp: now - 30 }))
       const originalFetch = globalThis.fetch
       globalThis.fetch = (() => Promise.resolve(new Response("ok"))) as unknown as typeof fetch
       try {
-        const res = await app.request("http://relay.test/workspaces/ws_1/api/wr/health", {
+        const res = await relay.request("http://relay.test/workspaces/ws_1/api/wr/health", {
           headers: { authorization: "Bearer custom" },
         })
         expect(res.status).toBe(200)
@@ -1742,9 +1540,9 @@ describe("workspace relay server", () => {
 
     test("rejects verifier claims with nbf beyond the clock-skew tolerance", async () => {
       const now = Math.floor(Date.now() / 1000)
-      const app = await verifierAppForClaims(verifierClaims({ nbf: now + 120 }))
+      const relay = await verifierRelayForClaims(verifierClaims({ nbf: now + 120 }))
 
-      const res = await app.request("http://relay.test/workspaces/ws_1/api/wr/health", {
+      const res = await relay.request("http://relay.test/workspaces/ws_1/api/wr/health", {
         headers: { authorization: "Bearer custom" },
       })
 
@@ -1758,9 +1556,9 @@ describe("workspace relay server", () => {
     })
 
     test("rejects verifier claims with an nbf that is not a finite number", async () => {
-      const app = await verifierAppForClaims(verifierClaims({ nbf: "tomorrow" }))
+      const relay = await verifierRelayForClaims(verifierClaims({ nbf: "tomorrow" }))
 
-      const res = await app.request("http://relay.test/workspaces/ws_1/api/wr/health", {
+      const res = await relay.request("http://relay.test/workspaces/ws_1/api/wr/health", {
         headers: { authorization: "Bearer custom" },
       })
 
@@ -1775,9 +1573,9 @@ describe("workspace relay server", () => {
 
     test("rejects verifier claims with an absurdly distant exp", async () => {
       const now = Math.floor(Date.now() / 1000)
-      const app = await verifierAppForClaims(verifierClaims({ exp: now + 48 * 60 * 60 }))
+      const relay = await verifierRelayForClaims(verifierClaims({ exp: now + 48 * 60 * 60 }))
 
-      const res = await app.request("http://relay.test/workspaces/ws_1/api/wr/health", {
+      const res = await relay.request("http://relay.test/workspaces/ws_1/api/wr/health", {
         headers: { authorization: "Bearer custom" },
       })
 
@@ -1793,7 +1591,7 @@ describe("workspace relay server", () => {
     test("denies requests when the custom verifier throws", async () => {
       const runtime = await generateKeyPair("EdDSA", { extractable: true })
       const relayHost = await generateKeyPair("EdDSA", { extractable: true })
-      const app = createWorkspaceRelay({
+      const relay = relayRoom({
         runtimeAccessKey: runtime.publicKey,
         relayHostSigningKey: relayHost.privateKey,
         relayHostAlgorithm: "EdDSA",
@@ -1810,7 +1608,7 @@ describe("workspace relay server", () => {
         },
       })
 
-      const res = await app.request("http://relay.test/workspaces/ws_1/api/wr/health", {
+      const res = await relay.request("http://relay.test/workspaces/ws_1/api/wr/health", {
         headers: { authorization: "Bearer custom" },
       })
 
@@ -1825,7 +1623,7 @@ describe("workspace relay server", () => {
   })
 })
 
-describe("workspace relay audit sampling (T16)", () => {
+describe("authorizeWorkspaceRelayRequest audit sampling", () => {
   async function samplingHarness(input: {
     auditAcceptSampleRate?: number
     auditFlushIntervalMs?: number
@@ -1834,7 +1632,7 @@ describe("workspace relay audit sampling (T16)", () => {
     const runtime = await generateKeyPair("EdDSA", { extractable: true })
     const relayHost = await generateKeyPair("EdDSA", { extractable: true })
     const auditEvents: WorkspaceRelayAuditEvent[] = []
-    const app = createWorkspaceRelay({
+    const options: WorkspaceRelayOptions = {
       runtimeAccessKey: runtime.publicKey,
       relayHostSigningKey: relayHost.privateKey,
       relayHostAlgorithm: "EdDSA",
@@ -1850,104 +1648,77 @@ describe("workspace relay audit sampling (T16)", () => {
       ...(input.auditAcceptSampleRate !== undefined ? { auditAcceptSampleRate: input.auditAcceptSampleRate } : {}),
       ...(input.auditFlushIntervalMs !== undefined ? { auditFlushIntervalMs: input.auditFlushIntervalMs } : {}),
       ...(input.random ? { random: input.random } : {}),
-    })
+    }
     return {
-      app,
       auditEvents,
-      runtime,
-      relayHost,
-      token: (role: "viewer" | "editor" | "admin" | "owner" = "editor", workspaceId = "ws_1") =>
+      authorize: (n: number, token?: string) => authorizeWorkspaceRelayRequest(
+        options,
+        new Request(`http://relay.test/workspaces/ws_1/api/wr/health?n=${n}`, token ? { headers: { authorization: `Bearer ${token}` } } : {}),
+        "ws_1",
+      ),
+      dispose: () => disposeAuditSampler(options),
+      token: () =>
         mintRuntimeAccessToken({
           principalKind: "user",
-      actorId: "user_1",
-      actorKind: "human",
+          actorId: "user_1",
+          actorKind: "human",
           orgId: "org_1",
-          workspaceId,
+          workspaceId: "ws_1",
           hostId: "host_1",
-          role,
+          role: "editor",
         }, runtime.privateKey, "EdDSA"),
     }
   }
 
   test("accept events ALL emit when sample rate is 1.0", async () => {
     const harness = await samplingHarness({ auditAcceptSampleRate: 1.0 })
-    const originalFetch = globalThis.fetch
-    globalThis.fetch = (() => Promise.resolve(new Response("ok"))) as unknown as typeof fetch
-    try {
-      const token = await harness.token()
-      for (let i = 0; i < 100; i++) {
-        const res = await harness.app.request(`http://relay.test/workspaces/ws_1/api/wr/health?n=${i}`, {
-          headers: { authorization: `Bearer ${token}` },
-        })
-        expect(res.status).toBe(200)
-      }
-    } finally {
-      globalThis.fetch = originalFetch
+    const token = await harness.token()
+    for (let i = 0; i < 100; i++) {
+      expect((await harness.authorize(i, token)).ok).toBe(true)
     }
     const accepted = harness.auditEvents.filter((e) => e.action === "relay.request.accepted")
     expect(accepted).toHaveLength(100)
   })
 
   test("accept events sampled at 0.5 emit a fraction (deterministic)", async () => {
-    // Deterministic: alternate < and > 0.5 each call; with rate 0.5 the sampler
-    // keeps when random() <= rate (or random() < rate, depending on impl). Use a
-    // counter-based PRNG that yields a known mix.
     let counter = 0
     const random = () => {
       counter += 1
-      // Cycle: 0.1, 0.9, 0.2, 0.8, 0.3, 0.7, 0.4, 0.6, 0.45, 0.55 ... half below 0.5
+      // Half of each ten-value cycle falls below the 0.5 rate.
       const seq = [0.1, 0.9, 0.2, 0.8, 0.3, 0.7, 0.4, 0.6, 0.45, 0.55]
       return seq[counter % seq.length]
     }
     const harness = await samplingHarness({ auditAcceptSampleRate: 0.5, random })
-    const originalFetch = globalThis.fetch
-    globalThis.fetch = (() => Promise.resolve(new Response("ok"))) as unknown as typeof fetch
-    try {
-      const token = await harness.token()
-      for (let i = 0; i < 100; i++) {
-        await harness.app.request(`http://relay.test/workspaces/ws_1/api/wr/health?n=${i}`, {
-          headers: { authorization: `Bearer ${token}` },
-        })
-      }
-    } finally {
-      globalThis.fetch = originalFetch
+    const token = await harness.token()
+    for (let i = 0; i < 100; i++) {
+      await harness.authorize(i, token)
     }
     const accepted = harness.auditEvents.filter((e) => e.action === "relay.request.accepted")
-    // Loose bound to avoid flakiness even if sampler implementation differs slightly.
     expect(accepted.length).toBeGreaterThanOrEqual(30)
     expect(accepted.length).toBeLessThanOrEqual(70)
-    harness.app.disposeAuditSampler()
+    harness.dispose()
   })
 
   test("accept events sampled at 0.0 emit zero accepts", async () => {
     const harness = await samplingHarness({ auditAcceptSampleRate: 0.0 })
-    const originalFetch = globalThis.fetch
-    globalThis.fetch = (() => Promise.resolve(new Response("ok"))) as unknown as typeof fetch
-    try {
-      const token = await harness.token()
-      for (let i = 0; i < 25; i++) {
-        await harness.app.request(`http://relay.test/workspaces/ws_1/api/wr/health?n=${i}`, {
-          headers: { authorization: `Bearer ${token}` },
-        })
-      }
-    } finally {
-      globalThis.fetch = originalFetch
+    const token = await harness.token()
+    for (let i = 0; i < 25; i++) {
+      await harness.authorize(i, token)
     }
     const accepted = harness.auditEvents.filter((e) => e.action === "relay.request.accepted")
     expect(accepted).toHaveLength(0)
-    harness.app.disposeAuditSampler()
+    harness.dispose()
   })
 
   test("deny events ALWAYS emit regardless of sample rate", async () => {
     const harness = await samplingHarness({ auditAcceptSampleRate: 0.0 })
-    // Trigger 5 denies via missing auth.
     for (let i = 0; i < 5; i++) {
-      const res = await harness.app.request(`http://relay.test/workspaces/ws_1/api/wr/health?n=${i}`)
-      expect(res.status).toBe(401)
+      const denied = await harness.authorize(i)
+      expect(denied.ok ? undefined : denied.response.status).toBe(401)
     }
     const denied = harness.auditEvents.filter((e) => e.action === "relay.request.denied")
     expect(denied).toHaveLength(5)
-    harness.app.disposeAuditSampler()
+    harness.dispose()
   })
 
   test("emits relay.request.suppressed_summary periodically with count", async () => {
@@ -1955,333 +1726,18 @@ describe("workspace relay audit sampling (T16)", () => {
       auditAcceptSampleRate: 0.0,
       auditFlushIntervalMs: 50,
     })
-    const originalFetch = globalThis.fetch
-    globalThis.fetch = (() => Promise.resolve(new Response("ok"))) as unknown as typeof fetch
-    try {
-      const token = await harness.token()
-      for (let i = 0; i < 7; i++) {
-        await harness.app.request(`http://relay.test/workspaces/ws_1/api/wr/health?n=${i}`, {
-          headers: { authorization: `Bearer ${token}` },
-        })
-      }
-      // Wait long enough for at least one flush interval to elapse.
-      await new Promise((resolve) => setTimeout(resolve, 120))
-    } finally {
-      globalThis.fetch = originalFetch
+    const token = await harness.token()
+    for (let i = 0; i < 7; i++) {
+      await harness.authorize(i, token)
     }
+    await new Promise((resolve) => setTimeout(resolve, 120))
     const summaries = harness.auditEvents.filter(
       (e) => e.action === "relay.request.suppressed_summary",
     )
     expect(summaries.length).toBeGreaterThanOrEqual(1)
-    // Sum of suppressed counts across summary events should equal total suppressed (7).
     const total = summaries.reduce((acc, e) => acc + (e.suppressedCount ?? 0), 0)
     expect(total).toBe(7)
-    harness.app.disposeAuditSampler()
-  })
-})
-
-describe("workspace relay drain (T9)", () => {
-  test("/health returns 200 when not draining", async () => {
-    const relay = await harness()
-    const res = await relay.app.request("http://relay.test/health")
-    expect(res.status).toBe(200)
-    const body = (await res.json()) as { ok: boolean; service: string }
-    expect(body.ok).toBe(true)
-    expect(body.service).toBe("workspace-relay")
-  })
-
-  test("allows Claxedo app origins to preflight authorized workspace requests", async () => {
-    const relay = await harness()
-    const res = await relay.app.request("http://relay.test/workspaces/ws_1/api/wr/health", {
-      method: "OPTIONS",
-      headers: {
-        origin: "https://app.claxedo.com",
-        "access-control-request-method": "GET",
-        "access-control-request-headers": "authorization",
-      },
-    })
-
-    expect(res.status).toBe(204)
-    expect(res.headers.get("access-control-allow-origin")).toBe("https://app.claxedo.com")
-    expect(res.headers.get("access-control-allow-headers")).toContain("Authorization")
-  })
-
-  test("/health returns 503 when isDraining() returns true", async () => {
-    const runtime = await generateKeyPair("EdDSA", { extractable: true })
-    const relayHost = await generateKeyPair("EdDSA", { extractable: true })
-    let draining = false
-    const app = createWorkspaceRelay({
-      runtimeAccessKey: runtime.publicKey,
-      relayHostSigningKey: relayHost.privateKey,
-      relayHostAlgorithm: "EdDSA",
-      resolveTarget: (claims) => ({
-        workspaceId: claims.workspace_id,
-        hostId: claims.host_id,
-        baseUrl: "https://host.example.test",
-        backing: "cloud-vm",
-      }),
-      isDraining: () => draining,
-    })
-
-    const ok = await app.request("http://relay.test/health")
-    expect(ok.status).toBe(200)
-
-    draining = true
-    const draininRes = await app.request("http://relay.test/health")
-    expect(draininRes.status).toBe(503)
-    const body = (await draininRes.json()) as { ok: boolean; service: string; draining: boolean }
-    expect(body.ok).toBe(false)
-    expect(body.draining).toBe(true)
-  })
-
-  test("workspace request returns 503 when draining (before auth)", async () => {
-    const runtime = await generateKeyPair("EdDSA", { extractable: true })
-    const relayHost = await generateKeyPair("EdDSA", { extractable: true })
-    const app = createWorkspaceRelay({
-      runtimeAccessKey: runtime.publicKey,
-      relayHostSigningKey: relayHost.privateKey,
-      relayHostAlgorithm: "EdDSA",
-      resolveTarget: (claims) => ({
-        workspaceId: claims.workspace_id,
-        hostId: claims.host_id,
-        baseUrl: "https://host.example.test",
-        backing: "cloud-vm",
-      }),
-      isDraining: () => true,
-    })
-    // No Authorization header — proves draining short-circuits before auth.
-    const res = await app.request("http://relay.test/workspaces/ws_1/anything")
-    expect(res.status).toBe(503)
-    await expect(res.json()).resolves.toEqual({
-      error: {
-        code: "relay_draining",
-        message: "Workspace relay is shutting down; try another instance",
-      },
-    })
-  })
-})
-
-describe("workspace relay /metrics endpoint (T31)", () => {
-  async function metricsHarness(input: {
-    metricsToken?: string
-    metricsRemoteAddress?: (req: Request) => string | undefined
-    fragmentation?: () => { fragmentsBuffered: number; oversizedClosed: number }
-    slowConsumer?: () => { overflowEvents: number; timerFired: number; droppedRequests: number }
-    drainPending?: () => number
-    auditAcceptSampleRate?: number
-    auditFlushIntervalMs?: number
-  } = {}) {
-    const runtime = await generateKeyPair("EdDSA", { extractable: true })
-    const relayHost = await generateKeyPair("EdDSA", { extractable: true })
-    const directory = createWorkspaceRelayDirectory({ sweepIntervalMs: 0 })
-    const auditEvents: WorkspaceRelayAuditEvent[] = []
-    const app = createWorkspaceRelay({
-      runtimeAccessKey: runtime.publicKey,
-      relayHostSigningKey: relayHost.privateKey,
-      relayHostAlgorithm: "EdDSA",
-      directory,
-      resolveTarget: (claims) => ({
-        workspaceId: claims.workspace_id,
-        hostId: claims.host_id,
-        baseUrl: "https://host.example.test",
-        backing: "cloud-vm",
-      }),
-      audit: (event) => {
-        auditEvents.push(event)
-      },
-      ...(input.metricsToken !== undefined ? { metricsToken: input.metricsToken } : {}),
-      ...(input.metricsRemoteAddress ? { metricsRemoteAddress: input.metricsRemoteAddress } : {}),
-      ...(input.fragmentation || input.slowConsumer || input.drainPending
-        ? {
-            metricsSources: {
-              ...(input.fragmentation ? { fragmentation: input.fragmentation } : {}),
-              ...(input.slowConsumer ? { slowConsumer: input.slowConsumer } : {}),
-              ...(input.drainPending ? { drainPending: input.drainPending } : {}),
-            },
-          }
-        : {}),
-      ...(input.auditAcceptSampleRate !== undefined ? { auditAcceptSampleRate: input.auditAcceptSampleRate } : {}),
-      ...(input.auditFlushIntervalMs !== undefined ? { auditFlushIntervalMs: input.auditFlushIntervalMs } : {}),
-    })
-    return {
-      app,
-      directory,
-      auditEvents,
-      runtime,
-      relayHost,
-      token: (workspaceId = "ws_1") =>
-        mintRuntimeAccessToken({
-          principalKind: "user",
-      actorId: "user_1",
-      actorKind: "human",
-          orgId: "org_1",
-          workspaceId,
-          hostId: "host_1",
-          role: "editor",
-        }, runtime.privateKey, "EdDSA"),
-    }
-  }
-
-  test("returns 200 with JSON body containing all expected counter sections (loopback)", async () => {
-    const harness = await metricsHarness({
-      metricsRemoteAddress: () => "127.0.0.1",
-      fragmentation: () => ({ fragmentsBuffered: 3, oversizedClosed: 1 }),
-      slowConsumer: () => ({ overflowEvents: 4, timerFired: 2, droppedRequests: 2 }),
-      drainPending: () => 5,
-    })
-
-    const res = await harness.app.request("http://relay.test/metrics")
-    expect(res.status).toBe(200)
-    const body = (await res.json()) as {
-      fragmentation: { fragmentsBuffered: number; oversizedClosed: number }
-      slowConsumer: { overflowEvents: number; timerFired: number; droppedRequests: number }
-      directory: { activeHostCount: number }
-      audit: { suppressedAccepts: number }
-      drain?: { pendingCount: number }
-    }
-    expect(body.fragmentation).toEqual({ fragmentsBuffered: 3, oversizedClosed: 1 })
-    expect(body.slowConsumer).toEqual({ overflowEvents: 4, timerFired: 2, droppedRequests: 2 })
-    expect(body.directory).toEqual({ activeHostCount: 0 })
-    expect(body.audit).toEqual({ suppressedAccepts: 0 })
-    expect(body.drain).toEqual({ pendingCount: 5 })
-    harness.app.disposeAuditSampler()
-  })
-
-  test("returns 401 from a non-loopback origin without metricsToken set", async () => {
-    const harness = await metricsHarness({
-      metricsRemoteAddress: () => "203.0.113.7",
-    })
-    const res = await harness.app.request("http://relay.test/metrics")
-    expect(res.status).toBe(401)
-    await expect(res.json()).resolves.toEqual({
-      error: {
-        code: "metrics_unauthorized",
-        message: "Metrics endpoint is restricted to loopback or bearer-token clients",
-      },
-    })
-    harness.app.disposeAuditSampler()
-  })
-
-  test("returns 401 from non-loopback when metricsToken set but Authorization missing/wrong", async () => {
-    const harness = await metricsHarness({
-      metricsToken: "secret-token",
-      metricsRemoteAddress: () => "203.0.113.7",
-    })
-    const missing = await harness.app.request("http://relay.test/metrics")
-    expect(missing.status).toBe(401)
-    await expect(missing.json()).resolves.toEqual({
-      error: {
-        code: "metrics_unauthorized",
-        message: "Metrics endpoint requires a valid bearer token",
-      },
-    })
-
-    const wrong = await harness.app.request("http://relay.test/metrics", {
-      headers: { authorization: "Bearer not-the-token" },
-    })
-    expect(wrong.status).toBe(401)
-    await expect(wrong.json()).resolves.toEqual({
-      error: {
-        code: "metrics_unauthorized",
-        message: "Metrics endpoint requires a valid bearer token",
-      },
-    })
-    harness.app.disposeAuditSampler()
-  })
-
-  test("returns 200 with valid Authorization: Bearer <metricsToken> from non-loopback", async () => {
-    const harness = await metricsHarness({
-      metricsToken: "secret-token",
-      metricsRemoteAddress: () => "203.0.113.7",
-    })
-    const res = await harness.app.request("http://relay.test/metrics", {
-      headers: { authorization: "Bearer secret-token" },
-    })
-    expect(res.status).toBe(200)
-    const body = (await res.json()) as { fragmentation: unknown }
-    expect(body.fragmentation).toBeDefined()
-    harness.app.disposeAuditSampler()
-  })
-
-  test("directory.activeHostCount reflects registered hosts", async () => {
-    const harness = await metricsHarness({
-      metricsRemoteAddress: () => "127.0.0.1",
-    })
-    harness.directory.registerHostTunnel({ hostId: "host_a", workspaceIds: ["ws_1"] })
-    harness.directory.registerHostTunnel({ hostId: "host_b", workspaceIds: ["ws_2"] })
-
-    const res = await harness.app.request("http://relay.test/metrics")
-    expect(res.status).toBe(200)
-    const body = (await res.json()) as { directory: { activeHostCount: number } }
-    expect(body.directory.activeHostCount).toBe(2)
-    harness.app.disposeAuditSampler()
-  })
-
-  test("audit.suppressedAccepts reflects sampler's internal suppressed counter", async () => {
-    const harness = await metricsHarness({
-      metricsRemoteAddress: () => "127.0.0.1",
-      auditAcceptSampleRate: 0.0,
-      // No flush interval needed — we read suppressed before any flush fires.
-      auditFlushIntervalMs: 60_000,
-    })
-    const originalFetch = globalThis.fetch
-    globalThis.fetch = (() => Promise.resolve(new Response("ok"))) as unknown as typeof fetch
-    try {
-      const token = await harness.token()
-      for (let i = 0; i < 4; i++) {
-        await harness.app.request(`http://relay.test/workspaces/ws_1/api/wr/health?n=${i}`, {
-          headers: { authorization: `Bearer ${token}` },
-        })
-      }
-    } finally {
-      globalThis.fetch = originalFetch
-    }
-    const res = await harness.app.request("http://relay.test/metrics")
-    expect(res.status).toBe(200)
-    const body = (await res.json()) as { audit: { suppressedAccepts: number } }
-    expect(body.audit.suppressedAccepts).toBe(4)
-    harness.app.disposeAuditSampler()
-  })
-
-  test("metrics endpoint returns 200 even if no metricsSources are wired (best-effort defaults)", async () => {
-    const harness = await metricsHarness({
-      metricsRemoteAddress: () => "127.0.0.1",
-    })
-    const res = await harness.app.request("http://relay.test/metrics")
-    expect(res.status).toBe(200)
-    const body = (await res.json()) as {
-      fragmentation: { fragmentsBuffered: number; oversizedClosed: number }
-      slowConsumer: { overflowEvents: number; timerFired: number; droppedRequests: number }
-      directory: { activeHostCount: number }
-      audit: { suppressedAccepts: number }
-    }
-    expect(body.fragmentation).toEqual({ fragmentsBuffered: 0, oversizedClosed: 0 })
-    expect(body.slowConsumer).toEqual({ overflowEvents: 0, timerFired: 0, droppedRequests: 0 })
-    expect(body.directory).toEqual({ activeHostCount: 0 })
-    expect(body.audit).toEqual({ suppressedAccepts: 0 })
-    harness.app.disposeAuditSampler()
-  })
-
-  test("when metricsToken unset and metricsRemoteAddress unset, fails closed", async () => {
-    const harness = await metricsHarness({})
-    const res = await harness.app.request("http://relay.test/metrics")
-    expect(res.status).toBe(401)
-    await expect(res.json()).resolves.toEqual({
-      error: {
-        code: "metrics_unauthorized",
-        message: "Metrics endpoint is restricted to loopback or bearer-token clients",
-      },
-    })
-    harness.app.disposeAuditSampler()
-  })
-
-  test("loopback IPv6 ::1 also passes the loopback check", async () => {
-    const harness = await metricsHarness({
-      metricsRemoteAddress: () => "::1",
-    })
-    const res = await harness.app.request("http://relay.test/metrics")
-    expect(res.status).toBe(200)
-    harness.app.disposeAuditSampler()
+    harness.dispose()
   })
 })
 
@@ -2398,7 +1854,7 @@ describe("forwarding a session recovery request", () => {
       }) as typeof fetch,
     })
 
-    const res = await relay.app.request("http://relay.test/workspaces/ws_1/session/ses_1/recovery?directory=%2Fwork", {
+    const res = await relay.room.request("http://relay.test/workspaces/ws_1/session/ses_1/recovery?directory=%2Fwork", {
       method: "POST",
       headers: { authorization: `Bearer ${await relay.token()}`, "content-type": "application/json" },
       body: submission,
@@ -2423,7 +1879,7 @@ describe("forwarding a session recovery request", () => {
       }) as typeof fetch,
     })
 
-    const res = await relay.app.request("http://relay.test/workspaces/ws_1/session/ses_1/recovery/operations/op_1", {
+    const res = await relay.room.request("http://relay.test/workspaces/ws_1/session/ses_1/recovery/operations/op_1", {
       headers: { authorization: `Bearer ${await relay.token()}` },
     })
 
@@ -2444,7 +1900,7 @@ describe("forwarding a session recovery request", () => {
       })) as typeof fetch,
     })
 
-    const res = await relay.app.request("http://relay.test/workspaces/ws_1/session/ses_1/recovery", {
+    const res = await relay.room.request("http://relay.test/workspaces/ws_1/session/ses_1/recovery", {
       method: "POST",
       headers: { authorization: `Bearer ${await relay.token()}`, "content-type": "application/json" },
       body: submission,
@@ -2463,7 +1919,7 @@ describe("forwarding a session recovery request", () => {
       fetch: ((_url: string | URL | Request) => Promise.reject(new Error("connect ECONNREFUSED"))) as unknown as typeof fetch,
     })
 
-    const res = await relay.app.request("http://relay.test/workspaces/ws_1/session/ses_1/recovery", {
+    const res = await relay.room.request("http://relay.test/workspaces/ws_1/session/ses_1/recovery", {
       method: "POST",
       headers: { authorization: `Bearer ${await relay.token()}`, "content-type": "application/json" },
       body: submission,
@@ -2481,7 +1937,7 @@ test("stale routing tokens are rejected before forwarding even after a positive 
   const host = await generateKeyPair("EdDSA")
   let current = "old"
   let forwarded = 0
-  const relay = createWorkspaceRelay({
+  const relay = relayRoom({
     runtimeAccessKey: runtime.publicKey,
     relayHostSigningKey: host.privateKey,
     relayHostAlgorithm: "EdDSA",

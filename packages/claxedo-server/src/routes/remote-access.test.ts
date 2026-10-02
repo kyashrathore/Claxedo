@@ -1,20 +1,18 @@
 import { describe, expect, test, vi } from "vitest"
 import { ControlPlaneAuthError } from "@claxedo/server-core/platform/auth/auth"
-import { RemoteAccessRoutes } from "./remote-access"
+import { RemoteAccessOwnerRoutes } from "./remote-access"
 
 const auth = { user: { subject: "user_1" } } as never
 
 describe("remote access routes", () => {
-  test("reports Phase A and relay blockers and fails closed before enrollment", async () => {
+  test("reports device sign-in and relay blockers and no enrollment while either is missing", async () => {
     const authenticate = vi.fn(async () => auth)
-    const enable = vi.fn()
-    const app = RemoteAccessRoutes({
+    const app = RemoteAccessOwnerRoutes({
       deviceLoginConfigured: false,
       relayConfigured: false,
       authenticate,
       service: {
         status: vi.fn(async () => ({ enrolled: false, enabled: false })),
-        enable,
         devices: vi.fn(async () => []),
         revoke: vi.fn(async () => ({ revoked: false })),
         rename: vi.fn(async () => ({ displayName: "Renamed" })),
@@ -30,25 +28,17 @@ describe("remote access routes", () => {
       enrolled: false,
       enabled: false,
     })
-    authenticate.mockClear()
-
-    const response = await app.request("http://localhost/enable", { method: "POST", body: "{}" })
-    expect(response.status).toBe(501)
-    await expect(response.json()).resolves.toMatchObject({ error: { code: "remote_access_unavailable" } })
-    expect(authenticate).not.toHaveBeenCalled()
-    expect(enable).not.toHaveBeenCalled()
   })
 
   test("renaming a machine trims the name, refuses an empty one, and is 404 for a host the caller does not own", async () => {
     const rename = vi.fn(async (_auth: unknown, input: { hostId: string; displayName: string }) =>
       input.hostId === "host_1" ? { displayName: input.displayName } : undefined)
-    const app = RemoteAccessRoutes({
+    const app = RemoteAccessOwnerRoutes({
       deviceLoginConfigured: true,
       relayConfigured: true,
       authenticate: vi.fn(async () => auth),
       service: {
         status: vi.fn(async () => ({ enrolled: true, enabled: true })),
-        enable: vi.fn(),
         devices: vi.fn(async () => []),
         revoke: vi.fn(async () => ({ revoked: true })),
         rename,
@@ -83,13 +73,12 @@ describe("remote access routes", () => {
       throw new ControlPlaneAuthError(401, "missing_bearer_token", "Authorization: Bearer token is required")
     })
     const status = vi.fn()
-    const app = RemoteAccessRoutes({
+    const app = RemoteAccessOwnerRoutes({
       deviceLoginConfigured: true,
       relayConfigured: true,
       authenticate,
       service: {
         status,
-        enable: vi.fn(),
         devices: vi.fn(),
         revoke: vi.fn(),
         rename: vi.fn(async () => ({ displayName: "Renamed" })),
@@ -102,38 +91,19 @@ describe("remote access routes", () => {
     expect(status).not.toHaveBeenCalled()
   })
 
-  test("enables, lists, and revokes enrolled machines through signed auth", async () => {
+  test("lists and revokes enrolled machines through signed auth", async () => {
     const service = {
       status: vi.fn(async () => ({ enrolled: true, enabled: true })),
-      enable: vi.fn(async () => ({ hostId: "host_1", workspaceIds: ["ws_1", "ws_2"], connectionCount: 1 })),
       devices: vi.fn(async () => [{ hostId: "host_1", displayName: "Mac", lastSeenAt: 10, workspaceIds: ["ws_1", "ws_2"] }]),
       revoke: vi.fn(async () => ({ revoked: true })),
       rename: vi.fn(async () => ({ displayName: "Renamed" })),
     }
-    const app = RemoteAccessRoutes({
+    const app = RemoteAccessOwnerRoutes({
       deviceLoginConfigured: true,
       relayConfigured: true,
       authenticate: vi.fn(async () => auth),
       service,
     })
-
-    const enabled = await app.request("http://localhost/enable", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ start_at_login: true }),
-    })
-    await expect(enabled.json()).resolves.toEqual({ host_id: "host_1", workspace_ids: ["ws_1", "ws_2"], connection_count: 1 })
-    expect(service.enable).toHaveBeenCalledWith(auth, { startAtLogin: true })
-
-    // The machine names itself, so a caller that sends one is a caller with a
-    // stale client: the body is strict and the request never reaches enrolment.
-    const named = await app.request("http://localhost/enable", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ display_name: "Mac", start_at_login: true }),
-    })
-    expect(named.status).toBe(400)
-    expect(service.enable).toHaveBeenCalledTimes(1)
 
     await expect((await app.request("http://localhost/devices")).json()).resolves.toEqual({
       devices: [{ host_id: "host_1", display_name: "Mac", last_seen_at: 10, workspace_ids: ["ws_1", "ws_2"] }],
@@ -142,5 +112,4 @@ describe("remote access routes", () => {
       .resolves.toEqual({ revoked: true })
     expect(service.revoke).toHaveBeenCalledWith(auth, "host_1")
   })
-
 })

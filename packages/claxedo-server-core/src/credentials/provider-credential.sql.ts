@@ -11,7 +11,7 @@ import {
 /**
  * The named single-tenant credential partition.
  *
- * Self-host without signed/cloud auth has no organization concept, so its
+ * An unsigned local deployment has no organization concept, so its
  * credentials live in ONE explicitly named partition rather than in an
  * implicit "no org = everything" wildcard. Every query in the registry is
  * `WHERE org_id = <scope>`; a caller that resolves no org resolves to THIS

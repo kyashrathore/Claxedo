@@ -58,7 +58,7 @@ describe("lazy import specifiers", () => {
     expect(failures).toEqual([])
     // A relative dynamic-import specifier that resolves to nothing hides a
     // Node-only edge from the bundler. Routing through a port
-    // (`workspace/local-runtime-port.ts`, `workspace/supervisor-port.ts`)
+    // (`workspace/local-runtime-port.ts`)
     // keeps the edge visible to tsc, to import rewriters, and to the closure
     // walker instead.
     //

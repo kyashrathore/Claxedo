@@ -51,9 +51,6 @@ const DENY = [
   // (`local-app.ts` mounts `localWorkspaceRoutes` at both
   // `/api/claxedo/workspace` and `/api/workspace`).
   "/api/workspace",
-  // BetterAuth device-code auth (`claxedo-server/src/routes/hosted/device-auth.ts`,
-  // `self-hosted-node/app.ts`). Not mounted on this daemon today; denied
-  // anyway as control-plane identity, never workspace data.
   "/api/auth",
   // The authority oracle the ISOLATED RUNTIME calls outward — served by the
   // central server, never a route a caller reaches directly

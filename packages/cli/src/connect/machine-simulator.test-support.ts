@@ -1,11 +1,8 @@
 /**
- * A machine for `claxedo connect --install-service` to run on: a service
- * manager that reads the unit the CLI wrote and runs its ExecStart as a real
- * child process, applying the unit's own restart policy to every exit, plus a
- * cloud-init-shaped `provision`. The systemd user manager is what the CLI
- * installs on Linux; launchd is what it installs on macOS, where the Tier R
- * fixture runs the real binary. Node APIs only: the fixture imports this under
- * tsx, the CLI's tests under bun.
+ * A machine for `claxedo connect --install-service` to run on: the systemd
+ * user manager the CLI installs into on Linux, which reads the unit the CLI
+ * wrote and runs its ExecStart as a real child process, applying the unit's
+ * own restart policy to every exit, plus a cloud-init-shaped `provision`.
  */
 
 import { execFile, spawn, type ChildProcess } from "node:child_process"
@@ -14,7 +11,7 @@ import fs from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
 import { promisify } from "node:util"
-import { LAUNCHD_LABEL, SYSTEMD_UNIT, serviceKind, type CommandResult, type ServiceDeps } from "./service"
+import { SYSTEMD_UNIT, type CommandResult, type ServiceDeps } from "./service"
 
 const execFileAsync = promisify(execFile)
 
@@ -118,64 +115,24 @@ export function parseSystemdUnit(text: string): SystemdUnit {
   return unit
 }
 
-export type LaunchdJob = {
-  label: string
-  programArguments: string[]
-  environment: Record<string, string>
-  runAtLoad: boolean
-  /** `KeepAlive.SuccessfulExit=false`: restart after every non-zero exit, never after zero. */
-  restartUnlessSuccessful: boolean
-  throttleIntervalS: number
-}
-
-function xmlUnescape(value: string) {
-  return value.replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&")
-}
-
-/** The plist `launchdPlist()` writes, read back; keys the CLI does not write take launchd's defaults. */
-export function parseLaunchdPlist(text: string): LaunchdJob {
-  const stringAfter = (key: string) => {
-    const match = new RegExp(`<key>${key}</key>\\s*<string>([^<]*)</string>`).exec(text)
-    return match ? xmlUnescape(match[1]) : undefined
-  }
-  const label = stringAfter("Label")
-  if (!label) throw new Error("plist has no Label")
-  const argsBlock = /<key>ProgramArguments<\/key>\s*<array>([\s\S]*?)<\/array>/.exec(text)?.[1] ?? ""
-  const programArguments = [...argsBlock.matchAll(/<string>([\s\S]*?)<\/string>/g)].map((match) => xmlUnescape(match[1]))
-  const environment: Record<string, string> = {}
-  const envBlock = /<key>EnvironmentVariables<\/key>\s*<dict>([\s\S]*?)<\/dict>/.exec(text)?.[1] ?? ""
-  for (const match of envBlock.matchAll(/<key>([^<]+)<\/key>\s*<string>([^<]*)<\/string>/g)) environment[match[1]] = xmlUnescape(match[2])
-  const keepAlive = /<key>KeepAlive<\/key>\s*<dict>([\s\S]*?)<\/dict>/.exec(text)?.[1] ?? ""
-  return {
-    label,
-    programArguments,
-    environment,
-    runAtLoad: /<key>RunAtLoad<\/key>\s*<true\/>/.test(text),
-    restartUnlessSuccessful: /<key>SuccessfulExit<\/key>\s*<false\/>/.test(keepAlive),
-    throttleIntervalS: Number(/<key>ThrottleInterval<\/key>\s*<integer>(\d+)<\/integer>/.exec(text)?.[1] ?? 10),
-  }
-}
-
 export type MainProcessExit = { code: number | null; signal: NodeJS.Signals | null }
 
-/** What both managers report about their one service, in the manager's own vocabulary and in a shared one. */
+/** What the manager reports about its one service, in its own vocabulary and in a shared one. */
 export type ServiceView = {
-  kind: "systemd-user" | "launchd"
   loaded: boolean
   enabled: boolean
   running: boolean
   pid: number | undefined
-  /** `ActiveState/SubState` for systemd, launchd's `state` for launchd. */
+  /** `ActiveState/SubState`. */
   state: string
   restarts: number
   lastExit: MainProcessExit | undefined
-  /** `systemctl show` / `launchctl print` as the manager prints it. */
+  /** `systemctl show` as the manager prints it. */
   raw: string
 }
 
 export type FakeServiceManager = {
-  kind: "systemd-user" | "launchd"
-  /** The CLI's exec seam: `systemctl`, `loginctl` and `launchctl` as this machine answers them. */
+  /** The CLI's exec seam: `systemctl` and `loginctl` as this machine answers them. */
   run: (file: string, args: readonly string[]) => Promise<CommandResult>
   /** Every command run, as one line each. */
   calls: string[]
@@ -478,7 +435,6 @@ export function createFakeSystemdUserManager(options: FakeSystemdOptions): FakeS
   }
 
   return {
-    kind: "systemd-user",
     run,
     calls,
     restartWaitsMs,
@@ -487,9 +443,8 @@ export function createFakeSystemdUserManager(options: FakeSystemdOptions): FakeS
     service: () => {
       const unit = only()
       const enabled = isEnabled(SYSTEMD_UNIT)
-      if (!unit) return { kind: "systemd-user", loaded: false, enabled, running: false, pid: undefined, state: "not-found", restarts: 0, lastExit: undefined, raw: "" }
+      if (!unit) return { loaded: false, enabled, running: false, pid: undefined, state: "not-found", restarts: 0, lastExit: undefined, raw: "" }
       return {
-        kind: "systemd-user",
         loaded: true,
         enabled,
         running: alive(unit.child),
@@ -528,228 +483,6 @@ export function createFakeSystemdUserManager(options: FakeSystemdOptions): FakeS
       await killAll()
     },
   }
-}
-
-export type FakeLaunchdOptions = FakeManagerOptions & { uid: number }
-
-/**
- * launchd as the CLI's LaunchAgent sees it: `bootstrap` loads the plist and
- * runs it (RunAtLoad), `bootout` unloads it and ends its process, and
- * `KeepAlive.SuccessfulExit=false` relaunches after any non-zero exit once
- * ThrottleInterval has passed since the last launch. The wrapper script the
- * CLI writes boots itself out on 78, which is the only reason a decision is
- * not relaunched — this model has no exempt status of its own, like launchd.
- */
-export function createFakeLaunchd(options: FakeLaunchdOptions): FakeServiceManager {
-  const setTimer = options.setTimeout ?? realSetTimeout
-  const agentsDir = path.join(options.home, "Library", "LaunchAgents")
-  const domain = `gui/${options.uid}`
-  const calls: string[] = []
-  const restartWaitsMs: number[] = []
-  let phase: "running" | "shutdown" = "running"
-
-  type Job = {
-    file: string
-    job: LaunchdJob
-    loaded: boolean
-    runs: number
-    lastStartedAt: number
-    lastExit: MainProcessExit | undefined
-    restartTimer: Timer | undefined
-  } & Tracked
-  const jobs = new Map<string, Job>()
-
-  const launch = (job: Job) => {
-    if (alive(job.child)) return
-    job.restartTimer?.cancel()
-    job.restartTimer = undefined
-    const [file, ...args] = job.job.programArguments
-    if (!file) throw new Error(`${job.job.label} has no ProgramArguments`)
-    const child = spawn(file, args, {
-      cwd: options.cwd,
-      env: { ...options.environment, ...job.job.environment },
-      stdio: ["ignore", "pipe", "pipe"],
-    })
-    job.runs += 1
-    job.lastStartedAt = Date.now()
-    void track(child, job, options.onChild).then((exit) => {
-      options.log?.(`${job.job.label}: exited ${JSON.stringify(exit)}`)
-      job.lastExit = exit
-      job.child = undefined
-      if (phase === "shutdown" || !job.loaded) return
-      if (exit.code === 0 || !job.job.restartUnlessSuccessful) return
-      const waitMs = Math.max(0, job.job.throttleIntervalS * 1000 - (Date.now() - job.lastStartedAt))
-      restartWaitsMs.push(waitMs)
-      job.restartTimer = setTimer(() => {
-        job.restartTimer = undefined
-        launch(job)
-      }, waitMs)
-    })
-  }
-
-  const bootstrap = async (file: string) => {
-    const text = await fs.readFile(file, "utf8")
-    const parsed = parseLaunchdPlist(text)
-    const existing = jobs.get(parsed.label)
-    if (existing?.loaded) return { code: 37, stdout: "" }
-    const job: Job = existing ?? {
-      file,
-      job: parsed,
-      loaded: false,
-      runs: 0,
-      lastStartedAt: 0,
-      lastExit: undefined,
-      restartTimer: undefined,
-      child: undefined,
-      exited: undefined,
-      pid: undefined,
-      journal: "",
-    }
-    job.file = file
-    job.job = parsed
-    job.loaded = true
-    jobs.set(parsed.label, job)
-    if (parsed.runAtLoad) launch(job)
-    return { code: 0, stdout: "" }
-  }
-
-  const print = (job: Job) =>
-    [
-      `${domain}/${job.job.label} = {`,
-      `\tactive count = ${alive(job.child) ? 1 : 0}`,
-      `\tpath = ${job.file}`,
-      `\tstate = ${alive(job.child) ? "running" : "not running"}`,
-      ...(alive(job.child) ? [`\tpid = ${job.pid}`] : []),
-      `\truns = ${job.runs}`,
-      ...(job.lastExit ? [`\tlast exit code = ${job.lastExit.signal ? `(signal ${job.lastExit.signal})` : job.lastExit.code}`] : []),
-      "}",
-      "",
-    ].join("\n")
-
-  const run = async (file: string, args: readonly string[]): Promise<CommandResult> => {
-    calls.push([file, ...args].join(" "))
-    if (file !== "launchctl") return { code: 127, stdout: "" }
-    const verb = args[0]
-    try {
-      if (verb === "bootstrap") {
-        if (args[1] !== domain) return { code: 1, stdout: "" }
-        return await bootstrap(args[2])
-      }
-      if (verb === "bootout" || verb === "print") {
-        const label = (args[1] ?? "").startsWith(`${domain}/`) ? args[1].slice(domain.length + 1) : undefined
-        const job = label ? jobs.get(label) : undefined
-        if (!job || !job.loaded) return { code: verb === "bootout" ? 3 : 113, stdout: "" }
-        if (verb === "print") return { code: 0, stdout: print(job) }
-        job.loaded = false
-        job.restartTimer?.cancel()
-        job.restartTimer = undefined
-        // Not awaited: the CLI's wrapper calls this from inside the job on 78.
-        if (alive(job.child)) job.child!.kill("SIGTERM")
-        return { code: 0, stdout: "" }
-      }
-      return { code: 1, stdout: "" }
-    } catch (error) {
-      options.log?.(`launchctl ${args.join(" ")}: ${error instanceof Error ? error.message : String(error)}`)
-      return { code: 1, stdout: "" }
-    }
-  }
-
-  const only = () => jobs.get(LAUNCHD_LABEL)
-
-  const killAll = async () => {
-    for (const job of jobs.values()) {
-      job.restartTimer?.cancel()
-      job.restartTimer = undefined
-      if (!alive(job.child)) continue
-      job.child!.kill("SIGKILL")
-      await job.exited
-    }
-  }
-
-  return {
-    kind: "launchd",
-    run,
-    calls,
-    restartWaitsMs,
-    child: () => only()?.child,
-    journal: () => only()?.journal ?? "",
-    service: () => {
-      const job = only()
-      if (!job) return { kind: "launchd", loaded: false, enabled: false, running: false, pid: undefined, state: "not loaded", restarts: 0, lastExit: undefined, raw: "" }
-      return {
-        kind: "launchd",
-        loaded: job.loaded,
-        enabled: job.loaded,
-        running: alive(job.child),
-        pid: alive(job.child) ? job.pid : undefined,
-        state: job.loaded ? (alive(job.child) ? "running" : "not running") : "not loaded",
-        restarts: Math.max(0, job.runs - 1),
-        lastExit: job.lastExit,
-        raw: job.loaded ? print(job) : "",
-      }
-    },
-    // A LaunchAgent comes back at the user's next login, which is the boot a
-    // machine with an auto-login user has.
-    reboot: async () => {
-      phase = "shutdown"
-      await killAll()
-      jobs.clear()
-      phase = "running"
-      const bootedAt = Date.now()
-      const plists = (await fs.readdir(agentsDir).catch(() => [] as string[])).filter((name) => name.endsWith(".plist"))
-      for (const name of plists) await bootstrap(path.join(agentsDir, name))
-      return { bootedAt }
-    },
-    serviceDeps: (input) => ({
-      platform: "darwin",
-      homedir: options.home,
-      username: options.username,
-      command: input.command,
-      claxedoHome: input.claxedoHome,
-      env: {},
-      run,
-      ...unitFileDeps,
-      now: input.now ?? (() => Date.now()),
-    }),
-    dispose: async () => {
-      phase = "shutdown"
-      await killAll()
-    },
-  }
-}
-
-/** The manager the CLI would install into on `platform`, for a fixture that runs the real binary. */
-export function createFakeServiceManager(
-  platform: NodeJS.Platform,
-  options: FakeManagerOptions & { linger: boolean; runtimeDir: string | undefined; uid: number },
-): FakeServiceManager {
-  return serviceKind(platform) === "systemd-user" ? createFakeSystemdUserManager(options) : createFakeLaunchd(options)
-}
-
-export const MANAGER_SHIMS = ["systemctl", "loginctl", "launchctl"] as const
-
-/**
- * The commands a real `claxedo connect --install-service` process runs, as
- * executables on its PATH that forward to a fixture's manager over HTTP:
- * `POST <url> {id, file, args}` answering `{code, stdout}`. The CLI's
- * launchd wrapper script runs `launchctl bootout` from inside the job, so the
- * job's own PATH must carry these too.
- */
-export async function writeManagerShims(dir: string) {
-  await fs.mkdir(dir, { recursive: true })
-  const script = [
-    "#!/usr/bin/env node",
-    "const file = require('node:path').basename(process.argv[1])",
-    "const url = process.env.CLAXEDO_FAKE_MANAGER_URL",
-    "const id = process.env.CLAXEDO_FAKE_MANAGER_INSTANCE",
-    "if (!url || !id) { process.stderr.write(`${file}: CLAXEDO_FAKE_MANAGER_URL and CLAXEDO_FAKE_MANAGER_INSTANCE are required\\n`); process.exit(1) }",
-    "fetch(url, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ id, file, args: process.argv.slice(2) }) })",
-    "  .then(async (response) => { const { code, stdout } = await response.json(); process.stdout.write(stdout ?? ''); process.exitCode = code })",
-    "  .catch((error) => { process.stderr.write(`${file}: ${error.message}\\n`); process.exitCode = 1 })",
-    "",
-  ].join("\n")
-  for (const name of MANAGER_SHIMS) await fs.writeFile(path.join(dir, name), script, { mode: 0o755 })
-  return dir
 }
 
 export type ProvisionInput = {

@@ -1,53 +1,19 @@
 # Architecture
 
-This is the internals doc for `@claxedo/workspace-relay`: how the two runtime
-adapters share one server core, how the three tokens (RAT/HTT/RHT) chain
-together, how a host tunnel connects/replaces/drains, and what the presence
-directory does and does not guarantee. For the public API surface and
-configuration knobs, see the [README](../README.md).
+`src/worker.ts` reads Worker bindings and creates the relay gateway. The gateway
+routes each request to a workspace Durable Object using
+`workspaceRelayDurableObjectRoomName(workspaceId)`.
 
-## One server core, two adapters
+`src/cloudflare.ts` owns the room's tunnel sockets, pending HTTP responses,
+WebSocket channels, hibernation attachments and alarms. It calls the
+`src/server.ts` authorization and forwarding functions, which operate on
+standard `Request` and `Response` objects. Token codecs live in `src/auth.ts`;
+`src/directory.ts` tracks active host presence.
 
-`src/server.ts` is the transport-agnostic core: request authorization
-(`authorizeWorkspaceRelayRequest`), target resolution, header
-stripping/forwarding (`workspaceRelayForwardHeaders`,
-`workspaceRelayForwardRequestInit`), CORS, `/metrics`, and the
-`/.well-known/jwks.json` publication of Relay Host public keys. It knows
-nothing about `Bun.serve` or Cloudflare Workers — it operates on standard
-`Request`/`Response` and a `WorkspaceRelayOptions` bag (auth keys, drain
-hook, telemetry, routing).
-
-Two adapters wrap that core with a WebSocket runtime:
-
-- **`src/bun.ts`** (`createWorkspaceRelayBun`) — the local Bun process the
-  e2e suites and the server's host-tunnel tests start. Uses `Bun.serve`'s
-  `fetch`/`websocket` handler pair and `Bun.ServerWebSocket`. One process
-  holds every host tunnel and pending-response map in local `Map`s (see
-  "Why the deployed relay is per-workspace rooms" below). A host tunnel here
-  registers with a set of `workspaceId`s in one WebSocket connection, so one
-  host can serve several workspaces over a single tunnel socket.
-- **`src/cloudflare.ts`** + **`src/worker.ts`** (`createWorkspaceRelayDurableObjectGateway`,
-  `createWorkspaceRelayDurableObjectRoom`) — a stateless Worker gateway that
-  routes each request to a per-workspace Durable Object "room" via
-  `namespace.idFromName(workspaceRelayDurableObjectRoomName(workspaceId))`,
-  where the room name is `` `workspace:${workspaceId}` ``. The room itself
-  reuses `authorizeWorkspaceRelayRequest` and the other `server.ts` exports —
-  it is the same authorization and forwarding logic as the Bun adapter,
-  just driven by Durable Object `WebSocketPair`s and (optionally) hibernation
-  instead of `Bun.serve`. Because a DO room is scoped to one workspace, a
-  host tunnel registering through this adapter must present exactly one
-  `workspaceId` per connection — the gateway rejects a host-tunnel upgrade
-  that lists more than one (`host_tunnel_single_workspace_required`).
-  `src/worker-h2.ts` is a variant entry point used to evaluate HTTP/2-specific
-  behavior on the same Durable Object core.
-
-Both adapters import their token verification, target/revocation resolvers,
-and directory contract from the same `src/auth.ts`, `src/directory.ts`, and
-`src/server.ts` modules — there is no parallel auth or forwarding
-implementation per runtime. `src/main.ts` is the Bun process's env-driven
-composition root (see [README § Configuration](../README.md#configuration));
-`src/worker.ts` plays the equivalent role for the Cloudflare deployment,
-reading `WorkspaceRelayWorkerEnv` bindings instead of `process.env`.
+A room belongs to one workspace. A host tunnel presents exactly one workspace
+per connection; the gateway refuses a multi-workspace upgrade with
+`host_tunnel_single_workspace_required`. `src/worker-h2.ts` evaluates HTTP/2
+behavior on the same room implementation.
 
 ## Token flow: RAT → HTT → RHT
 
@@ -83,8 +49,7 @@ Flow for one browser request:
 For **`local-worktree`** targets, step 4 does not `fetch()` a `baseUrl` directly —
 it forwards over an already-registered host tunnel (below). A workspace
 runtime registers that tunnel by presenting an HTT to
-`/host-tunnels/{hostId}?workspaceId=...` (one or more `workspaceId` query
-params on the Bun adapter; exactly one on the Durable Object adapter). The
+`/host-tunnels/{hostId}?workspaceId=...` (exactly one `workspaceId` query parameter). The
 relay verifies the HTT (`verifyHostTunnelToken`, checking `hostId` and
 `workspaceIds` match the claims) before upgrading the socket.
 
@@ -97,103 +62,22 @@ design: a RAT or HTT authorizes only the request/connection that presents it,
 not the lifetime of any socket it opens — see "Established sockets outlive
 their token" below.
 
-## Tunnel connect / replace / drain state machine
+## Tunnel lifecycle
 
-A host tunnel is a long-lived WebSocket from a workspace runtime to the relay
-at `/host-tunnels/{hostId}`, multiplexing HTTP requests, WebSocket channels,
-and heartbeats for one `hostId`. States (Bun adapter; the Durable Object room
-implements the same transitions inside one DO instance):
+The room verifies the Host Tunnel Token and serving generation before accepting
+a WebSocket. A replacement socket closes the incumbent and fails its pending
+HTTP responses and child WebSocket channels. Close handling checks socket
+identity before removing presence, so a delayed incumbent close cannot remove
+the replacement.
 
-```
-              authorizeHostTunnel() fails
-                        │
-   (no tunnel) ─────────┼───────────────────────────► 403 / socket refused
-        │               │
-        │ HTT valid, reconnect-rate under cap
-        ▼
-   CONNECTING ──────────────────────────► CONNECTED
-        │  server.upgrade()                  │  (open handler)
-        │                                     │  - registers in `hostTunnels` map
-        │                                     │  - directory.registerHostTunnel()
-        │                                     │  - starts ping heartbeat (15s default)
-        │                                     │  - schedules a debounced
-        │                                     │    host_tunnel.connected audit event
-        │                                     │
-        │            new socket for same hostId opens
-        │                        │
-        │                        ▼
-        │              REPLACING OLD SOCKET
-        │              - old socket's pending HTTP responses fail with
-        │                503 host_tunnel_offline
-        │              - old socket's child WS channels close (1011)
-        │              - old socket's heartbeat timer cleared
-        │              - old socket closed (1012 "replaced by a newer
-        │                connection") WITHOUT touching directory presence
-        │                (disconnectDirectory: false — the new socket owns it)
-        │                        │
-        │                        ▼
-        │                   CONNECTED (new socket)
-        │
-        ▼
-   missed pongs > cap (default 2)          explicit close/error
-        │                                          │
-        ▼                                          ▼
-   heartbeat timeout close (1001)          DISCONNECTED
-        │                                          │
-        └──────────────────────┬───────────────────┘
-                                ▼
-                   cleanupHostTunnelSocket(disconnectDirectory: true)
-                   - fails all pending HTTP responses
-                   - closes all child WS channels
-                   - identity-checks: only deletes `hostTunnels[hostId]`
-                     if the closing socket is still the map's current owner
-                     (so a stale old-socket close can't clobber a
-                     newer replacement's presence)
-                   - directory.disconnectHost(hostId)
-                   - schedules debounced host_tunnel.disconnected audit
-```
+Hibernation serializes socket attachments. The room rebuilds presence from
+those attachments and uses an alarm to re-check serving generations. A revoked
+or superseded enrollment closes the tunnel.
 
-Two properties make reconnects and flapping safe:
-
-- **Replacement is deterministic and ordered.** `open()` on the new socket
-  runs the full old-socket cleanup (fail pending, close channels, clear
-  heartbeat) synchronously before installing the new socket in the
-  `hostTunnels` map, so no request can be handed to a socket that is being
-  torn down.
-- **Stale-close identity check.** `cleanupHostTunnelSocket`'s directory
-  disconnect only fires `if (hostTunnels.get(hostId) === ws)` — an old
-  socket's delayed `close` event (arriving after a replacement already
-  connected) cannot delete the replacement's presence entry or emit a
-  spurious disconnect audit.
-- **Audit debounce.** `host_tunnel.connected`/`disconnected` events are
-  coalesced per `hostId` over a configurable window (`hostTunnelStateDebounceMs`,
-  default 250 ms) so a flapping reconnect within the window nets zero audit
-  events instead of a connect/disconnect/connect burst.
-
-Host tunnel reconnects are also rate-limited: at most
-`HOST_TUNNEL_REGISTRATION_RECONNECT_CAP` (5) registrations per `hostId`
-within `HOST_TUNNEL_REGISTRATION_RECONNECT_WINDOW_MS` (60 s), returning
-`429 too_many_host_tunnel_reconnects` past that.
-
-### Relay drain
-
-`WorkspaceRelayBunDrainController.setDraining(true)` (wired to `SIGTERM`/
-`SIGINT` via `installShutdownDrainHandler` in `main.ts`, and to uncaught
-exceptions/rejections via `installFatalProcessHandlers`) drives an orderly
-shutdown:
-
-1. `/health` starts returning `503 { draining: true }`.
-2. New HTTP requests to `/workspaces/*` and new host-tunnel WebSocket
-   upgrades fast-path to `503 relay_draining` before any auth work.
-3. Every currently-open host tunnel and relay client socket is closed with
-   `1012` so runtimes and browsers reconnect promptly (to another instance,
-   in a multi-instance deploy).
-4. The operator polls `waitForDrain(drainTimeoutMs)` (default 30 s, overridable
-   via `CLAXEDO_RELAY_DRAIN_TIMEOUT_MS`), which watches `pendingCount()` — the
-   sum of in-flight tunnel HTTP responses across every connected host tunnel —
-   until it reaches zero or the timeout elapses.
-5. `stopServer()` force-closes anything left (`server.stop(true)`), the
-   directory's sweep timer is disposed, and the process exits.
+`WorkspaceRelayDurableObjectDrainController.setDraining(true)` closes active
+tunnels and clients with code `1012`. New workspace requests are refused;
+`waitForDrain(timeoutMs)` waits for pending responses to finish within the
+supplied deadline.
 
 ### Established sockets outlive their token
 
@@ -218,41 +102,24 @@ type WorkspaceRelayDirectory = {
   recordPong(hostId: string): HostTunnelPresence | undefined
   disconnectHost(hostId: string): void
   activeHost(input: { hostId: string; workspaceId: string }): HostTunnelPresence | undefined
-  sweep(): void
-  dispose(): void
-  size(): number
 }
 ```
 
 The shipped implementation is an in-memory `Map` with:
 
 - a TTL per presence entry (`ttlMs`, default 45 s) refreshed by
-  `recordPong` on every tunnel heartbeat pong;
-- a background sweep (`sweepIntervalMs`, default 30 s; `0` disables the
-  timer for tests, which then call `sweep()` manually) that evicts entries
-  whose `expiresAt` has passed;
+  `recordPong` on every tunnel heartbeat pong; an expired entry is evicted
+  when a lookup reaches it;
 - `activeHost` returning a presence only if the host is unexpired **and**
   its `workspaceIds` includes the requested workspace — this is the
   workspace-membership check that keeps one host tunnel from serving
   traffic for a workspace it never registered.
 
-The Bun adapter pairs this with its `hostTunnels: Map<hostId, WebSocket>`:
-the directory says a `hostId` *should* be reachable, and the local map is the
-only thing that holds the live socket.
+The room owns both presence and the live tunnel socket. Cloudflare's routing
+sends every request for the workspace to that one room, including requests
+arriving through different gateway isolates.
 
-### Why the deployed relay is per-workspace rooms
-
-Presence and the live tunnel socket are both process-local in the Bun adapter,
-so a second Bun process could not reach a tunnel the first one holds even
-through a shared directory: traffic for a `hostId` has to reach the instance
-holding its socket, not just any instance that can read presence. The Durable
-Object adapter answers "which instance holds the socket" with Cloudflare's
-single-writer-per-DO-id routing: each workspace gets exactly one room. That is
-why a DO host tunnel is restricted to one `workspaceId` per connection; the
-room's identity *is* the workspace, and a tunnel serving several workspaces
-would have to live in several rooms with no shared state.
-
-Cloud-VM (`access: "cloud"`) targets do not go through the directory or a
+Cloud-VM (`backing: "cloud-vm"`) targets do not go through the directory or a
 host tunnel at all — the relay reaches them directly via `fetch()`/upstream
 WebSocket against `target.baseUrl`, so socket ownership does not apply to
 them.
@@ -263,5 +130,4 @@ The relay has no `/w/{workspaceId}/*` gateway prefix of its own and reads
 neither the workspace authority nor the identity provider. See
 [README § Routing](../README.md#routing) and
 [README § Seam: `internal-relay` vs `workspace-relay`](../README.md#seam-internal-relay-vs-workspace-relay)
-for how `claxedo-server`'s `workspaceRuntimeProxy` middleware and
-`internal-relay.ts` compose with this package.
+for the browser request path and the control-plane resolver boundary.

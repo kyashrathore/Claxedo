@@ -302,8 +302,8 @@ export type EmbeddedFirstPartyMcpLaunch = {
  * `createWorkspaceRuntimeApp` mounts them with.
  *
  * The one place that can answer it, and the one place that should: a host
- * serving these runtimes to remote clients (the desktop's relay tunnel, a
- * self-hosted `claxedo up`) has to DECLARE the composition to the control
+ * serving these runtimes to remote clients (the desktop's relay tunnel) has
+ * to DECLARE the composition to the control
  * plane, and the control plane refuses to infer it. Derived from the same
  * expression the app itself uses — the configured policy, or the unbound
  * `managedWorkspaceSessionAccessPolicy()` an embedded exposure falls back to —

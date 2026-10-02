@@ -1,13 +1,9 @@
 /**
- * Cross-tenant isolation for provider credentials on the SELF-HOST path.
- *
- * Provider credentials are model-provider API keys and OAuth tokens — the
- * highest-value secret in the product. Before org scoping landed,
- * `claxedo_provider_credential` had no tenant column, so on a self-hosted box
- * running signed multi-org auth ANY signed-in user could list, read, overwrite,
- * delete, or force-verify ANY other org's credentials. Every test below fails
- * against that shape; all five verbs are covered because all five were
- * reachable.
+ * Cross-tenant isolation for provider credentials in the credential router
+ * under signed multi-org auth: no signed-in user may list, read, overwrite,
+ * delete, or force-verify another org's credentials — model-provider API keys
+ * and OAuth tokens, the highest-value secret in the product. All five verbs
+ * are covered.
  *
  * These run against the REAL registry, the REAL SQLite schema, and the REAL
  * per-request org resolution (a stub token verifier stands in for the identity provider) —
@@ -78,8 +74,8 @@ const signedApp = CredentialRoutes(defaultControlPlaneCredentials(), {
 })
 
 /**
- * The same router with signed auth DISABLED — an ordinary self-host box. It
- * must keep working on the named single-tenant partition.
+ * The same router with signed auth DISABLED, as the desktop daemon composes
+ * it. It must keep working on the named single-tenant partition.
  */
 const singleTenantApp = CredentialRoutes(defaultControlPlaneCredentials(), {
   authConfig: { enabled: false, mode: "local-only", reason: "signed/cloud auth is disabled" },

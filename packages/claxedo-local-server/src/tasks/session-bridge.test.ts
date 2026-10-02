@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test, vi } from "vitest"
+import { afterEach, describe, expect, test } from "vitest"
 import fs from "fs/promises"
 import os from "os"
 import path from "path"
@@ -6,7 +6,6 @@ import { promisify } from "node:util"
 import { execFile } from "node:child_process"
 import type { HarnessEffortLevels } from "@claxedo/agent-runtime-contract"
 import { FakeTransport, fakeConnectionProvider } from "@claxedo/session-core/testing"
-import { closeAuthorityDatabases } from "@claxedo/server-core/authority/adapters/sqlite/workspace-authority-store"
 import { configureAgentConfig, disposeAgentConfig, saveUserConfig } from "@claxedo/server-core/agent-config/index"
 import { ClaxedoDB } from "@claxedo/server-core/platform/db/index"
 import { putSessionMeta, sessionMeta } from "@claxedo/server-core/session/meta/index"
@@ -269,7 +268,6 @@ afterEach(async () => {
   await shutdownEmbeddedWorkspaceRuntimes()
   disposeAgentConfig()
   ClaxedoDB.close()
-  closeAuthorityDatabases()
   configureEmbeddedWorkspaceRuntime({ sessionIdWorkspace: () => undefined })
   configureAgentConfig()
   for (const root of roots.splice(0)) await fs.rm(root, { recursive: true, force: true })
@@ -580,42 +578,6 @@ describe("local tasks session bridge", () => {
     expect(readable).toMatchObject({ ok: true })
     if (!readable.ok) return
     expect(readable.preview.previousTranscriptReadable).toBe(true)
-  })
-
-  test("reserves the origin and the configuration before the create when a signed host supplies one", async () => {
-    const host = await harness()
-    roots.push(host.root)
-    const createdWhenReserved: number[] = []
-    const reserve = vi.fn(async () => {
-      createdWhenReserved.push(host.created.length)
-      return { ok: true as const, headers: {} }
-    })
-    const signed = createLocalTasksSessionBridge({ reserve })
-    const previewed = await signed.preview({
-      actor: { scopeId: "local", ownerId: "local" },
-      task: task({ workspaceId: host.workspaceId }),
-      preset: preset(),
-      slot: "primary",
-      attempt: 1,
-      continueFromPrevious: false,
-      currentLink: null,
-      currentState: null,
-      authorizeTranscript: async () => true,
-    })
-    if (!previewed.ok) throw new Error("preview refused")
-
-    const started = await signed.start(await startCommand({ workspaceId: host.workspaceId, digest: previewed.preview.digest }))
-    expect(started).toMatchObject({ ok: true })
-    if (!started.ok) return
-    expect(reserve).toHaveBeenCalledWith({
-      actor: { scopeId: "local", ownerId: "local" },
-      operationId: `tasks.v1:local:tsk_1:primary:1:${await startConfigurationDigest({ preset: preset(), slot: "primary" })}`,
-      sessionId: started.session.sessionRef.sessionId,
-      workspaceId: host.workspaceId,
-      title: "Fix the importer",
-    })
-    expect(createdWhenReserved).toEqual([0])
-    expect(host.created).toHaveLength(1)
   })
 
   test("refuses to guess when a project holds two workspaces and neither is its root", async () => {
@@ -949,7 +911,6 @@ describe("local tasks session bridge", () => {
       await shutdownEmbeddedWorkspaceRuntimes()
       disposeAgentConfig()
       ClaxedoDB.close()
-      closeAuthorityDatabases()
     }
   })
 })

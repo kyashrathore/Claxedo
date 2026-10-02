@@ -162,7 +162,6 @@ export type RuntimeSessionStreamOptions = {
   authority: Pick<RuntimeSessionAuthorityPort, "authorizeRuntimeSession" | "runtimeAccessTokenActive">
   /** Absent on a plane that mints no owner grants; a lease bound to one is then refused at renewal. */
   resolveWorkspaceOwner?: ResolveWorkspaceOwner
-  mintStreamLease?: (claims: SessionStreamLeaseClaims) => Promise<{ lease: string; expiresAt: number }>
   env?: Record<string, string | undefined>
 }
 
@@ -182,18 +181,7 @@ export async function authorizeRuntimeSessionStream(
     workspaceId: claims.workspaceId,
     action: claims.action,
   })
-  const minter = options.mintStreamLease ?? streamLeaseMinter(options.env ?? process.env)
-  return { allowed: true, ...await minter(claims) }
-}
-
-/** Verifies a lease this control plane minted and returns its bound claims. */
-export function sessionStreamLeaseVerifier(env: Record<string, string | undefined> = process.env) {
-  return streamLeaseVerifier(env)
-}
-
-/** Issues the same signed stream proof for in-process and isolated runtimes. */
-export function sessionStreamLeaseMinter(env: Record<string, string | undefined> = process.env) {
-  return streamLeaseMinter(env)
+  return { allowed: true, ...await streamLeaseMinter(options.env ?? process.env)(claims) }
 }
 
 function sessionLeasePrincipal(claims: PrivateSessionRuntimePrincipal): PrivateSessionRuntimePrincipal {
@@ -260,8 +248,6 @@ export type RuntimeSessionAuthorityOptions = {
   env?: Record<string, string | undefined>
   ownerGrants?: OwnerGrantProof
   verifyRelayProof?: (token: string) => Promise<RelayHostPrivateSessionClaims>
-  mintStreamLease?: (claims: SessionStreamLeaseClaims) => Promise<{ lease: string; expiresAt: number }>
-  verifyStreamLease?: (lease: string) => Promise<SessionStreamLeaseClaims>
   mintTurnLease?: (claims: TurnLeaseClaims) => Promise<{ lease: string; expiresAt: number }>
   verifyTurnLease?: (lease: string) => Promise<TurnLeaseClaims>
   /** Where a cloud workspace's usage reports are filed; absent, a report answers 503. */
@@ -312,7 +298,7 @@ export function RuntimeSessionAuthorityRoutes(options: RuntimeSessionAuthorityOp
     // rechecked, as it is for a relay host token, and a fresh lease minted.
     const lease = trimToUndefined(body?.lease)
     const held = lease
-      ? await (options.verifyStreamLease ?? streamLeaseVerifier(env))(lease).catch(() => undefined)
+      ? await streamLeaseVerifier(env)(lease).catch(() => undefined)
       : undefined
     if (lease && (!held || held.sessionId !== WORKSPACE_STREAM_LEASE_SESSION || held.transport !== "relay-host")) {
       return context.json(
@@ -371,7 +357,7 @@ export function RuntimeSessionAuthorityRoutes(options: RuntimeSessionAuthorityOp
       )
     }
     if (action !== "host_read") return context.json({ allowed: true })
-    const minter = options.mintStreamLease ?? streamLeaseMinter(env)
+    const minter = streamLeaseMinter(env)
     const minted = await minter({
       ...sessionLeasePrincipal(proof),
       transport: "relay-host",
@@ -542,7 +528,7 @@ export function RuntimeSessionAuthorityRoutes(options: RuntimeSessionAuthorityOp
       }
       return { turn: { claims: verified, ownedTurn: verified, rechecked: false } }
     } else if (lease) {
-      const verified = await (options.verifyStreamLease ?? streamLeaseVerifier(env))(lease).catch(() => undefined)
+      const verified = await streamLeaseVerifier(env)(lease).catch(() => undefined)
       // A workspace lease stands for the reader on every session of its
       // workspace; the session named by the request is what is then authorized.
       const workspaceWide = verified?.sessionId === WORKSPACE_STREAM_LEASE_SESSION && verified.action === "read"
@@ -866,7 +852,6 @@ export function RuntimeSessionAuthorityRoutes(options: RuntimeSessionAuthorityOp
           {
             authority: options.authority,
             ...(resolveWorkspaceOwner ? { resolveWorkspaceOwner } : {}),
-            ...(options.mintStreamLease ? { mintStreamLease: options.mintStreamLease } : {}),
             env,
           },
           claims,

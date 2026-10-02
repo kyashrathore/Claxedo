@@ -16,38 +16,6 @@ const execFileAsync = promisify(execFile)
 
 const log = Log.create({ service: "workspace-store" })
 
-/**
- * Reads the provisioning lease for a cloud workspace.
- *
- * Only cloud workspaces have one, and a desktop-local build has no cloud
- * workspaces at all — yet importing the supervisor lease store directly put the
- * whole cloud sandbox graph inside the closure of every module that reads local
- * workspace inventory. A composition that provisions sandboxes supplies this;
- * one that does not leaves it unset, and an unfinished cloud workspace stays
- * hidden exactly as it does today when the lease lookup fails.
- */
-export type WorkspaceSandboxLeaseReader = (workspaceId: string) =>
-  | { status?: string; last_error?: string | null }
-  | undefined
-
-let sandboxLeaseReader: WorkspaceSandboxLeaseReader | undefined
-
-export function configureWorkspaceStore(options: { sandboxLease?: WorkspaceSandboxLeaseReader } = {}) {
-  sandboxLeaseReader = options.sandboxLease
-}
-
-/**
- * Whether a composition installed a lease reader.
- *
- * Exposed so the install is checkable. Without a reader, a cloud workspace in
- * `acquiring_sandbox` never becomes visible — nothing else moves that status —
- * so a dropped install hides every provisioned cloud workspace and its whole
- * project, silently.
- */
-export function workspaceSandboxLeaseInstalled() {
-  return sandboxLeaseReader !== undefined
-}
-
 export type Workspace = {
   id: string
   org_id?: string
@@ -107,25 +75,11 @@ type State = {
 const byId = new Map<string, Workspace>()
 const byDir = new Map<string, string>()
 const projectsById = new Map<string, Project>()
-const listeners = new Set<() => void | Promise<void>>()
 const localFirstTouch = new Map<string, Promise<Workspace | undefined>>()
 
 let ready: Promise<void> | undefined
 let loaded: string | undefined
 let saving = Promise.resolve()
-
-export function subscribeLocalWorkspaceChanges(listener: () => void | Promise<void>) {
-  listeners.add(listener)
-  return () => listeners.delete(listener)
-}
-
-function notifyWorkspaceChanges() {
-  for (const listener of listeners) {
-    Promise.resolve(listener()).catch((error) => {
-      log.warn("Workspace change listener failed", { error: error instanceof Error ? error.message : String(error) })
-    })
-  }
-}
 
 function file() {
   return path.join(dataDir(), "workspaces.json")
@@ -367,43 +321,13 @@ function upsert(ws: Workspace) {
 }
 
 function isListable(ws: Workspace) {
-  if (ws.kind !== "cloud") return true
-  if (!cloudAvailable(ws)) return false
-  if (ws.status === "failed") return false
-  if (ws.status !== "acquiring_sandbox") return true
-  const lease = (() => {
-    try {
-      return sandboxLeaseReader?.(ws.id)
-    } catch {
-      return undefined
-    }
-  })()
-  return lease?.status === "ready"
+  return ws.kind !== "cloud" || (cloudAvailable(ws) && ws.status !== "acquiring_sandbox")
 }
 
 function cloudAvailable(ws: Workspace) {
   if (ws.kind !== "cloud") return true
   if (ws.status === "failed") return false
-  if (ws.driver === "docker" && !dockerSandboxDriverEnabled()) return false
-  const lease = (() => {
-    try {
-      return sandboxLeaseReader?.(ws.id)
-    } catch {
-      return undefined
-    }
-  })()
-  if (!lease) return true
-  if (lease.status === "failed") return false
-  if (lease.status === "backoff" && lease.last_error) return false
-  return true
-}
-
-export function cloudWorkspaceReady(workspaceId: string): boolean {
-  try {
-    return sandboxLeaseReader?.(workspaceId)?.status === "ready"
-  } catch {
-    return false
-  }
+  return ws.driver !== "docker" || dockerSandboxDriverEnabled()
 }
 
 export async function listWorkspaces() {
@@ -596,7 +520,6 @@ async function ensureWorkspaceUncoalesced(input: EnsureWorkspaceInput) {
   })
   await save()
   log.info("Workspace stored", { workspaceId: id, directory })
-  notifyWorkspaceChanges()
   return ws
 }
 
@@ -674,7 +597,6 @@ export async function updateProjectMetadata(projectId: string, patch: ProjectMet
     updated_at: Date.now(),
   })
   await save()
-  notifyWorkspaceChanges()
   return (await listProjects()).find((project) => project.id === projectId)
 }
 
@@ -686,7 +608,6 @@ export async function deleteWorkspace(id: string) {
   byId.delete(id)
   await save()
   log.info("Workspace deleted", { workspaceId: id, directory: ws.directory })
-  notifyWorkspaceChanges()
   return true
 }
 
@@ -700,7 +621,6 @@ export async function deleteWorkspaceByDirectory(dir: string) {
   byId.delete(key)
   await save()
   log.info("Workspace deleted", { workspaceId: key, directory: ws.directory })
-  notifyWorkspaceChanges()
   return true
 }
 
@@ -780,7 +700,7 @@ export async function listProjects() {
         workspaces[workspaceKey(row)] = {
           ...row,
           available,
-          reachable: available && (row.kind !== "cloud" || cloudWorkspaceReady(row.id)),
+          reachable: available && row.kind !== "cloud",
           // Declared only for the workspaces this process actually serves. A
           // `cloud` row names a runtime on another machine, whose composition
           // this server has no standing to state; its client learns that one
@@ -849,7 +769,6 @@ export async function upsertProjectRecord(input: { id: string; name: string; env
   }
   projectsById.set(id, next)
   await save()
-  notifyWorkspaceChanges()
   return next
 }
 
@@ -859,7 +778,6 @@ export async function deleteProjectRecord(id: string) {
   const key = trimToUndefined(id)
   if (!key || !projectsById.delete(key)) return false
   await save()
-  notifyWorkspaceChanges()
   return true
 }
 

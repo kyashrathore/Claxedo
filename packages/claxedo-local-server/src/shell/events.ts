@@ -66,7 +66,7 @@ export function signedControlPlaneEventVisibleTo(frame: ControlPlaneFrame, princ
 
 /**
  * `/api/cp/events` — the control plane's stream, served by the local daemon
- * to its own surface and by a self-hosted node to its signed subscribers.
+ * to its own surface.
  * The hosted plane serves the same route from its room
  * (`claxedo-server/src/routes/hosted/shell.ts`), with the narrower notice
  * set `ControlPlaneEvent`'s docblock names.

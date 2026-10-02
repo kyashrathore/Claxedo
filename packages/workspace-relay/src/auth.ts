@@ -333,9 +333,7 @@ export type RelayKey = CryptoKey | Uint8Array | RelayKeyResolver
  *
  * `importJWK` is declared `Promise<CryptoKey | Uint8Array>` because a symmetric
  * (`oct`) JWK imports as raw bytes. An EdDSA public JWK never does, so the byte
- * branch is a configuration error worth failing loudly on — the two callers
- * (`main.ts` for Bun, `worker.ts` for Cloudflare) previously asserted it away
- * with their own copies of this round-trip.
+ * branch is a configuration error worth failing loudly on.
  */
 export async function deriveRelayHostPublicKey(privateKey: CryptoKey): Promise<CryptoKey> {
   const jwk = await exportJWK(privateKey)
@@ -349,10 +347,9 @@ export async function deriveRelayHostPublicKey(privateKey: CryptoKey): Promise<C
 /**
  * The relay-host key id, derived from the key's public component.
  *
- * ONE implementation on purpose: a Bun relay and a Cloudflare relay signing
- * with the same key must publish the same `kid`, or a token minted by one fails
- * key lookup at the other. It is written against WebCrypto rather than
- * `node:crypto` so the workerd bundle can use it too.
+ * Signing with the same key must always publish the same `kid`, or a token
+ * minted under one build fails key lookup at the next. Written against
+ * WebCrypto rather than `node:crypto` so the workerd bundle can use it.
  */
 export async function deriveRelayHostKid(publicKey: CryptoKey): Promise<string> {
   const jwk = await exportJWK(publicKey)
@@ -517,23 +514,6 @@ export async function verifyHostTunnelToken(token: string, key: RelayKey, expect
  * must cover every requested workspace, so a permissive policy cannot widen
  * the identity its own claims assert.
  */
-export function validateHostTunnelTokenClaims(input: Record<string, unknown>, expected: ExpectedHostTunnel) {
-  if (!isRecord(input)) {
-    throw new WorkspaceRelayAuthError("relay_token_claims_invalid", "Host Tunnel Token claims are not a claims object")
-  }
-  const payload = input as JWTPayload
-  if (stringClaim(payload, "iss") !== runtimeAccessTokenIssuer || stringClaim(payload, "aud") !== hostTunnelTokenAudience) {
-    throw new WorkspaceRelayAuthError("relay_token_claims_invalid", "Host Tunnel Token issuer or audience is invalid")
-  }
-  checkHostTunnelTarget(payload, expected)
-  const claims = hostTunnelClaims(payload)
-  if (!claims) {
-    throw new WorkspaceRelayAuthError("relay_token_claims_invalid", "Host Tunnel Token claims are incomplete")
-  }
-  checkTokenTimeClaims(payload, claims.exp, "Host Tunnel Token")
-  return claims
-}
-
 // RHT lifetime semantics:
 // The Relay Host Token (RHT) authenticates a SINGLE inbound HTTP request or
 // WebSocket upgrade from Workspace Relay to Workspace Host Service. TTL is

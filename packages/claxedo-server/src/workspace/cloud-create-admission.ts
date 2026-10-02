@@ -143,7 +143,7 @@ export type CloudCreateAdmission = {
 export type CloudCreateAdmissionPolicy = {
   /** The per-caller create budget. A supplied limiter is shared with the create route when the same instance is handed to both. */
   rateLimiter?: ConnectionRateLimiter
-  /** The deployment's cloud-workspace admission. Absent hook = no gate (self-host). */
+  /** The deployment's cloud-workspace admission. Absent hook = no gate. */
   entitlement?: CloudWorkspaceEntitlementGate
   /** `0` disables the concurrent-lease cap; absent means the default. */
   leaseCap?: number

@@ -160,7 +160,7 @@ async function roomHarness(input: {
   // used to reach it through a cast on each access.
   const pairs: Array<{ client: FakeSocket; server: FakeSocket }> = []
   const hibernatedSockets: FakeSocket[] = input.hibernatedSockets ?? []
-  const directory = createWorkspaceRelayDirectory({ sweepIntervalMs: 0, ...(input.now ? { now: input.now } : {}) })
+  const directory = createWorkspaceRelayDirectory(input.now ? { now: input.now } : {})
   const room = createWorkspaceRelayDurableObjectRoom({
     runtimeAccessKey: runtime.publicKey,
     relayHostSigningKey: relayHost.privateKey,
@@ -615,9 +615,8 @@ describe("workspace relay Cloudflare Durable Object room", () => {
     }))
 
     // The fake socket dispatches the async token verification without awaiting
-    // its listener. Wait for the canonical room state, just as the Bun socket
-    // integration test below waits for directory presence, instead of assuming
-    // one macrotask is enough for WebCrypto on every CI host.
+    // its listener. Wait for the canonical room state instead of assuming one
+    // macrotask is enough for WebCrypto on every CI host.
     const deadline = Date.now() + 1_000
     while (!harness.room.state().hostWorkspaceIds.host_1?.includes("ws_2") && Date.now() < deadline) {
       await new Promise((resolve) => setTimeout(resolve, 1))
@@ -2273,8 +2272,7 @@ describe("workspace relay Cloudflare Durable Object room", () => {
   })
 
   test("rejects workspace WS upgrades whose Origin is outside the allowlist", async () => {
-    // The Bun adapter's requireAllowedOrigin verdict on the same path: a valid
-    // token does not rescue a hostile browser origin.
+    // A valid token does not rescue a hostile browser origin.
     const harness = await roomHarness({
       connectWebSocket: () => new FakeSocket(),
     })
@@ -2332,7 +2330,7 @@ describe("workspace relay Cloudflare Durable Object room", () => {
 
   test("does not apply the origin gate to host-tunnel registrations", async () => {
     // Host connectors are non-browser clients protected by the Host Tunnel
-    // Token, not by the browser-origin allowlist — same exemption as Bun.
+    // Token, not by the browser-origin allowlist.
     const harness = await roomHarness({ resolveTarget: "local-worktree" })
     const res = await harness.room.fetch(new Request("https://relay.test/host-tunnels/host_1?workspaceId=ws_1", {
       headers: {

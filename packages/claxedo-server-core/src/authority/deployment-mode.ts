@@ -1,38 +1,32 @@
 /**
  * Explicit deployment trust posture and the global unsigned-local gate.
  *
- * TWO ORTHOGONAL AXES. Conflating them is how this file's vocabulary drifted:
+ * TWO ORTHOGONAL AXES:
  *
  * - TRUST (`local` | `hosted`, this module) — how requests are authenticated.
- * - RUNTIME (`node` | `workerd`, see `deploymentRuntime`) — where it executes.
+ * - RUNTIME (`node` | `workerd`, see `DeploymentRuntime`) — where it executes.
  *
  * "Self-hosting" is neither: it describes WHO OPERATES the deployment, and is
- * documentation vocabulary only, never a value here. A user self-hosting on a
- * public domain with signed auth is `trust=hosted, runtime=node` — a real shape
- * the old `self-host | hosted` enum could not express, which is why
- * `public-docs` had to warn operators away from the word "hosted" while
- * documenting a hosted remote deployment on Fly.
+ * never a value here. A user running their own Worker with signed auth is
+ * `trust=hosted`.
  *
  * Without an explicit posture, "hosted" would be an emergent property of which
  * env vars happen to be set. This module makes the deployment's trust posture
  * an explicit fact the system knows:
  *
- * - `CLAXEDO_DEPLOYMENT_MODE=local` (default when absent) keeps today's
- *   behavior bit-for-bit: zero-config boot, unsigned, loopback-guarded.
- *   The OSS quickstart never sets the flag.
+ * - `CLAXEDO_DEPLOYMENT_MODE=local` (default when absent): zero-config boot,
+ *   unsigned, loopback-guarded.
  * - `CLAXEDO_DEPLOYMENT_MODE=hosted` declares the signed multi-tenant posture.
  *
  * This module owns PARSING that posture and the request-time guard below —
  * nothing else. Hosted BOOT prerequisites belong to each composition root,
- * which is the only layer that knows its own dependencies: the self-hosted
- * Node app refuses `hosted` outright (`hosted_composition_removed`), and the
- * certified Better Auth + D1 worker validates its own bindings in
- * `better-auth-d1-compose.ts`. A generic boot assertion here could only
- * restate env names no composition reads.
+ * which is the only layer that knows its own dependencies: the Better Auth +
+ * D1 worker validates its own bindings in `better-auth-d1-compose.ts`. A
+ * generic boot assertion here could only restate env names no composition
+ * reads.
  *
- * NO BACKWARD COMPATIBILITY: the former `self-host` value is invalid and throws
- * at boot naming `local`. An accepted-but-deprecated alias would reintroduce
- * exactly the silent-drift surface this rename removes.
+ * The `self-host` value is invalid and throws at boot naming `local`; an
+ * accepted alias would let a deployment's posture drift silently.
  *
  * The request-time counterpart is `unsignedLocalRequestGuard`: one global
  * middleware at the app-composition root that is the PRIMARY unsigned-local
@@ -58,10 +52,8 @@ export const DEPLOYMENT_MODE_ENV = "CLAXEDO_DEPLOYMENT_MODE"
 export type Trust = "local" | "hosted"
 
 /**
- * Execution runtime. Derived at each composition root (worker.ts -> "workerd";
- * main.ts / hosted-node.ts -> "node"), never read from the environment, so it
- * adds no operator surface. Exists so `node-hosted` and `workerd-hosted` are
- * distinguishable — "hosted" alone says nothing about where code runs.
+ * Execution runtime, never read from the environment, so it adds no operator
+ * surface. "hosted" alone says nothing about where code runs.
  */
 export type DeploymentRuntime = "node" | "workerd"
 
@@ -165,7 +157,7 @@ function guardBody(code: string, message: string) {
 
 /**
  * The ONE global unsigned-local gate, mounted at the app-composition root
- * before every route handler (both `server.ts createApp` and
+ * before every route handler (`local-app.ts createLocalApp` and
  * `hosted-core-app.ts createHostedCoreApp`). Policy:
  *
  * - Signed deployment (`authConfig.enabled`): pass through — per-route bearer
@@ -175,10 +167,9 @@ function guardBody(code: string, message: string) {
  *   composition root's own business — so this branch is the real last line
  *   of defense: a hosted deployment that reaches serving without signed auth
  *   is DOWN, not open.
- * - Self-host unsigned: loopback requests pass (today's behavior,
- *   bit-for-bit); non-loopback requests are DENIED unless explicitly
- *   allowlisted above. `misconfigured` (signed requested but broken) answers
- *   503 to non-loopback like the per-route auth path always has.
+ * - Local unsigned: loopback requests pass; non-loopback requests are DENIED
+ *   unless explicitly allowlisted above. `misconfigured` (signed requested but
+ *   broken) answers 503 to non-loopback, as the per-route auth path does.
  */
 export function unsignedLocalRequestGuard(options: UnsignedLocalGuardOptions): MiddlewareHandler {
   return async (c, next) => {
@@ -200,7 +191,7 @@ export function unsignedLocalRequestGuard(options: UnsignedLocalGuardOptions): M
     return c.json(
       guardBody(
         "unsigned_local_loopback_required",
-        "unsigned-local access is loopback-only; set CLAXEDO_EMBEDDED_AUTH=1 to configure signed auth for remote access",
+        "unsigned-local access is loopback-only",
       ),
       403,
     )

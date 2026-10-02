@@ -1,7 +1,6 @@
 import { beforeEach, describe, expect, test, vi } from "vitest"
 
 const mocks = {
-  broadcastRuntimeConfig: vi.fn(async () => {}),
   syncEmbeddedWorkspaceRuntimes: vi.fn(async () => {}),
   log: {
     warn: vi.fn(),
@@ -19,33 +18,20 @@ vi.mock("@claxedo/server-core/platform/runtime/lib/log", () => ({
 }))
 
 const { fanOutConfig } = await import("./fanout")
-const { configureWorkspaceSupervisorPort } = await import("@claxedo/server-core/workspace/supervisor-port")
 
 beforeEach(() => {
   vi.clearAllMocks()
-  // Fanout reaches the sandbox supervisor through the composed port rather
-  // than importing the cloud provisioning graph.
-  configureWorkspaceSupervisorPort({
-    hold() {},
-    release() {},
-    markUse() {},
-    touch() {},
-    broadcastRuntimeConfig: mocks.broadcastRuntimeConfig,
-    reconcileCredentialDelivery: vi.fn(async () => {}),
-  })
-  mocks.broadcastRuntimeConfig.mockResolvedValue(undefined)
   mocks.syncEmbeddedWorkspaceRuntimes.mockResolvedValue(undefined)
 })
 
 describe("fanOutConfig", () => {
-  test("warns for a rejected target while the other runtime targets still run", async () => {
+  test("a rejected runtime fails the fan-out and is logged without the config it quoted", async () => {
     mocks.syncEmbeddedWorkspaceRuntimes.mockRejectedValue(
       new Error("runtime rejected config containing sk-secret"),
     )
 
     await expect(fanOutConfig()).rejects.toThrow("config fan-out failed")
 
-    expect(mocks.broadcastRuntimeConfig).toHaveBeenCalledOnce()
     expect(mocks.syncEmbeddedWorkspaceRuntimes).toHaveBeenCalledOnce()
     expect(mocks.log.warn).toHaveBeenCalledOnce()
     expect(mocks.log.warn).toHaveBeenCalledWith("config fan-out target failed", {

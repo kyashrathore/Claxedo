@@ -23,8 +23,8 @@ type Row = {
 
 // Bounded TTL so the in-memory cache is periodically refetched from disk even
 // when the data-dir root is unchanged (guards against another process writing
-// the file). 60s keeps behavior identical within the window and cheap on the
-// common single-box case, where all writes go through save() anyway.
+// the file). 60s keeps behavior identical within the window and cheap in the
+// common single-process case, where all writes go through save() anyway.
 const CACHE_TTL_MS = 60_000
 
 let cache: Map<string, Row> | undefined

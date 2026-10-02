@@ -59,8 +59,7 @@ Also excluded from AccountPort (intentional non-rows):
   only; signed hosted sessions may view them through the local proxy but do not
   spend the Hosted Server bearer on them.
 - **Machine pause** — desktop reaches it through Host
-  Connector IPC; browser self-hosted uses the page session over HTTP. The
-  enrollment handshake itself is the `host.enrollmentNonce` and
+  Connector IPC. The enrollment handshake itself is the `host.enrollmentNonce` and
   `host.enrollCurrentMachine` rows below, performed by main for the Host
   Connector child; everything after the enroll response is machine-signed.
   There is no `host.enrollmentHeartbeat` row: the beat is

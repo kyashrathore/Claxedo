@@ -267,9 +267,8 @@ export function mountLocalRouteFamilies(app: Hono, options: LocalAppOptions) {
         return localCorsOrigin(origin, new URL(c.req.url).origin, options.browserOrigins ?? [])
       },
       maxAge: 86400,
-      // `credentials: true` is deliberately not set, matching the self-hosted
-      // composition: turning it on would let any origin this policy approves
-      // complete a credentialed cross-origin read.
+      // `credentials: true` is deliberately not set: turning it on would let
+      // any origin this policy approves complete a credentialed cross-origin read.
     }),
   )
 
@@ -315,8 +314,7 @@ export function mountLocalRouteFamilies(app: Hono, options: LocalAppOptions) {
 
   app.route("/", TelemetryTrackRoutes({ auth: services.auth, telemetry: services.telemetry }))
 
-  // The same body the self-hosted composition returns. The shell reads these
-  // fields; an `{ ok: true }` stub would be a silent regression.
+  // The shell reads these fields; an `{ ok: true }` stub would be a silent regression.
   app.get("/api/claxedo/health", (c) =>
     c.json({
       ok: true,
@@ -436,7 +434,6 @@ export function mountLocalRouteFamilies(app: Hono, options: LocalAppOptions) {
     services,
     env,
     hostAggregateEvents: !!runtimeProxy.hostEventStream,
-    connections: false,
     // Read per request off the live serving arrangement, which Electron main
     // installs through `/api/claxedo/host-serving` after this route is
     // mounted: the daemon starts before the machine has enrolled and outlives
@@ -449,9 +446,8 @@ export function mountLocalRouteFamilies(app: Hono, options: LocalAppOptions) {
     agentUsage: readMachineAgentUsage,
     ...authRouteOptions(services),
     ...(env.CLAXEDO_CREDENTIALS_TOKEN?.trim() ? { token: env.CLAXEDO_CREDENTIALS_TOKEN.trim() } : {}),
-    // Derived from the environment, matching the self-hosted composition —
-    // never caller-supplied, since an omitted hook would leave credential
-    // mutation behind only the loopback guard on a signed box.
+    // Derived from the environment, never caller-supplied, since an omitted
+    // hook would leave credential mutation behind only the loopback guard under signed auth.
     ...(deploymentMode(env) === "hosted" || env.CLAXEDO_SIGNED_CLOUD_AUTH === "1"
       ? {
           authenticate: async (request: Request) => {

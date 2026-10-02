@@ -191,9 +191,8 @@ const DEFAULT_MACHINE_WINDOW_MS = 60_000
 
 /**
  * Per-client-address budget for the routes that admit no account, spent
- * before any body is parsed or any row is read. The hosted app's IP guard is
- * outer middleware; a self-hosted mount may not have it, so these routes
- * carry their own. Redeem is one call per machine lifetime and `/acquire`
+ * before any body is parsed or any row is read, apart from the hosted app's
+ * outer IP guard. Redeem is one call per machine lifetime and `/acquire`
  * one per process start; the machine heartbeat is one per lease interval,
  * and several hosts may share one egress address, so this sits at the
  * control-plane ceiling rather than at the human-action budget.

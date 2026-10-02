@@ -363,8 +363,8 @@ describe("desktop-local Tasks composition", () => {
     tasksOn = true
 
     // The person is admitted by the daemon capability and carries no bearer.
-    // A non-bearer Authorization is not a grant presentation — an unsigned box
-    // behind desktop basic auth sends one — so it stays the person's.
+    // A non-bearer Authorization is not a grant presentation, so it stays the
+    // person's.
     expect((await write("person-plain", {})).status).toBe(200)
     expect((await write("person-basic", { authorization: `Basic ${btoa(":desk-secret")}` })).status).toBe(200)
     expect((await write("session-valid", { authorization: `Bearer ${handle}` })).status).toBe(200)
