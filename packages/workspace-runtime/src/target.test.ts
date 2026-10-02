@@ -5,7 +5,6 @@ import fs from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
 import {
-  assertTarget,
   authoritativeWorkspaceId,
   registeredWorkspaceDirectoriesUnder,
   registeredWorkspaceDirectoryOwners,
@@ -17,14 +16,6 @@ import {
 } from "./target"
 
 describe("workspaceDir", () => {
-  it("pins a directory with a typed refusal", () => withSessionCore(testSessionCore(process.cwd(), "ws_test"), () => {
-    try {
-      assertTarget("/other", { WORKSPACE_RUNTIME_DIRECTORY: "/repo", WORKSPACE_RUNTIME_WORKSPACE_ID: "ws_1" })
-      throw new Error("expected refusal")
-    } catch (error) {
-      expect(error).toMatchObject({ code: "workspace_target_pinned", status: 400, retryable: false })
-    }
-  }))
   it("rejects multi-directory configuration", () => withSessionCore(testSessionCore(process.cwd(), "ws_test"), () => {
     expect(() =>
       workspaceDir({ WORKSPACE_RUNTIME_DIRECTORY: "/tmp/a,/tmp/b" } as NodeJS.ProcessEnv)
@@ -34,28 +25,6 @@ describe("workspaceDir", () => {
   it("resolves a single configured directory", () => withSessionCore(testSessionCore(process.cwd(), "ws_test"), () => {
     expect(workspaceDir({ WORKSPACE_RUNTIME_DIRECTORY: "./tmp/demo" } as NodeJS.ProcessEnv)).toContain("/tmp/demo")
     expect(workspaceDir({ WORKSPACE_RUNTIME_DIRECTORY: "./tmp/demo" } as NodeJS.ProcessEnv)).toContain("/tmp/demo")
-  }))
-})
-
-describe("assertTarget", () => {
-  it("accepts the configured directory", () => withSessionCore(testSessionCore(process.cwd(), "ws_test"), () => {
-    expect(assertTarget("/tmp/demo", { WORKSPACE_RUNTIME_DIRECTORY: "/tmp/demo" } as NodeJS.ProcessEnv)).toBe("/tmp/demo")
-  }))
-
-  it("accepts the configured synthetic workspace directory", () => withSessionCore(testSessionCore(process.cwd(), "ws_test"), () => {
-    expect(assertTarget(
-      "workspace:ws_123",
-      {
-        WORKSPACE_RUNTIME_DIRECTORY: "/tmp/demo",
-        WORKSPACE_RUNTIME_WORKSPACE_ID: "ws_123",
-      } as NodeJS.ProcessEnv,
-    )).toBe("/tmp/demo")
-  }))
-
-  it("rejects mismatched directories", () => withSessionCore(testSessionCore(process.cwd(), "ws_test"), () => {
-    expect(() =>
-      assertTarget("/tmp/other", { WORKSPACE_RUNTIME_DIRECTORY: "/tmp/demo" } as NodeJS.ProcessEnv)
-    ).toThrow("workspace-runtime is pinned to /tmp/demo")
   }))
 })
 

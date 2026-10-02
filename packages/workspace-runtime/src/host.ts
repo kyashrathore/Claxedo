@@ -13,11 +13,8 @@ export type { WorkspaceCapabilities, WorkspaceRpc } from "./capabilities"
 export type { WorkspaceProfile } from "./profile"
 export { Pty } from "./pty/index"
 export { setupAgentHooks } from "./agent-hooks"
-export {
-  workspaceDir,
-  workspaceId,
-  assertTarget,
-} from "./target"
+export { workspaceDir, workspaceId } from "./target"
+export { currentSessionCore } from "./session-context"
 export { workspaceRuntimeStoreDir } from "./env"
 export { storeBackedSessionPlacement } from "./store-file"
 export { WorkspaceWorktreeManager, workspaceStorageRoot } from "./worktree"

@@ -1,11 +1,9 @@
-import { withSessionCore } from "./session-context"
 import { testSessionCore } from "@claxedo/session-core/testing"
 import { afterEach, describe, expect, test } from "bun:test"
 import fs from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
 import { openRuntimeStore } from "./store-file"
-import { assertTarget, withWorkspaceTarget } from "./target"
 import { WorkspaceWorktreeManager } from "./worktree"
 
 const roots: string[] = []
@@ -107,13 +105,11 @@ describe("WorkspaceWorktreeManager", () => {
   })
 
   test("rejects traversal and authorizes only registered paths", async () => {
-    const { source, manager, store, core } = await fixture()
+    const { manager, store, core } = await fixture()
     await expect(manager.ensure({ sessionId: "../escape" })).rejects.toThrow("session id is not path-safe")
     const worktree = await manager.ensure({ sessionId: "session-safe" })
-    withSessionCore(core, () => withWorkspaceTarget({ workspaceId: "workspace-1", directory: source }, () => {
-      expect(assertTarget(worktree.path)).toBe(worktree.path)
-      expect(() => assertTarget(path.dirname(worktree.path))).toThrow("pinned")
-    }))
+    expect(core.placement.resolveDirectory(worktree.path)).toBe(worktree.path)
+    expect(() => core.placement.resolveDirectory(path.dirname(worktree.path))).toThrow("pinned")
     manager.close()
     store.close()
   })

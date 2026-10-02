@@ -172,19 +172,18 @@ describe("FileRoutes file search", () => {
     expect(await search("widget", "&dirs=false")).toEqual(["src/panel/widget.ts"])
   }))
 
-  test("evicts the oldest runtime root after the shared cache reaches its bound", () => withSessionCore(testSessionCore(tmp, workspaceId()), async () => {
+  test("evicts the oldest runtime root after the shared cache reaches its bound", async () => {
     const roots = Array.from({ length: 34 }, (_, index) => path.join(tmp, `root-${index}`))
     const app = new Hono().route("/", FileRoutes())
+    const find = (root: string) => withSessionCore(testSessionCore(root, workspaceId()), async () => await (await app.request("/find/file?dirs=false")).json())
     for (const root of roots) {
       await fs.mkdir(root)
       await fs.writeFile(path.join(root, "a.txt"), "")
-      process.env.WORKSPACE_RUNTIME_DIRECTORY = root
-      expect(await (await app.request("/find/file?dirs=false")).json()).toEqual(["a.txt"])
+      expect(await find(root)).toEqual(["a.txt"])
     }
-    await fs.writeFile(path.join(roots[0]!, "b.txt"), "")
-    process.env.WORKSPACE_RUNTIME_DIRECTORY = roots[0]
-    expect(await (await app.request("/find/file?dirs=false")).json()).toEqual(["a.txt", "b.txt"])
-  }))
+    await fs.writeFile(path.join(roots[0], "b.txt"), "")
+    expect(await find(roots[0])).toEqual(["a.txt", "b.txt"])
+  })
 
   test("matches a subsequence the way the picker does, not just a literal substring", () => withSessionCore(testSessionCore(tmp, workspaceId()), async () => {
     expect(await search("spwidget", "&dirs=false")).toEqual(["src/panel/widget.ts"])

@@ -23,3 +23,13 @@ test("two core instances of the same workspace own separate placement registries
   first.placement.register({ sessionId: "child", directory: "/worktrees/child" })
   expect(second.placement.registeredDirectory("child")).toBeUndefined()
 })
+
+test("the placement serves its root, its synthetic workspace name and registered worktrees, and refuses any other directory", () => {
+  const { placement } = core()
+  placement.register({ sessionId: "child", directory: "/worktrees/child" })
+  expect([undefined, "/workspace", "workspace:ws_same", "/worktrees/child"].map((requested) => placement.resolveDirectory(requested)))
+    .toEqual(["/workspace", "/workspace", "/workspace", "/worktrees/child"])
+  expect(placement.resolveDirectory(undefined, "child")).toBe("/worktrees/child")
+  expect(() => placement.resolveDirectory("/elsewhere"))
+    .toThrow(expect.objectContaining({ code: "workspace_target_pinned", status: 400, retryable: false, message: "workspace-runtime is pinned to /workspace" }))
+})

@@ -1,4 +1,7 @@
 import { expect, test, vi } from "vitest"
+import { testSessionCore } from "@claxedo/session-core/testing"
+import { withSessionCore } from "@claxedo/workspace-runtime/testing"
+import type { ConnectionSecretResolver } from "@claxedo/agent-runtime-contract"
 import { claxedoWorkspaceRuntimeBootFromEnv } from "./runtime-boot"
 
 const endpoint = "https://control.test/api/runtime-authority/connection-secrets/workspace-1"
@@ -10,7 +13,9 @@ async function bootResolver() {
     WORKSPACE_RUNTIME_WORKSPACE_ID: "workspace-1", WORKSPACE_RUNTIME_DIRECTORY: "/workspace",
     WORKSPACE_RUNTIME_SESSION_AUTHORITY_URL: "https://control.test/api/runtime-authority/session-authorize",
   })
-  return { resolve: boot.options.resolveConnectionSecrets!, contributions: boot.options.routeContributions?.map((contribution) => contribution.id) }
+  const core = testSessionCore("/workspace", "workspace-1")
+  const resolve: ConnectionSecretResolver = (input) => withSessionCore(core, () => boot.options.resolveConnectionSecrets!(input))
+  return { resolve, contributions: boot.options.routeContributions?.map((contribution) => contribution.id) }
 }
 
 test("sandbox boot leases a request's connection secrets with the relay proof that request carried", async () => {
@@ -55,6 +60,16 @@ test("sandbox boot refuses a lease no admitted operation proves, or no person ow
     await expect(Promise.resolve().then(() => resolve({ directory: "/workspace", descriptor, owner: { kind: "machine-owner" },
       authority: { kind: "turn", lease: "signed-turn-lease" } })))
       .rejects.toMatchObject({ code: "connection_unavailable", reason: "resolver_failed" })
+    expect(fetcher).not.toHaveBeenCalled()
+  } finally { fetcher.mockRestore() }
+})
+
+test("sandbox boot refuses a lease for a directory its runtime does not serve, without asking the control plane", async () => {
+  const { resolve } = await bootResolver()
+  const fetcher = vi.spyOn(globalThis, "fetch")
+  try {
+    await expect(Promise.resolve().then(() => resolve({ directory: "/elsewhere", descriptor, owner, authority: { kind: "turn", lease: "signed-turn-lease" } })))
+      .rejects.toMatchObject({ code: "workspace_target_pinned" })
     expect(fetcher).not.toHaveBeenCalled()
   } finally { fetcher.mockRestore() }
 })

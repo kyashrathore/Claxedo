@@ -1,5 +1,3 @@
-import type { RuntimeDirectory } from "./host/contracts"
-
 export type SessionPlacementPort = {
   workspaceId: string
   directory: string
@@ -32,7 +30,7 @@ export function createSessionPlacement(port: SessionPlacementPort) {
     registeredDirectory(sessionId: string) { return directories.get(sessionId) },
     registeredDirectories() { return [...directories.values()] },
     entries() { return [...directories].map(([sessionId, directory]) => ({ sessionId, directory })) },
-    resolveDirectory(requested?: string, sessionId?: string): RuntimeDirectory {
+    resolveDirectory(requested?: string, sessionId?: string): string {
       if (!requested) return (sessionId ? directories.get(sessionId) : undefined) ?? root
       if (requested.trim() === `workspace:${port.workspaceId}`) return root
       const directory = normalize(requested.trim())

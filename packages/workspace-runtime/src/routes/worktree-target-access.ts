@@ -1,7 +1,7 @@
 /**
  * The authorization the file, diff and Git route families run under.
  *
- * `assertTarget` answers whether a directory belongs to this runtime, and a
+ * `placement.resolveDirectory` answers whether a directory belongs to this runtime, and a
  * registered per-session worktree does — that is how a session's own tools
  * reach it. It does not answer whose it is, so a caller who names another
  * session's worktree in `?directory=` was reading and writing it with nothing
