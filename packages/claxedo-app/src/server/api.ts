@@ -251,7 +251,7 @@ export type ServerQueries = {
 }
 
 export type Server = {
-  readonly sharedSessions: Pick<SharedSessions, "list" | "find" | "refresh" | "enabled" | "error">
+  readonly sharedSessions: Pick<SharedSessions, "count" | "list" | "find" | "refresh" | "enabled" | "error">
   readonly connection: Accessor<ConnectionState>
   readonly capabilities: Accessor<Capabilities | undefined>
   readonly queryClient: QueryClient

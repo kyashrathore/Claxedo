@@ -39,6 +39,12 @@ export function createSharedSessions(account: HostedAccount | undefined, serverU
       revision()
       return client.getQueryState(key)?.error ?? undefined
     },
+    count: () => {
+      revision()
+      if (!account) return 0
+      const state = client.getQueryState<readonly SharedSessionRow[]>(key)
+      return state?.status === "pending" || !state ? undefined : (state.data?.length ?? 0)
+    },
     list,
     find,
     route,

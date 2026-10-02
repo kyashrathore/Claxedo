@@ -1,6 +1,7 @@
 import { createEffect, type JSX } from "solid-js"
 import { onboardingNeeded, onboardingPath } from "@/onboarding"
 import { useProjects } from "@/projects"
+import { useServer } from "@/server"
 import { useActivePlacement } from "./active-placement"
 import { useShellRoute } from "./router"
 import { draftPath } from "./routes"
@@ -8,10 +9,11 @@ import { draftPath } from "./routes"
 export function HomeRedirect(): JSX.Element {
   const routing = useShellRoute()
   const projects = useProjects()
+  const server = useServer()
   const active = useActivePlacement()
   createEffect(() => {
     if (routing.route().kind !== "home") return
-    if (onboardingNeeded(projects())) return routing.navigate(onboardingPath, { replace: true })
+    if (onboardingNeeded(projects(), server.sharedSessions.count())) return routing.navigate(onboardingPath, { replace: true })
     const placement = active()
     if (placement) routing.navigate(draftPath(placement), { replace: true })
   })

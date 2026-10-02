@@ -5,7 +5,7 @@ Owns: the first run. Today's app's first-project canvas and its three-step wizar
 ## Concepts
 
 - **Route entry**: `onboardingRoute`, the shell `RouteEntry` for `/welcome`, listed in the shell's `routes` registry. `FirstProjectCanvas` is its view: the blueprint field, glow and vignette behind the wizard column.
-- **Needed?**: `onboardingNeeded(projects)` is true when the project list is ready and empty. The shell's home route sends the reader to `onboardingPath` when it is.
+- **Needed?**: `onboardingNeeded(projects, sharedSessions)` is true when the project list is ready and empty and the account's shared-session list has been read and is empty too; a person with only shared sessions stays in the shell, where the rail lists them. The shell's home route sends the reader to `onboardingPath` when it is.
 - **Product**: the wizard waits for `server.capabilities()`. A server that declares `thisMachine` is a desktop (local execution); any other is a hosted plane. Ledes, step 2, step 3's rows and the finish button follow that.
 - **Execution facts** (`model.ts`): `localExecution` (a desktop) and `cloudAvailable` (the reader is signed in to a control plane, `useAuth()`). `executionChoices` lists step 3's rows from them; `executionBlock` says why the chosen row cannot finish: `signIn` (cloud without a signed control plane), `folder` (cloud from a local folder, which no sandbox can clone) or `machine` (a hosted plane cannot send a repository to a connected machine yet).
 
