@@ -1,8 +1,7 @@
 import type { JsonValue, v2 } from "./translate"
 import type { StartInput, TurnInput } from "../../contract"
 import { CodexTransportError } from "./errors"
-import { flattenTurnPrompt } from "../../translate/prompt"
-import { attachmentPathLine, isPromptImage, materializeAttachment, promptFiles, type MaterializedFile } from "../../translate/attachments"
+import { isPromptImage, writtenPrompt } from "../../translate/attachments"
 import { codexTurnSandboxPolicy, type CodexPermissionSettings } from "./modes"
 import type { CodexTurnSettings } from "./models"
 
@@ -11,13 +10,10 @@ type ThreadConfig = Record<string, JsonValue>
 const codexAttachmentError = (message: string) => new CodexTransportError("configuration", message)
 
 export async function codexTurnInput(turn: TurnInput, directory: string): Promise<v2.UserInput[]> {
-  const { files, references } = promptFiles(turn, codexAttachmentError)
-  if (references.length) throw codexAttachmentError(`Codex cannot deliver the file URL ${references[0]}`)
-  const written: MaterializedFile[] = []
-  for (const file of files) written.push(await materializeAttachment(directory, file, codexAttachmentError))
-  const text = [flattenTurnPrompt(turn, { system: "prefix", separator: "\n" }), ...written.map(attachmentPathLine)].filter(Boolean).join("\n")
+  const { text, files } = await writtenPrompt(turn, directory,
+    { program: "Codex", flatten: { system: "prefix", separator: "\n" }, error: codexAttachmentError })
   return [{ type: "text", text, text_elements: [] },
-    ...written.filter((file) => isPromptImage(file.mime)).map((file): v2.UserInput => ({ type: "localImage", path: file.path }))]
+    ...files.filter((file) => isPromptImage(file.mime)).map((file): v2.UserInput => ({ type: "localImage", path: file.path }))]
 }
 
 export function codexThreadStartParams(input: StartInput, config: ThreadConfig, mode: CodexPermissionSettings, modelProvider: string): v2.ThreadStartParams {

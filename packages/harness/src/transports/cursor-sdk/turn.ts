@@ -4,9 +4,8 @@ import { AsyncPushQueue } from "@claxedo/helpers"
 import type { SDKImage, SDKMessage, SDKUserMessage } from "@cursor/sdk"
 import type { RoutedEvent, TurnBroker, TurnInput } from "../../contract"
 import { TransportError } from "../../contract/errors"
-import { attachmentPathLine, isPromptImage, materializeAttachment, promptFiles } from "../../translate/attachments"
+import { isPromptImage, writtenPrompt } from "../../translate/attachments"
 import { routedIngest } from "../../translate/ingest"
-import { flattenTurnPrompt } from "../../translate/prompt"
 import { CursorDeltaRoutes } from "./deltas"
 import { cursorRunResultMissing, cursorRunStatusUnknown } from "./errors"
 import type { CursorHost } from "./host-registry"
@@ -17,16 +16,9 @@ type Runtime = ReturnType<typeof createAgentEventRuntime>
 const cursorAttachmentError = (message: string) => new TransportError("cursor", "configuration", message)
 
 export async function cursorPrompt(turn: TurnInput, directory: string): Promise<string | SDKUserMessage> {
-  const lines = [flattenTurnPrompt(turn, { separator: "\n\n", system: "prefix" })]
-  const { files, references } = promptFiles(turn, cursorAttachmentError)
-  if (references.length) throw cursorAttachmentError(`Cursor cannot deliver the file URL ${references[0]}`)
-  const images: SDKImage[] = []
-  for (const file of files) {
-    const written = await materializeAttachment(directory, file, cursorAttachmentError)
-    lines.push(attachmentPathLine(written))
-    if (isPromptImage(file.mime)) images.push({ data: file.base64, mimeType: file.mime })
-  }
-  const text = lines.filter(Boolean).join("\n")
+  const { text, files } = await writtenPrompt(turn, directory,
+    { program: "Cursor", flatten: { separator: "\n\n", system: "prefix" }, error: cursorAttachmentError })
+  const images = files.flatMap((file): SDKImage[] => isPromptImage(file.mime) ? [{ data: file.base64, mimeType: file.mime }] : [])
   return images.length ? { text, images } : text
 }
 
