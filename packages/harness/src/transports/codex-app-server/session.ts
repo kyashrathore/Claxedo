@@ -42,7 +42,7 @@ function publishBackgroundWork(broker: SessionBroker, work: BackgroundWork): voi
 }
 
 async function bindEntry(host: CodexSessionHost, launched: OpenedLaunch, input: StartInput, broker: SessionBroker,
-  threadId: string): Promise<{ entry: Entry; replay(): void }> {
+  threadId: string): Promise<{ entry: Entry; replay: () => void }> {
   const { rpc } = launched
   let entry: Entry | undefined
   const early: RpcMessage[] = []

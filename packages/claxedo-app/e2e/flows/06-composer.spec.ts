@@ -127,7 +127,6 @@ test("06 a file dropped on the transcript is attached to the composer", async ({
   await stack.acp.write("drop", { steps: [{ kind: "text", text: "A reply to drop files onto" }] })
   const session = await api.createSession(workspace.directory, { title: "Drop", harness: SCRIPTED_ACP_HARNESS })
   await app.goto(`${stack.url}${sessionRoute(workspace.id, session.id)}`)
-  const prompt = app.getByRole("textbox", { name: UI.composer })
   await sendPrompt(app, `Say something ${acpScriptToken("drop")}`)
   const reply = app.getByText("A reply to drop files onto")
   await expect(reply).toBeVisible()

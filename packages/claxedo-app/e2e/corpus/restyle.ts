@@ -1,5 +1,5 @@
 import type { CDPSession, Page } from "@playwright/test"
-import { traceEventsFrom, type TraceEvent } from "../harness/trace-events"
+import { traceEventsFrom, traceText, type TraceEvent } from "../harness/trace-events"
 const CATEGORIES = ["devtools.timeline", "disabled-by-default-devtools.timeline.invalidationTracking"]
 const LIST = "[data-timeline-virtual-content]"
 
@@ -21,7 +21,7 @@ export async function wholeListRestyles(app: Page, act: () => Promise<void>): Pr
     const complete = new Promise((resolve) => cdp.once("Tracing.tracingComplete", resolve))
     await cdp.send("Tracing.end")
     await complete
-    return events.filter((event) => event.args?.data?.nodeId === list && /subtree|Related style rule/.test(String(event.args.data.reason ?? ""))).length
+    return events.filter((event) => event.args?.data?.nodeId === list && /subtree|Related style rule/.test(traceText(event.args.data.reason) ?? "")).length
   } finally {
     await cdp.detach()
   }

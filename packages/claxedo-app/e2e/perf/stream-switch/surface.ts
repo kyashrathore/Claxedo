@@ -17,7 +17,7 @@ export type Surface = {
   api: ClaxedoApi
   workspace: Workspace
   url: string
-  writeScript(name: string, script: AcpScript): Promise<void>
+  writeScript: (name: string, script: AcpScript) => Promise<void>
   release(name: string): Promise<void>
   daemonLog(): string
   open(): Promise<{ page: Page; cdp: CDPSession; bounds?: ScreenBounds }>

@@ -161,7 +161,7 @@ async function compareStage(app: Page, corpusCase: CorpusCase, baseline: string,
 }
 
 async function interact(live: { stack: Stack; api: ClaxedoApi; target: Target; app: Page }, corpusCase: CorpusCase, interaction: CaseInteraction) {
-  const { stack, app } = live
+  const { app } = live
   switch (interaction.kind) {
     case "release":
       await releaseHold(live, interaction)

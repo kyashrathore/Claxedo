@@ -681,7 +681,7 @@ export function isSafeOperation(name: HostedOperationName) {
   return HOSTED_OPERATIONS[name].retry === "safe"
 }
 
-export function isStreamHostedOperation(name: string): name is HostedOperationName {
+export function isStreamHostedOperation(name: string): boolean {
   return isHostedOperationName(name) && "stream" in HOSTED_OPERATIONS[name].exposure && HOSTED_OPERATIONS[name].exposure.stream === true
 }
 

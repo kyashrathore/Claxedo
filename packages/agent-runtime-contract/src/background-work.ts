@@ -1,3 +1,5 @@
+import { asRecord } from "./values"
+
 /** Work a harness runs for a session outside any turn, counted by kind. A task the harness marks ambient is not activity and is not counted. */
 export type BackgroundWork = { agents: number; shells: number; other: number }
 
@@ -16,8 +18,8 @@ function wholeCount(value: unknown): number | undefined {
 }
 
 export function parseBackgroundWork(value: unknown): BackgroundWork | undefined {
-  if (typeof value !== "object" || value === null) return undefined
-  const { agents, shells, other } = value as Record<string, unknown>
-  const [a, s, o] = [wholeCount(agents), wholeCount(shells), wholeCount(other)]
+  const row = asRecord(value)
+  if (!row) return undefined
+  const [a, s, o] = [wholeCount(row.agents), wholeCount(row.shells), wholeCount(row.other)]
   return a === undefined || s === undefined || o === undefined ? undefined : { agents: a, shells: s, other: o }
 }

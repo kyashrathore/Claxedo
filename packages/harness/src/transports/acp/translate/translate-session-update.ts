@@ -9,13 +9,15 @@ import { toolUpdate } from "./tool-updates"
 import { noticeEvent } from "./notice"
 import { own } from "../../../translate/value"
 
-type UpdateOf<K extends SessionUpdate["sessionUpdate"]> = Extract<SessionUpdate, { sessionUpdate: K }>
+type UpdateKind = SessionUpdate["sessionUpdate"]
+type UpdateOf<K extends UpdateKind> = Extract<SessionUpdate, { sessionUpdate: K }>
+type Updates = { [K in UpdateKind]: UpdateOf<K> }
 
 type Handlers = {
-  [K in SessionUpdate["sessionUpdate"]]: {
+  [K in UpdateKind]: {
     required?: readonly (readonly [string, "string" | "number"])[]
     advertised?: false
-    translate: (update: UpdateOf<K>, ctx: TranslatorContext) => AgentRuntimeEvent[]
+    translate: (update: Updates[K], ctx: TranslatorContext) => AgentRuntimeEvent[]
   }
 }
 
@@ -95,10 +97,10 @@ export function isAdvertisedUpdate(kind: string): boolean {
   return !!definition && definition.advertised !== false
 }
 
+function translateUpdateKind<K extends UpdateKind>(kind: K, update: Updates[K], ctx: TranslatorContext): AgentRuntimeEvent[] {
+  return handlers[kind].translate(update, ctx)
+}
+
 export function translateSessionUpdate(update: SessionUpdate, ctx: TranslatorContext): AgentRuntimeEvent[] {
-  const handler = handlers[update.sessionUpdate].translate as (
-    update: SessionUpdate,
-    ctx: TranslatorContext,
-  ) => AgentRuntimeEvent[]
-  return handler(update, ctx)
+  return translateUpdateKind(update.sessionUpdate, update, ctx)
 }

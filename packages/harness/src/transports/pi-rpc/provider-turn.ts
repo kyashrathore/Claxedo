@@ -50,10 +50,10 @@ export class PiProviderTurn {
 
   private admit(input: ProviderTurnInput): void {
     this.admitting = true
-    void this.host.broker.admitProviderTurn(input, (broker) => this.stream(broker)).then((admission) => {
+    void this.host.broker.admitProviderTurn(input, (broker) => this.stream(broker)).then(async (admission) => {
       if (admission.admitted || !this.host.ended(this)) return
       this.host.log.warn("Pi started a run Claxedo could not admit as a turn; it is stopped", { reason: admission.reason })
-      return this.host.stop()
+      await this.host.stop()
     }).then(undefined, (error: unknown) => {
       this.host.log.error("Pi provider turn failed", { error: errorMessage(error) })
       this.host.broker.reportFailure(error)

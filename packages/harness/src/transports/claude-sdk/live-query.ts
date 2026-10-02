@@ -106,7 +106,7 @@ export class ClaudeLiveQuery {
   async stopBackground(): Promise<void> {
     if (this.process.kind === "open") {
       const { stream } = this.process
-      for (const task of [...this.background]) await stream.stopTask(task)
+      for (const task of this.background) await stream.stopTask(task)
     }
     this.close()
   }

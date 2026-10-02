@@ -30,7 +30,7 @@ async function recordReturn(page: Page, sessionId: string, frames: number) {
           },
           painted: (frame, at) => {
             if (frame.shown || out.length > 0) out.push({ at: Math.round(at - started), ...frame })
-            if (out.length < count) return
+            if (out.length < count) return false
             resolve(out)
             return true
           },

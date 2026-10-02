@@ -121,7 +121,7 @@ async function useDesktop(
   try {
     await use(desktop)
   } finally {
-    await attachLogOnFailure(testInfo, desktop.egress.attempts, "desktop.log", desktop.log)
+    await attachLogOnFailure(testInfo, desktop.egress.attempts, "desktop.log", () => desktop.log())
     await desktop.close()
   }
   refuseEgress(desktop.egress.attempts)

@@ -55,8 +55,7 @@ async function main() {
         const sessionId = sessions[index]
         if (!origin || !sessionId) throw new Error(`run ${index} has no origin or session`)
         const result = await measure({ browser, variant, origin, api, stack, workspace, sessionId, run: index, options, lastSeedText: LAST_SEED_TEXT })
-        const { topSelf, loafTop, ...headline } = result
-        console.log(JSON.stringify(headline))
+        console.log(JSON.stringify(result, (key, value: unknown) => key === "topSelf" || key === "loafTop" ? undefined : value))
         results.push(result)
       }
       await fs.writeFile(path.join(options.out, `${options.label}-summary.json`), JSON.stringify(results, null, 1))

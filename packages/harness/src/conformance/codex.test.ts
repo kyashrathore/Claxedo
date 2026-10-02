@@ -1,4 +1,4 @@
-import { scriptedTransport, type Frame } from "../transports/codex-app-server/test-support/transport"
+import { scriptedTransport } from "../transports/codex-app-server/test-support/transport"
 import fs from "node:fs/promises"
 import path from "node:path"
 import { describe, expect, test } from "bun:test"

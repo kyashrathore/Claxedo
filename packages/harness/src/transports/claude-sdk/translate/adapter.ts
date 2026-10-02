@@ -1,5 +1,4 @@
 import { asText as text, type AgentRuntimeEvent } from "@claxedo/agent-runtime-contract"
-import type { SDKMessage } from "@anthropic-ai/claude-agent-sdk"
 import { asRecordOrEmpty } from "@claxedo/helpers/guards"
 import type { HarnessEventAdapter, HarnessEventAdapterContext } from "../../../translate/adapter"
 import type { ClaudeSdkAdapterState, ClaudeTranslation } from "./adapter-state"
@@ -7,7 +6,8 @@ import { translateAssistantMessage } from "./assistant-message"
 import { translateRateLimitEvent } from "./rate-limits"
 import { CLAUDE_SUBAGENT_USAGE_METHOD, translateMessageDelta, translateMessageStart, translateMessageStop, translateSubagentUsage } from "./request-stream"
 import { translateResult } from "./result-events"
-import { diagnosticForEvent, ignoredFrame, type ClaudeFrameEvent, type ClaudeSdkStreamEvent } from "./sdk-message"
+import { diagnosticForEvent, ignoredFrame, isClaudeAssistantMessage, isClaudeStreamEvent, isClaudeStreamEventKind, malformedFrame,
+  type ClaudeFrameEvent, type ClaudeSdkStreamEvent } from "./sdk-message"
 import { translateContentBlockDelta, translateContentBlockStart, translateContentBlockStop } from "./stream-content"
 import { translateSystemMessage } from "./system-message"
 import type { ClaudeTrackedTask } from "./task-tracking"
@@ -36,12 +36,12 @@ function translateClaudeFrame(frame: Frame): ClaudeTranslation {
   if (ignoredTypes.includes(type)) return []
   switch (type) {
     case "stream_event":
-      return translateStreamEvent(message.event as ClaudeSdkStreamEvent, frame)
+      return translateStreamFrame(message.event, frame)
     case "user": {
       return claudeAgentMessage(message, event) ?? translateToolResults(state, message)
     }
     case "assistant":
-      return translateAssistantMessage(message as Extract<SDKMessage, { type: "assistant" }>, message, state, event, memory)
+      return isClaudeAssistantMessage(message) ? translateAssistantMessage(message, message, state, event, memory) : malformedFrame(event, type)
     case "result":
       return translateResult(state, message, context, memory)
     case "system":
@@ -59,9 +59,15 @@ function translateClaudeFrame(frame: Frame): ClaudeTranslation {
   }
 }
 
+function translateStreamFrame(raw: unknown, frame: Frame): ClaudeTranslation {
+  if (isClaudeStreamEvent(raw)) return translateStreamEvent(raw, frame)
+  const kind = text(asRecordOrEmpty(raw).type)
+  if (kind === "ping") return []
+  return isClaudeStreamEventKind(kind) ? malformedFrame(frame.event, `stream_event/${kind}`) : ignoredFrame(frame.memory, `stream_event/${kind ?? "undefined"}`)
+}
+
 function translateStreamEvent(stream: ClaudeSdkStreamEvent, frame: Frame): ClaudeTranslation {
   const { message, state, memory } = frame
-  const kind: string = stream.type
   switch (stream.type) {
     case "content_block_start":
       return translateContentBlockStart(stream, state, memory)
@@ -74,9 +80,8 @@ function translateStreamEvent(stream: ClaudeSdkStreamEvent, frame: Frame): Claud
     case "message_delta":
       return translateMessageDelta(stream, message, state, memory)
     case "message_stop":
-      return translateMessageStop(message, state)
     default:
-      return kind === "ping" ? [] : ignoredFrame(memory, `stream_event/${kind}`)
+      return translateMessageStop(message, state)
   }
 }
 
