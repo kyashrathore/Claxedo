@@ -131,6 +131,10 @@ export class ClaxedoApi {
     return this.call<SessionRow>("GET", `/session/${encodeURIComponent(id)}`, { directory })
   }
 
+  startGoal(directory: string, id: string, objective: string) {
+    return this.call<unknown>("POST", `/session/${encodeURIComponent(id)}/goal`, { directory, body: { objective } })
+  }
+
   sessions(directory: string) {
     return this.call<SessionRow[]>("GET", "/session", { directory })
   }

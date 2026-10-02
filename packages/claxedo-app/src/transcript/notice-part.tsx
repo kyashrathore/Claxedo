@@ -1,6 +1,7 @@
 import { Match, Switch } from "solid-js"
 import type { AgentContentPart } from "@claxedo/agent-runtime-contract"
 import { Icon } from "@/ui"
+import { AgentMessageEvent } from "./agent-message-event"
 import { useTranscriptI18n } from "./i18n"
 import { MessageDivider } from "./message-divider"
 import { noticeView, type NoticeMessage, type NoticeView } from "./notice-view"
@@ -31,10 +32,15 @@ export function NoticePartDisplay(props: { part: AgentContentPart }) {
     const current = view()
     return current?.shape === "row" ? current : undefined
   }
+  const agentMessage = () => {
+    const current = view()
+    return current?.shape === "agent-message" ? current : undefined
+  }
   return (
     <Switch>
       <Match when={boundary()}>{(current) => <MessageDivider label={i18n.t(current().key)} icon={current().icon} />}</Match>
       <Match when={row()}>{(current) => <NoticeRow view={current()} />}</Match>
+      <Match when={agentMessage()}>{(current) => <AgentMessageEvent sender={current().sender}>{current().message}</AgentMessageEvent>}</Match>
     </Switch>
   )
 }

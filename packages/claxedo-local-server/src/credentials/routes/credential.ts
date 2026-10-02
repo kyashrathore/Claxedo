@@ -197,12 +197,19 @@ export async function requestOrg(request: Request, options: CredentialRoutesOpti
   return context.user.orgId?.trim() || context.user.subject.trim() || SINGLE_TENANT_ORG
 }
 
-export async function requestActor(request: Request, options: Pick<CredentialRoutesOptions, "authConfig" | "verifier">): Promise<string> {
+async function requestAccountActor(request: Request, options: Pick<CredentialRoutesOptions, "authConfig" | "verifier">) {
   const context = await controlPlaneAuthContext(request, {
     ...(options.authConfig ? { config: options.authConfig } : {}),
     ...(options.verifier ? { verifier: options.verifier } : {}),
   })
-  return context.mode === "signed" ? context.user.subject : LOCAL_USER_ID
+  return {
+    person: context.mode === "signed" ? context.user.subject : LOCAL_USER_ID,
+    localOperator: context.mode === "unsigned-local" && isLoopbackLocalRequest(request),
+  }
+}
+
+export async function requestActor(request: Request, options: Pick<CredentialRoutesOptions, "authConfig" | "verifier">): Promise<string> {
+  return (await requestAccountActor(request, options)).person
 }
 
 export function CredentialRoutes(
@@ -213,6 +220,7 @@ export function CredentialRoutes(
   // Resolved once per request; every handler reads it instead of re-deriving,
   // so no handler can accidentally run unscoped.
   const actors = new WeakMap<Request, string>()
+  const localOperators = new WeakSet<Request>()
   const actor = (request: Request) => {
     const person = actors.get(request)
     if (!person) throw new Error("Credential request has no actor")
@@ -220,16 +228,19 @@ export function CredentialRoutes(
   }
   const orgs = new WeakMap<Request, string>()
   const org = (request: Request) => orgs.get(request) ?? SINGLE_TENANT_ORG
+  const canRemoveOrgAccounts = (request: Request) => localOperators.has(request) && org(request) === SINGLE_TENANT_ORG
   /**
    * One row, in the caller's org. Scoped before anything else runs: an
    * out-of-org id must 404 before a secret is resolved or a provider is called
    * on another org's key. A store with no id lookup answers from the list it
    * can scope.
    */
-  const findCredential = async (id: string, scope: string, person: string) => {
-    const row = credentials.getCredential
+  const readCredential = async (id: string, scope: string) =>
+    credentials.getCredential
       ? await credentials.getCredential(id, scope)
       : (await credentials.listCredentials(scope)).find((item) => item.id === id)
+  const findCredential = async (id: string, scope: string, person: string) => {
+    const row = await readCredential(id, scope)
     return row?.owner === person ? row : undefined
   }
   const checkOptions = {
@@ -295,7 +306,9 @@ export function CredentialRoutes(
   app.use(async (c, next) => {
     try {
       orgs.set(c.req.raw, await requestOrg(c.req.raw, options))
-      actors.set(c.req.raw, await requestActor(c.req.raw, options))
+      const accountActor = await requestAccountActor(c.req.raw, options)
+      actors.set(c.req.raw, accountActor.person)
+      if (accountActor.localOperator) localOperators.add(c.req.raw)
     } catch (error) {
       if (error instanceof ControlPlaneAuthError) {
         return c.json(controlPlaneAuthErrorBody(error), error.status)
@@ -339,7 +352,11 @@ export function CredentialRoutes(
     .get("/account-sources", async (c) => {
       const orgId = org(c.req.raw)
       const orgRows = (await credentials.listCredentials(orgId)).filter((row) => row.owner === null && fanoutEligible(row))
-      return c.json({ sources: (await credentials.accountSelections(orgId))[actor(c.req.raw)] ?? {}, org: orgRows.map(redact) })
+      return c.json({
+        sources: (await credentials.accountSelections(orgId))[actor(c.req.raw)] ?? {},
+        org: orgRows.map(redact),
+        can_remove_org_accounts: canRemoveOrgAccounts(c.req.raw),
+      })
     })
     .put("/account-sources", async (c) => {
       const body = accountSourcesBody.safeParse(await c.req.json().catch(() => null))
@@ -551,7 +568,9 @@ export function CredentialRoutes(
       }
     })
     .delete("/:id", async (c) => {
-      if (!await findCredential(c.req.param("id"), org(c.req.raw), actor(c.req.raw))) return c.json({ deleted: false })
+      const row = await readCredential(c.req.param("id"), org(c.req.raw))
+      const removable = row && (row.owner === actor(c.req.raw) || (row.owner === null && fanoutEligible(row) && canRemoveOrgAccounts(c.req.raw)))
+      if (!removable) return c.json({ deleted: false })
       const deleted = await credentials.deleteCredential(c.req.param("id"), org(c.req.raw))
       return c.json({ deleted })
     })
