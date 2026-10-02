@@ -1,5 +1,7 @@
-import type { AppError } from "@/server"
+import type { AppError, ErrorClass } from "@/server"
 import type { Translations } from "./dictionary"
+import type { Locale } from "./locales"
+import type { ErrorMessages } from "./errors/model"
 import ar from "./errors/ar"
 import br from "./errors/br"
 import bs from "./errors/bs"
@@ -21,15 +23,24 @@ import { useTranslator } from "./provider"
 
 export type ErrorCopy = { readonly title: string; readonly message: string; readonly retry: string }
 
-type ErrorKey = keyof typeof en
+type ErrorKey = `i18n.error.${ErrorClass}.${"title" | "message"}` | "i18n.error.signIn" | "i18n.error.retry" | "i18n.error.reload"
 
-export const errorDictionary = { en, ar, br, bs, da, de, es, fr, ja, ko, no, pl, ru, th, tr, zh, zht } satisfies Translations<ErrorKey>
+function errorTranslations(messages: ErrorMessages): Record<ErrorKey, string> {
+  const { signIn, retry, reload, ...classes } = messages
+  return Object.fromEntries([
+    ["i18n.error.signIn", signIn], ["i18n.error.retry", retry], ["i18n.error.reload", reload],
+    ...Object.entries(classes).flatMap(([kind, [title, message]]) => [[`i18n.error.${kind}.title`, title], [`i18n.error.${kind}.message`, message]]),
+  ]) as Record<ErrorKey, string>
+}
+
+const messages = { en, ar, br, bs, da, de, es, fr, ja, ko, no, pl, ru, th, tr, zh, zht } satisfies Record<Locale, ErrorMessages>
+export const errorDictionary = Object.fromEntries(Object.entries(messages).map(([locale, copy]) => [locale, errorTranslations(copy)])) as Translations<ErrorKey>
 
 export function useErrorCopy(): (error: AppError) => ErrorCopy {
   const t = useTranslator(errorDictionary)
   return (error) => ({
     title: t(`i18n.error.${error.class}.title`),
     message: t(`i18n.error.${error.class}.message`),
-    retry: t(`i18n.error.${error.class}.retry`),
+    retry: t(error.class === "auth" ? "i18n.error.signIn" : error.class === "not_found" || error.class === "conflict" ? "i18n.error.reload" : "i18n.error.retry"),
   })
 }

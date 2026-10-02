@@ -16,8 +16,6 @@ export async function startHostedAppFront(input: { port: number; distDir: string
     const pathname = new URL(request.url ?? "/", input.hosted.workerUrl).pathname
     if (/^\/(api|auth|internal|\.well-known)(\/|$)/.test(pathname) || pathname === "/health") {
       forwarded.push(`${request.method} ${pathname}`)
-      // A kept-alive socket that workerd has already closed answers the next
-      // request with ECONNRESET, so each forwarded request opens its own.
       const upstream = httpsRequest({ hostname: worker.hostname, port: worker.port, method: request.method,
         path: request.url, headers: request.headers, ca: certificate, agent: false }, (reply) => {
         response.writeHead(reply.statusCode ?? 502, reply.headers)
@@ -31,8 +29,6 @@ export async function startHostedAppFront(input: { port: number; distDir: string
     if (!asset) { response.writeHead(404).end(); return }
     response.writeHead(asset.status, Object.fromEntries(asset.headers)).end(Buffer.from(await asset.arrayBuffer()))
   }
-  // The public origin is a *.localhost name, which resolvers answer with ::1
-  // before 127.0.0.1; workerd and the sandbox runtimes take the first answer.
   const servers = [createServer(tls, serve), createServer(tls, serve)]
   await listenOnLoopback(servers[0], input.port)
   await new Promise<void>((resolve, reject) => {
