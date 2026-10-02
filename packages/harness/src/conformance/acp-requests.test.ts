@@ -67,8 +67,7 @@ test("disposing a sibling ACP transport preserves the owner's pending startup fo
     peer.elicit("startup-form", { requestId: message.id! })
     return true
   })
-  const sibling = new AcpTransport(f.services, { kind: "process", command: "wire-peer" }, filterMcpServers,
-    async () => { throw new Error("No handoff expected") })
+  const sibling = new AcpTransport(f.services, { kind: "process", command: "wire-peer" }, filterMcpServers)
   const starting = f.start().then((session) => session, (error: unknown) => error)
   try {
     const pending = await reached(() => f.owner.broker.list({ sessionId: "s1" })[0])

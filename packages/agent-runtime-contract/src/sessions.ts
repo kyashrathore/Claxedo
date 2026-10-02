@@ -204,7 +204,6 @@ export type SessionHandoff = {
   from: SessionHarness
   pending: true
   transcript: string
-  reason?: "missing-session"
   announced?: true
   source?: SessionHandoffSource
 }

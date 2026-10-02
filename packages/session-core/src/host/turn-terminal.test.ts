@@ -18,7 +18,7 @@ for (const [sequence, events] of Object.entries(exhaustions)) {
     const fixture = createHostFixture({ transports: { pi: transport } })
     try {
       const session = await fixture.runtime.sessions.create(sessionCreate())
-      fixture.store.updateSessionConfig(session.id, { handoff: { pending: true, transcript: "saved context", from: { id: "pi", access: "native" }, reason: "missing-session" } })
+      fixture.store.updateSessionConfig(session.id, { handoff: { pending: true, transcript: "saved context", from: { id: "pi", access: "native" } } })
       await fixture.runtime.turns.start({ sessionId: session.id, text: "continue", origin: LOOPBACK_ORIGIN })
       await until(() => !!fixture.store.getSession(session.id)?.lastTurn)
       expect(fixture.store.getSession(session.id)?.lastTurn).toMatchObject({ status: "failed", detail: { code: "missing_terminal_event" } })

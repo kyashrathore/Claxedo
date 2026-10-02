@@ -11,7 +11,7 @@ export async function steerCursorTurn(entry: CursorEntry, host: CursorHost | und
   if (!entry.busy || !host) return IDLE
   const prompt = await cursorPrompt(input, entry.input.directory)
   const reply = await host.call({ kind: "steer", sessionId: entry.session.binding.sessionId, text: typeof prompt === "string" ? prompt : prompt.text })
-  const outcome = reply.kind === "result" ? reply.value?.steer : undefined
+  const outcome = reply.value?.steer
   switch (outcome) {
     case "complete_delivered":
       return { ok: true }

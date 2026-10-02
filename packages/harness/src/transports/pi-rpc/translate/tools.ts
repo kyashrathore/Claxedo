@@ -1,11 +1,9 @@
 import type { AgentRuntimeEvent } from "@claxedo/agent-runtime-contract"
-import { asRecord } from "@claxedo/agent-runtime-contract"
+import { asArray, asRecordOrEmpty as row } from "@claxedo/helpers/guards"
 import { contentBlockImages } from "../../../translate/tool-attachments"
 import { piStep, type PiStep, type PiTranslatorState } from "./state"
 
 type Frame = Record<string, unknown>
-
-const row = (value: unknown): Frame => asRecord(value) ?? {}
 
 function toolCallId(frame: Frame, what: string): string {
   if (typeof frame.toolCallId !== "string") throw new Error(`Pi tool ${what} lacks identity`)
@@ -22,7 +20,7 @@ export function piToolStart(state: PiTranslatorState, frame: Frame): PiStep {
 export function piToolUpdate(state: PiTranslatorState, frame: Frame): PiStep {
   const id = toolCallId(frame, "update")
   const content = row(frame.partialResult).content
-  return piStep(state, (Array.isArray(content) ? content : []).flatMap((item): AgentRuntimeEvent[] => {
+  return piStep(state, asArray(content).flatMap((item): AgentRuntimeEvent[] => {
     const block = row(item)
     return block.type === "text" && typeof block.text === "string"
       ? [{ type: "tool-content", toolCallId: id, content: { type: "content", content: { type: "text", text: block.text } } }] : []
@@ -32,7 +30,7 @@ export function piToolUpdate(state: PiTranslatorState, frame: Frame): PiStep {
 function toolErrorText(result: unknown): string {
   if (typeof result === "string") return result
   const content = row(result).content
-  const lines = (Array.isArray(content) ? content : []).flatMap((item) => row(item).type === "text" && typeof row(item).text === "string" ? [String(row(item).text)] : [])
+  const lines = asArray(content).flatMap((item) => row(item).type === "text" && typeof row(item).text === "string" ? [String(row(item).text)] : [])
   return lines.length ? lines.join("\n") : JSON.stringify(result)
 }
 

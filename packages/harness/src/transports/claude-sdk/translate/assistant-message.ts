@@ -1,9 +1,8 @@
-import { asText as text } from "@claxedo/agent-runtime-contract"
-import type { AgentRuntimeEvent } from "@claxedo/agent-runtime-contract"
+import { asText as text, type AgentRuntimeEvent } from "@claxedo/agent-runtime-contract"
 import { asRecord } from "@claxedo/helpers/guards"
 import { own } from "../../../translate/value"
 import { withoutKey, type ClaudeSdkAdapterState, type ClaudeTranslation } from "./adapter-state"
-import { assistantBlocks, assistantSnapshotText, assistantToolBlocks } from "./assistant-content"
+import { messageBlocks, assistantSnapshotText, assistantToolBlocks } from "./message-content"
 import { assistantErrorClass, windowLimitMessage } from "./rate-limits"
 import { meterRequest } from "./request-usage"
 import { rememberFrame, announceResponse, supersededResponses } from "./responses"
@@ -75,7 +74,7 @@ function divergenceDiagnostics(
 
 function serverResults(state: ClaudeSdkAdapterState, message: Record<string, unknown>) {
   let next = state
-  const events = assistantBlocks(message).filter((block) => isServerToolResult(block.type)).flatMap((block) => {
+  const events = messageBlocks(message).filter((block) => isServerToolResult(block.type)).flatMap((block) => {
     const settled = serverToolResult(next, block)
     if (Array.isArray(settled)) return settled
     next = settled.state ?? next

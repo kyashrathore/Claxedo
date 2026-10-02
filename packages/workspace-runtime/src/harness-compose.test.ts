@@ -41,7 +41,7 @@ test("harness package composition starts ACP, Pi, Codex, Claude and OpenCode and
   const log = { debug: () => {}, info: () => {}, warn: () => {}, error: () => {} }
   const clock = { now: () => Date.now(), setTimeout, clearTimeout }
   const services = createHarnessServices({ ownership: volatileLaunchOwnership(), log, clock, patternEvaluator: async () => {}, healthChanged: () => {} })
-  const composer = createHarnessComposer(services, { acp: () => ({ missingContext: async () => { throw new Error("No saved context") } }),
+  const composer = createHarnessComposer(services, {
     pi: () => ({ binary: peer, runtime: process.execPath, env: { ...process.env, COMPOSE_PEER_KIND: "pi" },
       placement: "loopback", machineOwnerUserId: "owner", canUseOwnLogin: true,
       stateRoot: path.join(root, "pi-state"), ownerAgentDir: path.join(root, "pi-agent") }),

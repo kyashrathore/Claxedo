@@ -31,7 +31,7 @@ export async function codexBackend(): Promise<CodexBackend> {
   const guard = await startEgressGuard(guardPort)
   return {
     root, directory, server, env: { ...process.env, ...egressProxyEnv(guard.url) },
-    harness: { id: "codex", access: "native" }, expectedMcp: "config",
+    harness: { id: "codex", access: "native" }, credentialsAfterActiveTurns: true,
     model: { providerID: "codex", modelID: "gpt-4.1" },
     credentials: { machineLoginAllowed: false, accountOwner: "fixture-owner", providers: { openai: { baseUrl: server.v1Url, placeholder: "codex-conformance-placeholder", authMode: "api-key" } },
       secrets: {}, leaseGeneration: "conformance" },

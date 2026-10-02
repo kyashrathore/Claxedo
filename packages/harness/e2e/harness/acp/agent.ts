@@ -26,7 +26,7 @@ import {
   type SetSessionConfigOptionRequest,
 } from "@agentclientprotocol/sdk"
 import { isTitlePrompt, lastMarker } from "../scripted-model-request"
-import { ACP_CORE_ENV, ACP_NO_MODELS_ENV, ACP_RED_ENV, ACP_SCRIPT_DIR_ENV, lastAcpScriptName, readAcpScript, recoveryContextDropped, type AcpScript } from "./script"
+import { ACP_CORE_ENV, ACP_NO_MODELS_ENV, ACP_RED_ENV, ACP_SCRIPT_DIR_ENV, lastAcpScriptName, readAcpScript, type AcpScript } from "./script"
 import { scriptedGoalExtension, scriptedGoals } from "./goals"
 import { playScript } from "./turn"
 import { recordAcpRequest } from "./requests"
@@ -198,9 +198,7 @@ export class ScriptedAgent implements Agent {
 
   async prompt(params: PromptRequest): Promise<PromptResponse> {
     if (this.record) await recordAcpRequest(this.dir, "session/prompt", params, this.headers)
-    const delivered = deliveredAcpPrompt(recoveryContextDropped(this.dir)
-      ? params.prompt.filter((block) => block.type !== "text" || !block.text.includes("<session-context-recovery>"))
-      : params.prompt, this.dir)
+    const delivered = deliveredAcpPrompt(params.prompt, this.dir)
     const text = promptText(delivered)
     if (red && !isTitlePrompt(text)) throw RequestError.internalError(undefined, "Scripted ACP red run: every turn fails")
     const script = await scriptFor(text, this.dir)

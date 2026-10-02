@@ -35,7 +35,7 @@ test("sessions: a create the runtime refuses because the reserved id belongs to 
     },
   })
   running.push(server)
-  const transport = createTransport({ serverUrl: `http://127.0.0.1:${server.port}`, auth: { kind: "none" } })
+  const transport = createTransport({ serverUrl: `http://127.0.0.1:${server.port}` })
   const workspaces = createWorkspaces(transport, new QueryClient())
   const sessions = createSessionsApi(transport, workspaces, createStatusOwner(transport), createWorkspaceWakes(transport, workspaces), createSessionProjection(transport, workspaces))
 

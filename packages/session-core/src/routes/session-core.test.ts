@@ -4,7 +4,7 @@ import { AgentRuntimeContractError, NO_HARNESS_EFFORT, type AgentPermissionModeS
 import type { AgentMessage, AgentPermission, AgentQuestion, AgentSession, AgentEventEnvelope } from "@claxedo/agent-runtime-contract"
 import type { RuntimeDirectory } from "../host/contracts"
 import { AgentMessagePageError, type AgentMessagePageInput } from "@claxedo/agent-runtime-contract"
-import { AgentHarnessEngineError, applySessionConfigUpdate, type ConfigOperations, type TransportCapabilities, type TurnRequest } from "@claxedo/harness/contract"
+import { AgentHarnessEngineError, applySessionConfigUpdate, type ConfigOperations, type HarnessConfigOperations, type TransportCapabilities, type TurnRequest } from "@claxedo/harness/contract"
 import type { TurnOutline } from "@claxedo/agent-runtime-contract"
 import { AgentRuntimeTurnAdmissionError, type AgentRuntime } from "../host/runtime"
 import {
@@ -50,13 +50,15 @@ const unsupportedModes: AgentPermissionModeState = { modes: [], appliesFrom: "ne
 
 function configOps(overrides: Partial<ConfigOperations> = {}): ConfigOperations {
   return {
-    read: async () => { throw new Error("the fixture's config is runtime-owned") },
-    update: async () => { throw new Error("the fixture's config is runtime-owned") },
     options: async () => ({ options: [] }),
     permissionModes: async () => unsupportedModes,
     setPermissionMode: async () => unsupportedModes,
     ...overrides,
   }
+}
+
+function harnessConfigOps(update: HarnessConfigOperations["update"]): HarnessConfigOperations {
+  return { read: async () => { throw new Error("the fixture's config is never read") }, update }
 }
 
 function refusingRuntime(what: string): () => Promise<AgentRuntime> {
@@ -913,12 +915,9 @@ describe("createSessionRoutes directory-less sessions", () => {
     const calls: string[] = []
     const lifecycle: SessionLifecycleEvent[] = []
     const h = harness({
-      capabilities: { configOwner: "harness" },
-      config: configOps({
-        update: async () => {
-          calls.push("config")
-          throw new Error("config unavailable")
-        },
+      harnessConfig: harnessConfigOps(async () => {
+        calls.push("config")
+        throw new Error("config unavailable")
       }),
       onClose: (session) => { calls.push(`delete:${session.binding.sessionId}`) },
     })
@@ -2520,7 +2519,7 @@ function startupChildHost(children: Map<string, string[]>): ChildSessionHost {
  * reservation may see or answer anything about the creation.
  */
 function startupRouteFixture(options: {
-  configUpdate?: ConfigOperations["update"]
+  configUpdate?: HarnessConfigOperations["update"]
   refuseDelete?: () => boolean
   beforeProviderDelete?: () => Promise<void>
   children?: Map<string, string[]>
@@ -2540,9 +2539,8 @@ function startupRouteFixture(options: {
   const h = harness({
     capabilities: {
       requests: { permissions: false, questions: true, elicitation: false },
-      ...(options.configUpdate ? { configOwner: "harness" as const } : {}),
     },
-    ...(options.configUpdate ? { config: configOps({ update: options.configUpdate }) } : {}),
+    ...(options.configUpdate ? { harnessConfig: harnessConfigOps(options.configUpdate) } : {}),
     upstreamSessionId: (input) => `upstream-${input.sessionId}`,
     beforeStart: async (input, broker) => {
       expect(h.store.sessionStarts.get(input.sessionId)?.status).toBe("starting")
@@ -2860,18 +2858,17 @@ function privateSessionFixture(input: {
   const created: string[] = []
   const deleted: string[] = []
   const h = harness({
-    capabilities: { configOwner: "harness" },
     beforeStart: async (start) => {
       await holdCreate
       created.push(start.sessionId)
     },
-    config: configOps({
+    harnessConfig: {
       read: async (session) => h.store.getSessionConfig(session.binding.sessionId)!,
       update: async (session, patch) => {
         if (failConfig === session.binding.sessionId) throw new Error("harness refused the configuration")
         return applySessionConfigUpdate(h.store.getSessionConfig(session.binding.sessionId)!, patch)
       },
-    }),
+    },
     onClose: (session) => { deleted.push(session.binding.sessionId) },
   })
 

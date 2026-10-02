@@ -60,7 +60,7 @@ export class CodexPeer {
   private readonly threads = new Map<string, string | undefined>()
   private readonly pending = new Set<number>()
 
-  constructor(private readonly models: unknown[], private readonly script: { modelListFailures?: number; goal?: unknown; userAgent?: string } = {}) {}
+  constructor(private readonly models: unknown[], private readonly script: { modelListFailures?: number; turnStartError?: string; goal?: unknown; userAgent?: string } = {}) {}
 
   request(id: number) { this.pending.add(id) }
 
@@ -126,6 +126,10 @@ export class CodexPeer {
     const threadId = String(params.threadId)
     assert(this.threads.has(threadId), "turn/start requires an open thread")
     assert.equal(this.threads.get(threadId), undefined, "A turn is already active on this thread")
+    if (this.script.turnStartError) {
+      if (/thread not found/i.test(this.script.turnStartError)) this.threads.delete(threadId)
+      throw new CodexScriptedFailure(this.script.turnStartError)
+    }
     this.threads.set(threadId, "turn-current")
     return { turn: { id: "turn-current" } }
   }

@@ -46,7 +46,6 @@ async function restorationFixture() {
   })
   const unused = () => { throw new Error("Only ACP is composed for restoration") }
   const composer = createHarnessComposer(services, {
-    acp: () => ({ missingContext: async () => { throw new Error("A known saved session must resume") } }),
     pi: unused, claude: unused, cursor: unused, codex: unused, opencode: unused,
   })
   const transport = composer.connection({ descriptor: { connectionId: "acp", providerKey: "acp", configRevision: 1, enabled: true,

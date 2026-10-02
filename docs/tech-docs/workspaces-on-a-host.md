@@ -200,11 +200,11 @@ Two servers answer the route, and they declare different facts:
   workspace row carrying `reachable` and, for a workspace this process
   serves, `session_authority`.
 - The hosted control plane (`packages/claxedo-server/src/routes/hosted/shell.ts`)
-  declares `events.hostAggregate: false`, its own `issuesSessions` and no
-  `host`, and adds `project` only for a caller holding a credential:
-  `signedShellProjects` groups the authority's rows by project, addresses
-  each workspace as `workspace:<id>`, and sets `reachable` through
-  `authorityRowReachable`
+  declares `deployment.serverKind: "hosted"`, `events.hostAggregate: false`,
+  its own `issuesSessions` and no `host` or `project`, the same for every
+  caller. A signed browser reads its projects and placements from the account
+  catalog (`GET /api/workspace?host=provisioner|machine`), whose rows carry
+  `reachable` from `authorityRowReachable`
   (`packages/claxedo-server-core/src/workspace/placement-reachability.ts`: a
   cloud workspace whose sandbox lease is ready, or a machine row whose
   `host_online` is true). A browser therefore holds no enrollment id, which is

@@ -2,14 +2,13 @@ import { prefixedRandomId, settleAtRequestDeadline } from "@claxedo/helpers"
 import { HARNESS_TABLE, type SessionTitleRequest } from "@claxedo/agent-runtime-contract"
 import type {
   AttachInput, BackgroundTaskRef, ConfigApplied, Deadline, DraftLaunch, HarnessServices, HarnessSession, HarnessTransport,
-  RoutedEvent, SessionBroker, StartInput, TransportConfigUpdate, TurnBroker, TurnInput, TurnRef,
+  HealthOperations, RoutedEvent, SessionBroker, StartInput, TransportConfigUpdate, TurnBroker, TurnInput, TurnRef,
 } from "../../contract"
-import { ProcessLosses, selectedTurnAccount } from "../../contract"
+import { ProcessLosses, selectedTurnAccount, sessionConnectionHealth } from "../../contract"
 import { draftProbeKey, DraftProbeCache } from "../../contract/probe-cache"
 import { withTurnAccount } from "../../translate/turn-account"
 import { codexProbeInputs } from "../../profiles/codex"
 import { createCodexConfig } from "./config"
-import { codexHealth } from "./health"
 import { codexCapabilities } from "./capabilities"
 import { codexTurnInput } from "./input"
 import type { CodexTransportOptions, Entry } from "./entry"
@@ -21,8 +20,8 @@ import { answerCodexRequest, isCodexRequestMethod, requestingChild } from "./req
 import { stopCodexChild } from "./native-children"
 import { codexRetirementDeadline, type RpcMessage } from "./rpc"
 import { CodexSessions } from "./sessions"
-import { codexRename, codexSessionTitle } from "./titles"
-import { activeTurnBroker, runCodexTurn } from "./turn"
+import { codexSessionTitle } from "./titles"
+import { runCodexTurn } from "./turn"
 
 export type { CodexTransportOptions, Entry } from "./entry"
 
@@ -83,7 +82,7 @@ export class CodexAppServerTransport implements HarnessTransport {
     if (!message.method) throw new CodexRequestRefusal(-32600, "Codex request has no method")
     const child = requestingChild(entry, message)
     await child?.flushed()
-    const active = await activeTurnBroker(entry)
+    const active = entry.turn?.broker ?? await entry.providerTurn?.broker
     if (!active && !child && isCodexRequestMethod(message.method)) throw new CodexRequestRefusal(-32000, "Codex request has no active turn")
     const broker = active ?? entry.broker
     return answerCodexRequest(message, { ask: (request) => broker.ask(child ? { ...request, child: { correlationKey: child.threadId } } : request, { signal }) },
@@ -94,12 +93,18 @@ export class CodexAppServerTransport implements HarnessTransport {
 
   readonly goals = createCodexGoals((session) => this.sessions.live(session))
 
-  readonly health = codexHealth(this.losses, (sessionId) => this.sessions.connected(sessionId))
+  readonly health: HealthOperations = {
+    connection: (_directory, sessionId) => sessionConnectionHealth(sessionId, (id) => this.sessions.connected(id), "disconnected"),
+    runtime: (_directory, sessionId) => this.losses.health(sessionId) ?? { status: "ok" },
+  }
 
   readonly naming = {
     generateTitle: async (session: HarnessSession, request: SessionTitleRequest) =>
       codexSessionTitle(await this.sessions.live(session), request, this.services),
-    rename: async (session: HarnessSession, name: string) => codexRename(await this.sessions.live(session), session.binding.upstreamSessionId, name),
+    rename: async (session: HarnessSession, name: string) => {
+      const entry = await this.sessions.live(session)
+      await entry.rpc.request("thread/name/set", { threadId: session.binding.upstreamSessionId, name })
+    },
   }
 
   async *send(session: HarnessSession, turn: TurnInput, broker: TurnBroker): AsyncIterable<RoutedEvent> {

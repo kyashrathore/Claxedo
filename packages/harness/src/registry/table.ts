@@ -6,7 +6,7 @@ import type { TransportKind } from "../contract/transport"
 
 export type { BuiltInHarnessId }
 
-export const CUSTOM_HARNESS_PROVIDER_KEYS = ["acp", "pi-rpc"] as const
+export const CUSTOM_HARNESS_PROVIDER_KEYS = ["acp"] as const
 export type CustomHarnessProviderKey = (typeof CUSTOM_HARNESS_PROVIDER_KEYS)[number]
 export type NativeHarnessId = AgentHarnessId
 export type HarnessId = NativeHarnessId | CustomHarnessProviderKey
@@ -29,12 +29,10 @@ const BUILT_IN_MCP = {
 
 const CUSTOM_TRANSPORTS: Readonly<Record<CustomHarnessProviderKey, TransportKind>> = {
   acp: "acp",
-  "pi-rpc": "pi-rpc",
 }
 
 const CUSTOM_MCP: Readonly<Record<CustomHarnessProviderKey, boolean>> = {
   acp: true,
-  "pi-rpc": false,
 }
 
 export type BuiltInHarnessRecord = {

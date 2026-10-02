@@ -27,7 +27,7 @@ afterEach(async () => {
 })
 
 type FixtureOptions = {
-  /** The transport owns session config (`configOwner: "harness"`); the default keeps it in the store. */
+  /** The transport owns session config through `harnessConfig`; the default keeps it in the store. */
   harnessConfig?: boolean
   scoped?: boolean
   hold?: boolean
@@ -104,7 +104,6 @@ async function fixture(options: FixtureOptions = {}) {
       const transport: FakeTransport = new FakeTransport({
         ...(options.health ? { health: { runtime: () => options.health!.current, connection: () => ({ state: "ready" as const, processes: [] }) } } : {}),
         capabilities: {
-          configOwner: options.harnessConfig ? "harness" : "runtime",
           instructionChannel: "none",
           requests: { permissions: !!options.hold, questions: false, elicitation: false },
         },
@@ -146,7 +145,7 @@ async function fixture(options: FixtureOptions = {}) {
         },
         configure: (update) => { alive(); configures.push(update); return { state: "applied" } },
         ...(options.harnessConfig ? {
-          config: {
+          harnessConfig: {
             read: async (session) => { alive(); return configs.get(session.binding.sessionId)! },
             update: async (session, update) => {
               alive()
@@ -155,6 +154,8 @@ async function fixture(options: FixtureOptions = {}) {
               configs.set(session.binding.sessionId, next)
               return next
             },
+          },
+          config: {
             options: async () => ({ options: [] }),
             permissionModes: async () => ({ modes: [], appliesFrom: "next-turn", unsupported: "fixture has no permission modes" }),
             setPermissionMode: async () => ({ modes: [], appliesFrom: "next-turn", unsupported: "fixture has no permission modes" }),

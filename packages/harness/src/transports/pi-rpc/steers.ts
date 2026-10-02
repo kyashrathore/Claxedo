@@ -1,18 +1,10 @@
-import { asRecord } from "@claxedo/helpers/guards"
 import type { SteerResult } from "@claxedo/agent-runtime-contract"
 import type { RoutedEvent } from "../../contract"
 import { TransportError } from "../../contract/errors"
+import { piUserText } from "./events"
 import type { PiMessage } from "./rpc"
 
 type Steer = { messageId: string; text: string }
-
-function userText(message: PiMessage): string | undefined {
-  const content = asRecord(message.message)
-  if (message.type !== "message_start" || content?.role !== "user") return undefined
-  if (typeof content.content === "string") return content.content
-  const first = (Array.isArray(content.content) ? content.content : []).map((block) => asRecord(block)).find((block) => block?.type === "text")
-  return typeof first?.text === "string" ? first.text : ""
-}
 
 export class PiSteers {
   private readonly pending: Steer[] = []
@@ -27,7 +19,7 @@ export class PiSteers {
   }
 
   incorporated(message: PiMessage): RoutedEvent | undefined {
-    const text = userText(message)
+    const text = piUserText(message)
     if (text === undefined) return undefined
     if (!this.promptTaken) {
       this.promptTaken = true

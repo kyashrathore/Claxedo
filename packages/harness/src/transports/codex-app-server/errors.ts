@@ -35,7 +35,3 @@ export function codexRpcError(error: { code: number; message: string }): CodexTr
   if (/^no active turn to interrupt$/i.test(error.message)) return new CodexNoActiveTurnError()
   return new CodexTransportError("protocol", error.message)
 }
-
-export function isMissingCodexThread(error: unknown): boolean {
-  return error instanceof CodexTransportError && /thread not found/i.test(error.message)
-}

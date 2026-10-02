@@ -2,14 +2,8 @@
 import type { RunHostedOperation } from "@claxedo/account-contract"
 import { ServerError } from "./errors"
 
-export type AuthSource =
-  | { readonly kind: "none" }
-  | { readonly kind: "basic"; readonly username: string; readonly password: string }
-  | { readonly kind: "bearer"; readonly token: (options?: { readonly fresh?: boolean }) => Promise<string | undefined> }
-
 export type ServerConfig = {
   readonly serverUrl?: string
-  readonly auth: AuthSource
   readonly account?: RunHostedOperation
   readonly thisMachineReport?: () => Promise<unknown>
   readonly cookies?: boolean
