@@ -184,13 +184,13 @@ export class ClaxedoApi {
   }
 
   permissionMode(directory: string, id: string) {
-    return this.call<{ currentModeId?: string; appliesFrom: "next-turn" | "next-session"; modes: Array<{ id: string }> }>(
+    return this.call<{ currentModeId?: string; appliesFrom: "immediate" | "next-turn" | "next-session"; modes: Array<{ id: string }> }>(
       "GET", `/session/${encodeURIComponent(id)}/permission-mode`, { directory },
     )
   }
 
   setPermissionMode(directory: string, id: string, modeId: string) {
-    return this.call<{ currentModeId?: string; appliesFrom: "next-turn" | "next-session" }>(
+    return this.call<{ currentModeId?: string; appliesFrom: "immediate" | "next-turn" | "next-session" }>(
       "PUT", `/session/${encodeURIComponent(id)}/permission-mode`, { directory, body: { modeId } },
     )
   }

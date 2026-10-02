@@ -9,6 +9,7 @@ import { AcpTransportError } from "./errors"
 import { acpFlushUpdates, acpObserveSubagent, acpUnknown, acpUpdate } from "./events"
 import { ACP_PLUGINS_NOT_APPLIED, claudeOptionsMeta } from "./extensions/claude-options"
 import type { AcpEntry, AcpMcpFilter } from "./index"
+import { AcpChildren } from "./children"
 import { acpModeState } from "./options"
 import type { AcpPeerOwnership } from "./ownership"
 import { acpElicitation, acpMcp, acpPermission } from "./protocol"
@@ -76,7 +77,7 @@ async function openAcpEntry(host: AcpHost, input: StartInput, broker: SessionBro
   }, { role: "harness", signal: startupAbort.signal, owner: host.peers }) } catch (error) { observation.failed(error); startupAbort.abort(); host.startingAborts.delete(startupAbort); throw error }
   if (host.disposed()) { host.startingAborts.delete(startupAbort); await host.peers.retire(peer); throw new AcpTransportError("connection", "ACP transport disposed during startup") }
   entry = { onIdle: () => host.idle(opened), updatesDelivered: () => inOrder(async () => {}), observation, start: input, broker, peer, phase: "ready", cancelled: false, pendingRestart: false, commands: [], options: [], modes: [], modeUpdates: 0, startupAbort,
-    pendingUpdates: [], sideSessions: new Map(),
+    launched: input, children: new AcpChildren(input.config.harness.id, broker), pendingUpdates: [], sideSessions: new Map(),
     session: { binding: { sessionId: input.sessionId, workspaceId: input.workspaceId, directory: input.directory,
       connectionId: input.config.harness.id, upstreamSessionId: "" }, directory: input.directory, locality: input.locality } }
   const opened = entry

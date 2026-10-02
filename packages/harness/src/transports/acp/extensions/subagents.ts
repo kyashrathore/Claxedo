@@ -12,7 +12,7 @@ export function acpSubagentObservation(update: unknown): { key: string; observat
   if (typeof row?.subagentSessionId !== "string") return undefined
   const key = row.subagentSessionId
   const identity = { providerId: key, providerKind: "acp", stableCorrelationId: key,
-    transcript: { kind: "messages" as const } }
+    mode: "background" as const, transcript: { kind: "messages" as const } }
   if (row.sessionUpdate === "subagent_spawned" && typeof row.name === "string" && typeof row.task === "string") {
     return { key, observation: { ...identity, observationId: `acp:subagent:${key}:spawned`, status: "running",
       label: row.name, description: row.task } }

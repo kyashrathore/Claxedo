@@ -4,6 +4,7 @@ import { unexpectedEgress } from "../harness/egress-guard"
 import { startStack } from "../harness/stack"
 import { frameSessionId, frameType } from "../harness/stream"
 import { directTransport, sendJson } from "../harness/transport"
+import { claudeLivePermissions } from "./H10-live-permissions"
 
 async function waitFor(condition: () => boolean, label: string) {
   for (let attempt = 0; attempt < 300; attempt++) {
@@ -68,7 +69,7 @@ async function credentialRenewalAndChildCeiling() {
     const stream = await stack.events(workspace.directory)
     const model = { providerId: "claude", modelId: "claude-sonnet-4-6" }
     const session = await api.createSession(workspace.directory, { harness: { id: "claude", access: "native" }, model, title: "H10 long session", permissionMode: "default" })
-    assert.equal((await api.permissionMode(workspace.directory, session.id)).appliesFrom, "next-turn")
+    assert.equal((await api.permissionMode(workspace.directory, session.id)).appliesFrom, "immediate")
     await assert.rejects(
       api.createSession(workspace.directory, { harness: { id: "claude", access: "native" }, parentId: session.id, model, permissionMode: "bypassPermissions" }),
       (error: unknown) => error instanceof ApiError && error.status === 403 && error.body.includes("permission_ceiling_exceeded"),
@@ -105,7 +106,7 @@ async function credentialRenewalAndChildCeiling() {
     assert.ok(next?.authorization?.includes("renewed-scripted-key"), "next turn must use the renewed stored credential")
     assert.notEqual(first.authorization, next.authorization)
     assert.match(assistantText(await api.messages(workspace.directory, session.id)), /H10RENEWED/, "renewed credential must produce a stored next-turn response")
-    assert.equal((await api.setPermissionMode(workspace.directory, session.id, "bypassPermissions")).appliesFrom, "next-turn")
+    assert.equal((await api.setPermissionMode(workspace.directory, session.id, "bypassPermissions")).appliesFrom, "immediate")
     stack.scripted.scriptTool({ name: "Bash", input: { command: "pwd" }, whenPromptIncludes: "H10PERMISSION" })
     await api.prompt(workspace.directory, session.id, "Run Bash pwd under the selected permission mode H10PERMISSION", { model })
     assert.ok(stack.scripted.requests.some((request) => request.prompt.includes("H10PERMISSION") && JSON.stringify(request.body).includes("tool_result")), "the next turn must execute Bash under the selected mode")
@@ -121,6 +122,7 @@ async function credentialRenewalAndChildCeiling() {
 }
 
 export async function run() {
+  await claudeLivePermissions()
   await codexModelAndEffort()
   await credentialRenewalAndChildCeiling()
 }

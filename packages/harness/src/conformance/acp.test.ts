@@ -241,8 +241,8 @@ test("a busy workspace does not hold another workspace's ACP config restart", as
       pending = context.owner.broker.list({ sessionId: "s1" }).find((row) => row.request.kind === "permission")
     }
     expect(pending).toBeDefined()
-    const changed = { ...context.start.credentials, leaseGeneration: "rotated" }
-    expect(await context.transport.configure(context.session, { credentials: changed })).toEqual({ state: "deferred", until: "after-active-turns" })
+    const changed = { ...context.start.projection, generation: "plugins:rotated" }
+    expect(await context.transport.configure(context.session, { projection: changed })).toEqual({ state: "deferred", until: "after-active-turns" })
     const beforeReply = await readAcpRequests(context.backend.directory)
     expect(beforeReply.some((row) => row.method === "session/resume" && row.params.cwd === secondDirectory)).toBe(false)
     expect(beforeReply.some((row) => row.method === "session/resume" && row.params.cwd === context.backend.directory)).toBe(false)
@@ -996,7 +996,7 @@ test("a timed-out ACP config restore quarantines that session while its sibling 
       return id
     }, clearTimeout(handle) { timers.delete(handle as number) } }
     const restarting = context.transport.configure(context.session,
-      { credentials: { ...context.backend.credentials, leaseGeneration: "changed" } })
+      { projection: { ...context.start.projection, generation: "plugins:changed" } })
     for (let attempt = 0; attempt < 500; attempt++) {
       if ((await readAcpRequests(context.backend.directory)).some((row) => row.method === "session/resume")) break
       await new Promise((resolve) => setTimeout(resolve, 10))
@@ -1032,7 +1032,8 @@ test("ACP child updates use a child route and brokered lineage", async () => {
     const events = []
     for await (const event of context.transport.send(context.session,
       context.turn(acpScriptToken("subagent")), context.turnBroker())) events.push(event)
-    expect(events.some((item) => item.route?.kind === "child" && item.event.type === "text-delta" && item.event.delta.includes("Child result"))).toBe(true)
+    expect(context.ports.childEvents.some(({ event: item }) => item.route?.kind === "child" && item.event.type === "text-delta" && item.event.delta.includes("Child result"))).toBe(true)
+    expect(events.some((item) => item.route?.kind === "child")).toBe(false)
     expect(context.ports.subagents.some((item) => item.status === "running")).toBe(true)
     expect(context.ports.subagents.some((item) => item.status === "completed")).toBe(true)
   } finally { await context.close() }
@@ -1154,7 +1155,7 @@ async function deferredRestartFailure(context: Awaited<ReturnType<typeof setupCo
   })()
   const settled = running.then((events) => ({ kind: "events" as const, events }), (error: unknown) => ({ kind: "error" as const, error }))
   const pending = await waitFor(() => context.owner.broker.list({ sessionId: "s1" }).find((row) => row.request.kind === "permission"), "permission")
-  expect(await context.transport.configure(context.session, { credentials: { ...context.start.credentials, leaseGeneration: "rotated" } }))
+  expect(await context.transport.configure(context.session, { projection: { ...context.start.projection, generation: "plugins:rotated" } }))
     .toEqual({ state: "deferred", until: "after-active-turns" })
   expect((await context.owner.broker.answer(pending.request.requestId, { kind: "permission", decision: "allow_once" }, { sessionId: "s1" })).ok).toBe(true)
   const outcome = await Promise.race([settled, new Promise<"pending">((resolve) => setTimeout(() => resolve("pending"), 3_000))])
@@ -1307,6 +1308,7 @@ const options = () => [
   { id: "thought_level", name: "Effort", category: "thought_level", type: "select", currentValue: state.effort, options: [{ value: "low", name: "Low" }, { value: "high", name: "High" }] },
 ]
 let sessions = 0
+let releasePrompt
 agent()
   .onRequest("initialize", async () => ({ protocolVersion: PROTOCOL_VERSION, agentInfo, authMethods: [],
     agentCapabilities: { loadSession: true, promptCapabilities: caps, mcpCapabilities: { http: true, sse: true } } }))
@@ -1319,6 +1321,7 @@ agent()
     log("session/set_config_option", context.params)
     const { configId, value } = context.params
     if (configId === "mode") state.mode = value
+    if (configId === "mode") releasePrompt?.()
     if (configId === "model" && !flag("PARITY_ACP_CLAMP_MODEL")) state.model = value
     if (configId === "thought_level") state.effort = value
     return { configOptions: options() }
@@ -1326,13 +1329,15 @@ agent()
   .onRequest("session/set_mode", async (context) => {
     log("session/set_mode", context.params)
     if (!flag("PARITY_ACP_CLAMP_MODE")) state.mode = context.params.modeId
+    releasePrompt?.()
     await context.client.notify("session/update", { sessionId: context.params.sessionId, update: { sessionUpdate: "current_mode_update", currentModeId: state.mode } })
     return {}
   })
   .onRequest("session/prompt", async (context) => {
     log("session/prompt", context.params)
+    if (flag("PARITY_ACP_HOLD_FOR_MODE")) await new Promise((resolve) => { releasePrompt = resolve })
     const text = context.params.prompt.filter((block) => block.type === "text").map((block) => block.text).join("\\n")
-    const reply = text.includes(process.env.PARITY_ACP_TITLE_MARK ?? "\\u0000") ? "Scripted parity title" : "PARITY_OK"
+    const reply = flag("PARITY_ACP_HOLD_FOR_MODE") ? state.mode : text.includes(process.env.PARITY_ACP_TITLE_MARK ?? "\\u0000") ? "Scripted parity title" : "PARITY_OK"
     await context.client.notify("session/update", { sessionId: context.params.sessionId, update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text: reply } } })
     return { stopReason: "end_turn" }
   })
@@ -1455,7 +1460,7 @@ test("ACP permission modes come from the modes channel with the agent's current 
   const context = await setupConformance({ name: "acp modes channel", backend: () => parityBackend({ PARITY_ACP_MODES_ONLY: "1" }), makeTransport: parityTransport })
   try {
     expect(await context.transport.config!.permissionModes({ session: context.session })).toEqual({
-      modes: [{ id: "default", name: "Default" }, { id: "review", name: "Review" }], currentModeId: "default", appliesFrom: "next-turn" })
+      modes: [{ id: "default", name: "Default" }, { id: "review", name: "Review" }], currentModeId: "default", appliesFrom: "immediate" })
     const { sessionId: _sessionId, title: _title, instructions: _instructions, ...draft } = context.start
     expect((await context.transport.config!.permissionModes({ draft })).modes.map((mode) => mode.id)).toEqual(["default", "review"])
     expect(await context.transport.agents!.list({ session: context.session })).toEqual([
@@ -1463,6 +1468,27 @@ test("ACP permission modes come from the modes channel with the agent's current 
     expect((await context.transport.config!.setPermissionMode(context.session, "review")).currentModeId).toBe("review")
     expect((await (context.backend as ParityBackend).requests()).some((row) => row.method === "session/set_mode" && row.params.modeId === "review")).toBe(true)
     await expect(context.transport.config!.setPermissionMode(context.session, "bogus")).rejects.toThrow("does not offer permission mode bogus")
+  } finally { await context.close() }
+}, 30_000)
+
+test.each(["0", "1"])("ACP changes permission modes during an active prompt with modes-only=%s", async (modesOnly) => {
+  const context = await setupConformance({ name: "acp live permissions",
+    backend: () => parityBackend({ PARITY_ACP_MODES_ONLY: modesOnly, PARITY_ACP_HOLD_FOR_MODE: "1" }), makeTransport: parityTransport })
+  const state = context.backend as ParityBackend
+  const running = (async () => {
+    const events = []
+    for await (const event of context.transport.send(context.session, context.turn("hold for the mode change"), context.turnBroker())) events.push(event)
+    return events
+  })()
+  try {
+    await waitFor(async () => (await state.requests()).some((row) => row.method === "session/prompt") || undefined, "held ACP prompt")
+    const applied = await context.transport.config!.setPermissionMode(context.session, "review")
+    expect(applied).toMatchObject({ currentModeId: "review", appliesFrom: "immediate" })
+    expect(JSON.stringify(await running)).toContain("review")
+    const requests = await state.requests()
+    expect(requests.filter((row) => row.method === "session/new")).toHaveLength(1)
+    expect(requests.filter((row) => row.method === "session/prompt")).toHaveLength(1)
+    expect(requests.at(-1)?.method).toBe(modesOnly === "1" ? "session/set_mode" : "session/set_config_option")
   } finally { await context.close() }
 }, 30_000)
 

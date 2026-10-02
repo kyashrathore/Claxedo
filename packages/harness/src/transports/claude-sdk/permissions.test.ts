@@ -39,6 +39,13 @@ test("an unknown mode fails before launch", () => {
   expect(() => permissionOptions({ ...config, permissionMode: "unknown" })).toThrow("Unknown Claude permission mode")
 })
 
+test("a launch permits a later bypass selection only within its permission ceiling", () => {
+  expect(permissionOptions({ ...config, permissionMode: "default" }).allowDangerouslySkipPermissions).toBe(true)
+  expect(permissionOptions({ ...config, permissionCeiling: "auto" }).allowDangerouslySkipPermissions).toBe(false)
+  expect(permissionOptions({ ...config, permissionCeiling: "ask" }).allowDangerouslySkipPermissions).toBe(false)
+  expect(permissionOptions({ ...config, permissionCeiling: "full" }).allowDangerouslySkipPermissions).toBe(true)
+})
+
 test("saved grants replay their rules and directories at launch while the runtime keeps the mode", () => {
   const key = (updates: unknown) => JSON.stringify(["claude-sdk", JSON.stringify({ tool: "Bash", directory: "/work", updates })])
   const foreign = JSON.stringify(["codex-app-server", JSON.stringify({ tool: "Bash", directory: "/work", updates: [{ type: "addRules", behavior: "allow", destination: "session", rules: [{ toolName: "Bash", ruleContent: "codex" }] }] })])

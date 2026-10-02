@@ -43,9 +43,8 @@ export type AgentPermissionModeState = {
    */
   unsupported?: string
   /**
-   * When a change lands. `next-session` is not a rounding error: on cursor these
-   * are `Agent.create` options, so a change cannot affect the session in front
-   * of the user at all.
+   * When the harness applies a change: acknowledged live control, next turn,
+   * or next agent session.
    */
-  appliesFrom: "next-turn" | "next-session"
+  appliesFrom: "immediate" | "next-turn" | "next-session"
 }

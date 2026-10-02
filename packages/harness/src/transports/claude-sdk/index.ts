@@ -108,8 +108,9 @@ export class ClaudeSdkTransport implements HarnessTransport {
       return claudeModeState(claudeModeId(selected))
     },
     setPermissionMode: async (session: HarnessSession, modeId: string) => {
-      this.entry(session)
+      const entry = this.entry(session)
       requireClaudeMode(modeId)
+      await entry.live?.setPermissionMode(modeId)
       return claudeModeState(modeId)
     },
   }

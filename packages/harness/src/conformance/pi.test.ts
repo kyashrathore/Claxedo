@@ -284,15 +284,41 @@ test("a Pi process death mid-turn fails the turn through the channel's exit", as
   } finally { await context.close() }
 }, 30_000)
 
-test("Pi reads back a clamped thinking level and refuses the turn", async () => {
+test("Pi refuses clamped effort without retiring its process and accepts a corrected turn", async () => {
   const context = await setupConformance({ name: "pi clamped effort", backend, makeTransport: piTransport })
   try {
     const before = (context.backend as PiBackend).server.requests.length
+    const process = context.services.processes.at(-1)!
+    const count = context.services.processes.length
     const run = async () => {
       for await (const _event of context.transport.send(context.session, { ...context.turn("Reply with exactly this one token: PICLAMP"), effort: "xhigh" }, context.turnBroker())) {}
     }
     await expect(run()).rejects.toThrow("Pi does not run openai/gpt-4.1 at thinking level xhigh; it kept off")
     expect((context.backend as PiBackend).server.requests.length).toBe(before)
+    expect(processAlive(process.pid)).toBe(true)
+    const events: RoutedEvent[] = []
+    for await (const event of context.transport.send(context.session, context.turn("Reply with exactly this one token: PICORRECTED"), context.turnBroker())) events.push(event)
+    expect(events.some(({ event }) => event.type === "text-delta" && event.delta.includes("PICORRECTED"))).toBe(true)
+    expect(context.services.processes).toHaveLength(count)
+    expect(processAlive(process.pid)).toBe(true)
+  } finally { await context.close() }
+}, 30_000)
+
+test("Pi rejects an unavailable model without losing its session or a subsequent valid turn", async () => {
+  const context = await setupConformance({ name: "pi rejected model", backend, makeTransport: piTransport })
+  try {
+    const before = context.services.processes.length
+    const process = context.services.processes.at(-1)!
+    const run = async () => {
+      const turn = { ...context.turn("must not be submitted"), model: { providerID: "pi", modelID: "openai/fixture-missing-model" } }
+      for await (const _event of context.transport.send(context.session, turn, context.turnBroker())) {}
+    }
+    await expect(run()).rejects.toMatchObject({ code: "configuration", message: expect.stringContaining("Model not found") })
+    expect(processAlive(process.pid)).toBe(true)
+    const events: RoutedEvent[] = []
+    for await (const event of context.transport.send(context.session, context.turn("Reply with exactly this one token: PIMODELRECOVERED"), context.turnBroker())) events.push(event)
+    expect(events.some(({ event }) => event.type === "text-delta" && event.delta.includes("PIMODELRECOVERED"))).toBe(true)
+    expect(context.services.processes).toHaveLength(before)
   } finally { await context.close() }
 }, 30_000)
 

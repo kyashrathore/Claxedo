@@ -148,8 +148,10 @@ export class PiRpcTransport implements HarnessTransport {
       yield* withTurnAccount(run.queue, account)
       await run.answered()
     } catch (error) {
-      await entry.rpc.retire(piDeadline(this.services.clock))
-      this.entries.delete(session.binding.sessionId)
+      if (run.prompted || !entry.rpc.alive || !(error instanceof TransportError) || error.code !== "configuration") {
+        await entry.rpc.retire(piDeadline(this.services.clock))
+        this.entries.delete(session.binding.sessionId)
+      }
       throw error
     } finally {
       run.close()

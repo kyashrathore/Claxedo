@@ -18,7 +18,7 @@ export async function acpSessionTitle(entry: AcpEntry, request: SessionTitleRequ
   request.signal.addEventListener("abort", onAbort, { once: true })
   try {
     const result = await entry.peer.agent.prompt({ sessionId: started.sessionId,
-      prompt: [{ type: "text", text: `${request.system}\n\n${request.user}` }] })
+      prompt: [{ type: "text", text: `${request.system}\n\n${request.user}` }] }).finally(() => entry.updatesDelivered())
     if (result.stopReason === "cancelled" || request.signal.aborted) return null
     return text.trim() ? text : null
   } finally {

@@ -10,20 +10,14 @@ import type { AcpEntry } from "./index"
 import { acpKeptPermissionMode } from "./options"
 import { unrecognizedEvent } from "../../translate/unrecognized"
 import { routedIngest } from "../../translate/ingest"
-import { acpSubagentObservation, supportsAcpSubagents } from "./extensions/subagents"
+import { supportsAcpSubagents } from "./extensions/subagents"
 
 export function acpReceiver(harnessId: string, session: HarnessSession, queue: AsyncPushQueue<RoutedEvent>): (notification: SessionNotification) => void {
-  const runtimes = new Map<string, ReturnType<typeof createAgentEventRuntime>>()
+  const runtime = createAgentEventRuntime({ harness: harnessId, threadId: session.binding.upstreamSessionId,
+    adapter: createAcpEventTranslator({ client: harnessId }) })
   return (notification) => {
-    let runtime = runtimes.get(notification.sessionId)
-    if (!runtime) {
-      runtime = createAgentEventRuntime({ harness: harnessId, threadId: notification.sessionId,
-        adapter: createAcpEventTranslator({ client: harnessId }) })
-      runtimes.set(notification.sessionId, runtime)
-    }
     for (const event of routedIngest(runtime, { source: "acp.jsonrpc", method: "session/update", payload: notification.update }, {
-      method: "session/update",
-      target: notification.sessionId === session.binding.upstreamSessionId ? { kind: "parent" } : { kind: "child", correlationKey: notification.sessionId },
+      method: "session/update", target: { kind: "parent" },
     })) queue.push(event)
   }
 }
@@ -81,8 +75,7 @@ async function deliverAcpUpdate(entry: AcpEntry, notification: SessionNotificati
   if (notification.sessionId !== entry.session.binding.upstreamSessionId) {
     await acpObserveSubagent(entry, notification.update)
     entry.quiet?.touch()
-    const receive = entry.receive ?? entry.providerTurn?.receive
-    receive?.(notification)
+    await entry.children.deliver(notification)
     return
   }
   const meta = notification.update._meta?.goal
@@ -106,10 +99,6 @@ export async function acpUnknown(entry: AcpEntry | undefined, sessionId: string,
 }
 
 export async function acpObserveSubagent(entry: AcpEntry | undefined, update: unknown): Promise<void> {
-  if (!entry?.turnBroker || !supportsAcpSubagents(entry.peer.handshake)) return
-  const child = acpSubagentObservation(update)
-  if (!child) return
-  if (child.observation.status !== "running") await (entry.queue ?? entry.providerTurn?.queue)?.drained()
-  const ref = await entry.turnBroker.observeSubagent(child.observation)
-  if (ref) entry.turnBroker.associateChild(child.key, ref)
+  if (!entry || !supportsAcpSubagents(entry.peer.handshake)) return
+  await entry.children.observe(update, entry.turnBroker ?? entry.broker)
 }

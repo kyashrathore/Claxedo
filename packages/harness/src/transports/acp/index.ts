@@ -32,6 +32,7 @@ import { acpPrepareTurnConfig } from "./sync"
 import { acpSessionTitle } from "./title"
 import { attachAcpEntry, startAcpEntry, type AcpHost } from "./startup"
 import { AcpSessionLifecycle } from "./lifecycle"
+import type { AcpChildren } from "./children"
 
 export type AcpMcpFilter = (input: {
   servers: readonly ProjectedMcpServer[]
@@ -44,6 +45,8 @@ export type AcpEntry = {
   observation: ReturnType<AcpConnectionHealth["begin"]>
   session: HarnessSession
   start: StartInput
+  launched: StartInput
+  children: AcpChildren
   broker: SessionBroker
   peer: AcpPeer
   onIdle(): void
@@ -166,8 +169,9 @@ export class AcpTransport implements HarnessTransport {
 
   async *send(session: HarnessSession, turn: TurnInput, broker: TurnBroker): AsyncIterable<RoutedEvent> {
     await this.lifecycle.settled(session.binding.sessionId)
-    const entry = this.entry(session)
+    let entry = this.entry(session)
     if (entry.phase !== "ready" || entry.providerTurn) throw new AcpTransportError("session", entry.phase === "uncertain" ? "ACP session outcome is uncertain" : "ACP session already has an active turn")
+    if (entry.pendingRestart) { await this.lifecycle.restart(entry); entry = this.entry(session) }
     entry.phase = "busy"
     entry.cancelled = false
     entry.cancelSent = undefined
@@ -233,10 +237,11 @@ export class AcpTransport implements HarnessTransport {
       return { state: "refused", reason: "ACP session outcome is uncertain" }
     }
     const next = mergeStartInput(entry.start, update)
-    const changed = launchConfigChanged(entry.start, next)
+    const changed = launchConfigChanged(entry.launched, next)
     entry.start = next
+    entry.pendingRestart = changed
     if (!changed) return { state: "applied" }
-    if (entry.phase === "busy" || entry.providerTurn) { entry.pendingRestart = true; return { state: "deferred", until: "after-active-turns" } }
+    if (entry.phase === "busy" || entry.providerTurn) return { state: "deferred", until: "after-active-turns" }
     await this.lifecycle.restart(entry)
     return { state: "applied" }
   }

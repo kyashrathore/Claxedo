@@ -50,11 +50,15 @@ export class AcpSessionLifecycle {
     if (state === "closing") throw new AcpTransportError("session", "ACP session is closing")
   }
 
-  restart(entry: AcpEntry): Promise<void> {
+  async restart(entry: AcpEntry): Promise<void> {
+    await entry.updatesDelivered()
     const id = entry.session.binding.sessionId
     if (this.host.disposed() || this.host.entries.get(id) !== entry) return Promise.resolve()
     const pending = this.transitions.get(id)
     if (pending) return pending.done
+    if (!entry.pendingRestart && !entry.peer.agent.signal.aborted) return
+    if (!entry.peer.agent.signal.aborted && entry.children.hasLive) return Promise.reject(new AcpTransportError("configuration",
+      "Claxedo cannot replace the ACP process while subagents are running. Wait for them to finish or explicitly stop the session before changing launch settings."))
     const abort = new AbortController()
     const work = restartAcpEntry(this.host, entry, abort.signal).then(() => {
       const closing = this.superseded(id)

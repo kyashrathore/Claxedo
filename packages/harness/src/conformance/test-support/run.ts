@@ -488,7 +488,10 @@ export function runConformance(input: SuiteInput): void {
           providers: Object.fromEntries(Object.entries(credentials.providers).map(([id, provider]) =>
             [id, "placeholder" in provider ? { ...provider, placeholder: `${provider.placeholder}-session-one-only` } : provider])) } })
         expect(update.state).toBe("applied")
-        if (secondProcess && !context.backend.credentialsPerCommand) expect(context.services.processes.at(-1)).not.toBe(secondProcess)
+        if (secondProcess && !context.backend.credentialsPerCommand) {
+          if (Object.values(credentials.providers).some((provider) => "placeholder" in provider)) expect(context.services.processes.at(-1)).not.toBe(secondProcess)
+          else expect(context.services.processes.at(-1)).toBe(secondProcess)
+        }
         if (pending) expect((await context.owner.broker.answer(pending.request.requestId,
           { kind: "permission", decision: "deny" }, { sessionId: "s2" })).ok).toBe(true)
         release?.()
