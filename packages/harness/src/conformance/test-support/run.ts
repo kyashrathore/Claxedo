@@ -355,13 +355,16 @@ export function runConformance(input: SuiteInput): void {
       } finally { await context.close() }
     }, 60_000)
 
-    test("expires a timed extension dialog in the broker", async () => {
+    test("settles a timed extension dialog without granting it", async () => {
       const context = await setup(input)
       try {
         if (!context.backend.uiCommand) return
         const events = await collect(context.transport, context.session, context.turn(`/${context.backend.uiCommand} expire`), context.turnBroker())
         expect(events.some((item) => item.event.type === "harness-notice" && item.event.code === "pi.extension_ui.setStatus")).toBe(true)
-        expect(context.ports.saved.some((row) => row.answer.kind === "expired")).toBe(true)
+        const answers = context.ports.saved.filter((row) => row.pending.request.kind === "question")
+        expect(answers).toHaveLength(1)
+        expect(answers.some((row) => row.answer.kind === "expired" || row.answer.kind === "cancelled")).toBe(true)
+        expect(context.owner.broker.list({ sessionId: context.session.binding.sessionId })).toHaveLength(0)
       } finally { await context.close() }
     }, 60_000)
 
