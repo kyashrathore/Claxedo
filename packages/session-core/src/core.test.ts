@@ -1,5 +1,8 @@
 import { expect, test } from "bun:test"
+import os from "node:os"
+import path from "node:path"
 import { createSessionCore } from "./index"
+import { testSessionCore } from "./test-support/session-core"
 
 function core() {
   return createSessionCore({ placement: {
@@ -32,4 +35,11 @@ test("the placement serves its root, its synthetic workspace name and registered
   expect(placement.resolveDirectory(undefined, "child")).toBe("/worktrees/child")
   expect(() => placement.resolveDirectory("/elsewhere"))
     .toThrow(expect.objectContaining({ code: "workspace_target_pinned", status: 400, retryable: false, message: "workspace-runtime is pinned to /workspace" }))
+})
+
+test("a test core refuses a root outside the OS temp directory, so its routes never write into a checkout", () => {
+  for (const root of [process.cwd(), "/workspace", path.join(os.tmpdir(), "..", "escape")]) {
+    expect(() => testSessionCore(root)).toThrow("testSessionCore refuses")
+  }
+  expect(testSessionCore(path.join(os.tmpdir(), "core-guard")).placement.directory).toBe(path.join(os.tmpdir(), "core-guard"))
 })

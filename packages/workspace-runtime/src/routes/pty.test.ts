@@ -68,7 +68,7 @@ function privateSessionPolicy(owners: Record<string, string>): SessionAccessPoli
 /** The PTY routes inside a session core rooted where the test pins the runtime, as a host serves them. */
 function ptyRoutes(policy?: SessionAccessPolicy, root?: string) {
   return new Hono<{ Variables: RelayHostAuthContext }>()
-    .use("*", (_c, next) => withSessionCore(testSessionCore(root ?? process.env.WORKSPACE_RUNTIME_DIRECTORY ?? process.cwd()), next))
+    .use("*", (_c, next) => withSessionCore(testSessionCore(root ?? process.env.WORKSPACE_RUNTIME_DIRECTORY ?? path.join(os.tmpdir(), "pty-routes-unserved-root")), next))
     .route("/", PtyRoutes(upgradeWebSocket, policy))
 }
 
@@ -158,7 +158,7 @@ describe("PtyRoutes", () => {
       title: "Terminal",
       command: "/bin/sh",
       args: [],
-      cwd: "/tmp",
+      cwd: os.tmpdir(),
       status: "running" as const,
       pid: 123,
     } satisfies Pty.Info
@@ -168,11 +168,11 @@ describe("PtyRoutes", () => {
     }))
     const commit = spyOn(Pty, "commit").mockReturnValue(info)
     const list = spyOn(Pty, "list").mockReturnValue([info])
-    process.env.WORKSPACE_RUNTIME_DIRECTORY = "/tmp"
+    process.env.WORKSPACE_RUNTIME_DIRECTORY = os.tmpdir()
     try {
       const created = await ptyRoutes().request("http://localhost/", {
         method: "POST",
-        headers: { "content-type": "application/json", "x-claxedo-directory": "/tmp" },
+        headers: { "content-type": "application/json", "x-claxedo-directory": os.tmpdir() },
         body: JSON.stringify({
           sessionId: "session_a",
           createRequestId: "request-client-a",
@@ -197,17 +197,17 @@ describe("PtyRoutes", () => {
       title: "Terminal",
       command: "/bin/sh",
       args: [],
-      cwd: "/tmp",
+      cwd: os.tmpdir(),
       status: "running" as const,
       pid: 123,
     }
     const create = spyOn(Pty, "create").mockResolvedValue(info)
     const commit = spyOn(Pty, "commit").mockReturnValue(info)
-    process.env.WORKSPACE_RUNTIME_DIRECTORY = "/tmp"
+    process.env.WORKSPACE_RUNTIME_DIRECTORY = os.tmpdir()
     try {
       const response = await ptyRoutes().request("http://localhost/", {
         method: "POST",
-        headers: { "content-type": "application/json", "x-claxedo-directory": "/tmp" },
+        headers: { "content-type": "application/json", "x-claxedo-directory": os.tmpdir() },
         body: JSON.stringify({ title: "Terminal" }),
       })
 
@@ -631,14 +631,14 @@ describe("PtyRoutes", () => {
   })
 
   test("rejects create requests outside the pinned workspace before spawning", async () => {
-    process.env.WORKSPACE_RUNTIME_DIRECTORY = "/tmp/workspace-runtime-pty"
+    process.env.WORKSPACE_RUNTIME_DIRECTORY = path.join(os.tmpdir(), "workspace-runtime-pty")
     const app = ptyRoutes()
 
     const wrongDirectory = await app.request("http://localhost/", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "x-claxedo-directory": "/tmp/other",
+        "x-claxedo-directory": path.join(os.tmpdir(), "other"),
       },
       body: JSON.stringify({ title: "bad" }),
     })
@@ -653,7 +653,7 @@ describe("PtyRoutes", () => {
     const absoluteCwd = await app.request("http://localhost/", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ cwd: "/tmp/workspace-runtime-pty" }),
+      body: JSON.stringify({ cwd: path.join(os.tmpdir(), "workspace-runtime-pty") }),
     })
     expect(absoluteCwd.status).toBe(400)
     await expect(absoluteCwd.json()).resolves.toEqual({

@@ -1,5 +1,6 @@
+import os from "node:os"
+import path from "node:path"
 import { testSessionCore } from "../test-support/session-core"
-const testPlacement = testSessionCore("/workspace", "ws-events-test").placement
 import { describe, expect, test } from "bun:test"
 import { Hono, type Context } from "hono"
 import { createBus, type WorkspaceRuntimeEvent } from "../bus"
@@ -10,7 +11,8 @@ import type { SessionAccessPolicy } from "../session-access-policy"
 import { sessionEventDeliveryPolicy } from "../event-delivery"
 import { messagePartUpdated, questionAsked, sessionDeleted, withDir } from "../projection/presentation-events"
 
-const DIRECTORY = "/workspace"
+const DIRECTORY = path.join(os.tmpdir(), "events-workspace")
+const testPlacement = testSessionCore(DIRECTORY, "ws-events-test").placement
 const WORKSPACE_ID = "ws-events-test"
 
 function part(sessionID: string, id: string, state: { status: "running" } | { status: "completed" }): AgentEventEnvelope {

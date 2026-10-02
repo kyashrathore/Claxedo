@@ -1315,7 +1315,7 @@ describe("cors + signal registration (characterization)", () => {
     const preExc = process.listeners("uncaughtException")
     // Default: no lifecycle argument → the library must not claim the process.
     const server = startServer(0, { sessionIdWorkspace: () => undefined, placement,
-      target: { workspaceId: "ws-signals-default", directory: process.cwd() },
+      target: { workspaceId: "ws-signals-default", directory: path.join(os.tmpdir(), "server-signals-root") },
       exposure: loopbackWorkspaceRuntimeExposure(),
     })
     try {
@@ -1345,7 +1345,7 @@ describe("cors + signal registration (characterization)", () => {
     const preRej = process.listeners("unhandledRejection")
     const preExc = process.listeners("uncaughtException")
     const server = startServer(0, { sessionIdWorkspace: () => undefined, placement,
-      target: { workspaceId: "ws-signals", directory: process.cwd() },
+      target: { workspaceId: "ws-signals", directory: path.join(os.tmpdir(), "server-signals-root") },
       exposure: loopbackWorkspaceRuntimeExposure(),
     }, { signals: true })
     try {

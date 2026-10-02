@@ -12,6 +12,9 @@ import type { GitCommitSummary, GitWorktreeStatus } from "../workspace-files/git
 import { workspaceId } from "../target"
 import { GitWorktreeRoutes, type GitWorktreeRoutesOptions } from "./git-worktree"
 
+/** A core root no test creates: routes that fall back to it reach nothing in a checkout. */
+const TEST_ROOT = path.join(tmpdir(), "git-worktree-routes-unserved-root")
+
 const execFileAsync = promisify(execFile)
 
 async function git(directory: string, args: string[]) {
@@ -90,7 +93,7 @@ async function log(query = "") {
 }
 
 describe("GitWorktreeRoutes status", () => {
-  test("splits staged and unstaged entries with letters, counts and rename sources", () => withSessionCore(testSessionCore(process.cwd(), workspaceId()), async () => {
+  test("splits staged and unstaged entries with letters, counts and rename sources", () => withSessionCore(testSessionCore(TEST_ROOT, workspaceId()), async () => {
     await withWorkspace(async (directory) => {
       await writeFile(path.join(directory, "added.md"), "a\nb\nc\n")
       await git(directory, ["add", "added.md"])
@@ -118,7 +121,7 @@ describe("GitWorktreeRoutes status", () => {
     })
   }))
 
-  test("reports a staged deletion once and a binary change with zero counts", () => withSessionCore(testSessionCore(process.cwd(), workspaceId()), async () => {
+  test("reports a staged deletion once and a binary change with zero counts", () => withSessionCore(testSessionCore(TEST_ROOT, workspaceId()), async () => {
     await withWorkspace(async (directory) => {
       await git(directory, ["rm", "-q", "del.md"])
       await writeFile(path.join(directory, "blob.bin"), Buffer.from([0, 1, 2, 3, 0, 255]))
@@ -133,7 +136,7 @@ describe("GitWorktreeRoutes status", () => {
     })
   }))
 
-  test("reports branch, upstream, ahead and behind against a bare remote", () => withSessionCore(testSessionCore(process.cwd(), workspaceId()), async () => {
+  test("reports branch, upstream, ahead and behind against a bare remote", () => withSessionCore(testSessionCore(TEST_ROOT, workspaceId()), async () => {
     await withWorkspace(async (directory) => {
       await withBareRemote(directory, async (remote) => {
         await git(directory, ["push", "-q", "-u", "origin", "main"])
@@ -158,7 +161,7 @@ describe("GitWorktreeRoutes status", () => {
     })
   }))
 
-  test("lists unmerged files as conflicted in the unstaged group", () => withSessionCore(testSessionCore(process.cwd(), workspaceId()), async () => {
+  test("lists unmerged files as conflicted in the unstaged group", () => withSessionCore(testSessionCore(TEST_ROOT, workspaceId()), async () => {
     await withWorkspace(async (directory) => {
       await git(directory, ["checkout", "-q", "-b", "other"])
       await writeFile(path.join(directory, "doc.md"), "other\n")
@@ -180,7 +183,7 @@ describe("GitWorktreeRoutes status", () => {
 })
 
 describe("GitWorktreeRoutes stage and unstage", () => {
-  test("stage moves a modified file across groups and stages a deletion", () => withSessionCore(testSessionCore(process.cwd(), workspaceId()), async () => {
+  test("stage moves a modified file across groups and stages a deletion", () => withSessionCore(testSessionCore(TEST_ROOT, workspaceId()), async () => {
     await withWorkspace(async (directory) => {
       await writeFile(path.join(directory, "mod.md"), "one\nchanged\n")
       await unlink(path.join(directory, "del.md"))
@@ -195,7 +198,7 @@ describe("GitWorktreeRoutes stage and unstage", () => {
     })
   }))
 
-  test("unstage moves a file back to the unstaged group", () => withSessionCore(testSessionCore(process.cwd(), workspaceId()), async () => {
+  test("unstage moves a file back to the unstaged group", () => withSessionCore(testSessionCore(TEST_ROOT, workspaceId()), async () => {
     await withWorkspace(async (directory) => {
       await writeFile(path.join(directory, "mod.md"), "one\nchanged\n")
       await git(directory, ["add", "mod.md"])
@@ -210,7 +213,7 @@ describe("GitWorktreeRoutes stage and unstage", () => {
     })
   }))
 
-  test("unstage works on a repository without a first commit", () => withSessionCore(testSessionCore(process.cwd(), workspaceId()), async () => {
+  test("unstage works on a repository without a first commit", () => withSessionCore(testSessionCore(TEST_ROOT, workspaceId()), async () => {
     await withWorkspace(async (directory) => {
       await writeFile(path.join(directory, "first.md"), "first\n")
       await git(directory, ["add", "first.md"])
@@ -224,7 +227,7 @@ describe("GitWorktreeRoutes stage and unstage", () => {
     }, { commit: false })
   }))
 
-  test("rejects empty path lists and paths outside the workspace", () => withSessionCore(testSessionCore(process.cwd(), workspaceId()), async () => {
+  test("rejects empty path lists and paths outside the workspace", () => withSessionCore(testSessionCore(TEST_ROOT, workspaceId()), async () => {
     await withWorkspace(async () => {
       const empty = await post(app(), "stage", { paths: [] })
       expect(empty.status).toBe(400)
@@ -236,7 +239,7 @@ describe("GitWorktreeRoutes stage and unstage", () => {
     })
   }))
 
-  test("rejects entries that resolve to the workspace root instead of staging everything", () => withSessionCore(testSessionCore(process.cwd(), workspaceId()), async () => {
+  test("rejects entries that resolve to the workspace root instead of staging everything", () => withSessionCore(testSessionCore(TEST_ROOT, workspaceId()), async () => {
     await withWorkspace(async (directory) => {
       await writeFile(path.join(directory, "mod.md"), "one\nchanged\n")
       await writeFile(path.join(directory, "new.md"), "new\n")
@@ -256,7 +259,7 @@ describe("GitWorktreeRoutes stage and unstage", () => {
 })
 
 describe("GitWorktreeRoutes commit-staged", () => {
-  test("commits the index and advances HEAD", () => withSessionCore(testSessionCore(process.cwd(), workspaceId()), async () => {
+  test("commits the index and advances HEAD", () => withSessionCore(testSessionCore(TEST_ROOT, workspaceId()), async () => {
     await withWorkspace(async (directory) => {
       const before = await git(directory, ["rev-parse", "HEAD"])
       await writeFile(path.join(directory, "mod.md"), "one\nchanged\n")
@@ -273,7 +276,7 @@ describe("GitWorktreeRoutes commit-staged", () => {
     })
   }))
 
-  test("refuses an empty message and an empty index", () => withSessionCore(testSessionCore(process.cwd(), workspaceId()), async () => {
+  test("refuses an empty message and an empty index", () => withSessionCore(testSessionCore(TEST_ROOT, workspaceId()), async () => {
     await withWorkspace(async (directory) => {
       await writeFile(path.join(directory, "mod.md"), "one\nchanged\n")
       await git(directory, ["add", "mod.md"])
@@ -289,7 +292,7 @@ describe("GitWorktreeRoutes commit-staged", () => {
     })
   }))
 
-  test("amend rewrites the tip without adding a commit", () => withSessionCore(testSessionCore(process.cwd(), workspaceId()), async () => {
+  test("amend rewrites the tip without adding a commit", () => withSessionCore(testSessionCore(TEST_ROOT, workspaceId()), async () => {
     await withWorkspace(async (directory) => {
       const before = await git(directory, ["rev-parse", "HEAD"])
       await writeFile(path.join(directory, "mod.md"), "one\nchanged\n")
@@ -305,7 +308,7 @@ describe("GitWorktreeRoutes commit-staged", () => {
     })
   }))
 
-  test("makes the first commit of a repository with no HEAD", () => withSessionCore(testSessionCore(process.cwd(), workspaceId()), async () => {
+  test("makes the first commit of a repository with no HEAD", () => withSessionCore(testSessionCore(TEST_ROOT, workspaceId()), async () => {
     await withWorkspace(async (directory) => {
       const nothing = await post(app(), "commit-staged", { message: "nothing" })
       expect(nothing.status).toBe(400)
@@ -321,7 +324,7 @@ describe("GitWorktreeRoutes commit-staged", () => {
     }, { commit: false })
   }))
 
-  test("leaves a path staged after the snapshot out of the commit and in the index", () => withSessionCore(testSessionCore(process.cwd(), workspaceId()), async () => {
+  test("leaves a path staged after the snapshot out of the commit and in the index", () => withSessionCore(testSessionCore(TEST_ROOT, workspaceId()), async () => {
     await withWorkspace(async (directory) => {
       await writeFile(path.join(directory, "mod.md"), "one\nchanged\n")
       await git(directory, ["add", "mod.md"])
@@ -342,7 +345,7 @@ describe("GitWorktreeRoutes commit-staged", () => {
     })
   }))
 
-  test("a failing pre-commit hook fails the request and leaves HEAD and the index alone", () => withSessionCore(testSessionCore(process.cwd(), workspaceId()), async () => {
+  test("a failing pre-commit hook fails the request and leaves HEAD and the index alone", () => withSessionCore(testSessionCore(TEST_ROOT, workspaceId()), async () => {
     await withWorkspace(async (directory) => {
       await installHook(directory, "pre-commit", "exit 1")
       const before = await git(directory, ["rev-parse", "HEAD"])
@@ -357,7 +360,7 @@ describe("GitWorktreeRoutes commit-staged", () => {
     })
   }))
 
-  test("a pre-commit hook that rewrites and re-stages a file is committed and the index agrees", () => withSessionCore(testSessionCore(process.cwd(), workspaceId()), async () => {
+  test("a pre-commit hook that rewrites and re-stages a file is committed and the index agrees", () => withSessionCore(testSessionCore(TEST_ROOT, workspaceId()), async () => {
     await withWorkspace(async (directory) => {
       await installHook(directory, "pre-commit", 'printf "fixed\\n" > mod.md && git add mod.md && git rm -q --cached del.md')
       await writeFile(path.join(directory, "mod.md"), "one\nchanged\n")
@@ -374,7 +377,7 @@ describe("GitWorktreeRoutes commit-staged", () => {
     })
   }))
 
-  test("a pre-commit hook sees the snapshot as the index, and a commit-msg hook rewrites the message", () => withSessionCore(testSessionCore(process.cwd(), workspaceId()), async () => {
+  test("a pre-commit hook sees the snapshot as the index, and a commit-msg hook rewrites the message", () => withSessionCore(testSessionCore(TEST_ROOT, workspaceId()), async () => {
     await withWorkspace(async (directory) => {
       await installHook(directory, "pre-commit", 'git diff --cached --name-only > "$(git rev-parse --git-dir)/seen"')
       await installHook(directory, "commit-msg", 'printf "rewritten: %s" "$(cat "$1")" > "$1"')
@@ -390,7 +393,7 @@ describe("GitWorktreeRoutes commit-staged", () => {
 })
 
 describe("GitWorktreeRoutes push", () => {
-  test("pushes to origin, sets the upstream, and reports a rejected push", () => withSessionCore(testSessionCore(process.cwd(), workspaceId()), async () => {
+  test("pushes to origin, sets the upstream, and reports a rejected push", () => withSessionCore(testSessionCore(TEST_ROOT, workspaceId()), async () => {
     await withWorkspace(async (directory) => {
       await withBareRemote(directory, async (remote) => {
         const response = await post(app(), "push", { setUpstream: true })
@@ -411,7 +414,7 @@ describe("GitWorktreeRoutes push", () => {
 })
 
 describe("GitWorktreeRoutes log", () => {
-  test("returns author, date, refs and parents newest first", () => withSessionCore(testSessionCore(process.cwd(), workspaceId()), async () => {
+  test("returns author, date, refs and parents newest first", () => withSessionCore(testSessionCore(TEST_ROOT, workspaceId()), async () => {
     await withWorkspace(async (directory) => {
       const first = await git(directory, ["rev-parse", "HEAD"])
       await writeFile(path.join(directory, "mod.md"), "one\nchanged\n")
@@ -438,7 +441,7 @@ describe("GitWorktreeRoutes log", () => {
     })
   }))
 
-  test("returns no commits for a repository without a first commit", () => withSessionCore(testSessionCore(process.cwd(), workspaceId()), async () => {
+  test("returns no commits for a repository without a first commit", () => withSessionCore(testSessionCore(TEST_ROOT, workspaceId()), async () => {
     await withWorkspace(async () => {
       expect(await log()).toEqual([])
     }, { commit: false })
@@ -446,7 +449,7 @@ describe("GitWorktreeRoutes log", () => {
 })
 
 describe("workspace runtime client git namespace", () => {
-  test("drives the worktree routes and surfaces route errors", () => withSessionCore(testSessionCore(process.cwd(), workspaceId()), async () => {
+  test("drives the worktree routes and surfaces route errors", () => withSessionCore(testSessionCore(TEST_ROOT, workspaceId()), async () => {
     await withWorkspace(async (directory) => {
       const server = app()
       const client = createWorkspaceRuntimeClient({
@@ -475,7 +478,7 @@ describe("workspace runtime client git namespace", () => {
 })
 
 describe("GitWorktreeRoutes workspace scoping", () => {
-  test("serves a registered sibling worktree by ?directory= and refuses a directory the runtime is not pinned to", () => withSessionCore(testSessionCore(process.cwd(), workspaceId()), async () => {
+  test("serves a registered sibling worktree by ?directory= and refuses a directory the runtime is not pinned to", () => withSessionCore(testSessionCore(TEST_ROOT, workspaceId()), async () => {
     await withWorkspace(async (directory) => {
       const elsewhere = await app().request("http://localhost/api/wr/git/status?directory=%2Fnowhere")
       expect(elsewhere.status).toBe(400)

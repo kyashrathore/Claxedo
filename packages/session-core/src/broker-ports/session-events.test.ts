@@ -147,7 +147,7 @@ test("one broker subagent update commits once and reaches SSE once", async () =>
       retainLeasedTurnFailure: (_sessionId, _turn, error) => { throw error },
     })
     handler = workspaceEventsHandler({
-      placement: testSessionCore("/workspace", "ws-events-test").placement,
+      placement: testSessionCore(root, "ws-events-test").placement,
       directory: "/work", workspaceId: "workspace", eventHub: hub,
       bus: createBus<WorkspaceRuntimeEvent>(), sequenceOrigin: () => 0,
     })

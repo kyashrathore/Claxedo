@@ -10,6 +10,9 @@ import { execFile } from "node:child_process"
 import { promisify } from "node:util"
 import { createDiffRoutes } from "./diff"
 
+/** A core root no test creates: routes that fall back to it reach nothing in a checkout. */
+const TEST_ROOT = path.join(tmpdir(), "diff-routes-unserved-root")
+
 const execFileAsync = promisify(execFile)
 
 async function git(directory: string, args: string[]) {
@@ -36,7 +39,7 @@ async function withGitRepo(fn: (directory: string) => Promise<void>) {
 }
 
 describe("diff routes", () => {
-  test("returns structured validation errors", () => withSessionCore(testSessionCore(process.cwd(), workspaceId()), async () => {
+  test("returns structured validation errors", () => withSessionCore(testSessionCore(TEST_ROOT, workspaceId()), async () => {
     const app = new Hono().route("/api/wr/diff", createDiffRoutes())
 
     for (const endpoint of ["targets", "vcs", "refs"]) {
@@ -64,7 +67,7 @@ describe("diff routes", () => {
     })
   }))
 
-  test("counts a new file as uncommitted, in the summary, the full diff and its patch", () => withSessionCore(testSessionCore(process.cwd(), workspaceId()), async () => {
+  test("counts a new file as uncommitted, in the summary, the full diff and its patch", () => withSessionCore(testSessionCore(TEST_ROOT, workspaceId()), async () => {
     const app = new Hono().route("/api/wr/diff", createDiffRoutes())
 
     await withGitRepo(async (directory) => {
@@ -92,7 +95,7 @@ describe("diff routes", () => {
     })
   }))
 
-  test("measures branch modes from the fork point, so the base moving on is not shown as a revert", () => withSessionCore(testSessionCore(process.cwd(), workspaceId()), async () => {
+  test("measures branch modes from the fork point, so the base moving on is not shown as a revert", () => withSessionCore(testSessionCore(TEST_ROOT, workspaceId()), async () => {
     const app = new Hono().route("/api/wr/diff", createDiffRoutes())
 
     await withGitRepo(async (directory) => {
@@ -136,7 +139,7 @@ describe("diff routes", () => {
     })
   }))
 
-  test("offers no default base in a repository with no base branch, and the local main when there is one", () => withSessionCore(testSessionCore(process.cwd(), workspaceId()), async () => {
+  test("offers no default base in a repository with no base branch, and the local main when there is one", () => withSessionCore(testSessionCore(TEST_ROOT, workspaceId()), async () => {
     const app = new Hono().route("/api/wr/diff", createDiffRoutes())
 
     await withGitRepo(async (directory) => {
@@ -148,7 +151,7 @@ describe("diff routes", () => {
     })
   }))
 
-  test("refuses a branch mode without a base, with an unknown base, or with a base sharing no history", () => withSessionCore(testSessionCore(process.cwd(), workspaceId()), async () => {
+  test("refuses a branch mode without a base, with an unknown base, or with a base sharing no history", () => withSessionCore(testSessionCore(TEST_ROOT, workspaceId()), async () => {
     const app = new Hono().route("/api/wr/diff", createDiffRoutes())
 
     await withGitRepo(async (directory) => {
@@ -176,7 +179,7 @@ describe("diff routes", () => {
     })
   }))
 
-  test("loads summaries first and file patches on demand", () => withSessionCore(testSessionCore(process.cwd(), workspaceId()), async () => {
+  test("loads summaries first and file patches on demand", () => withSessionCore(testSessionCore(TEST_ROOT, workspaceId()), async () => {
     const app = new Hono().route("/api/wr/diff", createDiffRoutes())
 
     await withGitRepo(async (directory) => {
@@ -213,7 +216,7 @@ describe("diff routes", () => {
     })
   }))
 
-  test("uses the pinned workspace directory when relay requests omit directory", () => withSessionCore(testSessionCore(process.cwd(), workspaceId()), async () => {
+  test("uses the pinned workspace directory when relay requests omit directory", () => withSessionCore(testSessionCore(TEST_ROOT, workspaceId()), async () => {
     const app = new Hono().route("/api/wr/diff", createDiffRoutes())
 
     await withGitRepo(async (directory) => {
@@ -235,7 +238,7 @@ describe("diff routes", () => {
     })
   }))
 
-  test("rejects caller-selected directories outside the pinned workspace", () => withSessionCore(testSessionCore(process.cwd(), workspaceId()), async () => {
+  test("rejects caller-selected directories outside the pinned workspace", () => withSessionCore(testSessionCore(TEST_ROOT, workspaceId()), async () => {
     const app = new Hono().route("/api/wr/diff", createDiffRoutes())
 
     await withGitRepo(async () => {
@@ -262,7 +265,7 @@ describe("diff routes", () => {
     })
   }))
 
-  test("rejects absolute and escaping diff file paths", () => withSessionCore(testSessionCore(process.cwd(), workspaceId()), async () => {
+  test("rejects absolute and escaping diff file paths", () => withSessionCore(testSessionCore(TEST_ROOT, workspaceId()), async () => {
     const app = new Hono().route("/api/wr/diff", createDiffRoutes())
 
     await withGitRepo(async (directory) => {
@@ -285,7 +288,7 @@ describe("diff routes", () => {
     })
   }))
 
-  test("compares a root commit against the empty tree", () => withSessionCore(testSessionCore(process.cwd(), workspaceId()), async () => {
+  test("compares a root commit against the empty tree", () => withSessionCore(testSessionCore(TEST_ROOT, workspaceId()), async () => {
     const app = new Hono().route("/api/wr/diff", createDiffRoutes())
 
     await withGitRepo(async (directory) => {
@@ -301,7 +304,7 @@ describe("diff routes", () => {
     })
   }))
 
-  test("rejects unsafe or non-existent range refs before invoking diff", () => withSessionCore(testSessionCore(process.cwd(), workspaceId()), async () => {
+  test("rejects unsafe or non-existent range refs before invoking diff", () => withSessionCore(testSessionCore(TEST_ROOT, workspaceId()), async () => {
     const app = new Hono().route("/api/wr/diff", createDiffRoutes())
 
     await withGitRepo(async (directory) => {
@@ -331,7 +334,7 @@ describe("diff routes", () => {
     })
   }))
 
-  test("reads the caller's file as a filename, after -- and after the range refs", () => withSessionCore(testSessionCore(process.cwd(), workspaceId()), async () => {
+  test("reads the caller's file as a filename, after -- and after the range refs", () => withSessionCore(testSessionCore(TEST_ROOT, workspaceId()), async () => {
     const calls: string[][] = []
     const app = new Hono().route("/api/wr/diff", createDiffRoutes({
       git: async (args) => {
@@ -362,7 +365,7 @@ describe("diff routes", () => {
     })
   }))
 
-  test("limits concurrent git subprocesses per diff route instance", () => withSessionCore(testSessionCore(process.cwd(), workspaceId()), async () => {
+  test("limits concurrent git subprocesses per diff route instance", () => withSessionCore(testSessionCore(TEST_ROOT, workspaceId()), async () => {
     let active = 0
     let maxActive = 0
     const app = new Hono().route("/api/wr/diff", createDiffRoutes({
@@ -391,7 +394,7 @@ describe("diff routes", () => {
     })
   }))
 
-  test("marks only origin-backed refs as cloud branches and excludes symbolic remote HEAD", () => withSessionCore(testSessionCore(process.cwd(), workspaceId()), async () => {
+  test("marks only origin-backed refs as cloud branches and excludes symbolic remote HEAD", () => withSessionCore(testSessionCore(TEST_ROOT, workspaceId()), async () => {
     const app = new Hono().route("/api/wr/diff", createDiffRoutes())
 
     await withGitRepo(async (directory) => {
@@ -415,7 +418,7 @@ describe("diff routes", () => {
     })
   }))
 
-  test("returns 504 when git commands exceed the route timeout", () => withSessionCore(testSessionCore(process.cwd(), workspaceId()), async () => {
+  test("returns 504 when git commands exceed the route timeout", () => withSessionCore(testSessionCore(TEST_ROOT, workspaceId()), async () => {
     const app = new Hono().route("/api/wr/diff", createDiffRoutes({
       gitTimeoutMs: 5,
       git: async () => await new Promise(() => {}),
@@ -433,7 +436,7 @@ describe("diff routes", () => {
     })
   }))
 
-  test("uses rename-aware stats for uncommitted files", () => withSessionCore(testSessionCore(process.cwd(), workspaceId()), async () => {
+  test("uses rename-aware stats for uncommitted files", () => withSessionCore(testSessionCore(TEST_ROOT, workspaceId()), async () => {
     const app = new Hono().route("/api/wr/diff", createDiffRoutes())
 
     await withGitRepo(async (directory) => {

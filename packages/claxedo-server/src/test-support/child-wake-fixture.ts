@@ -10,10 +10,10 @@ import type { PrivateSessionRuntimePrincipal } from "@claxedo/server-core/platfo
 import { randomUUID } from "node:crypto"
 import type { RuntimeStore, SessionRoutes } from "@claxedo/session-core"
 import { openRuntimeStore } from "../../../workspace-runtime/src/store-file"
-import { FakeTransport, composeHost } from "@claxedo/session-core/testing"
+import { FakeTransport, TEST_SESSION_ROUTES_DIRECTORY, composeHost } from "@claxedo/session-core/testing"
 import { removeTestDataDir } from "./test-data-dir"
 
-export const DIRECTORY = process.cwd()
+export const DIRECTORY = TEST_SESSION_ROUTES_DIRECTORY
 export const WORKSPACE = "workspace_wake"
 export const HOST = "host_wake"
 export const PARENT = "ses_wake_parent"
