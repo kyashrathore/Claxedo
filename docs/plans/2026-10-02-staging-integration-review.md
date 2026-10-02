@@ -202,3 +202,21 @@ runtime health. The Electron desktop smoke passed with a scripted ACP turn.
 These local flows do not prove live staging authentication or hosted execution.
 Native Windows follow-up repairs resolve dynamic import paths as file URLs and
 locate bundled npm beside the selected Node executable; native CI is pending.
+
+## Final unit-gate follow-up
+
+Staging run 37028691023 passed the full gate and all four server shards. The
+rest shard passed 26 of 27 package tasks; harness passed 1,642 cases and failed
+only the terminal-status profile snapshot. That snapshot traversed a Codex
+plugin clone's transient `.git/shallow.lock` after the process exited. The test
+now hashes exactly the original user files captured before launch and requires
+equality; it still fails if any original file changes or disappears, and still
+checks that no hooks config was installed. Both real Codex/Cursor terminal-hook
+flows pass locally (18 assertions). There is no product change.
+
+Windows run 37025334090 passed three server shards; server-1 found two path
+assertions, now repaired to compare platform-native paths and decoded JSON
+commands. Both focused files pass all 12 tests locally. Run 37026971749 passed
+the Node SDK and host smoke assertions, then exposed the smoke caller's missing
+`await host.dispose()` during cleanup. That caller now awaits canonical shutdown.
+Both Node probes pass locally; native Windows follow-up remains in progress.
