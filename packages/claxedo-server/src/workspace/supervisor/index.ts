@@ -1,5 +1,5 @@
 import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
-import { configureWorkspaceStore, updateWorkspace, getWorkspace, type Workspace } from "@claxedo/server-core/workspace/store/index"
+import { configureWorkspaceStore, updateWorkspace, getWorkspace } from "@claxedo/server-core/workspace/store/index"
 import { configureWorkspaceSupervisorPort } from "@claxedo/server-core/workspace/supervisor-port"
 import { CredentialDeliveryError } from "@claxedo/server-core/credentials/delivery"
 import { IDLE_MS, now } from "./clock"
@@ -397,39 +397,6 @@ export function createWorkspaceSupervisorSandboxManager(): SandboxManager {
       return listSupervisorSandboxLeases().map(sandboxLeaseFromRow)
     },
   }
-}
-
-export function injectRuntime(ws: Workspace, url: string) {
-  const state: WorkspaceRuntimeState = {
-    ws,
-    url,
-    port: parseInt(new URL(url).port, 10),
-    status: "ready",
-    started_at: now(),
-    used_at: now(),
-    crashes: 0,
-    retry_at: 0,
-    active: 0,
-    holds: [],
-    remote: true,
-    sandbox_target: {
-      // The workspace row's `sandbox_id` column is not the runtime host
-      // location authority (that lives on the lease, e.g. sandboxTargetFromLease).
-      // `injectRuntime` is a direct-injection seam given the runtime URL outright,
-      // so the workspace id is the synthetic host identity here.
-      sandboxId: ws.id,
-      url,
-      hostId: ws.id,
-      driver: ws.driver
-        ? {
-          id: ws.driver,
-          resourceId: ws.id,
-        }
-        : undefined,
-    },
-  }
-  runtimes.set(ws.id, state)
-  return state
 }
 
 function sandboxReadyResult(

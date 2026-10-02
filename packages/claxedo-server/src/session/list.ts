@@ -79,7 +79,3 @@ export function sessionListErrorResponse(error: unknown): Response | undefined {
   return undefined
 }
 
-export function requiredWorkspaceId(value: string | undefined) {
-  if (value) return value
-  throw new ControlPlaneAuthError(400, "workspace_id_required", "workspaceId is required")
-}

@@ -332,13 +332,6 @@ export function configuredRuntimeAccessTokenSigner(options: WorkspaceRouteOption
  * every signed caller where the composition supplied no authorizer: an
  * unconfigurable machine gate is an open one.
  */
-export function requireDeploymentOperator(options: WorkspaceRouteOptions, auth: SignedControlPlaneAuth) {
-  if (!options.authorizeOperator) {
-    throw new ControlPlaneAuthError(503, "authority_unavailable", "Deployment operator authorization is not configured")
-  }
-  options.authorizeOperator(auth)
-}
-
 /** The 401 body a signed-only route answers when `signedOrError` admitted no bearer. */
 export function missingBearerBody() {
   return controlPlaneAuthErrorBody(

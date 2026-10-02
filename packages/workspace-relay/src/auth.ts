@@ -517,23 +517,6 @@ export async function verifyHostTunnelToken(token: string, key: RelayKey, expect
  * must cover every requested workspace, so a permissive policy cannot widen
  * the identity its own claims assert.
  */
-export function validateHostTunnelTokenClaims(input: Record<string, unknown>, expected: ExpectedHostTunnel) {
-  if (!isRecord(input)) {
-    throw new WorkspaceRelayAuthError("relay_token_claims_invalid", "Host Tunnel Token claims are not a claims object")
-  }
-  const payload = input as JWTPayload
-  if (stringClaim(payload, "iss") !== runtimeAccessTokenIssuer || stringClaim(payload, "aud") !== hostTunnelTokenAudience) {
-    throw new WorkspaceRelayAuthError("relay_token_claims_invalid", "Host Tunnel Token issuer or audience is invalid")
-  }
-  checkHostTunnelTarget(payload, expected)
-  const claims = hostTunnelClaims(payload)
-  if (!claims) {
-    throw new WorkspaceRelayAuthError("relay_token_claims_invalid", "Host Tunnel Token claims are incomplete")
-  }
-  checkTokenTimeClaims(payload, claims.exp, "Host Tunnel Token")
-  return claims
-}
-
 // RHT lifetime semantics:
 // The Relay Host Token (RHT) authenticates a SINGLE inbound HTTP request or
 // WebSocket upgrade from Workspace Relay to Workspace Host Service. TTL is
