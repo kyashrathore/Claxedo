@@ -47,7 +47,7 @@ import {
   type DeferredTurnGrantClaims,
 } from "../session/deferred-turn-grant"
 import { trimToUndefined } from "@claxedo/helpers/string"
-import { sessionAuthorityErrorAnswer } from "./runtime-session-authority-errors"
+import { sessionAuthorityErrorAnswer } from "../session/runtime-authority-errors"
 import { RuntimeConnectionSecretRoutes, type RuntimeConnectionSecretOptions } from "./runtime-connection-secrets"
 
 const bodyLimitBytes = 16 * 1024

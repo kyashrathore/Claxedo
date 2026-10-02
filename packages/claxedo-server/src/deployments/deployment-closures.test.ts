@@ -32,7 +32,7 @@ const ENTRIES = [
   // access error contract, the D1 session authority's input validation, the
   // verified-email account lookup, the owner of whose connections a turn spends
   // (`connections/turn-owner.ts`), the session authority routes' answer for a
-  // decision that threw (`routes/runtime-session-authority-errors.ts`), the one
+  // decision that threw (`session/runtime-authority-errors.ts`), the one
   // D1 constraint-failure reader and the org/People typed refusal envelope.
   // Every entry also mounts hosted Pages
   // from `core-worker.cf.ts`: the D1 document authority

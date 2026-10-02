@@ -54,7 +54,7 @@ export const serverWorkerd: Policy = {
   // routes resolve whose connections a turn spends through
   // `connections/turn-owner.ts`, the one owner the self-hosted node shares, and
   // answer a decision the authority threw through
-  // `routes/runtime-session-authority-errors.ts`; the
+  // `session/runtime-authority-errors.ts`; the
   // D1 session authority's refusal error and input validation
   // (`authority/adapters/d1/session-input.ts`) are a module of their own; every
   // D1 adapter reads a constraint failure through `platform/db/d1-constraint.ts`;
