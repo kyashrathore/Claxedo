@@ -1,11 +1,11 @@
 import { createBus, type WorkspaceRuntimeEvent } from "./bus"
 import { createSessionPlacement, type SessionPlacementPort } from "./placement"
-import { createRuntimeEventHub } from "./projection/runtime-event-hub"
+import { createRuntimeEventHub, type RuntimeEventHub } from "./projection/runtime-event-hub"
 import { createAgentRuntime, type AgentRuntimeCompositionInput } from "./host/runtime"
 import { SessionRoutes, type SessionRoutesOptions } from "./routes/session"
 import { workspaceEventsHandler, type WorkspaceEventsOptions } from "./routes/events"
 
-export function createSessionCore(ports: { placement: SessionPlacementPort; eventHub?: import("./projection/runtime-event-hub").RuntimeEventHub }) {
+export function createSessionCore(ports: { placement: SessionPlacementPort; eventHub?: RuntimeEventHub }) {
   const bus = createBus<WorkspaceRuntimeEvent>()
   const placement = createSessionPlacement(ports.placement)
   const eventHub = ports.eventHub ?? createRuntimeEventHub()
@@ -14,8 +14,8 @@ export function createSessionCore(ports: { placement: SessionPlacementPort; even
     createRuntime(input: Omit<AgentRuntimeCompositionInput, "eventHub">) {
       return createAgentRuntime({ ...input, eventHub })
     },
-    sessionRoutes(runtime: Parameters<typeof SessionRoutes>[0], options: Omit<SessionRoutesOptions, "bus" | "placement" | "eventHub" | "sessionIdWorkspace">) {
-      return SessionRoutes(runtime, { ...options, bus, placement, eventHub, sessionIdWorkspace: placement.sessionIdWorkspace })
+    sessionRoutes(runtime: Parameters<typeof SessionRoutes>[0], options: Omit<SessionRoutesOptions, "bus" | "placement" | "eventHub">) {
+      return SessionRoutes(runtime, { ...options, bus, placement, eventHub })
     },
     events(options: Omit<WorkspaceEventsOptions, "bus" | "placement" | "eventHub">) {
       return workspaceEventsHandler({ ...options, bus, placement, eventHub })

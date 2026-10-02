@@ -3,10 +3,10 @@ import type { RuntimeDirectory } from "./host/contracts"
 export type SessionPlacementPort = {
   workspaceId: string
   directory: string
-  canonicalDirectory(directory: string): string
-  normalizeDirectory(directory: string): string
-  containsDirectory(root: string, candidate: string): boolean
-  sessionIdWorkspace(sessionId: string): Promise<string | undefined> | string | undefined
+  canonicalDirectory: (directory: string) => string
+  normalizeDirectory: (directory: string) => string
+  containsDirectory: (root: string, candidate: string) => boolean
+  sessionIdWorkspace: (sessionId: string) => Promise<string | undefined> | string | undefined
 }
 
 export class WorkspaceTargetError extends Error {

@@ -13,7 +13,7 @@ export function testSessionCore(directory = process.cwd(), workspaceId = "ws_tes
   } })
 }
 
-export function testSessionRoutePorts(bus?: RuntimeBus): { bus: RuntimeBus; placement: SessionPlacement; sessionIdWorkspace: SessionPlacement["sessionIdWorkspace"] } {
+export function testSessionRoutePorts(bus?: RuntimeBus): { bus: RuntimeBus; placement: SessionPlacement } {
   const core = testSessionCore()
-  return { bus: bus ?? core.bus, placement: core.placement, sessionIdWorkspace: core.placement.sessionIdWorkspace }
+  return { bus: bus ?? core.bus, placement: core.placement }
 }

@@ -17,6 +17,7 @@ import {
   type SessionTurnOrigin,
 } from "../session-access-policy"
 import type { ChildSessionHost } from "./session-children"
+import type { AttachmentReader } from "./tool-image"
 import type { SessionStatusSnapshot } from "./session-status-snapshot"
 
 export type SessionLifecycleEvent = {
@@ -121,7 +122,7 @@ export type SessionRouteOptions = {
   afterDeleteSession?: (c: Ctx, directory: RuntimeDirectory, sessionId: string) => Promise<void> | void
   afterMessageCheckpoint?: (c: Ctx, directory: RuntimeDirectory, sessionId: string, messages: AgentMessage[]) => Promise<void> | void
   disposeSessionDocuments?: (sessionId: string) => Promise<void>
-  readAttachment?: import("./tool-image").AttachmentReader
+  readAttachment?: AttachmentReader
   flushSessionDocuments?: (sessionId: string) => Promise<void>
   exposeCommandRoute?: boolean
   publishGlobal: (event: AgentEventEnvelope) => void

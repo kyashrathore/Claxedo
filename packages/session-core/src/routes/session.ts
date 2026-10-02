@@ -7,7 +7,8 @@ import { publishTurnFailure } from "./session-prompt-admission"
 import type { SessionRouteContext } from "./session-route-options"
 import type { SessionStatusSnapshot } from "./session-status-snapshot"
 import { captureTurnTarget, containLostTurn } from "./session-turn-containment"
-import { createChildSessionHost, type ChildOriginStore, type PendingChildWake } from "./session-children"
+import { createChildSessionHost, type ChildOriginStore, type ChildSessionHost, type PendingChildWake } from "./session-children"
+import type { AttachmentReader } from "./tool-image"
 import { createSessionDeliveryOwner, type SessionDeliveryStore } from "../session/delivery-owner"
 import type { TurnOutline } from "@claxedo/agent-runtime-contract"
 import { isAgentRuntimeTurnAdmissionError, type AgentRuntime, type AgentRuntimeRecovery } from "../host/runtime"
@@ -63,7 +64,7 @@ export type SessionRoutesOptions = {
   placement: SessionPlacement
   flushSessionDocuments?: (sessionId: string) => Promise<void>
   disposeSessionDocuments?: (sessionId: string) => Promise<void>
-  readAttachment?: import("./tool-image").AttachmentReader
+  readAttachment?: AttachmentReader
   sessionStarts?: AgentSessionStarts
   eventHub?: RuntimeEventHub
   sessionAccessPolicy?: SessionAccessPolicy
@@ -82,7 +83,6 @@ export type SessionRoutesOptions = {
    * public handler so its private-session filter cannot be shadowed. */
   getStatus?: (c: SessionRouteContext, directory: string) => SessionStatusSnapshot | Promise<SessionStatusSnapshot>
   afterCreateSession?: (input: { directory: string; session: unknown }) => Promise<void> | void
-  sessionIdWorkspace: (sessionId: string) => Promise<string | undefined> | string | undefined
   /**
    * Host-owned child sessions (`POST /session` with `parentID`). The host
    * lends its subagent admission, keyed identity derivation and the
@@ -90,7 +90,7 @@ export type SessionRoutesOptions = {
    */
   childSessions?: {
     admit: (parentSessionId: string, observation: SubagentObservation) => Promise<SubagentUpdatedEvent>
-    deriveSessionId: import("./session-children").ChildSessionHost["deriveSessionId"]
+    deriveSessionId: ChildSessionHost["deriveSessionId"]
     pendingWakes: () => PendingChildWake[] | Promise<PendingChildWake[]>
     origins?: ChildOriginStore
   }
@@ -336,7 +336,7 @@ export function SessionRoutes(runtimeFor: () => Promise<AgentRuntime>, options: 
     afterCreateSession: options.afterCreateSession
       ? (_c, directory, session) => options.afterCreateSession!({ directory: requiredDirectory(directory), session })
       : undefined,
-    sessionIdWorkspace: options.sessionIdWorkspace,
+    sessionIdWorkspace: options.placement.sessionIdWorkspace,
     flushSessionDocuments: options.flushSessionDocuments,
     disposeSessionDocuments: options.disposeSessionDocuments,
     readAttachment: options.readAttachment,
