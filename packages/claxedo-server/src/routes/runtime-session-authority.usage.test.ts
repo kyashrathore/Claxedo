@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "vitest"
-import { LocalUsageRoutes } from "@claxedo/local-server/self-hosted-execution"
+import { LocalUsageRoutes } from "@claxedo/server-core/usage/routes"
 import { tokenTrackerPricing } from "@claxedo/server-core/usage/adapters/token-tracker-pricing"
 import {
   USAGE_REPORT_CLOCK_SKEW_MS,

@@ -22,7 +22,7 @@ const prev = process.env.CLAXEDO_DATA_DIR
 process.env.CLAXEDO_DATA_DIR = root
 
 // Import route builder after env is set
-const { ShellRoutes } = await import("@claxedo/local-server/self-hosted-execution")
+const { ShellRoutes } = await import("@claxedo/local-server/shell/routes")
 const { ensureWorkspace } = await import("@claxedo/server-core/workspace/store/index")
 
 // Build a minimal Hono app with Claxedo shell routes + SSE event handler
