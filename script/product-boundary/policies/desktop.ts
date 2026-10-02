@@ -428,17 +428,14 @@ export const desktopRenderer: Policy = {
   // SidePanel owns shared frame, header, tab, resize and motion; the panel and
   // Marketplace wrappers reach it through ui, with workspace data kept outside.
   // side-panel-slot lets the active page use that full-height shell host.
-  // +1 model-rows owns shared SettingsRow rendering and large-provider
-  // virtualization, reached through accounts/view/models-tab. Its imports
-  // already belong to the renderer closure; no package edge is added.
-  // +2 folded-user-message-body and its stylesheet own the rendered-height
-  // preview for user prompts, through message-part and transcript/styles.
-  // Existing Solid and transcript i18n owners add no package edge.
-  // +1 agent-message-notice.css owns the expandable peer report presentation
-  // through transcript/styles; the existing notice renderer adds no package edge.
-  // +1 module (2026-10-01): transcript/agent-message-event owns the event chrome
-  // shared by incoming reports and stored agent-authored openings, with no package edge.
-  ceilings: { modules: 1250, packages: 36 },
+  // Settings' provider model cards share their switch rows and large-provider
+  // virtualization through `accounts/view/model-rows.tsx`. A long user prompt
+  // folds through `transcript/folded-user-message-body.tsx` and its stylesheet.
+  // A child's report and a stored agent-authored opening share the event chrome
+  // of `transcript/agent-message-event.tsx`, styled by
+  // `transcript/agent-message-notice.css`. None adds a package edge.
+  // 1247/36, no headroom.
+  ceilings: { modules: 1247, packages: 36 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,
