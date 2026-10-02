@@ -141,7 +141,7 @@ describe("local Agent Plugins lifecycle", () => {
     const contribution = await composition.runtimeContribution()
     const launch = contribution.harnessLaunch
     // Custom ACP agents take the plugin as the snapshot's MCP map, never as a launch row.
-    expect(Object.keys(launch).toSorted()).toEqual(SUPPORTED_AGENT_PLUGIN_HARNESSES.filter((harnessId) => harnessId !== "acp").toSorted())
+    expect(Object.keys(launch).toSorted()).toEqual([...SUPPORTED_AGENT_PLUGIN_HARNESSES].toSorted())
     expect(Object.values(contribution.mcp).map((server) => server.source)).toEqual(["plugin"])
 
     const generations = new Set(Object.values(launch).map((row) => row.generation))

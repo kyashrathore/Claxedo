@@ -1,6 +1,7 @@
 /// <reference types="bun" />
 import { afterEach, expect, test } from "bun:test"
 import { QueryClient } from "@tanstack/solid-query"
+import { createBrowserHostedAccount } from "./account"
 import { placementId } from "./ids"
 import { createSessionProjection } from "./session-projection"
 import { RESERVATION_HEADER } from "./session-reservation"
@@ -17,14 +18,14 @@ afterEach(() => {
   for (const server of running.splice(0)) server.stop(true)
 })
 
-test("sessions: a create the runtime refuses because the reserved id belongs to another workspace rejects with that typed conflict", async () => {
+test.each([["cloud", false], ["remote machine", true]] as const)("sessions: a %s create is reserved through the account, and a refusal for another workspace's id rejects with that typed conflict", async (_kind, machine) => {
   const creates: Array<{ id?: unknown; operation: string | null }> = []
   const server = Bun.serve({
     hostname: "127.0.0.1",
     port: 0,
     fetch: async (request) => {
       const url = new URL(request.url)
-      if (url.pathname === "/api/claxedo/bootstrap") return Response.json(bootstrap(() => true, false))
+      if (url.pathname === "/api/claxedo/bootstrap") return Response.json(bootstrap(() => true, machine))
       if (url.pathname === "/api/control/session-registrations/reserve") return Response.json({ ...(await request.json()), state: "reserved" })
       if (url.pathname === "/workspaces/ws_cloud/session" && request.method === "POST") {
         const body = (await request.json()) as { id?: unknown }
@@ -35,9 +36,10 @@ test("sessions: a create the runtime refuses because the reserved id belongs to 
     },
   })
   running.push(server)
-  const transport = createTransport({ serverUrl: `http://127.0.0.1:${server.port}`, auth: { kind: "none" } })
+  const transport = createTransport({ serverUrl: `http://127.0.0.1:${server.port}`, cookies: true })
+  const account = createBrowserHostedAccount(transport)
   const workspaces = createWorkspaces(transport, new QueryClient())
-  const sessions = createSessionsApi(transport, workspaces, createStatusOwner(transport), createWorkspaceWakes(transport, workspaces), createSessionProjection(transport, workspaces))
+  const sessions = createSessionsApi(transport, workspaces, createStatusOwner(transport), createWorkspaceWakes(transport, workspaces), createSessionProjection(workspaces, account), account)
 
   const refusal = await sessions.create({ placementId: placementId("ws_cloud") }).then(
     () => undefined,

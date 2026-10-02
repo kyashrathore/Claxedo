@@ -6,7 +6,7 @@ import { Hono } from "hono"
 import type { ForkOperations } from "@claxedo/harness/contract"
 import { withWorkspaceTarget } from "../target"
 import { loopbackWorkspaceRuntimeExposure } from "../exposure"
-import { FakeTransport, fakeConnectionProvider } from "../test-support/fake-transport"
+import { FakeTransport, fakeConnectionProvider } from "@claxedo/session-core/testing"
 import { loopbackMachineLoginPolicy } from "../testing"
 import { createWorkspaceHost } from "./runtime"
 import type { RuntimeSnapshot } from "../routes/config"
@@ -33,7 +33,8 @@ async function fixture(fork: ForkOperations["fork"]) {
   cleanups.push(() => rm(directory, { recursive: true, force: true }))
   const target = { workspaceId: "ws_fork", directory }
   const provider = fakeConnectionProvider({ providerKey: "engine", transport: () => new FakeTransport({ fork }) })
-  const host = createWorkspaceHost({ placement: loopbackMachineLoginPolicy(), target, storeRoot: join(directory, "state"), connectionProviders: [provider] })
+  const host = createWorkspaceHost({
+  sessionIdWorkspace: () => undefined, placement: loopbackMachineLoginPolicy(), target, storeRoot: join(directory, "state"), connectionProviders: [provider] })
   cleanups.push(() => host.dispose())
   await host.apply(snapshot)
   const app = new Hono()

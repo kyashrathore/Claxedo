@@ -1,10 +1,10 @@
 import { root } from "./test-support/signed-browser-relay-fixture-root.mjs"
 import { startEmbeddedRelayHostEnrollment } from "./test-support/embedded-relay-host-enrollment.ts"
+import { attachHttpServerErrorHandlers, closeHttp, serverPort } from "./test-support/fixture-http-server.mjs"
 import fs from "node:fs/promises"
 import path from "node:path"
 import { execFile, spawn } from "node:child_process"
 import { promisify } from "node:util"
-import { once } from "node:events"
 import { serve } from "@hono/node-server"
 import { createRemoteJWKSet, errors as joseErrors, exportJWK, exportPKCS8, exportSPKI, generateKeyPair, jwtVerify } from "jose"
 import { mintHostTunnelToken, mintRuntimeAccessToken } from "@claxedo/workspace-relay"
@@ -144,40 +144,6 @@ async function run(cwd, ...args) {
   await execFileAsync(args[0], args.slice(1), { cwd })
 }
 
-function attachHttpServerErrorHandlers(server) {
-  server.on("clientError", (error, socket) => {
-    if (error?.code === "ECONNRESET" || error?.code === "EPIPE") {
-      socket.destroy()
-      return
-    }
-    socket.end("HTTP/1.1 400 Bad Request\r\n\r\n")
-  })
-  server.on("connection", (socket) => {
-    socket.setKeepAlive(false)
-    socket.on("error", (error) => {
-      if (error?.code === "ECONNRESET" || error?.code === "EPIPE") return
-      console.error("signed-browser-relay-fixture: socket error", error)
-    })
-  })
-}
-
-async function closeHttp(server) {
-  if (!server.listening) return
-  await new Promise((resolve, reject) => {
-    server.close((error) => error ? reject(error) : resolve())
-    // Fixture teardown must not wait forever for an SSE connection whose
-    // peer disappeared with the owning test process.
-    server.closeAllConnections?.()
-  })
-}
-
-async function serverPort(server, label) {
-  if (!server.listening) await once(server, "listening")
-  const address = server.address()
-  if (!address || typeof address === "string") throw new Error(`${label} did not bind`)
-  return address.port
-}
-
 async function startCloudRuntime(input) {
   configureRuntimeSessionAuthorityUrl(input.controlPlaneUrl)
   const relayHostAuth = {
@@ -205,6 +171,7 @@ async function startCloudRuntime(input) {
     relayHostAuth,
     configToken: runtimeConfigToken,
     harness: { kind: "native", harnessId: "pi" },
+    sessionIdWorkspace: sessionMetaWorkspace,
   })
   if (scriptedModelAuth) {
     await runtime.host.apply({
@@ -710,6 +677,11 @@ const runtimeAccessTokenSigner = async (input) => {
   }
 }
 const centralStore = createSqliteCentralStore({ mode: () => "central_canonical" })
+/** Whose workspace a session id belongs to, read from the projection the self-hosted node keeps, as production does. */
+async function sessionMetaWorkspace(sessionId) {
+  return (await services.projectionStore.session_meta(sessionId))?.workspaceID
+}
+
 const services = createControlPlaneServices(
   {
     projectionStore: centralStore.projectionStore,
@@ -875,7 +847,7 @@ if (hostMode === "embedded") {
   //      crosses before creating a session (`routes/private-session-registration
   //      .ts`'s `POST /reserve`).
   //   2. `registerRuntimeSession` — the RHT-authenticated runtime half that
-  //      creates the `session_history` row and its creator participant.
+  //      creates the `session_history` row with its creator.
   //   3. `acquireSessionTurn` — turn admission. It mints the fencing token AND
   //      records the admitted producer for `turnId`; `syncSessionMessages`
   //      rejects a snapshot whose user message has no admitted producer, and
@@ -921,6 +893,7 @@ if (hostMode === "embedded") {
 // before any tunnel request can create the runtime host.
 configureEmbeddedWorkspaceRuntime({
   sessionAccessPolicy: embeddedSessionPolicy,
+  sessionIdWorkspace: sessionMetaWorkspace,
 })
 
 const built = createSelfHostedApp(services, {

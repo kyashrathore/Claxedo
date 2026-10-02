@@ -258,16 +258,11 @@ export type ConnectorState =
  * control plane, not the enrollment, and must not be read as a decision the
  * control plane made.
  *
- * The transport reports HTTP failures as `HOSTED_HTTP <status> <json>`
- * (`HostedHttpError` in `./machine-transport`), so the status is recoverable
- * from the message. An error with no status at all is a transport failure and
- * therefore transient; the enrollment lease at the control plane is what
- * bounds that, expiring on its own if the machine really has gone.
  */
 export function transientHeartbeatFailure(error: unknown) {
-  const status = /HOSTED_HTTP (\d{3})\b/.exec(error instanceof Error ? error.message : String(error))?.[1]
-  if (!status) return true
-  return !new Set(["400", "401", "403", "404", "409", "410"]).has(status)
+  const status = error && typeof error === "object" && "status" in error ? error.status : undefined
+  if (typeof status !== "number") return true
+  return !new Set([400, 401, 403, 404, 409, 410]).has(status)
 }
 
 export function createHostConnector(options: ConnectorOptions) {

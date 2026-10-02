@@ -17,8 +17,8 @@ function inputOf(operation: string, value: unknown): Input {
 
 export type Operations = { readonly run: (name: string, input: unknown) => Promise<unknown> }
 
-export function hostedOperationRequest(name: string, input: unknown): ResolvedRequest {
-  if (!isHostedOperationName(name) || !HOSTED_OPERATIONS[name].exposure.app) {
+export function hostedOperationRequest(name: string, input: unknown, exposure: "app" | "renderer"): ResolvedRequest {
+  if (!isHostedOperationName(name) || !HOSTED_OPERATIONS[name].exposure[exposure]) {
     throw operationInputError(name, "this server offers no such operation to the app")
   }
   try {
@@ -28,20 +28,21 @@ export function hostedOperationRequest(name: string, input: unknown): ResolvedRe
   }
 }
 
+export function sendHostedRequest(transport: Transport, request: ResolvedRequest): Promise<unknown> {
+  return transport.json<unknown>(request.path, {
+    method: request.method,
+    ...(request.headers ? { headers: request.headers } : {}),
+    ...(request.body ? { body: JSON.stringify(request.body) } : {}),
+  })
+}
+
 function onServer(transport: Transport): Operations["run"] {
-  return (name, input) => {
-    const request = hostedOperationRequest(name, input)
-    return transport.json<unknown>(request.path, {
-      method: request.method,
-      ...(request.headers ? { headers: request.headers } : {}),
-      ...(request.body ? { body: JSON.stringify(request.body) } : {}),
-    })
-  }
+  return (name, input) => sendHostedRequest(transport, hostedOperationRequest(name, input, "app"))
 }
 
 function onAccount(account: HostedAccount): Operations["run"] {
   return async (name, input) => {
-    hostedOperationRequest(name, input)
+    hostedOperationRequest(name, input, "app")
     if (!isHostedOperationName(name)) throw operationInputError(name, "this server offers no such operation to the app")
     return account.run(name, inputOf(name, input))
   }

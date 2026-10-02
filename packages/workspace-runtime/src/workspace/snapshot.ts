@@ -2,12 +2,12 @@ import fs from "fs"
 import path from "path"
 import type { CredentialSnapshot, ProviderProjection } from "@claxedo/agent-runtime-contract"
 import { errorMessage } from "@claxedo/helpers"
-import { acpConnectionConfig, piRpcConnectionConfig, type ConnectionConfigHooks } from "@claxedo/harness/providers"
-import { rec } from "../json-value"
+import { acpConnectionConfig, type ConnectionConfigHooks } from "@claxedo/harness/providers"
+import { rec } from "@claxedo/session-core"
 import { RuntimeConfigApplyError, type AppliedRuntimeSnapshot, type RuntimeConnectionDescriptor, type RuntimeHarnessSelection } from "../routes/config"
 import type { RuntimeConfigApplyStatus } from "./host"
 
-const CONNECTION_CONFIGS: readonly ConnectionConfigHooks<unknown>[] = [acpConnectionConfig(), piRpcConnectionConfig()]
+const CONNECTION_CONFIGS: readonly ConnectionConfigHooks<unknown>[] = [acpConnectionConfig()]
 
 /** The built-in connection providers plus the ones a host installs, in lookup order. */
 export function connectionConfigHooks(custom: readonly ConnectionConfigHooks<unknown>[] = []): readonly ConnectionConfigHooks<unknown>[] {

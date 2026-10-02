@@ -117,18 +117,6 @@ function adoptionStatements(database: D1Database, now: number, workspace: Served
         on conflict do nothing
       `)
       .bind(row.createdAt, row.updatedAt, operationId),
-    database
-      .prepare(`
-        insert into session_participants (
-          session_id, workspace_id, org_id, project_id, actor_id,
-          granted_by_actor_id, role, granted_at, revoked_at
-        )
-        select s.session_id, s.workspace_id, s.org_id, s.project_id,
-          s.creator_actor_id, s.creator_actor_id, 'participant', ?, null
-        from sessions s where s.operation_id = ?
-        on conflict (session_id, actor_id) do nothing
-      `)
-      .bind(now, operationId),
   ]
 }
 

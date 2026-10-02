@@ -12,13 +12,17 @@ import {
 } from "@claxedo/agent-runtime-contract"
 import { createWorkspaceRuntimeClient } from "./client"
 import { loopbackWorkspaceRuntimeExposure } from "./exposure"
-import type { AgentRuntimeRecoveryInspection } from "./host/contracts"
-import { managedWorkspaceSessionAccessPolicy, type ManagedSessionAuthority } from "./session-access-policy"
+import {
+  type AgentRuntimeRecoveryInspection,
+  managedWorkspaceSessionAccessPolicy,
+  type ManagedSessionAuthority,
+  type RuntimeStore,
+} from "@claxedo/session-core"
 import type { RelayHostAuthContext } from "./workspace-host-service-auth"
-import type { RuntimeStore } from "./store"
 import { openRuntimeStore } from "./store-file"
 import { withWorkspaceTarget } from "./target"
-import { FakeTransport, fakeConnectionProvider, loopbackMachineLoginPolicy } from "./testing"
+import { loopbackMachineLoginPolicy } from "./testing"
+import { FakeTransport, fakeConnectionProvider } from "@claxedo/session-core/testing"
 import { createWorkspaceHost } from "./workspace/runtime"
 import { CheckpointRoutes } from "./routes/checkpoint"
 import { WorkspaceRuntimeRoutes } from "./routes/manifest"
@@ -108,6 +112,7 @@ function openWorkspace(input: { directory: string; storeRoot: string; workspaceI
   const sessionAccessPolicy = managedWorkspaceSessionAccessPolicy(input.authority ? { authority: input.authority } : {})
 
   const host = createWorkspaceHost({
+    sessionIdWorkspace: () => undefined,
     placement: loopbackMachineLoginPolicy(),
     target,
     storeRoot: input.storeRoot,
@@ -134,7 +139,7 @@ function openWorkspace(input: { directory: string; storeRoot: string; workspaceI
       c.set("relayHostAuth", {
         iss: "workspace-relay", aud: "workspace-host-service", principal_kind: "user",
         actor_id: "actor_1", user_id: "user_1", actor_kind: "human", org_id: "org_1",
-        workspace_id: target.workspaceId, host_id: "host_1", role: "editor", backing: "cloud-vm",
+        workspace_id: target.workspaceId, host_id: "host_1", role: "editor", scope: "workspace", backing: "cloud-vm",
         exp: issued + 600, iat: issued, jti: "jti_1", parent_jti: "rat_1",
       })
       return await next()

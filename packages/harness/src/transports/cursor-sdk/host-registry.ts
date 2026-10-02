@@ -3,7 +3,8 @@ import type { Clock, Deadline, HarnessServices, Logger, OwnedProcess, SpawnComma
 import { TransportError } from "../../contract/errors"
 import { NdjsonOwnedProcess } from "../../rpc/channel"
 import { PendingRpcRequests } from "../../rpc/pending"
-import { isHostReply, type HostReply, type HostRequest } from "./protocol"
+import { cursorSdkFailure } from "./errors"
+import { isHostReply, type HostReply, type HostRequest, type HostResultReply } from "./protocol"
 
 export type CursorHostKey = { binding: string; home: string; backendUrl?: string }
 
@@ -34,7 +35,7 @@ function retirementDeadline(clock: Clock): Deadline {
 
 export class CursorHost {
   private readonly channel: NdjsonOwnedProcess
-  private readonly pending = new PendingRpcRequests<number, ((reply: HostReply) => void) | undefined, HostReply>()
+  private readonly pending = new PendingRpcRequests<number, ((reply: HostReply) => void) | undefined, HostResultReply>()
   private nextId = 0
   private failure?: TransportError
   private stderrBytes = 0
@@ -55,8 +56,8 @@ export class CursorHost {
 
   private receive(reply: HostReply) {
     const onEvent = this.pending.get(reply.id)
-    if (reply.kind === "event") { onEvent?.(reply); return }
-    if (reply.kind === "error") this.pending.reject(reply.id, new TransportError("cursor", "sdk", reply.message))
+    if (reply.kind === "event" || reply.kind === "delta") { onEvent?.(reply); return }
+    if (reply.kind === "error") this.pending.reject(reply.id, cursorSdkFailure(reply))
     else this.pending.resolve(reply.id, reply)
   }
 
@@ -75,7 +76,7 @@ export class CursorHost {
       (error: unknown) => this.log.warn("Cursor run cancellation after inactivity failed", { error: errorMessage(error) }))
   }
 
-  private streamed(id: number, command: Extract<HostRequest, { kind: "run" | "title" }>, onEvent?: (reply: HostReply) => void, deadline?: Deadline): Promise<HostReply> {
+  private streamed(id: number, command: Extract<HostRequest, { kind: "run" | "title" }>, onEvent?: (reply: HostReply) => void, deadline?: Deadline): Promise<HostResultReply> {
     const idleMs = deadline ? Math.max(1, deadline.at - this.clock.now()) : RUN_IDLE_MS
     const countdown = new HoldableCountdown(this.clock, idleMs, () => {
       if (this.pending.reject(id, new TransportError("cursor", "worker", `Cursor ${command.kind} exceeded its inactivity deadline`))) {
@@ -88,7 +89,7 @@ export class CursorHost {
     return request
   }
 
-  call(command: HostRequest, onEvent?: (reply: HostReply) => void, deadline?: Deadline): Promise<HostReply> {
+  call(command: HostRequest, onEvent?: (reply: HostReply) => void, deadline?: Deadline): Promise<HostResultReply> {
     if (this.failure) return Promise.reject(this.failure)
     const id = ++this.nextId
     if (command.kind === "run" || command.kind === "title") return this.streamed(id, command, onEvent, deadline)

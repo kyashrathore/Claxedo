@@ -3,6 +3,7 @@ import { expect, test } from "bun:test"
 import type { HostedAccount } from "./account"
 import { sessionEndpoint } from "./session-context"
 import { NO_GOAL } from "./session-goal"
+import { ServerError } from "./errors"
 import { startSessionReads } from "./session-reads"
 import { readTurnPageBefore } from "./transcript-reads"
 import { centralRow, fakeServer, firstPath, firstRead, openPath, openView, ref, shape, stored } from "./test-session-server"
@@ -78,6 +79,29 @@ test("session reads: a runtime that answers it has stopped re-homes the session 
   expect(server.requests.filter((path) => path === "/api/claxedo/bootstrap").length).toBeGreaterThanOrEqual(2)
 })
 
+test("session reads: a scoped connection finding no runtime re-reads the catalog and renders its stopped history", async () => {
+  let running = true
+  const server = fakeServer({ reachable: () => running, runtime: () => {
+    running = false
+    throw new ServerError({ class: "conflict", code: "workspace_host_offline", message: "Nothing is serving this session's workspace right now" })
+  } })
+  const reads = startSessionReads(server.context, ref, shape)
+  const results = await Promise.allSettled([reads.first, reads.status, reads.requests, reads.todos, reads.goal, reads.subagents, reads.backgroundWork])
+  expect(results.every((result) => result.status === "fulfilled")).toBe(true)
+  expect((await reads.first).transcript.entries).toHaveLength(2)
+  expect(await reads.status).toEqual({ kind: "idle" })
+  expect(server.requests.filter((path) => path === "/api/claxedo/bootstrap").length).toBeGreaterThanOrEqual(2)
+})
+
+test("session reads: an offline connection refusal remains a failure if the refreshed catalog still says live", async () => {
+  const failure = new ServerError({ class: "conflict", code: "workspace_host_offline", message: "Runtime unavailable" })
+  const server = fakeServer({ reachable: () => true, runtime: () => { throw failure } })
+  const reads = startSessionReads(server.context, ref, shape)
+  const results = await Promise.allSettled([reads.first, reads.status, reads.requests, reads.todos, reads.goal, reads.subagents, reads.backgroundWork])
+  expect(results.every((result) => result.status === "rejected" && result.reason === failure)).toBe(true)
+  expect(server.requests.filter((path) => path === "/api/claxedo/bootstrap").length).toBeGreaterThanOrEqual(2)
+})
+
 test("session reads: a running cloud workspace's session reads its outline and page from the control plane, and its row and runtime facts from the sandbox", async () => {
   const server = fakeServer({
     reachable: () => true,
@@ -130,7 +154,7 @@ test("session reads: a machine session's first read lands while its open view is
     expect((await reads.first).transcript.entries.map((entry) => entry.info.id)).toEqual(["msg_1", "msg_2"])
   } finally {
     facts.resolve(openView())
-    await Promise.all([reads.status, reads.requests, reads.todos, reads.goal, reads.subagents])
+    await Promise.all([reads.status, reads.backgroundWork, reads.requests, reads.todos, reads.goal, reads.subagents])
   }
 })
 
@@ -153,7 +177,7 @@ test("session reads: a failed first read rejects the first read and the status i
     { status: "fulfilled", value: [] },
   ])
   const openFailed = startSessionReads(failing("open").context, ref, shape)
-  const [first, ...facts] = await Promise.allSettled([openFailed.first, openFailed.status, openFailed.requests, openFailed.todos, openFailed.goal, openFailed.subagents])
+  const [first, ...facts] = await Promise.allSettled([openFailed.first, openFailed.status, openFailed.backgroundWork, openFailed.requests, openFailed.todos, openFailed.goal, openFailed.subagents])
   expect(first?.status).toBe("fulfilled")
   for (const fact of facts) expect(fact).toEqual({ status: "rejected", reason: failure })
 })
@@ -162,7 +186,7 @@ test("session reads: a failed placement lookup rejects every read without an unh
   const failure = new Error("catalog unavailable")
   const server = fakeServer({ reachable: () => { throw failure } })
   const reads = startSessionReads(server.context, ref, shape)
-  const results = await Promise.allSettled([reads.first, reads.status, reads.requests, reads.todos, reads.goal, reads.subagents])
+  const results = await Promise.allSettled([reads.first, reads.status, reads.backgroundWork, reads.requests, reads.todos, reads.goal, reads.subagents])
   for (const result of results) expect(result).toEqual({ status: "rejected", reason: failure })
 })
 

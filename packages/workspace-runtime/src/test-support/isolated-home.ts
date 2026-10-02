@@ -1,4 +1,4 @@
-import "./home/isolated-home.mjs"
+import "@claxedo/session-core/testing/isolated-home"
 
 /** The runtime's data roots derive from the isolated home only when no inherited override names one. */
 for (const key of [

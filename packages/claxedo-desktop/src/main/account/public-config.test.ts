@@ -27,8 +27,17 @@ describe("accountConfigEnvironment", () => {
       "CLAXEDO_CORE_ORIGIN",
       "CLAXEDO_RELEASE_VALIDATION_OPERATION",
       "CLAXEDO_RELEASE_CANARY_JOURNEY_ID",
+      "CLAXEDO_RELAY_ORIGINS",
     ])
     expect(JSON.stringify(value)).not.toMatch(/AUTHORIZE|TOKEN_URL|CLIENT_ID|SCOPE|SECRET|BETTER_AUTH/)
+  })
+})
+
+describe("relay origins", () => {
+  test("come from runtime or baked configuration", () => {
+    expect(accountConfigEnvironment({ CLAXEDO_RELAY_ORIGINS: "https://self-relay.example" }, { CLAXEDO_RELAY_ORIGINS: "https://relay.example" }).CLAXEDO_RELAY_ORIGINS)
+      .toBe("https://self-relay.example")
+    expect(accountConfigEnvironment({}, { CLAXEDO_RELAY_ORIGINS: "https://relay.example" }).CLAXEDO_RELAY_ORIGINS).toBe("https://relay.example")
   })
 })
 

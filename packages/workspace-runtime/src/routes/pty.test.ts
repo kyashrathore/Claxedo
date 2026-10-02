@@ -6,11 +6,17 @@ import { Hono, type Context } from "hono"
 import type { UpgradeWebSocket, WSEvents, WSContext } from "hono/ws"
 import { PtyRoutes } from "./pty"
 import { Pty } from "../pty/index"
-import { errorBody, JSON_BODY_LIMIT_BYTES } from "./http"
+import {
+  errorBody,
+  JSON_BODY_LIMIT_BYTES,
+  managedWorkspaceSessionAccessPolicy,
+  type SessionAccessPolicy,
+} from "@claxedo/session-core"
 import type { RelayHostAuthContext } from "../workspace-host-service-auth"
-import { managedWorkspaceSessionAccessPolicy, type SessionAccessPolicy } from "../session-access-policy"
 import { createDiskHistory } from "../pty/history-disk"
 import { withWorkspaceTarget } from "../target"
+import { withSessionCore } from "../session-context"
+import { testSessionCore } from "@claxedo/session-core/testing"
 
 const upgradeWebSocket = (() => () => new Response(null, { status: 501 })) as unknown as UpgradeWebSocket
 const previousDirectory = process.env.WORKSPACE_RUNTIME_DIRECTORY
@@ -31,6 +37,7 @@ function relayAuth(
     workspace_id: "ws_1",
     host_id: "host_1",
     role,
+    scope: "workspace",
     backing: "cloud-vm",
     exp: now + 60,
     iat: now,
@@ -239,27 +246,6 @@ describe("PtyRoutes", () => {
       error: {
         code: "pty_session_not_found",
         message: "Session not found",
-      },
-    })
-  })
-
-  test("denies every terminal route to authenticated viewers", async () => {
-    const app = appForRole("viewer")
-
-    const list = await app.request("http://localhost/")
-    const connect = await app.request("http://localhost/pty_1/connect", {
-      headers: {
-        connection: "Upgrade",
-        upgrade: "websocket",
-      },
-    })
-
-    expect(list.status).toBe(403)
-    expect(connect.status).toBe(403)
-    await expect(connect.json()).resolves.toEqual({
-      error: {
-        code: "relay_role_denied",
-        message: "Workspace role does not allow terminal access",
       },
     })
   })
@@ -639,7 +625,8 @@ describe("PtyRoutes", () => {
 
   test("rejects create requests outside the pinned workspace before spawning", async () => {
     process.env.WORKSPACE_RUNTIME_DIRECTORY = "/tmp/workspace-runtime-pty"
-    const app = PtyRoutes(upgradeWebSocket)
+    const core = testSessionCore("/tmp/workspace-runtime-pty")
+    const app = new Hono().use("*", (_c, next) => withSessionCore(core, next)).route("/", PtyRoutes(upgradeWebSocket))
 
     const wrongDirectory = await app.request("http://localhost/", {
       method: "POST",

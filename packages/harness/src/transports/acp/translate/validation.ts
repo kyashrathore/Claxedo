@@ -1,27 +1,25 @@
-import { isRecord, asRecord as object } from "@claxedo/agent-runtime-contract"
-import type { ContentBlock, SessionUpdate, ToolCallContent } from "./types"
-import { asRecord } from "@claxedo/helpers/guards"
-import { diagnoseTranslation, shape, type AcpDiagnostics } from "./diagnostics"
+import { isRecord, asRecord } from "@claxedo/agent-runtime-contract"
+import type { ContentBlock, ToolCallContent } from "@agentclientprotocol/sdk"
+import { own } from "../../../translate/value"
+import { diagnoseTranslation, shape, type AcpDiagnostics, type AcpTranslationDiagnostic } from "./diagnostics"
 
 type ValidationContext = { diagnostics: AcpDiagnostics; toolCallId?: string; title?: string; kind?: string }
 
-function details(ctx: ValidationContext) {
-  return {
+function malformed(ctx: ValidationContext, event: AcpTranslationDiagnostic, reason: string, value: unknown): void {
+  diagnoseTranslation(ctx.diagnostics, event, {
     toolCallId: ctx.toolCallId,
     title: ctx.title,
     kind: ctx.kind,
-  }
+    reason,
+    shape: shape(value),
+  })
 }
 
 export function safeMeta(value: unknown, ctx: ValidationContext): Record<string, unknown> | undefined {
   if (value === undefined || value === null) return undefined
   const row = asRecord(value)
   if (row) return row
-  diagnoseTranslation(ctx.diagnostics, "acp.malformed_raw_input", {
-    ...details(ctx),
-    reason: "invalid_meta",
-    shape: shape(value),
-  })
+  malformed(ctx, "acp.malformed_raw_input", "invalid_meta", value)
   return undefined
 }
 
@@ -29,73 +27,55 @@ export function safeRawInput(value: unknown, ctx: ValidationContext) {
   if (value === undefined || value === null) return value
   const row = asRecord(value)
   if (row) return row
-  diagnoseTranslation(ctx.diagnostics, "acp.malformed_raw_input", {
-    ...details(ctx),
-    reason: "rawInput_not_object",
-    shape: shape(value),
-  })
+  malformed(ctx, "acp.malformed_raw_input", "rawInput_not_object", value)
   return { raw: value }
 }
 
 export function safeRawOutput(value: unknown, ctx: ValidationContext) {
   if (value === undefined || value === null) return value
   if (typeof value === "symbol" || typeof value === "function") {
-    diagnoseTranslation(ctx.diagnostics, "acp.malformed_raw_output", {
-      ...details(ctx),
-      reason: "rawOutput_unserializable",
-      shape: shape(value),
-    })
+    malformed(ctx, "acp.malformed_raw_output", "rawOutput_unserializable", value)
     return String(value)
   }
   return value
 }
 
-export function safeLocations(value: unknown, ctx: ValidationContext) {
+function safeItems<T>(
+  value: unknown,
+  ctx: ValidationContext,
+  event: AcpTranslationDiagnostic,
+  arrayReason: string,
+  itemReason: string,
+  decode: (item: unknown) => T | undefined,
+) {
   if (value === undefined || value === null) return value
   if (!Array.isArray(value)) {
-    diagnoseTranslation(ctx.diagnostics, "acp.malformed_location", {
-      ...details(ctx),
-      reason: "locations_not_array",
-      shape: shape(value),
-    })
-    return null
-  }
-  const out = value.flatMap((item) => {
-    const row = asRecord(item)
-    if (typeof row?.path === "string" && (row.line === undefined || row.line === null || typeof row.line === "number")) {
-      return [{ path: row.path, ...(row.line !== undefined ? { line: row.line } : {}) }]
-    }
-    diagnoseTranslation(ctx.diagnostics, "acp.malformed_location", {
-      ...details(ctx),
-      reason: "location_invalid",
-      shape: shape(item),
-    })
-    return []
-  })
-  return out
-}
-
-export function safeContent(value: unknown, ctx: ValidationContext) {
-  if (value === undefined || value === null) return value
-  if (!Array.isArray(value)) {
-    diagnoseTranslation(ctx.diagnostics, "acp.dropped_content", {
-      ...details(ctx),
-      reason: "content_not_array",
-      shape: shape(value),
-    })
+    malformed(ctx, event, arrayReason, value)
     return null
   }
   return value.flatMap((item) => {
-    if (isToolCallContent(item)) return [item]
-    diagnoseTranslation(ctx.diagnostics, "acp.dropped_content", {
-      ...details(ctx),
-      reason: "content_item_invalid",
-      shape: shape(item),
-    })
+    const decoded = decode(item)
+    if (decoded !== undefined) return [decoded]
+    malformed(ctx, event, itemReason, item)
     return []
   })
 }
 
+export function safeLocations(value: unknown, ctx: ValidationContext) {
+  return safeItems(value, ctx, "acp.malformed_location", "locations_not_array", "location_invalid", (item) => {
+    const row = asRecord(item)
+    if (typeof row?.path === "string" && (row.line === undefined || row.line === null || typeof row.line === "number")) {
+      return { path: row.path, ...(row.line !== undefined ? { line: row.line } : {}) }
+    }
+    return undefined
+  })
+}
+
+export function safeContent(value: unknown, ctx: ValidationContext) {
+  return safeItems(value, ctx, "acp.dropped_content", "content_not_array", "content_item_invalid", (item) =>
+    isToolCallContent(item) ? item : undefined,
+  )
+}
 
 const CONTENT_BLOCK_TYPES = {
   text: true,
@@ -105,8 +85,8 @@ const CONTENT_BLOCK_TYPES = {
   resource: true,
 } satisfies Record<ContentBlock["type"], true>
 
-export function isContentBlock(value: unknown): value is ContentBlock {
-  const row = object(value)
+function isContentBlock(value: unknown): value is ContentBlock {
+  const row = asRecord(value)
   if (!row) return false
   switch (row.type) {
     case "text":
@@ -123,8 +103,8 @@ export function isContentBlock(value: unknown): value is ContentBlock {
   }
 }
 
-export function isToolCallContent(value: unknown): value is ToolCallContent {
-  const row = object(value)
+function isToolCallContent(value: unknown): value is ToolCallContent {
+  const row = asRecord(value)
   if (!row) return false
   switch (row.type) {
     case "content":
@@ -138,40 +118,14 @@ export function isToolCallContent(value: unknown): value is ToolCallContent {
   }
 }
 
-export type ContentBlockCheck =
+type ContentBlockCheck =
   | { ok: true; block: ContentBlock }
   | { ok: false; reason: "content_missing_type" | "content_missing_required_fields" | "unknown_content_block" }
 
 export function checkContentBlock(value: unknown): ContentBlockCheck {
-  const row = object(value)
+  const row = asRecord(value)
   if (!row || typeof row.type !== "string") return { ok: false, reason: "content_missing_type" }
-  if (!Object.hasOwn(CONTENT_BLOCK_TYPES, row.type)) return { ok: false, reason: "unknown_content_block" }
+  if (!own(CONTENT_BLOCK_TYPES, row.type)) return { ok: false, reason: "unknown_content_block" }
   if (!isContentBlock(value)) return { ok: false, reason: "content_missing_required_fields" }
   return { ok: true, block: value }
-}
-
-type RequiredField = readonly [field: string, kind: "string" | "number"]
-
-const SESSION_UPDATE_REQUIRED_FIELDS = new Map<string, readonly RequiredField[]>(Object.entries({
-  agent_message_chunk: [],
-  agent_thought_chunk: [],
-  user_message_chunk: [],
-  tool_call: [["toolCallId", "string"]],
-  tool_call_update: [["toolCallId", "string"]],
-  plan: [],
-  plan_update: [],
-  plan_removed: [],
-  available_commands_update: [],
-  current_mode_update: [["currentModeId", "string"]],
-  config_option_update: [],
-  session_info_update: [],
-  usage_update: [["size", "number"], ["used", "number"]],
-} satisfies Record<SessionUpdate["sessionUpdate"], readonly RequiredField[]>))
-
-export function isSessionUpdate(value: unknown): value is SessionUpdate {
-  const row = object(value)
-  if (!row || typeof row.sessionUpdate !== "string") return false
-  const required = SESSION_UPDATE_REQUIRED_FIELDS.get(row.sessionUpdate)
-  if (!required) return false
-  return required.every(([field, kind]) => typeof row[field] === kind)
 }

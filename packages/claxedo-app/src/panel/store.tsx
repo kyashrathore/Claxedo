@@ -1,13 +1,6 @@
-import {
-  createContext,
-  createMemo,
-  createSignal,
-  useContext,
-  type Accessor,
-  type JSX,
-  type ParentProps,
-} from "solid-js"
-import { usePhone } from "@/lib/viewport"
+import { createContext, createMemo, useContext, type Accessor, type JSX, type ParentProps } from "solid-js"
+import { createSidePanelSize } from "@/lib/side-panel-size"
+import { SIDE_PANEL_BORDER_WIDTH } from "@/lib/side-panel-motion"
 import { useActiveSession } from "@/files"
 import { persistedSignal, preferenceKey } from "@/lib/persisted"
 import type { PlacementId } from "@/server"
@@ -21,7 +14,6 @@ import {
   clampNavigatorWidth,
   clampPanelWidth,
   maxNavigatorWidth,
-  PANEL_BORDER_WIDTH,
   restingNavigatorWidth,
   restingPanelWidth,
   workbenchInset,
@@ -82,30 +74,19 @@ function readWidth(value: unknown): number | null | undefined {
 }
 
 function createPanelSize(): PanelSize & { readonly setFullWidth: (fullWidth: boolean) => void } {
-  const phone = usePhone()
   const [chosen, setChosen] = persistedSignal<number | null>(preferenceKey("panel", "width"), null, readWidth)
-  const [fullWidth, setFullWidth] = createSignal(false)
-  const [available, setAvailable] = createSignal(typeof window === "undefined" ? 1024 : window.innerWidth)
-  const width = createMemo(() =>
-    restingPanelWidth({ available: available(), phone: phone(), fullWidth: fullWidth(), chosen: chosen() }),
-  )
+  const size = createSidePanelSize({ chosen, onChoose: setChosen, width: restingPanelWidth, clamp: clampPanelWidth })
   const [navigatorChosen, setNavigatorChosen] = persistedSignal<number | null>(
     preferenceKey("panel", "navigatorWidth"),
     null,
     readWidth,
   )
-  const row = () => width() - PANEL_BORDER_WIDTH
+  const row = () => size.width() - SIDE_PANEL_BORDER_WIDTH
   return {
-    phone,
-    fullWidth,
-    width,
-    available,
-    setAvailable: (value) => setAvailable(value),
-    chooseWidth: (value) => setChosen(Math.round(clampPanelWidth(value, available()))),
+    ...size,
     navigatorWidth: createMemo(() => restingNavigatorWidth(row(), navigatorChosen())),
     navigatorMaxWidth: () => maxNavigatorWidth(row()),
     chooseNavigatorWidth: (value) => setNavigatorChosen(Math.round(clampNavigatorWidth(value, row()))),
-    setFullWidth: (value) => setFullWidth(value),
   }
 }
 

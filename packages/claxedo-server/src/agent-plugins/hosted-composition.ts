@@ -1,6 +1,6 @@
 import { claxedoMcpToolGroupInventory } from "@claxedo/mcp"
 import type { D1Database } from "@cloudflare/workers-types"
-import { cloudRootBacking, isCloudRoot } from "./cloud-root-backing"
+import { cloudRootBacking, isCloudRoot } from "../workspace/cloud-root-backing"
 import type { Hono } from "hono"
 import { brokeredPlaceholderEnv } from "@claxedo/sandbox-manager"
 import { sandboxDriverCatalog, sandboxDriverId } from "@claxedo/sandbox-manager/driver-catalog"
@@ -31,7 +31,9 @@ import {
   hostedConnectionsAuthenticate,
 } from "../connections/hosted-d1/setup"
 import type { WorkspaceRuntimeContext, WorkspaceRuntimePreparation } from "../workspace/route-support"
-import { hostedRuntimeFetch } from "../workspace/hosted-runtime-fetch"
+import { createRelayRuntimeClient } from "../workspace/relay-runtime-client"
+import { CONTROL_PLANE_RUNTIME_ACTOR } from "@claxedo/server-core/platform/auth/runtime-actor"
+import type { ControlPlaneServices } from "../authority/services"
 import { D1SignedAgentPluginActivationStore } from "./activation/d1-store"
 import { hostedAgentPluginArtifactStore, type AgentPluginR2Bucket } from "./artifacts/r2-artifact-adapter"
 import { hostedAgentPluginsModule } from "./module"
@@ -57,11 +59,33 @@ import { createD1McpOAuthClientRegistry } from "./mcp/d1-client-registry"
 import { asRecord, isRecord, parseJson, stringField } from "@claxedo/server-core/platform/json/index"
 import { BUILTIN_SUBAGENTS_TOOL_GROUP, BUILTIN_TASKS_TOOL_GROUP } from "@claxedo/server-core/agent-plugins/builtin/plugin"
 import type { SandboxPassRegister } from "../platform/auth/sandbox-pass-register"
+import type { AgentPluginRuntimeContribution } from "@claxedo/server-core/agent-config/runtime-snapshot"
 import { OWNER_GRANT_AUDIENCE } from "../session/owner-grant"
 import { TASKS_CAPABILITY_AUDIENCE } from "../tasks/capability"
 import { createGrantWithdrawal } from "../tasks/grant-withdrawal"
 
 const log = Log.create({ service: "hosted-agent-plugins" })
+
+export function createHostedPluginRuntimeFetch(services: ControlPlaneServices): Parameters<typeof createHostedAgentPluginRuntimeProvisioner>[0]["runtimeFetch"] {
+  return async (workspaceId, identity, requestPath, init) => {
+    const manager = services.sandbox.sandboxManager
+    if (!manager) throw new Error("hosted sandbox manager is unavailable")
+    const target = await manager.target(workspaceId)
+    if (target.status !== "ready") throw new Error(`hosted sandbox ${workspaceId} is unavailable`)
+    const provider = services.relay.provider
+    if (!provider) throw new Error("hosted runtime token issuer is unavailable")
+    return await createRelayRuntimeClient({ provider, error: (_status, _code, message) => new Error(message) }).fetch({
+      workspaceId,
+      hostId: target.hostId,
+      routingId: target.routingId,
+      orgId: identity.organizationId,
+      ...CONTROL_PLANE_RUNTIME_ACTOR,
+      role: "owner",
+      ttlMs: 10 * 60_000,
+      homeRegion: target.homeRegion,
+    }, requestPath, init)
+  }
+}
 
 /**
  * The credential partition a deployment-wide secret belongs to. Not an org id:
@@ -81,13 +105,7 @@ export type HostedAgentPluginsComposition = {
   routeContributions: readonly ControlPlaneRouteContribution[]
   integrationRoutes: Hono
   prepareRuntime: (context: WorkspaceRuntimeContext) => Promise<WorkspaceRuntimePreparation>
-  provisionRuntime: (context: WorkspaceRuntimeContext, preparation?: WorkspaceRuntimePreparation) => Promise<void>
-  /**
-   * The MCP servers the plugins active for custom ACP agents deliver to a
-   * cloud workspace, in the snapshot's shape, resolved from the preparation
-   * whose brokered gateway secrets the sandbox holds.
-   */
-  acpMcp: (workspaceId: string, preparation: WorkspaceRuntimePreparation | undefined) => Promise<Record<string, AcpRuntimeMcpServer>>
+  pluginRuntime: (workspaceId: string, preparation: WorkspaceRuntimePreparation | undefined) => Promise<AgentPluginRuntimeContribution>
   /** Revokes every pass `prepareRuntime` minted for a root whose workspace is now deleted. */
   releaseRuntime: (context: WorkspaceRuntimeContext) => Promise<void>
   /**
@@ -221,6 +239,7 @@ export function createHostedAgentPluginsComposition(input: {
   passes: SandboxPassRegister
   /** Refreshes the caller's running sandboxes after an activation change; absent on a plane that hosts no sandboxes. */
   pluginsChanged?: (userId: string) => Promise<void>
+  pushRuntime?: (context: WorkspaceRuntimeContext, preparation: WorkspaceRuntimePreparation) => Promise<void>
 }): HostedAgentPluginsComposition {
   const bucket = input.env.CLAXEDO_AGENT_PLUGINS
   if (!bucket) throw new Error("Enabled Agent Plugins build requires CLAXEDO_AGENT_PLUGINS R2")
@@ -337,13 +356,7 @@ export function createHostedAgentPluginsComposition(input: {
   const provisioner = createHostedAgentPluginRuntimeProvisioner({
     activations,
     artifacts,
-    runtimeFetch: (workspaceId, identity, requestPath, init) => hostedRuntimeFetch(
-      services,
-      workspaceId,
-      { orgId: identity.organizationId, projectId: identity.projectId },
-      requestPath,
-      init,
-    ),
+    runtimeFetch: createHostedPluginRuntimeFetch(services),
   })
 
   // The hosted prepare/provision rail is a CLOUD VM rail: it pushes the
@@ -383,23 +396,21 @@ export function createHostedAgentPluginsComposition(input: {
     ])
     return { ...preparation, env }
   }
-  const provisionRuntime = async ({ workspaceId }: WorkspaceRuntimeContext, preparation?: WorkspaceRuntimePreparation) => {
-    if (!(await cloudWorkspace(workspaceId))) return
-    await provisioner.provision(workspaceId, agentPluginMcpRuntimePlan(preparation))
-  }
   // The header placeholder is the one a header-injecting driver installs
   // (`brokeredPlaceholderEnv`); the sandbox presents it and the driver's edge
   // substitutes the minted gateway credential.
-  const acpMcp = async (workspaceId: string, preparation: WorkspaceRuntimePreparation | undefined) => {
-    if (!(await cloudWorkspace(workspaceId))) return {}
+  const pluginRuntime = async (workspaceId: string, preparation: WorkspaceRuntimePreparation | undefined) => {
+    if (!(await cloudWorkspace(workspaceId))) return { mcp: {}, harnessLaunch: {} }
     const plan = agentPluginMcpRuntimePlan(preparation)
+    const receipt = await provisioner.provision(workspaceId, plan)
     const snapshot = await activations.runtimeSnapshot(workspaceId)
     if (plan.revision !== snapshot.revision) throw new Error("Agent Plugins runtime preparation is stale")
     const selections = plan.execution
       ? plan.execution.selections.filter((selection) => selection.contribution.kind === "plugin")
       : desiredAgentPluginSelections(snapshot)
-    return hostedAcpMcpServers(workspaceId, selections, artifacts,
+    const mcp = await hostedAcpMcpServers(workspaceId, selections, artifacts,
       runtimeMcpServers(plan.mcpServers, brokeredPlaceholderEnv(preparation?.secrets)))
+    return { mcp, harnessLaunch: receipt.harnessLaunch }
   }
   const reconcile = async (_revision: number, auth?: SignedControlPlaneAuth) => {
     if (!auth || !input.pluginsChanged) return { state: "scheduled" as const }
@@ -420,7 +431,8 @@ export function createHostedAgentPluginsComposition(input: {
       return preparer.forSnapshot(await activations.runtimeSnapshot(workspaceId), { selection: capabilities })
     },
     async apply({ workspaceId, preparation }) {
-      await provisioner.provision(workspaceId, agentPluginMcpRuntimePlan(preparation))
+      if (!input.pushRuntime) throw new Error("Selected capabilities require hosted settings delivery")
+      await input.pushRuntime({ workspaceId }, preparation)
     },
   }
 
@@ -455,6 +467,7 @@ export function createHostedAgentPluginsComposition(input: {
       list: () => sourceRegistry.list(auth),
     }),
     activations,
+    administersOrganization: (auth) => activations.administersOrganization(auth),
     artifacts,
     // Activation is durable immediately. The caller's running sandboxes are
     // refreshed before the route answers; every other runtime is brought to
@@ -492,8 +505,7 @@ export function createHostedAgentPluginsComposition(input: {
     ],
     integrationRoutes,
     prepareRuntime,
-    provisionRuntime,
-    acpMcp,
+    pluginRuntime,
     // A workspace that is gone takes every pass minted for it, whatever the audience.
     releaseRuntime: async ({ workspaceId }) => { await input.passes.revoke({ workspaceId, reason: "workspace_deleted" }) },
     rootEnvironment,

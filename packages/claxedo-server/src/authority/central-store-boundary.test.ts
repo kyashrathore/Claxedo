@@ -18,7 +18,7 @@ const centralStoreFiles = [
 ]
 
 // Runtime execution-store symbols the central seam must not touch: the store in
-// `workspace-runtime/src/store.ts` (`RuntimeStore`) and the runtime host's name
+// `session-core/src/store.ts` (`RuntimeStore`) and the runtime host's name
 // for it (`AgentRuntimeStore`).
 const forbiddenSymbols = [
   "RuntimeStore",

@@ -1,3 +1,4 @@
+import { withSessionCore } from "./session-context"
 import { isLoopbackHostname } from "@claxedo/helpers"
 import { FIRST_PARTY_MCP_PATH, type WorkspaceFirstPartyMcpLaunchOptions } from "./first-party-mcp/index"
 import { Hono, type MiddlewareHandler } from "hono"
@@ -14,7 +15,6 @@ import { createRelayHostAuthMiddleware, type RelayHostAuthOptions } from "./work
 import { startWorkspaceRelayHostTunnel, type WorkspaceRelayHostTunnelOptions } from "./workspace-relay-host-tunnel"
 import { ConfigRoutes } from "./routes/config"
 import { RuntimeDocumentHydrationRoutes } from "./routes/document-hydration"
-import { LocalDocumentBrokerRoutes } from "./routes/local-document-broker"
 import {
   mountRouteContributions,
   type WorkspaceRuntimeRouteContribution,
@@ -32,10 +32,13 @@ import {
   type WorkspaceRuntimeExposure,
 } from "./exposure"
 import { runtimeEnvText, workspaceRuntimeEpoch, workspaceRuntimeStoreDir } from "./env"
-import { retainedWorkspaceRuntimeInternalSecrets, type WorkspaceRuntimeInternalSecrets } from "./internal-secrets"
-import type { WorkspaceEventParents } from "./routes/events"
-import type { WorkspaceTranscriptRoutesOptions } from "./workspace/core"
-import { managedWorkspaceSessionAccessPolicy, sessionAccessContext, sessionAccessDenied, type SessionAccessPolicy } from "./session-access-policy"
+import {
+  type WorkspaceEventParents,
+  managedWorkspaceSessionAccessPolicy,
+  sessionAccessContext,
+  sessionAccessDenied,
+  type SessionAccessPolicy,
+} from "@claxedo/session-core"
 import { remoteWorkspaceSessionAccessPolicyFromEnv } from "./remote-session-authority"
 
 type Host = ReturnType<typeof createWorkspaceHost>
@@ -64,7 +67,6 @@ export type WorkspaceRuntimeServerOptions = {
   onPresentationEvent?: WorkspaceHostOptions["onPresentationEvent"]
   onRuntimeEvent?: WorkspaceHostOptions["onRuntimeEvent"]
   sessionParents?: WorkspaceEventParents
-  transcripts?: WorkspaceTranscriptRoutesOptions
   relayHostAuth?: RelayHostAuthOptions
   hostTunnel?: WorkspaceRelayHostTunnelOptions
   configToken?: string
@@ -84,10 +86,11 @@ export type WorkspaceRuntimeServerOptions = {
   resolveConnectionSecrets?: WorkspaceHostOptions["resolveConnectionSecrets"]
   /** Persist host-owned session metadata before the created lifecycle event is published. */
   afterCreateSession?: (input: { directory: string; session: unknown }) => Promise<void> | void
-  sessionIdWorkspace?: WorkspaceHostOptions["sessionIdWorkspace"]
+  sessionIdWorkspace: WorkspaceHostOptions["sessionIdWorkspace"]
   /** Explicit private-session authority. Relay-hosted runtimes default to the remote oracle. */
   sessionAccessPolicy?: SessionAccessPolicy
   target?: WorkspaceTarget
+  storeFactory?: WorkspaceHostOptions["storeFactory"]
   storeRoot?: string
   /** Host-owned directory for opt-in config apply receipts. See {@link WorkspaceHostOptions.configApplyReceiptDir}. */
   configApplyReceiptDir?: string
@@ -113,8 +116,6 @@ export type WorkspaceRuntimeServerOptions = {
    * rather than of a runtime flag.
    */
   routeContributions?: readonly WorkspaceRuntimeRouteContribution[]
-  /** Process-retained authority. It is never projected into a Session or child environment. */
-  internalSecrets?: WorkspaceRuntimeInternalSecrets
   /**
    * The first-party MCP entry injected into every session this runtime
    * launches: the loopback origin of the process serving
@@ -418,7 +419,6 @@ function trustedAgentHookCallback(input: { token: string; path: string; method: 
 }
 
 export function createWorkspaceRuntimeApp(options: WorkspaceRuntimeServerOptions): WorkspaceRuntimeApp {
-  const internalSecrets = options.internalSecrets ?? retainedWorkspaceRuntimeInternalSecrets()
   assertWorkspaceRuntimeExposure({
     exposure: options.exposure,
     hostname: workspaceRuntimeListenHostname(),
@@ -441,10 +441,11 @@ export function createWorkspaceRuntimeApp(options: WorkspaceRuntimeServerOptions
     ...(options.resolveConnectionSecrets ? { resolveConnectionSecrets: options.resolveConnectionSecrets } : {}),
     ...(options.harness ? { harness: options.harness } : {}),
     ...(options.afterCreateSession ? { afterCreateSession: options.afterCreateSession } : {}),
-    ...(options.sessionIdWorkspace ? { sessionIdWorkspace: options.sessionIdWorkspace } : {}),
+    sessionIdWorkspace: options.sessionIdWorkspace,
     sessionAccessPolicy,
-    ...(options.target ? { target: options.target } : {}),
+    target: options.target ?? { workspaceId: workspaceId(), directory: workspaceDir() },
     ...(options.storeRoot ? { storeRoot: options.storeRoot } : {}),
+    ...(options.storeFactory ? { storeFactory: options.storeFactory } : {}),
     ...(options.beforeHarnessAcquire ? { beforeHarnessAcquire: options.beforeHarnessAcquire } : {}),
     ...(options.onActivityChange ? { onActivityChange: options.onActivityChange } : {}),
     ...(options.configApplyReceiptDir ? { configApplyReceiptDir: options.configApplyReceiptDir } : {}),
@@ -452,7 +453,6 @@ export function createWorkspaceRuntimeApp(options: WorkspaceRuntimeServerOptions
     ...(options.onPresentationEvent ? { onPresentationEvent: options.onPresentationEvent } : {}),
     ...(options.onRuntimeEvent ? { onRuntimeEvent: options.onRuntimeEvent } : {}),
     ...(options.sessionParents ? { sessionParents: options.sessionParents } : {}),
-    ...(options.transcripts ? { transcripts: options.transcripts } : {}),
     ...(options.firstPartyMcpLaunch ? { firstPartyMcpLaunch: options.firstPartyMcpLaunch } : {}),
   })
   options.bindSessionConfig?.((sessionId) => host.getSessionConfig(sessionId))
@@ -460,6 +460,7 @@ export function createWorkspaceRuntimeApp(options: WorkspaceRuntimeServerOptions
   const worktrees = options.target
       ? new WorkspaceWorktreeManager({
         workspaceId: options.target.workspaceId,
+        placement: host.sessionCore.placement,
         sourceDirectory: options.target.directory,
         store: host.store,
       })
@@ -467,6 +468,7 @@ export function createWorkspaceRuntimeApp(options: WorkspaceRuntimeServerOptions
   if (worktrees) host.whenStoreOpens(() => worktrees.serveActive())
 
   const app = new Hono()
+  app.use("*", (_c, next) => withSessionCore(host.sessionCore, next))
 
   // Kept on the object rather than destructured: both are closures over the
   // app that `createNodeWebSocket` just built, and calling them through it
@@ -537,7 +539,7 @@ export function createWorkspaceRuntimeApp(options: WorkspaceRuntimeServerOptions
     app.use("*", async (c, next) => {
       if (inProcessRequests.has(c.req.raw)) return inProcessOwner ? await inProcessOwner(c, next) : await next()
       if (
-        ((c.req.method === "POST" && c.req.path === WorkspaceRuntimeRoutes.config)
+        ((["GET", "POST"].includes(c.req.method) && c.req.path === WorkspaceRuntimeRoutes.config)
           || c.req.path === WorkspaceRuntimeRoutes.checkpoint
           || c.req.path.startsWith(`${WorkspaceRuntimeRoutes.checkpoint}/`))
         && c.req.header(WORKSPACE_RUNTIME_MANAGEMENT_TOKEN_HEADER)?.trim()
@@ -566,7 +568,7 @@ export function createWorkspaceRuntimeApp(options: WorkspaceRuntimeServerOptions
       release()
     }
   })
-  app.route("/", ConfigRoutes((snapshot) => host.apply(snapshot), {
+  app.route("/", ConfigRoutes({ apply: host.apply, configApply: () => host.detail().configApply }, {
     ...(options.managementAuth ? { managementAuth: options.managementAuth } : {}),
     ...(options.managementTarget ? { managementTarget: options.managementTarget } : {}),
   }))
@@ -589,21 +591,10 @@ export function createWorkspaceRuntimeApp(options: WorkspaceRuntimeServerOptions
   // execution itself is only reachable through each Session's nonce-bound
   // loopback callback, which supplies the canonical Session identity.
   app.route("/", RuntimeDocumentHydrationRoutes({
-    trustedTransport: options.exposure?.kind === "relay",
+    ...(options.exposure?.kind === "relay" ? { workspaceId: options.exposure.auth.workspaceId } : {}),
     sessionAccessPolicy,
     ...(process.env.CLAXEDO_CONTROL_PLANE_URL ? { controlPlaneOrigin: process.env.CLAXEDO_CONTROL_PLANE_URL } : {}),
   }))
-  if (options.exposure?.kind === "relay") {
-    app.route("/", LocalDocumentBrokerRoutes({
-      trustedTransport: true,
-      ...(internalSecrets.localDocumentBrokerToken
-        ? { installationToken: internalSecrets.localDocumentBrokerToken }
-        : {}),
-      ...(process.env.CLAXEDO_LOCAL_CONTROL_PLANE_URL
-        ? { localControlPlaneUrl: process.env.CLAXEDO_LOCAL_CONTROL_PLANE_URL }
-        : {}),
-    }))
-  }
   type SessionToolRegistration = Parameters<typeof host.registerSessionTools>[0]
   const sessionToolGroups = new Map<string, Map<string, SessionToolRegistration>>()
   const dispatchSessionTool = async (url: string, call: { sessionID: string; name: string; toolCallID: string; input: unknown }) => {
@@ -655,7 +646,6 @@ export function createWorkspaceRuntimeApp(options: WorkspaceRuntimeServerOptions
       workspaceId: options.target?.workspaceId ?? workspaceId(),
       directory: options.target?.directory ?? workspaceDir(),
       stateDirectory: options.storeRoot ?? workspaceRuntimeStoreDir(),
-      applyHarnessLaunch: (harnessLaunch) => host.applyHarnessLaunch(harnessLaunch),
       fetch: contributionFetch,
       registerSessionTools: registerSessionToolGroup,
       unregisterSessionTools: unregisterSessionToolGroup,
@@ -715,7 +705,6 @@ export function startServer(
   options: WorkspaceRuntimeServerOptions,
   lifecycle: WorkspaceRuntimeLifecycleOptions = {},
 ) {
-  const internalSecrets = options.internalSecrets ?? retainedWorkspaceRuntimeInternalSecrets()
   const hostname = workspaceRuntimeListenHostname()
   assertWorkspaceRuntimeExposure({
     exposure: options.exposure,
@@ -724,7 +713,7 @@ export function startServer(
     env: process.env,
   })
   assertWorkspaceRuntimeListenPolicy(options, hostname)
-  const runtime = createWorkspaceRuntimeApp({ ...options, internalSecrets })
+  const runtime = createWorkspaceRuntimeApp(options)
 
   const server = serve({
     fetch: runtime.app.fetch,

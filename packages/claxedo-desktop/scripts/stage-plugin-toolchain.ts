@@ -76,6 +76,7 @@ export async function stagePluginToolchain(nodeModules: string, target: { platfo
     { name: compiler, source: packageDirectory(compiler, PLUGIN_BUILD_DIR), keep: everything },
     { name: "solid-js", source: packageDirectory("solid-js", PLUGIN_BUILD_DIR), keep: declarations },
     { name: "zod", source: packageDirectory("zod", PLUGIN_API_DIR), keep: declarations },
+    { name: "@claxedo/agent-runtime-contract", source: packageDirectory("@claxedo/agent-runtime-contract", PLUGIN_API_DIR), keep: declarations },
     { name: "@claxedo/plugin-api", source: PLUGIN_API_DIR, keep: pluginApiSource },
   ]
   for (const { name, source, keep } of packages) copyPackage(source, path.join(dependencies, name), keep)

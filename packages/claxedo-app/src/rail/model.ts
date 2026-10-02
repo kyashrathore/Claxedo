@@ -1,35 +1,38 @@
 import { formatCompactAge } from "@/lib/relative-time"
-import type { MachineId, Placement, ProjectId, SessionId, SessionRef } from "@/server"
-import type { SessionRowView } from "@/session"
+import type { MachineId, Placement, ProjectId, SessionId, SessionLocation } from "@/server"
+import { sessionActivity, type SessionRowView } from "@/session"
 import type { TerminalItem } from "@/terminal"
 
-export type NavigationStatus = "idle" | "working" | "permission" | "error" | "done"
+export type NavigationStatus = "idle" | "working" | "background" | "permission" | "error" | "done"
 
 export const SESSION_GROUP_PAGE_SIZE = 5
 
 export function navigationStatus(row: SessionRowView, failureUnseen: boolean): NavigationStatus {
-  if (row.waitingOnUser) return "permission"
+  const activity = sessionActivity(row)
+  if (activity === "waiting") return "permission"
   if (row.pending) return "working"
-  switch (row.status.kind) {
+  switch (activity) {
     case "working":
-    case "retrying":
-    case "recovering":
       return "working"
     case "failed":
       return failureUnseen ? "error" : "idle"
-    default:
+    case "background":
+      return "background"
+    case "idle":
       return "idle"
   }
 }
 
-const TERMINAL_STATUS: Readonly<Record<NonNullable<TerminalItem["agentStatus"]>, NavigationStatus>> = {
+export type TerminalNavigationStatus = Exclude<NavigationStatus, "background">
+
+const TERMINAL_STATUS: Readonly<Record<NonNullable<TerminalItem["agentStatus"]>, TerminalNavigationStatus>> = {
   working: "working",
   waitingOnUser: "permission",
   failed: "error",
   idle: "idle",
 }
 
-export function terminalNavigationStatus(item: TerminalItem): NavigationStatus {
+export function terminalNavigationStatus(item: TerminalItem): TerminalNavigationStatus {
   const status = item.agentStatus ? TERMINAL_STATUS[item.agentStatus] : "idle"
   return status === "idle" && item.seen ? "done" : status
 }
@@ -42,7 +45,7 @@ export function sessionAge(row: SessionRowView, now: number): string {
   return formatCompactAge(sessionAgeSince(row), now) ?? "<1m"
 }
 
-export function sessionIdsByProject(refs: readonly SessionRef[]): ReadonlyMap<ProjectId, readonly SessionId[]> {
+export function sessionIdsByProject(refs: readonly SessionLocation[]): ReadonlyMap<ProjectId, readonly SessionId[]> {
   const grouped = new Map<ProjectId, SessionId[]>()
   for (const ref of refs) {
     const group = grouped.get(ref.projectId)

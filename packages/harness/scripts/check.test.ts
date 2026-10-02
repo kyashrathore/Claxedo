@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test"
-import { readFileSync } from "node:fs"
+import { readFileSync, readdirSync } from "node:fs"
 import { check, type Rule, type Source } from "./check.ts"
 
 const agents = `## Process-wide state
@@ -148,4 +148,14 @@ test("a translator is held to no comments, size and no policy like the rest of i
 test("no-comments resumes correctly after template substitutions and regular expressions", () => {
   fails("no-comments", "src/contract/template.ts", 'const text = `hello ${name}`\n// missed explanation\nconst end = 1\n', /Remove the comment/)
   fails("no-comments", "src/contract/regex.ts", 'const pattern = /[\\/]foo/\n// missed explanation\n', /Remove the comment/)
+})
+
+test("ACP and Claude streaming translators respect file, function and naming ownership", () => {
+  const paths = readdirSync(new URL("../src/transports/acp/translate/", import.meta.url))
+    .filter((name) => name.endsWith(".ts") && !name.endsWith(".test.ts"))
+    .map((name) => `src/transports/acp/translate/${name}`)
+  paths.push("src/transports/claude-sdk/translate/partial-json.ts", "src/transports/claude-sdk/translate/transcript-title.ts")
+  const sources = paths.map((path) => ({ path, text: readFileSync(new URL(`../${path}`, import.meta.url), "utf8") }))
+  expect(check(sources, readFileSync(new URL("../AGENTS.md", import.meta.url), "utf8"), budgets)
+    .filter(({ rule }) => rule === "size" || rule === "no-policy-in-transports")).toEqual([])
 })

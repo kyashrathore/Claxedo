@@ -2,6 +2,7 @@ import { WORKSPACE_RUNTIME_MANAGEMENT_TOKEN_HEADER } from "../management-auth"
 import { WorkspaceRuntimeRoutes } from "../routes/manifest"
 import type { WorkspaceCapabilities } from "../capabilities"
 import type { RuntimeSnapshot } from "../routes/config"
+import type { RuntimeConfigApplyStatus } from "../workspace/host"
 import type { GitCommitSummary, GitWorktreeStatus } from "../workspace-files/git-worktree"
 import { fileClient, filesClient, findClient, type WorkspaceFileClient, type WorkspaceFilesClient, type WorkspaceFindClient } from "./files"
 import {
@@ -54,6 +55,7 @@ export type WorkspaceRuntimeClient = {
   health: () => Promise<WorkspaceRuntimeHealth>
   capabilities: () => Promise<WorkspaceCapabilities>
   applyConfig: (snapshot: RuntimeSnapshot, options?: WorkspaceRuntimeConfigApplyOptions) => Promise<void>
+  configStatus: (options?: WorkspaceRuntimeConfigApplyOptions) => Promise<RuntimeConfigApplyStatus>
   eventsUrl: () => URL
   session: WorkspaceSessionClient
   permission: WorkspacePermissionClient
@@ -100,6 +102,14 @@ export function createWorkspaceRuntimeClient(options: WorkspaceRuntimeClientOpti
   return {
     health: () => data({ operation: "health", path: WorkspaceRuntimeRoutes.health }),
     capabilities: () => data({ operation: "capabilities", path: WorkspaceRuntimeRoutes.capabilities }),
+    configStatus: (input = {}) => data({
+      operation: "config.status",
+      path: WorkspaceRuntimeRoutes.config,
+      headers: {
+        ...(input.headers ? Object.fromEntries(new Headers(input.headers)) : {}),
+        ...(input.token ? { [WORKSPACE_RUNTIME_MANAGEMENT_TOKEN_HEADER]: input.token } : {}),
+      },
+    }),
     applyConfig: async (snapshot, input = {}) => {
       await caller.send({
         operation: "config.apply",

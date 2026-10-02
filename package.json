@@ -10,14 +10,14 @@
     "dev:desktop": "bun --cwd packages/claxedo-desktop dev",
     "lint": "bun run --cwd packages/harness generate:codex-protocol && oxlint",
     "typecheck": "bun run --cwd packages/harness generate:codex-protocol && bun turbo typecheck",
-    "test:architecture-ratchets": "BUN_CONFIG_FILE=./script/architecture-ratchets.bunfig.toml bun test ./script/agent-plugins-retirement.test.ts ./script/upstream-engine-retirement.test.ts ./script/session-core-node-free.test.ts ./script/bun-build.test.ts ./script/file-size/verify.test.ts && bun ./script/product-boundary/verify.ts --all --source-only && bun ./script/helpers/verify.ts && bun ./script/file-size/verify.ts",
+    "test:architecture-ratchets": "BUN_CONFIG_FILE=./script/architecture-ratchets.bunfig.toml bun test ./script/agent-plugins-retirement.test.ts ./script/upstream-engine-retirement.test.ts ./script/session-core-node-free.test.ts ./script/bun-build.test.ts ./script/published-exports-plugin.test.ts ./script/file-size/verify.test.ts && bun ./script/product-boundary/verify.ts --all --source-only && bun ./script/helpers/verify.ts && bun ./script/file-size/verify.ts",
     "test:ci-policy": "node --test script/ci-changes.test.mjs",
     "prepush": "bun run lint && bun run typecheck && bun run test:ci-policy && bun run test:architecture-ratchets && bun run --cwd packages/claxedo-app check",
     "postinstall": "bun script/apply-dependency-patches.ts && bun script/fix-node-pty.ts",
     "prepare": "husky",
     "test": "echo 'do not run tests from root' && exit 1",
     "docs:check-links": "bun ./script/check-doc-links.ts",
-    "build:packages": "bun turbo build --filter=@claxedo/agent-runtime-contract --filter=@claxedo/process-ownership --filter=@claxedo/channels --filter=@claxedo/connections --filter=@claxedo/egress-broker --filter=@claxedo/helpers --filter=@claxedo/host-connector --filter=@claxedo/sandbox-contract --filter=@claxedo/sandbox-manager --filter=@claxedo/workspace-relay-protocol --filter=@claxedo/workspace-relay --filter=@claxedo/workspace-runtime"
+    "build:packages": "bun turbo build --filter=@claxedo/agent-runtime-contract --filter=@claxedo/process-ownership --filter=@claxedo/channels --filter=@claxedo/connections --filter=@claxedo/egress-broker --filter=@claxedo/helpers --filter=@claxedo/host-connector --filter=@claxedo/sandbox-contract --filter=@claxedo/sandbox-manager --filter=@claxedo/workspace-relay-protocol --filter=@claxedo/workspace-relay --filter=@claxedo/session-core --filter=@claxedo/workspace-runtime"
   },
   "workspaces": {
     "packages": [

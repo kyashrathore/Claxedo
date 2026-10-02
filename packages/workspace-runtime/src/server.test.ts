@@ -1,4 +1,5 @@
 import { installFakePiRpc } from "./test-support/home/fake-pi-rpc.mjs"
+import { createWorkspaceRuntimeClient } from "./client"
 import { afterEach, describe, expect, spyOn, test } from "bun:test"
 import fs from "fs"
 import os from "os"
@@ -21,6 +22,8 @@ import {
   workspaceRuntimeServiceExposureFromEnv,
 } from "./server"
 import { Pty } from "./pty/index"
+import { withSessionCore } from "./session-context"
+import { testSessionCore } from "@claxedo/session-core/testing"
 import {
   embeddedWorkspaceRuntimeExposure,
   loopbackWorkspaceRuntimeExposure,
@@ -28,7 +31,7 @@ import {
   relayWorkspaceRuntimeExposure,
 } from "./exposure"
 import { runtimeEnvText, workspaceRuntimeDataDir } from "./env"
-import { managedWorkspaceSessionAccessPolicy, type SessionAccessPolicy } from "./session-access-policy"
+import { managedWorkspaceSessionAccessPolicy, type SessionAccessPolicy } from "@claxedo/session-core"
 import {
   configTokenFromEnv,
   hostTunnelFromEnv,
@@ -128,24 +131,24 @@ describe("workspace runtime listen policy", () => {
   })
 
   test("allows unauthenticated loopback listeners", () => {
-    expect(() => assertWorkspaceRuntimeListenPolicy({ placement }, "127.0.0.1", {})).not.toThrow()
-    expect(() => assertWorkspaceRuntimeListenPolicy({ placement, configToken: "cfg-secret" }, "localhost", {})).not.toThrow()
+    expect(() => assertWorkspaceRuntimeListenPolicy({ sessionIdWorkspace: () => undefined, placement }, "127.0.0.1", { })).not.toThrow()
+    expect(() => assertWorkspaceRuntimeListenPolicy({ sessionIdWorkspace: () => undefined, placement, configToken: "cfg-secret" }, "localhost", { })).not.toThrow()
   })
 
   test("rejects unauthenticated non-loopback listeners", () => {
-    expect(() => assertWorkspaceRuntimeListenPolicy({ placement }, "0.0.0.0", {})).toThrow(
+    expect(() => assertWorkspaceRuntimeListenPolicy({ sessionIdWorkspace: () => undefined, placement }, "0.0.0.0", { })).toThrow(
       "Refusing to listen on non-loopback host 0.0.0.0 without relay-host auth",
     )
   })
 
   test("does not treat config tokens as whole-server auth", () => {
-    expect(() => assertWorkspaceRuntimeListenPolicy({ placement, configToken: "cfg-secret" }, "0.0.0.0", {})).toThrow(
+    expect(() => assertWorkspaceRuntimeListenPolicy({ sessionIdWorkspace: () => undefined, placement, configToken: "cfg-secret" }, "0.0.0.0", { })).toThrow(
       "Refusing to listen on non-loopback host 0.0.0.0 without relay-host auth",
     )
   })
 
   test("allows relay-authenticated non-loopback listeners", () => {
-    expect(() => assertWorkspaceRuntimeListenPolicy({ placement, relayHostAuth }, "0.0.0.0", {})).not.toThrow()
+    expect(() => assertWorkspaceRuntimeListenPolicy({ sessionIdWorkspace: () => undefined, placement, relayHostAuth }, "0.0.0.0", { })).not.toThrow()
   })
 
   test("allows guarded private-network non-loopback listeners", () => {
@@ -155,19 +158,17 @@ describe("workspace runtime listen policy", () => {
       runtimeAuth: () => true,
     })
     expect(() =>
-      assertWorkspaceRuntimeListenPolicy({
-        placement,
+      assertWorkspaceRuntimeListenPolicy({ sessionIdWorkspace: () => undefined, placement,
         exposure,
       }, "0.0.0.0", {})
     ).not.toThrow()
-    expect(workspaceRuntimeRouteAuthBoundary({ exposure }, "0.0.0.0", {})).toBe("private-network-host-guard")
+    expect(workspaceRuntimeRouteAuthBoundary({ exposure }, "0.0.0.0", { })).toBe("private-network-host-guard")
   })
 
   test("allows explicitly exempted private-network listeners", () => {
     const warn = spyOn(console, "warn").mockImplementation(() => {})
     try {
-      expect(() => assertWorkspaceRuntimeListenPolicy({ placement }, "0.0.0.0", {
-        WORKSPACE_RUNTIME_ALLOW_UNAUTHENTICATED_NON_LOOPBACK: "1",
+      expect(() => assertWorkspaceRuntimeListenPolicy({ sessionIdWorkspace: () => undefined, placement }, "0.0.0.0", { WORKSPACE_RUNTIME_ALLOW_UNAUTHENTICATED_NON_LOOPBACK: "1",
       })).not.toThrow()
       expect(warn).toHaveBeenCalledWith(
         "[workspace-runtime] WARN  allowing unauthenticated non-loopback listen because WORKSPACE_RUNTIME_ALLOW_UNAUTHENTICATED_NON_LOOPBACK=1",
@@ -191,8 +192,8 @@ describe("a store this build refuses", () => {
 
   test("still lets the runtime start, and answers every store-backed route with the typed refusal before any work", async () => {
     const { directory, storeRoot } = await refusedStore()
-    const runtime = createWorkspaceRuntimeApp({
-      placement,
+    const runtime = createWorkspaceRuntimeApp({ sessionIdWorkspace: () => undefined,
+    placement,
       exposure: loopbackWorkspaceRuntimeExposure(),
       target: { workspaceId: "ws_refused", directory },
       storeRoot,
@@ -225,8 +226,8 @@ describe("a store this build refuses", () => {
     const record = (reason: unknown) => { rejections.push(reason) }
     process.on("unhandledRejection", record)
     try {
-      const runtime = createWorkspaceRuntimeApp({
-        placement,
+      const runtime = createWorkspaceRuntimeApp({ sessionIdWorkspace: () => undefined,
+    placement,
         exposure: loopbackWorkspaceRuntimeExposure(),
         target: { workspaceId: "ws_refused_native", directory },
         storeRoot,
@@ -248,8 +249,8 @@ describe("a store this build refuses", () => {
 describe("workspace runtime host route auth", () => {
   test("private-network exposure runs host guard before runtime auth", async () => {
     const seen: string[] = []
-    const runtime = createWorkspaceRuntimeApp({
-      placement,
+    const runtime = createWorkspaceRuntimeApp({ sessionIdWorkspace: () => undefined,
+    placement,
       exposure: privateNetworkWorkspaceRuntimeExposure({
         name: "test-private-network",
         guard: (input) => {
@@ -283,8 +284,8 @@ describe("workspace runtime host route auth", () => {
 
   test("embedded exposure runs the caller-owned guard before runtime routes", async () => {
     const seen: string[] = []
-    const runtime = createWorkspaceRuntimeApp({
-      placement,
+    const runtime = createWorkspaceRuntimeApp({ sessionIdWorkspace: () => undefined,
+    placement,
       exposure: embeddedWorkspaceRuntimeExposure({
         owner: "test",
         guard: (input) => {
@@ -311,8 +312,8 @@ describe("workspace runtime host route auth", () => {
 
   test("private-network exposure protects SSE runtime event streams", async () => {
     const seen: string[] = []
-    const runtime = createWorkspaceRuntimeApp({
-      placement,
+    const runtime = createWorkspaceRuntimeApp({ sessionIdWorkspace: () => undefined,
+    placement,
       exposure: privateNetworkWorkspaceRuntimeExposure({
         name: "test-private-network",
         guard: (input) => {
@@ -348,8 +349,8 @@ describe("workspace runtime host route auth", () => {
 
   test("private-network exposure protects PTY WebSocket upgrades", async () => {
     const seen: string[] = []
-    const runtime = createWorkspaceRuntimeApp({
-      placement,
+    const runtime = createWorkspaceRuntimeApp({ sessionIdWorkspace: () => undefined,
+    placement,
       exposure: privateNetworkWorkspaceRuntimeExposure({
         name: "test-private-network",
         guard: (input) => {
@@ -386,7 +387,8 @@ describe("workspace runtime host route auth", () => {
   test("can disable runtime CORS when driver proxy owns CORS", async () => {
     const previousNeutral = process.env.WORKSPACE_RUNTIME_DISABLE_CORS
     process.env.WORKSPACE_RUNTIME_DISABLE_CORS = "1"
-    const runtime = createWorkspaceRuntimeApp({ placement, exposure: loopbackWorkspaceRuntimeExposure() })
+    const runtime = createWorkspaceRuntimeApp({ sessionIdWorkspace: () => undefined,
+    placement, exposure: loopbackWorkspaceRuntimeExposure() })
     try {
       const res = await runtime.app.request("http://localhost/global/health", {
         headers: { Origin: "http://localhost:4444" },
@@ -400,18 +402,20 @@ describe("workspace runtime host route auth", () => {
   })
 
   test("CORS origin policy derives from exposure kind", async () => {
-    const local = createWorkspaceRuntimeApp({ placement, exposure: loopbackWorkspaceRuntimeExposure() })
-    const relayed = createWorkspaceRuntimeApp({ placement, exposure: relayWorkspaceRuntimeExposure(relayHostAuth) })
-    const privateNetwork = createWorkspaceRuntimeApp({
-      placement,
+    const local = createWorkspaceRuntimeApp({ sessionIdWorkspace: () => undefined,
+    placement, exposure: loopbackWorkspaceRuntimeExposure() })
+    const relayed = createWorkspaceRuntimeApp({ sessionIdWorkspace: () => undefined,
+    placement, exposure: relayWorkspaceRuntimeExposure(relayHostAuth) })
+    const privateNetwork = createWorkspaceRuntimeApp({ sessionIdWorkspace: () => undefined,
+    placement,
       exposure: privateNetworkWorkspaceRuntimeExposure({
         name: "test-private-network",
         guard: () => true,
         runtimeAuth: () => true,
       }),
     })
-    const embedded = createWorkspaceRuntimeApp({
-      placement,
+    const embedded = createWorkspaceRuntimeApp({ sessionIdWorkspace: () => undefined,
+    placement,
       exposure: embeddedWorkspaceRuntimeExposure({
         owner: "test",
         guard: () => true,
@@ -455,9 +459,10 @@ describe("workspace runtime host route auth", () => {
   })
 
   test("health reports the effective auth boundary and service exposure", async () => {
-    const local = createWorkspaceRuntimeApp({ placement, exposure: loopbackWorkspaceRuntimeExposure() })
-    const relayed = createWorkspaceRuntimeApp({
-      placement,
+    const local = createWorkspaceRuntimeApp({ sessionIdWorkspace: () => undefined,
+    placement, exposure: loopbackWorkspaceRuntimeExposure() })
+    const relayed = createWorkspaceRuntimeApp({ sessionIdWorkspace: () => undefined,
+    placement,
       exposure: relayWorkspaceRuntimeExposure(relayHostAuth),
       relayHostAuth,
       configToken: "cfg-secret",
@@ -487,8 +492,7 @@ describe("workspace runtime host route auth", () => {
           driver: "vercel",
         },
       })
-      expect(workspaceRuntimeRouteAuthBoundary({}, "0.0.0.0", {
-        WORKSPACE_RUNTIME_ALLOW_UNAUTHENTICATED_NON_LOOPBACK: "1",
+      expect(workspaceRuntimeRouteAuthBoundary({ }, "0.0.0.0", { WORKSPACE_RUNTIME_ALLOW_UNAUTHENTICATED_NON_LOOPBACK: "1",
       })).toBe("private-network-dev-unsafe")
       expect(workspaceRuntimeServiceExposureFromEnv({
         WORKSPACE_RUNTIME_SERVICE_EXPOSURE_SOURCE: "driver-service-url",
@@ -507,8 +511,8 @@ describe("workspace runtime host route auth", () => {
 
   test("the anonymous global probe answers liveness and identity, not diagnostics", async () => {
     const dir = await pinTempWorkspaceDirectory()
-    const runtime = createWorkspaceRuntimeApp({
-      placement,
+    const runtime = createWorkspaceRuntimeApp({ sessionIdWorkspace: () => undefined,
+    placement,
       exposure: loopbackWorkspaceRuntimeExposure(),
       target: { workspaceId: "health-workspace", directory: dir },
     })
@@ -537,8 +541,8 @@ describe("workspace runtime host route auth", () => {
   })
 
   test("the authenticated health probe reports the terminal counter the supervisor's idle check reads", async () => {
-    const runtime = createWorkspaceRuntimeApp({
-      placement,
+    const runtime = createWorkspaceRuntimeApp({ sessionIdWorkspace: () => undefined,
+    placement,
       exposure: relayWorkspaceRuntimeExposure(relayHostAuth),
       relayHostAuth,
       configToken: "cfg-secret",
@@ -558,7 +562,8 @@ describe("workspace runtime host route auth", () => {
   })
 
   test("relay-authenticated runtime mounts reject anonymous sensitive host routes", async () => {
-    const runtime = createWorkspaceRuntimeApp({ placement, exposure: relayWorkspaceRuntimeExposure(relayHostAuth) })
+    const runtime = createWorkspaceRuntimeApp({ sessionIdWorkspace: () => undefined,
+    placement, exposure: relayWorkspaceRuntimeExposure(relayHostAuth) })
     try {
       const response = await runtime.app.request("http://localhost/api/wr/capabilities")
 
@@ -575,7 +580,8 @@ describe("workspace runtime host route auth", () => {
   })
 
   test("config tokens only authorize health when relay auth is mounted", async () => {
-    const runtime = createWorkspaceRuntimeApp({ placement, exposure: relayWorkspaceRuntimeExposure(relayHostAuth), relayHostAuth, configToken: "cfg-secret" })
+    const runtime = createWorkspaceRuntimeApp({ sessionIdWorkspace: () => undefined,
+    placement, exposure: relayWorkspaceRuntimeExposure(relayHostAuth), relayHostAuth, configToken: "cfg-secret" })
     try {
       const health = await runtime.app.request("http://localhost/api/wr/health", {
         headers: { authorization: "Bearer cfg-secret" },
@@ -679,8 +685,8 @@ describe("workspace runtime host route auth", () => {
       status: "running",
       pid: 1,
     })
-    const runtime = createWorkspaceRuntimeApp({
-      placement,
+    const runtime = createWorkspaceRuntimeApp({ sessionIdWorkspace: () => undefined,
+    placement,
       exposure: relayWorkspaceRuntimeExposure(relayHostAuth),
       relayHostAuth,
       sessionAccessPolicy: {
@@ -733,8 +739,8 @@ describe("workspace runtime host route auth", () => {
 
   test("management config push is not preempted by relay auth", async () => {
     await pinTempWorkspaceDirectory()
-    const runtime = createWorkspaceRuntimeApp({
-      placement,
+    const runtime = createWorkspaceRuntimeApp({ sessionIdWorkspace: () => undefined,
+    placement,
       exposure: relayWorkspaceRuntimeExposure(relayHostAuth),
       relayHostAuth,
       managementAuth,
@@ -848,12 +854,12 @@ describe("workspace runtime drain", () => {
 
   test("removes live PTYs through the real drain path", async () => {
     const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "wr-drain-pty-"))
-    const pty = await Pty.create({
+    const pty = await withSessionCore(testSessionCore(dir), () => Pty.create({
       command: process.execPath,
       args: ["-e", "setInterval(() => {}, 1000)"],
       cwd: dir,
       title: "drain-pty",
-    }, ownership)
+    }, ownership))
 
     try {
       expect(Pty.get(pty.id)?.id).toBe(pty.id)
@@ -965,13 +971,15 @@ describe("workspace runtime shutdown handler", () => {
 
 describe("createWorkspaceRuntimeApp assembly (characterization)", () => {
   test("requires an exposure", () => {
-    expect(() => createWorkspaceRuntimeApp({ placement })).toThrow("Workspace runtime exposure is required")
+    expect(() => createWorkspaceRuntimeApp({ sessionIdWorkspace: () => undefined,
+    placement })).toThrow("Workspace runtime exposure is required")
   })
 
   test("the health snapshot carries the lease epoch it was booted with", async () => {
     const previous = process.env.WORKSPACE_RUNTIME_EPOCH
     const health = async () => {
-      const runtime = createWorkspaceRuntimeApp({ placement, exposure: loopbackWorkspaceRuntimeExposure() })
+      const runtime = createWorkspaceRuntimeApp({ sessionIdWorkspace: () => undefined,
+    placement, exposure: loopbackWorkspaceRuntimeExposure() })
       try {
         return await (await runtime.app.request("http://localhost/global/health")).json()
       } finally {
@@ -995,7 +1003,8 @@ describe("createWorkspaceRuntimeApp assembly (characterization)", () => {
   })
 
   test("mounts /api/wr/health, /api/wr/capabilities, and /global/health", async () => {
-    const runtime = createWorkspaceRuntimeApp({ placement, exposure: loopbackWorkspaceRuntimeExposure() })
+    const runtime = createWorkspaceRuntimeApp({ sessionIdWorkspace: () => undefined,
+    placement, exposure: loopbackWorkspaceRuntimeExposure() })
     try {
       const health = await runtime.app.request("http://localhost/api/wr/health")
       expect(health.status).toBe(200)
@@ -1025,8 +1034,8 @@ describe("createWorkspaceRuntimeApp assembly (characterization)", () => {
     let harnessAcquisitions = 0
     let allowed = false
     const operations: string[] = []
-    const runtime = createWorkspaceRuntimeApp({
-      placement,
+    const runtime = createWorkspaceRuntimeApp({ sessionIdWorkspace: () => undefined,
+    placement,
       exposure: loopbackWorkspaceRuntimeExposure(),
       target: { workspaceId: "health-workspace", directory: dir },
       storeRoot: path.join(dir, "state"),
@@ -1062,8 +1071,8 @@ describe("createWorkspaceRuntimeApp assembly (characterization)", () => {
     const originalPi = process.env.PI_EXECUTABLE
     process.env.PI_EXECUTABLE = peer.binary
     const dir = await pinTempWorkspaceDirectory()
-    const runtime = createWorkspaceRuntimeApp({
-      placement,
+    const runtime = createWorkspaceRuntimeApp({ sessionIdWorkspace: () => undefined,
+    placement,
       exposure: loopbackWorkspaceRuntimeExposure(),
       harness: { kind: "native", harnessId: "pi" },
       storeRoot: path.join(dir, "state"),
@@ -1087,7 +1096,8 @@ describe("createWorkspaceRuntimeApp assembly (characterization)", () => {
   })
 
   test("does not expose the removed session-env bridge", async () => {
-    const runtime = createWorkspaceRuntimeApp({ placement, exposure: loopbackWorkspaceRuntimeExposure() })
+    const runtime = createWorkspaceRuntimeApp({ sessionIdWorkspace: () => undefined,
+    placement, exposure: loopbackWorkspaceRuntimeExposure() })
     try {
       const paths = runtime.app.routes.map((route) => route.path)
       expect(paths).toContain("/api/wr/capabilities")
@@ -1098,7 +1108,8 @@ describe("createWorkspaceRuntimeApp assembly (characterization)", () => {
   })
 
   test("session-env inherits relay-host auth under relay exposure", async () => {
-    const runtime = createWorkspaceRuntimeApp({ placement, exposure: relayWorkspaceRuntimeExposure(relayHostAuth) })
+    const runtime = createWorkspaceRuntimeApp({ sessionIdWorkspace: () => undefined,
+    placement, exposure: relayWorkspaceRuntimeExposure(relayHostAuth) })
     try {
       const exists = await runtime.app.request("http://localhost/api/wr/session-env/file/exists?path=x.txt")
       expect(exists.status).toBe(401)
@@ -1116,7 +1127,8 @@ describe("createWorkspaceRuntimeApp assembly (characterization)", () => {
 
 describe("relay-host auth middleware (characterization)", () => {
   test("rejects unauthenticated requests under relay exposure", async () => {
-    const runtime = createWorkspaceRuntimeApp({ placement, exposure: relayWorkspaceRuntimeExposure(relayHostAuth) })
+    const runtime = createWorkspaceRuntimeApp({ sessionIdWorkspace: () => undefined,
+    placement, exposure: relayWorkspaceRuntimeExposure(relayHostAuth) })
     try {
       const capabilities = await runtime.app.request("http://localhost/api/wr/capabilities")
       expect(capabilities.status).toBe(401)
@@ -1131,18 +1143,21 @@ describe("relay-host auth middleware (characterization)", () => {
     }
   })
 
-  test("management token bypasses relay auth for POST /api/wr/config", async () => {
+  test("management token reads and applies settings through the relay auth boundary", async () => {
     await pinTempWorkspaceDirectory()
-    const runtime = createWorkspaceRuntimeApp({
-      placement,
+    const runtime = createWorkspaceRuntimeApp({ sessionIdWorkspace: () => undefined,
+    placement,
       exposure: relayWorkspaceRuntimeExposure(relayHostAuth),
       relayHostAuth,
       managementAuth,
       managementTarget: { workspaceId: "ws_1", hostId: "host_1" },
     })
     try {
-      // No relay token, but a valid management token — the config-push bypass
-      // in the relay middleware lets it through to the management-auth check.
+      const client = createWorkspaceRuntimeClient({ baseUrl: "http://localhost", fetch: (url, init) => Promise.resolve(runtime.app.fetch(new Request(url, init))) })
+      const idle = await client.configStatus({ token: managementToken })
+      expect(idle).toEqual(runtime.host.detail().configApply)
+      expect(idle.state).toBe("idle")
+      await expect(client.configStatus({ token: "wrong-token" })).rejects.toMatchObject({ status: 401 })
       const config = await runtime.app.request("http://localhost/api/wr/config", {
         method: "POST",
         headers: {
@@ -1160,6 +1175,9 @@ describe("relay-host auth middleware (characterization)", () => {
       })
       expect(config.status).toBe(200)
       expect(await config.json()).toEqual({ ok: true })
+      const applied = await client.configStatus({ token: managementToken })
+      expect(applied).toEqual(runtime.host.detail().configApply)
+      expect(applied.state).toBe("applied")
 
       // The bypass only applies to the config route with a management-token
       // header present; other routes still require relay auth.
@@ -1173,8 +1191,8 @@ describe("relay-host auth middleware (characterization)", () => {
   })
 
   test("config push without a management-token header is preempted by relay auth", async () => {
-    const runtime = createWorkspaceRuntimeApp({
-      placement,
+    const runtime = createWorkspaceRuntimeApp({ sessionIdWorkspace: () => undefined,
+    placement,
       exposure: relayWorkspaceRuntimeExposure(relayHostAuth),
       relayHostAuth,
       managementAuth,
@@ -1215,7 +1233,7 @@ describe("startServer ephemeral bind (characterization)", () => {
     const listenersOf = (sig: (typeof signals)[number]) => process.listeners(sig as NodeJS.Signals).slice()
     const before = new Map(signals.map((sig) => [sig, listenersOf(sig)]))
 
-    const server = startServer(0, { placement, exposure: loopbackWorkspaceRuntimeExposure() })
+    const server = startServer(0, { sessionIdWorkspace: () => undefined, placement, exposure: loopbackWorkspaceRuntimeExposure() })
     try {
       const port = await waitForWorkspaceRuntimeServerPort(server, 0)
       expect(port).toBeGreaterThan(0)
@@ -1257,8 +1275,8 @@ describe("cors + signal registration (characterization)", () => {
 
   test("a host-supplied corsOrigin policy is used instead of the kit default", async () => {
     const seen: Array<{ origin: string; kind: string }> = []
-    const runtime = createWorkspaceRuntimeApp({
-      placement,
+    const runtime = createWorkspaceRuntimeApp({ sessionIdWorkspace: () => undefined,
+    placement,
       exposure: loopbackWorkspaceRuntimeExposure(),
       corsOrigin: (origin, exposure) => {
         seen.push({ origin, kind: exposure.kind })
@@ -1296,8 +1314,7 @@ describe("cors + signal registration (characterization)", () => {
     const preRej = process.listeners("unhandledRejection")
     const preExc = process.listeners("uncaughtException")
     // Default: no lifecycle argument → the library must not claim the process.
-    const server = startServer(0, {
-      placement,
+    const server = startServer(0, { sessionIdWorkspace: () => undefined, placement,
       target: { workspaceId: "ws-signals-default", directory: process.cwd() },
       exposure: loopbackWorkspaceRuntimeExposure(),
     })
@@ -1327,8 +1344,7 @@ describe("cors + signal registration (characterization)", () => {
     const preInt = process.listeners("SIGINT")
     const preRej = process.listeners("unhandledRejection")
     const preExc = process.listeners("uncaughtException")
-    const server = startServer(0, {
-      placement,
+    const server = startServer(0, { sessionIdWorkspace: () => undefined, placement,
       target: { workspaceId: "ws-signals", directory: process.cwd() },
       exposure: loopbackWorkspaceRuntimeExposure(),
     }, { signals: true })

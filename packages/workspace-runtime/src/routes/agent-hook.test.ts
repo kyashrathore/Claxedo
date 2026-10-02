@@ -1,13 +1,20 @@
 import { describe, expect, spyOn, test } from "bun:test"
 import { Hono } from "hono"
-import { workspaceRuntimeBus, type WorkspaceRuntimeEvent } from "../bus"
+import {
+  createBus as createTestBus,
+  type WorkspaceRuntimeEvent as TestBusEvent,
+  type WorkspaceRuntimeEvent,
+  errorBody,
+  JSON_BODY_LIMIT_BYTES,
+  managedWorkspaceSessionAccessPolicy,
+  type SessionAccessPolicy,
+  workspaceRuntimeEventSessionId,
+} from "@claxedo/session-core"
+const testBus = createTestBus<TestBusEvent>()
 import { AgentHookRoutes, lifecycleLogMetadata, TERMINAL_SESSION_MAX_ENTRIES } from "./agent-hook"
-import { errorBody, JSON_BODY_LIMIT_BYTES } from "./http"
-import { managedWorkspaceSessionAccessPolicy, type SessionAccessPolicy } from "../session-access-policy"
 import type { RelayHostAuthContext } from "../workspace-host-service-auth"
 import { Pty } from "../pty/index"
 import { withWorkspaceTarget } from "../target"
-import { workspaceRuntimeEventSessionId } from "./session-event-privacy"
 
 const runningTerminal = (id: string, sessionId?: string) => ({
   id,
@@ -26,11 +33,11 @@ const liveTerminals = (...ids: string[]) => {
 }
 
 test("raw provider hooks keep background waits busy and deduplicate only accepted completion", async () => {
-  const app = AgentHookRoutes()
+  const app = AgentHookRoutes({ bus: testBus })
   const terminalId = "pty_raw_background"
   const get = liveTerminals(terminalId)
   const events: unknown[] = []
-  const unsubscribe = workspaceRuntimeBus.subscribe((event) => {
+  const unsubscribe = testBus.subscribe((event) => {
     if (event.type === "agent.lifecycle" && event.terminalId === terminalId) events.push(event)
   })
   const post = (providerEvent: unknown) => app.request("http://localhost/agent-lifecycle", {
@@ -64,11 +71,11 @@ test("raw provider hooks keep background waits busy and deduplicate only accepte
 })
 
 test("a pending ask survives unrelated tool completions and retires with its own", async () => {
-  const app = AgentHookRoutes()
+  const app = AgentHookRoutes({ bus: testBus })
   const terminalId = "pty_raw_pending_ask"
   const get = liveTerminals(terminalId)
   const events: unknown[] = []
-  const unsubscribe = workspaceRuntimeBus.subscribe((event) => {
+  const unsubscribe = testBus.subscribe((event) => {
     if (event.type === "agent.lifecycle" && event.terminalId === terminalId) events.push(event)
   })
   const post = (providerEvent: unknown) => app.request("http://localhost/agent-lifecycle", {
@@ -108,7 +115,7 @@ test("a pending ask survives unrelated tool completions and retires with its own
 })
 
 test("a subagent still working after the parent's turn ended never pulls the tab back to busy", async () => {
-  const app = AgentHookRoutes()
+  const app = AgentHookRoutes({ bus: testBus })
   const terminalId = "pty_subagent_after_stop"
   const get = liveTerminals(terminalId)
   const post = (providerEvent: unknown) => app.request("http://localhost/agent-lifecycle", {
@@ -135,11 +142,11 @@ test("a subagent still working after the parent's turn ended never pulls the tab
 })
 
 test("a denial or failure retires only its own ask, and tool hooks never rebind the terminal's session", async () => {
-  const app = AgentHookRoutes()
+  const app = AgentHookRoutes({ bus: testBus })
   const terminalId = "pty_raw_deny_and_bind"
   const get = liveTerminals(terminalId)
   const events: unknown[] = []
-  const unsubscribe = workspaceRuntimeBus.subscribe((event) => {
+  const unsubscribe = testBus.subscribe((event) => {
     if (event.type === "agent.lifecycle" && event.terminalId === terminalId) events.push(event)
   })
   const post = (providerEvent: unknown) => app.request("http://localhost/agent-lifecycle", {
@@ -197,6 +204,7 @@ function privateSessionPolicy(owners: Record<string, string>): SessionAccessPoli
 function relayAuth(
   actorId: string,
   role: NonNullable<RelayHostAuthContext["relayHostAuth"]>["role"] = "editor",
+  sessionScope?: string,
 ): NonNullable<RelayHostAuthContext["relayHostAuth"]> {
   const now = Math.floor(Date.now() / 1000)
   return {
@@ -214,6 +222,7 @@ function relayAuth(
     iat: now,
     jti: `jti_${actorId}`,
     parent_jti: "rat_jti_1",
+    ...(sessionScope ? { scope: "session" as const, session_id: sessionScope } : { scope: "workspace" as const }),
   }
 }
 
@@ -247,25 +256,24 @@ const managedPolicy = managedWorkspaceSessionAccessPolicy({
     releaseTurn: () => ({ released: true }),
   },
 })
-managedPolicy.authorizeHost = async (input) => {
-  const rank = { viewer: 0, editor: 1, admin: 2, owner: 3 } as const
-  return input.authority && rank[input.authority.role] >= rank[input.minimumRole]
+managedPolicy.authorizeHost = async (input) =>
+  input.authority && input.authority.sessionId === undefined
     ? { allowed: true }
     : { allowed: false, status: 403, code: "host_authority_denied", message: "Current host authority is required" }
-}
 
 function managedApp(
   actorId: string,
   policyOrRole: SessionAccessPolicy | NonNullable<RelayHostAuthContext["relayHostAuth"]>["role"] = managedPolicy,
+  sessionScope?: string,
 ) {
   const policy = typeof policyOrRole === "string" ? managedPolicy : policyOrRole
   const role = typeof policyOrRole === "string" ? policyOrRole : "editor"
   const app = new Hono<{ Variables: RelayHostAuthContext }>()
   app.use("*", async (c, next) => {
-    c.set("relayHostAuth", relayAuth(actorId, role))
+    c.set("relayHostAuth", relayAuth(actorId, role, sessionScope))
     return await next()
   })
-  app.route("/", AgentHookRoutes({ sessionAccessPolicy: policy }))
+  app.route("/", AgentHookRoutes({ bus: testBus, sessionAccessPolicy: policy }))
   return app
 }
 
@@ -275,7 +283,7 @@ function directHookApp(policy: SessionAccessPolicy = managedPolicy) {
     c.set("relayHostDirectAuth", true)
     return await next()
   })
-  app.route("/", AgentHookRoutes({ sessionAccessPolicy: policy }))
+  app.route("/", AgentHookRoutes({ bus: testBus, sessionAccessPolicy: policy }))
   return app
 }
 
@@ -320,11 +328,12 @@ describe("AgentHookRoutes", () => {
   })
 
   test("exposes lifecycle ingestion as POST-only", async () => {
-    expect((await AgentHookRoutes().request("http://localhost/agent-lifecycle?tabId=leaked&eventType=Busy")).status).toBe(405)
+    expect((await AgentHookRoutes({ bus: testBus }).request("http://localhost/agent-lifecycle?tabId=leaked&eventType=Busy")).status).toBe(405)
   })
 
   test("denies actor-less managed lifecycle writes and ignores body actor fields", async () => {
     const response = await AgentHookRoutes({
+      bus: testBus,
       sessionAccessPolicy: managedWorkspaceSessionAccessPolicy({ requireActor: true }),
     }).request("http://localhost/agent-lifecycle", {
       method: "POST",
@@ -366,7 +375,7 @@ describe("AgentHookRoutes", () => {
     const editorA = managedApp("editor_a", policy)
     const editorB = managedApp("editor_b", policy)
     const events: unknown[] = []
-    const unsubscribe = workspaceRuntimeBus.subscribe((event) => {
+    const unsubscribe = testBus.subscribe((event) => {
       if (event.type === "agent.lifecycle" && event.terminalId === terminalId) events.push(event)
     })
 
@@ -450,10 +459,10 @@ describe("AgentHookRoutes", () => {
   })
 
   test("publishes derived terminal ref names instead of weak first prompts", async () => {
-    const app = AgentHookRoutes()
+    const app = AgentHookRoutes({ bus: testBus })
     const get = liveTerminals("pty_title_test")
     const events: unknown[] = []
-    const unsubscribe = workspaceRuntimeBus.subscribe((event) => {
+    const unsubscribe = testBus.subscribe((event) => {
       if (event.type === "agent.lifecycle" && event.terminalId === "pty_title_test") events.push(event)
     })
 
@@ -497,7 +506,7 @@ describe("AgentHookRoutes", () => {
   })
 
   test("derives ref names from assistant text when captured prompt is terminal noise", async () => {
-    const app = AgentHookRoutes()
+    const app = AgentHookRoutes({ bus: testBus })
     const get = liveTerminals("pty_noise_title_test")
     const params = new URLSearchParams({
       tabId: "tab_noise_title_test",
@@ -521,9 +530,9 @@ describe("AgentHookRoutes", () => {
   })
 
   test("rejects oversized lifecycle bodies", async () => {
-    const app = AgentHookRoutes()
+    const app = AgentHookRoutes({ bus: testBus })
     const events: unknown[] = []
-    const unsubscribe = workspaceRuntimeBus.subscribe((event) => {
+    const unsubscribe = testBus.subscribe((event) => {
       if (event.type === "agent.lifecycle") events.push(event)
     })
 
@@ -554,7 +563,7 @@ describe("AgentHookRoutes", () => {
   })
 
   test("bounds retained terminal lifecycle sessions", async () => {
-    const app = AgentHookRoutes()
+    const app = AgentHookRoutes({ bus: testBus })
     const first = "pty_cache_oldest"
     const get = liveTerminals(
       first,
@@ -590,7 +599,7 @@ describe("AgentHookRoutes", () => {
     const assistant = "private assistant sentinel"
     const transcriptPath = "/private/transcript/sentinel.jsonl"
     try {
-      const response = await AgentHookRoutes().request("http://localhost/agent-lifecycle", {
+      const response = await AgentHookRoutes({ bus: testBus }).request("http://localhost/agent-lifecycle", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
@@ -622,9 +631,9 @@ describe("AgentHookRoutes", () => {
   })
 
   test("GET lifecycle is read-only and directs canonical producers to POST", async () => {
-    const app = AgentHookRoutes()
+    const app = AgentHookRoutes({ bus: testBus })
     const events: unknown[] = []
-    const unsubscribe = workspaceRuntimeBus.subscribe((event) => {
+    const unsubscribe = testBus.subscribe((event) => {
       if (event.type === "agent.lifecycle" && event.terminalId === "pty_get_is_read_only") events.push(event)
     })
     const params = new URLSearchParams({
@@ -663,7 +672,7 @@ describe("AgentHookRoutes", () => {
     try {
       // Even if an unmanaged producer populated the same in-memory row first,
       // entering managed mode must erase that caller-provided scope.
-      expect((await AgentHookRoutes().request("http://localhost/agent-lifecycle", {
+      expect((await AgentHookRoutes({ bus: testBus }).request("http://localhost/agent-lifecycle", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
@@ -674,7 +683,7 @@ describe("AgentHookRoutes", () => {
         }),
       })).status).toBe(200)
       managedBound = true
-      unsubscribe = workspaceRuntimeBus.subscribe((event) => {
+      unsubscribe = testBus.subscribe((event) => {
         if (event.type === "agent.lifecycle" && event.terminalId === "pty_owned") events.push(event)
       })
       const payload = {
@@ -703,7 +712,7 @@ describe("AgentHookRoutes", () => {
       expect(metadataBody.session).toMatchObject({ providerSessionId: "provider_session_not_private_authority_id" })
       expect(metadataBody.session?.sessionId).toBe("session_canonical")
 
-      const unverifiedOverwrite = await AgentHookRoutes().request("http://localhost/agent-lifecycle", {
+      const unverifiedOverwrite = await AgentHookRoutes({ bus: testBus }).request("http://localhost/agent-lifecycle", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
@@ -737,12 +746,12 @@ describe("AgentHookRoutes", () => {
       : undefined)
     const owner = spyOn(Pty, "accessOwner").mockReturnValue(undefined)
     const events: Extract<WorkspaceRuntimeEvent, { type: "agent.lifecycle" }>[] = []
-    const unsubscribe = workspaceRuntimeBus.subscribe((event) => {
+    const unsubscribe = testBus.subscribe((event) => {
       if (event.type === "agent.lifecycle" && event.terminalId === terminalId) events.push(event)
     })
     try {
       const response = await withWorkspaceTarget({ workspaceId: "ws_canonical", directory: "/tmp" }, () =>
-        AgentHookRoutes().request("http://localhost/agent-lifecycle", {
+        AgentHookRoutes({ bus: testBus }).request("http://localhost/agent-lifecycle", {
           method: "POST",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({
@@ -764,7 +773,7 @@ describe("AgentHookRoutes", () => {
       })])
       expect(workspaceRuntimeEventSessionId(events[0])).toBe("session_bound")
       // The terminal's stored record carries the same canonical ownership.
-      const metadata = await AgentHookRoutes().request(`http://localhost/terminal-session?terminalId=${terminalId}`)
+      const metadata = await AgentHookRoutes({ bus: testBus }).request(`http://localhost/terminal-session?terminalId=${terminalId}`)
       const body = await metadata.json() as { session?: { sessionId?: string; workspaceId?: string } }
       expect(body.session).toMatchObject({ sessionId: "session_bound", workspaceId: "ws_canonical" })
     } finally {
@@ -774,7 +783,7 @@ describe("AgentHookRoutes", () => {
     }
   })
 
-  test("managed terminal metadata is private to its recorded owner while administrators retain oversight", async () => {
+  test("managed terminal metadata is private to its recorded owner while the workspace owner's token keeps oversight", async () => {
     const get = spyOn(Pty, "get").mockReturnValue({
       id: "pty_metadata",
       title: "metadata",
@@ -800,9 +809,9 @@ describe("AgentHookRoutes", () => {
       })
       expect(write.status).toBe(200)
 
-      const attacker = await managedApp("actor_attacker").request("http://localhost/terminal-session?terminalId=pty_metadata")
+      const attacker = await managedApp("actor_attacker", "viewer", "ses_shared").request("http://localhost/terminal-session?terminalId=pty_metadata")
       expect(attacker.status).toBe(403)
-      await expect(attacker.json()).resolves.toMatchObject({ error: { code: "agent_terminal_private" } })
+      await expect(attacker.json()).resolves.toMatchObject({ error: { code: "session_scope_denied" } })
 
       const ownerRead = await managedApp("actor_owner").request("http://localhost/terminal-session?terminalId=pty_metadata")
       expect(ownerRead.status).toBe(200)
@@ -815,8 +824,8 @@ describe("AgentHookRoutes", () => {
       })
       expect(ownerBody.session?.sessionId).toBeUndefined()
 
-      const adminRead = await managedApp("actor_admin", "admin").request("http://localhost/terminal-session?terminalId=pty_metadata")
-      expect(adminRead.status).toBe(200)
+      const workspaceOwnerRead = await managedApp("actor_workspace_owner", "owner").request("http://localhost/terminal-session?terminalId=pty_metadata")
+      expect(workspaceOwnerRead.status).toBe(200)
     } finally {
       get.mockRestore()
       owner.mockRestore()
@@ -827,7 +836,7 @@ describe("AgentHookRoutes", () => {
     const get = spyOn(Pty, "get").mockReturnValue(undefined)
     const owner = spyOn(Pty, "accessOwner").mockReturnValue(undefined)
     const events: unknown[] = []
-    const unsubscribe = workspaceRuntimeBus.subscribe((event) => {
+    const unsubscribe = testBus.subscribe((event) => {
       if (event.type === "agent.lifecycle" && event.terminalId === "pty_unknown") events.push(event)
     })
     try {
@@ -900,7 +909,7 @@ describe("AgentHookRoutes", () => {
       token === "hook_pty_bound" ? hookAccess("pty_bound", token) : token === "hook_other" ? hookAccess("pty_other", token) : undefined)
     const renew = spyOn(Pty, "renewAgentHookAccess").mockReturnValue(true)
     const events: unknown[] = []
-    const unsubscribe = workspaceRuntimeBus.subscribe((event) => {
+    const unsubscribe = testBus.subscribe((event) => {
       if (event.type === "agent.lifecycle") events.push(event)
     })
     const post = (app: Hono<{ Variables: RelayHostAuthContext }>, terminalId: string, token?: string) =>
@@ -913,7 +922,7 @@ describe("AgentHookRoutes", () => {
         body: JSON.stringify({ tabId: `tab_${terminalId}`, terminalId, eventType: "Busy" }),
       })
     try {
-      const app = AgentHookRoutes()
+      const app = AgentHookRoutes({ bus: testBus })
       const direct = directHookApp()
       // A terminal the runtime has no session for cannot be named at all.
       expect((await post(app, "pty_missing")).status).toBe(403)
@@ -1024,7 +1033,7 @@ describe("AgentHookRoutes", () => {
     })
     const renew = spyOn(Pty, "renewAgentHookAccess")
     const events: unknown[] = []
-    const unsubscribe = workspaceRuntimeBus.subscribe((event) => {
+    const unsubscribe = testBus.subscribe((event) => {
       if (event.type === "agent.lifecycle" && event.terminalId === "pty_revoked") events.push(event)
     })
     try {
@@ -1046,11 +1055,13 @@ describe("AgentHookRoutes", () => {
     }
   })
 
-  test("allows managed setup status reads but reserves setup writes for administrators", async () => {
-    const status = await managedApp("actor_viewer", "viewer").request("http://localhost/setup/status")
+  test("setup status and setup writes are the workspace owner's token's, never a session-scoped one's", async () => {
+    const status = await managedApp("actor_owner", "owner").request("http://localhost/setup/status")
     expect(status.status).toBe(200)
+    const scopedStatus = await managedApp("actor_viewer", "viewer", "ses_shared").request("http://localhost/setup/status")
+    expect(scopedStatus.status).toBe(403)
 
-    const setup = await managedApp("actor_editor", "editor").request("http://localhost/setup", {
+    const setup = await managedApp("actor_viewer", "viewer", "ses_shared").request("http://localhost/setup", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: "{}",

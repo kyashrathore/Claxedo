@@ -1,8 +1,8 @@
 import { expect, test } from "bun:test"
 import { createHarnessComposer } from "@claxedo/harness/compose"
 import { volatileLaunchOwnership } from "@claxedo/process-ownership/launch"
+import { LOOPBACK_ORIGIN, MACHINE_OWNER, createHostFixture, transportHandle } from "@claxedo/session-core/testing"
 import { createHarnessServices } from "../harness-services"
-import { createHostFixture, transportHandle, LOOPBACK_ORIGIN, MACHINE_OWNER } from "../test-support/host-fixture"
 
 type RpcRequest = { id?: string | number; method: string; params?: { sessionId?: string } }
 
@@ -46,7 +46,6 @@ async function restorationFixture() {
   })
   const unused = () => { throw new Error("Only ACP is composed for restoration") }
   const composer = createHarnessComposer(services, {
-    acp: () => ({ missingContext: async () => { throw new Error("A known saved session must resume") } }),
     pi: unused, claude: unused, cursor: unused, codex: unused, opencode: unused,
   })
   const transport = composer.connection({ descriptor: { connectionId: "acp", providerKey: "acp", configRevision: 1, enabled: true,

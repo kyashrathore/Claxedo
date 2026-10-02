@@ -1,8 +1,8 @@
 import type { HostedAccount } from "./account"
 import type { Transport, RuntimeRoute } from "./transport"
 import type { StatusOwner } from "./status"
-import type { SessionRef } from "./types"
-import { isWorkspaceStopped } from "./wire/connection"
+import type { SessionLocation } from "./types"
+import { isRuntimeUnavailable } from "./wire/connection"
 import type { Workspaces } from "./workspaces"
 
 export type SessionContext = {
@@ -12,13 +12,13 @@ export type SessionContext = {
   readonly account?: HostedAccount
 }
 
-export function sessionEndpoint(ref: Pick<SessionRef, "sessionId">, suffix = "") {
+export function sessionEndpoint(ref: Pick<SessionLocation, "sessionId">, suffix = "") {
   return `/session/${encodeURIComponent(ref.sessionId)}${suffix}`
 }
 
 export async function onRuntime<T>(
   context: SessionContext,
-  ref: SessionRef,
+  ref: SessionLocation,
   live: (route: RuntimeRoute) => Promise<T>,
   stopped: (workspaceId: string) => Promise<T>,
 ): Promise<T> {
@@ -27,7 +27,7 @@ export async function onRuntime<T>(
   try {
     return await live(home.route)
   } catch (error) {
-    if (!isWorkspaceStopped(error)) throw error
+    if (!isRuntimeUnavailable(error)) throw error
     await context.workspaces.refresh()
     if ((await context.workspaces.home(ref)).live) throw error
     return stopped(home.route.workspaceId)

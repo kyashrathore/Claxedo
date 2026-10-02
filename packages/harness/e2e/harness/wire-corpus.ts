@@ -49,6 +49,7 @@ export function orderFramesByEntity(frames: unknown[]): Array<{ key: string; fra
 
 export function latestStatusSubject(frame: unknown): string | undefined {
   const payload = object(object(object(frame).data).payload)
+  if (payload.type === "session.background-work") return "session.background-work"
   if (payload.type !== "runtime.diagnostic") return undefined
   const properties = object(payload.properties)
   const code = properties.code
@@ -114,23 +115,7 @@ function faultedObservations(rows: Observation[]): Observation[] {
 export function comparisonShape(rows: Observation[]) {
   const ids = new Map<string, string>()
   const specials = new Map<string, string>()
-  const http = rows.map((row, index) => {
-    if (row.kind !== "http") return undefined
-    if (row.method === "GET" && row.route.startsWith("/api/claxedo/usage")) {
-      const source = object(row.body)
-      const breakdown = object(source.breakdown)
-      const body: Record<string, unknown> = { claxedo: source.claxedo }
-      if (Array.isArray(breakdown.rows)) {
-        body.breakdown = { rows: [...breakdown.rows].sort((a, b) => {
-          const aKey = String(normalize(object(a).value, new Map(ids), new Map(specials)))
-          const bKey = String(normalize(object(b).value, new Map(ids), new Map(specials)))
-          return aKey.localeCompare(bKey)
-        }) }
-      }
-      return normalize({ ...row, body }, ids, specials, "", `http:${index}`)
-    }
-    return normalize(row, ids, specials, "", `http:${index}`)
-  })
+  const http = rows.map((row, index) => row.kind === "http" ? normalize(row, ids, specials, "", `http:${index}`) : undefined)
   return rows.map((row, index) => {
     if (row.kind === "http") return http[index]
     const frames = row.frames.filter((frame) => {
@@ -232,6 +217,11 @@ function normalize(value: unknown, ids: Map<string, string>, specials: Map<strin
     return scopedId(ids, directory, "workspace", scope)
   })
   result = result.replace(/-private-var-folders-[^/]+/g, (directory) => special(specials, "encoded-workspace", directory, scope))
+  result = result.replace(/(\/codex-owner-[0-9a-f]+\/homes\/)(codex-[0-9a-f]{16})\b/g, (_match, store: string, home: string) =>
+    `${store}${special(specials, "codex-home", home, scope)}`)
+  result = result.replace(/(?:\/private)?\/tmp\/claude-\d+\//g, "<claude-tmp>/")
+  result = result.replace(/(agentId: |to: '|\/tasks\/)(a[0-9a-f]{16})\b/g, (_match, context: string, agent: string) =>
+    `${context}${special(specials, "claude-agent", agent, scope)}`)
   result = result.replace(/([?&](?:since|until)=)\d+/g, "$1<time>")
   result = result.replace(/(?:127\.0\.0\.1|localhost):\d+/g, "localhost:<port>")
   result = result.replace(/\/tmp\/cc-socks\/\d+\.sock/g, (socket) => special(specials, "socket", socket, scope))
@@ -241,11 +231,12 @@ function normalize(value: unknown, ids: Map<string, string>, specials: Map<strin
   result = result.replace(/subagent-[a-f0-9]{8}/gi, (id) => special(specials, "subagent", id, scope))
   result = result.replace(/pty_[a-zA-Z0-9_-]+/g, (id) => special(specials, "pty", id, scope))
   result = result.replace(/(\\?"timestamp\\?":)1[7-9]\d{11}\b/g, "$1<time>")
+  result = result.replace(/\b\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})/g, "<time>")
   result = result.replace(/\b[0-9a-f]{48,64}(?![0-9a-f])/g, "<sha256>")
   result = result.replace(/\b1[7-9]\d{11}\b/g, (timestamp) => special(specials, "time-id", timestamp, scope))
   result = result.replace(/(goal\.updated:.*:)(1[7-9]\d{8,11})$/, (_match, prefix: string, timestamp: string) =>
     `${prefix}${special(specials, "time-id", timestamp, scope)}`)
-  result = result.replace(/(?:ses|msg|prt|per|que|frm|op|turn|tool|call|req|workspace|project|goal|act)_[a-zA-Z0-9_-]+|ws_[a-z0-9]+_[a-z0-9]+|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi, (id) => {
+  result = result.replace(/(?:ses|msg|prt|per|que|frm|op|turn|tool|call|req|workspace|project|goal|act|usr)_[a-zA-Z0-9_-]+|ws_[a-z0-9]+_[a-z0-9]+|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi, (id) => {
     return scopedId(ids, id, "id", scope)
   })
   if (/(?:^id$|id$)/i.test(key) && result === value && (/^[a-f0-9]{12,}$/i.test(value) || (value.length >= 18 && /[A-Z]/.test(value) && /\d/.test(value))) && !/\s|\//.test(value)) {
@@ -256,6 +247,24 @@ function normalize(value: unknown, ids: Map<string, string>, specials: Map<strin
 
 export function normalizeWireCorpus(value: unknown): unknown {
   return normalize(value, new Map(), new Map())
+}
+
+function unsequenced(frame: unknown): boolean {
+  return object(object(object(frame).data).payload).type === "harness.health"
+}
+
+export function healthAfterSequencedFrames(corpus: unknown): unknown {
+  const observations = object(corpus).observations
+  if (!Array.isArray(observations)) return corpus
+  return { ...object(corpus), observations: observations.map((row) => {
+    const entities = object(row).entities
+    if (!Array.isArray(entities)) return row
+    return { ...object(row), entities: entities.map((entity) => {
+      const frames = object(entity).frames
+      if (!Array.isArray(frames)) return entity
+      return { ...object(entity), frames: [...frames.filter((frame) => !unsequenced(frame)), ...frames.filter(unsequenced)] }
+    }) }
+  }) }
 }
 
 export function difference(expected: unknown, actual: unknown, location = "$"): string | undefined {
@@ -293,25 +302,32 @@ export function observeStream(url: URL) {
   }
 }
 
+/** Records one loopback HTTP exchange made outside the global `fetch`. */
+export async function observeHttp(target: URL, method: string, accept: string | null, reply: Response) {
+  const unsynchronizedReadback = method === "GET" && (target.pathname === "/api/claxedo/usage"
+    || flow !== "H0-smoke" && (target.pathname === "/api/claxedo/health" || target.pathname.endsWith("/api/wr/health")))
+  const capture = active && !unsynchronizedReadback && (target.hostname === "127.0.0.1" || target.hostname === "localhost") && accept !== "text/event-stream"
+  if (capture && !reply.headers.get("content-type")?.includes("text/event-stream")) {
+    observations.push({ kind: "http", method, route: `${target.pathname}${target.search}`, status: reply.status, body: parsed(await reply.clone().text()) })
+  }
+}
+
 if (mode) {
   const nativeFetch = globalThis.fetch
   const observedFetch = async (input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {
-    const target = new URL(input instanceof Request ? input.url : String(input))
-    const method = init?.method ?? (input instanceof Request ? input.method : "GET")
-    const accept = new Headers(init?.headers ?? (input instanceof Request ? input.headers : undefined)).get("accept")
-    const unsynchronizedReadback = method === "GET" && flow !== "H0-smoke" && target.pathname === "/api/claxedo/health"
-    const capture = active && !unsynchronizedReadback && (target.hostname === "127.0.0.1" || target.hostname === "localhost") && accept !== "text/event-stream"
     const reply = await nativeFetch(input, init)
-    if (capture && !reply.headers.get("content-type")?.includes("text/event-stream")) {
-      observations.push({ kind: "http", method, route: `${target.pathname}${target.search}`, status: reply.status, body: parsed(await reply.clone().text()) })
-    }
+    await observeHttp(new URL(input instanceof Request ? input.url : String(input)), init?.method ?? (input instanceof Request ? input.method : "GET"),
+      new Headers(init?.headers ?? (input instanceof Request ? input.headers : undefined)).get("accept"), reply)
     return reply
   }
   globalThis.fetch = new Proxy(nativeFetch, { apply: (_target, _this, args: Parameters<typeof fetch>) => observedFetch(...args) })
 }
 
-if (mode) process.on("exit", (code) => {
-  if (code !== 0) return
+let settled = false
+
+function settleCorpus(code: number) {
+  if (settled || code !== 0) return
+  settled = true
   if (!file) throw new Error("Corpus flow selector is missing")
   const current = { flow, observations: comparisonShape(faultedObservations(observations)) }
   if (mode === "record") {
@@ -321,10 +337,15 @@ if (mode) process.on("exit", (code) => {
     return
   }
   const expected = JSON.parse(fs.readFileSync(file, "utf8")) as unknown
-  const diff = difference(expected, current)
+  const diff = difference(healthAfterSequencedFrames(expected), healthAfterSequencedFrames(current))
   if (diff && process.env.CLAXEDO_E2E_CORPUS_ACTUAL) {
     fs.writeFileSync(process.env.CLAXEDO_E2E_CORPUS_ACTUAL, `${JSON.stringify(current, null, 2)}\n`)
   }
   if (diff) { console.error(`Wire corpus mismatch for ${flow}: ${diff}`); process.exitCode = 1 }
   else console.log(`Wire corpus matched ${flow}`)
-})
+}
+
+if (mode) {
+  process.on("beforeExit", settleCorpus)
+  process.on("exit", settleCorpus)
+}

@@ -1,21 +1,23 @@
+import {
+  type SessionCore,
+  type WorkspaceEventFramesTap,
+  type WorkspaceEventParents,
+  sessionEventDeliveryPolicy,
+  managedWorkspaceSessionAccessPolicy,
+  type SessionAccessPolicy,
+} from "@claxedo/session-core"
 import type { AgentSessionStarts } from "@claxedo/agent-runtime-contract"
 import type { LaunchOwnershipStore } from "@claxedo/process-ownership/launch"
 import type { Hono } from "hono"
 import { PtyRoutes, type PtyRouteOptions } from "../routes/pty"
 import { Pty } from "../pty/index"
 import { AgentHookRoutes } from "../routes/agent-hook"
-import { workspaceEventsHandler, type WorkspaceEventFramesTap, type WorkspaceEventParents } from "../routes/events"
-import { TranscriptRoutes } from "../routes/transcript"
-import type { TranscriptResolution, TranscriptUnavailable } from "../transcript-resolver"
 import { createDiffRoutes } from "../routes/diff"
 import { FileRoutes } from "../routes/file"
 import { GitSourceRoutes } from "../routes/git-source"
 import { GitWorktreeRoutes } from "../routes/git-worktree"
-import type { RuntimeEventHub } from "../projection/runtime-event-hub"
 import { WorkspaceRuntimeApiPrefix, WorkspaceRuntimeRoutes } from "../routes/manifest"
 import { assertWorkspaceRuntimeExposure, type WorkspaceRuntimeExposure } from "../exposure"
-import { sessionEventDeliveryPolicy } from "../event-delivery"
-import { managedWorkspaceSessionAccessPolicy, type SessionAccessPolicy } from "../session-access-policy"
 
 type Socket = Parameters<typeof PtyRoutes>[0]
 
@@ -33,8 +35,8 @@ export function mountWorkspacePty(
   app.route(WorkspaceRuntimeRoutes.pty, PtyRoutes(upgradeWebSocket, sessionAccessPolicy, options))
 }
 
-export function mountWorkspaceAgentHooks(app: Hono, sessionAccessPolicy?: SessionAccessPolicy) {
-  app.route(WorkspaceRuntimeRoutes.hook, AgentHookRoutes({ sessionAccessPolicy }))
+export function mountWorkspaceAgentHooks(app: Hono, core: SessionCore, sessionAccessPolicy?: SessionAccessPolicy) {
+  app.route(WorkspaceRuntimeRoutes.hook, AgentHookRoutes({ bus: core.bus, sessionAccessPolicy }))
 }
 
 /**
@@ -43,9 +45,9 @@ export function mountWorkspaceAgentHooks(app: Hono, sessionAccessPolicy?: Sessio
  * runtimes on one stream of its own.
  */
 export function mountWorkspaceEvents(app: Hono, options: {
+  core: SessionCore
   directory: string
   workspaceId?: string
-  eventHub: RuntimeEventHub
   sessionParents?: WorkspaceEventParents
   sessionStarts?: Pick<AgentSessionStarts, "get">
   sessionAccessPolicy?: SessionAccessPolicy
@@ -53,10 +55,9 @@ export function mountWorkspaceEvents(app: Hono, options: {
   renewalIntervalMs?: number
 }): MountedWorkspaceEvents {
   const policy = sessionEventDeliveryPolicy(options.sessionAccessPolicy ?? managedWorkspaceSessionAccessPolicy())
-  const handler = workspaceEventsHandler({
+  const handler = options.core.events({
     directory: options.directory,
     ...(options.workspaceId ? { workspaceId: options.workspaceId } : {}),
-    eventHub: options.eventHub,
     ptyDirectory: (id) => Pty.get(id)?.cwd,
     policy,
     sessionAccessPolicy: options.sessionAccessPolicy,
@@ -66,24 +67,6 @@ export function mountWorkspaceEvents(app: Hono, options: {
   })
   app.get(WorkspaceRuntimeRoutes.events, handler)
   return { close: handler.close, frames: handler.frames }
-}
-
-export type WorkspaceTranscriptRoutesOptions = {
-  workspaceId: string
-  resolver: {
-    open(input: { workspaceId: string; parentSessionId: string; handle: string }): Promise<TranscriptResolution>
-    register?(input: {
-      workspaceId: string
-      parentSessionId: string
-      providerKind: string
-      filePath: string
-    }): Promise<{ state: "ready"; handle: string } | TranscriptUnavailable>
-    invalidateParent?(workspaceId: string, parentSessionId: string): void
-  }
-}
-
-export function mountWorkspaceTranscripts(app: Hono, options: WorkspaceTranscriptRoutesOptions) {
-  app.route(WorkspaceRuntimeRoutes.subagentTranscripts, TranscriptRoutes(options))
 }
 
 export function mountWorkspaceFiles(app: Hono, sessionAccessPolicy?: SessionAccessPolicy) {
@@ -104,24 +87,23 @@ export function mountWorkspaceCore(
   app: Hono,
   upgradeWebSocket: Socket,
   options: {
+    core: SessionCore
     directory: string
     workspaceId?: string
-    eventHub: RuntimeEventHub
     exposure: WorkspaceRuntimeExposure
     sessionParents?: WorkspaceEventParents
     sessionStarts?: Pick<AgentSessionStarts, "get">
     sessionAccessPolicy?: SessionAccessPolicy
-    transcripts?: WorkspaceTranscriptRoutesOptions
     /** Resolved per launch, not captured: one process serves many workspaces. */
     launchOwnership?: () => LaunchOwnershipStore
+    renewalIntervalMs?: number
   },
 ): MountedWorkspaceEvents {
   assertWorkspaceRuntimeExposure({ exposure: options.exposure, env: process.env })
   const ownership = options.launchOwnership ? { ownership: options.launchOwnership } : {}
   mountWorkspacePty(app, upgradeWebSocket, options.sessionAccessPolicy, ownership)
-  mountWorkspaceAgentHooks(app, options.sessionAccessPolicy)
+  mountWorkspaceAgentHooks(app, options.core, options.sessionAccessPolicy)
   const events = mountWorkspaceEvents(app, options)
-  if (options.transcripts) mountWorkspaceTranscripts(app, options.transcripts)
   mountWorkspaceFiles(app, options.sessionAccessPolicy)
   return events
 }

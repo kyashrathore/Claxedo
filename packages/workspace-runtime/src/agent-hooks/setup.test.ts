@@ -1,3 +1,4 @@
+import { defaultStatusHooks } from "../status-hooks"
 import { expect, test } from "bun:test"
 import { createHash } from "node:crypto"
 import fs from "node:fs"
@@ -14,7 +15,7 @@ function contains(parent: string, child: string) {
 }
 
 function fingerprint(homeDir: string) {
-  return Object.fromEntries(Object.entries(agentHookConfigPaths(homeDir)).map(([runner, file]) => {
+  return Object.fromEntries(Object.entries(agentHookConfigPaths(homeDir, defaultStatusHooks)).map(([runner, file]) => {
     if (!fs.existsSync(file)) return [runner, undefined]
     return [runner, createHash("sha256").update(fs.readFileSync(file)).digest("hex")]
   }))
@@ -32,7 +33,7 @@ test("agent hook setup writes every harness config under the test home and none 
 
   await setupAgentHooks({ port: 7860 })
 
-  const written = agentHookConfigPaths(home)
+  const written = agentHookConfigPaths(home, defaultStatusHooks)
   for (const file of Object.values(written)) expect({ file, exists: fs.existsSync(file) }).toEqual({ file, exists: true })
   expect(fingerprint(accountHome)).toEqual(before)
 })

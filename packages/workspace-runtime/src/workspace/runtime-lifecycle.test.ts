@@ -8,16 +8,25 @@ import { applySessionConfigUpdate, type HarnessServices, type StartInput } from 
 import { openSqliteDatabase } from "../sqlite/node"
 import { openRuntimeStore } from "../store-file"
 import { sqliteLaunchOwnership } from "../ownership/launch-ownership-sqlite"
-import { registerWorkspaceDirectory, unregisterWorkspaceDirectory, withWorkspaceTarget } from "../target"
+import { withWorkspaceTarget } from "../target"
 import { loopbackWorkspaceRuntimeExposure } from "../exposure"
 import { installFakePiRpc } from "../test-support/home/fake-pi-rpc.mjs"
-import { FakeTransport, fakeConnectionProvider } from "../test-support/fake-transport"
+import {
+  FakeTransport,
+  fakeConnectionProvider,
+  controlledTurn,
+  createHostFixture,
+  sessionCreate,
+  tick,
+  until as hostUntil,
+  LOOPBACK_ORIGIN,
+  MACHINE_OWNER,
+} from "@claxedo/session-core/testing"
 import { loopbackMachineLoginPolicy } from "../testing"
 import { createWorkspaceHost } from "./runtime"
-import { createRuntimeEventHub } from "../projection/runtime-event-hub"
+import { createRuntimeEventHub } from "@claxedo/session-core"
 import type { RuntimeSnapshot } from "../routes/config"
 
-import { controlledTurn, createHostFixture, sessionCreate, tick, until as hostUntil, LOOPBACK_ORIGIN, MACHINE_OWNER } from "../test-support/host-fixture"
 
 const cleanups: Array<() => void | Promise<void>> = []
 const roots: string[] = []
@@ -27,7 +36,7 @@ afterEach(async () => {
 })
 
 type FixtureOptions = {
-  /** The transport owns session config (`configOwner: "harness"`); the default keeps it in the store. */
+  /** The transport owns session config through `harnessConfig`; the default keeps it in the store. */
   harnessConfig?: boolean
   scoped?: boolean
   hold?: boolean
@@ -104,7 +113,6 @@ async function fixture(options: FixtureOptions = {}) {
       const transport: FakeTransport = new FakeTransport({
         ...(options.health ? { health: { runtime: () => options.health!.current, connection: () => ({ state: "ready" as const, processes: [] }) } } : {}),
         capabilities: {
-          configOwner: options.harnessConfig ? "harness" : "runtime",
           instructionChannel: "none",
           requests: { permissions: !!options.hold, questions: false, elicitation: false },
         },
@@ -146,7 +154,7 @@ async function fixture(options: FixtureOptions = {}) {
         },
         configure: (update) => { alive(); configures.push(update); return { state: "applied" } },
         ...(options.harnessConfig ? {
-          config: {
+          harnessConfig: {
             read: async (session) => { alive(); return configs.get(session.binding.sessionId)! },
             update: async (session, update) => {
               alive()
@@ -155,6 +163,8 @@ async function fixture(options: FixtureOptions = {}) {
               configs.set(session.binding.sessionId, next)
               return next
             },
+          },
+          config: {
             options: async () => ({ options: [] }),
             permissionModes: async () => ({ modes: [], appliesFrom: "next-turn", unsupported: "fixture has no permission modes" }),
             setPermissionMode: async () => ({ modes: [], appliesFrom: "next-turn", unsupported: "fixture has no permission modes" }),
@@ -183,7 +193,8 @@ async function fixture(options: FixtureOptions = {}) {
   const rotateSecretLease = (next: string) => { secretLease = next }
   options.seed?.(storeRoot)
   function open() {
-    const host = createWorkspaceHost({ placement: loopbackMachineLoginPolicy(), target, storeRoot, eventHub, ...(options.onActivityChange ? { onActivityChange: options.onActivityChange } : {}), connectionProviders: [provider], resolveConnectionSecrets: () => ({ secrets: { token: secretLease }, secretLeaseGeneration: secretLease }), storeFactory: ({ storeRoot }) => {
+    const host = createWorkspaceHost({
+      sessionIdWorkspace: () => undefined, placement: loopbackMachineLoginPolicy(), target, storeRoot, eventHub, ...(options.onActivityChange ? { onActivityChange: options.onActivityChange } : {}), connectionProviders: [provider], resolveConnectionSecrets: () => ({ secrets: { token: secretLease }, secretLeaseGeneration: secretLease }), storeFactory: ({ storeRoot }) => {
       const store = openRuntimeStore(storeRoot)
       storeLifecycle.opened++
       const recover = store.recoverBusySessions.bind(store)
@@ -426,8 +437,8 @@ describe("workspace runtime public lifecycle", () => {
   test("connection resolution follows a registered session worktree without retiring the root transport", async () => {
     const f = await fixture({ scoped: true })
     const worktree = join(f.target.directory, "worktree")
-    registerWorkspaceDirectory({ workspaceId: f.target.workspaceId, sessionId: "worktree", directory: worktree })
-    cleanups.push(() => unregisterWorkspaceDirectory({ workspaceId: f.target.workspaceId, sessionId: "worktree" }))
+    f.host.sessionCore.placement.register({ sessionId: "worktree", directory: worktree })
+    cleanups.push(() => f.host.sessionCore.placement.unregister("worktree"))
     await f.host.apply(f.snapshot())
     await f.request("/session", "POST", { id: "root" })
     expect((await f.request("/session", "POST", { id: "worktree" }, "", worktree)).status).toBe(201)
@@ -593,6 +604,7 @@ describe("workspace runtime public lifecycle", () => {
     const outcomes: Array<{ sessionId: string; outcome: AgentTurnOutcome }> = []
     const boot = (onTurnOutcome?: (input: { sessionId: string; outcome: AgentTurnOutcome }) => void) => {
       const host = createWorkspaceHost({
+        sessionIdWorkspace: () => undefined,
         placement: loopbackMachineLoginPolicy(), target, storeRoot, harnessStateRoot,
         env: { ...process.env, PI_EXECUTABLE: peer.binary },
         harness: { kind: "native", harnessId: "pi" },
@@ -968,6 +980,25 @@ describe("host lifecycle", () => {
     const [a, b] = await Promise.all([f.runtime.transportFor("s"), f.runtime.transportFor("s")])
     expect(a.session).toBe(b.session)
     expect(transport.attaches).toHaveLength(1)
+    await f.dispose()
+  })
+
+  test("an attach tells the harness whether a turn ever started on the upstream session it binds", async () => {
+    const transport = new FakeTransport()
+    const f = createHostFixture({ transports: { pi: transport } })
+    await f.runtime.sessions.create(sessionCreate({ id: "s" }))
+    const reattach = async () => {
+      f.runtime.attachments.forget("s")
+      await f.runtime.transportFor("s")
+      return transport.attaches.at(-1)?.upstreamHasTurns
+    }
+    expect(await reattach()).toBe(false)
+    await f.runtime.turns.start({ sessionId: "s", text: "work", origin })
+    await hostUntil(() => transport.turns.length === 1 && transport.activeTurns === 0)
+    expect(await reattach()).toBe(true)
+    const binding = f.store.getExecutionBinding("s")!
+    f.store.bindSession({ ...binding, upstreamSessionId: "switched", agentSessionId: "switched" })
+    expect(await reattach()).toBe(false)
     await f.dispose()
   })
 

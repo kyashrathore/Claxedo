@@ -1,37 +1,26 @@
 import type { D1Database, D1PreparedStatement } from "@cloudflare/workers-types"
 import { ControlPlaneAuthError, type SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import {
-  AUTH_ADAPTERS,
   type ApplicationIdentityResolution,
   type AuthIdentity,
 } from "@claxedo/server-core/platform/auth/authentication"
 import type {
   ProjectAction,
+  ProjectRole,
   ProjectRoleResult,
   WorkspaceAuthority,
 } from "@claxedo/server-core/platform/auth/authority"
 import type { PrivateSessionRuntimePrincipal } from "@claxedo/server-core/platform/auth/private-session-authority"
 import { canonicalRepositoryKey } from "@claxedo/server-core/authority/repository-key"
-import { ClaxedoError } from "@claxedo/server-core/platform/errors/base"
 import { normalizeStoredDirectory } from "@claxedo/server-core/platform/auth/host-connect-contract"
 import { HOST_SERVING_WORKSPACE_SQL } from "./host-access-authority"
-import {
-  actionRank,
-  organizationAdminSql,
-  PROJECT_ACCESS_SQL,
-  rankRole,
-  workspaceAccessSql,
-} from "./project-role"
-import {
-  canAdminOrganization,
-  isActiveOrgMember,
-  ownerMembershipStatements,
-  requireText,
-  type D1AccessContext,
-} from "./access-context"
-import { D1OrgMemberAuthority } from "./org-member-authority"
-import type { FindAccountByEmail } from "@claxedo/server-core/platform/auth/org-access-authority"
+import { activeGuard, batchUnder, may, mayGuard, maySql, orgMemberSql, readProjectRole, type AuthorizationPrincipal, type BoundSql } from "./authorization"
+import { ownerMembershipStatements, requireHuman, requireText, type D1AccessContext } from "./access-context"
+import { prepareInvitationAdmission } from "./org-invitation-authority"
 import { asOrgId, type OrgId } from "@claxedo/server-core/platform/auth/branded-id"
+import { d1BatchAssertionFailed } from "../../../platform/db/d1-constraint"
+import { D1WorkspaceAuthorityError } from "./workspace-authority-error"
+import { requireBootstrapClaim, sameIdentity, userDeployedOwnerBootstrapClaimHash, userDeployedOwnerIdentityHash, validateIdentity } from "./owner-identity"
 
 const KNOWN_HOME_REGIONS = new Set(["apac-south", "apac-east", "eu-west", "us-east", "us-west"])
 
@@ -70,14 +59,15 @@ export type D1AuthorityProductPolicy =
       ownerBootstrap: "one-use-claim"
     }
 
-export const USER_DEPLOYED_OWNER_CLAIM_HEADER = "x-claxedo-bootstrap-owner-claim"
+/** The display identity a signed caller's sign-in provider holds for them. */
+export type D1ActorProfile = (auth: SignedControlPlaneAuth) => Promise<{ name?: string; image?: string } | undefined>
 
 export type D1WorkspaceAuthorityOptions = {
   deploymentId: string
   product: D1AuthorityProductPolicy
+  actorProfile?: D1ActorProfile
   now?: () => number
   randomId?: (prefix: "usr" | "act" | "org" | "prj" | "team" | "assert" | "audit") => string
-  findAccountByEmail?: FindAccountByEmail
 }
 
 export type D1WorkspaceCreateArgs = {
@@ -91,8 +81,6 @@ export type D1WorkspaceCreateArgs = {
   remoteDirectory?: string
   homeRegion?: string
   backing: "local-worktree" | "cloud-vm"
-  /** Whether ordinary org members get the implicit viewer rank; the serving host's scope decides it. */
-  orgMemberVisible?: boolean
 }
 
 export type D1LocalWorkspaceRegistrationArgs = {
@@ -105,7 +93,6 @@ export type D1LocalWorkspaceRegistrationArgs = {
   remoteDirectory?: string
   homeRegion?: string
   orgId?: string
-  orgMemberVisible?: boolean
 }
 
 type Principal = {
@@ -128,11 +115,6 @@ type OrgRow = {
   role: "member" | "admin" | "owner"
 }
 
-type ProjectAccessRow = {
-  org_id: string
-  role_rank: number
-}
-
 type WorkspaceAccessRow = {
   workspace_id: string
   org_id: string
@@ -147,31 +129,6 @@ type WorkspaceAccessRow = {
   remote_directory: string | null
   host_enrollment_id: string | null
   deleted_at: number | null
-  role_rank: number
-}
-
-export type D1WorkspaceAuthorityErrorCode =
-  | "invalid_input"
-  | "identity_conflict"
-  | "organization_policy_denied"
-  | "resource_conflict"
-
-const D1_WORKSPACE_ERROR_STATUS: Record<D1WorkspaceAuthorityErrorCode, number> = {
-  invalid_input: 400,
-  identity_conflict: 409,
-  organization_policy_denied: 403,
-  resource_conflict: 409,
-}
-
-/**
- * Carries its HTTP status like every other authority refusal
- * (`D1HostAccessAuthorityError`), so a route that hands the caller a
- * conflict answers 409 rather than reporting a fault it did not have.
- */
-export class D1WorkspaceAuthorityError extends ClaxedoError<D1WorkspaceAuthorityErrorCode> {
-  constructor(code: D1WorkspaceAuthorityErrorCode, message: string) {
-    super({ code, message, status: D1_WORKSPACE_ERROR_STATUS[code] })
-  }
 }
 
 /**
@@ -207,9 +164,8 @@ export class D1WorkspaceAuthority implements D1WorkspaceAuthorityCore {
       deploymentId: this.options.deploymentId,
       now: this.now,
       randomId: this.randomId,
-      principal: (auth) => this.requirePrincipal(auth),
+      principal: (auth) => requireHuman(this.database, this.options.deploymentId, auth),
       assertOrganizationAllowed: (orgId) => this.assertOrganizationAllowed(orgId),
-      ...(this.options.findAccountByEmail ? { findAccountByEmail: this.options.findAccountByEmail } : {}),
     }
   }
 
@@ -302,10 +258,36 @@ export class D1WorkspaceAuthority implements D1WorkspaceAuthorityCore {
       }),
     ])
     const resolution = await this.identityResolution(identity)
-    if (resolution.state !== "active" || !(await isActiveOrgMember(this.database, resolution.userId, org.id))) {
+    if (resolution.state !== "active" || !(await may(this.database, resolution, "member", { kind: "org", orgId: org.id }))) {
       return { state: "unavailable" }
     }
     return resolution
+  }
+
+  /**
+   * A user-deployed instance admits anyone but its owner only while an
+   * invitation to their verified email is pending, so a stranger who signs in
+   * stays unavailable. Membership still waits for the accept.
+   */
+  async admitInvitedIdentity(identity: AuthIdentity, verifiedEmail: string): Promise<ApplicationIdentityResolution> {
+    validateIdentity(identity)
+    const existing = await this.identityResolution(identity)
+    if (this.options.product.kind !== "user-deployed" || existing.state !== "unavailable") return existing
+    const now = this.now()
+    const admission = await prepareInvitationAdmission(this.accessContext(), {
+      orgId: this.options.product.organization.id,
+      email: verifiedEmail,
+      now,
+    })
+    if (!admission) return existing
+    const userId = this.randomId("usr")
+    await this.database.batch([
+      this.insertIdentity(identity, userId, now, admission.guard),
+      this.insertMappedUser(identity, userId, now),
+      this.insertHumanActor(identity, this.randomId("act"), now),
+      admission.recordUser(userId),
+    ])
+    return await this.identityResolution(identity)
   }
 
   /**
@@ -475,18 +457,7 @@ export class D1WorkspaceAuthority implements D1WorkspaceAuthorityCore {
   async linkApplicationIdentity(auth: SignedControlPlaneAuth, input: { identity: AuthIdentity }) {
     validateIdentity(input.identity)
     const who = await this.requirePrincipal(auth)
-    const now = this.now()
-    await this.database
-      .prepare(
-        `
-      insert into auth_identities (adapter, issuer, subject, user_id, linked_at, unlinked_at)
-      select ?, ?, ?, u.user_id, ?, null from users u
-      where u.user_id = ? and u.state = 'active'
-      on conflict (adapter, issuer, subject) do nothing
-    `,
-      )
-      .bind(input.identity.adapter, input.identity.issuer, input.identity.subject, now, who.userId)
-      .run()
+    await batchUnder(this.database, activeGuard(who), [this.insertIdentity(input.identity, who.userId, this.now())])
     const row = await this.identityRow(input.identity)
     if (!row || row.unlinked_at !== null || row.user_id !== who.userId) {
       throw new D1WorkspaceAuthorityError(
@@ -495,90 +466,6 @@ export class D1WorkspaceAuthority implements D1WorkspaceAuthorityCore {
       )
     }
     return { userId: row.user_id, actorId: requireActor(row) }
-  }
-
-  /**
-   * Direct-add path for a verified user in the one-organization product.
-   * This is a trusted application lifecycle operation, not a public auth hook.
-   */
-  async admitUserDeployedIdentity(
-    auth: SignedControlPlaneAuth,
-    input: { identity: AuthIdentity; role: "member" | "admin" },
-  ) {
-    if (this.options.product.kind !== "user-deployed") {
-      throw new D1WorkspaceAuthorityError(
-        "organization_policy_denied",
-        "Direct deployment admission is unavailable in the hosted product",
-      )
-    }
-    validateIdentity(input.identity)
-    const administrator = await this.requirePrincipal(auth)
-    const orgId = this.options.product.organization.id
-    if (!(await canAdminOrganization(this.database, administrator.userId, orgId))) {
-      throw denied("Organization administrator authority was denied")
-    }
-    const now = this.now()
-    const candidateUserId = this.randomId("usr")
-    const candidateActorId = this.randomId("act")
-    const adminGuard = `
-      exists (
-        select 1 from orgs o
-        left join org_memberships m
-          on m.org_id = o.org_id and m.user_id = ? and m.revoked_at is null
-        where o.org_id = ? and o.kind = 'deployment' and o.deployment_id = ? and o.deleted_at is null
-          and (o.owner_user_id = ? or m.role in ('owner', 'admin'))
-      )
-    `
-
-    await this.database.batch([
-      this.database
-        .prepare(
-          `
-        insert into auth_identities (adapter, issuer, subject, user_id, linked_at, unlinked_at)
-        select ?, ?, ?, ?, ?, null where ${adminGuard}
-        on conflict (adapter, issuer, subject) do nothing
-      `,
-        )
-        .bind(
-          input.identity.adapter,
-          input.identity.issuer,
-          input.identity.subject,
-          candidateUserId,
-          now,
-          administrator.userId,
-          orgId,
-          this.options.deploymentId,
-          administrator.userId,
-        ),
-      this.database
-        .prepare(
-          `
-        insert into users (user_id, state, created_at, updated_at, suspended_at, deleted_at)
-        select ?, 'active', ?, ?, null, null
-        where exists (
-          select 1 from auth_identities
-          where adapter = ? and issuer = ? and subject = ? and user_id = ? and unlinked_at is null
-        )
-        on conflict (user_id) do nothing
-      `,
-        )
-        .bind(
-          candidateUserId,
-          now,
-          now,
-          input.identity.adapter,
-          input.identity.issuer,
-          input.identity.subject,
-          candidateUserId,
-        ),
-      this.insertHumanActor(input.identity, candidateActorId, now),
-    ])
-
-    const resolution = await this.identityResolution(input.identity)
-    if (resolution.state !== "active") throw denied("Organization administrator authority was denied")
-    await new D1OrgMemberAuthority(this.accessContext())
-      .addOrgMember(auth, { orgId, userPublicId: resolution.userId, role: input.role })
-    return resolution
   }
 
   async createHostedOrganization(auth: SignedControlPlaneAuth, input: { name: string; orgId?: string }) {
@@ -593,18 +480,19 @@ export class D1WorkspaceAuthority implements D1WorkspaceAuthorityCore {
     const orgId = input.orgId ? requireText(input.orgId, "orgId") : this.randomId("org")
     const assertionId = this.randomId("assert")
     const now = this.now()
-    await this.guardedBatch(
+    await batchUnder(
+      this.database,
+      activeGuard(who),
       [
         this.database
           .prepare(
             `
         insert into orgs (org_id, name, kind, owner_user_id, deployment_id, created_at, updated_at)
-        select ?, ?, 'shared', u.user_id, null, ?, ? from users u
-        where u.user_id = ? and u.state = 'active'
+        values (?, ?, 'shared', ?, null, ?, ?)
         on conflict (org_id) do nothing
       `,
           )
-          .bind(orgId, name, now, now, who.userId),
+          .bind(orgId, name, who.userId, now, now),
         ...ownerMembershipStatements(this.accessContext(), {
           owners: {
             sql: `select o.org_id, o.owner_user_id as user_id from orgs o
@@ -627,18 +515,21 @@ export class D1WorkspaceAuthority implements D1WorkspaceAuthorityCore {
           .bind(assertionId, orgId, who.userId, name),
         this.database.prepare(`delete from authority_batch_assertions where assertion_id = ?`).bind(assertionId),
       ],
-      "Organization creation conflicted with existing authority state",
+      (statements) => this.guardedBatch(statements, "Organization creation conflicted with existing authority state"),
     )
     return { org_id: orgId, name, kind: "shared" as const, role: "owner" as const }
   }
 
   async usersMe(auth: SignedControlPlaneAuth) {
     const who = await this.requirePrincipal(auth)
-    const orgs = await this.organizationRows(who.userId)
+    const [orgs, profile] = await Promise.all([this.organizationRows(who.userId), this.options.actorProfile?.(auth)])
     return {
       user_id: who.userId,
       actor_id: who.actorId,
       actor_kind: "human" as const,
+      actor_public_id: who.userId,
+      actor_name: profile?.name ?? "User",
+      ...(profile?.image ? { actor_avatar_url: profile.image } : {}),
       ...(orgs.length === 1 ? { org_id: orgs[0].org_id } : {}),
     }
   }
@@ -670,8 +561,7 @@ export class D1WorkspaceAuthority implements D1WorkspaceAuthorityCore {
     args: { orgId?: OrgId; projectId: string },
   ): Promise<ProjectRoleResult> {
     const who = await this.requirePrincipal(auth)
-    const row = await this.projectAccess(who.userId, args.projectId, args.orgId)
-    return projectResult(row)
+    return projectResult(await this.projectAccess(who.userId, args.projectId, args.orgId))
   }
 
   async authorizeProject(
@@ -679,14 +569,14 @@ export class D1WorkspaceAuthority implements D1WorkspaceAuthorityCore {
     args: { orgId?: OrgId; projectId: string; action: ProjectAction },
   ): Promise<ProjectRoleResult> {
     const who = await this.requirePrincipal(auth)
-    const row = await this.projectAccess(who.userId, args.projectId, args.orgId)
-    if (!row || row.role_rank < actionRank(args.action)) return { ok: false }
-    return projectResult(row)
+    const project = { kind: "project" as const, projectId: args.projectId, ...(args.orgId ? { orgId: args.orgId } : {}) }
+    if (!(await may(this.database, who, args.action, project))) return { ok: false }
+    return projectResult(await this.projectAccess(who.userId, args.projectId, args.orgId))
   }
 
   async authorizeWorkspaceOpen(auth: SignedControlPlaneAuth, args: { workspaceId: string }) {
     const who = await this.requirePrincipal(auth)
-    if (!(await this.workspaceAccess(who.userId, args.workspaceId))) throw denied()
+    if (!(await may(this.database, who, "open", { kind: "workspace", workspaceId: args.workspaceId }))) throw denied()
   }
 
   /**
@@ -725,7 +615,7 @@ export class D1WorkspaceAuthority implements D1WorkspaceAuthorityCore {
   /** Who may create in an organization: one rule, whatever resolved the organization. */
   private async admitCreationOrganization(who: Principal, orgId: string) {
     this.assertOrganizationAllowed(orgId)
-    if (!(await canAdminOrganization(this.database, who.userId, orgId))) {
+    if (!(await may(this.database, who, "administer", { kind: "org", orgId }))) {
       throw denied("Workspace creation authority was denied")
     }
   }
@@ -740,24 +630,20 @@ export class D1WorkspaceAuthority implements D1WorkspaceAuthorityCore {
 
   async openWorkspace(auth: SignedControlPlaneAuth, args: { workspaceId: string }) {
     const who = await this.requirePrincipal(auth)
-    const row = await this.workspaceAccess(who.userId, args.workspaceId)
+    const row = await this.openableWorkspace(who, args.workspaceId)
     if (!row) throw denied()
-    return { allowed: true, role: rankRole(row.role_rank), workspace: workspaceJson(row) }
+    return { allowed: true, role: "owner" as const, workspace: workspaceJson(row) }
   }
 
   async listWorkspaces(auth: SignedControlPlaneAuth) {
     const who = await this.requirePrincipal(auth)
-    const result = await this.database
-      .prepare(workspaceAccessWithPlacementSql("w.deleted_at is null"))
-      .bind(who.userId)
-      .all<WorkspaceAccessRow>()
-    const rows = result.results.filter((row) => row.role_rank >= 1)
+    const rows = await this.openableWorkspaces(who)
     const online = await this.workspacesWithServingHost(
       rows.filter((row) => row.backing === "local-worktree").map((row) => row.workspace_id),
     )
     return rows.map((row) => ({
       ...workspaceJson(row),
-      role: rankRole(row.role_rank),
+      role: "owner" as const,
       // Reachability, not authorization: a shared workspace whose machine is
       // asleep is still listed, and the rail says "host offline" for it rather
       // than dropping the row or waiting for a pane to discover it.
@@ -797,8 +683,8 @@ export class D1WorkspaceAuthority implements D1WorkspaceAuthorityCore {
   private async createWorkspaceAs(who: Principal, input: D1WorkspaceCreateArgs) {
     const creation = await this.workspaceCreation(who, input)
     await this.guardedBatch(creation.statements, "Workspace identity conflicts with existing authority state")
-    const workspace = await this.workspaceAccess(who.userId, creation.workspaceId)
-    if (!workspace || workspace.org_id !== creation.orgId || workspace.role_rank < 3) {
+    const workspace = await this.openableWorkspace(who, creation.workspaceId)
+    if (!workspace || workspace.org_id !== creation.orgId) {
       throw denied("Workspace creation authority was denied")
     }
     return {
@@ -824,7 +710,7 @@ export class D1WorkspaceAuthority implements D1WorkspaceAuthorityCore {
     const orgId = requireText(input.orgId, "orgId")
     const displayName = requireText(input.displayName, "displayName")
     this.assertOrganizationAllowed(orgId)
-    if (!(await canAdminOrganization(this.database, who.userId, orgId))) {
+    if (!(await may(this.database, who, "administer", { kind: "org", orgId }))) {
       throw denied("Workspace creation authority was denied")
     }
     const homeRegion = validateHomeRegion(input.homeRegion)
@@ -851,7 +737,7 @@ export class D1WorkspaceAuthority implements D1WorkspaceAuthorityCore {
       : (existingProject?.project_id ?? this.randomId("prj"))
     const assertionId = this.randomId("assert")
     const now = this.now()
-    const adminGuard = organizationAdminSql("?", "?")
+    const administers = mayGuard(who, "administer", { kind: "org", orgId })
 
     return {
       who,
@@ -862,11 +748,11 @@ export class D1WorkspaceAuthority implements D1WorkspaceAuthorityCore {
           .prepare(
             `
         insert into projects (project_id, org_id, repo_key, owner_user_id, created_at, updated_at, deleted_at)
-        select ?, ?, ?, ?, ?, ?, null where ${adminGuard}
+        select ?, ?, ?, ?, ?, ?, null where ${administers.sql}
         on conflict do nothing
       `,
           )
-          .bind(projectId, orgId, repoKey, who.userId, now, now, who.userId, orgId, who.userId),
+          .bind(projectId, orgId, repoKey, who.userId, now, now, ...administers.bind),
         this.database
           .prepare(
             `
@@ -882,14 +768,13 @@ export class D1WorkspaceAuthority implements D1WorkspaceAuthorityCore {
             `
         insert into workspaces (
           workspace_id, org_id, project_id, owner_user_id, backing, display_name,
-          home_region, repo_url, repo_name, git_branch, remote_directory, created_at, updated_at, deleted_at,
-          org_member_visible
+          home_region, repo_url, repo_name, git_branch, remote_directory, created_at, updated_at, deleted_at
         )
-        select ?, ?, p.project_id, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, null, ?
+        select ?, ?, p.project_id, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, null
         from projects p
         where p.org_id = ? and p.repo_key = ? and p.deleted_at is null
           and (? is null or p.project_id = ?)
-          and ${adminGuard}
+          and ${administers.sql}
         on conflict (workspace_id) do nothing
       `,
           )
@@ -906,14 +791,11 @@ export class D1WorkspaceAuthority implements D1WorkspaceAuthorityCore {
             remoteDirectory,
             now,
             now,
-            input.orgMemberVisible === false ? 0 : 1,
             orgId,
             repoKey,
             input.projectId ?? null,
             input.projectId ?? null,
-            who.userId,
-            orgId,
-            who.userId,
+            ...administers.bind,
           ),
         this.database
           .prepare(
@@ -1004,7 +886,7 @@ export class D1WorkspaceAuthority implements D1WorkspaceAuthorityCore {
   ) {
     const who = await this.requireRuntimeActor(principal)
     const projectId = requireText(args.projectId, "projectId")
-    const orgId = await this.adminProjectOrgId(who.userId, projectId)
+    const orgId = await this.adminProjectOrgId(who, projectId)
     if (orgId !== requireText(args.orgId, "orgId")) throw denied("Project creation authority was denied")
     return await this.createWorkspaceAs(who, { ...args, orgId, projectId, backing: "cloud-vm" })
   }
@@ -1030,11 +912,12 @@ export class D1WorkspaceAuthority implements D1WorkspaceAuthorityCore {
 
   private async deleteWorkspaceAs(who: Principal, args: { workspaceId: string }) {
     const workspaceId = requireText(args.workspaceId, "workspaceId")
-    const row = await this.workspaceAccess(who.userId, workspaceId)
-    if (!row || row.role_rank < 4) throw denied()
+    if (!(await may(this.database, who, "administer", { kind: "workspace", workspaceId }))) throw denied()
     const assertionId = this.randomId("assert")
     const now = this.now()
-    await this.guardedBatch(
+    await batchUnder(
+      this.database,
+      mayGuard(who, "administer", { kind: "workspace", workspaceId }),
       [
         this.database
           .prepare(
@@ -1056,7 +939,7 @@ export class D1WorkspaceAuthority implements D1WorkspaceAuthorityCore {
           .bind(assertionId, workspaceId, who.userId, now),
         this.database.prepare(`delete from authority_batch_assertions where assertion_id = ?`).bind(assertionId),
       ],
-      "Workspace deletion changed concurrently",
+      (statements) => this.guardedBatch(statements, "Workspace deletion changed concurrently"),
     )
     return { deleted: true }
   }
@@ -1065,23 +948,23 @@ export class D1WorkspaceAuthority implements D1WorkspaceAuthorityCore {
     try {
       return await this.database.batch(statements)
     } catch (error) {
-      if (batchAssertionFailed(error)) {
+      if (d1BatchAssertionFailed(error)) {
         throw new D1WorkspaceAuthorityError("resource_conflict", message)
       }
       throw error
     }
   }
 
-  private insertIdentity(identity: AuthIdentity, userId: string, now: number) {
+  private insertIdentity(identity: AuthIdentity, userId: string, now: number, guard?: BoundSql) {
     return this.database
       .prepare(
         `
       insert into auth_identities (adapter, issuer, subject, user_id, linked_at, unlinked_at)
-      values (?, ?, ?, ?, ?, null)
+      select ?, ?, ?, ?, ?, null${guard ? ` where ${guard.sql}` : ""}
       on conflict (adapter, issuer, subject) do nothing
     `,
       )
-      .bind(identity.adapter, identity.issuer, identity.subject, userId, now)
+      .bind(identity.adapter, identity.issuer, identity.subject, userId, now, ...(guard?.bind ?? []))
   }
 
   private insertMappedUser(identity: AuthIdentity, userId: string, now: number) {
@@ -1137,48 +1020,8 @@ export class D1WorkspaceAuthority implements D1WorkspaceAuthorityCore {
     return { state: "active", userId: row.user_id, actorId: row.actor_id }
   }
 
-  /**
-   * One request = one `SignedControlPlaneAuth` object, and a single request
-   * asks this authority for its principal several times (the route's own
-   * lookup, then every store and port it calls). The identity row cannot
-   * change the answer within that request, so it is read once per auth
-   * object; a refusal is not remembered.
-   */
-  private readonly principals = new WeakMap<SignedControlPlaneAuth, Promise<Principal>>()
-
   private requirePrincipal(auth: SignedControlPlaneAuth): Promise<Principal> {
-    const existing = this.principals.get(auth)
-    if (existing) return existing
-    const pending = this.resolvePrincipal(auth).catch((cause: unknown) => {
-      this.principals.delete(auth)
-      throw cause
-    })
-    this.principals.set(auth, pending)
-    return pending
-  }
-
-  private async resolvePrincipal(auth: SignedControlPlaneAuth): Promise<Principal> {
-    const principal = auth.principal
-    if (!principal) {
-      throw new ControlPlaneAuthError(503, "identity_provisioning", "Canonical application identity is required")
-    }
-    if (principal.deploymentId !== this.options.deploymentId || principal.actorKind !== "human") {
-      throw new ControlPlaneAuthError(
-        401,
-        "invalid_bearer_token",
-        "Application principal belongs to another authority domain",
-      )
-    }
-    const row = await this.identityRow(principal.identity)
-    if (!row || row.unlinked_at !== null || row.user_id !== principal.userId || row.actor_id !== principal.actorId) {
-      throw new ControlPlaneAuthError(401, "invalid_bearer_token", "Application principal is stale or unlinked")
-    }
-    if (row.user_state === "deleted")
-      throw new ControlPlaneAuthError(403, "account_deleted", "Application account is deleted")
-    if (row.user_state !== "active" || row.actor_state !== "active") {
-      throw new ControlPlaneAuthError(403, "account_suspended", "Application account is suspended")
-    }
-    return { userId: principal.userId, actorId: principal.actorId }
+    return requireHuman(this.database, this.options.deploymentId, auth)
   }
 
   /**
@@ -1214,32 +1057,27 @@ export class D1WorkspaceAuthority implements D1WorkspaceAuthorityCore {
       from orgs o
       left join org_memberships m
         on m.org_id = o.org_id and m.user_id = ? and m.revoked_at is null
-      where o.deleted_at is null and (o.owner_user_id = ? or m.user_id is not null)
+      where ${orgMemberSql("o.org_id", "?")}
       order by o.created_at, o.org_id
     `,
       )
-      .bind(userId, userId, userId)
+      .bind(userId, userId, userId, userId)
       .all<OrgRow>()
     return result.results
   }
 
   private async projectAccess(userId: string, projectId: string, orgId?: string) {
-    return await this.database
-      .prepare(PROJECT_ACCESS_SQL)
-      .bind(userId, projectId, orgId ?? null)
-      .first<ProjectAccessRow>()
+    return await readProjectRole(this.database, userId, { kind: "project", projectId, ...(orgId ? { orgId } : {}) })
   }
 
-  private async workspaceAccess(userId: string, workspaceId: string) {
-    const row = await this.database
-      .prepare(workspaceAccessWithPlacementSql("w.workspace_id = ? and w.deleted_at is null"))
-      .bind(userId, workspaceId)
-      .first<WorkspaceAccessRow>()
-    if (!row) return null
-    if (row.role_rank >= 1) return row
-    const shared = await this.database.prepare(SESSION_SHARE_WORKSPACE_ACCESS_SQL)
-      .bind(userId, workspaceId).first()
-    return shared ? { ...row, role_rank: 1 } : null
+  private async openableWorkspace(who: AuthorizationPrincipal, workspaceId: string) {
+    const query = openableWorkspacesSql(who, "w.workspace_id = ?")
+    return await this.database.prepare(query.sql).bind(...query.bind, workspaceId).first<WorkspaceAccessRow>()
+  }
+
+  private async openableWorkspaces(who: AuthorizationPrincipal) {
+    const query = openableWorkspacesSql(who, "1 = 1")
+    return (await this.database.prepare(query.sql).bind(...query.bind).all<WorkspaceAccessRow>()).results
   }
 
   private assertOrganizationAllowed(orgId: string) {
@@ -1252,69 +1090,34 @@ export class D1WorkspaceAuthority implements D1WorkspaceAuthorityCore {
   }
 
   private async creationOrgId(auth: SignedControlPlaneAuth, projectId?: string) {
-    if (projectId) return await this.adminProjectOrgId((await this.requirePrincipal(auth)).userId, projectId)
+    if (projectId) return await this.adminProjectOrgId(await this.requirePrincipal(auth), projectId)
     return await this.resolveOrgId(auth)
   }
 
-  private async adminProjectOrgId(userId: string, projectId: string) {
-    const row = await this.projectAccess(userId, projectId)
-    if (!row || row.role_rank < actionRank("admin")) throw denied("Project creation authority was denied")
-    return row.org_id
+  private async adminProjectOrgId(who: Principal, projectId: string) {
+    const row = await this.projectAccess(who.userId, projectId)
+    if (!row || !(await may(this.database, who, "admin", { kind: "project", projectId }))) throw denied("Project creation authority was denied")
+    return row.orgId
   }
 }
 
-/**
- * What a session share is worth on the workspace that holds the session: the
- * grantee has no role there and still has to reach the machine serving it, so
- * an active grant floors them at `viewer` — enough to open the placement and
- * be handed a Runtime Access Token, and nothing else. Read and write on the
- * session stay the session authority's answer, asked per request, so the share
- * LEVEL deliberately does not appear here.
- *
- * Binds the user id, then the workspace id.
- */
-export const SESSION_SHARE_WORKSPACE_ACCESS_SQL = `
-  select 1
-  from session_share_grants share
-  join sessions session
-    on session.session_id = share.session_id
-    and session.workspace_id = share.workspace_id
-    and session.deleted_at is null
-  join users share_user on share_user.user_id = ? and share_user.state = 'active'
-  where share.workspace_id = ? and share.revoked_at is null
-    and (
-      share.target_user_id = share_user.user_id
-      or (
-        share.target_org_id = session.org_id
-        and exists (
-          select 1 from org_memberships share_org_member
-          where share_org_member.org_id = share.target_org_id
-            and share_org_member.user_id = share_user.user_id
-            and share_org_member.revoked_at is null
-        )
-      )
-      or exists (
-        select 1 from team_memberships share_team_member
-        join teams share_team on share_team.team_id = share_team_member.team_id
-          and share_team.org_id = session.org_id and share_team.deleted_at is null
-        where share_team_member.team_id = share.target_team_id
-          and share_team_member.user_id = share_user.user_id
-          and share_team_member.revoked_at is null
-      )
-    )
-  limit 1
-`
-
-function workspaceAccessWithPlacementSql(predicate: string) {
-  return workspaceAccessSql(predicate, {
-    columns: "assignment_enrollment.enrollment_id as host_enrollment_id",
-    joins: `
+/** The workspaces `who` may open matching `predicate` over `w`, with the machine each is placed on; `predicate`'s own values bind last. */
+function openableWorkspacesSql(who: AuthorizationPrincipal, predicate: string) {
+  const opens = maySql(who, "open", { kind: "workspace", alias: "w" })
+  return {
+    sql: `
+      select w.*, assignment_enrollment.enrollment_id as host_enrollment_id
+      from workspaces w
       left join host_workspace_assignments assignment
         on assignment.workspace_id = w.workspace_id
       left join host_enrollments assignment_enrollment
         on assignment_enrollment.host_id = assignment.host_id
-        and assignment_enrollment.owner_actor_id = assignment.owner_actor_id`,
-  })
+        and assignment_enrollment.owner_actor_id = assignment.owner_actor_id
+      where ${opens.sql} and ${predicate}
+      order by w.created_at, w.workspace_id
+    `,
+    bind: opens.bind,
+  }
 }
 
 function workspaceJson(row: WorkspaceAccessRow) {
@@ -1336,9 +1139,8 @@ function workspaceJson(row: WorkspaceAccessRow) {
   }
 }
 
-function projectResult(row: ProjectAccessRow | null): ProjectRoleResult {
-  if (!row || row.role_rank < 1) return { ok: false }
-  return { ok: true, orgId: asOrgId(row.org_id), role: rankRole(row.role_rank) }
+function projectResult(row: { orgId: string; role: ProjectRole } | undefined): ProjectRoleResult {
+  return row ? { ok: true, orgId: asOrgId(row.orgId), role: row.role } : { ok: false }
 }
 
 function requireActor(row: IdentityRow) {
@@ -1346,47 +1148,6 @@ function requireActor(row: IdentityRow) {
     throw new D1WorkspaceAuthorityError("identity_conflict", "Canonical human actor is unavailable")
   }
   return row.actor_id
-}
-
-function validateIdentity(identity: AuthIdentity) {
-  if (!AUTH_ADAPTERS.includes(identity.adapter)) {
-    throw new D1WorkspaceAuthorityError("invalid_input", "Unknown authentication adapter")
-  }
-  requireText(identity.issuer, "identity.issuer")
-  requireText(identity.subject, "identity.subject")
-}
-
-function sameIdentity(a: AuthIdentity, b: AuthIdentity) {
-  return a.adapter === b.adapter && a.issuer === b.issuer && a.subject === b.subject
-}
-
-function requireBootstrapClaim(value: string) {
-  if (value.trim() !== value || !/^[A-Za-z0-9_-]{43,128}$/.test(value)) {
-    throw new D1WorkspaceAuthorityError(
-      "invalid_input",
-      "Bootstrap owner claim must be a canonical 256-bit-or-stronger base64url value",
-    )
-  }
-  return value
-}
-
-export async function userDeployedOwnerBootstrapClaimHash(claim: string) {
-  const canonical = requireBootstrapClaim(claim)
-  const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(canonical)))
-  return `sha256:${Array.from(digest, (byte) => byte.toString(16).padStart(2, "0")).join("")}`
-}
-
-/** Stable hash recorded by the release admission and bootstrap claim rows. */
-export async function userDeployedOwnerIdentityHash(identity: AuthIdentity) {
-  validateIdentity(identity)
-  const canonical = JSON.stringify([
-    "claxedo:user-deployed-owner:v1",
-    identity.adapter,
-    identity.issuer,
-    identity.subject,
-  ])
-  const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(canonical)))
-  return `sha256:${Array.from(digest, (byte) => byte.toString(16).padStart(2, "0")).join("")}`
 }
 
 function validateHomeRegion(value?: string) {
@@ -1399,13 +1160,6 @@ function validateHomeRegion(value?: string) {
 
 function denied(message = "Workspace authority denied access") {
   return new ControlPlaneAuthError(403, "workspace_authorization_denied", message)
-}
-
-/** A guarded batch aborted on its `authority_batch_assertions` row; the cause chain is searched because D1 wraps the SQLite error. */
-export function batchAssertionFailed(error: unknown): boolean {
-  if (!(error instanceof Error)) return false
-  if (error.message.includes("passed = 1")) return true
-  return batchAssertionFailed(error.cause)
 }
 
 function randomId(prefix: "usr" | "act" | "org" | "prj" | "team" | "assert" | "audit") {

@@ -1,10 +1,11 @@
+import { readSessionAttachment } from "../host/attachment-files"
 import { afterEach, expect, test } from "bun:test"
 import fs from "node:fs/promises"
+import { constants } from "node:fs"
 import os from "node:os"
 import path from "node:path"
 import type { AgentMessage } from "@claxedo/agent-runtime-contract"
-import { toolImageResponse } from "./tool-image"
-import { createSessionRoutes } from "./session-core"
+import { toolImageResponse, createSessionRoutes } from "@claxedo/session-core"
 
 const dirs: string[] = []
 afterEach(async () => { await Promise.all(dirs.splice(0).map((dir) => fs.rm(dir, { recursive: true, force: true }))) })
@@ -19,7 +20,7 @@ async function fixture() {
       status: "completed", attachments: [{ id: "image", sessionID: "session", messageID: "message", type: "file", mime: "image/*", url: "", location: { kind: "tool-file", path: source } }],
     },
   }] }] as AgentMessage[]
-  return { source, messages, input: { messages, sessionId: "session", messageId: "message", attachmentId: "image" } }
+  return { source, messages, input: { readAttachment: readSessionAttachment, messages, sessionId: "session", messageId: "message", attachmentId: "image" } }
 }
 
 test("route reads do not start a harness, publish events or change messages, including failure and recovery", async () => {
@@ -27,6 +28,8 @@ test("route reads do not start a harness, publish events or change messages, inc
   const before = JSON.stringify(messages)
   let events = 0
   const app = createSessionRoutes({
+    readAttachment: readSessionAttachment,
+    sessionIdWorkspace: () => undefined,
     runtime: async () => { throw new Error("Image reads must not start a harness") },
     defaultHarness: () => ({ id: "codex", access: "native" }),
     requestedSessionHarness: () => undefined,
@@ -84,6 +87,8 @@ test("authorizes image reads before looking up any stored message", async () => 
   let reads = 0
   const operations: string[] = []
   const app = createSessionRoutes({
+    readAttachment: readSessionAttachment,
+    sessionIdWorkspace: () => undefined,
     runtime: async () => { throw new Error("Image reads must not start a harness") },
     defaultHarness: () => ({ id: "codex", access: "native" }),
     requestedSessionHarness: () => undefined,
@@ -106,4 +111,36 @@ test("authorizes image reads before looking up any stored message", async () => 
   expect(response.status).toBe(403)
   expect(operations).toEqual(["message_read:session"])
   expect(reads).toBe(0)
+})
+
+test.each(["symlink", "swap"])("without O_NOFOLLOW attachment reads refuse %s", async (mode) => {
+  const { input, source } = await fixture()
+  const target = `${source}.target`
+  await fs.writeFile(target, png)
+  const descriptor = Object.getOwnPropertyDescriptor(constants, "O_NOFOLLOW")
+  const open = fs.open
+  Object.defineProperty(constants, "O_NOFOLLOW", { value: undefined, configurable: true })
+  try {
+    expect((await toolImageResponse(input)).status).toBe(200)
+    let closed = false
+    if (mode === "symlink") {
+      await fs.unlink(source)
+      await fs.symlink(target, source)
+    } else {
+      fs.open = async (...args: Parameters<typeof open>) => {
+        await fs.unlink(source)
+        await fs.symlink(target, source)
+        const handle = await open(...args)
+        const close = handle.close.bind(handle)
+        handle.close = async () => { closed = true; await close() }
+        return handle
+      }
+    }
+    expect((await toolImageResponse(input)).status).toBe(404)
+    if (mode === "swap") expect(closed).toBe(true)
+  } finally {
+    fs.open = open
+    if (descriptor) Object.defineProperty(constants, "O_NOFOLLOW", descriptor)
+    else Reflect.deleteProperty(constants, "O_NOFOLLOW")
+  }
 })

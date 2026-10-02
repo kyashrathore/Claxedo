@@ -40,6 +40,10 @@ export function imageAttachment(input: {
   }
 }
 
+export function imageFileAttachment(path: string, mime: string): RuntimeToolAttachment {
+  return { kind: "tool-file", mime, path, filename: path.split(/[\\/]/).pop() }
+}
+
 export function contentBlockImages(content: unknown): RuntimeToolAttachment[] {
   if (!Array.isArray(content)) return []
   return content.flatMap((item) => {

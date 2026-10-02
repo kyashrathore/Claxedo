@@ -3,7 +3,7 @@ import { useQuery } from "@tanstack/solid-query"
 import { createProviderCatalog, harnessModelPickerProvider, modelGroupKey } from "@/composer"
 import { isCatalogHarnessId, type HarnessSelection } from "@/lib/harness-selection"
 import { inCatalogOrder, primaryPlacement, useProjects } from "@/projects"
-import { toAppError, useServer, type HarnessOptionChoice, type PlacementId } from "@/server"
+import { toAppError, useServer, type HarnessOptionChoice, type ModelChoice, type PlacementId } from "@/server"
 import { catalogProviders } from "./catalog-rules"
 
 export type ModelItem = { readonly id: string; readonly name: string; readonly provider: { readonly id: string; readonly name: string }; readonly connected?: boolean }
@@ -19,6 +19,12 @@ export type SourceGroup = {
 }
 
 export type ModelSource = { readonly loading: boolean; readonly error?: string; readonly empty: boolean; readonly groups: readonly SourceGroup[] }
+
+export const modelKeyOf = (item: ModelItem): ModelChoice => ({ providerId: item.provider.id, modelId: item.id })
+
+export function groupContext(group: SourceGroup, item: ModelItem) {
+  return { defaults: group.defaults, group: group.groupKey, ...(item.connected === undefined ? {} : { connected: item.connected }) }
+}
 
 export type SettingsPlacement = { readonly placementId: PlacementId; readonly label: string }
 

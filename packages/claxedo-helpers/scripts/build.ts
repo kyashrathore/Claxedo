@@ -18,6 +18,7 @@ const ROOT = path.resolve(import.meta.dirname, "..")
 
 const ENTRIES: readonly { readonly entry: string; readonly target: "browser" | "node" }[] = [
   { entry: "index", target: "browser" },
+  { entry: "api-error", target: "browser" },
   { entry: "crypto", target: "browser" },
   { entry: "guards", target: "browser" },
   { entry: "readers", target: "browser" },
@@ -28,6 +29,7 @@ const ENTRIES: readonly { readonly entry: string; readonly target: "browser" | "
   { entry: "claxedo-credentials", target: "node" },
   { entry: "claxedo-daemon", target: "browser" },
   { entry: "claxedo-document", target: "browser" },
+  { entry: "sse", target: "browser" },
   { entry: "fs", target: "node" },
   { entry: "path", target: "node" },
   { entry: "real-path", target: "node" },

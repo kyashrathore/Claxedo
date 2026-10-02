@@ -47,7 +47,7 @@ export async function probeDiscoveredCredential(
     // That is "can't tell", never "broken".
     if (error instanceof CredentialVerificationError) {
       log.info("probe inconclusive", { provider: item.provider_id, reason: error.message })
-      return { state: "unknown", reason: inconclusiveCopy(error.message) }
+      return { state: "unknown", reason: inconclusiveCopy(error.code) }
     }
     throw error
   }
@@ -70,11 +70,11 @@ function verdict(health: CredentialHealth, usage: CredentialUsageWindow[] | unde
   return { state: "unknown", reason: "The provider gave an answer we couldn't read." }
 }
 
-function inconclusiveCopy(message: string) {
-  if (message.includes("does not support verification")) {
+function inconclusiveCopy(code: string) {
+  if (code === "credential_verification_unsupported") {
     return "Claxedo can't check this provider yet — it will be used as-is."
   }
-  if (message.includes("unsupported shape")) {
+  if (code === "credential_shape_invalid") {
     return "This credential isn't in a shape Claxedo can check."
   }
   return "Couldn't reach the provider to check this."

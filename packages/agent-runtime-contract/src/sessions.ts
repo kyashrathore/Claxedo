@@ -8,6 +8,8 @@ import type { AgentAgentPartInput, AgentFilePartInput, AgentTextPartInput } from
 import type { FirstTurnErrorClass } from "./turn-error-classes"
 import type { TurnAccount } from "./turn-account"
 
+export type SessionRef = Readonly<{ sessionId: string; workspaceId: string }>
+
 export type AgentWorkspaceIdentity = {
   workspaceId: string
   directory: string
@@ -18,9 +20,8 @@ export type AgentWorkspaceIdentity = {
  * `upstreamSessionId` is opaque: Claxedo stores and forwards it but never
  * parses it or uses it to discover sessions.
  */
-export type AgentWorkspaceExecutionBinding = AgentWorkspaceIdentity & {
+export type AgentWorkspaceExecutionBinding = AgentWorkspaceIdentity & SessionRef & {
   scope?: "workspace"
-  sessionId: string
   connectionId: string
   upstreamSessionId: string
 }
@@ -28,8 +29,7 @@ export type AgentWorkspaceExecutionBinding = AgentWorkspaceIdentity & {
 export type AgentExecutionBinding = AgentWorkspaceExecutionBinding
 
 /** Ownership of creation before the provider has returned any session identity. */
-export type AgentSessionStartBinding = AgentWorkspaceIdentity & {
-  sessionId: string
+export type AgentSessionStartBinding = AgentWorkspaceIdentity & SessionRef & {
   connectionId: string
   operationId: string
 }
@@ -204,7 +204,6 @@ export type SessionHandoff = {
   from: SessionHarness
   pending: true
   transcript: string
-  reason?: "missing-session"
   announced?: true
   source?: SessionHandoffSource
 }

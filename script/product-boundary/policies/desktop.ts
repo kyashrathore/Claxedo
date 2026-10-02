@@ -208,11 +208,18 @@ export const desktopMainComposition: Policy = {
   // -1 module: the hosted operation table is `@claxedo/account-contract`'s
   // own, so `account/hosted-operations.ts` is gone; the plugin id subpath now
   // arrives through that package. 86/24, no headroom.
-  ceilings: { modules: 86, packages: 24 },
+  // +1 module: `main/auto-update.ts`, the packaged app's update check, prompt
+  // and install, split out of `index.ts` along its own responsibility.
+  // Reviewed owner: Electron main, the only process that drives
+  // `electron-updater`, already a package edge. 87/24, no headroom.
+  ceilings: { modules: 87, packages: 24 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-main.json",
     minModules: 35,
-    minChunks: 3,
+    // Main has one Rollup entry, so every module the base shares with the lazy
+    // account adapter stays in index.js and the adapter imports it from there;
+    // the base's static closure is that single chunk.
+    minChunks: 1,
     requiredModules: [
       `${DESKTOP}/main/index.ts`,
       `${DESKTOP}/main/account/lazy-account.ts`,
@@ -407,7 +414,32 @@ export const desktopRenderer: Policy = {
   // `server/harness-commands.ts`, parsed by `server/wire/harness-commands.ts`;
   // and onboarding's choice of where the first project lives, the draft it
   // holds and the creation Finish opens are `onboarding/{place,model,finish}.ts`.
-  ceilings: { modules: 1229, packages: 36 },
+  // A session's activity for the rail, workbench tabs and plugins is one
+  // reading (`session/list/activity.ts`); the transcript's background work
+  // line and its label are `session/view/timeline/timeline-background-work.tsx`
+  // and `background-work-label.ts`, which its unit test reaches directly; and a
+  // running background subagent's Stop beside its chip is
+  // `transcript/subagent-stop.tsx`.
+  // The transcript draws a harness's notices and compaction boundaries from the
+  // contract's `transcript-notice.ts` through `transcript/notice-part.tsx`, whose
+  // pure view (`notice-view.ts`) its unit test reaches directly, on the divider
+  // it shares with the compaction part (`message-divider.tsx`). A response the
+  // harness withdrew draws through `transcript/retracted-part.tsx`, and the edit
+  // tools' diagnostics list is `transcript/tool-diagnostics.tsx`. A queued
+  // message's label, reason and send action, including a steer the harness
+  // declined, are `session/view/timeline/queued-message-status.ts`, which its
+  // unit test reaches directly.
+  // SidePanel owns shared frame, header, tab, resize and motion; the panel and
+  // Marketplace wrappers reach it through ui, with workspace data kept outside.
+  // side-panel-slot lets the active page use that full-height shell host.
+  // Settings' provider model cards share their switch rows and large-provider
+  // virtualization through `accounts/view/model-rows.tsx`. A long user prompt
+  // folds through `transcript/folded-user-message-body.tsx` and its stylesheet.
+  // A child's report and a stored agent-authored opening share the event chrome
+  // of `transcript/agent-message-event.tsx`, styled by
+  // `transcript/agent-message-notice.css`. None adds a package edge.
+  // 1245/36, no headroom.
+  ceilings: { modules: 1245, packages: 36 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,

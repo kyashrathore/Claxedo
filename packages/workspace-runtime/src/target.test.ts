@@ -1,3 +1,5 @@
+import { testSessionCore } from "@claxedo/session-core/testing"
+import { currentSessionCore, withSessionCore } from "./session-context"
 import { describe, expect, it } from "bun:test"
 import fs from "node:fs/promises"
 import os from "node:os"
@@ -5,36 +7,42 @@ import path from "node:path"
 import {
   assertTarget,
   authoritativeWorkspaceId,
-  registerWorkspaceDirectory,
   registeredWorkspaceDirectoriesUnder,
   registeredWorkspaceDirectoryOwners,
   resolveWorkspaceCommandPaths,
   resolveWorkspacePath,
-  unregisterWorkspaceDirectory,
   withWorkspaceTarget,
   workspaceDir,
   workspaceId,
 } from "./target"
 
 describe("workspaceDir", () => {
-  it("rejects multi-directory configuration", () => {
+  it("pins a directory with a typed refusal", () => withSessionCore(testSessionCore(process.cwd(), "ws_test"), () => {
+    try {
+      assertTarget("/other", { WORKSPACE_RUNTIME_DIRECTORY: "/repo", WORKSPACE_RUNTIME_WORKSPACE_ID: "ws_1" })
+      throw new Error("expected refusal")
+    } catch (error) {
+      expect(error).toMatchObject({ code: "workspace_target_pinned", status: 400, retryable: false })
+    }
+  }))
+  it("rejects multi-directory configuration", () => withSessionCore(testSessionCore(process.cwd(), "ws_test"), () => {
     expect(() =>
       workspaceDir({ WORKSPACE_RUNTIME_DIRECTORY: "/tmp/a,/tmp/b" } as NodeJS.ProcessEnv)
     ).toThrow("WORKSPACE_RUNTIME_DIRECTORY must contain exactly one directory")
-  })
+  }))
 
-  it("resolves a single configured directory", () => {
+  it("resolves a single configured directory", () => withSessionCore(testSessionCore(process.cwd(), "ws_test"), () => {
     expect(workspaceDir({ WORKSPACE_RUNTIME_DIRECTORY: "./tmp/demo" } as NodeJS.ProcessEnv)).toContain("/tmp/demo")
     expect(workspaceDir({ WORKSPACE_RUNTIME_DIRECTORY: "./tmp/demo" } as NodeJS.ProcessEnv)).toContain("/tmp/demo")
-  })
+  }))
 })
 
 describe("assertTarget", () => {
-  it("accepts the configured directory", () => {
+  it("accepts the configured directory", () => withSessionCore(testSessionCore(process.cwd(), "ws_test"), () => {
     expect(assertTarget("/tmp/demo", { WORKSPACE_RUNTIME_DIRECTORY: "/tmp/demo" } as NodeJS.ProcessEnv)).toBe("/tmp/demo")
-  })
+  }))
 
-  it("accepts the configured synthetic workspace directory", () => {
+  it("accepts the configured synthetic workspace directory", () => withSessionCore(testSessionCore(process.cwd(), "ws_test"), () => {
     expect(assertTarget(
       "workspace:ws_123",
       {
@@ -42,17 +50,17 @@ describe("assertTarget", () => {
         WORKSPACE_RUNTIME_WORKSPACE_ID: "ws_123",
       } as NodeJS.ProcessEnv,
     )).toBe("/tmp/demo")
-  })
+  }))
 
-  it("rejects mismatched directories", () => {
+  it("rejects mismatched directories", () => withSessionCore(testSessionCore(process.cwd(), "ws_test"), () => {
     expect(() =>
       assertTarget("/tmp/other", { WORKSPACE_RUNTIME_DIRECTORY: "/tmp/demo" } as NodeJS.ProcessEnv)
     ).toThrow("workspace-runtime is pinned to /tmp/demo")
-  })
+  }))
 })
 
 describe("resolveWorkspacePath", () => {
-  it("keeps relative paths inside the workspace", async () => {
+  it("keeps relative paths inside the workspace", () => withSessionCore(testSessionCore(process.cwd(), "ws_test"), async () => {
     const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "workspace-runtime-target-"))
     try {
       await fs.mkdir(path.join(tmp, "src"))
@@ -65,9 +73,9 @@ describe("resolveWorkspacePath", () => {
     } finally {
       await fs.rm(tmp, { recursive: true, force: true })
     }
-  })
+  }))
 
-  it("trims by default and keeps the exact spelling on request", async () => {
+  it("trims by default and keeps the exact spelling on request", () => withSessionCore(testSessionCore(process.cwd(), "ws_test"), async () => {
     const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "workspace-runtime-target-"))
     try {
       await fs.mkdir(path.join(tmp, " lead"))
@@ -85,9 +93,9 @@ describe("resolveWorkspacePath", () => {
     } finally {
       await fs.rm(tmp, { recursive: true, force: true })
     }
-  })
+  }))
 
-  it("rejects symlink realpath escapes", async () => {
+  it("rejects symlink realpath escapes", () => withSessionCore(testSessionCore(process.cwd(), "ws_test"), async () => {
     const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "workspace-runtime-target-"))
     const outside = await fs.mkdtemp(path.join(os.tmpdir(), "workspace-runtime-target-outside-"))
     try {
@@ -101,11 +109,27 @@ describe("resolveWorkspacePath", () => {
       await fs.rm(tmp, { recursive: true, force: true })
       await fs.rm(outside, { recursive: true, force: true })
     }
-  })
+  }))
 })
 
 describe("resolveWorkspaceCommandPaths", () => {
-  it("allows workspace-relative paths and an absolute executable only", async () => {
+  it("checks Windows spellings through lexical and realpath containment", async () => {
+    const root = "C:\\work"
+    const realpath = async (value: string) => value.replace(/^C:\\work\\link(?=\\|$)/i, "D:\\private")
+    const options = { path: path.win32, realpath }
+    for (const reference of ["C:\\outside\\secret", "..\\secret", "\\\\server\\share\\secret", "C:\\work\\link\\secret"]) {
+      for (const input of [{ command: `type>${reference}` }, { command: "type", args: [reference] }]) {
+        await expect(resolveWorkspaceCommandPaths(root, input, options)).rejects.toThrow("workspace path escapes configured directory")
+      }
+    }
+    for (const home of ["%USERPROFILE%\\secret", "$env:USERPROFILE/secret", "~\\secret", "$HOME\\secret", "${HOME}\\secret"]) {
+      await expect(resolveWorkspaceCommandPaths(root, { command: `type<${home}` }, options)).rejects.toThrow("workspace command path must be relative")
+    }
+    await resolveWorkspaceCommandPaths(root, { command: "C:\\bin\\tool.exe .\\file", args: ["c:\\WORK\\file"], allowAbsoluteExecutable: true }, options)
+    await expect(resolveWorkspaceCommandPaths(root, { command: "type C:\\bin\\tool.exe", allowAbsoluteExecutable: true }, options)).rejects.toThrow("workspace path escapes configured directory")
+  })
+
+  it("allows workspace-relative paths and an absolute executable only", () => withSessionCore(testSessionCore(process.cwd(), "ws_test"), async () => {
     const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "workspace-runtime-command-"))
     try {
       await fs.writeFile(path.join(tmp, "input.txt"), "input")
@@ -124,9 +148,9 @@ describe("resolveWorkspaceCommandPaths", () => {
     } finally {
       await fs.rm(tmp, { recursive: true, force: true })
     }
-  })
+  }))
 
-  it("permits an absolute path that resolves inside the workspace (hydrated docs)", async () => {
+  it("permits an absolute path that resolves inside the workspace (hydrated docs)", () => withSessionCore(testSessionCore(process.cwd(), "ws_test"), async () => {
     const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "workspace-runtime-command-abs-"))
     try {
       const inside = path.join(tmp, "docs", "note.md")
@@ -139,9 +163,9 @@ describe("resolveWorkspaceCommandPaths", () => {
     } finally {
       await fs.rm(tmp, { recursive: true, force: true })
     }
-  })
+  }))
 
-  it("still blocks a symlinked absolute path that escapes the workspace", async () => {
+  it("still blocks a symlinked absolute path that escapes the workspace", () => withSessionCore(testSessionCore(process.cwd(), "ws_test"), async () => {
     const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "workspace-runtime-command-esc-"))
     const secret = await fs.mkdtemp(path.join(os.tmpdir(), "workspace-runtime-secret-"))
     try {
@@ -156,9 +180,9 @@ describe("resolveWorkspaceCommandPaths", () => {
       await fs.rm(tmp, { recursive: true, force: true })
       await fs.rm(secret, { recursive: true, force: true })
     }
-  })
+  }))
 
-  it("checks paths glued to redirection operators", async () => {
+  it("checks paths glued to redirection operators", () => withSessionCore(testSessionCore(process.cwd(), "ws_test"), async () => {
     const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "workspace-runtime-command-redir-"))
     const outside = await fs.mkdtemp(path.join(os.tmpdir(), "workspace-runtime-redir-outside-"))
     try {
@@ -210,95 +234,94 @@ describe("resolveWorkspaceCommandPaths", () => {
       await fs.rm(tmp, { recursive: true, force: true })
       await fs.rm(outside, { recursive: true, force: true })
     }
-  })
+  }))
 })
 
 describe("registered worktree ownership", () => {
-  it("names every owner of a path however it is spelled, and the worktrees a root walk reaches", async () => {
+  it("names every owner of a path however it is spelled, and the worktrees a root walk reaches", () => withSessionCore(testSessionCore(process.cwd(), "ws_owners"), async () => {
     const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "workspace-runtime-owners-"))
-    const env = { WORKSPACE_RUNTIME_WORKSPACE_ID: "ws_owners" } as NodeJS.ProcessEnv
     const outer = path.join(tmp, "outer")
     const inner = path.join(outer, "inner")
     try {
       await fs.mkdir(inner, { recursive: true })
       await fs.writeFile(path.join(inner, "file.txt"), "")
       await fs.symlink(inner, path.join(tmp, "link"))
-      registerWorkspaceDirectory({ workspaceId: "ws_owners", sessionId: "ses_outer", directory: outer })
-      registerWorkspaceDirectory({ workspaceId: "ws_owners", sessionId: "ses_inner", directory: inner })
+      currentSessionCore().placement.register({ sessionId: "ses_outer", directory: outer })
+      currentSessionCore().placement.register({ sessionId: "ses_inner", directory: inner })
 
-      expect(registeredWorkspaceDirectoryOwners(outer, env)).toEqual(["ses_outer"])
-      expect(registeredWorkspaceDirectoryOwners(path.join(inner, "file.txt"), env).sort()).toEqual([
+      expect(registeredWorkspaceDirectoryOwners(outer)).toEqual(["ses_outer"])
+      expect(registeredWorkspaceDirectoryOwners(path.join(inner, "file.txt")).sort()).toEqual([
         "ses_inner",
         "ses_outer",
       ])
       // Same entry through a symlink and through a relative spelling.
-      expect(registeredWorkspaceDirectoryOwners(path.join(tmp, "link", "file.txt"), env).sort()).toEqual([
+      expect(registeredWorkspaceDirectoryOwners(path.join(tmp, "link", "file.txt")).sort()).toEqual([
         "ses_inner",
         "ses_outer",
       ])
-      expect(registeredWorkspaceDirectoryOwners(path.join(outer, "..", "outer", "inner"), env).sort()).toEqual([
+      expect(registeredWorkspaceDirectoryOwners(path.join(outer, "..", "outer", "inner")).sort()).toEqual([
         "ses_inner",
         "ses_outer",
       ])
       // A leaf that does not exist yet is still placed by the real directory
       // that would hold it, link and all.
-      expect(registeredWorkspaceDirectoryOwners(path.join(tmp, "link", "not-yet.txt"), env).sort()).toEqual([
+      expect(registeredWorkspaceDirectoryOwners(path.join(tmp, "link", "not-yet.txt")).sort()).toEqual([
         "ses_inner",
         "ses_outer",
       ])
-      expect(registeredWorkspaceDirectoryOwners(tmp, env)).toEqual([])
+      expect(registeredWorkspaceDirectoryOwners(tmp)).toEqual([])
       // A sibling whose name starts with a registered one is not inside it.
-      expect(registeredWorkspaceDirectoryOwners(`${outer}-sibling`, env)).toEqual([])
+      expect(registeredWorkspaceDirectoryOwners(`${outer}-sibling`)).toEqual([])
       // A root that is not on disk at all answers, rather than raising: the
       // routes ask this before they find out the directory is missing.
-      expect(registeredWorkspaceDirectoryOwners(path.join(tmp, "gone", "file.txt"), env)).toEqual([])
-      expect(registeredWorkspaceDirectoriesUnder(path.join(tmp, "gone"), env)).toEqual([])
+      expect(registeredWorkspaceDirectoryOwners(path.join(tmp, "gone", "file.txt"))).toEqual([])
+      expect(registeredWorkspaceDirectoriesUnder(path.join(tmp, "gone"))).toEqual([])
 
       // The other direction: what a recursive operation on a root reaches.
-      expect(registeredWorkspaceDirectoriesUnder(tmp, env).map((entry) => entry.sessionId).sort()).toEqual([
+      expect(registeredWorkspaceDirectoriesUnder(tmp).map((entry) => entry.sessionId).sort()).toEqual([
         "ses_inner",
         "ses_outer",
       ])
-      expect(registeredWorkspaceDirectoriesUnder(outer, env).map((entry) => entry.sessionId)).toEqual(["ses_inner"])
+      expect(registeredWorkspaceDirectoriesUnder(outer).map((entry) => entry.sessionId)).toEqual(["ses_inner"])
       // Through an alias of the same root, and through a root spelled with a link.
-      expect(registeredWorkspaceDirectoriesUnder(path.join(tmp, "outer", "..", "outer"), env)
+      expect(registeredWorkspaceDirectoriesUnder(path.join(tmp, "outer", "..", "outer"))
         .map((entry) => entry.sessionId)).toEqual(["ses_inner"])
-      expect(registeredWorkspaceDirectoriesUnder(inner, env)).toEqual([])
+      expect(registeredWorkspaceDirectoriesUnder(inner)).toEqual([])
     } finally {
-      unregisterWorkspaceDirectory({ workspaceId: "ws_owners", sessionId: "ses_outer" })
-      unregisterWorkspaceDirectory({ workspaceId: "ws_owners", sessionId: "ses_inner" })
+      currentSessionCore().placement.unregister("ses_outer")
+      currentSessionCore().placement.unregister("ses_inner")
       await fs.rm(tmp, { recursive: true, force: true })
     }
-  })
+  }))
 })
 
 describe("workspaceId", () => {
-  it("stays stable for process env fallback", () => {
+  it("stays stable for process env fallback", () => withSessionCore(testSessionCore(process.cwd(), "ws_test"), () => {
     const a = workspaceId()
     const b = workspaceId()
     expect(a).toBe(b)
-  })
+  }))
 
-  it("prefers the configured id", () => {
+  it("prefers the configured id", () => withSessionCore(testSessionCore(process.cwd(), "ws_test"), () => {
     expect(workspaceId({ WORKSPACE_RUNTIME_WORKSPACE_ID: "wr_123" } as NodeJS.ProcessEnv)).toBe("wr_123")
     expect(workspaceId({ WORKSPACE_RUNTIME_WORKSPACE_ID: "wr_123" } as NodeJS.ProcessEnv)).toBe("wr_123")
-  })
+  }))
 })
 
 describe("authoritativeWorkspaceId", () => {
-  it("reads the target this runtime was placed for", () => {
+  it("reads the target this runtime was placed for", () => withSessionCore(testSessionCore(process.cwd(), "ws_test"), () => {
     withWorkspaceTarget({ workspaceId: "ws_placed", directory: "/tmp/placed" }, () => {
       expect(authoritativeWorkspaceId()).toBe("ws_placed")
     })
-  })
+  }))
 
-  it("reads the configured id", () => {
+  it("reads the configured id", () => withSessionCore(testSessionCore(process.cwd(), "ws_test"), () => {
     expect(authoritativeWorkspaceId({ WORKSPACE_RUNTIME_WORKSPACE_ID: "wr_123" } as NodeJS.ProcessEnv)).toBe("wr_123")
-  })
+  }))
 
-  it("answers nothing rather than the id workspaceId mints", () => {
+  it("answers nothing rather than the id workspaceId mints", () => withSessionCore(testSessionCore(process.cwd(), "ws_test"), () => {
     const env = {} as NodeJS.ProcessEnv
     expect(authoritativeWorkspaceId(env)).toBeUndefined()
     expect(workspaceId(env)).toBeTruthy()
-  })
+  }))
 })

@@ -1,3 +1,4 @@
+import { decodeApiError } from "@claxedo/helpers/api-error"
 import type { AgentGoalMutationResult, AgentPermissionModeState, GoalCapabilities, SessionConfig, SessionConfigUpdate } from "@claxedo/agent-runtime-contract"
 import type {
   AgentContentPart,
@@ -14,13 +15,12 @@ import type {
   RecoveryRequest,
 } from "@claxedo/agent-runtime-contract"
 import { isRecoveryOutcome, parseRecoveryOutcome } from "@claxedo/agent-runtime-contract"
-import type { HarnessCapabilities } from "../host/capabilities"
+import type { HarnessCapabilities, AgentRuntimeRecoveryInspection } from "@claxedo/session-core"
 import type { RuntimeGoalSnapshot } from "@claxedo/agent-runtime-contract"
-import type { ConfigOptionsPreview } from "@claxedo/harness/contract"
-import type { AgentRuntimeRecoveryInspection } from "../host/contracts"
+import type { BackgroundTaskStopResult, ConfigOptionsPreview } from "@claxedo/harness/contract"
 import type { AgentTurnCoveragePage } from "@claxedo/agent-runtime-contract"
 import type { FirstRead, TurnPage } from "@claxedo/agent-runtime-contract"
-import { claxedoErrorEnvelope, namedMembers, without, type WorkspaceRuntimeCaller, type WorkspaceRuntimeRequestOptions, type WorkspaceRuntimeResponse, type WorkspaceScope } from "./request"
+import { namedMembers, without, type WorkspaceRuntimeCaller, type WorkspaceRuntimeRequestOptions, type WorkspaceRuntimeResponse, type WorkspaceScope } from "./request"
 
 type Options = WorkspaceRuntimeRequestOptions
 type Reply<T> = Promise<WorkspaceRuntimeResponse<T>>
@@ -147,6 +147,9 @@ export type WorkspaceSessionClient = {
     stop(input: SessionInput, options?: Options): Reply<AgentGoalMutationResult>
     delete(input: SessionInput, options?: Options): Reply<AgentGoalMutationResult>
   }
+  backgroundTasks: {
+    stop(input: SessionInput & { toolCallId: string }, options?: Options): Reply<BackgroundTaskStopResult>
+  }
 }
 
 export type WorkspacePermissionClient = {
@@ -183,7 +186,7 @@ const RECOVERY_ROUTE_ERROR_STATUSES = new Set([400, 404])
  */
 function decodeRecoveryOutcome(body: unknown, status: number): RecoveryOutcome {
   if (isRecoveryOutcome(body)) return parseRecoveryOutcome(body)
-  const envelope = claxedoErrorEnvelope(body)
+  const envelope = decodeApiError(status, body)
   if (!envelope || RECOVERY_ROUTE_ERROR_STATUSES.has(status)) {
     throw new Error("recovery answer is neither an outcome nor a forwarding failure")
   }
@@ -258,7 +261,7 @@ export function sessionClient(caller: WorkspaceRuntimeCaller): WorkspaceSessionC
         options,
         // An inspection the owner answered carries no `kind` and is not an
         // error envelope, so it is the only body that is not an outcome.
-        decode: (body, status) => isRecoveryOutcome(body) || claxedoErrorEnvelope(body)
+        decode: (body, status) => isRecoveryOutcome(body) || decodeApiError(status, body)
           ? decodeRecoveryOutcome(body, status)
           : recoveryInspection(body),
       }),
@@ -316,6 +319,9 @@ export function sessionClient(caller: WorkspaceRuntimeCaller): WorkspaceSessionC
       resume: goalWrite("session.goal.resume", "POST", "/goal/resume"),
       stop: goalWrite("session.goal.stop", "POST", "/goal/stop"),
       delete: goalWrite("session.goal.delete", "DELETE", "/goal"),
+    },
+    backgroundTasks: {
+      stop: (input, options) => write<BackgroundTaskStopResult>("session.backgroundTasks.stop", "POST", input, "/background-task/stop", options, { toolCallId: input.toolCallId }),
     },
   }
 }

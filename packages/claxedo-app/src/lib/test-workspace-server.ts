@@ -16,7 +16,7 @@ export const FIXTURE_PLACEMENT = placementId("ws_1")
 
 const bootstrap = {
   events: { hostAggregate: false },
-  deployment: { issuesSessions: false },
+  deployment: { serverKind: "daemon", issuesSessions: false },
   project: [{ id: "proj_1", worktree: "/repo", workspaces: { [FIXTURE_PLACEMENT]: { id: FIXTURE_PLACEMENT, directory: "/repo", reachable: true } } }],
 }
 
@@ -62,7 +62,7 @@ export function createWorkspaceServer(listing: WorkspaceListing): WorkspaceServe
     if (url.pathname === "/api/cp/events") return openEvents(init?.signal)
     return Response.json({ error: { message: `unexpected ${url.pathname}` } }, { status: 404 })
   }, { preconnect: original.preconnect })
-  const server = createServer({ serverUrl: "https://cp.test", auth: { kind: "none" } })
+  const server = createServer({ serverUrl: "https://cp.test" })
   const roots: (() => void)[] = []
   const tree = (dir: string) => server.queries.files.tree(FIXTURE_PLACEMENT, dir)
   return {

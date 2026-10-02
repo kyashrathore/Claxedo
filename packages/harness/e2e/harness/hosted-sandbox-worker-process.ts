@@ -23,7 +23,7 @@ type Input = {
 export async function startHostedSandboxWorkerProcess(input: Input) {
   const child = spawn(process.env.CLAXEDO_E2E_NODE ?? "node", ["--conditions=development", "--import", TSX_LOADER, path.join(import.meta.dirname, "hosted-sandbox-worker.ts")], {
     stdio: ["ignore", "pipe", "pipe"],
-    env: { ...process.env, NODE_EXTRA_CA_CERTS: input.certificate, CLAXEDO_E2E_HOSTED_SANDBOX_WORKER: JSON.stringify(input) },
+    env: { ...process.env, HOME: input.root, XDG_CONFIG_HOME: path.join(input.root, ".config"), NODE_EXTRA_CA_CERTS: input.certificate, CLAXEDO_E2E_HOSTED_SANDBOX_WORKER: JSON.stringify(input) },
   })
   try {
     await new Promise<void>((resolve, reject) => {

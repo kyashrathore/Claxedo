@@ -6,7 +6,6 @@ import type {
   PermissionDecision,
   RuntimeGoalSnapshot,
   SessionConfig,
-  SessionHandoff,
   SubagentObservation,
 } from "@claxedo/agent-runtime-contract"
 import type { AgentRuntimeEvent, AgentRuntimeEventOf } from "@claxedo/agent-runtime-contract"
@@ -20,26 +19,24 @@ export type PermissionOption = {
   name: string
 }
 
-export type PermissionRequest = {
+export type ChildRequestRoute = { correlationKey: string }
+
+type RequestIdentity = { requestId: string; child?: ChildRequestRoute; expiresAt?: number }
+
+export type PermissionRequest = RequestIdentity & {
   kind: "permission"
-  requestId: string
-  expiresAt?: number
   permission: AgentPermission
   options?: readonly PermissionOption[]
   grantKey?: string
 }
 
-export type QuestionRequest = {
+export type QuestionRequest = RequestIdentity & {
   kind: "question"
-  requestId: string
-  expiresAt?: number
   question: AgentQuestion
 }
 
-export type ElicitationRequest = {
+export type ElicitationRequest = RequestIdentity & {
   kind: "elicitation"
-  requestId: string
-  expiresAt?: number
   elicitationId?: string
   mode: "form" | "url"
   message: string
@@ -77,8 +74,8 @@ export type ChildSessionRef = {
 
 export type ProviderTurnInput = {
   reason: "goal" | "provider"
-  userMessage?: { id: string; text: string }
-}
+  detail?: string
+} | { reason: "continuation"; current: () => boolean }
 
 export type ProviderTurnResult =
   | { admitted: true; turn: TurnRef; settled: Promise<ProviderTurnSettlement> }
@@ -88,7 +85,7 @@ export type ProviderTurnSettlement = { state: "completed" } | { state: "failed";
 
 export type OutsideTurnEvent = AgentRuntimeEventOf<
   | "rate-limit" | "auth-status" | "mcp-server-status" | "available-commands-update" | "config-update"
-  | "session-info" | "session-title" | "session-agent" | "harness-notice" | "diagnostic"
+  | "session-info" | "session-title" | "session-agent" | "harness-notice" | "agent-message" | "diagnostic" | "background-work"
 >
 
 export interface TurnBroker {
@@ -105,13 +102,15 @@ export interface SessionBroker {
   ask(request: TurnRequest, options?: { signal?: AbortSignal }): Promise<RequestAnswer>
   completeElicitation(elicitationId: string): Promise<void>
   rebind(upstreamSessionId: string): Promise<HarnessBinding>
-  persistHandoff(context: SessionHandoff): Promise<void>
   admitProviderTurn(
     input: ProviderTurnInput,
     run: (broker: TurnBroker, turn: TurnRef) => AsyncIterable<RoutedEvent>,
   ): Promise<ProviderTurnResult>
   meter(usage: OutsideTurnUsage): void
-  publish(event: OutsideTurnEvent): Promise<void>
+  publish(event: OutsideTurnEvent, assistantMessageId?: string): Promise<void>
+  observeSubagent(observation: SubagentObservation): Promise<ChildSessionRef | undefined>
+  associateChild(correlationKey: string, child: ChildSessionRef): void
+  publishChild(event: RoutedEvent): Promise<void>
   readonly goal: {
     read(): RuntimeGoalSnapshot | null
     publish(snapshot: RuntimeGoalSnapshot | null): Promise<void>

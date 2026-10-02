@@ -1,4 +1,4 @@
-import type { AgentRequest, SessionId, SessionRef } from "@/server"
+import { NO_BACKGROUND_WORK, sessionStatusWithBackgroundWork, type AgentRequest, type SessionId, type SessionLocation } from "@/server"
 import type { SessionRowView, SessionStatusView } from "@/session"
 import {
   compareOrder,
@@ -28,7 +28,7 @@ export const createRowViewCache = (): RowViewCache => ({ current: new Map() })
 
 type OrderData = Pick<ListData, "entries" | "windows">
 
-export function visibleOrder(data: OrderData): readonly SessionRef[] {
+export function visibleOrder(data: OrderData): readonly SessionLocation[] {
   const shown: Shown[] = []
   for (const entry of data.entries.values()) {
     if (entry.kind === "tombstone") continue
@@ -52,8 +52,8 @@ function cachedView(
 }
 
 export function rowViews(input: {
-  readonly order: readonly SessionRef[]
-  readonly data: Pick<ListData, "entries" | "statuses">
+  readonly order: readonly SessionLocation[]
+  readonly data: Pick<ListData, "entries" | "statuses" | "backgroundWork">
   readonly openRequests: ReadonlyMap<SessionId, readonly AgentRequest[]>
   readonly cache: RowViewCache
 }): ReadonlyMap<SessionId, SessionRowView> {
@@ -63,7 +63,7 @@ export function rowViews(input: {
     const id = ref.sessionId
     const entry = input.data.entries.get(id)
     if (!entry || entry.kind === "tombstone") continue
-    const status = input.data.statuses.get(id)?.status ?? UNKNOWN_STATUS
+    const status = sessionStatusWithBackgroundWork(input.data.statuses.get(id)?.status ?? UNKNOWN_STATUS, input.data.backgroundWork.get(id)?.work ?? NO_BACKGROUND_WORK)
     const waitingOnUser = (input.openRequests.get(id)?.length ?? 0) > 0 || input.data.statuses.get(id)?.waitingOnUser === true
     const cached = cachedView(input.cache.current.get(id), entry, status, waitingOnUser)
     next.set(id, cached)

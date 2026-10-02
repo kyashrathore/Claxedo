@@ -1,5 +1,6 @@
 import { singleFlightUntil } from "@claxedo/helpers"
 import type { Run } from "@cursor/sdk"
+import type { HostSteerOutcome } from "./protocol"
 
 type ActiveRun = { state: "starting" } | { state: "running"; run: Run } | { state: "terminal" }
 
@@ -23,6 +24,11 @@ export class CursorRunState {
   finish(): void {
     this.active = { state: "terminal" }
     this.ready.resolve()
+  }
+
+  async steer(text: string): Promise<HostSteerOutcome> {
+    if (this.active.state !== "running") return "no_run"
+    return this.active.run.steer ? this.active.run.steer(text) : "unsupported"
   }
 
   readonly cancel = singleFlightUntil(async () => {

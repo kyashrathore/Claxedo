@@ -46,7 +46,7 @@ Today measured on `feat/harness-v2` at `e90ea3215d` (worktree `/Users/yashvardha
 - Plan: `client-presentation` 2,041 + `compat-events` 471 + `turn-projection`+`child-event-routing` 467 + `sse` 243.
 - Command: `wc -l` over [lists/dev-projection.txt](lists/dev-projection.txt); `client-presentation` = `agent-event-runtime/src/projections/client-presentation/`.
 - Dev: measured client-presentation **2,000** (prod rule), so total **3,181**, not 3,222 — **mismatch −41 on `dev` itself** (the plan's 2,041 does not reproduce; including tests gives 3,291, so it's not a test-inclusion issue). 2,041 also does not match `wc -l` on the dir with fixtures — plan likely counted a pre-move or slightly different file set.
-- Today: same files, `sse.ts` now at `workspace-runtime/src/projection/sse.ts` ([list](lists/today-projection.txt)) — still 3,181.
+- Today: same files, `sse.ts` now at `claxedo-helpers/src/sse.ts` ([list](lists/today-projection.txt)) — still 3,181.
 
 ### M7 — Event contracts "458" (§Scope, §Moved unchanged)
 - Command: `find packages/agent-event-runtime/src/contracts -name '*.ts' ! -name '*.test.ts' | xargs wc -l`
@@ -217,7 +217,7 @@ Today measured on `feat/harness-v2` at `e90ea3215d` (worktree `/Users/yashvardha
 - Specs importing `e2e/helpers/mock-runtime.ts` (3,764 lines): **38** today on dev (34 `core-*` + 4 others) — plan's 32 is close but does not reproduce exactly; route-like handlers in the fake ≈ 69 — "~70" holds.
 
 ### M49 — Versions cited in the plan
-- `@cursor/sdk` 1.0.24 ✓ (`agent-sdk-runtime/package.json`); `@agentclientprotocol/sdk` 1.3.0 ✓; image pins per M40; OpenCode "1.18.32" is the installed CLI (docs/harness-v2/profiles.md), not a repo pin; Cursor-worker rule references the same dep.
+- `@cursor/sdk` 1.0.24 ✓ (`agent-sdk-runtime/package.json`); `@agentclientprotocol/sdk` 1.3.0 ✓; image pins per M40; OpenCode "1.18.32" is the installed CLI, not a repo pin; Cursor-worker rule references the same dep.
 
 ### M50 — npm: "13 `@claxedo/*` packages published; harness libraries at 0.8.0"
 - Repo today: **15** non-private `@claxedo/*` package.jsons (incl. `opencode-server-adapter`, `egress-broker`; `process-ownership`/`harness` are private/absent from publish set). The 13 and the 0.8.0 version came from `npm view` on 2026-09-24 — external state, not verifiable from the tree; repo version fields now read 0.10.0/0.5.0/0.4.0/0.2.0/0.1.0.

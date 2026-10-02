@@ -118,9 +118,10 @@ function sourcesFromWire(value: unknown): ReadonlyMap<string, AccountSource> | u
 }
 
 export function accountSourcesFromWire(value: unknown): AccountSources | undefined {
+  const canRemoveOrgAccounts = asRecord(value)?.can_remove_org_accounts
   const sources = sourcesFromWire(asRecord(value)?.sources)
   const org = rowsFromWire(value, "org", accountFromWire)
-  return sources && org ? { sources, org } : undefined
+  return sources && org && typeof canRemoveOrgAccounts === "boolean" ? { sources, org, canRemoveOrgAccounts } : undefined
 }
 
 export function hostedAccountSourcesFromWire(value: unknown): HostedAccountSources | undefined {

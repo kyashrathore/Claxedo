@@ -55,6 +55,9 @@ describe("SQLite organization/team authority invariants", () => {
         role: "member",
       }),
     ).rejects.toThrow("team_member_org_membership_required")
+    await expect(
+      authority.addTeamMember!(alice, { teamId: org.default_team_id, tokenIdentifier: "issuer|no-such-account", role: "member" }),
+    ).rejects.toThrow("team_member_org_membership_required")
 
     const now = Date.now()
     db()
@@ -73,6 +76,23 @@ describe("SQLite organization/team authority invariants", () => {
         role: "member",
       }),
     ).resolves.toMatchObject({ role: "member" })
+  })
+
+  test("only an org admin sets up the default team, and setting it up again restores no removed member", async () => {
+    const { authority, db } = setup()
+    await authority.usersMe(alice)
+    await authority.usersMe(bob)
+    const org = (await authority.createOrg!(alice, { name: "Acme" })) as { org_id: string; default_team_id: string }
+    const now = Date.now()
+    db().prepare(`INSERT INTO org_memberships (org_id, token_identifier, role, created_at, updated_at) VALUES (?, ?, 'member', ?, ?)`)
+      .run(org.org_id, bob.user.tokenIdentifier, now, now)
+    await authority.addTeamMember!(alice, { teamId: org.default_team_id, tokenIdentifier: bob.user.tokenIdentifier })
+    await authority.removeTeamMember!(alice, { teamId: org.default_team_id, tokenIdentifier: bob.user.tokenIdentifier })
+
+    await expect(authority.ensureDefaultTeam!(bob, { orgId: org.org_id })).rejects.toThrow("org_admin_required")
+    await authority.ensureDefaultTeam!(alice, { orgId: org.org_id })
+    expect(db().prepare(`SELECT 1 FROM team_memberships WHERE team_id = ? AND user_token_identifier = ?`)
+      .get(org.default_team_id, bob.user.tokenIdentifier)).toBeUndefined()
   })
 
   test("default-team provisioning preserves an explicit project revocation", async () => {

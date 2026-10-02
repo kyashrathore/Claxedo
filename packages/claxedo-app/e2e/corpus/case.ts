@@ -23,7 +23,8 @@ export type CaseTurn = { readonly prompt: string; readonly steps: readonly AcpSt
 
 export type CaseReplay =
   | { readonly agent: "acp"; readonly turns: readonly CaseTurn[] }
-  | { readonly agent: "claude" | "codex" }
+  | { readonly agent: "claude"; readonly scenario: "child-message-event" | "agent-authored-message" }
+  | { readonly agent: "codex" }
   | { readonly agent: "unsupported"; readonly reason: string }
 
 export type CaseInteraction =
@@ -32,6 +33,8 @@ export type CaseInteraction =
   | { readonly kind: "find"; readonly text: string }
   | { readonly kind: "reload" }
   | { readonly kind: "toggleFold"; readonly turn: number }
+  | { readonly kind: "toggleUserMessage"; readonly message: string }
+  | { readonly kind: "toggleAgentMessage" }
   | { readonly kind: "openTool"; readonly partId: string }
   | { readonly kind: "resize"; readonly width: number }
   | { readonly kind: "release"; readonly hold: string; readonly ready: string; readonly settles?: boolean }

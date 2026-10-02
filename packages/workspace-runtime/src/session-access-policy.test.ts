@@ -12,7 +12,7 @@ import {
   sessionRequestProvenance,
   type ManagedSessionAuthority,
   type SessionAccessPolicyInput,
-} from "./session-access-policy"
+} from "@claxedo/session-core"
 import { createRelayHostAuthMiddleware } from "./workspace-host-service-auth"
 
 function allowAll(): ManagedSessionAuthority {
@@ -90,7 +90,7 @@ describe("SessionAccessPolicy", () => {
     })).resolves.toEqual(["ses_1", "ses_2"])
   })
 
-  test("lets the session authority answer for a workspace viewer and keeps workspace writes on the role", async () => {
+  test("a token scoped to one session reaches that session alone, and the owner's token reaches the workspace", async () => {
     const asked: string[] = []
     const policy = managedWorkspaceSessionAccessPolicy({
       authority: {
@@ -101,11 +101,11 @@ describe("SessionAccessPolicy", () => {
         },
       },
     })
-    const viewer = { ...authority, role: "viewer" as const }
+    const scoped = { ...authority, role: "viewer" as const, sessionId: "ses_1" }
     const actor = { actorId: "actor_1", actorKind: "human" as const }
 
     await expect(policy.authorize({
-      authority: viewer,
+      authority: scoped,
       actor,
       operation: "prompt",
       sessionId: "ses_1",
@@ -113,17 +113,22 @@ describe("SessionAccessPolicy", () => {
     expect(asked).toEqual(["write:prompt"])
 
     await expect(policy.authorize({
-      authority: viewer,
+      authority: scoped,
       actor,
       operation: "session_meta_read",
       sessionId: "ses_1",
     })).resolves.toEqual({ allowed: true })
 
-    await expect(policy.authorize({
-      authority: viewer,
-      actor,
-      operation: "checkpoint_write",
-    })).resolves.toMatchObject({ allowed: false, code: "workspace_write_forbidden", status: 403 })
+    for (const input of [
+      { operation: "prompt" as const, sessionId: "ses_2" },
+      { operation: "session_meta_read" as const, sessionId: "ses_2" },
+      { operation: "session_list" as const },
+      { operation: "checkpoint_write" as const },
+    ]) {
+      await expect(policy.authorize({ authority: scoped, actor, ...input }))
+        .resolves.toMatchObject({ allowed: false, code: "session_scope_denied", status: 403 })
+    }
+    expect(asked).toEqual(["write:prompt"])
     await expect(policy.authorize({
       authority,
       actor,
@@ -288,6 +293,37 @@ describe("SessionAccessPolicy", () => {
     })
   })
 
+  test("an embedded stamp scoped to one session reaches that session and nothing else of the workspace", async () => {
+    const app = new Hono()
+    app.use("*", createWorkspaceRuntimeExposureMiddleware(embeddedWorkspaceRuntimeExposure({
+      owner: "session-access-test",
+      guard: () => true,
+    })))
+    app.all("*", (c) => c.json(sessionAccessContext(c as never).authority ?? null))
+    const stamp = JSON.stringify({
+      principal_kind: "user",
+      actor_id: "actor_alice",
+      actor_kind: "human",
+      actor_public_id: "usr_alice",
+      actor_name: "Alice",
+      workspace_id: "ws_1",
+      org_id: "org_1",
+      role: "viewer",
+      session_id: "ses_1",
+    })
+    const call = (path: string) => app.request(`http://runtime.test${path}`, { headers: { [EMBEDDED_RELAY_HOST_AUTH_HEADER]: stamp } })
+
+    const session = await call("/session/ses_1/message")
+    expect(session.status).toBe(200)
+    await expect(session.json()).resolves.toEqual({ managed: true, workspaceId: "ws_1", orgId: "org_1", role: "viewer", sessionId: "ses_1" })
+    expect((await call("/api/wr/events?sessionID=ses_1")).status).toBe(200)
+    for (const path of ["/session/ses_2/message", "/api/wr/pty", "/api/wr/harness-providers", "/session/capabilities", "/api/wr/git/status"]) {
+      const refused = await call(path)
+      expect(refused.status, path).toBe(403)
+      await expect(refused.json()).resolves.toMatchObject({ error: { code: "relay_scope_denied" } })
+    }
+  })
+
   test("reads a request's provenance off the same stamp, through the real embedded exposure", async () => {
     const app = new Hono()
     app.use("*", createWorkspaceRuntimeExposureMiddleware(embeddedWorkspaceRuntimeExposure({
@@ -442,7 +478,7 @@ test("startup is local workspace admission or exact managed reservation admissio
   const policy = managedWorkspaceSessionAccessPolicy({ authority: { ...allowAll(), authorizeSessionStart: (value) => { received.push(value); return true } } })
   expect(await policy.authorizeSessionStart(scoped)).toEqual({ allowed: true })
   expect(received).toEqual([scoped])
-  expect((await policy.authorizeSessionStart({ ...scoped, authority: { ...scoped.authority, role: "viewer" } })).allowed).toBe(false)
+  expect((await policy.authorizeSessionStart({ ...scoped, authority: { ...scoped.authority, sessionId: "ses_shared" } })).allowed).toBe(false)
   expect((await policy.authorizeSessionStart({ ...scoped, actor: undefined })).allowed).toBe(false)
   expect(received).toHaveLength(1)
 })

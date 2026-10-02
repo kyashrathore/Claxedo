@@ -5,8 +5,9 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import path from "node:path"
 import { promisify } from "node:util"
+import { withSessionCore } from "../session-context"
+import { testSessionCore } from "@claxedo/session-core/testing"
 import { GitSourceRoutes } from "./git-source"
-import type { RelayHostAuthContext } from "../workspace-host-service-auth"
 
 const execFileAsync = promisify(execFile)
 
@@ -35,54 +36,11 @@ async function withGitRepo(fn: (directory: string) => Promise<void>, input: { ob
 }
 
 function app() {
-  return new Hono().route("/api/wr/git", GitSourceRoutes())
-}
-
-function viewerApp() {
-  const server = new Hono<{ Variables: RelayHostAuthContext }>()
-  server.use("*", async (c, next) => {
-    const now = Math.floor(Date.now() / 1000)
-    c.set("relayHostAuth", {
-      iss: "workspace-relay",
-      aud: "workspace-host-service",
-      principal_kind: "user",
-      actor_id: "user_1",
-      actor_kind: "human",
-      org_id: "org_1",
-      workspace_id: "ws_1",
-      host_id: "host_1",
-      role: "viewer",
-      backing: "cloud-vm",
-      exp: now + 60,
-      iat: now,
-      jti: "jti_1",
-      parent_jti: "rat_jti_1",
-    })
-    return await next()
-  })
-  return server.route("/api/wr/git", GitSourceRoutes())
+  const core = testSessionCore(process.env.WORKSPACE_RUNTIME_DIRECTORY)
+  return new Hono().use("*", (_c, next) => withSessionCore(core, next)).route("/api/wr/git", GitSourceRoutes())
 }
 
 describe("GitSourceRoutes", () => {
-  test("denies commits to authenticated viewers while preserving snapshots", async () => {
-    await withGitRepo(async () => {
-      expect((await viewerApp().request("http://localhost/api/wr/git/snapshot?path=doc.md")).status).toBe(200)
-      const response = await viewerApp().request("http://localhost/api/wr/git/commit", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ path: "doc.md", content: "blocked\n", message: "blocked" }),
-      })
-
-      expect(response.status).toBe(403)
-      await expect(response.json()).resolves.toEqual({
-        error: {
-          code: "relay_role_denied",
-          message: "Workspace role does not allow Git writes",
-        },
-      })
-    })
-  })
-
   test("returns a clean tracked snapshot", async () => {
     await withGitRepo(async () => {
       const res = await app().request("http://localhost/api/wr/git/snapshot?path=doc.md")

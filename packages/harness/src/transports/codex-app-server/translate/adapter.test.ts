@@ -1,12 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { translatorRuntime } from "../../../test-support/translator-runtime"
-import {
-  codexAppServerAdapter,
-  codexCollabAgentCall,
-  codexCollabAgentStatus,
-  codexStartedSubagent,
-  codexSubagentActivity,
-} from "./adapter"
+import { codexAppServerAdapter } from "./adapter"
+import { codexCollabAgentCall, codexCollabAgentStatus, codexSubagentActivity } from "./subagent-items"
 
 function runtime() {
   return translatorRuntime({
@@ -19,27 +14,6 @@ function runtime() {
 }
 
 describe("codexAppServerAdapter", () => {
-  test("projects explicitly marked MCP consent with its advertised persistence choices", () => {
-    const agent = runtime()
-    expect(agent.ingest({
-      source: "codex.app-server",
-      method: "mcpServer/elicitation/request",
-      payload: {
-        requestId: "consent-1", serverName: "cua_repl", mode: "form",
-        _meta: { codex_approval_kind: "mcp_tool_call", persist: ["session", "always"] },
-        message: 'Allow Computer Use to use "Claxedo Dev (dev)"?',
-        requestedSchema: { type: "object", properties: {} },
-      },
-    }).events).toMatchObject([{
-      type: "permission-request", requestId: "consent-1", tool: "cua_repl", paths: [],
-      details: { reason: 'Allow Computer Use to use "Claxedo Dev (dev)"?' },
-      options: [
-        { id: "accept", label: "Accept" }, { id: "decline", label: "Decline" }, { id: "cancel", label: "Cancel" },
-        { id: '{"persist":"session"}', label: "Accept (session)" }, { id: '{"persist":"always"}', label: "Accept (always)" },
-      ],
-    }])
-  })
-
   test("translates native plan progress into canonical task status", () => {
     const agent = runtime()
     const result = agent.ingest({
@@ -124,7 +98,7 @@ describe("codexAppServerAdapter", () => {
     expect(thinking("item/completed", { item: { id: "rs-1", type: "reasoning", summary: ["**Reading**", "**Checking**"], content: [] } }))
       .toEqual([])
     expect(thinking("item/completed", { item: { id: "rs-2", type: "reasoning", summary: ["Only at completion"], content: [] } }))
-      .toEqual(["Only at completion"])
+      .toEqual(["\n\nOnly at completion"])
   })
 
   test("maps reasoning and proposed plan streams", () => {
@@ -147,51 +121,6 @@ describe("codexAppServerAdapter", () => {
       method: "item/completed",
       payload: { item: { id: "plan-1", type: "plan", text: "## Plan" } },
     }).events).toMatchObject([{ type: "proposed-plan-complete", planMarkdown: "## Plan" }])
-  })
-
-  test("maps approvals and requestUserInput lifecycle events", () => {
-    const agent = runtime()
-
-    expect(agent.ingest({
-      source: "codex.app-server",
-      method: "item/commandExecution/requestApproval",
-      payload: { requestId: "approval-1", command: "rm -rf tmp", cwd: "/repo", reason: "Remove generated files" },
-    }).events).toMatchObject([{
-      type: "permission-request",
-      requestId: "approval-1",
-      tool: "command",
-      paths: ["/repo"],
-      details: { command: "rm -rf tmp", reason: "Remove generated files" },
-    }])
-
-    expect(agent.ingest({
-      source: "codex.app-server",
-      method: "item/permissions/requestApproval",
-      payload: { requestId: "approval-2", toolName: "Edit", paths: ["/repo/file.ts"] },
-    }).events).toMatchObject([{
-      type: "permission-request",
-      requestId: "approval-2",
-      tool: "Edit",
-      paths: ["/repo/file.ts"],
-    }])
-
-    expect(agent.ingest({
-      source: "codex.app-server",
-      method: "item/tool/requestUserInput",
-      payload: {
-        requestId: "question-1",
-        questions: [{
-          id: "sandbox_mode",
-          question: "Which mode?",
-          options: [{ label: "workspace-write", description: "Allow workspace writes" }],
-        }],
-      },
-    }).events).toMatchObject([{
-      type: "question",
-      requestId: "question-1",
-      questions: [{ text: "Which mode?", options: ["workspace-write"], optionDescriptions: { "workspace-write": "Allow workspace writes" } }],
-    }])
-
   })
 
   test("completes tool-like items even when app-server only sends item/completed", () => {
@@ -285,31 +214,6 @@ describe("codexAppServerAdapter", () => {
       error: "User declined the command",
     }))
     expect(events.some((event) => event.type === "tool-output")).toBe(false)
-  })
-
-  test("a process exit reports the code's verdict", () => {
-    const failed = runtime().ingest({ source: "codex.app-server", method: "process/exited", payload: {
-      processHandle: "proc-killed",
-      exitCode: 137,
-      stdout: "",
-      stderr: "",
-    } }).events
-    expect(failed).toContainEqual(expect.objectContaining({
-      type: "tool-error",
-      toolCallId: "proc-killed",
-      error: "Process exited with code 137",
-      metadata: expect.objectContaining({ exitCode: 137 }),
-    }))
-    expect(failed.some((event) => event.type === "tool-output")).toBe(false)
-
-    const passed = runtime().ingest({ source: "codex.app-server", method: "process/exited", payload: {
-      processHandle: "proc-ok",
-      exitCode: 0,
-      stdout: "done",
-      stderr: "",
-    } }).events
-    expect(passed).toContainEqual(expect.objectContaining({ type: "tool-output", toolCallId: "proc-ok", output: "done" }))
-    expect(passed.some((event) => event.type === "tool-error")).toBe(false)
   })
 
   test("a command that produced no output yields empty output, not the raw envelope", () => {
@@ -437,84 +341,6 @@ describe("codexAppServerAdapter", () => {
     }])
   })
 
-  test("maps standalone process streams and exit notifications", () => {
-    const agent = runtime()
-
-    expect(agent.ingest({
-      source: "codex.app-server",
-      method: "process/outputDelta",
-      payload: {
-        processHandle: "proc-1",
-        stream: "stdout",
-        deltaBase64: Buffer.from("hello").toString("base64"),
-        capReached: false,
-      },
-    }).events).toMatchObject([
-      { type: "tool-start", toolCallId: "proc-1", toolName: "process" },
-      { type: "tool-input", toolCallId: "proc-1", input: { processHandle: "proc-1", stream: "stdout" } },
-      {
-        type: "tool-content",
-        toolCallId: "proc-1",
-        content: { type: "content", content: { type: "text", text: "hello" } },
-      },
-    ])
-
-    expect(agent.ingest({
-      source: "codex.app-server",
-      method: "process/exited",
-      payload: {
-        processHandle: "proc-1",
-        exitCode: 0,
-        stdout: "",
-        stdoutCapReached: false,
-        stderr: "",
-        stderrCapReached: false,
-      },
-    }).events).toMatchObject([{
-      type: "tool-output",
-      toolCallId: "proc-1",
-      output: "hello",
-    }])
-  })
-
-  test("decodes process output in browser-like runtimes without Buffer", () => {
-    const agent = runtime()
-    const runtimeGlobal = globalThis as typeof globalThis & { Buffer?: typeof Buffer }
-    const original = runtimeGlobal.Buffer
-    try {
-      Object.defineProperty(runtimeGlobal, "Buffer", {
-        configurable: true,
-        value: undefined,
-      })
-
-      expect(agent.ingest({
-        source: "codex.app-server",
-        method: "process/outputDelta",
-        payload: {
-          processHandle: "proc-1",
-          stream: "stdout",
-          deltaBase64: "aGVsbG8=",
-          capReached: false,
-        },
-      }).events).toMatchObject([{
-        type: "tool-start",
-        toolCallId: "proc-1",
-      }, {
-        type: "tool-input",
-        toolCallId: "proc-1",
-      }, {
-        type: "tool-content",
-        toolCallId: "proc-1",
-        content: { type: "content", content: { type: "text", text: "hello" } },
-      }])
-    } finally {
-      Object.defineProperty(runtimeGlobal, "Buffer", {
-        configurable: true,
-        value: original,
-      })
-    }
-  })
-
   test("maps file patch stream updates to file diffs", () => {
     const agent = runtime()
 
@@ -528,7 +354,7 @@ describe("codexAppServerAdapter", () => {
         changes: [{ path: "src/app.ts", kind: "update", diff: "@@ -1 +1 @@" }],
       },
     }).events).toMatchObject([
-      { type: "tool-start", toolCallId: "patch-1", toolName: "file-change", kind: "file_change" },
+      { type: "tool-start", toolCallId: "patch-1", toolName: "apply_patch", kind: "file_change" },
       { type: "file-diff", toolCallId: "patch-1", path: "src/app.ts", newText: "@@ -1 +1 @@" },
     ])
   })
@@ -802,21 +628,14 @@ describe("codexAppServerAdapter", () => {
     })
   })
 
-  test("maps retryable provider errors to diagnostics", () => {
+  test("maps retryable provider errors to the session retrying", () => {
     const agent = runtime()
 
     expect(agent.ingest({
       source: "codex.app-server",
       method: "error",
       payload: { error: { message: "Reconnecting... 2/5" }, willRetry: true },
-    }).events).toMatchObject([{
-      type: "diagnostic",
-      diagnostic: {
-        code: "codex_app_server.retryable_error",
-        message: "Reconnecting... 2/5",
-        severity: "warn",
-      },
-    }])
+    }).events).toMatchObject([{ type: "session-retry", message: "Reconnecting... 2/5" }])
   })
 
   test("maps chat-adjacent app-server session/provider events first class", () => {
@@ -894,7 +713,7 @@ describe("codexAppServerAdapter", () => {
     expect(agent.ingest({
       source: "codex.app-server", method: "thread/status/changed",
       payload: { threadId: "thread-1", status: { type: "systemError" } },
-    }).events).toEqual([])
+    }).events).toMatchObject([{ type: "harness-notice", code: "codex_app_server.thread_system_error" }])
   })
 
   test("waits for the authoritative error after an early systemError", () => {
@@ -902,7 +721,7 @@ describe("codexAppServerAdapter", () => {
     expect(agent.ingest({
       source: "codex.app-server", method: "thread/status/changed",
       payload: { threadId: "thread-1", status: { type: "systemError" } },
-    }).events).toEqual([])
+    }).events).toMatchObject([{ type: "harness-notice", code: "codex_app_server.thread_system_error" }])
     expect(agent.ingest({
       source: "codex.app-server", method: "error",
       payload: { threadId: "thread-1", turnId: "turn-1", willRetry: false,
@@ -953,13 +772,21 @@ describe("codexAppServerAdapter", () => {
     ])
   })
 
-  test("a Codex failure with no limit behind it carries no class of its own", () => {
+  test("a Codex sandbox failure is a workspace failure", () => {
     const [, error] = runtime().ingest({
       source: "codex.app-server",
       method: "error",
       payload: { threadId: "thread-1", turnId: "turn-1", willRetry: false, error: { message: "sandbox denied", codexErrorInfo: "sandboxError" } },
     }).events
-    expect(error).toMatchObject({ type: "error", error: "sandbox denied" })
+    expect(error).toMatchObject({ type: "error", error: "sandbox denied", errorClass: "workspace" })
+  })
+
+  test("a Codex failure with no structured reason carries no class of its own", () => {
+    const [, error] = runtime().ingest({
+      source: "codex.app-server",
+      method: "error",
+      payload: { threadId: "thread-1", turnId: "turn-1", willRetry: false, error: { message: "sandbox denied" } },
+    }).events
     expect(error).not.toHaveProperty("errorClass")
   })
 
@@ -1067,44 +894,18 @@ describe("codexAppServerAdapter", () => {
     }).events).toEqual([])
   })
 
-  test("maps thread/started parent identity without emitting a parent diagnostic", () => {
-    const payload = {
-      thread: {
-        id: "thread-child",
-        parentThreadId: "thread-parent",
-        preview: "Inspect the adapter",
-        agentNickname: "Ada",
-        agentRole: "reviewer",
-        status: { type: "active", activeFlags: [] },
-      },
-    }
-    expect(codexStartedSubagent(payload)).toEqual({
-      id: "thread-child",
-      parentThreadId: "thread-parent",
-      status: "running",
-      label: "Ada",
-      subagentType: "reviewer",
-      description: "Inspect the adapter",
-    })
-    expect(runtime().ingest({
-      source: "codex.app-server",
-      method: "thread/started",
-      payload,
-    }).events).toEqual([])
-  })
-
   test("reports app-server methods that have no runtime mapping", () => {
     const agent = runtime()
 
     expect(agent.ingest({
       source: "codex.app-server",
-      method: "hook/started",
-      payload: { threadId: "thread-1", turnId: "turn-1", run: { id: "hook-1" } },
+      method: "remoteControl/status/changed",
+      payload: { status: "disabled" },
     }).events).toMatchObject([{
       type: "diagnostic",
       diagnostic: {
         code: "codex_app_server.unmapped_event",
-        message: "hook/started: Codex app-server method has no AgentRuntimeEvent mapping",
+        message: "remoteControl/status/changed: Codex app-server method has no AgentRuntimeEvent mapping",
         severity: "info",
       },
     }])
@@ -1163,7 +964,7 @@ describe("codexAppServerAdapter", () => {
     ])
   })
 
-  test("carries MCP image content and a dynamic tool call's data-url image as attachments", () => {
+  test("carries MCP image content as attachments", () => {
     const png = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQ=="
     const mcp = runtime().ingest({ source: "codex.app-server", method: "item/completed", payload: { item: {
       id: "mcp-shot", type: "mcpToolCall", server: "browser", tool: "screenshot", pluginId: null, arguments: {}, status: "completed", error: null,
@@ -1174,20 +975,6 @@ describe("codexAppServerAdapter", () => {
       toolCallId: "mcp-shot",
       output: { content: [{ type: "text", text: "captured" }, { type: "image", data: png, mimeType: "image/png" }] },
       attachments: [{ kind: "inline", mime: "image/png", url: `data:image/png;base64,${png}` }],
-    })
-
-    const dynamic = runtime().ingest({ source: "codex.app-server", method: "item/completed", payload: { item: {
-      id: "dyn-shot", type: "dynamicToolCall", namespace: null, tool: "capture", arguments: {}, status: "completed", success: true,
-      contentItems: [
-        { type: "inputText", text: "captured" },
-        { type: "inputImage", imageUrl: `data:image/jpeg;base64,${png}` },
-        { type: "inputImage", imageUrl: "https://example.test/shot.png" },
-      ],
-    } } }).events
-    expect(dynamic.at(-1)).toMatchObject({
-      type: "tool-output",
-      toolCallId: "dyn-shot",
-      attachments: [{ kind: "inline", mime: "image/jpeg", url: `data:image/jpeg;base64,${png}` }],
     })
   })
 

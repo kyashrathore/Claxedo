@@ -12,6 +12,7 @@ import {
   type Agent,
   type CancelNotification,
   type ContentBlock,
+  type InitializeRequest,
   type InitializeResponse,
   type McpCapabilities,
   type NewSessionResponse,
@@ -25,7 +26,7 @@ import {
   type SetSessionConfigOptionRequest,
 } from "@agentclientprotocol/sdk"
 import { isTitlePrompt, lastMarker } from "../scripted-model-request"
-import { ACP_CORE_ENV, ACP_NO_MODELS_ENV, ACP_RED_ENV, ACP_SCRIPT_DIR_ENV, lastAcpScriptName, readAcpScript, recoveryContextDropped, type AcpScript } from "./script"
+import { ACP_CORE_ENV, ACP_NO_MODELS_ENV, ACP_RED_ENV, ACP_SCRIPT_DIR_ENV, lastAcpScriptName, readAcpScript, type AcpScript } from "./script"
 import { scriptedGoalExtension, scriptedGoals } from "./goals"
 import { playScript } from "./turn"
 import { recordAcpRequest } from "./requests"
@@ -98,6 +99,7 @@ export class ScriptedAgent implements Agent {
   private readonly startupQuestion: boolean
   private readonly groups: readonly string[]
   private readonly mcpCapabilities: McpCapabilities
+  private notices = false
 
   constructor(private readonly connection: AgentSideConnection, private readonly dir: string, options: ScriptedAgentOptions = {}) {
     this.core = options.core ?? false
@@ -121,7 +123,8 @@ export class ScriptedAgent implements Agent {
     return { modes: SCRIPTED_MODES, ...(configOptions.length ? { configOptions } : {}) }
   }
 
-  initialize(): InitializeResponse {
+  initialize(params: InitializeRequest): InitializeResponse {
+    this.notices = params.clientCapabilities?.session?.notices != null
     if (this.core) {
       return { protocolVersion: PROTOCOL_VERSION, agentCapabilities: { loadSession: true, promptCapabilities: PROMPT_CAPABILITIES }, authMethods: [], _meta: { jetbrains: JETBRAINS_META } }
     }
@@ -150,7 +153,7 @@ export class ScriptedAgent implements Agent {
       this.mcpUrls.set(sessionId, { url: mcp.url, headers: Object.fromEntries(headers.map((header) => [header.name, header.value])) })
     }
     if (this.startupQuestion) {
-      const answer = await this.connection.unstable_createElicitation({ sessionId, mode: "form", message: "Startup question",
+      const answer = await this.connection.createElicitation({ sessionId, mode: "form", message: "Startup question",
         requestedSchema: { type: "object", properties: { answer: { type: "string" } }, required: ["answer"] } })
       if (this.record) await recordAcpRequest(this.dir, "startup/answer", answer, this.headers)
     }
@@ -195,9 +198,7 @@ export class ScriptedAgent implements Agent {
 
   async prompt(params: PromptRequest): Promise<PromptResponse> {
     if (this.record) await recordAcpRequest(this.dir, "session/prompt", params, this.headers)
-    const delivered = deliveredAcpPrompt(recoveryContextDropped(this.dir)
-      ? params.prompt.filter((block) => block.type !== "text" || !block.text.includes("<session-context-recovery>"))
-      : params.prompt, this.dir)
+    const delivered = deliveredAcpPrompt(params.prompt, this.dir)
     const text = promptText(delivered)
     if (red && !isTitlePrompt(text)) throw RequestError.internalError(undefined, "Scripted ACP red run: every turn fails")
     const script = await scriptFor(text, this.dir)
@@ -210,7 +211,7 @@ export class ScriptedAgent implements Agent {
     this.turns.get(params.sessionId)?.abort()
     this.turns.set(params.sessionId, controller)
     try {
-      return await playScript({ connection: this.connection, sessionId: params.sessionId, scriptDir: this.dir, signal: controller.signal, prompt: text, mcp: this.mcpUrls.get(params.sessionId), reportsCancel: this.reportsCancel }, script)
+      return await playScript({ connection: this.connection, sessionId: params.sessionId, scriptDir: this.dir, signal: controller.signal, prompt: text, mcp: this.mcpUrls.get(params.sessionId), reportsCancel: this.reportsCancel, notices: this.notices }, script)
     } finally {
       if (this.turns.get(params.sessionId) === controller) this.turns.delete(params.sessionId)
     }

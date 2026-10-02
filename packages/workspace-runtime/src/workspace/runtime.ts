@@ -1,127 +1,81 @@
-import type { RecoveryTurnTarget, AgentEventEnvelope } from "@claxedo/agent-runtime-contract"
-import type { AgentRuntimeHealth, AgentTurnOutcome } from "@claxedo/agent-runtime-contract"
-import type { BrokerPorts } from "@claxedo/harness/broker"
+import type { AgentTurnOutcome, ConnectionSecretResolver } from "@claxedo/agent-runtime-contract"
+import type { WorkspaceHostOptions, WorkspaceRuntimeStoreFactory } from "./host-options"
+import path from "node:path"
+import { mountWorkspaceVcs } from "./vcs"
+import {
+  createSessionCore,
+  createStoreBrokerPorts,
+  WorkspaceHarnessUnavailableError,
+  sessionCredentials,
+  harnessUnavailableResponse,
+  pluginProjectionFor,
+  PreviewModelInvalidError,
+  type AgentRuntime,
+  type LaunchComposer,
+  requestedSessionHarness,
+  RUNTIME_NATIVE_HARNESS_IDS,
+  createWorkspaceEventFramesTap,
+  type WorkspaceEventParents,
+  isSessionRecoveryPath,
+  sessionOwner,
+  errorBody,
+  managedWorkspaceSessionAccessPolicy,
+  type SessionAccessPolicy,
+  runtimeSessionTime,
+  harnessHealthChanged,
+} from "@claxedo/session-core"
+import { realDirectoryPath } from "@claxedo/helpers/real-path"
+import { inside } from "@claxedo/helpers/path"
+import { withSessionCore } from "../session-context"
+import type { RecoveryTurnTarget } from "@claxedo/agent-runtime-contract"
+import type { AgentRuntimeHealth } from "@claxedo/agent-runtime-contract"
 import { createHarnessComposer } from "@claxedo/harness/compose"
-import type { CustomHarnessProvider } from "@claxedo/harness/providers"
-import type { HarnessServices, MachineLoginPolicy } from "@claxedo/harness/contract"
+import type { HarnessServices } from "@claxedo/harness/contract"
 import type { Hono } from "hono"
 import { HTTPException } from "hono/http-exception"
 import { clearOpaqueTimer, createKeyedSerializer, errorMessage } from "@claxedo/helpers"
 import type { LaunchOwnershipOwner } from "@claxedo/process-ownership/launch"
 import { workspaceCapabilities } from "../capabilities"
-import { createStoreBrokerPorts } from "../broker-ports"
 import { workspaceRuntimeStoreDir } from "../env"
 import { assertWorkspaceRuntimeExposure } from "../exposure"
-import { firstPartyMcpServerFor, type WorkspaceFirstPartyMcpLaunchOptions } from "../first-party-mcp/index"
+import { firstPartyMcpServerFor } from "../first-party-mcp/index"
 import { createHarnessServices } from "../harness-services"
-import { WorkspaceHarnessUnavailableError } from "../harness-unavailable-error"
 import { defaultHarnessStateRoot, harnessCompositionOptions, sweepIdleHarnessHomes } from "../host/composition"
 import { createElicitationPatternEvaluator } from "../host/pattern-evaluator"
-import { sessionCredentials } from "../host/launch"
-import { harnessUnavailableResponse } from "../routes/session-harness-refusal"
-import { pluginProjectionFor } from "../host/projection"
-import { PreviewModelInvalidError } from "../host/config-ops"
-import { createAgentRuntime, type AgentRuntime, type LaunchComposer } from "../host/runtime"
 import { Log } from "../log"
-import { createRuntimeEventHub, type RuntimeEventEnvelope, type RuntimeEventHub } from "../projection/runtime-event-hub"
-import { normalizeRuntimeSnapshot, requestedSessionHarness, RUNTIME_NATIVE_HARNESS_IDS, RuntimeConfigApplyError, type AppliedRuntimeSnapshot, type RuntimeConnectionDescriptor, type RuntimeHarnessSelection, type RuntimeSnapshot } from "../routes/config"
-import { createWorkspaceEventFramesTap, type WorkspaceEventParents } from "../routes/events"
-import { isSessionRecoveryPath } from "../routes/session-core"
-import { sessionOwner } from "../routes/session-route-options"
-import { errorBody } from "../routes/error-body"
-import { providerCatalogRefusal } from "../routes/workspace-role"
-import { managedWorkspaceSessionAccessPolicy, type SessionAccessPolicy } from "../session-access-policy"
-import { runtimeSessionTime } from "../session/session-time"
-import type { RuntimeStore } from "../store"
+import {
+  normalizeRuntimeSnapshot,
+  RuntimeConfigApplyError,
+  type AppliedRuntimeSnapshot,
+  type RuntimeConnectionDescriptor,
+  type RuntimeHarnessSelection,
+  type RuntimeSnapshot,
+} from "../routes/config"
 import { openRuntimeStore } from "../store-file"
 import { workspaceDurableState } from "./durable-state"
-import { runGit } from "../git"
-import { assertTarget, authoritativeWorkspaceId, withWorkspaceTarget, workspaceDir, workspaceId, type WorkspaceTarget } from "../target"
+import {
+  assertTarget,
+  withWorkspaceTarget,
+  workspaceDir,
+} from "../target"
 import { createWorkspaceCheckpoint } from "./checkpoint"
 import { createSessionConfiguration } from "./configure"
 import { createHarnessHealthFeed } from "./harness-health-feed"
-import { mountWorkspaceCore, mountWorkspaceAgentHooks, mountWorkspaceEvents, mountWorkspacePty, type MountedWorkspaceEvents, type WorkspaceTranscriptRoutesOptions } from "./core"
+import {
+  mountWorkspaceCore,
+  mountWorkspaceAgentHooks,
+  mountWorkspaceEvents,
+  mountWorkspacePty,
+  type MountedWorkspaceEvents,
+} from "./core"
 import type { RuntimeConfigApplyStatus, WorkspaceConnectionState, WorkspaceHost, WorkspaceHostMountOptions } from "./host"
+import { scopedToolPrompt } from "./scoped-tool-prompt"
 import { mountSessionRoutes } from "./session-routes"
 import { assertConnectionRevision, connectionConfigHooks, harnessKey, persistRuntimeConfigApplyStatus, runnerForSelection, runtimeConfigApplyError, runtimeSnapshotSignature, sameAuth, sameRuntimeMcp, validateDescriptors, type RuntimeRunner } from "./snapshot"
 import { createWorkspaceTransports } from "./transports"
-import type { ConnectionSecretResolver } from "@claxedo/agent-runtime-contract"
-import { harnessHealthChanged } from "../projection/presentation-events"
 
 export type { RuntimeRunner } from "./snapshot"
 
-export type WorkspaceRuntimeStore = RuntimeStore
-
-export type WorkspaceRuntimeStoreFactory = (input: { storeRoot?: string }) => WorkspaceRuntimeStore
-
-export type WorkspaceHostOptions = {
-  /** Host observer for the durable turn.finish outcome after store commit. */
-  onTurnOutcome?: (input: { sessionId: string; assistantMessageId?: string; outcome: AgentTurnOutcome }) => void
-  /** Direct observer for the presentation events produced by this host. */
-  onPresentationEvent?: (event: AgentEventEnvelope) => void
-  /**
-   * Direct observer for the canonical runtime events produced by this host.
-   *
-   * The presentation stream carries session metadata; this one carries what the harness
-   * said during the turn. A host that has to keep something a harness reports —
-   * a plan's quota windows outliving the session that heard about them — reads
-   * it here rather than off the SSE stream.
-   */
-  onRuntimeEvent?: (event: RuntimeEventEnvelope) => void
-  /** Parent lookup for scoping a subagent child's frames as its parent's; defaults to this host's own store. */
-  sessionParents?: WorkspaceEventParents
-  /** Host-mediated resolver endpoint for opaque file-backed transcript handles. */
-  transcripts?: WorkspaceTranscriptRoutesOptions
-  /** Host-owned projection write that completes before the created lifecycle event. */
-  afterCreateSession?: (input: { directory: string; session: unknown }) => Promise<void> | void
-  /** The workspace that already holds a session id on this host; a create naming an id another workspace holds is refused before any harness launches. */
-  sessionIdWorkspace?: (sessionId: string) => Promise<string | undefined> | string | undefined
-  /** Private-session authority selected by the host composition. */
-  sessionAccessPolicy?: SessionAccessPolicy
-  harness?: RuntimeHarnessSelection
-  /** Where this runtime runs and whose machine it is; every transport's own-login decision reads it. */
-  placement: MachineLoginPolicy
-  /** Connection providers this host installs beside the built-in ACP and Pi RPC ones. */
-  connectionProviders?: readonly CustomHarnessProvider<unknown>[]
-  /** Host-owned resolver for opaque descriptor secret references. */
-  resolveConnectionSecrets?: ConnectionSecretResolver
-  target?: WorkspaceTarget
-  storeRoot?: string
-  /** Where Claxedo-owned harness homes live; defaults to `~/.claxedo/harness` of the process user. */
-  harnessStateRoot?: string
-  /** The environment harness processes inherit and executables are resolved from. */
-  env?: NodeJS.ProcessEnv
-  /**
-   * Durable config-apply receipts (`accepted-snapshot.json`,
-   * `apply-status.json`). OFF by default: the live `configApply` status is
-   * already exposed through `host.detail()` and `/api/wr/health`, so receipt
-   * files are a diagnostics opt-in, not the source of truth. Hosts that need
-   * durable receipts (cloud/sandbox postmortems) pass a directory they own —
-   * never derived from the workspace checkout.
-   */
-  configApplyReceiptDir?: string
-  /** Embedded owner applies its canonical snapshot before any harness is acquired. */
-  beforeHarnessAcquire?: () => Promise<void>
-  /**
-   * Called synchronously after every change to what `activity()` and
-   * `activeTurns()` report, so an owner deciding residency never has to poll
-   * them. It must not start a turn, a checkpoint write, or a disposal.
-   */
-  onActivityChange?: () => void
-  eventHub?: RuntimeEventHub
-  /**
-   * Host-supplied shared store factory. Defaults to the SQLite-backed
-   * `RuntimeStore`. See {@link WorkspaceRuntimeStoreFactory}.
-   */
-  storeFactory?: WorkspaceRuntimeStoreFactory
-  /**
-   * The first-party MCP entry every launched session receives: the loopback
-   * origin serving `/api/claxedo/mcp` and this runtime's credential issuer.
-   * Absent, no harness receives the entry — the host that mounts the route is
-   * the one that enables injection.
-   */
-  firstPartyMcpLaunch?: WorkspaceFirstPartyMcpLaunchOptions
-}
 
 const log = Log.create({ service: "workspace-runtime" })
 
@@ -155,35 +109,20 @@ function resolveStoreFactory(options: WorkspaceHostOptions): WorkspaceRuntimeSto
   }
 }
 
-function scopedToolPrompt(
-  sessionId: string,
-  registration: {
-    callbackUrl: string
-    tools: Array<{ name: string; description: string; inputSchema: Record<string, unknown> }>
-  },
-) {
-  return [
-    "<claxedo_scoped_session_tools>",
-    "These trusted tools apply only to the current Session. Their callback derives tenant, workspace, Stream, Task, Run, and lease identity from a nonce-bound host binding; never add or change those identities.",
-    "Invoke a tool from the sandbox shell by POSTing JSON shaped as {\"sessionID\",\"name\",\"toolCallID\",\"input\"} to the callback URL. Use a stable unique toolCallID and reuse it if the response is lost.",
-    `Session ID: ${JSON.stringify(sessionId)}`,
-    `Callback URL: ${JSON.stringify(registration.callbackUrl)}`,
-    "Available tools:",
-    ...registration.tools.map((tool) => `${tool.name}: ${tool.description}\nInput schema: ${JSON.stringify(tool.inputSchema)}`),
-    "Use progress tools only at meaningful logical boundaries. If a completion tool is available, call it with evidence before giving the final response.",
-    "</claxedo_scoped_session_tools>",
-  ].join("\n")
-}
-
-function requestDirectory(c: { req: { query(name: string): string | undefined } }) {
-  return assertTarget(c.req.query("directory") || workspaceDir())
-}
-
 export function createWorkspaceHost(options: WorkspaceHostOptions): WorkspaceHost {
-  if (options.sessionIdWorkspace && !options.target?.workspaceId) {
-    throw new Error("sessionIdWorkspace requires a target workspace: a session's holder is compared with the workspace this host serves")
-  }
-  const eventHub = options.eventHub ?? createRuntimeEventHub()
+  if (!options.target?.workspaceId) throw new Error("createWorkspaceHost requires a target workspace")
+
+  const core = createSessionCore({
+    placement: {
+      workspaceId: options.target.workspaceId,
+      directory: options.target.directory,
+      normalizeDirectory: (directory) => path.resolve(directory.trim()),
+      canonicalDirectory: realDirectoryPath, containsDirectory: inside,
+      sessionIdWorkspace: options.sessionIdWorkspace,
+    },
+    ...(options.eventHub ? { eventHub: options.eventHub } : {}),
+  })
+  const eventHub = core.eventHub
   let closeEvents: () => void = () => {}
   const hostFrames = createWorkspaceEventFramesTap()
   const sessionParents: WorkspaceEventParents = {
@@ -213,10 +152,10 @@ export function createWorkspaceHost(options: WorkspaceHostOptions): WorkspaceHos
   const snapshots = createKeyedSerializer<"snapshot">()
   const storeFactory = resolveStoreFactory(options)
   const ownerGeneration = crypto.randomUUID()
-  const assignedWorkspaceId = options.target?.workspaceId ?? authoritativeWorkspaceId()
+  const assignedWorkspaceId = options.target.workspaceId
   const launchOwner: LaunchOwnershipOwner = {
     ownerGeneration,
-    scope: assignedWorkspaceId ? { kind: "workspace", workspaceId: assignedWorkspaceId } : { kind: "standalone" },
+    scope: { kind: "workspace", workspaceId: assignedWorkspaceId },
   }
   const durable = workspaceDurableState({ open: () => storeFactory({ storeRoot }), launchOwner, closing: () => closing })
   const { store, launchOwnership, sessionStarts } = durable
@@ -244,7 +183,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions): WorkspaceHos
   }
 
   const launch: LaunchComposer = {
-    workspaceId: options.target?.workspaceId ?? workspaceId(),
+    workspaceId: options.target.workspaceId,
     projection: (harness) => pluginProjectionFor(harness, {
       generation: `runtime-config:${configApplyRevision}`, mcp: currentMcp, harnessLaunch: currentHarnessLaunch,
     }),
@@ -255,7 +194,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions): WorkspaceHos
   type Engine = {
     services: HarnessServices
     transports: ReturnType<typeof createWorkspaceTransports>
-    ports: BrokerPorts & { abortProviderTurn(sessionId: string): void }
+    ports: ReturnType<typeof createStoreBrokerPorts>
     runtime: AgentRuntime
     configuration: ReturnType<typeof createSessionConfiguration>
   }
@@ -274,7 +213,6 @@ export function createWorkspaceHost(options: WorkspaceHostOptions): WorkspaceHos
     const runtimeStore = store()
     const services = createHarnessServices({
       ownership: launchOwnership(),
-      ...(options.transcripts ? { transcripts: options.transcripts } : {}),
       ...(options.firstPartyMcpLaunch ? { firstPartyMcpLaunch: options.firstPartyMcpLaunch } : {}),
       log: { debug: (message, fields) => log.info(message, fields), info: (message, fields) => log.info(message, fields),
         warn: (message, fields) => log.warn(message, fields), error: (message, fields) => log.error(message, fields) },
@@ -284,7 +222,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions): WorkspaceHos
     })
     void sweepIdleHarnessHomes(harnessStateRoot).catch((error: unknown) => log.warn("Idle harness home sweep failed", { error: String(error) }))
     const composer = createHarnessComposer(services, harnessCompositionOptions({
-      env, placement: options.placement, harnessStateRoot, opencodeRoot: `${storeRoot}/opencode`, store,
+      env, placement: options.placement, harnessStateRoot, opencodeRoot: `${storeRoot}/opencode`,
     }), options.connectionProviders ?? [])
     const transports = createWorkspaceTransports({
       composer,
@@ -318,9 +256,9 @@ export function createWorkspaceHost(options: WorkspaceHostOptions): WorkspaceHos
         await attached.handle.transport.close(attached.session)
       },
     })
-    const runtime = createAgentRuntime({
-      store: runtimeStore, eventHub, transports, ports, ownerGeneration, launch,
-      identity: { workspaceId: options.target?.workspaceId ?? "" },
+    const runtime = core.createRuntime({
+      store: runtimeStore, transports, ports, ownerGeneration, launch, log,
+      identity: { workspaceId: options.target.workspaceId },
       savedCommands: () => currentCommands,
       afterTurn: (sessionId) => configuration.afterTurn(sessionId),
       ...(options.onActivityChange ? { onActiveTurnChange: options.onActivityChange } : {}),
@@ -356,7 +294,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions): WorkspaceHos
   }
 
   function runnerHealth(): AgentRuntimeHealth {
-    const directory = options.target?.directory ?? workspaceDir()
+    const directory = options.target.directory
     if (!runner || !engine) return { status: "ok" }
     const handle = engine.transports.composed().find((item) => harnessKey(item.runner) === harnessKey(runner!))
     return handle?.transport.health?.runtime(directory) ?? { status: "ok" }
@@ -365,13 +303,13 @@ export function createWorkspaceHost(options: WorkspaceHostOptions): WorkspaceHos
   function connectionState(input?: { sessionId?: string; directory?: string }): WorkspaceConnectionState | undefined {
     const selection = input?.sessionId ? store().getSessionConfig(input.sessionId)?.harness : runner
     if (selection?.access !== "connection") return undefined
-    const directory = input?.directory ?? (input?.sessionId ? store().getSession(input.sessionId)?.directory : undefined) ?? options.target?.directory ?? workspaceDir()
+    const directory = input?.directory ?? (input?.sessionId ? store().getSession(input.sessionId)?.directory : undefined) ?? options.target.directory
     const handle = engine?.transports.composed().find((item) => item.runner.access === "connection" && item.runner.id === selection.id)
     return { connectionId: selection.id, ...(engine?.runtime.reads.connectionState(input?.sessionId, directory, handle) ?? { state: "configured" as const, processes: [] }) }
   }
 
   async function sessionHarnessHealth(input: { sessionId: string; directory?: string }): Promise<AgentRuntimeHealth> {
-    const directory = input.directory ?? store().getSession(input.sessionId)?.directory ?? options.target?.directory ?? workspaceDir()
+    const directory = input.directory ?? store().getSession(input.sessionId)?.directory ?? options.target.directory
     return engine?.runtime.reads.sessionHealth(input.sessionId, directory) ?? { status: "ok" }
   }
 
@@ -473,7 +411,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions): WorkspaceHos
   }
 
   function mountGate(app: Hono) {
-    app.use("*", async (c, next) => {
+    app.use("*", async (c, next) => withSessionCore(core, () => withWorkspaceTarget(options.target, async () => {
       // A recovery request is served while this runtime is closing, and it
       // is not something disposal waits for: a wedged session is contained BY
       // cancelling it, so draining that request before tearing down would make
@@ -490,30 +428,32 @@ export function createWorkspaceHost(options: WorkspaceHostOptions): WorkspaceHos
       pendingRequests.add(request)
       try { await next() } finally { pendingRequests.delete(request); finish() }
       return undefined
-    })
+    })))
   }
 
   function mountEvents(app: Hono, mount: WorkspaceHostMountOptions, sessionAccessPolicy: SessionAccessPolicy): MountedWorkspaceEvents {
-    const directory = options.target?.directory ?? workspaceDir()
-    const id = options.target?.workspaceId ?? workspaceId()
+    const directory = options.target.directory
+    const id = options.target.workspaceId
     if (mount.core) {
       return mountWorkspaceCore(app, mount.core.upgradeWebSocket, {
-        directory, workspaceId: id, eventHub, exposure: mount.exposure, sessionAccessPolicy,
+        core, directory, workspaceId: id, exposure: mount.exposure, sessionAccessPolicy,
         sessionStarts,
-        sessionParents: options.sessionParents ?? sessionParents, transcripts: options.transcripts, launchOwnership,
+        sessionParents: options.sessionParents ?? sessionParents, launchOwnership,
+        ...(mount.renewalIntervalMs !== undefined ? { renewalIntervalMs: mount.renewalIntervalMs } : {}),
       })
     }
     const events = mountWorkspaceEvents(app, {
-      directory, workspaceId: id, eventHub, sessionAccessPolicy, sessionStarts,
+      core, directory, workspaceId: id, sessionAccessPolicy, sessionStarts,
       sessionParents: options.sessionParents ?? sessionParents,
       ...(mount.renewalIntervalMs !== undefined ? { renewalIntervalMs: mount.renewalIntervalMs } : {}),
     })
     if (mount.pty) mountWorkspacePty(app, mount.pty.upgradeWebSocket, sessionAccessPolicy, { ownership: launchOwnership })
-    if (mount.agentHooks) mountWorkspaceAgentHooks(app, sessionAccessPolicy)
+    if (mount.agentHooks) mountWorkspaceAgentHooks(app, core, sessionAccessPolicy)
     return events
   }
 
   return {
+    sessionCore: core,
     mount(app: Hono, mount: WorkspaceHostMountOptions) {
       mountGate(app)
       assertWorkspaceRuntimeExposure({ exposure: mount.exposure, env: process.env })
@@ -531,8 +471,6 @@ export function createWorkspaceHost(options: WorkspaceHostOptions): WorkspaceHos
         events.close()
       }
       app.get("/api/wr/harness-providers", async (c) => {
-        const refused = providerCatalogRefusal(c)
-        if (refused) return refused
         const harness = requestedSessionHarness(c.req)
         if (!harness) return c.json(errorBody("harness_required", "Name the harness whose provider catalog to read"), 400)
         const directory = assertTarget(c.req.query("directory") || workspaceDir())
@@ -559,10 +497,6 @@ export function createWorkspaceHost(options: WorkspaceHostOptions): WorkspaceHos
         try {
           const runtime = await runtimeForSession()
           const target = { harness: targetRunner, directory, owner: sessionOwner(c) }
-          if (await runtime.reads.servesProviderCatalog(target)) {
-            const refused = providerCatalogRefusal(c)
-            if (refused) return refused
-          }
           const preview = await runtime.reads.configOptions(target, c.req.query("model") || undefined)
           if (!preview) {
             return c.json({ ok: false, error: { code: "harness_config_options_unavailable", harness: targetRunner.id,
@@ -576,33 +510,29 @@ export function createWorkspaceHost(options: WorkspaceHostOptions): WorkspaceHos
           return c.json({ ok: false, error: { code: "harness_config_options_unavailable", harness: targetRunner.id, message: errorMessage(cause) } }, 502)
         }
       })
-      app.get("/vcs", async (c) => c.json(await localVcsInfo(requestDirectory(c))))
+      mountWorkspaceVcs(app)
       const sessions = mountSessionRoutes({
+        core,
         runtime: runtimeForSession,
         recovery: () => engine?.runtime.recovery,
         store,
         sessionStarts,
-        eventHub,
         sessionAccessPolicy,
         checkpoint,
         currentRunner,
-        transcripts: options.transcripts,
         afterCreateSession: options.afterCreateSession,
-        sessionIdWorkspace: options.sessionIdWorkspace,
         sessionToolPrompt: (sessionId) => {
           const registration = sessionToolPrompts.get(sessionId)
           return registration ? scopedToolPrompt(sessionId, registration) : undefined
         },
         subagentAdmission: (parentSessionId, observation) => harnessEngine().runtime.subagents.admit(parentSessionId, observation),
+        backgroundWork: (sessionId) => engine?.ports.backgroundWork.read(sessionId),
       })
       disposeDeliveries = sessions.dispose
       app.route("/", sessions.routes)
       reissueQueuedPrompts = () => durable.whenAdmitted("queued prompt recovery", () =>
-        options.target ? withWorkspaceTarget(options.target, sessions.recoverQueuedPrompts) : sessions.recoverQueuedPrompts())
+        withSessionCore(core, () => withWorkspaceTarget(options.target, sessions.recoverQueuedPrompts)))
       if (runner) reissueQueuedPrompts()
-    },
-    hasSession(sessionId: string) {
-      return !!store().getSession(sessionId)
     },
     sessionTime(sessionId: string) {
       const session = store().getSession(sessionId)
@@ -625,19 +555,6 @@ export function createWorkspaceHost(options: WorkspaceHostOptions): WorkspaceHos
       return options.firstPartyMcpLaunch ? firstPartyMcpServerFor(options.firstPartyMcpLaunch, sessionId) : undefined
     },
     apply,
-    applyHarnessLaunch(harnessLaunch: Record<string, Record<string, unknown>>) {
-      return apply({
-        version: 4,
-        mcp: currentMcp,
-        connections: [...appliedConnections.values()],
-        ...(runner ? { defaultHarness: selectionForRunner(runner) } : {}),
-        auth: currentAuthRaw,
-        providerDefinitions: currentProviderDefinitions,
-        workspaceHarnessEnabled: enabled,
-        harnessLaunch,
-        commands: currentCommands,
-      })
-    },
     detail() {
       const health = runnerHealth()
       return {
@@ -694,7 +611,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions): WorkspaceHos
     async registerSessionTools(input) {
       if (closing) throw new HTTPException(503, { message: "Workspace runtime is disposed" })
       const config = store().getSessionConfig(input.sessionId)
-      const directory = store().getSession(input.sessionId)?.directory ?? options.target?.directory ?? workspaceDir()
+      const directory = store().getSession(input.sessionId)?.directory ?? options.target.directory
       const running = harnessEngine()
       const attached = running.runtime.attachments.peek(input.sessionId)
       // A connection's transport exists only under a secret lease, which a
@@ -741,6 +658,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions): WorkspaceHos
         const retired = engine
         engine = undefined
         appliedSignature = undefined
+        retired?.ports.backgroundWork.retireAll()
         if (retired) await retireTransports(retired.transports)
       },
       async resume() {
@@ -779,6 +697,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions): WorkspaceHos
         closeEvents()
         sessionToolPrompts.clear()
         durable.close()
+        core.placement.clear()
         engine = undefined
       })()
       void disposal.catch((error) => {
@@ -787,23 +706,5 @@ export function createWorkspaceHost(options: WorkspaceHostOptions): WorkspaceHos
       })
       return disposal
     },
-  }
-}
-
-async function localVcsInfo(directory: string) {
-  const gitLine = async (args: string[]) => {
-    try {
-      return (await runGit(args, directory)).trim() || undefined
-    } catch {
-      return undefined
-    }
-  }
-  const [branch, remoteHead] = await Promise.all([
-    gitLine(["branch", "--show-current"]),
-    gitLine(["symbolic-ref", "--quiet", "--short", "refs/remotes/origin/HEAD"]),
-  ])
-  return {
-    ...(branch ? { branch } : {}),
-    ...(remoteHead ? { default_branch: remoteHead.replace(/^origin\//, "") } : {}),
   }
 }

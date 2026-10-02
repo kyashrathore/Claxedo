@@ -2,7 +2,14 @@ import { Hono } from "hono"
 import { isBoolean, isNonEmptyString, isRecord, isString } from "@claxedo/helpers/guards"
 import { parsePositiveInteger } from "@claxedo/helpers"
 import { gitTopLevel, GitTimeoutError, withGitWriteLock } from "../git"
-import { assertTarget, hasRegisteredWorkspaceDirectories, WorkspaceTargetError } from "../target"
+import {
+  WorkspaceTargetError,
+  boundedJsonBody,
+  errorBody,
+  isRequestBodyTooLarge,
+  requestBodyTooLargeBody,
+} from "@claxedo/session-core"
+import { assertTarget, hasRegisteredWorkspaceDirectories} from "../target"
 import type { RelayHostAuthContext } from "../workspace-host-service-auth"
 import {
   GIT_LOG_DEFAULT_LIMIT,
@@ -14,8 +21,6 @@ import {
   gitWorktreeStatus,
   prepareStagedCommit,
 } from "../workspace-files/git-worktree"
-import { boundedJsonBody, errorBody, isRequestBodyTooLarge, requestBodyTooLargeBody } from "./http"
-import { denyWorkspaceViewers } from "./workspace-role"
 import {
   authorizeWorktreeTarget,
   deniedWorktreeFilter,
@@ -31,7 +36,6 @@ type GitRouteContext = {
   }
 }
 
-const WRITE_DENIED = "Workspace role does not allow Git writes"
 
 const ERROR_STATUS = {
   git_empty_message: 400,
@@ -124,7 +128,7 @@ export function GitWorktreeRoutes(options: GitWorktreeRoutesOptions = {}) {
       const limit = parsePositiveInteger(c.req.query("limit")) ?? GIT_LOG_DEFAULT_LIMIT
       return c.json({ commits: await gitLog(base, limit) })
     })
-    .post("/stage", denyWorkspaceViewers(WRITE_DENIED), async (c) => {
+    .post("/stage", async (c) => {
       const paths = pathList(await boundedJsonBody(c))
       if (!paths) return c.json(errorBody("git_paths_required", "paths must be a non-empty string array"), 400)
       const base = await scoped(c, { operation: "worktree_write", paths, subtree: true })
@@ -132,7 +136,7 @@ export function GitWorktreeRoutes(options: GitWorktreeRoutesOptions = {}) {
       await holdingIndex(base, () => gitStage(base, paths))
       return c.body(null, 204)
     })
-    .post("/unstage", denyWorkspaceViewers(WRITE_DENIED), async (c) => {
+    .post("/unstage", async (c) => {
       const paths = pathList(await boundedJsonBody(c))
       if (!paths) return c.json(errorBody("git_paths_required", "paths must be a non-empty string array"), 400)
       const base = await scoped(c, { operation: "worktree_write", paths, subtree: true })
@@ -140,7 +144,7 @@ export function GitWorktreeRoutes(options: GitWorktreeRoutesOptions = {}) {
       await holdingIndex(base, () => gitUnstage(base, paths))
       return c.body(null, 204)
     })
-    .post("/commit-staged", denyWorkspaceViewers(WRITE_DENIED), async (c) => {
+    .post("/commit-staged", async (c) => {
       const body = await boundedJsonBody(c)
       const message = isRecord(body) && isString(body.message) ? body.message : undefined
       const amend = isRecord(body) ? body.amend : undefined
@@ -164,7 +168,7 @@ export function GitWorktreeRoutes(options: GitWorktreeRoutesOptions = {}) {
         return c.json(await staged.commit())
       })
     })
-    .post("/push", denyWorkspaceViewers(WRITE_DENIED), async (c) => {
+    .post("/push", async (c) => {
       const body = await boundedJsonBody(c)
       const setUpstream = isRecord(body) ? body.setUpstream : undefined
       if (setUpstream !== undefined && !isBoolean(setUpstream)) {

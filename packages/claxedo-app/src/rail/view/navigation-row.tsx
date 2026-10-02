@@ -91,6 +91,16 @@ export function NavigationStatusMark(props: { readonly status: NavigationStatus;
           />
         </span>
       </Match>
+      <Match when={props.status === "background"}>
+        <span aria-hidden="true" {...data()} class="flex size-4 shrink-0 translate-y-[0.5px] items-center justify-center">
+          <span
+            class="flex items-center justify-center rounded-full border-[1.5px] border-icon-weak-base animate-pulse motion-reduce:animate-none"
+            classList={{ "size-[8.5px]": props.surface === "switcher", "size-[10px]": props.surface !== "switcher" }}
+          >
+            <span class="size-[3px] rounded-full bg-icon-weak-base" />
+          </span>
+        </span>
+      </Match>
       <Match when={props.status !== "idle"}>
         <span
           aria-hidden="true"

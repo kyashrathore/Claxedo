@@ -37,13 +37,12 @@ export function withArrays(...fields: string[]) {
 }
 
 export function sessionPeople(raw: unknown): DecodeResult<Record<string, unknown>> {
-  const shape = withArrays("grants", "participants", "teams")(raw)
+  const shape = withArrays("grants", "teams")(raw)
   if (!shape.ok) return shape
   if (typeof shape.value.can_manage_shares !== "boolean") {
     return { ok: false, reason: 'expected a boolean "can_manage_shares"' }
   }
   const teams = asArray(shape.value.teams)
-  const participants = asArray(shape.value.participants)
   const grants = asArray(shape.value.grants)
   for (const [index, team] of teams.entries()) {
     const row = object(team)
@@ -53,12 +52,6 @@ export function sessionPeople(raw: unknown): DecodeResult<Record<string, unknown
       if (typeof row.value[field] !== expected) {
         return { ok: false, reason: `expected teams[${index}].${field} to be a ${expected}` }
       }
-    }
-  }
-  for (const [index, participant] of participants.entries()) {
-    const row = object(participant)
-    if (!row.ok || typeof row.value.user_id !== "string") {
-      return { ok: false, reason: `expected participants[${index}].user_id to be a string` }
     }
   }
   for (const [index, grant] of grants.entries()) {
@@ -93,7 +86,7 @@ export function nullable<T>(decode: (raw: unknown) => DecodeResult<T>) {
 export function connection(raw: unknown): DecodeResult<Record<string, unknown>> {
   const shape = object(raw)
   if (!shape.ok) return shape
-  if (shape.value["status"] === "provisioning") return shape
+  if (shape.value["status"] === "provisioning" || shape.value["status"] === "stopped") return shape
   return withStrings("relayUrl")(raw)
 }
 

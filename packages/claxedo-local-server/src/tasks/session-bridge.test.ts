@@ -5,7 +5,7 @@ import path from "path"
 import { promisify } from "node:util"
 import { execFile } from "node:child_process"
 import type { HarnessEffortLevels } from "@claxedo/agent-runtime-contract"
-import { FakeTransport, fakeConnectionProvider } from "@claxedo/workspace-runtime/testing"
+import { FakeTransport, fakeConnectionProvider } from "@claxedo/session-core/testing"
 import { closeAuthorityDatabases } from "@claxedo/server-core/authority/adapters/sqlite/workspace-authority-store"
 import { configureAgentConfig, disposeAgentConfig, saveUserConfig } from "@claxedo/server-core/agent-config/index"
 import { ClaxedoDB } from "@claxedo/server-core/platform/db/index"
@@ -18,7 +18,7 @@ import {
   startConfigurationDigest,
   type Preset,
   type SessionHandoffCommand,
-  type SessionReference,
+  type SessionRef,
   type StartCommand,
   type Task,
   type TaskSessionLink,
@@ -112,7 +112,7 @@ function task(input: { workspaceId: string | null; projectId?: string }): Task {
   }
 }
 
-function link(sessionRef: { sessionId: string; workspaceId: string | null }, configurationDigest: string): TaskSessionLink {
+function link(sessionRef: SessionRef, configurationDigest: string): TaskSessionLink {
   return {
     scopeId: "local",
     taskId: "tsk_1",
@@ -157,7 +157,7 @@ async function startCommand(input: {
 function handoffCommand(input: {
   workspaceId: string | null
   projectId?: string
-  session: SessionReference
+  session: SessionRef
   attempt?: number
 }): SessionHandoffCommand {
   return {
@@ -195,7 +195,8 @@ async function harness(input: { offeredModelId?: string; effortLevels?: HarnessE
     offeredModelId: input.offeredModelId ?? MODEL.modelID,
     ...(input.effortLevels ? { effortLevels: input.effortLevels } : {}),
   })
-  configureEmbeddedWorkspaceRuntime({ connectionProviders: [fixture.provider] })
+  configureEmbeddedWorkspaceRuntime({
+  sessionIdWorkspace: () => undefined, connectionProviders: [fixture.provider] })
   configureAgentConfig({ connectionConfigs: [fixture.provider] })
   // The bridge dispatches through the local runtime port, and a create there
   // resynchronizes the runtime from the user config first: a connection
@@ -269,7 +270,7 @@ afterEach(async () => {
   disposeAgentConfig()
   ClaxedoDB.close()
   closeAuthorityDatabases()
-  configureEmbeddedWorkspaceRuntime({})
+  configureEmbeddedWorkspaceRuntime({ sessionIdWorkspace: () => undefined })
   configureAgentConfig()
   for (const root of roots.splice(0)) await fs.rm(root, { recursive: true, force: true })
   delete process.env.CLAXEDO_DATA_DIR

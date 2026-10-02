@@ -3,7 +3,7 @@ import { CLAUDE_PERMISSION_MODES, type AgentPermissionModeState, type SessionCon
 import { claudePermissionSettings } from "../../profiles/claude-code"
 import { TransportError } from "../../contract/errors"
 import type { KeptPermissionMode } from "../../contract"
-import { replayClaudePermissionUpdates, claudeGrantUpdates, persistedClaudeRules } from "./grants"
+import { replayClaudePermissionUpdates, claudeGrantUpdates } from "./grants"
 
 export const sdkModes = ["default", "acceptEdits", "bypassPermissions", "plan", "dontAsk", "auto"] as const satisfies readonly PermissionMode[]
 export const modeParity: Exclude<PermissionMode, typeof sdkModes[number]> extends never ? true : never = true
@@ -18,9 +18,12 @@ export function claudeModeState(currentModeId: string): AgentPermissionModeState
 
 export function claudeModeKept(updates: readonly PermissionUpdate[] | undefined): KeptPermissionMode | undefined {
   const moved = updates?.findLast((update) => update.type === "setMode")
-  if (moved?.type !== "setMode") return undefined
-  const mode = CLAUDE_PERMISSION_MODES.modes.find((candidate) => candidate.id === moved.mode)
-  if (!mode) throw new TransportError("claude", "protocol", `Unknown Claude permission mode ${moved.mode}`)
+  return moved?.type === "setMode" ? claudeKeptMode(moved.mode) : undefined
+}
+
+export function claudeKeptMode(modeId: string): KeptPermissionMode {
+  const mode = CLAUDE_PERMISSION_MODES.modes.find((candidate) => candidate.id === modeId)
+  if (!mode) throw new TransportError("claude", "protocol", `Unknown Claude permission mode ${modeId}`)
   return { modeId: mode.id, label: mode.name }
 }
 
@@ -33,7 +36,7 @@ export function requireClaudeMode(modeId: string): typeof sdkModes[number] {
 export function permissionOptions(config: SessionConfig, grantKeys: readonly string[] = []) {
   const modeId = claudeModeId(config.permissionMode)
   const selected = requireClaudeMode(modeId)
-  const rules = replayClaudePermissionUpdates(persistedClaudeRules(config.permissionState), claudeGrantUpdates(grantKeys))
+  const rules = replayClaudePermissionUpdates(claudeGrantUpdates(grantKeys))
   return { permissionMode: selected, allowDangerouslySkipPermissions: modeId === "bypassPermissions" ? true as const : undefined,
     additionalDirectories: rules.additionalDirectories,
     settings: claudePermissionSettings(rules.allow, rules.ask, rules.deny) }

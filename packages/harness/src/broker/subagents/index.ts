@@ -1,11 +1,12 @@
-import { randomUUID } from "node:crypto"
-import { prefixedRandomId } from "@claxedo/helpers"
+import { subagentIdentitySeed } from "./admission"
+import { createKeyedSerializer, prefixedRandomId, sha256Hex } from "@claxedo/helpers"
 import { UnknownHostSubagentKeyError, type SubagentObservation } from "@claxedo/agent-runtime-contract"
 import type { SubagentUpdatedEvent } from "@claxedo/agent-runtime-contract"
 import type { ChildSessionRef } from "../../contract/broker"
 import type { BrokerPorts } from "../ports"
 
 export class SubagentBroker {
+  private readonly admissions = createKeyedSerializer()
   constructor(private readonly ports: BrokerPorts) {}
 
   associate(sessionId: string, correlationKey: string, child: ChildSessionRef): void {
@@ -22,14 +23,20 @@ export class SubagentBroker {
     this.ports.bindChildCorrelation(sessionId, correlationKey, child.sessionId)
   }
 
-  async admit(sessionId: string, observation: SubagentObservation): Promise<SubagentUpdatedEvent> {
+  admit(sessionId: string, observation: SubagentObservation): Promise<SubagentUpdatedEvent> {
+    return this.admissions.run(sessionId, () => this.admitOrdered(sessionId, observation))
+  }
+
+  private async admitOrdered(sessionId: string, observation: SubagentObservation): Promise<SubagentUpdatedEvent> {
     const transcript = observation.transcript?.kind
     const openable = transcript === "live" || transcript === "messages" || transcript === "file"
+    const seed = subagentIdentitySeed(sessionId, observation)
+    const stableKey = seed ? `subagent_${(await sha256Hex(seed)).slice(0, 24)}` : undefined
     const admitted = this.ports.subagentAdmissionStore.admit({
       parentSessionId: sessionId,
       observation,
-      allocateKey: () => prefixedRandomId("subagent", "_"),
-      ...(openable ? { allocateChildSessionId: () => randomUUID() } : {}),
+      allocateKey: () => stableKey ?? prefixedRandomId("subagent", "_"),
+      ...(openable ? { allocateChildSessionId: () => crypto.randomUUID() } : {}),
     })
     if (!admitted.published) {
       await this.ports.publishSubagent(sessionId, admitted.event)

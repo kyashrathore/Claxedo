@@ -44,7 +44,7 @@ export const WEB_TOOL_NAMES = new Set(["webfetch", "websearch"])
 
 const HIDDEN_TOOLS = new Set(["todowrite"])
 
-const GROUPABLE_PART_TYPES = new Set(["compaction", "handoff", "text", "reasoning", "tool", "file"])
+const GROUPABLE_PART_TYPES = new Set(["compaction", "handoff", "notice", "text", "reasoning", "tool", "file"])
 
 const NON_BLANK = /\S/
 
@@ -313,9 +313,7 @@ type TurnFoldShape = {
 }
 
 function assistantMessageInterrupted(message: AgentAssistantMessage) {
-  if (message.error?.name === "MessageAbortedError") return true
-  if (message.error?.name !== "UnknownError") return false
-  return asRecord(message.error.data)?.message === "Codex turn aborted"
+  return message.error?.name === "MessageAbortedError"
 }
 
 /** The assistant message a session's last turn was cancelled at, which that turn draws as an interruption. */

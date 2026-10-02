@@ -57,7 +57,6 @@ describe("harness spawn env never carries internal secrets", () => {
       "CLAXEDO_RELAY_RESOLVER_TOKEN",
       "CLAXEDO_EMBEDDED_AUTH_SECRET",
       "CLAXEDO_POLAR_WEBHOOK_SECRET",
-      "CLAXEDO_LOCAL_DOCUMENT_BROKER_TOKEN",
       "CLAXEDO_ACCESS_TOKEN",
       "CLAXEDO_DEV_TOKEN",
       "CLAXEDO_CONTROL_PLANE_URL", // child has no need to name the control plane
@@ -98,5 +97,9 @@ describe("harness spawn env never carries internal secrets", () => {
 
   test("undefined values are dropped", () => {
     expect(harnessSpawnEnv({ KEEP: "v", DROP: undefined })).toEqual({ KEEP: "v" })
+  })
+
+  test("the path of Pi's one-read MCP handoff file reaches the Pi child it names", () => {
+    expect(harnessSpawnEnv({ CLAXEDO_PI_MCP_HANDOFF: "/state/mcp-handoff/one.json" })).toEqual({ CLAXEDO_PI_MCP_HANDOFF: "/state/mcp-handoff/one.json" })
   })
 })

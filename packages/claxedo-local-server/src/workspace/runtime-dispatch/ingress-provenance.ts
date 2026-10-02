@@ -32,6 +32,8 @@ const RELAY_FORWARDED_BY = "workspace-relay"
 export type IngressActor = RuntimeActor & {
   orgId: string
   role: "viewer" | "editor" | "admin" | "owner"
+  /** The one session the relayed token reaches, when it is a share holder's. */
+  sessionId?: string
 }
 
 export type IngressProvenance =

@@ -10,12 +10,8 @@ const [connector, identity, hostState, hostStateNode, machineTransport, bootstra
 for (const [name, value] of Object.entries({
   createHostConnector: connector.createHostConnector,
   createHostKeyPair: identity.createHostKeyPair,
-  enrollmentPayload: identity.enrollmentPayload,
   hostKeyPairFromJwk: identity.hostKeyPairFromJwk,
   machineRequestSignature: identity.machineRequestSignature,
-  hostInvitationRedeemPayload: identity.hostInvitationRedeemPayload,
-  hostPublicKeyFingerprint: identity.hostPublicKeyFingerprint,
-  parseInvitationToken: identity.parseInvitationToken,
   createHostStateStore: hostState.createHostStateStore,
   effectiveRoots: hostState.effectiveRoots,
   resolveRoots: hostState.resolveRoots,

@@ -1,7 +1,7 @@
 import type { PluginProjection, ResolvedCredentials, TransportConfigUpdate } from "@claxedo/harness/contract"
 import { createKeyedSerializer } from "@claxedo/helpers"
 import { CredentialSelectionError } from "@claxedo/harness/registry"
-import type { AttachedSession } from "../host/attachments"
+import type { AttachedSession } from "@claxedo/session-core"
 import { RuntimeConfigApplyError } from "../routes/config"
 
 export type SessionConfigurationInput = {

@@ -114,8 +114,7 @@ const RuntimeAuthorizationBody = z
     userId: z.string().min(1),
     orgId: z.string().min(1),
     projectId: z.string().min(1),
-    localWorkspaceId: z.string().min(1),
-    cloudWorkspaceId: z.string().min(1),
+    workspaceId: z.string().min(1),
     sessionId: z.string().min(1),
     operation: z.enum(["hydrate", "write", "resolve"]),
   })
@@ -165,20 +164,6 @@ export function DocumentsRoutes<H extends DocumentHandle>(options: DocumentsRout
         directory: context.req.query("directory") ?? context.req.header("x-claxedo-directory"),
       })
       return context.json(await documents().listStatuses(scope.projectId))
-    })
-    .get("/remote", async (context) => {
-      const scope = await routeScope(context.req.raw, options, "read", { project_id: context.req.query("project_id") })
-      if (!scope.auth) throw notFound()
-      return context.json(
-        await documents().remoteList({
-          auth: scope.auth,
-          orgId: scope.orgId,
-          projectId: scope.projectId,
-          localWorkspaceId: requiredQuery(context.req.query("local_workspace_id")),
-          cloudWorkspaceId: requiredQuery(context.req.query("cloud_workspace_id")),
-          sessionId: requiredQuery(context.req.query("session_id")),
-        }),
-      )
     })
     .get("/", async (context) => {
       const scope = await routeScope(context.req.raw, options, "read", {
@@ -245,12 +230,12 @@ export function DocumentsRoutes<H extends DocumentHandle>(options: DocumentsRout
     .post("/:id/shares", async (context) => {
       const scope = await directScope(context.req.raw, options, "manage", context.req.param("id"), true)
       const body = await bodyAs(context.req.raw, CreateShareBody)
-      return context.json(await createDocumentShare(scope.principal, scope.entry.id, body), 201)
+      return context.json(await createDocumentShare(scope.principal, scope.entry, body), 201)
     })
     .delete("/:id/shares", async (context) => {
       const scope = await directScope(context.req.raw, options, "manage", context.req.param("id"), true)
       const body = await bodyAs(context.req.raw, RevokeShareBody)
-      await requireDocumentSharing(scope.principal.access).revoke(scope.entry.id, body.share_id)
+      await requireDocumentSharing(scope.principal.access).revoke(scope.principal, scope.entry, body.share_id)
       return context.body(null, 204)
     })
     .get("/:id", async (context) => {

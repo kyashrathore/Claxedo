@@ -6,12 +6,13 @@ import { SCRIPTED_ACP_HARNESS, scriptedAcpConnection } from "../harness/acp/conn
 import { readAcpRequests } from "../harness/acp/requests"
 import { acpScriptToken, writeAcpScript } from "../harness/acp/script"
 import { hostedFetch } from "../harness/hosted-auth"
-import { hostedApi, hostedOwner, hostedSession, hostedWorkspace } from "../harness/hosted-flow"
+import { hostedApi, hostedOwner, hostedWorkspace } from "../harness/hosted-flow"
 import { HOSTED_PLUGIN_NAME, HOSTED_PLUGIN_REPOSITORY } from "../harness/hosted-scripted-github"
 import { HOSTED_MCP_AUTHORIZATION_CODE, HOSTED_MCP_UPSTREAM_TOKEN, hostedMcpCallsFile, type HostedMcpUpstreamCall } from "../harness/hosted-scripted-mcp"
 import { HOSTED_MCP_GATEWAY_ORIGIN } from "../harness/hosted-sandbox-worker"
 import { startHostedStack } from "../harness/hosted-stack"
 import { frameSessionId, frameType, openEventStream } from "../harness/stream"
+import { waitForTitle } from "../harness/turn-observations"
 
 type Catalog = {
   revision: number
@@ -121,15 +122,16 @@ export async function run() {
     }, owner)
     assert.equal(configured.status, 200, `hosted ACP configuration: ${await configured.text()}`)
     const workspace = await hostedWorkspace(stack, owner, "H28 hosted plugins")
-    const api = hostedApi(stack, workspace)
+    const api = hostedApi(stack, workspace, owner)
     const stream = await openEventStream(stack.relayUrl, workspace.directory, {
       relayWorkspaceId: workspace.id, authorization: `Bearer ${workspace.runtimeAccessToken}`,
     })
     try {
-      const session = await hostedSession(stack, owner, workspace, SCRIPTED_ACP_HARNESS)
-      await api.prompt(workspace.directory, session.id, acpScriptToken("h28-proof"))
+      const session = await api.createSession(workspace.directory, { harness: SCRIPTED_ACP_HARNESS })
+      await api.prompt(workspace.directory, session.id, acpScriptToken("h28-proof"), { title: true })
       const settled = await stream.waitFor((frame) => frameSessionId(frame) === session.id &&
         (frameType(frame) === "session.idle" || frameType(frame) === "session.error"), { label: "H28 hosted ACP settlement", timeoutMs: 60_000 })
+      if (frameType(settled) === "session.idle") await waitForTitle(stream, session.id)
       const started = (await readAcpRequests(scriptDir)).filter((request) => request.method === "session/new").at(-1)
       const servers = (started?.params.mcpServers ?? []) as McpEntry[]
       const delivered = servers.find((server) => server.name.endsWith("-scripted"))
@@ -172,10 +174,11 @@ export async function run() {
         relayWorkspaceId: workspace.id, authorization: `Bearer ${workspace.runtimeAccessToken}`,
       })
       try {
-        const after = await hostedSession(stack, owner, workspace, SCRIPTED_ACP_HARNESS)
-        await api.prompt(workspace.directory, after.id, acpScriptToken("h28-after"))
-        await afterStream.waitFor((frame) => frameSessionId(frame) === after.id &&
+        const after = await api.createSession(workspace.directory, { harness: SCRIPTED_ACP_HARNESS })
+        await api.prompt(workspace.directory, after.id, acpScriptToken("h28-after"), { title: true })
+        const afterSettled = await afterStream.waitFor((frame) => frameSessionId(frame) === after.id &&
           (frameType(frame) === "session.idle" || frameType(frame) === "session.error"), { label: "H28 after-change settlement", timeoutMs: 60_000 })
+        if (frameType(afterSettled) === "session.idle") await waitForTitle(afterStream, after.id)
         const restarted = (await readAcpRequests(scriptDir)).filter((request) => request.method === "session/new").at(-1)
         const afterServers = (restarted?.params.mcpServers ?? []) as McpEntry[]
         assert.ok(!afterServers.some((server) => server.name.endsWith("-scripted")), `C-8: the deactivated plugin still reaches the running sandbox: ${JSON.stringify(afterServers)}`)

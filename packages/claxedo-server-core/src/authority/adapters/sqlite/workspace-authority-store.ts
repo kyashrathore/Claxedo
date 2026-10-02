@@ -126,9 +126,6 @@ CREATE TABLE IF NOT EXISTS workspaces (
   repo_name TEXT,
   git_branch TEXT,
   remote_directory TEXT,
-  -- 0 withholds the implicit org-member role; direct, project, team and
-  -- org-admin access are unaffected. Set from the host's scope at assignment.
-  org_member_visible INTEGER NOT NULL DEFAULT 1,
   -- The highest host_workspace_assignments.revision ever issued for this
   -- workspace. Outlives the assignment row so a re-share after an unassign
   -- continues the sequence instead of restarting at 1.
@@ -177,7 +174,7 @@ CREATE TABLE IF NOT EXISTS host_enrollments (
   scope_json TEXT,
   scope_revision INTEGER NOT NULL DEFAULT 0,
   -- The ECDH P-256 public JWK the machine declared on a beat, stored as
-  -- machineSealingPublicKey normalizes it so a push can re-assert it by
+  -- publicKeyJwk normalizes it so a push can re-assert it by
   -- text equality. NULL until a beat declares one; never cleared.
   sealing_public_key_json TEXT,
   -- The owner's provider configuration sealed for that key, or NULL: at
@@ -321,16 +318,6 @@ CREATE TABLE IF NOT EXISTS session_messages (
   updated_at INTEGER NOT NULL,
   PRIMARY KEY (session_id, message_id)
 );
-CREATE TABLE IF NOT EXISTS session_participants (
-  session_id TEXT NOT NULL,
-  workspace_id TEXT NOT NULL,
-  actor_token_identifier TEXT NOT NULL,
-  added_by_token_identifier TEXT NOT NULL,
-  created_at INTEGER NOT NULL,
-  revoked_at INTEGER,
-  PRIMARY KEY (session_id, actor_token_identifier)
-);
-CREATE INDEX IF NOT EXISTS session_participants_by_actor ON session_participants (actor_token_identifier);
 -- Nested teams under an org (D17) and private-session share grants (D18).
 -- Evaluate-time membership joins mirror the authority; methods land with authority ports.
 CREATE TABLE IF NOT EXISTS teams (
@@ -933,7 +920,6 @@ export type WorkspaceRow = {
   repo_name: string | null
   git_branch: string | null
   remote_directory: string | null
-  org_member_visible: number
   created_at: number
   updated_at: number
   deleted_at: number | null
@@ -1172,18 +1158,6 @@ function directOrgRole(db: SqliteAuthorityDb, user: AuthorityUser, orgId: string
 }
 
 /**
- * The org branch of a WORKSPACE rank: the implicit org-member role is withheld
- * when the workspace's host scope says so; org admins and owners keep theirs.
- * Project ranks (`projectRoleForUser`) have no workspace row and are not gated.
- */
-function workspaceOrgRole(db: SqliteAuthorityDb, user: AuthorityUser, workspace: WorkspaceRow): WorkspaceRole | undefined {
-  if (!workspace.org_id) return undefined
-  const role = directOrgRole(db, user, workspace.org_id)
-  if (role === "viewer" && workspace.org_member_visible === 0) return undefined
-  return role
-}
-
-/**
  * Being in the organization is what makes a person offerable as a share
  * recipient. It carries no standing on the session, the workspace or the
  * machine; only the grant they are then given does.
@@ -1236,20 +1210,17 @@ function teamProjectRole(
   return maxRole(roles)
 }
 
-/** Role precedence mirror of `combineRolePrecedence` in the authority model. */
+/**
+ * A workspace is a folder on its owner's machine: its owner, while they stand
+ * in its organization, holds every workspace action and nobody else holds any.
+ */
 export function workspaceRoleForUser(
   db: SqliteAuthorityDb,
   workspace: WorkspaceRow,
   user: AuthorityUser,
 ): WorkspaceRole | undefined {
-  if (workspace.deleted_at) return undefined
-  if (workspace.owner_token_identifier === user.token_identifier) return "owner"
-  const project = workspace.project_id ? projectByPublicId(db, workspace.project_id) : undefined
-  return maxRole([
-    project ? directProjectRole(db, user, project.project_id) : undefined,
-    workspaceOrgRole(db, user, workspace),
-    teamProjectRole(db, user, project?.project_id ?? workspace.project_id, workspace.org_id),
-  ])
+  if (workspace.deleted_at || workspace.owner_token_identifier !== user.token_identifier) return undefined
+  return orgMemberForUser(db, user, workspace.org_id ?? undefined) ? "owner" : undefined
 }
 
 export function authorizeWorkspaceForUser(

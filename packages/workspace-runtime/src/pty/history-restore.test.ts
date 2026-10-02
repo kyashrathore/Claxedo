@@ -1,3 +1,5 @@
+import { testSessionCore } from "@claxedo/session-core/testing"
+import { withSessionCore } from "../session-context"
 import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test"
 import fs from "node:fs/promises"
 import os from "node:os"
@@ -43,9 +45,11 @@ await mock.module("@lydell/node-pty", () => ({
       resize() {},
       onData(handler: DataHandler) {
         fakeProcesses.get(pid)?.dataHandlers.push(handler)
+        return { dispose() { const handlers = fakeProcesses.get(pid)?.dataHandlers; if (handlers) handlers.splice(handlers.indexOf(handler), 1) } }
       },
       onExit(handler: ExitHandler) {
         fakeProcesses.get(pid)?.exitHandlers.push(handler)
+        return { dispose() { const handlers = fakeProcesses.get(pid)?.exitHandlers; if (handlers) handlers.splice(handlers.indexOf(handler), 1) } }
       },
       command,
       args,
@@ -127,7 +131,7 @@ afterEach(async () => {
 })
 
 describe("cold restore: replacing a lost PTY", () => {
-  test("the replacement session comes up carrying the old session's scrollback", async () => {
+  test("the replacement session comes up carrying the old session's scrollback", () => withSessionCore(testSessionCore(tmpDir, "ws_test"), async () => {
     const { Pty } = await import("./index")
 
     const first = await Pty.create({ cwd: tmpDir, title: "before" }, ownership)
@@ -144,9 +148,9 @@ describe("cold restore: replacing a lost PTY", () => {
     }, ownership)
 
     expect(Pty.snapshot(replacement.id)).toContain("IMPORTANT-OUTPUT-FROM-BEFORE")
-  })
+  }))
 
-  test("a client attaching to the replacement is SENT the restored scrollback", async () => {
+  test("a client attaching to the replacement is SENT the restored scrollback", () => withSessionCore(testSessionCore(tmpDir, "ws_test"), async () => {
     const { Pty } = await import("./index")
 
     const first = await Pty.create({ cwd: tmpDir, title: "before" }, ownership)
@@ -164,9 +168,9 @@ describe("cold restore: replacing a lost PTY", () => {
     Pty.connect(replacement.id, client.ws)
 
     expect((await client.text())).toContain("REPLAYED-TO-THE-CLIENT")
-  })
+  }))
 
-  test("the restored session is marked with the separator, exactly once", async () => {
+  test("the restored session is marked with the separator, exactly once", () => withSessionCore(testSessionCore(tmpDir, "ws_test"), async () => {
     const { Pty } = await import("./index")
 
     const first = await Pty.create({ cwd: tmpDir, title: "before" }, ownership)
@@ -192,9 +196,9 @@ describe("cold restore: replacing a lost PTY", () => {
     const freshClient = socket()
     Pty.connect(replacement.id, freshClient.ws, 0)
     expect((await freshClient.text()).split("Session contents restored")).toHaveLength(2)
-  })
+  }))
 
-  test("the separator sits between restored content and fresh shell output", async () => {
+  test("the separator sits between restored content and fresh shell output", () => withSessionCore(testSessionCore(tmpDir, "ws_test"), async () => {
     const { Pty } = await import("./index")
 
     const first = await Pty.create({ cwd: tmpDir, title: "before" }, ownership)
@@ -215,9 +219,9 @@ describe("cold restore: replacing a lost PTY", () => {
     const text = (await client.text())
     expect(text.indexOf("OLD-CONTENT")).toBeLessThan(text.indexOf("Session contents restored"))
     expect(text.indexOf("Session contents restored")).toBeLessThan(text.indexOf("NEW-PROMPT"))
-  })
+  }))
 
-  test("a session that replaced nothing is NOT marked as restored", async () => {
+  test("a session that replaced nothing is NOT marked as restored", () => withSessionCore(testSessionCore(tmpDir, "ws_test"), async () => {
     const { Pty } = await import("./index")
 
     const fresh = await Pty.create({ cwd: tmpDir, title: "fresh" }, ownership)
@@ -225,9 +229,9 @@ describe("cold restore: replacing a lost PTY", () => {
     Pty.connect(fresh.id, client.ws)
 
     expect((await client.text())).not.toContain("Session contents restored")
-  })
+  }))
 
-  test("the history file is re-keyed onto the new id, leaving none behind", async () => {
+  test("the history file is re-keyed onto the new id, leaving none behind", () => withSessionCore(testSessionCore(tmpDir, "ws_test"), async () => {
     const { Pty } = await import("./index")
 
     const first = await Pty.create({ cwd: tmpDir, title: "before" }, ownership)
@@ -245,9 +249,9 @@ describe("cold restore: replacing a lost PTY", () => {
     expect(await fs.readFile(historyPath(tmpDir, replacement.id), "utf8")).toContain("RE-KEYED")
     // The old path must not linger, or a later restore could resurrect it.
     await expect(fs.readFile(historyPath(tmpDir, first.id), "utf8")).rejects.toThrow()
-  })
+  }))
 
-  test("naming a previous PTY that never existed degrades to a clean fresh session", async () => {
+  test("naming a previous PTY that never existed degrades to a clean fresh session", () => withSessionCore(testSessionCore(tmpDir, "ws_test"), async () => {
     const { Pty } = await import("./index")
 
     const replacement = await Pty.create({
@@ -261,9 +265,9 @@ describe("cold restore: replacing a lost PTY", () => {
     expect(Pty.snapshot(replacement.id)).toBe("")
     // Nothing was restored, so there is no seam to mark.
     expect((await client.text())).not.toContain("Session contents restored")
-  })
+  }))
 
-  test("restored content survives a SECOND loss — the chain does not break", async () => {
+  test("restored content survives a SECOND loss — the chain does not break", () => withSessionCore(testSessionCore(tmpDir, "ws_test"), async () => {
     const { Pty } = await import("./index")
 
     const first = await Pty.create({ cwd: tmpDir, title: "gen1" }, ownership)
@@ -283,9 +287,9 @@ describe("cold restore: replacing a lost PTY", () => {
     const snapshot = Pty.snapshot(third.id)
     expect(snapshot).toContain("GENERATION-ONE")
     expect(snapshot).toContain("GENERATION-TWO")
-  })
+  }))
 
-  test("restored ANSI content is preserved byte-for-byte, not stripped", async () => {
+  test("restored ANSI content is preserved byte-for-byte, not stripped", () => withSessionCore(testSessionCore(tmpDir, "ws_test"), async () => {
     const { Pty } = await import("./index")
 
     // A TUI's scrollback is mostly escape sequences; a restore that mangles
@@ -299,5 +303,5 @@ describe("cold restore: replacing a lost PTY", () => {
 
     const replacement = await Pty.create({ cwd: tmpDir, title: "after", env: { previousPtyId: first.id } }, ownership)
     expect(Pty.snapshot(replacement.id)).toContain(tuiish.trimEnd())
-  })
+  }))
 })

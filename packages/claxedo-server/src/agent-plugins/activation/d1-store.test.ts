@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from "vitest"
 import { Miniflare } from "miniflare"
-import type { D1Database } from "@cloudflare/workers-types"
+import type { D1Database, D1PreparedStatement } from "@cloudflare/workers-types"
 import { AgentPluginActivationStoreError } from "@claxedo/server-core/agent-plugins/activation/store"
 import type { AgentPluginArtifactPin } from "@claxedo/server-core/agent-plugins/activation/store"
 import type { ArtifactDigest } from "@claxedo/server-core/agent-plugins/activation/types"
@@ -46,8 +46,26 @@ async function setup() {
     d1Databases: ["CONTROL_PLANE_DB"],
   })
   active.push(instance)
-  const database = await instance.getD1Database("CONTROL_PLANE_DB")
-  for (const name of MIGRATIONS) await applyControlPlaneMigration(database, name)
+  const raw = await instance.getD1Database("CONTROL_PLANE_DB")
+  for (const name of MIGRATIONS) await applyControlPlaneMigration(raw, name)
+  // A step run between a method's reads and its batch, which is where a
+  // concurrent writer lands in production. Miniflare's D1 handle is a Proxy
+  // that drops property sets, so the interception lives in a wrapper.
+  let beforeBatch: (() => Promise<void>) | undefined
+  const database = new Proxy(raw, {
+    get(target, property, receiver) {
+      if (property === "batch") {
+        return async (statements: D1PreparedStatement[]) => {
+          const step = beforeBatch
+          beforeBatch = undefined
+          if (step) await step()
+          return await target.batch(statements)
+        }
+      }
+      const value: unknown = Reflect.get(target, property, receiver)
+      return typeof value === "function" ? value.bind(target) : value
+    },
+  })
   let sequence = 0
   const authority = new D1WorkspaceAuthority(database, {
     deploymentId: "deployment-a",
@@ -56,7 +74,19 @@ async function setup() {
     randomId: (prefix) => `${prefix}_${String(++sequence).padStart(4, "0")}`,
   })
   const store = new D1SignedAgentPluginActivationStore({ database, authority })
-  return { database, authority, store }
+  const beforeNextBatch = (step: () => Promise<void>) => {
+    beforeBatch = step
+  }
+  return { database, authority, store, beforeNextBatch }
+}
+
+async function suspendActor(database: D1Database, auth: SignedControlPlaneAuth) {
+  if (!auth.principal) throw new Error("fixture auth has no principal")
+  await database.prepare("update actors set state = 'suspended' where actor_id = ?").bind(auth.principal.actorId).run()
+}
+
+async function overrideCount(database: D1Database) {
+  return (await database.prepare("select count(*) as count from agent_plugin_project_overrides").first<{ count: number }>())?.count
 }
 
 async function signed(
@@ -195,7 +225,6 @@ describe("D1 signed Agent Plugins activation store", () => {
         calls.authorizeProject += 1
         return authority.authorizeProject(auth, input)
       },
-      listOrgs: (auth) => authority.listOrgs(auth),
     }
     const store = new D1SignedAgentPluginActivationStore({ database, authority: counting })
     const auth = await signed(authority, identity("alice"))
@@ -500,7 +529,7 @@ describe("D1 signed Agent Plugins activation store", () => {
     expect(foreignWorkspace.code).toBe("workspace_authorization_denied")
   })
 
-  test("an org member's runtime read on another person's workspace is refused whatever their project grant or its visibility", async () => {
+  test("an org member's runtime read on another person's workspace is refused whatever their project grant", async () => {
     const { database, authority, store } = await setup()
     const auth = await signed(authority, identity("alice"))
     const { orgId } = await principalOf(authority, auth)
@@ -519,10 +548,7 @@ describe("D1 signed Agent Plugins activation store", () => {
       .bind(created.project_id, member.userId)
       .run()
 
-    for (const visible of [0, 1]) {
-      await database.prepare("update workspaces set org_member_visible = ? where workspace_id = ?").bind(visible, created.workspace_id).run()
-      expect((await denial(store.readRuntime(runtime))).code).toBe("workspace_authorization_denied")
-    }
+    expect((await denial(store.readRuntime(runtime))).code).toBe("workspace_authorization_denied")
     await expect(store.readRuntime({ ...runtime, ownerUserId: (await principalOf(authority, auth)).userId }))
       .resolves.toMatchObject({ pluginInstanceId: PLUGIN, harnessId: "codex" })
   })
@@ -637,6 +663,68 @@ describe("D1 signed Agent Plugins activation store", () => {
       pluginInstanceId: PLUGIN,
       harnessId: "claude",
     })).rejects.toThrow(/membership/)
+  })
+
+  test("a project editor whose grant is revoked between admission and the batch writes no override on any project", async () => {
+    const { database, authority, store, beforeNextBatch } = await setup()
+    const owner = await signed(authority, identity("alice"))
+    const { orgId } = await principalOf(authority, owner)
+    const first = await workspace({ authority, auth: owner, orgId, workspaceId: "ws-one", backing: "cloud-vm" })
+    const second = await workspace({ authority, auth: owner, orgId, workspaceId: "ws-two", backing: "cloud-vm" })
+    const editor = await plainMember({ database, authority, subject: "bob", orgId })
+    for (const projectId of [first.project_id, second.project_id]) {
+      await database
+        .prepare("insert into project_memberships (project_id, user_id, role, created_at, updated_at, revoked_at) values (?, ?, 'editor', 1, 1, null)")
+        .bind(projectId, editor.userId)
+        .run()
+    }
+    const override = (expectedRevision: number) => ({
+      pluginInstanceId: PLUGIN,
+      harnessIds: ["codex" as const],
+      choice: false,
+      target: { scope: "projects" as const, projectIds: [first.project_id, second.project_id] },
+      expectedRevision,
+    })
+    expect(await store.mutateUser(editor.auth, override(0))).toBe(1)
+    await database.prepare("delete from agent_plugin_project_overrides").run()
+
+    beforeNextBatch(async () => {
+      await database
+        .prepare("update project_memberships set revoked_at = 2 where project_id = ? and user_id = ?")
+        .bind(second.project_id, editor.userId)
+        .run()
+    })
+    const failure = await denial(store.mutateUser(editor.auth, override(1)))
+
+    expect(failure.status).toBe(403)
+    expect(failure.code).toBe("workspace_authorization_denied")
+    expect(await store.revision(owner)).toBe(1)
+    expect(await overrideCount(database)).toBe(0)
+  })
+
+  test("an actor suspended after the caller resolved, while the user stays active, changes no default", async () => {
+    const { database, authority, store, beforeNextBatch } = await setup()
+    const owner = await signed(authority, identity("alice"))
+    beforeNextBatch(() => suspendActor(database, owner))
+
+    const failure = await denial(store.mutateUser(owner, {
+      pluginInstanceId: PLUGIN,
+      harnessIds: ["codex"],
+      choice: true,
+      target: { scope: "all-projects" },
+      artifact: artifact("a"),
+      expectedRevision: 0,
+    }))
+
+    expect(failure.status).toBe(403)
+    expect(await database.prepare("select state from users where user_id = ?").bind(owner.principal?.userId).first())
+      .toEqual({ state: "active" })
+    const rows = await database.prepare(`
+      select (select count(*) from agent_plugin_user_defaults) as defaults,
+        (select count(*) from agent_plugin_artifact_pins) as pins,
+        (select count(*) from agent_plugin_revisions) as revisions
+    `).first()
+    expect(rows).toEqual({ defaults: 0, pins: 0, revisions: 0 })
   })
 
   test("rejects an unknown harness before writing anything", async () => {

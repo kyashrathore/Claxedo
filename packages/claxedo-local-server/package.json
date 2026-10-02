@@ -84,7 +84,8 @@
     "better-sqlite3": "13.0.1",
     "hono": "4.12.34",
     "tokentracker-cli": "0.91.0",
-    "zod": "4.4.3"
+    "zod": "4.4.3",
+    "@claxedo/session-core": "workspace:*"
   },
   "devDependencies": {
     "@hono/node-server": "1.19.11",

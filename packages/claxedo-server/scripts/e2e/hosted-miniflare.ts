@@ -6,7 +6,8 @@ import { unstable_getMiniflareWorkerOptions } from "wrangler"
 import { betterAuthDeploymentConfigurationId } from "../../src/platform/auth/better-auth-configuration"
 import { provisionBetterAuthNativeClients } from "../../src/platform/auth/better-auth-native-clients"
 import { generateCanonicalOwnerClaim, ownerClaimMutationSql } from "../deploy/claim-owner"
-import { userDeployedOwnerBootstrapClaimHash, userDeployedOwnerIdentityHash } from "../../src/authority/adapters/d1/workspace-authority"
+import { userDeployedOwnerBootstrapClaimHash, userDeployedOwnerIdentityHash } from "../../src/authority/adapters/d1/owner-identity"
+import { recordedEmailOutbox } from "../../src/test-support/recorded-email"
 
 type Input = {
   config: string
@@ -19,6 +20,9 @@ type Input = {
   relayUrl: string
   signingPrivateKey: string
   signingPublicKey: string
+  apiOrigin: string
+  appOrigin: string
+  emailPassword: boolean
 }
 
 const serverRoot = path.resolve(import.meta.dirname, "../..")
@@ -42,7 +46,7 @@ async function main(input: Input) {
   const converted = unstable_getMiniflareWorkerOptions(input.config)
   if (!converted.main) throw new Error("certified config has no Worker main")
   const bundle = path.join(bundleDir, path.basename(converted.main).replace(/\.ts$/, ".js"))
-  const apiOrigin = `https://127.0.0.1:${input.port}`
+  const apiOrigin = input.apiOrigin
   const env: Record<string, string> = {
     CLAXEDO_ADAPTER_PROFILE: "better-auth-d1",
     CLAXEDO_PRODUCT_POSTURE: "user-deployed",
@@ -53,9 +57,9 @@ async function main(input: Input) {
     CLAXEDO_PRIVATE_REPO_HOSTS: new URL(input.gitUrl).hostname,
     CLAXEDO_DEPLOYMENT_MODE: "hosted",
     CLAXEDO_DEPLOYMENT_ID: "hosted-e2e-deployment",
-    CLAXEDO_AUTH_METHODS: "github",
+    CLAXEDO_AUTH_METHODS: input.emailPassword ? "github,email-password" : "github",
     BETTER_AUTH_URL: apiOrigin,
-    CLAXEDO_APP_ORIGIN: apiOrigin,
+    CLAXEDO_APP_ORIGIN: input.appOrigin,
     BETTER_AUTH_SECRET: "hosted-e2e-better-auth-secret-at-least-32-characters",
     CLAXEDO_AUTH_INTROSPECTION_SECRET: "hosted-e2e-introspection-secret-at-least-32-characters",
     GITHUB_CLIENT_ID: "hosted-e2e-github-client",
@@ -72,10 +76,12 @@ async function main(input: Input) {
     CLAXEDO_MCP_OAUTH_CLIENTS: JSON.stringify({ "https://auth.hosted-e2e.test": { clientId: "hosted-e2e-mcp-client" } }),
     CLAXEDO_USER_DEPLOYED_ORGANIZATION_ID: "hosted-e2e-organization",
     CLAXEDO_USER_DEPLOYED_ORGANIZATION_NAME: "Hosted E2E",
+    CLAXEDO_EMAIL_FROM: "invitations@hosted-e2e.test",
   }
   env.CLAXEDO_AUTH_CONFIGURATION_ID = await betterAuthDeploymentConfigurationId({
-    methods: ["github"], apiOrigin, appOrigin: apiOrigin, githubClientId: env.GITHUB_CLIENT_ID,
+    methods: input.emailPassword ? ["github", "email-password"] : ["github"], apiOrigin, appOrigin: input.appOrigin, githubClientId: env.GITHUB_CLIENT_ID,
   })
+  const outbox = recordedEmailOutbox({ stdout: process.stdout, stderr: process.stderr })
   const mf = new Miniflare({
     ...converted.workerOptions,
     versionMetadata: undefined,
@@ -91,6 +97,7 @@ async function main(input: Input) {
     host: "127.0.0.1",
     port: input.port,
     https: true,
+    handleRuntimeStdio: outbox.handleRuntimeStdio,
     httpsKey: readFileSync(input.key, "utf8"),
     httpsCert: readFileSync(input.certificate, "utf8"),
     outboundService: async (request: Request) => {
@@ -111,8 +118,15 @@ async function main(input: Input) {
     await provisionBetterAuthNativeClients(auth, apiOrigin, env.BETTER_AUTH_SECRET, env.CLAXEDO_AUTH_INTROSPECTION_SECRET)
     await mf.ready
     process.on("message", (message: unknown) => {
-      if (!message || typeof message !== "object" || !("subject" in message) || typeof message.subject !== "string" ||
-        !("id" in message) || typeof message.id !== "number") return
+      if (!message || typeof message !== "object" || !("id" in message) || typeof message.id !== "number") return
+      if ("emailTo" in message && typeof message.emailTo === "string" && "emailSubject" in message && typeof message.emailSubject === "string") {
+        const { emailTo, emailSubject } = message
+        void outbox.waitFor((email) => email.to === emailTo && email.subject === emailSubject).then((email) => {
+          process.send?.(email.actionUrl ? { id: message.id, actionUrl: email.actionUrl } : { id: message.id, error: "the recorded email carried no link" })
+        }, (cause: unknown) => process.send?.({ id: message.id, error: String(cause) }))
+        return
+      }
+      if (!("subject" in message) || typeof message.subject !== "string") return
       const subject = message.subject
       void (async () => {
         try {
@@ -165,5 +179,8 @@ if (import.meta.main) {
     relayUrl: required("relayUrl"),
     signingPrivateKey: required("signingPrivateKey"),
     signingPublicKey: required("signingPublicKey"),
+    apiOrigin: required("apiOrigin"),
+    appOrigin: required("appOrigin"),
+    emailPassword: field("emailPassword") === true,
   })
 }

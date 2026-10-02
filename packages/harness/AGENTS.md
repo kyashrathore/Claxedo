@@ -2,6 +2,8 @@
 
 This package connects Claxedo to agent harnesses. The repo root `AGENTS.md` still applies; where the two differ, this file wins here.
 
+The [harness architecture](../../docs/harness/README.md) owns the cross-package execution flow; folder READMEs own protocol and format constraints.
+
 ## Parts
 
 - **Core** (`src/contract/`, `src/broker/`, `src/registry/`, `src/capabilities/`, `src/translate/`): Claxedo's own concepts. It never imports a transport, a profile, or a vendor SDK.
@@ -36,9 +38,7 @@ Never assume its files are ours, and never report a remote stop as proven.
 ## Process-wide state
 
 None, except these owners, each with its reason in its folder's `README.md`:
-- `src/translate/runtime.ts`: the constant set of event types that carry diagnostics;
-- `src/transports/acp/translate/state.ts`: the process-wide sequence that names unserializable ACP content;
-- `src/transports/acp/translate/validation.ts`: the constant table of required fields per ACP session update.
+- `src/translate/runtime.ts`: the constant set of event types that carry diagnostics.
 
 Adding an owner adds its exact path here; `bun run check` reads this list.
 
@@ -54,7 +54,7 @@ Code carries no comments. Names, types and small functions say what the code doe
 
 ## Errors
 
-Typed errors from each transport's `errors.ts`, with a class, `retryable` and a cause. No `.catch(() => default)`, no empty `catch`, no silent fallback, no retry loop apart from a harness's own protocol recovery named in its `README.md`.
+Typed errors: `TransportError` from `src/contract/errors.ts`, or transport-local classes built on it, with a class, `retryable` and a cause. No `.catch(() => default)`, no empty `catch`, no silent fallback, no retry loop apart from a harness's own protocol recovery named in its `README.md`.
 
 ## Tests
 
@@ -62,4 +62,4 @@ Real stack first: flows against real harnesses and the scripted model server; th
 
 ## Checks
 
-`bun run check` runs: no comments, size, core boundary, transport boundary, no policy in transports, process-wide state, no swallowed errors, no polling, one harness table, wire unchanged, budget. All at zero before a change is done. `bun run test:architecture-ratchets` after every import change.
+`bun run check` runs: no comments, size, core boundary, compose boundary, transport boundary, no policy in transports, process-wide state, no swallowed errors, no polling, one harness table, budget. All at zero before a change is done. `corpus all compare` checks the public wire recordings. `bun run test:architecture-ratchets` after every import change.

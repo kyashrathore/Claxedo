@@ -1,4 +1,5 @@
 import assert from "node:assert/strict"
+import { eventually } from "../harness/eventually"
 import { ClaxedoApi, assistantText } from "../harness/api"
 import { unexpectedEgress } from "../harness/egress-guard"
 import { startStack } from "../harness/stack"
@@ -8,8 +9,8 @@ import { waitForTitle } from "../harness/turn-observations"
 const NATIVE = [
   { id: "claude", providerId: "anthropic", modelId: "claude-sonnet-4-5", tool: "Agent", mode: "bypassPermissions",
     input: { description: "Inspect child", prompt: "Reply with exactly CHILD-CLAUDE-NATIVE", subagent_type: "general-purpose", run_in_background: false } },
-  { id: "codex", providerId: "openai", modelId: "gpt-4.1", tool: "spawn_agent", mode: "full-access",
-    input: { task_name: "child_inspect", message: "Reply with exactly CHILD-CODEX-NATIVE" } },
+  { id: "codex", providerId: "openai", modelId: "gpt-4.1", tool: "spawn_agent", namespace: "multi_agent_v1", mode: "full-access",
+    input: { message: "Reply with exactly CHILD-CODEX-NATIVE" } },
 ] as const
 
 export async function run() {
@@ -20,7 +21,7 @@ export async function run() {
     const stream = await stack.events(directory)
     for (const harness of NATIVE) {
       const marker = `H5_${harness.id.toUpperCase()}_PARENT`
-      stack.scripted.scriptTool({ name: harness.tool, input: harness.input, whenPromptIncludes: marker })
+      stack.scripted.scriptTool({ name: harness.tool, ...("namespace" in harness ? { namespace: harness.namespace } : {}), input: harness.input, whenPromptIncludes: marker })
       const parent = await api.createSession(directory, { harness: { id: harness.id, access: "native" },
         permissionMode: harness.mode, model: { providerId: harness.providerId, modelId: harness.modelId } })
       await api.promptAsync(directory, parent.id, `Delegate one child task, then reply with exactly this one token: ${marker}`)
@@ -40,9 +41,10 @@ export async function run() {
       assert.ok(stream.frames.some((frame) => frameType(frame) === "subagent.updated" && frameSessionId(frame) === parent.id))
       assert.ok(stream.frames.some((frame) => frameType(frame) === "message.part.updated" && frameSessionId(frame) === child.id))
       assert.doesNotMatch(assistantText(await api.messages(directory, parent.id)), /CHILD-(CLAUDE|CODEX)-NATIVE/)
-      const usage = await api.usageBySession(Date.now() - 120_000, Date.now() + 60_000)
-      assert.ok(usage.claxedo.totals.input > 0,
-        `${harness.id} usage was absent from the local person's totals`)
+      const usage = await eventually(`${harness.id} usage in the local person's totals`, async () => {
+        const read = await api.usageBySession(Date.now() - 120_000, Date.now() + 60_000)
+        return read.claxedo.totals.input > 0 ? read : undefined
+      }, 20_000)
       assert.ok(usage.breakdown.rows.some((row) => row.value.endsWith(`:session:${parent.id}`) && row.input > 0),
         `${harness.id} usage was not attributed to parent: ${JSON.stringify(usage.breakdown.rows)}`)
       console.log(`H5 ${harness.id}: child transcript, parent link, live frames and owner usage passed`)

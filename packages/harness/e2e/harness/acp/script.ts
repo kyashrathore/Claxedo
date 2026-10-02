@@ -1,5 +1,4 @@
 import fs from "node:fs/promises"
-import { existsSync, writeFileSync } from "node:fs"
 import path from "node:path"
 import type { PlanEntry, PromptResponse, StopReason, ToolCallContent, ToolCallLocation, ToolKind } from "@agentclientprotocol/sdk"
 import { isMissingFile } from "@claxedo/helpers/fs"
@@ -8,16 +7,6 @@ export const ACP_SCRIPT_DIR_ENV = "SCRIPTED_ACP_DIR"
 export const ACP_RED_ENV = "SCRIPTED_ACP_RED"
 export const ACP_NO_MODELS_ENV = "SCRIPTED_ACP_NO_MODELS"
 export const ACP_CORE_ENV = "SCRIPTED_ACP_CORE"
-const RECOVERY_CONTEXT_FAULT = "drop-recovery-context"
-
-export function dropRecoveryContext(dir: string) {
-  writeFileSync(path.join(dir, RECOVERY_CONTEXT_FAULT), "drop")
-}
-
-export function recoveryContextDropped(dir: string) {
-  return existsSync(path.join(dir, RECOVERY_CONTEXT_FAULT))
-}
-
 export const ACP_WITHHOLD_ONCE_ENV = "SCRIPTED_ACP_WITHHOLD_ONCE_OPTION"
 export const ACP_FAULT_ENV = "SCRIPTED_ACP_FAULT"
 
@@ -43,6 +32,7 @@ export type AcpStep =
   | { kind: "env-digest"; name: string }
   | { kind: "mcp"; marker: string }
   | { kind: "reasoning"; text: string }
+  | { kind: "notice"; severity: string; title: string; description?: string }
   | { kind: "image"; data: string; mimeType: string }
   | { kind: "plan"; entries: PlanEntry[] }
   | AcpToolStep

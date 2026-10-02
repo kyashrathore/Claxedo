@@ -82,7 +82,7 @@ async function turnChecks(probe: Probe, placement: Placement) {
   console.log(`PASS create: session ${ref.sessionId} "${row.title}" on ${SCRIPTED_ACP_HARNESS.id}`)
   await check("session reads: fresh session", async () => {
     const reads = server.sessions.read(ref, PROBE_VIEWPORT)
-    const [first, status, goal] = await Promise.all([reads.first, reads.status, reads.goal, reads.requests, reads.todos])
+    const [first, status, goal] = await Promise.all([reads.first, reads.status, reads.goal, reads.backgroundWork, reads.requests, reads.todos])
     return `status=${status.kind} entries=${first.transcript.entries.length} goal actions=[${goal.actions.join(",")}]`
   })
   await check("prompt: the turn streams and settles", async () => {
@@ -205,7 +205,7 @@ async function main() {
   const stack = await startStack({ label: "adapter-smoke" })
   const proxy = await startTcpProxy(new URL(stack.url))
   const workspace = await stack.daemon.makeWorkspace("adapter")
-  const server = createServer({ serverUrl: proxy.url, auth: { kind: "none" } })
+  const server = createServer({ serverUrl: proxy.url })
   const probe: Probe = { stack, proxy, server, log: eventLog(server), workspace }
   try {
     const placement = await connectAndPlace(probe)

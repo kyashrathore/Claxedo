@@ -47,11 +47,6 @@ function addOrgMember(db: () => SqliteAuthorityDb, workspaceId: string, tokenIde
   `).run(workspace.org_id, tokenIdentifier, role, now, now)
 }
 
-/** Withholds the implicit member rank, leaving org membership with no workspace standing of its own. */
-function hideFromOrgMembers(db: () => SqliteAuthorityDb, workspaceId: string) {
-  db().prepare("UPDATE workspaces SET org_member_visible = 0 WHERE workspace_id = ?").run(workspaceId)
-}
-
 async function createSessionAs(
   authority: ReturnType<typeof setup>["authority"],
   creator: SignedControlPlaneAuth,
@@ -73,98 +68,45 @@ async function createSessionAs(
 }
 
 describe("SQLite workspace session authority", () => {
-  test("participant administration rests on the creator alone, not on workspace standing", async () => {
+  test("only the owner creates sessions, and only a share crosses people", async () => {
     const { authority, db } = setup()
     const owner = signed("owner")
-    const creator = signed("creator")
-    const participant = signed("participant")
-    await Promise.all([authority.usersMe(owner), authority.usersMe(creator), authority.usersMe(participant)])
+    const member = signed("member")
+    await Promise.all([authority.usersMe(owner), authority.usersMe(member)])
     await authority.createCloudWorkspace(owner, {
       workspaceId: "ws_1",
       displayName: "Workspace",
       repoUrl: "https://github.com/acme/repo.git",
     })
-    // An org admin ranks `admin` on the workspace even where the implicit
-    // member rank is withheld, so downgrading them to member below takes the
-    // rank away while their organization standing — which every session
-    // decision still asks for — is untouched.
-    addOrgMember(db, "ws_1", "creator", "admin")
-    addOrgMember(db, "ws_1", "participant", "member")
-    hideFromOrgMembers(db, "ws_1")
-    await createSessionAs(authority, creator, "ses_1")
+    addOrgMember(db, "ws_1", "member", "admin")
+    await createSessionAs(authority, owner, "ses_1")
+    await expect(createSessionAs(authority, member, "ses_member")).rejects.toMatchObject({ status: 403 })
 
-    await expect(authority.grantSessionParticipant(owner, {
-      workspaceId: "ws_1",
-      sessionId: "ses_1",
-      participantActorId: "participant",
-    })).rejects.toMatchObject({ status: 403 })
+    await expect(authority.authorizeSessionRead(member, { workspaceId: "ws_1", sessionId: "ses_1" }))
+      .rejects.toMatchObject({ status: 403 })
 
-    addOrgMember(db, "ws_1", "creator", "member")
-    await expect(authority.openWorkspace(creator, { workspaceId: "ws_1" })).rejects.toMatchObject({ status: 403 })
-    await expect(authority.grantSessionParticipant(creator, {
-      workspaceId: "ws_1",
-      sessionId: "ses_1",
-      participantActorId: "participant",
-    })).resolves.toEqual({ participant_id: "participant" })
-
-    await expect(authority.authorizeSessionRead(participant, {
-      workspaceId: "ws_1",
-      sessionId: "ses_1",
-    })).resolves.toBeUndefined()
-    await expect(authority.grantSessionParticipant(participant, {
-      workspaceId: "ws_1",
-      sessionId: "ses_1",
-      participantActorId: "owner",
-    })).rejects.toMatchObject({ code: "actor_authorization_denied" })
+    await authority.grantSessionShare!(owner, { workspaceId: "ws_1", sessionId: "ses_1", grantedToTokenIdentifier: "member" })
+    await expect(authority.authorizeSessionRead(member, { workspaceId: "ws_1", sessionId: "ses_1" })).resolves.toBeUndefined()
   })
 
-  test("durable organization ownership ranks the workspace and never admits to a session", async () => {
+  test("a workspace handed to a member is theirs, and the organization's founder ranks nothing on it", async () => {
     const { authority, db } = setup()
-    const owner = signed("owner")
-    const creator = signed("creator")
-    const participant = signed("participant")
-    await Promise.all([authority.usersMe(owner), authority.usersMe(creator), authority.usersMe(participant)])
-    await authority.createCloudWorkspace(owner, {
+    const founder = signed("founder")
+    const member = signed("member")
+    await Promise.all([authority.usersMe(founder), authority.usersMe(member)])
+    await authority.createCloudWorkspace(founder, {
       workspaceId: "ws_1",
       displayName: "Workspace",
       repoUrl: "https://github.com/acme/repo.git",
     })
-    addOrgMember(db, "ws_1", "creator", "admin")
-    await createSessionAs(authority, creator, "ses_1")
-    const database = db()
-    const workspace = database.prepare("SELECT org_id, project_id FROM workspaces WHERE workspace_id = ?")
-      .get("ws_1") as { org_id: string; project_id: string }
-    database.prepare("UPDATE workspaces SET owner_token_identifier = ? WHERE workspace_id = ?")
-      .run("creator", "ws_1")
-    database.prepare("UPDATE projects SET owner_token_identifier = ? WHERE project_id = ?")
-      .run("creator", workspace.project_id)
-    database.prepare("DELETE FROM project_memberships WHERE project_id = ? AND token_identifier = ?")
-      .run(workspace.project_id, "owner")
-    database.prepare("DELETE FROM org_memberships WHERE org_id = ? AND token_identifier = ?")
-      .run(workspace.org_id, "owner")
+    addOrgMember(db, "ws_1", "member", "member")
+    db().prepare("UPDATE workspaces SET owner_token_identifier = ? WHERE workspace_id = ?").run("member", "ws_1")
+    await createSessionAs(authority, member, "ses_1")
 
-    await expect(authority.openWorkspace(owner, { workspaceId: "ws_1" })).resolves.toMatchObject({ role: "admin" })
-    await expect(authority.listSessions(owner, { workspaceId: "ws_1" })).resolves.toEqual([])
-    await expect(authority.authorizeSessionRead(owner, {
-      workspaceId: "ws_1",
-      sessionId: "ses_1",
-    })).rejects.toMatchObject({ status: 403 })
-
-    database.prepare(`
-      INSERT INTO org_memberships (org_id, token_identifier, role, created_at, updated_at)
-      VALUES (?, ?, 'member', ?, ?)
-    `).run(workspace.org_id, "owner", Date.now(), Date.now())
-
-    await expect(authority.openWorkspace(owner, { workspaceId: "ws_1" })).resolves.toMatchObject({ role: "viewer" })
-    await expect(authority.listSessions(owner, { workspaceId: "ws_1" })).resolves.toEqual([])
-    await expect(authority.authorizeSessionRead(owner, {
-      workspaceId: "ws_1",
-      sessionId: "ses_1",
-    })).rejects.toMatchObject({ status: 403 })
-    await expect(authority.grantSessionParticipant(owner, {
-      workspaceId: "ws_1",
-      sessionId: "ses_1",
-      participantActorId: "participant",
-    })).rejects.toMatchObject({ status: 403 })
+    await expect(authority.openWorkspace(member, { workspaceId: "ws_1" })).resolves.toMatchObject({ role: "owner" })
+    await expect(authority.openWorkspace(founder, { workspaceId: "ws_1" })).rejects.toMatchObject({ status: 403 })
+    await expect(authority.listSessions(founder, { workspaceId: "ws_1" })).resolves.toEqual([])
+    await expect(authority.authorizeSessionRead(founder, { workspaceId: "ws_1", sessionId: "ses_1" }))
+      .rejects.toMatchObject({ status: 403 })
   })
 })

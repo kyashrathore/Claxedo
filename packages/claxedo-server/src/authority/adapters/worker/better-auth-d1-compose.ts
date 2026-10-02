@@ -3,13 +3,14 @@ import { oauthProviderAuthServerMetadata } from "@better-auth/oauth-provider"
 import type { D1Database } from "@cloudflare/workers-types"
 import { Hono } from "hono"
 import type { ControlPlaneAuthAdapter } from "@claxedo/server-core/platform/auth/auth"
-import type { AuthAdapterDescriptor } from "@claxedo/server-core/platform/auth/authentication"
+import type { AuthAdapterDescriptor } from "@claxedo/account-contract/auth"
 import type { AuthIdentity } from "@claxedo/server-core/platform/auth/authentication"
 import { browserAuthHttpSecurity } from "@claxedo/server-core/platform/http/browser-auth-security"
 
 import type { D1AccessContext } from "../d1/access-context"
 import { createD1CoreAuthority, type D1CoreAuthorityBoundary } from "../d1/core-authority"
-import { D1WorkspaceAuthority, USER_DEPLOYED_OWNER_CLAIM_HEADER, type D1AuthorityProductPolicy } from "../d1/workspace-authority"
+import { D1WorkspaceAuthority, type D1ActorProfile, type D1AuthorityProductPolicy } from "../d1/workspace-authority"
+import { USER_DEPLOYED_OWNER_CLAIM_HEADER } from "../d1/owner-identity"
 import { createD1HostTunnelTargetResolver } from "../d1/host-tunnel-relay-target"
 import { hostedCredentialsEnabled, hostedOrgCredentials } from "../../../credentials/worker/index"
 import { d1UserAgentConfigRepository } from "../d1/user-agent-config"
@@ -41,10 +42,10 @@ import {
   BETTER_AUTH_INTROSPECTION_CLIENT_ID,
   betterAuthNativeResource,
 } from "../../../platform/auth/better-auth-native-clients"
-import { createBetterAuthD1AuthenticationEvidenceResolver } from "../../../platform/auth/better-auth-d1-authentication-evidence"
+import { createBetterAuthD1AuthenticationEvidenceResolver, betterAuthAccount } from "../../../platform/auth/better-auth-d1-authentication-evidence"
 import { createBetterAuthD1RequestAuthenticationAdapter } from "../../../platform/auth/better-auth-d1-request-authentication"
-import { createBetterAuthD1AccountEmailResolver } from "../../../platform/auth/better-auth-d1-account-email"
-import type { FindAccountByEmail } from "@claxedo/server-core/platform/auth/org-access-authority"
+import { orgInvitationEmailDelivery } from "../../../platform/auth/auth-email-delivery"
+import type { OrgInvitationDelivery } from "@claxedo/server-core/platform/auth/org-access-authority"
 import { STATIC_PRODUCT_DESCRIPTORS } from "../../../deployments/hosted-shared/deployment-profile"
 import type { HostedCoreAppOptions } from "../../../deployments/hosted-shared/hosted-core-app"
 import { provisionedRunner } from "@claxedo/server-core/agent-config/connections"
@@ -60,7 +61,8 @@ type BetterAuthD1AuthorityEnv = {
 export function composeBetterAuthD1Authority(input: {
   env: BetterAuthD1AuthorityEnv
   product: D1AuthorityProductPolicy
-  findAccountByEmail?: FindAccountByEmail
+  invitations?: OrgInvitationDelivery
+  actorProfile?: D1ActorProfile
 }): D1CoreAuthorityBoundary {
   if (input.env.CLAXEDO_ADAPTER_PROFILE !== "better-auth-d1") {
     throw new HostedWorkerCompositionError(
@@ -87,7 +89,8 @@ export function composeBetterAuthD1Authority(input: {
   return createD1CoreAuthority(requiredDatabase(input.env.CONTROL_PLANE_DB), {
     deploymentId: required(input.env.CLAXEDO_DEPLOYMENT_ID, "CLAXEDO_DEPLOYMENT_ID"),
     product: input.product,
-    ...(input.findAccountByEmail ? { findAccountByEmail: input.findAccountByEmail } : {}),
+    ...(input.invitations ? { invitations: input.invitations } : {}),
+    ...(input.actorProfile ? { actorProfile: input.actorProfile } : {}),
   })
 }
 
@@ -166,7 +169,12 @@ export function composeBetterAuthD1UserDeployedControlPlane(
       CONTROL_PLANE_DB: input.controlPlaneDatabase,
     },
     product: input.product,
-    findAccountByEmail: createBetterAuthD1AccountEmailResolver(input.authDatabase, descriptor.issuer),
+    actorProfile: (auth) => betterAuthAccount({ database: input.authDatabase, issuer: descriptor.issuer }, auth.principal?.identity),
+    invitations: orgInvitationEmailDelivery({
+      verifiedEmail: async (auth) => (await betterAuthAccount({ database: input.authDatabase, issuer: descriptor.issuer }, auth.principal?.identity))?.verifiedEmail,
+      appOrigin: configured.public.appOrigin,
+      ...(configured.private.emailSender ? { sender: configured.private.emailSender } : {}),
+    }),
   })
   const foundation = createBetterAuthD1Foundation({
     database: requiredDatabase(input.authDatabase),
@@ -191,10 +199,14 @@ export function composeBetterAuthD1UserDeployedControlPlane(
     resolveAuthenticationEvidence: createBetterAuthD1AuthenticationEvidenceResolver(input.authDatabase),
     resolveIdentity: async (identity, request) => {
       const existing = await authority.ensureApplicationIdentity(identity)
-      if (existing.state !== "unavailable" || input.product.ownerBootstrap !== "one-use-claim") return existing
-      const claim = request?.headers.get(USER_DEPLOYED_OWNER_CLAIM_HEADER)
-      if (!claim) return existing
-      return await authority.claimUserDeployedOwner(identity, claim)
+      if (existing.state !== "unavailable" && existing.state !== "provisioning") return existing
+      const claim = existing.state === "unavailable" && input.product.ownerBootstrap === "one-use-claim"
+        ? request?.headers.get(USER_DEPLOYED_OWNER_CLAIM_HEADER)
+        : undefined
+      if (claim) return await authority.claimUserDeployedOwner(identity, claim)
+      const email = (await betterAuthAccount({ database: input.authDatabase, issuer: descriptor.issuer }, identity))?.verifiedEmail
+      const admitted = email ? await authority.admitInvitedIdentity(identity, email) : undefined
+      return admitted?.state === "active" ? admitted : existing
     },
     ...(input.now ? { now: input.now } : {}),
   })
@@ -228,6 +240,7 @@ export function composeBetterAuthD1UserDeployedControlPlane(
   const delivery = input.sandbox && plane.orgCredentials && plane.services.sandbox.sandboxManager
     ? createHostedRuntimeDelivery({
         authority,
+        database: input.controlPlaneDatabase,
         services: plane.services,
         sandboxManager: plane.services.sandbox.sandboxManager,
         driver: input.sandbox.driver,
@@ -256,6 +269,7 @@ export function composeBetterAuthD1UserDeployedControlPlane(
         productWorkspace: {
           prepareRuntime: delivery.prepareRuntime,
           provisionRuntime: delivery.provisionRuntime,
+          runtimeProvisioned: delivery.runtimeProvisioned,
         },
       } : {}),
       // With a composed sandbox the owner's organization is admitted to cloud
@@ -274,9 +288,6 @@ export function composeBetterAuthD1UserDeployedControlPlane(
       product: STATIC_PRODUCT_DESCRIPTORS["user-deployed"],
       requestGuardExemptions: [],
       usageLedger: createD1UsageLedger({ database: input.controlPlaneDatabase, ...(input.now ? { now: input.now } : {}) }),
-      userDeployedIdentityAdmission: {
-        admit: (auth, admission) => authority.admitUserDeployedIdentity(auth, admission),
-      },
     },
     verifyIdentity: (request) => authentication.verifyIdentity(request),
     authHandler: async (request) => await authProtocol.fetch(request),

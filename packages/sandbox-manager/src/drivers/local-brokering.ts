@@ -124,7 +124,8 @@ export function createLocalBrokeringSandboxDriver(options: LocalBrokeringDriverO
   }))
   const directOrigins = options.directOrigins.map((origin) => new URL(origin))
   const directDestinations = directOrigins.map((url) => {
-    if (!(["localhost", "127.0.0.1", "[::1]"].includes(url.hostname) && ["http:", "https:"].includes(url.protocol))) {
+    const loopback = ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname) || url.hostname.endsWith(".localhost")
+    if (!(loopback && ["http:", "https:"].includes(url.protocol))) {
       throw new Error("local brokering direct origins must use loopback HTTP")
     }
     return `localhost:${url.port || (url.protocol === "https:" ? "443" : "80")}`

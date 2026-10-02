@@ -4,7 +4,7 @@ import fs from "fs/promises"
 import os from "os"
 import path from "path"
 import { randomUUID } from "crypto"
-import { createWorkspaceHost } from "@claxedo/workspace-runtime/host"
+import { createWorkspaceRuntimeApp, loopbackWorkspaceRuntimeExposure } from "@claxedo/workspace-runtime"
 import { loopbackMachineLoginPolicy } from "@claxedo/workspace-runtime/testing"
 
 const root = path.join(realpathSync(os.tmpdir()), `agent-config-secret-scope-${randomUUID().slice(0, 8)}`)
@@ -77,15 +77,24 @@ describe("runtime config secret scoping", () => {
     expect(JSON.stringify([sharedSnapshot, localSnapshot])).not.toContain("-secret")
 
     // A descriptor that still names secret references has no source in a v4
-    // snapshot, so selecting it fails closed rather than starting unauthenticated.
-    const host = createWorkspaceHost({ target: { workspaceId: "ws-denied", directory: root }, storeRoot: path.join(root, "denied"), placement: loopbackMachineLoginPolicy() })
+    // snapshot. The runtime accepts the selection and resolves secrets when a
+    // session launches it, so the session is refused before any harness starts.
+    const runtime = createWorkspaceRuntimeApp({
+      sessionIdWorkspace: () => undefined,
+      exposure: loopbackWorkspaceRuntimeExposure(),
+      target: { workspaceId: "ws-denied", directory: root },
+      storeRoot: path.join(root, "denied"),
+      placement: loopbackMachineLoginPolicy(),
+    })
     try {
-      await expect(host.apply({
-        ...localSnapshot,
-        defaultHarness: { kind: "connection", connectionId: "external" },
-      })).rejects.toThrow()
+      await runtime.host.apply({ ...localSnapshot, defaultHarness: { kind: "connection", connectionId: "external" } })
+      const created = await runtime.app.request(`http://runtime.test/session?directory=${encodeURIComponent(root)}`, {
+        method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ id: "unauthenticated" }),
+      })
+      expect(created.status).toBe(409)
+      expect(await created.json()).toMatchObject({ error: { code: "workspace_harness_not_configured" } })
     } finally {
-      await host.dispose()
+      await runtime.dispose()
     }
   })
 

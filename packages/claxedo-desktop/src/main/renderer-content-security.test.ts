@@ -8,9 +8,10 @@ function directive(policy: string, name: string) {
   return policy.split("; ").find((entry) => entry.startsWith(`${name} `))
 }
 
-function listen(options: { origin: Promise<string>; devServerUrl?: string }) {
+function listen(options: { origin: Promise<string>; devServerUrl?: string; relayOrigins?: readonly string[] }) {
   return rendererContentSecurityListener({
     serverOrigin: options.origin,
+    relayOrigins: options.relayOrigins ?? [],
     isRendererDocument: (url) => url === DOCUMENT,
     ...(options.devServerUrl ? { devServerUrl: options.devServerUrl } : {}),
   })
@@ -22,7 +23,7 @@ function respond(listener: ReturnType<typeof listen>, details: Parameters<Return
 
 describe("the renderer policy", () => {
   test("names exactly the daemon's origin for every network directive", () => {
-    const policy = rendererContentSecurityPolicy("http://127.0.0.1:2593")
+    const policy = rendererContentSecurityPolicy("http://127.0.0.1:2593", [])
     expect(directive(policy, "connect-src")).toBe("connect-src 'self' http://127.0.0.1:2593 ws://127.0.0.1:2593")
     expect(directive(policy, "img-src")).toBe("img-src 'self' data: blob: https: http://127.0.0.1:2593")
     expect(directive(policy, "default-src")).toBe("default-src 'self'")
@@ -62,6 +63,12 @@ describe("stamping the renderer document", () => {
     expect(headers["content-security-policy"]).toBeUndefined()
     expect(headers["x-other"]).toEqual(["1"])
     expect(directive(headers["Content-Security-Policy"]?.[0] ?? "", "connect-src")).toBe("connect-src 'self' http://127.0.0.1:2601 ws://127.0.0.1:2601")
+  })
+
+  test("a signed desktop's relay is reachable over HTTP and WebSocket, and nothing else of the account's is", async () => {
+    const listener = listen({ origin: Promise.resolve("http://127.0.0.1:2593"), relayOrigins: ["https://relay.example"] })
+    const policy = (await respond(listener, { url: DOCUMENT, resourceType: "mainFrame" })).responseHeaders?.["Content-Security-Policy"]?.[0] ?? ""
+    expect(directive(policy, "connect-src")).toBe("connect-src 'self' http://127.0.0.1:2593 https://relay.example ws://127.0.0.1:2593 wss://relay.example")
   })
 
   test("leaves subresources and other documents alone", async () => {

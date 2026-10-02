@@ -242,8 +242,6 @@ function services(): ControlPlaneServices {
       resolveOrgId: vi.fn(async () => "org_1" as never),
       authorizeSessionRead: vi.fn(async () => {}),
       authorizeSessionWrite: vi.fn(async () => {}),
-      grantSessionParticipant: vi.fn(async () => ({ participant_id: "participant_1" })),
-      revokeSessionParticipant: vi.fn(async () => ({ removed: true })),
       authorizeWorkspaceOpen: vi.fn(async () => {}),
       authorizeWorkspaceCreate: vi.fn(async () => {}),
       authorizeWorkspaceHostAssignment: vi.fn(async () => ({ registration: "existing" as const })),
@@ -306,7 +304,6 @@ function services(): ControlPlaneServices {
       syncSessionMessages: vi.fn(async () => ({})),
       upsertSessionVisibility: vi.fn(async () => ({})),
       replaceSessionVisibility: vi.fn(async () => ({})),
-      deleteSessionVisibility: vi.fn(async () => ({})),
       recordRuntimeAccessToken: vi.fn(async () => ({})),
       recordRuntimeAccessTokenForService: vi.fn(async () => ({})),
       runtimeAccessTokenActive: vi.fn(async () => ({ active: true })),
@@ -2238,6 +2235,7 @@ describe("workspace routes signed control plane authority", () => {
       error: {
         code: "missing_bearer_token",
         message: "Authorization: Bearer token is required",
+        retryable: false,
       },
     })
     expect(svc.telemetry.capture).toHaveBeenCalledWith("local", "control_plane.auth.denied", {
@@ -2454,6 +2452,7 @@ describe("workspace routes signed control plane authority", () => {
       error: {
         code: "runtime_access_token_signer_unavailable",
         message: "Runtime Access Token signer is not configured",
+        retryable: false,
       },
     })
     expect(sandbox.target).toHaveBeenCalledWith("ws_1")
@@ -3158,6 +3157,7 @@ describe("workspace routes signed control plane authority", () => {
       error: {
         code: "missing_bearer_token",
         message: "Authorization: Bearer token is required",
+        retryable: false,
       },
     })
     expect(mocks.resolveWorkspace).not.toHaveBeenCalled()
@@ -3346,6 +3346,7 @@ describe("workspace routes signed control plane authority", () => {
       error: {
         code: "workspace_authority_unavailable",
         message: "The workspace assignment was not acknowledged by the control plane",
+        retryable: false,
       },
     })
     expect(svc.authority?.auditAllow).not.toHaveBeenCalled()
@@ -3742,7 +3743,7 @@ describe("workspace lifecycle authorization", () => {
 
     expect(res.status).toBe(403)
     await expect(res.json()).resolves.toEqual({
-      error: { code: "operator_required", message: "Deployment operator access is required" },
+      error: { code: "operator_required", message: "Deployment operator access is required", retryable: false },
     })
     expect(mocks.deleteWorkspace).not.toHaveBeenCalled()
     expect(mocks.discardSupervisorSandbox).not.toHaveBeenCalled()
@@ -3782,6 +3783,7 @@ describe("workspace lifecycle authorization", () => {
       error: {
         code: "authority_unavailable",
         message: "Deployment operator authorization is not configured",
+        retryable: false,
       },
     })
     expect(mocks.deleteWorkspace).not.toHaveBeenCalled()

@@ -1,3 +1,4 @@
+import { deriveChildSessionId } from "../../../workspace-runtime/src/host/child-identity"
 import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"
@@ -7,17 +8,10 @@ import { openAuthorityDb } from "@claxedo/server-core/authority/adapters/sqlite/
 import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import type { PrivateSessionRuntimePrincipal } from "@claxedo/server-core/platform/auth/private-session-authority"
 import { randomUUID } from "node:crypto"
-import type { RuntimeStore } from "../../../workspace-runtime/src/store"
+import type { RuntimeStore, SessionRoutes } from "@claxedo/session-core"
 import { openRuntimeStore } from "../../../workspace-runtime/src/store-file"
-import type { AgentRuntime } from "../../../workspace-runtime/src/host/runtime"
-import type { SessionRoutes } from "../../../workspace-runtime/src/routes/session"
+import { FakeTransport, composeHost } from "@claxedo/session-core/testing"
 import { removeTestDataDir } from "./test-data-dir"
-
-/**
- * One child, one parent, two people, shared by the wake suites that put a
- * child-completion turn to a real SQLite authority: the embedded one decides
- * it in process, the remote one over `RuntimeSessionAuthorityRoutes`.
- */
 
 export const DIRECTORY = process.cwd()
 export const WORKSPACE = "workspace_wake"
@@ -30,7 +24,6 @@ export const WAKE_TURN = `msg_wake_${CHILD}_${REPLY}`
 
 export type WakeAuthority = ReturnType<typeof createSqliteWorkspaceAuthority>
 type HostOptions = Parameters<typeof SessionRoutes>[1]
-export type HostRuntime = AgentRuntime
 
 const hosts: Array<() => Promise<void>> = []
 const closers: Array<() => void> = []
@@ -69,10 +62,10 @@ export function runtimePrincipal(who: SignedControlPlaneAuth): PrivateSessionRun
 }
 
 /**
- * Alice's workspace, Bob a member of it, and Alice's private parent session
- * shared with Bob at `parentShare`. The child is not yet reserved: the create
- * path under test reserves it before the runtime is asked, so each suite
- * takes it as far as the flow it exercises expects.
+ * Alice's workspace, Bob a member of its organization, and Alice's private
+ * parent session shared with Bob at `parentShare`. The child is not yet
+ * reserved: the create path under test reserves it before the runtime is
+ * asked, so each suite takes it as far as the flow it exercises expects.
  */
 export async function seedWakeWorkspace(parentShare: "follow" | "send") {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "claxedo-child-wake-"))
@@ -88,12 +81,13 @@ export async function seedWakeWorkspace(parentShare: "follow" | "send") {
   await authority.createCloudWorkspace(alice, { workspaceId: WORKSPACE, displayName: "Wake" })
   const opened = await authority.openWorkspace(alice, { workspaceId: WORKSPACE })
   const orgId = opened.workspace!.org_id!
-  member(seeded, orgId, opened.workspace!.project_id!, bob.user.tokenIdentifier)
+  member(seeded, orgId, bob.user.tokenIdentifier)
+  const aliceRuntime = runtimePrincipal(alice)
   const bobRuntime = runtimePrincipal(bob)
   await authority.reserveSession(alice, { operationId: "op_parent", sessionId: PARENT, workspaceId: WORKSPACE, kind: "create" })
-  await authority.registerRuntimeSession({ ...runtimePrincipal(alice), operationId: "op_parent", sessionId: PARENT, workspaceId: WORKSPACE, createdAt: Date.now(), updatedAt: Date.now() })
+  await authority.registerRuntimeSession({ ...aliceRuntime, operationId: "op_parent", sessionId: PARENT, workspaceId: WORKSPACE, createdAt: Date.now(), updatedAt: Date.now() })
   await setShare(authority, alice, bob, parentShare)
-  return { root, authority, seeded, alice, bob, bobRuntime, orgId }
+  return { root, authority, seeded, alice, bob, aliceRuntime, bobRuntime, orgId }
 }
 
 /** The reservation a client takes on the control plane before it asks the runtime to create the child. */
@@ -108,12 +102,9 @@ export async function registerChild(authority: WakeAuthority, creator: PrivateSe
   await authority.registerRuntimeSession({ ...creator, operationId: CHILD_OPERATION, sessionId: CHILD, workspaceId: WORKSPACE, createdAt: Date.now(), updatedAt: Date.now() })
 }
 
-function member(seeded: () => Database.Database, orgId: string, projectId: string, tokenIdentifier: string) {
-  const db = seeded()
-  db.prepare(`INSERT INTO org_memberships (org_id, token_identifier, role, created_at, updated_at) VALUES (?, ?, 'member', 1, 1)`)
+function member(seeded: () => Database.Database, orgId: string, tokenIdentifier: string) {
+  seeded().prepare(`INSERT INTO org_memberships (org_id, token_identifier, role, created_at, updated_at) VALUES (?, ?, 'member', 1, 1)`)
     .run(orgId, tokenIdentifier)
-  db.prepare(`INSERT INTO project_memberships (project_id, token_identifier, role, created_at, updated_at) VALUES (?, ?, 'editor', 1, 1)`)
-    .run(projectId, tokenIdentifier)
 }
 
 export async function setShare(
@@ -143,13 +134,13 @@ export function admitFinishedChild(store: RuntimeStore, subagentKey: string) {
 
 /**
  * The runtime store as the create route leaves it: both sessions bound, the
- * child admitted under the parent, finished, its wake pending, and Bob
+ * child admitted under the parent, finished, its wake pending, and `origin`
  * recorded as the identity the wake is to run as, with the grant it presents.
  */
-export function seedFinishedChildStore(root: string, origin?: { actorId: string; orgId: string; grant?: string }) {
+export async function seedFinishedChildStore(root: string, origin?: { actorId: string; orgId: string; grant?: string }) {
   const store = openRuntimeStore(runtimeStoreRoot(root))
-  store.bindSession({ owner: { kind: "machine-owner" }, sessionId: PARENT, directory: DIRECTORY, agentSessionId: PARENT })
-  store.bindSession({ owner: { kind: "machine-owner" }, sessionId: CHILD, directory: DIRECTORY, agentSessionId: CHILD, parentSessionId: PARENT })
+  const { runtime } = await wakeRuntime(store, { createChild: true })
+  await runtime.dispose()
   store.admit({
     parentSessionId: PARENT,
     observation: {
@@ -185,32 +176,51 @@ export function reopened(storeRoot: string) {
   return store
 }
 
-/**
- * An agent runtime that admits every turn it is handed and records it. The
- * idle wait is the one seam a suite varies: a parent that never goes idle
- * keeps a queued prompt in the store for the next process to recover.
- */
-export function hostRuntimeDouble(options: { whenIdle?: () => Promise<{ abandon(): void }> } = {}) {
+export async function wakeRuntime(store: RuntimeStore, options: { holdParent?: boolean; createChild?: boolean } = {}) {
   const prompts: Array<{ sessionId: string; messageId?: string }> = []
-  const runtime = {
-    turns: {
-      whenIdle: options.whenIdle ?? (async () => ({ abandon() {} })),
-      abort: async () => {},
-      start: async (input: { sessionId: string; messageId: string; parts: unknown[]; onAdmitted?: () => void }) => {
-        prompts.push({ sessionId: input.sessionId, messageId: input.messageId })
-        input.onAdmitted?.()
-        return {
-          sessionId: input.sessionId,
-          userMessageId: input.messageId,
-          assistantMessageId: "reply",
-          delivery: "start",
-          prompt: { userMessageId: input.messageId, assistantMessageId: "reply", parts: input.parts, agent: "build", model: { providerID: "test", modelID: "fixture" } },
-        }
-      },
+  let releaseParent!: () => void
+  const parentHeld = new Promise<void>((resolve) => {
+    releaseParent = resolve
+  })
+  const transport = new FakeTransport({
+    turn: async function* ({ session, turn }) {
+      if (turn.userMessageId === "msg_hold_parent") {
+        await parentHeld
+      } else prompts.push({ sessionId: session.binding.sessionId, messageId: turn.userMessageId })
+      yield { type: "finish", sessionId: session.binding.sessionId }
     },
-    events: { list: async () => [], subscribe: () => (async function* () {})() },
-  } as unknown as HostRuntime
-  return { runtime, prompts }
+  })
+  const { runtime } = composeHost({ store, transports: { pi: transport }, workspaceId: WORKSPACE })
+  for (const id of options.createChild ? [PARENT, CHILD] : [PARENT]) {
+    if (!store.getSession(id)) {
+      await runtime.sessions.create({
+        id,
+        workspaceId: WORKSPACE,
+        directory: DIRECTORY,
+        harness: { id: "pi", access: "native" },
+        owner: { kind: "machine-owner" },
+        origin: { actor: { kind: "machine-owner" }, via: "loopback", reissued: false },
+        ...(id === CHILD ? { parentID: PARENT } : {}),
+      })
+    }
+  }
+  if (options.holdParent) {
+    await runtime.turns.start({
+      sessionId: PARENT,
+      messageId: "msg_hold_parent",
+      text: "hold",
+      origin: { actor: { kind: "machine-owner" }, via: "loopback", reissued: false },
+    })
+    await until(() => transport.activeTurns === 1, "the parent turn to start")
+  }
+  return {
+    runtime,
+    prompts,
+    dispose: async () => {
+      releaseParent()
+      await runtime.dispose()
+    },
+  }
 }
 
 /** What a host lends the session routes out of its store, plus the child's one reply. */
@@ -227,7 +237,7 @@ export function storeBackedHostOptions(store: RuntimeStore): Pick<HostOptions, "
         store.markPublished(parentSessionId, admitted.observationId)
         return admitted.event
       },
-      secret: () => store.runtimeSecret("child-session"),
+      deriveSessionId: (input) => deriveChildSessionId(store.runtimeSecret("child-session"), input),
       pendingWakes: () => store.listPendingSubagentWakes(),
       origins: {
         record: (parent, key, origin) => store.recordSubagentOrigin(parent, key, origin),

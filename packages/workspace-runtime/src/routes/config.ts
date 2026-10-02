@@ -1,19 +1,25 @@
+import {
+  RUNTIME_NATIVE_HARNESS_IDS,
+  boundedJsonBody,
+  errorBody,
+  isRequestBodyTooLarge,
+  requestBodyTooLargeBody,
+  isRecord as record,
+  str,
+} from "@claxedo/session-core"
 import { readProviderDefinitions, type CustomProviderDefinition } from "@claxedo/harness/contract"
 import type { CredentialSnapshot, PlaceholderEnvironment, ProviderProjection, ProviderProjectionSource, SavedCommand } from "@claxedo/agent-runtime-contract"
 import { Hono } from "hono"
-import { HTTPException } from "hono/http-exception"
 import { Log } from "../log"
-import { isAgentHarnessId, credentialSnapshot, type HarnessConnectionDescriptor, type SessionHarness } from "@claxedo/agent-runtime-contract"
+import { isAgentHarnessId, credentialSnapshot, type HarnessConnectionDescriptor } from "@claxedo/agent-runtime-contract"
 import { isRecord } from "@claxedo/helpers/guards"
 import type { RelayHostAuthContext } from "../workspace-host-service-auth"
-import { boundedJsonBody, errorBody, isRequestBodyTooLarge, requestBodyTooLargeBody } from "./http"
 import { authorizeManagementAccess, type ManagementAccessOptions } from "./management-access"
 import { WorkspaceRuntimeRoutes } from "./manifest"
-import { isRecord as record, str } from "../json-value"
+import type { RuntimeConfigApplyStatus } from "../workspace/host"
 
 const log = Log.create({ service: "config-route" })
 
-export const RUNTIME_NATIVE_HARNESS_IDS = ["claude", "codex", "cursor", "pi", "opencode"] as const
 export type RuntimeNativeHarnessId = (typeof RUNTIME_NATIVE_HARNESS_IDS)[number]
 export type RuntimeHarnessSelection =
   | { kind: "native"; harnessId: RuntimeNativeHarnessId }
@@ -21,27 +27,6 @@ export type RuntimeHarnessSelection =
 
 export type RuntimeConnectionDescriptor = HarnessConnectionDescriptor
 
-export function requestedSessionHarness(req: { query(name: string): string | undefined }): SessionHarness | undefined {
-  const nativeHarness = req.query("nativeHarness")
-  const connectionId = req.query("connectionId")
-  if (req.query("harness") !== undefined || req.query("runner") !== undefined) {
-    throw new HTTPException(400, { message: "Use nativeHarness or connectionId to select a harness" })
-  }
-  if (nativeHarness !== undefined && connectionId !== undefined) {
-    throw new HTTPException(400, { message: "Select either nativeHarness or connectionId" })
-  }
-  if (nativeHarness !== undefined) {
-    if (!RUNTIME_NATIVE_HARNESS_IDS.some((id) => id === nativeHarness)) {
-      throw new HTTPException(400, { message: "Unknown native harness" })
-    }
-    return { id: nativeHarness, access: "native" }
-  }
-  if (connectionId !== undefined) {
-    if (!connectionId.trim()) throw new HTTPException(400, { message: "connectionId must not be empty" })
-    return { id: connectionId, access: "connection" }
-  }
-  return undefined
-}
 
 export type { ProviderProjection, ProviderProjectionSource }
 
@@ -144,7 +129,7 @@ function normalizeHarnessLaunch(input: unknown): Record<string, Record<string, u
   if (!record(input)) return undefined
   const rows: Record<string, Record<string, unknown>> = {}
   for (const [harnessId, value] of Object.entries(input)) {
-    if (!isAgentHarnessId(harnessId) || !record(value)) return undefined
+    if ((!isAgentHarnessId(harnessId) && harnessId !== "acp") || !record(value)) return undefined
     rows[harnessId] = value
   }
   return rows
@@ -228,11 +213,19 @@ export function normalizeRuntimeSnapshot(
   }
 }
 
-export const ConfigRoutes = (apply: (snapshot: AppliedRuntimeSnapshot) => Promise<void>, options: ConfigRouteOptions = {}) =>
+export const ConfigRoutes = (host: {
+  apply: (snapshot: AppliedRuntimeSnapshot) => Promise<void>
+  configApply: () => RuntimeConfigApplyStatus
+}, options: ConfigRouteOptions = {}) =>
   new Hono<{ Variables: RelayHostAuthContext }>()
     .onError((err, c) => {
       if (isRequestBodyTooLarge(err)) return c.json(requestBodyTooLargeBody(), 413)
       throw err
+    })
+    .get(WorkspaceRuntimeRoutes.config, async (c) => {
+      const verdict = await authorizeManagementAccess(c, options, "runtime.config.apply")
+      if (!verdict.ok) return c.json({ error: { code: verdict.code, message: verdict.message } }, verdict.status)
+      return c.json(host.configApply())
     })
     .post(WorkspaceRuntimeRoutes.config, async (c) => {
       const verdict = await authorizeManagementAccess(c, options, "runtime.config.apply")
@@ -250,7 +243,7 @@ export const ConfigRoutes = (apply: (snapshot: AppliedRuntimeSnapshot) => Promis
         return c.json(errorBody("invalid_runtime_snapshot", "Invalid runtime snapshot"), 400)
       }
       try {
-        await apply(body)
+        await host.apply(body)
         log.info("Applied runtime snapshot", {
           connectionCount: body.connections.length,
           selection: body.defaultHarness,

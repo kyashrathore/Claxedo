@@ -1,14 +1,14 @@
 /// <reference types="bun" />
 import { expect, spyOn, test } from "bun:test"
 import { createEffect, createRoot, on } from "solid-js"
-import { placementId, projectId, ServerError, sessionId, type Server, type SessionFirstRead, type SessionReads, type SessionRef, type TranscriptPage, type TranscriptPart } from "@/server"
+import { placementId, projectId, ServerError, sessionId, type Server, type SessionFirstRead, type SessionReads, type SessionLocation, type TranscriptPage, type TranscriptPart } from "@/server"
 import { createRequests } from "../requests"
 import { createTranscriptContext, type TranscriptDeps } from "./context"
 import { loadOlder } from "./older"
 import { loadPart } from "./part"
 import { readSnapshot } from "./snapshot"
 
-const ref: SessionRef = { projectId: projectId("project-1"), placementId: placementId("placement-1"), sessionId: sessionId("ses_1") }
+const ref: SessionLocation = { projectId: projectId("project-1"), placementId: placementId("placement-1"), sessionId: sessionId("ses_1") }
 
 const entry = (id: string, role: "user" | "assistant", parts: readonly { readonly type: string; readonly id: string }[]) => ({
   info: { id, role, sessionID: "ses_1", time: { created: 1, completed: 2 }, ...(role === "assistant" ? { parentID: id.replace(/_r$/, "") } : {}) },
@@ -53,6 +53,7 @@ function fakeServer(first: SessionFirstRead = firstRead(latest), pages: readonly
   const reads = {
     first: Promise.resolve(first),
     status: Promise.resolve({ kind: "idle" }),
+    backgroundWork: Promise.resolve({ agents: 0, shells: 0, other: 0 }),
     requests: Promise.resolve([]),
     todos: Promise.resolve([]),
     goal: Promise.resolve({ goal: undefined, actions: [], available: false }),
@@ -61,7 +62,7 @@ function fakeServer(first: SessionFirstRead = firstRead(latest), pages: readonly
   const server = {
     sessions: {
       read: () => reads,
-      page: async (_ref: SessionRef, _shape: unknown, cursor: string) => {
+      page: async (_ref: SessionLocation, _shape: unknown, cursor: string) => {
         olderReads.push(cursor)
         return pages[olderReads.length - 1] ?? olderPage
       },
@@ -69,7 +70,7 @@ function fakeServer(first: SessionFirstRead = firstRead(latest), pages: readonly
     },
   } as unknown as Server
   const deps = {
-    list: { readRow: () => undefined, readStatus: () => undefined },
+    list: { readRow: () => undefined, readStatus: () => undefined, readBackgroundWork: () => undefined },
     requests: { read: () => undefined, readFailed: () => undefined },
     pageShape: () => ({ rows: 40, cols: 100, reasoning: false, shell: false, edit: false }),
   } as unknown as TranscriptDeps

@@ -53,7 +53,7 @@ async function setupApp(opts: {
   const app = new Hono()
   app.route(
     "/",
-    ConfigRoutes(async (snapshot) => { opts.applied?.push(snapshot) }, {
+    ConfigRoutes({ apply: async (snapshot) => { opts.applied?.push(snapshot) }, configApply: () => ({ state: "idle", revision: 0 }) }, {
       managementAuth: opts.publicKey
         ? createWorkspaceRuntimeJwtManagementAuth({
             key: opts.publicKey,
@@ -132,7 +132,7 @@ describe("ConfigRoutes management auth", () => {
 
   test("fails closed when management auth is not configured", async () => {
     const app = new Hono()
-    app.route("/", ConfigRoutes(async () => {}))
+    app.route("/", ConfigRoutes({ apply: async () => {}, configApply: () => ({ state: "idle", revision: 0 }) }))
     const res = await app.request("http://localhost/api/wr/config", {
       method: "POST",
       headers: { "Content-Type": "application/json" },

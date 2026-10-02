@@ -3,6 +3,7 @@ import { settleAtRequestDeadline } from "@claxedo/helpers"
 import type { Clock, Deadline, OwnedProcess } from "../../contract"
 import { NdjsonOwnedProcess } from "../../rpc/channel"
 import { PendingRpcRequests } from "../../rpc/pending"
+import { StderrTail } from "../../rpc/stderr-tail"
 import { unrecognizedEvent } from "../../translate/unrecognized"
 import { TransportError } from "../../contract/errors"
 
@@ -14,17 +15,20 @@ export class PiRpc {
   private readonly listeners = new Set<(message: PiMessage) => void>()
   private exitReported = false
   private retired = false
+  private readonly stderr: StderrTail
 
   constructor(readonly process: OwnedProcess, clock: Clock,
     private readonly diagnostic: (event: ReturnType<typeof unrecognizedEvent>) => void) {
     this.pending = new PendingRpcRequests(clock)
+    this.stderr = new StderrTail(process)
     this.channel = new NdjsonOwnedProcess(process, clock, (value) => this.receive(value), (reason, cause) => {
       if (reason === "exit") {
         this.exitReported = true
         if (cause && typeof cause === "object" && "code" in cause) {
           const code = cause.code
           const signal = "signal" in cause ? cause.signal : undefined
-          return new TransportError("pi", "process", `Pi process exited (${String(signal ?? code)})`)
+          const reason = this.stderr.value
+          return new TransportError("pi", "process", `Pi process exited (${String(signal ?? code)})${reason ? `: ${reason}` : ""}`)
         }
         return new TransportError("pi", "process", "Pi exit observation failed", { cause })
       }
@@ -32,7 +36,6 @@ export class PiRpc {
         reason === "frame" ? "Invalid Pi RPC record" : `Pi ${reason} failed`, { cause })
     }, (error) => this.diagnostic(unrecognizedEvent("pi.rpc", "retirement", error)))
     this.channel.onFailure((error) => this.pending.fail(error))
-    process.stderr.resume()
   }
 
   get alive(): boolean { return this.channel.alive && !this.exitReported }
@@ -77,6 +80,12 @@ export class PiRpc {
     if (typeof limit === "number") return request
     return settleAtRequestDeadline(`Pi ${type}`, { deadlineAt: limit.at, signal: limit.signal }, request,
       () => { this.pending.reject(id, timeout()) }, timeout)
+  }
+
+  async stop(deadline: Deadline): Promise<void> {
+    const results = await Promise.allSettled([this.request("clear_queue", {}, deadline), this.request("abort", {}, deadline)])
+    const failure = results.find((result) => result.status === "rejected")
+    if (failure?.status === "rejected") throw failure.reason
   }
 
   retire(deadline: Deadline): Promise<void> {

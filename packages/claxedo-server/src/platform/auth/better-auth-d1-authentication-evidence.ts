@@ -5,6 +5,7 @@ import type { D1Database } from "@cloudflare/workers-types"
 import {
   AuthenticationError,
   type AuthAssurance,
+  type AuthIdentity,
   type AuthenticationEvidenceMethod,
 } from "@claxedo/server-core/platform/auth/authentication"
 
@@ -216,5 +217,20 @@ export function createBetterAuthD1AuthenticationEvidenceResolver(
       methods: evidence.methods,
       assurance: evidence.assurance,
     }
+  }
+}
+
+/** The Better Auth account behind an identity: its email when verified, and its profile name and image. */
+export async function betterAuthAccount(input: { database: D1Database; issuer: string }, identity: AuthIdentity | undefined) {
+  if (!identity || identity.adapter !== "better-auth" || identity.issuer !== input.issuer) return undefined
+  const account = await input.database
+    .prepare('select email, "emailVerified" as verified, name, image from "user" where id = ?')
+    .bind(identity.subject)
+    .first<{ email: string; verified: number; name: string | null; image: string | null }>()
+  if (!account) return undefined
+  return {
+    ...(account.verified === 1 ? { verifiedEmail: account.email } : {}),
+    ...(account.name ? { name: account.name } : {}),
+    ...(account.image ? { image: account.image } : {}),
   }
 }

@@ -32,7 +32,7 @@ function coreConfig(artifactId: (typeof CERTIFIED_HOSTED_WORKER_ARTIFACT_IDS)[nu
 }
 
 describe("certified core resource ownership", () => {
-  test("every artifact binds auth/control D1, the limiter and LiveSyncRoom, the documents bucket, and only Agent Plugins binds the plugin-backend platform", () => {
+  test("every artifact binds auth/control D1, the EMAIL send_email binding, the limiter and LiveSyncRoom, the documents bucket, and only Agent Plugins binds the plugin-backend platform", () => {
     for (const artifactId of CERTIFIED_HOSTED_WORKER_ARTIFACT_IDS) {
       const config = coreConfig(artifactId)
       const agentPlugins = certifiedHostedWorkerArtifact(artifactId).agentPlugins
@@ -44,6 +44,7 @@ describe("certified core resource ownership", () => {
         ...(agentPlugins ? ["CLAXEDO_AGENT_PLUGINS", "PLUGIN_LOADER"] : []),
       ])
       expect([...config.matchAll(/^name = "([A-Z][A-Z0-9_]+)"$/gm)].map((match) => match[1])).toEqual([
+        "EMAIL",
         "CLAXEDO_REQUEST_LIMITER",
         "LIVE_SYNC_ROOM",
         ...(agentPlugins ? ["PLUGIN_SUPERVISOR"] : []),

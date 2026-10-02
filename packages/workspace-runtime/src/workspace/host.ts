@@ -6,14 +6,12 @@ import type { WorkspaceCapabilities } from "../capabilities"
 import type { WorkspaceProfile } from "../profile"
 import type { AgentRuntimeHealth } from "@claxedo/agent-runtime-contract"
 import type { WorkspaceRuntimeExposure } from "../exposure"
-import type { WorkspaceEventFramesTap } from "../routes/events"
+import type { WorkspaceEventFramesTap, RuntimeSessionTime, RuntimeStore, SessionCore } from "@claxedo/session-core"
 import type { RuntimeCredentialIssuer } from "../first-party-mcp/credential"
 import type { FirstPartyMcpServerEntry } from "../first-party-mcp/index"
 import type { ConnectionRuntimeStatus, RecoveryTurnTarget } from "@claxedo/agent-runtime-contract"
 import type { LaunchOwnershipRecord } from "@claxedo/process-ownership/launch"
 import type { LaunchOwnershipReconciliation } from "../ownership/reconcile-launch-ownership"
-import type { RuntimeSessionTime } from "../session/session-time"
-import type { RuntimeStore } from "../store"
 
 export type WorkspaceConnectionState = ConnectionRuntimeStatus & { connectionId: string }
 
@@ -92,6 +90,7 @@ export type WorkspaceCheckpointControl = {
 }
 
 export type WorkspaceHost = {
+  sessionCore: SessionCore
   mount: (app: Hono, options: WorkspaceHostMountOptions) => void
   /**
    * Every turn this runtime has admitted, by the identity its owner minted.
@@ -123,7 +122,6 @@ export type WorkspaceHost = {
    * with none would report an owner as having nothing left to reconcile.
    */
   unresolvedLaunches: () => Promise<LaunchOwnershipRecord[]>
-  hasSession: (sessionId: string) => boolean
   /** The session's times in this runtime's store; undefined when the store holds no such session or holds it without both times. */
   sessionTime: (sessionId: string) => RuntimeSessionTime | undefined
   /**
@@ -151,8 +149,6 @@ export type WorkspaceHost = {
   /** The `claxedo` MCP entry this runtime injects into a session's harness config, absent for the same reason. */
   firstPartyMcpServer: (sessionId: string) => FirstPartyMcpServerEntry | undefined
   apply: (snapshot: RuntimeSnapshot) => Promise<void>
-  /** Replace only host-composed launch metadata while preserving the accepted runtime configuration. */
-  applyHarnessLaunch: (harnessLaunch: Record<string, Record<string, unknown>>) => Promise<void>
   detail: () => {
     state: "ready" | "applying" | "error"
     healthStatus: "ok" | "degraded" | "unavailable"

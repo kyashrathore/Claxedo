@@ -5,17 +5,26 @@ will run. **Local** uses a directory on your computer. **Cloud** uses a sandbox.
 Pi and its tools run together on that machine. A Cloud session needs its sandbox
 to start before Pi can run.
 
-Claxedo starts Pi 0.85.1 in RPC mode. For Local, install that version and make
-`pi` available on PATH, or set `PI_EXECUTABLE` to its executable. The sandbox
-images install the same version. The model picker reads the models available to
+Claxedo starts Pi in RPC mode and is tested against Pi 0.99.0 through 0.99.1
+(`PI_RANGE` in `packages/harness/src/transports/pi-rpc/version.ts`). For Local,
+install a Pi in that range and make `pi` available on PATH, or set
+`PI_EXECUTABLE` to its executable. Claxedo reads `pi --version` at launch and
+caches the result by executable identity, reading it again when the file changes;
+a bare command is read at every launch. An older Pi refuses the session and asks you to update it, and a newer
+one runs with one warning. The sandbox images install Pi 0.99.1. The model picker reads the models available to
 that Pi process; connect a provider before selecting its model.
 
 Claxedo keeps the visible conversation and controls starting, stopping and
 answering questions. Pi keeps its native conversation file, chooses the context
 sent to the model and performs automatic compaction. Restarting an idle process
-resumes that same file. If the file is missing, Claxedo reports an error rather
-than silently starting another conversation. Repository memory files and other
-files written by the agent live on the selected machine.
+resumes that same file. Pi writes the file with the first message, so a session
+that has not had a message yet has no file: reconfiguring it, or reopening it
+after Claxedo restarts, starts Pi fresh under the same id, and nothing is lost
+because nothing was said. Claxedo's own record of the session's turns decides
+which case applies. If a session that had a turn has lost its file, Claxedo
+reports an error rather than silently starting another conversation.
+Repository memory files and other files written by the agent live on the
+selected machine.
 
 ## Extending Pi
 
@@ -56,5 +65,9 @@ in this release.
 
 Pi supplies its native file, search and shell tools. Inline image attachments
 are supported. Refer to other workspace files by path. Pi does not provide
-Claxedo permission prompts or native subagents. MCP support requires a Pi
-extension; configuring a Claxedo MCP server alone does not add it to upstream Pi.
+Claxedo permission prompts or native subagents. The MCP servers you configure in
+Claxedo reach Pi through Pi's own MCP support: HTTP servers everywhere, stdio
+servers in local sessions, and no SSE servers. Their tools are declared to the
+model directly. Pi also reads its own `mcp.json` from its profile, so the
+machine owner's own Pi servers load in their sessions; a server there with the
+same name as one from Claxedo replaces it.

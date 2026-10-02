@@ -6,7 +6,7 @@ import type { WorkspaceAuthority } from "@claxedo/server-core/platform/auth/auth
 import type { PrivateSessionRuntimePrincipal } from "@claxedo/server-core/platform/auth/private-session-authority"
 import {
   tasksErrorDetail,
-  type SessionReference,
+  type SessionRef,
   type Task,
   type TasksActor,
   type TasksAuthorizationPort,
@@ -49,7 +49,7 @@ export type TasksPrincipals = {
    * when it was minted for a session, else the calling-session name the
    * request carried and the verifier already admitted.
    */
-  capabilityActorOf(grant: TasksCapabilityGrant, session?: SessionReference): TasksActor
+  capabilityActorOf(grant: TasksCapabilityGrant, session?: SessionRef): TasksActor
   /** The grant an actor was minted from, or undefined for an actor carrying a signed principal instead. */
   capabilityOf(actor: TasksActor): TasksCapabilityGrant | undefined
 }
@@ -265,7 +265,7 @@ export function capabilityTasksAuthenticate(input: {
  * `capabilityScopeRefusal` has already held to the workspace, and nothing when
  * it named none.
  */
-function provenanceSession(scope: TasksCapabilityScope, cost: TasksRequestCost): SessionReference | undefined {
+function provenanceSession(scope: TasksCapabilityScope, cost: TasksRequestCost): SessionRef | undefined {
   if (scope.sessionId) return { sessionId: scope.sessionId, workspaceId: scope.workspaceId }
   const named = asRecord(cost.createdFrom ?? cost.startedFrom)
   const sessionId = named?.sessionId
@@ -372,15 +372,11 @@ export function createTasksAuthorization(input: {
           () => false,
         )
     },
-    async authorizeSessionOpen(actor, session: SessionReference) {
-      // A hosted session is always registered under a workspace. A link that
-      // names none cannot be re-checked, so it is not shown rather than shown
-      // unchecked.
-      if (session.workspaceId === null) return false
+    async authorizeSessionOpen(actor, session: SessionRef) {
       const grant = input.principals.capabilityOf(actor)
       if (grant) {
         // Project membership is not session access: a shared task can link a
-        // session of another participant's that the workspace's owner may not
+        // session on another person's workspace that the grant's owner may not
         // open. The scope rule refuses a link into another project without
         // asking, and the rest is the session authority's answer for the owner
         // the grant resolved to — asked by canonical actor because a grant
@@ -427,12 +423,9 @@ export function createLocalTasksAuthorization(
       const grant = principals.capabilityOf(actor)
       return grant ? projectId === grant.scope.projectId : true
     },
-    async authorizeSessionOpen(actor, session: SessionReference) {
+    async authorizeSessionOpen(actor, session: SessionRef) {
       const grant = principals.capabilityOf(actor)
       if (!grant) return true
-      // A link that names no workspace cannot be held to the grant's project,
-      // so it is not shown rather than shown unchecked.
-      if (session.workspaceId === null) return false
       return !(await capabilityScopeRefusal(grant, capability, { workspaceId: session.workspaceId }))
     },
   }

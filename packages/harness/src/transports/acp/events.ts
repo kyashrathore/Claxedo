@@ -28,21 +28,19 @@ export function acpReceiver(harnessId: string, session: HarnessSession, queue: A
   }
 }
 
-export async function acpUpdate(entry: AcpEntry | undefined, notification: SessionNotification,
-  observe: (update: SessionNotification["update"]) => Promise<void>): Promise<void> {
+export async function acpUpdate(entry: AcpEntry | undefined, notification: SessionNotification): Promise<void> {
   if (!entry) return
   if (entry.pendingUpdates) {
     entry.pendingUpdates.push(notification)
     return
   }
-  await deliverAcpUpdate(entry, notification, observe)
+  await deliverAcpUpdate(entry, notification)
 }
 
-export async function acpFlushUpdates(entry: AcpEntry,
-  observe: (update: SessionNotification["update"]) => Promise<void>): Promise<void> {
+export async function acpFlushUpdates(entry: AcpEntry): Promise<void> {
   const pending = entry.pendingUpdates
   if (!pending) return
-  while (pending.length) await deliverAcpUpdate(entry, pending.shift()!, observe)
+  while (pending.length) await deliverAcpUpdate(entry, pending.shift()!)
   entry.pendingUpdates = undefined
   await entry.start.permissionModeKept?.(acpKeptPermissionMode(entry))
 }
@@ -77,12 +75,11 @@ async function ingestAcpUpdate(entry: AcpEntry, notification: SessionNotificatio
   }
 }
 
-async function deliverAcpUpdate(entry: AcpEntry, notification: SessionNotification,
-  observe: (update: SessionNotification["update"]) => Promise<void>): Promise<void> {
+async function deliverAcpUpdate(entry: AcpEntry, notification: SessionNotification): Promise<void> {
   const side = entry.sideSessions.get(notification.sessionId)
   if (side) { side(notification.update); return }
   if (notification.sessionId !== entry.session.binding.upstreamSessionId) {
-    await observe(notification.update)
+    await acpObserveSubagent(entry, notification.update)
     entry.quiet?.touch()
     const receive = entry.receive ?? entry.providerTurn?.receive
     receive?.(notification)
@@ -92,7 +89,7 @@ async function deliverAcpUpdate(entry: AcpEntry, notification: SessionNotificati
   const goal = meta === undefined ? undefined : goalSnapshot(entry.session.binding.sessionId, { goal: meta })
   await acpReportModeMove(entry, () => acpCatalogUpdate(entry, notification.update))
   const deliver = async () => {
-    await observe(notification.update)
+    await acpObserveSubagent(entry, notification.update)
     entry.quiet?.touch()
     await ingestAcpUpdate(entry, notification, goal)
   }
@@ -112,6 +109,7 @@ export async function acpObserveSubagent(entry: AcpEntry | undefined, update: un
   if (!entry?.turnBroker || !supportsAcpSubagents(entry.peer.handshake)) return
   const child = acpSubagentObservation(update)
   if (!child) return
+  if (child.observation.status !== "running") await (entry.queue ?? entry.providerTurn?.queue)?.drained()
   const ref = await entry.turnBroker.observeSubagent(child.observation)
   if (ref) entry.turnBroker.associateChild(child.key, ref)
 }

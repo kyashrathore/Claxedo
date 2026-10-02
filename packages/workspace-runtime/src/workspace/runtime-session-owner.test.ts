@@ -5,7 +5,7 @@ import path from "node:path"
 import type { StartInput } from "@claxedo/harness/contract"
 import { createWorkspaceRuntimeApp } from "../server"
 import { loopbackWorkspaceRuntimeExposure } from "../exposure"
-import { FakeTransport, fakeConnectionProvider } from "../test-support/fake-transport"
+import { FakeTransport, fakeConnectionProvider } from "@claxedo/session-core/testing"
 import { withWorkspaceTarget } from "../target"
 
 let directory = ""
@@ -23,6 +23,7 @@ test("a connected host's snapshot names its machine owner over the placement's, 
   const transport = new FakeTransport({ onStart: (start) => { starts.push(start) } })
   const target = { workspaceId: "ws_1", directory }
   const runtime = createWorkspaceRuntimeApp({
+    sessionIdWorkspace: () => undefined,
     placement: { placement: "desktop", machineOwnerUserId: "", canUseOwnLogin: true },
     target,
     storeRoot: directory,

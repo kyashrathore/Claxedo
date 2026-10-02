@@ -10,9 +10,12 @@ import {
   type SessionWriteClass,
   sessionAccessRequiresWrite,
   sessionAccessWriteClass,
-} from "./session-access-policy"
-import { bool, num, rec, str } from "./json-value"
-import type { RuntimeSessionTime } from "./session/session-time"
+  bool,
+  num,
+  rec,
+  str,
+  type RuntimeSessionTime,
+} from "@claxedo/session-core"
 
 export const WORKSPACE_RUNTIME_SESSION_AUTHORITY_URL = "WORKSPACE_RUNTIME_SESSION_AUTHORITY_URL"
 
@@ -169,8 +172,7 @@ export function remoteWorkspaceSessionAccessPolicy(
   policy.authorizeHost = async (input) => {
     const url = authorityUrl()
     if (!url || (!input.credential && !input.lease)) return denied(503, "session_authority_unavailable")
-    const action: HostAuthorityAction =
-      input.minimumRole === "admin" || input.minimumRole === "owner" ? "host_admin" : "host_read"
+    const action: HostAuthorityAction = input.hostAccess === "admin" ? "host_admin" : "host_read"
     try {
       const timeoutSignal = AbortSignal.timeout(options.timeoutMs ?? 5_000)
       const response = await (options.fetch ?? globalThis.fetch)(url, {
@@ -395,6 +397,6 @@ function denied(
       message ??
       (status === 503
         ? "Session authority is temporarily unavailable"
-        : "Session access requires creator, participant, or session share authority"),
+        : "Session access requires workspace ownership or session share authority"),
   }
 }

@@ -3,6 +3,16 @@ import { CredentialVerificationError, verifyCredential } from "./verify"
 import type { CredentialMetadata } from "@claxedo/server-core/credentials/types"
 
 const NOW = 1_700_000_000_000
+
+test("unsupported providers return a typed verification error", async () => {
+  await expect(verifyCredential(credential({ provider_id: "unsupported-provider", expires_at: null }), "secret"))
+    .rejects.toMatchObject({ code: "credential_verification_unsupported", status: 400, retryable: false })
+})
+
+test("unreadable secrets return a typed validation error", async () => {
+  await expect(verifyCredential(credential({ provider_id: "openai", kind: "api_key", expires_at: null }), "{}"))
+    .rejects.toMatchObject({ code: "credential_shape_invalid", status: 400, retryable: false })
+})
 const TOKEN_URL = "https://auth.openai.com/oauth/token"
 const PROFILE_URL = "https://api.anthropic.com/api/oauth/profile"
 const CATALOG_URL = "https://api.anthropic.com/v1/models"

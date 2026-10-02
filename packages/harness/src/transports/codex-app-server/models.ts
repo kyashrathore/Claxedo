@@ -16,12 +16,6 @@ export type CodexModel = {
   tiers: { id: string; name: string; description?: string }[]
 }
 
-function reasoningEffort(value: string | undefined): v2.TurnStartParams["effort"] {
-  if (value === undefined) return undefined
-  if (value === "none" || value === "minimal" || value === "low" || value === "medium" || value === "high" || value === "xhigh") return value
-  throw new CodexTransportError("configuration", `Unsupported Codex effort ${value}`)
-}
-
 export async function readCodexModels(rpc: CodexRpc): Promise<CodexModel[]> {
   const models = new Map<string, CodexModel>()
   let cursor: string | undefined
@@ -67,15 +61,17 @@ export function codexModelOptions(models: readonly CodexModel[], requested: stri
   return options
 }
 
+export type CodexTurnSettings = Pick<v2.TurnStartParams, "model" | "effort" | "serviceTier" | "summary">
+
 export function codexTurnSettings(models: readonly CodexModel[], requested: {
   model?: string; effort?: string | null; serviceTier?: string | null
-}): Pick<v2.TurnStartParams, "model" | "effort" | "serviceTier"> {
+}): CodexTurnSettings {
   const row = selectedModel(models, requested.model)
   const model = row?.id ?? (requested.model === "default" ? undefined : requested.model)
   if (requested.effort && (!row || !row.efforts.includes(requested.effort))) {
     throw new CodexTransportError("configuration", `Codex does not run ${model ?? "its default model"} at effort ${requested.effort}; it accepts ${row?.efforts.join(", ") || "none"}`)
   }
   const effort = requested.effort ?? (row?.defaultEffort && row.efforts.includes(row.defaultEffort) ? row.defaultEffort : undefined)
-  return { ...(model ? { model } : {}), ...(effort ? { effort: reasoningEffort(effort) } : {}),
-    serviceTier: requested.serviceTier && row?.tiers.some((tier) => tier.id === requested.serviceTier) ? requested.serviceTier : null }
+  return { ...(model ? { model } : {}), ...(effort ? { effort } : {}),
+    serviceTier: requested.serviceTier && row?.tiers.some((tier) => tier.id === requested.serviceTier) ? requested.serviceTier : null, summary: "auto" }
 }

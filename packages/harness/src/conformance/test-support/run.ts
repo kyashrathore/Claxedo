@@ -21,7 +21,7 @@ export type ConformanceBackend = {
   origin?: TurnOrigin
   sharedSender?: TurnOrigin
   projection?: PluginProjection
-  expectedMcp?: "session" | "config" | "none"
+  credentialsAfterActiveTurns?: true
   locality?: "local" | "remote"
   permissionCommand?: string
   textCommand?: string
@@ -32,6 +32,9 @@ export type ConformanceBackend = {
   hold?(marker: string): () => void
   held?(marker: string): Promise<void>
   steerIncorporationUnreported?: true
+  processesPerLaunch?: number
+  firstLaunchProcesses?: number
+  credentialsPerCommand?: true
   scriptTool?(name: string, input: unknown): void
   scriptThinking?(input: { marker: string; text: string; reasoning: string }): void | Promise<string>
   thinkingRequested?(marker: string): boolean
@@ -138,8 +141,6 @@ export function runConformance(input: SuiteInput): void {
         expect(events.some((item) => item.event.type === "text-delta" && item.event.delta.includes("PICONFORM"))).toBe(true)
         expect(events.some((item) => item.event.type === "usage")).toBe(true)
         expect(events.some((item) => item.event.type === "finish")).toBe(true)
-        const capabilities = await context.transport.capabilities({ directory: context.backend.directory })
-        if (context.backend.expectedMcp) expect(capabilities.pluginIntake.mcp).toBe(context.backend.expectedMcp)
         await context.transport.close(context.session)
         if (context.backend.execution === "in-process") expect(context.services.processes).toHaveLength(0)
         else expect((await Promise.all(context.services.processes.map((process) => process.exited))).every((exit) => exit.code !== null || exit.signal !== null)).toBe(true)
@@ -220,7 +221,6 @@ export function runConformance(input: SuiteInput): void {
     test("tool events and declared optional groups", async () => {
       const context = await setup(input)
       try {
-        const capabilities = await context.transport.capabilities({ directory: context.backend.directory })
         if (context.backend.scriptTool) {
           context.backend.scriptTool("read", { path: "conformance.txt" })
           const events = await collect(context.transport, context.session, context.turn("Read conformance.txt"), context.turnBroker())
@@ -228,10 +228,7 @@ export function runConformance(input: SuiteInput): void {
           expect(events.some((item) => item.event.type === "tool-output")).toBe(true)
         }
         if (context.transport.commands) expect(await context.transport.commands.list({ session: context.session })).toBeArray()
-        if (capabilities.titles === "harness") {
-          expect(context.transport.naming).toBeDefined()
-          await context.transport.naming?.rename?.(context.session, "Conformance title")
-        }
+        if (context.transport.naming?.rename) await context.transport.naming.rename(context.session, "Conformance title")
         if (context.transport.health) {
           expect(context.transport.health.runtime(context.backend.directory).status).toBe("ok")
           expect(context.transport.health.connection(context.backend.directory, context.session.binding.sessionId).state).toBe("ready")
@@ -264,14 +261,13 @@ export function runConformance(input: SuiteInput): void {
     test("credential timing, cancellation facts, and disposal", async () => {
       const context = await setup(input)
       try {
-        const capabilities = await context.transport.capabilities({ directory: context.backend.directory })
         if (context.backend.hold) {
           const release = context.backend.hold("PICANCEL")
           const controller = new AbortController()
           const running = collect(context.transport, context.session, context.turn("Reply with exactly this one token: PICANCEL"), context.turnBroker(controller.signal))
           await heldRequest(context.backend, "PICANCEL")
           const update = await context.transport.configure(context.session, { credentials: context.backend.credentials })
-          if (capabilities.timing.credentials === "after-active-turns") expect(update.state).toBe("refused")
+          if (context.backend.credentialsAfterActiveTurns) expect(["refused", "deferred"]).toContain(update.state)
           const outcome = await context.transport.cancel(context.session, { turnId: "t1", assistantMessageId: "a1" }, { at: Date.now() + 5_000, signal: controller.signal })
           expect(["terminal", "unknown"].includes(outcome.execution)).toBe(true)
           if (context.backend.cleanupWithoutCommands) expect(outcome.cleanup).toBe(context.backend.cleanupWithoutCommands)
@@ -315,14 +311,15 @@ export function runConformance(input: SuiteInput): void {
       try {
         await collect(context.transport, context.session, context.turn("PIATTACH"), context.turnBroker())
         await context.transport.close(context.session)
-        const attached = await context.transport.attach({ ...context.start, binding: context.session.binding }, context.sessionBroker)
+        const attached = await context.transport.attach({ ...context.start, binding: context.session.binding, upstreamHasTurns: true }, context.sessionBroker)
         if (context.backend.execution === "in-process") expect(context.services.processes).toHaveLength(0)
         expect(attached.binding.upstreamSessionId).toBe(context.session.binding.upstreamSessionId)
         const events = await collect(context.transport, attached, context.turn("PIRESUMED"), context.turnBroker())
         expect(events.flatMap((item) => item.event.type === "text-delta" ? [item.event.delta] : []).join("").length).toBeGreaterThan(0)
         expect(events.some((item) => item.event.type === "finish")).toBe(true)
         await context.transport.close(attached)
-        expect(context.services.processes).toHaveLength(context.backend.execution === "in-process" || context.backend.locality === "remote" ? 0 : 2)
+        expect(context.services.processes).toHaveLength(context.backend.execution === "in-process" || context.backend.locality === "remote" ? 0
+          : (context.backend.firstLaunchProcesses ?? context.backend.processesPerLaunch ?? 1) + (context.backend.processesPerLaunch ?? 1))
       } finally { await context.close() }
     }, 60_000)
 
@@ -332,7 +329,7 @@ export function runConformance(input: SuiteInput): void {
         if (!context.backend.verifyRemoteMcp) return
         await context.transport.fork?.fork(context.session, "m1", "child")
         await context.transport.close(context.session)
-        await context.transport.attach({ ...context.start, binding: context.session.binding }, context.sessionBroker)
+        await context.transport.attach({ ...context.start, binding: context.session.binding, upstreamHasTurns: false }, context.sessionBroker)
         await context.backend.verifyRemoteMcp()
       } finally { await context.close() }
     }, 60_000)
@@ -463,8 +460,7 @@ export function runConformance(input: SuiteInput): void {
     test("a credential update targets one session while another turn runs", async () => {
       const context = await setup(input)
       try {
-        const capabilities = await context.transport.capabilities({ directory: context.backend.directory })
-        if (capabilities.timing.credentials !== "after-active-turns" ||
+        if (!context.backend.credentialsAfterActiveTurns ||
           (!context.backend.hold && !context.backend.permissionCommand)) return
         await collect(context.transport, context.session, context.turn("Reply with exactly this one token: CONFORMANCEPREPARE"), context.turnBroker())
         const secondStart = { ...context.start, sessionId: "s2", workspaceId: "w2" }
@@ -485,11 +481,12 @@ export function runConformance(input: SuiteInput): void {
           expect(pending).toBeDefined()
         } else await heldRequest(context.backend, "CONFORMANCESECOND")
         const secondProcess = context.services.processes.at(-1)
-        const update = await context.transport.configure(context.session, { credentials: {
-          ...context.backend.credentials, leaseGeneration: "session-one-only",
-        } })
+        const { credentials } = context.backend
+        const update = await context.transport.configure(context.session, { credentials: { ...credentials, leaseGeneration: "session-one-only",
+          providers: Object.fromEntries(Object.entries(credentials.providers).map(([id, provider]) =>
+            [id, "placeholder" in provider ? { ...provider, placeholder: `${provider.placeholder}-session-one-only` } : provider])) } })
         expect(update.state).toBe("applied")
-        if (secondProcess) expect(context.services.processes.at(-1)).not.toBe(secondProcess)
+        if (secondProcess && !context.backend.credentialsPerCommand) expect(context.services.processes.at(-1)).not.toBe(secondProcess)
         if (pending) expect((await context.owner.broker.answer(pending.request.requestId,
           { kind: "permission", decision: "deny" }, { sessionId: "s2" })).ok).toBe(true)
         release?.()
@@ -510,8 +507,8 @@ export function runConformance(input: SuiteInput): void {
         expect(first.options.length).toBeGreaterThan(0)
         if (context.backend.execution === "in-process") expect(context.services.processes).toHaveLength(0)
         else if (context.backend.locality !== "remote") {
-          expect(context.services.processes).toHaveLength(before + 1)
-          expect(await context.services.processes.at(-1)!.exited).toBeDefined()
+          expect(context.services.processes).toHaveLength(before + (context.backend.processesPerLaunch ?? 1))
+          for (const child of context.services.processes.slice(before)) expect(await child.exited).toBeDefined()
         }
         expect(await context.transport.config.options({ draft }, "probe")).toEqual(first)
       } finally { await context.close() }
@@ -528,8 +525,8 @@ export function runConformance(input: SuiteInput): void {
         expect(commands?.length).toBeGreaterThan(0)
         if (context.backend.execution === "in-process") expect(context.services.processes).toHaveLength(0)
         else if (context.backend.locality !== "remote") {
-          expect(context.services.processes).toHaveLength(before + 1)
-          expect(await context.services.processes.at(-1)!.exited).toBeDefined()
+          expect(context.services.processes).toHaveLength(before + (context.backend.processesPerLaunch ?? 1))
+          for (const child of context.services.processes.slice(before)) expect(await child.exited).toBeDefined()
         }
       } finally { await context.close() }
     }, 60_000)

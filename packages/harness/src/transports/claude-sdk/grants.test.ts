@@ -1,8 +1,10 @@
 import { expect, test } from "bun:test"
-import { replayClaudePermissionUpdates, claudeGrantUpdates, persistedClaudeRules, sessionPermissionUpdates } from "./grants"
+import { replayClaudePermissionUpdates, claudeGrantUpdates, sessionPermissionUpdates } from "./grants"
 
 test("permission updates replay in order: add, replace, remove, and directories", () => {
-  const rules = replayClaudePermissionUpdates(persistedClaudeRules({ allow: ["Read"], ask: ["Bash(git push *)"] }), [
+  const rules = replayClaudePermissionUpdates([
+    { type: "addRules", behavior: "allow", destination: "session", rules: [{ toolName: "Read" }] },
+    { type: "addRules", behavior: "ask", destination: "session", rules: [{ toolName: "Bash", ruleContent: "git push *" }] },
     { type: "addRules", behavior: "allow", destination: "session", rules: [{ toolName: "Bash", ruleContent: "npm test" }, { toolName: "Read" }] },
     { type: "addRules", behavior: "deny", destination: "session", rules: [{ toolName: "WebFetch" }] },
     { type: "replaceRules", behavior: "ask", destination: "session", rules: [{ toolName: "Bash", ruleContent: "git push --force" }] },
@@ -23,12 +25,13 @@ test("suggestions become session updates and malformed grants fail before launch
   expect(() => claudeGrantUpdates(["{"])).toThrow("Invalid persisted Claude grant")
   expect(() => claudeGrantUpdates([JSON.stringify([1])])).toThrow("Invalid persisted Claude grant")
   expect(() => claudeGrantUpdates([JSON.stringify({ updates: [1] })])).toThrow("Invalid persisted Claude grant updates")
-  expect(() => persistedClaudeRules({ deny: [1] })).toThrow("Invalid Claude deny permission state")
 })
 
 test("rule replacement preserves parenthesized contents and other behaviors", () => {
-  const state = persistedClaudeRules({ allow: ["Read", "Bash(old)"], deny: ["Write"], additionalDirectories: ["/old"] })
-  expect(replayClaudePermissionUpdates(state, [
+  expect(replayClaudePermissionUpdates([
+    { type: "addRules", behavior: "allow", destination: "session", rules: [{ toolName: "Read" }, { toolName: "Bash", ruleContent: "old" }] },
+    { type: "addRules", behavior: "deny", destination: "session", rules: [{ toolName: "Write" }] },
+    { type: "addDirectories", destination: "session", directories: ["/old"] },
     { type: "replaceRules", behavior: "allow", destination: "session", rules: [{ toolName: "Bash", ruleContent: "echo (hello)" }, { toolName: "Read" }] },
     { type: "removeRules", behavior: "allow", destination: "session", rules: [{ toolName: "Read" }] },
     { type: "removeDirectories", destination: "session", directories: ["/old"] },

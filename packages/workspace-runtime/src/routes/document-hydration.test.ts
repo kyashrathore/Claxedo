@@ -3,7 +3,7 @@ import fs from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
 import { fetchBodyJson, fetchDouble, fetchUrl } from "../test-support/fetch-double"
-import { rec, str } from "../json-value"
+import { rec, str } from "@claxedo/session-core"
 import { Hono } from "hono"
 import { afterEach, beforeEach, describe, expect, test, mock, spyOn } from "bun:test"
 import {
@@ -12,7 +12,6 @@ import {
   forgetRuntimeDocuments,
   RuntimeDocumentHydrationRoutes,
 } from "./document-hydration"
-import { LocalDocumentBrokerRoutes } from "./local-document-broker"
 
 describe("runtime document hydration", () => {
   const originalFetch = globalThis.fetch
@@ -23,7 +22,7 @@ describe("runtime document hydration", () => {
   })
 
   test("rejects declared and chunked oversized hydration bodies before JSON parsing", async () => {
-    const app = new Hono().route("/", RuntimeDocumentHydrationRoutes({ trustedTransport: true }))
+    const app = new Hono().route("/", RuntimeDocumentHydrationRoutes({ workspaceId: "ws_1" }))
     expect(
       (
         await app.request("/api/wr/documents/hydrate", {
@@ -51,73 +50,17 @@ describe("runtime document hydration", () => {
     expect(response.status).toBe(413)
   })
 
-  test("rejects declared and chunked oversized local-broker bodies before verification", async () => {
-    const app = new Hono().route("/", LocalDocumentBrokerRoutes({ trustedTransport: true }))
-    expect(
-      (
-        await app.request("/api/wr/local-documents/broker", {
-          method: "POST",
-          headers: { "content-length": String(2 * 1024 * 1024 + 1) },
-          body: "{}",
-        })
-      ).status,
-    ).toBe(413)
-    const chunk = new Uint8Array(1024 * 1024)
-    const response = await app.fetch(
-      new Request("http://runtime.test/api/wr/local-documents/broker", {
-        method: "POST",
-        body: new ReadableStream({
-          start(controller) {
-            controller.enqueue(chunk)
-            controller.enqueue(chunk)
-            controller.enqueue(new Uint8Array([1]))
-            controller.close()
-          },
-        }),
-        duplex: "half",
-      } as RequestInit & { duplex: "half" }),
-    )
-    expect(response.status).toBe(413)
-  })
-
-  test("returns stable validation errors for malformed hydration, resolution, and broker bodies", async () => {
-    const hydration = new Hono().route("/", RuntimeDocumentHydrationRoutes({ trustedTransport: true }))
-    const broker = new Hono().route("/", LocalDocumentBrokerRoutes({ trustedTransport: true }))
+  test("returns stable validation errors for malformed hydration and resolution bodies", async () => {
+    const hydration = new Hono().route("/", RuntimeDocumentHydrationRoutes({ workspaceId: "ws_1" }))
 
     for (const response of [
       await hydration.request("/api/wr/documents/hydrate", { method: "POST", body: "{" }),
       await hydration.request("/api/wr/documents/hydrate", { method: "POST", body: "{}" }),
       await hydration.request("/api/wr/documents/session_1/document_1/resolve", { method: "POST", body: "{" }),
-      await broker.request("/api/wr/local-documents/broker", { method: "POST", body: "{" }),
-      await broker.request("/api/wr/local-documents/broker", { method: "POST", body: "{}" }),
     ]) {
       expect(response.status).toBe(400)
       await expect(response.json()).resolves.toEqual({ error: "document_request_invalid" })
     }
-  })
-
-  test("returns a stable forbidden response for rejected broker capabilities", async () => {
-    const app = new Hono().route("/", LocalDocumentBrokerRoutes({ trustedTransport: true }))
-    const response = await app.request("/api/wr/local-documents/broker", {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        "x-claxedo-document-capability": "not-a-document-job-token",
-      },
-      body: JSON.stringify({
-        userId: "user_1",
-        orgId: "org_1",
-        projectId: "project_1",
-        localWorkspaceId: "local_1",
-        cloudWorkspaceId: "cloud_1",
-        sessionId: "session_1",
-        documentId: "document_1",
-        operation: "read",
-      }),
-    })
-
-    expect(response.status).toBe(403)
-    await expect(response.json()).resolves.toEqual({ error: "document_broker_capability_invalid" })
   })
 
   test("returns a stable forbidden response when conflict resolution capability verification fails", async () => {
@@ -127,7 +70,7 @@ describe("runtime document hydration", () => {
       "/",
       RuntimeDocumentHydrationRoutes({
         workspaceRoot: root,
-        trustedTransport: true,
+        workspaceId: "ws_1",
         controlPlaneOrigin: "https://control.test",
         verifyJob: async (token) => {
           if (token === "hydrate-job") return {}
@@ -149,8 +92,6 @@ describe("runtime document hydration", () => {
             userId: "user_1",
             orgId: "org_1",
             projectId: "project_1",
-            localWorkspaceId: "local_1",
-            cloudWorkspaceId: "cloud_1",
           },
           writeback: {
             url: "https://control.test/write",
@@ -175,8 +116,6 @@ describe("runtime document hydration", () => {
           userId: "user_1",
           orgId: "org_1",
           projectId: "project_1",
-          localWorkspaceId: "local_1",
-          cloudWorkspaceId: "cloud_1",
         },
         writeback: {
           url: "https://control.test/write",
@@ -200,7 +139,7 @@ describe("runtime document hydration", () => {
       "/",
       RuntimeDocumentHydrationRoutes({
         workspaceRoot: root,
-        trustedTransport: true,
+        workspaceId: "ws_1",
         controlPlaneOrigin: "https://control.test",
         verifyJob: async () => ({}),
       }),
@@ -219,8 +158,6 @@ describe("runtime document hydration", () => {
           userId: "user_1",
           orgId: "org_1",
           projectId: "project_1",
-          localWorkspaceId: "ws_1",
-          cloudWorkspaceId: "ws_1",
         },
         writeback: {
           url: "https://control.test/documents/document_1/runtime-writeback",
@@ -260,7 +197,7 @@ describe("runtime document hydration", () => {
       "/",
       RuntimeDocumentHydrationRoutes({
         workspaceRoot: root,
-        trustedTransport: true,
+        workspaceId: "ws_1",
         controlPlaneOrigin: "https://control.test",
         verifyJob: async () => ({}),
       }),
@@ -279,8 +216,6 @@ describe("runtime document hydration", () => {
           userId: "user_1",
           orgId: "org_1",
           projectId: "project_1",
-          localWorkspaceId: "ws_1",
-          cloudWorkspaceId: "ws_1",
         },
         writeback: {
           url: "https://control.test/write",
@@ -315,7 +250,7 @@ describe("runtime document hydration", () => {
       "/",
       RuntimeDocumentHydrationRoutes({
         workspaceRoot: root,
-        trustedTransport: true,
+        workspaceId: "ws_1",
         controlPlaneOrigin: "https://control.test",
         verifyJob: async () => ({}),
         renewalTimer: timer,
@@ -335,8 +270,6 @@ describe("runtime document hydration", () => {
             userId: "user_1",
             orgId: "org_1",
             projectId: "project_1",
-            localWorkspaceId: "local_1",
-            cloudWorkspaceId: "cloud_1",
           },
           writeback: {
             url: "https://control.test/write",
@@ -384,7 +317,7 @@ describe("runtime document hydration", () => {
       "/",
       RuntimeDocumentHydrationRoutes({
         workspaceRoot: root,
-        trustedTransport: true,
+        workspaceId: "ws_1",
         controlPlaneOrigin: "https://control.test",
         verifyJob: async () => ({}),
         requestTimeoutMs: 10,
@@ -404,8 +337,6 @@ describe("runtime document hydration", () => {
             userId: "user_1",
             orgId: "org_1",
             projectId: "project_1",
-            localWorkspaceId: "local_1",
-            cloudWorkspaceId: "cloud_1",
           },
           writeback: {
             url: "https://control.test/write",
@@ -442,7 +373,7 @@ describe("runtime document hydration", () => {
         "/",
         RuntimeDocumentHydrationRoutes({
           workspaceRoot: root,
-          trustedTransport: true,
+          workspaceId: "ws_1",
           controlPlaneOrigin: "https://control.test",
           verifyJob: async () => ({}),
           requestTimeoutMs: 10,
@@ -486,7 +417,7 @@ describe("runtime document hydration", () => {
       "/",
       RuntimeDocumentHydrationRoutes({
         workspaceRoot: root,
-        trustedTransport: true,
+        workspaceId: "ws_1",
         controlPlaneOrigin: "https://control.test",
         verifyJob: async () => ({}),
         renewalTimer: timer,
@@ -503,8 +434,6 @@ describe("runtime document hydration", () => {
         userId: "user_1",
         orgId: "org_1",
         projectId: "project_1",
-        localWorkspaceId: "local_1",
-        cloudWorkspaceId: "cloud_1",
       },
       writeback: {
         url: "https://control.test/documents/document_race/runtime-writeback",
@@ -572,7 +501,7 @@ describe("runtime document hydration", () => {
       "/",
       RuntimeDocumentHydrationRoutes({
         workspaceRoot: root,
-        trustedTransport: true,
+        workspaceId: "ws_1",
         controlPlaneOrigin: "https://control.test",
         verifyJob: async () => ({}),
         beforeWriteOpen: async () => {
@@ -624,7 +553,7 @@ describe("runtime document hydration", () => {
       "/",
       RuntimeDocumentHydrationRoutes({
         workspaceRoot: root,
-        trustedTransport: true,
+        workspaceId: "ws_1",
         controlPlaneOrigin: "https://control.test",
         verifyJob: async () => ({}),
       }),
@@ -672,7 +601,7 @@ describe("runtime document hydration", () => {
       "/",
       RuntimeDocumentHydrationRoutes({
         workspaceRoot: root,
-        trustedTransport: true,
+        workspaceId: "ws_1",
         controlPlaneOrigin: "https://control.test",
         verifyJob: async () => ({}),
         afterWatcherCreated: (value) => {
@@ -716,7 +645,7 @@ describe("runtime document hydration", () => {
       "/",
       RuntimeDocumentHydrationRoutes({
         workspaceRoot: root,
-        trustedTransport: true,
+        workspaceId: "ws_1",
         controlPlaneOrigin: "https://control.test",
         verifyJob: async () => ({}),
       }),
@@ -735,8 +664,6 @@ describe("runtime document hydration", () => {
             userId: "user_1",
             orgId: "org_1",
             projectId: "project_1",
-            localWorkspaceId: "local_1",
-            cloudWorkspaceId: "cloud_1",
           },
           writeback: {
             url: "https://control.test/write",
@@ -775,7 +702,7 @@ describe("runtime document hydration", () => {
       "/",
       RuntimeDocumentHydrationRoutes({
         workspaceRoot: root,
-        trustedTransport: true,
+        workspaceId: "ws_1",
         controlPlaneOrigin: "https://control.test",
         verifyJob: async () => ({}),
         renewalTimer: timer,
@@ -795,8 +722,6 @@ describe("runtime document hydration", () => {
             userId: "user_1",
             orgId: "org_1",
             projectId: "project_1",
-            localWorkspaceId: "local_1",
-            cloudWorkspaceId: "cloud_1",
           },
           writeback: {
             url: "https://control.test/write",
@@ -846,7 +771,7 @@ describe("runtime document hydration", () => {
         "/",
         RuntimeDocumentHydrationRoutes({
           workspaceRoot: root,
-          trustedTransport: true,
+          workspaceId: "ws_1",
           controlPlaneOrigin: "https://control.test",
           verifyJob: async () => ({}),
           renewalTimer: timer,
@@ -869,8 +794,6 @@ describe("runtime document hydration", () => {
                 userId: "user_1",
                 orgId: "org_1",
                 projectId: "project_1",
-                localWorkspaceId: "local_1",
-                cloudWorkspaceId: "cloud_1",
               },
               writeback: {
                 url: "https://control.test/write",
@@ -914,7 +837,7 @@ describe("runtime document hydration", () => {
         "/",
         RuntimeDocumentHydrationRoutes({
           workspaceRoot: root,
-          trustedTransport: true,
+          workspaceId: "ws_1",
           controlPlaneOrigin: "https://control.test",
           verifyJob: async () => ({}),
         }),
@@ -933,8 +856,6 @@ describe("runtime document hydration", () => {
               userId: "user_1",
               orgId: "org_1",
               projectId: "project_1",
-              localWorkspaceId: "local_1",
-              cloudWorkspaceId: "cloud_1",
             },
             writeback: {
               url: "https://control.test/write",
@@ -965,8 +886,6 @@ describe("runtime document hydration", () => {
             userId: "user_1",
             orgId: "org_1",
             projectId: "project_1",
-            localWorkspaceId: "local_1",
-            cloudWorkspaceId: "cloud_1",
           },
         }),
       })
@@ -988,7 +907,7 @@ describe("runtime document hydration", () => {
       "/",
       RuntimeDocumentHydrationRoutes({
         workspaceRoot: root,
-        trustedTransport: true,
+        workspaceId: "ws_1",
         controlPlaneOrigin: "https://control.test",
         verifyJob: async () => ({}),
       }),
@@ -1007,8 +926,6 @@ describe("runtime document hydration", () => {
             userId: "user_1",
             orgId: "org_1",
             projectId: "project_1",
-            localWorkspaceId: "local_1",
-            cloudWorkspaceId: "cloud_1",
           },
           writeback: {
             url: "https://control.test/write",
@@ -1040,8 +957,6 @@ describe("runtime document hydration", () => {
               userId: "user_1",
               orgId: "org_1",
               projectId: "project_1",
-              localWorkspaceId: "local_1",
-              cloudWorkspaceId: "cloud_1",
             },
           }),
         })
@@ -1068,8 +983,6 @@ describe("runtime document hydration", () => {
           userId: "user_1",
           orgId: "org_1",
           projectId: "project_1",
-          localWorkspaceId: "ws_1",
-          cloudWorkspaceId: "ws_1",
         },
         writeback: {
           url: "https://attacker.test/write",
@@ -1090,7 +1003,7 @@ describe("runtime document hydration", () => {
       "/",
       RuntimeDocumentHydrationRoutes({
         workspaceRoot: root,
-        trustedTransport: true,
+        workspaceId: "ws_1",
         controlPlaneOrigin: "https://control.test",
         verifyJob: async () => ({}),
       }),
@@ -1109,8 +1022,6 @@ describe("runtime document hydration", () => {
           userId: "user_1",
           orgId: "org_1",
           projectId: "project_1",
-          localWorkspaceId: "ws_1",
-          cloudWorkspaceId: "ws_1",
         },
         writeback: {
           url: "https://attacker.test/write",
@@ -1131,7 +1042,7 @@ describe("runtime document hydration", () => {
       "/",
       RuntimeDocumentHydrationRoutes({
         workspaceRoot: root,
-        trustedTransport: true,
+        workspaceId: "ws_1",
         controlPlaneOrigin: "https://control.test",
         verifyJob: async () => {
           throw new Error("wrong audience")
@@ -1152,8 +1063,6 @@ describe("runtime document hydration", () => {
           userId: "user_1",
           orgId: "org_1",
           projectId: "project_1",
-          localWorkspaceId: "local_1",
-          cloudWorkspaceId: "cloud_1",
         },
         writeback: {
           url: "https://control.test/write",
@@ -1180,7 +1089,7 @@ describe("runtime document hydration", () => {
       "/",
       RuntimeDocumentHydrationRoutes({
         workspaceRoot: root,
-        trustedTransport: true,
+        workspaceId: "ws_1",
         controlPlaneOrigin: "https://control.test",
         verifyJob: async () => ({}),
       }),
@@ -1196,8 +1105,6 @@ describe("runtime document hydration", () => {
         userId: "user_1",
         orgId: "org_1",
         projectId: "project_1",
-        localWorkspaceId: "ws_1",
-        cloudWorkspaceId: "ws_1",
       },
       writeback: {
         url: "https://control.test/write",
@@ -1242,7 +1149,7 @@ describe("runtime document hydration", () => {
       "/",
       RuntimeDocumentHydrationRoutes({
         workspaceRoot: root,
-        trustedTransport: true,
+        workspaceId: "ws_1",
         controlPlaneOrigin: "https://control.test",
         renewalTimer: timer,
         verifyJob: async (_token, expected) => {
@@ -1290,7 +1197,7 @@ describe("runtime document hydration", () => {
       "/",
       RuntimeDocumentHydrationRoutes({
         workspaceRoot: root,
-        trustedTransport: true,
+        workspaceId: "ws_1",
         controlPlaneOrigin: "https://control.test",
         verifyJob: async () => ({}),
       }),
@@ -1306,8 +1213,6 @@ describe("runtime document hydration", () => {
         userId: "user_1",
         orgId: "org_1",
         projectId: "project_1",
-        localWorkspaceId: "local_1",
-        cloudWorkspaceId: "cloud_1",
       },
       writeback: {
         url: "https://control.test/write",
@@ -1355,7 +1260,7 @@ describe("runtime document hydration", () => {
       "/",
       RuntimeDocumentHydrationRoutes({
         workspaceRoot: root,
-        trustedTransport: true,
+        workspaceId: "ws_1",
         controlPlaneOrigin: "https://control.test",
         verifyJob: async () => ({}),
       }),
@@ -1374,8 +1279,6 @@ describe("runtime document hydration", () => {
           userId: "user_1",
           orgId: "org_1",
           projectId: "project_1",
-          localWorkspaceId: "ws_1",
-          cloudWorkspaceId: "ws_1",
         },
         writeback: {
           url: "https://control.test/write",
@@ -1399,7 +1302,7 @@ describe("runtime document hydration", () => {
       "/",
       RuntimeDocumentHydrationRoutes({
         workspaceRoot: root,
-        trustedTransport: true,
+        workspaceId: "ws_1",
         controlPlaneOrigin: "https://control.test",
         verifyJob: async () => ({}),
         beforeWriteOpen: async () => {
@@ -1423,8 +1326,6 @@ describe("runtime document hydration", () => {
           userId: "user_1",
           orgId: "org_1",
           projectId: "project_1",
-          localWorkspaceId: "local_1",
-          cloudWorkspaceId: "cloud_1",
         },
         writeback: {
           url: "https://control.test/write",
@@ -1475,8 +1376,6 @@ function hydrationBody(sessionId: string, documentId: string) {
       userId: "user_1",
       orgId: "org_1",
       projectId: "project_1",
-      localWorkspaceId: "local_1",
-      cloudWorkspaceId: "cloud_1",
     },
     writeback: {
       url: `https://control.test/documents/${documentId}/runtime-writeback`,

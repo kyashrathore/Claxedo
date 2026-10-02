@@ -30,6 +30,7 @@ export const queryKeys = {
   folderChildren: (server: string, directory: string) => ["server", server, "folders", "children", directory] as const,
   harnessOptions: (server: string, placementId: PlacementId, harness: string) => ["server", server, "harness", placementId, harness] as const,
   harnessCommands: (server: string, placementId: PlacementId, harness: string) => ["server", server, "harness-commands", placementId, harness] as const,
+  stopsBackgroundTasks: (server: string, placementId: PlacementId, sessionId: string) => ["server", server, "stops-background-tasks", placementId, sessionId] as const,
   codeHostAll: (server: string) => ["server", server, "codeHost"] as const,
   integrations: (server: string) => ["server", server, "integrations"] as const,
   agentConnections: (server: string) => ["server", server, "agent-connections"] as const,

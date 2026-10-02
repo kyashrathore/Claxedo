@@ -2,7 +2,7 @@ import type { PluginApi, SessionAttachment, SessionRef, SessionStatus } from "@c
 import { encodeAttachmentData } from "@claxedo/tasks"
 import { uuid } from "@/lib/uuid"
 import { sessionId, type Placement, type PromptAttachment } from "@/server"
-import type { SessionRowView } from "@/session"
+import { sessionActivity, type SessionActivity, type SessionRowView } from "@/session"
 import { sessionPath } from "@/shell"
 import { currentProjectId, PluginEntryError, type BindingScope } from "./services"
 
@@ -27,21 +27,20 @@ function placementFor(scope: BindingScope, projectId: string): Placement {
 }
 
 function sessionRowOf(scope: BindingScope, ref: SessionRef): SessionRowView | undefined {
-  return scope.services.sessions.list.view(sessionId(ref.sessionId))
+  const row = scope.services.sessions.list.view(sessionId(ref.sessionId))
+  return row?.ref.placementId === ref.workspaceId ? row : undefined
+}
+
+const PLUGIN_STATUS: Readonly<Record<SessionActivity, SessionStatus>> = {
+  waiting: "waiting",
+  working: "running",
+  background: "running_in_background",
+  failed: "failed",
+  idle: "idle",
 }
 
 export function sessionStatusOf(row: SessionRowView | undefined): SessionStatus {
-  if (row?.waitingOnUser) return "waiting"
-  switch (row?.status.kind) {
-    case "working":
-    case "retrying":
-    case "recovering":
-      return "running"
-    case "failed":
-      return "failed"
-    default:
-      return "idle"
-  }
+  return row ? PLUGIN_STATUS[sessionActivity(row)] : "idle"
 }
 
 function sessionBindings(scope: BindingScope): PluginApi["sessions"] {
@@ -52,7 +51,7 @@ function sessionBindings(scope: BindingScope): PluginApi["sessions"] {
       const attachments = (input.attachments ?? []).map((attachment) => promptAttachment(scope, attachment))
       const ref = await sessions.list.create({ placementId: placement.id, title: input.title })
       await sessions.open(ref).send({ clientRequestId: uuid(), text: input.prompt, attachments })
-      return { sessionId: ref.sessionId, projectId: ref.projectId }
+      return { sessionId: ref.sessionId, workspaceId: ref.placementId }
     },
     status: (ref) => sessionStatusOf(sessionRowOf(scope, ref)),
     open: (ref) => {
@@ -82,8 +81,7 @@ export function dataBindings(scope: BindingScope): Data {
       currentSession: () => {
         const route = services.routing.route()
         if (route.kind !== "session") return undefined
-        const projectId = services.server.placements.byId(route.placementId)?.projectId
-        return projectId ? { sessionId: route.sessionId, projectId } : undefined
+        return { sessionId: route.sessionId, workspaceId: route.placementId }
       },
       signal: scope.signal,
     },

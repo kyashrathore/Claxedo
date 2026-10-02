@@ -12,6 +12,7 @@ import type {
   PromptDeliveryRequest,
   RuntimeGoalSnapshot,
 } from "@claxedo/agent-runtime-contract"
+import type { BackgroundWork, ListedStatus, SessionStatus } from "./status-types"
 import type { SolidQueryOptions } from "@tanstack/solid-query"
 import type { HarnessSelection } from "../lib/harness-selection"
 import type { MachineId, OrgId, PlacementId, ProjectId, RequestId, SessionId, UserId } from "./ids"
@@ -27,7 +28,7 @@ export type AppError = {
   readonly cause?: unknown
 }
 
-export type SessionRef = {
+export type SessionLocation = {
   readonly projectId: ProjectId
   readonly placementId: PlacementId
   readonly sessionId: SessionId
@@ -88,22 +89,6 @@ export type ProjectUpdate = {
   readonly commands?: ProjectCommands
 }
 
-export type RetryAction = {
-  readonly reason: string
-  readonly provider: string
-  readonly title: string
-  readonly message: string
-  readonly label: string
-  readonly link?: string
-}
-
-export type SessionStatus =
-  | { readonly kind: "idle" }
-  | { readonly kind: "working" }
-  | { readonly kind: "retrying"; readonly attempt: number; readonly message: string; readonly nextAt: number; readonly action?: RetryAction }
-  | { readonly kind: "recovering"; readonly reason: "processRestart" | "uncertainExecution"; readonly message: string }
-  | { readonly kind: "failed"; readonly error: AppError }
-
 export type SessionSelections = {
   readonly harness?: HarnessSelection
   readonly model?: ModelChoice
@@ -112,7 +97,7 @@ export type SessionSelections = {
 }
 
 export type SessionRow = SessionSelections & {
-  readonly ref: SessionRef
+  readonly ref: SessionLocation
   readonly title: string
   readonly createdAt: number
   readonly updatedAt: number
@@ -140,8 +125,6 @@ export type FileDiff = AgentSnapshotFileDiff
 export type Subagent = AgentSubagentUpdate
 
 export type SessionListInput = { readonly projectId: ProjectId; readonly after?: string; readonly limit: number }
-
-export type ListedStatus = { readonly status: SessionStatus; readonly waitingOnUser: boolean }
 
 export type SessionPage = {
   readonly rows: readonly SessionRow[]
@@ -188,6 +171,7 @@ export type SessionFirstRead = {
 export type SessionReads = {
   readonly first: Promise<SessionFirstRead>
   readonly status: Promise<SessionStatus>
+  readonly backgroundWork: Promise<BackgroundWork>
   readonly requests: Promise<readonly AgentRequest[]>
   readonly todos: Promise<readonly Todo[]>
   readonly goal: Promise<SessionGoalState>

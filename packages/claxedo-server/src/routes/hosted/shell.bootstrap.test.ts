@@ -17,23 +17,8 @@ const signedConfig: ControlPlaneAuthConfig = {
   audience: "claxedo-server",
 }
 
-const verifier = async (token: string) => {
-  if (token !== "token-owner") throw Object.assign(new Error("unknown token"), { status: 401 })
-  return {
-    mode: "signed" as const,
-    user: { subject: "user_owner", tokenIdentifier: "https://example.issuer.dev|user_owner", issuer: "https://example.issuer.dev" },
-  }
-}
-
-const OWNER_WORKSPACES = [
-  { workspace_id: "ws_cloud", project_id: "proj_one", backing: "cloud-vm", workspace_name: "main", remote_directory: "/workspace", created_at: 1_800_000_000_000 },
-]
-
-function bootstrap(options: { authConfig: ControlPlaneAuthConfig; version?: string; token?: string; connections?: boolean }) {
-  const { token, ...route } = options
-  return HostedShellRoutes({ ...route, verifier, listWorkspaces: async () => OWNER_WORKSPACES }).request("http://cp.test/api/claxedo/bootstrap", {
-    headers: token ? { authorization: `Bearer ${token}` } : {},
-  })
+function bootstrap(options: { authConfig: ControlPlaneAuthConfig; version?: string; connections?: boolean }) {
+  return HostedShellRoutes(options).request("http://cp.test/api/claxedo/bootstrap")
 }
 
 describe("GET /api/claxedo/bootstrap on a hosted central", () => {
@@ -45,7 +30,7 @@ describe("GET /api/claxedo/bootstrap on a hosted central", () => {
       healthy: true,
       version: "9.9.9-test",
       events: { hostAggregate: false },
-      deployment: { issuesSessions: true, documents: false, connections: false },
+      deployment: { serverKind: "hosted", issuesSessions: true, documents: false, connections: false },
     })
   })
 
@@ -85,35 +70,5 @@ describe("GET /api/claxedo/bootstrap on a hosted central", () => {
     })
 
     await expect(localOnly.json()).resolves.toMatchObject({ deployment: { issuesSessions: false } })
-  })
-
-  test("hands a signed caller its project catalog beside the posture", async () => {
-    const body = await (await bootstrap({ authConfig: signedConfig, token: "token-owner" })).json() as Record<string, unknown>
-
-    expect(body).toMatchObject({ healthy: true, events: { hostAggregate: false }, deployment: { issuesSessions: true } })
-    expect(body.project).toMatchObject([{ id: "proj_one", workspaces: { ws_cloud: { id: "ws_cloud", backing: "cloud-vm", directory: "workspace:ws_cloud" } } }])
-  })
-
-  test("refuses a credential it cannot verify instead of answering it as anonymous", async () => {
-    const response = await bootstrap({ authConfig: signedConfig, token: "token-stranger" })
-
-    expect(response.status).toBe(401)
-  })
-
-  test("states each cloud workspace reachable only while the sandbox manager reports its lease ready", async () => {
-    const workspaces = [
-      { workspace_id: "ws_running", project_id: "proj_one", backing: "cloud-vm" },
-      { workspace_id: "ws_stopped", project_id: "proj_one", backing: "cloud-vm" },
-    ]
-    const sandboxManager = {
-      target: async (id: string) => id === "ws_running"
-        ? { status: "ready" as const, routingId: "routing_test", sandboxId: id, url: "http://sandbox.test", hostId: id, epoch: 1, homeRegion: "us-east" }
-        : { status: "unavailable" as const, reason: "runtime_lease_not_ready", leaseStatus: "stopped" as const },
-    }
-    const response = await HostedShellRoutes({ authConfig: signedConfig, verifier, listWorkspaces: async () => workspaces, sandboxManager })
-      .request("http://cp.test/api/claxedo/bootstrap", { headers: { authorization: "Bearer token-owner" } })
-
-    const body = await response.json() as { project: Array<{ workspaces: Record<string, { reachable: boolean }> }> }
-    expect(body.project[0]?.workspaces).toMatchObject({ ws_running: { reachable: true }, ws_stopped: { reachable: false } })
   })
 })

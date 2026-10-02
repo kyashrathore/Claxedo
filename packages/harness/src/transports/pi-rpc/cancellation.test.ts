@@ -1,8 +1,10 @@
 import { expect, test } from "bun:test"
 import { PassThrough } from "node:stream"
-import type { HarnessServices, HarnessSession, OwnedProcess } from "../../contract"
+import type { HarnessServices, HarnessSession, OwnedProcess, SessionBroker } from "../../contract"
 import { PiRpcTransport } from "./index"
 import { PiRpc } from "./rpc"
+import { PiRun } from "./run"
+import { PiSessionStream } from "./session-stream"
 
 function fixture(clear: "stall" | "reject" | "ok") {
   const commands: string[] = []
@@ -21,9 +23,14 @@ function fixture(clear: "stall" | "reject" | "ok") {
   })
   const transport = new PiRpcTransport({ clock } as unknown as HarnessServices, {} as never)
   const session = { binding: { sessionId: "s1" } } as HarnessSession
-  const entry = { session, rpc, busy: true, prompted: true, settled: false }
+  const log = { debug: () => {}, info: () => {}, warn: () => {}, error: () => {} }
+  const stream = new PiSessionStream({ sessionId: "s1", rpc, broker: {} as SessionBroker, clock, log, stop: async () => {} })
+  const run = new PiRun(rpc, "s1", clock, { ask: async () => ({ kind: "cancelled" }) } as never)
+  const idle = stream.claim(run)
+  run.prompted = true
+  const entry = { session, rpc, stream }
   ;(transport as unknown as { entries: Map<string, typeof entry> }).entries.set("s1", entry)
-  return { transport, session, commands, rpc, entry }
+  return { transport, session, commands, rpc, run, idle, stream, clock }
 }
 const turn = { turnId: "t1", assistantMessageId: "a1" }
 
@@ -60,14 +67,14 @@ test("Pi sends nothing for an expired cancellation or an idle session", async ()
   const f = fixture("ok")
   const deadline = { at: Date.now() - 1, signal: new AbortController().signal }
   expect(await f.transport.cancel(f.session, turn, deadline)).toMatchObject({ error: { code: "cancellation_timeout" } })
-  f.entry.busy = false
+  f.idle()
   expect(await f.transport.cancel(f.session, turn, deadline)).toEqual({ execution: "terminal", cleanup: "unknown" })
   expect(f.commands).toEqual([])
 })
 
 test("Pi reports terminal only after the entry observes settlement", async () => {
   const f = fixture("ok")
-  f.entry.settled = true
+  f.run.settled = true
   expect(await f.transport.cancel(f.session, turn, { at: Date.now() + 1000, signal: new AbortController().signal }))
     .toEqual({ execution: "terminal", cleanup: "unknown" })
   expect(f.commands).toEqual(["clear_queue", "abort"])
@@ -81,4 +88,16 @@ test("Pi sends one clear_queue and one abort for concurrent stops of one turn, a
   expect(second).toEqual(first)
   await f.transport.cancel(f.session, turn, deadline)
   expect(f.commands).toEqual(["clear_queue", "abort", "clear_queue", "abort"])
+})
+
+test("a later turn's stop reports that turn's settlement, not the settlement of an earlier turn it stopped", async () => {
+  const f = fixture("ok")
+  const deadline = { at: Date.now() + 1000, signal: new AbortController().signal }
+  f.run.settled = true
+  expect(await f.transport.cancel(f.session, turn, deadline)).toEqual({ execution: "terminal", cleanup: "unknown" })
+  f.idle()
+  const later = new PiRun(f.rpc, "s1", f.clock, { ask: async () => ({ kind: "cancelled" }) } as never)
+  later.prompted = true
+  f.stream.claim(later)
+  expect(await f.transport.cancel(f.session, turn, deadline)).toEqual({ execution: "unknown", cleanup: "unknown" })
 })

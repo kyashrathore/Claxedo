@@ -7,7 +7,8 @@ import { Hono } from "hono"
 import { exportPKCS8, exportSPKI, generateKeyPair } from "jose"
 import { mintRelayHostToken } from "@claxedo/workspace-relay"
 import type { HarnessConnectionCapabilities } from "@claxedo/agent-runtime-contract"
-import { FakeTransport, fakeConnectionProvider, loopbackMachineLoginPolicy } from "@claxedo/workspace-runtime/testing"
+import { loopbackMachineLoginPolicy } from "@claxedo/workspace-runtime/testing"
+import { FakeTransport, fakeConnectionProvider } from "@claxedo/session-core/testing"
 import { ControlPlaneAuthError } from "@claxedo/server-core/platform/auth/auth"
 import type { WorkspaceOwnerIdentity } from "@claxedo/server-core/platform/auth/authority"
 import type { PrivateSessionRuntimePrincipal } from "@claxedo/server-core/platform/auth/private-session-authority"
@@ -96,9 +97,9 @@ const CAPABILITIES: HarnessConnectionCapabilities = {
 }
 
 /**
- * An in-process harness: turns in memory, permission modes with rungs, no
- * model of its own. A held turn never settles until released, which is how a
- * child is kept active for the cap rule.
+ * An in-process harness: turns in memory, permission modes with rungs, and the
+ * one model the parent's group names. A held turn never settles until
+ * released, which is how a child is kept active for the cap rule.
  */
 function fakeHarness() {
   const prompts: Array<{ sessionId: string; messageID?: string }> = []
@@ -107,14 +108,16 @@ function fakeHarness() {
   let currentMode = "workspace-write"
   const modes = (): AgentPermissionModeState => ({ modes: [...MODES], currentModeId: currentMode, appliesFrom: "next-turn" })
   const transport = new FakeTransport({
-    capabilities: { configOwner: "runtime", instructionChannel: "turn-system-prompt", subagents: true, requests: { permissions: true, questions: true, elicitation: false } },
+    capabilities: {
+      instructionChannel: "turn-system-prompt", subagents: true,
+      requests: { permissions: true, questions: true, elicitation: false },
+      modelSelection: { status: "optional", models: [{ providerId: "fake", modelId: "m1", name: "Fake M1" }] },
+    },
     turn: async function* ({ session, turn }) {
       prompts.push({ sessionId: session.binding.sessionId, messageID: turn.userMessageId })
       if (holding) await new Promise<void>((resolve) => held.push(resolve))
     },
     config: {
-      read: async () => { throw new Error("runtime-owned config") },
-      update: async () => { throw new Error("runtime-owned config") },
       options: async () => ({ options: [] }),
       permissionModes: async () => modes(),
       setPermissionMode: async (_session, modeId) => {
@@ -200,6 +203,7 @@ beforeAll(async () => {
   harness = fakeHarness()
   const enabledToolGroups = ["sessions", "subagents"]
   runtime = createWorkspaceRuntimeApp({
+    sessionIdWorkspace: () => undefined,
     exposure: relayWorkspaceRuntimeExposure({ key: relayKey.publicKey, workspaceId: WORKSPACE, hostId: HOST }),
     target: { workspaceId: WORKSPACE, directory },
     storeRoot: path.join(directory, "state"),

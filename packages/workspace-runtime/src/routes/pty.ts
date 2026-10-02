@@ -3,27 +3,34 @@ import type { WSContext } from "hono/ws"
 import type { UpgradeWebSocket } from "hono/ws"
 import { Pty } from "../pty/index"
 import { Log } from "../log"
-import { boundedJsonBody, errorBody, isRequestBodyTooLarge, requestBodyTooLargeBody } from "./http"
+import {
+  boundedJsonBody,
+  errorBody,
+  isRequestBodyTooLarge,
+  requestBodyTooLargeBody,
+  WorkspaceTargetError,
+  managedWorkspaceSessionAccessPolicy,
+  sessionAccessContext,
+  sessionAccessDenied,
+  type SessionAccessOperation,
+  type SessionAccessPolicy,
+} from "@claxedo/session-core"
 import { routeParam } from "@claxedo/helpers/route-param"
-import { assertTarget, authoritativeWorkspaceId, resolveWorkspaceCommandPaths, resolveWorkspacePath, WorkspaceTargetError } from "../target"
+import {
+  assertTarget,
+  authoritativeWorkspaceId,
+  resolveWorkspaceCommandPaths,
+  resolveWorkspacePath,
+} from "../target"
 import type { RelayHostAuthContext } from "../workspace-host-service-auth"
-import { denyWorkspaceViewers } from "./workspace-role"
 import { readHistorySessionId } from "../pty/history-disk"
 import {
   authorizePtyAttach,
   createAuthorizedPtyConnection,
   isPtyStreamSocket,
   ptyAccessRefusalResponse,
-  PTY_ROLE_DENIED_MESSAGE,
   type PtyStreamAdmission,
 } from "../pty/authorized-connection"
-import {
-  managedWorkspaceSessionAccessPolicy,
-  sessionAccessContext,
-  sessionAccessDenied,
-  type SessionAccessOperation,
-  type SessionAccessPolicy,
-} from "../session-access-policy"
 import { volatileLaunchOwnership, type LaunchOwnershipStore } from "@claxedo/process-ownership/launch"
 
 function invalidInput(details: Record<string, unknown>) {
@@ -105,7 +112,6 @@ export function PtyRoutes(
       throw err
     })
     // Terminal access is sensitive even when the transport method is GET.
-    .use("*", denyWorkspaceViewers(PTY_ROLE_DENIED_MESSAGE))
     .get("/", async (c) => {
       const rows = Pty.list()
       const access = sessionAccessContext(c)
@@ -157,7 +163,7 @@ export function PtyRoutes(
           })
         }
       } catch (err) {
-        if (err instanceof WorkspaceTargetError && err.message.includes("pinned")) {
+        if (err instanceof WorkspaceTargetError && err.code === "workspace_target_pinned") {
           return c.json(invalidDirectory(), 400)
         }
         if (err instanceof WorkspaceTargetError) {

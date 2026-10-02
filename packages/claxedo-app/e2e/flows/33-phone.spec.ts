@@ -1,5 +1,6 @@
 import { fileURLToPath } from "node:url"
 import type { Page } from "@playwright/test"
+import { marketplacePanel } from "../harness/marketplace-panel"
 import {
   acpScriptToken,
   expect,
@@ -65,6 +66,13 @@ async function panel(app: Page): Promise<void> {
 
 test.skip(({ isMobile }) => !isMobile, "flow 33 runs in the phone project")
 
+test("33 phone: Marketplace details use the full-width shared panel with touch close and no workspace controls", async ({
+  stack,
+  app,
+}, testInfo) => {
+  await marketplacePanel(stack, app, true, testInfo)
+})
+
 test("33 phone: the drawer, two sessions and the workspace panel, no horizontal scroll, an axe sweep", async ({ stack, api, app }) => {
   await drawer(stack, api, app, await arrange(stack, api))
   await panel(app)
@@ -122,4 +130,17 @@ test("33 phone: what a mouse reveals on hover shows on touch, and icon buttons k
   await app.getByRole("button", { name: UI.hideSidebar }).tap()
   await expect(app.getByRole("button", { name: "Close Touch", exact: true })).toHaveCSS("opacity", "1")
   expect(pages.requested).toEqual(["/preview.html"])
+})
+
+
+test("33 phone: an invitation link uses the auth screen without horizontal scroll and has touch targets", async ({ stack, app }) => {
+  await app.goto(`${stack.url}/invitations#phone-invitation`)
+  await expect(app.getByRole("heading", { name: "Join your organization" })).toBeVisible()
+  await expect(app.getByText("Use the email address that received this invitation.")).toBeVisible()
+  await expectNoHorizontalScroll(app)
+  const button = app.getByRole("button").first()
+  await expect(button).toBeVisible()
+  const target = await button.boundingBox()
+  expect(target?.width).toBeGreaterThanOrEqual(44)
+  expect(target?.height).toBeGreaterThanOrEqual(44)
 })

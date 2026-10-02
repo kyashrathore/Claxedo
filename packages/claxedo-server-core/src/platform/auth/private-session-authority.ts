@@ -134,12 +134,6 @@ export function sessionAccessQuestion(
   return input.action === "read" ? "read" : input.writeClass ?? "agent_turn"
 }
 
-export type PrivateSessionParticipantInput = {
-  sessionId: string
-  workspaceId: string
-  participantActorId: string
-}
-
 export type PrivateSessionVisibility = {
   sessionId: string
   title?: string
@@ -171,6 +165,8 @@ export type RelayHostPrivateSessionClaims = {
   jti: string
   parent_jti: string
   role?: "viewer" | "editor" | "admin" | "owner"
+  /** The one session the proof's token reaches; absent on the workspace owner's. */
+  session_id?: string
 }
 
 export type PrivateSessionRuntimeProof = PrivateSessionRuntimePrincipal & {
@@ -274,15 +270,6 @@ export type PrivateSessionAuthority = {
   authorizeRuntimeSessionStart: (input: AuthorizeRuntimeSessionStartInput) => Promise<void>
   authorizeRuntimeSession: (input: AuthorizeRuntimePrivateSessionInput) => Promise<void>
 
-  grantSessionParticipant: (
-    auth: SignedControlPlaneAuth,
-    input: PrivateSessionParticipantInput,
-  ) => Promise<{ participant_id: string }>
-  revokeSessionParticipant: (
-    auth: SignedControlPlaneAuth,
-    input: PrivateSessionParticipantInput,
-  ) => Promise<{ removed: boolean }>
-
   listSessions: (
     auth: SignedControlPlaneAuth,
     input: { workspaceId: string },
@@ -314,7 +301,6 @@ export type PrivateSessionAuthority = {
       sessionId: string
       workspaceId: string
       messages: unknown[]
-      intakeReady?: boolean
       maxEventOrdinal?: number
       fencingToken?: number
     },
@@ -326,10 +312,6 @@ export type PrivateSessionAuthority = {
   replaceSessionVisibility: (
     auth: SignedControlPlaneAuth,
     input: { workspaceId: string; sessions: PrivateSessionVisibility[] },
-  ) => Promise<unknown>
-  deleteSessionVisibility: (
-    auth: SignedControlPlaneAuth,
-    input: { sessionId: string; workspaceId: string },
   ) => Promise<unknown>
 }
 
@@ -346,8 +328,6 @@ export const PRIVATE_SESSION_AUTHORITY_METHODS = [
   "authorizeRuntimeSession",
   "authorizeRuntimeSessionStart",
   "authorizeRuntimeSessionStartStatus",
-  "grantSessionParticipant",
-  "revokeSessionParticipant",
   "listSessions",
   "listSessionPage",
   "resolveSession",
@@ -358,7 +338,6 @@ export const PRIVATE_SESSION_AUTHORITY_METHODS = [
   "syncSessionMessages",
   "upsertSessionVisibility",
   "replaceSessionVisibility",
-  "deleteSessionVisibility",
 ] as const satisfies readonly (keyof PrivateSessionAuthority)[]
 
 type MissingPrivateSessionMethod = Exclude<

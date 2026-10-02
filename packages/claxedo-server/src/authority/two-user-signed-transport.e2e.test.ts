@@ -2,7 +2,7 @@ import fs from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
 import { afterAll, describe, expect, test } from "vitest"
-import { withClaxedoMessageAuthor } from "../../../workspace-runtime/src/projection/client-presentation/author"
+import { withClaxedoMessageAuthor } from "@claxedo/session-core"
 import type { AgentMessageInfo } from "@claxedo/agent-runtime-contract"
 
 const root = await fs.mkdtemp(path.join(os.tmpdir(), "claxedo-two-user-signed-"))
@@ -326,15 +326,15 @@ describe("two-user signed app transport", () => {
     expect(JSON.stringify(projected)).not.toContain(aliceProfile.actor_id)
     expect(JSON.stringify(projected)).not.toContain(bobProfile.actor_id)
 
-    await authority.recordRuntimeAccessToken(bobAuth, {
+    await expect(authority.recordRuntimeAccessToken(bobAuth, {
       jti: "jti_signed_bob",
       workspaceId: "ws_signed_private",
       hostId: "host_signed",
       actorId: bobProfile.actor_id,
       actorKind: "human",
-      role: "editor",
+      role: "viewer",
       expiresAt: Date.now() + 60_000,
-    })
+    })).rejects.toMatchObject({ status: 403 })
     const revokedShare = await signedRequest(alice.token, "/api/control/sessions/ses_signed_private/shares", {
       method: "DELETE",
       body: JSON.stringify({
@@ -347,12 +347,6 @@ describe("two-user signed app transport", () => {
       revoked: true,
       runtime_tokens_revoked: expect.any(Number),
     })
-    await expect(authority.runtimeAccessTokenActive({
-      jti: "jti_signed_bob",
-      workspaceId: "ws_signed_private",
-      hostId: "host_signed",
-    })).resolves.toMatchObject({ active: false, code: "runtime_access_token_revoked" })
-
     const afterRemoval = await signedRequest(
       bob.token,
       "/api/control/sessions/ses_signed_private/messages?workspaceId=ws_signed_private",

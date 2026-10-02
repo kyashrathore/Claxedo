@@ -8,4 +8,4 @@ packages/agent-event-runtime/src/projections/client-presentation/types.ts
 packages/agent-sdk-runtime/src/compat-events.ts
 packages/agent-sdk-runtime/src/harnesses/shared/child-event-routing.ts
 packages/agent-sdk-runtime/src/harnesses/shared/turn-projection.ts
-packages/workspace-runtime/src/projection/sse.ts
+packages/claxedo-helpers/src/sse.ts

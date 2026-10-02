@@ -23,23 +23,28 @@ npm install @claxedo/workspace-runtime
 Minimal loopback host, no `claxedo-server` or control plane involved:
 
 ```ts
-import { startServer, loopbackWorkspaceRuntimeExposure } from "@claxedo/workspace-runtime"
+import {
+  startServer,
+  loopbackWorkspaceRuntimeExposure,
+  type WorkspaceRuntimeServerOptions,
+} from "@claxedo/workspace-runtime"
 
-startServer(
-  3002,
-  {
+export function startLoopbackHost(
+  ports: Pick<WorkspaceRuntimeServerOptions, "placement" | "sessionIdWorkspace" | "storeFactory">,
+) {
+  return startServer(3002, {
+    ...ports,
     exposure: loopbackWorkspaceRuntimeExposure(),
     target: { workspaceId: "demo", directory: process.cwd() },
-  },
-  // Opt in to process-global SIGTERM/SIGINT/exit handling; omit this to let
-  // the host process own signals itself.
-  { signals: true },
-)
+  }, { signals: true })
+}
 ```
 
 `startServer(port?, options?, lifecycle?)` requires an explicit `exposure`
 declaration (`loopbackWorkspaceRuntimeExposure()` here) and refuses to start
-without one. See [Supported runtime shapes](#supported-runtime-shapes) below
+without one. The host supplies `placement` and the required `sessionIdWorkspace`
+reader from its authoritative session index. `storeFactory` is optional for
+the machine host. See [Supported runtime shapes](#supported-runtime-shapes) below
 for the other four exposure/deployment options, and
 [`docs/architecture.md`](docs/architecture.md) for the full picture.
 
@@ -93,13 +98,12 @@ lower-level helpers:
 | `@claxedo/workspace-runtime/client` | Manual typed HTTP client for health, capabilities, config apply, events, files, diff/git, and PTY routes. |
 | `@claxedo/workspace-runtime/file-index` | Machine file listing, bounded search index, and explicit cache invalidation. |
 | `@claxedo/workspace-runtime/host` | Low-level host construction and route mounting. |
-| `@claxedo/workspace-runtime/projection` | SSE fanout and replay helpers for runtime presentation frames. |
+| `@claxedo/session-core` | Runtime-neutral session storage, orchestration, projection, session routes, event delivery and HTTP primitives. |
 | `@claxedo/harness/opencode-sdk` | The embedded OpenCode engine and its transport, which this runtime composes as the `opencode` registry row (Node 24+). |
 | `@claxedo/workspace-runtime/exposure` | Explicit loopback, relay, private-network, and embedded exposure declarations. |
 | `@claxedo/workspace-runtime/relay` | Relay-host auth and host tunnel helpers. |
 | `@claxedo/workspace-runtime/config` | Runtime config snapshot and management-auth contracts. |
 | `@claxedo/workspace-runtime/routes` | Neutral `/api/wr/*` route manifest. |
-| `@claxedo/workspace-runtime/http` | Shared bearer-token, bounded-body, and error-response primitives for host-supplied routes. |
 | `@claxedo/workspace-runtime/route-contribution` | Host route-contribution contracts and lifecycle-safe route mounting. |
 | `@claxedo/workspace-runtime/testing` | Test support: management-auth helpers, the loopback login policy, and the fake transport and connection provider. |
 
@@ -113,35 +117,23 @@ files in one command; non-repositories use a symlink-free walk capped at
 each caller.
 
 Root runtime value exports:
-`FIRST_PARTY_MCP_PATH`, `FIRST_PARTY_MCP_SERVER_NAME`,
-`Pty`, `SESSION_CORE_ROUTE_ACCESS`,
-`WORKSPACE_RUNTIME_MANAGEMENT_TOKEN_HEADER`,
-`WORKSPACE_RUNTIME_SESSION_AUTHORITY_URL`,
-`WorkspaceRuntimeRouteManifest`, `WorkspaceWorktreeManager`,
-`WorkspaceRuntimeRoutes`, `createMemoryTranscriptHandleStore`,
-`createPersistentTranscriptHandleStore`, `createRuntimeCredentialIssuer`,
-`createTranscriptResolver`, `createWorkspaceHost`,
-`createWorkspaceRuntimeApp`, `createWorkspaceRuntimeJwtManagementAuth`,
-`embeddedWorkspaceRuntimeExposure`,
-`firstPartyMcpServerFor`, `isLoopbackHostname`, `loadWorkspaceRuntimeManagementVerificationKey`,
-`loopbackWorkspaceRuntimeExposure`, `managedWorkspaceSessionAccessPolicy`,
-`normalizeRuntimeSnapshot`,
-`privateNetworkDevUnsafeWorkspaceRuntimeExposure`,
+
+`FIRST_PARTY_MCP_PATH`, `FIRST_PARTY_MCP_SERVER_NAME`, `Pty`, `PTY_NOT_FOUND_REFUSAL`,
+`WORKSPACE_RUNTIME_MANAGEMENT_TOKEN_HEADER`, `WORKSPACE_RUNTIME_SESSION_AUTHORITY_URL`,
+`WorkspaceRuntimeRouteManifest`, `WorkspaceRuntimeRoutes`, `WorkspaceWorktreeManager`,
+`authorizePtyAttach`, `createAuthorizedPtyConnection`,
+`isPtyStreamSocket`, `ptyAccessRefusalResponse`, `ptyStreamAccess`, 
+`createRuntimeCredentialIssuer`, `createWorkspaceHost`,
+`createWorkspaceRuntimeApp`, `createWorkspaceRuntimeJwtManagementAuth`, `embeddedWorkspaceRuntimeExposure`,
+`firstPartyMcpServerFor`, `flushRuntimeDocument`, `forgetRuntimeDocuments`, `isLoopbackHostname`,
+`loadWorkspaceRuntimeManagementVerificationKey`, `loopbackWorkspaceRuntimeExposure`,
+`normalizeRuntimeSnapshot`, `privateNetworkDevUnsafeWorkspaceRuntimeExposure`,
 `privateNetworkWorkspaceRuntimeExposure`, `relayWorkspaceRuntimeExposure`,
-`remoteWorkspaceSessionAccessPolicy`,
-`remoteWorkspaceSessionAccessPolicyFromEnv`, `sessionAccessRequiresWrite`,
-`sessionAccessWriteClass`,
-`flushRuntimeDocument`, `forgetRuntimeDocuments`,
-`runtimeCredentialWorkspaceId`,
-`PTY_NOT_FOUND_REFUSAL`, `authorizePtyAttach`, `createAuthorizedPtyConnection`,
-`isPtyStreamSocket`, `ptyAccessRefusalResponse`, `ptyStreamAccess`,
-`WORKSPACE_RUNTIME_OWNER_GRANT_AUDIENCE`, `WORKSPACE_RUNTIME_OWNER_GRANT_ISSUER`,
-`ownerGrantIdentity`, `ownerGrantIdentityFromEnv`,
-`createIdentityAwareEventSource`, `isRetainedWorkspaceEventFrame`,
-`malformedEventStreamCursor`, `streamWorkspaceEventFrames`,
-`runtimeEnvText`, `startServer`, `startWorkspaceRuntime`,
-`waitForWorkspaceRuntimeServerPort`, `workspaceRuntimeListenHostname`,
-`workspaceRuntimeRoute`, and `workspaceStorageRoot`.
+`remoteWorkspaceSessionAccessPolicy`, `remoteWorkspaceSessionAccessPolicyFromEnv`,
+`runtimeCredentialWorkspaceId`, `runtimeEnvText`, `startServer`, `startWorkspaceRuntime`,
+`waitForWorkspaceRuntimeServerPort`, `workspaceRuntimeListenHostname`, `workspaceRuntimeRoute`,
+`workspaceStorageRoot`, `WORKSPACE_RUNTIME_OWNER_GRANT_AUDIENCE`, `WORKSPACE_RUNTIME_OWNER_GRANT_ISSUER`,
+`ownerGrantIdentity`, `ownerGrantIdentityFromEnv`.
 
 The first-party MCP group is how a runtime hands each session it launches an
 entry for the built-in Claxedo MCP server, authenticated by a bearer token the
@@ -185,7 +177,6 @@ projection compose those concerns outside the OSS runtime boundary.
 | `*    /api/wr/diff/*`, `* /api/wr/git/*` | [`routes/diff.ts`](src/routes/diff.ts), [`routes/git-source.ts`](src/routes/git-source.ts) | exposure-dependent runtime auth |
 | `*    /api/wr/pty/*` | [`routes/pty.ts`](src/routes/pty.ts) | exposure-dependent runtime auth |
 | `*    /api/wr/hook/*` | [`routes/agent-hook.ts`](src/routes/agent-hook.ts) | exposure-dependent runtime auth |
-| `GET  /api/wr/subagent-transcripts/*` | [`routes/transcript.ts`](src/routes/transcript.ts) | exposure-dependent runtime auth and parent-session authorization |
 | `*    /api/wr/worktrees/*` | [`routes/worktree.ts`](src/routes/worktree.ts) | exposure-dependent runtime auth |
 | `*    /session/*` | `SessionRoutes` (mounted via `mountWorkspaceCore`) | implicit (host-level) |
 | `*    /mcp/*` | MCP routes | implicit |
@@ -200,7 +191,7 @@ stream and have their own transport:
 
 | Surface | Transport | Event family | Contract |
 | --- | --- | --- | --- |
-| `GET /api/wr/events` | SSE | `{ directory, payload }` frames: the runtime's projected client-presentation events (parts, deltas, tool state, status, permission and question asks, todo, diagnostics), the projected `subagent.updated` / `goal.*` runtime-channel events, `harness.health` (a session's `harnessHealth` and `connectionState`, as `/api/wr/health?sessionId=` answers them, sent when either changes around a turn), and the workspace's control frames from `workspaceRuntimeBus` (PTY lifecycle and stream summaries, agent lifecycle, session lifecycle) | The one stream a workspace runtime serves. Mounted by `mountWorkspaceCore()`; resumable by `Last-Event-ID`, with a second retained ring for the frames that settle a state machine. A principal the workspace authority admits reads it unscoped, on a workspace lease the control plane mints for the read and the delivery policy renews, and the session authority decides per session what reaches it — the workspace's owner is no exception; a principal it refuses is answered 403 `workspace_event_stream_denied` and reads `?sessionID=` under a session lease, that session and its subagent children. A connection lives at most one runtime-access-token lifetime and reconnects by cursor into the reader's actor-keyed replay scope; a self-hosted node admits the unscoped arm by stamped role with no lease and re-checks only session grants. |
+| `GET /api/wr/events` | SSE | `{ directory, payload }` frames: the runtime's projected client-presentation events (parts, deltas, tool state, status, permission and question asks, todo, diagnostics), the committed `subagent.updated` / `goal.*` presentation events, `harness.health` (a session's `harnessHealth` and `connectionState`, as `/api/wr/health?sessionId=` answers them, sent when either changes around a turn), `session.background-work` (whether the session's harness runs work outside any turn, sent when it changes), and the workspace's control frames from `sessionCore.bus` (PTY lifecycle and stream summaries, agent lifecycle, session lifecycle) | The one stream a workspace runtime serves. Mounted by `mountWorkspaceCore()`; resumable by `Last-Event-ID`, with a second retained ring for the frames that settle a state machine. A principal the workspace authority admits reads it unscoped, on a workspace lease the control plane mints for the read and the delivery policy renews, and the session authority decides per session what reaches it — the workspace's owner is no exception; a principal it refuses is answered 403 `workspace_event_stream_denied` and reads `?sessionID=` under a session lease, that session and its subagent children. A connection lives at most one runtime-access-token lifetime and reconnects by cursor into the reader's actor-keyed replay scope; a self-hosted node admits the unscoped arm by stamped role with no lease and re-checks only session grants. |
 | `GET /api/wr/pty/:ptyID/connect` | WebSocket | PTY bytes plus cursor metadata | Supported PTY data stream. PTY lifecycle summaries also appear on `/api/wr/events`, but terminal bytes are delivered over this WebSocket. |
 
 `harness.health` is owned by `src/workspace/harness-health-feed.ts`. A session is
@@ -211,19 +202,50 @@ state), and every call, turn start and turn end schedules one read of each
 watched session on the next task; a read that differs from the last one sent for
 that session is published.
 
+`session.background-work` is owned by `session-core/src/broker-ports/background-work.ts`. A
+harness publishes `{ type: "background-work", agents, shells, other }` through
+`SessionBroker.publish` whenever the work it runs for a session outside any
+turn (background agents, shells and other tasks in a process that outlives the
+turn) changes, all zero once it settled. The counts are held in memory by the
+engine's broker ports, not in the store: they describe a process this runtime
+owns, so a restart or a retired engine ends them, and nothing stored could
+outlive that truthfully. A change is broadcast as `session.background-work`
+with the same counts, never journaled, and the settling frame (all zero) is
+retained in the replay ring; `GET /session/status` and the open view's
+`status` add `backgroundWork: { agents, shells, other }` beside the turn's own
+status while any count is above zero (an idle session with background work is
+listed as `{ type: "idle", backgroundWork: { … } }`). It never enters turn admission: a prompt sent while it is set starts a turn on
+the same attached session as any other.
+
+`POST /session/:id/background-task/stop` with `{ toolCallId }` stops one
+background task (`src/host/background-tasks.ts`, route in
+`src/routes/session-background-tasks.ts`). It is an `agent_turn` write
+(`background_task_stop`), authorized like a prompt or a turn cancel, so a
+`send` share may stop a task its turn started. The task is named by the call
+that started it, which the subagent row carries. The runtime asks the held
+attachment's `HarnessTransport.backgroundTasks.stop` and answers what the
+harness answers: 200 `{ ok: true }` once the harness accepted (the task's end
+still arrives as its row's own update), 404 `not_found` for a call with no
+running task, and for a session holding no harness process, which is never
+launched to answer. A harness without the operation is refused 409
+`unsupported_operation` and reads `backgroundTasks: false` in
+`GET /session/:id/capabilities`.
+
 `RuntimeEventHub` is the hub for session/runtime events: session routes
-publish client-presentation events to its global channel, which `/api/wr/events`
-serves, and runtime-channel events (subagent revisions, goal changes) to its
-runtime channel, which `/api/wr/events` projects onto the wire. The session
+publish committed client-presentation events to its global channel, which
+`/api/wr/events` serves. `createSessionEventWriter` appends each projected event,
+subagent revisions included, before publication; a goal change is appended and
+published by the store's goal write. Raw runtime events stay on its runtime
+channel for in-process subscribers. The session
 routes' `publishGlobal` (`bridgeLifecycleEvent` in
-[`routes/session.ts`](src/routes/session.ts)) also forwards a session's
-lifecycle states onto `workspaceRuntimeBus` as `agent.lifecycle` frames:
+[`session routes`](../session-core/src/routes/session.ts)) also forwards a session's
+lifecycle states onto `sessionCore.bus` as `agent.lifecycle` frames:
 `session.status` with busy status becomes `Busy`, a permission or question ask
 `UserActionRequired`, `session.idle` `Idle`, and `session.error` `Error`.
 
-`workspaceRuntimeBus` is intentionally process-global runtime state. It is used
-by PTY and agent-hook code that already lives inside the
-workspace-runtime process. Subscribers are isolated: a throwing or rejecting
+`sessionCore.bus` belongs to one session core instance. PTY callbacks retain
+the bus of their creating host, and agent hooks publish to the bus their host
+supplies. Subscribers are isolated: a throwing or rejecting
 subscriber is reported and cannot prevent later subscribers from receiving the
 same event.
 
@@ -376,7 +398,7 @@ are no migrations while the product is unreleased.
 
 ## Harness transports
 
-The runtime host in `src/host/` drives every harness through one
+The session host in `@claxedo/session-core` drives every harness through one
 `HarnessTransport` per composed harness, from `@claxedo/harness/contract`.
 `src/workspace/transports.ts` composes them through the `@claxedo/harness`
 registry: a native harness (Claude, Codex, Cursor, OpenCode, Pi) by its
@@ -384,11 +406,27 @@ registry row, a configured connection by its descriptor, directory and secret
 lease. There is no second path: OpenCode is a registry row like the others.
 
 The host owns what a transport never decides: turn admission and fencing,
-durable writes and the SSE projection (`src/projection/`), recovery and its
+durable writes and the SSE projection (`session-core/src/projection/`), recovery and its
 receipts, goals the harness does not run natively, session titles, handoffs
 and child sessions. One request broker per store (`@claxedo/harness/broker`
-over `src/broker-ports/`) answers every permission, question and elicitation a
+over `session-core/src/broker-ports/`) answers every permission, question and elicitation a
 transport asks, and persists each answer before the harness is released.
+
+A notice the person needs reaches the transcript, not a diagnostic. The
+client-presentation projection (`session-core/src/projection/client-presentation/notices.ts`)
+turns a turn's `harness-notice` into a `notice` part on its reply, and a
+compaction into one `notice` part that goes from running to completed or
+failed, and a `conversation-reset` (Claude's `/clear`) into a boundary part; the
+session and its stored history stay, and later turns run on the new
+conversation. A `debug` notice, or one published outside any turn, has no reply to
+land in and stays a `runtime.diagnostic`.
+
+A harness that names its model responses (`response-start`) lets the
+projection remember which text, reasoning and tool parts each response wrote.
+A `response-retracted` for those responses becomes `message.part.retracted`:
+the store marks exactly those text and reasoning parts `retracted`, keeping
+their content, and a tool call the response never ran settles as withdrawn. A
+tool call that ran keeps its recorded outcome, because what it did happened.
 
 A descriptor whose revision or secret lease changes replaces its transport.
 The superseded one is disposed only once the turns admitted on it have ended,

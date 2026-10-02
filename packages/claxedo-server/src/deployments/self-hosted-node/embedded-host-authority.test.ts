@@ -1,3 +1,4 @@
+import { testSessionCore } from "@claxedo/session-core/testing"
 import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"
@@ -8,10 +9,13 @@ import { createSqliteWorkspaceAuthority } from "@claxedo/server-core/authority/a
 import { openAuthorityDb } from "@claxedo/server-core/authority/adapters/sqlite/workspace-authority-store"
 import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import { createWorkspaceRuntimeApp, relayWorkspaceRuntimeExposure } from "@claxedo/workspace-runtime"
-import { createRuntimeEventHub } from "@claxedo/workspace-runtime/host"
-import { createBus, type WorkspaceRuntimeEvent } from "../../../../workspace-runtime/src/bus"
-import { sessionEventDeliveryPolicy } from "../../../../workspace-runtime/src/event-delivery"
-import { workspaceEventsHandler } from "../../../../workspace-runtime/src/routes/events"
+import {
+  createRuntimeEventHub,
+  createBus,
+  type WorkspaceRuntimeEvent,
+  sessionEventDeliveryPolicy,
+  workspaceEventsHandler,
+} from "@claxedo/session-core"
 import { sessionStreamLeaseVerifier } from "../../routes/runtime-session-authority"
 import { embeddedManagedPrivateSessionPolicy } from "./app"
 import { loopbackMachineLoginPolicy } from "@claxedo/workspace-runtime/testing"
@@ -44,37 +48,38 @@ async function fixture() {
   await authority.createCloudWorkspace(owner, { workspaceId: "ws_current", displayName: "Current" })
   await authority.usersMe(member)
   const row = database().prepare("SELECT org_id, project_id FROM workspaces WHERE workspace_id = ?").get("ws_current") as { org_id: string; project_id: string }
-  const role = (value?: string) => {
-    database().prepare("DELETE FROM project_memberships WHERE project_id = ? AND token_identifier = ?").run(row.project_id, member.user.tokenIdentifier)
-    if (value) database().prepare("INSERT INTO project_memberships (project_id, token_identifier, role, created_at, updated_at) VALUES (?, ?, ?, ?, ?)")
-      .run(row.project_id, member.user.tokenIdentifier, value, Date.now(), Date.now())
+  database().prepare("INSERT INTO org_memberships (org_id, token_identifier, role, created_at, updated_at) VALUES (?, ?, 'member', ?, ?)")
+    .run(row.org_id, member.user.tokenIdentifier, Date.now(), Date.now())
+  // Whether the member owns the workspace now; nothing else gives anyone a
+  // machine's workspace.
+  const owns = (value: boolean) => {
+    database().prepare("UPDATE workspaces SET owner_token_identifier = ? WHERE workspace_id = ?")
+      .run(value ? member.user.tokenIdentifier : owner.user.tokenIdentifier, "ws_current")
   }
   const input = {
     actor: { actorId: member.user.tokenIdentifier, actorKind: "human" as const },
-    authority: { managed: true as const, workspaceId: "ws_current", orgId: row.org_id, role: "admin" as const },
+    authority: { managed: true as const, workspaceId: "ws_current", orgId: row.org_id, role: "owner" as const },
     operation: "checkpoint_write" as const,
-    minimumRole: "admin" as const,
+    hostAccess: "admin" as const,
   }
-  return { authority, policy: embeddedManagedPrivateSessionPolicy(authority), input, role, directory }
+  return { authority, policy: embeddedManagedPrivateSessionPolicy(authority), input, owns, directory }
 }
 
-test("checkpoint authority rechecks the current SQLite role instead of the role on the original request", async () => {
+test("checkpoint authority rechecks who owns the workspace now instead of the role on the original request", async () => {
   const f = await fixture()
-  f.role("admin")
+  f.owns(true)
   expect(await f.policy.authorizeHost!(f.input)).toEqual({ allowed: true })
-  f.role("viewer")
+  f.owns(false)
   expect(await f.policy.authorizeHost!(f.input)).toMatchObject({ allowed: false, status: 403 })
-  f.role("admin")
+  f.owns(true)
   expect(await f.policy.authorizeHost!(f.input)).toEqual({ allowed: true })
-  f.role()
-  expect(await f.policy.authorizeHost!(f.input)).toMatchObject({ allowed: false, status: 403 })
 })
 
-test("viewer streams receive renewable workspace leases and cannot reuse them across actors, workspaces or organizations", async () => {
+test("the owner's streams receive renewable workspace leases that cannot be reused across actors, workspaces or organizations", async () => {
   const f = await fixture()
-  f.role("viewer")
   await expect(f.authority.resolveRuntimeMachineAccess(f.input.actor.actorId, "ws_current")).rejects.toMatchObject({ status: 403 })
-  const input = { ...f.input, operation: "session_event_stream" as const, minimumRole: "viewer" as const }
+  f.owns(true)
+  const input = { ...f.input, operation: "session_event_stream" as const, hostAccess: "read" as const }
   const first = await f.policy.authorizeHost!(input)
   if (!first.allowed || !first.lease) throw new Error("Expected a workspace stream lease")
   expect(await sessionStreamLeaseVerifier()(first.lease)).toMatchObject({ transport: "embedded", sessionId: "*", actorId: input.actor.actorId })
@@ -84,16 +89,16 @@ test("viewer streams receive renewable workspace leases and cannot reuse them ac
     { ...input, authority: { ...input.authority, workspaceId: "other" } },
     { ...input, authority: { ...input.authority, orgId: "other" } },
   ]) expect(await f.policy.authorizeHost!({ ...altered, lease: first.lease })).toMatchObject({ allowed: false, status: 401 })
-  f.role()
+  f.owns(false)
   expect(await f.policy.authorizeHost!({ ...input, lease: first.lease })).toMatchObject({ allowed: false, status: 403 })
 })
 
-test("an already-open SSE stream stops sessionless frames after current SQLite membership is revoked", async () => {
+test("an already-open SSE stream stops sessionless frames once its reader no longer owns the workspace", async () => {
   const f = await fixture()
-  f.role("viewer")
+  f.owns(true)
   const bus = createBus<WorkspaceRuntimeEvent>()
   const events = workspaceEventsHandler({
-    directory: f.directory, workspaceId: "ws_current", eventHub: createRuntimeEventHub(), bus,
+    placement: testSessionCore(f.directory, "ws_current").placement, directory: f.directory, workspaceId: "ws_current", eventHub: createRuntimeEventHub(), bus,
     sessionAccessPolicy: f.policy, policy: sessionEventDeliveryPolicy(f.policy),
     renewalIntervalMs: 60_000,
   })
@@ -102,7 +107,7 @@ test("an already-open SSE stream stops sessionless frames after current SQLite m
   app.use("*", async (c, next) => {
     c.set("relayHostAuth" as never, {
       actor_id: f.input.actor.actorId, actor_kind: "human", org_id: f.input.authority.orgId,
-      workspace_id: "ws_current", host_id: "host_local", role: "viewer",
+      workspace_id: "ws_current", host_id: "host_local", role: "owner",
     } as never)
     await next()
   })
@@ -124,7 +129,7 @@ test("an already-open SSE stream stops sessionless frames after current SQLite m
   }
   bus.publish({ type: "pty.created", info: { id: "before_revoke", title: "t", command: "sh", args: [], cwd: f.directory, status: "running", pid: 1 } })
   expect(await readUntil("before_revoke")).toContain("before_revoke")
-  f.role()
+  f.owns(false)
   const later = Date.now() + 6_000
   vi.spyOn(Date, "now").mockReturnValue(later)
   bus.publish({ type: "pty.created", info: { id: "after_revoke", title: "t", command: "sh", args: [], cwd: f.directory, status: "running", pid: 1 } })
@@ -133,10 +138,11 @@ test("an already-open SSE stream stops sessionless frames after current SQLite m
 })
 
 
-test("checkpoint HTTP mutations reject a stale admin token after SQLite membership changes", async () => {
+test("checkpoint HTTP mutations reject a stale owner token once its holder no longer owns the workspace", async () => {
   const f = await fixture()
   const key = await generateKeyPair("EdDSA")
   const runtime = createWorkspaceRuntimeApp({
+    sessionIdWorkspace: () => undefined,
     exposure: relayWorkspaceRuntimeExposure({ workspaceId: "ws_current", hostId: "host_local", key: key.publicKey }),
     placement: loopbackMachineLoginPolicy(),
     sessionAccessPolicy: f.policy,
@@ -145,7 +151,7 @@ test("checkpoint HTTP mutations reject a stale admin token after SQLite membersh
     const token = await new SignJWT({
       principal_kind: "user", actor_id: f.input.actor.actorId, actor_kind: "human",
       org_id: f.input.authority.orgId, workspace_id: "ws_current", host_id: "host_local",
-      role: "admin", backing: "cloud-vm", parent_jti: "parent_checkpoint",
+      role: "owner", scope: "workspace", backing: "cloud-vm", parent_jti: "parent_checkpoint",
     }).setProtectedHeader({ alg: "EdDSA" }).setIssuer("workspace-relay").setAudience("workspace-host-service")
       .setIssuedAt().setExpirationTime("1m").setJti("stale_admin").sign(key.privateKey)
     const request = (operation: string) => runtime.app.request(`/api/wr/checkpoint/${operation}`, {
@@ -154,15 +160,15 @@ test("checkpoint HTTP mutations reject a stale admin token after SQLite membersh
         "x-workspace-id": "ws_current", "x-forwarded-by": "workspace-relay",
       }, body: JSON.stringify({ policy: "drain", epoch: 1, checkpointId: "checkpoint_1" }),
     })
-    f.role("admin")
+    f.owns(true)
     expect((await request("freeze")).status).toBe(200)
     expect(runtime.host.checkpoint.detail().state).toBe("frozen")
-    f.role("viewer")
+    f.owns(false)
     for (const operation of ["freeze", "flush", "scrub", "resume", "restore-reconcile"]) {
       expect((await request(operation)).status).toBe(403)
     }
     expect(runtime.host.checkpoint.detail().state).toBe("frozen")
-    f.role("admin")
+    f.owns(true)
     expect((await request("resume")).status).toBe(200)
     expect(runtime.host.checkpoint.detail().state).toBe("active")
   } finally { await runtime.dispose() }

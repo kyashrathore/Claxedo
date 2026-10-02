@@ -5,6 +5,7 @@ import path from "node:path"
 import { afterAll, expect, test } from "vitest"
 import { setupAgentHooks } from "@claxedo/workspace-runtime/host"
 import { dataDir, stateDir } from "@claxedo/server-core/platform/runtime/lib/paths"
+import { defaultStatusHooks } from "../../../workspace-runtime/src/status-hooks"
 import { agentHookConfigPaths } from "../../../workspace-runtime/src/agent-hooks/materialize-status-hooks"
 import { ClaxedoDB } from "../platform/db"
 
@@ -19,7 +20,7 @@ function contains(parent: string, child: string) {
 }
 
 function fingerprint(homeDir: string) {
-  return Object.fromEntries(Object.entries(agentHookConfigPaths(homeDir)).map(([runner, file]) => [
+  return Object.fromEntries(Object.entries(agentHookConfigPaths(homeDir, defaultStatusHooks)).map(([runner, file]) => [
     runner,
     existsSync(file) ? createHash("sha256").update(readFileSync(file)).digest("hex") : undefined,
   ]))
@@ -54,7 +55,7 @@ test("agent hook setup rewrites the harness configs under the temporary home, no
 
   await setupAgentHooks({ port: 7860 })
 
-  const written = agentHookConfigPaths(os.homedir())
+  const written = agentHookConfigPaths(os.homedir(), defaultStatusHooks)
   for (const file of Object.values(written)) expect({ file, exists: existsSync(file) }).toEqual({ file, exists: true })
   const workspaceRuntime = process.env.WORKSPACE_RUNTIME_DATA_DIR!
   expect(readFileSync(written.gemini, "utf8")).toContain(path.join(workspaceRuntime, "hooks", "gemini-hook.sh"))

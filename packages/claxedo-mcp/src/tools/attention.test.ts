@@ -6,7 +6,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js"
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js"
 import { ElicitRequestSchema } from "@modelcontextprotocol/sdk/types.js"
 import type { AgentPermission, AgentQuestion, AgentRuntimeStatus } from "@claxedo/agent-runtime-contract"
-import { createSessionRoutes } from "@claxedo/workspace-runtime/routes"
+import { createSessionRoutes } from "@claxedo/session-core"
 import { createClaxedoMcpClient } from "../client/index"
 import {
   controlPlaneWorkspaceListFetch,
@@ -36,7 +36,7 @@ type Harness = {
   status: Record<string, AgentRuntimeStatus>
   pendingPermissions: AgentPermission[]
   pendingQuestions: AgentQuestion[]
-  answered: Array<{ id: string; decision: string }>
+  answered: Array<{ id: string; decision: { kind: "permission"; decision: string; optionId?: string } }>
   replied: Array<{ id: string; answers: string[][] }>
   rejected: string[]
   fail?: string
@@ -77,6 +77,8 @@ const RECOVERY_FACTS = {
  * produced, and the recovery owner, whose cancellation is where the ACP fix
  * clears one.
  */
+const ownSession = async (sessionId: string) => sessionId
+
 function runtimeApp(state: Harness) {
   const recovery = {
     inspect: (sessionId: string) => ({
@@ -126,14 +128,16 @@ function runtimeApp(state: Harness) {
       }),
     },
     permissions: {
+      askingSession: ownSession,
       list: async () => state.pendingPermissions,
-      respond: async (permId: string, decision: string) => {
+      respond: async (permId: string, decision: { kind: "permission"; decision: string; optionId?: string }) => {
         state.answered.push({ id: permId, decision })
         state.pendingPermissions = state.pendingPermissions.filter((row) => row.id !== permId)
         return { events: [] }
       },
     },
     questions: {
+      askingSession: ownSession,
       list: async () => state.pendingQuestions,
       answer: async (id: string, answers: string[][]) => {
         state.replied.push({ id, answers })
@@ -148,13 +152,17 @@ function runtimeApp(state: Harness) {
     },
   }
   const routes = createSessionRoutes({
+    sessionIdWorkspace: () => undefined,
     runtime: async () => runtime as unknown as SessionRuntime,
     defaultHarness: () => ({ id: "codex", access: "native" }),
     requestedSessionHarness: () => undefined,
     resolveRecoveryOwner: () => recovery as never,
     resolveDirectory: () => DIRECTORY,
-    listSessions: async () => state.sessions.filter((row) => !row.parentID).map((row) => ({ ...row })),
-    getSession: (_c, _directory, sessionId) => state.sessions.find((row) => row.id === sessionId) ?? null,
+    listSessions: async () => state.sessions.filter((row) => !row.parentID).map((row) => ({ ...row, time: { created: 1, updated: 1 } })),
+    getSession: (_c, _directory, sessionId) => {
+      const row = state.sessions.find((candidate) => candidate.id === sessionId)
+      return row ? { ...row, time: { created: 1, updated: 1 } } : null
+    },
     getStatus: () => state.status,
     publishGlobal: () => {},
   })
@@ -358,7 +366,7 @@ describe("answering", () => {
     const { client } = await connect(url, "cli-jwt")
     expect((await callText(client, "permission_reply", { session: "ses_1", permission: "perm_1", response: "always" })).text)
       .toContain("Answered permission perm_1")
-    expect(state.answered).toEqual([{ id: "perm_1", decision: "allow_always" }])
+    expect(state.answered).toEqual([{ id: "perm_1", decision: { kind: "permission", decision: "allow_always" } }])
     expect((await callText(client, "question_reply", { request: "q_2", answers: [["8080"]] })).text)
       .toContain("Answered question q_2")
     expect((await callText(client, "question_reject", { request: "q_1" })).text).toContain("Rejected question q_1")
@@ -480,7 +488,7 @@ describe("wait_for_attention", () => {
     const { text } = await callText(client, "wait_for_attention", { timeoutMs: 5_000 })
     expect(prompts).toEqual(["Bash rm -rf — session ses_1"])
     expect(text).toContain('Answered permission perm_1 on session ses_1 with "once"')
-    expect(state.answered).toEqual([{ id: "perm_1", decision: "allow_once" }])
+    expect(state.answered).toEqual([{ id: "perm_1", decision: { kind: "permission", decision: "allow_once" } }])
     expect(audits.map((event) => ({ tool: event.tool, sessionId: event.sessionId }))).toEqual([
       { tool: "permission_reply", sessionId: "ses_1" },
     ])

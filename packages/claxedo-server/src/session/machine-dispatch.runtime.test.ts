@@ -3,7 +3,8 @@ import fs from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
 import { createWorkspaceRuntimeApp, loopbackWorkspaceRuntimeExposure } from "@claxedo/workspace-runtime"
-import { FakeTransport, fakeConnectionProvider, loopbackMachineLoginPolicy } from "@claxedo/workspace-runtime/testing"
+import { loopbackMachineLoginPolicy } from "@claxedo/workspace-runtime/testing"
+import { FakeTransport, fakeConnectionProvider } from "@claxedo/session-core/testing"
 import { configureLocalWorkspaceRuntime } from "@claxedo/server-core/workspace/local-runtime-port"
 import { createMachineSessionDispatch } from "./machine-dispatch"
 import type { ControlPlaneServices } from "../authority/services"
@@ -41,6 +42,7 @@ describe("machine dispatch against the workspace runtime it reads", () => {
     directory = path.join(root, "workspace")
     await fs.mkdir(directory)
     const runtime = createWorkspaceRuntimeApp({
+      sessionIdWorkspace: () => undefined,
       exposure: loopbackWorkspaceRuntimeExposure(),
       placement: loopbackMachineLoginPolicy(),
       target: { workspaceId: "ws_machine", directory },
@@ -74,12 +76,16 @@ describe("machine dispatch against the workspace runtime it reads", () => {
     const session = await dispatch.create({ workspaceId: "ws_machine" })
     expect(session.id).toMatch(/^ses_/)
 
-    const seen: Array<{ type: string; properties?: { part?: { text?: string } } }> = []
+    const seen: Array<{ type: string; properties?: { field?: string; delta?: string } }> = []
     for await (const event of dispatch.prompt(session.id, { messageID: "msg_machine", parts: [{ type: "text", text: "hi" }] })) {
       seen.push(event as (typeof seen)[number])
     }
     expect(seen.map((event) => event.type)).toContain("message.updated")
-    expect(seen.some((event) => event.type === "message.part.updated" && event.properties?.part?.text === "machine reply")).toBe(true)
+    const reply = seen
+      .filter((event) => event.type === "message.part.delta" && event.properties?.field === "text")
+      .map((event) => event.properties?.delta)
+      .join("")
+    expect(reply).toBe("machine reply")
     expect(seen.at(-1)?.type).toBe("session.idle")
   })
 })

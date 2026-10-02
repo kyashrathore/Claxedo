@@ -11,16 +11,28 @@ export function isProjectGrantRole(value: unknown): value is ProjectGrantRole {
   return value === "viewer" || value === "editor" || value === "admin"
 }
 
-/** One person by exactly one of these: their public id, a verified email, a provider token identifier, or a provider subject. */
-export type MemberSelector = {
+export type TeamMemberSelector = {
   userPublicId?: string
-  email?: string
   tokenIdentifier?: string
   providerSubject?: string
 }
 
-/** Finds an existing account by its verified email address, for deployments whose identity provider holds one. */
-export type FindAccountByEmail = (email: string) => Promise<{ tokenIdentifier: string } | undefined>
+export type OrgInvitation = {
+  id: string
+  org_id: string
+  email: string
+  role: OrgMemberRole
+  invited_by: string
+  created_at: number
+  expires_at: number
+  accepted_at: number | null
+  revoked_at: number | null
+}
+
+export type OrgInvitationDelivery = {
+  sendInvitation?: (input: { email: string; token: string }) => Promise<void>
+  verifiedEmail: (auth: SignedControlPlaneAuth) => Promise<string | undefined>
+}
 
 export type OrgMember = { user_id: string; public_id: string; role: OrgMemberRole; joined_at: number }
 
@@ -29,7 +41,6 @@ export type OrgMemberRemoval = {
   team_memberships_revoked: number
   project_memberships_revoked: number
   session_shares_revoked: number
-  session_participations_revoked: number
   runtime_tokens_revoked: number
 }
 
@@ -54,9 +65,9 @@ export type OrgAccessAuthority = {
   createTeamInOrg?: (auth: SignedControlPlaneAuth, args: { orgId: string; name: string }) => Promise<unknown>
   addTeamMember?: (
     auth: SignedControlPlaneAuth,
-    args: MemberSelector & { teamId: string; role?: OrgMemberRole },
+    args: TeamMemberSelector & { teamId: string; role?: OrgMemberRole },
   ) => Promise<unknown>
-  removeTeamMember?: (auth: SignedControlPlaneAuth, args: MemberSelector & { teamId: string }) => Promise<unknown>
+  removeTeamMember?: (auth: SignedControlPlaneAuth, args: TeamMemberSelector & { teamId: string }) => Promise<unknown>
   listTeamMembers?: (auth: SignedControlPlaneAuth, args: { teamId: string }) => Promise<unknown>
   grantTeamProject?: (
     auth: SignedControlPlaneAuth,
@@ -69,15 +80,24 @@ export type OrgAccessAuthority = {
   ) => Promise<Array<{ team_id: string; project_id: string; role: ProjectGrantRole; updated_at: number }>>
   ensureDefaultTeam?: (auth: SignedControlPlaneAuth, args: { orgId: string }) => Promise<unknown>
   listOrgMembers?: (auth: SignedControlPlaneAuth, args: { orgId: string }) => Promise<OrgMember[]>
-  addOrgMember?: (
+  createOrgInvitation?: (
     auth: SignedControlPlaneAuth,
-    args: MemberSelector & { orgId: string; role: OrgMemberRole },
-  ) => Promise<OrgMember>
+    args: { orgId: string; email: string; role: OrgMemberRole },
+  ) => Promise<void>
+  listOrgInvitations?: (auth: SignedControlPlaneAuth, args: { orgId: string }) => Promise<OrgInvitation[]>
+  revokeOrgInvitation?: (
+    auth: SignedControlPlaneAuth,
+    args: { orgId: string; invitationId: string },
+  ) => Promise<{ revoked: boolean }>
+  acceptOrgInvitation?: (auth: SignedControlPlaneAuth, args: { token: string }) => Promise<OrgMember>
   updateOrgMember?: (
     auth: SignedControlPlaneAuth,
     args: { orgId: string; userPublicId: string; role: OrgMemberRole },
   ) => Promise<OrgMember>
-  removeOrgMember?: (auth: SignedControlPlaneAuth, args: { orgId: string; userPublicId: string }) => Promise<OrgMemberRemoval>
+  removeOrgMember?: (
+    auth: SignedControlPlaneAuth,
+    args: { orgId: string; userPublicId: string },
+  ) => Promise<OrgMemberRemoval>
   grantProjectMember?: (
     auth: SignedControlPlaneAuth,
     args: { projectId: string; userPublicId: string; role: ProjectGrantRole },

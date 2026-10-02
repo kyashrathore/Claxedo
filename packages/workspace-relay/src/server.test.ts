@@ -80,7 +80,7 @@ async function harness(
     relayHost,
     forwarded,
     auditEvents,
-    token: (role: "viewer" | "editor" | "admin" | "owner" = "editor") => mintRuntimeAccessToken({
+    token: (role: "viewer" | "editor" | "admin" | "owner" = "editor", sessionId?: string) => mintRuntimeAccessToken({
       principalKind: "user",
       actorId: "actor_1",
       actorKind: "human",
@@ -88,6 +88,7 @@ async function harness(
       workspaceId: "ws_1",
       hostId: "host_1",
       role,
+      ...(sessionId ? { sessionId } : {}),
     }, runtime.privateKey, "EdDSA"),
   }
 }
@@ -294,6 +295,7 @@ describe("workspace relay server", () => {
               workspace_id: "ws_1",
               host_id: "host_1",
               role: "editor",
+              scope: "workspace",
               exp: Math.floor(Date.now() / 1000) + 300,
               iat: Math.floor(Date.now() / 1000),
               jti: "shared-jti",
@@ -375,6 +377,7 @@ describe("workspace relay server", () => {
               workspace_id: "ws_1",
               host_id: "host_1",
               role: "editor",
+              scope: "workspace",
               exp: Math.floor(Date.now() / 1000) + 300,
               iat: Math.floor(Date.now() / 1000),
               jti: token,
@@ -502,6 +505,7 @@ describe("workspace relay server", () => {
               workspace_id: "ws_1",
               host_id: "host_1",
               role: "editor",
+              scope: "workspace",
               exp: Math.floor(Date.now() / 1000) + 300,
               iat: Math.floor(Date.now() / 1000),
               jti: "jti_same_token",
@@ -552,6 +556,7 @@ describe("workspace relay server", () => {
               workspace_id: "ws_1",
               host_id: "host_1",
               role: "editor",
+              scope: "workspace",
               exp: Math.floor(Date.now() / 1000) + 300,
               iat: Math.floor(Date.now() / 1000),
               jti: "jti_uncached",
@@ -669,90 +674,55 @@ describe("workspace relay server", () => {
     ])
   })
 
-  test("enforces viewer relay access as read-only", async () => {
+  test("a token scoped to one session reaches that session, its stream and its questions, and nothing else", async () => {
     const relay = await harness({
       fetch: ((url, init) => {
         relay.forwarded.push({ url: fetchUrl(url), request: new Request(url, init) })
         return Promise.resolve(new Response("ok"))
       }) as typeof fetch,
     })
+    const token = await relay.token("viewer", "ses_1")
+    const call = (path: string, method = "GET") =>
+      relay.app.request(`http://relay.test/workspaces/ws_1${path}`, { method, headers: { authorization: `Bearer ${token}` } })
 
-    const get = await relay.app.request("http://relay.test/workspaces/ws_1/api/session", {
-      headers: {
-        authorization: `Bearer ${await relay.token("viewer")}`,
-      },
-    })
-    const post = await relay.app.request("http://relay.test/workspaces/ws_1/api/session", {
-      method: "POST",
-      headers: {
-        authorization: `Bearer ${await relay.token("viewer")}`,
-      },
-    })
-
-    expect(get.status).toBe(200)
-    expect(post.status).toBe(403)
-    await expect(post.json()).resolves.toEqual({
+    for (const [path, method] of [
+      ["/session/ses_1", "GET"],
+      ["/session/ses_1/prompt_async", "POST"],
+      ["/session/ses_1/permissions/perm_1", "POST"],
+      ["/api/wr/events?sessionID=ses_1", "GET"],
+      ["/question/question_1/reply", "POST"],
+    ] as const) {
+      expect((await call(path, method)).status, `${method} ${path}`).toBe(200)
+    }
+    for (const path of [
+      "/session",
+      "/session/ses_10",
+      "/session/ses_2/message",
+      "/api/wr/events",
+      "/api/wr/events?sessionID=ses_2",
+      "/file?path=README.md",
+      "/api/wr/pty",
+      "/session/ses_1/..%2F..%2Fapi%2Fwr%2Fpty",
+      "/question",
+    ]) {
+      expect((await call(path)).status, path).toBe(403)
+    }
+    const refused = await call("/api/wr/pty")
+    await expect(refused.json()).resolves.toEqual({
       error: {
-        code: "relay_role_denied",
-        message: "Workspace role does not allow this relay request",
+        code: "relay_scope_denied",
+        message: "Runtime Access Token scope does not reach this relay request",
       },
     })
-    expect(relay.forwarded).toHaveLength(1)
-    expect(relay.auditEvents).toContainEqual({
+    expect(relay.forwarded).toHaveLength(5)
+    expect(relay.auditEvents).toContainEqual(expect.objectContaining({
       action: "relay.request.denied",
-      result: "deny",
-      reason: "relay_role_denied",
-      principalKind: "user",
-      actorId: "actor_1",
-      actorKind: "human",
-      role: "viewer",
-      workspaceId: "ws_1",
-      hostId: "host_1",
-      method: "POST",
-      path: "/workspaces/ws_1/api/session",
-    })
+      reason: "relay_scope_denied",
+      path: "/workspaces/ws_1/api/wr/pty",
+    }))
   })
 
-  test("denies viewer access to terminal routes including WebSocket upgrades", async () => {
-    const relay = await harness({
-      fetch: ((url, init) => {
-        relay.forwarded.push({ url: fetchUrl(url), request: new Request(url, init) })
-        return Promise.resolve(new Response("unexpected"))
-      }) as typeof fetch,
-    })
-    const token = await relay.token("viewer")
-
-    const list = await relay.app.request("http://relay.test/workspaces/ws_1/api/wr/pty", {
-      headers: { authorization: `Bearer ${token}` },
-    })
-    const connect = await relay.app.request("http://relay.test/workspaces/ws_1/api/wr/pty/pty_1/connect", {
-      headers: {
-        authorization: `Bearer ${token}`,
-        connection: "Upgrade",
-        upgrade: "websocket",
-      },
-    })
-    const encodedConnect = await relay.app.request("http://relay.test/workspaces/ws_1/api/wr/%70ty/pty_1/connect", {
-      headers: {
-        authorization: `Bearer ${token}`,
-        connection: "Upgrade",
-        upgrade: "websocket",
-      },
-    })
-
-    expect(list.status).toBe(403)
-    expect(connect.status).toBe(403)
-    expect(encodedConnect.status).toBe(403)
-    await expect(connect.json()).resolves.toEqual({
-      error: {
-        code: "relay_role_denied",
-        message: "Workspace role does not allow this relay request",
-      },
-    })
-    expect(relay.forwarded).toEqual([])
-  })
-
-  test("normalizes terminal paths before authorizing and forwarding", async () => {
+  test("a workspace-wide token reaches the terminal, however its path is spelled", async () => {
     const relay = await harness({
       fetch: ((url, init) => {
         relay.forwarded.push({ url: fetchUrl(url), request: new Request(url, init) })
@@ -760,31 +730,38 @@ describe("workspace relay server", () => {
       }) as typeof fetch,
     })
     // %3F/%23 decode to ?/# which forwarding resolves away, hitting the real
-    // /api/wr/pty — the viewer gate must deny on the resolved pathname, not the
-    // raw decoded string.
+    // /api/wr/pty — the scope is asked of the resolved pathname, not the raw
+    // decoded string.
     const paths = ["//api/wr/pty", "/%2Fapi/wr/pty", "/api/wr/pty%3Fx", "/api/wr/pty%23x"]
 
     for (const path of paths) {
-      const res = await relay.app.request(`http://relay.test/workspaces/ws_1${path}`, {
-        headers: { authorization: `Bearer ${await relay.token("viewer")}` },
+      const scoped = await relay.app.request(`http://relay.test/workspaces/ws_1${path}`, {
+        headers: { authorization: `Bearer ${await relay.token("viewer", "ses_1")}` },
       })
-
-      expect(res.status).toBe(403)
-    }
-
-    for (const role of ["editor", "admin", "owner"] as const) {
-      for (const path of paths) {
-        const res = await relay.app.request(`http://relay.test/workspaces/ws_1${path}`, {
-          headers: { authorization: `Bearer ${await relay.token(role)}` },
-        })
-
-        expect(res.status).toBe(200)
-      }
+      expect(scoped.status).toBe(403)
+      const owner = await relay.app.request(`http://relay.test/workspaces/ws_1${path}`, {
+        headers: { authorization: `Bearer ${await relay.token("owner")}` },
+      })
+      expect(owner.status).toBe(200)
     }
 
     expect(relay.forwarded.map((item) => item.url)).toEqual(
-      Array.from({ length: 12 }, () => "https://host.example.test/api/wr/pty"),
+      Array.from({ length: 4 }, () => "https://host.example.test/api/wr/pty"),
     )
+  })
+
+  test("the Relay Host Token carries the session scope the Runtime Access Token named", async () => {
+    const relay = await harness({
+      fetch: ((url, init) => {
+        relay.forwarded.push({ url: fetchUrl(url), request: new Request(url, init) })
+        return Promise.resolve(new Response("ok"))
+      }) as typeof fetch,
+    })
+    await relay.app.request("http://relay.test/workspaces/ws_1/session/ses_1", {
+      headers: { authorization: `Bearer ${await relay.token("viewer", "ses_1")}` },
+    })
+    const forwarded = relay.forwarded[0]!.request.headers.get("authorization")?.replace(/^Bearer /, "")
+    expect(decodeJwt(forwarded!)).toMatchObject({ session_id: "ses_1", role: "viewer" })
   })
 
   test("allows editor admin and owner relay write requests", async () => {
@@ -1494,6 +1471,7 @@ describe("workspace relay server", () => {
                 workspace_id: "ws_1",
                 host_id: "host_1",
                 role: "editor",
+                scope: "workspace",
                 aud: "workspace-relay",
                 iss: "claxedo-control-plane",
                 exp: Math.floor(Date.now() / 1000) + 300,
@@ -1554,6 +1532,7 @@ describe("workspace relay server", () => {
                 workspace_id: "ws_other",
                 host_id: "host_1",
                 role: "editor",
+                scope: "workspace",
                 exp: Math.floor(Date.now() / 1000) + 300,
                 iat: Math.floor(Date.now() / 1000),
                 jti: "jti_custom",
@@ -1721,6 +1700,7 @@ describe("workspace relay server", () => {
         workspace_id: "ws_1",
         host_id: "host_1",
         role: "editor",
+        scope: "workspace",
         exp: Math.floor(Date.now() / 1000) + 300,
         iat: Math.floor(Date.now() / 1000),
         jti: "jti_custom",

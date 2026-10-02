@@ -20,10 +20,10 @@ import {
 import { ControlPlaneAuthError, type SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import type { WorkspaceAuthority } from "@claxedo/server-core/platform/auth/authority"
 import { asOrgId, asProjectId } from "@claxedo/server-core/platform/auth/branded-id"
-import { stringField } from "@claxedo/server-core/platform/json/index"
 import type { SignedAgentPluginRuntimeSnapshot } from "../runtime/provision"
-import { activeOrgMemberSql, PROJECT_ACCESS_SQL, workspaceAccessSql } from "../../authority/adapters/d1/project-role"
-import { isRecord } from "@claxedo/helpers/guards"
+import { assertionId, batchUnder, may, maySql, type BoundSql } from "../../authority/adapters/d1/authorization"
+import { d1BatchAssertionFailed } from "../../platform/db/d1-constraint"
+import { agentPluginWriteGuard, resolveAgentPluginScope, type AgentPluginScope } from "../signed-scope"
 
 /** The project scope a user default addresses; never a real project ID. */
 export const AGENT_PLUGIN_ALL_PROJECTS_SCOPE = "all-projects"
@@ -40,7 +40,7 @@ const CLAXEDO_SCOPE_KEY = "claxedo"
  */
 export type AgentPluginActivationAuthority = Pick<
   WorkspaceAuthority,
-  "usersMe" | "resolveOrgId" | "authorizeProject" | "listOrgs"
+  "usersMe" | "resolveOrgId" | "authorizeProject"
 >
 
 export type D1SignedAgentPluginActivationStoreInput = {
@@ -50,15 +50,13 @@ export type D1SignedAgentPluginActivationStoreInput = {
 }
 
 type RequestResolution = {
-  scope?: Promise<Scope>
+  scope?: Promise<AgentPluginScope>
   /** Keyed `${action}:${projectId}`; a settled entry is an authorization that passed. */
   projects: Map<string, Promise<void>>
 }
 
-type Scope = {
-  userId: string
-  orgId: string
-}
+/** The data a snapshot reads is keyed by user and organization; a runtime read has no actor. */
+type Scope = Pick<AgentPluginScope, "userId" | "orgId">
 
 type RevisionRow = {
   revision: number
@@ -86,20 +84,6 @@ type InstanceRow = {
   plugin_instance_id: string
 }
 
-type ProjectAccessRow = {
-  org_id: string
-  role_rank: number
-}
-
-type WorkspaceAccessRow = {
-  workspace_id: string
-  org_id: string
-  project_id: string
-  owner_user_id: string
-  backing: string
-  role_rank: number
-}
-
 type WorkspaceRow = {
   workspace_id: string
   org_id: string
@@ -107,15 +91,6 @@ type WorkspaceRow = {
   owner_user_id: string
   backing: string
 }
-
-/**
- * The runtime reads below carry an audience-bound token instead of a signed
- * bearer, so they cannot go through the authority port; they evaluate the
- * same membership and rank statements the authority does.
- */
-const ORG_MEMBERSHIP_SQL = `select 1 as present where ${activeOrgMemberSql("?", "?")}`
-
-const WORKSPACE_ACCESS_SQL = workspaceAccessSql("w.workspace_id = ? and w.deleted_at is null")
 
 const PIN_COLUMNS = "plugin_instance_id, artifact_digest, source_id, relative_path, source_revision"
 
@@ -130,11 +105,6 @@ function text(value: unknown, detail: string) {
 
 function revisionNumber(value: unknown) {
   if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 0) invalid("revision")
-  return value
-}
-
-function roleRank(value: unknown) {
-  if (typeof value !== "number" || !Number.isFinite(value)) invalid("access rank")
   return value
 }
 
@@ -216,17 +186,6 @@ async function operationId(name: string, args: Record<string, unknown>) {
   const bytes = new TextEncoder().encode(JSON.stringify([name, args]))
   const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", bytes))
   return `agent-plugins-${[...digest].map((byte) => byte.toString(16).padStart(2, "0")).join("")}`
-}
-
-function assertionId() {
-  const bytes = crypto.getRandomValues(new Uint8Array(16))
-  return `assert_${Array.from(bytes, (value) => value.toString(16).padStart(2, "0")).join("")}`
-}
-
-function assertionFailed(cause: unknown): boolean {
-  if (!(cause instanceof Error)) return false
-  if (cause.message.includes("passed = 1")) return true
-  return assertionFailed(cause.cause)
 }
 
 /**
@@ -333,13 +292,13 @@ export class D1SignedAgentPluginActivationStore implements SignedAgentPluginActi
         }))
       }
     }
-    return await this.commit(scope.orgId, started.revision, operation, writes)
+    return await this.commit(agentPluginWriteGuard(scope, "user", projectIds), scope.orgId, started.revision, operation, writes)
   }
 
   async mutateOrganizationDefault(auth: SignedControlPlaneAuth, input: MutateSignedOrganizationDefault) {
     const harnessIds = requireHarnesses(input.harnessIds)
     const scope = await this.scope(auth)
-    await this.requireOrganizationAdmin(auth, scope)
+    await this.requireOrganizationAdmin(auth)
     const operation = await operationId("mutateOrganizationDefault", {
       plugin_instance_id: input.pluginInstanceId,
       harness_ids: input.harnessIds,
@@ -387,7 +346,7 @@ export class D1SignedAgentPluginActivationStore implements SignedAgentPluginActi
             `)
             .bind(scope.orgId, input.pluginInstanceId, harnessId, now))
     }
-    return await this.commit(scope.orgId, started.revision, operation, writes)
+    return await this.commit(agentPluginWriteGuard(scope, "organization"), scope.orgId, started.revision, operation, writes)
   }
 
   async updateUserArtifact(auth: SignedControlPlaneAuth, input: UpdateSignedArtifactPin) {
@@ -431,14 +390,9 @@ export class D1SignedAgentPluginActivationStore implements SignedAgentPluginActi
   }
 
   private async requireMembership(ownerUserId: string, organizationId: string) {
-    const [user, membership] = await Promise.all([
-      this.database
-        .prepare(`select 1 as present from users where user_id = ? and state = 'active'`)
-        .bind(ownerUserId)
-        .first<PresenceRow>(),
-      this.database.prepare(ORG_MEMBERSHIP_SQL).bind(ownerUserId, organizationId, ownerUserId).first<PresenceRow>(),
-    ])
-    if (!user || !membership) throw denied("Agent Plugins organization membership is required")
+    if (!(await may(this.database, { userId: ownerUserId }, "member", { kind: "org", orgId: organizationId }))) {
+      throw denied("Agent Plugins organization membership is required")
+    }
   }
 
   /** The whole desired world of one cloud workspace, from its canonical owner. */
@@ -494,7 +448,7 @@ export class D1SignedAgentPluginActivationStore implements SignedAgentPluginActi
     input: UpdateSignedArtifactPin,
   ) {
     const scope = await this.scope(auth)
-    if (authority === "organization") await this.requireOrganizationAdmin(auth, scope)
+    if (authority === "organization") await this.requireOrganizationAdmin(auth)
     const operation = await operationId("updatePin", {
       authority,
       plugin_instance_id: input.pluginInstanceId,
@@ -507,7 +461,7 @@ export class D1SignedAgentPluginActivationStore implements SignedAgentPluginActi
       ? userScopeKey(scope.orgId, scope.userId)
       : organizationScopeKey(scope.orgId)
     if (!(await this.pinRow(scopeKey, input.pluginInstanceId))) throw artifactUnavailable()
-    return await this.commit(scope.orgId, started.revision, operation, [
+    return await this.commit(agentPluginWriteGuard(scope, authority), scope.orgId, started.revision, operation, [
       this.writePin({
         scopeKey,
         authority,
@@ -528,24 +482,16 @@ export class D1SignedAgentPluginActivationStore implements SignedAgentPluginActi
     return created
   }
 
-  private scope(auth: SignedControlPlaneAuth): Promise<Scope> {
+  private scope(auth: SignedControlPlaneAuth): Promise<AgentPluginScope> {
     const resolution = this.resolution(auth)
     if (!resolution.scope) {
-      resolution.scope = this.resolveScope(auth).catch((cause: unknown) => {
+      resolution.scope = resolveAgentPluginScope(this.authority, auth).catch((cause: unknown) => {
         // A failed lookup is not an answer; the next call asks the authority again.
         resolution.scope = undefined
         throw cause
       })
     }
     return resolution.scope
-  }
-
-  private async resolveScope(auth: SignedControlPlaneAuth): Promise<Scope> {
-    const me = await this.authority.usersMe(auth)
-    if (!isRecord(me)) invalid("principal")
-    const userId = text(me.user_id, "principal")
-    const orgId = stringField(me, "org_id") || (await this.authority.resolveOrgId(auth))
-    return { userId, orgId }
   }
 
   private requireProject(
@@ -583,13 +529,13 @@ export class D1SignedAgentPluginActivationStore implements SignedAgentPluginActi
     if (!result.ok) throw denied("Agent Plugins project access denied")
   }
 
-  private async requireOrganizationAdmin(auth: SignedControlPlaneAuth, scope: Scope) {
-    const orgs = await this.authority.listOrgs(auth)
-    if (!Array.isArray(orgs)) invalid("organization list")
-    const administrator = orgs.some((row) => isRecord(row)
-      && row.org_id === scope.orgId
-      && (row.role === "owner" || row.role === "admin"))
-    if (!administrator) throw denied("Agent Plugins organization admin access required")
+  async administersOrganization(auth: SignedControlPlaneAuth) {
+    const scope = await this.scope(auth)
+    return await may(this.database, scope, "administer", { kind: "org", orgId: scope.orgId })
+  }
+
+  private async requireOrganizationAdmin(auth: SignedControlPlaneAuth) {
+    if (!(await this.administersOrganization(auth))) throw denied("Agent Plugins organization admin access required")
   }
 
   private async requireRuntimeAccess(input: {
@@ -598,32 +544,12 @@ export class D1SignedAgentPluginActivationStore implements SignedAgentPluginActi
     projectId: string
     workspaceId: string
   }) {
-    const { ownerUserId, organizationId, projectId, workspaceId } = input
-    const [user, membership, project, workspace] = await Promise.all([
-      this.database
-        .prepare(`select 1 as present from users where user_id = ? and state = 'active'`)
-        .bind(ownerUserId)
-        .first<PresenceRow>(),
-      this.database.prepare(ORG_MEMBERSHIP_SQL).bind(ownerUserId, organizationId, ownerUserId).first<PresenceRow>(),
-      this.database
-        .prepare(PROJECT_ACCESS_SQL)
-        .bind(ownerUserId, projectId, organizationId)
-        .first<ProjectAccessRow>(),
-      this.database
-        .prepare(WORKSPACE_ACCESS_SQL)
-        .bind(ownerUserId, workspaceId)
-        .first<WorkspaceAccessRow>(),
-    ])
-    if (!user || !membership) throw denied("Agent Plugins organization membership is required")
-    if (!project || project.org_id !== organizationId || roleRank(project.role_rank) < 1) {
-      throw denied("Agent Plugins project access denied")
-    }
-    if (!workspace
-      || workspace.org_id !== organizationId
-      || workspace.project_id !== projectId
-      || roleRank(workspace.role_rank) < 1) {
-      throw denied("Agent Plugins workspace access denied")
-    }
+    const operates = maySql({ userId: input.ownerUserId }, "operate", { kind: "workspace", alias: "w" })
+    const workspace = await this.database
+      .prepare(`select 1 from workspaces w where w.workspace_id = ? and w.org_id = ? and w.project_id = ? and ${operates.sql}`)
+      .bind(input.workspaceId, input.organizationId, input.projectId, ...operates.bind)
+      .first()
+    if (!workspace) throw denied("Agent Plugins workspace access denied")
   }
 
   private async revisionRow(orgId: string) {
@@ -657,16 +583,17 @@ export class D1SignedAgentPluginActivationStore implements SignedAgentPluginActi
   }
 
   private async commit(
+    guard: BoundSql,
     orgId: string,
     revision: number,
     operation: string,
     writes: D1PreparedStatement[],
   ) {
     const next = revision + 1
-    const guard = assertionId()
+    const revisionAssertion = assertionId()
     const now = this.now()
     try {
-      await this.database.batch([
+      await batchUnder(this.database, guard, [
         ...writes,
         // The compare-and-set is this `where`: a writer that moved the
         // revision between the read above and this batch leaves the row alone.
@@ -695,11 +622,11 @@ export class D1SignedAgentPluginActivationStore implements SignedAgentPluginActi
               where org_id = ? and revision = ? and last_operation_id = ?
             ) then 1 else 0 end
           `)
-          .bind(guard, orgId, next, operation),
-        this.database.prepare(`delete from authority_batch_assertions where assertion_id = ?`).bind(guard),
+          .bind(revisionAssertion, orgId, next, operation),
+        this.database.prepare(`delete from authority_batch_assertions where assertion_id = ?`).bind(revisionAssertion),
       ])
     } catch (cause) {
-      if (!assertionFailed(cause)) throw cause
+      if (!d1BatchAssertionFailed(cause)) throw cause
       throw conflict(revision, await this.currentRevision(orgId))
     }
     return next

@@ -1,27 +1,15 @@
+import { attachEmbeddedPty, type EmbeddedPtyAttachInput } from "./embedded-pty-attachment"
 import type { AgentEventEnvelope } from "@claxedo/agent-runtime-contract"
 import { embeddedConfigModeForPath } from "../../workspace/runtime-dispatch/internals"
 import path from "path"
-import fs from "fs/promises"
-import os from "node:os"
 import {
-  authorizePtyAttach,
-  createAuthorizedPtyConnection,
-  createPersistentTranscriptHandleStore,
   createRuntimeCredentialIssuer,
-  createTranscriptResolver,
   createWorkspaceRuntimeApp,
-  managedWorkspaceSessionAccessPolicy,
-  Pty,
-  ptyAccessRefusalResponse,
-  ptyStreamAccess,
-  PTY_NOT_FOUND_REFUSAL,
   runtimeCredentialWorkspaceId,
-  type AuthorizedPtyConnection,
-  type EmbeddedRelayHostIdentity,
   type RuntimeCredentialClaims,
-  type WorkspaceEventFramesTap,
   type WorkspaceRuntimeServerOptions,
 } from "@claxedo/workspace-runtime"
+import { managedWorkspaceSessionAccessPolicy, type WorkspaceEventFramesTap } from "@claxedo/session-core"
 import type { WorkspaceRuntimeRouteContribution } from "@claxedo/workspace-runtime/route-contribution"
 import { DESKTOP_PLACEMENT } from "./connection-secret-scope"
 import type { CustomHarnessProvider } from "@claxedo/harness/providers"
@@ -364,7 +352,7 @@ export function configureEmbeddedWorkspaceRuntime(input: {
   onSessionMetaEvent?: (event: AgentEventEnvelope) => void
   onSessionMetaCreated?: (workspace: Workspace, session: unknown) => Promise<void> | void
   onSessionMetaSnapshot?: (workspace: Workspace, sessions: unknown[]) => void | Promise<void>
-  sessionIdWorkspace?: WorkspaceRuntimeServerOptions["sessionIdWorkspace"]
+  sessionIdWorkspace: WorkspaceRuntimeServerOptions["sessionIdWorkspace"]
   onTurnOutcome?: (input: { sessionId: string; assistantMessageId?: string; outcome: AgentTurnOutcome }) => void
   /** Absent, no embedded runtime injects the first-party MCP entry into its sessions. */
   firstPartyMcpLaunch?: EmbeddedFirstPartyMcpLaunch
@@ -386,26 +374,18 @@ function storeRoot(ws: Workspace) {
   return path.join(dataDir(), "agent-core", ws.id)
 }
 
-export function cursorTranscriptRoot(workspaceDirectory: string, cursorDataRoot = process.env.CURSOR_DATA_DIR?.trim()) {
-  const project = workspaceDirectory
-    .replace(/[^a-zA-Z0-9]/g, "-")
-    .replace(/-+/g, "-")
-    .replace(/^-+|-+$/g, "")
-  return path.join(cursorDataRoot || path.join(os.homedir(), ".cursor"), "projects", project, "agent-transcripts")
-}
-
 const embeddedRuntimeGuard = () => true
 
 function options(
   ws: Workspace,
   sessionAccess: {
-    exists(sessionId: string): boolean
     parentSessionIdFor(sessionId: string): string | undefined
   },
   harness: WorkspaceRuntimeServerOptions["harness"],
 ): WorkspaceRuntimeServerOptions & {
   exposure: WorkspaceRuntimeExposure
 } {
+  if (!configuredSessionIdWorkspace) throw new Error("Embedded runtimes require the session placement authority")
   return {
     ...(harness ? { harness } : {}),
     placement: DESKTOP_PLACEMENT,
@@ -415,7 +395,7 @@ function options(
     ...(configuredRouteContributions.length ? { routeContributions: configuredRouteContributions } : {}),
     ...(configuredSessionAccessPolicy ? { sessionAccessPolicy: configuredSessionAccessPolicy } : {}),
     ...(configuredOnTurnOutcome ? { onTurnOutcome: configuredOnTurnOutcome } : {}),
-    ...(configuredSessionIdWorkspace ? { sessionIdWorkspace: configuredSessionIdWorkspace } : {}),
+    sessionIdWorkspace: configuredSessionIdWorkspace,
     ...(configuredFirstPartyMcpLaunch
       ? {
           firstPartyMcpLaunch: {
@@ -436,20 +416,6 @@ function options(
     exposure: createClaxedoRuntimeExposure({ kind: "embedded", guard: embeddedRuntimeGuard }),
     target: resolveClaxedoWorkspaceRuntimeTarget(ws),
     storeRoot: storeRoot(ws),
-    transcripts: {
-      workspaceId: ws.id,
-      resolver: createTranscriptResolver({
-        workspaceId: ws.id,
-        providers: {
-          "cursor-agent": { root: cursorTranscriptRoot(ws.directory), format: "jsonl" },
-        },
-        authorizeParent: ({ workspaceId, parentSessionId }) =>
-          workspaceId === ws.id && sessionAccess.exists(parentSessionId),
-        handleStore: createPersistentTranscriptHandleStore({
-          file: path.join(storeRoot(ws), "transcript-handles.db"),
-        }),
-      }),
-    },
     sessionParents: {
       parentSessionIdFor: (sessionId) => sessionAccess.parentSessionIdFor(sessionId),
     },
@@ -637,7 +603,6 @@ export async function ensureEmbeddedWorkspaceRuntime(
   let activeHost: EmbeddedRuntime["host"] | undefined
   const created = createWorkspaceRuntimeApp({
     ...options(ws, {
-      exists: (sessionId) => activeHost?.hasSession(sessionId) ?? false,
       parentSessionIdFor: (sessionId) => activeHost?.parentSessionIdFor(sessionId),
     }, harness),
     beforeHarnessAcquire: async () => {
@@ -665,22 +630,6 @@ export async function ensureEmbeddedWorkspaceRuntime(
   return runtime
 }
 
-async function realPath(input: string) {
-  return await fs.realpath(input).catch(() => path.resolve(input))
-}
-
-async function ownsPath(ws: Workspace, cwd: string) {
-  const [root, current] = await Promise.all([
-    realPath(ws.directory),
-    realPath(cwd),
-  ])
-  return current === root || current.startsWith(root + path.sep)
-}
-
-export type EmbeddedWorkspacePtyAttachment =
-  | { ok: true; connection: AuthorizedPtyConnection }
-  | { ok: false; response: Response }
-
 /**
  * Admits a caller to a terminal this process hosts, and hands back the
  * authorized lifetime it may have — the same one the runtime's own
@@ -692,46 +641,11 @@ export type EmbeddedWorkspacePtyAttachment =
  * relay-replayed stamp, or nothing at all for this machine's own user. Nothing
  * on this path may name an actor the ingress did not.
  */
-export async function attachEmbeddedWorkspacePty(input: {
-  workspace: Workspace
-  ptyId: string
-  identity?: EmbeddedRelayHostIdentity
-  authorization?: string
-  method: string
-  path: string
-  cursor?: number
-}): Promise<EmbeddedWorkspacePtyAttachment> {
+export async function attachEmbeddedWorkspacePty(input: EmbeddedPtyAttachInput) {
   await ensureEmbeddedWorkspaceRuntime(input.workspace, {
     config: embeddedConfigModeForPath(input.path, input.method),
   })
-  const info = Pty.get(input.ptyId)
-  if (!info || !await ownsPath(input.workspace, info.cwd)) {
-    log.warn("terminal attach refused", {
-      ptyId: input.ptyId,
-      workspaceId: input.workspace.id,
-      reason: info ? "outside the workspace" : "no such PTY in this process",
-    })
-    return { ok: false, response: ptyAccessRefusalResponse(PTY_NOT_FOUND_REFUSAL) }
-  }
-  const policy = embeddedSessionAccessPolicy()
-  const access = ptyStreamAccess({
-    ...(input.identity ? { identity: input.identity } : {}),
-    ...(input.authorization ? { authorization: input.authorization } : {}),
-    method: input.method,
-    path: input.path,
-  })
-  const admission = await authorizePtyAttach({ policy, access, info })
-  if (!admission.allowed) return { ok: false, response: ptyAccessRefusalResponse(admission) }
-  return {
-    ok: true,
-    connection: createAuthorizedPtyConnection({
-      ptyId: input.ptyId,
-      policy,
-      access,
-      admission,
-      ...(input.cursor === undefined ? {} : { cursor: input.cursor }),
-    }),
-  }
+  return attachEmbeddedPty(input, embeddedSessionAccessPolicy())
 }
 
 /**

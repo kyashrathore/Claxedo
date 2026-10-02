@@ -1,0 +1,93 @@
+{
+  "adapter": "pi-rpc",
+  "initialState": {
+    "blocks": {},
+    "finished": false,
+    "stopped": false,
+    "noted": []
+  },
+  "calls": [
+    {
+      "state": {
+        "blocks": {},
+        "finished": false,
+        "stopped": false,
+        "noted": []
+      },
+      "event": {
+        "source": "pi.rpc",
+        "method": "message_start",
+        "payload": {
+          "type": "message_start",
+          "message": {
+            "role": "custom",
+            "customType": "probe",
+            "content": "custom text shown",
+            "display": true,
+            "timestamp": 1790766448156
+          }
+        }
+      },
+      "context": {
+        "harness": "pi",
+        "threadId": "native-pi"
+      },
+      "callbacks": [],
+      "output": {
+        "state": {
+          "blocks": {},
+          "finished": false,
+          "stopped": false,
+          "noted": []
+        },
+        "events": []
+      }
+    },
+    {
+      "state": {
+        "blocks": {},
+        "finished": false,
+        "stopped": false,
+        "noted": []
+      },
+      "event": {
+        "source": "pi.rpc",
+        "method": "message_end",
+        "payload": {
+          "type": "message_end",
+          "message": {
+            "role": "custom",
+            "customType": "probe",
+            "content": "custom text shown",
+            "display": true,
+            "timestamp": 1790766448156
+          }
+        }
+      },
+      "context": {
+        "harness": "pi",
+        "threadId": "native-pi"
+      },
+      "callbacks": [],
+      "output": {
+        "state": {
+          "blocks": {},
+          "finished": false,
+          "stopped": false,
+          "noted": []
+        },
+        "events": [
+          {
+            "type": "harness-notice",
+            "code": "pi.custom_message",
+            "message": "custom text shown",
+            "severity": "info",
+            "details": {
+              "customType": "probe"
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

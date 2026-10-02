@@ -78,7 +78,7 @@ describe("core rate limit is driven by the server clock, not the envelope", () =
     return {
       sent,
       async createSession() {
-        return { sessionId: "ses_1", appUrl: "/s/ses_1" }
+        return { sessionId: "ses_1", workspaceId: "workspace-1", appUrl: "/s/ses_1" }
       },
       async *sendMessage(input) {
         sent.push(input.text)

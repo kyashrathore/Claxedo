@@ -1,7 +1,4 @@
-export interface SessionRef {
-  sessionId: string
-  projectId: string
-}
+import type { SessionRef } from "@claxedo/agent-runtime-contract"
 
 export interface SessionAttachment {
   name: string
@@ -16,7 +13,7 @@ export interface CreateSessionInput {
   attachments?: readonly SessionAttachment[]
 }
 
-export type SessionStatus = "idle" | "running" | "waiting" | "failed"
+export type SessionStatus = "idle" | "running" | "running_in_background" | "waiting" | "failed"
 
 export interface SessionsApi {
   create(input: CreateSessionInput): Promise<SessionRef>

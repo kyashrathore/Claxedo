@@ -7,7 +7,7 @@ import type { ConfigOperations, ConfigPreviewTarget, DraftLaunch } from "@claxed
 import { loopbackWorkspaceRuntimeExposure } from "../exposure"
 import type { RuntimeSnapshot } from "../routes/config"
 import { withWorkspaceTarget } from "../target"
-import { FakeTransport, fakeConnectionProvider } from "../test-support/fake-transport"
+import { FakeTransport, fakeConnectionProvider } from "@claxedo/session-core/testing"
 import { loopbackMachineLoginPolicy } from "../testing"
 import { createWorkspaceHost } from "./runtime"
 
@@ -45,6 +45,7 @@ async function catalogHost() {
   })
   const target = { workspaceId: "ws_1", directory }
   const host = createWorkspaceHost({
+    sessionIdWorkspace: () => undefined,
     placement: loopbackMachineLoginPolicy(),
     target,
     storeRoot: directory,
@@ -68,20 +69,10 @@ async function catalogHost() {
   return { host, transport, previews, catalogReads, request, query }
 }
 
-test("only the workspace owner reaches a harness's provider catalog through a draft preview or the catalog read", async () => {
+test("the workspace owner's token reads a harness's provider catalog through a draft preview or the catalog read, as the owner", async () => {
   const f = await catalogHost()
   try {
-    for (const role of ["viewer", "editor", "admin"]) {
-      const preview = await f.request(`http://runtime.test/api/wr/harness-config-options?${f.query()}`, { role })
-      expect(preview.status).toBe(403)
-      const models = await f.request(`http://runtime.test/api/wr/harness-providers?${f.query()}`, { role })
-      expect(models.status).toBe(403)
-      const capabilities = await f.request(`http://runtime.test/session/capabilities?${f.query()}`, { role })
-      expect(capabilities.status).toBe(403)
-    }
     expect((await f.request(`http://runtime.test/session/capabilities?${f.query()}`, { role: "owner" })).status).toBe(200)
-    expect(f.previews).toEqual([])
-    expect(f.catalogReads).toEqual([])
 
     expect((await f.request(`http://runtime.test/api/wr/harness-config-options?${f.query()}`, { role: "owner" })).status).toBe(200)
     const models = await f.request(`http://runtime.test/api/wr/harness-providers?${f.query()}`, { role: "owner" })

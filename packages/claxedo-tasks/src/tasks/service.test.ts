@@ -170,9 +170,9 @@ describe("tasks service", () => {
     })
 
     test("refuses a creating session that names no session", async () => {
-      const origin = { sessionId: "ses_author", workspaceId: null }
+      const origin = { sessionId: "ses_author", workspaceId: "workspace-local" }
       const refusal = await refusalOf(() =>
-        tasks.create({ ...ACTOR, session: origin }, draft({ createdFrom: { sessionId: " ", workspaceId: null } })),
+        tasks.create({ ...ACTOR, session: origin }, draft({ createdFrom: { sessionId: " ", workspaceId: "workspace-local" } })),
       )
       expect(fieldReasons(refusal)).toEqual({ "createdFrom.sessionId": "required" })
     })
@@ -837,7 +837,7 @@ describe("tasks service", () => {
             taskId: task.id,
             slot: "primary",
             attempt: 1,
-            sessionRef: { sessionId: "session-winner", workspaceId: null },
+            sessionRef: { sessionId: "session-winner", workspaceId: "workspace-local" },
             continuedFrom: null,
             presetId: preset.id,
             presetRevision: preset.revision,

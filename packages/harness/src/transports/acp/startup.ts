@@ -1,5 +1,6 @@
-import type { CreateElicitationRequest, CreateElicitationResponse, RequestPermissionRequest } from "@agentclientprotocol/sdk"
+import type { CreateElicitationRequest, CreateElicitationResponse, McpServer, NewSessionResponse, RequestPermissionRequest } from "@agentclientprotocol/sdk"
 import { createKeyedSerializer } from "@claxedo/helpers"
+import { asRecord } from "@claxedo/helpers/guards"
 import type { AttachInput, HarnessServices, HarnessSession, McpServerSpec, SessionBroker, StartInput } from "../../contract"
 import { connectAcp, type AcpConnectionOptions, type AcpPeer } from "./connection"
 import type { AcpConnectionHealth } from "./health"
@@ -12,22 +13,23 @@ import { acpModeState } from "./options"
 import type { AcpPeerOwnership } from "./ownership"
 import { acpElicitation, acpMcp, acpPermission } from "./protocol"
 import { acpMcpProjection } from "./projection"
-import { restoreAcp, type AcpRestored, type MissingSessionContext } from "./restore"
 
 export type AcpHost = {
   readonly health: AcpConnectionHealth
   readonly services: HarnessServices
   readonly connection: AcpConnectionOptions
   readonly filterMcp: AcpMcpFilter
-  readonly missingContext: MissingSessionContext
   readonly entries: Map<string, AcpEntry>
-  readonly starting: Set<AcpEntry>
   readonly startingAborts: Set<AbortController>
   readonly peers: AcpPeerOwnership
   idle(entry: AcpEntry): void
   disposed(): boolean
   mcp(entry: Pick<AcpEntry, "start" | "peer">): McpServerSpec[]
 }
+
+type AcpResumeInput = Omit<AttachInput, "upstreamHasTurns">
+
+type AcpSessionOpened = Pick<NewSessionResponse, "modes" | "configOptions">
 
 async function acpSidePermission(entry: AcpEntry | undefined, broker: SessionBroker, request: RequestPermissionRequest, startupSignal: AbortSignal) {
   if (!ownsRequest(entry, request.sessionId)) return { outcome: { outcome: "cancelled" as const } }
@@ -68,7 +70,7 @@ async function openAcpEntry(host: AcpHost, input: StartInput, broker: SessionBro
     permission: (request) => acpSidePermission(entry, broker, request, startupAbort.signal),
     elicitation: (request) => acpSideElicitation(entry, broker, request, startupAbort.signal),
     complete: (notification) => (entry?.turnBroker ?? broker).completeElicitation(notification.elicitationId),
-    update: (notification) => inOrder(() => acpUpdate(entry, notification, (update) => acpObserveSubagent(entry, update))),
+    update: (notification) => inOrder(() => acpUpdate(entry, notification)),
     extension: (_sessionId, update) => inOrder(() => acpObserveSubagent(entry, update)),
     unknown: (sessionId, method, payload) => inOrder(() => acpUnknown(entry, sessionId, method, payload)),
   }, { role: "harness", signal: startupAbort.signal, owner: host.peers }) } catch (error) { observation.failed(error); startupAbort.abort(); host.startingAborts.delete(startupAbort); throw error }
@@ -83,20 +85,37 @@ async function openAcpEntry(host: AcpHost, input: StartInput, broker: SessionBro
     opened.providerTurn?.queue.fail(new AcpTransportError("connection", "ACP peer disconnected"))
   }, { once: true })
   if (peer.agent.signal.aborted) observation.disconnected()
-  host.starting.add(entry)
   return entry
 }
 
-async function adopt(host: AcpHost, entry: AcpEntry, restored: AcpRestored, what: string): Promise<HarnessSession> {
+async function resumeAcpSession(peer: AcpPeer, input: AcpResumeInput, mcpServers: McpServer[]): Promise<AcpSessionOpened> {
+  const upstream = input.binding.upstreamSessionId
+  const capabilities = peer.handshake.agentCapabilities
+  try {
+    if (capabilities?.sessionCapabilities?.resume) return await peer.agent.resumeSession({ sessionId: upstream, cwd: input.directory, mcpServers })
+    if (capabilities?.loadSession) return await peer.agent.loadSession({ sessionId: upstream, cwd: input.directory, mcpServers })
+    throw new AcpTransportError("protocol", "ACP agent declares neither load nor resume")
+  } catch (error) {
+    if (!lostAttachedSession(error, upstream)) throw error
+    throw new AcpTransportError("session", `ACP agent no longer has session ${upstream}; it is not replaced`, error)
+  }
+}
+
+function lostAttachedSession(error: unknown, sessionId: string): boolean {
+  const failure = asRecord(error)
+  const data = asRecord(failure?.data)
+  return failure?.code === -32002 && (data?.uri === sessionId || data?.sessionId === sessionId)
+}
+
+async function adopt(host: AcpHost, entry: AcpEntry, upstreamSessionId: string, opened: AcpSessionOpened, what: string): Promise<HarnessSession> {
   if (entry.startupAbort.signal.aborted) throw new AcpTransportError("connection", "ACP startup was abandoned")
   entry.startup = undefined
-  if (restored.configOptions != null) entry.options = restored.configOptions
-  if (restored.modes !== undefined) Object.assign(entry, { currentModeId: undefined }, acpModeState(restored.modes))
-  entry.session = { ...entry.session, binding: await entry.broker.rebind(restored.upstreamSessionId) }
-  await acpFlushUpdates(entry, (update) => acpObserveSubagent(entry, update))
+  if (opened.configOptions != null) entry.options = opened.configOptions
+  if (opened.modes !== undefined) Object.assign(entry, { currentModeId: undefined }, acpModeState(opened.modes))
+  entry.session = { ...entry.session, binding: await entry.broker.rebind(upstreamSessionId) }
+  await acpFlushUpdates(entry)
   if (host.disposed() || entry.startupAbort.signal.aborted) throw new AcpTransportError("connection", `ACP transport closed during ${what}`)
   if (entry.peer.agent.signal.aborted) throw new AcpTransportError("connection", `ACP peer disconnected during ${what}`)
-  host.starting.delete(entry)
   host.startingAborts.delete(entry.startupAbort)
   entry.observation.ready()
   host.entries.set(entry.session.binding.sessionId, entry)
@@ -106,14 +125,9 @@ async function adopt(host: AcpHost, entry: AcpEntry, restored: AcpRestored, what
 async function abandon(host: AcpHost, entry: AcpEntry, error: unknown): Promise<never> {
   entry.observation.failed(error)
   entry.startupAbort.abort()
-  host.starting.delete(entry)
   host.startingAborts.delete(entry.startupAbort)
   await host.peers.retire(entry.peer)
   throw error
-}
-
-function acpStartupDeadline(host: AcpHost, operation: string): AcpStartupDeadline {
-  return new AcpStartupDeadline(host.services.clock, host.connection.startupTimeoutMs ?? 10_000, operation)
 }
 
 export async function startAcpEntry(host: AcpHost, input: StartInput, broker: SessionBroker): Promise<HarnessSession> {
@@ -121,10 +135,10 @@ export async function startAcpEntry(host: AcpHost, input: StartInput, broker: Se
   try {
     const { meta, notApplied } = claudeOptionsMeta(entry.peer.handshake, input)
     const mcp = acpMcpProjection(entry, host.services, host.connection, host.filterMcp)
-    entry.startup = acpStartupDeadline(host, "session/new")
+    entry.startup = new AcpStartupDeadline(host.services.clock, host.connection.startupTimeoutMs, "session/new")
     const result = await entry.startup.run(entry.peer.agent.newSession({ cwd: input.directory, mcpServers: mcp.servers.map(acpMcp),
       ...(meta ? { _meta: meta } : {}) }))
-    const session = await adopt(host, entry, { upstreamSessionId: result.sessionId, modes: result.modes, configOptions: result.configOptions }, "startup")
+    const session = await adopt(host, entry, result.sessionId, result, "startup")
     if (mcp.notApplied.length) await broker.publish({ type: "harness-notice", code: "acp.mcp.not-applied", severity: "warn",
       message: `MCP servers not applied: ${mcp.notApplied.map((item) => `${item.item} (${item.reason})`).join(", ")}`,
       details: { notApplied: mcp.notApplied } })
@@ -135,7 +149,7 @@ export async function startAcpEntry(host: AcpHost, input: StartInput, broker: Se
   } catch (error) { return abandon(host, entry, error) }
 }
 
-export async function attachAcpEntry(host: AcpHost, input: AttachInput, broker: SessionBroker, prior?: AcpEntry, signal?: AbortSignal): Promise<HarnessSession> {
+export async function attachAcpEntry(host: AcpHost, input: AcpResumeInput, broker: SessionBroker, prior?: AcpEntry, signal?: AbortSignal): Promise<HarnessSession> {
   const entry = await openAcpEntry(host, input, broker, signal)
   if (prior) {
     entry.options = prior.options
@@ -145,10 +159,9 @@ export async function attachAcpEntry(host: AcpHost, input: AttachInput, broker: 
     entry.context = prior.context
   }
   try {
-    entry.startup = acpStartupDeadline(host, "session restore")
-    const restored = await entry.startup.run(restoreAcp(entry.peer, input, host.mcp(entry).map(acpMcp), broker, host.missingContext,
-      claudeOptionsMeta(entry.peer.handshake, input).meta), entry.startupAbort.signal)
-    return await adopt(host, entry, restored, "attach")
+    entry.startup = new AcpStartupDeadline(host.services.clock, host.connection.startupTimeoutMs, "session restore")
+    const opened = await entry.startup.run(resumeAcpSession(entry.peer, input, host.mcp(entry).map(acpMcp)), entry.startupAbort.signal)
+    return await adopt(host, entry, input.binding.upstreamSessionId, opened, "attach")
   } catch (error) { return abandon(host, entry, error) }
 }
 

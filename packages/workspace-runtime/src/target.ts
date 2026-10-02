@@ -5,6 +5,9 @@ import { AsyncLocalStorage } from "async_hooks"
 import { runtimeEnvText } from "./env"
 import { realDirectoryPath, realPathAllowingMissing } from "@claxedo/helpers/real-path"
 
+import { currentSessionCore } from "./session-context"
+import { WorkspaceTargetError } from "@claxedo/session-core"
+
 let id: string | undefined
 
 export type WorkspaceTarget = {
@@ -13,14 +16,6 @@ export type WorkspaceTarget = {
 }
 
 const targetStorage = new AsyncLocalStorage<WorkspaceTarget>()
-const registered = new Map<string, Map<string, string>>()
-
-export class WorkspaceTargetError extends Error {
-  constructor(message: string) {
-    super(message)
-    this.name = "WorkspaceTargetError"
-  }
-}
 
 function clean(dir: string): string {
   return path.resolve(dir.trim())
@@ -68,42 +63,14 @@ export function assertTarget(requested: string | undefined, env: NodeJS.ProcessE
   if (!requested) return dir
   if (requested.trim() === `workspace:${workspaceId(env)}`) return dir
   if (clean(requested) === dir) return dir
-  if ([...(registered.get(workspaceId(env))?.values() ?? [])].includes(clean(requested))) return clean(requested)
-  throw new WorkspaceTargetError(`workspace-runtime is pinned to ${dir}`)
-}
-
-export function registerWorkspaceDirectory(input: {
-  workspaceId: string
-  sessionId: string
-  directory: string
-}) {
-  const directories = registered.get(input.workspaceId) ?? new Map<string, string>()
-  directories.set(input.sessionId, clean(input.directory))
-  registered.set(input.workspaceId, directories)
-}
-
-export function unregisterWorkspaceDirectory(input: { workspaceId: string; sessionId: string }) {
-  const directories = registered.get(input.workspaceId)
-  directories?.delete(input.sessionId)
-  if (directories?.size === 0) registered.delete(input.workspaceId)
-}
-
-export function registeredWorkspaceDirectory(sessionId: string, env: NodeJS.ProcessEnv = process.env) {
-  return registered.get(workspaceId(env))?.get(sessionId)
-}
-
-/** The per-session worktrees a workspace's runtime serves besides its own directory. */
-export function registeredWorkspaceDirectories(workspaceId: string): string[] {
-  return [...(registered.get(workspaceId)?.values() ?? [])]
+  if (currentSessionCore().placement.registeredDirectories().includes(clean(requested))) return clean(requested)
+  throw new WorkspaceTargetError(`workspace-runtime is pinned to ${dir}`, "workspace_target_pinned")
 }
 
 export type RegisteredWorkspaceDirectory = { sessionId: string; directory: string }
 
-function registeredEntries(env: NodeJS.ProcessEnv): RegisteredWorkspaceDirectory[] {
-  return [...(registered.get(workspaceId(env)) ?? [])].map(([sessionId, directory]) => ({
-    sessionId,
-    directory: realDirectoryPath(directory),
-  }))
+function registeredEntries(): RegisteredWorkspaceDirectory[] {
+  return currentSessionCore().placement.entries().map((entry) => ({ ...entry, directory: realDirectoryPath(entry.directory) }))
 }
 
 /**
@@ -121,10 +88,9 @@ function registeredEntries(env: NodeJS.ProcessEnv): RegisteredWorkspaceDirectory
  */
 export function registeredWorkspaceDirectoryOwners(
   candidate: string,
-  env: NodeJS.ProcessEnv = process.env,
 ): string[] {
   const real = realPathAllowingMissing(candidate)
-  return registeredEntries(env)
+  return registeredEntries()
     .filter((entry) => real === entry.directory || real.startsWith(entry.directory + path.sep))
     .map((entry) => entry.sessionId)
 }
@@ -140,15 +106,14 @@ export function registeredWorkspaceDirectoryOwners(
  */
 export function registeredWorkspaceDirectoriesUnder(
   root: string,
-  env: NodeJS.ProcessEnv = process.env,
 ): RegisteredWorkspaceDirectory[] {
   const real = realPathAllowingMissing(root)
-  return registeredEntries(env).filter((entry) => entry.directory.startsWith(real + path.sep))
+  return registeredEntries().filter((entry) => entry.directory.startsWith(real + path.sep))
 }
 
 /** Whether this workspace has any per-session worktree at all; the cheap guard before a filter does real work. */
-export function hasRegisteredWorkspaceDirectories(env: NodeJS.ProcessEnv = process.env): boolean {
-  return (registered.get(workspaceId(env))?.size ?? 0) > 0
+export function hasRegisteredWorkspaceDirectories(): boolean {
+  return currentSessionCore().placement.entries().length > 0
 }
 
 export function withWorkspaceTarget<T>(target: WorkspaceTarget, run: () => T): T {
@@ -158,13 +123,15 @@ export function withWorkspaceTarget<T>(target: WorkspaceTarget, run: () => T): T
   }, run)
 }
 
-async function existingPath(input: string) {
+type PathAccess = { path?: typeof path; realpath?: (file: string) => Promise<string> }
+
+async function existingPath(input: string, paths: typeof path, realpath: (file: string) => Promise<string>) {
   let current = input
   while (true) {
     try {
-      return await fs.realpath(current)
+      return await realpath(current)
     } catch {
-      const next = path.dirname(current)
+      const next = paths.dirname(current)
       if (next === current) throw new WorkspaceTargetError("workspace path does not exist")
       current = next
     }
@@ -183,11 +150,12 @@ async function existingPath(input: string) {
 export function workspacePathCandidate(
   root: string,
   input: string,
-  options: { exactInput?: boolean } = {},
+  options: { exactInput?: boolean; path?: typeof path } = {},
 ): string {
+  const paths = options.path ?? path
   const text = options.exactInput ? input : input.trim()
-  if (!text) return path.resolve(root)
-  return path.isAbsolute(text) ? path.resolve(text) : path.resolve(root, text)
+  if (!text) return paths.resolve(root)
+  return paths.isAbsolute(text) ? paths.resolve(text) : paths.resolve(root, text)
 }
 
 export async function resolveWorkspacePath(
@@ -203,27 +171,29 @@ export async function resolveWorkspacePath(
   // arrive with stray whitespace and are trimmed by default; a path git
   // reported does not, and " lead/file.txt" trimmed resolves to a different
   // entry than the one git named.
-  options: { allowAbsoluteWithinRoot?: boolean; exactInput?: boolean } = {},
+  options: PathAccess & { allowAbsoluteWithinRoot?: boolean; exactInput?: boolean } = {},
 ): Promise<string> {
-  const base = path.resolve(root)
+  const paths = options.path ?? path
+  const realpath = options.realpath ?? fs.realpath
+  const base = paths.resolve(root)
   const txt = options.exactInput ? input : input?.trim()
   if (!txt) return base
   if (txt.includes("\0")) throw new WorkspaceTargetError("workspace path cannot contain null bytes")
-  const absolute = path.isAbsolute(txt)
+  const absolute = paths.isAbsolute(txt)
   if (absolute && !options.allowAbsoluteWithinRoot) throw new WorkspaceTargetError("workspace path must be relative")
 
-  const realRoot = await fs.realpath(base)
-  const candidate = workspacePathCandidate(base, txt, { exactInput: true })
+  const realRoot = await realpath(base)
+  const candidate = workspacePathCandidate(base, txt, { exactInput: true, path: paths })
   // Lexical pre-check. An absolute input may already be realpath-resolved
   // (e.g. /private/var/... on macOS) while `base` is not (/var/...), so accept
   // containment under either the raw or the realpath'd root; the realpath check
   // below is the authoritative, symlink-safe boundary.
-  if (!inside(base, candidate) && !inside(realRoot, candidate)) {
+  if (!inside(base, candidate, paths) && !inside(realRoot, candidate, paths)) {
     throw new WorkspaceTargetError("workspace path escapes configured directory")
   }
 
-  const realExisting = await existingPath(candidate)
-  if (!inside(realRoot, realExisting)) throw new WorkspaceTargetError("workspace path escapes configured directory")
+  const realExisting = await existingPath(candidate, paths, realpath)
+  if (!inside(realRoot, realExisting, paths)) throw new WorkspaceTargetError("workspace path escapes configured directory")
 
   return candidate
 }
@@ -234,9 +204,11 @@ export async function resolveWorkspacePath(
 // paths. The scan enforces the command policy on the spellings it finds; it
 // does not parse shell syntax and is not filesystem confinement.
 const commandPathPattern = /(^|[\s"'`=,;(<>{}!|&)])((?:\/|~\/|\.\.?\/|\$HOME\/|\$\{HOME\}\/)[^\s"'`,;|&()<>{}!]+)/g
+const windowsCommandPathPattern = /(^|[\s"'`=,;(<>{}!|&)])((?:[A-Za-z]:[\\/]|[\\/]|~[\\/]|\.\.?[\\/]|\$HOME[\\/]|\$\{HOME\}[\\/]|%USERPROFILE%[\\/]|\$env:USERPROFILE[\\/])[^\s"'`,;|&()<>{}!]+)/gi
+const homeReference = /^(?:~|\$HOME|\$\{HOME\}|%USERPROFILE%|\$env:USERPROFILE)[\\/]/i
 
-function commandPathReferences(input: string) {
-  return [...input.matchAll(commandPathPattern)].map((match) => ({
+function commandPathReferences(input: string, paths: typeof path) {
+  return [...input.matchAll(paths.sep === "\\" ? windowsCommandPathPattern : commandPathPattern)].map((match) => ({
     value: match[2].replace(/[\]}]+$/, ""),
     offset: match.index + match[1].length,
   }))
@@ -250,24 +222,16 @@ function executableReference(input: string, offset: number) {
 export async function resolveWorkspaceCommandPaths(
   root: string,
   input: { command?: string; args?: string[]; allowAbsoluteExecutable?: boolean },
+  options: PathAccess = {},
 ) {
-  for (const reference of commandPathReferences(input.command ?? "")) {
-    if (input.allowAbsoluteExecutable && path.isAbsolute(reference.value) && executableReference(input.command!, reference.offset)) {
-      continue
-    }
-    if (reference.value.startsWith("~/") || reference.value.startsWith("$HOME/") || reference.value.startsWith("${HOME}/")) {
-      throw new WorkspaceTargetError("workspace command path must be relative")
-    }
-    // Absolute paths are permitted only when they resolve inside the workspace
-    // (e.g. hydrated document paths); escapes are still rejected by containment.
-    await resolveWorkspacePath(root, reference.value, { allowAbsoluteWithinRoot: true })
-  }
-  for (const arg of input.args ?? []) {
-    for (const reference of commandPathReferences(arg)) {
-      if (reference.value.startsWith("~/") || reference.value.startsWith("$HOME/") || reference.value.startsWith("${HOME}/")) {
-        throw new WorkspaceTargetError("workspace command path must be relative")
-      }
-      await resolveWorkspacePath(root, reference.value, { allowAbsoluteWithinRoot: true })
+  const paths = options.path ?? path
+  const entries = [{ text: input.command ?? "", executable: input.allowAbsoluteExecutable },
+    ...(input.args ?? []).map((text) => ({ text, executable: false }))]
+  for (const entry of entries) {
+    for (const reference of commandPathReferences(entry.text, paths)) {
+      if (entry.executable && paths.isAbsolute(reference.value) && executableReference(entry.text, reference.offset)) continue
+      if (homeReference.test(reference.value)) throw new WorkspaceTargetError("workspace command path must be relative")
+      await resolveWorkspacePath(root, reference.value, { ...options, allowAbsoluteWithinRoot: true })
     }
   }
 }

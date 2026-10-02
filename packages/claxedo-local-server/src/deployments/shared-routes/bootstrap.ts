@@ -84,7 +84,7 @@ function declaresSessions(options: Options) {
 }
 
 function deployment(options: Options) {
-  return { issuesSessions: declaresSessions(options), documents: true, connections: options.connections }
+  return { serverKind: "daemon", issuesSessions: declaresSessions(options), documents: true, connections: options.connections }
 }
 
 function bootstrapHostIdentity(options: Options) {
@@ -124,11 +124,6 @@ function localBootstrap(url: string, options: Options) {
 /**
  * The `project` array a SIGNED bootstrap body carries: the authority's
  * workspace rows grouped by project.
- *
- * The hosted control plane answers the same shape from its own copy,
- * `signedShellProjects`. This module cannot be shared into the Worker bundle
- * — it reaches the fs-backed workspace store and agent config — so the two
- * are changed together or one client meets two shapes.
  */
 function signedBootstrapProjects(workspaces: unknown[], readyCloud: ReadonlySet<string>, servedHere: ReadonlySet<string>) {
   const groups = new Map<string, {
@@ -145,8 +140,7 @@ function signedBootstrapProjects(workspaces: unknown[], readyCloud: ReadonlySet<
     // `directory` given here (`placementRecord` in the app's
     // server/wire/placements.ts), and both event lanes publish under
     // `workspace:<id>`: a filesystem path here would put every live frame of an
-    // attached turn on a scope nothing publishes to. Same shape the hosted
-    // control plane serves (`signedShellProjects`).
+    // attached turn on a scope nothing publishes to.
     const directory = `workspace:${workspaceId}`
     const remoteDirectory = asString(row?.remote_directory) ?? asString(row?.remoteDirectory)
     const projectId = asString(row?.project_id) ?? asString(row?.projectID) ?? workspaceId

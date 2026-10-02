@@ -1,3 +1,7 @@
 export * from "./adapter"
-export * from "./question-decline"
+export type { ClaudeRequestUsage, ClaudeSdkAdapterState } from "./adapter-state"
+export { CLAUDE_SUBAGENT_USAGE_METHOD, type ClaudeSubagentUsage } from "./request-stream"
+export { claudeSubagentObservations } from "./subagent-observations"
+export { claudeChildCorrelationKey, foldNestedSubagentFrame } from "./subagent-routing"
 export * from "./task-ledger"
+export { createClaudeTranslatorMemory, type ClaudeTranslatorMemory } from "./translator-memory"

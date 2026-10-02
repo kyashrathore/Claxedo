@@ -5,6 +5,7 @@ export type BakedAccountConfig = {
   CLAXEDO_CORE_ORIGIN?: string
   CLAXEDO_RELEASE_VALIDATION_OPERATION?: string
   CLAXEDO_RELEASE_CANARY_JOURNEY_ID?: string
+  CLAXEDO_RELAY_ORIGINS?: string
 }
 
 /**
@@ -24,5 +25,6 @@ export function accountConfigEnvironment(runtime: AccountConfigEnv, baked: Baked
       runtime.CLAXEDO_RELEASE_CANARY_JOURNEY_ID?.trim()
       || baked.CLAXEDO_RELEASE_CANARY_JOURNEY_ID?.trim()
       || undefined,
+    CLAXEDO_RELAY_ORIGINS: runtime.CLAXEDO_RELAY_ORIGINS?.trim() || baked.CLAXEDO_RELAY_ORIGINS?.trim() || undefined,
   }
 }

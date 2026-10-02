@@ -26,14 +26,14 @@ function serve(answer: (request: Seen) => Response) {
     },
   })
   running.push(server)
-  return { seen, transport: createTransport({ serverUrl: `http://127.0.0.1:${server.port}`, auth: { kind: "none" } }) }
+  return { seen, transport: createTransport({ serverUrl: `http://127.0.0.1:${server.port}` }) }
 }
 
 const orgRow = { id: "cred-org", provider_id: "claude-sdk", kind: "api_key", source: "managed", label: "Acme", scope: "shared", deliverable: { local: true, cloud: true } }
 
 test("accounts: the person's source per provider and the organization's own rows are read, and a choice is written for every provider of the harness", async () => {
   const { seen, transport } = serve((request) => {
-    if (request.path === "/api/claxedo/credentials/account-sources" && request.method === "GET") return Response.json({ sources: { "claude-sdk": "org" }, org: [orgRow] })
+    if (request.path === "/api/claxedo/credentials/account-sources" && request.method === "GET") return Response.json({ sources: { "claude-sdk": "org" }, org: [orgRow], can_remove_org_accounts: false })
     return Response.json({ sources: { "claude-sdk": "own" } })
   })
   const client = new QueryClient()
@@ -41,14 +41,24 @@ test("accounts: the person's source per provider and the organization's own rows
   const sources = await client.fetchQuery(read)
   expect([...sources.sources]).toEqual([["claude-sdk", "org"]])
   expect(sources.org).toEqual([expect.objectContaining({ id: "cred-org", providerId: "claude-sdk", label: "Acme", scope: "shared" })])
+  expect(sources.canRemoveOrgAccounts).toBe(false)
 
   await createAccountsApi(transport, client).setSource(["claude-sdk", "claude-acp"], "own")
   expect(seen.at(-1)).toEqual({ method: "PUT", path: "/api/claxedo/credentials/account-sources", body: { provider_ids: ["claude-sdk", "claude-acp"], source: "own" } })
 })
 
 test("accounts: a source answer naming anything but own or org is a contract mismatch, not an empty choice", async () => {
-  const { transport } = serve(() => Response.json({ sources: { "claude-sdk": "team" }, org: [] }))
+  const { transport } = serve(() => Response.json({ sources: { "claude-sdk": "team" }, org: [], can_remove_org_accounts: false }))
   await expect(new QueryClient().fetchQuery(accountQueries(transport).sources())).rejects.toMatchObject({ class: "internal" })
+})
+
+test("accounts: org account removal is reported by the server, and an absent or malformed access fact is a contract mismatch", async () => {
+  const allowed = serve(() => Response.json({ sources: {}, org: [orgRow], can_remove_org_accounts: true }))
+  expect((await new QueryClient().fetchQuery(accountQueries(allowed.transport).sources())).canRemoveOrgAccounts).toBe(true)
+  for (const flag of [undefined, "true", null]) {
+    const invalid = serve(() => Response.json({ sources: {}, org: [orgRow], can_remove_org_accounts: flag }))
+    await expect(new QueryClient().fetchQuery(accountQueries(invalid.transport).sources())).rejects.toMatchObject({ class: "internal" })
+  }
 })
 
 test("accounts: the hosted plane's Pi sources are read per harness and a choice is written to the provider's source route", async () => {

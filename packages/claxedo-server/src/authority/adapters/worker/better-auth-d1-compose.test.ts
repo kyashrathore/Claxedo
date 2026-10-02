@@ -7,6 +7,11 @@ import { Miniflare } from "miniflare"
 import type { D1Database } from "@cloudflare/workers-types"
 import { sourceClosure } from "@claxedo/server-core/platform/governance/source-closure"
 
+import { decodeJwt } from "jose"
+import type { ControlPlanePrincipal } from "@claxedo/server-core/platform/auth/authentication"
+import { requireAuthority } from "@claxedo/server-core/platform/auth/authority"
+import { resolveRuntimeActor } from "@claxedo/server-core/platform/auth/runtime-actor"
+import type { D1CoreAuthorityBoundary } from "../d1/core-authority"
 import { composeBetterAuthD1UserDeployedControlPlane } from "./better-auth-d1-compose"
 import { applyControlPlaneMigration, controlPlaneMigrations } from "../../../test-support/control-plane-migrations"
 
@@ -398,5 +403,43 @@ describe("Better Auth + D1 user-deployed composition", () => {
       ),
     ).toEqual([])
     expect(bundled.outputFiles.map((file) => file.text).join("\n")).not.toMatch(/POLAR_ACCESS_TOKEN/)
+  })
+
+  test("a Runtime Access Token minted for a Better Auth person names them as the machine's relay ingress requires", async () => {
+    const { authDatabase, controlPlaneDatabase } = await databases()
+    const identity = { adapter: "better-auth" as const, issuer: "https://api.example.test/api/auth", subject: "owner-subject" }
+    await authDatabase.prepare(`insert into "user" (id, name, email, "emailVerified", image, "createdAt", "updatedAt")
+      values (?, 'Ada Owner', 'ada@example.test', 1, 'https://images.example.test/ada.png', 1, 1)`).bind(identity.subject).run()
+    const composed = composeBetterAuthD1UserDeployedControlPlane({
+      env: env(),
+      authDatabase,
+      controlPlaneDatabase,
+      descriptorExpiresAt: 1_900_000_000_000,
+      now: () => 1_800_000_000_000,
+      product: { kind: "user-deployed", organization: { id: "org_deployment", name: "My deployment" }, ownerIdentity: identity },
+    })
+    await composed.authReady
+    const authority = requireAuthority(composed.plane.services)
+    const person = await (authority as unknown as Pick<D1CoreAuthorityBoundary, "ensureApplicationIdentity">).ensureApplicationIdentity(identity)
+    if (person.state !== "active") throw new Error(`owner identity is ${person.state}`)
+    const principal: ControlPlanePrincipal = {
+      userId: person.userId, actorId: person.actorId, actorKind: "human", deploymentId: "deployment-1",
+      sessionId: "session-owner", authenticatedAt: 1_800_000_000_000, methods: ["oauth:github"], assurance: "single-factor",
+      client: { kind: "browser", tokenKind: "browser-session", id: "browser", resource: "https://api.example.test", scopes: ["openid"], origin: "https://app.example.test" },
+      identity,
+    }
+    const auth = { mode: "signed" as const, principal, user: { subject: identity.subject, tokenIdentifier: `${identity.issuer}|${identity.subject}`, issuer: identity.issuer } }
+
+    const actor = await resolveRuntimeActor(authority, auth)
+    const minted = await composed.plane.services.relay.runtimeAccessTokenSigner!({
+      principalKind: "user", ...actor, orgId: "org_deployment", workspaceId: "ws_machine", hostId: "host_machine", role: "owner",
+    })
+
+    expect(decodeJwt(minted.runtimeAccessToken)).toMatchObject({
+      actor_id: person.actorId,
+      actor_public_id: person.userId,
+      actor_name: "Ada Owner",
+      actor_avatar_url: "https://images.example.test/ada.png",
+    })
   })
 })

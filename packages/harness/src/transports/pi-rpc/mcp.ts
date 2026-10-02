@@ -1,112 +1,57 @@
 import { randomUUID } from "node:crypto"
 import fs from "node:fs/promises"
 import path from "node:path"
-import { writePrivateFileAtomic } from "@claxedo/helpers/fs"
-import type { McpServerSpec } from "../../contract"
+import { isMissingFile, writePrivateFileAtomic } from "@claxedo/helpers/fs"
+import { sessionMcpServers, type HarnessServices, type StartInput } from "../../contract"
 import { TransportError } from "../../contract/errors"
-import { installPiExtension, piExtensionPath, runPiExtensionCommand } from "./extension"
-import { piDeadline } from "./launch"
-import type { PiRpc } from "./rpc"
-import type { Clock } from "../../contract"
+import { piMcpServerConfig } from "../../profiles/pi"
+import { installPiExtension } from "./extension"
 
-export const PI_MCP_COMMAND = "claxedo-mcp"
-const EXTENSION_FILE = "claxedo-first-party-mcp.ts"
+export const PI_MCP_HANDOFF = "CLAXEDO_PI_MCP_HANDOFF"
+const EXTENSION_FILE = "claxedo-mcp.ts"
 
-export const PI_MCP_EXTENSION_SOURCE = `import { readFile, rm } from "node:fs/promises"
+const PI_MCP_EXTENSION_SOURCE = `import { readFile, rm } from "node:fs/promises"
 
-const COMMAND = ${JSON.stringify(PI_MCP_COMMAND)}
-
-async function connect(server) {
-  let session
-  let version = "2025-03-26"
-  let sequence = 0
-  const headers = () => ({ ...server.headers, "content-type": "application/json", accept: "application/json, text/event-stream",
-    "mcp-protocol-version": version, ...(session ? { "mcp-session-id": session } : {}) })
-  const post = async (body, signal) => {
-    const response = await fetch(server.url, { method: "POST", headers: headers(), body: JSON.stringify(body),
-      signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(120_000)]) : AbortSignal.timeout(120_000) })
-    if (!response.ok) throw new Error("Claxedo MCP " + (body.method ?? "request") + " failed (" + response.status + ")")
-    session = response.headers.get("mcp-session-id") ?? session
-    return response.text()
-  }
-  const request = async (method, params, signal) => {
-    const id = ++sequence
-    const text = await post({ jsonrpc: "2.0", id, method, params }, signal)
-    const records = text.includes("data:") ? text.split("\\n").filter((line) => line.startsWith("data:")).map((line) => line.slice(5).trim()) : [text]
-    const reply = records.filter(Boolean).map((record) => JSON.parse(record)).find((message) => message.id === id)
-    if (!reply) throw new Error("Claxedo MCP " + method + " returned no reply")
-    if (reply.error) throw new Error("Claxedo MCP " + method + ": " + reply.error.message)
-    return reply.result
-  }
-  version = String((await request("initialize", { protocolVersion: version, capabilities: {}, clientInfo: { name: "claxedo-pi", version: "1" } })).protocolVersion)
-  await post({ jsonrpc: "2.0", method: "notifications/initialized" })
-  return {
-    async tools() {
-      const tools = []
-      let cursor
-      do {
-        const page = await request("tools/list", cursor ? { cursor } : {})
-        tools.push(...page.tools)
-        cursor = page.nextCursor
-      } while (cursor)
-      return tools
-    },
-    call: (name, args, signal) => request("tools/call", { name, arguments: args }, signal),
-    async close() {
-      if (!session) return
-      const response = await fetch(server.url, { method: "DELETE", headers: headers(), signal: AbortSignal.timeout(10_000) })
-      if (!response.ok && response.status !== 404) throw new Error("Claxedo MCP close failed (" + response.status + ")")
-    },
-  }
-}
-
-function content(block) {
-  return block.type === "text" || block.type === "image" ? block : { type: "text", text: JSON.stringify(block) }
-}
-
-async function readOnce(file) {
-  try { return JSON.parse(await readFile(file, "utf8")) }
+export default async function (pi) {
+  const file = process.env.${PI_MCP_HANDOFF}
+  delete process.env.${PI_MCP_HANDOFF}
+  if (!file) throw new Error("Claxedo's MCP handoff is not named")
+  let servers
+  try { servers = JSON.parse(await readFile(file, "utf8")) }
   finally { await rm(file, { force: true }) }
-}
-
-export default function (pi) {
-  let connection
-  pi.registerCommand(COMMAND, {
-    description: "Connect this session's Claxedo tools",
-    handler: async (args) => {
-      if (connection) throw new Error("Claxedo MCP is already connected")
-      const server = await readOnce(args.trim())
-      connection = await connect(server)
-      const names = []
-      for (const tool of await connection.tools()) {
-        const name = "mcp__" + server.name + "__" + tool.name
-        names.push(name)
-        pi.registerTool({ name, label: tool.name, description: tool.description || tool.name, parameters: tool.inputSchema,
-          execute: async (_id, params, signal) => {
-            const result = await connection.call(tool.name, params, signal)
-            const blocks = (result.content ?? []).map(content)
-            if (result.isError) throw new Error(blocks.map((block) => block.text ?? "").join("\\n"))
-            return { content: blocks, details: {} }
-          } })
-      }
-      pi.setActiveTools([...new Set([...pi.getActiveTools(), ...names])])
-    },
-  })
-  pi.on("session_shutdown", async () => { if (connection) await connection.close() })
+  const refused = []
+  for (const [name, config] of Object.entries(servers)) {
+    try { pi.registerMcpServer(name, config) }
+    catch (error) { refused.push(name + ": " + (error instanceof Error ? error.message : String(error))) }
+  }
+  if (refused.length) pi.on("session_start", (_event, ctx) => ctx.ui.notify("Claxedo could not add these MCP servers to Pi:\\n" + refused.join("\\n"), "error"))
 }
 `
 
-export function installPiMcpExtension(stateRoot: string): Promise<string> {
-  return installPiExtension(stateRoot, EXTENSION_FILE, PI_MCP_EXTENSION_SOURCE)
+export type PiMcpHandoff = { args: string[]; env: Record<string, string>; consumed(): Promise<void>; discard(): Promise<void> }
+
+function piMcpServers(input: StartInput, services: Pick<HarnessServices, "firstPartyMcp">) {
+  const servers = sessionMcpServers(input, services, { includeFirstParty: input.locality === "local",
+    duplicate: (name) => new TransportError("pi", "configuration", `Duplicate Pi MCP server ${name}`) })
+  const stdio = input.locality === "local" ? undefined : servers.find((server) => server.kind === "stdio")
+  if (stdio) throw new TransportError("pi", "configuration", `Pi cannot run stdio MCP server ${stdio.name} for a remote session`)
+  return Object.fromEntries(servers.map((server) => [server.name, piMcpServerConfig(server)]))
 }
 
-export async function connectPiMcp(rpc: PiRpc, clock: Clock, stateRoot: string, server: McpServerSpec): Promise<void> {
-  if (server.kind === "stdio") throw new TransportError("pi", "configuration", "Claxedo's MCP server must be an HTTP entry")
-  const handoff = path.join(stateRoot, "mcp-handoff", `${randomUUID()}.json`)
-  await fs.mkdir(path.dirname(handoff), { recursive: true, mode: 0o700 })
-  await writePrivateFileAtomic(handoff, JSON.stringify({ name: server.name, url: server.url, headers: server.headers ?? {} }))
-  try {
-    await runPiExtensionCommand(rpc, { what: "Pi Claxedo MCP connection", command: PI_MCP_COMMAND,
-      extension: piExtensionPath(stateRoot, EXTENSION_FILE), argument: handoff, deadline: piDeadline(clock) })
-  } finally { await fs.rm(handoff, { force: true }) }
+export async function piMcpHandoff(stateRoot: string, input: StartInput, services: Pick<HarnessServices, "firstPartyMcp">): Promise<PiMcpHandoff | undefined> {
+  const servers = piMcpServers(input, services)
+  if (!Object.keys(servers).length) return undefined
+  const extension = await installPiExtension(stateRoot, EXTENSION_FILE, PI_MCP_EXTENSION_SOURCE)
+  const file = path.join(stateRoot, "mcp-handoff", `${randomUUID()}.json`)
+  await fs.mkdir(path.dirname(file), { recursive: true, mode: 0o700 })
+  await writePrivateFileAtomic(file, JSON.stringify(servers))
+  return {
+    args: ["-e", extension], env: { [PI_MCP_HANDOFF]: file },
+    consumed: async () => {
+      try { await fs.access(file) }
+      catch (error) { if (isMissingFile(error)) return; throw error }
+      throw new TransportError("pi", "protocol", "Pi did not load Claxedo's MCP extension, so the session's MCP servers were not handed over")
+    },
+    discard: () => fs.rm(file, { force: true }),
+  }
 }

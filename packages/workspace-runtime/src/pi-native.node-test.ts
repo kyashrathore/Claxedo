@@ -12,85 +12,21 @@ import { loopbackWorkspaceRuntimeExposure } from "./exposure"
 import { loopbackMachineLoginPolicy } from "./testing"
 
 void test(
-  "lazy Pi admission clears crash-left credentials before its first unauthenticated HTTP turn",
-  { skip: !process.env.PI_EXECUTABLE, timeout: 60_000 },
-  async () => {
-    const root = await fs.mkdtemp(path.join(os.tmpdir(), "pi-cold-auth-"))
-    const directory = path.join(root, "repo")
-    const storeRoot = path.join(root, "runtime")
-    const agentDir = path.join(storeRoot, "pi", "agent")
-    await fs.mkdir(directory)
-    await fs.mkdir(agentDir, { recursive: true })
-    let requests = 0
-    const provider = createServer((_request, response) => {
-      requests++
-      response.writeHead(401, { "content-type": "application/json" })
-      response.end(JSON.stringify({ error: { message: "Unexpected stale credential request" } }))
-    })
-    await new Promise<void>((resolve) => provider.listen(0, "127.0.0.1", resolve))
-    const address = provider.address()
-    if (!address || typeof address === "string") throw new Error("Missing provider address")
-    await fs.writeFile(
-      path.join(agentDir, "auth.json"),
-      JSON.stringify({ openai: { type: "api_key", key: "crash-left-secret" } }),
-    )
-    await fs.writeFile(
-      path.join(agentDir, "models.json"),
-      JSON.stringify({
-        providers: { openai: { baseUrl: `http://127.0.0.1:${address.port}/v1`, api: "openai-completions" } },
-      }),
-    )
-    const runtime = createWorkspaceRuntimeApp({
-      placement: loopbackMachineLoginPolicy(),
-      target: { workspaceId: "cold-auth", directory },
-      storeRoot,
-      exposure: loopbackWorkspaceRuntimeExposure(),
-    })
-    const post = (resource: string, body: object) =>
-      runtime.app.request(`http://localhost/${resource}`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(body),
-      })
-    try {
-      await runtime.host.apply({ version: 4, commands: [], mcp: {}, connections: [], auth: { machineOwnerUserId: "local", accounts: {} } })
-      const model = { providerID: "pi", modelID: "openai/gpt-4.1" }
-      const created = await post("session?nativeHarness=pi", { model })
-      assert.equal(created.status, 201, await created.clone().text())
-      const session = await created.json()
-      assert.deepEqual(JSON.parse(await fs.readFile(path.join(agentDir, "auth.json"), "utf8")), {})
-      const response = await post(`session/${session.id}/message`, {
-        messageID: "no-credential",
-        model,
-        parts: [{ type: "text", text: "Hello" }],
-      })
-      const result = await response.text()
-      assert.match(result, /api key|credential/i)
-      assert.equal(requests, 0, "Pi must reject locally before sending any stale credential")
-    } finally {
-      await runtime.dispose()
-      provider.closeAllConnections()
-      await new Promise<void>((resolve) => provider.close(() => resolve()))
-      await fs.rm(root, { recursive: true, force: true })
-    }
-  },
-)
-
-void test(
-  "native Pi machine HTTP routes retain sessions and scrub auth across checkpoint/restart",
-  { skip: !process.env.PI_EXECUTABLE, timeout: 60_000 },
+  "native Pi machine HTTP routes keep the session across checkpoint scrub and restart, sending only the placeholder",
+  { timeout: 60_000 },
   async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "pi-machine-http-"))
     const directory = path.join(root, "repo")
     const storeRoot = path.join(root, "runtime")
-    const agentDir = path.join(storeRoot, "pi", "agent")
+    const harnessStateRoot = path.join(root, "harness")
     await fs.mkdir(directory)
-    await fs.mkdir(agentDir, { recursive: true })
     const requests: any[] = []
+    const authorizations: Array<string | undefined> = []
     const provider = createServer(async (request, response) => {
       const chunks = []
       for await (const chunk of request) chunks.push(chunk)
       requests.push(JSON.parse(Buffer.concat(chunks).toString()))
+      authorizations.push(request.headers.authorization)
       const tool = requests.length === 1
       const delta = tool
         ? {
@@ -124,24 +60,15 @@ void test(
     await new Promise<void>((resolve) => provider.listen(0, "127.0.0.1", resolve))
     const address = provider.address()
     if (!address || typeof address === "string") throw new Error("Missing provider address")
-    await fs.writeFile(
-      path.join(agentDir, "models.json"),
-      JSON.stringify({
-        providers: {
-          proof: {
-            baseUrl: `http://127.0.0.1:${address.port}/v1`,
-            api: "openai-completions",
-            apiKey: "test-provider",
-            models: [{ id: "proof", reasoning: false, contextWindow: 32000, maxTokens: 4096 }],
-          },
-        },
-      }),
-    )
+    const placeholder = "proof-placeholder"
+    const model = { providerID: "pi", modelID: "groq/llama-3.1-8b-instant" }
     const create = () =>
       createWorkspaceRuntimeApp({
         placement: loopbackMachineLoginPolicy(),
         target: { workspaceId: "workspace-proof", directory },
+        sessionIdWorkspace: () => undefined,
         storeRoot,
+        harnessStateRoot,
         harness: { kind: "native", harnessId: "pi" },
         exposure: loopbackWorkspaceRuntimeExposure(),
       })
@@ -151,7 +78,19 @@ void test(
       defaultHarness: { kind: "native" as const, harnessId: "pi" as const },
       mcp: {},
       connections: [],
-      auth: { machineOwnerUserId: "local", accounts: {} },
+      auth: {
+        machineOwnerUserId: "local",
+        accounts: {
+          local: {
+            groq: {
+              baseUrl: `http://127.0.0.1:${address.port}/bindings/proof`,
+              placeholder,
+              authMode: "bearer" as const,
+              apiPath: "/openai/v1",
+            },
+          },
+        },
+      },
       commands: [],
     }
     const call = async (resource: string, body: object) => {
@@ -167,33 +106,33 @@ void test(
       await runtime.host.apply(snapshot)
       const session = await call("session?nativeHarness=pi", {
         title: "Native machine proof",
-        model: { providerID: "pi", modelID: "proof/proof" },
+        model,
       })
       assert.ok(session.id)
       await call(`session/${session.id}/message`, {
         messageID: "first",
-        model: { providerID: "pi", modelID: "proof/proof" },
+        model,
         parts: [{ type: "text", text: "Write proof.txt" }],
       })
       assert.equal(await fs.readFile(path.join(directory, "proof.txt"), "utf8"), "native machine tool")
-      assert.deepEqual(JSON.parse(await fs.readFile(path.join(agentDir, "auth.json"), "utf8")), {})
-      const nativeFiles = await fs.readdir(path.join(agentDir, "sessions"))
-      assert.equal(nativeFiles.filter((file) => file.endsWith(".jsonl")).length, 1)
+      const nativeFiles = async () => (await fs.readdir(harnessStateRoot, { recursive: true })).filter((file) => file.endsWith(".jsonl"))
+      const files = await nativeFiles()
+      assert.equal(files.length, 1)
       await call("checkpoint/freeze", { policy: "drain" })
       await call("checkpoint/flush", {})
       await call("checkpoint/scrub", {})
-      await assert.rejects(fs.access(path.join(agentDir, "auth.json")))
-      assert.deepEqual(await fs.readdir(path.join(agentDir, "sessions")), nativeFiles)
+      assert.deepEqual(await nativeFiles(), files)
       await runtime.dispose()
       runtime = create()
       await runtime.host.apply(snapshot)
       await call(`session/${session.id}/message`, {
         messageID: "second",
-        model: { providerID: "pi", modelID: "proof/proof" },
+        model,
         parts: [{ type: "text", text: "Continue" }],
       })
       assert.equal(requests.at(-1).messages.filter((message: any) => message.role === "user").length, 2)
-      assert.deepEqual(await fs.readdir(path.join(agentDir, "sessions")), nativeFiles)
+      assert.deepEqual([...new Set(authorizations)], [`Bearer ${placeholder}`])
+      assert.deepEqual(await nativeFiles(), files)
       const history = await runtime.app.request(`http://localhost/session/${session.id}/message`)
       assert.equal(history.status, 200)
       assert.ok((await history.text()).includes("Machine turn complete"))

@@ -1,9 +1,8 @@
 import fs from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
-import { dropRecoveryContext, releaseAcpHold, writeAcpScript, type AcpScript } from "./acp/script"
+import { releaseAcpHold, writeAcpScript, type AcpScript } from "./acp/script"
 import { refuseGoalStart } from "./acp/goals"
-import { forgetSessionsOnRestart } from "./acp/sessions"
 import { staleCodexInventory } from "./codex-inventory-fault"
 import { startDaemon, type Daemon } from "./daemon"
 import { startEgressGuard, type EgressGuard } from "./egress-guard"
@@ -28,14 +27,12 @@ export type Stack = {
     write(name: string, script: AcpScript): Promise<void>
     release(name: string): Promise<void>
     refuseGoalStart(): void
-    dropRecoveryContext(): void
-    forgetSessionsOnRestart(): void
   }
   events(directory: string, options?: EventStreamOptions): Promise<EventStream>
   close(): Promise<void>
 }
 
-export type StackInput = { label: string; red?: boolean; cloud?: boolean; cloudMcpUrl?: string; coldStartWithoutKeys?: boolean; codexInventoryFault?: boolean; steerReplyFault?: "pi" | "codex"; claudeSteerFault?: boolean; piRpcFault?: boolean; cursorBackends?: number; resistantChild?: boolean; retirementFault?: boolean }
+export type StackInput = { label: string; red?: boolean; codexInventoryFault?: boolean; steerReplyFault?: "pi" | "codex"; claudeSteerFault?: boolean; piRpcFault?: boolean; cursorBackends?: number; resistantChild?: boolean; retirementFault?: boolean }
 
 export function safeLabel(label: string) {
   return label.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40) || "flow"
@@ -84,9 +81,6 @@ export async function startStack(input: StackInput): Promise<Stack> {
   let daemon: Daemon
   try {
     daemon = await startDaemon({ dataDir, scripted, guardUrl: egress.url, port: daemonPort, red,
-      cloud: input.cloud,
-      cloudMcpUrl: input.cloudMcpUrl,
-      coldStartWithoutKeys: input.coldStartWithoutKeys,
       resistantChild: input.resistantChild,
       retirementFault: input.retirementFault,
       ...(input.steerReplyFault === "pi" ? { piExecutable: steerFault!.executable } : {}),
@@ -115,8 +109,6 @@ export async function startStack(input: StackInput): Promise<Stack> {
       write: (name, script) => writeAcpScript(daemon.acpScriptDir, name, script),
       release: (name) => releaseAcpHold(daemon.acpScriptDir, name),
       refuseGoalStart: () => refuseGoalStart(daemon.acpScriptDir),
-      dropRecoveryContext: () => dropRecoveryContext(daemon.acpScriptDir),
-      forgetSessionsOnRestart: () => forgetSessionsOnRestart(daemon.acpScriptDir),
     },
     events: async (directory, options) => {
       const stream = await openEventStream(daemon.url, directory, options)

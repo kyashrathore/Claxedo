@@ -1,3 +1,4 @@
+import { inviteOrgMember } from "../../../test-support/invite-org-member"
 import { afterEach, describe, expect, test } from "vitest"
 import { Miniflare } from "miniflare"
 import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
@@ -77,12 +78,12 @@ async function signed(authority: D1CoreAuthorityBoundary, subject: string): Prom
 
 describe("composed Better Auth + D1 authority", () => {
   test("uses one canonical principal and tenant scope across workspace, session, and runtime-token modules", async () => {
-    const { authority } = await setup()
+    const { authority, database } = await setup()
     const alice = await signed(authority, "alice")
     const bob = await signed(authority, "bob")
 
     await authority.createHostedOrganization(alice, { name: "Acme", orgId: "org_acme" })
-    await authority.addOrgMember!(alice, {
+    await inviteOrgMember(database, alice, {
       orgId: "org_acme",
       userPublicId: bob.principal!.userId,
       role: "member",
@@ -94,7 +95,7 @@ describe("composed Better Auth + D1 authority", () => {
       backing: "cloud-vm",
     })
 
-    await authority.addOrgMember!(alice, {
+    await inviteOrgMember(database, alice, {
       orgId: "org_acme",
       userPublicId: bob.principal!.userId,
       role: "admin",
@@ -183,13 +184,13 @@ describe("composed Better Auth + D1 authority", () => {
   })
 
   test("persists team session sharing and revokes the shared user's live authority", async () => {
-    const { authority } = await setup()
+    const { authority, database } = await setup()
     const alice = await signed(authority, "team-alice")
     const bob = await signed(authority, "team-bob")
     const outsider = await signed(authority, "team-outsider")
 
     await authority.createHostedOrganization(alice, { name: "Team sharing", orgId: "org_team_sharing" })
-    await authority.addOrgMember!(alice, {
+    await inviteOrgMember(database, alice, {
       orgId: "org_team_sharing",
       userPublicId: bob.principal!.userId,
       role: "member",
@@ -241,7 +242,7 @@ describe("composed Better Auth + D1 authority", () => {
         workspaceId: "ws_team_sharing",
         grantedToTeamId: otherTeam.team_id,
       }),
-    ).rejects.toThrow("session_share_team_org_mismatch")
+    ).rejects.toMatchObject({ code: "session_share_team_org_mismatch" })
 
     const firstGrant = await authority.grantSessionShare!(alice, {
       sessionId: "ses_team_sharing",
@@ -275,13 +276,13 @@ describe("composed Better Auth + D1 authority", () => {
     await expect(authority.listSessionShares!(alice, {
       sessionId: "ses_created_on_the_machine",
       workspaceId: "ws_team_sharing",
-    })).resolves.toEqual({ can_manage_shares: false, grants: [], participants: [], teams: [] })
+    })).resolves.toEqual({ can_manage_shares: false, grants: [], teams: [] })
     await expect(authority.listSessionShares!(outsider, {
       sessionId: "ses_created_on_the_machine",
       workspaceId: "ws_team_sharing",
     })).rejects.toMatchObject({ code: "workspace_authorization_denied" })
 
-    await authority.recordRuntimeAccessToken(bob, {
+    await expect(authority.recordRuntimeAccessToken(bob, {
       jti: "jti_team_bob",
       workspaceId: "ws_team_sharing",
       hostId: "host_team",
@@ -289,18 +290,13 @@ describe("composed Better Auth + D1 authority", () => {
       actorKind: "human",
       role: "viewer",
       expiresAt: Date.now() + 60_000,
-    })
+    })).rejects.toMatchObject({ status: 403 })
     await expect(authority.revokeSessionShare!(alice, {
       sessionId: "ses_team_sharing",
       workspaceId: "ws_team_sharing",
       grantId: firstGrant.grant_id,
-    })).resolves.toMatchObject({ revoked: true, runtime_tokens_revoked: 1 })
+    })).resolves.toMatchObject({ revoked: true })
     expect(await authority.listSessions(bob, { workspaceId: "ws_team_sharing" })).toEqual([])
-    expect(await authority.runtimeAccessTokenActive({
-      jti: "jti_team_bob",
-      workspaceId: "ws_team_sharing",
-      hostId: "host_team",
-    })).toMatchObject({ active: false, code: "runtime_access_token_revoked" })
   })
 
   test("has no unimplemented full-authority capabilities", () => {
@@ -312,7 +308,7 @@ describe("composed Better Auth + D1 authority", () => {
     const alice = await signed(authority, "channel-alice")
     const bob = await signed(authority, "channel-bob")
     await authority.createHostedOrganization(alice, { name: "Channels", orgId: "org_channels" })
-    await authority.addOrgMember!(alice, {
+    await inviteOrgMember(database, alice, {
       orgId: "org_channels",
       userPublicId: bob.principal!.userId,
       role: "admin",
@@ -413,12 +409,12 @@ describe("composed Better Auth + D1 authority", () => {
     ).toEqual({ revoked: false })
   })
 
-  test("a channel-bound org member is refused on another person's workspace whatever their project grant or its visibility", async () => {
+  test("a channel-bound org member is refused on another person's workspace whatever their project grant", async () => {
     const { authority, database } = await setup()
     const alice = await signed(authority, "visibility-alice")
     const bob = await signed(authority, "visibility-bob")
     await authority.createHostedOrganization(alice, { name: "Visibility", orgId: "org_visibility" })
-    await authority.addOrgMember!(alice, { orgId: "org_visibility", userPublicId: bob.principal!.userId, role: "member" })
+    await inviteOrgMember(database, alice, { orgId: "org_visibility", userPublicId: bob.principal!.userId, role: "member" })
     await authority.createWorkspace(alice, {
       workspaceId: "ws_alice",
       orgId: "org_visibility",
@@ -441,14 +437,11 @@ describe("composed Better Auth + D1 authority", () => {
       .bind(project!.project_id, bob.principal!.userId)
       .run()
 
-    for (const visible of [0, 1]) {
-      await database.prepare("update workspaces set org_member_visible = ? where workspace_id = 'ws_alice'").bind(visible).run()
-      await expect(authority.authorizeChannelWorkspace(request)).rejects.toMatchObject({ status: 403 })
-    }
+    await expect(authority.authorizeChannelWorkspace(request)).rejects.toMatchObject({ status: 403 })
   })
 
   test("records only the configured canonical service actor and enforces deployment, workspace, JTI, and revocation", async () => {
-    const { authority } = await setup()
+    const { authority, database } = await setup()
     const alice = await signed(authority, "service-alice")
     await authority.createHostedOrganization(alice, { name: "Services", orgId: "org_services" })
     await authority.createWorkspace(alice, {

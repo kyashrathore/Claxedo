@@ -3,7 +3,7 @@ import { query, type AgentInfo, type ModelInfo, type Query, type SlashCommand } 
 import type { AgentConfigOption } from "@claxedo/agent-runtime-contract"
 import type { DraftLaunch, HarnessServices, StartInput } from "../../contract"
 import { TransportError } from "../../contract/errors"
-import { draftProbeKey, DraftProbeCache, modelAndEffortOptions, type ProbeInputs } from "../../contract"
+import { draftProbeKey, DraftProbeCache, modelAndEffortOptions, type ProbeInputs } from "../../contract/node"
 import { CLAUDE_SETTINGS_FILES } from "../../profiles/claude-code"
 import { claudeLaunchContext, type ClaudeSdkOptions } from "./launch-context"
 import { ClaudeProcess } from "./process"

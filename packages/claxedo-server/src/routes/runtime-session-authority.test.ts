@@ -28,6 +28,9 @@ import {
 } from "../session/deferred-turn-grant"
 import { mintTasksCapability } from "../tasks/capability"
 import { RuntimeSessionAuthorityRoutes, type RuntimeSessionAuthorityOptions } from "./runtime-session-authority"
+import { D1SessionAuthorityError } from "../authority/adapters/d1/session-input"
+import { remoteWorkspaceSessionAccessPolicy } from "../../../workspace-runtime/src/remote-session-authority"
+import { fetchUrl } from "../test-support/fetch-calls"
 
 const RUNTIME_TIMES = { createdAt: 1_000, updatedAt: 1_234 }
 
@@ -68,11 +71,9 @@ function request(target: Hono, token: string | undefined, body: Record<string, u
 }
 
 describe("runtime private-session authority oracle", () => {
-  test("checks current runtime-token role before host setup administration", async () => {
+  test("host capabilities are the workspace owner's token's: a session-scoped proof is refused before its token is asked", async () => {
     const key = await generateKeyPair("EdDSA", { extractable: true })
-    const runtimeAccessTokenActive = vi.fn(async (input: { minimumRole?: string }) => input.minimumRole === "admin"
-      ? { active: false, code: "runtime_access_token_revoked", reason: "Workspace role was downgraded" }
-      : { active: true })
+    const runtimeAccessTokenActive = vi.fn(async (_input: { jti: string; workspaceId: string; hostId: string }) => ({ active: true }))
     const target = app({
       authority: {
         ...transitionStubs,
@@ -82,22 +83,46 @@ describe("runtime private-session authority oracle", () => {
       },
       env: { CLAXEDO_RELAY_HOST_VERIFY_PEM: await exportSPKI(key.publicKey), CLAXEDO_RUNTIME_ACCESS_TOKEN_PRIVATE_KEY_PEM: await exportPKCS8(key.privateKey) },
     })
-    const editor = await mintRelayHostToken(relayInput, key.privateKey, "EdDSA")
-    const admin = await mintRelayHostToken({ ...relayInput, role: "admin", jti: "rht_admin" }, key.privateKey, "EdDSA")
+    const owner = await mintRelayHostToken({ ...relayInput, role: "owner" }, key.privateKey, "EdDSA")
+    const scoped = await mintRelayHostToken({ ...relayInput, role: "viewer", sessionId: "ses_shared", jti: "rht_scoped" }, key.privateKey, "EdDSA")
 
-    expect((await request(target, editor, { action: "host_read" })).status).toBe(200)
-    expect(runtimeAccessTokenActive).toHaveBeenLastCalledWith({
-      jti: "rat_parent_1",
-      workspaceId: "ws_1",
-      hostId: "host_1",
-      minimumRole: "viewer",
+    expect((await request(target, owner, { action: "host_read" })).status).toBe(200)
+    expect(runtimeAccessTokenActive).toHaveBeenLastCalledWith({ jti: "rat_parent_1", workspaceId: "ws_1", hostId: "host_1" })
+    expect((await request(target, owner, { action: "host_admin" })).status).toBe(200)
+    const calls = runtimeAccessTokenActive.mock.calls.length
+    for (const action of ["host_read", "host_admin"]) {
+      const refused = await request(target, scoped, { action })
+      expect(refused.status).toBe(403)
+      await expect(refused.json()).resolves.toMatchObject({ error: { code: "host_authority_denied" } })
+    }
+    expect(runtimeAccessTokenActive.mock.calls.length).toBe(calls)
+
+    runtimeAccessTokenActive.mockResolvedValueOnce({ active: false, code: "runtime_access_token_revoked", reason: "revoked" } as never)
+    const revoked = await request(target, owner, { action: "host_admin" })
+    expect(revoked.status).toBe(401)
+    await expect(revoked.json()).resolves.toMatchObject({ error: { code: "runtime_access_token_revoked" } })
+  })
+
+  test("a session-scoped proof asks about its own session and is refused any other before the authority is asked", async () => {
+    const key = await generateKeyPair("EdDSA", { extractable: true })
+    const authorizeRuntimeSession = vi.fn(async () => {})
+    const target = app({
+      authority: {
+        ...transitionStubs,
+        registerRuntimeSession: async () => ({}),
+        authorizeRuntimeSession,
+        runtimeAccessTokenActive: async () => ({ active: true }),
+      },
+      env: { CLAXEDO_RELAY_HOST_VERIFY_PEM: await exportSPKI(key.publicKey) },
     })
-    expect((await request(target, editor, { action: "host_admin" })).status).toBe(403)
+    const scoped = await mintRelayHostToken({ ...relayInput, role: "viewer", sessionId: "ses_shared" }, key.privateKey, "EdDSA")
 
-    const downgraded = await request(target, admin, { action: "host_admin" })
-    expect(downgraded.status).toBe(401)
-    await expect(downgraded.json()).resolves.toMatchObject({ error: { code: "runtime_access_token_revoked" } })
-    expect(runtimeAccessTokenActive).toHaveBeenLastCalledWith(expect.objectContaining({ minimumRole: "admin" }))
+    expect((await request(target, scoped, { action: "read", sessionId: "ses_shared" })).status).toBe(200)
+    expect(authorizeRuntimeSession).toHaveBeenLastCalledWith(expect.objectContaining({ sessionId: "ses_shared", action: "read" }))
+    const other = await request(target, scoped, { action: "read", sessionId: "ses_other" })
+    expect(other.status).toBe(403)
+    await expect(other.json()).resolves.toMatchObject({ error: { code: "session_scope_denied" } })
+    expect(authorizeRuntimeSession).toHaveBeenCalledTimes(1)
   })
 
   test("refuses a workspace stream when its lease signer is unavailable", async () => {
@@ -175,6 +200,38 @@ describe("runtime private-session authority oracle", () => {
     }, key.privateKey, "EdDSA")
     expect((await request(target, expired, { sessionId: "ses_private", action: "read" })).status).toBe(401)
     expect(authorizeRuntimeSession).not.toHaveBeenCalled()
+  })
+
+  test("a registration the authority refuses as a conflict reaches the runtime as that conflict, and only an untyped failure as unavailable", async () => {
+    const key = await generateKeyPair("EdDSA", { extractable: true })
+    let refusal: Error = new D1SessionAuthorityError("resource_conflict", "Runtime registration title does not match the reservation")
+    const target = app({
+      authority: {
+        ...transitionStubs,
+        registerRuntimeSession: async () => { throw refusal },
+        authorizeRuntimeSession: async () => {},
+        runtimeAccessTokenActive: async () => ({ active: true }),
+      },
+      env: { CLAXEDO_RELAY_HOST_VERIFY_PEM: await exportSPKI(key.publicKey) },
+    })
+    const policy = remoteWorkspaceSessionAccessPolicy({
+      url: "http://control.test/api/runtime-authority/session-authorize",
+      fetch: async (input, init) => target.request(fetchUrl(input), init),
+    })
+    const register = async () => policy.registerSession!({
+      actor: { actorId: "actor_1", actorKind: "human" },
+      authority: { managed: true, workspaceId: "ws_1", orgId: "org_1", role: "editor" },
+      credential: `Bearer ${await mintRelayHostToken({ ...relayInput, jti: `rht_${crypto.randomUUID()}` }, key.privateKey, "EdDSA")}`,
+      sessionId: "ses_private",
+      registrationOperationId: "op_create_1",
+      sessionTitle: "Private",
+      sessionTime: { created: RUNTIME_TIMES.createdAt, updated: RUNTIME_TIMES.updatedAt },
+      operation: "session_create",
+    })
+
+    await expect(register()).resolves.toMatchObject({ allowed: false, status: 409, code: "resource_conflict" })
+    refusal = new Error("database is away")
+    await expect(register()).resolves.toMatchObject({ allowed: false, status: 503, code: "session_authority_unavailable" })
   })
 
   test("rejects inconsistent principal and actor kinds even when the relay signature is valid", async () => {
@@ -405,7 +462,7 @@ describe("runtime private-session authority oracle", () => {
       ? { active: true }
       : { active: false, code: "runtime_access_token_revoked", reason: "revoked" })
     const authorizeRuntimeSession = vi.fn(async () => {
-      if (!allowed) throw new ControlPlaneAuthError(403, "workspace_authorization_denied", "participant revoked")
+      if (!allowed) throw new ControlPlaneAuthError(403, "workspace_authorization_denied", "session access revoked")
     })
     const target = app({
       authority: {
@@ -697,11 +754,11 @@ describe("the owner grant as a session proof", () => {
     const renewed = await request(target, undefined, { action: "host_read", lease })
     expect(renewed.status).toBe(200)
     expect((await renewed.json() as { lease: string }).lease).not.toBe(lease)
-    // The lease carries no role: administration under it is the access
-    // token's current role, asked for at admin.
+    // Administration under a workspace lease rechecks the access token the
+    // lease was minted under.
     expect((await request(target, undefined, { action: "host_admin", lease })).status).toBe(200)
-    expect(authority.runtimeAccessTokenActive).toHaveBeenLastCalledWith(expect.objectContaining({ jti: "rat_parent_1", minimumRole: "admin" }))
-    authority.runtimeAccessTokenActive.mockResolvedValueOnce({ active: false, code: "runtime_access_token_revoked", reason: "Workspace role was downgraded" })
+    expect(authority.runtimeAccessTokenActive).toHaveBeenLastCalledWith(expect.objectContaining({ jti: "rat_parent_1" }))
+    authority.runtimeAccessTokenActive.mockResolvedValueOnce({ active: false, code: "runtime_access_token_revoked", reason: "revoked" })
     expect((await request(target, undefined, { action: "host_admin", lease })).status).toBe(401)
 
     authority.runtimeAccessTokenActive.mockResolvedValueOnce({ active: false, code: "runtime_access_token_revoked", reason: "revoked" })
@@ -752,8 +809,8 @@ describe("adopting a session the host already held", () => {
     const key = await generateKeyPair("EdDSA", { extractable: true })
     const { authority, creators } = adoptingAuthority()
     const target = app({ authority, env: { CLAXEDO_RELAY_HOST_VERIFY_PEM: await exportSPKI(key.publicKey) } })
-    const token = (role: "owner" | "editor") =>
-      mintRelayHostToken({ ...relayInput, role, jti: `rht_${role}` }, key.privateKey, "EdDSA")
+    const token = (role: "owner" | "viewer") =>
+      mintRelayHostToken({ ...relayInput, role, jti: `rht_${role}`, ...(role === "viewer" ? { sessionId: "ses_shared" } : {}) }, key.privateKey, "EdDSA")
     return { target, authority, creators, token }
   }
 
@@ -788,10 +845,10 @@ describe("adopting a session the host already held", () => {
     expect(authority.adoptRuntimeSession).toHaveBeenCalledTimes(2)
   })
 
-  test("a member of the workspace is refused before the authority is asked", async () => {
+  test("a token scoped to one session is refused adoption before the authority is asked", async () => {
     const { target, authority, token } = await fixture()
 
-    const refused = await request(target, await token("editor"), { action: "adopt", sessionId: "ses_local", ...RUNTIME_TIMES })
+    const refused = await request(target, await token("viewer"), { action: "adopt", sessionId: "ses_shared", ...RUNTIME_TIMES })
 
     expect(refused.status).toBe(403)
     expect(await refused.json()).toMatchObject({ error: { code: "session_adoption_requires_host_owner" } })

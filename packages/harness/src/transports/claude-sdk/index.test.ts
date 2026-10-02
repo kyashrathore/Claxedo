@@ -31,8 +31,8 @@ test("a reconstructed binding attaches to the same Claude session without object
     userConfigRoot: "/tmp/person-claude", env: {} })
   const session = await value.start(input, sessionBroker)
   const reconstructed = JSON.parse(JSON.stringify(session)) as typeof session
-  expect(await value.config.read(reconstructed)).toEqual(runtimeConfig.current)
-  await expect(value.config.read({ ...reconstructed, binding: { ...reconstructed.binding, workspaceId: "other" } }))
+  expect((await value.config.permissionModes({ session: reconstructed })).currentModeId).toBe("plan")
+  await expect(value.config.permissionModes({ session: { ...reconstructed, binding: { ...reconstructed.binding, workspaceId: "other" } } }))
     .rejects.toMatchObject({ transport: "claude", code: "session" })
   await value.close(session)
 })
@@ -80,14 +80,6 @@ test("a Claude transport turn removes its broker abort listener on settlement", 
   expect(removed).toBe(added)
 })
 
-test("goal cancellation reports unknown when admission settles failed", async () => {
-  const value = transport({ async *[Symbol.asyncIterator]() {} })
-  const session = await value.start(input, sessionBroker)
-  Object.assign(value, { goalRuntime: { turnId: () => "t1", cancel: async () => ({ state: "failed", error: "retirement failed" }) } })
-  expect(await value.cancel(session, { turnId: "t1", assistantMessageId: "a1" }, { at: Date.now() + 1000, signal: new AbortController().signal }))
-    .toMatchObject({ execution: "unknown", cleanup: "unknown", error: { message: "retirement failed" } })
-})
-
 test("an unselected Claude draft reports the auto classifier mode", async () => {
   const value = new ClaudeSdkTransport({} as HarnessServices, { executable: "claude", configRoot: "/tmp/claxedo-claude", userConfigRoot: "/tmp/person-claude", env: {} })
   expect((await value.config.permissionModes({ draft: { ...input, config: { harness: input.config.harness } } })).currentModeId).toBe("auto")
@@ -97,27 +89,11 @@ test("Claude session config has one owner, the runtime, and the transport keeps 
   const value = new ClaudeSdkTransport({} as HarnessServices, { executable: "claude", configRoot: "/tmp/claxedo-claude", userConfigRoot: "/tmp/person-claude", env: {} })
   const session = await value.start({ ...input, config: { ...input.config, permissionMode: "default" } }, sessionBroker)
   try {
-    expect(await value.config.read(session)).toEqual(runtimeConfig.current)
     expect((await value.config.permissionModes({ session })).currentModeId).toBe("plan")
     expect((await value.config.setPermissionMode(session, "acceptEdits")).currentModeId).toBe("acceptEdits")
     expect((await value.config.permissionModes({ session })).currentModeId).toBe("plan")
     await expect(value.config.setPermissionMode(session, "unknown")).rejects.toMatchObject({ code: "configuration" })
-    const updated = await value.config.update(session, { model: { providerID: "anthropic", modelID: "haiku" }, permissionMode: null })
-    expect(updated).toEqual({ ...runtimeConfig.current, model: { providerID: "anthropic", modelID: "haiku" }, permissionMode: undefined })
-    expect(updated.instructions).toBe("keep me")
-    await expect(value.config.update(session, { permissionMode: "unknown" })).rejects.toMatchObject({ code: "configuration" })
-    expect(await value.config.read(session)).toEqual(runtimeConfig.current)
   } finally { await value.close(session) }
-})
-
-test("goal cancellation reports terminal execution and unproven cleanup once admission settles cancelled or completed", async () => {
-  for (const state of ["cancelled", "completed"] as const) {
-    const value = transport({ async *[Symbol.asyncIterator]() {} })
-    const session = await value.start(input, sessionBroker)
-    Object.assign(value, { goalRuntime: { turnId: () => "t1", cancel: async () => ({ state }) } })
-    expect(await value.cancel(session, { turnId: "t1", assistantMessageId: "a1" }, { at: Date.now() + 1000, signal: new AbortController().signal }))
-      .toEqual({ execution: "terminal", cleanup: "unknown" })
-  }
 })
 
 test("a stop during Claude turn startup aborts it before launch and says nothing ran", async () => {
@@ -165,7 +141,7 @@ test("an aborted Claude turn signal ends the stream before launch without an err
   } finally { await value.dispose() }
 })
 
-test("subagent usage the SDK mirrors ahead of the stream is metered at the turn's result, after the stream's own usage", async () => {
+test("subagent usage the SDK mirrors ahead of the stream is metered once, at the turn's result, under its transcript and apart from the parent's own total", async () => {
   const log: [string, number | null][] = []
   const tokens = (usage: unknown) => (usage as { observation: { tokens: { input: number | null } } }).observation.tokens.input
   const options = { executable: "claude", configRoot: "/tmp/claude-test", userConfigRoot: "/tmp/claude-user", env: {} }
@@ -188,5 +164,5 @@ test("subagent usage the SDK mirrors ahead of the stream is metered at the turn'
       if (routed.event.type === "usage") log.push(["stream", tokens(routed.event)])
     }
   } finally { await value.dispose() }
-  expect(log).toEqual([["stream", 1], ["mirror", 6], ["stream", 6]])
+  expect(log).toEqual([["stream", 1], ["mirror", 5], ["stream", 1]])
 })

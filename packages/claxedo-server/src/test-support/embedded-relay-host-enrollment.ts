@@ -4,10 +4,15 @@ import type {
   MachinePrincipal,
   WorkspaceAuthority,
 } from "@claxedo/server-core/platform/auth/authority"
-import { hostEnrollmentPayload, signHostPayload, type LocalHostIdentity } from "../workspace/local-host"
+import { signHostPayload, type LocalHostIdentity } from "../workspace/local-host"
+import { enrollmentPayload } from "@claxedo/account-contract/machine"
 
 /** Enrolls `identity` and acquires its serving generation, the fence every Host Tunnel Token carries. */
-export async function enrollServingHost(authority: WorkspaceAuthority, auth: SignedControlPlaneAuth, identity: LocalHostIdentity) {
+export async function enrollServingHost(
+  authority: WorkspaceAuthority,
+  auth: SignedControlPlaneAuth,
+  identity: LocalHostIdentity,
+) {
   const hostId = identity.hostId
   const request = await authority.createHostEnrollmentRequest(auth, { hostId })
   const enrollment = await authority.enrollHost(auth, {
@@ -16,7 +21,7 @@ export async function enrollServingHost(authority: WorkspaceAuthority, auth: Sig
     requestId: request.request_id,
     signature: signHostPayload(
       identity,
-      hostEnrollmentPayload({ hostId, requestId: request.request_id, nonce: request.nonce }),
+      enrollmentPayload({ hostId, requestId: request.request_id, nonce: request.nonce }),
     ),
     displayName: "Embedded Relay Host",
   })
@@ -55,12 +60,17 @@ export async function startEmbeddedRelayHostEnrollment(input: {
 }) {
   const { authority, auth, identity, workspaceId } = input
   const host = await enrollServingHost(authority, auth, identity)
-  await authority.assignWorkspaceHost(auth, { workspaceId, hostId: identity.hostId, remoteDirectory: input.remoteDirectory })
+  await authority.assignWorkspaceHost(auth, {
+    workspaceId,
+    hostId: identity.hostId,
+    remoteDirectory: input.remoteDirectory,
+  })
   const heartbeat = authority.heartbeatHostEnrollmentByMachine
   const listHostEnrollments = authority.listHostEnrollments
   if (!heartbeat || !listHostEnrollments) throw new Error("The authority cannot serve a machine heartbeat")
   const beat = async () => {
-    const declared = (await listHostEnrollments(auth)).find((row) => row.enrollment_id === host.enrollmentId)?.assignments ?? []
+    const declared =
+      (await listHostEnrollments(auth)).find((row) => row.enrollment_id === host.enrollmentId)?.assignments ?? []
     return await heartbeat(await host.machine(), {
       enrollmentId: host.enrollmentId,
       hostId: identity.hostId,

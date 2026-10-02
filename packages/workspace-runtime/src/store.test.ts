@@ -8,15 +8,27 @@ import { createRequire } from "module"
 import os from "os"
 import path from "path"
 import { AgentMessagePageError } from "@claxedo/agent-runtime-contract"
-import { AgentRuntimeStaleTurnError } from "./store"
+import {
+  AgentRuntimeStaleTurnError,
+  createStoreBrokerPorts,
+  type RuntimeEventPublishers,
+  RuntimeStore as RuntimeStoreImpl,
+  RuntimeStoreSchemaMismatchError,
+  readTurnOutline,
+  type TurnOutlineDatabase,
+  messageCompleted,
+  messagePartDelta,
+  messagePartUpdated,
+  messageUpdated,
+  permissionAsked,
+  questionAsked,
+  sessionIdle,
+  sessionUpdated,
+  sessionUsage,
+  todoUpdated,
+} from "@claxedo/session-core"
 import { createRequestBroker } from "@claxedo/harness/broker"
-import { createStoreBrokerPorts } from "./broker-ports/index"
-import type { RuntimeEventPublishers } from "./projection/runtime-event-hub"
-import { RuntimeStore as RuntimeStoreImpl } from "./store"
 import { openRuntimeStore, openRuntimeStoreDatabase } from "./store-file"
-import { RuntimeStoreSchemaMismatchError } from "./store-schema"
-import { readTurnOutline, type TurnOutlineDatabase } from "./session/turn-outline"
-import { messageCompleted, messagePartDelta, messagePartUpdated, messageUpdated, permissionAsked, questionAsked, sessionIdle, sessionUpdated, sessionUsage, todoUpdated } from "./projection/presentation-events"
 
 const roots: string[] = []
 const stores: RuntimeStoreImpl[] = []
@@ -3126,7 +3138,7 @@ void describe("RuntimeStore", () => {
     assert.equal(new RuntimeStore(root).getSessionConfig("s1")?.handoff, undefined)
   })
 
-  void it("persists why a handoff is pending, whether a sent message marked it, and the session it kept", () => {
+  void it("persists a pending handoff, whether a sent message marked it, and the session it kept", () => {
     const root = tmp()
     const first = new RuntimeStore(root)
     first.bindSession({ owner: { kind: "machine-owner" }, sessionId: "s1", directory: "/work", agentSessionId: "a1", createdAt: 1 })
@@ -3134,7 +3146,7 @@ void describe("RuntimeStore", () => {
     const from = { id: "claude", access: "native" } as const
     first.updateSessionConfig("s1", {
       harness: from,
-      handoff: { from, pending: true, transcript: "rebuilt", reason: "missing-session" },
+      handoff: { from, pending: true, transcript: "rebuilt" },
     })
     first.updateSessionConfig("s2", {
       harness: { id: "codex", access: "native" },
@@ -3147,7 +3159,7 @@ void describe("RuntimeStore", () => {
       model: { providerID: "anthropic", modelID: "opus" },
       variant: "high",
       agent: null,
-      handoff: { from, pending: true, transcript: "rebuilt", reason: "missing-session" },
+      handoff: { from, pending: true, transcript: "rebuilt" },
     } as const
     first.updateSessionConfig("s1", {
       harness: { id: "codex", access: "native" },
@@ -3391,6 +3403,32 @@ void describe("session ordering timestamps", () => {
     const by = new Map(rows.map((row) => [row.id, row.time?.lastHumanTurn]))
     assert.ok(typeof by.get("spoken") === "number")
     assert.equal(by.get("quiet"), undefined)
+  })
+})
+
+void describe("retracted parts", () => {
+  void it("marks the withdrawn text and reasoning, keeps their content, and leaves every other part alone", () => {
+    const store = new RuntimeStore(tmp())
+    store.bindSession({ owner: { kind: "machine-owner" }, sessionId: "s1", directory: "/w", agentSessionId: "a1" })
+    store.appendEvent({ sessionId: "s1", payload: { type: "message.updated", properties: { info: { id: "m1", sessionID: "s1", role: "assistant" } } } } as never)
+    const part = (id: string, fields: Record<string, unknown>) => store.appendEvent({
+      sessionId: "s1", payload: messagePartUpdated({ id, sessionID: "s1", messageID: "m1", ...fields } as never, 1),
+    })
+    part("thought", { type: "reasoning", text: "Considering", time: { start: 1, end: 2 } })
+    part("refused", { type: "text", text: "Here is how" })
+    store.appendEvent({ sessionId: "s1", payload: { type: "message.part.delta", properties: { sessionID: "s1", messageID: "m1", partID: "refused", field: "text", delta: " to" } } } as never)
+    part("answer", { type: "text", text: "Safe answer" })
+    store.appendEvent({ sessionId: "s1", payload: {
+      id: "message.part.retracted:s1:r", type: "message.part.retracted",
+      properties: { sessionID: "s1", reason: "refusal", parts: [{ messageID: "m1", partID: "thought" }, { messageID: "m1", partID: "refused" }, { messageID: "m2", partID: "answer" }] },
+    } })
+    const parts = store.getMessages("s1").flatMap((message) => message.parts) as Array<{ id: string; text?: string; retracted?: unknown }>
+    assert.deepEqual(parts.map((item) => [item.id, item.text, item.retracted]), [
+      ["thought", "Considering", { reason: "refusal" }],
+      ["refused", "Here is how to", { reason: "refusal" }],
+      ["answer", "Safe answer", undefined],
+    ])
+    store.close()
   })
 })
 

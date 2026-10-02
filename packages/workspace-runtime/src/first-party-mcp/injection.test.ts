@@ -5,7 +5,7 @@ import path from "node:path"
 import type { HarnessServices, McpServerSpec, StartInput } from "@claxedo/harness/contract"
 import { Hono } from "hono"
 import { loopbackWorkspaceRuntimeExposure } from "../exposure"
-import { FakeTransport, fakeConnectionProvider } from "../test-support/fake-transport"
+import { FakeTransport, fakeConnectionProvider } from "@claxedo/session-core/testing"
 import { withWorkspaceTarget } from "../target"
 import { loopbackMachineLoginPolicy } from "../testing"
 import { createWorkspaceHost } from "../workspace"
@@ -40,6 +40,7 @@ function fixture(input: { firstParty: boolean; groups?: readonly string[] }) {
     },
   })
   const host = createWorkspaceHost({
+    sessionIdWorkspace: () => undefined,
     placement: loopbackMachineLoginPolicy(),
     target,
     storeRoot: path.join(directory, "store"),

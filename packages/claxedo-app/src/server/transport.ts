@@ -1,7 +1,9 @@
-import { isLoopbackUrl, resolveServerUrl, type AuthSource, type ServerConfig } from "./config"
-import { responseError, responseErrorCode, toAppError } from "./errors"
+import { isLoopbackUrl, resolveServerUrl, type ServerConfig } from "./config"
+import { createHostedAccount, type HostedAccount } from "./account"
+import { responseError, toAppError } from "./errors"
 import { createRelay } from "./relay"
 import { startWorkspace, type StartOptions } from "./workspace-start"
+import { CLOUD_RUNTIME_UNAVAILABLE, connectionAnswerFromWire, unavailableRetryAfter, type ConnectionAnswer, type WorkspaceConnections } from "./wire/connection"
 
 export type RuntimeRoute = {
   readonly directory: string
@@ -26,17 +28,8 @@ function socketUrl(serverUrl: string, path: string) {
   return url
 }
 
-async function authorization(auth: AuthSource, fresh: boolean): Promise<string | undefined> {
-  if (auth.kind === "none") return undefined
-  if (auth.kind === "basic") return `Basic ${btoa(`${auth.username}:${auth.password}`)}`
-  const token = await auth.token({ fresh })
-  return token ? `Bearer ${token}` : undefined
-}
-
-async function authorizedInit(config: ServerConfig, init: RequestInit | undefined, fresh: boolean): Promise<RequestInit> {
+function withRequestDefaults(config: ServerConfig, init: RequestInit | undefined): RequestInit {
   const headers = new Headers(init?.headers)
-  const header = await authorization(config.auth, fresh)
-  if (header) headers.set("Authorization", header)
   if (typeof init?.body === "string" && !headers.has("Content-Type")) headers.set("Content-Type", "application/json")
   if (!headers.has("Accept")) headers.set("Accept", "application/json")
   return {
@@ -45,10 +38,6 @@ async function authorizedInit(config: ServerConfig, init: RequestInit | undefine
     cache: "no-store",
     credentials: config.cookies ? "include" : "same-origin",
   }
-}
-
-async function rejectedBearer(response: Response) {
-  return response.status === 401 && (await responseErrorCode(response)) === "invalid_bearer_token"
 }
 
 export function withQuery(path: string, query: Readonly<Record<string, string | number | boolean | undefined>>) {
@@ -66,18 +55,12 @@ function withoutRouteQuery(path: string) {
   return `${url.pathname}${url.search}`
 }
 
-async function fetchAuthorized(config: ServerConfig, url: string, init: RequestInit | undefined, fresh: boolean) {
+async function fetchFromServer(config: ServerConfig, url: string, init?: RequestInit): Promise<Response> {
   try {
-    return await fetch(url, await authorizedInit(config, init, fresh))
+    return await fetch(url, withRequestDefaults(config, init))
   } catch (error) {
     throw toAppError(error)
   }
-}
-
-async function sendAuthorized(config: ServerConfig, url: string, init?: RequestInit): Promise<Response> {
-  const response = await fetchAuthorized(config, url, init, false)
-  if (config.auth.kind !== "bearer" || !(await rejectedBearer(response))) return response
-  return fetchAuthorized(config, url, init, true)
 }
 
 async function readJsonResponse<T>(response: Response, label: string): Promise<T> {
@@ -90,19 +73,44 @@ function workspaceProxyPath(route: RuntimeRoute, path: string) {
   return `/workspaces/${encodeURIComponent(route.workspaceId)}${withoutRouteQuery(path)}`
 }
 
+type Request = Transport["request"]
+
+async function requestConnection(request: Request, workspaceId: string, start: boolean): Promise<ConnectionAnswer> {
+  const response = await request(`/api/workspace/${encodeURIComponent(workspaceId)}/connection`, start ? { method: "POST", body: "{}" } : undefined)
+  if (response.ok) return connectionAnswerFromWire(await response.json(), workspaceId)
+  const body = response.clone()
+  const error = await responseError(response, start ? "Workspace start" : "Workspace connection")
+  const retryAfterMs = start && error.code === CLOUD_RUNTIME_UNAVAILABLE ? unavailableRetryAfter(JSON.parse(await body.text())) : undefined
+  if (retryAfterMs === undefined) throw error
+  return { kind: "provisioning", retryAfterMs }
+}
+
+export function createWorkspaceConnections(request: Request, account?: HostedAccount): WorkspaceConnections {
+  return {
+    read: async (workspaceId) => account
+      ? connectionAnswerFromWire(await account.run("workspace.connection.read", { id: workspaceId }), workspaceId)
+      : requestConnection(request, workspaceId, false),
+    start: async (workspaceId) => account
+      ? connectionAnswerFromWire(await account.run("workspace.connection.mint", { id: workspaceId }), workspaceId)
+      : requestConnection(request, workspaceId, true),
+  }
+}
+
 export function createTransport(config: ServerConfig): Transport {
   const serverUrl = resolveServerUrl(config)
   const loopback = isLoopbackUrl(serverUrl)
-  const request = (path: string, init?: RequestInit) => sendAuthorized(config, `${serverUrl}${path}`, init)
-  const relay = createRelay(request)
+  const request = (path: string, init?: RequestInit) => fetchFromServer(config, `${serverUrl}${path}`, init)
+  const connections = createWorkspaceConnections(request, config.account ? createHostedAccount(config.account) : undefined)
+  const relay = createRelay(connections.read)
+  const daemonProxy = loopback && config.account === undefined
   const runtime = (route: RuntimeRoute, path: string, init?: RequestInit) => {
     if (!route.remote) return request(withQuery(path, { directory: route.directory }), init)
-    if (loopback) return request(workspaceProxyPath(route, path), init)
+    if (daemonProxy) return request(workspaceProxyPath(route, path), init)
     return relay.fetch(route.workspaceId, withoutRouteQuery(path), init)
   }
   const runtimeSocket = async (route: RuntimeRoute, path: string): Promise<WebSocket> => {
     if (!route.remote) return new WebSocket(socketUrl(serverUrl, withQuery(path, { directory: route.directory })))
-    if (loopback) return new WebSocket(socketUrl(serverUrl, workspaceProxyPath(route, path)))
+    if (daemonProxy) return new WebSocket(socketUrl(serverUrl, workspaceProxyPath(route, path)))
     return relay.webSocket(route.workspaceId, withoutRouteQuery(path))
   }
   const label = (path: string, init?: RequestInit) => `${init?.method ?? "GET"} ${path}`
@@ -115,8 +123,8 @@ export function createTransport(config: ServerConfig): Transport {
     json: async (path, init) => readJsonResponse(await request(path, init), label(path, init)),
     runtimeJson: async (route, path, init) => readJsonResponse(await runtime(route, path, init), label(path, init)),
     startRuntime: async (workspaceId, options) => {
-      const link = await startWorkspace(request, workspaceId, options)
-      if (!loopback) relay.adopt(link)
+      const link = await startWorkspace(connections.start, workspaceId, options)
+      if (!daemonProxy) relay.adopt(link)
     },
   }
 }

@@ -151,7 +151,7 @@ describe("validateTaskDraft", () => {
     expect(parsedReasons(validateTaskDraft(draft({ workspaceId: oversized })))).toEqual({ workspaceId: "too_long" })
     expect(parsedReasons(validateTaskDraft(draft({ parentTaskId: oversized })))).toEqual({ parentTaskId: "too_long" })
     expect(
-      parsedReasons(validateTaskDraft({ ...draft(), createdFrom: { sessionId: oversized, workspaceId: null } })),
+      parsedReasons(validateTaskDraft({ ...draft(), createdFrom: { sessionId: oversized, workspaceId: "workspace-local" } })),
     ).toEqual({ "createdFrom.sessionId": "too_long" })
     expect(validateTaskDraft(draft({ projectId: "i".repeat(TASKS_BOUNDS.idMaxBytes) })).ok).toBe(true)
   })
@@ -208,7 +208,7 @@ describe("validateStart", () => {
       parsedReasons(validateStart({ ...request, handoffText: "x".repeat(TASKS_BOUNDS.handoffTextMaxBytes + 1) })),
     ).toEqual({ handoffText: "too_long" })
     expect(
-      parsedReasons(validateStart({ ...request, startedFrom: { sessionId: oversized, workspaceId: null } })),
+      parsedReasons(validateStart({ ...request, startedFrom: { sessionId: oversized, workspaceId: "workspace-local" } })),
     ).toEqual({ "startedFrom.sessionId": "too_long" })
     expect(validateStart(request).ok).toBe(true)
   })

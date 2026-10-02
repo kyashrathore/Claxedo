@@ -10,7 +10,7 @@ import type * as EmbeddedRuntime from "../deployments/local/embedded-workspace-r
 import { startLocalServer, type LocalServer } from "./start-local-server"
 import type { LocalAppOptions } from "./local-app"
 import { testDaemon } from "./test-support/daemon"
-import { buildAssistantMessage, messageUpdated, sessionUsage } from "@claxedo/workspace-runtime/projection"
+import { buildAssistantMessage, messageUpdated, sessionUsage } from "@claxedo/session-core"
 
 type RuntimeHooks = Parameters<typeof EmbeddedRuntime.configureEmbeddedWorkspaceRuntime>[0]
 

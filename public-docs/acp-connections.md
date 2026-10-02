@@ -400,7 +400,7 @@ One previous generation is kept as `server.old.log`.
   `packages/harness/src/translate/attachments.ts`
 - Session-update translation and what the transcript can represent:
   `packages/harness/src/transports/acp/translate/translate-session-update.ts`
-  and `packages/workspace-runtime/src/projection/client-presentation/translate.ts`
+  and `packages/session-core/src/projection/client-presentation/translate.ts`
 - Config file watch:
   `packages/claxedo-server-core/src/agent-config/index.ts`
 - Strict v3 persistence/map validation:

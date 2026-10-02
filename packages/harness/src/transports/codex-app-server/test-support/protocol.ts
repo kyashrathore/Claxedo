@@ -28,10 +28,6 @@ const approvalPolicy = optional(either(oneOf("untrusted", "on-request", "never")
   required: ["granular"], fields: { granular: shaped({
     required: ["sandbox_approval", "rules", "skill_approval", "request_permissions", "mcp_elicitations"],
     fields: { sandbox_approval: flag, rules: flag, skill_approval: flag, request_permissions: flag, mcp_elicitations: flag } }) } })))
-const dynamicTool = tagged({
-  function: { required: ["name", "description", "inputSchema"], fields: { name: text, description: text, inputSchema: json, deferLoading: optional(flag) } },
-  namespace: { required: ["name", "description", "tools"], fields: { name: text, description: text, tools: list(isRecord) } },
-})
 const personality = optional(oneOf("none", "friendly", "pragmatic"))
 const thread = {
   model: optional(text), modelProvider: optional(text), serviceTier: optional(text), cwd: optional(text), approvalPolicy,
@@ -41,8 +37,9 @@ const thread = {
 }
 const methods: Record<string, Shape> = {
   "model/list": { required: [], fields: { cursor: optional(text), limit: optional(count), includeHidden: optional(flag) } },
+  "config/read": { required: [], fields: { includeLayers: optional(flag), cwd: optional(text) } },
   "thread/start": { required: [], fields: { ...thread, serviceName: optional(text), ephemeral: optional(flag),
-    sessionStartSource: optional(oneOf("startup", "clear")), threadSource: optional(text), dynamicTools: optional(list(dynamicTool)) } },
+    sessionStartSource: optional(oneOf("startup", "clear")) } },
   "thread/resume": { required: ["threadId"], fields: { ...thread, threadId: text, excludeTurns: optional(flag) } },
   "turn/start": { required: ["threadId", "input"], fields: { threadId: text, disabledPluginIds: optional(list(text)),
     clientUserMessageId: optional(text), input: list(userInput), turnTrigger: optional(text),
@@ -51,18 +48,25 @@ const methods: Record<string, Shape> = {
     model: optional(text), serviceTier: optional(text), serviceTierForTurn: optional(text), effort: optional(text),
     summary: optional(oneOf("auto", "concise", "detailed", "none")), personality, outputSchema: json } },
   "turn/interrupt": { required: ["threadId", "turnId"], fields: { threadId: text, turnId: text } },
+  "thread/goal/get": { required: ["threadId"], fields: { threadId: text } },
+  "turn/steer": { required: ["threadId", "expectedTurnId", "input"], fields: { threadId: text, expectedTurnId: text,
+    clientUserMessageId: optional(text), input: list(userInput) } },
 }
+
+export class CodexScriptedFailure extends Error {}
 
 export class CodexPeer {
   private phase: "new" | "initializing" | "ready" = "new"
   private readonly threads = new Map<string, string | undefined>()
   private readonly pending = new Set<number>()
 
-  constructor(private readonly models: unknown[]) {}
+  constructor(private readonly models: unknown[], private readonly script: { modelListFailures?: number; turnStartError?: string; goal?: unknown; userAgent?: string } = {}) {}
 
   request(id: number) { this.pending.add(id) }
 
   emitted(frame: Frame) {
+    const started = frame.params?.turn
+    if (frame.method === "turn/started" && isRecord(started)) this.threads.set(String(frame.params?.threadId), String(started.id))
     if (frame.method !== "turn/completed") return
     const threadId = String(frame.params?.threadId)
     const turn = frame.params?.turn
@@ -84,8 +88,17 @@ export class CodexPeer {
     assert.equal(typeof frame.id, "number", `${frame.method} requires a request id`)
     assert(methods[frame.method], `Unscripted Codex method: ${frame.method}`)
     assert(conforms(params, methods[frame.method]), `Invalid Codex ${frame.method} parameters: ${JSON.stringify(params)}`)
-    if (frame.method === "model/list") return { data: this.models }
+    if (frame.method === "model/list") {
+      if (this.script.modelListFailures) { this.script.modelListFailures--; throw new CodexScriptedFailure("model catalog unavailable") }
+      return { data: this.models }
+    }
+    if (frame.method === "config/read") return { config: { model_provider: null }, origins: {}, layers: null }
+    if (frame.method === "thread/goal/get") return { goal: this.script.goal ?? null }
     if (frame.method === "turn/start") return this.start(params)
+    if (frame.method === "turn/steer") {
+      assert.equal(this.threads.get(String(params.threadId)), params.expectedTurnId, "turn/steer must name the thread's active turn")
+      return { turnId: params.expectedTurnId }
+    }
     if (frame.method === "turn/interrupt") {
       assert.equal(this.threads.get(String(params.threadId)), params.turnId, "turn/interrupt must name the thread's active turn")
       return {}
@@ -106,13 +119,17 @@ export class CodexPeer {
     assert.equal(typeof frame.id, "number", "initialize requires a request id")
     assert.deepEqual(params, { clientInfo: { name: "claxedo", version: "0.1.0" }, capabilities: { experimentalApi: true, requestAttestation: false } })
     this.phase = "initializing"
-    return { userAgent: "codex-conformance", platformFamily: "unix", platformOs: "macos" }
+    return { userAgent: this.script.userAgent ?? "claxedo/0.156.1 (Mac OS 26.6.2; arm64) unknown (claxedo; 0.1.0)", platformFamily: "unix", platformOs: "macos" }
   }
 
   private start(params: Record<string, unknown>) {
     const threadId = String(params.threadId)
     assert(this.threads.has(threadId), "turn/start requires an open thread")
     assert.equal(this.threads.get(threadId), undefined, "A turn is already active on this thread")
+    if (this.script.turnStartError) {
+      if (/thread not found/i.test(this.script.turnStartError)) this.threads.delete(threadId)
+      throw new CodexScriptedFailure(this.script.turnStartError)
+    }
     this.threads.set(threadId, "turn-current")
     return { turn: { id: "turn-current" } }
   }

@@ -10,11 +10,24 @@ import { PINNED_PI } from "../../e2e/harness/pinned-pi"
 import { reservePort, releasePort } from "../../e2e/harness/ports"
 import { startScriptedModelServer } from "../../e2e/harness/scripted-model-server"
 import { PiRpcTransport } from "../transports/pi-rpc"
+import { PI_RANGE } from "../transports/pi-rpc/version"
 import { SESSION_TITLE_SYSTEM_PROMPT } from "../../e2e/harness/config"
+import { pollUntil } from "./test-support/poll"
+import type { RoutedEvent } from "../contract"
 
 type PiBackend = SuiteBackend & { root: string; agentDir: string; server: Awaited<ReturnType<typeof startScriptedModelServer>> }
 
 const extension = `export default function (pi) {
+  pi.on("session_start", (_event, ctx) => ctx.ui.notify("Pi conformance extension loaded", "info"))
+  pi.on("input", (event) => event.text.includes("PIHANDLEDSTEER") ? { action: "handled" } : undefined)
+  pi.registerCommand("conformance-notify", {
+    description: "Answer without starting a run",
+    handler: async (_args, ctx) => { ctx.ui.notify("Pi conformance handled", "info") },
+  })
+  pi.registerCommand("conformance-later", {
+    description: "Start a run of its own",
+    handler: async () => { pi.sendUserMessage("Reply with exactly this one token: PILATER") },
+  })
   pi.registerCommand("conformance-ui", {
     description: "Exercise Pi extension UI",
     handler: async (args, ctx) => {
@@ -55,12 +68,13 @@ async function backend(): Promise<PiBackend> {
   return {
     root, agentDir, directory, authFile, server, uiCommand: "conformance-ui", owner: { kind: "machine-owner" },
     sharedSender: { actor: { kind: "person", userId: "member" }, via: "relay", reissued: false },
-    harness: { id: "pi", access: "native" }, expectedMcp: "none",
+    harness: { id: "pi", access: "native" }, credentialsAfterActiveTurns: true,
     model: { providerID: "pi", modelID: "openai/gpt-4.1" },
     credentials: { machineLoginAllowed: true, accountOwner: "fixture-owner", providers: {}, secrets: {}, leaseGeneration: "conformance" },
     hold: (marker) => server.holdTextReplies(marker),
     held: (marker) => server.textGateReached(marker),
-    steerIncorporationUnreported: true,
+    processesPerLaunch: 1,
+    firstLaunchProcesses: 2,
     scriptTool: (name, input) => server.scriptTool({ name, input }),
     scriptThinking: (input) => server.scriptText(input),
     unrunnableTurn: withUndeliverableFile,
@@ -79,6 +93,7 @@ test("Pi failed configuration restart removes the retired session", async () => 
     },
   })
   try {
+    for await (const _event of context.transport.send(context.session, context.turn("Reply with exactly this one token: PIWRITTEN"), context.turnBroker())) {}
     const entry = (context.transport as unknown as { entries: Map<string, { profile: { sessionDir: string } }> }).entries.get("s1")!
     await fs.rm(entry.profile.sessionDir, { recursive: true, force: true })
     await expect(context.transport.configure(context.session,
@@ -94,7 +109,8 @@ test("Pi failed configuration restart removes the retired session", async () => 
 test("Pi settles a turn and cancels its unanswered dialog", async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "pi-settled-dialog-"))
   const script = path.join(root, "scripted-pi.js")
-  await fs.writeFile(script, `const readline = require("node:readline");
+  await fs.writeFile(script, `if (process.argv.includes("--version")) { console.log("${PI_RANGE.max}"); process.exit(0); }
+const readline = require("node:readline");
 const fs = require("node:fs");
 const send = (message) => process.stdout.write(JSON.stringify(message) + "\\n");
 readline.createInterface({ input: process.stdin }).on("line", (line) => {
@@ -104,7 +120,7 @@ readline.createInterface({ input: process.stdin }).on("line", (line) => {
     return;
   }
   send({ type: "response", id: request.id, command: request.type, success: true,
-    data: request.type === "get_state" ? { sessionId: "scripted-pi" } : {} });
+    data: request.type === "get_state" ? { sessionId: "scripted-pi" } : request.type === "prompt" ? { disposition: "started" } : {} });
   if (request.type === "prompt") {
     send({ type: "extension_ui_request", id: "orphan-dialog", method: "confirm", title: "Orphan", message: "Still open?" });
     send({ type: "agent_settled" });
@@ -127,9 +143,9 @@ readline.createInterface({ input: process.stdin }).on("line", (line) => {
       for await (const _event of context.transport.send(context.session, context.turn("dialog"), context.turnBroker())) {}
     })()
     const completed = running.then(() => "settled", (error: unknown) => `failed: ${String(error)}`)
-    const entry = (context.transport as unknown as { entries: Map<string, { settled: boolean }> }).entries.get("s1")!
-    for (let attempt = 0; !entry.settled && attempt < 500; attempt++) await new Promise((resolve) => setTimeout(resolve, 10))
-    expect(entry.settled).toBe(true)
+    const entry = (context.transport as unknown as { entries: Map<string, { stream: { busy: boolean } }> }).entries.get("s1")!
+    for (let attempt = 0; entry.stream.busy && attempt < 500; attempt++) await new Promise((resolve) => setTimeout(resolve, 10))
+    expect(entry.stream.busy).toBe(false)
     await expect(Promise.race([
       completed,
       new Promise<string>((resolve) => setTimeout(() => resolve("pending"), 2_000)),
@@ -185,7 +201,8 @@ test("Pi script uses the composed runtime even when PATH starts with a failing n
   const marker = path.join(root, "wrong-node")
   await fs.writeFile(path.join(bin, "node"), `#!/bin/sh\ntouch '${marker}'\nexit 91\n`, { mode: 0o755 })
   const script = path.join(root, "pi.js")
-  await fs.writeFile(script, `const readline = require("node:readline");
+  await fs.writeFile(script, `if (process.argv.includes("--version")) { console.log("${PI_RANGE.max}"); process.exit(0); }
+const readline = require("node:readline");
 readline.createInterface({ input: process.stdin }).on("line", (line) => {
   const request = JSON.parse(line);
   process.stdout.write(JSON.stringify({ type: "response", id: request.id, command: request.type,
@@ -246,7 +263,8 @@ runConformance({
 function piTransport(services: ReturnType<typeof createTestServices>, state: ConformanceBackend, env = process.env) {
   const pi = state as PiBackend
   return new PiRpcTransport(services, { binary: PINNED_PI, placement: "loopback", machineOwnerUserId: "owner",
-    canUseOwnLogin: true, stateRoot: path.join(pi.root, "claxedo"), ownerAgentDir: pi.agentDir, runtime: process.execPath, env })
+    canUseOwnLogin: true, stateRoot: path.join(pi.root, "claxedo"), ownerAgentDir: pi.agentDir, runtime: process.execPath,
+    env: { ...env, HOME: path.join(pi.root, "home") } })
 }
 
 test("a Pi process death mid-turn fails the turn through the channel's exit", async () => {
@@ -280,7 +298,7 @@ test("Pi reads back a clamped thinking level and refuses the turn", async () => 
 
 test("Pi lists only its profile's runnable models and their thinking levels through the config group", async () => {
   const context = await setupConformance({ name: "pi config group", backend,
-    makeTransport: (services, state) => piTransport(services, state, { PATH: process.env.PATH, HOME: process.env.HOME }) })
+    makeTransport: (services, state) => piTransport(services, state, { PATH: process.env.PATH }) })
   try {
     const config = context.transport.config!
     const preview = await config.options({ session: context.session }, "probe")
@@ -300,8 +318,8 @@ test("Pi lists only its profile's runnable models and their thinking levels thro
     expect(await config.options({ draft }, "probe")).toEqual(preview)
     expect(await config.permissionModes({ session: context.session })).toEqual({ modes: [], unsupported: "Pi has no permission modes", appliesFrom: "next-turn" })
     await expect(config.setPermissionMode(context.session, "auto")).rejects.toThrow("Pi has no permission modes")
-    expect(context.services.processes.filter((child) => child !== context.services.processes[0])).toHaveLength(2)
-    for (const probe of context.services.processes.slice(1)) expect(await probe.exited).toBeDefined()
+    expect(context.services.processes.slice(2)).toHaveLength(2)
+    for (const probe of context.services.processes.slice(2)) expect(await probe.exited).toBeDefined()
   } finally { await context.close() }
 }, 60_000)
 
@@ -319,7 +337,6 @@ test("Pi names a session through the Claxedo title extension and hides its comma
     expect(title).toBe("Session PITITLE")
     const entry = (context.transport as unknown as { entries: Map<string, { rpc: { request(type: string): Promise<unknown> } }> }).entries.get("s1")!
     expect((await entry.rpc.request("get_state") as { sessionName?: string }).sessionName).toBe("Session PITITLE")
-    expect((await context.transport.capabilities({ directory: context.backend.directory })).titles).toBe("side-request")
     await fs.access(path.join(pi.agentDir, "extensions", "conformance.ts"))
     expect((await fs.readdir(pi.agentDir)).filter((name) => name.endsWith(".ts"))).toEqual([])
   } finally { await context.close() }
@@ -335,7 +352,7 @@ test("a failed Pi retirement during configure keeps the session and its process 
         const spawn = services.spawn.bind(services)
         services.spawn = async (command, options) => {
           const child = await spawn(command, options)
-          if (options.role !== "harness" || pid !== undefined) return child
+          if (options.label !== "Pi RPC" || pid !== undefined) return child
           pid = child.pid
           let refused = false
           const retire = child.retire.bind(child)
@@ -357,7 +374,7 @@ test("a failed Pi retirement during configure keeps the session and its process 
     expect(context.transport.health?.connection(context.backend.directory, "s1").state).toBe("ready")
     expect(context.transport.health?.runtime(context.backend.directory, "s1").status).toBe("degraded")
     await context.transport.close(context.session)
-    expect(await context.services.processes[0]!.exited).toBeDefined()
+    expect(await context.services.processes[1]!.exited).toBeDefined()
     expect(processAlive(pid!)).toBe(false)
   } finally {
     await context.close()
@@ -404,5 +421,145 @@ test("a Pi cancel that arrives before the prompt stops that turn, whether or not
     expect(await ended).toBe("ended")
     await new Promise((resolve) => setTimeout(resolve, 500))
     expect(server.requests.filter((request) => request.prompt.includes("PICANCELEARLY"))).toEqual([])
+  } finally { await context.close() }
+}, 60_000)
+
+test("a Pi model error that Pi retries and recovers shows as retrying and leaves the turn completed", async () => {
+  const context = await setupConformance({ name: "pi recovered retry", backend, makeTransport: piTransport })
+  try {
+    const stop = (context.backend as PiBackend).server.scriptError({ marker: "PIRETRYONCE", status: 500, message: "overloaded" })
+    const types: string[] = []
+    let text = ""
+    for await (const { event } of context.transport.send(context.session, context.turn("Reply with exactly this one token: PIRETRYONCE"), context.turnBroker())) {
+      types.push(event.type)
+      if (event.type === "session-retry") stop()
+      if (event.type === "text-delta") text += event.delta
+    }
+    expect(types).toContain("session-retry")
+    expect(types).not.toContain("error")
+    expect(types.at(-1)).toBe("finish")
+    expect(text).toContain("PIRETRYONCE")
+  } finally { await context.close() }
+}, 60_000)
+
+async function within<T>(promise: Promise<T>, ms: number): Promise<T | "hung"> {
+  return Promise.race([promise, new Promise<"hung">((resolve) => setTimeout(() => resolve("hung"), ms))])
+}
+
+test("a Pi extension command that starts no run ends its turn at Pi's handled answer", async () => {
+  const context = await setupConformance({ name: "pi handled command", backend, makeTransport: piTransport })
+  try {
+    const events: string[] = []
+    const run = (async () => {
+      for await (const { event } of context.transport.send(context.session, context.turn("/conformance-notify"), context.turnBroker())) {
+        events.push(event.type === "harness-notice" ? `notice:${event.message}` : event.type)
+      }
+    })()
+    expect(await within(run.then(() => "ended"), 5_000)).toBe("ended")
+    expect(events).toEqual(["notice:Pi conformance handled", "finish"])
+    expect(context.ports.sessionEvents.map(({ event }) => (event as { message?: string }).message)).toContain("Pi conformance extension loaded")
+  } finally { await context.close() }
+}, 60_000)
+
+test("a run Pi starts on its own after a handled command reaches Claxedo as a provider turn with its prompt", async () => {
+  const context = await setupConformance({ name: "pi provider turn", backend, makeTransport: piTransport })
+  try {
+    const run = (async () => { for await (const _event of context.transport.send(context.session, context.turn("/conformance-later"), context.turnBroker())) {} })()
+    expect(await within(run.then(() => "ended"), 5_000)).toBe("ended")
+    const drained = () => (context.ports.drained as RoutedEvent[]).map(({ event }) => event)
+    await pollUntil(() => drained().some((event) => event.type === "finish") ? true : undefined, Date.now() + 10_000)
+    expect(context.ports.providerInputs).toEqual([{ reason: "provider", detail: "Reply with exactly this one token: PILATER" }])
+    expect(drained().flatMap((event) => event.type === "text-delta" ? [event.delta] : []).join("")).toContain("PILATER")
+    const after: string[] = []
+    for await (const { event } of context.transport.send(context.session, context.turn("Reply with exactly this one token: PIAFTERLATER"), context.turnBroker())) after.push(event.type)
+    expect(after.at(-1)).toBe("finish")
+  } finally { await context.close() }
+}, 60_000)
+
+test("a steer a Pi extension takes as input settles declined instead of waiting for the conversation", async () => {
+  const context = await setupConformance({ name: "pi handled steer", backend, makeTransport: piTransport })
+  try {
+    const release = context.backend.hold!("PISTEERHOST")
+    const running = (async () => { for await (const _event of context.transport.send(context.session, context.turn("Reply with exactly this one token: PISTEERHOST"), context.turnBroker())) {} })()
+    await context.backend.held!("PISTEERHOST")
+    const result = await context.transport.steer!.steer(context.session, { turnId: "t1", assistantMessageId: "a1" },
+      context.turn("PIHANDLEDSTEER", "msg_handled"))
+    release()
+    await running
+    expect(result).toEqual({ ok: false, status: "declined", message: "A Pi extension took the steer as input, so it is not in the conversation" })
+  } finally { await context.close() }
+}, 60_000)
+
+test("a Pi that exits while starting names Pi's own reason, not only its exit code", async () => {
+  const context = await setupConformance({ name: "pi start failure", backend, makeTransport: piTransport })
+  try {
+    const plugin = path.join(context.backend.directory, "broken-extension")
+    await fs.mkdir(plugin)
+    await fs.writeFile(path.join(plugin, "index.ts"), "export default function () { throw new Error(\"PIBROKENEXTENSION\") }\n")
+    const start = { ...context.start, sessionId: "s-broken", projection: { generation: "g2", mcpServers: [], notApplied: [],
+      pluginRoots: [{ pluginInstanceId: "broken", root: plugin, skillNames: [], dataRoot: plugin }] } }
+    await expect(context.transport.start(start, context.sessionBroker)).rejects.toThrow(/Pi process exited \(1\): [\s\S]*PIBROKENEXTENSION/)
+  } finally { await context.close() }
+}, 60_000)
+
+test("a Pi process that dies during a run Pi started itself ends that provider turn instead of holding the session", async () => {
+  const context = await setupConformance({ name: "pi provider turn death", backend, makeTransport: piTransport })
+  try {
+    const release = context.backend.hold!("PILATER")
+    for await (const _event of context.transport.send(context.session, context.turn("/conformance-later"), context.turnBroker())) {}
+    await context.backend.held!("PILATER")
+    const entry = (context.transport as unknown as { entries: Map<string, { stream: { busy: boolean }; rpc: { process: { pid: number } } }> }).entries.get("s1")!
+    expect(entry.stream.busy).toBe(true)
+    process.kill(entry.rpc.process.pid, "SIGKILL")
+    const idle = await pollUntil(() => entry.stream.busy ? undefined : true, Date.now() + 5_000)
+    release()
+    expect(idle).toBe(true)
+  } finally { await context.close() }
+}, 60_000)
+
+test("a Pi session reconfigured before its first prompt keeps its session id and runs the next turn", async () => {
+  const context = await setupConformance({ name: "pi configure before prompt", backend, makeTransport: piTransport })
+  try {
+    const update = await context.transport.configure(context.session, { credentials: { ...context.backend.credentials, leaseGeneration: "before-first-prompt" } })
+    expect(update).toEqual({ state: "applied" })
+    const events: string[] = []
+    for await (const { event } of context.transport.send(context.session, context.turn("Reply with exactly this one token: PIFRESHCONFIG"), context.turnBroker())) events.push(event.type)
+    expect(events.at(-1)).toBe("finish")
+    const entry = (context.transport as unknown as { entries: Map<string, { rpc: { request(type: string): Promise<unknown> } }> }).entries.get("s1")!
+    expect((await entry.rpc.request("get_state") as { sessionId: string }).sessionId).toBe(context.session.binding.upstreamSessionId)
+  } finally { await context.close() }
+}, 60_000)
+
+test("a Pi session that never had a turn attaches after a restart as a fresh Pi session under its id", async () => {
+  const context = await setupConformance({ name: "pi attach before prompt", backend, makeTransport: piTransport })
+  try {
+    const entries = (context.transport as unknown as { entries: Map<string, { profile: { sessionDir: string }; rpc: { request(type: string): Promise<unknown> } }> }).entries
+    const sessionDir = entries.get("s1")!.profile.sessionDir
+    const upstream = context.session.binding.upstreamSessionId
+    await context.transport.close(context.session)
+    expect((await fs.readdir(sessionDir)).filter((name) => name.includes(upstream))).toEqual([])
+    const attached = await context.transport.attach({ ...context.start, binding: context.session.binding, upstreamHasTurns: false }, context.sessionBroker)
+    expect(attached.binding.upstreamSessionId).toBe(upstream)
+    const events: string[] = []
+    for await (const { event } of context.transport.send(attached, context.turn("Reply with exactly this one token: PIFRESHATTACH"), context.turnBroker())) events.push(event.type)
+    expect(events.at(-1)).toBe("finish")
+    expect((await entries.get("s1")!.rpc.request("get_state") as { sessionId: string }).sessionId).toBe(upstream)
+  } finally { await context.close() }
+}, 60_000)
+
+test("a Pi session that had a turn refuses to attach once its session file is gone", async () => {
+  const context = await setupConformance({ name: "pi attach lost file", backend, makeTransport: piTransport })
+  try {
+    for await (const _event of context.transport.send(context.session, context.turn("Reply with exactly this one token: PIWRITTEN"), context.turnBroker())) {}
+    const entry = (context.transport as unknown as { entries: Map<string, { profile: { sessionDir: string } }> }).entries.get("s1")!
+    const upstream = context.session.binding.upstreamSessionId
+    await context.transport.close(context.session)
+    const written = (await fs.readdir(entry.profile.sessionDir)).filter((name) => name.endsWith(`_${upstream}.jsonl`))
+    expect(written).toHaveLength(1)
+    await fs.rm(path.join(entry.profile.sessionDir, written[0]!))
+    const processes = context.services.processes.length
+    await expect(context.transport.attach({ ...context.start, binding: context.session.binding, upstreamHasTurns: true }, context.sessionBroker))
+      .rejects.toMatchObject({ name: "PiTransportError", code: "session", retryable: false, detail: { upstreamSessionId: upstream } })
+    expect(context.services.processes).toHaveLength(processes)
   } finally { await context.close() }
 }, 60_000)

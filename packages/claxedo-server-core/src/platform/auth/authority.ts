@@ -141,7 +141,6 @@ export type SessionShareGrantResult = {
 export type SessionPeopleContext = {
   can_manage_shares: boolean
   grants: Array<Record<string, unknown>>
-  participants: Array<Record<string, unknown>>
   teams: Array<{
     team_id: string
     name: string
@@ -161,16 +160,8 @@ export type ChannelMachineIdentity = { channel: string; externalUserId: string; 
 export type AuthorizedChannelIdentity = ChannelMachineIdentity & { identityVersion: number }
 
 export type WorkspaceAuthority = OrgAccessAuthority & {
-  /**
-   * Internal host delegation; the authority rechecks the actor and current
-   * workspace role. `userId` is the user-scoped partition key the authority
-   * records for the actor (`auth.user.subject`'s side of the actor/user
-   * pair) — present when the actor resolves to a user the authority knows,
-   * absent for principals with no user row. It exists so a credential minted
-   * for a verified actor can bind that actor's personal partitions without
-   * the caller synthesizing provider subjects.
-   */
-  resolveRuntimeMachineAccess: (actorId: string, workspaceId: string, minimumRole?: ProjectRole) => Promise<RuntimeActorIdentity & { orgId: string; role: ProjectRole; userId?: string }>
+  /** Internal host delegation, answered only for the workspace's owner, whose actor the authority rechecks. */
+  resolveRuntimeMachineAccess: (actorId: string, workspaceId: string) => Promise<RuntimeActorIdentity & { orgId: string; role: ProjectRole }>
   resolveChannelMachineAccess: (identity: ChannelMachineIdentity, workspaceId: string) => Promise<RuntimeActorIdentity & { orgId: string; role: ProjectRole; identityVersion: number }>
   /**
    * The workspace's canonical owner, for a credential this control plane
@@ -501,14 +492,6 @@ export type WorkspaceAuthority = OrgAccessAuthority & {
   ) => Promise<void>
   authorizeRuntimeSession?: (args: AuthorizeRuntimePrivateSessionInput) => Promise<void>
   registerRuntimeSession?: (args: RegisterRuntimePrivateSessionInput) => Promise<unknown>
-  grantSessionParticipant: (
-    auth: SignedControlPlaneAuth,
-    args: { sessionId: string; workspaceId: string; participantActorId: string },
-  ) => Promise<{ participant_id: string }>
-  revokeSessionParticipant: (
-    auth: SignedControlPlaneAuth,
-    args: { sessionId: string; workspaceId: string; participantActorId: string },
-  ) => Promise<{ removed: boolean }>
   /**
    * Creates the grant, or moves an existing one to `level`. One active grant
    * per (session, target) is the store's unique index, so a second grant at a
@@ -588,13 +571,6 @@ export type WorkspaceAuthority = OrgAccessAuthority & {
       sessions: WorkspaceVisibility[]
     },
   ) => Promise<unknown>
-  deleteSessionVisibility: (
-    auth: SignedControlPlaneAuth,
-    args: {
-      sessionId: string
-      workspaceId: string
-    },
-  ) => Promise<unknown>
   /**
    * The account a machine's own session usage is attributed to: the actor of
    * the session's latest turn, else the creator the session registered under.
@@ -621,6 +597,7 @@ export type WorkspaceAuthority = OrgAccessAuthority & {
   ) => Promise<{ org_id: string; user_id: string } | undefined>
 
   // runtime tokens
+  /** Without `sessionId` the token reaches the workspace and is its owner's; with one it is a viewer's for that session alone. */
   recordRuntimeAccessToken: (
     auth: SignedControlPlaneAuth,
     args: {
@@ -630,6 +607,7 @@ export type WorkspaceAuthority = OrgAccessAuthority & {
       actorId: string
       actorKind: "human" | "agent"
       role: "viewer" | "editor" | "admin" | "owner"
+      sessionId?: string
       expiresAt: number
     },
   ) => Promise<unknown>
@@ -643,12 +621,7 @@ export type WorkspaceAuthority = OrgAccessAuthority & {
     role: "viewer" | "editor" | "admin" | "owner"
     expiresAt: number
   }) => Promise<unknown>
-  runtimeAccessTokenActive: (args: {
-    jti: string
-    workspaceId: string
-    hostId: string
-    minimumRole?: "viewer" | "editor" | "admin" | "owner"
-  }) => Promise<unknown>
+  runtimeAccessTokenActive: (args: { jti: string; workspaceId: string; hostId: string }) => Promise<unknown>
   revokeRuntimeAccessToken: (
     auth: SignedControlPlaneAuth,
     args: { jti: string; workspaceId: string },
@@ -730,12 +703,10 @@ export type HostEnrollmentState =
 
 export type HostEnrolledVia = "account" | "invitation"
 
-/** What an owner grants a machine: the roots it may serve and who may see them. */
+/** What an owner grants a machine: the roots it may serve. */
 export type HostScopeDefinition = {
   /** Absolute POSIX paths. Empty means the machine may serve nothing. */
   allowed_roots: string[]
-  /** `"owner"`: no implicit org-member access to the machine's workspaces. */
-  visibility: "owner" | "org"
 }
 
 /** The stored scope, versioned so a host can tell a newer delivery from a stale one. */
@@ -755,10 +726,9 @@ export function hostEnrollmentScope(json: unknown, revision: number): HostEnroll
     return undefined
   }
   if (!isRecord(value)) return undefined
-  const { allowed_roots, visibility } = value
+  const { allowed_roots } = value
   if (!Array.isArray(allowed_roots) || !allowed_roots.every((root) => typeof root === "string")) return undefined
-  if (visibility !== "owner" && visibility !== "org") return undefined
-  return { allowed_roots: [...allowed_roots], visibility, revision }
+  return { allowed_roots: [...allowed_roots], revision }
 }
 
 /**
@@ -821,8 +791,8 @@ export type HostMachineHeartbeatInput = {
   ttlMs?: number
   sessionAuthority?: HostSessionAuthority
   /**
-   * The ECDH P-256 public JWK JSON this machine can be sealed to
-   * (`./machine-seal`), recorded on every beat that carries one.
+   * The ECDH P-256 public JWK JSON this machine can be sealed to, recorded on
+   * every beat that carries one.
    *
    * The enrollment's own key signs and cannot derive bits, so this is a second
    * key and its declaration rides the one channel the machine already proves
@@ -933,7 +903,7 @@ export type HostProviderConfigPushInput = {
   sealed: string | null
   revision: number
   /**
-   * The key the blob was sealed to, as `machineSealingPublicKey` normalized it.
+   * The key the blob was sealed to, as `publicKeyJwk` normalized it.
    * Re-asserted inside the write: a machine that re-keyed between the read and
    * the write would otherwise be left holding a revision it cannot open, and
    * an unopenable revision is acked by nobody and re-sent forever.
@@ -976,7 +946,7 @@ export type HostInvitationRedeemInput = {
   hostId: string
   /** Public P-256 JWK JSON. */
   publicKey: string
-  /** Over `invitationRedeemPayload` (host-connect-contract). */
+  /** Over `invitationRedeemPayload` from account-contract/machine. */
   signature: string
   displayName?: string
 }

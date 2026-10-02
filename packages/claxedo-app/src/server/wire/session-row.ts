@@ -1,14 +1,16 @@
 import { asFiniteNumber, nonEmptyString } from "@claxedo/helpers/guards"
 import type { AgentSession } from "@claxedo/agent-runtime-contract"
 import { sessionId, type PlacementId, type ProjectId, type SessionId } from "../ids"
-import type { ListedStatus, ModelChoice, SessionRef, SessionRow, SessionSelections } from "../types"
+import type { ListedStatus } from "../status-types"
+import type { ModelChoice, SessionLocation, SessionRow, SessionSelections } from "../types"
 import { sessionConfigFromWire } from "./harness-state"
+import { backgroundWorkFromWire } from "./status"
 
 export type Address = {
   readonly placementFor: (directory: string, workspaceId?: string) => { readonly placementId: PlacementId; readonly projectId: ProjectId } | undefined
 }
 
-export function sessionRefFor(address: Address, input: { directory: string; workspaceId?: string; sessionId: string }): SessionRef | undefined {
+export function sessionLocationFor(address: Address, input: { directory: string; workspaceId?: string; sessionId: string }): SessionLocation | undefined {
   const placed = address.placementFor(input.directory, input.workspaceId)
   if (!placed) return undefined
   return { projectId: placed.projectId, placementId: placed.placementId, sessionId: sessionId(input.sessionId) }
@@ -22,7 +24,7 @@ export function sessionRowFromListItem(item: unknown, address: Address): Session
   const createdAt = asFiniteNumber(row.createdAt)
   const updatedAt = asFiniteNumber(row.updatedAt)
   if (!id || !directory || createdAt === undefined || updatedAt === undefined) return undefined
-  const ref = sessionRefFor(address, { directory, workspaceId: nonEmptyString(row.workspaceId), sessionId: id })
+  const ref = sessionLocationFor(address, { directory, workspaceId: nonEmptyString(row.workspaceId), sessionId: id })
   if (!ref) return undefined
   const lastHumanTurnAt = asFiniteNumber(row.lastHumanTurnAt)
   const archivedAt = asFiniteNumber(row.archivedAt)
@@ -48,7 +50,7 @@ function configuredSelection(info: AgentSession & { readonly config?: unknown })
   return { ...(harness ? { harness } : {}), ...(model ? { model } : {}), ...(permissionMode ? { permissionMode } : {}), ...(permissionModeLabel ? { permissionModeLabel } : {}) }
 }
 
-export function sessionRowFromSession(info: AgentSession, ref: SessionRef): SessionRow {
+export function sessionRowFromSession(info: AgentSession, ref: SessionLocation): SessionRow {
   const created = info.time?.created ?? 0
   const updated = info.time?.updated ?? created
   const archived = info.time?.archived
@@ -67,7 +69,7 @@ export function sessionRowFromSession(info: AgentSession, ref: SessionRef): Sess
   }
 }
 
-export function sessionRowFromCentral(item: unknown, ref: SessionRef): SessionRow | undefined {
+export function sessionRowFromCentral(item: unknown, ref: SessionLocation): SessionRow | undefined {
   if (!item || typeof item !== "object") return undefined
   const row = item as Record<string, unknown>
   if (nonEmptyString(row.session_id) !== ref.sessionId) return undefined
@@ -91,5 +93,5 @@ export function listedStatusFromListItem(item: unknown): ListedStatus | undefine
   if (!status || typeof status !== "object") return undefined
   const { kind, awaitingInput } = status as { kind?: unknown; awaitingInput?: unknown }
   if (kind !== "idle" && kind !== "busy" && kind !== "retry" && kind !== "recovering") return undefined
-  return { status: kind === "idle" ? IDLE : WORKING, waitingOnUser: awaitingInput === true }
+  return { status: kind === "idle" ? IDLE : WORKING, waitingOnUser: awaitingInput === true, backgroundWork: backgroundWorkFromWire(status) }
 }

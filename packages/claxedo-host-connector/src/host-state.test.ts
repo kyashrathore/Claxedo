@@ -172,10 +172,11 @@ describe("parseHostState", () => {
 
   test("recorded endpoints load canonicalized, and a file edited to name an undialable one does not load", () => {
     const endpoints =
-      '"relay":{"url":"https://relay.test/","jwksUrl":"https://relay.test/.well-known/jwks.json"},"authority":{"sessionAuthorityUrl":"https://cp.test/api/runtime-authority/session-authorize"}'
+      '"relay":{"url":"https://relay.test/","jwksUrl":"https://relay.test/.well-known/jwks.json"},"authority":{"sessionAuthorityUrl":"https://cp.test/api/runtime-authority/session-authorize"},"sessionRows":{"url":"https://cp.test/api/claxedo/host/session-rows"}'
     expect(parseHostState(`${SEALING_BASE},${endpoints}}`)).toMatchObject({
       relay: { url: "https://relay.test", jwksUrl: "https://relay.test/.well-known/jwks.json" },
       authority: { sessionAuthorityUrl: "https://cp.test/api/runtime-authority/session-authorize" },
+      sessionRows: { url: "https://cp.test/api/claxedo/host/session-rows" },
     })
 
     const cleartextRelay = `${SEALING_BASE},"relay":{"url":"ws://attacker.test","jwksUrl":"https://relay.test/jwks.json"}}`
@@ -187,6 +188,9 @@ describe("parseHostState", () => {
 
     const scriptedAuthority = `${SEALING_BASE},"authority":{"sessionAuthorityUrl":"javascript:fetch(1)"}}`
     expect(() => parseHostState(scriptedAuthority)).toThrow(/authority\.sessionAuthorityUrl/)
+
+    const fileRows = `${SEALING_BASE},"sessionRows":{"url":"file:///etc/rows"}}`
+    expect(() => parseHostState(fileRows)).toThrow(/sessionRows\.url/)
   })
 })
 
@@ -318,7 +322,7 @@ describe("roots", () => {
   /** Lexical identity: every path resolves to itself. */
   const lexical = async (path: string) => path
 
-  const scope = (allowed_roots: string[]) => ({ revision: 1, allowed_roots, visibility: "owner" as const })
+  const scope = (allowed_roots: string[]) => ({ revision: 1, allowed_roots })
 
   test("no scope yet, or an empty allowed_roots, is deny-all", async () => {
     expect(await effectiveRoots({ cli_roots: ["/srv"] }, lexical)).toEqual([])
@@ -374,7 +378,7 @@ describe("roots", () => {
 })
 
 describe("root pinning", () => {
-  const scope = (allowed_roots: string[]) => ({ revision: 1, allowed_roots, visibility: "owner" as const })
+  const scope = (allowed_roots: string[]) => ({ revision: 1, allowed_roots })
   /** A filesystem where `/srv/projects` does not exist yet and can later be made a symlink. */
   const filesystem = (links: Record<string, string>) => async (path: string) => {
     if (path in links) return links[path]

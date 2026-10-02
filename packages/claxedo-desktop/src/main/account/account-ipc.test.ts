@@ -73,6 +73,22 @@ async function flushStreamSettlement() {
   for (let index = 0; index < 10; index++) await Promise.resolve()
 }
 
+test("renderer can request a read-only scoped connection through its named channel", async () => {
+  const h = harness()
+  const channel = hostedOperationChannel("workspace.connection.read")
+  expect(h.has(channel)).toBe(true)
+  await h.invoke(channel, { id: "ws_1" })
+  expect(h.calls).toEqual([{ name: "workspace.connection.read", input: { id: "ws_1" } }])
+})
+
+test("renderer can reserve a cloud session through the closed account channel", async () => {
+  const h = harness()
+  const channel = hostedOperationChannel("session.reserve")
+  expect(h.has(channel)).toBe(true)
+  await h.invoke(channel, { workspaceId: "ws_1", sessionId: "ses_1", operationId: "op_1" })
+  expect(h.calls).toEqual([{ name: "session.reserve", input: { workspaceId: "ws_1", sessionId: "ses_1", operationId: "op_1" } }])
+})
+
 describe("registered channels", () => {
   test("exposes one channel per operation and nothing else, plus the account protocol", () => {
     // Both directions. An extra channel is the failure that matters, and only
@@ -538,8 +554,11 @@ test("the renderer-visible operation set stays pinned", async () => {
     "documents.workSourcePin",
     "org.create",
     "org.ensureDefaultTeam",
+    "org.invitations.accept",
+    "org.invitations.create",
+    "org.invitations.list",
+    "org.invitations.revoke",
     "org.list",
-    "org.members.add",
     "org.members.list",
     "org.members.remove",
     "org.members.update",
@@ -555,10 +574,10 @@ test("the renderer-visible operation set stays pinned", async () => {
     "session.outline",
     "session.page",
     "session.part",
-    "session.participants.add",
     "session.projection.checkpoint",
     "session.projection.register",
     "session.projection.repair",
+    "session.reserve",
     "session.shares.grant",
     "session.shares.list",
     "session.shares.revoke",
@@ -574,6 +593,7 @@ test("the renderer-visible operation set stays pinned", async () => {
     "workspace.checkpoints.list",
     "workspace.checkpoints.restore",
     "workspace.connection.mint",
+    "workspace.connection.read",
     "workspace.connection.refresh",
     "workspace.create",
     "workspace.lifecycle",

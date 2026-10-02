@@ -3,7 +3,7 @@ import type { QuotaWindow } from "@claxedo/usage-contract"
 
 export type AccountDelivery = { readonly local: boolean; readonly cloud: boolean; readonly reason?: string }
 
-export type AccountSources = { readonly sources: ReadonlyMap<string, AccountSource>; readonly org: readonly Account[] }
+export type AccountSources = { readonly sources: ReadonlyMap<string, AccountSource>; readonly org: readonly Account[]; readonly canRemoveOrgAccounts: boolean }
 
 export type HostedAccountSources = { readonly sources: ReadonlyMap<string, AccountSource>; readonly org: ReadonlySet<string> }
 
@@ -48,4 +48,3 @@ export type MachineLogin = {
 export type AccountVerdict = "ok" | "auth_failed" | "no_billing" | "rate_capped" | "expired" | "unknown"
 
 export type AccountCheck = { readonly verdict: AccountVerdict; readonly usage?: readonly QuotaWindow[] }
-

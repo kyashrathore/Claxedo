@@ -5,11 +5,14 @@ import fs from "node:fs/promises"
 import http from "node:http"
 import os from "node:os"
 import path from "node:path"
-import { generateCursorHook, generateNotifyScript } from "../../../workspace-runtime/src/agent-hooks/core/hooks"
-import { generateCodexWrapper } from "../../../workspace-runtime/src/agent-hooks/core/wrappers"
+import { defaultStatusHooks } from "../../../workspace-runtime/src/status-hooks"
+import { generateNotifyScript } from "../../../workspace-runtime/src/agent-hooks/core/hooks"
+import { hookArtifact } from "../../../workspace-runtime/src/agent-hooks/core/render"
+import { generateTemplateWrapper } from "../../../workspace-runtime/src/agent-hooks/core/wrappers"
 import { materializeAgentHooks } from "../../../workspace-runtime/src/agent-hooks/materialize-status-hooks"
 import { AgentHookRoutes } from "../../../workspace-runtime/src/routes/agent-hook"
 import { Pty } from "../../../workspace-runtime/src/pty/index"
+import { createBus, type WorkspaceRuntimeEvent } from "../../../session-core/src/bus"
 import { startScriptedCursorBackend } from "./cursor/backend"
 import { PINNED_CODEX } from "./pinned-codex"
 import { releasePort, reservePort } from "./ports"
@@ -21,7 +24,7 @@ const terminals = new Set<string>()
 const pty = spyOn(Pty, "get").mockImplementation((id) => id && terminals.has(id)
   ? { id, title: id, command: "/bin/sh", args: [], cwd: "/tmp", status: "running" as const, pid: 4_194_305 }
   : undefined)
-const routes = AgentHookRoutes()
+const routes = AgentHookRoutes({ bus: createBus<WorkspaceRuntimeEvent>() })
 const observations: Observation[] = []
 let root: string
 let lifecycle: http.Server
@@ -116,10 +119,10 @@ test("a real Codex run in a tab reports busy, waiting and done through session-f
   const before = await snapshot(personal)
   const notify = path.join(root, "hooks", "notify.sh")
   await fs.mkdir(path.dirname(notify), { recursive: true })
-  await fs.writeFile(notify, generateNotifyScript(lifecyclePort), { mode: 0o755 })
+  await fs.writeFile(notify, generateNotifyScript(lifecyclePort, defaultStatusHooks), { mode: 0o755 })
   const wrapper = path.join(root, "claxedo-bin", "codex")
   await fs.mkdir(path.dirname(wrapper), { recursive: true })
-  await fs.writeFile(wrapper, generateCodexWrapper(notify), { mode: 0o755 })
+  await fs.writeFile(wrapper, generateTemplateWrapper(defaultStatusHooks.find((template) => template.command === "codex")!, notify), { mode: 0o755 })
   const codexBin = path.dirname(PINNED_CODEX)
   const terminalId = "codex-tab"
   terminals.add(terminalId)
@@ -171,9 +174,9 @@ test("a real Cursor agent in a tab reaches the lifecycle route through Claxedo's
   await fs.mkdir(hookDir, { recursive: true })
   const notify = path.join(hookDir, "notify.sh")
   const cursorHook = path.join(hookDir, "cursor-hook.sh")
-  await fs.writeFile(notify, generateNotifyScript(lifecyclePort), { mode: 0o755 })
-  await fs.writeFile(cursorHook, generateCursorHook(notify), { mode: 0o755 })
-  const merge = () => materializeAgentHooks({ homeDir: home, notifyPath: notify, geminiHookPath: path.join(hookDir, "gemini-hook.sh"), cursorHookPath: cursorHook })
+  await fs.writeFile(notify, generateNotifyScript(lifecyclePort, defaultStatusHooks), { mode: 0o755 })
+  await fs.writeFile(cursorHook, hookArtifact(defaultStatusHooks.find((template) => template.command === "cursor")!, "cursor-hook.sh", notify), { mode: 0o755 })
+  const merge = () => materializeAgentHooks({ homeDir: home, notifyPath: notify, templates: defaultStatusHooks })
   expect((await merge()).find((result) => result.runner === "cursor")?.status).toBe("applied")
   const merged = await fs.readFile(personal, "utf8")
   expect(merged).toContain('"afterFileEdit": [ { "command": "true" } ]')

@@ -49,7 +49,7 @@ async function retirementFixture(retirePeer: RetirePolicy) {
     }),
     makeTransport: (services) => new AcpTransport(services, { kind: "process", command: process.execPath,
       args: [join(import.meta.dirname, "../../e2e/harness/acp/agent.ts")], env: { SCRIPTED_ACP_DIR: directory } },
-      filterMcpServers, async () => { throw new Error("Unexpected restore") }),
+      filterMcpServers),
   })
   const live = () => children.filter((child) => child.exitCode === null && child.signalCode === null)
   const release = async () => {
@@ -152,7 +152,7 @@ for (const invalid of ["stale", "repeated"] as const) test(`ACP ${invalid} close
     if (invalid === "stale") await f.transport.close(session)
     const replacement = await f.start()
     await f.transport.close(replacement)
-    const attached = await f.transport.attach({ ...f.input, binding: replacement.binding }, f.sessionBroker)
+    const attached = await f.transport.attach({ ...f.input, binding: replacement.binding, upstreamHasTurns: false }, f.sessionBroker)
     expect(attached.binding).toEqual(replacement.binding)
     expect(f.peers).toHaveLength(3)
     expect(f.peers.map((peer) => peer.retirements)).toEqual([1, 1, 0])
@@ -213,7 +213,7 @@ for (const operation of ["close", "restart"] as const) test(`ACP fences an unver
       : f.transport.configure(session, { credentials: { ...f.input.credentials, leaseGeneration: "g2" } })
     await expect(failed).rejects.toMatchObject({ code: "ownership", message: "writer remains alive" })
     await expect(f.start()).rejects.toMatchObject({ code: "ownership" })
-    await expect(f.transport.attach({ ...f.input, binding: session.binding }, f.sessionBroker)).rejects.toMatchObject({ code: "ownership" })
+    await expect(f.transport.attach({ ...f.input, binding: session.binding, upstreamHasTurns: false }, f.sessionBroker)).rejects.toMatchObject({ code: "ownership" })
     await expect(collect(f.transport.send(session, f.turn, f.turnBroker()))).rejects.toMatchObject({ code: "ownership" })
     expect(retirements).toBe(1)
     if (operation === "close") {
@@ -277,7 +277,7 @@ for (const deferred of [false, true]) for (const failure of ["session/resume", "
       await expect(collect(f.transport.send(session, f.turn, f.turnBroker()))).rejects.toThrow("ACP session restart failed")
       expect(await bounded(f.transport.close(session))).toBeUndefined()
       await expect(f.transport.close(session)).rejects.toThrow("not attached")
-      const attached = await f.transport.attach({ ...f.input, binding: session.binding }, f.sessionBroker)
+      const attached = await f.transport.attach({ ...f.input, binding: session.binding, upstreamHasTurns: deferred }, f.sessionBroker)
       expect(attached.binding.upstreamSessionId).toBe(session.binding.upstreamSessionId)
       expect(f.peers.map((peer) => peer.retirements)).toEqual([1, 1, 0])
     } finally { await bounded(f.transport.dispose()) }

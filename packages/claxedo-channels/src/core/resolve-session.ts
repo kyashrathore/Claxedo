@@ -1,4 +1,4 @@
-import type { RecoveryOutcome } from "@claxedo/agent-runtime-contract"
+import type { RecoveryOutcome, SessionRef } from "@claxedo/agent-runtime-contract"
 import type { ChannelId, InboundEnvelope } from "../envelope"
 
 /**
@@ -13,11 +13,9 @@ export type ChannelAbortResult =
   | { kind: "outcome"; outcome: RecoveryOutcome }
   | { kind: "unreachable"; message: string }
 
-export type SessionRef = {
-  sessionId: string
+export type ChannelSession = SessionRef & {
   threadKey: string
   channel: ChannelId
-  workspaceId?: string
   workspaceRef?: string
   appUrl?: string
   created?: boolean
@@ -30,14 +28,14 @@ export type ChannelRuntime = {
     threadKey: string
     externalUserId: string
     workspaceId?: string
-  }): Promise<{ sessionId: string; appUrl?: string; workspaceRef?: string }>
+  }): Promise<SessionRef & { appUrl?: string; workspaceRef?: string }>
   sendMessage(input: { sessionId: string; text: string; channel: ChannelId; externalUserId: string; threadKey: string }): AsyncIterable<unknown>
   abortSession(input: { sessionId: string; channel: ChannelId; externalUserId: string; threadKey: string }): Promise<ChannelAbortResult>
 }
 
 export type SessionResolver = {
-  resolve(input: InboundEnvelope): Promise<SessionRef>
-  get(threadKey: string): Promise<SessionRef | undefined>
+  resolve(input: InboundEnvelope): Promise<ChannelSession>
+  get(threadKey: string): Promise<ChannelSession | undefined>
   /** Forget the thread→session binding so the next resolve creates fresh (/new). */
   reset?(threadKey: string): Promise<void>
 }
@@ -50,8 +48,8 @@ export class ChannelSessionResolutionError extends Error {
 }
 
 export function createMemorySessionResolver(runtime: ChannelRuntime): SessionResolver {
-  const byThread = new Map<string, SessionRef>()
-  const pending = new Map<string, Promise<SessionRef>>()
+  const byThread = new Map<string, ChannelSession>()
+  const pending = new Map<string, Promise<ChannelSession>>()
   return {
     async resolve(input) {
       const existing = byThread.get(input.threadKey)
@@ -68,9 +66,9 @@ export function createMemorySessionResolver(runtime: ChannelRuntime): SessionRes
         })
         const ref = {
           sessionId: created.sessionId,
+          workspaceId: created.workspaceId,
           threadKey: input.threadKey,
           channel: input.channel,
-          ...(input.repo ? { workspaceId: `${input.repo.owner}/${input.repo.name}` } : {}),
           ...(created.workspaceRef ? { workspaceRef: created.workspaceRef } : {}),
           ...(created.appUrl ? { appUrl: created.appUrl } : {}),
         }

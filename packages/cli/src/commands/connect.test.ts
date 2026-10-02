@@ -193,7 +193,7 @@ async function harness(input: { home?: string; cp?: FakeControlPlane; relay?: Re
 }
 
 async function invitationFile(h: Harness, roots: string[]) {
-  const invitation = await h.cp.createInvitation({ displayName: "build-box", scope: { allowed_roots: roots, visibility: "owner" } })
+  const invitation = await h.cp.createInvitation({ displayName: "build-box", scope: { allowed_roots: roots } })
   const file = path.join(h.home, "invite.txt")
   await fs.writeFile(file, `${invitation.token}\n`)
   return { file, invitation }
@@ -396,7 +396,7 @@ describe("claxedo connect", () => {
 
   test("a loopback control plane over http still enrolls: the local development flow is the one cleartext case", async () => {
     const local = await harness({ cp: createFakeConnectControlPlane({ url: "http://127.0.0.1:2593", relayUrl: h.relay.url }) })
-    const invitation = await local.cp.createInvitation({ displayName: "build-box", scope: { allowed_roots: [local.root], visibility: "owner" } })
+    const invitation = await local.cp.createInvitation({ displayName: "build-box", scope: { allowed_roots: [local.root] } })
     const file = path.join(local.home, "invite.txt")
     await fs.writeFile(file, invitation.token)
 
@@ -775,7 +775,7 @@ describe("claxedo connect", () => {
     await until(() => h.cp.beats().length > beats, "the beat before the re-scope")
     h.tick()
     await until(() => h.lines.some((line) => line.startsWith(`root ${projects} now resolves to ${projects}, not ${victim}`)), "the drift back")
-    h.cp.setScope(enrollmentIdOf(h), { allowed_roots: [projects], visibility: "owner" })
+    h.cp.setScope(enrollmentIdOf(h), { allowed_roots: [projects] })
     h.cp.assign({ hostId, workspaceId: "ws_app", remoteDirectory: path.join(projects, "app") })
     h.tick()
     await until(() => h.cp.routable(enrollmentIdOf(h)).includes("ws_app"), "the folder to be served after the re-scope")
@@ -793,7 +793,7 @@ describe("claxedo connect", () => {
     await until(() => h.cp.beats().length >= 1, "first beat")
     const hostId = (await h.deps.store.load())!.host_id
 
-    h.cp.setScope(enrollmentIdOf(h), { allowed_roots: [narrowed], visibility: "owner" })
+    h.cp.setScope(enrollmentIdOf(h), { allowed_roots: [narrowed] })
     h.tick()
     await until(async () => (await h.deps.store.load())?.scope?.revision === 2, "the narrowed scope to be stored")
     h.stop()
@@ -801,7 +801,7 @@ describe("claxedo connect", () => {
 
     // What a replayed pre-restart answer carries: the invitation's original,
     // wider scope at a revision the host has already passed.
-    h.cp.enrollments.get(enrollmentIdOf(h))!.scope = { revision: 1, allowed_roots: [h.root], visibility: "owner" }
+    h.cp.enrollments.get(enrollmentIdOf(h))!.scope = { revision: 1, allowed_roots: [h.root] }
 
     const rebooted = connect([], h.deps)
     let beats = h.cp.beats().length
@@ -1012,7 +1012,7 @@ describe("exit-code mapping and bootstrap retry", () => {
           throw new HostedHttpError(503, { error: { code: "deploying" } })
         },
       ),
-    ).rejects.toThrow(/^redeem failed for 299s: HOSTED_HTTP 503/)
+    ).rejects.toThrow(/^redeem failed for 299s: HTTP 503/)
     expect(delays.slice(0, 6)).toEqual([1_000, 2_000, 4_000, 8_000, 16_000, 30_000])
     expect(attempts.map((attempt) => attempt.timeoutMs)).toEqual(attempts.map((attempt) => 5 * 60_000 - attempt.at))
     expect(attempts.at(-1)!.at, "the last sleep was cut to leave exactly the minimum, and that attempt ran").toBe(5 * 60_000 - 1_000)
@@ -1061,7 +1061,7 @@ describe("exit-code mapping and bootstrap retry", () => {
     ).catch((e: unknown) => e)
 
     expect(attempts).toEqual([0])
-    expect(String(error)).toMatch(/^Error: acquire failed for 299s: HOSTED_HTTP 503/)
+    expect(String(error)).toMatch(/^Error: acquire failed for 299s: HTTP 503/)
   })
 
   test("the beat interval is a third of the lease, capped at 20 s", () => {

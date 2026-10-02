@@ -38,7 +38,7 @@ type CallOptions = { directory?: string; body?: unknown; query?: Record<string, 
 /** Opens the event stream a prompt reads its turn's end from; the API's own url by default. */
 export type ApiEvents = (directory: string) => Promise<EventStream>
 
-export type ApiOptions = { reserveSessions?: boolean; events?: ApiEvents }
+export type ApiOptions = { reserveSessions?: boolean; workspaceId?: (directory: string) => Promise<string>; events?: ApiEvents }
 
 const TURN_TIMEOUT_MS = 240_000
 
@@ -125,7 +125,9 @@ export class ClaxedoApi {
   }
 
   private async reserveSession(directory: string, title?: string): Promise<Reservation> {
-    const { workspaceId } = await this.call<{ workspaceId: string }>("GET", "/api/workspace/resolve", { directory })
+    const workspaceId = this.options.workspaceId
+      ? await this.options.workspaceId(directory)
+      : (await this.call<{ workspaceId: string }>("GET", "/api/workspace/resolve", { directory })).workspaceId
     const reservation = { operationId: `session_registration_${randomUUID()}`, sessionId: `ses_${randomUUID()}` }
     await this.call<unknown>("POST", "/api/control/session-registrations/reserve", {
       body: { ...reservation, workspaceId, kind: "create", ...(title ? { title } : {}) },

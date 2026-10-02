@@ -29,10 +29,8 @@ export type HarnessSelectionControllerStore = {
   connectionState?(scope: string): HarnessConnectionState | undefined
   models(scope: string): HarnessModelChoice[]
   thoughtLevels(scope: string): readonly HarnessOptionChoice[]
-  setThoughtLevel(scope: string, value: string | undefined): void
   selectedThoughtLevel(scope: string): string | undefined
   serviceTiers(scope: string): readonly HarnessOptionChoice[]
-  setServiceTier(scope: string, value: string | undefined): void
   selectedServiceTier(scope: string): string | undefined
   selectedModel(scope: string): string
   selectedModelKey(scope: string): ModelChoice | undefined

@@ -11,7 +11,7 @@ import {
   disposeAgentConfig,
   saveUserConfig,
 } from "@claxedo/server-core/agent-config/index"
-import { FakeTransport, fakeConnectionProvider } from "@claxedo/workspace-runtime/testing"
+import { FakeTransport, fakeConnectionProvider } from "@claxedo/session-core/testing"
 import { startLocalServer, type LocalServer } from "./start-local-server"
 import { testDaemon } from "./test-support/daemon"
 import {
@@ -37,7 +37,8 @@ import {
  */
 
 const OWNER = { actorId: "actor_owner", actorPublicId: "user_owner", actorName: "Owner", role: "owner" as const }
-const MEMBER = { actorId: "actor_member", actorPublicId: "user_member", actorName: "Member", role: "editor" as const }
+/** Reaches this one session through a share, which is all a token that is not the owner's can reach. */
+const MEMBER = { actorId: "actor_member", actorPublicId: "user_member", actorName: "Member", role: "viewer" as const, sessionId: "ses_before_sharing" }
 /** Holds the workspace outright, but is not the person this machine is enrolled to. */
 const CO_OWNER = { actorId: "actor_co_owner", actorPublicId: "user_co_owner", actorName: "Co-owner", role: "owner" as const }
 
@@ -184,6 +185,7 @@ beforeEach(async () => {
   // run here; the policy and the loopback declaration are re-supplied because
   // this call replaces the whole composition it made.
   configureEmbeddedWorkspaceRuntime({
+    sessionIdWorkspace: () => undefined,
     connectionProviders: [provider],
     sessionAccessPolicy: localHostSessionAccessPolicy,
     loopbackSessionAuthority: "local",
@@ -208,7 +210,7 @@ afterEach(async () => {
   await server?.stop()
   server = undefined
   disposeAgentConfig()
-  configureEmbeddedWorkspaceRuntime({})
+  configureEmbeddedWorkspaceRuntime({ sessionIdWorkspace: () => undefined })
   configureAgentConfig()
   setLocalHostEndpoints(undefined)
   resetLocalHostSessionAdoptions()
@@ -249,7 +251,7 @@ async function read(workspaceId: string, sessionId: string, headers: Record<stri
 }
 
 describe("a session the machine held before remote access", () => {
-  test("the owner's first relayed read claims it; another member is still refused", async () => {
+  test("the owner's first relayed read claims it; a share holder's token never claims it and is refused", async () => {
     const workspaceId = await workspaceWithLocalSession("ses_before_sharing")
 
     const owner = await read(workspaceId, "ses_before_sharing", relayed("owner-token"))

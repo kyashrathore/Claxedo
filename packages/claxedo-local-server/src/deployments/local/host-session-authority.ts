@@ -21,11 +21,8 @@
  * they land. The loopback arm never asks.
  */
 
-import {
-  remoteWorkspaceSessionAccessPolicy,
-  type AdoptRefusedSession,
-  type SessionAccessDecision,
-} from "@claxedo/workspace-runtime"
+import { remoteWorkspaceSessionAccessPolicy, type AdoptRefusedSession } from "@claxedo/workspace-runtime"
+import { type SessionAccessDecision } from "@claxedo/session-core"
 import { createRelayHostTokenVerifier } from "@claxedo/workspace-runtime/relay"
 import { hostServingIdentity } from "@claxedo/host-serving/serving"
 import type { RuntimeProxyOptions } from "../../workspace/runtime-dispatch/internals"
@@ -106,6 +103,7 @@ export const localHostRelayActor: NonNullable<RuntimeProxyOptions["resolveRelayA
     ...(claims.actor_avatar_url ? { actorAvatarUrl: claims.actor_avatar_url } : {}),
     orgId: claims.org_id,
     role: claims.role,
+    ...(claims.session_id ? { sessionId: claims.session_id } : {}),
   }
 }
 
@@ -126,14 +124,14 @@ const adoptions = new Map<string, Promise<SessionAccessDecision>>()
  * first relayed read of one. Claiming it here, on that refusal, is what makes
  * them reachable without registering anything the owner never opened remotely.
  *
- * Only for a token the relay says holds the workspace, and only for a session
- * a runtime in this process actually holds: the authority names the creator
- * itself and refuses anyone but the machine's owner, but it cannot see whether
- * the id exists here, and an id that does not would become a row for a
- * transcript nobody can read.
+ * Only for a token that reaches the whole workspace, not one scoped to a
+ * single session, and only for a session a runtime in this process actually
+ * holds: the authority names the creator itself and refuses anyone but the
+ * machine's owner, but it cannot see whether the id exists here, and an id
+ * that does not would become a row for a transcript nobody can read.
  */
 const adoptRefusedSession: AdoptRefusedSession = async (input, refusal) => {
-  if (input.authority.role !== "owner") return refusal.denial
+  if (input.authority.sessionId !== undefined) return refusal.denial
   const workspaceId = input.authority.workspaceId
   const time = embeddedWorkspaceRuntimeSessionTime(workspaceId, input.sessionId)
   if (!time) return refusal.denial

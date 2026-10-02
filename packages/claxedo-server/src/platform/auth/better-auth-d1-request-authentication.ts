@@ -1,9 +1,9 @@
 import { isNonBlankString } from "@claxedo/helpers/guards"
+import { type AuthAdapterDescriptor } from "@claxedo/account-contract/auth"
 import {
   AuthenticationError,
   createControlPlaneAuthenticationAdapter,
   type ApplicationIdentityResolver,
-  type AuthAdapterDescriptor,
   type AuthAssurance,
   type AuthenticationEvidenceMethod,
   type RequestAuthenticationAdapter,

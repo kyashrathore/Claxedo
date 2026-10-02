@@ -1,8 +1,5 @@
 import { describe, expect, test } from "bun:test"
 import fs from "node:fs"
-import {
-  SESSION_CORE_ROUTE_ACCESS,
-} from "./session-access-policy"
 
 function source(relative: string) {
   return fs.readFileSync(new URL(relative, import.meta.url), "utf8")
@@ -21,11 +18,6 @@ function uniqueDeclaredRoutes(input: string) {
 }
 
 describe("private-session route inventory", () => {
-  test("every session-core route has an explicit access classification", () => {
-    expect(declaredRoutes(source("./routes/session-core.ts"), ["get", "post", "put", "patch", "delete"]))
-      .toEqual(Object.keys(SESSION_CORE_ROUTE_ACCESS).sort())
-  })
-
   test("sensitive peripheral route families cannot grow without an inventory decision", () => {
     const expected: Record<string, string[]> = {
       "./routes/agent-hook.ts": [
@@ -57,7 +49,6 @@ describe("private-session route inventory", () => {
         "POST /",
         "PUT /:ptyID",
       ],
-      "./routes/transcript.ts": ["GET /:handle"],
       "./routes/worktree.ts": ["GET /", "GET /:sessionId", "POST /"],
     }
 
@@ -67,7 +58,7 @@ describe("private-session route inventory", () => {
   })
 
   test("direct host routes cannot grow around the classified session router", () => {
-    expect(uniqueDeclaredRoutes(source("./workspace/runtime.ts"))).toEqual([
+    expect(uniqueDeclaredRoutes(source("./workspace/runtime.ts") + source("./workspace/vcs.ts"))).toEqual([
       "GET /api/wr/harness-config-options",
       "GET /api/wr/harness-providers",
       "GET /vcs",

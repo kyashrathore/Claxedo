@@ -1,7 +1,7 @@
 import { createSignal, type Accessor, type Setter } from "solid-js"
 import { createStore } from "solid-js/store"
 import { machine, type Machine } from "@/lib/machine"
-import type { PageShape, Server, SessionRef, TranscriptPage } from "@/server"
+import type { PageShape, Server, SessionLocation, TranscriptPage } from "@/server"
 import type { OlderState, OutlineState } from "@/session"
 import type { SessionListInternal } from "../list"
 import type { RequestsInternal } from "../requests"
@@ -32,7 +32,7 @@ export type TranscriptDeps = {
 
 export type TranscriptContext = {
   readonly server: Server
-  readonly ref: SessionRef
+  readonly ref: SessionLocation
   readonly deps: TranscriptDeps
   readonly data: TranscriptData
   readonly setData: SetTranscript
@@ -53,7 +53,7 @@ export type TranscriptContext = {
   readonly partReads: Map<string, Promise<void>>
 }
 
-export function createTranscriptContext(server: Server, ref: SessionRef, deps: TranscriptDeps): TranscriptContext {
+export function createTranscriptContext(server: Server, ref: SessionLocation, deps: TranscriptDeps): TranscriptContext {
   const [data, setStoreData] = createStore(emptyTranscript())
   const deltas = createDeltaBuffer((delta) => appendDelta(setStoreData, data, delta.messageId, delta.partId, delta.field, delta.delta))
   const setData = committingFirst(setStoreData, deltas)

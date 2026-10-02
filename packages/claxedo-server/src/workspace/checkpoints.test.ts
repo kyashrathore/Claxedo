@@ -6,6 +6,14 @@ import type {
 } from "@claxedo/sandbox-manager"
 import { createWorkspaceCheckpointService } from "./checkpoints"
 
+test("checkpoint runtime failures preserve the typed authority refusal", async () => {
+  const service = createWorkspaceCheckpointService({
+    sandboxManager: manager() as unknown as SandboxManager,
+    runtimeRequest: async () => Response.json({ error: { code: "busy", message: "Busy", retryable: true } }, { status: 503 }),
+  })
+  await expect(service.capture("ws_1")).rejects.toMatchObject({ code: "busy", status: 503, retryable: true })
+})
+
 function manager() {
   const checkpoint = vi.fn(async (_workspaceId: string, input: SandboxCheckpointCaptureInput) => {
     await input.runtime.freeze("drain")

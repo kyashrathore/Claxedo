@@ -1,3 +1,4 @@
+import { ClaxedoError } from "@claxedo/server-core/platform/errors/base"
 import { nonEmptyString } from "@claxedo/helpers/guards"
 import { Hono } from "hono"
 import { HTTPException } from "hono/http-exception"
@@ -190,9 +191,8 @@ export function SessionMetaRoutes(options: Options = {}) {
       if (authResult.error) return c.json(authResult.error, authResult.status)
       const resolved = await workspace(c)
       await authorizeWorkspaceRead(authResult.auth, options, resolved?.id)
-      // Signed callers get participant-scoped authority rows. Projection metas
-      // are workspace-complete and would leak private sessions to editors who
-      // are not participants (two-user privacy / Journey 3).
+      // Projection metas cover the whole workspace and cannot filter by the
+      // signed caller's session shares.
       if (authResult.auth && resolved?.id) {
         const rows = await requireAuthority(options.services).listSessions(authResult.auth, {
           workspaceId: resolved.id,
@@ -237,7 +237,7 @@ export function SessionMetaRoutes(options: Options = {}) {
           readRuntimeStatus: readMountedEmbeddedWorkspaceRuntime,
         }))
       } catch (err) {
-        if (err instanceof Error && err.message === "invalid_session_list_cursor") {
+        if (err instanceof ClaxedoError && err.code === "invalid_session_list_cursor") {
           return c.json({
             error: {
               code: "invalid_session_list_cursor",

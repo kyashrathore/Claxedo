@@ -27,21 +27,32 @@ const HOSTED_CORE_WORKER_ROOT = "src/deployments/hosted-workerd/core-worker.cf.t
  * deliberate bump someone reads.
  */
 const ENTRIES = [
-  // Every entry carries the D1 access model: the project-role query, the access
+  // Every entry carries the D1 access model: the authorization rules, the access
   // context, the org-member, project-member and team authorities, the host
-  // access error contract, the D1 session authority's input validation and
-  // access predicates, and the verified-email account lookup. Every entry also
-  // mounts hosted Pages from `core-worker.cf.ts`: the D1 document authority
+  // access error contract, the D1 session authority's input validation, the
+  // verified-email account lookup, the owner of whose connections a turn spends
+  // (`connections/turn-owner.ts`), the session authority routes' answer for a
+  // decision that threw (`session/runtime-authority-errors.ts`), the one
+  // D1 constraint-failure reader and the org/People typed refusal envelope.
+  // Every entry also mounts hosted Pages
+  // from `core-worker.cf.ts`: the D1 document authority
   // (`authority/adapters/d1/document-authority.ts`), the R2 documents backend
-  // and its index, managed store and local-relay schemas
-  // (`documents/backends/hosted/`), and the runtime broker that hydrates a page
-  // into a session with its relay client (`documents/relay-http.ts`).
-  { name: "worker", entry: BETTER_AUTH_D1_ENTRY, modules: 115, packages: 19 },
+  // and its index and managed store (`documents/backends/hosted/`), and the
+  // runtime broker that hydrates a page into a session with its relay client
+  // (`documents/relay-http.ts`). The hosted runtime delivery reads a
+  // workspace's recorded backing (`workspace/cloud-root-backing.ts`) before it
+  // provisions a sandbox, which the Agent Plugins entries already carried.
+  // Every entry carries the D1 workspace authority's refusal type and owner
+  // identity helpers as modules of their own (`d1/workspace-authority-error.ts`,
+  // `d1/owner-identity.ts`).
+  { name: "worker", entry: BETTER_AUTH_D1_ENTRY, modules: 120, packages: 19 },
   // Both Agent Plugins entries carry the plugin-backend platform
   // (`src/plugin-backends/`): seven modules, `@claxedo/plugin-api` for the
-  // manifest, and `cloudflare:workers` for the supervisor and its entrypoints.
-  { name: "worker-agent-plugins", entry: BETTER_AUTH_D1_AGENT_PLUGINS_ENTRY, modules: 165, packages: 23 },
-  { name: "worker-agent-plugins-full-hosted", entry: BETTER_AUTH_D1_AGENT_PLUGINS_FULL_HOSTED_ENTRY, modules: 170, packages: 23 },
+  // manifest, and `cloudflare:workers` for the supervisor and its entrypoints,
+  // plus `agent-plugins/signed-scope.ts`, the caller and write guard the
+  // activation and source stores share.
+  { name: "worker-agent-plugins", entry: BETTER_AUTH_D1_AGENT_PLUGINS_ENTRY, modules: 170, packages: 23 },
+  { name: "worker-agent-plugins-full-hosted", entry: BETTER_AUTH_D1_AGENT_PLUGINS_FULL_HOSTED_ENTRY, modules: 175, packages: 23 },
 ] as const
 
 function closure(entry: string, options: { runtimeOnly?: boolean } = {}) {

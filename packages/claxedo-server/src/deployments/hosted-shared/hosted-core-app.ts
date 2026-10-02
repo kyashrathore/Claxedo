@@ -17,7 +17,7 @@ import {
 
 import { JwksRoutes } from "../../authority/routes/jwks"
 import { OAuthProtectedResourceRoutes } from "../../mcp/oauth-protected-resource"
-import { HostedShellRoutes, hostedHarnessRuntimeOptions, hostedHarnessRuntimeStatus } from "../../routes/hosted/shell"
+import { HostedShellRoutes, hostedHarnessRuntimeStatus } from "../../routes/hosted/shell"
 import { HostedAuthProfileRoutes } from "../../routes/hosted/auth-profile"
 import { HostedDeviceAuthRoutes } from "../../routes/hosted/device-auth"
 import { HostedWorkspaceRoutes, type HostedWorkspaceRouteOptions } from "../../routes/hosted/workspace"
@@ -34,10 +34,6 @@ import { RuntimeSessionAuthorityRoutes } from "../../routes/runtime-session-auth
 import type { SandboxPassRegister } from "../../platform/auth/sandbox-pass-register"
 import { createOwnerGrantProof } from "../../session/owner-grant"
 import { PrivateSessionRegistrationRoutes } from "../../routes/private-session-registration"
-import {
-  UserDeployedIdentityAdmissionRoutes,
-  type UserDeployedIdentityAdmission,
-} from "../../routes/user-deployed-identity-admission"
 import { OrgTeamControlRoutes } from "../../session/routes/org-team-routes"
 import { SessionPeopleControlRoutes } from "../../session/routes/session-people-routes"
 import { createRouteOwnership, mountOwnedRoute, withRouteOwnership } from "../route-ownership"
@@ -88,6 +84,7 @@ export type HostedCoreProductWorkspaceOptions = Pick<
   | "sandboxUsage"
   | "prepareRuntime"
   | "provisionRuntime"
+  | "runtimeProvisioned"
   | "releaseRuntime"
   | "createWorkspaceRateLimiter"
   | "sandboxLeaseCap"
@@ -107,7 +104,6 @@ export type HostedCoreAppOptions = {
   agentConfigRepository?: UserAgentConfigRepository
   settingsChanged?: (userId: string) => Promise<void>
   credentialsChanged?: (orgId: string) => Promise<void>
-  userDeployedIdentityAdmission?: UserDeployedIdentityAdmission
   /**
    * Build-composed product route families (Agent Plugins today). An entry
    * passes an explicit array; the base core passes none and imports no
@@ -203,9 +199,6 @@ export function assertHostedCoreBootConfig(plane: HostedControlPlane, options: P
   if (!options.cloudWorkspaceAdmission) failures.push("cloud workspace admission policy is not composed")
   if (!options.product) failures.push("static product descriptor is not composed")
   if (!options.requestGuardExemptions) failures.push("product request-guard inventory is not composed")
-  if (options.product?.productPosture === "user-deployed" && !options.userDeployedIdentityAdmission) {
-    failures.push("user-deployed identity admission is not composed")
-  }
   if (failures.length) {
     throw new HostedWorkerCompositionError(
       "hosted_core_composition_invalid",
@@ -314,12 +307,9 @@ export function createHostedCoreApp(plane: HostedControlPlane, options: HostedCo
       authConfig,
       connections: options.integrationRoutes !== undefined,
       ...(plane.env.npm_package_version ? { version: plane.env.npm_package_version } : {}),
-      ...(services.authority ? { listWorkspaces: (auth) => services.authority!.listWorkspaces(auth) } : {}),
-      ...(services.sandbox.sandboxManager ? { sandboxManager: services.sandbox.sandboxManager } : {}),
       liveSyncRoom: options.liveSyncRoom,
       ...(services.authority ? { resolveOrgId: (auth) => services.authority!.resolveOrgId(auth) } : {}),
       harnessStatus: hostedHarnessRuntimeStatus(services),
-      harnessOptions: hostedHarnessRuntimeOptions(services),
       ...hostedPiCredentials({
         resolveOrgId: (auth) => requireAuthority(services).resolveOrgId(auth),
         credentials: plane.orgCredentials,
@@ -427,18 +417,6 @@ export function createHostedCoreApp(plane: HostedControlPlane, options: HostedCo
       services,
     }),
   )
-  // The user-deployed product keeps provider verification and application
-  // membership separate. Only this explicit owner/admin lifecycle route may
-  // turn a provider-verified subject into a canonical app principal.
-  if (options.userDeployedIdentityAdmission) {
-    app.route(
-      "/api/control",
-      UserDeployedIdentityAdmissionRoutes({
-        authentication: options.authentication,
-        admission: options.userDeployedIdentityAdmission,
-      }),
-    )
-  }
   app.route(
     "/api/control",
     OrgTeamControlRoutes(services, {

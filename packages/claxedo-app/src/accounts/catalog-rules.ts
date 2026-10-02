@@ -12,15 +12,14 @@ export function catalogNeedsSearch(count: number): boolean {
   return count > FULL_CATALOG_LIMIT
 }
 
-export function visibleModels<T extends { readonly id: string; readonly name: string }>(items: readonly T[], query: string, pageFilterActive: boolean): readonly T[] {
-  if (pageFilterActive || items.length <= MODELS_SEARCH_THRESHOLD) return items
+export function matchingModels<T extends { readonly id: string; readonly name: string }>(items: readonly T[], query: string): readonly T[] {
   const needle = query.trim().toLowerCase()
-  if (!needle) return items.slice(0, MODELS_PREVIEW_COUNT)
+  if (!needle) return items
   return items.filter((item) => item.name.toLowerCase().includes(needle) || item.id.toLowerCase().includes(needle))
 }
 
-export function usesInlineSearch(modelCount: number, pageFilterActive: boolean): boolean {
-  return modelCount > MODELS_SEARCH_THRESHOLD && !pageFilterActive
+export function usesInlineSearch(modelCount: number): boolean {
+  return modelCount > MODELS_SEARCH_THRESHOLD
 }
 
 export function catalogProviders<T extends { readonly id: string; readonly name: string }>(all: readonly T[], connectedIds: readonly string[], query: string, popular: readonly string[] = POPULAR_PROVIDERS): T[] {
