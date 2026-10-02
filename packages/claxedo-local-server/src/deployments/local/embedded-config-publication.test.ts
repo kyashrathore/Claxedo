@@ -17,6 +17,8 @@ async function runtime(id: string) {
 afterEach(async () => {
   vi.restoreAllMocks()
   await shutdownEmbeddedWorkspaceRuntimes()
+  disposeAgentConfig()
+  ClaxedoDB.close()
   if (previous === undefined) delete process.env.CLAXEDO_DATA_DIR
   else process.env.CLAXEDO_DATA_DIR = previous
   for (const root of roots.splice(0)) await fs.rm(root, { recursive: true, force: true })
