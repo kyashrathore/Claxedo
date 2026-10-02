@@ -1,4 +1,3 @@
-import os from "node:os"
 import path from "node:path"
 import { HARNESS_TABLE, type SessionTitleRequest } from "@claxedo/agent-runtime-contract"
 import type {
@@ -7,6 +6,7 @@ import type {
   TransportConfigUpdate, TurnBroker, TurnInput, TurnRef,
 } from "../../contract"
 import { attachedSessionEntry, configOptionsPreview, mergeStartInput, selectedTurnAccount } from "../../contract"
+import { DraftProbeCache } from "../../contract/node"
 import { withTurnAccount } from "../../translate/turn-account"
 import { TransportError } from "../../contract/errors"
 import { composeCursorHome, cursorHomeKey } from "../../profiles/cursor"
@@ -16,7 +16,7 @@ import { CursorEntryLifecycle, type CursorEntry as Entry } from "./entry"
 import { CursorGoals } from "./goals"
 import { CursorHostRegistry, type CursorWorker, type CursorHost, type CursorHostKey } from "./host-registry"
 import { cursorModelId, hostSession } from "./launch"
-import { CursorModelCatalog, catalogKey, cursorCatalogModels, cursorModelOptions } from "./models"
+import { CATALOG_INPUTS, catalogKey, cursorCatalogModels, cursorModelOptions, readCursorModels } from "./models"
 import { cursorPermissionModeState } from "./permission-modes"
 import type { HostModel } from "./protocol"
 import { steerCursorTurn } from "./steer"
@@ -25,7 +25,7 @@ import { cursorPrompt, streamCursorRun } from "./turn"
 
 export { CURSOR_WORKER_FILE } from "./worker-file"
 
-export type CursorSdkTransportOptions = MachineLoginPolicy & { homeRoot: string; worker: CursorWorker; env?: NodeJS.ProcessEnv }
+export type CursorSdkTransportOptions = MachineLoginPolicy & { homeRoot: string; ownerCursorDir: string; worker: CursorWorker; env?: NodeJS.ProcessEnv }
 
 function cursorCapabilities(models: readonly HostModel[] | undefined): TransportCapabilities {
   return {
@@ -49,7 +49,7 @@ export class CursorSdkTransport implements HarnessTransport {
   private readonly registry: CursorHostRegistry
   private readonly entries = new Map<string, Entry>()
   private readonly lifecycle = new CursorEntryLifecycle()
-  private readonly catalog = new CursorModelCatalog()
+  private readonly catalog = new DraftProbeCache<HostModel[]>()
   private readonly goalRuntime = new CursorGoals()
   private readonly disposeAbort = new AbortController()
 
@@ -60,13 +60,14 @@ export class CursorSdkTransport implements HarnessTransport {
 
   async capabilities(context: CapabilityContext): Promise<TransportCapabilities> {
     const entry = context.sessionId ? this.entries.get(context.sessionId) : undefined
-    return cursorCapabilities(entry ? this.catalog.peek(catalogKey(entry.credential, entry.input.credentials.leaseGeneration)) : undefined)
+    const models = entry ? await this.catalog.peek(catalogKey(entry.credential, entry.input.credentials.leaseGeneration), CATALOG_INPUTS) : undefined
+    return cursorCapabilities(models)
   }
 
   private async compose(input: StartInput | DraftLaunch, credential: CursorCredential, key: string) {
     await this.services.recordHomeUse(path.join(this.options.homeRoot, key))
-    const personal = credential.ownerLogin ? path.join(this.env.HOME ?? os.homedir(), ".cursor") : undefined
-    return composeCursorHome({ root: this.options.homeRoot, key, projection: input.projection, ...(personal ? { personalCursorDir: personal } : {}) })
+    return composeCursorHome({ root: this.options.homeRoot, key, projection: input.projection,
+      ...(credential.ownerLogin ? { personalCursorDir: this.options.ownerCursorDir } : {}) })
   }
 
   private async admit(input: StartInput, broker: SessionBroker, resumed?: string): Promise<HarnessSession> {
@@ -76,12 +77,7 @@ export class CursorSdkTransport implements HarnessTransport {
     const process = await this.registry.acquire(host)
     let session: HarnessSession
     try {
-      let upstream = resumed
-      if (upstream === undefined) {
-        const reply = await process.call({ kind: "open", session: hostSession(input, this.services, credential.apiKey, composed.local) })
-        upstream = reply.value?.agentId
-        if (!upstream) throw new TransportError("cursor", "sdk", "Cursor did not return an agent id")
-      }
+      const upstream = resumed ?? await this.openAgent(process, input, credential, composed.local)
       try { session = { directory: input.directory, locality: input.locality, binding: await broker.rebind(upstream) } }
       catch (error) {
         if (resumed === undefined) await process.call({ kind: "close", sessionId: input.sessionId })
@@ -116,10 +112,15 @@ export class CursorSdkTransport implements HarnessTransport {
     if (entry.unsent) entry.replace = true
   }
 
-  private async replaceAgent(entry: Entry, host: CursorHost): Promise<void> {
-    const reply = await host.call({ kind: "open", session: hostSession(entry.input, this.services, entry.credential.apiKey, entry.plugins) })
+  private async openAgent(host: CursorHost, input: StartInput, credential: CursorCredential, plugins: Entry["plugins"]): Promise<string> {
+    const reply = await host.call({ kind: "open", session: hostSession(input, this.services, credential.apiKey, plugins) })
     const upstream = reply.value?.agentId
     if (!upstream) throw new TransportError("cursor", "sdk", "Cursor did not return an agent id")
+    return upstream
+  }
+
+  private async replaceAgent(entry: Entry, host: CursorHost): Promise<void> {
+    const upstream = await this.openAgent(host, entry.input, entry.credential, entry.plugins)
     entry.session = { directory: entry.session.directory, locality: entry.session.locality, binding: await entry.broker.rebind(upstream) }
     entry.replace = false
   }
@@ -177,12 +178,18 @@ export class CursorSdkTransport implements HarnessTransport {
     const credential = entry ? entry.credential : cursorCredential(input, this.env)
     const key = catalogKey(credential, input.credentials.leaseGeneration)
     const requested = cursorModelId(("model" in target ? target.model?.modelID : undefined) ?? input.config.model?.modelID ?? input.model?.modelID)
-    if (mode === "peek") return configOptionsPreview(cursorModelOptions(this.catalog.peek(key) ?? [], requested))
-    if (entry) return configOptionsPreview(cursorModelOptions(await this.catalog.load(key, () => this.lifecycle.current(entry, this.registry), credential), requested))
+    if (mode === "peek") return configOptionsPreview(cursorModelOptions(await this.catalog.peek(key, CATALOG_INPUTS) ?? [], requested))
+    if (entry) {
+      const models = await this.catalog.read(key, CATALOG_INPUTS, () => readCursorModels(() => this.lifecycle.current(entry, this.registry), credential))
+      return configOptionsPreview(cursorModelOptions(models, requested))
+    }
     const composed = await this.compose(input, credential, `${cursorHomeKey(input.credentials.accountOwner, credential.key, input.projection)}-probe`)
     const probe = hostKey(credential, composed.home)
     let host: CursorHost | undefined
-    try { return configOptionsPreview(cursorModelOptions(await this.catalog.load(key, async () => host = await this.registry.acquire(probe), credential), requested)) }
+    try {
+      const models = await this.catalog.read(key, CATALOG_INPUTS, () => readCursorModels(async () => host = await this.registry.acquire(probe), credential))
+      return configOptionsPreview(cursorModelOptions(models, requested))
+    }
     finally { if (host) await this.registry.release(probe, host) }
   }
 

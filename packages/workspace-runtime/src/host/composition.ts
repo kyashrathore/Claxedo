@@ -49,6 +49,7 @@ export function harnessCompositionOptions(input: HarnessCompositionInput): Harne
     cursor: () => ({
       env,
       homeRoot: path.join(harnessStateRoot, "cursor", "homes"),
+      ownerCursorDir: path.join(home, ".cursor"),
       worker: requireCursorWorker(env),
       ...placement,
     }),

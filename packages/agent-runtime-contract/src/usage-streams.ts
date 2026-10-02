@@ -34,6 +34,10 @@ function applyObservation(previous: RuntimeTokenUsage, observation: Pick<Runtime
   }
 }
 
+export function addTokenUsage(previous: RuntimeTokenUsage, next: RuntimeTokenUsage): RuntimeTokenUsage {
+  return applyObservation(previous, { kind: "delta", tokens: next })
+}
+
 /**
  * A scope's one-hour writes are a part of its cache writes. A share reported
  * above the total, or with no total at all, would make every revision of the
