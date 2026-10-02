@@ -228,3 +228,12 @@ and observes early prompt failure through the same race as permission arrival.
 The separate silence, startup-timeout and post-answer deadline cases still
 exercise cancellation and uncertain-session fencing. All 202 ACP conformance
 cases pass locally; product deadlines and transport code are unchanged.
+
+Staging run 37047182996 passed the static gate, documentation, all four Linux
+server shards, and 1,642 harness tests. The remaining failure checked the native
+Codex child's broker record immediately after the parent turn and the child's
+model request. Native child admission runs on its own ordered queue, so neither
+event acknowledges publication. The conformance flows now wait for the actual
+broker running/completed/interrupted records with a bounded deadline. Follow-up
+completion must be a new record, and the fixed three-second sleeps are removed.
+All 16 native-child conformance and transport cases pass (87 assertions).
