@@ -434,8 +434,8 @@ export const desktopRenderer: Policy = {
   // A child's report and a stored agent-authored opening share the event chrome
   // of `transcript/agent-message-event.tsx`, styled by
   // `transcript/agent-message-notice.css`. None adds a package edge.
-  // 1247/36, no headroom.
-  ceilings: { modules: 1247, packages: 36 },
+  // 1245/36, no headroom.
+  ceilings: { modules: 1245, packages: 36 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,
