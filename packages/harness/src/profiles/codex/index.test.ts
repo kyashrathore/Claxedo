@@ -196,7 +196,7 @@ test("a plugin generation change, a changed plugin set and an owner config chang
     const third = await prepareCodexProfile({ homeRoot, credentials: ownLogin, projection: { generation: "g3", mcpServers: [], notApplied: [], pluginRoots: [one] }, ownerHome: owner })
     expect(third.home).toBe(first.home)
     expect(third.plugins).toEqual(["one@claxedo-agent-plugins"])
-    expect(await fs.readdir(path.join(third.home, "marketplace", "plugins"))).toEqual(["one", "two"])
+    expect((await fs.readdir(path.join(third.home, "marketplace", "plugins"))).sort()).toEqual(["one", "two"])
   } finally { await fs.rm(root, { recursive: true, force: true }) }
 })
 

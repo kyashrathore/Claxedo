@@ -30,3 +30,12 @@ H32 (a custom ACP connection spends a stored secret, and revoking it refuses the
 Changed shapes that keep the assertion: H19's ungranted member is refused a connection by the Worker and refused by the relay with their own cookie; app 00's signed-out API refusal reads `/api/workspace` on the Worker; flows 21, 24 and 38 create repository-backed cloud workspaces; flow 39 selects by the D1 project id.
 
 Flows 24 and 38 run in a signed browser and on the signed desktop (`signedCloud` + `signedDesktop`); the desktop is launched with the stack's relay as `CLAXEDO_RELAY_ORIGINS`, the origin its renderer policy admits.
+
+Port leases publish a complete PID record atomically through a hard link, so
+another process cannot reclaim an empty file while its owner initializes it.
+Stale-owner cleanup is serialized per port and rechecks liveness under that
+claim. An unreadable owner identity is treated as occupied. A crashed reclaim
+claim conservatively blocks reclamation until the temporary lease directory is
+cleaned; it never authorizes deleting another run's lease. Linux CI also reserves
+the fixture range through `script/ci-linux-test-host.sh` so automatic outbound
+socket allocation cannot steal a probed port before the actual server binds.

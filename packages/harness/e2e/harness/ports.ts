@@ -1,4 +1,5 @@
-import { closeSync, mkdirSync, openSync, readFileSync, rmSync, writeSync } from "node:fs"
+import { linkSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs"
+import { randomUUID } from "node:crypto"
 import type { Server } from "node:http"
 import net from "node:net"
 import os from "node:os"
@@ -27,7 +28,7 @@ function holderAlive(file: string) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return false
     throw error
   }
-  if (!Number.isSafeInteger(pid) || pid <= 1) return false
+  if (!Number.isSafeInteger(pid) || pid <= 1) return true
   try {
     process.kill(pid, 0)
     return true
@@ -36,22 +37,41 @@ function holderAlive(file: string) {
   }
 }
 
+function reclaimLease(file: string) {
+  const guard = `${file}.reclaim`
+  try { mkdirSync(guard) }
+  catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "EEXIST") return false
+    throw error
+  }
+  try {
+    if (holderAlive(file)) return false
+    rmSync(file, { force: true })
+    return true
+  } finally {
+    rmSync(guard, { recursive: true })
+  }
+}
+
 function takeLease(port: number) {
   mkdirSync(LEASE_DIR, { recursive: true })
   const file = leaseFile(port)
-  for (let attempt = 0; attempt < 2; attempt += 1) {
-    try {
-      const fd = openSync(file, "wx")
-      writeSync(fd, String(process.pid))
-      closeSync(fd)
-      return true
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error
-      if (holderAlive(file)) return false
-      rmSync(file, { force: true })
+  const candidate = path.join(LEASE_DIR, `.candidate-${process.pid}-${randomUUID()}`)
+  writeFileSync(candidate, String(process.pid), { flag: "wx", mode: 0o600 })
+  try {
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      try {
+        linkSync(candidate, file)
+        return true
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error
+        if (!reclaimLease(file)) return false
+      }
     }
+    return false
+  } finally {
+    rmSync(candidate)
   }
-  return false
 }
 
 function dropLease(port: number) {

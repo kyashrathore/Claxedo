@@ -175,7 +175,9 @@ install_linux_gui_dependencies() {
     libnss3-dev \
     libgdk-pixbuf2.0-dev \
     libgtk-3-dev \
-    libxss-dev
+    libxss-dev \
+    xvfb \
+    xauth
 }
 
 install_linux_native_build_dependencies() {
@@ -211,6 +213,7 @@ run_release_gates_linux_x64() {
 }
 
 run_unit() {
+  bash script/ci-linux-test-host.sh
   install_linux_gui_dependencies
   install_root
   install_app_server_native_dependencies
@@ -231,6 +234,16 @@ run_workspace_files() {
   (
     cd packages/workspace-runtime
     bun test src/workspace-files/working-tree.test.ts src/routes/diff.test.ts src/target.test.ts
+  )
+}
+
+run_codex_conformance() {
+  bash script/ci-linux-test-host.sh
+  install_root
+  build_dist_packages
+  (
+    cd packages/harness
+    bun test src/conformance/codex.test.ts
   )
 }
 
@@ -274,6 +287,7 @@ case "$LANE" in
   release-gates-linux-x64) run_release_gates_linux_x64 ;;
   unit-linux) run_unit ;;
   workspace-files-linux) run_workspace_files ;;
+  codex-conformance) run_codex_conformance ;;
   typecheck-linux) run_typecheck ;;
   packages-dry-run) run_packages_dry_run ;;
   *)

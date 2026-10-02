@@ -165,6 +165,10 @@ jobs:
         if: runner.os == 'Linux' && matrix.lane == 'server-1' && needs.changes.outputs.boundary_server == 'true'
         run: bun run --cwd packages/claxedo-server verify:closure
 
+      - name: Prepare Linux sandbox and test ports
+        if: runner.os == 'Linux' && matrix.lane == 'rest'
+        run: bash script/ci-linux-test-host.sh
+
       # `bun turbo test` used to be a near-no-op: turbo.json declared only five
       # package-scoped `#test` entries, and turbo runs nothing for a package it
       # has no entry for, so 22 packages with real suites -- claxedo-server's

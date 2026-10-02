@@ -29,13 +29,18 @@ async function adjacentUnusedPorts() {
 // The lease directory and range are read when `ports.ts` loads, and the real
 // ones are shared with every other e2e run on the machine; a child gets its
 // own of both, so no other process can take or hold the ports it is asked about.
-test("a port another live process leases is skipped, and a dead holder's lease is reclaimed", async () => {
+test.each([
+  ["a live holder", String(process.pid), false],
+  ["a holder that has not published its PID", "", false],
+  ["a stale holder another process is reclaiming", String(UNASSIGNABLE_PID), true],
+] as const)("a lease with %s is skipped, and a dead holder's lease is reclaimed", async (_name, liveHolder, reclaiming) => {
   const tmp = mkdtempSync(path.join(os.tmpdir(), "claxedo-port-leases-"))
   try {
     const [live, dead] = await adjacentUnusedPorts()
     const leases = path.join(tmp, "claxedo-e2e-port-leases")
     mkdirSync(leases)
-    writeFileSync(path.join(leases, String(live)), String(process.pid))
+    writeFileSync(path.join(leases, String(live)), liveHolder)
+    if (reclaiming) mkdirSync(path.join(leases, `${live}.reclaim`))
     writeFileSync(path.join(leases, String(dead)), String(UNASSIGNABLE_PID))
     const env: Record<string, string | undefined> = { ...process.env, TMPDIR: tmp, CLAXEDO_E2E_PORT_RANGE: `${live}-${dead}` }
     delete env.CLAXEDO_E2E_DAEMON_PORT
@@ -50,7 +55,7 @@ test("a port another live process leases is skipped, and a dead holder's lease i
     expect(await child.exited).toBe(0)
     const result = JSON.parse(await new Response(child.stdout).text())
     expect(result).toEqual({ port: dead, lease: String(result.pid), pid: result.pid, released: true })
-    expect(readFileSync(path.join(leases, String(live)), "utf8")).toBe(String(process.pid))
+    expect(readFileSync(path.join(leases, String(live)), "utf8")).toBe(liveHolder)
   } finally {
     rmSync(tmp, { recursive: true, force: true })
   }
