@@ -216,7 +216,7 @@ export type SessionCreateInput = {
   readonly prompt?: PromptInput & { readonly messageId: string }
 }
 
-export type QueuedPromptPart = { readonly type: string; readonly text?: string; readonly filename?: string }
+export type QueuedPromptPart = { readonly type: string; readonly text?: string; readonly synthetic?: boolean; readonly filename?: string; readonly url?: string; readonly mime?: string }
 
 export type QueuedPromptSteering = {
   readonly mode: "start" | "steer"

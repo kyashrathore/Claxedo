@@ -1,5 +1,5 @@
 import { createSignal, type Accessor, type Setter } from "solid-js"
-import { toAppError, type AppError, type PromptInput, type QueuedPrompt, type QueuedPromptAction, type Server, type SessionLocation } from "@/server"
+import { ServerError, toAppError, type AppError, type PromptInput, type QueuedPrompt, type QueuedPromptAction, type Server, type SessionLocation } from "@/server"
 import type { QueuedMessage, QueuedMessages } from "../view/timeline/model"
 
 export type QueueInternal = QueuedMessages & {
@@ -34,8 +34,6 @@ async function read(context: QueueContext): Promise<void> {
     context.items.set(next)
     context.readError.set(undefined)
     context.onRead(next)
-    const editing = context.editing.get()
-    if (editing !== undefined && !next.some((item) => item.seq === editing)) context.editing.set(undefined)
   } catch (cause) {
     context.readError.set(toAppError(cause))
   }
@@ -56,7 +54,7 @@ async function control(context: QueueContext, seq: number, action: QueuedPromptA
     if (!result.ok && result.status !== "pending" && result.message) {
       context.controlError.set({ class: "conflict", message: result.message, retryable: false })
     }
-    if (action !== "hold" && context.editing.get() === seq) context.editing.set(undefined)
+    if (result.ok && action !== "hold" && context.editing.get() === seq) context.editing.set(undefined)
     await reread(context)
     return result.ok
   } catch (cause) {
@@ -69,14 +67,19 @@ async function control(context: QueueContext, seq: number, action: QueuedPromptA
 
 async function replace(context: QueueContext, seq: number, input: PromptInput): Promise<boolean> {
   const messageId = context.items.get().find((item) => item.seq === seq)?.messageId
-  if (!messageId) return false
+  if (!messageId) throw new ServerError({ class: "conflict", code: "queue_edit_missing", message: "The queued message is no longer available; your edit has not been sent" })
   const replaced = await context.server.sessions.replaceQueued(context.ref, seq, input, messageId)
-  context.editing.set(undefined)
+  if (replaced) context.editing.set(undefined)
   await reread(context)
   return replaced
 }
 
 async function beginEdit(context: QueueContext, record: QueuedMessage): Promise<void> {
+  if (context.editing.get() !== undefined) return
+  if (!record.parts.every((part) => part.type === "text" && part.text !== undefined || part.type === "file" && part.url && part.mime && part.filename)) {
+    context.controlError.set({ class: "invalid", message: "This queued attachment cannot be edited", retryable: false })
+    return
+  }
   if (await control(context, record.seq, "hold")) context.editing.set(record.seq)
 }
 
@@ -102,7 +105,10 @@ export function createQueue(server: Server, ref: SessionLocation, onRead: (items
     sendNow: (seq) => void control(context, seq, "steer"),
     remove: (seq) => void control(context, seq, "cancel"),
     beginEdit: (record) => void beginEdit(context, record),
-    cancelEdit: (seq) => void control(context, seq, "release"),
+    cancelEdit: (seq) => {
+      if (!context.items.get().some((item) => item.seq === seq)) context.editing.set(undefined)
+      else void control(context, seq, "release")
+    },
     reread: () => reread(context),
     replace: (seq, input) => replace(context, seq, input),
   }

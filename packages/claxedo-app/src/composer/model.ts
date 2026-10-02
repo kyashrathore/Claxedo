@@ -1,4 +1,4 @@
-import type { AppError, ModelChoice } from "@/server"
+import { ServerError, type AppError, type ModelChoice, type QueuedPromptPart } from "@/server"
 import type { FileSelection } from "@/lib/file-selection"
 import type { QuoteSource } from "@/lib/comment-note"
 import type { Transition } from "@/lib/machine"
@@ -95,6 +95,28 @@ export type Submission = {
 export const emptyPrompt = (): Prompt => [{ type: "text", content: "", start: 0, end: 0 }]
 
 export const emptyDraft = (): Draft => ({ prompt: emptyPrompt(), cursor: undefined, context: [], goalArmed: false })
+
+export function queuedDraft(parts: readonly QueuedPromptPart[]): Draft {
+  const context: ContextItem[] = []
+  let offset = 0
+  const prompt = parts.flatMap((part, index): PromptPart[] => {
+    if (part.type === "text" && part.text !== undefined) {
+      if (part.synthetic) {
+        context.push({ type: "text", key: `queued-note-${index}`, label: "", text: part.text })
+        return []
+      }
+      const content = `${offset ? "\n\n" : ""}${part.text}`
+      const start = offset
+      offset += content.length
+      return [{ type: "text", content, start, end: offset }]
+    }
+    if (part.type === "file" && part.url && part.mime && part.filename) {
+      return [{ type: "image", id: `queued-file-${index}`, filename: part.filename, mime: part.mime, dataUrl: part.url }]
+    }
+    throw new ServerError({ class: "invalid", code: "queue_part_unsupported", message: "This queued attachment cannot be edited" })
+  })
+  return { prompt, context, goalArmed: false }
+}
 
 export const randomId = () => uuid()
 

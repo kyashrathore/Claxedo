@@ -1,5 +1,5 @@
 import { createMemo, createSignal, type Accessor } from "solid-js"
-import { toAppError, type PromptAttachment, type PromptInput } from "@/server"
+import { ServerError, toAppError, type PromptAttachment, type PromptInput } from "@/server"
 import type { SessionView } from "@/session"
 import { formatCommentNote, formatImageMarkNote, formatQuoteNote } from "@/lib/comment-note"
 import { machine } from "@/lib/machine"
@@ -162,13 +162,14 @@ async function startDraftSession(input: SendInput, submission: Submission, promp
 
 async function deliverDraft(input: SendInput, draft: Draft, goal: GoalIntent, clientRequestId: string, setBooting: (booting: boolean) => void): Promise<SessionView> {
   const key = input.key()
+  const replace = input.queuedReplace()
   const delivery = input.working() ? "queue" : undefined
   const submission = await input.submission()
   const prompt = await buildPromptInput({ draft, submission, goal, delivery })
   const existing = input.view()
   if (!existing) return startDraftSession(input, submission, { ...prompt, clientRequestId }, setBooting)
-  const replace = goal.kind === "submit" ? undefined : input.queuedReplace()
-  if (replace && (await replace(prompt))) {
+  if (replace) {
+    if (!await replace(prompt)) throw new ServerError({ class: "conflict", code: "queue_edit_conflict", message: "The queued message changed; your edit has not been sent" })
     input.store.reset(key)
     input.normalMode()
     return existing
@@ -189,7 +190,7 @@ export function createComposerSend(input: SendInput) {
   const send = async () => {
     const draft = input.store.draft(input.key())
     if (sending() || !promptFilled(draft)) return
-    const goal = goalIntent(promptText(draft.prompt), draft.goalArmed, input.goalCapable())
+    const goal = input.queuedReplace() ? { kind: "none" as const } : goalIntent(promptText(draft.prompt), draft.goalArmed, input.goalCapable())
     if (goal.kind === "arm") {
       input.store.setPrompt(input.key(), promptWithoutText(draft.prompt), 0)
       return armGoal()

@@ -1,37 +1,31 @@
 import { createEffect, on } from "solid-js"
-import { sessionComposerKey, useComposerStore } from "@/composer"
+import { queuedDraft, sessionComposerKey, useComposerStore } from "@/composer"
 import type { PromptInput } from "@/server"
 import type { SessionView } from "@/session"
-import { queuedMessageText } from "./timeline"
 
 export function createQueueEdit(view: SessionView) {
   const store = useComposerStore()
-  const key = sessionComposerKey(view.ref)
+  const key = () => view.queue.editing() === undefined ? sessionComposerKey(view.ref) : `${sessionComposerKey(view.ref)}:queue:${view.queue.editing()}`
   createEffect(
     on(view.queue.editing, (seq) => {
       if (seq === undefined) return
       const record = view.queue.items().find((item) => item.seq === seq)
       if (!record) return
-      const text = queuedMessageText(record)
-      store.setPrompt(key, [{ type: "text", content: text, start: 0, end: text.length }], text.length)
+      store.restore(key(), queuedDraft(record.parts))
     }),
   )
   return {
-    accepted: () => {
-      const seq = view.queue.editing()
-      if (seq !== undefined) view.queue.remove(seq)
-    },
+    key,
     edit: {
       active: () => view.queue.editing() !== undefined,
-      replace: (input: PromptInput) => {
+      get replace() {
         const seq = view.queue.editing()
-        return seq === undefined ? Promise.resolve(false) : view.replaceQueued(seq, input)
+        return (input: PromptInput) => seq === undefined ? Promise.resolve(false) : view.replaceQueued(seq, input)
       },
       cancel: () => {
         const seq = view.queue.editing()
         if (seq === undefined) return
         view.queue.cancelEdit(seq)
-        store.reset(key)
       },
     },
   }

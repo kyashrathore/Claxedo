@@ -5,6 +5,7 @@ import type { ImagePart, Prompt } from "./model"
 import { promptFilled, promptImages, promptText, quoteContextItem } from "./model"
 import { buildPromptInput, createComposerSend } from "./send"
 import { createComposerStore } from "./store"
+import type { SessionView } from "@/session"
 
 const KEY = "session:goal"
 const IMAGE: ImagePart = { type: "image", id: "img-1", filename: "shot.png", mime: "image/png", dataUrl: "data:image/png;base64,AA==" }
@@ -67,4 +68,57 @@ test("a quoted excerpt with its comment travels as one text note naming where it
 test("a draft holding only a quoted comment can be sent", () => {
   const quote = quoteContextItem({ source: { kind: "conversation" }, quote: "q", comment: "c" })
   expect(promptFilled({ prompt: [{ type: "text", content: "", start: 0, end: 0 }], context: [quote] })).toBe(true)
+})
+
+test("a refused queue replacement preserves the edit and never sends a fresh prompt", async () => {
+  const store = createComposerStore()
+  store.setPrompt(KEY, [{ type: "text", content: "edited queued input", start: 0, end: 19 }], 19)
+  let sends = 0
+  let accepted = 0
+  const view = { send: async () => { sends++ } } as unknown as SessionView
+  const send = createRoot(() => createComposerSend({
+    key: () => KEY, store, mode: () => "normal", normalMode: () => undefined,
+    submission: async () => ({}), working: () => true, goalCapable: () => false,
+    view: () => view, queuedReplace: () => async () => false,
+    afterAccepted: () => { accepted++ }, focusEditor: () => undefined, goalStopFailed: () => undefined,
+  }))
+  await send.send()
+  expect(sends).toBe(0)
+  expect(accepted).toBe(0)
+  expect(promptText(store.draft(KEY).prompt)).toBe("edited queued input")
+  expect(send.state().kind).toBe("rejected")
+})
+
+test("saving captures its edit before asynchronous settings and never clears the restored original draft", async () => {
+  const store = createComposerStore()
+  const editingKey = `${KEY}:queue:1`
+  store.setPrompt(KEY, [{ type: "text", content: "Original draft", start: 0, end: 14 }, IMAGE], 14)
+  store.setGoalArmed(KEY, true)
+  store.setPrompt(editingKey, [{ type: "text", content: "/goal edited input", start: 0, end: 18 }], 18)
+  let key = editingKey
+  let replacing = true
+  let sends = 0
+  const prompts: Awaited<ReturnType<typeof buildPromptInput>>[] = []
+  let release = () => {}
+  const settings = new Promise<void>((resolve) => { release = resolve })
+  const view = { send: async () => { sends++ } } as unknown as SessionView
+  const send = createRoot(() => createComposerSend({
+    key: () => key, store, mode: () => "normal", normalMode: () => undefined,
+    submission: async () => { await settings; return {} }, working: () => true, goalCapable: () => true,
+    view: () => view, queuedReplace: () => replacing ? async (prompt) => { prompts.push(prompt); return true } : undefined,
+    focusEditor: () => undefined, goalStopFailed: () => undefined,
+  }))
+  const saved = send.send()
+  replacing = false
+  key = KEY
+  release()
+  await saved
+  expect(sends).toBe(0)
+  expect(prompts).toHaveLength(1)
+  expect(prompts[0]?.text).toBe("/goal edited input")
+  expect(prompts[0]?.goal).toBeUndefined()
+  expect(promptText(store.draft(editingKey).prompt)).toBe("")
+  expect(promptText(store.draft(KEY).prompt)).toBe("Original draft")
+  expect(promptImages(store.draft(KEY).prompt)).toEqual([IMAGE])
+  expect(store.draft(KEY).goalArmed).toBe(true)
 })

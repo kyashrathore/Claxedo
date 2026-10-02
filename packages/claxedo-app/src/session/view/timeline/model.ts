@@ -1,7 +1,7 @@
 import type { Accessor } from "solid-js"
 import type { AgentTurnOutcome, FirstTurnErrorClass } from "@claxedo/agent-runtime-contract"
 import { type PairedTranscriptTypography } from "@/ui/utils"
-import type { BackgroundWork, SessionStatus } from "@/server"
+import type { BackgroundWork, QueuedPrompt, SessionStatus } from "@/server"
 import type { MessageNavMessage, MessageNavPreview, TranscriptConversation } from "@/transcript"
 
 export type TurnOutcome = AgentTurnOutcome
@@ -120,19 +120,7 @@ export type TimelineHost = {
   readonly navigation: TimelineNavigation
 }
 
-export type QueuedMessage = {
-  readonly seq: number
-  readonly messageId?: string
-  readonly queuedAt: number
-  readonly parts: ReadonlyArray<{ readonly type: string; readonly text?: string; readonly filename?: string }>
-  readonly held: boolean
-  readonly steering?: {
-    readonly mode: "start" | "steer"
-    readonly operationId: string
-    readonly state: "dispatching" | "accepted" | "unknown" | "rejected"
-    readonly message?: string
-  }
-}
+export type QueuedMessage = QueuedPrompt
 
 export type QueuedMessages = {
   readonly items: Accessor<readonly QueuedMessage[]>

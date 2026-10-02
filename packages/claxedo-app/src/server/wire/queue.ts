@@ -5,7 +5,10 @@ function queuedPart(value: unknown): QueuedPromptPart | undefined {
   if (!isRecord(value) || typeof value.type !== "string") return undefined
   const partText = asString(value.text)
   const filename = asString(value.filename)
-  return { type: value.type, ...(partText !== undefined ? { text: partText } : {}), ...(filename !== undefined ? { filename } : {}) }
+  const url = asString(value.url)
+  const mime = asString(value.mime)
+  return { type: value.type, ...(partText !== undefined ? { text: partText } : {}), ...(value.synthetic === true ? { synthetic: true } : {}), ...(filename !== undefined ? { filename } : {}),
+    ...(url !== undefined ? { url } : {}), ...(mime !== undefined ? { mime } : {}) }
 }
 
 function steering(value: unknown): QueuedPromptSteering | undefined {

@@ -1,5 +1,5 @@
 export type { ContextItem, ImagePart, QuoteSource, Submission } from "./model"
-export { promptText } from "./model"
+export { promptText, queuedDraft } from "./model"
 export { setCursorPosition } from "./editor/dom"
 export { useComposerStore, draftComposerKey, sessionComposerKey, type ComposerKey } from "./store"
 export { ComposerStoreProvider } from "./provider"

@@ -1,5 +1,5 @@
 import { createEffect, createMemo, createSignal, Match, on, Show, Switch } from "solid-js"
-import { Composer, promptText, SelectionComment, sessionComposerKey, useComposerStore } from "@/composer"
+import { Composer, promptText, SelectionComment, useComposerStore } from "@/composer"
 import { usePhone } from "@/lib/viewport"
 import { FailureBoundary, FailureNotice } from "@/lib/failure"
 import { sessionId, useServer, type SessionLocation } from "@/server"
@@ -112,7 +112,7 @@ function SessionBody(props: {
   const composers = useComposerStore()
   let body: HTMLDivElement | undefined
   let timeline: HTMLDivElement | undefined
-  const draft = () => composers.draft(sessionComposerKey(props.view.ref))
+  const draft = () => composers.draft(queueEdit.key())
   const driving = () => props.active && !props.readOnly
   const composing = () => (!parentId() || !props.controls.owner) && !props.readOnly
   installSessionScreenKeydown({
@@ -134,7 +134,7 @@ function SessionBody(props: {
           <FloatingPeekRow count={users().length} peek={peek} t={host.t} />
         </Show>
         <Show when={props.active && composing() && props.controls.send}>
-          <SelectionComment root={() => timeline} composerKey={() => sessionComposerKey(props.view.ref)} source={{ kind: "conversation" }} />
+          <SelectionComment root={() => timeline} composerKey={queueEdit.key} source={{ kind: "conversation" }} />
         </Show>
         <div
           ref={timeline}
@@ -166,14 +166,13 @@ function SessionBody(props: {
                 <Composer
                   readOnly={!props.controls.send}
                   manageSession={props.controls.owner}
-                  composerKey={sessionComposerKey(props.view.ref)}
+                  composerKey={queueEdit.key()}
                   placementId={props.view.ref.placementId}
                   view={props.view}
                   attachmentWorkspace={props.controls.owner}
                   hidden={blocked()}
                   afterAccepted={() => {
                     peek.sent()
-                    queueEdit.accepted()
                   }}
                   queuedEdit={queueEdit.edit}
                   dropZone={() => body}
