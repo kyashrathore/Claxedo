@@ -206,16 +206,11 @@ export class AcpTransport implements HarnessTransport {
     }
     const prompt = entry.peer.agent.prompt({ sessionId: session.binding.upstreamSessionId, prompt: content })
     entry.prompt = prompt
-    // The prompt's answer, a failure included, can overtake updates the agent
-    // sent before it that are still in the ordered delivery chain.
     void prompt.then((result) => entry.updatesDelivered().then(() => result)).then((result) => {
       for (const event of acpPromptUsage(result, session.binding.upstreamSessionId, entry.context)) queue.push(event)
       for (const event of translateStopReason(result.stopReason, session.binding.sessionId)) queue.push({ event })
       queue.end()
-    }, (error: unknown) => {
-      const fail = () => queue.fail(error)
-      void entry.updatesDelivered().then(fail, fail)
-    })
+    }, (error: unknown) => entry.updatesDelivered().then(() => queue.fail(error), () => queue.fail(error)))
     yield* queue
   }
 
