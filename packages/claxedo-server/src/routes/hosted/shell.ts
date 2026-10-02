@@ -26,7 +26,6 @@ import { Hono } from "hono"
 import type { Context } from "hono"
 import {
   ControlPlaneAuthError,
-  bearerToken,
   controlPlaneAuthContext,
   controlPlaneAuthErrorBody,
   issuesSessions,
@@ -35,10 +34,6 @@ import {
   type SignedControlPlaneAuth,
 } from "@claxedo/server-core/platform/auth/auth"
 import type { RequestAuthenticationAdapter } from "@claxedo/server-core/platform/auth/authentication"
-import { requestHasAuthenticationCredential } from "@claxedo/server-core/platform/auth/authentication"
-import type { SandboxManagerPort } from "@claxedo/server-core/sandbox/manager-port"
-import { authorityRowBacking, readyCloudWorkspaces } from "@claxedo/server-core/workspace/cloud-runtime-readiness"
-import { authorityRowReachable } from "@claxedo/server-core/workspace/placement-reachability"
 import { connectLiveSyncRoom, type LiveSyncRoomNamespace } from "../../deployments/hosted-workerd/live-sync-room.cf"
 import { requireAuthority, type WorkspaceRecord } from "@claxedo/server-core/platform/auth/authority"
 import { createRelayRuntimeClient, decodeRelayRuntimeJson } from "../../workspace/relay-runtime-client"
@@ -64,10 +59,6 @@ export type HostedShellRouteOptions = {
   version?: string
   /** Whether the entry mounted the hosted Connections family; the bootstrap declares it. */
   connections?: boolean
-  /** Signed project inventory source (the authority workspaces.list). */
-  listWorkspaces?: (auth: SignedControlPlaneAuth) => Promise<unknown>
-  /** Whose lease says which cloud workspaces of that inventory are running. */
-  sandboxManager?: Pick<SandboxManagerPort, "target">
   /** Heartbeat cadence for the events stream (tests shrink this). */
   heartbeatMs?: number
   /**
@@ -167,52 +158,6 @@ function piProviderAuth() {
     anthropic: [{ type: "api", label: "API Key" }],
     openai: [{ type: "api", label: "API Key" }],
   }
-}
-
-// The local server projects the same inventory, and the two must stay in step.
-// They cannot be one function: the local one reaches the fs-backed agent config
-// and workspace store, which the Worker bundle cannot carry. The inventory
-// tells the app shell which directories a signed workspace occupies, and so
-// which runtime-owned reads (provider, files, PTY) take the relay.
-export function signedShellProjects(workspaces: unknown[], readyCloud: ReadonlySet<string>) {
-  const groups = new Map<string, {
-    id: string
-    directories: string[]
-    workspaces: Record<string, unknown>
-  }>()
-  for (const workspace of workspaces) {
-    const row = asRecord(workspace)
-    const workspaceId = asString(row?.workspace_id) ?? asString(row?.workspaceId)
-    if (!workspaceId) continue
-    // A workspace served elsewhere is addressed by its id; the host's own path
-    // is location metadata.
-    const directory = `workspace:${workspaceId}`
-    const remoteDirectory = asString(row?.remote_directory) ?? asString(row?.remoteDirectory)
-    const projectId = asString(row?.project_id) ?? asString(row?.projectID) ?? workspaceId
-    const workspaceName = asString(row?.workspace_name) ?? asString(row?.workspaceName) ?? asString(row?.display_name) ?? asString(row?.displayName) ?? workspaceId
-    const group = groups.get(projectId) ?? { id: projectId, directories: [], workspaces: {} }
-    const backing = authorityRowBacking(row)
-    group.directories.push(workspaceId)
-    group.workspaces[workspaceId] = {
-      id: workspaceId,
-      backing,
-      workspace_name: workspaceName,
-      reachable: authorityRowReachable(row, readyCloud),
-      directory,
-      ...(remoteDirectory ? { remote_directory: remoteDirectory } : {}),
-      // Carried so the client can derive an owner/repo label of its own (the
-      // rail already does) without a second round-trip.
-      ...(asString(row?.repo_url) ?? asString(row?.repoUrl) ? { repo_url: asString(row?.repo_url) ?? asString(row?.repoUrl) } : {}),
-      ...(asString(row?.repo_name) ?? asString(row?.repoName) ? { repo_name: asString(row?.repo_name) ?? asString(row?.repoName) } : {}),
-    }
-    groups.set(projectId, group)
-  }
-  return [...groups.values()].map((group) => ({
-    id: group.id,
-    worktree: group.directories[0] ?? group.id,
-    sandboxes: group.directories,
-    workspaces: group.workspaces,
-  }))
 }
 
 /**
@@ -475,22 +420,6 @@ async function relayedHarnessOptionsResponse(c: Context, options: HostedShellRou
   }
 }
 
-function hasCredential(c: Context, options: HostedShellRouteOptions) {
-  return options.authentication
-    ? requestHasAuthenticationCredential(c.req.raw, options.authentication.descriptor)
-    : !!bearerToken(c.req.header("authorization") ?? null)
-}
-
-async function signedProjects(c: Context, options: HostedShellRouteOptions) {
-  if (!hasCredential(c, options)) return []
-  const auth = await signedAuth(c, options)
-  if (!auth) return []
-  if (!options.listWorkspaces) return []
-  const listed = await options.listWorkspaces(auth)
-  const workspaces = Array.isArray(listed) ? listed : []
-  return signedShellProjects(workspaces, await readyCloudWorkspaces(options.sandboxManager, workspaces))
-}
-
 function authErrorResponse(c: Context, err: unknown) {
   if (err instanceof ControlPlaneAuthError) {
     return c.json(controlPlaneAuthErrorBody(err), err.status)
@@ -624,26 +553,17 @@ export function HostedShellRoutes(options: HostedShellRouteOptions) {
         healthy: true,
         version: version(options),
       }))
-    // Public, and deliberately not the node's bootstrap body: a hosted central
-    // has no filesystem, no embedded runtime and no machine behind it. The app
-    // reads it before its first render, while nobody is signed in yet, which is
-    // why it passes no auth gate and an anonymous caller learns only the
-    // posture. A caller holding a credential also gets the project catalog
-    // `/project` serves, which is what a signed node's bootstrap carries too.
-    .get("/api/claxedo/bootstrap", async (c) => {
+    // Public and the same for every caller: the app reads it before its first
+    // render, while nobody is signed in yet. Projects and placements come from
+    // the account catalog (`/api/workspace`), never from here.
+    .get("/api/claxedo/bootstrap", (c) => {
       c.header("Cache-Control", "no-store")
-      const declaration = {
+      return c.json({
         healthy: true,
         version: version(options),
         events: { hostAggregate: false },
         deployment: { serverKind: "hosted", issuesSessions: issuesSessions(options.authConfig), documents: false, connections: options.connections === true },
-      }
-      if (!hasCredential(c, options)) return c.json(declaration)
-      try {
-        return c.json({ ...declaration, project: await signedProjects(c, options) })
-      } catch (err) {
-        return authErrorResponse(c, err)
-      }
+      })
     })
     .get("/path", (c) => c.json(hostedPath(directoryInput(c))))
     .get("/api/claxedo/agent-config/providers", async (c) => {

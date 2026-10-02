@@ -23,7 +23,7 @@ function serve() {
     },
   })
   running.push(server)
-  return { seen, api: createProviderConnectApi(createTransport({ serverUrl: `http://127.0.0.1:${server.port}`, auth: { kind: "none" } }), new QueryClient()) }
+  return { seen, api: createProviderConnectApi(createTransport({ serverUrl: `http://127.0.0.1:${server.port}` }), new QueryClient()) }
 }
 
 test("provider connect: a custom provider is declared with the header its key rides in", async () => {
