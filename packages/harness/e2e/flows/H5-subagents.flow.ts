@@ -1,4 +1,5 @@
 import assert from "node:assert/strict"
+import { eventually } from "../harness/eventually"
 import { ClaxedoApi, assistantText } from "../harness/api"
 import { SCRIPTED_ACP_HARNESS } from "../harness/acp/connection"
 import { acpScriptToken } from "../harness/acp/script"
@@ -34,9 +35,10 @@ export async function run() {
       "child transcript was absent from the live stream")
     assert.ok(stream.frames.some((frame) => frameType(frame) === "session.usage" && frameSessionId(frame) === parent.id),
       "owner usage was absent from the live stream")
-    const usage = await api.usageBySession(Date.now() - 60_000, Date.now() + 60_000)
-    assert.ok(usage.claxedo.totals.input >= 11 && usage.claxedo.totals.output >= 7,
-      "subagent turn usage was absent from the local person's totals")
+    const usage = await eventually("subagent turn usage in the local person's totals", async () => {
+      const read = await api.usageBySession(Date.now() - 60_000, Date.now() + 60_000)
+      return read.claxedo.totals.input >= 11 && read.claxedo.totals.output >= 7 ? read : undefined
+    }, 20_000)
     assert.ok(usage.breakdown.rows.some((row) => row.value.endsWith(`:session:${parent.id}`) && row.input >= 11 && row.output >= 7),
       `subagent turn usage was not attributed to the owning session: ${JSON.stringify(usage.breakdown.rows)}`)
     assert.deepEqual(stack.egress.attempts, [])

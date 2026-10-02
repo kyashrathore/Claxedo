@@ -302,7 +302,8 @@ export function observeStream(url: URL) {
 
 /** Records one loopback HTTP exchange made outside the global `fetch`. */
 export async function observeHttp(target: URL, method: string, accept: string | null, reply: Response) {
-  const unsynchronizedReadback = method === "GET" && flow !== "H0-smoke" && (target.pathname === "/api/claxedo/health" || target.pathname.endsWith("/api/wr/health"))
+  const unsynchronizedReadback = method === "GET" && (target.pathname === "/api/claxedo/usage"
+    || flow !== "H0-smoke" && (target.pathname === "/api/claxedo/health" || target.pathname.endsWith("/api/wr/health")))
   const capture = active && !unsynchronizedReadback && (target.hostname === "127.0.0.1" || target.hostname === "localhost") && accept !== "text/event-stream"
   if (capture && !reply.headers.get("content-type")?.includes("text/event-stream")) {
     observations.push({ kind: "http", method, route: `${target.pathname}${target.search}`, status: reply.status, body: parsed(await reply.clone().text()) })
