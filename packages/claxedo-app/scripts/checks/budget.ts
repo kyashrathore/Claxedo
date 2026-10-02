@@ -13,7 +13,7 @@ const parts: readonly Part[] = [
   { name: "Session screen", budget: 14300, folders: ["src/session/view"] },
   { name: "Composer", budget: 12163, folders: ["src/composer"] },
   { name: "Rail and workbench", budget: 8300, folders: ["src/rail", "src/workbench"] },
-  { name: "Browser tabs", budget: 1375, folders: ["src/browser"] },
+  { name: "Browser tabs", budget: 1443, folders: ["src/browser"] },
   { name: "Shell and platform", budget: 6628, folders: ["src/shell", "src/auth", "src/i18n", "src/lib", "src/*"], except: ["src/lib/machine.ts"] },
   { name: "Terminal", budget: 4300, folders: ["src/terminal"] },
   { name: "Settings and accounts", budget: 5200, folders: ["src/settings", "src/accounts"] },

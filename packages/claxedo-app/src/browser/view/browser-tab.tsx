@@ -1,21 +1,30 @@
-import { createEffect, on, Show, type JSX } from "solid-js"
-import { useTranslator } from "@/i18n"
-import { browserDictionary } from "../i18n"
+import { createEffect, createMemo, For, on, Show, type JSX } from "solid-js"
 import { usePickDelivery } from "../pick-to-composer"
-import { useBrowserTab } from "../store"
+import { useBrowserTabs } from "../store"
+import type { BrowserTab } from "../tab"
 import { ConsoleDrawer } from "./console"
 import { PageHost } from "./page-host"
 import { PickerShield } from "./picker"
 import { Toolbar } from "./toolbar"
 import { useNoticeToasts } from "./toolbar-actions"
 
-export type BrowserTabViewProps = { readonly url?: string; readonly navigationVersion?: number }
+export type BrowserTabViewProps = {
+  readonly url?: string
+  readonly navigationVersion?: number
+  readonly active: boolean
+  readonly open: boolean
+}
 
 export function BrowserTabView(props: BrowserTabViewProps): JSX.Element {
-  const t = useTranslator(browserDictionary)
-  const tab = useBrowserTab()
-  const deliver = usePickDelivery()
-  useNoticeToasts(tab)
+  const tabs = useBrowserTabs()
+  const tab = createMemo(() => {
+    const placementId = tabs.placementId()
+    return placementId && props.open ? tabs.tabFor(placementId) : undefined
+  })
+  createEffect(() => {
+    const placementId = tabs.placementId()
+    if (placementId && !props.open) tabs.closeTab(placementId)
+  })
   createEffect(
     on(
       () => [tab(), props.url, props.navigationVersion] as const,
@@ -25,31 +34,38 @@ export function BrowserTabView(props: BrowserTabViewProps): JSX.Element {
     ),
   )
   return (
-    <Show
-      when={tab()}
-      fallback={
-        <p class="flex h-full items-center justify-center px-4 text-center text-sm text-text-muted">
-          {t("browser.noPlacement")}
-        </p>
-      }
+    <For each={tabs.tabs()}>
+      {(current) => <BrowserPage tab={current} active={props.active && tab() === current} />}
+    </For>
+  )
+}
+
+function BrowserPage(props: { readonly tab: BrowserTab; readonly active: boolean }): JSX.Element {
+  const deliver = usePickDelivery()
+  useNoticeToasts(() => (props.active ? props.tab : undefined))
+  return (
+    <div
+      class="absolute inset-0 flex h-full min-h-0 w-full flex-col overflow-hidden bg-background-base"
+      classList={{ hidden: !props.active }}
+      inert={!props.active}
+      data-testid="workspace-browser-panel"
     >
-      {(current) => (
-        <div
-          class="flex h-full min-h-0 w-full flex-col overflow-hidden bg-background-base"
-          data-testid="workspace-browser-panel"
-        >
-          <div class="flex h-full w-full flex-col bg-background-base text-text-base">
-            <Toolbar tab={current()} />
-            <div class="relative flex-1">
-              <div data-testid="browser-pane-webview-host" class="absolute inset-0">
-                <PageHost tab={current()} deliver={deliver} />
-                <PickerShield tab={current()} />
-              </div>
-            </div>
-            <ConsoleDrawer tab={current()} />
+      <div class="flex h-full w-full flex-col bg-background-base text-text-base">
+        <Show when={props.active}>
+          <Toolbar tab={props.tab} />
+        </Show>
+        <div class="relative flex-1">
+          <div data-testid="browser-pane-webview-host" class="absolute inset-0">
+            <PageHost tab={props.tab} deliver={(pick) => props.active && deliver(pick)} />
+            <Show when={props.active}>
+              <PickerShield tab={props.tab} />
+            </Show>
           </div>
         </div>
-      )}
-    </Show>
+        <Show when={props.active}>
+          <ConsoleDrawer tab={props.tab} />
+        </Show>
+      </div>
+    </div>
   )
 }

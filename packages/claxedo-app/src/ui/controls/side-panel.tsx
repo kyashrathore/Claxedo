@@ -121,7 +121,8 @@ export function SidePanelArea(
         >
           {props.children}
         </div>
-        <Show when={host.slot()} fallback={props.panel}>
+        {props.panel}
+        <Show when={host.slot()}>
           {(slot) => slot().panel}
         </Show>
       </div>

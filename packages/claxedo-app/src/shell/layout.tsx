@@ -6,6 +6,7 @@ import { clampWidth, createShellPreferences, SIDEBAR_MAX_WIDTH, SIDEBAR_MIN_WIDT
 import { isMac } from "./palette/keybinding"
 import { usePageTabFocused } from "./view/page-tab"
 import { trackMacWindowControls } from "./window-controls"
+import { useShellRoute } from "./router"
 
 export type ShellLayout = {
   readonly state: Accessor<ShellLayoutState>
@@ -32,7 +33,8 @@ export function ShellLayoutProvider(props: { readonly scope: string; readonly ch
 
   const [peekMuted, setPeekMuted] = createSignal(false)
   const pageTabFocused = usePageTabFocused()
-  const panelAllowed = () => !pageTabFocused()
+  const route = useShellRoute()
+  const panelAllowed = () => route.route().kind !== "page" && !pageTabFocused()
 
   const send = (event: ShellLayoutEvent) => {
     if (event.type === "toggleSidebar") setPeekMuted(sidebarPinned(machine.state()))

@@ -146,10 +146,6 @@ function ActiveTab(props: { readonly placementId: PlacementId }): JSX.Element {
     const current = tab()
     return current.kind === "subagent" ? current : undefined
   }
-  const browser = () => {
-    const current = tab()
-    return current.kind === "browser" ? current : undefined
-  }
   const plan = () => {
     const current = tab()
     return current.kind === "plan" ? current : undefined
@@ -184,13 +180,6 @@ function ActiveTab(props: { readonly placementId: PlacementId }): JSX.Element {
           </div>
         )}
       </Match>
-      <Match when={browser()}>
-        {(current) => (
-          <div class="absolute inset-0 h-full min-h-0 overflow-hidden">
-            <BrowserTabView url={current().url} navigationVersion={current().navigationVersion} />
-          </div>
-        )}
-      </Match>
       <Match when={context()}>
         {(current) => <RegisteredView kind="context" placementId={props.placementId} sessionId={current().sessionId} />}
       </Match>
@@ -208,6 +197,20 @@ function ActiveTab(props: { readonly placementId: PlacementId }): JSX.Element {
         {(current) => <PlanTab markdown={current().markdown} composerKey={fileComments.composerKey} />}
       </Match>
     </Switch>
+  )
+}
+
+function BrowserPanel(): JSX.Element {
+  const panel = usePanel()
+  const browser = createMemo(() => panel.tabs().find((tab) => tab.kind === "browser"))
+  const active = () => panel.open() && panel.activeTab().kind === "browser"
+  return (
+    <BrowserTabView
+      open={!!browser()}
+      url={browser()?.url}
+      navigationVersion={browser()?.navigationVersion}
+      active={active()}
+    />
   )
 }
 
@@ -236,45 +239,41 @@ export function PanelBody(props: { readonly tabsShown: boolean }): JSX.Element {
   const t = useTranslator(panelDictionary)
   const panel = usePanel()
   return (
-    <Show
-      keyed
-      when={panel.placementId()}
-      fallback={
-        <div class="flex h-full items-center justify-center px-6 text-center text-compact text-text-weak">
-          {t("panel.noPlacement")}
-        </div>
-      }
-    >
-      {(placementId) => (
-        <MarkedProvider>
-          <div class="flex h-full min-h-0 flex-col">
-            <div class="min-h-0 flex-1 overflow-hidden">
-              <div
-                class="relative flex size-full min-w-0 overflow-hidden [container-type:inline-size]"
-                data-workspace-panel-session-id={panel.sessionId()}
-              >
-                <NavigatorColumn placementId={placementId} />
-                <Show when={props.tabsShown}>
-                  <WorkspacePending placementId={placementId} />
-                </Show>
-                <div class="h-full min-w-0 flex-1">
-                  <div class="relative flex size-full min-h-0 overflow-hidden bg-background-base h-full">
-                    <div id="review-panel" class="relative flex-1 min-w-0 flex flex-col h-full">
-                      <div class="flex min-h-0 flex-1 flex-col bg-background-stronger">
-                        <div class="relative min-h-0 flex-1 overflow-hidden contain-strict">
-                          <Show when={props.tabsShown}>
-                            <ActiveTab placementId={placementId} />
-                          </Show>
+    <MarkedProvider>
+      <div class="flex h-full min-h-0 flex-col">
+        <div class="min-h-0 flex-1 overflow-hidden">
+          <div
+            class="relative flex size-full min-w-0 overflow-hidden [container-type:inline-size]"
+            data-workspace-panel-session-id={panel.sessionId()}
+          >
+            <Show keyed when={panel.allowed() && panel.placementId()}>
+              {(placementId) => <NavigatorColumn placementId={placementId} />}
+            </Show>
+            <Show keyed when={props.tabsShown && panel.placementId()}>
+              {(placementId) => <WorkspacePending placementId={placementId} />}
+            </Show>
+            <div class="h-full min-w-0 flex-1">
+              <div class="relative flex size-full min-h-0 overflow-hidden bg-background-base h-full">
+                <div id="review-panel" class="relative flex-1 min-w-0 flex flex-col h-full">
+                  <div class="flex min-h-0 flex-1 flex-col bg-background-stronger">
+                    <div class="relative min-h-0 flex-1 overflow-hidden contain-strict">
+                      <BrowserPanel />
+                      <Show keyed when={props.tabsShown && panel.placementId()}>
+                        {(placementId) => <ActiveTab placementId={placementId} />}
+                      </Show>
+                      <Show when={!panel.placementId()}>
+                        <div class="flex h-full items-center justify-center px-6 text-center text-compact text-text-weak">
+                          {t("panel.noPlacement")}
                         </div>
-                      </div>
+                      </Show>
                     </div>
                   </div>
                 </div>
               </div>
             </div>
           </div>
-        </MarkedProvider>
-      )}
-    </Show>
+        </div>
+      </div>
+    </MarkedProvider>
   )
 }

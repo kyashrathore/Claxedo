@@ -15,14 +15,13 @@
  * Electron shell behaves exactly as it did before this feature landed.
  */
 
-import { app, webContents as electronWebContents } from "electron"
+import { app, session, webContents as electronWebContents } from "electron"
 import type { Event, WebPreferences } from "electron"
 import log from "electron-log/main.js"
 import { existsSync } from "node:fs"
 import path from "node:path"
 
 import { isBrowserTabEnabled } from "./flag"
-import { readString } from "@claxedo/helpers/readers"
 import { configureAgentBrowserPartition, installAgentBrowserNavigationGuards } from "./partition"
 import { BrowserRegistry } from "./registry"
 import { AGENT_BROWSER_PARTITION, createWillAttachWebviewHandler } from "./will-attach-webview"
@@ -94,18 +93,16 @@ export function setupBrowserTab(): BrowserTabSetup | undefined {
     // If this web-contents itself belongs to the agent-browser partition (i.e.
     // it is a guest), harden its navigation surface too.
     try {
-      // `partition` is a runtime-only field on `Session` — Electron does not
-      // declare it — so probe for it instead of asserting it exists.
-      const sessionPartition = readString(contents.session, "partition")
+      const browserSession = contents.session === session.fromPartition(AGENT_BROWSER_PARTITION)
       // A guest only reaches this event if its attach survived the
       // will-attach-webview gate, which pins the partition — so a webview
       // already carrying it came through the sanctioned path. Registration
       // (browser:register) refuses any webContentsId never admitted here.
-      if (contents.getType?.() === "webview" && sessionPartition === AGENT_BROWSER_PARTITION) {
+      if (contents.getType() === "webview" && browserSession) {
         registry.admitGuest(contents.id)
         contents.once("destroyed", () => registry.dropGuest(contents.id))
       }
-      if (contents.getType?.() === "webview" || sessionPartition === AGENT_BROWSER_PARTITION) {
+      if (contents.getType() === "webview" || browserSession) {
         installAgentBrowserNavigationGuards(contents)
       }
     } catch (err) {

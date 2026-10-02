@@ -1,7 +1,6 @@
 import { Match, Show, Switch, type JSX } from "solid-js"
 import { WorkspaceArea } from "@/panel"
 import { useWorkbench, Workbench } from "@/workbench"
-import { SidePanelArea } from "@/ui"
 import { useShellLayout } from "../layout"
 import type { RouteParams } from "../routes"
 import type { PageEntry } from "../types"
@@ -73,18 +72,9 @@ export function ShellFrame(props: ShellFrameProps): JSX.Element {
           data-center={props.center.kind}
           data-testid="shell-center"
         >
-          <Show
-            when={props.center.kind === "panes"}
-            fallback={
-              <SidePanelArea inset={0} panel={undefined}>
-                <CenterRegion center={props.center} tabs={props.compactTabs} />
-              </SidePanelArea>
-            }
-          >
-            <WorkspaceArea>
-              <CenterRegion center={props.center} tabs={props.compactTabs} />
-            </WorkspaceArea>
-          </Show>
+          <WorkspaceArea>
+            <CenterRegion center={props.center} tabs={props.compactTabs} />
+          </WorkspaceArea>
         </main>
       </div>
     </div>

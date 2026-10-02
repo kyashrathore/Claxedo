@@ -1,4 +1,4 @@
-import { Show, type JSX, type ParentProps } from "solid-js"
+import { type JSX, type ParentProps } from "solid-js"
 import { useTranslator } from "@/i18n"
 import { useServer } from "@/server"
 import { SidePanel, SidePanelArea } from "@/ui"
@@ -60,11 +60,7 @@ export function WorkspaceArea(props: ParentProps): JSX.Element {
         "data-testid": "workbench-column",
         "data-floating-host": panel.maximized() ? "" : undefined,
       }}
-      panel={
-        <Show when={panel.allowed()}>
-          <WorkspacePanel />
-        </Show>
-      }
+      panel={<WorkspacePanel />}
     >
       {props.children}
     </SidePanelArea>

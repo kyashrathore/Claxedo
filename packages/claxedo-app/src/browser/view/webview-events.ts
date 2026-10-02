@@ -50,6 +50,7 @@ async function onDomReady(host: WebviewHost, first: boolean) {
 }
 
 function onNavigated(host: WebviewHost, event: Event, kind: "load" | "inPage") {
+  if (!host.tab.registered()) return
   if (kind === "inPage" && readBoolean(event, "isMainFrame") !== true) return
   const url = readString(event, "url") ?? host.tab.state().url
   host.tab.select(undefined)
