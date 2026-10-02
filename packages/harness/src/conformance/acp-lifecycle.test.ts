@@ -95,7 +95,7 @@ test("ACP deferred config waits for the turn and retirement before accepting the
     const peer = f.peers[0]!
     const running = collect(f.transport.send(session, f.turn, f.turnBroker()))
     const prompt = await reached(() => peer.messages.find((row) => row.method === "session/prompt"))
-    expect(await f.transport.configure(session, { credentials: { ...f.input.credentials, leaseGeneration: "g2" } }))
+    expect(await f.transport.configure(session, { projection: { ...f.input.projection, generation: "plugins:g2" } }))
       .toEqual({ state: "deferred", until: "after-active-turns" })
     expect(peer.retirements).toBe(0)
     peer.retirementGate = new Promise<void>((resolve) => { release = resolve })
@@ -110,7 +110,7 @@ test("ACP deferred config waits for the turn and retirement before accepting the
     expect(f.peers).toHaveLength(2)
     expect(f.peers[1]!.messages.filter((row) => row.method === "session/resume")).toHaveLength(1)
     expect(f.peers.flatMap((item) => item.messages).filter((row) => row.method === "session/cancel")).toEqual([])
-    expect(await f.transport.configure(session, { credentials: { ...f.input.credentials, leaseGeneration: "g2" } })).toEqual({ state: "applied" })
+    expect(await f.transport.configure(session, { projection: { ...f.input.projection, generation: "plugins:g2" } })).toEqual({ state: "applied" })
     expect(f.peers).toHaveLength(2)
   } finally { release?.(); await f.transport.dispose() }
 })

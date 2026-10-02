@@ -1,0 +1,22 @@
+{
+  "provider": "daytona",
+  "action": "create",
+  "workspaceId": "ws_reeval_dtn",
+  "snapshot": "claxedo-workspace-runtime-0-5-0-v7",
+  "target": {
+    "workspaceId": "ws_reeval_dtn",
+    "sandboxId": "82a967e0-cf3c-4627-804d-7b35b1d99006",
+    "url": "https://2593-n5cc9vdhbveqn7cm.daytonaproxy01.net",
+    "hostId": "claxedo-ws_reeval_dtn",
+    "driverResourceId": "82a967e0-cf3c-4627-804d-7b35b1d99006",
+    "driver": {
+      "id": "daytona",
+      "resourceId": "82a967e0-cf3c-4627-804d-7b35b1d99006"
+    },
+    "labels": {
+      "claxedo.bench": "cf-relay-reeval",
+      "daytona.previewToken": "n5cc9vdhbveqn7cm"
+    }
+  },
+  "wsUrl": "wss://2593-n5cc9vdhbveqn7cm.daytonaproxy01.net"
+}

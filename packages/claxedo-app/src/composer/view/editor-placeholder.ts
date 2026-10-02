@@ -1,6 +1,6 @@
 import { createMemo, createSignal, type Accessor } from "solid-js"
 import type { SessionView } from "@/session"
-import type { FileContextItem } from "../model"
+import type { FileContextItem, QuoteContextItem } from "../model"
 import { promptDesignPlaceholder } from "../role-gate"
 import type { ComposerSetup } from "../setup"
 import type { PromptInputMode } from "./editor-surface"
@@ -11,12 +11,15 @@ export function createEditorPlaceholder(input: {
   composer: ComposerSetup
   mode: Accessor<PromptInputMode>
   fileItems: Accessor<FileContextItem[]>
+  quoteItems: Accessor<QuoteContextItem[]>
   view: Accessor<SessionView | undefined>
   readOnly: Accessor<boolean | undefined>
 }): Accessor<string> {
   const t = input.composer.t
   const [placeholderIndex] = createSignal(Math.floor(Math.random() * PROMPT_EXAMPLES.length))
-  const commentCount = createMemo(() => (input.mode() === "shell" ? 0 : input.fileItems().filter((item) => !!item.comment?.trim()).length))
+  const commentCount = createMemo(() =>
+    input.mode() === "shell" ? 0 : input.fileItems().filter((item) => !!item.comment?.trim()).length + input.quoteItems().length,
+  )
   const suggest = createMemo(() => !input.view()?.messages().some((message) => message.role === "user"))
   const placeholder = () =>
     promptPlaceholder({

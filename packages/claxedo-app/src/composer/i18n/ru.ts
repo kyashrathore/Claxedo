@@ -77,7 +77,6 @@ export default {
   "prompt.imageMarks.title": "Отметить на изображении",
   "prompt.imageMarks.hint": "Потяните, чтобы выделить область, или щёлкните, чтобы поставить метку, затем добавьте комментарий.",
   "prompt.imageMarks.delete": "Удалить метку",
-  "prompt.imageMarks.mark": "метка {{number}}",
   "composer.cancel": "Отмена",
   "common.save": "Сохранить",
   "model.input.text": "текст",

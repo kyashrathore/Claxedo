@@ -71,7 +71,6 @@ export default {
   "prompt.imageMarks.title": "Annoter l'image",
   "prompt.imageMarks.hint": "Faites glisser pour encadrer une zone ou cliquez pour placer une épingle, puis commentez.",
   "prompt.imageMarks.delete": "Supprimer le repère",
-  "prompt.imageMarks.mark": "repère {{number}}",
   "composer.cancel": "Annuler",
   "common.save": "Enregistrer",
   "model.input.text": "texte",

@@ -68,6 +68,20 @@ async function findFiles(input: TimelineHostInput, query: string): Promise<reado
   }
 }
 
+function timelinePlatform(input: TimelineHostInput): TimelineHost["platform"] {
+  return {
+    openLink: openExternal,
+    renderMermaid: desktopBridge()?.renderMermaid,
+    get openPath() {
+      const placement = input.server.placements.byId(input.view.ref.placementId)
+      const machine = input.server.capabilities()?.thisMachine
+      return machine && placement?.kind !== "cloud" && placement?.machineId === machine.id
+        ? desktopBridge()?.openPath
+        : undefined
+    },
+  }
+}
+
 export function createTimelineHost(input: TimelineHostInput): TimelineHost {
   const { view, server } = input
   const sessions = createMemo(() => {
@@ -91,7 +105,7 @@ export function createTimelineHost(input: TimelineHostInput): TimelineHost {
     settings,
     transcriptTypography,
     t: timelineText(input.t),
-    platform: { openLink: openExternal, renderMermaid: desktopBridge()?.renderMermaid },
+    platform: timelinePlatform(input),
     openFocus: (focus) => openFocus(input, focus),
     openSessionInPane: (id) => void input.workbench.openRoute({ kind: "session", ...refFor(view, id) }),
     findFiles: (query) => findFiles(input, query),

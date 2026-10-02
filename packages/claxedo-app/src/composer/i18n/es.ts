@@ -74,7 +74,6 @@ export default {
   "prompt.imageMarks.title": "Marcar imagen",
   "prompt.imageMarks.hint": "Arrastra para enmarcar un área o haz clic para colocar un pin y luego comenta.",
   "prompt.imageMarks.delete": "Eliminar marca",
-  "prompt.imageMarks.mark": "marca {{number}}",
   "composer.cancel": "Cancelar",
   "common.save": "Guardar",
   "model.input.text": "texto",

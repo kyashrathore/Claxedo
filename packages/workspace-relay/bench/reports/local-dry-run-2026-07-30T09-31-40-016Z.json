@@ -1,0 +1,38 @@
+{
+  "rowId": "local-dry-run",
+  "shape": "c20/load20",
+  "target": "http://127.0.0.1:62348",
+  "relay": "http://127.0.0.1:62350",
+  "httpP99OverheadMs": 8.72,
+  "wsMessageP99OverheadMs": 2.62,
+  "relayedWsMessages": {
+    "attempted": 80,
+    "delivered": 80
+  },
+  "directWsMessages": {
+    "attempted": 80,
+    "delivered": 80
+  },
+  "connectP95Ms": 2.55,
+  "upstreamOpenP95Ms": 2.08,
+  "upstreamOpenSource": "relay-trace",
+  "holderSetup": {
+    "attempted": 20,
+    "delivered": 20
+  },
+  "upstreamFailureCodes": {},
+  "upstreamFailureReasons": {},
+  "trace": {
+    "wsUpstreamOpenP95Ms": 2.08,
+    "maxQueuedFrames": 4,
+    "maxQueuedDelayMs": 1.74,
+    "samples": 20
+  },
+  "gates": {
+    "httpP99OverheadPass": false,
+    "wsMessageP99OverheadPass": true,
+    "zeroRelayedWsLossPass": true,
+    "latencyMeasurable": true,
+    "pass": false
+  }
+}

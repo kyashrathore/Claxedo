@@ -1,5 +1,5 @@
 import { createEffect, createMemo, createSignal, Match, on, Show, Switch } from "solid-js"
-import { Composer, promptText, sessionComposerKey, useComposerStore } from "@/composer"
+import { Composer, promptText, SelectionComment, sessionComposerKey, useComposerStore } from "@/composer"
 import { usePhone } from "@/lib/viewport"
 import { FailureBoundary, FailureNotice } from "@/lib/failure"
 import { sessionId, useServer, type SessionLocation } from "@/server"
@@ -24,7 +24,7 @@ import { SessionConnectionLine } from "./connection-line"
 import { commitDeltasWhileShown } from "./delta-frames"
 import { createScreenTurnRecovery } from "./turn-recovery-actions"
 import { createFloatingPeek } from "./floating-peek"
-import { PreviousMessagesRow, turnActive } from "./timeline"
+import { PreviousMessagesRow, turnActive, type TimelineHost } from "./timeline"
 import { PlacementStateCards } from "./workspace-sleep"
 import "./session-screen.css"
 import "./session-floating.css"
@@ -42,6 +42,24 @@ function ChildNotice(props: { readonly t: SessionScreenText; readonly readOnly: 
           {props.t("sessionScreen.child.backToParent")}
         </button>
       </Show>
+    </div>
+  )
+}
+
+function FloatingPeekRow(props: {
+  readonly count: number
+  readonly peek: ReturnType<typeof createFloatingPeek>
+  readonly t: TimelineHost["t"]
+}) {
+  return (
+    <div class="session-floating-peek">
+      <PreviousMessagesRow
+        count={props.count}
+        expanded={props.peek.peeked()}
+        testId="session-transcript-peek"
+        onReveal={props.peek.toggle}
+        t={props.t}
+      />
     </div>
   )
 }
@@ -93,8 +111,10 @@ function SessionBody(props: {
   const transcriptCollapsed = () => props.floating && !peek.peeked()
   const composers = useComposerStore()
   let body: HTMLDivElement | undefined
+  let timeline: HTMLDivElement | undefined
   const draft = () => composers.draft(sessionComposerKey(props.view.ref))
   const driving = () => props.active && !props.readOnly
+  const composing = () => (!parentId() || !props.controls.owner) && !props.readOnly
   installSessionScreenKeydown({
     active: driving,
     dialogActive: () => dialog.active,
@@ -111,17 +131,13 @@ function SessionBody(props: {
     <div ref={body} data-slot="session-screen-body" classList={{ "session-floating-overlay": props.floating }}>
       <div data-slot="session-screen-transcript" classList={{ "session-floating-tab": props.floating }}>
         <Show when={props.floating && users().length > 0}>
-          <div class="session-floating-peek">
-            <PreviousMessagesRow
-              count={users().length}
-              expanded={peek.peeked()}
-              testId="session-transcript-peek"
-              onReveal={peek.toggle}
-              t={host.t}
-            />
-          </div>
+          <FloatingPeekRow count={users().length} peek={peek} t={host.t} />
+        </Show>
+        <Show when={props.active && composing() && props.controls.send}>
+          <SelectionComment root={() => timeline} composerKey={() => sessionComposerKey(props.view.ref)} source={{ kind: "conversation" }} />
         </Show>
         <div
+          ref={timeline}
           data-slot="session-screen-timeline"
           data-session-transcript-collapsed={transcriptCollapsed() ? "true" : undefined}
           classList={{ "session-floating-timeline": props.floating, "session-floating-timeline-collapsed": transcriptCollapsed() }}
@@ -145,7 +161,7 @@ function SessionBody(props: {
               <Show when={!props.readOnly}>
                 <SessionConnectionLine />
               </Show>
-              <Show when={(!parentId() || !props.controls.owner) && !props.readOnly} fallback={<ChildNotice t={t} readOnly={props.readOnly} onBack={toParent} />}>
+              <Show when={composing()} fallback={<ChildNotice t={t} readOnly={props.readOnly} onBack={toParent} />}>
                 <PlacementStateCards placementId={props.view.ref.placementId} />
                 <Composer
                   readOnly={!props.controls.send}

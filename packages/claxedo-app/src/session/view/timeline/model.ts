@@ -34,6 +34,8 @@ export type TimelineTextKey =
   | "session.timeline.previousMessages.one"
   | "session.timeline.previousMessages.other"
   | "session.timeline.scrollToBottom"
+  | "session.timeline.quote.conversation"
+  | "session.timeline.quote.plan"
   | "ui.common.file.one"
   | "ui.common.file.other"
   | "ui.message.attachment.alt"
@@ -75,6 +77,7 @@ export type TimelineSettings = {
 
 export type TimelinePlatform = {
   readonly openLink: (url: string) => void
+  readonly openPath?: (path: string) => Promise<void>
   readonly renderMermaid?: (source: string, theme?: Record<string, string>) => Promise<string>
 }
 

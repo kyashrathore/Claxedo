@@ -441,9 +441,24 @@ export const desktopRenderer: Policy = {
   // the account are read and routed by `server/shared-sessions.ts` and listed
   // by `rail/view/shared-sessions.tsx`. Whether the macOS window buttons cover
   // the shell's top-left corner is `shell/window-controls.ts`, read through the
-  // desktop bridge. None adds a package edge.
-  // 1248/36, no headroom.
-  ceilings: { modules: 1248, packages: 36 },
+  // desktop bridge. A comment on text selected in the transcript, a Markdown
+  // preview or the plan tab is `composer/quote/selection-comment.tsx` over its
+  // selection controller (`quote-selection.ts`), its pure selection reading and
+  // box placement (`selected-quote.ts`, which its unit test reaches directly)
+  // and its highlight stylesheet; the composer groups quotes through
+  // `composer/view/annotations-chip.tsx`, with details and actions in
+  // `annotation-card.tsx`, and a sent message through
+  // `session/view/timeline/message-comment-chip.tsx`. Every comment box, line,
+  // mark or quote, is `transcript/line-comment-editor.tsx`, apart from the
+  // anchor and saved comment in `line-comment.tsx`. Composer owns the source
+  // registry (`quote/surfaces.tsx`), range lookup (`find-quote.ts`), edit
+  // controller (`annotation-editor.tsx`), shared placement and highlight
+  // (`anchored-position.ts`, `highlight.ts`) and popup (`quote-box.tsx`). Its
+  // context chips share their remove control through `view/context-chip.tsx`;
+  // mark and quote positioning share the bounded coordinate in `coordinate.ts`.
+  // These renderer interactions add no package edge.
+  // 1264/36, no headroom.
+  ceilings: { modules: 1264, packages: 36 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,

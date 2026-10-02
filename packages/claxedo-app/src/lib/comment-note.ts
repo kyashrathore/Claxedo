@@ -94,3 +94,43 @@ export function parseImageMarkNote(text: string): PromptImageMarkComment | undef
   if (!match) return undefined
   return { number: Number(match[1]), filename: match[2], comment: match[3] }
 }
+
+export type QuoteSource =
+  | { readonly kind: "conversation" }
+  | { readonly kind: "plan" }
+  | { readonly kind: "file"; readonly path: string }
+
+export type QuoteNote = { readonly source: QuoteSource; readonly quote: string; readonly comment: string }
+
+function quoteSourcePhrase(source: QuoteSource) {
+  if (source.kind === "file") return `the file ${source.path}`
+  return source.kind === "plan" ? "the plan" : "the conversation"
+}
+
+function quoteSourceOf(phrase: string): QuoteSource {
+  if (phrase === "the conversation") return { kind: "conversation" }
+  if (phrase === "the plan") return { kind: "plan" }
+  return { kind: "file", path: phrase.slice("the file ".length) }
+}
+
+export function formatQuoteNote(input: QuoteNote) {
+  const quoted = input.quote
+    .trim()
+    .split("\n")
+    .map((line) => (line ? `> ${line}` : ">"))
+    .join("\n")
+  return `The user made the following comment regarding this excerpt from ${quoteSourcePhrase(input.source)}:\n${quoted}\n\n${input.comment}`
+}
+
+export function parseQuoteNote(text: string): QuoteNote | undefined {
+  const match = text.match(
+    /^The user made the following comment regarding this excerpt from (the conversation|the plan|the file .+):\n((?:>.*\n)+)\n([\s\S]+)$/,
+  )
+  if (!match) return undefined
+  const quote = match[2]
+    .slice(0, -1)
+    .split("\n")
+    .map((line) => line.replace(/^> ?/, ""))
+    .join("\n")
+  return { source: quoteSourceOf(match[1]), quote, comment: match[3] }
+}

@@ -1,0 +1,38 @@
+{
+  "rowId": "reeval-0730-c50x2000",
+  "shape": "c50x2000",
+  "target": "https://3939-82a967e0-cf3c-4627-804d-7b35b1d99006.daytonaproxy01.net",
+  "relay": "https://claxedo-workspace-relay-reeval-0730.kanusdlp.workers.dev",
+  "httpP99OverheadMs": null,
+  "wsMessageP99OverheadMs": null,
+  "relayedWsMessages": {
+    "attempted": 100000,
+    "delivered": 61
+  },
+  "directWsMessages": {
+    "attempted": 0,
+    "delivered": 0
+  },
+  "connectP95Ms": 561.95,
+  "upstreamOpenP95Ms": 561.95,
+  "upstreamOpenSource": "client-wall-clock",
+  "holderSetup": {
+    "attempted": 50,
+    "delivered": 50
+  },
+  "upstreamFailureCodes": {
+    "1006": 49,
+    "1011": 1
+  },
+  "upstreamFailureReasons": {
+    "Connection ended": 49,
+    "User-hosted tunnel disconnected": 1
+  },
+  "gates": {
+    "httpP99OverheadPass": true,
+    "wsMessageP99OverheadPass": false,
+    "zeroRelayedWsLossPass": false,
+    "latencyMeasurable": false,
+    "pass": false
+  }
+}

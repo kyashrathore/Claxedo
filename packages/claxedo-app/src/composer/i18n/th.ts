@@ -78,7 +78,6 @@ export default {
   "prompt.imageMarks.title": "ทำเครื่องหมายบนรูปภาพ",
   "prompt.imageMarks.hint": "ลากเพื่อตีกรอบพื้นที่หรือคลิกเพื่อปักหมุด แล้วเพิ่มความคิดเห็น",
   "prompt.imageMarks.delete": "ลบเครื่องหมาย",
-  "prompt.imageMarks.mark": "เครื่องหมาย {{number}}",
   "composer.cancel": "ยกเลิก",
   "common.save": "บันทึก",
   "model.input.text": "ข้อความ",

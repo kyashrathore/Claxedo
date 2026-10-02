@@ -1,10 +1,11 @@
 import type { AppError, ModelChoice } from "@/server"
 import type { FileSelection } from "@/lib/file-selection"
+import type { QuoteSource } from "@/lib/comment-note"
 import type { Transition } from "@/lib/machine"
 import { unreachable } from "@/lib/machine"
 import { uuid } from "@/lib/uuid"
 
-export type { FileSelection }
+export type { FileSelection, QuoteSource }
 
 export type LineRange = {
   readonly start: number
@@ -51,7 +52,15 @@ export type TextContextItem = {
   text: string
 }
 
-export type ContextItem = FileContextItem | TextContextItem
+export type QuoteContextItem = {
+  type: "quote"
+  key: string
+  source: QuoteSource
+  quote: string
+  comment: string
+}
+
+export type ContextItem = FileContextItem | TextContextItem | QuoteContextItem
 
 export type EditorMode = "normal" | "shell"
 
@@ -113,7 +122,7 @@ export function promptWithoutText(prompt: readonly PromptPart[]): Prompt {
 
 export function promptFilled(draft: Pick<Draft, "prompt" | "context">) {
   if (promptImages(draft.prompt).length > 0) return true
-  if (draft.context.some((item) => item.type === "text" || !!item.comment?.trim())) return true
+  if (draft.context.some((item) => item.type !== "file" || !!item.comment?.trim())) return true
   return promptText(draft.prompt).trim().length > 0
 }
 
@@ -184,4 +193,8 @@ export const attachmentTransition: Transition<AttachmentState, AttachmentEvent> 
     default:
       return unreachable(event)
   }
+}
+
+export function quoteContextItem(input: Pick<QuoteContextItem, "source" | "quote" | "comment">): QuoteContextItem {
+  return { type: "quote", key: `quote:${randomId()}`, source: input.source, quote: input.quote, comment: input.comment }
 }

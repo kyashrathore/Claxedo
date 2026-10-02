@@ -81,7 +81,6 @@ export function ImageMarkEditor(props: ImageMarkEditorProps) {
                   {(target) => (
                     <MarkCommentBox
                       isNew={current.isNew}
-                      number={props.firstNumber + current.index}
                       value={editing.draft()}
                       position={commentBoxPosition(target(), fit.size(), fit.stageSize)}
                       onInput={editing.setDraft}

@@ -75,7 +75,6 @@ export default {
   "prompt.imageMarks.title": "标记图片",
   "prompt.imageMarks.hint": "拖动框选区域或点击放置图钉，然后添加评论。",
   "prompt.imageMarks.delete": "删除标记",
-  "prompt.imageMarks.mark": "标记 {{number}}",
   "composer.cancel": "取消",
   "common.save": "保存",
   "model.input.text": "文本",

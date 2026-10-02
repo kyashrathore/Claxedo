@@ -74,7 +74,6 @@ export default {
   "prompt.imageMarks.title": "Marcar imagem",
   "prompt.imageMarks.hint": "Arraste para destacar uma área ou clique para colocar um alfinete e depois comente.",
   "prompt.imageMarks.delete": "Excluir marcação",
-  "prompt.imageMarks.mark": "marcação {{number}}",
   "composer.cancel": "Cancelar",
   "common.save": "Salvar",
   "model.input.text": "texto",

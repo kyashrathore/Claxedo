@@ -25,3 +25,5 @@ The transport starts only through `HarnessServices.spawn`. A failed RPC exchange
 The workspace runtime drives Pi only through this transport (`compose.ts`). The contract conformance suite runs it against pinned Pi at both ends of `PI_RANGE` and the scripted model server.
 
 A stop sends `clear_queue` and `abort` once per turn: the turn's own abort signal and the runtime's cancellation reach `cancel` together, and they share the one request pair in flight. Pi answers every `clear_queue` with a `queue_update` event, and a second pair's event would land before or after `agent_settled` depending on when Pi read it. Source: pinned Pi `dist/core/agent-session.js` (`clearQueue`, `abort`).
+
+A rejected `set_model` or `set_thinking_level` response is a configuration error. Before a prompt is submitted, a configuration refusal (including a thinking level Pi clamps instead of keeping) releases only the attempted turn; the live session stays attached for a corrected prompt. A timeout, broken channel, or failure after prompt submission still follows process retirement, because its execution outcome is uncertain.

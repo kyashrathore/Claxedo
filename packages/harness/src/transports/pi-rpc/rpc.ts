@@ -63,7 +63,9 @@ export class PiRpc {
         return
       }
       if (message.success === true) this.pending.resolve(message.id, message.data)
-      else this.pending.reject(message.id, new TransportError("pi", "protocol", typeof message.error === "string" ? message.error : "Pi rejected the command"))
+      else this.pending.reject(message.id, new TransportError("pi",
+        command === "set_model" || command === "set_thinking_level" ? "configuration" : "protocol",
+        typeof message.error === "string" ? message.error : "Pi rejected the command"))
       return
     }
     for (const listener of this.listeners) listener(message)

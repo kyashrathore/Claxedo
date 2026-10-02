@@ -1,4 +1,4 @@
-import { createSignal } from "solid-js"
+import { createSignal, Show } from "solid-js"
 import { copyText } from "@/lib/clipboard"
 import { ClaxedoIcon as Icon } from "@/ui"
 import { timelineFileTarget } from "./timeline-file-paths"
@@ -22,6 +22,7 @@ export function createTimelineFileContextMenu() {
 export function TimelineFileContextMenu(props: {
   menu: FileMenu
   onOpenFile: (path: string) => void
+  onOpenExternal?: (path: string) => void
   onDismiss: () => void
   resolvePath: (path: string) => string
 }) {
@@ -43,7 +44,7 @@ export function TimelineFileContextMenu(props: {
       >
         <button
           type="button"
-          class="flex w-full items-center gap-2 rounded-md px-2 h-9 text-13-regular text-text-base hover:bg-surface-base-active"
+          class="flex w-full items-center gap-2 rounded-md px-2 min-h-11 text-13-regular text-text-base hover:bg-surface-base-active"
           onClick={() => {
             props.onOpenFile(props.menu.path)
             props.onDismiss()
@@ -53,7 +54,7 @@ export function TimelineFileContextMenu(props: {
         </button>
         <button
           type="button"
-          class="flex w-full items-center gap-2 rounded-md px-2 h-9 text-13-regular text-text-base hover:bg-surface-base-active"
+          class="flex w-full items-center gap-2 rounded-md px-2 min-h-11 text-13-regular text-text-base hover:bg-surface-base-active"
           onClick={() => {
             void copyText(props.resolvePath(props.menu.path))
             props.onDismiss()
@@ -61,6 +62,20 @@ export function TimelineFileContextMenu(props: {
         >
           <Icon name="copy" size="small" /> Copy path
         </button>
+        <Show when={props.onOpenExternal}>
+          {(open) => (
+            <button
+              type="button"
+              class="flex w-full items-center gap-2 rounded-md px-2 min-h-11 text-13-regular text-text-base hover:bg-surface-base-active"
+              onClick={() => {
+                open()(props.menu.path)
+                props.onDismiss()
+              }}
+            >
+              <Icon name="open-external" size="small" /> Open externally
+            </button>
+          )}
+        </Show>
       </div>
     </>
   )

@@ -74,7 +74,6 @@ export default {
   "prompt.imageMarks.title": "Oznacz obraz",
   "prompt.imageMarks.hint": "Przeciągnij, aby zaznaczyć obszar, lub kliknij, aby wstawić pinezkę, a następnie dodaj komentarz.",
   "prompt.imageMarks.delete": "Usuń oznaczenie",
-  "prompt.imageMarks.mark": "oznaczenie {{number}}",
   "composer.cancel": "Anuluj",
   "common.save": "Zapisz",
   "model.input.text": "tekst",

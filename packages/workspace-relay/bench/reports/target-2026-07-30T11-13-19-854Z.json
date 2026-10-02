@@ -1,0 +1,8 @@
+{
+  "sandboxId": "82a967e0-cf3c-4627-804d-7b35b1d99006",
+  "port": 3939,
+  "httpUrl": "https://3939-82a967e0-cf3c-4627-804d-7b35b1d99006.daytonaproxy01.net",
+  "wsUrl": "wss://3939-82a967e0-cf3c-4627-804d-7b35b1d99006.daytonaproxy01.net",
+  "path": "/ws",
+  "previewToken": "lojnlypme7g-uetvtebgghvoy_jlexsj"
+}

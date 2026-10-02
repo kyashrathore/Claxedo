@@ -1,4 +1,5 @@
 import type { ImageMark, ImagePart } from "../model"
+import { clampCoordinate } from "../coordinate"
 
 export type Point = { x: number; y: number }
 export type Size = { width: number; height: number }
@@ -39,8 +40,6 @@ export function markStyle(size: Size) {
   }
 }
 
-const clamp = (value: number, min: number, max: number) => Math.min(Math.max(value, min), Math.max(min, max))
-
 export function isPin(mark: ImageMark) {
   return mark.width === 0 && mark.height === 0
 }
@@ -48,14 +47,14 @@ export function isPin(mark: ImageMark) {
 export function badgeCenter(mark: ImageMark, size: Size): Point {
   const { radius } = markStyle(size)
   return {
-    x: clamp(mark.x, radius, size.width - radius),
-    y: clamp(mark.y, radius, size.height - radius),
+    x: clampCoordinate(mark.x, radius, size.width - radius),
+    y: clampCoordinate(mark.y, radius, size.height - radius),
   }
 }
 
 export function markFromDrag(start: Point, end: Point, size: Size, pinBelow: number): ImageMark {
-  const from = { x: clamp(start.x, 0, size.width), y: clamp(start.y, 0, size.height) }
-  const to = { x: clamp(end.x, 0, size.width), y: clamp(end.y, 0, size.height) }
+  const from = { x: clampCoordinate(start.x, 0, size.width), y: clampCoordinate(start.y, 0, size.height) }
+  const to = { x: clampCoordinate(end.x, 0, size.width), y: clampCoordinate(end.y, 0, size.height) }
   if (Math.abs(to.x - from.x) < pinBelow && Math.abs(to.y - from.y) < pinBelow) {
     return { x: Math.round(from.x), y: Math.round(from.y), width: 0, height: 0, comment: "" }
   }

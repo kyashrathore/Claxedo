@@ -2,8 +2,8 @@
 import { expect, test } from "bun:test"
 import { createRoot } from "solid-js"
 import type { ImagePart, Prompt } from "./model"
-import { promptImages, promptText } from "./model"
-import { createComposerSend } from "./send"
+import { promptFilled, promptImages, promptText, quoteContextItem } from "./model"
+import { buildPromptInput, createComposerSend } from "./send"
 import { createComposerStore } from "./store"
 
 const KEY = "session:goal"
@@ -45,4 +45,26 @@ test("sending a bare /goal arms a Goal and drops only the command text", async (
   expect(store.draft(KEY).goalArmed).toBe(true)
   expect(promptText(store.draft(KEY).prompt)).toBe("")
   expect(promptImages(store.draft(KEY).prompt)).toEqual([IMAGE])
+})
+
+test("a quoted excerpt with its comment travels as one text note naming where it came from", async () => {
+  const quote = quoteContextItem({ source: { kind: "file", path: "docs/guide.md" }, quote: "Install it first.", comment: "Which version?" })
+  const input = await buildPromptInput({
+    draft: { prompt: [{ type: "text", content: "", start: 0, end: 0 }], context: [quote], goalArmed: false },
+    submission: {},
+    goal: { kind: "none" },
+    delivery: undefined,
+  })
+  expect(input.attachments).toEqual([
+    {
+      kind: "text",
+      label: "docs/guide.md",
+      text: "The user made the following comment regarding this excerpt from the file docs/guide.md:\n> Install it first.\n\nWhich version?",
+    },
+  ])
+})
+
+test("a draft holding only a quoted comment can be sent", () => {
+  const quote = quoteContextItem({ source: { kind: "conversation" }, quote: "q", comment: "c" })
+  expect(promptFilled({ prompt: [{ type: "text", content: "", start: 0, end: 0 }], context: [quote] })).toBe(true)
 })

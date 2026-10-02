@@ -75,7 +75,6 @@ export default {
   "prompt.imageMarks.title": "標記圖片",
   "prompt.imageMarks.hint": "拖曳框選區域或點擊放置圖釘，然後加入留言。",
   "prompt.imageMarks.delete": "刪除標記",
-  "prompt.imageMarks.mark": "標記 {{number}}",
   "composer.cancel": "取消",
   "common.save": "儲存",
   "model.input.text": "文字",

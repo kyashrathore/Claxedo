@@ -241,8 +241,8 @@ test("a busy workspace does not hold another workspace's ACP config restart", as
       pending = context.owner.broker.list({ sessionId: "s1" }).find((row) => row.request.kind === "permission")
     }
     expect(pending).toBeDefined()
-    const changed = { ...context.start.credentials, leaseGeneration: "rotated" }
-    expect(await context.transport.configure(context.session, { credentials: changed })).toEqual({ state: "deferred", until: "after-active-turns" })
+    const changed = { ...context.start.projection, generation: "plugins:rotated" }
+    expect(await context.transport.configure(context.session, { projection: changed })).toEqual({ state: "deferred", until: "after-active-turns" })
     const beforeReply = await readAcpRequests(context.backend.directory)
     expect(beforeReply.some((row) => row.method === "session/resume" && row.params.cwd === secondDirectory)).toBe(false)
     expect(beforeReply.some((row) => row.method === "session/resume" && row.params.cwd === context.backend.directory)).toBe(false)
@@ -996,7 +996,7 @@ test("a timed-out ACP config restore quarantines that session while its sibling 
       return id
     }, clearTimeout(handle) { timers.delete(handle as number) } }
     const restarting = context.transport.configure(context.session,
-      { credentials: { ...context.backend.credentials, leaseGeneration: "changed" } })
+      { projection: { ...context.start.projection, generation: "plugins:changed" } })
     for (let attempt = 0; attempt < 500; attempt++) {
       if ((await readAcpRequests(context.backend.directory)).some((row) => row.method === "session/resume")) break
       await new Promise((resolve) => setTimeout(resolve, 10))
@@ -1032,7 +1032,8 @@ test("ACP child updates use a child route and brokered lineage", async () => {
     const events = []
     for await (const event of context.transport.send(context.session,
       context.turn(acpScriptToken("subagent")), context.turnBroker())) events.push(event)
-    expect(events.some((item) => item.route?.kind === "child" && item.event.type === "text-delta" && item.event.delta.includes("Child result"))).toBe(true)
+    expect(context.ports.childEvents.some(({ event: item }) => item.route?.kind === "child" && item.event.type === "text-delta" && item.event.delta.includes("Child result"))).toBe(true)
+    expect(events.some((item) => item.route?.kind === "child")).toBe(false)
     expect(context.ports.subagents.some((item) => item.status === "running")).toBe(true)
     expect(context.ports.subagents.some((item) => item.status === "completed")).toBe(true)
   } finally { await context.close() }
@@ -1154,7 +1155,7 @@ async function deferredRestartFailure(context: Awaited<ReturnType<typeof setupCo
   })()
   const settled = running.then((events) => ({ kind: "events" as const, events }), (error: unknown) => ({ kind: "error" as const, error }))
   const pending = await waitFor(() => context.owner.broker.list({ sessionId: "s1" }).find((row) => row.request.kind === "permission"), "permission")
-  expect(await context.transport.configure(context.session, { credentials: { ...context.start.credentials, leaseGeneration: "rotated" } }))
+  expect(await context.transport.configure(context.session, { projection: { ...context.start.projection, generation: "plugins:rotated" } }))
     .toEqual({ state: "deferred", until: "after-active-turns" })
   expect((await context.owner.broker.answer(pending.request.requestId, { kind: "permission", decision: "allow_once" }, { sessionId: "s1" })).ok).toBe(true)
   const outcome = await Promise.race([settled, new Promise<"pending">((resolve) => setTimeout(() => resolve("pending"), 3_000))])

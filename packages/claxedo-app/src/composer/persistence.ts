@@ -1,7 +1,7 @@
 import { isRecord } from "@claxedo/helpers/guards"
 import { readArray, readFiniteNumber, readString } from "@claxedo/helpers/readers"
 import type { FileSelection } from "@/lib/file-selection"
-import type { ContextItem, Draft, History, HistoryComment, HistoryEntry, ImageMark, LineRange, Prompt, PromptPart } from "./model"
+import type { ContextItem, Draft, History, HistoryComment, HistoryEntry, ImageMark, LineRange, Prompt, PromptPart, QuoteContextItem, QuoteSource } from "./model"
 
 export type PersistedEntry = { readonly draft: Omit<Draft, "goalArmed">; readonly history: History }
 
@@ -61,6 +61,20 @@ function promptOf(value: unknown): Prompt | undefined {
   return parts.length === value.length && parts.length > 0 ? parts : undefined
 }
 
+function storedQuoteSource(value: unknown): QuoteSource | undefined {
+  if (!isRecord(value)) return undefined
+  if (value.kind === "conversation" || value.kind === "plan") return { kind: value.kind }
+  const path = readString(value, "path")
+  return value.kind === "file" && path ? { kind: "file", path } : undefined
+}
+
+function quoteOf(key: string, value: Record<string, unknown>): QuoteContextItem | undefined {
+  const source = storedQuoteSource(value.source)
+  const quote = readString(value, "quote")
+  const comment = readString(value, "comment")
+  return source && quote !== undefined && comment !== undefined ? { type: "quote", key, source, quote, comment } : undefined
+}
+
 function contextOf(value: unknown): ContextItem | undefined {
   const key = readString(value, "key")
   if (!isRecord(value) || !key) return undefined
@@ -69,6 +83,7 @@ function contextOf(value: unknown): ContextItem | undefined {
     const text = readString(value, "text")
     return label !== undefined && text !== undefined ? { type: "text", key, label, text } : undefined
   }
+  if (value.type === "quote") return quoteOf(key, value)
   const path = readString(value, "path")
   if (value.type !== "file" || !path) return undefined
   const selection = storedSelection(value.selection)

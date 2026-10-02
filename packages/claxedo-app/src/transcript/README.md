@@ -20,6 +20,7 @@ A logic change here is its own slice, proven by the transcript corpus (flow 30, 
 
 ## Why tool rows read this way
 
+- Hook prompts (`hook_prompt`) use the shared hook glyph and regular 12 px text in the quieter `text-weaker` tone; hover and keyboard focus lift the text to `text-weak`. The `hook-call` corpus case compares a hook with a normal command and checks reload persistence.
 - A tool row (`BasicTool`, `basic-tool.css`) and a work-group header (`work-group.css`) share one anatomy: a 14 px icon, a verb and a truncated tail. The row sets one tone (`--transcript-tool-color`, falling back to `--text-weak`) and the icon inherits it; a per-element ladder of shades reads as three mismatched colors. Hover lifts the text only, since the icon carries category, not attention. The lift is gated on `@media (hover: hover)` so touch never triggers it, and `:focus-visible` on the trigger mirrors it for the keyboard. The chevron is the kit's `Collapsible.Arrow`, hidden until the trigger is hovered and shown while the row is open.
 - A row has a chevron only when its body shows something: a renderer that gates its body on output it never got still passes a child (the `<Show>` itself), so `hasRenderedContent` checks what the children resolve to. The resolved children are computed once and reused by the body; a deferred or header-only row is not built until opened, so until then only the presence of a child counts. A generic tool passes children only when it has output.
 - A running tool can open: streaming output is the only sign of how far along a long call is.
@@ -121,6 +122,7 @@ A logic change here is its own slice, proven by the transcript corpus (flow 30, 
 - `ShadowRoot.getSelection()` is a Chromium extension lib.dom does not declare; the selection falls back to the document's.
 - Comment hover follows the pointer and content scrolling under a still pointer with passive listeners, not a per-frame poll; they detach on the first event after the button leaves the DOM, since the utility has no teardown hook.
 - Line-comment annotations each get a detached host with its own Solid root, updated through a signal, so Pierre can reparent the host without re-rendering; unchanged annotations keep their identity to avoid no-op rerenders, and a virtualized row keeps its draft text and edit identity when it releases its UI. The anchor's click and hover handlers attach through `on:` (a direct listener) on its button, or on the popover div when `inline` hides the button.
+- The comment editor (`line-comment-editor.tsx`) is the one box for every comment the user writes: review and file line comments, image marks and quoted selections. It is a single field that starts one line tall and grows with its text to 200 px, then scrolls; the check button stays at its bottom right. Enter submits, Shift+Enter breaks the line, Escape cancels. A textarea does not shrink when its rows are removed, so its height is reset to `auto` before it is set to the content height on every change.
 
 ## Why the Review code view works this way
 

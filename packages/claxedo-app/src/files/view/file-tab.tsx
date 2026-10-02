@@ -1,6 +1,7 @@
 import { createEffect, createMemo, createSignal, Match, on, onCleanup, Show, Switch, type JSX } from "solid-js"
 import { Portal } from "solid-js/web"
 import { useQuery } from "@tanstack/solid-query"
+import { SelectionComment } from "@/composer"
 import type { SelectedLineRange } from "@pierre/diffs"
 import { useTranslator } from "@/i18n"
 import { copyText } from "@/lib/clipboard"
@@ -93,12 +94,15 @@ function createFocusReveal(props: FileTabProps) {
 }
 
 function FileText(props: {
+  readonly path: string
   readonly file: TextFile
   readonly previewing: boolean
   readonly focus: ReturnType<typeof createFocusReveal>
   readonly comments: FileCommentProps
+  readonly composerKey: () => string | undefined
   readonly onRendered: () => void
 }): JSX.Element {
+  const [preview, setPreview] = createSignal<HTMLDivElement>()
   return (
     <>
       <div class={props.previewing ? "hidden" : undefined}>
@@ -119,9 +123,10 @@ function FileText(props: {
         />
       </div>
       <Show when={props.previewing}>
-        <div class="px-6 py-4">
+        <div ref={setPreview} class="px-6 py-4">
           <Markdown text={props.file.contents} />
         </div>
+        <SelectionComment root={preview} composerKey={props.composerKey} source={{ kind: "file", path: props.path }} />
       </Show>
     </>
   )
@@ -235,10 +240,12 @@ export function FileTab(props: FileTabProps): JSX.Element {
           <Match when={file()}>
             {(current) => (
               <FileText
+                path={props.path}
                 file={current()}
                 previewing={isMarkdownPath(props.path) && !files.markdownSource(props.path)}
                 focus={focus}
                 comments={commentProps}
+                composerKey={() => store?.composerKey()}
                 onRendered={() => setRenderedKey(file()?.cacheKey)}
               />
             )}

@@ -4,8 +4,10 @@ import { readField, readString } from "@claxedo/helpers/readers"
 import {
   parseCommentNote,
   parseImageMarkNote,
+  parseQuoteNote,
   readCommentMetadata,
   readImageMarkMetadata,
+  type QuoteSource,
 } from "@/lib/comment-note"
 import type {
   AgentAssistantMessage as AssistantMessage,
@@ -475,16 +477,29 @@ export namespace MessageComment {
     comment: string
   }
 
-  export type MessageComment = FileComment | ImageMarkComment
+  export type QuoteComment = {
+    kind: "quote"
+    source: QuoteSource
+    quote: string
+    comment: string
+  }
+
+  export type MessageComment = FileComment | ImageMarkComment | QuoteComment
 
   export const asFile = (comment: MessageComment) => (comment.kind === "file" ? comment : undefined)
   export const asImageMark = (comment: MessageComment) => (comment.kind === "image-mark" ? comment : undefined)
+  export const asQuote = (comment: MessageComment) => (comment.kind === "quote" ? comment : undefined)
+
+  const noteOf = (text: string) => text.slice(text.indexOf("\n") + 1)
 
   export const fromPart = (part: Part): MessageComment | undefined => {
     if (part.type !== "text" || !part.synthetic) return undefined
-    const mark = readImageMarkMetadata(part.metadata) ?? parseImageMarkNote(part.text)
+    const note = noteOf(part.text)
+    const quote = parseQuoteNote(note)
+    if (quote) return { kind: "quote", ...quote }
+    const mark = readImageMarkMetadata(part.metadata) ?? parseImageMarkNote(note)
     if (mark) return { kind: "image-mark", ...mark }
-    const next = readCommentMetadata(part.metadata) ?? parseCommentNote(part.text)
+    const next = readCommentMetadata(part.metadata) ?? parseCommentNote(note)
     if (!next) return undefined
     return {
       kind: "file",

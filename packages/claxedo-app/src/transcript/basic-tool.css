@@ -1,3 +1,10 @@
+.hook-call {
+  --transcript-tool-color: var(--text-weaker);
+  --transcript-tool-hover-color: var(--text-weak);
+  --transcript-tool-size: 12px;
+  --transcript-tool-weight: var(--font-weight-regular);
+}
+
 [data-component="tool-trigger"] {
   content-visibility: auto;
   width: 100%;

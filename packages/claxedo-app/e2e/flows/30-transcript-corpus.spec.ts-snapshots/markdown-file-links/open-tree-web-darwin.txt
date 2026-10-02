@@ -1,0 +1,19 @@
+scrollTop: 0
+background subagents:
+(none)
+row 0:
+- text: Show the artifact links. acp-script:markdown-file-links-0 Build · <time>
+- button "Copy message"
+row 1:
+- paragraph:
+  - link "Workspace notes":
+    - /url: README.md
+  - text: ·
+  - link "Artifact preview":
+    - /url: /tmp/transcript-artifact.png
+  - text: ·
+  - link "Verification details":
+    - /url: file:///tmp/verification%20details.md
+- paragraph: Artifact links ready.
+- button "Copy response"
+- text: Build · 0s

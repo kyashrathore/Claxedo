@@ -1,9 +1,9 @@
 import { createMemo, createSignal, type Accessor } from "solid-js"
 import { toAppError, type PromptAttachment, type PromptInput } from "@/server"
 import type { SessionView } from "@/session"
-import { formatCommentNote, formatImageMarkNote } from "@/lib/comment-note"
+import { formatCommentNote, formatImageMarkNote, formatQuoteNote } from "@/lib/comment-note"
 import { machine } from "@/lib/machine"
-import type { Draft, EditorMode, HistoryComment, SendEvent, SendState, StopEvent, StopState, Submission } from "./model"
+import type { Draft, EditorMode, HistoryComment, QuoteSource, SendEvent, SendState, StopEvent, StopState, Submission } from "./model"
 import { promptFilled, promptImages, promptText, promptWithoutText, randomId, sendTransition, stopTransition } from "./model"
 import { flattenMarkedImages } from "./marks/flatten"
 import { numberImageMarks } from "./marks/marks"
@@ -30,6 +30,11 @@ function commentLabel(path: string, selection?: { startLine: number; endLine: nu
     : `${path}:${selection.startLine}-${selection.endLine}`
 }
 
+function quoteLabel(source: QuoteSource) {
+  if (source.kind === "file") return source.path
+  return source.kind === "plan" ? "Plan" : "Conversation"
+}
+
 export function historyComments(draft: Draft): HistoryComment[] {
   return draft.context.flatMap((item) => {
     if (item.type !== "file" || !item.comment?.trim()) return []
@@ -52,6 +57,7 @@ export function historyComments(draft: Draft): HistoryComment[] {
 function noteAttachments(draft: Draft): PromptAttachment[] {
   const comments = draft.context.flatMap((item): PromptAttachment[] => {
     if (item.type === "text") return [{ kind: "text", text: item.text, label: item.label }]
+    if (item.type === "quote") return [{ kind: "text", text: formatQuoteNote(item), label: quoteLabel(item.source) }]
     const comment = item.comment?.trim()
     if (!comment) return []
     const text = formatCommentNote({ path: item.path, selection: item.selection, comment })
