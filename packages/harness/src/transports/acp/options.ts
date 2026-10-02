@@ -49,11 +49,11 @@ export function acpPermissionModes(catalog: AcpCatalog): AgentPermissionModeStat
   const option = acpPickOption(catalog.options, "mode")
   if (option) {
     const current = acpOptionValue(option)
-    return { modes: acpSelectChoices(option), ...(current ? { currentModeId: current } : {}), appliesFrom: "next-turn" }
+    return { modes: acpSelectChoices(option), ...(current ? { currentModeId: current } : {}), appliesFrom: "immediate" }
   }
   if (catalog.modes.length) {
     return { modes: catalog.modes.map((mode) => ({ ...mode, description: mode.description ?? undefined })),
-      ...(catalog.currentModeId ? { currentModeId: catalog.currentModeId } : {}), appliesFrom: "next-turn" }
+      ...(catalog.currentModeId ? { currentModeId: catalog.currentModeId } : {}), appliesFrom: "immediate" }
   }
   return { modes: [], ...(catalog.options.length ? {} : { unsupported: "This agent does not expose permission modes" }), appliesFrom: "next-turn" }
 }

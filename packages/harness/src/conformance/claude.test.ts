@@ -438,6 +438,27 @@ test("a command outside the floor runs unprompted in bypassPermissions mode", as
   } finally { await context.close(); await state.close() }
 }, 60_000)
 
+test("Claude applies permission changes before the active turn's next tool", async () => {
+  const state = await backend()
+  const context = await attachedClaude(state)
+  const outside = path.join(state.root, "live-outside")
+  await fs.mkdir(outside, { mode: 0o700 })
+  const release = state.server.holdOpeningReplies("CLAUDELIVEPERMISSIONS")
+  state.server.scriptTool({ name: "Bash", whenPromptIncludes: "CLAUDELIVEPERMISSIONS",
+    input: { command: `chmod -R 755 ${outside}` } })
+  const running = context.collectWithoutAsk("t1", "Run the scripted Bash tool CLAUDELIVEPERMISSIONS")
+  try {
+    await state.server.textGateReached("CLAUDELIVEPERMISSIONS")
+    const applied = await context.transport.config.setPermissionMode(context.session(), "bypassPermissions")
+    expect(applied.currentModeId).toBe("bypassPermissions")
+    state.config.permissionMode = "bypassPermissions"
+    release()
+    await running
+    expect(await fileMode(outside)).toBe(0o755)
+    expect(state.sampledPids).toHaveLength(1)
+  } finally { release(); await running.then(() => undefined, () => undefined); await context.close(); await state.close() }
+}, 60_000)
+
 test("a permission mode set in the runtime's config reaches the next Claude launch", async () => {
   const state = await backend()
   const context = await attachedClaude(state)
@@ -449,6 +470,29 @@ test("a permission mode set in the runtime's config reaches the next Claude laun
     await context.collectWithoutAsk("t1", "Run the scripted Bash tool")
     expect(await fs.readFile(out, "utf8")).toBe("hi")
   } finally { await context.close(); await state.close() }
+}, 60_000)
+
+test("Claude tightens permissions during the active turn before its next tool", async () => {
+  const state = await backend()
+  state.config.permissionMode = "bypassPermissions"
+  const context = await attachedClaude(state)
+  const outside = path.join(state.root, "tighten-outside")
+  await fs.mkdir(outside, { mode: 0o700 })
+  const release = state.server.holdOpeningReplies("CLAUDETIGHTENPERMISSIONS")
+  state.server.scriptTool({ name: "Bash", whenPromptIncludes: "CLAUDETIGHTENPERMISSIONS",
+    input: { command: `chmod -R 755 ${outside}` } })
+  const running = context.collect("t1", "Run the scripted Bash tool CLAUDETIGHTENPERMISSIONS")
+  try {
+    await state.server.textGateReached("CLAUDETIGHTENPERMISSIONS")
+    await context.transport.config.setPermissionMode(context.session(), "default")
+    state.config.permissionMode = "default"
+    release()
+    const asked = await context.awaitPending()
+    await context.owner.broker.answer(asked.request.requestId, { kind: "permission", decision: "deny" }, { sessionId: "s1" })
+    await running
+    expect(await fileMode(outside)).toBe(0o700)
+    expect(state.sampledPids).toHaveLength(1)
+  } finally { release(); await context.close(); await running.then(() => undefined, () => undefined); await state.close() }
 }, 60_000)
 
 test("the config preview names the runtime's current model, not the start model", async () => {

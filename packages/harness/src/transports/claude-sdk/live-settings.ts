@@ -3,6 +3,13 @@ import { claudeModeId, requireClaudeMode } from "./permissions"
 
 export type ClaudeLiveSettings = { model: string; effort?: EffortLevel; permissionMode?: string }
 
+export async function applyClaudePermissionMode(stream: Query, current: Pick<ClaudeLiveSettings, "permissionMode"> | undefined, modeId: string): Promise<void> {
+  const mode = requireClaudeMode(modeId)
+  if (current && claudeModeId(current.permissionMode) === mode) return
+  await stream.setPermissionMode(mode)
+  if (current) current.permissionMode = mode
+}
+
 export async function applyClaudeLiveSettings(stream: Query, current: ClaudeLiveSettings, next: ClaudeLiveSettings): Promise<void> {
   const changedModel = current.model !== next.model
   if (changedModel) {
@@ -13,8 +20,5 @@ export async function applyClaudeLiveSettings(stream: Query, current: ClaudeLive
     await stream.applyFlagSettings({ effortLevel: next.effort ?? null })
     current.effort = next.effort
   }
-  if (claudeModeId(current.permissionMode) !== claudeModeId(next.permissionMode)) {
-    await stream.setPermissionMode(requireClaudeMode(claudeModeId(next.permissionMode)))
-    current.permissionMode = next.permissionMode
-  }
+  await applyClaudePermissionMode(stream, current, claudeModeId(next.permissionMode))
 }

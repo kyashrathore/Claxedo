@@ -12,7 +12,7 @@ export type PermissionModeState = {
   readonly modes: readonly PermissionMode[]
   readonly currentModeId?: string
   readonly unsupported?: string
-  readonly appliesFrom: "next-turn" | "next-session"
+  readonly appliesFrom: "immediate" | "next-turn" | "next-session"
 }
 
 function modeOf(value: unknown): PermissionMode | undefined {
@@ -28,6 +28,10 @@ function modeOf(value: unknown): PermissionMode | undefined {
 
 export function permissionModeStateFromWire(body: unknown): PermissionModeState {
   if (!isRecord(body) || !Array.isArray(body.modes)) throw new ServerError({ class: "internal", message: "The permission modes answered without modes" })
+  const appliesFrom = body.appliesFrom
+  if (appliesFrom !== "immediate" && appliesFrom !== "next-turn" && appliesFrom !== "next-session") {
+    throw new ServerError({ class: "internal", message: "The permission modes answered without valid delivery timing" })
+  }
   return {
     modes: body.modes.flatMap((value) => {
       const mode = modeOf(value)
@@ -35,6 +39,6 @@ export function permissionModeStateFromWire(body: unknown): PermissionModeState 
     }),
     ...(typeof body.currentModeId === "string" ? { currentModeId: body.currentModeId } : {}),
     ...(typeof body.unsupported === "string" ? { unsupported: body.unsupported } : {}),
-    appliesFrom: body.appliesFrom === "next-session" ? "next-session" : "next-turn",
+    appliesFrom,
   }
 }

@@ -141,11 +141,11 @@ describe("a session's effective selections", () => {
     expect(effectivePermissionModeId(cursor, "plan")).toBeNull()
   })
 
-  test("a declared default is one of the harness's own modes, and every table lands on the next turn", () => {
+  test("a declared default is offered and timing follows the harness's live control", () => {
     for (const harness of HARNESS_IDS) {
       const table = HARNESS_TABLE[harness].permissionModes
       if (table.defaultModeId !== undefined) expect(table.modes.map((mode) => mode.id), harness).toContain(table.defaultModeId)
-      expect(table.appliesFrom, harness).toBe("next-turn")
+      expect(table.appliesFrom, harness).toBe(harness === "claude" ? "immediate" : "next-turn")
     }
   })
 

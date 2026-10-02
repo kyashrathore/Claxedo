@@ -37,7 +37,7 @@ export function permissionOptions(config: SessionConfig, grantKeys: readonly str
   const modeId = claudeModeId(config.permissionMode)
   const selected = requireClaudeMode(modeId)
   const rules = replayClaudePermissionUpdates(claudeGrantUpdates(grantKeys))
-  return { permissionMode: selected, allowDangerouslySkipPermissions: modeId === "bypassPermissions" ? true as const : undefined,
+  return { permissionMode: selected, allowDangerouslySkipPermissions: config.permissionCeiling === undefined || config.permissionCeiling === "full",
     additionalDirectories: rules.additionalDirectories,
     settings: claudePermissionSettings(rules.allow, rules.ask, rules.deny) }
 }

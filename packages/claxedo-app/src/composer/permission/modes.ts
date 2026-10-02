@@ -8,7 +8,7 @@ export type PermissionSelection =
 export type PermissionModeDelivery = {
   kind: "harness-permission-mode"
   modeId: string
-  appliesFrom: "next-turn" | "next-session"
+  appliesFrom: "immediate" | "next-turn" | "next-session"
 }
 
 export type PermissionModeOption = {
@@ -24,7 +24,7 @@ export type HarnessModeReport = {
   modes: readonly { id: string; name: string; description?: string; level?: "ask" | "auto" | "full" }[]
   currentModeId?: string
   unsupported?: string
-  appliesFrom: "next-turn" | "next-session"
+  appliesFrom: "immediate" | "next-turn" | "next-session"
 }
 
 export type HarnessPermissionModes = {

@@ -3,9 +3,9 @@ import type { AgentPermissionMode, AutoLevel } from "./permissions"
 /**
  * When a change lands. `next-session` is a harness whose options are read only
  * when its agent is created, and that cannot recreate the agent in front of
- * the user; every table below lands on the next turn.
+ * the user. `immediate` uses a live session control.
  */
-export type PermissionModesApplyFrom = "next-turn" | "next-session"
+export type PermissionModesApplyFrom = "immediate" | "next-turn" | "next-session"
 
 export type HarnessPermissionModes = {
   modes: readonly AgentPermissionMode[]
@@ -33,8 +33,8 @@ const mode = (id: string, name: string, description: string, level?: AutoLevel):
  * DENIES rather than allows, so neither sits on an allow-more ladder at all.
  * `acceptEdits` carries none either: it still prompts for every command.
  *
- * `next-turn`: `permissionMode` is read when `query()` is called, and a turn is
- * one query.
+ * `immediate`: streaming queries acknowledge `setPermissionMode()` without
+ * restarting the active turn.
  */
 export const CLAUDE_PERMISSION_MODES = {
   modes: [
@@ -50,7 +50,7 @@ export const CLAUDE_PERMISSION_MODES = {
     mode("dontAsk", "Don't ask", "Don't prompt for permissions, deny if not pre-approved"),
     mode("bypassPermissions", "Bypass permissions", "Bypass all permission checks", "full"),
   ],
-  appliesFrom: "next-turn",
+  appliesFrom: "immediate",
   defaultModeId: "auto",
 } satisfies HarnessPermissionModes
 

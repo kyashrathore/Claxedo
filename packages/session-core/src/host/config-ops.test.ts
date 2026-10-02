@@ -107,6 +107,18 @@ describe("a selection write publishes the session's row", () => {
     expect(fixture.store.getSessionConfig(sessionId)).toMatchObject({ permissionMode: "code", permissionModeLabel: "Write code" })
   })
 
+  test("a refused live permission change neither persists nor publishes the requested mode", async () => {
+    const config = modeConfig(HARNESS_TABLE.claude.permissionModes.modes)
+    const refused = new Error("native permission control refused")
+    const { fixture, published, sessionId } = await hostWith(CLAUDE, new FakeTransport({
+      config: { ...config, setPermissionMode: async () => { throw refused } },
+    }))
+    const before = fixture.store.getSessionConfig(sessionId)
+    await expect(fixture.runtime.reads.setPermissionMode(sessionId, "bypassPermissions")).rejects.toBe(refused)
+    expect(fixture.store.getSessionConfig(sessionId)).toEqual(before)
+    expect(published).toHaveLength(0)
+  })
+
   test("a turn's own mode is set on the harness and stored through the same write, and a turn naming the stored mode sets and publishes nothing", async () => {
     const config = modeConfig(HARNESS_TABLE.claude.permissionModes.modes)
     const asked: string[] = []

@@ -11,7 +11,7 @@ import { ClaudeHeldFrames } from "./held-frames"
 import { ClaudeQueryInput } from "./query-input"
 import type { ClaudeMirroredUsage } from "./mirrored-usage"
 import type { ClaudeProcess } from "./process"
-import { applyClaudeLiveSettings, type ClaudeLiveSettings } from "./live-settings"
+import { applyClaudeLiveSettings, applyClaudePermissionMode, type ClaudeLiveSettings } from "./live-settings"
 
 export type ClaudeFrame = SDKMessage | SDKActiveGoalMessage
 
@@ -62,6 +62,8 @@ export class ClaudeLiveQuery {
 
   private delivered = Promise.resolve()
   private preparingPrompt = false
+  private settingsUpdate = Promise.resolve()
+  private readonly opened = Promise.withResolvers<void>()
 
   constructor(readonly key: string, private readonly between: ClaudeBetweenTurns, private readonly settings?: ClaudeLiveSettings) {}
 
@@ -74,7 +76,9 @@ export class ClaudeLiveQuery {
   async prompt(opening: SDKUserMessage, assistantMessageId?: string, settings?: ClaudeLiveSettings): Promise<ClaudeClaim> {
     this.preparingPrompt = true
     try {
-      if (settings && this.process.kind === "open" && this.settings) await applyClaudeLiveSettings(this.process.stream, this.settings, settings)
+      if (settings) await this.updateSettings(async () => {
+        if (this.process.kind === "open" && this.settings) await applyClaudeLiveSettings(this.process.stream, this.settings, settings)
+      })
       if (!this.reusable) throw new TransportError("claude", "process", "Claude process ended while preparing the next prompt")
       this.input.write(opening)
       return this.claim("prompt", assistantMessageId)!
@@ -90,7 +94,23 @@ export class ClaudeLiveQuery {
 
   run(stream: Query): void {
     this.process = { kind: "open", stream }
+    this.opened.resolve()
     void this.read(stream)
+  }
+
+  setPermissionMode(modeId: string): Promise<void> {
+    return this.updateSettings(async () => {
+      await this.opened.promise
+      if (this.process.kind !== "open") return
+      try { await applyClaudePermissionMode(this.process.stream, this.settings, modeId) }
+      catch (cause) { throw new TransportError("claude", "configuration", "Claude refused the permission mode change", { cause }) }
+    })
+  }
+
+  private updateSettings(apply: () => Promise<void>): Promise<void> {
+    const update = this.settingsUpdate.then(apply, apply)
+    this.settingsUpdate = update
+    return update
   }
 
   fail(error: unknown): void {
@@ -159,6 +179,7 @@ export class ClaudeLiveQuery {
 
   private finish(failure?: unknown): void {
     this.process = { kind: "ended", ...(failure === undefined ? {} : { failure }) }
+    this.opened.resolve()
     this.replaceBackground([])
     if (this.frames.kind === "claimed") this.settle(this.frames.claim)
     void this.delivered.then(() => this.resolveEnded(), (error: unknown) => {
@@ -180,6 +201,9 @@ export class ClaudeLiveQuery {
   }
 
   private track(frame: ClaudeFrame): void {
+    if (frame.type === "system" && frame.subtype === "status" && frame.permissionMode && this.settings) {
+      this.settings.permissionMode = frame.permissionMode
+    }
     if (frame.type !== "system" || frame.subtype !== "background_tasks_changed") return
     this.replaceBackground(frame.tasks)
     if (this.background.size === 0 && this.frames.kind !== "claimed" && !this.preparingPrompt) this.close()
