@@ -7,7 +7,7 @@ import { ensureDesktopBuilt, type DesktopBuild } from "./desktop-build"
 import type { DesktopRenderer } from "./desktop-renderer"
 import { unexpectedEgress, type EgressAttempt } from "../../../harness/e2e/harness/egress-guard"
 import { releasePort, reservePort } from "../../../harness/e2e/harness/ports"
-import { startSignedStack, type SignedStack } from "./signed-stack"
+import { signedOrigin, startSignedStack, type SignedStack } from "./signed-stack"
 import { redRun, startStack, type Stack } from "./stack"
 
 export type HarnessFixtures = {
@@ -21,7 +21,7 @@ export type HarnessFixtures = {
   signedCloud: SignedStack
 }
 
-type SignedBuild = AppBuild & { frontPort: number }
+type SignedBuild = AppBuild & { frontPort: number; relayPort: number }
 
 type HarnessWorkerFixtures = { desktopBuild: DesktopBuild; signedBuild: SignedBuild }
 
@@ -35,6 +35,19 @@ function refuseEgress(attempts: EgressAttempt[]) {
 async function attachLogOnFailure(testInfo: TestInfo, attempts: EgressAttempt[], name: string, log: () => string) {
   if (testInfo.status === testInfo.expectedStatus && unexpectedEgress(attempts).length === 0) return
   await testInfo.attach(name, { body: log(), contentType: "text/plain" })
+}
+
+async function useSignedFixture(build: SignedBuild, testInfo: TestInfo, use: (signed: SignedStack) => Promise<void>) {
+  const signed = await startSignedStack({ label: testInfo.titlePath.join(" "), frontPort: build.frontPort, relayPort: build.relayPort, distDir: build.distDir })
+  try {
+    await use(signed)
+  } finally {
+    await attachLogOnFailure(testInfo, signed.local.egress.attempts, "daemon.log", signed.local.daemon.log)
+    const outbound = await signed.hosted.outboundAttempts()
+    await signed.close()
+    refuseEgress(signed.local.egress.attempts)
+    expect(outbound).toEqual([])
+  }
 }
 
 export const test = base.extend<HarnessFixtures, HarnessWorkerFixtures>({
@@ -69,42 +82,31 @@ export const test = base.extend<HarnessFixtures, HarnessWorkerFixtures>({
   signedBuild: [
     async ({}, use) => {
       const frontPort = await reservePort()
+      const relayPort = await reservePort()
       try {
-        const build = await ensureAppBuilt({ serverUrl: `https://127.0.0.1:${frontPort}`, outDir: signedDistDir() })
-        await use({ ...build, frontPort })
+        const build = await ensureAppBuilt({ serverUrl: signedOrigin(frontPort), outDir: signedDistDir(), relayOrigins: [`http://127.0.0.1:${relayPort}`] })
+        await use({ ...build, frontPort, relayPort })
       } finally {
         releasePort(frontPort)
+        releasePort(relayPort)
       }
     },
     { scope: "worker", timeout: 300_000 },
   ],
-  signed: async ({ signedBuild }, use, testInfo) => {
-    const signed = await startSignedStack({ label: testInfo.titlePath.join(" "), frontPort: signedBuild.frontPort, distDir: signedBuild.distDir })
-    try {
-      await use(signed)
-    } finally {
-      await attachLogOnFailure(testInfo, signed.stack.egress.attempts, "daemon.log", signed.stack.daemon.log)
-      await signed.close()
-    }
-    refuseEgress(signed.stack.egress.attempts)
-  },
-  signedCloud: async ({ signedBuild }, use, testInfo) => {
-    const signed = await startSignedStack({ label: testInfo.titlePath.join(" "), frontPort: signedBuild.frontPort, distDir: signedBuild.distDir, cloud: true })
-    try {
-      await use(signed)
-    } finally {
-      await attachLogOnFailure(testInfo, signed.stack.egress.attempts, "daemon.log", signed.stack.daemon.log)
-      await attachLogOnFailure(testInfo, signed.stack.egress.attempts, "relay.log", signed.relayLog)
-      await signed.close()
-    }
-    refuseEgress(signed.stack.egress.attempts)
-  },
+  // Booting and stopping the hosted Worker, relay, sandbox fixture and enrolled
+  // daemon is outside the flow's own budget.
+  signed: [async ({ signedBuild }, use, testInfo) => {
+    await useSignedFixture(signedBuild, testInfo, use)
+  }, { timeout: 120_000 }],
+  signedCloud: [async ({ signedBuild }, use, testInfo) => {
+    await useSignedFixture(signedBuild, testInfo, use)
+  }, { timeout: 120_000 }],
   desktopRenderer: ["file", { option: true }],
   desktop: async ({ desktopBuild, desktopRenderer }, use, testInfo) => {
     await useDesktop(testInfo, desktopBuild, desktopRenderer, undefined, use)
   },
   signedDesktop: async ({ desktopBuild, desktopRenderer, signedCloud }, use, testInfo) => {
-    await useDesktop(testInfo, desktopBuild, desktopRenderer, { coreOrigin: signedCloud.url, trust: signedCloud.trust }, use)
+    await useDesktop(testInfo, desktopBuild, desktopRenderer, { coreOrigin: signedCloud.url, relayOrigins: [signedCloud.hosted.relayUrl], trust: signedCloud.trust }, use)
   },
 })
 

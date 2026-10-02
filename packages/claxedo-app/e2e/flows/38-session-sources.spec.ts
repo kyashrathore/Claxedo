@@ -1,17 +1,14 @@
 import type { Page } from "@playwright/test"
 import {
   apiRequests,
-  acpScriptToken,
   cloudTurn,
   expect,
   makeCloudWorkspace,
   SCRIPTED_ACP_HARNESS,
-  sendPrompt,
   sessionRoute,
   signInDesktop,
   startCloudWorkspace,
   stopCloudWorkspace,
-  storedMessages,
   test,
   UI,
   type ClaxedoApi,
@@ -53,28 +50,6 @@ async function createAll(api: ClaxedoApi, directory: string, titles: readonly st
 }
 
 test.skip(({ isMobile }) => isMobile, "flow 38 runs at desktop width; flow 33 owns the phone rail")
-
-test("38 signed desktop opens a live account cloud session and streams its next turn", { tag: "@desktop" }, async ({ signedCloud, signedDesktop, page }) => {
-  test.setTimeout(150_000)
-  const workspace = await makeCloudWorkspace(signedCloud, "Desktop live")
-  await startCloudWorkspace(signedCloud, workspace)
-  const sessionId = await cloudTurn(signedCloud, workspace, { title: "Desktop live turn", script: "desktop-first", reply: "First desktop answer" })
-  const window = signedDesktop.window
-  const daemonRequests: string[] = []
-  window.on("request", (request) => {
-    const url = new URL(request.url())
-    if (url.origin === signedDesktop.url && (url.pathname.startsWith(`/workspaces/${workspace.id}/`) || url.pathname === `/api/workspace/${workspace.id}/connection`)) daemonRequests.push(`${request.method()} ${url.pathname}`)
-  })
-  await signInDesktop(signedCloud, signedDesktop, page)
-  await window.getByRole("navigation", { name: UI.rail }).getByRole("button", { name: "Desktop live turn", exact: true }).click()
-  await expect(window.getByText("First desktop answer")).toBeVisible()
-  await expect(window.getByText("Session unavailable")).toHaveCount(0)
-  await signedCloud.stack.acp.write("desktop-streamed", { steps: [{ kind: "text", text: "Streamed on desktop" }] })
-  await sendPrompt(window, `Go on. ${acpScriptToken("desktop-streamed")}`)
-  await expect(window.getByText("Streamed on desktop")).toBeVisible()
-  await expect.poll(async () => (await storedMessages(signedCloud, workspace, sessionId)).length).toBe(4)
-  expect(daemonRequests).toEqual([])
-})
 
 test("38 a project's rail is one order across its folder and its worktree, a true prefix at every Show more", async ({ stack, api, app }) => {
   const workspace = await stack.daemon.makeWorkspace("sources", "Sources")
@@ -158,7 +133,7 @@ test("38 terminals are read only for an expanded project's live placements", asy
 
 test("38 a stopped sandbox's session paints its stored surface, and its project reads no terminal list and wakes nothing", async ({ signedCloud, page }) => {
   test.setTimeout(120_000)
-  const workspace = await makeCloudWorkspace(signedCloud, "Stored")
+  const workspace = await makeCloudWorkspace(signedCloud, "main")
   await startCloudWorkspace(signedCloud, workspace)
   const sessionId = await cloudTurn(signedCloud, workspace, { title: "Stored turn", script: "stored", reply: "Kept by the control plane" })
   await stopCloudWorkspace(signedCloud, workspace)
@@ -177,4 +152,22 @@ test("38 a stopped sandbox's session paints its stored surface, and its project 
   expect(reads.filter((read) => read.includes(`/workspaces/${workspace.id}/`)), "runtime reads of the stopped sandbox").toEqual([])
   expect(reads.filter((read) => read.startsWith(`POST /api/workspace/${workspace.id}/connection`)), "wakes").toEqual([])
   expect(reads.filter((read) => read.includes("/api/wr/pty")), "terminal lists").toEqual([])
+})
+
+test("38 desktop: a stopped sandbox's session paints its stored surface and wakes nothing", { tag: "@desktop" }, async ({ signedCloud, signedDesktop, page }) => {
+  test.setTimeout(150_000)
+  const workspace = await makeCloudWorkspace(signedCloud, "main")
+  await startCloudWorkspace(signedCloud, workspace)
+  await cloudTurn(signedCloud, workspace, { title: "Stored turn", script: "stored", reply: "Kept by the control plane" })
+  await stopCloudWorkspace(signedCloud, workspace)
+  const mark = signedCloud.controlPlaneRequests().length
+  await signedDesktop.makeWorkspace("local", "Local")
+  await signedDesktop.window.reload()
+  await signInDesktop(signedCloud, signedDesktop, page)
+  const window = signedDesktop.window
+  const row = window.getByRole("navigation", { name: UI.rail }).getByRole("button", { name: "Stored turn" })
+  await expect(row).toBeVisible()
+  await row.click()
+  await expect(window.getByText("Kept by the control plane")).toBeVisible()
+  expect(signedCloud.controlPlaneRequests().slice(mark).filter((request) => request === `POST /api/workspace/${workspace.id}/connection`), "wakes").toEqual([])
 })

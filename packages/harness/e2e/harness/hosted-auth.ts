@@ -1,8 +1,17 @@
 import fs from "node:fs/promises"
+import { request } from "node:https"
+import type { LookupFunction } from "node:net"
 import type { startHostedStack } from "./hosted-stack"
+import { observeHttp } from "./wire-corpus"
 
 type HostedStack = Awaited<ReturnType<typeof startHostedStack>>
 export type HostedPerson = { id: string; email: string; cookie: string }
+
+/** Every fixture listener binds 127.0.0.1, while the OS resolves a *.localhost name to ::1 first. */
+const fixtureLoopback: LookupFunction = (_hostname, options, callback) => {
+  if (options.all) callback(null, [{ address: "127.0.0.1", family: 4 }])
+  else callback(null, "127.0.0.1", 4)
+}
 
 export async function hostedFetch(
   stack: HostedStack,
@@ -14,12 +23,30 @@ export async function hostedFetch(
   const headers = new Headers(options.headers)
   if (options.method && options.method !== "GET") headers.set("origin", stack.workerUrl)
   if (person) headers.set("cookie", person.cookie)
-  return fetch(new URL(route, stack.workerUrl), {
-    ...options,
-    redirect: options.redirect ?? "manual",
-    headers,
-    tls: { ca },
-  } as RequestInit & { tls: { ca: string } })
+  // Under Bun's node:https a request on a reused keep-alive socket to workerd
+  // intermittently fails with ECONNRESET, so each request takes its own.
+  headers.set("connection", "close")
+  const url = new URL(route, stack.workerUrl)
+  const reply = await new Promise<Response>((resolve, reject) => {
+    const upstream = request(url, {
+      method: options.method ?? "GET", headers: Object.fromEntries(headers), ca, signal: options.signal ?? undefined,
+      lookup: fixtureLoopback,
+    }, (received) => {
+      const responseHeaders = new Headers()
+      for (let index = 0; index < received.rawHeaders.length; index += 2) responseHeaders.append(received.rawHeaders[index], received.rawHeaders[index + 1])
+      const chunks: Buffer[] = []
+      received.on("data", (chunk: Buffer) => chunks.push(Buffer.from(chunk)))
+      received.on("error", reject)
+      received.on("end", () => {
+        const status = received.statusCode ?? 502
+        resolve(new Response([204, 205, 304].includes(status) ? null : Buffer.concat(chunks), { status, headers: responseHeaders }))
+      })
+    })
+    upstream.on("error", reject)
+    upstream.end(options.body as string | undefined)
+  })
+  await observeHttp(url, options.method ?? "GET", headers.get("accept"), reply)
+  return reply
 }
 
 export async function signInHostedPerson(stack: HostedStack, code: "hosted-person-a" | "hosted-person-b") {

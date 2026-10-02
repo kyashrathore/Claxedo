@@ -45,6 +45,14 @@ test("an OpenCode form ID keeps one placeholder across its question key, event I
   expect(result.route).toBe(`/question/${placeholder}/reply`)
 })
 
+test("a hosted person's user ID is one placeholder wherever the account and its frames name it", () => {
+  const user = "usr_a596d3ffb51c4d05d832306e8fa1b710"
+  const result = normalizeWireCorpus({ author: { id: user, kind: "human" }, member: { userId: user } }) as
+    { author: { id: string }; member: { userId: string } }
+  expect(result.author.id).not.toContain("usr_")
+  expect(result.member.userId).toBe(result.author.id)
+})
+
 test("goal event IDs normalize their embedded second timestamps", () => {
   const first = normalizeWireCorpus({ id: "goal.updated:ses_11111111:1790334985" })
   const second = normalizeWireCorpus({ id: "goal.updated:ses_11111111:1790337074" })

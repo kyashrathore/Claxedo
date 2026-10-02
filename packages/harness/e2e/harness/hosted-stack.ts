@@ -8,14 +8,18 @@ import { startHostedRelay } from "./hosted-relay"
 import { reservePort, releasePort } from "./ports"
 import { startScriptedModelServer } from "./scripted-model-server"
 
-export async function startHostedStack(label: string) {
+export type HostedStackOptions = { apiOrigin?: string; appOrigin?: string; emailPassword?: boolean; relayPort?: number }
+
+export async function startHostedStack(label: string, options: HostedStackOptions = {}) {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), `claxedo-hosted-${label}-`))
   const workerPort = await reservePort()
   const sandboxPort = await reservePort()
   const modelPort = await reservePort()
   const gitPort = await reservePort()
-  const relayPort = await reservePort()
-  const workerUrl = `https://127.0.0.1:${workerPort}`
+  const relayPort = options.relayPort ?? await reservePort()
+  const leased = [workerPort, sandboxPort, modelPort, gitPort, ...(options.relayPort === undefined ? [relayPort] : [])]
+  const workerOrigin = `https://127.0.0.1:${workerPort}`
+  const workerUrl = options.apiOrigin ?? workerOrigin
   const sandboxOrigin = `https://127.0.0.1:${sandboxPort}`
   const relayUrl = `http://127.0.0.1:${relayPort}`
   const credentials = await hostedCertificate(root)
@@ -36,21 +40,24 @@ export async function startHostedStack(label: string) {
       gitUrl: git.url,
       relayUrl,
     })
-    control = await startHostedControlPlane({ root, port: workerPort, sandboxOrigin, gitUrl: git.url, relayUrl, credentials })
-    relay = await startHostedRelay({ port: relayPort, controlPlaneUrl: workerUrl, certificate: credentials.certificate })
+    control = await startHostedControlPlane({ root, port: workerPort, sandboxOrigin, gitUrl: git.url, relayUrl, credentials,
+      apiOrigin: workerUrl, appOrigin: options.appOrigin ?? workerUrl, emailPassword: options.emailPassword })
+    relay = await startHostedRelay({ root, port: relayPort, controlPlaneUrl: workerUrl, certificate: credentials.certificate, allowedOrigins: [options.appOrigin ?? workerUrl] })
   } catch (error) {
     if (relay) await relay.close()
     if (control) await control.close()
     if (sandbox) await sandbox.close()
     await model.close()
     await git.close()
-    for (const port of [workerPort, sandboxPort, modelPort, gitPort, relayPort]) releasePort(port)
+    for (const port of leased) releasePort(port)
     await fs.rm(root, { recursive: true, force: true })
     throw error
   }
   return {
     root,
     workerUrl,
+    workerOrigin,
+    credentials,
     sandboxOrigin,
     certificate: credentials.certificate,
     model,
@@ -65,7 +72,7 @@ export async function startHostedStack(label: string) {
       await sandbox.close()
       await model.close()
       await git.close()
-      for (const port of [workerPort, sandboxPort, modelPort, gitPort, relayPort]) releasePort(port)
+      for (const port of leased) releasePort(port)
       if (process.env.CLAXEDO_E2E_KEEP_DATA !== "1") await fs.rm(root, { recursive: true, force: true })
     },
   }
