@@ -23,7 +23,6 @@ function pendingHandoff(input: unknown): Omit<SessionHandoff, "source"> | undefi
     from,
     pending: true,
     transcript: value.transcript,
-    ...(value.reason === "missing-session" ? { reason: value.reason } : {}),
     ...(value.announced === true ? { announced: true } : {}),
   }
 }

@@ -1,9 +1,9 @@
 import fs from "node:fs/promises"
 import path from "node:path"
 import type { SdkPluginConfig } from "@anthropic-ai/claude-agent-sdk"
-import { lstatIfExists } from "@claxedo/helpers/fs"
+import { readTextIfExists } from "@claxedo/helpers/fs"
 import type { PluginProjection } from "../../contract"
-import { mirrorConfigTree } from "../config-mirror"
+import { mirrorConfigEntries } from "../config-mirror"
 
 export const CLAUDE_SETTINGS_FILES = ["settings.json", "settings.local.json", "cowork_settings.json"] as const
 const MIRRORED = ["CLAUDE.md", "memory", "agents", "commands", "skills", "plugins", "projects", "todos", "history.jsonl"] as const
@@ -34,34 +34,15 @@ export function scrubClaudeSettings(content: string): Record<string, unknown> {
 
 export async function composeClaudeConfigHome(root: string, source: string): Promise<string> {
   await fs.mkdir(root, { recursive: true, mode: 0o700 })
-  const home = await fs.realpath(source).catch((error: unknown) => {
-    if (error instanceof Error && "code" in error && error.code === "ENOENT") return path.resolve(source)
-    throw error
+  await mirrorConfigEntries(source, root, MIRRORED, {
+    secretFile: SECRET_FILE, externalSkills: true, initialize: CLAUDE_WRITTEN, allowDisappeared: true, allowMissingRoot: true,
   })
-  for (const name of MIRRORED) {
-    const from = path.join(home, name)
-    const to = path.join(root, name)
-    if (CLAUDE_WRITTEN.some((entry) => entry === name) && await lstatIfExists(to)) continue
-    if (!(await lstatIfExists(from))) {
-      if (!CLAUDE_WRITTEN.some((entry) => entry === name)) await fs.rm(to, { recursive: true, force: true })
-      continue
-    }
-    try { await mirrorConfigTree(from, to, home, { secretFile: SECRET_FILE, externalSkills: true }, name) }
-    catch (error) {
-      if (error instanceof Error && "code" in error && error.code === "ENOENT") continue
-      throw error
-    }
-  }
   for (const name of CLAUDE_SETTINGS_FILES) {
     const from = path.join(source, name)
     const to = path.join(root, name)
     await fs.rm(to, { force: true })
-    let content: string
-    try { content = await fs.readFile(from, "utf8") }
-    catch (error) {
-      if (error instanceof Error && "code" in error && error.code === "ENOENT") continue
-      throw error
-    }
+    const content = await readTextIfExists(from)
+    if (content === undefined) continue
     await fs.writeFile(to, JSON.stringify(scrubClaudeSettings(content)), { mode: 0o600 })
   }
   return root

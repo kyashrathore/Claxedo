@@ -1,6 +1,8 @@
 import type { AnyMessage, SessionNotification, Stream } from "@agentclientprotocol/sdk"
+import { asRecord } from "@claxedo/helpers/guards"
 import type { AcpHandlers } from "./connection"
 import type { AcpRequestScope } from "./request-scope"
+import { isAdvertisedUpdate } from "./translate/translate-session-update"
 
 type UpdateHandlers = Pick<AcpHandlers, "update" | "extension" | "unknown">
 
@@ -24,7 +26,7 @@ export function acpOrderedUpdates(stream: Stream, handlers: UpdateHandlers, requ
       if (item.done) { controller.close(); return }
       requests.settle(item.value)
       const wire = sessionUpdateWire(item.value)
-      const path = wire && (subagentUpdate(wire.kind) ? "extension" : knownUpdate(wire.kind) ? undefined : "unknown")
+      const path = wire && (subagentUpdate(wire.kind) ? "extension" : isAdvertisedUpdate(wire.kind) ? undefined : "unknown")
       controller.enqueue(wire && path ? carriedMessage(wire, { path, update: wire.update }) : item.value)
     },
     cancel,
@@ -45,19 +47,9 @@ function deliverInWireOrder(handlers: UpdateHandlers, notification: SessionNotif
 }
 
 function carriedUpdate(value: unknown): Carried | undefined {
-  if (!value || typeof value !== "object" || !("path" in value) || !("update" in value)) return undefined
-  if (value.path !== "extension" && value.path !== "unknown") return undefined
-  return { path: value.path, update: value.update }
-}
-
-function knownUpdate(type: string): boolean {
-  switch (type) {
-    case "agent_message_chunk": case "agent_thought_chunk": case "user_message_chunk": case "tool_call":
-    case "tool_call_update": case "plan": case "plan_update": case "plan_removed":
-    case "available_commands_update": case "current_mode_update": case "config_option_update":
-    case "session_info_update": case "usage_update": case "notice": return true
-    default: return false
-  }
+  const row = asRecord(value)
+  if (!row || !("update" in row) || (row.path !== "extension" && row.path !== "unknown")) return undefined
+  return { path: row.path, update: row.update }
 }
 
 function subagentUpdate(type: string): boolean {
@@ -65,12 +57,9 @@ function subagentUpdate(type: string): boolean {
 }
 
 function sessionUpdateWire(message: unknown): { sessionId: string; kind: string; update: unknown } | undefined {
-  if (!message || typeof message !== "object" || !("method" in message) || message.method !== "session/update" ||
-    !("params" in message)) return undefined
-  const params = message.params
-  if (!params || typeof params !== "object" || !("sessionId" in params) || typeof params.sessionId !== "string" ||
-    !("update" in params)) return undefined
-  const update = params.update
-  if (!update || typeof update !== "object" || !("sessionUpdate" in update) || typeof update.sessionUpdate !== "string") return undefined
+  const row = asRecord(message)
+  const params = row?.method === "session/update" ? asRecord(row.params) : undefined
+  const update = asRecord(params?.update)
+  if (typeof params?.sessionId !== "string" || typeof update?.sessionUpdate !== "string") return undefined
   return { sessionId: params.sessionId, kind: update.sessionUpdate, update }
 }

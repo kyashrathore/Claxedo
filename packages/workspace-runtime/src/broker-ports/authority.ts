@@ -1,4 +1,3 @@
-import type { SessionHandoff } from "@claxedo/agent-runtime-contract"
 import type { SessionAuthority, TurnAuthority } from "@claxedo/harness/broker"
 import type { HarnessBinding } from "@claxedo/harness/contract"
 import type { RuntimeStore } from "../store"
@@ -47,10 +46,5 @@ export class BrokerAuthority {
     const committed = this.store.getExecutionBinding(sessionId)
     if (!committed) throw new Error(`Session ${sessionId} lost its execution binding`)
     return committed
-  }
-
-  async persistHandoff(sessionId: string, context: SessionHandoff): Promise<void> {
-    if (!this.store.getSession(sessionId)) throw new Error(`Session ${sessionId} does not exist`)
-    this.store.updateSessionConfig(sessionId, { handoff: context })
   }
 }

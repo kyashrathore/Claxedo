@@ -52,8 +52,6 @@ type ModeSurface = {
  */
 function modeOperations(surface: ModeSurface, calls: { modes: Array<{ sessionId: string; modeId: string }> }): ConfigOperations {
   return {
-    read: async () => { throw new Error("the fixture's config is runtime-owned") },
-    update: async () => { throw new Error("the fixture's config is runtime-owned") },
     options: async () => ({ options: [] }),
     permissionModes: (target) => "draft" in target ? surface.draft() : surface.session(target.session.binding.sessionId),
     setPermissionMode: async (session, modeId) => {

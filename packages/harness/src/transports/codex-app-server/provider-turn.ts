@@ -11,58 +11,45 @@ import type { CodexUsageLedger } from "./usage"
 export type ProviderTurnEntry = { session: HarnessSession; broker: SessionBroker; usage: CodexUsageLedger; terminals: CodexTerminals
   providerTurn?: CodexProviderTurn; released: Promise<void>; idle(): void }
 
-type Ending = { error?: unknown }
-
 export class CodexProviderTurn {
   readonly events: CodexEvents
-  readonly broker: Promise<TurnBroker | undefined>
-  private queue?: AsyncPushQueue<RoutedEvent>
-  private held: RoutedEvent[] = []
-  private ending?: Ending
-  private started!: (broker: TurnBroker | undefined) => void
+  readonly released: Promise<void>
+  private readonly admitted = Promise.withResolvers<TurnBroker | undefined>()
+  private readonly queue: AsyncPushQueue<RoutedEvent>
 
-  constructor(readonly id: string, threadId: string) {
-    this.events = new CodexEvents(threadId)
-    this.broker = new Promise((resolve) => { this.started = resolve })
+  constructor(readonly id: string, entry: ProviderTurnEntry) {
+    this.events = new CodexEvents(entry.session.binding.upstreamSessionId)
+    const released = Promise.withResolvers<void>()
+    this.released = released.promise
+    this.queue = admitQueuedProviderTurn(entry.broker, {
+      started: (turnBroker, turn) => {
+        entry.usage.attach({ sessionId: entry.session.binding.sessionId, directory: entry.session.directory, assistantMessageId: turn.assistantMessageId })
+        turnBroker.signal.addEventListener("abort", () => { void entry.terminals.stop(this.id, codexStopDeadline())
+          .then(undefined, (error: unknown) => entry.broker.reportFailure(error)) }, { once: true })
+        this.admitted.resolve(turnBroker)
+      },
+      ended: () => {},
+      refused: () => { this.release(entry); released.resolve() },
+      settled: (settlement) => {
+        if (settlement.state === "failed") entry.broker.reportFailure(new CodexTransportError("session", settlement.error))
+        if (settlement.state !== "completed") this.queue.end()
+        this.release(entry)
+        released.resolve()
+      },
+    }).queue
   }
 
-  push(event: RoutedEvent): void { if (this.queue) this.queue.push(event); else this.held.push(event) }
-  end(): void { if (this.queue) this.queue.end(); else this.ending ??= {} }
-  fail(error: unknown): void { if (this.queue) this.queue.fail(error); else this.ending ??= { error } }
-  drained(): Promise<void> { return this.queue ? this.queue.drained() : Promise.resolve() }
+  get broker(): Promise<TurnBroker | undefined> { return this.admitted.promise }
+  push(event: RoutedEvent): void { this.queue.push(event) }
+  end(): void { this.queue.end() }
+  fail(error: unknown): void { this.queue.fail(error) }
   async delivered(): Promise<void> {
     await this.broker
-    await this.drained()
-  }
-
-  admit(entry: ProviderTurnEntry): Promise<void> {
-    return new Promise((released) => {
-      const { queue } = admitQueuedProviderTurn(entry.broker, {
-        started: (turnBroker, turn) => {
-          entry.usage.attach({ sessionId: entry.session.binding.sessionId, directory: entry.session.directory, assistantMessageId: turn.assistantMessageId })
-          turnBroker.signal.addEventListener("abort", () => { void entry.terminals.stop(this.id, codexStopDeadline())
-            .then(undefined, (error: unknown) => entry.broker.reportFailure(error)) }, { once: true })
-          this.started(turnBroker)
-        },
-        ended: () => {},
-        refused: () => { this.release(entry); released() },
-        settled: (settlement) => {
-          if (settlement.state === "failed") entry.broker.reportFailure(new CodexTransportError("session", settlement.error))
-          if (settlement.state !== "completed") queue.end()
-          this.release(entry)
-          released()
-        },
-      })
-      this.queue = queue
-      for (const event of this.held.splice(0)) queue.push(event)
-      if (this.ending?.error !== undefined) queue.fail(this.ending.error)
-      else if (this.ending) queue.end()
-    })
+    await this.queue.drained()
   }
 
   private release(entry: ProviderTurnEntry): void {
-    this.started(undefined)
-    this.held = []
+    this.admitted.resolve(undefined)
     if (entry.providerTurn === this) entry.providerTurn = undefined
     entry.idle()
   }
@@ -71,8 +58,8 @@ export class CodexProviderTurn {
 export function admitCodexProviderTurn(entry: ProviderTurnEntry, message: RpcMessage): void {
   const id = asString(asRecordOrEmpty(asRecordOrEmpty(message.params).turn).id)
   if (!id) return
-  const turn = new CodexProviderTurn(id, entry.session.binding.upstreamSessionId)
+  const turn = new CodexProviderTurn(id, entry)
   entry.providerTurn = turn
-  entry.released = turn.admit(entry)
+  entry.released = turn.released
   for (const event of turn.events.ingest(message)) turn.push(event)
 }

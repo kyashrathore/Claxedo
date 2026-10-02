@@ -79,10 +79,7 @@ export async function* streamCursorRun(input: CursorRun): AsyncIterable<RoutedEv
       ...(input.mode ? { mode: input.mode } : {}) }, (reply) => queue.push(reply))
     void request.then((reply) => { queue.push(reply); queue.end() }, (error: unknown) => queue.fail(error))
     if (input.broker.signal.aborted) onAbort()
-    while (true) {
-      const next = await queue.next()
-      if (next.done) break
-      const reply = next.value
+    for await (const reply of queue) {
       if (reply.kind === "delta") {
         yield* deltas.events(reply.update)
         continue

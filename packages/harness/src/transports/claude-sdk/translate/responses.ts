@@ -1,5 +1,5 @@
 import type { AgentRuntimeEvent } from "@claxedo/agent-runtime-contract"
-import { own } from "../../../translate/value"
+import { boundKeyedMap, own } from "../../../translate/value"
 import type { ClaudeSdkAdapterState } from "./adapter-state"
 import { diagnosticForEvent, type ClaudeFrameEvent } from "./sdk-message"
 import type { ClaudeTranslatorMemory } from "./translator-memory"
@@ -16,8 +16,7 @@ export function announceResponse(state: ClaudeSdkAdapterState, owner: string, re
 export function rememberFrame(memory: ClaudeTranslatorMemory, frameId: string | undefined, responseId: string) {
   if (!frameId) return
   memory.responseByFrame.set(frameId, responseId)
-  const oldest = memory.responseByFrame.size > REMEMBERED_FRAMES ? memory.responseByFrame.keys().next().value : undefined
-  if (oldest !== undefined) memory.responseByFrame.delete(oldest)
+  boundKeyedMap(memory.responseByFrame, REMEMBERED_FRAMES)
 }
 
 export function noteRefusal(memory: ClaudeTranslatorMemory, responseId: string | undefined, stopReason: unknown) {

@@ -31,8 +31,8 @@ test("a reconstructed binding attaches to the same Claude session without object
     userConfigRoot: "/tmp/person-claude", env: {} })
   const session = await value.start(input, sessionBroker)
   const reconstructed = JSON.parse(JSON.stringify(session)) as typeof session
-  expect(await value.config.read(reconstructed)).toEqual(runtimeConfig.current)
-  await expect(value.config.read({ ...reconstructed, binding: { ...reconstructed.binding, workspaceId: "other" } }))
+  expect((await value.config.permissionModes({ session: reconstructed })).currentModeId).toBe("plan")
+  await expect(value.config.permissionModes({ session: { ...reconstructed, binding: { ...reconstructed.binding, workspaceId: "other" } } }))
     .rejects.toMatchObject({ transport: "claude", code: "session" })
   await value.close(session)
 })
@@ -89,16 +89,10 @@ test("Claude session config has one owner, the runtime, and the transport keeps 
   const value = new ClaudeSdkTransport({} as HarnessServices, { executable: "claude", configRoot: "/tmp/claxedo-claude", userConfigRoot: "/tmp/person-claude", env: {} })
   const session = await value.start({ ...input, config: { ...input.config, permissionMode: "default" } }, sessionBroker)
   try {
-    expect(await value.config.read(session)).toEqual(runtimeConfig.current)
     expect((await value.config.permissionModes({ session })).currentModeId).toBe("plan")
     expect((await value.config.setPermissionMode(session, "acceptEdits")).currentModeId).toBe("acceptEdits")
     expect((await value.config.permissionModes({ session })).currentModeId).toBe("plan")
     await expect(value.config.setPermissionMode(session, "unknown")).rejects.toMatchObject({ code: "configuration" })
-    const updated = await value.config.update(session, { model: { providerID: "anthropic", modelID: "haiku" }, permissionMode: null })
-    expect(updated).toEqual({ ...runtimeConfig.current, model: { providerID: "anthropic", modelID: "haiku" }, permissionMode: undefined })
-    expect(updated.instructions).toBe("keep me")
-    await expect(value.config.update(session, { permissionMode: "unknown" })).rejects.toMatchObject({ code: "configuration" })
-    expect(await value.config.read(session)).toEqual(runtimeConfig.current)
   } finally { await value.close(session) }
 })
 
