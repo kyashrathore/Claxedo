@@ -1,19 +1,10 @@
 /**
- * The local-execution surface a HOST composes.
- *
- * `@claxedo/server` reaches this package for one reason: the self-hosted
- * single-binary runs local workspaces. Rather than let it reach sixteen deep
- * module paths — every one of which is an internal layout this package should be
- * free to change — that dependency goes through here.
- *
- * The contract is deliberately narrow and product-neutral. It provides embedded
- * Workspace Runtime lifecycle, the local route mounters, the compatibility event
- * stream, and the local port constant. It names nothing about Electron, nothing
- * about any hosted capability, and nothing about who is signed in: a host that
- * wants extra routes inside a local runtime passes them as generic route
- * contributions to `configureEmbeddedWorkspaceRuntime`, which is what keeps a
- * hosted capability's absence from an unsigned desktop a composition fact
- * rather than a runtime flag.
+ * The local-execution surface the desktop daemon composes: embedded Workspace
+ * Runtime lifecycle, the local route mounters, the compatibility event stream
+ * and the local port constant, so no consumer reaches this package's internal
+ * layout. It names nothing about Electron, any hosted capability, or who is
+ * signed in: a host that wants extra routes inside a local runtime passes them
+ * as generic route contributions to `configureEmbeddedWorkspaceRuntime`.
  */
 
 export {

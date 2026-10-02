@@ -200,7 +200,7 @@ export function unsignedLocalRequestGuard(options: UnsignedLocalGuardOptions): M
     return c.json(
       guardBody(
         "unsigned_local_loopback_required",
-        "unsigned-local access is loopback-only; set CLAXEDO_EMBEDDED_AUTH=1 to configure signed auth for remote access",
+        "unsigned-local access is loopback-only",
       ),
       403,
     )

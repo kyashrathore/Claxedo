@@ -25,7 +25,6 @@ source by the three processes that mount it.
 | Desktop / local server (`@claxedo/local-server`, `createLocalApp`) | `firstPartyMcp: LoopbackFirstPartyMcpOptions` | the runtime credential only | this machine's runtimes, through the local app's own fetch bound to the credential's workspace |
 | Cloud VM runtime (`@claxedo/workspace-runtime`, `createWorkspaceRuntimeApp`) | `firstPartyMcp: LoopbackFirstPartyMcpOptions` | the runtime credential only | that workspace's runtime; under relay exposure the tools' in-process calls carry a token only the process knows, which relay-host auth accepts as direct |
 | Hosted worker (`@claxedo/server`, `createHostedCoreApp`) | `firstPartyMcp: FirstPartyMcpOptions` | the CLI JWT as the whole account; a runtime credential when the entry supplies `verifyRuntimeCredential` | nothing; the control plane, as the caller |
-| Self-hosted node (`@claxedo/server`, `createSelfHostedApp`) | `firstPartyMcp: FirstPartyMcpOptions` | as hosted, plus the unsigned loopback caller as the box's anonymous account | the node's own runtimes behind its runtime proxy, and the control plane |
 
 Every mount is absent until its composition supplies the option; the route is
 a contribution like the others, mounted under its own owner.

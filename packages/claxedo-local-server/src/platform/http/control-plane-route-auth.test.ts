@@ -34,9 +34,9 @@ afterAll(async () => {
 // is invisible under unsigned-local — the global `unsignedLocalRequestGuard` is
 // the gate there — and wide open the moment signed auth is enabled, because that
 // guard returns `next()` immediately when `authConfig.enabled` and hands the job
-// to per-route verification that did not exist. Self-host boxes enable signed
-// auth (`CLAXEDO_EMBEDDED_AUTH=1`) specifically to be reachable remotely, so
-// that is exactly when the protection disappears.
+// to per-route verification that did not exist. A box enables signed auth
+// specifically to be reachable remotely, so that is exactly when the protection
+// disappears.
 //
 // `LivingAppsRoutes` was the other instance of this class; the route has since
 // been removed from the tree, so `provider-auth` and `client-presentation` are what
