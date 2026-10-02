@@ -171,7 +171,7 @@ test("02 a new local worktree picked in the Workspace chip is made on the first 
   await expect(app.getByRole("button", { name: "Session destination" })).toContainText("This computer")
   const chip = app.getByRole("button", { name: "Workspace", exact: true })
   await expect(chip).toContainText("main")
-  await expect(app.getByRole("button", { name: "Base branch" })).toContainText("main")
+  await expect(app.getByRole("button", { name: "Current branch" })).toContainText("main")
   await chip.click()
   await app.getByRole("button", { name: "New local worktree" }).click()
   await expect(chip).toContainText("New local worktree")

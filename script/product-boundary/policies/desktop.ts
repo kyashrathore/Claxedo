@@ -459,8 +459,10 @@ export const desktopRenderer: Policy = {
   // context chips share their remove control through `view/context-chip.tsx`;
   // mark and quote positioning share the bounded coordinate in `coordinate.ts`.
   // These renderer interactions add no package edge.
-  // 1264/36, no headroom.
-  ceilings: { modules: 1264, packages: 36 },
+  // The draft context reaches `projects/draft-branches.ts`, which owns the
+  // selected placement's live Git status and new-workspace base choice.
+  // 1265/36, no headroom.
+  ceilings: { modules: 1265, packages: 36 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,

@@ -40,9 +40,9 @@ export function DraftSessionScreen(props: PaneProps<DraftSessionState>) {
   })
   const startSession = async (submission: Submission, input: PromptInput): Promise<SessionView> => {
     const prompt = { ...input, messageId: server.sessions.newMessageId(), sentAt: Date.now() }
-    const placementId = draft.resolve(props.state)
-    setSent(prompt)
     try {
+      const placementId = draft.resolve(props.state)
+      setSent(prompt)
       const ref = await stores.list.create({ placementId: await placementId, harness: submission.harness, model: submission.model, prompt })
       const view = stores.open(ref)
       view.showSent(prompt)
@@ -70,16 +70,14 @@ export function DraftSessionScreen(props: PaneProps<DraftSessionState>) {
                 </div>
               </Show>
               <ComposerNoticeRow notice={notice.current()} />
-              <Show when={!sent()}>
-                <div class="relative" classList={{ "z-10 -mt-2": !!notice.current() }}>
-                  <NewSessionContextRow
-                    projectId={props.state.projectId}
-                    placementId={props.state.placementId}
-                    resolver={draft}
-                    onOpen={(target) => workbench.replacePane(props.paneId, draftSessionPaneKind, target)}
-                  />
-                </div>
-              </Show>
+              <div hidden={!!sent()} class="relative" classList={{ "z-10 -mt-2": !!notice.current() }}>
+                <NewSessionContextRow
+                  projectId={props.state.projectId}
+                  placementId={props.state.placementId}
+                  resolver={draft}
+                  onOpen={(target) => workbench.replacePane(props.paneId, draftSessionPaneKind, target)}
+                />
+              </div>
               <div class="relative z-10" classList={{ "-mt-2": !sent() || !!notice.current() }}>
                 <WorkspaceSleepCard placementId={props.state.placementId} />
                 <Composer

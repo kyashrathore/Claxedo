@@ -2,8 +2,8 @@
  * Worktree Event Publishing Tests
  *
  * RED test: verifies that POST /experimental/worktree publishes
- * a worktree.ready event on the control bus after the background
- * git reset --hard completes.
+ * a worktree.ready event on the control bus after creation has populated
+ * and registered the worktree.
  *
  * Bug: frontend WorktreeState.wait() never resolves because
  * the worktree.ready event never reaches the browser.

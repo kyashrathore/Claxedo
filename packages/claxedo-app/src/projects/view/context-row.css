@@ -1,10 +1,11 @@
 @layer components {
-  @container session-new-design (max-width: 20rem) {
+  @container session-new-design (max-width: 30rem) {
     .session-context-row .ui-context-chip-label {
       display: none;
     }
 
-    .session-context-row [data-chip="context-chip-worktree"] .ui-context-chip-label {
+    .session-context-row [data-chip="context-chip-worktree"] .ui-context-chip-label,
+    .session-context-row [data-chip="context-chip-branch"] .ui-context-chip-label {
       display: inline;
     }
   }

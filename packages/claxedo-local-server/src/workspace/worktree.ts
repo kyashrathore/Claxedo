@@ -10,7 +10,7 @@ export type RegisteredWorktreeProvision = Readonly<{
   workspaceId?: string
   checkout:
     | Readonly<{ kind: "detached"; revision: string }>
-    | Readonly<{ kind: "branch"; branch: string; noCheckout?: boolean }>
+    | Readonly<{ kind: "branch"; branch: string; baseRef?: string }>
 }>
 
 export class WorktreeProvisionError extends Error {
@@ -19,7 +19,16 @@ export class WorktreeProvisionError extends Error {
   }
 }
 
+async function worktreeBase(directory: string, reference: string) {
+  const resolved = await gitRun(directory, ["rev-parse", "--verify", "--end-of-options", `${reference}^{commit}`])
+  if (!resolved.ok) throw new WorktreeProvisionError("Invalid worktree base", resolved.err || resolved.out)
+  return resolved.out.trim()
+}
+
 export async function provisionRegisteredWorktree(input: RegisteredWorktreeProvision) {
+  const baseCommit = input.checkout.kind === "branch" && input.checkout.baseRef !== undefined
+    ? await worktreeBase(input.repositoryDirectory, input.checkout.baseRef)
+    : undefined
   const project = await ensureWorkspace({ directory: input.repositoryDirectory })
   if (!project || project.kind !== "local") {
     throw new WorktreeProvisionError("Project workspace not found", input.repositoryDirectory)
@@ -32,10 +41,10 @@ export async function provisionRegisteredWorktree(input: RegisteredWorktreeProvi
       : [
           "worktree",
           "add",
-          ...(input.checkout.noCheckout ? ["--no-checkout"] : []),
           "-b",
           input.checkout.branch,
           input.directory,
+          ...(baseCommit !== undefined ? [baseCommit] : []),
         ]
     const created = await gitRun(project.directory, args)
     if (!created.ok) {

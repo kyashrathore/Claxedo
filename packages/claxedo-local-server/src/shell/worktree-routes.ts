@@ -54,6 +54,9 @@ export async function createWorktree(c: Context) {
   const root = await getProjectWorkspace(ws.project_id ?? ws.id)
   if (!root) return c.json(errorBody("claxedo_project_workspace_not_found", "Project workspace not found"), 404)
   const body = record(await c.req.json().catch(() => ({}))) ?? {}
+  if (body.baseRef !== undefined && (typeof body.baseRef !== "string" || !body.baseRef.trim())) {
+    return c.json(errorBody("claxedo_worktree_invalid_base", "baseRef must be a non-empty Git reference"), 400)
+  }
   const info = await nextWorktreeInfo(root.directory, root.project_id ?? root.id, trimmed(body.name))
   if (!info) return c.json(errorBody("claxedo_worktree_name_failed", "Failed to generate a unique worktree name"), 400)
   try {
@@ -61,10 +64,10 @@ export async function createWorktree(c: Context) {
       repositoryDirectory: root.directory,
       directory: info.directory,
       workspaceName: info.name,
-      checkout: { kind: "branch", branch: info.branch, noCheckout: true },
+      checkout: { kind: "branch", branch: info.branch, baseRef: raw(body.baseRef) },
     })
     const registeredInfo = { ...info, directory: workspace.directory }
-    scheduleWorktreeReadyCheck(registeredInfo, raw(body.startCommand))
+    scheduleWorktreeStartup(registeredInfo, raw(body.startCommand))
     return c.json(registeredInfo)
   } catch (error) {
     const message = error instanceof WorktreeProvisionError ? error.detail : error instanceof Error ? error.message : String(error)
@@ -157,14 +160,9 @@ export async function resetWorktree(c: Context) {
   return c.json(true)
 }
 
-function scheduleWorktreeReadyCheck(info: WorktreeInfo, startCommand?: string) {
+function scheduleWorktreeStartup(info: WorktreeInfo, startCommand?: string) {
   setTimeout(() => {
     void (async () => {
-      const reset = await gitRun(info.directory, ["reset", "--hard"])
-      if (!reset.ok) {
-        publishWorktreeFailed(info.directory, reset.err || reset.out || "Failed to populate worktree")
-        return
-      }
       publishWorktreeReady(info)
       const cmd = startCommand?.trim()
       if (!cmd) return
