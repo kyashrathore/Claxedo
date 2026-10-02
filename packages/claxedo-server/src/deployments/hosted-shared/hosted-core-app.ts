@@ -307,8 +307,6 @@ export function createHostedCoreApp(plane: HostedControlPlane, options: HostedCo
       authConfig,
       connections: options.integrationRoutes !== undefined,
       ...(plane.env.npm_package_version ? { version: plane.env.npm_package_version } : {}),
-      ...(services.authority ? { listWorkspaces: (auth) => services.authority!.listWorkspaces(auth) } : {}),
-      ...(services.sandbox.sandboxManager ? { sandboxManager: services.sandbox.sandboxManager } : {}),
       liveSyncRoom: options.liveSyncRoom,
       ...(services.authority ? { resolveOrgId: (auth) => services.authority!.resolveOrgId(auth) } : {}),
       harnessStatus: hostedHarnessRuntimeStatus(services),

@@ -1,5 +1,4 @@
-export { CODEX_DESCENDANT_ERROR_METHOD, codexAppServerAdapter } from "./adapter"
-export type { CodexThreadModel } from "./frame"
+export { codexAppServerAdapter } from "./adapter"
 export { codexMcpApproval } from "./mcp-elicitation"
 export { codexReportedModel } from "./reported-model"
 export type { CodexAppServerAdapterState, CodexTurnUsageState } from "./state"

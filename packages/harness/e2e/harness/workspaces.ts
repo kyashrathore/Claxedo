@@ -35,17 +35,3 @@ export async function makeWorkspace(
   const projectId = await recordProject(transport, serverUrl, directory, projectName)
   return { id: (JSON.parse(resolved) as { workspaceId: string }).workspaceId, directory, projectId }
 }
-
-export async function makeSignedWorkspace(
-  transport: HttpTransport,
-  serverUrl: string,
-  root: string,
-  name: string,
-  projectName?: string,
-): Promise<Workspace> {
-  const directory = await freshRepository(root, name)
-  const projectId = await recordProject(transport, serverUrl, directory, projectName)
-  const resolved = await transport({ method: "GET", url: `${serverUrl}/api/workspace/resolve?directory=${encodeURIComponent(directory)}` })
-  if (resolved.status !== 200) throw new Error(`Resolving the signed workspace failed: ${resolved.status} ${resolved.body}`)
-  return { id: (JSON.parse(resolved.body) as { workspaceId: string }).workspaceId, directory, projectId }
-}

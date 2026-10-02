@@ -1,4 +1,4 @@
-import { NO_BACKGROUND_WORK, type BackgroundWork, type SubagentStatus } from "@claxedo/agent-runtime-contract"
+import { NO_BACKGROUND_WORK, type BackgroundWork } from "@claxedo/agent-runtime-contract"
 import type { RoutedEvent } from "../../contract"
 import { CodexEvents } from "./events"
 import type { RpcMessage } from "./rpc"
@@ -19,12 +19,11 @@ export class CodexChild {
   state: ChildState = "spawned"
   turnId?: string
   interaction?: string
-  outcome?: SubagentStatus
   readonly calls = new Set<string>()
   private events?: CodexEvents
   private tail: Promise<void> = Promise.resolve()
 
-  constructor(readonly threadId: string, readonly spawn?: ChildSpawn) {
+  constructor(readonly threadId: string, spawn?: ChildSpawn) {
     this.events = new CodexEvents(threadId)
     if (spawn?.toolCallId) this.calls.add(spawn.toolCallId)
   }

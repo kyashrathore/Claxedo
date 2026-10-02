@@ -90,7 +90,6 @@ function childTurnStarted(entry: Entry, child: CodexChild, turnId: string): void
 function childTurnEnded(entry: Entry, child: CodexChild, turn: Record<string, unknown>): void {
   entry.children.move(child, "turn-ended")
   const outcome = childTurnOutcome(turn)
-  child.outcome = outcome.status
   child.enqueue(async () => {
     await childFramesDelivered(entry)
     await observeNativeChild(entry, child, `${asString(turn.id) ?? "turn"}:${outcome.status}`, outcome.status, outcome.label ? { label: outcome.label } : {})

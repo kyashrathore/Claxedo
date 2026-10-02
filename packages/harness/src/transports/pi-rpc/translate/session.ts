@@ -1,11 +1,9 @@
 import type { AgentRuntimeEvent } from "@claxedo/agent-runtime-contract"
-import { asRecord, asText } from "@claxedo/agent-runtime-contract"
+import { asRecordOrEmpty, asString } from "@claxedo/helpers/guards"
 import { piStep, type PiStep, type PiTranslatorState } from "./state"
 import { piUsageEvents } from "./usage"
 
 type Frame = Record<string, unknown>
-
-const text = (value: unknown) => asText(value) ?? ""
 
 export function piAgentStart(state: PiTranslatorState): PiStep {
   return piStep({ ...state, blocks: {}, finished: false, failure: undefined, stopped: false })
@@ -22,7 +20,7 @@ export function piSettled(state: PiTranslatorState, _frame: Frame, sessionId: st
 }
 
 function piRetryEvents(frame: Frame, fallback: string): AgentRuntimeEvent[] {
-  return [{ type: "session-retry", message: text(frame.errorMessage) || fallback,
+  return [{ type: "session-retry", message: asString(frame.errorMessage) || fallback,
     ...(typeof frame.attempt === "number" ? { attempt: frame.attempt } : {}),
     ...(typeof frame.delayMs === "number" ? { delayMs: frame.delayMs } : {}) }]
 }
@@ -37,16 +35,16 @@ export const piCompactionStart = (state: PiTranslatorState, frame: Frame): PiSte
   piStep(state, [{ type: "session-compaction", phase: "started", ...reason(frame) }])
 
 export function piCompactionEnd(state: PiTranslatorState, frame: Frame): PiStep {
-  const result = asRecord(frame.result) ?? {}
+  const result = asRecordOrEmpty(frame.result)
   return piStep(state, [...piUsageEvents(result.usage), { type: "session-compaction", phase: "completed", ...reason(frame),
-    summary: text(result.summary) || undefined,
+    summary: asString(result.summary) || undefined,
     metadata: { aborted: frame.aborted === true, ...(typeof frame.errorMessage === "string" ? { error: frame.errorMessage } : {}) } }])
 }
 
 export function piSessionName(state: PiTranslatorState, frame: Frame): PiStep {
-  const name = text(frame.name).trim()
+  const name = (asString(frame.name) ?? "").trim()
   return piStep(state, name ? [{ type: "session-title", title: name }] : [])
 }
 
 export const piExtensionError = (state: PiTranslatorState, frame: Frame): PiStep =>
-  piStep(state, [{ type: "harness-notice", code: "pi.extension_error", message: text(frame.error), severity: "error" }])
+  piStep(state, [{ type: "harness-notice", code: "pi.extension_error", message: asString(frame.error) ?? "", severity: "error" }])

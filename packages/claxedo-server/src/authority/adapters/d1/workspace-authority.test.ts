@@ -6,12 +6,8 @@ import { Miniflare } from "miniflare"
 import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import type { AuthIdentity, ControlPlanePrincipal } from "@claxedo/server-core/platform/auth/authentication"
 
-import {
-  D1WorkspaceAuthority,
-  userDeployedOwnerBootstrapClaimHash,
-  userDeployedOwnerIdentityHash,
-  type D1AuthorityProductPolicy,
-} from "./workspace-authority"
+import { D1WorkspaceAuthority, type D1AuthorityProductPolicy } from "./workspace-authority"
+import { userDeployedOwnerBootstrapClaimHash, userDeployedOwnerIdentityHash } from "./owner-identity"
 import { D1SessionAuthority } from "./session-authority"
 import { inviteIdentity } from "../../../test-support/invite-identity"
 import { D1AuditAuthority } from "./audit-authority"

@@ -135,12 +135,10 @@ export function createSessionLifecycle(input: SessionLifecycleInput) {
         ...(title !== undefined ? { title } : {}),
         ...(config.instructions ? { instructions: config.instructions } : {}),
       }), broker)
-      const declared = await handle.transport.capabilities({ directory: targetDirectory, sessionId })
       const attached: AttachedSession = { handle, session, broker, context, owner }
       attachments.register(sessionId, attached)
       return {
         attached,
-        configOwner: declared.configOwner,
         rollback: async () => {
           attachments.forget(sessionId)
           await handle.transport.close(session)
@@ -157,9 +155,9 @@ export function createSessionLifecycle(input: SessionLifecycleInput) {
     const changingHarness = !!current && !!update.harness && key(current.harness) !== key(update.harness)
     if (!changingHarness) {
       const attached = await attachments.for(sessionId, directory, undefined, authority)
-      const declared = await attached.handle.transport.capabilities({ directory: attached.session.directory, sessionId })
-      const configured = declared.configOwner === "harness" && attached.handle.transport.config
-        ? await attached.handle.transport.config.update(attached.session, update)
+      const harnessConfig = attached.handle.transport.harnessConfig
+      const configured = harnessConfig
+        ? await harnessConfig.update(attached.session, update)
         : applySessionConfigUpdate(current!, update)
       const persisted = store.updateSessionConfig(sessionId, configured)
       if (!persisted) throw new Error(`Session ${sessionId} has no runtime config`)

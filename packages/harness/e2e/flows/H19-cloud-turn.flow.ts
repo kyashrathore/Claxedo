@@ -3,27 +3,31 @@ import { assistantText } from "../harness/api"
 import { SCRIPTED_ACP_HARNESS } from "../harness/acp/connection"
 import { acpScriptToken } from "../harness/acp/script"
 import { cloudAcpScript } from "../harness/cloud-faults"
-import { cloudApi, createCloudWorkspace, waitCloudConnection } from "../harness/cloud-workspace"
-import { startStack } from "../harness/stack"
+import { hostedApi, hostedWorkspace } from "../harness/hosted-flow"
+import { hostedFetch, signInHostedPerson } from "../harness/hosted-auth"
+import { startHostedCloudStack } from "../harness/hosted-cloud"
 import { frameType, openEventStream } from "../harness/stream"
 import { waitForTitle } from "../harness/turn-observations"
 
 export async function run() {
-  const stack = await startStack({ label: "h19-cloud-acp", cloud: true })
+  const stack = await startHostedCloudStack("h19-cloud-acp")
   try {
     await stack.acp.write("h19-cloud", cloudAcpScript({ steps: [{ kind: "text", text: "H19_CLOUD_ACP" }] }, process.env.CLAXEDO_E2E_CLOUD_FAULT))
-    const workspace = await createCloudWorkspace(stack, "h19-acp")
-    const connection = await waitCloudConnection(stack, workspace.id)
-    assert.equal(connection.status, 200, `Cloud connection: ${connection.body}`)
-    const runtimeHealth = `${stack.url}/workspaces/${encodeURIComponent(workspace.id)}/api/wr/health`
+    const workspace = await hostedWorkspace(stack, stack.owner, "h19-acp")
+    const connection = await hostedFetch(stack, `/api/workspace/${workspace.id}/connection`, {}, stack.owner)
+    assert.equal(connection.status, 200, `Cloud connection: ${await connection.text()}`)
+    const runtimeHealth = `${stack.relayUrl}/workspaces/${encodeURIComponent(workspace.id)}/api/wr/health`
     const unsigned = await fetch(runtimeHealth)
     assert.ok(unsigned.status >= 400, `unsigned caller reached owner's runtime: ${unsigned.status}`)
-    const ungranted = await fetch(runtimeHealth, { headers: { authorization: `Bearer ${stack.daemon.cloudMemberToken}` } })
+    const member = await signInHostedPerson(stack, "hosted-person-b")
+    const ungrantedConnection = await hostedFetch(stack, `/api/workspace/${workspace.id}/connection`, {}, member)
+    assert.ok(ungrantedConnection.status >= 400, `ungranted member received a runtime capability: ${ungrantedConnection.status}`)
+    const ungranted = await fetch(runtimeHealth, { headers: { cookie: member.cookie } })
     assert.ok(ungranted.status >= 400, `ungranted member reached owner's runtime: ${ungranted.status}`)
-    const api = cloudApi(stack, workspace.id)
-    const stream = await openEventStream(stack.url, workspace.directory, {
+    const api = hostedApi(stack, workspace, stack.owner)
+    const stream = await openEventStream(stack.relayUrl, workspace.directory, {
       relayWorkspaceId: workspace.id,
-      authorization: `Bearer ${stack.daemon.cloudToken}`,
+      authorization: `Bearer ${workspace.runtimeAccessToken}`,
     })
     try {
       const session = await api.createSession(workspace.directory, { harness: SCRIPTED_ACP_HARNESS })
@@ -34,7 +38,7 @@ export async function run() {
       assert.match(assistantText(messages), /H19_CLOUD_ACP/)
       assert.ok(stream.frames.some((frame) => frameType(frame) === "message.part.updated"), "cloud ACP emitted no live text frame")
       assert.equal((await api.session(workspace.directory, session.id)).id, session.id)
-      assert.deepEqual(stack.egress.attempts, [])
+      assert.deepEqual(await stack.outboundAttempts(), [])
     } finally {
       stream.close()
     }

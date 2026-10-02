@@ -1,12 +1,11 @@
-import { asText as text } from "@claxedo/agent-runtime-contract"
-import type { AgentRuntimeEvent, AgentRuntimeEventOf, RuntimeNoticeSeverity } from "@claxedo/agent-runtime-contract"
+import { asText as text, type AgentRuntimeEvent, type RuntimeNoticeSeverity } from "@claxedo/agent-runtime-contract"
 import { asFiniteNumber, asRecord } from "@claxedo/helpers/guards"
 import { refusalRetraction } from "./responses"
 import { claudeNotice, type ClaudeFrameEvent } from "./sdk-message"
 import type { ClaudeTranslatorMemory } from "./translator-memory"
 
-function notice(code: string, message: string | undefined, severity: RuntimeNoticeSeverity = "info", details?: Record<string, unknown>): AgentRuntimeEventOf<"harness-notice">[] {
-  return message ? [claudeNotice(code, message, severity, details)] : []
+function notice(code: string, message: string | undefined, severity: RuntimeNoticeSeverity = "info") {
+  return message ? [claudeNotice(code, message, severity)] : []
 }
 
 function retryCause(frame: Record<string, unknown>) {
@@ -41,8 +40,7 @@ export function systemNotice(subtype: string, frame: Record<string, unknown>, me
     case "notification":
       return notice(subtype, text(frame.text))
     case "task_notification":
-      return notice(subtype, text(frame.summary), frame.status === "failed" ? "error" : "info", { taskId: text(frame.task_id), status: text(frame.status) })
-        .map((notice) => ({ ...notice, eventId: text(frame.uuid) }))
+      return notice(subtype, text(frame.summary), frame.status === "failed" ? "error" : "info").map((notice) => ({ ...notice, eventId: text(frame.uuid) }))
     case "memory_recall":
       return notice(subtype, recalledPaths(frame))
     case "informational":

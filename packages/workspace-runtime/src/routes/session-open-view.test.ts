@@ -27,7 +27,6 @@ const CODEX_SHAPED: FakeTransportOptions = {
 function scriptedAcp(peer: ReturnType<typeof acpPeer>) {
   const unused = () => { throw new Error("Unused transport") }
   const composer = createHarnessComposer(peer.services, {
-    acp: () => ({ missingContext: async () => { throw new Error("no restore in this test") } }),
     pi: unused, codex: unused, claude: unused, cursor: unused, opencode: unused,
   })
   return composer.connection({ descriptor: { connectionId: "acp", providerKey: "acp", configRevision: 1, enabled: true,

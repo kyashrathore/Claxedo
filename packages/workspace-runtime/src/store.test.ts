@@ -3126,7 +3126,7 @@ void describe("RuntimeStore", () => {
     assert.equal(new RuntimeStore(root).getSessionConfig("s1")?.handoff, undefined)
   })
 
-  void it("persists why a handoff is pending, whether a sent message marked it, and the session it kept", () => {
+  void it("persists a pending handoff, whether a sent message marked it, and the session it kept", () => {
     const root = tmp()
     const first = new RuntimeStore(root)
     first.bindSession({ owner: { kind: "machine-owner" }, sessionId: "s1", directory: "/work", agentSessionId: "a1", createdAt: 1 })
@@ -3134,7 +3134,7 @@ void describe("RuntimeStore", () => {
     const from = { id: "claude", access: "native" } as const
     first.updateSessionConfig("s1", {
       harness: from,
-      handoff: { from, pending: true, transcript: "rebuilt", reason: "missing-session" },
+      handoff: { from, pending: true, transcript: "rebuilt" },
     })
     first.updateSessionConfig("s2", {
       harness: { id: "codex", access: "native" },
@@ -3147,7 +3147,7 @@ void describe("RuntimeStore", () => {
       model: { providerID: "anthropic", modelID: "opus" },
       variant: "high",
       agent: null,
-      handoff: { from, pending: true, transcript: "rebuilt", reason: "missing-session" },
+      handoff: { from, pending: true, transcript: "rebuilt" },
     } as const
     first.updateSessionConfig("s1", {
       harness: { id: "codex", access: "native" },

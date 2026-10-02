@@ -26,7 +26,7 @@ function serve(answer: (request: Seen) => Response) {
     },
   })
   running.push(server)
-  return { seen, transport: createTransport({ serverUrl: `http://127.0.0.1:${server.port}`, auth: { kind: "none" } }) }
+  return { seen, transport: createTransport({ serverUrl: `http://127.0.0.1:${server.port}` }) }
 }
 
 const orgRow = { id: "cred-org", provider_id: "claude-sdk", kind: "api_key", source: "managed", label: "Acme", scope: "shared", deliverable: { local: true, cloud: true } }

@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, test } from "vitest"
 import type { D1Database } from "@cloudflare/workers-types"
-import { controlPlaneMigrations, miniflareControlPlaneDatabase, type ControlPlaneDatabase } from "../test-support/control-plane-migrations"
+import type { ControlPlaneDatabase } from "../test-support/control-plane-migrations"
+import { workspaceBackingDatabase, type WorkspaceBackingRow } from "../test-support/workspace-backing-database"
 import { cloudRootBacking, HostedRuntimeNotReadyError, isCloudRoot } from "./cloud-root-backing"
 
 const active: ControlPlaneDatabase[] = []
@@ -9,19 +10,9 @@ afterEach(async () => {
   await Promise.all(active.splice(0).map((instance) => instance.dispose()))
 })
 
-async function database(rows: Array<{ id: string; backing: "cloud-vm" | "local-worktree"; deletedAt?: number }>): Promise<D1Database> {
-  const instance = await miniflareControlPlaneDatabase(controlPlaneMigrations())
+async function database(rows: WorkspaceBackingRow[]): Promise<D1Database> {
+  const instance = await workspaceBackingDatabase(rows)
   active.push(instance)
-  const db = instance.database
-  await db.batch([
-    db.prepare("insert into users values ('owner', 'active', 1, 1, null, null)"),
-    db.prepare("insert into orgs values ('org', 'Org', 'deployment', 'owner', 'deployment-1', 1, 1, null)"),
-    db.prepare("insert into projects values ('project', 'org', 'repo:one', 'owner', 1, 1, null)"),
-    ...rows.map((row) => db.prepare(`insert into workspaces
-      (workspace_id, org_id, project_id, owner_user_id, backing, display_name, created_at, updated_at, deleted_at)
-      values (?, 'org', 'project', 'owner', ?, ?, 1, 1, ?)`)
-      .bind(row.id, row.backing, row.id, row.deletedAt ?? null)),
-  ])
   return instance.database
 }
 

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { translateStopReason } from "./translate-session-update"
+import { translateStopReason } from "./stop-reason"
 
 describe("translateStopReason", () => {
   test("ends a completed prompt with finish", () => {

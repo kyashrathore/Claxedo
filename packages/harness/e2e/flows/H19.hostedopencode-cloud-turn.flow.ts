@@ -3,7 +3,7 @@ import fs from "node:fs/promises"
 import path from "node:path"
 import { assistantText } from "../harness/api"
 import { hostedFetch } from "../harness/hosted-auth"
-import { hostedApi, hostedOwner, hostedSession, hostedWorkspace } from "../harness/hosted-flow"
+import { hostedApi, hostedOwner, hostedWorkspace } from "../harness/hosted-flow"
 import { startHostedStack } from "../harness/hosted-stack"
 import { frameSessionId, frameType, openEventStream } from "../harness/stream"
 
@@ -26,14 +26,14 @@ export async function run() {
     assert.equal(offered.status, 200, `Hosted OpenCode model options returned ${offered.status}`)
     const offeredModel = offeredBody.options?.find((option) => option.id === "model")?.selectOptions?.find((choice) => choice.id === "openai/gpt-4.1")
     assert.ok(offeredModel, "C-11: OpenCode did not offer the supplied OpenAI credential")
-    const api = hostedApi(stack, workspace)
+    const api = hostedApi(stack, workspace, owner)
     const stream = await openEventStream(stack.relayUrl, workspace.directory, {
       relayWorkspaceId: workspace.id,
       authorization: `Bearer ${workspace.runtimeAccessToken}`,
     })
     try {
       const model = { providerId: "openai", modelId: "gpt-4.1" }
-      const session = await hostedSession(stack, owner, workspace, { id: "opencode", access: "native" }, model)
+      const session = await api.createSession(workspace.directory, { harness: { id: "opencode", access: "native" }, model })
       await api.prompt(workspace.directory, session.id, "Reply with exactly this one token: HOSTEDOPENCODETURN", { model })
       const settled = await stream.waitFor((frame) => frameSessionId(frame) === session.id &&
         (frameType(frame) === "session.idle" || frameType(frame) === "session.error"), { label: "hosted OpenCode settlement", timeoutMs: 60_000 })

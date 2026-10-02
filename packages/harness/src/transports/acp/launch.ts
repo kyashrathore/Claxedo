@@ -12,7 +12,7 @@ export async function openAcpStream(input: StartInput, options: AcpConnectionOpt
   if (launch.signal.aborted) throw new AcpTransportError("connection", "ACP launch was abandoned", launch.signal.reason)
   const abort = new AbortController()
   const signal = AbortSignal.any([launch.signal, abort.signal])
-  const deadline = new AcpStartupDeadline(services.clock, options.startupTimeoutMs ?? 10_000, "launch")
+  const deadline = new AcpStartupDeadline(services.clock, options.startupTimeoutMs, "launch")
   try { return await deadline.run(openStream(input, options, services, { ...launch, signal }), signal) }
   catch (error) { abort.abort(error); throw error }
 }

@@ -52,7 +52,6 @@ export type BrowserAuthState = {
   signIn: (options?: BrowserAuthSignInOptions) => Promise<void>
   signOut: () => Promise<void>
   signUp: (options?: BrowserAuthSignUpOptions) => Promise<void>
-  getToken: (options?: { skipCache?: boolean }) => Promise<string | null>
   refreshSession: () => Promise<void>
 }
 
@@ -64,10 +63,8 @@ export type BrowserAuthDeployment = {
 
 export type BrowserAuthAdapter = {
   readonly adapter: BrowserAuthAdapterId
-  readonly transport: "cookie" | "bearer"
   initialize(input: BrowserAuthDeployment): Promise<void>
   useAuth(): BrowserAuthState
-  getToken(options?: { skipCache?: boolean }): Promise<string | null>
 }
 
 type DescriptorRequest = (input: string, init?: RequestInit) => Promise<Response>

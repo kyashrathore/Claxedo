@@ -12,7 +12,17 @@ type Input = {
   gitUrl: string
   relayUrl: string
   credentials: { key: string; certificate: string }
+  apiOrigin: string
+  appOrigin: string
+  emailPassword?: boolean
 }
+
+/**
+ * The signed browser's public hostname. The app treats a loopback server URL
+ * (localhost, 127.0.0.1) as the local daemon and calls its routes, so a hosted
+ * origin has to be named; Chromium resolves any *.localhost name to loopback.
+ */
+export const HOSTED_E2E_PUBLIC_HOSTNAME = "claxedo-e2e.localhost"
 
 export async function hostedCertificate(root: string) {
   const key = path.join(root, "hosted-key.pem")
@@ -20,7 +30,7 @@ export async function hostedCertificate(root: string) {
   const generated = spawnSync("openssl", [
     "req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "1",
     "-keyout", key, "-out", certificate, "-subj", "/CN=127.0.0.1",
-    "-addext", "subjectAltName=IP:127.0.0.1",
+    "-addext", `subjectAltName=IP:127.0.0.1,DNS:${HOSTED_E2E_PUBLIC_HOSTNAME}`,
   ], { encoding: "utf8" })
   if (generated.error) throw generated.error
   if (generated.status !== 0) throw new Error(`openssl failed: ${generated.stderr}`)
@@ -78,12 +88,15 @@ export async function startHostedControlPlane(input: Input) {
     stdio: ["ignore", "pipe", "pipe", "ipc"],
     env: {
       ...process.env,
+      HOME: input.root,
+      XDG_CONFIG_HOME: path.join(input.root, ".config"),
       NODE_EXTRA_CA_CERTS: credentials.certificate,
       CLAXEDO_E2E_HOSTED_MINIFLARE: JSON.stringify({
         config, root: input.root, port: input.port, certificate: credentials.certificate,
         key: credentials.key, sandboxOrigin: input.sandboxOrigin, gitUrl: input.gitUrl,
         relayUrl: input.relayUrl, signingPrivateKey: HOSTED_SIGNING_PRIVATE_KEY,
         signingPublicKey: HOSTED_SIGNING_PUBLIC_KEY,
+        apiOrigin: input.apiOrigin, appOrigin: input.appOrigin, emailPassword: input.emailPassword,
       }),
     },
   })

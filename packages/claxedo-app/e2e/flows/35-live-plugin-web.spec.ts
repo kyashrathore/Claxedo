@@ -141,27 +141,3 @@ test("35 a live plugin on the web swaps on save, keeps its last build on a broke
   expect((await listLivePlugins(stack.url)).plugins).toEqual([])
   await expect(fs.access(path.join(folder, "package.json"))).resolves.toBeUndefined()
 })
-
-test("35 a machine owner's app plugins never list, serve, activate or ask for another signed-in user", async ({ signed, page, browser }) => {
-  await signed.makeWorkspace("fixture", "Fixture project")
-  const row = await registerLivePlugin(signed.stack.url, await writeFixturePlugin(signed.stack.dataDir, { label: "Fixture v1" }), signed.owner.transport)
-  expect(row).toMatchObject({ id: "fixture", status: "ready" })
-  const member = await signed.signUp("Mia Member")
-  expect((await listLivePlugins(signed.stack.url, member.transport)).status).toBe(403)
-  expect((await member.transport({ method: "GET", url: new URL(`/api/claxedo/live-plugins/fixture/${row.hash}/app.js`, signed.stack.url).href })).status).toBe(403)
-
-  await signed.signIn(page, member)
-  await page.goto(`${signed.url}/settings/app-plugins`)
-  await expect(page.getByRole("status").filter({ hasText: "App plugins on this machine belong to its owner" })).toBeVisible()
-  await expect(page.getByText("No app plugins yet.")).toBeVisible()
-  await expect(appPluginRow(page, "Fixture")).toHaveCount(0)
-  await expect(appPluginDialog(page, "Turn on the app plugin Fixture?")).toHaveCount(0)
-
-  const owner = await (await browser.newContext({ ignoreHTTPSErrors: true })).newPage()
-  await signed.signIn(owner, signed.owner)
-  await owner.goto(`${signed.url}/settings/app-plugins`)
-  await approveAppPlugin(owner, "Turn on the app plugin Fixture?", APP_PLUGIN_WARNING.web)
-  await expect(appPluginRow(owner, "Fixture")).toContainText("On")
-  await owner.context().close()
-  await expect(appPluginRow(page, "Fixture")).toHaveCount(0)
-})

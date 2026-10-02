@@ -69,21 +69,6 @@ test("15 settings opened and closed again leave nothing animating", async ({ sta
   await expectNothingAnimating(app)
 })
 
-test("15 Connections on the local server lists its integrations and never shows a raw HTTP status", async ({ stack, app, isMobile }) => {
-  const workspace = await stack.daemon.makeWorkspace("settings", "Settings")
-  const integrations = await fetch(new URL("/api/claxedo/integrations", stack.url))
-  await app.goto(`${stack.url}${sessionRoute(workspace.id)}`)
-  await openSettings(app, isMobile)
-  await openSection(app, isMobile, "Connections")
-  const group = app.getByRole("group", { name: "Integrations" })
-  await expect(group.getByText("Notion", { exact: true })).toBeVisible()
-  await expect(group.getByText(/\b[45]\d\d\b/)).toHaveCount(0)
-  await expect(group.getByText("This server doesn't offer integrations.")).toHaveCount(0)
-  expect(integrations.status).toBe(200)
-  const bootstrap = (await (await fetch(new URL("/api/claxedo/bootstrap?scope=shell", stack.url))).json()) as { deployment?: unknown }
-  expect(bootstrap.deployment).toMatchObject({ connections: true })
-})
-
 test("15 Connections on the desktop's local server says it offers no integrations and asks for none", { tag: "@desktop" }, async ({ desktop }) => {
   await desktop.makeWorkspace("desktop-connections", "Desk")
   const window = desktop.window

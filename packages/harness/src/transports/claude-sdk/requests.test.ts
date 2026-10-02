@@ -51,13 +51,11 @@ test("a native ask rule has no reusable grant while a plain approval reason keep
   expect(keys[1]).toBeDefined()
 })
 
-test("Claude questions require text and one answer per question", async () => {
+test("Claude questions require text", async () => {
   const signal = new AbortController().signal
   const broker = { signal, ask: async () => ({ kind: "answers" as const, answers: [] }) } as unknown as TurnBroker
   await expect(askClaudePermission(input, broker, "AskUserQuestion", { questions: [{ question: "" }] },
     { signal } as Parameters<CanUseTool>[2])).rejects.toThrow("non-empty question")
-  await expect(askClaudePermission(input, broker, "AskUserQuestion", { questions: [{ question: "What?" }] },
-    { signal } as Parameters<CanUseTool>[2])).rejects.toThrow("answer each question")
 })
 
 test("Always allow keys the grant by the request identity and returns the SDK's suggestions as session updates", async () => {

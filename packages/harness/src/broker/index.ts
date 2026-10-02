@@ -59,7 +59,6 @@ export function createSessionBroker(owner: BrokerOwner, context: SessionBrokerCo
       return owner.requests.completeElicitation(context.sessionId, context.start.connectionId, elicitationId)
     },
     rebind: async (upstreamSessionId) => Object.freeze({ ...await ports.rebind(context.sessionId, upstreamSessionId) }),
-    persistHandoff: (handoff) => ports.persistHandoff(context.sessionId, handoff),
     admitProviderTurn: (input, run) => admitProviderTurn(
       ports, context.sessionId, input,
       (turn, signal) => {

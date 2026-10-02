@@ -7,7 +7,7 @@ import { desktopMachineReport } from "@/lib/desktop-bridge"
 import { ClockProvider } from "@/lib/clock"
 import { ProjectListProvider } from "@/projects"
 import { CompactSwitcher, MainSidebar } from "@/rail"
-import { createServer, ServerProvider, type AuthSource } from "@/server"
+import { createServer, ServerProvider } from "@/server"
 import { SessionStoresProvider } from "@/session"
 import { AttentionAlerts } from "@/notifications"
 import { PreferencesProvider, usePreferences } from "@/settings"
@@ -21,14 +21,12 @@ function principalOf(state: AuthState): string | undefined {
   return state.kind === "signedIn" ? state.user.id : undefined
 }
 
-type ServerAccess = { readonly auth: AuthSource; readonly account?: RunHostedOperation; readonly cookies?: true }
+type ServerAccess = { readonly account?: RunHostedOperation; readonly cookies?: true }
 
 function serverAccess(auth: Auth, principal: string | undefined): ServerAccess {
-  if (principal === undefined) return { auth: { kind: "none" } }
+  if (principal === undefined) return {}
   const access = auth.controlPlane
-  if (access.kind === "port") return { auth: { kind: "none" }, account: access.run }
-  if (access.kind === "cookie") return { auth: { kind: "none" }, cookies: true }
-  return { auth: { kind: "bearer", token: async (options) => (await access.token({ skipCache: options?.fresh })) ?? undefined } }
+  return access.kind === "port" ? { account: access.run } : { cookies: true }
 }
 
 function ServerScope(props: ParentProps<{ readonly access: ServerAccess; readonly serverUrl?: string }>): JSX.Element {

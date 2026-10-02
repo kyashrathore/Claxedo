@@ -3,10 +3,8 @@ import { asRecordOrEmpty, asString, assertRecord } from "@claxedo/helpers/guards
 import { errorMessage } from "@claxedo/helpers"
 import { NdjsonOwnedProcess } from "../../rpc/channel"
 import { PendingRpcRequests } from "../../rpc/pending"
+import { StderrTail } from "../../rpc/stderr-tail"
 import { codexChannelError, CodexRequestRefusal, CodexRequestTimeout, CodexTransportError, codexRpcError } from "./errors"
-
-const STDERR_TAIL = 2_000
-const ANSI = /\x1b\[[0-9;]*m/g
 
 export type RpcMessage = { id?: string | number; method?: string; params?: unknown; result?: unknown; error?: { code: number; message: string } }
 
@@ -21,14 +19,13 @@ export class CodexRpc {
   private readonly listeners = new Set<(message: RpcMessage) => void>()
   private handler?: (message: RpcMessage, signal: AbortSignal) => Promise<unknown>
   private readonly inbound = new Map<string | number, AbortController>()
-  private stderr = ""
+  private readonly stderr: StderrTail
 
   constructor(readonly process: OwnedProcess, clock: HarnessServices["clock"]) {
     this.pending = new PendingRpcRequests(clock)
-    process.stderr.setEncoding("utf8")
-    process.stderr.on("data", (chunk: string) => { this.stderr = `${this.stderr}${chunk.replace(ANSI, "")}`.slice(-STDERR_TAIL) })
+    this.stderr = new StderrTail(process)
     this.channel = new NdjsonOwnedProcess(process, clock, (value) => this.receive(this.decode(value)),
-      (reason, cause) => codexChannelError(reason, cause, this.stderr.trim()),
+      (reason, cause) => codexChannelError(reason, cause, this.stderr.value),
     (error) => console.error("Codex process retirement failed", error))
     this.channel.onFailure((error) => this.pending.fail(error))
   }

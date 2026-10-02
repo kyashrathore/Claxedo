@@ -1,7 +1,5 @@
-import type { SDKActiveGoalMessage, SDKMessage } from "@anthropic-ai/claude-agent-sdk"
 import type { RoutedEvent } from "../../contract"
-
-type Frame = SDKMessage | SDKActiveGoalMessage
+import type { ClaudeFrame as Frame } from "./live-query"
 
 const HELD_LIMIT = 1_000
 

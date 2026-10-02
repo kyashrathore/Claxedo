@@ -11,6 +11,7 @@ import {
   D1_WORKSPACE_AUTHORITY_METHODS,
   type D1AuthorityProductPolicy,
   type D1WorkspaceAuthorityCore,
+  type D1ActorProfile,
 } from "./workspace-authority"
 import {
   D1SessionAuthority,
@@ -103,6 +104,7 @@ export type D1CoreAuthorityOptions = {
   product: D1AuthorityProductPolicy
   now?: () => number
   invitations?: OrgInvitationDelivery
+  actorProfile?: D1ActorProfile
 }
 
 /**
@@ -116,6 +118,7 @@ export function createD1CoreAuthority(database: D1Database, options: D1CoreAutho
   const workspace = new D1WorkspaceAuthority(database, {
     ...shared,
     product: options.product,
+    ...(options.actorProfile ? { actorProfile: options.actorProfile } : {}),
   })
   const access = workspace.accessContext()
   const sessions = new D1SessionAuthority(database, shared)
