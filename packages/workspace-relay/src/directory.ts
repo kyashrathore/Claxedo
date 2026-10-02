@@ -14,17 +14,15 @@ export type HostTunnelPresence = {
 /**
  * Presence is keyed by (host, workspace), so a later registration for a
  * workspace takes that workspace over without touching the host's other
- * entries. `recordPong` and `disconnectHost` take an optional workspace set;
- * without it they act on every entry of the host, which is what a
- * single-workspace Cloudflare room wants.
+ * entries. `recordPong` and `disconnectHost` act on every entry of the host.
  */
 export type WorkspaceRelayDirectory = {
   registerHostTunnel(input: {
     hostId: string
     workspaceIds: string[]
   }): HostTunnelPresence
-  recordPong(hostId: string, workspaceIds?: string[]): HostTunnelPresence | undefined
-  disconnectHost(hostId: string, workspaceIds?: string[]): void
+  recordPong(hostId: string): HostTunnelPresence | undefined
+  disconnectHost(hostId: string): void
   activeHost(input: {
     hostId: string
     workspaceId: string
@@ -79,10 +77,8 @@ export function createWorkspaceRelayDirectory(options: {
     return presence
   }
 
-  const keysOf = (hostId: string, workspaceIds: string[] | undefined) => {
-    if (workspaceIds) return [...new Set(workspaceIds)].map((workspaceId) => presenceKey(hostId, workspaceId))
-    return [...entries].filter(([, presence]) => presence.hostId === hostId).map(([key]) => key)
-  }
+  const keysOf = (hostId: string) =>
+    [...entries].filter(([, presence]) => presence.hostId === hostId).map(([key]) => key)
 
   const sweep = () => {
     const at = now()
@@ -111,10 +107,10 @@ export function createWorkspaceRelayDirectory(options: {
       for (const workspaceId of next.workspaceIds) entries.set(presenceKey(next.hostId, workspaceId), next)
       return next
     },
-    recordPong(hostId, workspaceIds) {
+    recordPong(hostId) {
       const timestamp = now()
       let touched: HostTunnelPresence | undefined
-      for (const key of keysOf(hostId, workspaceIds)) {
+      for (const key of keysOf(hostId)) {
         const presence = alive(key)
         if (!presence) continue
         const next = { ...presence, lastPongAt: timestamp, expiresAt: timestamp + ttlMs }
@@ -123,8 +119,8 @@ export function createWorkspaceRelayDirectory(options: {
       }
       return touched
     },
-    disconnectHost(hostId, workspaceIds) {
-      for (const key of keysOf(hostId, workspaceIds)) entries.delete(key)
+    disconnectHost(hostId) {
+      for (const key of keysOf(hostId)) entries.delete(key)
     },
     activeHost(input) {
       return alive(presenceKey(input.hostId, input.workspaceId))
