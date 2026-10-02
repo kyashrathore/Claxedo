@@ -1,3 +1,5 @@
+import { isRecord } from "@claxedo/helpers/guards"
+import { readField } from "@claxedo/helpers/readers"
 import type { PluginDefinition } from "@claxedo/plugin-api"
 
 export const NOT_A_PLUGIN = "the bundle's default export is not definePlugin(...)"
@@ -11,8 +13,11 @@ export async function importBundle(code: string): Promise<unknown> {
   }
 }
 
+function isPluginDefinition(value: unknown): value is PluginDefinition {
+  return isRecord(value) && typeof value.activate === "function"
+}
+
 export function bundleDefinition(module: unknown): PluginDefinition | undefined {
-  const candidate = (module as { readonly default?: unknown }).default
-  if (typeof candidate !== "object" || candidate === null) return undefined
-  return typeof (candidate as PluginDefinition).activate === "function" ? (candidate as PluginDefinition) : undefined
+  const candidate = readField(module, "default")
+  return isPluginDefinition(candidate) ? candidate : undefined
 }

@@ -6,6 +6,7 @@ import os from "node:os"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
 import { build, type Plugin } from "esbuild"
+import { asRecord } from "@claxedo/helpers/guards"
 import { Miniflare } from "miniflare"
 import { RuntimeStore } from "./store"
 import { openTestRuntimeStoreDatabase } from "./test-support/store"
@@ -20,7 +21,7 @@ void describe("store core scenarios on the Node SQLite driver", () => {
       const stores: RuntimeStore[] = []
       const side = openTestRuntimeStoreDatabase(root).db
       try {
-        storeCoreScenarios[name]!({
+        storeCoreScenarios[name]({
           open: () => {
             const store = new RuntimeStore(openTestRuntimeStoreDatabase(root))
             stores.push(store)
@@ -96,7 +97,7 @@ void describe("store core scenarios on Durable Object SQLite under workerd", () 
     })
     miniflare = new Miniflare({
       compatibilityDate: "2026-07-22",
-      modules: [{ type: "ESModule", path: "index.mjs", contents: bundled.outputFiles[0]!.text }],
+      modules: [{ type: "ESModule", path: "index.mjs", contents: bundled.outputFiles[0].text }],
       durableObjects: { STORE_GATE: { className: "StoreGate", useSQLite: true } },
     })
     await miniflare.ready
@@ -109,9 +110,9 @@ void describe("store core scenarios on Durable Object SQLite under workerd", () 
   for (const name of scenarios) {
     void it(name, async () => {
       const response = await miniflare.dispatchFetch(`http://store-gate/?scenario=${encodeURIComponent(name)}`)
-      const result = await response.json() as { ok: boolean; error?: string }
-      assert.equal(result.error, undefined)
-      assert.equal(result.ok, true)
+      const result = asRecord(await response.json())
+      assert.equal(result?.error, undefined)
+      assert.equal(result?.ok, true)
     })
   }
 })

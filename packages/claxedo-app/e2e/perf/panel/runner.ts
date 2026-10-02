@@ -105,8 +105,8 @@ export class Runner {
     if (profile) await fs.writeFile(traceFile.replace(".trace.json", ".cpuprofile"), JSON.stringify(profile))
     const frames = recording.frames
     const cutoff = recording.settledAt ?? recording.readyAt ?? Number.POSITIVE_INFINITY
-    const deltas = frames.filter((at) => at <= cutoff + 1).map((at, index, all) => (index === 0 ? at - recording.inputAt : at - all[index - 1]!))
-    const quietDeltas = frames.map((at, index, all) => (index === 0 ? at - recording.inputAt : at - all[index - 1]!))
+    const deltas = frames.filter((at) => at <= cutoff + 1).map((at, index, all) => (index === 0 ? at - recording.inputAt : at - all[index - 1]))
+    const quietDeltas = frames.map((at, index, all) => (index === 0 ? at - recording.inputAt : at - all[index - 1]))
     const worstQuiet = Math.max(0, ...quietDeltas)
     const worstQuietAt = quietDeltas.indexOf(worstQuiet) >= 0 ? (frames[quietDeltas.indexOf(worstQuiet)] ?? 0) - recording.inputAt : -1
     const requests = this.requests.map((request) => ({ ...request, startMs: Math.round(request.startMs - pageEpoch - recording.inputAt) })).filter((request) => request.startMs >= -5)

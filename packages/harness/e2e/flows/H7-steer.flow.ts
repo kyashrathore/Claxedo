@@ -31,10 +31,10 @@ function assertIncorporated(name: string, stream: EventStream, stored: MessageRo
   assert.deepEqual(shape.slice(0, steerAt + 1).map(({ role, parent }) => ({ role, parent })), [
     { role: "user", parent: undefined }, { role: "assistant", parent: ids.open }, { role: "user", parent: undefined },
   ], `${name} transcript before the steer: ${JSON.stringify(shape)}`)
-  assert.ok(stored[steerAt]!.parts.some((part) => part.type === "text" && part.text === second), `${name} steered message lost its text`)
+  assert.ok(stored[steerAt].parts.some((part) => part.type === "text" && part.text === second), `${name} steered message lost its text`)
   assert.deepEqual(shape.slice(steerAt + 1).map(({ role, parent, completed }) => ({ role, parent, completed })),
     [{ role: "assistant", parent: ids.steer, completed: true }], `${name} reply after the steer: ${JSON.stringify(shape)}`)
-  assert.equal(shape[steerAt - 1]!.completed, true, `${name} reply before the steer stayed open`)
+  assert.equal(shape[steerAt - 1].completed, true, `${name} reply before the steer stayed open`)
   const live = stream.frames.filter((frame) => frameType(frame) === "message.updated"
     && (frame.data.payload as { properties?: { info?: { id?: string; role?: string } } }).properties?.info?.id === ids.steer)
   assert.ok(live.some((frame) => (frame.data.payload as { properties: { info: { role?: string } } }).properties.info.role === "user"),

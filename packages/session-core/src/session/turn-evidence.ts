@@ -1,8 +1,7 @@
 import type { AgentTurnOutcome } from "@claxedo/agent-runtime-contract"
+import type { SqliteDatabase } from "../sqlite/database"
 
-export type TurnEvidenceDatabase = {
-  prepare<Row>(sql: string): { get(...params: unknown[]): Row | null | undefined }
-}
+export type TurnEvidenceDatabase = Pick<SqliteDatabase, "prepare">
 
 export type TurnEvidence = { started: boolean; finished: boolean; outcome?: AgentTurnOutcome }
 

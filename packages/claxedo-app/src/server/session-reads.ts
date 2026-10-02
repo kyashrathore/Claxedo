@@ -1,4 +1,5 @@
-import { NO_BACKGROUND_WORK, type AgentPresentationSession } from "@claxedo/agent-runtime-contract"
+import { isAgentSnapshotFileDiff, NO_BACKGROUND_WORK, type AgentSession } from "@claxedo/agent-runtime-contract"
+import { readField } from "@claxedo/helpers/readers"
 import { readCentralFirst, readCentralRow } from "./central-session"
 import { responseError } from "./errors"
 import { onRuntime, sessionEndpoint, type SessionContext } from "./session-context"
@@ -9,28 +10,29 @@ import type { HeldSessionReads, PageShape, SessionFirstRead, SessionReads, Sessi
 import { GOAL_UNAVAILABLE } from "./wire/goal"
 import { firstReadFromWire, NO_FIRST_PAGE } from "./wire/first-read"
 import { OPEN_VIEW, sessionOpenFromWire, TODOS_UNSUPPORTED, type SessionFact, type SessionOpenView } from "./wire/session-open"
-import { sessionRowFromSession } from "./wire/session-row"
+import { sessionFromWire, sessionRowFromSession } from "./wire/session-row"
 import { viewportQuery } from "./wire/turn-page"
 
 const STOPPED_STATUS: SessionStatus = { kind: "idle" }
 
-function runtimeRow(session: AgentPresentationSession, ref: SessionLocation): Pick<SessionFirstRead, "row" | "diff"> {
-  return { row: sessionRowFromSession(session, ref), diff: session.summary?.diffs ?? [] }
+function runtimeRow(session: AgentSession, ref: SessionLocation): Pick<SessionFirstRead, "row" | "diff"> {
+  const diffs = readField(readField(session, "summary"), "diffs")
+  return { row: sessionRowFromSession(session, ref), diff: Array.isArray(diffs) ? diffs.filter(isAgentSnapshotFileDiff) : [] }
 }
 
 async function readRuntimeFirst(context: SessionContext, route: RuntimeRoute, ref: SessionLocation, shape: PageShape): Promise<SessionFirstRead> {
   const response = await context.transport.runtime(route, withQuery(sessionEndpoint(ref, "/outline"), viewportQuery(shape)))
   if (!response.ok) throw await responseError(response, "First read")
   const read = firstReadFromWire(await response.json())
-  return { ...runtimeRow(read.session as AgentPresentationSession, ref), outline: read.outline, ...(read.page ?? NO_FIRST_PAGE) }
+  return { ...runtimeRow(sessionFromWire(read.session), ref), outline: read.outline, ...(read.page ?? NO_FIRST_PAGE) }
 }
 
 async function readOfflineFirst(context: SessionContext, workspaceId: string, ref: SessionLocation): Promise<SessionFirstRead> {
   return { row: await readCentralRow(context, workspaceId, ref), diff: [], outline: undefined, ...NO_FIRST_PAGE }
 }
 
-function readLiveSession(context: SessionContext, ref: SessionLocation): Promise<AgentPresentationSession | undefined> {
-  return onRuntime(context, ref, (route) => context.transport.runtimeJson<AgentPresentationSession>(route, sessionEndpoint(ref)), async () => undefined)
+function readLiveSession(context: SessionContext, ref: SessionLocation): Promise<AgentSession | undefined> {
+  return onRuntime(context, ref, async (route) => sessionFromWire(await context.transport.runtimeJson(route, sessionEndpoint(ref))), async () => undefined)
 }
 
 async function readHeldFirst(context: SessionContext, ref: SessionLocation, held: HeldSessionReads): Promise<SessionFirstRead> {
@@ -71,7 +73,7 @@ export function startSessionReads(context: SessionContext, ref: SessionLocation,
   const opened = onRuntime<SessionOpenView | undefined>(
     context,
     ref,
-    async (route) => sessionOpenFromWire(await transport.runtimeJson<unknown>(route, withQuery(sessionEndpoint(ref), OPEN_VIEW))),
+    async (route) => sessionOpenFromWire(await transport.runtimeJson(route, withQuery(sessionEndpoint(ref), OPEN_VIEW))),
     async () => undefined,
   )
   const fact = <T>(read: (view: SessionOpenView) => T, stopped: T) => opened.then((view) => (view ? read(view) : stopped))

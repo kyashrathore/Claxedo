@@ -32,7 +32,7 @@ test("relay: a read takes its connection from the read-only GET and never from t
   await createRelay(server.read).fetch("ws_1", "/api/wr/health")
 
   expect(server.calls).toEqual([{ path: "/api/workspace/ws_1/connection", method: undefined }])
-  expect(String(runtimeFetch.mock.calls[0]?.[0])).toBe("https://relay.test/workspaces/ws_1/api/wr/health")
+  expect(runtimeFetch.mock.calls[0]?.[0]).toBe("https://relay.test/workspaces/ws_1/api/wr/health")
 })
 
 test("relay: a stopped workspace answers the read with workspace_stopped and nothing reaches the relay", async () => {

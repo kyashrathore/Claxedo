@@ -1,3 +1,4 @@
+import { unreachable } from "@/lib/machine"
 import type { Accessor } from "solid-js"
 import { useServer, type OrgRole, type Principal, type SessionLocation } from "@/server"
 import { isOrgManager, sessionControls, type AccessAction } from "./model"
@@ -28,6 +29,8 @@ export function useAccess(): Access {
         case "org.accounts":
         case "plugins.manage":
           return isOrgManager(orgRole())
+        default:
+          return unreachable(action)
       }
     },
   }

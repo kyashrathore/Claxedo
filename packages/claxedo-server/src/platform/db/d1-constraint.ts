@@ -25,7 +25,7 @@ const CONSTRAINT_FAILED = /\b(UNIQUE|CHECK|NOT NULL|FOREIGN KEY) constraint fail
 export function d1ConstraintFailure(error: unknown): D1ConstraintFailure | undefined {
   for (let current = error, depth = 0; current instanceof Error && depth < 4; current = current.cause, depth++) {
     const match = CONSTRAINT_FAILED.exec(current.message)
-    if (match) return { kind: KINDS[match[1]!]!, target: match[2]?.trim() ?? "" }
+    if (match) return { kind: KINDS[match[1]], target: match[2]?.trim() ?? "" }
   }
   return undefined
 }

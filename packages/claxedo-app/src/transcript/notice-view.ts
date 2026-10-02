@@ -1,3 +1,4 @@
+import { unreachable } from "@/lib/machine"
 import type { TranscriptNotice, TranscriptNoticeSeverity } from "@claxedo/agent-runtime-contract"
 import type { TranscriptTextKey } from "./i18n"
 
@@ -23,6 +24,8 @@ export function noticeView(notice: TranscriptNotice): NoticeView {
       return { shape: "row", tone: "warn", message: { key: "transcript.notice.compactionFailed", error: notice.error } }
     case "conversation-reset":
       return { shape: "boundary", key: notice.trigger === "clear" ? "transcript.notice.conversationCleared" : "transcript.notice.conversationReset", icon: "new-session" }
+    default:
+      return unreachable(notice)
   }
 }
 

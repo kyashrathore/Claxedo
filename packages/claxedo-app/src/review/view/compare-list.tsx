@@ -76,7 +76,7 @@ export function CompareList(props: {
         aria-expanded="true"
         aria-autocomplete="list"
         aria-controls={listId}
-        aria-activedescendant={activeOption() ? optionId(visible().indexOf(activeOption()!)) : undefined}
+        aria-activedescendant={activeOption() ? optionId(visible().indexOf(activeOption())) : undefined}
         autocomplete="off"
         spellcheck={false}
         placeholder={t("review.compare.search")}

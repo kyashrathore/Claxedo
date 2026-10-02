@@ -76,6 +76,17 @@ describe("cursorSdkAdapter", () => {
     expect(JSON.stringify(agent.state().notedKinds)).not.toContain("xxxx")
   })
 
+  test("a known frame missing a field its translation reads is noted by kind, never an adapter error", () => {
+    const agent = runtime()
+    const frame = (payload: Record<string, unknown>) => agent.ingest({ source: "cursor.sdk.message",
+      payload: { agent_id: "agent-1", run_id: "run-1", ...payload } }).events
+    const note = (kind: string) => [{ type: "diagnostic", diagnostic: { code: "cursor_sdk.ignored_frame", details: { kind } } }]
+    expect(frame({ type: "assistant", message: { role: "assistant", content: [null] } })).toMatchObject(note("message:assistant"))
+    expect(frame({ type: "tool_call", call_id: "c2", status: "running", args: {} })).toMatchObject(note("message:tool_call"))
+    expect(frame({ type: "usage" })).toMatchObject(note("message:usage"))
+    expect(frame({ type: "result", status: "finished" })).toMatchObject(note("message:result"))
+  })
+
   test("maps tool call lifecycle events", () => {
     const agent = runtime()
 

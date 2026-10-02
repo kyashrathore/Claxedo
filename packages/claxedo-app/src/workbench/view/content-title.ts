@@ -5,6 +5,6 @@ export function createContentTitle(wb: WorkbenchStore, contentId: Accessor<strin
   return createMemo(() => {
     const id = contentId()
     const opened = id ? wb.content(id) : undefined
-    return opened?.kind.title(opened.state as never)
+    return opened?.content?.title()
   })
 }

@@ -297,14 +297,14 @@ describe("hosted organization, team and project access routes on D1", () => {
       expect(await call(alice.token, "POST", `/api/control/orgs/${orgId}/invitations`, { email, role: "member" }))
         .toEqual({ status: 202, body: { message: "invitation sent" } })
     }
-    expect((await call(carol.token, "POST", "/api/control/invitations/accept", { token: sent[0]!.token })).body)
+    expect((await call(carol.token, "POST", "/api/control/invitations/accept", { token: sent[0].token })).body)
       .toMatchObject({ user_id: carol.userId, role: "member" })
-    expect(await call("dave", "POST", "/api/control/invitations/accept", { token: sent[1]!.token }))
+    expect(await call("dave", "POST", "/api/control/invitations/accept", { token: sent[1].token }))
       .toMatchObject({ status: 403, body: { error: { code: "org_invitation_email_mismatch" } } })
   })
 
   test("a caller who does not administer the org learns nothing about whether an email has an account", async () => {
-    const { person, account, call, join, sent } = await hosted()
+    const { person, account, call, join } = await hosted()
     const alice = await person("alice")
     const bob = await person("bob")
     await account("carol", "carol@example.com", true)

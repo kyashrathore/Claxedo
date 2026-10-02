@@ -17,23 +17,6 @@ async function serverProject(url: string, id: string): Promise<{ status: number;
   return { status: 200, project: ((await response.json()) as { project: ProjectRecord }).project }
 }
 
-function railMenu(app: Page, project: string) {
-  const header = app.getByRole("navigation", { name: UI.rail }).getByTestId("project-header").filter({ hasText: project })
-  const show = async () => {
-    const drawer = app.getByRole("button", { name: UI.openRail })
-    if (await drawer.isVisible()) await drawer.click()
-  }
-  return {
-    header,
-    show,
-    open: async () => {
-      await show()
-      await header.hover()
-      await header.getByRole("button", { name: /^More options for / }).click()
-    },
-  }
-}
-
 function projectChip(app: Page) {
   return app.getByRole("button", { name: "Project", exact: true })
 }

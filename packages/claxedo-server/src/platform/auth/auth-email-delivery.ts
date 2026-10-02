@@ -17,6 +17,8 @@ const EMAIL_FAILURES = {
   E_INTERNAL_SERVER_ERROR: { code: "email_service_unavailable", status: 503, retryable: true },
 } as const
 
+const EMAIL_FAILURE_BY_CODE = new Map<string, { code: string; status: number; retryable: boolean }>(Object.entries(EMAIL_FAILURES))
+
 const INVALID_MESSAGE_CODES = new Set([
   "E_VALIDATION_ERROR", "E_FIELD_MISSING", "E_TOO_MANY_RECIPIENTS", "E_TOO_MANY_ATTACHMENTS", "E_CONTENT_TOO_LARGE",
   "E_HEADER_NOT_ALLOWED", "E_HEADER_USE_API_FIELD", "E_HEADER_VALUE_INVALID", "E_HEADER_VALUE_TOO_LONG",
@@ -25,11 +27,10 @@ const INVALID_MESSAGE_CODES = new Set([
 
 function cloudflareEmailDeliveryError(cause: unknown) {
   const providerCode = cause && typeof cause === "object" && "code" in cause ? cause.code : undefined
-  const failure = typeof providerCode === "string" && Object.hasOwn(EMAIL_FAILURES, providerCode)
-    ? EMAIL_FAILURES[providerCode as keyof typeof EMAIL_FAILURES]
-    : typeof providerCode === "string" && INVALID_MESSAGE_CODES.has(providerCode)
-      ? { code: "email_invalid_message", status: 400, retryable: false }
-      : EMAIL_FAILURES.E_DELIVERY_FAILED
+  const known = typeof providerCode === "string" ? EMAIL_FAILURE_BY_CODE.get(providerCode) : undefined
+  const failure = known ?? (typeof providerCode === "string" && INVALID_MESSAGE_CODES.has(providerCode)
+    ? { code: "email_invalid_message", status: 400, retryable: false }
+    : EMAIL_FAILURES.E_DELIVERY_FAILED)
   return new ClaxedoError({ ...failure, message: "Transactional email delivery failed", cause })
 }
 

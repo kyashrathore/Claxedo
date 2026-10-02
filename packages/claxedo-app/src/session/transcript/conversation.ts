@@ -89,9 +89,8 @@ export function appendDelta(set: SetTranscript, data: TranscriptData, messageId:
     messageId,
     index,
     produce((part) => {
-      const record = part as unknown as Record<string, unknown>
-      const current = record[field]
-      record[field] = typeof current === "string" ? current + text : text
+      const current: unknown = Reflect.get(part, field)
+      Reflect.set(part, field, typeof current === "string" ? current + text : text)
     }),
   )
   if (field === "text" && !data.partsWithText[partId] && textIsPresent(text)) set("partsWithText", partId, true)

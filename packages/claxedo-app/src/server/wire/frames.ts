@@ -1,13 +1,13 @@
-import { isAgentContentPart, isAgentMessageInfo, parseBackgroundWork, type AgentSession } from "@claxedo/agent-runtime-contract"
+import { isAgentContentPart, isAgentMessageInfo, isAgentSnapshotFileDiff, isAgentTodo, parseBackgroundWork } from "@claxedo/agent-runtime-contract"
 import type { ServerEvent } from "../events"
 import { placementId as asPlacementId, projectId, requestId } from "../ids"
-import type { FileDiff, SessionLocation, Todo } from "../types"
+import type { SessionLocation } from "../types"
 import { provisionStatus } from "./cloud"
 import { goalFromWire } from "./goal"
 import { connectionStateFromWire, harnessHealthFromWire } from "./harness-state"
 import { subagentFromWire } from "./subagents"
 import { isPermissionWire, isQuestionWire, requestFromPermission, requestFromQuestion } from "./requests"
-import { sessionLocationFor, sessionRowFromSession, type Address } from "./session-row"
+import { isSessionWire, sessionLocationFor, sessionRowFromSession, type Address } from "./session-row"
 import { sessionStatusFromTurnError, sessionStatusFromWire } from "./status"
 import { terminalEvent } from "./terminals"
 import { isRecord, nonEmptyString } from "@claxedo/helpers/guards"
@@ -18,10 +18,6 @@ export type Frame = {
   readonly type: string
   readonly properties?: Record<string, unknown>
   readonly raw: Record<string, unknown>
-}
-
-function isSessionInfo(value: unknown): value is AgentSession {
-  return isRecord(value) && typeof value.id === "string"
 }
 
 export function frameFromWire(input: unknown): Frame | undefined {
@@ -59,16 +55,6 @@ function refOf(frame: Frame, address: Address): SessionLocation | undefined {
 
 function framePlacementId(frame: Frame, address: Address) {
   return frame.directory ? address.placementFor(frame.directory, frame.workspaceId)?.placementId : undefined
-}
-
-function todosFromWire(value: unknown): Todo[] | undefined {
-  if (!Array.isArray(value)) return undefined
-  return value.filter((item): item is Todo => isRecord(item) && typeof item.content === "string" && typeof item.status === "string")
-}
-
-function diffOf(value: unknown): FileDiff[] | undefined {
-  if (!Array.isArray(value)) return undefined
-  return value.filter((item): item is FileDiff => isRecord(item) && typeof item.additions === "number" && typeof item.deletions === "number")
 }
 
 function retractedParts(value: unknown) {
@@ -144,12 +130,12 @@ function lifecycleEvent(frame: Frame, ref: SessionLocation): ServerEvent | undef
   const properties = frame.properties ?? {}
   switch (frame.type) {
     case "session.updated":
-      return isSessionInfo(properties.info) ? { type: "sessionUpserted", row: sessionRowFromSession(properties.info, ref) } : undefined
+      return isSessionWire(properties.info) ? { type: "sessionUpserted", row: sessionRowFromSession(properties.info, ref) } : undefined
     case "session.deleted":
       return { type: "sessionRemoved", ref }
     case "session.diff": {
-      const diff = diffOf(properties.diff)
-      return diff ? { type: "diffChanged", ref, diff } : undefined
+      const diff = properties.diff
+      return Array.isArray(diff) ? { type: "diffChanged", ref, diff: diff.filter(isAgentSnapshotFileDiff) } : undefined
     }
     case "goal.updated": {
       const goal = goalFromWire(properties.goal)
@@ -162,8 +148,8 @@ function lifecycleEvent(frame: Frame, ref: SessionLocation): ServerEvent | undef
       return subagent ? { type: "subagentUpdated", ref, subagent } : undefined
     }
     case "todo.updated": {
-      const todos = todosFromWire(properties.todos)
-      return todos ? { type: "todosChanged", ref, todos } : undefined
+      const todos = properties.todos
+      return Array.isArray(todos) ? { type: "todosChanged", ref, todos: todos.filter(isAgentTodo) } : undefined
     }
     default:
       return undefined

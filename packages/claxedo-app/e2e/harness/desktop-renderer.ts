@@ -28,10 +28,13 @@ const CONTENT_TYPES: Readonly<Record<string, string>> = {
 
 async function serveFile(request: IncomingMessage, response: ServerResponse) {
   const file = path.join(RENDERER_DIR, decodeURIComponent(new URL(request.url ?? "/", "http://renderer").pathname))
-  if (!file.startsWith(`${RENDERER_DIR}${path.sep}`)) return void response.writeHead(403).end()
+  if (!file.startsWith(`${RENDERER_DIR}${path.sep}`)) {
+    response.writeHead(403).end()
+    return
+  }
   const body = await fs.readFile(file).catch(() => undefined)
-  if (!body) return void response.writeHead(404).end()
-  response.writeHead(200, { "content-type": CONTENT_TYPES[path.extname(file)] ?? "application/octet-stream" }).end(body)
+  if (!body) response.writeHead(404).end()
+  else response.writeHead(200, { "content-type": CONTENT_TYPES[path.extname(file)] ?? "application/octet-stream" }).end(body)
 }
 
 export async function serveRenderer(port: number): Promise<RendererServer> {

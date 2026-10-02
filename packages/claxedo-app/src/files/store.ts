@@ -4,9 +4,9 @@ import { createPlacementState } from "@/shell"
 import type { RevealBatches } from "./tree-rows"
 
 type PlacementFiles = {
-  readonly expanded: Readonly<Record<string, boolean>>
+  readonly expanded: Readonly<Partial<Record<string, boolean>>>
   readonly search: string
-  readonly markdownSource: Readonly<Record<string, boolean>>
+  readonly markdownSource: Readonly<Partial<Record<string, boolean>>>
   readonly scrollTop: number
   readonly batches: Readonly<Record<string, RevealBatches>>
 }

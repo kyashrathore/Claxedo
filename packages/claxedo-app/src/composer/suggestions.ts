@@ -32,7 +32,7 @@ function createAtItems(input: SuggestionInput, atQuery: Accessor<string | undefi
   const files = useQuery(() => {
     const placementId = input.placementId()
     const query = atQuery()
-    const options = server.queries.files.search(placementId ?? ("" as PlacementId), query ?? "", "all")
+    const options = server.queries.files.search(placementId ?? asPlacementId(""), query ?? "", "all")
     return { ...options, enabled: placementId !== undefined && query !== undefined }
   })
   const [mentions] = createResource(

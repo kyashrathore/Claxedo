@@ -1,0 +1,233 @@
+Subject: kit: the vendored tree passes the repository's type-aware lint
+
+What: `default-themes.ts` is deleted; the build-oc2 script reads oc-2.json
+through `parseDesktopTheme`; non-null and template assertions the checker
+already proves are dropped; `List`'s `applyFilter` and `LineCommentV2`'s
+`currentMention` return consistently; `MenuV2` calls a function `ref`
+without re-asserting its type.
+Why: patch 0003 dropped its re-export from `theme/index.ts` and nothing in
+the repository imports it, so its 37 `as DesktopTheme` casts were dead reads
+of theme JSON that skipped the parser. The rest are the
+findings root `oxlint` reports in this package; behaviour is unchanged.
+
+diff --git a/script/build-oc2-v2-overrides.ts b/script/build-oc2-v2-overrides.ts
+index e5dae76..8bba294 100644
+--- a/script/build-oc2-v2-overrides.ts
++++ b/script/build-oc2-v2-overrides.ts
+@@ -1,10 +1,11 @@
+ #!/usr/bin/env bun
+ 
+ import { V2_PRIMITIVES_DEFAULT } from "../src/theme/v2/default-primitives"
++import { parseDesktopTheme } from "../src/theme/parse"
+ import type { DesktopTheme } from "../src/theme/types"
+ 
+ const themePath = import.meta.dir + "/../src/theme/themes/oc-2.json"
+-const theme = (await Bun.file(themePath).json()) as DesktopTheme
++const theme = parseDesktopTheme(await Bun.file(themePath).json(), themePath)
+ const css = await Bun.file(import.meta.dir + "/../src/v2/styles/theme.css").text()
+ 
+ const light = { ...V2_PRIMITIVES_DEFAULT, ...readTokens("light") }
+@@ -27,6 +28,6 @@ function readTokens(mode: "light" | "dark") {
+     [...block.matchAll(/--(v2-[\w-]+):\s*([^;]+);/g)]
+       // Fonts and the fixed avatar foreground remain global CSS rather than theme overrides.
+       .filter(([, key]) => key !== "v2-avatar-fg" && key !== "v2-font-family-sans")
+-      .map(([, key, value]) => [key, value!.replace(/\s+/g, " ").trim()]),
++      .map(([, key, value]) => [key, value.replace(/\s+/g, " ").trim()]),
+   )
+ }
+diff --git a/script/tailwind.ts b/script/tailwind.ts
+index 6e558a8..cecabb1 100644
+--- a/script/tailwind.ts
++++ b/script/tailwind.ts
+@@ -6,7 +6,7 @@ const variables = []
+ for (const line of colors.split("\n")) {
+   if (!line.trim()) continue
+   const [variable] = line.trim().split(":")
+-  const name = variable!.trim().substring(2)
++  const name = variable.trim().substring(2)
+   variables.push(`--color-${name}: var(--${name});`)
+ }
+ 
+diff --git a/src/components/list.tsx b/src/components/list.tsx
+index 3b412e0..2366014 100644
+--- a/src/components/list.tsx
++++ b/src/components/list.tsx
+@@ -82,8 +82,8 @@ export function List<T>(props: ListProps<T> & { ref?: (ref: ListRef) => void }):
+     list.onInput(value)
+     props.onFilter?.(value)
+     if (!options?.ref) return
+-    if (previous === value) return void list.refetch()
+-    queueMicrotask(() => list.refetch())
++    if (previous === value) void list.refetch()
++    else queueMicrotask(() => list.refetch())
+   }
+   createEffect(() => {
+     if (props.filter === undefined || props.filter === store.internalFilter) return
+diff --git a/src/context/i18n.tsx b/src/context/i18n.tsx
+index 86ef31d..93787a2 100644
+--- a/src/context/i18n.tsx
++++ b/src/context/i18n.tsx
+@@ -35,7 +35,7 @@ export function pluralCategory(locale: string, count: number): UiPluralCategory
+ }
+ 
+ export function pluralKey(key: UiI18nPluralKey, category: UiPluralCategory) {
+-  return `${key}.${category}` as UiI18nPluralLookupKey
++  return `${key}.${category}`
+ }
+ 
+ function resolveTemplate(text: string, params?: UiI18nParams) {
+diff --git a/src/theme/default-themes.ts b/src/theme/default-themes.ts
+deleted file mode 100644
+index c141989..0000000
+--- a/src/theme/default-themes.ts
++++ /dev/null
+@@ -1,116 +0,0 @@
+-import type { DesktopTheme } from "./types"
+-import oc2ThemeJson from "./themes/oc-2.json"
+-import amoledThemeJson from "./themes/amoled.json"
+-import auraThemeJson from "./themes/aura.json"
+-import ayuThemeJson from "./themes/ayu.json"
+-import carbonfoxThemeJson from "./themes/carbonfox.json"
+-import catppuccinThemeJson from "./themes/catppuccin.json"
+-import catppuccinFrappeThemeJson from "./themes/catppuccin-frappe.json"
+-import catppuccinMacchiatoThemeJson from "./themes/catppuccin-macchiato.json"
+-import cobalt2ThemeJson from "./themes/cobalt2.json"
+-import cursorThemeJson from "./themes/cursor.json"
+-import draculaThemeJson from "./themes/dracula.json"
+-import everforestThemeJson from "./themes/everforest.json"
+-import flexokiThemeJson from "./themes/flexoki.json"
+-import githubThemeJson from "./themes/github.json"
+-import gruvboxThemeJson from "./themes/gruvbox.json"
+-import kanagawaThemeJson from "./themes/kanagawa.json"
+-import lucentOrngThemeJson from "./themes/lucent-orng.json"
+-import materialThemeJson from "./themes/material.json"
+-import matrixThemeJson from "./themes/matrix.json"
+-import mercuryThemeJson from "./themes/mercury.json"
+-import monokaiThemeJson from "./themes/monokai.json"
+-import nightowlThemeJson from "./themes/nightowl.json"
+-import nordThemeJson from "./themes/nord.json"
+-import oneDarkThemeJson from "./themes/one-dark.json"
+-import oneDarkProThemeJson from "./themes/onedarkpro.json"
+-import opencodeThemeJson from "./themes/opencode.json"
+-import orngThemeJson from "./themes/orng.json"
+-import osakaJadeThemeJson from "./themes/osaka-jade.json"
+-import palenightThemeJson from "./themes/palenight.json"
+-import rosepineThemeJson from "./themes/rosepine.json"
+-import shadesOfPurpleThemeJson from "./themes/shadesofpurple.json"
+-import solarizedThemeJson from "./themes/solarized.json"
+-import synthwave84ThemeJson from "./themes/synthwave84.json"
+-import tokyonightThemeJson from "./themes/tokyonight.json"
+-import vercelThemeJson from "./themes/vercel.json"
+-import vesperThemeJson from "./themes/vesper.json"
+-import zenburnThemeJson from "./themes/zenburn.json"
+-
+-export const oc2Theme = oc2ThemeJson as DesktopTheme
+-export const amoledTheme = amoledThemeJson as DesktopTheme
+-export const auraTheme = auraThemeJson as DesktopTheme
+-export const ayuTheme = ayuThemeJson as DesktopTheme
+-export const carbonfoxTheme = carbonfoxThemeJson as DesktopTheme
+-export const catppuccinTheme = catppuccinThemeJson as DesktopTheme
+-export const catppuccinFrappeTheme = catppuccinFrappeThemeJson as DesktopTheme
+-export const catppuccinMacchiatoTheme = catppuccinMacchiatoThemeJson as DesktopTheme
+-export const cobalt2Theme = cobalt2ThemeJson as DesktopTheme
+-export const cursorTheme = cursorThemeJson as DesktopTheme
+-export const draculaTheme = draculaThemeJson as DesktopTheme
+-export const everforestTheme = everforestThemeJson as DesktopTheme
+-export const flexokiTheme = flexokiThemeJson as DesktopTheme
+-export const githubTheme = githubThemeJson as DesktopTheme
+-export const gruvboxTheme = gruvboxThemeJson as DesktopTheme
+-export const kanagawaTheme = kanagawaThemeJson as DesktopTheme
+-export const lucentOrngTheme = lucentOrngThemeJson as DesktopTheme
+-export const materialTheme = materialThemeJson as DesktopTheme
+-export const matrixTheme = matrixThemeJson as DesktopTheme
+-export const mercuryTheme = mercuryThemeJson as DesktopTheme
+-export const monokaiTheme = monokaiThemeJson as DesktopTheme
+-export const nightowlTheme = nightowlThemeJson as DesktopTheme
+-export const nordTheme = nordThemeJson as DesktopTheme
+-export const oneDarkTheme = oneDarkThemeJson as DesktopTheme
+-export const oneDarkProTheme = oneDarkProThemeJson as DesktopTheme
+-export const opencodeTheme = opencodeThemeJson as DesktopTheme
+-export const orngTheme = orngThemeJson as DesktopTheme
+-export const osakaJadeTheme = osakaJadeThemeJson as DesktopTheme
+-export const palenightTheme = palenightThemeJson as DesktopTheme
+-export const rosepineTheme = rosepineThemeJson as DesktopTheme
+-export const shadesOfPurpleTheme = shadesOfPurpleThemeJson as DesktopTheme
+-export const solarizedTheme = solarizedThemeJson as DesktopTheme
+-export const synthwave84Theme = synthwave84ThemeJson as DesktopTheme
+-export const tokyonightTheme = tokyonightThemeJson as DesktopTheme
+-export const vercelTheme = vercelThemeJson as DesktopTheme
+-export const vesperTheme = vesperThemeJson as DesktopTheme
+-export const zenburnTheme = zenburnThemeJson as DesktopTheme
+-
+-export const DEFAULT_THEMES: Record<string, DesktopTheme> = {
+-  "oc-2": oc2Theme,
+-  amoled: amoledTheme,
+-  aura: auraTheme,
+-  ayu: ayuTheme,
+-  carbonfox: carbonfoxTheme,
+-  catppuccin: catppuccinTheme,
+-  "catppuccin-frappe": catppuccinFrappeTheme,
+-  "catppuccin-macchiato": catppuccinMacchiatoTheme,
+-  cobalt2: cobalt2Theme,
+-  cursor: cursorTheme,
+-  dracula: draculaTheme,
+-  everforest: everforestTheme,
+-  flexoki: flexokiTheme,
+-  github: githubTheme,
+-  gruvbox: gruvboxTheme,
+-  kanagawa: kanagawaTheme,
+-  "lucent-orng": lucentOrngTheme,
+-  material: materialTheme,
+-  matrix: matrixTheme,
+-  mercury: mercuryTheme,
+-  monokai: monokaiTheme,
+-  nightowl: nightowlTheme,
+-  nord: nordTheme,
+-  "one-dark": oneDarkTheme,
+-  onedarkpro: oneDarkProTheme,
+-  opencode: opencodeTheme,
+-  orng: orngTheme,
+-  "osaka-jade": osakaJadeTheme,
+-  palenight: palenightTheme,
+-  rosepine: rosepineTheme,
+-  shadesofpurple: shadesOfPurpleTheme,
+-  solarized: solarizedTheme,
+-  synthwave84: synthwave84Theme,
+-  tokyonight: tokyonightTheme,
+-  vercel: vercelTheme,
+-  vesper: vesperTheme,
+-  zenburn: zenburnTheme,
+-}
+diff --git a/src/v2/components/line-comment-v2.tsx b/src/v2/components/line-comment-v2.tsx
+index 056b3dd..d153df1 100644
+--- a/src/v2/components/line-comment-v2.tsx
++++ b/src/v2/components/line-comment-v2.tsx
+@@ -118,13 +118,11 @@ export function LineCommentEditorV2(props: LineCommentEditorV2Props) {
+ 
+   const currentMention = () => {
+     const textarea = textareaRef
+-    if (!textarea) return
+-    if (!local.mention) return
+-    if (textarea.selectionStart !== textarea.selectionEnd) return
++    if (!textarea || !local.mention || textarea.selectionStart !== textarea.selectionEnd) return undefined
+ 
+     const end = textarea.selectionStart
+     const match = textarea.value.slice(0, end).match(/@(\S*)$/)
+-    if (!match) return
++    if (!match) return undefined
+ 
+     return {
+       query: match[1] ?? "",
+diff --git a/src/v2/components/menu-v2.tsx b/src/v2/components/menu-v2.tsx
+index 3aa1872..aea7b56 100644
+--- a/src/v2/components/menu-v2.tsx
++++ b/src/v2/components/menu-v2.tsx
+@@ -268,7 +268,7 @@ function MenuV2Trigger(props: ComponentProps<typeof DropdownMenu.Trigger>) {
+       {...rest}
+       ref={(node: HTMLElement) => {
+         lazy.setTrigger(node, props)
+-        if (typeof local.ref === "function") (local.ref as (node: HTMLElement) => void)(node)
++        if (typeof local.ref === "function") local.ref(node)
+       }}
+       id={props.id ?? `${lazy.id}-trigger`}
+       aria-haspopup="true"

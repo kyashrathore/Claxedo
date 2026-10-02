@@ -43,7 +43,7 @@ function agentContentEvents(content: ContentBlock, update: AgentChunk, state: Se
           title: content.title ?? undefined,
         },
       ]
-    case "resource": {
+    default: {
       const resource = content.resource
       return "text" in resource && typeof resource.text === "string"
         ? [{ type: thinking ? "thinking-delta" : "text-delta", delta: resource.text }]

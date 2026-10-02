@@ -20,7 +20,7 @@ const statusProtocolMap: Partial<Record<Extract<SDKMessage, { type: "status" }>[
 
 export function statusEvents(state: CursorSdkAdapterState, message: Extract<SDKMessage, { type: "status" }>): CursorTranslation {
   const status = own(statusProtocolMap, message.status)
-  if (status === undefined) return unknownKind(state, `status:${String(message.status)}`)
+  if (status === undefined) return unknownKind(state, `status:${message.status}`)
   return unchanged(state, status ? [{ type: "session-status", status }] : [])
 }
 
@@ -32,6 +32,10 @@ function failedRun(row: CursorRunResult): AgentRuntimeEvent[] {
     { type: "session-status", status: "error" },
     { type: "error", error: text(error?.message) ?? row.errorCode ?? "Cursor run failed", ...(errorClass ? { errorClass } : {}) },
   ]
+}
+
+export function isCursorRunResult(row: Record<string, unknown>): row is Record<string, unknown> & CursorRunResult {
+  return row.type === "result" && typeof row.runId === "string" && typeof row.status === "string"
 }
 
 export function localRunTerminalEvents(state: CursorSdkAdapterState, row: CursorRunResult): CursorTranslation {

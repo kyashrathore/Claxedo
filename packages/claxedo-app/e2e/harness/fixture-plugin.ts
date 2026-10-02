@@ -96,7 +96,7 @@ export default definePlugin({
       render: (props) => <p>Fixture pane: {props.state.text}</p>,
       restore: { parse: (raw) => (typeof raw === "object" && raw !== null && typeof (raw as Note).text === "string" ? (raw as Note) : undefined), serialize: (state) => state },
     })
-    api.commands.register({ id: "pane", title: "Fixture: open a pane", run: () => api.panes.open<Note>("notes", { text: "Pane state" }) })
+    api.commands.register({ id: "pane", title: "Fixture: open a pane", run: () => api.panes.open("notes", { text: "Pane state" } satisfies Note) })
     api.icons.registerSkin({
       id: "fixture",
       name: "Fixture icons",

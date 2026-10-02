@@ -11,7 +11,7 @@ export function machine<State extends { kind: string }, Event extends { type: st
   initial: State,
   transition: Transition<State, Event>,
 ): Machine<State, Event> {
-  const [state, setState] = createSignal<State>(initial)
+  const [state, setState] = createSignal(initial)
   return {
     state,
     send: (event) => setState((current) => transition(current, event)),

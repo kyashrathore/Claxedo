@@ -1,3 +1,4 @@
+import { unreachable } from "@/lib/machine"
 import {
   REVIEW_TAB_ID,
   openBrowserWorkspaceTab,
@@ -95,5 +96,7 @@ export function applyFocus(set: WorkingSet, focus: PanelFocus, effects: FocusEff
       return withTabs(set, openSubagentWorkspaceTab({ tabs: set.tabs, ...focus }))
     case "plan":
       return withTabs(set, openPlanWorkspaceTab({ tabs: set.tabs, ...focus }))
+    default:
+      return unreachable(focus)
   }
 }

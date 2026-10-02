@@ -1341,7 +1341,7 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
     }
   }
 
-  private readonly storedQuery: StoredMessageQuery = async (sql, params) => (await this.database.prepare(sql).bind(...params).all()).results
+  private readonly storedQuery: StoredMessageQuery = async <Row,>(sql: string, params: readonly (string | number)[]) => (await this.database.prepare(sql).bind(...params).all<Row>()).results
 
   private turnRead(sessionId: string, workspaceId: string): TurnRead {
     return async (before) =>

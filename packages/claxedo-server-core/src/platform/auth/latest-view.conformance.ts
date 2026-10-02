@@ -1,3 +1,4 @@
+import { asRecord, isRecord } from "@claxedo/helpers/guards"
 import type { PrivateSessionAuthority } from "./private-session-authority"
 import type { SessionTurnAuthority } from "./session-turn-authority"
 import type { SessionPageConformanceUser } from "./session-page.conformance"
@@ -8,7 +9,30 @@ export type LatestViewConformanceHarness = {
   creator: SessionPageConformanceUser
 }
 
-type Page = { messages: Array<{ info: { id: string }; parts: Array<{ type: string }> }>; nextCursor?: string; maxEventOrdinal?: number }
+type Entry = { info: { id: string }; parts: Array<{ type: string }> }
+
+type Page = { messages: Entry[]; nextCursor?: string; maxEventOrdinal?: number }
+
+function isEntry(value: unknown): value is Entry {
+  return isRecord(value)
+    && isRecord(value.info) && typeof value.info.id === "string"
+    && Array.isArray(value.parts) && value.parts.every((part) => isRecord(part) && typeof part.type === "string")
+}
+
+function latestViewPage(answer: unknown): Page {
+  const page = asRecord(answer)
+  const messages: unknown = page?.messages
+  const nextCursor = page?.nextCursor
+  const maxEventOrdinal = page?.maxEventOrdinal
+  latestViewHolds(Array.isArray(messages) && messages.every(isEntry), "a read did not answer a list of messages")
+  latestViewHolds(nextCursor === undefined || typeof nextCursor === "string", "a read answered a cursor that is not a string")
+  latestViewHolds(maxEventOrdinal === undefined || typeof maxEventOrdinal === "number", "a read answered an event ordinal that is not a number")
+  return {
+    messages,
+    ...(nextCursor === undefined ? {} : { nextCursor }),
+    ...(maxEventOrdinal === undefined ? {} : { maxEventOrdinal }),
+  }
+}
 
 const transcriptEntry = (id: string, role: "user" | "assistant", parts: Array<Record<string, unknown>>) => ({ info: { id, role }, parts })
 
@@ -26,7 +50,7 @@ export async function exerciseLatestViewConformance(harness: LatestViewConforman
   await authority.reserveSession(creator.auth, { operationId: "op_latest_view", sessionId, workspaceId, kind: "create" })
   await authority.registerRuntimeSession({ ...creator.runtime, operationId: "op_latest_view", sessionId, workspaceId, createdAt: Date.now(), updatedAt: Date.now() })
   const read = async (input: { view?: "latest-turn" | "latest-surface"; limit?: number; before?: string }) =>
-    await authority.readSessionMessages(creator.auth, { sessionId, workspaceId, ...input }) as Page
+    latestViewPage(await authority.readSessionMessages(creator.auth, { sessionId, workspaceId, ...input }))
   const empty = await read({ view: "latest-surface" })
   latestViewHolds(empty.messages.length === 0 && !empty.nextCursor, "an empty transcript answered a surface")
 

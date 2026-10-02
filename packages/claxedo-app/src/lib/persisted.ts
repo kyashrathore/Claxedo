@@ -1,4 +1,4 @@
-import { makePersisted } from "@solid-primitives/storage"
+import { makePersisted, type PersistenceOptions } from "@solid-primitives/storage"
 import { createSignal, type Signal } from "solid-js"
 import { createStore, type SetStoreFunction, type Store } from "solid-js/store"
 
@@ -34,19 +34,19 @@ function deserializer<T>(key: string, read: PreferenceReader<T>, initial: T) {
   }
 }
 
+function persistence<T>(key: string, storage: Storage, read: PreferenceReader<T>, initial: T): PersistenceOptions<T, undefined> {
+  return { name: key, storage, deserialize: deserializer(key, read, initial) }
+}
+
 export function persistedSignal<T>(
   key: string,
   initial: T,
   read: PreferenceReader<T>,
   storage: Storage | undefined = preferenceStorage(),
 ): Signal<T> {
-  const signal = createSignal<T>(initial)
+  const signal = createSignal(initial)
   if (!storage) return signal
-  const [get, set] = makePersisted<T, Signal<T>>(signal, {
-    name: key,
-    storage,
-    deserialize: deserializer(key, read, initial),
-  })
+  const [get, set] = makePersisted(signal, persistence(key, storage, read, initial))
   return [get, set]
 }
 
@@ -58,10 +58,6 @@ export function persistedStore<T extends object>(
   const store = createStore<T>(initial)
   const storage = preferenceStorage()
   if (!storage) return store
-  const [get, set] = makePersisted<T, [Store<T>, SetStoreFunction<T>]>(store, {
-    name: key,
-    storage,
-    deserialize: deserializer(key, read, initial),
-  })
+  const [get, set] = makePersisted(store, persistence(key, storage, read, initial))
   return [get, set]
 }

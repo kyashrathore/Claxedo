@@ -38,7 +38,7 @@ export function recordedEmailOutbox(forward?: { stdout: NodeJS.WritableStream; s
     }))
   }
   return {
-    handleRuntimeStdio(stdout: Readable, stderr: Readable) {
+    handleRuntimeStdio: (stdout: Readable, stderr: Readable) => {
       stdout.on("data", (chunk: Buffer) => {
         output += chunk.toString("utf8")
         forward?.stdout.write(chunk)

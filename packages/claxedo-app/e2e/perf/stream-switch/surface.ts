@@ -17,7 +17,7 @@ export type Surface = {
   api: ClaxedoApi
   workspace: Workspace
   url: string
-  writeScript(name: string, script: AcpScript): Promise<void>
+  writeScript: (name: string, script: AcpScript) => Promise<void>
   release(name: string): Promise<void>
   daemonLog(): string
   open(): Promise<{ page: Page; cdp: CDPSession; bounds?: ScreenBounds }>
@@ -93,14 +93,14 @@ export async function desktopSurface(): Promise<Surface> {
     open: async () => {
       const page = desktop.window
       await desktop.electron.evaluate(({ BrowserWindow }) => {
-        const window = BrowserWindow.getAllWindows().find((candidate) => candidate.isVisible()) ?? BrowserWindow.getAllWindows()[0]!
+        const window = BrowserWindow.getAllWindows().find((candidate) => candidate.isVisible()) ?? BrowserWindow.getAllWindows()[0]
         window.setContentSize(1440, 900)
         window.setPosition(0, 40)
         window.focus()
       })
       await installProbe(page.context())
       const bounds = await desktop.electron.evaluate(({ BrowserWindow }) => {
-        const window = BrowserWindow.getAllWindows().find((candidate) => candidate.isVisible()) ?? BrowserWindow.getAllWindows()[0]!
+        const window = BrowserWindow.getAllWindows().find((candidate) => candidate.isVisible()) ?? BrowserWindow.getAllWindows()[0]
         return window.getContentBounds()
       })
       return { page, cdp: await page.context().newCDPSession(page), bounds }

@@ -82,7 +82,7 @@ async function startTrace(cdp: CDPSession) {
 }
 
 function probeCall(page: Page, method: "start" | "stop") {
-  return page.evaluate((name) => (window as unknown as { __streamProbe: Record<string, () => void> }).__streamProbe[name]!(), method)
+  return page.evaluate((name) => (window as unknown as { __streamProbe: Record<string, () => void> }).__streamProbe[name](), method)
 }
 
 async function streamTurn(input: Run, page: Page) {

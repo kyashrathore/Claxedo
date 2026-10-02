@@ -24,7 +24,7 @@ type QueueContext = {
 const NO_ITEMS: readonly QueuedPrompt[] = Object.freeze([])
 
 function signalField<T>(initial: T): Field<T> {
-  const [get, set] = createSignal<T>(initial)
+  const [get, set] = createSignal(initial)
   return { get, set }
 }
 

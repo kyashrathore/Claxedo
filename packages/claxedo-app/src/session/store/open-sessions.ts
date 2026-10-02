@@ -87,7 +87,7 @@ function touchOrOpen(open: OpenState, ref: SessionLocation): SessionTranscript {
 }
 
 function forgetCached(open: OpenState, sessionId?: SessionId): void {
-  for (const [id, entry] of [...open.entries]) {
+  for (const [id, entry] of Array.from(open.entries)) {
     if (entry.kind === "cached" && (sessionId === undefined || id === sessionId)) open.entries.delete(id)
   }
 }
@@ -106,7 +106,7 @@ export function createOpenSessions(input: OpenSessionsInput): OpenSessions {
       for (const entry of open.entries.values()) if (entry.kind === "open") visit(entry.view)
     },
     disposeAll: () => {
-      for (const [sessionId, entry] of [...open.entries]) {
+      for (const [sessionId, entry] of Array.from(open.entries)) {
         open.entries.delete(sessionId)
         if (entry.kind !== "open") continue
         entry.dispose()

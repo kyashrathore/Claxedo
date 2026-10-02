@@ -63,7 +63,7 @@ async function main() {
       const cdp = await page.context().newCDPSession(page)
       await cdp.send("Performance.enable")
       await cdp.send("HeapProfiler.enable")
-      await page.goto(`${stack.url}${sessionRoute(workspace.id, workspace.sessions[0]!)}`)
+      await page.goto(`${stack.url}${sessionRoute(workspace.id, workspace.sessions[0])}`)
       await page.locator("[data-component='prompt-input']").waitFor({ timeout: 60_000 })
       await page.evaluate(() => new Promise((resolve) => setTimeout(resolve, 1500)))
       await ensureNavigator(page, "files")

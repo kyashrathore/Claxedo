@@ -48,7 +48,7 @@ test("signed browser build lists account projects, placements and sessions with 
       expect(server.placements.list().map((placement) => [String(placement.id), placement.kind, placement.reachable])).toEqual([["ws_cloud", "cloud", false], ["ws_machine", "worktree", false]])
       const page = await server.sessions.list({ projectId: projectId("prj_app"), limit: 5 })
       expect(page.rows.map((row) => [row.ref.sessionId, row.ref.placementId, row.title])).toEqual([["ses_1", "ws_cloud", "Stored turn"]])
-      const reads = server.sessions.read(page.rows[0]!.ref, shape)
+      const reads = server.sessions.read(page.rows[0].ref, shape)
       expect((await reads.first).transcript.entries.map((entry) => entry.info.id)).toEqual(["msg_1", "msg_2"])
       await Promise.all([reads.status, reads.requests, reads.todos, reads.goal, reads.subagents])
       await expect(server.queryClient.fetchQuery(server.queries.projects.byId(projectId("missing")))).rejects.toMatchObject({ class: "not_found" })

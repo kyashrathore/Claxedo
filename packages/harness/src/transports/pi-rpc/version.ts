@@ -14,11 +14,11 @@ async function printed(owned: OwnedProcess): Promise<string> {
 }
 
 export async function piReportedVersion(owned: OwnedProcess, deadline: Deadline): Promise<string> {
-  try {
-    return await settleAtRequestDeadline("pi --version", { deadlineAt: deadline.at, signal: deadline.signal }, printed(owned), () => {},
-      (what, aborted) => new TransportError("pi", "timeout", `${what} ${aborted ? "was abandoned" : "timed out"}`))
-  } finally {
-    const retired = await owned.retire(deadline)
-    if (!retired.stopped) throw new TransportError("pi", "retirement", retired.error.message)
-  }
+  const reading = await settleAtRequestDeadline("pi --version", { deadlineAt: deadline.at, signal: deadline.signal }, printed(owned), () => {},
+    (what, aborted) => new TransportError("pi", "timeout", `${what} ${aborted ? "was abandoned" : "timed out"}`))
+    .then((version) => ({ ok: true as const, version }), (error: unknown) => ({ ok: false as const, error }))
+  const retired = await owned.retire(deadline)
+  if (!retired.stopped) throw new TransportError("pi", "retirement", retired.error.message, reading.ok ? undefined : { cause: reading.error })
+  if (!reading.ok) throw reading.error
+  return reading.version
 }

@@ -1,9 +1,7 @@
 import { AgentMessagePageError } from "@claxedo/agent-runtime-contract"
 import { projectTurn, type PageTurn, type ReaderSettings, type TurnPage, type TurnPageRequest } from "@claxedo/agent-runtime-contract"
-import type { AgentMessage, AgentToolPart } from "@claxedo/agent-runtime-contract"
-import { registerTranscriptSession, syncTranscript, syncedMessage, type SyncedMessage, type TranscriptConformanceHarness } from "./stored-transcript.conformance"
-
-type LatestTurn = { messages: AgentMessage[]; nextCursor?: string }
+import type { AgentToolPart } from "@claxedo/agent-runtime-contract"
+import { registerTranscriptSession, storedMessagePage, syncTranscript, syncedMessage, type SyncedMessage, type TranscriptConformanceHarness } from "./stored-transcript.conformance"
 
 const sessionId = "ses_turn_page"
 const toolOutput = "x".repeat(4096)
@@ -34,13 +32,13 @@ export async function exerciseTurnPageConformance(harness: TranscriptConformance
     message("a1", "assistant", [readTool("call-1", 11), { type: "text", text: "first answer" }], { parentID: "u1" }),
     message("u2", "user", [{ type: "text", text: "second" }]),
     message("a2-work", "assistant", [{ type: "text", text: "Looking." }, readTool("call-2", 21)], { parentID: "u2" }),
-    message("a2", "assistant", [{ type: "reasoning", text: "thinking" }, { type: "text", text: "second answer" }], { parentID: "u2" }),
+    message("a2", "assistant", [{ type: "reasoning", text: "thinking", time: { start: 23, end: 24 } }, { type: "text", text: "second answer" }], { parentID: "u2" }),
     message("u3", "user", [{ type: "text", text: "third" }]),
     message("a3", "assistant", [{ type: "text", text: "third answer" }], { parentID: "u3" }),
   ])
 
   const latestTurn = async (before?: string) =>
-    (await authority.readSessionMessages(creator.auth, { sessionId, workspaceId, view: "latest-turn", ...(before ? { before } : {}) })) as LatestTurn
+    storedMessagePage(await authority.readSessionMessages(creator.auth, { sessionId, workspaceId, view: "latest-turn", ...(before ? { before } : {}) }))
   const third = await latestTurn()
   const second = await latestTurn(third.nextCursor)
   const first = await latestTurn(second.nextCursor)

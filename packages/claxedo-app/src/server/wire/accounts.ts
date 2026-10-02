@@ -27,7 +27,9 @@ function deliveryFromWire(value: unknown): AccountDelivery | undefined {
 }
 
 function definedFields<T extends object>(fields: T): Partial<T> {
-  return Object.fromEntries(Object.entries(fields).filter(([, value]) => value !== undefined)) as Partial<T>
+  const defined: Partial<T> = {}
+  for (const key in fields) if (fields[key] !== undefined) defined[key] = fields[key]
+  return defined
 }
 
 export function accountScopeFromWire(value: unknown): AccountScope | undefined {

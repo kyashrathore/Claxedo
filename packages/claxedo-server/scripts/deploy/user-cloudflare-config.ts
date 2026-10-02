@@ -200,7 +200,7 @@ export function deployReadSecrets(env: NodeJS.ProcessEnv) {
   if (betterAuthSecret === introspectionSecret) {
     throw new Error("BETTER_AUTH_SECRET and CLAXEDO_AUTH_INTROSPECTION_SECRET must be different secrets")
   }
-  return { betterAuthSecret: betterAuthSecret!, introspectionSecret: introspectionSecret! }
+  return { betterAuthSecret: betterAuthSecret, introspectionSecret: introspectionSecret }
 }
 
 export function authConfigurationId(deployment: UserCloudflareDeployment) {

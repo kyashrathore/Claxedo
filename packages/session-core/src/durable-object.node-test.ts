@@ -8,6 +8,7 @@ import type { Readable } from "node:stream"
 import { fileURLToPath } from "node:url"
 import { build, type Plugin } from "esbuild"
 import { Miniflare } from "miniflare"
+import { isRecord } from "@claxedo/helpers/guards"
 
 const FIXTURE = fileURLToPath(new URL("./test-support/durable-object-host.ts", import.meta.url))
 const PACKAGES = path.resolve(import.meta.dirname, "../..")
@@ -37,7 +38,7 @@ async function bundle() {
     write: false,
     plugins: [nodeImports],
   })
-  return result.outputFiles[0]!.text
+  return result.outputFiles[0].text
 }
 
 /** A workerd process over the bundle, with what its objects wrote to stderr. */
@@ -65,6 +66,30 @@ type StoredMessage = {
   parts: Array<{ type: string; text?: string; callID?: string; state?: { status: string; error?: string } }>
 }
 
+const optionalString = (value: unknown) => value === undefined || typeof value === "string"
+
+function isFrame(value: unknown): value is Frame {
+  if (!isRecord(value) || !optionalString(value.directory)) return false
+  const payload = value.payload
+  return payload === undefined
+    || (isRecord(payload) && typeof payload.type === "string" && (payload.properties === undefined || isRecord(payload.properties)))
+}
+
+function isStoredMessage(value: unknown): value is StoredMessage {
+  return isRecord(value)
+    && isRecord(value.info) && typeof value.info.id === "string" && typeof value.info.role === "string"
+    && Array.isArray(value.parts)
+    && value.parts.every((part) => isRecord(part) && typeof part.type === "string" && optionalString(part.text) && optionalString(part.callID)
+      && (part.state === undefined || (isRecord(part.state) && typeof part.state.status === "string" && optionalString(part.state.error))))
+}
+
+const hasId = (value: unknown): value is { id: string } => isRecord(value) && typeof value.id === "string"
+const isStoredMessages = (value: unknown): value is StoredMessage[] => Array.isArray(value) && value.every(isStoredMessage)
+const isQueue = (value: unknown): value is Array<{ seq: number }> =>
+  Array.isArray(value) && value.every((row) => isRecord(row) && typeof row.seq === "number")
+const isStatuses = (value: unknown): value is Record<string, { type: string; message?: string }> =>
+  isRecord(value) && Object.values(value).every((row) => isRecord(row) && typeof row.type === "string" && optionalString(row.message))
+
 const RESTART_MESSAGE = "ACP process restarted; pending interactive state must be rerun"
 
 /** One workspace's Durable Object, reached the way a client reaches a runtime: over its HTTP routes. */
@@ -72,7 +97,7 @@ function workspace(miniflare: Miniflare, workspaceId: string) {
   const url = (route: string) => `http://session-core${route}`
   const headers = { [WORKSPACE_HEADER]: workspaceId }
 
-  async function json<T>(route: string, init?: { method?: string; body?: unknown }): Promise<T> {
+  async function request(route: string, init?: { method?: string; body?: unknown }): Promise<unknown> {
     const response = await miniflare.dispatchFetch(url(route), {
       method: init?.method ?? "GET",
       headers: init?.body === undefined ? headers : { ...headers, "content-type": "application/json" },
@@ -80,7 +105,13 @@ function workspace(miniflare: Miniflare, workspaceId: string) {
     })
     const text = await response.text()
     assert.ok(response.ok, `${workspaceId} ${init?.method ?? "GET"} ${route} answered ${response.status}: ${text}`)
-    return (text ? JSON.parse(text) : undefined) as T
+    return text ? JSON.parse(text) : undefined
+  }
+
+  async function json<T>(route: string, is: (value: unknown) => value is T): Promise<T> {
+    const body = await request(route)
+    assert.ok(is(body), `${workspaceId} GET ${route} answered ${JSON.stringify(body)}`)
+    return body
   }
 
   /** Opens the workspace event stream; frames accumulate until `close`. */
@@ -104,7 +135,10 @@ function workspace(miniflare: Miniflare, workspaceId: string) {
       buffered = blocks.pop() ?? ""
       for (const block of blocks) {
         const data = block.split("\n").filter((line) => line.startsWith("data:")).map((line) => line.slice(5)).join("\n")
-        if (data) frames.push(JSON.parse(data) as Frame)
+        if (!data) continue
+        const frame: unknown = JSON.parse(data)
+        assert.ok(isFrame(frame), `${workspaceId} streamed a frame that is not one: ${data}`)
+        frames.push(frame)
       }
       return true
     }
@@ -141,14 +175,18 @@ function workspace(miniflare: Miniflare, workspaceId: string) {
   }
 
   return {
-    json,
     stream,
-    create: () => json<{ id: string }>(`/session?directory=${encodeURIComponent(DIRECTORY)}`, { method: "POST", body: {} }),
+    create: async () => {
+      const created = await request(`/session?directory=${encodeURIComponent(DIRECTORY)}`, { method: "POST", body: {} })
+      assert.ok(hasId(created), `${workspaceId} created a session with no id: ${JSON.stringify(created)}`)
+      return created
+    },
     prompt: (sessionId: string, text: string, delivery?: "queue") =>
-      json(`/session/${sessionId}/prompt_async`, { method: "POST", body: { parts: [{ type: "text", text }], ...(delivery ? { delivery } : {}) } }),
-    messages: (sessionId: string) => json<StoredMessage[]>(`/session/${sessionId}/message`),
-    queue: (sessionId: string) => json<Array<{ seq: number }>>(`/session/${sessionId}/queue`),
-    status: () => json<Record<string, { type: string; message?: string }>>(`/session/status?directory=${encodeURIComponent(DIRECTORY)}`),
+      request(`/session/${sessionId}/prompt_async`, { method: "POST", body: { parts: [{ type: "text", text }], ...(delivery ? { delivery } : {}) } }),
+    session: (sessionId: string) => json(`/session/${sessionId}`, hasId),
+    messages: (sessionId: string) => json(`/session/${sessionId}/message`, isStoredMessages),
+    queue: (sessionId: string) => json(`/session/${sessionId}/queue`, isQueue),
+    status: () => json(`/session/status?directory=${encodeURIComponent(DIRECTORY)}`, isStatuses),
   }
 }
 
@@ -234,7 +272,7 @@ void describe("the session core in a Durable Object under workerd", () => {
     await first.dispose()
     const restarted = workspace(start(persist), "ws_restart")
 
-    assert.equal((await restarted.json<{ id: string }>(`/session/${session.id}`)).id, session.id)
+    assert.equal((await restarted.session(session.id)).id, session.id)
     assert.deepEqual(await restarted.messages(session.id), stored)
 
     const resumed = await restarted.stream()
@@ -288,7 +326,7 @@ void describe("the session core in a Durable Object under workerd", () => {
     assert.deepEqual((await reopened.status())[session.id], { type: "recovering", kind: "process_restart", message: RESTART_MESSAGE })
     const interrupted = await reopened.messages(session.id)
     assert.deepEqual(transcript(interrupted), [{ role: "user", text: "hold: the build" }, { role: "assistant", text: "working on the build" }])
-    const tool = interrupted[1]!.parts.find((part) => part.callID === "call_held")
+    const tool = interrupted[1].parts.find((part) => part.callID === "call_held")
     assert.deepEqual([tool?.state?.status, tool?.state?.error], ["error", "Tool execution interrupted by ACP restart"])
 
     const after = await reopened.stream()

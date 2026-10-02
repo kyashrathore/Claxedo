@@ -62,7 +62,7 @@ function createDragGhost() {
 function createDropZones() {
   const zones: DropZone[] = []
   return {
-    register(zone: DropZone) {
+    register: (zone: DropZone) => {
       zones.push(zone)
       return () => {
         const index = zones.indexOf(zone)
@@ -86,7 +86,7 @@ function dropOn(zones: DropZones, current: DragState): boolean {
 }
 
 export function createDragController(): DragController {
-  const [state, setState] = createSignal<DragState>(idle)
+  const [state, setState] = createSignal(idle)
   const zones = createDropZones()
   const ghost = createDragGhost()
   const stop = (current: DragState) => {

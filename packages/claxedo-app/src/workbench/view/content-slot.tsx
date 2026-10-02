@@ -65,7 +65,11 @@ export function ContentSlot(props: {
           <Show when={mounted() ? opened() : undefined}>
             {(pane) => {
               onMount(() => onCleanup(props.holds.mounted(props.contentId)))
-              return <Dynamic component={pane().kind.view} state={pane().state as never} paneId={paneId() ?? ""} active={focused()} />
+              return (
+                <Show when={pane().content}>
+                  {(content) => <Dynamic component={pane().kind.view} content={content()} paneId={paneId() ?? ""} active={focused()} />}
+                </Show>
+              )
             }}
           </Show>
         </FailureBoundary>

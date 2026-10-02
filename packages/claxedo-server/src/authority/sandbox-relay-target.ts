@@ -1,10 +1,9 @@
-import type { SandboxManager, SandboxTarget } from "@claxedo/sandbox-manager"
+import type { SandboxManager } from "@claxedo/sandbox-manager"
 import type { RelayTargetLookup } from "../deployments/shared-routes/internal-relay"
 import type { HostTunnelTargetResolver } from "@claxedo/server-core/adapters/relay-port"
 import type { ControlPlaneTelemetry } from "./services"
 import { emitSandboxLeaseClosed } from "../platform/telemetry/product/metering"
 import { timeoutMsFromEnv, withTimeout } from "../platform/runtime/timeout"
-import { trimToUndefined } from "@claxedo/helpers/string"
 
 export type { HostTunnelTargetResolver, HostTunnelTargetResult } from "@claxedo/server-core/adapters/relay-port"
 

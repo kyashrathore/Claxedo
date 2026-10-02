@@ -10,7 +10,7 @@ function storedPaneWidth(value: unknown): number | undefined {
 }
 
 export function createMarketplacePanelSize() {
-  const [chosen, onChoose] = persistedSignal<number>(
+  const [chosen, onChoose] = persistedSignal(
     preferenceKey("marketplace", "detailWidth"),
     PANE_DEFAULT_WIDTH,
     storedPaneWidth,

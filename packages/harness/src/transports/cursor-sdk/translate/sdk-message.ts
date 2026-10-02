@@ -1,6 +1,7 @@
 import type { SDKMessage } from "@cursor/sdk"
 import type { AgentRuntimeEvent } from "@claxedo/agent-runtime-contract"
 import { asText as text } from "@claxedo/agent-runtime-contract"
+import { asRecord, isRecord } from "@claxedo/helpers/guards"
 import { own } from "../../../translate/value"
 import { unknownKind } from "./frames"
 import { statusEvents } from "./run-status"
@@ -19,7 +20,7 @@ function todoEvents(input: Record<string, unknown>): AgentRuntimeEvent[] {
 }
 
 function assistantEvents(state: CursorSdkAdapterState, message: Assistant): CursorTranslation {
-  return message.message.content.reduce<CursorTranslation>((current, block) => {
+  return message.message.content.reduce((current, block) => {
     if (block.type === "text") return block.text ? unchanged(current.state, [...current.events, { type: "text-delta", delta: block.text }]) : current
     const input = toolInput(block.input)
     if (isTodoTool(block.name)) return unchanged(current.state, [...current.events, ...todoEvents(input)])
@@ -53,7 +54,34 @@ function compactionEvents(state: CursorSdkAdapterState, message: Extract<SDKMess
   return unchanged(state, summary ? [{ type: "session-compaction", phase: "completed", summary }] : [])
 }
 
-const sdkMessageProtocolMap = {
+type SdkMessages = { [Kind in SDKMessage["type"]]: Extract<SDKMessage, { type: Kind }> }
+
+const nothingRequired = () => true
+
+const sdkMessageShapes: { [Kind in keyof SdkMessages]: (row: Record<string, unknown>) => boolean } = {
+  assistant: (row) => {
+    const content = asRecord(row.message)?.content
+    return Array.isArray(content) && content.every((block) => {
+      const item = asRecord(block)
+      return !!item && (item.type === "text" || (typeof item.name === "string" && typeof item.id === "string"))
+    })
+  },
+  thinking: nothingRequired,
+  tool_call: (row) => typeof row.call_id === "string" && typeof row.name === "string",
+  status: (row) => typeof row.status === "string",
+  usage: (row) => typeof row.run_id === "string" && isRecord(row.usage),
+  task: nothingRequired,
+  system: nothingRequired,
+  request: nothingRequired,
+  user: nothingRequired,
+}
+
+function isSdkMessage(row: Record<string, unknown>): row is Record<string, unknown> & SDKMessage {
+  const shape = typeof row.type === "string" ? own(sdkMessageShapes, row.type) : undefined
+  return !!shape && shape(row)
+}
+
+const sdkMessageProtocolMap: { [Kind in keyof SdkMessages]: (state: CursorSdkAdapterState, message: SdkMessages[Kind]) => CursorTranslation } = {
   assistant: assistantEvents,
   thinking: (state, message) => unchanged(state, message.text ? [{ type: "thinking-delta", delta: message.text }] : []),
   tool_call: toolCallEvents,
@@ -63,10 +91,12 @@ const sdkMessageProtocolMap = {
   system: (state) => unchanged(state),
   request: (state) => unchanged(state),
   user: (state) => unchanged(state),
-} satisfies { [Kind in SDKMessage["type"]]: (state: CursorSdkAdapterState, message: Extract<SDKMessage, { type: Kind }>) => CursorTranslation }
+}
+
+function translateMessageKind<Kind extends keyof SdkMessages>(state: CursorSdkAdapterState, kind: Kind, message: SdkMessages[Kind]): CursorTranslation {
+  return sdkMessageProtocolMap[kind](state, message)
+}
 
 export function translateSdkMessage(state: CursorSdkAdapterState, row: Record<string, unknown>, unknownType = String(row.type)): CursorTranslation {
-  const handlers = sdkMessageProtocolMap as Record<string, (state: CursorSdkAdapterState, message: SDKMessage) => CursorTranslation>
-  const translate = typeof row.type === "string" ? own(handlers, row.type) : undefined
-  return translate ? translate(state, row as unknown as SDKMessage) : unknownKind(state, `message:${unknownType}`)
+  return isSdkMessage(row) ? translateMessageKind(state, row.type, row) : unknownKind(state, `message:${unknownType}`)
 }

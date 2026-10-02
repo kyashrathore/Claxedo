@@ -5,7 +5,7 @@ import { createWorkspaceServer, FIXTURE_PLACEMENT } from "@/lib/test-workspace-s
 import { createTreeSource, type TreeExpansion, type TreeSource } from "./tree-source"
 
 function createExpansion(open: readonly string[]): TreeExpansion {
-  const [expanded, setExpanded] = createSignal<readonly string[]>(open)
+  const [expanded, setExpanded] = createSignal(open)
   const without = (dir: string) => expanded().filter((known) => known !== dir)
   return {
     expanded: (dir) => expanded().includes(dir),

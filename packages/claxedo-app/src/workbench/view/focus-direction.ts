@@ -1,3 +1,4 @@
+import { unreachable } from "@/lib/machine"
 import { computePaneRects } from "../reducers/tree-helpers"
 import type { PaneRect, WorkbenchState } from "../types"
 
@@ -17,6 +18,8 @@ function score(direction: FocusDirection, from: PaneRect, to: PaneRect): number 
       return rcy < cy ? cy - rcy + Math.abs(rcx - cx) * 2 : undefined
     case "down":
       return rcy > cy ? rcy - cy + Math.abs(rcx - cx) * 2 : undefined
+    default:
+      return unreachable(direction)
   }
 }
 

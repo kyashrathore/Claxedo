@@ -14,7 +14,10 @@ export function usePlacementOpener(): (placementId: PlacementId) => void {
   const navigate = useNavigate()
   const t = useProjectsText()
   return (placementId) => {
-    if (!server.placements.byId(placementId)) return void showToast({ title: t("projects.placement.openFailed") })
+    if (!server.placements.byId(placementId)) {
+      showToast({ title: t("projects.placement.openFailed") })
+      return
+    }
     navigate(draftPath(placementId))
   }
 }

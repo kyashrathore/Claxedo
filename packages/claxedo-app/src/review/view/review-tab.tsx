@@ -1,3 +1,4 @@
+import { unreachable } from "@/lib/machine"
 import { createEffect, createMemo, createSignal, Match, on, onCleanup, Show, Switch, type JSX } from "solid-js"
 import { useQuery } from "@tanstack/solid-query"
 import { useTranslator, type DomainTranslate } from "@/i18n"
@@ -47,6 +48,8 @@ function scopeTooltip(t: Translate, selection: ReviewSelection, branch: string |
       return t("review.label.withUncommitted", {
         label: onBranch(t("review.label.branchWorktree", { ref: selection.fromRef })),
       })
+    default:
+      return unreachable(selection.mode)
   }
 }
 

@@ -1,3 +1,5 @@
+import { asRecord } from "@claxedo/helpers/guards"
+
 export const AUTH_ADAPTERS = ["better-auth", "custom"] as const
 export const INTERACTIVE_AUTH_METHODS = ["google", "github", "email-password"] as const
 
@@ -73,6 +75,8 @@ export type NativeDescriptor = Pick<
   native: Partial<AuthAdapterDescriptor["native"]>
 }
 
+const NATIVE_AUTH_FLOWS = ["device-authorization", "authorization-code-pkce", "adapter-native"] as const satisfies readonly NativeAuthClientDescriptor["flow"][]
+
 export type AuthDescriptorPolicy = {
   now: number
   clients: readonly ("cli" | "desktop")[]
@@ -86,19 +90,16 @@ export function decodeAuthDescriptor(raw: unknown, policy: AuthDescriptorPolicy)
   const fail = (code: "invalid_descriptor" | "expired_descriptor", message: string): never => {
     throw policy.error?.(code, message) ?? new Error(message)
   }
-  const object = (value: unknown, name: string): Record<string, unknown> => {
-    if (typeof value !== "object" || value === null || Array.isArray(value))
-      return fail("invalid_descriptor", `${name} must be an object`)
-    return value as Record<string, unknown>
-  }
+  const object = (value: unknown, name: string): Record<string, unknown> =>
+    asRecord(value) ?? fail("invalid_descriptor", `${name} must be an object`)
   const text = (value: unknown, name: string): string => {
     if (typeof value !== "string" || !value.trim()) return fail("invalid_descriptor", `${name} must be non-empty`)
     return value
   }
   const url = (value: unknown, name: string, kind: "origin" | "url") => policy.url(text(value, name), name, kind)
   const root = object(raw, "Authentication descriptor")
-  if (!(policy.adapters ?? AUTH_ADAPTERS).includes(root.adapter as AuthAdapterId))
-    return fail("invalid_descriptor", `Authentication descriptor adapter ${String(root.adapter)} is unsupported`)
+  const adapter = (policy.adapters ?? AUTH_ADAPTERS).find((candidate) => candidate === root.adapter)
+  if (!adapter) return fail("invalid_descriptor", `Authentication descriptor adapter ${String(root.adapter)} is unsupported`)
   const deploymentId = text(root.deploymentId, "deploymentId")
   const configurationVersion = text(root.configurationVersion, "configurationVersion")
   if (typeof root.expiresAt !== "number" || !Number.isFinite(root.expiresAt))
@@ -107,7 +108,7 @@ export function decodeAuthDescriptor(raw: unknown, policy: AuthDescriptorPolicy)
   const issuer = url(root.issuer, "issuer", "url")
   const native = object(root.native, "native")
   const decoded: NativeDescriptor = {
-    adapter: root.adapter as AuthAdapterId,
+    adapter,
     deploymentId,
     configurationVersion,
     expiresAt: root.expiresAt,
@@ -117,9 +118,9 @@ export function decodeAuthDescriptor(raw: unknown, policy: AuthDescriptorPolicy)
   for (const kind of policy.clients) {
     const name = `native.${kind}`
     const row = object(native[kind], name)
-    const flow = text(row.flow, `${name}.flow`)
-    if (!["device-authorization", "authorization-code-pkce", "adapter-native"].includes(flow))
-      return fail("invalid_descriptor", `${name}.flow is invalid`)
+    const flowName = text(row.flow, `${name}.flow`)
+    const flow = NATIVE_AUTH_FLOWS.find((candidate) => candidate === flowName)
+    if (!flow) return fail("invalid_descriptor", `${name}.flow is invalid`)
     const clientId = text(row.clientId, `${name}.clientId`)
     const controlPlaneOrigin = url(row.controlPlaneOrigin, `${name}.controlPlaneOrigin`, "origin")
     const tokenEndpointOrigin = url(row.tokenEndpointOrigin, `${name}.tokenEndpointOrigin`, "origin")
@@ -140,7 +141,7 @@ export function decodeAuthDescriptor(raw: unknown, policy: AuthDescriptorPolicy)
     else if (revocation.protocol === "adapter-native") parsedRevocation = { protocol: "adapter-native", endpoint }
     else return fail("invalid_descriptor", `${name}.revocation contract is invalid`)
     const client: NativeAuthClientDescriptor = {
-      flow: flow as NativeAuthClientDescriptor["flow"],
+      flow,
       clientId,
       resource,
       scopes,

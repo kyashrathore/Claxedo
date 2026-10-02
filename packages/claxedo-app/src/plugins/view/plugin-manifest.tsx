@@ -24,7 +24,10 @@ function FolderEntry(props: { readonly directory: string }): JSX.Element {
   const [copied, setCopied] = createSignal(false)
   const copy = () =>
     void copyText(props.directory).then((result) => {
-      if (result.copied) return setCopied(true)
+      if (result.copied) {
+        setCopied(true)
+        return
+      }
       showToast({ variant: "error", description: t("plugins.manifest.copyFailed", { reason: failureReason(result.error) }) })
     })
   return (

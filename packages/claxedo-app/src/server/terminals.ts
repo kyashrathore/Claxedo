@@ -1,4 +1,5 @@
-import { ServerError, responseErrorCode } from "./errors"
+import { readArray, readField } from "@claxedo/helpers/readers"
+import { contractMismatch, ServerError, responseErrorCode } from "./errors"
 import type { PlacementId, TerminalId } from "./ids"
 import type { TerminalsApi } from "./api"
 import type { Terminal, TerminalAttachInput, TerminalCreateInput, TerminalPresence, TerminalStream } from "./terminal-types"
@@ -52,7 +53,7 @@ async function createPty(transport: Transport, where: RuntimeRoute, input: Termi
       ...(input.previousTerminalId ? { previousPtyId: input.previousTerminalId } : {}),
     },
   }
-  const created = terminalFromWire(await transport.runtimeJson<unknown>(where, PTY_PATH, jsonInit("POST", body)), input.placementId)
+  const created = terminalFromWire(await transport.runtimeJson(where, PTY_PATH, jsonInit("POST", body)), input.placementId)
   if (!created) throw new ServerError({ class: "internal", message: "The terminal create answered without a terminal" })
   return created
 }
@@ -72,25 +73,26 @@ export function createTerminalsApi(transport: Transport, workspaces: Workspaces)
   const route = (placementId: PlacementId) => workspaces.route(placementId)
   return {
     list: async (placementId) => {
-      const rows = await transport.runtimeJson<unknown[]>(await route(placementId), PTY_PATH)
+      const rows = await transport.runtimeJson(await route(placementId), PTY_PATH)
+      if (!Array.isArray(rows)) throw contractMismatch("terminal list")
       return rows.flatMap((row) => terminalFromWire(row, placementId) ?? [])
     },
     create: async (input) => createPty(transport, await route(input.placementId), input),
     requiresOpenSession: (placementId) => workspaces.catalog()?.placements.find((record) => record.placement.id === placementId)?.route.remote === true,
     update: async (placementId, terminalId, input) => {
-      await transport.runtimeJson<unknown>(await route(placementId), ptyPath(terminalId), jsonInit("PUT", input))
+      await transport.runtimeJson(await route(placementId), ptyPath(terminalId), jsonInit("PUT", input))
     },
     remove: async (placementId, terminalId) => {
-      await transport.runtimeJson<unknown>(await route(placementId), ptyPath(terminalId), { method: "DELETE" })
+      await transport.runtimeJson(await route(placementId), ptyPath(terminalId), { method: "DELETE" })
     },
     presence: async (placementId, terminalId) => presenceOf(transport, await route(placementId), terminalId),
     agents: async (placementId) => {
-      const body = await transport.runtimeJson<{ installed?: unknown }>(await route(placementId), `${PTY_PATH}/agents`)
-      return Array.isArray(body.installed) ? body.installed.filter((item): item is string => typeof item === "string") : []
+      const installed = readArray(await transport.runtimeJson(await route(placementId), `${PTY_PATH}/agents`), "installed") ?? []
+      return installed.filter((item): item is string => typeof item === "string")
     },
     agentStatus: async (placementId, terminalId) => {
-      const body = await transport.runtimeJson<{ session?: { eventType?: unknown } | null }>(await route(placementId), withQuery(TERMINAL_HOOK_PATH, { terminalId }))
-      return agentStatusFromWire(body.session?.eventType)
+      const body = await transport.runtimeJson(await route(placementId), withQuery(TERMINAL_HOOK_PATH, { terminalId }))
+      return agentStatusFromWire(readField(readField(body, "session"), "eventType"))
     },
     attach: async (input) => {
       const path = withQuery(`${ptyPath(input.terminalId)}/connect`, { cursor: input.cursor })

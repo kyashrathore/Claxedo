@@ -49,10 +49,12 @@ function harness(options: { maxDirtySessions?: number; url?: string | undefined 
     random: () => 0.5,
     ...(options.maxDirtySessions !== undefined ? { maxDirtySessions: options.maxDirtySessions } : {}),
     fetch: (async (input: string | URL | Request, init?: RequestInit) => {
+      const body = init?.body
+      if (typeof body !== "string") throw new Error("the publisher sent a body that is not text")
       sent.push({
-        url: String(input),
+        url: input instanceof Request ? input.url : input.toString(),
         token: new Headers(init?.headers).get("authorization"),
-        body: JSON.parse(String(init?.body)) as Sent["body"],
+        body: JSON.parse(body) as Sent["body"],
       })
       const answer = answers.shift()
       return answer ? answer() : Response.json({ accepted: 0, refused: [] })

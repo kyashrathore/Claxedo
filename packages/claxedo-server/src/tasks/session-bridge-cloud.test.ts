@@ -405,8 +405,8 @@ describe("hosted tasks cloud roots", () => {
     expect(second.started).toMatchObject({ ok: true })
     if (!first.started.ok || !second.started.ok) return
 
-    const one = String(first.started.session.sessionRef.workspaceId)
-    const two = String(second.started.session.sessionRef.workspaceId)
+    const one = first.started.session.sessionRef.workspaceId
+    const two = second.started.session.sessionRef.workspaceId
     expect(one).toBe((await rootOf("tsk_one"))?.id)
     expect(two).toBe((await rootOf("tsk_two"))?.id)
     expect(one).not.toBe(two)
@@ -465,7 +465,7 @@ describe("hosted tasks cloud roots", () => {
     expect(again.started).toMatchObject({ ok: true })
     if (!first.started.ok || !again.started.ok) return
 
-    const root = String(first.started.session.sessionRef.workspaceId)
+    const root = first.started.session.sessionRef.workspaceId
     expect(again.started.session.sessionRef).toEqual(first.started.session.sessionRef)
     expect(new Set(ensured)).toEqual(new Set([root]))
     // The retry re-admits the row it found rather than trusting it. A store row

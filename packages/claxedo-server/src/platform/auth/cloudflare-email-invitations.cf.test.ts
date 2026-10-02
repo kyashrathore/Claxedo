@@ -47,7 +47,7 @@ test("an org invitation traverses the simulated Cloudflare send_email binding", 
     expect(email.text).toMatch(/^Join your Claxedo organization\n\nhttps:\/\/app\.example\.com\/invitations#[a-f0-9]{64}$/)
     expect(email.actionUrl).toMatch(/^https:\/\/app\.example\.com\/invitations#[a-f0-9]{64}$/)
     expect(email.html).toContain(`href="${email.actionUrl}"`)
-    expect((await invitations.listOrgInvitations(auth, { orgId: "org_acme" }))[0]!.revoked_at).toBeNull()
+    expect((await invitations.listOrgInvitations(auth, { orgId: "org_acme" }))[0].revoked_at).toBeNull()
   } finally {
     await instance.dispose()
     await rm(directory, { recursive: true, force: true })

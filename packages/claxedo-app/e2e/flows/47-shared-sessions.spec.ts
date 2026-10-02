@@ -18,7 +18,7 @@ async function ownersColleague(signed: SignedStack, name: string) {
   const orgs = await hostedFetch(signed.hosted, "/api/control/orgs", {}, signed.owner.person)
   expect(orgs.status).toBe(200)
   const [{ org_id: orgId }] = await orgs.json() as Array<{ org_id: string }>
-  const token = await inviteHostedPerson(signed.hosted, signed.owner.person, colleague.person, orgId!)
+  const token = await inviteHostedPerson(signed.hosted, signed.owner.person, colleague.person, orgId)
   const accepted = await hostedFetch(signed.hosted, "/api/control/invitations/accept", {
     method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ token }),
   }, colleague.person)

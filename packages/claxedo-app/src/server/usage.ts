@@ -2,6 +2,7 @@ import { fetchQuery } from "./fetch-query"
 import { queryKeys } from "./query-keys"
 import { withQuery, type Transport } from "./transport"
 import type { UsageRequest, UsageSummary } from "./usage-types"
+import { usageSummaryFromWire } from "./wire/usage"
 
 function usageQuery(input: UsageRequest) {
   const filters = Object.fromEntries(Object.entries(input.filters ?? {}).flatMap(([dimension, value]) => (value ? [[`filter_${dimension}`, value]] : [])))
@@ -24,7 +25,7 @@ export function usageQueries(transport: Transport) {
   return {
     summary: (input: UsageRequest) =>
       fetchQuery<UsageSummary>(queryKeys.usage(transport.serverUrl, input), () =>
-        transport.json<UsageSummary>(withQuery("/api/claxedo/usage", usageQuery(input))),
+        transport.json(withQuery("/api/claxedo/usage", usageQuery(input))).then(usageSummaryFromWire),
       ),
   }
 }

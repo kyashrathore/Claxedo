@@ -94,7 +94,7 @@ async function main() {
     console.log(`[switch] seeded ${steps.seeded.length} sessions, ${SEED_TURNS} turns each`)
     const { page, cdp, bounds } = await surface.open()
     const seeded = page.getByText(`Seed turn ${SEED_TURNS} done.`).first()
-    const first = steps.seeded.includes("Beta") ? ids.Beta! : ids.Alpha!
+    const first = steps.seeded.includes("Beta") ? ids.Beta : ids.Alpha
     if (TARGET === "desktop") {
       await page.reload()
       await page.locator('[data-testid="rail-sidebar-session-row"]').first().waitFor({ state: "visible", timeout: 60_000 })
@@ -104,7 +104,7 @@ async function main() {
     }
     await seeded.waitFor({ state: "visible", timeout: 60_000 })
     if (first !== ids.Alpha) {
-      await page.mouse.click(...Object.values(await railRow(page, ids.Alpha!)) as [number, number])
+      await page.mouse.click(...Object.values(await railRow(page, ids.Alpha)) as [number, number])
       await seeded.waitFor({ state: "visible", timeout: 60_000 })
     }
     if (THROTTLE > 1) await cdp.send("Emulation.setCPUThrottlingRate", { rate: THROTTLE })
@@ -112,7 +112,7 @@ async function main() {
     await startScreencast(cdp, screencast)
     const video = VIDEO ? recordScreen(bounds, path.join(OUT, "screen.mov"), Math.ceil((steps.clicks.length * 1.0 + 4) * (SCENARIO === "cold" ? ROUNDS : 1))) : undefined
     await page.evaluate(() => (window as unknown as { __switchProbe: { start(): void } }).__switchProbe.start())
-    for (const title of steps.streaming) await startStream(surface, ids[title]!, `stream-${title.replace(/ /g, "-")}`)
+    for (const title of steps.streaming) await startStream(surface, ids[title], `stream-${title.replace(/ /g, "-")}`)
     await mainThreadIdle(page)
     if (PROFILE) {
       await cdp.send("Profiler.enable")
@@ -136,7 +136,7 @@ async function main() {
           await endTrace(path.join(OUT, "switch.trace.json"))
           endTrace = undefined
         }
-        const row = await railRow(page, ids[title]!)
+        const row = await railRow(page, ids[title])
         clicks.push({ title, wall: Date.now() })
         await page.mouse.click(row.x, row.y)
         await dwell(jitter(index))
@@ -153,7 +153,7 @@ async function main() {
     const framesDir = path.join(OUT, "frames")
     await fs.mkdir(framesDir, { recursive: true })
     const index = screencast.map((frame, n) => ({ n, wall: frame.wall, file: `f${String(n).padStart(5, "0")}.jpg` }))
-    await Promise.all(screencast.map((frame, n) => fs.writeFile(path.join(framesDir, index[n]!.file), frame.data)))
+    await Promise.all(screencast.map((frame, n) => fs.writeFile(path.join(framesDir, index[n].file), frame.data)))
     await fs.writeFile(path.join(OUT, "recording.json"), JSON.stringify({ target: TARGET, alpha: ids.Alpha, beta: ids.Beta, ids, scenario: SCENARIO, clicks, videoStartedAt: video?.startedAt, bounds, screencast: index, rounds }))
     console.log(`[switch] ${clicks.length} switches, ${screencast.length} screencast frames, out ${OUT}`)
   } finally {

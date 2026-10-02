@@ -5,7 +5,7 @@ import { REPO_ROOT } from "./node-loader"
 
 type Fetch = (request: Request, ...rest: any[]) => Response | Promise<Response>
 const { getMimeType } = createRequire(path.join(REPO_ROOT, "packages/claxedo-local-server/package.json"))("hono/utils/mime") as {
-  getMimeType(path: string): string | undefined
+  getMimeType: (path: string) => string | undefined
 }
 
 export async function appBundleFile(directory: string, pathname: string, acceptsHtml: boolean): Promise<Response | undefined> {

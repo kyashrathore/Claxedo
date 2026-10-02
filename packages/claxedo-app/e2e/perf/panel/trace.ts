@@ -1,7 +1,7 @@
 import fs from "node:fs"
 import path from "node:path"
 import { SourceMapConsumer } from "../../../../../node_modules/.bun/node_modules/source-map/source-map.js"
-import type { TraceEvent } from "../../harness/trace-events"
+import { traceText, type TraceEvent } from "../../harness/trace-events"
 
 export type TaskRow = {
   readonly startMs: number
@@ -43,13 +43,13 @@ function describe(event: TraceEvent, mapper: Mapper): string {
   const data = event.args?.data ?? {}
   const ms = ((event.dur ?? 0) / 1000).toFixed(1)
   if (event.name === "FunctionCall") {
-    const url = String(data.url ?? "").split("/").pop() ?? ""
+    const url = (traceText(data.url) ?? "").split("/").pop() ?? ""
     const where = url ? mapper.map(url, Number(data.lineNumber ?? 1), Number(data.columnNumber ?? 1) - 1) : ""
-    return `${ms}ms FunctionCall ${String(data.functionName ?? "(anon)")} ${where}`
+    return `${ms}ms FunctionCall ${traceText(data.functionName) ?? "(anon)"} ${where}`
   }
-  if (event.name === "EventDispatch") return `${ms}ms Event:${String(data.type ?? "")}`
+  if (event.name === "EventDispatch") return `${ms}ms Event:${traceText(data.type) ?? ""}`
   if (event.name === "TimerFire") return `${ms}ms TimerFire`
-  if (event.name === "XHRReadyStateChange" || event.name === "XHRLoad") return `${ms}ms ${event.name} ${String(data.url ?? "").split("?")[0]?.split("/").slice(-2).join("/")}`
+  if (event.name === "XHRReadyStateChange" || event.name === "XHRLoad") return `${ms}ms ${event.name} ${(traceText(data.url) ?? "").split("?")[0]?.split("/").slice(-2).join("/")}`
   return `${ms}ms ${event.name}`
 }
 

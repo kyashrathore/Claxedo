@@ -18,8 +18,8 @@ export async function serveLocalPages(input: {
     requested.push(path)
     if (input.held.includes(path)) return
     const body = input.pages[path]
-    if (body === undefined) return void response.writeHead(404).end()
-    response.writeHead(200, { "content-type": "text/html; charset=utf-8" }).end(body)
+    if (body === undefined) response.writeHead(404).end()
+    else response.writeHead(200, { "content-type": "text/html; charset=utf-8" }).end(body)
   }
   const server = input.secure ? createSecureServer(await selfSignedCertificate(input.secure.certDir), handle) : createServer(handle)
   await new Promise<void>((resolve, reject) => {

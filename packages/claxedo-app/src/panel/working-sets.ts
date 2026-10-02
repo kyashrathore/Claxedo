@@ -20,6 +20,6 @@ export function withWorkingSet(sets: WorkingSets, key: string, set: WorkingSet):
   const order = [...sets.order.filter((item) => item !== key), key]
   const kept = order.slice(-WORKING_SET_CAP)
   const entries: Record<string, WorkingSet> = {}
-  for (const item of kept) entries[item] = item === key ? set : sets.entries[item]!
+  for (const item of kept) entries[item] = item === key ? set : sets.entries[item]
   return { entries, order: kept }
 }

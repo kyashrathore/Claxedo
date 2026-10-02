@@ -5,7 +5,7 @@ import { ModelList, type PickerItem } from "./model-list"
 
 export function chooseRecoveryModel(dialog: ReturnType<typeof useDialog>, title: string, candidates: readonly PickerItem[]): Promise<ModelChoice | undefined> {
   return new Promise((resolve) => {
-    dialog.show(
+    void dialog.show(
       () => (
         <Dialog size="large" fit containerClass="long-dialog-container">
           <DialogHeader>

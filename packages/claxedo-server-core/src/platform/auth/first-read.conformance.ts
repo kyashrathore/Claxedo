@@ -1,9 +1,5 @@
-import { projectTurn, type TurnPageRequest, type FirstRead } from "@claxedo/agent-runtime-contract"
-import type { AgentMessage } from "@claxedo/agent-runtime-contract"
-import type { PrivateSessionInventoryRow } from "./private-session-authority"
-import { registerTranscriptSession, syncTranscript, syncedMessage, type TranscriptConformanceHarness } from "./stored-transcript.conformance"
-
-type Page = { messages: AgentMessage[]; nextCursor?: string }
+import { projectTurn, type TurnPageRequest } from "@claxedo/agent-runtime-contract"
+import { registerTranscriptSession, storedMessagePage, syncTranscript, syncedMessage, type TranscriptConformanceHarness } from "./stored-transcript.conformance"
 
 const sessionId = "ses_first_read"
 const message = syncedMessage.bind(undefined, sessionId)
@@ -43,7 +39,7 @@ export async function exerciseFirstReadConformance(harness: TranscriptConformanc
       { type: "text", text: "Looking." },
       { type: "tool", tool: "read", callID: "call-read", state: { status: "completed", input: {}, output: "x".repeat(2048), title: "read", metadata: {}, time: { start: 21, end: 22 } } },
     ], { parentID: "u2" }),
-    message("a2", "assistant", [{ type: "reasoning", text: "thinking" }, { type: "text", text: "second answer" }], { parentID: "u2" }),
+    message("a2", "assistant", [{ type: "reasoning", text: "thinking", time: { start: 23, end: 24 } }, { type: "text", text: "second answer" }], { parentID: "u2" }),
   ])
 
   const outlineOnly = await read()
@@ -58,11 +54,12 @@ export async function exerciseFirstReadConformance(harness: TranscriptConformanc
     "the turns' titles, times or prompt snippets are wrong",
   )
 
-  const latest = (await authority.readSessionMessages(creator.auth, { sessionId, workspaceId, view: "latest-turn" })) as Page
-  const earlier = (await authority.readSessionMessages(creator.auth, { sessionId, workspaceId, view: "latest-turn", before: latest.nextCursor })) as Page
+  const latest = storedMessagePage(await authority.readSessionMessages(creator.auth, { sessionId, workspaceId, view: "latest-turn" }))
+  const earlier = storedMessagePage(await authority.readSessionMessages(creator.auth, { sessionId, workspaceId, view: "latest-turn", before: latest.nextCursor }))
   const [prompt, work, answer] = latest.messages
   firstReadHolds(prompt && work && answer && latest.nextCursor, "the latest turn is not the prompt, the work and the answer with a cursor before it")
-  const first = (await read(viewport)) as FirstRead<PrivateSessionInventoryRow>
+  const first = await read(viewport)
+  firstReadHolds(first, "a session the registry holds answered no first read")
   firstReadHolds(
     JSON.stringify(first.page?.turns) === JSON.stringify([
       projectTurn(earlier.messages, viewport),

@@ -1,3 +1,5 @@
+import { asRecordOrEmpty } from "@claxedo/helpers/guards"
+import { readArray } from "@claxedo/helpers/readers"
 import type { HostedAccount } from "./account"
 import { fetchQuery } from "./fetch-query"
 import type { CloudApi } from "./api"
@@ -16,15 +18,15 @@ const INTEGRATIONS_PATH = "/api/claxedo/integrations"
 export function cloudQueries(transport: Transport) {
   const server = transport.serverUrl
   const list = (): FetchQuery<readonly CloudWorkspace[]> => fetchQuery(queryKeys.cloud(server), async () => {
-      const body = await transport.json<{ workspaces?: unknown }>(withQuery("/api/workspace", { host: "provisioner" }))
-      return (Array.isArray(body.workspaces) ? body.workspaces : []).flatMap((row) => {
+      const body = await transport.json(withQuery("/api/workspace", { host: "provisioner" }))
+      return (readArray(body, "workspaces") ?? []).flatMap((row) => {
         const workspace = cloudWorkspaceFromRow(row)
         return workspace ? [workspace] : []
       })
     })
   const repositories = (connectionId: string): FetchQuery<readonly CodeHostRepository[]> => fetchQuery(queryKeys.codeHostRepositories(server, connectionId), async () => {
-      const body = await transport.json<{ repositories?: unknown }>(`${INTEGRATIONS_PATH}/connections/${encodeURIComponent(connectionId)}/repositories`)
-      return (Array.isArray(body.repositories) ? body.repositories : []).flatMap((row) => {
+      const body = await transport.json(`${INTEGRATIONS_PATH}/connections/${encodeURIComponent(connectionId)}/repositories`)
+      return (readArray(body, "repositories") ?? []).flatMap((row) => {
         const repository = codeHostRepositoryFromRow(row)
         return repository ? [repository] : []
       })
@@ -58,7 +60,7 @@ function createForProject(transport: Transport, workspaces: Workspaces, project:
       ...(options.branch ? { gitBranch: options.branch } : {}),
       ...sourceBody((await project(options.projectId)).source),
     }
-    const created = await transport.json<Created>("/api/workspace/create", jsonInit("POST", body))
+    const created = asRecordOrEmpty(await transport.json("/api/workspace/create", jsonInit("POST", body)))
     await workspaces.refresh()
     return createdWorkspace(created, options.projectId)
   }
@@ -89,10 +91,10 @@ export function createCloudApi(
     start: wakes.start,
     runtime: wakes.runtime,
     stop: async (id) => {
-      await transport.json<unknown>(at(id, "/lifecycle/stop"), jsonInit("POST", {}))
+      await transport.json(at(id, "/lifecycle/stop"), jsonInit("POST", {}))
     },
     remove: async (id) => {
-      await transport.json<unknown>(at(id), { method: "DELETE" })
+      await transport.json(at(id), { method: "DELETE" })
       await workspaces.refresh()
     },
   }

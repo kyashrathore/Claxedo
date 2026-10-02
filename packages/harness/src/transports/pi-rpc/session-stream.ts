@@ -11,7 +11,17 @@ type Owner = { kind: "idle" } | { kind: "turn"; run: PiRun } | { kind: "provider
 
 export type PiStreamHost = { sessionId: string; rpc: PiRpc; broker: SessionBroker; clock: Clock; log: Logger; stop(): Promise<void> }
 
-const OUTSIDE: readonly string[] = ["harness-notice", "diagnostic", "session-title", "mcp-server-status"]
+function outsideTurnEvent(event: RoutedEvent["event"]): OutsideTurnEvent | undefined {
+  switch (event.type) {
+    case "harness-notice":
+    case "diagnostic":
+    case "session-title":
+    case "mcp-server-status":
+      return event
+    default:
+      return undefined
+  }
+}
 
 export class PiSessionStream {
   private owner: Owner = { kind: "idle" }
@@ -69,7 +79,8 @@ export class PiSessionStream {
 
   private outside(message: PiMessage, events: readonly RoutedEvent[]): void {
     for (const { event } of events) {
-      if (OUTSIDE.includes(event.type)) void this.host.broker.publish(event as OutsideTurnEvent).then(undefined, (error: unknown) =>
+      const outside = outsideTurnEvent(event)
+      if (outside) void this.host.broker.publish(outside).then(undefined, (error: unknown) =>
         this.host.log.error("Pi notice publication failed", { error: errorMessage(error) }))
       else this.host.log.debug("Pi event outside any turn has no session surface", { type: event.type })
     }

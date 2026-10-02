@@ -1,3 +1,5 @@
+import { isAgentMessage, type AgentMessage } from "@claxedo/agent-runtime-contract"
+import { asRecord } from "@claxedo/helpers/guards"
 import type { PrivateSessionAuthority } from "./private-session-authority"
 import type { SessionTurnAuthority } from "./session-turn-authority"
 import type { SessionPageConformanceUser } from "./session-page.conformance"
@@ -9,7 +11,10 @@ export type TranscriptConformanceHarness = {
   creator: SessionPageConformanceUser
 }
 
-export type SyncedMessage = { info: { id: string; role: "user" | "assistant" } & Record<string, unknown>; parts: Array<Record<string, unknown>> }
+export type SyncedMessage = {
+  info: { id: string; role: "user" | "assistant"; time: { created: number; completed?: number } } & Record<string, unknown>
+  parts: Array<Record<string, unknown>>
+}
 
 /** A runtime's snapshot of one message of `sessionId`, created at ten times the digits of its id, each part keyed `<id>-p<index>`. */
 export function syncedMessage(
@@ -44,8 +49,7 @@ export async function registerTranscriptSession(harness: TranscriptConformanceHa
 }
 
 function messageTime(message: SyncedMessage) {
-  const time = message.info.time as { created: number; completed?: number }
-  return time.completed ?? time.created
+  return message.info.time.completed ?? message.info.time.created
 }
 
 /** Stores `messages` as the session's transcript, each user message first admitted as a turn the creator produced. */
@@ -66,4 +70,17 @@ export async function syncTranscript(harness: TranscriptConformanceHarness, sess
     ...(fencingToken === undefined ? {} : { fencingToken }),
     messages,
   })
+}
+
+export type StoredMessagePage = { messages: AgentMessage[]; nextCursor?: string }
+
+/** A `readSessionMessages` answer as a page of contract messages; anything else fails the suite reading it. */
+export function storedMessagePage(answer: unknown): StoredMessagePage {
+  const page = asRecord(answer)
+  const messages: unknown = page?.messages
+  const nextCursor = page?.nextCursor
+  if (!Array.isArray(messages) || !messages.every(isAgentMessage) || (nextCursor !== undefined && typeof nextCursor !== "string")) {
+    throw new Error("Stored-transcript conformance failed: a message read did not answer a page of messages")
+  }
+  return { messages, ...(nextCursor === undefined ? {} : { nextCursor }) }
 }

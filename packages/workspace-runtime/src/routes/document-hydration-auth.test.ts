@@ -7,7 +7,6 @@ import { exportSPKI, generateKeyPair, SignJWT } from "jose"
 import { createWorkspaceRuntimeApp } from "../server"
 import { relayWorkspaceRuntimeExposure } from "../exposure"
 import { managedWorkspaceSessionAccessPolicy } from "@claxedo/session-core"
-import { fetchDouble } from "../test-support/fetch-double"
 import { flushRuntimeDocument, forgetRuntimeDocuments } from "./document-hydration"
 import { loopbackMachineLoginPolicy } from "../testing"
 

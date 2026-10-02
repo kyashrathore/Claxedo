@@ -1,6 +1,7 @@
 import type { AgentPermission, AgentPermissionReply, AgentQuestion } from "@claxedo/agent-runtime-contract"
 import { requestId } from "../ids"
 import type { AgentRequest } from "../types"
+import { isRecord } from "@claxedo/helpers/guards"
 
 export function requestFromPermission(permission: AgentPermission): AgentRequest {
   return { kind: "permission", id: requestId(permission.id), permission }
@@ -11,13 +12,11 @@ export function requestFromQuestion(question: AgentQuestion): AgentRequest {
 }
 
 export function isPermissionWire(value: unknown): value is AgentPermission {
-  const row = value as { id?: unknown; sessionID?: unknown; permission?: unknown } | null
-  return !!row && typeof row.id === "string" && typeof row.sessionID === "string" && typeof row.permission === "string"
+  return isRecord(value) && typeof value.id === "string" && typeof value.sessionID === "string" && typeof value.permission === "string"
 }
 
 export function isQuestionWire(value: unknown): value is AgentQuestion {
-  const row = value as { id?: unknown; sessionID?: unknown; questions?: unknown } | null
-  return !!row && typeof row.id === "string" && typeof row.sessionID === "string" && Array.isArray(row.questions)
+  return isRecord(value) && typeof value.id === "string" && typeof value.sessionID === "string" && Array.isArray(value.questions)
 }
 
 export function permissionReplyBody(reply: AgentPermissionReply): Record<string, unknown> {

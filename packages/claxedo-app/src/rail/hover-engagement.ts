@@ -30,7 +30,10 @@ function createEngagedState(releaseDelayMs: number) {
       return
     }
     if (!engaged() || pending !== undefined) return
-    if (releaseDelayMs <= 0) return void setEngaged(false)
+    if (releaseDelayMs <= 0) {
+      setEngaged(false)
+      return
+    }
     pending = setTimeout(() => {
       pending = undefined
       setEngaged(wanted())

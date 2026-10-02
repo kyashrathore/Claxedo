@@ -60,7 +60,7 @@ export function useSwitcherItems(): Accessor<readonly SwitcherItem[]> {
         {
           contentId,
           kind: kindOf(opened.kind.kind),
-          title: opened.kind.title(opened.state as never),
+          title: opened.content?.title() ?? "",
           projectLabel: placement ? labels().get(placement.projectId) : undefined,
           workspaceLabel: placement?.label,
           status: row ? navigationStatus(row, stores.unseenOutcomes.of(row.ref.sessionId)) : terminal ? terminalNavigationStatus(terminal) : "idle",

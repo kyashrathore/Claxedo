@@ -145,7 +145,7 @@ function routeHandlerParameter(name: ts.Identifier): boolean {
 function isRouteHandler(fn: FunctionNode, parameter: ts.ParameterDeclaration): boolean {
   if (parameter.type && ts.isTypeReferenceNode(parameter.type) && parameter.type.typeName.getText() === "Route") return true
   const call = fn.parent
-  return ts.isCallExpression(call) && calleeName(call) === "route" && call.arguments.indexOf(fn as ts.Expression) === 1 && fn.parameters[0] === parameter
+  return ts.isCallExpression(call) && calleeName(call) === "route" && call.arguments[1] === fn && fn.parameters[0] === parameter
 }
 
 function deliversRealResponse(argument: ts.Expression): boolean {

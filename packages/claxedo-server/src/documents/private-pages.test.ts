@@ -72,7 +72,7 @@ describe("private page HTTP entrypoints", () => {
       level: "edit",
     })
     expect(response.status).toBe(201)
-    const share = (await response.json()) as any
+    const share = (await response.json())
     expect(await (await f.request("creator", `/documents/${page.id}/shares`)).json()).toEqual([share])
     expect((await f.request("creator", `/documents/${page.id}/shares`, "DELETE", { share_id: share.id })).status).toBe(
       204,
@@ -87,7 +87,7 @@ describe("private page HTTP entrypoints", () => {
       level: "view",
     })
     expect(response.status).toBe(201)
-    const share = (await response.json()) as any
+    const share = (await response.json())
     expect(share.token).toHaveLength(64)
     expect(f.shares[0].target_id).not.toBe(share.token)
     expect((await f.request("", `/p/${share.token}`)).status).toBe(200)
@@ -199,7 +199,7 @@ test("a listing reads membership, project access and shares once, however many p
   expect(listed.map((row) => row.id).sort()).toEqual(
     pages
       .slice(0, 10)
-      .map((page) => page.id)
+      .map((page): string => page.id)
       .sort(),
   )
   expect(calls).toEqual({ member: 1, project: 1, granted: 1 })

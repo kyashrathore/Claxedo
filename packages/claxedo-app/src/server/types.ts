@@ -287,4 +287,4 @@ export type FeatureAvailability =
   | { readonly kind: "available" }
   | { readonly kind: "unavailable"; readonly reason: string }
 
-export type FetchQuery<T> = SolidQueryOptions<T, AppError, T, readonly unknown[]> & { readonly initialData?: undefined }
+export type FetchQuery<T> = SolidQueryOptions<T, AppError, T> & { readonly initialData?: undefined }

@@ -7,6 +7,8 @@ import { embeddedWorkspaceRuntimeExposure, EMBEDDED_RELAY_HOST_AUTH_HEADER, rela
 import { remoteWorkspaceSessionAccessPolicy } from "../remote-session-authority"
 import { createWorkspaceRuntimeApp, type WorkspaceRuntimeApp } from "../server"
 import { loopbackMachineLoginPolicy } from "../testing"
+import { fetchBodyJson, fetchUrl } from "../test-support/fetch-double"
+import { asRecord } from "@claxedo/helpers/guards"
 
 const target = { workspaceId: "ws_root_files", hostId: "host_root_files" }
 
@@ -56,10 +58,10 @@ function hostAuthority() {
   let parentActive = true
   const fetch = async (_input: RequestInfo | URL, init?: RequestInit) => {
     const headers = new Headers(init?.headers)
-    const body = JSON.parse(String(init?.body)) as { action?: unknown }
-    asked.push({ action: body.action, authorization: headers.get("authorization") })
-    if (body.action !== "host_read" && body.action !== "host_admin") {
-      return Response.json({ error: { code: "unexpected_action", message: String(body.action) } }, { status: 400 })
+    const action = asRecord(fetchBodyJson(init?.body))?.action
+    asked.push({ action, authorization: headers.get("authorization") })
+    if (action !== "host_read" && action !== "host_admin") {
+      return Response.json({ error: { code: "unexpected_action", message: JSON.stringify(action) } }, { status: 400 })
     }
     return parentActive
       ? Response.json({ allowed: true })
@@ -84,14 +86,13 @@ async function relayed(directory: string) {
     role: "owner", scope: "workspace", backing: "cloud-vm", parent_jti: "rat_parent",
   }).setProtectedHeader({ alg: "EdDSA" }).setIssuer("workspace-relay").setAudience("workspace-host-service")
     .setIssuedAt().setExpirationTime("5m").setJti("rht_root_files").sign(pair.privateKey)
-  const request = (pathname: string, init: RequestInit = {}) => runtime.app.request(`http://localhost${pathname}`, {
+  const request = (pathname: string, init: Pick<RequestInit, "method" | "body"> = {}) => runtime.app.request(`http://localhost${pathname}`, {
     ...init,
     headers: {
       authorization: `Bearer ${token}`,
       "x-workspace-id": target.workspaceId,
       "x-forwarded-by": "workspace-relay",
       ...(init.body ? { "content-type": "application/json" } : {}),
-      ...init.headers,
     },
   })
   return { authority, request, token }
@@ -152,7 +153,7 @@ describe("an unsigned desktop's root", () => {
         url: () => undefined,
         requireActor: false,
         fetch: async (input) => {
-          fetched.push(String(input))
+          fetched.push(fetchUrl(input))
           return Response.json({ allowed: true })
         },
       }),

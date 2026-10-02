@@ -15,7 +15,7 @@ function livePluginPath(pluginId: string) {
 export function livePluginQueries(transport: Transport) {
   const server = transport.serverUrl
   return {
-    list: () => fetchQuery<readonly LivePlugin[]>(queryKeys.livePlugins(server), async () => parseLivePlugins(await transport.json<unknown>(LIVE_PLUGINS_PATH))),
+    list: () => fetchQuery<readonly LivePlugin[]>(queryKeys.livePlugins(server), async () => parseLivePlugins(await transport.json(LIVE_PLUGINS_PATH))),
   }
 }
 
@@ -31,7 +31,7 @@ export function createLivePluginsApi(transport: Transport): LivePluginsApi {
       }
     },
     remove: async (pluginId) => {
-      await transport.json<unknown>(livePluginPath(pluginId), { method: "DELETE" })
+      await transport.json(livePluginPath(pluginId), { method: "DELETE" })
     },
   }
 }

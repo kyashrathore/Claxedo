@@ -18,8 +18,8 @@ export type Transport = {
   readonly request: (path: string, init?: RequestInit) => Promise<Response>
   readonly runtime: (route: RuntimeRoute, path: string, init?: RequestInit) => Promise<Response>
   readonly runtimeSocket: (route: RuntimeRoute, path: string) => Promise<WebSocket>
-  readonly json: <T>(path: string, init?: RequestInit) => Promise<T>
-  readonly runtimeJson: <T>(route: RuntimeRoute, path: string, init?: RequestInit) => Promise<T>
+  readonly json: (path: string, init?: RequestInit) => Promise<unknown>
+  readonly runtimeJson: (route: RuntimeRoute, path: string, init?: RequestInit) => Promise<unknown>
   readonly startRuntime: (workspaceId: string, options?: StartOptions) => Promise<void>
 }
 
@@ -64,10 +64,10 @@ async function fetchFromServer(config: ServerConfig, url: string, init?: Request
   }
 }
 
-async function readJsonResponse<T>(response: Response, label: string): Promise<T> {
+async function readJsonResponse(response: Response, label: string): Promise<unknown> {
   if (!response.ok) throw await responseError(response, label)
-  if (response.status === 204) return undefined as T
-  return (await response.json()) as T
+  if (response.status === 204) return undefined
+  return response.json()
 }
 
 function workspaceProxyPath(route: RuntimeRoute, path: string) {

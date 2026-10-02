@@ -2,7 +2,7 @@ import { createContext, createSignal, useContext } from "solid-js"
 import type { Registry, ShellRegistries } from "./types"
 
 export function createRegistry<Entry>(initial: readonly Entry[]): Registry<Entry> {
-  const [entries, setEntries] = createSignal<readonly Entry[]>(initial)
+  const [entries, setEntries] = createSignal(initial)
   return {
     list: entries,
     add: (entry) => {

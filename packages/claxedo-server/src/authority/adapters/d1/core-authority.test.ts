@@ -440,7 +440,7 @@ describe("composed Better Auth + D1 authority", () => {
   })
 
   test("records only the configured canonical service actor and enforces deployment, workspace, JTI, and revocation", async () => {
-    const { authority, database } = await setup()
+    const { authority } = await setup()
     const alice = await signed(authority, "service-alice")
     await authority.createHostedOrganization(alice, { name: "Services", orgId: "org_services" })
     await authority.createWorkspace(alice, {

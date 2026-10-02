@@ -1,4 +1,4 @@
-import { ServerError } from "./errors"
+import { contractMismatch, ServerError } from "./errors"
 import { onRuntime, sessionEndpoint, type SessionContext } from "./session-context"
 import { jsonInit, type RuntimeRoute, type Transport } from "./transport"
 import type { PromptInput, QueuedPrompt, QueuedPromptAction, QueuedPromptControl, SessionLocation } from "./types"
@@ -10,7 +10,8 @@ function queuePath(ref: SessionLocation, suffix = "") {
 }
 
 async function readQueue(transport: Transport, where: RuntimeRoute, ref: SessionLocation): Promise<readonly QueuedPrompt[]> {
-  const rows = await transport.runtimeJson<unknown[]>(where, queuePath(ref))
+  const rows = await transport.runtimeJson(where, queuePath(ref))
+  if (!Array.isArray(rows)) throw contractMismatch("queue")
   return rows.flatMap((row) => {
     const prompt = queuedPromptFromWire(row)
     return prompt ? [prompt] : []
@@ -22,12 +23,12 @@ export function createSessionQueue(context: SessionContext) {
   return {
     queue: (ref: SessionLocation): Promise<readonly QueuedPrompt[]> => onRuntime(context, ref, (where) => readQueue(transport, where, ref), async () => []),
     controlQueued: async (ref: SessionLocation, seq: number, action: QueuedPromptAction): Promise<QueuedPromptControl> => {
-      const body = await transport.runtimeJson<unknown>(await workspaces.route(ref), queuePath(ref, `/${seq}/${action}`), jsonInit("POST", {}))
+      const body = await transport.runtimeJson(await workspaces.route(ref), queuePath(ref, `/${seq}/${action}`), jsonInit("POST", {}))
       return queuedPromptControlFromWire(body)
     },
     replaceQueued: async (ref: SessionLocation, seq: number, input: PromptInput, messageId: string): Promise<boolean> => {
       try {
-        await transport.runtimeJson<unknown>(await workspaces.route(ref), queuePath(ref, `/${seq}/replace`), jsonInit("POST", promptBody(input, messageId)))
+        await transport.runtimeJson(await workspaces.route(ref), queuePath(ref, `/${seq}/replace`), jsonInit("POST", promptBody(input, messageId)))
         return true
       } catch (error) {
         if (error instanceof ServerError && error.class === "conflict") return false

@@ -13,14 +13,14 @@ export type AgentConnectionsApi = { readonly remove: (connectionId: string) => P
 
 export function agentConnectionQueries(transport: Transport): AgentConnectionsQueries {
   return {
-    list: () => fetchQuery(queryKeys.agentConnections(transport.serverUrl), async () => decodeHarnessConnectionsCatalog(await transport.json<unknown>(AGENT_CONNECTIONS_PATH))),
+    list: () => fetchQuery(queryKeys.agentConnections(transport.serverUrl), async () => decodeHarnessConnectionsCatalog(await transport.json(AGENT_CONNECTIONS_PATH))),
   }
 }
 
 export function createAgentConnectionsApi(transport: Transport, queryClient: QueryClient): AgentConnectionsApi {
   return {
     remove: async (connectionId) => {
-      await transport.json<unknown>(`${AGENT_CONNECTIONS_PATH}/${encodeURIComponent(connectionId)}`, { method: "DELETE" })
+      await transport.json(`${AGENT_CONNECTIONS_PATH}/${encodeURIComponent(connectionId)}`, { method: "DELETE" })
       await queryClient.invalidateQueries({ queryKey: queryKeys.agentConnections(transport.serverUrl) })
     },
   }

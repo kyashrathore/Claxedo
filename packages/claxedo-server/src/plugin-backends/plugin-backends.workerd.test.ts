@@ -3,7 +3,7 @@ import { afterAll, beforeAll, describe, expect, test } from "vitest"
 import { Miniflare } from "miniflare"
 import type { D1Database } from "@cloudflare/workers-types"
 import { buildPluginBackend, type PluginBackendBuild } from "@claxedo/plugin-build"
-import type { AuthIdentity, ControlPlanePrincipal } from "@claxedo/server-core/platform/auth/authentication"
+import type { AuthIdentity } from "@claxedo/server-core/platform/auth/authentication"
 import type { AgentPluginR2Bucket } from "../agent-plugins/artifacts/r2-artifact-adapter"
 import { D1WorkspaceAuthority } from "../authority/adapters/d1/workspace-authority"
 import { applyControlPlaneBaseline } from "../test-support/control-plane-migrations"
@@ -59,19 +59,8 @@ function identity(subject: string): AuthIdentity {
 async function signIn(subject: string): Promise<{ token: string; userId: string }> {
   const linked = await authority().ensureApplicationIdentity(identity(subject))
   if (linked.state !== "active") throw new Error(`${subject} did not become active: ${linked.state}`)
-  const principal: ControlPlanePrincipal = {
-    userId: linked.userId,
-    actorId: linked.actorId,
-    actorKind: "human",
-    deploymentId: DEPLOYMENT_ID,
-    sessionId: `session:${subject}`,
-    authenticatedAt: 1_800_000_000_000,
-    methods: ["oauth:github"],
-    assurance: "single-factor",
-    client: { kind: "browser", tokenKind: "browser-session", id: "browser", resource: ORIGIN, scopes: ["openid"], origin: "https://app.test" },
-    identity: identity(subject),
-  }
-  return { token: Buffer.from(JSON.stringify(principal)).toString("base64url"), userId: linked.userId }
+  const claims = { userId: linked.userId, actorId: linked.actorId, subject }
+  return { token: Buffer.from(JSON.stringify(claims)).toString("base64url"), userId: linked.userId }
 }
 
 async function personalOrg(userId: string) {

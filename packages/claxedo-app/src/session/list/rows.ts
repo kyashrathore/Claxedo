@@ -29,17 +29,15 @@ function setEntry<S extends ListData>(data: S, id: SessionId, entry: ListEntry):
 
 type SelectionKey = keyof SessionSelections
 
-const sameSelection: { readonly [K in SelectionKey]: (a: SessionSelections[K], b: SessionSelections[K]) => boolean } = {
-  harness: sameHarnessSelection,
-  model: sameModelKey,
-  permissionMode: (a, b) => a === b,
-  permissionModeLabel: (a, b) => a === b,
+const sameSelection: { readonly [K in SelectionKey]: (a: SessionSelections, b: SessionSelections) => boolean } = {
+  harness: (a, b) => sameHarnessSelection(a.harness, b.harness),
+  model: (a, b) => sameModelKey(a.model, b.model),
+  permissionMode: (a, b) => a.permissionMode === b.permissionMode,
+  permissionModeLabel: (a, b) => a.permissionModeLabel === b.permissionModeLabel,
 }
 
-const sameSelectionField = <K extends SelectionKey>(key: K, a: SessionSelections, b: SessionSelections) => sameSelection[key](a[key], b[key])
-
 function sameSelections(a: SessionSelections, b: SessionSelections): boolean {
-  return (Object.keys(sameSelection) as SelectionKey[]).every((key) => sameSelectionField(key, a, b))
+  return Object.values(sameSelection).every((same) => same(a, b))
 }
 
 const sameTurn = (a: SessionRow["lastTurn"], b: SessionRow["lastTurn"]) => a?.status === b?.status && a?.completedAt === b?.completedAt

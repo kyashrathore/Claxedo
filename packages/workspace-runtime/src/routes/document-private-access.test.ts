@@ -3,6 +3,7 @@ import fs from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
 import { RuntimeDocumentHydrationRoutes, forgetRuntimeDocuments } from "./document-hydration"
+import { fetchDouble, fetchUrl } from "../test-support/fetch-double"
 
 const originalFetch = globalThis.fetch
 const roots: string[] = []
@@ -18,10 +19,10 @@ test("hydration refuses a revoked document before writing its content", async ()
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "private-document-"))
   roots.push(root)
   const calls: string[] = []
-  globalThis.fetch = (async (url: string | URL | Request) => {
-    calls.push(String(url))
+  globalThis.fetch = fetchDouble(async (url) => {
+    calls.push(fetchUrl(url))
     return new Response(null, { status: 404 })
-  }) as typeof fetch
+  })
   const routes = RuntimeDocumentHydrationRoutes({
     workspaceId: "ws_1",
     workspaceRoot: root,

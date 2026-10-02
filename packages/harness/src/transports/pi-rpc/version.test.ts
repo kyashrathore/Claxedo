@@ -3,10 +3,11 @@ import { readFileSync } from "node:fs"
 import fs from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
-import type { SessionBroker } from "../../contract"
+import { PassThrough } from "node:stream"
+import type { OwnedProcess, SessionBroker } from "../../contract"
 import { harnessVersionStanding } from "../../contract"
 import { scriptedPi } from "./test-support/scripted-pi"
-import { PI_RANGE } from "./version"
+import { PI_RANGE, piReportedVersion } from "./version"
 
 test("a Pi older than the tested range refuses the session by name before its RPC process starts", async () => {
   const pi = await scriptedPi({ version: "0.87.1" })
@@ -73,4 +74,15 @@ test("the version is read once per Pi binary file, and again once the file chang
     await pi.close()
     await fs.rm(dir, { recursive: true, force: true })
   }
+})
+
+test("a version read that times out and then cannot retire its process fails as the retirement, carrying the timeout as its cause", async () => {
+  const stdout = new PassThrough()
+  const owned: OwnedProcess = { pid: 1, stdin: new PassThrough(), stdout, stderr: new PassThrough(), exited: new Promise(() => {}),
+    retire: async () => ({ stopped: false, error: { code: "alive", message: "pi --version is still running" } }) }
+  const expired = { at: Date.now() - 1, signal: new AbortController().signal }
+  const failure = await piReportedVersion(owned, expired).catch((error: unknown) => error)
+  expect(failure).toMatchObject({ transport: "pi", code: "retirement", message: "pi --version is still running",
+    cause: { transport: "pi", code: "timeout", message: "pi --version timed out" } })
+  stdout.destroy()
 })

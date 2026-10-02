@@ -87,7 +87,7 @@ function useOAuth(input: ConnectFormInput, methods: ReturnType<typeof useConnect
     setStore({ methodIndex: index, authorization: undefined, state: "pending", error: undefined, saving: true })
     try {
       const authorization = await server.providerConnect.authorize(methods.authProviderId(), index)
-      if (!authorization) return void (await complete())
+      if (!authorization) return await complete()
       setStore({ authorization, state: authorization.method, saving: authorization.method === "auto" })
       if (authorization.method === "auto") void finish()
     } catch (error) {
@@ -111,8 +111,8 @@ function useSaveKey(input: ConnectFormInput, hosted: () => boolean, state: Retur
     event.preventDefault()
     const secret = store.value.trim()
     const label = store.label.trim()
-    if (!secret) return void setStore("error", t("provider.connect.apiKey.required"))
-    if (!input.credentialId && !hosted() && !label) return void setStore("error", t("provider.connect.label.required"))
+    if (!secret) return setStore("error", t("provider.connect.apiKey.required"))
+    if (!input.credentialId && !hosted() && !label) return setStore("error", t("provider.connect.label.required"))
     setStore({ saving: true, error: undefined })
     try {
       await write(secret, label)

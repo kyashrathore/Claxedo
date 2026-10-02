@@ -1,7 +1,7 @@
 import type { JSX } from "solid-js"
 import type { Disposer, MentionInsert, PluginApi } from "@claxedo/plugin-api"
 import { unreachable } from "@/lib/machine"
-import type { FoundMention, FrameInvoke, Registration, RenderTarget } from "./protocol"
+import { foundMentionsFromFrame, type FrameInvoke, type Registration, type RenderTarget } from "./protocol"
 
 export type FrameSlots = (target: RenderTarget, title: string) => JSX.Element
 
@@ -13,7 +13,7 @@ function registerMention(api: PluginApi, registration: Extract<Registration, { k
     id: registration.id,
     label: registration.label,
     search: async (query, context) => {
-      const found = (await invoke({ method: "mention.search", mentionId: registration.id, query, context })) as readonly FoundMention[]
+      const found = foundMentionsFromFrame(await invoke({ method: "mention.search", mentionId: registration.id, query, context }))
       for (const { item, insert } of found) inserts.set(item.id, insert)
       return found.map(({ item }) => item)
     },

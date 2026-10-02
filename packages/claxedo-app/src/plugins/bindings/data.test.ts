@@ -1,8 +1,8 @@
 import { describe, expect, mock, test } from "bun:test"
 import type { BindingScope } from "./services"
 
-mock.module("@/session", () => ({ sessionActivity: () => "working" }))
-mock.module("@/shell", () => ({ sessionPath: (ref: { placementId: string; sessionId: string }) => `${ref.placementId}/${ref.sessionId}` }))
+await mock.module("@/session", () => ({ sessionActivity: () => "working" }))
+await mock.module("@/shell", () => ({ sessionPath: (ref: { placementId: string; sessionId: string }) => `${ref.placementId}/${ref.sessionId}` }))
 const { dataBindings } = await import("./data")
 
 function fixture() {

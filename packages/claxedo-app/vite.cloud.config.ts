@@ -29,6 +29,11 @@ function devTls(): { key: Buffer; cert: Buffer } | undefined {
   }
 }
 
+function manifestField(value: unknown, key: string): unknown {
+  if (typeof value !== "object" || value === null) return undefined
+  return new Map<string, unknown>(Object.entries(value)).get(key)
+}
+
 function claxedoWorkspaceSource(): Plugin {
   const roots = [
     fileURLToPath(new URL("./node_modules/", import.meta.url)),
@@ -49,10 +54,9 @@ function claxedoWorkspaceSource(): Plugin {
       if (!match) return null
       const manifestPath = manifestFor(match[1])
       if (!manifestPath) return null
-      const manifest = JSON.parse(readFileSync(manifestPath, "utf8")) as { exports?: Record<string, unknown> }
-      const entry = manifest.exports?.[match[2] ? `.${match[2]}` : "."]
-      if (!entry || typeof entry !== "object") return null
-      const development = (entry as Record<string, unknown>).development
+      const manifest: unknown = JSON.parse(readFileSync(manifestPath, "utf8"))
+      const entry = manifestField(manifestField(manifest, "exports"), match[2] ? `.${match[2]}` : ".")
+      const development = manifestField(entry, "development")
       if (typeof development !== "string") return null
       return normalizePath(realpathSync(`${dirname(manifestPath)}/${development}`))
     },

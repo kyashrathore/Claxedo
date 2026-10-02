@@ -67,7 +67,6 @@ import type {
   PageShape,
   PromptInput,
   QueuedPrompt,
-  ReaderSettings,
   QueuedPromptAction,
   QueuedPromptControl,
   SessionCreateInput,
@@ -77,7 +76,6 @@ import type {
   SessionReads,
   SessionLocation,
   SessionRow,
-  Subagent,
   TranscriptPage,
   TranscriptPart,
 } from "./types"
