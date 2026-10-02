@@ -249,6 +249,24 @@ export function normalizeWireCorpus(value: unknown): unknown {
   return normalize(value, new Map(), new Map())
 }
 
+function unsequenced(frame: unknown): boolean {
+  return object(object(object(frame).data).payload).type === "harness.health"
+}
+
+export function healthAfterSequencedFrames(corpus: unknown): unknown {
+  const observations = object(corpus).observations
+  if (!Array.isArray(observations)) return corpus
+  return { ...object(corpus), observations: observations.map((row) => {
+    const entities = object(row).entities
+    if (!Array.isArray(entities)) return row
+    return { ...object(row), entities: entities.map((entity) => {
+      const frames = object(entity).frames
+      if (!Array.isArray(frames)) return entity
+      return { ...object(entity), frames: [...frames.filter((frame) => !unsequenced(frame)), ...frames.filter(unsequenced)] }
+    }) }
+  }) }
+}
+
 export function difference(expected: unknown, actual: unknown, location = "$"): string | undefined {
   if (Object.is(expected, actual)) return undefined
   if (expected && actual && typeof expected === "object" && typeof actual === "object") {
@@ -319,7 +337,7 @@ function settleCorpus(code: number) {
     return
   }
   const expected = JSON.parse(fs.readFileSync(file, "utf8")) as unknown
-  const diff = difference(expected, current)
+  const diff = difference(healthAfterSequencedFrames(expected), healthAfterSequencedFrames(current))
   if (diff && process.env.CLAXEDO_E2E_CORPUS_ACTUAL) {
     fs.writeFileSync(process.env.CLAXEDO_E2E_CORPUS_ACTUAL, `${JSON.stringify(current, null, 2)}\n`)
   }
