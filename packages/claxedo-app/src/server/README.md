@@ -4,6 +4,8 @@ The only module that knows today's server: its routes, its OpenCode-shaped paylo
 
 ## Owned concepts
 
+- Startup (`startup.ts`): the server owns `loading`, `ready`, and `failed { failure }`. Catalog and capability failures retain the typed error. Concurrent retries share the pending startup; failed startup retries reload capabilities even if its stream already opened, without opening a duplicate stream. Once ready, retry reconnects the existing stream. HTTP error envelopes preserve the server's explicit retry decision. Browser-account tests and flow 48 cover identity failure, canonical invitation admission, explicit retry, and reload recovery.
+
 - `SessionRef` belongs to `@claxedo/agent-runtime-contract` and identifies a session by `{ sessionId, workspaceId }`. `SessionLocation` is the app's navigation context: its placement id is the workspace id, with branded ids and separate project metadata. Plugins and Tasks exchange the canonical reference.
 
 - Session first reads (`session-reads.ts`): a session opens from one first read that answers its row, its turn outline and the page its transcript draws first (`wire/first-read.ts`), asked for with the reader's viewport (`rows`, `cols`, `reasoning`). The open view's facts are a second read the first never waits for, and the status settles once both have landed, because a failed last turn on the row decides it. Both promise branches are observed immediately, including when placement lookup fails.

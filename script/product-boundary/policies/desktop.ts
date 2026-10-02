@@ -485,8 +485,10 @@ export const desktopRenderer: Policy = {
   // renumber offsets, set image marks) are `composer/prompt-edits.ts`, split
   // from the draft store; the harness selector's model, effort and fast writes
   // and their refusal toast are `composer/view/selection-writes.ts`.
-  // 1268/36, no headroom.
-  ceilings: { modules: 1268, packages: 36 },
+  // server/startup.ts owns startup failure and retry; shell/view/startup.tsx
+  // presents that state through the existing failure notice. Both belong in
+  // the shared desktop renderer and add no package edge. 1270/36, no headroom.
+  ceilings: { modules: 1270, packages: 36 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,

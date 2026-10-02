@@ -15,7 +15,7 @@ const bootstrap = {
   events: { hostAggregate: false },
 }
 
-function worker(options: { unauthorized?: boolean; malformed?: boolean } = {}) {
+function worker(options: { unauthorized?: boolean; malformed?: boolean; identityUnavailable?: boolean } = {}) {
   const calls: { path: string; init?: RequestInit }[] = []
   globalThis.fetch = Object.assign(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = new URL(input instanceof Request ? input.url : input)
@@ -26,6 +26,7 @@ function worker(options: { unauthorized?: boolean; malformed?: boolean } = {}) {
       return new Response(new ReadableStream({ start(controller) { init?.signal?.addEventListener("abort", () => controller.close(), { once: true }) } }))
     }
     if (url.pathname === "/api/workspace") {
+      if (options.identityUnavailable) return Response.json({ error: { code: "auth_verifier_unavailable", message: "Application identity mapping is unavailable", retryable: false } }, { status: 503 })
       if (options.unauthorized) return Response.json({ error: { code: "session_expired", message: "Sign in again" } }, { status: 401 })
       if (options.malformed) return Response.json({ workspaces: "wrong" })
       return Response.json({ workspaces: url.searchParams.get("host") === "machine" ? [machine] : [cloud] })
@@ -43,6 +44,7 @@ test("signed browser build lists account projects, placements and sessions with 
     const server = createServer({ serverUrl: "https://worker.test", cookies: true })
     try {
       await server.ready
+      expect(server.startup().kind).toBe("ready")
       const projects = await server.queryClient.fetchQuery(server.queries.projects.list())
       expect(projects.map((project) => [project.id, project.name])).toEqual([["prj_app", "App"]])
       expect(server.placements.list().map((placement) => [String(placement.id), placement.kind, placement.reachable])).toEqual([["ws_cloud", "cloud", false], ["ws_machine", "worktree", false]])
@@ -62,6 +64,7 @@ test("signed browser build lists account projects, placements and sessions with 
 for (const [options, failure] of [
   [{ unauthorized: true }, { class: "auth", code: "session_expired", status: 401 }],
   [{ malformed: true }, { class: "internal" }],
+  [{ identityUnavailable: true }, { class: "network", code: "auth_verifier_unavailable", status: 503, retryable: false }],
 ] as const) {
   test(`signed browser catalog surfaces ${failure.class} failures and recovers on the next read`, async () => {
     worker(options)
@@ -71,9 +74,12 @@ for (const [options, failure] of [
       console.error = () => undefined
       try {
         await server.ready
+        expect(server.startup()).toMatchObject({ kind: "failed", failure })
         await expect(server.queryClient.fetchQuery(server.queries.projects.list())).rejects.toMatchObject(failure)
         worker()
-        await server.placements.load()
+        await server.retryConnection()
+        expect(server.startup().kind).toBe("ready")
+        expect(server.capabilities()).toMatchObject({ signedIn: true })
         expect((await server.queryClient.fetchQuery(server.queries.projects.list())).map((project) => String(project.id))).toEqual(["prj_app"])
       } finally { console.error = originalError; server.dispose(); dispose() }
     })

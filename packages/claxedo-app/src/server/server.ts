@@ -2,7 +2,7 @@ import { QueryClient } from "@tanstack/solid-query"
 import { createSignal } from "solid-js"
 import { createBrowserHostedAccount, createHostedAccount, type HostedAccount } from "./account"
 import { createAccountsApi } from "./accounts"
-import { createCapabilities, type CapabilitiesOwner } from "./capabilities"
+import { createCapabilities } from "./capabilities"
 import { createCloudApi } from "./cloud"
 import { createAgentConnectionsApi } from "./agent-connections"
 import { createIntegrationsApi } from "./integrations"
@@ -10,7 +10,7 @@ import { createProviderConnectApi } from "./provider-connect"
 import { createProviderCatalogsApi } from "./provider-catalogs"
 import { createFoldersApi } from "./folders"
 import type { ServerConfig } from "./config"
-import { isRetryableServerError, toAppError } from "./errors"
+import { isRetryableServerError } from "./errors"
 import { createEventIntake } from "./event-intake"
 import type { ConnectionState } from "./events"
 import { createGitApi } from "./git"
@@ -28,7 +28,8 @@ import { createPlacementStreams } from "./placement-streams"
 import { createSessionProjection, type SessionProjection } from "./session-projection"
 import { createSessionsApi } from "./sessions"
 import { createStatusOwner, type StatusOwner } from "./status"
-import { createEventStreams, type EventStreams } from "./streams"
+import { createEventStreams } from "./streams"
+import { createStartup } from "./startup"
 import { createTerminalsApi } from "./terminals"
 import { createTransport, type Transport } from "./transport"
 import { createWorkspaces, type Workspaces } from "./workspaces"
@@ -57,38 +58,8 @@ function createQueryClient() {
 
 export type ServerHandle = Server & {
   readonly config: ServerConfig
-  readonly retryConnection: () => void
   readonly ready: Promise<void>
   readonly dispose: () => void
-}
-
-type Startup = { readonly ready: Promise<void>; readonly retry: () => void }
-
-function createStartup(input: {
-  readonly workspaces: Workspaces
-  readonly streams: EventStreams
-  readonly capabilities: CapabilitiesOwner
-  readonly setConnection: (state: ConnectionState) => void
-}): Startup {
-  let opened = false
-  const start = async () => {
-    try {
-      const catalog = await input.workspaces.load()
-      if (!opened) input.streams.open(catalog.declaration)
-      opened = true
-      await input.capabilities.load()
-    } catch (error) {
-      const failure = toAppError(error)
-      if (!opened) input.setConnection({ kind: "offline", reason: failure.message })
-      else console.error("The server's capabilities could not be read", failure)
-    }
-  }
-  const retry = () => {
-    if (opened) return input.streams.retry()
-    input.setConnection({ kind: "connecting" })
-    void start()
-  }
-  return { ready: start(), retry }
 }
 
 function serverApis(transport: Transport, workspaces: Workspaces, status: StatusOwner, queryClient: QueryClient, queries: ServerQueries, projection: SessionProjection, account: HostedAccount | undefined, port: HostedAccount | undefined) {
@@ -147,6 +118,7 @@ export function createServer(config: ServerConfig): ServerHandle {
     config,
     connection,
     capabilities: capabilities.value,
+    startup: startup.state,
     queryClient,
     subscribe: intake.subscribe,
     ...serverApis(transport, workspaces, status, queryClient, queries, projection, account, port),

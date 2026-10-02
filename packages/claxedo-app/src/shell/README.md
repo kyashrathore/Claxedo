@@ -14,6 +14,8 @@ Owns: the app frame and nothing a feature knows about. Three regions and their h
 
 ## State machines
 
+- Startup presentation (`view/startup.tsx`) reads the server's startup machine until capabilities establish the shell scope. Loading uses the shared delayed placeholder; failure uses the shared `FailureNotice`, translated error title, server detail, and explicit retry. Auth and onboarding screens retain their own route. Flow 48 covers desktop and phone failure and recovery. The shell/platform budget grows by 22 lines for this presentation and the incomplete invitation screen; startup orchestration remains in the server domain.
+
 - **`ShellLayout`** (`model.ts`): `wide { sidebar, panel }` with the panel `open` or `collapsed` and the sidebar `open` (pinned), `collapsed` (unpinned) or `peeking` (unpinned and shown), or `phone { drawer, sheet }` with each overlay `open` or `closed`. Events: `viewportChanged`, `toggleSidebar`, `showSidebar`, `hideSidebar`, `peekSidebar` (only from `collapsed`), `unpeekSidebar` (only from `peeking`), `togglePanel`, `showPanel`, `hidePanel`, `navigated` (closes the phone overlays). The wide regions persist as preferences (`store.ts`) under the principal's scope, a peek as `collapsed`; phone overlays never persist. An event that changes no region returns the same state object, so no reader re-runs: opening a file in the open panel sends `showPanel`, and a fresh object re-ran the session timeline's virtualizer options and its bottom anchor, a forced layout inside the click.
 
 ## Routes (`routes.ts`)
