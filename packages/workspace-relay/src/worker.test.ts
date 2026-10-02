@@ -192,7 +192,7 @@ test("Worker resolver transmits identity and preserves a stale-token authenticat
     CLAXEDO_RELAY_RESOLVER_URL: "https://resolver.test",
     CLAXEDO_RELAY_RESOLVER_TOKEN: "secret",
   }, async (input) => {
-    requests.push(new URL(String(input)))
+    requests.push(new URL(input instanceof Request ? input.url : input))
     return Response.json({ error: { code: "runtime_access_token_invalid" } }, { status: 401 })
   })
   await expect(resolver.target("ws_1", "host_1", "old")).rejects.toMatchObject({ code: "runtime_access_token_invalid" })

@@ -719,7 +719,7 @@ describe("workspace relay server", () => {
     await relay.room.request("http://relay.test/workspaces/ws_1/session/ses_1", {
       headers: { authorization: `Bearer ${await relay.token("viewer", "ses_1")}` },
     })
-    const forwarded = relay.forwarded[0]!.request.headers.get("authorization")?.replace(/^Bearer /, "")
+    const forwarded = relay.forwarded[0].request.headers.get("authorization")?.replace(/^Bearer /, "")
     expect(decodeJwt(forwarded!)).toMatchObject({ session_id: "ses_1", role: "viewer" })
   })
 
