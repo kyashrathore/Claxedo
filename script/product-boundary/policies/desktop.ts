@@ -462,8 +462,10 @@ export const desktopRenderer: Policy = {
   // JSON validation; shell/pane-kind-entry.tsx retains each registered pane's
   // state type while exposing the heterogeneous shell registry. These four
   // owners are reached through the existing server and shell entrypoints.
-  // 1268/36, no headroom.
-  ceilings: { modules: 1268, packages: 36 },
+  // server/startup.ts owns startup failure and retry; shell/view/startup.tsx
+  // presents that state through the existing failure notice. Both belong in
+  // the shared desktop renderer and add no package edge. 1270/36, no headroom.
+  ceilings: { modules: 1270, packages: 36 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,

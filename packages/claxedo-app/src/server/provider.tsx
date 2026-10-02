@@ -6,7 +6,7 @@ import type { ServerHandle } from "./server"
 export function ServerProvider(props: ParentProps<{ readonly server: ServerHandle }>) {
   const server = props.server
   const visible = () => {
-    if (document.visibilityState === "visible") server.retryConnection()
+    if (document.visibilityState === "visible") void server.retryConnection()
   }
   window.addEventListener("online", server.retryConnection)
   window.addEventListener("focus", server.retryConnection)

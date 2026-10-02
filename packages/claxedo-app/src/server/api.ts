@@ -2,6 +2,7 @@ import type { AccountScope, AccountSource } from "@claxedo/account-contract/voca
 import type { Accessor } from "solid-js"
 import type { QueryClient } from "@tanstack/solid-query"
 import type { SharedSessions } from "./shared-sessions"
+import type { StartupState } from "./startup"
 import type { RuntimeCommand } from "@claxedo/agent-runtime-contract"
 import type { Account, AccountCheck, AccountSources, EffectiveAccounts, HostedAccountSources, MachineLogin } from "./account-types"
 import type { CloudCreateInput, CloudWorkspace, CodeHostRepository, WorkspaceRuntime } from "./cloud-types"
@@ -252,6 +253,8 @@ export type Server = {
   readonly sharedSessions: Pick<SharedSessions, "count" | "list" | "find" | "refresh" | "enabled" | "error">
   readonly connection: Accessor<ConnectionState>
   readonly capabilities: Accessor<Capabilities | undefined>
+  readonly startup: Accessor<StartupState>
+  readonly retryConnection: () => Promise<void>
   readonly queryClient: QueryClient
   readonly subscribe: (handler: (event: ServerEvent) => void) => () => void
   readonly sessions: SessionsApi

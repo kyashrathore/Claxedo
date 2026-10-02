@@ -2,15 +2,13 @@ import { createEffect, createMemo, Show, type JSX } from "solid-js"
 import { useAuth } from "@/auth"
 import { Dynamic } from "solid-js/web"
 import { ComposerStoreProvider } from "@/composer"
-import { useTranslator } from "@/i18n"
 import { preferenceKey } from "@/lib/persisted"
 import { PluginHostProvider } from "@/plugins"
 import { useServer, type Capabilities } from "@/server"
-import { Toast, ClaxedoSplash } from "@/ui"
+import { Toast } from "@/ui"
 import { createWorkbenchStore, WorkbenchProvider } from "@/workbench"
 import { HomeRedirect } from "../home-redirect"
 import { signInGate } from "../sign-in-gate"
-import { shellDictionary } from "../i18n"
 import { ShellLayoutProvider } from "../layout"
 import { CommandsProvider } from "../palette/commands"
 import { OpenFileCommand } from "../palette/open-file-command"
@@ -26,6 +24,7 @@ import { Overlays } from "./overlays"
 import { RouteSync } from "./route-sync"
 import { SettingsSidebar } from "./settings-sidebar"
 import { ShellCommands } from "./shell-commands"
+import { ShellStartup } from "./startup"
 
 const LOGIN_PATH = "/login"
 
@@ -39,20 +38,6 @@ export function principalScope(capabilities: Capabilities | undefined): string |
 
 function centerOf(route: ShellRoute): CenterContent {
   return route.kind === "page" && !route.page.tab ? { kind: "page", page: route.page, params: route.params } : { kind: "panes" }
-}
-
-function ShellLoading(): JSX.Element {
-  const t = useTranslator(shellDictionary)
-  return (
-    <div
-      role="status"
-      aria-label={t("shell.loading")}
-      data-testid="shell-loading"
-      class="fixed inset-0 z-[9999] h-dvh w-screen flex flex-col items-center justify-center bg-background-base"
-    >
-      <ClaxedoSplash class="w-16 h-20 opacity-50" />
-    </div>
-  )
 }
 
 function ScopedShell(props: AppShellProps & { readonly scope: string }): JSX.Element {
@@ -110,7 +95,7 @@ export function AppShell(props: AppShellProps): JSX.Element {
   })
   return (
     <>
-      <Show when={screen()} fallback={<Show when={scope()} fallback={<ShellLoading />}>{(s) => <ScopedShell scope={s()} mainSidebar={props.mainSidebar} compactTabs={props.compactTabs} />}</Show>}>
+      <Show when={screen()} fallback={<Show when={scope()} fallback={<ShellStartup />}>{(s) => <ScopedShell scope={s()} mainSidebar={props.mainSidebar} compactTabs={props.compactTabs} />}</Show>}>
         {(route) => <Dynamic component={route().screen.view} params={route().params} />}
       </Show>
       <Toast.Region />

@@ -18,7 +18,15 @@ export function LoginPage() {
 export function OrgInvitationPage() {
   const location = useLocation()
   return (
-    <Show when={location.hash.slice(1)} keyed>
+    <Show when={location.hash.slice(1)} keyed fallback={
+      <main class="auth-page">
+        <section class="auth-card">
+          <h1 class="auth-title">Invitation link is incomplete</h1>
+          <p class="auth-subtitle">Open the complete invitation link from your email, or ask your organization for a new invitation.</p>
+          <a class="auth-button" href="/">Continue to Claxedo</a>
+        </section>
+      </main>
+    }>
       {(token) => <LoginForm invitationToken={token} />}
     </Show>
   )

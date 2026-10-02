@@ -15,3 +15,8 @@ test("a gateway failure without a settled code is still retried", async () => {
   const error = await responseError(reply(502, { code: "upstream_timeout", message: "timed out" }))
   expect(error.retryable).toBe(true)
 })
+
+test("the server's explicit retry decision survives the HTTP error envelope", async () => {
+  const error = await responseError(reply(503, { code: "auth_verifier_unavailable", message: "Application identity mapping is unavailable", retryable: false }))
+  expect(error.retryable).toBe(false)
+})

@@ -134,6 +134,9 @@ test("33 phone: what a mouse reveals on hover shows on touch, and icon buttons k
 
 
 test("33 phone: an invitation link uses the auth screen without horizontal scroll and has touch targets", async ({ stack, app }) => {
+  await app.goto(`${stack.url}/invitations`)
+  await expect(app.getByRole("heading", { name: "Invitation link is incomplete" })).toBeVisible()
+  await expectNoHorizontalScroll(app)
   await app.goto(`${stack.url}/invitations#phone-invitation`)
   await expect(app.getByRole("heading", { name: "Join your organization" })).toBeVisible()
   await expect(app.getByText("Use the email address that received this invitation.")).toBeVisible()
